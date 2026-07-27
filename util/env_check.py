@@ -1,4 +1,5 @@
 """Fail loudly if the environment can't do the one thing it exists to do."""
+
 import sys
 
 import networkx as nx
@@ -19,7 +20,7 @@ require(
     "Check the pin in pixi.toml.",
 )
 
-import dace  # noqa: E402  (imported after the nx check so the error is legible)
+import dace
 
 require(dace.__version__ == "1.0.2", f"expected DaCe 1.0.2, got {dace.__version__}")
 
@@ -50,5 +51,7 @@ if FAILURES:
         print(f"  - {f}")
     sys.exit(1)
 
-print(f"OK  python {sys.version.split()[0]}  dace {dace.__version__}  "
-      f"networkx {nx.__version__}  numpy {np.__version__}")
+print(
+    f"OK  python {sys.version.split()[0]}  dace {dace.__version__}  "
+    f"networkx {nx.__version__}  numpy {np.__version__}"
+)
