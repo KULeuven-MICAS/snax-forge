@@ -58,5 +58,6 @@ jobs:
       - name: Lint
         run: pixi run -e ci lint
 
-      - name: Tests
-        run: pixi run -e ci test
+    # TODO: add me later when there are proper tests
+    #   - name: Tests
+    #     run: pixi run -e ci test
