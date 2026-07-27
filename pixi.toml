@@ -58,9 +58,9 @@ ci      = { features = ["dev"],        solve-group = "main" }
 DACE_default_build_folder = "$PIXI_PROJECT_ROOT/out/.dacecache"
 
 [tasks]
-check   = "python scripts/env_check.py"
+check   = "python util/env_check.py"
 test    = "pytest -q"
-lint    = "ruff check src harness scripts"
-fmt     = "ruff format src harness scripts"
+lint    = "ruff check util"
+fmt     = "ruff format util"
 ingest  = "python -m snax_forge.ingest.run"
 census  = "python -m snax_forge.census.run"
