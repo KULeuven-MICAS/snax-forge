@@ -35,11 +35,6 @@ jobs:
       - name: env_check
         run: pixi run check
 
-      - name: Show resolved DaCe build folder
-        if: always()
-        run: |
-          pixi run python -c "import dace; print('build folder:', dace.Config.get('default_build_folder'))"
-
   test:
     name: Tests + lint
     runs-on: ubuntu-latest
