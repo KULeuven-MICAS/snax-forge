@@ -1,0 +1,66 @@
+[workspace]
+name = "snax-forge"
+version = "0.1.0"
+description = "SDFG-driven generation of heterogeneous accelerator clusters for SNAX"
+authors = ["Ryan <ryan@esat.kuleuven.be>"]
+channels = ["conda-forge"]
+platforms = ["linux-64"]
+
+[dependencies]
+python = "3.11.*"
+
+# ---------------------------------------------------------------------------
+# HARD PIN. networkx >= 3.6 breaks ALL DaCe 1.0.2 codegen.
+#   KeyError: SDFGState  in  dace/sdfg/analysis/cfg.py :: block_parent_tree
+#   (idom[block] lookup fails against the new dominator-tree return type)
+# DaCe's own metadata only declares networkx>=2.5, so nothing upstream
+# protects you here. Verified working: 3.1, 3.4.2, 3.5.
+# Do not relax without re-running `pixi run check`.
+# ---------------------------------------------------------------------------
+networkx = ">=3.1,<3.6"
+
+numpy = ">=1.26,<2"
+sympy = ">=1.12"
+scipy = ">=1.11"
+pandas = ">=2.0"
+pyyaml = ">=6.0"
+
+# DaCe shells out to cmake + a C++ compiler at *runtime* to build generated
+# code. Pinning them here is what makes the golden-reference CPU compile
+# reproducible across your laptop and the ESAT server.
+cmake = ">=3.27"
+ninja = ">=1.11"
+cxx-compiler = ">=1.7"
+
+[pypi-dependencies]
+dace = "==1.0.2"
+snax-forge = { path = ".", editable = true }
+
+[feature.viz.dependencies]
+matplotlib = ">=3.8"
+# flask + python-dotenv are required by the VS Code SDFG viewer daemon
+# (phschaad.sdfv). Without them the extension silently fails to launch.
+flask = ">=3.0"
+python-dotenv = ">=1.0"
+
+[feature.dev.dependencies]
+pytest = ">=8.0"
+pytest-xdist = ">=3.5"
+ruff = ">=0.6"
+ipython = ">=8.0"
+
+[environments]
+default = { features = ["viz", "dev"], solve-group = "main" }
+ci      = { features = ["dev"],        solve-group = "main" }
+
+[activation.env]
+# Keep every generated build tree inside the repo so .gitignore catches it.
+DACE_default_build_folder = "$PIXI_PROJECT_ROOT/out/.dacecache"
+
+[tasks]
+check   = "python scripts/env_check.py"
+test    = "pytest -q"
+lint    = "ruff check src harness scripts"
+fmt     = "ruff format src harness scripts"
+ingest  = "python -m snax_forge.ingest.run"
+census  = "python -m snax_forge.census.run"
