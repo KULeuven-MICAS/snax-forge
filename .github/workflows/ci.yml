@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  env-check:
+    name: Environment check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          # Pin the pixi binary itself so a pixi release can't change
+          # solver behaviour underneath a green build.
+          pixi-version: v0.41.4
+          environments: default
+          # Fail if pixi.lock is stale w.r.t. pixi.toml, rather than
+          # silently re-solving. Regenerate locally with `pixi install`.
+          locked: true
+          cache: true
+          # Only main writes the cache; PRs read it. Stops a branch with a
+          # one-off dependency from evicting the good cache entry.
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
+      - name: env_check
+        run: pixi run check
+
+      - name: Show resolved DaCe build folder
+        if: always()
+        run: |
+          pixi run python -c "import dace; print('build folder:', dace.Config.get('default_build_folder'))"
+
+  test:
+    name: Tests + lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          pixi-version: v0.41.4
+          environments: ci
+          locked: true
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
+      - name: Lint
+        run: pixi run -e ci lint
+
+      - name: Tests
+        run: pixi run -e ci test
