@@ -26,6 +26,7 @@ class KernelSpec:
     bytes_moved: Callable | None = None  # **sizes -> compulsory traffic
     notes: str = ""
     tags: tuple[str, ...] = ()
+    sweep_sizes: tuple = ()  # entries: int (n=) or dict of size kwargs
 
     def __post_init__(self) -> None:
         if not self.inout:

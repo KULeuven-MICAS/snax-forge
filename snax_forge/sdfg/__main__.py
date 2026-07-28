@@ -5,13 +5,20 @@ from .build import run
 from .loader import kernel_paths, load
 
 
+def parse_size(tok: str):
+    """'4096' -> 4096;  'm=256,n=512' -> {'m': 256, 'n': 512}"""
+    if "=" in tok:
+        return {k: int(v) for k, v in (p.split("=") for p in tok.split(","))}
+    return int(tok)
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(prog="snax-forge ingest")
     ap.add_argument("kernels", nargs="*", help="kernel names; empty = all")
     ap.add_argument("--list", action="store_true", help="list available kernel names")
     ap.add_argument("--profile", action="store_true", help="run a size sweep instead of ingest")
-    ap.add_argument("--sizes", type=int, nargs="+", help="sweep sizes")
-    ap.add_argument("--reps", type=int, default=50)
+    ap.add_argument("--sizes", type=parse_size, nargs="+", help="sweep sizes; int or m=256,n=512")
+    ap.add_argument("--reps", type=int, default=50, help="repetitions per size (default: 50)")
     ap.add_argument(
         "--instrument", action="store_true", help="also emit per-state DaCe timers (tier 1)"
     )

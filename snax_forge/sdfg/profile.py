@@ -36,6 +36,19 @@ DEFAULT_SIZES = (1 << 10, 1 << 12, 1 << 14, 1 << 16, 1 << 18)
 INSTRUMENT_REPS = 10
 
 
+def as_size_kwargs(size) -> dict:
+    """Normalise a sweep entry to make_inputs kwargs.
+
+    Accepts a bare int (1-D kernels -> n=) or a mapping for multi-symbol
+    kernels, e.g. {"m": 256, "n": 512}.
+    """
+    return {"n": int(size)} if isinstance(size, int) else dict(size)
+
+
+def size_label(kw: dict) -> str:
+    return " ".join(f"{k}={v}" for k, v in kw.items())
+
+
 def _auto_bytes(args: dict) -> int:
     """Compulsory traffic: every array touched once.
 
@@ -89,12 +102,20 @@ def collect_durations(sdfg: dace.SDFG) -> dict:
             "samples": int(a.size),
         }
 
+    # A state can execute many times per SDFG call (loops). Normalise the
+    # per-state total by how many SDFG invocations we actually captured.
+    n_calls = len(whole) or 1
     states = {k: stats(v) for k, v in per_state.items() if v}
+    for k, v in per_state.items():
+        states[k]["per_call_us"] = round(float(np.sum(v)) * 1e3 / n_calls, 3)
+
     out = {
         "n_events": n_events,
+        "n_calls": n_calls,
         "states": states,
-        "states_sum_us": round(sum(s["min_us"] for s in states.values()), 3),
+        "states_sum_us": round(sum(s["per_call_us"] for s in states.values()), 3),
     }
+
     if whole:
         out["sdfg_total_us"] = stats(whole)["min_us"]
         # Whole-SDFG minus sum-of-states = inter-state edges and control flow.
@@ -174,6 +195,7 @@ def sweep(
     Symbolic descriptors are what make one compile serve the whole sweep --
     concrete shapes would force a rebuild per size.
     """
+    sizes = sizes or spec.sweep_sizes or DEFAULT_SIZES
     sdfg = build(spec, simplify=True)
     csdfg = sdfg.compile()  # once; symbolic bounds serve every size
 
@@ -197,12 +219,13 @@ def sweep(
     }
 
     print(f"{spec.name}  (threads={report['omp_threads']})")
-    for n in sizes:
-        p = time_kernel(csdfg, spec, warmup, reps, instr=instr, n=n)
+    for size in sizes:
+        kw = as_size_kwargs(size)
+        p = time_kernel(csdfg, spec, warmup, reps, instr=instr, **kw)
         report["points"].append(p)
         ai = p.get("arithmetic_intensity")
         print(
-            f"  n={n:<8} {p['min_s'] * 1e6:9.2f} us  "
+            f"  {size_label(kw):<18} {p['min_s'] * 1e6:9.2f} us  "
             f"+/-{p['stdev_s'] * 1e6:7.2f}  {p['gbytes_s']:6.2f} GB/s"
             + (f"  AI={ai:.4f}" if ai is not None else "")
         )
