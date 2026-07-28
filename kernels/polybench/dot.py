@@ -30,4 +30,6 @@ SPEC = KernelSpec(
     make_inputs=make_inputs,
     inout=("out",),
     tags=("reduction",),
+    flops=lambda n=1024: 2 * n,
+    bytes_moved=lambda n=1024: 2 * 4 * n + 4,
 )

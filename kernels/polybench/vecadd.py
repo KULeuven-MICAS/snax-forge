@@ -30,4 +30,6 @@ SPEC = KernelSpec(
     make_inputs=make_inputs,
     inout=("C",),
     tags=("gate", "streamable"),
+    flops=lambda n=1024: n,
+    bytes_moved=lambda n=1024: 3 * 4 * n,
 )
