@@ -50,7 +50,7 @@ class SimpleAdder(val width: Int = 32, val lanes: Int = 4) extends Module {
   // landing in out/hw. SystemVerilog's module namespace is flat and global,
   // and Chisel derives the module name from the class name alone -- the Scala
   // package is discarded, so it cannot do this job.
-  override def desiredName = "sample_SimpleAdder"
+  override def desiredName = "SimpleAdder"
 
   val io = IO(new ElementwiseBinaryIO(width, lanes))
 
