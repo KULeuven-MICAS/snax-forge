@@ -33,7 +33,7 @@ def main() -> int:
     for name in names:
         try:
             if args.profile:
-                from .profile import DEFAULT_SIZES, sweep
+                from .profile import sweep
 
                 sweep(
                     load(name),
