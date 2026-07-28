@@ -56,11 +56,10 @@ ci      = { features = ["dev"],        solve-group = "main" }
 [activation.env]
 # Keep every generated build tree inside the repo so .gitignore catches it.
 DACE_default_build_folder = "$PIXI_PROJECT_ROOT/out/.dacecache"
+PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/bin:$PATH"
 
 [tasks]
 check   = "python util/env_check.py"
 test    = "pytest -q"
-lint    = "ruff check util"
-fmt     = "ruff format util"
-ingest  = "python -m snax_forge.ingest.run"
-census  = "python -m snax_forge.census.run"
+lint    = "ruff check util kernels snax_forge"
+fmt     = "ruff format util kernels snax_forge"
