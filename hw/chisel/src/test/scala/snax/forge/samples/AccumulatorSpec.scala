@@ -9,9 +9,8 @@ class AccumulatorSpec extends AnyFlatSpec with ChiselScalatestTester {
   private val W    = 32
   private val Mask = (BigInt(1) << W) - 1
 
-  /** `peek().litToBoolean` rather than `peekBoolean()`: the latter moved
-    * between the testableBool and testableData implicit classes across
-    * chiseltest versions, and resolving it is not worth a version argument.
+  /** `peek().litToBoolean` rather than `peekBoolean()`: the latter moved between the testableBool and testableData
+    * implicit classes across chiseltest versions, and resolving it is not worth a version argument.
     */
   private def isHigh(b: Bool): Boolean = b.peek().litToBoolean
 
