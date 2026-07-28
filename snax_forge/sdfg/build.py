@@ -4,14 +4,14 @@ from __future__ import annotations
 
 import json
 import time
-from pathlib import Path
 
 import dace
 import numpy as np
 
+from .paths import _repo_root
 from .spec import KernelSpec
 
-OUT = Path("out/sdfg")
+OUT = _repo_root() / "out" / "sdfg"
 
 
 def build(spec: KernelSpec, simplify: bool = False) -> dace.SDFG:
