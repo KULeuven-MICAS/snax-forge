@@ -53,6 +53,51 @@ jobs:
       - name: Lint
         run: pixi run -e ci lint
 
+  chisel:
+    name: Chisel format + test + elaborate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          pixi-version: v0.41.4
+          environments: hw
+          locked: true
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
+      # Separate from the pixi cache on purpose: this holds the Maven
+      # artefacts and the firtool binary, which pixi knows nothing about.
+      # Without it every run re-downloads ~200 MB of jars.
+      - name: Cache Coursier / sbt
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.ivy2/cache
+            ~/.sbt
+          key: sbt-${{ hashFiles('hw/chisel/build.sbt', 'hw/chisel/project/*') }}
+          restore-keys: sbt-
+
+      - name: Format check
+        run: pixi run -e hw chisel-check
+
+      - name: Tests
+        run: pixi run -e hw chisel-test
+
+      - name: Elaborate to SystemVerilog
+        run: pixi run -e hw chisel-gen
+
+      # Elaboration failures inside firtool can still exit 0 from sbt's
+      # perspective, so assert the artefacts actually exist.
+      - name: Assert RTL was produced
+        run: |
+          ls -la out/hw
+          test -f out/hw/SimpleAdder.sv
+          test -f out/hw/Accumulator.sv
+
     # TODO: add me later when there are proper tests
     #   - name: Tests
     #     run: pixi run -e ci test
