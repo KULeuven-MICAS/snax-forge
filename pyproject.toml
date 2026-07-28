@@ -9,7 +9,7 @@ requires-python = ">=3.11"
 dependencies = []
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/snax_forge"]
+packages = ["snax_forge"]
 
 [tool.ruff]
 line-length = 100
