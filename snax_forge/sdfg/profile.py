@@ -185,7 +185,7 @@ def time_kernel(
 
 def sweep(
     spec: KernelSpec,
-    sizes=DEFAULT_SIZES,
+    sizes=None,
     warmup: int = 10,
     reps: int = 50,
     instrument: bool = False,

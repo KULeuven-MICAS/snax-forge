@@ -37,7 +37,7 @@ def main() -> int:
 
                 sweep(
                     load(name),
-                    sizes=args.sizes or DEFAULT_SIZES,
+                    sizes=args.sizes,
                     reps=args.reps,
                     instrument=args.instrument,
                 )
