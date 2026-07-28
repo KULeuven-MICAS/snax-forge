@@ -22,6 +22,8 @@ class KernelSpec:
     make_inputs: Callable  # rng, **sizes -> dict of concrete arrays
     inout: tuple[str, ...]
     ref: Callable | None = None
+    flops: Callable | None = None  # **sizes -> op count
+    bytes_moved: Callable | None = None  # **sizes -> compulsory traffic
     notes: str = ""
     tags: tuple[str, ...] = ()
 
