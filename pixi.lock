@@ -2817,7 +2817,7 @@ packages:
 - pypi: .
   name: snax-forge
   version: 0.1.0
-  sha256: d697be0a5bf8d0d3fe3607be9af3e9d5663f24ad852b43400ad26a7a88901cb4
+  sha256: a953bb50c182cd1bd648a4652601e570e6151c2ecfa55c65365beaa706e5b1d9
   requires_python: '>=3.11'
   editable: true
 - conda: https://conda.anaconda.org/conda-forge/noarch/stack_data-0.6.3-pyhd8ed1ab_1.conda
