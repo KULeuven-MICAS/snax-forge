@@ -1,7 +1,5 @@
-"""Dot product via reduction. Yields a Reduce library node, not a WCR memlet.
-
-The WCR variant lives in dot_wcr.py — see KERNEL_NOTES.md on why the two
-spellings produce different graphs.
+"""
+Dot product via reduction. Yields a Reduce library node, not a WCR memlet.
 """
 
 import dace
