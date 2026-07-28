@@ -32,4 +32,5 @@ SPEC = KernelSpec(
     tags=("reduction",),
     flops=lambda n=1024: 2 * n,
     bytes_moved=lambda n=1024: 2 * 4 * n + 4,
+    sweep_sizes=(1 << 10, 1 << 12, 1 << 14, 1 << 16, 1 << 18),
 )

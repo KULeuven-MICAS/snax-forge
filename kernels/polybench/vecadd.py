@@ -32,4 +32,5 @@ SPEC = KernelSpec(
     tags=("gate", "streamable"),
     flops=lambda n=1024: n,
     bytes_moved=lambda n=1024: 3 * 4 * n,
+    sweep_sizes=(1 << 10, 1 << 12, 1 << 14, 1 << 16, 1 << 18),
 )
