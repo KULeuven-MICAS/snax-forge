@@ -49,14 +49,43 @@ pytest-xdist = ">=3.5"
 ruff = ">=0.6"
 ipython = ">=8.0"
 
+# ---------------------------------------------------------------------------
+# Hardware-generation toolchain (Chisel -> SystemVerilog -> simulation).
+#
+# `sbt` is the same conda-forge package snax_cluster uses; it drags in an
+# openjdk, which is the only reason a JVM is not listed separately here.
+# Keeping the version window identical to snax_cluster's (>=1.10.2,<2) means a
+# machine that can build SNAX can build snax-forge without a second toolchain.
+#
+# The Chisel/FIRRTL jars themselves are NOT conda packages -- sbt resolves
+# them from Maven Central on first build, and Chisel 6 additionally fetches
+# the `firtool` binary (~40 MB) through firtool-resolver. Both land in the
+# Coursier cache, so the first `chisel-test` is slow and every later one is
+# not. That is expected, not a hang.
+#
+# verilator is here for the standalone RTL testbenches (W8 onward) and for
+# chiseltest's VerilatorBackendAnnotation. Nothing in the current smoke test
+# needs it -- it is pinned now so the lock does not have to be re-solved
+# mid-schedule.
+# ---------------------------------------------------------------------------
+[feature.hw.dependencies]
+sbt = ">=1.10.2,<2"
+verilator = ">=5.30,<6"
+
 [environments]
-default = { features = ["viz", "dev"], solve-group = "main" }
-ci      = { features = ["dev"],        solve-group = "main" }
+default = { features = ["viz", "dev", "hw"], solve-group = "main" }
+ci      = { features = ["dev"],              solve-group = "main" }
+hw      = { features = ["dev", "hw"],        solve-group = "main" }
 
 [activation.env]
 # Keep every generated build tree inside the repo so .gitignore catches it.
 DACE_default_build_folder = "$PIXI_PROJECT_ROOT/out/.dacecache"
-PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/bin:$PATH"
+# Same idea for elaborated RTL: Emit.scala writes here.
+SNAX_FORGE_HW_OUT = "$PIXI_PROJECT_ROOT/out/hw"
+# ESAT machines ship a Vitis-bundled cmake 3.3.2 early on PATH, which shadows
+# pixi's. Prepend the *active* environment's bin -- not a hardcoded "default",
+# which would silently point `-e ci` and `-e hw` at the wrong prefix.
+PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/$PIXI_ENVIRONMENT_NAME/bin:$PATH"
 OMP_NUM_THREADS = "1"
 
 [tasks]
@@ -66,3 +95,36 @@ lint    = "ruff check util kernels snax_forge transforms"
 fmt     = "ruff check --fix util kernels snax_forge transforms && ruff format util kernels snax_forge transforms"
 forge   = "python -m snax_forge.sdfg"
 profile = "python -m snax_forge.sdfg --profile"
+
+# --- Chisel ---------------------------------------------------------------
+# `-batch` stops sbt from dropping into its interactive shell when a command
+# fails, which otherwise wedges CI until the job timeout.
+
+[tasks.chisel-compile]
+cmd = "sbt -batch compile"
+cwd = "hw/chisel"
+description = "Compile the Chisel sources (no elaboration)"
+
+[tasks.chisel-test]
+cmd = "sbt -batch test"
+cwd = "hw/chisel"
+description = "Run the chiseltest specs"
+
+[tasks.chisel-gen]
+cmd = "sbt -batch \"runMain snax.forge.Emit\""
+cwd = "hw/chisel"
+description = "Elaborate every module to SystemVerilog in out/hw"
+
+[tasks.chisel-fmt]
+cmd = "sbt -batch scalafmtAll"
+cwd = "hw/chisel"
+description = "Format Scala sources with scalafmt"
+
+[tasks.chisel-check]
+cmd = "sbt -batch scalafmtCheckAll"
+cwd = "hw/chisel"
+description = "Fail if Scala sources are unformatted"
+
+[tasks.chisel-clean]
+cmd = "rm -rf hw/chisel/target hw/chisel/project/target hw/chisel/project/project out/hw"
+description = "Drop all Chisel build artefacts (keeps the Coursier cache)"
