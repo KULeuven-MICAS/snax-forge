@@ -10,6 +10,12 @@ from snax_forge.sdfg.transforms import Step, TransformRecipe
 RECIPE = TransformRecipe(
     name="vecadd_opt",
     kernel="vecadd",
-    steps=(Step(MapTiling, target="_Add__map", options={"tile_sizes": (64,)}),),
+    steps=(
+        Step(
+            MapTiling,
+            target="_Add__map",
+            options={"tile_sizes": (64,), "divides_evenly": True},
+        ),
+    ),
     tags=("tiling", "allocation"),
 )
