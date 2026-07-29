@@ -1,11 +1,2 @@
 __pycache__/
 out/
-
-# Scala / sbt / metals
-hw/chisel/target/
-hw/chisel/project/target/
-hw/chisel/project/project/
-hw/chisel/.bloop/
-hw/chisel/.bsp/
-hw/chisel/.metals/
-hw/chisel/metals.sbt
