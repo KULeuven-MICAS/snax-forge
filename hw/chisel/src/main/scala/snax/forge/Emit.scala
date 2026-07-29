@@ -2,7 +2,7 @@ package snax.forge
 
 import chisel3.RawModule
 import circt.stage.ChiselStage
-import snax.forge.samples.{Accumulator, SimpleAdder} // ← new
+import snax.forge.samples.{Accumulator, SimpleAdder}
 
 /** Elaboration entry point: Chisel -> CHIRRTL -> firtool -> SystemVerilog.
   *
