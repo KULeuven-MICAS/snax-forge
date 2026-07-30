@@ -320,7 +320,7 @@ def extract_compute(sdfg: dace.SDFG) -> dict:
 
 def print_compute(data: dict) -> None:
     """Accepts extract_compute() or extract_sdfg() output."""
-    c = data.get("compute", data)
+    c = data.get("compute_section", data)
     for m in c["maps"]:
         tag = "top" if m["top_level"] else "inner"
         rag = "  RAGGED" if m["ragged"] else ""
@@ -465,6 +465,12 @@ def print_memlets(data: dict, only_traffic: bool = False) -> None:
             f"{r['role']:15} {flags}"
         )
 
+    shown = sum(1 for r in m_data["memlets"]
+                if not (only_traffic and r["role"] == "scope-internal"))
+    total = len(m_data["memlets"])
+    if shown != total:
+        print(f"  ({shown} of {total} shown; {total - shown} scope-internal hidden)")
+
     print(
         f"  traffic: external={m_data['traffic_external_bytes']:,} B   "
         f"transient={m_data['traffic_transient_bytes']:,} B"
@@ -528,7 +534,7 @@ def extract_sdfg(sdfg: dace.SDFG, symbols: dict | None = None) -> dict:
         "free_symbols": sorted(str(x) for x in sdfg.free_symbols),
         "states": [st.label for st in sdfg.states()],
         "arrays_section": arrays,
-        "compute": compute,
+        "compute_section": compute,
         "memlets_section": memlets,
         "interstate": extract_interstate(sdfg),
         "totals": {
@@ -546,7 +552,7 @@ def extract_sdfg(sdfg: dace.SDFG, symbols: dict | None = None) -> dict:
     }
 
 
-def print_sdfg(data: dict, only_traffic: bool = True) -> None:
+def print_sdfg(data: dict, only_traffic: bool = False) -> None:
     """Full human-readable report from extract_sdfg() output."""
     print(
         f"SDFG {data['sdfg']}  (dace {data['dace']})  "
