@@ -5,7 +5,7 @@ Under one-map-scope-per-accelerator this can improve data locality and performan
 
 from dace.transformation.dataflow import MapTiling
 
-from snax_forge.sdfg.transforms import Step, TransformRecipe
+from snax_forge.sdfg.transforms import Step, TransformRecipe, set_map_property
 
 RECIPE = TransformRecipe(
     name="vecadd_opt",
@@ -16,6 +16,7 @@ RECIPE = TransformRecipe(
             target="_Add__map",
             options={"tile_sizes": (64,), "divides_evenly": True},
         ),
+        Step(set_map_property, options={"params": ["__i0"], "unroll": True}),
     ),
     tags=("tiling", "allocation"),
 )
