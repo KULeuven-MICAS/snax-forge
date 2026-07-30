@@ -252,6 +252,9 @@ def extract_compute(sdfg: dace.SDFG) -> dict:
     for st in sdfg.states():
         for n in st.nodes():
             if isinstance(n, dn.MapEntry):
+                trip = n.map.range.num_elements()
+                trip_value = _sym(trip, None)  # None unless fully concrete
+                uf = n.map.unroll_factor or 0
                 maps.append(
                     {
                         "label": n.map.label,
@@ -260,6 +263,12 @@ def extract_compute(sdfg: dace.SDFG) -> dict:
                         "range": str(n.map.range),
                         "schedule": _enum(n.map.schedule),
                         "unroll": n.map.unroll,
+                        # unroll_factor is a PARTIAL-unroll width; 0 means "all".
+                        "unroll_factor": uf,
+                        "trip_count": str(trip),
+                        "trip_count_value": trip_value,
+                        # Lanes of hardware this dimension implies.
+                        "lanes": (uf or trip_value) if n.map.unroll else 1,
                         "collapse": n.map.collapse,
                         "top_level": st.entry_node(n) is None,
                         # SymExpr only exists when main != approx, so its presence
@@ -321,13 +330,33 @@ def extract_compute(sdfg: dace.SDFG) -> dict:
 def print_compute(data: dict) -> None:
     """Accepts extract_compute() or extract_sdfg() output."""
     c = data.get("compute_section", data)
-    for m in c["maps"]:
-        tag = "top" if m["top_level"] else "inner"
-        rag = "  RAGGED" if m["ragged"] else ""
-        print(
-            f"  Map     {m['label']:22} [{tag:5}] range={m['range']} "
-            f"sched={m['schedule']} unroll={m['unroll']}{rag}"
+    if c["maps"]:
+        hdr = (
+            f"  {'map':18} {'lvl':5} {'params':18} {'range':30} "
+            f"{'trip':>12} {'lanes':>7} {'sched':10} flags"
         )
+        print(hdr)
+        print("  " + "-" * (len(hdr) - 2))
+        for m in c["maps"]:
+            trip = m["trip_count_value"]
+            # Symbolic trip counts (outer/tile loops) can be long -- truncate.
+            trip = m["trip_count"][:12] if trip is None else f"{trip:,}"
+            uf = f"uf={m['unroll_factor']}" if m["unroll_factor"] else ""
+            flags = " ".join(
+                f
+                for f, on in (
+                    ("UNROLL", m["unroll"]),
+                    (uf, uf),
+                    ("RAGGED", m["ragged"]),
+                    (f"collapse={m['collapse']}", m["collapse"] != 1),
+                )
+                if on
+            )
+            print(
+                f"  {m['label'][:18]:18} {('top' if m['top_level'] else 'inner'):5} "
+                f"{str(m['params'])[:18]:18} {m['range'][:30]:30} "
+                f"{trip:>12} {_num(m['lanes']):>7} {m['schedule']:10} {flags}"
+            )
     for t in c["tasklets"]:
         print(
             f"  Tasklet {t['label']:22} in={list(t['in_connectors'])} "
@@ -465,8 +494,9 @@ def print_memlets(data: dict, only_traffic: bool = False) -> None:
             f"{r['role']:15} {flags}"
         )
 
-    shown = sum(1 for r in m_data["memlets"]
-                if not (only_traffic and r["role"] == "scope-internal"))
+    shown = sum(
+        1 for r in m_data["memlets"] if not (only_traffic and r["role"] == "scope-internal")
+    )
     total = len(m_data["memlets"])
     if shown != total:
         print(f"  ({shown} of {total} shown; {total - shown} scope-internal hidden)")

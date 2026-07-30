@@ -162,8 +162,41 @@ def _shape(sdfg: dace.SDFG) -> dict:
     }
 
 
+def set_map_property(sdfg: dace.SDFG, params=None, **props) -> int:
+    """Set properties on maps whose params match. Returns how many were hit.
+
+    Not a transformation: schedule and unroll are DECLARATIONS about a map,
+    not rewrites of it. unroll=True means spatial replication (all iterations
+    at once, in hardware terms replicated lanes); the default False means
+    temporal (one iteration per cycle through shared hardware).
+    """
+    hit = 0
+    for state in sdfg.states():
+        for node in state.nodes():
+            if not isinstance(node, dace.nodes.MapEntry):
+                continue
+            if params is not None and list(node.map.params) != list(params):
+                continue
+            for key, value in props.items():
+                setattr(node.map, key, value)
+            hit += 1
+    if hit == 0:
+        avail = sorted(
+            {
+                tuple(n.map.params)
+                for st in sdfg.states()
+                for n in st.nodes()
+                if isinstance(n, dace.nodes.MapEntry)
+            }
+        )
+        raise KeyError(f"no map with params {params}; available: {avail}")
+    return hit
+
+
 def apply_step(sdfg: dace.SDFG, step: Step) -> int:
     """Apply one step in place. Returns how many times it fired."""
+    if not isinstance(step.xform, type):
+        return step.xform(sdfg, **step.options)
     if step.target is not None:
         hits = [n for _, n in _map_entries(sdfg) if n.label == step.target]
         if not hits:
