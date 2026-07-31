@@ -10,7 +10,7 @@ assertion silently drops the clamp and produces wrong results.
 
 from dace.transformation.dataflow import MapExpansion, MapTiling
 
-from snax_forge.sdfg.transforms import Step, TransformRecipe, set_map_property
+from snax_forge.sdfg.recipes import Step, TransformRecipe, set_map_property
 
 RECIPE = TransformRecipe(
     name="matadd_opt",

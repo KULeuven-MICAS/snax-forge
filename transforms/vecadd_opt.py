@@ -5,7 +5,7 @@ Under one-map-scope-per-accelerator this can improve data locality and performan
 
 from dace.transformation.dataflow import MapTiling
 
-from snax_forge.sdfg.transforms import Step, TransformRecipe, set_map_property
+from snax_forge.sdfg.recipes import Step, TransformRecipe, set_map_property
 
 RECIPE = TransformRecipe(
     name="vecadd_opt",

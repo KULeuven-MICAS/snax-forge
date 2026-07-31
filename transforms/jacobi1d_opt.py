@@ -6,7 +6,7 @@ generated datapaths and two. Same result auto_optimize reaches, but explicit.
 
 from dace.transformation.dataflow import MapFusion
 
-from snax_forge.sdfg.transforms import Step, TransformRecipe
+from snax_forge.sdfg.recipes import Step, TransformRecipe
 
 RECIPE = TransformRecipe(
     name="jacobi1d_opt",
