@@ -58,7 +58,7 @@ def main() -> int:
 
     # --- recipe mode: iterates RECIPES, not kernels -----------------------
     if args.list_recipes or args.recipe is not None:
-        from .transforms import apply_recipe, load_recipe, recipe_paths
+        from .recipes import apply_recipe, load_recipe, recipe_paths
 
         if args.list_recipes:
             print("\n".join(sorted(recipe_paths())))
@@ -120,7 +120,7 @@ def main() -> int:
                     instrument=args.instrument,
                 )
             elif args.transforms:
-                from .transforms import report_transformations
+                from .recipes import report_transformations
 
                 report_transformations(load(name))
             else:
