@@ -1,0 +1,343 @@
+"""Structural pattern detection on SDFGs.
+
+A pattern is a DaCe PatternTransformation whose apply() is empty. It answers
+one question -- does this scope look like something we can build hardware for
+-- and, when it does, hands back the parameters the hardware needs. Detection
+never mutates the graph, so the census can run over every kernel safely.
+
+Each pattern supplies two things:
+
+    expressions() / can_be_applied()   inherited DaCe machinery: the subgraph
+                                       SHAPE and the PREDICATE, kept separate
+    describe(state)                    the match turned into a descriptor
+
+describe() is the seam where detection hands off to descriptor generation.
+Its field names deliberately mirror analysis.extract_compute, so a census row
+and a descriptor line up instead of being two vocabularies for one graph.
+
+Because DaCe auto-registers PatternTransformation subclasses on import, these
+also appear in recipes.transformation_matches alongside the stock ones, and in
+the VS Code panel when the daemon runs in an interpreter that can import them.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+from typing import Any
+
+import dace
+from dace.sdfg import nodes
+from dace.sdfg import utils as sdutil
+from dace.symbolic import SymExpr
+from dace.transformation import transformation
+from dace.transformation.optimizer import Optimizer
+
+from snax_forge.sdfg.analysis import _node_ref, _sym, tasklet_signature
+
+# ---------------------------------------------------------------------------
+# Result type
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class PatternMatch:
+    """One detected occurrence, decoupled from the live DaCe match object.
+
+    Bound PatternNode attributes are only meaningful while the match object is
+    alive and paired with its state. Snapshotting here means nothing
+    downstream has to hold one.
+    """
+
+    pattern: str
+    state: str
+    roles: dict[str, dict]
+    descriptor: dict[str, Any] = field(default_factory=dict)
+
+    def to_json(self, **kwargs: Any) -> str:
+        return json.dumps(asdict(self), **kwargs)
+
+
+# ---------------------------------------------------------------------------
+# Shared helpers
+# ---------------------------------------------------------------------------
+
+
+def _map_facts(state: dace.SDFGState, entry: nodes.MapEntry) -> dict:
+    """The hardware-relevant facts about one map.
+
+    Same keys as the map rows in analysis.extract_compute. Recomputed rather
+    than looked up because map labels are not unique -- after tiling, the
+    outer and inner map share one label (`_Add__map`), so nothing can be
+    keyed by it.
+    """
+    trip = entry.map.range.num_elements()
+    trip_value = _sym(trip, None)
+    uf = entry.map.unroll_factor or 0
+    ((_, _, step),) = entry.map.range.ndrange()
+    return {
+        "label": entry.map.label,
+        "params": list(entry.map.params),
+        "range": str(entry.map.range),
+        # Not in extract_compute's map rows: the stride is what the tile size
+        # becomes after tiling, and parsing it back out of `range` would be a
+        # string-shaped way to lose it.
+        "step": str(step),
+        "step_value": _sym(step, None),
+        "schedule": str(entry.map.schedule).split(".")[-1],
+        "unroll": entry.map.unroll,
+        # unroll_factor is a PARTIAL-unroll width; 0 means "all".
+        "unroll_factor": uf,
+        "trip_count": str(trip),
+        "trip_count_value": trip_value,
+        # Lanes of hardware this dimension implies. unroll is the declaration
+        # of spatial replication; without it the dimension is temporal.
+        "lanes": (uf or trip_value) if entry.map.unroll else 1,
+        "top_level": state.entry_node(entry) is None,
+        # SymExpr only exists when main != approx, so its presence means a
+        # clamped bound -> partial-tile predication needed.
+        "ragged": any(isinstance(e, SymExpr) for _, e, _ in entry.map.range.ndrange()),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Base class
+# ---------------------------------------------------------------------------
+
+
+class ForgePattern(transformation.SingleStateTransformation):
+    """Base for all SNAX-FORGE detectors.
+
+    Subclasses declare PatternNode roles, expressions() and can_be_applied()
+    exactly as any DaCe transformation would, then add describe(). apply() is
+    inert here: these classify, they do not rewrite. Rewrites subclass the
+    detector and override apply(), so shape and predicate are stated once.
+    """
+
+    #: Stable identifier, written into the descriptor and the census.
+    pattern_name: str = "forge_pattern"
+
+    #: Attribute names of the declared PatternNode roles, in match order.
+    role_names: tuple[str, ...] = ()
+
+    def apply(self, graph, sdfg) -> None:  # deliberately inert
+        return None
+
+    def describe(self, state: dace.SDFGState) -> dict[str, Any]:
+        """Return the hardware-relevant parameters of this match."""
+        raise NotImplementedError
+
+    def bound_roles(self) -> dict[str, dict]:
+        return {r: _node_ref(getattr(self, r)) for r in self.role_names}
+
+
+# ---------------------------------------------------------------------------
+# Tiled elementwise
+# ---------------------------------------------------------------------------
+
+
+class TiledElementwise(ForgePattern):
+    """A tiled, unrolled 1-D elementwise scope.
+
+        outer_entry -> inner_entry -> tasklet -> inner_exit -> outer_exit
+
+    What MapTiling plus an unroll declaration leave behind on an elementwise
+    kernel, read as (temporal loop of stride S) x (spatial datapath of W
+    lanes). Neither number is a knob to search over: both were decided by
+    whoever wrote the recipe.
+    """
+
+    pattern_name = "tiled_elementwise"
+    role_names = ("outer_entry", "inner_entry", "tasklet", "inner_exit", "outer_exit")
+
+    # -- step 1: name the roles -------------------------------------------
+    outer_entry = transformation.PatternNode(nodes.MapEntry)
+    inner_entry = transformation.PatternNode(nodes.MapEntry)
+    tasklet = transformation.PatternNode(nodes.Tasklet)
+    inner_exit = transformation.PatternNode(nodes.MapExit)
+    outer_exit = transformation.PatternNode(nodes.MapExit)
+
+    # -- step 2: declare the shape ----------------------------------------
+    @classmethod
+    def expressions(cls):
+        return [
+            sdutil.node_path_graph(
+                cls.outer_entry,
+                cls.inner_entry,
+                cls.tasklet,
+                cls.inner_exit,
+                cls.outer_exit,
+            )
+        ]
+
+    # -- step 3: the predicate --------------------------------------------
+    def can_be_applied(self, graph, expr_index, sdfg, permissive=False) -> bool:
+        outer, inner = self.outer_entry, self.inner_entry
+
+        # One top-level map scope is one accelerator, so the outer map must be
+        # top-level; a nested hit is not a scope we can hand to a cluster.
+        if graph.entry_node(outer) is not None:
+            return False
+
+        # 1-D only for now. Higher rank is real (matadd) but it changes the
+        # streamer configuration, so it gets its own pattern rather than a
+        # loosened predicate here.
+        if len(outer.map.params) != 1 or len(inner.map.params) != 1:
+            return False
+
+        # node_path_graph does not guarantee the matched exits are the ones
+        # DaCe pairs with these entries.
+        if graph.exit_node(outer) is not self.outer_exit:
+            return False
+        if graph.exit_node(inner) is not self.inner_exit:
+            return False
+
+        # No unroll, no datapath. unroll=True is the declaration that the
+        # dimension is spatially replicated; without it the inner map is a
+        # sequential loop through shared hardware, which is not what this
+        # pattern claims to have found.
+        if not inner.map.unroll:
+            return False
+
+        ((_, _, ostep),) = outer.map.range.ndrange()
+        ((_, _, istep),) = inner.map.range.ndrange()
+
+        # Outer strided (it steps by the tile size), inner unit-stride (it
+        # walks the lanes). An untiled map has ostep == 1 and is rejected.
+        if ostep == 1 or istep != 1:
+            return False
+
+        # Elementwise means exactly one value out per iteration and no
+        # accumulation. A WCR edge is a reduction: different hardware, and a
+        # chaining barrier, so it must not land in this pattern.
+        if len(self.tasklet.out_connectors) != 1:
+            return False
+        for node in (self.tasklet, self.inner_exit, self.outer_exit):
+            if any(e.data.wcr is not None for e in graph.out_edges(node)):
+                return False
+
+        # The clincher: the inner range must be written in terms of the outer
+        # parameter (`__i0 = tile___i0 : tile___i0 + 64`). That is what makes
+        # this a TILING rather than any two adjacent nested maps.
+        return outer.map.params[0] in {str(x) for x in inner.map.range.free_symbols}
+
+    # -- step 4: the ports -------------------------------------------------
+    def ports(self, state: dace.SDFGState) -> tuple[dict[str, dict], dict[str, dict]]:
+        """Array name -> {var, subset}, for reads and writes respectively.
+
+        `var` is the datapath variable the array feeds; nothing else in the
+        toolchain records that binding, and an RTL emitter cannot wire a
+        streamer to a lane input without it.
+
+        `subset` is the memlet subset INSIDE the scope -- the per-iteration
+        access, not the whole-array footprint. It is what a streamer's address
+        generator has to reproduce, and it is also what makes the expansion
+        able to rebuild the scope rather than approximate it.
+        """
+        reads = {
+            e.data.data: {"var": e.dst_conn, "subset": str(e.data.subset)}
+            for e in state.out_edges(self.inner_entry)
+            if e.dst is self.tasklet
+        }
+        writes = {
+            e.data.data: {"var": e.src_conn, "subset": str(e.data.subset)}
+            for e in state.in_edges(self.inner_exit)
+            if e.src is self.tasklet
+        }
+        return reads, writes
+
+    # -- step 5: describe --------------------------------------------------
+    def describe(self, state: dace.SDFGState) -> dict[str, Any]:
+        sdfg = state.sdfg if hasattr(state, "sdfg") else state.parent
+        reads, writes = self.ports(state)
+
+        def stream(edges, ports):
+            seen: dict[str, dict] = {}
+            for e in edges:
+                name = e.data.data
+                if not name or name in seen:
+                    continue
+                d = sdfg.arrays[name]
+                port = ports.get(name, {})
+                seen[name] = {
+                    "name": name,
+                    # The datapath variable this array feeds.
+                    "port": port.get("var"),
+                    # The per-iteration access inside the scope.
+                    "subset": port.get("subset"),
+                    "dtype": str(d.dtype.as_numpy_dtype()),
+                    "bytes_per_element": d.dtype.bytes,
+                    "shape": [str(x) for x in d.shape],
+                    "transient": bool(d.transient),
+                }
+            return [seen[k] for k in sorted(seen)]
+
+        return {
+            "pattern": self.pattern_name,
+            # Outer map: the sequential driver, how often the datapath is fed.
+            "temporal": _map_facts(state, self.outer_entry),
+            # Inner map: the datapath itself, how wide it is.
+            "spatial": _map_facts(state, self.inner_entry),
+            # Tasklet: the functional unit. tasklet_signature gives the op
+            # histogram and AST depth -- the units needed and the depth of the
+            # combinational chain.
+            "datapath": {
+                "label": self.tasklet.label,
+                "code": self.tasklet.code.as_string,
+                "language": self.tasklet.code.language.name,
+                "in_connectors": {k: str(v) for k, v in self.tasklet.in_connectors.items()},
+                "out_connectors": {k: str(v) for k, v in self.tasklet.out_connectors.items()},
+                **tasklet_signature(self.tasklet),
+            },
+            # Arrays crossing the outer scope become streamer ports.
+            "streams": {
+                "in": stream(state.in_edges(self.outer_entry), reads),
+                "out": stream(state.out_edges(self.outer_exit), writes),
+            },
+        }
+
+
+#: Every pattern the toolchain knows about. Adding a class here is all that is
+#: needed for it to appear in the census.
+PATTERNS: tuple[type[ForgePattern], ...] = (TiledElementwise,)
+
+
+# ---------------------------------------------------------------------------
+# Driver
+# ---------------------------------------------------------------------------
+
+
+def detect(sdfg: dace.SDFG, patterns=None) -> list[PatternMatch]:
+    """Enumerate pattern occurrences without modifying the SDFG."""
+    out: list[PatternMatch] = []
+    for match in Optimizer(sdfg).get_pattern_matches(
+        patterns=list(PATTERNS if patterns is None else patterns)
+    ):
+        state = _state_of(sdfg, match)
+        out.append(
+            PatternMatch(
+                pattern=match.pattern_name,
+                state=state.label,
+                roles=match.bound_roles(),
+                descriptor=match.describe(state),
+            )
+        )
+    return out
+
+
+def detect_file(path, **kwargs) -> list[PatternMatch]:
+    """detect() on a stored .sdfg."""
+    return detect(dace.SDFG.from_file(str(path)), **kwargs)
+
+
+def _state_of(sdfg: dace.SDFG, match) -> dace.SDFGState:
+    """Resolve the state a match was found in.
+
+    state_id indexes the top-level graph, which holds while one SDFG state is
+    one cluster configuration. Guarded so a future nested control-flow region
+    fails loudly rather than silently mislabelling.
+    """
+    state = sdfg.node(match.state_id)
+    if not isinstance(state, dace.SDFGState):
+        raise TypeError(f"expected SDFGState at index {match.state_id}, got {type(state).__name__}")
+    return state
