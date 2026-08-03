@@ -111,9 +111,9 @@ cwd = "hw/chisel"
 description = "Run the chiseltest specs"
 
 [tasks.chisel-gen]
-cmd = "sbt -batch \"runMain snax.forge.Emit\""
+cmd = "bash -c 'sbt -batch \"runMain snax.forge.Emit $*\"' --"
 cwd = "hw/chisel"
-description = "Elaborate every module to SystemVerilog in out/hw"
+description = "Elaborate modules to SystemVerilog in out/hw (args select targets)"
 
 [tasks.chisel-fmt]
 cmd = "sbt -batch scalafmtAll"
