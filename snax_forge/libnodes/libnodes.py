@@ -152,6 +152,10 @@ class SnaxVectorOp(dn.LibraryNode):
     code = properties.Property(dtype=str, default="", desc="tasklet body")
 
     # -- allocation: lanes * trips == elements -----------------------------
+    # loop | spatial | tiled_spatial. Each is a different datapath, so it is
+    # stored rather than re-derived: a backend selecting an implementation
+    # reads one field instead of inspecting two nullable scope dicts.
+    variant = properties.Property(dtype=str, default="loop", desc="loop | spatial | tiled_spatial")
     lanes = properties.Property(dtype=int, default=1, desc="spatially replicated lanes")
     trips = properties.Property(dtype=str, default="1", desc="times the datapath is fed")
     elements = properties.Property(dtype=str, default="1", desc="total iteration space")
@@ -191,6 +195,7 @@ class SnaxVectorOp(dn.LibraryNode):
         if descriptor:
             self.descriptor_json = json.dumps(descriptor)
             shape = descriptor["shape"]
+            self.variant = shape["variant"]
             self.code = descriptor["datapath"]["code"]
             # An unbounded width has no integer to store; 0 stands for
             # "unresolved", and `bounded` is what says so.
@@ -212,6 +217,17 @@ class SnaxVectorOp(dn.LibraryNode):
 # ---------------------------------------------------------------------------
 
 
+def _node_label(variant: str, tasklet_label: str) -> str:
+    """`snax_vector_<variant>_<op>`, e.g. snax_vector_tiled_spatial_Add.
+
+    DaCe-generated tasklets are labelled `_Add_`, so the edges are trimmed to
+    avoid `snax_vector_loop__Add_`. The result must stay a valid identifier:
+    the expansion builds an SDFG named after it, and SDFG names are checked.
+    """
+    op = tasklet_label.strip("_") or "op"
+    return f"snax_vector_{variant}_{op}"
+
+
 class RaiseToSnaxVector(ElementwisePattern):
     """Shared apply() for every elementwise raise.
 
@@ -231,7 +247,7 @@ class RaiseToSnaxVector(ElementwisePattern):
         # tasklet. Array names are unique and survive into RTL port names.
         both = (*reads.items(), *writes.items())
         node = SnaxVectorOp(
-            f"snax_vector_{self.tasklet.label}",
+            _node_label(descriptor["shape"]["variant"], self.tasklet.label),
             descriptor=descriptor,
             port_map={f"_{a}": p["var"] for a, p in both},
             port_subset={f"_{a}": p["subset"] for a, p in both},
@@ -291,15 +307,24 @@ RAISERS: tuple[type[RaiseToSnaxVector], ...] = (RaiseTiledVector, RaiseFlatVecto
 def raise_vector_ops(sdfg: dace.SDFG, patterns=None) -> int:
     """Apply every elementwise raise that fits. Returns the count.
 
-    Matches are collected before any rewriting starts: applying invalidates
-    the iterator, and a raised scope is not re-matchable, so there is no fixed
-    point to chase. Callable form, so it can be used as a bare recipe Step
-    alongside set_map_property.
+    One match is applied per search, and the search is re-run afterwards. A
+    DaCe match stores node INDICES, and removing the raised scope renumbers
+    the state -- so a batch of matches collected up front goes stale after the
+    first apply, and the second one binds a MapEntry role to whatever now sits
+    at that index. With a single scope per state nothing goes wrong, which is
+    exactly why it is worth not relying on.
+
+    Terminates because a raised scope is not re-matchable, so each pass
+    strictly reduces the number of matches; the bound is belt-and-braces
+    against a pattern that ever matched its own output.
     """
     total = 0
+    limit = sum(len(s.nodes()) for s in sdfg.states())
     for raiser in patterns or RAISERS:
-        matches = list(Optimizer(sdfg).get_pattern_matches(patterns=[raiser]))
-        for match in matches:
+        while total < limit:
+            match = next(iter(Optimizer(sdfg).get_pattern_matches(patterns=[raiser])), None)
+            if match is None:
+                break
             match.apply(sdfg.node(match.state_id), sdfg)
-        total += len(matches)
+            total += 1
     return total

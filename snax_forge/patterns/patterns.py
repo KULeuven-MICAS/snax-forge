@@ -118,6 +118,29 @@ def _map_facts(state: dace.SDFGState, entry: nodes.MapEntry) -> dict:
     }
 
 
+def _variant(temporal: dict | None, spatial: dict | None) -> str:
+    """Name the design point from which scopes are present.
+
+        loop           temporal only    W = 1     T = N
+        spatial        spatial only     W = N     T = 1
+        tiled_spatial  both             W = tile  T = ceil(N/tile)
+
+    Derived from the graph rather than from which pattern class fired, so two
+    routes to the same structure get the same name. The three cases are
+    exhaustive: a flat scope is temporal or spatial by its unroll flag, and a
+    tiled scope always has both (TiledElementwise requires the inner unroll).
+    """
+    if temporal and spatial:
+        return "tiled_spatial"
+    if spatial:
+        return "spatial"
+    if temporal:
+        return "loop"
+    # Unreachable through the current patterns; a scope with neither would
+    # mean a map that is somehow both unrolled and not.
+    raise ValueError("elementwise match has no temporal or spatial scope")
+
+
 def _elementwise_tasklet(graph, tasklet, *boundary) -> bool:
     """Exactly one value out per iteration, and no accumulation.
 
@@ -244,6 +267,10 @@ class ElementwisePattern(ForgePattern):
             # The allocation split, stated once so a backend never has to
             # infer it from which pattern fired.
             "shape": {
+                # Which hardware this becomes: loop, spatial, tiled_spatial.
+                # Named here rather than at the raise, so the classification
+                # is a fact about the graph and not about the call site.
+                "variant": _variant(temporal, spatial),
                 "lanes": lanes,
                 "trips": temporal["trip_count"] if temporal else "1",
                 "elements": str(elements),
