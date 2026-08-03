@@ -16,7 +16,7 @@ from snax_forge.libnodes.libnodes import raise_vector_ops
 from snax_forge.sdfg.recipes import Step, TransformRecipe, set_map_property
 
 RECIPE = TransformRecipe(
-    name="vecadd_forge",
+    name="vecadd_tiled_spatial",
     kernel="vecadd",
     steps=(
         Step(
