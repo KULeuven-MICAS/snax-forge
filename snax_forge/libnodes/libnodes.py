@@ -8,6 +8,16 @@ second schema to keep in sync, because there is only one.
 Not to be confused with transforms/ at the repo root, which holds recipes:
 declarative INPUTS to the toolchain. This is machinery.
 
+One node, two patterns
+----------------------
+
+FlatElementwise and TiledElementwise both raise to SnaxVectorOp. They describe
+one piece of hardware -- W lanes fed T times -- and differ only in how the
+graph spelled the split, so giving them separate node types would hand an RTL
+backend two input formats for one datapath. The descriptor's `shape` section
+carries (W, T); the expansion reads it back to rebuild whichever scope
+structure was raised.
+
 Every node registers a `pure` expansion, so a raised SDFG still compiles and
 runs on the CPU. Without it the raise would cost us the golden reference at
 exactly the moment we most want to check it, and recipes could not run with
@@ -29,7 +39,7 @@ from dace.sdfg import nodes as dn
 from dace.transformation.optimizer import Optimizer
 from dace.transformation.transformation import ExpandTransformation
 
-from snax_forge.patterns.patterns import TiledElementwise
+from snax_forge.patterns.patterns import ElementwisePattern, FlatElementwise, TiledElementwise
 
 # ---------------------------------------------------------------------------
 # SnaxVectorOp
@@ -40,14 +50,16 @@ from snax_forge.patterns.patterns import TiledElementwise
 class ExpandSnaxVectorPure(ExpandTransformation):
     """Rebuild the scope the node was raised from.
 
-    Not an approximation of it: the same two maps, the same unroll
-    declaration, the same tasklet, the same per-iteration memlets. Expanding a
-    raised node therefore shows you exactly what was compressed into it, which
-    is the only honest way to document what the node means.
+    Not an approximation of it: the same maps, the same unroll declarations,
+    the same tasklet, the same per-iteration memlets. Expanding a raised node
+    therefore shows exactly what was compressed into it, which is the only
+    honest way to document what the node means.
 
     It also gives a testable round-trip. Because the reconstruction is
-    structural, TiledElementwise matches it again after expand + simplify --
-    so `expand(raise(G))` can be checked against `G`, rather than trusted.
+    structural, the originating pattern matches it again after expand +
+    simplify -- so `expand(raise(G))` can be checked against `G` rather than
+    trusted. One scope or two is handled by the same loop, so a flat raise
+    round-trips as a flat scope and a tiled one as a tiled scope.
 
     "pure" in the DaCe sense means the expansion uses plain SDFG constructs
     and needs no external library. It does not mean simplified.
@@ -60,7 +72,6 @@ class ExpandSnaxVectorPure(ExpandTransformation):
         in_edges = {e.dst_conn: e for e in parent_state.in_edges(node)}
         out_edges = {e.src_conn: e for e in parent_state.out_edges(node)}
         desc = node.descriptor
-        temporal, spatial = desc["temporal"], desc["spatial"]
 
         sdfg = dace.SDFG(f"{node.label}_expanded")
         state = sdfg.add_state("main")
@@ -74,17 +85,25 @@ class ExpandSnaxVectorPure(ExpandTransformation):
             d = parent_sdfg.arrays[edge.data.data]
             sdfg.add_array(conn, d.shape, d.dtype)
 
-        # The two map scopes, restored with their original parameters and
-        # ranges. The inner one carries the unroll declaration -- without it
-        # this would be two sequential loops, not a datapath.
-        outer_entry, outer_exit = state.add_map(
-            temporal["label"], {temporal["params"][0]: temporal["range"]}
-        )
-        inner_entry, inner_exit = state.add_map(
-            spatial["label"],
-            {spatial["params"][0]: spatial["range"]},
-            unroll=spatial["unroll"],
-        )
+        # Outermost first. A flat raise has one entry here, a tiled raise two;
+        # nothing below needs to know which.
+        #
+        # The schedule has to be carried across. A reconstructed map left at
+        # Default is inferred CPU_Multicore when it lands at the top of the
+        # nested SDFG, and DaCe refuses to unroll an OpenMP map -- so dropping
+        # it turns a valid spatial raise into a codegen error.
+        entries, exits = [], []
+        for scope in (desc["temporal"], desc["spatial"]):
+            if scope is None:
+                continue
+            entry, exit_ = state.add_map(
+                scope["label"],
+                {scope["params"][0]: scope["range"]},
+                schedule=dace.ScheduleType[scope["schedule"]],
+                unroll=scope["unroll"],
+            )
+            entries.append(entry)
+            exits.append(exit_)
 
         tasklet = state.add_tasklet(
             desc["datapath"]["label"],
@@ -93,14 +112,13 @@ class ExpandSnaxVectorPure(ExpandTransformation):
             node.code,
         )
 
-        # add_memlet_path threads the edge through both scopes and creates the
-        # map connectors on the way, which is what makes this reconstruction
-        # short enough to trust.
+        # add_memlet_path threads the edge through every scope and creates the
+        # map connectors on the way, which is what keeps this short enough to
+        # trust for either arity.
         for conn in in_edges:
             state.add_memlet_path(
                 state.add_read(conn),
-                outer_entry,
-                inner_entry,
+                *entries,
                 tasklet,
                 dst_conn=node.port_map[conn],
                 memlet=dace.Memlet(f"{conn}[{node.port_subset[conn]}]"),
@@ -108,8 +126,7 @@ class ExpandSnaxVectorPure(ExpandTransformation):
         for conn in out_edges:
             state.add_memlet_path(
                 tasklet,
-                inner_exit,
-                outer_exit,
+                *reversed(exits),
                 state.add_write(conn),
                 src_conn=node.port_map[conn],
                 memlet=dace.Memlet(f"{conn}[{node.port_subset[conn]}]"),
@@ -119,11 +136,11 @@ class ExpandSnaxVectorPure(ExpandTransformation):
 
 @library.node
 class SnaxVectorOp(dn.LibraryNode):
-    """An elementwise datapath of `lanes` width, fed by streamers.
+    """An elementwise datapath of `lanes` width, fed `trips` times.
 
-    Every property came out of TiledElementwise.describe(). None of them is a
-    knob for a search: the width was fixed when the recipe declared the inner
-    map unrolled.
+    Every property came out of an ElementwisePattern's describe(). None of
+    them is a knob for a search: the split was fixed when the recipe declared
+    which map is unrolled.
     """
 
     implementations: ClassVar[dict[str, type[ExpandTransformation]]] = {
@@ -133,12 +150,14 @@ class SnaxVectorOp(dn.LibraryNode):
 
     # -- datapath ----------------------------------------------------------
     code = properties.Property(dtype=str, default="", desc="tasklet body")
-    spatial_param = properties.Property(dtype=str, default="i", desc="lane index")
 
-    # -- allocation --------------------------------------------------------
+    # -- allocation: lanes * trips == elements -----------------------------
     lanes = properties.Property(dtype=int, default=1, desc="spatially replicated lanes")
-    stride = properties.Property(dtype=int, default=1, desc="outer map stride")
-    trips = properties.Property(dtype=str, default="1", desc="outer trip count")
+    trips = properties.Property(dtype=str, default="1", desc="times the datapath is fed")
+    elements = properties.Property(dtype=str, default="1", desc="total iteration space")
+    # False means the width did not resolve to an integer -- an unrolled map
+    # over a symbolic bound. Not buildable until the symbol is specialized.
+    bounded = properties.Property(dtype=bool, default=True, desc="lanes is a concrete width")
     ragged = properties.Property(
         dtype=bool, default=False, desc="clamped bound -> partial-tile predication"
     )
@@ -171,12 +190,16 @@ class SnaxVectorOp(dn.LibraryNode):
         self.port_subset = dict(port_subset or {})
         if descriptor:
             self.descriptor_json = json.dumps(descriptor)
+            shape = descriptor["shape"]
             self.code = descriptor["datapath"]["code"]
-            self.spatial_param = descriptor["spatial"]["params"][0]
-            self.lanes = int(descriptor["spatial"]["lanes"])
-            self.ragged = bool(descriptor["spatial"]["ragged"])
-            self.stride = int(descriptor["temporal"]["step_value"])
-            self.trips = descriptor["temporal"]["trip_count"]
+            # An unbounded width has no integer to store; 0 stands for
+            # "unresolved", and `bounded` is what says so.
+            self.lanes = int(shape["lanes"]) if shape["bounded"] else 0
+            self.trips = shape["trips"]
+            self.elements = shape["elements"]
+            self.bounded = bool(shape["bounded"])
+            spatial = descriptor["spatial"]
+            self.ragged = bool(spatial["ragged"]) if spatial else False
 
     @property
     def descriptor(self) -> dict[str, Any]:
@@ -189,23 +212,18 @@ class SnaxVectorOp(dn.LibraryNode):
 # ---------------------------------------------------------------------------
 
 
-class SnaxForgeVectorExpand(TiledElementwise):
-    """Replace a matched tiled elementwise scope with one SnaxVectorOp.
+class RaiseToSnaxVector(ElementwisePattern):
+    """Shared apply() for every elementwise raise.
 
-    Subclasses the detector so the shape and the predicate are stated once.
-    Only apply() differs: the detector's is inert, this one rewrites.
-
-    Usable directly as a recipe Step, which is the intended route -- running it
-    under verify_each=True checks bit-exactness at the moment the scope is
-    swapped for a node.
+    Subclasses pair this with a pattern class, so the shape and the predicate
+    are stated once in snax_forge.patterns and only the rewrite lives here.
     """
-
-    pattern_name = "snax_forge_vector_expand"
 
     def apply(self, graph, sdfg):
         state = graph
         descriptor = self.describe(state)
         reads, writes = self.ports(state)
+        entries, exits = self.scopes(state)
 
         # Connectors are named after the ARRAY, not the datapath variable --
         # see ExpandSnaxVectorPure for why they cannot be the variable names,
@@ -242,13 +260,7 @@ class SnaxForgeVectorExpand(TiledElementwise):
         # Drop the scope, then the access nodes it left stranded. simplify()
         # would collect them anyway, but doing it here keeps the saved graph
         # readable without one.
-        scope = [
-            self.outer_entry,
-            self.inner_entry,
-            self.tasklet,
-            self.inner_exit,
-            self.outer_exit,
-        ]
+        scope = [*entries, *exits, self.tasklet]
         stranded = {e.src for n in scope for e in state.in_edges(n)}
         stranded |= {e.dst for n in scope for e in state.out_edges(n)}
         state.remove_nodes_from(scope)
@@ -259,15 +271,35 @@ class SnaxForgeVectorExpand(TiledElementwise):
         return node
 
 
-def raise_vector_ops(sdfg: dace.SDFG) -> int:
-    """Apply SnaxForgeVectorExpand everywhere it fits. Returns the count.
+class RaiseFlatVector(RaiseToSnaxVector, FlatElementwise):
+    """Raise an untiled elementwise scope to a SnaxVectorOp."""
+
+    pattern_name = "raise_flat_vector"
+
+
+class RaiseTiledVector(RaiseToSnaxVector, TiledElementwise):
+    """Raise a tiled elementwise scope to a SnaxVectorOp."""
+
+    pattern_name = "raise_tiled_vector"
+
+
+#: Raise transformations, most specific first. Order matters only if a graph
+#: could match both, which the top-level requirement rules out.
+RAISERS: tuple[type[RaiseToSnaxVector], ...] = (RaiseTiledVector, RaiseFlatVector)
+
+
+def raise_vector_ops(sdfg: dace.SDFG, patterns=None) -> int:
+    """Apply every elementwise raise that fits. Returns the count.
 
     Matches are collected before any rewriting starts: applying invalidates
     the iterator, and a raised scope is not re-matchable, so there is no fixed
-    point to chase. Callable form, so it can also be used as a bare recipe
-    Step alongside set_map_property.
+    point to chase. Callable form, so it can be used as a bare recipe Step
+    alongside set_map_property.
     """
-    matches = list(Optimizer(sdfg).get_pattern_matches(patterns=[SnaxForgeVectorExpand]))
-    for match in matches:
-        match.apply(sdfg.node(match.state_id), sdfg)
-    return len(matches)
+    total = 0
+    for raiser in patterns or RAISERS:
+        matches = list(Optimizer(sdfg).get_pattern_matches(patterns=[raiser]))
+        for match in matches:
+            match.apply(sdfg.node(match.state_id), sdfg)
+        total += len(matches)
+    return total

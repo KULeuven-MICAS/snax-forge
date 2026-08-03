@@ -5,7 +5,7 @@ one question -- does this scope look like something we can build hardware for
 -- and, when it does, hands back the parameters the hardware needs. Detection
 never mutates the graph, so the census can run over every kernel safely.
 
-Each pattern supplies two things:
+Each pattern supplies:
 
     expressions() / can_be_applied()   inherited DaCe machinery: the subgraph
                                        SHAPE and the PREDICATE, kept separate
@@ -14,6 +14,24 @@ Each pattern supplies two things:
 describe() is the seam where detection hands off to descriptor generation.
 Its field names deliberately mirror analysis.extract_compute, so a census row
 and a descriptor line up instead of being two vocabularies for one graph.
+
+The elementwise family
+----------------------
+
+FlatElementwise and TiledElementwise describe the SAME hardware -- a datapath
+of W lanes fed T times -- and differ only in how the graph spells the split:
+
+    flat, not unrolled    W = 1        T = N              fully temporal
+    flat, unrolled        W = N        T = 1              fully spatial
+    tiled                 W = tile     T = ceil(N/tile)   the middle ground
+
+with W * T = N throughout. The `shape` section states that split directly, so
+a backend reads one pair of numbers instead of inferring them from whichever
+pattern happened to fire. That is also why both raise to one library node.
+
+W is a hardware width, so it has to be a concrete integer. A flat unrolled map
+over symbolic N asks for unbounded lanes; `shape.bounded` records that rather
+than letting it pass as a plausible-looking descriptor.
 
 Because DaCe auto-registers PatternTransformation subclasses on import, these
 also appear in recipes.transformation_matches alongside the stock ones, and in
@@ -100,8 +118,19 @@ def _map_facts(state: dace.SDFGState, entry: nodes.MapEntry) -> dict:
     }
 
 
+def _elementwise_tasklet(graph, tasklet, *boundary) -> bool:
+    """Exactly one value out per iteration, and no accumulation.
+
+    A WCR edge is a reduction: different hardware, and a chaining barrier, so
+    it must not land in an elementwise pattern.
+    """
+    if len(tasklet.out_connectors) != 1:
+        return False
+    return all(e.data.wcr is None for node in (tasklet, *boundary) for e in graph.out_edges(node))
+
+
 # ---------------------------------------------------------------------------
-# Base class
+# Base classes
 # ---------------------------------------------------------------------------
 
 
@@ -131,97 +160,24 @@ class ForgePattern(transformation.SingleStateTransformation):
         return {r: _node_ref(getattr(self, r)) for r in self.role_names}
 
 
-# ---------------------------------------------------------------------------
-# Tiled elementwise
-# ---------------------------------------------------------------------------
+class ElementwisePattern(ForgePattern):
+    """Shared machinery for the elementwise family.
 
-
-class TiledElementwise(ForgePattern):
-    """A tiled, unrolled 1-D elementwise scope.
-
-        outer_entry -> inner_entry -> tasklet -> inner_exit -> outer_exit
-
-    What MapTiling plus an unroll declaration leave behind on an elementwise
-    kernel, read as (temporal loop of stride S) x (spatial datapath of W
-    lanes). Neither number is a knob to search over: both were decided by
-    whoever wrote the recipe.
+    A subclass supplies scopes() -- the map entries and exits enclosing the
+    tasklet, outermost first -- and everything else follows: which scope is
+    temporal, which is spatial, and how the ports are wired. One or two scopes
+    are handled identically, which is what keeps flat and tiled from drifting
+    into two descriptions of one piece of hardware.
     """
 
-    pattern_name = "tiled_elementwise"
-    role_names = ("outer_entry", "inner_entry", "tasklet", "inner_exit", "outer_exit")
-
-    # -- step 1: name the roles -------------------------------------------
-    outer_entry = transformation.PatternNode(nodes.MapEntry)
-    inner_entry = transformation.PatternNode(nodes.MapEntry)
+    #: The tasklet role is common to the whole family.
     tasklet = transformation.PatternNode(nodes.Tasklet)
-    inner_exit = transformation.PatternNode(nodes.MapExit)
-    outer_exit = transformation.PatternNode(nodes.MapExit)
 
-    # -- step 2: declare the shape ----------------------------------------
-    @classmethod
-    def expressions(cls):
-        return [
-            sdutil.node_path_graph(
-                cls.outer_entry,
-                cls.inner_entry,
-                cls.tasklet,
-                cls.inner_exit,
-                cls.outer_exit,
-            )
-        ]
+    def scopes(self, state) -> tuple[list, list]:
+        """Enclosing map entries and exits, outermost first."""
+        raise NotImplementedError
 
-    # -- step 3: the predicate --------------------------------------------
-    def can_be_applied(self, graph, expr_index, sdfg, permissive=False) -> bool:
-        outer, inner = self.outer_entry, self.inner_entry
-
-        # One top-level map scope is one accelerator, so the outer map must be
-        # top-level; a nested hit is not a scope we can hand to a cluster.
-        if graph.entry_node(outer) is not None:
-            return False
-
-        # 1-D only for now. Higher rank is real (matadd) but it changes the
-        # streamer configuration, so it gets its own pattern rather than a
-        # loosened predicate here.
-        if len(outer.map.params) != 1 or len(inner.map.params) != 1:
-            return False
-
-        # node_path_graph does not guarantee the matched exits are the ones
-        # DaCe pairs with these entries.
-        if graph.exit_node(outer) is not self.outer_exit:
-            return False
-        if graph.exit_node(inner) is not self.inner_exit:
-            return False
-
-        # No unroll, no datapath. unroll=True is the declaration that the
-        # dimension is spatially replicated; without it the inner map is a
-        # sequential loop through shared hardware, which is not what this
-        # pattern claims to have found.
-        if not inner.map.unroll:
-            return False
-
-        ((_, _, ostep),) = outer.map.range.ndrange()
-        ((_, _, istep),) = inner.map.range.ndrange()
-
-        # Outer strided (it steps by the tile size), inner unit-stride (it
-        # walks the lanes). An untiled map has ostep == 1 and is rejected.
-        if ostep == 1 or istep != 1:
-            return False
-
-        # Elementwise means exactly one value out per iteration and no
-        # accumulation. A WCR edge is a reduction: different hardware, and a
-        # chaining barrier, so it must not land in this pattern.
-        if len(self.tasklet.out_connectors) != 1:
-            return False
-        for node in (self.tasklet, self.inner_exit, self.outer_exit):
-            if any(e.data.wcr is not None for e in graph.out_edges(node)):
-                return False
-
-        # The clincher: the inner range must be written in terms of the outer
-        # parameter (`__i0 = tile___i0 : tile___i0 + 64`). That is what makes
-        # this a TILING rather than any two adjacent nested maps.
-        return outer.map.params[0] in {str(x) for x in inner.map.range.free_symbols}
-
-    # -- step 4: the ports -------------------------------------------------
+    # -- ports -------------------------------------------------------------
     def ports(self, state: dace.SDFGState) -> tuple[dict[str, dict], dict[str, dict]]:
         """Array name -> {var, subset}, for reads and writes respectively.
 
@@ -231,25 +187,36 @@ class TiledElementwise(ForgePattern):
 
         `subset` is the memlet subset INSIDE the scope -- the per-iteration
         access, not the whole-array footprint. It is what a streamer's address
-        generator has to reproduce, and it is also what makes the expansion
-        able to rebuild the scope rather than approximate it.
+        generator has to reproduce, and it is what lets the expansion rebuild
+        the scope rather than approximate it.
         """
         reads = {
             e.data.data: {"var": e.dst_conn, "subset": str(e.data.subset)}
-            for e in state.out_edges(self.inner_entry)
-            if e.dst is self.tasklet
+            for e in state.in_edges(self.tasklet)
         }
         writes = {
             e.data.data: {"var": e.src_conn, "subset": str(e.data.subset)}
-            for e in state.in_edges(self.inner_exit)
-            if e.src is self.tasklet
+            for e in state.out_edges(self.tasklet)
         }
         return reads, writes
 
-    # -- step 5: describe --------------------------------------------------
+    # -- describe ----------------------------------------------------------
     def describe(self, state: dace.SDFGState) -> dict[str, Any]:
         sdfg = state.sdfg if hasattr(state, "sdfg") else state.parent
+        entries, exits = self.scopes(state)
+        facts = [_map_facts(state, e) for e in entries]
         reads, writes = self.ports(state)
+
+        # A map is spatial exactly when it declares itself unrolled; the rest
+        # is temporal. Either may be absent: a flat unrolled map has no
+        # temporal dimension, a flat sequential one has no spatial dimension.
+        spatial = next((f for f in facts if f["unroll"]), None)
+        temporal = next((f for f in facts if not f["unroll"]), None)
+
+        elements = 1
+        for entry in entries:
+            elements = elements * entry.map.range.num_elements()
+        lanes = spatial["lanes"] if spatial else 1
 
         def stream(edges, ports):
             seen: dict[str, dict] = {}
@@ -274,10 +241,21 @@ class TiledElementwise(ForgePattern):
 
         return {
             "pattern": self.pattern_name,
-            # Outer map: the sequential driver, how often the datapath is fed.
-            "temporal": _map_facts(state, self.outer_entry),
-            # Inner map: the datapath itself, how wide it is.
-            "spatial": _map_facts(state, self.inner_entry),
+            # The allocation split, stated once so a backend never has to
+            # infer it from which pattern fired.
+            "shape": {
+                "lanes": lanes,
+                "trips": temporal["trip_count"] if temporal else "1",
+                "elements": str(elements),
+                # Lanes are physical hardware, so an unresolved width is not a
+                # buildable design. Flat + unrolled + symbolic bound is the
+                # case this exists to catch.
+                "bounded": isinstance(lanes, int),
+            },
+            # Outer scope: the sequential driver, how often the datapath runs.
+            "temporal": temporal,
+            # Inner scope: the datapath itself, how wide it is.
+            "spatial": spatial,
             # Tasklet: the functional unit. tasklet_signature gives the op
             # histogram and AST depth -- the units needed and the depth of the
             # combinational chain.
@@ -289,17 +267,142 @@ class TiledElementwise(ForgePattern):
                 "out_connectors": {k: str(v) for k, v in self.tasklet.out_connectors.items()},
                 **tasklet_signature(self.tasklet),
             },
-            # Arrays crossing the outer scope become streamer ports.
+            # Arrays crossing the outermost scope become streamer ports.
             "streams": {
-                "in": stream(state.in_edges(self.outer_entry), reads),
-                "out": stream(state.out_edges(self.outer_exit), writes),
+                "in": stream(state.in_edges(entries[0]), reads),
+                "out": stream(state.out_edges(exits[0]), writes),
             },
         }
 
 
+# ---------------------------------------------------------------------------
+# Flat elementwise
+# ---------------------------------------------------------------------------
+
+
+class FlatElementwise(ElementwisePattern):
+    """An untiled 1-D elementwise scope.
+
+        entry -> tasklet -> exit
+
+    A kernel before any allocation decision has been made. The single map
+    carries the whole iteration space, so its unroll declaration alone decides
+    whether this is one lane run N times or N lanes run once -- there is no
+    second scope for a width to come from.
+
+    Cannot collide with TiledElementwise: the top-level requirement rejects a
+    tiled graph's inner scope, and a tiled graph's outer scope is followed by
+    a MapEntry rather than a Tasklet, so the path shape does not match either.
+    """
+
+    pattern_name = "flat_elementwise"
+    role_names = ("entry", "tasklet", "exit")
+
+    entry = transformation.PatternNode(nodes.MapEntry)
+    exit = transformation.PatternNode(nodes.MapExit)
+
+    @classmethod
+    def expressions(cls):
+        return [sdutil.node_path_graph(cls.entry, cls.tasklet, cls.exit)]
+
+    def scopes(self, state):
+        return [self.entry], [self.exit]
+
+    def can_be_applied(self, graph, expr_index, sdfg, permissive=False) -> bool:
+        # One top-level map scope is one accelerator. A nested hit is not a
+        # scope we can hand to a cluster, and would double-count the inner
+        # half of a tiled graph.
+        if graph.entry_node(self.entry) is not None:
+            return False
+        if len(self.entry.map.params) != 1:
+            return False
+        # node_path_graph does not guarantee the matched exit is the one DaCe
+        # pairs with this entry.
+        if graph.exit_node(self.entry) is not self.exit:
+            return False
+        return _elementwise_tasklet(graph, self.tasklet, self.exit)
+
+
+# ---------------------------------------------------------------------------
+# Tiled elementwise
+# ---------------------------------------------------------------------------
+
+
+class TiledElementwise(ElementwisePattern):
+    """A tiled, unrolled 1-D elementwise scope.
+
+        outer_entry -> inner_entry -> tasklet -> inner_exit -> outer_exit
+
+    What MapTiling plus an unroll declaration leave behind, read as (temporal
+    loop of stride S) x (spatial datapath of W lanes). Neither number is a
+    knob to search over: both were decided by whoever wrote the recipe.
+    """
+
+    pattern_name = "tiled_elementwise"
+    role_names = ("outer_entry", "inner_entry", "tasklet", "inner_exit", "outer_exit")
+
+    outer_entry = transformation.PatternNode(nodes.MapEntry)
+    inner_entry = transformation.PatternNode(nodes.MapEntry)
+    inner_exit = transformation.PatternNode(nodes.MapExit)
+    outer_exit = transformation.PatternNode(nodes.MapExit)
+
+    @classmethod
+    def expressions(cls):
+        return [
+            sdutil.node_path_graph(
+                cls.outer_entry,
+                cls.inner_entry,
+                cls.tasklet,
+                cls.inner_exit,
+                cls.outer_exit,
+            )
+        ]
+
+    def scopes(self, state):
+        return [self.outer_entry, self.inner_entry], [self.outer_exit, self.inner_exit]
+
+    def can_be_applied(self, graph, expr_index, sdfg, permissive=False) -> bool:
+        outer, inner = self.outer_entry, self.inner_entry
+
+        if graph.entry_node(outer) is not None:
+            return False
+
+        # 1-D only for now. Higher rank is real (matadd) but it changes the
+        # streamer configuration, so it gets its own pattern rather than a
+        # loosened predicate here.
+        if len(outer.map.params) != 1 or len(inner.map.params) != 1:
+            return False
+
+        if graph.exit_node(outer) is not self.outer_exit:
+            return False
+        if graph.exit_node(inner) is not self.inner_exit:
+            return False
+
+        # No unroll, no datapath. Without it the inner map is a sequential
+        # walk through shared hardware, which is not what this pattern claims.
+        if not inner.map.unroll:
+            return False
+
+        ((_, _, ostep),) = outer.map.range.ndrange()
+        ((_, _, istep),) = inner.map.range.ndrange()
+
+        # Outer strided (it steps by the tile size), inner unit-stride (it
+        # walks the lanes). An untiled map has ostep == 1 and is rejected.
+        if ostep == 1 or istep != 1:
+            return False
+
+        if not _elementwise_tasklet(graph, self.tasklet, self.inner_exit, self.outer_exit):
+            return False
+
+        # The clincher: the inner range must be written in terms of the outer
+        # parameter (`__i0 = tile___i0 : tile___i0 + 64`). That is what makes
+        # this a TILING rather than any two adjacent nested maps.
+        return outer.map.params[0] in {str(x) for x in inner.map.range.free_symbols}
+
+
 #: Every pattern the toolchain knows about. Adding a class here is all that is
 #: needed for it to appear in the census.
-PATTERNS: tuple[type[ForgePattern], ...] = (TiledElementwise,)
+PATTERNS: tuple[type[ForgePattern], ...] = (FlatElementwise, TiledElementwise)
 
 
 # ---------------------------------------------------------------------------
