@@ -104,7 +104,7 @@ jobs:
       # the fault is in a module; if both break, it is in the elaboration
       # helpers they share.
       - name: Elaborate the module catalogue
-        run: pixi run -e hw chisel-hwgen
+        run: pixi run -e hw chisel-gen
 
       # firtool failures do not always propagate as a non-zero exit from sbt,
       # so assert the artefacts exist rather than trusting the status.
