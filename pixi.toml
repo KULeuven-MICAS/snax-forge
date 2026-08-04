@@ -31,6 +31,7 @@ pyyaml = ">=6.0"
 cmake = ">=3.27"
 ninja = ">=1.11"
 cxx-compiler = ">=1.7"
+jsonschema = ">=4.20,<5"
 
 [pypi-dependencies]
 dace = "==1.0.2"
@@ -110,10 +111,10 @@ cmd = "sbt -batch test"
 cwd = "hw/chisel"
 description = "Run the chiseltest specs"
 
-[tasks.chisel-gen]
-cmd = "bash -c 'sbt -batch \"runMain snax.forge.Emit $*\"' --"
+[tasks.chisel-hwgen]
+cmd = "bash -c 'sbt -batch \"runMain snax.forge.HwGen $*\"' --"
 cwd = "hw/chisel"
-description = "Elaborate modules to SystemVerilog in out/hw (args select targets)"
+description = "Generate SystemVerilog from a descriptor JSON"
 
 [tasks.chisel-fmt]
 cmd = "sbt -batch scalafmtAll"
