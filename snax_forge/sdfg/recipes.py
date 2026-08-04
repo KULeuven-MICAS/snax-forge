@@ -136,6 +136,7 @@ class TransformRecipe:
     steps: tuple[Step, ...]
     notes: str = ""
     tags: tuple[str, ...] = ()
+    n: int | None = None   # problem size this recipe is built for; None = kernel default
 
     def __post_init__(self) -> None:
         if not self.steps:
@@ -192,6 +193,21 @@ def set_map_property(sdfg: dace.SDFG, params=None, **props) -> int:
         raise KeyError(f"no map with params {params}; available: {avail}")
     return hit
 
+def specialize(sdfg: dace.SDFG, **symbols) -> int:
+    """Pin symbolic bounds to concrete values, rewriting the graph.
+
+    NOT sdfg.specialize(), which registers a codegen constant and leaves map
+    ranges symbolic -- the range still reads 0:N afterwards, so `lanes` never
+    resolves and `bounded` stays False. sdfg.replace() substitutes the symbol
+    throughout, so map ranges AND array shapes become concrete, which is what
+    an elaboration-time width has to be.
+
+    Irreversible: the SDFG no longer describes a family of sizes. That is the
+    point -- a spatial datapath is built for one N.
+    """
+    for name, value in symbols.items():
+        sdfg.replace(name, str(int(value)))
+    return len(symbols)
 
 def apply_step(sdfg: dace.SDFG, step: Step) -> int:
     """Apply one step in place. Returns how many times it fired."""
@@ -229,7 +245,7 @@ def apply_recipe(recipe: TransformRecipe, verify_each: bool = True) -> tuple[dac
             "shape": _shape(sdfg),
         }
         if verify_each:
-            entry["bitexact"] = verify(spec, sdfg)
+            entry["bitexact"] = verify(spec, sdfg, n=recipe.n)
         log.append(entry)
         ok = "  bitexact" if entry.get("bitexact") else ""
         bad = "" if entry.get("bitexact", True) else "   *** BIT-EXACTNESS BROKEN ***"
