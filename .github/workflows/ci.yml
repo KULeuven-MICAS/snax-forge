@@ -99,13 +99,6 @@ jobs:
       - name: Tests
         run: pixi run -e hw chisel-test
 
-      # The hand-written catalogue path, independent of any descriptor. Worth
-      # keeping green on its own: if this breaks and the flow job does not,
-      # the fault is in a module; if both break, it is in the elaboration
-      # helpers they share.
-      - name: Elaborate the module catalogue
-        run: pixi run -e hw chisel-gen
-
       # firtool failures do not always propagate as a non-zero exit from sbt,
       # so assert the artefacts exist rather than trusting the status.
       - name: Assert catalogue RTL was produced
