@@ -129,3 +129,7 @@ description = "Fail if Scala sources are unformatted"
 [tasks.chisel-clean]
 cmd = "rm -rf hw/chisel/target hw/chisel/project/target hw/chisel/project/project hw/chisel/test_run_dir out/hw"
 description = "Drop all Chisel build artefacts (keeps the Coursier cache)"
+
+[tasks.descriptors]
+cmd = "python -m snax_forge.descriptors"
+description = "Emit hardware descriptors from raised SDFGs into out/descriptors"
