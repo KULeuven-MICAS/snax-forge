@@ -136,7 +136,7 @@ class TransformRecipe:
     steps: tuple[Step, ...]
     notes: str = ""
     tags: tuple[str, ...] = ()
-    n: int | None = None   # problem size this recipe is built for; None = kernel default
+    n: int | None = None  # problem size this recipe is built for; None = kernel default
 
     def __post_init__(self) -> None:
         if not self.steps:
@@ -193,6 +193,7 @@ def set_map_property(sdfg: dace.SDFG, params=None, **props) -> int:
         raise KeyError(f"no map with params {params}; available: {avail}")
     return hit
 
+
 def specialize(sdfg: dace.SDFG, **symbols) -> int:
     """Pin symbolic bounds to concrete values, rewriting the graph.
 
@@ -208,6 +209,7 @@ def specialize(sdfg: dace.SDFG, **symbols) -> int:
     for name, value in symbols.items():
         sdfg.replace(name, str(int(value)))
     return len(symbols)
+
 
 def apply_step(sdfg: dace.SDFG, step: Step) -> int:
     """Apply one step in place. Returns how many times it fired."""

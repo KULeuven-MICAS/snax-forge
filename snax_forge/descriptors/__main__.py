@@ -8,6 +8,7 @@ pixi run descriptors vecadd_loop --print   # to stdout, nothing written
 
 import argparse
 import json
+import os
 import sys
 
 import dace
@@ -91,4 +92,7 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    code = main()
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(code)
