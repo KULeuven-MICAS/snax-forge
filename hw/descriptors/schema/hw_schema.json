@@ -1,0 +1,237 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/KULeuven-MICAS/snax-forge/hw/descriptors/schema/hw_schema.json",
+  "title": "SNAX-FORGE hardware descriptor",
+
+  "description": "Contract between the Python extractor and the Chisel generator. Python validates on write so a malformed descriptor never reaches disk; Scala validates on read so a stale file, a hand edit, or a third-party generator fails with a named problem rather than a decode error. One file, discriminated on `family`, because cross-file $ref needs a resolver on both sides and the Scala libraries are the weaker half of that. Adding a family means adding one allOf/if-then block and one $defs entry; it does not touch the existing ones. What this file does NOT describe is generator policy -- whether an ALU is fixed-function or selectable, what loopCountWidth to use, what to specialize a symbol to. Those are build decisions with no counterpart in the SDFG, and they belong on the generator's command line.",
+
+  "type": "object",
+  "required": ["schema_version", "cluster"],
+
+  "properties": {
+    "schema_version": {
+      "description": "Major version must match what the consumer understands; minor bumps only ever ADD optional fields, so a 1.1 descriptor stays readable by a 1.0 consumer. A const would reject that, which is why this is a pattern. Bump the major only for a removal or a change of meaning.",
+      "type": "string",
+      "pattern": "^1\\.[0-9]+$"
+    },
+
+    "generator": {
+      "description": "Provenance, ignored by the generator. Present so a puzzling .sv can be traced to the run that produced it.",
+      "type": "object",
+      "properties": {
+        "tool": { "type": "string" },
+        "version": { "type": "string" },
+        "recipe": { "type": "string" },
+        "sdfg": { "type": "string" },
+        "timestamp": { "type": "string" }
+      }
+    },
+
+    "cluster": { "$ref": "#/$defs/cluster" }
+  },
+
+  "$defs": {
+
+    "cluster": {
+      "description": "One SDFG state: the accelerators that coexist in a single configuration. The list holds exactly one unit today, and is a list anyway -- a multi-op composite is on the schedule, and adding the wrapper later would be a breaking change to a file both sides parse.",
+      "type": "object",
+      "required": ["name", "units"],
+      "properties": {
+        "name": { "$ref": "#/$defs/identifier" },
+        "units": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/unit" }
+        }
+      }
+    },
+
+    "unit": {
+      "description": "One raised library node: one datapath, one streamer-fed scope. Unknown properties are permitted on purpose -- the emitted descriptor also carries DaCe-side detail (scope ranges, AST depth, schedules) that the generator ignores but that is worth having when reading the file by hand.",
+      "type": "object",
+      "required": ["module_name", "family", "variant", "shape", "datapath", "ports"],
+      "properties": {
+        "module_name": {
+          "description": "Logical name, unique within the cluster. NOT the Chisel class name and not the elaborated SystemVerilog name -- the generator owns that mapping, so two units that happen to elaborate to identical hardware can still be deduplicated without the descriptor caring.",
+          "$ref": "#/$defs/identifier"
+        },
+
+        "family": {
+          "description": "Which kind of hardware this is, and therefore which generator handles it. Split from `variant` because a reduction is not a fourth elementwise variant: it has an accumulator, it is a chaining barrier, and its port shape differs. Discriminating here keeps the Scala match exhaustive per family instead of one flat enum that grows without structure.",
+          "enum": ["elementwise"]
+        },
+
+        "variant": {
+          "description": "The allocation split within the family. Meaning depends on `family`; see the conditional blocks below.",
+          "type": "string"
+        },
+
+        "shape": { "$ref": "#/$defs/shape" },
+        "datapath": { "$ref": "#/$defs/datapath" },
+        "ports": {
+          "type": "array",
+          "minItems": 2,
+          "items": { "$ref": "#/$defs/port" }
+        }
+      },
+
+      "allOf": [
+        {
+          "if": { "properties": { "family": { "const": "elementwise" } }, "required": ["family"] },
+          "then": {
+            "properties": {
+              "variant": {
+                "description": "loop: W=1, T=N, fully temporal. spatial: W=N, T=1, fully spatial. tiled_spatial: W=tile, T=ceil(N/tile). All three satisfy W*T = elements and all three raise to the same datapath module parameterised by W.",
+                "enum": ["loop", "spatial", "tiled_spatial"]
+              },
+              "datapath": {
+                "properties": {
+                  "expr": {
+                    "description": "An elementwise datapath produces exactly one value per lane per beat, so the tree has a single root and no accumulation.",
+                    "$ref": "#/$defs/expr"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+
+    "shape": {
+      "description": "The allocation split, stated directly so a backend never infers it from which pattern fired. lanes * trips == elements.",
+      "type": "object",
+      "required": ["lanes", "trips", "elements", "bounded"],
+      "properties": {
+        "lanes": {
+          "description": "W: how much hardware exists. An ELABORATION-time parameter, so it must be a concrete integer -- there is no value to pass a Chisel constructor otherwise.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "trips": {
+          "description": "T: how many times the datapath is fed. A RUNTIME value written to a CSR, so it stays a string and may be a symbolic expression such as ceiling(N/64). The generator never reads it; the driver evaluates it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "elements": {
+          "description": "The whole iteration space, symbolic like trips.",
+          "type": "string",
+          "minLength": 1
+        },
+        "bounded": {
+          "description": "Whether `lanes` resolved to an integer. The const here is the point of the field: a descriptor whose width is still symbolic fails validation on the Python side and never reaches disk, so an unbuildable design is caught where the error can name the symbol rather than three layers down in firtool. Specialize the SDFG first -- sdfg.specialize({'N': 64}) -- and it becomes emittable.",
+          "const": true
+        },
+        "ragged": {
+          "description": "True when the tile size does not divide the iteration space, so the final pass runs short and needs lane masking. Not yet handled by any generated datapath; recorded so the gap is visible rather than silent.",
+          "type": "boolean"
+        }
+      }
+    },
+
+    "datapath": {
+      "description": "The computation one lane performs. Element width is NOT here: it belongs to each port, because an accumulating or mixed-precision datapath has more than one. The generator derives its ALU width from the ports and fails loudly if they disagree, which is honest about an assumption that elementwise kernels happen to satisfy.",
+      "type": "object",
+      "required": ["expr"],
+      "properties": {
+        "label": {
+          "description": "The originating tasklet's label, for tracing back to the SDFG.",
+          "type": "string"
+        },
+        "expr": { "$ref": "#/$defs/expr" },
+        "source": {
+          "description": "The original tasklet code. Informational only -- the generator reads `expr`, never this. Kept because a descriptor that cannot be checked against its source is hard to trust.",
+          "type": "string"
+        }
+      }
+    },
+
+    "expr": {
+      "description": "The computation as a tree, not as source text. This is the field that decides whether the boundary survives contact with real kernels: an op histogram works only while a tasklet holds exactly one operation, and `c = a + b * 2` silently breaks it because one library node stops being one ALU. A tree needs no schema change for that case -- only the generator's handling changes.",
+      "oneOf": [
+        {
+          "title": "port reference",
+          "type": "object",
+          "required": ["port"],
+          "properties": {
+            "port": {
+              "description": "The datapath variable name a port binds to, matching some ports[].bind.",
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "additionalProperties": false
+        },
+        {
+          "title": "integer literal",
+          "type": "object",
+          "required": ["const"],
+          "properties": {
+            "const": { "type": "integer" }
+          },
+          "additionalProperties": false
+        },
+        {
+          "title": "binary operation",
+          "type": "object",
+          "required": ["op", "args"],
+          "properties": {
+            "op": {
+              "description": "Encodings must stay in step with ElementwiseOp in the Chisel tree. That list currently exists twice and is the most likely thing here to drift; generating the Scala constants from this enum is the eventual fix.",
+              "enum": ["add", "sub", "mul", "and", "or", "xor", "min", "max"]
+            },
+            "args": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "items": { "$ref": "#/$defs/expr" }
+            }
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+
+    "port": {
+      "description": "One array crossing the scope boundary, which becomes one streamer-fed port. `lanes` elements of it arrive per beat under a single ready/valid pair -- the descriptor names the logical array, not the N physical wires, so nothing here enumerates 64 entries.",
+      "type": "object",
+      "required": ["name", "direction", "bind", "dtype", "bits", "signed"],
+      "properties": {
+        "name": {
+          "description": "The SDFG array name, e.g. A. Survives into the RTL port name.",
+          "$ref": "#/$defs/identifier"
+        },
+        "direction": { "enum": ["in", "out"] },
+        "bind": {
+          "description": "The datapath variable this array feeds or is fed by, matching a leaf of the expression tree. Nothing else records this binding, and a generator cannot wire a streamer to a lane input without it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "subset": {
+          "description": "The per-iteration access inside the scope, e.g. __i0. A streamer's address generator has to reproduce it. A single string suffices while every port is read once per iteration; a stencil reading __i0-1, __i0, __i0+1 will need a list, which is a minor bump.",
+          "type": "string"
+        },
+        "dtype": {
+          "description": "DaCe dtype name. Power-of-two integer widths only, per the project's scope decision -- floating point is out until the datapath has a story for it.",
+          "enum": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+        },
+        "bits": {
+          "description": "Redundant with dtype, and deliberately so: it saves the Scala side from parsing dtype strings, and one Python function emits both so they cannot disagree.",
+          "enum": [8, 16, 32, 64]
+        },
+        "signed": { "type": "boolean" },
+        "shape": {
+          "description": "Array extents as strings, since they may be symbolic.",
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+
+    "identifier": {
+      "description": "Safe as a SystemVerilog identifier and as a Chisel module name.",
+      "type": "string",
+      "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+    }
+  }
+}
