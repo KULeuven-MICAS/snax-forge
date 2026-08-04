@@ -10,20 +10,20 @@ import snax.forge.elementwise.{ElementwiseLoop, ElementwiseOp, ElementwiseSpatia
 /** upickle configured so that Option[T] is null-or-absent rather than a JSON array.
   *
   * upickle's default encoding for Option is a sequence: None is `[]` and Some(x) is `[x]`. That is unambiguous and
-  * completely unlike how anyone writes JSON by hand, and it would force the Python emitter to wrap every optional
-  * field in a single-element list. This is the recipe from upickle's own documentation for the conventional encoding:
-  * absent or null means None, a bare value means Some.
+  * completely unlike how anyone writes JSON by hand, and it would force the Python emitter to wrap every optional field
+  * in a single-element list. This is the recipe from upickle's own documentation for the conventional encoding: absent
+  * or null means None, a bare value means Some.
   *
   * Every ReadWriter below must be derived from THIS object, not from upickle.default, or the override does not apply.
   */
 object Json extends upickle.AttributeTagged {
-  override implicit def OptionWriter[T: Writer]: Writer[Option[T]] =
+  implicit override def OptionWriter[T: Writer]: Writer[Option[T]] =
     implicitly[Writer[T]].comap[Option[T]] {
       case None    => null.asInstanceOf[T]
       case Some(x) => x
     }
 
-  override implicit def OptionReader[T: Reader]: Reader[Option[T]] =
+  implicit override def OptionReader[T: Reader]: Reader[Option[T]] =
     new Reader.Delegate[Any, Option[T]](implicitly[Reader[T]].map(Some(_))) {
       override def visitNull(index: Int): Option[T] = None
     }
@@ -43,9 +43,9 @@ object Json extends upickle.AttributeTagged {
   *
   * ==What is checked here, and what is not==
   *
-  * upickle's decoding already enforces the structural half of the schema: a missing required field or a wrong JSON
-  * type fails to decode. What it cannot see are the value constraints -- enums, `bounded: const true`, `lanes >= 1` --
-  * so those are explicit `require`s in `validate`. They produce better messages than a schema validator would anyway,
+  * upickle's decoding already enforces the structural half of the schema: a missing required field or a wrong JSON type
+  * fails to decode. What it cannot see are the value constraints -- enums, `bounded: const true`, `lanes >= 1` -- so
+  * those are explicit `require`s in `validate`. They produce better messages than a schema validator would anyway,
   * because they can say which unit and which field.
   *
   * That is deliberately not the same as validating against the schema file. A hand-edited or third-party descriptor
@@ -56,9 +56,9 @@ object Json extends upickle.AttributeTagged {
   * ==Descriptor versus policy==
   *
   * The descriptor says what the SDFG says: which operation, how many lanes, how wide an element. It says nothing about
-  * whether the ALU should be fixed-function or selectable, or how many bits the trip counter needs, because an SDFG
-  * has no opinion on either. Those are build decisions and they arrive on the command line, in `Policy`. Keeping the
-  * split sharp is what stops the descriptor from slowly accumulating generator flags.
+  * whether the ALU should be fixed-function or selectable, or how many bits the trip counter needs, because an SDFG has
+  * no opinion on either. Those are build decisions and they arrive on the command line, in `Policy`. Keeping the split
+  * sharp is what stops the descriptor from slowly accumulating generator flags.
   */
 object HwGen {
 
@@ -72,25 +72,27 @@ object HwGen {
     * derived sealed-trait support writes a `$type` field, which the schema does not have and should not grow.
     */
   sealed trait Expr
-  case class PortRef(port: String) extends Expr
-  case class ConstInt(const: Long) extends Expr
+  case class PortRef(port: String)              extends Expr
+  case class ConstInt(const: Long)              extends Expr
   case class BinOp(op: String, args: Seq[Expr]) extends Expr
 
   object Expr {
-    implicit val rw: Json.ReadWriter[Expr] = Json.readwriter[ujson.Value].bimap[Expr](
-      {
-        case PortRef(p)   => ujson.Obj("port" -> p)
-        case ConstInt(c)  => ujson.Obj("const" -> ujson.Num(c.toDouble))
-        case BinOp(o, as) => ujson.Obj("op" -> o, "args" -> ujson.Arr.from(as.map(Json.writeJs(_))))
-      },
-      json => {
-        val o = json.obj
-        if (o.contains("port")) PortRef(o("port").str)
-        else if (o.contains("const")) ConstInt(o("const").num.toLong)
-        else if (o.contains("op")) BinOp(o("op").str, o("args").arr.map(Json.read[Expr](_)).toSeq)
-        else fail(s"expression node has none of port/const/op: ${ujson.write(json)}")
-      }
-    )
+    implicit val rw: Json.ReadWriter[Expr] = Json
+      .readwriter[ujson.Value]
+      .bimap[Expr](
+        {
+          case PortRef(p)   => ujson.Obj("port" -> p)
+          case ConstInt(c)  => ujson.Obj("const" -> ujson.Num(c.toDouble))
+          case BinOp(o, as) => ujson.Obj("op" -> o, "args" -> ujson.Arr.from(as.map(Json.writeJs(_))))
+        },
+        json => {
+          val o = json.obj
+          if (o.contains("port")) PortRef(o("port").str)
+          else if (o.contains("const")) ConstInt(o("const").num.toLong)
+          else if (o.contains("op")) BinOp(o("op").str, o("args").arr.map(Json.read[Expr](_)).toSeq)
+          else fail(s"expression node has none of port/const/op: ${ujson.write(json)}")
+        }
+      )
   }
 
   case class Port(
@@ -100,7 +102,7 @@ object HwGen {
     dtype:     String,
     bits:      Int,
     signed:    Boolean,
-    subset:    Option[String] = None,
+    subset:    Option[String]      = None,
     shape:     Option[Seq[String]] = None
   )
   object Port { implicit val rw: Json.ReadWriter[Port] = Json.macroRW }
@@ -153,8 +155,8 @@ object HwGen {
 
   /** @param selectable
     *   emit an ALU that can perform every operation, rather than only the one the descriptor names. The descriptor is
-    *   always fixed -- a tasklet is one computation -- so this is purely a build decision, taken when several units
-    *   are expected to share a datapath or when the same RTL must serve more than one kernel.
+    *   always fixed -- a tasklet is one computation -- so this is purely a build decision, taken when several units are
+    *   expected to share a datapath or when the same RTL must serve more than one kernel.
     * @param loopCountWidth
     *   bits of trip counter. The descriptor's `trips` may be symbolic (ceiling(N/64)) and is a runtime CSR value, so
     *   nothing in it determines this.
@@ -244,7 +246,7 @@ object HwGen {
     // truncated to whichever port happened to be read first.
     val widths = u.ports.map(_.bits).distinct
     if (widths.size != 1) bad(s"ports disagree on element width: ${widths.sorted.mkString(", ")}")
-    val signs = u.ports.map(_.signed).distinct
+    val signs  = u.ports.map(_.signed).distinct
     if (signs.size != 1) bad("ports disagree on signedness")
 
     // A leaf naming a port that does not exist means the descriptor cannot be
@@ -255,11 +257,12 @@ object HwGen {
     }
   }
 
-  private def leaves(e: Expr): Seq[String] = e match {
-    case PortRef(p)  => Seq(p)
-    case ConstInt(_) => Seq.empty
-    case BinOp(_, a) => a.flatMap(leaves)
-  }
+  private def leaves(e: Expr): Seq[String] =
+    e match {
+      case PortRef(p)  => Seq(p)
+      case ConstInt(_) => Seq.empty
+      case BinOp(_, a) => a.flatMap(leaves)
+    }
 
   // -------------------------------------------------------------------------
   // Descriptor to module
@@ -272,14 +275,15 @@ object HwGen {
     * fail: the tree is expressible, the hardware for it is not yet. Widening this means composing lanes rather than
     * selecting one, so it is a real piece of work and not a missing case.
     */
-  def opOf(u: UnitDesc): Int = u.datapath.expr match {
-    case BinOp(op, Seq(PortRef(_), PortRef(_))) =>
-      encoding.getOrElse(op, fail(s"${u.module_name}: no Chisel encoding for operation '$op'"))
-    case BinOp(op, _) =>
-      fail(s"${u.module_name}: '$op' over a nested expression is not yet supported; only two port operands")
-    case _ =>
-      fail(s"${u.module_name}: datapath must be a single binary operation")
-  }
+  def opOf(u: UnitDesc): Int =
+    u.datapath.expr match {
+      case BinOp(op, Seq(PortRef(_), PortRef(_))) =>
+        encoding.getOrElse(op, fail(s"${u.module_name}: no Chisel encoding for operation '$op'"))
+      case BinOp(op, _)                           =>
+        fail(s"${u.module_name}: '$op' over a nested expression is not yet supported; only two port operands")
+      case _                                      =>
+        fail(s"${u.module_name}: datapath must be a single binary operation")
+    }
 
   def build(u: UnitDesc, policy: Policy): RawModule = {
     val bits   = u.ports.head.bits
@@ -287,17 +291,17 @@ object HwGen {
     val ops    = policy.opsFor(opOf(u))
 
     u.variant match {
-      case "loop" =>
+      case "loop"          =>
         new ElementwiseLoop(bits, policy.loopCountWidth, ops, signed)
       // lanes is the only thing separating these two from each other; the
       // trip counter is what separates them structurally. Both carry the same
       // datapath width, which is why `variant` selects a module rather than a
       // circuit.
-      case "spatial" =>
+      case "spatial"       =>
         new ElementwiseSpatial(bits, u.shape.lanes, ops, signed)
       case "tiled_spatial" =>
         new ElementwiseTiledSpatial(bits, u.shape.lanes, policy.loopCountWidth, ops, signed)
-      case other =>
+      case other           =>
         fail(s"${u.module_name}: unreachable variant '$other'")
     }
   }
@@ -341,9 +345,9 @@ object HwGen {
     // The descriptor path is always explicit. It lives in a gitignored
     // directory today and will move to out/descriptors once Python emits it,
     // so a baked-in default would be wrong within the week.
-    val path = positional.head
+    val path   = positional.head
     val policy = Policy(
-      selectable = flags.contains("--selectable"),
+      selectable     = flags.contains("--selectable"),
       loopCountWidth = args.sliding(2).collectFirst { case Array("--loop-count-width", n) => n.toInt }.getOrElse(32)
     )
 
@@ -357,7 +361,9 @@ object HwGen {
 
     val provenance = descriptor.generator.flatMap(_.recipe).getOrElse("<unknown recipe>")
     println(s"[snax-forge] ${RepoPaths.display(RepoPaths.resolve(path))}")
-    println(s"[snax-forge] cluster ${descriptor.cluster.name} from $provenance, ${descriptor.cluster.units.size} unit(s)")
+    println(
+      s"[snax-forge] cluster ${descriptor.cluster.name} from $provenance, ${descriptor.cluster.units.size} unit(s)"
+    )
     descriptor.cluster.units.foreach(u => println(describe(u, policy)))
 
     if (flags.contains("--dry-run")) {
