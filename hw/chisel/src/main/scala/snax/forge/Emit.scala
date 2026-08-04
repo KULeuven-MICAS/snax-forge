@@ -36,12 +36,16 @@ object Emit {
 
   /** firtool flags shared by every SNAX-FORGE emission.
     *
+    * Not private: HwGen elaborates through the same helpers. Two entry points
+    * with two copies of the flag list would eventually produce RTL that
+    * differs depending on which one built it.
+    *
     *   - `-disable-all-randomization` removes the `RANDOMIZE_*` ifdef soup, so one .sv file is consumable by Verilator
     *     and by a synthesis flow without a per-tool define set.
     *   - `-strip-debug-info` drops Scala source locators. Without it the emitted SV churns on every unrelated edit
     *     above it in the file, which makes RTL diffs useless for review.
     */
-  private val firtoolOpts = Array(
+  val firtoolOpts = Array(
     "-disable-all-randomization",
     "-strip-debug-info"
   )
@@ -62,9 +66,9 @@ object Emit {
 
   /** Everything the emitter knows how to build.
     *
-    * The elementwise entries deliberately come in selectable/fixed pairs. Diffing the two emitted files is the clearest
-    * way to see what `supportedOps` actually does to the hardware: the operation mux and its decode vanish, leaving the
-    * bare operator. That is the generator policy made visible.
+    * The elementwise entries deliberately come in selectable/fixed pairs. Diffing the two emitted files is the
+    * clearest way to see what `supportedOps` actually does to the hardware: the operation mux and its decode vanish,
+    * leaving the bare operator. That is the generator policy made visible.
     */
   private val catalogue: Seq[Target] = Seq(
     Target(
@@ -166,12 +170,19 @@ object Emit {
     println(s"[snax-forge] emitted ${chosen.size} module(s) to $outDir")
   }
 
-  /** `--out <dir>`, else `$SNAX_FORGE_HW_OUT`, else the default beside the repo root. */
-  private def outDirFrom(args: Array[String]): String = {
+  /** `--out <dir>`, else `$SNAX_FORGE_HW_OUT`, else `out/hw` under the repo root.
+    *
+    * Anchored rather than written as ../../out/hw, which only happened to be
+    * right because sbt starts in hw/chisel. A --out passed by the user is
+    * resolved the same way, so `--out out/scratch` means what it looks like.
+    */
+  def outDirFrom(args: Array[String]): String = {
     val flagged = args.sliding(2).collectFirst { case Array("--out", dir) => dir }
     flagged
       .orElse(sys.env.get("SNAX_FORGE_HW_OUT"))
-      .getOrElse("../../out/hw")
+      .map(RepoPaths.resolve)
+      .getOrElse(RepoPaths.out.resolve("hw"))
+      .toString
   }
 
   /** Elaborate one module and return the emitted top-level name.
@@ -179,7 +190,7 @@ object Emit {
     * `gen` is by-name for the same reason `Target.gen` is a thunk: construction has to happen inside the elaboration
     * context. The returned name is the module's `desiredName`, which is also the .sv filename ChiselStage writes.
     */
-  private def emit(gen: => RawModule, outDir: String): String = {
+  def emit(gen: => RawModule, outDir: String): String = {
     var name = "<unknown>"
     ChiselStage.emitSystemVerilogFile(
       {
@@ -187,7 +198,7 @@ object Emit {
         name = m.name
         m
       },
-      args = Array("--target-dir", outDir),
+      args        = Array("--target-dir", outDir),
       firtoolOpts = firtoolOpts
     )
     name
