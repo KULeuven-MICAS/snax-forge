@@ -20,12 +20,14 @@ have told us.
 import dace
 
 from snax_forge.libnodes.libnodes import raise_vector_ops
-from snax_forge.sdfg.recipes import Step, TransformRecipe, set_map_property
+from snax_forge.sdfg.recipes import Step, TransformRecipe, set_map_property, specialize
 
 RECIPE = TransformRecipe(
     name="vecadd_spatial",
     kernel="vecadd",
+    n=64,
     steps=(
+        Step(specialize, options={"N": 128}),
         Step(
             set_map_property,
             options={
@@ -36,5 +38,5 @@ RECIPE = TransformRecipe(
         ),
         Step(raise_vector_ops),
     ),
-    tags=("libnode", "spatial", "unbounded"),
+    tags=("libnode", "spatial", "specialized"),
 )
