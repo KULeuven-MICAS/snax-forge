@@ -1,0 +1,11 @@
+import dace
+from snax_forge.sdfg.analysis import extract_sdfg, print_sdfg, extract_arrays, print_arrays
+
+sdfg = dace.SDFG.from_file("out/transforms/matadd_opt.sdfg")
+data = extract_sdfg(sdfg, {"N": 512, "M": 512})
+print_sdfg(data)
+
+# print(data)
+
+# or one section at a time
+# print_arrays(extract_arrays(sdfg, {"N": 512}))

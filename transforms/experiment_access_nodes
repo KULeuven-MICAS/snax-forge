@@ -1,0 +1,303 @@
+from __future__ import annotations
+
+import ast
+from collections import Counter, defaultdict
+
+import dace
+from dace import nodes as dn
+from dace.sdfg import propagation
+from dace.symbolic import SymExpr
+
+sdfg = dace.SDFG.from_file("out/transforms/vecadd_opt.sdfg")
+# dump(sdfg)
+# report_movement(sdfg, {"N": 4096})
+
+# import json
+# print(json.dumps(sdfg, indent=2))
+
+# Access read and write states of SDFG
+# print(sdfg.read_and_write_sets()[0])
+
+# Gets the current states
+# print(sdfg.states())
+
+# Gets all existing nodes
+# print(sdfg.states()[0].nodes()[3])
+
+# print(sdfg.arrays)
+# print()
+# print(sdfg.arrays.items())
+# print()
+# print(sdfg.arrays.keys())
+# print()
+# print(sdfg.transients())
+
+
+
+
+# Lists all arrays
+# data = extract_arrays(sdfg)
+# print_arrays(data)
+
+# sdfg.specialize({"M": 4096, "N": 4096})
+
+# # List details of a single array
+# print(sdfg.arrays['A'])
+
+# # List gets total size in symbolic form
+# print(sdfg.arrays['A'].total_size)
+
+# # List gets used symbol
+# print(sdfg.arrays['A'].used_symbols)
+
+# # List gets used shapes in tuple form
+# print(sdfg.arrays['A'].shape)
+
+# # List gets used sizes in tuple form
+# print(sdfg.arrays['A'].sizes())
+
+
+# import ast
+# from collections import Counter
+
+# BINOPS = {
+#     ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul", ast.Div: "div",
+#     ast.FloorDiv: "floordiv", ast.Mod: "mod", ast.Pow: "pow",
+#     ast.LShift: "shl", ast.RShift: "shr", ast.BitAnd: "and",
+#     ast.BitOr: "or", ast.BitXor: "xor", ast.USub: "neg",
+# }
+
+
+# def tasklet_signature(t: dn.Tasklet) -> dict:
+#     """Operation histogram and expression-DAG shape for one tasklet.
+
+#     This is the datapath signature: which functional units the tasklet needs,
+#     how many, and how deep the combinational chain is.
+#     """
+#     ops, calls, consts, depth = Counter(), Counter(), 0, 0
+#     trees = t.code.code if isinstance(t.code.code, list) else [t.code.code]
+
+#     def walk(node, d=0):
+#         nonlocal consts, depth
+#         depth = max(depth, d)
+#         if isinstance(node, (ast.BinOp, ast.UnaryOp)):
+#             ops[BINOPS.get(type(node.op), type(node.op).__name__)] += 1
+#         elif isinstance(node, ast.Call):
+#             calls[getattr(node.func, "id", getattr(node.func, "attr", "?"))] += 1
+#         elif isinstance(node, ast.Constant):
+#             consts += 1
+#         for c in ast.iter_child_nodes(node):
+#             walk(c, d + 1)
+
+#     for tree in trees:
+#         walk(tree)
+#     return {
+#         "ops": dict(ops),
+#         "calls": dict(calls),
+#         "constants": consts,
+#         "ast_depth": depth,
+#         "total_ops": sum(ops.values()),
+#     }
+
+
+# def extract_compute(sdfg: dace.SDFG) -> dict:
+#     """Tasklets, library nodes and map scopes as JSON-serialisable dicts."""
+#     tasklets, libnodes, maps = [], [], []
+
+#     for st in sdfg.states():
+#         for n in st.nodes():
+#             if isinstance(n, dn.Tasklet):
+#                 tasklets.append({
+#                     "label": n.label,
+#                     "state": st.label,
+#                     "language": n.code.language.name,
+#                     "code": n.code.as_string,
+#                     "in_connectors": {k: str(v) for k, v in n.in_connectors.items()},
+#                     "out_connectors": {k: str(v) for k, v in n.out_connectors.items()},
+#                     "side_effects": n.side_effects,
+#                     "in_scope": st.entry_node(n) is not None,
+#                     **tasklet_signature(n),
+#                 })
+#             elif isinstance(n, dn.LibraryNode):
+#                 base = set(dn.LibraryNode.__properties__)
+#                 libnodes.append({
+#                     "type": type(n).__name__,
+#                     "state": st.label,
+#                     "implementation": n.implementation,          # None = unexpanded
+#                     "available": sorted(type(n).implementations),
+#                     "has_pure": "pure" in type(n).implementations,
+#                     "schedule": str(n.schedule).split(".")[-1],
+#                     "in_connectors": list(n.in_connectors),
+#                     "out_connectors": list(n.out_connectors),
+#                     "properties": {
+#                         p: str(getattr(n, p))
+#                         for p in type(n).__properties__ if p not in base
+#                     },
+#                 })
+#             elif isinstance(n, dn.MapEntry):
+#                 maps.append({
+#                     "label": n.map.label,
+#                     "state": st.label,
+#                     "params": list(n.map.params),
+#                     "range": str(n.map.range),
+#                     "schedule": str(n.map.schedule).split(".")[-1],
+#                     "unroll": n.map.unroll,
+#                     "collapse": n.map.collapse,
+#                     "top_level": st.entry_node(n) is None,
+#                     "ragged": any(
+#                         isinstance(e, SymExpr) for _, e, _ in n.map.range.ndrange()
+#                     ),
+#                 })
+
+#     return {
+#         "sdfg": sdfg.name,
+#         "maps": maps,
+#         "tasklets": tasklets,
+#         "library_nodes": libnodes,
+#         "totals": {
+#             "map_scopes": sum(1 for m in maps if m["top_level"]),
+#             "tasklets": len(tasklets),
+#             "library_nodes": len(libnodes),
+#             "op_histogram": dict(
+#                 sum((Counter(t["ops"]) for t in tasklets), Counter())
+#             ),
+#         },
+#     }
+
+# def _sym(expr, symbols: dict | None) -> int | None:
+#     """Symbolic expression -> int when resolvable, else None.
+
+#     Returns None rather than raising: data-dependent sizes are legal and
+#     should show up as unknown, not as a crash.
+#     """
+#     try:
+#         return int(dace.symbolic.evaluate(expr, symbols or {}))
+#     except Exception:  # noqa: BLE001
+#         return None
+
+# def print_compute(data: dict) -> None:
+#     print(f"SDFG {data['sdfg']}")
+#     for m in data["maps"]:
+#         tag = "top" if m["top_level"] else "inner"
+#         rag = "  RAGGED" if m["ragged"] else ""
+#         print(f"  Map     {m['label']:20} [{tag}] range={m['range']} "
+#               f"sched={m['schedule']} unroll={m['unroll']}{rag}")
+#     for t in data["tasklets"]:
+#         print(f"  Tasklet {t['label']:20} in={list(t['in_connectors'])} "
+#               f"out={list(t['out_connectors'])}")
+#         print(f"      code : {t['code'].replace(chr(10), ' ; ')[:70]}")
+#         print(f"      ops={t['ops']} calls={t['calls']} depth={t['ast_depth']}")
+#     for lb in data["library_nodes"]:
+#         star = " <- has 'pure'" if lb["has_pure"] else ""
+#         print(f"  LibNode {lb['type']:20} impl={lb['implementation']} "
+#               f"available={lb['available']}{star}")
+#         if lb["properties"]:
+#             print(f"      properties: {lb['properties']}")
+#     print(f"  totals: {data['totals']}")
+
+
+# def _node_ref(n) -> dict:
+#     """Short identification of a graph node endpoint."""
+#     if isinstance(n, dn.AccessNode):
+#         return {"type": "AccessNode", "label": n.data}
+#     if isinstance(n, dn.MapEntry):
+#         return {"type": "MapEntry", "label": n.map.label}
+#     if isinstance(n, dn.MapExit):
+#         return {"type": "MapExit", "label": n.map.label}
+#     if isinstance(n, dn.LibraryNode):
+#         return {"type": type(n).__name__, "label": n.label}
+#     if isinstance(n, dn.NestedSDFG):
+#         return {"type": "NestedSDFG", "label": n.label}
+#     return {"type": type(n).__name__, "label": getattr(n, "label", str(n))}
+
+
+# def extract_memlets(sdfg: dace.SDFG, symbols: dict | None = None) -> dict:
+#     """Every memlet edge: endpoints, connectors, subset, volume, flags.
+
+#     `role` is the key field. Only AccessNode-incident edges carry whole-scope
+#     volume; edges inside a scope are per-iteration views of the SAME traffic,
+#     so they are marked scope-internal and excluded from totals.
+#     """
+#     propagation.propagate_states(sdfg)  # fills state.executions for loops
+#     rows = []
+
+#     for st in sdfg.states():
+#         execs = _sym(st.executions, symbols) or 1
+#         for e in st.edges():
+#             m = e.data
+#             if m.data is None:
+#                 continue
+#             desc = sdfg.arrays[m.data]
+#             vol = _sym(m.volume, symbols)
+#             src_is_an = isinstance(e.src, dn.AccessNode) and e.src.data == m.data
+#             dst_is_an = isinstance(e.dst, dn.AccessNode) and e.dst.data == m.data
+
+#             rows.append({
+#                 "state": st.label,
+#                 "state_executions": execs,
+#                 "src": _node_ref(e.src), "src_connector": e.src_conn,
+#                 "dst": _node_ref(e.dst), "dst_connector": e.dst_conn,
+#                 "data": m.data,
+#                 "transient": bool(desc.transient),
+#                 "subset": str(m.subset),              # address pattern
+#                 "other_subset": None if m.other_subset is None else str(m.other_subset),
+#                 "volume": str(m.volume),              # access count, symbolic
+#                 "volume_value": vol,
+#                 "bytes_value": None if vol is None else vol * desc.dtype.bytes,
+#                 "total_bytes": None if vol is None else vol * desc.dtype.bytes * execs,
+#                 "wcr": None if m.wcr is None else str(m.wcr),
+#                 "dynamic": bool(m.dynamic),
+#                 "role": "read" if src_is_an else ("write" if dst_is_an else "scope-internal"),
+#             })
+
+#     return {
+#         "sdfg": sdfg.name,
+#         "symbols": dict(symbols) if symbols else None,
+#         "memlets": rows,
+#     }
+
+
+# def movement_from_memlets(data: dict) -> dict:
+#     """Reduce memlet rows to per-array traffic."""
+#     per: dict[str, dict] = {}
+#     for r in data["memlets"]:
+#         if r["role"] == "scope-internal" or r["total_bytes"] is None:
+#             continue
+#         a = per.setdefault(r["data"],
+#                            {"transient": r["transient"], "read_bytes": 0, "write_bytes": 0})
+#         a[f"{r['role']}_bytes"] += r["total_bytes"]
+
+#     ext = sum(v["read_bytes"] + v["write_bytes"] for v in per.values() if not v["transient"])
+#     tr = sum(v["read_bytes"] + v["write_bytes"] for v in per.values() if v["transient"])
+#     return {"arrays": per, "external_bytes": ext, "transient_bytes": tr}
+
+
+# def print_memlets(data: dict, only_traffic: bool = False) -> None:
+#     print(f"SDFG {data['sdfg']}" + (f"  symbols={data['symbols']}" if data["symbols"] else ""))
+#     hdr = (f"  {'state':40} {'src':40} {'dst':40} {'data':15} {'subset':25} "
+#            f"{'volume':>15} {'xexec':>15} {'bytes':>25} {'role':>25} flags")
+#     print(hdr)
+#     print("  " + "-" * (len(hdr) - 2))
+
+#     for r in data["memlets"]:
+#         if only_traffic and r["role"] == "scope-internal":
+#             continue
+#         src = f"{r['src']['type']}({r['src']['label']})[{r['src_connector']}]"
+#         dst = f"{r['dst']['type']}({r['dst']['label']})[{r['dst_connector']}]"
+#         flags = " ".join(f for f, on in (("WCR", r["wcr"]), ("DYN", r["dynamic"]),
+#                                          ("transient", r["transient"])) if on)
+#         vol = r["volume_value"] if r["volume_value"] is not None else r["volume"]
+#         b = "-" if r["total_bytes"] is None else f"{r['total_bytes']:,}"
+#         print(f"  {r['state'][:40]:40} {src[:40]:40} {dst[:40]:40} {r['data']:15} "
+#               f"{r['subset'][:25]:25} {str(vol):>15} {r['state_executions']:>15} "
+#               f"{b:>25} {r['role']:>25} {flags}")
+
+#     mv = movement_from_memlets(data)
+#     print(f"  external={mv['external_bytes']:,} bytes   "
+#           f"transient={mv['transient_bytes']:,} bytes")
+
+
+# data = extract_memlets(sdfg, {"M": 8, "N": 8})
+# print_memlets(data)
+
+# print(data)
