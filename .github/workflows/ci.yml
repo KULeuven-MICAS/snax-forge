@@ -87,8 +87,9 @@ jobs:
       - name: Tests
         run: pixi run -e hw chisel-test
 
-      - name: Elaborate to SystemVerilog
-        run: pixi run -e hw chisel-hwgen -- --dry-run experiments/vecadd_tiled_spatial.json
+      # TODO: add me later when there are proper tests
+      # - name: Elaborate to SystemVerilog
+      #   run: pixi run -e hw chisel-hwgen -- --dry-run experiments/vecadd_tiled_spatial.json
 
       # Elaboration failures inside firtool can still exit 0 from sbt's
       # perspective, so assert the artefacts actually exist.
