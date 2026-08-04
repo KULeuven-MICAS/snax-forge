@@ -35,8 +35,8 @@ jobs:
       - name: env_check
         run: pixi run check
 
-  test:
-    name: Tests + lint
+  python:
+    name: Python lint + schema
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -53,8 +53,20 @@ jobs:
       - name: Lint
         run: pixi run -e ci lint
 
+      # Cheap, and it fails on exactly the mistakes a schema invites: a $ref to
+      # a $defs entry that was renamed, an unbalanced structure, a keyword
+      # typo. An unrecognised JSON Schema keyword is SILENTLY IGNORED by every
+      # validator, so `requried` would otherwise pass forever.
+      - name: Schema is self-consistent
+        run: pixi run -e ci python util/schema_explain.py
+
+      # TODO: enable once tests/ exists. pytest with nothing to collect exits
+      # 5, which reads as a failure.
+      # - name: Tests
+      #   run: pixi run -e ci test
+
   chisel:
-    name: Chisel format + test + elaborate
+    name: Chisel format + unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -87,18 +99,118 @@ jobs:
       - name: Tests
         run: pixi run -e hw chisel-test
 
-      # TODO: add me later when there are proper tests
-      # - name: Elaborate to SystemVerilog
-      #   run: pixi run -e hw chisel-hwgen -- --dry-run experiments/vecadd_tiled_spatial.json
+      # The hand-written catalogue path, independent of any descriptor. Worth
+      # keeping green on its own: if this breaks and the flow job does not,
+      # the fault is in a module; if both break, it is in the elaboration
+      # helpers they share.
+      - name: Elaborate the module catalogue
+        run: pixi run -e hw chisel-gen
 
-      # Elaboration failures inside firtool can still exit 0 from sbt's
-      # perspective, so assert the artefacts actually exist.
-      # - name: Assert RTL was produced
-      #   run: |
-      #     ls -la out/hw
-      #     test -f out/hw/SimpleAdder.sv
-      #     test -f out/hw/Accumulator.sv
+      # firtool failures do not always propagate as a non-zero exit from sbt,
+      # so assert the artefacts exist rather than trusting the status.
+      - name: Assert catalogue RTL was produced
+        run: |
+          ls -la out/hw
+          test -f out/hw/SimpleAdder.sv
+          test -f out/hw/Accumulator.sv
+          test -f out/hw/ElementwiseLoop_w32_t32_sel8.sv
+          test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
 
-    # TODO: add me later when there are proper tests
-    #   - name: Tests
-    #     run: pixi run -e ci test
+  flow:
+    name: SDFG to RTL end to end
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # The `hw` environment carries both halves: dace arrives through the
+      # top-level [pypi-dependencies], sbt through [feature.hw]. So the whole
+      # flow runs in one job and nothing has to be handed between runners as
+      # an artefact.
+      - uses: prefix-dev/setup-pixi@v0.8.8
+        with:
+          pixi-version: v0.41.4
+          environments: hw
+          locked: true
+          cache: true
+          cache-write: ${{ github.event_name == 'push' && github.ref_name == 'main' }}
+
+      - name: Cache Coursier / sbt
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cache/coursier
+            ~/.ivy2/cache
+            ~/.sbt
+          key: sbt-${{ hashFiles('hw/chisel/build.sbt', 'hw/chisel/project/*') }}
+          restore-keys: sbt-
+
+      # Step 1. Every recipe, not only the three consumed below: a pattern
+      # change that breaks matadd_opt should fail here rather than go unnoticed
+      # because only vecadd is exercised downstream. Bit-exactness against the
+      # DaCe CPU reference is checked inside, after every transformation.
+      - name: Apply every recipe
+        run: pixi run -e hw forge --recipe
+
+      # Step 2. Validates against hw/descriptors/schema/hw_schema.json BEFORE
+      # writing, so out/descriptors can never hold a file the generator would
+      # reject.
+      - name: Emit descriptors
+        run: pixi run -e hw python -m snax_forge.descriptors
+
+      - name: Assert descriptors were written
+        run: |
+          ls -la out/descriptors
+          test -f out/descriptors/vecadd_loop.json
+          test -f out/descriptors/vecadd_spatial.json
+          test -f out/descriptors/vecadd_tiled_spatial.json
+
+      # An independent second opinion. `descriptors` already validates on
+      # write with the same schema, so this only catches a broken validate() --
+      # cheap enough to keep while both sides of the boundary are new.
+      - name: Re-validate the emitted descriptors
+        run: |
+          for f in out/descriptors/*.json; do
+            pixi run -e hw python util/schema_explain.py --validate "$f"
+          done
+
+      # Step 3. Decode and report without elaborating, so a JSON contract
+      # failure is distinguishable from an elaboration failure. Those are very
+      # different bugs and the second is far slower to diagnose.
+      - name: Read descriptors (dry run)
+        run: |
+          for f in out/descriptors/*.json; do
+            pixi run -e hw chisel-hwgen -- "$f" --dry-run
+          done
+
+      - name: Generate RTL from descriptors
+        run: |
+          for f in out/descriptors/*.json; do
+            pixi run -e hw chisel-hwgen -- "$f"
+          done
+
+      # These names come from each module's desiredName, which bakes in the
+      # parameters the descriptor supplied. Asserting them is really asserting
+      # that lanes and dtype survived the crossing: a descriptor saying
+      # lanes=64 that somehow produced _n4_ would still exit 0 without this.
+      - name: Assert the descriptor-driven RTL matches the descriptors
+        run: |
+          ls -la out/hw
+          test -f out/hw/ElementwiseLoop_w32_t32_add.sv
+          test -f out/hw/ElementwiseSpatial_w32_n64_add.sv
+          test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
+
+      # Not needed for the build to pass; the point is that diagnosing a
+      # failure is far easier with the intermediate artefacts in hand than by
+      # re-running locally and hoping it reproduces.
+      - name: Upload artefacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: snax-forge-flow
+          path: |
+            out/descriptors
+            out/hw
+            out/transforms/*.log.json
+          retention-days: 14
+          if-no-files-found: warn
