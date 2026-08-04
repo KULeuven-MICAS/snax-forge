@@ -108,7 +108,11 @@ def _node(node: ast.AST, code: str) -> dict[str, Any]:
         return {"port": node.id}
 
     if isinstance(node, ast.Constant):
-        if isinstance(node.value, bool) or not isinstance(node.value, int):
+        # `type(...) is not int` rather than isinstance: bool subclasses int,
+        # so isinstance would accept True as a literal 1 and silently emit a
+        # constant the tasklet never meant. The exact check excludes it
+        # without a second condition.
+        if type(node.value) is not int:
             raise ValueError(f"only integer literals are supported, got {node.value!r} in {code!r}")
         return {"const": node.value}
 

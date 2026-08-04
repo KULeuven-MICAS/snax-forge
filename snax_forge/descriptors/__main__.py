@@ -30,7 +30,12 @@ def raised_recipes() -> list[str]:
     for path in sorted(TRANSFORM_OUT.glob("*.sdfg")):
         try:
             sdfg = dace.SDFG.from_file(str(path))
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 - from_file raises anything
+            # Broad on purpose: out/transforms is a directory, not a curated
+            # list, and a stale or foreign .sdfg is not a reason to abort the
+            # scan. Reported rather than swallowed, because a file that should
+            # have been readable failing here is otherwise invisible.
+            print(f"  skipping {path.name}: {type(exc).__name__}: {exc}", file=sys.stderr)
             continue
         if any(isinstance(n, SnaxVectorOp) for s in sdfg.states() for n in s.nodes()):
             found.append(path.stem)
@@ -70,7 +75,10 @@ def main() -> int:
                 path = emit_recipe(name)
                 rel = path.relative_to(_repo_root())
                 print(f"  {name:24} -> {rel}")
-        except Exception as exc:
+        # Broad, and deliberately so: this is the top of a batch command, and
+        # one unemittable recipe must not stop the other five. Every failure
+        # is reported and the exit code reflects them.
+        except Exception as exc:  # noqa: BLE001 - batch driver, reports and continues
             print(f"  {name:24} FAILED: {exc}", file=sys.stderr)
             failed.append(name)
 
