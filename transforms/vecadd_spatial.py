@@ -27,7 +27,7 @@ RECIPE = TransformRecipe(
     kernel="vecadd",
     n=64,
     steps=(
-        Step(specialize, options={"N": 128}),
+        Step(specialize, options={"N": 64}),
         Step(
             set_map_property,
             options={
