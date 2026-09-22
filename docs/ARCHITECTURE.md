@@ -257,7 +257,9 @@ describe.
 4. **Accelerator models.** Instances of the accelerator interface (ports with
    per-port element rate, `L`, `II`, Python function), advancing according to
    their timing and producing data through their function. Generic
-   elementwise and reduce stubs exist before any BRM.
+   elementwise and reduce stubs exist before any BRM. An accelerator sits
+   between its streamers' FIFOs; its L-stage pipeline stalls globally on a
+   full output (D33).
 5. **DMA and L2.** A global memory and a DMA between L2 and L1, sharing the
    interconnect.
 6. **Register interface and controller.** CSRs per accelerator and streamer,
@@ -464,6 +466,7 @@ parameter and memory-plan choices, sweeps.
 | D30 | L1 banks are a shared state element touched by their requester, not a ticked component; read data is held keyed by its ready cycle; a same-bank double access at the L1 is an error, and arbitration and stalling belong to the interconnect | 7 |
 | D31 | Interconnect copies the SNAX SparseInterconnect per-bank arbiter: priority mask, then round-robin with pointer = last selection (reset on an idle bank cycle), lock on a refused selection; no added latency. It is a Component awake exactly when one of its port owners is; a refused request must be held unchanged | 8 |
 | D32 | Streamer copies the SNAX readerWriter timing: ports advance independently (per-port address queue and credit); a reader port may have `fifo_depth` reads in flight or buffered, and a pop frees credit in the same cycle; FIFOs are touched per-lane elements with flow = false, pipe on the reader side only; start in s gives the first request in s+2; `busy` drops the cycle after the last grant. A reader blocked on credit wakes with its FIFO's consumer. Not copied yet: dynamic TCDM priority, reader repeat on temporal stride 0 | 9 |
+| D33 | Accelerator sits between FIFOs as a COMPUTE component: per port direction, lanes (= streamer n_ports) and rate (one beat every `rate` firings, int or start parameter); stubs are configs. Join on inputs as in snax_alu; pipeline of L slots with a global stall (head cannot be pushed → nothing advances, fires or pops); II counts wall-clock cycles; start in s gives busy from s+1, done the cycle after the last push. Cycle classes busy > stall_out > idle (II gap) > stall_in > idle; drain after the last firing is idle. Not copied yet: per-stage ready, the Accumulator's drain cycle | 10 |
 
 ## 11. Open Items
 
@@ -473,3 +476,4 @@ parameter and memory-plan choices, sweeps.
 3. Acceptable model-vs-RTL error target (decided in M2).
 4. Positioning details relative to ZigZag/Stream.
 5. Streamer dynamic TCDM priority and reader repeat on temporal stride 0 (D32): copy or keep out, decided in ANC2.
+6. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D33): copy or keep out, decided in ANC2 (drain cycle at the latest in BRM4).

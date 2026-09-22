@@ -1,5 +1,12 @@
 """SNAX-MODEL: kernel-agnostic, cycle-level model of the SNAX cluster."""
 
+from .accel import (
+    AccelConfig,
+    Accelerator,
+    AccelPort,
+    elementwise_stub,
+    reduce_stub,
+)
 from .cluster import Cluster
 from .mem import (
     AddressMap,
@@ -29,6 +36,9 @@ from .streamer import (
 from .xbar import HoldViolation, Port, Xbar
 
 __all__ = [
+    "AccelConfig",
+    "AccelPort",
+    "Accelerator",
     "AddressMap",
     "BankConflictError",
     "BankReq",
@@ -51,5 +61,7 @@ __all__ = [
     "WordInterleaved",
     "Xbar",
     "address_stream",
+    "elementwise_stub",
     "lane_offsets",
+    "reduce_stub",
 ]
