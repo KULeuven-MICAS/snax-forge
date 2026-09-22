@@ -404,3 +404,25 @@ def test_strobed_write_packed_word():
     cl.add(ToyMaster("m", mem, [(0, req)]))
     cl.run()
     assert mem.peek(BASE).tolist() == [1, 9]
+
+
+def test_bank_groups_for_wide_ports():
+    """MOD6 (D33): group sizes per width, and the banks of an aligned wide access.
+
+    With 16 banks of 64 bits, a 512-bit access at byte 64 is row 0 of banks
+    8..15; at byte 128 it is row 1 of banks 0..7.
+    """
+    cfg = L1Config(n_banks=16, rows=8)
+    assert [cfg.group_banks(w) for w in (64, 128, 256, 512)] == [1, 2, 4, 8]
+    for bad in (32, 96, 192, 1024):
+        with pytest.raises(ValueError):
+            cfg.group_banks(bad)
+    mem = L1Memory(Cluster(), cfg)
+    assert mem.group_of(64, 512) == tuple(range(8, 16))
+    assert mem.group_of(128, 512) == tuple(range(8))
+    assert mem.group_of(16, 128) == (2, 3)
+    for bad_addr in (8, 32, 16 * 8 * 8):  # misaligned twice, then outside L1
+        with pytest.raises(SimulationError):
+            mem.group_of(bad_addr, 512)
+    # A 4-bank L1 is fine by itself; only a 512-bit port on it is refused (Xbar.add_port).
+    L1Config(n_banks=4)
