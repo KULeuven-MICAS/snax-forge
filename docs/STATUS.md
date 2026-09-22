@@ -130,8 +130,7 @@ All tests use synthetic traffic and hand-written scenarios.
 
 ## Next Up
 
-Briefs to write first, along the critical path: MOD1, MOD2, MOD3. ANC1 has no
-dependencies and can start in parallel.
+Briefs to write first, along the critical path: MOD3, MOD4. ANC1 has no dependencies and can start in parallel.
 
 ## Sync Reminders
 
