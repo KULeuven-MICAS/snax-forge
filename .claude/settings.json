@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": ["Bash(pixi run fmt *)", "Bash(pixi run lint *)", "Bash(pixi run test *)"]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/fmt-on-edit.sh" }]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [{ "type": "command", "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/lint-on-stop.sh" }]
+      }
+    ]
+  }
+}
