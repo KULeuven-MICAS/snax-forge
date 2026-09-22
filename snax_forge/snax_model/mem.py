@@ -50,6 +50,21 @@ take a per-element strobe, so packing several elements into a word (e.g.
 
 Addresses are byte addresses of whole words, starting at ``base_addr``
 (0 by default).
+
+Bank groups (MOD6, D33)
+-----------------------
+A master port can be wider than a bank. A port of ``w`` bits covers
+``g = w / width_bits`` consecutive banks in an aligned group, and each of
+its accesses is one access on every bank of the group. In SNAX the DMA
+uses a 512-bit port: 8 banks of 64 bits, one "superbank".
+``wide_bits`` is the widest port allowed (512 in SNAX). ``group_banks``
+checks a port width and ``group_of`` checks a wide access. The L1 itself
+still sees one access per bank: the interconnect splits a wide grant into
+``g`` calls to ``request``, so the D30 check stays as it is.
+
+Whether ``n_banks`` is a multiple of ``g`` is checked when a port of that
+width is added (``Xbar.add_port``), not here: an L1 with 4 banks is fine as
+long as no 512-bit port is attached to it.
 """
 
 from __future__ import annotations
@@ -92,6 +107,7 @@ class L1Config:
     dtype: str = "int64"  # element type (any NumPy dtype name)
     elems_per_word: int = 1  # elements packed in one word; 1 in v1
     base_addr: int = 0  # byte address of the first L1 word
+    wide_bits: int = 512  # widest port (the DMA's): one superbank of 8 banks in SNAX
 
     def __post_init__(self) -> None:
         # Reject configs that cannot describe a real memory.
@@ -109,6 +125,8 @@ class L1Config:
             raise ValueError(
                 f"{self.elems_per_word} x {self.dtype} does not fit in {self.width_bits} bits"
             )
+        # The widest port must itself be a valid port width.
+        _group_size(self.wide_bits, self.width_bits, "wide_bits")
 
     # Derived values are properties, not fields, so they can never
     # disagree with the fields they come from.
@@ -122,6 +140,27 @@ class L1Config:
     def size_bytes(self) -> int:
         """Total L1 size in bytes."""
         return self.n_banks * self.rows * self.word_bytes
+
+    def group_banks(self, width_bits: int) -> int:
+        """Banks covered by one access of a ``width_bits`` port (1 for a narrow port).
+
+        The width must be a power-of-two multiple of the bank width and at
+        most ``wide_bits``: 64 -> 1, 128 -> 2, 256 -> 4, 512 -> 8 banks.
+        """
+        g = _group_size(width_bits, self.width_bits, "port width")
+        if width_bits > self.wide_bits:
+            raise ValueError(f"port width {width_bits} is wider than wide_bits = {self.wide_bits}")
+        return g
+
+
+def _group_size(width_bits: int, bank_bits: int, what: str) -> int:
+    """``width_bits / bank_bits`` if it is a power of two >= 1, else ValueError."""
+    g, rest = divmod(width_bits, bank_bits)
+    if width_bits < 1 or rest or g & (g - 1):
+        raise ValueError(
+            f"{what} {width_bits} must be a power-of-two multiple of the bank width {bank_bits}"
+        )
+    return g
 
 
 # =============================================================================
@@ -266,6 +305,32 @@ class L1Memory:
     def bank_of(self, addr: int) -> int:
         """Bank of a word address. The interconnect uses this to arbitrate."""
         return self.locate(addr)[0]
+
+    def group_of(self, addr: int, width_bits: int) -> tuple[int, ...]:
+        """Banks accessed by a ``width_bits`` access at ``addr``, in lane order.
+
+        Lane i of the access is the word at ``addr + i * word_bytes``. The
+        access must be aligned to its width, and its words must fill one
+        aligned bank group in one row. With the word-interleaved map every
+        aligned address passes; the check guards custom address maps.
+        Raises SimulationError otherwise (misaligned, outside L1, or a map
+        that scatters the words).
+        """
+        c = self.cfg
+        g = c.group_banks(width_bits)
+        if g == 1:
+            return (self.bank_of(addr),)
+        if (addr - c.base_addr) % (g * c.word_bytes):
+            raise SimulationError(f"L1 address {addr:#x} is not aligned to {width_bits} bits")
+        where = [self.locate(addr + i * c.word_bytes) for i in range(g)]
+        banks = tuple(b for b, _ in where)
+        first = banks[0]
+        if first % g or banks != tuple(range(first, first + g)) or len({r for _, r in where}) != 1:
+            raise SimulationError(
+                f"L1 address {addr:#x}: the address map does not put this {width_bits}-bit "
+                f"access in one aligned group of {g} banks"
+            )
+        return banks
 
     def addr_of(self, bank: int, row: int) -> int:
         """Byte address of (bank, row). Inverse of ``locate``."""

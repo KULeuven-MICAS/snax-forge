@@ -8,6 +8,8 @@ from .accel import (
     reduce_stub,
 )
 from .cluster import Cluster
+from .dma import Dma, DmaConfig, DmaDescriptor, DmaPattern, check_descriptor
+from .l2 import L2AccessError, L2Config, L2Memory, L2Resp
 from .mem import (
     AddressMap,
     BankConflictError,
@@ -45,10 +47,18 @@ __all__ = [
     "BankResp",
     "Cluster",
     "Component",
+    "Dma",
+    "DmaConfig",
+    "DmaDescriptor",
+    "DmaPattern",
     "Fifo",
     "HoldViolation",
     "L1Config",
     "L1Memory",
+    "L2AccessError",
+    "L2Config",
+    "L2Memory",
+    "L2Resp",
     "Phase",
     "Port",
     "Scheduler",
@@ -61,6 +71,7 @@ __all__ = [
     "WordInterleaved",
     "Xbar",
     "address_stream",
+    "check_descriptor",
     "elementwise_stub",
     "lane_offsets",
     "reduce_stub",
