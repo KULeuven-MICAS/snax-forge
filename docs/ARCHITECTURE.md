@@ -247,8 +247,7 @@ describe.
 
 **Sub-models, in build order:**
 
-1. **L1 memory banks.** RTL-like SRAM: one access per bank per cycle;
-   configurable count, width and read latency.
+1. **L1 memory banks.** RTL-like SRAM: one access per bank per cycle; configurable count, width and read latency; replaceable address-to-bank map (default word-interleaved); base address configurable, 0 by default. A shared element touched by its requester, not a ticked component (D30).
 2. **Interconnect.** TCDM-like: parallel access to distinct banks, round-robin
    arbitration on conflicts. Every conflict and stall is recorded.
 3. **Streamers.** One per accelerator port, configured by raw register values
@@ -280,7 +279,7 @@ enabled later without restructuring.
 
 **Configurable cluster parameters**:
 
-- bank count and width
+- bank count, width, and read latency
 - port bandwidths
 - interconnect ports per streamer
 - FIFO depth and number of streamer loops
@@ -462,6 +461,7 @@ parameter and memory-plan choices, sweeps.
 | D27 | Until SNAX-DSE exists, thinkers edit the design point directly (interim to D14) | 5 |
 | D28 | Reductions use integer types first; float reductions follow a BRM-defined order [DEFAULT] | 5 |
 | D29 | RTL-like cycle semantics: fixed phases per cycle; reads see previous-cycle state and wires from earlier phases; components and touched shared elements commit at cycle end; next_wake answers must not depend on when they are asked | 6 |
+| D30 | L1 banks are a shared state element touched by their requester, not a ticked component; read data is held keyed by its ready cycle; a same-bank double access at the L1 is an error, and arbitration and stalling belong to the interconnect | 7 |
 
 ## 11. Open Items
 
