@@ -27,7 +27,6 @@ from snax_forge.snax_model import (
     SimulationTimeout,
 )
 
-
 # =============================================================================
 # Toy parts
 # =============================================================================
@@ -48,9 +47,9 @@ class ToyFifo:
     def __init__(self, cluster, depth):
         self.cluster = cluster
         self.depth = depth
-        self.q = []        # committed contents, oldest item first
-        self._push = []    # items pushed this cycle
-        self._pops = 0     # number of items popped this cycle
+        self.q = []  # committed contents, oldest item first
+        self._push = []  # items pushed this cycle
+        self._pops = 0  # number of items popped this cycle
 
     def full(self):
         return len(self.q) >= self.depth
@@ -73,7 +72,7 @@ class ToyFifo:
         # Remove this cycle's pops from the front, add this cycle's pushes at
         # the back. Because full() looks at committed contents only, a push
         # and a pop in the same cycle can never overflow the FIFO.
-        self.q = self.q[self._pops:] + self._push
+        self.q = self.q[self._pops :] + self._push
         assert len(self.q) <= self.depth
         self._push = []
         self._pops = 0
@@ -114,8 +113,8 @@ class Producer(Counted):
         super().__init__(name)
         self.fifo = fifo
         self.release = release  # release[k] = earliest cycle for item k
-        self.k = 0              # committed: index of the next item to push
-        self._k_next = 0        # next state of k, applied in commit
+        self.k = 0  # committed: index of the next item to push
+        self._k_next = 0  # next state of k, applied in commit
 
     def tick(self, cycle, phase):
         super().tick(cycle, phase)
@@ -129,9 +128,9 @@ class Producer(Counted):
 
     def next_wake(self, cycle):
         if self.k >= len(self.release):
-            return None           # everything pushed: nothing left to do
+            return None  # everything pushed: nothing left to do
         if self.fifo.full():
-            return cycle + 1      # stalled: retry next cycle
+            return cycle + 1  # stalled: retry next cycle
         # Wait until the next item is released (or go now if it already is).
         return max(cycle + 1, self.release[self.k])
 
@@ -149,7 +148,7 @@ class Consumer(Counted):
         super().__init__(name)
         self.fifo = fifo
         self.service = service
-        self.free_at = 0        # committed: first cycle it may pop again
+        self.free_at = 0  # committed: first cycle it may pop again
         self._free_at_next = 0  # next state of free_at, applied in commit
         self.log = []
 
@@ -170,8 +169,8 @@ class Consumer(Counted):
         if cycle + 1 <= self.free_at:
             return self.free_at
         if not self.fifo.empty():
-            return cycle + 1      # free and data waiting: pop next cycle
-        return None               # free and FIFO empty: nothing to do
+            return cycle + 1  # free and data waiting: pop next cycle
+        return None  # free and FIFO empty: nothing to do
 
 
 class Sleeper(Counted):
@@ -245,10 +244,10 @@ def test_skip_on_off_identical(seed):
     a, _, cons_a, slp_a = build(skip=True, seed=seed)
     b, _, cons_b, slp_b = build(skip=False, seed=seed)
 
-    assert a.run() == b.run()          # same total cycle count
-    assert cons_a.log == cons_b.log    # same pops at the same cycles
-    assert slp_a.log == slp_b.log      # same wake-ups
-    assert len(cons_a.log) == 40       # all items arrived
+    assert a.run() == b.run()  # same total cycle count
+    assert cons_a.log == cons_b.log  # same pops at the same cycles
+    assert slp_a.log == slp_b.log  # same wake-ups
+    assert len(cons_a.log) == 40  # all items arrived
 
 
 def test_repeatable():

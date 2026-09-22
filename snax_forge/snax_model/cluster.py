@@ -8,7 +8,8 @@ the controller (MOD7), and wires them together.
 
 from __future__ import annotations
 
-from typing import Iterator, TypeVar
+from collections.abc import Iterator
+from typing import TypeVar
 
 from .sched import Component, Scheduler, Stateful
 

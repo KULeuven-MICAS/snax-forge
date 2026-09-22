@@ -24,19 +24,20 @@ component is ticked every cycle; results must be identical either way.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from enum import IntEnum
-from typing import Optional, Protocol, Sequence
+from typing import Protocol
 
 
 class Phase(IntEnum):
     """Order of work inside one cycle."""
 
-    CONTROL = 0    # controller issues commands
-    COMPUTE = 1    # accelerators take from / push to FIFOs
-    REQUEST = 2    # streamers and DMA drive memory requests
+    CONTROL = 0  # controller issues commands
+    COMPUTE = 1  # accelerators take from / push to FIFOs
+    REQUEST = 2  # streamers and DMA drive memory requests
     ARBITRATE = 3  # interconnect grants one master per bank
-    MEMORY = 4     # banks serve granted requests
-    RESPONSE = 5   # masters see grants, read data returns
+    MEMORY = 4  # banks serve granted requests
+    RESPONSE = 5  # masters see grants, read data returns
 
 
 class SimulationError(RuntimeError):
@@ -66,7 +67,7 @@ class Component:
     def commit(self, cycle: int) -> None:
         """Make next state visible and clear wires."""
 
-    def next_wake(self, cycle: int) -> Optional[int]:
+    def next_wake(self, cycle: int) -> int | None:
         """Earliest cycle > ``cycle`` at which a tick is needed, or None if idle.
 
         Called after ``cycle`` has been committed (with ``cycle = -1`` before the
@@ -173,7 +174,7 @@ class Scheduler:
         return now
 
     @staticmethod
-    def _checked_wake(comp: Component, cycle: int) -> Optional[int]:
+    def _checked_wake(comp: Component, cycle: int) -> int | None:
         w = comp.next_wake(cycle)
         if w is not None and w <= cycle:
             raise SimulationError(
