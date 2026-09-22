@@ -1,11 +1,141 @@
-# List of Milestones
-- M1: Base milstone of having an SDFG ingest, patterns, libnodes, descriptors, and a direct ChiselHwGen
+# SNAX-FORGE Status
 
-# Scheduled or Planned Features
-- To be filled
+Build order and rationale: `docs/ARCHITECTURE.md` section 8 and D24.
+Status values: `todo`, `brief` (brief written), `wip`, `done`.
 
-# List of TODO Tasks
-- To be filled
+## Existing Code
 
-# Sync Reminders
-- After every new updates, PRs, commits, or new tasks to do with Claude, make sure to synchronize the `./docs` everytime.
+Code from before the v1.1 plan: SDFG ingest, patterns, libnodes, descriptors
+and a direct ChiselHwGen. It is kept and reused in M7 (SDFG front end) and M10
+(HW generator). It is not part of M1–M6.
+
+## Milestones
+
+| Milestone | Content | Status |
+|---|---|---|
+| M1 | SNAX-MODEL, kernel-agnostic | todo |
+| M2 | Anchor against SNAX RTL | todo |
+| M3 | Build backwards to close `vecadd` | todo |
+| M4 | Visualiser and first manual loop | todo |
+| M5 | `dot` | todo |
+| M6 | Contract freeze | todo |
+| M7 | SDFG front end | todo |
+| M8 | DSE via config | todo |
+| M9 | `jacobi1d` | todo |
+| M10 | Outer path | todo |
+
+## Task Breakdown
+
+### M1: SNAX-MODEL (kernel-agnostic)
+
+All tests use synthetic traffic and hand-written scenarios.
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| MOD1 | Event-driven scheduler; ticks only components with pending work, skips idle cycle ranges; struct-of-arrays state (D10, D21) | none | Toy components give identical results with skipping on and off; two runs are identical | todo |
+| MOD2 | L1 banks: count, width, read latency, one access per bank per cycle; element type and elements per word (D13) | MOD1 | Read latency is exact; a second access to the same bank in the same cycle is refused | todo |
+| MOD3 | TCDM interconnect: round-robin arbitration, conflicts and stalls recorded | MOD2 | Grant sequences for 2–3 masters on one bank match hand-worked tables; distinct banks proceed in parallel | todo |
+| MOD4 | Streamer from raw registers (base, bounds and strides per loop), FIFO depth, valid/ready, configurable ports (D12) | MOD3 | Address streams equal a NumPy enumeration for 1D, 2D and strided nests; a full FIFO causes stalls; conflict-free throughput equals the port count per cycle | todo |
+| MOD5 | Accelerator interface: ports with per-port element rate, `L`, `II`, Python function; elementwise (N→1) and reduce (T→1) stubs (D25) | MOD4 | With ideal streams, both stubs hit their cycle formulas; the reduce stub proves unequal port rates work | todo |
+| MOD6 | L2 and DMA sharing the interconnect | MOD3 | DMA bandwidth test; DMA–streamer contention shows up in the trace | todo |
+| MOD7 | CSR map and controller executing `csr_write`, `csr_read`, `dma`, `start`, `wait` (poll, signal) (D11) | MOD5, MOD6 | Poll and signal give the same output data; cycle counts differ only by the expected control overhead | todo |
+| MOD8 | Profile and JSON trace | MOD7 | Per accelerator, busy + idle + stalled = total; per-bank access counts equal trace event counts | todo |
+| MOD9 | Scenario runner: JSON with cluster config, initial memory, command list; dumps profile, trace, final memory | MOD8 | Elementwise, reduce and DMA scenarios run from the CLI; final memory checked against NumPy | todo |
+| MOD10 | Write down model-side contracts: cluster config, streamer register layout, accelerator interface, control program (D26) | MOD9 | Short spec with JSON examples; every test scenario conforms | todo |
+
+### M2: Anchor
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| ANC1 | Run `vecadd` in the SNAX RTL flow, record cycles per phase | none | Reproducible script; numbers checked in | todo |
+| ANC2 | Matching hand-written scenario, deviation report, error target (open item 3) | MOD9, ANC1 | Deviation explained per phase, CPU-side CSR programming kept separate; target in the Decision Log | todo |
+| ANC3 | Regression test locking the anchor numbers | ANC2 | CI fails when model cycles drift outside the target | todo |
+
+### M3: Build backwards to close `vecadd`
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| BRM1 | BRM structure with six parts; hardware binding optional | MOD10 | Missing required part is rejected; no binding is accepted | todo |
+| BRM2 | First affine nest notation and enumerator, mapping to the MOD10 streamer register layout | BRM1 | Enumeration equals hand-written index lists for 1D, 2D and strided cases; mapped registers reproduce MOD4 streams | todo |
+| BRM3 | Elementwise-add BRM: lanes `W`, per-port nests, `L`/`II`, function, pattern | BRM1, BRM2 | In the model, gives the same cycles and data as the elementwise stub | todo |
+| DP1 | Design point structure and hand-written `vecadd` design point | BRM3 | Validation catches overlapping buffers, out-of-range banks, unknown BRMs | todo |
+| LOW1 | Lowering from design point to control program | DP1, MOD10 | Generated program equals the hand-written ANC2 scenario | todo |
+| DFG1 | Minimal SNAX-DFG: data container, tasklet, map scope with symbolic range, memlet | none | Hand-built `vecadd` DFG round-trips | todo |
+| DFG2 | Accelerated node referencing a BRM instance, nesting allowed | DFG1, BRM3 | `vecadd` with its map replaced validates; nested case validates | todo |
+| REF1 | NumPy reference executor for DFG1 kinds | DFG1 | `vecadd` equals `a+b` over random N, including N not divisible by the lane count | todo |
+| E2E1 | Full `vecadd` path from DFG to profile | all of the above | Output matches REF1 exactly; cycles equal the ANC2 numbers | todo |
+
+### M4: Visualiser and first manual loop
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| VIS1 | HTML generator scaffold, self-contained, one page per run; reads model dataclasses | E2E1 | Opens offline from one file; snapshot test on `vecadd` | todo |
+| VIS2 | Timeline: accelerator, streamer, DMA activity with busy, idle, stalled states | MOD8, VIS1 | Spans match profile totals per component | todo |
+| VIS3 | Utilisation and bank conflicts: per-bank accesses and conflicts, FIFO occupancy | MOD8, VIS1 | Counts equal the profile; a conflicting `vecadd` layout highlights the expected banks | todo |
+| VIS4 | Design point view: memory map, accelerator instances and parameters | DP1, VIS1 | Every buffer and instance appears with correct addresses and banks | todo |
+| VIS5 | DFG view: original and with accelerated nodes | DFG2, VIS1 | Node and edge counts match; replaced subgraphs are marked | todo |
+| VIS6 | Diff between two runs: design point fields, profile metrics, timelines side by side | VIS2–VIS4 | For two `vecadd` runs differing only in lanes, exactly that field and its effects are flagged | todo |
+| VIS7 | Compressed trace summary for LLM use | MOD8 | Under a size limit; numbers equal the profile | todo |
+| LOOP1 | One documented iteration: run, read views, edit design point, rerun, diff (D27) | VIS6, VIS7 | Checked-in example with both design points and the diff page; cycle change matches what the views predicted | todo |
+
+### M5: `dot`
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| DFG3 | Reduction in SNAX-DFG and REF | DFG1, REF1 | REF `dot` equals `np.dot` on integer inputs (D28) | todo |
+| BRM4 | Accumulator BRM, based on the Chisel accumulator | BRM1, BRM2 | Same cycles and data as the reduce stub | todo |
+| LOW2 | Chaining multiply → accumulate, waits at accelerator boundaries | LOW1, BRM4 | Waits appear only at dependencies crossing a boundary | todo |
+| LOW3 | DMA insertion from L2 addresses in the memory plan | LOW1 | DMA list covers exactly the buffers in L2, no duplicates | todo |
+| E2E2 | `dot` end to end, anchor repeated, timeline check | all of the above, ANC3, VIS2 | Output matches exactly; anchor report for `dot`; timeline shows the chaining wait | todo |
+
+### M6: Contract freeze
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| F1 | Package layout, CI, CLAUDE.md conventions | M5 | CI runs green | todo |
+| F2 | Versioned JSON schemas for SNAX-DFG, BRM, design point, control program, scenario, profile, trace; close open item 1 | M5 | Every existing scenario and fixture validates; an old version is rejected | todo |
+| F3 | Registries and namespaced attributes (D19) | F2 | A new kind can be added from outside the core; unknown attrs survive a round trip | todo |
+
+### M7: SDFG front end
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| FE1 | SDFG → SNAX-DFG translator, reusing the existing ingest | DFG3, F2 | DaCe SDFGs for `vecadd`, `dot`, `jacobi1d` translate; REF output equals NumPy | todo |
+| FE2 | Named errors for unsupported SDFG constructs | FE1 | Each unsupported construct in the fixtures gets a named error | todo |
+
+### M8: DSE via config
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| DSE1 | Config format and schema; single point or sweep (open item 2) | F2 | Decision logged; schema tests | todo |
+| DSE2 | Pattern-based replacement | FE1, BRM3, BRM4 | Auto-replaced `vecadd` is structurally equal to DP1 | todo |
+| DSE3 | Parameter choices: lanes, tiling, instance count | DSE2 | Each config value appears in the design point | todo |
+| DSE4 | Memory planner: bank placement and alignment | DP1 | No overlaps; each policy gives the expected bank map | todo |
+| DSE5 | Sweep runner writing a results table | DSE1–DSE4 | Lanes × bank-count sweep is reproducible and shows hand-checked trends | todo |
+| VIS8 | Diff view shows config changes alongside design point changes | DSE1, VIS6 | A one-field config change is shown with the design point fields it caused | todo |
+
+### M9: `jacobi1d`
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| J1 | Stencil BRM with reuse, DFG support, double buffering in DSE and SNAX-LOWER | M5, M8 | Output matches exactly; trace shows DMA overlapping compute, with fewer cycles than single buffering | todo |
+
+### M10: Outer path
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| GEN1 | Chisel generation through BRM bindings into one accelerator top (reuse ChiselHwGen) | BRM1 | Elaborates for the BRM3 and BRM4 parameter sets | todo |
+| GEN2 | C backend for SNAX-LOWER | LOW3 | C kernel command sequence equals the JSON program (D18); builds with the SNAX toolchain | todo |
+| COS1 | cocotb bridge replacing accelerator models with RTL | GEN1, MOD7 | `vecadd` and `dot` outputs match | todo |
+| COS2 | Mismatch report per BRM | COS1 | Cycle deviation from BRM timing reported per BRM | todo |
+
+## Next Up
+
+Briefs to write first, along the critical path: MOD1, MOD2, MOD3. ANC1 has no
+dependencies and can start in parallel.
+
+## Sync Reminders
+
+- After every new update, PR, commit, or new task done with Claude, synchronise
+  `./docs`: update task status here, and log any design change in the
+  ARCHITECTURE.md Decision Log.

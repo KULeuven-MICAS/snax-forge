@@ -1,4 +1,4 @@
-# SNAX-FORGE Architecture (Skeleton v1.0)
+# SNAX-FORGE Architecture (Skeleton v1.1)
 
 > This is the main skeleton of SNAX-FORGE: what the system is, its components,
 > their contracts, and the order in which they are built. It is expected to
@@ -7,6 +7,9 @@
 >
 > Markers: **[OPEN]** = undecided. **[DEFAULT]** = working assumption, adopted
 > unless a real kernel shows otherwise.
+>
+> Task-level breakdown, dependencies and acceptance criteria live in
+> `docs/STATUS.md`.
 
 ---
 
@@ -49,18 +52,21 @@ whether SNAX-FORGE can consume or produce their formats.
 ## 3. Guiding Principles
 
 1. **Model first.** Python models are the primary artefact; hardware is
-   generated from, or checked against, them.
+   generated from, or checked against, them. SNAX-MODEL is built before the
+   components that feed it, and their contracts follow from what it needs
+   (D24, D26).
 2. **One slice before generality.** Every component is first built in the
    simplest form that carries `vecadd` end to end, then generalised only when a
-   real kernel requires it.
+   real kernel requires it. SNAX-MODEL is kernel-agnostic by construction: it
+   only executes control programs (D6, D11).
 3. **Anchor to reality early.** The model's cycle counts are validated against
    real SNAX RTL on a simple kernel before the design space is explored at
    scale (section 7).
 4. **Decisions are separate from derivations.** SNAX-DSE decides; SNAX-LOWER
    derives command sequences; SNAX-MODEL measures. No stage does another's job.
 5. **Everything is text and diffable.** SNAX-DFG, BRMs, configs, design points,
-   control programs, profiles and traces are serialised, versionable and
-   readable by humans and LLMs.
+   control programs, scenarios, profiles and traces are serialised,
+   versionable and readable by humans and LLMs.
 6. **Extend without editing the core.** New node kinds, attributes and
    accelerator models are added by registration, not by changing core classes.
 
@@ -78,6 +84,7 @@ flowchart LR
     LOWER --> CP[Control program]
     PLAN --> MODEL[SNAX-MODEL]
     CP --> MODEL
+    SC[Hand-written scenario] -. early milestones .-> MODEL
     MODEL --> FB[Profile + trace]
     DFG --> VIS[GUI / visualiser]
     PLAN --> VIS
@@ -85,6 +92,7 @@ flowchart LR
     FB --> T[Thinkers: human, LLM]
     VIS --> T
     T --> CFG
+    T -. until DSE exists .-> PLAN
     PLAN --> GEN[HW/SW generator]
     BRM --> GEN
     LOWER -. SW kernel .-> GEN
@@ -96,13 +104,18 @@ flowchart LR
 **Inner loop** (core, Python only):
 DFG → DSE → LOWER → MODEL → feedback → thinkers → config → DSE.
 
+Until SNAX-DSE exists, thinkers close the loop by editing the design point
+directly (D27).
+
 **Outer path** (commit and check): HW/SW generator → cosim → feedback.
 
 ## 5. Components and Contracts
 
 Each component is defined by what it consumes and what it produces. The
 artefacts between components are the contracts and must stay stable and
-versioned.
+versioned. Until the contract freeze (M6), contracts are Python dataclasses
+with plain JSON files; versioned schemas follow once two kernels have used them
+(D26).
 
 | Component | Consumes | Produces |
 |---|---|---|
@@ -110,7 +123,7 @@ versioned.
 | SNAX-BRM library | user-supplied block models | BRMs |
 | SNAX-DSE | SNAX-DFG, BRMs, DSE config | design point |
 | SNAX-LOWER | design point, BRMs | control program (later also C kernel) |
-| SNAX-MODEL | design point, control program | profile, trace, output data |
+| SNAX-MODEL | design point, control program (or a scenario) | profile, trace, output data |
 | Reference executor | SNAX-DFG, input data | golden output data |
 | Visualiser | SNAX-DFG, design point, profile, trace | HTML views |
 | HW/SW generator | design point, BRMs, SNAX-LOWER | accelerator RTL, SW kernel |
@@ -147,8 +160,10 @@ optional.
 The primary definition of an accelerator block, supplied by the user or taken
 from the library. A BRM has six parts:
 
-1. **Interface**: ports, direction, data types and widths, CSR map, parameters
-   (e.g. lanes `W`, trip count `T`), and interconnect ports needed per port.
+1. **Interface**: ports, direction, data types and widths, per-port element
+   rate (elements consumed or produced per beat, so reductions and
+   elementwise blocks share one interface, D25), CSR map, parameters (e.g.
+   lanes `W`, trip count `T`), and interconnect ports needed per port.
 2. **Dataflow**: per port, an exact affine loop nest giving the order in which
    elements are consumed or produced. Streamer configuration is derived from
    it. [OPEN] exact notation.
@@ -160,6 +175,10 @@ from the library. A BRM has six parts:
    predicate and parameter extraction.
 6. **Hardware binding** (optional): how to obtain RTL, e.g. a Chisel generator
    with parameters, or hand-written SystemVerilog.
+
+The interface, timing and function parts fill the accelerator interface that
+SNAX-MODEL defines (section 5.6). A BRM is accepted when, plugged into the
+model, it gives the same cycles and data as the matching generic stub.
 
 The existing Chisel elementwise modules (loop, spatial, tiled-spatial) and the
 accumulator are the reference implementations for the first BRMs.
@@ -211,13 +230,18 @@ backend. It turns a design point into a generated sequence of tasks. It:
 - `start`
 - `wait`, which either polls a busy CSR or blocks on a completion signal
 
+Its first acceptance test is reproducing the hand-written `vecadd` scenario used
+for the anchor (section 7).
+
 **Later**, a C backend emits the SW library kernel for real hardware from the
 same logic, so the model and the chip are driven by the same task sequence.
 
 ### 5.6 SNAX-MODEL: Cluster Model
 
 A pure-Python model of the SNAX cluster. There is no CPU; a controller executes
-the control program through the register interface.
+the control program through the register interface. The model has no knowledge
+of kernels: it runs whatever the control program and cluster configuration
+describe.
 
 **Time model.** Cycle-level and event-driven. Each component with pending work
 receives a per-cycle tick, and cycle ranges with no pending work are skipped.
@@ -229,15 +253,27 @@ Round-robin arbitration is resolved exactly.
    configurable count, width and read latency.
 2. **Interconnect.** TCDM-like: parallel access to distinct banks, round-robin
    arbitration on conflicts. Every conflict and stall is recorded.
-3. **Streamers.** One per accelerator port. Affine address generation
-   (configurable loop count, bounds, strides), FIFO buffering (configurable
-   depth), valid/ready interface, configurable interconnect ports per streamer.
-4. **Accelerator models.** BRM instances advancing according to their timing
-   model and producing data through their Python function.
+3. **Streamers.** One per accelerator port, configured by raw register values
+   (base, bounds and strides per loop). Affine address generation, FIFO
+   buffering (configurable depth), valid/ready interface, configurable
+   interconnect ports per streamer.
+4. **Accelerator models.** Instances of the accelerator interface (ports with
+   per-port element rate, `L`, `II`, Python function), advancing according to
+   their timing and producing data through their function. Generic
+   elementwise and reduce stubs exist before any BRM.
 5. **DMA and L2.** A global memory and a DMA between L2 and L1, sharing the
    interconnect.
 6. **Register interface and controller.** CSRs per accelerator and streamer,
    and the controller executing the control program.
+
+**Scenario runner.** Before the upstream components exist, the model is driven
+by hand-written scenario files: cluster configuration, initial memory contents
+and a control program. It dumps the profile, trace and final memory.
+
+**Model-side contracts (D26).** The cluster configuration, streamer register
+layout, accelerator interface and control program are written down once the
+model works (task MOD10 in STATUS.md). They define what SNAX-BRM, SNAX-DSE and
+SNAX-LOWER must produce.
 
 **Data granularity.** The unit of transfer is a bank word; in v1 one element
 occupies one word. Element type and elements per word are part of the data
@@ -287,12 +323,18 @@ summary for LLM use.
 - a timeline
 - utilisation
 - bank conflicts
-- a diff between two design points
+- a diff between two runs (design point and profile; config changes once
+  SNAX-DSE exists)
+
+The visualiser is built right after `vecadd` closes (M4), so one full manual
+loop is possible before `dot`. Until the contract freeze, views read the same
+Python dataclasses as the model rather than raw JSON.
 
 ### 5.8 Thinkers
 
 Humans and a commercial LLM (Claude, ChatGPT, Gemini) read the feedback and
-edit the DSE config, closing the loop.
+edit the DSE config, closing the loop. Until SNAX-DSE exists, they edit the
+design point directly (D27).
 
 ### 5.9 Outer Path (later)
 
@@ -315,46 +357,63 @@ Three levels, each checked against the one above it:
 3. **Cosim**: the same design point with RTL accelerators. Output must match;
    cycle deviations from the BRM timing are reported.
 
+**Reductions [DEFAULT] (D28).** Exact matching with floating point depends on
+accumulation order. Reductions use integer types first; for floating point, the
+BRM defines its accumulation order and the reference executor follows it.
+
 ## 7. Model Validation Anchor
 
-SNAX-MODEL is only useful if its cycle counts track reality. Before the design
-space is explored at scale:
+SNAX-MODEL is only useful if its cycle counts track reality. The anchor runs
+right after the model is built (M2), using a hand-written `vecadd` scenario,
+before any upstream component exists:
 
 - run `vecadd` on the real SNAX cluster RTL (existing SNAX simulation flow) and
-  record the cycle counts
+  record the cycle counts per phase
 - run the same configuration in SNAX-MODEL
 - document the deviation and its causes
+
+The RTL counts include CSR programming by the Snitch core, which SNAX-MODEL
+does not model (D6). The report compares accelerator-active phases separately
+from control overhead.
 
 This is repeated for `dot` once reductions are supported. [OPEN] acceptable
 error target.
 
 ## 8. Build Order (milestones, not a schedule)
 
-**M1: Vertical slice, `vecadd`.**
+See `docs/STATUS.md` for the task breakdown of each milestone.
 
-- minimal SNAX-DFG and reference executor
-- one BRM (elementwise add)
-- a hand-written design point (no DSE yet)
-- SNAX-LOWER producing a control program
-- SNAX-MODEL with banks, interconnect, streamers, accelerator and controller
-- a basic text profile and JSON trace
+**M1: SNAX-MODEL, kernel-agnostic.** Scheduler, banks, interconnect,
+streamers, accelerator interface with elementwise and reduce stubs, DMA/L2,
+CSRs and controller, profile and trace, scenario runner. Ends with the
+model-side contracts written down.
 
-**M2: Anchor.** Validate M1's cycle counts against real SNAX RTL (section 7).
+**M2: Anchor.** Hand-written `vecadd` scenario validated against real SNAX RTL
+(section 7), with a regression test.
 
-**M3: `dot`.** A reduction BRM and chaining barriers, plus DMA/L2 in SNAX-MODEL.
+**M3: Build backwards to close `vecadd`.** Elementwise-add BRM, design point,
+SNAX-LOWER, minimal SNAX-DFG and reference executor. Each is accepted when it
+reproduces an input hand-written in M1 or M2.
 
-**M4: SDFG front end.** SDFG → SNAX-DFG translation, reusing the existing
+**M4: Visualiser and first manual loop.** Timeline, utilisation, bank
+conflicts, design point, DFG and diff views; LLM trace summary; one documented
+design iteration on `vecadd`.
+
+**M5: `dot`.** Reduction in SNAX-DFG and the reference executor, accumulator
+BRM, chaining waits and DMA insertion in SNAX-LOWER, anchor repeated.
+
+**M6: Contract freeze.** Package layout and CI conventions, versioned schemas
+for all contracts, registries and namespaced attributes.
+
+**M7: SDFG front end.** SDFG → SNAX-DFG translation, reusing the existing
 ingest.
 
-**M5: DSE via config.** Declarative configs, pattern-based replacement,
-parameter and memory-plan choices.
+**M8: DSE via config.** Declarative configs, pattern-based replacement,
+parameter and memory-plan choices, sweeps.
 
-**M6: Visualiser.** DFG, timeline, bank-conflict and diff views; LLM summary
-of the trace.
+**M9: `jacobi1d`.** Stencil reuse and double buffering.
 
-**M7: `jacobi1d`.** Stencil reuse and double buffering.
-
-**M8: Outer path.** HW/SW generator from BRM bindings, cocotb cosim.
+**M10: Outer path.** HW/SW generator from BRM bindings, cocotb cosim.
 
 **Later:**
 
@@ -399,13 +458,16 @@ of the trace.
 | D21 | Exact sequential simulator first, array-friendly state, acceleration later [DEFAULT] | 4 |
 | D22 | Vertical `vecadd` slice first; model validated against real RTL early | 4 |
 | D23 | Positioned as complementary to ZigZag/Stream (cycle-level, RTL-backed) | 4 |
+| D24 | Build order: kernel-agnostic SNAX-MODEL first (incl. DMA/L2), anchor next, upstream built backwards to close `vecadd`, visualiser before `dot`, contract freeze after `dot`. Refines how D22 is carried out | 5 |
+| D25 | Accelerator interface has per-port element rates, so reductions and elementwise blocks share it | 5 |
+| D26 | Model-side contracts are defined by SNAX-MODEL; dataclasses + plain JSON until the M6 freeze, versioned schemas after | 5 |
+| D27 | Until SNAX-DSE exists, thinkers edit the design point directly (interim to D14) | 5 |
+| D28 | Reductions use integer types first; float reductions follow a BRM-defined order [DEFAULT] | 5 |
 
 ## 11. Open Items
 
-1. BRM per-port affine loop nest notation and its mapping to streamer registers.
+1. BRM per-port affine loop nest notation and its mapping to streamer registers
+   (streamer register layout fixed in MOD10; notation closed in M6).
 2. DSE config format, and single design point vs sweep.
-3. Acceptable model-vs-RTL error target.
+3. Acceptable model-vs-RTL error target (decided in M2).
 4. Positioning details relative to ZigZag/Stream.
-
-# Document Evolution
-- This document can evolve in time when new ideas or features thought of needs to be considered.
