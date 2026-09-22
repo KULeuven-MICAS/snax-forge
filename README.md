@@ -214,3 +214,59 @@ Check `lscpu -e=CPU,CORE,SOCKET` first — rows sharing a `CORE` value are
 hyperthread siblings, and CPU 0 usually handles interrupts.
 
 
+---
+
+## 7. Model — run a scenario on SNAX-MODEL
+
+**What it does.** Runs a cycle-level model of the SNAX cluster (banks,
+interconnect, streamers, accelerators, DMA/L2, register interface and
+controller) on a scenario file, and writes a profile, a trace and the final
+memory. No CPU and no RTL are involved; see `docs/ARCHITECTURE.md` section 5.6.
+
+```bash
+pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd
+pixi run model-run scenarios/reduce/scenario.json --out out/reduce --trace task
+pixi run model-run scenarios/dma/scenario.json    --out out/dma --trace beat --no-skip
+```
+
+```
+vecadd: 109 cycles (skip on, trace task) -> out/vecadd
+```
+
+A scenario is two files. The cluster file (`scenarios/clusters/`) holds the
+hardware: L1, optional L2, the ordered component list and the register map.
+The scenario file holds one run: the cluster it uses, the initial memory
+(inline words, `.npy` files or a seeded random fill) and the control program
+as a plain list of `csr_write`, `csr_read` and `wait` commands, with registers
+named as `dma.src_base`. One cluster serves many programs and problem sizes.
+
+Outputs: `run.json` (register map, total cycles, `csr_read` values),
+`profile.json`, `trace.jsonl` with `trace_meta.json` when tracing is on, and
+`l1.npy` / `l2.npy` (flat words in address order). The files are
+byte-identical on every run and with `--no-skip`, so two runs can be compared
+with `diff`.
+
+```bash
+diff out/base/profile.json out/try/profile.json
+grep '"k": "stall"' out/vecadd/trace.jsonl | head
+python -c "import numpy as np; print(np.load('out/vecadd/l2.npy')[256:264, 0])"
+```
+
+The checked-in scenarios are generated, so register values stay consistent
+with the block helpers:
+
+```bash
+pixi run scenarios           # rewrite scenarios/ from scenarios/make.py
+pixi run scenarios --check   # "stale: nothing" when files and generator agree
+```
+
+| Option | Meaning |
+|---|---|
+| `--out DIR` | Output directory, created if missing (required) |
+| `--trace off\|task\|beat` | Trace level: off (default), commands and starts, or per-beat detail |
+| `--no-skip` | Tick every cycle; same results, slower |
+| `--max-cycles N` | Overrides the scenario's own limit |
+
+Exit codes: 0 done, 1 the run failed or did not finish, 2 the scenario is
+invalid. `--no-skip` only changes the speed, never the results; if the two ever
+disagree, that is a bug in the model.
