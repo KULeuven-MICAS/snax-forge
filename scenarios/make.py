@@ -45,7 +45,6 @@ from snax_forge.snax_model.scenario import (
     NamedRead,
     RegisterMapSpec,
     Scenario,
-    config_to_dict,
     named,
     register_map_of,
     to_json,
@@ -68,7 +67,7 @@ CTL = ControllerConfig(write_cost=1, kind_write_cost={"dma": 2}, read_cost=2, po
 
 def _streamer(name: str, write: bool, lanes: int) -> ComponentSpec:
     cfg = StreamerConfig(write=write, n_ports=lanes, fifo_depth=2)
-    return ComponentSpec(name, "streamer", config_to_dict(cfg))
+    return ComponentSpec(name, "streamer", cfg.to_dict())
 
 
 def alu4() -> ClusterConfig:
@@ -78,7 +77,7 @@ def alu4() -> ClusterConfig:
         l2=L2Config(size_bytes=1 << 15, read_latency=1),
         components=[
             ComponentSpec("xbar", "xbar", {"check_hold": True}),
-            ComponentSpec("dma", "dma", config_to_dict(DmaConfig())),
+            ComponentSpec("dma", "dma", DmaConfig().to_dict()),
             _streamer("ra", False, LANES),
             _streamer("rb", False, LANES),
             _streamer("wr", True, LANES),
