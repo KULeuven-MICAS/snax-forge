@@ -5,15 +5,14 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`.
 
 ## Existing Code
 
-Code from before the v1.1 plan: SDFG ingest, patterns, libnodes, descriptors
-and a direct ChiselHwGen. It is kept and reused in M7 (SDFG front end) and M10
-(HW generator). It is not part of M1–M6.
+- Code from before the v1.1 plan: SDFG ingest, patterns, libnodes, descriptors and a direct ChiselHwGen. It is kept and reused in M7 (SDFG front end) and M10 (HW generator). It is not part of M1–M6.
+- SNAX-MODEL (M1) lives in snax_forge/snax_model/, tests in tests/snax_model/.
 
 ## Milestones
 
 | Milestone | Content | Status |
 |---|---|---|
-| M1 | SNAX-MODEL, kernel-agnostic | todo |
+| M1 | SNAX-MODEL, kernel-agnostic | `WIP` |
 | M2 | Anchor against SNAX RTL | todo |
 | M3 | Build backwards to close `vecadd` | todo |
 | M4 | Visualiser and first manual loop | todo |
@@ -32,7 +31,7 @@ All tests use synthetic traffic and hand-written scenarios.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| MOD1 | Event-driven scheduler; ticks only components with pending work, skips idle cycle ranges; struct-of-arrays state (D10, D21) | none | Toy components give identical results with skipping on and off; two runs are identical | todo |
+| MOD1 | Event-driven scheduler; ticks only components with pending work, skips idle cycle ranges; struct-of-arrays state (D10, D21) | none | Toy components give identical results with skipping on and off; two runs are identical | `done` |
 | MOD2 | L1 banks: count, width, read latency, one access per bank per cycle; element type and elements per word (D13) | MOD1 | Read latency is exact; a second access to the same bank in the same cycle is refused | todo |
 | MOD3 | TCDM interconnect: round-robin arbitration, conflicts and stalls recorded | MOD2 | Grant sequences for 2–3 masters on one bank match hand-worked tables; distinct banks proceed in parallel | todo |
 | MOD4 | Streamer from raw registers (base, bounds and strides per loop), FIFO depth, valid/ready, configurable ports (D12) | MOD3 | Address streams equal a NumPy enumeration for 1D, 2D and strided nests; a full FIFO causes stalls; conflict-free throughput equals the port count per cycle | todo |

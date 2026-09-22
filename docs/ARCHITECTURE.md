@@ -243,9 +243,7 @@ the control program through the register interface. The model has no knowledge
 of kernels: it runs whatever the control program and cluster configuration
 describe.
 
-**Time model.** Cycle-level and event-driven. Each component with pending work
-receives a per-cycle tick, and cycle ranges with no pending work are skipped.
-Round-robin arbitration is resolved exactly.
+**Time model.** Cycle-level and event-driven. Each component with pending work receives a per-cycle tick, and cycle ranges with no pending work are skipped. Round-robin arbitration is resolved exactly. Each cycle runs in fixed phases (control, compute, request, arbitrate, memory, response). A component may take part in several phases. Components compute their next state during ticks and apply it in a commit at the end of the cycle; shared elements such as FIFOs commit the same way (D29).
 
 **Sub-models, in build order:**
 
@@ -463,6 +461,7 @@ parameter and memory-plan choices, sweeps.
 | D26 | Model-side contracts are defined by SNAX-MODEL; dataclasses + plain JSON until the M6 freeze, versioned schemas after | 5 |
 | D27 | Until SNAX-DSE exists, thinkers edit the design point directly (interim to D14) | 5 |
 | D28 | Reductions use integer types first; float reductions follow a BRM-defined order [DEFAULT] | 5 |
+| D29 | RTL-like cycle semantics: fixed phases per cycle; reads see previous-cycle state and wires from earlier phases; components and touched shared elements commit at cycle end; next_wake answers must not depend on when they are asked | 6 |
 
 ## 11. Open Items
 
