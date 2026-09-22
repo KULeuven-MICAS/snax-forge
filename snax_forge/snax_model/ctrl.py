@@ -134,8 +134,9 @@ from typing import Any
 
 from .accel import Accelerator
 from .dma import DIRECTIONS, Dma, DmaDescriptor, DmaPattern
-from .sched import Component, Phase, SimulationError
+from .sched import ClassLog, Component, Phase, SimulationError
 from .streamer import Streamer, StreamerRegs
+from .trace import Cmd, Poll
 
 CYCLE_CLASSES = ("command", "wait", "idle")
 STATUS = ("start", "busy", "busy_cycles")  # offsets 0, 1, 2 of every block
@@ -571,8 +572,9 @@ class Controller(Component):
       start landed);
     * wires: ``_done`` (the current command ends this cycle), ``_write``,
       ``_read``, ``_cls``;
-    * statistics: ``cycles`` per class, ``reads``, ``polls``, ``spans``,
-      ``waits``.
+    * statistics: ``cycles`` per class (a ``ClassLog``, MOD8), ``reads``,
+      ``polls``, ``spans``, ``waits``. Trace events: ``cmd`` per finished
+      command (task), ``poll`` per poll sample (beat), both from commit.
     """
 
     phases = (Phase.CONTROL,)
@@ -595,7 +597,7 @@ class Controller(Component):
         self._shadow = {b: dict.fromkeys(blk.config_names, 0) for b, blk in regmap.blocks.items()}
         self._started: dict[str, int] = {}
         # Statistics.
-        self.cycles = dict.fromkeys(CYCLE_CLASSES, 0)
+        self.cycles = ClassLog(CYCLE_CLASSES)
         self.reads: list[tuple[int, int, int]] = []  # (cycle, addr, value)
         self.polls = 0
         self.spans: list[tuple[int, int, int]] = []  # (pc, first cycle, last cycle)
@@ -740,6 +742,7 @@ class Controller(Component):
         self._started[block] = cycle
 
     def commit(self, cycle: int) -> None:
+        tr = self._trace
         if self._write is not None:
             block, reg, value = self._write
             self._shadow[block][reg] = value
@@ -747,17 +750,38 @@ class Controller(Component):
             self.reads.append(self._read)
         if self._polled:
             self.polls += 1
+            if tr is not None and tr.beat:
+                # A poll ends the wait exactly when it sampled busy = 0.
+                cmd = self.program[self.pc]
+                tr.emit(Poll(cycle, self.name, block=cmd.block, value=0 if self._done else 1))
         if self._done:
             cmd = self.program[self.pc]
             self.spans.append((self.pc, self._t, cycle))
             if isinstance(cmd, Wait):
                 d = self.map[cmd.block].comp.done_cycle
                 self.waits.append((self.pc, cmd.block, self._t, d, cycle))
+            if tr is not None and tr.task:
+                tr.emit(self._cmd_event(cmd, cycle))
             self.pc += 1
             self._t = cycle + 1
         if self._cls is not None:
-            self.cycles[self._cls] += 1
+            self.cycles.add(self._cls, cycle, cycle + 1)
         self._clear_wires()
+
+    def _cmd_event(self, cmd: Command, last: int) -> Cmd:
+        """Trace event of the command ending in ``last`` (commit: wires are final)."""
+        pc, first = self.pc, self._t
+        if isinstance(cmd, Wait):
+            d = self.map[cmd.block].comp.done_cycle
+            return Cmd(first, self.name, pc=pc, op="wait", last=last, block=cmd.block,
+                       mode=cmd.mode, done=d)  # fmt: skip
+        r = self.map.register(cmd.addr)
+        reg = f"{r.block}.{r.name}"
+        if isinstance(cmd, CsrRead):
+            value = self._read[2] if self._read is not None else None
+            return Cmd(first, self.name, pc=pc, op="csr_read", last=last, reg=reg, value=value)
+        return Cmd(first, self.name, pc=pc, op="csr_write", last=last, reg=reg,
+                   value=int(cmd.value))  # fmt: skip
 
     def next_wake(self, cycle: int) -> int | None:
         """See "Waking" in the module doc."""
@@ -776,12 +800,12 @@ class Controller(Component):
     def on_gap(self, start: int, stop: int) -> None:
         """Skipped cycles belong to the current command, or are idle."""
         if self.finished:
-            self.cycles["idle"] += stop - start
+            self.cycles.add("idle", start, stop)
             return
         idle = max(0, min(stop, self._t) - start)  # only before the program starts
         cls = "wait" if isinstance(self.program[self.pc], Wait) else "command"
-        self.cycles["idle"] += idle
-        self.cycles[cls] += stop - start - idle
+        self.cycles.add("idle", start, start + idle)
+        self.cycles.add(cls, start + idle, stop)
 
     def summary(self) -> dict[str, Any]:
         """Totals for a quick look; MOD8 builds the real profile."""

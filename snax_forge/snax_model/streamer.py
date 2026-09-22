@@ -121,6 +121,15 @@ data), ``idle`` (anything else: not started, done, waiting for the first
 address or for read data). Skipped cycles are classified from the
 committed state; the streamer only sleeps in the ``stall_fifo`` or ``idle``
 states, and neither can change while it sleeps.
+
+Statistics and trace (MOD8)
+---------------------------
+``cycles`` is a ``ClassLog``: commit and on_gap add their cycles to it, and
+it keeps the class runs when the run is traced. Trace events (task level):
+``start`` when a start lands, ``done`` with the done_cycle. The FIFO keeps an
+occupancy histogram per lane (always on, see ``Fifo``) and, at beat level,
+emits a ``fifo`` event per lane whose count changes. Grants are traced by
+the xbar. None of this is read back by the model.
 """
 
 from __future__ import annotations
@@ -133,7 +142,8 @@ from typing import Any
 import numpy as np
 
 from .mem import BankReq
-from .sched import Component, Phase, SimulationError
+from .sched import ClassLog, Component, Phase, SimulationError
+from .trace import Done, FifoCount, Start
 from .xbar import Xbar
 
 CYCLE_CLASSES = ("busy", "stall_xbar", "stall_fifo", "idle")
@@ -255,6 +265,14 @@ class Fifo:
 
     ``pusher`` / ``popper`` are the components on each side. The reader uses
     ``popper.next_wake`` while it waits for credit (see streamer waking).
+
+    Occupancy (MOD8, D40): ``occ[lane, c]`` counts the cycles in which the
+    lane held ``c`` elements. Counts change only in ``commit`` (a pushed
+    element is visible from the next cycle), so ``commit`` in cycle t closes
+    the old count's run at t + 1. ``commit`` runs only when the FIFO was
+    touched, in both skip modes, so the histogram is identical with
+    skipping on and off. ``occupancy(total)`` adds the open run up to
+    ``total`` without changing the FIFO.
     """
 
     cluster: Any  # anything with touch(elem)
@@ -262,6 +280,8 @@ class Fifo:
     depth: int
     pipe: bool = False
     name: str = "fifo"
+
+    _trace = None  # set by Trace.bind (not a dataclass field: no annotation)
 
     def __post_init__(self) -> None:
         if self.lanes < 1 or self.depth < 1:
@@ -276,6 +296,9 @@ class Fifo:
         self._now: int | None = None
         self._pop_now = [False] * self.lanes
         self._push_now: list[list[Any]] = [[] for _ in range(self.lanes)]
+        # Statistics (MOD8): cycles per (lane, count), and where the open run began.
+        self.occ = np.zeros((self.lanes, self.depth + 1), dtype=np.int64)
+        self._occ_since = np.zeros(self.lanes, dtype=np.int64)
 
     def _enter(self, cycle: int) -> None:
         if self._now is not None and self._now != cycle:
@@ -348,8 +371,11 @@ class Fifo:
         return not any(self._q)
 
     def commit(self) -> None:
-        """End of cycle: remove popped heads, append pushes."""
+        """End of cycle: remove popped heads, append pushes, update occupancy."""
+        t = self._now
+        tr = self._trace
         for j in range(self.lanes):
+            old = len(self._q[j])
             if self._pop_now[j]:
                 self._q[j].popleft()
                 self.popped[j] += 1
@@ -358,7 +384,21 @@ class Fifo:
                 self.pushed[j] += 1
             self._pop_now[j] = False
             self._push_now[j] = []
+            new = len(self._q[j])
+            if new != old and t is not None:
+                # The old count held up to cycle t; the new one from t + 1.
+                self.occ[j, old] += t + 1 - self._occ_since[j]
+                self._occ_since[j] = t + 1
+                if tr is not None and tr.beat:
+                    tr.emit(FifoCount(t + 1, self.name, lane=j, count=new))
         self._now = None
+
+    def occupancy(self, total: int) -> np.ndarray:
+        """Histogram [lanes, depth + 1] of cycles per count over ``[0, total)``."""
+        occ = self.occ.copy()
+        for j in range(self.lanes):
+            occ[j, len(self._q[j])] += max(0, total - int(self._occ_since[j]))
+        return occ
 
 
 # =============================================================================
@@ -415,7 +455,8 @@ class Streamer(Component):
         ``_issued``   per port: reads granted over all tasks (credit)
         ``done_cycle`` first cycle in which ``busy`` is False after a task
     * this cycle's wires: ``_now``, ``_req``, ``_fire``, ``_agu_push``, ``_cls``
-    * statistics (for MOD8): ``cycles`` per class, see the module doc
+    * statistics (for MOD8): ``cycles`` per class (a ``ClassLog``), see the
+      module doc
     """
 
     phases = (Phase.REQUEST, Phase.RESPONSE)
@@ -442,7 +483,7 @@ class Streamer(Component):
         self._k = np.zeros(n, dtype=np.int64)
         self._issued = np.zeros(n, dtype=np.int64)
         self.done_cycle: int | None = None
-        self.cycles = dict.fromkeys(CYCLE_CLASSES, 0)
+        self.cycles = ClassLog(CYCLE_CLASSES)
         self._clear_wires()
 
     def _clear_wires(self) -> None:
@@ -504,6 +545,11 @@ class Streamer(Component):
         self._k[:] = 0
         # A zero-beat task never makes the AGU busy (RTL ignores the start).
         self.done_cycle = None if self._n else cycle + 1
+        tr = self._trace
+        if tr is not None and tr.task:
+            tr.emit(Start(cycle, self.name))
+            if not self._n:
+                tr.emit(Done(cycle + 1, self.name))
 
     # -------------------------------------------------------------------------
     # Per-port conditions (committed state plus earlier-phase wires)
@@ -593,8 +639,10 @@ class Streamer(Component):
             self._gen += 1
         if was_busy and not self.busy:
             self.done_cycle = cycle + 1
+            if self._trace is not None and self._trace.task:
+                self._trace.emit(Done(cycle + 1, self.name))
         if self._cls is not None:
-            self.cycles[self._cls] += 1
+            self.cycles.add(self._cls, cycle, cycle + 1)
         self._clear_wires()
 
     def next_wake(self, cycle: int) -> int | None:
@@ -629,7 +677,7 @@ class Streamer(Component):
 
     def on_gap(self, start: int, stop: int) -> None:
         """Skipped cycles: the streamer slept in a FIFO stall or idle."""
-        self.cycles[self._sleep_class()] += stop - start
+        self.cycles.add(self._sleep_class(), start, stop)
 
     # -------------------------------------------------------------------------
     # Statistics

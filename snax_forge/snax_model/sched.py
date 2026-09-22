@@ -20,13 +20,20 @@ its next wake-up cycle and jumps to the earliest one. Cycles in which a
 component is not ticked are reported to it through ``on_gap`` so statistics
 still add up to the total cycle count. With ``skip_idle=False`` every
 component is ticked every cycle; results must be identical either way.
+
+Cycle classes (MOD8, D40): components that classify their cycles keep a
+``ClassLog`` and call ``add(cls, start, stop)`` both from ``commit`` (one
+cycle) and from ``on_gap`` (the skipped range). The log keeps the totals
+per class and, when a trace asks for it, the runs ``[cls, start, stop)``
+for the timeline. Because ticked and skipped cycles go through the same
+call, the runs cover ``[0, total)`` without gaps in both skip modes.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from enum import IntEnum
-from typing import Protocol
+from typing import Any, Protocol
 
 
 class Phase(IntEnum):
@@ -48,14 +55,62 @@ class SimulationTimeout(RuntimeError):
     """The run did not finish within ``max_cycles``."""
 
 
+class ClassLog(dict):
+    """Cycles per class of one component, plus the class runs when recording.
+
+    A ``dict`` of class -> cycle count, so ``comp.cycles["busy"]`` and
+    ``dict(comp.cycles)`` work as before. Counts change only through
+    ``add``. ``record(origin)`` switches on the runs (called by
+    ``Trace.bind``): from then on every ``add`` must continue exactly where
+    the previous one stopped, which checks that commits and gaps together
+    cover the run. The runs are statistics only; the model never reads them.
+    """
+
+    def __init__(self, classes: Sequence[str]) -> None:
+        super().__init__(dict.fromkeys(classes, 0))
+        self.runs: list[list[Any]] | None = None  # [cls, start, stop) when recording
+        self._next = 0  # where the next run must start
+
+    def record(self, origin: int) -> None:
+        """Start recording runs from cycle ``origin`` (idempotent while recording)."""
+        if self.runs is None:
+            self.runs = []
+            self._next = origin
+
+    def add(self, cls: str, start: int, stop: int) -> None:
+        """Cycles ``[start, stop)`` were of class ``cls``."""
+        if stop <= start:
+            return  # empty range, e.g. the controller's idle part of a gap
+        if cls not in self:
+            raise SimulationError(f"unknown cycle class {cls!r}")
+        self[cls] += stop - start
+        runs = self.runs
+        if runs is None:
+            return
+        if start != self._next:
+            raise SimulationError(
+                f"cycle classes not contiguous: [{start}, {stop}) after cycle {self._next}"
+            )
+        self._next = stop
+        if runs and runs[-1][0] == cls:
+            runs[-1][2] = stop  # same class continues: extend the run
+        else:
+            runs.append([cls, start, stop])
+
+
 class Component:
     """Base class for every sub-model of the cluster.
 
     Subclasses set ``phases`` and override ``tick``. The remaining methods have
     safe defaults.
+
+    ``_trace`` is set by ``Trace.bind`` (MOD8) when the run is traced;
+    components emit events through it only if it is not None, and never
+    read anything back from it.
     """
 
     phases: Sequence[Phase] = ()
+    _trace: Any = None
 
     def __init__(self, name: str) -> None:
         self.name = name

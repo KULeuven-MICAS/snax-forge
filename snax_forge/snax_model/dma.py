@@ -140,8 +140,9 @@ import numpy as np
 
 from .l2 import L2Config, L2Memory
 from .mem import BankReq, L1Config
-from .sched import Component, Phase, SimulationError
+from .sched import ClassLog, Component, Phase, SimulationError
 from .streamer import StreamerRegs, address_stream
+from .trace import DmaBeat, Done, Start
 from .xbar import Xbar
 
 CYCLE_CLASSES = ("busy", "stall_l1", "stall_mem", "idle")
@@ -298,8 +299,9 @@ class Dma(Component):
       (ready cycle, beat)), ``_buf`` (buffered beats: (visible cycle, beat,
       data)), ``_resp_at`` (response cycle of the last write), ``done_cycle``;
     * wires: ``_w``;
-    * statistics (for MOD8): ``cycles`` per class, ``beats_read``,
-      ``beats_written``, ``max_buffered``.
+    * statistics (for MOD8): ``cycles`` per class (a ``ClassLog``),
+      ``beats_read``, ``beats_written``, ``max_buffered``. Trace events:
+      ``start``, ``done`` (task), ``dma_beat`` per moved beat (beat).
     """
 
     phases = (Phase.REQUEST, Phase.MEMORY, Phase.RESPONSE)
@@ -330,7 +332,7 @@ class Dma(Component):
         self._resp_at: int | None = None
         self.done_cycle: int | None = None
         # Statistics.
-        self.cycles = dict.fromkeys(CYCLE_CLASSES, 0)
+        self.cycles = ClassLog(CYCLE_CLASSES)
         self.beats_read = 0
         self.beats_written = 0
         self.max_buffered = 0
@@ -384,6 +386,11 @@ class Dma(Component):
         self._buf.clear()
         self._resp_at = None
         self.done_cycle = None if self._n else cycle + 1
+        tr = self._trace
+        if tr is not None and tr.task:
+            tr.emit(Start(cycle, self.name))
+            if not self._n:
+                tr.emit(Done(cycle + 1, self.name))
 
     # -------------------------------------------------------------------------
     # Conditions (committed state)
@@ -489,6 +496,17 @@ class Dma(Component):
 
     def commit(self, cycle: int) -> None:
         w = self._w
+        tr = self._trace
+        if tr is not None and tr.beat:
+            # Before the counters move: _s / _d are the beats of this cycle.
+            # L2 -> L1 reads the L2 and writes the L1; L1 -> L2 the other way.
+            src_mem, dst_mem = ("l2", "l1") if self.to_l1 else ("l1", "l2")
+            if w.src_moved:
+                tr.emit(DmaBeat(cycle, self.name, side="src", i=self._s, mem=src_mem,
+                                addr=int(self._src[self._s])))  # fmt: skip
+            if w.dst_moved:
+                tr.emit(DmaBeat(cycle, self.name, side="dst", i=self._d, mem=dst_mem,
+                                addr=int(self._dst[self._d])))  # fmt: skip
         if w.src_moved:
             self._s += 1
             self._last_src = cycle
@@ -506,7 +524,10 @@ class Dma(Component):
         if self._resp_at is not None and cycle >= self._resp_at:
             self._resp_at = None
             self.done_cycle = cycle + 1
-        self.cycles[w.cls if w.cls is not None else self._sleep_class(cycle)] += 1
+            if tr is not None and tr.task:
+                tr.emit(Done(cycle + 1, self.name))
+        cls = w.cls if w.cls is not None else self._sleep_class(cycle)
+        self.cycles.add(cls, cycle, cycle + 1)
         self._w = _Wires()
 
     def next_wake(self, cycle: int) -> int | None:
@@ -519,7 +540,7 @@ class Dma(Component):
 
     def on_gap(self, start: int, stop: int) -> None:
         """Skipped cycles: one class, from committed state (module doc)."""
-        self.cycles[self._sleep_class(start)] += stop - start
+        self.cycles.add(self._sleep_class(start), start, stop)
 
     # -------------------------------------------------------------------------
     # Statistics

@@ -32,7 +32,9 @@ from .mem import (
     L1Memory,
     WordInterleaved,
 )
+from .profile import Profile, build_profile
 from .sched import (
+    ClassLog,
     Component,
     Phase,
     Scheduler,
@@ -48,6 +50,7 @@ from .streamer import (
     address_stream,
     lane_offsets,
 )
+from .trace import Trace
 from .xbar import HoldViolation, Port, Xbar
 
 __all__ = [
@@ -59,6 +62,7 @@ __all__ = [
     "BankConflictError",
     "BankReq",
     "BankResp",
+    "ClassLog",
     "Cluster",
     "Component",
     "Controller",
@@ -79,6 +83,7 @@ __all__ = [
     "L2Resp",
     "Phase",
     "Port",
+    "Profile",
     "RegisterMap",
     "Scheduler",
     "SimulationError",
@@ -87,10 +92,12 @@ __all__ = [
     "Streamer",
     "StreamerConfig",
     "StreamerRegs",
+    "Trace",
     "Wait",
     "WordInterleaved",
     "Xbar",
     "address_stream",
+    "build_profile",
     "check_descriptor",
     "command_from_dict",
     "elementwise_stub",

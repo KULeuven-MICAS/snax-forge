@@ -197,8 +197,9 @@ from typing import Any
 
 import numpy as np
 
-from .sched import Component, Phase, SimulationError
+from .sched import ClassLog, Component, Phase, SimulationError
 from .streamer import Fifo
+from .trace import Done, Fire, Start
 
 CYCLE_CLASSES = ("busy", "stall_out", "stall_in", "idle")
 
@@ -379,7 +380,9 @@ class Accelerator(Component):
       ``_slots`` (pipeline, slot L-1 is next to push), ``state`` (the
       function's task state), ``done_cycle``;
     * wires: ``_w``;
-    * statistics: ``cycles`` per class, ``beats`` per port.
+    * statistics: ``cycles`` per class (a ``ClassLog``, MOD8), ``beats`` per
+      port. Trace events: ``start``, ``done`` (task), ``fire`` (beat), all
+      emitted when the state they describe commits.
     """
 
     phases = (Phase.COMPUTE,)
@@ -400,7 +403,7 @@ class Accelerator(Component):
         self.done_cycle: int | None = None
         self._kick: int | None = None  # first busy cycle after a start: always ticked
         self._gap_cls: str | None = None  # class of skipped cycles, see module doc
-        self.cycles = dict.fromkeys(CYCLE_CLASSES, 0)
+        self.cycles = ClassLog(CYCLE_CLASSES)
         self.beats = dict.fromkeys((p.name for p in cfg.ports), 0)
         self._w = _Wires()
 
@@ -487,6 +490,11 @@ class Accelerator(Component):
         self._kick = cycle + 1
         # A zero-firing task never becomes busy.
         self.done_cycle = None if self._n else cycle + 1
+        tr = self._trace
+        if tr is not None and tr.task:
+            tr.emit(Start(cycle, self.name))
+            if not self._n:
+                tr.emit(Done(cycle + 1, self.name))
 
     # -------------------------------------------------------------------------
     # Conditions (committed state)
@@ -586,18 +594,23 @@ class Accelerator(Component):
 
     def commit(self, cycle: int) -> None:
         w = self._w
+        tr = self._trace
         was_busy = self.busy
         if w.fired:
+            if tr is not None and tr.beat:
+                tr.emit(Fire(cycle, self.name, n=self._k))  # index before the increment
             self._k += 1
             self._last_fire = cycle
         if not w.frozen:
             self._advance(w.new)
         if was_busy and not self.busy:
             self.done_cycle = cycle + 1
+            if tr is not None and tr.task:
+                tr.emit(Done(cycle + 1, self.name))
         for n in w.ports:
             self.beats[n] += 1
         if w.cls is not None:
-            self.cycles[w.cls] += 1
+            self.cycles.add(w.cls, cycle, cycle + 1)
         if self._kick is not None and self._kick <= cycle:
             self._kick = None
         self._gap_cls = None  # recorded again by the next next_wake
@@ -637,7 +650,7 @@ class Accelerator(Component):
     def on_gap(self, start: int, stop: int) -> None:
         """Skipped cycles: the class recorded when the gap began (module doc)."""
         cls = self._gap_cls if self._gap_cls is not None else self._sleep_class(start)
-        self.cycles[cls] += stop - start
+        self.cycles.add(cls, start, stop)
 
     # -------------------------------------------------------------------------
     # Statistics

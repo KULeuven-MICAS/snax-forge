@@ -98,6 +98,15 @@ so the minimum does too. The xbar's own state never needs a wake of its own:
   owner to drive again next cycle;
 * outstanding reads are collected by their owner, which wakes for them.
 
+Trace (MOD8, D39)
+-----------------
+At beat level, ``commit`` emits one event per port that requested in the
+cycle: ``grant`` or ``stall`` (``wider`` from the ``_wider`` wire). These are
+the L1 accesses: the grant is served in the same cycle, one access on each
+bank of its group, so there is no separate access event. ``row`` comes from
+the L1 address map (a pure lookup). The events come from the wires, the
+statistics from ``_priority``; the tests compare the two.
+
 Idle cycles reset every pointer and lock, whether they are ticked (skipping
 off) or skipped (``on_gap``), so both give the same result.
 
@@ -118,6 +127,7 @@ import numpy as np
 
 from .mem import BankReq, BankResp, L1Memory
 from .sched import Component, Phase, SimulationError
+from .trace import Grant, Stall
 
 
 class HoldViolation(SimulationError):
@@ -159,8 +169,8 @@ class Xbar(Component):
         ``_held``    per port: request refused last cycle, for the hold check
         ``_due``     per port: (ready cycle, banks) of outstanding reads
     * this cycle's wires, cleared in ``commit``:
-        ``_now``, ``_req``, ``_grant``, ``_arbitrated``, ``_sel``,
-        ``_lock_next``, ``_new_due``
+        ``_now``, ``_req``, ``_grant``, ``_wider`` (refused by a wider
+        grant), ``_arbitrated``, ``_sel``, ``_lock_next``, ``_new_due``
     * statistics (for MOD8), never read by the model itself:
         per bank: ``bank_grants`` (accesses; a wide grant counts on each of
         its banks), ``bank_conflicts`` (cycles with >= 2 requests covering
@@ -243,6 +253,7 @@ class Xbar(Component):
         self._now: int | None = None
         self._req: list[_Req | None] = [None] * n
         self._grant = np.zeros(n, dtype=bool)
+        self._wider = np.zeros(n, dtype=bool)
         self._arbitrated = False
         # With no request a group selects N-1 and does not lock: the default.
         self._sel = {g: np.full(nb // g, n - 1, dtype=np.int64) for g in self._groups}
@@ -391,6 +402,7 @@ class Xbar(Component):
                 self.bank_blocked[banks] += 1
                 for p in ps:
                     self.port_stalls_wider[p] += 1
+                    self._wider[p] = True
             else:
                 self._grant[sel] = True
                 taken[banks] = True
@@ -433,6 +445,8 @@ class Xbar(Component):
     def commit(self, cycle: int) -> None:
         """End of cycle: pointers and locks take their next value, wires clear."""
         self._freeze()
+        if self._trace is not None and self._trace.beat:
+            self._emit(cycle)
         for g in self._groups:
             self.prev[g][:] = self._sel[g]
             self.lock[g][:] = self._lock_next[g]
@@ -444,6 +458,26 @@ class Xbar(Component):
             while q and q[0][0] <= cycle:
                 q.popleft()
         self._clear_wires()
+
+    def _emit(self, cycle: int) -> None:
+        """Beat-level trace: one grant or stall per requesting port, in port order."""
+        tr = self._trace
+        for p, r in enumerate(self._req):
+            if r is None:
+                continue
+            port = self.ports[p]
+            kw = {
+                "port": port.name,
+                "mem": "l1",
+                "w": bool(r.req.write),
+                "addr": int(r.req.addr),
+                "banks": tuple(int(b) for b in r.banks),
+                "row": int(self.mem.locate(r.req.addr)[1]),  # same row on every bank
+            }
+            if self._grant[p]:
+                tr.emit(Grant(cycle, self.name, **kw))
+            else:
+                tr.emit(Stall(cycle, self.name, wider=bool(self._wider[p]), **kw))
 
     def next_wake(self, cycle: int) -> int | None:
         """Awake exactly when an owner is awake (see "Waking" in the module doc)."""
