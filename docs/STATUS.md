@@ -38,7 +38,7 @@ All tests use synthetic traffic and hand-written scenarios.
 | MOD5 | Accelerator interface: ports with per-port element rate, `L`, `II`, Python function; elementwise (N→1) and reduce (T→1) stubs (D25) | MOD4 | With ideal streams, both stubs hit their cycle formulas; the reduce stub proves unequal port rates work | `done` |
 | MOD6 | L2 and DMA with a wide port with per-cycle superbank priority (D33, D34) | MOD3 | DMA bandwidth test; DMA–streamer contention shows up in the trace | `done` |
 | MOD7 | Uniform register interface and controller executing `csr_write`, `csr_read`, `wait` (poll, signal) (D11, D36, D37) | MOD5, MOD6 | Poll and signal give the same output data; cycle counts differ only by the expected control overhead | `done` |
-| MOD8 | Profile and JSON trace | MOD7 | Per accelerator, busy + idle + stalled = total; per-bank access counts equal trace event counts | todo |
+| MOD8 | Profile and JSON trace | MOD7 | Per accelerator, busy + idle + stalled = total; per-bank access counts equal the bank coverage of the trace's grant events (D38, D39) | `done` |
 | MOD9 | Scenario runner: JSON with cluster config, initial memory, command list; dumps profile, trace, final memory | MOD8 | Elementwise, reduce and DMA scenarios run from the CLI; final memory checked against NumPy | todo |
 | MOD10 | Write down model-side contracts: cluster config, streamer register layout, accelerator interface, control program (D26) | MOD9 | Short spec with JSON examples; every test scenario conforms | todo |
 
@@ -130,7 +130,7 @@ All tests use synthetic traffic and hand-written scenarios.
 
 ## Next Up
 
-Briefs to write first, along the critical path: MOD8 (MOD7 is done). ANC1 can go in parallel; it should also measure the DMA values left open in open item 7 and the controller costs in open item 10.
+Briefs to write first, along the critical path: MOD9 (MOD8 is done). ANC1 can go in parallel; it should also measure the DMA values left open in open item 7 and the controller costs in open item 10.
 
 ## Sync Reminders
 

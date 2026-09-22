@@ -321,18 +321,27 @@ enabled later without restructuring.
 
 ### 5.7 Feedback and Visualisation
 
-**Profile**:
+**Profile** (`snax_model/profile.py`, built from the components' own
+counters, D38):
 
 - total latency
-- per-accelerator busy, idle and stalled time, and utilisation
-- accesses and conflicts per bank
-- FIFO occupancy
-- DMA traffic
-- control overhead
-- functional check result against the reference executor
+- per component (accelerator, streamer, DMA, controller) its cycle classes;
+  per accelerator utilisation (busy / total = firing rate)
+- per bank reads, writes, grants, conflicts, stalls and cycles blocked by a
+  wider grant; per interconnect port grants, stalls and stalls caused by a
+  wider grant
+- FIFO occupancy per lane: max, time-weighted mean and histogram (D40)
+- DMA traffic in beats and bytes, L2 reads and writes
+- control overhead (controller command cycles), reported apart from wait
+  cycles and every wait listed
+- functional check result against the reference executor (empty until E2E1)
 
-**Trace**: a data-level JSON event log with cycle timestamps, plus a compressed
-summary for LLM use.
+**Trace** (`snax_model/trace.py`, D39): a JSON event log with cycle
+timestamps, at a level chosen per run: off, task (commands, starts, dones,
+cycle-class intervals) or beat (adds L1 grants and stalls with address,
+banks and row, accelerator firings, DMA beats, polls, FIFO count changes).
+Cycle-class intervals are stored per component beside the events. The
+compressed summary for LLM use is VIS7.
 
 **Visualiser** (Python-generated HTML), with views for:
 
@@ -490,6 +499,9 @@ parameter and memory-plan choices, sweeps.
 | D35 | Accelerator sits between FIFOs as a COMPUTE component: per port direction, lanes (= streamer n_ports) and rate (one beat every `rate` firings, int or start parameter); stubs are configs. Join on inputs as in snax_alu; pipeline of L slots with a global stall (head cannot be pushed → nothing advances, fires or pops); II counts wall-clock cycles; start in s gives busy from s+1, done the cycle after the last push. Cycle classes busy > stall_out > idle (II gap) > stall_in > idle; drain after the last firing is idle. Not copied yet: per-stage ready, the Accumulator's drain cycle | 10 |
 | D36 | Uniform register interface (builds on D11; does not copy ReqRspManager or iDMA instructions). Every block is a register block with the same shape in an aligned window of `window` registers (default 32, one word each, addresses are register indices): `start` (write-only, 1 launches the block) at offset 0, `busy` and `busy_cycles` (read-only) at 1 and 2, configuration registers from 3. Configuration registers are buffered: a start copies them, so the next task can be programmed while the block runs; start while busy is an error. A per-kind adapter in ctrl.py lists the configuration registers from the component's config and decodes them into its start argument (streamer: base, temporal bounds and strides, spatial strides, spatial bounds design-time and given to the adapter; accelerator: `n` and named rates; DMA: direction and source/destination loops for `DmaConfig.dims`); component classes do not change. Register names are the contract; `RegisterMap.to_dict` lists them, and mapping them onto the real SNAX interfaces is left to SNAX-LOWER's C backend (D18, GEN2) | 11 |
 | D37 | Controller timing: a Phase.CONTROL component executing the program in order from cycle 0, one command at a time. A command beginning in t with cost c covers [t, t+c−1] and takes effect in its last cycle; costs per command kind, write and read costs settable per block kind, all placeholders until ANC2. A start landing in w calls `start(arg, w)` (busy from w+1). Reads sample committed state; `busy_cycles` = min(r, done) − start − 1. Wait poll: sample i in t + iP + c_r − 1, ending on the first 0; wait signal: [t, max(t, done) + S − 1]. Poll and signal give the same data; the cycle difference follows from these formulas. Cycle classes command (control overhead) / wait / idle. While blocked on a signal the controller sleeps (next_wake None) and wakes from the block's committed `done_cycle`, without calling the block's next_wake | 11 |
+| D38 | Profile from counters, trace cross-checked: `build_profile(cluster)` only reads the counters the components already keep (cycle classes, L1 reads/writes, xbar bank and port counts, DMA beats and max_buffered, L2 reads/writes, controller spans, waits, reads and polls) and never recounts. The trace is an independent event log written from each cycle's final wires in commit; tests check it against the counters. Profile and trace are dataclasses with `to_dict` / `from_dict` (D26); writing files and the CLI are MOD9. Both are identical with skipping on and off, and results are identical with tracing off, task or beat. `skip_idle` is not part of the profile. The accelerator has no firing count: a busy cycle is a firing cycle. The functional check is an empty field until E2E1 | 12 |
+| D39 | Trace levels and events: off (default), task (`cmd`, `start`, `done` and the class intervals), beat (adds `grant`, `stall`, `fire`, `dma_beat`, `poll`, `fifo`). Each event is a flat dict `t`, `k`, `src`, then its fields. An action event carries the cycle it happens in (`cmd`: its first cycle, with `last`); a state change (`done`, `fifo`) the first cycle its new state is visible. Order inside a cycle: state changes, then phase, then source in registration order, then emission order. `grant` / `stall` are the L1 accesses (`mem`, `w`, `addr` of lane 0, `banks`, `row` from the run's address map); no separate L1 access event, since the xbar serves a grant in the same cycle (D31, D33). Components emit through `_trace` only in commit (or when a start lands), so no tick, touch or next_wake changes. Kinds are added with `register_event` | 12 |
+| D40 | Class intervals and FIFO occupancy under skipping: `cycles` is a `ClassLog`; commit and on_gap both call `add(cls, start, stop)`, which keeps the totals and, when traced, the merged runs `[cls, start, stop)`, raising if a range does not continue the previous one. Runs cover [0, total) and are identical with skipping on and off; they are stored per component in `Trace.intervals`, not as events, because on_gap reports a gap only when it ends. FIFO occupancy: per lane a histogram of cycles per count, updated in `Fifo.commit` (the only place counts change, in both skip modes) and closed at `total` on a copy; the profile reports max, mean and histogram | 12 |
 
 ## 11. Open Items
 
@@ -504,3 +516,7 @@ parameter and memory-plan choices, sweeps.
 8. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D35): copy or keep out, decided in ANC2 (drain cycle at the latest in BRM4).
 9. Mapping the register blocks (D36) onto the real SNAX interfaces in SNAX-LOWER's C backend (GEN2): streamer and accelerator registers onto ReqRspManager CSRs, DMA registers onto iDMA instructions.
 10. Calibrating the controller costs (D37) in ANC2: write and read cost per block kind (DMA programming separately), poll interval and signal latency.
+11. Statistics that need the class intervals rather than totals (D38, D40): FIFO occupancy over the owner's busy window instead of the whole run (VIS3), and the overlap of accelerator-active phases with control overhead for the anchor report (section 7, ANC2).
+12. A beat-level trace filter by source or cycle window (D39), for large runs; it goes into `Trace.emit` only (VIS2 / VIS7).
+13. The functional check field of the profile (D38): filled once the reference executor exists (REF1, E2E1); MOD9 can already compare final memory against NumPy.
+14. Starts made before a run (`start(..., cycle=None)`, tests only) are not traced (D39).
