@@ -406,3 +406,6 @@ of the trace.
 2. DSE config format, and single design point vs sweep.
 3. Acceptable model-vs-RTL error target.
 4. Positioning details relative to ZigZag/Stream.
+
+# Document Evolution
+- This document can evolve in time when new ideas or features thought of needs to be considered.
