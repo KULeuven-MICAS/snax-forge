@@ -1,0 +1,24 @@
+{
+ "name": "reduce",
+ "max_cycles": 1000,
+ "cluster": "../clusters/red4.json",
+ "memory": [{"mem": "l1", "addr": 0, "npy": "x.npy"}],
+ "program": [
+  {"op": "csr_write", "reg": "ra.base", "value": 0},
+  {"op": "csr_write", "reg": "ra.tbound[0]", "value": 16},
+  {"op": "csr_write", "reg": "ra.tstride[0]", "value": 32},
+  {"op": "csr_write", "reg": "ra.sstride[0]", "value": 8},
+  {"op": "csr_write", "reg": "wr.base", "value": 1024},
+  {"op": "csr_write", "reg": "wr.tbound[0]", "value": 4},
+  {"op": "csr_write", "reg": "wr.tstride[0]", "value": 8},
+  {"op": "csr_write", "reg": "wr.sstride[0]", "value": 8},
+  {"op": "csr_write", "reg": "acc.n", "value": 16},
+  {"op": "csr_write", "reg": "acc.T", "value": 4},
+  {"op": "csr_write", "reg": "ra.start", "value": 1},
+  {"op": "csr_write", "reg": "wr.start", "value": 1},
+  {"op": "csr_write", "reg": "acc.start", "value": 1},
+  {"op": "wait", "block": "wr", "mode": "signal"},
+  {"op": "wait", "block": "acc", "mode": "poll"},
+  {"op": "csr_read", "reg": "acc.busy_cycles"}
+ ]
+}

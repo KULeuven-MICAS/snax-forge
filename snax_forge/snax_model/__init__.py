@@ -33,6 +33,17 @@ from .mem import (
     WordInterleaved,
 )
 from .profile import Profile, build_profile
+from .scenario import (
+    ClusterConfig,
+    RunResult,
+    Scenario,
+    ScenarioError,
+    read_outputs,
+    register_accel,
+    register_component,
+    register_op,
+    write_outputs,
+)
 from .sched import (
     ClassLog,
     Component,
@@ -64,6 +75,7 @@ __all__ = [
     "BankResp",
     "ClassLog",
     "Cluster",
+    "ClusterConfig",
     "Component",
     "Controller",
     "ControllerConfig",
@@ -85,6 +97,9 @@ __all__ = [
     "Port",
     "Profile",
     "RegisterMap",
+    "RunResult",
+    "Scenario",
+    "ScenarioError",
     "Scheduler",
     "SimulationError",
     "SimulationTimeout",
@@ -104,6 +119,11 @@ __all__ = [
     "lane_offsets",
     "program_from_dicts",
     "program_to_dicts",
+    "read_outputs",
     "reduce_stub",
+    "register_accel",
     "register_adapter",
+    "register_component",
+    "register_op",
+    "write_outputs",
 ]

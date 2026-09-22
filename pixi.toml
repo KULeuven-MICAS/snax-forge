@@ -93,10 +93,13 @@ OMP_NUM_THREADS = "1"
 check      = "python util/env_check.py"
 test       = "pytest -q"
 test-model = "pytest -q tests/snax_model"
-lint       = "ruff check util kernels snax_forge transforms tests && ruff format --check util kernels snax_forge transforms tests"
-fmt        = "ruff check --fix util kernels snax_forge transforms tests && ruff format util kernels snax_forge transforms tests"
+lint       = "ruff check util kernels snax_forge transforms tests scenarios && ruff format --check util kernels snax_forge transforms tests scenarios"
+fmt        = "ruff check --fix util kernels snax_forge transforms tests scenarios && ruff format util kernels snax_forge transforms tests scenarios"
 forge      = "python -m snax_forge.sdfg"
 profile    = "python -m snax_forge.sdfg --profile"
+# SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`
+model-run  = "python -m snax_forge.snax_model run"
+scenarios  = "python scenarios/make.py"
 
 # --- Chisel ---------------------------------------------------------------
 # `-batch` stops sbt from dropping into its interactive shell when a command
