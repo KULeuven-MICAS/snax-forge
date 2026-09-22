@@ -23,8 +23,12 @@ A user brings a workload and a set of accelerator models. SNAX-FORGE maps the
 workload onto a configurable model of the cluster, runs it in a fast
 cycle-level Python simulation, and returns profiles, traces and visualisations.
 A human or an LLM uses these to decide the next design iteration. The chosen
-design can then be generated as hardware and software and checked against real
-RTL through cosimulation.
+accelerator can then be generated as hardware, and its RTL checked against its
+model through cosimulation.
+
+The user describes the accelerator; SNAX-FORGE models the rest of the SNAX
+cluster (D51). Model cycle counts compare design points; they do not predict
+the absolute timing of the real SNAX cluster.
 
 The goal is insight into how to design domain-specific accelerators for compute
 clusters: where cycles are lost, which banks conflict, which accelerators
@@ -40,8 +44,9 @@ such as ZigZag and Stream (KU Leuven MICAS). What distinguishes it:
   explicitly rather than abstracted into analytical cost terms.
 - **Arbitrary dataflow graphs**, not only DNN layers: PolyBench-style kernels,
   stencils, reductions, and later HDC workloads.
-- **RTL-backed accelerator models.** Every block model has a hardware binding,
-  and the model is checked against real RTL through cosim.
+- **RTL-backed accelerator models.** A block model can carry a hardware
+  binding, and the accelerator's model is checked against its RTL through
+  cosim (D52).
 - **A shared task sequence.** The same lowering logic drives both the model and
   the real hardware.
 - **Human- and LLM-in-the-loop by design.** All artefacts are text-based and
@@ -60,9 +65,11 @@ whether SNAX-FORGE can consume or produce their formats.
    simplest form that carries `vecadd` end to end, then generalised only when a
    real kernel requires it. SNAX-MODEL is kernel-agnostic by construction: it
    only executes control programs (D6, D11).
-3. **Anchor to reality early.** The model's cycle counts are validated against
-   real SNAX RTL on a simple kernel before the design space is explored at
-   scale (section 7).
+3. **The user owns the accelerator, the model owns the platform.** The user
+   supplies the accelerator's interface and timing (lanes, rates, latency,
+   II); everything around it is SNAX-MODEL's model of the SNAX platform, with
+   declared defaults. Model cycles compare design points; checking the
+   platform model against SNAX RTL is deferred (section 7, D51).
 4. **Decisions are separate from derivations.** SNAX-DSE decides; SNAX-LOWER
    derives command sequences; SNAX-MODEL measures. No stage does another's job.
 5. **Everything is text and diffable.** SNAX-DFG, BRMs, configs, design points,
@@ -82,8 +89,9 @@ flowchart LR
     DSE --> PLAN[Design point]
     PLAN --> LOWER[SNAX-LOWER]
     BRM --> LOWER
+    LOWER --> CF[Cluster file]
     LOWER --> CP[Control program]
-    PLAN --> MODEL[SNAX-MODEL]
+    CF --> MODEL[SNAX-MODEL]
     CP --> MODEL
     SC[Hand-written scenario] -. early milestones .-> MODEL
     MODEL --> FB[Profile + trace]
@@ -97,9 +105,10 @@ flowchart LR
     PLAN --> GEN[HW/SW generator]
     BRM --> GEN
     LOWER -. SW kernel .-> GEN
-    GEN --> COSIM[Cosim: SNAX-MODEL + cocotb RTL]
+    GEN --> COSIM[Cosim: SNAX-MODEL + accelerator RTL]
+    CF --> COSIM
     CP --> COSIM
-    COSIM --> FB
+    COSIM -. accelerator check .-> T
 ```
 
 **Inner loop** (core, Python only):
@@ -108,7 +117,9 @@ DFG → DSE → LOWER → MODEL → feedback → thinkers → config → DSE.
 Until SNAX-DSE exists, thinkers close the loop by editing the design point
 directly (D27).
 
-**Outer path** (commit and check): HW/SW generator → cosim → feedback.
+**Outer path** (later, independent of the inner loop, D52): HW/SW generator →
+cosim, which checks an accelerator's RTL against its model. Nothing in the
+inner loop waits on it.
 
 ## 5. Components and Contracts
 
@@ -123,12 +134,12 @@ with plain JSON files; versioned schemas follow once two kernels have used them
 | Workload analysis | workload via SDFG (later MLIR) | SNAX-DFG |
 | SNAX-BRM library | user-supplied block models | BRMs |
 | SNAX-DSE | SNAX-DFG, BRMs, DSE config | design point |
-| SNAX-LOWER | design point, BRMs | control program (later also C kernel) |
-| SNAX-MODEL | design point, control program (or a scenario) | profile, trace, output data |
+| SNAX-LOWER | design point, BRMs | cluster file, control program (later also C kernel) |
+| SNAX-MODEL | cluster file, control program (or a hand-written scenario) | profile, trace, output data |
 | Reference executor | SNAX-DFG, input data | golden output data |
 | Visualiser | SNAX-DFG, design point, profile, trace | HTML views |
 | HW/SW generator | design point, BRMs, SNAX-LOWER | accelerator RTL, SW kernel |
-| Cosim | design point, control program, RTL | profile, trace, mismatch report |
+| Cosim | cluster file, control program, accelerator RTL | profile, trace, per-accelerator mismatch report |
 
 ### 5.1 SNAX-DFG
 
@@ -178,7 +189,10 @@ from the library. A BRM has six parts:
    with parameters, or hand-written SystemVerilog.
 
 The interface, timing and function parts fill the accelerator interface that
-SNAX-MODEL defines (section 5.6). A BRM is accepted when, plugged into the
+SNAX-MODEL defines (section 5.6). In the cluster file they are the
+accelerator's entry (`lanes`, rates, `latency`, `ii`, `op`), which is the
+only part of the cluster file the user is responsible for (D51); until BRMs
+exist it is written by hand. A BRM is accepted when, plugged into the
 model, it gives the same cycles and data as the matching generic stub.
 
 The existing Chisel elementwise modules (loop, spatial, tiled-spatial) and the
@@ -214,7 +228,19 @@ Exploration is manual (config-driven) first. Automated search comes later.
 ### 5.5 SNAX-LOWER: Lowering
 
 A separate step between SNAX-DSE and SNAX-MODEL, comparable to a compiler
-backend. It turns a design point into a generated sequence of tasks. It:
+backend. It turns a design point into the two inputs of a model run: the
+cluster file and the control program (D53). It derives both and decides
+nothing (principle 4).
+
+**Cluster file.** One accelerator entry per accelerator instance, filled
+from its BRM's interface and timing parts and the instance's parameters; one
+streamer per accelerator port (D12), with `n_ports` equal to the port's lanes
+and attached to it; the xbar, L1, L2, DMA and controller from the cluster
+configuration in the design point; the register map. Its layout is the one
+of `scenarios/clusters/alu4.json` (CONTRACTS.md section 2) and may change
+later.
+
+**Control program.** It:
 
 - orders tasks by the dependencies and execution order of the optimised SNAX-DFG
 - computes streamer registers from each BRM's per-port affine loop nest and the
@@ -223,7 +249,7 @@ backend. It turns a design point into a generated sequence of tasks. It:
 - inserts L2↔L1 DMA transfers required by the memory plan
 - inserts a wait at every dependency crossing an accelerator or DMA boundary
 
-**Output: the control program**, a JSON list of commands:
+The control program is a JSON list of commands:
 
 - `csr_write`
 - `csr_read`
@@ -241,8 +267,8 @@ task list is expanded into the plain command list with the same per-kind
 adapters the model uses (D36). A task list can also be written by hand before
 the design point exists. [OPEN] task-list format, decided in LOW1.
 
-Its first acceptance test is reproducing the hand-written `vecadd` scenario used
-for the anchor (section 7).
+Its first acceptance test is reproducing the hand-written `scenarios/vecadd`:
+its cluster file and its program.
 
 **Later**, a C backend emits the SW library kernel for real hardware from the
 same logic, so the model and the chip are driven by the same task sequence.
@@ -256,6 +282,14 @@ A pure-Python model of the SNAX cluster. There is no CPU; a controller executes
 the control program through the register interface. The model has no knowledge
 of kernels: it runs whatever the control program and cluster configuration
 describe.
+
+**Ownership (D51).** The accelerator entry of the cluster file is the user's.
+Everything else is the model of the SNAX platform: its behaviour is fixed
+here, and its parameters (bank count, FIFO depth, DMA bandwidth, ...) are
+design knobs for SNAX-DSE (D7), not something the user has to supply. Their
+defaults are declared, not measured: one 512-bit DMA beat per cycle, 1-cycle
+L1 and L2 reads, and small fixed controller costs (CONTRACTS.md section 2
+lists every default).
 
 **Time model.** Cycle-level and event-driven. Each component with pending work receives a per-cycle tick, and cycle ranges with no pending work are skipped. Round-robin arbitration is resolved exactly. Each cycle runs in fixed phases (control, compute, request, arbitrate, memory, response). A component may take part in several phases. Components compute their next state during ticks and apply it in a commit at the end of the cycle; shared elements such as FIFOs commit the same way (D29).
 
@@ -390,14 +424,17 @@ Humans and a commercial LLM (Claude, ChatGPT, Gemini) read the feedback and
 edit the DSE config, closing the loop. Until SNAX-DSE exists, they edit the
 design point directly (D27).
 
-### 5.9 Outer Path (later)
+### 5.9 Outer Path (later, independent of the inner loop)
 
 - **HW/SW generator.** Accelerator RTL through each BRM's hardware binding
   (Chisel first), grouped into one accelerator top. The SW kernel comes from
   SNAX-LOWER's C backend. The SNAX cluster itself is not generated.
-- **Cosim.** SNAX-MODEL with accelerator models replaced by RTL through cocotb
-  (Verilator, Questasim). It reports functional and cycle mismatches between
-  each BRM and its RTL.
+- **Cosim (D52).** SNAX-MODEL with accelerator models replaced by RTL through
+  cocotb (Verilator, Questasim). It checks each accelerator's output and its
+  declared `latency` and `ii` against its RTL. It says nothing about the SNAX
+  platform's own timing, and nothing in M3–M9 waits on it. Integrating a
+  generated accelerator into the real SNAX cluster is outside the current
+  plan.
 - **HW cost estimator.** Post-synthesis, technology-dependent, from a cost
   database. Built last.
 
@@ -408,53 +445,58 @@ Three levels, each checked against the one above it:
 1. **Reference executor**: golden output of the workload (SNAX-DFG in NumPy).
 2. **SNAX-MODEL**: the same workload through BRM functions, streamers and
    memory. Its output must match level 1 exactly.
-3. **Cosim**: the same design point with RTL accelerators. Output must match;
-   cycle deviations from the BRM timing are reported.
+3. **Cosim**: the same run with RTL accelerators. Output must match; each
+   accelerator's deviation from its declared `latency` and `ii` is reported
+   (D52). This checks the accelerator, not the platform model.
 
 **Reductions [DEFAULT] (D28).** Exact matching with floating point depends on
 accumulation order. Reductions use integer types first; for floating point, the
 BRM defines its accumulation order and the reference executor follows it.
 
-## 7. Model Validation Anchor
+## 7. Model Validation Anchor (deferred until after M10, D51)
 
-SNAX-MODEL is only useful if its cycle counts track reality. The anchor runs
-right after the model is built (M2), using a hand-written `vecadd` scenario,
-before any upstream component exists:
+The anchor would check the *platform* model — interconnect, streamers, DMA
+and controller — against the real SNAX cluster RTL. Cosim does not do this:
+it replaces only the accelerator (D52). Until the anchor runs, the platform
+parameters are declared defaults (section 5.6) and model cycle counts are for
+comparing design points, not for predicting SNAX cycle counts.
 
-- run `vecadd` on the real SNAX cluster RTL (existing SNAX simulation flow) and
-  record the cycle counts per phase
+When it runs, after M10, the plan is:
+
+- run `vecadd` on the real SNAX cluster RTL and record the cycle counts per
+  phase, with one core issuing every task in order as the model's single
+  controller does (D37)
 - run the same configuration in SNAX-MODEL
 - document the deviation and its causes
 
 The RTL counts include CSR programming by the Snitch core, which SNAX-MODEL
 does not model (D6). The report compares accelerator-active phases separately
-from control overhead.
-
-This is repeated for `dot` once reductions are supported. [OPEN] acceptable
-error target.
+from control overhead. The error target (open item 3) is fixed before the
+first comparison.
 
 ## 8. Build Order (milestones, not a schedule)
 
 See `docs/STATUS.md` for the task breakdown of each milestone.
+
+Order: M1, M3–M10, then M2 (D51). `vecadd` is closed end to end first (M3),
+then the visualiser (M4).
 
 **M1: SNAX-MODEL, kernel-agnostic.** Scheduler, banks, interconnect,
 streamers, accelerator interface with elementwise and reduce stubs, DMA/L2,
 CSRs and controller, profile and trace, scenario runner. Ends with the
 model-side contracts written down.
 
-**M2: Anchor.** Hand-written `vecadd` scenario validated against real SNAX RTL
-(section 7), with a regression test.
-
 **M3: Build backwards to close `vecadd`.** Elementwise-add BRM, design point,
-SNAX-LOWER, minimal SNAX-DFG and reference executor. Each is accepted when it
-reproduces an input hand-written in M1 or M2.
+SNAX-LOWER (cluster file and control program, D53), minimal SNAX-DFG and
+reference executor. Each is accepted when it reproduces an input hand-written
+in M1 (`scenarios/vecadd`).
 
 **M4: Visualiser and first manual loop.** Timeline, utilisation, bank
 conflicts, design point, DFG and diff views; LLM trace summary; one documented
 design iteration on `vecadd`.
 
 **M5: `dot`.** Reduction in SNAX-DFG and the reference executor, accumulator
-BRM, chaining waits and DMA insertion in SNAX-LOWER, anchor repeated.
+BRM, chaining waits and DMA insertion in SNAX-LOWER.
 
 **M6: Contract freeze.** Package layout and CI conventions, versioned schemas
 for all contracts, registries and namespaced attributes.
@@ -467,7 +509,11 @@ parameter and memory-plan choices, sweeps.
 
 **M9: `jacobi1d`.** Stencil reuse and double buffering.
 
-**M10: Outer path.** HW/SW generator from BRM bindings, cocotb cosim.
+**M10: Outer path.** HW/SW generator from BRM bindings, cocotb cosim of the
+accelerators (D52). Independent of M3–M9.
+
+**M2: Anchor (deferred, D51).** `vecadd`, then `dot`, against the real SNAX
+cluster RTL (section 7), with a regression test.
 
 **Later:**
 
@@ -484,6 +530,8 @@ parameter and memory-plan choices, sweeps.
 - Generating the SNAX cluster itself.
 - Automated design-space search before manual exploration works.
 - Bit-level accuracy inside SNAX-MODEL; that is the job of cosim.
+- Predicting absolute SNAX cycle counts before the anchor (D51).
+- Integrating generated accelerators into the real SNAX cluster (D52).
 
 ## 10. Decision Log
 
@@ -539,6 +587,9 @@ parameter and memory-plan choices, sweeps.
 | D48 | Everything touched every cycle is plain Python, not NumPy: xbar pointers, locks, wires and counters (read back as arrays through properties), and `L1Memory.dump` is one reshape instead of a loop over words. Arrays stay where they hold data or address streams. Results are bit-identical, proved by the existing tests; measured 1.4x on a large vecadd. Refines D21, which still holds for persistent state | 14 |
 | D49 | Beat-level trace filter by source and by cycle window, in `Trace.emit` only and recorded in `trace_meta.json`; task-level events, class intervals and every profile number are never filtered. Amends D39, closes open item 12 | 14 |
 | D50 | `run.json` also records the cluster configuration and the cluster file path, so an output directory says on its own which hardware produced it (VIS6). Amends D44 | 14 |
+| D51 | Ownership and the anchor. The user supplies the accelerator: its entry in the cluster file (`lanes`, rates, `latency`, `ii`, `op`), later its BRM (D5). Everything else is SNAX-MODEL's model of the SNAX platform, whose behaviour is fixed and whose parameters stay design knobs for SNAX-DSE (D7). The platform defaults are declared, not measured: one 512-bit DMA beat per cycle, 1-cycle L1 and L2 reads, small fixed controller costs. Model cycles compare design points and do not predict SNAX's absolute timing. The anchor (M2), which checks the platform model against SNAX RTL, is deferred to after M10; the milestone order is M1, M3–M10, M2. Amends D22, D24, principle 3 and section 7 | 15 |
+| D52 | Cosim is independent of the inner loop: nothing in M3–M9 waits on it. It replaces only the accelerator with its RTL and checks the accelerator's output and its declared `latency` / `ii`; it checks nothing about the platform. Integrating generated accelerators into the real SNAX cluster is outside the current plan. Amends section 5.9 and section 6 level 3 | 15 |
+| D53 | SNAX-LOWER produces both inputs of a model run: the cluster file (accelerator entries from each BRM's interface and timing parts, one streamer per port with `n_ports` = lanes, platform parts from the design point's cluster configuration, register map) and the control program. Deriving the cluster file decides nothing, so principle 4 holds. The layout is that of `scenarios/clusters/alu4.json` for now. Refines D18, D45 | 15 |
 
 ## 11. Open Items
 
@@ -548,23 +599,23 @@ it.
 1. BRM per-port affine loop nest notation and its mapping to streamer registers
    (streamer register layout fixed in MOD10; notation closed in M6).
 2. DSE config format, and single design point vs sweep.
-3. Acceptable model-vs-RTL error target (decided in M2).
+3. Acceptable model-vs-RTL error target, decided with the deferred anchor (D51) before its first comparison.
 4. Positioning details relative to ZigZag/Stream.
-5. Streamer dynamic TCDM priority and reader repeat on temporal stride 0 (D32): copy or keep out, decided in ANC2.
-6. Priority manager for ports of different widths: N wide and M narrow accesses per bank group (a share instead of the absolute priority of D33). Decided after ANC2, once the cost of absolute priority on real kernels is known; it replaces only `Xbar._priority`.
-7. DMA features of the Snitch iDMA not copied yet (D34), decided with ANC1/ANC2: AXI bursts (`NumAxInFlight = 3` bursts in flight, split at 256 beats and 4 KiB; short bursts such as the row-by-row pattern are slower in RTL); its 2D shape with one inner length shared by both sides (more general patterns need several descriptors, each with its own startup); back-pressure from its 3-deep buffer; L1→L1 and unaligned transfers; the transaction limit of the `tb_memory_axi` atomics filter; XDMA as an alternative engine; the real values of `startup`, L2 read latency, `l1_read_extra` and `done_latency`.
-8. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D35): copy or keep out, decided in ANC2 (drain cycle at the latest in BRM4).
+5. Streamer dynamic TCDM priority and reader repeat on temporal stride 0 (D32): copy or keep out, decided with the deferred anchor (D51); not copied until then.
+6. Priority manager for ports of different widths: N wide and M narrow accesses per bank group (a share instead of the absolute priority of D33). Decided with the deferred anchor (D51), or earlier if a kernel's profile shows absolute priority costing cycles; it replaces only `Xbar._priority`.
+7. DMA features of the Snitch iDMA not copied yet (D34): AXI bursts (`NumAxInFlight = 3` bursts in flight, split at 256 beats and 4 KiB; short bursts such as the row-by-row pattern are slower in RTL); its 2D shape with one inner length shared by both sides (more general patterns need several descriptors, each with its own startup); back-pressure from its 3-deep buffer; L1→L1 and unaligned transfers; the transaction limit of the `tb_memory_axi` atomics filter; XDMA as an alternative engine; the real values of `startup`, L2 read latency, `l1_read_extra` and `done_latency`. Decided with the deferred anchor (D51); until then the model has none of these features and its values are declared defaults.
+8. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D35): copy or keep out, decided with the deferred anchor (D51); the drain cycle at the latest in BRM4.
 9. Mapping the register blocks (D36) onto the real SNAX interfaces in SNAX-LOWER's C backend (GEN2): streamer and accelerator registers onto ReqRspManager CSRs, DMA registers onto iDMA instructions.
-10. Calibrating the controller costs (D37) in ANC2: write and read cost per block kind (DMA programming separately), poll interval and signal latency.
-11. Statistics that need the class intervals rather than totals (D38, D40): FIFO occupancy over the owner's busy window instead of the whole run (VIS3), and the overlap of accelerator-active phases with control overhead for the anchor report (section 7, ANC2).
+10. Calibrating the controller costs (D37): write and read cost per block kind (DMA programming separately), poll interval and signal latency. Calibrated with the deferred anchor (D51); until then they are declared defaults.
+11. Statistics that need the class intervals rather than totals (D38, D40): FIFO occupancy over the owner's busy window instead of the whole run (VIS3), and the overlap of accelerator-active phases with control overhead for the anchor report (section 7, deferred).
 12. ~~A beat-level trace filter by source or cycle window~~ — closed by D49 (MOD10): `--trace-source` and `--trace-window`, in `Trace.emit` only.
 13. The functional check field of the profile (D38): filled once the reference executor exists (REF1, E2E1); MOD9 can already compare final memory against NumPy.
 14. Starts made before a run (`start(..., cycle=None)`, tests only) are not traced (D39).
-15. An optional `expect` section in scenarios (D41): expected memory regions, `csr_read` values and a cycle target with tolerance. Deferred; the memory part is covered by the functional check once E2E1 exists, the cycle target may be wanted for ANC3.
+15. An optional `expect` section in scenarios (D41): expected memory regions, `csr_read` values and a cycle target with tolerance. Deferred; the memory part is covered by the functional check once E2E1 exists, the cycle target may be wanted for the deferred anchor.
 16. ~~Move the generic config dict helpers of scenario.py next to each config class, and write the model-side contracts down~~ — closed by D46 (MOD10): `snax_model/config.py` and `docs/CONTRACTS.md`.
-17. ANC2 builds on `scenarios/vecadd` (the MOD7 vecadd); its controller costs and DMA timing are placeholders until calibrated (open items 7, 10).
+17. ~~ANC2 builds on `scenarios/vecadd`~~ — closed by D51: M3 builds on it instead (LOW1b, E2E1); its costs and DMA timing are declared defaults.
 18. A non-default L1 address map (`AddressMap`) cannot be chosen in a scenario yet; add a registered map kind when a kernel needs one.
 19. Task-list format for SNAX-LOWER (D45), decided in LOW1.
 20. A streamer port is always one bank wide: section 5.6 lists port width as a cluster parameter, but only the DMA uses a wide port, and `StreamerConfig` has no width. Add one when a kernel needs it (the xbar already takes 128 and 256).
 21. `elems_per_word > 1` (D13) is exercised at the L1 only; the streamers, the accelerator and the DMA have never moved packed words. Decided with sub-word packing.
-22. `L1Config.base_addr` other than 0 works but is not tested end to end; ANC2 uses the real TCDM base, so it is tested there.
+22. `L1Config.base_addr` other than 0 works but is not tested end to end; add a scenario with a nonzero base when one is needed.

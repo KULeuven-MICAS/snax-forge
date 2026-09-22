@@ -74,7 +74,7 @@ Not copied (open item 7):
 * L1 -> L1, unaligned transfers (hardware legalizer), and XDMA;
 * where the AXI latencies sit: they are lumped into ``startup``,
   ``L2Config.read_latency``, ``l1_read_extra`` and ``done_latency``, all
-  placeholders until ANC1.
+  declared defaults (D51, open item 7).
 
 Who calls what, per cycle
 -------------------------
@@ -238,7 +238,7 @@ def check_descriptor(
 
 @dataclass(frozen=True)
 class DmaConfig(Config):
-    """Design-time timing of the DMA. All defaults are placeholders until ANC1."""
+    """Design-time timing of the DMA. All defaults are declared, not measured (D51)."""
 
     startup: int = 2  # start in s -> first source request in s + startup (>= 1)
     beat_interval: int = 1  # bandwidth: min cycles between beats on each side

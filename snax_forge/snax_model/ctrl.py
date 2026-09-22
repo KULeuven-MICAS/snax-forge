@@ -63,7 +63,7 @@ The program starts in cycle 0 and runs one command at a time. A command
 that begins in cycle t with cost c covers cycles [t, t + c - 1]; its effect
 happens in its last cycle, in Phase.CONTROL, and the next command begins in
 t + c. Costs are per command kind, and write and read costs may be set per
-block kind (``ControllerConfig``). All are placeholders until ANC2.
+block kind (``ControllerConfig``). All are declared defaults (D51).
 
 * csr_write of a configuration register: the shadow value changes.
 * csr_write of 1 to ``start``, landing in w: the controller checks the
@@ -527,7 +527,7 @@ class RegisterMap:
 
 @dataclass(frozen=True)
 class ControllerConfig(Config):
-    """Command costs in cycles (all >= 1) and wait timing. Placeholders until ANC2."""
+    """Command costs in cycles (all >= 1) and wait timing. Declared defaults (D51)."""
 
     write_cost: int = 1
     read_cost: int = 1

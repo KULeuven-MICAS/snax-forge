@@ -59,7 +59,7 @@ Only what changes cycle counts:
   cycle after the last request is granted. For a reader, read data may still
   be in flight or in the FIFO at that point (same as RTL).
 
-Not copied (they change cycles, flagged for ANC2):
+Not copied (they change cycles, open item 5):
 
 * Dynamic TCDM priority (``dynamicPriority``, default on in snax_alu): the
   RTL raises a reader port's priority when its FIFO lane is nearly empty

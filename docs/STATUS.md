@@ -1,8 +1,9 @@
 # SNAX-FORGE Status
 
-Build order and rationale: `docs/ARCHITECTURE.md` section 8 and D24.
+Build order and rationale: `docs/ARCHITECTURE.md` section 8, D24 and D51
+(order M1, M3–M10, then M2).
 What the model-side artefacts mean: `docs/CONTRACTS.md` (MOD10).
-Status values: `todo`, `brief` (brief written), `wip`, `done`.
+Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 
 ## Existing Code
 
@@ -14,7 +15,6 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`.
 | Milestone | Content | Status |
 |---|---|---|
 | M1 | SNAX-MODEL, kernel-agnostic | `done` |
-| M2 | Anchor against SNAX RTL | `WIP` |
 | M3 | Build backwards to close `vecadd` | todo |
 | M4 | Visualiser and first manual loop | todo |
 | M5 | `dot` | todo |
@@ -22,7 +22,8 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`.
 | M7 | SDFG front end | todo |
 | M8 | DSE via config | todo |
 | M9 | `jacobi1d` | todo |
-| M10 | Outer path | todo |
+| M10 | Outer path (independent of M3–M9, D52) | todo |
+| M2 | Anchor against SNAX RTL (after M10, D51) | `deferred` |
 
 ## Task Breakdown
 
@@ -43,14 +44,6 @@ All tests use synthetic traffic and hand-written scenarios.
 | MOD9 | Scenario runner: JSON with cluster config, initial memory, command list; dumps profile, trace, final memory | MOD8 | Elementwise, reduce and DMA scenarios run from the CLI; final memory checked against NumPy | `done` |
 | MOD10 | Write down the model-side contracts in docs/CONTRACTS.md; configs carry their own to_dict / from_dict; gap rules, trace filter and housekeeping (D26, D46-D50) | MOD9 | Every snippet in the document is checked against its file and the register names against the adapters (test_contracts.py); the gap rules have tests (test_gaps.py) | `done` |
 
-### M2: Anchor
-
-| ID | Scope | Depends | Acceptance | Status |
-|---|---|---|---|---|
-| ANC1 | Run `vecadd` in the SNAX RTL flow, record cycles per phase | none | Reproducible script; numbers checked in | todo |
-| ANC2 | Matching hand-written scenario, deviation report, error target (open item 3) | MOD9, ANC1 | Deviation explained per phase, CPU-side CSR programming kept separate; target in the Decision Log | todo |
-| ANC3 | Regression test locking the anchor numbers | ANC2 | CI fails when model cycles drift outside the target | todo |
-
 ### M3: Build backwards to close `vecadd`
 
 | ID | Scope | Depends | Acceptance | Status |
@@ -60,11 +53,12 @@ All tests use synthetic traffic and hand-written scenarios.
 | BRM3 | Elementwise-add BRM: lanes `W`, per-port nests, `L`/`II`, function, pattern | BRM1, BRM2 | In the model, gives the same cycles and data as the elementwise stub | todo |
 | DP1 | Design point structure and hand-written `vecadd` design point | BRM3 | Validation catches overlapping buffers, out-of-range banks, unknown BRMs | todo |
 | LOW1a | Lowering from design point to an ordered task list (D45); task-list format decided (open item 19) | DP1, MOD10 | Task list for the `vecadd` design point equals the hand-written one | todo |
-| LOW1b | Task list → plain command list through the model's adapters (D36, D45) | LOW1a | Same program as `scenarios/make.py` for the same tasks; generated program equals the hand-written ANC2 scenario | todo |
+| LOW1b | Task list → plain command list through the model's adapters (D36, D45) | LOW1a | Same program as `scenarios/make.py` for the same tasks; generated program equals `scenarios/vecadd` | todo |
+| LOW1c | Design point + BRMs → cluster file (D53): accelerator entries from BRM interface and timing, one streamer per port with `n_ports` = lanes, platform parts from the cluster configuration | DP1, BRM3 | Cluster file for the `vecadd` design point equals `scenarios/clusters/alu4.json` | todo |
 | DFG1 | Minimal SNAX-DFG: data container, tasklet, map scope with symbolic range, memlet | none | Hand-built `vecadd` DFG round-trips | todo |
 | DFG2 | Accelerated node referencing a BRM instance, nesting allowed | DFG1, BRM3 | `vecadd` with its map replaced validates; nested case validates | todo |
 | REF1 | NumPy reference executor for DFG1 kinds | DFG1 | `vecadd` equals `a+b` over random N, including N not divisible by the lane count | todo |
-| E2E1 | Full `vecadd` path from DFG to profile | all of the above | Output matches REF1 exactly; cycles equal the ANC2 numbers | todo |
+| E2E1 | Full `vecadd` path from DFG to profile | all of the above | Output matches REF1 exactly; cycles equal a run of `scenarios/vecadd` | todo |
 
 ### M4: Visualiser and first manual loop
 
@@ -87,7 +81,7 @@ All tests use synthetic traffic and hand-written scenarios.
 | BRM4 | Accumulator BRM, based on the Chisel accumulator | BRM1, BRM2 | Same cycles and data as the reduce stub | todo |
 | LOW2 | Chaining multiply → accumulate, waits at accelerator boundaries | LOW1b, BRM4 | Waits appear only at dependencies crossing a boundary | todo |
 | LOW3 | DMA insertion from L2 addresses in the memory plan | LOW1b | DMA list covers exactly the buffers in L2, no duplicates | todo |
-| E2E2 | `dot` end to end, anchor repeated, timeline check | all of the above, ANC3, VIS2 | Output matches exactly; anchor report for `dot`; timeline shows the chaining wait | todo |
+| E2E2 | `dot` end to end, timeline check | all of the above, VIS2 | Output matches exactly; timeline shows the chaining wait | todo |
 
 ### M6: Contract freeze
 
@@ -123,27 +117,39 @@ All tests use synthetic traffic and hand-written scenarios.
 
 ### M10: Outer path
 
+Independent of M3–M9 (D52): cosim checks an accelerator's RTL against its
+model, not the platform.
+
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | GEN1 | Chisel generation through BRM bindings into one accelerator top (reuse ChiselHwGen) | BRM1 | Elaborates for the BRM3 and BRM4 parameter sets | todo |
 | GEN2 | C backend for SNAX-LOWER | LOW3 | C kernel command sequence equals the JSON program (D18); builds with the SNAX toolchain | todo |
-| COS1 | cocotb bridge replacing accelerator models with RTL | GEN1, MOD7 | `vecadd` and `dot` outputs match | todo |
-| COS2 | Mismatch report per BRM | COS1 | Cycle deviation from BRM timing reported per BRM | todo |
+| COS1 | cocotb bridge replacing accelerator models with RTL | GEN1, MOD7 | `vecadd` and `dot` outputs match the model's | todo |
+| COS2 | Mismatch report per accelerator (D52) | COS1 | Deviation of each accelerator's RTL from its declared `latency` and `ii` reported per BRM | todo |
+
+### M2: Anchor (deferred until after M10, D51)
+
+Checks the platform model against the real SNAX cluster RTL (ARCHITECTURE.md
+section 7). Until then the platform values are declared defaults and model
+cycles compare design points only.
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| ANC1 | Run `vecadd` in the SNAX RTL flow, record cycles per phase | M10 | Numbers checked in | `deferred` |
+| ANC2 | Matching hand-written scenario, deviation report, error target (open item 3) | MOD9, ANC1 | Deviation explained per phase, CPU-side CSR programming kept separate; target in the Decision Log | `deferred` |
+| ANC3 | Regression test locking the anchor numbers | ANC2 | CI fails when model cycles drift outside the target | `deferred` |
 
 ## Next Up
 
 M1 is done: the model runs scenarios, writes profiles and traces, and its
-contracts are written down (`docs/CONTRACTS.md`).
+contracts are written down (`docs/CONTRACTS.md`). The anchor (M2) is
+deferred until after M10 (D51): the user supplies the accelerator's entry in
+the cluster file, and the rest of the cluster keeps its declared defaults.
 
-Next is M2, the anchor. ANC1 first: run `vecadd` in the SNAX RTL flow and
-record the cycles per phase. It should also measure what is still a
-placeholder in the model — the DMA values of open item 7 and the controller
-costs of open item 10 — because ANC2 needs them to compare like with like.
-ANC2 then builds on `scenarios/vecadd` (run it with `pixi run model-run`)
-and reports the deviation per phase, keeping CPU-side CSR programming
-separate; it needs at least `--trace task`, since the overlap of
-accelerator-active phases with control overhead comes from the class
-intervals, not from the totals (open item 11).
+Next is M3: close `vecadd` end to end by building backwards from
+`scenarios/vecadd`, then the visualiser (M4). SNAX-LOWER produces both the
+cluster file and the control program (D53), so LOW1b and LOW1c are accepted
+against `scenarios/vecadd/scenario.json` and `scenarios/clusters/alu4.json`.
 
 ## Sync Reminders
 

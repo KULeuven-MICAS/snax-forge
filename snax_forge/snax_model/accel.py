@@ -60,7 +60,7 @@ changes cycle counts:
   ``start`` in cycle s gives busy from s+1; ``done_cycle`` is the cycle
   after the last push.
 
-Not copied (flagged for ANC2 / BRM4):
+Not copied (open item 8; the drain cycle at the latest in BRM4):
 
 * Per-stage ready. Here the pipeline has a global stall (see below). Many
   SNAX accelerators instead give each stage its own ready, so a stage can

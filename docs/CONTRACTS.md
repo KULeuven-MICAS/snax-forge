@@ -10,8 +10,9 @@
 > 19, LOW1).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
-> schemas are F2's job (D26, F2). Every value marked **placeholder** is a
-> number ANC1/ANC2 measures; nothing else about the format depends on it.
+> schemas are F2's job (D26, F2). Every value marked **default** is a
+> declared platform default, not a measurement (D51); nothing else about the
+> format depends on it.
 >
 > Every fenced block below is copied verbatim out of a checked-in file or
 > out of the output of `scenarios/reduce`, and
@@ -71,6 +72,12 @@ and `register_map` (D41). Every config class writes all of its fields
 (`to_dict`), missing keys take the class default, and unknown keys are an
 error.
 
+**Who fills what** (D51, D53). The accelerator entries are the user's: an
+accelerator's `lanes`, rates, `latency`, `ii` and `op` (later its BRM).
+Everything else describes the SNAX platform, with the defaults below; they
+are design knobs for SNAX-DSE, not measurements. SNAX-LOWER will derive the
+whole file from a design point; until then `scenarios/make.py` writes it.
+
 **`components` is one ordered list** of every ticked component, the xbar and
 the controller included. The builder adds them in exactly that order, and
 that order fixes three things: the scheduler's tick order, the xbar's port
@@ -106,7 +113,7 @@ but cannot yet be named in a scenario (open item 18).
 |---|---|---|---|
 | `size_bytes` | flat size | 1 MiB | positive multiple of `beat_bytes` |
 | `base_addr` | byte address of the first word | 0 | — |
-| `read_latency` | cycles from a read to the DMA's buffer | 1 **placeholder** | >= 0 |
+| `read_latency` | cycles from a read to the DMA's buffer | 1 **default** | >= 0 |
 | `beat_bits` | one access | 512 | multiple of `width_bits`; must equal `L1Config.wide_bits` |
 | `width_bits`, `dtype`, `elems_per_word` | as the L1, and must agree with it | 64, `int64`, 1 | fits the word |
 
@@ -124,7 +131,7 @@ either in one cycle is a bug in the DMA and raises.
 | `addr_depth` | address buffer per port | 8 | >= 1 |
 | `prio` | static TCDM priority of every port | 0 | — |
 
-### DmaConfig (dma.py) — every field a **placeholder** until ANC1
+### DmaConfig (dma.py) — every value a declared **default** (D51)
 
 | Field | Meaning | Default | Checked |
 |---|---|---|---|
@@ -134,7 +141,7 @@ either in one cycle is a bug in the DMA and raises.
 | `done_latency` | last write -> its response | 0 | >= 0 |
 | `dims` | loops per side held in registers | 2 | >= 1 |
 
-### ControllerConfig (ctrl.py) — every cost a **placeholder** until ANC2
+### ControllerConfig (ctrl.py) — every cost a declared **default** (D51)
 
 | Field | Meaning | Default | Checked |
 |---|---|---|---|
@@ -322,7 +329,7 @@ busy is an error — the program must wait first. `busy_cycles` read in cycle
 `r` after a start that landed in `s` is `min(r, D) - s - 1`, with `D` the
 block's `done_cycle`; a task with no work reads 0.
 
-**Timing** (D37, every cost a **placeholder** until ANC2). The program starts
+**Timing** (D37, every cost a declared **default**, D51). The program starts
 in cycle 0 and runs one command at a time. A command beginning in `t` with
 cost `c` covers `[t, t + c - 1]` and takes effect in its last cycle; the next
 begins in `t + c`. A start landing in `w` makes the block busy from `w + 1`.
@@ -482,7 +489,7 @@ kept per component and written to `trace_meta.json` as half-open runs
 
 Two things need the intervals rather than the totals, so they need at least a
 task-level trace: the anchor report's overlap of accelerator-active phases
-with control overhead (section 7 of ARCHITECTURE.md, ANC2) and FIFO occupancy
+with control overhead (section 7 of ARCHITECTURE.md, deferred) and FIFO occupancy
 over the owner's busy window (VIS3). Both are open item 11.
 
 **Filter** (D49). A beat-level run writes roughly a kilobyte per cycle, so a

@@ -13,7 +13,7 @@ Files:
 
     clusters/alu4.json   DMA, readers ra and rb, writer wr, elementwise add, 4 lanes
     clusters/red4.json   reader ra (4 lanes), writer wr (1 lane), reduce; no L2
-    vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the ANC2 basis
+    vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the M3 target
     reduce/              64 elements in L1 summed in groups of 16
     dma/                 L2 -> L1 with a 2D pattern and back, on alu4
 """
@@ -55,8 +55,8 @@ WORD = 8  # bytes per bank word (64-bit banks)
 BEAT = 64  # bytes per wide beat (512 bits)
 LANES = 4
 
-# Controller costs of the MOD7 vecadd (test_profile.VECADD_CFG). Placeholders
-# until ANC2 calibrates them (open item 10).
+# Controller costs of the MOD7 vecadd (test_profile.VECADD_CFG). Declared
+# defaults, not measured (D51, open item 10).
 CTL = ControllerConfig(write_cost=1, kind_write_cost={"dma": 2}, read_cost=2, poll_interval=4)
 
 

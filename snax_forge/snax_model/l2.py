@@ -13,7 +13,7 @@ cluster's wide AXI port goes to ``tb_memory_axi``: an atomics filter, an
 combinationally and is always ready. So the L2 is a fixed latency set by a
 few registers, with one beat per cycle; there is no DRAM model. Here that
 is ``read_latency``: cycles from the DMA's read to the data in the DMA's
-buffer, with the AXI path lumped in. ANC1 measures the real value.
+buffer, with the AXI path lumped in. The value is a declared default (D51).
 
 AXI read and write channels are independent, so one read and one write per
 cycle are allowed. A second read or a second write in the same cycle is a
@@ -70,7 +70,7 @@ class L2Config(Config):
 
     size_bytes: int = 1 << 20  # placeholder size, 1 MiB
     base_addr: int = 0  # byte address of the first L2 word
-    read_latency: int = 1  # cycles from read to data in the DMA buffer; ANC1 sets it
+    read_latency: int = 1  # cycles from read to data in the DMA buffer; declared default (D51)
     beat_bits: int = 512  # one access; must equal L1Config.wide_bits
     width_bits: int = 64  # word = the L1 bank word (D13)
     dtype: str = "int64"  # element type, as in the L1
