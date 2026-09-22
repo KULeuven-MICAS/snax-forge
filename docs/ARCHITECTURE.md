@@ -414,9 +414,13 @@ for LLM use is VIS7.
 - a diff between two runs (design point and profile; config changes once
   SNAX-DSE exists)
 
-The visualiser is built right after `vecadd` closes (M4), so one full manual
-loop is possible before `dot`. Until the contract freeze, views read the same
-Python dataclasses as the model rather than raw JSON.
+The visualiser comes in two parts (D54). The run views — scaffold, timeline,
+utilisation and bank conflicts (M4a) — read only a model run's output
+directory and are built before M3. The design point and DFG views, the diff,
+the LLM summary and the first manual loop (M4b) follow M3, so one full manual
+loop is still possible before `dot`. Until the contract freeze, views read the
+same Python dataclasses as the model rather than raw JSON: a run's output
+files are loaded back with each class's `from_dict` (D38, D50).
 
 ### 5.8 Thinkers
 
@@ -478,22 +482,24 @@ first comparison.
 
 See `docs/STATUS.md` for the task breakdown of each milestone.
 
-Order: M1, M3–M10, then M2 (D51). `vecadd` is closed end to end first (M3),
-then the visualiser (M4).
+Order: M1, M4a, M3, M4b, M5–M10, then M2 (D51, D54). The run views come
+first, then `vecadd` is closed end to end, then the rest of the visualiser.
 
 **M1: SNAX-MODEL, kernel-agnostic.** Scheduler, banks, interconnect,
 streamers, accelerator interface with elementwise and reduce stubs, DMA/L2,
 CSRs and controller, profile and trace, scenario runner. Ends with the
 model-side contracts written down.
 
+**M4a: Run views.** HTML scaffold, timeline, utilisation and bank conflicts,
+all from a model run's output directory; tested on the M1 scenarios.
+
 **M3: Build backwards to close `vecadd`.** Elementwise-add BRM, design point,
 SNAX-LOWER (cluster file and control program, D53), minimal SNAX-DFG and
 reference executor. Each is accepted when it reproduces an input hand-written
 in M1 (`scenarios/vecadd`).
 
-**M4: Visualiser and first manual loop.** Timeline, utilisation, bank
-conflicts, design point, DFG and diff views; LLM trace summary; one documented
-design iteration on `vecadd`.
+**M4b: Remaining views and first manual loop.** Design point, DFG and diff
+views; LLM trace summary; one documented design iteration on `vecadd`.
 
 **M5: `dot`.** Reduction in SNAX-DFG and the reference executor, accumulator
 BRM, chaining waits and DMA insertion in SNAX-LOWER.
@@ -590,6 +596,7 @@ cluster RTL (section 7), with a regression test.
 | D51 | Ownership and the anchor. The user supplies the accelerator: its entry in the cluster file (`lanes`, rates, `latency`, `ii`, `op`), later its BRM (D5). Everything else is SNAX-MODEL's model of the SNAX platform, whose behaviour is fixed and whose parameters stay design knobs for SNAX-DSE (D7). The platform defaults are declared, not measured: one 512-bit DMA beat per cycle, 1-cycle L1 and L2 reads, small fixed controller costs. Model cycles compare design points and do not predict SNAX's absolute timing. The anchor (M2), which checks the platform model against SNAX RTL, is deferred to after M10; the milestone order is M1, M3–M10, M2. Amends D22, D24, principle 3 and section 7 | 15 |
 | D52 | Cosim is independent of the inner loop: nothing in M3–M9 waits on it. It replaces only the accelerator with its RTL and checks the accelerator's output and its declared `latency` / `ii`; it checks nothing about the platform. Integrating generated accelerators into the real SNAX cluster is outside the current plan. Amends section 5.9 and section 6 level 3 | 15 |
 | D53 | SNAX-LOWER produces both inputs of a model run: the cluster file (accelerator entries from each BRM's interface and timing parts, one streamer per port with `n_ports` = lanes, platform parts from the design point's cluster configuration, register map) and the control program. Deriving the cluster file decides nothing, so principle 4 holds. The layout is that of `scenarios/clusters/alu4.json` for now. Refines D18, D45 | 15 |
+| D54 | The visualiser is split. M4a (VIS1–VIS3: scaffold, timeline, utilisation and bank conflicts) reads only a model run's output directory, loaded back into the model's dataclasses, and is built before M3: model outputs have been stable since MOD10, and the views help debug M3's runs. M4b (VIS4–VIS7, LOOP1) needs the design point or the DFG and follows M3. VIS1 is tested on `scenarios/vecadd` instead of E2E1. Order M1, M4a, M3, M4b, M5–M10, M2. Amends D24, D51 (order) and section 5.7 | 15 |
 
 ## 11. Open Items
 

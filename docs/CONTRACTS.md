@@ -402,7 +402,7 @@ identical on every run and with skipping on and off.
 
 ## 7. Profile and trace
 
-This is what M4 and VIS7 read.
+This is what the views (M4a, M4b) and VIS7 read.
 
 **Profile** (`profile.py`): the totals of one run, read off the counters the
 components already keep. It never recounts, and it changes nothing (D38).

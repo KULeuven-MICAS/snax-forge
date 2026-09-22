@@ -62,7 +62,7 @@ New event kinds are added with ``register_event`` (principle 6).
 
 Filter (D49)
 ------------
-A beat-level run writes roughly a kilobyte per cycle, so a long run (M4)
+A beat-level run writes roughly a kilobyte per cycle, so a long run (M4a)
 is unreadable and large. ``Trace(level, sources=..., window=...)`` drops
 beat events outside the filter in ``emit``, and nowhere else:
 
