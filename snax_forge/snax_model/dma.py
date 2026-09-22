@@ -134,10 +134,10 @@ from __future__ import annotations
 from collections import deque
 from dataclasses import dataclass, field
 from math import prod
-from typing import Any
 
 import numpy as np
 
+from .config import Config
 from .l2 import L2Config, L2Memory
 from .mem import BankReq, L1Config
 from .sched import ClassLog, Component, Phase, SimulationError
@@ -237,7 +237,7 @@ def check_descriptor(
 
 
 @dataclass(frozen=True)
-class DmaConfig:
+class DmaConfig(Config):
     """Design-time timing of the DMA. All defaults are placeholders until ANC1."""
 
     startup: int = 2  # start in s -> first source request in s + startup (>= 1)
@@ -541,16 +541,3 @@ class Dma(Component):
     def on_gap(self, start: int, stop: int) -> None:
         """Skipped cycles: one class, from committed state (module doc)."""
         self.cycles.add(self._sleep_class(start), start, stop)
-
-    # -------------------------------------------------------------------------
-    # Statistics
-    # -------------------------------------------------------------------------
-
-    def summary(self) -> dict[str, Any]:
-        """Totals for a quick look; MOD8 builds the real profile."""
-        return {
-            "cycles": dict(self.cycles),
-            "beats_read": self.beats_read,
-            "beats_written": self.beats_written,
-            "max_buffered": self.max_buffered,
-        }

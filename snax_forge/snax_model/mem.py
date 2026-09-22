@@ -74,6 +74,7 @@ from typing import Any, Protocol
 
 import numpy as np
 
+from .config import Config
 from .sched import SimulationError
 
 # Default sizes follow snax_cluster target/snitch_cluster/cfg/snax_alu_cluster.hjson:
@@ -95,7 +96,7 @@ class BankConflictError(SimulationError):
 
 
 @dataclass(frozen=True)
-class L1Config:
+class L1Config(Config):
     """Size and timing of the L1. Frozen: it describes the storage array,
     which is built once from it, so it must not change afterwards.
     """
@@ -273,6 +274,13 @@ class L1Memory:
         c = self.cfg
         if self.amap is None:
             self.amap = WordInterleaved(c.n_banks)
+        # Hot-path copies of derived config values, bound once (D48): locate()
+        # runs several times per access, and properties are not free.
+        self._wb = c.word_bytes
+        self._size = c.size_bytes
+        self._base = c.base_addr
+        self._decode = self.amap.decode
+        self._all_strb = np.ones(c.elems_per_word, dtype=bool)  # "write every element"
         self.data = np.zeros((c.n_banks, c.rows, c.elems_per_word), dtype=c.dtype)
         self.reads = np.zeros(c.n_banks, dtype=np.int64)
         self.writes = np.zeros(c.n_banks, dtype=np.int64)
@@ -291,12 +299,12 @@ class L1Memory:
     def locate(self, addr: int) -> tuple[int, int]:
         """(bank, row) of a word address. Raises on misaligned or out-of-range."""
         c = self.cfg
-        off = addr - c.base_addr  # byte offset inside L1
-        if off % c.word_bytes:
+        off = addr - self._base  # byte offset inside L1
+        if off % self._wb:
             raise SimulationError(f"L1 address {addr:#x} is not word aligned")
-        if not 0 <= off < c.size_bytes:
+        if not 0 <= off < self._size:
             raise SimulationError(f"L1 address {addr:#x} is outside L1")
-        bank, row = self.amap.decode(off // c.word_bytes)
+        bank, row = self._decode(off // self._wb)
         # Guard against a custom address map that returns nonsense.
         if not (0 <= bank < c.n_banks and 0 <= row < c.rows):
             raise SimulationError(f"address map gave bank {bank}, row {row} for {addr:#x}")
@@ -444,8 +452,21 @@ class L1Memory:
             self.poke(addr + i * self.cfg.word_bytes, w)
 
     def dump(self, addr: int, n: int) -> np.ndarray:
-        """Read ``n`` consecutive words starting at ``addr``, shape [n, epw]."""
-        return np.stack([self.peek(addr + i * self.cfg.word_bytes) for i in range(n)])
+        """Read ``n`` consecutive words starting at ``addr``, shape [n, epw].
+
+        Every run dumps the whole L1 (MOD9), so with the default map this is
+        one reshape instead of a Python loop over every word (D48). A custom
+        address map falls back to the loop.
+        """
+        c = self.cfg
+        if n > 0 and isinstance(self.amap, WordInterleaved) and self.amap.n_banks == c.n_banks:
+            self.locate(addr)  # same checks as peek: alignment and range
+            self.locate(addr + (n - 1) * c.word_bytes)
+            w0 = (addr - c.base_addr) // c.word_bytes
+            # [banks, rows, epw] -> word order (row * n_banks + bank) of the map.
+            flat = self.data.transpose(1, 0, 2).reshape(-1, c.elems_per_word)
+            return flat[w0 : w0 + n].copy()
+        return np.stack([self.peek(addr + i * c.word_bytes) for i in range(n)])
 
     # -------------------------------------------------------------------------
     # Helpers
@@ -465,7 +486,7 @@ class L1Memory:
         """Turn a strobe into a bool mask of shape (elems_per_word,); None = all."""
         epw = self.cfg.elems_per_word
         if strb is None:
-            return np.ones(epw, dtype=bool)
+            return self._all_strb  # shared, never written to
         arr = np.asarray(strb, dtype=bool)
         if arr.shape != (epw,):
             raise SimulationError(f"strobe must have {epw} entries, got shape {arr.shape}")

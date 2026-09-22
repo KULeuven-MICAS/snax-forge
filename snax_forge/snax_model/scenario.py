@@ -84,7 +84,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field, fields
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -92,6 +92,7 @@ import numpy as np
 
 from .accel import AccelConfig, Accelerator, elementwise_stub, reduce_stub
 from .cluster import Cluster
+from .config import check_keys, plain, to_json
 from .ctrl import (
     Command,
     Controller,
@@ -154,74 +155,27 @@ class MemoryInitError(ScenarioError):
 
 
 def _check_keys(d: Mapping[str, Any], allowed: Sequence[str], what: str) -> None:
-    """Reject unknown keys, so a typo never silently falls back to a default."""
-    unknown = sorted(set(d) - set(allowed))
-    if unknown:
-        raise ScenarioError(f"{what}: unknown keys {unknown} (allowed: {list(allowed)})")
+    """Reject unknown keys, so a typo never silently falls back to a default.
 
-
-def _plain(v: Any) -> Any:
-    """Tuples -> lists, mappings -> dicts, recursively: JSON-ready values."""
-    if isinstance(v, Mapping):
-        return {k: _plain(x) for k, x in v.items()}
-    if isinstance(v, (list, tuple)):
-        return [_plain(x) for x in v]
-    return v
-
-
-def config_to_dict(cfg: Any) -> dict[str, Any]:
-    """Every field of a flat config dataclass (L1Config, StreamerConfig, ...).
-
-    Every field is written, defaults included, so a written file says
-    everything. Moves next to each config class in MOD10 / F2.
+    config.check_keys with the scenario's error type; the config classes use
+    the plain one (MOD10b).
     """
-    return {f.name: _plain(getattr(cfg, f.name)) for f in fields(cfg)}
+    try:
+        check_keys(d, allowed, what)
+    except ValueError as e:
+        raise ScenarioError(str(e)) from None
 
 
 def config_from_dict(cls: type, d: Mapping[str, Any], what: str) -> Any:
-    """Inverse of ``config_to_dict``; missing keys take the class default."""
-    _check_keys(d, [f.name for f in fields(cls)], what)
+    """``cls.from_dict`` (config.py) with the name of the field being read.
+
+    The config classes carry the conversion themselves since MOD10b; this
+    only turns their ValueError into a ScenarioError naming the field.
+    """
     try:
-        return cls(**d)
+        return cls.from_dict(d)
     except (TypeError, ValueError) as e:
         raise ScenarioError(f"{what}: {e}") from e
-
-
-JSON_WIDTH = 100  # line length of written JSON, as ruff's for the code
-
-
-def _scalar(v: Any) -> bool:
-    return not isinstance(v, (dict, list, tuple))
-
-
-def _json(v: Any, indent: int, col: int) -> str:
-    """One value, its block indented by ``indent``, starting at column ``col``.
-
-    A container goes on one line if it ends within JSON_WIDTH, and a list of
-    scalars always does (a histogram stays one line); otherwise one item per
-    line, one space deeper.
-    """
-    flat = json.dumps(v)
-    if _scalar(v) or (isinstance(v, (list, tuple)) and all(map(_scalar, v))):
-        return flat
-    if col + len(flat) <= JSON_WIDTH or not v:
-        return flat
-    pad = " " * (indent + 1)
-    if isinstance(v, dict):
-        items = []
-        for k, x in v.items():
-            head = f"{pad}{json.dumps(k)}: "
-            items.append(head + _json(x, indent + 1, len(head)))
-        return "{\n" + ",\n".join(items) + "\n" + " " * indent + "}"
-    items = [pad + _json(x, indent + 1, len(pad)) for x in v]
-    return "[\n" + ",\n".join(items) + "\n" + " " * indent + "]"
-
-
-def to_json(obj: Any) -> str:
-    """The one JSON format of every written file (D44): insertion order, small
-    containers on one line (so one command per line), final newline.
-    Deterministic, and ``json.loads`` gives ``obj`` back."""
-    return _json(obj, 0, 0) + "\n"
 
 
 # =============================================================================
@@ -428,9 +382,9 @@ class ComponentSpec:
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"name": self.name, "kind": self.kind}
         if self.kind == "accel":
-            d |= {"accel": self.accel, "params": _plain(self.params), "attach": dict(self.attach)}
+            d |= {"accel": self.accel, "params": plain(self.params), "attach": dict(self.attach)}
         else:
-            d["config"] = _plain(self.config)
+            d["config"] = plain(self.config)
         return d
 
     @classmethod
@@ -503,9 +457,9 @@ class ClusterConfig:
     register_map: RegisterMapSpec = field(default_factory=RegisterMapSpec)
 
     def to_dict(self) -> dict[str, Any]:
-        d: dict[str, Any] = {"l1": config_to_dict(self.l1)}
+        d: dict[str, Any] = {"l1": self.l1.to_dict()}
         if self.l2 is not None:
-            d["l2"] = config_to_dict(self.l2)
+            d["l2"] = self.l2.to_dict()
         d["components"] = [c.to_dict() for c in self.components]
         d["register_map"] = self.register_map.to_dict()
         return d
@@ -594,7 +548,7 @@ class MemInit:
         for s in _SOURCES:
             v = getattr(self, s)
             if v is not None:
-                d[s] = _plain(v)
+                d[s] = plain(v)
         return d
 
     @classmethod
@@ -847,13 +801,22 @@ class RunResult:
     reads: list[tuple[int, int, int]]  # (cycle, addr, value), as Controller.reads
     l1: np.ndarray  # [n_words, elems_per_word], address order
     l2: np.ndarray | None
+    cluster: dict[str, Any] = field(default_factory=dict)  # the cluster config used
+    cluster_file: str | None = None  # its path as the scenario file gave it
 
     def run_info(self) -> dict[str, Any]:
-        """Contents of run.json. No skip mode: output must not depend on it (D44)."""
+        """Contents of run.json. No skip mode: output must not depend on it (D44).
+
+        The cluster configuration is written out in full (D50): an output
+        directory then says on its own which hardware produced it, which is
+        what a diff of two runs needs (VIS6).
+        """
         return {
             "scenario": self.scenario,
+            "cluster_file": self.cluster_file,
             "trace_level": self.trace_level,
             "total_cycles": self.total_cycles,
+            "cluster": self.cluster,
             "register_map": self.regmap.to_dict(),
             "reads": [
                 {"cycle": c, "addr": a, "reg": self.regmap.describe(a), "value": v}
@@ -867,15 +830,25 @@ def run(
     skip_idle: bool = True,
     trace_level: str = "off",
     max_cycles: int | None = None,
+    trace_sources: Sequence[str] | None = None,
+    trace_window: tuple[int, int] | None = None,
 ) -> RunResult:
     """Build, run until idle and collect the results.
 
     ``max_cycles`` overrides the scenario's; with neither, ``Cluster.run``'s
     default. A program that does not finish raises ``SimulationTimeout``.
+    ``trace_sources`` / ``trace_window`` filter the beat-level events only
+    (D49); they change the trace file, nothing else.
     """
     if trace_level not in LEVELS:
         raise ScenarioError(f"trace level must be one of {LEVELS}, got {trace_level!r}")
-    trace = None if trace_level == "off" else Trace(trace_level)
+    if trace_level == "off":
+        trace = None
+    else:
+        try:
+            trace = Trace(trace_level, filter_sources=trace_sources, filter_window=trace_window)
+        except ValueError as e:
+            raise ScenarioError(str(e)) from e
     b = build(scenario, skip_idle, trace)
     limit = max_cycles if max_cycles is not None else scenario.max_cycles
     total = b.cluster.run() if limit is None else b.cluster.run(max_cycles=limit)
@@ -884,7 +857,17 @@ def run(
     l2 = None if b.l2 is None else b.l2.dump(b.l2.cfg.base_addr, b.l2.cfg.n_words)
     reads = [(int(c), int(a), int(v)) for c, a, v in b.controller.reads]
     return RunResult(
-        scenario.name, trace_level, total, build_profile(b.cluster), trace, b.regmap, reads, l1, l2
+        scenario=scenario.name,
+        trace_level=trace_level,
+        total_cycles=total,
+        profile=build_profile(b.cluster),
+        trace=trace,
+        regmap=b.regmap,
+        reads=reads,
+        l1=l1,
+        l2=l2,
+        cluster=scenario.cluster.to_dict(),
+        cluster_file=scenario.cluster_ref,
     )
 
 
@@ -983,7 +966,6 @@ __all__ = [
     "build",
     "build_cluster",
     "config_from_dict",
-    "config_to_dict",
     "named",
     "read_outputs",
     "register_accel",

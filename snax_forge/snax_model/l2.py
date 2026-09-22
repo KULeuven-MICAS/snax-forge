@@ -51,6 +51,7 @@ from typing import Any
 
 import numpy as np
 
+from .config import Config
 from .sched import SimulationError
 
 
@@ -64,7 +65,7 @@ class L2AccessError(SimulationError):
 
 
 @dataclass(frozen=True)
-class L2Config:
+class L2Config(Config):
     """Size and timing of the L2. Frozen: the storage is built once from it."""
 
     size_bytes: int = 1 << 20  # placeholder size, 1 MiB

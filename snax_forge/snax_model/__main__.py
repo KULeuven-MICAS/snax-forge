@@ -2,10 +2,16 @@
 
     python -m snax_forge.snax_model run SCENARIO --out DIR
            [--trace off|task|beat] [--no-skip] [--max-cycles N]
+           [--trace-source NAME ...] [--trace-window A:B]
 
 Runs one scenario file (scenario.py) and writes the output files into DIR.
 The skip mode only changes how fast the run is, never what is written
 (D29, D38), so it is printed here and not stored in run.json.
+
+``--trace-source`` and ``--trace-window`` filter the beat-level events of a
+long run (D49); the task-level events and every profile number stay
+complete. Both are recorded in trace_meta.json, so a filtered trace says
+what it left out.
 
 Exit codes: 0 done, 1 the simulation failed (a model error or a program
 that does not finish within max_cycles), 2 the scenario is invalid or
@@ -37,7 +43,22 @@ def _parser() -> argparse.ArgumentParser:
     r.add_argument(
         "--max-cycles", type=int, default=None, help="overrides the scenario's max_cycles"
     )
+    r.add_argument(
+        "--trace-source", action="append", metavar="NAME",
+        help="beat events of this source only (repeatable)",
+    )  # fmt: skip
+    r.add_argument("--trace-window", metavar="A:B", help="beat events in cycles [A, B) only")
     return p
+
+
+def _window(text: str | None) -> tuple[int, int] | None:
+    """``"A:B"`` -> (A, B). ValueError otherwise."""
+    if text is None:
+        return None
+    a, sep, b = text.partition(":")
+    if not sep:
+        raise ValueError(f"trace window {text!r} must be A:B")
+    return int(a), int(b)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -49,9 +70,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"error: {args.scenario}: {e}", file=sys.stderr)
         return 2
     try:
-        res = run(sc, skip_idle=skip, trace_level=args.trace, max_cycles=args.max_cycles)
+        res = run(
+            sc,
+            skip_idle=skip,
+            trace_level=args.trace,
+            max_cycles=args.max_cycles,
+            trace_sources=args.trace_source,
+            trace_window=_window(args.trace_window),
+        )
     except ScenarioError as e:
         print(f"error: {sc.name}: {e}", file=sys.stderr)
+        return 2
+    except ValueError as e:  # a bad --trace-window (ScenarioError is caught above)
+        print(f"error: {e}", file=sys.stderr)
         return 2
     except (SimulationError, SimulationTimeout) as e:
         print(f"simulation failed: {sc.name}: {e}", file=sys.stderr)

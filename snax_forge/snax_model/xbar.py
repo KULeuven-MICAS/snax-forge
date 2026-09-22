@@ -120,7 +120,7 @@ dropping or changing a refused request raises ``HoldViolation``.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
@@ -170,7 +170,10 @@ class Xbar(Component):
         ``_due``     per port: (ready cycle, banks) of outstanding reads
     * this cycle's wires, cleared in ``commit``:
         ``_now``, ``_req``, ``_grant``, ``_wider`` (refused by a wider
-        grant), ``_arbitrated``, ``_sel``, ``_lock_next``, ``_new_due``
+        grant), ``_arbitrated``, ``_sel``, ``_lock_next``, ``_new_due``.
+        ``_sel`` / ``_lock_next`` are sparse: only the (width, group) pairs
+        that had a request this cycle; every other group takes the idle
+        default in ``commit``.
     * statistics (for MOD8), never read by the model itself:
         per bank: ``bank_grants`` (accesses; a wide grant counts on each of
         its banks), ``bank_conflicts`` (cycles with >= 2 requests covering
@@ -180,6 +183,13 @@ class Xbar(Component):
         per port: ``port_grants``, ``port_stalls`` (cycles refused),
         ``port_stalls_wider`` (the part of ``port_stalls`` lost to a wider
         grant; the rest is same-width contention)
+
+    Everything touched every cycle (pointers, locks, wires, the counters) is
+    a plain Python list of ints or bools, not a NumPy array: at cluster sizes
+    (tens of banks and ports) the array call overhead dominates, and this is
+    the hottest path of the model (D48). The counters are still *read* as
+    arrays through the properties below, so nothing outside changes. Arrays
+    stay where they hold data (``L1Memory.data``) or address streams.
     """
 
     phases = (Phase.ARBITRATE, Phase.MEMORY)
@@ -234,30 +244,64 @@ class Xbar(Component):
         # Group sizes in use, widest first: the order of _priority.
         self._groups = sorted({p.group for p in self.ports} | {1}, reverse=True)
         # Committed state. N-1 is the RTL reset value: "start from 0".
-        self.prev = {g: np.full(nb // g, n - 1, dtype=np.int64) for g in self._groups}
-        self.lock = {g: np.zeros(nb // g, dtype=bool) for g in self._groups}
+        self.prev = {g: [n - 1] * (nb // g) for g in self._groups}
+        self.lock = {g: [False] * (nb // g) for g in self._groups}
+        # The value a group takes in a cycle without a request, copied in bulk.
+        self._prev_idle = {g: list(v) for g, v in self.prev.items()}
+        self._lock_idle = {g: list(v) for g, v in self.lock.items()}
         self._held: list[_Req | None] = [None] * n
         self._due: list[deque[tuple[int, tuple[int, ...]]]] = [deque() for _ in range(n)]
-        # Statistics.
-        self.bank_grants = np.zeros(nb, dtype=np.int64)
-        self.bank_conflicts = np.zeros(nb, dtype=np.int64)
-        self.bank_stalls = np.zeros(nb, dtype=np.int64)
-        self.bank_blocked = np.zeros(nb, dtype=np.int64)
-        self.port_grants = np.zeros(n, dtype=np.int64)
-        self.port_stalls = np.zeros(n, dtype=np.int64)
-        self.port_stalls_wider = np.zeros(n, dtype=np.int64)
+        # Statistics (read as arrays through the properties below).
+        self._bank_grants = [0] * nb
+        self._bank_conflicts = [0] * nb
+        self._bank_stalls = [0] * nb
+        self._bank_blocked = [0] * nb
+        self._port_grants = [0] * n
+        self._port_stalls = [0] * n
+        self._port_stalls_wider = [0] * n
         self._clear_wires()
 
+    # Counters: kept as lists, read as arrays (the model never reads them).
+
+    @property
+    def bank_grants(self) -> np.ndarray:
+        return np.asarray(self._bank_grants, dtype=np.int64)
+
+    @property
+    def bank_conflicts(self) -> np.ndarray:
+        return np.asarray(self._bank_conflicts, dtype=np.int64)
+
+    @property
+    def bank_stalls(self) -> np.ndarray:
+        return np.asarray(self._bank_stalls, dtype=np.int64)
+
+    @property
+    def bank_blocked(self) -> np.ndarray:
+        return np.asarray(self._bank_blocked, dtype=np.int64)
+
+    @property
+    def port_grants(self) -> np.ndarray:
+        return np.asarray(self._port_grants, dtype=np.int64)
+
+    @property
+    def port_stalls(self) -> np.ndarray:
+        return np.asarray(self._port_stalls, dtype=np.int64)
+
+    @property
+    def port_stalls_wider(self) -> np.ndarray:
+        return np.asarray(self._port_stalls_wider, dtype=np.int64)
+
     def _clear_wires(self) -> None:
-        n, nb = len(self.ports), self.mem.cfg.n_banks
+        n = len(self.ports)
         self._now: int | None = None
         self._req: list[_Req | None] = [None] * n
-        self._grant = np.zeros(n, dtype=bool)
-        self._wider = np.zeros(n, dtype=bool)
+        self._grant = [False] * n
+        self._wider = [False] * n
         self._arbitrated = False
-        # With no request a group selects N-1 and does not lock: the default.
-        self._sel = {g: np.full(nb // g, n - 1, dtype=np.int64) for g in self._groups}
-        self._lock_next = {g: np.zeros(nb // g, dtype=bool) for g in self._groups}
+        # Sparse: (width, group) -> selection / lock, only where there was a
+        # request. Every other group takes the idle default (N-1, no lock).
+        self._sel: dict[tuple[int, int], int] = {}
+        self._lock_next: set[tuple[int, int]] = set()
         self._new_due: list[tuple[int, int, tuple[int, ...]]] = []  # (port, ready, banks)
 
     def _enter(self, cycle: int) -> None:
@@ -336,7 +380,7 @@ class Xbar(Component):
             raise SimulationError(f"{self.name}: lost read data for port {port} in cycle {cycle}")
         first = resps[0]
         if len(resps) == 1:
-            return replace(first, tag=first.tag[1])
+            return BankResp(first.bank, first.tag[1], first.data, first.issued)
         return BankResp(first.bank, first.tag[1], np.stack([r.data for r in resps]), first.issued)
 
     def next_rdata(self, cycle: int, port: int) -> int | None:
@@ -370,11 +414,14 @@ class Xbar(Component):
                     raise HoldViolation(
                         f"cycle {cycle}: port {self.ports[p].name} dropped a refused request"
                     )
-        cover = np.zeros(self.mem.cfg.n_banks, dtype=np.int64)  # requests per bank
+        cover: dict[int, int] = {}  # requests per bank, this cycle only
         for r in self._req:
             if r is not None:
-                cover[list(r.banks)] += 1
-        self.bank_conflicts += cover >= 2
+                for b in r.banks:
+                    cover[b] = cover.get(b, 0) + 1
+        for b, c in cover.items():
+            if c >= 2:
+                self._bank_conflicts[b] += 1
         self._priority(cycle)
         self._arbitrated = True
 
@@ -391,33 +438,36 @@ class Xbar(Component):
             if r is not None:
                 by_group.setdefault((self.ports[p].group, r.grp), []).append(p)
 
-        taken = np.zeros(self.mem.cfg.n_banks, dtype=bool)  # banks granted this cycle
+        taken: set[int] = set()  # banks granted this cycle
         for g, grp in sorted(by_group, key=lambda k: (-k[0], k[1])):  # widest first
             ps = by_group[(g, grp)]
-            banks = slice(grp * g, grp * g + g)
+            banks = range(grp * g, grp * g + g)
             sel = self._select(g, grp, ps)
-            self._sel[g][grp] = sel  # becomes prev at commit, granted or not
-            if taken[banks].any():  # a wider grant owns a bank: not ready
-                self._lock_next[g][grp] = True
-                self.bank_blocked[banks] += 1
+            self._sel[(g, grp)] = sel  # becomes prev at commit, granted or not
+            if any(b in taken for b in banks):  # a wider grant owns a bank: not ready
+                self._lock_next.add((g, grp))
+                for b in banks:
+                    self._bank_blocked[b] += 1
                 for p in ps:
-                    self.port_stalls_wider[p] += 1
+                    self._port_stalls_wider[p] += 1
                     self._wider[p] = True
             else:
                 self._grant[sel] = True
-                taken[banks] = True
-                self.bank_grants[banks] += 1
-                self.port_grants[sel] += 1
+                taken.update(banks)
+                for b in banks:
+                    self._bank_grants[b] += 1
+                self._port_grants[sel] += 1
             for p in ps:
                 if not self._grant[p]:
-                    self.port_stalls[p] += 1
-                    self.bank_stalls[banks] += 1
+                    self._port_stalls[p] += 1
+                    for b in banks:
+                        self._bank_stalls[b] += 1
 
     def _select(self, g: int, grp: int, ps: list[int]) -> int:
         """PriorityRoundRobinArbiter of one (width, group) among requesters ``ps``."""
         top = max(self._req[p].prio for p in ps)  # priority mask
         valid = [p for p in ps if self._req[p].prio == top]
-        prev = int(self.prev[g][grp])
+        prev = self.prev[g][grp]
         if self.lock[g][grp] and prev in valid:
             return prev  # locked: keep the refused selection
         later = [p for p in valid if p > prev]
@@ -427,14 +477,16 @@ class Xbar(Component):
         """Send each winner to its banks; remember where read data will appear."""
         lat = self.mem.cfg.read_latency
         wb = self.mem.cfg.word_bytes
-        for p in np.flatnonzero(self._grant):
-            p = int(p)
+        for p, granted in enumerate(self._grant):
+            if not granted:
+                continue
             r = self._req[p]
             # Wrap the tag so the response can be routed back (the RTL uses
             # a registered bank select instead; same effect with latency 1).
             tag = (p, r.req.tag)
             if len(r.banks) == 1:
-                self.mem.request(cycle, replace(r.req, tag=tag))
+                q = r.req  # same request with the routing tag (no dataclasses.replace: hot)
+                self.mem.request(cycle, BankReq(q.addr, q.write, q.wdata, q.strb, tag))
             else:  # one access per bank of the group, lane i at word i
                 for i in range(len(r.banks)):
                     sub = BankReq(r.req.addr + i * wb, r.req.write, r.wdata[i], r.strb[i], tag)
@@ -447,9 +499,13 @@ class Xbar(Component):
         self._freeze()
         if self._trace is not None and self._trace.beat:
             self._emit(cycle)
-        for g in self._groups:
-            self.prev[g][:] = self._sel[g]
-            self.lock[g][:] = self._lock_next[g]
+        for g in self._groups:  # every group idle by default, then this cycle's
+            self.prev[g][:] = self._prev_idle[g]
+            self.lock[g][:] = self._lock_idle[g]
+        for (g, grp), sel in self._sel.items():
+            self.prev[g][grp] = sel
+        for g, grp in self._lock_next:
+            self.lock[g][grp] = True
         for p, r in enumerate(self._req):
             self._held[p] = r if (r is not None and not self._grant[p]) else None
         for p, ready, banks in self._new_due:
@@ -494,26 +550,9 @@ class Xbar(Component):
         if self.check_hold and any(h is not None for h in self._held):
             raise HoldViolation(f"cycle {start}: a refused request was dropped (owner slept)")
         for g in self._groups:
-            self.prev[g][:] = len(self.ports) - 1
-            self.lock[g][:] = False
+            self.prev[g][:] = self._prev_idle[g]
+            self.lock[g][:] = self._lock_idle[g]
         self._held = [None] * len(self.ports)
-
-    # -------------------------------------------------------------------------
-    # Statistics
-    # -------------------------------------------------------------------------
-
-    def summary(self) -> dict[str, Any]:
-        """Totals for a quick look; MOD8 builds the real profile."""
-        self._freeze()
-        return {
-            "grants": int(self.port_grants.sum()),
-            "conflict_cycles": int(self.bank_conflicts.sum()),
-            "stalls": int(self.port_stalls.sum()),
-            "stalls_wider": int(self.port_stalls_wider.sum()),
-            "blocked": int(self.bank_blocked.sum()),
-            "stalls_per_port": {p.name: int(self.port_stalls[p.index]) for p in self.ports},
-            "worst_bank": int(np.argmax(self.bank_stalls)) if self.bank_stalls.any() else None,
-        }
 
 
 def _lanes(x: Any, g: int, what: str) -> list[Any]:

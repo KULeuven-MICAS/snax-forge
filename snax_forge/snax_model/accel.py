@@ -651,11 +651,3 @@ class Accelerator(Component):
         """Skipped cycles: the class recorded when the gap began (module doc)."""
         cls = self._gap_cls if self._gap_cls is not None else self._sleep_class(start)
         self.cycles.add(cls, start, stop)
-
-    # -------------------------------------------------------------------------
-    # Statistics
-    # -------------------------------------------------------------------------
-
-    def summary(self) -> dict[str, Any]:
-        """Totals for a quick look; MOD8 builds the real profile."""
-        return {"cycles": dict(self.cycles), "firings": self._k, "beats": dict(self.beats)}

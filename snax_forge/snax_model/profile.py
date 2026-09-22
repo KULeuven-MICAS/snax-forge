@@ -42,6 +42,7 @@ from typing import Any
 from .accel import Accelerator
 from .ctrl import Controller, Wait
 from .dma import Dma
+from .sched import ClassLog, SimulationError
 from .streamer import Streamer
 from .xbar import Xbar
 
@@ -208,11 +209,33 @@ def _controller(ctl: Controller) -> ControllerProfile:
     return ControllerProfile(ctl.name, dict(ctl.cycles), commands, len(ctl.reads), ctl.polls, waits)
 
 
+def _check_cycles(comp: Any, total: int) -> None:
+    """Every classified cycle of ``comp`` accounted for exactly once (R4, D47).
+
+    The class runs must cover ``[0, total)``: a commit classifies one cycle
+    and ``on_gap`` the cycles that were skipped. A component that sleeps
+    through a class change, or classifies a gap it never reported, shows up
+    here rather than as a quietly wrong statistic. ``ClassLog`` also checks
+    that the runs are contiguous, but only while a trace records them, so
+    this check is what covers an untraced run.
+    """
+    got = sum(comp.cycles.values())
+    if got != total:
+        raise SimulationError(
+            f"{comp.name}: cycle classes add up to {got}, the run took {total} cycles "
+            f"({dict(comp.cycles)}): a gap was classified wrongly (CONTRACTS.md, rule R4)"
+        )
+
+
 def build_profile(cluster: Any) -> Profile:
     """Collect the counters of every component after a run (reads only)."""
     total = int(cluster.cycle)
     comps = list(cluster)
     prof = Profile(total_cycles=total)
+
+    for c in comps:  # cheap, and it catches every gap bug in every run
+        if isinstance(getattr(c, "cycles", None), ClassLog):
+            _check_cycles(c, total)
 
     ctls = [c for c in comps if isinstance(c, Controller)]
     if len(ctls) > 1:

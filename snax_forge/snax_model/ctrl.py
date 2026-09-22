@@ -133,6 +133,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from .accel import Accelerator
+from .config import Config
 from .dma import DIRECTIONS, Dma, DmaDescriptor, DmaPattern
 from .sched import ClassLog, Component, Phase, SimulationError
 from .streamer import Streamer, StreamerRegs
@@ -525,7 +526,7 @@ class RegisterMap:
 
 
 @dataclass(frozen=True)
-class ControllerConfig:
+class ControllerConfig(Config):
     """Command costs in cycles (all >= 1) and wait timing. Placeholders until ANC2."""
 
     write_cost: int = 1
@@ -546,20 +547,6 @@ class ControllerConfig:
 
     def read_cost_of(self, kind: str) -> int:
         return self.kind_read_cost.get(kind, self.read_cost)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "write_cost": self.write_cost,
-            "read_cost": self.read_cost,
-            "kind_write_cost": dict(self.kind_write_cost),
-            "kind_read_cost": dict(self.kind_read_cost),
-            "poll_interval": self.poll_interval,
-            "signal_latency": self.signal_latency,
-        }
-
-    @classmethod
-    def from_dict(cls, d: Mapping[str, Any]) -> ControllerConfig:
-        return cls(**d)
 
 
 class Controller(Component):
@@ -806,8 +793,3 @@ class Controller(Component):
         cls = "wait" if isinstance(self.program[self.pc], Wait) else "command"
         self.cycles.add("idle", start, start + idle)
         self.cycles.add(cls, start + idle, stop)
-
-    def summary(self) -> dict[str, Any]:
-        """Totals for a quick look; MOD8 builds the real profile."""
-        return {"cycles": dict(self.cycles), "commands": len(self.spans), "polls": self.polls,
-                "finished": self.finished}  # fmt: skip

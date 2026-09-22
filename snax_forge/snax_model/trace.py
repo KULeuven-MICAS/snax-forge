@@ -58,9 +58,22 @@ model reads either. Events are emitted in ``commit`` (or when a start lands,
 which is itself a commit), so no hook adds a tick, a ``touch`` or a change to
 ``next_wake``, and the wake schedule is the same with tracing on or off.
 
-New event kinds are added with ``register_event`` (principle 6). Filtering
-beat events by source or cycle window would go into ``Trace.emit`` only
-(open item, VIS2 / VIS7).
+New event kinds are added with ``register_event`` (principle 6).
+
+Filter (D49)
+------------
+A beat-level run writes roughly a kilobyte per cycle, so a long run (ANC2,
+M4) is unreadable and large. ``Trace(level, sources=..., window=...)`` drops
+beat events outside the filter in ``emit``, and nowhere else:
+
+* ``sources``: keep beat events of these sources only (component or FIFO
+  names, as in ``sources``);
+* ``window``: keep beat events in the half-open cycle range ``[a, b)``.
+
+Task-level events (``cmd``, ``start``, ``done``) and the class intervals are
+never filtered, so the skeleton of the run and every profile number stay
+complete whatever the filter is. The filter changes what is written, never
+what is simulated: emitting is still the last thing a commit does.
 """
 
 from __future__ import annotations
@@ -275,10 +288,22 @@ class Trace:
     sources: list[str] = field(default_factory=list)
     intervals: dict[str, list[tuple[str, int, int]]] = field(default_factory=dict)
     events: list[Event] = field(default_factory=list)
+    filter_sources: list[str] | None = None  # beat events: these sources only
+    filter_window: tuple[int, int] | None = None  # beat events: cycles [a, b)
 
     def __post_init__(self) -> None:
         if self.level not in LEVELS:
             raise ValueError(f"trace level must be one of {LEVELS}, got {self.level!r}")
+        if self.filter_sources is not None:
+            self.filter_sources = list(self.filter_sources)
+            if not self.filter_sources:
+                raise ValueError("trace filter: sources must name at least one source")
+        if self.filter_window is not None:
+            a, b = (int(x) for x in self.filter_window)
+            if a < 0 or b < a:
+                raise ValueError(f"trace filter: window [{a}, {b}) is empty or negative")
+            self.filter_window = (a, b)
+        self._keep = None if self.filter_sources is None else set(self.filter_sources)
         self._logs: dict[str, ClassLog] = {}
 
     # -- levels (checked by the hooks before building an event) -----------------
@@ -321,7 +346,17 @@ class Trace:
             self.sources.append(name)
 
     def emit(self, ev: Event) -> None:
-        """Record one event. The hook has already checked the level."""
+        """Record one event, unless a filter drops it (module doc, D49).
+
+        The hook has already checked the level. Only beat events are
+        filtered: the task-level skeleton is always complete.
+        """
+        if ev.level == "beat":
+            if self._keep is not None and ev.src not in self._keep:
+                return
+            w = self.filter_window
+            if w is not None and not (w[0] <= ev.t < w[1]):
+                return
         self.events.append(ev)
 
     def finish(self, total: int) -> None:
@@ -346,6 +381,8 @@ class Trace:
         return {
             "level": self.level,
             "total_cycles": self.total_cycles,
+            "filter_sources": None if self.filter_sources is None else list(self.filter_sources),
+            "filter_window": None if self.filter_window is None else list(self.filter_window),
             "sources": list(self.sources),
             "intervals": {k: [list(r) for r in v] for k, v in self.intervals.items()},
             "events": [e.to_dict() for e in self.events],
@@ -353,9 +390,12 @@ class Trace:
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Trace:
+        window = d.get("filter_window")
         return cls(
             level=d["level"],
             total_cycles=d.get("total_cycles"),
+            filter_sources=d.get("filter_sources"),
+            filter_window=None if window is None else (int(window[0]), int(window[1])),
             sources=list(d.get("sources", [])),
             intervals={
                 k: [(str(c), int(a), int(b)) for c, a, b in v]

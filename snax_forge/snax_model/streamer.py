@@ -141,6 +141,7 @@ from typing import Any
 
 import numpy as np
 
+from .config import Config
 from .mem import BankReq
 from .sched import ClassLog, Component, Phase, SimulationError
 from .trace import Done, FifoCount, Start
@@ -407,7 +408,7 @@ class Fifo:
 
 
 @dataclass(frozen=True)
-class StreamerConfig:
+class StreamerConfig(Config):
     """Design-time parameters of one streamer."""
 
     write: bool = False  # False: reader (L1 -> FIFO); True: writer (FIFO -> L1)
@@ -678,15 +679,3 @@ class Streamer(Component):
     def on_gap(self, start: int, stop: int) -> None:
         """Skipped cycles: the streamer slept in a FIFO stall or idle."""
         self.cycles.add(self._sleep_class(), start, stop)
-
-    # -------------------------------------------------------------------------
-    # Statistics
-    # -------------------------------------------------------------------------
-
-    def summary(self) -> dict[str, Any]:
-        """Totals for a quick look; MOD8 builds the real profile."""
-        return {
-            "cycles": dict(self.cycles),
-            "grants_per_port": [int(self.xbar.port_grants[p]) for p in self.ports],
-            "stalls_per_port": [int(self.xbar.port_stalls[p]) for p in self.ports],
-        }
