@@ -1,0 +1,407 @@
+"""L1 memory banks for SNAX-MODEL (MOD2, D13, D29).
+
+What this models
+----------------
+The L1 (TCDM in SNAX) is a set of single-port SRAM banks. Each bank can do
+one access per cycle: either one read or one write. Many masters (streamer
+ports, DMA) share the banks through the interconnect.
+
+What this does NOT model
+------------------------
+Arbitration. Choosing which master gets a bank when several want it, and
+stalling the others, is the interconnect's job (MOD3, a separate module).
+The interconnect only passes one access per bank per cycle to this file. If
+two accesses still reach the same bank in one cycle, the interconnect has a
+bug, so ``request`` raises ``BankConflictError`` instead of guessing.
+
+Who calls what, per cycle
+-------------------------
+The cycle phases come from ``sched.Phase``:
+
+    REQUEST    masters drive requests            (MOD3 / MOD4 / MOD6)
+    ARBITRATE  interconnect picks one per bank   (MOD3)
+    MEMORY     interconnect calls L1Memory.request for each winner
+    RESPONSE   interconnect reads L1Memory.responses and routes data back
+
+The L1 is a shared state element (a ``Stateful`` in sched.py, like a FIFO),
+not a ``Component``: it is never ticked and has no ``next_wake``. Instead,
+``request`` calls ``cluster.touch(self)``, so the scheduler calls
+``commit`` at the end of that cycle. Because the L1 is only ever changed by
+someone who is awake and calling it, it can never "sleep through" a request.
+
+Timing rules (RTL-like, D29)
+----------------------------
+* A read samples the storage as it was at the end of the previous cycle.
+  A write issued in the same cycle, to another bank, does not affect it.
+* A write is buffered and only lands in storage in ``commit``, at the end
+  of the cycle. A read in the next cycle sees it.
+* Read data for a request in cycle ``t`` becomes visible in cycle
+  ``t + read_latency``. With latency 1 this is the registered SRAM output.
+* The read latency pipeline is stored as "responses keyed by the cycle they
+  become ready". That gives the same timing as a shift register of length
+  ``read_latency``, without ticking every cycle to shift it.
+
+Data layout (D13)
+-----------------
+The unit of access is one bank word (``width_bits`` wide). In v1 a word holds
+one element. Storage is already ``[banks, rows, elems_per_word]`` and writes
+take a per-element strobe, so packing several elements into a word (e.g.
+8 x int8 in 64 bits) can be switched on later without changing the interface.
+
+Addresses are byte addresses of whole words, starting at ``base_addr``
+(0 by default).
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any, Protocol
+
+import numpy as np
+
+from .sched import SimulationError
+
+# Default sizes follow snax_cluster target/snitch_cluster/cfg/snax_alu_cluster.hjson:
+# 128 KiB TCDM, 32 banks, 64-bit data. The base address defaults to 0 so the
+# model does not depend on where a given cluster maps its TCDM.
+
+
+class BankConflictError(SimulationError):
+    """Two accesses reached the same bank in the same cycle.
+
+    Should never happen once the interconnect (MOD3) is in place; it means
+    arbitration let two masters through to one bank.
+    """
+
+
+# =============================================================================
+# Configuration
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class L1Config:
+    """Size and timing of the L1. Frozen: it describes the storage array,
+    which is built once from it, so it must not change afterwards.
+    """
+
+    n_banks: int = 32  # number of banks
+    width_bits: int = 64  # bits per bank word
+    rows: int = 512  # words per bank; 32 * 512 * 8 B = 128 KiB
+    read_latency: int = 1  # cycles from read request to data out
+    dtype: str = "int64"  # element type (any NumPy dtype name)
+    elems_per_word: int = 1  # elements packed in one word; 1 in v1
+    base_addr: int = 0  # byte address of the first L1 word
+
+    def __post_init__(self) -> None:
+        # Reject configs that cannot describe a real memory.
+        if self.n_banks < 1 or self.rows < 1:
+            raise ValueError("n_banks and rows must be >= 1")
+        if self.width_bits % 8:
+            raise ValueError("width_bits must be a multiple of 8")
+        if self.read_latency < 0:
+            raise ValueError("read_latency must be >= 0")
+        if self.elems_per_word < 1:
+            raise ValueError("elems_per_word must be >= 1")
+        # All elements of one word must fit in the bank width.
+        elem_bits = np.dtype(self.dtype).itemsize * 8
+        if elem_bits * self.elems_per_word > self.width_bits:
+            raise ValueError(
+                f"{self.elems_per_word} x {self.dtype} does not fit in {self.width_bits} bits"
+            )
+
+    # Derived values are properties, not fields, so they can never
+    # disagree with the fields they come from.
+
+    @property
+    def word_bytes(self) -> int:
+        """Bytes per bank word; also the address step between words."""
+        return self.width_bits // 8
+
+    @property
+    def size_bytes(self) -> int:
+        """Total L1 size in bytes."""
+        return self.n_banks * self.rows * self.word_bytes
+
+
+# =============================================================================
+# Address mapping: word index <-> (bank, row)
+# =============================================================================
+
+
+class AddressMap(Protocol):
+    """How word indices are spread over the banks.
+
+    A "word index" is ``(addr - base_addr) / word_bytes``: 0 for the first
+    word of L1, 1 for the next, and so on. Any class with these two methods
+    can be passed to ``L1Memory`` (no subclassing needed).
+    """
+
+    def decode(self, word: int) -> tuple[int, int]:
+        """Word index -> (bank, row)."""
+        ...
+
+    def encode(self, bank: int, row: int) -> int:
+        """(bank, row) -> word index. Inverse of ``decode``."""
+        ...
+
+
+@dataclass(frozen=True)
+class WordInterleaved:
+    """Consecutive words go to consecutive banks (the SNAX TCDM layout).
+
+    With 4 banks, words 0 1 2 3 are row 0 of banks 0 1 2 3, words 4 5 6 7
+    are row 1, and so on. A unit-stride stream therefore touches every bank
+    once before it comes back to the first one.
+    """
+
+    n_banks: int
+
+    def decode(self, word: int) -> tuple[int, int]:
+        return word % self.n_banks, word // self.n_banks
+
+    def encode(self, bank: int, row: int) -> int:
+        return row * self.n_banks + bank
+
+
+# =============================================================================
+# Requests and responses
+# =============================================================================
+
+
+@dataclass
+class BankReq:
+    """One word access, as the interconnect hands it to a bank.
+
+    ``tag`` is not used here. It is carried into the response so that the
+    interconnect can route read data back to the right master.
+    """
+
+    addr: int  # byte address of the word, aligned to word_bytes
+    write: bool = False  # False = read, True = write
+    wdata: Any = None  # writes only: scalar, or one value per element
+    strb: Any = None  # writes only: which elements to write; None = all
+    tag: Any = None  # opaque to the L1
+
+
+@dataclass
+class BankResp:
+    """Read data leaving a bank."""
+
+    bank: int  # bank that served the read
+    tag: Any  # copied from the request
+    data: np.ndarray  # the word, shape (elems_per_word,)
+    issued: int  # cycle the read was served
+
+
+@dataclass
+class _PendingWrite:
+    """A write accepted this cycle, applied in ``commit``."""
+
+    bank: int
+    row: int
+    wdata: np.ndarray  # shape (elems_per_word,)
+    strb: np.ndarray  # bool, shape (elems_per_word,)
+
+
+# =============================================================================
+# The L1 memory
+# =============================================================================
+
+
+@dataclass(eq=False)  # eq=False: compare by identity, like the scheduler's touch()
+class L1Memory:
+    """All L1 banks together.
+
+    State, split the RTL way:
+
+    * committed state, which anyone may read at any time:
+        ``data``      the storage, [banks, rows, elems_per_word]
+        ``_resp``     read data waiting to leave the banks
+    * this cycle's uncommitted state, cleared in ``commit``:
+        ``_now``      cycle being served (None between cycles)
+        ``_busy``     banks already accessed this cycle
+        ``_writes``   writes to apply at the end of the cycle
+    * statistics (for MOD8), never read by the model itself:
+        ``reads``, ``writes``   per-bank access counts
+    """
+
+    cluster: Any  # anything with touch(elem): a Cluster or a Scheduler
+    cfg: L1Config = field(default_factory=L1Config)
+    amap: AddressMap | None = None  # None = WordInterleaved(cfg.n_banks)
+
+    def __post_init__(self) -> None:
+        c = self.cfg
+        if self.amap is None:
+            self.amap = WordInterleaved(c.n_banks)
+        self.data = np.zeros((c.n_banks, c.rows, c.elems_per_word), dtype=c.dtype)
+        self.reads = np.zeros(c.n_banks, dtype=np.int64)
+        self.writes = np.zeros(c.n_banks, dtype=np.int64)
+        self._now: int | None = None
+        self._busy: set[int] = set()
+        self._writes: list[_PendingWrite] = []
+        # ready cycle -> {bank -> response}. At most one response per bank
+        # per ready cycle, because a bank serves one access per cycle and
+        # the latency is fixed.
+        self._resp: dict[int, dict[int, BankResp]] = {}
+
+    # -------------------------------------------------------------------------
+    # Addressing
+    # -------------------------------------------------------------------------
+
+    def locate(self, addr: int) -> tuple[int, int]:
+        """(bank, row) of a word address. Raises on misaligned or out-of-range."""
+        c = self.cfg
+        off = addr - c.base_addr  # byte offset inside L1
+        if off % c.word_bytes:
+            raise SimulationError(f"L1 address {addr:#x} is not word aligned")
+        if not 0 <= off < c.size_bytes:
+            raise SimulationError(f"L1 address {addr:#x} is outside L1")
+        bank, row = self.amap.decode(off // c.word_bytes)
+        # Guard against a custom address map that returns nonsense.
+        if not (0 <= bank < c.n_banks and 0 <= row < c.rows):
+            raise SimulationError(f"address map gave bank {bank}, row {row} for {addr:#x}")
+        return bank, row
+
+    def bank_of(self, addr: int) -> int:
+        """Bank of a word address. The interconnect uses this to arbitrate."""
+        return self.locate(addr)[0]
+
+    def addr_of(self, bank: int, row: int) -> int:
+        """Byte address of (bank, row). Inverse of ``locate``."""
+        c = self.cfg
+        return c.base_addr + self.amap.encode(bank, row) * c.word_bytes
+
+    # -------------------------------------------------------------------------
+    # Timed port: use during a run
+    # -------------------------------------------------------------------------
+
+    def request(self, cycle: int, req: BankReq) -> int:
+        """Serve one access in ``cycle``. Returns the bank that served it.
+
+        Call in Phase.MEMORY, after arbitration, at most once per bank per
+        cycle.
+        """
+        # Every cycle with accesses must end in commit() before the next
+        # cycle's accesses. If not, _busy and _writes would mix two cycles.
+        if self._now is not None and self._now != cycle:
+            raise SimulationError("L1 was not committed between cycles")
+
+        bank, row = self.locate(req.addr)
+
+        # One access per bank per cycle. The interconnect should make this
+        # impossible; if it happens anyway, stop instead of hiding the bug.
+        if bank in self._busy:
+            raise BankConflictError(
+                f"cycle {cycle}: second access to bank {bank} (addr {req.addr:#x})"
+            )
+        self._now = cycle
+        self._busy.add(bank)
+        self.cluster.touch(self)  # makes the scheduler call commit() at cycle end
+
+        if req.write:
+            # Buffer the write; storage changes only in commit().
+            self._writes.append(
+                _PendingWrite(bank, row, self._word(req.wdata), self._strobe(req.strb))
+            )
+            self.writes[bank] += 1
+        else:
+            # Sample storage now (end-of-previous-cycle state) and hold the
+            # data until it is due. copy(): later writes must not change it.
+            ready = cycle + self.cfg.read_latency
+            resp = BankResp(bank, req.tag, self.data[bank, row].copy(), cycle)
+            self._resp.setdefault(ready, {})[bank] = resp
+            self.reads[bank] += 1
+        return bank
+
+    def resp(self, bank: int, cycle: int) -> BankResp | None:
+        """Read data leaving ``bank`` in ``cycle``, or None. Read in Phase.RESPONSE."""
+        return self._resp.get(cycle, {}).get(bank)
+
+    def responses(self, cycle: int) -> list[BankResp]:
+        """All read data leaving the banks in ``cycle``, in bank order."""
+        by_bank = self._resp.get(cycle, {})
+        return [by_bank[b] for b in sorted(by_bank)]
+
+    def next_response(self, cycle: int) -> int | None:
+        """Earliest cycle > ``cycle`` in which read data leaves a bank, or None.
+
+        For the requester's ``next_wake``: it must be awake in that cycle to
+        pick the data up. Depends only on committed state, so asking again
+        before that cycle gives the same answer (D29).
+        """
+        later = [t for t in self._resp if t > cycle]
+        return min(later) if later else None
+
+    def commit(self) -> None:
+        """End of cycle: apply writes, drop delivered read data, free the banks.
+
+        Called by the scheduler, only in cycles where request() touched us.
+        """
+        # Apply buffered writes, only to the strobed elements of each word.
+        for w in self._writes:
+            self.data[w.bank, w.row, w.strb] = w.wdata[w.strb]
+        self._writes.clear()
+
+        # Read data due in this cycle or earlier has had its RESPONSE phase.
+        # (Data due in a cycle without accesses is dropped at the next
+        # commit instead; harmless, since resp() looks up exact cycles.)
+        if self._now is not None:
+            for t in [t for t in self._resp if t <= self._now]:
+                del self._resp[t]
+
+        self._busy.clear()
+        self._now = None
+
+    # -------------------------------------------------------------------------
+    # Backdoor: setup and inspection outside a run.
+    # No timing, no counters, no conflict checks.
+    # -------------------------------------------------------------------------
+
+    def peek(self, addr: int) -> np.ndarray:
+        """The word at ``addr``, shape (elems_per_word,)."""
+        bank, row = self.locate(addr)
+        return self.data[bank, row].copy()
+
+    def poke(self, addr: int, word: Any) -> None:
+        """Overwrite the word at ``addr`` (scalar or one value per element)."""
+        bank, row = self.locate(addr)
+        self.data[bank, row] = self._word(word)
+
+    def load(self, addr: int, words: Any) -> None:
+        """Write consecutive words starting at ``addr``. ``words``: [n] or [n, epw].
+
+        "Consecutive" means consecutive addresses; with the default map they
+        land in consecutive banks.
+        """
+        arr = np.asarray(words, dtype=self.cfg.dtype).reshape(-1, self.cfg.elems_per_word)
+        for i, w in enumerate(arr):
+            self.poke(addr + i * self.cfg.word_bytes, w)
+
+    def dump(self, addr: int, n: int) -> np.ndarray:
+        """Read ``n`` consecutive words starting at ``addr``, shape [n, epw]."""
+        return np.stack([self.peek(addr + i * self.cfg.word_bytes) for i in range(n)])
+
+    # -------------------------------------------------------------------------
+    # Helpers
+    # -------------------------------------------------------------------------
+
+    def _word(self, x: Any) -> np.ndarray:
+        """Turn a scalar or sequence into one word: shape (elems_per_word,)."""
+        epw = self.cfg.elems_per_word
+        arr = np.asarray(x, dtype=self.cfg.dtype)
+        if arr.ndim == 0:  # scalar: fill every element with it
+            arr = np.full(epw, arr, dtype=self.cfg.dtype)
+        if arr.shape != (epw,):
+            raise SimulationError(f"word must have {epw} elements, got shape {arr.shape}")
+        return arr
+
+    def _strobe(self, strb: Any) -> np.ndarray:
+        """Turn a strobe into a bool mask of shape (elems_per_word,); None = all."""
+        epw = self.cfg.elems_per_word
+        if strb is None:
+            return np.ones(epw, dtype=bool)
+        arr = np.asarray(strb, dtype=bool)
+        if arr.shape != (epw,):
+            raise SimulationError(f"strobe must have {epw} entries, got shape {arr.shape}")
+        return arr
