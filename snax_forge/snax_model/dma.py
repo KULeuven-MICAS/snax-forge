@@ -9,7 +9,8 @@ to L2. It is a master on the xbar with one wide port of
 the only user of the L2.
 
 It is started by ``start(descriptor, cycle)``, like the streamer and the
-accelerator. No CSRs (MOD7), no descriptor chaining, no data path
+accelerator; ctrl.py (MOD7) drives that start from registers, with
+``DmaConfig.dims`` loops per side. No descriptor chaining, no data path
 extensions, no L1 -> L1.
 
 Descriptor
@@ -77,7 +78,7 @@ Not copied (open item 7):
 
 Who calls what, per cycle
 -------------------------
-    CONTROL    controller: dma.start(desc, cycle)                 (MOD7)
+    CONTROL    controller: dma.start(desc, cycle)                 (ctrl.py)
     REQUEST    DMA:  xbar.request on the wide port: L1 source read or
                      L1 destination write
     MEMORY     DMA:  l2.read (L2 source) or l2.write (L2 destination)
@@ -242,10 +243,13 @@ class DmaConfig:
     beat_interval: int = 1  # bandwidth: min cycles between beats on each side
     l1_read_extra: int = 0  # L1 source: cycles from L1 read data to the buffer
     done_latency: int = 0  # last write -> its response (AXI B)
+    # Loops per side that the DMA's registers hold (MOD7, ctrl.py). A pattern
+    # may use fewer; unused loops are bound 1. 2 as the iDMA's 2D shape.
+    dims: int = 2
 
     def __post_init__(self) -> None:
-        if self.startup < 1 or self.beat_interval < 1:
-            raise ValueError("startup and beat_interval must be >= 1")
+        if self.startup < 1 or self.beat_interval < 1 or self.dims < 1:
+            raise ValueError("startup, beat_interval and dims must be >= 1")
         if self.l1_read_extra < 0 or self.done_latency < 0:
             raise ValueError("l1_read_extra and done_latency must be >= 0")
 
@@ -353,6 +357,12 @@ class Dma(Component):
         a run, without ``cycle`` (as if started in cycle -1). A zero-beat
         transfer never becomes busy; its ``done_cycle`` is ``cycle + 1``.
         """
+        for side, p in (("source", desc.src), ("destination", desc.dst)):
+            if len(p.bounds) > self.cfg.dims:
+                raise ValueError(
+                    f"{self.name}: {side} has {len(p.bounds)} loops, "
+                    f"DmaConfig.dims is {self.cfg.dims}"
+                )
         check_descriptor(desc, self.xbar.mem.cfg, self.l2.cfg)
         if self.busy or self._start.pending is not None:
             raise SimulationError(f"{self.name}: start while busy")

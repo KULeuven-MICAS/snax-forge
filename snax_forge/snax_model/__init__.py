@@ -8,6 +8,19 @@ from .accel import (
     reduce_stub,
 )
 from .cluster import Cluster
+from .ctrl import (
+    Adapter,
+    Controller,
+    ControllerConfig,
+    CsrRead,
+    CsrWrite,
+    RegisterMap,
+    Wait,
+    command_from_dict,
+    program_from_dicts,
+    program_to_dicts,
+    register_adapter,
+)
 from .dma import Dma, DmaConfig, DmaDescriptor, DmaPattern, check_descriptor
 from .l2 import L2AccessError, L2Config, L2Memory, L2Resp
 from .mem import (
@@ -41,12 +54,17 @@ __all__ = [
     "AccelConfig",
     "AccelPort",
     "Accelerator",
+    "Adapter",
     "AddressMap",
     "BankConflictError",
     "BankReq",
     "BankResp",
     "Cluster",
     "Component",
+    "Controller",
+    "ControllerConfig",
+    "CsrRead",
+    "CsrWrite",
     "Dma",
     "DmaConfig",
     "DmaDescriptor",
@@ -61,6 +79,7 @@ __all__ = [
     "L2Resp",
     "Phase",
     "Port",
+    "RegisterMap",
     "Scheduler",
     "SimulationError",
     "SimulationTimeout",
@@ -68,11 +87,16 @@ __all__ = [
     "Streamer",
     "StreamerConfig",
     "StreamerRegs",
+    "Wait",
     "WordInterleaved",
     "Xbar",
     "address_stream",
     "check_descriptor",
+    "command_from_dict",
     "elementwise_stub",
     "lane_offsets",
+    "program_from_dicts",
+    "program_to_dicts",
     "reduce_stub",
+    "register_adapter",
 ]
