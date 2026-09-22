@@ -96,7 +96,7 @@ class LogStreamer(Streamer):
         super().commit(cycle)
 
 
-class Controller(Component):
+class ScriptedStarts(Component):
     """Starts components in scripted cycles: {cycle: [(comp, arg), ...]}."""
 
     phases = (Phase.CONTROL,)
@@ -320,7 +320,7 @@ def test_uncontended_transfer_hits_formula(direction, timing, skip):
         desc = DmaDescriptor(direction, contiguous(128, n), contiguous(512, n))
         src_lat = l1_lat + extra
     s = 5
-    cl.add(Controller("ctl", {s: [(dma, desc)]}))
+    cl.add(ScriptedStarts("ctl", {s: [(dma, desc)]}))
     total = cl.run()
 
     assert dma.done_cycle - s == expected_total(cfg, n, src_lat)
@@ -347,7 +347,7 @@ def test_zero_beats_and_restart(skip):
     dma = cl.add(Dma("dma", xb, l2))
     zero = DmaDescriptor("l2_to_l1", DmaPattern(0, (0,), (BEAT,)), DmaPattern(0, (0,), (BEAT,)))
     one = DmaDescriptor("l2_to_l1", contiguous(0, 2), contiguous(0, 2))
-    cl.add(Controller("ctl", {3: [(dma, zero)], 10: [(dma, one)], 30: [(dma, one)]}))
+    cl.add(ScriptedStarts("ctl", {3: [(dma, zero)], 10: [(dma, one)], 30: [(dma, one)]}))
     probe = []
 
     class Probe(Component):
@@ -375,6 +375,19 @@ def test_start_while_busy_raises():
     dma.start(d)
     with pytest.raises(SimulationError):
         dma.start(d)
+
+
+def test_dims_limits_the_loops():
+    """DmaConfig.dims (the loops the registers hold, MOD7): more loops is rejected."""
+    cl, _, xb, l2 = build()
+    dma = cl.add(Dma("dma", xb, l2, DmaConfig(dims=1)))
+    flat = contiguous(0, 4)
+    nested = DmaPattern(0, (2, 2), (BEAT, 2 * BEAT))
+    with pytest.raises(ValueError, match="dims"):
+        dma.start(DmaDescriptor("l2_to_l1", flat, nested))
+    dma.start(DmaDescriptor("l2_to_l1", flat, flat))
+    with pytest.raises(ValueError):
+        DmaConfig(dims=0)
 
 
 # =============================================================================
@@ -491,7 +504,7 @@ def run_overlap(skip, with_dma, with_compute, dma_desc, dma_start, n_beats, base
     if with_dma:
         dma = cl.add(Dma("dma", xb, l2))
         script.setdefault(dma_start, []).append((dma, dma_desc))
-    cl.add(Controller("ctl", script))
+    cl.add(ScriptedStarts("ctl", script))
     total = cl.run(max_cycles=5000)
     return total, mem, parts
 
@@ -570,7 +583,7 @@ def test_vecadd_from_l2_to_l2(skip):
     t = expected_total(DmaConfig(), n_dma, 1)
     t_b, t_comp = t, 2 * t
     t_c = t_comp + 5 + nb
-    cl.add(Controller("ctl", {
+    cl.add(ScriptedStarts("ctl", {
         0: [(dma, DmaDescriptor("l2_to_l1", contiguous(l2a, n_dma), contiguous(wa * WORD, n_dma)))],
         t_b: [(dma, DmaDescriptor("l2_to_l1", contiguous(l2b, n_dma), contiguous(wb * WORD, n_dma)))],
         t_comp: [(ra, unit(wa)), (rb, unit(wb)), (wr, unit(wc)), (acc, {"n": nb})],
@@ -661,7 +674,7 @@ def run_case(case, skip):
     script = {}
     for s, (_, regs, at) in zip(rs, readers):
         script.setdefault(at, []).append((s, regs))
-    cl.add(Controller("ctl", script))
+    cl.add(ScriptedStarts("ctl", script))
     total = cl.run(max_cycles=5000)
     fifos = [[[np.asarray(x).ravel()[0].item() for x in q] for q in s.fifo._q] for s in rs]
     return {

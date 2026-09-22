@@ -143,7 +143,7 @@ class Producer(Component):
         return self.willing.next_after(cycle)
 
 
-class Controller(Component):
+class ScriptedStarts(Component):
     """Starts streamers in scripted cycles: {cycle: (streamer, regs)}."""
 
     phases = (Phase.CONTROL,)
@@ -614,7 +614,7 @@ def test_start_timing_and_restart(skip):
     cl, _, xb = build(skip)
     rd = reader(cl, xb, "rd", 2, fifo_depth=2)
     t1, t2 = unit_regs(4, 2), unit_regs(3, 2, base=128)
-    cl.add(Controller("ctl", {5: (rd, t1), 30: (rd, t2)}))
+    cl.add(ScriptedStarts("ctl", {5: (rd, t1), 30: (rd, t2)}))
     probe = cl.add(Probe("probe", rd, [4, 5, 6, 10, 11, 12]))
     con = cl.add(Consumer("acc", rd.fifo, 7))
     total = cl.run()
@@ -632,7 +632,7 @@ def test_start_while_busy_raises():
     with pytest.raises(SimulationError):
         rd.start(StreamerRegs(0, (4,), (8,)))
     cl.add(Consumer("acc", rd.fifo, 4))
-    cl.add(Controller("ctl", {2: (rd, StreamerRegs(0, (4,), (8,)))}))
+    cl.add(ScriptedStarts("ctl", {2: (rd, StreamerRegs(0, (4,), (8,)))}))
     with pytest.raises(SimulationError):
         cl.run()
 

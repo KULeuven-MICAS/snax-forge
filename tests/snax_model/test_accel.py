@@ -141,7 +141,7 @@ class Consumer(Component):
         return [c for c, _ in self.beats]
 
 
-class Controller(Component):
+class ScriptedStarts(Component):
     """Starts components in scripted cycles: {cycle: (comp, arg)}."""
 
     phases = (Phase.CONTROL,)
@@ -561,7 +561,7 @@ def test_start_timing_and_restart(skip):
     fout = Fifo(cl, 1, 8)
     acc.attach("a", fin)
     acc.attach("out", fout)
-    cl.add(Controller("ctl", {5: (acc, {"n": n}), 20: (acc, {"n": n})}))
+    cl.add(ScriptedStarts("ctl", {5: (acc, {"n": n}), 20: (acc, {"n": n})}))
     probe = cl.add(Probe("probe", acc, range(30)))
     cl.add(Producer("prod", fin, a))
     con = cl.add(Consumer("con", fout, 2 * n))
