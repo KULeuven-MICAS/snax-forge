@@ -218,7 +218,7 @@ backend. It turns a design point into a generated sequence of tasks. It:
 - orders tasks by the dependencies and execution order of the optimised SNAX-DFG
 - computes streamer registers from each BRM's per-port affine loop nest and the
   memory plan
-- computes accelerator CSR values from BRM parameters
+- computes accelerator register values from BRM parameters
 - inserts L2↔L1 DMA transfers required by the memory plan
 - inserts a wait at every dependency crossing an accelerator or DMA boundary
 
@@ -226,15 +226,22 @@ backend. It turns a design point into a generated sequence of tasks. It:
 
 - `csr_write`
 - `csr_read`
-- `dma`
-- `start`
-- `wait`, which either polls a busy CSR or blocks on a completion signal
+- `wait`, which either polls a block's `busy` register or blocks on its
+  completion signal
+
+There is no separate `start` or `dma` command: every block (streamer,
+accelerator, DMA) is programmed through the uniform register interface
+(section 5.6, D36), and writing 1 to its `start` register launches it
+(D37).
 
 Its first acceptance test is reproducing the hand-written `vecadd` scenario used
 for the anchor (section 7).
 
 **Later**, a C backend emits the SW library kernel for real hardware from the
 same logic, so the model and the chip are driven by the same task sequence.
+It maps the model's register blocks by name onto the real interfaces:
+ReqRspManager CSRs for streamers and accelerators, iDMA instructions for the
+DMA (open item 9).
 
 ### 5.6 SNAX-MODEL: Cluster Model
 
@@ -265,12 +272,17 @@ describe.
    their timing and producing data through their function. Generic
    elementwise and reduce stubs exist before any BRM. An accelerator sits
    between its streamers' FIFOs; its L-stage pipeline stalls globally on a
-   full output (D33).
+   full output (D35).
 5. **DMA and L2.** A flat L2 with fixed read latency and a DMA between L2
    and L1 on one wide port of the interconnect. Source and destination are
    affine beat patterns; timing is per beat for now (D34).
-6. **Register interface and controller.** CSRs per accelerator and streamer,
-   and the controller executing the control program.
+6. **Register interface and controller.** A uniform register interface: every
+   block (streamer, accelerator, DMA, any later block) has an aligned window
+   with `start`, `busy` and `busy_cycles` at offsets 0–2 and buffered
+   configuration registers after them, listed by a per-kind adapter (D36).
+   The controller executes `csr_write`, `csr_read` and `wait` one at a time,
+   each with a per-kind cost, and keeps control overhead separate from
+   waiting (D37).
 
 **Scenario runner.** Before the upstream components exist, the model is driven
 by hand-written scenario files: cluster configuration, initial memory contents
@@ -475,7 +487,9 @@ parameter and memory-plan choices, sweeps.
 | D32 | Streamer copies the SNAX readerWriter timing: ports advance independently (per-port address queue and credit); a reader port may have `fifo_depth` reads in flight or buffered, and a pop frees credit in the same cycle; FIFOs are touched per-lane elements with flow = false, pipe on the reader side only; start in s gives the first request in s+2; `busy` drops the cycle after the last grant. A reader blocked on credit wakes with its FIFO's consumer. Not copied yet: dynamic TCDM priority, reader repeat on temporal stride 0 | 9 |
 | D33 | Multi-width interconnect ports (extends D31): a w-bit port covers the aligned group of w / bank-width banks (64 = 1, 128 = 2, 256 = 4, 512 = 8); w is a power-of-two multiple of the bank width and at most `L1Config.wide_bits` = 512, and `n_banks` must be a multiple of the group (checked per port). Arbitration works on bank sets in one xbar method (`_priority`): wider wins absolutely, per cycle and per group (as mem_wide_narrow_mux); equal widths use the D31 arbiter per (width, group); a request refused by a wider grant locks as in D31. D30 reads with it: the xbar passes at most one access per bank per cycle, and a wide grant is one access on each bank of its group. `block_bank` is removed; stalls caused by a wider grant are counted separately | 10 |
 | D34 | DMA: a Component on one `wide_bits` port (never refused under the default policy), started by `start(descriptor, cycle)`, busy from cycle + 1. Descriptor = direction (L2→L1 or L1→L2) plus source and destination affine beat patterns (base, bounds, strides; `address_stream`), equal beat counts, every beat aligned to the wide beat. Per-beat timing first: decoupled read and write sides, one beat per `beat_interval`, `startup`, source latency, `done_latency`; for N uncontended beats, done − start = startup + Ls + k(N − 1) + 2 + done_latency. L2 = flat element touched by its requester, one read and one write per cycle, fixed read latency. snax_alu's DMA is the Snitch iDMA; its burst cost and 2D shape are not copied yet (open item 7) | 10 |
-| D33 | Accelerator sits between FIFOs as a COMPUTE component: per port direction, lanes (= streamer n_ports) and rate (one beat every `rate` firings, int or start parameter); stubs are configs. Join on inputs as in snax_alu; pipeline of L slots with a global stall (head cannot be pushed → nothing advances, fires or pops); II counts wall-clock cycles; start in s gives busy from s+1, done the cycle after the last push. Cycle classes busy > stall_out > idle (II gap) > stall_in > idle; drain after the last firing is idle. Not copied yet: per-stage ready, the Accumulator's drain cycle | 10 |
+| D35 | Accelerator sits between FIFOs as a COMPUTE component: per port direction, lanes (= streamer n_ports) and rate (one beat every `rate` firings, int or start parameter); stubs are configs. Join on inputs as in snax_alu; pipeline of L slots with a global stall (head cannot be pushed → nothing advances, fires or pops); II counts wall-clock cycles; start in s gives busy from s+1, done the cycle after the last push. Cycle classes busy > stall_out > idle (II gap) > stall_in > idle; drain after the last firing is idle. Not copied yet: per-stage ready, the Accumulator's drain cycle | 10 |
+| D36 | Uniform register interface (builds on D11; does not copy ReqRspManager or iDMA instructions). Every block is a register block with the same shape in an aligned window of `window` registers (default 32, one word each, addresses are register indices): `start` (write-only, 1 launches the block) at offset 0, `busy` and `busy_cycles` (read-only) at 1 and 2, configuration registers from 3. Configuration registers are buffered: a start copies them, so the next task can be programmed while the block runs; start while busy is an error. A per-kind adapter in ctrl.py lists the configuration registers from the component's config and decodes them into its start argument (streamer: base, temporal bounds and strides, spatial strides, spatial bounds design-time and given to the adapter; accelerator: `n` and named rates; DMA: direction and source/destination loops for `DmaConfig.dims`); component classes do not change. Register names are the contract; `RegisterMap.to_dict` lists them, and mapping them onto the real SNAX interfaces is left to SNAX-LOWER's C backend (D18, GEN2) | 11 |
+| D37 | Controller timing: a Phase.CONTROL component executing the program in order from cycle 0, one command at a time. A command beginning in t with cost c covers [t, t+c−1] and takes effect in its last cycle; costs per command kind, write and read costs settable per block kind, all placeholders until ANC2. A start landing in w calls `start(arg, w)` (busy from w+1). Reads sample committed state; `busy_cycles` = min(r, done) − start − 1. Wait poll: sample i in t + iP + c_r − 1, ending on the first 0; wait signal: [t, max(t, done) + S − 1]. Poll and signal give the same data; the cycle difference follows from these formulas. Cycle classes command (control overhead) / wait / idle. While blocked on a signal the controller sleeps (next_wake None) and wakes from the block's committed `done_cycle`, without calling the block's next_wake | 11 |
 
 ## 11. Open Items
 
@@ -487,4 +501,6 @@ parameter and memory-plan choices, sweeps.
 5. Streamer dynamic TCDM priority and reader repeat on temporal stride 0 (D32): copy or keep out, decided in ANC2.
 6. Priority manager for ports of different widths: N wide and M narrow accesses per bank group (a share instead of the absolute priority of D33). Decided after ANC2, once the cost of absolute priority on real kernels is known; it replaces only `Xbar._priority`.
 7. DMA features of the Snitch iDMA not copied yet (D34), decided with ANC1/ANC2: AXI bursts (`NumAxInFlight = 3` bursts in flight, split at 256 beats and 4 KiB; short bursts such as the row-by-row pattern are slower in RTL); its 2D shape with one inner length shared by both sides (more general patterns need several descriptors, each with its own startup); back-pressure from its 3-deep buffer; L1→L1 and unaligned transfers; the transaction limit of the `tb_memory_axi` atomics filter; XDMA as an alternative engine; the real values of `startup`, L2 read latency, `l1_read_extra` and `done_latency`.
-6. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D33): copy or keep out, decided in ANC2 (drain cycle at the latest in BRM4).
+8. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D35): copy or keep out, decided in ANC2 (drain cycle at the latest in BRM4).
+9. Mapping the register blocks (D36) onto the real SNAX interfaces in SNAX-LOWER's C backend (GEN2): streamer and accelerator registers onto ReqRspManager CSRs, DMA registers onto iDMA instructions.
+10. Calibrating the controller costs (D37) in ANC2: write and read cost per block kind (DMA programming separately), poll interval and signal latency.
