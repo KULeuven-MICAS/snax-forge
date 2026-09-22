@@ -1,0 +1,86 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index d1361df..6b195fd 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -36,7 +36,7 @@ jobs:
+         run: pixi run check
+ 
+   python:
+-    name: Python lint + schema
++    name: Python lint + schema + tests
+     runs-on: ubuntu-latest
+     timeout-minutes: 20
+     steps:
+@@ -60,10 +60,10 @@ jobs:
+       - name: Schema is self-consistent
+         run: pixi run -e ci python util/schema_explain.py
+ 
+-      # TODO: enable once tests/ exists. pytest with nothing to collect exits
+-      # 5, which reads as a failure.
+-      # - name: Tests
+-      #   run: pixi run -e ci test
++      # SNAX-MODEL unit tests (MOD1 onward). `test` runs everything under
++      # tests/, so new model tests are picked up without touching CI.
++      - name: Tests
++        run: pixi run -e ci test
+ 
+   chisel:
+     name: Chisel format + unit tests
+diff --git a/CLAUDE.md b/CLAUDE.md
+index 84241fc..4ebdd8e 100644
+--- a/CLAUDE.md
++++ b/CLAUDE.md
+@@ -13,8 +13,8 @@ Read it before designing or changing any component. Do not contradict a logged d
+ 
+ ## Commands
+ - Environment: `pixi install`
+-- Tests: `pixi run test`
+-- Lint/format: `pixi run lint`
++- Tests: `pixi run test` (everything under tests/), `pixi run test-model` (SNAX-MODEL only); CI runs `pixi run -e ci test`
++- Lint/format: `pixi run lint` (ruff check + format check, CI runs it), `pixi run fmt` to fix
+ 
+ ## Conventions
+ - Python 3.x, type hints on all public functions, dataclasses for artefacts.
+diff --git a/pixi.toml b/pixi.toml
+index cb55da5..371d9be 100644
+--- a/pixi.toml
++++ b/pixi.toml
+@@ -90,12 +90,13 @@ PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/$PIXI_ENVIRONMENT_NAME/bin:$PATH"
+ OMP_NUM_THREADS = "1"
+ 
+ [tasks]
+-check   = "python util/env_check.py"
+-test    = "pytest -q"
+-lint    = "ruff check util kernels snax_forge transforms"
+-fmt     = "ruff check --fix util kernels snax_forge transforms && ruff format util kernels snax_forge transforms"
+-forge   = "python -m snax_forge.sdfg"
+-profile = "python -m snax_forge.sdfg --profile"
++check      = "python util/env_check.py"
++test       = "pytest -q"
++test-model = "pytest -q tests/snax_model"
++lint       = "ruff check util kernels snax_forge transforms tests && ruff format --check util kernels snax_forge transforms tests"
++fmt        = "ruff check --fix util kernels snax_forge transforms tests && ruff format util kernels snax_forge transforms tests"
++forge      = "python -m snax_forge.sdfg"
++profile    = "python -m snax_forge.sdfg --profile"
+ 
+ # --- Chisel ---------------------------------------------------------------
+ # `-batch` stops sbt from dropping into its interactive shell when a command
+diff --git a/pyproject.toml b/pyproject.toml
+index 9cbddc7..f0a9bb4 100644
+--- a/pyproject.toml
++++ b/pyproject.toml
+@@ -12,4 +12,12 @@ dependencies = []
+ packages = ["snax_forge"]
+ 
+ [tool.ruff]
+-line-length = 100
+\ No newline at end of file
++line-length = 100
++
++[tool.pytest.ini_options]
++# Only collect tests/, so a stray test_*.py elsewhere (kernels, out/) is never
++# picked up. pythonpath lets plain `pytest` work outside pixi too; inside pixi
++# the editable install already provides snax_forge.
++testpaths = ["tests"]
++pythonpath = ["."]
++addopts = "-ra"

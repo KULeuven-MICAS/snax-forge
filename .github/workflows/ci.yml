@@ -36,7 +36,7 @@ jobs:
         run: pixi run check
 
   python:
-    name: Python lint + schema
+    name: Python lint + schema + tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -60,10 +60,10 @@ jobs:
       - name: Schema is self-consistent
         run: pixi run -e ci python util/schema_explain.py
 
-      # TODO: enable once tests/ exists. pytest with nothing to collect exits
-      # 5, which reads as a failure.
-      # - name: Tests
-      #   run: pixi run -e ci test
+      # SNAX-MODEL unit tests (MOD1 onward). `test` runs everything under
+      # tests/, so new model tests are picked up without touching CI.
+      - name: Tests
+        run: pixi run -e ci test
 
   chisel:
     name: Chisel format + unit tests

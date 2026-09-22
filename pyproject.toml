@@ -13,3 +13,11 @@ packages = ["snax_forge"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.pytest.ini_options]
+# Only collect tests/, so a stray test_*.py elsewhere (kernels, out/) is never
+# picked up. pythonpath lets plain `pytest` work outside pixi too; inside pixi
+# the editable install already provides snax_forge.
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra"

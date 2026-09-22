@@ -13,8 +13,8 @@ Read it before designing or changing any component. Do not contradict a logged d
 
 ## Commands
 - Environment: `pixi install`
-- Tests: `pixi run test`
-- Lint/format: `pixi run lint`
+- Tests: `pixi run test` (everything under tests/), `pixi run test-model` (SNAX-MODEL only); CI runs `pixi run -e ci test`
+- Lint/format: `pixi run lint` (ruff check + format check, CI runs it), `pixi run fmt` to fix
 
 ## Conventions
 - Python 3.x, type hints on all public functions, dataclasses for artefacts.

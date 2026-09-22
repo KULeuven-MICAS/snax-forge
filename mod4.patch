@@ -1,0 +1,1495 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 208e480..c8dcc9d 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -463,6 +463,7 @@ parameter and memory-plan choices, sweeps.
+ | D29 | RTL-like cycle semantics: fixed phases per cycle; reads see previous-cycle state and wires from earlier phases; components and touched shared elements commit at cycle end; next_wake answers must not depend on when they are asked | 6 |
+ | D30 | L1 banks are a shared state element touched by their requester, not a ticked component; read data is held keyed by its ready cycle; a same-bank double access at the L1 is an error, and arbitration and stalling belong to the interconnect | 7 |
+ | D31 | Interconnect copies the SNAX SparseInterconnect per-bank arbiter: priority mask, then round-robin with pointer = last selection (reset on an idle bank cycle), lock on a refused selection; no added latency. It is a Component awake exactly when one of its port owners is; a refused request must be held unchanged | 8 |
++| D32 | Streamer copies the SNAX readerWriter timing: ports advance independently (per-port address queue and credit); a reader port may have `fifo_depth` reads in flight or buffered, and a pop frees credit in the same cycle; FIFOs are touched per-lane elements with flow = false, pipe on the reader side only; start in s gives the first request in s+2; `busy` drops the cycle after the last grant. A reader blocked on credit wakes with its FIFO's consumer. Not copied yet: dynamic TCDM priority, reader repeat on temporal stride 0 | 9 |
+ 
+ ## 11. Open Items
+ 
+@@ -470,4 +471,5 @@ parameter and memory-plan choices, sweeps.
+    (streamer register layout fixed in MOD10; notation closed in M6).
+ 2. DSE config format, and single design point vs sweep.
+ 3. Acceptable model-vs-RTL error target (decided in M2).
+-4. Positioning details relative to ZigZag/Stream.
+\ No newline at end of file
++4. Positioning details relative to ZigZag/Stream.
++5. Streamer dynamic TCDM priority and reader repeat on temporal stride 0 (D32): copy or keep out, decided in ANC2.
+\ No newline at end of file
+diff --git a/docs/STATUS.md b/docs/STATUS.md
+index f064e70..72cd7c2 100644
+--- a/docs/STATUS.md
++++ b/docs/STATUS.md
+@@ -34,7 +34,7 @@ All tests use synthetic traffic and hand-written scenarios.
+ | MOD1 | Event-driven scheduler; ticks only components with pending work, skips idle cycle ranges; struct-of-arrays state (D10, D21) | none | Toy components give identical results with skipping on and off; two runs are identical | `done` |
+ | MOD2 | L1 banks: count, width, read latency, one access per bank per cycle; element type and elements per word (D13) | MOD1 | Read latency is exact; a second access to the same bank in the same cycle is refused | `done` |
+ | MOD3 | TCDM interconnect: round-robin arbitration, conflicts and stalls recorded | MOD2 | Grant sequences for 2–3 masters on one bank match hand-worked tables; distinct banks proceed in parallel | `done` |
+-| MOD4 | Streamer from raw registers (base, bounds and strides per loop), FIFO depth, valid/ready, configurable ports (D12) | MOD3 | Address streams equal a NumPy enumeration for 1D, 2D and strided nests; a full FIFO causes stalls; conflict-free throughput equals the port count per cycle | todo |
++| MOD4 | Streamer from raw registers (base, bounds and strides per loop), FIFO depth, valid/ready, configurable ports (D12) | MOD3 | Address streams equal a NumPy enumeration for 1D, 2D and strided nests; a full FIFO causes stalls; conflict-free throughput equals the port count per cycle | `done` |
+ | MOD5 | Accelerator interface: ports with per-port element rate, `L`, `II`, Python function; elementwise (N→1) and reduce (T→1) stubs (D25) | MOD4 | With ideal streams, both stubs hit their cycle formulas; the reduce stub proves unequal port rates work | todo |
+ | MOD6 | L2 and DMA sharing the interconnect | MOD3 | DMA bandwidth test; DMA–streamer contention shows up in the trace | todo |
+ | MOD7 | CSR map and controller executing `csr_write`, `csr_read`, `dma`, `start`, `wait` (poll, signal) (D11) | MOD5, MOD6 | Poll and signal give the same output data; cycle counts differ only by the expected control overhead | todo |
+@@ -130,7 +130,7 @@ All tests use synthetic traffic and hand-written scenarios.
+ 
+ ## Next Up
+ 
+-Briefs to write first, along the critical path: MOD4. ANC1 has no dependencies and can start in parallel.
++Briefs to write first, along the critical path: MOD5. MOD6 depends only on MOD3 and can go in parallel, as can ANC1.
+ 
+ ## Sync Reminders
+ 
+diff --git a/snax_forge/snax_model/__init__.py b/snax_forge/snax_model/__init__.py
+index c7db39c..ffd9956 100644
+--- a/snax_forge/snax_model/__init__.py
++++ b/snax_forge/snax_model/__init__.py
+@@ -18,6 +18,14 @@ from .sched import (
+     SimulationTimeout,
+     Stateful,
+ )
++from .streamer import (
++    Fifo,
++    Streamer,
++    StreamerConfig,
++    StreamerRegs,
++    address_stream,
++    lane_offsets,
++)
+ from .xbar import HoldViolation, Port, Xbar
+ 
+ __all__ = [
+@@ -27,6 +35,7 @@ __all__ = [
+     "BankResp",
+     "Cluster",
+     "Component",
++    "Fifo",
+     "HoldViolation",
+     "L1Config",
+     "L1Memory",
+@@ -36,6 +45,11 @@ __all__ = [
+     "SimulationError",
+     "SimulationTimeout",
+     "Stateful",
++    "Streamer",
++    "StreamerConfig",
++    "StreamerRegs",
+     "WordInterleaved",
+     "Xbar",
++    "address_stream",
++    "lane_offsets",
+ ]
+diff --git a/snax_forge/snax_model/streamer.py b/snax_forge/snax_model/streamer.py
+new file mode 100644
+index 0000000..b2c043f
+--- /dev/null
++++ b/snax_forge/snax_model/streamer.py
+@@ -0,0 +1,644 @@
++"""Streamers and streamer FIFOs for SNAX-MODEL (MOD4, D12, D29, D31).
++
++What this models
++----------------
++A streamer moves data between the L1 and one accelerator port (D12: one
++streamer per accelerator port). It is a master on the interconnect with
++``n_ports`` narrow ports, one per lane of a beat:
++
++* a reader requests the addresses of each beat, collects the read data and
++  pushes it into its FIFO; the accelerator pops whole beats;
++* a writer pops the accelerator's beats from its FIFO and writes them.
++
++Nothing more: no data path extensions, no byte masks, no channel enables.
++
++Address generation
++------------------
++The registers (``StreamerRegs``) describe temporal loops (one beat per
++step) around a parallel spatial loop (one port per element):
++
++    for each temporal index i:           # loop 0 innermost
++        parfor each spatial index j:     # lane = j0 + b0*(j1 + b1*(j2 ...))
++            addr = base + sum(i_t * s_t) + sum(j_k * sigma_k)
++
++``address_stream`` is a pure function of the registers. It works like the
++RTL AddressGenUnit: one counter per temporal loop that adds its stride on
++every tick and wraps at its bound, each counter ticking when all inner ones
++wrap. The tests check it against a direct NumPy enumeration.
++
++Which RTL it copies (snax_cluster hw/chisel/src/main/scala/snax/readerWriter/)
++------------------------------------------------------------------------------
++Only what changes cycle counts:
++
++* Loop order: counter 0 is innermost; lane index splits with spatial dim 0
++  fastest (AddressGenUnit ``spatialOffsets``).
++* Bounds: a loop of bound 1 runs once. If any temporal bound is 0 the AGU
++  ignores ``start`` and the streamer never becomes busy (zero beats).
++* Ports are independent, not lockstep. The AGU writes a whole beat of
++  addresses into a per-port address queue (ComplexQueueConcat, depth
++  ``addr_depth``, pipe). Each port then issues on its own. A port can run
++  ahead of the others until its address queue or its data credit runs out.
++  The AGU pushes the next beat in a cycle when every port's queue has room
++  or that port's request is granted in the same cycle (pipe).
++* Reader flow control (DataResponser): per port an up/down counter of
++  requests issued minus beats popped by the accelerator. A port may issue
++  while the counter is below the FIFO depth, or in a cycle in which the
++  accelerator pops a beat (combinational). So at most ``fifo_depth`` reads
++  per port are in flight or buffered, and the FIFO cannot overflow. The
++  counter is never reset, so credit carries over between tasks.
++* Writer: a port writes when it has an address and its FIFO lane has data.
++  It does not wait for write responses (the model returns none, MOD3).
++* FIFO timing (chisel3.util.Queue): a pushed element is visible one cycle
++  later (flow = false). The reader's data buffer has pipe = true: in a
++  cycle in which the accelerator pops a lane, that lane accepts a push even
++  when full. The writer's data buffer has pipe = false: a pop does not free
++  a slot for a push in the same cycle.
++* Start and done: ``start`` in cycle s makes the AGU busy from s+1, so the
++  first address is pushed in s+1 and the first request goes out in s+2.
++  ``busy`` is "AGU busy or an address queue not empty", i.e. it drops the
++  cycle after the last request is granted. For a reader, read data may still
++  be in flight or in the FIFO at that point (same as RTL).
++
++Not copied (they change cycles, flagged for ANC2):
++
++* Dynamic TCDM priority (``dynamicPriority``, default on in snax_alu): the
++  RTL raises a reader port's priority when its FIFO lane is nearly empty
++  and a writer's when nearly full. Here every port uses the static
++  ``StreamerConfig.prio``.
++* Reader temporal stride 0 on loop 0: the RTL reads once and repeats the
++  beat ``bound0`` times (HandShakeRepeater). ``start`` rejects it for readers
++  instead of silently re-reading.
++* Spatial bounds are design-time parameters in RTL (only spatial strides
++  are CSRs). Here they are in the registers, but their product must equal
++  ``n_ports``.
++
++Who calls what, per cycle
++-------------------------
++    CONTROL    controller:   streamer.start(regs, cycle)        (MOD7)
++    COMPUTE    accelerator:  fifo.pop(cycle) / fifo.push(cycle, beat)   (MOD5)
++    REQUEST    streamer:     xbar.request(...) for each port that can issue
++    ARBITRATE  xbar
++    MEMORY     xbar -> L1
++    RESPONSE   streamer:     xbar.granted, xbar.rdata;
++                             reader: fifo.push_lane; writer: fifo.pop_lane;
++                             AGU pushes the next beat of addresses
++
++Hold rule (D31)
++---------------
++A refused request is driven again unchanged next cycle, with no extra
++logic: the port's address and tag (beat index) only change on a grant, the
++reader's credit can only grow while it waits (it only drops on a grant),
++and the writer's FIFO lane head only leaves on a grant.
++
++Waking (D29)
++------------
++``next_wake`` reads only committed state: its own counters, the FIFO's
++committed contents, the xbar's outstanding reads, and the next_wake of the
++FIFO's other side. After cycle t:
++
++* t+1 if any port can issue (address present, plus credit or FIFO data),
++  including a port holding a refused request, or if the AGU can push;
++* reader with a port blocked on credit (FIFO full): the accelerator's own
++  next_wake. A pop can only happen in a cycle where the accelerator is
++  ticked, and the pop frees credit in that same cycle, so the reader must
++  be ticked in exactly those cycles (the xbar uses the same trick with its
++  port owners);
++* writer with a port blocked on an empty FIFO lane: nothing. A push only
++  becomes visible after the FIFO commits, and next_wake is asked again
++  after every cycle, so it then answers t+1;
++* the cycle of the next read data for any port (``xbar.next_rdata``);
++* None when done.
++
++None of these can change unless something the streamer reads changes, so
++asking again before the returned cycle gives the same answer.
++
++Cycle classes (for MOD8)
++------------------------
++Each cycle counts as exactly one of, in this order:
++``busy`` (some port granted), ``stall_xbar`` (some port requested, none
++granted), ``stall_fifo`` (some port has an address but no credit or no
++data), ``idle`` (anything else: not started, done, waiting for the first
++address or for read data). Skipped cycles are classified from the
++committed state; the streamer only sleeps in the ``stall_fifo`` or ``idle``
++states, and neither can change while it sleeps.
++"""
++
++from __future__ import annotations
++
++from collections import deque
++from dataclasses import dataclass
++from math import prod
++from typing import Any
++
++import numpy as np
++
++from .mem import BankReq
++from .sched import Component, Phase, SimulationError
++from .xbar import Xbar
++
++CYCLE_CLASSES = ("busy", "stall_xbar", "stall_fifo", "idle")
++
++
++# =============================================================================
++# Registers and address generation
++# =============================================================================
++
++
++@dataclass(frozen=True)
++class StreamerRegs:
++    """Streamer register set: base address, temporal and spatial loops.
++
++    Separate from the accelerator CSRs; the CSR addresses are fixed in MOD7.
++    Loop 0 is innermost (temporal) or fastest (spatial). Strides are in
++    bytes and may be negative. Lists are stored as tuples.
++    """
++
++    base: int
++    temporal_bounds: tuple[int, ...]
++    temporal_strides: tuple[int, ...]
++    spatial_bounds: tuple[int, ...] = (1,)
++    spatial_strides: tuple[int, ...] = (0,)
++
++    def __post_init__(self) -> None:
++        for f in ("temporal_bounds", "temporal_strides", "spatial_bounds", "spatial_strides"):
++            object.__setattr__(self, f, tuple(int(x) for x in getattr(self, f)))
++        tb, ts = self.temporal_bounds, self.temporal_strides
++        sb, ss = self.spatial_bounds, self.spatial_strides
++        if len(tb) != len(ts):
++            raise ValueError(f"{len(tb)} temporal bounds but {len(ts)} temporal strides")
++        if len(sb) != len(ss):
++            raise ValueError(f"{len(sb)} spatial bounds but {len(ss)} spatial strides")
++        if not tb or not sb:
++            raise ValueError("need at least one temporal and one spatial loop")
++        if any(b < 0 for b in tb):
++            raise ValueError("temporal bounds must be >= 0")
++        if any(b < 1 for b in sb):
++            raise ValueError("spatial bounds must be >= 1")
++
++    @property
++    def n_beats(self) -> int:
++        """Number of beats (temporal steps); 0 if any temporal bound is 0."""
++        return prod(self.temporal_bounds)
++
++    @property
++    def n_lanes(self) -> int:
++        """Elements per beat; equals the streamer's port count."""
++        return prod(self.spatial_bounds)
++
++
++def lane_offsets(regs: StreamerRegs) -> np.ndarray:
++    """Spatial offset of each lane, shape [n_lanes]. Spatial dim 0 is fastest."""
++    out = np.zeros(regs.n_lanes, dtype=np.int64)
++    for lane in range(regs.n_lanes):
++        rem, off = lane, 0
++        for b, s in zip(regs.spatial_bounds, regs.spatial_strides):
++            off += (rem % b) * s
++            rem //= b
++        out[lane] = off
++    return out
++
++
++def address_stream(regs: StreamerRegs) -> np.ndarray:
++    """All addresses in issue order, shape [n_beats, n_lanes].
++
++    Written like the RTL counters (no multiplications in the temporal part)
++    so the NumPy enumeration in the tests is an independent check.
++    """
++    tb, ts = regs.temporal_bounds, regs.temporal_strides
++    n = regs.n_beats
++    out = np.empty((n, regs.n_lanes), dtype=np.int64)
++    if n == 0:
++        return out
++    lanes = lane_offsets(regs)
++    value = [0] * len(tb)  # counter outputs: i_t * s_t, built by adding s_t
++    count = [0] * len(tb)  # index i_t, to detect the wrap (the "small counter")
++    for beat in range(n):
++        out[beat] = regs.base + sum(value) + lanes
++        # Tick counter 0; carry into the next counter only when it wraps.
++        for t in range(len(tb)):
++            if count[t] == tb[t] - 1:
++                count[t], value[t] = 0, 0
++            else:
++                count[t] += 1
++                value[t] += ts[t]
++                break
++    return out
++
++
++# =============================================================================
++# FIFO between streamer and accelerator
++# =============================================================================
++
++
++@dataclass(eq=False)  # compared by identity, like every touched element
++class Fifo:
++    """Per-lane queues of ``depth`` entries (ComplexQueueConcat in RTL).
++
++    Shared state element: pushes and pops touch it, and the scheduler calls
++    ``commit`` at the end of the cycle. Two sides:
++
++    * wide: ``push(cycle, beat)`` / ``pop(cycle)`` move a whole beat; valid
++      only when every lane can take / give one;
++    * narrow: ``push_lane`` / ``pop_lane`` move one lane's element.
++
++    The reader streamer uses the narrow push and the accelerator the wide
++    pop; for a writer it is the other way round.
++
++    Timing (chisel3 Queue, flow = false):
++
++    * reads (``count``, ``can_pop*``, ``peek*``) see committed state; a push
++      becomes visible after ``commit``, i.e. in the next cycle;
++    * at most one push and one pop per lane per cycle;
++    * ``pipe``: a lane popped earlier in this cycle accepts a push even when
++      full. The pop must come in an earlier phase than the push (accelerator
++      in COMPUTE, reader in RESPONSE).
++
++    ``pusher`` / ``popper`` are the components on each side. The reader uses
++    ``popper.next_wake`` while it waits for credit (see streamer waking).
++    """
++
++    cluster: Any  # anything with touch(elem)
++    lanes: int
++    depth: int
++    pipe: bool = False
++    name: str = "fifo"
++
++    def __post_init__(self) -> None:
++        if self.lanes < 1 or self.depth < 1:
++            raise ValueError("lanes and depth must be >= 1")
++        self.pusher: Component | None = None
++        self.popper: Component | None = None
++        # Committed state.
++        self._q: list[deque[Any]] = [deque() for _ in range(self.lanes)]
++        self.pushed = np.zeros(self.lanes, dtype=np.int64)  # totals, also used
++        self.popped = np.zeros(self.lanes, dtype=np.int64)  # for reader credit
++        # This cycle's wires, cleared in commit.
++        self._now: int | None = None
++        self._pop_now = [False] * self.lanes
++        self._push_now: list[list[Any]] = [[] for _ in range(self.lanes)]
++
++    def _enter(self, cycle: int) -> None:
++        if self._now is not None and self._now != cycle:
++            raise SimulationError(f"{self.name} was not committed between cycles")
++        self._now = cycle
++        self.cluster.touch(self)
++
++    # -- lane (narrow) side ---------------------------------------------------
++
++    def count(self, lane: int) -> int:
++        """Committed number of elements in ``lane``."""
++        return len(self._q[lane])
++
++    def can_pop_lane(self, lane: int) -> bool:
++        return bool(self._q[lane]) and not self._pop_now[lane]
++
++    def peek_lane(self, lane: int) -> Any:
++        """Head of ``lane`` (committed). Only valid if ``can_pop_lane``."""
++        return self._q[lane][0]
++
++    def pop_lane(self, cycle: int, lane: int) -> Any:
++        if not self.can_pop_lane(lane):
++            raise SimulationError(f"{self.name}: pop from empty lane {lane} in cycle {cycle}")
++        self._enter(cycle)
++        self._pop_now[lane] = True
++        return self._q[lane][0]
++
++    def popped_now(self, cycle: int, lane: int) -> bool:
++        """Wire: ``lane`` was popped earlier in ``cycle``."""
++        return self._now == cycle and self._pop_now[lane]
++
++    def can_push_lane(self, lane: int) -> bool:
++        used = len(self._q[lane]) - (1 if self.pipe and self._pop_now[lane] else 0)
++        return not self._push_now[lane] and used < self.depth
++
++    def push_lane(self, cycle: int, lane: int, x: Any) -> None:
++        if not self.can_push_lane(lane):
++            raise SimulationError(f"{self.name}: push to full lane {lane} in cycle {cycle}")
++        self._enter(cycle)
++        self._push_now[lane].append(x)
++
++    # -- wide side --------------------------------------------------------------
++
++    def can_pop(self) -> bool:
++        return all(self.can_pop_lane(j) for j in range(self.lanes))
++
++    def peek(self) -> list[Any]:
++        return [q[0] for q in self._q]
++
++    def pop(self, cycle: int) -> list[Any]:
++        """Pop one element from every lane (a beat)."""
++        if not self.can_pop():
++            raise SimulationError(f"{self.name}: pop without a full beat in cycle {cycle}")
++        return [self.pop_lane(cycle, j) for j in range(self.lanes)]
++
++    def can_push(self) -> bool:
++        return all(self.can_push_lane(j) for j in range(self.lanes))
++
++    def push(self, cycle: int, beat: Any) -> None:
++        """Push one element into every lane. ``beat`` has one entry per lane."""
++        if len(beat) != self.lanes:
++            raise SimulationError(f"{self.name}: beat has {len(beat)} lanes, need {self.lanes}")
++        if not self.can_push():
++            raise SimulationError(f"{self.name}: push to a full lane in cycle {cycle}")
++        for j in range(self.lanes):
++            self.push_lane(cycle, j, beat[j])
++
++    @property
++    def empty(self) -> bool:
++        return not any(self._q)
++
++    def commit(self) -> None:
++        """End of cycle: remove popped heads, append pushes."""
++        for j in range(self.lanes):
++            if self._pop_now[j]:
++                self._q[j].popleft()
++                self.popped[j] += 1
++            for x in self._push_now[j]:
++                self._q[j].append(x)
++                self.pushed[j] += 1
++            self._pop_now[j] = False
++            self._push_now[j] = []
++        self._now = None
++
++
++# =============================================================================
++# Streamer
++# =============================================================================
++
++
++@dataclass(frozen=True)
++class StreamerConfig:
++    """Design-time parameters of one streamer."""
++
++    write: bool = False  # False: reader (L1 -> FIFO); True: writer (FIFO -> L1)
++    n_ports: int = 1  # interconnect ports = lanes per beat (D12)
++    temporal_dims: int = 1  # temporal counters in hardware
++    fifo_depth: int = 8  # data buffer per lane (snax_alu fifo_depth)
++    addr_depth: int = 8  # address buffer per port (snax_alu uses fifo_depth)
++    prio: int = 0  # static TCDM priority of every port
++
++    def __post_init__(self) -> None:
++        if min(self.n_ports, self.temporal_dims, self.fifo_depth, self.addr_depth) < 1:
++            raise ValueError("n_ports, temporal_dims, fifo_depth, addr_depth must be >= 1")
++
++
++class _StartReg:
++    """Holds a start written in a cycle until the end of that cycle.
++
++    A touched element, so the start lands in commit even if the streamer
++    itself was not ticked in that cycle.
++    """
++
++    def __init__(self, owner: Streamer) -> None:
++        self.owner = owner
++        self.pending: tuple[StreamerRegs, int] | None = None
++
++    def commit(self) -> None:
++        if self.pending is not None:
++            regs, cycle = self.pending
++            self.pending = None
++            self.owner._load(regs, cycle)
++
++
++class Streamer(Component):
++    """Reader or writer between the L1 (through the xbar) and a FIFO.
++
++    Construct streamers in RTL port order: each adds its ``n_ports`` ports to
++    the xbar in lane order, and the index decides round-robin tie-breaks.
++
++    State, split the RTL way:
++
++    * committed state:
++        ``regs``, ``_addrs``   current task and its address stream
++        ``_gen``      beats whose addresses the AGU has pushed
++        ``_k``        per port: beats granted in this task
++        ``_issued``   per port: reads granted over all tasks (credit)
++        ``done_cycle`` first cycle in which ``busy`` is False after a task
++    * this cycle's wires: ``_now``, ``_req``, ``_fire``, ``_agu_push``, ``_cls``
++    * statistics (for MOD8): ``cycles`` per class, see the module doc
++    """
++
++    phases = (Phase.REQUEST, Phase.RESPONSE)
++
++    def __init__(self, name: str, xbar: Xbar, cfg: StreamerConfig | None = None) -> None:
++        super().__init__(name)
++        self.cfg = cfg = cfg or StreamerConfig()
++        self.xbar = xbar
++        self._cluster = xbar.mem.cluster
++        n = cfg.n_ports
++        self.ports = [xbar.add_port(self, f"{name}.{j}") for j in range(n)]
++        # Reader data buffer is pipe, writer data buffer is not (see module doc).
++        self.fifo = Fifo(self._cluster, n, cfg.fifo_depth, pipe=not cfg.write, name=f"{name}.fifo")
++        if cfg.write:
++            self.fifo.popper = self
++        else:
++            self.fifo.pusher = self
++        self._start = _StartReg(self)
++        # Committed state.
++        self.regs: StreamerRegs | None = None
++        self._addrs = np.zeros((0, n), dtype=np.int64)
++        self._n = 0
++        self._gen = 0
++        self._k = np.zeros(n, dtype=np.int64)
++        self._issued = np.zeros(n, dtype=np.int64)
++        self.done_cycle: int | None = None
++        self.cycles = dict.fromkeys(CYCLE_CLASSES, 0)
++        self._clear_wires()
++
++    def _clear_wires(self) -> None:
++        n = self.cfg.n_ports
++        self._now: int | None = None
++        self._req = np.zeros(n, dtype=bool)
++        self._fire = np.zeros(n, dtype=bool)
++        self._agu_push = False
++        self._cls: str | None = None
++
++    # -------------------------------------------------------------------------
++    # Control side: start and done
++    # -------------------------------------------------------------------------
++
++    @property
++    def busy(self) -> bool:
++        """Committed: AGU busy or a port still has an address to issue."""
++        return self._n > 0 and bool((self._k < self._n).any())
++
++    def start(self, regs: StreamerRegs, cycle: int | None = None) -> None:
++        """Start a task. ``busy`` becomes True from ``cycle + 1``.
++
++        During a run, call it in Phase.CONTROL with the current cycle. Before
++        a run, call it without ``cycle``: the task starts as if started in
++        cycle -1, so the first address is pushed in cycle 0.
++        """
++        self._check(regs)
++        if self.busy or self._start.pending is not None:
++            raise SimulationError(f"{self.name}: start while busy")
++        if cycle is None:
++            self._load(regs, -1)
++        else:
++            self._start.pending = (regs, cycle)
++            self._cluster.touch(self._start)
++
++    def _check(self, regs: StreamerRegs) -> None:
++        c = self.cfg
++        if regs.n_lanes != c.n_ports:
++            raise ValueError(
++                f"{self.name}: spatial bounds give {regs.n_lanes} lanes, streamer has {c.n_ports}"
++            )
++        # Fewer loops than counters is the same as padding with bound 1.
++        if len(regs.temporal_bounds) > c.temporal_dims:
++            raise ValueError(
++                f"{self.name}: {len(regs.temporal_bounds)} temporal loops, hardware has "
++                f"{c.temporal_dims}"
++            )
++        if not c.write and regs.temporal_strides[0] == 0:
++            raise NotImplementedError(
++                f"{self.name}: reader with temporal stride 0 on loop 0 (RTL repeats the beat)"
++            )
++
++    def _load(self, regs: StreamerRegs, cycle: int) -> None:
++        """Committed effect of a start in ``cycle``."""
++        self.regs = regs
++        self._addrs = address_stream(regs)
++        self._n = regs.n_beats
++        self._gen = 0
++        self._k[:] = 0
++        # A zero-beat task never makes the AGU busy (RTL ignores the start).
++        self.done_cycle = None if self._n else cycle + 1
++
++    # -------------------------------------------------------------------------
++    # Per-port conditions (committed state plus earlier-phase wires)
++    # -------------------------------------------------------------------------
++
++    def _has_addr(self, j: int) -> bool:
++        """The AGU pushed this port's next address in an earlier cycle."""
++        return bool(self._k[j] < self._gen)
++
++    def _credit(self, j: int, cycle: int | None = None) -> bool:
++        """Reader: room for one more read on port ``j``.
++
++        With ``cycle``, includes a pop by the accelerator earlier in that
++        cycle (combinational in RTL).
++        """
++        used = int(self._issued[j] - self.fifo.popped[j])
++        if used < self.cfg.fifo_depth:
++            return True
++        return cycle is not None and self.fifo.popped_now(cycle, j)
++
++    # -------------------------------------------------------------------------
++    # Component interface
++    # -------------------------------------------------------------------------
++
++    def tick(self, cycle: int, phase: Phase) -> None:
++        if phase == Phase.REQUEST:
++            self._request(cycle)
++        elif phase == Phase.RESPONSE:
++            self._response(cycle)
++
++    def _request(self, cycle: int) -> None:
++        """Drive a request on every port that has an address and credit/data."""
++        self._now = cycle
++        write = self.cfg.write
++        for j in range(self.cfg.n_ports):
++            if not self._has_addr(j):
++                continue
++            k = int(self._k[j])
++            addr = int(self._addrs[k, j])
++            if write:
++                if not self.fifo.can_pop_lane(j):
++                    continue  # no data from the accelerator yet
++                req = BankReq(addr, write=True, wdata=self.fifo.peek_lane(j), tag=k)
++            else:
++                if not self._credit(j, cycle):
++                    continue  # FIFO lane full, counting reads in flight
++                req = BankReq(addr, tag=k)
++            self.xbar.request(cycle, self.ports[j], req, self.cfg.prio)
++            self._req[j] = True
++
++    def _response(self, cycle: int) -> None:
++        """Grants, read data, the AGU's next beat, and the cycle class."""
++        n = self.cfg.n_ports
++        for j in range(n):
++            p = self.ports[j]
++            if self._req[j] and self.xbar.granted(cycle, p):
++                self._fire[j] = True
++                if self.cfg.write:
++                    self.fifo.pop_lane(cycle, j)
++            if not self.cfg.write:
++                r = self.xbar.rdata(cycle, p)
++                if r is not None:
++                    self.fifo.push_lane(cycle, j, r.data)  # credit guarantees room
++
++        # AGU: push the next beat if every port's address queue has room,
++        # counting a slot freed by this cycle's grant (pipe).
++        if self._gen < self._n:
++            room = (self._gen - self._k < self.cfg.addr_depth) | self._fire
++            self._agu_push = bool(room.all())
++
++        if self._fire.any():
++            self._cls = "busy"
++        elif self._req.any():
++            self._cls = "stall_xbar"
++        else:
++            self._cls = self._sleep_class()
++
++    def _sleep_class(self) -> str:
++        """Class of a cycle without requests: FIFO-blocked or idle."""
++        return "stall_fifo" if bool((self._k < self._gen).any()) else "idle"
++
++    def commit(self, cycle: int) -> None:
++        was_busy = self.busy
++        self._k += self._fire
++        self._issued += self._fire
++        if self._agu_push:
++            self._gen += 1
++        if was_busy and not self.busy:
++            self.done_cycle = cycle + 1
++        if self._cls is not None:
++            self.cycles[self._cls] += 1
++        self._clear_wires()
++
++    def next_wake(self, cycle: int) -> int | None:
++        """See "Waking" in the module doc."""
++        n, write = self.cfg.n_ports, self.cfg.write
++        credit_blocked = False
++        for j in range(n):
++            if not self._has_addr(j):
++                continue
++            if write:
++                if self.fifo.count(j) > 0:
++                    return cycle + 1
++            elif self._credit(j):
++                return cycle + 1
++            else:
++                credit_blocked = True
++        if self._gen < self._n and bool((self._gen - self._k < self.cfg.addr_depth).all()):
++            return cycle + 1
++
++        cands = []
++        if credit_blocked:
++            if self.fifo.popper is None:
++                raise SimulationError(f"{self.name}: FIFO full and nothing attached to pop it")
++            w = self.fifo.popper.next_wake(cycle)
++            if w is not None:
++                cands.append(w)
++        for p in self.ports:
++            r = self.xbar.next_rdata(cycle, p)
++            if r is not None:
++                cands.append(r)
++        return min(cands) if cands else None
++
++    def on_gap(self, start: int, stop: int) -> None:
++        """Skipped cycles: the streamer slept in a FIFO stall or idle."""
++        self.cycles[self._sleep_class()] += stop - start
++
++    # -------------------------------------------------------------------------
++    # Statistics
++    # -------------------------------------------------------------------------
++
++    def summary(self) -> dict[str, Any]:
++        """Totals for a quick look; MOD8 builds the real profile."""
++        return {
++            "cycles": dict(self.cycles),
++            "grants_per_port": [int(self.xbar.port_grants[p]) for p in self.ports],
++            "stalls_per_port": [int(self.xbar.port_stalls[p]) for p in self.ports],
++        }
+diff --git a/tests/snax_model/test_streamer.py b/tests/snax_model/test_streamer.py
+new file mode 100644
+index 0000000..228af7a
+--- /dev/null
++++ b/tests/snax_model/test_streamer.py
+@@ -0,0 +1,757 @@
++"""Tests for the SNAX-MODEL streamers (MOD4).
++
++MOD4 acceptance (docs/STATUS.md):
++  * address streams equal a NumPy enumeration for 1D, 2D and strided nests,
++  * a full FIFO causes stalls, and
++  * conflict-free throughput equals the port count per cycle.
++Plus: skip on/off identical under random configs and consumer timing.
++
++How the tests are built
++-----------------------
++There is no accelerator yet (MOD5). ``Consumer`` pops beats from a reader's
++FIFO and ``Producer`` pushes beats into a writer's FIFO, both in COMPUTE,
++the phase the accelerator will use. Each is "willing" in a given set of
++cycles (every cycle by default) and acts when willing and the FIFO allows.
++
++``LogStreamer`` is a Streamer that also logs grants as (cycle, port) and
++the cycles in which it was ticked.
++
++The L1 is loaded with each word's own index (address // 8), so the data a
++reader returns is its address stream divided by 8.
++
++All runs use ``check_hold=True`` on the xbar, so any streamer that drops or
++changes a refused request fails the test.
++
++Sections:
++  1. helpers and toy components
++  2. acceptance: address streams vs NumPy
++  3. registers and FIFO rules
++  4. reader and writer data through the xbar
++  5. acceptance: conflict-free throughput
++  6. acceptance: full FIFO stalls (and wake on pop)
++  7. independent ports under conflicts
++  8. start and done
++  9. random configs: skip on/off
++"""
++
++import bisect
++import random
++from math import prod
++
++import numpy as np
++import pytest
++
++from snax_forge.snax_model import (
++    Cluster,
++    Component,
++    Fifo,
++    L1Config,
++    L1Memory,
++    Phase,
++    SimulationError,
++    Streamer,
++    StreamerConfig,
++    StreamerRegs,
++    Xbar,
++    address_stream,
++)
++
++WORD = 8  # bytes per word with the default 64-bit banks
++NB = 8  # banks in most tests
++
++
++# =============================================================================
++# 1. Helpers and toy components
++# =============================================================================
++
++
++class Willing:
++    """A set of cycles; None means every cycle. ``after``: every cycle from then on."""
++
++    def __init__(self, cycles=None, after=None):
++        self.every = cycles is None and after is None
++        self.cycles = sorted(set(cycles or ()))
++        self.after = after
++
++    def __contains__(self, c):
++        return self.every or (self.after is not None and c >= self.after) or c in self.cycles
++
++    def next_after(self, c):
++        """Earliest willing cycle > c, or None."""
++        if self.every:
++            return c + 1
++        i = bisect.bisect_right(self.cycles, c)
++        cands = [self.cycles[i]] if i < len(self.cycles) else []
++        if self.after is not None:
++            cands.append(max(c + 1, self.after))
++        return min(cands) if cands else None
++
++
++class Consumer(Component):
++    """Pops ``total`` beats from ``fifo`` in COMPUTE, in willing cycles."""
++
++    phases = (Phase.COMPUTE,)
++
++    def __init__(self, name, fifo, total, willing=None):
++        super().__init__(name)
++        self.fifo, self.total = fifo, total
++        self.willing = willing or Willing()
++        fifo.popper = self
++        self.beats = []  # (cycle, [first element of each lane])
++
++    def tick(self, cycle, phase):
++        if len(self.beats) < self.total and cycle in self.willing and self.fifo.can_pop():
++            beat = self.fifo.pop(cycle)
++            self.beats.append((cycle, [int(np.asarray(x).ravel()[0]) for x in beat]))
++
++    def next_wake(self, cycle):
++        if len(self.beats) >= self.total:
++            return None
++        return self.willing.next_after(cycle)
++
++    @property
++    def values(self):
++        return np.array([v for _, v in self.beats], dtype=np.int64).reshape(-1, self.fifo.lanes)
++
++    @property
++    def pop_cycles(self):
++        return [c for c, _ in self.beats]
++
++
++class Producer(Component):
++    """Pushes ``beats`` (one value per lane) into ``fifo`` in COMPUTE, in willing cycles."""
++
++    phases = (Phase.COMPUTE,)
++
++    def __init__(self, name, fifo, beats, willing=None):
++        super().__init__(name)
++        self.fifo, self.beats = fifo, [list(b) for b in beats]
++        self.willing = willing or Willing()
++        fifo.pusher = self
++        self.i = 0
++        self.push_cycles = []
++
++    def tick(self, cycle, phase):
++        if self.i < len(self.beats) and cycle in self.willing and self.fifo.can_push():
++            self.fifo.push(cycle, self.beats[self.i])
++            self.push_cycles.append(cycle)
++            self.i += 1
++
++    def next_wake(self, cycle):
++        if self.i >= len(self.beats):
++            return None
++        return self.willing.next_after(cycle)
++
++
++class Controller(Component):
++    """Starts streamers in scripted cycles: {cycle: (streamer, regs)}."""
++
++    phases = (Phase.CONTROL,)
++
++    def __init__(self, name, script):
++        super().__init__(name)
++        self.script = script
++
++    def tick(self, cycle, phase):
++        if cycle in self.script:
++            s, regs = self.script[cycle]
++            s.start(regs, cycle)
++
++    def next_wake(self, cycle):
++        later = [c for c in self.script if c > cycle]
++        return min(later) if later else None
++
++
++class Probe(Component):
++    """Records ``streamer.busy`` in every cycle of ``window``."""
++
++    phases = (Phase.CONTROL,)
++
++    def __init__(self, name, streamer, window):
++        super().__init__(name)
++        self.s, self.window = streamer, window
++        self.busy = {}
++
++    def tick(self, cycle, phase):
++        if cycle in self.window:
++            self.busy[cycle] = self.s.busy
++
++    def next_wake(self, cycle):
++        later = [c for c in self.window if c > cycle]
++        return min(later) if later else None
++
++
++class LogStreamer(Streamer):
++    """Streamer that logs grants (cycle, port) and tick cycles."""
++
++    def __init__(self, *a, **kw):
++        super().__init__(*a, **kw)
++        self.fires = []
++        self.ticks = []
++
++    def tick(self, cycle, phase):
++        if phase == Phase.REQUEST:
++            self.ticks.append(cycle)
++        super().tick(cycle, phase)
++
++    def commit(self, cycle):
++        self.fires += [(cycle, int(j)) for j in np.flatnonzero(self._fire)]
++        super().commit(cycle)
++
++    def grant_cycles(self, port=None):
++        return sorted({c for c, j in self.fires if port is None or j == port})
++
++
++def build(skip=True, n_banks=NB, rows=64, read_latency=1):
++    """Cluster, L1 loaded with word indices, and an Xbar. Returns (cl, mem, xb)."""
++    cl = Cluster(skip_idle=skip)
++    mem = L1Memory(cl, L1Config(n_banks=n_banks, rows=rows, read_latency=read_latency))
++    mem.load(0, np.arange(n_banks * rows))
++    xb = cl.add(Xbar("xbar", mem))
++    return cl, mem, xb
++
++
++def reader(cl, xb, name, n_ports=1, **cfg):
++    return cl.add(LogStreamer(name, xb, StreamerConfig(write=False, n_ports=n_ports, **cfg)))
++
++
++def writer(cl, xb, name, n_ports=1, **cfg):
++    return cl.add(LogStreamer(name, xb, StreamerConfig(write=True, n_ports=n_ports, **cfg)))
++
++
++def unit_regs(n_beats, n_ports, base=0):
++    """Contiguous stream: lanes on consecutive words, beats one after another."""
++    return StreamerRegs(base, (n_beats,), (n_ports * WORD,), (n_ports,), (WORD,))
++
++
++def assert_cycles_add_up(s, total):
++    assert sum(s.cycles.values()) == total, s.cycles
++
++
++# =============================================================================
++# 2. Acceptance: address streams vs NumPy
++# =============================================================================
++
++
++def numpy_stream(regs):
++    """Direct enumeration: loop 0 innermost/fastest, one row per beat."""
++    tb, ts = regs.temporal_bounds, regs.temporal_strides
++    sb, ss = regs.spatial_bounds, regs.spatial_strides
++    n, lanes = prod(tb), prod(sb)
++    if n == 0:
++        return np.empty((0, lanes), dtype=np.int64)
++    i = np.array(np.unravel_index(np.arange(n), tb, order="F"))  # [dims, n]
++    j = np.array(np.unravel_index(np.arange(lanes), sb, order="F"))  # [dims, lanes]
++    t_off = (i * np.array(ts)[:, None]).sum(0)
++    s_off = (j * np.array(ss)[:, None]).sum(0)
++    return regs.base + t_off[:, None] + s_off[None, :]
++
++
++CASES = {
++    "1d": StreamerRegs(64, (10,), (8,)),
++    "1d_4lanes": StreamerRegs(0, (6,), (32,), (4,), (8,)),
++    "2d": StreamerRegs(16, (3, 5), (8, 64), (2,), (24,)),
++    "3d": StreamerRegs(0, (2, 3, 4), (8, 40, 200), (2,), (16,)),
++    "strided": StreamerRegs(0, (7,), (24,), (3,), (40,)),
++    "2d_spatial": StreamerRegs(8, (4, 2), (16, 128), (2, 3), (8, 256)),
++    "negative": StreamerRegs(4096, (5, 3), (-8, -200), (2,), (-24,)),
++    "zero_stride": StreamerRegs(0, (3, 4), (8, 0)),
++    "bound_1": StreamerRegs(0, (1, 5, 1), (99, 8, 77), (1, 2), (55, 8)),
++    "bound_0": StreamerRegs(0, (3, 0), (8, 8)),
++}
++
++
++@pytest.mark.parametrize("name", list(CASES))
++def test_address_stream_matches_numpy(name):
++    regs = CASES[name]
++    got = address_stream(regs)
++    assert got.shape == (regs.n_beats, regs.n_lanes)
++    assert np.array_equal(got, numpy_stream(regs))
++
++
++def test_loop_order_by_hand():
++    """Temporal loop 0 innermost, spatial dim 0 fastest in the lane index.
++
++    base 100, temporal (2, 3) with strides (10, 100), spatial (2,) stride 1.
++    """
++    regs = StreamerRegs(100, (2, 3), (10, 100), (2,), (1,))
++    assert address_stream(regs).tolist() == [
++        [100, 101], [110, 111], [200, 201], [210, 211], [300, 301], [310, 311],
++    ]  # fmt: skip
++    regs = StreamerRegs(0, (1,), (0,), (2, 2), (1, 10))
++    assert address_stream(regs).tolist() == [[0, 1, 10, 11]]
++
++
++@pytest.mark.parametrize("seed", range(20))
++def test_address_stream_random(seed):
++    rng = random.Random(seed)
++    dt, ds = rng.randint(1, 4), rng.randint(1, 3)
++    regs = StreamerRegs(
++        rng.randrange(0, 1 << 16, 8),
++        [rng.randint(0, 5) for _ in range(dt)],
++        [rng.randint(-8, 8) * 8 for _ in range(dt)],
++        [rng.randint(1, 3) for _ in range(ds)],
++        [rng.randint(-8, 8) * 8 for _ in range(ds)],
++    )
++    assert np.array_equal(address_stream(regs), numpy_stream(regs))
++
++
++# =============================================================================
++# 3. Registers and FIFO rules
++# =============================================================================
++
++
++def test_regs_validation():
++    with pytest.raises(ValueError):
++        StreamerRegs(0, (2, 3), (8,))  # unequal temporal lists
++    with pytest.raises(ValueError):
++        StreamerRegs(0, (2,), (8,), (2, 2), (8,))  # unequal spatial lists
++    with pytest.raises(ValueError):
++        StreamerRegs(0, (-1,), (8,))
++    with pytest.raises(ValueError):
++        StreamerRegs(0, (2,), (8,), (0,), (8,))
++    with pytest.raises(ValueError):
++        StreamerRegs(0, (), ())
++    r = StreamerRegs(0, [2, 3], [8, 16])  # lists become tuples
++    assert r.temporal_bounds == (2, 3) and r.n_beats == 6 and r.n_lanes == 1
++
++
++def test_start_checks_against_hardware():
++    cl, _, xb = build()
++    rd = reader(cl, xb, "rd", n_ports=2, temporal_dims=2)
++    with pytest.raises(ValueError):
++        rd.start(StreamerRegs(0, (4,), (16,), (3,), (8,)))  # 3 lanes on 2 ports
++    with pytest.raises(ValueError):
++        rd.start(StreamerRegs(0, (2, 2, 2), (16, 32, 64), (2,), (8,)))  # 3 loops > 2
++    with pytest.raises(NotImplementedError):
++        rd.start(StreamerRegs(0, (4, 2), (0, 16), (2,), (8,)))  # reader repeat
++    wr = writer(cl, xb, "wr", n_ports=2, temporal_dims=2)
++    wr.start(StreamerRegs(0, (4, 2), (0, 16), (2,), (8,)))  # fine for a writer
++    rd.start(StreamerRegs(0, (4,), (16,), (2,), (8,)))  # fewer loops than counters: fine
++
++
++class _NoSched:
++    def touch(self, elem):
++        pass
++
++
++def test_fifo_push_visible_next_cycle():
++    f = Fifo(_NoSched(), lanes=2, depth=2)
++    f.push(0, [1, 2])
++    assert not f.can_pop()  # flow = false
++    f.commit()
++    assert f.can_pop() and f.peek() == [1, 2]
++    assert f.pop(1) == [1, 2]
++    assert not f.can_pop()  # one pop per cycle
++    f.commit()
++    assert f.empty
++
++
++@pytest.mark.parametrize("pipe", [True, False])
++def test_fifo_pipe(pipe):
++    """Full lane: a pop earlier in the cycle frees the slot only with pipe."""
++    f = Fifo(_NoSched(), lanes=1, depth=1, pipe=pipe)
++    f.push_lane(0, 0, "a")
++    f.commit()
++    assert not f.can_push_lane(0)
++    f.pop_lane(1, 0)
++    assert f.can_push_lane(0) == pipe
++    if pipe:
++        f.push_lane(1, 0, "b")
++    f.commit()
++    assert f.count(0) == (1 if pipe else 0)
++
++
++def test_fifo_wide_pop_needs_every_lane():
++    f = Fifo(_NoSched(), lanes=3, depth=2)
++    f.push_lane(0, 0, 10)
++    f.push_lane(0, 2, 12)
++    f.commit()
++    assert not f.can_pop()
++    with pytest.raises(SimulationError):
++        f.pop(1)
++    f.push_lane(1, 1, 11)
++    f.commit()
++    assert f.pop(2) == [10, 11, 12]
++
++
++# =============================================================================
++# 4. Reader and writer data through the xbar
++# =============================================================================
++
++
++@pytest.mark.parametrize("latency", [0, 1, 3])
++@pytest.mark.parametrize("name", ["1d_4lanes", "2d", "3d", "strided", "2d_spatial"])
++@pytest.mark.parametrize("skip", [True, False])
++def test_reader_data(name, latency, skip):
++    """Every beat holds exactly the words at the NumPy-enumerated addresses."""
++    regs = CASES[name]
++    cl, _, xb = build(skip, read_latency=latency)
++    rd = reader(cl, xb, "rd", regs.n_lanes, temporal_dims=3, fifo_depth=2)
++    con = cl.add(Consumer("acc", rd.fifo, regs.n_beats))
++    rd.start(regs)
++    total = cl.run(max_cycles=2000)
++    assert np.array_equal(con.values, numpy_stream(regs) // WORD)
++    assert not rd.busy and rd.fifo.empty
++    assert_cycles_add_up(rd, total)
++
++
++@pytest.mark.parametrize("skip", [True, False])
++def test_writer_data(skip):
++    """2D writer: each word lands at its enumerated address; nothing else changes."""
++    regs = StreamerRegs(8, (3, 4), (16, 128), (2,), (48,))
++    cl, mem, xb = build(skip)
++    before = mem.data.copy()
++    wr = writer(cl, xb, "wr", 2, temporal_dims=2)
++    values = np.arange(regs.n_beats * 2).reshape(-1, 2) + 5000
++    cl.add(Producer("acc", wr.fifo, values))
++    wr.start(regs)
++    total = cl.run(max_cycles=2000)
++    addrs = numpy_stream(regs)
++    assert len(set(addrs.ravel())) == addrs.size  # test layout: no duplicates
++    expect = before.copy()
++    for a, v in zip(addrs.ravel(), values.ravel()):
++        b, r = mem.locate(int(a))
++        expect[b, r] = v
++    assert np.array_equal(mem.data, expect)
++    assert_cycles_add_up(wr, total)
++
++
++# =============================================================================
++# 5. Acceptance: conflict-free throughput
++# =============================================================================
++
++
++@pytest.mark.parametrize("n_ports", [1, 2, 4, 8])
++@pytest.mark.parametrize("skip", [True, False])
++def test_reader_throughput(n_ports, skip):
++    """Unit-stride stream on 8 banks: every port is granted every cycle.
++
++    Started before the run (as if in cycle -1):
++        cycle 0      AGU pushes beat 0's addresses
++        cycle 1+k    beat k requested and granted on all ports
++        cycle 2+k    read data arrives, pushed into the FIFO
++        cycle 3+k    beat k visible and popped
++    so N beats take N + 3 cycles, with N busy cycles.
++    """
++    n = 20
++    cl, _, xb = build(skip)
++    rd = reader(cl, xb, "rd", n_ports, fifo_depth=2)
++    con = cl.add(Consumer("acc", rd.fifo, n))
++    rd.start(unit_regs(n, n_ports))
++    total = cl.run()
++    assert total == n + 3
++    assert rd.grant_cycles() == list(range(1, n + 1))
++    assert all(int(xb.port_grants[p]) == n for p in rd.ports)
++    assert xb.port_stalls.sum() == 0
++    assert con.pop_cycles == list(range(3, n + 3))
++    assert rd.cycles == {"busy": n, "stall_xbar": 0, "stall_fifo": 0, "idle": 3}
++
++
++@pytest.mark.parametrize("skip", [True, False])
++def test_reader_depth_1_halves_throughput(skip):
++    """Depth 1: the next read waits for the pop, which frees credit in the same cycle.
++
++    Beat k is requested in 1+2k and popped in 3+2k, so N beats take 2N + 2.
++    """
++    n = 10
++    cl, _, xb = build(skip)
++    rd = reader(cl, xb, "rd", 4, fifo_depth=1)
++    con = cl.add(Consumer("acc", rd.fifo, n))
++    rd.start(unit_regs(n, 4))
++    assert cl.run() == 2 * n + 2
++    assert rd.grant_cycles() == [1 + 2 * k for k in range(n)]
++    assert con.pop_cycles == [3 + 2 * k for k in range(n)]
++
++
++@pytest.mark.parametrize("n_ports", [1, 4])
++@pytest.mark.parametrize("skip", [True, False])
++def test_writer_throughput(n_ports, skip):
++    """Producer pushes from cycle 0; beat k is written in 1+k: N + 1 cycles."""
++    n = 20
++    cl, mem, xb = build(skip)
++    wr = writer(cl, xb, "wr", n_ports, fifo_depth=2)
++    values = np.arange(n * n_ports).reshape(n, n_ports) + 7000
++    cl.add(Producer("acc", wr.fifo, values))
++    wr.start(unit_regs(n, n_ports, base=64 * WORD))
++    total = cl.run()
++    assert total == n + 1
++    assert wr.grant_cycles() == list(range(1, n + 1))
++    assert wr.done_cycle == n + 1
++    assert np.array_equal(mem.dump(64 * WORD, n * n_ports).ravel(), values.ravel())
++    assert wr.cycles == {"busy": n, "stall_xbar": 0, "stall_fifo": 0, "idle": 1}
++
++
++@pytest.mark.parametrize("skip", [True, False])
++def test_writer_depth_1_no_pipe(skip):
++    """Writer FIFO has no pipe: a pop does not free the slot for that cycle's push.
++
++    Producer pushes in 0, 2, 4, ...; writes happen in 1, 3, 5, ...
++    """
++    n = 6
++    cl, _, xb = build(skip)
++    wr = writer(cl, xb, "wr", 2, fifo_depth=1)
++    prod_ = cl.add(Producer("acc", wr.fifo, [[k, k] for k in range(n)]))
++    wr.start(unit_regs(n, 2, base=64 * WORD))
++    assert cl.run() == 2 * n
++    assert prod_.push_cycles == [2 * k for k in range(n)]
++    assert wr.grant_cycles() == [1 + 2 * k for k in range(n)]
++
++
++# =============================================================================
++# 6. Acceptance: full FIFO stalls (and wake on pop)
++# =============================================================================
++
++
++@pytest.mark.parametrize("skip", [True, False])
++def test_full_fifo_stalls_reader(skip):
++    """Depth 3, consumer asleep until cycle 40.
++
++        cycles 1..3    beats 0..2 read; credit is now used up
++        cycles 4..39   stall_fifo; AGU still fills the address queues until 9
++        cycle 40       consumer pops beat 0 and, in the same cycle, beat 3 is
++                       requested (the pop frees credit combinationally)
++        cycles 40..46  beats 3..9 requested
++        cycles 40..49  beats 0..9 popped
++    With skipping on, the reader must sleep in 10..39 and still be awake in 40:
++    it wakes with its consumer.
++    """
++    n, d = 10, 3
++    cl, _, xb = build(skip)
++    rd = reader(cl, xb, "rd", 4, fifo_depth=d)
++    con = cl.add(Consumer("acc", rd.fifo, n, Willing(after=40)))
++    rd.start(unit_regs(n, 4))
++    total = cl.run()
++    assert total == 50
++    assert rd.grant_cycles() == [1, 2, 3] + list(range(40, 47))
++    assert con.pop_cycles == list(range(40, 50))
++    assert np.array_equal(con.values, address_stream(unit_regs(n, 4)) // WORD)
++    assert rd.cycles == {"busy": 10, "stall_xbar": 0, "stall_fifo": 36, "idle": 4}
++    if skip:
++        assert not any(10 <= c < 40 for c in rd.ticks)
++        assert 40 in rd.ticks
++
++
++@pytest.mark.parametrize("skip", [True, False])
++def test_empty_fifo_stalls_writer(skip):
++    """Producer starts in cycle 20: writer has addresses from cycle 1 but no data.
++
++    cycle 0 idle, 1..20 stall_fifo, beat k written in 21+k.
++    """
++    n = 6
++    cl, _, xb = build(skip)
++    wr = writer(cl, xb, "wr", 2, fifo_depth=2)
++    cl.add(Producer("acc", wr.fifo, [[k, k] for k in range(n)], Willing(after=20)))
++    wr.start(unit_regs(n, 2, base=64 * WORD))
++    assert cl.run() == 21 + n
++    assert wr.grant_cycles() == list(range(21, 21 + n))
++    assert wr.cycles == {"busy": n, "stall_xbar": 0, "stall_fifo": 20, "idle": 1}
++    if skip:
++        assert not any(n <= c < 20 for c in wr.ticks)
++
++
++@pytest.mark.parametrize("skip", [True, False])
++def test_slow_consumer_sets_the_rate(skip):
++    """Consumer pops every 3rd cycle: after the FIFO fills, one read per 3 cycles."""
++    n = 12
++    cl, _, xb = build(skip)
++    rd = reader(cl, xb, "rd", 2, fifo_depth=2)
++    con = cl.add(Consumer("acc", rd.fifo, n, Willing(range(0, 200, 3))))
++    rd.start(unit_regs(n, 2))
++    total = cl.run()
++    assert np.diff(con.pop_cycles).tolist() == [3] * (n - 1)
++    assert rd.cycles["stall_fifo"] > 0
++    assert_cycles_add_up(rd, total)
++
++
++# =============================================================================
++# 7. Independent ports under conflicts
++# =============================================================================
++
++
++@pytest.mark.parametrize("skip", [True, False])
++def test_ports_advance_independently(skip):
++    """Reader A: port 0 always on bank 0, port 1 always on bank 1.
++
++    Reader B keeps bank 0 busy, so A's port 0 wins only every other cycle.
++    A's port 1 runs ahead, limited by its credit (fifo_depth) since beats
++    only leave the FIFO when port 0's data is there too.
++    """
++    n, d = 16, 4
++    cl, _, xb = build(skip)
++    a = reader(cl, xb, "a", 2, fifo_depth=d)
++    b = reader(cl, xb, "b", 1, fifo_depth=d)
++    ca = cl.add(Consumer("acc_a", a.fifo, n))
++    cl.add(Consumer("acc_b", b.fifo, n))
++    a.start(StreamerRegs(0, (n,), (NB * WORD,), (2,), (WORD,)))  # banks 0 and 1
++    b.start(StreamerRegs(NB * WORD * 32, (n,), (NB * WORD,)))  # bank 0
++    total = cl.run()
++
++    g0, g1 = a.grant_cycles(0), a.grant_cycles(1)
++    assert xb.port_stalls[a.ports[1]] == 0 and xb.port_stalls[a.ports[0]] > 0
++    skew = [sum(c <= t for c in g1) - sum(c <= t for c in g0) for t in range(total)]
++    assert 1 < max(skew) <= d
++    assert g1[-1] < g0[-1]
++    # Once port 1 is credit-blocked or done, port 0's refused cycles are xbar stalls.
++    assert a.cycles["stall_xbar"] > 0 and b.cycles["stall_xbar"] > 0
++    assert np.array_equal(ca.values, address_stream(a.regs) // WORD)
++    assert_cycles_add_up(a, total)
++    assert_cycles_add_up(b, total)
++
++
++# =============================================================================
++# 8. Start and done
++# =============================================================================
++
++
++@pytest.mark.parametrize("skip", [True, False])
++def test_start_timing_and_restart(skip):
++    """start in cycle 5: busy from 6, AGU pushes in 6, first grant in 7.
++
++    Task 1 (4 beats) is granted in 7..10, so busy drops in 11. Task 2 starts
++    in 30 and is granted in 32..34.
++    """
++    cl, _, xb = build(skip)
++    rd = reader(cl, xb, "rd", 2, fifo_depth=2)
++    t1, t2 = unit_regs(4, 2), unit_regs(3, 2, base=128)
++    cl.add(Controller("ctl", {5: (rd, t1), 30: (rd, t2)}))
++    probe = cl.add(Probe("probe", rd, [4, 5, 6, 10, 11, 12]))
++    con = cl.add(Consumer("acc", rd.fifo, 7))
++    total = cl.run()
++    assert probe.busy == {4: False, 5: False, 6: True, 10: True, 11: False, 12: False}
++    assert rd.grant_cycles() == [7, 8, 9, 10, 32, 33, 34]
++    assert rd.done_cycle == 35
++    assert con.values[:, 0].tolist() == [0, 2, 4, 6, 16, 18, 20]
++    assert_cycles_add_up(rd, total)
++
++
++def test_start_while_busy_raises():
++    cl, _, xb = build()
++    rd = reader(cl, xb, "rd", 1)
++    rd.start(StreamerRegs(0, (4,), (8,)))
++    with pytest.raises(SimulationError):
++        rd.start(StreamerRegs(0, (4,), (8,)))
++    cl.add(Consumer("acc", rd.fifo, 4))
++    cl.add(Controller("ctl", {2: (rd, StreamerRegs(0, (4,), (8,)))}))
++    with pytest.raises(SimulationError):
++        cl.run()
++
++
++def test_zero_bound_does_nothing():
++    """A temporal bound of 0: the RTL AGU ignores start; never busy, no requests."""
++    cl, _, xb = build()
++    rd = reader(cl, xb, "rd", 1, temporal_dims=2)
++    rd.start(StreamerRegs(0, (4, 0), (8, 8)))
++    assert not rd.busy and rd.done_cycle == 0
++    assert cl.run() == 0
++    assert rd.grant_cycles() == []
++
++
++# =============================================================================
++# 9. Random configs: skip on/off
++# =============================================================================
++
++
++def random_regs(rng, n_ports, write, lo, hi):
++    """Regs with non-negative strides whose addresses stay in [lo, hi) bytes."""
++    sb = (2, 2) if n_ports == 4 and rng.random() < 0.5 else (n_ports,)
++    for _ in range(1000):
++        dt = rng.randint(1, 3)
++        tb = [rng.choice([0, 1, 2, 3, 4, 5]) if rng.random() < 0.1 else rng.randint(1, 5)
++              for _ in range(dt)]  # fmt: skip
++        ts = [rng.randint(0, 6) * WORD for _ in range(dt)]
++        if not write and ts[0] == 0:
++            ts[0] = WORD
++        ss = [rng.randint(0, 3) * WORD for _ in sb]
++        span = sum((b - 1) * s for b, s in zip(tb, ts) if b) + sum(
++            (b - 1) * s for b, s in zip(sb, ss)
++        )
++        if span < hi - lo:
++            base = rng.randrange(lo, hi - span, WORD)
++            return StreamerRegs(base, tb, ts, sb, ss)
++    raise AssertionError("no regs found")
++
++
++def random_case(seed):
++    """Two readers and a writer on 4 banks with random depths and timing.
++
++    Readers read the lower half of L1, the writer writes the upper half, so
++    read data never depends on write timing. Consumers and producers are
++    willing on a random ~half of the first 300 cycles, then always.
++    """
++    rng = random.Random(seed)
++    specs = []
++    for kind in ("r", "r", "w"):
++        n_ports = rng.choice([1, 2, 3, 4])
++        cfg = {
++            "n_ports": n_ports,
++            "temporal_dims": 3,
++            "fifo_depth": rng.randint(1, 4),
++            "addr_depth": rng.randint(1, 4),
++            "prio": rng.choice([0, 0, 1]),
++        }
++        half = 4 * 64 * WORD // 2
++        lo, hi = (0, half) if kind == "r" else (half, 2 * half)
++        regs = random_regs(rng, n_ports, kind == "w", lo, hi)
++        willing = [c for c in range(300) if rng.random() < 0.5]
++        specs.append((kind, cfg, regs, willing))
++    latency = rng.choice([0, 1, 2])
++    return specs, latency
++
++
++def run_case(specs, latency, skip):
++    cl, mem, xb = build(skip, n_banks=4, read_latency=latency)
++    ss, toys = [], []
++    for i, (kind, cfg, regs, willing) in enumerate(specs):
++        if kind == "r":
++            s = reader(cl, xb, f"s{i}", **cfg)
++            toys.append(cl.add(Consumer(f"t{i}", s.fifo, regs.n_beats, Willing(willing, 300))))
++        else:
++            s = writer(cl, xb, f"s{i}", **cfg)
++            vals = np.arange(regs.n_beats * regs.n_lanes).reshape(-1, regs.n_lanes) + 10000
++            toys.append(cl.add(Producer(f"t{i}", s.fifo, vals, Willing(willing, 300))))
++        s.start(regs)
++        ss.append(s)
++    total = cl.run(max_cycles=20000)
++    return total, mem, xb, ss, toys
++
++
++@pytest.mark.parametrize("seed", range(30))
++def test_random_skip_on_off(seed):
++    specs, latency = random_case(seed)
++    results = []
++    for skip in (True, False):
++        total, mem, xb, ss, toys = run_case(specs, latency, skip)
++        results.append(
++            (
++                total,
++                [s.fires for s in ss],
++                [dict(s.cycles) for s in ss],
++                [t.beats if isinstance(t, Consumer) else t.push_cycles for t in toys],
++                mem.data.copy(),
++                xb.port_grants.copy(),
++                xb.port_stalls.copy(),
++                xb.bank_conflicts.copy(),
++            )
++        )
++        for s in ss:
++            assert_cycles_add_up(s, total)
++            assert not s.busy
++
++        # Data: readers return their NumPy stream; words the writer wrote
++        # exactly once hold the written value.
++        for (kind, _, regs, _), s, t in zip(specs, ss, toys):
++            if kind == "r":
++                assert np.array_equal(t.values, numpy_stream(regs) // WORD)
++            else:
++                addrs = numpy_stream(regs).ravel()
++                vals = np.arange(addrs.size) + 10000
++                uniq, cnt = np.unique(addrs, return_counts=True)
++                once = set(uniq[cnt == 1].tolist())
++                for a, v in zip(addrs, vals):
++                    if int(a) in once:
++                        assert mem.peek(int(a))[0] == v
++
++    a, b = results
++    assert a[0] == b[0] and a[1] == b[1] and a[2] == b[2] and a[3] == b[3]
++    assert all(np.array_equal(x, y) for x, y in zip(a[4:], b[4:]))

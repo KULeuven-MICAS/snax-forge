@@ -18,6 +18,14 @@ from .sched import (
     SimulationTimeout,
     Stateful,
 )
+from .streamer import (
+    Fifo,
+    Streamer,
+    StreamerConfig,
+    StreamerRegs,
+    address_stream,
+    lane_offsets,
+)
 from .xbar import HoldViolation, Port, Xbar
 
 __all__ = [
@@ -27,6 +35,7 @@ __all__ = [
     "BankResp",
     "Cluster",
     "Component",
+    "Fifo",
     "HoldViolation",
     "L1Config",
     "L1Memory",
@@ -36,6 +45,11 @@ __all__ = [
     "SimulationError",
     "SimulationTimeout",
     "Stateful",
+    "Streamer",
+    "StreamerConfig",
+    "StreamerRegs",
     "WordInterleaved",
     "Xbar",
+    "address_stream",
+    "lane_offsets",
 ]

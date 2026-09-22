@@ -34,7 +34,7 @@ All tests use synthetic traffic and hand-written scenarios.
 | MOD1 | Event-driven scheduler; ticks only components with pending work, skips idle cycle ranges; struct-of-arrays state (D10, D21) | none | Toy components give identical results with skipping on and off; two runs are identical | `done` |
 | MOD2 | L1 banks: count, width, read latency, one access per bank per cycle; element type and elements per word (D13) | MOD1 | Read latency is exact; a second access to the same bank in the same cycle is refused | `done` |
 | MOD3 | TCDM interconnect: round-robin arbitration, conflicts and stalls recorded | MOD2 | Grant sequences for 2–3 masters on one bank match hand-worked tables; distinct banks proceed in parallel | `done` |
-| MOD4 | Streamer from raw registers (base, bounds and strides per loop), FIFO depth, valid/ready, configurable ports (D12) | MOD3 | Address streams equal a NumPy enumeration for 1D, 2D and strided nests; a full FIFO causes stalls; conflict-free throughput equals the port count per cycle | todo |
+| MOD4 | Streamer from raw registers (base, bounds and strides per loop), FIFO depth, valid/ready, configurable ports (D12) | MOD3 | Address streams equal a NumPy enumeration for 1D, 2D and strided nests; a full FIFO causes stalls; conflict-free throughput equals the port count per cycle | `done` |
 | MOD5 | Accelerator interface: ports with per-port element rate, `L`, `II`, Python function; elementwise (N→1) and reduce (T→1) stubs (D25) | MOD4 | With ideal streams, both stubs hit their cycle formulas; the reduce stub proves unequal port rates work | todo |
 | MOD6 | L2 and DMA sharing the interconnect | MOD3 | DMA bandwidth test; DMA–streamer contention shows up in the trace | todo |
 | MOD7 | CSR map and controller executing `csr_write`, `csr_read`, `dma`, `start`, `wait` (poll, signal) (D11) | MOD5, MOD6 | Poll and signal give the same output data; cycle counts differ only by the expected control overhead | todo |
@@ -130,7 +130,7 @@ All tests use synthetic traffic and hand-written scenarios.
 
 ## Next Up
 
-Briefs to write first, along the critical path: MOD4. ANC1 has no dependencies and can start in parallel.
+Briefs to write first, along the critical path: MOD5. MOD6 depends only on MOD3 and can go in parallel, as can ANC1.
 
 ## Sync Reminders
 

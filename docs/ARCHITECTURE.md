@@ -463,6 +463,7 @@ parameter and memory-plan choices, sweeps.
 | D29 | RTL-like cycle semantics: fixed phases per cycle; reads see previous-cycle state and wires from earlier phases; components and touched shared elements commit at cycle end; next_wake answers must not depend on when they are asked | 6 |
 | D30 | L1 banks are a shared state element touched by their requester, not a ticked component; read data is held keyed by its ready cycle; a same-bank double access at the L1 is an error, and arbitration and stalling belong to the interconnect | 7 |
 | D31 | Interconnect copies the SNAX SparseInterconnect per-bank arbiter: priority mask, then round-robin with pointer = last selection (reset on an idle bank cycle), lock on a refused selection; no added latency. It is a Component awake exactly when one of its port owners is; a refused request must be held unchanged | 8 |
+| D32 | Streamer copies the SNAX readerWriter timing: ports advance independently (per-port address queue and credit); a reader port may have `fifo_depth` reads in flight or buffered, and a pop frees credit in the same cycle; FIFOs are touched per-lane elements with flow = false, pipe on the reader side only; start in s gives the first request in s+2; `busy` drops the cycle after the last grant. A reader blocked on credit wakes with its FIFO's consumer. Not copied yet: dynamic TCDM priority, reader repeat on temporal stride 0 | 9 |
 
 ## 11. Open Items
 
@@ -471,3 +472,4 @@ parameter and memory-plan choices, sweeps.
 2. DSE config format, and single design point vs sweep.
 3. Acceptable model-vs-RTL error target (decided in M2).
 4. Positioning details relative to ZigZag/Stream.
+5. Streamer dynamic TCDM priority and reader repeat on temporal stride 0 (D32): copy or keep out, decided in ANC2.
