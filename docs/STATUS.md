@@ -36,7 +36,7 @@ All tests use synthetic traffic and hand-written scenarios.
 | MOD3 | TCDM interconnect: round-robin arbitration, conflicts and stalls recorded | MOD2 | Grant sequences for 2–3 masters on one bank match hand-worked tables; distinct banks proceed in parallel | `done` |
 | MOD4 | Streamer from raw registers (base, bounds and strides per loop), FIFO depth, valid/ready, configurable ports (D12) | MOD3 | Address streams equal a NumPy enumeration for 1D, 2D and strided nests; a full FIFO causes stalls; conflict-free throughput equals the port count per cycle | `done` |
 | MOD5 | Accelerator interface: ports with per-port element rate, `L`, `II`, Python function; elementwise (N→1) and reduce (T→1) stubs (D25) | MOD4 | With ideal streams, both stubs hit their cycle formulas; the reduce stub proves unequal port rates work | `done` |
-| MOD6 | L2 and DMA sharing the interconnect | MOD3 | DMA bandwidth test; DMA–streamer contention shows up in the trace | todo |
+| MOD6 | L2 and DMA with a wide port with per-cycle superbank priority (D33, D34) | MOD3 | DMA bandwidth test; DMA–streamer contention shows up in the trace | `done` |
 | MOD7 | CSR map and controller executing `csr_write`, `csr_read`, `dma`, `start`, `wait` (poll, signal) (D11) | MOD5, MOD6 | Poll and signal give the same output data; cycle counts differ only by the expected control overhead | todo |
 | MOD8 | Profile and JSON trace | MOD7 | Per accelerator, busy + idle + stalled = total; per-bank access counts equal trace event counts | todo |
 | MOD9 | Scenario runner: JSON with cluster config, initial memory, command list; dumps profile, trace, final memory | MOD8 | Elementwise, reduce and DMA scenarios run from the CLI; final memory checked against NumPy | todo |
@@ -130,7 +130,7 @@ All tests use synthetic traffic and hand-written scenarios.
 
 ## Next Up
 
-Briefs to write first, along the critical path: MOD6 (MOD7 needs MOD5 and MOD6). ANC1 can go in parallel.
+Briefs to write first, along the critical path: MOD7 (MOD5 and MOD6 are done). ANC1 can go in parallel; it should also measure the DMA values left open in open item 7.
 
 ## Sync Reminders
 

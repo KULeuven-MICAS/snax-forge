@@ -249,7 +249,13 @@ describe.
 
 1. **L1 memory banks.** RTL-like SRAM: one access per bank per cycle; configurable count, width and read latency; replaceable address-to-bank map (default word-interleaved); base address configurable, 0 by default. A shared element touched by its requester, not a ticked component (D30).
 2. **Interconnect.** TCDM-like: parallel access to distinct banks, round-robin
-   arbitration on conflicts. Every conflict and stall is recorded.
+   arbitration on conflicts. Ports have a width: a narrow port (64 bits)
+   reaches one bank, a wide port an aligned group of banks (512 bits = one
+   superbank of 8 banks, used by the DMA). Wide port with per-cycle
+   superbank priority: wider wins per cycle and per bank group, so narrow
+   ports to other superbanks, and to the same superbank in cycles the wide
+   port does not use it, proceed (D31, D33). Every conflict and stall is
+   recorded, with stalls caused by a wider grant counted separately.
 3. **Streamers.** One per accelerator port, configured by raw register values
    (base, bounds and strides per loop). Affine address generation, FIFO
    buffering (configurable depth), valid/ready interface, configurable
@@ -260,8 +266,9 @@ describe.
    elementwise and reduce stubs exist before any BRM. An accelerator sits
    between its streamers' FIFOs; its L-stage pipeline stalls globally on a
    full output (D33).
-5. **DMA and L2.** A global memory and a DMA between L2 and L1, sharing the
-   interconnect.
+5. **DMA and L2.** A flat L2 with fixed read latency and a DMA between L2
+   and L1 on one wide port of the interconnect. Source and destination are
+   affine beat patterns; timing is per beat for now (D34).
 6. **Register interface and controller.** CSRs per accelerator and streamer,
    and the controller executing the control program.
 
@@ -282,11 +289,11 @@ enabled later without restructuring.
 **Configurable cluster parameters**:
 
 - bank count, width, and read latency
-- port bandwidths
+- port bandwidths: port widths (64 to `wide_bits`, 512 by default)
 - interconnect ports per streamer
 - FIFO depth and number of streamer loops
 - L2 size and latency
-- DMA bandwidth
+- DMA bandwidth (`beat_interval`), startup and latencies
 
 **Performance path [DEFAULT]:**
 
@@ -466,6 +473,8 @@ parameter and memory-plan choices, sweeps.
 | D30 | L1 banks are a shared state element touched by their requester, not a ticked component; read data is held keyed by its ready cycle; a same-bank double access at the L1 is an error, and arbitration and stalling belong to the interconnect | 7 |
 | D31 | Interconnect copies the SNAX SparseInterconnect per-bank arbiter: priority mask, then round-robin with pointer = last selection (reset on an idle bank cycle), lock on a refused selection; no added latency. It is a Component awake exactly when one of its port owners is; a refused request must be held unchanged | 8 |
 | D32 | Streamer copies the SNAX readerWriter timing: ports advance independently (per-port address queue and credit); a reader port may have `fifo_depth` reads in flight or buffered, and a pop frees credit in the same cycle; FIFOs are touched per-lane elements with flow = false, pipe on the reader side only; start in s gives the first request in s+2; `busy` drops the cycle after the last grant. A reader blocked on credit wakes with its FIFO's consumer. Not copied yet: dynamic TCDM priority, reader repeat on temporal stride 0 | 9 |
+| D33 | Multi-width interconnect ports (extends D31): a w-bit port covers the aligned group of w / bank-width banks (64 = 1, 128 = 2, 256 = 4, 512 = 8); w is a power-of-two multiple of the bank width and at most `L1Config.wide_bits` = 512, and `n_banks` must be a multiple of the group (checked per port). Arbitration works on bank sets in one xbar method (`_priority`): wider wins absolutely, per cycle and per group (as mem_wide_narrow_mux); equal widths use the D31 arbiter per (width, group); a request refused by a wider grant locks as in D31. D30 reads with it: the xbar passes at most one access per bank per cycle, and a wide grant is one access on each bank of its group. `block_bank` is removed; stalls caused by a wider grant are counted separately | 10 |
+| D34 | DMA: a Component on one `wide_bits` port (never refused under the default policy), started by `start(descriptor, cycle)`, busy from cycle + 1. Descriptor = direction (L2→L1 or L1→L2) plus source and destination affine beat patterns (base, bounds, strides; `address_stream`), equal beat counts, every beat aligned to the wide beat. Per-beat timing first: decoupled read and write sides, one beat per `beat_interval`, `startup`, source latency, `done_latency`; for N uncontended beats, done − start = startup + Ls + k(N − 1) + 2 + done_latency. L2 = flat element touched by its requester, one read and one write per cycle, fixed read latency. snax_alu's DMA is the Snitch iDMA; its burst cost and 2D shape are not copied yet (open item 7) | 10 |
 | D33 | Accelerator sits between FIFOs as a COMPUTE component: per port direction, lanes (= streamer n_ports) and rate (one beat every `rate` firings, int or start parameter); stubs are configs. Join on inputs as in snax_alu; pipeline of L slots with a global stall (head cannot be pushed → nothing advances, fires or pops); II counts wall-clock cycles; start in s gives busy from s+1, done the cycle after the last push. Cycle classes busy > stall_out > idle (II gap) > stall_in > idle; drain after the last firing is idle. Not copied yet: per-stage ready, the Accumulator's drain cycle | 10 |
 
 ## 11. Open Items
@@ -476,4 +485,6 @@ parameter and memory-plan choices, sweeps.
 3. Acceptable model-vs-RTL error target (decided in M2).
 4. Positioning details relative to ZigZag/Stream.
 5. Streamer dynamic TCDM priority and reader repeat on temporal stride 0 (D32): copy or keep out, decided in ANC2.
+6. Priority manager for ports of different widths: N wide and M narrow accesses per bank group (a share instead of the absolute priority of D33). Decided after ANC2, once the cost of absolute priority on real kernels is known; it replaces only `Xbar._priority`.
+7. DMA features of the Snitch iDMA not copied yet (D34), decided with ANC1/ANC2: AXI bursts (`NumAxInFlight = 3` bursts in flight, split at 256 beats and 4 KiB; short bursts such as the row-by-row pattern are slower in RTL); its 2D shape with one inner length shared by both sides (more general patterns need several descriptors, each with its own startup); back-pressure from its 3-deep buffer; L1→L1 and unaligned transfers; the transaction limit of the `tb_memory_axi` atomics filter; XDMA as an alternative engine; the real values of `startup`, L2 read latency, `l1_read_extra` and `done_latency`.
 6. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D33): copy or keep out, decided in ANC2 (drain cycle at the latest in BRM4).
