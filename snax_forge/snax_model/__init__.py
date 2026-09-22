@@ -18,6 +18,7 @@ from .sched import (
     SimulationTimeout,
     Stateful,
 )
+from .xbar import HoldViolation, Port, Xbar
 
 __all__ = [
     "AddressMap",
@@ -26,12 +27,15 @@ __all__ = [
     "BankResp",
     "Cluster",
     "Component",
+    "HoldViolation",
     "L1Config",
     "L1Memory",
     "Phase",
+    "Port",
     "Scheduler",
     "SimulationError",
     "SimulationTimeout",
     "Stateful",
     "WordInterleaved",
+    "Xbar",
 ]
