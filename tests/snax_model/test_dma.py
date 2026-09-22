@@ -25,6 +25,18 @@ import random
 
 import numpy as np
 import pytest
+from helpers import (
+    BEAT,
+    NB,
+    WORD,
+    LogDma,
+    LogStreamer,
+    ScriptedStarts,
+    assert_cycles_add_up,
+    build,
+    contiguous,
+)
+from helpers import dma_total as expected_total
 
 from snax_forge.snax_model import (
     Cluster,
@@ -49,69 +61,9 @@ from snax_forge.snax_model import (
 )
 from snax_forge.snax_model.accel import Accelerator
 
-WORD = 8  # bytes per bank word
-BEAT = 64  # bytes per wide beat (512 bits)
-NB = 16  # banks: two superbanks
-
-
 # =============================================================================
 # 1. Helpers
 # =============================================================================
-
-
-def build(skip=True, n_banks=NB, rows=64, l1_lat=1, l2_lat=1, l2_size=1 << 15):
-    """Cluster with L1, xbar and L2. Returns (cluster, l1, xbar, l2)."""
-    cl = Cluster(skip_idle=skip)
-    mem = L1Memory(cl, L1Config(n_banks=n_banks, rows=rows, read_latency=l1_lat))
-    xb = cl.add(Xbar("xbar", mem))
-    l2 = L2Memory(cl, L2Config(size_bytes=l2_size, read_latency=l2_lat))
-    return cl, mem, xb, l2
-
-
-class LogDma(Dma):
-    """Dma that logs the cycles in which it read and wrote a beat."""
-
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        self.read_cycles, self.write_cycles = [], []
-
-    def commit(self, cycle):
-        if self._w.src_moved:
-            self.read_cycles.append(cycle)
-        if self._w.dst_moved:
-            self.write_cycles.append(cycle)
-        super().commit(cycle)
-
-
-class LogStreamer(Streamer):
-    """Streamer that logs its grant cycles."""
-
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        self.grants = []
-
-    def commit(self, cycle):
-        if self._fire.any():
-            self.grants.append(cycle)
-        super().commit(cycle)
-
-
-class ScriptedStarts(Component):
-    """Starts components in scripted cycles: {cycle: [(comp, arg), ...]}."""
-
-    phases = (Phase.CONTROL,)
-
-    def __init__(self, name, script):
-        super().__init__(name)
-        self.script = script
-
-    def tick(self, cycle, phase):
-        for comp, arg in self.script.get(cycle, ()):
-            comp.start(arg, cycle)
-
-    def next_wake(self, cycle):
-        later = [c for c in self.script if c > cycle]
-        return min(later) if later else None
 
 
 class Chain(Component):
@@ -138,19 +90,6 @@ class Chain(Component):
         if self.i >= len(self.items) or self.dma.busy or self.dma._start.pending:
             return None  # asked again after every cycle: sees the DMA finish
         return max(cycle + 1, self._at())
-
-
-def contiguous(base, n):
-    return DmaPattern(base, (n,), (BEAT,))
-
-
-def expected_total(cfg, n, src_latency):
-    """done_cycle - start cycle for N beats without contention (dma.py module doc)."""
-    return cfg.startup + src_latency + cfg.beat_interval * (n - 1) + 2 + cfg.done_latency
-
-
-def assert_cycles_add_up(comp, total):
-    assert sum(comp.cycles.values()) == total, comp.cycles
 
 
 # =============================================================================

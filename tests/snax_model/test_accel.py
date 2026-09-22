@@ -40,6 +40,13 @@ import random
 
 import numpy as np
 import pytest
+from helpers import (
+    LogAccel,
+    LogStreamer,
+    ScriptedStarts,
+    assert_cycles_add_up,
+    build_l1,
+)
 
 from snax_forge.snax_model import (
     AccelConfig,
@@ -141,25 +148,6 @@ class Consumer(Component):
         return [c for c, _ in self.beats]
 
 
-class ScriptedStarts(Component):
-    """Starts components in scripted cycles: {cycle: (comp, arg)}."""
-
-    phases = (Phase.CONTROL,)
-
-    def __init__(self, name, script):
-        super().__init__(name)
-        self.script = script
-
-    def tick(self, cycle, phase):
-        if cycle in self.script:
-            comp, arg = self.script[cycle]
-            comp.start(arg, cycle)
-
-    def next_wake(self, cycle):
-        later = [c for c in self.script if c > cycle]
-        return min(later) if later else None
-
-
 class Probe(Component):
     """Records ``comp.busy`` in every cycle of ``window``."""
 
@@ -177,35 +165,6 @@ class Probe(Component):
     def next_wake(self, cycle):
         later = [c for c in self.window if c > cycle]
         return min(later) if later else None
-
-
-class LogAccel(Accelerator):
-    """Accelerator that logs firing and push cycles."""
-
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        self.fire_cycles = []
-        self.push_cycles = []
-
-    def commit(self, cycle):
-        if self._w.fired:
-            self.fire_cycles.append(cycle)
-        if self._w.pushed:
-            self.push_cycles.append(cycle)
-        super().commit(cycle)
-
-
-class LogStreamer(Streamer):
-    """Streamer that logs grant cycles."""
-
-    def __init__(self, *a, **kw):
-        super().__init__(*a, **kw)
-        self.grants = []
-
-    def commit(self, cycle):
-        if self._fire.any():
-            self.grants.append(cycle)
-        super().commit(cycle)
 
 
 def toy_setup(cfg, in_beats, n_out, skip=True, depth_in=2, depth_out=2, willing_in=None,
@@ -229,10 +188,6 @@ def toy_setup(cfg, in_beats, n_out, skip=True, depth_in=2, depth_out=2, willing_
         w = (willing_out or {}).get(p.name)
         cons[p.name] = cl.add(Consumer(f"cons_{p.name}", f, n_out[p.name], w))
     return cl, acc, prods, cons
-
-
-def assert_cycles_add_up(comp, total):
-    assert sum(comp.cycles.values()) == total, comp.cycles
 
 
 def rand_beats(rng, n, lanes, lo=-50, hi=50):
@@ -500,13 +455,6 @@ def test_reduce_freeze_keeps_partial_state(skip):
     assert np.array_equal(cons["out"].values, x.reshape(n_out, T, 2).sum(axis=1))
     assert acc.cycles["stall_out"] > 0
     assert_cycles_add_up(acc, total)
-
-
-def build_l1(skip, n_banks=16, rows=64, read_latency=1):
-    cl = Cluster(skip_idle=skip)
-    mem = L1Memory(cl, L1Config(n_banks=n_banks, rows=rows, read_latency=read_latency))
-    xb = cl.add(Xbar("xbar", mem))
-    return cl, mem, xb
 
 
 def unit_regs(n_beats, lanes, base):

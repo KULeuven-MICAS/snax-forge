@@ -25,6 +25,7 @@ from itertools import pairwise
 
 import numpy as np
 import pytest
+from helpers import BEAT, NB, WORD, build, compute_blocks, contiguous, unit
 
 from snax_forge.snax_model import (
     Accelerator,
@@ -39,8 +40,6 @@ from snax_forge.snax_model import (
     DmaPattern,
     L1Config,
     L1Memory,
-    L2Config,
-    L2Memory,
     RegisterMap,
     SimulationError,
     Streamer,
@@ -48,16 +47,12 @@ from snax_forge.snax_model import (
     StreamerRegs,
     Wait,
     Xbar,
-    elementwise_stub,
     reduce_stub,
 )
 from snax_forge.snax_model.profile import Profile, build_profile
 from snax_forge.snax_model.sched import ClassLog
 from snax_forge.snax_model.trace import EVENT_KINDS, Trace
 
-WORD = 8  # bytes per bank word
-BEAT = 64  # bytes per wide beat (512 bits)
-NB = 16  # banks: two superbanks
 VECADD_CFG = ControllerConfig(
     write_cost=1, kind_write_cost={"dma": 2}, read_cost=2, poll_interval=4
 )
@@ -66,38 +61,6 @@ VECADD_CFG = ControllerConfig(
 # =============================================================================
 # 1. Helpers
 # =============================================================================
-
-
-def build(skip=True, trace=None, rows=64, l1_lat=1, l2_size=1 << 15):
-    """Cluster with L1, xbar and L2. Returns (cluster, l1, xbar, l2)."""
-    cl = Cluster(skip_idle=skip, trace=trace)
-    mem = L1Memory(cl, L1Config(n_banks=NB, rows=rows, read_latency=l1_lat))
-    xb = cl.add(Xbar("xbar", mem))
-    l2 = L2Memory(cl, L2Config(size_bytes=l2_size, read_latency=1))
-    return cl, mem, xb, l2
-
-
-def compute_blocks(cl, xb, lanes=4, fifo_depth=2):
-    """Readers ra, rb, writer wr and an elementwise-add accelerator."""
-    cfg = StreamerConfig(n_ports=lanes, fifo_depth=fifo_depth)
-    wcfg = StreamerConfig(write=True, n_ports=lanes, fifo_depth=fifo_depth)
-    ra = cl.add(Streamer("ra", xb, cfg))
-    rb = cl.add(Streamer("rb", xb, cfg))
-    wr = cl.add(Streamer("wr", xb, wcfg))
-    acc = cl.add(Accelerator("acc", cl, elementwise_stub(lanes=lanes)))
-    acc.attach("a", ra.fifo)
-    acc.attach("b", rb.fifo)
-    acc.attach("out", wr.fifo)
-    return ra, rb, wr, acc
-
-
-def contiguous(base, n):
-    return DmaPattern(base, (n,), (BEAT,))
-
-
-def unit(word, n_beats, lanes):
-    """Streamer task over n_beats contiguous beats of `lanes` words from word `word`."""
-    return StreamerRegs(word * WORD, (n_beats,), (lanes * WORD,), (lanes,), (WORD,))
 
 
 def run_vecadd(mode="poll", skip=True, level=None, cfg=VECADD_CFG):

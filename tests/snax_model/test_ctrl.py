@@ -23,10 +23,21 @@ import random
 
 import numpy as np
 import pytest
+from helpers import (
+    BEAT,
+    NB,
+    WORD,
+    assert_cycles_add_up,
+    build,
+    compute_blocks,
+    contiguous,
+    dma_total,
+    unit,
+    w_poll,
+    w_signal,
+)
 
 from snax_forge.snax_model import (
-    Accelerator,
-    Cluster,
     Controller,
     ControllerConfig,
     CsrRead,
@@ -35,84 +46,22 @@ from snax_forge.snax_model import (
     DmaConfig,
     DmaDescriptor,
     DmaPattern,
-    L1Config,
-    L1Memory,
-    L2Config,
-    L2Memory,
     RegisterMap,
     SimulationError,
     Streamer,
     StreamerConfig,
     StreamerRegs,
     Wait,
-    Xbar,
     address_stream,
     command_from_dict,
-    elementwise_stub,
     program_from_dicts,
     program_to_dicts,
     reduce_stub,
 )
 
-WORD = 8  # bytes per bank word
-BEAT = 64  # bytes per wide beat (512 bits)
-NB = 16  # banks: two superbanks
-
-
 # =============================================================================
 # 1. Helpers
 # =============================================================================
-
-
-def build(skip=True, n_banks=NB, rows=64, l1_lat=1, l2_lat=1, l2_size=1 << 15):
-    """Cluster with L1, xbar and L2. Returns (cluster, l1, xbar, l2)."""
-    cl = Cluster(skip_idle=skip)
-    mem = L1Memory(cl, L1Config(n_banks=n_banks, rows=rows, read_latency=l1_lat))
-    xb = cl.add(Xbar("xbar", mem))
-    l2 = L2Memory(cl, L2Config(size_bytes=l2_size, read_latency=l2_lat))
-    return cl, mem, xb, l2
-
-
-def compute_blocks(cl, xb, lanes=4, fifo_depth=2, acc_cfg=None, temporal_dims=1):
-    """Readers ra, rb, writer wr and an accelerator (elementwise add by default)."""
-    cfg = StreamerConfig(n_ports=lanes, fifo_depth=fifo_depth, temporal_dims=temporal_dims)
-    wcfg = StreamerConfig(write=True, n_ports=lanes, fifo_depth=fifo_depth,
-                          temporal_dims=temporal_dims)  # fmt: skip
-    acc_cfg = acc_cfg or elementwise_stub(lanes=lanes)
-    ra = cl.add(Streamer("ra", xb, cfg))
-    rb = cl.add(Streamer("rb", xb, cfg)) if len(acc_cfg.inputs) > 1 else None
-    wr = cl.add(Streamer("wr", xb, wcfg))
-    acc = cl.add(Accelerator("acc", cl, acc_cfg))
-    ins = [p.name for p in acc_cfg.inputs]
-    acc.attach(ins[0], ra.fifo)
-    if rb is not None:
-        acc.attach(ins[1], rb.fifo)
-    acc.attach(acc_cfg.outputs[0].name, wr.fifo)
-    return ra, rb, wr, acc
-
-
-def contiguous(base, n):
-    return DmaPattern(base, (n,), (BEAT,))
-
-
-def unit(word, n_beats, lanes):
-    """Streamer task over n_beats contiguous beats of `lanes` words from word `word`."""
-    return StreamerRegs(word * WORD, (n_beats,), (lanes * WORD,), (lanes,), (WORD,))
-
-
-def dma_total(cfg, n, src_latency):
-    """done_cycle - start cycle for N beats without contention (D34)."""
-    return cfg.startup + src_latency + cfg.beat_interval * (n - 1) + 2 + cfg.done_latency
-
-
-def w_poll(t, d, c_r, p):
-    """Length of a poll wait (ctrl.py module doc)."""
-    i = max(0, -(-(d - t - c_r + 1) // p))
-    return i * p + c_r
-
-
-def w_signal(t, d, s):
-    return max(t, d) - t + s
 
 
 def check_waits(ctl, mode):
@@ -149,10 +98,6 @@ def start_cycle(ctl, block):
     """Cycle in which the (last) start write of `block` landed."""
     addr = ctl.map.addr(f"{block}.start")
     return [last for pc, _, last in ctl.spans if ctl.program[pc] == CsrWrite(addr, 1)][-1]
-
-
-def assert_cycles_add_up(comp, total):
-    assert sum(comp.cycles.values()) == total, comp.cycles
 
 
 # =============================================================================
