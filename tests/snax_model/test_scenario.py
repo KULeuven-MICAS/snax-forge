@@ -8,7 +8,8 @@ registration order kept, and every named error on a small broken scenario.
 
 Sections:
   1. helpers
-  2. checked-in scenarios from the CLI, against NumPy
+  2. checked-in scenarios from the CLI, against NumPy (and vecadd_conflict's
+     pinned conflicts)
   3. vecadd equals the hand-built run
   4. round trips
   5. deterministic output files, and reloading them
@@ -54,7 +55,7 @@ from snax_forge.snax_model.scenario import (
 
 REPO = Path(__file__).resolve().parents[2]
 SCEN = REPO / "scenarios"
-NAMES = ("vecadd", "reduce", "dma")
+NAMES = ("vecadd", "vecadd_conflict", "reduce", "dma")
 OUT_FILES = ("run.json", "profile.json", "trace.jsonl", "trace_meta.json", "l1.npy", "l2.npy")
 
 
@@ -139,6 +140,23 @@ def test_dma_from_cli(tmp_path):
     # In L1, beat k sits at the k-th address of the 2D pattern.
     for k, addr in enumerate(DmaPattern(0, (8, 2), (1024, 64)).addresses()):
         assert np.array_equal(l1[addr // 8 : addr // 8 + 8], src[k])
+
+
+def test_vecadd_conflict_from_cli(tmp_path):
+    """b in a's banks (VIS3's conflict case): only ra and rb collide, rb loses.
+
+    Numbers pinned from the first run of the generator: 4 cycles more than
+    vecadd's 109, conflicts only on the banks a and b share while both
+    readers run, every stall on rb's ports, and the data unchanged.
+    """
+    assert cli("vecadd_conflict", tmp_path) == 0
+    a, b = npy("vecadd_conflict", "a.npy"), npy("vecadd_conflict", "b.npy")
+    assert np.array_equal(np.load(tmp_path / "l2.npy")[256:320, 0], a + b)
+    prof = read_outputs(tmp_path).profile
+    assert prof.total_cycles == 113
+    assert [i for i, c in enumerate(prof.banks.conflicts) if c] == [0, 1, 2, 3, 8, 9, 10, 11]
+    stalls = {name: p.stalls for name, p in prof.ports.items() if p.stalls}
+    assert stalls == {f"rb.{i}": 7 for i in range(4)}
 
 
 def test_cli_as_a_process(tmp_path):
