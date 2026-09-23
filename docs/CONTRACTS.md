@@ -484,7 +484,7 @@ kept per component and written to `trace_meta.json` as half-open runs
 
 <!-- snippet: run:reduce/trace_meta.json -->
 ```json
-  "ra": [["idle", 0, 12], ["busy", 12, 28], ["idle", 28, 37]],
+  "ra": [["idle", 0, 12], ["busy", 12, 28], ["idle", 28, 35]],
 ```
 
 Two things need the intervals rather than the totals, so they need at least a

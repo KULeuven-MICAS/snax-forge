@@ -30,7 +30,7 @@ import numpy as np
 import pytest
 from test_profile import run_vecadd
 
-from snax_forge.snax_model import DmaPattern, SimulationTimeout
+from snax_forge.snax_model import ControllerConfig, DmaPattern, SimulationTimeout
 from snax_forge.snax_model.__main__ import main
 from snax_forge.snax_model.profile import build_profile
 from snax_forge.snax_model.scenario import (
@@ -98,6 +98,11 @@ def npy(name, file):
     return np.load(SCEN / name / file)
 
 
+def ctl_config(sc):
+    """The controller's config dict in a scenario's cluster."""
+    return next(c.config for c in sc.cluster.components if c.kind == "controller")
+
+
 def cli(name, out, *extra):
     return main(["run", str(path_of(name)), "--out", str(out), *extra])
 
@@ -145,15 +150,17 @@ def test_dma_from_cli(tmp_path):
 def test_vecadd_conflict_from_cli(tmp_path):
     """b in a's banks (VIS3's conflict case): only ra and rb collide, rb loses.
 
-    Numbers pinned from the first run of the generator: 4 cycles more than
-    vecadd's 109, conflicts only on the banks a and b share while both
-    readers run, every stall on rb's ports, and the data unchanged.
+    Numbers pinned from the generator with 1-cycle writes and reads: 8
+    cycles more than vecadd's 77 (rb's 7 stall cycles, plus one because the
+    controller polls wr every 4 cycles), conflicts only on the banks a and b
+    share while both readers run, every stall on rb's ports, and the data
+    unchanged.
     """
     assert cli("vecadd_conflict", tmp_path) == 0
     a, b = npy("vecadd_conflict", "a.npy"), npy("vecadd_conflict", "b.npy")
     assert np.array_equal(np.load(tmp_path / "l2.npy")[256:320, 0], a + b)
     prof = read_outputs(tmp_path).profile
-    assert prof.total_cycles == 113
+    assert prof.total_cycles == 85
     assert [i for i, c in enumerate(prof.banks.conflicts) if c] == [0, 1, 2, 3, 8, 9, 10, 11]
     stalls = {name: p.stalls for name, p in prof.ports.items() if p.stalls}
     assert stalls == {f"rb.{i}": 7 for i in range(4)}
@@ -165,7 +172,7 @@ def test_cli_as_a_process(tmp_path):
            "--out", str(tmp_path), "--trace", "beat", "--no-skip"]  # fmt: skip
     r = subprocess.run(cmd, capture_output=True, text=True, env=env, cwd=REPO, check=False)
     assert r.returncode == 0, r.stderr
-    assert "109 cycles (skip off, trace beat)" in r.stdout
+    assert "77 cycles (skip off, trace beat)" in r.stdout
     assert set(files(tmp_path)) == set(OUT_FILES)
 
 
@@ -175,16 +182,20 @@ def test_checked_in_files_equal_the_generator():
 
 
 # =============================================================================
-# 3. vecadd equals the hand-built run of test_profile
+# 3. vecadd equals the hand-built run of test_profile, with the scenario's costs
 # =============================================================================
 
 
 @pytest.mark.parametrize("skip", [True, False])
 @pytest.mark.parametrize("level", ["off", "task", "beat"])
 def test_vecadd_equals_hand_built_run(level, skip):
-    res = run(load("vecadd"), skip_idle=skip, trace_level=level)
-    ref = run_vecadd(mode="poll", skip=skip, level=None if level == "off" else level)
-    assert res.total_cycles == ref["total"] == 109
+    sc = load("vecadd")
+    # The hand-built run gets the scenario's controller costs: test_profile keeps
+    # its own non-default ones (VECADD_CFG) to exercise the D37 formulas.
+    cfg = ControllerConfig.from_dict(ctl_config(sc))
+    res = run(sc, skip_idle=skip, trace_level=level)
+    ref = run_vecadd(mode="poll", skip=skip, level=None if level == "off" else level, cfg=cfg)
+    assert res.total_cycles == ref["total"] == 77
     assert res.profile.to_dict() == build_profile(ref["cl"]).to_dict()
     if level == "off":
         assert res.trace is None and ref["trace"] is None
@@ -246,7 +257,7 @@ def test_defaults_may_be_left_out_of_a_file():
             c["config"] = {
                 k: v for k, v in c["config"].items() if k in ("write", "n_ports", "fifo_depth")
             }
-    assert run(from_dict(d)).total_cycles == 109
+    assert run(from_dict(d)).total_cycles == 77
 
 
 # =============================================================================
@@ -273,7 +284,7 @@ def test_output_files_reload(tmp_path):
     assert back.profile == res.profile
     assert back.trace.to_dict() == res.trace.to_dict()
     assert np.array_equal(back.l1, res.l1) and np.array_equal(back.l2, res.l2)
-    assert back.run["total_cycles"] == 109 and back.run["trace_level"] == "beat"
+    assert back.run["total_cycles"] == 77 and back.run["trace_level"] == "beat"
     assert back.run["register_map"] == res.regmap.to_dict()
     assert "skip" not in json.dumps(back.run)  # nothing depends on the skip mode
     # One event per line.

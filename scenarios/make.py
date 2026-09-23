@@ -56,8 +56,11 @@ WORD = 8  # bytes per bank word (64-bit banks)
 BEAT = 64  # bytes per wide beat (512 bits)
 LANES = 4
 
-# Controller costs of the MOD7 vecadd (test_profile.VECADD_CFG). Declared
-# defaults, not measured (D51, open item 10).
+# Controller costs of every scenario: one cycle per csr_write and csr_read on
+# every block kind, a poll every 4 cycles. Declared defaults, not measured
+# (D51, open item 10). test_profile.VECADD_CFG keeps its own non-default costs
+# (DMA writes and reads 2) to exercise the D37 formulas; test_scenario runs the
+# hand-built vecadd with these instead.
 CTL = ControllerConfig(write_cost=1, read_cost=1, poll_interval=4)
 
 
@@ -157,7 +160,7 @@ class Program:
 
 
 def vecadd() -> tuple[Scenario, dict[str, np.ndarray]]:
-    """test_profile.run_vecadd(mode="poll"): same data, same program, same cluster."""
+    """test_profile.run_vecadd(mode="poll"): same data, program and cluster, costs of CTL."""
     return _vecadd("vecadd", wb=72)
 
 
