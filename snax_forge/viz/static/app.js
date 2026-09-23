@@ -1,17 +1,20 @@
-// Entry point of the viewer (VIS1, VIS2, D55, D57): loads the run list and
+// Entry point of the viewer (VIS1-VIS3, D55, D57, D61): loads the run list and
 // the selected run from the API, fills the header and hands the page to one
-// view: the profile report (report.js) or the schedule (schedule.js).
+// view: the profile report (report.js) or the schedule with the cluster view
+// under it (schedule.js, cluster.js).
 //
 // All view state lives in the URL hash, e.g.
 //   #run=vecadd&view=schedule&from=0&to=120&cycle=42
-// so a browser refresh or a shared link shows the same thing, and the
-// schedule's selected cycle is what the cluster view (VIS3) will follow.
+// so a browser refresh or a shared link shows the same thing. The selected
+// cycle is what the cluster view shows; a change of the cycle alone updates
+// the page in place, anything else redraws the view. The arrow keys step
+// the cycle while the schedule is shown.
 // A run's detail is fetched once and kept until Reload, which asks the server
 // to read the directories again (POST /api/reload) and clears the cache.
 
 import { h, int } from "./dom.js";
 import { renderReport } from "./report.js";
-import { renderSchedule } from "./schedule.js";
+import { renderSchedule, selectCycle, stepCycle } from "./schedule.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -53,7 +56,7 @@ function setHash(changes) {
   location.hash = q.toString();
 }
 
-const VIEWS = { report: "Report", schedule: "Schedule" };
+const VIEWS = { report: "Report", schedule: "Schedule and cluster" };
 
 // -- header ------------------------------------------------------------------------
 
@@ -102,6 +105,13 @@ function fillHeader(detail) {
 
 let cache = {}; // run name -> {detail, fifo}; cleared by Reload
 let shown = null; // "run/view" last drawn, so a cycle change does not refetch
+let drawnWith = null; // hash of the last full draw without `cycle`
+
+/** The hash state without `cycle`, as a string to compare draws. */
+function withoutCycle(st) {
+  const { cycle, ...rest } = st;
+  return new URLSearchParams(rest).toString();
+}
 
 async function show() {
   const st = hashState();
@@ -122,7 +132,11 @@ async function show() {
     if (view === "report") {
       if (shown !== `${name}/report`) renderReport(root, detail, fifo);
     } else {
-      await renderSchedule(root, detail, { api, st, setHash });
+      const same = shown === `${name}/schedule` && drawnWith === withoutCycle(st);
+      if (!(same && (await selectCycle(detail, st)))) {
+        await renderSchedule(root, detail, { api, st, setHash });
+        drawnWith = withoutCycle(hashState()); // the window may have moved to the cycle
+      }
     }
     shown = `${name}/${view}`;
     status("");
@@ -131,18 +145,61 @@ async function show() {
   }
 }
 
+// One draw at a time: a hash change during a draw waits for it, and several
+// waiting changes collapse into one draw of the latest hash, so a held arrow
+// key or a slow first load never leaves an older draw on screen.
+let drawing = null;
+let pending = false;
+async function showLatest() {
+  if (drawing) {
+    pending = true;
+    return drawing;
+  }
+  do {
+    pending = false;
+    drawing = show();
+    await drawing;
+  } while (pending);
+  drawing = null;
+}
+
 $("run-select").addEventListener("change", (e) => setHash({ run: e.target.value, from: null, to: null, cycle: null }));
-window.addEventListener("hashchange", show);
+window.addEventListener("hashchange", showLatest);
 $("reload").addEventListener("click", async () => {
   status("Reloading…");
   try {
     await api.reload();
     cache = {};
     shown = null;
-    await show();
+    drawnWith = null;
+    await // Left and right arrows step the selected cycle while the schedule is shown.
+document.addEventListener("keydown", (e) => {
+  const st = hashState();
+  if ((st.view ?? "report") !== "schedule") return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  const d = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+  const next = d ? stepCycle(d) : null;
+  if (next === null) return;
+  e.preventDefault();
+  setHash({ cycle: next });
+});
+
+showLatest();
   } catch (e) {
     status(String(e.message || e), true);
   }
 });
 
-show();
+// Left and right arrows step the selected cycle while the schedule is shown.
+document.addEventListener("keydown", (e) => {
+  const st = hashState();
+  if ((st.view ?? "report") !== "schedule") return;
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  const d = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
+  const next = d ? stepCycle(d) : null;
+  if (next === null) return;
+  e.preventDefault();
+  setHash({ cycle: next });
+});
+
+showLatest();

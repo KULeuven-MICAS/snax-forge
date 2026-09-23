@@ -59,7 +59,7 @@ multi-cycle multiplier, 525 cycles).
 |---|---|---|---|---|
 | VIS1 | Server, CLI, viewer shell and profile report (D55, D56): `python -m snax_forge.viz DIR [DIR ...]`, JSON API over the run directories, report of cycles per class, accelerators, streamers and FIFOs (with the busy window), memory, DMA and L2, controller, cluster configuration | MOD10 | API tests pass (tests/viz); report checked by eye on `scenarios/vecadd` and `scenarios/vecadd_conflict` (a and b in the same banks) | `done` |
 | VIS2 | Schedule view, HLS-schedule style (D57, D58, D60): per component its class runs, tasks and commands over a cycle window, beat-level detail rows (ports, FIFO, firings, DMA beats, polls), a selected cycle with everything that happened in it | VIS1 | Kind filter of the events route tested (tests/viz); schedule checked by eye on `vecadd`, `vecadd_conflict`, `reduce` (task trace) and `dma` (filtered beat trace) | `done` |
-| VIS3 | Cluster view: banks, interconnect, streamers, accelerator, DMA per cycle, linked to the schedule; addresses, conflicts, FIFO counts and firings, no data values (open item 23) | VIS1, VIS2 | Checked by eye | todo |
+| VIS3 | Cluster view (D61): banks, interconnect, streamers, accelerator, DMA and controller at the schedule's selected cycle, under the schedule on the same page; grants, conflicts (list in the interconnect box, stalled side red), FIFO fill, firings, DMA beats, no data values (open item 23); layout built from the cluster file | VIS1, VIS2 | Checked by eye on `vecadd_conflict` (ra and rb on banks 8–11) and `fmul` (DMA in one superbank while the streamers use others, e.g. cycle 65); tests/viz still pass | `wip` |
 
 ### M3: Build backwards to close `vecadd`
 
@@ -161,9 +161,10 @@ deferred until after M10 (D51): the user supplies the accelerator's entry in
 the cluster file, and the rest of the cluster keeps its declared defaults.
 
 VIS1 and VIS2 are done: `pixi run view DIR [DIR ...]` serves the profile
-report and the schedule of model runs (D55–D57). Next is VIS3, the cluster
-view, following the schedule's selected cycle; data values in the trace
-(open item 23) are decided after VIS3 has been used. Then M3 closes `vecadd`
+report and the schedule of model runs (D55–D57). VIS3, the cluster view
+under the schedule (D61), is written and waits for its check by eye; data
+values in the trace (open item 23) and a push event (open item 25) are
+decided after it has been used. Then M3 closes `vecadd`
 end to end, building backwards from `scenarios/vecadd`; SNAX-LOWER produces
 both the cluster file and the control program (D53), so LOW1b and LOW1c are
 accepted against `scenarios/vecadd/scenario.json` and

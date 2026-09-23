@@ -1,6 +1,9 @@
-/* SNAX-FORGE viewer (VIS1). System fonts only: the page loads nothing from
-   the internet. Class colours follow the VIS1 plan: busy green, idle grey,
-   memory stalls warm, flow stalls violet, controller command and wait blue. */
+/* SNAX-FORGE viewer (VIS1-VIS3). System fonts only: the page loads nothing
+   from the internet. One set of colours for every view, so a colour means the
+   same in the report, the schedule and the cluster view (D61): busy, a grant,
+   a beat or a firing green; idle grey; memory stalls (stall_xbar, stall_l1, a
+   stalled port, a contested bank) red; flow stalls violet; FIFO contents
+   lilac; controller command and wait blue. */
 
 :root {
   --bg: #f5f6f7;
@@ -10,11 +13,12 @@
   --rule: #d7dbe0;
   --busy: #2f8a55;
   --idle: #c5cad0;
-  --mem: #df7a22;
+  --mem: #cf3f35;
   --flow: #7a5bc2;
   --command: #2d64ad;
   --wait: #8fb7e2;
-  --hot-bg: #fdf0e3;
+  --hot-bg: #fbeae8;
+  --busy-bg: #e2f1e8;
   --gap: 1.25rem;
   color-scheme: light dark;
 }
@@ -27,11 +31,12 @@
     --rule: #353a40;
     --busy: #45b07a;
     --idle: #4b5158;
-    --mem: #f0924a;
+    --mem: #ee6a5f;
     --flow: #9c83e0;
     --command: #5d93db;
     --wait: #3d5f85;
-    --hot-bg: #3a2a1c;
+    --hot-bg: #3c2220;
+    --busy-bg: #1d3426;
   }
 }
 
@@ -154,15 +159,16 @@ pre { background: var(--panel); border: 1px solid var(--rule); padding: 0.7rem; 
 .sched-controls input[type="number"] { width: 6.5rem; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 0.2rem 0.4rem; }
 .zoom-read { color: var(--muted); font-size: 0.88em; }
 div.sched { display: flex; border: 1px solid var(--rule); background: var(--panel); }
-.sched-labels { flex: none; border-right: 1px solid var(--rule); font-size: 0.85em; }
+/* One scroll box for labels and chart, labels pinned left; capped so the cluster view fits under it (D61). */
+.sched-scroll { overflow: auto; max-height: 52vh; }
+.sched-labels { flex: none; position: sticky; left: 0; z-index: 1; background: var(--panel); border-right: 1px solid var(--rule); font-size: 0.85em; }
 .sched-labels .ruler-label { display: flex; align-items: flex-end; padding: 0 0.5rem 4px; color: var(--muted); border-bottom: 1px solid var(--rule); }
 .sched-labels .lab { display: flex; align-items: center; gap: 0.4rem; padding: 0 0.5rem; overflow: hidden; white-space: nowrap; }
 .sched-labels .lab span { font-weight: 600; }
 .sched-labels .lab.sub { padding-left: 1.2rem; font-size: 0.9em; }
 .sched-labels .lab.sub span { font-weight: 400; }
 .sched-labels small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
-.sched-plot { flex: 1; overflow-x: auto; min-width: 0; }
-svg.sched { display: block; cursor: crosshair; }
+svg.sched { display: block; flex: none; cursor: crosshair; }
 .row-bg { fill: var(--panel); }
 .row-bg.odd { fill: var(--bg); }
 .row-bg.sub { opacity: 0.6; }
@@ -184,8 +190,106 @@ svg.sched { display: block; cursor: crosshair; }
 .cell-text.mid { text-anchor: middle; }
 .cursor { fill: var(--command); fill-opacity: 0.18; stroke: var(--command); stroke-width: 1; pointer-events: none; }
 
-.cycle-panel { margin-top: 1rem; }
-.cycle-head { display: flex; align-items: center; gap: 0.5rem; }
-.cycle-head h3 { margin: 0 0.3rem; min-width: 6.5rem; text-align: center; }
+.cycle-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+.cycle-head h2 { margin: 0 0.3rem; min-width: 11rem; text-align: center; }
+.cycle-events { margin-top: 0.9rem; }
+.cycle-table { width: 100%; } /* the event column takes the rest of the page width */
 .cycle-table td, .cycle-table th { vertical-align: top; }
+.cycle-table tbody th { width: 9rem; }
+.cycle-table td:nth-child(2) { width: 10rem; }
 .cycle-table td div { white-space: nowrap; }
+
+/* -- cluster view (VIS3, D61) ------------------------------------------------------ */
+.cl-note:empty { display: none; }
+.cl-frame { min-width: 44rem; }
+.muted { color: var(--muted); }
+
+/* L1: banks by superbank, one arrow cell under each bank */
+.cl-l1-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.3rem; }
+.cl-l1-head small { color: var(--muted); }
+.cl-banks { display: grid; column-gap: 3px; }
+.cl-banks + .cl-banks { margin-top: 0.5rem; }
+.cl-sb-head { font-size: 0.78em; color: var(--muted); border-bottom: 1px solid var(--rule); margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-sb-head small { margin-left: 0.4rem; }
+.sb-first { margin-left: 0.6rem; }
+.cl-bank { display: flex; flex-direction: column; align-items: center; min-width: 0; overflow: hidden; padding: 0.15rem 0 0.2rem; border: 1px solid var(--rule); border-radius: 3px; background: var(--panel); font-size: 0.78em; line-height: 1.25; transition: background-color 0.12s, border-color 0.12s; }
+.cl-bank b { font-weight: 600; color: var(--muted); }
+.cl-bank .who { min-height: 1.25em; font-weight: 600; white-space: nowrap; }
+.cl-bank .acc { min-height: 1.25em; color: var(--muted); white-space: nowrap; }
+.cl-bank.on { background: var(--busy-bg); border-color: var(--busy); }
+.cl-bank.on b { color: var(--ink); }
+.cl-bank.bad { border-color: var(--mem); box-shadow: inset 0 0 0 1px var(--mem); }
+
+/* straight arrows: a faint guide when nothing moves, coloured with a head when something does */
+.cl-arrow { display: flex; justify-content: center; min-width: 0; color: var(--rule); }
+.cl-arrow.v { height: 1.7rem; }
+.cl-arrow.h { align-items: center; }
+.cl-arrow i { display: block; position: relative; background: currentColor; }
+.cl-arrow.v i { width: 1px; }
+.cl-arrow.h i { flex: 1; height: 1px; }
+.cl-arrow.none i { visibility: hidden; }
+.cl-arrow.on { color: var(--busy); }
+.cl-arrow.on.bad { color: var(--mem); }
+.cl-arrow.on i { visibility: visible; }
+.cl-arrow.on.v i { width: 3px; }
+.cl-arrow.on.h i { height: 3px; }
+.cl-arrow.up i { margin-top: 7px; }
+.cl-arrow.down i { margin-bottom: 7px; }
+.cl-arrow.left i { margin-left: 7px; }
+.cl-arrow.right i { margin-right: 7px; }
+.cl-arrow.on i::after { content: ""; position: absolute; border: 6px solid transparent; }
+.cl-arrow.up i::after { bottom: 100%; left: 50%; transform: translateX(-50%); border-top: 0; border-bottom: 7px solid currentColor; }
+.cl-arrow.down i::after { top: 100%; left: 50%; transform: translateX(-50%); border-bottom: 0; border-top: 7px solid currentColor; }
+.cl-arrow.left i::after { right: 100%; top: 50%; transform: translateY(-50%); border-left: 0; border-right: 7px solid currentColor; }
+.cl-arrow.right i::after { left: 100%; top: 50%; transform: translateY(-50%); border-right: 0; border-left: 7px solid currentColor; }
+
+/* interconnect: status in the middle, description in the top-right corner */
+.cl-xbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name desc" "status desc"; gap: 0.2rem 1rem; min-height: 4.8rem; padding: 0.45rem 0.7rem; border: 2px solid var(--idle); border-radius: 4px; background: var(--panel); transition: background-color 0.12s, border-color 0.12s; }
+.cl-xbar.ok { border-color: var(--busy); background: var(--busy-bg); }
+.cl-xbar.bad { border-color: var(--mem); background: var(--hot-bg); }
+.cl-xbar-name { grid-area: name; }
+.cl-xbar-name small { margin-left: 0.4rem; color: var(--muted); }
+.cl-xbar-desc { grid-area: desc; display: grid; grid-template-columns: max-content max-content; gap: 0 0.6rem; margin: 0; font-size: 0.78em; color: var(--muted); align-self: start; }
+.cl-xbar-desc dd { margin: 0; color: var(--ink); }
+.cl-xbar-status { grid-area: status; justify-self: center; align-self: center; font-size: 0.88em; }
+.cl-conflicts { margin: 0; padding: 0; list-style: none; }
+.cl-conflicts .stalled { color: var(--mem); font-weight: 600; }
+
+/* requesters, accelerators and controller in one grid: rows arrow, block, arrow, accelerator, controller */
+.cl-req { display: grid; column-gap: 0.6rem; }
+.cl-box { min-width: 0; padding: 0.3rem 0.5rem 0.4rem; border: 1px solid var(--rule); border-left: 4px solid var(--rule); border-radius: 3px; background: var(--panel); font-size: 0.85em; transition: background-color 0.12s, border-color 0.12s; }
+.cl-box[data-group="busy"] { border-left-color: var(--busy); }
+.cl-box[data-group="idle"] { border-left-color: var(--idle); }
+.cl-box[data-group="mem"] { border-left-color: var(--mem); }
+.cl-box[data-group="flow"] { border-left-color: var(--flow); }
+.cl-box[data-group="command"] { border-left-color: var(--command); }
+.cl-box[data-group="wait"] { border-left-color: var(--wait); }
+.cl-box.bad { border-color: var(--mem); border-left-color: var(--mem); background: var(--hot-bg); }
+.cl-box.plain { border-left-width: 1px; }
+.cl-box.ctl { margin-top: 0.6rem; }
+.cl-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.4rem; }
+.cl-head small { color: var(--muted); }
+.cl-cls { margin-left: auto; color: var(--muted); font-size: 0.92em; white-space: nowrap; }
+.cl-body { display: grid; gap: 0.25rem; margin-top: 0.25rem; }
+.cl-line { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cl-line.hit { color: var(--busy); font-weight: 600; }
+.cl-line.hit.waiting { color: var(--command); }
+.cl-sub { color: var(--muted); font-size: 0.8em; }
+
+.cl-ports { display: flex; flex-wrap: wrap; gap: 3px; }
+.cl-port { padding: 0 0.3rem; border: 1px solid var(--rule); border-radius: 3px; color: var(--muted); font-size: 0.82em; }
+.cl-port.ok { background: var(--busy); border-color: var(--busy); color: #fff; }
+.cl-port.bad { background: var(--mem); border-color: var(--mem); color: #fff; }
+
+/* FIFO lanes: one column of `depth` slots per lane, filled from the bottom */
+.cl-fifo { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-end; }
+.cl-lane { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.cl-lane .slots { display: flex; flex-direction: column-reverse; gap: 2px; width: 1.1rem; height: 2.6rem; }
+.cl-lane .slot { flex: 1; border: 1px solid var(--rule); border-radius: 2px; background: var(--bg); transition: background-color 0.12s, border-color 0.12s; }
+.cl-lane .slot.full { background: var(--fifo); border-color: var(--flow); }
+.cl-lane.bar .slots { border: 1px solid var(--rule); border-radius: 2px; background: var(--bg); }
+.cl-lane .fill { display: block; background: var(--fifo); transition: height 0.12s; }
+.cl-lane small { font-size: 0.75em; color: var(--muted); }
+.cl-lane.unknown .slot, .cl-lane.untraced .slot { border-style: dashed; }
+
+.cluster.task-only .cl-banks, .cluster.task-only .cl-ports, .cluster.task-only .cl-fifo { opacity: 0.45; }
