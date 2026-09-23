@@ -107,6 +107,12 @@ bank of its group, so there is no separate access event. ``row`` comes from
 the L1 address map (a pure lookup). The events come from the wires, the
 statistics from ``_priority``; the tests compare the two.
 
+It then emits a ``resp`` for every port whose read data leaves the banks in
+the cycle (D62), from ``_due`` / ``_new_due``, which keep each outstanding
+read's address for it. The xbar is awake in that cycle because the port's
+owner wakes for its data (``next_rdata``). The tests check one ``resp`` per
+read grant, ``read_latency`` cycles later, with the same words.
+
 Idle cycles reset every pointer and lock, whether they are ticked (skipping
 off) or skipped (``on_gap``), so both give the same result.
 

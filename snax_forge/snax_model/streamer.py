@@ -128,8 +128,9 @@ Statistics and trace (MOD8)
 it keeps the class runs when the run is traced. Trace events (task level):
 ``start`` when a start lands, ``done`` with the done_cycle. The FIFO keeps an
 occupancy histogram per lane (always on, see ``Fifo``) and, at beat level,
-emits a ``fifo`` event per lane whose count changes. Grants are traced by
-the xbar. None of this is read back by the model.
+emits a ``fifo`` event per lane whose count changes. Grants, stalls and read
+responses (D62) are traced by the xbar. None of this is read back by the
+model.
 """
 
 from __future__ import annotations

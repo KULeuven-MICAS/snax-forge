@@ -301,7 +301,9 @@ class Dma(Component):
     * wires: ``_w``;
     * statistics (for MOD8): ``cycles`` per class (a ``ClassLog``),
       ``beats_read``, ``beats_written``, ``max_buffered``. Trace events:
-      ``start``, ``done`` (task), ``dma_beat`` per moved beat (beat).
+      ``start``, ``done`` (task), ``dma_beat`` per moved beat and ``resp``
+      per L2 read whose data returns (beat, D62); the L1 side's grants and
+      read responses are the xbar's.
     """
 
     phases = (Phase.REQUEST, Phase.MEMORY, Phase.RESPONSE)

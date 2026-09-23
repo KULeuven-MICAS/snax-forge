@@ -200,9 +200,9 @@ def events_window(
     """The events with ``start <= t < stop``, of the given sources and kinds only if given.
 
     Events keep their trace order (D39). ``stop`` defaults to the end of the
-    run. ``kinds`` lets the schedule (VIS2) ask for the task events of the
-    whole run, or the FIFO counts before its window, without the beat events
-    in between (D57).
+    run. ``kinds`` lets the viewer ask for the task events or the FIFO counts
+    of the whole run, once per run, without the beat events in between
+    (D57, D61).
     """
     stop = rv.total_cycles + 1 if stop is None else stop
     if stop <= start:
