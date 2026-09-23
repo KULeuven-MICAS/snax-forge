@@ -165,15 +165,18 @@ Each cycle counts as exactly one of, in this order:
 
 * ``busy``: a firing happened;
 * ``stall_out``: the pipeline was frozen on a full output FIFO;
-* ``idle`` (II gap): a task is running but II does not allow a firing,
-  whether or not the inputs are there;
+* ``busy`` (II gap, D59): a task is running and the cycle is less than
+  ``ii`` cycles after the last firing, whether or not the inputs are there.
+  A firing occupies the datapath for ``ii`` cycles, so a multi-cycle unit
+  (``ii`` = 5) is busy for all 5, not only in the cycle it fires;
 * ``stall_in``: a task is running, II allows, not frozen, and some due
   input FIFO is empty: it could fire now but for a missing beat;
 * ``idle``: anything else: no task, done, or results only in flight after
-  the last firing (the drain after the last firing is L cycles of
-  ``idle``).
+  the last firing and its II gap (the drain after the last firing is
+  ``idle`` from ``ii`` cycles after it).
 
-So ``busy`` / total is the firing rate. In a tick, the class is computed
+So ``busy`` / total is the share of cycles the datapath is occupied; with
+``ii`` = 1 it is the firing rate. The number of firings is ``firings``. In a tick, the class is computed
 from committed state at the start of the tick. Skipped cycles get the
 class of the first cycle of the gap, which ``next_wake`` records when it is
 first asked after a tick (``_gap_cls``). It cannot be computed in
@@ -381,7 +384,7 @@ class Accelerator(Component):
       function's task state), ``done_cycle``;
     * wires: ``_w``;
     * statistics: ``cycles`` per class (a ``ClassLog``, MOD8), ``beats`` per
-      port. Trace events: ``start``, ``done`` (task), ``fire`` (beat), all
+      port, ``firings`` (D59). Trace events: ``start``, ``done`` (task), ``fire`` (beat), all
       emitted when the state they describe commits.
     """
 
@@ -405,6 +408,7 @@ class Accelerator(Component):
         self._gap_cls: str | None = None  # class of skipped cycles, see module doc
         self.cycles = ClassLog(CYCLE_CLASSES)
         self.beats = dict.fromkeys((p.name for p in cfg.ports), 0)
+        self.firings = 0  # over the whole run (D59): busy counts the II gaps too
         self._w = _Wires()
 
     # -------------------------------------------------------------------------
@@ -535,13 +539,19 @@ class Accelerator(Component):
         if self.cfg.latency:
             self._slots = [new] + self._slots[:-1]
 
+    def _occupied(self, cycle: int) -> bool:
+        """``cycle`` is in the II gap after a firing of a running task (D59)."""
+        return self.busy and self._last_fire is not None and cycle < self._last_fire + self.cfg.ii
+
     def _sleep_class(self, cycle: int) -> str:
         """Class of a cycle without a firing, from committed state."""
         if self._frozen(cycle):
             return "stall_out"
+        if self._occupied(cycle):
+            return "busy"  # the firing still occupies the datapath (D59)
         if self._k < self._n and self._ii_ok(cycle) and not self._inputs_ready():
             return "stall_in"
-        return "idle"  # includes II gaps
+        return "idle"
 
     # -------------------------------------------------------------------------
     # Component interface
@@ -601,6 +611,7 @@ class Accelerator(Component):
                 tr.emit(Fire(cycle, self.name, n=self._k))  # index before the increment
             self._k += 1
             self._last_fire = cycle
+            self.firings += 1
         if not w.frozen:
             self._advance(w.new)
         if was_busy and not self.busy:

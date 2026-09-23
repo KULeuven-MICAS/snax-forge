@@ -55,7 +55,7 @@ from snax_forge.snax_model.scenario import (
 
 REPO = Path(__file__).resolve().parents[2]
 SCEN = REPO / "scenarios"
-NAMES = ("vecadd", "vecadd_conflict", "vecadd_tiled", "reduce", "dma")
+NAMES = ("vecadd", "vecadd_conflict", "vecadd_tiled", "fmul", "reduce", "dma")
 OUT_FILES = ("run.json", "profile.json", "trace.jsonl", "trace_meta.json", "l1.npy", "l2.npy")
 
 
@@ -139,6 +139,29 @@ def test_vecadd_tiled_from_cli(tmp_path):
     assert prof.total_cycles == 471
     assert not any(p.stalls for p in prof.ports.values())  # b is 8 banks after a
     assert prof.dmas["dma"].beats_written == 3 * (2 * 24 + 24)  # per tile: a, b in; c out
+
+
+def test_fmul_from_cli(tmp_path):
+    """Five tiles of 16 on mul1, double buffered: the DMA works behind the multiplier.
+
+    Pinned from the generator (1-cycle writes and reads). The multiplier
+    (L = II = 5) is busy 5 cycles per firing (D59). Every DMA task but the
+    first two loads and the last store runs while the multiplier is busy,
+    and nothing collides: the DMA only uses the other tile set's superbanks.
+    """
+    assert cli("fmul", tmp_path, "--trace", "task") == 0
+    a, b = npy("fmul", "a.npy"), npy("fmul", "b.npy")
+    assert np.array_equal(np.load(tmp_path / "l2.npy")[160:240, 0], a * b)  # L2 byte 2 * 80 * 8
+    out = read_outputs(tmp_path)
+    prof = out.profile
+    assert prof.total_cycles == 525
+    acc = prof.accelerators["acc"]
+    assert acc.firings == 80 and acc.cycles["busy"] == 80 * 5
+    assert not any(p.stalls for p in prof.ports.values()) and not any(prof.banks.conflicts)
+    busy = [(a0, b0) for c, a0, b0 in out.trace.intervals["acc"] if c == "busy"]
+    dma = [(a0, b0) for c, a0, b0 in out.trace.intervals["dma"] if c == "busy"]
+    inside = [r for r in dma if any(a0 <= r[0] and r[1] <= b0 for a0, b0 in busy)]
+    assert inside == dma[2:-1]
 
 
 def test_reduce_from_cli(tmp_path):

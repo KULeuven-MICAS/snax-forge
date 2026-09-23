@@ -297,8 +297,8 @@ def test_fn_output_is_checked():
 
 
 @pytest.mark.parametrize("skip", [True, False])
-@pytest.mark.parametrize("ii", [1, 2, 3])
-@pytest.mark.parametrize("latency", [0, 1, 3])
+@pytest.mark.parametrize("ii", [1, 2, 3, 5])
+@pytest.mark.parametrize("latency", [0, 1, 3, 5])
 @pytest.mark.parametrize("lanes", [1, 4])
 def test_elementwise_ideal(lanes, latency, ii, skip):
     n = 12
@@ -315,9 +315,12 @@ def test_elementwise_ideal(lanes, latency, ii, skip):
     assert cons["out"].pop_cycles == [f + latency + 1 for f in fires]
     assert acc.done_cycle == fires[-1] + latency + 1
     assert np.array_equal(cons["out"].values, a + b)
-    # Classes: n firings, cycle 0 waits for the first beat, the rest idle
-    # (II gaps with inputs present, the L-cycle drain, the last pop).
-    assert acc.cycles["busy"] == n and acc.cycles["stall_out"] == 0
+    # Classes: each firing is busy with its II gap (D59); the last firing's
+    # gap ends at done_cycle. Cycle 0 waits for the first beat; the rest is
+    # idle (the drain beyond the II gap, the last pop).
+    assert acc.firings == n
+    assert acc.cycles["busy"] == (n - 1) * ii + 1 + min(ii - 1, latency)
+    assert acc.cycles["stall_out"] == 0
     assert acc.cycles["stall_in"] == 1
     assert_cycles_add_up(acc, total)
     assert not acc.busy
@@ -364,7 +367,8 @@ def test_reduce_ideal(T, latency, ii, lanes_out, skip):
     if lanes_out == 1:
         expect = expect.sum(axis=1, keepdims=True)
     assert np.array_equal(cons["out"].values, expect)
-    assert acc.cycles["busy"] == n
+    assert acc.firings == n
+    assert acc.cycles["busy"] == (n - 1) * ii + 1 + min(ii - 1, latency)  # D59
     assert_cycles_add_up(acc, total)
 
 

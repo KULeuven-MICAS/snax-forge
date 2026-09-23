@@ -85,7 +85,7 @@ function accelSection(detail) {
   const names = Object.keys(profile.accelerators);
   if (!names.length) return null;
   return section("accelerators", "Accelerators",
-    "Utilisation is busy cycles over the whole run; a busy cycle is a firing. Beats are counted per port.",
+    "Utilisation is busy cycles over the whole run: a firing and the II gap after it (D59), so a unit with ii 5 is busy 5 cycles per firing. Beats are counted per port.",
     names.map((n) => {
       const a = profile.accelerators[n];
       const spec = specs[n] || {};
@@ -94,7 +94,7 @@ function accelSection(detail) {
         h("h3", {}, n, h("span", { class: "kind" }, `${spec.accel || ""} ${params ? `(${params})` : ""}`)),
         h("div", { class: "util" },
           h("div", { class: "meter" }, h("span", { class: "g-busy", style: { width: `${100 * a.utilisation}%` } })),
-          h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.cycles.busy)} firings`),
+          h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.firings)} firings`),
         table(
           [{ key: "port", label: "Port" }, { key: "stream", label: "Streamer" }, { key: "beats", label: "Beats", num: true, fmt: int }],
           Object.entries(a.beats).map(([port, beats]) => ({ port, beats, stream: spec.attach?.[port] ?? "" }))));

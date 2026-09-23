@@ -14,9 +14,9 @@ Contents (section 5.7)
 * ``controller``: cycles per class (``command`` = control overhead, kept
   apart from ``wait`` as section 7 needs), commands, csr reads, polls and
   every wait (D37);
-* per accelerator: cycles per class, utilisation (busy / total, i.e. the
-  firing rate: a busy cycle is a firing cycle, so there is no separate
-  firing count), and beats per port;
+* per accelerator: cycles per class, utilisation (busy / total: the share
+  of cycles the datapath is occupied, a firing plus its II gap, D59), beats
+  per port and the number of firings (equal to busy only when ii = 1);
 * per streamer: cycles per class, its xbar ports, and its FIFO occupancy
   (max, time-weighted mean and histogram per lane, D40);
 * per DMA: cycles per class, beats and bytes each way, max buffered beats;
@@ -76,9 +76,10 @@ class StreamerProfile:
 
 @dataclass
 class AccelProfile:
-    cycles: dict[str, int]  # "busy" = firings (accel.py cycle classes)
-    utilisation: float
+    cycles: dict[str, int]  # accel.py cycle classes; busy includes II gaps (D59)
+    utilisation: float  # busy / total: share of cycles the datapath is occupied
     beats: dict[str, int]
+    firings: int = 0  # equals busy only when ii = 1 (D59)
 
 
 @dataclass
@@ -247,7 +248,7 @@ def build_profile(cluster: Any) -> Profile:
         if isinstance(c, Accelerator):
             busy = c.cycles["busy"]
             prof.accelerators[c.name] = AccelProfile(
-                dict(c.cycles), busy / total if total else 0.0, dict(c.beats)
+                dict(c.cycles), busy / total if total else 0.0, dict(c.beats), c.firings
             )
         elif isinstance(c, Streamer):
             names = [c.xbar.ports[p].name for p in c.ports]

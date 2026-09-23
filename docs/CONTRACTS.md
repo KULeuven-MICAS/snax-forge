@@ -427,8 +427,9 @@ Per part: the controller gives cycles per class (`command` = control
 overhead, kept apart from `wait`), the command and read counts, the poll
 count and every wait with its first cycle, the block's `done_cycle` and its
 last cycle; an accelerator gives cycles per class, utilisation
-(`busy / total`, which is the firing rate — a busy cycle is a firing cycle,
-so there is no separate firing count) and beats per port; a streamer gives
+(`busy / total`, the share of cycles its datapath is occupied: a firing and
+the II gap after it, D59), beats per port and `firings` (equal to `busy`
+only when `ii` = 1); a streamer gives
 cycles per class, its xbar ports and its FIFO occupancy (max, time-weighted
 mean and a histogram per lane, D40); a DMA gives cycles per class, beats and
 bytes each way and the peak buffer; `banks` gives per-bank reads, writes,
@@ -441,7 +442,7 @@ Cycle classes, one per cycle per component, in this order:
 
 | Component | Classes |
 |---|---|
-| accelerator | `busy` (a firing) > `stall_out` (frozen on a full output) > `idle` (II gap) > `stall_in` (a due input empty) > `idle` |
+| accelerator | `busy` (a firing) > `stall_out` (frozen on a full output) > `busy` (II gap of a running task, D59) > `stall_in` (a due input empty) > `idle` |
 | streamer | `busy` (a port granted) > `stall_xbar` (requested, none granted) > `stall_fifo` (an address but no credit or no data) > `idle` |
 | DMA | `busy` (a beat moved) > `stall_l1` (an L1 request refused) > `idle` (bandwidth gap) > `stall_mem` (waiting for memory) > `idle` |
 | controller | `command` (control overhead) / `wait` / `idle` |
