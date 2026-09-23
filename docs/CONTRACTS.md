@@ -4,10 +4,10 @@
 > file says what every field is, so SNAX-BRM, SNAX-DSE and SNAX-LOWER can
 > produce them without reading `scenario.py`.
 >
-> Scope: the model side only (D26). The design point, the BRM and the
-> task list are not here — they are M3's, and their open items stay open
-> (BRM affine-nest notation: open item 1, M6; task-list format: open item
-> 19, LOW1).
+> Scope: the model side (D26), plus SNAX-LOWER's task list (section 9,
+> D64), the input the model's control program is lowered from. The design
+> point and the BRM are not here — they are M3's, and their open items stay
+> open (BRM affine-nest notation: open item 1, M6).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
 > schemas are F2's job (D26, F2). Every value marked **default** is a
@@ -20,7 +20,8 @@
 > `<!-- snippet: ... -->` line above each block names its source;
 > `run:` means "produced by running that scenario".
 >
-> Layout: section 8 holds the rules a new block kind must follow. The
+> Layout: section 8 holds the rules a new block kind must follow; section 9
+> the task list. The
 > reasoning behind each contract is in the module docstrings and in
 > `docs/ARCHITECTURE.md` section 5.6; this file does not repeat it.
 
@@ -548,4 +549,97 @@ A block kind also needs a register adapter (`register_adapter`, D36): it
 lists the configuration registers in offset order from the component's own
 config, decodes their values into the component's start argument, and
 encodes an argument back. The register *names* are the contract (section 5),
-so pick them as SNAX-LOWER's C backend will want to read them.
+so pick them as SNAX-LOWER's C backend will want to read them. To appear in
+task lists (section 9) it also needs its `values` form, registered under the
+adapter's kind with `register_values` in `snax_forge/lower/values.py`.
+
+## 9. Task list
+
+SNAX-LOWER's ordered list of tasks (LOW1b, D45, D64): which component runs
+which task with which values, where each task is configured and started,
+and what it waits for. `lower_program(tasks, cluster)` turns it into the
+program of section 5; the model never reads a task list. LOW1a will produce
+it from a design point; until then it is written by hand (D63), and
+`scenarios/make.py` checks one in as `tasks.json` beside every scenario but
+fmul (open item 26).
+
+A task list is `name` and `steps`, each step with an `op`:
+
+| `op` | Fields | Becomes |
+|---|---|---|
+| `configure` | `task_name`, `type`, `component`, `after`, `wait_mode`, `values` | every configuration register of the component, written here |
+| `start` | `tasks` | the waits these tasks need, then their `start` writes in list order |
+| `sync` | `task`, `mode` | one `wait` on the task's component, always emitted |
+| `read` | `reg` | one `csr_read` of `block.register` |
+
+`type` is the component's adapter kind and says how `values` are read:
+
+```
+streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes);
+          spatial bounds are design-time and come from the cluster file
+dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with base,
+          bounds and strides (bytes, one wide beat per step)
+accel     its start parameters by name: n, then any named rate (e.g. T)
+```
+
+Only the loops a task uses are given; the adapter pads the rest with bound
+1 and stride 0. `after` names earlier tasks this one needs finished before
+it starts: data it reads, and a buffer it overwrites. `wait_mode` (`poll`
+or `signal`) is used whenever the lowering waits for this task; a `sync`
+gives its own `mode`. Missing `after` and `wait_mode` default to `[]` and
+`poll`; every field is written back, and unknown keys are errors.
+
+**Structural rules**, checked when a task list is made: task names are
+unique; `after`, `start` and `sync` refer to tasks configured earlier; a
+component has at most one configured task that has not started, because its
+registers are buffered (section 5); a task starts once, after its `after`
+tasks have started; every configured task is started.
+
+**Waits.** Before a `start`, the lowering adds one wait per component, for
+every `after` task and every listed component whose latest task is not yet
+covered; the waits are ordered by when the task each one ends on was
+started. A wait is on a component, so it ends on that component's latest
+task and covers every earlier one. A wait on a writer streamer also covers
+the accelerator attached to it and that accelerator's reader streamers when
+the same start launched them: their data flows into the writer, so it
+finishes last. Nothing else is added; where configures, starts and syncs
+go, and so how programming overlaps running blocks, is the task list's.
+
+The end of `vecadd`'s task list: the adder's four tasks are configured one
+by one (the last one is shown), started together, and the store waits for
+the writer.
+
+<!-- snippet: scenarios/vecadd/tasks.json -->
+```json
+  {
+   "op": "configure",
+   "task_name": "add_acc",
+   "type": "accel",
+   "component": "acc",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16}
+  },
+  {"op": "start", "tasks": ["add_ra", "add_rb", "add_wr", "add_acc"]},
+  {
+   "op": "configure",
+   "task_name": "store_c",
+   "type": "dma",
+   "component": "dma",
+   "after": ["add_wr"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 1152, "bounds": [8], "strides": [64]},
+    "dst": {"base": 2048, "bounds": [8], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["store_c"]},
+  {"op": "sync", "task": "store_c", "mode": "poll"}
+```
+
+From the first of the adder's configures on, this lowers to the 13
+configuration writes of `ra`, `rb`, `wr` and `acc`, `wait dma` (for the loads
+in `add_ra`'s and `add_rb`'s `after`), the four starts, the DMA's 11
+configuration writes, `wait wr`, the DMA's start and a final `wait dma`: the
+last 32 of the 57 commands of `scenarios/vecadd/scenario.json`.

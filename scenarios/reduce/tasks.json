@@ -1,0 +1,36 @@
+{
+ "name": "reduce",
+ "steps": [
+  {
+   "op": "configure",
+   "task_name": "sum_ra",
+   "type": "streamer",
+   "component": "ra",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"base": 0, "temporal_bounds": [16], "temporal_strides": [32], "spatial_strides": [8]}
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_wr",
+   "type": "streamer",
+   "component": "wr",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"base": 1024, "temporal_bounds": [4], "temporal_strides": [8], "spatial_strides": [8]}
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_acc",
+   "type": "accel",
+   "component": "acc",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16, "T": 4}
+  },
+  {"op": "start", "tasks": ["sum_ra", "sum_wr", "sum_acc"]},
+  {"op": "sync", "task": "sum_wr", "mode": "signal"},
+  {"op": "sync", "task": "sum_acc", "mode": "poll"},
+  {"op": "read", "reg": "acc.busy_cycles"}
+ ]
+}

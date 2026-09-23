@@ -1,0 +1,95 @@
+{
+ "name": "vecadd",
+ "steps": [
+  {
+   "op": "configure",
+   "task_name": "load_a",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 0, "bounds": [8], "strides": [64]},
+    "dst": {"base": 0, "bounds": [8], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_a"]},
+  {
+   "op": "configure",
+   "task_name": "load_b",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 1024, "bounds": [8], "strides": [64]},
+    "dst": {"base": 576, "bounds": [8], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_b"]},
+  {
+   "op": "configure",
+   "task_name": "add_ra",
+   "type": "streamer",
+   "component": "ra",
+   "after": ["load_a"],
+   "wait_mode": "poll",
+   "values": {"base": 0, "temporal_bounds": [16], "temporal_strides": [32], "spatial_strides": [8]}
+  },
+  {
+   "op": "configure",
+   "task_name": "add_rb",
+   "type": "streamer",
+   "component": "rb",
+   "after": ["load_b"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 576,
+    "temporal_bounds": [16],
+    "temporal_strides": [32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "add_wr",
+   "type": "streamer",
+   "component": "wr",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "base": 1152,
+    "temporal_bounds": [16],
+    "temporal_strides": [32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "add_acc",
+   "type": "accel",
+   "component": "acc",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16}
+  },
+  {"op": "start", "tasks": ["add_ra", "add_rb", "add_wr", "add_acc"]},
+  {
+   "op": "configure",
+   "task_name": "store_c",
+   "type": "dma",
+   "component": "dma",
+   "after": ["add_wr"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 1152, "bounds": [8], "strides": [64]},
+    "dst": {"base": 2048, "bounds": [8], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["store_c"]},
+  {"op": "sync", "task": "store_c", "mode": "poll"}
+ ]
+}

@@ -1,0 +1,35 @@
+{
+ "name": "dma",
+ "steps": [
+  {
+   "op": "configure",
+   "task_name": "load",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 0, "bounds": [16], "strides": [64]},
+    "dst": {"base": 0, "bounds": [8, 2], "strides": [1024, 64]}
+   }
+  },
+  {"op": "start", "tasks": ["load"]},
+  {"op": "sync", "task": "load", "mode": "signal"},
+  {
+   "op": "configure",
+   "task_name": "store",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 0, "bounds": [8, 2], "strides": [1024, 64]},
+    "dst": {"base": 4096, "bounds": [16], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["store"]},
+  {"op": "sync", "task": "store", "mode": "poll"}
+ ]
+}

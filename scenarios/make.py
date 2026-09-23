@@ -3,23 +3,25 @@
     python scenarios/make.py            write every file below scenarios/
     python scenarios/make.py --check    exit 1 if a checked-in file differs
 
-The scenario files hold plain command lists (D42). This script is where the
-block-level helpers belong: it programs each block with
-``RegisterMap.config_writes`` / ``start_writes`` and writes the resulting
-commands in name form. test_scenario.py checks that the checked-in files
-equal what this script generates, so they cannot drift apart.
+The scenario files hold plain command lists (D42). Most scenarios are
+written here as task lists (SNAX-LOWER, D45, D64): the script writes the task
+list to ``tasks.json`` and its lowered program (``lower_program``) into
+``scenario.json``. fmul is scheduled by hand with ``Program``, the command
+builder the lowering uses too (open item 26). test_scenario.py checks that
+the checked-in files equal what this script generates, so they cannot drift
+apart.
 
 Files:
 
     clusters/alu4.json   DMA, readers ra and rb, writer wr, elementwise add, 4 lanes
     clusters/red4.json   reader ra (4 lanes), writer wr (1 lane), reduce; no L2
     clusters/mul1.json   32 banks, 1-lane ra, rb, wr (2 loops), multiplier L = II = 5, DMA
-    vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the M3 target
-    vecadd_conflict/     vecadd with b in the same banks as a (VIS3's conflict case)
-    vecadd_tiled/        vecadd over 576 elements in 3 tiles of 192 (471 cycles)
-    fmul/                a * b in 4 tiles of 24 on mul1, double buffered: DMA behind compute
-    reduce/              64 elements in L1 summed in groups of 16
-    dma/                 L2 -> L1 with a 2D pattern and back, on alu4
+    vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the M3 target; task list
+    vecadd_conflict/     vecadd with b in the same banks as a (VIS3's conflict case); task list
+    vecadd_tiled/        vecadd over 576 elements in 3 tiles of 192 (471 cycles); task list
+    fmul/                a * b in 5 tiles of 16 on mul1, double buffered: DMA behind compute
+    reduce/              64 elements in L1 summed in groups of 16; task list
+    dma/                 L2 -> L1 with a 2D pattern and back, on alu4; task list
 """
 
 from __future__ import annotations
@@ -31,6 +33,7 @@ from pathlib import Path
 
 import numpy as np
 
+from snax_forge.lower import Program, TaskList, Tasks, lower_program
 from snax_forge.snax_model import (
     ControllerConfig,
     DmaConfig,
@@ -40,17 +43,13 @@ from snax_forge.snax_model import (
     L2Config,
     StreamerConfig,
     StreamerRegs,
-    Wait,
 )
 from snax_forge.snax_model.scenario import (
     ClusterConfig,
     ComponentSpec,
     MemInit,
-    NamedRead,
     RegisterMapSpec,
     Scenario,
-    named,
-    register_map_of,
     to_json,
 )
 
@@ -173,37 +172,19 @@ def unit(word: int, n_beats: int, lanes: int) -> StreamerRegs:
     return StreamerRegs(word * WORD, (n_beats,), (lanes * WORD,), (lanes,), (WORD,))
 
 
-class Program:
-    """Collects commands in name form for one cluster's register map."""
-
-    def __init__(self, cluster: ClusterConfig) -> None:
-        self.map = register_map_of(cluster)
-        self.cmds: list = []
-
-    def config(self, block: str, arg) -> None:
-        self.cmds += [named(c, self.map) for c in self.map.config_writes(block, arg)]
-
-    def start(self, block: str) -> None:
-        self.cmds.append(named(self.map.start_write(block), self.map))
-
-    def wait(self, block: str, mode: str) -> None:
-        self.cmds.append(Wait(block, mode))
-
-    def read(self, reg: str) -> None:
-        self.cmds.append(NamedRead(reg))
-
-
 # =============================================================================
-# Scenarios: (scenario, {npy file name: array})
+# Scenarios: (scenario, {npy file name: array}, task list or None)
 # =============================================================================
 
+Made = tuple[Scenario, dict[str, np.ndarray], TaskList | None]
 
-def vecadd() -> tuple[Scenario, dict[str, np.ndarray]]:
+
+def vecadd() -> Made:
     """test_profile.run_vecadd(mode="poll"): same data, program and cluster, costs of CTL."""
     return _vecadd("vecadd", n=64, tile=64, wb=72, wc=144, l2_step=1024, seed=3)
 
 
-def vecadd_conflict() -> tuple[Scenario, dict[str, np.ndarray]]:
+def vecadd_conflict() -> Made:
     """vecadd with b at L1 word 64: b starts in bank 0 like a, so ra and rb collide (VIS3).
 
     Only b's L1 place changes: its DMA ``dst_base`` and ``rb.base`` (576 -> 512
@@ -217,7 +198,7 @@ TILED_N = 576
 TILE = 192
 
 
-def vecadd_tiled() -> tuple[Scenario, dict[str, np.ndarray]]:
+def vecadd_tiled() -> Made:
     """vecadd over TILED_N elements in tiles of TILE, for a run of several hundred cycles.
 
     alu4's L1 (1024 words) holds one tile each of a, b and c, so the tiles
@@ -231,13 +212,15 @@ def vecadd_tiled() -> tuple[Scenario, dict[str, np.ndarray]]:
     )  # fmt: skip
 
 
-def _vecadd(
-    name: str, *, n: int, tile: int, wb: int, wc: int, l2_step: int, seed: int
-) -> tuple[Scenario, dict[str, np.ndarray]]:
+def _vecadd(name: str, *, n: int, tile: int, wb: int, wc: int, l2_step: int, seed: int) -> Made:
     """c = a + b on alu4, one tile after another: load a, load b, add, store c.
 
     ``wb`` and ``wc`` are b's and c's L1 word addresses (a is at word 0);
     a, b and c start ``l2_step`` bytes apart in L2. vecadd is one tile of 64.
+    Written as a task list. With several tiles the task names get ``_k``, and
+    each tile's tasks also name in ``after`` the tasks of tile k - 1 that use
+    the same L1 buffer; the sync on the previous store has covered those, so
+    they add no wait.
     """
     nb, n_dma = tile // LANES, tile // 8
     rng = np.random.default_rng(seed)
@@ -252,34 +235,39 @@ def _vecadd(
         return DmaDescriptor("l1_to_l2", contiguous(word * WORD, n_dma), contiguous(dst, n_dma))
 
     cl = alu4()
-    p = Program(cl)
-    for k in range(n // tile):
+    t = Tasks(name, cl)
+    tiles = n // tile
+    for k in range(tiles):
         off = k * tile * WORD  # byte offset of tile k in each L2 array
-        p.config("dma", load(l2a + off, wa))
-        p.start("dma")
-        p.config("dma", load(l2b + off, wb))
-        p.wait("dma", "poll")
-        p.start("dma")
-        p.config("ra", unit(wa, nb, LANES))
-        p.config("rb", unit(wb, nb, LANES))
-        p.config("wr", unit(wc, nb, LANES))
-        p.config("acc", {"n": nb})
-        p.wait("dma", "poll")
-        for blk in ("ra", "rb", "wr", "acc"):
-            p.start(blk)
-        p.config("dma", store(wc, l2c + off))
-        p.wait("wr", "poll")
-        p.start("dma")
-        p.wait("dma", "poll")
+
+        def x(task: str, k: int = k) -> str:
+            return f"{task}_{k}" if tiles > 1 else task
+
+        def reuse(task: str, k: int = k) -> list[str]:
+            return [x(task, k - 1)] if k else []
+
+        t.configure(x("load_a"), "dma", load(l2a + off, wa), after=reuse("add_ra"))
+        t.start(x("load_a"))
+        t.configure(x("load_b"), "dma", load(l2b + off, wb), after=reuse("add_rb"))
+        t.start(x("load_b"))
+        t.configure(x("add_ra"), "ra", unit(wa, nb, LANES), after=[x("load_a")])
+        t.configure(x("add_rb"), "rb", unit(wb, nb, LANES), after=[x("load_b")])
+        t.configure(x("add_wr"), "wr", unit(wc, nb, LANES), after=reuse("store_c"))
+        t.configure(x("add_acc"), "acc", {"n": nb})
+        t.start(x("add_ra"), x("add_rb"), x("add_wr"), x("add_acc"))
+        t.configure(x("store_c"), "dma", store(wc, l2c + off), after=[x("add_wr")])
+        t.start(x("store_c"))
+        t.sync(x("store_c"))
+    tasks = t.task_list()
     sc = Scenario(
         name=name,
         cluster=cl,
         cluster_ref="../clusters/alu4.json",
         memory=[MemInit("l2", l2a, npy="a.npy"), MemInit("l2", l2b, npy="b.npy")],
-        program=p.cmds,
+        program=lower_program(tasks, cl),
         max_cycles=5000,
     )
-    return sc, {"a.npy": a, "b.npy": b}
+    return sc, {"a.npy": a, "b.npy": b}, tasks
 
 
 # fmul: FMUL_TILES tiles of FMUL_TILE elements, double buffered over two tile sets.
@@ -295,7 +283,7 @@ FMUL_SETS = (
 )
 
 
-def fmul() -> tuple[Scenario, dict[str, np.ndarray]]:
+def fmul() -> Made:
     """c = a * b over FMUL_TILES tiles on mul1, the DMA hidden behind the multiplier.
 
     A buffer lives in one superbank: FMUL_TILE / 8 rows of 8 words, one
@@ -306,6 +294,10 @@ def fmul() -> tuple[Scenario, dict[str, np.ndarray]]:
     set, and the controller programs the streamers for tile k + 1 (their
     registers are buffered, D36). A wide DMA grant only blocks its own
     superbank (D33), so the streamers never wait for it. Integer data (D28).
+
+    Scheduled by hand with ``Program``, not as a task list: its program has
+    two waits a task list would not emit and configures the last store after
+    its waits (open item 26), so lowering a task list would change its cycles.
     """
     n = FMUL_TILES * FMUL_TILE
     rows = FMUL_TILE // SB_WORDS
@@ -375,32 +367,32 @@ def fmul() -> tuple[Scenario, dict[str, np.ndarray]]:
         program=p.cmds,
         max_cycles=5000,
     )
-    return sc, {"a.npy": a, "b.npy": b}
+    return sc, {"a.npy": a, "b.npy": b}, None
 
 
-def reduce() -> tuple[Scenario, dict[str, np.ndarray]]:
+def reduce() -> Made:
     """64 elements at L1 word 0 summed in 4 groups of 16 (16 beats, T = 4) to word 128."""
     x = np.random.default_rng(5).integers(-1000, 1000, 64)
     nb, t = 64 // LANES, 4
     cl = red4()
-    p = Program(cl)
-    p.config("ra", unit(0, nb, LANES))
-    p.config("wr", unit(128, nb // t, 1))
-    p.config("acc", {"n": nb, "T": t})
-    for blk in ("ra", "wr", "acc"):
-        p.start(blk)
-    p.wait("wr", "signal")
-    p.wait("acc", "poll")
-    p.read("acc.busy_cycles")
+    tl = Tasks("reduce", cl)
+    tl.configure("sum_ra", "ra", unit(0, nb, LANES))
+    tl.configure("sum_wr", "wr", unit(128, nb // t, 1))
+    tl.configure("sum_acc", "acc", {"n": nb, "T": t})
+    tl.start("sum_ra", "sum_wr", "sum_acc")
+    tl.sync("sum_wr", "signal")
+    tl.sync("sum_acc", "poll")
+    tl.read("acc.busy_cycles")
+    tasks = tl.task_list()
     sc = Scenario(
         name="reduce",
         cluster=cl,
         cluster_ref="../clusters/red4.json",
         memory=[MemInit("l1", 0, npy="x.npy")],
-        program=p.cmds,
+        program=lower_program(tasks, cl),
         max_cycles=1000,
     )
-    return sc, {"x.npy": x}
+    return sc, {"x.npy": x}, tasks
 
 
 # The 2D L1 pattern of the DMA scenario: 8 beats 1 KiB apart, twice, 64 B apart.
@@ -409,26 +401,27 @@ DMA_BEATS = 16
 DMA_BACK = 4096  # L2 byte address of the copy back
 
 
-def dma() -> tuple[Scenario, dict[str, np.ndarray]]:
+def dma() -> Made:
     """16 beats from L2 into L1 with DMA_L1, then back to L2 at DMA_BACK, on alu4."""
     src = np.random.default_rng(11).integers(-1000, 1000, DMA_BEATS * BEAT // WORD)
     cl = alu4()
-    p = Program(cl)
-    p.config("dma", DmaDescriptor("l2_to_l1", contiguous(0, DMA_BEATS), DMA_L1))
-    p.start("dma")
-    p.wait("dma", "signal")
-    p.config("dma", DmaDescriptor("l1_to_l2", DMA_L1, contiguous(DMA_BACK, DMA_BEATS)))
-    p.start("dma")
-    p.wait("dma", "poll")
+    t = Tasks("dma", cl)
+    t.configure("load", "dma", DmaDescriptor("l2_to_l1", contiguous(0, DMA_BEATS), DMA_L1))
+    t.start("load")
+    t.sync("load", "signal")
+    t.configure("store", "dma", DmaDescriptor("l1_to_l2", DMA_L1, contiguous(DMA_BACK, DMA_BEATS)))
+    t.start("store")
+    t.sync("store")
+    tasks = t.task_list()
     sc = Scenario(
         name="dma",
         cluster=cl,
         cluster_ref="../clusters/alu4.json",
         memory=[MemInit("l2", 0, npy="src.npy")],
-        program=p.cmds,
+        program=lower_program(tasks, cl),
         max_cycles=2000,
     )
-    return sc, {"src.npy": src}
+    return sc, {"src.npy": src}, tasks
 
 
 # =============================================================================
@@ -450,8 +443,10 @@ def generate() -> dict[str, bytes]:
         "clusters/mul1.json": to_json(mul1().to_dict()).encode(),
     }
     for make in (vecadd, vecadd_conflict, vecadd_tiled, fmul, reduce, dma):
-        sc, arrays = make()
+        sc, arrays, tasks = make()
         files[f"{sc.name}/scenario.json"] = to_json(sc.to_dict()).encode()
+        if tasks is not None:
+            files[f"{sc.name}/tasks.json"] = to_json(tasks.to_dict()).encode()
         for name, arr in arrays.items():
             files[f"{sc.name}/{name}"] = _npy(arr)
     return files
