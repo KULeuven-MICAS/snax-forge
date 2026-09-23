@@ -1,0 +1,31 @@
+<!doctype html>
+<!--
+  SNAX-FORGE viewer (VIS1, D55). Served by snax_forge/viz/server.py; talks
+  only to its /api routes. No external file is loaded, so it works offline.
+  app.js is the entry point; report.js draws the profile report (VIS1),
+  schedule.js the schedule (VIS2).
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SNAX-FORGE run viewer</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="app.js"></script>
+</head>
+<body>
+  <header id="top">
+    <div class="bar">
+      <h1 id="run-title">SNAX-FORGE run viewer</h1>
+      <div class="controls">
+        <label id="run-pick" hidden>Run <select id="run-select"></select></label>
+        <button id="reload" type="button" title="Read the run directories from disk again">Reload</button>
+      </div>
+    </div>
+    <dl id="facts" class="facts"></dl>
+    <nav id="tabs" class="tabs" role="tablist" aria-label="Views"></nav>
+    <p id="status" class="status" role="status"></p>
+  </header>
+  <main id="report"></main>
+</body>
+</html>
