@@ -142,7 +142,7 @@ from .l2 import L2Config, L2Memory
 from .mem import BankReq, L1Config
 from .sched import ClassLog, Component, Phase, SimulationError
 from .streamer import StreamerRegs, address_stream
-from .trace import DmaBeat, Done, Start
+from .trace import DmaBeat, Done, Resp, Start
 from .xbar import Xbar
 
 CYCLE_CLASSES = ("busy", "stall_l1", "stall_mem", "idle")
@@ -507,6 +507,9 @@ class Dma(Component):
             if w.dst_moved:
                 tr.emit(DmaBeat(cycle, self.name, side="dst", i=self._d, mem=dst_mem,
                                 addr=int(self._dst[self._d])))  # fmt: skip
+            if self.to_l1:  # L2 read data returning (D62); L1 read data is the xbar's resp
+                for _, beat, _ in w.arrived:
+                    tr.emit(Resp(cycle, self.name, mem="l2", addr=int(self._src[beat]), i=beat))
         if w.src_moved:
             self._s += 1
             self._last_src = cycle

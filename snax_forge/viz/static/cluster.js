@@ -1,45 +1,47 @@
-// The cluster at one cycle (VIS3, D61), drawn under the schedule and
+// The cluster at one cycle (VIS3, D61, D62), drawn under the schedule and
 // following its selected cycle. Plain HTML and CSS: every arrow is straight
 // and sits in the grid column of the bank or block it points at, so nothing
 // is measured. Top to bottom, the way requests go from memory to control:
 //
 //   L1 banks      grouped by superbank (wide_bits / width_bits banks); a bank
-//                 accessed in the cycle is highlighted and names the port
-//                 that was served, with R/W and the row
-//   arrows        one per bank, between the banks and the interconnect
-//   interconnect  status in the middle: grey without requests, green with
-//                 requests and no conflict, red with the list of conflicts
+//                 names the port whose request it accepted (R/W, row) and the
+//                 port its read data goes back to
+//   arrow pairs   one per bank, between the banks and the interconnect
+//   interconnect  status in the middle: grey without traffic, green with
+//                 traffic and no conflict, red with the list of conflicts
 //                 (served port first); a static description in the corner
-//   arrows        one per requester (streamer, DMA), centred on its box
-//   requesters    streamers (port chips, FIFO lanes as `depth` slots), the
-//                 DMA with L2 beside it
+//   arrow pairs   one per requester (streamer, DMA), centred on its box
+//   requesters    streamers (one column per lane: port, FIFO slots, count),
+//                 the DMA with L2 beside it
 //   arrows        between a streamer and the accelerator it is attached to
 //   accelerators  plain boxes over their attached streamers
 //   controller    the command running in the cycle and any poll
 //
-// Arrows point the way data moves: down for reads, up for writes. Green is
-// a served access, red a stall (the stalled streamer, its arrow, and the
-// arrow into the contested bank); the served side stays green. Colours are
-// the schedule's (style.css): busy green, memory stall red, flow stall
-// violet, FIFO lilac, controller blue.
+// Every memory hop has two lanes, because both can happen in one cycle
+// (D62): the request (teal, dashed, pointing to memory; red when stalled)
+// and the response (green, solid, pointing back), which only reads have.
+// A read's request is its `grant` event; its response is the `resp` event
+// read_latency cycles later, and the FIFO slot fills the cycle after that
+// (Queue, D32). A conflict turns the stalled streamer, its request arrow and
+// the request arrow into the contested bank red; the served side stays teal.
+// Colours are the schedule's (style.css): request teal, read data, busy and
+// firing green, memory stall red, flow stall violet, FIFO lilac, controller
+// blue.
 //
 // The DOM is built once per run from the cluster configuration and the
 // profile's port list, so another cluster file gives another picture; a
 // cycle change only updates it (update), which lets the FIFO slots animate.
 //
 // What each hop is read from (CONTRACTS.md section 7):
-//   bank and requester arrows  grant / stall events of the cycle
-//   streamer -> accelerator    a firing of the accelerator (it pops its inputs)
-//   accelerator -> writer      a rise of a writer lane's count; there is no
-//                              push event, so a push and a pop in the same
-//                              cycle show no arrow (open item 25)
-//   L2 <-> DMA, DMA <-> L1     dma_beat events: the read and write sides are
-//                              independent (D34), each side has its own hop
-// A read's arrow is drawn in its grant cycle; the data reaches the FIFO
-// read_latency cycles later, where the lane count rises.
+//   request lanes             grant / stall (L1), dma_beat (L2)
+//   response lanes            resp (L1 from the xbar, L2 from the DMA)
+//   streamer -> accelerator   a firing of the accelerator (it pops its inputs)
+//   accelerator -> writer     a rise of a writer lane's count; there is no
+//                             push event, so a push and a pop in the same
+//                             cycle show no arrow (open item 25)
 
 import { h, int } from "./dom.js";
-import { GROUP, bankText, beatTraced, classAt, fifoCount } from "./events.js";
+import { GROUP, bankText, beatTraced, classAt, fifoCount, onPort } from "./events.js";
 
 const BANKS_PER_LINE = 32; // more banks wrap onto a new line, a superbank at a time
 const MAX_SLOTS = 8; // deeper FIFOs are drawn as a bar
@@ -55,9 +57,16 @@ export function clusterView(detail) {
 
 // -- small parts ---------------------------------------------------------------------
 
-/** A straight arrow; `v` vertical or `h` horizontal. `guide` draws a faint line when off. */
-function arrow(axis, guide = true) {
-  return h("div", { class: `cl-arrow ${axis}${guide ? "" : " none"}` }, h("i"));
+/** A straight arrow; `v` vertical or `h` horizontal; `lane` req, resp or "" (data). `guide` draws a faint line when off. */
+function arrow(axis, lane = "", guide = true) {
+  return h("div", { class: `cl-arrow ${axis}${lane ? ` ${lane}` : ""}${guide ? "" : " none"}` }, h("i"));
+}
+
+/** A request lane and a response lane side by side (v) or stacked (h). */
+function pair(axis) {
+  const req = arrow(axis, "req");
+  const resp = arrow(axis, "resp");
+  return { el: h("div", { class: `cl-pair ${axis}` }, req, resp), req, resp };
 }
 
 /** Show an arrow pointing `dir` (up, down, left, right), or hide it with dir null. */
@@ -84,9 +93,13 @@ function setClass(b, cls) {
   b.cls.replaceChildren(...(cls ? [h("i", { class: `key g-${group}` }), cls] : []));
 }
 
-function setText(el, text) {
+function setText(el, text, kind = null) {
   if (el.textContent !== text) el.textContent = text;
+  el.classList.toggle("req", kind === "req" && !!text);
+  el.classList.toggle("resp", kind === "resp" && !!text);
 }
+
+const portText = (e) => `${e.port} ${e.k === "resp" ? "read data back" : e.k === "grant" ? "request accepted" : e.wider ? "stalled by a wider grant" : "stalled"}: ${e.k === "resp" ? "read" : e.w ? "write" : "read"} addr ${e.addr}, ${bankText(e.banks)}`;
 
 // -- building ------------------------------------------------------------------------
 
@@ -104,7 +117,7 @@ function build(detail) {
 
   // L1 banks, a line of superbanks at a time.
   const bankCells = [];
-  const bankArrows = [];
+  const bankPairs = [];
   const sbPerLine = Math.max(1, Math.floor(BANKS_PER_LINE / group));
   const nSb = Math.ceil(nBanks / group);
   const lines = [];
@@ -116,23 +129,24 @@ function build(detail) {
     const heads = sbs.map((s, i) => h("div", { class: `cl-sb-head${i ? " sb-first" : ""}`, style: { gridColumn: `span ${Math.min(group, nBanks - s * group)}` } },
       group > 1 ? `superbank ${s}` : "", group > 1 ? h("small", {}, `banks ${s * group}–${Math.min((s + 1) * group, nBanks) - 1}`) : null));
     const cells = [];
-    const arrows = [];
+    const pairs = [];
     for (let b = first; b < last; b++) {
       const sep = b > first && b % group === 0 ? " sb-first" : "";
       const who = h("span", { class: "who" });
       const acc = h("small", { class: "acc" });
-      const cell = h("div", { class: `cl-bank${sep}` }, h("b", {}, String(b)), who, acc);
-      bankCells[b] = { cell, who, acc };
-      const a = arrow("v");
-      if (sep) a.classList.add("sb-first");
-      bankArrows[b] = a;
+      const back = h("small", { class: "back" });
+      const cell = h("div", { class: `cl-bank${sep}` }, h("b", {}, String(b)), who, acc, back);
+      bankCells[b] = { cell, who, acc, back };
+      const p = pair("v");
+      if (sep) p.el.classList.add("sb-first");
+      bankPairs[b] = p;
       cells.push(cell);
-      arrows.push(a);
+      pairs.push(p.el);
     }
-    lines.push(h("div", { class: "cl-banks", style: { gridTemplateColumns: `repeat(${last - first}, minmax(0, 1fr))` } }, heads, cells, arrows));
+    lines.push(h("div", { class: "cl-banks", style: { gridTemplateColumns: `repeat(${last - first}, minmax(0, 1fr))` } }, heads, cells, pairs));
   }
   const l1Box = h("div", { class: "cl-l1" },
-    h("div", { class: "cl-l1-head" }, h("b", {}, "L1"), h("small", {}, `${nBanks} banks × ${l1.width_bits} bit, ${l1.rows} rows`)),
+    h("div", { class: "cl-l1-head" }, h("b", {}, "L1"), h("small", {}, `${nBanks} banks × ${l1.width_bits} bit, ${l1.rows} rows, read latency ${l1.read_latency}`)),
     lines);
 
   // Interconnect: status in the middle, description in the corner.
@@ -166,7 +180,7 @@ function build(detail) {
   const hasL2 = !!cfg.l2 && dmas.length > 0;
   if (hasL2) cols.push({ kind: "l2arrow" }, { kind: "l2" });
   const colOf = (name) => cols.findIndex((c) => c.name === name) + 1;
-  const template = cols.map((c) => ({ streamer: "minmax(7.5rem, 1fr)", dma: "minmax(11rem, 1.3fr)", l2arrow: "2.4rem", l2: "minmax(7rem, 0.7fr)" })[c.kind]).join(" ");
+  const template = cols.map((c) => ({ streamer: "minmax(7.5rem, 1fr)", dma: "minmax(12rem, 1.3fr)", l2arrow: "2.6rem", l2: "minmax(8rem, 0.7fr)" })[c.kind]).join(" ");
   const place = (el, col, row, span = 1) => { el.style.gridColumn = `${col} / span ${span}`; el.style.gridRow = String(row); return el; };
   const reqItems = [];
 
@@ -182,18 +196,20 @@ function build(detail) {
     for (let l = 0; l < nLanes; l++) {
       const slots = depth <= MAX_SLOTS ? Array.from({ length: depth }, () => h("i", { class: "slot" })) : [];
       const fill = depth > MAX_SLOTS ? h("i", { class: "fill" }) : null;
-      const count = h("small", {});
-      const el = h("div", { class: `cl-lane${fill ? " bar" : ""}` }, h("div", { class: "slots" }, slots, fill), count);
-      lanes.push({ el, slots, fill, count });
+      lanes.push({ slotsEl: h("div", { class: `slots${fill ? " bar" : ""}` }, slots, fill), slots, fill, count: h("small", { class: "count" }) });
     }
+    // One grid column per lane: its port on top, then its FIFO slots, then its count, so they line up.
+    const lined = chips.length === nLanes;
+    const grid = h("div", { class: "cl-lanes", style: { gridTemplateColumns: `repeat(${Math.max(nLanes, 1)}, 1.45rem)` } },
+      lined ? chips.map((c) => c.el) : null, lanes.map((x) => x.slotsEl), lanes.map((x) => x.count));
     b.body.append(
-      chips.length ? h("div", { class: "cl-ports", title: "xbar ports" }, chips.map((c) => c.el)) : null,
-      nLanes ? h("div", { class: "cl-fifo", title: `${sp.fifo.name}, depth ${depth}` }, lanes.map((x) => x.el)) : null,
+      !lined && chips.length ? h("div", { class: "cl-ports" }, chips.map((c) => c.el)) : null,
+      nLanes ? grid : null,
       nLanes ? h("small", { class: "cl-sub" }, `${sp.fifo.name}, depth ${depth}`) : null);
-    const up = arrow("v");
+    const up = pair("v");
     const attachedTo = accels.find((a) => Object.values(a.attach || {}).includes(name));
-    const down = arrow("v", !!attachedTo);
-    reqItems.push(place(up, col, 1), place(b.el, col, 2), place(down, col, 3));
+    const down = arrow("v", "", !!attachedTo);
+    reqItems.push(place(up.el, col, 1), place(b.el, col, 2), place(down, col, 3));
     parts.streamers[name] = { b, chips, lanes, depth, up, down, fifo: sp?.fifo.name, write: !!sp?.write, accel: attachedTo?.name };
   }
 
@@ -203,24 +219,26 @@ function build(detail) {
     const chips = portsOf(d.name).map((p) => ({ port: p, el: h("span", { class: "cl-port" }, `${ports[p].width} bit`) }));
     const task = h("div", { class: "cl-line" });
     const rd = h("div", { class: "cl-line" });
+    const back = h("div", { class: "cl-line" });
     const wr = h("div", { class: "cl-line" });
-    b.body.append(chips.length ? h("div", { class: "cl-ports" }, chips.map((c) => c.el)) : null, task, rd, wr);
-    const up = arrow("v");
-    reqItems.push(place(up, col, 1), place(b.el, col, 2));
-    parts.dmas[d.name] = { b, chips, task, rd, wr, up };
+    b.body.append(chips.length ? h("div", { class: "cl-ports" }, chips.map((c) => c.el)) : null, task, rd, back, wr);
+    const up = pair("v");
+    reqItems.push(place(up.el, col, 1), place(b.el, col, 2));
+    parts.dmas[d.name] = { b, chips, task, rd, back, wr, up };
   }
 
   let l2 = null;
   if (hasL2) {
     const col = cols.length - 1;
-    const b = block("L2", `${int(cfg.l2.size_bytes / 1024)} KiB`);
-    const line = h("div", { class: "cl-line" });
-    b.body.append(line);
+    const b = block("L2", `${int(cfg.l2.size_bytes / 1024)} KiB, read latency ${cfg.l2.read_latency}`);
+    const req = h("div", { class: "cl-line" });
+    const back = h("div", { class: "cl-line" });
+    b.body.append(req, back);
     b.el.classList.add("plain");
     b.el.dataset.group = "none";
-    const a = arrow("h");
-    reqItems.push(place(a, col, 2), place(b.el, col + 1, 2));
-    l2 = { b, line, a, dma: dmas[0].name };
+    const p = pair("h");
+    reqItems.push(place(p.el, col, 2), place(b.el, col + 1, 2));
+    l2 = { b, req, back, p, dma: dmas[0].name };
   }
 
   for (const a of accels) {
@@ -252,10 +270,11 @@ function build(detail) {
   const req = h("div", { class: "cl-req", style: { gridTemplateColumns: template || "1fr" } }, reqItems);
   const note = h("p", { class: "note cl-note" });
   const legend = h("ul", { class: "legend" },
-    h("li", {}, h("i", { class: "key g-busy" }), "Served access, beat, firing"),
+    h("li", {}, h("i", { class: "key g-req dashed" }), "Request (accepted)"),
+    h("li", {}, h("i", { class: "key g-busy" }), "Read data back, firing"),
     h("li", {}, h("i", { class: "key g-mem" }), "Stall, contested bank"),
     h("li", {}, h("i", { class: "key g-fifo" }), "FIFO slot in use"),
-    h("li", {}, "Arrows point the way data moves: down for reads, up for writes"));
+    h("li", {}, "Requests point to memory, read data points back"));
   const el = h("div", { class: "cluster" }, legend, note, h("div", { class: "scroll" }, h("div", { class: "cl-frame" }, l1Box, xbarBox, req)));
 
   const cmds = [];
@@ -277,38 +296,46 @@ function build(detail) {
     const xbarOn = on && !!xbar && beatTraced(trace, xbar.name, t);
     const mine = (src) => (on && beatTraced(trace, src, t) ? events.filter((e) => e.src === src) : null);
 
-    // Grants and stalls by bank and by owner.
-    const grants = xbarOn ? events.filter((e) => e.k === "grant" && e.mem === "l1") : [];
-    const stalls = xbarOn ? events.filter((e) => e.k === "stall" && e.mem === "l1") : [];
+    // The xbar's events of the cycle, by bank and by owner.
+    const portEvs = xbarOn ? events.filter((e) => onPort(e) && e.mem === "l1") : [];
+    const grants = portEvs.filter((e) => e.k === "grant");
+    const stalls = portEvs.filter((e) => e.k === "stall");
+    const resps = portEvs.filter((e) => e.k === "resp");
     const bank = [];
-    for (const g of grants) for (const b of g.banks) (bank[b] ??= { grant: null, stalls: [] }).grant = g;
-    for (const s of stalls) for (const b of s.banks) (bank[b] ??= { grant: null, stalls: [] }).stalls.push(s);
-    const reqOf = {};
-    for (const e of [...grants, ...stalls]) (reqOf[ports[e.port]?.owner ?? e.port] ??= []).push(e);
+    const at = (b) => (bank[b] ??= { grant: null, stalls: [], resp: null });
+    for (const g of grants) for (const b of g.banks) at(b).grant = g;
+    for (const s of stalls) for (const b of s.banks) at(b).stalls.push(s);
+    for (const r of resps) for (const b of r.banks) at(b).resp = r;
+    const evsOf = {};
+    for (const e of portEvs) (evsOf[ports[e.port]?.owner ?? e.port] ??= []).push(e);
 
     // Note above the picture.
     let msg = "";
     if (level === "off") msg = "This run was traced at level off: only the cluster's structure is shown. Run it again with --trace beat.";
     else if (!on) msg = "Select a cycle in the schedule.";
-    else if (!beat) msg = "Task-level trace: classes, tasks and commands only. Run with --trace beat for grants, FIFO counts, firings and DMA beats.";
-    else if (!xbarOn) msg = "The xbar's beat events were filtered out of this cycle (see the header): no grants or stalls to show.";
+    else if (!beat) msg = "Task-level trace: classes, tasks and commands only. Run with --trace beat for requests, read data, FIFO counts, firings and DMA beats.";
+    else if (!xbarOn) msg = "The xbar's beat events were filtered out of this cycle (see the header): no requests or read data to show.";
     setText(note, msg);
     el.classList.toggle("task-only", !beat);
 
-    // Banks and their arrows.
+    // Banks and their arrow pairs.
     for (let b = 0; b < nBanks; b++) {
       const st = bank[b];
-      const { cell, who, acc } = bankCells[b];
+      const { cell, who, acc, back } = bankCells[b];
       const g = st?.grant;
+      const r = st?.resp;
       const contested = !!st?.stalls.length;
-      cell.classList.toggle("on", !!g);
+      cell.classList.toggle("req", !!g);
+      cell.classList.toggle("resp", !!r);
       cell.classList.toggle("bad", contested);
       setText(who, g ? portLabel(g.port) : "");
       setText(acc, g ? `${g.w ? "W" : "R"} r${g.row}` : "");
-      cell.title = st ? [g, ...st.stalls].filter(Boolean).map((e) => `${e.port} ${e.k === "grant" ? "served" : "stalled"}: ${e.w ? "write" : "read"} addr ${e.addr}, row ${e.row}`).join("\n") : `bank ${b}`;
+      setText(back, r ? `↓ ${portLabel(r.port)}` : "");
+      cell.title = st ? [g, ...st.stalls, r].filter(Boolean).map(portText).join("\n") : `bank ${b}`;
       const any = g ?? st?.stalls[0];
-      setArrow(bankArrows[b], any ? (any.w ? "up" : "down") : null, contested,
+      setArrow(bankPairs[b].req, any ? "up" : null, contested,
         contested ? `bank ${b} contested: ${g ? `${g.port} served, ` : ""}${st.stalls.map((s) => s.port).join(", ")} stalled` : any ? `${any.port} ${any.w ? "writes" : "reads"} bank ${b}` : "");
+      setArrow(bankPairs[b].resp, r ? "down" : null, false, r ? `bank ${b} read data goes back to ${r.port}` : "");
     }
 
     // Interconnect status.
@@ -331,7 +358,7 @@ function build(detail) {
           const served = c.winners.length ? `${c.winners.map((g) => g.port).join(", ")} served${wider ? " (wider grant)" : ""}` : "no grant";
           return h("li", {}, h("b", {}, `${bankText(c.banks)}:`), ` ${served}, `, h("span", { class: "stalled" }, `${c.stalled.map((s) => s.port).join(", ")} stalled`));
         })));
-      } else if (grants.length) {
+      } else if (portEvs.length) {
         xbarBox.classList.add("ok");
         status.replaceChildren();
       } else {
@@ -340,40 +367,40 @@ function build(detail) {
       }
     }
 
-    // Port chips, shared by streamers and DMAs.
+    // Port chips and requester arrow pairs, shared by streamers and DMAs.
     const chipState = (chips) => {
       for (const c of chips) {
-        const evs = (reqOf[ports[c.port]?.owner] ?? []).filter((e) => e.port === c.port);
-        const g = evs.find((e) => e.k === "grant");
-        const s = evs.find((e) => e.k === "stall");
-        c.el.classList.toggle("ok", !!g);
-        c.el.classList.toggle("bad", !!s);
-        c.el.title = evs.length ? evs.map((e) => `${e.port} ${e.k === "grant" ? "served" : e.wider ? "stalled by a wider grant" : "stalled"}: ${e.w ? "write" : "read"} addr ${e.addr}, ${bankText(e.banks)}`).join("\n") : `${c.port}: no request`;
+        const evs = (evsOf[ports[c.port]?.owner] ?? []).filter((e) => e.port === c.port);
+        c.el.classList.toggle("req", evs.some((e) => e.k === "grant"));
+        c.el.classList.toggle("bad", evs.some((e) => e.k === "stall"));
+        c.el.classList.toggle("resp", evs.some((e) => e.k === "resp"));
+        c.el.title = evs.length ? evs.map(portText).join("\n") : `${c.port}: nothing in this cycle`;
       }
     };
-    const reqArrow = (a, evs) => {
-      const any = evs?.[0];
-      const bad = !!evs?.some((e) => e.k === "stall");
-      setArrow(a, any ? (any.w ? "up" : "down") : null, bad, any ? (bad ? "stalled" : any.w ? "writes to L1" : "reads from L1") : "");
+    const reqPair = (p, evs) => {
+      const reqs = (evs ?? []).filter((e) => e.k !== "resp");
+      const bad = reqs.some((e) => e.k === "stall");
+      const back = (evs ?? []).filter((e) => e.k === "resp");
+      setArrow(p.req, reqs.length ? "up" : null, bad, reqs.map(portText).join("\n"));
+      setArrow(p.resp, back.length ? "down" : null, false, back.map(portText).join("\n"));
+      return bad;
     };
 
     // Streamers.
     for (const [name, p] of Object.entries(parts.streamers)) {
       setClass(p.b, cls(name));
-      const evs = reqOf[name];
-      p.b.el.classList.toggle("bad", !!evs?.some((e) => e.k === "stall"));
+      p.b.el.classList.toggle("bad", reqPair(p.up, evsOf[name]));
       chipState(p.chips);
-      reqArrow(p.up, evs);
       const fifoOn = on && beatTraced(trace, p.fifo, t);
       let rise = false;
       p.lanes.forEach((lane, l) => {
         const n = on ? fifoCount(fifo, trace, p.fifo, l, t) : null;
-        lane.el.classList.toggle("unknown", fifoOn && n === null);
-        lane.el.classList.toggle("untraced", !fifoOn);
+        lane.slotsEl.classList.toggle("unknown", fifoOn && n === null);
+        lane.slotsEl.classList.toggle("untraced", !fifoOn);
         lane.slots.forEach((s, i) => s.classList.toggle("full", n !== null && i < n));
         if (lane.fill) lane.fill.style.height = `${n === null ? 0 : (100 * n) / p.depth}%`;
         setText(lane.count, !fifoOn ? "–" : n === null ? "?" : String(n));
-        lane.el.title = !fifoOn ? `lane ${l}: not traced in this cycle` : n === null ? `lane ${l}: count unknown (set before the trace window)` : `lane ${l}: ${n} of ${p.depth}`;
+        lane.slotsEl.title = !fifoOn ? `lane ${l}: not traced in this cycle` : n === null ? `lane ${l}: count unknown (set before the trace window)` : `lane ${l}: ${n} of ${p.depth}`;
         if (p.write && n !== null) {
           const before = fifoCount(fifo, trace, p.fifo, l, t - 1);
           if (before !== null && n > before) rise = true;
@@ -386,29 +413,28 @@ function build(detail) {
       }
     }
 
-    // DMA and L2.
+    // DMA and L2: its L1 side comes from the xbar, its L2 side from its own beats and responses.
     for (const [name, p] of Object.entries(parts.dmas)) {
       setClass(p.b, cls(name));
-      const evs = reqOf[name];
-      p.b.el.classList.toggle("bad", !!evs?.some((e) => e.k === "stall"));
+      p.b.el.classList.toggle("bad", reqPair(p.up, evsOf[name]));
       chipState(p.chips);
-      reqArrow(p.up, evs);
       const task = on ? (detail.tasks[name] ?? []).find((s) => s.start <= t && t < s.done) : null;
       setText(p.task, task ? `${DIR_TEXT[task.direction] ?? task.direction ?? "task"}, start in ${task.start}, done in ${task.done}` : on ? "no task" : "");
-      const beats = mine(name);
-      const rd = beats?.find((e) => e.k === "dma_beat" && e.side === "src");
-      const wr = beats?.find((e) => e.k === "dma_beat" && e.side === "dst");
-      const beatText = (e, verb) => (e ? `${verb} beat ${e.i}, ${e.mem.toUpperCase()} addr ${e.addr}` : "");
-      setText(p.rd, beats === null && on && beat ? "beats not traced in this cycle" : beatText(rd, "read"));
-      setText(p.wr, beatText(wr, "write"));
-      p.rd.classList.toggle("hit", !!rd);
-      p.wr.classList.toggle("hit", !!wr);
+      const own = mine(name);
+      const rd = own?.find((e) => e.k === "dma_beat" && e.side === "src");
+      const wr = own?.find((e) => e.k === "dma_beat" && e.side === "dst");
+      const l2back = own?.find((e) => e.k === "resp");
+      const l1back = (evsOf[name] ?? []).find((e) => e.k === "resp");
+      const MEM = (m) => m.toUpperCase();
+      setText(p.rd, own === null && on && beat ? "beats not traced in this cycle" : rd ? `read request, beat ${rd.i}, ${MEM(rd.mem)} addr ${rd.addr}` : "", "req");
+      setText(p.back, l2back ? `read data back, beat ${l2back.i}, L2 addr ${l2back.addr}` : l1back ? `read data back, L1 addr ${l1back.addr}` : "", "resp");
+      setText(p.wr, wr ? `write request, beat ${wr.i}, ${MEM(wr.mem)} addr ${wr.addr}` : "", "req");
       if (l2 && l2.dma === name) {
-        const l2rd = rd?.mem === "l2" ? rd : null;
-        const l2wr = wr?.mem === "l2" ? wr : null;
-        setArrow(l2.a, l2rd ? "left" : l2wr ? "right" : null, false, l2rd ? `${name} reads L2` : l2wr ? `${name} writes L2` : "");
-        setText(l2.line, l2rd ? `read addr ${l2rd.addr}` : l2wr ? `write addr ${l2wr.addr}` : "");
-        l2.line.classList.toggle("hit", !!(l2rd || l2wr));
+        const l2req = rd?.mem === "l2" ? rd : wr?.mem === "l2" ? wr : null;
+        setArrow(l2.p.req, l2req ? "right" : null, false, l2req ? `${name} ${l2req.side === "src" ? "reads" : "writes"} L2 addr ${l2req.addr}` : "");
+        setArrow(l2.p.resp, l2back ? "left" : null, false, l2back ? `L2 read data of beat ${l2back.i} goes back to ${name}` : "");
+        setText(l2.req, l2req ? `${l2req.side === "src" ? "read" : "write"} request, addr ${l2req.addr}` : "", "req");
+        setText(l2.back, l2back ? `read data back, addr ${l2back.addr}` : "", "resp");
       }
     }
 
@@ -416,8 +442,7 @@ function build(detail) {
     for (const [name, p] of Object.entries(parts.accels)) {
       setClass(p.b, cls(name));
       const fire = (mine(name) ?? []).find((e) => e.k === "fire");
-      setText(p.fire, fire ? `firing ${fire.n}` : "");
-      p.fire.classList.toggle("hit", !!fire);
+      setText(p.fire, fire ? `firing ${fire.n}` : "", "resp");
     }
 
     // Controller.
@@ -428,8 +453,8 @@ function build(detail) {
       setText(p.cmd, c ? `pc ${c.pc}: ${what}, cycles ${c.t}–${c.last}` : on ? "no command" : "");
       const poll = (mine(name) ?? []).find((e) => e.k === "poll");
       setText(p.poll, poll ? `poll ${poll.block}: busy = ${poll.value}` : "");
-      p.poll.classList.toggle("hit", !!poll);
       p.poll.classList.toggle("waiting", !!poll?.value);
+      p.poll.classList.toggle("done", !!poll && !poll.value);
     }
   }
 

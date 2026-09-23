@@ -10,9 +10,12 @@
 //                 A DMA's tasks carry their direction (L2 → L1, L1 → L2, D58).
 //   detail rows   beat level only, for components that ran a task: one per
 //                 xbar port the component owns, labelled `<port>.target_banks`
-//                 (`<owner>.target_banks` for a single port, D58): grants and
-//                 stalls, with bank numbers when there is room; its FIFO
-//                 (largest lane count), its firings or its DMA beats.
+//                 (`<owner>.target_banks` for a single port, D58): accepted
+//                 requests (teal) and stalls (red) with bank numbers when
+//                 there is room, and a green strip under the cell when read
+//                 data comes back (resp, D62); its FIFO (largest lane count),
+//                 its firings or its DMA requests (with the L2 read data
+//                 coming back under the read requests).
 //
 // The chart scrolls in one box with the row labels pinned on the left, and
 // its height is capped so the cluster view fits under it. The mouse wheel
@@ -31,7 +34,7 @@
 
 import { dec, h, int } from "./dom.js";
 import { clusterView } from "./cluster.js";
-import { BEAT_KINDS, GROUP, beatTraced, byOwner, classAt, describe, fifoCount, fifoIndex, taskEvents } from "./events.js";
+import { BEAT_KINDS, GROUP, beatTraced, byOwner, classAt, describe, fifoCount, fifoIndex, onPort, taskEvents } from "./events.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const MAIN_H = 24; // px, main row
@@ -134,16 +137,20 @@ function buildRows(detail, win, tasks, beats, fifo, showDetail) {
     // One row per xbar port the component owns, named after what it shows (D58).
     const ports = Object.entries(profile.ports).filter(([, p]) => p.owner === name);
     for (const [port, p] of ports) {
-      const evs = mine.filter((e) => (e.k === "grant" || e.k === "stall") && e.port === port);
+      const evs = mine.filter((e) => onPort(e) && e.k !== "resp" && e.port === port);
+      const back = mine.filter((e) => e.k === "resp" && e.port === port);
       rows.push({
         name, label: `${ports.length === 1 ? name : port}.target_banks`, sub: `${p.width} bits`,
-        title: `port ${port}, ${p.width} bits: the bank of each grant and stall`, height: SUB_H, detail: true,
+        title: `port ${port}, ${p.width} bits: the bank of each request and stall; a green strip where read data comes back`, height: SUB_H, detail: true,
         draw(g, x, cw) {
+          for (const e of back) { // under the request cells, so both show in a cycle with both
+            g.append(s("rect", { x: x(e.t) + 0.5, y: SUB_H - 4, width: Math.max(cw - 1, 0.5), height: 3, class: "s-resp" }, `cycle ${e.t}: ${describe(e)}`));
+          }
           for (const e of evs) {
-            const cls = e.k === "grant" ? "s-busy" : e.wider ? "s-mem wider" : "s-mem";
-            g.append(s("rect", { x: x(e.t) + 0.5, y: 2, width: Math.max(cw - 1, 0.5), height: SUB_H - 4, class: cls }, `cycle ${e.t}: ${describe(e)}`));
+            const cls = e.k === "grant" ? "s-req" : e.wider ? "s-mem wider" : "s-mem";
+            g.append(s("rect", { x: x(e.t) + 0.5, y: 2, width: Math.max(cw - 1, 0.5), height: SUB_H - 7, class: cls }, `cycle ${e.t}: ${describe(e)}`));
             const text = e.banks.length > 1 ? `${e.banks[0]}+` : String(e.banks[0]);
-            if (cw >= text.length * 6 + 4) txt(g, { x: x(e.t) + cw / 2, y: SUB_H - 5, class: "cell-text mid on-dark" }, text);
+            if (cw >= text.length * 6 + 4) txt(g, { x: x(e.t) + cw / 2, y: SUB_H - 7, class: "cell-text mid on-dark" }, text);
           }
         },
       });
@@ -193,12 +200,17 @@ function buildRows(detail, win, tasks, beats, fifo, showDetail) {
     if (spec.kind === "dma") {
       for (const side of ["src", "dst"]) {
         const evs = mine.filter((e) => e.k === "dma_beat" && e.side === side);
+        const back = side === "src" ? mine.filter((e) => e.k === "resp" && !e.port) : []; // L2 read data (D62)
         rows.push({
-          name, label: `${name} ${side === "src" ? "reads" : "writes"}`, sub: "beats", height: SUB_H, detail: true,
+          name, label: `${name} ${side === "src" ? "reads" : "writes"}`, sub: "requests", height: SUB_H, detail: true,
+          title: side === "src" ? "read requests by beat; a green strip where L2 read data comes back" : "write requests by beat",
           draw(g, x, cw) {
+            for (const e of back) {
+              g.append(s("rect", { x: x(e.t) + 0.5, y: SUB_H - 4, width: Math.max(cw - 1, 0.5), height: 3, class: "s-resp" }, `cycle ${e.t}: ${describe(e)}`));
+            }
             for (const e of evs) {
-              g.append(s("rect", { x: x(e.t) + 0.5, y: 2, width: Math.max(cw - 1, 0.5), height: SUB_H - 4, class: "s-busy" }, `cycle ${e.t}: ${describe(e)}`));
-              if (cw >= String(e.i).length * 6 + 4) txt(g, { x: x(e.t) + cw / 2, y: SUB_H - 5, class: "cell-text mid on-dark" }, String(e.i));
+              g.append(s("rect", { x: x(e.t) + 0.5, y: 2, width: Math.max(cw - 1, 0.5), height: SUB_H - 7, class: "s-req" }, `cycle ${e.t}: ${describe(e)}`));
+              if (cw >= String(e.i).length * 6 + 4) txt(g, { x: x(e.t) + cw / 2, y: SUB_H - 7, class: "cell-text mid on-dark" }, String(e.i));
             }
           },
         });
@@ -473,10 +485,10 @@ export async function renderSchedule(root, detail, ctx) {
   const note = beat
     ? `Cycles ${int(from)} to ${int(to - 1)} of ${int(total)}. Idle is blank. Under each row, a line runs from each task's start to its done. Click a cycle, or step with the arrow keys, to show it in the cluster view below.` +
       (filtered ? " This beat trace is filtered (see the header), so some detail rows are empty." : "")
-    : `Cycles ${int(from)} to ${int(to - 1)} of ${int(total)}. Task-level trace: class runs, tasks and commands; run with --trace beat for grants, FIFO counts and firings.`;
+    : `Cycles ${int(from)} to ${int(to - 1)} of ${int(total)}. Task-level trace: class runs, tasks and commands; run with --trace beat for requests, read data, FIFO counts and firings.`;
 
   const legend = h("ul", { class: "legend" },
-    [["busy", "Busy, grant, firing, beat"], ["mem", "Memory stall"], ["flow", "Flow stall"], ["command", "Controller command"], ["wait", "Controller wait"], ["fifo", "FIFO count (largest lane)"]]
+    [["busy", "Busy, firing, read data back (strip)"], ["req", "Request (accepted)"], ["mem", "Memory stall"], ["flow", "Flow stall"], ["command", "Controller command"], ["wait", "Controller wait"], ["fifo", "FIFO count (largest lane)"]]
       .map(([g, label]) => h("li", {}, h("i", { class: `key g-${g}` }), label)));
 
   const controls = h("form", { class: "sched-controls", onsubmit: (e) => { e.preventDefault(); apply(); } },

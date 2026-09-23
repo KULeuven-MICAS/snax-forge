@@ -127,7 +127,7 @@ import numpy as np
 
 from .mem import BankReq, BankResp, L1Memory
 from .sched import Component, Phase, SimulationError
-from .trace import Grant, Stall
+from .trace import Grant, Resp, Stall
 
 
 class HoldViolation(SimulationError):
@@ -167,7 +167,8 @@ class Xbar(Component):
         ``lock[g]``  lock (selection was refused) per group of g banks
                      (``prev[1]`` / ``lock[1]`` are the per-bank ones of MOD3)
         ``_held``    per port: request refused last cycle, for the hold check
-        ``_due``     per port: (ready cycle, banks) of outstanding reads
+        ``_due``     per port: (ready cycle, banks, addr) of outstanding reads
+                     (addr only for the trace's ``resp`` event, D62)
     * this cycle's wires, cleared in ``commit``:
         ``_now``, ``_req``, ``_grant``, ``_wider`` (refused by a wider
         grant), ``_arbitrated``, ``_sel``, ``_lock_next``, ``_new_due``.
@@ -250,7 +251,7 @@ class Xbar(Component):
         self._prev_idle = {g: list(v) for g, v in self.prev.items()}
         self._lock_idle = {g: list(v) for g, v in self.lock.items()}
         self._held: list[_Req | None] = [None] * n
-        self._due: list[deque[tuple[int, tuple[int, ...]]]] = [deque() for _ in range(n)]
+        self._due: list[deque[tuple[int, tuple[int, ...], int]]] = [deque() for _ in range(n)]
         # Statistics (read as arrays through the properties below).
         self._bank_grants = [0] * nb
         self._bank_conflicts = [0] * nb
@@ -302,7 +303,8 @@ class Xbar(Component):
         # request. Every other group takes the idle default (N-1, no lock).
         self._sel: dict[tuple[int, int], int] = {}
         self._lock_next: set[tuple[int, int]] = set()
-        self._new_due: list[tuple[int, int, tuple[int, ...]]] = []  # (port, ready, banks)
+        # (port, ready, banks, addr) of reads granted this cycle
+        self._new_due: list[tuple[int, int, tuple[int, ...], int]] = []
 
     def _enter(self, cycle: int) -> None:
         """Called by every wire driver: the wires must belong to ``cycle``."""
@@ -364,12 +366,12 @@ class Xbar(Component):
         if not self._frozen:
             return None
         banks = None
-        for ready, bs in self._due[port]:  # committed: reads from earlier cycles
+        for ready, bs, _ in self._due[port]:  # committed: reads from earlier cycles
             if ready == cycle:
                 banks = bs
                 break
         if banks is None and self._now == cycle:  # wire: latency-0 read this cycle
-            for p, ready, bs in self._new_due:
+            for p, ready, bs, _ in self._new_due:
                 if p == port and ready == cycle:
                     banks = bs
         if banks is None:
@@ -390,7 +392,7 @@ class Xbar(Component):
         """
         if not self._frozen:
             return None
-        for ready, _ in self._due[port]:  # in issue order, so in ready order
+        for ready, _, _ in self._due[port]:  # in issue order, so in ready order
             if ready > cycle:
                 return ready
         return None
@@ -492,7 +494,7 @@ class Xbar(Component):
                     sub = BankReq(r.req.addr + i * wb, r.req.write, r.wdata[i], r.strb[i], tag)
                     self.mem.request(cycle, sub)
             if not r.req.write:
-                self._new_due.append((p, cycle + lat, r.banks))
+                self._new_due.append((p, cycle + lat, r.banks, int(r.req.addr)))
 
     def commit(self, cycle: int) -> None:
         """End of cycle: pointers and locks take their next value, wires clear."""
@@ -508,15 +510,20 @@ class Xbar(Component):
             self.lock[g][grp] = True
         for p, r in enumerate(self._req):
             self._held[p] = r if (r is not None and not self._grant[p]) else None
-        for p, ready, banks in self._new_due:
-            self._due[p].append((ready, banks))
+        for p, ready, banks, addr in self._new_due:
+            self._due[p].append((ready, banks, addr))
         for q in self._due:  # drop data whose RESPONSE phase has passed
             while q and q[0][0] <= cycle:
                 q.popleft()
         self._clear_wires()
 
     def _emit(self, cycle: int) -> None:
-        """Beat-level trace: one grant or stall per requesting port, in port order."""
+        """Beat-level trace: one grant or stall per requesting port, in port order,
+        then one ``resp`` per port whose read data leaves the banks in ``cycle``.
+
+        The xbar is awake in that cycle: the port's owner wakes for its read
+        data (``next_rdata``) and the xbar is awake whenever an owner is.
+        """
         tr = self._trace
         for p, r in enumerate(self._req):
             if r is None:
@@ -534,6 +541,11 @@ class Xbar(Component):
                 tr.emit(Grant(cycle, self.name, **kw))
             else:
                 tr.emit(Stall(cycle, self.name, wider=bool(self._wider[p]), **kw))
+        due = [(p, b, a) for p, q in enumerate(self._due) for ready, b, a in q if ready == cycle]
+        due += [(p, b, a) for p, ready, b, a in self._new_due if ready == cycle]  # latency 0
+        for p, banks, addr in sorted(due, key=lambda d: d[0]):
+            tr.emit(Resp(cycle, self.name, mem="l1", addr=addr, port=self.ports[p].name,
+                         banks=tuple(int(b) for b in banks), row=int(self.mem.locate(addr)[1])))  # fmt: skip
 
     def next_wake(self, cycle: int) -> int | None:
         """Awake exactly when an owner is awake (see "Waking" in the module doc)."""

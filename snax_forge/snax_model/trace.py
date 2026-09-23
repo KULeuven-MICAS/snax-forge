@@ -12,8 +12,8 @@ Levels, chosen per run with ``Cluster(trace=Trace(level))``:
 * ``off``: nothing is recorded (same as no trace);
 * ``task``: controller commands, block starts and dones, and the
   cycle-class intervals of every classified component;
-* ``beat``: adds xbar grants and stalls (the L1 accesses), accelerator
-  firings, DMA beats, controller polls and FIFO count changes.
+* ``beat``: adds xbar grants and stalls (the L1 accesses), read responses,
+  accelerator firings, DMA beats, controller polls and FIFO count changes.
 
 Events (D39)
 ------------
@@ -25,6 +25,7 @@ plus the fields of its kind:
     task  done      (t = done_cycle: first cycle busy reads 0)
     beat  grant     port, mem, w, addr, banks, row
     beat  stall     port, mem, w, addr, banks, row, wider
+    beat  resp      mem, addr, then port, banks, row (L1) | i (L2)  (t = data returns)
     beat  fire      n (firing index)
     beat  dma_beat  side (src/dst), i (beat index), mem (l1/l2), addr
     beat  poll      block, value (busy as sampled)
@@ -39,8 +40,18 @@ words, computed with the run's address map. There is no separate L1 access
 event: the xbar serves every grant in the same cycle (D31), one access on
 each bank of the group (D33).
 
+``resp`` is a read's data coming back, in the cycle it leaves the memory
+(D62): the request is recorded when it is made, the response when its data
+returns, by the same source. The xbar emits it for L1 reads (``port``,
+``banks``, ``row`` as the grant, ``t`` = grant + ``L1Config.read_latency``);
+the DMA for its L2 reads (``i`` = beat index, ``t`` = the ``dma_beat`` read
++ ``L2Config.read_latency``). Writes have no response. A reader streamer's
+data is pushed into its FIFO in the ``resp`` cycle and counted from the
+next (the ``fifo`` event).
+
 Order inside a cycle (``finish`` sorts once, stably): state changes first,
-then action events by phase (CONTROL, COMPUTE, REQUEST, ARBITRATE), then by
+then action events by phase (CONTROL, COMPUTE, REQUEST, ARBITRATE,
+RESPONSE), then by
 source in registration order (``sources``), then in emission order. Emission
 order inside one source is fixed by the model (ports and lanes ascending,
 DMA source beat before destination beat), so the log is identical with
@@ -214,6 +225,23 @@ class Stall(Event):
     kind: ClassVar[str] = "stall"
     level: ClassVar[str] = "beat"
     group: ClassVar[int] = int(Phase.ARBITRATE)
+
+
+@register_event
+@dataclass(frozen=True)
+class Resp(Event):
+    """Read data returning in ``t`` (D62): an L1 read of ``port``, or an L2 read of DMA beat ``i``."""
+
+    mem: str = "l1"
+    addr: int = 0
+    port: str | None = None
+    banks: tuple[int, ...] | None = None
+    row: int | None = None
+    i: int | None = None
+
+    kind: ClassVar[str] = "resp"
+    level: ClassVar[str] = "beat"
+    group: ClassVar[int] = int(Phase.RESPONSE)
 
 
 @register_event

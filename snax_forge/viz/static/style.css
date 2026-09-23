@@ -1,9 +1,10 @@
 /* SNAX-FORGE viewer (VIS1-VIS3). System fonts only: the page loads nothing
    from the internet. One set of colours for every view, so a colour means the
-   same in the report, the schedule and the cluster view (D61): busy, a grant,
-   a beat or a firing green; idle grey; memory stalls (stall_xbar, stall_l1, a
-   stalled port, a contested bank) red; flow stalls violet; FIFO contents
-   lilac; controller command and wait blue. */
+   same in the report, the schedule and the cluster view (D61, D62): a memory
+   request teal (dashed where it is an arrow); busy, read data coming back and
+   a firing green; idle grey; memory stalls (stall_xbar, stall_l1, a stalled
+   port, a contested bank) red; flow stalls violet; FIFO contents lilac;
+   controller command and wait blue. */
 
 :root {
   --bg: #f5f6f7;
@@ -19,6 +20,8 @@
   --wait: #8fb7e2;
   --hot-bg: #fbeae8;
   --busy-bg: #e2f1e8;
+  --req: #13838c;
+  --req-bg: #ddf0f1;
   --gap: 1.25rem;
   color-scheme: light dark;
 }
@@ -37,6 +40,8 @@
     --wait: #3d5f85;
     --hot-bg: #3c2220;
     --busy-bg: #1d3426;
+    --req: #3bb9c3;
+    --req-bg: #16343a;
   }
 }
 
@@ -83,6 +88,8 @@ h3 { margin: 1.1rem 0 0.4rem; font-size: 1rem; }
 .g-command { background: var(--command); }
 .g-wait { background: var(--wait); }
 .g-other { background: var(--muted); }
+.g-req { background: var(--req); }
+i.key.dashed { background: repeating-linear-gradient(90deg, var(--req) 0 3px, transparent 3px 5px); box-shadow: inset 0 0 0 1px var(--req); }
 i.key { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px; margin-right: 0.35em; vertical-align: -0.05em; }
 
 .legend { display: flex; flex-wrap: wrap; gap: 0.3rem 1.2rem; list-style: none; padding: 0; margin: 0 0 0.9rem; color: var(--muted); font-size: 0.9em; }
@@ -176,6 +183,8 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .grid { stroke: var(--rule); stroke-opacity: 0.45; }
 .ruler-text { font-size: 10px; fill: var(--muted); }
 .s-busy { fill: var(--busy); }
+.s-req { fill: var(--req); }
+.s-resp { fill: var(--busy); }
 .s-mem { fill: var(--mem); }
 .s-mem.wider { fill: var(--mem); fill-opacity: 0.55; }
 .s-flow { fill: var(--flow); }
@@ -199,12 +208,12 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .cycle-table td:nth-child(2) { width: 10rem; }
 .cycle-table td div { white-space: nowrap; }
 
-/* -- cluster view (VIS3, D61) ------------------------------------------------------ */
+/* -- cluster view (VIS3, D61, D62) -------------------------------------------------- */
 .cl-note:empty { display: none; }
 .cl-frame { min-width: 44rem; }
 .muted { color: var(--muted); }
 
-/* L1: banks by superbank, one arrow cell under each bank */
+/* L1: banks by superbank, one arrow pair under each bank */
 .cl-l1-head { display: flex; align-items: baseline; gap: 0.5rem; margin-bottom: 0.3rem; }
 .cl-l1-head small { color: var(--muted); }
 .cl-banks { display: grid; column-gap: 3px; }
@@ -212,27 +221,38 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .cl-sb-head { font-size: 0.78em; color: var(--muted); border-bottom: 1px solid var(--rule); margin-bottom: 0.25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-sb-head small { margin-left: 0.4rem; }
 .sb-first { margin-left: 0.6rem; }
-.cl-bank { display: flex; flex-direction: column; align-items: center; min-width: 0; overflow: hidden; padding: 0.15rem 0 0.2rem; border: 1px solid var(--rule); border-radius: 3px; background: var(--panel); font-size: 0.78em; line-height: 1.25; transition: background-color 0.12s, border-color 0.12s; }
+.cl-bank { display: flex; flex-direction: column; align-items: center; min-width: 0; overflow: hidden; padding: 0.15rem 0 0.2rem; border: 1px solid var(--rule); border-radius: 3px; background: var(--panel); font-size: 0.78em; line-height: 1.25; transition: background-color 0.12s, border-color 0.12s, box-shadow 0.12s; }
 .cl-bank b { font-weight: 600; color: var(--muted); }
-.cl-bank .who { min-height: 1.25em; font-weight: 600; white-space: nowrap; }
+.cl-bank .who { min-height: 1.25em; font-weight: 600; color: var(--req); white-space: nowrap; }
 .cl-bank .acc { min-height: 1.25em; color: var(--muted); white-space: nowrap; }
-.cl-bank.on { background: var(--busy-bg); border-color: var(--busy); }
-.cl-bank.on b { color: var(--ink); }
+.cl-bank .back { min-height: 1.25em; font-weight: 600; color: var(--busy); white-space: nowrap; }
+.cl-bank.req { background: var(--req-bg); border-color: var(--req); }
+.cl-bank.req b, .cl-bank.resp b { color: var(--ink); }
+.cl-bank.resp { box-shadow: inset 0 -3px var(--busy); }
 .cl-bank.bad { border-color: var(--mem); box-shadow: inset 0 0 0 1px var(--mem); }
+.cl-bank.bad.resp { box-shadow: inset 0 0 0 1px var(--mem), inset 0 -3px var(--busy); }
 
-/* straight arrows: a faint guide when nothing moves, coloured with a head when something does */
+/* straight arrows: a faint guide when nothing moves, coloured with a head when something does.
+   A pair holds the request lane (teal, dashed) and the response lane (green, solid). */
+.cl-pair { display: flex; justify-content: center; min-width: 0; }
+.cl-pair.v { gap: 6px; height: 1.7rem; }
+.cl-pair.h { flex-direction: column; gap: 7px; }
 .cl-arrow { display: flex; justify-content: center; min-width: 0; color: var(--rule); }
 .cl-arrow.v { height: 1.7rem; }
-.cl-arrow.h { align-items: center; }
+.cl-pair .cl-arrow.v { width: 12px; height: auto; }
+.cl-arrow.h { align-items: center; height: 12px; }
 .cl-arrow i { display: block; position: relative; background: currentColor; }
 .cl-arrow.v i { width: 1px; }
 .cl-arrow.h i { flex: 1; height: 1px; }
 .cl-arrow.none i { visibility: hidden; }
 .cl-arrow.on { color: var(--busy); }
+.cl-arrow.req.on { color: var(--req); }
 .cl-arrow.on.bad { color: var(--mem); }
 .cl-arrow.on i { visibility: visible; }
 .cl-arrow.on.v i { width: 3px; }
 .cl-arrow.on.h i { height: 3px; }
+.cl-arrow.req.on.v i { background: repeating-linear-gradient(to bottom, currentColor 0 4px, transparent 4px 7px); }
+.cl-arrow.req.on.h i { background: repeating-linear-gradient(to right, currentColor 0 4px, transparent 4px 7px); }
 .cl-arrow.up i { margin-top: 7px; }
 .cl-arrow.down i { margin-bottom: 7px; }
 .cl-arrow.left i { margin-left: 7px; }
@@ -255,7 +275,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .cl-conflicts { margin: 0; padding: 0; list-style: none; }
 .cl-conflicts .stalled { color: var(--mem); font-weight: 600; }
 
-/* requesters, accelerators and controller in one grid: rows arrow, block, arrow, accelerator, controller */
+/* requesters, accelerators and controller in one grid: rows arrows, block, arrow, accelerator, controller */
 .cl-req { display: grid; column-gap: 0.6rem; }
 .cl-box { min-width: 0; padding: 0.3rem 0.5rem 0.4rem; border: 1px solid var(--rule); border-left: 4px solid var(--rule); border-radius: 3px; background: var(--panel); font-size: 0.85em; transition: background-color 0.12s, border-color 0.12s; }
 .cl-box[data-group="busy"] { border-left-color: var(--busy); }
@@ -272,24 +292,27 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .cl-cls { margin-left: auto; color: var(--muted); font-size: 0.92em; white-space: nowrap; }
 .cl-body { display: grid; gap: 0.25rem; margin-top: 0.25rem; }
 .cl-line { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cl-line.hit { color: var(--busy); font-weight: 600; }
-.cl-line.hit.waiting { color: var(--command); }
+.cl-line.req { color: var(--req); font-weight: 600; }
+.cl-line.resp, .cl-line.done { color: var(--busy); font-weight: 600; }
+.cl-line.waiting { color: var(--command); font-weight: 600; }
 .cl-sub { color: var(--muted); font-size: 0.8em; }
 
+/* port chips: teal = request accepted, red = stalled, green underline = read data back */
 .cl-ports { display: flex; flex-wrap: wrap; gap: 3px; }
-.cl-port { padding: 0 0.3rem; border: 1px solid var(--rule); border-radius: 3px; color: var(--muted); font-size: 0.82em; }
-.cl-port.ok { background: var(--busy); border-color: var(--busy); color: #fff; }
+.cl-port { padding: 0 0.3rem; border: 1px solid var(--rule); border-radius: 3px; color: var(--muted); font-size: 0.82em; text-align: center; transition: background-color 0.12s, border-color 0.12s; }
+.cl-port.req { background: var(--req); border-color: var(--req); color: #fff; }
 .cl-port.bad { background: var(--mem); border-color: var(--mem); color: #fff; }
+.cl-port.resp { box-shadow: inset 0 -3px var(--busy); }
 
-/* FIFO lanes: one column of `depth` slots per lane, filled from the bottom */
-.cl-fifo { display: flex; flex-wrap: wrap; gap: 4px; align-items: flex-end; }
-.cl-lane { display: flex; flex-direction: column; align-items: center; gap: 2px; }
-.cl-lane .slots { display: flex; flex-direction: column-reverse; gap: 2px; width: 1.1rem; height: 2.6rem; }
-.cl-lane .slot { flex: 1; border: 1px solid var(--rule); border-radius: 2px; background: var(--bg); transition: background-color 0.12s, border-color 0.12s; }
-.cl-lane .slot.full { background: var(--fifo); border-color: var(--flow); }
-.cl-lane.bar .slots { border: 1px solid var(--rule); border-radius: 2px; background: var(--bg); }
-.cl-lane .fill { display: block; background: var(--fifo); transition: height 0.12s; }
-.cl-lane small { font-size: 0.75em; color: var(--muted); }
-.cl-lane.unknown .slot, .cl-lane.untraced .slot { border-style: dashed; }
+/* lanes: one grid column per lane, its port on top, its FIFO slots (filled from the bottom), its count */
+.cl-lanes { display: grid; gap: 3px 4px; justify-content: start; justify-items: stretch; align-items: end; }
+.cl-lanes .cl-port { padding: 0; }
+.cl-lanes .slots { display: flex; flex-direction: column-reverse; gap: 2px; height: 2.6rem; }
+.cl-lanes .slot { flex: 1; border: 1px solid var(--rule); border-radius: 2px; background: var(--bg); transition: background-color 0.12s, border-color 0.12s; }
+.cl-lanes .slot.full { background: var(--fifo); border-color: var(--flow); }
+.cl-lanes .slots.bar { border: 1px solid var(--rule); border-radius: 2px; background: var(--bg); }
+.cl-lanes .fill { display: block; background: var(--fifo); transition: height 0.12s; }
+.cl-lanes .count { text-align: center; font-size: 0.75em; color: var(--muted); line-height: 1.1; }
+.cl-lanes .slots.unknown .slot, .cl-lanes .slots.untraced .slot { border-style: dashed; }
 
-.cluster.task-only .cl-banks, .cluster.task-only .cl-ports, .cluster.task-only .cl-fifo { opacity: 0.45; }
+.cluster.task-only .cl-banks, .cluster.task-only .cl-ports, .cluster.task-only .cl-lanes { opacity: 0.45; }

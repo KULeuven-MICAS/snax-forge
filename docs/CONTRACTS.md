@@ -451,7 +451,8 @@ Cycle classes, one per cycle per component, in this order:
 final wires in commit. Levels: `off`; `task` = controller commands, block
 starts and dones, and the class intervals; `beat` = adds xbar grants and
 stalls (these *are* the L1 accesses: there is no separate access event),
-accelerator firings, DMA beats, controller polls and FIFO count changes.
+read responses, accelerator firings, DMA beats, controller polls and FIFO
+count changes.
 Every event is a flat dict of `t`, `k`, `src` and the kind's own fields:
 
 <!-- snippet: snax_forge/snax_model/trace.py -->
@@ -461,6 +462,7 @@ Every event is a flat dict of `t`, `k`, `src` and the kind's own fields:
     task  done      (t = done_cycle: first cycle busy reads 0)
     beat  grant     port, mem, w, addr, banks, row
     beat  stall     port, mem, w, addr, banks, row, wider
+    beat  resp      mem, addr, then port, banks, row (L1) | i (L2)  (t = data returns)
     beat  fire      n (firing index)
     beat  dma_beat  side (src/dst), i (beat index), mem (l1/l2), addr
     beat  poll      block, value (busy as sampled)
@@ -468,7 +470,13 @@ Every event is a flat dict of `t`, `k`, `src` and the kind's own fields:
 ```
 
 An action event carries the cycle it happens in; a state change (`done`,
-`fifo`) the first cycle its new state is visible. Inside a cycle the order is
+`fifo`) the first cycle its new state is visible. A read shows up twice (D62):
+its `grant` in the cycle the request is accepted, and its `resp` in the
+cycle the data returns (`grant` + `L1Config.read_latency`, from the xbar
+with the same `port`, `addr`, `banks` and `row`). An L2 read is a DMA
+`dma_beat` with `side: src`, `mem: l2`, and a `resp` from the DMA with the
+same `i` and `addr`, `L2Config.read_latency` later. Writes have no `resp`.
+A reader's FIFO count rises the cycle after the `resp` (`Queue`, D32). Inside a cycle the order is
 state changes, then phase, then source in registration order, then emission
 order — identical with skipping on and off.
 

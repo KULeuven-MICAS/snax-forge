@@ -14,7 +14,7 @@
 import { CLASS_GROUP } from "./dom.js";
 
 export const TASK_KINDS = ["cmd", "start", "done"];
-export const BEAT_KINDS = ["grant", "stall", "fire", "dma_beat", "poll", "fifo"];
+export const BEAT_KINDS = ["grant", "stall", "resp", "fire", "dma_beat", "poll", "fifo"];
 
 /** Colour group of each class that is drawn; idle is left out (left blank). */
 export const GROUP = Object.fromEntries(Object.entries(CLASS_GROUP).filter(([c]) => c !== "idle"));
@@ -97,11 +97,14 @@ export function classAt(runs, t) {
   return lo < runs.length && runs[lo][1] <= t ? runs[lo][0] : null;
 }
 
-/** Group events by owner: grants and stalls go to the port's owner, a FIFO to its streamer. */
+/** Is this event an xbar port's (grant, stall, or an L1 read response)? */
+export const onPort = (e) => e.k === "grant" || e.k === "stall" || (e.k === "resp" && !!e.port);
+
+/** Group events by owner: port events go to the port's owner, a FIFO to its streamer. */
 export function byOwner(events, profile) {
   const fifoOwner = Object.fromEntries(Object.entries(profile.streamers).map(([n, st]) => [st.fifo.name, n]));
   const owner = (e) => {
-    if (e.k === "grant" || e.k === "stall") return profile.ports[e.port]?.owner ?? e.src;
+    if (onPort(e)) return profile.ports[e.port]?.owner ?? e.src;
     if (e.k === "fifo") return fifoOwner[e.src] ?? e.src;
     return e.src;
   };
@@ -126,11 +129,14 @@ export function describe(e) {
     case "done": return "done (busy reads 0 from here)";
     case "grant":
     case "stall": {
-      const head = e.k === "grant" ? "granted" : e.wider ? "stalled by a wider grant" : "stalled";
+      const head = e.k === "grant" ? "request accepted" : e.wider ? "stalled by a wider grant" : "stalled";
       return `${e.port} ${head}: ${e.w ? "write" : "read"} ${e.mem} addr ${e.addr}, ${bankText(e.banks)}, row ${e.row}`;
     }
+    case "resp": return e.port
+      ? `${e.port} read data back: ${e.mem} addr ${e.addr}, ${bankText(e.banks)}, row ${e.row}`
+      : `read data of beat ${e.i} back: ${e.mem} addr ${e.addr}`;
     case "fire": return `firing ${e.n}`;
-    case "dma_beat": return `${e.side === "src" ? "read" : "write"} beat ${e.i}, ${e.mem} addr ${e.addr}`;
+    case "dma_beat": return `${e.side === "src" ? "read" : "write"} request, beat ${e.i}, ${e.mem} addr ${e.addr}`;
     case "poll": return `poll ${e.block}: busy = ${e.value}`;
     case "fifo": return `${e.src} lane ${e.lane} holds ${e.count} from here`;
     default: return JSON.stringify(e);

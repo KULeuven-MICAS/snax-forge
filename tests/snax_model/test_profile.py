@@ -331,6 +331,18 @@ def check_trace_against_counters(r):
         assert sum(e.side == "dst" for e in mine) == d.beats_written
     assert sum(e.mem == "l2" and e.side == "src" for e in beats) == p.l2["l2"].reads
     assert sum(e.mem == "l2" and e.side == "dst" for e in beats) == p.l2["l2"].writes
+    # Read responses (D62): one per read, read_latency after its request, same
+    # words; L1 reads through the xbar, L2 reads through the DMA. Writes have none.
+    resps = tr.of_kind("resp")
+    lat, l2_lat = r["mem"].cfg.read_latency, r["l2"].cfg.read_latency
+    want = sorted((e.src, e.port, e.t + lat, e.addr, e.banks, e.row) for e in grants if not e.w)
+    got = sorted((e.src, e.port, e.t, e.addr, e.banks, e.row) for e in resps if e.mem == "l1")
+    assert got == want
+    l2_reads = [e for e in beats if e.mem == "l2" and e.side == "src"]
+    want = sorted((e.src, e.i, e.t + l2_lat, e.addr) for e in l2_reads)
+    got = sorted((e.src, e.i, e.t, e.addr) for e in resps if e.mem == "l2")
+    assert got == want
+    assert all((e.mem == "l1") == (e.port is not None) == (e.i is None) for e in resps)
     # Accelerator firings: one fire event per firing (busy also counts II gaps, D59).
     for name, a in p.accelerators.items():
         assert sum(e.src == name for e in tr.of_kind("fire")) == a.firings  # D59
