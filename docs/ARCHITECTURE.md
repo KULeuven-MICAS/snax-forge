@@ -404,23 +404,34 @@ can be filtered by source and by cycle window (`--trace-source`,
 task events and the profile are never filtered (D49). The compressed summary
 for LLM use is VIS7.
 
-**Visualiser** (Python-generated HTML), with views for:
+**Visualiser** (`snax_forge/viz/`, D55): a local server plus a static viewer,
+for humans; LLMs read the profile and later VIS7's summary. The server
+(stdlib `http.server`, bound to 127.0.0.1, no new dependency) loads the run
+directories given on the command line once and answers a small JSON API;
+the viewer is plain HTML, JS modules and CSS with no build step and no
+external file, so it works offline. Reload is a button that re-reads the
+directories; nothing watches the files. Views:
 
-- SNAX-DFG (original and optimised)
+- the profile report of a run (VIS1)
+- the schedule: per component its activity over time, HLS-schedule style,
+  with a selected cycle the cluster view follows (VIS2, D57)
+- the cluster view: banks, interconnect, streamers, accelerator and DMA per
+  cycle, linked to the schedule (VIS3)
 - the design point (memory map, accelerator instances)
-- a timeline
-- utilisation
-- bank conflicts
+- SNAX-DFG (original and optimised)
 - a diff between two runs (design point and profile; config changes once
   SNAX-DSE exists)
 
-The visualiser comes in two parts (D54). The run views — scaffold, timeline,
-utilisation and bank conflicts (M4a) — read only a model run's output
+`python -m snax_forge.viz DIR [DIR ...]` (pixi `view`) takes several runs
+from the start, which the diff needs. The visualiser comes in two parts
+(D54). The run views (M4a: VIS1–VIS3) read only a model run's output
 directory and are built before M3. The design point and DFG views, the diff,
 the LLM summary and the first manual loop (M4b) follow M3, so one full manual
 loop is still possible before `dot`. Until the contract freeze, views read the
 same Python dataclasses as the model rather than raw JSON: a run's output
-files are loaded back with each class's `from_dict` (D38, D50).
+files are loaded back with `read_outputs` and each class's `from_dict` (D38,
+D50). FIFO occupancy is also shown over the FIFO's busy window (D56), which
+needs a task or beat trace.
 
 ### 5.8 Thinkers
 
@@ -597,6 +608,9 @@ cluster RTL (section 7), with a regression test.
 | D52 | Cosim is independent of the inner loop: nothing in M3–M9 waits on it. It replaces only the accelerator with its RTL and checks the accelerator's output and its declared `latency` / `ii`; it checks nothing about the platform. Integrating generated accelerators into the real SNAX cluster is outside the current plan. Amends section 5.9 and section 6 level 3 | 15 |
 | D53 | SNAX-LOWER produces both inputs of a model run: the cluster file (accelerator entries from each BRM's interface and timing parts, one streamer per port with `n_ports` = lanes, platform parts from the design point's cluster configuration, register map) and the control program. Deriving the cluster file decides nothing, so principle 4 holds. The layout is that of `scenarios/clusters/alu4.json` for now. Refines D18, D45 | 15 |
 | D54 | The visualiser is split. M4a (VIS1–VIS3: scaffold, timeline, utilisation and bank conflicts) reads only a model run's output directory, loaded back into the model's dataclasses, and is built before M3: model outputs have been stable since MOD10, and the views help debug M3's runs. M4b (VIS4–VIS7, LOOP1) needs the design point or the DFG and follows M3. VIS1 is tested on `scenarios/vecadd` instead of E2E1. Order M1, M4a, M3, M4b, M5–M10, M2. Amends D24, D51 (order) and section 5.7 | 15 |
+| D55 | The visualiser is a local server plus a static viewer, for humans only (LLMs read the profile and later VIS7). Package `snax_forge/viz/`: `server.py` (stdlib `ThreadingHTTPServer` bound to 127.0.0.1, no new dependency), `api.py` (plain functions the server calls), `__main__.py` and `static/` (index.html, plain JS modules, CSS; no npm, no build step, no external file, works offline). CLI `python -m snax_forge.viz DIR [DIR ...] [--port 8765]`, pixi `view`; several run directories from the start (VIS6). Runs are loaded once with `read_outputs` plus `ClusterConfig.from_dict(run["cluster"])` (D50, D54); a Reload button re-reads them, no file watching. Routes: `/api/runs`, `/api/run/<name>` (run.json, profile, class intervals), `/api/run/<name>/events?from=A&to=B&src=...` (A <= t < B by bisect on the sorted events, D39), `/api/run/<name>/fifo` (D56), `POST /api/reload`. Tests are Python-only: the API, not HTML or drawing, which is checked by eye. M4a is regrouped: VIS1 = server, CLI, viewer shell and profile report; VIS2 = schedule; VIS3 = cluster view. Amends section 5.7 ("Python-generated HTML"), D54 (VIS1's snapshot test) and the VIS1–VIS3 rows | 16 |
+| D56 | FIFO busy window. For a streamer's FIFO, the window is the union over tasks of [first start, last done) of the streamer and the accelerators attached to it (`attach`), from the task-level `start` / `done` events; the k-th task of each owner is taken together, and extra tasks of one owner are windows on their own. Outside the window the FIFO is empty, so the window histogram is the run histogram with the count-0 bucket reduced by the cycles outside it; if that bucket would go negative the window numbers are withheld with a reason. Needs at least a task trace (task events are never filtered, D49); at level `off` only the whole-run statistics are shown. Closes the VIS3 part of open item 11 | 16 |
+| D57 | Schedule view (VIS2). One row per classified component in registration order, one column per cycle over a window [from, to): the class runs from the trace intervals with idle left blank, a line per task from its `start` to its `done`, and the controller's commands with their registers. At beat level, detail rows for components that ran a task: one per xbar port they own (grants, stalls, bank numbers), the FIFO (largest lane count), firings, DMA read and write beats, polls. Default window: the whole run at task level, the first 400 cycles at beat level. View state (run, view, window, zoom, selected cycle) lives in the URL hash; the selected cycle is what the cluster view (VIS3) follows, and a panel lists every component's class and every event in it. The events route gets a kind filter `k=` so the task events of the whole run and the FIFO counts before the window come without the beat events in between. Needs at least a task trace. Amends D55 (routes) | 17 |
 
 ## 11. Open Items
 
@@ -614,7 +628,7 @@ it.
 8. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D35): copy or keep out, decided with the deferred anchor (D51); the drain cycle at the latest in BRM4.
 9. Mapping the register blocks (D36) onto the real SNAX interfaces in SNAX-LOWER's C backend (GEN2): streamer and accelerator registers onto ReqRspManager CSRs, DMA registers onto iDMA instructions.
 10. Calibrating the controller costs (D37): write and read cost per block kind (DMA programming separately), poll interval and signal latency. Calibrated with the deferred anchor (D51); until then they are declared defaults.
-11. Statistics that need the class intervals rather than totals (D38, D40): FIFO occupancy over the owner's busy window instead of the whole run (VIS3), and the overlap of accelerator-active phases with control overhead for the anchor report (section 7, deferred).
+11. Statistics that need the class intervals rather than totals (D38, D40): the overlap of accelerator-active phases with control overhead for the anchor report (section 7, deferred). The FIFO busy-window part is closed by D56 (VIS1).
 12. ~~A beat-level trace filter by source or cycle window~~ — closed by D49 (MOD10): `--trace-source` and `--trace-window`, in `Trace.emit` only.
 13. The functional check field of the profile (D38): filled once the reference executor exists (REF1, E2E1); MOD9 can already compare final memory against NumPy.
 14. Starts made before a run (`start(..., cycle=None)`, tests only) are not traced (D39).
@@ -626,3 +640,4 @@ it.
 20. A streamer port is always one bank wide: section 5.6 lists port width as a cluster parameter, but only the DMA uses a wide port, and `StreamerConfig` has no width. Add one when a kernel needs it (the xbar already takes 128 and 256).
 21. `elems_per_word > 1` (D13) is exercised at the L1 only; the streamers, the accelerator and the DMA have never moved packed words. Decided with sub-word packing.
 22. `L1Config.base_addr` other than 0 works but is not tested end to end; add a scenario with a nonzero base when one is needed.
+23. Data values on beat-level `grant` and `fire` events (the words moved, the operands and results), so the cluster view can show them. Amends D39 and CONTRACTS.md section 7 when done; decided after VIS3 has been used.

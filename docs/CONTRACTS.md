@@ -490,7 +490,8 @@ kept per component and written to `trace_meta.json` as half-open runs
 Two things need the intervals rather than the totals, so they need at least a
 task-level trace: the anchor report's overlap of accelerator-active phases
 with control overhead (section 7 of ARCHITECTURE.md, deferred) and FIFO occupancy
-over the owner's busy window (VIS3). Both are open item 11.
+over the owner's busy window (D56, shown by the viewer since VIS1). The
+first is open item 11; the second closed it for the views.
 
 **Filter** (D49). A beat-level run writes roughly a kilobyte per cycle, so a
 long run needs `--trace-source NAME` (repeatable) or `--trace-window A:B`.
