@@ -100,6 +100,8 @@ profile    = "python -m snax_forge.sdfg --profile"
 # SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`
 model-run  = "python -m snax_forge.snax_model run"
 scenarios  = "python scenarios/make.py"
+# Viewer (VIS1, D55): `pixi run view out/vecadd [out/other ...]`, then open http://127.0.0.1:8765/
+view       = "python -m snax_forge.viz"
 
 # --- Chisel ---------------------------------------------------------------
 # `-batch` stops sbt from dropping into its interactive shell when a command
