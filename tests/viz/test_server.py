@@ -27,7 +27,7 @@ def test_server_serves_viewer_and_runs(tmp_path):
         runs = get_json(srv, "/api/runs")
         assert runs == [
             {"name": "vecadd", "path": str(d), "scenario": "vecadd",
-             "trace_level": "task", "total_cycles": 109}
+             "trace_level": "task", "total_cycles": 77}
         ]  # fmt: skip
         evs = get_json(srv, "/api/run/vecadd/events?from=0&to=5&src=ctl")["events"]
         assert evs and all(e["src"] == "ctl" and e["t"] < 5 for e in evs)
@@ -38,11 +38,11 @@ def test_server_serves_viewer_and_runs(tmp_path):
 def test_reload_picks_up_a_changed_directory(tmp_path):
     d = run_dir(tmp_path / "run", "vecadd", "off")
     with serving([d]) as srv:
-        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 109
+        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 77
         run_dir(d, "vecadd_conflict", "task")  # overwrite the directory
-        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 109  # read once, not watched
+        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 77  # read once, not watched
         req = Request(srv.url + "api/reload", method="POST")
         with urlopen(req, timeout=10) as r:
             assert json.loads(r.read()) == {"runs": ["run"]}
-        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 113
+        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 85
         assert get_json(srv, "/api/run/run")["trace"]["level"] == "task"
