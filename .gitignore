@@ -1,2 +1,5 @@
 __pycache__/
 out/
+.pytest_cache/
+.ruff_cache/
+.dacecache/

@@ -102,6 +102,8 @@ model-run  = "python -m snax_forge.snax_model run"
 scenarios  = "python scenarios/make.py"
 # Viewer (VIS1, D55): `pixi run view out/vecadd [out/other ...]`, then open http://127.0.0.1:8765/
 view       = "python -m snax_forge.viz"
+# Remove out/, Python and test caches and Chisel build trees; `pixi run clean --dry-run` only lists them
+clean      = "python util/clean.py"
 
 # --- Chisel ---------------------------------------------------------------
 # `-batch` stops sbt from dropping into its interactive shell when a command

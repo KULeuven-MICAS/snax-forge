@@ -18,6 +18,7 @@ checked against the file it came from, so update both together.
 - Environment: `pixi install`
 - Tests: `pixi run test` (everything under tests/), `pixi run test-model` (SNAX-MODEL only); CI runs `pixi run -e ci test`
 - Viewer: `pixi run view DIR [DIR ...]` serves model output directories at http://127.0.0.1:8765/ (D55)
+- Clean slate: `pixi run clean` removes out/, caches and Chisel build trees (`pixi run clean --dry-run` lists them first)
 - Lint/format: `pixi run lint` (ruff check + format check, CI runs it), `pixi run fmt` to fix
 
 ## Conventions
