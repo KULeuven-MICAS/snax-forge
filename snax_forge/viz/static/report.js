@@ -118,7 +118,15 @@ function streamerSection(detail, fifo) {
   const note = fifo.available
     ? "Occupancy per lane over the whole run, and over the busy window: the cycles in which the streamer or its accelerator had a task (D56). The histogram shows the window."
     : `Occupancy per lane over the whole run. Busy-window numbers need a task or beat trace (${fifo.reason}).`;
+  const key = [
+    ["Lane", "one FIFO lane per streamer port"],
+    ["Max", "the most beats the lane ever held (at most the FIFO depth)"],
+    ["Mean (run)", "average beats held over every cycle of the run"],
+    ["Mean (busy window)", "average beats held over the busy window only"],
+    ["Cycles per count", "how many cycles the lane held 0, 1, 2, … beats"],
+  ];
   return section("streamers", "Streamers and FIFOs", note,
+    h("ul", { class: "col-key" }, key.map(([k, v]) => h("li", {}, h("b", {}, k), `: ${v}`))),
     names.map((n) => {
       const s = profile.streamers[n];
       const f = s.fifo;
@@ -130,7 +138,7 @@ function streamerSection(detail, fifo) {
         hist: winLanes ? winLanes[lane].hist : hist,
       }));
       const winText = !win ? null : win.reason ? `Busy window withheld: ${win.reason}.`
-        : `Busy window: ${int(win.window_cycles)} of ${int(profile.total_cycles)} cycles, ${win.window.map(([a, b]) => `[${a}, ${b})`).join(" ")}, owners ${win.owners.join(" and ")}.`;
+        : `Busy window: ${int(win.window_cycles)} of ${int(profile.total_cycles)} cycles, owners ${win.owners.join(" and ")}.`;
       return h("div", { class: "block" },
         h("h3", {}, n, h("span", { class: "kind" }, `${s.write ? "writer" : "reader"}, ${s.ports.length} ports, FIFO ${f.name} depth ${f.depth}`)),
         winText ? h("p", { class: "note" }, winText) : null,
@@ -219,19 +227,9 @@ function controllerSection(detail) {
   const c = profile.controller;
   if (!c) return null;
   const total = profile.total_cycles;
-  const waits = c.waits.map((w) => ({ ...w, len: w.last - w.first + 1 }));
   return section("controller", "Controller",
-    `${int(c.commands)} commands (${int(c.reads)} reads), ${waits.length} waits, ${int(c.polls)} poll samples. Command cycles are control overhead, kept apart from waiting (D37).`,
+    `${int(c.commands)} commands (${int(c.reads)} reads), ${int(c.polls)} poll samples. Command cycles are control overhead, kept apart from waiting (D37).`,
     h("div", { class: "row single" }, classBar("controller", c.cycles, total), classCounts("controller", c.cycles, total)),
-    h("h3", {}, "Waits"),
-    waits.length ? table([
-      { key: "pc", label: "pc", num: true },
-      { key: "block", label: "Block" }, { key: "mode", label: "Mode" },
-      { key: "first", label: "First cycle", num: true, fmt: int },
-      { key: "last", label: "Last cycle", num: true, fmt: int },
-      { key: "len", label: "Cycles", num: true, fmt: int },
-      { key: "done", label: "Block done", num: true, fmt: int },
-    ], waits) : h("p", { class: "note" }, "No waits."),
     h("h3", {}, "csr_read values"),
     run.reads.length ? table([
       { key: "cycle", label: "Cycle", num: true, fmt: int },

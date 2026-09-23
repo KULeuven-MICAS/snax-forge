@@ -98,6 +98,10 @@ i.key { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px
   .row, .row.single { grid-template-columns: 1fr; }
 }
 
+/* column key under a section heading */
+.col-key { list-style: none; margin: 0 0 0.9rem; padding: 0; color: var(--muted); font-size: 0.9em; }
+.col-key b { color: var(--ink); font-weight: 600; }
+
 /* accelerators */
 .util { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
 .meter { width: 14rem; height: 0.8rem; background: var(--rule); border-radius: 3px; overflow: hidden; }
