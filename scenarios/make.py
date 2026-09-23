@@ -14,6 +14,7 @@ Files:
     clusters/alu4.json   DMA, readers ra and rb, writer wr, elementwise add, 4 lanes
     clusters/red4.json   reader ra (4 lanes), writer wr (1 lane), reduce; no L2
     vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the M3 target
+    vecadd_conflict/     vecadd with b in the same banks as a (VIS3's conflict case)
     reduce/              64 elements in L1 summed in groups of 16
     dma/                 L2 -> L1 with a 2D pattern and back, on alu4
 """
@@ -57,7 +58,7 @@ LANES = 4
 
 # Controller costs of the MOD7 vecadd (test_profile.VECADD_CFG). Declared
 # defaults, not measured (D51, open item 10).
-CTL = ControllerConfig(write_cost=1, kind_write_cost={"dma": 2}, read_cost=2, poll_interval=4)
+CTL = ControllerConfig(write_cost=1, read_cost=1, poll_interval=4)
 
 
 # =============================================================================
@@ -157,12 +158,26 @@ class Program:
 
 def vecadd() -> tuple[Scenario, dict[str, np.ndarray]]:
     """test_profile.run_vecadd(mode="poll"): same data, same program, same cluster."""
+    return _vecadd("vecadd", wb=72)
+
+
+def vecadd_conflict() -> tuple[Scenario, dict[str, np.ndarray]]:
+    """vecadd with b at L1 word 64: b starts in bank 0 like a, so ra and rb collide (VIS3).
+
+    Only b's L1 place changes: its DMA ``dst_base`` and ``rb.base`` (576 -> 512
+    bytes). Data, L2 layout and cluster file are vecadd's.
+    """
+    return _vecadd("vecadd_conflict", wb=64)
+
+
+def _vecadd(name: str, wb: int) -> tuple[Scenario, dict[str, np.ndarray]]:
+    """The vecadd body; ``wb`` is b's L1 word address (72 in vecadd, bank 8)."""
     n_elems = 64
     nb, n_dma = n_elems // LANES, n_elems // 8
     rng = np.random.default_rng(3)
     a, b = rng.integers(-1000, 1000, n_elems), rng.integers(-1000, 1000, n_elems)
     l2a, l2b, l2c = 0, 1024, 2048
-    wa, wb, wc = 0, 72, 144  # L1 word addresses
+    wa, wc = 0, 144  # L1 word addresses of a and c
 
     def to_l1(src: int, word: int) -> DmaDescriptor:
         return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
@@ -189,7 +204,7 @@ def vecadd() -> tuple[Scenario, dict[str, np.ndarray]]:
     p.start("dma")
     p.wait("dma", "poll")
     sc = Scenario(
-        name="vecadd",
+        name=name,
         cluster=cl,
         cluster_ref="../clusters/alu4.json",
         memory=[MemInit("l2", l2a, npy="a.npy"), MemInit("l2", l2b, npy="b.npy")],
@@ -269,7 +284,7 @@ def generate() -> dict[str, bytes]:
         "clusters/alu4.json": to_json(alu4().to_dict()).encode(),
         "clusters/red4.json": to_json(red4().to_dict()).encode(),
     }
-    for make in (vecadd, reduce, dma):
+    for make in (vecadd, vecadd_conflict, reduce, dma):
         sc, arrays = make()
         files[f"{sc.name}/scenario.json"] = to_json(sc.to_dict()).encode()
         for name, arr in arrays.items():

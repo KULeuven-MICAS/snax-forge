@@ -73,8 +73,8 @@
    "kind": "controller",
    "config": {
     "write_cost": 1,
-    "read_cost": 2,
-    "kind_write_cost": {"dma": 2},
+    "read_cost": 1,
+    "kind_write_cost": {},
     "kind_read_cost": {},
     "poll_interval": 4,
     "signal_latency": 1
