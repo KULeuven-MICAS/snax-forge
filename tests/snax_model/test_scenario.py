@@ -55,7 +55,7 @@ from snax_forge.snax_model.scenario import (
 
 REPO = Path(__file__).resolve().parents[2]
 SCEN = REPO / "scenarios"
-NAMES = ("vecadd", "vecadd_conflict", "reduce", "dma")
+NAMES = ("vecadd", "vecadd_conflict", "vecadd_tiled", "reduce", "dma")
 OUT_FILES = ("run.json", "profile.json", "trace.jsonl", "trace_meta.json", "l1.npy", "l2.npy")
 
 
@@ -123,6 +123,22 @@ def test_vecadd_from_cli(tmp_path):
     assert l2.shape == (4096, 1) and l2.dtype == np.int64
     assert np.array_equal(l2[256:320, 0], a + b)  # L2 byte 2048
     assert np.array_equal(l2[:64, 0], a) and np.array_equal(l2[128:192, 0], b)
+
+
+def test_vecadd_tiled_from_cli(tmp_path):
+    """Three tiles of 192 run one after another; c = a + b over all 576 elements.
+
+    The cycle count is pinned from the generator (1-cycle writes and reads):
+    the scenario exists to give the viewer a run of several hundred cycles.
+    """
+    assert cli("vecadd_tiled", tmp_path) == 0
+    a, b = npy("vecadd_tiled", "a.npy"), npy("vecadd_tiled", "b.npy")
+    l2 = np.load(tmp_path / "l2.npy")[:, 0]
+    assert np.array_equal(l2[1152:1728], a + b)  # L2 byte 2 * 576 * 8
+    prof = read_outputs(tmp_path).profile
+    assert prof.total_cycles == 471
+    assert not any(p.stalls for p in prof.ports.values())  # b is 8 banks after a
+    assert prof.dmas["dma"].beats_written == 3 * (2 * 24 + 24)  # per tile: a, b in; c out
 
 
 def test_reduce_from_cli(tmp_path):

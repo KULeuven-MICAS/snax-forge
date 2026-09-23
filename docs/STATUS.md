@@ -50,7 +50,8 @@ All tests use synthetic traffic and hand-written scenarios.
 
 Everything here reads only a model run's output directory, through the local
 server and viewer of D55 (`pixi run view DIR [DIR ...]`); tested on the M1
-scenarios and `scenarios/vecadd_conflict`.
+scenarios, `scenarios/vecadd_conflict` and `scenarios/vecadd_tiled`
+(3 tiles, 471 cycles, for a longer schedule).
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|

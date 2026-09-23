@@ -15,6 +15,7 @@ Files:
     clusters/red4.json   reader ra (4 lanes), writer wr (1 lane), reduce; no L2
     vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the M3 target
     vecadd_conflict/     vecadd with b in the same banks as a (VIS3's conflict case)
+    vecadd_tiled/        vecadd over 576 elements in 3 tiles of 192 (471 cycles)
     reduce/              64 elements in L1 summed in groups of 16
     dma/                 L2 -> L1 with a 2D pattern and back, on alu4
 """
@@ -217,6 +218,63 @@ def _vecadd(name: str, wb: int) -> tuple[Scenario, dict[str, np.ndarray]]:
     return sc, {"a.npy": a, "b.npy": b}
 
 
+# vecadd_tiled: TILED_N elements in tiles of TILE, one tile of a, b and c in L1 at a time.
+TILED_N = 576
+TILE = 192
+
+
+def vecadd_tiled() -> tuple[Scenario, dict[str, np.ndarray]]:
+    """vecadd over TILED_N elements in tiles of TILE, for a run of several hundred cycles.
+
+    alu4's L1 (1024 words) holds one tile each of a, b and c, so the tiles
+    run one after another: load a, load b, add, store c, with no overlap
+    (double buffering is J1's). b sits 8 banks after a as in vecadd, so the
+    readers do not collide. a, b and c are contiguous in L2 like vecadd's.
+    """
+    n_tiles = TILED_N // TILE
+    nb, n_dma = TILE // LANES, TILE // 8
+    rng = np.random.default_rng(7)
+    a, b = rng.integers(-1000, 1000, TILED_N), rng.integers(-1000, 1000, TILED_N)
+    l2a, l2b, l2c = 0, TILED_N * WORD, 2 * TILED_N * WORD
+    wa, wb, wc = 0, TILE + 8, 2 * TILE + 16  # L1 words: banks 0, 8 and 0
+
+    def load(src: int, word: int) -> DmaDescriptor:
+        return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
+
+    def store(word: int, dst: int) -> DmaDescriptor:
+        return DmaDescriptor("l1_to_l2", contiguous(word * WORD, n_dma), contiguous(dst, n_dma))
+
+    cl = alu4()
+    p = Program(cl)
+    for k in range(n_tiles):
+        off = k * TILE * WORD  # byte offset of tile k in each L2 array
+        p.config("dma", load(l2a + off, wa))
+        p.start("dma")
+        p.config("dma", load(l2b + off, wb))
+        p.wait("dma", "poll")
+        p.start("dma")
+        p.config("ra", unit(wa, nb, LANES))
+        p.config("rb", unit(wb, nb, LANES))
+        p.config("wr", unit(wc, nb, LANES))
+        p.config("acc", {"n": nb})
+        p.wait("dma", "poll")
+        for blk in ("ra", "rb", "wr", "acc"):
+            p.start(blk)
+        p.config("dma", store(wc, l2c + off))
+        p.wait("wr", "poll")
+        p.start("dma")
+        p.wait("dma", "poll")
+    sc = Scenario(
+        name="vecadd_tiled",
+        cluster=cl,
+        cluster_ref="../clusters/alu4.json",
+        memory=[MemInit("l2", l2a, npy="a.npy"), MemInit("l2", l2b, npy="b.npy")],
+        program=p.cmds,
+        max_cycles=5000,
+    )
+    return sc, {"a.npy": a, "b.npy": b}
+
+
 def reduce() -> tuple[Scenario, dict[str, np.ndarray]]:
     """64 elements at L1 word 0 summed in 4 groups of 16 (16 beats, T = 4) to word 128."""
     x = np.random.default_rng(5).integers(-1000, 1000, 64)
@@ -287,7 +345,7 @@ def generate() -> dict[str, bytes]:
         "clusters/alu4.json": to_json(alu4().to_dict()).encode(),
         "clusters/red4.json": to_json(red4().to_dict()).encode(),
     }
-    for make in (vecadd, vecadd_conflict, reduce, dma):
+    for make in (vecadd, vecadd_conflict, vecadd_tiled, reduce, dma):
         sc, arrays = make()
         files[f"{sc.name}/scenario.json"] = to_json(sc.to_dict()).encode()
         for name, arr in arrays.items():
