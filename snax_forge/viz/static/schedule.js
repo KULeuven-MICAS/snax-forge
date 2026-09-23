@@ -6,10 +6,15 @@
 //                 blank, so the rows read like a Gantt chart. Under it a thin
 //                 line per task, from its start to its done. The controller's
 //                 row shows each command (cmd events) with its register.
+//                 A DMA's tasks carry their direction (L2 → L1, L1 → L2, D58).
 //   detail rows   beat level only, for components that ran a task: one per
-//                 xbar port the component owns
-//                 (grants and stalls, with bank numbers when there is room),
-//                 its FIFO (largest lane count), its firings or its DMA beats.
+//                 xbar port the component owns, labelled `<port>.target_banks`
+//                 (`<owner>.target_banks` for a single port, D58): grants and
+//                 stalls, with bank numbers when there is room; its FIFO
+//                 (largest lane count), its firings or its DMA beats.
+//
+// The mouse wheel over the chart zooms around the pointer; shift + wheel and
+// a sideways swipe scroll (D58).
 //
 // Clicking a cycle selects it (hash `cycle`); the panel under the chart lists
 // every component's class and every event in that cycle. The selected cycle
@@ -30,6 +35,8 @@ const SUB_H = 17; // px, detail row
 const RULER_H = 22;
 const LABEL_W = 150;
 const BEAT_WINDOW = 400; // default window of a beat-level run
+const MAX_CW = 64; // px per cycle, largest zoom
+const DIR_TEXT = { l2_to_l1: "L2 → L1", l1_to_l2: "L1 → L2" };
 
 // Colour group of each cycle class, as in the report (report.js).
 const GROUP = {
@@ -179,18 +186,24 @@ function buildRows(detail, win, tasks, beats, showDetail) {
           if (sp.start >= from && sp.start < to) g.append(s("path", { d: `M${x(sp.start)},${MAIN_H - 7} l4,4 l-4,4 z`, class: "task-mark" }, `${name} start in ${sp.start}`));
           if (sp.done >= from && sp.done <= to) g.append(s("rect", { x: x(sp.done) - 1, y: MAIN_H - 8, width: 2, height: 8, class: "task-mark" }, `${name} done in ${sp.done}`));
         }
+        for (const tk of detail.dma_tasks?.[name] ?? []) { // D58
+          const [a, b] = clip(tk.start, tk.done);
+          const text = DIR_TEXT[tk.direction] ?? tk.direction;
+          if ((b - a) * cw >= text.length * 6 + 8) txt(g, { x: x(a) + 4, y: MAIN_H - 10, class: "cell-text on-dark" }, text);
+        }
       },
     });
     // Detail rows only for a component that ran a task: an unused block adds nothing.
     if (!showDetail || !spans.some((sp) => sp.src === name)) continue;
     const mine = beatBy[name] ?? [];
 
-    // One row per xbar port the component owns.
-    for (const [port, p] of Object.entries(profile.ports)) {
-      if (p.owner !== name) continue;
+    // One row per xbar port the component owns, named after what it shows (D58).
+    const ports = Object.entries(profile.ports).filter(([, p]) => p.owner === name);
+    for (const [port, p] of ports) {
       const evs = mine.filter((e) => (e.k === "grant" || e.k === "stall") && e.port === port);
       rows.push({
-        name, label: port, sub: `${p.width} bits`, height: SUB_H, detail: true,
+        name, label: `${ports.length === 1 ? name : port}.target_banks`, sub: `${p.width} bits`,
+        title: `port ${port}, ${p.width} bits: the bank of each grant and stall`, height: SUB_H, detail: true,
         draw(g, x, cw) {
           for (const e of evs) {
             const cls = e.k === "grant" ? "s-busy" : e.wider ? "s-mem wider" : "s-mem";
@@ -324,7 +337,7 @@ function chart(rows, win, cw, cycle, onPick) {
 function labels(rows) {
   return h("div", { class: "sched-labels", style: { width: `${LABEL_W}px` } },
     h("div", { style: { height: `${RULER_H}px` }, class: "ruler-label" }, "cycle"),
-    rows.map((r) => h("div", { class: `lab${r.detail ? " sub" : ""}`, style: { height: `${r.height}px` }, title: r.label },
+    rows.map((r) => h("div", { class: `lab${r.detail ? " sub" : ""}`, style: { height: `${r.height}px` }, title: r.title ?? r.label },
       h("span", {}, r.label), r.sub ? h("small", {}, r.sub) : null)));
 }
 
@@ -377,6 +390,36 @@ document.addEventListener("keydown", (e) => {
   keysFor.setHash({ cycle: Math.min(Math.max(Number(st.cycle) + d, 0), keysFor.total - 1) });
 });
 
+// -- wheel zoom (D58) --------------------------------------------------------------
+//
+// Wheel events come in bursts; they are gathered for a short moment and
+// applied as one zoom change, which keeps the cycle under the pointer where
+// it was. The anchor survives the redraw in `anchorNext`.
+
+let anchorNext = null; // {t, px}: put cycle t at px from the plot's left edge after the redraw
+const wheel = { factor: 1, anchor: null, timer: null };
+
+function onWheel(ev, scroller, view) {
+  if (ev.shiftKey || Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return; // sideways: native scroll
+  ev.preventDefault();
+  const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 400 : 1);
+  wheel.factor *= Math.exp(-dy * 0.002);
+  if (!wheel.anchor) {
+    const px = ev.clientX - scroller.getBoundingClientRect().left;
+    wheel.anchor = { t: view.from + (scroller.scrollLeft + px) / view.cw, px };
+  }
+  clearTimeout(wheel.timer);
+  wheel.timer = setTimeout(() => {
+    const next = Math.min(Math.max(view.cw * wheel.factor, view.fit), MAX_CW).toFixed(3);
+    const anchor = wheel.anchor;
+    wheel.factor = 1;
+    wheel.anchor = null;
+    if (Math.abs(Number(next) - view.cw) < 1e-3) return; // at a limit: nothing to redraw
+    anchorNext = anchor;
+    view.setHash({ zoom: next });
+  }, 60);
+}
+
 // -- the view ----------------------------------------------------------------------
 
 function intArg(v, dflt) {
@@ -413,15 +456,17 @@ export async function renderSchedule(root, detail, ctx) {
 
   const rows = buildRows(detail, win, tasks, beats, showDetail);
   // Width left for the plot: the main column less its padding, the labels and the borders.
-  const pad = Number.parseFloat(getComputedStyle(root).paddingLeft) * 2 || 40;
+  const cs = getComputedStyle(root);
+  const pad = (Number.parseFloat(cs.paddingLeft) || 0) + (Number.parseFloat(cs.paddingRight) || 0);
   const avail = Math.max((root.clientWidth || 1100) - pad - LABEL_W - 4, 200);
-  const cw = st.zoom ? Math.max(Number(st.zoom), 0.02) : Math.min(Math.max(avail / (to - from), 0.02), 32);
+  const fit = Math.min(Math.max(avail / (to - from), 0.02), 32); // the window fills the plot
+  const cw = st.zoom ? Math.min(Math.max(Number(st.zoom), fit), MAX_CW) : fit;
 
   const input = (id, value) => h("input", { id, type: "number", min: 0, max: total, value, inputmode: "numeric" });
   const fromIn = input("sched-from", from);
   const toIn = input("sched-to", to);
   const apply = () => setHash({ from: intArg(fromIn.value, from), to: intArg(toIn.value, to), zoom: null });
-  const zoom = (f) => setHash({ zoom: Math.min(Math.max(cw * f, 0.02), 64).toFixed(3) });
+  const zoom = (f) => setHash({ zoom: Math.min(Math.max(cw * f, fit), MAX_CW).toFixed(3) });
 
   const filtered = tr.filter_sources || tr.filter_window;
   const note = beat
@@ -451,6 +496,12 @@ export async function renderSchedule(root, detail, ctx) {
     h("div", { class: "sched" }, labels(rows), scroller),
     cycle !== null ? cyclePanel(detail, cycle, tasks, atCycle, setHash)
       : h("p", { class: "note" }, "Select a cycle by clicking in the chart.")));
+  scroller.addEventListener("wheel", (ev) => onWheel(ev, scroller, { from, cw, fit, setHash }), { passive: false });
+  if (anchorNext) { // a wheel zoom: keep the cycle under the pointer in place
+    scroller.scrollLeft = Math.max((anchorNext.t - from) * cw - anchorNext.px, 0);
+    anchorNext = null;
+    return;
+  }
   scroller.scrollLeft = keepLeft;
   if (cycle !== null) { // keep the selected cycle in view
     const cx = (cycle - from) * cw;

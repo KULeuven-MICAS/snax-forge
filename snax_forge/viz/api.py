@@ -57,6 +57,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from snax_forge.snax_model.dma import DIRECTIONS
 from snax_forge.snax_model.scenario import ClusterConfig, Outputs, read_outputs
 
 # =============================================================================
@@ -152,7 +153,38 @@ def run_detail(rv: RunView) -> dict[str, Any]:
         "run": rv.outputs.run,
         "profile": rv.outputs.profile.to_dict(),
         "trace": trace,
+        "dma_tasks": dma_tasks(rv),
     }
+
+
+def dma_tasks(rv: RunView) -> dict[str, list[dict[str, Any]]]:
+    """Per DMA its tasks with their direction, for the schedule's DMA row (D58).
+
+    A task is a ``start`` / ``done`` pair (``task_spans``). Its direction is
+    the last ``csr_write`` to ``<dma>.direction`` that ended before the start
+    landed, since a start copies the buffered registers (D36); registers
+    reset to 0, so with no write it is ``DIRECTIONS[0]``. Needs the task
+    events, so at level off every DMA has an empty list.
+    """
+    dmas = [c.name for c in rv.cluster.components if c.kind == "dma"]
+    writes: dict[str, list[tuple[int, int]]] = {d: [] for d in dmas}  # (last, value)
+    for e in rv.events:
+        if e["k"] == "cmd" and e.get("op") == "csr_write":
+            block, _, reg = str(e.get("reg") or "").partition(".")
+            if reg == "direction" and block in writes:
+                writes[block].append((int(e["last"]), int(e["value"])))
+    out: dict[str, list[dict[str, Any]]] = {}
+    for d in dmas:
+        tasks = []
+        for start, done in task_spans(rv, d):
+            k = 0
+            for last, value in writes[d]:  # in trace order, so the last one wins
+                if last < start:
+                    k = value
+            name = DIRECTIONS[k] if 0 <= k < len(DIRECTIONS) else f"direction {k}"
+            tasks.append({"start": start, "done": done, "direction": name})
+        out[d] = tasks
+    return out
 
 
 def events_window(
@@ -330,6 +362,7 @@ __all__ = [
     "RunSet",
     "RunView",
     "busy_window",
+    "dma_tasks",
     "events_window",
     "fifo_windows",
     "load_run",

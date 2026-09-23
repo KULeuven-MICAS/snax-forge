@@ -38,12 +38,13 @@
 * { box-sizing: border-box; }
 body {
   margin: 0;
+  padding: 0 var(--gap); /* side gap here, so header, rules and text share one edge */
   background: var(--bg);
   color: var(--ink);
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   font-variant-numeric: tabular-nums;
 }
-header, main { max-width: 1180px; margin: 0 auto; padding: 0 var(--gap); }
+header, main { max-width: calc(1180px - 2 * var(--gap)); margin: 0 auto; }
 
 /* -- header ------------------------------------------------------------------ */
 header { padding-top: 1.5rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--ink); }
@@ -65,7 +66,7 @@ section { padding: 1.4rem 0 1.2rem; border-bottom: 1px solid var(--rule); }
 h2 { margin: 0 0 0.2rem; font-size: 1.25rem; }
 h3 { margin: 1.1rem 0 0.4rem; font-size: 1rem; }
 .kind { margin-left: 0.6rem; color: var(--muted); font-weight: 400; font-size: 0.9em; }
-.note { margin: 0.15rem 0 0.8rem; color: var(--muted); max-width: 75ch; }
+.note { margin: 0.15rem 0 0.8rem; color: var(--muted); }
 .block + .block { margin-top: 1.2rem; }
 .scroll { overflow-x: auto; }
 

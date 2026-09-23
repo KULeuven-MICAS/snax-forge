@@ -6,6 +6,7 @@ is what the viewer is given:
   1. a run loads as read_outputs gives it
   2. the events window is exactly [A, B), of the asked sources and kinds
   3. the FIFO busy window equals a direct count from beat-level fifo events
+  4. each DMA task's direction matches the memory its source beats read (D58)
 """
 
 import pytest
@@ -134,3 +135,36 @@ def test_fifo_window_needs_task_events(dirs):
     assert task == beat  # start and done are task events: beat events add nothing
     off = api.fifo_windows(api.load_run(dirs[("vecadd", "off")]))
     assert not off["available"] and off["streamers"] == {} and "off" in off["reason"]
+
+
+# =============================================================================
+# 4. DMA task directions (D58)
+# =============================================================================
+
+
+@pytest.mark.parametrize("name", ["vecadd", "vecadd_conflict"])
+def test_dma_direction_matches_source_beats(dirs, name):
+    """The direction from the register writes equals where the task's reads went."""
+    rv = api.load_run(dirs[(name, "beat")])
+    tasks = api.dma_tasks(rv)
+    assert set(tasks) == {c.name for c in rv.cluster.components if c.kind == "dma"}
+    seen = set()
+    for dma, ts in tasks.items():
+        assert [(t["start"], t["done"]) for t in ts] == api.task_spans(rv, dma)
+        for t in ts:
+            src = {
+                e["mem"]
+                for e in api.events_window(rv, t["start"], t["done"] + 1, [dma], ["dma_beat"])
+                if e["side"] == "src"
+            }
+            assert src == {t["direction"].split("_to_")[0]}
+            seen.add(t["direction"])
+    if name == "vecadd_conflict":
+        assert seen == {"l2_to_l1", "l1_to_l2"}  # both directions are exercised
+
+
+def test_dma_direction_needs_task_events(dirs):
+    task = api.dma_tasks(api.load_run(dirs[("vecadd", "task")]))
+    assert task == api.dma_tasks(api.load_run(dirs[("vecadd", "beat")]))
+    off = api.dma_tasks(api.load_run(dirs[("vecadd", "off")]))
+    assert off and all(ts == [] for ts in off.values())
