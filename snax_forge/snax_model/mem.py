@@ -21,7 +21,7 @@ The cycle phases come from ``sched.Phase``:
     REQUEST    masters drive requests            (MOD3 / MOD4 / MOD6)
     ARBITRATE  interconnect picks one per bank   (MOD3)
     MEMORY     interconnect calls L1Memory.request for each winner
-    RESPONSE   interconnect reads L1Memory.responses and routes data back
+    RESPONSE   interconnect reads L1Memory.resp per bank and routes data back
 
 The L1 is a shared state element (a ``Stateful`` in sched.py, like a FIFO),
 not a ``Component``: it is never ticked and has no ``next_wake``. Instead,

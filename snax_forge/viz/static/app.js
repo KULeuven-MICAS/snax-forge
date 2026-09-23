@@ -23,7 +23,7 @@ async function getJSON(url, opts) {
 }
 
 const enc = encodeURIComponent;
-export const api = {
+const api = {
   runs: () => getJSON("/api/runs"),
   run: (name) => getJSON(`/api/run/${enc(name)}`),
   fifo: (name) => getJSON(`/api/run/${enc(name)}/fifo`),
@@ -39,12 +39,12 @@ export const api = {
 
 // -- view state in the hash -----------------------------------------------------
 
-export function hashState() {
+function hashState() {
   return Object.fromEntries(new URLSearchParams(location.hash.slice(1)));
 }
 
 /** Merge `changes` into the hash (null removes a key); triggers hashchange. */
-export function setHash(changes) {
+function setHash(changes) {
   const q = new URLSearchParams(location.hash.slice(1));
   for (const [k, v] of Object.entries(changes)) {
     if (v === null || v === undefined) q.delete(k);

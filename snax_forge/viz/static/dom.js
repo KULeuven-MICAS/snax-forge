@@ -2,6 +2,14 @@
 // Everything is built with textContent, never innerHTML, so names from a
 // run directory cannot inject markup.
 
+/** Colour group of each cycle class (style.css .g-* / .s-*): memory stalls warm, flow stalls violet. */
+export const CLASS_GROUP = {
+  busy: "busy", idle: "idle",
+  stall_xbar: "mem", stall_l1: "mem",
+  stall_fifo: "flow", stall_in: "flow", stall_out: "flow", stall_mem: "flow",
+  command: "command", wait: "wait",
+};
+
 /** Create an element: h("td", {class: "num"}, "12"). Children may be nested arrays or null. */
 export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);

@@ -331,9 +331,9 @@ def check_trace_against_counters(r):
         assert sum(e.side == "dst" for e in mine) == d.beats_written
     assert sum(e.mem == "l2" and e.side == "src" for e in beats) == p.l2["l2"].reads
     assert sum(e.mem == "l2" and e.side == "dst" for e in beats) == p.l2["l2"].writes
-    # Accelerator firings: a busy cycle is a firing cycle.
+    # Accelerator firings: one fire event per firing (busy also counts II gaps, D59).
     for name, a in p.accelerators.items():
-        assert sum(e.src == name for e in tr.of_kind("fire")) == a.cycles["busy"]
+        assert sum(e.src == name for e in tr.of_kind("fire")) == a.firings  # D59
     # Controller: one cmd per span, polls, and the waits.
     ctl = r["ctl"]
     cmds = tr.of_kind("cmd")

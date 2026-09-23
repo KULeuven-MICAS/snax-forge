@@ -58,7 +58,7 @@ multi-cycle multiplier, 525 cycles).
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | VIS1 | Server, CLI, viewer shell and profile report (D55, D56): `python -m snax_forge.viz DIR [DIR ...]`, JSON API over the run directories, report of cycles per class, accelerators, streamers and FIFOs (with the busy window), memory, DMA and L2, controller, cluster configuration | MOD10 | API tests pass (tests/viz); report checked by eye on `scenarios/vecadd` and `scenarios/vecadd_conflict` (a and b in the same banks) | `done` |
-| VIS2 | Schedule view, HLS-schedule style (D57): per component its class runs, tasks and commands over a cycle window, beat-level detail rows (ports, FIFO, firings, DMA beats, polls), a selected cycle with everything that happened in it | VIS1 | Kind filter of the events route tested (tests/viz); schedule checked by eye on `vecadd`, `vecadd_conflict`, `reduce` (task trace) and `dma` (filtered beat trace) | `done` |
+| VIS2 | Schedule view, HLS-schedule style (D57, D58, D60): per component its class runs, tasks and commands over a cycle window, beat-level detail rows (ports, FIFO, firings, DMA beats, polls), a selected cycle with everything that happened in it | VIS1 | Kind filter of the events route tested (tests/viz); schedule checked by eye on `vecadd`, `vecadd_conflict`, `reduce` (task trace) and `dma` (filtered beat trace) | `done` |
 | VIS3 | Cluster view: banks, interconnect, streamers, accelerator, DMA per cycle, linked to the schedule; addresses, conflicts, FIFO counts and firings, no data values (open item 23) | VIS1, VIS2 | Checked by eye | todo |
 
 ### M3: Build backwards to close `vecadd`

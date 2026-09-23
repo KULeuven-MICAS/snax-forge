@@ -6,7 +6,7 @@ is what the viewer is given:
   1. a run loads as read_outputs gives it
   2. the events window is exactly [A, B), of the asked sources and kinds
   3. the FIFO busy window equals a direct count from beat-level fifo events
-  4. each DMA task's direction matches the memory its source beats read (D58)
+  4. tasks pair starts with dones; a DMA task's direction matches its reads (D58, D60)
 """
 
 import pytest
@@ -138,23 +138,28 @@ def test_fifo_window_needs_task_events(dirs):
 
 
 # =============================================================================
-# 4. DMA task directions (D58)
+# 4. Tasks and DMA directions (D58, D60)
 # =============================================================================
 
 
 @pytest.mark.parametrize("name", ["vecadd", "vecadd_conflict"])
-def test_dma_direction_matches_source_beats(dirs, name):
-    """The direction from the register writes equals where the task's reads went."""
+def test_tasks_and_dma_direction(dirs, name):
+    """Tasks pair each start with its done; a DMA task's direction is where its reads went."""
     rv = api.load_run(dirs[(name, "beat")])
-    tasks = api.dma_tasks(rv)
-    assert set(tasks) == {c.name for c in rv.cluster.components if c.kind == "dma"}
+    got = api.tasks(rv)
+    starts = [e for e in rv.events if e["k"] == "start"]
+    assert sum(len(ts) for ts in got.values()) == len(starts)
     seen = set()
-    for dma, ts in tasks.items():
-        assert [(t["start"], t["done"]) for t in ts] == api.task_spans(rv, dma)
+    for block, ts in got.items():
+        assert [(t["start"], t["done"]) for t in ts] == api.task_spans(rv, block)
+        assert all(t["start"] < t["done"] for t in ts)
+        if block != "dma":
+            assert all("direction" not in t for t in ts)
+            continue
         for t in ts:
             src = {
                 e["mem"]
-                for e in api.events_window(rv, t["start"], t["done"] + 1, [dma], ["dma_beat"])
+                for e in api.events_window(rv, t["start"], t["done"] + 1, [block], ["dma_beat"])
                 if e["side"] == "src"
             }
             assert src == {t["direction"].split("_to_")[0]}
@@ -163,8 +168,7 @@ def test_dma_direction_matches_source_beats(dirs, name):
         assert seen == {"l2_to_l1", "l1_to_l2"}  # both directions are exercised
 
 
-def test_dma_direction_needs_task_events(dirs):
-    task = api.dma_tasks(api.load_run(dirs[("vecadd", "task")]))
-    assert task == api.dma_tasks(api.load_run(dirs[("vecadd", "beat")]))
-    off = api.dma_tasks(api.load_run(dirs[("vecadd", "off")]))
-    assert off and all(ts == [] for ts in off.values())
+def test_tasks_need_task_events(dirs):
+    task = api.tasks(api.load_run(dirs[("vecadd", "task")]))
+    assert task and task == api.tasks(api.load_run(dirs[("vecadd", "beat")]))
+    assert api.tasks(api.load_run(dirs[("vecadd", "off")])) == {}

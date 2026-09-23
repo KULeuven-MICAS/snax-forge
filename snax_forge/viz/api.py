@@ -75,6 +75,7 @@ class RunView:
     cluster: ClusterConfig
     events: list[dict[str, Any]] = field(default_factory=list)  # sorted by t
     times: list[int] = field(default_factory=list)  # events[i]["t"], for bisect
+    spans: dict[str, list[tuple[int, int]]] = field(default_factory=dict)  # task_spans, per block
 
     @property
     def total_cycles(self) -> int:
@@ -98,6 +99,7 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
         cluster=cluster,
         events=events,
         times=[int(e["t"]) for e in events],
+        spans=_pair_tasks(events, int(out.run["total_cycles"])),
     )
 
 
@@ -153,20 +155,20 @@ def run_detail(rv: RunView) -> dict[str, Any]:
         "run": rv.outputs.run,
         "profile": rv.outputs.profile.to_dict(),
         "trace": trace,
-        "dma_tasks": dma_tasks(rv),
+        "tasks": tasks(rv),
     }
 
 
-def dma_tasks(rv: RunView) -> dict[str, list[dict[str, Any]]]:
-    """Per DMA its tasks with their direction, for the schedule's DMA row (D58).
+def tasks(rv: RunView) -> dict[str, list[dict[str, Any]]]:
+    """Per block that ran a task: its tasks as ``start`` / ``done``, for the schedule (D60).
 
-    A task is a ``start`` / ``done`` pair (``task_spans``). Its direction is
-    the last ``csr_write`` to ``<dma>.direction`` that ended before the start
-    landed, since a start copies the buffered registers (D36); registers
-    reset to 0, so with no write it is ``DIRECTIONS[0]``. Needs the task
-    events, so at level off every DMA has an empty list.
+    A DMA's tasks also carry their ``direction`` (D58): the last
+    ``csr_write`` to ``<dma>.direction`` that ended before the start landed,
+    since a start copies the buffered registers (D36); registers reset to
+    0, so with no write it is ``DIRECTIONS[0]``. Needs the task events, so
+    at level off the answer is empty.
     """
-    dmas = [c.name for c in rv.cluster.components if c.kind == "dma"]
+    dmas = {c.name for c in rv.cluster.components if c.kind == "dma"}
     writes: dict[str, list[tuple[int, int]]] = {d: [] for d in dmas}  # (last, value)
     for e in rv.events:
         if e["k"] == "cmd" and e.get("op") == "csr_write":
@@ -174,16 +176,17 @@ def dma_tasks(rv: RunView) -> dict[str, list[dict[str, Any]]]:
             if reg == "direction" and block in writes:
                 writes[block].append((int(e["last"]), int(e["value"])))
     out: dict[str, list[dict[str, Any]]] = {}
-    for d in dmas:
-        tasks = []
-        for start, done in task_spans(rv, d):
-            k = 0
-            for last, value in writes[d]:  # in trace order, so the last one wins
-                if last < start:
-                    k = value
-            name = DIRECTIONS[k] if 0 <= k < len(DIRECTIONS) else f"direction {k}"
-            tasks.append({"start": start, "done": done, "direction": name})
-        out[d] = tasks
+    for block, spans in rv.spans.items():
+        out[block] = []
+        for start, done in spans:
+            task: dict[str, Any] = {"start": start, "done": done}
+            if block in dmas:
+                k = 0
+                for last, value in writes[block]:  # in trace order, so the last one wins
+                    if last < start:
+                        k = value
+                task["direction"] = DIRECTIONS[k] if 0 <= k < len(DIRECTIONS) else f"direction {k}"
+            out[block].append(task)
     return out
 
 
@@ -221,28 +224,32 @@ def events_window(
 # =============================================================================
 
 
-def task_spans(rv: RunView, block: str) -> list[tuple[int, int]]:
-    """``(start, done)`` of every task of ``block``, from the task events.
+def _pair_tasks(events: Sequence[dict[str, Any]], total: int) -> dict[str, list[tuple[int, int]]]:
+    """``(start, done)`` of every task, per block, in one pass over the events.
 
     A start is closed by the next ``done`` of the same block; a zero-work
     start has its done in the next cycle (the model emits it), and a task
     still open at the end is closed at the run's total.
     """
-    spans: list[tuple[int, int]] = []
-    open_at: int | None = None
-    for e in rv.events:
-        if e["src"] != block:
-            continue
-        if e["k"] == "start":
-            if open_at is not None:  # cannot happen in a model run (start while busy)
-                spans.append((open_at, e["t"]))
-            open_at = e["t"]
-        elif e["k"] == "done" and open_at is not None:
-            spans.append((open_at, e["t"]))
-            open_at = None
-    if open_at is not None:
-        spans.append((open_at, rv.total_cycles))
+    spans: dict[str, list[tuple[int, int]]] = {}
+    open_at: dict[str, int] = {}
+    for e in events:
+        src, k = e["src"], e["k"]
+        if k == "start":
+            if src in open_at:  # cannot happen in a model run (start while busy)
+                spans[src].append((open_at[src], e["t"]))
+            open_at[src] = e["t"]
+            spans.setdefault(src, [])
+        elif k == "done" and src in open_at:
+            spans[src].append((open_at.pop(src), e["t"]))
+    for src, t in open_at.items():
+        spans[src].append((t, total))
     return spans
+
+
+def task_spans(rv: RunView, block: str) -> list[tuple[int, int]]:
+    """``(start, done)`` of every task of ``block`` (computed once, at load)."""
+    return rv.spans.get(block, [])
 
 
 def owners_of(cluster: ClusterConfig, streamer: str) -> list[str]:
@@ -362,7 +369,6 @@ __all__ = [
     "RunSet",
     "RunView",
     "busy_window",
-    "dma_tasks",
     "events_window",
     "fifo_windows",
     "load_run",
@@ -372,4 +378,5 @@ __all__ = [
     "run_names",
     "run_summary",
     "task_spans",
+    "tasks",
 ]

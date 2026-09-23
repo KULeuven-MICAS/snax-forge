@@ -200,7 +200,7 @@ class Program:
 
 def vecadd() -> tuple[Scenario, dict[str, np.ndarray]]:
     """test_profile.run_vecadd(mode="poll"): same data, program and cluster, costs of CTL."""
-    return _vecadd("vecadd", wb=72)
+    return _vecadd("vecadd", n=64, tile=64, wb=72, wc=144, l2_step=1024, seed=3)
 
 
 def vecadd_conflict() -> tuple[Scenario, dict[str, np.ndarray]]:
@@ -209,51 +209,7 @@ def vecadd_conflict() -> tuple[Scenario, dict[str, np.ndarray]]:
     Only b's L1 place changes: its DMA ``dst_base`` and ``rb.base`` (576 -> 512
     bytes). Data, L2 layout and cluster file are vecadd's.
     """
-    return _vecadd("vecadd_conflict", wb=64)
-
-
-def _vecadd(name: str, wb: int) -> tuple[Scenario, dict[str, np.ndarray]]:
-    """The vecadd body; ``wb`` is b's L1 word address (72 in vecadd, bank 8)."""
-    n_elems = 64
-    nb, n_dma = n_elems // LANES, n_elems // 8
-    rng = np.random.default_rng(3)
-    a, b = rng.integers(-1000, 1000, n_elems), rng.integers(-1000, 1000, n_elems)
-    l2a, l2b, l2c = 0, 1024, 2048
-    wa, wc = 0, 144  # L1 word addresses of a and c
-
-    def to_l1(src: int, word: int) -> DmaDescriptor:
-        return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
-
-    def to_l2(word: int, dst: int) -> DmaDescriptor:
-        return DmaDescriptor("l1_to_l2", contiguous(word * WORD, n_dma), contiguous(dst, n_dma))
-
-    cl = alu4()
-    p = Program(cl)
-    p.config("dma", to_l1(l2a, wa))
-    p.start("dma")
-    p.config("dma", to_l1(l2b, wb))
-    p.wait("dma", "poll")
-    p.start("dma")
-    p.config("ra", unit(wa, nb, LANES))
-    p.config("rb", unit(wb, nb, LANES))
-    p.config("wr", unit(wc, nb, LANES))
-    p.config("acc", {"n": nb})
-    p.wait("dma", "poll")
-    for blk in ("ra", "rb", "wr", "acc"):
-        p.start(blk)
-    p.config("dma", to_l2(wc, l2c))
-    p.wait("wr", "poll")
-    p.start("dma")
-    p.wait("dma", "poll")
-    sc = Scenario(
-        name=name,
-        cluster=cl,
-        cluster_ref="../clusters/alu4.json",
-        memory=[MemInit("l2", l2a, npy="a.npy"), MemInit("l2", l2b, npy="b.npy")],
-        program=p.cmds,
-        max_cycles=5000,
-    )
-    return sc, {"a.npy": a, "b.npy": b}
+    return _vecadd("vecadd_conflict", n=64, tile=64, wb=64, wc=144, l2_step=1024, seed=3)
 
 
 # vecadd_tiled: TILED_N elements in tiles of TILE, one tile of a, b and c in L1 at a time.
@@ -265,16 +221,29 @@ def vecadd_tiled() -> tuple[Scenario, dict[str, np.ndarray]]:
     """vecadd over TILED_N elements in tiles of TILE, for a run of several hundred cycles.
 
     alu4's L1 (1024 words) holds one tile each of a, b and c, so the tiles
-    run one after another: load a, load b, add, store c, with no overlap
-    (double buffering is J1's). b sits 8 banks after a as in vecadd, so the
-    readers do not collide. a, b and c are contiguous in L2 like vecadd's.
+    run one after another with no overlap (double buffering is fmul's). b
+    sits 8 banks after a as in vecadd, so the readers do not collide. a, b
+    and c are contiguous in L2.
     """
-    n_tiles = TILED_N // TILE
-    nb, n_dma = TILE // LANES, TILE // 8
-    rng = np.random.default_rng(7)
-    a, b = rng.integers(-1000, 1000, TILED_N), rng.integers(-1000, 1000, TILED_N)
-    l2a, l2b, l2c = 0, TILED_N * WORD, 2 * TILED_N * WORD
-    wa, wb, wc = 0, TILE + 8, 2 * TILE + 16  # L1 words: banks 0, 8 and 0
+    return _vecadd(
+        "vecadd_tiled", n=TILED_N, tile=TILE, wb=TILE + 8, wc=2 * TILE + 16,
+        l2_step=TILED_N * WORD, seed=7,
+    )  # fmt: skip
+
+
+def _vecadd(
+    name: str, *, n: int, tile: int, wb: int, wc: int, l2_step: int, seed: int
+) -> tuple[Scenario, dict[str, np.ndarray]]:
+    """c = a + b on alu4, one tile after another: load a, load b, add, store c.
+
+    ``wb`` and ``wc`` are b's and c's L1 word addresses (a is at word 0);
+    a, b and c start ``l2_step`` bytes apart in L2. vecadd is one tile of 64.
+    """
+    nb, n_dma = tile // LANES, tile // 8
+    rng = np.random.default_rng(seed)
+    a, b = rng.integers(-1000, 1000, n), rng.integers(-1000, 1000, n)
+    l2a, l2b, l2c = 0, l2_step, 2 * l2_step
+    wa = 0
 
     def load(src: int, word: int) -> DmaDescriptor:
         return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
@@ -284,8 +253,8 @@ def vecadd_tiled() -> tuple[Scenario, dict[str, np.ndarray]]:
 
     cl = alu4()
     p = Program(cl)
-    for k in range(n_tiles):
-        off = k * TILE * WORD  # byte offset of tile k in each L2 array
+    for k in range(n // tile):
+        off = k * tile * WORD  # byte offset of tile k in each L2 array
         p.config("dma", load(l2a + off, wa))
         p.start("dma")
         p.config("dma", load(l2b + off, wb))
@@ -303,7 +272,7 @@ def vecadd_tiled() -> tuple[Scenario, dict[str, np.ndarray]]:
         p.start("dma")
         p.wait("dma", "poll")
     sc = Scenario(
-        name="vecadd_tiled",
+        name=name,
         cluster=cl,
         cluster_ref="../clusters/alu4.json",
         memory=[MemInit("l2", l2a, npy="a.npy"), MemInit("l2", l2b, npy="b.npy")],

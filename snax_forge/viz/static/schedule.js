@@ -20,12 +20,13 @@
 // every component's class and every event in that cycle. The selected cycle
 // is what the cluster view (VIS3) will follow.
 //
-// Data: the class intervals come with the run detail; task events (cmd,
-// start, done) are fetched once per run for the whole run; beat events only
-// for the window, plus the FIFO counts before it (a fifo event is a state
-// change, D39). All through /api/run/<name>/events with its k filter (D57).
+// Data: the class intervals and each block's tasks (start paired with done,
+// D60) come with the run detail; task events (cmd, start, done) are fetched
+// once per run for the whole run; beat events only for the window, plus the
+// FIFO counts before it (a fifo event is a state change, D39). Events come
+// through /api/run/<name>/events with its k filter (D57).
 
-import { dec, h, int } from "./dom.js";
+import { CLASS_GROUP, dec, h, int } from "./dom.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const TASK_KINDS = ["cmd", "start", "done"];
@@ -37,13 +38,9 @@ const LABEL_W = 150;
 const BEAT_WINDOW = 400; // default window of a beat-level run
 const MAX_CW = 64; // px per cycle, largest zoom
 const DIR_TEXT = { l2_to_l1: "L2 → L1", l1_to_l2: "L1 → L2" };
+// Classes drawn in the rows; idle is left blank.
+const GROUP = Object.fromEntries(Object.entries(CLASS_GROUP).filter(([c]) => c !== "idle"));
 
-// Colour group of each cycle class, as in the report (report.js).
-const GROUP = {
-  busy: "busy", stall_xbar: "mem", stall_l1: "mem",
-  stall_fifo: "flow", stall_in: "flow", stall_out: "flow", stall_mem: "flow",
-  command: "command", wait: "wait",
-};
 
 /** An SVG element with attributes; `title` becomes a native tooltip. */
 function s(tag, attrs = {}, title = null) {
@@ -91,30 +88,21 @@ async function beatEvents(api, detail, from, to) {
   return beatsOf.get(key);
 }
 
-/** Pair each start with the next done of the same block: [{src, start, done}]. */
-function taskSpans(tasks, total) {
-  const open = {};
-  const spans = [];
-  for (const e of tasks) {
-    if (e.k === "start") open[e.src] = e.t;
-    else if (e.k === "done" && e.src in open) {
-      spans.push({ src: e.src, start: open[e.src], done: e.t });
-      delete open[e.src];
-    }
-  }
-  for (const [src, start] of Object.entries(open)) spans.push({ src, start, done: total });
-  return spans;
-}
-
-/** Who an event belongs to: grants and stalls to the port's owner, a FIFO to its streamer. */
-function ownerOf(e, profile, fifoOwner) {
-  if (e.k === "grant" || e.k === "stall") return profile.ports[e.port]?.owner ?? e.src;
-  if (e.k === "fifo") return fifoOwner[e.src] ?? e.src;
-  return e.src;
+/** Group events by owner: grants and stalls go to the port's owner, a FIFO to its streamer. */
+function byOwner(events, profile) {
+  const fifoOwner = Object.fromEntries(Object.entries(profile.streamers).map(([n, st]) => [st.fifo.name, n]));
+  const owner = (e) => {
+    if (e.k === "grant" || e.k === "stall") return profile.ports[e.port]?.owner ?? e.src;
+    if (e.k === "fifo") return fifoOwner[e.src] ?? e.src;
+    return e.src;
+  };
+  const by = {};
+  for (const e of events) (by[owner(e)] ??= []).push(e);
+  return by;
 }
 
 /** One line of text for an event, as the cycle panel lists it. */
-export function describe(e) {
+function describe(e) {
   switch (e.k) {
     case "cmd": {
       const what = e.op === "wait" ? `wait ${e.block} (${e.mode})` : `${e.op} ${e.reg ?? ""}${e.value !== undefined ? ` = ${e.value}` : ""}`;
@@ -144,11 +132,8 @@ function buildRows(detail, win, tasks, beats, showDetail) {
   const { from, to } = win;
   const clip = (a, b) => [Math.max(a, from), Math.min(b, to)];
   const intervals = trace.intervals;
-  const spans = taskSpans(tasks, run.total_cycles);
   const cmds = tasks.filter((e) => e.k === "cmd");
-  const fifoOwner = Object.fromEntries(Object.entries(profile.streamers).map(([n, st]) => [st.fifo.name, n]));
-  const beatBy = {}; // owner -> events
-  for (const e of beats?.events ?? []) (beatBy[ownerOf(e, profile, fifoOwner)] ??= []).push(e);
+  const beatBy = byOwner(beats?.events ?? [], profile);
 
   const rows = [];
   for (const spec of run.cluster.components) {
@@ -156,6 +141,7 @@ function buildRows(detail, win, tasks, beats, showDetail) {
     const runs = intervals[name];
     if (!runs) continue; // the xbar has no classes; its work shows on the port rows
     const isCtl = spec.kind === "controller";
+    const mySpans = detail.tasks[name] ?? []; // {start, done[, direction]} (D60)
     rows.push({
       name, label: name, sub: spec.kind === "accel" ? spec.accel : spec.kind, height: MAIN_H,
       draw(g, x, cw) {
@@ -177,24 +163,23 @@ function buildRows(detail, win, tasks, beats, showDetail) {
             }
           }
         }
-        for (const sp of spans) {
-          if (sp.src !== name) continue;
+        for (const sp of mySpans) {
           const [a, b] = clip(sp.start, sp.done);
           if (b < a) continue;
           g.append(s("line", { x1: x(a), x2: x(Math.max(b, a)), y1: MAIN_H - 3, y2: MAIN_H - 3, class: "task" },
             `${name} task: start in ${sp.start}, done in ${sp.done}`));
           if (sp.start >= from && sp.start < to) g.append(s("path", { d: `M${x(sp.start)},${MAIN_H - 7} l4,4 l-4,4 z`, class: "task-mark" }, `${name} start in ${sp.start}`));
           if (sp.done >= from && sp.done <= to) g.append(s("rect", { x: x(sp.done) - 1, y: MAIN_H - 8, width: 2, height: 8, class: "task-mark" }, `${name} done in ${sp.done}`));
-        }
-        for (const tk of detail.dma_tasks?.[name] ?? []) { // D58
-          const [a, b] = clip(tk.start, tk.done);
-          const text = DIR_TEXT[tk.direction] ?? tk.direction;
-          if ((b - a) * cw >= text.length * 6 + 8) txt(g, { x: x(a) + 4, y: MAIN_H - 10, class: "cell-text on-dark" }, text);
+          if (sp.direction && b > a) { // a DMA task's direction (D58)
+            const text = DIR_TEXT[sp.direction] ?? sp.direction;
+            if ((b - a) * cw >= text.length * 6 + 8) txt(g, { x: x(a) + 4, y: MAIN_H - 10, class: "cell-text on-dark" }, text);
+          }
         }
       },
     });
-    // Detail rows only for a component that ran a task: an unused block adds nothing.
-    if (!showDetail || !spans.some((sp) => sp.src === name)) continue;
+    // Detail rows only for a component that ran a task (an unused block adds
+    // nothing), and for the controller, which never starts but polls.
+    if (!showDetail || (!mySpans.length && !isCtl)) continue;
     const mine = beatBy[name] ?? [];
 
     // One row per xbar port the component owns, named after what it shows (D58).
@@ -351,11 +336,8 @@ function classAt(runs, t) {
 function cyclePanel(detail, cycle, tasks, events, setHash) {
   const { profile, run, trace } = detail;
   const total = run.total_cycles;
-  const fifoOwner = Object.fromEntries(Object.entries(profile.streamers).map(([n, st]) => [st.fifo.name, n]));
   const running = tasks.filter((e) => e.k === "cmd" && e.t <= cycle && cycle <= e.last);
-  const at = [...running, ...tasks.filter((e) => e.k !== "cmd" && e.t === cycle), ...events];
-  const by = {};
-  for (const e of at) (by[ownerOf(e, profile, fifoOwner)] ??= []).push(e);
+  const by = byOwner([...running, ...tasks.filter((e) => e.k !== "cmd" && e.t === cycle), ...events], profile);
   const rows = run.cluster.components
     .filter((c) => trace.intervals[c.name] || by[c.name])
     .map((c) => {

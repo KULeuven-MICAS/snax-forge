@@ -7,7 +7,7 @@
 // arranges numbers. Components appear in registration order (the cluster
 // file's `components`), which is also the tick and trace-source order (D41).
 
-import { dec, h, int, pct, section, table } from "./dom.js";
+import { CLASS_GROUP as GROUP, dec, h, int, pct, section, table } from "./dom.js";
 
 // Cycle classes per component kind, in CONTRACTS.md section 7 order.
 const CLASS_ORDER = {
@@ -15,14 +15,6 @@ const CLASS_ORDER = {
   streamer: ["busy", "stall_xbar", "stall_fifo", "idle"],
   dma: ["busy", "stall_l1", "stall_mem", "idle"],
   controller: ["command", "wait", "idle"],
-};
-
-// Colour group of each class: memory stalls warm, flow stalls cool (VIS1 plan).
-const GROUP = {
-  busy: "busy", idle: "idle",
-  stall_xbar: "mem", stall_l1: "mem",
-  stall_fifo: "flow", stall_in: "flow", stall_out: "flow", stall_mem: "flow",
-  command: "command", wait: "wait",
 };
 
 const LEGEND = [

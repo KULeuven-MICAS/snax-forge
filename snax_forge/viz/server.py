@@ -12,7 +12,7 @@ Routes (every answer is JSON except the static files):
 
     GET  /api/runs                          name, trace level, total cycles per run
     GET  /api/run/<name>                    run.json, profile, class intervals,
-                                            DMA task directions (D58)
+                                            tasks per block (D60)
     GET  /api/run/<name>/events?from=A&to=B&src=S[&src=T]&k=K[&k=L]
                                             events with A <= t < B (D39), of these
                                             sources and kinds only if src / k is
