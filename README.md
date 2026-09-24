@@ -17,10 +17,12 @@ You need [pixi](https://pixi.prefix.dev/v0.28.1/) shell to install the environme
 curl -fsSL https://pixi.sh/install.sh | sh
 ```
 
-Clone the repo:
+Clone the repo and install the environment:
 
 ```bash
 git clone git@github.com:KULeuven-MICAS/snax-forge.git
+cd snax-forge
+pixi install
 ```
 
 # Getting Started
@@ -216,57 +218,151 @@ hyperthread siblings, and CPU 0 usually handles interrupts.
 
 ---
 
-## 7. Model — run a scenario on SNAX-MODEL
+## 7. Model — generate, run and view a scenario
 
 **What it does.** Runs a cycle-level model of the SNAX cluster (banks,
 interconnect, streamers, accelerators, DMA/L2, register interface and
-controller) on a scenario file, and writes a profile, a trace and the final
-memory. No CPU and no RTL are involved; see `docs/ARCHITECTURE.md` section 5.6.
+controller) on a scenario, writes a profile, a trace and the final memory, and
+shows them in a local web viewer. No CPU and no RTL are involved; see
+`docs/ARCHITECTURE.md` sections 5.5–5.7.
+
+Quick start, from the repo root:
 
 ```bash
-pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd
-pixi run model-run scenarios/reduce/scenario.json --out out/reduce --trace task
-pixi run model-run scenarios/dma/scenario.json    --out out/dma --trace beat --no-skip
+pixi run scenarios                                                   # 1. generate the scenario files
+pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd --trace beat   # 2. run one
+pixi run view out/vecadd                                             # 3. open http://127.0.0.1:8765/
 ```
 
-```
-vecadd: 109 cycles (skip on, trace task) -> out/vecadd
-```
+### 7.1 Generate the scenarios
 
-A scenario is two files. The cluster file (`scenarios/clusters/`) holds the
-hardware: L1, optional L2, the ordered component list and the register map.
-The scenario file holds one run: the cluster it uses, the initial memory
-(inline words, `.npy` files or a seeded random fill) and the control program
-as a plain list of `csr_write`, `csr_read` and `wait` commands, with registers
-named as `dma.src_base`. One cluster serves many programs and problem sizes.
+Each scenario is a folder under `scenarios/`. Two files in it are the sources
+you edit; the rest is generated and ignored by git:
 
-Outputs: `run.json` (register map, total cycles, `csr_read` values),
-`profile.json`, `trace.jsonl` with `trace_meta.json` when tracing is on, and
-`l1.npy` / `l2.npy` (flat words in address order). The files are
-byte-identical on every run and with `--no-skip`, so two runs can be compared
-with `diff`.
+```
+scenarios/
+  make.py              writes every generated file below
+  common.py            shared helpers
+  clusters/
+    clusters.py        source: the clusters (alu4, red4, mul1)
+    alu4.json ...      generated: one cluster file each
+  vecadd/
+    tasks.json         source: the task list (what runs, in which order, what it waits for)
+    scenario.py        source: data, memory layout, cluster, cycle limit
+    scenario.json      generated: the scenario the model runs, with the lowered program
+    a.npy, b.npy       generated: input data
+```
 
 ```bash
-diff out/base/profile.json out/try/profile.json
-grep '"k": "stall"' out/vecadd/trace.jsonl | head
-python -c "import numpy as np; print(np.load('out/vecadd/l2.npy')[256:264, 0])"
+pixi run scenarios           # write the generated files
+pixi run scenarios --check   # "stale: nothing" when they match the sources
 ```
 
-The checked-in scenarios are generated, so register values stay consistent
-with the block helpers:
+```
+written: clusters/alu4.json, clusters/red4.json, clusters/mul1.json, dma/scenario.json, ...
+```
+
+`pixi run model-run` and `pixi run test` write them first on their own, so on a
+fresh clone step 1 is optional. The scenarios are `vecadd`, `vecadd_conflict`
+(a and b in the same banks), `vecadd_tiled` (3 tiles, 471 cycles), `fmul`
+(double buffered multiply, 525 cycles), `reduce` and `dma`.
+
+### 7.2 Run a scenario
 
 ```bash
-pixi run scenarios           # rewrite scenarios/ from scenarios/make.py
-pixi run scenarios --check   # "stale: nothing" when files and generator agree
+pixi run model-run scenarios/vecadd/scenario.json          --out out/vecadd --trace beat
+pixi run model-run scenarios/vecadd_conflict/scenario.json --out out/vecadd_conflict --trace beat
+pixi run model-run scenarios/fmul/scenario.json            --out out/fmul --trace task
+```
+
+```
+vecadd: 77 cycles (skip on, trace beat) -> out/vecadd
+```
+
+Outputs in the `--out` directory: `run.json` (register map, total cycles,
+`csr_read` values), `profile.json`, `trace.jsonl` with `trace_meta.json` when
+tracing is on, and `l1.npy` / `l2.npy` (flat words in address order). The
+files are byte-identical on every run and with `--no-skip`, so two runs can be
+compared with `diff`:
+
+```bash
+diff out/vecadd/profile.json out/vecadd_conflict/profile.json
+grep '"k": "stall"' out/vecadd_conflict/trace.jsonl | head
+python -c "import numpy as np; print(np.load('out/vecadd/l2.npy')[256:264, 0])"   # first words of c
 ```
 
 | Option | Meaning |
 |---|---|
 | `--out DIR` | Output directory, created if missing (required) |
-| `--trace off\|task\|beat` | Trace level: off (default), commands and starts, or per-beat detail |
+| `--trace off\|task\|beat` | Trace level: off (default), tasks and commands, or per-beat detail |
+| `--trace-source NAME` | Beat events of this component only (repeatable) |
+| `--trace-window A:B` | Beat events of cycles A to B only |
 | `--no-skip` | Tick every cycle; same results, slower |
 | `--max-cycles N` | Overrides the scenario's own limit |
 
 Exit codes: 0 done, 1 the run failed or did not finish, 2 the scenario is
 invalid. `--no-skip` only changes the speed, never the results; if the two ever
 disagree, that is a bug in the model.
+
+### 7.3 View in the browser
+
+```bash
+pixi run view out/vecadd out/vecadd_conflict
+```
+
+```
+serving vecadd, vecadd_conflict at http://127.0.0.1:8765/ (Ctrl-C to stop)
+```
+
+Open that address in a browser. With several runs, pick one in the Run menu
+at the top. The tabs switch between the profile report and the schedule
+(every component's activity per cycle); under the schedule, the cluster view
+shows the selected cycle (banks, interconnect, streamers, accelerator, DMA).
+Click a cycle in the schedule or use the arrow keys to step. The schedule needs at least `--trace task`; the per-beat rows
+and the cluster view's traffic need `--trace beat`. After rerunning a
+scenario into the same directory, press Reload.
+
+The server listens on 127.0.0.1 only. When it runs on a remote machine,
+forward the port from your laptop and open http://127.0.0.1:8765/ there:
+
+```bash
+ssh -L 8765:127.0.0.1:8765 you@server   # then run `pixi run view ...` on the server
+```
+
+Use `--port N` for another port.
+
+### 7.4 Change a scenario
+
+A task list is a readable list of steps that SNAX-LOWER turns into the
+controller's program of `csr_write`, `csr_read` and `wait` commands:
+
+| `op` | Fields | Becomes |
+|---|---|---|
+| `configure` | `task_name`, `type`, `component`, `after`, `wait_mode`, `values` | the component's register writes, at this point |
+| `start` | `tasks` | the waits these tasks need, then their starts |
+| `sync` | `task`, `mode` | a wait on that task's component, here |
+| `read` | `reg` | a register read, e.g. `acc.busy_cycles` |
+
+`after` names the tasks that must finish before this one starts; the lowering
+adds only the waits that needs. Edit a `tasks.json`, then regenerate and run:
+
+```bash
+pixi run scenarios
+pixi run model-run scenarios/vecadd_tiled/scenario.json --out out/tiled_try --trace task
+pixi run view out/tiled_try
+```
+
+For example, deleting the two `sync` steps in the middle of
+`vecadd_tiled/tasks.json` overlaps each tile's first load with the previous
+store: 447 cycles instead of 471, same result. Every field of a task list is
+described in `docs/CONTRACTS.md` section 9. A new scenario is a new folder with
+a `tasks.json` and a `scenario.py` whose `make()` returns the scenario and its
+input arrays; `scenarios/make.py` finds it on its own.
+
+### 7.5 Tests
+
+```bash
+pixi run test          # everything; writes the generated scenario files first
+pixi run test-model    # SNAX-MODEL only
+pixi run test-lower    # SNAX-LOWER only (task lists)
+```
