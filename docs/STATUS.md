@@ -14,7 +14,8 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 - SNAX-BRM (M3, D68) lives in snax_forge/brm/ (the BRM dataclasses and their validation, value expressions, the registry of dataflow notations, instances and their accelerator entry, the `affine` dataflow notation, the library loader), tests in tests/brm/ (a package, like tests/lower). The library of hand-written BRMs is snax_forge/brm/library/, one JSON file per BRM (`elementwise_add` so far).
 - SNAX-LOWER (M3, D64) lives in snax_forge/lower/ (task list, per-type values, lowering to commands, the `Program` command builder, and since BRM2 the provisional buffer `Layout` and the nest-to-streamer mapping, D70), tests in tests/lower/ (a package, like tests/viz). Every scenario has a hand-written `tasks.json` in its folder, which its scenario.py lowers into the program of its `scenario.json` (D65, D66).
 - SNAX-DFG (M3, D77) lives in snax_forge/dfg/ (the `.snaxdfg` dataclasses, validation and round trip in graph.py, the registry of node kinds with `map`, `tasklet` and `accelerated` in kinds.py, the dimension notation of subsets and ranges in subset.py), tests in tests/dfg/ (a package) with the fixtures `vecadd`, `vecadd_split` and `vecadd_accelerated` in tests/dfg/fixtures/. Value expressions are one module shared with SNAX-BRM, snax_forge/expr.py (moved from snax_forge/brm/, tests in tests/test_expr.py).
-- Planned in M3 (D71–D76): the importer and the reference executor in snax_forge/dfg/, snax_forge/sandbox/ (transforms and recipes), and the DFG viewer as a second mode of snax_forge/viz/ (`python -m snax_forge.viz.dfg`, pixi `view-dfg`). Generated `.snaxdfg` files and design points go under out/, not in git.
+- The SDFG importer (IMP1, D78) is snax_forge/dfg/import_sdfg.py, with the CLI in snax_forge/dfg/__main__.py (`pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg); tests in tests/dfg/test_import.py, small DaCe programs for them in tests/dfg/sdfg_programs.py.
+- Planned in M3 (D71–D76): the reference executor in snax_forge/dfg/, snax_forge/sandbox/ (transforms and recipes), and the DFG viewer as a second mode of snax_forge/viz/ (`python -m snax_forge.viz.dfg`, pixi `view-dfg`). Generated `.snaxdfg` files and design points go under out/, not in git.
 
 ## Milestones
 
@@ -80,7 +81,7 @@ and task-list work below is done; the rest follows in table order.
 | BRM3 | Elementwise-add BRM, the library's first file (`snax_forge/brm/library/elementwise_add.json`): lanes `W` (default 4), per-port affine nests, one Chisel implementation (L = 0, II = 1), function, pattern; `load_brm` | BRM1, BRM2 | Resolves to exactly alu4's `acc` entry; vecadd run with it gives the same cycles, profile and data as the elementwise stub, and its nests give vecadd's streamer values (tests/brm/test_library.py, tests/lower/test_streams.py) | `done` |
 | LOW1b | Task-list format (D64, closes open item 19) and task list → plain command list through the model's adapters (D36, D45); built before LOW1a on hand-written task lists (D63) | MOD10 | Program lowered from `scenarios/vecadd/tasks.json` equals vecadd's hand-scheduled program (written out in tests/lower, D67); every scenario keeps its cycle count (tests/lower) | `done` |
 | DFG1 | SNAX-DFG format (D71, D77): `.snaxdfg` JSON with containers, tasklets, map scopes with symbolic ranges and `loop.kind`, connectors, memlets, the accelerated node (nesting allowed); registered kinds and namespaced attrs (D19); `to_dict` / `from_dict`; the shared expression module | none | A hand-built vecadd, plain and accelerated, round-trips with every field written; unknown kinds and dangling references are rejected by name (tests/dfg, tests/test_expr.py) | `done` |
-| IMP1 | SDFG importer for vecadd (D71, D77): reads the simplified SDFG of `pixi run forge vecadd` (simplify already folds its transient copy), keeps `N` symbolic, readable names; moves the vecadd kernel to `int64` (open item 30) | DFG1 | The import equals a checked-in `vecadd.snaxdfg` fixture, with no transient and no copy left | todo |
+| IMP1 | SDFG importer for vecadd (D71, D77, D78): reads the simplified SDFG of `pixi run forge vecadd` (simplify already folds its transient copy), keeps `N` symbolic, readable names, named errors for what it does not support; moves the vecadd kernel to `int64` (closes open item 30) | DFG1 | The import equals a checked-in `vecadd.snaxdfg` fixture, with no transient and no copy left (tests/dfg/test_import.py) | `done` |
 | REF1 | NumPy reference executor on `.snaxdfg` (D20), symbols bound; an accelerated node runs through its BRM's function | DFG1, BRM3 | The imported vecadd equals the kernel's `reference` on `make_inputs`, for N a multiple of the lane count and not; plain, split and accelerated graphs agree | todo |
 | VIS5 | DFG viewer (D76): `python -m snax_forge.viz.dfg FILE [FILE ...]`, pixi `view-dfg`; several files side by side, Reload; containers, maps as nested boxes by loop kind, tasklets, accelerated nodes, memlets with subsets | DFG1, VIS1 | API tests (tests/viz); `vecadd.snaxdfg` and `vecadd_accelerated.snaxdfg` checked by eye side by side | todo |
 | SBX1 | SNAX-SANDBOX (D72, D73): registered transforms `split_map` and `bind` (absorbs DFG2: the pattern predicate and design-param extraction), the recipe format with symbol bindings, the reference check after every step, a CLI writing each step's `.snaxdfg`; settles open item 35 or leaves it to DP1 | DFG1, REF1, BRM3 | The vecadd recipe gives `vecadd_accelerated.snaxdfg`: a temporal loop of N / W and a spatial loop of W, bound to `elementwise_add`; W = 4 and W = 8 both pass the reference check; a bound that is not a multiple of W (open item 31) and a W the BRM does not allow are rejected | todo |
@@ -197,10 +198,11 @@ from the kernel forwards, and SNAX-DSE starts as SNAX-SANDBOX. DFG1 is done
 (D77): a `.snaxdfg` is a tree of registered node kinds (`map`, `tasklet`,
 `accelerated`) with memlets on connectors and expressions in the grammar of
 `snax_forge/expr.py`, now shared with the BRM; vecadd's three fixtures
-(plain, split, accelerated) are in tests/dfg/fixtures/. Next is IMP1, which
-imports vecadd's simplified SDFG into that format (with the kernel moved to
-`int64`, open item 30); then REF1 runs it in NumPy and VIS5 shows it in the
-browser. SBX1
+(plain, split, accelerated) are in tests/dfg/fixtures/. IMP1 is done (D78):
+`pixi run import-dfg vecadd` imports vecadd's simplified SDFG into exactly
+the plain fixture, with the kernel now `int64` (open item 30). Next REF1
+runs the three fixtures in NumPy against the kernel's reference, and VIS5
+shows them in the browser. SBX1
 adds SNAX-SANDBOX: `split_map` and `bind` turn `vecadd.snaxdfg` into
 `vecadd_accelerated.snaxdfg` from a recipe. DP1 writes the design point,
 NAME1 renames the streamers, LOW1c and LOW1a derive `alu4.json` and

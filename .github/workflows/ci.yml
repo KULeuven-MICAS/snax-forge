@@ -196,9 +196,9 @@ jobs:
       - name: Assert the descriptor-driven RTL matches the descriptors
         run: |
           ls -la out/hw
-          test -f out/hw/ElementwiseLoop_w32_t32_add.sv
-          test -f out/hw/ElementwiseSpatial_w32_n64_add.sv
-          test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
+          test -f out/hw/ElementwiseLoop_w64_t32_add.sv
+          test -f out/hw/ElementwiseSpatial_w64_n64_add.sv
+          test -f out/hw/ElementwiseTiledSpatial_w64_n64_t32_add.sv
 
       # Not needed for the build to pass; the point is that diagnosing a
       # failure is far easier with the intermediate artefacts in hand than by

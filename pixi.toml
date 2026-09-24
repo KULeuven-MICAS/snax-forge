@@ -99,6 +99,8 @@ test-dfg   = "pytest -q tests/dfg tests/test_expr.py"
 lint       = "ruff check util kernels snax_forge transforms tests scenarios && ruff format --check util kernels snax_forge transforms tests scenarios"
 fmt        = "ruff check --fix util kernels snax_forge transforms tests scenarios && ruff format util kernels snax_forge transforms tests scenarios"
 forge      = "python -m snax_forge.sdfg"
+# SNAX-DFG importer (IMP1): `pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg
+import-dfg = "python -m snax_forge.dfg import"
 profile    = "python -m snax_forge.sdfg --profile"
 # SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`.
 # The scenario files are generated, not in git (D67): `scenarios` writes them, model-run first.
