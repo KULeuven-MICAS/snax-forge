@@ -7,19 +7,25 @@ Kinds are registered (kinds.py: ``map``, ``tasklet``, ``accelerated``);
 memlet subsets and map ranges use the shared expression grammar
 (snax_forge/expr.py) with the dimension notation of subset.py.
 
-Next in this package: the SDFG importer (IMP1) and the reference executor
-(REF1).
+IMP1 (D78): import_sdfg.py maps a simplified DaCe SDFG onto the format
+(``import_sdfg``, ``import_kernel``; it imports DaCe, so it is not loaded
+here). REF1 (D79): execute.py runs a graph in NumPy (``execute``), an
+accelerated node through its BRM's function. The command line is
+``python -m snax_forge.dfg import | check``.
 """
 
+from .execute import EXECUTORS, ExecutionError, execute, register_executor
 from .graph import Container, Graph, Memlet, Node
 from .kinds import KINDS, LOOP_KINDS, DfgError, Kind, Scope, register_kind
 from .subset import canonical_dim, dim_names, format_dim, is_range, parse_dim
 
 __all__ = [
+    "EXECUTORS",
     "KINDS",
     "LOOP_KINDS",
     "Container",
     "DfgError",
+    "ExecutionError",
     "Graph",
     "Kind",
     "Memlet",
@@ -27,8 +33,10 @@ __all__ = [
     "Scope",
     "canonical_dim",
     "dim_names",
+    "execute",
     "format_dim",
     "is_range",
     "parse_dim",
+    "register_executor",
     "register_kind",
 ]

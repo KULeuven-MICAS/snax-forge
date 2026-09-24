@@ -101,6 +101,8 @@ fmt        = "ruff check --fix util kernels snax_forge transforms tests scenario
 forge      = "python -m snax_forge.sdfg"
 # SNAX-DFG importer (IMP1): `pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg
 import-dfg = "python -m snax_forge.dfg import"
+# Reference executor (REF1): `pixi run check-dfg out/dfg/vecadd.snaxdfg --kernel vecadd`
+check-dfg  = "python -m snax_forge.dfg check"
 profile    = "python -m snax_forge.sdfg --profile"
 # SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`.
 # The scenario files are generated, not in git (D67): `scenarios` writes them, model-run first.
