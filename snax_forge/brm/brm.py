@@ -37,8 +37,8 @@ design params only; a rate is an int or the name of a runtime param.
 Every field is written by ``to_dict``; a missing required part is an error
 that names it, optional fields take their defaults, and unknown keys are
 errors (D26, D41). A BRM is validated when it is made, whether from a file
-or in Python. Nothing here reads the model; the link to the accelerator
-entry comes with BRM1's second patch.
+or in Python. Nothing here reads the model: ``resolve`` builds an instance,
+whose accelerator entry is checked against the model in instance.py.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ import keyword
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -57,6 +57,9 @@ from snax_forge.snax_model.config import check_keys, plain, to_json
 from . import expr
 from .expr import Value
 from .notation import NOTATIONS
+
+if TYPE_CHECKING:
+    from .instance import Instance
 
 STAGES = ("design", "runtime")
 TYPES = {"int": int, "str": str}
@@ -308,6 +311,12 @@ class Brm:
         """The start parameters, in register order: ``n``, then named rates in port order."""
         named = [p.rate for p in self.interface.ports if isinstance(p.rate, str)]
         return ["n", *dict.fromkeys(named)]
+
+    def resolve(self, implementation: str, params: Mapping[str, Any] | None = None) -> Instance:
+        """The ``Instance`` built as ``implementation`` with design ``params`` (instance.py)."""
+        from .instance import resolve
+
+        return resolve(self, implementation, params)
 
     def port(self, name: str) -> Port:
         for p in self.interface.ports:

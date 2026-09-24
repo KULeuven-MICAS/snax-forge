@@ -4,6 +4,10 @@ BRMs in the tests are written as plain dicts, the way a person or an LLM
 writes the JSON file. Until BRM2 registers ``affine``, the tests use a
 notation of their own, ``test_list``: a nest is a list of logical indices,
 and a port's list must hold a multiple of its lanes when they are constant.
+
+``test_fixed_latency`` is an accelerator kind registered here: the
+elementwise stub with latency 3 whatever it is given, so a BRM whose
+implementation declares another latency is caught.
 """
 
 from __future__ import annotations
@@ -12,6 +16,8 @@ import copy
 from typing import Any
 
 from snax_forge.brm import NOTATIONS, expr, register_notation
+from snax_forge.snax_model.accel import elementwise_stub
+from snax_forge.snax_model.scenario import ACCEL_KINDS, register_accel
 
 
 def _test_list(nest: Any, port: Any, brm: Any) -> None:
@@ -24,6 +30,14 @@ def _test_list(nest: Any, port: Any, brm: Any) -> None:
 
 if "test_list" not in NOTATIONS:
     register_notation("test_list", _test_list)
+
+
+def _fixed_latency(lanes: int = 1, latency: int = 0, ii: int = 1, **_: object):
+    return elementwise_stub(lanes=lanes, latency=3, ii=ii)
+
+
+if "test_fixed_latency" not in ACCEL_KINDS:
+    register_accel("test_fixed_latency", _fixed_latency)
 
 
 def adder() -> dict[str, Any]:
@@ -74,7 +88,7 @@ def reducer() -> dict[str, Any]:
             "interface": {
                 "params": {
                     "W": {"stage": "design"},
-                    "lanes_out": {"stage": "design", "values": [1]},
+                    "lanes_out": {"stage": "design", "default": 1, "values": [1]},
                     "n": {"stage": "runtime"},
                     "T": {"stage": "runtime"},
                 },
