@@ -7,9 +7,9 @@
 > Scope: the model side (D26), plus SNAX-LOWER's task list (section 9,
 > D64), the input the model's control program is lowered from, and the BRM
 > (section 10, D68, D70), from which the accelerator entry and the streamer
-> values are derived, and the SNAX-DFG (section 11, D77), the workload graph
-> the sandbox transforms. The sandbox recipe and the design point get
-> sections with SBX1 and DP1 (D72–D74). Later nest notations are open
+> values are derived, the SNAX-DFG (section 11, D77), the workload graph
+> the sandbox transforms, and the sandbox recipe (section 12, D80). The
+> design point gets a section with DP1 (D74). Later nest notations are open
 > item 1 (M6).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
@@ -25,7 +25,8 @@
 > `run:` means "produced by running that scenario".
 >
 > Layout: section 8 holds the rules a new block kind must follow; section 9
-> the task list; section 10 the BRM; section 11 the SNAX-DFG. The
+> the task list; section 10 the BRM; section 11 the SNAX-DFG; section 12
+> the recipe. The
 > reasoning behind each contract is in the module docstrings and in
 > `docs/ARCHITECTURE.md` section 5.6; this file does not repeat it.
 
@@ -672,7 +673,7 @@ name.
 | `interface` | params (`design` / `runtime`) and ports (direction, lanes, rate, dtype) | everything below |
 | `function` | a registered accelerator kind (D43) and its factory params, without timing | the accelerator entry |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
-| `pattern` | `family`, `attrs`; `predicate` null until DFG2 | SNAX-DFG (later) |
+| `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
 | `implementations` | per name: `source` (`chisel` only), `supports`, `timing`, `binding` (null until M10) | the accelerator entry, the HW generator (later) |
 
 The shared part (the first four) is what every implementation has in
@@ -815,3 +816,41 @@ N // 4 beats that becomes its streamers' temporal loop and its `n`.
 
 Whether the connectors and params agree with the BRM is checked where the
 BRM is loaded: by `bind` (SBX1) and the reference executor (REF1).
+
+## 12. Recipe
+
+SNAX-SANDBOX's ordered list of transforms (SBX1, D72, D80): what a thinker
+edits to change the mapping of a kernel. A recipe is a hand-written JSON
+file in `recipes/`, loaded with `Recipe.load(path)`; every field is written,
+`params`, `symbols` and `steps` default to empty, unknown keys are errors.
+
+| Field | Holds |
+|---|---|
+| `name` | the recipe; its steps are written to `out/sandbox/<name>/` |
+| `kernel` | the kernel whose import (IMP1) the recipe starts from |
+| `params` | recipe params, each an int or a string; `--set NAME=VALUE` overrides one |
+| `symbols` | a value for graph symbols: an int or an expression over the params |
+| `steps` | in order: `transform` (a registered name) and its `params` |
+
+A transform's int params take an int or an expression over the recipe
+params (`"factor": "W"`); its other params are taken as written. Running a
+recipe binds the symbols (step 0), applies the steps, and checks every step
+against the reference executor: on the same seeded inputs, every
+non-transient container equals the input graph's. Each step is written as
+`<i>_<transform>.snaxdfg`, with the recipe it ran as `recipe.json`.
+
+| Transform | Params | Does |
+|---|---|---|
+| `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor` |
+| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; the lanes param comes from the spatial bound |
+
+The vecadd recipe: W lanes, one temporal map of N / W beats, bound to
+`elementwise_add`.
+
+<!-- snippet: recipes/vecadd.json -->
+```json
+ "params": {"W": 4},
+ "symbols": {"N": 64},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
+```

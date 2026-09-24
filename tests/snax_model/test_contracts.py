@@ -194,6 +194,7 @@ def test_every_register_named_in_the_document_exists(name):
         "## 9. Task list",
         "## 10. Block runtime model",
         "## 11. SNAX-DFG",
+        "## 12. Recipe",
     ],
 )
 def test_section_exists(heading):

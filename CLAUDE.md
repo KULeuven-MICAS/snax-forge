@@ -16,17 +16,18 @@ checked against the file it came from, so update both together.
 
 ## Commands
 - Environment: `pixi install`
-- Tests: `pixi run test` (everything under tests/), `pixi run test-model` (SNAX-MODEL only), `pixi run test-lower` (SNAX-LOWER only), `pixi run test-brm` (SNAX-BRM only), `pixi run test-dfg` (SNAX-DFG only; both also run tests/test_expr.py, the shared expressions); CI runs `pixi run -e ci test`
+- Tests: `pixi run test` (everything under tests/), `pixi run test-model` (SNAX-MODEL only), `pixi run test-lower` (SNAX-LOWER only), `pixi run test-brm` (SNAX-BRM only), `pixi run test-dfg` (SNAX-DFG only; both also run tests/test_expr.py, the shared expressions), `pixi run test-sandbox` (SNAX-SANDBOX only); CI runs `pixi run -e ci test`
 - SDFG of a kernel: `pixi run forge <kernel>` writes `out/sdfg/<kernel>.raw.sdfg` and `.simplified.sdfg` (the input of the SNAX-DFG importer, D71)
 - SNAX-DFG of a kernel: `pixi run import-dfg <kernel>` writes `out/dfg/<kernel>.snaxdfg` (D78); `--sdfg PATH --name NAME` imports a stored `.sdfg` instead
 - Run a `.snaxdfg` against the kernel: `pixi run check-dfg FILE [FILE ...] --kernel <kernel> [--n N]` (reference executor, D79)
+- Apply a recipe: `pixi run sandbox recipes/<name>.json [--set W=8] [--graph FILE]` writes every step to `out/sandbox/<name>/`, each checked against the reference executor (D80)
 - Viewer: `pixi run view DIR [DIR ...]` serves model output directories at http://127.0.0.1:8765/ (D55); the DFG viewer, `pixi run view-dfg FILE [FILE ...]`, comes with VIS5 (D76)
 - Clean slate: `pixi run clean` removes out/, caches and Chisel build trees (`pixi run clean --dry-run` lists them first)
 - Lint/format: `pixi run lint` (ruff check + format check, CI runs it), `pixi run fmt` to fix
 
 ## Conventions
 - Python 3.x, type hints on all public functions, dataclasses for artefacts.
-- One package per component under `snax_forge/`: snax_model and viz (built), lower (task list → program built, D64), brm (format, instances, the affine notation and the library built, D68, D70; BRMs in snax_forge/brm/library/), dfg (the `.snaxdfg` format, the SDFG importer and the reference executor built, D77–D79), then sandbox (transforms and recipes, D72) and dse (automated search, M8).
+- One package per component under `snax_forge/`: snax_model and viz (built), lower (task list → program built, D64), brm (format, instances, the affine notation and the library built, D68, D70; BRMs in snax_forge/brm/library/), dfg (the `.snaxdfg` format, the SDFG importer and the reference executor built, D77–D79), sandbox (recipes, `split_map`, `bind` and pattern matchers built, D80; recipes in `recipes/`) and dse (automated search, M8).
 - Generated `.snaxdfg` files and design points go under `out/`, not in git (D71); test fixtures are the exception (tests/dfg/fixtures/, kept in the form `Graph.to_json` writes).
 - Value expressions (BRM fields, SNAX-DFG subsets, ranges and shapes) are one grammar in `snax_forge/expr.py` (D68, D77): ints, names, `+ - * //`, parsed with `ast`, stored canonical.
 - Scenarios: one folder per scenario under `scenarios/`, with the `scenario.py` that makes it and a hand-written `tasks.json` it lowers into the program (D64–D66). `pixi run scenarios` (`python scenarios/make.py`, `--check` to compare) writes `scenario.json`, the `.npy` data and the cluster files; they are generated, ignored by git and never edited by hand (D67). `pixi run model-run` and the test session write them first.

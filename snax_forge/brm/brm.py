@@ -9,7 +9,8 @@ implementations, which differ in how they are built:
      "interface":       params (design / runtime) and ports
      "function":        a registered accelerator kind and its params (D43)
      "dataflow":        a notation and one nest per port (notation.py)
-     "pattern":         the DFG subgraph it can replace; descriptive until DFG2
+     "pattern":         the DFG subgraph it can replace: a family matched by
+                        SNAX-SANDBOX (snax_forge/sandbox/patterns.py, D80)
      "implementations": {name: {source, supports, timing, binding}}
     }
 
@@ -21,7 +22,7 @@ order make a different BRM. Only ``source: chisel`` is accepted for now
 Which part serves which component: interface, function and the chosen
 implementation's timing give the accelerator entry of the cluster file
 (SNAX-MODEL, through LOW1c); the dataflow gives the streamer values
-(SNAX-LOWER, through LOW1a); the pattern serves SNAX-DFG (DFG2) and the
+(SNAX-LOWER, through LOW1a); the pattern serves SNAX-SANDBOX's ``bind`` and the
 binding the HW generator (GEN1).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
@@ -215,7 +216,12 @@ class Dataflow:
 
 @dataclass
 class Pattern:
-    """The DFG subgraph the BRM can replace. Descriptive only; the predicate comes in DFG2."""
+    """The DFG subgraph the BRM can replace: a family, matched by SNAX-SANDBOX (D80).
+
+    ``family`` names a matcher registered in snax_forge/sandbox/patterns.py
+    and ``attrs`` are its parameters. ``predicate`` is kept for a later,
+    data-only form of a pattern and is null in every BRM so far.
+    """
 
     family: str
     attrs: dict[str, Any] = field(default_factory=dict)
