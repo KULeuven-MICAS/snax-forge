@@ -11,8 +11,8 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 - Code from before the v1.1 plan: SDFG ingest, patterns, libnodes, descriptors and a direct ChiselHwGen. It is kept and reused in M7 (SDFG front end) and M10 (HW generator). It is not part of M1–M6.
 - SNAX-MODEL (M1) lives in snax_forge/snax_model/, tests in tests/snax_model/ (shared test helpers in tests/snax_model/helpers.py). Scenarios (MOD9) live in scenarios/, one folder each with the scenario.py that makes it and its hand-written tasks.json; scenarios/make.py writes the scenario files, data and cluster files, which are generated and not in git (D65–D67; `pixi run scenarios`, and the test session writes them first). The contracts (MOD10) are docs/CONTRACTS.md; the configuration classes and the JSON writer they describe are snax_forge/snax_model/config.py.
 - The visualiser (M4a, D55) lives in snax_forge/viz/ (server, API, static viewer), tests in tests/viz/ (a package, so its helpers.py does not clash with snax_model's).
-- SNAX-BRM (M3, D68) lives in snax_forge/brm/ (the BRM dataclasses and their validation, value expressions, the registry of dataflow notations, instances and their accelerator entry), tests in tests/brm/ (a package, like tests/lower). The library of hand-written BRMs, snax_forge/brm/library/, gets its first file with BRM3.
-- SNAX-LOWER (M3, D64) lives in snax_forge/lower/ (task list, per-type values, lowering to commands, the `Program` command builder), tests in tests/lower/ (a package, like tests/viz). Every scenario has a hand-written `tasks.json` in its folder, which its scenario.py lowers into the program of its `scenario.json` (D65, D66).
+- SNAX-BRM (M3, D68) lives in snax_forge/brm/ (the BRM dataclasses and their validation, value expressions, the registry of dataflow notations, instances and their accelerator entry, the `affine` dataflow notation), tests in tests/brm/ (a package, like tests/lower). The library of hand-written BRMs, snax_forge/brm/library/, gets its first file with BRM3.
+- SNAX-LOWER (M3, D64) lives in snax_forge/lower/ (task list, per-type values, lowering to commands, the `Program` command builder, and since BRM2 the provisional buffer `Layout` and the nest-to-streamer mapping, D70), tests in tests/lower/ (a package, like tests/viz). Every scenario has a hand-written `tasks.json` in its folder, which its scenario.py lowers into the program of its `scenario.json` (D65, D66).
 
 ## Milestones
 
@@ -69,7 +69,7 @@ multi-cycle multiplier, 525 cycles).
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | BRM1 | BRM format (D68): shared part (interface, function, dataflow, pattern) and implementations (source, supports, timing, optional binding); design and runtime params; value expressions; dataflow as a registered notation; then the link to the accelerator entry of the cluster file through the registered accel kind (D43) | MOD10 | Missing required part is rejected; no binding is accepted; round trip writes every field; the entry resolved from a BRM is checked against the AccelConfig its kind builds | `done` |
-| BRM2 | First affine nest notation and enumerator, mapping to the MOD10 streamer register layout | BRM1 | Enumeration equals hand-written index lists for 1D, 2D and strided cases; mapped registers reproduce MOD4 streams | todo |
+| BRM2 | First affine nest notation and enumerator (D70), mapped onto the MOD10 streamer register layout through a provisional buffer layout in SNAX-LOWER | BRM1 | Enumeration equals hand-written index lists for 1D, 2D and strided cases (tests/brm/test_affine.py); mapped registers reproduce the enumerated addresses, and vecadd's nests give the streamer values of `scenarios/vecadd/tasks.json` (tests/lower/test_streams.py) | `done` |
 | BRM3 | Elementwise-add BRM: lanes `W`, per-port nests, `L`/`II`, function, pattern | BRM1, BRM2 | In the model, gives the same cycles and data as the elementwise stub | todo |
 | DP1 | Design point structure and hand-written `vecadd` design point; an instance names BRM, implementation and design params (D68); buffer layout per open item 29 | BRM3 | Validation catches overlapping buffers, out-of-range banks, unknown BRMs and implementations | todo |
 | LOW1a | Lowering from design point to an ordered task list (D45) in the format of D64 | DP1, LOW1b | Task list for the `vecadd` design point equals `scenarios/vecadd/tasks.json` | todo |
@@ -175,16 +175,17 @@ gives exactly vecadd's hand-scheduled program. Scenarios live one folder
 each, every one with a hand-written task list, fmul included (D65, D66); the
 scenario files are generated and not in git (D67).
 
-BRM1 is done (D68): a BRM is a hand-written JSON file with a shared part
-and a map of implementations, and `Brm.resolve` turns one implementation
-and its design params into the accelerator entry of the cluster file,
-checked against the model's registered kind. Before BRM2, the model gained
-the reader repeat on temporal stride 0 (D69, copied from the RTL), so a
-nest may reuse a beat on its innermost loop. Next are BRM2 (the affine
-notation, D70 to come) and BRM3 (`elementwise_add`), then LOW1c, the
-cluster file from a design point and BRMs (D53), accepted against
-`scenarios/clusters/alu4.json`, with DP1; LOW1a then produces
-`scenarios/vecadd/tasks.json` from the design point. M4b follows.
+BRM1 and BRM2 are done (D68, D70): a BRM is a hand-written JSON file with a
+shared part and a map of implementations; `Brm.resolve` turns one
+implementation and its design params into the accelerator entry of the
+cluster file, checked against the model's registered kind; each port's
+`affine` nest is enumerated per task and mapped through a buffer layout
+onto streamer values. The model gained the reader repeat on temporal
+stride 0 (D69) on the way. Next is BRM3 (`elementwise_add`, the library's
+first file), then LOW1c, the cluster file from a design point and BRMs
+(D53), accepted against `scenarios/clusters/alu4.json`, with DP1; LOW1a
+then produces `scenarios/vecadd/tasks.json` from the design point. M4b
+follows.
 
 ## Sync Reminders
 

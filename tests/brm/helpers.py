@@ -5,6 +5,9 @@ writes the JSON file. Until BRM2 registers ``affine``, the tests use a
 notation of their own, ``test_list``: a nest is a list of logical indices,
 and a port's list must hold a multiple of its lanes when they are constant.
 
+``affine_adder`` and ``affine_reducer`` are the same BRMs with ``affine``
+nests (D70): a vector walked W elements per beat.
+
 ``test_fixed_latency`` is an accelerator kind registered here: the
 elementwise stub with latency 3 whatever it is given, so a BRM whose
 implementation declares another latency is caught.
@@ -108,3 +111,30 @@ def reducer() -> dict[str, Any]:
             },
         }
     )
+
+
+def vector_nest(length: str, lanes: str) -> dict[str, Any]:
+    """``length`` elements, ``lanes`` per beat, in order: element t*lanes + j."""
+    return {
+        "shape": [f"{length} * {lanes}"],
+        "loops": [
+            {"bound": length, "strides": [lanes]},
+            {"bound": lanes, "strides": [1], "spatial": True},
+        ],
+    }
+
+
+def affine_adder() -> dict[str, Any]:
+    d = adder()
+    nest = vector_nest("n", "W")
+    d["dataflow"] = {"notation": "affine", "ports": {"a": nest, "b": nest, "out": nest}}
+    return copy.deepcopy(d)
+
+
+def affine_reducer() -> dict[str, Any]:
+    d = reducer()
+    d["dataflow"] = {
+        "notation": "affine",
+        "ports": {"in": vector_nest("n", "W"), "out": vector_nest("n // T", "lanes_out")},
+    }
+    return copy.deepcopy(d)

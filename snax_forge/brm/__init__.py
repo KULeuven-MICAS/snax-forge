@@ -5,10 +5,14 @@ part (interface, function, dataflow, pattern) and a map of implementations
 (source, supports, timing, binding). ``Brm.resolve`` builds an instance from
 an implementation and design-param values; its ``accel_entry`` is the
 accelerator entry of the cluster file, checked against the model's
-registered kind. The affine notation (BRM2) and the library's first BRM
-(BRM3) come later.
+registered kind. BRM2 (D70): the ``affine`` dataflow notation, whose nests
+``task_nest`` resolves and enumerates for one task; SNAX-LOWER maps them
+onto streamer values (``snax_forge.lower.streams``). The library's first BRM
+(BRM3) comes later.
 """
 
+from . import affine  # registers the "affine" notation (D70)
+from .affine import Nest, resolve_nest, task_nest
 from .brm import (
     Brm,
     BrmError,
@@ -35,10 +39,14 @@ __all__ = [
     "Implementation",
     "Instance",
     "Interface",
+    "Nest",
     "Param",
     "Pattern",
     "Port",
     "Timing",
+    "affine",
     "register_notation",
     "resolve",
+    "resolve_nest",
+    "task_nest",
 ]

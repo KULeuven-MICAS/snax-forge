@@ -189,7 +189,10 @@ Shared:
    which the accelerator consumes or produces the operand's elements, in
    logical indices. It describes only the accelerator and holds no
    addresses: SNAX-LOWER maps it through the buffer layout SNAX-DSE chooses
-   (section 5.5). [OPEN] notation (open item 1; first version in BRM2).
+   (section 5.5). The first notation, `affine` (D70), gives the operand's
+   shape, an optional offset and loops listed outermost first, each with a
+   bound, one stride per dimension and a spatial flag; the spatial loops
+   come last and are the lanes. [OPEN] later notations (open item 1).
 3. **Function**: a registered accelerator kind (D43) and its params, whose
    Python implementation produces real output data.
 4. **Pattern**: the SNAX-DFG subgraph shape the block can replace. Descriptive
@@ -270,7 +273,8 @@ later.
 
 - orders tasks by the dependencies and execution order of the optimised SNAX-DFG
 - computes streamer registers from each BRM's per-port affine loop nest and the
-  memory plan
+  memory plan: the nest through the buffer's layout (`snax_forge/lower/streams.py`,
+  D70)
 - computes accelerator register values from BRM parameters
 - inserts L2↔L1 DMA transfers required by the memory plan
 - inserts a wait at every dependency crossing an accelerator or DMA boundary
@@ -668,6 +672,7 @@ cluster RTL (section 7), with a regression test.
 | D67 | Generated scenario files are not in git. `scenarios/*/scenario.json`, their `.npy` inputs and `scenarios/clusters/*.json` are written by `scenarios/make.py` and ignored by git; the sources are each folder's `scenario.py` and `tasks.json`, `scenarios/common.py` and `scenarios/clusters/clusters.py`. They are written again by `pixi run scenarios`, by `pixi run model-run` before it runs (`depends-on`), and at the start of every test session (`tests/conftest.py`, in the controlling process only, each file replaced in one step). Because a scenario's program is now always its task list lowered, the LOW1b acceptance compares vecadd's lowered task list with its hand-scheduled program written out in the test, and `tests/lower` pins every scenario's cycle count. A lowered program is no longer seen in a diff of a commit; `pixi run scenarios` and a local diff show it. Amends D41 and D65 (checked-in scenario files) | 23 |
 | D68 | BRM format (BRM1). A BRM is a hand-written JSON file with a shared part (interface, function, dataflow, pattern) and a map of implementations (`source`, `supports`, `timing`, `binding`). Designs that differ only in timing, supported values or RTL source are implementations of one BRM; different ports, rates or data order make a different BRM; only `source: chisel` is accepted for now. Params are `design` (fixed per instance, end up in the cluster file) or `runtime` (exactly `n` and every named rate, the start parameters of CONTRACTS.md section 4). Value fields hold an int or an expression over params (names and `+ - * //`, parsed with `ast`, no string literals: a fixed string is a design param with one allowed value); lanes, timing and function params use design params only, a rate is an int or a runtime param name. The function part names a registered accelerator kind (D43) and its factory params without timing; the accelerator entry is those params resolved plus the implementation's `latency` and `ii`, so the cluster file keeps naming the model's kind and the model is unchanged. Timing is `latency` and `initiation_interval` in the BRM, `ii` in the cluster file. The register map and interconnect ports are derived, not declared. The dataflow part is a registered notation plus one nest per port, describing only the accelerator in logical indices; the pattern is descriptive (`family`, `attrs`) with its predicate null until DFG2; the binding may be null until M10. Every field is written, a missing part is rejected by name, unknown keys are errors. A design point instance names BRM, implementation and design params; `Brm.resolve` makes it, checking every design param against its type, `values`, the implementation's `supports` and its default, and rejecting runtime params, which are the task's. The instance's entry is checked against the `AccelConfig` its registered kind builds: the same ports in the same order (name, direction, lanes, rate) and the same `latency` and `ii`, so an instance that exists is consistent with the model. Amends section 5.3 (parts, CSR map derived) and 5.4 (implementation choice) | 24 |
 | D69 | Reader repeat on temporal stride 0, copied from snax_cluster's Reader and HandShakeRepeater (at `8ebd422`). A reader whose loop-0 temporal stride is 0 runs its AGU with `tbound[0]` = 1, so it reads each group once, and its FIFO hands the head beat to the accelerator `tbound[0]` times, popping it only on the last hand-out, with no added latency. Credit, the FIFO's `pipe` and its occupancy see only that pop (the RTL's `dataFifoPopped` is the buffer's pop). The hand-out count restarts at every start and wins over a hand-out counted in the same cycle (the counter's reset). Writers do not repeat. A zero bound still means no beats: the RTL's stride 0 with bound 0 is not copied. No existing scenario uses it, so every cycle count is unchanged. Amends D32 (not copied yet), CONTRACTS.md section 3 and section 5.6; closes the repeat half of open item 5 | 24 |
+| D70 | Affine dataflow notation (BRM2), the first version of open item 1. Per port a nest gives the operand's logical `shape`, an optional `offset` and `loops` listed outermost first, each with a `bound`, one stride per operand dimension and a `spatial` flag: index = offset + Σ i_l · strides_l, affine by construction. Temporal loops come first (one step of them is one beat, the last one innermost), spatial loops last (the lanes, the last one lane dimension 0). Values are ints or expressions over params; spatial bounds use design params only. Checked when the BRM is made (structure), by `resolve` (the spatial product is the port's lanes) and per task by `task_nest` (task values are exactly the registers, `n` is a multiple of the rate, the nest gives n / rate beats, every index lies inside the shape). Strides may be 0 or negative. The nest describes only the accelerator; that the ports agree on element positions is the BRM author's responsibility. A notation may register `check_instance` and `normalize` hooks, and nests are kept with every field written. SNAX-LOWER maps a nest through a buffer `Layout` (base, shape, one byte stride per dimension; provisional until DP1, open item 29) onto a streamer task's `values` (`streamer_values`): base = the layout at the offset, each loop's byte stride = its strides dotted with the layout's, temporal loops innermost first, spatial fastest first. Nothing is adjusted: a component that is not a streamer, a reader for an output port or a writer for an input port, spatial bounds other than the streamer's, more temporal loops than it has, a layout of another shape, unaligned to the word, outside L1 or on packed words (open item 21) is an error. Amends sections 5.3 and 5.5 and CONTRACTS.md section 3 | 24 |
 
 ## 11. Open Items
 
@@ -675,7 +680,8 @@ Numbers are never reused: a closed item keeps its place and says what closed
 it.
 
 1. BRM per-port affine loop nest notation and its mapping to streamer registers
-   (streamer register layout fixed in MOD10; notation closed in M6).
+   (streamer register layout fixed in MOD10; first notation `affine` and the
+   mapping in BRM2, D70; closed in M6).
 2. DSE config format, and single design point vs sweep.
 3. Acceptable model-vs-RTL error target, decided with the deferred anchor (D51) before its first comparison.
 4. Positioning details relative to ZigZag/Stream.
@@ -703,4 +709,4 @@ it.
 26. ~~`scenarios/fmul` is scheduled by hand with `Program`, not written as a task list~~ — closed by D66: `fmul/tasks.json` lowers to the same program, 525 cycles; its six syncs that only keep that program are listed in `fmul/scenario.py` (519 cycles without them).
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources instead of writing it by hand (D68). Far future.
 28. Implementations whose `source` is SystemVerilog or HLS (D68): only `chisel` is accepted until one is needed.
-29. The design point's memory plan needs a layout per buffer (shape and a byte stride per dimension, covering storage order and padding), not only an address and banks, for SNAX-LOWER to map a BRM's nest into streamer values. Decided with DP1; trivial for the 1D targets (vecadd, dot, jacobi1d).
+29. The design point's memory plan needs a layout per buffer (shape and a byte stride per dimension, covering storage order and padding), not only an address and banks, for SNAX-LOWER to map a BRM's nest into streamer values. Decided with DP1; trivial for the 1D targets (vecadd, dot, jacobi1d). Until then `snax_forge/lower/layout.py` holds a provisional `Layout` in that form (D70).

@@ -509,8 +509,11 @@ def _check_dataflow(b: Brm, what: str) -> None:
     ports = [p.name for p in b.interface.ports]
     if set(d.ports) != set(ports):
         raise BrmError(f"{w}.ports: need one nest per port {ports}, got {list(d.ports)}")
+    notation = NOTATIONS[d.notation]
     for p in b.interface.ports:
         try:
-            NOTATIONS[d.notation](d.ports[p.name], p, b)
-        except ValueError as e:
+            notation.check(d.ports[p.name], p, b)
+        except (TypeError, ValueError) as e:
             raise BrmError(f"{w}.ports.{p.name}: {e}") from None
+    if notation.normalize is not None:  # every field written (D26)
+        d.ports = {p.name: notation.normalize(d.ports[p.name]) for p in b.interface.ports}

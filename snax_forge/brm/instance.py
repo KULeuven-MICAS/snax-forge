@@ -34,6 +34,7 @@ from snax_forge.snax_model.scenario import ACCEL_KINDS
 
 from . import expr
 from .brm import TYPES, BrmError
+from .notation import NOTATIONS
 
 if TYPE_CHECKING:
     from .brm import Brm, Implementation
@@ -119,8 +120,22 @@ def resolve(brm: Brm, implementation: str, params: Mapping[str, Any] | None = No
         values[k] = v
     inst = Instance(brm, implementation, values)
     _check_values(inst, what)
+    _check_dataflow(inst, what)
     _check_model(inst, what)
     return inst
+
+
+def _check_dataflow(inst: Instance, what: str) -> None:
+    """The notation's own checks that need design-param values (e.g. spatial size = lanes)."""
+    d = inst.brm.dataflow
+    check = NOTATIONS[d.notation].check_instance
+    if check is None:
+        return
+    for p in inst.brm.interface.ports:
+        try:
+            check(d.ports[p.name], p, inst)
+        except (TypeError, ValueError) as e:
+            raise BrmError(f"{what}: dataflow of port {p.name!r}: {e}") from None
 
 
 def _check_values(inst: Instance, what: str) -> None:

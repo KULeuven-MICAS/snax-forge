@@ -232,12 +232,19 @@ to the accelerator `tbound[0]` times, so the accelerator sees every beat of
 the enumeration above while L1 sees one read per group. A stride of 0 on any
 other loop, or on a writer, is an ordinary stride.
 
-**Mapping a BRM's per-port affine nest onto these registers** is exactly
-this: the nest's parallel innermost level becomes the spatial loops (its trip
-count must equal the streamer's `n_ports`), every enclosing level becomes a
-temporal loop with the same bound and its stride in bytes, innermost first,
-and the nest's first element address becomes `base`. The nest notation
-itself is open (open item 1, closed in M6); this register side is not.
+**Mapping a BRM's per-port nest onto these registers** (D70). A nest
+describes only the accelerator: the order in which it consumes or produces
+an operand's elements, in logical indices, with no addresses. Streamer
+values come from SNAX-LOWER (`snax_forge/lower/streams.py`), which maps the
+nest through the buffer's layout (base, shape and one byte stride per
+dimension; SNAX-DSE's decision, provisional until DP1). The nest's spatial
+loops become the spatial loops, fastest first, and their bounds must be the
+streamer's design-time spatial bounds (so their product is `n_ports`);
+every temporal loop becomes a temporal loop with the same bound, innermost
+first; a loop's byte stride is its index strides dotted with the layout's,
+and `base` is the layout's address of the nest's offset. The first nest
+notation is `affine` (D70); later ones are open item 1, and this register
+side does not change with them.
 
 <!-- snippet: scenarios/vecadd/scenario.json -->
 ```json
