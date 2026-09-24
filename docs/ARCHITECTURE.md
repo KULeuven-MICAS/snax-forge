@@ -170,30 +170,56 @@ optional.
 ### 5.3 SNAX-BRM: Block Runtime Model
 
 The primary definition of an accelerator block, supplied by the user or taken
-from the library. A BRM has six parts:
+from the library. BRMs are written by hand for now (open item 27): one JSON
+file each, in `snax_forge/brm/library/` (D68). A BRM has a shared part,
+common to every implementation of the accelerator, and a map of
+implementations, which differ in how the accelerator is built. Its six parts
+(D3):
 
-1. **Interface**: ports, direction, data types and widths, per-port element
-   rate (elements consumed or produced per beat, so reductions and
-   elementwise blocks share one interface, D25), CSR map, parameters (e.g.
-   lanes `W`, trip count `T`), and interconnect ports needed per port.
-2. **Dataflow**: per port, an exact affine loop nest giving the order in which
-   elements are consumed or produced. Streamer configuration is derived from
-   it. [OPEN] exact notation.
-3. **Timing**: cycles as a function of parameters (latency `L`, initiation
-   interval `II`, throughput per beat), analytic or measured from RTL; always
-   user-supplied.
-4. **Function**: a Python implementation that produces real output data.
-5. **Pattern**: the SNAX-DFG subgraph shape the block can replace, with its
-   predicate and parameter extraction.
-6. **Hardware binding** (optional): how to obtain RTL, e.g. a Chisel generator
-   with parameters, or hand-written SystemVerilog.
+Shared:
 
-The interface, timing and function parts fill the accelerator interface that
-SNAX-MODEL defines (section 5.6). In the cluster file they are the
-accelerator's entry (`lanes`, rates, `latency`, `ii`, `op`), which is the
-only part of the cluster file the user is responsible for (D51); until BRMs
-exist it is written by hand. A BRM is accepted when, plugged into the
-model, it gives the same cycles and data as the matching generic stub.
+1. **Interface**: params and ports. A param is `design` (fixed per
+   instance: lanes `W`, the op) or `runtime` (a start parameter: exactly `n`
+   and every named port rate). A port has a direction, lanes, a per-port
+   element rate (elements consumed or produced per beat, so reductions and
+   elementwise blocks share one interface, D25) and a dtype. The register map
+   follows from the runtime params (D36) and a port's interconnect ports from
+   its lanes (D12); neither is written in the BRM.
+2. **Dataflow**: per port, a nest in a registered notation giving the order in
+   which the accelerator consumes or produces the operand's elements, in
+   logical indices. It describes only the accelerator and holds no
+   addresses: SNAX-LOWER maps it through the buffer layout SNAX-DSE chooses
+   (section 5.5). [OPEN] notation (open item 1; first version in BRM2).
+3. **Function**: a registered accelerator kind (D43) and its params, whose
+   Python implementation produces real output data.
+4. **Pattern**: the SNAX-DFG subgraph shape the block can replace. Descriptive
+   (family and attributes) until DFG2 adds its predicate and parameter
+   extraction.
+
+Per implementation, beside its `source` (only `chisel` for now, open item
+28) and the design-param values it supports:
+
+5. **Timing**: `latency` (`L`) and `initiation_interval` (`II`, written `ii`
+   in the cluster file), ints or expressions over design params; always
+   user-supplied, analytic or measured from RTL (D5).
+6. **Hardware binding** (optional): how to obtain RTL, e.g. a Chisel
+   generator with parameters. Null until M10.
+
+Designs that differ only in timing, supported values or RTL source are
+implementations of one BRM; different ports, rates or data order make a
+different BRM. Choosing an implementation is a SNAX-DSE decision, so a
+design point instance names the BRM, the implementation and the design
+params.
+
+Each part serves one component: interface, function and timing give the
+accelerator entry of the cluster file (SNAX-MODEL, through SNAX-LOWER,
+D53); the dataflow gives the streamer values (SNAX-LOWER); the pattern
+serves SNAX-DFG and the binding the HW generator. In the cluster file the
+entry is the accelerator's `lanes`, rates, `latency`, `ii` and `op`, which
+is the only part of the cluster file the user is responsible for (D51);
+until BRMs exist it is written by hand. A BRM is accepted when, plugged
+into the model, it gives the same cycles and data as the matching generic
+stub.
 
 The existing Chisel elementwise modules (loop, spatial, tiled-spatial) and the
 accumulator are the reference implementations for the first BRMs.
@@ -209,7 +235,7 @@ describes a single design point or a sweep.
 
 **Decisions** (extensible):
 
-- which subgraphs are replaced by which BRMs
+- which subgraphs are replaced by which BRMs, and which implementation of each
 - BRM parameters (lanes, tiling)
 - accelerator instance count and concurrency
 - chaining between accelerators
@@ -220,7 +246,7 @@ describes a single design point or a sweep.
 
 1. optimised SNAX-DFG
 2. memory allocation plan (L1 addresses and banks, L2 addresses)
-3. accelerator instances with BRM parameters
+3. accelerator instances: BRM, implementation and design params
 4. cluster configuration
 
 Exploration is manual (config-driven) first. Automated search comes later.
@@ -639,6 +665,7 @@ cluster RTL (section 7), with a regression test.
 | D65 | One folder per scenario, task lists written by hand. Each scenario folder holds the script that makes it, `scenario.py` with `make()` returning the `Scenario` and its input arrays (seeded data, memory, cluster, `max_cycles`), next to its inputs and outputs. A folder with a `tasks.json` is a task-list scenario: the task list is the hand-written source, and `scenario.py` lowers it into the program (`lower_program`, D64). `scenarios/make.py` is a driver: it writes `clusters/<stem>.json` from `clusters/clusters.py` (the builders and `CTL`) and every folder's `scenario.json` and `.npy` files, and never writes a `tasks.json`; `--check` and `test_scenario` compare the files it writes, so a task list edited without rerunning it is caught. Shared helpers are `scenarios/common.py`. `scenario.json` keeps its format and stays the model's only input (D41, D42); its program is derived output. Every checked-in file is byte-identical to before. Amends D64 (make.py built the task lists in Python), closes open item 24 except the move of the cluster builders into SNAX-LOWER (LOW1c) | 23 |
 | D66 | fmul as a task list, and a covered wait left out. When a start needs several waits, a wait that another of them covers is left out, so a wait on a writer streamer replaces the waits on the accelerator and readers started with it even when they come first in the start (before, fmul's tiles got extra waits on `ra` and `rb`). With it, `scenarios/fmul/tasks.json` lowers to exactly the program fmul was scheduled by hand with (525 cycles); six of its syncs are there only to keep that program (one cycle each, 519 without them). Every scenario is now a task list. Amends D64 (wait rule), closes open item 26 | 23 |
 | D67 | Generated scenario files are not in git. `scenarios/*/scenario.json`, their `.npy` inputs and `scenarios/clusters/*.json` are written by `scenarios/make.py` and ignored by git; the sources are each folder's `scenario.py` and `tasks.json`, `scenarios/common.py` and `scenarios/clusters/clusters.py`. They are written again by `pixi run scenarios`, by `pixi run model-run` before it runs (`depends-on`), and at the start of every test session (`tests/conftest.py`, in the controlling process only, each file replaced in one step). Because a scenario's program is now always its task list lowered, the LOW1b acceptance compares vecadd's lowered task list with its hand-scheduled program written out in the test, and `tests/lower` pins every scenario's cycle count. A lowered program is no longer seen in a diff of a commit; `pixi run scenarios` and a local diff show it. Amends D41 and D65 (checked-in scenario files) | 23 |
+| D68 | BRM format (BRM1). A BRM is a hand-written JSON file with a shared part (interface, function, dataflow, pattern) and a map of implementations (`source`, `supports`, `timing`, `binding`). Designs that differ only in timing, supported values or RTL source are implementations of one BRM; different ports, rates or data order make a different BRM; only `source: chisel` is accepted for now. Params are `design` (fixed per instance, end up in the cluster file) or `runtime` (exactly `n` and every named rate, the start parameters of CONTRACTS.md section 4). Value fields hold an int or an expression over params (names and `+ - * //`, parsed with `ast`, no string literals: a fixed string is a design param with one allowed value); lanes, timing and function params use design params only, a rate is an int or a runtime param name. The function part names a registered accelerator kind (D43) and its factory params without timing; the accelerator entry is those params resolved plus the implementation's `latency` and `ii`, so the cluster file keeps naming the model's kind and the model is unchanged. Timing is `latency` and `initiation_interval` in the BRM, `ii` in the cluster file. The register map and interconnect ports are derived, not declared. The dataflow part is a registered notation plus one nest per port, describing only the accelerator in logical indices; the pattern is descriptive (`family`, `attrs`) with its predicate null until DFG2; the binding may be null until M10. Every field is written, a missing part is rejected by name, unknown keys are errors. A design point instance names BRM, implementation and design params. Amends section 5.3 (parts, CSR map derived) and 5.4 (implementation choice) | 24 |
 
 ## 11. Open Items
 
@@ -672,3 +699,6 @@ it.
 24. ~~`scenarios/make.py` holds every scenario's layout and program by hand, plus shared helpers, and grows with each scenario~~ — closed by D65: one folder per scenario with its own `scenario.py`, shared helpers in `scenarios/common.py`, cluster builders in `scenarios/clusters/clusters.py`, `Program` and the lowering in `snax_forge/lower/` (D64). The cluster builders move into SNAX-LOWER with LOW1c (D53); the layout helpers (`contiguous`, `unit`) are BRM2 / LOW1a's.
 25. No trace event for an accelerator's push into its output FIFO: the cluster view (VIS3, D61) draws the accelerator → writer arrow when a writer lane's count rises, so a push and a pop in the same cycle show no arrow. A beat `push` event would make it exact (amends D39 and CONTRACTS.md section 7); decided after VIS3 has been used, together with open item 23.
 26. ~~`scenarios/fmul` is scheduled by hand with `Program`, not written as a task list~~ — closed by D66: `fmul/tasks.json` lowers to the same program, 525 cycles; its six syncs that only keep that program are listed in `fmul/scenario.py` (519 cycles without them).
+27. Generating a BRM from Chisel, SystemVerilog or HLS sources instead of writing it by hand (D68). Far future.
+28. Implementations whose `source` is SystemVerilog or HLS (D68): only `chisel` is accepted until one is needed.
+29. The design point's memory plan needs a layout per buffer (shape and a byte stride per dimension, covering storage order and padding), not only an address and banks, for SNAX-LOWER to map a BRM's nest into streamer values. Decided with DP1; trivial for the 1D targets (vecadd, dot, jacobi1d).

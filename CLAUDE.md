@@ -16,14 +16,14 @@ checked against the file it came from, so update both together.
 
 ## Commands
 - Environment: `pixi install`
-- Tests: `pixi run test` (everything under tests/), `pixi run test-model` (SNAX-MODEL only), `pixi run test-lower` (SNAX-LOWER only); CI runs `pixi run -e ci test`
+- Tests: `pixi run test` (everything under tests/), `pixi run test-model` (SNAX-MODEL only), `pixi run test-lower` (SNAX-LOWER only), `pixi run test-brm` (SNAX-BRM only); CI runs `pixi run -e ci test`
 - Viewer: `pixi run view DIR [DIR ...]` serves model output directories at http://127.0.0.1:8765/ (D55)
 - Clean slate: `pixi run clean` removes out/, caches and Chisel build trees (`pixi run clean --dry-run` lists them first)
 - Lint/format: `pixi run lint` (ruff check + format check, CI runs it), `pixi run fmt` to fix
 
 ## Conventions
 - Python 3.x, type hints on all public functions, dataclasses for artefacts.
-- One package per component under `snax_forge/`: snax_model and viz (built), lower (task list → program built, D64), then dfg, brm, dse.
+- One package per component under `snax_forge/`: snax_model and viz (built), lower (task list → program built, D64), brm (format in progress, D68), then dfg, dse.
 - Scenarios: one folder per scenario under `scenarios/`, with the `scenario.py` that makes it and a hand-written `tasks.json` it lowers into the program (D64–D66). `pixi run scenarios` (`python scenarios/make.py`, `--check` to compare) writes `scenario.json`, the `.npy` data and the cluster files; they are generated, ignored by git and never edited by hand (D67). `pixi run model-run` and the test session write them first.
 - Every new artefact type gets a `to_dict` / `from_dict` and a round-trip test. Versioned JSON schemas in `schemas/` come from M6 on (F2), not before (D26).
 - Shared test helpers live in `tests/<package>/helpers.py`, not copied per file.
