@@ -29,10 +29,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from snax_forge import expr
 from snax_forge.snax_model.accel import AccelConfig
 from snax_forge.snax_model.scenario import ACCEL_KINDS
 
-from . import expr
 from .brm import TYPES, BrmError
 from .notation import NOTATIONS
 

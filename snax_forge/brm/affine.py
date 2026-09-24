@@ -26,7 +26,8 @@ innermost. The spatial loops come last and enumerate the lanes of a beat,
 the last one fastest (lane dimension 0, as the streamer's spatial dimension
 0, CONTRACTS.md section 3).
 
-Every value is an int or an expression over the BRM's params (expr.py).
+Every value is an int or an expression over the BRM's params
+(snax_forge/expr.py).
 Checked when the BRM is made: the keys, one stride per dimension, at least
 one spatial loop and only at the end, and spatial bounds that use design
 params only (lanes are design time, as the streamer's spatial bounds).
@@ -50,7 +51,8 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
-from . import expr
+from snax_forge import expr
+
 from .notation import register_notation
 
 if TYPE_CHECKING:

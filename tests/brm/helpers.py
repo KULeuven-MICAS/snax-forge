@@ -18,7 +18,8 @@ from __future__ import annotations
 import copy
 from typing import Any
 
-from snax_forge.brm import NOTATIONS, expr, register_notation
+from snax_forge import expr
+from snax_forge.brm import NOTATIONS, register_notation
 from snax_forge.snax_model.accel import elementwise_stub
 from snax_forge.snax_model.scenario import ACCEL_KINDS, register_accel
 

@@ -193,6 +193,7 @@ def test_every_register_named_in_the_document_exists(name):
         "## 8. Rules for a new block kind",
         "## 9. Task list",
         "## 10. Block runtime model",
+        "## 11. SNAX-DFG",
     ],
 )
 def test_section_exists(heading):

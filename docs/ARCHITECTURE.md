@@ -166,32 +166,55 @@ with plain JSON files; versioned schemas follow once two kernels have used them
 SNAX-FORGE's own dataflow graph: a JSON file with the extension `.snaxdfg`
 (D71), independent of DaCe classes. It borrows SDFG's concepts, not its
 format: the SDFG JSON carries guids, debuginfo, per-state bookkeeping and
-DaCe types, which make it hard to transform by hand or by script. [OPEN]
-The exact format is fixed in DFG1.
+DaCe types, which make it hard to transform by hand or by script. The
+format is fixed by D77 and written down in CONTRACTS.md section 11
+(`snax_forge/dfg/`).
 
+- **A tree, not a graph** (D77): symbols, containers and an ordered `body`
+  of nodes; scopes hold ordered bodies of their own, and body order is
+  execution order. Memlets sit on the connectors of the nodes that use the
+  data. Map entry/exit nodes, access nodes and the outer memlets SDFG
+  draws on a map are derived, not stored.
 - **Borrowed from SDFG**: data containers (shape, dtype, symbolic sizes),
   tasklets, map scopes with symbolic ranges, connectors, memlets
   (data-movement edges with a subset), and the order between scopes.
-- **Loop kinds**: a map's loops carry `loop.kind`: absent as imported,
-  `temporal` or `spatial` once SNAX-SANDBOX splits them (D73).
+- **Loop kinds**: a map has one loop variable, so a multi-dimensional
+  loop is nested maps. It carries `loop.kind`: absent as imported, `tile`,
+  `temporal` or `spatial` once SNAX-SANDBOX maps it (D73, D77).
+- **Names and expressions** (D77): every name in an expression is a symbol
+  or the variable of an enclosing map. Subsets, ranges and shapes use the
+  expression grammar of the BRM (`snax_forge/expr.py`), stored canonical.
+  A symbol is `null` as imported and gets its value from the recipe, while
+  expressions keep its name.
 - **Coarse node kinds on top**, most importantly the *accelerated node*, which
-  replaces a subgraph with a bound BRM instance. Replacement can be nested.
+  replaces a subgraph with a bound BRM instance. It does one beat: `bind`
+  replaces a spatial map and its tasklet, so the node sits inside the
+  temporal maps it runs over, its connectors are the BRM's ports and each
+  memlet gives a port's lanes as a range. It holds the instance (BRM,
+  implementation, design params, D77). Replacement can be nested: the node
+  has a body, empty for a leaf block.
 - **No streamer nodes.** A memlet on an accelerated node's connector becomes
   a streamer at lowering, one per port (D12, D53). The graph describes the
   workload, not the cluster.
 - **Importers** derive a `.snaxdfg` and decide nothing (principle 4). The
-  first reads the simplified SDFG that `pixi run forge <kernel>` writes and
-  folds DaCe's transient-plus-copy (`C[:] = A + B` gives a map into
-  `__tmp0` and a copy into `C`) into a direct write. Symbols (`N`) stay
-  symbolic; the recipe binds them. An MLIR importer comes later and writes
+  first reads the simplified SDFG that `pixi run forge <kernel>` writes.
+  DaCe's transient-plus-copy (`C[:] = A + B` gives a map into `__tmp0` and a
+  copy into `C` in the raw SDFG) is already folded by simplify for vecadd;
+  the importer folds only what simplify leaves, and transients stay in the
+  format (dot and jacobi1d keep theirs). Symbols (`N`) stay symbolic; the
+  recipe binds them. An MLIR importer comes later and writes
   `.snaxdfg` directly, without SDFG (open item 33).
-- **Extensibility [DEFAULT]:**
-  - The core element schema is only `id`, `kind`, `inputs`, `outputs`, `attrs`.
-  - Node kinds are registered entries (name, attribute schema, optional Python
-    behaviour), never subclasses.
-  - `attrs` uses namespaced keys (`loop.*`, `mem.*`, `hw.*`, `user.*`). Tools
-    read the namespaces they know and pass the rest through untouched.
-  - Each kind validates its own attributes against its registered schema.
+- **Extensibility** (D19, D77):
+  - The core element schema is `id`, `kind`, `inputs`, `outputs`, `attrs`,
+    plus `body` for a kind that is a scope.
+  - Node kinds are registered entries (attrs, whether they have a body, the
+    variables they bind, a check), never subclasses: `map`, `tasklet` and
+    `accelerated` so far; a sequential `loop` and a `branch` come with the
+    kernels that need them (open item 36).
+  - An attr without a namespace belongs to the kind, is checked by it and is
+    always written. Namespaced keys (`loop.*`, `mem.*`, `hw.*`, `user.*`)
+    are cross-cutting: tools read the namespaces they know and pass the rest
+    through untouched.
 - **Visualisable** in the DFG viewer (section 5.7, VIS5), as imported and
   after every sandbox step.
 
@@ -328,7 +351,8 @@ hand:
 2. the memory plan: a layout per container and memory (base address, shape,
    one byte stride per dimension); banks follow from addresses under the
    fixed address map (open item 18) and are not stated
-3. accelerator instances: BRM, implementation and design params
+3. accelerator instances: BRM, implementation and design params, as the
+   accelerated nodes of the mapped SNAX-DFG hold them (D77)
 4. the platform
 
 Loads and stores are not in the design point: SNAX-LOWER inserts them for
@@ -792,6 +816,7 @@ cluster RTL (section 7), with a regression test.
 | D74 | The design point is SNAX-SANDBOX's output, written to disk and not edited by hand: the mapped SNAX-DFG, the memory plan, the accelerator instances (BRM, implementation, design params, D68) and the platform. The memory plan holds a layout per container and memory (base address, shape, one byte stride per dimension: the form of `lower/layout.py`, which stays where it is), set by the recipe's place step, explicitly or by a default policy. Banks follow from addresses under the fixed word-interleaved map (open item 18) and are not stated, so validation checks addresses against the memory's size, overlaps between containers in one memory, and unknown BRMs and implementations. Loads and stores are not in it: SNAX-LOWER inserts them for containers with both an L2 and an L1 layout. Amends section 5.4 and DP1's acceptance ("out-of-range banks" becomes out-of-range addresses); DP1 closes open item 29 | 25 |
 | D75 | Derived names. The streamer serving port `p` of instance `i` is `i_p` (an underscore, since register names split on the first dot, D42), a task is `<node>_<component>` and a DMA task `load_<container>` or `store_<container>`, with node and container names as the imported graph has them; SNAX-LOWER derives all of them and the design point names none. The existing scenarios are renamed in NAME1, before LOW1c and LOW1a: alu4's and mul1's `ra`, `rb`, `wr` become `acc_a`, `acc_b`, `acc_out`, red4's `ra`, `wr` become `acc_in`, `acc_out`, and the task names of every `tasks.json` follow the scheme. Component order is kept, so every cycle count is unchanged. Amends D53 | 25 |
 | D76 | DFG viewer and the M3 order. The viewer of D55 gets a second mode for `.snaxdfg` files, `python -m snax_forge.viz.dfg FILE [FILE ...]` (pixi `view-dfg`): several graphs side by side, a Reload button, the same server, colours and offline rule. Containers are nodes, maps nested boxes coloured by loop kind, tasklets and accelerated nodes sit inside them, memlets are edges labelled with their subset; edges use SVG and a small layered layout in plain JS with no library (D61's no-SVG rule is the cluster view's; open item 32). VIS5 moves from M4b into M3. M3 closes vecadd from the kernel forwards: DFG1, IMP1, REF1, VIS5, SBX1 (absorbs DFG2), DP1, NAME1, LOW1c, LOW1a, E2E1. The SDFG import of vecadd moves from M7 (FE1) into M3, that of dot into M5; M7 keeps the remaining front ends and M8 becomes automated search over recipes. Amends D24, D54, D55 and section 8 | 25 |
+| D77 | SNAX-DFG format (DFG1), fixing D71's open format. A `.snaxdfg` is `name`, `symbols` (name → int or null: null as imported, set by the recipe, while expressions keep the name), `containers` (`shape` over symbols, `dtype` a NumPy dtype name, `transient`, namespaced `attrs`; no strides or storage, which are the memory plan's) and an ordered `body`. It is a tree: a node is `id`, `kind`, `inputs`, `outputs`, `attrs` and, for a scope kind, `body`, in execution order; a memlet is `{data, subset}` on a node's connector, one dimension per container dimension, an index or a range `begin:end[:step]` with the end exclusive. Map entry/exit nodes, access nodes and outer memlets are not stored: they are derived (propagation, body order). Kinds are registered with their attrs, whether they have a body, the variables they bind and a check: `map` (one `var` over a `range`, parallel iterations, no connectors, `loop.kind` absent, `tile`, `temporal` or `spatial`), `tasklet` (`code`, one `output = expression` per output over the input connectors, one element per connector) and `accelerated` (`instance`, `brm`, `implementation`, design `params`; one beat of the BRM, its connectors the BRM's ports, each memlet a port's lanes as a range, sitting inside the temporal maps it runs over; a body for a nested block, empty for a leaf). Attrs without a namespace are the kind's, checked and always written; namespaced attrs pass through untouched. Names: every name in an expression is a symbol or the `var` of an enclosing map; symbols, containers and variables never share a name; node ids are unique identifiers (D75). Expressions use the BRM grammar, moved to `snax_forge/expr.py` and extended with NumPy integer arrays in `evaluate` (REF1), `canonical`, `substitute` (`split_map`) and `linear` (constant and int coefficients per variable, for `bind` and LOW1a); the stored form is canonical (`ast.unparse`, an expression without names as an int). Every field is written, missing keys take defaults, unknown keys are errors; `body` is written exactly for scope kinds. An accelerated node's connectors and params are checked against its BRM by `bind` and REF1, not by the format; two nodes on one instance must agree. Amends D19 (core schema gains `body`; the attrs rule), D71 (the importer folds only what DaCe's simplify leaves: the simplified vecadd has no transient), D73 (`loop.kind` gains `tile`) and D74 (the instances are the ones the mapped DFG's accelerated nodes hold); closes the format half of D71 | 26 |
 
 ## 11. Open Items
 
@@ -832,9 +857,11 @@ it.
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources instead of writing it by hand (D68). Far future.
 28. Implementations whose `source` is SystemVerilog or HLS (D68): only `chisel` is accepted until one is needed.
 29. The design point's memory plan needs a layout per buffer (shape and a byte stride per dimension, covering storage order and padding), not only an address and banks, for SNAX-LOWER to map a BRM's nest into streamer values. Decided with DP1; trivial for the 1D targets (vecadd, dot, jacobi1d). Until then `snax_forge/lower/layout.py` holds a provisional `Layout` in that form (D70). D74 takes that form for the memory plan; closed when DP1 lands.
-30. Kernel and model dtypes disagree: `kernels/polybench/vecadd.py` uses `int32`, while the model's L1 and `elementwise_add` use `int64` with one element per word. Decided in IMP1: change the kernel, or give the L1 and the BRM port `int32` (still one element per word, open item 21).
+30. Kernel and model dtypes disagree: `kernels/polybench/vecadd.py` uses `int32`, while the model's L1 and `elementwise_add` use `int64` with one element per word. Decided in IMP1: change the kernel, or give the L1 and the BRM port `int32` (still one element per word, open item 21). Decided (round 26): the vecadd kernel moves to `int64` in IMP1, so the model, `elementwise_add` and the streamer strides of `scenarios/vecadd` stay as they are; dot and jacobi1d keep `int32` until M5 and M9.
 31. A loop whose bound is not a multiple of the spatial bound (N not a multiple of W): `split_map` rejects it for now (D73); a tail task or padding later. The reference executor still runs such N (REF1).
 32. The DFG viewer's layout: a small layered layout for nested scopes and edges, in plain JS with no library (D76). Revisit if graphs outgrow it.
 33. An MLIR importer that writes `.snaxdfg` directly, without SDFG (D71).
 34. A hand-edited `.snaxdfg` cannot be replayed or swept (D72); whether a recipe may start from an edited file is decided when it is needed.
 35. Where the platform lives: a platform file beside the recipe, or a first recipe step (D72). Decided in SBX1 or DP1.
+36. Control flow in the SNAX-DFG (D77): a sequential `loop` kind (`var`, `range`, a body; iterations in order, unlike a map) for jacobi1d's time steps, which the importer finds with DaCe's `find_for_loop`, and a `branch` kind whose body holds `case` nodes, each with a `cond` and a body. Registered when a kernel needs them (M9); state machines that are neither get a named error in the importer.
+37. The expression grammar (D68, D77) has `+ - * //` only: a tail tile needs `min` (open item 31), a branch needs comparisons, and jacobi1d's tasklet a cast (`dace.int64(x) // 3`). Extended when a kernel needs it.

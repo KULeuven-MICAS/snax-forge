@@ -12,6 +12,8 @@ hand-written BRMs (library.py, ``load_brm``), starting with
 ``elementwise_add``.
 """
 
+from snax_forge.expr import ExprError
+
 from . import affine  # registers the "affine" notation (D70)
 from .affine import Nest, resolve_nest, task_nest
 from .brm import (
@@ -26,7 +28,6 @@ from .brm import (
     Port,
     Timing,
 )
-from .expr import ExprError
 from .instance import Instance, resolve
 from .library import LIBRARY, library_names, load_brm
 from .notation import NOTATIONS, register_notation

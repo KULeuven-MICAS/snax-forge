@@ -7,9 +7,10 @@
 > Scope: the model side (D26), plus SNAX-LOWER's task list (section 9,
 > D64), the input the model's control program is lowered from, and the BRM
 > (section 10, D68, D70), from which the accelerator entry and the streamer
-> values are derived. The SNAX-DFG (`.snaxdfg`), the sandbox recipe and the
-> design point are not here yet: they get sections with DFG1, SBX1 and DP1
-> (D71–D74). Later nest notations are open item 1 (M6).
+> values are derived, and the SNAX-DFG (section 11, D77), the workload graph
+> the sandbox transforms. The sandbox recipe and the design point get
+> sections with SBX1 and DP1 (D72–D74). Later nest notations are open
+> item 1 (M6).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
 > schemas are F2's job (D26, F2). Every value marked **default** is a
@@ -24,7 +25,7 @@
 > `run:` means "produced by running that scenario".
 >
 > Layout: section 8 holds the rules a new block kind must follow; section 9
-> the task list; section 10 the BRM. The
+> the task list; section 10 the BRM; section 11 the SNAX-DFG. The
 > reasoning behind each contract is in the module docstrings and in
 > `docs/ARCHITECTURE.md` section 5.6; this file does not repeat it.
 
@@ -738,3 +739,79 @@ SNAX-LOWER maps it through a layout onto streamer registers.
 Element `t * W + j` in lane `j` of beat `t`, on `b` and `out` alike: the
 ports agree on element positions, which is the BRM author's responsibility
 (D70).
+
+## 11. SNAX-DFG
+
+The workload as SNAX-FORGE's own dataflow graph (DFG1, D71, D77): one
+`.snaxdfg` JSON file, written by an importer (IMP1) and rewritten by each
+sandbox transform (SBX1). Loaded with `Graph.load(path)`; every field is
+written, missing keys take defaults, unknown keys are errors, and a graph is
+validated when it is made. Generated files live under `out/`; the fixtures
+in `tests/dfg/fixtures/` are the exception.
+
+| Field | Holds |
+|---|---|
+| `name` | the kernel |
+| `symbols` | name → int or `null`: `null` as imported, the value once a recipe binds it; expressions keep the name |
+| `containers` | name → `shape` (ints or expressions over symbols), `dtype` (a NumPy dtype name), `transient`, `attrs` (namespaced only) |
+| `body` | the nodes, in execution order |
+
+**Nodes.** Every node has `id`, `kind`, `inputs`, `outputs`, `attrs` and,
+for a kind that has one, `body`. `inputs` and `outputs` map a connector
+name to a memlet, `{"data": container, "subset": [dim, ...]}`, one
+dimension per container dimension. A dimension is an index (`i`,
+`4 * i_t + i_s`, `0`) or a range `begin:end` or `begin:end:step` with the
+end exclusive. Node ids are identifiers and unique in the graph, because
+derived task names are built from them (D75).
+
+| Kind | Attrs | Body | Connectors |
+|---|---|---|---|
+| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial` | yes: runs once per value of `var` | none (derived from the body) |
+| `tasklet` | `code`: one `output = expression` per output connector | no | one element each: indices only |
+| `accelerated` | `instance`, `brm`, `implementation`, `params` (design params) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
+
+Attrs without a namespace belong to the kind and are all written;
+namespaced attrs (`loop.*`, `mem.*`, `hw.*`, `user.*`) are passed through
+untouched. More kinds are added with `register_kind` (principle 6).
+
+**Names.** Every name in an expression is a symbol or the `var` of an
+enclosing map, and nothing else; shapes use symbols only. Symbols,
+containers and variables never share a name. Expressions use the grammar
+of section 10's value fields (ints, names, `+ - * //`) and are stored as
+`ast.unparse` writes them, an expression without names as an int.
+
+vecadd after `split_map` (W = 4) and `bind` to `elementwise_add`: the
+accelerated node does one beat of four lanes, inside the temporal map of
+N // 4 beats that becomes its streamers' temporal loop and its `n`.
+
+<!-- snippet: tests/dfg/fixtures/vecadd_accelerated.snaxdfg -->
+```json
+  {
+   "id": "add_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i_t", "range": "0:N // 4", "loop.kind": "temporal"},
+   "body": [
+    {
+     "id": "add",
+     "kind": "accelerated",
+     "inputs": {
+      "a": {"data": "A", "subset": ["4 * i_t:4 * i_t + 4"]},
+      "b": {"data": "B", "subset": ["4 * i_t:4 * i_t + 4"]}
+     },
+     "outputs": {"out": {"data": "C", "subset": ["4 * i_t:4 * i_t + 4"]}},
+     "attrs": {
+      "instance": "acc",
+      "brm": "elementwise_add",
+      "implementation": "chisel_tiled_spatial",
+      "params": {"W": 4, "op": "add"}
+     },
+     "body": []
+    }
+   ]
+  }
+```
+
+Whether the connectors and params agree with the BRM is checked where the
+BRM is loaded: by `bind` (SBX1) and the reference executor (REF1).

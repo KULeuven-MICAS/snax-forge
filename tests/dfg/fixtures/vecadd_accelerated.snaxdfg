@@ -1,0 +1,36 @@
+{
+ "name": "vecadd",
+ "symbols": {"N": 64},
+ "containers": {
+  "A": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "B": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "C": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}}
+ },
+ "body": [
+  {
+   "id": "add_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i_t", "range": "0:N // 4", "loop.kind": "temporal"},
+   "body": [
+    {
+     "id": "add",
+     "kind": "accelerated",
+     "inputs": {
+      "a": {"data": "A", "subset": ["4 * i_t:4 * i_t + 4"]},
+      "b": {"data": "B", "subset": ["4 * i_t:4 * i_t + 4"]}
+     },
+     "outputs": {"out": {"data": "C", "subset": ["4 * i_t:4 * i_t + 4"]}},
+     "attrs": {
+      "instance": "acc",
+      "brm": "elementwise_add",
+      "implementation": "chisel_tiled_spatial",
+      "params": {"W": 4, "op": "add"}
+     },
+     "body": []
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,27 @@
+{
+ "name": "vecadd",
+ "symbols": {"N": null},
+ "containers": {
+  "A": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "B": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "C": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}}
+ },
+ "body": [
+  {
+   "id": "add_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i", "range": "0:N"},
+   "body": [
+    {
+     "id": "add",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "A", "subset": ["i"]}, "in2": {"data": "B", "subset": ["i"]}},
+     "outputs": {"out": {"data": "C", "subset": ["i"]}},
+     "attrs": {"code": "out = in1 + in2"}
+    }
+   ]
+  }
+ ]
+}

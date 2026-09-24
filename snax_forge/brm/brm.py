@@ -31,8 +31,9 @@ section 4). The register map is derived from them, and a port's interconnect
 ports from its lanes (D12, D36); neither is written in the BRM.
 
 Value fields (lanes, rate, timing, function params) hold an int or an
-expression over params (expr.py). Lanes, timing and function params may use
-design params only; a rate is an int or the name of a runtime param.
+expression over params (snax_forge/expr.py, shared with the SNAX-DFG). Lanes,
+timing and function params may use design params only; a rate is an int or
+the name of a runtime param.
 
 Every field is written by ``to_dict``; a missing required part is an error
 that names it, optional fields take their defaults, and unknown keys are
@@ -52,10 +53,10 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
+from snax_forge import expr
+from snax_forge.expr import Value
 from snax_forge.snax_model.config import check_keys, plain, to_json
 
-from . import expr
-from .expr import Value
 from .notation import NOTATIONS
 
 if TYPE_CHECKING:
