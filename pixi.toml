@@ -98,9 +98,10 @@ lint       = "ruff check util kernels snax_forge transforms tests scenarios && r
 fmt        = "ruff check --fix util kernels snax_forge transforms tests scenarios && ruff format util kernels snax_forge transforms tests scenarios"
 forge      = "python -m snax_forge.sdfg"
 profile    = "python -m snax_forge.sdfg --profile"
-# SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`
-model-run  = "python -m snax_forge.snax_model run"
+# SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`.
+# The scenario files are generated, not in git (D67): `scenarios` writes them, model-run first.
 scenarios  = "python scenarios/make.py"
+model-run  = { cmd = "python -m snax_forge.snax_model run", depends-on = ["scenarios"] }
 # Viewer (VIS1, D55): `pixi run view out/vecadd [out/other ...]`, then open http://127.0.0.1:8765/
 view       = "python -m snax_forge.viz"
 # Remove out/, Python and test caches and Chisel build trees; `pixi run clean --dry-run` only lists them

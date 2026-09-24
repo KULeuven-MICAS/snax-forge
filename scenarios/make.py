@@ -1,7 +1,7 @@
 """Generate the checked-in SNAX-MODEL clusters and scenarios (MOD9, D41, D42, D65).
 
     python scenarios/make.py            write every generated file below scenarios/
-    python scenarios/make.py --check    exit 1 if a checked-in file differs
+    python scenarios/make.py --check    exit 1 if a generated file is missing or differs
 
 Every scenario lives in its own folder with the script that makes it
 (D65): ``<name>/scenario.py`` defines ``make()``, which returns the
@@ -10,8 +10,13 @@ Every scenario lives in its own folder with the script that makes it
 every cluster in ``clusters/clusters.py``. A folder with a hand-written
 ``tasks.json`` is written as a task list: its ``scenario.py`` lowers it into
 the scenario's program (``lower_program``, D64), and this driver never
-writes it. test_scenario.py checks that the checked-in files equal what this
-script generates, so they cannot drift apart.
+writes it. Every scenario is a task list now (D66).
+
+The generated files are not in git (D67): they are written again by
+``pixi run scenarios``, by ``pixi run model-run`` before it runs, and by
+the test session before any test (tests/conftest.py). The sources are the
+``scenario.py`` and ``tasks.json`` files, ``common.py`` and
+``clusters/clusters.py``.
 
 Shared helpers live in ``common.py``; ``scenarios/`` is put on the import
 path so every ``scenario.py`` can use it and ``clusters.clusters``.
@@ -21,7 +26,7 @@ Scenarios:
     vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the M3 target; task list
     vecadd_conflict/     vecadd with b in the same banks as a (VIS3's conflict case); task list
     vecadd_tiled/        vecadd over 576 elements in 3 tiles of 192 (471 cycles); task list
-    fmul/                a * b in 5 tiles of 16 on mul1, double buffered; scheduled by hand
+    fmul/                a * b in 5 tiles of 16 on mul1, double buffered; task list
     reduce/              64 elements in L1 summed in groups of 16; task list
     dma/                 L2 -> L1 with a 2D pattern and back, on alu4; task list
 """
@@ -31,6 +36,7 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import io
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -52,7 +58,7 @@ SCENARIO_FILE = "scenario.py"
 # (test_gaps: MAKE.alu4, MAKE.unit, MAKE.Program, MAKE.WORD, ...).
 __all__ = [
     "BEAT", "CTL", "LANES", "WORD", "Program", "alu4", "contiguous", "generate", "main",
-    "mul1", "red4", "unit",
+    "mul1", "red4", "unit", "write",
 ]  # fmt: skip
 
 
@@ -95,19 +101,31 @@ def generate() -> dict[str, bytes]:
     return files
 
 
-def main(argv: list[str] | None = None) -> int:
-    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    ap.add_argument("--check", action="store_true", help="only compare, write nothing")
-    args = ap.parse_args(argv)
+def write(check: bool = False) -> list[str]:
+    """Write every generated file that is missing or differs; returns their paths.
+
+    With ``check`` nothing is written. A file is replaced in one step (a
+    temporary file, then ``os.replace``), so a reader never sees half of it.
+    """
     stale = []
     for rel, data in generate().items():
         path = ROOT / rel
         if path.is_file() and path.read_bytes() == data:
             continue
         stale.append(rel)
-        if not args.check:
+        if not check:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(data)
+            tmp = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+            tmp.write_bytes(data)
+            os.replace(tmp, path)
+    return stale
+
+
+def main(argv: list[str] | None = None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--check", action="store_true", help="only compare, write nothing")
+    args = ap.parse_args(argv)
+    stale = write(check=args.check)
     if args.check and stale:
         print("out of date: " + ", ".join(stale), file=sys.stderr)
         return 1

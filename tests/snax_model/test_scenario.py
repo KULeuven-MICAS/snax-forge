@@ -215,7 +215,9 @@ def test_cli_as_a_process(tmp_path):
     assert set(files(tmp_path)) == set(OUT_FILES)
 
 
-def test_checked_in_files_equal_the_generator():
+def test_generated_files_equal_the_generator():
+    """The files tests/conftest.py wrote are what make.py generates now: generation
+    is deterministic, and no test run leaves a changed file behind (D67)."""
     for rel, data in MAKE.generate().items():
         assert (SCEN / rel).read_bytes() == data, f"scenarios/{rel} is stale: run make.py"
 

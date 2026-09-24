@@ -1,0 +1,484 @@
+{
+ "name": "fmul",
+ "steps": [
+  {
+   "op": "configure",
+   "task_name": "load_a_0",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 0, "bounds": [2], "strides": [64]},
+    "dst": {"base": 0, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_a_0"]},
+  {
+   "op": "configure",
+   "task_name": "load_b_0",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 640, "bounds": [2], "strides": [64]},
+    "dst": {"base": 64, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_b_0"]},
+  {
+   "op": "configure",
+   "task_name": "mul_ra_0",
+   "type": "streamer",
+   "component": "ra",
+   "after": ["load_a_0"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 0,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_rb_0",
+   "type": "streamer",
+   "component": "rb",
+   "after": ["load_b_0"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 64,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_wr_0",
+   "type": "streamer",
+   "component": "wr",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "base": 1088,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_acc_0",
+   "type": "accel",
+   "component": "acc",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16}
+  },
+  {"op": "start", "tasks": ["mul_ra_0", "mul_rb_0", "mul_wr_0", "mul_acc_0"]},
+  {
+   "op": "configure",
+   "task_name": "load_a_1",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 128, "bounds": [2], "strides": [64]},
+    "dst": {"base": 128, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "sync", "task": "load_b_0", "mode": "poll"},
+  {"op": "start", "tasks": ["load_a_1"]},
+  {
+   "op": "configure",
+   "task_name": "load_b_1",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 768, "bounds": [2], "strides": [64]},
+    "dst": {"base": 192, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_b_1"]},
+  {
+   "op": "configure",
+   "task_name": "mul_ra_1",
+   "type": "streamer",
+   "component": "ra",
+   "after": ["load_a_1"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 128,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_rb_1",
+   "type": "streamer",
+   "component": "rb",
+   "after": ["load_b_1"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 192,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_wr_1",
+   "type": "streamer",
+   "component": "wr",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "base": 1216,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_acc_1",
+   "type": "accel",
+   "component": "acc",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16}
+  },
+  {"op": "start", "tasks": ["mul_ra_1", "mul_rb_1", "mul_wr_1", "mul_acc_1"]},
+  {
+   "op": "configure",
+   "task_name": "store_c_0",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_wr_0"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 1088, "bounds": [2], "strides": [256]},
+    "dst": {"base": 1280, "bounds": [2], "strides": [64]}
+   }
+  },
+  {"op": "sync", "task": "load_b_1", "mode": "poll"},
+  {"op": "start", "tasks": ["store_c_0"]},
+  {
+   "op": "configure",
+   "task_name": "load_a_2",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_ra_0"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 256, "bounds": [2], "strides": [64]},
+    "dst": {"base": 0, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_a_2"]},
+  {
+   "op": "configure",
+   "task_name": "load_b_2",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_rb_0"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 896, "bounds": [2], "strides": [64]},
+    "dst": {"base": 64, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_b_2"]},
+  {
+   "op": "configure",
+   "task_name": "mul_ra_2",
+   "type": "streamer",
+   "component": "ra",
+   "after": ["load_a_2"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 0,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_rb_2",
+   "type": "streamer",
+   "component": "rb",
+   "after": ["load_b_2"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 64,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_wr_2",
+   "type": "streamer",
+   "component": "wr",
+   "after": ["store_c_0"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 1088,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_acc_2",
+   "type": "accel",
+   "component": "acc",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16}
+  },
+  {"op": "start", "tasks": ["mul_ra_2", "mul_rb_2", "mul_wr_2", "mul_acc_2"]},
+  {
+   "op": "configure",
+   "task_name": "store_c_1",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_wr_1"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 1216, "bounds": [2], "strides": [256]},
+    "dst": {"base": 1408, "bounds": [2], "strides": [64]}
+   }
+  },
+  {"op": "sync", "task": "load_b_2", "mode": "poll"},
+  {"op": "start", "tasks": ["store_c_1"]},
+  {
+   "op": "configure",
+   "task_name": "load_a_3",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_ra_1"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 384, "bounds": [2], "strides": [64]},
+    "dst": {"base": 128, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_a_3"]},
+  {
+   "op": "configure",
+   "task_name": "load_b_3",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_rb_1"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 1024, "bounds": [2], "strides": [64]},
+    "dst": {"base": 192, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_b_3"]},
+  {
+   "op": "configure",
+   "task_name": "mul_ra_3",
+   "type": "streamer",
+   "component": "ra",
+   "after": ["load_a_3"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 128,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_rb_3",
+   "type": "streamer",
+   "component": "rb",
+   "after": ["load_b_3"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 192,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_wr_3",
+   "type": "streamer",
+   "component": "wr",
+   "after": ["store_c_1"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 1216,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_acc_3",
+   "type": "accel",
+   "component": "acc",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16}
+  },
+  {"op": "start", "tasks": ["mul_ra_3", "mul_rb_3", "mul_wr_3", "mul_acc_3"]},
+  {
+   "op": "configure",
+   "task_name": "store_c_2",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_wr_2"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 1088, "bounds": [2], "strides": [256]},
+    "dst": {"base": 1536, "bounds": [2], "strides": [64]}
+   }
+  },
+  {"op": "sync", "task": "load_b_3", "mode": "poll"},
+  {"op": "start", "tasks": ["store_c_2"]},
+  {
+   "op": "configure",
+   "task_name": "load_a_4",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_ra_2"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 512, "bounds": [2], "strides": [64]},
+    "dst": {"base": 0, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_a_4"]},
+  {
+   "op": "configure",
+   "task_name": "load_b_4",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_rb_2"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"base": 1152, "bounds": [2], "strides": [64]},
+    "dst": {"base": 64, "bounds": [2], "strides": [256]}
+   }
+  },
+  {"op": "start", "tasks": ["load_b_4"]},
+  {
+   "op": "configure",
+   "task_name": "mul_ra_4",
+   "type": "streamer",
+   "component": "ra",
+   "after": ["load_a_4"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 0,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_rb_4",
+   "type": "streamer",
+   "component": "rb",
+   "after": ["load_b_4"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 64,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_wr_4",
+   "type": "streamer",
+   "component": "wr",
+   "after": ["store_c_2"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 1088,
+    "temporal_bounds": [8, 2],
+    "temporal_strides": [8, 256],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mul_acc_4",
+   "type": "accel",
+   "component": "acc",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16}
+  },
+  {"op": "start", "tasks": ["mul_ra_4", "mul_rb_4", "mul_wr_4", "mul_acc_4"]},
+  {
+   "op": "configure",
+   "task_name": "store_c_3",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_wr_3"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 1216, "bounds": [2], "strides": [256]},
+    "dst": {"base": 1664, "bounds": [2], "strides": [64]}
+   }
+  },
+  {"op": "sync", "task": "load_b_4", "mode": "poll"},
+  {"op": "start", "tasks": ["store_c_3"]},
+  {"op": "sync", "task": "mul_wr_4", "mode": "poll"},
+  {"op": "sync", "task": "store_c_3", "mode": "poll"},
+  {
+   "op": "configure",
+   "task_name": "store_c_4",
+   "type": "dma",
+   "component": "dma",
+   "after": ["mul_wr_4"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 1088, "bounds": [2], "strides": [256]},
+    "dst": {"base": 1792, "bounds": [2], "strides": [64]}
+   }
+  },
+  {"op": "sync", "task": "store_c_3", "mode": "poll"},
+  {"op": "start", "tasks": ["store_c_4"]},
+  {"op": "sync", "task": "store_c_4", "mode": "poll"}
+ ]
+}

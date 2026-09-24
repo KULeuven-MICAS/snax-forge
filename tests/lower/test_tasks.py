@@ -22,8 +22,11 @@ from .helpers import SCEN, TASK_SCENARIOS, add, cluster, dma, start, stream, syn
 # =============================================================================
 
 
-def test_the_task_scenarios_are_found():
-    assert TASK_SCENARIOS == ("dma", "reduce", "vecadd", "vecadd_conflict", "vecadd_tiled")
+def test_every_scenario_is_a_task_list():
+    """Every scenario folder has a hand-written task list (D66)."""
+    scenarios = tuple(sorted(p.parent.name for p in SCEN.glob("*/scenario.py")))
+    assert TASK_SCENARIOS == scenarios
+    assert "fmul" in scenarios and "vecadd" in scenarios
 
 
 @pytest.mark.parametrize("name", TASK_SCENARIOS)

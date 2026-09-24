@@ -14,8 +14,9 @@
 > declared platform default, not a measurement (D51); nothing else about the
 > format depends on it.
 >
-> Every fenced block below is copied verbatim out of a checked-in file or
-> out of the output of `scenarios/reduce`, and
+> Every fenced block below is copied verbatim out of a checked-in file, a
+> file `scenarios/make.py` generates (D67), or the output of
+> `scenarios/reduce`, and
 > `tests/snax_model/test_contracts.py` fails if one of them drifts. The
 > `<!-- snippet: ... -->` line above each block names its source;
 > `run:` means "produced by running that scenario".
@@ -560,9 +561,8 @@ which task with which values, where each task is configured and started,
 and what it waits for. `lower_program(tasks, cluster)` turns it into the
 program of section 5; the model never reads a task list. LOW1a will produce
 it from a design point; until then it is written by hand (D63). Every
-checked-in scenario but fmul has one as `tasks.json`, the hand-written
-source its `scenario.py` lowers into the program of its `scenario.json`
-(D65, open item 26).
+scenario has one as `tasks.json`, the hand-written source its `scenario.py`
+lowers into the program of its generated `scenario.json` (D65, D66, D67).
 
 A task list is `name` and `steps`, each step with an `op`:
 
@@ -598,8 +598,8 @@ tasks have started; every configured task is started.
 
 **Waits.** Before a `start`, the lowering adds one wait per component, for
 every `after` task and every listed component whose latest task is not yet
-covered; the waits are ordered by when the task each one ends on was
-started. A wait is on a component, so it ends on that component's latest
+covered, leaves out a wait that another of these waits covers (D66), and
+orders the rest by when the task each one ends on was started. A wait is on a component, so it ends on that component's latest
 task and covers every earlier one. A wait on a writer streamer also covers
 the accelerator attached to it and that accelerator's reader streamers when
 the same start launched them: their data flows into the writer, so it

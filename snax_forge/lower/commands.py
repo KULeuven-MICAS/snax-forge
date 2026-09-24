@@ -12,8 +12,9 @@ adapters (D36), the same path the Python generators used before:
 The waits a start needs: one for every ``after`` task not yet waited for,
 and one for every listed component whose latest task has not been waited
 for (a start while busy is an error, D36). There is at most one wait per
-component; waits are ordered by when the task they end on was started, and
-each uses that task's ``wait_mode``. A wait is on a component, so it ends on
+component, and a wait that another of these waits covers is left out (D66);
+waits are ordered by when the task they end on was started, and each uses
+that task's ``wait_mode``. A wait is on a component, so it ends on
 the component's latest task and covers every earlier one on it.
 
 A wait on a writer streamer also covers the accelerator attached to it and
@@ -76,21 +77,24 @@ class _Lowering:
         c = self.covered.get(self.conf[task].component)
         return c is not None and self.started_at[c] >= self.started_at[task]
 
+    def covers(self, comp: str) -> dict[str, str]:
+        """What one wait on ``comp`` covers: component -> its task (module doc)."""
+        step = self.started_at[self.latest[comp]][0]
+        out: dict[str, str] = {}
+        stack = [comp]
+        while stack:
+            x = stack.pop()
+            t = self.latest.get(x)
+            if x in out or t is None or (x != comp and self.started_at[t][0] != step):
+                continue
+            out[x] = t
+            stack += self.up.get(x, [])
+        return out
+
     def wait(self, comp: str, mode: str) -> None:
         """One wait on ``comp``: covers its latest task and, from a writer, its group."""
         self.p.wait(comp, mode)
-        step = self.started_at[self.latest[comp]][0]
-        stack, seen = [comp], set()
-        while stack:
-            x = stack.pop()
-            if x in seen:
-                continue
-            seen.add(x)
-            t = self.latest.get(x)
-            if t is None or (x != comp and self.started_at[t][0] != step):
-                continue
-            self.covered[x] = t
-            stack += self.up.get(x, [])
+        self.covered.update(self.covers(comp))
 
     def configure(self, s: Configure, where: str) -> None:
         blocks = self.p.map.blocks
@@ -116,8 +120,10 @@ class _Lowering:
                 if not self.is_covered(a):
                     ac = self.conf[a].component
                     need[ac] = self.latest[ac]
+        # A wait another needed wait covers is left out (a writer's covers its group).
+        covered_by_others = {x for c in need for x in self.covers(c) if x != c}
         for c in sorted(need, key=lambda c: self.started_at[need[c]]):
-            if not self.is_covered(need[c]):
+            if c not in covered_by_others and not self.is_covered(need[c]):
                 self.wait(c, self.conf[need[c]].wait_mode)
         for j, t in enumerate(s.tasks):
             c = self.conf[t].component

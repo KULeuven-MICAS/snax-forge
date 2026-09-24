@@ -15,7 +15,7 @@ from snax_forge.snax_model.scenario import ClusterConfig
 
 REPO = Path(__file__).resolve().parents[2]
 SCEN = REPO / "scenarios"
-# Every scenario with a hand-written task list (fmul is scheduled by hand, D65).
+# Every scenario with a hand-written task list: all of them (D66).
 TASK_SCENARIOS = tuple(sorted(p.parent.name for p in SCEN.glob("*/tasks.json")))
 
 

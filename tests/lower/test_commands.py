@@ -1,24 +1,25 @@
 """Tests for the lowering of task lists into programs (LOW1b, D45, D64).
 
 LOW1b acceptance (docs/STATUS.md): the program lowered from
-scenarios/vecadd/tasks.json equals the program in scenarios/vecadd/scenario.json.
-Plus: every other checked-in task list gives its scenario's program, the
-wait rule on small cases, and the errors that need the cluster.
+scenarios/vecadd/tasks.json equals vecadd's hand-scheduled program, the one
+scenarios/vecadd held before its program was generated (D65, D67), written
+out here without the lowering. Plus: every scenario's generated program is
+its task list lowered and keeps its cycle count, the wait rule on small
+cases, and the errors that need the cluster.
 
 Sections:
-  1. checked-in task lists give the checked-in programs
+  1. the scenarios' task lists
   2. configure and start
   3. which waits a start gets
   4. sync and read
   5. errors that need the cluster
 """
 
-import json
-
 import pytest
 
-from snax_forge.lower import TaskList, TaskListError, lower_program, upstream
-from snax_forge.snax_model.scenario import Scenario
+from snax_forge.lower import Program, TaskList, TaskListError, lower_program, upstream
+from snax_forge.snax_model import DmaDescriptor, DmaPattern, StreamerRegs
+from snax_forge.snax_model.scenario import Scenario, run
 
 from .helpers import (
     SCEN,
@@ -34,26 +35,65 @@ from .helpers import (
 )
 
 # =============================================================================
-# 1. Checked-in task lists give the checked-in programs
+# 1. The scenarios' task lists
 # =============================================================================
 
 
+def vecadd_by_hand() -> list:
+    """vecadd's program as scheduled by hand (test_profile.run_vecadd, and the
+    program scenarios/make.py wrote before D64): the LOW1b reference."""
+    p = Program(cluster("alu4"))
+
+    def beats(base: int) -> DmaPattern:
+        return DmaPattern(base, (8,), (64,))
+
+    def unit(word: int) -> StreamerRegs:
+        return StreamerRegs(word * 8, (16,), (32,), (4,), (8,))
+
+    p.config("dma", DmaDescriptor("l2_to_l1", beats(0), beats(0)))
+    p.start("dma")
+    p.config("dma", DmaDescriptor("l2_to_l1", beats(1024), beats(576)))
+    p.wait("dma", "poll")
+    p.start("dma")
+    for block, word in (("ra", 0), ("rb", 72), ("wr", 144)):
+        p.config(block, unit(word))
+    p.config("acc", {"n": 16})
+    p.wait("dma", "poll")
+    for block in ("ra", "rb", "wr", "acc"):
+        p.start(block)
+    p.config("dma", DmaDescriptor("l1_to_l2", beats(1152), beats(2048)))
+    p.wait("wr", "poll")
+    p.start("dma")
+    p.wait("dma", "poll")
+    return p.cmds
+
+
 def test_vecadd_task_list_gives_the_vecadd_program():
-    """LOW1b acceptance: read from the files, not through make.py."""
-    tasks = TaskList.load(SCEN / "vecadd" / "tasks.json")
-    program = lower_program(tasks, cluster("alu4"))
-    expected = json.loads((SCEN / "vecadd" / "scenario.json").read_text())["program"]
-    assert [c.to_dict() for c in program] == expected
+    """LOW1b acceptance, against a program written without the lowering."""
+    program = lower_program(TaskList.load(SCEN / "vecadd" / "tasks.json"), cluster("alu4"))
+    assert [c.to_dict() for c in program] == [c.to_dict() for c in vecadd_by_hand()]
     assert len(program) == 57
 
 
 @pytest.mark.parametrize("name", TASK_SCENARIOS)
-def test_task_list_gives_the_scenario_program(name):
+def test_the_scenario_program_is_its_task_list_lowered(name):
     sc = Scenario.load(SCEN / name / "scenario.json")
     tasks = TaskList.load(SCEN / name / "tasks.json")
     assert tasks.name == name
     program = lower_program(tasks, sc.cluster)
     assert [c.to_dict() for c in program] == [c.to_dict() for c in sc.program]
+
+
+# The cycle counts of the scenarios as they were checked in before their programs
+# were generated (D67): a change to a task list or to the lowering that moves one
+# of them shows up here. fmul's program is the one it was scheduled by hand with.
+CYCLES = {"vecadd": 77, "vecadd_conflict": 85, "vecadd_tiled": 471, "fmul": 525, "reduce": 35,
+          "dma": 65}  # fmt: skip
+
+
+@pytest.mark.parametrize("name", TASK_SCENARIOS)
+def test_the_scenario_keeps_its_cycles(name):
+    assert run(Scenario.load(SCEN / name / "scenario.json")).total_cycles == CYCLES[name]
 
 
 def test_vecadd_step_by_step():
@@ -170,6 +210,12 @@ def test_a_wait_on_the_writer_covers_its_group():
     )  # fmt: skip
     tail = shape(prog)[shape(prog).index("Sdma") + 1 :]
     assert tail == ["Cra", "Crb", "Cwr", "Cacc", "Sra", "Srb", "Swr", "Sacc"]
+
+
+def test_a_needed_wait_the_writer_covers_is_left_out():
+    """ra and rb are busy too, but waiting for wr covers them (fmul's tiles, D66)."""
+    prog = lowered(*group(0), *group(1))
+    assert shape(prog)[-5:] == ["Wwr:poll", "Sra", "Srb", "Swr", "Sacc"]
 
 
 def test_the_writer_covers_only_tasks_started_with_it():

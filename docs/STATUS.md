@@ -9,9 +9,9 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 ## Existing Code
 
 - Code from before the v1.1 plan: SDFG ingest, patterns, libnodes, descriptors and a direct ChiselHwGen. It is kept and reused in M7 (SDFG front end) and M10 (HW generator). It is not part of M1–M6.
-- SNAX-MODEL (M1) lives in snax_forge/snax_model/, tests in tests/snax_model/ (shared test helpers in tests/snax_model/helpers.py). Scenarios (MOD9) live in scenarios/, one folder each with the scenario.py that makes it, written by scenarios/make.py (D65). The contracts (MOD10) are docs/CONTRACTS.md; the configuration classes and the JSON writer they describe are snax_forge/snax_model/config.py.
+- SNAX-MODEL (M1) lives in snax_forge/snax_model/, tests in tests/snax_model/ (shared test helpers in tests/snax_model/helpers.py). Scenarios (MOD9) live in scenarios/, one folder each with the scenario.py that makes it and its hand-written tasks.json; scenarios/make.py writes the scenario files, data and cluster files, which are generated and not in git (D65–D67; `pixi run scenarios`, and the test session writes them first). The contracts (MOD10) are docs/CONTRACTS.md; the configuration classes and the JSON writer they describe are snax_forge/snax_model/config.py.
 - The visualiser (M4a, D55) lives in snax_forge/viz/ (server, API, static viewer), tests in tests/viz/ (a package, so its helpers.py does not clash with snax_model's).
-- SNAX-LOWER (M3, D64) lives in snax_forge/lower/ (task list, per-type values, lowering to commands, the `Program` command builder), tests in tests/lower/ (a package, like tests/viz). Every scenario but fmul has a hand-written `tasks.json` in its folder, which its scenario.py lowers into the program of its `scenario.json` (D65).
+- SNAX-LOWER (M3, D64) lives in snax_forge/lower/ (task list, per-type values, lowering to commands, the `Program` command builder), tests in tests/lower/ (a package, like tests/viz). Every scenario has a hand-written `tasks.json` in its folder, which its scenario.py lowers into the program of its `scenario.json` (D65, D66).
 
 ## Milestones
 
@@ -72,7 +72,7 @@ multi-cycle multiplier, 525 cycles).
 | BRM3 | Elementwise-add BRM: lanes `W`, per-port nests, `L`/`II`, function, pattern | BRM1, BRM2 | In the model, gives the same cycles and data as the elementwise stub | todo |
 | DP1 | Design point structure and hand-written `vecadd` design point | BRM3 | Validation catches overlapping buffers, out-of-range banks, unknown BRMs | todo |
 | LOW1a | Lowering from design point to an ordered task list (D45) in the format of D64 | DP1, LOW1b | Task list for the `vecadd` design point equals `scenarios/vecadd/tasks.json` | todo |
-| LOW1b | Task-list format (D64, closes open item 19) and task list → plain command list through the model's adapters (D36, D45); built before LOW1a on hand-written task lists (D63) | MOD10 | Program lowered from `scenarios/vecadd/tasks.json` equals the one in `scenarios/vecadd/scenario.json`; the task lists of `vecadd_conflict`, `vecadd_tiled`, `reduce` and `dma` give their programs too (tests/lower) | `done` |
+| LOW1b | Task-list format (D64, closes open item 19) and task list → plain command list through the model's adapters (D36, D45); built before LOW1a on hand-written task lists (D63) | MOD10 | Program lowered from `scenarios/vecadd/tasks.json` equals vecadd's hand-scheduled program (written out in tests/lower, D67); every scenario keeps its cycle count (tests/lower) | `done` |
 | LOW1c | Design point + BRMs → cluster file (D53): accelerator entries from BRM interface and timing, one streamer per port with `n_ports` = lanes, platform parts from the cluster configuration | DP1, BRM3 | Cluster file for the `vecadd` design point equals `scenarios/clusters/alu4.json` | todo |
 | DFG1 | Minimal SNAX-DFG: data container, tasklet, map scope with symbolic range, memlet | none | Hand-built `vecadd` DFG round-trips | todo |
 | DFG2 | Accelerated node referencing a BRM instance, nesting allowed | DFG1, BRM3 | `vecadd` with its map replaced validates; nested case validates | todo |
@@ -170,9 +170,9 @@ decided once the views have been used for a while.
 M3 closes `vecadd` end to end, building backwards from `scenarios/vecadd`.
 LOW1b is done (D63, D64): a task list (`configure`, `start`, `sync`, `read`)
 is lowered to the model's command list, and `scenarios/vecadd/tasks.json`
-gives exactly the program of `scenarios/vecadd/scenario.json`. Scenarios
-now live one folder each, and the task lists are the hand-written sources
-of their programs (D65). fmul stays scheduled by hand (open item 26).
+gives exactly vecadd's hand-scheduled program. Scenarios live one folder
+each, every one with a hand-written task list, fmul included (D65, D66); the
+scenario files are generated and not in git (D67).
 
 Next is LOW1c, the cluster file from a design point and BRMs (D53),
 accepted against `scenarios/clusters/alu4.json`, with the BRM and design
