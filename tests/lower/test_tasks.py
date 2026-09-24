@@ -22,13 +22,17 @@ from .helpers import SCEN, TASK_SCENARIOS, add, cluster, dma, start, stream, syn
 # =============================================================================
 
 
+def test_the_task_scenarios_are_found():
+    assert TASK_SCENARIOS == ("dma", "reduce", "vecadd", "vecadd_conflict", "vecadd_tiled")
+
+
 @pytest.mark.parametrize("name", TASK_SCENARIOS)
 def test_checked_in_task_list_round_trips(name):
-    path = SCEN / name / "tasks.json"
-    d = json.loads(path.read_text())
+    """Hand-written files: the same data back, whatever the layout of the file."""
+    d = json.loads((SCEN / name / "tasks.json").read_text())
     tasks = TaskList.from_dict(d)
     assert tasks.to_dict() == d
-    assert to_json(tasks.to_dict()) == path.read_text()
+    assert TaskList.from_dict(json.loads(to_json(tasks.to_dict()))) == tasks
 
 
 def test_missing_optional_keys_take_defaults():

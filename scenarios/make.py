@@ -1,25 +1,27 @@
-"""Generate the checked-in SNAX-MODEL clusters and scenarios (MOD9, D41, D42).
+"""Generate the checked-in SNAX-MODEL clusters and scenarios (MOD9, D41, D42, D65).
 
-    python scenarios/make.py            write every file below scenarios/
+    python scenarios/make.py            write every generated file below scenarios/
     python scenarios/make.py --check    exit 1 if a checked-in file differs
 
-The scenario files hold plain command lists (D42). Most scenarios are
-written here as task lists (SNAX-LOWER, D45, D64): the script writes the task
-list to ``tasks.json`` and its lowered program (``lower_program``) into
-``scenario.json``. fmul is scheduled by hand with ``Program``, the command
-builder the lowering uses too (open item 26). test_scenario.py checks that
-the checked-in files equal what this script generates, so they cannot drift
-apart.
+Every scenario lives in its own folder with the script that makes it
+(D65): ``<name>/scenario.py`` defines ``make()``, which returns the
+``Scenario`` and its input arrays by ``.npy`` file name. This driver writes
+``<name>/scenario.json`` and the arrays, and ``clusters/<stem>.json`` for
+every cluster in ``clusters/clusters.py``. A folder with a hand-written
+``tasks.json`` is written as a task list: its ``scenario.py`` lowers it into
+the scenario's program (``lower_program``, D64), and this driver never
+writes it. test_scenario.py checks that the checked-in files equal what this
+script generates, so they cannot drift apart.
 
-Files:
+Shared helpers live in ``common.py``; ``scenarios/`` is put on the import
+path so every ``scenario.py`` can use it and ``clusters.clusters``.
 
-    clusters/alu4.json   DMA, readers ra and rb, writer wr, elementwise add, 4 lanes
-    clusters/red4.json   reader ra (4 lanes), writer wr (1 lane), reduce; no L2
-    clusters/mul1.json   32 banks, 1-lane ra, rb, wr (2 loops), multiplier L = II = 5, DMA
+Scenarios:
+
     vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the M3 target; task list
     vecadd_conflict/     vecadd with b in the same banks as a (VIS3's conflict case); task list
     vecadd_tiled/        vecadd over 576 elements in 3 tiles of 192 (471 cycles); task list
-    fmul/                a * b in 5 tiles of 16 on mul1, double buffered: DMA behind compute
+    fmul/                a * b in 5 tiles of 16 on mul1, double buffered; scheduled by hand
     reduce/              64 elements in L1 summed in groups of 16; task list
     dma/                 L2 -> L1 with a 2D pattern and back, on alu4; task list
 """
@@ -27,406 +29,51 @@ Files:
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import io
 import sys
 from pathlib import Path
+from types import ModuleType
 
 import numpy as np
 
-from snax_forge.lower import Program, TaskList, Tasks, lower_program
-from snax_forge.snax_model import (
-    ControllerConfig,
-    DmaConfig,
-    DmaDescriptor,
-    DmaPattern,
-    L1Config,
-    L2Config,
-    StreamerConfig,
-    StreamerRegs,
-)
-from snax_forge.snax_model.scenario import (
-    ClusterConfig,
-    ComponentSpec,
-    MemInit,
-    RegisterMapSpec,
-    Scenario,
-    to_json,
-)
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for common and clusters.clusters
+
+from clusters.clusters import CLUSTERS, CTL, alu4, mul1, red4
+from common import BEAT, LANES, WORD, contiguous, unit
+
+from snax_forge.lower import Program
+from snax_forge.snax_model.scenario import Scenario, to_json
 
 ROOT = Path(__file__).resolve().parent
-WORD = 8  # bytes per bank word (64-bit banks)
-BEAT = 64  # bytes per wide beat (512 bits)
-LANES = 4
+SCENARIO_FILE = "scenario.py"
 
-# Controller costs of every scenario: one cycle per csr_write and csr_read on
-# every block kind, a poll every 4 cycles. Declared defaults, not measured
-# (D51, open item 10). test_profile.VECADD_CFG keeps its own non-default costs
-# (DMA writes and reads 2) to exercise the D37 formulas; test_scenario runs the
-# hand-built vecadd with these instead.
-CTL = ControllerConfig(write_cost=1, read_cost=1, poll_interval=4)
+# Re-exported for the tests that build programs with the scenario helpers
+# (test_gaps: MAKE.alu4, MAKE.unit, MAKE.Program, MAKE.WORD, ...).
+__all__ = [
+    "BEAT", "CTL", "LANES", "WORD", "Program", "alu4", "contiguous", "generate", "main",
+    "mul1", "red4", "unit",
+]  # fmt: skip
 
 
-# =============================================================================
-# Clusters
-# =============================================================================
+def scenario_dirs() -> list[Path]:
+    """Every folder with a ``scenario.py``, by name."""
+    return sorted(p.parent for p in ROOT.glob(f"*/{SCENARIO_FILE}"))
 
 
-def _streamer(name: str, write: bool, lanes: int, temporal_dims: int = 1) -> ComponentSpec:
-    cfg = StreamerConfig(write=write, n_ports=lanes, fifo_depth=2, temporal_dims=temporal_dims)
-    return ComponentSpec(name, "streamer", cfg.to_dict())
+def load(folder: Path) -> ModuleType:
+    """A folder's ``scenario.py``, as a module of its own name."""
+    spec = importlib.util.spec_from_file_location(f"scenario_{folder.name}", folder / SCENARIO_FILE)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 
-def alu4() -> ClusterConfig:
-    """The cluster of test_profile's run_vecadd, in its registration order."""
-    return ClusterConfig(
-        l1=L1Config(n_banks=16, rows=64, read_latency=1),
-        l2=L2Config(size_bytes=1 << 15, read_latency=1),
-        components=[
-            ComponentSpec("xbar", "xbar", {"check_hold": True}),
-            ComponentSpec("dma", "dma", DmaConfig().to_dict()),
-            _streamer("ra", False, LANES),
-            _streamer("rb", False, LANES),
-            _streamer("wr", True, LANES),
-            ComponentSpec(
-                "acc",
-                "accel",
-                accel="elementwise",
-                params={"lanes": LANES, "n_inputs": 2, "op": "add", "latency": 0, "ii": 1},
-                attach={"a": "ra", "b": "rb", "out": "wr"},
-            ),
-            ComponentSpec("ctl", "controller", CTL.to_dict()),
-        ],
-        register_map=RegisterMapSpec(blocks=["dma", "ra", "rb", "wr", "acc"]),
-    )
-
-
-def red4() -> ClusterConfig:
-    """A reduce over 4 lanes into one lane (lanes_out = 1), L1 only."""
-    return ClusterConfig(
-        l1=L1Config(n_banks=16, rows=64, read_latency=1),
-        components=[
-            ComponentSpec("xbar", "xbar", {"check_hold": True}),
-            _streamer("ra", False, LANES),
-            _streamer("wr", True, 1),
-            ComponentSpec(
-                "acc",
-                "accel",
-                accel="reduce",
-                params={"lanes": LANES, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1},
-                attach={"in": "ra", "out": "wr"},
-            ),
-            ComponentSpec("ctl", "controller", CTL.to_dict()),
-        ],
-        register_map=RegisterMapSpec(blocks=["ra", "wr", "acc"]),
-    )
-
-
-# =============================================================================
-# Block values (the helpers of test_ctrl / test_profile)
-# =============================================================================
-
-
-# mul1: a multi-cycle multiplier with 1-lane streamers, for fmul.
-MUL_BANKS = 32
-MUL_LATENCY = 5
-MUL_II = 5
-
-
-def mul1() -> ClusterConfig:
-    """One multiplier (1 lane, L = II = 5) between readers ra, rb and writer wr, and a DMA.
-
-    32 banks = 4 superbanks of 8, so one tile's buffers fit in two
-    superbanks and the DMA can work on the other two (fmul). The streamers
-    have 2 temporal loops, to walk a buffer that lives in one superbank.
-    """
-    L, II = MUL_LATENCY, MUL_II
-    return ClusterConfig(
-        l1=L1Config(n_banks=MUL_BANKS, rows=32, read_latency=1),
-        l2=L2Config(size_bytes=1 << 15, read_latency=1),
-        components=[
-            ComponentSpec("xbar", "xbar", {"check_hold": True}),
-            ComponentSpec("dma", "dma", DmaConfig().to_dict()),
-            _streamer("ra", False, 1, temporal_dims=2),
-            _streamer("rb", False, 1, temporal_dims=2),
-            _streamer("wr", True, 1, temporal_dims=2),
-            ComponentSpec(
-                "acc",
-                "accel",
-                accel="elementwise",
-                params={"lanes": 1, "n_inputs": 2, "op": "mul", "latency": L, "ii": II},
-                attach={"a": "ra", "b": "rb", "out": "wr"},
-            ),
-            ComponentSpec("ctl", "controller", CTL.to_dict()),
-        ],
-        register_map=RegisterMapSpec(blocks=["dma", "ra", "rb", "wr", "acc"]),
-    )
-
-
-def contiguous(base: int, n: int) -> DmaPattern:
-    """n consecutive wide beats from byte ``base``."""
-    return DmaPattern(base, (n,), (BEAT,))
-
-
-def unit(word: int, n_beats: int, lanes: int) -> StreamerRegs:
-    """Streamer task over n_beats contiguous beats of ``lanes`` words from word ``word``."""
-    return StreamerRegs(word * WORD, (n_beats,), (lanes * WORD,), (lanes,), (WORD,))
-
-
-# =============================================================================
-# Scenarios: (scenario, {npy file name: array}, task list or None)
-# =============================================================================
-
-Made = tuple[Scenario, dict[str, np.ndarray], TaskList | None]
-
-
-def vecadd() -> Made:
-    """test_profile.run_vecadd(mode="poll"): same data, program and cluster, costs of CTL."""
-    return _vecadd("vecadd", n=64, tile=64, wb=72, wc=144, l2_step=1024, seed=3)
-
-
-def vecadd_conflict() -> Made:
-    """vecadd with b at L1 word 64: b starts in bank 0 like a, so ra and rb collide (VIS3).
-
-    Only b's L1 place changes: its DMA ``dst_base`` and ``rb.base`` (576 -> 512
-    bytes). Data, L2 layout and cluster file are vecadd's.
-    """
-    return _vecadd("vecadd_conflict", n=64, tile=64, wb=64, wc=144, l2_step=1024, seed=3)
-
-
-# vecadd_tiled: TILED_N elements in tiles of TILE, one tile of a, b and c in L1 at a time.
-TILED_N = 576
-TILE = 192
-
-
-def vecadd_tiled() -> Made:
-    """vecadd over TILED_N elements in tiles of TILE, for a run of several hundred cycles.
-
-    alu4's L1 (1024 words) holds one tile each of a, b and c, so the tiles
-    run one after another with no overlap (double buffering is fmul's). b
-    sits 8 banks after a as in vecadd, so the readers do not collide. a, b
-    and c are contiguous in L2.
-    """
-    return _vecadd(
-        "vecadd_tiled", n=TILED_N, tile=TILE, wb=TILE + 8, wc=2 * TILE + 16,
-        l2_step=TILED_N * WORD, seed=7,
-    )  # fmt: skip
-
-
-def _vecadd(name: str, *, n: int, tile: int, wb: int, wc: int, l2_step: int, seed: int) -> Made:
-    """c = a + b on alu4, one tile after another: load a, load b, add, store c.
-
-    ``wb`` and ``wc`` are b's and c's L1 word addresses (a is at word 0);
-    a, b and c start ``l2_step`` bytes apart in L2. vecadd is one tile of 64.
-    Written as a task list. With several tiles the task names get ``_k``, and
-    each tile's tasks also name in ``after`` the tasks of tile k - 1 that use
-    the same L1 buffer; the sync on the previous store has covered those, so
-    they add no wait.
-    """
-    nb, n_dma = tile // LANES, tile // 8
-    rng = np.random.default_rng(seed)
-    a, b = rng.integers(-1000, 1000, n), rng.integers(-1000, 1000, n)
-    l2a, l2b, l2c = 0, l2_step, 2 * l2_step
-    wa = 0
-
-    def load(src: int, word: int) -> DmaDescriptor:
-        return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
-
-    def store(word: int, dst: int) -> DmaDescriptor:
-        return DmaDescriptor("l1_to_l2", contiguous(word * WORD, n_dma), contiguous(dst, n_dma))
-
-    cl = alu4()
-    t = Tasks(name, cl)
-    tiles = n // tile
-    for k in range(tiles):
-        off = k * tile * WORD  # byte offset of tile k in each L2 array
-
-        def x(task: str, k: int = k) -> str:
-            return f"{task}_{k}" if tiles > 1 else task
-
-        def reuse(task: str, k: int = k) -> list[str]:
-            return [x(task, k - 1)] if k else []
-
-        t.configure(x("load_a"), "dma", load(l2a + off, wa), after=reuse("add_ra"))
-        t.start(x("load_a"))
-        t.configure(x("load_b"), "dma", load(l2b + off, wb), after=reuse("add_rb"))
-        t.start(x("load_b"))
-        t.configure(x("add_ra"), "ra", unit(wa, nb, LANES), after=[x("load_a")])
-        t.configure(x("add_rb"), "rb", unit(wb, nb, LANES), after=[x("load_b")])
-        t.configure(x("add_wr"), "wr", unit(wc, nb, LANES), after=reuse("store_c"))
-        t.configure(x("add_acc"), "acc", {"n": nb})
-        t.start(x("add_ra"), x("add_rb"), x("add_wr"), x("add_acc"))
-        t.configure(x("store_c"), "dma", store(wc, l2c + off), after=[x("add_wr")])
-        t.start(x("store_c"))
-        t.sync(x("store_c"))
-    tasks = t.task_list()
-    sc = Scenario(
-        name=name,
-        cluster=cl,
-        cluster_ref="../clusters/alu4.json",
-        memory=[MemInit("l2", l2a, npy="a.npy"), MemInit("l2", l2b, npy="b.npy")],
-        program=lower_program(tasks, cl),
-        max_cycles=5000,
-    )
-    return sc, {"a.npy": a, "b.npy": b}, tasks
-
-
-# fmul: FMUL_TILES tiles of FMUL_TILE elements, double buffered over two tile sets.
-FMUL_TILES = 5
-FMUL_TILE = 16  # elements = words; a multiple of 8, so no padding in a beat
-SB_WORDS = 8  # words per superbank row (one wide beat)
-# L1 buffers per tile set: (superbank, first row of the set's rows in it).
-# Set 0 uses superbanks 0 and 1, set 1 superbanks 2 and 3; a alone in one,
-# b and c (c 4 rows further down) in the other.
-FMUL_SETS = (
-    {"a": (0, 0), "b": (1, 0), "c": (1, 4)},
-    {"a": (2, 0), "b": (3, 0), "c": (3, 4)},
-)
-
-
-def fmul() -> Made:
-    """c = a * b over FMUL_TILES tiles on mul1, the DMA hidden behind the multiplier.
-
-    A buffer lives in one superbank: FMUL_TILE / 8 rows of 8 words, one
-    wide beat per row, so the DMA pattern steps one L1 row (MUL_BANKS words)
-    per beat and the streamers walk 8 words, then the next row. Tiles
-    alternate between the two tile sets. While tile k runs in its set, the
-    DMA stores c of tile k - 1 and loads a and b of tile k + 1 in the other
-    set, and the controller programs the streamers for tile k + 1 (their
-    registers are buffered, D36). A wide DMA grant only blocks its own
-    superbank (D33), so the streamers never wait for it. Integer data (D28).
-
-    Scheduled by hand with ``Program``, not as a task list: its program has
-    two waits a task list would not emit and configures the last store after
-    its waits (open item 26), so lowering a task list would change its cycles.
-    """
-    n = FMUL_TILES * FMUL_TILE
-    rows = FMUL_TILE // SB_WORDS
-    row_bytes = MUL_BANKS * WORD  # one L1 row
-    rng = np.random.default_rng(13)
-    a, b = rng.integers(-1000, 1000, n), rng.integers(-1000, 1000, n)
-    l2 = {"a": 0, "b": n * WORD, "c": 2 * n * WORD}
-
-    def l1_base(k: int, buf: str) -> int:
-        sb, row = FMUL_SETS[k % 2][buf]
-        return row * row_bytes + sb * SB_WORDS * WORD
-
-    def l1_beats(k: int, buf: str) -> DmaPattern:
-        return DmaPattern(l1_base(k, buf), (rows,), (row_bytes,))
-
-    def l2_beats(k: int, buf: str) -> DmaPattern:
-        return contiguous(l2[buf] + k * FMUL_TILE * WORD, rows)
-
-    def walk(k: int, buf: str) -> StreamerRegs:
-        return StreamerRegs(l1_base(k, buf), (SB_WORDS, rows), (WORD, row_bytes), (1,), (WORD,))
-
-    cl = mul1()
-    p = Program(cl)
-
-    def load(k: int) -> None:
-        """a and b of tile k into its set; ends with the DMA running b's load."""
-        p.config("dma", DmaDescriptor("l2_to_l1", l2_beats(k, "a"), l1_beats(k, "a")))
-        if k:  # tile 0's load is the DMA's first task: nothing to wait for
-            p.wait("dma", "poll")
-        p.start("dma")
-        p.config("dma", DmaDescriptor("l2_to_l1", l2_beats(k, "b"), l1_beats(k, "b")))
-        p.wait("dma", "poll")
-        p.start("dma")
-
-    def store(k: int) -> None:
-        p.config("dma", DmaDescriptor("l1_to_l2", l1_beats(k, "c"), l2_beats(k, "c")))
-        p.wait("dma", "poll")
-        p.start("dma")
-
-    def program(k: int) -> None:
-        p.config("ra", walk(k, "a"))
-        p.config("rb", walk(k, "b"))
-        p.config("wr", walk(k, "c"))
-        p.config("acc", {"n": FMUL_TILE})
-
-    load(0)
-    program(0)
-    for k in range(FMUL_TILES):
-        p.wait("dma", "poll")  # a and b of tile k are in L1 (and c of k - 2 is out)
-        for blk in ("ra", "rb", "wr", "acc"):
-            p.start(blk)
-        # While tile k computes, the other set: c of k - 1 out, a and b of k + 1 in.
-        if k:
-            store(k - 1)
-        if k + 1 < FMUL_TILES:
-            load(k + 1)
-            program(k + 1)
-        p.wait("wr", "poll")
-    p.wait("dma", "poll")
-    store(FMUL_TILES - 1)
-    p.wait("dma", "poll")
-    sc = Scenario(
-        name="fmul",
-        cluster=cl,
-        cluster_ref="../clusters/mul1.json",
-        memory=[MemInit("l2", l2["a"], npy="a.npy"), MemInit("l2", l2["b"], npy="b.npy")],
-        program=p.cmds,
-        max_cycles=5000,
-    )
-    return sc, {"a.npy": a, "b.npy": b}, None
-
-
-def reduce() -> Made:
-    """64 elements at L1 word 0 summed in 4 groups of 16 (16 beats, T = 4) to word 128."""
-    x = np.random.default_rng(5).integers(-1000, 1000, 64)
-    nb, t = 64 // LANES, 4
-    cl = red4()
-    tl = Tasks("reduce", cl)
-    tl.configure("sum_ra", "ra", unit(0, nb, LANES))
-    tl.configure("sum_wr", "wr", unit(128, nb // t, 1))
-    tl.configure("sum_acc", "acc", {"n": nb, "T": t})
-    tl.start("sum_ra", "sum_wr", "sum_acc")
-    tl.sync("sum_wr", "signal")
-    tl.sync("sum_acc", "poll")
-    tl.read("acc.busy_cycles")
-    tasks = tl.task_list()
-    sc = Scenario(
-        name="reduce",
-        cluster=cl,
-        cluster_ref="../clusters/red4.json",
-        memory=[MemInit("l1", 0, npy="x.npy")],
-        program=lower_program(tasks, cl),
-        max_cycles=1000,
-    )
-    return sc, {"x.npy": x}, tasks
-
-
-# The 2D L1 pattern of the DMA scenario: 8 beats 1 KiB apart, twice, 64 B apart.
-DMA_L1 = DmaPattern(0, (8, 2), (1024, BEAT))
-DMA_BEATS = 16
-DMA_BACK = 4096  # L2 byte address of the copy back
-
-
-def dma() -> Made:
-    """16 beats from L2 into L1 with DMA_L1, then back to L2 at DMA_BACK, on alu4."""
-    src = np.random.default_rng(11).integers(-1000, 1000, DMA_BEATS * BEAT // WORD)
-    cl = alu4()
-    t = Tasks("dma", cl)
-    t.configure("load", "dma", DmaDescriptor("l2_to_l1", contiguous(0, DMA_BEATS), DMA_L1))
-    t.start("load")
-    t.sync("load", "signal")
-    t.configure("store", "dma", DmaDescriptor("l1_to_l2", DMA_L1, contiguous(DMA_BACK, DMA_BEATS)))
-    t.start("store")
-    t.sync("store")
-    tasks = t.task_list()
-    sc = Scenario(
-        name="dma",
-        cluster=cl,
-        cluster_ref="../clusters/alu4.json",
-        memory=[MemInit("l2", 0, npy="src.npy")],
-        program=lower_program(tasks, cl),
-        max_cycles=2000,
-    )
-    return sc, {"src.npy": src}, tasks
-
-
-# =============================================================================
-# Files
-# =============================================================================
+def make(folder: Path) -> tuple[Scenario, dict[str, np.ndarray]]:
+    sc, arrays = load(folder).make()
+    if sc.name != folder.name:
+        raise ValueError(f"{folder.name}/{SCENARIO_FILE} makes a scenario named {sc.name!r}")
+    return sc, arrays
 
 
 def _npy(arr: np.ndarray) -> bytes:
@@ -436,17 +83,13 @@ def _npy(arr: np.ndarray) -> bytes:
 
 
 def generate() -> dict[str, bytes]:
-    """Every file, by path relative to scenarios/, with its exact contents."""
+    """Every generated file, by path relative to scenarios/, with its exact contents."""
     files = {
-        "clusters/alu4.json": to_json(alu4().to_dict()).encode(),
-        "clusters/red4.json": to_json(red4().to_dict()).encode(),
-        "clusters/mul1.json": to_json(mul1().to_dict()).encode(),
+        f"clusters/{stem}.json": to_json(b().to_dict()).encode() for stem, b in CLUSTERS.items()
     }
-    for make in (vecadd, vecadd_conflict, vecadd_tiled, fmul, reduce, dma):
-        sc, arrays, tasks = make()
+    for folder in scenario_dirs():
+        sc, arrays = make(folder)
         files[f"{sc.name}/scenario.json"] = to_json(sc.to_dict()).encode()
-        if tasks is not None:
-            files[f"{sc.name}/tasks.json"] = to_json(tasks.to_dict()).encode()
         for name, arr in arrays.items():
             files[f"{sc.name}/{name}"] = _npy(arr)
     return files

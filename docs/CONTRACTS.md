@@ -559,9 +559,10 @@ SNAX-LOWER's ordered list of tasks (LOW1b, D45, D64): which component runs
 which task with which values, where each task is configured and started,
 and what it waits for. `lower_program(tasks, cluster)` turns it into the
 program of section 5; the model never reads a task list. LOW1a will produce
-it from a design point; until then it is written by hand (D63), and
-`scenarios/make.py` checks one in as `tasks.json` beside every scenario but
-fmul (open item 26).
+it from a design point; until then it is written by hand (D63). Every
+checked-in scenario but fmul has one as `tasks.json`, the hand-written
+source its `scenario.py` lowers into the program of its `scenario.json`
+(D65, open item 26).
 
 A task list is `name` and `steps`, each step with an `op`:
 

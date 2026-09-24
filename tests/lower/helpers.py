@@ -15,8 +15,8 @@ from snax_forge.snax_model.scenario import ClusterConfig
 
 REPO = Path(__file__).resolve().parents[2]
 SCEN = REPO / "scenarios"
-# The scenarios make.py writes as task lists (fmul is scheduled by hand).
-TASK_SCENARIOS = ("vecadd", "vecadd_conflict", "vecadd_tiled", "reduce", "dma")
+# Every scenario with a hand-written task list (fmul is scheduled by hand, D65).
+TASK_SCENARIOS = tuple(sorted(p.parent.name for p in SCEN.glob("*/tasks.json")))
 
 
 def cluster(name: str = "alu4") -> ClusterConfig:

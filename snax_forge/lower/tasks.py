@@ -31,8 +31,9 @@ component; a task starts once, after its ``after`` tasks have started; every
 configured task is started. What needs the cluster (component, type, values,
 register names) is checked by ``lower_program``.
 
-``Tasks`` builds a task list from start arguments, for Python generators such
-as scenarios/make.py.
+``Tasks`` builds a task list from start arguments, for Python generators
+(LOW1a, tests). The checked-in scenarios' task lists are written by hand
+(D65).
 """
 
 from __future__ import annotations

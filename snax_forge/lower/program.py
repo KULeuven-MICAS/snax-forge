@@ -1,4 +1,4 @@
-"""Command builder in name form (moved from scenarios/make.py, open item 24).
+"""Command builder in name form (moved from scenarios/make.py, open item 24, D65).
 
 ``Program`` programs one block at a time through the model's register map:
 ``config`` writes every configuration register of a block for a start
@@ -6,7 +6,7 @@ argument (``RegisterMap.config_writes``, D36), ``start`` writes its start
 register, ``wait`` and ``read`` add the other two commands. The commands are
 in name form (``"reg": "dma.src_base"``), as the scenario files hold them
 (D42). ``lower_program`` builds its output with it; scenarios that are
-scheduled by hand (``scenarios/fmul``) use it directly.
+scheduled by hand (``scenarios/fmul/scenario.py``) use it directly.
 """
 
 from __future__ import annotations
