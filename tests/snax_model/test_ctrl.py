@@ -505,10 +505,6 @@ RUN_ERRORS = {
     "unaligned dma base": lambda m: [*m.config_writes("dma", good_dma()),
                                      CsrWrite(m.addr("dma.dst_base"), 8), m.start_write("dma")],
     "n not a multiple of T": lambda m: [*m.start_writes("acc", {"n": 6, "T": 4})],
-    # Not modelled yet (D32, open item 5): the streamer's own NotImplementedError.
-    "reader temporal stride 0": lambda m: [*m.config_writes("ra", unit(0, 4, 2)),
-                                           CsrWrite(m.addr("ra.tstride[0]"), 0),
-                                           m.start_write("ra")],
 }  # fmt: skip
 
 
@@ -516,7 +512,7 @@ RUN_ERRORS = {
 def test_run_errors(name):
     cl, m = small_setup()
     cl.add(Controller("ctl", m, RUN_ERRORS[name](m)))
-    with pytest.raises((SimulationError, NotImplementedError)):
+    with pytest.raises(SimulationError):
         cl.run(max_cycles=500)
 
 

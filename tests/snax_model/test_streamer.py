@@ -258,6 +258,8 @@ CASES = {
     "zero_stride": StreamerRegs(0, (3, 4), (8, 0)),
     "bound_1": StreamerRegs(0, (1, 5, 1), (99, 8, 77), (1, 2), (55, 8)),
     "bound_0": StreamerRegs(0, (3, 0), (8, 8)),
+    "repeat": StreamerRegs(8, (3, 4), (0, 32), (4,), (8,)),  # reader repeat (D69)
+    "repeat_3d": StreamerRegs(0, (2, 3, 2), (0, 16, 0), (2,), (8,)),
 }
 
 
@@ -323,8 +325,6 @@ def test_start_checks_against_hardware():
         rd.start(StreamerRegs(0, (4,), (16,), (3,), (8,)))  # 3 lanes on 2 ports
     with pytest.raises(ValueError):
         rd.start(StreamerRegs(0, (2, 2, 2), (16, 32, 64), (2,), (8,)))  # 3 loops > 2
-    with pytest.raises(NotImplementedError):
-        rd.start(StreamerRegs(0, (4, 2), (0, 16), (2,), (8,)))  # reader repeat
     wr = writer(cl, xb, "wr", n_ports=2, temporal_dims=2)
     wr.start(StreamerRegs(0, (4, 2), (0, 16), (2,), (8,)))  # fine for a writer
     rd.start(StreamerRegs(0, (4,), (16,), (2,), (8,)))  # fewer loops than counters: fine
@@ -381,7 +381,9 @@ def test_fifo_wide_pop_needs_every_lane():
 
 
 @pytest.mark.parametrize("latency", [0, 1, 3])
-@pytest.mark.parametrize("name", ["1d_4lanes", "2d", "3d", "strided", "2d_spatial"])
+@pytest.mark.parametrize(
+    "name", ["1d_4lanes", "2d", "3d", "strided", "2d_spatial", "repeat", "repeat_3d"]
+)
 @pytest.mark.parametrize("skip", [True, False])
 def test_reader_data(name, latency, skip):
     """Every beat holds exactly the words at the NumPy-enumerated addresses."""
@@ -653,15 +655,16 @@ def test_zero_bound_does_nothing():
 
 
 def random_regs(rng, n_ports, write, lo, hi):
-    """Regs with non-negative strides whose addresses stay in [lo, hi) bytes."""
+    """Regs with non-negative strides whose addresses stay in [lo, hi) bytes.
+
+    A reader's loop-0 stride may be 0, which exercises the repeat (D69).
+    """
     sb = (2, 2) if n_ports == 4 and rng.random() < 0.5 else (n_ports,)
     for _ in range(1000):
         dt = rng.randint(1, 3)
         tb = [rng.choice([0, 1, 2, 3, 4, 5]) if rng.random() < 0.1 else rng.randint(1, 5)
               for _ in range(dt)]  # fmt: skip
         ts = [rng.randint(0, 6) * WORD for _ in range(dt)]
-        if not write and ts[0] == 0:
-            ts[0] = WORD
         ss = [rng.randint(0, 3) * WORD for _ in sb]
         span = sum((b - 1) * s for b, s in zip(tb, ts) if b) + sum(
             (b - 1) * s for b, s in zip(sb, ss)
@@ -755,3 +758,76 @@ def test_random_skip_on_off(seed):
     a, b = results
     assert a[0] == b[0] and a[1] == b[1] and a[2] == b[2] and a[3] == b[3]
     assert all(np.array_equal(x, y) for x, y in zip(a[4:], b[4:]))
+
+
+# =============================================================================
+# 10. Reader repeat on temporal stride 0 (D69)
+# =============================================================================
+
+
+@pytest.mark.parametrize("skip", [True, False])
+def test_reader_repeat_reads_each_group_once(skip):
+    """tstride[0] = 0, tbound[0] = 3: 4 reads, 12 beats handed out back to back.
+
+    Credit comes back only when a group's last hand-out pops the FIFO, so
+    with depth 2 the first two groups are read in cycles 1 and 2, and each
+    later group in the cycle the group two before it is popped (5, 8).
+    """
+    regs = StreamerRegs(0, (3, 4), (0, 32), (4,), (8,))
+    cl, _, xb = build(skip)
+    rd = reader(cl, xb, "rd", 4, temporal_dims=2, fifo_depth=2)
+    con = cl.add(Consumer("acc", rd.fifo, regs.n_beats))
+    rd.start(regs)
+    total = cl.run()
+    assert total == regs.n_beats + 3
+    assert con.pop_cycles == list(range(3, regs.n_beats + 3))
+    assert np.array_equal(con.values, numpy_stream(regs) // WORD)
+    assert rd.grant_cycles() == [1, 2, 5, 8]
+    assert all(int(xb.port_grants[p]) == 4 for p in rd.ports)
+    assert rd.fifo.popped.tolist() == [4] * 4 and rd.fifo.empty
+    assert rd.cycles["busy"] == 4
+    assert_cycles_add_up(rd, total)
+
+
+def test_writer_stride_0_does_not_repeat():
+    """Only readers repeat: a writer with tstride[0] = 0 writes every beat."""
+    cl, _, xb = build()
+    wr = writer(cl, xb, "wr", 1, temporal_dims=2)
+    cl.add(Producer("acc", wr.fifo, [[1], [2], [3], [4]]))
+    wr.start(StreamerRegs(0, (2, 2), (0, 8), (1,), (0,)))
+    cl.run()
+    assert len(wr.fires) == 4 and wr.fifo.repeat == 1
+
+
+def test_fifo_repeat_hands_out_then_pops():
+    f = Fifo(_NoSched(), lanes=1, depth=2)
+    f.push(0, [7])
+    f.commit()
+    f.push(1, [8])
+    f.commit()
+    f.restart_repeat(3)
+    for t in (2, 3, 4):
+        assert f.pop(t) == [7]
+        assert not f.can_pop()  # one hand-out per cycle
+        assert f.popped_now(t, 0) == (t == 4)  # only the last one pops
+        f.commit()
+        assert f.count(0) == (2 if t < 4 else 1)
+    assert f.popped.tolist() == [1]
+
+
+def test_fifo_restart_resets_the_count():
+    """A restart in the cycle of a hand-out wins over it, as the RTL counter's reset."""
+    f = Fifo(_NoSched(), lanes=1, depth=2)
+    f.push(0, [7])
+    f.commit()
+    f.restart_repeat(3)
+    assert f.pop(1) == [7]
+    f.restart_repeat(2)  # the start lands in the same cycle
+    f.commit()
+    assert f.pop(2) == [7] and not f.popped_now(2, 0)  # count restarted: 1 of 2
+    f.commit()
+    assert f.pop(3) == [7] and f.popped_now(3, 0)
+    f.commit()
+    assert f.empty
+    with pytest.raises(ValueError):
+        f.restart_repeat(0)

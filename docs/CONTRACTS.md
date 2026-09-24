@@ -226,8 +226,11 @@ of 1 runs once. **Spatial bounds are design time**: they are part of
 spatial strides are CSRs. Unused temporal loops are padded with bound 1 and
 stride 0, which the model treats as fewer loops.
 
-A reader with `tstride[0] == 0` is rejected: the RTL repeats the beat
-instead of re-reading (open item 5).
+A reader with `tstride[0] == 0` repeats instead of re-reading, as the RTL
+does (D69): it reads each group of `tbound[0]` beats once and hands that beat
+to the accelerator `tbound[0]` times, so the accelerator sees every beat of
+the enumeration above while L1 sees one read per group. A stride of 0 on any
+other loop, or on a writer, is an ordinary stride.
 
 **Mapping a BRM's per-port affine nest onto these registers** is exactly
 this: the nest's parallel innermost level becomes the spatial loops (its trip

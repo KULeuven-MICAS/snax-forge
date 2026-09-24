@@ -53,6 +53,15 @@ Only what changes cycle counts:
   cycle in which the accelerator pops a lane, that lane accepts a push even
   when full. The writer's data buffer has pipe = false: a pop does not free
   a slot for a push in the same cycle.
+* Reader repeat (D69, snax_cluster Reader + HandShakeRepeater): a reader
+  whose temporal stride on loop 0 is 0 runs its AGU with ``tbound[0]`` = 1,
+  so it reads each group once, and its FIFO hands the head out
+  ``tbound[0]`` times to the accelerator before popping it (``Fifo.pop``).
+  Only the last hand-out pops the FIFO, so only it frees credit and counts
+  in the FIFO's occupancy; there is no added latency. The repeat count
+  restarts at every start, as the RTL counter resets on ``start``. A zero
+  bound still means no beats (the RTL's stride 0 with bound 0 is not
+  copied).
 * Start and done: ``start`` in cycle s makes the AGU busy from s+1, so the
   first address is pushed in s+1 and the first request goes out in s+2.
   ``busy`` is "AGU busy or an address queue not empty", i.e. it drops the
@@ -65,9 +74,6 @@ Not copied (they change cycles, open item 5):
   RTL raises a reader port's priority when its FIFO lane is nearly empty
   and a writer's when nearly full. Here every port uses the static
   ``StreamerConfig.prio``.
-* Reader temporal stride 0 on loop 0: the RTL reads once and repeats the
-  beat ``bound0`` times (HandShakeRepeater). ``start`` rejects it for readers
-  instead of silently re-reading.
 * Spatial bounds are design-time parameters in RTL (only spatial strides
   are CSRs). Here they are in the registers, but their product must equal
   ``n_ports``.
@@ -136,7 +142,7 @@ model.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from math import prod
 from typing import Any
 
@@ -265,6 +271,13 @@ class Fifo:
       full. The pop must come in an earlier phase than the push (accelerator
       in COMPUTE, reader in RESPONSE).
 
+    Repeat (reader side, D69): with ``repeat`` = r > 1 the wide ``pop``
+    hands the head beat out r times; only the r-th hand-out removes it
+    (``pop_lane``), so ``popped``, ``popped_now``, ``pipe`` and the counts
+    see real pops only. The hand-out count lives here and changes in
+    ``commit``; ``restart_repeat`` sets r and restarts the count, winning
+    over a hand-out counted in the same cycle (the RTL's BasicCounter).
+
     ``pusher`` / ``popper`` are the components on each side. The reader uses
     ``popper.next_wake`` while it waits for credit (see streamer waking).
 
@@ -298,6 +311,10 @@ class Fifo:
         self._now: int | None = None
         self._pop_now = [False] * self.lanes
         self._push_now: list[list[Any]] = [[] for _ in range(self.lanes)]
+        # Reader repeat (D69): hand the head out ``repeat`` times, then pop it.
+        self.repeat = 1
+        self._rep = 0  # committed hand-outs of the current head
+        self._rep_tick = False  # wire: a hand-out this cycle
         # Statistics (MOD8): cycles per (lane, count), and where the open run began.
         self.occ = np.zeros((self.lanes, self.depth + 1), dtype=np.int64)
         self._occ_since = np.zeros(self.lanes, dtype=np.int64)
@@ -345,16 +362,34 @@ class Fifo:
     # -- wide side --------------------------------------------------------------
 
     def can_pop(self) -> bool:
-        return all(self.can_pop_lane(j) for j in range(self.lanes))
+        return not self._rep_tick and all(self.can_pop_lane(j) for j in range(self.lanes))
 
     def peek(self) -> list[Any]:
         return [q[0] for q in self._q]
 
     def pop(self, cycle: int) -> list[Any]:
-        """Pop one element from every lane (a beat)."""
+        """Take one beat from every lane; with ``repeat`` > 1 only the last hand-out pops it."""
         if not self.can_pop():
             raise SimulationError(f"{self.name}: pop without a full beat in cycle {cycle}")
+        if self.repeat > 1:
+            self._enter(cycle)
+            self._rep_tick = True
+            if self._rep < self.repeat - 1:
+                return self.peek()  # handed out again; the head stays
         return [self.pop_lane(cycle, j) for j in range(self.lanes)]
+
+    def restart_repeat(self, times: int) -> None:
+        """Hand every beat out ``times`` times from now on, counting from 0 (a reader start).
+
+        Called when a reader's start takes effect. A hand-out counted in the
+        same cycle is dropped from the count (the reset wins, as in the RTL's
+        BasicCounter); a pop it made stands.
+        """
+        if times < 1:
+            raise ValueError(f"{self.name}: repeat must be >= 1, got {times}")
+        self.repeat = times
+        self._rep = 0
+        self._rep_tick = False
 
     def can_push(self) -> bool:
         return all(self.can_push_lane(j) for j in range(self.lanes))
@@ -393,6 +428,9 @@ class Fifo:
                 self._occ_since[j] = t + 1
                 if tr is not None and tr.beat:
                     tr.emit(FifoCount(t + 1, self.name, lane=j, count=new))
+        if self._rep_tick:
+            self._rep = 0 if self._rep >= self.repeat - 1 else self._rep + 1
+            self._rep_tick = False
         self._now = None
 
     def occupancy(self, total: int) -> np.ndarray:
@@ -533,16 +571,19 @@ class Streamer(Component):
                 f"{self.name}: {len(regs.temporal_bounds)} temporal loops, hardware has "
                 f"{c.temporal_dims}"
             )
-        if not c.write and regs.temporal_strides[0] == 0:
-            raise NotImplementedError(
-                f"{self.name}: reader with temporal stride 0 on loop 0 (RTL repeats the beat)"
-            )
 
     def _load(self, regs: StreamerRegs, cycle: int) -> None:
         """Committed effect of a start in ``cycle``."""
         self.regs = regs
-        self._addrs = address_stream(regs)
-        self._n = regs.n_beats
+        agu, repeat = regs, 1
+        if not self.cfg.write and regs.temporal_strides[0] == 0 and regs.n_beats:
+            # Reader repeat (D69): read each group once, hand it out tbound[0] times.
+            repeat = regs.temporal_bounds[0]
+            agu = replace(regs, temporal_bounds=(1, *regs.temporal_bounds[1:]))
+        if not self.cfg.write:
+            self.fifo.restart_repeat(repeat)
+        self._addrs = address_stream(agu)
+        self._n = agu.n_beats
         self._gen = 0
         self._k[:] = 0
         # A zero-beat task never makes the AGU busy (RTL ignores the start).

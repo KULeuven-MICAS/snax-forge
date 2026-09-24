@@ -178,8 +178,10 @@ scenario files are generated and not in git (D67).
 BRM1 is done (D68): a BRM is a hand-written JSON file with a shared part
 and a map of implementations, and `Brm.resolve` turns one implementation
 and its design params into the accelerator entry of the cluster file,
-checked against the model's registered kind. Next are BRM2 (the affine
-notation, D69 to come) and BRM3 (`elementwise_add`), then LOW1c, the
+checked against the model's registered kind. Before BRM2, the model gained
+the reader repeat on temporal stride 0 (D69, copied from the RTL), so a
+nest may reuse a beat on its innermost loop. Next are BRM2 (the affine
+notation, D70 to come) and BRM3 (`elementwise_add`), then LOW1c, the
 cluster file from a design point and BRMs (D53), accepted against
 `scenarios/clusters/alu4.json`, with DP1; LOW1a then produces
 `scenarios/vecadd/tasks.json` from the design point. M4b follows.
