@@ -1,4 +1,4 @@
-# SNAX-FORGE Architecture (Skeleton v1.1)
+# SNAX-FORGE Architecture (Skeleton v1.2)
 
 > This is the main skeleton of SNAX-FORGE: what the system is, its components,
 > their contracts, and the order in which they are built. It is expected to
@@ -19,9 +19,12 @@
 SNAX-FORGE is a platform for exploring how domain-specific accelerators perform
 when plugged into a SNAX compute cluster, before committing to RTL.
 
-A user brings a workload and a set of accelerator models. SNAX-FORGE maps the
-workload onto a configurable model of the cluster, runs it in a fast
-cycle-level Python simulation, and returns profiles, traces and visualisations.
+A user brings a workload and a set of accelerator models. SNAX-FORGE imports
+the workload into its own dataflow graph (SNAX-DFG, a `.snaxdfg` file), maps
+it in SNAX-SANDBOX onto a configurable model of the cluster (loops split into
+temporal and spatial parts, accelerators bound, memory planned; D71–D74),
+runs it in a fast cycle-level Python simulation, and returns profiles, traces
+and visualisations.
 A human or an LLM uses these to decide the next design iteration. The chosen
 accelerator can then be generated as hardware, and its RTL checked against its
 model through cosimulation.
@@ -50,7 +53,8 @@ such as ZigZag and Stream (KU Leuven MICAS). What distinguishes it:
 - **A shared task sequence.** The same lowering logic drives both the model and
   the real hardware.
 - **Human- and LLM-in-the-loop by design.** All artefacts are text-based and
-  self-describing.
+  self-describing; the workload graph and the recipes that transform it are
+  plain JSON a thinker can edit, sweep and view (D71, D72, D76).
 
 [OPEN] Refine this positioning with the ZigZag/Stream authors' view, and decide
 whether SNAX-FORGE can consume or produce their formats.
@@ -70,10 +74,13 @@ whether SNAX-FORGE can consume or produce their formats.
    II); everything around it is SNAX-MODEL's model of the SNAX platform, with
    declared defaults. Model cycles compare design points; checking the
    platform model against SNAX RTL is deferred (section 7, D51).
-4. **Decisions are separate from derivations.** SNAX-DSE decides; SNAX-LOWER
-   derives command sequences; SNAX-MODEL measures. No stage does another's job.
-5. **Everything is text and diffable.** SNAX-DFG, BRMs, configs, design points,
-   control programs, scenarios, profiles and traces are serialised,
+4. **Decisions are separate from derivations.** SNAX-DSE decides, by hand in
+   SNAX-SANDBOX first (D72); importers derive the SNAX-DFG and SNAX-LOWER
+   derives the cluster file and command sequences; SNAX-MODEL measures. No
+   stage does another's job.
+5. **Everything is text and diffable.** SNAX-DFG, BRMs, recipes, platform
+   files, design points, task lists, control programs, scenarios, profiles
+   and traces are serialised,
    versionable and readable by humans and LLMs.
 6. **Extend without editing the core.** New node kinds, attributes and
    accelerator models are added by registration, not by changing core classes.
@@ -82,11 +89,20 @@ whether SNAX-FORGE can consume or produce their formats.
 
 ```mermaid
 flowchart LR
-    W[Workload] --> IR[SDFG / later MLIR] --> DFG[SNAX-DFG]
-    DFG --> DSE[SNAX-DSE]
-    BRM[SNAX-BRM library] --> DSE
-    CFG[Declarative DSE config] --> DSE
-    DSE --> PLAN[Design point]
+    W[Workload kernel] --> IR[Simplified SDFG / later MLIR] --> IMP[Importer]
+    IMP --> DFG[SNAX-DFG .snaxdfg]
+    W -. inputs, golden output .-> REF[Reference executor]
+    subgraph DSE[SNAX-DSE]
+        SBX[SNAX-SANDBOX: transforms, recipes]
+        SRCH[Automated search, later]
+    end
+    DFG --> SBX
+    BRM[SNAX-BRM library] --> SBX
+    PLAT[Platform] --> SBX
+    REC[Recipe] --> SBX
+    SRCH -. writes .-> REC
+    SBX -. every step .-> REF
+    SBX --> PLAN[Design point]
     PLAN --> LOWER[SNAX-LOWER]
     BRM --> LOWER
     LOWER --> CF[Cluster file]
@@ -95,13 +111,15 @@ flowchart LR
     CP --> MODEL
     SC[Hand-written scenario] -. early milestones .-> MODEL
     MODEL --> FB[Profile + trace]
-    DFG --> VIS[GUI / visualiser]
-    PLAN --> VIS
+    DFG --> GV[DFG viewer]
+    SBX --> GV
+    PLAN --> VIS[Run views]
     FB --> VIS
     FB --> T[Thinkers: human, LLM]
+    GV --> T
     VIS --> T
-    T --> CFG
-    T -. until DSE exists .-> PLAN
+    T --> REC
+    T -. hand edits .-> DFG
     PLAN --> GEN[HW/SW generator]
     BRM --> GEN
     LOWER -. SW kernel .-> GEN
@@ -112,10 +130,11 @@ flowchart LR
 ```
 
 **Inner loop** (core, Python only):
-DFG → DSE → LOWER → MODEL → feedback → thinkers → config → DSE.
+kernel → importer → SNAX-DFG → SNAX-SANDBOX (recipe) → design point →
+SNAX-LOWER → SNAX-MODEL → feedback → thinkers → recipe → SNAX-SANDBOX.
 
-Until SNAX-DSE exists, thinkers close the loop by editing the design point
-directly (D27).
+Until automated search exists (M8), thinkers close the loop by editing the
+recipe, or a `.snaxdfg` by hand (D72, amends D27).
 
 **Outer path** (later, independent of the inner loop, D52): HW/SW generator →
 cosim, which checks an accelerator's RTL against its model. Nothing in the
@@ -131,26 +150,41 @@ with plain JSON files; versioned schemas follow once two kernels have used them
 
 | Component | Consumes | Produces |
 |---|---|---|
-| Workload analysis | workload via SDFG (later MLIR) | SNAX-DFG |
+| Importer (workload analysis) | kernel via its simplified SDFG (later MLIR) | SNAX-DFG (`.snaxdfg`) |
 | SNAX-BRM library | user-supplied block models | BRMs |
-| SNAX-DSE | SNAX-DFG, BRMs, DSE config | design point |
+| SNAX-DSE: SNAX-SANDBOX first, automated search later | SNAX-DFG, BRMs, platform, recipe | transformed `.snaxdfg` per step, design point |
 | SNAX-LOWER | design point, BRMs | cluster file, control program (later also C kernel) |
 | SNAX-MODEL | cluster file, control program (or a hand-written scenario) | profile, trace, output data |
 | Reference executor | SNAX-DFG, input data | golden output data |
-| Visualiser | SNAX-DFG, design point, profile, trace | HTML views |
+| DFG viewer | `.snaxdfg` files | HTML view |
+| Visualiser (run views) | design point, profile, trace | HTML views |
 | HW/SW generator | design point, BRMs, SNAX-LOWER | accelerator RTL, SW kernel |
 | Cosim | cluster file, control program, accelerator RTL | profile, trace, per-accelerator mismatch report |
 
 ### 5.1 SNAX-DFG
 
-SNAX-FORGE's own serialisable dataflow graph (JSON or equivalent), independent
-of DaCe classes.
+SNAX-FORGE's own dataflow graph: a JSON file with the extension `.snaxdfg`
+(D71), independent of DaCe classes. It borrows SDFG's concepts, not its
+format: the SDFG JSON carries guids, debuginfo, per-state bookkeeping and
+DaCe types, which make it hard to transform by hand or by script. [OPEN]
+The exact format is fixed in DFG1.
 
-- **SDFG-inspired base** so SDFG → SNAX-DFG translation is direct: data
-  containers, compute nodes, map/loop scopes with symbolic ranges, memlets
-  (data-movement edges), and control/state ordering.
+- **Borrowed from SDFG**: data containers (shape, dtype, symbolic sizes),
+  tasklets, map scopes with symbolic ranges, connectors, memlets
+  (data-movement edges with a subset), and the order between scopes.
+- **Loop kinds**: a map's loops carry `loop.kind`: absent as imported,
+  `temporal` or `spatial` once SNAX-SANDBOX splits them (D73).
 - **Coarse node kinds on top**, most importantly the *accelerated node*, which
   replaces a subgraph with a bound BRM instance. Replacement can be nested.
+- **No streamer nodes.** A memlet on an accelerated node's connector becomes
+  a streamer at lowering, one per port (D12, D53). The graph describes the
+  workload, not the cluster.
+- **Importers** derive a `.snaxdfg` and decide nothing (principle 4). The
+  first reads the simplified SDFG that `pixi run forge <kernel>` writes and
+  folds DaCe's transient-plus-copy (`C[:] = A + B` gives a map into
+  `__tmp0` and a copy into `C`) into a direct write. Symbols (`N`) stay
+  symbolic; the recipe binds them. An MLIR importer comes later and writes
+  `.snaxdfg` directly, without SDFG (open item 33).
 - **Extensibility [DEFAULT]:**
   - The core element schema is only `id`, `kind`, `inputs`, `outputs`, `attrs`.
   - Node kinds are registered entries (name, attribute schema, optional Python
@@ -158,13 +192,22 @@ of DaCe classes.
   - `attrs` uses namespaced keys (`loop.*`, `mem.*`, `hw.*`, `user.*`). Tools
     read the namespaces they know and pass the rest through untouched.
   - Each kind validates its own attributes against its registered schema.
-- **Visualisable** before and after DSE.
+- **Visualisable** in the DFG viewer (section 5.7, VIS5), as imported and
+  after every sandbox step.
+
+Generated `.snaxdfg` files go under `out/`, not in git (as D67); test
+fixtures are the exception.
 
 ### 5.2 Reference Executor [DEFAULT]
 
 A small NumPy interpreter that executes a SNAX-DFG directly and produces the
-golden output. SNAX-MODEL output (computed through each BRM's Python function)
-and later cosim output are compared against it. DaCe's CPU reference is
+golden output. It runs any `.snaxdfg`, as imported, split or accelerated (an
+accelerated node through its BRM's function), so SNAX-SANDBOX checks every
+transform step against it, as `verify_each` does for the SDFG recipes in
+`transforms/` (D72). Inputs come from the kernel's `make_inputs`; the
+kernel's own `reference` is what the executor must match on the imported
+graph. SNAX-MODEL output (computed through each BRM's Python function) and
+later cosim output are compared against it. DaCe's CPU reference is
 optional.
 
 ### 5.3 SNAX-BRM: Block Runtime Model
@@ -188,16 +231,19 @@ Shared:
 2. **Dataflow**: per port, a nest in a registered notation giving the order in
    which the accelerator consumes or produces the operand's elements, in
    logical indices. It describes only the accelerator and holds no
-   addresses: SNAX-LOWER maps it through the buffer layout SNAX-DSE chooses
-   (section 5.5). The first notation, `affine` (D70), gives the operand's
+   addresses. It checks that the memlets of the mapped SNAX-DFG deliver the
+   operand in this order; the streamer values come from those memlets
+   through the buffer layout (section 5.5, D73). The first notation, `affine` (D70), gives the operand's
    shape, an optional offset and loops listed outermost first, each with a
    bound, one stride per dimension and a spatial flag; the spatial loops
    come last and are the lanes. [OPEN] later notations (open item 1).
 3. **Function**: a registered accelerator kind (D43) and its params, whose
    Python implementation produces real output data.
-4. **Pattern**: the SNAX-DFG subgraph shape the block can replace. Descriptive
-   (family and attributes) until DFG2 adds its predicate and parameter
-   extraction.
+4. **Pattern**: the SNAX-DFG subgraph shape the block can replace.
+   SNAX-SANDBOX's `bind` matches it and extracts the design params from the
+   graph, e.g. `W` from the spatial bound of a split map, so a design param
+   is decided once, in the graph (D73). Descriptive (family and attributes)
+   until SBX1 adds the predicate and the extraction.
 
 Per implementation, beside its `source` (only `chisel` for now, open item
 28) and the design-param values it supports:
@@ -216,8 +262,9 @@ params.
 
 Each part serves one component: interface, function and timing give the
 accelerator entry of the cluster file (SNAX-MODEL, through SNAX-LOWER,
-D53); the dataflow gives the streamer values (SNAX-LOWER); the pattern
-serves SNAX-DFG and the binding the HW generator. In the cluster file the
+D53); the dataflow checks the order of the memlets that give the streamer
+values (SNAX-SANDBOX, SNAX-LOWER, D73); the pattern serves SNAX-SANDBOX's
+`bind` and the binding the HW generator. In the cluster file the
 entry is the accelerator's `lanes`, rates, `latency`, `ii` and `op`, which
 is the only part of the cluster file the user is responsible for (D51);
 until BRMs exist it is written by hand. A BRM is accepted when, plugged
@@ -234,11 +281,36 @@ Library files are kept in the form `Brm.to_json` writes.
 ### 5.4 SNAX-DSE: Design Space Exploration
 
 SNAX-DSE only makes decisions. It never computes register values or command
-sequences.
+sequences. It comes in two parts (D72):
 
-**Inputs**: SNAX-DFG, BRM library, declarative DSE config written by the
-thinkers. [OPEN] config format (YAML, TOML or JSON) and whether one config
-describes a single design point or a sweep.
+- **SNAX-SANDBOX** (M3): where decisions are made by hand. Registered
+  transforms act on a `.snaxdfg` and write a new one. A **recipe** is an
+  ordered JSON list of transforms with their parameters, applied to an
+  imported `.snaxdfg`; the reference executor checks every step. A thinker
+  edits the recipe, or a `.snaxdfg` directly. Only a recipe can be swept: a
+  sweep is one recipe with a parameter taking several values (open item 34
+  for hand edits).
+- **Automated search** (M8): drives the same transforms and writes recipes,
+  so everything it finds can be replayed, viewed and diffed.
+
+**Inputs**: SNAX-DFG, BRM library, the platform (L1, L2, DMA, controller,
+streamer defaults; [OPEN] a file of its own or a first recipe step, open
+item 35) and the recipe, which also binds the symbols (`N`).
+
+**Transforms** (registered, extensible; the first two in SBX1):
+
+- `split_map`: split a loop into an outer loop tagged `temporal` and an inner
+  one tagged `spatial` (`loop.kind`, D73)
+- `bind`: replace a subgraph matching a BRM's pattern with an accelerated
+  node bound to an instance (BRM, implementation, design params extracted
+  from the graph, D68, D73)
+- tile: an outer loop over L1-sized tiles
+- place: a layout per container and memory (the memory plan, D74)
+
+The three loop levels map onto the cluster as follows: a tile is a
+repetition of the tasks with a DMA per tile, a temporal loop is a streamer
+temporal loop and part of the accelerator's `n`, a spatial loop is lanes
+(streamer `n_ports`).
 
 **Decisions** (extensible):
 
@@ -249,14 +321,20 @@ describes a single design point or a sweep.
 - buffer placement across banks, double buffering
 - cluster parameters (section 5.6)
 
-**Output: the design point**:
+**Output: the design point** (D74), written by the sandbox, not edited by
+hand:
 
-1. optimised SNAX-DFG
-2. memory allocation plan (L1 addresses and banks, L2 addresses)
+1. the mapped SNAX-DFG
+2. the memory plan: a layout per container and memory (base address, shape,
+   one byte stride per dimension); banks follow from addresses under the
+   fixed address map (open item 18) and are not stated
 3. accelerator instances: BRM, implementation and design params
-4. cluster configuration
+4. the platform
 
-Exploration is manual (config-driven) first. Automated search comes later.
+Loads and stores are not in the design point: SNAX-LOWER inserts them for
+containers that have both an L2 and an L1 layout (section 5.5).
+
+Exploration is manual (recipes) first. Automated search comes later.
 
 ### 5.5 SNAX-LOWER: Lowering
 
@@ -269,18 +347,27 @@ nothing (principle 4).
 from its BRM's interface and timing parts and the instance's parameters; one
 streamer per accelerator port (D12), with `n_ports` equal to the port's lanes
 and attached to it; the xbar, L1, L2, DMA and controller from the cluster
-configuration in the design point; the register map. Its layout is the one
-of `scenarios/clusters/alu4.json` (CONTRACTS.md section 2) and may change
+configuration in the design point; the register map. A streamer serving
+port `p` of instance `i` is named `i_p` (D75). Its layout is the one of
+`scenarios/clusters/alu4.json` (CONTRACTS.md section 2) and may change
 later.
 
 **Control program.** It:
 
-- orders tasks by the dependencies and execution order of the optimised SNAX-DFG
-- computes streamer registers from each BRM's per-port affine loop nest and the
-  memory plan: the nest through the buffer's layout (`snax_forge/lower/streams.py`,
-  D70)
-- computes accelerator register values from BRM parameters
-- inserts L2↔L1 DMA transfers required by the memory plan
+- orders tasks by the execution order of the mapped SNAX-DFG, one group of
+  tasks per accelerated node and tile, sequential per tile by default
+  (double buffering is a later recipe choice); a task is named
+  `<node>_<component>`, a DMA task `load_<container>` or
+  `store_<container>` (D75)
+- computes streamer registers from the memlets on each accelerated node's
+  connectors and the memory plan: the memlet's index through the container's
+  layout (`snax_forge/lower/streams.py`, D70, D73); the BRM's nest checks the
+  order
+- computes accelerator register values from BRM parameters and the loop
+  bounds
+- inserts L2↔L1 DMA transfers from the memory plan: a container with both an
+  L2 and an L1 layout is loaded before its first read and stored after its
+  last write (the simple case in LOW1a, general insertion in LOW3)
 - inserts a wait at every dependency crossing an accelerator or DMA boundary
 
 The control program is a JSON list of commands:
@@ -471,26 +558,38 @@ directories; nothing watches the files. Views:
   controller at the selected cycle, under the schedule on the same page,
   with each memory hop split into request and read data (VIS3, D61, D62)
 - the design point (memory map, accelerator instances)
-- SNAX-DFG (original and optimised)
-- a diff between two runs (design point and profile; config changes once
-  SNAX-DSE exists)
+- a diff between two runs (design point and profile; recipe changes once
+  automated search writes recipes, VIS8)
 
 `python -m snax_forge.viz DIR [DIR ...]` (pixi `view`) takes several runs
 from the start, which the diff needs. The visualiser comes in two parts
 (D54). The run views (M4a: VIS1–VIS3) read only a model run's output
-directory and are built before M3. The design point and DFG views, the diff,
-the LLM summary and the first manual loop (M4b) follow M3, so one full manual
+directory and are built before M3. The design point view, the diff, the
+LLM summary and the first manual loop (M4b) follow M3, so one full manual
 loop is still possible before `dot`. Until the contract freeze, views read the
 same Python dataclasses as the model rather than raw JSON: a run's output
 files are loaded back with `read_outputs` and each class's `from_dict` (D38,
 D50). FIFO occupancy is also shown over the FIFO's busy window (D56), which
 needs a task or beat trace.
 
+**DFG viewer** (`snax_forge/viz/`, VIS5, D76): a second mode of the same
+server for `.snaxdfg` files instead of run directories.
+`python -m snax_forge.viz.dfg FILE [FILE ...]` (pixi `view-dfg`) shows
+several graphs side by side, e.g. `vecadd.snaxdfg` next to
+`vecadd_accelerated.snaxdfg`; Reload re-reads them, so the loop is transform,
+reload, inspect. It draws containers as nodes, maps as nested boxes coloured
+by loop kind (untagged, temporal, spatial), tasklets and accelerated nodes
+inside them, and memlets as edges labelled with their subset. Edges use SVG
+and a small layered layout in plain JS, with no library, so the offline rule
+of D55 holds (open item 32). It is built in M3, since SNAX-SANDBOX is used
+through it.
+
 ### 5.8 Thinkers
 
 Humans and a commercial LLM (Claude, ChatGPT, Gemini) read the feedback and
-edit the DSE config, closing the loop. Until SNAX-DSE exists, they edit the
-design point directly (D27).
+close the loop in SNAX-SANDBOX: they edit the recipe, or a `.snaxdfg`
+directly (D72, amends D27). Recipes can be replayed and swept, hand edits
+cannot (open item 34). Automated search (M8) later writes recipes itself.
 
 ### 5.9 Outer Path (later, independent of the inner loop)
 
@@ -510,7 +609,9 @@ design point directly (D27).
 
 Three levels, each checked against the one above it:
 
-1. **Reference executor**: golden output of the workload (SNAX-DFG in NumPy).
+1. **Reference executor**: golden output of the workload (SNAX-DFG in NumPy),
+   equal to the kernel's own reference on the imported graph and run after
+   every sandbox step (D72).
 2. **SNAX-MODEL**: the same workload through BRM functions, streamers and
    memory. Its output must match level 1 exactly.
 3. **Cosim**: the same run with RTL accelerators. Output must match; each
@@ -548,6 +649,9 @@ See `docs/STATUS.md` for the task breakdown of each milestone.
 
 Order: M1, M4a, M3, M4b, M5–M10, then M2 (D51, D54). The run views come
 first, then `vecadd` is closed end to end, then the rest of the visualiser.
+Since D76, M3 closes `vecadd` from the kernel forwards: the SNAX-DFG and its
+importer, the reference executor, the DFG viewer and SNAX-SANDBOX come
+before the design point and SNAX-LOWER.
 
 **M1: SNAX-MODEL, kernel-agnostic.** Scheduler, banks, interconnect,
 streamers, accelerator interface with elementwise and reduce stubs, DMA/L2,
@@ -557,25 +661,31 @@ model-side contracts written down.
 **M4a: Run views.** HTML scaffold, timeline, utilisation and bank conflicts,
 all from a model run's output directory; tested on the M1 scenarios.
 
-**M3: Build backwards to close `vecadd`.** Elementwise-add BRM, design point,
-SNAX-LOWER (cluster file and control program, D53), minimal SNAX-DFG and
-reference executor. Each is accepted when it reproduces an input hand-written
-in M1 (`scenarios/vecadd`).
+**M3: Close `vecadd` end to end.** Elementwise-add BRM and task-list
+lowering (done); the `.snaxdfg` format and the SDFG importer for vecadd, the
+reference executor, the DFG viewer, SNAX-SANDBOX (`split_map`, `bind`,
+recipes), the design point, derived names, and SNAX-LOWER (cluster file and
+task list, D53). Accepted when the kernel runs end to end with its reference
+output and the cycles of the hand-written `scenarios/vecadd`, whose cluster
+file and task list the design point reproduces (D76).
 
-**M4b: Remaining views and first manual loop.** Design point, DFG and diff
-views; LLM trace summary; one documented design iteration on `vecadd`.
+**M4b: Remaining views and first manual loop.** Design point and diff views;
+LLM trace summary; one documented design iteration on `vecadd`, made by
+editing a recipe.
 
-**M5: `dot`.** Reduction in SNAX-DFG and the reference executor, accumulator
-BRM, chaining waits and DMA insertion in SNAX-LOWER.
+**M5: `dot`.** Reduction in SNAX-DFG, its import and the reference executor,
+accumulator BRM, chaining waits and general DMA insertion in SNAX-LOWER.
 
 **M6: Contract freeze.** Package layout and CI conventions, versioned schemas
-for all contracts, registries and namespaced attributes.
+for all contracts (`.snaxdfg`, recipes and the design point included),
+registries and namespaced attributes.
 
-**M7: SDFG front end.** SDFG → SNAX-DFG translation, reusing the existing
-ingest.
+**M7: Remaining front ends.** The SDFG importer for the constructs of
+`jacobi1d`, and named errors for unsupported ones; the vecadd and dot imports
+come with M3 and M5 (D76).
 
-**M8: DSE via config.** Declarative configs, pattern-based replacement,
-parameter and memory-plan choices, sweeps.
+**M8: Automated DSE.** Search over recipes: pattern-based replacement across
+the BRM library, parameter and memory-plan policies, sweeps.
 
 **M9: `jacobi1d`.** Stencil reuse and double buffering.
 
@@ -587,8 +697,7 @@ cluster RTL (section 7), with a regression test.
 
 **Later:**
 
-- MLIR front end
-- automated search
+- MLIR front end (open item 33)
 - GPU-batched simulation
 - sub-word packing
 - HW cost estimator
@@ -677,6 +786,12 @@ cluster RTL (section 7), with a regression test.
 | D68 | BRM format (BRM1). A BRM is a hand-written JSON file with a shared part (interface, function, dataflow, pattern) and a map of implementations (`source`, `supports`, `timing`, `binding`). Designs that differ only in timing, supported values or RTL source are implementations of one BRM; different ports, rates or data order make a different BRM; only `source: chisel` is accepted for now. Params are `design` (fixed per instance, end up in the cluster file) or `runtime` (exactly `n` and every named rate, the start parameters of CONTRACTS.md section 4). Value fields hold an int or an expression over params (names and `+ - * //`, parsed with `ast`, no string literals: a fixed string is a design param with one allowed value); lanes, timing and function params use design params only, a rate is an int or a runtime param name. The function part names a registered accelerator kind (D43) and its factory params without timing; the accelerator entry is those params resolved plus the implementation's `latency` and `ii`, so the cluster file keeps naming the model's kind and the model is unchanged. Timing is `latency` and `initiation_interval` in the BRM, `ii` in the cluster file. The register map and interconnect ports are derived, not declared. The dataflow part is a registered notation plus one nest per port, describing only the accelerator in logical indices; the pattern is descriptive (`family`, `attrs`) with its predicate null until DFG2; the binding may be null until M10. Every field is written, a missing part is rejected by name, unknown keys are errors. A design point instance names BRM, implementation and design params; `Brm.resolve` makes it, checking every design param against its type, `values`, the implementation's `supports` and its default, and rejecting runtime params, which are the task's. The instance's entry is checked against the `AccelConfig` its registered kind builds: the same ports in the same order (name, direction, lanes, rate) and the same `latency` and `ii`, so an instance that exists is consistent with the model. Amends section 5.3 (parts, CSR map derived) and 5.4 (implementation choice) | 24 |
 | D69 | Reader repeat on temporal stride 0, copied from snax_cluster's Reader and HandShakeRepeater (at `8ebd422`). A reader whose loop-0 temporal stride is 0 runs its AGU with `tbound[0]` = 1, so it reads each group once, and its FIFO hands the head beat to the accelerator `tbound[0]` times, popping it only on the last hand-out, with no added latency. Credit, the FIFO's `pipe` and its occupancy see only that pop (the RTL's `dataFifoPopped` is the buffer's pop). The hand-out count restarts at every start and wins over a hand-out counted in the same cycle (the counter's reset). Writers do not repeat. A zero bound still means no beats: the RTL's stride 0 with bound 0 is not copied. No existing scenario uses it, so every cycle count is unchanged. Amends D32 (not copied yet), CONTRACTS.md section 3 and section 5.6; closes the repeat half of open item 5 | 24 |
 | D70 | Affine dataflow notation (BRM2), the first version of open item 1. Per port a nest gives the operand's logical `shape`, an optional `offset` and `loops` listed outermost first, each with a `bound`, one stride per operand dimension and a `spatial` flag: index = offset + Σ i_l · strides_l, affine by construction. Temporal loops come first (one step of them is one beat, the last one innermost), spatial loops last (the lanes, the last one lane dimension 0). Values are ints or expressions over params; spatial bounds use design params only. Checked when the BRM is made (structure), by `resolve` (the spatial product is the port's lanes) and per task by `task_nest` (task values are exactly the registers, `n` is a multiple of the rate, the nest gives n / rate beats, every index lies inside the shape). Strides may be 0 or negative. The nest describes only the accelerator; that the ports agree on element positions is the BRM author's responsibility. A notation may register `check_instance` and `normalize` hooks, and nests are kept with every field written. SNAX-LOWER maps a nest through a buffer `Layout` (base, shape, one byte stride per dimension; provisional until DP1, open item 29) onto a streamer task's `values` (`streamer_values`): base = the layout at the offset, each loop's byte stride = its strides dotted with the layout's, temporal loops innermost first, spatial fastest first. Nothing is adjusted: a component that is not a streamer, a reader for an output port or a writer for an input port, spatial bounds other than the streamer's, more temporal loops than it has, a layout of another shape, unaligned to the word, outside L1 or on packed words (open item 21) is an error. Amends sections 5.3 and 5.5 and CONTRACTS.md section 3 | 24 |
+| D71 | SNAX-DFG is its own JSON format, `.snaxdfg`, not a copy of the SDFG JSON. It borrows SDFG's containers, tasklets, map scopes with symbolic ranges, connectors and memlets, and leaves out guids, debuginfo, per-state bookkeeping and DaCe types, so it is easy to transform by hand or by script. A graph comes from an importer, which derives and decides nothing: the first reads the simplified SDFG of `pixi run forge <kernel>` (the existing ingest in `snax_forge/sdfg/`) and folds DaCe's transient-plus-copy into a direct write; symbols stay symbolic; an MLIR importer later writes `.snaxdfg` directly (open item 33). Streamers are not nodes: a memlet on an accelerated node's connector becomes a streamer at lowering (D12, D53). Generated `.snaxdfg` files live under `out/`, not in git (as D67); test fixtures are the exception. The format is fixed in DFG1. Refines D1, D2; amends section 5.1 | 25 |
+| D72 | SNAX-SANDBOX is SNAX-DSE's manual decision layer, built in M3. Registered transforms act on a `.snaxdfg` and write a new one (first `split_map` and `bind`, then tile and place). A recipe is an ordered JSON list of transforms with parameters, applied to an imported graph, which also binds its symbols; the reference executor checks every step, as `verify_each` does for the SDFG recipes in `transforms/`. Thinkers edit the recipe or a `.snaxdfg` by hand; a sweep is one recipe with a parameter over several values, and hand edits cannot be swept (open item 34). The platform is an input beside the recipe (open item 35). Automated search (M8) later drives the same transforms and writes recipes. Amends D14, D27, principle 4 and section 5.4; closes the single-point-or-sweep half of open item 2 | 25 |
+| D73 | Loop kinds, binding and the source of streamer values. `split_map` splits a loop into an outer loop tagged `loop.kind: temporal` and an inner one tagged `spatial`. `bind` matches a BRM's pattern and extracts its design params from the graph (`W` from the spatial bound), so a design param is decided once, in the graph; a value the BRM does not allow is rejected by `resolve` (D68). Three loop levels: tile (a repetition of the tasks with a DMA per tile), temporal (streamer temporal loops and the accelerator's `n`), spatial (lanes, `n_ports`). Streamer values come from the memlets on an accelerated node's connectors, mapped through the container's layout by `streams.py`; the BRM's per-port nest (D70) checks that the memlets deliver the operand in its order. Amends D70 (the input of the mapping) and section 5.3 (dataflow, pattern) | 25 |
+| D74 | The design point is SNAX-SANDBOX's output, written to disk and not edited by hand: the mapped SNAX-DFG, the memory plan, the accelerator instances (BRM, implementation, design params, D68) and the platform. The memory plan holds a layout per container and memory (base address, shape, one byte stride per dimension: the form of `lower/layout.py`, which stays where it is), set by the recipe's place step, explicitly or by a default policy. Banks follow from addresses under the fixed word-interleaved map (open item 18) and are not stated, so validation checks addresses against the memory's size, overlaps between containers in one memory, and unknown BRMs and implementations. Loads and stores are not in it: SNAX-LOWER inserts them for containers with both an L2 and an L1 layout. Amends section 5.4 and DP1's acceptance ("out-of-range banks" becomes out-of-range addresses); DP1 closes open item 29 | 25 |
+| D75 | Derived names. The streamer serving port `p` of instance `i` is `i_p` (an underscore, since register names split on the first dot, D42), a task is `<node>_<component>` and a DMA task `load_<container>` or `store_<container>`, with node and container names as the imported graph has them; SNAX-LOWER derives all of them and the design point names none. The existing scenarios are renamed in NAME1, before LOW1c and LOW1a: alu4's and mul1's `ra`, `rb`, `wr` become `acc_a`, `acc_b`, `acc_out`, red4's `ra`, `wr` become `acc_in`, `acc_out`, and the task names of every `tasks.json` follow the scheme. Component order is kept, so every cycle count is unchanged. Amends D53 | 25 |
+| D76 | DFG viewer and the M3 order. The viewer of D55 gets a second mode for `.snaxdfg` files, `python -m snax_forge.viz.dfg FILE [FILE ...]` (pixi `view-dfg`): several graphs side by side, a Reload button, the same server, colours and offline rule. Containers are nodes, maps nested boxes coloured by loop kind, tasklets and accelerated nodes sit inside them, memlets are edges labelled with their subset; edges use SVG and a small layered layout in plain JS with no library (D61's no-SVG rule is the cluster view's; open item 32). VIS5 moves from M4b into M3. M3 closes vecadd from the kernel forwards: DFG1, IMP1, REF1, VIS5, SBX1 (absorbs DFG2), DP1, NAME1, LOW1c, LOW1a, E2E1. The SDFG import of vecadd moves from M7 (FE1) into M3, that of dot into M5; M7 keeps the remaining front ends and M8 becomes automated search over recipes. Amends D24, D54, D55 and section 8 | 25 |
 
 ## 11. Open Items
 
@@ -686,7 +801,10 @@ it.
 1. BRM per-port affine loop nest notation and its mapping to streamer registers
    (streamer register layout fixed in MOD10; first notation `affine` and the
    mapping in BRM2, D70; closed in M6).
-2. DSE config format, and single design point vs sweep.
+2. DSE config format, and single design point vs sweep. The sweep half is
+   closed by D72: a sweep is one recipe with a parameter over several
+   values, and the recipe format is fixed in SBX1. What automated search
+   reads (DSE1, M8) is still open.
 3. Acceptable model-vs-RTL error target, decided with the deferred anchor (D51) before its first comparison.
 4. Positioning details relative to ZigZag/Stream.
 5. Streamer dynamic TCDM priority (D32): copy or keep out, decided with the deferred anchor (D51); not copied until then. The reader repeat on temporal stride 0 is closed by D69.
@@ -713,4 +831,10 @@ it.
 26. ~~`scenarios/fmul` is scheduled by hand with `Program`, not written as a task list~~ — closed by D66: `fmul/tasks.json` lowers to the same program, 525 cycles; its six syncs that only keep that program are listed in `fmul/scenario.py` (519 cycles without them).
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources instead of writing it by hand (D68). Far future.
 28. Implementations whose `source` is SystemVerilog or HLS (D68): only `chisel` is accepted until one is needed.
-29. The design point's memory plan needs a layout per buffer (shape and a byte stride per dimension, covering storage order and padding), not only an address and banks, for SNAX-LOWER to map a BRM's nest into streamer values. Decided with DP1; trivial for the 1D targets (vecadd, dot, jacobi1d). Until then `snax_forge/lower/layout.py` holds a provisional `Layout` in that form (D70).
+29. The design point's memory plan needs a layout per buffer (shape and a byte stride per dimension, covering storage order and padding), not only an address and banks, for SNAX-LOWER to map a BRM's nest into streamer values. Decided with DP1; trivial for the 1D targets (vecadd, dot, jacobi1d). Until then `snax_forge/lower/layout.py` holds a provisional `Layout` in that form (D70). D74 takes that form for the memory plan; closed when DP1 lands.
+30. Kernel and model dtypes disagree: `kernels/polybench/vecadd.py` uses `int32`, while the model's L1 and `elementwise_add` use `int64` with one element per word. Decided in IMP1: change the kernel, or give the L1 and the BRM port `int32` (still one element per word, open item 21).
+31. A loop whose bound is not a multiple of the spatial bound (N not a multiple of W): `split_map` rejects it for now (D73); a tail task or padding later. The reference executor still runs such N (REF1).
+32. The DFG viewer's layout: a small layered layout for nested scopes and edges, in plain JS with no library (D76). Revisit if graphs outgrow it.
+33. An MLIR importer that writes `.snaxdfg` directly, without SDFG (D71).
+34. A hand-edited `.snaxdfg` cannot be replayed or swept (D72); whether a recipe may start from an edited file is decided when it is needed.
+35. Where the platform lives: a platform file beside the recipe, or a first recipe step (D72). Decided in SBX1 or DP1.

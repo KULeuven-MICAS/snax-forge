@@ -7,8 +7,9 @@
 > Scope: the model side (D26), plus SNAX-LOWER's task list (section 9,
 > D64), the input the model's control program is lowered from, and the BRM
 > (section 10, D68, D70), from which the accelerator entry and the streamer
-> values are derived. The design point is not here yet (DP1); later nest
-> notations are open item 1 (M6).
+> values are derived. The SNAX-DFG (`.snaxdfg`), the sandbox recipe and the
+> design point are not here yet: they get sections with DFG1, SBX1 and DP1
+> (D71–D74). Later nest notations are open item 1 (M6).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
 > schemas are F2's job (D26, F2). Every value marked **default** is a
