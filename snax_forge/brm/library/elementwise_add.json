@@ -1,0 +1,54 @@
+{
+ "name": "elementwise_add",
+ "interface": {
+  "params": {
+   "W": {"stage": "design", "type": "int", "default": 4, "values": null},
+   "op": {"stage": "design", "type": "str", "default": "add", "values": ["add"]},
+   "n": {"stage": "runtime", "type": "int", "default": null, "values": null}
+  },
+  "ports": [
+   {"name": "a", "direction": "in", "lanes": "W", "rate": 1, "dtype": "int64"},
+   {"name": "b", "direction": "in", "lanes": "W", "rate": 1, "dtype": "int64"},
+   {"name": "out", "direction": "out", "lanes": "W", "rate": 1, "dtype": "int64"}
+  ]
+ },
+ "function": {"accel": "elementwise", "params": {"lanes": "W", "n_inputs": 2, "op": "op"}},
+ "dataflow": {
+  "notation": "affine",
+  "ports": {
+   "a": {
+    "shape": ["n * W"],
+    "offset": [0],
+    "loops": [
+     {"bound": "n", "strides": ["W"], "spatial": false},
+     {"bound": "W", "strides": [1], "spatial": true}
+    ]
+   },
+   "b": {
+    "shape": ["n * W"],
+    "offset": [0],
+    "loops": [
+     {"bound": "n", "strides": ["W"], "spatial": false},
+     {"bound": "W", "strides": [1], "spatial": true}
+    ]
+   },
+   "out": {
+    "shape": ["n * W"],
+    "offset": [0],
+    "loops": [
+     {"bound": "n", "strides": ["W"], "spatial": false},
+     {"bound": "W", "strides": [1], "spatial": true}
+    ]
+   }
+  }
+ },
+ "pattern": {"family": "elementwise", "attrs": {"op": "add", "arity": 2}, "predicate": null},
+ "implementations": {
+  "chisel_tiled_spatial": {
+   "source": "chisel",
+   "supports": {},
+   "timing": {"latency": 0, "initiation_interval": 1},
+   "binding": null
+  }
+ }
+}

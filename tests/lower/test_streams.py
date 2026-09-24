@@ -7,7 +7,7 @@ import json
 import numpy as np
 import pytest
 
-from snax_forge.brm import Brm, task_nest
+from snax_forge.brm import Brm, load_brm, task_nest
 from snax_forge.lower import Layout, LayoutError, StreamError, arg_of, streamer_values
 from snax_forge.snax_model import ControllerConfig, L1Config, StreamerConfig
 from snax_forge.snax_model.scenario import (
@@ -61,14 +61,17 @@ def instance(nest_a=None, W=4):
 
 
 def test_vecadd_streamer_values():
-    """a, b and c of 64 int64 at L1 bytes 0, 576 and 1152, n = 16 beats of 4."""
+    """The library's elementwise_add (BRM3): a, b and c of 64 int64 at L1 bytes 0, 576
+    and 1152, n = 16 beats of 4, give vecadd's four task values."""
     tasks = json.loads((SCEN / "vecadd" / "tasks.json").read_text())["steps"]
-    want = {s["task_name"]: s["values"] for s in tasks if s.get("type") == "streamer"}
-    inst, cl = instance(), cluster("alu4")
+    want = {s["task_name"]: s["values"] for s in tasks if s.get("type") in ("streamer", "accel")}
+    inst, cl = load_brm("elementwise_add").resolve(IMPL), cluster("alu4")
+    task = {"n": 16}
+    assert want.pop("add_acc") == task and list(task) == inst.brm.registers
     got = {
-        "add_ra": streamer_values(inst, "a", {"n": 16}, Layout(0, (64,), (8,)), cl, "ra"),
-        "add_rb": streamer_values(inst, "b", {"n": 16}, Layout(576, (64,), (8,)), cl, "rb"),
-        "add_wr": streamer_values(inst, "out", {"n": 16}, Layout(1152, (64,), (8,)), cl, "wr"),
+        "add_ra": streamer_values(inst, "a", task, Layout(0, (64,), (8,)), cl, "ra"),
+        "add_rb": streamer_values(inst, "b", task, Layout(576, (64,), (8,)), cl, "rb"),
+        "add_wr": streamer_values(inst, "out", task, Layout(1152, (64,), (8,)), cl, "wr"),
     }
     assert got == want
 

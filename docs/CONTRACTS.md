@@ -5,9 +5,10 @@
 > produce them without reading `scenario.py`.
 >
 > Scope: the model side (D26), plus SNAX-LOWER's task list (section 9,
-> D64), the input the model's control program is lowered from. The design
-> point and the BRM are not here — they are M3's, and their open items stay
-> open (BRM affine-nest notation: open item 1, M6).
+> D64), the input the model's control program is lowered from, and the BRM
+> (section 10, D68, D70), from which the accelerator entry and the streamer
+> values are derived. The design point is not here yet (DP1); later nest
+> notations are open item 1 (M6).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
 > schemas are F2's job (D26, F2). Every value marked **default** is a
@@ -22,7 +23,7 @@
 > `run:` means "produced by running that scenario".
 >
 > Layout: section 8 holds the rules a new block kind must follow; section 9
-> the task list. The
+> the task list; section 10 the BRM. The
 > reasoning behind each contract is in the module docstrings and in
 > `docs/ARCHITECTURE.md` section 5.6; this file does not repeat it.
 
@@ -654,3 +655,85 @@ configuration writes of `ra`, `rb`, `wr` and `acc`, `wait dma` (for the loads
 in `add_ra`'s and `add_rb`'s `after`), the four starts, the DMA's 11
 configuration writes, `wait wr`, the DMA's start and a final `wait dma`: the
 last 32 of the 57 commands of `scenarios/vecadd/scenario.json`.
+
+## 10. Block runtime model
+
+What SNAX-BRM hands the rest of the flow (BRM1–BRM3, D68, D70): one
+accelerator as plain data. A BRM is a hand-written JSON file in
+`snax_forge/brm/library/`, one per accelerator, named after it and kept in
+the form `Brm.to_json` writes (every field, defaults included). Loaded with
+`load_brm(name)`; unknown keys are errors and a missing part is rejected by
+name.
+
+| Part | Holds | Read by |
+|---|---|---|
+| `interface` | params (`design` / `runtime`) and ports (direction, lanes, rate, dtype) | everything below |
+| `function` | a registered accelerator kind (D43) and its factory params, without timing | the accelerator entry |
+| `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
+| `pattern` | `family`, `attrs`; `predicate` null until DFG2 | SNAX-DFG (later) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing`, `binding` (null until M10) | the accelerator entry, the HW generator (later) |
+
+The shared part (the first four) is what every implementation has in
+common; designs that differ only in timing, supported values or RTL source
+are implementations of one BRM.
+
+**Params.** A `design` param is fixed per instance and ends up in the
+cluster file (lanes, the op); its `default` is used when the design point
+gives none, and `values` limits what any implementation may take. An
+implementation's `supports` limits it further for that RTL. A `runtime`
+param is a start parameter of the accelerator: the runtime params are
+exactly `n` and every named port rate, and they are the registers of
+section 4 and the accelerator task's `values` in section 9. A value field
+holds an int or an expression over params (`+ - * //`); a fixed string is
+a design param with one allowed value.
+
+**The accelerator entry** of an instance (`brm.resolve(implementation,
+params)`, then `accel_entry()`) is the function's params resolved, in their
+order, then the implementation's `latency` and `ii` (its
+`initiation_interval`). The first library BRM resolves to exactly the
+accelerator of `scenarios/clusters/alu4.json`:
+
+<!-- snippet: snax_forge/brm/library/elementwise_add.json -->
+```json
+ "function": {"accel": "elementwise", "params": {"lanes": "W", "n_inputs": 2, "op": "op"}},
+```
+
+<!-- snippet: snax_forge/brm/library/elementwise_add.json -->
+```json
+  "chisel_tiled_spatial": {
+   "source": "chisel",
+   "supports": {},
+   "timing": {"latency": 0, "initiation_interval": 1},
+   "binding": null
+  }
+```
+
+`resolve` builds the `AccelConfig` through the kind and rejects a BRM whose
+declared ports (name, direction, lanes, rate, in order) or timing differ
+from it.
+
+**The affine nest** of a port lists the operand's `shape`, an `offset` and
+`loops`, outermost first; each loop has a `bound`, one stride per operand
+dimension and a `spatial` flag, and the element of a step is
+`offset + sum(i_l * strides_l)`. Temporal loops come first (one step of
+them is one beat, the last one innermost), spatial loops last (the lanes,
+the last one fastest). Spatial bounds use design params only and multiply
+to the port's lanes; per task the nest gives n / rate beats inside the
+shape. The nest says nothing about addresses: section 3 gives how
+SNAX-LOWER maps it through a layout onto streamer registers.
+
+<!-- snippet: snax_forge/brm/library/elementwise_add.json -->
+```json
+   "a": {
+    "shape": ["n * W"],
+    "offset": [0],
+    "loops": [
+     {"bound": "n", "strides": ["W"], "spatial": false},
+     {"bound": "W", "strides": [1], "spatial": true}
+    ]
+   },
+```
+
+Element `t * W + j` in lane `j` of beat `t`, on `b` and `out` alike: the
+ports agree on element positions, which is the BRM author's responsibility
+(D70).

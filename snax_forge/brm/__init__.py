@@ -7,8 +7,9 @@ an implementation and design-param values; its ``accel_entry`` is the
 accelerator entry of the cluster file, checked against the model's
 registered kind. BRM2 (D70): the ``affine`` dataflow notation, whose nests
 ``task_nest`` resolves and enumerates for one task; SNAX-LOWER maps them
-onto streamer values (``snax_forge.lower.streams``). The library's first BRM
-(BRM3) comes later.
+onto streamer values (``snax_forge.lower.streams``). BRM3: the library of
+hand-written BRMs (library.py, ``load_brm``), starting with
+``elementwise_add``.
 """
 
 from . import affine  # registers the "affine" notation (D70)
@@ -27,9 +28,11 @@ from .brm import (
 )
 from .expr import ExprError
 from .instance import Instance, resolve
+from .library import LIBRARY, library_names, load_brm
 from .notation import NOTATIONS, register_notation
 
 __all__ = [
+    "LIBRARY",
     "NOTATIONS",
     "Brm",
     "BrmError",
@@ -45,6 +48,8 @@ __all__ = [
     "Port",
     "Timing",
     "affine",
+    "library_names",
+    "load_brm",
     "register_notation",
     "resolve",
     "resolve_nest",

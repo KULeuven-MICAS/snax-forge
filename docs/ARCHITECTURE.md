@@ -225,7 +225,11 @@ into the model, it gives the same cycles and data as the matching generic
 stub.
 
 The existing Chisel elementwise modules (loop, spatial, tiled-spatial) and the
-accumulator are the reference implementations for the first BRMs.
+accumulator are the reference implementations for the first BRMs. The first
+library file is `elementwise_add` (BRM3): `W` lanes, 4 by default, one
+implementation `chisel_tiled_spatial` (`ElementwiseTiledSpatial`, L = 0,
+II = 1), resolving to exactly the adder of `scenarios/clusters/alu4.json`.
+Library files are kept in the form `Brm.to_json` writes.
 
 ### 5.4 SNAX-DSE: Design Space Exploration
 
