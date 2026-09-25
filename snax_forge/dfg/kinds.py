@@ -22,7 +22,9 @@ Built-in kinds (DFG1):
 
     map          one loop variable over a range, parallel iterations; a body.
                  ``loop.kind`` (tile, temporal, spatial) says how SNAX-SANDBOX
-                 mapped it (D73); absent as imported. No connectors: the
+                 mapped it (D73); absent as imported. ``loop.split`` (D82) on a
+                 temporal map is the ``var`` and ``range`` it had before
+                 split_map, so join_map can undo the split. No connectors: the
                  memlets are its body's, and the outer ones SDFG draws on a map
                  are derived by propagation.
     tasklet      ``code``: one assignment per output connector over the input
@@ -31,7 +33,11 @@ Built-in kinds (DFG1):
     accelerated  a bound BRM instance (``instance``, ``brm``, ``implementation``,
                  design ``params``) doing one beat: its connectors are the BRM's
                  ports, its memlets give each port's lanes as a range. It sits
-                 inside the temporal maps it runs over. A body is allowed for a
+                 inside the temporal maps it runs over. ``code`` (D82) is what
+                 one lane computes, over its connectors, as the BRM states it;
+                 ``replaced`` is the subtree ``bind`` replaced, in stored form
+                 and checked in this node's scope, so ``unbind`` gives it back
+                 (null for a node written by hand). A body is allowed for a
                  nested block (D71); a leaf block has an empty one.
 
 ``loop`` (a sequential loop) and ``branch`` come with the kernels that need
@@ -40,7 +46,6 @@ them (open item 36).
 
 from __future__ import annotations
 
-import ast
 import keyword
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -162,6 +167,16 @@ def _check_map(node: Node, scope: Scope, what: str) -> None:
     kind = node.attrs.get("loop.kind")
     if kind is not None and kind not in LOOP_KINDS:
         raise DfgError(f"{what}.attrs.loop.kind: {kind!r} is not one of {list(LOOP_KINDS)}")
+    split = node.attrs.get("loop.split")
+    if split is not None:
+        w = f"{what}.attrs.loop.split"
+        if not isinstance(split, Mapping) or set(split) != {"var", "range"}:
+            raise DfgError(f"{w}: must be {{var, range}} of the map before split_map")
+        ident(split["var"], f"{w}.var")
+        if not is_range(split["range"]):
+            raise DfgError(f"{w}.range: {split['range']!r} is not a range")
+        for part in parse_dim(split["range"], f"{w}.range"):
+            scope.uses(part, f"{w}.range")
 
 
 register_kind(
@@ -179,46 +194,20 @@ register_kind(
 # =============================================================================
 
 
-def _statements(code: Any, what: str) -> list[ast.Assign]:
-    if not isinstance(code, str):
-        raise DfgError(f"{what}: must be a string, got {code!r}")
-    try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
-        raise DfgError(f"{what}: cannot parse {code!r}") from e
-    out = []
-    for st in tree.body:
-        if not (
-            isinstance(st, ast.Assign)
-            and len(st.targets) == 1
-            and isinstance(st.targets[0], ast.Name)
-        ):
-            raise DfgError(f"{what}: {ast.unparse(st)!r} is not 'output = expression'")
-        _wrap(lambda st=st: expr.check(ast.unparse(st.value), what))
-        out.append(st)
-    if not out:
-        raise DfgError(f"{what}: no statement")
-    return out
-
-
-def _normalize_tasklet(attrs: dict[str, Any], what: str) -> dict[str, Any]:
-    attrs["code"] = "\n".join(ast.unparse(s) for s in _statements(attrs["code"], f"{what}.code"))
+def _normalize_code(attrs: dict[str, Any], what: str) -> dict[str, Any]:
+    attrs["code"] = _wrap(lambda: expr.canonical_code(attrs["code"], f"{what}.code"))
     return attrs
 
 
+def _check_code(node: Node, what: str) -> None:
+    """One ``output = expression`` per output connector, reading input connectors only."""
+    _wrap(
+        lambda: expr.check_code(node.attrs["code"], node.inputs, node.outputs, f"{what}.attrs.code")
+    )
+
+
 def _check_tasklet(node: Node, scope: Scope, what: str) -> None:
-    stmts = _statements(node.attrs["code"], f"{what}.attrs.code")
-    targets = [s.targets[0].id for s in stmts]
-    for t in targets:
-        if t not in node.outputs:
-            raise DfgError(f"{what}.attrs.code: assigns {t!r}, which is not an output connector")
-    for o in node.outputs:
-        if targets.count(o) != 1:
-            raise DfgError(f"{what}.attrs.code: output {o!r} must be assigned exactly once")
-    for s in stmts:
-        for name in sorted(expr.names(ast.unparse(s.value))):
-            if name not in node.inputs:
-                raise DfgError(f"{what}.attrs.code: {name!r} is not an input connector")
+    _check_code(node, what)
     for side, conns in (("inputs", node.inputs), ("outputs", node.outputs)):
         for c, m in conns.items():
             for d in m.subset:
@@ -226,7 +215,7 @@ def _check_tasklet(node: Node, scope: Scope, what: str) -> None:
                     raise DfgError(f"{what}.{side}.{c}: a tasklet takes one element, got {d!r}")
 
 
-register_kind("tasklet", required=("code",), normalize=_normalize_tasklet, check=_check_tasklet)
+register_kind("tasklet", required=("code",), normalize=_normalize_code, check=_check_tasklet)
 
 
 # =============================================================================
@@ -246,12 +235,17 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
         ident(k, f"{what}.attrs.params")
         if type(v) not in (int, str):
             raise DfgError(f"{what}.attrs.params.{k}: must be an int or a string, got {v!r}")
+    _check_code(node, what)
+    if a["replaced"] is not None and not isinstance(a["replaced"], Mapping):
+        raise DfgError(f"{what}.attrs.replaced: must be a node or null")
+    # the replaced subtree itself is checked in graph.py, in this node's scope
 
 
 register_kind(
     "accelerated",
-    required=("instance", "brm", "implementation"),
-    defaults={"params": {}},
+    required=("instance", "brm", "implementation", "code"),
+    defaults={"params": {}, "replaced": None},
     body=True,
+    normalize=_normalize_code,
     check=_check_accelerated,
 )

@@ -42,6 +42,7 @@ def test_hand_built_vecadd_equals_the_fixture():
 
 def test_hand_built_accelerated_equals_the_fixture():
     lanes = "4*i_t:4*i_t+4"
+    split = Graph.load(fixture("vecadd_split"))
     acc = Node(
         "add",
         "accelerated",
@@ -51,13 +52,20 @@ def test_hand_built_accelerated_equals_the_fixture():
             "instance": "acc",
             "brm": "elementwise_add",
             "implementation": "chisel_tiled_spatial",
+            "code": "out = a + b",
             "params": {"W": 4, "op": "add"},
+            "replaced": split.node("add_map_s").to_dict(),
         },
     )
     tmap = Node(
         "add_map",
         "map",
-        attrs={"var": "i_t", "range": "0:N//4", "loop.kind": "temporal"},
+        attrs={
+            "var": "i_t",
+            "range": "0:N//4",
+            "loop.kind": "temporal",
+            "loop.split": {"var": "i", "range": "0:N"},
+        },
         body=[acc],
     )
     g = Graph("vecadd", {"N": 64}, {k: Container(["N"], "int64") for k in "ABC"}, [tmap])
@@ -133,10 +141,16 @@ def test_namespaced_attrs_pass_through_untouched():
 def test_kind_owned_attrs_come_first_with_defaults():
     d = as_dict("vecadd_accelerated")
     acc = d["body"][0]["body"][0]
-    acc["attrs"] = {"user.x": 1, "brm": "elementwise_add", "instance": "acc", "implementation": "i"}
+    acc["attrs"] = {
+        "user.x": 1, "code": "out=a+b", "brm": "elementwise_add", "instance": "acc",
+        "implementation": "i",
+    }  # fmt: skip
     attrs = Graph.from_dict(d).node("add").attrs
-    assert list(attrs) == ["instance", "brm", "implementation", "params", "user.x"]
-    assert attrs["params"] == {}
+    assert list(attrs) == [
+        "instance", "brm", "implementation", "code", "params", "replaced", "user.x"
+    ]  # fmt: skip
+    assert attrs["params"] == {} and attrs["replaced"] is None
+    assert attrs["code"] == "out = a + b"
 
 
 def test_walk_is_execution_order_with_enclosing_nodes():

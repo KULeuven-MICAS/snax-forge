@@ -170,8 +170,8 @@ GRAPH_CASES = [
     ("vecadd_accelerated", lambda d: accel(d)["attrs"]["params"].update(W=8), "has 8 lanes, got 4"),
     (
         "vecadd_accelerated",
-        lambda d: accel(d)["inputs"].update(x=accel(d)["inputs"].pop("a")),
-        "connectors \\['b', 'x'\\], the BRM's ports",
+        lambda d: accel(d)["inputs"].update(c=accel(d)["inputs"]["a"]),
+        "connectors \\['a', 'b', 'c'\\], the BRM's ports",
     ),
     ("vecadd_accelerated", lambda d: accel(d)["attrs"].update(brm="nope"), "no BRM 'nope'"),
     (
@@ -234,3 +234,10 @@ def test_an_unregistered_executor():
     finally:
         KINDS.pop("test_noop", None)
         EXECUTORS.pop("test_noop", None)
+
+
+def test_the_node_code_must_be_the_brms():
+    d = as_dict("vecadd_accelerated")
+    accel(d)["attrs"]["code"] = "out = a - b"
+    with pytest.raises(ExecutionError, match="'out = a - b', but 'elementwise_add' computes"):
+        execute(Graph.from_dict(d), kernel_run(64)[0])

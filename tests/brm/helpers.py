@@ -65,6 +65,7 @@ def adder() -> dict[str, Any]:
             "function": {
                 "accel": "elementwise",
                 "params": {"lanes": "W", "n_inputs": 2, "op": "op"},
+                "code": "out = a + b",
             },
             "dataflow": {"notation": "test_list", "ports": {"a": nest, "b": nest, "out": nest}},
             "pattern": {

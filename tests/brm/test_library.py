@@ -93,3 +93,19 @@ def test_vecadd_same_cycles_and_data_as_the_stub():
     assert a.reads == b.reads
     x, y = (np.load(SCEN / "vecadd" / f) for f in ("a.npy", "b.npy"))
     assert np.array_equal(b.l2[2048 // 8 : 2048 // 8 + 64, 0], x + y)  # c = a + b at L2 2048
+
+
+@pytest.mark.parametrize("w", [1, 4, 8])
+def test_function_code_agrees_with_the_model(w):
+    """The BRM's code and the kind SNAX-MODEL runs compute the same lanes (D82)."""
+    import numpy as np
+
+    from snax_forge import expr
+
+    inst = load_brm("elementwise_add").resolve("chisel_tiled_spatial", {"W": w})
+    cfg = inst.accel_config()
+    rng = np.random.default_rng(w)
+    ins = {p.name: rng.integers(-1000, 1000, p.lanes) for p in cfg.inputs}
+    got = cfg.fn(0, ins, {}, {"n": 1})
+    for target, e in expr.statements(inst.brm.function.code, "code"):
+        assert np.array_equal(got[target], expr.evaluate(e, ins))

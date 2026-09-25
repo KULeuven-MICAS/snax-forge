@@ -110,3 +110,26 @@ def test_a_variable_is_bound_only_inside_its_map():
     )
     with pytest.raises(DfgError, match="node 'late'.inputs.x: 'i' is not a symbol"):
         Graph.from_dict(d)
+
+
+def _replaced(edit):
+    return _node(lambda n: edit(n["attrs"]["replaced"]["body"][0]))
+
+
+REPLACED_CASES = [
+    (_replaced(lambda t: t["inputs"]["in1"].update(data="X")),
+     "attrs.replaced: node 'add'.inputs.in1: unknown container 'X'"),
+    (_replaced(lambda t: t["inputs"]["in1"].update(subset=["j"])), "attrs.replaced: .*'j' is not a"),
+    (_node(lambda n: n["attrs"].update(replaced=[1])), "replaced: must be a node or null"),
+    (_node(lambda n: n["attrs"].update(code="out = a + x")), "code: 'x' is not an input"),
+    (_map(lambda m: m["attrs"].update({"loop.split": {"var": "i"}})), "loop.split: must be"),
+    (_map(lambda m: m["attrs"].update({"loop.split": {"var": "i", "range": "M"}})), "not a range"),
+    (_map(lambda m: m["attrs"].update({"loop.split": {"var": "i", "range": "0:M"}})),
+     "loop.split.range: 'M' is not a symbol"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("edit", "message"), REPLACED_CASES)
+def test_accelerated_history_rejected_by_name(edit, message):
+    with pytest.raises(DfgError, match=message):
+        Graph.from_dict(edited("vecadd_accelerated", edit))

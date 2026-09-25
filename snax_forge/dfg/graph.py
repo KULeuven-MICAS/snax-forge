@@ -335,6 +335,7 @@ def _check_body(
             kind.check(node, scope, what)
         if node.kind == "accelerated":
             _check_instance(node, instances, what)
+            _check_replaced(node, scope, what)
         if kind.body:
             node.body = list(node.body or [])
             inner = scope.inner(kind.binds(node) if kind.binds else [])
@@ -385,6 +386,25 @@ def _check_memlets(node: Node, scope: Scope, what: str) -> None:
                     parse_dim(d, w)
                 except ExprError as e:
                     raise DfgError(str(e)) from None
+
+
+def _check_replaced(node: Node, scope: Scope, what: str) -> None:
+    """The subtree an accelerated node replaced: a valid node in the node's own scope (D82).
+
+    It is history, not part of the graph: its ids may repeat live ones (the
+    tasklet ``bind`` replaced has the accelerated node's id) and it is never
+    run. It is kept in its stored form.
+    """
+    r = node.attrs.get("replaced")
+    if r is None:
+        return
+    w = f"{what}.attrs.replaced"
+    try:
+        old = Node.from_dict(r, w)
+        _check_body([old], scope, set(), {})
+    except DfgError as e:
+        raise DfgError(f"{w}: {e}") from None
+    node.attrs["replaced"] = old.to_dict()
 
 
 def _check_instance(node: Node, instances: dict[str, tuple[Any, ...]], what: str) -> None:

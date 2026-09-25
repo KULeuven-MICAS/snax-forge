@@ -37,9 +37,10 @@ const LOOP_KINDS = [
 
 function legend() {
   $("legend").replaceChildren(
+    h("li", {}, h("i", { class: "key data" }), "data container"),
+    h("li", {}, h("i", { class: "key data transient" }), "transient data container"),
     ...LOOP_KINDS.map(([k, label]) => h("li", {}, h("i", { class: `key loop-${k}` }), label)),
     h("li", {}, h("i", { class: "key op-accelerated" }), "accelerated node"),
-    h("li", {}, h("i", { class: "key transient" }), "transient container"),
   );
 }
 
@@ -56,6 +57,7 @@ function containerBox(view, key) {
     class: `box${c.transient ? " transient" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-id": name,
     title: tip({ container: name, ...c, version: b.version, written_by: b.written_by, shown_again: b.again }),
   },
+  h("span", { class: "box-kind" }, c.transient ? "transient data" : "data container"),
   h("b", {}, name),
   h("small", {}, `${c.dtype}[${shape.join(", ")}]`),
   b.written_by.length ? h("small", { class: "ver" }, `written by ${b.written_by.join(", ")}`) : null);
@@ -81,10 +83,19 @@ function nodeEl(n) {
     n.inputs.length ? h("div", { class: "ports in" }, n.inputs.map((p) => port(n, p))) : null,
     h("div", { class: "op-head" },
       h("b", {}, n.id), h("span", { class: "tag" }, n.kind),
-      n.kind === "tasklet" ? null : h("div", { class: "op-title" }, n.title)),
+      n.kind === "tasklet" ? null : h("div", { class: "op-title" }, n.title),
+      (n.heading || []).map((l) => h("div", { class: "op-title" }, l))),
     n.lines.length ? h("div", { class: "op-lines mono" }, n.lines.map((l) => h("div", {}, l))) : null,
+    n.replaced ? h("div", { class: "op-replaced" }, `replaces ${n.replaced}`) : null,
     n.body && n.body.length ? h("div", { class: "scope-body" }, n.body.map(nodeEl)) : null,
     n.outputs.length ? h("div", { class: "ports out" }, n.outputs.map((p) => port(n, p))) : null);
+}
+
+/** A top-level node: the box an edge from or to a container stops at (D82). */
+function topEl(n) {
+  const el = nodeEl(n);
+  el.setAttribute("data-top", n.id);
+  return el;
 }
 
 function symbolsText(symbols) {
@@ -106,7 +117,7 @@ function panel(view, index) {
   const rows = h("div", { class: "dfg-rows" }, view.rows.map((r) =>
     r.kind === "containers"
       ? h("div", { class: "dfg-row" }, r.boxes.map((k) => containerBox(view, k)))
-      : h("div", { class: "dfg-row" }, nodeEl(r.node))));
+      : h("div", { class: "dfg-row" }, topEl(r.node))));
   const canvas = h("div", { class: "dfg-canvas" }, rows, svg);
   const el = h("section", { class: "dfg-panel" }, head, h("div", { class: "dfg-scroll" }, canvas));
   el._draw = () => drawEdges(canvas, svg, view.edges, index);
@@ -150,9 +161,17 @@ function drawEdges(canvas, svg, edges, index) {
     const ra = a.getBoundingClientRect();
     const rb = b.getBoundingClientRect();
     const x1 = ra.left + ra.width / 2 - c.left;
-    const y1 = ra.bottom - c.top;
     const x2 = rb.left + rb.width / 2 - c.left;
-    const y2 = rb.top - c.top;
+    let y1 = ra.bottom - c.top;
+    let y2 = rb.top - c.top;
+    // An edge to or from a connector inside a top-level node stops at that node's box,
+    // straight above or below the connector, so it never runs over the text inside.
+    const top = e.stop ? canvas.querySelector(`[data-top="${CSS.escape(e.stop)}"]`) : null;
+    if (top) {
+      const rt = top.getBoundingClientRect();
+      if (e.dir === "read") y2 = rt.top - c.top;
+      else y1 = rt.bottom - c.top;
+    }
     const k = Math.max(18, Math.abs(y2 - y1) * 0.45);
     const ids = [e.data, e.from.split(/[.@]/)[0], e.to.split(/[.@]/)[0]].join(" "); // container, nodes
     const p = svgEl("path", {

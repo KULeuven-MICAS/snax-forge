@@ -33,6 +33,8 @@ How a node runs is registered per kind (``register_executor``, principle
     ``fn(k, ins, state, params)`` SNAX-MODEL runs (the instance's
     ``accel_config``). The ``temporal`` maps directly around the node are
     its firing loop, outermost first, as the BRM nest orders them (D70);
+    the node's ``code`` must be the BRM's ``function.code`` (D82), and its
+    ``replaced`` subtree is history, never run;
     ``k`` counts firings, ``state`` lives for one task, ``n`` is the number
     of firings. Maps further out (a tile, an untagged map) start a new task
     per iteration. Each port's beat is gathered from its memlet (the lanes,
@@ -299,6 +301,12 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     if node.body:
         raise ExecutionError(f"{what}: a nested accelerated block is not run yet")
     instance, cfg = _accel(node, what)
+    brm_code = instance.brm.function.code
+    if brm_code is not None and node.attrs["code"] != brm_code:
+        raise ExecutionError(
+            f"{what}.attrs.code: {node.attrs['code']!r}, but {node.attrs['brm']!r} "
+            f"computes {brm_code!r}"
+        )
     for side, conns, ports in (
         ("inputs", node.inputs, cfg.inputs),
         ("outputs", node.outputs, cfg.outputs),

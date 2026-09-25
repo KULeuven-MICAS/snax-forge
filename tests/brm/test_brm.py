@@ -32,6 +32,7 @@ def test_sparse_file_takes_defaults_and_writes_them():
     assert d["interface"]["ports"][0]["rate"] == 1
     assert d["interface"]["ports"][0]["dtype"] == "int64"
     assert d["pattern"] == {"family": "reduce", "attrs": {}, "predicate": None}
+    assert d["function"]["code"] is None  # a reduction cannot say it per lane yet (D82)
     impl = d["implementations"]["chisel_accumulator"]
     assert impl["supports"] == {} and impl["binding"] is None
     assert Brm.from_dict(d) == b
@@ -172,3 +173,31 @@ def test_python_construction_is_validated():
     b.interface.ports[0].lanes = "n"
     with pytest.raises(BrmError, match="not design params"):
         Brm(b.name, b.interface, b.function, b.dataflow, b.pattern, b.implementations)
+
+
+# =============================================================================
+# function.code: what one lane computes (D82)
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("code", "message"),
+    [
+        ("out = a + c", "'c' is not an input"),
+        ("y = a + b", "assigns 'y', which is not an output"),
+        ("out = a\nout = b", "exactly once"),
+        ("out = a / b", "Div is not allowed"),
+        ("a + b", "is not 'output = expression'"),
+    ],
+)
+def test_function_code_rejected(code, message):
+    d = adder()
+    d["function"]["code"] = code
+    with pytest.raises(BrmError, match=message):
+        Brm.from_dict(d)
+
+
+def test_function_code_is_stored_canonical():
+    d = adder()
+    d["function"]["code"] = "out=(a+b)"
+    assert Brm.from_dict(d).function.code == "out = a + b"

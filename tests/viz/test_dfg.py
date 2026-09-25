@@ -110,16 +110,19 @@ def test_vecadd_accelerated():
         "add_map", "temporal", 16, "i_t in 0:N // 4"
     )  # fmt: skip
     acc = top["body"][0]
-    assert acc["title"] == "acc = elementwise_add / chisel_tiled_spatial"
-    assert acc["lines"] == ["W = 4, op = add"]
+    assert acc["title"] == "acc = elementwise_add"
+    assert acc["heading"] == ["impl = chisel_tiled_spatial", "W = 4, op = add"]
+    assert acc["lines"] == ["out = a + b"]
+    assert acc["replaced"] == "add_map_s › add"
     assert [p["text"] for p in acc["inputs"]] == [
         "A[4 * i_t:4 * i_t + 4]",
         "B[4 * i_t:4 * i_t + 4]",
     ]
+    lanes = "[4 * i_t:4 * i_t + 4]"
     assert v["edges"] == [
-        {"from": "A@0", "to": "add.a", "data": "A", "text": "A[4 * i_t:4 * i_t + 4]", "dir": "read"},
-        {"from": "B@0", "to": "add.b", "data": "B", "text": "B[4 * i_t:4 * i_t + 4]", "dir": "read"},
-        {"from": "add.out", "to": "C@1", "data": "C", "text": "C[4 * i_t:4 * i_t + 4]", "dir": "write"},
+        {"from": "A@0", "to": "add.a", "data": "A", "text": f"A{lanes}", "dir": "read", "stop": "add_map"},
+        {"from": "B@0", "to": "add.b", "data": "B", "text": f"B{lanes}", "dir": "read", "stop": "add_map"},
+        {"from": "add.out", "to": "C@1", "data": "C", "text": f"C{lanes}", "dir": "write", "stop": "add_map"},
     ]  # fmt: skip
 
 
@@ -169,9 +172,9 @@ def test_inside_one_node_an_edge_goes_straight_from_the_writer(tmp_path):
                tasklet("t2", {"in1": "tmp0"}, {"out": "B"}, "out = in1"))],
     )  # fmt: skip
     v = view(path)
-    assert [(e["from"], e["to"], e["data"]) for e in v["edges"]] == [
-        ("A@0", "t1.in1", "A"), ("t1.out", "t2.in1", "tmp0"),
-        ("t1.out", "tmp0@1", "tmp0"), ("t2.out", "B@1", "B"),
+    assert [(e["from"], e["to"], e["data"], e["stop"]) for e in v["edges"]] == [
+        ("A@0", "t1.in1", "A", "m"), ("t1.out", "t2.in1", "tmp0", None),
+        ("t1.out", "tmp0@1", "tmp0", "m"), ("t2.out", "B@1", "B", "m"),
     ]  # fmt: skip
     assert v["rows"][-1]["boxes"] == ["tmp0@1", "B@1"]
 

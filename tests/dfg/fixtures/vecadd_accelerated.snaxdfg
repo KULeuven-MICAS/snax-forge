@@ -12,7 +12,12 @@
    "kind": "map",
    "inputs": {},
    "outputs": {},
-   "attrs": {"var": "i_t", "range": "0:N // 4", "loop.kind": "temporal"},
+   "attrs": {
+    "var": "i_t",
+    "range": "0:N // 4",
+    "loop.kind": "temporal",
+    "loop.split": {"var": "i", "range": "0:N"}
+   },
    "body": [
     {
      "id": "add",
@@ -26,7 +31,27 @@
       "instance": "acc",
       "brm": "elementwise_add",
       "implementation": "chisel_tiled_spatial",
-      "params": {"W": 4, "op": "add"}
+      "code": "out = a + b",
+      "params": {"W": 4, "op": "add"},
+      "replaced": {
+       "id": "add_map_s",
+       "kind": "map",
+       "inputs": {},
+       "outputs": {},
+       "attrs": {"var": "i_s", "range": "0:4", "loop.kind": "spatial"},
+       "body": [
+        {
+         "id": "add",
+         "kind": "tasklet",
+         "inputs": {
+          "in1": {"data": "A", "subset": ["4 * i_t + i_s"]},
+          "in2": {"data": "B", "subset": ["4 * i_t + i_s"]}
+         },
+         "outputs": {"out": {"data": "C", "subset": ["4 * i_t + i_s"]}},
+         "attrs": {"code": "out = in1 + in2"}
+        }
+       ]
+      }
      },
      "body": []
     }

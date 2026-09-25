@@ -252,3 +252,68 @@ def _fold(node: ast.expr) -> ast.expr:
     if isinstance(node.op, ast.Add) and lc == 0:
         return right
     return ast.BinOp(left, node.op, right)
+
+
+# =============================================================================
+# Code: one assignment per line (D77, D82)
+# =============================================================================
+
+
+def statements(code: Any, what: str) -> list[tuple[str, Value]]:
+    """``code`` as ``(target, expression)`` pairs: one ``name = expression`` per line.
+
+    The expressions are in the grammar above and canonical. Used for a
+    tasklet's code, an accelerated node's code and a BRM's function code;
+    which names a target and an expression may use is the caller's rule.
+    """
+    if not isinstance(code, str):
+        raise ExprError(f"{what}: must be a string, got {code!r}")
+    try:
+        tree = ast.parse(code)
+    except SyntaxError as e:
+        raise ExprError(f"{what}: cannot parse {code!r}") from e
+    out = []
+    for st in tree.body:
+        ok = isinstance(st, ast.Assign) and len(st.targets) == 1
+        if not ok or not isinstance(st.targets[0], ast.Name):
+            raise ExprError(f"{what}: {ast.unparse(st)!r} is not 'output = expression'")
+        rhs = ast.unparse(st.value)
+        try:
+            _parse(rhs)
+        except ExprError as e:
+            raise ExprError(f"{what}: {e}") from None
+        out.append((st.targets[0].id, canonical(rhs)))
+    if not out:
+        raise ExprError(f"{what}: no statement")
+    return out
+
+
+def canonical_code(code: Any, what: str) -> str:
+    """``code`` in its stored form: one canonical ``target = expression`` per line."""
+    return "\n".join(f"{t} = {e}" for t, e in statements(code, what))
+
+
+def rename_code(code: str, names: Mapping[str, str]) -> str:
+    """``code`` (valid, see ``statements``) with targets and names renamed, canonical."""
+    lines = statements(code, "code")
+    return "\n".join(f"{names.get(t, t)} = {substitute(e, names)}" for t, e in lines)
+
+
+def check_code(
+    code: Any, inputs: Iterable[str], outputs: Iterable[str], what: str
+) -> list[tuple[str, Value]]:
+    """``statements`` of ``code``, each output assigned once, only inputs read."""
+    lines = statements(code, what)
+    outs, ins = list(outputs), set(inputs)
+    targets = [t for t, _ in lines]
+    for t in targets:
+        if t not in outs:
+            raise ExprError(f"{what}: assigns {t!r}, which is not an output")
+    for o in outs:
+        if targets.count(o) != 1:
+            raise ExprError(f"{what}: output {o!r} must be assigned exactly once")
+    for _, e in lines:
+        for name in sorted(names(e)):
+            if name not in ins:
+                raise ExprError(f"{what}: {name!r} is not an input")
+    return lines

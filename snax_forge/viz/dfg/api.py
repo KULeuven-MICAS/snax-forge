@@ -39,7 +39,11 @@ come in the order the next node's connectors read them, then the rest, so
 edges cross as little as possible.
 
 Each edge is one memlet: from a container box (or a writer's connector) to
-an input connector, or from an output connector to a container box. The
+an input connector, or from an output connector to a container box. An
+edge between a container and a connector inside a top-level node is drawn
+only up to that node's outer box, above or below the connector it belongs
+to (``stop``, D82), so it never crosses the text inside; an edge between
+two connectors inside one node is drawn in full. The
 nodes are the graph's own tree, with what a panel shows about each one
 already worked out: a map's iteration count when its range evaluates with
 the bound symbols, a tasklet's code, an accelerated node's instance line.
@@ -220,14 +224,27 @@ def _node(g: Graph, n: Node, top: str) -> dict[str, Any]:
         d["lines"] = a["code"].split("\n")
     elif n.kind == "accelerated":
         params = ", ".join(f"{k} = {v}" for k, v in a["params"].items())
-        d["title"] = f"{a['instance']} = {a['brm']} / {a['implementation']}"
-        d["lines"] = [params] if params else []
+        d["title"] = f"{a['instance']} = {a['brm']}"
+        d["heading"] = [f"impl = {a['implementation']}"] + ([params] if params else [])
+        d["lines"] = a["code"].split("\n")
+        d["replaced"] = _replaced_text(a.get("replaced"))
     else:
         d["title"] = n.kind
         d["lines"] = [f"{k} = {v}" for k, v in a.items() if "." not in k]
     if n.body is not None:
         d["body"] = [_node(g, c, top) for c in n.body]
     return d
+
+
+def _replaced_text(r: dict[str, Any] | None) -> str | None:
+    """What an accelerated node replaced, as its chain of ids (``add_map_s › add``)."""
+    if not r:
+        return None
+    ids = []
+    while r:
+        ids.append(r["id"])
+        r = r["body"][0] if r.get("body") and len(r["body"]) == 1 else None
+    return " › ".join(ids)
 
 
 def _conn(c: str, m: Memlet) -> dict[str, Any]:
@@ -300,14 +317,14 @@ def _layout(g: Graph) -> dict[str, Any]:
             elif m.data in writers:  # written earlier inside this node: straight from the writer
                 edges.extend(_edge(w, port, m.data, text, "read") for w in writers[m.data])
             else:
-                edges.append(_edge(above[m.data], port, m.data, text, "read"))
+                edges.append(_edge(above[m.data], port, m.data, text, "read", top.id))
         nxt = reads[k + 1] if k + 1 < len(tops) else []
         names = nxt + [c for c in writes[k] if c not in nxt]
         fresh = {c: list(dict.fromkeys(n.id for n, _, _ in _writes(top, c))) for c in writes[k]}
         below = box_row(names, fresh, k + 1)
         for c in writes[k]:
             for n, cn, m in _writes(top, c):
-                edges.append(_edge(f"{n.id}.{cn}", below[c], c, memlet_text(m), "write"))
+                edges.append(_edge(f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", top.id))
         above = below
     return {"rows": rows, "boxes": boxes, "edges": edges}
 
@@ -316,5 +333,8 @@ def _writes(top: Node, c: str) -> list[tuple[Node, str, Memlet]]:
     return [(n, cn, m) for side, n, cn, m in _uses(top) if side == "write" and m.data == c]
 
 
-def _edge(src: str, dst: str, data: str, text: str, side: str) -> dict[str, Any]:
-    return {"from": src, "to": dst, "data": data, "text": text, "dir": side}
+def _edge(
+    src: str, dst: str, data: str, text: str, side: str, stop: str | None = None
+) -> dict[str, Any]:
+    """One memlet; ``stop`` is the top-level node whose box the drawn edge ends at (D82)."""
+    return {"from": src, "to": dst, "data": data, "text": text, "dir": side, "stop": stop}

@@ -12,7 +12,11 @@
    {"name": "out", "direction": "out", "lanes": "W", "rate": 1, "dtype": "int64"}
   ]
  },
- "function": {"accel": "elementwise", "params": {"lanes": "W", "n_inputs": 2, "op": "op"}},
+ "function": {
+  "accel": "elementwise",
+  "params": {"lanes": "W", "n_inputs": 2, "op": "op"},
+  "code": "out = a + b"
+ },
  "dataflow": {
   "notation": "affine",
   "ports": {

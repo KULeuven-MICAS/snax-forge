@@ -113,6 +113,7 @@ def _rename_ports(d):
     for p, new in zip(d["interface"]["ports"], ["x", "y", "out"], strict=True):
         p["name"] = new
     d["dataflow"]["ports"] = {k: list(range(4)) for k in ("x", "y", "out")}
+    d["function"]["code"] = "out = x + y"
 
 
 MODEL_CASES = [

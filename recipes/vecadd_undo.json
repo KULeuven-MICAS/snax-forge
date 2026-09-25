@@ -1,0 +1,10 @@
+{
+ "name": "vecadd_undo",
+ "kernel": "vecadd",
+ "params": {},
+ "symbols": {"N": 64},
+ "steps": [
+  {"transform": "unbind", "params": {"node": "add"}},
+  {"transform": "join_map", "params": {"map": "add_map"}}
+ ]
+}

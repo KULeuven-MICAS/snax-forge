@@ -671,7 +671,7 @@ name.
 | Part | Holds | Read by |
 |---|---|---|
 | `interface` | params (`design` / `runtime`) and ports (direction, lanes, rate, dtype) | everything below |
-| `function` | a registered accelerator kind (D43) and its factory params, without timing | the accelerator entry |
+| `function` | a registered accelerator kind (D43), its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
 | `implementations` | per name: `source` (`chisel` only), `supports`, `timing`, `binding` (null until M10) | the accelerator entry, the HW generator (later) |
@@ -698,8 +698,19 @@ accelerator of `scenarios/clusters/alu4.json`:
 
 <!-- snippet: snax_forge/brm/library/elementwise_add.json -->
 ```json
- "function": {"accel": "elementwise", "params": {"lanes": "W", "n_inputs": 2, "op": "op"}},
+ "function": {
+  "accel": "elementwise",
+  "params": {"lanes": "W", "n_inputs": 2, "op": "op"},
+  "code": "out = a + b"
+ },
 ```
+
+`code` is one `output = expression` per output port over the input ports,
+per lane of one firing, in the grammar of the value fields. It says what
+the accelerator computes without running it: `bind` compares a tasklet
+against it, and the accelerated node carries it. It is null for a BRM
+that cannot say it per lane yet (a reduction, DFG3 / BRM4), which cannot
+be bound. The library tests check it against the registered kind.
 
 <!-- snippet: snax_forge/brm/library/elementwise_add.json -->
 ```json
@@ -767,9 +778,9 @@ derived task names are built from them (D75).
 
 | Kind | Attrs | Body | Connectors |
 |---|---|---|---|
-| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial` | yes: runs once per value of `var` | none (derived from the body) |
+| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`) | yes: runs once per value of `var` | none (derived from the body) |
 | `tasklet` | `code`: one `output = expression` per output connector | no | one element each: indices only |
-| `accelerated` | `instance`, `brm`, `implementation`, `params` (design params) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
+| `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
 
 Attrs without a namespace belong to the kind and are all written;
 namespaced attrs (`loop.*`, `mem.*`, `hw.*`, `user.*`) are passed through
@@ -783,20 +794,24 @@ of section 10's value fields (ints, names, `+ - * //`) and are stored as
 
 vecadd after `split_map` (W = 4) and `bind` to `elementwise_add`: the
 accelerated node does one beat of four lanes, inside the temporal map of
-N // 4 beats that becomes its streamers' temporal loop and its `n`.
+N // 4 beats that becomes its streamers' temporal loop and its `n`. The
+temporal map keeps what it was split from:
 
 <!-- snippet: tests/dfg/fixtures/vecadd_accelerated.snaxdfg -->
 ```json
-  {
-   "id": "add_map",
-   "kind": "map",
-   "inputs": {},
-   "outputs": {},
-   "attrs": {"var": "i_t", "range": "0:N // 4", "loop.kind": "temporal"},
-   "body": [
-    {
-     "id": "add",
-     "kind": "accelerated",
+   "attrs": {
+    "var": "i_t",
+    "range": "0:N // 4",
+    "loop.kind": "temporal",
+    "loop.split": {"var": "i", "range": "0:N"}
+   },
+```
+
+and the accelerated node what it computes and what it replaced (the
+spatial map and the tasklet, as `split_map` left them, D82):
+
+<!-- snippet: tests/dfg/fixtures/vecadd_accelerated.snaxdfg -->
+```json
      "inputs": {
       "a": {"data": "A", "subset": ["4 * i_t:4 * i_t + 4"]},
       "b": {"data": "B", "subset": ["4 * i_t:4 * i_t + 4"]}
@@ -806,16 +821,19 @@ N // 4 beats that becomes its streamers' temporal loop and its `n`.
       "instance": "acc",
       "brm": "elementwise_add",
       "implementation": "chisel_tiled_spatial",
-      "params": {"W": 4, "op": "add"}
-     },
-     "body": []
-    }
-   ]
-  }
+      "code": "out = a + b",
+      "params": {"W": 4, "op": "add"},
+      "replaced": {
+       "id": "add_map_s",
+       "kind": "map",
 ```
 
-Whether the connectors and params agree with the BRM is checked where the
-BRM is loaded: by `bind` (SBX1) and the reference executor (REF1).
+So a bound graph says on its own what each accelerator does, and
+`unbind` and `join_map` (section 12) take it back to the imported graph.
+`replaced` is history: checked in the node's scope, never run, and its ids
+may repeat live ones. Whether the connectors, params and `code` agree with
+the BRM is checked where the BRM is loaded: by `bind` (SBX1) and the
+reference executor (REF1).
 
 ## 12. Recipe
 
@@ -842,10 +860,13 @@ non-transient container equals the input graph's. Each step is written as
 | Transform | Params | Does |
 |---|---|---|
 | `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor` |
-| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; the lanes param comes from the spatial bound |
+| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; the lanes param comes from the spatial bound; the tasklet's code on the port names must be the BRM's `function.code` |
+| `unbind` | `node` (accelerated id) | the accelerated node becomes the subtree it `replaced` |
+| `join_map` | `map` (id) | a temporal map with `loop.split` and its spatial map become the map they were split from |
 
 The vecadd recipe: W lanes, one temporal map of N / W beats, bound to
-`elementwise_add`.
+`elementwise_add`. `recipes/vecadd_undo.json` (`unbind`, then `join_map`)
+takes its last step back to the first.
 
 <!-- snippet: recipes/vecadd.json -->
 ```json

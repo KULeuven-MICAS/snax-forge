@@ -12,7 +12,12 @@
    "kind": "map",
    "inputs": {},
    "outputs": {},
-   "attrs": {"var": "i_t", "range": "0:N // 4", "loop.kind": "temporal"},
+   "attrs": {
+    "var": "i_t",
+    "range": "0:N // 4",
+    "loop.kind": "temporal",
+    "loop.split": {"var": "i", "range": "0:N"}
+   },
    "body": [
     {
      "id": "add_map_s",

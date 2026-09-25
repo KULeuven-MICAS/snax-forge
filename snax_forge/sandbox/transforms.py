@@ -23,7 +23,13 @@ is (D77); the reference check after the step is run.py's.
     memlet becomes the port's lanes as a range over the spatial variable,
     the container dtype must be the port's, and the memlets together with
     the temporal maps around must give the elements in the order of the
-    port's nest (D70, D73).
+    port's nest (D70, D73). The tasklet's code, on the BRM's port names,
+    must be the BRM's ``function.code``; the accelerated node carries that
+    code and the replaced subtree (D82).
+``unbind(node)`` and ``join_map(map)``
+    the inverses (D82): the subtree an accelerated node replaced, and the
+    map a temporal / spatial pair was split from (``loop.split``), so a
+    graph at any step can go back to the imported one.
 """
 
 from __future__ import annotations
@@ -104,6 +110,13 @@ def _substitute_body(body: list[Node], values: Mapping[str, Any]) -> None:
             m.subset = [_substitute_dim(d, values) for d in m.subset]
         if n.kind == "map":
             n.attrs["range"] = _substitute_dim(n.attrs["range"], values)
+            if n.attrs.get("loop.split"):
+                split = n.attrs["loop.split"]
+                n.attrs["loop.split"] = {**split, "range": _substitute_dim(split["range"], values)}
+        if n.kind == "accelerated" and n.attrs.get("replaced"):
+            old = Node.from_dict(n.attrs["replaced"], n.id)
+            _substitute_body([old], values)
+            n.attrs["replaced"] = old.to_dict()
         if n.body:
             _substitute_body(n.body, values)
 
@@ -174,6 +187,7 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
         "range": format_dim((0, expr.canonical(f"({length}) // {factor}"), 1)),
         **{k: v for k, v in node.attrs.items() if k not in ("var", "range")},
         "loop.kind": "temporal",
+        "loop.split": {"var": var, "range": node.attrs["range"]},  # for join_map (D82)
     }
     node.body = [inner]
     return _result(g)
@@ -220,6 +234,14 @@ def bind(
     except BrmError as e:
         raise SandboxError(f"{what}: {e}") from None
     ports = match(tasklet, b)
+    if b.function.code is None:
+        raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
+    computes = expr.rename_code(tasklet.attrs["code"], ports)
+    if computes != b.function.code:
+        raise SandboxError(
+            f"{what}: the tasklet computes {computes!r} on the BRM's ports, "
+            f"{brm!r} computes {b.function.code!r}"
+        )
 
     # design params: the lanes param from the spatial bound, the rest given or default
     begin, end, step = parse_dim(smap.attrs["range"], what)
@@ -282,7 +304,9 @@ def bind(
             "instance": instance,
             "brm": brm,
             "implementation": implementation,
+            "code": b.function.code,
             "params": dict(inst.params),
+            "replaced": smap.to_dict(),  # for unbind (D82)
         },
         body=[],
     )
@@ -335,5 +359,96 @@ def _check_order(
         raise SandboxError(f"{what}: the memlet {m.data}{m.subset} does not give the BRM's order")
 
 
+# =============================================================================
+# unbind and join_map: the inverses (D82)
+# =============================================================================
+
+
+def unbind(g: Graph, node: str) -> Graph:
+    """The accelerated node ``node`` replaced by the subtree ``bind`` replaced."""
+    g = _copy(g)
+    body, i, _ = _locate(g, node)
+    acc = body[i]
+    what = f"unbind {node!r}"
+    if acc.kind != "accelerated":
+        raise SandboxError(f"{what}: a {acc.kind!r} is not an accelerated node")
+    if acc.attrs.get("replaced") is None:
+        raise SandboxError(f"{what}: it records nothing it replaced (written by hand?)")
+    body[i] = Node.from_dict(acc.attrs["replaced"], what)
+    return _result(g)
+
+
+def join_map(g: Graph, map: str) -> Graph:
+    """The inverse of split_map: a temporal map and its spatial map become the map they were.
+
+    Needs ``loop.split`` (the var and range before the split) and the
+    spatial map as the temporal map's only child. Every index under it is
+    written back over the old variable: an index ``k + c * (b + f * v_t + v_s)``
+    that split_map wrote becomes ``k + c * v``; an index in another form is
+    an error, since it is not what split_map wrote.
+    """
+    g = _copy(g)
+    body, i, _ = _locate(g, map)
+    outer = body[i]
+    what = f"join_map {map!r}"
+    split = outer.attrs.get("loop.split") if outer.kind == "map" else None
+    if split is None:
+        raise SandboxError(f"{what}: not a map split by split_map (no loop.split)")
+    kids = outer.body or []
+    if len(kids) != 1 or kids[0].kind != "map" or kids[0].attrs.get("loop.kind") != "spatial":
+        raise SandboxError(f"{what}: its only child must be the spatial map (unbind first)")
+    inner = kids[0]
+    v_t, v_s, var = outer.attrs["var"], inner.attrs["var"], split["var"]
+    begin, _, _ = parse_dim(split["range"], what)
+    b0, factor, step = parse_dim(inner.attrs["range"], what)
+    if b0 != 0 or step != 1 or type(factor) is not int:
+        raise SandboxError(f"{what}: the spatial map must run over 0:<int>")
+
+    def back(part: Any) -> Any:
+        try:
+            const, co = expr.linear(part, [v_t, v_s])
+        except ExprError as e:
+            raise SandboxError(f"{what}: {e}") from None
+        c = co[v_s]
+        if co[v_t] != factor * c:
+            raise SandboxError(f"{what}: {part!r} is not an index split_map wrote")
+        if c == 0:
+            return part
+        k = expr.linear(f"({const}) - {c} * ({begin})", [])[0]
+        term = var if c == 1 else f"-{var}" if c == -1 else f"{c} * {var}"
+        if k == 0:
+            return expr.canonical(term)
+        if type(k) is int and k < 0:
+            return expr.canonical(f"{term} - {-k}")
+        return expr.canonical(f"{term} + {k}")
+
+    def back_dim(d: Any) -> Any:
+        return format_dim(tuple(back(p) for p in parse_dim(d, what)))
+
+    def walk(nodes: list[Node]) -> None:
+        for n in nodes:
+            for m in (*n.inputs.values(), *n.outputs.values()):
+                m.subset = [back_dim(d) for d in m.subset]
+            if n.kind == "map":
+                n.attrs["range"] = back_dim(n.attrs["range"])
+            if n.kind == "accelerated" and n.attrs.get("replaced"):
+                old = Node.from_dict(n.attrs["replaced"], n.id)
+                walk([old])
+                n.attrs["replaced"] = old.to_dict()
+            if n.body:
+                walk(n.body)
+
+    walk(inner.body or [])
+    rest = {
+        k: v for k, v in outer.attrs.items() if k not in ("var", "range", "loop.kind", "loop.split")
+    }
+    body[i] = Node(
+        outer.id, "map", attrs={"var": var, "range": split["range"], **rest}, body=inner.body
+    )
+    return _result(g)
+
+
 register_transform("split_map", split_map, ints=("factor",))
 register_transform("bind", bind)
+register_transform("unbind", unbind)
+register_transform("join_map", join_map)

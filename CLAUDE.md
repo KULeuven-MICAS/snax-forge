@@ -21,6 +21,7 @@ checked against the file it came from, so update both together.
 - SNAX-DFG of a kernel: `pixi run import-dfg <kernel>` writes `out/dfg/<kernel>.snaxdfg` (D78); `--sdfg PATH --name NAME` imports a stored `.sdfg` instead
 - Run a `.snaxdfg` against the kernel: `pixi run check-dfg FILE [FILE ...] --kernel <kernel> [--n N]` (reference executor, D79)
 - Apply a recipe: `pixi run sandbox recipes/<name>.json [--set W=8] [--graph FILE]` writes every step to `out/sandbox/<name>/`, each checked against the reference executor (D80)
+- Go back from a bound graph: `pixi run sandbox recipes/vecadd_undo.json --graph out/sandbox/vecadd/2_bind.snaxdfg --out out/sandbox/vecadd_undo` (`unbind`, `join_map`, D82)
 - Look at graphs: `pixi run view-dfg FILE|DIR ...` (e.g. `out/sandbox/vecadd/`), then open http://127.0.0.1:8766/ (D81)
 - Viewer: `pixi run view DIR [DIR ...]` serves model output directories at http://127.0.0.1:8765/ (D55); the DFG viewer, `pixi run view-dfg FILE [FILE ...]`, comes with VIS5 (D76)
 - Clean slate: `pixi run clean` removes out/, caches and Chisel build trees (`pixi run clean --dry-run` lists them first)

@@ -214,7 +214,11 @@ accelerated fixtures, every step checked against the reference executor,
 and `--set W=8` runs the same recipe at another point. VIS5 is done
 (D81): `pixi run view-dfg out/sandbox/vecadd/` shows every step of the
 recipe side by side, top to bottom, with SVG edges, and hovering a node
-highlights it in every step. Next DP1 writes the design point (and settles
+highlights it in every step. D82 followed: a BRM says what one lane
+computes (`function.code`), `bind` checks the tasklet against it, and a
+bound graph records what it replaced, so `unbind` and `join_map` take
+`vecadd_accelerated.snaxdfg` back to the imported graph
+(`recipes/vecadd_undo.json`). Next DP1 writes the design point (and settles
 where the platform lives, open item 35), NAME1 renames the streamers, LOW1c
 and LOW1a derive `alu4.json` and `vecadd/tasks.json` from the design point,
 and E2E1 runs the whole path. M4b follows.

@@ -7,7 +7,8 @@ implementations, which differ in how they are built:
     {
      "name": ...,
      "interface":       params (design / runtime) and ports
-     "function":        a registered accelerator kind and its params (D43)
+     "function":        a registered accelerator kind and its params (D43),
+                        and what one lane computes, as code (D82)
      "dataflow":        a notation and one nest per port (notation.py)
      "pattern":         the DFG subgraph it can replace: a family matched by
                         SNAX-SANDBOX (snax_forge/sandbox/patterns.py, D80)
@@ -182,18 +183,30 @@ class Interface:
 
 @dataclass
 class Function:
-    """A registered accelerator kind (D43) and its factory params, without timing."""
+    """A registered accelerator kind (D43), its factory params, and what it computes (D82).
+
+    ``code`` says what the accelerator computes, symbolically: one
+    ``output = expression`` per output port over the input ports, per lane
+    of one firing, in the expression grammar (``"out = a + b"``). It is what
+    SNAX-SANDBOX's ``bind`` compares a tasklet against and what an
+    accelerated node carries, so a bound graph says what each accelerator
+    does without its BRM. The registered kind is how SNAX-MODEL and the
+    reference executor compute it; the two must agree (tests/brm). Null for
+    a BRM that cannot say it this way yet (a reduction, DFG3 / BRM4); such a
+    BRM cannot be bound.
+    """
 
     accel: str
     params: dict[str, Value] = field(default_factory=dict)
+    code: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"accel": self.accel, "params": dict(self.params)}
+        return {"accel": self.accel, "params": dict(self.params), "code": self.code}
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Function:
-        _keys(d, ("accel",), ("params",), what)
-        return cls(d["accel"], dict(d.get("params", {})))
+        _keys(d, ("accel",), ("params", "code"), what)
+        return cls(d["accel"], dict(d.get("params", {})), d.get("code"))
 
 
 @dataclass
@@ -468,6 +481,18 @@ def _check_function(b: Brm, design: dict[str, Param], what: str) -> None:
         if k in TIMING_IN_FUNCTION:
             raise BrmError(f"{w}.params.{k}: timing comes from the implementation, not here")
         _uses(v, design, f"{w}.params.{k}")
+    if f.code is not None:
+        ports = b.interface.ports
+        try:
+            f.code = expr.canonical_code(f.code, f"{w}.code")
+            expr.check_code(
+                f.code,
+                [p.name for p in ports if p.direction == "in"],
+                [p.name for p in ports if p.direction == "out"],
+                f"{w}.code",
+            )
+        except expr.ExprError as e:
+            raise BrmError(str(e)) from None
 
 
 def _check_pattern(b: Brm, what: str) -> None:

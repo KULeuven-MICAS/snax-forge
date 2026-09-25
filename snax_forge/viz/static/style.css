@@ -327,6 +327,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
   --loop-spatial: #c0621a;
   --edge: #6b747e;
   --hl: #d4386a;
+  --data: #1f7a8c;
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -336,6 +337,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
     --loop-spatial: #e8914e;
     --edge: #8e98a3;
     --hl: #f06a95;
+    --data: #52b5c7;
   }
 }
 body.dfg header, body.dfg main { max-width: none; }
@@ -346,7 +348,8 @@ i.key.loop-tile { background: var(--loop-tile); }
 i.key.loop-temporal { background: var(--loop-temporal); }
 i.key.loop-spatial { background: var(--loop-spatial); }
 i.key.op-accelerated { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
-i.key.transient { box-shadow: inset 0 0 0 1.5px var(--ink); background: repeating-linear-gradient(90deg, var(--panel) 0 2px, transparent 2px 4px); }
+i.key.data { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 3px; }
+i.key.data.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
 
 .graphs { display: flex; flex-wrap: wrap; gap: 1.2rem; padding: 1.2rem 0 2rem; align-items: flex-start; }
 /* A panel is as wide as its graph; panels wrap when they do not fit side by side. */
@@ -364,7 +367,9 @@ i.key.transient { box-shadow: inset 0 0 0 1.5px var(--ink); background: repeatin
 svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; }
 
 /* containers */
-.box { display: flex; flex-direction: column; align-items: center; min-width: 6.5rem; padding: 0.3rem 0.9rem; border: 1.5px solid var(--ink); border-radius: 1rem; background: var(--bg); line-height: 1.25; }
+/* data containers: their own colour, a label on top (D82) */
+.box { display: flex; flex-direction: column; align-items: center; min-width: 6.5rem; padding: 0.25rem 0.9rem 0.3rem; border: 1.5px solid var(--data); border-radius: 1rem; background: color-mix(in srgb, var(--data) 10%, var(--panel)); line-height: 1.25; }
+.box .box-kind { font-size: 0.66em; letter-spacing: 0.04em; text-transform: uppercase; color: var(--data); font-weight: 600; }
 .box.transient { border-style: dashed; }
 .box small.ver { font-family: inherit; font-size: 0.72em; }
 .box small { color: var(--muted); font-size: 0.78em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
@@ -389,6 +394,7 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .op-accelerated .op-head .tag { --loop: var(--busy); }
 .op-title { flex-basis: 100%; }
 .op-lines { padding: 0.1rem 0.6rem 0.4rem; font-size: 0.85em; }
+.op-replaced { padding: 0 0.6rem 0.4rem; font-size: 0.78em; color: var(--muted); }
 .ports { display: flex; flex-wrap: nowrap; justify-content: center; gap: 0.4rem; padding: 0.35rem 0.45rem; }
 .ports.in { border-bottom: 1px solid var(--rule); }
 .ports.out { border-top: 1px solid var(--rule); }
