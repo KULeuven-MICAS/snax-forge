@@ -146,7 +146,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def _static(self, parts: list[str]) -> None:
         """A file below static/, index.html for /; nothing outside it is served."""
-        path = (STATIC / "/".join(parts or ["index.html"])).resolve()
+        index = getattr(self.server, "index", "index.html")  # the DFG viewer's is dfg.html
+        path = (STATIC / "/".join(parts or [index])).resolve()
         if STATIC not in path.parents or not path.is_file():
             self._error(HTTPStatus.NOT_FOUND, f"no file {self.path}")
             return

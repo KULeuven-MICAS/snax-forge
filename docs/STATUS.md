@@ -17,7 +17,8 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 - The SDFG importer (IMP1, D78) is snax_forge/dfg/import_sdfg.py, with the CLI in snax_forge/dfg/__main__.py (`pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg); tests in tests/dfg/test_import.py, small DaCe programs for them in tests/dfg/sdfg_programs.py.
 - The reference executor (REF1, D79) is snax_forge/dfg/execute.py (`execute(graph, inputs)`, a registered executor per node kind); `pixi run check-dfg FILE --kernel K` runs files against the kernel's reference; tests in tests/dfg/test_execute.py.
 - SNAX-SANDBOX (SBX1, D80) lives in snax_forge/sandbox/ (recipe.py, transforms.py with `split_map` and `bind`, patterns.py with the `elementwise` matcher, run.py with the per-step reference check, the CLI), tests in tests/sandbox/ (a package). Recipes live in recipes/ (`vecadd.json`); `pixi run sandbox recipes/vecadd.json [--set W=8]` writes every step to out/sandbox/vecadd/.
-- Planned in M3 (D71–D76): the DFG viewer as a second mode of snax_forge/viz/ (`python -m snax_forge.viz.dfg`, pixi `view-dfg`). Generated `.snaxdfg` files and design points go under out/, not in git.
+- The DFG viewer (VIS5, D81) is snax_forge/viz/dfg/ (api.py: loading files and the rows, nodes and edges of a graph; server.py: its routes on the viewer's Handler; `__main__.py`) with static/dfg.html and static/dfg.js; tests in tests/viz/test_dfg.py. `pixi run view-dfg FILE|DIR ...` serves http://127.0.0.1:8766/.
+- Generated `.snaxdfg` files and design points go under out/, not in git.
 
 ## Milestones
 
@@ -85,7 +86,7 @@ and task-list work below is done; the rest follows in table order.
 | DFG1 | SNAX-DFG format (D71, D77): `.snaxdfg` JSON with containers, tasklets, map scopes with symbolic ranges and `loop.kind`, connectors, memlets, the accelerated node (nesting allowed); registered kinds and namespaced attrs (D19); `to_dict` / `from_dict`; the shared expression module | none | A hand-built vecadd, plain and accelerated, round-trips with every field written; unknown kinds and dangling references are rejected by name (tests/dfg, tests/test_expr.py) | `done` |
 | IMP1 | SDFG importer for vecadd (D71, D77, D78): reads the simplified SDFG of `pixi run forge vecadd` (simplify already folds its transient copy), keeps `N` symbolic, readable names, named errors for what it does not support; moves the vecadd kernel to `int64` (closes open item 30) | DFG1 | The import equals a checked-in `vecadd.snaxdfg` fixture, with no transient and no copy left (tests/dfg/test_import.py) | `done` |
 | REF1 | NumPy reference executor on `.snaxdfg` (D20, D79), symbols bound; an accelerated node runs through its BRM's function | DFG1, BRM3 | The imported vecadd equals the kernel's `reference` on `make_inputs`, for N a multiple of the lane count and not; plain, split and accelerated graphs agree (tests/dfg/test_execute.py) | `done` |
-| VIS5 | DFG viewer (D76): `python -m snax_forge.viz.dfg FILE [FILE ...]`, pixi `view-dfg`; several files side by side, Reload; containers, maps as nested boxes by loop kind, tasklets, accelerated nodes, memlets with subsets | DFG1, VIS1 | API tests (tests/viz); `vecadd.snaxdfg` and `vecadd_accelerated.snaxdfg` checked by eye side by side | todo |
+| VIS5 | DFG viewer (D76, D81): `python -m snax_forge.viz.dfg FILE|DIR ...`, pixi `view-dfg`; several files side by side, a directory as its files in order, Reload, a broken file's error in its panel; drawn top to bottom: containers, maps as nested boxes by loop kind, tasklets, accelerated nodes, memlets as SVG edges to connectors that carry the subsets | DFG1, VIS1 | API tests (tests/viz/test_dfg.py); `vecadd.snaxdfg`, `vecadd_split.snaxdfg` and `vecadd_accelerated.snaxdfg`, and `out/sandbox/vecadd/`, checked by eye side by side | `done` |
 | SBX1 | SNAX-SANDBOX (D72, D73): registered transforms `split_map` and `bind` (absorbs DFG2: the pattern predicate and design-param extraction), the recipe format with symbol bindings, the reference check after every step, a CLI writing each step's `.snaxdfg`; open item 35 left to DP1 (D80) | DFG1, REF1, BRM3 | The vecadd recipe gives `vecadd_accelerated.snaxdfg`: a temporal loop of N / W and a spatial loop of W, bound to `elementwise_add`; W = 4 and W = 8 both pass the reference check; a bound that is not a multiple of W (open item 31) and a W the BRM does not allow are rejected (tests/sandbox) | `done` |
 | DP1 | Design point (D74): written by the sandbox from a recipe; the mapped DFG, the memory plan (a layout per container and memory, set by a place step), the instances, the platform; closes open item 29 | SBX1 | vecadd's design point places a, b and c where `scenarios/vecadd` has them; validation catches overlapping containers, out-of-range addresses, unknown BRMs and implementations | todo |
 | NAME1 | Derived names (D75): streamers `<instance>_<port>` and task names `<node>_<component>`, `load_<container>`, `store_<container>` (vecadd's as the imported graph names them) in the cluster builders, every `tasks.json`, the tests and the CONTRACTS.md snippets | LOW1b, IMP1 | Every scenario keeps its cycle count (tests/lower) | todo |
@@ -210,14 +211,13 @@ is done (D80), ahead of VIS5, which it does not need:
 `recipes/vecadd.json` (`split_map` with factor W, then `bind` to
 `elementwise_add`) turns the imported graph into exactly the split and
 accelerated fixtures, every step checked against the reference executor,
-and `--set W=8` runs the same recipe at another point. Next are VIS5 (the
-DFG viewer) and DP1 (the design point, which also settles where the
-platform lives, open item 35). SBX1
-adds SNAX-SANDBOX: `split_map` and `bind` turn `vecadd.snaxdfg` into
-`vecadd_accelerated.snaxdfg` from a recipe. DP1 writes the design point,
-NAME1 renames the streamers, LOW1c and LOW1a derive `alu4.json` and
-`vecadd/tasks.json` from the design point, and E2E1 runs the whole path. A
-sweep over W is then one recipe with W as a parameter. M4b follows.
+and `--set W=8` runs the same recipe at another point. VIS5 is done
+(D81): `pixi run view-dfg out/sandbox/vecadd/` shows every step of the
+recipe side by side, top to bottom, with SVG edges, and hovering a node
+highlights it in every step. Next DP1 writes the design point (and settles
+where the platform lives, open item 35), NAME1 renames the streamers, LOW1c
+and LOW1a derive `alu4.json` and `vecadd/tasks.json` from the design point,
+and E2E1 runs the whole path. M4b follows.
 
 ## Sync Reminders
 

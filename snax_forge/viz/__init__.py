@@ -11,7 +11,9 @@ later, VIS7's summary instead.
   no external file, so it works offline).
 
 VIS1 is the profile report; the schedule (VIS2) and the cluster view (VIS3)
-use the same API.
+use the same API. The DFG viewer (VIS5, D81) is the subpackage dfg/, a
+second mode of the same server for ``.snaxdfg`` files
+(``python -m snax_forge.viz.dfg``).
 """
 
 from .api import RunSet, RunView, fifo_windows, load_run

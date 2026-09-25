@@ -1,0 +1,29 @@
+<!doctype html>
+<!--
+  SNAX-FORGE DFG viewer (VIS5, D76, D81). Served by snax_forge/viz/dfg/server.py;
+  talks only to its /api routes and loads no external file, so it works
+  offline. dfg.js draws one panel per .snaxdfg: boxes are HTML laid out by
+  CSS, the edges one SVG layer per panel.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SNAX-FORGE DFG viewer</title>
+  <link rel="stylesheet" href="style.css">
+  <script type="module" src="dfg.js"></script>
+</head>
+<body class="dfg">
+  <header id="top">
+    <div class="bar">
+      <h1 id="title">SNAX-FORGE DFG viewer</h1>
+      <div class="controls">
+        <button id="reload" type="button" title="Read the files from disk again">Reload</button>
+      </div>
+    </div>
+    <ul id="legend" class="legend dfg-legend"></ul>
+    <p id="status" class="status" role="status"></p>
+  </header>
+  <main id="graphs" class="graphs"></main>
+</body>
+</html>

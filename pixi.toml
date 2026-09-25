@@ -106,6 +106,8 @@ import-dfg = "python -m snax_forge.dfg import"
 check-dfg  = "python -m snax_forge.dfg check"
 # SNAX-SANDBOX (SBX1): `pixi run sandbox recipes/vecadd.json [--set W=8]` writes out/sandbox/vecadd/
 sandbox    = "python -m snax_forge.sandbox"
+# DFG viewer (VIS5): `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
+view-dfg   = "python -m snax_forge.viz.dfg"
 profile    = "python -m snax_forge.sdfg --profile"
 # SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`.
 # The scenario files are generated, not in git (D67): `scenarios` writes them, model-run first.

@@ -316,3 +316,90 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .cl-lanes .slots.unknown .slot, .cl-lanes .slots.untraced .slot { border-style: dashed; }
 
 .cluster.task-only .cl-banks, .cluster.task-only .cl-ports, .cluster.task-only .cl-lanes { opacity: 0.45; }
+
+/* -- DFG viewer (VIS5, D81) ---------------------------------------------------------
+   Loop kinds get colours of their own: green, red and violet already mean busy,
+   memory stall and flow stall in the run views (D61). */
+:root {
+  --loop-none: #8b939c;
+  --loop-tile: #9a6b1f;
+  --loop-temporal: #3569b3;
+  --loop-spatial: #c0621a;
+  --edge: #6b747e;
+  --hl: #d4386a;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --loop-none: #7b838c;
+    --loop-tile: #c79a4f;
+    --loop-temporal: #6f9ee0;
+    --loop-spatial: #e8914e;
+    --edge: #8e98a3;
+    --hl: #f06a95;
+  }
+}
+body.dfg header, body.dfg main { max-width: none; }
+.mono, .port, .op-lines { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.dfg-legend { margin: 0.8rem 0 0; }
+i.key.loop-none { background: var(--loop-none); }
+i.key.loop-tile { background: var(--loop-tile); }
+i.key.loop-temporal { background: var(--loop-temporal); }
+i.key.loop-spatial { background: var(--loop-spatial); }
+i.key.op-accelerated { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
+i.key.transient { box-shadow: inset 0 0 0 1.5px var(--ink); background: repeating-linear-gradient(90deg, var(--panel) 0 2px, transparent 2px 4px); }
+
+.graphs { display: flex; flex-wrap: wrap; gap: 1.2rem; padding: 1.2rem 0 2rem; align-items: flex-start; }
+/* A panel is as wide as its graph; panels wrap when they do not fit side by side. */
+.dfg-panel { flex: 0 1 auto; max-width: 100%; min-width: 18rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem 1rem 1rem; }
+.dfg-panel.broken { border-color: var(--mem); }
+.panel-head h2 { font-size: 1.1rem; margin: 0; }
+.panel-head .note { margin: 0.1rem 0 0; }
+.panel-head .path { margin: 0 0 0.6rem; font-size: 0.8em; color: var(--muted); overflow-wrap: anywhere; }
+.load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.dfg-scroll { overflow: auto; }
+.dfg-canvas { position: relative; width: max-content; min-width: 100%; padding: 0.4rem 0.6rem 0.8rem; }
+.dfg-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.8rem; }
+.dfg-row { display: flex; gap: 1.4rem; justify-content: center; align-items: flex-start; }
+/* Under the boxes: text is drawn over an edge, and an edge ends at the box it enters. */
+svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; }
+
+/* containers */
+.box { display: flex; flex-direction: column; align-items: center; min-width: 6.5rem; padding: 0.3rem 0.9rem; border: 1.5px solid var(--ink); border-radius: 1rem; background: var(--bg); line-height: 1.25; }
+.box.transient { border-style: dashed; }
+.box small.ver { font-family: inherit; font-size: 0.72em; }
+.box small { color: var(--muted); font-size: 0.78em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+/* map scopes */
+.scope { --loop: var(--loop-none); border: 2px solid var(--loop); border-radius: 7px; background: color-mix(in srgb, var(--loop) 6%, transparent); padding: 0 0.8rem 0.9rem; }
+.scope.loop-tile { --loop: var(--loop-tile); }
+.scope.loop-temporal { --loop: var(--loop-temporal); }
+.scope.loop-spatial { --loop: var(--loop-spatial); }
+.scope-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; padding: 0.35rem 0 0; font-size: 0.85em; color: var(--muted); }
+.scope-head b { color: var(--ink); }
+.scope-head .count { color: var(--ink); }
+.scope-head .tag, .op-head .tag { margin-left: auto; padding: 0 0.45rem; border-radius: 3px; background: var(--loop, var(--muted)); color: var(--panel); font-size: 0.85em; font-weight: 600; }
+.scope-body { display: flex; flex-direction: column; align-items: center; gap: 2.4rem; padding-top: 2.2rem; }
+.op .scope-body { padding: 0.8rem; }
+
+/* tasklets and accelerated nodes */
+.op { min-width: 12rem; border: 1.5px solid var(--ink); border-radius: 5px; background: var(--panel); }
+.op-accelerated { border: 2px solid var(--busy); background: var(--busy-bg); }
+.op-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.6rem; padding: 0.35rem 0.6rem 0.1rem; font-size: 0.88em; }
+.op-head .tag { --loop: var(--muted); }
+.op-accelerated .op-head .tag { --loop: var(--busy); }
+.op-title { flex-basis: 100%; }
+.op-lines { padding: 0.1rem 0.6rem 0.4rem; font-size: 0.85em; }
+.ports { display: flex; flex-wrap: nowrap; justify-content: center; gap: 0.4rem; padding: 0.35rem 0.45rem; }
+.ports.in { border-bottom: 1px solid var(--rule); }
+.ports.out { border-top: 1px solid var(--rule); }
+.port { font-size: 0.76em; border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.4rem; background: var(--bg); white-space: nowrap; }
+.port b { color: var(--ink); }
+.port span { color: var(--muted); }
+
+/* edges and hover */
+path.edge { fill: none; stroke: var(--edge); stroke-width: 1.4; }
+path.arrow { fill: var(--edge); }
+path.arrow-hl { fill: var(--hl); }
+path.edge.hl { stroke: var(--hl); stroke-width: 2.4; }
+.box.hl, .op.hl, .port.hl { box-shadow: 0 0 0 2px var(--hl); }
+.scope.hl { box-shadow: 0 0 0 2px var(--hl); }
