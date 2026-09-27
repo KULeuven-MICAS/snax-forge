@@ -8,8 +8,9 @@
 > D64), the input the model's control program is lowered from, and the BRM
 > (section 10, D68, D70), from which the accelerator entry and the streamer
 > values are derived, the SNAX-DFG (section 11, D77), the workload graph
-> the sandbox transforms, and the sandbox recipe (section 12, D80). The
-> design point gets a section with DP1 (D74). Later nest notations are open
+> the sandbox transforms, the sandbox recipe (section 12, D80), the
+> platform (section 13, D84) and the design checks (section 14, D85). The
+> design point gets a section with DP1b (D74). Later nest notations are open
 > item 1 (M6).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
@@ -26,7 +27,7 @@
 >
 > Layout: section 8 holds the rules a new block kind must follow; section 9
 > the task list; section 10 the BRM; section 11 the SNAX-DFG; section 12
-> the recipe. The
+> the recipe; section 13 the platform; section 14 the design checks. The
 > reasoning behind each contract is in the module docstrings and in
 > `docs/ARCHITECTURE.md` section 5.6; this file does not repeat it.
 
@@ -566,7 +567,9 @@ config, decodes their values into the component's start argument, and
 encodes an argument back. The register *names* are the contract (section 5),
 so pick them as SNAX-LOWER's C backend will want to read them. To appear in
 task lists (section 9) it also needs its `values` form, registered under the
-adapter's kind with `register_values` in `snax_forge/lower/values.py`.
+adapter's kind with `register_values` in `snax_forge/lower/values.py`. What
+must hold for it to fit a platform and a graph is a design check,
+registered with `register_check` (section 14).
 
 ## 9. Task list
 
@@ -883,3 +886,83 @@ takes its last step back to the first.
  "steps": [
   {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
 ```
+
+## 13. Platform
+
+The SNAX cluster around the accelerators (DP1a, D84): everything of the
+cluster file that is not the accelerator. A platform file lives in
+`platforms/` (`small16.json`, alu4's platform); it never names a recipe,
+and a recipe never names it. `Platform.load(path)`; every field is written,
+missing keys take their defaults (`l2` missing: no L2), unknown keys and
+values of the wrong type are errors, and loading reports every problem at
+once (section 14).
+
+| Field | Holds |
+|---|---|
+| `name` | the platform (an identifier) |
+| `base` | the platform this one was made from, or null for an original |
+| `changes` | what differs from `base`: `--set` path -> value, in the order set |
+| `l1`, `l2` | `L1Config`, `L2Config` (section 2); `l2` null for an L1-only cluster |
+| `xbar` | `{"check_hold": bool}` |
+| `dma` | `DmaConfig` (section 2), used when there is an L2 |
+| `controller` | `ControllerConfig` (section 2) |
+| `register_window` | registers per block, a power of two |
+| `wait_mode` | `poll` or `signal`: how the controller waits for a task |
+| `streamers` | the streamer shell: `default`, then an entry per streamer it changes |
+
+**The streamer shell.** One streamer per port of every accelerated node's
+instance, named `<instance>_<port>` (D75). The port decides `write` (its
+direction is `out`), `n_ports` (its lanes) and, unless an entry gives them,
+`spatial_bounds` (the port nest's spatial loops, fastest first); an entry
+may not set `write` or `n_ports`. `default` holds `temporal_dims`,
+`fifo_depth`, `addr_depth` and `prio`; an entry named after a streamer
+overrides any of them, and `spatial_bounds`, for that streamer only.
+
+<!-- snippet: platforms/small16.json -->
+```json
+ "register_window": 32,
+ "wait_mode": "poll",
+ "streamers": {"default": {"temporal_dims": 1, "fifo_depth": 2, "addr_depth": 8, "prio": 0}}
+```
+
+**Changes and working copies.** `pixi run design GRAPH --platform P --set
+platform.PATH=VALUE` sets any field by its path (`l1.n_banks`,
+`streamers.default.temporal_dims`, `streamers.acc_out.fifo_depth`; the
+value is JSON, else text, and must have the field's type) and writes the
+working copy `out/design/<name>/platform.json`: complete values, `base`
+the platform it all started from, `changes` every path set since. Passing
+the working copy as `--platform` continues from it, adding to `changes`.
+`pixi run design save SRC NAME` keeps it as `platforms/NAME.json`, with
+`base` and `changes` as its record; continuing from a saved platform keeps
+the root `base`, so `changes` is always the difference from it.
+
+## 14. Design checks
+
+Before the design step writes anything it runs every registered check on
+the pairing of a bound graph and a platform (DP1a, D85) and reports every
+problem found, each as `[code] where: why` with a `fix:` line where one
+exists: the `--set` or recipe change that removes it. `pixi run design
+check GRAPH --platform P [--set ...]` runs them only. Stages: `platform`
+and `graph` run independently; `connect` runs when both passed. A check is
+registered with `register_check(code, stage, fn)`, `fn(design)` yielding
+problems.
+
+| Code | Fails when |
+|---|---|
+| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
+| `platform.values` | a value its section rejects (`n_banks` 0, `dims` 0, a `wait_mode` or `register_window` that is not allowed) |
+| `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1 |
+| `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`), word width, dtype or elements per word |
+| `platform.banks` | with an L2, `n_banks` is not a multiple of the DMA's port group (`wide_bits / width_bits`) |
+| `graph.load` | a graph file that does not load (section 11) |
+| `graph.symbols` | a symbol still null: bind it in the recipe |
+| `graph.unbound` | a tasklet or a map holding nothing to run outside every accelerated node, or no accelerated node: SNAX-MODEL has no core |
+| `graph.brm` | an unknown BRM or implementation, design params that do not resolve, connectors that are not the BRM's ports, code that is not the BRM's |
+| `graph.instance` | an instance named `xbar`, `dma` or `ctl` or after a streamer, or two streamers with one name |
+| `connect.streamer_key` | a streamer entry that matches no port of the graph (the fix names the closest streamer) |
+| `connect.derived` | a streamer entry that sets `write` or `n_ports` |
+| `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
+| `connect.dtype` | a container whose dtype is not the L1's or not its port's, or an L1 with more than one element per word (open item 21) |
+| `connect.regmap` | a streamer, accelerator or DMA whose status and configuration registers do not fit `register_window` |
+
+The model's own checks, when a cluster file is built, stay as a backstop.

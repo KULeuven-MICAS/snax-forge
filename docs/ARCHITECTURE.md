@@ -337,9 +337,18 @@ sequences. It comes in two parts (D72):
 - **Automated search** (M8): drives the same transforms and writes recipes,
   so everything it finds can be replayed, viewed and diffed.
 
-**Inputs**: SNAX-DFG, BRM library, the platform (L1, L2, DMA, controller,
-streamer defaults; [OPEN] a file of its own or a first recipe step, open
-item 35) and the recipe, which also binds the symbols (`N`).
+**Inputs**: SNAX-DFG, BRM library and the recipe, which also binds the
+symbols (`N`). The recipe acts on the graph only: it never names a platform.
+
+**The design step** (`snax_forge/design/`, D84, D85) pairs the recipe's last
+graph with a platform: a file of its own in `platforms/` (L1, L2, xbar, DMA,
+controller, register window, wait mode and the streamer shell, CONTRACTS.md
+section 13). Either side can be swapped without touching the other.
+`pixi run design GRAPH --platform P [--set platform.PATH=VALUE]` checks the
+pairing (section 14 of CONTRACTS.md: every problem, each with its fix) and
+writes a working copy of the platform with its changes under
+`out/design/<name>/`; `design save` keeps a working copy under
+`platforms/`. DP1b adds the memory plan and writes the design point.
 
 **Transforms** (registered, extensible; the first two in SBX1):
 
@@ -351,7 +360,8 @@ item 35) and the recipe, which also binds the symbols (`N`).
 - `unbind`, `join_map`: the inverses of `bind` and `split_map`, from what
   the graph records (D82)
 - tile: an outer loop over L1-sized tiles
-- place: a layout per container and memory (the memory plan, D74)
+
+The memory plan is not a transform: the design step makes it (DP1b, D84).
 
 The three loop levels map onto the cluster as follows: a tile is a
 repetition of the tasks with a DMA per tile, a temporal loop is a streamer
@@ -367,8 +377,8 @@ temporal loop and part of the accelerator's `n`, a spatial loop is lanes
 - buffer placement across banks, double buffering
 - cluster parameters (section 5.6)
 
-**Output: the design point** (D74), written by the sandbox, not edited by
-hand:
+**Output: the design point** (D74, D84), written by the design step from a
+bound graph and a platform, not edited by hand:
 
 1. the mapped SNAX-DFG
 2. the memory plan: a layout per container and memory (base address, shape,
@@ -393,8 +403,9 @@ nothing (principle 4).
 **Cluster file.** One accelerator entry per accelerator instance, filled
 from its BRM's interface and timing parts and the instance's parameters; one
 streamer per accelerator port (D12), with `n_ports` equal to the port's lanes
-and attached to it; the xbar, L1, L2, DMA and controller from the cluster
-configuration in the design point; the register map. A streamer serving
+and attached to it, shaped by the platform's streamer shell (D84); the xbar,
+L1, L2, DMA and controller from the platform in the design point; the
+register map. A streamer serving
 port `p` of instance `i` is named `i_p` (D75). Its layout is the one of
 `scenarios/clusters/alu4.json` (CONTRACTS.md section 2) and may change
 later.
@@ -853,6 +864,8 @@ cluster RTL (section 7), with a regression test.
 | D81 | DFG viewer (VIS5). `snax_forge/viz/dfg/` (api.py, server.py, `__main__.py`) with `static/dfg.html` and `static/dfg.js` on the viewer's `Handler` and static files (the handler's page at `/` is now per server); `python -m snax_forge.viz.dfg FILE|DIR ...`, pixi `view-dfg`, port 8766 by default so it runs beside the run viewer. A directory stands for its `.snaxdfg` files in natural order; entries are named by stem, `-2`, `-3` on a clash; a file that does not load is kept with its error, shown in its panel, and Reload reads every file again. Routes `/api/graphs`, `/api/graph/<name>`, `POST /api/reload`. A graph is drawn top to bottom in execution order, not left to right: the containers the first top-level node reads (and those nothing uses), the node, the containers it writes and those the next node reads, the next node, and so on. A write makes a new version of a container in the row after the top-level node (`A@1`), so an in-place update has no upward edge; a container read further down is shown again above its reader (`B@0~1`), so every edge joins neighbouring rows and never passes behind a node; inside one top-level node a read of data written earlier there is an edge straight from the writer's connector. Within a row, containers follow the next node's connector order. The rows, the boxes and the edges (one per memlet) are computed in Python and tested; nodes are nested HTML boxes laid out by CSS, a map with its variable, range, loop kind and iteration count when the symbols are bound, a tasklet with its code, an accelerated node with its instance line and params; connectors sit on top (inputs) and below (outputs) and carry the subset, rather than a label on the edge; the edges are one SVG layer per panel under the boxes, measured from them by `dfg.js` and redrawn on resize. Loop kinds have colour tokens of their own (`--loop-*`), since green, red and violet mean busy and stalls in the run views (D61). Hovering a node, connector or container highlights every element and edge with that name in every panel, following one node through a recipe's steps. Amends D76 (vertical layout, rows in Python, subsets on connectors, directories, port) and section 5.7 | 30 |
 | D82 | What an accelerator computes, and going back. The BRM's function part gets `code`: one `output = expression` per output port over the input ports, per lane of one firing, in the expression grammar, stored canonical (`elementwise_add`: `out = a + b`); null for a BRM that cannot say it per lane yet (a reduction, DFG3 / BRM4), which cannot be bound; the library tests check it against the registered kind. `bind` renames the tasklet's code onto the ports the pattern matcher gave and requires it to equal the BRM's code (so `op` and the pattern are no longer the only word on what is computed). The accelerated node gets two kind-owned attrs: `code` (required; the BRM's code over the node's connectors, checked like a tasklet's; the reference executor checks it against the BRM) and `replaced` (default null; the subtree `bind` replaced, in stored form, checked in the node's scope as history: never run, ids may repeat live ones). `split_map` writes `loop.split` (`var` and `range` before the split) on the temporal map, checked by the map kind. Two new registered transforms undo the first two: `unbind(node)` puts the `replaced` subtree back, and `join_map(map)` turns a temporal map with `loop.split` and its only child, the spatial map, back into the map it was, writing each index `k + c * (b + f * v_t + v_s)` back as `k + c * v` (an index in another form is an error). Transforms that substitute variables also rewrite `replaced` and `loop.split`. From `vecadd_accelerated.snaxdfg` alone, `unbind` gives `vecadd_split.snaxdfg` and `join_map` the imported graph, byte for byte; `recipes/vecadd_undo.json` does it through the sandbox. The DFG viewer: an edge between a container and a connector stops at the outer box of the top-level node, above or below the connector (edge field `stop`), so it never crosses the text inside; container boxes are labelled "data container" ("transient data") and have a colour of their own (`--data`) and legend entries; an accelerated node shows `acc = <brm>`, then `impl = <implementation>` and its params on lines of their own, its code in the tasklet style, and what it replaced. Amends D68 (function part), D77 (accelerated attrs, `loop.split`), D80 (bind's check, the inverses) and D81 (edges, containers, the accelerated node) | 31 |
 | D83 | Derived names in the scenarios (NAME1), as D75 says. alu4's and mul1's streamers are `acc_a`, `acc_b`, `acc_out`, red4's `acc_in`, `acc_out`; tasks are `<node>_<component>` (`add_acc_a`, `add_acc`, `mul_acc_out`, `sum_acc_in`) and `load_<container>` / `store_<container>`, with `_<k>` appended for tile `k` (`load_A_2`, `add_acc_a_2`). Containers take the imported names `A`, `B`, `C`; the scenarios without a kernel (fmul, reduce, dma) use the same names, dma's one buffer being `A` (`load_A`, `store_A`). The `.npy` file names stay as they are. vecadd and vecadd_conflict pack a, b and c in L2 (0, 512, 1024 instead of 0, 1024, 2048), as the default memory plan will: the L2 has no banks, so the cycles and the profile do not change. Component order is kept, so every scenario keeps its cycle count (dma 65, fmul 525, reduce 35, vecadd 77, vecadd_conflict 85, vecadd_tiled 471) and its profile up to the names. test_profile's hand-built `run_vecadd` follows the scenario (names and L2), so it still equals it trace for trace; the SNAX-MODEL unit tests keep `ra`, `rb`, `wr` on their own clusters (`compute_blocks` takes `names`). Amends D75 (tile suffix, containers of scenarios without a kernel) | 32 |
+| D84 | Platform, streamer shell and the design step (DP1a). The recipe acts on the SNAX-DFG only and never names a platform; the platform is a file of its own in `platforms/` and never names a recipe. The design step pairs a bound graph (the recipe's last `.snaxdfg`, which holds every instance, D77, D82) with a platform, so either can be swapped: a new accelerator is a recipe change, a new memory size a platform change. A platform holds `name`, `base`, `changes`, `l1`, `l2` (or null), `xbar`, `dma` (used with an L2), `controller`, `register_window`, `wait_mode` and `streamers` (CONTRACTS.md section 13); `platforms/small16.json` is alu4 without its accelerator. The streamers are a shell, as in SNAX: one per port of every accelerated node's instance, `<instance>_<port>` (D75); the port decides `write`, `n_ports` and, unless given, `spatial_bounds` (its nest's spatial loops, fastest first); `streamers.default` gives `temporal_dims`, `fifo_depth`, `addr_depth` and `prio`, and an entry keyed by the streamer's name (`acc_a`, not by BRM port, so a platform with per-port entries follows the recipe's instance names) overrides them, and `spatial_bounds`, for that streamer only. Exploring the platform needs no new files: `--set platform.PATH=VALUE` changes any field and the design step writes a working copy to `out/design/<name>/platform.json` (the graph's sandbox folder, else its stem), overwritten on every run, with `base` the platform it started from and `changes` every path set since; passing the working copy continues from it, and `design save SRC NAME` keeps it as `platforms/NAME.json` with `base` and `changes` as its record. Loading reports every problem at once. The memory plan is not a transform (`place` is dropped) but a stage of the design step with a default policy and later hooks (DP1b), and the design point is the design step's output, with the recipe only as provenance. DP1 is split into DP1a (this) and DP1b (memory plan, design point). Amends D51 (the streamer knobs are the platform's, per streamer), D53 (streamer entries come from the shell), D72 (no platform step, no place transform) and D74 (made from a graph and a platform, not by the sandbox); closes open item 35 | 33 |
+| D85 | Design checks (DP1a). Before the design step writes anything it runs every registered check (`register_check(code, stage, fn)`) on the platform, the graph and their pairing, and reports every problem, each with a code, what it is about, why it fails and, where there is one, the fix as the `--set` or recipe change to make (`DesignError` holds them all; exit 1). Stages: `platform` (keys, values, streamer values, L1 and L2 agreeing, banks holding the DMA port) and `graph` (loads, symbols bound, nothing left unbound, since SNAX-MODEL has no core, BRMs, implementations, connectors and code, instance names) run independently; `connect` (streamer entries naming a port, with the closest name suggested; `write` and `n_ports` left to the port; spatial bounds giving the lanes and the nest; container, port and L1 dtypes; registers fitting the window) runs when both passed; DP1b adds `memory`, LOW1a the temporal-loop and DMA-loop checks. The codes and what each catches are CONTRACTS.md section 14. `design check` runs them without writing. The model's own checks stay as a backstop; these speak in platform, graph and recipe terms. Amends CONTRACTS.md section 8 (a block kind registers its checks) | 33 |
 
 ## 11. Open Items
 
@@ -898,6 +911,6 @@ it.
 32. The DFG viewer's layout: rows computed in Python, nested HTML boxes, SVG edges between neighbouring rows, no library (D76, D81). Revisit if graphs outgrow it (edge crossings in wide rows, very deep nesting).
 33. An MLIR importer that writes `.snaxdfg` directly, without SDFG (D71).
 34. A hand-edited `.snaxdfg` cannot be replayed or swept (D72); whether a recipe may start from an edited file is decided when it is needed.
-35. Where the platform lives: a platform file beside the recipe, or a first recipe step (D72). Decided in SBX1 or DP1.
+35. ~~Where the platform lives: a platform file beside the recipe, or a first recipe step (D72). Decided in SBX1 or DP1.~~ — closed by D84 (DP1a): a platform file of its own in `platforms/`, paired with the recipe's bound graph by the design step.
 36. Control flow in the SNAX-DFG (D77): a sequential `loop` kind (`var`, `range`, a body; iterations in order, unlike a map) for jacobi1d's time steps, which the importer finds with DaCe's `find_for_loop`, and a `branch` kind whose body holds `case` nodes, each with a `cond` and a body. Registered when a kernel needs them (M9); state machines that are neither get a named error in the importer.
 37. The expression grammar (D68, D77) has `+ - * //` only: a tail tile needs `min` (open item 31), a branch needs comparisons, and jacobi1d's tasklet a cast (`dace.int64(x) // 3`). Extended when a kernel needs it.

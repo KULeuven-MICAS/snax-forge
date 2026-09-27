@@ -97,6 +97,7 @@ test-lower = "pytest -q tests/lower"
 test-brm   = "pytest -q tests/brm tests/test_expr.py"
 test-dfg   = "pytest -q tests/dfg tests/test_expr.py"
 test-sandbox = "pytest -q tests/sandbox"
+test-design = "pytest -q tests/design"
 lint       = "ruff check util kernels snax_forge transforms tests scenarios && ruff format --check util kernels snax_forge transforms tests scenarios"
 fmt        = "ruff check --fix util kernels snax_forge transforms tests scenarios && ruff format util kernels snax_forge transforms tests scenarios"
 forge      = "python -m snax_forge.sdfg"
@@ -106,6 +107,10 @@ import-dfg = "python -m snax_forge.dfg import"
 check-dfg  = "python -m snax_forge.dfg check"
 # SNAX-SANDBOX (SBX1): `pixi run sandbox recipes/vecadd.json [--set W=8]` writes out/sandbox/vecadd/
 sandbox    = "python -m snax_forge.sandbox"
+# SNAX-DESIGN (DP1a): `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json
+# [--set platform.PATH=VALUE]` checks the pairing and writes out/design/vecadd/platform.json;
+# `design check ...` only checks, `design save SRC NAME` keeps a working copy as platforms/NAME.json
+design     = "python -m snax_forge.design"
 # DFG viewer (VIS5): `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
 view-dfg   = "python -m snax_forge.viz.dfg"
 profile    = "python -m snax_forge.sdfg --profile"
