@@ -1,18 +1,27 @@
-"""SNAX-DESIGN command line (DP1a).
+"""SNAX-DESIGN command line (DP1a, DP1b).
 
-    python -m snax_forge.design GRAPH --platform P [--set platform.PATH=VALUE ...]
+    python -m snax_forge.design GRAPH --platform P [--memory M]
+                                      [--set platform.PATH=VALUE ...]
+                                      [--set memory.PATH=VALUE ...]
                                       [--name NAME] [--out DIR]
-    python -m snax_forge.design check GRAPH --platform P [--set platform.PATH=VALUE ...]
+    python -m snax_forge.design check GRAPH --platform P [--memory M] [--set ...]
     python -m snax_forge.design save SRC DST [--force]
 
 The first form pairs a bound graph (the last ``.snaxdfg`` of a sandbox run)
-with a platform, runs every design check and, when they pass, writes the
-working copy of the platform to ``DIR/platform.json`` (default
-``out/design/<name>/``) and prints the streamer shell. The name is the
-sandbox folder of the graph (``out/sandbox/vecadd_w8/2_bind.snaxdfg`` ->
+with a platform, makes the memory plan, runs every design check and, when
+they pass, writes to ``DIR`` (default ``out/design/<name>/``):
+
+    platform.json       the platform working copy (base, changes)
+    memory.json         the memory working copy (passes, changes, layouts)
+    design_point.json   graph, platform, streamers and memory (point.py)
+
+and prints the streamer shell and the memory plan. The name is the sandbox
+folder of the graph (``out/sandbox/vecadd_w8/2_bind.snaxdfg`` ->
 ``vecadd_w8``), else the file's stem. Each run overwrites that folder.
-Passing the working copy as ``--platform`` continues from it: new ``--set``
-paths add to its ``changes``.
+Passing a working copy (``--platform DIR/platform.json``, ``--memory
+DIR/memory.json``) continues from it: new ``--set`` paths add to its
+``changes``. ``--set memory.C.l1.base=1152`` pins a base,
+``--set memory.passes.placement=NAME`` picks a registered pass.
 
 ``check`` runs the checks only and writes nothing. ``save`` keeps a
 platform, usually a working copy, under a new name: DST is a path, or a
@@ -35,6 +44,7 @@ from snax_forge.sdfg.paths import _repo_root
 
 from .check import Design, load, run_checks
 from .platform import Platform, parse_value
+from .point import DesignPoint
 from .problems import DesignError, report
 from .streamers import resolve
 
@@ -44,12 +54,14 @@ PLATFORMS = ROOT / "platforms"
 STEP = re.compile(r"\d+_\w+\.snaxdfg")
 
 
-def _setting(text: str) -> tuple[str, Any]:
+def _setting(text: str) -> tuple[str, str, Any]:
     path, sep, value = text.partition("=")
     head, dot, rest = path.partition(".")
-    if not sep or head != "platform" or not dot or not rest:
-        raise argparse.ArgumentTypeError(f"{text!r} is not platform.PATH=VALUE")
-    return rest, parse_value(value)
+    if not sep or head not in ("platform", "memory") or not dot or not rest:
+        raise argparse.ArgumentTypeError(
+            f"{text!r} is not platform.PATH=VALUE or memory.PATH=VALUE"
+        )
+    return head, rest, parse_value(value)
 
 
 def _rel(p: Path) -> str:
@@ -67,13 +79,16 @@ def design_name(graph: Path) -> str:
 def _inputs(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("graph", type=Path, help="a bound .snaxdfg (the last step of a recipe)")
     ap.add_argument("--platform", type=Path, required=True, help="platform file or working copy")
+    ap.add_argument("--memory", type=Path, help="memory working copy to continue from")
     ap.add_argument(
-        "--set", type=_setting, action="append", default=[], metavar="platform.PATH=VALUE"
+        "--set", type=_setting, action="append", default=[], metavar="platform|memory.PATH=VALUE"
     )
 
 
 def _checked(args: argparse.Namespace) -> Design | None:
-    design = load(args.graph, args.platform, args.set)
+    sets = [(p, v) for h, p, v in args.set if h == "platform"]
+    memory = [(p, v) for h, p, v in args.set if h == "memory"]
+    design = load(args.graph, args.platform, sets, args.memory, memory)
     problems = run_checks(design)
     if problems:
         print(report(problems, f"design check of {args.graph} on {args.platform}"), file=sys.stderr)
@@ -97,6 +112,22 @@ def _summary(design: Design) -> str:
             f"{list(s.spatial_bounds)}  temporal_dims {o.temporal_dims}  "
             f"fifo_depth {o.fifo_depth}  addr_depth {o.addr_depth}  prio {o.prio}"
         )
+    plan = design.memory
+    n = len(plan.changes)
+    passes = ", ".join(f"{k} {v}" for k, v in plan.passes.items())
+    lines.append(f"memory plan ({passes}; {n} change{'' if n == 1 else 's'}):")
+    ctx = design.context()
+    pins = plan.spec.pins()
+    for c, mems in plan.layouts.items():
+        parts = []
+        for m, lay in mems.items():
+            word = ctx.word_bytes(m)
+            lo, hi = lay.span()
+            where = f"{m} [{lo}, {hi + word})"
+            if m == "l1":
+                where += f" bank {(lay.base - pf.l1.base_addr) // word % pf.l1.n_banks}"
+            parts.append(f"{where + (' pinned' if (c, m) in pins else ''):<30}")
+        lines.append(f"  {c:<12} " + "".join(parts).rstrip())
     return "\n".join(lines)
 
 
@@ -110,10 +141,15 @@ def _run(argv: list[str]) -> int:
     if design is None:
         return 1
     out = args.out or OUT / (args.name or design_name(args.graph))
+    name = args.name or design_name(args.graph)
+    point = DesignPoint.of(design, name)
     out.mkdir(parents=True, exist_ok=True)
     design.platform.save(out / "platform.json")
+    design.memory.save(out / "memory.json")
+    point.save(out / "design_point.json")
     print(_summary(design))
-    print(f"wrote {_rel(out / 'platform.json')}")
+    for f in ("platform.json", "memory.json", "design_point.json"):
+        print(f"wrote {_rel(out / f)}")
     return 0
 
 

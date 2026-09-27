@@ -8,7 +8,9 @@ import json
 import pytest
 
 from snax_forge.design import CHECKS, Design, DesignError, Platform, check, load, register_check
+from snax_forge.design.memory import MEMORY_PASSES, MemorySpec
 from snax_forge.design.problems import Problem
+from snax_forge.lower.layout import Layout
 
 from .helpers import (
     BOUND,
@@ -297,3 +299,139 @@ def test_the_working_copy_is_what_the_checks_read():
         "streamers.acc_out.fifo_depth": 4
     }
     assert isinstance(d.platform, Platform) and problems(d) == []
+
+
+# =============================================================================
+# 6. Stage memory (DP1b)
+# =============================================================================
+
+
+def with_memory(memory=(), **kw) -> Design:
+    d = design(**kw)
+    d.memory_spec = MemorySpec().with_changes(list(memory))
+    return d
+
+
+def test_a_pin_must_name_a_container_and_one_of_its_memories():
+    (p,) = problems(with_memory([("Cc.l1.base", 0)]))
+    assert (p.code, p.where) == ("memory.pin", "memory.Cc.l1.base")
+    assert p.fix == "did you mean memory.C.l1.base?"
+
+    def no_l2(d):
+        d["l2"] = None
+
+    (p,) = problems(with_memory([("C.l2.base", 0)], edit_platform=no_l2))
+    assert p.code == "memory.pin" and "does not live in 'l2'" in p.message
+
+
+def test_an_unknown_pass_is_named():
+    (p,) = problems(with_memory([("passes.layout", "tiled")]))
+    assert (p.code, p.where) == ("memory.pin", "memory.passes.layout")
+    assert "registered: ['contiguous']" in p.message
+
+
+def test_memory_load_problems_are_reported(tmp_path):
+    (tmp_path / "m.json").write_text('{"passes": {"x": "y"}}')
+    got = problems(load(BOUND, SMALL16, memory_path=tmp_path / "m.json"))
+    assert [p.code for p in got] == ["memory.pin"]
+
+
+def _with_pass(kind, name, fn, test):
+    MEMORY_PASSES[kind][name] = fn
+    try:
+        test()
+    finally:
+        del MEMORY_PASSES[kind][name]
+
+
+def test_an_accelerator_operand_needs_an_l1_layout():
+    def l2_only(c):
+        return {k: ["l2"] for k in c.containers}
+
+    def test():
+        got = problems(with_memory([("passes.residency", "l2_only")]))
+        assert {p.code for p in got} == {"memory.residency"}
+        assert "has no L1 layout: the streamers reach only the L1" in got[0].message
+
+    _with_pass("residency", "l2_only", l2_only, test)
+
+
+def test_a_layout_must_have_the_containers_shape():
+    def short(c, residency):
+        return {k: {m: Layout.contiguous(0, (32,), 8) for m in ms} for k, ms in residency.items()}
+
+    def test():
+        got = [
+            p
+            for p in problems(with_memory([("passes.layout", "short")]))
+            if p.code == "memory.layout"
+        ]
+        assert len(got) == 6 and "shape [32] is not the container's [64]" in got[0].message
+
+    _with_pass("layout", "short", short, test)
+
+
+def test_a_moved_layout_must_start_on_a_beat():
+    (p,) = problems(with_memory([("B.l1.base", 600)]))
+    assert (p.code, p.where, p.fix) == ("memory.align", "B in l1", "--set memory.B.l1.base=640")
+    (p,) = problems(with_memory([("B.l1.base", 604)]))
+    assert "multiples of the 8-byte word" in p.message and p.fix == "--set memory.B.l1.base=608"
+
+
+def test_a_moved_container_must_be_whole_beats():
+    """N = 60: 480 bytes, not whole 64-byte beats (open item 38)."""
+
+    def n60(g):
+        g["symbols"]["N"] = 60
+
+    got = [p for p in problems(with_memory(edit_graph=n60)) if p.code == "memory.align"]
+    assert [p.where for p in got] == [
+        "A in l2",
+        "A in l1",
+        "B in l2",
+        "B in l1",
+        "C in l2",
+        "C in l1",
+    ]
+    assert "480 bytes, not whole 64-byte beats" in got[0].message and "8 elements" in got[0].fix
+
+
+def test_a_layout_must_fit_its_memory():
+    got = problems(with_memory([], edit_platform=lambda d: d["l1"].update(rows=8)))
+    assert [(p.code, p.where) for p in got] == [("memory.fit", "C in l1")]
+    assert "L1 is 1024 B (16 banks x 8 rows x 8 B)" in got[0].message
+    assert got[0].fix.startswith("--set platform.l1.rows=12")
+    (p,) = problems(with_memory([("C.l1.base", 8000)]))
+    assert p.code == "memory.fit" and p.fix.startswith("pin it lower")
+
+
+def test_pins_may_not_overlap():
+    (p,) = problems(with_memory([("A.l1.base", 0), ("B.l1.base", 256)]))
+    assert (p.code, p.where) == ("memory.overlap", "A and B in l1")
+    assert "share 256 bytes" in p.message and "pinned: A, B" in p.message
+    assert p.fix == "move the pin past everything: --set memory.B.l1.base=1280, or remove it"
+
+
+def test_strided_layouts_that_interleave_do_not_overlap():
+    def interleave(c, residency):
+        return {k: {m: Layout(0, (64,), (16,)) for m in ms} for k, ms in residency.items()}
+
+    def place(c, layouts, pins):
+        return {k: {m: 8 * i for m in ms} for i, (k, ms) in enumerate(layouts.items())}
+
+    def test():
+        sets = [("passes.layout", "interleave"), ("passes.placement", "gaps")]
+        got = problems(with_memory(sets, edit_platform=lambda d: d.update(l2=None)))
+        assert [p.code for p in got if p.code == "memory.overlap"] == ["memory.overlap"]  # A, C
+        assert got[-1].where == "A and C in l1"
+
+    MEMORY_PASSES["placement"]["gaps"] = place
+    try:
+        _with_pass("layout", "interleave", interleave, test)
+    finally:
+        del MEMORY_PASSES["placement"]["gaps"]
+
+
+def test_memory_waits_for_connect():
+    got = codes(with_memory([("Q.l1.base", 0)], sets=[("streamers.acc_q.prio", 1)]))
+    assert got == ["connect.streamer_key"]

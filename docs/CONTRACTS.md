@@ -9,9 +9,9 @@
 > (section 10, D68, D70), from which the accelerator entry and the streamer
 > values are derived, the SNAX-DFG (section 11, D77), the workload graph
 > the sandbox transforms, the sandbox recipe (section 12, D80), the
-> platform (section 13, D84) and the design checks (section 14, D85). The
-> design point gets a section with DP1b (D74). Later nest notations are open
-> item 1 (M6).
+> platform (section 13, D84), the design checks (section 14, D85) and the
+> memory plan and design point (section 15, D86, D87). Later nest notations
+> are open item 1 (M6).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
 > schemas are F2's job (D26, F2). Every value marked **default** is a
@@ -27,7 +27,8 @@
 >
 > Layout: section 8 holds the rules a new block kind must follow; section 9
 > the task list; section 10 the BRM; section 11 the SNAX-DFG; section 12
-> the recipe; section 13 the platform; section 14 the design checks. The
+> the recipe; section 13 the platform; section 14 the design checks;
+> section 15 the memory plan and the design point. The
 > reasoning behind each contract is in the module docstrings and in
 > `docs/ARCHITECTURE.md` section 5.6; this file does not repeat it.
 
@@ -943,7 +944,8 @@ the pairing of a bound graph and a platform (DP1a, D85) and reports every
 problem found, each as `[code] where: why` with a `fix:` line where one
 exists: the `--set` or recipe change that removes it. `pixi run design
 check GRAPH --platform P [--set ...]` runs them only. Stages: `platform`
-and `graph` run independently; `connect` runs when both passed. A check is
+and `graph` run independently; `connect` runs when both passed, `memory`
+when `connect` passed. A check is
 registered with `register_check(code, stage, fn)`, `fn(design)` yielding
 problems.
 
@@ -964,5 +966,56 @@ problems.
 | `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
 | `connect.dtype` | a container whose dtype is not the L1's or not its port's, or an L1 with more than one element per word (open item 21) |
 | `connect.regmap` | a streamer, accelerator or DMA whose status and configuration registers do not fit `register_window` |
+| `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest) or on a memory the container does not live in; an unknown pass. The plan is made after these pass |
+| `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
+| `memory.layout` | a layout whose shape is not its container's |
+| `memory.align` | a base or stride that is not a multiple of the word; a container the DMA moves (in L2 and L1) that is not contiguous, not whole wide beats (open item 38) or not on a beat |
+| `memory.fit` | a layout that leaves its memory (the fix names the rows or L2 size that would hold it) |
+| `memory.overlap` | two layouts in one memory that share bytes, naming the pins (the fix moves the latest pin past everything) |
+| `point.keys` | a design point with unknown or missing keys or a malformed streamer entry |
+| `point.streamers` | a design point whose `streamers` are not the platform's shell for its graph |
 
 The model's own checks, when a cluster file is built, stay as a backstop.
+
+## 15. Memory plan and design point
+
+**Memory plan** (DP1b, D86, `snax_forge/design/memory.py`). A layout per
+container and memory it lives in: `base` (byte address of index 0),
+`shape` and one byte stride per dimension, the form of
+`snax_forge/lower/layout.py`. Banks follow from addresses (word `i` in bank
+`i % n_banks`, open item 18) and are not stated. Three passes make it, each
+registered by name (`register_memory_pass(kind, name, fn)`):
+
+| Pass | Decides | Default |
+|---|---|---|
+| `residency` | the memories of each container | `default`: not transient: L2 and L1 with an L2, else L1; transient: L1 |
+| `layout` | shape and strides, base 0 | `contiguous`: row-major, one element per word |
+| `placement` | the base per container and memory | `contiguous`: graph container order from the memory's first byte, no gaps; a layout in both L2 and L1 on a wide beat, others on a word; around the pins |
+
+`--set memory.<container>.<memory>.base=N` pins a base; `--set
+memory.passes.<pass>=NAME` picks a pass. Passes read a `MemoryContext`:
+the graph with its symbols bound, the platform, shapes, words, memory
+ranges and, for policies that avoid bank conflicts, each accelerator
+port's element-index stream (`accesses`, beats x lanes x dimensions, from
+its memlet over the maps around it) grouped by the node that runs them
+together. The design step writes `out/design/<name>/memory.json`:
+`passes`, `changes` (every memory path set, in order) and `layouts`;
+`--memory` continues from it.
+
+**Design point** (D74, D87, `snax_forge/design/point.py`). Written by the
+design step to `out/design/<name>/design_point.json` once every check has
+passed; not edited by hand. It is what SNAX-LOWER reads.
+
+| Field | Holds |
+|---|---|
+| `name` | the design (the graph's sandbox folder, else its stem) |
+| `graph_from` | the `.snaxdfg` it was made from |
+| `graph` | that graph as read: instances, `code`, `replaced`, `loop.split` |
+| `platform` | the platform working copy (section 13) |
+| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `fifo_depth`, `addr_depth`, `prio` |
+| `memory` | the memory plan: `passes`, `changes`, `layouts` (container -> memory -> layout) |
+
+There is no recipe in it: the graph holds every instance, and the sandbox
+folder keeps the recipe. Loading one runs every check again on what it
+holds (the stored layouts as they are) and requires `streamers` to be the
+platform's shell for the graph.

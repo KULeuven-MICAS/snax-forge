@@ -9,10 +9,15 @@ why it fails and the change that fixes it. Checks belong to stages:
     graph      the graph alone: symbols bound, everything bound to an
                accelerator, BRMs and implementations known, instance names
     connect    the two together: streamer entries, lanes, dtypes, registers
+    memory     the memory plan (DP1b, D86): pins and passes, then the plan
+               the passes make, its residency, shapes, alignment, fit and
+               overlaps
 
 ``platform`` and ``graph`` run independently; ``connect`` runs only when
-both passed, since its checks read what they established. DP1b adds a
-``memory`` stage after ``connect``. A new check is registered with
+both passed, since its checks read what they established, and ``memory``
+only when ``connect`` passed. ``memory.pin`` makes the plan (memory.py)
+when its pins and passes name what exists, unless the Design already holds
+one (a design point, judged as stored). A new check is registered with
 ``register_check(code, stage, fn)``; ``fn(design)`` yields Problems.
 
 The model's own checks (scenario.py, when a cluster is built) stay as a
@@ -34,6 +39,7 @@ from snax_forge.brm import BrmError, Instance
 from snax_forge.dfg import DfgError, Graph, Node
 from snax_forge.snax_model.ctrl import STATUS, DmaAdapter, StreamerAdapter
 
+from .memory import MemoryContext, MemoryPlan, MemorySpec, pin_problems, plan
 from .platform import DERIVED, Platform
 from .problems import DesignError, Problem
 from .streamers import (
@@ -49,6 +55,7 @@ STAGES: dict[str, tuple[str, ...]] = {
     "platform": (),
     "graph": (),
     "connect": ("platform", "graph"),
+    "memory": ("connect",),
 }
 # Component names of the cluster besides the shell and the accelerators (LOW1c).
 FIXED = ("xbar", "dma", "ctl")
@@ -63,6 +70,11 @@ class Design:
     load_problems: list[Problem] = field(default_factory=list)
     graph_path: str = "graph"
     instances: dict[str, Instance] = field(default_factory=dict)  # filled by graph.brm
+    memory_spec: MemorySpec | None = field(default_factory=MemorySpec)
+    memory: MemoryPlan | None = None  # made by the memory.pin check, or given (a design point)
+
+    def context(self) -> MemoryContext:
+        return MemoryContext(self.graph, self.platform)
 
 
 Check = Callable[[Design], Iterable[Problem]]
@@ -88,12 +100,18 @@ def register_check(code: str, stage: str, fn: Check) -> None:
 
 
 def load(
-    graph_path: str | Path, platform_path: str | Path, sets: Sequence[tuple[str, Any]] = ()
+    graph_path: str | Path,
+    platform_path: str | Path,
+    sets: Sequence[tuple[str, Any]] = (),
+    memory_path: str | Path | None = None,
+    memory_sets: Sequence[tuple[str, Any]] = (),
 ) -> Design:
-    """Load both inputs; what fails to load becomes a problem, never an exception.
+    """Load the inputs; what fails to load becomes a problem, never an exception.
 
     The platform is the working copy (``Platform.with_changes``), with ``sets``
-    applied when they are given.
+    applied when they are given. The memory spec starts from ``memory_path``
+    (a memory working copy) or the default passes, with ``memory_sets``
+    applied; the plan itself is made by the memory checks.
     """
     problems: list[Problem] = []
     platform = None
@@ -106,7 +124,13 @@ def load(
         graph = Graph.load(graph_path)
     except (OSError, json.JSONDecodeError, DfgError) as e:
         problems.append(Problem("graph.load", str(graph_path), str(e)))
-    return Design(platform, graph, problems, str(graph_path))
+    spec = None
+    try:
+        start = MemorySpec() if memory_path is None else MemorySpec.load(memory_path)
+        spec = start.with_changes(memory_sets)
+    except DesignError as e:
+        problems += e.problems
+    return Design(platform, graph, problems, str(graph_path), memory_spec=spec)
 
 
 def run_checks(design: Design, stages: Sequence[str] | None = None) -> list[Problem]:
@@ -447,6 +471,201 @@ def _connect_regmap(design: Design) -> Iterable[Problem]:
         yield from over("dma", regs, "lower platform.dma.dims")
 
 
+# =============================================================================
+# Stage memory
+# =============================================================================
+
+
+def _memory_pin(design: Design) -> Iterable[Problem]:
+    """Pins and passes name what exists; then the plan is made (unless one was given)."""
+    yield from (p for p in design.load_problems if p.code.startswith("memory."))
+    if design.memory_spec is None:
+        return
+    if design.memory is not None:  # a design point's stored plan is judged as it is
+        return
+    ctx = design.context()
+    found = pin_problems(ctx, design.memory_spec)
+    if found:
+        yield from found
+        return
+    try:
+        design.memory = plan(ctx, design.memory_spec)
+    except (ValueError, KeyError, TypeError) as e:
+        yield Problem("memory.pin", "memory.passes", f"the passes failed: {e}")
+
+
+def _layouts(design: Design) -> Iterator[tuple[str, str, Any]]:
+    if design.memory is None:
+        return
+    for c, mems in design.memory.layouts.items():
+        for m, lay in mems.items():
+            yield c, m, lay
+
+
+def _memory_residency(design: Design) -> Iterable[Problem]:
+    if design.memory is None:
+        return
+    ctx, lays = design.context(), design.memory.layouts
+    for c, m, _ in _layouts(design):
+        if c not in design.graph.containers:
+            yield Problem("memory.residency", f"container {c}", "is not a container of the graph")
+        elif m not in ctx.memories:
+            yield Problem(
+                "memory.residency", f"{c} in {m}", f"the platform has no {m} ({ctx.memories})"
+            )
+    for c, cont in design.graph.containers.items():
+        if not cont.transient and not lays.get(c):
+            yield Problem("memory.residency", f"container {c}", "lives in no memory")
+    for n in accelerated(design.graph):
+        for conn, mlet in {**n.inputs, **n.outputs}.items():
+            if "l1" not in lays.get(mlet.data, {}):
+                yield Problem(
+                    "memory.residency", f"container {mlet.data}",
+                    f"is read or written by {n.id}.{conn}, but has no L1 layout: "
+                    "the streamers reach only the L1",
+                )  # fmt: skip
+
+
+def _memory_layout(design: Design) -> Iterable[Problem]:
+    ctx = design.context() if design.memory is not None else None
+    for c, m, lay in _layouts(design):
+        if c not in design.graph.containers:
+            continue
+        want = ctx.shape(c)
+        if tuple(lay.shape) != want:
+            yield Problem(
+                "memory.layout", f"{c} in {m}",
+                f"shape {list(lay.shape)} is not the container's {list(want)}",
+            )  # fmt: skip
+
+
+def _memory_align(design: Design) -> Iterable[Problem]:
+    if design.memory is None:
+        return
+    ctx = design.context()
+    for c, m, lay in _layouts(design):
+        word = ctx.word_bytes(m)
+        where = f"{c} in {m}"
+        if lay.base % word or any(s % word for s in lay.strides):
+            yield Problem(
+                "memory.align", where,
+                f"base {lay.base} and strides {list(lay.strides)} must be multiples of the "
+                f"{word}-byte word",
+                f"--set memory.{c}.{m}.base={_align_up(lay.base, word)}",
+            )  # fmt: skip
+            continue
+        mems = design.memory.layouts.get(c, {})
+        if not ("l1" in mems and "l2" in mems):
+            continue
+        beat = ctx.beat_bytes
+        size = prod(lay.shape) * word
+        contiguous = type(lay).contiguous(lay.base, lay.shape, word)
+        if lay.strides != contiguous.strides:
+            yield Problem(
+                "memory.align", where,
+                f"strides {list(lay.strides)} are not contiguous {list(contiguous.strides)}; "
+                "the DMA moves a container as whole contiguous beats (open item 38)",
+            )  # fmt: skip
+        elif size % beat:
+            yield Problem(
+                "memory.align", where,
+                f"{prod(lay.shape)} elements are {size} bytes, not whole {beat}-byte beats: "
+                "the DMA moves whole beats (open item 38)",
+                f"make the size a multiple of {beat // word} elements in the recipe's symbols",
+            )  # fmt: skip
+        elif lay.base % beat:
+            yield Problem(
+                "memory.align", where,
+                f"base {lay.base} is not on a {beat}-byte beat, and the DMA moves whole beats",
+                f"--set memory.{c}.{m}.base={_align_up(lay.base, beat)}",
+            )  # fmt: skip
+
+
+def _align_up(x: int, a: int) -> int:
+    return -(-x // a) * a
+
+
+def _extent(lay: Any, word: int) -> tuple[int, int]:
+    lo, hi = lay.span()
+    return lo, hi + word
+
+
+def _memory_fit(design: Design) -> Iterable[Problem]:
+    if design.memory is None:
+        return
+    ctx = design.context()
+    pf = design.platform
+    for c, m, lay in _layouts(design):
+        if m not in ctx.memories:
+            continue
+        start, end = ctx.span(m)
+        lo, hi = _extent(lay, ctx.word_bytes(m))
+        if lo < start or hi > end:
+            if m == "l1":
+                l1 = pf.l1
+                row = l1.n_banks * (l1.width_bits // 8)
+                rows = -(-(hi - l1.base_addr) // row)
+                fix = f"--set platform.l1.rows={max(rows, l1.rows)}, or tile the loop in the recipe"
+                size = f"L1 is {end - start} B ({l1.n_banks} banks x {l1.rows} rows x {row // l1.n_banks} B)"  # fmt: skip
+            else:
+                fix = f"--set platform.l2.size_bytes={_align_up(hi - start, pf.l2.beat_bytes)}"
+                size = f"L2 is {end - start} B"
+            if (c, m) in design.memory.spec.pins():
+                fix = f"pin it lower (--set memory.{c}.{m}.base=...), or {fix}"
+            yield Problem("memory.fit", f"{c} in {m}", f"spans bytes [{lo}, {hi}); {size}", fix)
+
+
+def _memory_overlap(design: Design) -> Iterable[Problem]:
+    if design.memory is None:
+        return
+    ctx = design.context()
+    pins = design.memory.spec.pins()
+    for m in ctx.memories:
+        word = ctx.word_bytes(m)
+        items = [(c, lay) for c, mm, lay in _layouts(design) if mm == m]
+        for (a, la), (b, lb) in _pairs(items):
+            alo, ahi = _extent(la, word)
+            blo, bhi = _extent(lb, word)
+            if alo >= bhi or blo >= ahi:
+                continue
+            shared = _shared(la, lb, word)
+            if not shared:
+                continue
+            pinned = [x for x in (a, b) if (x, m) in pins]
+            fix = None
+            if pinned:
+                order = list(design.memory.changes)
+                p = max(pinned, key=lambda x: order.index(f"{x}.{m}.base"))  # the latest pin
+                end = max(_extent(lay, word)[1] for _, mm, lay in _layouts(design) if mm == m)
+                free = _align_up(end, ctx.beat_bytes)
+                fix = (
+                    f"move the pin past everything: --set memory.{p}.{m}.base={free}, or remove it"
+                )
+            yield Problem(
+                "memory.overlap", f"{a} and {b} in {m}",
+                f"share {shared} bytes: {a} [{alo}, {ahi}), {b} [{blo}, {bhi})"
+                + (f"; pinned: {', '.join(pinned)}" if pinned else ""),
+                fix,
+            )  # fmt: skip
+
+
+def _pairs(items: list[Any]) -> Iterator[tuple[Any, Any]]:
+    for i, x in enumerate(items):
+        for y in items[i + 1 :]:
+            yield x, y
+
+
+def _shared(la: Any, lb: Any, word: int) -> int:
+    """Bytes two layouts both use (element addresses, each a word)."""
+    import numpy as np
+
+    def addrs(lay: Any) -> Any:
+        idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
+        return lay.address(idx)
+
+    return int(np.intersect1d(addrs(la), addrs(lb)).size) * word
+
+
 for _code, _stage, _fn in (
     ("platform.load", "platform", _platform_load),
     ("platform.l2", "platform", _platform_l2),
@@ -461,5 +680,11 @@ for _code, _stage, _fn in (
     ("connect.lanes", "connect", _connect_lanes),
     ("connect.dtype", "connect", _connect_dtype),
     ("connect.regmap", "connect", _connect_regmap),
+    ("memory.pin", "memory", _memory_pin),
+    ("memory.residency", "memory", _memory_residency),
+    ("memory.layout", "memory", _memory_layout),
+    ("memory.align", "memory", _memory_align),
+    ("memory.fit", "memory", _memory_fit),
+    ("memory.overlap", "memory", _memory_overlap),
 ):
     register_check(_code, _stage, _fn)

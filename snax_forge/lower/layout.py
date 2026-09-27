@@ -1,4 +1,4 @@
-"""Buffer layout: where an operand's elements live in L1 (BRM2, D70; provisional).
+"""Buffer layout: where an operand's elements live in a memory (BRM2, D70; D74, D86).
 
 A layout is affine, like the nests it serves:
 
@@ -9,9 +9,10 @@ extent per dimension, ``strides`` the bytes per step of each dimension. One
 form covers storage order (row- or column-major) and padding. Choosing it is
 SNAX-DSE's decision (section 5.4); SNAX-LOWER only reads it.
 
-This class is provisional: the design point's memory plan decides the final
-form with DP1 (open item 29). Until then SNAX-LOWER's tests give layouts by
-hand.
+This is the form of the design point's memory plan (DP1b, D86, closing open
+item 29): snax_forge/design/memory.py makes one per container and memory,
+and SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs;
+the design checks judge a whole plan, in L1 and L2.
 """
 
 from __future__ import annotations
