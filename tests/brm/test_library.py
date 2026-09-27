@@ -7,6 +7,7 @@ same cycles, profile and data.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import numpy as np
@@ -92,7 +93,16 @@ def test_vecadd_same_cycles_and_data_as_the_stub():
     assert np.array_equal(a.l1, b.l1) and np.array_equal(a.l2, b.l2)
     assert a.reads == b.reads
     x, y = (np.load(SCEN / "vecadd" / f) for f in ("a.npy", "b.npy"))
-    assert np.array_equal(b.l2[2048 // 8 : 2048 // 8 + 64, 0], x + y)  # c = a + b at L2 2048
+    # c = a + b in L2 where vecadd's store_C puts it (1024 since NAME1, D83)
+    c = store_base(SCEN / "vecadd" / "tasks.json", "store_C") // 8
+    assert np.array_equal(b.l2[c : c + 64, 0], x + y)
+
+
+def store_base(tasks: Path, task: str) -> int:
+    """The L2 byte address a store task writes to, read off the task list."""
+    steps = json.loads(tasks.read_text())["steps"]
+    (step,) = [s for s in steps if s.get("task_name") == task]
+    return step["values"]["dst"]["base"]
 
 
 @pytest.mark.parametrize("w", [1, 4, 8])
