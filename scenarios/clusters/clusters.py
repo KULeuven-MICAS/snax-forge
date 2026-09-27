@@ -1,5 +1,9 @@
 """The checked-in clusters: alu4.json, red4.json and mul1.json (MOD9, D41).
 
+Streamers are named after the accelerator port they serve, ``<instance>_<port>``
+(D75): alu4's and mul1's ``acc_a``, ``acc_b``, ``acc_out``, red4's ``acc_in``,
+``acc_out``.
+
 scenarios/make.py writes one file per entry of ``CLUSTERS``. The builders
 move into SNAX-LOWER with LOW1c, which derives a cluster file from a design
 point and BRMs (D53, open item 24).
@@ -41,19 +45,19 @@ def alu4() -> ClusterConfig:
         components=[
             ComponentSpec("xbar", "xbar", {"check_hold": True}),
             ComponentSpec("dma", "dma", DmaConfig().to_dict()),
-            _streamer("ra", False, LANES),
-            _streamer("rb", False, LANES),
-            _streamer("wr", True, LANES),
+            _streamer("acc_a", False, LANES),
+            _streamer("acc_b", False, LANES),
+            _streamer("acc_out", True, LANES),
             ComponentSpec(
                 "acc",
                 "accel",
                 accel="elementwise",
                 params={"lanes": LANES, "n_inputs": 2, "op": "add", "latency": 0, "ii": 1},
-                attach={"a": "ra", "b": "rb", "out": "wr"},
+                attach={"a": "acc_a", "b": "acc_b", "out": "acc_out"},
             ),
             ComponentSpec("ctl", "controller", CTL.to_dict()),
         ],
-        register_map=RegisterMapSpec(blocks=["dma", "ra", "rb", "wr", "acc"]),
+        register_map=RegisterMapSpec(blocks=["dma", "acc_a", "acc_b", "acc_out", "acc"]),
     )
 
 
@@ -63,18 +67,18 @@ def red4() -> ClusterConfig:
         l1=L1Config(n_banks=16, rows=64, read_latency=1),
         components=[
             ComponentSpec("xbar", "xbar", {"check_hold": True}),
-            _streamer("ra", False, LANES),
-            _streamer("wr", True, 1),
+            _streamer("acc_in", False, LANES),
+            _streamer("acc_out", True, 1),
             ComponentSpec(
                 "acc",
                 "accel",
                 accel="reduce",
                 params={"lanes": LANES, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1},
-                attach={"in": "ra", "out": "wr"},
+                attach={"in": "acc_in", "out": "acc_out"},
             ),
             ComponentSpec("ctl", "controller", CTL.to_dict()),
         ],
-        register_map=RegisterMapSpec(blocks=["ra", "wr", "acc"]),
+        register_map=RegisterMapSpec(blocks=["acc_in", "acc_out", "acc"]),
     )
 
 
@@ -85,7 +89,7 @@ MUL_II = 5
 
 
 def mul1() -> ClusterConfig:
-    """One multiplier (1 lane, L = II = 5) between readers ra, rb and writer wr, and a DMA.
+    """One multiplier (1 lane, L = II = 5), its streamers acc_a, acc_b, acc_out, and a DMA.
 
     32 banks = 4 superbanks of 8, so one tile's buffers fit in two
     superbanks and the DMA can work on the other two (fmul). The streamers
@@ -98,19 +102,19 @@ def mul1() -> ClusterConfig:
         components=[
             ComponentSpec("xbar", "xbar", {"check_hold": True}),
             ComponentSpec("dma", "dma", DmaConfig().to_dict()),
-            _streamer("ra", False, 1, temporal_dims=2),
-            _streamer("rb", False, 1, temporal_dims=2),
-            _streamer("wr", True, 1, temporal_dims=2),
+            _streamer("acc_a", False, 1, temporal_dims=2),
+            _streamer("acc_b", False, 1, temporal_dims=2),
+            _streamer("acc_out", True, 1, temporal_dims=2),
             ComponentSpec(
                 "acc",
                 "accel",
                 accel="elementwise",
                 params={"lanes": 1, "n_inputs": 2, "op": "mul", "latency": L, "ii": II},
-                attach={"a": "ra", "b": "rb", "out": "wr"},
+                attach={"a": "acc_a", "b": "acc_b", "out": "acc_out"},
             ),
             ComponentSpec("ctl", "controller", CTL.to_dict()),
         ],
-        register_map=RegisterMapSpec(blocks=["dma", "ra", "rb", "wr", "acc"]),
+        register_map=RegisterMapSpec(blocks=["dma", "acc_a", "acc_b", "acc_out", "acc"]),
     )
 
 

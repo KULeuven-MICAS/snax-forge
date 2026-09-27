@@ -69,9 +69,9 @@ def test_vecadd_streamer_values():
     task = {"n": 16}
     assert want.pop("add_acc") == task and list(task) == inst.brm.registers
     got = {
-        "add_ra": streamer_values(inst, "a", task, Layout(0, (64,), (8,)), cl, "ra"),
-        "add_rb": streamer_values(inst, "b", task, Layout(576, (64,), (8,)), cl, "rb"),
-        "add_wr": streamer_values(inst, "out", task, Layout(1152, (64,), (8,)), cl, "wr"),
+        "add_acc_a": streamer_values(inst, "a", task, Layout(0, (64,), (8,)), cl, "acc_a"),
+        "add_acc_b": streamer_values(inst, "b", task, Layout(576, (64,), (8,)), cl, "acc_b"),
+        "add_acc_out": streamer_values(inst, "out", task, Layout(1152, (64,), (8,)), cl, "acc_out"),
     }
     assert got == want
 
@@ -167,7 +167,7 @@ ERRORS = [
     ("writer for in", {"s": "w4"}, "a writer cannot serve an 'in' port"),
     ("spatial bounds", {"s": "r22"}, r"spatial bounds \[4\] .* design-time \[2, 2\]"),
     ("temporal loops",
-     {"nest": REUSE, "n": 6, "layout": Layout(0, (8,), (8,)), "cl": cluster("alu4"), "s": "ra"},
+     {"nest": REUSE, "n": 6, "layout": Layout(0, (8,), (8,)), "cl": cluster("alu4"), "s": "acc_a"},
      "2 temporal loops, the streamer has 1"),
     ("shape", {"layout": Layout(0, (32,), (8,))}, r"layout shape \[32\]"),
     ("unaligned base", {"layout": Layout(4, (64,), (8,))}, "multiples of the 8-byte word"),

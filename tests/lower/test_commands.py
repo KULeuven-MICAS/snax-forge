@@ -52,17 +52,17 @@ def vecadd_by_hand() -> list:
 
     p.config("dma", DmaDescriptor("l2_to_l1", beats(0), beats(0)))
     p.start("dma")
-    p.config("dma", DmaDescriptor("l2_to_l1", beats(1024), beats(576)))
+    p.config("dma", DmaDescriptor("l2_to_l1", beats(512), beats(576)))
     p.wait("dma", "poll")
     p.start("dma")
-    for block, word in (("ra", 0), ("rb", 72), ("wr", 144)):
+    for block, word in (("acc_a", 0), ("acc_b", 72), ("acc_out", 144)):
         p.config(block, unit(word))
     p.config("acc", {"n": 16})
     p.wait("dma", "poll")
-    for block in ("ra", "rb", "wr", "acc"):
+    for block in ("acc_a", "acc_b", "acc_out", "acc"):
         p.start(block)
-    p.config("dma", DmaDescriptor("l1_to_l2", beats(1152), beats(2048)))
-    p.wait("wr", "poll")
+    p.config("dma", DmaDescriptor("l1_to_l2", beats(1152), beats(1024)))
+    p.wait("acc_out", "poll")
     p.start("dma")
     p.wait("dma", "poll")
     return p.cmds
@@ -103,8 +103,8 @@ def test_vecadd_step_by_step():
     assert shape(program) == [
         "Cdma", "Sdma",
         "Cdma", "Wdma:poll", "Sdma",
-        "Cra", "Crb", "Cwr", "Cacc", "Wdma:poll", "Sra", "Srb", "Swr", "Sacc",
-        "Cdma", "Wwr:poll", "Sdma",
+        "Cacc_a", "Cacc_b", "Cacc_out", "Cacc", "Wdma:poll", "Sacc_a", "Sacc_b", "Sacc_out", "Sacc",
+        "Cdma", "Wacc_out:poll", "Sdma",
         "Wdma:poll",
     ]  # fmt: skip
 
@@ -129,19 +129,19 @@ def test_configure_can_run_ahead_of_its_start():
     """A configure goes where it is written: here while the DMA's first task runs."""
     prog = lowered(
         dma("a"), start("a"),
-        stream("r", "ra", after=["a"]),
+        stream("r", "acc_a", after=["a"]),
         dma("b", src=512, dst=512), start("b"),
         start("r"),
     )  # fmt: skip
-    assert shape(prog) == ["Cdma", "Sdma", "Cra", "Cdma", "Wdma:poll", "Sdma", "Sra"]
+    assert shape(prog) == ["Cdma", "Sdma", "Cacc_a", "Cdma", "Wdma:poll", "Sdma", "Sacc_a"]
 
 
 def test_start_launches_its_tasks_in_list_order():
     prog = lowered(
-        stream("w", "wr"), stream("r", "ra"), stream("s", "rb"), add("x"),
+        stream("w", "acc_out"), stream("r", "acc_a"), stream("s", "acc_b"), add("x"),
         start("x", "s", "r", "w"),
     )  # fmt: skip
-    assert shape(prog)[-4:] == ["Sacc", "Srb", "Sra", "Swr"]
+    assert shape(prog)[-4:] == ["Sacc", "Sacc_b", "Sacc_a", "Sacc_out"]
 
 
 # =============================================================================
@@ -157,81 +157,81 @@ def test_a_busy_component_is_waited_for():
 
 def test_no_after_no_wait_across_components():
     """Nothing ties the streamer to the load unless ``after`` says so."""
-    prog = lowered(dma("a"), start("a"), stream("r", "ra"), start("r"))
-    assert shape(prog) == ["Cdma", "Sdma", "Cra", "Sra"]
+    prog = lowered(dma("a"), start("a"), stream("r", "acc_a"), start("r"))
+    assert shape(prog) == ["Cdma", "Sdma", "Cacc_a", "Sacc_a"]
 
 
 def test_one_wait_per_component_covers_its_earlier_tasks():
     """after on both loads: one wait on the DMA, which ends on its latest task."""
     prog = lowered(
         dma("a"), start("a"), dma("b", src=512, dst=512), start("b"),
-        stream("r", "ra", after=["a", "b"]), start("r"),
+        stream("r", "acc_a", after=["a", "b"]), start("r"),
     )  # fmt: skip
-    assert shape(prog)[-3:] == ["Cra", "Wdma:poll", "Sra"]
+    assert shape(prog)[-3:] == ["Cacc_a", "Wdma:poll", "Sacc_a"]
     assert shape(prog).count("Wdma:poll") == 2  # the first one is b's busy wait
 
 
 def test_a_covered_dependency_gets_no_wait():
-    prog = lowered(dma("a"), start("a"), sync("a"), stream("r", "ra", after=["a"]), start("r"))
-    assert shape(prog) == ["Cdma", "Sdma", "Wdma:poll", "Cra", "Sra"]
+    prog = lowered(dma("a"), start("a"), sync("a"), stream("r", "acc_a", after=["a"]), start("r"))
+    assert shape(prog) == ["Cdma", "Sdma", "Wdma:poll", "Cacc_a", "Sacc_a"]
 
 
 def test_waits_are_ordered_by_when_their_task_started():
-    """ra's earlier task started before the DMA's load, so ra is waited for first."""
-    first_ra = [stream("r0", "ra"), start("r0"), dma("a"), start("a")]
-    prog = lowered(*first_ra, stream("r1", "ra", after=["a"]), start("r1"))
-    assert shape(prog)[-3:] == ["Wra:poll", "Wdma:poll", "Sra"]
-    first_dma = [dma("a"), start("a"), stream("r0", "ra"), start("r0")]
-    prog = lowered(*first_dma, stream("r1", "ra", after=["a"]), start("r1"))
-    assert shape(prog)[-3:] == ["Wdma:poll", "Wra:poll", "Sra"]
+    """acc_a's earlier task started before the DMA's load, so acc_a is waited for first."""
+    first_ra = [stream("r0", "acc_a"), start("r0"), dma("a"), start("a")]
+    prog = lowered(*first_ra, stream("r1", "acc_a", after=["a"]), start("r1"))
+    assert shape(prog)[-3:] == ["Wacc_a:poll", "Wdma:poll", "Sacc_a"]
+    first_dma = [dma("a"), start("a"), stream("r0", "acc_a"), start("r0")]
+    prog = lowered(*first_dma, stream("r1", "acc_a", after=["a"]), start("r1"))
+    assert shape(prog)[-3:] == ["Wdma:poll", "Wacc_a:poll", "Sacc_a"]
 
 
 def test_the_wait_mode_is_the_waited_tasks():
     prog = lowered(
-        dma("a", wait_mode="signal"), start("a"), stream("r", "ra", after=["a"]), start("r")
+        dma("a", wait_mode="signal"), start("a"), stream("r", "acc_a", after=["a"]), start("r")
     )
     assert "Wdma:signal" in shape(prog)
 
 
 def group(k: int, after: list[str] = ()) -> list[dict]:
-    """ra, rb, wr and acc configured and started together as task group k."""
+    """acc_a, acc_b, acc_out and acc configured and started together as task group k."""
     return [
-        stream(f"ra{k}", "ra", after=list(after)), stream(f"rb{k}", "rb", word=72),
-        stream(f"wr{k}", "wr", word=144), add(f"acc{k}"),
+        stream(f"ra{k}", "acc_a", after=list(after)), stream(f"rb{k}", "acc_b", word=72),
+        stream(f"wr{k}", "acc_out", word=144), add(f"acc{k}"),
         start(f"ra{k}", f"rb{k}", f"wr{k}", f"acc{k}"),
     ]  # fmt: skip
 
 
 def test_a_wait_on_the_writer_covers_its_group():
-    """wr finishes last in its group: after waiting for it, ra, rb and acc are free."""
+    """acc_out finishes last in its group: after waiting for it, acc_a, acc_b and acc are free."""
     prog = lowered(
         *group(0), dma("c", "l1_to_l2", src=1152, dst=2048, after=["wr0"]), start("c"),
         *group(1),
     )  # fmt: skip
     tail = shape(prog)[shape(prog).index("Sdma") + 1 :]
-    assert tail == ["Cra", "Crb", "Cwr", "Cacc", "Sra", "Srb", "Swr", "Sacc"]
+    assert tail == ["Cacc_a", "Cacc_b", "Cacc_out", "Cacc", "Sacc_a", "Sacc_b", "Sacc_out", "Sacc"]
 
 
 def test_a_needed_wait_the_writer_covers_is_left_out():
-    """ra and rb are busy too, but waiting for wr covers them (fmul's tiles, D66)."""
+    """acc_a and acc_b are busy too, but waiting for acc_out covers them (fmul's tiles, D66)."""
     prog = lowered(*group(0), *group(1))
-    assert shape(prog)[-5:] == ["Wwr:poll", "Sra", "Srb", "Swr", "Sacc"]
+    assert shape(prog)[-5:] == ["Wacc_out:poll", "Sacc_a", "Sacc_b", "Sacc_out", "Sacc"]
 
 
 def test_the_writer_covers_only_tasks_started_with_it():
-    """ra's task started on its own: waiting for wr says nothing about it."""
+    """acc_a's task started on its own: waiting for acc_out says nothing about it."""
     prog = lowered(
-        stream("r", "ra"), start("r"),
-        stream("s", "rb"), stream("w", "wr"), add("x"), start("s", "w", "x"),
+        stream("r", "acc_a"), start("r"),
+        stream("s", "acc_b"), stream("w", "acc_out"), add("x"), start("s", "w", "x"),
         sync("w"),
-        stream("r1", "ra"), stream("s1", "rb"), start("r1", "s1"),
+        stream("r1", "acc_a"), stream("s1", "acc_b"), start("r1", "s1"),
     )  # fmt: skip
-    assert shape(prog)[-3:] == ["Wra:poll", "Sra", "Srb"]
+    assert shape(prog)[-3:] == ["Wacc_a:poll", "Sacc_a", "Sacc_b"]
 
 
 def test_upstream_follows_attach_and_the_write_flag():
-    assert upstream(cluster("alu4")) == {"acc": ["ra", "rb"], "wr": ["acc"]}
-    assert upstream(cluster("red4")) == {"acc": ["ra"], "wr": ["acc"]}
+    assert upstream(cluster("alu4")) == {"acc": ["acc_a", "acc_b"], "acc_out": ["acc"]}
+    assert upstream(cluster("red4")) == {"acc": ["acc_in"], "acc_out": ["acc"]}
 
 
 # =============================================================================
@@ -288,7 +288,7 @@ GOOD_DMA = dma("x")["values"]
             "loops",
         ),
         ([{**add("x"), "values": {"n": 16, "T": 4}}, start("x")], "parameters"),
-        ([{**stream("x", "ra"), "values": {"base": 0}}, start("x")], "missing"),
+        ([{**stream("x", "acc_a"), "values": {"base": 0}}, start("x")], "missing"),
         (
             [
                 bad_values({**GOOD_DMA, "src": {"base": 0, "bounds": 8, "strides": [64]}}),

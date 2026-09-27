@@ -88,8 +88,8 @@ and task-list work below is done; the rest follows in table order.
 | REF1 | NumPy reference executor on `.snaxdfg` (D20, D79), symbols bound; an accelerated node runs through its BRM's function | DFG1, BRM3 | The imported vecadd equals the kernel's `reference` on `make_inputs`, for N a multiple of the lane count and not; plain, split and accelerated graphs agree (tests/dfg/test_execute.py) | `done` |
 | VIS5 | DFG viewer (D76, D81): `python -m snax_forge.viz.dfg FILE|DIR ...`, pixi `view-dfg`; several files side by side, a directory as its files in order, Reload, a broken file's error in its panel; drawn top to bottom: containers, maps as nested boxes by loop kind, tasklets, accelerated nodes, memlets as SVG edges to connectors that carry the subsets | DFG1, VIS1 | API tests (tests/viz/test_dfg.py); `vecadd.snaxdfg`, `vecadd_split.snaxdfg` and `vecadd_accelerated.snaxdfg`, and `out/sandbox/vecadd/`, checked by eye side by side | `done` |
 | SBX1 | SNAX-SANDBOX (D72, D73): registered transforms `split_map` and `bind` (absorbs DFG2: the pattern predicate and design-param extraction), the recipe format with symbol bindings, the reference check after every step, a CLI writing each step's `.snaxdfg`; open item 35 left to DP1 (D80) | DFG1, REF1, BRM3 | The vecadd recipe gives `vecadd_accelerated.snaxdfg`: a temporal loop of N / W and a spatial loop of W, bound to `elementwise_add`; W = 4 and W = 8 both pass the reference check; a bound that is not a multiple of W (open item 31) and a W the BRM does not allow are rejected (tests/sandbox) | `done` |
+| NAME1 | Derived names (D75, D83): streamers `<instance>_<port>` and task names `<node>_<component>`, `load_<container>`, `store_<container>` (vecadd's as the imported graph names them, `_<k>` per tile) in the cluster builders, every `tasks.json`, the tests and the CONTRACTS.md snippets; vecadd's L2 packed | LOW1b, IMP1 | Every scenario keeps its cycle count and its profile up to the names (tests/lower, tests/snax_model/test_scenario.py) | `done` |
 | DP1 | Design point (D74): written by the sandbox from a recipe; the mapped DFG, the memory plan (a layout per container and memory, set by a place step), the instances, the platform; closes open item 29 | SBX1 | vecadd's design point places a, b and c where `scenarios/vecadd` has them; validation catches overlapping containers, out-of-range addresses, unknown BRMs and implementations | todo |
-| NAME1 | Derived names (D75): streamers `<instance>_<port>` and task names `<node>_<component>`, `load_<container>`, `store_<container>` (vecadd's as the imported graph names them) in the cluster builders, every `tasks.json`, the tests and the CONTRACTS.md snippets | LOW1b, IMP1 | Every scenario keeps its cycle count (tests/lower) | todo |
 | LOW1c | Design point + BRMs → cluster file (D53): accelerator entries from BRM interface and timing, one streamer per port named `<instance>_<port>` with `n_ports` = lanes, platform parts from the design point | DP1, NAME1 | Cluster file for the `vecadd` design point equals `scenarios/clusters/alu4.json` | todo |
 | LOW1a | Design point → ordered task list (D45) in the format of D64: order from the mapped DFG, sequential per tile; loads and stores from the memory plan; streamer values from memlets through layouts (D73); `after` from the memlets; derived task names (D75) | DP1, LOW1b, NAME1 | Task list for the `vecadd` design point equals `scenarios/vecadd/tasks.json` | todo |
 | E2E1 | Full `vecadd` path: kernel → import → recipe → design point → cluster file and task list → scenario (inputs from `make_inputs`) → run | all of the above | Output equals the kernel's reference and REF1 exactly; cycles equal a run of `scenarios/vecadd` | todo |
@@ -218,8 +218,10 @@ highlights it in every step. D82 followed: a BRM says what one lane
 computes (`function.code`), `bind` checks the tasklet against it, and a
 bound graph records what it replaced, so `unbind` and `join_map` take
 `vecadd_accelerated.snaxdfg` back to the imported graph
-(`recipes/vecadd_undo.json`). Next DP1 writes the design point (and settles
-where the platform lives, open item 35), NAME1 renames the streamers, LOW1c
+(`recipes/vecadd_undo.json`). NAME1 is done (D83): the scenarios use the
+derived names (`acc_a`, `add_acc_a`, `load_A`) with every cycle count kept.
+Next DP1 writes the design point (and settles where the platform lives,
+open item 35), LOW1c
 and LOW1a derive `alu4.json` and `vecadd/tasks.json` from the design point,
 and E2E1 runs the whole path. M4b follows.
 

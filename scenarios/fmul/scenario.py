@@ -13,8 +13,8 @@ apart. Integer data (D28).
 
 The program is lowered from tasks.json (D64, D65) and is the one fmul was
 scheduled by hand with before (open item 26, closed by D66). Six of its syncs
-are there only to keep that program: the one before starting load_a_1, the
-one before each store_c_k start, and the second sync on store_c_3. Each is a
+are there only to keep that program: the one before starting load_A_1, the
+one before each store_C_k start, and the second sync on store_C_3. Each is a
 wait on a DMA that was already waited for, one cycle each; without them fmul
 runs 519 cycles instead of 525.
 """

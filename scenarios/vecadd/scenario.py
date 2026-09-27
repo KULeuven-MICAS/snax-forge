@@ -17,7 +17,7 @@ from snax_forge.snax_model.scenario import MemInit, Scenario
 
 HERE = Path(__file__).resolve().parent
 N = 64
-L2_A, L2_B = 0, 1024  # byte addresses of a and b in L2; c is stored at 2048
+L2_A, L2_B = 0, 512  # byte addresses of a and b in L2, packed; c is stored at 1024
 
 
 def make() -> tuple[Scenario, dict[str, np.ndarray]]:

@@ -70,7 +70,7 @@ def test_same_directory_names_get_suffixes(tmp_path):
     [
         (0, None, None, None),
         (20, 60, None, None),
-        (20, 60, ["ra", "ctl"], None),
+        (20, 60, ["acc_a", "ctl"], None),
         (60, 20, None, None),
         (70, 71, ["xbar"], None),
         (0, None, None, ["cmd", "start", "done"]),  # the schedule's task events (D57)
@@ -117,7 +117,7 @@ def direct_count(rv, fifo, lanes, window):
 def test_fifo_window_equals_direct_count(dirs, name):
     rv = api.load_run(dirs[(name, "beat")])
     res = api.fifo_windows(rv)
-    assert res["available"] and set(res["streamers"]) == {"ra", "rb", "wr"}
+    assert res["available"] and set(res["streamers"]) == {"acc_a", "acc_b", "acc_out"}
     for s, win in res["streamers"].items():
         assert win["reason"] is None and win["owners"] == [s, "acc"]
         f = rv.outputs.profile.streamers[s].fifo

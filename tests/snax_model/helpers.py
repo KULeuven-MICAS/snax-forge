@@ -56,18 +56,20 @@ def build_l1(skip=True, n_banks=NB, rows=64, read_latency=1):
     return cl, mem, xb
 
 
-def compute_blocks(cl, xb, lanes=4, fifo_depth=2, acc_cfg=None, temporal_dims=1):
+def compute_blocks(cl, xb, lanes=4, fifo_depth=2, acc_cfg=None, temporal_dims=1, names=None):
     """Readers ra, rb, writer wr and an accelerator (elementwise add by default).
 
-    ``rb`` is None for a single-input accelerator (the reduce stub).
+    ``rb`` is None for a single-input accelerator (the reduce stub). ``names``
+    renames the three streamers, e.g. to alu4's ``acc_a``, ``acc_b``, ``acc_out``.
     """
     cfg = StreamerConfig(n_ports=lanes, fifo_depth=fifo_depth, temporal_dims=temporal_dims)
     wcfg = StreamerConfig(write=True, n_ports=lanes, fifo_depth=fifo_depth,
                           temporal_dims=temporal_dims)  # fmt: skip
     acc_cfg = acc_cfg or elementwise_stub(lanes=lanes)
-    ra = cl.add(Streamer("ra", xb, cfg))
-    rb = cl.add(Streamer("rb", xb, cfg)) if len(acc_cfg.inputs) > 1 else None
-    wr = cl.add(Streamer("wr", xb, wcfg))
+    na, nb, nw = names or ("ra", "rb", "wr")
+    ra = cl.add(Streamer(na, xb, cfg))
+    rb = cl.add(Streamer(nb, xb, cfg)) if len(acc_cfg.inputs) > 1 else None
+    wr = cl.add(Streamer(nw, xb, wcfg))
     acc = cl.add(Accelerator("acc", cl, acc_cfg))
     ins = [p.name for p in acc_cfg.inputs]
     acc.attach(ins[0], ra.fifo)

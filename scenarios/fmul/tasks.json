@@ -3,7 +3,7 @@
  "steps": [
   {
    "op": "configure",
-   "task_name": "load_a_0",
+   "task_name": "load_A_0",
    "type": "dma",
    "component": "dma",
    "after": [],
@@ -14,10 +14,10 @@
     "dst": {"base": 0, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_a_0"]},
+  {"op": "start", "tasks": ["load_A_0"]},
   {
    "op": "configure",
-   "task_name": "load_b_0",
+   "task_name": "load_B_0",
    "type": "dma",
    "component": "dma",
    "after": [],
@@ -28,13 +28,13 @@
     "dst": {"base": 64, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_b_0"]},
+  {"op": "start", "tasks": ["load_B_0"]},
   {
    "op": "configure",
-   "task_name": "mul_ra_0",
+   "task_name": "mul_acc_a_0",
    "type": "streamer",
-   "component": "ra",
-   "after": ["load_a_0"],
+   "component": "acc_a",
+   "after": ["load_A_0"],
    "wait_mode": "poll",
    "values": {
     "base": 0,
@@ -45,10 +45,10 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_rb_0",
+   "task_name": "mul_acc_b_0",
    "type": "streamer",
-   "component": "rb",
-   "after": ["load_b_0"],
+   "component": "acc_b",
+   "after": ["load_B_0"],
    "wait_mode": "poll",
    "values": {
     "base": 64,
@@ -59,9 +59,9 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_wr_0",
+   "task_name": "mul_acc_out_0",
    "type": "streamer",
-   "component": "wr",
+   "component": "acc_out",
    "after": [],
    "wait_mode": "poll",
    "values": {
@@ -80,10 +80,10 @@
    "wait_mode": "poll",
    "values": {"n": 16}
   },
-  {"op": "start", "tasks": ["mul_ra_0", "mul_rb_0", "mul_wr_0", "mul_acc_0"]},
+  {"op": "start", "tasks": ["mul_acc_a_0", "mul_acc_b_0", "mul_acc_out_0", "mul_acc_0"]},
   {
    "op": "configure",
-   "task_name": "load_a_1",
+   "task_name": "load_A_1",
    "type": "dma",
    "component": "dma",
    "after": [],
@@ -94,11 +94,11 @@
     "dst": {"base": 128, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "sync", "task": "load_b_0", "mode": "poll"},
-  {"op": "start", "tasks": ["load_a_1"]},
+  {"op": "sync", "task": "load_B_0", "mode": "poll"},
+  {"op": "start", "tasks": ["load_A_1"]},
   {
    "op": "configure",
-   "task_name": "load_b_1",
+   "task_name": "load_B_1",
    "type": "dma",
    "component": "dma",
    "after": [],
@@ -109,13 +109,13 @@
     "dst": {"base": 192, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_b_1"]},
+  {"op": "start", "tasks": ["load_B_1"]},
   {
    "op": "configure",
-   "task_name": "mul_ra_1",
+   "task_name": "mul_acc_a_1",
    "type": "streamer",
-   "component": "ra",
-   "after": ["load_a_1"],
+   "component": "acc_a",
+   "after": ["load_A_1"],
    "wait_mode": "poll",
    "values": {
     "base": 128,
@@ -126,10 +126,10 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_rb_1",
+   "task_name": "mul_acc_b_1",
    "type": "streamer",
-   "component": "rb",
-   "after": ["load_b_1"],
+   "component": "acc_b",
+   "after": ["load_B_1"],
    "wait_mode": "poll",
    "values": {
     "base": 192,
@@ -140,9 +140,9 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_wr_1",
+   "task_name": "mul_acc_out_1",
    "type": "streamer",
-   "component": "wr",
+   "component": "acc_out",
    "after": [],
    "wait_mode": "poll",
    "values": {
@@ -161,13 +161,13 @@
    "wait_mode": "poll",
    "values": {"n": 16}
   },
-  {"op": "start", "tasks": ["mul_ra_1", "mul_rb_1", "mul_wr_1", "mul_acc_1"]},
+  {"op": "start", "tasks": ["mul_acc_a_1", "mul_acc_b_1", "mul_acc_out_1", "mul_acc_1"]},
   {
    "op": "configure",
-   "task_name": "store_c_0",
+   "task_name": "store_C_0",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_wr_0"],
+   "after": ["mul_acc_out_0"],
    "wait_mode": "poll",
    "values": {
     "direction": "l1_to_l2",
@@ -175,14 +175,14 @@
     "dst": {"base": 1280, "bounds": [2], "strides": [64]}
    }
   },
-  {"op": "sync", "task": "load_b_1", "mode": "poll"},
-  {"op": "start", "tasks": ["store_c_0"]},
+  {"op": "sync", "task": "load_B_1", "mode": "poll"},
+  {"op": "start", "tasks": ["store_C_0"]},
   {
    "op": "configure",
-   "task_name": "load_a_2",
+   "task_name": "load_A_2",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_ra_0"],
+   "after": ["mul_acc_a_0"],
    "wait_mode": "poll",
    "values": {
     "direction": "l2_to_l1",
@@ -190,13 +190,13 @@
     "dst": {"base": 0, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_a_2"]},
+  {"op": "start", "tasks": ["load_A_2"]},
   {
    "op": "configure",
-   "task_name": "load_b_2",
+   "task_name": "load_B_2",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_rb_0"],
+   "after": ["mul_acc_b_0"],
    "wait_mode": "poll",
    "values": {
     "direction": "l2_to_l1",
@@ -204,13 +204,13 @@
     "dst": {"base": 64, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_b_2"]},
+  {"op": "start", "tasks": ["load_B_2"]},
   {
    "op": "configure",
-   "task_name": "mul_ra_2",
+   "task_name": "mul_acc_a_2",
    "type": "streamer",
-   "component": "ra",
-   "after": ["load_a_2"],
+   "component": "acc_a",
+   "after": ["load_A_2"],
    "wait_mode": "poll",
    "values": {
     "base": 0,
@@ -221,10 +221,10 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_rb_2",
+   "task_name": "mul_acc_b_2",
    "type": "streamer",
-   "component": "rb",
-   "after": ["load_b_2"],
+   "component": "acc_b",
+   "after": ["load_B_2"],
    "wait_mode": "poll",
    "values": {
     "base": 64,
@@ -235,10 +235,10 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_wr_2",
+   "task_name": "mul_acc_out_2",
    "type": "streamer",
-   "component": "wr",
-   "after": ["store_c_0"],
+   "component": "acc_out",
+   "after": ["store_C_0"],
    "wait_mode": "poll",
    "values": {
     "base": 1088,
@@ -256,13 +256,13 @@
    "wait_mode": "poll",
    "values": {"n": 16}
   },
-  {"op": "start", "tasks": ["mul_ra_2", "mul_rb_2", "mul_wr_2", "mul_acc_2"]},
+  {"op": "start", "tasks": ["mul_acc_a_2", "mul_acc_b_2", "mul_acc_out_2", "mul_acc_2"]},
   {
    "op": "configure",
-   "task_name": "store_c_1",
+   "task_name": "store_C_1",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_wr_1"],
+   "after": ["mul_acc_out_1"],
    "wait_mode": "poll",
    "values": {
     "direction": "l1_to_l2",
@@ -270,14 +270,14 @@
     "dst": {"base": 1408, "bounds": [2], "strides": [64]}
    }
   },
-  {"op": "sync", "task": "load_b_2", "mode": "poll"},
-  {"op": "start", "tasks": ["store_c_1"]},
+  {"op": "sync", "task": "load_B_2", "mode": "poll"},
+  {"op": "start", "tasks": ["store_C_1"]},
   {
    "op": "configure",
-   "task_name": "load_a_3",
+   "task_name": "load_A_3",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_ra_1"],
+   "after": ["mul_acc_a_1"],
    "wait_mode": "poll",
    "values": {
     "direction": "l2_to_l1",
@@ -285,13 +285,13 @@
     "dst": {"base": 128, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_a_3"]},
+  {"op": "start", "tasks": ["load_A_3"]},
   {
    "op": "configure",
-   "task_name": "load_b_3",
+   "task_name": "load_B_3",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_rb_1"],
+   "after": ["mul_acc_b_1"],
    "wait_mode": "poll",
    "values": {
     "direction": "l2_to_l1",
@@ -299,13 +299,13 @@
     "dst": {"base": 192, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_b_3"]},
+  {"op": "start", "tasks": ["load_B_3"]},
   {
    "op": "configure",
-   "task_name": "mul_ra_3",
+   "task_name": "mul_acc_a_3",
    "type": "streamer",
-   "component": "ra",
-   "after": ["load_a_3"],
+   "component": "acc_a",
+   "after": ["load_A_3"],
    "wait_mode": "poll",
    "values": {
     "base": 128,
@@ -316,10 +316,10 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_rb_3",
+   "task_name": "mul_acc_b_3",
    "type": "streamer",
-   "component": "rb",
-   "after": ["load_b_3"],
+   "component": "acc_b",
+   "after": ["load_B_3"],
    "wait_mode": "poll",
    "values": {
     "base": 192,
@@ -330,10 +330,10 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_wr_3",
+   "task_name": "mul_acc_out_3",
    "type": "streamer",
-   "component": "wr",
-   "after": ["store_c_1"],
+   "component": "acc_out",
+   "after": ["store_C_1"],
    "wait_mode": "poll",
    "values": {
     "base": 1216,
@@ -351,13 +351,13 @@
    "wait_mode": "poll",
    "values": {"n": 16}
   },
-  {"op": "start", "tasks": ["mul_ra_3", "mul_rb_3", "mul_wr_3", "mul_acc_3"]},
+  {"op": "start", "tasks": ["mul_acc_a_3", "mul_acc_b_3", "mul_acc_out_3", "mul_acc_3"]},
   {
    "op": "configure",
-   "task_name": "store_c_2",
+   "task_name": "store_C_2",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_wr_2"],
+   "after": ["mul_acc_out_2"],
    "wait_mode": "poll",
    "values": {
     "direction": "l1_to_l2",
@@ -365,14 +365,14 @@
     "dst": {"base": 1536, "bounds": [2], "strides": [64]}
    }
   },
-  {"op": "sync", "task": "load_b_3", "mode": "poll"},
-  {"op": "start", "tasks": ["store_c_2"]},
+  {"op": "sync", "task": "load_B_3", "mode": "poll"},
+  {"op": "start", "tasks": ["store_C_2"]},
   {
    "op": "configure",
-   "task_name": "load_a_4",
+   "task_name": "load_A_4",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_ra_2"],
+   "after": ["mul_acc_a_2"],
    "wait_mode": "poll",
    "values": {
     "direction": "l2_to_l1",
@@ -380,13 +380,13 @@
     "dst": {"base": 0, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_a_4"]},
+  {"op": "start", "tasks": ["load_A_4"]},
   {
    "op": "configure",
-   "task_name": "load_b_4",
+   "task_name": "load_B_4",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_rb_2"],
+   "after": ["mul_acc_b_2"],
    "wait_mode": "poll",
    "values": {
     "direction": "l2_to_l1",
@@ -394,13 +394,13 @@
     "dst": {"base": 64, "bounds": [2], "strides": [256]}
    }
   },
-  {"op": "start", "tasks": ["load_b_4"]},
+  {"op": "start", "tasks": ["load_B_4"]},
   {
    "op": "configure",
-   "task_name": "mul_ra_4",
+   "task_name": "mul_acc_a_4",
    "type": "streamer",
-   "component": "ra",
-   "after": ["load_a_4"],
+   "component": "acc_a",
+   "after": ["load_A_4"],
    "wait_mode": "poll",
    "values": {
     "base": 0,
@@ -411,10 +411,10 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_rb_4",
+   "task_name": "mul_acc_b_4",
    "type": "streamer",
-   "component": "rb",
-   "after": ["load_b_4"],
+   "component": "acc_b",
+   "after": ["load_B_4"],
    "wait_mode": "poll",
    "values": {
     "base": 64,
@@ -425,10 +425,10 @@
   },
   {
    "op": "configure",
-   "task_name": "mul_wr_4",
+   "task_name": "mul_acc_out_4",
    "type": "streamer",
-   "component": "wr",
-   "after": ["store_c_2"],
+   "component": "acc_out",
+   "after": ["store_C_2"],
    "wait_mode": "poll",
    "values": {
     "base": 1088,
@@ -446,13 +446,13 @@
    "wait_mode": "poll",
    "values": {"n": 16}
   },
-  {"op": "start", "tasks": ["mul_ra_4", "mul_rb_4", "mul_wr_4", "mul_acc_4"]},
+  {"op": "start", "tasks": ["mul_acc_a_4", "mul_acc_b_4", "mul_acc_out_4", "mul_acc_4"]},
   {
    "op": "configure",
-   "task_name": "store_c_3",
+   "task_name": "store_C_3",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_wr_3"],
+   "after": ["mul_acc_out_3"],
    "wait_mode": "poll",
    "values": {
     "direction": "l1_to_l2",
@@ -460,16 +460,16 @@
     "dst": {"base": 1664, "bounds": [2], "strides": [64]}
    }
   },
-  {"op": "sync", "task": "load_b_4", "mode": "poll"},
-  {"op": "start", "tasks": ["store_c_3"]},
-  {"op": "sync", "task": "mul_wr_4", "mode": "poll"},
-  {"op": "sync", "task": "store_c_3", "mode": "poll"},
+  {"op": "sync", "task": "load_B_4", "mode": "poll"},
+  {"op": "start", "tasks": ["store_C_3"]},
+  {"op": "sync", "task": "mul_acc_out_4", "mode": "poll"},
+  {"op": "sync", "task": "store_C_3", "mode": "poll"},
   {
    "op": "configure",
-   "task_name": "store_c_4",
+   "task_name": "store_C_4",
    "type": "dma",
    "component": "dma",
-   "after": ["mul_wr_4"],
+   "after": ["mul_acc_out_4"],
    "wait_mode": "poll",
    "values": {
     "direction": "l1_to_l2",
@@ -477,8 +477,8 @@
     "dst": {"base": 1792, "bounds": [2], "strides": [64]}
    }
   },
-  {"op": "sync", "task": "store_c_3", "mode": "poll"},
-  {"op": "start", "tasks": ["store_c_4"]},
-  {"op": "sync", "task": "store_c_4", "mode": "poll"}
+  {"op": "sync", "task": "store_C_3", "mode": "poll"},
+  {"op": "start", "tasks": ["store_C_4"]},
+  {"op": "sync", "task": "store_C_4", "mode": "poll"}
  ]
 }

@@ -182,7 +182,7 @@ registered name (`add`, `sub`, `mul`, `min`, `max`, `and`, `or`, `xor`).
    "kind": "accel",
    "accel": "reduce",
    "params": {"lanes": 4, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1},
-   "attach": {"in": "ra", "out": "wr"}
+   "attach": {"in": "acc_in", "out": "acc_out"}
   },
 ```
 
@@ -252,10 +252,10 @@ side does not change with them.
 
 <!-- snippet: scenarios/vecadd/scenario.json -->
 ```json
-  {"op": "csr_write", "reg": "ra.base", "value": 0},
-  {"op": "csr_write", "reg": "ra.tbound[0]", "value": 16},
-  {"op": "csr_write", "reg": "ra.tstride[0]", "value": 32},
-  {"op": "csr_write", "reg": "ra.sstride[0]", "value": 8},
+  {"op": "csr_write", "reg": "acc_a.base", "value": 0},
+  {"op": "csr_write", "reg": "acc_a.tbound[0]", "value": 16},
+  {"op": "csr_write", "reg": "acc_a.tstride[0]", "value": 32},
+  {"op": "csr_write", "reg": "acc_a.sstride[0]", "value": 8},
 ```
 
 16 beats of 4 words: 4 lanes 8 bytes apart (`sstride[0]`), one beat every 32
@@ -366,10 +366,10 @@ built), so `done_cycle` always belongs to the task the wait is for.
 
 <!-- snippet: scenarios/reduce/scenario.json -->
 ```json
-  {"op": "csr_write", "reg": "ra.start", "value": 1},
-  {"op": "csr_write", "reg": "wr.start", "value": 1},
+  {"op": "csr_write", "reg": "acc_in.start", "value": 1},
+  {"op": "csr_write", "reg": "acc_out.start", "value": 1},
   {"op": "csr_write", "reg": "acc.start", "value": 1},
-  {"op": "wait", "block": "wr", "mode": "signal"},
+  {"op": "wait", "block": "acc_out", "mode": "signal"},
   {"op": "wait", "block": "acc", "mode": "poll"},
   {"op": "csr_read", "reg": "acc.busy_cycles"}
 ```
@@ -395,7 +395,7 @@ the tests (D41). Two files, because one cluster serves many programs:
  "name": "vecadd",
  "max_cycles": 5000,
  "cluster": "../clusters/alu4.json",
- "memory": [{"mem": "l2", "addr": 0, "npy": "a.npy"}, {"mem": "l2", "addr": 1024, "npy": "b.npy"}],
+ "memory": [{"mem": "l2", "addr": 0, "npy": "a.npy"}, {"mem": "l2", "addr": 512, "npy": "b.npy"}],
 ```
 
 `memory` is a list of fills applied in order before the run. Each has `mem`
@@ -498,8 +498,8 @@ order — identical with skipping on and off.
 
 <!-- snippet: run:reduce/trace.jsonl -->
 ```json
-{"t": 0, "k": "cmd", "src": "ctl", "pc": 0, "op": "csr_write", "last": 0, "reg": "ra.base", "value": 0}
-{"t": 14, "k": "fifo", "src": "ra.fifo", "lane": 0, "count": 1}
+{"t": 0, "k": "cmd", "src": "ctl", "pc": 0, "op": "csr_write", "last": 0, "reg": "acc_in.base", "value": 0}
+{"t": 14, "k": "fifo", "src": "acc_in.fifo", "lane": 0, "count": 1}
 ```
 
 **Class intervals** are not events: `on_gap` reports a skipped range only
@@ -509,7 +509,7 @@ kept per component and written to `trace_meta.json` as half-open runs
 
 <!-- snippet: run:reduce/trace_meta.json -->
 ```json
-  "ra": [["idle", 0, 12], ["busy", 12, 28], ["idle", 28, 35]],
+  "acc_in": [["idle", 0, 12], ["busy", 12, 28], ["idle", 28, 35]],
 ```
 
 Two things need the intervals rather than the totals, so they need at least a
@@ -597,6 +597,14 @@ dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with base,
 accel     its start parameters by name: n, then any named rate (e.g. T)
 ```
 
+**Names** (D75, D83). A streamer is named after the accelerator port it
+serves, `<instance>_<port>` (`acc_a`, `acc_out`). A task is
+`<node>_<component>` (`add_acc_a`, `add_acc`), a DMA task
+`load_<container>` or `store_<container>` (`load_A`, `store_C`), with node
+and container names as the imported graph has them, and `_<k>` appended for
+tile `k` (`add_acc_a_2`). Scenarios without a kernel (fmul, reduce, dma)
+name their containers `A`, `B`, `C` as vecadd does.
+
 Only the loops a task uses are given; the adapter pads the rest with bound
 1 and stride 0. `after` names earlier tasks this one needs finished before
 it starts: data it reads, and a buffer it overwrites. `wait_mode` (`poll`
@@ -635,28 +643,28 @@ the writer.
    "wait_mode": "poll",
    "values": {"n": 16}
   },
-  {"op": "start", "tasks": ["add_ra", "add_rb", "add_wr", "add_acc"]},
+  {"op": "start", "tasks": ["add_acc_a", "add_acc_b", "add_acc_out", "add_acc"]},
   {
    "op": "configure",
-   "task_name": "store_c",
+   "task_name": "store_C",
    "type": "dma",
    "component": "dma",
-   "after": ["add_wr"],
+   "after": ["add_acc_out"],
    "wait_mode": "poll",
    "values": {
     "direction": "l1_to_l2",
     "src": {"base": 1152, "bounds": [8], "strides": [64]},
-    "dst": {"base": 2048, "bounds": [8], "strides": [64]}
+    "dst": {"base": 1024, "bounds": [8], "strides": [64]}
    }
   },
-  {"op": "start", "tasks": ["store_c"]},
-  {"op": "sync", "task": "store_c", "mode": "poll"}
+  {"op": "start", "tasks": ["store_C"]},
+  {"op": "sync", "task": "store_C", "mode": "poll"}
 ```
 
 From the first of the adder's configures on, this lowers to the 13
-configuration writes of `ra`, `rb`, `wr` and `acc`, `wait dma` (for the loads
-in `add_ra`'s and `add_rb`'s `after`), the four starts, the DMA's 11
-configuration writes, `wait wr`, the DMA's start and a final `wait dma`: the
+configuration writes of `acc_a`, `acc_b`, `acc_out` and `acc`, `wait dma` (for
+the loads in `add_acc_a`'s and `add_acc_b`'s `after`), the four starts, the
+DMA's 11 configuration writes, `wait acc_out`, the DMA's start and a final `wait dma`: the
 last 32 of the 57 commands of `scenarios/vecadd/scenario.json`.
 
 ## 10. Block runtime model

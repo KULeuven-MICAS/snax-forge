@@ -121,8 +121,8 @@ def test_vecadd_from_cli(tmp_path):
     l2 = np.load(tmp_path / "l2.npy")
     a, b = npy("vecadd", "a.npy"), npy("vecadd", "b.npy")
     assert l2.shape == (4096, 1) and l2.dtype == np.int64
-    assert np.array_equal(l2[256:320, 0], a + b)  # L2 byte 2048
-    assert np.array_equal(l2[:64, 0], a) and np.array_equal(l2[128:192, 0], b)
+    assert np.array_equal(l2[128:192, 0], a + b)  # L2 byte 1024
+    assert np.array_equal(l2[:64, 0], a) and np.array_equal(l2[64:128, 0], b)
 
 
 def test_vecadd_tiled_from_cli(tmp_path):
@@ -187,22 +187,22 @@ def test_dma_from_cli(tmp_path):
 
 
 def test_vecadd_conflict_from_cli(tmp_path):
-    """b in a's banks (VIS3's conflict case): only ra and rb collide, rb loses.
+    """b in a's banks (VIS3's conflict case): only acc_a and acc_b collide, acc_b loses.
 
     Numbers pinned from the generator with 1-cycle writes and reads: 8
-    cycles more than vecadd's 77 (rb's 7 stall cycles, plus one because the
-    controller polls wr every 4 cycles), conflicts only on the banks a and b
+    cycles more than vecadd's 77 (acc_b's 7 stall cycles, plus one because the
+    controller polls acc_out every 4 cycles), conflicts only on the banks a and b
     share while both readers run, every stall on rb's ports, and the data
     unchanged.
     """
     assert cli("vecadd_conflict", tmp_path) == 0
     a, b = npy("vecadd_conflict", "a.npy"), npy("vecadd_conflict", "b.npy")
-    assert np.array_equal(np.load(tmp_path / "l2.npy")[256:320, 0], a + b)
+    assert np.array_equal(np.load(tmp_path / "l2.npy")[128:192, 0], a + b)
     prof = read_outputs(tmp_path).profile
     assert prof.total_cycles == 85
     assert [i for i, c in enumerate(prof.banks.conflicts) if c] == [0, 1, 2, 3, 8, 9, 10, 11]
     stalls = {name: p.stalls for name, p in prof.ports.items() if p.stalls}
-    assert stalls == {f"rb.{i}": 7 for i in range(4)}
+    assert stalls == {f"acc_b.{i}": 7 for i in range(4)}
 
 
 def test_cli_as_a_process(tmp_path):
@@ -352,7 +352,10 @@ def test_registration_order_is_file_order():
     order = [c.name for c in sc.cluster.components]
     assert [c.name for c in b.cluster] == order
     ports = [p.name for p in b.cluster["xbar"].ports]
-    assert ports == ["dma.wide", *(f"{s}.{i}" for s in ("ra", "rb", "wr") for i in range(4))]
+    assert ports == [
+        "dma.wide",
+        *(f"{s}.{i}" for s in ("acc_a", "acc_b", "acc_out") for i in range(4)),
+    ]
     sources = run(sc, trace_level="task").trace.sources
     assert [s for s in sources if not s.endswith(".fifo")] == order
 
@@ -360,13 +363,15 @@ def test_registration_order_is_file_order():
 def test_swapped_components_swap_ports_and_sources():
     d = inline_dict()
     comps = d["cluster"]["components"]
-    comps[2], comps[3] = comps[3], comps[2]  # rb before ra
+    comps[2], comps[3] = comps[3], comps[2]  # acc_b before acc_a
     sc = from_dict(d)
     res = run(sc, trace_level="task")
-    assert [p.name for p in build(sc).cluster["xbar"].ports][1:5] == [f"rb.{i}" for i in range(4)]
-    assert res.trace.sources.index("rb") < res.trace.sources.index("ra")
+    assert [p.name for p in build(sc).cluster["xbar"].ports][1:5] == [
+        f"acc_b.{i}" for i in range(4)
+    ]
+    assert res.trace.sources.index("acc_b") < res.trace.sources.index("acc_a")
     a, b = npy("vecadd", "a.npy"), npy("vecadd", "b.npy")
-    assert np.array_equal(res.l2[256:320, 0], a + b)
+    assert np.array_equal(res.l2[128:192, 0], a + b)
 
 
 # =============================================================================
@@ -381,7 +386,7 @@ def test_registered_op_is_usable():
         d["cluster"]["components"][5]["params"]["op"] = "absdiff"
         res = run(from_dict(d))
         a, b = npy("vecadd", "a.npy"), npy("vecadd", "b.npy")
-        assert np.array_equal(res.l2[256:320, 0], np.abs(a - b))
+        assert np.array_equal(res.l2[128:192, 0], np.abs(a - b))
     finally:
         del OPS["absdiff"]
     with pytest.raises(ValueError):
@@ -414,7 +419,7 @@ def _without_l2(d):
 
 
 BROKEN = {
-    "component kind": (UnknownComponentKind, lambda d: _comp(d, "wr").update(kind="writer")),
+    "component kind": (UnknownComponentKind, lambda d: _comp(d, "acc_out").update(kind="writer")),
     "accel kind": (UnknownAccelKind, lambda d: _comp(d, "acc").update(accel="conv")),
     "op": (UnknownOpError, lambda d: _comp(d, "acc")["params"].update(op="div")),
     "block in reg": (UnknownBlockError, lambda d: _set(d, ["program", 0, "reg"], "dmx.direction")),
@@ -426,16 +431,16 @@ BROKEN = {
     "wait block": (UnknownBlockError, lambda d: _set(d, ["program", 23, "block"], "dmx")),
     "map block": (UnknownBlockError, lambda d: d["cluster"]["register_map"]["blocks"].append("x")),
     "port missing": (PortAttachError, lambda d: _comp(d, "acc")["attach"].pop("b")),
-    "port unknown": (PortAttachError, lambda d: _comp(d, "acc")["attach"].update(c="rb")),
+    "port unknown": (PortAttachError, lambda d: _comp(d, "acc")["attach"].update(c="acc_b")),
     "port target": (PortAttachError, lambda d: _comp(d, "acc")["attach"].update(b="dma")),
-    "port side": (PortAttachError, lambda d: _comp(d, "acc")["attach"].update(b="wr")),
+    "port side": (PortAttachError, lambda d: _comp(d, "acc")["attach"].update(b="acc_out")),
     "port lanes": (PortAttachError, lambda d: _comp(d, "acc")["params"].update(lanes=2)),
     "mem outside": (MemoryInitError, lambda d: _set(d, ["memory", 1, "addr"], 32768 - 8)),
     "mem misaligned": (MemoryInitError, lambda d: _set(d, ["memory", 1, "addr"], 1028)),
     "mem two sources": (MemoryInitError, lambda d: d["memory"][0].update(data=[1])),
     "mem npy missing": (MemoryInitError, lambda d: d["memory"][0].update(npy="nope.npy")),
     "mem no l2": (MemoryInitError, lambda d: _without_l2(d)),
-    "unknown key": (ScenarioError, lambda d: _comp(d, "ra")["config"].update(fifo_dpeth=4)),
+    "unknown key": (ScenarioError, lambda d: _comp(d, "acc_a")["config"].update(fifo_dpeth=4)),
     "no controller": (ScenarioError, lambda d: d["cluster"]["components"].pop()),
 }
 

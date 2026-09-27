@@ -51,7 +51,7 @@ def test_builder_writes_the_values_of_its_arguments():
     t = Tasks("b", cluster("alu4"))
     desc = DmaDescriptor("l1_to_l2", DmaPattern(64, (2, 3), (64, 128)), DmaPattern(0, (6,), (64,)))
     t.configure("st", "dma", desc, wait_mode="signal")
-    t.configure("rd", "ra", StreamerRegs(8, (16,), (32,), (4,), (8,)), after=["st"])
+    t.configure("rd", "acc_a", StreamerRegs(8, (16,), (32,), (4,), (8,)), after=["st"])
     t.configure("x", "acc", {"n": 16})
     t.start("st")
     t.start("rd", "x")
@@ -72,7 +72,7 @@ def test_builder_writes_the_values_of_its_arguments():
 def test_builder_checks_arguments_where_they_are_made():
     t = Tasks("b", cluster("alu4"))
     with pytest.raises(ValueError, match="design-time"):
-        t.configure("r", "ra", StreamerRegs(0, (16,), (32,), (2, 2), (8, 64)))
+        t.configure("r", "acc_a", StreamerRegs(0, (16,), (32,), (2, 2), (8, 64)))
     with pytest.raises(TaskListError, match="no component"):
         t.configure("r", "rc", StreamerRegs(0, (16,), (32,), (4,), (8,)))
 
@@ -86,7 +86,7 @@ def test_builder_checks_arguments_where_they_are_made():
                 "l2_to_l1", DmaPattern(0, (8, 2), (1024, 64)), DmaPattern(0, (16,), (64,))
             ),
         ),
-        ("ra", StreamerRegs(24, (4,), (-32,), (4,), (8,))),
+        ("acc_a", StreamerRegs(24, (4,), (-32,), (4,), (8,))),
         ("acc", {"n": 7}),
     ],
 )
@@ -104,14 +104,17 @@ def test_values_and_start_arguments_are_inverses(block, arg):
     "steps, match",
     [
         ([dma("a"), start("a"), dma("a"), start("a")], "configured twice"),
-        ([stream("r", "ra", after=["a"]), start("r")], "'a' is not an earlier task"),
-        ([stream("r", "ra", after=["r"]), start("r")], "'r' is not an earlier task"),
+        ([stream("r", "acc_a", after=["a"]), start("r")], "'a' is not an earlier task"),
+        ([stream("r", "acc_a", after=["r"]), start("r")], "'r' is not an earlier task"),
         ([dma("a"), dma("b"), start("a"), start("b")], "configured again before its task 'a'"),
         ([start("a")], "'a' is not configured before"),
         ([dma("a"), start("a"), start("a")], "'a' is started twice"),
-        ([stream("r", "ra"), stream("s", "ra"), start("r", "s")], "configured again"),
-        ([dma("a"), stream("r", "ra", after=["a"]), start("a", "r")], "needs 'a', which has not"),
-        ([dma("a"), stream("r", "ra", after=["a"]), start("r"), start("a")], "needs 'a'"),
+        ([stream("r", "acc_a"), stream("s", "acc_a"), start("r", "s")], "configured again"),
+        (
+            [dma("a"), stream("r", "acc_a", after=["a"]), start("a", "r")],
+            "needs 'a', which has not",
+        ),
+        ([dma("a"), stream("r", "acc_a", after=["a"]), start("r"), start("a")], "needs 'a'"),
         ([dma("a"), sync("a"), start("a")], "'a' is not started before"),
         ([dma("a"), start("a"), sync("a", "spin")], "mode must be one of"),
         ([dma("a", wait_mode="spin"), start("a")], "wait_mode must be one of"),
@@ -129,7 +132,7 @@ def test_a_task_listed_twice_in_one_start():
     """Two tasks on one component cannot meet in one start: the second
     configure is refused first (above)."""
     with pytest.raises(TaskListError, match="listed twice"):
-        task_list(stream("r", "ra"), start("r", "r"))
+        task_list(stream("r", "acc_a"), start("r", "r"))
 
 
 # =============================================================================

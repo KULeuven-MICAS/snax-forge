@@ -120,12 +120,12 @@ def random_scenario(seed):
                                       contiguous(word * WORD, n_dma)))  # fmt: skip
         p.start("dma")
         p.wait("dma", mode())
-    for blk, word in (("ra", wa), ("rb", wb), ("wr", wc)):
+    for blk, word in (("acc_a", wa), ("acc_b", wb), ("acc_out", wc)):
         p.config(blk, MAKE.unit(word, nb, LANES))
     p.config("acc", {"n": nb})
-    for blk in ("ra", "rb", "wr", "acc"):
+    for blk in ("acc_a", "acc_b", "acc_out", "acc"):
         p.start(blk)
-    p.wait("wr", mode())
+    p.wait("acc_out", mode())
     p.config("dma", DmaDescriptor("l1_to_l2", contiguous(wc * WORD, n_dma),
                                   contiguous(l2c, n_dma)))  # fmt: skip
     p.start("dma")

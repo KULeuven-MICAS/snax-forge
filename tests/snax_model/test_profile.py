@@ -64,20 +64,24 @@ VECADD_CFG = ControllerConfig(
 
 
 def run_vecadd(mode="poll", skip=True, level=None, cfg=VECADD_CFG):
-    """The MOD7 vecadd (test_ctrl section 7), optionally traced."""
+    """The MOD7 vecadd (test_ctrl section 7), optionally traced.
+
+    Named and placed as scenarios/vecadd (NAME1, D83): streamers acc_a, acc_b,
+    acc_out, and a, b, c packed in L2.
+    """
     n_elems, lanes = 64, 4
     nb, n_dma = n_elems // lanes, n_elems // 8
     trace = None if level is None else Trace(level)
     cl, mem, xb, l2 = build(skip, trace)
     rng = np.random.default_rng(3)
     a, b = rng.integers(-1000, 1000, n_elems), rng.integers(-1000, 1000, n_elems)
-    l2a, l2b, l2c = 0, 1024, 2048
+    l2a, l2b, l2c = 0, 512, 1024
     l2.load(l2a, a)
     l2.load(l2b, b)
     wa, wb, wc = 0, 72, 144
     dma = cl.add(Dma("dma", xb, l2))
-    ra, rb, wr, acc = compute_blocks(cl, xb, lanes=lanes)
-    m = RegisterMap([("dma", dma), ("ra", ra), ("rb", rb), ("wr", wr), ("acc", acc)])
+    ra, rb, wr, acc = compute_blocks(cl, xb, lanes=lanes, names=("acc_a", "acc_b", "acc_out"))
+    m = RegisterMap([("dma", dma), ("acc_a", ra), ("acc_b", rb), ("acc_out", wr), ("acc", acc)])
 
     def to_l1(src, word):
         return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
@@ -90,14 +94,14 @@ def run_vecadd(mode="poll", skip=True, level=None, cfg=VECADD_CFG):
         *m.config_writes("dma", to_l1(l2b, wb)),
         Wait("dma", mode),
         m.start_write("dma"),
-        *m.config_writes("ra", unit(wa, nb, lanes)),
-        *m.config_writes("rb", unit(wb, nb, lanes)),
-        *m.config_writes("wr", unit(wc, nb, lanes)),
+        *m.config_writes("acc_a", unit(wa, nb, lanes)),
+        *m.config_writes("acc_b", unit(wb, nb, lanes)),
+        *m.config_writes("acc_out", unit(wc, nb, lanes)),
         *m.config_writes("acc", {"n": nb}),
         Wait("dma", mode),
-        *(m.start_write(x) for x in ("ra", "rb", "wr", "acc")),
+        *(m.start_write(x) for x in ("acc_a", "acc_b", "acc_out", "acc")),
         *m.config_writes("dma", to_l2(wc, l2c)),
-        Wait("wr", mode),
+        Wait("acc_out", mode),
         m.start_write("dma"),
         Wait("dma", mode),
     ]
@@ -282,9 +286,9 @@ def test_vecadd_profile_numbers():
     assert p.accelerators["acc"].cycles == {"busy": 16, "stall_out": 0, "stall_in": 1, "idle": 92}
     assert p.dmas["dma"].bytes_read == p.dmas["dma"].bytes_written == 24 * BEAT
     assert p.banks.reads == [12] * NB and p.banks.writes == [12] * NB
-    assert p.ports["dma.wide"].grants == 24 and p.ports["ra.0"].grants == 16
+    assert p.ports["dma.wide"].grants == 24 and p.ports["acc_a.0"].grants == 16
     assert p.l2["l2"].reads == 16 and p.l2["l2"].writes == 8
-    assert p.streamers["rb"].fifo.hist == [[93, 16, 0]] * 4
+    assert p.streamers["acc_b"].fifo.hist == [[93, 16, 0]] * 4
     assert p.functional_check is None
 
 
@@ -492,8 +496,8 @@ def test_order_inside_a_cycle():
     assert keys == sorted(keys)
     per_cycle = Counter(e.t for e in tr.events)
     assert max(per_cycle.values()) >= 12  # a streaming cycle: 12 streamer grants and more
-    assert tr.sources == ["xbar", "dma", "ra", "ra.fifo", "rb", "rb.fifo", "wr", "wr.fifo",
-                          "acc", "ctl"]  # fmt: skip
+    assert tr.sources == ["xbar", "dma", "acc_a", "acc_a.fifo", "acc_b", "acc_b.fifo",
+                          "acc_out", "acc_out.fifo", "acc", "ctl"]  # fmt: skip
     # Grants of one cycle come in port order.
     ports = [p.name for p in run_vecadd("poll")["cl"]["xbar"].ports]
     for t in per_cycle:

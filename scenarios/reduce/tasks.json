@@ -3,18 +3,18 @@
  "steps": [
   {
    "op": "configure",
-   "task_name": "sum_ra",
+   "task_name": "sum_acc_in",
    "type": "streamer",
-   "component": "ra",
+   "component": "acc_in",
    "after": [],
    "wait_mode": "poll",
    "values": {"base": 0, "temporal_bounds": [16], "temporal_strides": [32], "spatial_strides": [8]}
   },
   {
    "op": "configure",
-   "task_name": "sum_wr",
+   "task_name": "sum_acc_out",
    "type": "streamer",
-   "component": "wr",
+   "component": "acc_out",
    "after": [],
    "wait_mode": "poll",
    "values": {"base": 1024, "temporal_bounds": [4], "temporal_strides": [8], "spatial_strides": [8]}
@@ -28,8 +28,8 @@
    "wait_mode": "poll",
    "values": {"n": 16, "T": 4}
   },
-  {"op": "start", "tasks": ["sum_ra", "sum_wr", "sum_acc"]},
-  {"op": "sync", "task": "sum_wr", "mode": "signal"},
+  {"op": "start", "tasks": ["sum_acc_in", "sum_acc_out", "sum_acc"]},
+  {"op": "sync", "task": "sum_acc_out", "mode": "signal"},
   {"op": "sync", "task": "sum_acc", "mode": "poll"},
   {"op": "read", "reg": "acc.busy_cycles"}
  ]
