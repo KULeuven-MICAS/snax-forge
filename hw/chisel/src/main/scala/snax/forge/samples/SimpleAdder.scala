@@ -8,8 +8,8 @@ import chisel3.util._
   * The shape mirrors what a SNAX streamer presents: each port is an independent elastic channel carrying `lanes`
   * elements per beat. Nothing here knows about addresses, strides or CSRs -- address generation stays in the streamer,
   * and the datapath only ever sees data in flight. That split is what makes "one operation instance to one hardware
-  * instance" a legal binding: the SDFG has already decided the schedule, so the datapath has no scheduling decisions
-  * left to make.
+  * instance" a legal binding: the workload graph has already decided the schedule, so the datapath has no scheduling
+  * decisions left to make.
   *
   * NB the parameter is `elemWidth`, not `width`. Bundle extends Aggregate, which already declares `width:
   * chisel3.Width`; a `val width: Int` here is a type-incompatible override and will not compile. The same applies to
@@ -35,10 +35,10 @@ class ElementwiseBinaryIO(val elemWidth: Int, val lanes: Int) extends Bundle {
   * Arithmetic: Chisel's `+` on UInt truncates to the operand width, which is exactly two's-complement wraparound and
   * therefore bit-identical to NumPy's int32/int8 overflow behaviour. Addition does not care about signedness, so UInt
   * is used as a raw bit container here. Signedness starts to matter at multiply, compare and shift -- those arrive with
-  * the typed ALU set in W6.
+  * a typed ALU set.
   *
   * @param width
-  *   bits per element, taken from the DaCe dtype
+  *   bits per element, from the BRM port's dtype
   * @param lanes
   *   elements per beat, i.e. the unroll factor of the map scope
   */

@@ -20,12 +20,12 @@ import chisel3.util._
   *
   * The unit counts passes; it does not compute how many passes a problem needs. If N elements are to be processed at
   * `lanes` per beat, the driver programs ceil(N / lanes) and the arithmetic happens where N is known. Putting a divider
-  * here would duplicate a calculation the descriptor already carries in its `trips` field, and would do it in the one
+  * here would duplicate a calculation SNAX-LOWER already makes for the accelerator's `n`, and would do it in the one
   * place with no access to N.
   *
   * A consequence worth stating: a final partial tile is not handled. If `lanes` does not divide N, the last pass still
   * processes `lanes` elements and the surplus is whatever the producer supplied. Masking it is the streamer's job or a
-  * future predication port; the descriptor's `ragged` flag is what says which runs need it.
+  * future predication port (open item 31).
   *
   * ==Handshake==
   *
@@ -34,9 +34,9 @@ import chisel3.util._
   * two properties this wiring trades away -- operands must arrive in lockstep, and `valid` depends on `ready`.
   *
   * @param dataWidth
-  *   bits per element, from the DaCe dtype
+  *   bits per element, from the BRM port's dtype
   * @param lanes
-  *   elements per beat, i.e. the tile size the SDFG map was tiled by
+  *   elements per beat, i.e. the spatial bound of the map the BRM replaces (W)
   * @param loopCountWidth
   *   bits of trip counter; must hold the largest T the driver will program
   * @param supportedOps

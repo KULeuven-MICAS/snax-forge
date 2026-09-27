@@ -38,7 +38,7 @@ class SimpleAdderSpec extends AnyFlatSpec with ChiselScalatestTester {
       dut.io.b.valid.poke(true.B)
 
       // 0xFFFFFFFF + 1 == 0. If this ever fails, the emitted datapath has
-      // stopped matching the DaCe int32 golden reference and every
+      // stopped matching the NumPy int32 golden reference and every
       // differential test downstream is lying.
       for (i <- 0 until Lanes) {
         dut.io.a.bits(i).poke(Mask.U)

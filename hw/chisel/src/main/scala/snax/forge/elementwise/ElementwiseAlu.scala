@@ -9,8 +9,8 @@ import chisel3.util._
   * `supportedOps.size` on purpose: a fixed-function unit and a fully selectable one then present the same port list,
   * and swapping one for the other is a generator decision that does not ripple into whatever instantiates it.
   *
-  * The numbering is part of the descriptor contract once the JSON boundary lands -- the Python side will emit `op:
-  * "add"` and the generator will resolve it here, so these values must not be renumbered casually.
+  * A BRM names the operation (`op: "add"`) and a generator from its hardware binding (GEN1) will resolve it here, so
+  * these values must not be renumbered casually.
   */
 object ElementwiseOp {
   val Add: Int = 0
@@ -70,10 +70,10 @@ object ElementwiseOp {
   * Signedness applies to `Min` and `Max` only. Add, Sub and the bitwise operators are signedness-agnostic in two's
   * complement, and so is the truncated low half of a multiply -- which is why `Mul` needs no signed variant here, even
   * though a widening multiply would. All of these wrap exactly as NumPy's fixed-width integers do, which is what keeps
-  * the datapath bit-identical to the DaCe golden reference.
+  * the datapath bit-identical to the NumPy golden reference.
   *
   * @param dataWidth
-  *   bits per element, from the DaCe dtype
+  *   bits per element, from the BRM port's dtype
   * @param supportedOps
   *   encodings this instance can perform; one entry means fixed-function
   * @param signed
@@ -109,7 +109,7 @@ class ElementwiseAlu(
   // One supported op: no decode logic at all. firtool would constant-fold a
   // single-entry MuxLookup anyway, but emitting the bare operator keeps the
   // generated SystemVerilog readable, which matters when it is the artifact
-  // being reviewed against the descriptor.
+  // being reviewed against its BRM.
   io.out :=
     (if (results.size == 1) results.head._2
      else MuxLookup(io.opSel, results.head._2)(results.map { case (op, r) => op.U(ElementwiseOp.width.W) -> r }))

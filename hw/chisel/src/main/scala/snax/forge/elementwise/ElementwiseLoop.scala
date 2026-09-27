@@ -5,10 +5,10 @@ import chisel3.util._
 
 /** One lane, fed `loopCount` times -- the hardware image of the `loop` variant.
   *
-  * W = 1, T = N in the descriptor's shape section: the fully temporal end of the elementwise family. A single ALU is
-  * cycled once per element, which is almost certainly slower than running the loop on the CVA6 core. Its value is as a
-  * bring-up target: when the cluster integration is what is being debugged, the smallest possible datapath is the one
-  * you want on the other end of the streamer.
+  * W = 1, T = N: the fully temporal end of the elementwise family. A single ALU is cycled once per element, which is
+  * almost certainly slower than running the loop on the CVA6 core. Its value is as a bring-up target: when the cluster
+  * integration is what is being debugged, the smallest possible datapath is the one you want on the other end of the
+  * streamer.
   *
   * ==Why the counter is here and not in the streamer==
   *
@@ -42,7 +42,7 @@ import chisel3.util._
   * situation) is the worse failure.
   *
   * @param dataWidth
-  *   bits per element, from the DaCe dtype
+  *   bits per element, from the BRM port's dtype
   * @param loopCountWidth
   *   bits of trip counter; must hold the largest T the driver will program
   * @param supportedOps
@@ -60,8 +60,8 @@ class ElementwiseLoop(
   require(loopCountWidth > 0, s"loopCountWidth must be positive, got $loopCountWidth")
 
   /** Parameters are baked into the module name so that several instantiations coexist in SystemVerilog's flat, global
-    * module namespace without Chisel's positional `_1` suffixes, which carry no information. This is also the name the
-    * descriptor's `module_name` will eventually be resolved against.
+    * module namespace without Chisel's positional `_1` suffixes, which carry no information. This is also the name a
+    * BRM's hardware binding will name.
     */
   override def desiredName: String =
     s"ElementwiseLoop_w${dataWidth}_t${loopCountWidth}_${ElementwiseOp.tag(supportedOps)}"

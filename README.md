@@ -1,80 +1,111 @@
 # :hammer: :fire: SNAX-FORGE :fire: :hammer:
 
-This repository is a work-in-progress (WIP) where we develop a program that uses the DaCe IR to generate and multi-accelerator architecture for the SNAX compute cluster.
-This tool would help HW-oriented engineers bring the SW side closer to them rather than the typical otherway around were tools like DaCe make it easier for SW designers and optimization engineers to match the HW-SW combinations.
-This work's motivation is to enable a HW-SW co-design but with the perspective on the HW-side.
+SNAX-FORGE is a platform for exploring how domain-specific accelerators perform
+when plugged into a SNAX compute cluster, before committing to RTL. You bring a
+kernel and a model of your accelerator (a BRM); SNAX-FORGE imports the kernel
+into its own dataflow graph, maps it onto the cluster by a recipe you edit,
+runs it in a cycle-level Python model of the cluster, and shows where the
+cycles go. Humans and LLMs close the loop by editing the recipe or the
+platform and running again.
 
-# Anticipated Features
-1. First is to break a program into an IR and use that IR to make accelerator(s) that fit within the SNAX/PULP compute clusters. In here we use the DaCe tool and use it as a model to make our HW accelerators.
-2. We will offer some block primitives that enable an efficient yet modular designs that help constrain the design space a bit more unlike classic HLS that maps every operation on every kernel. These accelerators will be generated with Chisel.
-3. We offer also a kernel library generation, where for the given designed accelerator we automatically generate the designated library kernels that are light function calls.
-4. Finally, we have compute cluster model that simulates the flow of the accelerator for fast investigations rather than relying entirely on RTL simulations. Those can happen afterwards.
+Where to read more:
+
+| File | What it holds |
+|---|---|
+| `docs/ARCHITECTURE.md` | what each component does and how they fit together |
+| `docs/CONTRACTS.md` | every artefact between the components, field by field |
+| `docs/DECISIONS.md` | the decisions behind it, D1 onwards |
+| `docs/STATUS.md` | milestones, tasks and open items |
+| `hw/chisel/README.md` | the Chisel accelerator blocks |
 
 # Setup
-You need [pixi](https://pixi.prefix.dev/v0.28.1/) shell to install the environment:
+
+You need [pixi](https://pixi.sh):
 
 ```bash
 curl -fsSL https://pixi.sh/install.sh | sh
-```
-
-Clone the repo and install the environment:
-
-```bash
 git clone git@github.com:KULeuven-MICAS/snax-forge.git
 cd snax-forge
 pixi install
+pixi run check      # OK  python 3.11…  dace 1.0.2  networkx …  numpy …
 ```
 
-# Getting Started
+Every command below runs through pixi, from the repository root.
 
-All commands run through pixi. The whole path, from a kernel to a checked
-model run, is one command:
+# 1. The whole path
+
+One command takes a kernel to a checked model run:
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/small16.json   # writes out/flow/vecadd/
+pixi run flow recipes/vecadd.json --platform platforms/small16.json
 ```
 
-`CLAUDE.md` lists the command of every step on the way (import, sandbox,
-design, lower); `docs/ARCHITECTURE.md` says what each one does.
-
----
-
-## 1. Ingest — build and verify SDFGs
-
-**What it does.** Builds each kernel twice (raw and simplified), saves both to
-`out/sdfg/`, and checks the compiled SDFG bit-exactly against the kernel's
-NumPy reference. Prints a structural summary: state count, map entries,
-top-level map scopes, arrays, transients, free symbols. The simplified SDFG is
-what the SNAX-DFG importer reads (`pixi run import-dfg <kernel>`).
-
-```bash
-pixi run forge              # every kernel
-pixi run forge vecadd dot   # named kernels
-pixi run forge --list       # just list available kernel names
+```
+flow vecadd (vecadd: W=4; N=64) on small16 -> out/flow/vecadd/
+  sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
+  design    checks passed; platform base small16, 0 changes; memory contiguous, 0 changes -> design/
+  lower     cluster.json (7 components), tasks.json (12 steps, 57 commands)
+  scenario  scenario.json, inputs A.npy, B.npy, C.npy (make_inputs, seed 0)
+  run       85 cycles -> run/  (pixi run view out/flow/vecadd/run)
+  check     C (64 elements, from l2) equals the vecadd reference and REF1
 ```
 
-Outputs: `out/sdfg/<kernel>.raw.sdfg`, `out/sdfg/<kernel>.simplified.sdfg`,
-`out/sdfg/<kernel>.json`
-
----
-
-## 2. Model — generate, run and view a scenario
-
-**What it does.** Runs a cycle-level model of the SNAX cluster (banks,
-interconnect, streamers, accelerators, DMA/L2, register interface and
-controller) on a scenario, writes a profile, a trace and the final memory, and
-shows them in a local web viewer. No CPU and no RTL are involved; see
-`docs/ARCHITECTURE.md` sections 5.5–5.7.
-
-Quick start, from the repo root:
+It imports the kernel, applies the recipe, pairs the result with the
+platform, derives the cluster file and the task list, runs the model and
+checks the output against the kernel's own reference and the reference
+executor. Everything lands in `out/flow/<name>/`. Change a design point with
+`--set`:
 
 ```bash
-pixi run scenarios                                                   # 1. generate the scenario files
+pixi run flow recipes/vecadd.json --platform platforms/small16.json --set W=8                  # a recipe param: 73 cycles
+pixi run flow recipes/vecadd.json --platform platforms/small16.json --set platform.l1.n_banks=32
+pixi run flow recipes/vecadd.json --platform platforms/small16.json \
+     --set memory.B.l1.base=576 --set memory.C.l1.base=1152                                   # a and b in other banks: 77 cycles
+pixi run view out/flow/vecadd/run                                                              # then open http://127.0.0.1:8765/
+```
+
+A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
+the design step.
+
+# 2. Step by step
+
+The flow runs these tools in turn; each also runs on its own.
+
+| Step | Command | Writes |
+|---|---|---|
+| SDFG of a kernel | `pixi run forge vecadd` | `out/sdfg/vecadd.raw.sdfg`, `.simplified.sdfg` |
+| Import | `pixi run import-dfg vecadd` | `out/dfg/vecadd.snaxdfg` |
+| Check a graph | `pixi run check-dfg out/dfg/vecadd.snaxdfg --kernel vecadd` | nothing; compares with the kernel's reference |
+| Recipe | `pixi run sandbox recipes/vecadd.json [--set W=8]` | `out/sandbox/vecadd/<i>_<transform>.snaxdfg` |
+| Undo a recipe | `pixi run sandbox recipes/vecadd_undo.json --graph out/sandbox/vecadd/2_bind.snaxdfg --out out/sandbox/vecadd_undo` | the graph back as imported |
+| Design point | `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | `out/design/vecadd/` platform, memory plan, design point |
+| Only check | `pixi run design check out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | nothing |
+| Keep a platform | `pixi run design save out/design/vecadd/platform.json NAME` | `platforms/NAME.json` |
+| Cluster file | `pixi run lower cluster out/design/vecadd/design_point.json` | `cluster.json` beside the point |
+| Task list | `pixi run lower tasks out/design/vecadd/design_point.json` | `tasks.json` beside the point |
+
+The design step names every problem with its fix, and writes working copies
+of the platform and the memory plan (`platform.json`, `memory.json`) that
+later runs continue from with `--platform` and `--memory`.
+
+To look at graphs, e.g. every step of a recipe side by side:
+
+```bash
+pixi run view-dfg out/sandbox/vecadd/     # then open http://127.0.0.1:8766/
+```
+
+# 3. The model on its own: scenarios
+
+The model also runs hand-written scenarios, which is how SNAX-MODEL is tested
+and how a platform feature is tried before any kernel needs it.
+
+```bash
+pixi run scenarios                                                                 # 1. generate the scenario files
 pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd --trace beat   # 2. run one
-pixi run view out/vecadd                                             # 3. open http://127.0.0.1:8765/
+pixi run view out/vecadd                                                           # 3. open http://127.0.0.1:8765/
 ```
 
-### 2.1 Generate the scenarios
+### 3.1 The scenario files
 
 Each scenario is a folder under `scenarios/`. Two files in it are the sources
 you edit; the rest is generated and ignored by git:
@@ -92,26 +123,17 @@ scenarios/
     a.npy, b.npy       generated: input data
 ```
 
-```bash
-pixi run scenarios           # write the generated files
-pixi run scenarios --check   # "stale: nothing" when they match the sources
-```
+`pixi run scenarios --check` prints `stale: nothing` when the generated files
+match their sources. `pixi run model-run` and `pixi run test` write them first
+on their own. The scenarios are `vecadd`, `vecadd_conflict` (a and b in the
+same banks), `vecadd_tiled` (3 tiles, 471 cycles), `fmul` (double buffered
+multiply, 525 cycles), `reduce` and `dma`.
 
-```
-written: clusters/alu4.json, clusters/red4.json, clusters/mul1.json, dma/scenario.json, ...
-```
-
-`pixi run model-run` and `pixi run test` write them first on their own, so on a
-fresh clone step 1 is optional. The scenarios are `vecadd`, `vecadd_conflict`
-(a and b in the same banks), `vecadd_tiled` (3 tiles, 471 cycles), `fmul`
-(double buffered multiply, 525 cycles), `reduce` and `dma`.
-
-### 2.2 Run a scenario
+### 3.2 Run a scenario
 
 ```bash
 pixi run model-run scenarios/vecadd/scenario.json          --out out/vecadd --trace beat
 pixi run model-run scenarios/vecadd_conflict/scenario.json --out out/vecadd_conflict --trace beat
-pixi run model-run scenarios/fmul/scenario.json            --out out/fmul --trace task
 ```
 
 ```
@@ -127,7 +149,7 @@ compared with `diff`:
 ```bash
 diff out/vecadd/profile.json out/vecadd_conflict/profile.json
 grep '"k": "stall"' out/vecadd_conflict/trace.jsonl | head
-python -c "import numpy as np; print(np.load('out/vecadd/l2.npy')[256:264, 0])"   # first words of c
+python -c "import numpy as np; print(np.load('out/vecadd/l2.npy')[128:136, 0])"   # first words of c
 ```
 
 | Option | Meaning |
@@ -143,7 +165,7 @@ Exit codes: 0 done, 1 the run failed or did not finish, 2 the scenario is
 invalid. `--no-skip` only changes the speed, never the results; if the two ever
 disagree, that is a bug in the model.
 
-### 2.3 View in the browser
+### 3.3 View a run
 
 ```bash
 pixi run view out/vecadd out/vecadd_conflict
@@ -153,24 +175,19 @@ pixi run view out/vecadd out/vecadd_conflict
 serving vecadd, vecadd_conflict at http://127.0.0.1:8765/ (Ctrl-C to stop)
 ```
 
-Open that address in a browser. With several runs, pick one in the Run menu
-at the top. The tabs switch between the profile report and the schedule
-(every component's activity per cycle); under the schedule, the cluster view
-shows the selected cycle (banks, interconnect, streamers, accelerator, DMA).
-Click a cycle in the schedule or use the arrow keys to step. The schedule needs at least `--trace task`; the per-beat rows
-and the cluster view's traffic need `--trace beat`. After rerunning a
-scenario into the same directory, press Reload.
+With several runs, pick one in the Run menu at the top. The tabs switch
+between the profile report and the schedule (every component's activity per
+cycle); under the schedule, the cluster view shows the selected cycle (banks,
+interconnect, streamers, accelerator, DMA). Click a cycle in the schedule or
+use the arrow keys to step. The schedule needs at least `--trace task`; the
+per-beat rows and the cluster view's traffic need `--trace beat`. After
+rerunning into the same directory, press Reload.
 
-The server listens on 127.0.0.1 only. When it runs on a remote machine,
-forward the port from your laptop and open http://127.0.0.1:8765/ there:
+The server listens on 127.0.0.1 only. On a remote machine, forward the port
+from your laptop (`ssh -L 8765:127.0.0.1:8765 you@server`) and open
+http://127.0.0.1:8765/ there. Use `--port N` for another port.
 
-```bash
-ssh -L 8765:127.0.0.1:8765 you@server   # then run `pixi run view ...` on the server
-```
-
-Use `--port N` for another port.
-
-### 2.4 Change a scenario
+### 3.4 Change a scenario
 
 A task list is a readable list of steps that SNAX-LOWER turns into the
 controller's program of `csr_write`, `csr_read` and `wait` commands:
@@ -194,14 +211,27 @@ pixi run view out/tiled_try
 For example, deleting the two `sync` steps in the middle of
 `vecadd_tiled/tasks.json` overlaps each tile's first load with the previous
 store: 447 cycles instead of 471, same result. Every field of a task list is
-described in `docs/CONTRACTS.md` section 9. A new scenario is a new folder with
-a `tasks.json` and a `scenario.py` whose `make()` returns the scenario and its
+in `docs/CONTRACTS.md` section 9. A new scenario is a new folder with a
+`tasks.json` and a `scenario.py` whose `make()` returns the scenario and its
 input arrays; `scenarios/make.py` finds it on its own.
 
-### 2.5 Tests
+# 4. Chisel blocks
+
+The accelerator blocks behind the BRMs are a Chisel project of their own in
+`hw/chisel/`, with its own environment (`-e hw`):
+
+```bash
+pixi run -e hw chisel-test    # the chiseltest specs
+pixi run -e hw chisel-gen     # every catalogue configuration to out/hw/*.sv
+```
+
+See `hw/chisel/README.md`.
+
+# 5. Tests and lint
 
 ```bash
 pixi run test          # everything; writes the generated scenario files first
-pixi run test-model    # SNAX-MODEL only
-pixi run test-lower    # SNAX-LOWER only (task lists)
+pixi run test-model    # one block: test-model, test-lower, test-brm, test-dfg, test-sandbox, test-design, test-flow
+pixi run lint          # ruff check and format check (CI runs it); pixi run fmt fixes
+pixi run clean         # remove out/, caches and Chisel build trees (--dry-run lists them)
 ```

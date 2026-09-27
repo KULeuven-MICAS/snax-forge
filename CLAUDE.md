@@ -1,40 +1,50 @@
 # SNAX-FORGE
 
-Architecture skeleton: `docs/ARCHITECTURE.md`. Decisions, D1 onwards: `docs/DECISIONS.md`.
-Read both before designing or changing any component. Do not contradict a logged decision (D-numbers); propose a new one instead, with the next free number.
-What the model-side artefacts mean, field by field: `docs/CONTRACTS.md`. Its
-section 8 holds the rules a new block kind must follow; a snippet in it is
-checked against the file it came from, so update both together.
+Read before designing or changing a component:
+
+- `docs/ARCHITECTURE.md`: what each component does, as it is now.
+- `docs/DECISIONS.md`: the decisions behind it (D-numbers). Do not contradict one; propose a new
+  one with the next free number, following the rules at the top of that file.
+- `docs/CONTRACTS.md`: every artefact between the components, field by field. A snippet in it is
+  checked against the file it came from, so update both together; section 8 holds the rules a new
+  block kind must follow.
+- `docs/STATUS.md`: milestones, tasks, open items. Update it with every change.
 
 ## Principles
 - Model first: Python models are the source of truth; RTL is checked against them.
 - DSE decides, LOWER derives command sequences, MODEL measures. Never mix roles.
-- All artefacts (DFG, BRM, design point, control program, profile, trace) are
-  serialisable text (JSON/YAML) and must round-trip.
+- All artefacts (DFG, BRM, recipe, platform, design point, task list, control program, profile,
+  trace) are serialisable text and must round-trip.
 - Extend by registration and namespaced attrs, never by editing core classes.
 - Build the vecadd vertical slice before generalising.
 
 ## Commands
-- Environment: `pixi install`
-- Tests: `pixi run test` (everything under tests/), `pixi run test-model` (SNAX-MODEL only), `pixi run test-lower` (SNAX-LOWER only), `pixi run test-brm` (SNAX-BRM only), `pixi run test-dfg` (SNAX-DFG only; both also run tests/test_expr.py, the shared expressions), `pixi run test-sandbox` (SNAX-SANDBOX only), `pixi run test-design` (SNAX-DESIGN only), `pixi run test-flow` (the whole path, E2E1); CI runs `pixi run -e ci test`
-- SDFG of a kernel: `pixi run forge <kernel>` writes `out/sdfg/<kernel>.raw.sdfg` and `.simplified.sdfg` (the input of the SNAX-DFG importer, D71)
-- SNAX-DFG of a kernel: `pixi run import-dfg <kernel>` writes `out/dfg/<kernel>.snaxdfg` (D78); `--sdfg PATH --name NAME` imports a stored `.sdfg` instead
-- Run a `.snaxdfg` against the kernel: `pixi run check-dfg FILE [FILE ...] --kernel <kernel> [--n N]` (reference executor, D79)
-- Apply a recipe: `pixi run sandbox recipes/<name>.json [--set W=8] [--graph FILE]` writes every step to `out/sandbox/<name>/`, each checked against the reference executor (D80)
-- Make a design point: `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json [--set platform.l1.n_banks=32] [--set memory.B.l1.base=576]` checks the pairing (every problem with its fix) and writes `out/design/vecadd/` `platform.json` and `memory.json` (working copies; continue with `--platform`/`--memory` on them) and `design_point.json`; `pixi run design check ...` only checks; `pixi run design save out/design/vecadd/platform.json NAME` keeps a platform as `platforms/NAME.json` (D84–D87)
-- Cluster file and task list of a design point: `pixi run lower cluster out/design/vecadd/design_point.json` writes `out/design/vecadd/cluster.json` (for vecadd on small16 byte-equal to `scenarios/clusters/alu4.json`, D88); `pixi run lower tasks ...` writes `tasks.json` (with `--set memory.B.l1.base=576 --set memory.C.l1.base=1152` equal to `scenarios/vecadd/tasks.json`, D89)
-- The whole path: `pixi run flow recipes/vecadd.json --platform platforms/small16.json [--set W=8] [--set platform.PATH=VALUE] [--set memory.B.l1.base=576]` runs recipe → design point → cluster file and task list → scenario → model run and checks the output against the kernel's reference and REF1; everything in `out/flow/<name>/` (D90)
-- Go back from a bound graph: `pixi run sandbox recipes/vecadd_undo.json --graph out/sandbox/vecadd/2_bind.snaxdfg --out out/sandbox/vecadd_undo` (`unbind`, `join_map`, D82)
-- Look at graphs: `pixi run view-dfg FILE|DIR ...` (e.g. `out/sandbox/vecadd/`), then open http://127.0.0.1:8766/ (D81)
-- Viewer: `pixi run view DIR [DIR ...]` serves model output directories at http://127.0.0.1:8765/ (D55); the DFG viewer, `pixi run view-dfg FILE [FILE ...]`, comes with VIS5 (D76)
-- Clean slate: `pixi run clean` removes out/, caches and Chisel build trees (`pixi run clean --dry-run` lists them first)
-- Lint/format: `pixi run lint` (ruff check + format check, CI runs it), `pixi run fmt` to fix
+- Environment: `pixi install`; `pixi run check` checks DaCe and its pins.
+- Tests: `pixi run test` (all), or one block: `test-model`, `test-lower`, `test-brm`, `test-dfg`,
+  `test-sandbox`, `test-design`, `test-flow`. CI runs `pixi run -e ci test`.
+- Lint: `pixi run lint` (CI runs it); `pixi run fmt` fixes.
+- The whole path: `pixi run flow recipes/vecadd.json --platform platforms/small16.json [--set W=8]
+  [--set platform.PATH=VALUE] [--set memory.B.l1.base=576]`, everything in `out/flow/<name>/`.
+  The single steps (`forge`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in
+  README.md section 2.
+- Model on its own: `pixi run scenarios` writes the scenario files; `pixi run model-run
+  scenarios/<name>/scenario.json --out out/<name> [--trace beat]`.
+- Viewers: `pixi run view DIR ...` (runs, port 8765), `pixi run view-dfg FILE|DIR ...` (graphs,
+  port 8766).
+- Chisel: `pixi run -e hw chisel-test`, `chisel-gen`; `hw/chisel/` is a project of its own.
+- Clean slate: `pixi run clean` (`--dry-run` lists first).
 
 ## Conventions
-- Python 3.x, type hints on all public functions, dataclasses for artefacts.
-- One package per component under `snax_forge/`: snax_model and viz (built), lower (task list → program, design point → cluster file and task list built, D64, D88, D89), brm (format, instances, the affine notation and the library built, D68, D70; BRMs in snax_forge/brm/library/), dfg (the `.snaxdfg` format, the SDFG importer and the reference executor built, D77–D79), sandbox (recipes, `split_map`, `bind` and pattern matchers built, D80; recipes in `recipes/`), design (platform, streamer shell, design checks, memory plan and design point built, D84–D87; platforms in `platforms/`), flow (the whole path, kernel to checked model run, D90) and dse (automated search, M8).
-- Generated `.snaxdfg` files and design points go under `out/`, not in git (D71); test fixtures are the exception (tests/dfg/fixtures/, kept in the form `Graph.to_json` writes).
-- Value expressions (BRM fields, SNAX-DFG subsets, ranges and shapes) are one grammar in `snax_forge/expr.py` (D68, D77): ints, names, `+ - * //`, parsed with `ast`, stored canonical.
-- Scenarios: one folder per scenario under `scenarios/`, with the `scenario.py` that makes it and a hand-written `tasks.json` it lowers into the program (D64–D66). `pixi run scenarios` (`python scenarios/make.py`, `--check` to compare) writes `scenario.json`, the `.npy` data and the cluster files; they are generated, ignored by git and never edited by hand (D67). `pixi run model-run` and the test session write them first.
-- Every new artefact type gets a `to_dict` / `from_dict` and a round-trip test. Versioned JSON schemas in `schemas/` come from M6 on (F2), not before (D26).
+- Python 3.11, type hints on all public functions, dataclasses for artefacts.
+- One package per component under `snax_forge/` (ARCHITECTURE.md section 5 lists them). Recipes
+  live in `recipes/`, platforms in `platforms/`, BRMs in `snax_forge/brm/library/`.
+- Generated files (`.snaxdfg`, design points, runs) go under `out/`, not in git; test fixtures are
+  the exception (`tests/dfg/fixtures/`, in the form `Graph.to_json` writes).
+- Value expressions (BRM fields, SNAX-DFG subsets, ranges, shapes) are one grammar in
+  `snax_forge/expr.py`: ints, names, `+ - * //`, parsed with `ast`, stored canonical.
+- Scenarios: one folder each under `scenarios/`, with its `scenario.py` and a hand-written
+  `tasks.json`. `scenario.json`, the `.npy` data and the cluster files are generated by
+  `scenarios/make.py` (`--check` compares), ignored by git and never edited by hand.
+- Every new artefact type gets a `to_dict` / `from_dict` and a round-trip test. Versioned JSON
+  schemas come with M6 (F2), not before.
 - Shared test helpers live in `tests/<package>/helpers.py`, not copied per file.

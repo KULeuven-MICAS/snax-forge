@@ -1,36 +1,25 @@
-# SNAX-MODEL Contracts (MOD10)
+# SNAX-FORGE Contracts
 
-> What the artefacts around SNAX-MODEL *mean*. MOD9 fixed their shape; this
-> file says what every field is, so SNAX-BRM, SNAX-DSE and SNAX-LOWER can
-> produce them without reading `scenario.py`.
->
-> Scope: the model side (D26), plus SNAX-LOWER's task list (section 9,
-> D64), the input the model's control program is lowered from, and the BRM
-> (section 10, D68, D70), from which the accelerator entry and the streamer
-> values are derived, the SNAX-DFG (section 11, D77), the workload graph
-> the sandbox transforms, the sandbox recipe (section 12, D80), the
-> platform (section 13, D84), the design checks (section 14, D85) and the
-> memory plan and design point (section 15, D86, D87). Later nest notations
-> are open item 1 (M6).
+> What the artefacts between the components *mean*, field by field, so each
+> component can produce its output without reading another's code.
+> Sections 1–8 are the model side (D26, D46): cluster configuration,
+> streamer registers, accelerator interface, control program, scenario,
+> profile and trace, and the rules a new block kind must follow. Sections
+> 9–15 are the rest of the flow: the task list (D64), the BRM (D68, D70),
+> the SNAX-DFG (D77), the recipe (D80), the platform (D84), the design
+> checks (D85), and the memory plan and design point (D86, D87).
 >
 > Until the M6 freeze these are plain dataclasses and plain JSON; versioned
-> schemas are F2's job (D26, F2). Every value marked **default** is a
-> declared platform default, not a measurement (D51); nothing else about the
-> format depends on it.
+> schemas are F2's job (D26). Every value marked **default** is a declared
+> platform default, not a measurement (D51); nothing else about the format
+> depends on it.
 >
 > Every fenced block below is copied verbatim out of a checked-in file, a
 > file `scenarios/make.py` generates (D67), or the output of
-> `scenarios/reduce`, and
-> `tests/snax_model/test_contracts.py` fails if one of them drifts. The
-> `<!-- snippet: ... -->` line above each block names its source;
-> `run:` means "produced by running that scenario".
->
-> Layout: section 8 holds the rules a new block kind must follow; section 9
-> the task list; section 10 the BRM; section 11 the SNAX-DFG; section 12
-> the recipe; section 13 the platform; section 14 the design checks;
-> section 15 the memory plan and the design point. The
-> reasoning behind each contract is in the module docstrings and in
-> `docs/ARCHITECTURE.md` section 5.6; this file does not repeat it.
+> `scenarios/reduce`, and `tests/snax_model/test_contracts.py` fails if one
+> of them drifts. The `<!-- snippet: ... -->` line above each block names its
+> source; `run:` means "produced by running that scenario". Why each
+> contract is the way it is: the module docstrings and `docs/DECISIONS.md`.
 
 ---
 
@@ -245,19 +234,19 @@ to the accelerator `tbound[0]` times, so the accelerator sees every beat of
 the enumeration above while L1 sees one read per group. A stride of 0 on any
 other loop, or on a writer, is an ordinary stride.
 
-**Mapping a BRM's per-port nest onto these registers** (D70). A nest
-describes only the accelerator: the order in which it consumes or produces
-an operand's elements, in logical indices, with no addresses. Streamer
-values come from SNAX-LOWER (`snax_forge/lower/streams.py`), which maps the
-nest through the buffer's layout (base, shape and one byte stride per
-dimension; SNAX-DSE's decision, provisional until DP1). The nest's spatial
-loops become the spatial loops, fastest first, and their bounds must be the
-streamer's design-time spatial bounds (so their product is `n_ports`);
-every temporal loop becomes a temporal loop with the same bound, innermost
-first; a loop's byte stride is its index strides dotted with the layout's,
-and `base` is the layout's address of the nest's offset. The first nest
-notation is `affine` (D70); later ones are open item 1, and this register
-side does not change with them.
+**Where the values come from** (D73, D89). SNAX-LOWER derives a
+streamer's values from the memlet on the accelerated node's connector,
+through the container's L1 layout in the memory plan (base, shape and one
+byte stride per dimension, section 15): one temporal loop per firing loop
+around the node, innermost first, and one spatial loop per range dimension
+of the memlet, fastest first, whose bounds must be the streamer's
+design-time spatial bounds (so their product is `n_ports`); a loop's byte
+stride is its index strides dotted with the layout's, and `base` is the
+layout's address of the memlet's first element (`lower/derive.py`). The
+BRM's per-port nest (D70) then checks the order: mapped through the same
+layout (`lower/streams.py`), it must visit the same addresses beat by beat.
+The first nest notation is `affine`; later ones are open item 1, and this
+register side does not change with them.
 
 <!-- snippet: scenarios/vecadd/scenario.json -->
 ```json

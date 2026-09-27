@@ -135,7 +135,7 @@ class ElementwiseSpatialSpec extends AnyFlatSpec with ChiselScalatestTester {
 
   it should "share one opSel across all lanes" in {
     test(new ElementwiseSpatial(dataWidth = W, lanes = Lanes)) { dut =>
-      // The lanes are replications of a single SDFG tasklet, so they cannot
+      // The lanes are replications of a single tasklet, so they cannot
       // differ. Switching opSel must move all of them together.
       val beat = Seq.fill(Lanes)((BigInt(40), BigInt(7)))
       drive(dut, beat)

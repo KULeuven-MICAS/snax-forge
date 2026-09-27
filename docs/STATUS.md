@@ -1,28 +1,33 @@
 # SNAX-FORGE Status
 
-Build order and rationale: `docs/ARCHITECTURE.md` section 8, D24, D51 and D54
-(order M1, M4a, M3, M4b, M5–M10, then M2); inside M3, LOW1b comes before
-LOW1a (D63), and since D76 M3 closes `vecadd` from the kernel forwards.
-What the model-side artefacts mean: `docs/CONTRACTS.md` (MOD10).
+What is built, what comes next, and what is still open. How the components
+work: `docs/ARCHITECTURE.md`; why: `docs/DECISIONS.md`; the artefacts field by
+field: `docs/CONTRACTS.md`.
+
 Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 
-## Existing Code
+## Where the Code Lives
 
-- The SDFG ingest (snax_forge/sdfg/, `pixi run forge <kernel>` writes out/sdfg/<kernel>.raw.sdfg and .simplified.sdfg) is what the SNAX-DFG importer reads (IMP1, D71). The Chisel accelerator blocks, their specs and `Emit` live in hw/chisel/, a project of its own with its own pixi tasks and CI job; the old SDFG → descriptor → RTL path is removed (D91).
-- SNAX-MODEL (M1) lives in snax_forge/snax_model/, tests in tests/snax_model/ (shared test helpers in tests/snax_model/helpers.py). Scenarios (MOD9) live in scenarios/, one folder each with the scenario.py that makes it and its hand-written tasks.json; scenarios/make.py writes the scenario files, data and cluster files, which are generated and not in git (D65–D67; `pixi run scenarios`, and the test session writes them first). The contracts (MOD10) are docs/CONTRACTS.md; the configuration classes and the JSON writer they describe are snax_forge/snax_model/config.py.
-- The visualiser (M4a, D55) lives in snax_forge/viz/ (server, API, static viewer), tests in tests/viz/ (a package, so its helpers.py does not clash with snax_model's).
-- SNAX-BRM (M3, D68) lives in snax_forge/brm/ (the BRM dataclasses and their validation, value expressions, the registry of dataflow notations, instances and their accelerator entry, the `affine` dataflow notation, the library loader), tests in tests/brm/ (a package, like tests/lower). The library of hand-written BRMs is snax_forge/brm/library/, one JSON file per BRM (`elementwise_add` so far).
-- SNAX-LOWER (M3, D64) lives in snax_forge/lower/ (task list, per-type values, lowering to commands, the `Program` command builder, since BRM2 the buffer `Layout` and the nest-to-streamer mapping, D70, since LOW1c the cluster file of a design point, cluster.py, D88, and since LOW1a its task list, derive.py, D89; CLI `pixi run lower cluster|tasks`), tests in tests/lower/ (a package, like tests/viz). Every scenario has a hand-written `tasks.json` in its folder, which its scenario.py lowers into the program of its `scenario.json` (D65, D66).
-- SNAX-DFG (M3, D77) lives in snax_forge/dfg/ (the `.snaxdfg` dataclasses, validation and round trip in graph.py, the registry of node kinds with `map`, `tasklet` and `accelerated` in kinds.py, the dimension notation of subsets and ranges in subset.py), tests in tests/dfg/ (a package) with the fixtures `vecadd`, `vecadd_split` and `vecadd_accelerated` in tests/dfg/fixtures/. Value expressions are one module shared with SNAX-BRM, snax_forge/expr.py (moved from snax_forge/brm/, tests in tests/test_expr.py).
-- The SDFG importer (IMP1, D78) is snax_forge/dfg/import_sdfg.py, with the CLI in snax_forge/dfg/__main__.py (`pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg); tests in tests/dfg/test_import.py, small DaCe programs for them in tests/dfg/sdfg_programs.py.
-- The reference executor (REF1, D79) is snax_forge/dfg/execute.py (`execute(graph, inputs)`, a registered executor per node kind); `pixi run check-dfg FILE --kernel K` runs files against the kernel's reference; tests in tests/dfg/test_execute.py.
-- SNAX-SANDBOX (SBX1, D80) lives in snax_forge/sandbox/ (recipe.py, transforms.py with `split_map` and `bind`, patterns.py with the `elementwise` matcher, run.py with the per-step reference check, the CLI), tests in tests/sandbox/ (a package). Recipes live in recipes/ (`vecadd.json`); `pixi run sandbox recipes/vecadd.json [--set W=8]` writes every step to out/sandbox/vecadd/.
-- The DFG viewer (VIS5, D81) is snax_forge/viz/dfg/ (api.py: loading files and the rows, nodes and edges of a graph; server.py: its routes on the viewer's Handler; `__main__.py`) with static/dfg.html and static/dfg.js; tests in tests/viz/test_dfg.py. `pixi run view-dfg FILE|DIR ...` serves http://127.0.0.1:8766/.
-- SNAX-DESIGN (DP1a, D84, D85) lives in snax_forge/design/ (platform.py: the platform file, `--set` changes and working copies; streamers.py: the streamer shell against a bound graph; check.py: the registered design checks; problems.py: what they report; the CLI), tests in tests/design/ (a package). Platforms live in platforms/ (`small16.json`); `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` writes out/design/vecadd/platform.json, memory.json and design_point.json. Since DP1b also memory.py (the memory plan: registered passes, pins, the context policies read) and point.py (the design point).
-- The flow (E2E1, D90) is snax_forge/flow/ (run.py: `run_flow` and the functional check; the CLI), tests in tests/flow/ (a package). `pixi run flow recipes/vecadd.json --platform platforms/small16.json` writes out/flow/vecadd/.
-- Generated `.snaxdfg` files and design points go under out/, not in git.
+| Component | Code | Tests | Data |
+|---|---|---|---|
+| SDFG ingest | `snax_forge/sdfg/` | (through `tests/dfg`) | `kernels/` |
+| SNAX-DFG, importer, reference executor | `snax_forge/dfg/`, `snax_forge/expr.py` | `tests/dfg/`, `tests/test_expr.py` | fixtures in `tests/dfg/fixtures/` |
+| SNAX-BRM | `snax_forge/brm/` | `tests/brm/` | `snax_forge/brm/library/` |
+| SNAX-SANDBOX | `snax_forge/sandbox/` | `tests/sandbox/` | `recipes/` |
+| Design step | `snax_forge/design/` | `tests/design/` | `platforms/` |
+| SNAX-LOWER | `snax_forge/lower/` | `tests/lower/` | |
+| SNAX-MODEL | `snax_forge/snax_model/` | `tests/snax_model/` | `scenarios/` |
+| Flow | `snax_forge/flow/` | `tests/flow/` | |
+| Viewers | `snax_forge/viz/` | `tests/viz/` | |
+| Chisel blocks | `hw/chisel/` | `hw/chisel/src/test/` | |
+
+Shared test helpers live in each test package's `helpers.py`. Generated
+files (`.snaxdfg`, design points, runs) go under `out/`; the scenario files
+under `scenarios/` are generated by `scenarios/make.py` (D67).
 
 ## Milestones
+
+Order: M1, M4a, M3, M4b, M5–M10, then M2 (D24, D51, D54, D76).
 
 | Milestone | Content | Status |
 |---|---|---|
@@ -38,70 +43,50 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | M10 | Outer path (independent of M3–M9, D52) | todo |
 | M2 | Anchor against SNAX RTL (after M10, D51) | `deferred` |
 
-## Task Breakdown
+## Done
 
-### M1: SNAX-MODEL (kernel-agnostic)
+Every task below is `done`; its acceptance is kept as tests. The full task
+tables as they were written are in git history.
 
-All tests use synthetic traffic and hand-written scenarios.
+| ID | Built | Decisions |
+|---|---|---|
+| MOD1 | event-driven scheduler with idle skipping | D10, D21 |
+| MOD2 | L1 banks | D13, D30 |
+| MOD3 | TCDM interconnect | D31 |
+| MOD4 | streamers | D12, D32 |
+| MOD5 | accelerator interface, elementwise and reduce stubs | D25, D35 |
+| MOD6 | L2 and DMA on a wide port | D33, D34 |
+| MOD7 | register interface and controller | D11, D36, D37 |
+| MOD8 | profile and trace | D38–D40 |
+| MOD9 | scenario runner and CLI | D41–D44 |
+| MOD10 | CONTRACTS.md, gap rules, trace filter | D46–D50 |
+| VIS1 | viewer server, CLI and profile report | D55, D56 |
+| VIS2 | schedule view | D57, D58, D60 |
+| VIS3 | cluster view | D61, D62 |
+| BRM1 | BRM format and instances | D68 |
+| BRM2 | `affine` nest notation and its mapping to streamer registers | D70 |
+| BRM3 | `elementwise_add`, the library's first BRM | D68, D82 |
+| LOW1b | task list and its lowering to commands | D63–D67 |
+| DFG1 | `.snaxdfg` format | D77 |
+| IMP1 | SDFG importer for vecadd | D78 |
+| REF1 | reference executor | D79 |
+| VIS5 | DFG viewer | D81 |
+| SBX1 | SNAX-SANDBOX: recipes, `split_map`, `bind` (and `unbind`, `join_map`) | D80, D82 |
+| NAME1 | derived names in the scenarios | D83 |
+| DP1a | platform, streamer shell, design checks | D84, D85 |
+| DP1b | memory plan and design point | D86, D87 |
+| LOW1c | cluster file from a design point | D88 |
+| LOW1a | task list from a design point | D89 |
+| E2E1 | the whole path, `pixi run flow` | D90 |
+| — | housekeeping after M3: old SDFG → RTL path removed, duplicate tests and helpers removed, decision log condensed | D91–D93 |
 
-| ID | Scope | Depends | Acceptance | Status |
-|---|---|---|---|---|
-| MOD1 | Event-driven scheduler; ticks only components with pending work, skips idle cycle ranges; struct-of-arrays state (D10, D21) | none | Toy components give identical results with skipping on and off; two runs are identical | `done` |
-| MOD2 | L1 banks: count, width, read latency, one access per bank per cycle; element type and elements per word (D13) | MOD1 | Read latency is exact; a second access to the same bank in the same cycle is refused | `done` |
-| MOD3 | TCDM interconnect: round-robin arbitration, conflicts and stalls recorded | MOD2 | Grant sequences for 2–3 masters on one bank match hand-worked tables; distinct banks proceed in parallel | `done` |
-| MOD4 | Streamer from raw registers (base, bounds and strides per loop), FIFO depth, valid/ready, configurable ports (D12) | MOD3 | Address streams equal a NumPy enumeration for 1D, 2D and strided nests; a full FIFO causes stalls; conflict-free throughput equals the port count per cycle | `done` |
-| MOD5 | Accelerator interface: ports with per-port element rate, `L`, `II`, Python function; elementwise (N→1) and reduce (T→1) stubs (D25) | MOD4 | With ideal streams, both stubs hit their cycle formulas; the reduce stub proves unequal port rates work | `done` |
-| MOD6 | L2 and DMA with a wide port with per-cycle superbank priority (D33, D34) | MOD3 | DMA bandwidth test; DMA–streamer contention shows up in the trace | `done` |
-| MOD7 | Uniform register interface and controller executing `csr_write`, `csr_read`, `wait` (poll, signal) (D11, D36, D37) | MOD5, MOD6 | Poll and signal give the same output data; cycle counts differ only by the expected control overhead | `done` |
-| MOD8 | Profile and JSON trace | MOD7 | Per accelerator, busy + idle + stalled = total; per-bank access counts equal the bank coverage of the trace's grant events (D38, D39) | `done` |
-| MOD9 | Scenario runner: JSON with cluster config, initial memory, command list; dumps profile, trace, final memory | MOD8 | Elementwise, reduce and DMA scenarios run from the CLI; final memory checked against NumPy | `done` |
-| MOD10 | Write down the model-side contracts in docs/CONTRACTS.md; configs carry their own to_dict / from_dict; gap rules, trace filter and housekeeping (D26, D46-D50) | MOD9 | Every snippet in the document is checked against its file and the register names against the adapters (test_contracts.py); the gap rules have tests (test_gaps.py) | `done` |
-
-### M4a: Run views (before M3, D54)
-
-Everything here reads only a model run's output directory, through the local
-server and viewer of D55 (`pixi run view DIR [DIR ...]`); tested on the M1
-scenarios, `scenarios/vecadd_conflict`, `scenarios/vecadd_tiled`
-(3 tiles, 471 cycles, for a longer schedule) and `scenarios/fmul` (5 tiles
-on `clusters/mul1.json`, double buffered: the DMA works behind a
-multi-cycle multiplier, 525 cycles).
-
-| ID | Scope | Depends | Acceptance | Status |
-|---|---|---|---|---|
-| VIS1 | Server, CLI, viewer shell and profile report (D55, D56): `python -m snax_forge.viz DIR [DIR ...]`, JSON API over the run directories, report of cycles per class, accelerators, streamers and FIFOs (with the busy window), memory, DMA and L2, controller, cluster configuration | MOD10 | API tests pass (tests/viz); report checked by eye on `scenarios/vecadd` and `scenarios/vecadd_conflict` (a and b in the same banks) | `done` |
-| VIS2 | Schedule view, HLS-schedule style (D57, D58, D60): per component its class runs, tasks and commands over a cycle window, beat-level detail rows (ports, FIFO, firings, DMA beats, polls), a selected cycle with everything that happened in it | VIS1 | Kind filter of the events route tested (tests/viz); schedule checked by eye on `vecadd`, `vecadd_conflict`, `reduce` (task trace) and `dma` (filtered beat trace) | `done` |
-| VIS3 | Cluster view (D61): banks, interconnect, streamers, accelerator, DMA and controller at the schedule's selected cycle, under the schedule on the same page; requests (teal) and read data coming back (green) as separate lanes (D62), conflicts (list in the interconnect box, stalled side red), FIFO fill per lane, firings, DMA and L2 requests and responses, no data values (open item 23); layout built from the cluster file | VIS1, VIS2 | Checked by eye on `vecadd_conflict` (ra and rb on banks 8–11) and `fmul` (DMA in one superbank while the streamers use others, e.g. cycle 65); request / response timing on `vecadd_conflict` cycles 41–44 and 13–15; `resp` checked against the grants in test_profile | `done` |
-
-### M3: Close `vecadd` end to end (D76)
-
-From the kernel forwards: `kernels/polybench/vecadd.py` → simplified SDFG
-(`pixi run forge vecadd`) → `vecadd.snaxdfg` → recipe in SNAX-SANDBOX →
-design point → cluster file and task list → scenario → SNAX-MODEL. The BRM
-and task-list work below is done; the rest follows in table order.
-
-| ID | Scope | Depends | Acceptance | Status |
-|---|---|---|---|---|
-| BRM1 | BRM format (D68): shared part (interface, function, dataflow, pattern) and implementations (source, supports, timing, optional binding); design and runtime params; value expressions; dataflow as a registered notation; then the link to the accelerator entry of the cluster file through the registered accel kind (D43) | MOD10 | Missing required part is rejected; no binding is accepted; round trip writes every field; the entry resolved from a BRM is checked against the AccelConfig its kind builds | `done` |
-| BRM2 | First affine nest notation and enumerator (D70), mapped onto the MOD10 streamer register layout through a provisional buffer layout in SNAX-LOWER | BRM1 | Enumeration equals hand-written index lists for 1D, 2D and strided cases (tests/brm/test_affine.py); mapped registers reproduce the enumerated addresses, and vecadd's nests give the streamer values of `scenarios/vecadd/tasks.json` (tests/lower/test_streams.py) | `done` |
-| BRM3 | Elementwise-add BRM, the library's first file (`snax_forge/brm/library/elementwise_add.json`): lanes `W` (default 4), per-port affine nests, one Chisel implementation (L = 0, II = 1), function, pattern; `load_brm` | BRM1, BRM2 | Resolves to exactly alu4's `acc` entry; vecadd run with it gives the same cycles, profile and data as the elementwise stub, and its nests give vecadd's streamer values (tests/brm/test_library.py, tests/lower/test_streams.py) | `done` |
-| LOW1b | Task-list format (D64, closes open item 19) and task list → plain command list through the model's adapters (D36, D45); built before LOW1a on hand-written task lists (D63) | MOD10 | Program lowered from `scenarios/vecadd/tasks.json` equals vecadd's hand-scheduled program (written out in tests/lower, D67); every scenario keeps its cycle count (tests/lower) | `done` |
-| DFG1 | SNAX-DFG format (D71, D77): `.snaxdfg` JSON with containers, tasklets, map scopes with symbolic ranges and `loop.kind`, connectors, memlets, the accelerated node (nesting allowed); registered kinds and namespaced attrs (D19); `to_dict` / `from_dict`; the shared expression module | none | A hand-built vecadd, plain and accelerated, round-trips with every field written; unknown kinds and dangling references are rejected by name (tests/dfg, tests/test_expr.py) | `done` |
-| IMP1 | SDFG importer for vecadd (D71, D77, D78): reads the simplified SDFG of `pixi run forge vecadd` (simplify already folds its transient copy), keeps `N` symbolic, readable names, named errors for what it does not support; moves the vecadd kernel to `int64` (closes open item 30) | DFG1 | The import equals a checked-in `vecadd.snaxdfg` fixture, with no transient and no copy left (tests/dfg/test_import.py) | `done` |
-| REF1 | NumPy reference executor on `.snaxdfg` (D20, D79), symbols bound; an accelerated node runs through its BRM's function | DFG1, BRM3 | The imported vecadd equals the kernel's `reference` on `make_inputs`, for N a multiple of the lane count and not; plain, split and accelerated graphs agree (tests/dfg/test_execute.py) | `done` |
-| VIS5 | DFG viewer (D76, D81): `python -m snax_forge.viz.dfg FILE|DIR ...`, pixi `view-dfg`; several files side by side, a directory as its files in order, Reload, a broken file's error in its panel; drawn top to bottom: containers, maps as nested boxes by loop kind, tasklets, accelerated nodes, memlets as SVG edges to connectors that carry the subsets | DFG1, VIS1 | API tests (tests/viz/test_dfg.py); `vecadd.snaxdfg`, `vecadd_split.snaxdfg` and `vecadd_accelerated.snaxdfg`, and `out/sandbox/vecadd/`, checked by eye side by side | `done` |
-| SBX1 | SNAX-SANDBOX (D72, D73): registered transforms `split_map` and `bind` (absorbs DFG2: the pattern predicate and design-param extraction), the recipe format with symbol bindings, the reference check after every step, a CLI writing each step's `.snaxdfg`; open item 35 left to DP1 (D80) | DFG1, REF1, BRM3 | The vecadd recipe gives `vecadd_accelerated.snaxdfg`: a temporal loop of N / W and a spatial loop of W, bound to `elementwise_add`; W = 4 and W = 8 both pass the reference check; a bound that is not a multiple of W (open item 31) and a W the BRM does not allow are rejected (tests/sandbox) | `done` |
-| NAME1 | Derived names (D75, D83): streamers `<instance>_<port>` and task names `<node>_<component>`, `load_<container>`, `store_<container>` (vecadd's as the imported graph names them, `_<k>` per tile) in the cluster builders, every `tasks.json`, the tests and the CONTRACTS.md snippets; vecadd's L2 packed | LOW1b, IMP1 | Every scenario keeps its cycle count and its profile up to the names (tests/lower, tests/snax_model/test_scenario.py) | `done` |
-| DP1a | Platform and design checks (D84, D85): the platform file (`platforms/small16.json`, CONTRACTS.md section 13) with the streamer shell (`default`, per-streamer entries keyed `<instance>_<port>`); `--set platform.PATH=VALUE`, the working copy in `out/design/<name>/platform.json` and `design save`; the shell resolved against a bound graph; the platform, graph and connect checks with a fix per problem (CONTRACTS.md section 14); `pixi run design`, `design check`; closes open item 35 | SBX1, NAME1 | vecadd's bound graph on small16 passes and its shell equals alu4's streamer entries; W = 8 passes on the same platform; every check code is caught by name with its fix; working copies accumulate changes and `save` keeps them (tests/design) | `done` |
-| DP1b | Memory plan and design point (D86, D87): registered residency, layout and placement passes (contiguous by default) with pins (`--set memory.<container>.<mem>.base=N`), the memory working copy `out/design/<name>/memory.json` and `--memory`, the context later policies read (port index streams, groups), the `memory.*` checks, and `design_point.json` (graph, platform, streamers, memory), checked again on load; closes open item 29 | DP1a | vecadd's default plan is contiguous (A, B, C at 0, 512, 1024 in L2 and L1); with B and C pinned it has scenarios/vecadd's places; a registered pass is picked by name; overlaps, misaligned, partial-beat and out-of-range layouts are caught by name with their fix; the graph is carried unchanged and the point round-trips byte for byte (tests/design) | `done` |
-| LOW1c | Design point + BRMs → cluster file (D53, D88): accelerator entries from BRM interface and timing, the resolved streamer shell, platform parts from the design point; the cluster builders of `scenarios/clusters/clusters.py` moved into SNAX-LOWER (`snax_forge/lower/cluster.py`), alu4, red4 and mul1 built through them; `pixi run lower cluster` | DP1b, NAME1 | Cluster file for the `vecadd` design point equals `scenarios/clusters/alu4.json` byte for byte; the checked-in clusters are unchanged; every combination of W, temporal_dims, n_banks and register_window that passes the design checks builds (tests/lower/test_cluster.py) | `done` |
-| LOW1a | Design point → ordered task list (D45, D89) in the format of D64: one group per accelerated node in execution order (temporal firing loops only, a single tile); loads and stores from the memory plan; streamer values from memlets through layouts (D73), checked against the BRM nest by address; `after` from the data; derived task names (D75); the `connect.temporal` check; `pixi run lower tasks` | DP1b, LOW1b, NAME1 | Task list for the `vecadd` design point with B and C pinned equals `scenarios/vecadd/tasks.json` and lowers to its program; in the model 77 cycles pinned and 85 contiguous; W = 8, two temporal maps and a chain of two accelerators run to the right data (tests/lower/test_derive.py) | `done` |
-| E2E1 | Full `vecadd` path (D90), `pixi run flow RECIPE --platform P [--set ...]`: kernel → import → recipe → design point → cluster file and task list → scenario (inputs from `make_inputs`) → run → functional check against the kernel's reference and REF1, written into the profile; everything in `out/flow/<name>/`; closes open item 13 | all of the above | Output equals the kernel's reference and REF1 exactly; with the default memory plan 85 cycles, with B and C pinned the cluster file, task list, 77 cycles and profile of `scenarios/vecadd`; W = 8 exact (tests/flow) | `done` |
+## Open Tasks
 
 ### M4b: Remaining views and first manual loop (after M3, D54)
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| VIS4 | Design point view: memory map, accelerator instances and parameters | DP1, VIS1 | Every buffer and instance appears with correct addresses and banks | todo |
+| VIS4 | Design point view: memory map, accelerator instances and parameters | DP1b, VIS1 | Every buffer and instance appears with correct addresses and banks | todo |
 | VIS6 | Diff between two runs: design point fields, profile metrics, timelines side by side | VIS2–VIS4 | For two `vecadd` runs differing only in lanes, exactly that field and its effects are flagged | todo |
 | VIS7 | Compressed trace summary for LLM use | MOD8 | Under a size limit; numbers equal the profile | todo |
 | LOOP1 | One documented iteration: run, read views, edit the recipe, rerun, diff (D72) | VIS6, VIS7 | Checked-in example with both recipes, their design points and the diff page; cycle change matches what the views predicted | todo |
@@ -136,9 +121,9 @@ and task-list work below is done; the rest follows in table order.
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | DSE1 | Search and sweep settings for automated DSE, and their schema (the rest of open item 2); recipes are SBX1's | F2, SBX1 | Decision logged; schema tests | todo |
-| DSE2 | Pattern-based replacement across the BRM library: every matching BRM and implementation, not only the one a recipe names | SBX1, BRM4 | Auto-replaced `vecadd` equals the design point of its hand-written recipe (DP1) | todo |
+| DSE2 | Pattern-based replacement across the BRM library: every matching BRM and implementation, not only the one a recipe names | SBX1, BRM4 | Auto-replaced `vecadd` equals the design point of its hand-written recipe (DP1b) | todo |
 | DSE3 | Parameter choices (lanes, tiling, instance count) made by search and written as recipes | DSE2 | Each chosen value appears in the recipe and the design point | todo |
-| DSE4 | Memory planner policies for the place step: bank placement and alignment | DP1 | No overlaps; each policy gives the expected bank map | todo |
+| DSE4 | Memory plan policies for the placement pass (D86): bank placement and alignment | DP1b | No overlaps; each policy gives the expected bank map | todo |
 | DSE5 | Sweep runner writing a results table | DSE1–DSE4 | Lanes × bank-count sweep is reproducible and shows hand-checked trends | todo |
 | VIS8 | Diff view shows recipe changes alongside design point changes | DSE1, VIS6 | A one-parameter recipe change is shown with the design point fields it caused | todo |
 
@@ -174,77 +159,53 @@ cycles compare design points only.
 
 ## Next Up
 
-M1 is done: the model runs scenarios, writes profiles and traces, and its
-contracts are written down (`docs/CONTRACTS.md`). The anchor (M2) is
-deferred until after M10 (D51): the user supplies the accelerator's entry in
-the cluster file, and the rest of the cluster keeps its declared defaults.
+M3 is closed: `pixi run flow recipes/vecadd.json --platform
+platforms/small16.json` takes vecadd from the kernel to a checked model run
+(85 cycles contiguous; 77 with B and C pinned; 73 at W = 8). Next is M4b:
+the design point view (VIS4) and the diff (VIS6), the LLM trace summary
+(VIS7), then one documented design iteration on vecadd (LOOP1).
 
-M4a is done: `pixi run view DIR [DIR ...]` serves the profile report, the
-schedule and, under it, the cluster view of model runs (D55–D62). Data
-values in the trace (open item 23) and a push event (open item 25) are
-decided once the views have been used for a while.
+## Open Items
 
-M3 closes `vecadd` end to end. LOW1b is done (D63, D64): a task list (`configure`, `start`, `sync`, `read`)
-is lowered to the model's command list, and `scenarios/vecadd/tasks.json`
-gives exactly vecadd's hand-scheduled program. Scenarios live one folder
-each, every one with a hand-written task list, fmul included (D65, D66); the
-scenario files are generated and not in git (D67).
+Questions not decided yet. Numbers are never reused; a closed item is removed,
+and the decision that closed it says so. Next free number: 39.
 
-BRM1–BRM3 are done (D68, D70): a BRM is a hand-written JSON file with a
-shared part and a map of implementations; `Brm.resolve` turns one
-implementation and its design params into the accelerator entry of the
-cluster file, checked against the model's registered kind; each port's
-`affine` nest is enumerated per task and mapped through a buffer layout
-onto streamer values. The library's first file, `elementwise_add`,
-resolves to exactly alu4's adder and gives vecadd's streamer values. The
-model gained the reader repeat on temporal stride 0 (D69) on the way.
-
-The plan for the rest of M3 changed with D71–D76: `vecadd` is now closed
-from the kernel forwards, and SNAX-DSE starts as SNAX-SANDBOX. DFG1 is done
-(D77): a `.snaxdfg` is a tree of registered node kinds (`map`, `tasklet`,
-`accelerated`) with memlets on connectors and expressions in the grammar of
-`snax_forge/expr.py`, now shared with the BRM; vecadd's three fixtures
-(plain, split, accelerated) are in tests/dfg/fixtures/. IMP1 is done (D78):
-`pixi run import-dfg vecadd` imports vecadd's simplified SDFG into exactly
-the plain fixture, with the kernel now `int64` (open item 30). REF1 is
-done (D79): `pixi run check-dfg FILE --kernel vecadd` runs a graph in NumPy,
-and the plain, split and accelerated fixtures all equal the kernel's
-reference, the accelerated one through `elementwise_add`'s function. SBX1
-is done (D80), ahead of VIS5, which it does not need:
-`recipes/vecadd.json` (`split_map` with factor W, then `bind` to
-`elementwise_add`) turns the imported graph into exactly the split and
-accelerated fixtures, every step checked against the reference executor,
-and `--set W=8` runs the same recipe at another point. VIS5 is done
-(D81): `pixi run view-dfg out/sandbox/vecadd/` shows every step of the
-recipe side by side, top to bottom, with SVG edges, and hovering a node
-highlights it in every step. D82 followed: a BRM says what one lane
-computes (`function.code`), `bind` checks the tasklet against it, and a
-bound graph records what it replaced, so `unbind` and `join_map` take
-`vecadd_accelerated.snaxdfg` back to the imported graph
-(`recipes/vecadd_undo.json`). NAME1 is done (D83): the scenarios use the
-derived names (`acc_a`, `add_acc_a`, `load_A`) with every cycle count kept.
-DP1a is done (D84, D85): a platform is a file of its own
-(`platforms/small16.json`, with the streamer shell), paired with the
-recipe's bound graph by `pixi run design`, which checks the pairing, names
-every problem with its fix and writes a working copy of the platform with
-its `--set` changes. DP1b is done (D86, D87): the design step also makes
-the memory plan (contiguous by default, pins with `--set memory.B.l1.base=576`)
-and writes `design_point.json`, what SNAX-LOWER reads. LOW1c is done (D88):
-`pixi run lower cluster out/design/vecadd/design_point.json` derives
-`alu4.json` byte for byte, and the checked-in clusters are built by the
-same code. LOW1a is done (D89): `pixi run lower tasks` derives the task list,
-and vecadd's design point with B and C pinned gives `vecadd/tasks.json`
-exactly. E2E1 is done (D90) and closes M3: `pixi run flow recipes/vecadd.json
---platform platforms/small16.json` runs the kernel to a checked model run,
-the output equal to the kernel's reference and REF1 (85 cycles contiguous;
-with B and C pinned, 77 cycles and the profile of `scenarios/vecadd`).
-Housekeeping after M3 removed the old SDFG → descriptor → RTL path (D91), the
-scenario helpers the lowering replaced and the tests that repeated others (D92),
-and moved the decision log to `docs/DECISIONS.md`, condensed (D93).
-M4b follows.
+1. BRM per-port affine loop nest notation and its mapping to streamer registers
+   (streamer register layout fixed in MOD10; first notation `affine` and the
+   mapping in BRM2, D70; closed in M6).
+2. DSE config format, and single design point vs sweep. The sweep half is
+   closed by D72: a sweep is one recipe with a parameter over several
+   values, and the recipe format is fixed in SBX1. What automated search
+   reads (DSE1, M8) is still open.
+3. Acceptable model-vs-RTL error target, decided with the deferred anchor (D51) before its first comparison.
+4. Positioning details relative to ZigZag/Stream.
+5. Streamer dynamic TCDM priority (D32): copy or keep out, decided with the deferred anchor (D51); not copied until then. The reader repeat on temporal stride 0 is closed by D69.
+6. Priority manager for ports of different widths: N wide and M narrow accesses per bank group (a share instead of the absolute priority of D33). Decided with the deferred anchor (D51), or earlier if a kernel's profile shows absolute priority costing cycles; it replaces only `Xbar._priority`.
+7. DMA features of the Snitch iDMA not copied yet (D34): AXI bursts (`NumAxInFlight = 3` bursts in flight, split at 256 beats and 4 KiB; short bursts such as the row-by-row pattern are slower in RTL); its 2D shape with one inner length shared by both sides (more general patterns need several descriptors, each with its own startup); back-pressure from its 3-deep buffer; L1→L1 and unaligned transfers; the transaction limit of the `tb_memory_axi` atomics filter; XDMA as an alternative engine; the real values of `startup`, L2 read latency, `l1_read_extra` and `done_latency`. Decided with the deferred anchor (D51); until then the model has none of these features and its values are declared defaults.
+8. Accelerator per-stage ready instead of the global stall, and the Accumulator's drain cycle (in.ready low while the result waits, T+1 cycles per back-to-back reduction) (D35): copy or keep out, decided with the deferred anchor (D51); the drain cycle at the latest in BRM4.
+9. Mapping the register blocks (D36) onto the real SNAX interfaces in SNAX-LOWER's C backend (GEN2): streamer and accelerator registers onto ReqRspManager CSRs, DMA registers onto iDMA instructions.
+10. Calibrating the controller costs (D37): write and read cost per block kind (DMA programming separately), poll interval and signal latency. Calibrated with the deferred anchor (D51); until then they are declared defaults. The checked-in scenarios use 1 cycle per `csr_write` and `csr_read` on every block kind and a poll every 4 cycles (`CTL` in `scenarios/clusters/clusters.py`); `test_profile` keeps non-default costs to exercise the D37 formulas.
+11. Statistics that need the class intervals rather than totals (D38, D40): the overlap of accelerator-active phases with control overhead for the anchor report (ARCHITECTURE.md section 7, deferred). The FIFO busy-window part is closed by D56 (VIS1).
+14. Starts made before a run (`start(..., cycle=None)`, tests only) are not traced (D39).
+15. An optional `expect` section in scenarios (D41): expected memory regions, `csr_read` values and a cycle target with tolerance. Deferred; the memory part is covered by the functional check once E2E1 exists, the cycle target may be wanted for the deferred anchor.
+18. A non-default L1 address map (`AddressMap`) cannot be chosen in a scenario yet; add a registered map kind when a kernel needs one.
+20. A streamer port is always one bank wide: ARCHITECTURE.md section 5.6 lists port width as a cluster parameter, but only the DMA uses a wide port, and `StreamerConfig` has no width. Add one when a kernel needs it (the xbar already takes 128 and 256).
+21. `elems_per_word > 1` (D13) is exercised at the L1 only; the streamers, the accelerator and the DMA have never moved packed words. Decided with sub-word packing.
+22. `L1Config.base_addr` other than 0 works but is not tested end to end; add a scenario with a nonzero base when one is needed.
+23. Data values on beat-level `grant` and `fire` events (the words moved, the operands and results), so the cluster view can show them. Amends D39 and CONTRACTS.md section 7 when done; decided after VIS3 has been used.
+25. No trace event for an accelerator's push into its output FIFO: the cluster view (VIS3, D61) draws the accelerator → writer arrow when a writer lane's count rises, so a push and a pop in the same cycle show no arrow. A beat `push` event would make it exact (amends D39 and CONTRACTS.md section 7); decided after VIS3 has been used, together with open item 23.
+27. Generating a BRM from Chisel, SystemVerilog or HLS sources instead of writing it by hand (D68). Far future.
+28. Implementations whose `source` is SystemVerilog or HLS (D68): only `chisel` is accepted until one is needed.
+31. A loop whose bound is not a multiple of the spatial bound (N not a multiple of W): `split_map` rejects it for now (D73); a tail task or padding later. The reference executor still runs such N (REF1).
+32. The DFG viewer's layout: rows computed in Python, nested HTML boxes, SVG edges between neighbouring rows, no library (D76, D81). Revisit if graphs outgrow it (edge crossings in wide rows, very deep nesting).
+33. An MLIR importer that writes `.snaxdfg` directly, without SDFG (D71).
+34. A hand-edited `.snaxdfg` cannot be replayed or swept (D72); whether a recipe may start from an edited file is decided when it is needed.
+36. Control flow in the SNAX-DFG (D77): a sequential `loop` kind (`var`, `range`, a body; iterations in order, unlike a map) for jacobi1d's time steps, which the importer finds with DaCe's `find_for_loop`, and a `branch` kind whose body holds `case` nodes, each with a `cond` and a body. Registered when a kernel needs them (M9); state machines that are neither get a named error in the importer.
+37. The expression grammar (D68, D77) has `+ - * //` only: a tail tile needs `min` (open item 31), a branch needs comparisons, and jacobi1d's tasklet a cast (`dace.int64(x) // 3`). Extended when a kernel needs it.
+38. The DMA moves a container as whole contiguous 64-byte beats, so a container in L2 and L1 must be contiguous and a whole number of beats (N a multiple of 8 for int64 vecadd); `memory.align` rejects the rest (D86). Strided or partial-beat transfers when a kernel needs them (a tail tile, open item 31, or a 2D tile); a check of the DMA's loop count (`dma.dims`) comes with them (D89).
 
 ## Sync Reminders
 
-- After every new update, PR, commit, or new task done with Claude, synchronise
-  `./docs`: update task status here, and log any design change in
-  `docs/DECISIONS.md` (next free number, rules at its top).
+- After every change done with Claude, synchronise `./docs`: update task
+  status here, and log any design change in `docs/DECISIONS.md` (next free
+  number, rules at its top).

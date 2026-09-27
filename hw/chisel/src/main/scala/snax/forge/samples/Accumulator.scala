@@ -11,9 +11,9 @@ import chisel3.util._
   * element-by-element in producer order, because no output element exists until the last input has been absorbed.
   * Chained reductions therefore get control chaining, not data chaining.
   *
-  * The `len` port is a placeholder for what will become a CSR field once the descriptor and driver generation land in
-  * W9. It is sampled continuously rather than latched, so it must be held stable for the duration of a run -- which is
-  * what a CSR write followed by a start pulse gives you anyway.
+  * The `len` port is a placeholder for what will become a register once the accelerator is generated from its BRM
+  * (GEN1). It is sampled continuously rather than latched, so it must be held stable for the duration of a run -- which
+  * is what a CSR write followed by a start pulse gives you anyway.
   *
   * Protocol: `in.ready` is high while absorbing and low while a result is waiting to be collected, so absorb and drain
   * are mutually exclusive by construction and the two `when` blocks below can never both fire in the same cycle. After
@@ -21,13 +21,13 @@ import chisel3.util._
   * reset.
   *
   * Not handled, deliberately: `len === 0`. A zero-length run never reaches the drain state and the unit sits waiting
-  * forever. Guarding it in RTL costs a comparator on a case the extractor should reject at descriptor-build time, where
-  * the error message can actually name the offending map range.
+  * forever. Guarding it in RTL costs a comparator on a case the toolchain should reject before hardware exists, where
+  * the error message can actually name the offending loop.
   *
   * @param width
-  *   bits per input element, from the DaCe dtype
+  *   bits per input element, from the BRM port's dtype
   * @param accWidth
-  *   bits of accumulator; widening here is how you buy headroom against overflow that the DaCe reference would also
+  *   bits of accumulator; widening here is how you buy headroom against overflow that the NumPy reference would also
   *   wrap on
   */
 class Accumulator(val width: Int = 32, val accWidth: Int = 32) extends Module {

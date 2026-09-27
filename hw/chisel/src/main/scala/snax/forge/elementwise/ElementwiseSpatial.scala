@@ -5,9 +5,9 @@ import chisel3.util._
 
 /** `lanes` lanes, fed once -- the hardware image of the `spatial` variant.
   *
-  * W = N, T = 1 in the descriptor's shape section: the fully spatial end of the family. The whole iteration space is
-  * consumed in a single beat, so there is no trip count and no sequencing state. The registers `Module` provides go
-  * unused here; the class extends `Module` regardless, so every unit in this package has the same skeleton.
+  * W = N, T = 1: the fully spatial end of the family. The whole iteration space is consumed in a single beat, so there
+  * is no trip count and no sequencing state. The registers `Module` provides go unused here; the class extends `Module`
+  * regardless, so every unit in this package has the same skeleton.
   *
   * ==One handshake per port, not per lane==
   *
@@ -18,10 +18,9 @@ import chisel3.util._
   *
   * ==The constraint this module makes concrete==
   *
-  * `lanes` is an elaboration-time parameter: it decides how much hardware exists. That is why a descriptor carrying
-  * `lanes: N` with N still symbolic is not buildable and must be rejected at emit time -- there is no value to pass
-  * here. Compare `loopCount` on the other two variants, which is a runtime port. The `bounded` flag in the descriptor
-  * marks exactly this distinction.
+  * `lanes` is an elaboration-time parameter: it decides how much hardware exists. That is why a BRM's lane count is a
+  * design param, fixed per instance: a lane count still symbolic is not buildable -- there is no value to pass here.
+  * Compare `loopCount` on the other two variants, which is a runtime port.
   *
   * ==Handshake==
   *
@@ -30,7 +29,7 @@ import chisel3.util._
   * dropped, and `valid` depends on `ready`, so a consumer whose `ready` is a function of `valid` deadlocks against it.
   *
   * @param dataWidth
-  *   bits per element, from the DaCe dtype
+  *   bits per element, from the BRM port's dtype
   * @param lanes
   *   elements per beat -- for this variant, the entire iteration space
   * @param supportedOps
@@ -58,7 +57,7 @@ class ElementwiseSpatial(
   })
 
   // One ALU instance per lane, all driven from the same opSel. Sharing the
-  // select is not an optimisation: the lanes are replications of a single SDFG
+  // select is not an optimisation: the lanes are replications of a single
   // tasklet, so they cannot differ.
   private val alus = Seq.fill(lanes)(Module(new ElementwiseAlu(dataWidth, supportedOps, signed)))
   alus.zipWithIndex.foreach { case (alu, i) =>
