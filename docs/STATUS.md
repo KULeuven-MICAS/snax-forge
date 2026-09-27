@@ -8,7 +8,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 
 ## Existing Code
 
-- Code from before the v1.1 plan: SDFG ingest, patterns, libnodes, descriptors and a direct ChiselHwGen. The SDFG ingest (snax_forge/sdfg/, `pixi run forge <kernel>` writes out/sdfg/<kernel>.raw.sdfg and .simplified.sdfg) is reused by the SNAX-DFG importer from M3 on (IMP1, D71), and the SDFG recipes in transforms/ are the model for SNAX-SANDBOX's recipes (D72); ChiselHwGen is reused in M10 (HW generator). Patterns, libnodes and descriptors are not used yet.
+- The SDFG ingest (snax_forge/sdfg/, `pixi run forge <kernel>` writes out/sdfg/<kernel>.raw.sdfg and .simplified.sdfg) is what the SNAX-DFG importer reads (IMP1, D71). The Chisel accelerator blocks, their specs and `Emit` live in hw/chisel/, a project of its own with its own pixi tasks and CI job; the old SDFG → descriptor → RTL path is removed (D91).
 - SNAX-MODEL (M1) lives in snax_forge/snax_model/, tests in tests/snax_model/ (shared test helpers in tests/snax_model/helpers.py). Scenarios (MOD9) live in scenarios/, one folder each with the scenario.py that makes it and its hand-written tasks.json; scenarios/make.py writes the scenario files, data and cluster files, which are generated and not in git (D65–D67; `pixi run scenarios`, and the test session writes them first). The contracts (MOD10) are docs/CONTRACTS.md; the configuration classes and the JSON writer they describe are snax_forge/snax_model/config.py.
 - The visualiser (M4a, D55) lives in snax_forge/viz/ (server, API, static viewer), tests in tests/viz/ (a package, so its helpers.py does not clash with snax_model's).
 - SNAX-BRM (M3, D68) lives in snax_forge/brm/ (the BRM dataclasses and their validation, value expressions, the registry of dataflow notations, instances and their accelerator entry, the `affine` dataflow notation, the library loader), tests in tests/brm/ (a package, like tests/lower). The library of hand-written BRMs is snax_forge/brm/library/, one JSON file per BRM (`elementwise_add` so far).
@@ -155,7 +155,7 @@ model, not the platform.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| GEN1 | Chisel generation through BRM bindings into one accelerator top (reuse ChiselHwGen) | BRM1 | Elaborates for the BRM3 and BRM4 parameter sets | todo |
+| GEN1 | Chisel generation through BRM bindings into one accelerator top (through `Emit` and the blocks in hw/chisel/, D91) | BRM1 | Elaborates for the BRM3 and BRM4 parameter sets | todo |
 | GEN2 | C backend for SNAX-LOWER | LOW3 | C kernel command sequence equals the JSON program (D18); builds with the SNAX toolchain | todo |
 | COS1 | cocotb bridge replacing accelerator models with RTL | GEN1, MOD7 | `vecadd` and `dot` outputs match the model's | todo |
 | COS2 | Mismatch report per accelerator (D52) | COS1 | Deviation of each accelerator's RTL from its declared `latency` and `ii` reported per BRM | todo |
@@ -238,6 +238,7 @@ exactly. E2E1 is done (D90) and closes M3: `pixi run flow recipes/vecadd.json
 --platform platforms/small16.json` runs the kernel to a checked model run,
 the output equal to the kernel's reference and REF1 (85 cycles contiguous;
 with B and C pinned, 77 cycles and the profile of `scenarios/vecadd`).
+Housekeeping after M3 removed the old SDFG → descriptor → RTL path (D91).
 M4b follows.
 
 ## Sync Reminders

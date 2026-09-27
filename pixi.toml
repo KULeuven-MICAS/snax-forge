@@ -1,12 +1,17 @@
 [workspace]
 name = "snax-forge"
 version = "0.1.0"
-description = "SDFG-driven generation of heterogeneous accelerator clusters for SNAX"
+description = "Design-space exploration of accelerators in a SNAX compute cluster"
 authors = ["Ryan <ryan@esat.kuleuven.be>"]
 channels = ["conda-forge"]
 platforms = ["linux-64"]
 
-[dependencies]
+# ---------------------------------------------------------------------------
+# Python side: the kernels, DaCe (SDFG ingest, IMP1) and every snax_forge
+# package. A feature rather than top-level dependencies, so the `hw`
+# environment below stays JVM-only.
+# ---------------------------------------------------------------------------
+[feature.py.dependencies]
 python = "3.11.*"
 
 # ---------------------------------------------------------------------------
@@ -21,9 +26,6 @@ networkx = ">=3.1,<3.6"
 
 numpy = ">=1.26,<2"
 sympy = ">=1.12"
-scipy = ">=1.11"
-pandas = ">=2.0"
-pyyaml = ">=6.0"
 
 # DaCe shells out to cmake + a C++ compiler at *runtime* to build generated
 # code. Pinning them here is what makes the golden-reference CPU compile
@@ -31,18 +33,10 @@ pyyaml = ">=6.0"
 cmake = ">=3.27"
 ninja = ">=1.11"
 cxx-compiler = ">=1.7"
-jsonschema = ">=4.20,<5"
 
-[pypi-dependencies]
+[feature.py.pypi-dependencies]
 dace = "==1.0.2"
 snax-forge = { path = ".", editable = true }
-
-[feature.viz.dependencies]
-matplotlib = ">=3.8"
-# flask + python-dotenv are required by the VS Code SDFG viewer daemon
-# (phschaad.sdfv). Without them the extension silently fails to launch.
-flask = ">=3.0"
-python-dotenv = ">=1.0"
 
 [feature.dev.dependencies]
 pytest = ">=8.0"
@@ -51,7 +45,8 @@ ruff = ">=0.6"
 ipython = ">=8.0"
 
 # ---------------------------------------------------------------------------
-# Hardware-generation toolchain (Chisel -> SystemVerilog -> simulation).
+# Chisel side (hw/chisel): the accelerator blocks, their specs and Emit. A
+# project of its own; nothing in it uses the Python side.
 #
 # `sbt` is the same conda-forge package snax_cluster uses; it drags in an
 # openjdk, which is the only reason a JVM is not listed separately here.
@@ -64,19 +59,17 @@ ipython = ">=8.0"
 # Coursier cache, so the first `chisel-test` is slow and every later one is
 # not. That is expected, not a hang.
 #
-# verilator is here for the standalone RTL testbenches (W8 onward) and for
-# chiseltest's VerilatorBackendAnnotation. Nothing in the current smoke test
-# needs it -- it is pinned now so the lock does not have to be re-solved
-# mid-schedule.
+# verilator is for standalone RTL testbenches and for chiseltest's
+# VerilatorBackendAnnotation. The current specs do not need it.
 # ---------------------------------------------------------------------------
 [feature.hw.dependencies]
 sbt = ">=1.10.2,<2"
 verilator = ">=5.30,<6"
 
 [environments]
-default = { features = ["viz", "dev", "hw"], solve-group = "main" }
-ci      = { features = ["dev"],              solve-group = "main" }
-hw      = { features = ["dev", "hw"],        solve-group = "main" }
+default = { features = ["py", "dev", "hw"], solve-group = "main" }
+ci      = { features = ["py", "dev"],       solve-group = "main" }
+hw      = { features = ["hw"],              solve-group = "main" }
 
 [activation.env]
 # Keep every generated build tree inside the repo so .gitignore catches it.
@@ -99,8 +92,9 @@ test-dfg   = "pytest -q tests/dfg tests/test_expr.py"
 test-sandbox = "pytest -q tests/sandbox"
 test-design = "pytest -q tests/design"
 test-flow  = "pytest -q tests/flow"
-lint       = "ruff check util kernels snax_forge transforms tests scenarios && ruff format --check util kernels snax_forge transforms tests scenarios"
-fmt        = "ruff check --fix util kernels snax_forge transforms tests scenarios && ruff format util kernels snax_forge transforms tests scenarios"
+lint       = "ruff check util kernels snax_forge tests scenarios && ruff format --check util kernels snax_forge tests scenarios"
+fmt        = "ruff check --fix util kernels snax_forge tests scenarios && ruff format util kernels snax_forge tests scenarios"
+# SDFG ingest: `pixi run forge vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
 forge      = "python -m snax_forge.sdfg"
 # SNAX-DFG importer (IMP1): `pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg
 import-dfg = "python -m snax_forge.dfg import"
@@ -121,7 +115,6 @@ lower      = "python -m snax_forge.lower"
 flow       = "python -m snax_forge.flow"
 # DFG viewer (VIS5): `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
 view-dfg   = "python -m snax_forge.viz.dfg"
-profile    = "python -m snax_forge.sdfg --profile"
 # SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`.
 # The scenario files are generated, not in git (D67): `scenarios` writes them, model-run first.
 scenarios  = "python scenarios/make.py"
@@ -163,13 +156,3 @@ description = "Fail if Scala sources are unformatted"
 [tasks.chisel-clean]
 cmd = "rm -rf hw/chisel/target hw/chisel/project/target hw/chisel/project/project hw/chisel/test_run_dir out/hw"
 description = "Drop all Chisel build artefacts (keeps the Coursier cache)"
-
-[tasks.chisel-hwgen]
-cmd = "bash -c 'sbt -batch \"runMain snax.forge.HwGen $*\"' --"
-cwd = "hw/chisel"
-description = "Generate SystemVerilog from a descriptor JSON"
-
-[tasks.descriptors]
-cmd = "python -m snax_forge.descriptors"
-description = "Emit hardware descriptors from raised SDFGs into out/descriptors"
-

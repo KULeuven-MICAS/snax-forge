@@ -14,21 +14,13 @@ val chiselVersion     = "6.4.0"
 val chiseltestVersion = "6.0.0"
 val scalatestVersion  = "3.2.19"
 
-// JSON decoding for HwGen. upickle rather than circe: one artifact, no
-// implicit-derivation ceremony, and it ignores unknown keys by default --
-// which the descriptor format relies on, since it carries DaCe-side detail
-// the generator has no use for. Chisel already depends on upickle
-// transitively via firtool option handling, so this pins rather than adds.
-val upickleVersion    = "3.3.1"
-
 lazy val root = (project in file("."))
   .settings(
     name := "snax-forge-hw",
     libraryDependencies ++= Seq(
       "org.chipsalliance" %% "chisel"     % chiselVersion,
       "edu.berkeley.cs"   %% "chiseltest" % chiseltestVersion % "test",
-      "org.scalatest"     %% "scalatest"  % scalatestVersion  % "test",
-      "com.lihaoyi"       %% "upickle"    % upickleVersion
+      "org.scalatest"     %% "scalatest"  % scalatestVersion  % "test"
     ),
     scalacOptions ++= Seq(
       "-language:reflectiveCalls",

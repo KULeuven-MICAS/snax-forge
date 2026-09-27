@@ -1,8 +1,12 @@
 # SNAX-FORGE Chisel datapaths
 
-Hardware side of SNAX-FORGE. Today this is a hand-written primitive library
-with a smoke test; by W8 the modules here are instantiated and parameterised
-from an Accelerator Descriptor emitted by the SDFG side.
+Hardware side of SNAX-FORGE: a hand-written library of accelerator blocks,
+their chiseltest specs, and `Emit`, which elaborates a catalogue of
+configurations to SystemVerilog. It is a project of its own: nothing here
+imports `snax_forge/`, and the Python side does not call it. The blocks are
+the reference implementations of the BRMs (`elementwise_add` names
+`ElementwiseTiledSpatial`); generating them from a BRM's hardware binding is
+GEN1 (M10).
 
 ## Why these versions
 
@@ -27,12 +31,13 @@ hw/chisel/
 ├── .scalafmt.conf                      # copied verbatim from snax_cluster
 └── src/
     ├── main/scala/snax/forge/
-    │   ├── SimpleAdder.scala           # elementwise archetype  (cf. vecadd)
-    │   ├── Accumulator.scala           # reduction archetype    (cf. dot)
-    │   └── Emit.scala                  # elaboration entry point
-    └── test/scala/snax/forge/
-        ├── SimpleAdderSpec.scala
-        └── AccumulatorSpec.scala
+    │   ├── Emit.scala                  # elaboration entry point and catalogue
+    │   ├── RepoPaths.scala             # out/hw and repository paths
+    │   ├── samples/
+    │   │   ├── SimpleAdder.scala       # elementwise archetype  (cf. vecadd)
+    │   │   └── Accumulator.scala       # reduction archetype    (cf. dot)
+    │   └── elementwise/                # ALU, loop, spatial, tiled-spatial
+    └── test/scala/snax/forge/          # one spec per module, plus a model
 ```
 
 Package root is `snax.forge`, matching `snax.streamer` / `snax.xdma` in
@@ -89,13 +94,12 @@ two reductions and a barrier between each.
   agnostic, so `UInt` here is bit-identical to the DaCe int32 reference,
   wraparound included. Signedness starts to matter at multiply, compare and
   shift; the typed ALU set in W6 is where it gets handled properly.
-- **Width and lane count come from the SDFG**, never from a default. The
-  defaults in these constructors exist so the smoke test can run standalone.
+- **Width and lane count come from the caller** (the catalogue today, a BRM's
+  design params later), never from a default. The defaults in these
+  constructors exist so the specs can run standalone.
 
 ## Not here yet
 
-Elastic wrapper, skid buffer, typed integer ALU set and lane replication are
-W6. The descriptor-driven emitter replaces the hand-written body of
-`Emit.scala` in W8. Nothing in this directory imports anything from
-`snax_forge/` yet, and that is intentional — the two halves are developed
-independently until the descriptor schema freezes in W5.
+Elastic wrapper, skid buffer, typed integer ALU set and lane replication.
+Elaborating from a BRM's hardware binding instead of the hand-written
+catalogue is GEN1 (M10, `docs/STATUS.md`).

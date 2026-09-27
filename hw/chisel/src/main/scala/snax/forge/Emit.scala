@@ -8,20 +8,14 @@ import snax.forge.samples.{Accumulator, SimpleAdder}
 /** Elaboration entry point: Chisel -> CHIRRTL -> firtool -> SystemVerilog.
   *
   * Run with `pixi run chisel-gen`. Output goes to `$SNAX_FORGE_HW_OUT` (`out/hw`, already covered by .gitignore) so
-  * that elaborated RTL is never committed -- the Scala is the source of truth, exactly as the SDFG is the source of
-  * truth on the Python side.
+  * that elaborated RTL is never committed -- the Scala is the source of truth.
   *
   * ==Why emission lives here and not in each module==
   *
-  * A `main` inside every module would work, and would spare this file a catalogue. It is the wrong shape for what this
-  * becomes. This object is hand-written today and generated tomorrow: once the Accelerator Descriptor schema freezes in
-  * W5, the emitter reads a descriptor and picks the module and its parameters from it. That mapping -- descriptor to
-  * module to constructor arguments -- belongs in one generator, not scattered across the modules being generated. A
-  * module that knows how to emit itself has to know something about the descriptor, and then there is no single place
-  * left to change when the schema moves.
-  *
-  * The smaller reasons point the same way: one copy of the firtool flags rather than one per module, and one `runMain`
-  * target rather than N.
+  * A `main` inside every module would work, and would spare this file a catalogue. One catalogue keeps the mapping from
+  * a configuration to a module and its constructor arguments in one place, which is where a later generator (a BRM's
+  * hardware binding, GEN1) plugs in. It also keeps one copy of the firtool flags rather than one per module, and one
+  * `runMain` target rather than N.
   *
   * ==Usage==
   *
@@ -36,8 +30,8 @@ object Emit {
 
   /** firtool flags shared by every SNAX-FORGE emission.
     *
-    * Not private: HwGen elaborates through the same helpers. Two entry points with two copies of the flag list would
-    * eventually produce RTL that differs depending on which one built it.
+    * Not private: a later generator (GEN1) elaborates through the same flags. Two entry points with two copies of the
+    * flag list would eventually produce RTL that differs depending on which one built it.
     *
     *   - `-disable-all-randomization` removes the `RANDOMIZE_*` ifdef soup, so one .sv file is consumable by Verilator
     *     and by a synthesis flow without a per-tool define set.
@@ -121,13 +115,12 @@ object Emit {
           supportedOps   = Seq(ElementwiseOp.Add)
         )
     ),
-    // The configuration the vecadd_tiled_spatial recipe actually describes:
-    // lanes = 64 from the MapTiling step, int32 from the DaCe dtype, fixed add
-    // from the tasklet. Emitted at full width on purpose -- 64 lanes is a big
-    // file, and seeing how big is part of the point.
+    // A wide configuration: 64 lanes, int32, fixed add. Emitted at full width
+    // on purpose -- 64 lanes is a big file, and seeing how big is part of the
+    // point.
     Target(
       "vecadd-tiled-spatial",
-      "matches transforms/vecadd_tiled_spatial.py: W=64, int32, fixed add",
+      "W=64, int32, fixed add",
       () =>
         new ElementwiseTiledSpatial(
           dataWidth      = DataWidth,

@@ -38,13 +38,6 @@ try:
 except Exception as exc:  # noqa: BLE001
     FAILURES.append(f"end-to-end SDFG build/compile/run failed: {exc!r}")
 
-try:
-    import matplotlib
-
-    matplotlib.use("Agg")
-except ImportError:
-    FAILURES.append("matplotlib missing")
-
 if FAILURES:
     print("ENVIRONMENT CHECK FAILED\n")
     for f in FAILURES:
