@@ -112,6 +112,8 @@ sandbox    = "python -m snax_forge.sandbox"
 # platform.json, memory.json and design_point.json; `design check ...` only checks, `design save SRC NAME`
 # keeps a platform working copy as platforms/NAME.json
 design     = "python -m snax_forge.design"
+# SNAX-LOWER (LOW1c): `pixi run lower cluster out/design/vecadd/design_point.json` writes cluster.json beside it
+lower      = "python -m snax_forge.lower"
 # DFG viewer (VIS5): `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
 view-dfg   = "python -m snax_forge.viz.dfg"
 profile    = "python -m snax_forge.sdfg --profile"

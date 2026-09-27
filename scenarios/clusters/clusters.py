@@ -1,85 +1,61 @@
-"""The checked-in clusters: alu4.json, red4.json and mul1.json (MOD9, D41).
+"""The checked-in clusters: alu4.json, red4.json and mul1.json (MOD9, D41, D88).
+
+Each is a platform plus its accelerators, assembled by SNAX-LOWER's cluster
+builder (snax_forge/lower/cluster.py, LOW1c), the same code that derives a
+design point's cluster file, so the checked-in clusters and the derived ones
+cannot drift apart:
+
+    alu4   platforms/small16.json with the elementwise_add BRM at W = 4
+           (instance ``acc``): exactly the cluster of vecadd's design point
+    red4   an L1-only platform with the ``reduce`` stub (no BRM yet, BRM4)
+    mul1   32 banks and 2-loop streamers with a 1-lane ``elementwise`` mul
+           stub (no BRM for mul yet)
 
 Streamers are named after the accelerator port they serve, ``<instance>_<port>``
 (D75): alu4's and mul1's ``acc_a``, ``acc_b``, ``acc_out``, red4's ``acc_in``,
 ``acc_out``.
-
-scenarios/make.py writes one file per entry of ``CLUSTERS``. The builders
-move into SNAX-LOWER with LOW1c, which derives a cluster file from a design
-point and BRMs (D53, open item 24).
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 
 from common import LANES
 
-from snax_forge.snax_model import (
-    ControllerConfig,
-    DmaConfig,
-    L1Config,
-    L2Config,
-    StreamerConfig,
-)
-from snax_forge.snax_model.scenario import ClusterConfig, ComponentSpec, RegisterMapSpec
+from snax_forge.brm import load_brm
+from snax_forge.design import Platform, StreamerOptions
+from snax_forge.lower import cluster_config, cluster_of, stub
+from snax_forge.snax_model import ControllerConfig, L1Config, L2Config
+from snax_forge.snax_model.scenario import ClusterConfig
+
+PLATFORMS = Path(__file__).resolve().parents[2] / "platforms"
 
 # Controller costs of every scenario: one cycle per csr_write and csr_read on
 # every block kind, a poll every 4 cycles. Declared defaults, not measured
 # (D51, open item 10). test_profile.VECADD_CFG keeps its own non-default costs
 # (DMA writes and reads 2) to exercise the D37 formulas; test_scenario runs the
-# hand-built vecadd with these instead.
+# hand-built vecadd with these instead. platforms/small16.json holds the same.
 CTL = ControllerConfig(write_cost=1, read_cost=1, poll_interval=4)
 
 
-def _streamer(name: str, write: bool, lanes: int, temporal_dims: int = 1) -> ComponentSpec:
-    cfg = StreamerConfig(write=write, n_ports=lanes, fifo_depth=2, temporal_dims=temporal_dims)
-    return ComponentSpec(name, "streamer", cfg.to_dict())
-
-
 def alu4() -> ClusterConfig:
-    """The cluster of test_profile's run_vecadd, in its registration order."""
-    return ClusterConfig(
-        l1=L1Config(n_banks=16, rows=64, read_latency=1),
-        l2=L2Config(size_bytes=1 << 15, read_latency=1),
-        components=[
-            ComponentSpec("xbar", "xbar", {"check_hold": True}),
-            ComponentSpec("dma", "dma", DmaConfig().to_dict()),
-            _streamer("acc_a", False, LANES),
-            _streamer("acc_b", False, LANES),
-            _streamer("acc_out", True, LANES),
-            ComponentSpec(
-                "acc",
-                "accel",
-                accel="elementwise",
-                params={"lanes": LANES, "n_inputs": 2, "op": "add", "latency": 0, "ii": 1},
-                attach={"a": "acc_a", "b": "acc_b", "out": "acc_out"},
-            ),
-            ComponentSpec("ctl", "controller", CTL.to_dict()),
-        ],
-        register_map=RegisterMapSpec(blocks=["dma", "acc_a", "acc_b", "acc_out", "acc"]),
-    )
+    """small16 with elementwise_add at W = 4: vecadd's cluster (test_profile's run_vecadd)."""
+    inst = load_brm("elementwise_add").resolve("chisel_tiled_spatial", {"W": LANES})
+    return cluster_of(Platform.load(PLATFORMS / "small16.json"), {"acc": inst})
 
 
 def red4() -> ClusterConfig:
     """A reduce over 4 lanes into one lane (lanes_out = 1), L1 only."""
-    return ClusterConfig(
+    pf = Platform(
+        "red4",
         l1=L1Config(n_banks=16, rows=64, read_latency=1),
-        components=[
-            ComponentSpec("xbar", "xbar", {"check_hold": True}),
-            _streamer("acc_in", False, LANES),
-            _streamer("acc_out", True, 1),
-            ComponentSpec(
-                "acc",
-                "accel",
-                accel="reduce",
-                params={"lanes": LANES, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1},
-                attach={"in": "acc_in", "out": "acc_out"},
-            ),
-            ComponentSpec("ctl", "controller", CTL.to_dict()),
-        ],
-        register_map=RegisterMapSpec(blocks=["acc_in", "acc_out", "acc"]),
+        controller=CTL,
+        default=StreamerOptions(fifo_depth=2),
     )
+    params = {"lanes": LANES, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1}
+    acc = stub(pf, "acc", "reduce", params, [("in", False, LANES), ("out", True, 1)])
+    return cluster_config(pf, [acc])
 
 
 # mul1: a multi-cycle multiplier with 1-lane streamers, for fmul.
@@ -95,27 +71,16 @@ def mul1() -> ClusterConfig:
     superbanks and the DMA can work on the other two (fmul). The streamers
     have 2 temporal loops, to walk a buffer that lives in one superbank.
     """
-    L, II = MUL_LATENCY, MUL_II
-    return ClusterConfig(
+    pf = Platform(
+        "mul1",
         l1=L1Config(n_banks=MUL_BANKS, rows=32, read_latency=1),
         l2=L2Config(size_bytes=1 << 15, read_latency=1),
-        components=[
-            ComponentSpec("xbar", "xbar", {"check_hold": True}),
-            ComponentSpec("dma", "dma", DmaConfig().to_dict()),
-            _streamer("acc_a", False, 1, temporal_dims=2),
-            _streamer("acc_b", False, 1, temporal_dims=2),
-            _streamer("acc_out", True, 1, temporal_dims=2),
-            ComponentSpec(
-                "acc",
-                "accel",
-                accel="elementwise",
-                params={"lanes": 1, "n_inputs": 2, "op": "mul", "latency": L, "ii": II},
-                attach={"a": "acc_a", "b": "acc_b", "out": "acc_out"},
-            ),
-            ComponentSpec("ctl", "controller", CTL.to_dict()),
-        ],
-        register_map=RegisterMapSpec(blocks=["dma", "acc_a", "acc_b", "acc_out", "acc"]),
+        controller=CTL,
+        default=StreamerOptions(temporal_dims=2, fifo_depth=2),
     )
+    params = {"lanes": 1, "n_inputs": 2, "op": "mul", "latency": MUL_LATENCY, "ii": MUL_II}
+    ports = [("a", False, 1), ("b", False, 1), ("out", True, 1)]
+    return cluster_config(pf, [stub(pf, "acc", "elementwise", params, ports)])
 
 
 # File name stem -> builder, in the order make.py writes them.

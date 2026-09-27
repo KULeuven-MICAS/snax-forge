@@ -83,8 +83,15 @@ error.
 **Who fills what** (D51, D53). The accelerator entries are the user's: an
 accelerator's `lanes`, rates, `latency`, `ii` and `op` (later its BRM).
 Everything else describes the SNAX platform, with the defaults below; they
-are design knobs for SNAX-DSE, not measurements. SNAX-LOWER will derive the
-whole file from a design point; until then `scenarios/make.py` writes it.
+are design knobs for SNAX-DSE, not measurements. SNAX-LOWER derives the whole
+file (LOW1c, D88, `snax_forge/lower/cluster.py`): from a design point with
+`pixi run lower cluster out/design/<name>/design_point.json`, and for the
+checked-in clusters through the same builder, which `scenarios/make.py`
+writes. Components: `xbar`, `dma` (with an L2), then per accelerator in the
+order the graph first uses it its streamers in port order
+(`<instance>_<port>`, from the platform's shell, section 13) and the
+accelerator itself, then `ctl`; the register map lists all but the xbar and
+the controller, with spatial bounds only where they are not `[n_ports]`.
 
 **`components` is one ordered list** of every ticked component, the xbar and
 the controller included. The builder adds them in exactly that order, and
