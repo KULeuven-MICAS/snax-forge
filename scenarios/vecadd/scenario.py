@@ -1,8 +1,9 @@
 """vecadd: c = a + b over 64 elements on alu4, one tile; the M3 target.
 
-The MOD7 vecadd (test_profile.run_vecadd(mode="poll")): same data, program
-and cluster, with the controller costs of clusters.CTL. The program is
-lowered from the hand-written tasks.json (D64, D65).
+The MOD7 vecadd (tests/snax_model helpers.mod7_vecadd, mode "poll"): same data,
+program and cluster, with the controller costs of clusters.CTL. The program is
+lowered from the hand-written tasks.json (D64, D65), which also stays the
+reference the derived task list is checked against (LOW1a, D89, D92).
 """
 
 from __future__ import annotations

@@ -32,6 +32,7 @@ from helpers import (
     compute_blocks,
     contiguous,
     dma_total,
+    mod7_vecadd,
     unit,
     w_poll,
     w_signal,
@@ -54,8 +55,6 @@ from snax_forge.snax_model import (
     Wait,
     address_stream,
     command_from_dict,
-    program_from_dicts,
-    program_to_dicts,
     reduce_stub,
 )
 
@@ -165,10 +164,10 @@ def test_explicit_bases_and_window():
 
 def test_command_dict_round_trip():
     prog = [CsrWrite(4, -64), CsrWrite(0, 1), CsrRead(1), Wait("dma", "poll"), Wait("ra")]
-    ds = program_to_dicts(prog)
+    ds = [c.to_dict() for c in prog]
     assert ds[0] == {"op": "csr_write", "addr": 4, "value": -64}
     assert ds[4] == {"op": "wait", "block": "ra", "mode": "signal"}
-    assert program_from_dicts(ds) == prog
+    assert [command_from_dict(d) for d in ds] == prog
     with pytest.raises(ValueError):
         command_from_dict({"op": "dma"})
     with pytest.raises(ValueError):
@@ -375,62 +374,13 @@ def test_poll_counts_its_reads():
 # =============================================================================
 
 
-def run_vecadd(mode, skip, cfg=None):
-    """The MOD6 vecadd, now driven by a control program instead of hand-picked cycles.
-
-    Transfer b and the compute blocks are programmed while the previous
-    transfer runs; each start comes after a wait on the block it needs.
-    """
-    n_elems, lanes = 64, 4
-    nb, n_dma = n_elems // lanes, n_elems // 8
-    cl, mem, xb, l2 = build(skip)
-    rng = np.random.default_rng(3)
-    a = rng.integers(-1000, 1000, n_elems)
-    b = rng.integers(-1000, 1000, n_elems)
-    l2a, l2b, l2c = 0, 1024, 2048
-    l2.load(l2a, a)
-    l2.load(l2b, b)
-    wa, wb, wc = 0, 72, 144  # same L1 layout as test_dma
-    dma = cl.add(Dma("dma", xb, l2))
-    ra, rb, wr, acc = compute_blocks(cl, xb, lanes=lanes)
-    m = RegisterMap([("dma", dma), ("ra", ra), ("rb", rb), ("wr", wr), ("acc", acc)])
-
-    def to_l1(src, word):
-        return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
-
-    def to_l2(word, dst):
-        return DmaDescriptor("l1_to_l2", contiguous(word * WORD, n_dma), contiguous(dst, n_dma))
-
-    prog = [
-        *m.start_writes("dma", to_l1(l2a, wa)),
-        *m.config_writes("dma", to_l1(l2b, wb)),
-        Wait("dma", mode),
-        m.start_write("dma"),
-        *m.config_writes("ra", unit(wa, nb, lanes)),
-        *m.config_writes("rb", unit(wb, nb, lanes)),
-        *m.config_writes("wr", unit(wc, nb, lanes)),
-        *m.config_writes("acc", {"n": nb}),
-        Wait("dma", mode),
-        *(m.start_write(x) for x in ("ra", "rb", "wr", "acc")),
-        *m.config_writes("dma", to_l2(wc, l2c)),
-        Wait("wr", mode),
-        m.start_write("dma"),
-        Wait("dma", mode),
-    ]
-    ctl = cl.add(Controller("ctl", m, prog, cfg))
-    total = cl.run(max_cycles=5000)
-    return {"ctl": ctl, "total": total, "c": l2.dump(l2c, n_elems)[:, 0], "a": a, "b": b,
-            "l1": mem.data.copy(), "l2": l2.data.copy(), "comps": (dma, ra, rb, wr, acc)}  # fmt: skip
-
-
 @pytest.mark.parametrize("mode", ["poll", "signal"])
 @pytest.mark.parametrize("skip", [True, False])
 def test_vecadd_from_a_control_program(mode, skip):
     cfg = ControllerConfig(write_cost=1, kind_write_cost={"dma": 2}, read_cost=2, poll_interval=4)
-    r = run_vecadd(mode, skip, cfg)
+    r = mod7_vecadd(mode, skip, cfg)
     ctl, total = r["ctl"], r["total"]
     assert ctl.finished
-    assert np.array_equal(r["c"], r["a"] + r["b"])
     # The first transfer runs exactly as D34 says from its start write.
     dma = r["comps"][0]
     s = ctl.spans[11][2]
@@ -451,8 +401,9 @@ def test_vecadd_from_a_control_program(mode, skip):
 def test_vecadd_poll_and_signal_same_data():
     """Identical L1 and L2; the difference is the sum of the per-wait differences."""
     cfg = ControllerConfig(read_cost=2, poll_interval=5, signal_latency=2)
-    p, s = run_vecadd("poll", True, cfg), run_vecadd("signal", True, cfg)
-    assert np.array_equal(p["l1"], s["l1"]) and np.array_equal(p["l2"], s["l2"])
+    p, s = mod7_vecadd("poll", True, cfg), mod7_vecadd("signal", True, cfg)
+    assert np.array_equal(p["mem"].data, s["mem"].data)
+    assert np.array_equal(p["l2"].data, s["l2"].data)
     diff = sum(check_waits(p["ctl"], "poll")) - sum(check_waits(s["ctl"], "signal"))
     assert p["total"] - s["total"] == diff
 

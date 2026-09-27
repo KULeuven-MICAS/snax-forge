@@ -21,8 +21,6 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
-from common import LANES
-
 from snax_forge.brm import load_brm
 from snax_forge.design import Platform, StreamerOptions
 from snax_forge.lower import cluster_config, cluster_of, stub
@@ -30,17 +28,19 @@ from snax_forge.snax_model import ControllerConfig, L1Config, L2Config
 from snax_forge.snax_model.scenario import ClusterConfig
 
 PLATFORMS = Path(__file__).resolve().parents[2] / "platforms"
+LANES = 4  # alu4 and red4
 
 # Controller costs of every scenario: one cycle per csr_write and csr_read on
 # every block kind, a poll every 4 cycles. Declared defaults, not measured
 # (D51, open item 10). test_profile.VECADD_CFG keeps its own non-default costs
 # (DMA writes and reads 2) to exercise the D37 formulas; test_scenario runs the
-# hand-built vecadd with these instead. platforms/small16.json holds the same.
+# hand-built vecadd (helpers.mod7_vecadd) with these instead.
+# platforms/small16.json holds the same.
 CTL = ControllerConfig(write_cost=1, read_cost=1, poll_interval=4)
 
 
 def alu4() -> ClusterConfig:
-    """small16 with elementwise_add at W = 4: vecadd's cluster (test_profile's run_vecadd)."""
+    """small16 with elementwise_add at W = 4: vecadd's cluster (the MOD7 vecadd's)."""
     inst = load_brm("elementwise_add").resolve("chisel_tiled_spatial", {"W": LANES})
     return cluster_of(Platform.load(PLATFORMS / "small16.json"), {"acc": inst})
 

@@ -82,7 +82,6 @@ you edit; the rest is generated and ignored by git:
 ```
 scenarios/
   make.py              writes every generated file below
-  common.py            shared helpers
   clusters/
     clusters.py        source: the clusters (alu4, red4, mul1)
     alu4.json ...      generated: one cluster file each

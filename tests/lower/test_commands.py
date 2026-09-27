@@ -3,9 +3,8 @@
 LOW1b acceptance (docs/STATUS.md): the program lowered from
 scenarios/vecadd/tasks.json equals vecadd's hand-scheduled program, the one
 scenarios/vecadd held before its program was generated (D65, D67), written
-out here without the lowering. Plus: every scenario's generated program is
-its task list lowered and keeps its cycle count, the wait rule on small
-cases, and the errors that need the cluster.
+out here without the lowering. Plus: every scenario keeps its cycle count,
+the wait rule on small cases, and the errors that need the cluster.
 
 Sections:
   1. the scenarios' task lists
@@ -40,8 +39,8 @@ from .helpers import (
 
 
 def vecadd_by_hand() -> list:
-    """vecadd's program as scheduled by hand (test_profile.run_vecadd, and the
-    program scenarios/make.py wrote before D64): the LOW1b reference."""
+    """vecadd's program as scheduled by hand (tests/snax_model helpers.mod7_vecadd,
+    and the program scenarios/make.py wrote before D64): the LOW1b reference."""
     p = Program(cluster("alu4"))
 
     def beats(base: int) -> DmaPattern:
@@ -75,15 +74,6 @@ def test_vecadd_task_list_gives_the_vecadd_program():
     assert len(program) == 57
 
 
-@pytest.mark.parametrize("name", TASK_SCENARIOS)
-def test_the_scenario_program_is_its_task_list_lowered(name):
-    sc = Scenario.load(SCEN / name / "scenario.json")
-    tasks = TaskList.load(SCEN / name / "tasks.json")
-    assert tasks.name == name
-    program = lower_program(tasks, sc.cluster)
-    assert [c.to_dict() for c in program] == [c.to_dict() for c in sc.program]
-
-
 # The cycle counts of the scenarios as they were checked in before their programs
 # were generated (D67): a change to a task list or to the lowering that moves one
 # of them shows up here. fmul's program is the one it was scheduled by hand with.
@@ -94,19 +84,6 @@ CYCLES = {"vecadd": 77, "vecadd_conflict": 85, "vecadd_tiled": 471, "fmul": 525,
 @pytest.mark.parametrize("name", TASK_SCENARIOS)
 def test_the_scenario_keeps_its_cycles(name):
     assert run(Scenario.load(SCEN / name / "scenario.json")).total_cycles == CYCLES[name]
-
-
-def test_vecadd_step_by_step():
-    """The walk-through of D64: configs before the waits, one wait per dependency."""
-    tasks = TaskList.load(SCEN / "vecadd" / "tasks.json")
-    program = [c.to_dict() for c in lower_program(tasks, cluster("alu4"))]
-    assert shape(program) == [
-        "Cdma", "Sdma",
-        "Cdma", "Wdma:poll", "Sdma",
-        "Cacc_a", "Cacc_b", "Cacc_out", "Cacc", "Wdma:poll", "Sacc_a", "Sacc_b", "Sacc_out", "Sacc",
-        "Cdma", "Wacc_out:poll", "Sdma",
-        "Wdma:poll",
-    ]  # fmt: skip
 
 
 # =============================================================================

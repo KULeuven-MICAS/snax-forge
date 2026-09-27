@@ -11,23 +11,30 @@ Not imported by the model or by scenarios/make.py: this is test code.
 
 from __future__ import annotations
 
+import numpy as np
+
 from snax_forge.snax_model import (
     Accelerator,
     Cluster,
     Component,
+    Controller,
     Dma,
+    DmaDescriptor,
     DmaPattern,
     L1Config,
     L1Memory,
     L2Config,
     L2Memory,
     Phase,
+    RegisterMap,
     Streamer,
     StreamerConfig,
     StreamerRegs,
+    Wait,
     Xbar,
     elementwise_stub,
 )
+from snax_forge.snax_model.trace import Trace
 
 WORD = 8  # bytes per bank word (64-bit banks)
 BEAT = 64  # bytes per wide beat (512 bits)
@@ -92,6 +99,66 @@ def contiguous(base, n):
 def unit(word, n_beats, lanes):
     """Streamer task over n_beats contiguous beats of ``lanes`` words from word ``word``."""
     return StreamerRegs(word * WORD, (n_beats,), (lanes * WORD,), (lanes,), (WORD,))
+
+
+# =============================================================================
+# The MOD7 vecadd
+# =============================================================================
+
+
+def mod7_vecadd(mode="poll", skip=True, cfg=None, level=None):
+    """c = a + b over 64 elements, L2 -> L1 -> L2, from a hand-written control program.
+
+    Transfer b and the compute blocks are programmed while the previous
+    transfer runs; each start comes after a wait on the block it needs. Named
+    and placed as scenarios/vecadd (NAME1, D83): streamers acc_a, acc_b,
+    acc_out, and a, b, c packed in L2 at 0, 512 and 1024. Written without
+    SNAX-LOWER, so it is an independent reference for that scenario
+    (test_scenario, D92). ``cfg`` sets the controller costs (the model's
+    defaults when None), ``level`` the trace level (no trace when None).
+    """
+    n_elems, lanes = 64, 4
+    nb, n_dma = n_elems // lanes, n_elems // 8
+    trace = None if level is None else Trace(level)
+    cl, mem, xb, l2 = build(skip, trace)
+    rng = np.random.default_rng(3)
+    a, b = rng.integers(-1000, 1000, n_elems), rng.integers(-1000, 1000, n_elems)
+    l2a, l2b, l2c = 0, 512, 1024
+    l2.load(l2a, a)
+    l2.load(l2b, b)
+    wa, wb, wc = 0, 72, 144  # L1 words: a and b in different banks
+    dma = cl.add(Dma("dma", xb, l2))
+    ra, rb, wr, acc = compute_blocks(cl, xb, lanes=lanes, names=("acc_a", "acc_b", "acc_out"))
+    m = RegisterMap([("dma", dma), ("acc_a", ra), ("acc_b", rb), ("acc_out", wr), ("acc", acc)])
+
+    def to_l1(src, word):
+        return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
+
+    def to_l2(word, dst):
+        return DmaDescriptor("l1_to_l2", contiguous(word * WORD, n_dma), contiguous(dst, n_dma))
+
+    prog = [
+        *m.start_writes("dma", to_l1(l2a, wa)),
+        *m.config_writes("dma", to_l1(l2b, wb)),
+        Wait("dma", mode),
+        m.start_write("dma"),
+        *m.config_writes("acc_a", unit(wa, nb, lanes)),
+        *m.config_writes("acc_b", unit(wb, nb, lanes)),
+        *m.config_writes("acc_out", unit(wc, nb, lanes)),
+        *m.config_writes("acc", {"n": nb}),
+        Wait("dma", mode),
+        *(m.start_write(x) for x in ("acc_a", "acc_b", "acc_out", "acc")),
+        *m.config_writes("dma", to_l2(wc, l2c)),
+        Wait("acc_out", mode),
+        m.start_write("dma"),
+        Wait("dma", mode),
+    ]
+    ctl = cl.add(Controller("ctl", m, prog, cfg))
+    total = cl.run(max_cycles=5000)
+    c = l2.dump(l2c, n_elems)[:, 0]
+    assert np.array_equal(c, a + b)
+    return {"cl": cl, "total": total, "trace": trace, "ctl": ctl, "mem": mem, "l2": l2,
+            "a": a, "b": b, "c": c, "comps": (dma, ra, rb, wr, acc)}  # fmt: skip
 
 
 # =============================================================================

@@ -273,10 +273,11 @@ Placement = Callable[
     dict[str, dict[str, int]],
 ]
 
-MEMORY_PASSES: dict[str, dict[str, Callable[..., Any]]] = {k: {} for k in PASS_KINDS}
+MemoryPass = Residency | LayoutPass | Placement
+MEMORY_PASSES: dict[str, dict[str, MemoryPass]] = {k: {} for k in PASS_KINDS}
 
 
-def register_memory_pass(kind: str, name: str, fn: Callable[..., Any]) -> None:
+def register_memory_pass(kind: str, name: str, fn: MemoryPass) -> None:
     """Add a pass of ``kind`` (residency, layout, placement) under ``name``."""
     if kind not in PASS_KINDS:
         raise ValueError(f"unknown pass kind {kind!r} ({list(PASS_KINDS)})")

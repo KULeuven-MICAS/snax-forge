@@ -11,13 +11,13 @@ from pathlib import Path
 
 import numpy as np
 from clusters.clusters import alu4
-from common import BEAT, WORD
 
 from snax_forge.lower import TaskList, lower_program
 from snax_forge.snax_model.scenario import MemInit, Scenario
 
 HERE = Path(__file__).resolve().parent
 BEATS = 16
+WORD, BEAT = 8, 64  # bytes per bank word and per wide beat
 
 
 def make() -> tuple[Scenario, dict[str, np.ndarray]]:

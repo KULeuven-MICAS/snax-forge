@@ -17,8 +17,6 @@ from .ctrl import (
     RegisterMap,
     Wait,
     command_from_dict,
-    program_from_dicts,
-    program_to_dicts,
     register_adapter,
 )
 from .dma import Dma, DmaConfig, DmaDescriptor, DmaPattern, check_descriptor
@@ -117,8 +115,6 @@ __all__ = [
     "command_from_dict",
     "elementwise_stub",
     "lane_offsets",
-    "program_from_dicts",
-    "program_to_dicts",
     "read_outputs",
     "reduce_stub",
     "register_accel",

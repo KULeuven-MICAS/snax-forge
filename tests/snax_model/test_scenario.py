@@ -2,8 +2,8 @@
 
 MOD9 acceptance (docs/STATUS.md): the elementwise, reduce and DMA scenarios
 run from the CLI; final memory checked against NumPy. Plus: the vecadd
-scenario gives exactly the profile and trace of test_profile's hand-built
-run, round trips, byte-identical output files, output files reload,
+scenario gives exactly the profile and trace of the hand-built MOD7 run
+(helpers.mod7_vecadd), round trips, byte-identical output files, output files reload,
 registration order kept, and every named error on a small broken scenario.
 
 Sections:
@@ -28,7 +28,7 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from test_profile import run_vecadd
+from helpers import mod7_vecadd
 
 from snax_forge.snax_model import ControllerConfig, DmaPattern, SimulationTimeout
 from snax_forge.snax_model.__main__ import main
@@ -223,25 +223,24 @@ def test_generated_files_equal_the_generator():
 
 
 # =============================================================================
-# 3. vecadd equals the hand-built run of test_profile, with the scenario's costs
+# 3. vecadd equals the hand-built MOD7 run, with the scenario's costs
 # =============================================================================
 
 
-@pytest.mark.parametrize("skip", [True, False])
-@pytest.mark.parametrize("level", ["off", "task", "beat"])
-def test_vecadd_equals_hand_built_run(level, skip):
+def test_vecadd_equals_hand_built_run():
+    """scenarios/vecadd (its task list lowered) against a program written without
+    SNAX-LOWER: every `cmd` event carries its command, so an equal beat trace is an
+    equal program. Skip and trace levels are covered for every scenario by
+    test_output_files_byte_identical (D92)."""
     sc = load("vecadd")
     # The hand-built run gets the scenario's controller costs: test_profile keeps
     # its own non-default ones (VECADD_CFG) to exercise the D37 formulas.
     cfg = ControllerConfig.from_dict(ctl_config(sc))
-    res = run(sc, skip_idle=skip, trace_level=level)
-    ref = run_vecadd(mode="poll", skip=skip, level=None if level == "off" else level, cfg=cfg)
+    res = run(sc, trace_level="beat")
+    ref = mod7_vecadd(mode="poll", cfg=cfg, level="beat")
     assert res.total_cycles == ref["total"] == 77
     assert res.profile.to_dict() == build_profile(ref["cl"]).to_dict()
-    if level == "off":
-        assert res.trace is None and ref["trace"] is None
-    else:
-        assert res.trace.to_dict() == ref["trace"].to_dict()
+    assert res.trace.to_dict() == ref["trace"].to_dict()
     assert np.array_equal(res.l2, ref["l2"].dump(0, ref["l2"].cfg.n_words))
 
 

@@ -8,7 +8,7 @@ hand-worked case, control overhead in the MOD7 vecadd, round trips, and
 recording does not change results (tracing off vs on, skipping off vs on).
 
 Sections:
-  1. helpers (a copy of the MOD7 vecadd and random programs, with a trace)
+  1. helpers (the MOD7 vecadd with this file's costs, and random programs, traced)
   2. ClassLog
   3. classes add up; control overhead
   4. trace vs counters
@@ -25,7 +25,7 @@ from itertools import pairwise
 
 import numpy as np
 import pytest
-from helpers import BEAT, NB, WORD, build, compute_blocks, contiguous, unit
+from helpers import BEAT, NB, WORD, build, compute_blocks, contiguous, mod7_vecadd, unit
 
 from snax_forge.snax_model import (
     Accelerator,
@@ -64,51 +64,8 @@ VECADD_CFG = ControllerConfig(
 
 
 def run_vecadd(mode="poll", skip=True, level=None, cfg=VECADD_CFG):
-    """The MOD7 vecadd (test_ctrl section 7), optionally traced.
-
-    Named and placed as scenarios/vecadd (NAME1, D83): streamers acc_a, acc_b,
-    acc_out, and a, b, c packed in L2.
-    """
-    n_elems, lanes = 64, 4
-    nb, n_dma = n_elems // lanes, n_elems // 8
-    trace = None if level is None else Trace(level)
-    cl, mem, xb, l2 = build(skip, trace)
-    rng = np.random.default_rng(3)
-    a, b = rng.integers(-1000, 1000, n_elems), rng.integers(-1000, 1000, n_elems)
-    l2a, l2b, l2c = 0, 512, 1024
-    l2.load(l2a, a)
-    l2.load(l2b, b)
-    wa, wb, wc = 0, 72, 144
-    dma = cl.add(Dma("dma", xb, l2))
-    ra, rb, wr, acc = compute_blocks(cl, xb, lanes=lanes, names=("acc_a", "acc_b", "acc_out"))
-    m = RegisterMap([("dma", dma), ("acc_a", ra), ("acc_b", rb), ("acc_out", wr), ("acc", acc)])
-
-    def to_l1(src, word):
-        return DmaDescriptor("l2_to_l1", contiguous(src, n_dma), contiguous(word * WORD, n_dma))
-
-    def to_l2(word, dst):
-        return DmaDescriptor("l1_to_l2", contiguous(word * WORD, n_dma), contiguous(dst, n_dma))
-
-    prog = [
-        *m.start_writes("dma", to_l1(l2a, wa)),
-        *m.config_writes("dma", to_l1(l2b, wb)),
-        Wait("dma", mode),
-        m.start_write("dma"),
-        *m.config_writes("acc_a", unit(wa, nb, lanes)),
-        *m.config_writes("acc_b", unit(wb, nb, lanes)),
-        *m.config_writes("acc_out", unit(wc, nb, lanes)),
-        *m.config_writes("acc", {"n": nb}),
-        Wait("dma", mode),
-        *(m.start_write(x) for x in ("acc_a", "acc_b", "acc_out", "acc")),
-        *m.config_writes("dma", to_l2(wc, l2c)),
-        Wait("acc_out", mode),
-        m.start_write("dma"),
-        Wait("dma", mode),
-    ]
-    ctl = cl.add(Controller("ctl", m, prog, cfg))
-    total = cl.run(max_cycles=5000)
-    assert np.array_equal(l2.dump(l2c, n_elems)[:, 0], a + b)
-    return {"cl": cl, "total": total, "trace": trace, "ctl": ctl, "mem": mem, "l2": l2}
+    """The MOD7 vecadd (helpers.mod7_vecadd) with this file's controller costs."""
+    return mod7_vecadd(mode, skip, cfg, level)
 
 
 # --- Random programs (as test_ctrl section 9), traced -------------------------

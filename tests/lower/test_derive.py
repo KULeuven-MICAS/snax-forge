@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-
 import numpy as np
 import pytest
 
@@ -70,13 +68,6 @@ def test_vecadd_with_its_l1_places_gives_its_task_list():
     got = task_list(point(memory=PINS))
     want = TaskList.load(VECADD / "tasks.json")
     assert got == want and got.to_dict() == want.to_dict()
-
-
-def test_and_lowers_to_the_scenarios_program():
-    p = point(memory=PINS)
-    program = lower_program(task_list(p), cluster_file(p))
-    want = json.loads((VECADD / "scenario.json").read_text())["program"]
-    assert [c.to_dict() for c in program] == want and len(program) == 57
 
 
 def test_the_default_plan_differs_only_in_the_l1_bases():

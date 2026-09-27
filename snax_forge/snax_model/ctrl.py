@@ -128,7 +128,7 @@ while busy, and shadow values the adapter or the component rejects.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -199,14 +199,6 @@ def command_from_dict(d: Mapping[str, Any]) -> Command:
     if op == "wait":
         return Wait(str(d["block"]), str(d.get("mode", "signal")))
     raise ValueError(f"unknown command op {op!r}")
-
-
-def program_to_dicts(program: Iterable[Command]) -> list[dict[str, Any]]:
-    return [c.to_dict() for c in program]
-
-
-def program_from_dicts(ds: Iterable[Mapping[str, Any]]) -> list[Command]:
-    return [command_from_dict(d) for d in ds]
 
 
 # =============================================================================

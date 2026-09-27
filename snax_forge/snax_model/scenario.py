@@ -406,10 +406,6 @@ class ComponentSpec:
         )
 
 
-# Kinds that are never register blocks by default (they have no adapter).
-_NOT_BLOCKS = ("xbar", "controller")
-
-
 @dataclass
 class RegisterMapSpec:
     """Arguments of ``RegisterMap``. ``blocks = None``: every component except the

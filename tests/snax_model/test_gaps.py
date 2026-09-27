@@ -14,15 +14,15 @@ Sections:
   6. small gaps found while writing this: named registers, default blocks
 """
 
-import importlib.util
 import json
 import random
 from pathlib import Path
 
 import numpy as np
 import pytest
-from helpers import assert_cycles_add_up, build, contiguous
+from helpers import BEAT, WORD, assert_cycles_add_up, build, contiguous, unit
 
+from snax_forge.lower import Program
 from snax_forge.snax_model import (
     CsrRead,
     CsrWrite,
@@ -56,18 +56,8 @@ from snax_forge.snax_model.scenario import (
     build as build_scenario,
 )
 
-REPO = Path(__file__).resolve().parents[2]
-
-
-def _load_make():
-    spec = importlib.util.spec_from_file_location("scenarios_make", REPO / "scenarios" / "make.py")
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
-MAKE = _load_make()
-WORD, BEAT, LANES = MAKE.WORD, MAKE.BEAT, MAKE.LANES
+ALU4 = Path(__file__).resolve().parents[2] / "scenarios" / "clusters" / "alu4.json"
+LANES = 4  # alu4's
 
 
 # =============================================================================
@@ -85,7 +75,7 @@ def random_scenario(seed):
     is a seeded random fill, so the scenario needs no files.
     """
     r = random.Random(seed)
-    cl = MAKE.alu4()
+    cl = ClusterConfig.load(ALU4)
     cl.cluster_ref = None
     cl.l1 = L1Config(n_banks=16, rows=64, read_latency=r.choice([0, 1, 2]))
     depth = r.choice([1, 2, 4])
@@ -114,14 +104,14 @@ def random_scenario(seed):
     def mode():
         return r.choice(["poll", "signal"])
 
-    p = MAKE.Program(cl)
+    p = Program(cl)
     for src, word in ((l2a, wa), (l2b, wb)):
         p.config("dma", DmaDescriptor("l2_to_l1", contiguous(src, n_dma),
                                       contiguous(word * WORD, n_dma)))  # fmt: skip
         p.start("dma")
         p.wait("dma", mode())
     for blk, word in (("acc_a", wa), ("acc_b", wb), ("acc_out", wc)):
-        p.config(blk, MAKE.unit(word, nb, LANES))
+        p.config(blk, unit(word, nb, LANES))
     p.config("acc", {"n": nb})
     for blk in ("acc_a", "acc_b", "acc_out", "acc"):
         p.start(blk)
@@ -290,7 +280,7 @@ def test_controller_idle_tail_is_credited():
     """A program that ends before the hardware does: the tail is controller idle."""
     cl = small_cluster()
     m = register_map_of(cl)
-    prog = [named(c, m) for c in m.start_writes("ra", MAKE.unit(0, 8, 2))]
+    prog = [named(c, m) for c in m.start_writes("ra", unit(0, 8, 2))]
     sc = Scenario(name="tail", cluster=cl, program=prog, max_cycles=500)
     res = run(sc, trace_level="task")
     ctl = res.profile.controller
@@ -331,7 +321,7 @@ def test_zero_work_starts_are_traced():
     """A task with no beats, firings or DMA beats: busy never rises, done is t+1."""
     cl = small_cluster()
     m = register_map_of(cl)
-    regs = MAKE.unit(0, 0, 2)  # temporal bound 0: no beats
+    regs = unit(0, 0, 2)  # temporal bound 0: no beats
     prog = [named(c, m) for c in m.start_writes("ra", regs)]
     prog += [named(c, m) for c in m.start_writes("acc", {"n": 0})]
     zero = DmaDescriptor("l2_to_l1", DmaPattern(0, (0,), (BEAT,)), DmaPattern(0, (0,), (BEAT,)))

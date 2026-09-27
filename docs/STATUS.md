@@ -238,7 +238,8 @@ exactly. E2E1 is done (D90) and closes M3: `pixi run flow recipes/vecadd.json
 --platform platforms/small16.json` runs the kernel to a checked model run,
 the output equal to the kernel's reference and REF1 (85 cycles contiguous;
 with B and C pinned, 77 cycles and the profile of `scenarios/vecadd`).
-Housekeeping after M3 removed the old SDFG → descriptor → RTL path (D91).
+Housekeeping after M3 removed the old SDFG → descriptor → RTL path (D91), the
+scenario helpers the lowering replaced and the tests that repeated others (D92).
 M4b follows.
 
 ## Sync Reminders

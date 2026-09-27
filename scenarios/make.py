@@ -15,20 +15,18 @@ writes it. Every scenario is a task list now (D66).
 The generated files are not in git (D67): they are written again by
 ``pixi run scenarios``, by ``pixi run model-run`` before it runs, and by
 the test session before any test (tests/conftest.py). The sources are the
-``scenario.py`` and ``tasks.json`` files, ``common.py`` and
-``clusters/clusters.py``.
-
-Shared helpers live in ``common.py``; ``scenarios/`` is put on the import
-path so every ``scenario.py`` can use it and ``clusters.clusters``.
+``scenario.py`` and ``tasks.json`` files and ``clusters/clusters.py``;
+``scenarios/`` is put on the import path so every ``scenario.py`` can import
+``clusters.clusters`` (D92).
 
 Scenarios:
 
-    vecadd/              the MOD7 vecadd (test_profile.run_vecadd), the M3 target; task list
-    vecadd_conflict/     vecadd with b in the same banks as a (VIS3's conflict case); task list
-    vecadd_tiled/        vecadd over 576 elements in 3 tiles of 192 (471 cycles); task list
-    fmul/                a * b in 5 tiles of 16 on mul1, double buffered; task list
-    reduce/              64 elements in L1 summed in groups of 16; task list
-    dma/                 L2 -> L1 with a 2D pattern and back, on alu4; task list
+    vecadd/              the MOD7 vecadd (helpers.mod7_vecadd in tests/snax_model), the M3 target
+    vecadd_conflict/     vecadd with b in the same banks as a (VIS3's conflict case)
+    vecadd_tiled/        vecadd over 576 elements in 3 tiles of 192 (471 cycles)
+    fmul/                a * b in 5 tiles of 16 on mul1, double buffered
+    reduce/              64 elements in L1 summed in groups of 16
+    dma/                 L2 -> L1 with a 2D pattern and back, on alu4
 """
 
 from __future__ import annotations
@@ -43,23 +41,14 @@ from types import ModuleType
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))  # for common and clusters.clusters
+sys.path.insert(0, str(Path(__file__).resolve().parent))  # for clusters.clusters
 
-from clusters.clusters import CLUSTERS, CTL, alu4, mul1, red4
-from common import BEAT, LANES, WORD, contiguous, unit
+from clusters.clusters import CLUSTERS
 
-from snax_forge.lower import Program
 from snax_forge.snax_model.scenario import Scenario, to_json
 
 ROOT = Path(__file__).resolve().parent
 SCENARIO_FILE = "scenario.py"
-
-# Re-exported for the tests that build programs with the scenario helpers
-# (test_gaps: MAKE.alu4, MAKE.unit, MAKE.Program, MAKE.WORD, ...).
-__all__ = [
-    "BEAT", "CTL", "LANES", "WORD", "Program", "alu4", "contiguous", "generate", "main",
-    "mul1", "red4", "unit", "write",
-]  # fmt: skip
 
 
 def scenario_dirs() -> list[Path]:
