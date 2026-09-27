@@ -239,11 +239,12 @@ exactly. E2E1 is done (D90) and closes M3: `pixi run flow recipes/vecadd.json
 the output equal to the kernel's reference and REF1 (85 cycles contiguous;
 with B and C pinned, 77 cycles and the profile of `scenarios/vecadd`).
 Housekeeping after M3 removed the old SDFG → descriptor → RTL path (D91), the
-scenario helpers the lowering replaced and the tests that repeated others (D92).
+scenario helpers the lowering replaced and the tests that repeated others (D92),
+and moved the decision log to `docs/DECISIONS.md`, condensed (D93).
 M4b follows.
 
 ## Sync Reminders
 
 - After every new update, PR, commit, or new task done with Claude, synchronise
-  `./docs`: update task status here, and log any design change in the
-  ARCHITECTURE.md Decision Log.
+  `./docs`: update task status here, and log any design change in
+  `docs/DECISIONS.md` (next free number, rules at its top).

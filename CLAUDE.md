@@ -1,7 +1,7 @@
 # SNAX-FORGE
 
-Architecture skeleton and decision log: `docs/ARCHITECTURE.md`.
-Read it before designing or changing any component. Do not contradict a logged decision (D-numbers); propose a new one instead.
+Architecture skeleton: `docs/ARCHITECTURE.md`. Decisions, D1 onwards: `docs/DECISIONS.md`.
+Read both before designing or changing any component. Do not contradict a logged decision (D-numbers); propose a new one instead, with the next free number.
 What the model-side artefacts mean, field by field: `docs/CONTRACTS.md`. Its
 section 8 holds the rules a new block kind must follow; a snippet in it is
 checked against the file it came from, so update both together.
