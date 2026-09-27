@@ -82,3 +82,36 @@ def alu4_streamers() -> dict[str, dict[str, Any]]:
 def accel_node(gd: dict[str, Any]) -> dict[str, Any]:
     """The accelerated node of a vecadd fixture dict."""
     return gd["body"][0]["body"][0]
+
+
+# --- graph edits for the lowering cases (LOW1a) ---
+
+
+def two_loops(g: dict[str, Any]) -> None:
+    """vecadd's temporal map split in two temporal maps, i_o over 0:2 around i_t over 0:N // 8."""
+    inner = g["body"][0]
+    inner["attrs"]["range"] = "0:N // 8"
+    del inner["attrs"]["loop.split"]
+    node = inner["body"][0]
+    for m in [*node["inputs"].values(), *node["outputs"].values()]:
+        m["subset"] = ["32 * i_o + 4 * i_t:32 * i_o + 4 * i_t + 4"]
+    tasklet = node["attrs"]["replaced"]["body"][0]
+    for m in [*tasklet["inputs"].values(), *tasklet["outputs"].values()]:
+        m["subset"] = ["32 * i_o + 4 * i_t + i_s"]
+    outer = {"id": "add_map_o", "kind": "map", "inputs": {}, "outputs": {},
+             "attrs": {"var": "i_o", "range": "0:2", "loop.kind": "temporal"}, "body": [inner]}  # fmt: skip
+    g["body"] = [outer]
+
+
+def chained(g: dict[str, Any]) -> None:
+    """vecadd followed by D = C + B on a second instance, acc2."""
+    second = copy.deepcopy(g["body"][0])
+    second["id"] = "add_map2"
+    node = second["body"][0]
+    node["id"], node["attrs"]["instance"] = "add2", "acc2"
+    node["inputs"]["a"]["data"], node["outputs"]["out"]["data"] = "C", "D"
+    rep = node["attrs"]["replaced"]
+    rep["id"], rep["body"][0]["id"] = "add_map2_s", "add2"
+    rep["body"][0]["inputs"]["in1"]["data"], rep["body"][0]["outputs"]["out"]["data"] = "C", "D"
+    g["containers"]["D"] = copy.deepcopy(g["containers"]["C"])
+    g["body"].append(second)

@@ -21,6 +21,7 @@ from .helpers import (
     design,
     platform_dict,
     problems,
+    two_loops,
 )
 
 # =============================================================================
@@ -435,3 +436,29 @@ def test_strided_layouts_that_interleave_do_not_overlap():
 def test_memory_waits_for_connect():
     got = codes(with_memory([("Q.l1.base", 0)], sets=[("streamers.acc_q.prio", 1)]))
     assert got == ["connect.streamer_key"]
+
+
+# =============================================================================
+# 7. Firing loops (LOW1a)
+# =============================================================================
+
+
+def test_each_firing_loop_needs_a_streamer_loop():
+    got = problems(design(edit_graph=two_loops))
+    assert [(p.code, p.where) for p in got] == [
+        ("connect.temporal", f"streamer {s}") for s in ("acc_a", "acc_b", "acc_out")
+    ]
+    assert "fires over 2 temporal loops (add_map_o, add_map), the streamer has 1" in got[0].message
+    assert got[0].fix == "--set platform.streamers.acc_a.temporal_dims=2"
+    assert (
+        problems(design(edit_graph=two_loops, sets=[("streamers.default.temporal_dims", 2)])) == []
+    )
+
+
+def test_a_tile_map_is_not_lowered_yet():
+    def tile(g):
+        g["body"][0]["attrs"]["loop.kind"] = "tile"
+
+    (p,) = problems(design(edit_graph=tile))
+    assert (p.code, p.where) == ("connect.temporal", "node add")
+    assert "map add_map around add is tile" in p.message

@@ -35,15 +35,19 @@ from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
+from snax_forge import expr
 from snax_forge.brm import BrmError, Instance
 from snax_forge.dfg import DfgError, Graph, Node
+from snax_forge.dfg.subset import parse_dim
 from snax_forge.snax_model.ctrl import STATUS, DmaAdapter, StreamerAdapter
 
 from .memory import MemoryContext, MemoryPlan, MemorySpec, pin_problems, plan
 from .platform import DERIVED, Platform
 from .problems import DesignError, Problem
 from .streamers import (
+    LoopError,
     accelerated,
+    firing_loops,
     instance_nodes,
     instance_of,
     nest_spatial_bounds,
@@ -444,6 +448,38 @@ def _connect_dtype(design: Design) -> Iterable[Problem]:
                 )  # fmt: skip
 
 
+def _connect_temporal(design: Design) -> Iterable[Problem]:
+    """Each port needs one streamer temporal loop per firing loop around its node (LOW1a)."""
+    pf, g = design.platform, design.graph
+    for n in accelerated(g):
+        try:
+            loops = firing_loops(g, n)
+        except LoopError as e:
+            yield Problem("connect.temporal", f"node {n.id}", str(e))
+            continue
+        i = n.attrs["instance"]
+        for conn, m in {**n.inputs, **n.outputs}.items():
+            s = streamer_name(i, conn)
+            try:
+                for dim in m.subset:
+                    for part in parse_dim(dim, "subset")[:2]:
+                        expr.linear(part, [lp.var for lp in loops])
+            except expr.ExprError as e:
+                yield Problem(
+                    "connect.temporal", f"node {n.id}.{conn}",
+                    f"subset {m.subset} is not affine in the firing loops: {e}",
+                )  # fmt: skip
+                continue
+            have = pf.options(s).temporal_dims
+            if len(loops) > have:
+                yield Problem(
+                    "connect.temporal", f"streamer {s}",
+                    f"node {n.id} fires over {len(loops)} temporal loops "
+                    f"({', '.join(lp.map for lp in loops)}), the streamer has {have}",
+                    _set(f"streamers.{s}.temporal_dims", len(loops)),
+                )  # fmt: skip
+
+
 def _connect_regmap(design: Design) -> Iterable[Problem]:
     pf = design.platform
     window = pf.register_window
@@ -679,6 +715,7 @@ for _code, _stage, _fn in (
     ("connect.derived", "connect", _connect_derived),
     ("connect.lanes", "connect", _connect_lanes),
     ("connect.dtype", "connect", _connect_dtype),
+    ("connect.temporal", "connect", _connect_temporal),
     ("connect.regmap", "connect", _connect_regmap),
     ("memory.pin", "memory", _memory_pin),
     ("memory.residency", "memory", _memory_residency),

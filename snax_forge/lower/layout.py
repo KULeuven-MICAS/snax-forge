@@ -86,3 +86,16 @@ class Layout(Config):
             raise LayoutError(
                 f"the operand spans bytes [{lo}, {hi + word}), L1 is [{start}, {end})"
             )
+
+
+def dma_side(lay: Layout, word: int, beat: int) -> dict[str, int | list[int]]:
+    """One side of a DMA task moving a whole layout: ``base``, ``bounds``, ``strides``.
+
+    A contiguous layout of whole wide beats, starting on a beat, is one loop of
+    beats (open item 38); anything else raises LayoutError, which the design
+    check ``memory.align`` reports first.
+    """
+    size = int(np.prod(lay.shape)) * word
+    if lay != Layout.contiguous(lay.base, lay.shape, word) or size % beat or lay.base % beat:
+        raise LayoutError(f"layout {lay} is not whole contiguous {beat}-byte beats")
+    return {"base": lay.base, "bounds": [size // beat], "strides": [beat]}

@@ -26,6 +26,7 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.brm import Instance, load_brm, task_nest
 from snax_forge.dfg import Graph, Node
+from snax_forge.dfg.subset import parse_dim
 from snax_forge.snax_model import StreamerConfig
 
 from .platform import Platform, StreamerOptions
@@ -87,6 +88,44 @@ def instances(graph: Graph) -> dict[str, Instance]:
 
 def streamer_name(instance: str, port: str) -> str:
     return f"{instance}_{port}"
+
+
+@dataclass(frozen=True)
+class Loop:
+    """One firing loop of an accelerated node: a temporal map around it."""
+
+    map: str
+    var: str
+    begin: int
+    count: int
+    step: int
+
+
+class LoopError(ValueError):
+    """An accelerated node whose enclosing maps are not all its firing loops."""
+
+
+def firing_loops(graph: Graph, node: Node) -> list[Loop]:
+    """The temporal maps around ``node``, outermost first: its firing loop (D70, D79).
+
+    Every map around an accelerated node must be ``temporal`` for now: a tile
+    or untagged map would start a new task per iteration, which LOW1a does
+    not lower yet (a tile transform and per-tile DMA come later).
+    """
+    outer = next(o for n, o in graph.walk() if n is node)
+    symbols = {k: v for k, v in graph.symbols.items() if v is not None}
+    loops = []
+    for m in outer:
+        kind = m.attrs.get("loop.kind")
+        if m.kind != "map" or kind != "temporal":
+            raise LoopError(
+                f"map {m.id} around {node.id} is {kind or 'untagged'}; only temporal maps "
+                "(one task, one firing loop) are lowered for now"
+            )
+        b, e, s = parse_dim(m.attrs["range"], m.id)
+        lo, hi = expr.evaluate(b, symbols), expr.evaluate(e, symbols)
+        loops.append(Loop(m.id, m.attrs["var"], lo, len(range(lo, hi, s)), s))
+    return loops
 
 
 def nest_spatial_bounds(inst: Instance, port: str) -> list[int]:

@@ -584,8 +584,9 @@ registered with `register_check` (section 14).
 SNAX-LOWER's ordered list of tasks (LOW1b, D45, D64): which component runs
 which task with which values, where each task is configured and started,
 and what it waits for. `lower_program(tasks, cluster)` turns it into the
-program of section 5; the model never reads a task list. LOW1a will produce
-it from a design point; until then it is written by hand (D63). Every
+program of section 5; the model never reads a task list. LOW1a produces it
+from a design point (D89, `snax_forge/lower/derive.py`, `pixi run lower tasks
+DESIGN_POINT`; the rules below); it can still be written by hand (D63). Every
 scenario has one as `tasks.json`, the hand-written source its `scenario.py`
 lowers into the program of its generated `scenario.json` (D65, D66, D67).
 
@@ -638,6 +639,28 @@ the accelerator attached to it and that accelerator's reader streamers when
 the same start launched them: their data flows into the writer, so it
 finishes last. Nothing else is added; where configures, starts and syncs
 go, and so how programming overlaps running blocks, is the task list's.
+
+**Derived from a design point** (LOW1a, D89). The accelerated nodes run in
+execution order, one group each; every map around a node is one of its
+temporal firing loops (a single tile). A group is: `load_<C>` (configure,
+start) for each input, in BRM port order, whose container has an L2 and an
+L1 layout and is not in L1 yet; `<node>_<instance>_<port>` for every port,
+the streamer's values from the memlet through the L1 layout; `<node>_<instance>`
+with `n` = the firing count; one `start` of the streamer tasks and then the
+accelerator task; `store_<C>` after the writer's task for each output
+written for the last time. At the end one `sync` per non-transient
+container the graph writes, on its store (or its writer without an L2).
+`after` holds data dependences only: a reader waits for the task that last
+put its container in L1, a writer for the readers and writer since. Every
+configure and sync uses the platform's `wait_mode`. Streamer values, with
+firing loops `v_k` (begin `b_k`, `count_k`, step `s_k`) and a subset
+dimension `d` whose begin is `c_d + sum_k a_dk v_k`: `base` = layout base +
+sum_d (c_d + sum_k a_dk b_k) * stride_d; temporal loop k (innermost first):
+bound `count_k`, stride sum_d a_dk s_k stride_d; one spatial loop per range
+dimension (the last first): its length and step * stride_d. The spatial
+bounds must be the streamer's and the addresses must be those the BRM's
+nest gives through the same layout. vecadd's design point with B and C
+pinned to 576 and 1152 gives `scenarios/vecadd/tasks.json` exactly.
 
 The end of `vecadd`'s task list: the adder's four tasks are configured one
 by one (the last one is shown), started together, and the store waits for
@@ -972,6 +995,7 @@ problems.
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
 | `connect.dtype` | a container whose dtype is not the L1's or not its port's, or an L1 with more than one element per word (open item 21) |
+| `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), a subset that is not affine in the firing loops, or a streamer with fewer `temporal_dims` than the node's firing loops (the fix names the count) |
 | `connect.regmap` | a streamer, accelerator or DMA whose status and configuration registers do not fit `register_window` |
 | `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest) or on a memory the container does not live in; an unknown pass. The plan is made after these pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
