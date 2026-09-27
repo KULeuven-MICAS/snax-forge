@@ -460,8 +460,12 @@ mean and a histogram per lane, D40); a DMA gives cycles per class, beats and
 bytes each way and the peak buffer; `banks` gives per-bank reads, writes,
 grants, conflicts, stalls and cycles blocked by a wider grant; `ports` gives
 per xbar port its owner, width, grants, stalls and the stalls caused by a
-wider grant. `functional_check` stays empty until the reference executor
-exists (E2E1, open item 13).
+wider grant. `functional_check` is null for a scenario run on its own; a run
+of the flow (E2E1, D90, `pixi run flow`) fills it: `kernel`, `seed`,
+`symbols`, `passed`, and per `inout` container of the kernel the `memory` it
+was read back from (L2 when it has an L2 layout), its `elements`, whether it
+equals the kernel's `reference` and the reference executor (`ref1`) on the
+same inputs, and the number of `mismatches` against the reference.
 
 Cycle classes, one per cycle per component, in this order:
 

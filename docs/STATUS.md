@@ -19,6 +19,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 - SNAX-SANDBOX (SBX1, D80) lives in snax_forge/sandbox/ (recipe.py, transforms.py with `split_map` and `bind`, patterns.py with the `elementwise` matcher, run.py with the per-step reference check, the CLI), tests in tests/sandbox/ (a package). Recipes live in recipes/ (`vecadd.json`); `pixi run sandbox recipes/vecadd.json [--set W=8]` writes every step to out/sandbox/vecadd/.
 - The DFG viewer (VIS5, D81) is snax_forge/viz/dfg/ (api.py: loading files and the rows, nodes and edges of a graph; server.py: its routes on the viewer's Handler; `__main__.py`) with static/dfg.html and static/dfg.js; tests in tests/viz/test_dfg.py. `pixi run view-dfg FILE|DIR ...` serves http://127.0.0.1:8766/.
 - SNAX-DESIGN (DP1a, D84, D85) lives in snax_forge/design/ (platform.py: the platform file, `--set` changes and working copies; streamers.py: the streamer shell against a bound graph; check.py: the registered design checks; problems.py: what they report; the CLI), tests in tests/design/ (a package). Platforms live in platforms/ (`small16.json`); `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` writes out/design/vecadd/platform.json, memory.json and design_point.json. Since DP1b also memory.py (the memory plan: registered passes, pins, the context policies read) and point.py (the design point).
+- The flow (E2E1, D90) is snax_forge/flow/ (run.py: `run_flow` and the functional check; the CLI), tests in tests/flow/ (a package). `pixi run flow recipes/vecadd.json --platform platforms/small16.json` writes out/flow/vecadd/.
 - Generated `.snaxdfg` files and design points go under out/, not in git.
 
 ## Milestones
@@ -27,7 +28,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 |---|---|---|
 | M1 | SNAX-MODEL, kernel-agnostic | `done` |
 | M4a | Run views: profile report, schedule, cluster view | `done` |
-| M3 | Close `vecadd` end to end, from the kernel (D76) | `wip` |
+| M3 | Close `vecadd` end to end, from the kernel (D76, D90) | `done` |
 | M4b | Remaining views and first manual loop | todo |
 | M5 | `dot` | todo |
 | M6 | Contract freeze | todo |
@@ -94,7 +95,7 @@ and task-list work below is done; the rest follows in table order.
 | DP1b | Memory plan and design point (D86, D87): registered residency, layout and placement passes (contiguous by default) with pins (`--set memory.<container>.<mem>.base=N`), the memory working copy `out/design/<name>/memory.json` and `--memory`, the context later policies read (port index streams, groups), the `memory.*` checks, and `design_point.json` (graph, platform, streamers, memory), checked again on load; closes open item 29 | DP1a | vecadd's default plan is contiguous (A, B, C at 0, 512, 1024 in L2 and L1); with B and C pinned it has scenarios/vecadd's places; a registered pass is picked by name; overlaps, misaligned, partial-beat and out-of-range layouts are caught by name with their fix; the graph is carried unchanged and the point round-trips byte for byte (tests/design) | `done` |
 | LOW1c | Design point + BRMs → cluster file (D53, D88): accelerator entries from BRM interface and timing, the resolved streamer shell, platform parts from the design point; the cluster builders of `scenarios/clusters/clusters.py` moved into SNAX-LOWER (`snax_forge/lower/cluster.py`), alu4, red4 and mul1 built through them; `pixi run lower cluster` | DP1b, NAME1 | Cluster file for the `vecadd` design point equals `scenarios/clusters/alu4.json` byte for byte; the checked-in clusters are unchanged; every combination of W, temporal_dims, n_banks and register_window that passes the design checks builds (tests/lower/test_cluster.py) | `done` |
 | LOW1a | Design point → ordered task list (D45, D89) in the format of D64: one group per accelerated node in execution order (temporal firing loops only, a single tile); loads and stores from the memory plan; streamer values from memlets through layouts (D73), checked against the BRM nest by address; `after` from the data; derived task names (D75); the `connect.temporal` check; `pixi run lower tasks` | DP1b, LOW1b, NAME1 | Task list for the `vecadd` design point with B and C pinned equals `scenarios/vecadd/tasks.json` and lowers to its program; in the model 77 cycles pinned and 85 contiguous; W = 8, two temporal maps and a chain of two accelerators run to the right data (tests/lower/test_derive.py) | `done` |
-| E2E1 | Full `vecadd` path, `pixi run flow RECIPE --platform P`: kernel → import → recipe → design point → cluster file and task list → scenario (inputs from `make_inputs`) → run | all of the above | Output equals the kernel's reference and REF1 exactly; with the default memory plan 85 cycles, with B and C pinned to vecadd's L1 places the cycles and profile of `scenarios/vecadd` | todo |
+| E2E1 | Full `vecadd` path (D90), `pixi run flow RECIPE --platform P [--set ...]`: kernel → import → recipe → design point → cluster file and task list → scenario (inputs from `make_inputs`) → run → functional check against the kernel's reference and REF1, written into the profile; everything in `out/flow/<name>/`; closes open item 13 | all of the above | Output equals the kernel's reference and REF1 exactly; with the default memory plan 85 cycles, with B and C pinned the cluster file, task list, 77 cycles and profile of `scenarios/vecadd`; W = 8 exact (tests/flow) | `done` |
 
 ### M4b: Remaining views and first manual loop (after M3, D54)
 
@@ -233,7 +234,11 @@ and writes `design_point.json`, what SNAX-LOWER reads. LOW1c is done (D88):
 `alu4.json` byte for byte, and the checked-in clusters are built by the
 same code. LOW1a is done (D89): `pixi run lower tasks` derives the task list,
 and vecadd's design point with B and C pinned gives `vecadd/tasks.json`
-exactly. Next E2E1 runs the whole path. M4b follows.
+exactly. E2E1 is done (D90) and closes M3: `pixi run flow recipes/vecadd.json
+--platform platforms/small16.json` runs the kernel to a checked model run,
+the output equal to the kernel's reference and REF1 (85 cycles contiguous;
+with B and C pinned, 77 cycles and the profile of `scenarios/vecadd`).
+M4b follows.
 
 ## Sync Reminders
 

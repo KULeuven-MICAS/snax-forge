@@ -98,6 +98,7 @@ test-brm   = "pytest -q tests/brm tests/test_expr.py"
 test-dfg   = "pytest -q tests/dfg tests/test_expr.py"
 test-sandbox = "pytest -q tests/sandbox"
 test-design = "pytest -q tests/design"
+test-flow  = "pytest -q tests/flow"
 lint       = "ruff check util kernels snax_forge transforms tests scenarios && ruff format --check util kernels snax_forge transforms tests scenarios"
 fmt        = "ruff check --fix util kernels snax_forge transforms tests scenarios && ruff format util kernels snax_forge transforms tests scenarios"
 forge      = "python -m snax_forge.sdfg"
@@ -115,6 +116,9 @@ design     = "python -m snax_forge.design"
 # SNAX-LOWER (LOW1c, LOW1a): `pixi run lower cluster|tasks out/design/vecadd/design_point.json` writes
 # cluster.json or tasks.json beside it
 lower      = "python -m snax_forge.lower"
+# The whole path (E2E1): `pixi run flow recipes/vecadd.json --platform platforms/small16.json [--set W=8]`
+# writes out/flow/vecadd/ and checks the run against the kernel reference and REF1
+flow       = "python -m snax_forge.flow"
 # DFG viewer (VIS5): `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
 view-dfg   = "python -m snax_forge.viz.dfg"
 profile    = "python -m snax_forge.sdfg --profile"
