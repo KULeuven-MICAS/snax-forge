@@ -1,4 +1,4 @@
-"""What the viewer asks for, as plain Python functions (VIS1, D54, D55, D56).
+"""What the viewer asks for, as plain Python functions (VIS1-VIS4b, D54-D56, D96, D97).
 
 What this is
 ------------
@@ -216,10 +216,6 @@ def _ports(rv: RunView) -> dict[str, dict[str, Any]]:
     return rv.outputs.profile.to_dict()["ports"]
 
 
-def _dmas(rv: RunView) -> set[str]:
-    return {c.name for c in rv.cluster.components if c.kind == "dma"}
-
-
 def _unavailable(rv: RunView, e: MovementUnavailable) -> dict[str, Any]:
     return {"name": rv.name, "available": False, "reason": str(e)}
 
@@ -236,7 +232,7 @@ def movement_view(rv: RunView) -> dict[str, Any]:
         "name": rv.name,
         "available": True,
         "filtered": idx.filtered,
-        "residency": movement.residency(idx, rv.outputs.regions, _dmas(rv)),
+        "residency": movement.residency(idx, rv.outputs.regions),
         "patterns": movement.patterns(idx, rv.spans, _ports(rv)),
         "conflicts": {k: c[k] for k in ("count", "banks", "ports")},
     }
@@ -316,23 +312,15 @@ def tasks(rv: RunView) -> dict[str, list[dict[str, Any]]]:
     0, so with no write it is ``DIRECTIONS[0]``. Needs the task events, so
     at level off the answer is empty.
     """
-    dmas = {c.name for c in rv.cluster.components if c.kind == "dma"}
-    writes: dict[str, list[tuple[int, int]]] = {d: [] for d in dmas}  # (last, value)
-    for e in rv.events:
-        if e["k"] == "cmd" and e.get("op") == "csr_write":
-            block, _, reg = str(e.get("reg") or "").partition(".")
-            if reg == "direction" and block in writes:
-                writes[block].append((int(e["last"]), int(e["value"])))
+    dmas = movement.dma_names(rv.cluster)
+    writes = movement.csr_writes(rv.events)
     out: dict[str, list[dict[str, Any]]] = {}
     for block, spans in rv.spans.items():
         out[block] = []
         for start, done in spans:
             task: dict[str, Any] = {"start": start, "done": done}
             if block in dmas:
-                k = 0
-                for last, value in writes[block]:  # in trace order, so the last one wins
-                    if last < start:
-                        k = value
+                k = movement.last_write(writes, f"{block}.direction", start) or 0
                 task["direction"] = DIRECTIONS[k] if 0 <= k < len(DIRECTIONS) else f"direction {k}"
             out[block].append(task)
     return out

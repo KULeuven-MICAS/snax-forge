@@ -23,12 +23,12 @@ SNAX-LOWER derives from it; the model is not run. For a plain run directory
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
 from typing import Any
 
 from snax_forge.snax_model.scenario import ClusterConfig, Region
 
 from ..viz import memory as memview
+from .markdown import kib, kv, pct, span_text, spans, table
 from .record import Record
 
 
@@ -114,18 +114,6 @@ class DesignReport(Record):
 # =============================================================================
 
 
-def spans(xs: list[int]) -> str:
-    """[0, 1, 2, 3, 8] -> "0–3, 8"."""
-    out, i = [], 0
-    while i < len(xs):
-        j = i
-        while j + 1 < len(xs) and xs[j + 1] == xs[j] + 1:
-            j += 1
-        out.append(str(xs[i]) if i == j else f"{xs[i]}–{xs[j]}")
-        i = j + 1
-    return ", ".join(out)
-
-
 def _component_detail(c: Any) -> str:
     cfg = c.config
     if c.kind == "streamer":
@@ -159,7 +147,7 @@ def _memory_tables(cluster: ClusterConfig, regions: list[Region]) -> list[Memory
                 r["bytes"],
                 r["share"],
                 spans(r[col]),
-                spans(list(range(r["rows"][0], r["rows"][1] + 1))),
+                span_text(r["rows"]),
             )
             for r in s["regions"]
         ]
@@ -177,20 +165,12 @@ def _memory_tables(cluster: ClusterConfig, regions: list[Region]) -> list[Memory
     return out
 
 
-def _unravel(flat: int, shape: tuple[int, ...]) -> tuple[int, ...]:
-    out = []
-    for e in reversed(shape):
-        out.append(flat % e)
-        flat //= e
-    return tuple(reversed(out))
-
-
 def _notes(
     cluster: ClusterConfig, streamers: list[StreamerRow], regions: list[Region]
 ) -> list[str]:
     """Address facts about the streamers of each accelerator (module doc)."""
-    l1 = cluster.l1
-    word, row_bytes = l1.word_bytes, l1.word_bytes * l1.n_banks
+    lay = memview.layout_of("l1", cluster, [])
+    row_bytes = lay.word_bytes * lay.columns
     by_name = {r.name: r for r in regions if r.mem == "l1"}
     notes = []
     groups: dict[str, list[StreamerRow]] = {}
@@ -203,9 +183,8 @@ def _notes(
                 ra, rb = by_name[a.container], by_name[b.container]  # type: ignore[index]
 
                 def first_banks(r: Region, lanes: int) -> list[int]:
-                    n = min(lanes, r.size)
-                    addrs = [r.address(_unravel(k, r.shape)) for k in range(n)]
-                    return sorted({((x - l1.base_addr) // word) % l1.n_banks for x in addrs})
+                    words = [lay.element_word(r, k) for k in range(min(lanes, r.size))]
+                    return sorted({lay.place(w)[0] for w in words})
 
                 ba, bb = first_banks(ra, a.lanes), first_banks(rb, b.lanes)
                 both = sorted(set(ba) & set(bb))
@@ -262,6 +241,7 @@ def build_design(
     containers: dict[str, str] = {}
     if point is not None:
         from snax_forge.design import run_checks
+        from snax_forge.design.streamers import accelerated, streamer_name
 
         design = point.design()
         run_checks(design)  # resolves the instances (BRM, implementation, params)
@@ -277,12 +257,10 @@ def build_design(
             passes=dict(point.memory.passes),
             pins=dict(point.memory.changes),
         )
-        for n in _accelerated(point.graph.body):
+        for n in accelerated(point.graph):
             for side in (n.inputs, n.outputs):
                 for port, m in side.items():
-                    containers[f"{n.attrs['instance']}_{port}"] = (
-                        m["data"] if isinstance(m, dict) else m.data
-                    )
+                    containers[streamer_name(n.attrs["instance"], port)] = m.data
     else:
         containers = _container_by_task_base(tasks, regions)
 
@@ -338,47 +316,9 @@ def build_design(
     )
 
 
-def _accelerated(body: list[Any]) -> list[Any]:
-    out = []
-    for n in body:
-        if n.kind == "accelerated":
-            out.append(n)
-        out += _accelerated(getattr(n, "body", None) or [])
-    return out
-
-
 # =============================================================================
 # Rendering
 # =============================================================================
-
-
-def _table(cols: list[str], rows: list[list[Any]], right: set[int] = frozenset()) -> list[str]:  # type: ignore[assignment]
-    def cell(v: Any) -> str:
-        if v is None:
-            return "–"
-        if isinstance(v, float):
-            return f"{v:.2f}"
-        return str(v).replace("|", "\\|")
-
-    out = [
-        "| " + " | ".join(cols) + " |",
-        "|" + "|".join("---:" if i in right else "---" for i in range(len(cols))) + "|",
-    ]
-    out += ["| " + " | ".join(cell(v) for v in r) + " |" for r in rows]
-    return out
-
-
-def _kv(d: dict[str, Any]) -> str:
-    return ", ".join(f"{k}={v}" for k, v in d.items()) or "none"
-
-
-def pct(x: float) -> str:
-    """A share as a percentage with one decimal, halves rounded up (as the viewer shows it)."""
-    return f"{Decimal(str(100 * x)).quantize(Decimal('0.1'), ROUND_HALF_UP)}%"
-
-
-def kib(n: int) -> str:
-    return f"{n // 1024} KiB" if n >= 1024 and n % 1024 == 0 else f"{n} B"
 
 
 def render_design(r: DesignReport) -> str:
@@ -392,23 +332,23 @@ def render_design(r: DesignReport) -> str:
     else:
         h = r.header
         base = f", base {h.platform_base}" if h.platform_base else ""
-        out += _table(
+        out += table(
             ["", ""],
             [
                 ["Kernel", h.kernel],
-                ["Recipe", f"{h.recipe} ({_kv(h.params)})"],
-                ["Symbols", _kv(h.symbols)],
-                ["Platform", f"{h.platform}{base}; changes: {_kv(h.platform_changes)}"],
-                ["Memory plan", f"{_kv(h.passes)}; pins: {_kv(h.pins)}"],
+                ["Recipe", f"{h.recipe} ({kv(h.params)})"],
+                ["Symbols", kv(h.symbols)],
+                ["Platform", f"{h.platform}{base}; changes: {kv(h.platform_changes)}"],
+                ["Memory plan", f"{kv(h.passes)}; pins: {kv(h.pins)}"],
             ],
         )
         out.append("")
     out += ["## Cluster", ""]
-    out += _table(
+    out += table(
         ["Component", "Kind", "Details"], [[c.name, c.kind, c.detail] for c in r.components]
     )
     out += ["", "## Accelerators", ""]
-    out += _table(
+    out += table(
         ["Instance", "Kind", "BRM", "Implementation", "Params", "Latency", "Target II", "Ports"],
         [
             [
@@ -416,7 +356,7 @@ def render_design(r: DesignReport) -> str:
                 a.kind,
                 a.brm,
                 a.implementation,
-                _kv(a.params),
+                kv(a.params),
                 a.latency,
                 a.target_ii,
                 "; ".join(a.ports),
@@ -426,7 +366,7 @@ def render_design(r: DesignReport) -> str:
         {5, 6},
     )
     out += ["", "## Streamers", ""]
-    out += _table(
+    out += table(
         ["Streamer", "Serves", "Direction", "Lanes", "FIFO depth", "Temporal loops", "Container"],
         [
             [
@@ -451,7 +391,7 @@ def render_design(r: DesignReport) -> str:
         if not m.regions:
             out.append("No region lives here.")
             continue
-        out += _table(
+        out += table(
             [
                 "Region",
                 "Base",

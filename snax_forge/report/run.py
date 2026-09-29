@@ -31,7 +31,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from ..viz import api
-from .design import _table, spans
+from ..viz.movement import dma_names
+from .markdown import span_text, spans, table
 from .record import Record
 
 HELD_SHOWN = 3  # held-back cycles listed per pattern; the count is always given
@@ -316,7 +317,7 @@ def build_run(rv: api.RunView, tasks: Any = None) -> RunReport:
             )
         )
     movement, reason = None, None
-    dma_names = {c.name for c in rv.cluster.components if c.kind == "dma"}
+    dma_set = dma_names(rv.cluster)
     mv = api.movement_view(rv)
     if not mv["available"]:
         reason = mv["reason"]
@@ -336,7 +337,7 @@ def build_run(rv: api.RunView, tasks: Any = None) -> RunReport:
         ]
         pats = []
         for p in mv["patterns"]:
-            if p["owner"] in dma_names and "side" not in p:
+            if p["owner"] in dma_set and "side" not in p:
                 continue  # the DMA's L1 side as the xbar saw it: its own rows say it
             el = p.get("element")
             if el:
@@ -387,12 +388,6 @@ def build_run(rv: api.RunView, tasks: Any = None) -> RunReport:
 # =============================================================================
 
 
-def _w(x: list[int] | None) -> str:
-    if not x:
-        return "–"
-    return str(x[0]) if x[0] == x[1] else f"{x[0]}–{x[1]}"
-
-
 def render_run(r: RunReport) -> str:
     """``run.md``: the report as Markdown, one section per part."""
     out = [f"# Run report: {r.name}", ""]
@@ -409,7 +404,7 @@ def render_run(r: RunReport) -> str:
             for c, x in r.check.containers.items()
         ]
         check = ("passed: " if r.check.passed else "FAILED: ") + "; ".join(parts)
-    out += _table(
+    out += table(
         ["", ""],
         [
             ["Scenario", r.scenario],
@@ -422,7 +417,7 @@ def render_run(r: RunReport) -> str:
     if r.tasks is None:
         out.append("Needs at least a task trace (--trace task).")
     else:
-        out += _table(
+        out += table(
             ["Block", "#", "Task", "Start", "Done", "Cycles", "Direction"],
             [
                 [
@@ -439,7 +434,7 @@ def render_run(r: RunReport) -> str:
             {1, 3, 4, 5},
         )
     out += ["", "## Accelerators", ""]
-    out += _table(
+    out += table(
         [
             "Accelerator",
             "Firings",
@@ -480,14 +475,14 @@ def render_run(r: RunReport) -> str:
             f"{c.name}: {c.command} cycles issuing commands, {c.wait} waiting, {c.idle} idle.",
             "",
         ]
-        out += _table(
+        out += table(
             ["Waits on", "Mode", "From", "To", "Cycles"],
             [[w.block, w.mode, w.first, w.last, w.cycles] for w in c.waits],
             {2, 3, 4},
         )
     if r.dmas:
         out += ["", "## DMA", ""]
-        out += _table(
+        out += table(
             [
                 "DMA",
                 "Busy",
@@ -513,7 +508,7 @@ def render_run(r: RunReport) -> str:
         )
     out += ["", "## Memory", ""]
     if r.banks:
-        out += _table(
+        out += table(
             ["Banks", "Conflicts per bank", "Stalls per bank"],
             [[b.banks, b.conflicts, b.stalls] for b in r.banks],
             {1, 2},
@@ -521,7 +516,7 @@ def render_run(r: RunReport) -> str:
     else:
         out.append("No bank conflicts.")
     out.append("")
-    out += _table(
+    out += table(
         [
             "Streamer",
             "Held by the xbar (cycles)",
@@ -545,7 +540,7 @@ def render_run(r: RunReport) -> str:
                 f"The beat trace is filtered ({m.filtered}): the numbers cover what it kept.",
                 "",
             ]
-        out += _table(
+        out += table(
             [
                 "Region",
                 "Memory",
@@ -560,11 +555,11 @@ def render_run(r: RunReport) -> str:
                 [
                     x.region,
                     x.mem.upper(),
-                    _w(x.arrival),
-                    _w(x.use),
-                    _w(x.departure),
-                    _w(x.wait_in),
-                    _w(x.wait_out),
+                    span_text(x.arrival),
+                    span_text(x.use),
+                    span_text(x.departure),
+                    span_text(x.wait_in),
+                    span_text(x.wait_out),
                     x.present_at_start,
                 ]
                 for x in m.residency
@@ -572,7 +567,7 @@ def render_run(r: RunReport) -> str:
             {7},
         )
         out += ["", f"L1 conflicts: {m.conflicts}.", ""]
-        out += _table(
+        out += table(
             [
                 "Port",
                 "Task",

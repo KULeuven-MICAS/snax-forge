@@ -46,7 +46,7 @@
 // from the memory tab's rows (memory.js); the caller loads them first.
 
 import { h, int } from "./dom.js";
-import { GROUP, bankText, beatTraced, classAt, fifoCount, onPort } from "./events.js";
+import { DIRECTION_TEXT, GROUP, bankText, beatTraced, classAt, describe, fifoCount, onPort } from "./events.js";
 
 const BANKS_PER_LINE = 32; // more banks wrap onto a new line, a superbank at a time
 const MAX_SLOTS = 8; // deeper FIFOs are drawn as a bar
@@ -59,7 +59,6 @@ const BOX_PAD = 1.35; // a box's padding and borders
 const COL_GAP = 0.6; // between requester columns (style.css .cl-req)
 const MIN_STREAMER = 7.5;
 const FRAME_MIN = 44; // style.css .cl-frame
-const DIR_TEXT = { l2_to_l1: "L2 → L1", l1_to_l2: "L1 → L2" };
 
 const views = new WeakMap(); // detail -> view, kept until Reload
 
@@ -459,7 +458,7 @@ function build(detail) {
       p.b.el.classList.toggle("bad", reqPair(p.up, evsOf[name]));
       chipState(p.chips);
       const task = on ? (detail.tasks[name] ?? []).find((s) => s.start <= t && t < s.done) : null;
-      setText(p.task, task ? `${DIR_TEXT[task.direction] ?? task.direction ?? "task"}, start in ${task.start}, done in ${task.done}` : on ? "no task" : "");
+      setText(p.task, task ? `${DIRECTION_TEXT[task.direction] ?? task.direction ?? "task"}, start in ${task.start}, done in ${task.done}` : on ? "no task" : "");
       const own = mine(name);
       const rd = own?.find((e) => e.k === "dma_beat" && e.side === "src");
       const wr = own?.find((e) => e.k === "dma_beat" && e.side === "dst");
@@ -489,10 +488,9 @@ function build(detail) {
     for (const [name, p] of Object.entries(parts.ctls)) {
       setClass(p.b, cls(name));
       const c = on ? cmds.find((e) => e.src === name && e.t <= t && t <= e.last) : null;
-      const what = c ? (c.op === "wait" ? `wait ${c.block} (${c.mode})` : `${c.op} ${c.reg ?? ""}${c.value !== undefined ? ` = ${c.value}` : ""}`) : "";
-      setText(p.cmd, c ? `pc ${c.pc}: ${what}, cycles ${c.t}–${c.last}` : on ? "no command" : "");
+      setText(p.cmd, c ? describe(c) : on ? "no command" : "");
       const poll = (mine(name) ?? []).find((e) => e.k === "poll");
-      setText(p.poll, poll ? `poll ${poll.block}: busy = ${poll.value}` : "");
+      setText(p.poll, poll ? describe(poll) : "");
       p.poll.classList.toggle("waiting", !!poll?.value);
       p.poll.classList.toggle("done", !!poll && !poll.value);
     }

@@ -87,6 +87,7 @@ tables as they were written are in git history.
 | REP1 | design and run reports as Markdown from dataclasses, `pixi run report`; the flow writes `report/` and `flow.log` beside `run/` | D99 |
 | LOOP1 | one turn of the loop by hand, `examples/loop1/README.md`: vecadd's bank conflicts read from the reports and the memory tab, a written prediction, B moved, the prediction checked; every number checked by `tests/flow/test_loop1.py` | D98 |
 | VIEW1 | viewer housekeeping: a play / pause control stepping the selected cycle on a timer (Space toggles it), streamer boxes as wide as their lanes, every view as wide as the page less 1.5 in on each side | — |
+| — | housekeeping after M4b: shared element, word and register helpers in `viz/memory.py` and `viz/movement.py`, report Markdown helpers in `report/markdown.py`, repeated viewer text and cycle clamping in `events.js` and `dom.js`, unused JS exports removed, shared flow test helpers in `tests/flow/helpers.py`, stale docstrings and decision back-links | — |
 
 ## Open Tasks
 
@@ -176,7 +177,7 @@ width of the window in every view (VIEW1). VIS6, VIS7 and VIS8 are dropped
 ## Open Items
 
 Questions not decided yet. Numbers are never reused; a closed item is removed,
-and the decision that closed it says so. Next free number: 41.
+and the decision that closed it says so. Next free number: 42.
 
 1. BRM per-port affine loop nest notation and its mapping to streamer registers
    (streamer register layout fixed in MOD10; first notation `affine` and the
@@ -213,6 +214,7 @@ and the decision that closed it says so. Next free number: 41.
 38. The DMA moves a container as whole contiguous 64-byte beats, so a container in L2 and L1 must be contiguous and a whole number of beats (N a multiple of 8 for int64 vecadd); `memory.align` rejects the rest (D86). Strided or partial-beat transfers when a kernel needs them (a tail tile, open item 31, or a 2D tile); a check of the DMA's loop count (`dma.dims`) comes with them (D89).
 39. Beat-trace size: about 1.1 KB per vecadd element (grant, response and FIFO events for each word moved), so vecadd at N = 4096 writes 4.4 MB and a 128k-element run about 140 MB. The views work on filtered traces (D49), and the movement index of the N = 4096 run builds in under a second; a more compact trace format is decided when a run needs it.
 40. Switching runs in the viewer clears the cycle window, the selected cycle and the picked element; keeping the cycle would make flipping between two runs land on the same cycle. Left as is until a comparison needs it.
+41. Report glossary and reading aids, on hold. A glossary kept in code that generates a "How to read" section in `design.md` and `run.md` and a doc page, with a test that every column and term in the reports is defined; a "Where the cycles went" summary in `run.md` that ranks the losses and links them to the design report's notes; and a list of the knobs (recipe params, platform fields, memory pins) with their `--set` paths and current values, without recommendations (principle 4: reports derive, the thinker decides). Would be D100 when built.
 
 ## Sync Reminders
 

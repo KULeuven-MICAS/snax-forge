@@ -18,11 +18,9 @@ from snax_forge.report import render_design, render_run, reports_of
 from snax_forge.sandbox import Recipe
 from snax_forge.sdfg.loader import load as load_kernel
 from snax_forge.snax_model.scenario import Scenario, read_outputs, run
-from tests.design.helpers import FIXTURES, RECIPE, SMALL16
+from tests.design.helpers import RECIPE, SMALL16
 
-SCEN = RECIPE.parents[1] / "scenarios"
-PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel (IMP1)
-PINS = [("B.l1.base", 576), ("C.l1.base", 1152)]
+from .helpers import PINS, PLAIN, SCEN
 
 
 def flow(tmp_path, **kw):

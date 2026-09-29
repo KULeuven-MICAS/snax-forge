@@ -109,8 +109,11 @@ flowchart LR
     DFG --> GV[DFG viewer]
     SBX --> GV
     FB --> VIS[Run views]
+    FB --> REP[Reports]
+    DP --> REP
     GV --> T[Thinkers: human, LLM]
     VIS --> T
+    REP --> T
     T --> REC
     T --> PLAT
     T -. hand edits .-> DFG

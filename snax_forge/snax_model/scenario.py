@@ -912,8 +912,8 @@ class RunResult:
         """Contents of run.json. No skip mode: output must not depend on it (D44).
 
         The cluster configuration is written out in full (D50): an output
-        directory then says on its own which hardware produced it, which is
-        what a diff of two runs needs (VIS6). The scenario's regions are
+        directory then says on its own which hardware produced it, so two runs
+        can be compared from their directories (D98). The scenario's regions are
         written with it (D95), so the views know where the data lives.
         """
         return {

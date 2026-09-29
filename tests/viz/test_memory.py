@@ -13,15 +13,12 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from snax_forge.flow import run_flow
 from snax_forge.snax_model.scenario import ClusterConfig, Region
 from snax_forge.viz import api, memory
-from tests.design.helpers import FIXTURES, RECIPE, SMALL16
+from tests.flow.helpers import B_PIN, run_flows
 
 from .helpers import SCEN, run_dir
 
-PLAIN = FIXTURES / "vecadd.snaxdfg"
-B_PIN = [("B.l1.base", 576)]
 FLOWS = {
     "default": {},
     "W8": {"recipe_sets": {"W": 8}},
@@ -33,12 +30,8 @@ FLOWS = {
 @pytest.fixture(scope="module")
 def runs(tmp_path_factory):
     """The flow runs of the acceptance, loaded as the viewer loads them."""
-    base = tmp_path_factory.mktemp("flows")
-    out = {}
-    for name, kw in FLOWS.items():
-        f = run_flow(RECIPE, SMALL16, graph_path=PLAIN, out=base / name, trace_level="off", **kw)
-        out[name] = api.load_run(f.out / "run", name)
-    return out
+    flows = run_flows(tmp_path_factory.mktemp("flows"), FLOWS, "off")
+    return {name: api.load_run(f.out / "run", name) for name, f in flows.items()}
 
 
 def mem(view, m):

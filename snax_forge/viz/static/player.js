@@ -14,7 +14,7 @@
 
 import { h } from "./dom.js";
 
-export const SPEEDS = [[1000, "1 s"], [500, "0.5 s"], [250, "0.25 s"], [100, "0.1 s"]];
+const SPEEDS = [[1000, "1 s"], [500, "0.5 s"], [250, "0.25 s"], [100, "0.1 s"]];
 const KEY = "snax-forge.play.ms";
 
 let ms = loadSpeed();
@@ -44,10 +44,6 @@ export function setStepper(s) {
   stepper = s;
 }
 
-export function isPlaying() {
-  return timer !== null;
-}
-
 /** Paint every control; one taken off the page (a redraw) is dropped, one not yet put on it is kept. */
 function refresh() {
   for (const c of controls) {
@@ -73,7 +69,7 @@ function tick() {
   stepper.go(n);
 }
 
-export function startPlaying() {
+function startPlaying() {
   if (timer || !stepper || stepper.next() === null) return;
   timer = setInterval(tick, ms);
   tick();

@@ -13,7 +13,7 @@
 
 import { CLASS_GROUP } from "./dom.js";
 
-export const TASK_KINDS = ["cmd", "start", "done"];
+const TASK_KINDS = ["cmd", "start", "done"];
 export const BEAT_KINDS = ["grant", "stall", "resp", "fire", "dma_beat", "poll", "fifo"];
 
 /** Colour group of each class that is drawn; idle is left out (left blank). */
@@ -113,6 +113,9 @@ export function byOwner(events, profile) {
   return by;
 }
 
+/** A DMA task's direction as text (D58). */
+export const DIRECTION_TEXT = { l2_to_l1: "L2 → L1", l1_to_l2: "L1 → L2" };
+
 /** Banks as text: "bank 8" or "banks 0–7". */
 export function bankText(banks) {
   return banks.length > 1 ? `banks ${banks[0]}–${banks[banks.length - 1]}` : `bank ${banks[0]}`;
@@ -141,4 +144,19 @@ export function describe(e) {
     case "fifo": return `${e.src} lane ${e.lane} holds ${e.count} from here`;
     default: return JSON.stringify(e);
   }
+}
+
+// -- a journey's hops and firings (/api/run/<n>/journey, D97) ----------------------
+
+/** One hop of an element: "L1 read by acc_a.1 (bank 5, row 0); bank served ...". */
+export function hopText(x) {
+  const where = x.mem === "l1" ? `bank ${x.bank}, row ${x.row}` : `beat ${x.beat}`;
+  const served = x.served ? `; bank served ${x.served.port} for ${x.served.element ?? `row ${x.served.row}`}` : "";
+  return `${x.mem.toUpperCase()} ${x.act} by ${x.by} (${where})${served}`;
+}
+
+/** A firing's operands: "a A[5]; b B[5] → out C[5]". */
+export function operandsText(f) {
+  const side = (ports) => Object.entries(ports).map(([p, xs]) => `${p} ${xs.join(", ")}`).join("; ");
+  return `${side(f.inputs)}${Object.keys(f.outputs).length ? ` → ${side(f.outputs)}` : ""}`;
 }

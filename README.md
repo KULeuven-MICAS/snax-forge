@@ -183,12 +183,15 @@ serving vecadd, vecadd_conflict at http://127.0.0.1:8765/ (Ctrl-C to stop)
 ```
 
 With several runs, pick one in the Run menu at the top. The tabs switch
-between the profile report and the schedule (every component's activity per
-cycle); under the schedule, the cluster view shows the selected cycle (banks,
-interconnect, streamers, accelerator, DMA). Click a cycle in the schedule or
-use the arrow keys to step. The schedule needs at least `--trace task`; the
-per-beat rows and the cluster view's traffic need `--trace beat`. After
-rerunning into the same directory, press Reload.
+between the profile report, the schedule (every component's activity per
+cycle) and the memory tab (where each region lies in L1 and L2); under the
+schedule, the cluster view shows the selected cycle (banks, interconnect,
+streamers, accelerator, DMA). Click a cycle in the schedule or use the arrow
+keys to step; Play steps it on a timer (Space plays and pauses). The schedule
+needs at least `--trace task`; the per-beat rows, the cluster view's traffic
+and the memory tab's data movement need `--trace beat`. After rerunning into
+the same directory, press Reload. `pixi run report DIR` writes the same run as
+Markdown reports for reading or for an LLM (`DIR_report/`).
 
 The server listens on 127.0.0.1 only. On a remote machine, forward the port
 from your laptop (`ssh -L 8765:127.0.0.1:8765 you@server`) and open

@@ -19,11 +19,12 @@ Routes (every answer is JSON except the static files):
                                             given (repeat it, or separate names
                                             with commas; k is D57)
     GET  /api/run/<name>/fifo               FIFO busy window per streamer (D56)
-    GET  /api/run/<name>/memory[?marks=conflicts]
-                                            per memory its geometry, regions and
-                                            folded lines (D96); with marks, L1
-                                            folded with its conflict counts (D97)
-    GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=conflicts]
+    GET  /api/run/<name>/memory[?marks=M]    per memory its geometry, regions and
+                                            folded lines (D96); with marks, folded
+                                            by a mark per word: M is conflicts
+                                            (L1 conflict counts), arrival, use or
+                                            wait (a cycle per word, D97)
+    GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=M]
                                             rows A <= r < B in full, at most 256
     GET  /api/run/<name>/movement           residency, patterns and conflict
                                             counts (D97)
@@ -59,11 +60,11 @@ STATIC = Path(__file__).resolve().parent / "static"
 HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 
-# Served types; .js must be a JavaScript type or the browser refuses the module.
 # What reading a run directory can raise: a missing file, bad JSON, a key or
 # field missing from a file of another version.
 READ_ERRORS = (OSError, ValueError, KeyError, TypeError)
 
+# Served types; .js must be a JavaScript type or the browser refuses the module.
 _TYPES = {".html": "text/html", ".js": "text/javascript", ".css": "text/css"}
 
 

@@ -57,7 +57,7 @@ from typing import Any
 from snax_forge.snax_model.accel import AccelConfig
 from snax_forge.snax_model.scenario import ACCEL_KINDS, ClusterConfig, Region
 
-from .memory import Marks, MemoryLayout, TimeMarks
+from .memory import Marks, MemoryLayout, TimeMarks, element_name
 
 
 class MovementUnavailable(Exception):
@@ -144,7 +144,7 @@ class Index:
     def element(self, mem: str, word: int) -> str | None:
         """``A[5]`` for the word, None when no region lives there."""
         hit = self.cell(mem, word)
-        return " + ".join(_elem_text(r, f) for r, f in hit) if hit else None
+        return " + ".join(element_name(r, f) for r, f in hit) if hit else None
 
     def cell(self, mem: str, word: int) -> list[tuple[Region, int]]:
         lay = self.layouts.get(mem)
@@ -153,14 +153,6 @@ class Index:
         col, row = lay.place(word)
         cells = lay.occupied.get(row)
         return [(lay.regions[ri], flat) for ri, flat in cells[col]] if cells else []
-
-
-def _elem_text(r: Region, flat: int) -> str:
-    idx, rest = [], flat
-    for e in reversed(r.shape):
-        idx.append(rest % e)
-        rest //= e
-    return f"{r.name}[{','.join(str(i) for i in reversed(idx))}]"
 
 
 def _lane_of(port: str, owner: str) -> int:
@@ -229,7 +221,7 @@ def build_index(
         elif k == "dma_beat" and e.get("mem") == "l2" and l2 is not None:
             side = e["side"]
             dma_hops.setdefault((e["src"], side), []).append((e["t"], e["i"], e["addr"], "l2"))
-            first = (e["addr"] - l2.base_addr) // l2.word_bytes
+            first = l2.word_at(e["addr"])
             for j in range(l2.columns):  # one beat of words
                 add(
                     Hop(
@@ -244,7 +236,7 @@ def build_index(
                     )
                 )
         elif k == "resp" and e.get("mem") == "l2" and l2 is not None:
-            first = (e["addr"] - l2.base_addr) // l2.word_bytes
+            first = l2.word_at(e["addr"])
             for j in range(l2.columns):
                 add(Hop(e["t"], "l2", first + j, "data back", e["src"], e["src"], j, beat=e["i"]))
         elif k == "dma_beat" and e.get("mem") == "l1":
@@ -310,7 +302,7 @@ def build_index(
             "sources": trace.filter_sources,
             "window": None if trace.filter_window is None else list(trace.filter_window),
         },
-        {c.name for c in cluster.components if c.kind == "dma"},
+        dma_names(cluster),
     )
 
 
@@ -324,15 +316,37 @@ def accel_config(spec: Any) -> AccelConfig:
     return ACCEL_KINDS[spec.accel](**spec.params)
 
 
+def dma_names(cluster: ClusterConfig) -> set[str]:
+    """The cluster's DMA components."""
+    return {c.name for c in cluster.components if c.kind == "dma"}
+
+
+def csr_writes(events: Sequence[dict[str, Any]]) -> list[tuple[int, str, int]]:
+    """Every ``csr_write`` by register name, as (its last cycle, register, value), in
+    trace order."""
+    return [
+        (int(e["last"]), str(e["reg"]), int(e["value"]))
+        for e in events
+        if e["k"] == "cmd" and e.get("op") == "csr_write" and e.get("reg")
+    ]
+
+
+def last_write(writes: list[tuple[int, str, int]], reg: str, before: int) -> int | None:
+    """The value of the last write to ``reg`` that ended before cycle ``before`` (a start
+    copies the registers written until then, D36), or None."""
+    val = None
+    for last, r, value in writes:  # in trace order: the last one wins
+        if last < before and r == reg:
+            val = value
+    return val
+
+
 def _rate(
     port_rate: int | str, acc: str, start: int, writes: list[tuple[int, str, int]]
 ) -> int | None:
     if isinstance(port_rate, int):
         return port_rate
-    val = None
-    for last, reg, value in writes:  # in trace order: the last write before the start wins
-        if last < start and reg == f"{acc}.{port_rate}":
-            val = value
+    val = last_write(writes, f"{acc}.{port_rate}", start)
     return val if val and val > 0 else None
 
 
@@ -349,12 +363,10 @@ def _firings(
 ) -> tuple[dict[tuple[str, int], list[Firing]], dict[tuple[str, int], list[Firing]]]:
     """Which firings each read fed and which firing each write carried (module doc)."""
     fires: dict[str, list[tuple[int, int]]] = {}
-    writes: list[tuple[int, str, int]] = []
     for e in events:
         if e["k"] == "fire":
             fires.setdefault(e["src"], []).append((e["t"], e["n"]))
-        elif e["k"] == "cmd" and e.get("op") == "csr_write" and e.get("reg"):
-            writes.append((int(e["last"]), str(e["reg"]), int(e["value"])))
+    writes = csr_writes(events)
     fed: dict[tuple[str, int], list[Firing]] = {}
     made: dict[tuple[str, int], list[Firing]] = {}
     for spec in cluster.components:
@@ -450,8 +462,7 @@ def _element_hops(idx: Index, regions: Sequence[Region], name: str, flat: int) -
     for r in regions:
         if r.name != name:
             continue
-        lay = idx.layouts[r.mem]
-        word = (r.address(_unravel(flat, r.shape)) - lay.base_addr) // lay.word_bytes
+        word = idx.layouts[r.mem].element_word(r, flat)
         hops += idx.words.get((r.mem, word), [])
     hops.sort(key=lambda h: (h.t, h.mem != "l2"))
     return hops
@@ -473,28 +484,24 @@ def journey(
         if key is None:
             continue
         for f in idx.fed.get(key, []):
+            d = _firing_dict(idx, f, h.lane, h.owner)
+            on_lane = {x for xs in d["outputs"].values() for x in xs}  # the results of h's lane
             results = {}
             for beats in f.outputs.values():
                 for out in beats.values():
                     for r, fl in idx.cell(out.mem, out.word):
+                        name = element_name(r, fl)
+                        if name not in on_lane:
+                            continue
                         after = [x for x in _element_hops(idx, regions, r.name, fl) if x.t >= f.t]
-                        results[_elem_text(r, fl)] = [x.to_dict(idx.element) for x in after]
-            firings.append(
-                {
-                    **_firing_dict(idx, f, h.lane, h.owner),
-                    "via": h.by,
-                    "role": "consumed",
-                    "results": {
-                        k: v for k, v in results.items() if k in _outputs_on_lane(idx, f, h)
-                    },
-                }
-            )
+                        results[name] = [x.to_dict(idx.element) for x in after]
+            firings.append({**d, "via": h.by, "role": "consumed", "results": results})
         for f in idx.made.get(key, []):  # every firing the written beat came from
             firings.append(
                 {**_firing_dict(idx, f, h.lane, h.owner), "via": h.by, "role": "produced"}
             )
     return {
-        "element": _elem_text(mine[0], flat),
+        "element": element_name(mine[0], flat),
         "flat": flat,
         "memories": [r.mem for r in mine],
         "hops": [h.to_dict(idx.element) for h in hops],
@@ -503,25 +510,11 @@ def journey(
     }
 
 
-def _outputs_on_lane(idx: Index, f: Firing, h: Hop) -> set[str]:
-    """The output elements of firing ``f`` that belong with hop ``h``'s lane."""
-    d = _firing_dict(idx, f, h.lane, h.owner)
-    return {x for xs in d["outputs"].values() for x in xs}
-
-
-def _unravel(flat: int, shape: Sequence[int]) -> tuple[int, ...]:
-    out = []
-    for e in reversed(shape):
-        out.append(flat % e)
-        flat //= e
-    return tuple(reversed(out))
-
-
 def _window(xs: list[int]) -> list[int] | None:
     return [min(xs), max(xs)] if xs else None
 
 
-def residency(idx: Index, regions: Sequence[Region], dmas: set[str]) -> list[dict[str, Any]]:
+def residency(idx: Index, regions: Sequence[Region]) -> list[dict[str, Any]]:
     """Per region and memory: arrival, use and departure windows and the waits (module doc).
 
     Arrival is an element's first write in that memory (none: it was there
@@ -529,14 +522,14 @@ def residency(idx: Index, regions: Sequence[Region], dmas: set[str]) -> list[dic
     read. The waits are per element: first use less arrival, and departure
     less the later of arrival and last use.
     """
+    dmas = idx.dmas
     out = []
     for r in regions:
         lay = idx.layouts[r.mem]
         arr, first_use, last_use, dep, w_in, w_out = [], [], [], [], [], []
         present = 0
         for flat in range(r.size):
-            word = (r.address(_unravel(flat, r.shape)) - lay.base_addr) // lay.word_bytes
-            hs = idx.words.get((r.mem, word), [])
+            hs = idx.words.get((r.mem, lay.element_word(r, flat)), [])
             a = next((h.t for h in hs if h.act == "write"), None)
             uses = [h.t for h in hs if h.act == "read" and h.owner not in dmas]
             d = next(
@@ -668,7 +661,7 @@ def patterns(
                             "served": h.served,
                             "served_element": None
                             if h.served is None
-                            else idx.element("l1", l1.word_of(h.bank, h.served["row"])),
+                            else idx.element("l1", h.served["word"]),
                         }
                         for h in held
                     ],
@@ -687,11 +680,7 @@ def patterns(
             fit = fit_nest([a for _, _, a, _ in mine])
             mem = mine[0][3]
             lay = idx.layouts.get(mem)
-            words = (
-                []
-                if lay is None
-                else [(a - lay.base_addr) // lay.word_bytes for _, _, a, _ in mine]
-            )
+            words = [] if lay is None else [lay.word_at(a) for _, _, a, _ in mine]
             out.append(
                 {
                     "port": f"{dma}.{side}",
@@ -816,9 +805,12 @@ __all__ = [
     "build_index",
     "conflict_marks",
     "conflicts",
+    "csr_writes",
+    "dma_names",
     "expand_nest",
     "fit_nest",
     "journey",
+    "last_write",
     "patterns",
     "residency",
     "time_marks",

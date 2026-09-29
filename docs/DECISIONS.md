@@ -178,7 +178,7 @@ model. Expanding blocks into register writes is SNAX-LOWER's job.
 change to the core.
 
 **D44** · model — `pixi run model-run` writes the run record, profile, trace and memory dumps,
-byte-identical on every run and with skipping on or off. Amended by D50. → C§6, C§7.
+byte-identical on every run and with skipping on or off. Amended by D50, D95. → C§6, C§7.
 
 **D45** · lower — SNAX-LOWER works in two steps: design point → task list → command list, the
 second through the model's own register adapters. Refines D18.
@@ -209,11 +209,11 @@ and checks its output, latency and II, not the platform.
 program. Refines D18; built by D88 and D89.
 
 **D54** · viz — The visualiser is split: the run views (M4a) before M3, the design-point views and
-the first manual loop (M4b) after it.
+the first manual loop (M4b) after it. Amended by D96, D98.
 
 **D55** · viz — The visualiser is a local server bound to 127.0.0.1 plus a static viewer: stdlib
-only, no build step, works offline. It is for humans; LLMs read the profile (VIS7).
-→ `viz/server.py`, `viz/api.py`.
+only, no build step, works offline. It is for humans; LLMs read the profile and, since D99, the
+reports. Amended by D94, D98, D99. → `viz/server.py`, `viz/api.py`.
 
 **D56** · viz — A FIFO's occupancy is also shown over its busy window, taken from task events.
 Closes that half of open item 11.
@@ -232,7 +232,7 @@ views. Replaces D58's `dma_tasks`.
 
 **D61** · viz — The cluster view shows banks, interconnect, streamers, accelerators, DMA and
 controller at the selected cycle, under the schedule; one colour means one thing across all views.
-Data values: open item 23.
+Data values: open item 23. Amended by D62, D96.
 
 **D62** · model — Read responses are traced as `resp` events and drawn apart from requests.
 Amends D39, D61.
@@ -245,7 +245,7 @@ only the waits correctness needs, one per component, and a wait on a writer stre
 what started with it. Amended by D66. → C§9, `lower/commands.py`.
 
 **D65** · scenario — One folder per scenario, holding its `scenario.py` and a hand-written
-`tasks.json` that it lowers into the program. Amended by D67, D92.
+`tasks.json` that it lowers into the program. Amended by D67, D92, D95.
 
 **D66** · lower — A wait that another wait of the same start already covers is left out; with it,
 fmul becomes a task list with its hand-scheduled program.
@@ -341,7 +341,7 @@ nest by address. → `lower/derive.py`.
 
 **D90** · flow — `pixi run flow` runs recipe → design point → cluster file and task list → scenario
 → model run, and checks the output against the kernel's reference and the reference executor. It
-closes M3 and open item 13. → `flow/run.py`.
+closes M3 and open item 13. Amended by D94. → `flow/run.py`.
 
 **D91** · scope — The old SDFG → descriptor → RTL path is removed: M3's flow never used it. The
 Chisel blocks and `Emit` stay as a project of their own in `hw/chisel/`, the `hw` environment is

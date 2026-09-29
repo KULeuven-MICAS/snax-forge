@@ -40,11 +40,11 @@
 // per run (events.js); beat events only for the window and for the selected
 // cycle. Events come through /api/run/<n>/events with its k filter (D57).
 
-import { dec, h, int } from "./dom.js";
+import { clampCycle, dec, h, int } from "./dom.js";
 import { clusterView } from "./cluster.js";
 import { elementAt, ensureRows, journeyOf, tracersOf } from "./memory.js";
 import { playControl } from "./player.js";
-import { BEAT_KINDS, GROUP, beatTraced, byOwner, classAt, describe, fifoCount, fifoIndex, onPort, taskEvents } from "./events.js";
+import { BEAT_KINDS, DIRECTION_TEXT, GROUP, beatTraced, byOwner, classAt, describe, fifoCount, fifoIndex, hopText, onPort, operandsText, taskEvents } from "./events.js";
 
 const SVG = "http://www.w3.org/2000/svg";
 const MAIN_H = 24; // px, main row
@@ -53,8 +53,6 @@ const RULER_H = 22;
 const LABEL_W = 150;
 const BEAT_WINDOW = 400; // default window of a beat-level run
 const MAX_CW = 64; // px per cycle, largest zoom
-const DIR_TEXT = { l2_to_l1: "L2 → L1", l1_to_l2: "L1 → L2" };
-
 
 /** An SVG element with attributes; `title` becomes a native tooltip. */
 function s(tag, attrs = {}, title = null) {
@@ -133,7 +131,7 @@ function buildRows(detail, win, tasks, beats, fifo, showDetail) {
           if (sp.start >= from && sp.start < to) g.append(s("path", { d: `M${x(sp.start)},${MAIN_H - 7} l4,4 l-4,4 z`, class: "task-mark" }, `${name} start in ${sp.start}`));
           if (sp.done >= from && sp.done <= to) g.append(s("rect", { x: x(sp.done) - 1, y: MAIN_H - 8, width: 2, height: 8, class: "task-mark" }, `${name} done in ${sp.done}`));
           if (sp.direction && b > a) { // a DMA task's direction (D58)
-            const text = DIR_TEXT[sp.direction] ?? sp.direction;
+            const text = DIRECTION_TEXT[sp.direction] ?? sp.direction;
             if ((b - a) * cw >= text.length * 6 + 8) txt(g, { x: x(a) + 4, y: MAIN_H - 10, class: "cell-text on-dark" }, text);
           }
         }
@@ -249,17 +247,8 @@ function buildRows(detail, win, tasks, beats, fifo, showDetail) {
 const HOP_CLASS = { read: "s-req", write: "s-req", "data back": "s-resp", "held back": "s-mem" };
 const HOP_TEXT = { read: "R", write: "W", "data back": "", "held back": "✕" };
 
-function hopTip(x) {
-  const where = x.mem === "l1" ? `bank ${x.bank}, row ${x.row}` : `beat ${x.beat}`;
-  const served = x.served ? `; bank served ${x.served.port} for ${x.served.element ?? `row ${x.served.row}`}` : "";
-  return `cycle ${x.t}: ${x.element ?? ""} ${x.mem.toUpperCase()} ${x.act} by ${x.by} (${where})${served}`;
-}
-
-function fireTip(f) {
-  const ins = Object.entries(f.inputs).map(([p, xs]) => `${p} ${xs.join(", ")}`).join("; ");
-  const outs = Object.entries(f.outputs).map(([p, xs]) => `${p} ${xs.join(", ")}`).join("; ");
-  return `cycle ${f.t}: firing ${f.n} of ${f.acc} (task ${f.task}) ${f.role} it: ${ins}${outs ? ` → ${outs}` : ""}`;
-}
+const hopTip = (x) => `cycle ${x.t}: ${x.element ?? ""} ${hopText(x)}`;
+const fireTip = (f) => `cycle ${f.t}: firing ${f.n} of ${f.acc} (task ${f.task}) ${f.role} it: ${operandsText(f)}`;
 
 /** One row per traced element (module doc), from its journey. */
 function tracerRows(journeys, win) {
@@ -388,7 +377,7 @@ let current = null;
 /** The shown cycle moved by d and kept inside the run, or null if no schedule is on screen (arrow keys). */
 export function stepCycle(d) {
   if (!current || current.cycle === null || !current.detail.trace) return null;
-  return Math.min(Math.max(current.cycle + d, 0), current.total - 1);
+  return clampCycle(current.cycle + d, current.total);
 }
 
 /** The first cycle any block is busy (a start lands in s, busy from s + 1), or 0. */
@@ -446,7 +435,7 @@ async function elementNames(c, events) {
  */
 export async function selectCycle(detail, st) {
   if (!current || current.detail !== detail) return false;
-  const cycle = st.cycle === undefined ? current.defaultCycle : Math.min(Math.max(intArg(st.cycle, 0), 0), current.total - 1);
+  const cycle = st.cycle === undefined ? current.defaultCycle : clampCycle(intArg(st.cycle, 0), current.total);
   if (current.cursor && (cycle < current.from || cycle >= current.to)) return false;
   await showCycle(cycle);
   return true;
@@ -492,7 +481,7 @@ function intArg(v, dflt) {
 
 /** The cluster section: heading with cycle stepping and play, the cluster view, the event list. */
 function clusterSection(detail, total, setHash) {
-  const go = (d) => setHash({ cycle: Math.min(Math.max((current?.cycle ?? 0) + d, 0), total - 1) });
+  const go = (d) => setHash({ cycle: clampCycle((current?.cycle ?? 0) + d, total) });
   const title = h("h2", {}, "Cluster");
   const prev = h("button", { type: "button", onclick: () => go(-1), "aria-label": "Previous cycle" }, "‹");
   const next = h("button", { type: "button", onclick: () => go(1), "aria-label": "Next cycle" }, "›");
@@ -527,7 +516,7 @@ export async function renderSchedule(root, detail, ctx) {
   const beat = tr.level === "beat";
   let from = Math.min(Math.max(intArg(st.from, 0), 0), Math.max(total - 1, 0));
   let to = Math.min(Math.max(intArg(st.to, beat ? Math.min(total, from + BEAT_WINDOW) : total), from + 1), total);
-  const picked = st.cycle === undefined ? null : Math.min(Math.max(intArg(st.cycle, 0), 0), total - 1);
+  const picked = st.cycle === undefined ? null : clampCycle(intArg(st.cycle, 0), total);
   if (picked !== null && (picked < from || picked >= to)) { // stepped out of the window: move it, same width (D61)
     const width = to - from;
     from = Math.min(Math.max(picked - Math.floor(width / 2), 0), Math.max(total - width, 0));

@@ -42,6 +42,9 @@ export const int = (n) => (n === null || n === undefined ? "–" : Number(n).toL
 /** Percentage of part in whole, one decimal. */
 export const pct = (part, whole) => (whole ? `${((100 * part) / whole).toFixed(1)}%` : "–");
 
+/** A cycle kept inside a run of `total` cycles: 0 .. total - 1. */
+export const clampCycle = (c, total) => Math.min(Math.max(c, 0), total - 1);
+
 /** Fixed decimals for means. */
 export const dec = (x, d = 2) => (x === null || x === undefined ? "–" : Number(x).toFixed(d));
 

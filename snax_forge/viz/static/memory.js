@@ -23,16 +23,17 @@
 // holds in its tooltips: `ensureRows` loads the rows a cycle touches (a block
 // of MAX_ROWS at a time, once per run) and `elementAt` names what is there.
 
-import { h, int, pct } from "./dom.js";
+import { clampCycle, h, int, pct } from "./dom.js";
+import { hopText, operandsText } from "./events.js";
 import { playControl, stopPlaying } from "./player.js";
 
-export const MAX_ROWS = 256; // viz/memory.py MAX_ROWS: rows per request
+const MAX_ROWS = 256; // viz/memory.py MAX_ROWS: rows per request
 const LABEL_EVERY_CELL = 32; // above this many columns only the first cell of a run is labelled
 const N_COLOURS = 8; // style.css --region-0 ... --region-7
 
 // -- data shared with the cluster view -------------------------------------------------
 
-const store = new WeakMap(); // detail -> {view: Promise, rows: {mem: Map(row -> line)}, blocks: Set}
+const store = new WeakMap(); // detail -> {view, loaded: Promise of the view, data: the view, rows: {mem: Map(row -> line)}, blocks: Map("mem|block" -> Promise)}
 
 function stateOf(api, detail) {
   if (!store.has(detail)) {
@@ -44,7 +45,7 @@ function stateOf(api, detail) {
 }
 
 /** The memory view of a run (/api/run/<name>/memory), fetched once per run. */
-export function memoryData(api, detail) {
+function memoryData(api, detail) {
   return stateOf(api, detail).loaded;
 }
 
@@ -361,8 +362,8 @@ function controls(ctx, beat) {
       "Run with --trace beat for the selected cycle's accesses, the conflicts, arrival and use times, and each element's journey.")) };
   }
   const input = h("input", { type: "number", min: 0, max: ctx.total - 1, value: ctx.cycle ?? "", inputmode: "numeric", "aria-label": "Cycle",
-    onchange: (e) => ctx.setHash({ cycle: Math.min(Math.max(Number.parseInt(e.target.value, 10) || 0, 0), ctx.total - 1) }) });
-  const step = (d) => ctx.setHash({ cycle: Math.min(Math.max((current?.cycle ?? -1) + d, 0), ctx.total - 1) });
+    onchange: (e) => ctx.setHash({ cycle: clampCycle(Number.parseInt(e.target.value, 10) || 0, ctx.total) }) });
+  const step = (d) => ctx.setHash({ cycle: stepMemoryCycle(d) });
   const summary = h("p", { class: "note ov-summary" });
   const el = h("section", { class: "mem-controls" },
     h("div", { class: "mem-bar" },
@@ -463,12 +464,6 @@ async function applyCycle(cur, cycle) {
   }
 }
 
-function hopText(x) {
-  const where = x.mem === "l1" ? `bank ${x.bank}, row ${x.row}` : `beat ${x.beat}`;
-  const served = x.served ? `; bank served ${x.served.port} for ${x.served.element ?? `row ${x.served.row}`}` : "";
-  return `${x.mem.toUpperCase()} ${x.act} by ${x.by} (${where})${served}`;
-}
-
 /** The drawer of the picked element: its hops, firings and conflicts. */
 async function applyPick(cur, pick) {
   cur.pick = pick;
@@ -517,9 +512,7 @@ async function applyPick(cur, pick) {
   }
   const hopRows = j.hops.map((x) => h("tr", { class: x.act === "held back" ? "bad" : null }, h("td", {}, go(x.t)), h("td", {}, hopText(x))));
   const firing = (f) => h("div", { class: "fire" },
-    h("div", {}, go(f.t), ` firing ${f.n} of ${f.acc} (task ${f.task}, lane ${f.lane}) ${f.role} it: `,
-      Object.entries(f.inputs).map(([p, xs]) => `${p} ${xs.join(", ")}`).join("; "),
-      Object.keys(f.outputs).length ? ` → ${Object.entries(f.outputs).map(([p, xs]) => `${p} ${xs.join(", ")}`).join("; ")}` : ""),
+    h("div", {}, go(f.t), ` firing ${f.n} of ${f.acc} (task ${f.task}, lane ${f.lane}) ${f.role} it: `, operandsText(f)),
     f.results ? Object.entries(f.results).map(([el, hs]) => h("div", { class: "note" }, `${el}: `,
       hs.map((x, i) => [i ? " · " : "", go(x.t), ` ${x.mem.toUpperCase()} ${x.act} by ${x.by}`]))) : null);
   const words = (cur.conflicts?.words ?? []).filter((w) => w.element === j.element);
@@ -562,7 +555,7 @@ function drawer(setHash) {
 function cycleOf(st, total) {
   if (st.cycle === undefined || st.cycle === "") return null;
   const c = Number.parseInt(st.cycle, 10);
-  return Number.isFinite(c) ? Math.min(Math.max(c, 0), total - 1) : null;
+  return Number.isFinite(c) ? clampCycle(c, total) : null;
 }
 
 /**
@@ -655,5 +648,5 @@ export async function updateMemory(detail, st) {
 /** The memory tab's cycle moved by d, or null when there is none to step (arrow keys). */
 export function stepMemoryCycle(d) {
   if (!current || !current.beat) return null;
-  return Math.min(Math.max((current.cycle ?? -1) + d, 0), current.total - 1);
+  return clampCycle((current.cycle ?? -1) + d, current.total);
 }

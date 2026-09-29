@@ -25,18 +25,18 @@ from snax_forge.report import (
     reports_of,
 )
 from snax_forge.report.__main__ import main
-from snax_forge.report.design import pct
+from snax_forge.report.markdown import pct
 from snax_forge.snax_model.scenario import Scenario, run, write_outputs
 from snax_forge.viz import api
 from snax_forge.viz import memory as memview
-from tests.design.helpers import FIXTURES, RECIPE, SMALL16
+from tests.design.helpers import RECIPE, SMALL16
+from tests.flow.helpers import PINS, PLAIN, run_flows
 
 from .helpers import SCEN, SCENARIOS
 
-PLAIN = FIXTURES / "vecadd.snaxdfg"
 FLOWS = {
     "default": {},
-    "pinned": {"memory_sets": [("B.l1.base", 576), ("C.l1.base", 1152)]},
+    "pinned": {"memory_sets": PINS},
     "W8": {"recipe_sets": {"W": 8}},
 }
 
@@ -44,12 +44,8 @@ FLOWS = {
 @pytest.fixture(scope="module")
 def flows(tmp_path_factory):
     """The guard-rail flows at beat level, as folders."""
-    base = tmp_path_factory.mktemp("flows")
-    out = {}
-    for name, kw in FLOWS.items():
-        f = run_flow(RECIPE, SMALL16, graph_path=PLAIN, out=base / name, trace_level="beat", **kw)
-        out[name] = f.out
-    return out
+    flows = run_flows(tmp_path_factory.mktemp("flows"), FLOWS, "beat")
+    return {name: f.out for name, f in flows.items()}
 
 
 @pytest.fixture(scope="module")

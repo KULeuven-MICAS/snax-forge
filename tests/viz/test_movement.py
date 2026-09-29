@@ -14,17 +14,15 @@ from types import SimpleNamespace
 
 import pytest
 
-from snax_forge.flow import run_flow
 from snax_forge.snax_model.scenario import ClusterConfig, Region, Scenario, run, write_outputs
 from snax_forge.viz import api, memory, movement
-from tests.design.helpers import FIXTURES, RECIPE, SMALL16
+from tests.flow.helpers import B_PIN, run_flows
 
 from .helpers import SCEN, run_dir
 
-PLAIN = FIXTURES / "vecadd.snaxdfg"
 FLOWS = {
     "default": {},
-    "B_pinned": {"memory_sets": [("B.l1.base", 576)]},
+    "B_pinned": {"memory_sets": B_PIN},
     "W8": {"recipe_sets": {"W": 8}},
 }
 
@@ -33,10 +31,8 @@ FLOWS = {
 def runs(tmp_path_factory):
     """The flow runs at beat level, vecadd_conflict, vecadd_tiled, fmul, and reduce with regions."""
     base = tmp_path_factory.mktemp("moves")
-    out = {}
-    for name, kw in FLOWS.items():
-        f = run_flow(RECIPE, SMALL16, graph_path=PLAIN, out=base / name, trace_level="beat", **kw)
-        out[name] = api.load_run(f.out / "run", name)
+    flows = run_flows(base, FLOWS, "beat")
+    out = {name: api.load_run(f.out / "run", name) for name, f in flows.items()}
     for name in ("vecadd_conflict", "vecadd_tiled", "fmul"):
         out[name] = api.load_run(run_dir(base / name, name, "beat"), name)
     sc = Scenario.load(SCEN / "reduce" / "scenario.json")

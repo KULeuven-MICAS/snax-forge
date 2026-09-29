@@ -58,6 +58,7 @@ Row lines then carry ``marks``, and the summary the range of all marks
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -74,6 +75,20 @@ Marks = dict[int, list[int | None]]  # row -> one mark per column; rows not list
 
 class MemoryViewError(ValueError):
     """A request the memory layout cannot answer; the message says why."""
+
+
+def unravel(flat: int, shape: Sequence[int]) -> tuple[int, ...]:
+    """A row-major flat index as an index tuple of ``shape``."""
+    out = []
+    for e in reversed(shape):
+        out.append(flat % e)
+        flat //= e
+    return tuple(reversed(out))
+
+
+def element_name(r: Region, flat: int) -> str:
+    """Element ``flat`` of region ``r`` by name: ``A[5]``, ``M[1,2]``."""
+    return f"{r.name}[{','.join(str(i) for i in unravel(flat, r.shape))}]"
 
 
 @dataclass
@@ -110,6 +125,14 @@ class MemoryLayout:
 
     def addr(self, column: int, row: int) -> int:
         return self.base_addr + self.word_of(column, row) * self.word_bytes
+
+    def word_at(self, addr: int) -> int:
+        """Byte address -> word index."""
+        return (addr - self.base_addr) // self.word_bytes
+
+    def element_word(self, r: Region, flat: int) -> int:
+        """The word that holds element ``flat`` of region ``r``."""
+        return self.word_at(r.address(unravel(flat, r.shape)))
 
     def cells(self, row: int) -> list[Cell]:
         return self.occupied.get(row) or [[] for _ in range(self.columns)]
@@ -324,8 +347,10 @@ __all__ = [
     "MemoryLayout",
     "MemoryViewError",
     "TimeMarks",
+    "element_name",
     "fold",
     "layout_of",
     "rows",
     "summary",
+    "unravel",
 ]
