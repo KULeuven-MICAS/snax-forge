@@ -685,6 +685,13 @@ def patterns(
             if not mine:
                 continue
             fit = fit_nest([a for _, _, a, _ in mine])
+            mem = mine[0][3]
+            lay = idx.layouts.get(mem)
+            words = (
+                []
+                if lay is None
+                else [(a - lay.base_addr) // lay.word_bytes for _, _, a, _ in mine]
+            )
             out.append(
                 {
                     "port": f"{dma}.{side}",
@@ -697,6 +704,9 @@ def patterns(
                     "last": mine[-1][0],
                     "ideal_last": mine[0][0] + len(mine) - 1,
                     "addr": None if fit is None else {"base": fit[0], "nest": fit[1]},
+                    "element": _elements(idx, mem, words)
+                    if words
+                    else None,  # each beat's first word
                 }
             )
     return out

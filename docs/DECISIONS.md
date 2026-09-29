@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D98**.
+  area tag. Next free number: **D100**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -28,7 +28,7 @@ By area:
 
 | Area | Decisions |
 |---|---|
-| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 |
+| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 |
@@ -38,7 +38,7 @@ By area:
 | sandbox | D72 D73 D80 |
 | design | D7 D74 D84–D87 |
 | flow | D90 D94 |
-| viz | D16 D54–D58 D60 D61 D76 D81 D96 D97 |
+| viz | D16 D54–D58 D60 D61 D76 D81 D96 D97 D99 |
 | docs, test | D26 D46 D92 D93 |
 
 ---
@@ -380,3 +380,13 @@ pattern as an affine nest plus the cycles it was held back and why, and the L1 c
 the memory layout, each linking the word that waited to the word its bank served. Firings are
 matched to reads and writes by order within the k-th task of each owner (as D56 pairs them). A run
 without a beat trace gets the reason. → `viz/movement.py`.
+
+**D98** · scope — VIS6, VIS7 and VIS8 are dropped: runs are compared by switching them in the
+viewer and reading their reports, and a diff comes back when M8's sweeps need one. LOOP1 becomes a
+walk-through with a test, its outputs not checked in (D67). Amends D54, D55.
+
+**D99** · viz — Design and run reports in the layout of HLS reports, as Markdown built from
+dataclasses: `design.md` from the design point with no model run, `run.md` from the profile, the
+trace's intervals and tasks and D97's movement answers. Every number comes from one of those, and
+nothing in them grows with cycles or elements. They are written next to `run/`, never in it (D44),
+and replace VIS7 as what LLMs read. → `report/`.

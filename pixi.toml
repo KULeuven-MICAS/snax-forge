@@ -92,6 +92,7 @@ test-dfg   = "pytest -q tests/dfg tests/test_expr.py"
 test-sandbox = "pytest -q tests/sandbox"
 test-design = "pytest -q tests/design"
 test-flow  = "pytest -q tests/flow"
+test-report = "pytest -q tests/report"
 lint       = "ruff check util kernels snax_forge tests scenarios && ruff format --check util kernels snax_forge tests scenarios"
 fmt        = "ruff check --fix util kernels snax_forge tests scenarios && ruff format util kernels snax_forge tests scenarios"
 # SDFG ingest: `pixi run forge vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
@@ -113,6 +114,9 @@ lower      = "python -m snax_forge.lower"
 # The whole path (E2E1): `pixi run flow recipes/vecadd.json --platform platforms/small16.json [--set W=8]`
 # writes out/flow/vecadd/ and checks the run against the kernel reference and REF1
 flow       = "python -m snax_forge.flow"
+# Reports (REP1, D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/;
+# a run directory gets DIR_report/ (`--tasks scenarios/<name>/tasks.json` names a scenario's tasks)
+report     = "python -m snax_forge.report"
 # DFG viewer (VIS5): `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
 view-dfg   = "python -m snax_forge.viz.dfg"
 # SNAX-MODEL scenarios (MOD9): `pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd`.

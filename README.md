@@ -63,6 +63,7 @@ pixi run flow recipes/vecadd.json --platform platforms/small16.json --set W=8   
 pixi run flow recipes/vecadd.json --platform platforms/small16.json --set platform.l1.n_banks=32 # out/flow/vecadd_l1.n_banks32
 pixi run flow recipes/vecadd.json --platform platforms/small16.json --set memory.B.l1.base=576  # out/flow/vecadd_B.l1.base576: b in other banks, 77 cycles
 pixi run view out/flow/vecadd/run out/flow/vecadd_B.l1.base576/run                            # then open http://127.0.0.1:8765/
+pixi run report out/flow/vecadd                                                                # report/design.md and report/run.md
 ```
 
 A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to

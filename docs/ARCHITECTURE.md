@@ -150,6 +150,7 @@ versioned schemas follow (D26).
 | SNAX-MODEL | `snax_model/` | cluster file, control program | profile, trace, output data |
 | Flow | `flow/` | recipe, platform | all of the above, checked |
 | Viewers | `viz/` | run directories, `.snaxdfg` files | local HTML views |
+| Reports | `report/` | a flow folder or run directory | `design.md`, `run.md` |
 | HW generator (M10) | `hw/chisel/` | BRM hardware bindings | accelerator RTL |
 | Cosim (M10) | | cluster file, program, accelerator RTL | per-accelerator mismatch report |
 
@@ -435,7 +436,7 @@ flow's functional check.
 level chosen per run: `off`, `task` (commands, starts, dones, cycle-class
 intervals) or `beat` (adds grants, stalls, read responses, firings, DMA beats,
 polls, FIFO counts). Beat events can be filtered by source and cycle window;
-task events and the profile never are. A compressed summary for LLMs is VIS7.
+task events and the profile never are. What LLMs read is the reports below.
 
 **Run views** (`snax_forge/viz/`, D54, D55; `pixi run view DIR ...`, port
 8765): a local server bound to 127.0.0.1 plus a static viewer, stdlib only,
@@ -474,10 +475,29 @@ the run directories. Views:
   one time step (`.../memory?marks=...`); clicking a word opens a drawer
   with its element's journey, firings and conflict cycles, each cycle
   selectable there or in the schedule, where the element can also be traced
-- later (M4b): a diff between two runs (VIS6)
 
 Views read the model's own dataclasses, loaded back from a run directory, not
-raw JSON (D38, D50).
+raw JSON (D38, D50). Two runs are compared by switching between them in the
+viewer and reading their reports (D98).
+
+**Reports** (`snax_forge/report/`, D99; `pixi run report DIR`), in the layout
+of HLS reports, as Markdown built from dataclasses so humans, LLMs and GitHub
+read the same text. `design.md` says what was built, from the design point and
+its recipe with no model run: kernel, params, symbols, platform and its
+changes, memory pins, the cluster's components, each accelerator's BRM,
+implementation, latency and target II, each streamer's lanes, FIFO depth and
+container, a table of regions per memory (the memory tab's numbers), and notes
+that are facts about addresses (streamers of one accelerator whose containers
+start in the same banks, or lie a whole number of bank rows apart). `run.md`
+says where the cycles went: each task's start, done and length; per
+accelerator its firings, target and achieved II (the busy span divided by the
+firings, from the class intervals) and utilisation over its task window; the
+controller's command, wait and idle cycles and each wait; DMA bytes and bytes
+per busy cycle; banks with conflicts as ranges, streamer stalls and FIFO
+highs; and on a beat trace the residency and per-port patterns of D97, with
+the first cycles held back. Nothing in them grows with cycles or elements.
+They go to `report/` beside a flow's `run/`, or `DIR_report/` beside a run
+directory.
 
 **DFG viewer** (`snax_forge/viz/dfg/`, D76, D81; `pixi run view-dfg FILE|DIR
 ...`, port 8766): the same server for `.snaxdfg` files, several side by side,

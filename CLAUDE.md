@@ -21,7 +21,7 @@ Read before designing or changing a component:
 ## Commands
 - Environment: `pixi install`; `pixi run check` checks DaCe and its pins.
 - Tests: `pixi run test` (all), or one block: `test-model`, `test-lower`, `test-brm`, `test-dfg`,
-  `test-sandbox`, `test-design`, `test-flow`. CI runs `pixi run -e ci test`.
+  `test-sandbox`, `test-design`, `test-flow`, `test-report`. CI runs `pixi run -e ci test`.
 - Lint: `pixi run lint` (CI runs it); `pixi run fmt` fixes.
 - The whole path: `pixi run flow recipes/vecadd.json --platform platforms/small16.json [--set W=8]
   [--set platform.PATH=VALUE] [--set memory.B.l1.base=576]`, everything in `out/flow/<name>/`.
@@ -31,6 +31,7 @@ Read before designing or changing a component:
   scenarios/<name>/scenario.json --out out/<name> [--trace beat]`.
 - Viewers: `pixi run view DIR ...` (runs, port 8765), `pixi run view-dfg FILE|DIR ...` (graphs,
   port 8766).
+- Reports: `pixi run report out/flow/<name>` writes `report/design.md` and `report/run.md`.
 - Chisel: `pixi run -e hw chisel-test`, `chisel-gen`; `hw/chisel/` is a project of its own.
 - Clean slate: `pixi run clean` (`--dry-run` lists first).
 

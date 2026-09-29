@@ -19,6 +19,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | SNAX-MODEL | `snax_forge/snax_model/` | `tests/snax_model/` | `scenarios/` |
 | Flow | `snax_forge/flow/` | `tests/flow/` | |
 | Viewers | `snax_forge/viz/` | `tests/viz/` | |
+| Reports | `snax_forge/report/` | `tests/report/` | |
 | Chisel blocks | `hw/chisel/` | `hw/chisel/src/test/` | |
 
 Shared test helpers live in each test package's `helpers.py`. Generated
@@ -89,9 +90,8 @@ tables as they were written are in git history.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| VIS6 | Diff between two runs: design point fields, profile metrics, timelines side by side | VIS2–VIS4 | For two `vecadd` runs differing only in lanes, exactly that field and its effects are flagged | todo |
-| VIS7 | Compressed trace summary for LLM use | MOD8 | Under a size limit; numbers equal the profile | todo |
-| LOOP1 | One documented iteration: run, read views, edit the recipe, rerun, diff (D72) | VIS6, VIS7 | Checked-in example with both recipes, their design points and the diff page; cycle change matches what the views predicted | todo |
+| REP1 | Design and run reports (D99): (1) the report dataclasses, rendering and `pixi run report` (done); (2) the flow writes `report/` and `flow.log` | MOD8, VIS4b, FLOW1 | Every number equals its source, field by field; achieved II 1.44 default, 1.00 pinned, 1.38 at W = 8; the reports round-trip; every scenario and flow renders; N = 256 gives as many lines as N = 64 (tests/report) | `wip` |
+| LOOP1 | One documented iteration as a walk-through (D98): run the default flow, read the memory tab and `run.md`, write the prediction, rerun with B moved, compare | VIS4a, REP1 | `examples/loop1/README.md` and `tests/flow/test_loop1.py`, which checks every number the README states; outputs not checked in | todo |
 
 ### M5: `dot`
 
@@ -127,7 +127,6 @@ tables as they were written are in git history.
 | DSE3 | Parameter choices (lanes, tiling, instance count) made by search and written as recipes | DSE2 | Each chosen value appears in the recipe and the design point | todo |
 | DSE4 | Memory plan policies for the placement pass (D86): bank placement and alignment | DP1b | No overlaps; each policy gives the expected bank map | todo |
 | DSE5 | Sweep runner writing a results table | DSE1–DSE4 | Lanes × bank-count sweep is reproducible and shows hand-checked trends | todo |
-| VIS8 | Diff view shows recipe changes alongside design point changes | DSE1, VIS6 | A one-parameter recipe change is shown with the design point fields it caused | todo |
 
 ### M9: `jacobi1d`
 
@@ -176,7 +175,10 @@ patterns with the cycles held back, and the L1 conflicts placed on the
 layout, all from a beat trace; the memory tab draws them: the selected
 cycle's accesses and conflicts, conflict counts, arrival, use and wait
 colouring, and a drawer with each element's journey, and the schedule traces
-chosen elements, so VIS4b is done. Next is REP1: the design and run reports.
+chosen elements, so VIS4b is done. REP1's first part is done (D99):
+`pixi run report DIR` writes `design.md` and `run.md` for a flow folder or a
+run directory, and VIS6, VIS7 and VIS8 are dropped (D98). Next is the flow
+writing its reports and `flow.log` itself, then LOOP1.
 
 ## Open Items
 
