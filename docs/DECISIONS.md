@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D100**.
+  area tag. Next free number: **D101**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -28,7 +28,7 @@ By area:
 
 | Area | Decisions |
 |---|---|
-| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 |
+| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 |
@@ -65,7 +65,7 @@ register interface and a controller. It has no CPU.
 
 **D8** · scope — The AI thinker is a commercial LLM, so every artefact is text.
 
-**D9** · scope — First targets: vecadd, dot, then jacobi1d.
+**D9** · scope — First targets: vecadd, dot, then jacobi1d. Amended by D100.
 
 **D10** · model — Cycle-level and event-driven: only components with pending work are ticked, and
 idle cycle ranges are skipped. → `sched.py`.
@@ -108,7 +108,7 @@ analytical (open item 4).
 
 **D24** · scope — Build order: the kernel-agnostic SNAX-MODEL first, then vecadd end to end, the
 visualiser before dot, and the contract freeze after dot. The order is now M1, M4a, M3, M4b,
-M5–M10, M2 (D51, D54, D76).
+P1 with M5, M6–M9, M11, M12, P2, with M10 independent and M2 last (D51, D54, D76, D100).
 
 **D25** · model — The accelerator interface has a per-port element rate, so reductions and
 elementwise blocks share one interface. → C§4.
@@ -391,3 +391,11 @@ trace's intervals and tasks and D97's movement answers. Every number comes from 
 nothing in them grows with cycles or elements. They are written next to `run/`, never in it (D44),
 with the flow's `flow.log` (what it printed and the design checks that ran, or why it failed), and
 replace VIS7 as what LLMs read. → `report/`, `flow/run.py`.
+
+**D100** · scope — SNAX-FORGE becomes the subject of a paper, so a paper plan (P1) runs alongside
+M5 and turns the hypothesis into claims with their measurements and baselines, and a paper draft
+(P2) comes after the evidence. The evaluation moves from D9's three kernels to NPBench, climbing
+from kernels (M5, M7, M9) to layers (M11) to blocks and models (M12: ResNet, Transformer, NVSA),
+because the claims are about the whole path on real workloads. P1 revisits the order after M5;
+the anchor (D51) and generated accelerators in SNAX (D52) stay as they are, open items 42 and 43.
+Amends D9 and D24 (order). → STATUS, ARCHITECTURE section 8.

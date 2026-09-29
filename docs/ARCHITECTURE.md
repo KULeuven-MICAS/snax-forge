@@ -600,26 +600,36 @@ before the first comparison.
 
 ## 8. Build Order (milestones, not a schedule)
 
-Order: M1, M4a, M3, M4b, M5–M10, then M2 (D24, D51, D54, D76). Done: M1
+Order: M1, M4a, M3, M4b, then P1 alongside M5, M6–M9, M11, M12 and P2; M10
+is independent of them and M2 comes last (D24, D51, D54, D76, D100). Done: M1
 (SNAX-MODEL), M4a (run views), M3 (`vecadd` from the kernel to a checked
-model run). `docs/STATUS.md` has the tasks of every milestone.
+model run), M4b (memory tab, data movement, reports, one documented loop on
+`vecadd`). `docs/STATUS.md` has the tasks of every milestone.
 
-- **M4b:** design point and diff views, LLM trace summary, one documented
-  design iteration on `vecadd` made by editing a recipe.
+- **P1: paper plan.** The hypothesis as claims with their measurements and
+  baselines (the SNAX flow's turnaround, the model's speed), related work,
+  and the order of the milestones after M5 (D100).
 - **M5: `dot`.** Reduction in SNAX-DFG and its import, the accumulator BRM,
   chaining, general DMA insertion.
 - **M6: contract freeze.** Versioned schemas for every contract, registries
   and namespaced attributes.
-- **M7: remaining front ends.** The SDFG import of `jacobi1d`'s constructs,
-  named errors for unsupported ones.
+- **M7: front ends, NPBench kernels.** The SDFG import of `jacobi1d`'s
+  constructs and of the NPBench kernels, named errors for unsupported ones,
+  and a coverage table (D100).
 - **M8: automated DSE.** Search over recipes: pattern-based replacement across
   the BRM library, parameter and memory-plan policies, sweeps.
 - **M9: `jacobi1d`.** Stencil reuse and double buffering.
+- **M11: layers.** conv2d with a DMA per tile, softmax and an attention
+  block with several BRMs, HDC bind, bundle and similarity (D100).
+- **M12: blocks and models.** Steady-state extrapolation for long runs, then
+  a ResNet block, a Transformer block and an NVSA pipeline (D100).
+- **P2: paper draft.** Every number made from checked-in commands and
+  checked by a test.
 - **M10: outer path.** HW generator from BRM bindings, cocotb cosim of the
-  accelerators. Independent of M3–M9.
+  accelerators. Independent of M3–M12.
 - **M2: anchor** (section 7).
 - **Later:** MLIR front end (open item 33), GPU-batched simulation, sub-word
-  packing, HW cost estimator, HDC workloads.
+  packing, HW cost estimator.
 
 ## 9. Non-Goals (for now)
 
