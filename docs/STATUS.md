@@ -20,6 +20,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | Flow | `snax_forge/flow/` | `tests/flow/` | |
 | Viewers | `snax_forge/viz/` | `tests/viz/` | |
 | Reports | `snax_forge/report/` | `tests/report/` | |
+| Examples | `examples/` (walk-throughs) | `tests/flow/test_loop1.py` | |
 | Chisel blocks | `hw/chisel/` | `hw/chisel/src/test/` | |
 
 Shared test helpers live in each test package's `helpers.py`. Generated
@@ -84,6 +85,7 @@ tables as they were written are in git history.
 | VIS4a | memory tab: regions in the scenario and `run.json`, the folded memory API, the tab, element names in the cluster view's tooltips | D95, D96 |
 | VIS4b | data movement: journeys, residency, patterns, conflicts on the layout; the memory tab's cycle overlay, conflict and time modes and journey drawer; tracer rows in the schedule | D97 |
 | REP1 | design and run reports as Markdown from dataclasses, `pixi run report`; the flow writes `report/` and `flow.log` beside `run/` | D99 |
+| LOOP1 | one turn of the loop by hand, `examples/loop1/README.md`: vecadd's bank conflicts read from the reports and the memory tab, a written prediction, B moved, the prediction checked; every number checked by `tests/flow/test_loop1.py` | D98 |
 
 ## Open Tasks
 
@@ -91,7 +93,7 @@ tables as they were written are in git history.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| LOOP1 | One documented iteration as a walk-through (D98): run the default flow, read the memory tab and `run.md`, write the prediction, rerun with B moved, compare | VIS4a, REP1 | `examples/loop1/README.md` and `tests/flow/test_loop1.py`, which checks every number the README states; outputs not checked in | todo |
+| VIEW1 | Viewer housekeeping: a play / pause control that steps the selected cycle on a timer (e.g. 1 s or 0.5 s) and stops at the end; streamer boxes in the cluster view sized to their lanes, and the drawing as wide as the page less a margin of about 1–2 inches | VIS2, VIS3 | By eye; a decision only if D61's layout rules change | todo |
 
 ### M5: `dot`
 
@@ -179,7 +181,11 @@ chosen elements, so VIS4b is done. REP1 is done (D99): `pixi run report DIR`
 writes `design.md` and `run.md` for a flow folder or a run directory, every
 flow writes them to `report/` with `flow.log` (what it printed and the design
 checks that ran, or why it failed) beside `run/`, and VIS6, VIS7 and VIS8 are
-dropped (D98). Next is LOOP1.
+dropped (D98). LOOP1 is done (D98): `examples/loop1/README.md` walks one
+iteration by hand, from the default run's conflicts (acc_b held 7 cycles,
+achieved II 1.44) through a written prediction to the rerun with B moved
+(77 cycles, II 1.00), and `tests/flow/test_loop1.py` checks every number in
+it. Last in M4b is VIEW1, the viewer housekeeping.
 
 ## Open Items
 

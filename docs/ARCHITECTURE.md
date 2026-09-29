@@ -550,6 +550,11 @@ earlier run in the folder are removed first, so `report/` always describes the
 folder's last run. A report that cannot be built is named in the summary and
 does not fail the flow.
 
+The manual loop is flow, reports and viewer, then a changed `--set`.
+`examples/loop1/README.md` is one turn of it on vecadd, with the prediction
+written before the rerun; `tests/flow/test_loop1.py` runs its commands and
+checks every number it states against the reports and the viewer API (D98).
+
 ## 6. Correctness Strategy
 
 Three levels, each checked against the one above it:

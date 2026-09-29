@@ -70,7 +70,9 @@ pixi run report out/flow/vecadd                                                 
 ```
 
 A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
-the design step.
+the design step. `examples/loop1/README.md` walks through one turn of the loop
+this way: reading why the default run takes 85 cycles, predicting what moving
+B does, and checking it.
 
 # 2. Step by step
 

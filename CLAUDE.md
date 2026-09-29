@@ -50,3 +50,5 @@ Read before designing or changing a component:
 - Every new artefact type gets a `to_dict` / `from_dict` and a round-trip test. Versioned JSON
   schemas come with M6 (F2), not before.
 - Shared test helpers live in `tests/<package>/helpers.py`, not copied per file.
+- Walk-throughs live in `examples/<name>/README.md`; a test checks every number one states, and
+  their outputs are not checked in.
