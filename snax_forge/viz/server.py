@@ -19,12 +19,16 @@ Routes (every answer is JSON except the static files):
                                             given (repeat it, or separate names
                                             with commas; k is D57)
     GET  /api/run/<name>/fifo               FIFO busy window per streamer (D56)
+    GET  /api/run/<name>/memory             per memory its geometry, regions and
+                                            folded lines (D96)
+    GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B
+                                            rows A <= r < B in full, at most 256
     POST /api/reload                        read every run directory again
 
 All the work is in api.py; this module only parses paths and queries and
-turns results and errors into responses: 404 for an unknown run or file,
-400 for a bad query, 500 with the message when a reload fails (the old runs
-stay loaded).
+turns results and errors into responses: 404 for an unknown run, memory or
+file, 400 for a bad query, 500 with the message when a reload fails (the
+old runs stay loaded).
 """
 
 from __future__ import annotations
@@ -123,6 +127,19 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["runs"]:
             self._json(runs.summaries())
             return
+        if len(parts) == 5 and parts[0] == "run" and parts[2:] == ["memory", parts[3], "rows"]:
+            rv = runs.get(parts[1])
+            if rv is None or parts[3] not in api.memories(rv):
+                what = f"run {parts[1]!r}" if rv is None else f"memory {parts[3]!r}"
+                self._error(HTTPStatus.NOT_FOUND, f"no {what}")
+                return
+            a = _int_arg(q, "from", 0) or 0
+            b = _int_arg(q, "to", a + api.memory.MAX_ROWS)
+            try:
+                self._json(api.memory_rows(rv, parts[3], a, b or 0))
+            except api.MemoryViewError as e:
+                raise _BadRequest(str(e)) from e
+            return
         if len(parts) in (2, 3) and parts[0] == "run":
             rv = runs.get(parts[1])
             if rv is None:
@@ -141,6 +158,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if parts[2] == "fifo":
                 self._json(api.fifo_windows(rv))
+                return
+            if parts[2] == "memory":
+                self._json(api.memory_view(rv))
                 return
         self._error(HTTPStatus.NOT_FOUND, "unknown API route /api/" + "/".join(parts))
 

@@ -3,6 +3,7 @@ viewer and the run list, answers an events query, and a reload picks up a
 changed directory. Only the plumbing; api.py's answers are test_api.py's."""
 
 import json
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
 from .helpers import run_dir, serving
@@ -46,3 +47,27 @@ def test_reload_picks_up_a_changed_directory(tmp_path):
             assert json.loads(r.read()) == {"runs": ["run"]}
         assert get_json(srv, "/api/runs")[0]["total_cycles"] == 85
         assert get_json(srv, "/api/run/run")["trace"]["level"] == "task"
+
+
+def status_of(srv, path):
+    try:
+        return get(srv, path)[0]
+    except HTTPError as e:
+        return e.code
+
+
+def test_memory_routes(tmp_path):
+    """The memory tab's two routes (D96): the folded view and rows on request."""
+    d = run_dir(tmp_path / "vecadd", "vecadd", "off")
+    with serving([d]) as srv:
+        view = get_json(srv, "/api/run/vecadd/memory")
+        assert view["has_regions"] and [m["mem"] for m in view["memories"]] == ["l1", "l2"]
+        rows = get_json(srv, "/api/run/vecadd/memory/l1/rows?from=4&to=6")
+        assert [r["row"] for r in rows["rows"]] == [4, 5]
+        # B's first element in bank 8 of row 4; regions are numbered per memory (A, B, C in L1)
+        assert rows["rows"][0]["cells"][8] == [[1, 0]]
+        assert len(get_json(srv, "/api/run/vecadd/memory/l2/rows")["rows"]) == 256  # default
+        assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=0&to=300") == 400
+        assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=x") == 400
+        assert status_of(srv, "/api/run/vecadd/memory/l3/rows") == 404
+        assert status_of(srv, "/api/run/nope/memory") == 404

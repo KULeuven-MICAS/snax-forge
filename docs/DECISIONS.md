@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D96**.
+  area tag. Next free number: **D97**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -38,7 +38,7 @@ By area:
 | sandbox | D72 D73 D80 |
 | design | D7 D74 D84–D87 |
 | flow | D90 D94 |
-| viz | D16 D54–D58 D60 D61 D76 D81 |
+| viz | D16 D54–D58 D60 D61 D76 D81 D96 |
 | docs, test | D26 D46 D92 D93 |
 
 ---
@@ -366,3 +366,10 @@ which the model ignores and `run.json` records, so a run directory says where it
 says which hardware ran it (D50). The flow fills them from the memory plan; vecadd and
 vecadd_conflict declare theirs, and a region must fit its memory when the scenario is made.
 Amends D44, D65. → C§6.
+
+**D96** · viz — The memory layout is a tab of the run viewer, not a design point view: L1 first, as
+banks × rows through the model's address map, L2 as rows of one DMA beat. Rows are computed and
+folded in Python: neighbouring rows fold when every column holds the same regions and each region
+moves by one constant step, so the answer grows with the regions and not with the depth, and
+folded rows are served on request, at most 256 at a time. Region colours are a new meaning, used
+only in that tab. Amends D54, D61. → `viz/memory.py`.

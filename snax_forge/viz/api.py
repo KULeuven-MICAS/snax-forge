@@ -28,6 +28,13 @@ cycle (``Trace.finish`` sorts them, D39), with their cycles in a separate
 list so a window ``[a, b)`` is two bisects. The source filter is applied
 after the window, on the few events left.
 
+Memory layout (D96)
+-------------------
+The memory tab's rows are computed in memory.py from the run's regions
+(D95) and its cluster, once per memory on first use, and folded so the
+answer grows with the regions, not with the depth; folded rows come on
+request, at most ``memory.MAX_ROWS`` at a time.
+
 FIFO busy window (D56)
 ----------------------
 The profile's FIFO statistics are over the whole run (D40), which dilutes
@@ -60,6 +67,9 @@ from typing import Any
 from snax_forge.snax_model.dma import DIRECTIONS
 from snax_forge.snax_model.scenario import ClusterConfig, Outputs, read_outputs
 
+from . import memory
+from .memory import MemoryLayout, MemoryViewError
+
 # =============================================================================
 # One run
 # =============================================================================
@@ -76,6 +86,7 @@ class RunView:
     events: list[dict[str, Any]] = field(default_factory=list)  # sorted by t
     times: list[int] = field(default_factory=list)  # events[i]["t"], for bisect
     spans: dict[str, list[tuple[int, int]]] = field(default_factory=dict)  # task_spans, per block
+    layouts: dict[str, MemoryLayout] = field(default_factory=dict, repr=False)  # per memory, lazy
 
     @property
     def total_cycles(self) -> int:
@@ -118,6 +129,44 @@ def run_names(dirs: Sequence[str | Path]) -> list[str]:
             name = f"{base}-{i}"
         names.append(name)
     return names
+
+
+# =============================================================================
+# Memory layout (VIS4a, D96)
+# =============================================================================
+
+
+def memories(rv: RunView) -> list[str]:
+    """The run's memories, L1 first."""
+    return ["l1"] + (["l2"] if rv.cluster.l2 is not None else [])
+
+
+def _layout(rv: RunView, mem: str) -> MemoryLayout:
+    if mem not in memories(rv):
+        raise MemoryViewError(f"run {rv.name!r} has no memory {mem!r}")
+    if mem not in rv.layouts:  # computed once per load; the same answer if two threads race
+        rv.layouts[mem] = memory.layout_of(mem, rv.cluster, rv.outputs.regions)
+    return rv.layouts[mem]
+
+
+def memory_view(rv: RunView) -> dict[str, Any]:
+    """/api/run/<name>/memory: per memory its geometry, regions, use and folded lines
+    (memory.py). A run without regions gets the geometry and ``has_regions`` false."""
+    return {
+        "name": rv.name,
+        "has_regions": bool(rv.outputs.regions),
+        "memories": [memory.summary(_layout(rv, m)) for m in memories(rv)],
+    }
+
+
+def memory_rows(rv: RunView, mem: str, start: int, stop: int) -> dict[str, Any]:
+    """/api/run/<name>/memory/<mem>/rows: rows ``start <= r < stop`` in full."""
+    return {
+        "mem": mem,
+        "from": start,
+        "to": stop,
+        "rows": memory.rows(_layout(rv, mem), start, stop),
+    }
 
 
 # =============================================================================
@@ -376,6 +425,9 @@ __all__ = [
     "events_window",
     "fifo_windows",
     "load_run",
+    "memories",
+    "memory_rows",
+    "memory_view",
     "merge",
     "owners_of",
     "run_detail",
