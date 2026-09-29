@@ -34,6 +34,7 @@
 
 import { dec, h, int } from "./dom.js";
 import { clusterView } from "./cluster.js";
+import { elementAt, ensureRows } from "./memory.js";
 import { BEAT_KINDS, GROUP, beatTraced, byOwner, classAt, describe, fifoCount, fifoIndex, onPort, taskEvents } from "./events.js";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -345,12 +346,30 @@ async function showCycle(cycle, keepInView = true) {
   }
   const tr = c.detail.trace;
   const events = tr?.level === "beat" ? await c.api.events(c.detail.name, cycle, cycle + 1, { k: BEAT_KINDS }) : [];
+  const names = await elementNames(c, events);
   if (current !== c || c.cycle !== cycle) return; // a newer cycle or render took over
-  c.cluster.update(tr ? cycle : null, { tasks: c.tasks, fifo: c.fifo, events });
+  c.cluster.update(tr ? cycle : null, { tasks: c.tasks, fifo: c.fifo, events, names });
   c.title.textContent = `Cluster at cycle ${int(cycle)}`;
   c.prev.disabled = cycle <= 0;
   c.next.disabled = cycle >= c.total - 1;
   if (tr) c.events.replaceChildren(eventList(c.detail, cycle, c.tasks, events));
+}
+
+/**
+ * When the run names its regions (D95): a function (bank, row) -> the element
+ * there (`A[17]`), after loading the L1 rows the cycle's accesses touch, for
+ * the cluster view's tooltips. Null without regions, or if the rows cannot be
+ * loaded; the tooltips then say what they said before.
+ */
+async function elementNames(c, events) {
+  if (!c.detail.run.regions?.length) return null;
+  const rows = events.filter((e) => e.mem === "l1" && e.row !== undefined).map((e) => e.row);
+  try {
+    if (rows.length) await ensureRows(c.api, c.detail, "l1", rows);
+  } catch {
+    return null;
+  }
+  return (bank, row) => elementAt(c.detail, "l1", bank, row);
 }
 
 /**

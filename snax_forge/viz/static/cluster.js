@@ -39,6 +39,10 @@
 //   accelerator -> writer     a rise of a writer lane's count; there is no
 //                             push event, so a push and a pop in the same
 //                             cycle show no arrow (open item 25)
+//
+// When the run names its regions (D95), the tooltips of banks, port chips and
+// request arrows also name the element each L1 access touches (`A[17]`),
+// from the memory tab's rows (memory.js); the caller loads them first.
 
 import { h, int } from "./dom.js";
 import { GROUP, bankText, beatTraced, classAt, fifoCount, onPort } from "./events.js";
@@ -100,6 +104,13 @@ function setText(el, text, kind = null) {
 }
 
 const portText = (e) => `${e.port} ${e.k === "resp" ? "read data back" : e.k === "grant" ? "request accepted" : e.wider ? "stalled by a wider grant" : "stalled"}: ${e.k === "resp" ? "read" : e.w ? "write" : "read"} addr ${e.addr}, ${bankText(e.banks)}`;
+
+/** ["A[0]", "A[1]", "A[2]"] -> "A[0..2]"; anything else is listed. */
+function elementRange(names) {
+  const m = names.map((x) => /^(.+)\[(\d+)\]$/.exec(x));
+  const run = m.every((x, i) => x && x[1] === m[0][1] && Number(x[2]) === Number(m[0][2]) + i);
+  return run && names.length > 1 ? `${m[0][1]}[${m[0][2]}..${m[m.length - 1][2]}]` : names.join(", ");
+}
 
 // -- building ------------------------------------------------------------------------
 
@@ -283,7 +294,14 @@ function build(detail) {
   // -- one cycle ----------------------------------------------------------------------
 
   function update(t, data = {}) {
-    const { tasks = [], fifo = new Map(), events = [] } = data;
+    const { tasks = [], fifo = new Map(), events = [], names = null } = data;
+    // An access and the element(s) it touches: `acc_a.1 request accepted: ... : A[17]`.
+    const what = (e, banks) => {
+      if (!names || e.mem !== "l1" || e.row === undefined) return "";
+      const got = banks.map((b) => names(b, e.row)).filter((x) => x);
+      return got.length ? `: ${elementRange(got)}` : "";
+    };
+    const said = (e, banks = e.banks ?? []) => portText(e) + what(e, banks);
     if (cmdsFrom !== tasks) {
       cmds.length = 0;
       for (const e of tasks) if (e.k === "cmd") cmds.push(e);
@@ -331,7 +349,7 @@ function build(detail) {
       setText(who, g ? portLabel(g.port) : "");
       setText(acc, g ? `${g.w ? "W" : "R"} r${g.row}` : "");
       setText(back, r ? `↓ ${portLabel(r.port)}` : "");
-      cell.title = st ? [g, ...st.stalls, r].filter(Boolean).map(portText).join("\n") : `bank ${b}`;
+      cell.title = st ? [g, ...st.stalls, r].filter(Boolean).map((e) => said(e, [b])).join("\n") : `bank ${b}`;
       const any = g ?? st?.stalls[0];
       setArrow(bankPairs[b].req, any ? "up" : null, contested,
         contested ? `bank ${b} contested: ${g ? `${g.port} served, ` : ""}${st.stalls.map((s) => s.port).join(", ")} stalled` : any ? `${any.port} ${any.w ? "writes" : "reads"} bank ${b}` : "");
@@ -374,15 +392,15 @@ function build(detail) {
         c.el.classList.toggle("req", evs.some((e) => e.k === "grant"));
         c.el.classList.toggle("bad", evs.some((e) => e.k === "stall"));
         c.el.classList.toggle("resp", evs.some((e) => e.k === "resp"));
-        c.el.title = evs.length ? evs.map(portText).join("\n") : `${c.port}: nothing in this cycle`;
+        c.el.title = evs.length ? evs.map((e) => said(e)).join("\n") : `${c.port}: nothing in this cycle`;
       }
     };
     const reqPair = (p, evs) => {
       const reqs = (evs ?? []).filter((e) => e.k !== "resp");
       const bad = reqs.some((e) => e.k === "stall");
       const back = (evs ?? []).filter((e) => e.k === "resp");
-      setArrow(p.req, reqs.length ? "up" : null, bad, reqs.map(portText).join("\n"));
-      setArrow(p.resp, back.length ? "down" : null, false, back.map(portText).join("\n"));
+      setArrow(p.req, reqs.length ? "up" : null, bad, reqs.map((e) => said(e)).join("\n"));
+      setArrow(p.resp, back.length ? "down" : null, false, back.map((e) => said(e)).join("\n"));
       return bad;
     };
 

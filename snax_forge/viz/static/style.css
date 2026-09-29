@@ -409,3 +409,50 @@ path.arrow-hl { fill: var(--hl); }
 path.edge.hl { stroke: var(--hl); stroke-width: 2.4; }
 .box.hl, .op.hl, .port.hl { box-shadow: 0 0 0 2px var(--hl); }
 .scope.hl { box-shadow: 0 0 0 2px var(--hl); }
+
+/* -- memory tab (VIS4a, D96) -------------------------------------------------------
+   Region colours are a meaning of this tab only: a region keeps its colour in
+   every memory. Soft fills with ink text, so a cell's index stays readable; the
+   status colours above (request, busy, stalls) are kept for later overlays. */
+:root {
+  --region-0: #f2d49b; --region-1: #bcd8f2; --region-2: #f3c4d4; --region-3: #cfe5bd;
+  --region-4: #ddd0f0; --region-5: #ffd6b0; --region-6: #bfe6df; --region-7: #e2dccb;
+  --region-edge: rgba(0, 0, 0, 0.18);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --region-0: #6b5424; --region-1: #2f4d6b; --region-2: #6b3348; --region-3: #3d5a2c;
+    --region-4: #4a3d68; --region-5: #6e4a28; --region-6: #2c5a52; --region-7: #57503d;
+    --region-edge: rgba(255, 255, 255, 0.16);
+  }
+}
+.r0 { --region: var(--region-0); } .r1 { --region: var(--region-1); }
+.r2 { --region: var(--region-2); } .r3 { --region: var(--region-3); }
+.r4 { --region: var(--region-4); } .r5 { --region: var(--region-5); }
+.r6 { --region: var(--region-6); } .r7 { --region: var(--region-7); }
+i.key.region { background: var(--region); box-shadow: inset 0 0 0 1px var(--region-edge); }
+
+.mem-scale-wrap { margin: 0.4rem 0 0.9rem; }
+.mem-scale { position: relative; height: 1.6rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; overflow: hidden; }
+.mem-seg { position: absolute; top: 0; bottom: 0; min-width: 2px; background: var(--region); box-shadow: inset 0 0 0 1px var(--region-edge); display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.mem-seg span { font-size: 0.8em; font-weight: 600; white-space: nowrap; padding: 0 0.2rem; }
+.mem-scale-ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 0.8em; margin-top: 0.15rem; }
+table.mem-regions { margin-bottom: 1rem; }
+table.mem-regions td:first-child { white-space: nowrap; font-weight: 600; }
+
+.mem-grid-wrap { padding-bottom: 0.3rem; }
+.mem-grid { display: grid; gap: 2px; align-items: stretch; font-size: 0.78em; line-height: 1.2; min-width: min-content; }
+.mem-corner, .mem-col { color: var(--muted); text-align: center; padding: 0.1rem 0; font-weight: 600; }
+.mem-corner { text-align: left; }
+.mem-col.sb-first, .mem-cell.sb-first { margin-left: 5px; }
+.mem-row-label { display: flex; flex-direction: column; justify-content: center; padding-right: 0.3rem; font-weight: 600; }
+.mem-row-label small { color: var(--muted); font-weight: 400; font-size: 0.85em; }
+.mem-cell { min-height: 2.1rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; background: var(--region, var(--panel)); box-shadow: inset 0 0 0 1px var(--region-edge); font-weight: 600; white-space: nowrap; overflow: hidden; }
+.mem-cell.empty { background: transparent; box-shadow: inset 0 0 0 1px var(--rule); }
+.mem-cell.multi { background: repeating-linear-gradient(135deg, var(--region) 0 6px, var(--panel) 6px 8px); }
+.mem-line { padding: 0.25rem 0.4rem; border-radius: 3px; color: var(--muted); }
+.mem-line.empty { border: 1px dashed var(--rule); text-align: center; }
+.mem-line.fold { padding: 0; }
+.mem-fold { width: 100%; text-align: left; border-style: dashed; color: var(--ink); background: transparent; font-size: 1em; padding: 0.3rem 0.5rem; }
+.mem-fold:hover { background: var(--panel); }
+.mem-line.fold.open .mem-fold { color: var(--muted); border-style: solid; }

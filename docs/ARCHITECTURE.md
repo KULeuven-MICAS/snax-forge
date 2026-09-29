@@ -449,12 +449,14 @@ the run directories. Views:
 - the cluster view: banks, interconnect, streamers, accelerators, DMA and
   controller at the selected cycle, requests and read data apart (VIS3, D61,
   D62)
-- the memory layout (VIS4a, D95, D96): per memory the regions a run names
-  (their extent, bytes and share) and its rows, L1 as banks × rows through
-  the model's address map and L2 as rows of one DMA beat; rows that repeat
-  with one constant step per region are folded in Python, and folded rows
-  come on request (`/api/run/<name>/memory`, `.../memory/<mem>/rows`); the
-  tab that draws them is VIS4a's next part
+- the memory tab (VIS4a, D95, D96): per memory a scale bar and a table of
+  the regions a run names (extent, bytes, share, banks and rows touched),
+  then its rows, L1 as banks × rows through the model's address map and L2
+  as rows of one DMA beat, each word in its region's colour with the
+  element's index; rows that repeat with one constant step per region are
+  folded in Python and opened on a click, 256 rows at a time
+  (`/api/run/<name>/memory`, `.../memory/<mem>/rows`). With regions, the
+  cluster view's tooltips also name the element each L1 access touches
 - later (M4b): data movement and a diff between two runs (VIS4b, VIS6)
 
 Views read the model's own dataclasses, loaded back from a run directory, not

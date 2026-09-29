@@ -1,7 +1,8 @@
-// Entry point of the viewer (VIS1-VIS3, D55, D57, D61): loads the run list and
-// the selected run from the API, fills the header and hands the page to one
-// view: the profile report (report.js) or the schedule with the cluster view
-// under it (schedule.js, cluster.js).
+// Entry point of the viewer (VIS1-VIS3, VIS4a, D55, D57, D61, D96): loads the
+// run list and the selected run from the API, fills the header and hands the
+// page to one view: the profile report (report.js), the schedule with the
+// cluster view under it (schedule.js, cluster.js), or the memory layout
+// (memory.js).
 //
 // All view state lives in the URL hash, e.g.
 //   #run=vecadd&view=schedule&from=0&to=120&cycle=42
@@ -13,6 +14,7 @@
 // to read the directories again (POST /api/reload) and clears the cache.
 
 import { h, int } from "./dom.js";
+import { renderMemory } from "./memory.js";
 import { renderReport } from "./report.js";
 import { renderSchedule, selectCycle, stepCycle } from "./schedule.js";
 
@@ -37,6 +39,10 @@ const api = {
     if (opts.k?.length) q.set("k", opts.k.join(","));
     return getJSON(`/api/run/${enc(name)}/events?${q}`).then((r) => r.events);
   },
+  memory: (name) => getJSON(`/api/run/${enc(name)}/memory`),
+  /** Rows from <= r < to of memory `mem` in full (at most 256). */
+  memoryRows: (name, mem, from, to) =>
+    getJSON(`/api/run/${enc(name)}/memory/${enc(mem)}/rows?${new URLSearchParams({ from: String(from), to: String(to) })}`),
   reload: () => getJSON("/api/reload", { method: "POST" }),
 };
 
@@ -56,7 +62,7 @@ function setHash(changes) {
   location.hash = q.toString();
 }
 
-const VIEWS = { report: "Report", schedule: "Schedule and cluster" };
+const VIEWS = { report: "Report", schedule: "Schedule and cluster", memory: "Memory" };
 
 // -- header ------------------------------------------------------------------------
 
@@ -131,6 +137,8 @@ async function show() {
     const root = $("report");
     if (view === "report") {
       if (shown !== `${name}/report`) renderReport(root, detail, fifo);
+    } else if (view === "memory") {
+      if (shown !== `${name}/memory`) await renderMemory(root, detail, { api, status });
     } else {
       const same = shown === `${name}/schedule` && drawnWith === withoutCycle(st);
       if (!(same && (await selectCycle(detail, st)))) {
@@ -172,19 +180,7 @@ $("reload").addEventListener("click", async () => {
     cache = {};
     shown = null;
     drawnWith = null;
-    await // Left and right arrows step the selected cycle while the schedule is shown.
-document.addEventListener("keydown", (e) => {
-  const st = hashState();
-  if ((st.view ?? "report") !== "schedule") return;
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
-  const d = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
-  const next = d ? stepCycle(d) : null;
-  if (next === null) return;
-  e.preventDefault();
-  setHash({ cycle: next });
-});
-
-showLatest();
+    await showLatest();
   } catch (e) {
     status(String(e.message || e), true);
   }

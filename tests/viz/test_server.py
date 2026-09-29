@@ -25,6 +25,7 @@ def test_server_serves_viewer_and_runs(tmp_path):
         status, ctype, body = get(srv, "/")
         assert status == 200 and ctype == "text/html" and b"app.js" in body
         assert get(srv, "/app.js")[1] == "text/javascript"  # modules need a JS type
+        assert get(srv, "/memory.js")[1] == "text/javascript"  # the memory tab (VIS4a)
         runs = get_json(srv, "/api/runs")
         assert runs == [
             {"name": "vecadd", "path": str(d), "scenario": "vecadd",
