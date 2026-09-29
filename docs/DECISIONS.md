@@ -389,4 +389,5 @@ walk-through with a test, its outputs not checked in (D67). Amends D54, D55.
 dataclasses: `design.md` from the design point with no model run, `run.md` from the profile, the
 trace's intervals and tasks and D97's movement answers. Every number comes from one of those, and
 nothing in them grows with cycles or elements. They are written next to `run/`, never in it (D44),
-and replace VIS7 as what LLMs read. → `report/`.
+with the flow's `flow.log` (what it printed and the design checks that ran, or why it failed), and
+replace VIS7 as what LLMs read. → `report/`, `flow/run.py`.

@@ -83,6 +83,7 @@ tables as they were written are in git history.
 | FLOW1 | flow defaults for viewing: `task` trace, a folder name from every `--set`, flow runs named after their folder in the viewer | D94 |
 | VIS4a | memory tab: regions in the scenario and `run.json`, the folded memory API, the tab, element names in the cluster view's tooltips | D95, D96 |
 | VIS4b | data movement: journeys, residency, patterns, conflicts on the layout; the memory tab's cycle overlay, conflict and time modes and journey drawer; tracer rows in the schedule | D97 |
+| REP1 | design and run reports as Markdown from dataclasses, `pixi run report`; the flow writes `report/` and `flow.log` beside `run/` | D99 |
 
 ## Open Tasks
 
@@ -90,7 +91,6 @@ tables as they were written are in git history.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| REP1 | Design and run reports (D99): (1) the report dataclasses, rendering and `pixi run report` (done); (2) the flow writes `report/` and `flow.log` | MOD8, VIS4b, FLOW1 | Every number equals its source, field by field; achieved II 1.44 default, 1.00 pinned, 1.38 at W = 8; the reports round-trip; every scenario and flow renders; N = 256 gives as many lines as N = 64 (tests/report) | `wip` |
 | LOOP1 | One documented iteration as a walk-through (D98): run the default flow, read the memory tab and `run.md`, write the prediction, rerun with B moved, compare | VIS4a, REP1 | `examples/loop1/README.md` and `tests/flow/test_loop1.py`, which checks every number the README states; outputs not checked in | todo |
 
 ### M5: `dot`
@@ -175,10 +175,11 @@ patterns with the cycles held back, and the L1 conflicts placed on the
 layout, all from a beat trace; the memory tab draws them: the selected
 cycle's accesses and conflicts, conflict counts, arrival, use and wait
 colouring, and a drawer with each element's journey, and the schedule traces
-chosen elements, so VIS4b is done. REP1's first part is done (D99):
-`pixi run report DIR` writes `design.md` and `run.md` for a flow folder or a
-run directory, and VIS6, VIS7 and VIS8 are dropped (D98). Next is the flow
-writing its reports and `flow.log` itself, then LOOP1.
+chosen elements, so VIS4b is done. REP1 is done (D99): `pixi run report DIR`
+writes `design.md` and `run.md` for a flow folder or a run directory, every
+flow writes them to `report/` with `flow.log` (what it printed and the design
+checks that ran, or why it failed) beside `run/`, and VIS6, VIS7 and VIS8 are
+dropped (D98). Next is LOOP1.
 
 ## Open Items
 

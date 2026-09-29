@@ -17,6 +17,8 @@
                         reference and the reference executor (REF1) on the
                         same inputs; written into the profile's
                         ``functional_check`` (open item 13)
+      -> reports        design.md and run.md (REP1, D99)           report/
+      -> log            the summary and the design checks that ran flow.log
 
 Everything goes to one folder, ``out/flow/<name>/``, overwritten on every
 run; the default name carries every ``--set``, so runs that differ only in
@@ -26,6 +28,13 @@ traced at ``task`` level by default, so ``run/`` opens in the run viewer
 ``trace_level="beat"``. ``scenario.json`` runs again on its own (``pixi run
 model-run``). Nothing is decided here: each stage is the tool of that name,
 called as its CLI would (D90, D94).
+
+``report/`` and ``flow.log`` sit next to ``run/``, never inside it (D44,
+D99). ``flow.log`` is what the command line prints plus the design checks
+that ran; a flow that fails writes the failure there instead, and the reports
+of an earlier run in the same folder are removed first, so the folder never
+holds reports of a run other than its last. A report that cannot be built is
+named in the summary; the run and its check stand without it.
 """
 
 from __future__ import annotations
@@ -33,17 +42,19 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from snax_forge.design import DesignError, DesignPoint, load, run_checks
-from snax_forge.dfg import Graph
+from snax_forge.design.check import CHECKS, STAGES
+from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.execute import execute
-from snax_forge.lower import TaskList, cluster_file, lower_program, task_list
-from snax_forge.sandbox import Recipe, apply_recipe, write_steps
+from snax_forge.lower import LowerError, TaskList, cluster_file, lower_program, task_list
+from snax_forge.report import DESIGN_MD, RUN_MD, write_reports
+from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
 from snax_forge.sdfg.loader import load as load_kernel
 from snax_forge.sdfg.paths import _repo_root
 from snax_forge.snax_model.scenario import (
@@ -52,11 +63,14 @@ from snax_forge.snax_model.scenario import (
     Region,
     RunResult,
     Scenario,
+    ScenarioError,
     run,
     write_outputs,
 )
 
 OUT = _repo_root() / "out" / "flow"
+LOG = "flow.log"
+REPORT = "report"
 
 
 class FlowError(ValueError):
@@ -78,6 +92,8 @@ class Flow:
     scenario: Scenario
     result: RunResult
     check: dict[str, Any]
+    checks: dict[str, list[str]] = field(default_factory=dict)  # stage -> codes that ran
+    report_error: str | None = None  # why report/ could not be written, if it could not
 
     @property
     def passed(self) -> bool:
@@ -168,6 +184,79 @@ def functional_check(
     }
 
 
+def checks_that_ran() -> dict[str, list[str]]:
+    """The registered design checks per stage, in the order they run. The flow only goes on
+    when every stage passed, so after a flow these are exactly the checks that ran."""
+    return {st: [c.code for c in CHECKS.values() if c.stage == st] for st in STAGES}
+
+
+def _rel(p: Path) -> str:
+    try:
+        return str(p.resolve().relative_to(Path.cwd()))
+    except ValueError:
+        return str(p)
+
+
+def summary(f: Flow) -> str:
+    """What the command line prints: one line per stage."""
+    p, check = f.point, f.check
+    params = ", ".join(f"{k}={v}" for k, v in f.recipe.params.items())
+    syms = ", ".join(f"{k}={v}" for k, v in check["symbols"].items())
+    plan = f.point.memory
+    inputs = ", ".join(m.npy for m in f.scenario.memory)
+    n_checks = sum(len(v) for v in f.checks.values())
+    lines = [
+        f"flow {f.name} ({f.recipe.name}: {params}; {syms}) on {p.platform.name} -> {_rel(f.out)}/"
+    ]
+    lines.append(
+        f"  sandbox   {len(f.steps) - 1} steps, each equal to the input graph on the reference "
+        "check -> sandbox/"
+    )
+    lines.append(
+        f"  design    {n_checks} checks passed; platform base {p.platform.base}, "
+        f"{len(p.platform.changes)} changes; memory {plan.passes['placement']}, "
+        f"{len(plan.changes)} changes -> design/"
+    )
+    lines.append(
+        f"  lower     cluster.json ({len(f.cluster.components)} components), tasks.json "
+        f"({len(f.tasks.steps)} steps, {f.n_commands} commands)"
+    )
+    lines.append(f"  scenario  scenario.json, inputs {inputs} (make_inputs, seed {check['seed']})")
+    lines.append(
+        f"  run       {f.result.total_cycles} cycles -> run/  (pixi run view {_rel(f.out / 'run')})"
+    )
+    for c, x in check["containers"].items():
+        if x["reference"] and x["ref1"]:
+            lines.append(
+                f"  check     {c} ({x['elements']} elements, from {x['memory']}) equals the "
+                f"{check['kernel']} reference and REF1"
+            )
+        else:
+            lines.append(
+                f"  check     {c} ({x['elements']} elements, from {x['memory']}) DIFFERS: "
+                f"reference {x['reference']}, REF1 {x['ref1']}, {x['mismatches']} elements wrong"
+            )
+    if f.report_error is None:
+        lines.append(f"  report    {REPORT}/{DESIGN_MD}, {REPORT}/{RUN_MD}, {LOG}")
+    else:
+        lines.append(f"  report    NOT WRITTEN: {f.report_error}")
+    return "\n".join(lines)
+
+
+def log_text(f: Flow) -> str:
+    """``flow.log``: the summary, then the design checks that ran, per stage."""
+    n = sum(len(v) for v in f.checks.values())
+    lines = [summary(f), "", f"design checks that ran ({n}, all passed):"]
+    lines += [f"  {st:<9} {', '.join(codes)}" for st, codes in f.checks.items() if codes]
+    return "\n".join(lines) + "\n"
+
+
+def _clear(out: Path) -> None:
+    """Remove the log and reports of an earlier run in ``out`` (module doc)."""
+    for p in (out / LOG, out / REPORT / DESIGN_MD, out / REPORT / RUN_MD):
+        p.unlink(missing_ok=True)
+
+
 def run_flow(
     recipe_path: str | Path,
     platform_path: str | Path,
@@ -192,7 +281,45 @@ def run_flow(
     name = name or default_name(recipe, recipe_sets, platform_sets, memory_sets)
     out = Path(out) if out is not None else OUT / name
     out.mkdir(parents=True, exist_ok=True)
+    _clear(out)
+    try:
+        f = _stages(
+            recipe, name, point_name, out, platform_path, platform_sets, memory_path,
+            memory_sets, graph_path, seed, trace_level,
+        )  # fmt: skip
+    except (
+        DesignError,
+        FlowError,
+        SandboxError,
+        DfgError,
+        LowerError,
+        ScenarioError,
+        OSError,
+    ) as e:
+        (out / LOG).write_text(f"flow {name} FAILED\n{e}\n")
+        raise
+    try:
+        write_reports(out)
+    except (ValueError, KeyError, OSError) as e:
+        f.report_error = f"{type(e).__name__}: {e}"
+    (out / LOG).write_text(log_text(f))
+    return f
 
+
+def _stages(
+    recipe: Recipe,
+    name: str,
+    point_name: str,
+    out: Path,
+    platform_path: str | Path,
+    platform_sets: Sequence[tuple[str, Any]],
+    memory_path: str | Path | None,
+    memory_sets: Sequence[tuple[str, Any]],
+    graph_path: str | Path | None,
+    seed: int,
+    trace_level: str,
+) -> Flow:
+    """The stages of ``run_flow``, up to the check."""
     # SNAX-SANDBOX
     if graph_path is not None:
         graph = Graph.load(graph_path)
@@ -242,5 +369,6 @@ def run_flow(
     result.profile.functional_check = check
     write_outputs(result, out / "run")
     return Flow(
-        name, out, recipe, steps, point, cluster, tasks, len(program), scenario, result, check
-    )
+        name, out, recipe, steps, point, cluster, tasks, len(program), scenario, result, check,
+        checks_that_ran(),
+    )  # fmt: skip

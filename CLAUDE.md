@@ -31,7 +31,8 @@ Read before designing or changing a component:
   scenarios/<name>/scenario.json --out out/<name> [--trace beat]`.
 - Viewers: `pixi run view DIR ...` (runs, port 8765), `pixi run view-dfg FILE|DIR ...` (graphs,
   port 8766).
-- Reports: `pixi run report out/flow/<name>` writes `report/design.md` and `report/run.md`.
+- Reports: every flow writes `report/design.md`, `report/run.md` and `flow.log` beside `run/`;
+  `pixi run report DIR` writes the reports for any flow folder or run directory.
 - Chisel: `pixi run -e hw chisel-test`, `chisel-gen`; `hw/chisel/` is a project of its own.
 - Clean slate: `pixi run clean` (`--dry-run` lists first).
 

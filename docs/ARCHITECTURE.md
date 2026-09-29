@@ -496,8 +496,8 @@ controller's command, wait and idle cycles and each wait; DMA bytes and bytes
 per busy cycle; banks with conflicts as ranges, streamer stalls and FIFO
 highs; and on a beat trace the residency and per-port patterns of D97, with
 the first cycles held back. Nothing in them grows with cycles or elements.
-They go to `report/` beside a flow's `run/`, or `DIR_report/` beside a run
-directory.
+They go to `report/` beside a flow's `run/` (the flow writes them after every
+run), or `DIR_report/` beside a run directory.
 
 **DFG viewer** (`snax_forge/viz/dfg/`, D76, D81; `pixi run view-dfg FILE|DIR
 ...`, port 8766): the same server for `.snaxdfg` files, several side by side,
@@ -543,6 +543,12 @@ runs again on its own. The default name carries every `--set` (`vecadd_W8`,
 and the viewer names a flow's `run/` after that folder; the design point and
 task list keep the recipe's name and params only. The run is traced at `task`
 level unless `--trace` says otherwise, so it opens with a schedule (D94).
+After the run the flow writes `report/design.md` and `report/run.md` (D99) and
+`flow.log`: the summary it prints and the design checks that ran, per stage.
+A flow that stops writes why to `flow.log` instead, and the reports of an
+earlier run in the folder are removed first, so `report/` always describes the
+folder's last run. A report that cannot be built is named in the summary and
+does not fail the flow.
 
 ## 6. Correctness Strategy
 

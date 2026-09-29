@@ -9,9 +9,12 @@ import numpy as np
 import pytest
 
 from snax_forge.design import DesignError
+from snax_forge.design.check import CHECKS
 from snax_forge.flow import __main__ as cli
-from snax_forge.flow import default_name, functional_check, run_flow
+from snax_forge.flow import default_name, functional_check, run_flow, summary
+from snax_forge.flow import run as flow_run
 from snax_forge.lower import TaskList
+from snax_forge.report import render_design, render_run, reports_of
 from snax_forge.sandbox import Recipe
 from snax_forge.sdfg.loader import load as load_kernel
 from snax_forge.snax_model.scenario import Scenario, read_outputs, run
@@ -151,10 +154,67 @@ def test_the_trace_level_can_still_be_lowered(tmp_path):
     f = flow(tmp_path, trace_level="off")
     assert f.result.total_cycles == 85 and f.result.trace is None
     assert not (tmp_path / "flow" / "run" / "trace_meta.json").exists()
+    assert f.report_error is None  # the reports say what needs a trace instead
 
 
 # =============================================================================
-# 3. Command line
+# 3. The reports and the log (REP1, D99)
+# =============================================================================
+
+
+def test_the_flow_writes_its_reports_and_log_beside_the_run(tmp_path):
+    f = flow(tmp_path)
+    out = tmp_path / "flow"
+    assert (out / "report" / "design.md").is_file() and (out / "report" / "run.md").is_file()
+    # run/ holds only what the model wrote (D44)
+    assert sorted(p.name for p in (out / "run").iterdir()) == [
+        "l1.npy", "l2.npy", "profile.json", "run.json", "trace.jsonl", "trace_meta.json"
+    ]  # fmt: skip
+    # the same reports as `pixi run report` on the folder
+    r = reports_of(out)
+    assert (out / "report" / "design.md").read_text() == render_design(r.design)
+    assert (out / "report" / "run.md").read_text() == render_run(r.run)
+    assert f.report_error is None
+    assert "  report    report/design.md, report/run.md, flow.log" in summary(f)
+
+
+def test_the_log_is_the_summary_and_the_checks_that_ran(tmp_path):
+    f = flow(tmp_path)
+    log = (tmp_path / "flow" / "flow.log").read_text()
+    head, _, checks = log.partition("\n\ndesign checks that ran ")
+    assert head == summary(f)
+    assert f"  design    {len(CHECKS)} checks passed;" in head
+    lines = checks.splitlines()
+    assert lines[0] == f"({len(CHECKS)}, all passed):"
+    assert lines[1] == "  platform  platform.load, platform.l2, platform.banks"
+    listed = [c for line in lines[1:] for c in line.split(None, 1)[1].split(", ")]
+    assert listed == list(CHECKS)  # every registered check once, in the order it ran
+    assert f.checks == {st: [c for c in CHECKS if CHECKS[c].stage == st] for st in f.checks}
+
+
+def test_a_failing_flow_logs_why_and_leaves_no_old_reports(tmp_path):
+    flow(tmp_path)
+    out = tmp_path / "flow"
+    with pytest.raises(DesignError):
+        flow(tmp_path, platform_sets=[("l1.rows", 8)])
+    log = (out / "flow.log").read_text()
+    assert log.startswith("flow vecadd_l1.rows8 FAILED\n") and "[memory.fit] C in l1" in log
+    assert not (out / "report" / "design.md").exists() and not (out / "report" / "run.md").exists()
+
+
+def test_a_report_that_cannot_be_built_is_named_not_fatal(tmp_path, monkeypatch):
+    def broken(folder):
+        raise ValueError("no such thing")
+
+    monkeypatch.setattr(flow_run, "write_reports", broken)
+    f = flow(tmp_path)
+    assert f.passed and f.report_error == "ValueError: no such thing"
+    assert "  report    NOT WRITTEN: ValueError: no such thing" in summary(f)
+    assert (tmp_path / "flow" / "flow.log").read_text().startswith(summary(f))
+
+
+# =============================================================================
+# 4. Command line
 # =============================================================================
 
 
@@ -170,6 +230,7 @@ def test_cli_runs_and_says_what_it_did(tmp_path, capsys):
     assert "lower     cluster.json (7 components), tasks.json (12 steps, 57 commands)" in out
     assert "run       77 cycles" in out
     assert "check     C (64 elements, from l2) equals the vecadd reference and REF1" in out
+    assert (tmp_path / "f" / "flow.log").read_text().startswith(out)  # what it printed
     d = json.loads((tmp_path / "f" / "design" / "memory.json").read_text())
     assert d["changes"] == {"B.l1.base": 576, "C.l1.base": 1152}
 

@@ -16,7 +16,8 @@ name is the recipe's with every ``--set`` appended: recipe params, then
 platform and memory paths without their prefix, each in the order given
 (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``). The run is
 traced at ``task`` level unless ``--trace`` says otherwise; the data
-movement views need ``--trace beat`` (D94).
+movement views need ``--trace beat`` (D94). What it prints is also in
+``flow.log``, with the design checks that ran, next to ``report/`` (D99).
 
 Exit 0 when the output matches, 1 when a stage fails (its problems named) or
 the output does not match, 2 on bad arguments. pixi: ``flow``.
@@ -35,7 +36,7 @@ from snax_forge.lower import LowerError
 from snax_forge.sandbox import SandboxError
 from snax_forge.snax_model.scenario import ScenarioError
 
-from .run import Flow, FlowError, run_flow
+from .run import FlowError, run_flow, summary
 
 
 def _setting(text: str) -> tuple[str, str, Any]:
@@ -53,53 +54,6 @@ def _setting(text: str) -> tuple[str, str, Any]:
         return "recipe", path, int(value)
     except ValueError:
         return "recipe", path, value
-
-
-def _rel(p: Path) -> str:
-    try:
-        return str(p.resolve().relative_to(Path.cwd()))
-    except ValueError:
-        return str(p)
-
-
-def summary(f: Flow) -> str:
-    p, check = f.point, f.check
-    params = ", ".join(f"{k}={v}" for k, v in f.recipe.params.items())
-    syms = ", ".join(f"{k}={v}" for k, v in check["symbols"].items())
-    plan = f.point.memory
-    inputs = ", ".join(m.npy for m in f.scenario.memory)
-    lines = [
-        f"flow {f.name} ({f.recipe.name}: {params}; {syms}) on {p.platform.name} -> {_rel(f.out)}/"
-    ]
-    lines.append(
-        f"  sandbox   {len(f.steps) - 1} steps, each equal to the input graph on the reference "
-        "check -> sandbox/"
-    )
-    lines.append(
-        f"  design    checks passed; platform base {p.platform.base}, "
-        f"{len(p.platform.changes)} changes; memory {plan.passes['placement']}, "
-        f"{len(plan.changes)} changes -> design/"
-    )
-    lines.append(
-        f"  lower     cluster.json ({len(f.cluster.components)} components), tasks.json "
-        f"({len(f.tasks.steps)} steps, {f.n_commands} commands)"
-    )
-    lines.append(f"  scenario  scenario.json, inputs {inputs} (make_inputs, seed {check['seed']})")
-    lines.append(
-        f"  run       {f.result.total_cycles} cycles -> run/  (pixi run view {_rel(f.out / 'run')})"
-    )
-    for c, x in check["containers"].items():
-        if x["reference"] and x["ref1"]:
-            lines.append(
-                f"  check     {c} ({x['elements']} elements, from {x['memory']}) equals the "
-                f"{check['kernel']} reference and REF1"
-            )
-        else:
-            lines.append(
-                f"  check     {c} ({x['elements']} elements, from {x['memory']}) DIFFERS: "
-                f"reference {x['reference']}, REF1 {x['ref1']}, {x['mismatches']} elements wrong"
-            )
-    return "\n".join(lines)
 
 
 def main(argv: list[str] | None = None) -> int:

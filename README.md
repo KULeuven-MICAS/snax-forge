@@ -43,17 +43,20 @@ pixi run flow recipes/vecadd.json --platform platforms/small16.json
 ```
 flow vecadd (vecadd: W=4; N=64) on small16 -> out/flow/vecadd/
   sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-  design    checks passed; platform base small16, 0 changes; memory contiguous, 0 changes -> design/
+  design    20 checks passed; platform base small16, 0 changes; memory contiguous, 0 changes -> design/
   lower     cluster.json (7 components), tasks.json (12 steps, 57 commands)
   scenario  scenario.json, inputs A.npy, B.npy, C.npy (make_inputs, seed 0)
   run       85 cycles -> run/  (pixi run view out/flow/vecadd/run)
   check     C (64 elements, from l2) equals the vecadd reference and REF1
+  report    report/design.md, report/run.md, flow.log
 ```
 
 It imports the kernel, applies the recipe, pairs the result with the
 platform, derives the cluster file and the task list, runs the model and
 checks the output against the kernel's own reference and the reference
-executor. Everything lands in `out/flow/<name>/`, traced at `task` level
+executor, then writes a design report and a run report (`report/`) and
+`flow.log`, which holds what it printed and the design checks that ran.
+Everything lands in `out/flow/<name>/`, traced at `task` level
 (`--trace beat` for the data movement, `--trace off` for none). Change a
 design point with `--set`; each one is added to the name, so the runs sit side
 by side:
@@ -63,7 +66,7 @@ pixi run flow recipes/vecadd.json --platform platforms/small16.json --set W=8   
 pixi run flow recipes/vecadd.json --platform platforms/small16.json --set platform.l1.n_banks=32 # out/flow/vecadd_l1.n_banks32
 pixi run flow recipes/vecadd.json --platform platforms/small16.json --set memory.B.l1.base=576  # out/flow/vecadd_B.l1.base576: b in other banks, 77 cycles
 pixi run view out/flow/vecadd/run out/flow/vecadd_B.l1.base576/run                            # then open http://127.0.0.1:8765/
-pixi run report out/flow/vecadd                                                                # report/design.md and report/run.md
+pixi run report out/flow/vecadd                                                                # writes report/ again, e.g. after a code change
 ```
 
 A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
