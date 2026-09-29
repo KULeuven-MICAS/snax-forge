@@ -34,7 +34,7 @@ Order: M1, M4a, M3, M4b, M5–M10, then M2 (D24, D51, D54, D76).
 | M1 | SNAX-MODEL, kernel-agnostic | `done` |
 | M4a | Run views: profile report, schedule, cluster view | `done` |
 | M3 | Close `vecadd` end to end, from the kernel (D76, D90) | `done` |
-| M4b | Remaining views and first manual loop | todo |
+| M4b | Remaining views and first manual loop | `wip` |
 | M5 | `dot` | todo |
 | M6 | Contract freeze | todo |
 | M7 | Remaining front ends | todo |
@@ -79,6 +79,7 @@ tables as they were written are in git history.
 | LOW1a | task list from a design point | D89 |
 | E2E1 | the whole path, `pixi run flow` | D90 |
 | — | housekeeping after M3: old SDFG → RTL path removed, duplicate tests and helpers removed, decision log condensed | D91–D93 |
+| FLOW1 | flow defaults for viewing: `task` trace, a folder name from every `--set`, flow runs named after their folder in the viewer | D94 |
 
 ## Open Tasks
 
@@ -161,9 +162,12 @@ cycles compare design points only.
 
 M3 is closed: `pixi run flow recipes/vecadd.json --platform
 platforms/small16.json` takes vecadd from the kernel to a checked model run
-(85 cycles contiguous; 77 with B and C pinned; 73 at W = 8). Next is M4b:
-the design point view (VIS4) and the diff (VIS6), the LLM trace summary
-(VIS7), then one documented design iteration on vecadd (LOOP1).
+(85 cycles contiguous; 77 with B and C pinned; 73 at W = 8). M4b is under
+way in the order FLOW1, VIS4a, VIS4b, REP1, LOOP1; each patch replaces the
+rows below that it changes. FLOW1 is done (D94): flow runs are traced at
+`task` level and each `--set` gives a folder of its own, so
+`pixi run view out/flow/vecadd/run out/flow/vecadd_W8/run` shows both.
+Next is VIS4a: regions in the scenario, then the memory tab.
 
 ## Open Items
 

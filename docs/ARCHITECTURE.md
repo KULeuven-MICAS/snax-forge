@@ -490,7 +490,11 @@ container is read back and compared with the kernel's reference and the
 reference executor; the result goes into the profile and the exit code. A
 `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
 the design step. Everything goes to `out/flow/<name>/`, and the scenario there
-runs again on its own.
+runs again on its own. The default name carries every `--set` (`vecadd_W8`,
+`vecadd_B.l1.base576`), so runs that differ in any setting sit side by side,
+and the viewer names a flow's `run/` after that folder; the design point and
+task list keep the recipe's name and params only. The run is traced at `task`
+level unless `--trace` says otherwise, so it opens with a schedule (D94).
 
 ## 6. Correctness Strategy
 

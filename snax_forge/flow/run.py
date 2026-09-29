@@ -18,13 +18,19 @@
                         ``functional_check`` (open item 13)
 
 Everything goes to one folder, ``out/flow/<name>/``, overwritten on every
-run; ``run/`` opens in the run viewer (``pixi run view``) and
-``scenario.json`` runs again on its own (``pixi run model-run``). Nothing is
-decided here: each stage is the tool of that name, called as its CLI would.
+run; the default name carries every ``--set``, so runs that differ only in
+the platform or the memory plan land in folders of their own. The run is
+traced at ``task`` level by default, so ``run/`` opens in the run viewer
+(``pixi run view``) with its schedule; the data movement views need
+``trace_level="beat"``. ``scenario.json`` runs again on its own (``pixi run
+model-run``). Nothing is decided here: each stage is the tool of that name,
+called as its CLI would (D90, D94).
 """
 
 from __future__ import annotations
 
+import json
+import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -76,9 +82,24 @@ class Flow:
         return bool(self.check["passed"])
 
 
-def default_name(recipe: Recipe, recipe_sets: Mapping[str, Any]) -> str:
-    """The recipe's name, with every overridden param appended (``vecadd_W8``)."""
-    return "_".join([recipe.name, *(f"{k}{v}" for k, v in recipe_sets.items())])
+def _name_part(path: str, value: Any) -> str:
+    """One ``--set`` as part of a name: the path, then the value (compact JSON unless text),
+    keeping only letters, digits and ``._,+-`` so the name stays one plain directory."""
+    text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
+    return re.sub(r"[^\w.,+-]", "", f"{path}{text}")
+
+
+def default_name(
+    recipe: Recipe,
+    recipe_sets: Mapping[str, Any],
+    platform_sets: Sequence[tuple[str, Any]] = (),
+    memory_sets: Sequence[tuple[str, Any]] = (),
+) -> str:
+    """The recipe's name with every ``--set`` appended (D94): recipe params, then platform and
+    memory paths without their ``platform.`` / ``memory.`` prefix, each in the order given
+    (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``)."""
+    sets = [*recipe_sets.items(), *platform_sets, *memory_sets]
+    return "_".join([recipe.name, *(_name_part(k, v) for k, v in sets)])
 
 
 def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
@@ -148,12 +169,16 @@ def run_flow(
     name: str | None = None,
     out: str | Path | None = None,
     seed: int = 0,
-    trace_level: str = "off",
+    trace_level: str = "task",
 ) -> Flow:
     """Run the whole path; see the module doc. Raises FlowError or DesignError."""
     recipe_sets = dict(recipe_sets or {})
     recipe = Recipe.load(recipe_path).with_params(recipe_sets)
-    name = name or default_name(recipe, recipe_sets)
+    # The design point, and with it the task list, is named after the recipe and its params
+    # only, so pinning B and C still gives scenarios/vecadd's tasks.json byte for byte; the
+    # folder carries every --set (D94).
+    point_name = name or default_name(recipe, recipe_sets)
+    name = name or default_name(recipe, recipe_sets, platform_sets, memory_sets)
     out = Path(out) if out is not None else OUT / name
     out.mkdir(parents=True, exist_ok=True)
 
@@ -171,7 +196,7 @@ def run_flow(
     problems = run_checks(design)
     if problems:
         raise DesignError(problems, f"design check of {steps[-1]} on {platform_path}")
-    point = DesignPoint.of(design, name)
+    point = DesignPoint.of(design, point_name)
     ddir = out / "design"
     ddir.mkdir(exist_ok=True)
     design.platform.save(ddir / "platform.json")

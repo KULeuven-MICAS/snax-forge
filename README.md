@@ -53,15 +53,16 @@ flow vecadd (vecadd: W=4; N=64) on small16 -> out/flow/vecadd/
 It imports the kernel, applies the recipe, pairs the result with the
 platform, derives the cluster file and the task list, runs the model and
 checks the output against the kernel's own reference and the reference
-executor. Everything lands in `out/flow/<name>/`. Change a design point with
-`--set`:
+executor. Everything lands in `out/flow/<name>/`, traced at `task` level
+(`--trace beat` for the data movement, `--trace off` for none). Change a
+design point with `--set`; each one is added to the name, so the runs sit side
+by side:
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/small16.json --set W=8                  # a recipe param: 73 cycles
-pixi run flow recipes/vecadd.json --platform platforms/small16.json --set platform.l1.n_banks=32
-pixi run flow recipes/vecadd.json --platform platforms/small16.json \
-     --set memory.B.l1.base=576 --set memory.C.l1.base=1152                                   # a and b in other banks: 77 cycles
-pixi run view out/flow/vecadd/run                                                              # then open http://127.0.0.1:8765/
+pixi run flow recipes/vecadd.json --platform platforms/small16.json --set W=8                  # out/flow/vecadd_W8: 73 cycles
+pixi run flow recipes/vecadd.json --platform platforms/small16.json --set platform.l1.n_banks=32 # out/flow/vecadd_l1.n_banks32
+pixi run flow recipes/vecadd.json --platform platforms/small16.json --set memory.B.l1.base=576  # out/flow/vecadd_B.l1.base576: b in other banks, 77 cycles
+pixi run view out/flow/vecadd/run out/flow/vecadd_B.l1.base576/run                            # then open http://127.0.0.1:8765/
 ```
 
 A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to

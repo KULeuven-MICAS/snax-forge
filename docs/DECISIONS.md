@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D94**.
+  area tag. Next free number: **D95**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -37,7 +37,7 @@ By area:
 | ref | D17 D20 D28 D79 |
 | sandbox | D72 D73 D80 |
 | design | D7 D74 D84–D87 |
-| flow | D90 |
+| flow | D90 D94 |
 | viz | D16 D54–D58 D60 D61 D76 D81 |
 | docs, test | D26 D46 D92 D93 |
 
@@ -353,3 +353,10 @@ vecadds become one test helper, and tests that only repeated others are removed.
 
 **D93** · docs — The decision log moves to this file and is condensed by the rules at its top;
 `docs/ARCHITECTURE.md` describes the current state only.
+
+**D94** · flow — The flow traces at `task` by default, so its run opens in the viewer with a
+schedule, and its default folder name carries every `--set` (recipe params, then platform and
+memory paths without their prefix), so runs that differ only in the platform or the memory plan
+no longer overwrite each other. The design point and its task list keep the name of the recipe
+and its params, so pinning B and C still gives `scenarios/vecadd/tasks.json`, and the viewer names
+a flow's `run/` after its folder. Amends D55 (run names) and D90. → `flow/run.py`, `viz/api.py`.

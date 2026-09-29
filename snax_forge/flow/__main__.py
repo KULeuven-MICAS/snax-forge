@@ -3,7 +3,7 @@
     python -m snax_forge.flow RECIPE --platform P [--set NAME=VALUE ...]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--graph FILE] [--name NAME] [--out DIR]
-                              [--seed S] [--trace off|task|beat]
+                              [--seed S] [--trace off|task|beat]  (default task)
 
 Runs the recipe on its kernel's import (or ``--graph``), pairs the result
 with the platform, lowers the design point, runs it in SNAX-MODEL on the
@@ -11,8 +11,12 @@ kernel's ``make_inputs`` and checks the output against the kernel's
 reference and REF1 (run.py). ``--set W=8`` sets a recipe param,
 ``--set platform.l1.n_banks=32`` a platform field and
 ``--set memory.B.l1.base=576`` pins a base, as the sandbox and design
-commands take them. Everything goes to ``out/flow/<name>/`` (default name:
-the recipe's, with each recipe param set appended, e.g. ``vecadd_W8``).
+commands take them. Everything goes to ``out/flow/<name>/``. The default
+name is the recipe's with every ``--set`` appended: recipe params, then
+platform and memory paths without their prefix, each in the order given
+(``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``). The run is
+traced at ``task`` level unless ``--trace`` says otherwise; the data
+movement views need ``--trace beat`` (D94).
 
 Exit 0 when the output matches, 1 when a stage fails (its problems named) or
 the output does not match, 2 on bad arguments. pixi: ``flow``.
@@ -105,10 +109,10 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--set", type=_setting, action="append", default=[], metavar="NAME=VALUE")
     ap.add_argument("--memory", type=Path, help="memory working copy to start from")
     ap.add_argument("--graph", type=Path, help="start from this .snaxdfg instead of the import")
-    ap.add_argument("--name", help="flow name (default: recipe name and its --set params)")
+    ap.add_argument("--name", help="flow name (default: recipe name and every --set)")
     ap.add_argument("--out", type=Path, help="output directory (default out/flow/<name>)")
     ap.add_argument("--seed", type=int, default=0, help="seed of make_inputs and the checks")
-    ap.add_argument("--trace", default="off", choices=["off", "task", "beat"])
+    ap.add_argument("--trace", default="task", choices=["off", "task", "beat"])
     args = ap.parse_args(argv)
     sets: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
     for head, path, value in args.set:

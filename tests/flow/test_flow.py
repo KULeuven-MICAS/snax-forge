@@ -49,8 +49,12 @@ def test_vecadd_from_the_kernel(tmp_path):
     assert {"sandbox/recipe.json", "sandbox/0_input.snaxdfg", "sandbox/2_bind.snaxdfg",
             "design/platform.json", "design/memory.json", "design/design_point.json",
             "cluster.json", "tasks.json", "scenario.json", "A.npy", "B.npy", "C.npy",
-            "run/run.json", "run/profile.json", "run/l2.npy"} <= names  # fmt: skip
-    assert read_outputs(out / "run").profile.functional_check == f.check
+            "run/run.json", "run/profile.json", "run/l2.npy",
+            "run/trace.jsonl", "run/trace_meta.json"} <= names  # fmt: skip
+    got = read_outputs(out / "run")
+    assert got.profile.functional_check == f.check
+    assert got.run["trace_level"] == "task"  # the default (D94): the schedule has class runs
+    assert {"acc", "acc_a", "acc_b", "acc_out", "dma", "ctl"} <= set(got.trace.intervals)
 
 
 def test_with_vecadds_places_it_is_scenarios_vecadd(tmp_path):
@@ -58,6 +62,8 @@ def test_with_vecadds_places_it_is_scenarios_vecadd(tmp_path):
     f = flow(tmp_path, memory_sets=PINS)
     out = tmp_path / "flow"
     assert f.passed and f.result.total_cycles == 77
+    assert f.name == "vecadd_B.l1.base576_C.l1.base1152" and f.point.name == "vecadd"
+    assert (out / "tasks.json").read_text() == (SCEN / "vecadd" / "tasks.json").read_text()
     assert (out / "cluster.json").read_text() == (SCEN / "clusters" / "alu4.json").read_text()
     assert TaskList.load(out / "tasks.json") == TaskList.load(SCEN / "vecadd" / "tasks.json")
     want = run(Scenario.load(SCEN / "vecadd" / "scenario.json")).profile.to_dict()
@@ -77,6 +83,7 @@ def test_w8_and_platform_changes_run_right(tmp_path):
     f = flow(tmp_path, recipe_sets={"W": 8},
              platform_sets=[("l1.n_banks", 32), ("streamers.acc_out.fifo_depth", 4)])  # fmt: skip
     assert f.passed and f.point.streamers["acc_out"].n_ports == 8
+    assert f.name == "vecadd_W8_l1.n_banks32_streamers.acc_out.fifo_depth4"
     assert f.cluster.l1.n_banks == 32 and f.tasks.configured()["add_acc"].values == {"n": 8}
 
 
@@ -113,8 +120,31 @@ def test_a_design_problem_stops_the_flow_before_the_run(tmp_path):
 
 
 def test_default_name():
+    """Every --set: recipe params, then platform and memory paths without their prefix (D94)."""
     r = Recipe.load(RECIPE)
     assert default_name(r, {}) == "vecadd" and default_name(r, {"W": 8}) == "vecadd_W8"
+    assert default_name(r, {}, memory_sets=[("B.l1.base", 576)]) == "vecadd_B.l1.base576"
+    assert default_name(r, {}, [("l1.n_banks", 32)]) == "vecadd_l1.n_banks32"
+    both = default_name(r, {"W": 8}, [("l1.n_banks", 32)], [("B.l1.base", 576)])
+    assert both == "vecadd_W8_l1.n_banks32_B.l1.base576"
+    # a value that is not a plain word keeps one plain directory name
+    assert default_name(r, {}, [("x.y", [2, 2]), ("z", "a/b c")]) == "vecadd_x.y2,2_zabc"
+
+
+def test_the_guard_rail_flows_get_names_of_their_own(tmp_path):
+    """Default, W = 8 and B pinned no longer share out/flow/vecadd (D94)."""
+    names = {
+        flow(tmp_path / "0").name,
+        flow(tmp_path / "1", recipe_sets={"W": 8}).name,
+        flow(tmp_path / "2", memory_sets=[("B.l1.base", 576)]).name,
+    }
+    assert names == {"vecadd", "vecadd_W8", "vecadd_B.l1.base576"}
+
+
+def test_the_trace_level_can_still_be_lowered(tmp_path):
+    f = flow(tmp_path, trace_level="off")
+    assert f.result.total_cycles == 85 and f.result.trace is None
+    assert not (tmp_path / "flow" / "run" / "trace_meta.json").exists()
 
 
 # =============================================================================
@@ -130,7 +160,7 @@ def test_cli_runs_and_says_what_it_did(tmp_path, capsys):
     args = [RECIPE, "--platform", SMALL16, "--graph", PLAIN, "--out", tmp_path / "f"]
     assert main(*args, "--set", "memory.B.l1.base=576", "--set", "memory.C.l1.base=1152") == 0
     out = capsys.readouterr().out
-    assert "flow vecadd (vecadd: W=4; N=64) on small16" in out
+    assert "flow vecadd_B.l1.base576_C.l1.base1152 (vecadd: W=4; N=64) on small16" in out
     assert "lower     cluster.json (7 components), tasks.json (12 steps, 57 commands)" in out
     assert "run       77 cycles" in out
     assert "check     C (64 elements, from l2) equals the vecadd reference and REF1" in out
@@ -141,7 +171,9 @@ def test_cli_runs_and_says_what_it_did(tmp_path, capsys):
 def test_cli_routes_each_set(tmp_path, capsys):
     args = [RECIPE, "--platform", SMALL16, "--graph", PLAIN, "--out", tmp_path / "f"]
     assert main(*args, "--set", "W=8", "--set", "platform.streamers.default.fifo_depth=4") == 0
-    assert "flow vecadd_W8 (vecadd: W=8; N=64)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "flow vecadd_W8_streamers.default.fifo_depth4 (vecadd: W=8; N=64)" in out
+    assert (tmp_path / "f" / "run" / "trace_meta.json").exists()  # --trace task by default
     pf = json.loads((tmp_path / "f" / "design" / "platform.json").read_text())
     assert pf["changes"] == {"streamers.default.fifo_depth": 4}
 

@@ -104,10 +104,14 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
 
 
 def run_names(dirs: Sequence[str | Path]) -> list[str]:
-    """Directory names, made unique with -2, -3, ... in the order given."""
+    """Directory names, made unique with -2, -3, ... in the order given. A flow's ``run/``
+    (a ``run`` directory beside its ``scenario.json``) takes the name of its flow folder,
+    so ``out/flow/vecadd_W8/run`` is ``vecadd_W8`` (D94)."""
     names: list[str] = []
     for d in dirs:
-        base = Path(d).resolve().name or "run"
+        p = Path(d).resolve()
+        flow = p.name == "run" and (p.parent / "scenario.json").is_file()
+        base = (p.parent.name if flow else p.name) or "run"
         name, i = base, 1
         while name in names:
             i += 1
