@@ -88,7 +88,7 @@ tables as they were written are in git history.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| VIS4b | Data movement (plan `claude/m4b-plan.md`): (1) the API: journey, residency, patterns with held-back cycles, conflicts placed on the layout and as the memory tab's marks (D97, done); (2) the memory tab's cycle overlay with conflicts, whole-run conflict counts, time colouring and the journey panel; (3) optional tracer rows in the schedule | VIS2, VIS3, VIS4a | A[5]'s journey on the default flow (L2 read 13, L1 write 15, `acc_a.1` read 42, firing 1 at 45 with B[5], C[5] written 46, stored 73 and 75); B[5] on the B-pinned flow; residency windows equal the extremes of the journeys; every pattern regenerates its addresses; held-back cycles equal `stall_xbar` and the port stalls (acc_b 7 default, 0 pinned); vecadd_conflict's 28 conflicts, B waiting on A in banks 0–3 and 8–11; a repeated read feeds its firings in order; a task-level run gets the reason (tests/viz/test_movement.py); drawing by eye | `wip` |
+| VIS4b | Data movement (plan `claude/m4b-plan.md`): (1) the API: journey, residency, patterns with held-back cycles, conflicts placed on the layout and as the memory tab's marks (D97, done); (2) the memory tab's cycle overlay with conflicts, whole-run conflict counts, time colouring and the journey drawer (done); (3) optional tracer rows in the schedule | VIS2, VIS3, VIS4a | A[5]'s journey on the default flow (L2 read 13, L1 write 15, `acc_a.1` read 42, firing 1 at 45 with B[5], C[5] written 46, stored 73 and 75); B[5] on the B-pinned flow; residency windows equal the extremes of the journeys; every pattern regenerates its addresses; held-back cycles equal `stall_xbar` and the port stalls (acc_b 7 default, 0 pinned); vecadd_conflict's 28 conflicts, B waiting on A in banks 0–3 and 8–11; a repeated read feeds its firings in order; a task-level run gets the reason; arrival folds A and B at +2 cycles per row and C at +6 (tests/viz/test_movement.py); drawing by eye | `wip` |
 | VIS6 | Diff between two runs: design point fields, profile metrics, timelines side by side | VIS2–VIS4 | For two `vecadd` runs differing only in lanes, exactly that field and its effects are flagged | todo |
 | VIS7 | Compressed trace summary for LLM use | MOD8 | Under a size limit; numbers equal the profile | todo |
 | LOOP1 | One documented iteration: run, read views, edit the recipe, rerun, diff (D72) | VIS6, VIS7 | Checked-in example with both recipes, their design points and the diff page; cycle change matches what the views predicted | todo |
@@ -173,14 +173,15 @@ VIS4a is done (D95, D96): a scenario names its data as regions, which
 tab draws each memory's regions and rows, folded by a constant step.
 VIS4b's API is done (D97): an element's journey, residency, per-port
 patterns with the cycles held back, and the L1 conflicts placed on the
-layout, all from a beat trace. Next is drawing them in the memory tab: the
-selected cycle's accesses and conflicts, whole-run conflict counts, time
-colouring and the journey panel.
+layout, all from a beat trace; the memory tab draws them: the selected
+cycle's accesses and conflicts, conflict counts, arrival, use and wait
+colouring, and a drawer with each element's journey. Next is the optional
+tracer rows in the schedule, then REP1's reports.
 
 ## Open Items
 
 Questions not decided yet. Numbers are never reused; a closed item is removed,
-and the decision that closed it says so. Next free number: 40.
+and the decision that closed it says so. Next free number: 41.
 
 1. BRM per-port affine loop nest notation and its mapping to streamer registers
    (streamer register layout fixed in MOD10; first notation `affine` and the
@@ -216,6 +217,7 @@ and the decision that closed it says so. Next free number: 40.
 37. The expression grammar (D68, D77) has `+ - * //` only: a tail tile needs `min` (open item 31), a branch needs comparisons, and jacobi1d's tasklet a cast (`dace.int64(x) // 3`). Extended when a kernel needs it.
 38. The DMA moves a container as whole contiguous 64-byte beats, so a container in L2 and L1 must be contiguous and a whole number of beats (N a multiple of 8 for int64 vecadd); `memory.align` rejects the rest (D86). Strided or partial-beat transfers when a kernel needs them (a tail tile, open item 31, or a 2D tile); a check of the DMA's loop count (`dma.dims`) comes with them (D89).
 39. Beat-trace size: about 1.1 KB per vecadd element (grant, response and FIFO events for each word moved), so vecadd at N = 4096 writes 4.4 MB and a 128k-element run about 140 MB. The views work on filtered traces (D49), and the movement index of the N = 4096 run builds in under a second; a more compact trace format is decided when a run needs it.
+40. Switching runs in the viewer clears the cycle window, the selected cycle and the picked element; keeping the cycle would make flipping between two runs land on the same cycle. Left as is until a comparison needs it.
 
 ## Sync Reminders
 

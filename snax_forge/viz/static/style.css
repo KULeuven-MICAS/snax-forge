@@ -452,7 +452,62 @@ table.mem-regions td:first-child { white-space: nowrap; font-weight: 600; }
 .mem-cell.multi { background: repeating-linear-gradient(135deg, var(--region) 0 6px, var(--panel) 6px 8px); }
 .mem-line { padding: 0.25rem 0.4rem; border-radius: 3px; color: var(--muted); }
 .mem-line.empty { border: 1px dashed var(--rule); text-align: center; }
-.mem-line.fold { padding: 0; }
-.mem-fold { width: 100%; text-align: left; border-style: dashed; color: var(--ink); background: transparent; font-size: 1em; padding: 0.3rem 0.5rem; }
+.mem-line.fold { padding: 0; display: flex; align-items: center; gap: 0.5rem; }
+.mem-line.fold .ov-count { padding-right: 0.5rem; white-space: nowrap; }
+.mem-fold { flex: 1; text-align: left; border-style: dashed; color: var(--ink); background: transparent; font-size: 1em; padding: 0.3rem 0.5rem; }
 .mem-fold:hover { background: var(--panel); }
 .mem-line.fold.open .mem-fold { color: var(--muted); border-style: solid; }
+
+/* -- memory tab: modes, cycle overlay, picked element (VIS4b, D97) --------------
+   The overlay uses the meanings of D61/D62 as outlines, so the region colours
+   stay visible: request teal, read data back green, held back red. The picked
+   element is outlined in ink. Time marks use one warm scale, only in this tab. */
+:root { --time-lo: #f6eee2; --time-hi: #a4471a; }
+@media (prefers-color-scheme: dark) { :root { --time-lo: #2b2723; --time-hi: #e38a4f; } }
+
+.mem-controls { padding-bottom: 0.8rem; }
+.mem-bar { display: flex; flex-wrap: wrap; gap: 0.8rem 1.5rem; align-items: center; justify-content: space-between; }
+.mem-modes { display: flex; gap: 0.3rem; flex-wrap: wrap; }
+.mem-modes button[aria-selected="true"] { font-weight: 600; background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.mem-controls .cycle-head { display: flex; gap: 0.4rem; align-items: center; }
+.mem-controls .cycle-head input { width: 5.5rem; font: inherit; padding: 0.2rem 0.4rem; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); color: var(--ink); }
+.ov-summary { margin-top: 0.4rem; }
+.ov-summary .ov-conflict { display: block; color: var(--mem); }
+i.key.outline { background: transparent; box-shadow: inset 0 0 0 2px var(--rule); }
+i.key.outline.ov-req { box-shadow: inset 0 0 0 2px var(--req); }
+i.key.outline.ov-resp { box-shadow: inset 0 0 0 2px var(--busy); }
+i.key.outline.ov-held { box-shadow: inset 0 0 0 2px var(--mem); }
+i.key.outline.picked { box-shadow: inset 0 0 0 2px var(--ink); }
+
+.mem-cell { cursor: pointer; position: relative; }
+.mem-cell.empty { cursor: default; }
+.mem-cell.ov-req { box-shadow: inset 0 0 0 2px var(--req); }
+.mem-cell.ov-resp { box-shadow: inset 0 0 0 2px var(--busy); }
+.mem-cell.ov-req.ov-resp { box-shadow: inset 0 0 0 2px var(--req), inset 0 -4px var(--busy); }
+.mem-cell.ov-held { box-shadow: inset 0 0 0 3px var(--mem); }
+.mem-cell.picked { outline: 2px solid var(--ink); outline-offset: 1px; z-index: 1; }
+.mem-badge { position: absolute; top: 1px; right: 1px; min-width: 1.05em; padding: 0 0.2em; border-radius: 0.6em; background: var(--mem); color: #fff; font-size: 0.72em; line-height: 1.05em; text-align: center; }
+.mem-col { position: relative; }
+.mem-col .mem-badge { top: -0.2em; right: 0; }
+.mem-grid.timed .mem-cell:not(.empty):not(.untimed) { background: color-mix(in srgb, var(--time-hi) calc(var(--t) * 100%), var(--time-lo)); }
+.mem-grid.timed .mem-cell.dark-text { color: #fff; }
+.mem-grid.timed .mem-cell.untimed { opacity: 0.35; }
+.time-key { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.6rem; color: var(--muted); font-size: 0.85em; }
+.time-key .time-ramp { display: inline-block; width: 12rem; height: 0.8rem; border-radius: 3px; background: linear-gradient(90deg, var(--time-lo), var(--time-hi)); box-shadow: inset 0 0 0 1px var(--region-edge); }
+.ov-count { color: var(--req); font-weight: 600; }
+.ov-count.bad { color: var(--mem); }
+
+.mem-drawer { position: fixed; top: 0; right: 0; bottom: 0; width: min(28rem, 92vw); overflow: auto; background: var(--panel); border-left: 1px solid var(--rule); box-shadow: -6px 0 18px rgba(0, 0, 0, 0.12); padding: 0.9rem 1rem 1.5rem; z-index: 10; }
+.mem-drawer[hidden] { display: none; }
+.drawer-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.3rem; }
+.drawer-head b { font-size: 1.2rem; }
+.mem-drawer h3 { margin: 0.9rem 0 0.3rem; }
+table.journey { width: 100%; }
+table.journey td:first-child { width: 1%; white-space: nowrap; }
+table.journey td { padding: 0.15rem 0.4rem 0.15rem 0; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+table.journey td:first-child { overflow-wrap: normal; white-space: nowrap; }
+@media (min-width: 1100px) { body.drawer-open { padding-right: calc(28rem + var(--gap)); } }
+table.journey tr.bad td { color: var(--mem); }
+button.cyc { padding: 0 0.35rem; font-size: 0.9em; }
+button.cyc.link { border: none; color: var(--command); background: none; padding: 0; }
+.mem-drawer .fire { margin: 0.3rem 0 0.5rem; }

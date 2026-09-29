@@ -57,7 +57,7 @@ from typing import Any
 from snax_forge.snax_model.accel import AccelConfig
 from snax_forge.snax_model.scenario import ACCEL_KINDS, ClusterConfig, Region
 
-from .memory import Marks, MemoryLayout
+from .memory import Marks, MemoryLayout, TimeMarks
 
 
 class MovementUnavailable(Exception):
@@ -139,6 +139,7 @@ class Index:
     made: dict[tuple[str, int], list[Firing]]  # (L1 port, index of its write) -> its firings
     grant_no: dict[int, tuple[str, int]]  # id(hop) -> (port, index among the port's grants)
     filtered: dict[str, Any] | None
+    dmas: set[str] = field(default_factory=set)  # the DMA components: their reads are departures
 
     def element(self, mem: str, word: int) -> str | None:
         """``A[5]`` for the word, None when no region lives there."""
@@ -309,6 +310,7 @@ def build_index(
             "sources": trace.filter_sources,
             "window": None if trace.filter_window is None else list(trace.filter_window),
         },
+        {c.name for c in cluster.components if c.kind == "dma"},
     )
 
 
@@ -759,6 +761,30 @@ def conflicts(idx: Index, start: int = 0, stop: int | None = None) -> dict[str, 
     }
 
 
+TIMES = ("arrival", "use", "wait")
+
+
+def time_marks(idx: Index, mem: str, kind: str) -> TimeMarks:
+    """Per word of ``mem`` a cycle (D97): ``arrival`` its first write, ``use`` its first read by
+    anything but a DMA, ``wait`` the cycles between the two; None where there is none."""
+    if kind not in TIMES:
+        raise ValueError(f"a time mark is one of {list(TIMES)}, got {kind!r}")
+    lay = idx.layouts[mem]
+    marks = TimeMarks()
+    for (m, word), hs in idx.words.items():
+        if m != mem:
+            continue
+        arrival = next((h.t for h in hs if h.act == "write"), None)
+        use = next((h.t for h in hs if h.act == "read" and h.owner not in idx.dmas), None)
+        t = {"arrival": arrival, "use": use}.get(kind)
+        if kind == "wait":
+            t = None if arrival is None or use is None else use - arrival
+        if t is not None:
+            col, row = lay.place(word)
+            marks.setdefault(row, [None] * lay.columns)[col] = t
+    return marks
+
+
 def conflict_marks(idx: Index) -> Marks:
     """Per L1 word the number of conflicts it took part in (held back or served), as fold marks."""
     lay = idx.layouts["l1"]
@@ -785,4 +811,5 @@ __all__ = [
     "journey",
     "patterns",
     "residency",
+    "time_marks",
 ]

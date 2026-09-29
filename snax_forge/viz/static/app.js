@@ -14,7 +14,7 @@
 // to read the directories again (POST /api/reload) and clears the cache.
 
 import { h, int } from "./dom.js";
-import { renderMemory } from "./memory.js";
+import { renderMemory, stepMemoryCycle, updateMemory } from "./memory.js";
 import { renderReport } from "./report.js";
 import { renderSchedule, selectCycle, stepCycle } from "./schedule.js";
 
@@ -39,10 +39,16 @@ const api = {
     if (opts.k?.length) q.set("k", opts.k.join(","));
     return getJSON(`/api/run/${enc(name)}/events?${q}`).then((r) => r.events);
   },
-  memory: (name) => getJSON(`/api/run/${enc(name)}/memory`),
+  /** The memory view; `marks` (conflicts, arrival, use, wait) folds by those marks (D97). */
+  memory: (name, marks) => getJSON(`/api/run/${enc(name)}/memory${marks ? `?marks=${enc(marks)}` : ""}`),
   /** Rows from <= r < to of memory `mem` in full (at most 256). */
-  memoryRows: (name, mem, from, to) =>
-    getJSON(`/api/run/${enc(name)}/memory/${enc(mem)}/rows?${new URLSearchParams({ from: String(from), to: String(to) })}`),
+  memoryRows: (name, mem, from, to, marks) => {
+    const q = new URLSearchParams({ from: String(from), to: String(to) });
+    if (marks) q.set("marks", marks);
+    return getJSON(`/api/run/${enc(name)}/memory/${enc(mem)}/rows?${q}`);
+  },
+  journey: (name, region, index) => getJSON(`/api/run/${enc(name)}/journey?${new URLSearchParams({ region, index: String(index) })}`),
+  conflicts: (name, from, to) => getJSON(`/api/run/${enc(name)}/conflicts?${new URLSearchParams({ from: String(from), to: String(to) })}`),
   reload: () => getJSON("/api/reload", { method: "POST" }),
 };
 
@@ -135,10 +141,12 @@ async function show() {
     const { detail, fifo } = cache[name];
     fillHeader(detail);
     const root = $("report");
+    if (view !== "memory") document.body.classList.remove("drawer-open"); // only the memory tab has the drawer
     if (view === "report") {
       if (shown !== `${name}/report`) renderReport(root, detail, fifo);
     } else if (view === "memory") {
-      if (shown !== `${name}/memory`) await renderMemory(root, detail, { api, status });
+      const same = shown === `${name}/memory` && (await updateMemory(detail, st));
+      if (!same) await renderMemory(root, detail, { api, status, st, setHash });
     } else {
       const same = shown === `${name}/schedule` && drawnWith === withoutCycle(st);
       if (!(same && (await selectCycle(detail, st)))) {
@@ -171,7 +179,7 @@ async function showLatest() {
   drawing = null;
 }
 
-$("run-select").addEventListener("change", (e) => setHash({ run: e.target.value, from: null, to: null, cycle: null }));
+$("run-select").addEventListener("change", (e) => setHash({ run: e.target.value, from: null, to: null, cycle: null, pick: null }));
 window.addEventListener("hashchange", showLatest);
 $("reload").addEventListener("click", async () => {
   status("Reloading…");
@@ -186,13 +194,14 @@ $("reload").addEventListener("click", async () => {
   }
 });
 
-// Left and right arrows step the selected cycle while the schedule is shown.
+// Left and right arrows step the selected cycle while the schedule or the memory tab is shown.
 document.addEventListener("keydown", (e) => {
   const st = hashState();
-  if ((st.view ?? "report") !== "schedule") return;
+  const view = st.view ?? "report";
+  if (view !== "schedule" && view !== "memory") return;
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
   const d = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
-  const next = d ? stepCycle(d) : null;
+  const next = d ? (view === "schedule" ? stepCycle(d) : stepMemoryCycle(d)) : null;
   if (next === null) return;
   e.preventDefault();
   setHash({ cycle: next });

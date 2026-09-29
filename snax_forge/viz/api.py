@@ -151,22 +151,25 @@ def _layout(rv: RunView, mem: str) -> MemoryLayout:
     return rv.layouts[mem]
 
 
-MARKS = ("conflicts",)
+MARKS = ("conflicts", *movement.TIMES)
 
 
 def _marks(rv: RunView, mem: str, marks: str | None) -> memory.Marks | None:
-    """The fold marks asked for: ``conflicts`` gives L1's conflict counts per word (D97)."""
+    """The fold marks asked for (D97): ``conflicts`` gives L1's conflict counts per word,
+    ``arrival``, ``use`` and ``wait`` a cycle per word in every memory."""
     if marks is None:
         return None
     if marks not in MARKS:
         raise MemoryViewError(f"marks must be one of {list(MARKS)}, got {marks!r}")
-    return movement.conflict_marks(moves(rv)) if mem == "l1" else {}
+    if marks == "conflicts":
+        return movement.conflict_marks(moves(rv)) if mem == "l1" else {}
+    return movement.time_marks(moves(rv), mem, marks)
 
 
 def memory_view(rv: RunView, marks: str | None = None) -> dict[str, Any]:
     """/api/run/<name>/memory: per memory its geometry, regions, use and folded lines
     (memory.py). A run without regions gets the geometry and ``has_regions`` false.
-    ``marks="conflicts"`` folds L1 with its conflict counts (needs a beat trace)."""
+    ``marks`` folds with conflict counts or times per word (MARKS; needs a beat trace)."""
     return {
         "name": rv.name,
         "has_regions": bool(rv.outputs.regions),

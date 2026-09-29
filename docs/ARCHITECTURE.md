@@ -462,10 +462,16 @@ the run directories. Views:
   from and their operands), residency per region and memory (arrival, use,
   departure, waits), per port and task the addresses as an affine nest with
   the cycles held back and what the bank served instead, and the L1
-  conflicts placed on the layout, which also mark the memory tab's rows
-  (`/api/run/<name>/movement`, `.../journey`, `.../conflicts`,
-  `.../memory?marks=conflicts`); its drawing in the memory tab is VIS4b's
-  next part
+  conflicts placed on the layout (`/api/run/<name>/movement`,
+  `.../journey`, `.../conflicts`). The memory tab draws them on a
+  beat-level run: the selected cycle (shared with the schedule, stepped by
+  the arrow keys) outlines the words requested teal, read back green and
+  held back red, with each conflict's waiting and served word; a mode
+  colours the words by conflict count (with a count per bank) or by
+  arrival, first use or wait, the rows then folding by equal counts or by
+  one time step (`.../memory?marks=...`); clicking a word opens a drawer
+  with its element's journey, firings and conflict cycles, each cycle
+  selectable there or in the schedule
 - later (M4b): a diff between two runs (VIS6)
 
 Views read the model's own dataclasses, loaded back from a run directory, not

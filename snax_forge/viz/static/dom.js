@@ -15,7 +15,12 @@ export function h(tag, attrs = {}, ...children) {
   const el = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
     if (v === null || v === undefined || v === false) continue;
-    if (k === "style" && typeof v === "object") Object.assign(el.style, v);
+    if (k === "style" && typeof v === "object") {
+      for (const [prop, val] of Object.entries(v)) { // custom properties (--x) need setProperty
+        if (prop.startsWith("--")) el.style.setProperty(prop, String(val));
+        else el.style[prop] = val;
+      }
+    }
     else if (k.startsWith("on")) el.addEventListener(k.slice(2), v);
     else el.setAttribute(k, v === true ? "" : String(v));
   }

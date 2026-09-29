@@ -363,3 +363,71 @@ def test_a_filtered_trace_says_so(tmp_path):
     m = api.movement_view(rv)
     assert m["available"] and m["filtered"] == {"sources": None, "window": [40, 50]}
     assert all(40 <= c["t"] < 50 for c in api.conflicts_view(rv)["conflicts"])
+
+
+# =============================================================================
+# 7. Time marks for the memory tab (arrival, first use, wait)
+# =============================================================================
+
+
+def texts_of(lines):
+    out = []
+    for x in lines:
+        if x["kind"] == "row":
+            out.append(("row", x["row"], x["marks"]))
+        elif x["kind"] == "fold":
+            out.append(("fold", x["from"], x["to"], x["mark_step"], x["mark_span"]))
+        else:
+            out.append(("empty", x["from"], x["to"]))
+    return out
+
+
+def test_arrival_folds_by_a_constant_step(runs):
+    """The DMA writes one 8-word beat per cycle, so A and B arrive 2 cycles per row; C is
+    written by acc_out at the pace acc_b's stalls allow, 6 cycles per row."""
+    l1 = api.memory_view(runs["default"], "arrival")["memories"][0]
+    assert l1["mark_range"] == [15, 67]
+    got = texts_of(l1["lines"])
+    assert got[0] == ("row", 0, [15] * 8 + [16] * 8)
+    assert got[1] == ("fold", 1, 2, 2, [17, 20])
+    assert got[4] == ("fold", 5, 6, 2, [30, 33])
+    assert got[6] == ("row", 8, [45] * 4 + [46] * 4 + [48] * 4 + [49] * 4)
+    assert got[7] == ("fold", 9, 10, 6, [51, 61])
+    assert got[-1] == ("empty", 12, 63)
+
+
+def test_use_and_wait_marks(runs):
+    view = {m["mem"]: m for m in api.memory_view(runs["default"], "wait")["memories"]}
+    rows = {x["row"]: x["marks"] for x in view["l1"]["lines"] if x["kind"] == "row"}
+    assert rows[0][:4] == [26, 26, 26, 26]  # A[0..3]: in L1 at 15, first read at 41
+    assert rows[4][:4] == [14, 14, 14, 14]  # B[0..3]: in L1 at 28, first read at 42
+    assert rows[8] == [None] * 16  # C is written, never read by a streamer
+    assert view["l2"]["mark_range"] is None  # nothing in L2 is read by a streamer
+    use = api.memory_view(runs["default"], "use")["memories"][0]
+    assert use["mark_range"] == [41, 64]
+
+
+def test_time_rows_on_request_carry_their_marks(runs):
+    got = api.memory_rows(runs["default"], "l1", 1, 3, "arrival")["rows"]
+    assert [r["marks"] for r in got] == [[17] * 8 + [18] * 8, [19] * 8 + [20] * 8]
+    with pytest.raises(memory.MemoryViewError):
+        api.memory_view(runs["default"], "later")
+
+
+def test_the_time_step_rule():
+    ts = memory._time_step
+    assert ts([1, 2, None], [3, 4, None]) == (True, 2)
+    assert ts([1, 2, None], [3, 5, None]) == (False, None)
+    assert ts([1, None], [3, 4]) == (False, None)  # a word with a time next to one without
+    assert ts([None, None], [None, None]) == (True, None)
+    marks = memory.TimeMarks({0: [1, 1], 1: [3, 3], 2: [5, 5], 3: [8, 8]})
+    cl = ClusterConfig.load(SCEN / "clusters" / "alu4.json")
+    lay = memory.layout_of("l1", cl, [Region("A", "l1", 0, (4, 16), (128, 8))])
+    kinds = [(x["kind"], x.get("row", x.get("from"))) for x in memory.fold(lay, marks)]
+    assert kinds == [
+        ("row", 0),
+        ("fold", 1),
+        ("row", 2),
+        ("row", 3),
+        ("empty", 4),
+    ]  # step 2, then 3

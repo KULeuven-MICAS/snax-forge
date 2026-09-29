@@ -40,11 +40,20 @@ number of elements plus the occupied rows, not the size of the memory.
 
 Marks
 -----
-A view may carry one mark per word, a count (D97: how many L1 conflicts the
-word took part in). Rows with marks are alike only when their marks are
-equal column by column, so a row with conflicts stays visible unless its
-neighbours had the same ones; row lines then carry ``marks`` and a fold line
-the sum of the marks it hides (``marked``).
+A view may carry one mark per word (D97), in one of two kinds:
+
+* counts (how many L1 conflicts the word took part in): rows are alike only
+  when their marks are equal column by column, so a row with conflicts stays
+  visible unless its neighbours had the same ones; a fold line gives the sum
+  of the marks it hides (``marked``);
+* times (a cycle per word, or None: arrival, first use, the wait between):
+  rows are alike only when every word's time moves by one step, the same in
+  every column and along the whole run, and the words without a time are the
+  same; a fold line gives that step (``mark_step``) and the smallest and
+  largest time it hides (``mark_span``).
+
+Row lines then carry ``marks``, and the summary the range of all marks
+(``mark_range``), for a colour scale.
 """
 
 from __future__ import annotations
@@ -60,7 +69,7 @@ from snax_forge.snax_model.scenario import ClusterConfig, Region
 MAX_ROWS = 256  # rows per request
 
 Cell = list[tuple[int, int]]  # (region, flat) per element of the word
-Marks = dict[int, list[int]]  # row -> one count per column; rows not listed are all 0
+Marks = dict[int, list[int | None]]  # row -> one mark per column; rows not listed: 0 / None
 
 
 class MemoryViewError(ValueError):
@@ -113,7 +122,7 @@ class MemoryLayout:
             "cells": [[list(p) for p in cell] for cell in self.cells(row)],
         }
         if marks is not None:
-            line["marks"] = list(marks.get(row) or [0] * self.columns)
+            line["marks"] = list(marks.get(row) or [marks_default(marks)] * self.columns)
         return line
 
 
@@ -166,11 +175,39 @@ def _steps(a: list[Cell], b: list[Cell]) -> dict[int, int] | None:
     return steps
 
 
+class TimeMarks(dict):
+    """Marks that are times (module doc): fold by a constant step, not by equality."""
+
+
+def marks_default(marks: Marks) -> int | None:
+    return None if isinstance(marks, TimeMarks) else 0
+
+
+def _time_step(a: list[int | None], b: list[int | None]) -> tuple[bool, int | None]:
+    """Whether rows with times ``a`` and ``b`` are alike, and their step (None: no times)."""
+    d = None
+    for x, y in zip(a, b, strict=True):
+        if (x is None) != (y is None):
+            return False, None
+        if x is not None and y is not None:
+            if d is None:
+                d = y - x
+            elif y - x != d:
+                return False, None
+    return True, d
+
+
 def fold(lay: MemoryLayout, marks: Marks | None = None) -> list[dict[str, Any]]:
     """The folded lines of a memory (module doc), top row first; ``marks`` as in Marks."""
     lines: list[dict[str, Any]] = []
     occupied = sorted(lay.occupied)
-    mark = (lambda r: marks.get(r) or [0] * lay.columns) if marks is not None else (lambda r: None)
+    times = isinstance(marks, TimeMarks)
+
+    def mark(r: int) -> list[int | None]:
+        if marks is None:
+            return []
+        return marks.get(r) or [marks_default(marks)] * lay.columns
+
     row = 0
     i = 0
     while row < lay.rows:
@@ -181,16 +218,28 @@ def fold(lay: MemoryLayout, marks: Marks | None = None) -> list[dict[str, Any]]:
             continue
         # a run of occupied rows starting at `row`
         first, steps = row, None
+        tstep: list[int | None] = []  # the run's time step, once two rows set it
         while i + 1 < len(occupied) and occupied[i + 1] == row + 1:
             s = _steps(lay.occupied[row], lay.occupied[row + 1])
-            if s is None or (steps is not None and s != steps) or mark(row) != mark(row + 1):
+            if s is None or (steps is not None and s != steps):
+                break
+            if times:
+                ok, d = _time_step(mark(row), mark(row + 1))
+                if not ok or (tstep and d != tstep[0]):
+                    break
+                tstep = [d]
+            elif mark(row) != mark(row + 1):
                 break
             steps, row, i = s, row + 1, i + 1
         lines.append(lay.row_line(first, marks))
         if row - first >= 2:
             line = _fold_line(lay, first + 1, row - 1, steps or {})
-            if marks is not None:
-                line["marked"] = sum(sum(mark(r)) for r in range(first + 1, row))
+            hidden = [x for r in range(first + 1, row) for x in mark(r) if x is not None]
+            if times:
+                line["mark_step"] = tstep[0] if tstep else None
+                line["mark_span"] = [min(hidden), max(hidden)] if hidden else None
+            elif marks is not None:
+                line["marked"] = sum(hidden)
             lines.append(line)
         if row > first:
             lines.append(lay.row_line(row, marks))
@@ -245,13 +294,17 @@ def summary(lay: MemoryLayout, marks: Marks | None = None) -> dict[str, Any]:
         "word_bytes": lay.word_bytes, "elem_bytes": lay.elem_bytes,
         "elems_per_word": lay.elems_per_word, "size_bytes": lay.size_bytes,
     }  # fmt: skip
-    return {
+    out: dict[str, Any] = {
         "mem": lay.mem,
         "geometry": geometry,
         "regions": regions,
         "used": {"words": used, "share": used / n_words},
         "lines": fold(lay, marks),
     }
+    if marks is not None:
+        vals = [x for row in marks.values() for x in row if x is not None]
+        out["mark_range"] = [min(vals), max(vals)] if vals else None
+    return out
 
 
 def rows(
@@ -270,6 +323,7 @@ __all__ = [
     "Marks",
     "MemoryLayout",
     "MemoryViewError",
+    "TimeMarks",
     "fold",
     "layout_of",
     "rows",
