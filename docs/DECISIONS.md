@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D101**.
+  area tag. Next free number: **D102**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -28,7 +28,7 @@ By area:
 
 | Area | Decisions |
 |---|---|
-| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 |
+| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 D101 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 |
@@ -399,3 +399,14 @@ from kernels (M5, M7, M9) to layers (M11) to blocks and models (M12: ResNet, Tra
 because the claims are about the whole path on real workloads. P1 revisits the order after M5;
 the anchor (D51) and generated accelerators in SNAX (D52) stay as they are, open items 42 and 43.
 Amends D9 and D24 (order). → STATUS, ARCHITECTURE section 8.
+
+**D101** · scope — M5 chains dot's two operations through L1: a multiplier and an accumulator,
+one `bind` each, the accumulator's task waiting on the multiplier's writer, so C3's first evidence
+needs no new platform part. The accumulator's drain cycle becomes a timing parameter of a BRM
+implementation beside `latency` and `ii`, default 0, so an implementation that drains (the Chisel
+`Accumulator`) says so and the stubs keep their cycles (open item 8). DMA insertion is split:
+padding small containers to whole beats now (LOW3a), per-tile slices with a tile transform
+(LOW3b, M9). A direct accelerator-to-accelerator link (A2A) is a milestone of its own, M13, after
+M5 and planned in its own round, because it touches the platform shell, SNAX-DFG, SNAX-SANDBOX,
+SNAX-LOWER and SNAX-MODEL, and amends D12 and D51 when built. Amends D100 (order).
+→ STATUS, ARCHITECTURE section 8.

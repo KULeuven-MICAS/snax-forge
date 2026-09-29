@@ -600,8 +600,9 @@ before the first comparison.
 
 ## 8. Build Order (milestones, not a schedule)
 
-Order: M1, M4a, M3, M4b, then P1 alongside M5, M6–M9, M11, M12 and P2; M10
-is independent of them and M2 comes last (D24, D51, D54, D76, D100). Done: M1
+Order: M1, M4a, M3, M4b, then P1 alongside M5, M13, M6–M9, M11, M12 and P2;
+M10 is independent of them and M2 comes last (D24, D51, D54, D76, D100,
+D101). Done: M1
 (SNAX-MODEL), M4a (run views), M3 (`vecadd` from the kernel to a checked
 model run), M4b (memory tab, data movement, reports, one documented loop on
 `vecadd`). `docs/STATUS.md` has the tasks of every milestone.
@@ -609,8 +610,14 @@ model run), M4b (memory tab, data movement, reports, one documented loop on
 - **P1: paper plan.** The hypothesis as claims with their measurements and
   baselines (the SNAX flow's turnaround, the model's speed), related work,
   and the order of the milestones after M5 (D100).
-- **M5: `dot`.** Reduction in SNAX-DFG and its import, the accumulator BRM,
-  chaining, general DMA insertion.
+- **M5: `dot`.** Reduction in SNAX-DFG and its import, the accumulator BRM
+  with its drain cycle as a timing parameter, a multiplier and an
+  accumulator chained through L1 with a wait between them, small containers
+  padded to whole DMA beats (D101).
+- **M13: accelerator-to-accelerator links.** A FIFO from one accelerator's
+  output port straight into another's input port, bound in one recipe step;
+  `dot` through the link against `dot` through L1. Planned in its own round
+  after M5 (D101).
 - **M6: contract freeze.** Versioned schemas for every contract, registries
   and namespaced attributes.
 - **M7: front ends, NPBench kernels.** The SDFG import of `jacobi1d`'s
@@ -618,7 +625,8 @@ model run), M4b (memory tab, data movement, reports, one documented loop on
   and a coverage table (D100).
 - **M8: automated DSE.** Search over recipes: pattern-based replacement across
   the BRM library, parameter and memory-plan policies, sweeps.
-- **M9: `jacobi1d`.** Stencil reuse and double buffering.
+- **M9: `jacobi1d`.** Stencil reuse and double buffering; per-tile DMA
+  insertion (LOW3b).
 - **M11: layers.** conv2d with a DMA per tile, softmax and an attention
   block with several BRMs, HDC bind, bundle and similarity (D100).
 - **M12: blocks and models.** Steady-state extrapolation for long runs, then
