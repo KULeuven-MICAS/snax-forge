@@ -75,13 +75,17 @@ function txt(g, attrs, text) {
 
 // -- data --------------------------------------------------------------------------
 
-const beatsOf = new Map(); // "name|path|from|to" -> beat events of the window
+// Keyed by the run's detail, as events.js and memory.js key theirs: Reload fetches a
+// new detail, so a run written again into the same directory gets its new events.
+const beatsOf = new WeakMap(); // detail -> Map("from|to" -> beat events of the window)
 
-/** Beat events in [from, to). */
+/** Beat events in [from, to), fetched once per run and window. */
 async function beatEvents(api, detail, from, to) {
-  const key = `${detail.name}|${detail.path}|${from}|${to}`;
-  if (!beatsOf.has(key)) beatsOf.set(key, await api.events(detail.name, from, to, { k: BEAT_KINDS }));
-  return beatsOf.get(key);
+  if (!beatsOf.has(detail)) beatsOf.set(detail, new Map());
+  const cache = beatsOf.get(detail);
+  const key = `${from}|${to}`;
+  if (!cache.has(key)) cache.set(key, await api.events(detail.name, from, to, { k: BEAT_KINDS }));
+  return cache.get(key);
 }
 
 // -- rows -------------------------------------------------------------------------

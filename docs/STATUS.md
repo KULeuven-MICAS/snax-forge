@@ -87,7 +87,7 @@ tables as they were written are in git history.
 | REP1 | design and run reports as Markdown from dataclasses, `pixi run report`; the flow writes `report/` and `flow.log` beside `run/` | D99 |
 | LOOP1 | one turn of the loop by hand, `examples/loop1/README.md`: vecadd's bank conflicts read from the reports and the memory tab, a written prediction, B moved, the prediction checked; every number checked by `tests/flow/test_loop1.py` | D98 |
 | VIEW1 | viewer housekeeping: a play / pause control stepping the selected cycle on a timer (Space toggles it), streamer boxes as wide as their lanes, every view as wide as the page less 1.5 in on each side | — |
-| — | housekeeping after M4b: shared element, word and register helpers in `viz/memory.py` and `viz/movement.py`, report Markdown helpers in `report/markdown.py`, repeated viewer text and cycle clamping in `events.js` and `dom.js`, unused JS exports removed, shared flow test helpers in `tests/flow/helpers.py`, stale docstrings and decision back-links | — |
+| — | housekeeping after M4b: shared element, word and register helpers in `viz/memory.py` and `viz/movement.py`, report Markdown helpers in `report/markdown.py`, repeated viewer text and cycle clamping in `events.js` and `dom.js`, unused JS exports removed, shared flow test helpers in `tests/flow/helpers.py`, stale docstrings and decision back-links; Reload now also refreshes the schedule's beat rows (its cache was keyed by directory name, not by run) | — |
 
 ## Open Tasks
 
