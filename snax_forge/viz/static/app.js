@@ -9,12 +9,14 @@
 // so a browser refresh or a shared link shows the same thing. The selected
 // cycle is what the cluster view shows; a change of the cycle alone updates
 // the page in place, anything else redraws the view. The arrow keys step
-// the cycle while the schedule is shown.
+// the cycle while the schedule or the memory tab is shown, and Space plays
+// and pauses it (player.js, VIEW1).
 // A run's detail is fetched once and kept until Reload, which asks the server
 // to read the directories again (POST /api/reload) and clears the cache.
 
 import { h, int } from "./dom.js";
 import { renderMemory, stepMemoryCycle, updateMemory } from "./memory.js";
+import { setStepper, stopPlaying, togglePlaying } from "./player.js";
 import { renderReport } from "./report.js";
 import { renderSchedule, selectCycle, stepCycle } from "./schedule.js";
 
@@ -139,6 +141,7 @@ async function show() {
       cache[name] = { detail, fifo };
     }
     const { detail, fifo } = cache[name];
+    if (shown !== null && shown !== `${name}/${view}`) stopPlaying(); // another run or view
     fillHeader(detail);
     const root = $("report");
     if (view !== "memory") document.body.classList.remove("drawer-open"); // only the memory tab has the drawer
@@ -184,6 +187,7 @@ window.addEventListener("hashchange", showLatest);
 $("reload").addEventListener("click", async () => {
   status("Reloading…");
   try {
+    stopPlaying();
     await api.reload();
     cache = {};
     shown = null;
@@ -194,14 +198,55 @@ $("reload").addEventListener("click", async () => {
   }
 });
 
-// Left and right arrows step the selected cycle while the schedule or the memory tab is shown.
+/** The shown view's cycle moved by d, or null when it has none to step. */
+function stepShown(d) {
+  const view = hashState().view ?? "report";
+  return view === "schedule" ? stepCycle(d) : view === "memory" ? stepMemoryCycle(d) : null;
+}
+
+// The player steps as the right arrow does and stops at the last cycle; a
+// tick waits while a draw runs, so the shown cycle is the one it steps from.
+setStepper({
+  next: () => {
+    const n = stepShown(1);
+    const now = Number.parseInt(hashState().cycle, 10);
+    return n === null || n === now ? null : n;
+  },
+  go: (n) => setHash({ cycle: n }),
+  busy: () => drawing !== null,
+});
+
+// The page is as wide as the window allows (VIEW1). The schedule fits its window
+// to the width it is drawn at, so a change of width draws it again; the other
+// views follow the width by themselves (CSS grids).
+let drawnAtWidth = window.innerWidth;
+let resizeTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (window.innerWidth === drawnAtWidth) return;
+    drawnAtWidth = window.innerWidth;
+    if ((hashState().view ?? "report") !== "schedule") return;
+    shown = null;
+    drawnWith = null;
+    showLatest();
+  }, 200);
+});
+
+// Left and right arrows step the selected cycle while the schedule or the memory
+// tab is shown; Space plays and pauses (a focused button keeps Space for itself).
 document.addEventListener("keydown", (e) => {
-  const st = hashState();
-  const view = st.view ?? "report";
+  const view = hashState().view ?? "report";
   if (view !== "schedule" && view !== "memory") return;
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
+  if (e.key === " ") {
+    if (e.target instanceof Element && e.target.closest("button, summary, a")) return;
+    e.preventDefault();
+    togglePlaying();
+    return;
+  }
   const d = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
-  const next = d ? (view === "schedule" ? stepCycle(d) : stepMemoryCycle(d)) : null;
+  const next = d ? stepShown(d) : null;
   if (next === null) return;
   e.preventDefault();
   setHash({ cycle: next });

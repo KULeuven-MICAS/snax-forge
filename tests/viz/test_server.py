@@ -3,6 +3,8 @@ viewer and the run list, answers an events query, and a reload picks up a
 changed directory. Only the plumbing; api.py's answers are test_api.py's."""
 
 import json
+import re
+from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -35,6 +37,19 @@ def test_server_serves_viewer_and_runs(tmp_path):
         assert evs and all(e["src"] == "ctl" and e["t"] < 5 for e in evs)
         evs = get_json(srv, "/api/run/vecadd/events?from=0&to=200&k=start,done")["events"]
         assert evs and {e["k"] for e in evs} == {"start", "done"}
+
+
+def test_every_module_the_viewer_imports_is_served(tmp_path):
+    """Each ``from "./x.js"`` in the static modules names a file the server gives out as JS."""
+    static = Path(__file__).parents[2] / "snax_forge" / "viz" / "static"
+    wanted = {
+        m for f in static.glob("*.js") for m in re.findall(r'from "\./([\w-]+\.js)"', f.read_text())
+    }
+    assert "player.js" in wanted  # the play button (VIEW1)
+    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+    with serving([d]) as srv:
+        for m in sorted(wanted):
+            assert get(srv, f"/{m}")[:2] == (200, "text/javascript"), m
 
 
 def test_reload_picks_up_a_changed_directory(tmp_path):

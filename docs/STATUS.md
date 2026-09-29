@@ -36,7 +36,7 @@ Order: M1, M4a, M3, M4b, M5–M10, then M2 (D24, D51, D54, D76).
 | M1 | SNAX-MODEL, kernel-agnostic | `done` |
 | M4a | Run views: profile report, schedule, cluster view | `done` |
 | M3 | Close `vecadd` end to end, from the kernel (D76, D90) | `done` |
-| M4b | Remaining views and first manual loop | `wip` |
+| M4b | Remaining views and first manual loop | `done` |
 | M5 | `dot` | todo |
 | M6 | Contract freeze | todo |
 | M7 | Remaining front ends | todo |
@@ -86,14 +86,9 @@ tables as they were written are in git history.
 | VIS4b | data movement: journeys, residency, patterns, conflicts on the layout; the memory tab's cycle overlay, conflict and time modes and journey drawer; tracer rows in the schedule | D97 |
 | REP1 | design and run reports as Markdown from dataclasses, `pixi run report`; the flow writes `report/` and `flow.log` beside `run/` | D99 |
 | LOOP1 | one turn of the loop by hand, `examples/loop1/README.md`: vecadd's bank conflicts read from the reports and the memory tab, a written prediction, B moved, the prediction checked; every number checked by `tests/flow/test_loop1.py` | D98 |
+| VIEW1 | viewer housekeeping: a play / pause control stepping the selected cycle on a timer (Space toggles it), streamer boxes as wide as their lanes, every view as wide as the page less 1.5 in on each side | — |
 
 ## Open Tasks
-
-### M4b: Remaining views and first manual loop (after M3, D54)
-
-| ID | Scope | Depends | Acceptance | Status |
-|---|---|---|---|---|
-| VIEW1 | Viewer housekeeping: a play / pause control that steps the selected cycle on a timer (e.g. 1 s or 0.5 s) and stops at the end; streamer boxes in the cluster view sized to their lanes, and the drawing as wide as the page less a margin of about 1–2 inches | VIS2, VIS3 | By eye; a decision only if D61's layout rules change | todo |
 
 ### M5: `dot`
 
@@ -164,28 +159,19 @@ cycles compare design points only.
 
 M3 is closed: `pixi run flow recipes/vecadd.json --platform
 platforms/small16.json` takes vecadd from the kernel to a checked model run
-(85 cycles contiguous; 77 with B and C pinned; 73 at W = 8). M4b is under
-way in the order FLOW1, VIS4a, VIS4b, REP1, LOOP1; each patch replaces the
-rows below that it changes. FLOW1 is done (D94): flow runs are traced at
-`task` level and each `--set` gives a folder of its own, so
-`pixi run view out/flow/vecadd/run out/flow/vecadd_W8/run` shows both.
-VIS4a is done (D95, D96): a scenario names its data as regions, which
-`run.json` records and the flow fills from the memory plan, and the Memory
-tab draws each memory's regions and rows, folded by a constant step.
-VIS4b's API is done (D97): an element's journey, residency, per-port
-patterns with the cycles held back, and the L1 conflicts placed on the
-layout, all from a beat trace; the memory tab draws them: the selected
-cycle's accesses and conflicts, conflict counts, arrival, use and wait
-colouring, and a drawer with each element's journey, and the schedule traces
-chosen elements, so VIS4b is done. REP1 is done (D99): `pixi run report DIR`
-writes `design.md` and `run.md` for a flow folder or a run directory, every
-flow writes them to `report/` with `flow.log` (what it printed and the design
-checks that ran, or why it failed) beside `run/`, and VIS6, VIS7 and VIS8 are
-dropped (D98). LOOP1 is done (D98): `examples/loop1/README.md` walks one
-iteration by hand, from the default run's conflicts (acc_b held 7 cycles,
-achieved II 1.44) through a written prediction to the rerun with B moved
-(77 cycles, II 1.00), and `tests/flow/test_loop1.py` checks every number in
-it. Last in M4b is VIEW1, the viewer housekeeping.
+(85 cycles contiguous; 77 with B and C pinned; 73 at W = 8).
+
+M4b is closed. A flow run gets a folder of its own per `--set` and a task
+trace (D94); its scenario names its data as regions (D95); the run viewer
+has a Memory tab with each memory's regions and rows, folded by a constant
+step (D96), and on a beat trace the data movement: journeys, residency,
+per-port patterns with the cycles held back, and the L1 conflicts on the
+layout, with tracer rows in the schedule (D97); every flow writes a design
+report, a run report and `flow.log` beside `run/` (D99); and
+`examples/loop1/README.md` walks one iteration by hand, checked number by
+number (D98). The viewer steps the selected cycle on a timer and uses the
+width of the window in every view (VIEW1). VIS6, VIS7 and VIS8 are dropped
+(D98). Next is M5 (`dot`).
 
 ## Open Items
 

@@ -22,7 +22,8 @@
 // over the chart zooms around the pointer; shift + wheel and a sideways
 // swipe scroll (D58).
 //
-// Clicking a cycle selects it (hash `cycle`); the arrow keys step it (app.js).
+// Clicking a cycle selects it (hash `cycle`); the arrow keys step it and the
+// play button beside the cluster heading steps it on a timer (app.js, player.js).
 // A cycle change only moves the cursor and updates the cluster view and the
 // cycle's event list in place (selectCycle); a selected cycle outside the
 // window moves the window to it, keeping its width (D61).
@@ -42,6 +43,7 @@
 import { dec, h, int } from "./dom.js";
 import { clusterView } from "./cluster.js";
 import { elementAt, ensureRows, journeyOf, tracersOf } from "./memory.js";
+import { playControl } from "./player.js";
 import { BEAT_KINDS, GROUP, beatTraced, byOwner, classAt, describe, fifoCount, fifoIndex, onPort, taskEvents } from "./events.js";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -488,7 +490,7 @@ function intArg(v, dflt) {
   return Number.isFinite(n) ? n : dflt;
 }
 
-/** The cluster section: heading with cycle stepping, the cluster view, the event list. */
+/** The cluster section: heading with cycle stepping and play, the cluster view, the event list. */
 function clusterSection(detail, total, setHash) {
   const go = (d) => setHash({ cycle: Math.min(Math.max((current?.cycle ?? 0) + d, 0), total - 1) });
   const title = h("h2", {}, "Cluster");
@@ -497,7 +499,7 @@ function clusterSection(detail, total, setHash) {
   const events = h("div", {});
   const cluster = clusterView(detail);
   const el = h("section", { id: "cluster" },
-    h("div", { class: "cycle-head" }, prev, title, next),
+    h("div", { class: "cycle-head" }, prev, title, next, detail.trace ? playControl() : null),
     cluster.el,
     detail.trace ? h("details", { class: "cycle-events", open: true }, h("summary", {}, "Events in this cycle"), events) : null);
   return { el, title, prev, next, events, cluster };

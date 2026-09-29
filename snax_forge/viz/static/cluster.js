@@ -11,8 +11,9 @@
 //                 traffic and no conflict, red with the list of conflicts
 //                 (served port first); a static description in the corner
 //   arrow pairs   one per requester (streamer, DMA), centred on its box
-//   requesters    streamers (one column per lane: port, FIFO slots, count),
-//                 the DMA with L2 beside it
+//   requesters    streamers (one column per lane: port, FIFO slots, count;
+//                 a streamer's box is as wide as its lanes need), the DMA with
+//                 L2 beside it
 //   arrows        between a streamer and the accelerator it is attached to
 //   accelerators  plain boxes over their attached streamers
 //   controller    the command running in the cycle and any poll
@@ -49,6 +50,15 @@ import { GROUP, bankText, beatTraced, classAt, fifoCount, onPort } from "./event
 
 const BANKS_PER_LINE = 32; // more banks wrap onto a new line, a superbank at a time
 const MAX_SLOTS = 8; // deeper FIFOs are drawn as a bar
+// Widths in rem (VIEW1): a streamer's column is at least as wide as its lanes, so a
+// wider streamer gets a wider box; the frame is at least as wide as its columns.
+const LANE = 1.45; // a lane's column, at its narrowest
+const LANE_MAX = 2; // and at its widest
+const LANE_GAP = 0.25; // between lanes (style.css .cl-lanes, 4px)
+const BOX_PAD = 1.35; // a box's padding and borders
+const COL_GAP = 0.6; // between requester columns (style.css .cl-req)
+const MIN_STREAMER = 7.5;
+const FRAME_MIN = 44; // style.css .cl-frame
 const DIR_TEXT = { l2_to_l1: "L2 → L1", l1_to_l2: "L1 → L2" };
 
 const views = new WeakMap(); // detail -> view, kept until Reload
@@ -191,7 +201,19 @@ function build(detail) {
   const hasL2 = !!cfg.l2 && dmas.length > 0;
   if (hasL2) cols.push({ kind: "l2arrow" }, { kind: "l2" });
   const colOf = (name) => cols.findIndex((c) => c.name === name) + 1;
-  const template = cols.map((c) => ({ streamer: "minmax(7.5rem, 1fr)", dma: "minmax(12rem, 1.3fr)", l2arrow: "2.6rem", l2: "minmax(8rem, 0.7fr)" })[c.kind]).join(" ");
+  const lanesOf = (name) => profile.streamers[name]?.fifo.hist.length ?? 0;
+  const narrowest = (c) => {
+    if (c.kind !== "streamer") return { dma: 12, l2arrow: 2.6, l2: 8 }[c.kind];
+    const n = lanesOf(c.name);
+    return Math.max(MIN_STREAMER, n * LANE + Math.max(n - 1, 0) * LANE_GAP + BOX_PAD);
+  };
+  // A streamer's share of the spare width grows with its lanes (1fr per 4 lanes, at least 1fr).
+  const track = (c) => ({
+    streamer: () => `minmax(${narrowest(c).toFixed(2)}rem, ${Math.max(1, lanesOf(c.name) / 4)}fr)`,
+    dma: () => "minmax(12rem, 1.3fr)", l2arrow: () => "2.6rem", l2: () => "minmax(8rem, 0.7fr)",
+  })[c.kind]();
+  const template = cols.map(track).join(" ");
+  const frameMin = Math.max(FRAME_MIN, cols.reduce((a, c) => a + narrowest(c), 0) + COL_GAP * Math.max(cols.length - 1, 0));
   const place = (el, col, row, span = 1) => { el.style.gridColumn = `${col} / span ${span}`; el.style.gridRow = String(row); return el; };
   const reqItems = [];
 
@@ -211,12 +233,12 @@ function build(detail) {
     }
     // One grid column per lane: its port on top, then its FIFO slots, then its count, so they line up.
     const lined = chips.length === nLanes;
-    const grid = h("div", { class: "cl-lanes", style: { gridTemplateColumns: `repeat(${Math.max(nLanes, 1)}, 1.45rem)` } },
+    const grid = h("div", { class: "cl-lanes", style: { gridTemplateColumns: `repeat(${Math.max(nLanes, 1)}, minmax(${LANE}rem, ${LANE_MAX}rem))` } },
       lined ? chips.map((c) => c.el) : null, lanes.map((x) => x.slotsEl), lanes.map((x) => x.count));
-    b.body.append(
+    b.body.append(...[ // append() would write a null as the text "null"
       !lined && chips.length ? h("div", { class: "cl-ports" }, chips.map((c) => c.el)) : null,
       nLanes ? grid : null,
-      nLanes ? h("small", { class: "cl-sub" }, `${sp.fifo.name}, depth ${depth}`) : null);
+      nLanes ? h("small", { class: "cl-sub" }, `${sp.fifo.name}, depth ${depth}`) : null].filter(Boolean));
     const up = pair("v");
     const attachedTo = accels.find((a) => Object.values(a.attach || {}).includes(name));
     const down = arrow("v", "", !!attachedTo);
@@ -232,7 +254,7 @@ function build(detail) {
     const rd = h("div", { class: "cl-line" });
     const back = h("div", { class: "cl-line" });
     const wr = h("div", { class: "cl-line" });
-    b.body.append(chips.length ? h("div", { class: "cl-ports" }, chips.map((c) => c.el)) : null, task, rd, back, wr);
+    b.body.append(...[chips.length ? h("div", { class: "cl-ports" }, chips.map((c) => c.el)) : null, task, rd, back, wr].filter(Boolean));
     const up = pair("v");
     reqItems.push(place(up.el, col, 1), place(b.el, col, 2));
     parts.dmas[d.name] = { b, chips, task, rd, back, wr, up };
@@ -286,7 +308,7 @@ function build(detail) {
     h("li", {}, h("i", { class: "key g-mem" }), "Stall, contested bank"),
     h("li", {}, h("i", { class: "key g-fifo" }), "FIFO slot in use"),
     h("li", {}, "Requests point to memory, read data points back"));
-  const el = h("div", { class: "cluster" }, legend, note, h("div", { class: "scroll" }, h("div", { class: "cl-frame" }, l1Box, xbarBox, req)));
+  const el = h("div", { class: "cluster" }, legend, note, h("div", { class: "scroll" }, h("div", { class: "cl-frame", style: { minWidth: `${frameMin.toFixed(2)}rem` } }, l1Box, xbarBox, req)));
 
   const cmds = [];
   let cmdsFrom = null; // the task events the command list was taken from

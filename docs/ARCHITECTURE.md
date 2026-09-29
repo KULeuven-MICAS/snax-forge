@@ -441,7 +441,9 @@ task events and the profile never are. What LLMs read is the reports below.
 **Run views** (`snax_forge/viz/`, D54, D55; `pixi run view DIR ...`, port
 8765): a local server bound to 127.0.0.1 plus a static viewer, stdlib only,
 with no build step and no external file, so it works offline. Reload re-reads
-the run directories. Views:
+the run directories. Every view takes the page width less 1.5 in on each side
+(the 1180 px column on a narrower screen), so drawings and tables grow with
+the window; running text keeps a readable line length (VIEW1). Views:
 
 - the profile report (VIS1), with FIFO occupancy also over each FIFO's busy
   window (D56)
@@ -451,7 +453,7 @@ the run directories. Views:
   element was read, written, held back or fired (VIS4b, D97)
 - the cluster view: banks, interconnect, streamers, accelerators, DMA and
   controller at the selected cycle, requests and read data apart (VIS3, D61,
-  D62)
+  D62); a streamer's box is as wide as its lanes need (VIEW1)
 - the memory tab (VIS4a, D95, D96): per memory a scale bar and a table of
   the regions a run names (extent, bytes, share, banks and rows touched),
   then its rows, L1 as banks × rows through the model's address map and L2
@@ -475,6 +477,12 @@ the run directories. Views:
   one time step (`.../memory?marks=...`); clicking a word opens a drawer
   with its element's journey, firings and conflict cycles, each cycle
   selectable there or in the schedule, where the element can also be traced
+
+The selected cycle lives in the URL hash, so a refresh or a shared link shows
+it; the arrow keys step it, and a play button in the schedule's cluster
+heading and in the memory tab steps it on a timer (1 s to 0.1 s, Space to
+play and pause), waiting for each cycle to be drawn and stopping at the last
+one (VIEW1). Playing itself is not kept in the hash.
 
 Views read the model's own dataclasses, loaded back from a run directory, not
 raw JSON (D38, D50). Two runs are compared by switching between them in the

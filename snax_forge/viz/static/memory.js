@@ -16,13 +16,15 @@
 //
 // Region colours are a meaning of this tab only (D96): a region keeps its
 // colour in every memory, so A in L2 and A in L1 match. The modes, the cycle
-// overlay and the picked element are described under "drawing" below.
+// overlay and the picked element are described under "drawing" below. The
+// cycle bar has the play button of player.js (VIEW1); Clear also stops it.
 //
 // The cluster view (VIS3) uses the same rows to name the element a bank
 // holds in its tooltips: `ensureRows` loads the rows a cycle touches (a block
 // of MAX_ROWS at a time, once per run) and `elementAt` names what is there.
 
 import { h, int, pct } from "./dom.js";
+import { playControl, stopPlaying } from "./player.js";
 
 export const MAX_ROWS = 256; // viz/memory.py MAX_ROWS: rows per request
 const LABEL_EVERY_CELL = 32; // above this many columns only the first cell of a run is labelled
@@ -371,7 +373,8 @@ function controls(ctx, beat) {
         h("button", { type: "button", onclick: () => step(-1), "aria-label": "Previous cycle" }, "‹"),
         h("label", {}, "Cycle ", input),
         h("button", { type: "button", onclick: () => step(1), "aria-label": "Next cycle" }, "›"),
-        h("button", { type: "button", onclick: () => ctx.setHash({ cycle: null }) }, "Clear"))),
+        playControl(),
+        h("button", { type: "button", onclick: () => { stopPlaying(); ctx.setHash({ cycle: null }); } }, "Clear"))),
     ctx.show ? h("p", { class: "note" }, SHOW_NOTES[ctx.show]) : null,
     h("ul", { class: "legend" },
       [["ov-req", "Requested in the cycle"], ["ov-resp", "Read data back in the cycle"], ["ov-held", "Held back in the cycle"], ["picked", "The picked element"]]

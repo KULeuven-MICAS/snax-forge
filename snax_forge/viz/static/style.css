@@ -23,6 +23,7 @@
   --req: #13838c;
   --req-bg: #ddf0f1;
   --gap: 1.25rem;
+  --wide-edge: 1.5in; /* the page's margin on a wide screen (VIEW1) */
   color-scheme: light dark;
 }
 @media (prefers-color-scheme: dark) {
@@ -54,7 +55,10 @@ body {
   font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
   font-variant-numeric: tabular-nums;
 }
-header, main { max-width: calc(1180px - 2 * var(--gap)); margin: 0 auto; }
+/* Every view takes the page width less --wide-edge on each side (VIEW1); on a
+   screen too narrow for that, the old 1180 px column, or the page less the
+   side gap. Running text keeps a readable line length (p.note). */
+header, main { max-width: max(1180px - 2 * var(--gap), 100vw - 2 * var(--wide-edge)); margin: 0 auto; }
 
 /* -- header ------------------------------------------------------------------ */
 header { padding-top: 1.5rem; padding-bottom: 0.5rem; border-bottom: 2px solid var(--ink); }
@@ -77,6 +81,7 @@ h2 { margin: 0 0 0.2rem; font-size: 1.25rem; }
 h3 { margin: 1.1rem 0 0.4rem; font-size: 1rem; }
 .kind { margin-left: 0.6rem; color: var(--muted); font-weight: 400; font-size: 0.9em; }
 .note { margin: 0.15rem 0 0.8rem; color: var(--muted); }
+p.note { max-width: 110ch; }
 .block + .block { margin-top: 1.2rem; }
 .scroll { overflow-x: auto; }
 
@@ -96,8 +101,9 @@ i.key { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px
 
 /* where the cycles go: name | bar | counts */
 .rows { display: grid; gap: 0.55rem; }
-.row { display: grid; grid-template-columns: 9rem minmax(12rem, 1fr) minmax(16rem, 1.1fr); gap: 0.4rem 1rem; align-items: center; }
-.row.single { grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 1.1fr); margin-top: 0.4rem; }
+/* the bar takes the width the counts leave (VIEW1): the counts column stops at 34rem */
+.row { display: grid; grid-template-columns: 9rem minmax(12rem, 1fr) minmax(16rem, 34rem); gap: 0.4rem 1rem; align-items: center; }
+.row.single { grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 34rem); margin-top: 0.4rem; }
 .who b { display: block; }
 .who .kind { margin: 0; }
 .stack { display: flex; height: 1.4rem; border-radius: 3px; overflow: hidden; background: var(--rule); }
@@ -199,7 +205,11 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .cell-text.mid { text-anchor: middle; }
 .cursor { fill: var(--command); fill-opacity: 0.18; stroke: var(--command); stroke-width: 1; pointer-events: none; }
 
-.cycle-head { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+.cycle-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
+/* play / pause and its interval (VIEW1, player.js) */
+.player { display: inline-flex; align-items: center; gap: 0.3rem; margin-left: 0.4rem; }
+.player .play { min-width: 5.8rem; }
+.player .play[aria-pressed="true"] { background: var(--command); border-color: var(--command); color: #fff; }
 .cycle-head h2 { margin: 0 0.3rem; min-width: 11rem; text-align: center; }
 .cycle-events { margin-top: 0.9rem; }
 .cycle-table { width: 100%; } /* the event column takes the rest of the page width */
@@ -210,7 +220,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 
 /* -- cluster view (VIS3, D61, D62) -------------------------------------------------- */
 .cl-note:empty { display: none; }
-.cl-frame { min-width: 44rem; }
+.cl-frame { min-width: 44rem; } /* cluster.js raises it to what the columns need */
 .muted { color: var(--muted); }
 
 /* L1: banks by superbank, one arrow pair under each bank */
