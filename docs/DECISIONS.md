@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D97**.
+  area tag. Next free number: **D98**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -38,7 +38,7 @@ By area:
 | sandbox | D72 D73 D80 |
 | design | D7 D74 D84–D87 |
 | flow | D90 D94 |
-| viz | D16 D54–D58 D60 D61 D76 D81 D96 |
+| viz | D16 D54–D58 D60 D61 D76 D81 D96 D97 |
 | docs, test | D26 D46 D92 D93 |
 
 ---
@@ -373,3 +373,10 @@ folded in Python: neighbouring rows fold when every column holds the same region
 moves by one constant step, so the answer grows with the regions and not with the depth, and
 folded rows are served on request, at most 256 at a time. Region colours are a new meaning, used
 only in that tab. Amends D54, D61. → `viz/memory.py`.
+
+**D97** · viz — Data movement is read off the beat trace and the regions, with no timing model:
+one element's journey on demand, residency per region and memory, per port and task the address
+pattern as an affine nest plus the cycles it was held back and why, and the L1 conflicts placed on
+the memory layout, each linking the word that waited to the word its bank served. Firings are
+matched to reads and writes by order within the k-th task of each owner (as D56 pairs them). A run
+without a beat trace gets the reason. → `viz/movement.py`.

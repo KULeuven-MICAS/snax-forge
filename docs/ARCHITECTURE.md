@@ -457,7 +457,16 @@ the run directories. Views:
   folded in Python and opened on a click, 256 rows at a time
   (`/api/run/<name>/memory`, `.../memory/<mem>/rows`). With regions, the
   cluster view's tooltips also name the element each L1 access touches
-- later (M4b): data movement and a diff between two runs (VIS4b, VIS6)
+- data movement (VIS4b, D97), read off a beat trace and the regions: one
+  element's journey (every hop in every memory, the firings it fed or came
+  from and their operands), residency per region and memory (arrival, use,
+  departure, waits), per port and task the addresses as an affine nest with
+  the cycles held back and what the bank served instead, and the L1
+  conflicts placed on the layout, which also mark the memory tab's rows
+  (`/api/run/<name>/movement`, `.../journey`, `.../conflicts`,
+  `.../memory?marks=conflicts`); its drawing in the memory tab is VIS4b's
+  next part
+- later (M4b): a diff between two runs (VIS6)
 
 Views read the model's own dataclasses, loaded back from a run directory, not
 raw JSON (D38, D50).

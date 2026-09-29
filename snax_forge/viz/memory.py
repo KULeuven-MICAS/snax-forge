@@ -37,6 +37,14 @@ empty rows is one line, however long. Lines:
 served on request (``rows``), at most ``MAX_ROWS`` per request, so a large
 memory is never sent whole. Only occupied rows are visited: the cost is the
 number of elements plus the occupied rows, not the size of the memory.
+
+Marks
+-----
+A view may carry one mark per word, a count (D97: how many L1 conflicts the
+word took part in). Rows with marks are alike only when their marks are
+equal column by column, so a row with conflicts stays visible unless its
+neighbours had the same ones; row lines then carry ``marks`` and a fold line
+the sum of the marks it hides (``marked``).
 """
 
 from __future__ import annotations
@@ -52,6 +60,7 @@ from snax_forge.snax_model.scenario import ClusterConfig, Region
 MAX_ROWS = 256  # rows per request
 
 Cell = list[tuple[int, int]]  # (region, flat) per element of the word
+Marks = dict[int, list[int]]  # row -> one count per column; rows not listed are all 0
 
 
 class MemoryViewError(ValueError):
@@ -96,13 +105,16 @@ class MemoryLayout:
     def cells(self, row: int) -> list[Cell]:
         return self.occupied.get(row) or [[] for _ in range(self.columns)]
 
-    def row_line(self, row: int) -> dict[str, Any]:
-        return {
+    def row_line(self, row: int, marks: Marks | None = None) -> dict[str, Any]:
+        line = {
             "kind": "row",
             "row": row,
             "addr": [self.addr(c, row) for c in range(self.columns)],
             "cells": [[list(p) for p in cell] for cell in self.cells(row)],
         }
+        if marks is not None:
+            line["marks"] = list(marks.get(row) or [0] * self.columns)
+        return line
 
 
 def layout_of(mem: str, cluster: ClusterConfig, regions: list[Region]) -> MemoryLayout:
@@ -154,10 +166,11 @@ def _steps(a: list[Cell], b: list[Cell]) -> dict[int, int] | None:
     return steps
 
 
-def fold(lay: MemoryLayout) -> list[dict[str, Any]]:
-    """The folded lines of a memory (module doc), top row first."""
+def fold(lay: MemoryLayout, marks: Marks | None = None) -> list[dict[str, Any]]:
+    """The folded lines of a memory (module doc), top row first; ``marks`` as in Marks."""
     lines: list[dict[str, Any]] = []
     occupied = sorted(lay.occupied)
+    mark = (lambda r: marks.get(r) or [0] * lay.columns) if marks is not None else (lambda r: None)
     row = 0
     i = 0
     while row < lay.rows:
@@ -170,14 +183,17 @@ def fold(lay: MemoryLayout) -> list[dict[str, Any]]:
         first, steps = row, None
         while i + 1 < len(occupied) and occupied[i + 1] == row + 1:
             s = _steps(lay.occupied[row], lay.occupied[row + 1])
-            if s is None or (steps is not None and s != steps):
+            if s is None or (steps is not None and s != steps) or mark(row) != mark(row + 1):
                 break
             steps, row, i = s, row + 1, i + 1
-        lines.append(lay.row_line(first))
+        lines.append(lay.row_line(first, marks))
         if row - first >= 2:
-            lines.append(_fold_line(lay, first + 1, row - 1, steps or {}))
+            line = _fold_line(lay, first + 1, row - 1, steps or {})
+            if marks is not None:
+                line["marked"] = sum(sum(mark(r)) for r in range(first + 1, row))
+            lines.append(line)
         if row > first:
-            lines.append(lay.row_line(row))
+            lines.append(lay.row_line(row, marks))
         row, i = row + 1, i + 1
     return lines
 
@@ -199,7 +215,7 @@ def _fold_line(lay: MemoryLayout, a: int, b: int, steps: dict[int, int]) -> dict
     }
 
 
-def summary(lay: MemoryLayout) -> dict[str, Any]:
+def summary(lay: MemoryLayout, marks: Marks | None = None) -> dict[str, Any]:
     """Geometry, regions (extent, bytes, share, columns and rows touched) and use."""
     regions = []
     touched: dict[int, tuple[set[int], set[int]]] = {
@@ -234,17 +250,28 @@ def summary(lay: MemoryLayout) -> dict[str, Any]:
         "geometry": geometry,
         "regions": regions,
         "used": {"words": used, "share": used / n_words},
-        "lines": fold(lay),
+        "lines": fold(lay, marks),
     }
 
 
-def rows(lay: MemoryLayout, start: int, stop: int) -> list[dict[str, Any]]:
+def rows(
+    lay: MemoryLayout, start: int, stop: int, marks: Marks | None = None
+) -> list[dict[str, Any]]:
     """Rows ``start <= r < stop`` in full, at most MAX_ROWS of them."""
     if not 0 <= start < stop <= lay.rows:
         raise MemoryViewError(f"rows [{start}, {stop}) are not inside [0, {lay.rows})")
     if stop - start > MAX_ROWS:
         raise MemoryViewError(f"at most {MAX_ROWS} rows per request, asked {stop - start}")
-    return [lay.row_line(r) for r in range(start, stop)]
+    return [lay.row_line(r, marks) for r in range(start, stop)]
 
 
-__all__ = ["MAX_ROWS", "MemoryLayout", "MemoryViewError", "fold", "layout_of", "rows", "summary"]
+__all__ = [
+    "MAX_ROWS",
+    "Marks",
+    "MemoryLayout",
+    "MemoryViewError",
+    "fold",
+    "layout_of",
+    "rows",
+    "summary",
+]

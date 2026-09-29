@@ -67,8 +67,9 @@ from typing import Any
 from snax_forge.snax_model.dma import DIRECTIONS
 from snax_forge.snax_model.scenario import ClusterConfig, Outputs, read_outputs
 
-from . import memory
+from . import memory, movement
 from .memory import MemoryLayout, MemoryViewError
+from .movement import MovementUnavailable
 
 # =============================================================================
 # One run
@@ -87,6 +88,7 @@ class RunView:
     times: list[int] = field(default_factory=list)  # events[i]["t"], for bisect
     spans: dict[str, list[tuple[int, int]]] = field(default_factory=dict)  # task_spans, per block
     layouts: dict[str, MemoryLayout] = field(default_factory=dict, repr=False)  # per memory, lazy
+    moves: Any = field(default=None, repr=False)  # movement.Index, or why it has none; lazy
 
     @property
     def total_cycles(self) -> int:
@@ -149,24 +151,114 @@ def _layout(rv: RunView, mem: str) -> MemoryLayout:
     return rv.layouts[mem]
 
 
-def memory_view(rv: RunView) -> dict[str, Any]:
+MARKS = ("conflicts",)
+
+
+def _marks(rv: RunView, mem: str, marks: str | None) -> memory.Marks | None:
+    """The fold marks asked for: ``conflicts`` gives L1's conflict counts per word (D97)."""
+    if marks is None:
+        return None
+    if marks not in MARKS:
+        raise MemoryViewError(f"marks must be one of {list(MARKS)}, got {marks!r}")
+    return movement.conflict_marks(moves(rv)) if mem == "l1" else {}
+
+
+def memory_view(rv: RunView, marks: str | None = None) -> dict[str, Any]:
     """/api/run/<name>/memory: per memory its geometry, regions, use and folded lines
-    (memory.py). A run without regions gets the geometry and ``has_regions`` false."""
+    (memory.py). A run without regions gets the geometry and ``has_regions`` false.
+    ``marks="conflicts"`` folds L1 with its conflict counts (needs a beat trace)."""
     return {
         "name": rv.name,
         "has_regions": bool(rv.outputs.regions),
-        "memories": [memory.summary(_layout(rv, m)) for m in memories(rv)],
+        "marks": marks,
+        "memories": [memory.summary(_layout(rv, m), _marks(rv, m, marks)) for m in memories(rv)],
     }
 
 
-def memory_rows(rv: RunView, mem: str, start: int, stop: int) -> dict[str, Any]:
+def memory_rows(
+    rv: RunView, mem: str, start: int, stop: int, marks: str | None = None
+) -> dict[str, Any]:
     """/api/run/<name>/memory/<mem>/rows: rows ``start <= r < stop`` in full."""
+    rows = memory.rows(_layout(rv, mem), start, stop, _marks(rv, mem, marks))
+    return {"mem": mem, "from": start, "to": stop, "rows": rows}
+
+
+# =============================================================================
+# Data movement (VIS4b, D97)
+# =============================================================================
+
+
+def moves(rv: RunView) -> movement.Index:
+    """The run's movement index, built once per load; raises MovementUnavailable with the
+    reason when the trace cannot give one."""
+    if rv.moves is None:
+        try:
+            rv.moves = movement.build_index(
+                rv.events,
+                rv.cluster,
+                _ports(rv),
+                {m: _layout(rv, m) for m in memories(rv)},
+                rv.spans,
+                rv.outputs.trace,
+            )
+        except MovementUnavailable as e:
+            rv.moves = e
+    if isinstance(rv.moves, MovementUnavailable):
+        raise rv.moves
+    return rv.moves
+
+
+def _ports(rv: RunView) -> dict[str, dict[str, Any]]:
+    """The profile's xbar ports as plain dicts (owner, width, counts)."""
+    return rv.outputs.profile.to_dict()["ports"]
+
+
+def _dmas(rv: RunView) -> set[str]:
+    return {c.name for c in rv.cluster.components if c.kind == "dma"}
+
+
+def _unavailable(rv: RunView, e: MovementUnavailable) -> dict[str, Any]:
+    return {"name": rv.name, "available": False, "reason": str(e)}
+
+
+def movement_view(rv: RunView) -> dict[str, Any]:
+    """/api/run/<name>/movement: residency per region and memory, patterns per port and
+    task, and the conflict counts, or ``available`` false with the reason."""
+    try:
+        idx = moves(rv)
+    except MovementUnavailable as e:
+        return _unavailable(rv, e)
+    c = movement.conflicts(idx)
     return {
-        "mem": mem,
-        "from": start,
-        "to": stop,
-        "rows": memory.rows(_layout(rv, mem), start, stop),
+        "name": rv.name,
+        "available": True,
+        "filtered": idx.filtered,
+        "residency": movement.residency(idx, rv.outputs.regions, _dmas(rv)),
+        "patterns": movement.patterns(idx, rv.spans, _ports(rv)),
+        "conflicts": {k: c[k] for k in ("count", "banks", "ports")},
     }
+
+
+def journey_view(rv: RunView, region: str, index: Sequence[int] | int) -> dict[str, Any]:
+    """/api/run/<name>/journey?region=A&index=5: every hop of one element (movement.py)."""
+    try:
+        idx = moves(rv)
+    except MovementUnavailable as e:
+        return _unavailable(rv, e)
+    return {
+        "name": rv.name,
+        "available": True,
+        **movement.journey(idx, rv.outputs.regions, region, index),
+    }
+
+
+def conflicts_view(rv: RunView, start: int = 0, stop: int | None = None) -> dict[str, Any]:
+    """/api/run/<name>/conflicts?from=A&to=B: the L1 conflicts placed on the layout."""
+    try:
+        idx = moves(rv)
+    except MovementUnavailable as e:
+        return _unavailable(rv, e)
+    return {"name": rv.name, "available": True, **movement.conflicts(idx, start, stop)}
 
 
 # =============================================================================
@@ -422,13 +514,16 @@ __all__ = [
     "RunSet",
     "RunView",
     "busy_window",
+    "conflicts_view",
     "events_window",
     "fifo_windows",
+    "journey_view",
     "load_run",
     "memories",
     "memory_rows",
     "memory_view",
     "merge",
+    "movement_view",
     "owners_of",
     "run_detail",
     "run_names",

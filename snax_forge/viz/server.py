@@ -19,16 +19,28 @@ Routes (every answer is JSON except the static files):
                                             given (repeat it, or separate names
                                             with commas; k is D57)
     GET  /api/run/<name>/fifo               FIFO busy window per streamer (D56)
-    GET  /api/run/<name>/memory             per memory its geometry, regions and
-                                            folded lines (D96)
-    GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B
+    GET  /api/run/<name>/memory[?marks=conflicts]
+                                            per memory its geometry, regions and
+                                            folded lines (D96); with marks, L1
+                                            folded with its conflict counts (D97)
+    GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=conflicts]
                                             rows A <= r < B in full, at most 256
+    GET  /api/run/<name>/movement           residency, patterns and conflict
+                                            counts (D97)
+    GET  /api/run/<name>/journey?region=R&index=I
+                                            every hop of element R[I] (I a flat
+                                            index, or indices separated by commas)
+    GET  /api/run/<name>/conflicts?from=A&to=B
+                                            the L1 conflicts with A <= t < B,
+                                            placed on the layout
     POST /api/reload                        read every run directory again
 
 All the work is in api.py; this module only parses paths and queries and
 turns results and errors into responses: 404 for an unknown run, memory or
-file, 400 for a bad query, 500 with the message when a reload fails (the
-old runs stay loaded).
+file, 400 for a bad query (marks on a run without a beat trace included, with
+the reason), 500 with the message when a reload fails (the old runs stay
+loaded). The movement routes answer a run without a beat trace with
+``available`` false and the reason.
 """
 
 from __future__ import annotations
@@ -67,6 +79,11 @@ def _int_arg(q: dict[str, list[str]], key: str, default: int | None) -> int | No
         return int(vals[-1])
     except ValueError as e:
         raise _BadRequest(f"{key} must be an integer, got {vals[-1]!r}") from e
+
+
+def _str_arg(q: dict[str, list[str]], key: str) -> str | None:
+    vals = q.get(key)
+    return vals[-1] if vals else None
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -136,8 +153,8 @@ class Handler(BaseHTTPRequestHandler):
             a = _int_arg(q, "from", 0) or 0
             b = _int_arg(q, "to", a + api.memory.MAX_ROWS)
             try:
-                self._json(api.memory_rows(rv, parts[3], a, b or 0))
-            except api.MemoryViewError as e:
+                self._json(api.memory_rows(rv, parts[3], a, b or 0, _str_arg(q, "marks")))
+            except (api.MemoryViewError, api.MovementUnavailable) as e:
                 raise _BadRequest(str(e)) from e
             return
         if len(parts) in (2, 3) and parts[0] == "run":
@@ -160,7 +177,29 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(api.fifo_windows(rv))
                 return
             if parts[2] == "memory":
-                self._json(api.memory_view(rv))
+                try:
+                    self._json(api.memory_view(rv, _str_arg(q, "marks")))
+                except (api.MemoryViewError, api.MovementUnavailable) as e:
+                    raise _BadRequest(str(e)) from e
+                return
+            if parts[2] == "movement":
+                self._json(api.movement_view(rv))
+                return
+            if parts[2] == "journey":
+                region = _str_arg(q, "region")
+                index = _str_arg(q, "index")
+                if not region or index is None:
+                    raise _BadRequest("give region=R and index=I (a flat index or i,j,...)")
+                try:
+                    idx = [int(x) for x in index.split(",")]
+                    self._json(api.journey_view(rv, region, idx[0] if len(idx) == 1 else idx))
+                except ValueError as e:
+                    raise _BadRequest(str(e)) from e
+                return
+            if parts[2] == "conflicts":
+                a = _int_arg(q, "from", 0)
+                b = _int_arg(q, "to", None)
+                self._json(api.conflicts_view(rv, a or 0, b))
                 return
         self._error(HTTPStatus.NOT_FOUND, "unknown API route /api/" + "/".join(parts))
 

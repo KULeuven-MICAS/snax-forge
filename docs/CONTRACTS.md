@@ -549,7 +549,8 @@ with control overhead (section 7 of ARCHITECTURE.md, deferred) and FIFO occupanc
 over the owner's busy window (D56, shown by the viewer since VIS1). The
 first is open item 11; the second closed it for the views.
 
-**Filter** (D49). A beat-level run writes roughly a kilobyte per cycle, so a
+**Filter** (D49). A beat-level run writes about a kilobyte per word the
+accelerator reads or writes (4.4 MB for vecadd at N = 4096, open item 39), so a
 long run needs `--trace-source NAME` (repeatable) or `--trace-window A:B`.
 These drop beat events only; the task-level skeleton and every profile number
 stay complete, and `trace_meta.json` records what was filtered.

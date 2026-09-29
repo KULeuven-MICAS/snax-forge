@@ -72,3 +72,26 @@ def test_memory_routes(tmp_path):
         assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=x") == 400
         assert status_of(srv, "/api/run/vecadd/memory/l3/rows") == 404
         assert status_of(srv, "/api/run/nope/memory") == 404
+
+
+def test_movement_routes(tmp_path):
+    """The data movement routes (D97): movement, journey, conflicts and marks."""
+    beat = run_dir(tmp_path / "beat", "vecadd_conflict", "beat")
+    task = run_dir(tmp_path / "task", "vecadd", "task")
+    with serving([beat, task]) as srv:
+        m = get_json(srv, "/api/run/beat/movement")
+        assert m["available"] and m["conflicts"]["count"] == 28
+        j = get_json(srv, "/api/run/beat/journey?region=B&index=8")
+        assert j["element"] == "B[8]" and any(h["act"] == "held back" for h in j["hops"])
+        c = get_json(srv, "/api/run/beat/conflicts?from=44&to=45")
+        assert c["count"] == 4
+        marked = get_json(srv, "/api/run/beat/memory?marks=conflicts")
+        assert marked["marks"] == "conflicts" and "marks" in marked["memories"][0]["lines"][0]
+        rows = get_json(srv, "/api/run/beat/memory/l1/rows?from=4&to=5&marks=conflicts")
+        assert sum(rows["rows"][0]["marks"]) == 4
+        assert get_json(srv, "/api/run/task/movement")["available"] is False
+        assert status_of(srv, "/api/run/task/memory?marks=conflicts") == 400
+        assert status_of(srv, "/api/run/beat/memory?marks=nope") == 400
+        assert status_of(srv, "/api/run/beat/journey?region=B") == 400
+        assert status_of(srv, "/api/run/beat/journey?region=B&index=99") == 400
+        assert status_of(srv, "/api/run/beat/journey?region=B&index=x") == 400
