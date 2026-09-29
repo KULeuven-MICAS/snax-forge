@@ -38,6 +38,8 @@ from snax_forge.snax_model.scenario import (
     ClusterConfig,
     MemoryInitError,
     PortAttachError,
+    Region,
+    RegionError,
     Scenario,
     ScenarioError,
     UnknownAccelKind,
@@ -332,6 +334,58 @@ def test_output_files_reload(tmp_path):
     assert len(lines) == len(res.trace.events)
 
 
+def test_regions_reach_run_json_and_come_back(tmp_path):
+    """The scenario's regions are written to run.json and read back as Regions (D95)."""
+    sc = load("vecadd")
+    assert [(r.name, r.mem, r.base) for r in sc.regions] == [
+        ("A", "l2", 0), ("A", "l1", 0), ("B", "l2", 512),
+        ("B", "l1", 576), ("C", "l2", 1024), ("C", "l1", 1152),
+    ]  # fmt: skip
+    write_outputs(run(sc), tmp_path)
+    back = read_outputs(tmp_path)
+    assert back.regions == sc.regions
+    assert back.run["regions"] == [r.to_dict() for r in sc.regions]
+    assert list(back.run)[:6] == [
+        "scenario", "cluster_file", "trace_level", "total_cycles", "cluster", "regions"
+    ]  # fmt: skip
+
+
+def test_regions_do_not_change_the_run():
+    """The model ignores regions: the same run with and without them."""
+    sc = load("vecadd")
+    bare = copy.deepcopy(sc)
+    bare.regions = []
+    a, b = run(sc, trace_level="beat"), run(bare, trace_level="beat")
+    assert a.total_cycles == b.total_cycles == 77
+    assert a.profile == b.profile and a.trace.to_dict() == b.trace.to_dict()
+    assert np.array_equal(a.l1, b.l1) and np.array_equal(a.l2, b.l2)
+
+
+def test_a_run_without_regions(tmp_path):
+    """A scenario without regions writes an empty list; an older run.json without the key
+    reads back as no regions."""
+    sc = load("dma")
+    assert sc.regions == [] and sc.to_dict()["regions"] == []
+    older = {k: v for k, v in sc.to_dict().items() if k != "regions"}
+    assert Scenario.from_dict(older, base_dir=sc.base_dir) == sc  # the key may be left out
+    write_outputs(run(sc), tmp_path)
+    assert read_outputs(tmp_path).regions == []
+    info = json.loads((tmp_path / "run.json").read_text())
+    del info["regions"]
+    (tmp_path / "run.json").write_text(json.dumps(info))
+    assert read_outputs(tmp_path).regions == []
+
+
+def test_region_addresses():
+    r = Region("M", "l1", 64, (4, 8), (8 * 8, 8))  # row-major 4 x 8
+    assert r.size == 32 and r.span() == (64, 64 + 3 * 64 + 7 * 8)
+    assert r.address((2, 3)) == 64 + 2 * 64 + 3 * 8
+    back = Region.from_dict(json.loads(json.dumps(r.to_dict())))
+    assert back == r and back.to_dict() == {
+        "name": "M", "mem": "l1", "base": 64, "shape": [4, 8], "strides": [64, 8]
+    }  # fmt: skip
+
+
 def test_trace_off_removes_stale_trace_files(tmp_path):
     assert cli("vecadd", tmp_path, "--trace", "task") == 0
     assert (tmp_path / "trace.jsonl").exists()
@@ -415,6 +469,17 @@ def _without_l2(d):
     cl["components"] = [c for c in cl["components"] if c["kind"] != "dma"]
     cl["register_map"]["blocks"].remove("dma")
     d["program"] = []
+    d["regions"] = [r for r in d["regions"] if r["mem"] != "l2"]
+
+
+def _without_l2_regions(d):
+    """No L2 in the cluster, but the L2 regions kept: only the regions are wrong."""
+    _without_l2(d)
+    d["regions"].append({"name": "A", "mem": "l2", "base": 0, "shape": [64], "strides": [8]})
+
+
+def _region(d, i, **kw):
+    d["regions"][i].update(kw)
 
 
 BROKEN = {
@@ -440,6 +505,14 @@ BROKEN = {
     "mem npy missing": (MemoryInitError, lambda d: d["memory"][0].update(npy="nope.npy")),
     "mem no l2": (MemoryInitError, lambda d: _without_l2(d)),
     "unknown key": (ScenarioError, lambda d: _comp(d, "acc_a")["config"].update(fifo_dpeth=4)),
+    "region outside": (RegionError, lambda d: _region(d, 1, base=8192 - 8 * 63)),  # one past
+    "region below": (RegionError, lambda d: _region(d, 1, strides=[-8])),
+    "region misaligned": (RegionError, lambda d: _region(d, 3, base=580)),
+    "region no l2": (RegionError, lambda d: _without_l2_regions(d)),
+    "region twice": (RegionError, lambda d: d["regions"].append(dict(d["regions"][0]))),
+    "region mem": (RegionError, lambda d: _region(d, 0, mem="l3")),
+    "region shape": (RegionError, lambda d: _region(d, 0, shape=[8, 8])),
+    "region key": (RegionError, lambda d: _region(d, 0, stride=[8])),
     "no controller": (ScenarioError, lambda d: d["cluster"]["components"].pop()),
 }
 

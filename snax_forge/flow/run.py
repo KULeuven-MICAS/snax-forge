@@ -8,8 +8,9 @@
       -> SNAX-LOWER     the cluster file and the task list          cluster.json
                         (lowered once to the program)               tasks.json
       -> scenario       the kernel's make_inputs, each input at its
-                        container's layout in its first memory     scenario.json
-                                                                    <C>.npy
+                        container's layout in its first memory,    scenario.json
+                        and one region per container and memory    <C>.npy
+                        from the memory plan (D95)
       -> SNAX-MODEL     the run                                     run/
       -> check          every ``inout`` container, read back from its last
                         memory through its layout, against the kernel's
@@ -48,6 +49,7 @@ from snax_forge.sdfg.paths import _repo_root
 from snax_forge.snax_model.scenario import (
     ClusterConfig,
     MemInit,
+    Region,
     RunResult,
     Scenario,
     run,
@@ -116,6 +118,15 @@ def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
         if str(arr.dtype) != cont.dtype:
             raise FlowError(f"inputs: {c} is {arr.dtype}, the container is {cont.dtype}")
     return inputs
+
+
+def regions_of(point: DesignPoint) -> list[Region]:
+    """One region per container per memory, from the memory plan (D95), in its order."""
+    return [
+        Region(c, mem, lay.base, lay.shape, lay.strides)
+        for c, mems in point.memory.layouts.items()
+        for mem, lay in mems.items()
+    ]
 
 
 def read_container(point: DesignPoint, result: RunResult, c: str) -> tuple[str, np.ndarray]:
@@ -219,7 +230,10 @@ def run_flow(
         mem = "l2" if "l2" in mems else "l1"
         np.save(out / f"{c}.npy", np.ascontiguousarray(arr), allow_pickle=False)
         fills.append(MemInit(mem, mems[mem].base, npy=f"{c}.npy"))
-    scenario = Scenario(name, cluster, fills, program, cluster_ref="cluster.json", base_dir=out)
+    scenario = Scenario(
+        name, cluster, fills, program, cluster_ref="cluster.json", base_dir=out,
+        regions=regions_of(point),
+    )  # fmt: skip
     scenario.save(out / "scenario.json")
 
     # SNAX-MODEL and the check

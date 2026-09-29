@@ -384,8 +384,8 @@ the tests (D41). Two files, because one cluster serves many programs:
 
 * the **cluster file** (section 2), shared;
 * the **scenario file**: `name`, optional `max_cycles`, `cluster` (a path
-  relative to the scenario file, or the cluster object inline), `memory` and
-  `program`.
+  relative to the scenario file, or the cluster object inline), `memory`,
+  `regions` and `program`.
 
 <!-- snippet: scenarios/vecadd/scenario.json -->
 ```json
@@ -406,9 +406,38 @@ exactly one source:
 | `npy` | a `.npy` file, path relative to the scenario file |
 | `random` | `seed`, `n`, `low`, `high`: `default_rng(seed).integers(low, high, n)`, integers only (D28) |
 
+`regions` names the data the scenario places (D95), for the views; the model
+does not use it, and a run is the same without it. Each region has a `name`
+(the container), `mem` (`"l1"` or `"l2"`), a byte `base`, a `shape` and one
+byte stride per dimension (`strides`): element `i` is at
+`base + sum(i[d] * strides[d])`, the form of a memory-plan layout (section
+15). The flow writes one per container and memory from the memory plan, in
+its order; vecadd and vecadd_conflict declare theirs by hand, the other
+scenarios have none. The list is always written, empty or not, and may be left
+out of a file.
+
+<!-- snippet: scenarios/vecadd/scenario.json -->
+```json
+ "regions": [
+  {"name": "A", "mem": "l2", "base": 0, "shape": [64], "strides": [8]},
+  {"name": "A", "mem": "l1", "base": 0, "shape": [64], "strides": [8]},
+  {"name": "B", "mem": "l2", "base": 512, "shape": [64], "strides": [8]},
+  {"name": "B", "mem": "l1", "base": 576, "shape": [64], "strides": [8]},
+  {"name": "C", "mem": "l2", "base": 1024, "shape": [64], "strides": [8]},
+  {"name": "C", "mem": "l1", "base": 1152, "shape": [64], "strides": [8]}
+ ],
+```
+
+When a scenario is made, each region must lie inside its memory, with its base
+and strides on element boundaries, and a name may appear once per memory
+(`RegionError`, a `ScenarioError`). Regions may overlap, since a buffer can
+serve two containers. The model does not check that a region matches a fill
+or a program.
+
 The run writes into a directory (D44, D50): `run.json` (scenario name,
 cluster file, trace level, total cycles, the cluster configuration, the
-register map, the `csr_read` values), `profile.json`, `trace.jsonl` and
+scenario's regions, the register map, the `csr_read` values),
+`profile.json`, `trace.jsonl` and
 `trace_meta.json` when traced, `l1.npy` and `l2.npy` (flat words
 `[n_words, elems_per_word]` in address order). Files a run does not produce
 are removed, so the directory always matches its `run.json`. The bytes are

@@ -55,6 +55,11 @@ def test_vecadd_from_the_kernel(tmp_path):
     assert got.profile.functional_check == f.check
     assert got.run["trace_level"] == "task"  # the default (D94): the schedule has class runs
     assert {"acc", "acc_a", "acc_b", "acc_out", "dma", "ctl"} <= set(got.trace.intervals)
+    # one region per container and memory, from the memory plan (D95)
+    assert got.regions == f.scenario.regions and len(got.regions) == 6
+    for r in got.regions:
+        lay = f.point.memory.layouts[r.name][r.mem]
+        assert (r.base, r.shape, r.strides) == (lay.base, lay.shape, lay.strides)
 
 
 def test_with_vecadds_places_it_is_scenarios_vecadd(tmp_path):
@@ -64,6 +69,7 @@ def test_with_vecadds_places_it_is_scenarios_vecadd(tmp_path):
     assert f.passed and f.result.total_cycles == 77
     assert f.name == "vecadd_B.l1.base576_C.l1.base1152" and f.point.name == "vecadd"
     assert (out / "tasks.json").read_text() == (SCEN / "vecadd" / "tasks.json").read_text()
+    assert f.scenario.regions == Scenario.load(SCEN / "vecadd" / "scenario.json").regions
     assert (out / "cluster.json").read_text() == (SCEN / "clusters" / "alu4.json").read_text()
     assert TaskList.load(out / "tasks.json") == TaskList.load(SCEN / "vecadd" / "tasks.json")
     want = run(Scenario.load(SCEN / "vecadd" / "scenario.json")).profile.to_dict()

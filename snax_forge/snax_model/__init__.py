@@ -33,6 +33,7 @@ from .mem import (
 from .profile import Profile, build_profile
 from .scenario import (
     ClusterConfig,
+    Region,
     RunResult,
     Scenario,
     ScenarioError,
@@ -94,6 +95,7 @@ __all__ = [
     "Phase",
     "Port",
     "Profile",
+    "Region",
     "RegisterMap",
     "RunResult",
     "Scenario",

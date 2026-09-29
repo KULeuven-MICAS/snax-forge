@@ -6,6 +6,22 @@ kernel's reference and the reference executor (run.py). The command line is
 ``python -m snax_forge.flow`` (pixi ``flow``).
 """
 
-from .run import Flow, FlowError, default_name, functional_check, read_container, run_flow
+from .run import (
+    Flow,
+    FlowError,
+    default_name,
+    functional_check,
+    read_container,
+    regions_of,
+    run_flow,
+)
 
-__all__ = ["Flow", "FlowError", "default_name", "functional_check", "read_container", "run_flow"]
+__all__ = [
+    "Flow",
+    "FlowError",
+    "default_name",
+    "functional_check",
+    "read_container",
+    "regions_of",
+    "run_flow",
+]

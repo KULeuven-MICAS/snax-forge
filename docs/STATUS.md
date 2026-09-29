@@ -87,7 +87,7 @@ tables as they were written are in git history.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| VIS4 | Design point view: memory map, accelerator instances and parameters | DP1b, VIS1 | Every buffer and instance appears with correct addresses and banks | todo |
+| VIS4a | Memory layout, a tab of the run viewer (plan `claude/m4b-plan.md`): (1) `regions` in the scenario and `run.json`, filled by the flow (D95, done); (2) the memory API with folded rows; (3) the memory tab and bank tooltips | VIS1, E2E1, FLOW1 | Region round trip and a run without regions (tests/snax_model), the flow's regions equal its memory plan and, pinned, `scenarios/vecadd`'s (tests/flow); then the fold and expansion tests of parts 2 and 3 | `wip` |
 | VIS6 | Diff between two runs: design point fields, profile metrics, timelines side by side | VIS2–VIS4 | For two `vecadd` runs differing only in lanes, exactly that field and its effects are flagged | todo |
 | VIS7 | Compressed trace summary for LLM use | MOD8 | Under a size limit; numbers equal the profile | todo |
 | LOOP1 | One documented iteration: run, read views, edit the recipe, rerun, diff (D72) | VIS6, VIS7 | Checked-in example with both recipes, their design points and the diff page; cycle change matches what the views predicted | todo |
@@ -167,7 +167,9 @@ way in the order FLOW1, VIS4a, VIS4b, REP1, LOOP1; each patch replaces the
 rows below that it changes. FLOW1 is done (D94): flow runs are traced at
 `task` level and each `--set` gives a folder of its own, so
 `pixi run view out/flow/vecadd/run out/flow/vecadd_W8/run` shows both.
-Next is VIS4a: regions in the scenario, then the memory tab.
+VIS4a's first part is done (D95): a scenario names its data as regions,
+which `run.json` records and the flow fills from the memory plan. Next is the
+memory API with folded rows, then the memory tab.
 
 ## Open Items
 

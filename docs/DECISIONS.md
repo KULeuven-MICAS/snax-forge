@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D95**.
+  area tag. Next free number: **D96**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -30,7 +30,7 @@ By area:
 |---|---|
 | scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
-| scenario | D41 D42 D65 D67 D83 |
+| scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 |
 | brm | D3 D5 D15 D68 D70 D82 |
 | dfg | D1 D2 D19 D71 D77 D78 |
@@ -360,3 +360,9 @@ memory paths without their prefix), so runs that differ only in the platform or 
 no longer overwrite each other. The design point and its task list keep the name of the recipe
 and its params, so pinning B and C still gives `scenarios/vecadd/tasks.json`, and the viewer names
 a flow's `run/` after its folder. Amends D55 (run names) and D90. → `flow/run.py`, `viz/api.py`.
+
+**D95** · scenario — A scenario may name its data: `regions` (name, memory, base, shape, strides),
+which the model ignores and `run.json` records, so a run directory says where its data lives as it
+says which hardware ran it (D50). The flow fills them from the memory plan; vecadd and
+vecadd_conflict declare theirs, and a region must fit its memory when the scenario is made.
+Amends D44, D65. → C§6.

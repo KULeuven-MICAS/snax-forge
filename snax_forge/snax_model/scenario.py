@@ -11,7 +11,7 @@ expected results live in the tests (D41). Two JSON files:
   scenarios can share one;
 * the scenario file (``Scenario``): ``name``, optional ``max_cycles``,
   ``cluster`` (a path relative to the scenario file, or the cluster object
-  inline), ``memory`` and ``program``.
+  inline), ``memory``, ``regions`` and ``program``.
 
 Component order
 ---------------
@@ -46,6 +46,20 @@ Memory
 ``low``, ``high``: ``default_rng(seed).integers(low, high, n)``, integers
 only as D28 asks). Words are ``[n]`` or ``[n, elems_per_word]``.
 
+Regions (D95)
+-------------
+``regions`` names the data a scenario places, for the views: each has a
+``name``, ``mem``, byte ``base``, ``shape`` and one byte stride per
+dimension (``strides``), the form of a memory-plan layout, so element
+``i`` is at ``base + sum(i[d] * strides[d])``. The model does not use them:
+a run is the same with or without. They are checked against the cluster
+when the scenario is made (the memory exists, every element lies inside it
+at an element boundary, one region per name and memory) and written to
+``run.json``, so a run directory says where its data lives as it says which
+hardware ran it (D50). The flow fills them from the memory plan; a
+hand-written scenario may leave them empty. Regions may overlap (a buffer
+reused by two containers).
+
 Registries (principle 6, D43)
 -----------------------------
 * component kinds: ``register_component(kind, builder)``; built in:
@@ -61,7 +75,8 @@ Output (D44)
 ------------
 ``run`` returns a ``RunResult``; ``write_outputs`` writes into a directory:
 
-    run.json         scenario, trace_level, total_cycles, register_map, reads
+    run.json         scenario, cluster_file, trace_level, total_cycles, cluster,
+                     regions, register_map, reads
     profile.json     Profile.to_dict()
     trace.jsonl      one event per line (task or beat level only)
     trace_meta.json  Trace.to_dict() without events (task or beat level only)
@@ -92,7 +107,7 @@ import numpy as np
 
 from .accel import AccelConfig, Accelerator, elementwise_stub, reduce_stub
 from .cluster import Cluster
-from .config import check_keys, plain, to_json
+from .config import Config, check_keys, plain, to_json
 from .ctrl import (
     Command,
     Controller,
@@ -143,6 +158,10 @@ class UnknownOpError(ScenarioError):
 
 class PortAttachError(ScenarioError):
     """An accelerator port attached wrongly: unknown, missing, doubled or mismatched."""
+
+
+class RegionError(ScenarioError):
+    """A region that does not fit its memory, or a name given twice (D95)."""
 
 
 class MemoryInitError(ScenarioError):
@@ -578,6 +597,76 @@ def _fill(fill: MemInit, l1: L1Memory, l2: L2Memory | None, base_dir: Path | Non
 
 
 # =============================================================================
+# Regions (D95)
+# =============================================================================
+
+
+@dataclass(frozen=True)
+class Region(Config):
+    """Where a named piece of data lives (module doc): ``base`` + one byte stride per
+    dimension over ``shape``. Read by the views only; the model ignores it."""
+
+    name: str
+    mem: str
+    base: int
+    shape: tuple[int, ...]
+    strides: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "shape", tuple(int(x) for x in self.shape))
+        object.__setattr__(self, "strides", tuple(int(x) for x in self.strides))
+        where = f"region {self.name!r} in {self.mem}"
+        if not self.name:
+            raise RegionError("region: needs a name")
+        if self.mem not in ("l1", "l2"):
+            raise RegionError(f"{where}: mem must be 'l1' or 'l2'")
+        if not self.shape or len(self.shape) != len(self.strides):
+            raise RegionError(f"{where}: {len(self.shape)} extents, {len(self.strides)} strides")
+        if any(e < 1 for e in self.shape):
+            raise RegionError(f"{where}: extents must be >= 1, got {list(self.shape)}")
+
+    @property
+    def size(self) -> int:
+        """Number of elements."""
+        return int(np.prod(self.shape))
+
+    def span(self) -> tuple[int, int]:
+        """The lowest and highest byte address of an element."""
+        lo = hi = self.base
+        for e, st in zip(self.shape, self.strides, strict=True):
+            lo += min(0, (e - 1) * st)
+            hi += max(0, (e - 1) * st)
+        return lo, hi
+
+    def address(self, index: Sequence[int]) -> int:
+        """Byte address of one element."""
+        return self.base + sum(i * st for i, st in zip(index, self.strides, strict=True))
+
+
+def check_regions(regions: Sequence[Region], cluster: ClusterConfig) -> None:
+    """Each region inside its memory, at element boundaries; one per (name, mem)."""
+    seen: set[tuple[str, str]] = set()
+    for r in regions:
+        where = f"region {r.name!r} in {r.mem}"
+        if (r.name, r.mem) in seen:
+            raise RegionError(f"{where}: given twice")
+        seen.add((r.name, r.mem))
+        cfg = cluster.l1 if r.mem == "l1" else cluster.l2
+        if cfg is None:
+            raise RegionError(f"{where}: the cluster has no L2")
+        elem = cfg.word_bytes // cfg.elems_per_word
+        lo, hi = r.span()
+        end = cfg.base_addr + cfg.size_bytes
+        if (r.base - cfg.base_addr) % elem or any(st % elem for st in r.strides):
+            raise RegionError(
+                f"{where}: base {r.base} and strides {list(r.strides)} must be multiples of "
+                f"the {elem}-byte element"
+            )
+        if lo < cfg.base_addr or hi + elem > end:
+            raise RegionError(f"{where}: [{lo}, {hi + elem}) lies outside [{cfg.base_addr}, {end})")
+
+
+# =============================================================================
 # Program: raw or named registers, one command each (D42)
 # =============================================================================
 
@@ -670,6 +759,16 @@ def named(cmd: Command, regmap: RegisterMap) -> ScenarioCommand:
     return cmd
 
 
+def region_from_dict(d: Mapping[str, Any]) -> Region:
+    """A region from its dict; unknown keys and bad values are RegionErrors."""
+    try:
+        return Region.from_dict(d)
+    except RegionError:
+        raise
+    except (TypeError, ValueError) as e:
+        raise RegionError(f"region {dict(d)}: {e}") from e
+
+
 # =============================================================================
 # Scenario
 # =============================================================================
@@ -687,6 +786,10 @@ class Scenario:
     max_cycles: int | None = None
     cluster_ref: str | None = None
     base_dir: Path | None = field(default=None, compare=False)
+    regions: list[Region] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        check_regions(self.regions, self.cluster)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"name": self.name}
@@ -694,12 +797,15 @@ class Scenario:
             d["max_cycles"] = self.max_cycles
         d["cluster"] = self.cluster_ref if self.cluster_ref is not None else self.cluster.to_dict()
         d["memory"] = [m.to_dict() for m in self.memory]
+        d["regions"] = [r.to_dict() for r in self.regions]
         d["program"] = [c.to_dict() for c in self.program]
         return d
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], base_dir: str | Path | None = None) -> Scenario:
-        _check_keys(d, ["name", "max_cycles", "cluster", "memory", "program"], "scenario")
+        _check_keys(
+            d, ["name", "max_cycles", "cluster", "memory", "regions", "program"], "scenario"
+        )
         if "name" not in d or "cluster" not in d:
             raise ScenarioError("scenario needs 'name' and 'cluster'")
         base = None if base_dir is None else Path(base_dir)
@@ -720,6 +826,7 @@ class Scenario:
             max_cycles=None if mc is None else int(mc),
             cluster_ref=ref,
             base_dir=base,
+            regions=[region_from_dict(r) for r in d.get("regions", [])],
         )
 
     @classmethod
@@ -799,13 +906,15 @@ class RunResult:
     l2: np.ndarray | None
     cluster: dict[str, Any] = field(default_factory=dict)  # the cluster config used
     cluster_file: str | None = None  # its path as the scenario file gave it
+    regions: list[Region] = field(default_factory=list)  # the scenario's, for the views
 
     def run_info(self) -> dict[str, Any]:
         """Contents of run.json. No skip mode: output must not depend on it (D44).
 
         The cluster configuration is written out in full (D50): an output
         directory then says on its own which hardware produced it, which is
-        what a diff of two runs needs (VIS6).
+        what a diff of two runs needs (VIS6). The scenario's regions are
+        written with it (D95), so the views know where the data lives.
         """
         return {
             "scenario": self.scenario,
@@ -813,6 +922,7 @@ class RunResult:
             "trace_level": self.trace_level,
             "total_cycles": self.total_cycles,
             "cluster": self.cluster,
+            "regions": [r.to_dict() for r in self.regions],
             "register_map": self.regmap.to_dict(),
             "reads": [
                 {"cycle": c, "addr": a, "reg": self.regmap.describe(a), "value": v}
@@ -864,6 +974,7 @@ def run(
         l2=l2,
         cluster=scenario.cluster.to_dict(),
         cluster_file=scenario.cluster_ref,
+        regions=list(scenario.regions),
     )
 
 
@@ -915,6 +1026,7 @@ class Outputs:
     trace: Trace | None
     l1: np.ndarray
     l2: np.ndarray | None
+    regions: list[Region] = field(default_factory=list)  # run.json's, empty if it has none
 
 
 def read_outputs(out_dir: str | Path) -> Outputs:
@@ -927,12 +1039,14 @@ def read_outputs(out_dir: str | Path) -> Outputs:
         meta["events"] = [json.loads(line) for line in lines]
         trace = Trace.from_dict(meta)
     l2 = np.load(out / L2_FILE) if (out / L2_FILE).is_file() else None
+    run_info = json.loads((out / RUN_FILE).read_text())
     return Outputs(
-        run=json.loads((out / RUN_FILE).read_text()),
+        run=run_info,
         profile=Profile.from_dict(json.loads((out / PROFILE_FILE).read_text())),
         trace=trace,
         l1=np.load(out / L1_FILE),
         l2=l2,
+        regions=[region_from_dict(r) for r in run_info.get("regions", [])],
     )
 
 
@@ -950,6 +1064,8 @@ __all__ = [
     "NamedWrite",
     "Outputs",
     "PortAttachError",
+    "Region",
+    "RegionError",
     "RegisterMapSpec",
     "RunResult",
     "Scenario",

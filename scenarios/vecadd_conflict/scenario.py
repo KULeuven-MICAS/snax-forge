@@ -14,11 +14,13 @@ import numpy as np
 from clusters.clusters import alu4
 
 from snax_forge.lower import TaskList, lower_program
-from snax_forge.snax_model.scenario import MemInit, Scenario
+from snax_forge.snax_model.scenario import MemInit, Region, Scenario
 
 HERE = Path(__file__).resolve().parent
 N = 64
 L2_A, L2_B = 0, 512  # byte addresses of a and b in L2, packed; c is stored at 1024
+# Where A, B and C live, as the memory plan gives them (D95): per container its L2, then L1.
+PLACES = {"A": (0, 0), "B": (512, 512), "C": (1024, 1152)}
 
 
 def make() -> tuple[Scenario, dict[str, np.ndarray]]:
@@ -32,5 +34,10 @@ def make() -> tuple[Scenario, dict[str, np.ndarray]]:
         memory=[MemInit("l2", L2_A, npy="a.npy"), MemInit("l2", L2_B, npy="b.npy")],
         program=lower_program(TaskList.load(HERE / "tasks.json"), cl),
         max_cycles=5000,
+        regions=[
+            Region(c, mem, base, (N,), (8,))
+            for c, bases in PLACES.items()
+            for mem, base in zip(("l2", "l1"), bases, strict=True)
+        ],
     )
     return sc, {"a.npy": a, "b.npy": b}
