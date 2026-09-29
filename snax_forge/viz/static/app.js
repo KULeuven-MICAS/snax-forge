@@ -146,7 +146,7 @@ async function show() {
       if (shown !== `${name}/report`) renderReport(root, detail, fifo);
     } else if (view === "memory") {
       const same = shown === `${name}/memory` && (await updateMemory(detail, st));
-      if (!same) await renderMemory(root, detail, { api, status, st, setHash });
+      if (!same) await renderMemory(root, detail, { api, status, st, setHash, hashState });
     } else {
       const same = shown === `${name}/schedule` && drawnWith === withoutCycle(st);
       if (!(same && (await selectCycle(detail, st)))) {

@@ -445,7 +445,9 @@ the run directories. Views:
 - the profile report (VIS1), with FIFO occupancy also over each FIFO's busy
   window (D56)
 - the schedule: per component its classes, tasks and commands over a cycle
-  window, with a selected cycle (VIS2, D57, D58, D60)
+  window, with a selected cycle (VIS2, D57, D58, D60); on a beat-level run,
+  a tracer row per element traced from the memory tab, with every cycle the
+  element was read, written, held back or fired (VIS4b, D97)
 - the cluster view: banks, interconnect, streamers, accelerators, DMA and
   controller at the selected cycle, requests and read data apart (VIS3, D61,
   D62)
@@ -471,7 +473,7 @@ the run directories. Views:
   arrival, first use or wait, the rows then folding by equal counts or by
   one time step (`.../memory?marks=...`); clicking a word opens a drawer
   with its element's journey, firings and conflict cycles, each cycle
-  selectable there or in the schedule
+  selectable there or in the schedule, where the element can also be traced
 - later (M4b): a diff between two runs (VIS6)
 
 Views read the model's own dataclasses, loaded back from a run directory, not

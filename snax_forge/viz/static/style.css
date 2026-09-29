@@ -511,3 +511,11 @@ table.journey tr.bad td { color: var(--mem); }
 button.cyc { padding: 0 0.35rem; font-size: 0.9em; }
 button.cyc.link { border: none; color: var(--command); background: none; padding: 0; }
 .mem-drawer .fire { margin: 0.3rem 0 0.5rem; }
+
+/* -- tracer rows in the schedule (VIS4b, D97) ------------------------------------- */
+.sched-labels .lab.tracer { background: var(--req-bg); }
+.sched-labels .lab.tracer .lab-link { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink); text-decoration: underline dotted; cursor: pointer; }
+.sched-labels .lab.tracer .lab-x { margin-left: auto; border: none; background: none; padding: 0 0.2rem; color: var(--muted); font-size: 1.1em; line-height: 1; cursor: pointer; }
+.sched-labels .lab.tracer .lab-x:hover { color: var(--mem); }
+path.fire-mark { stroke: var(--panel); stroke-width: 1; }
+button.trace-toggle[aria-pressed="true"] { background: var(--req-bg); border-color: var(--req); color: var(--ink); }

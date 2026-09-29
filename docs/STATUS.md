@@ -81,6 +81,7 @@ tables as they were written are in git history.
 | — | housekeeping after M3: old SDFG → RTL path removed, duplicate tests and helpers removed, decision log condensed | D91–D93 |
 | FLOW1 | flow defaults for viewing: `task` trace, a folder name from every `--set`, flow runs named after their folder in the viewer | D94 |
 | VIS4a | memory tab: regions in the scenario and `run.json`, the folded memory API, the tab, element names in the cluster view's tooltips | D95, D96 |
+| VIS4b | data movement: journeys, residency, patterns, conflicts on the layout; the memory tab's cycle overlay, conflict and time modes and journey drawer; tracer rows in the schedule | D97 |
 
 ## Open Tasks
 
@@ -88,7 +89,6 @@ tables as they were written are in git history.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| VIS4b | Data movement (plan `claude/m4b-plan.md`): (1) the API: journey, residency, patterns with held-back cycles, conflicts placed on the layout and as the memory tab's marks (D97, done); (2) the memory tab's cycle overlay with conflicts, whole-run conflict counts, time colouring and the journey drawer (done); (3) optional tracer rows in the schedule | VIS2, VIS3, VIS4a | A[5]'s journey on the default flow (L2 read 13, L1 write 15, `acc_a.1` read 42, firing 1 at 45 with B[5], C[5] written 46, stored 73 and 75); B[5] on the B-pinned flow; residency windows equal the extremes of the journeys; every pattern regenerates its addresses; held-back cycles equal `stall_xbar` and the port stalls (acc_b 7 default, 0 pinned); vecadd_conflict's 28 conflicts, B waiting on A in banks 0–3 and 8–11; a repeated read feeds its firings in order; a task-level run gets the reason; arrival folds A and B at +2 cycles per row and C at +6 (tests/viz/test_movement.py); drawing by eye | `wip` |
 | VIS6 | Diff between two runs: design point fields, profile metrics, timelines side by side | VIS2–VIS4 | For two `vecadd` runs differing only in lanes, exactly that field and its effects are flagged | todo |
 | VIS7 | Compressed trace summary for LLM use | MOD8 | Under a size limit; numbers equal the profile | todo |
 | LOOP1 | One documented iteration: run, read views, edit the recipe, rerun, diff (D72) | VIS6, VIS7 | Checked-in example with both recipes, their design points and the diff page; cycle change matches what the views predicted | todo |
@@ -175,8 +175,8 @@ VIS4b's API is done (D97): an element's journey, residency, per-port
 patterns with the cycles held back, and the L1 conflicts placed on the
 layout, all from a beat trace; the memory tab draws them: the selected
 cycle's accesses and conflicts, conflict counts, arrival, use and wait
-colouring, and a drawer with each element's journey. Next is the optional
-tracer rows in the schedule, then REP1's reports.
+colouring, and a drawer with each element's journey, and the schedule traces
+chosen elements, so VIS4b is done. Next is REP1: the design and run reports.
 
 ## Open Items
 

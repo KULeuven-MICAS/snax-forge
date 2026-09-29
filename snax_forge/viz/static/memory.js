@@ -485,18 +485,15 @@ async function applyPick(cur, pick) {
     }
   }
   cur.drawer.hidden = false;
-  const [region, index] = pick.split(":");
   const body = cur.drawer.querySelector(".drawer-body");
   if (!cur.beat) {
     body.replaceChildren(h("p", { class: "note" }, "The journey needs a beat-level trace: run with --trace beat."));
     return;
   }
   body.replaceChildren(h("p", { class: "note" }, "Loading…"));
-  const cache = cacheOf(journeys, cur.detail);
-  if (!cache.has(pick)) cache.set(pick, cur.api.journey(cur.detail.name, region, index));
   let j;
   try {
-    j = await cache.get(pick);
+    j = await journeyOf(cur.api, cur.detail, pick);
   } catch (e) {
     body.replaceChildren(h("p", { class: "note" }, String(e.message || e)));
     return;
@@ -505,6 +502,12 @@ async function applyPick(cur, pick) {
   const go = (t) => h("button", { type: "button", class: "cyc", onclick: () => cur.setHash({ cycle: t }), title: "Show this cycle here" }, String(t));
   const sched = (t) => h("button", { type: "button", class: "cyc link", onclick: () => cur.setHash({ view: "schedule", cycle: t }), title: "Open the schedule at this cycle" }, "→ schedule");
   cur.drawer.querySelector(".drawer-title").textContent = j.element ?? pick;
+  const traced = tracersOf(cur.st());
+  const on = traced.includes(pick);
+  const toggle = h("button", { type: "button", class: "trace-toggle", "aria-pressed": String(on),
+    title: "A row in the schedule with every cycle this element is touched",
+    onclick: () => cur.setHash({ tracers: (on ? traced.filter((x) => x !== pick) : [...traced, pick]).join(",") || null }) },
+  on ? "✓ Traced in the schedule" : "+ Trace in the schedule");
   if (!j.available) {
     body.replaceChildren(h("p", { class: "note" }, j.reason));
     return;
@@ -521,6 +524,7 @@ async function applyPick(cur, pick) {
   const won = words.flatMap((w) => w.won);
   body.replaceChildren(h("div", {}, // h() drops nulls and flattens arrays
     h("p", { class: "note" }, `In ${j.memories.map((m) => m.toUpperCase()).join(" and ")}. Click a cycle to show it here.`),
+    h("p", {}, toggle, " ", h("button", { type: "button", class: "cyc link", onclick: () => cur.setHash({ view: "schedule" }) }, "open the schedule")),
     j.filtered ? h("p", { class: "note" }, "This beat trace is filtered (see the header): hops outside it are missing.") : null,
     h("h3", {}, "Hops"),
     hopRows.length ? h("table", { class: "journey" }, h("tbody", {}, hopRows)) : h("p", { class: "note" }, "No access to this element was traced."),
@@ -528,6 +532,21 @@ async function applyPick(cur, pick) {
     held.length || won.length ? [h("h3", {}, "Conflicts in L1"),
       held.length ? h("p", {}, `Held back in ${held.length} cycle${held.length === 1 ? "" : "s"}: `, held.map((t) => [go(t), " ", sched(t), " "])) : null,
       won.length ? h("p", {}, `Served while another port waited, in ${won.length} cycle${won.length === 1 ? "" : "s"}: `, won.map((t) => [go(t), " ", sched(t), " "])) : null] : null));
+}
+
+/** The journey of element `pick` ("A:5"), fetched once per run; shared with the schedule's tracer rows. */
+export function journeyOf(api, detail, pick) {
+  const cache = cacheOf(journeys, detail);
+  if (!cache.has(pick)) {
+    const [region, index] = pick.split(":");
+    cache.set(pick, api.journey(detail.name, region, index));
+  }
+  return cache.get(pick);
+}
+
+/** The traced elements of the hash (`tracers=A:5,B:5`), in order, without repeats. */
+export function tracersOf(st) {
+  return [...new Set((st.tracers ?? "").split(",").filter(Boolean))];
 }
 
 function drawer(setHash) {
@@ -575,7 +594,7 @@ export async function renderMemory(root, detail, ctx) {
   const cellsBy = {};
   const foldsBy = {};
   const cur = {
-    detail, api, setHash, beat, show, total, cycle: null, pick: null, decorated: [], picked: [], cellsBy, foldsBy, conflicts,
+    detail, api, setHash, beat, show, total, st: ctx.hashState, cycle: null, pick: null, decorated: [], picked: [], cellsBy, foldsBy, conflicts,
     geo: Object.fromEntries(view.memories.map((m) => [m.mem, m.geometry])),
   };
   const draw = {
@@ -609,6 +628,7 @@ export async function renderMemory(root, detail, ctx) {
   cur.drawer = drawer(setHash);
   root.replaceChildren(...[intro, bar?.el, ...view.memories.map((m) => memorySection(draw, m, colours)), cur.drawer].filter(Boolean));
   current = cur;
+  cur.tracers = st.tracers ?? "";
   await applyCycle(cur, cycleOf(st, total));
   await applyPick(cur, st.pick ?? null);
 }
@@ -622,7 +642,10 @@ export async function updateMemory(detail, st) {
   if (!cur || cur.detail !== detail || (cur.beat && st.show in SHOWS ? st.show : "") !== cur.show) return false;
   const cycle = cycleOf(st, cur.total);
   if (cycle !== cur.cycle) await applyCycle(cur, cycle);
-  if ((st.pick ?? null) !== cur.pick) await applyPick(cur, st.pick ?? null);
+  if ((st.pick ?? null) !== cur.pick || (st.tracers ?? "") !== cur.tracers) {
+    cur.tracers = st.tracers ?? "";
+    await applyPick(cur, st.pick ?? null);
+  }
   return true;
 }
 

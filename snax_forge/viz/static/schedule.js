@@ -27,6 +27,13 @@
 // cycle's event list in place (selectCycle); a selected cycle outside the
 // window moves the window to it, keeping its width (D61).
 //
+// Tracer rows (VIS4b, D97): the elements traced from the memory tab (hash
+// `tracers=A:5,B:5`) get a row each at the top, from their journey: a thin
+// line over the element's life, L1 hops in the upper half and L2 hops in the
+// lower half (request teal, read data back green, held back red), and each
+// firing that consumed or produced it as a green diamond. The label opens the
+// element in the memory tab; × stops tracing it. Beat-level runs only.
+//
 // Data: the class intervals and each block's tasks (start paired with done,
 // D60) come with the run detail; task events and FIFO counts are fetched once
 // per run (events.js); beat events only for the window and for the selected
@@ -34,7 +41,7 @@
 
 import { dec, h, int } from "./dom.js";
 import { clusterView } from "./cluster.js";
-import { elementAt, ensureRows } from "./memory.js";
+import { elementAt, ensureRows, journeyOf, tracersOf } from "./memory.js";
 import { BEAT_KINDS, GROUP, beatTraced, byOwner, classAt, describe, fifoCount, fifoIndex, onPort, taskEvents } from "./events.js";
 
 const SVG = "http://www.w3.org/2000/svg";
@@ -235,6 +242,58 @@ function buildRows(detail, win, tasks, beats, fifo, showDetail) {
   return rows;
 }
 
+// -- tracer rows ---------------------------------------------------------------------
+
+const HOP_CLASS = { read: "s-req", write: "s-req", "data back": "s-resp", "held back": "s-mem" };
+const HOP_TEXT = { read: "R", write: "W", "data back": "", "held back": "✕" };
+
+function hopTip(x) {
+  const where = x.mem === "l1" ? `bank ${x.bank}, row ${x.row}` : `beat ${x.beat}`;
+  const served = x.served ? `; bank served ${x.served.port} for ${x.served.element ?? `row ${x.served.row}`}` : "";
+  return `cycle ${x.t}: ${x.element ?? ""} ${x.mem.toUpperCase()} ${x.act} by ${x.by} (${where})${served}`;
+}
+
+function fireTip(f) {
+  const ins = Object.entries(f.inputs).map(([p, xs]) => `${p} ${xs.join(", ")}`).join("; ");
+  const outs = Object.entries(f.outputs).map(([p, xs]) => `${p} ${xs.join(", ")}`).join("; ");
+  return `cycle ${f.t}: firing ${f.n} of ${f.acc} (task ${f.task}) ${f.role} it: ${ins}${outs ? ` → ${outs}` : ""}`;
+}
+
+/** One row per traced element (module doc), from its journey. */
+function tracerRows(journeys, win) {
+  const { from, to } = win;
+  return journeys.map(({ pick, j }) => {
+    const fail = !j || !j.available;
+    return {
+      name: pick, label: fail ? pick : j.element, sub: fail ? "not traced" : "tracer", height: MAIN_H, tracer: pick,
+      title: fail ? (j?.reason ?? "no journey") : `${j.element}: L1 hops above, L2 hops below, firings as diamonds`,
+      draw(g, x, cw) {
+        if (fail) return;
+        const ts = [...j.hops.map((h) => h.t), ...j.firings.map((f) => f.t)];
+        if (!ts.length) return;
+        const a = Math.max(Math.min(...ts), from);
+        const b = Math.min(Math.max(...ts) + 1, to);
+        if (b > a) g.append(s("line", { x1: x(a), x2: x(b), y1: MAIN_H / 2, y2: MAIN_H / 2, class: "task" }, `${j.element}: cycles ${Math.min(...ts)}–${Math.max(...ts)}`));
+        for (const hop of j.hops) {
+          if (hop.t < from || hop.t >= to) continue;
+          const top = hop.mem === "l1" ? 2 : MAIN_H / 2 + 1;
+          const hgt = hop.act === "data back" ? 3 : MAIN_H / 2 - 3;
+          const y = hop.act === "data back" ? top + MAIN_H / 2 - 6 : top;
+          g.append(s("rect", { x: x(hop.t) + 0.5, y, width: Math.max(cw - 1, 0.5), height: hgt, class: HOP_CLASS[hop.act] ?? "s-req" }, hopTip(hop)));
+          const text = HOP_TEXT[hop.act];
+          if (text && cw >= 10) txt(g, { x: x(hop.t) + cw / 2, y: top + MAIN_H / 2 - 5, class: "cell-text mid on-dark" }, text);
+        }
+        for (const f of j.firings) {
+          if (f.t < from || f.t >= to) continue;
+          const cx = x(f.t) + cw / 2;
+          const r = Math.min(MAIN_H / 2 - 2, Math.max(cw / 2, 3));
+          g.append(s("path", { d: `M${cx},${MAIN_H / 2 - r} l${r},${r} l${-r},${r} l${-r},${-r} z`, class: "s-busy fire-mark" }, fireTip(f)));
+        }
+      },
+    };
+  });
+}
+
 // -- drawing -----------------------------------------------------------------------
 
 /** Tick step so that labels are at least 44 px apart. */
@@ -284,11 +343,17 @@ function chart(rows, win, cw, onPick) {
   return { svg, cursor };
 }
 
-function labels(rows) {
+function labels(rows, setHash, tracers) {
+  const tracerLabel = (r) => [
+    h("button", { type: "button", class: "lab-link", title: `Open ${r.label} in the memory tab`, onclick: () => setHash({ view: "memory", pick: r.tracer }) }, r.label),
+    h("small", {}, r.sub),
+    h("button", { type: "button", class: "lab-x", "aria-label": `Stop tracing ${r.label}`, title: "Stop tracing",
+      onclick: () => setHash({ tracers: tracers.filter((x) => x !== r.tracer).join(",") || null }) }, "×"),
+  ];
   return h("div", { class: "sched-labels", style: { width: `${LABEL_W}px` } },
     h("div", { style: { height: `${RULER_H}px` }, class: "ruler-label" }, "cycle"),
-    rows.map((r) => h("div", { class: `lab${r.detail ? " sub" : ""}`, style: { height: `${r.height}px` }, title: r.title ?? r.label },
-      h("span", {}, r.label), r.sub ? h("small", {}, r.sub) : null)));
+    rows.map((r) => h("div", { class: `lab${r.detail ? " sub" : ""}${r.tracer ? " tracer" : ""}`, style: { height: `${r.height}px` }, title: r.title ?? r.label },
+      r.tracer ? tracerLabel(r) : [h("span", {}, r.label), r.sub ? h("small", {}, r.sub) : null])));
 }
 
 // -- the cycle's event list --------------------------------------------------------
@@ -482,7 +547,15 @@ export async function renderSchedule(root, detail, ctx) {
     fifoIndex(api, detail),
   ]);
 
-  const rows = buildRows(detail, win, tasks, beats, fifo, showDetail);
+  const tracers = beat ? tracersOf(st) : [];
+  const journeys = await Promise.all(tracers.map(async (pick) => {
+    try {
+      return { pick, j: await journeyOf(api, detail, pick) };
+    } catch (e) {
+      return { pick, j: { available: false, reason: String(e.message || e) } };
+    }
+  }));
+  const rows = [...tracerRows(journeys, win), ...buildRows(detail, win, tasks, beats, fifo, showDetail)];
   // Width left for the plot: the main column less its padding, the labels and the borders.
   const cst = getComputedStyle(root);
   const pad = (Number.parseFloat(cst.paddingLeft) || 0) + (Number.parseFloat(cst.paddingRight) || 0);
@@ -506,6 +579,9 @@ export async function renderSchedule(root, detail, ctx) {
       (filtered ? " This beat trace is filtered (see the header), so some detail rows are empty." : "")
     : `Cycles ${int(from)} to ${int(to - 1)} of ${int(total)}. Task-level trace: class runs, tasks and commands; run with --trace beat for requests, read data, FIFO counts and firings.`;
 
+  const tracerNote = !beat ? null : h("p", { class: "note" }, tracers.length
+    ? "Tracer rows: L1 hops in the upper half, L2 hops in the lower half; R a read, W a write, a green strip read data back, ✕ held back, a diamond a firing. Click a label to open the element in the Memory tab."
+    : "To follow one element through the run, pick a word in the Memory tab and trace it in the schedule.");
   const legend = h("ul", { class: "legend" },
     [["busy", "Busy, firing, read data back (strip)"], ["req", "Request (accepted)"], ["mem", "Memory stall"], ["flow", "Flow stall"], ["command", "Controller command"], ["wait", "Controller wait"], ["fifo", "FIFO count (largest lane)"]]
       .map(([g, label]) => h("li", {}, h("i", { class: `key g-${g}` }), label)));
@@ -524,10 +600,10 @@ export async function renderSchedule(root, detail, ctx) {
   const keepLeft = root.querySelector(".sched-scroll")?.scrollLeft ?? 0; // survive a redraw
   const keepTop = root.querySelector(".sched-scroll")?.scrollTop ?? 0;
   const { svg, cursor } = chart(rows, win, cw, (t) => setHash({ cycle: t }));
-  const scroller = h("div", { class: "sched sched-scroll" }, labels(rows), svg);
+  const scroller = h("div", { class: "sched sched-scroll" }, labels(rows, setHash, tracers), svg);
   root.replaceChildren(
     h("section", { id: "schedule" },
-      h("h2", {}, "Schedule"), h("p", { class: "note" }, note), legend, controls, scroller),
+      h("h2", {}, "Schedule"), h("p", { class: "note" }, note), tracerNote, legend, controls, scroller),
     cs.el);
   scroller.addEventListener("wheel", (ev) => onWheel(ev, scroller, { from, cw, fit, setHash }), { passive: false });
   scroller.scrollTop = keepTop;
