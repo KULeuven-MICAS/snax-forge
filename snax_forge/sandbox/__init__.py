@@ -6,8 +6,10 @@ transforms with their params, applied to an imported graph; the transforms
 (transforms.py); the pattern matchers ``bind``
 uses to recognise a BRM's pattern (patterns.py); and the runner
 (run.py), which binds the recipe's symbols, applies every step, checks each
-step against the reference executor and writes every step's graph. The
-command line is ``python -m snax_forge.sandbox RECIPE`` (pixi ``sandbox``).
+step against the reference executor and writes every step's graph. SBX2
+(D104): the ``reduce`` pattern matcher and ``bind`` of a folding output as
+one lane, its named rate from ``named_rates``. The command line is
+``python -m snax_forge.sandbox RECIPE`` (pixi ``sandbox``).
 """
 
 from .patterns import PATTERNS, match, register_pattern

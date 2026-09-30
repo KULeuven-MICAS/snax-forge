@@ -26,6 +26,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from snax_forge.lower.layout import round_up
 from snax_forge.snax_model.scenario import ClusterConfig, Region
 
 from ..viz import memory as memview
@@ -224,7 +225,7 @@ def _padding_notes(cluster: ClusterConfig, regions: list[Region]) -> list[str]:
             continue
         size = r.size * word
         if size % beat:
-            moved = -(-size // beat) * beat
+            moved = round_up(size, beat)
             notes.append(
                 f"{r.name}: {size} B, moved by the DMA as {moved // beat} whole {beat}-byte "
                 f"beat{'s' if moved > beat else ''}; bytes {r.base + size}–{r.base + moved} are "

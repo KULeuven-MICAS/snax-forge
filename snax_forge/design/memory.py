@@ -58,7 +58,7 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import parse_dim
-from snax_forge.lower.layout import Layout, moved_bytes
+from snax_forge.lower.layout import Layout, moved_bytes, round_up
 from snax_forge.snax_model.config import plain, to_json
 
 from .platform import Platform
@@ -310,10 +310,6 @@ def _extent(lay: Layout, word: int) -> tuple[int, int]:
     return lo, hi + word
 
 
-def _align(x: int, a: int) -> int:
-    return -(-x // a) * a
-
-
 def contiguous_placement(
     ctx: MemoryContext,
     layouts: dict[str, dict[str, Layout]],
@@ -338,13 +334,13 @@ def contiguous_placement(
             lo0, hi0 = _extent(lay, word)  # with base 0
             if moved:  # the DMA moves whole beats: keep the padding free (D105)
                 hi0 = lo0 + moved_bytes(lay, word, a)
-            base = _align(cursor - lo0, a)
+            base = round_up(cursor - lo0, a)
             clash = True
             while clash:
                 clash = False
                 for tlo, thi in sorted(taken):
                     if base + lo0 < thi and tlo < base + hi0:
-                        base, clash = _align(thi - lo0, a), True
+                        base, clash = round_up(thi - lo0, a), True
             bases[c][mem] = base
             taken.append((base + lo0, base + hi0))
             cursor = base + hi0

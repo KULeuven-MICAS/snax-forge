@@ -285,11 +285,11 @@ class _Importer:
                 )
             tmp = outs[0].dst
             desc = self.sdfg.arrays[tmp.data]
+            if not desc.transient or type(desc) is not dace.data.Scalar:
+                self.reduce_out[red] = outs[0].data  # written as it is, no fold
+                continue
             readers = st.out_edges(tmp)
             copy = readers[0].dst if len(readers) == 1 else None
-            if not desc.transient or type(desc) is not dace.data.Scalar:
-                self.reduce_out[red] = outs[0].data
-                continue
             ok = (
                 isinstance(copy, dn.Tasklet)
                 and len(st.in_edges(tmp)) == 1
@@ -354,7 +354,6 @@ class _Importer:
         in_ranges, out_ranges = src.subset.ndrange(), dst.subset.ndrange()
         rank = len(in_ranges)
         axes = list(range(rank)) if red.axes is None else sorted(red.axes)
-        kept = [d for d in range(rank) if d not in axes]
 
         variables: list[str] = []
         taken = set(self.outer_names)
@@ -365,39 +364,7 @@ class _Importer:
                 raise SdfgImportError(f"{what}: input dimension {d} has step {s}, not 1")
             variables.append(_variable(d, taken))
             ranges.append((b, e, s))
-
-        def length(r: tuple[Any, Any, Any]) -> Any:
-            b, e, _ = (dace.symbolic.pystr_to_symbolic(str(x)) for x in r)
-            return e - b + 1
-
-        if not kept and all(length(r) == 1 for r in out_ranges):  # to one element
-            pairs = {}
-        elif len(out_ranges) == len(kept):
-            pairs = dict(zip(range(len(out_ranges)), kept, strict=True))
-        elif len(out_ranges) == rank:  # the reduced dimensions kept with length 1
-            pairs = {k: k for k in kept}
-            for k in axes:
-                if length(out_ranges[k]) != 1:
-                    raise SdfgImportError(f"{what}: reduced dimension {k} of the output is not 1")
-        else:
-            raise SdfgImportError(
-                f"{what}: an output of {len(out_ranges)} dimensions for {rank} input dimensions "
-                f"reduced over {axes}"
-            )
-        out_subset: list[Value] = []
-        for k, r in enumerate(out_ranges):
-            ob = dace.symbolic.pystr_to_symbolic(str(r[0]))
-            if k not in pairs:
-                out_subset.append(_value(ob, {}, f"{what} output"))
-                continue
-            d = pairs[k]
-            if r[2] != 1 or (length(r) - length(in_ranges[d])) != 0:
-                raise SdfgImportError(
-                    f"{what}: output dimension {k} does not match input dimension {d} one to one"
-                )
-            ib = dace.symbolic.pystr_to_symbolic(str(in_ranges[d][0]))
-            index = ob - ib + dace.symbolic.pystr_to_symbolic(variables[d])
-            out_subset.append(_value(index, {}, f"{what} output"))
+        out_subset = _reduce_out_subset(in_ranges, out_ranges, axes, variables, what)
 
         target = self.containers[dst.data]
         dtype = np.dtype(self.sdfg.arrays[dst.data].dtype.as_numpy_dtype())
@@ -455,6 +422,55 @@ class _Importer:
                 )
             out[conn] = m
         return out
+
+
+def _length(r: tuple[Any, Any, Any]) -> Any:
+    """The number of elements of a DaCe range entry (begin, end inclusive, step 1)."""
+    b, e, _ = (dace.symbolic.pystr_to_symbolic(str(x)) for x in r)
+    return e - b + 1
+
+
+def _reduce_out_subset(
+    in_ranges: list[Any], out_ranges: list[Any], axes: list[int], variables: list[str], what: str
+) -> list[Value]:
+    """A Reduce's output memlet over the maps of its input dimensions (``variables``).
+
+    Each output dimension is either a kept input dimension, indexed by that
+    dimension's variable, or (reduced) a single element. DaCe writes the
+    output with the reduced dimensions dropped, kept with length 1, or, for a
+    reduction to one element, as any one-element subset.
+    """
+    rank = len(in_ranges)
+    kept = [d for d in range(rank) if d not in axes]
+    if not kept and all(_length(r) == 1 for r in out_ranges):  # to one element
+        pairs: dict[int, int] = {}
+    elif len(out_ranges) == len(kept):
+        pairs = dict(zip(range(len(out_ranges)), kept, strict=True))
+    elif len(out_ranges) == rank:  # the reduced dimensions kept with length 1
+        pairs = {k: k for k in kept}
+        for k in axes:
+            if _length(out_ranges[k]) != 1:
+                raise SdfgImportError(f"{what}: reduced dimension {k} of the output is not 1")
+    else:
+        raise SdfgImportError(
+            f"{what}: an output of {len(out_ranges)} dimensions for {rank} input dimensions "
+            f"reduced over {axes}"
+        )
+    out: list[Value] = []
+    for k, r in enumerate(out_ranges):
+        ob = dace.symbolic.pystr_to_symbolic(str(r[0]))
+        if k not in pairs:
+            out.append(_value(ob, {}, f"{what} output"))
+            continue
+        d = pairs[k]
+        if r[2] != 1 or (_length(r) - _length(in_ranges[d])) != 0:
+            raise SdfgImportError(
+                f"{what}: output dimension {k} does not match input dimension {d} one to one"
+            )
+        ib = dace.symbolic.pystr_to_symbolic(str(in_ranges[d][0]))
+        index = ob - ib + dace.symbolic.pystr_to_symbolic(variables[d])
+        out.append(_value(index, {}, f"{what} output"))
+    return out
 
 
 def _is_copy(t: dn.Tasklet) -> bool:

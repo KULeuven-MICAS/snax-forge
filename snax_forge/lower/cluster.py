@@ -21,8 +21,9 @@ written only when they are not the default ``[n_ports]``.
 
 ``Accel`` is one accelerator with its streamers. ``accel_of`` makes one from
 a BRM instance and the resolved shell; ``stub`` makes one from a registered
-accelerator kind and its params directly, for clusters whose accelerator has
-no BRM yet (the ``reduce`` and ``mul`` stubs of red4 and mul1).
+accelerator kind and its params directly, for a cluster whose accelerator
+has no BRM (mul1's multi-cycle ``mul`` stub; red4 comes from ``accumulate``
+since BRM4).
 ``cluster_config`` assembles the file; ``cluster_file`` does it for a design
 point (snax_forge/design/point.py). scenarios/clusters/clusters.py builds
 alu4, red4 and mul1 through these, so the checked-in clusters and the

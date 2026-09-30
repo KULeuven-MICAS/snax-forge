@@ -88,10 +88,14 @@ class Layout(Config):
             )
 
 
+def round_up(x: int, a: int) -> int:
+    """``x`` rounded up to a multiple of ``a``."""
+    return -(-x // a) * a
+
+
 def moved_bytes(lay: Layout, word: int, beat: int) -> int:
     """The bytes the DMA moves for a layout: its size padded to whole beats (LOW3a, D105)."""
-    size = int(np.prod(lay.shape)) * word
-    return -(-size // beat) * beat
+    return round_up(int(np.prod(lay.shape)) * word, beat)
 
 
 def dma_side(lay: Layout, word: int, beat: int) -> dict[str, int | list[int]]:

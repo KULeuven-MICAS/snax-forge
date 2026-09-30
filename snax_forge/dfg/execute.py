@@ -79,7 +79,7 @@ from snax_forge.expr import ExprError, Value
 
 from .graph import Graph, Memlet, Node
 from .kinds import DfgError
-from .subset import dim_names, parse_dim
+from .subset import parse_dim
 
 
 class ExecutionError(DfgError):
@@ -331,9 +331,7 @@ def named_rates(
     for port, (m, rate) in ports.items():
         if not isinstance(rate, str):
             continue
-        used: set[str] = set()
-        for d in m.subset:
-            used |= dim_names(d)
+        used = m.names
         k = len(loops)
         while k and loops[k - 1][0] not in used:
             k -= 1
@@ -392,10 +390,10 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
         [(loop.var, len(loop.values)) for loop in inner],
         what,
     )
-    rate = {p.name: p.rate if isinstance(p.rate, int) else params[p.rate] for p in cfg.ports}
-    for name, r in rate.items():
-        if n % r:
-            raise ExecutionError(f"{what}: n = {n} is not a multiple of port {name!r}'s rate {r}")
+    try:  # the model's own schedule (snax_model/accel.py): rates, then the ports due at k
+        rate = cfg.rates(params)
+    except ValueError as e:
+        raise ExecutionError(f"{what}: {e}") from None
     written = {m.data: np.zeros(ctx.data[m.data].shape, bool) for m in node.outputs.values()}
     for point in itertools.product(*(loop.values for loop in outer)):
         state: dict[str, Any] = {}
@@ -403,17 +401,15 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
         for k, beat in enumerate(itertools.product(*(loop.values for loop in inner))):
             env = env0 | {lp.var: int(v) for lp, v in zip(inner, beat, strict=True)}
             ins = {}
-            for p in cfg.inputs:
-                if k % rate[p.name]:
-                    continue
-                m = node.inputs[p.name]
-                idx = _beat_indices(m, env, ctx, f"{what}.inputs.{p.name}")
-                ins[p.name] = _lanes(ctx.data[m.data][idx], p, what)
+            for name in cfg.due(k, rate, "in"):
+                p, m = cfg.port(name), node.inputs[name]
+                idx = _beat_indices(m, env, ctx, f"{what}.inputs.{name}")
+                ins[name] = _lanes(ctx.data[m.data][idx], p, what)
             outs = cfg.fn(k, ins, state, params)
-            due = [p for p in cfg.outputs if (k + 1) % rate[p.name] == 0]
-            if sorted(outs) != sorted(p.name for p in due):
+            due = cfg.due(k, rate, "out")
+            if sorted(outs) != sorted(due):
                 raise ExecutionError(f"{what}: firing {k} gave {sorted(outs)}")
-            for p in due:
+            for p in map(cfg.port, due):
                 m = node.outputs[p.name]
                 idx = _beat_indices(m, env, ctx, f"{what}.outputs.{p.name}")
                 arr = ctx.data[m.data]

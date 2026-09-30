@@ -68,7 +68,7 @@ changes cycle counts:
   T+1 cycles each, as in RTL, also when the writer's FIFO holds the push
   back (the cycles before a late push are frozen anyway). A drain cycle is
   ``busy``, like the II gap. A single sum per task (``dot``) is not
-  affected. The rule lives in ``_ii_ok`` and ``tick``.
+  affected. The rule lives in ``_allowed`` and ``tick``.
 
 Not copied (open item 8):
 
@@ -287,6 +287,38 @@ class AccelConfig:
                 return p
         raise KeyError(f"no port {name!r}")
 
+    def rates(self, params: Mapping[str, int]) -> dict[str, int]:
+        """Each port's rate in a task with start parameters ``params`` (``n``, named rates).
+
+        Raises ValueError for a missing ``n`` or rate, a rate below 1, or an
+        ``n`` that is not a multiple of every rate. The model and the
+        reference executor (dfg/execute.py) both run a task through this and
+        ``due``, so they fire the same schedule.
+        """
+        n = params.get("n")
+        if n is None or n < 0:
+            raise ValueError("need params['n'] >= 0 (firings)")
+        rates = {}
+        for p in self.ports:
+            r = p.rate if isinstance(p.rate, int) else params.get(p.rate)
+            if r is None:
+                raise ValueError(f"port {p.name} needs parameter {p.rate!r}")
+            if r < 1:
+                raise ValueError(f"port {p.name} rate {r} must be >= 1")
+            if n % r:
+                raise ValueError(f"n = {n} is not a multiple of {p.name}'s rate {r}")
+            rates[p.name] = r
+        return rates
+
+    def due(self, k: int, rates: Mapping[str, int], direction: str) -> list[str]:
+        """The ports of ``direction`` that move a beat at firing ``k``.
+
+        An input with rate r at firings 0, r, 2r, ...; an output at r-1, 2r-1, ...
+        """
+        if direction == "in":
+            return [p.name for p in self.inputs if k % rates[p.name] == 0]
+        return [p.name for p in self.outputs if (k + 1) % rates[p.name] == 0]
+
 
 # -----------------------------------------------------------------------------
 # Stubs: configs, not subclasses
@@ -478,26 +510,16 @@ class Accelerator(Component):
             self._cluster.touch(self._start)
 
     def _resolve(self, params: Mapping[str, int]) -> dict[str, int]:
-        rates = {}
-        for p in self.cfg.ports:
-            r = p.rate if isinstance(p.rate, int) else params.get(p.rate)
-            if r is None:
-                raise ValueError(f"{self.name}: port {p.name} needs parameter {p.rate!r}")
-            if r < 1:
-                raise ValueError(f"{self.name}: port {p.name} rate {r} must be >= 1")
-            rates[p.name] = r
-        return rates
+        try:
+            return self.cfg.rates(params)
+        except ValueError as e:
+            raise ValueError(f"{self.name}: {e}") from None
 
     def _check(self, params: Mapping[str, int]) -> None:
         missing = [p.name for p in self.cfg.ports if p.name not in self.fifos]
         if missing:
             raise ValueError(f"{self.name}: ports not attached: {missing}")
-        n = params.get("n")
-        if n is None or n < 0:
-            raise ValueError(f"{self.name}: need params['n'] >= 0 (firings)")
-        for name, r in self._resolve(params).items():
-            if n % r:
-                raise ValueError(f"{self.name}: n = {n} is not a multiple of {name}'s rate {r}")
+        self._resolve(params)
 
     def _load(self, params: dict[str, int], cycle: int) -> None:
         """Committed effect of a start in ``cycle``."""
@@ -520,10 +542,10 @@ class Accelerator(Component):
     # -------------------------------------------------------------------------
 
     def _due_in(self, k: int) -> list[str]:
-        return [p.name for p in self.cfg.inputs if k % self._rate[p.name] == 0]
+        return self.cfg.due(k, self._rate, "in")
 
     def _due_out(self, k: int) -> list[str]:
-        return [p.name for p in self.cfg.outputs if (k + 1) % self._rate[p.name] == 0]
+        return self.cfg.due(k, self._rate, "out")
 
     def _inputs_ready(self) -> bool:
         """Every input due at the next firing has a committed beat."""
@@ -532,11 +554,13 @@ class Accelerator(Component):
     def _room(self, ports: Sequence[str]) -> bool:
         return all(self.fifos[n].can_push() for n in ports)
 
+    def _allowed(self) -> int:
+        """The first cycle II allows a firing in, and the drain after the last push (D103)."""
+        after_ii = 0 if self._last_fire is None else self._last_fire + self.cfg.ii
+        return max(self._ready_at, after_ii)
+
     def _ii_ok(self, cycle: int) -> bool:
-        """II allows a firing in ``cycle``, and so does the drain after the last push."""
-        if cycle < self._ready_at:
-            return False
-        return self._last_fire is None or cycle >= self._last_fire + self.cfg.ii
+        return cycle >= self._allowed()
 
     def _can_fire(self, cycle: int) -> bool:
         """Firing conditions other than the freeze."""
@@ -559,11 +583,7 @@ class Accelerator(Component):
 
     def _occupied(self, cycle: int) -> bool:
         """``cycle`` is in the II gap after a firing (D59) or a drain (D103) of a running task."""
-        if not self.busy:
-            return False
-        return cycle < self._ready_at or (
-            self._last_fire is not None and cycle < self._last_fire + self.cfg.ii
-        )
+        return self.busy and cycle < self._allowed()
 
     def _sleep_class(self, cycle: int) -> str:
         """Class of a cycle without a firing, from committed state."""
@@ -675,9 +695,7 @@ class Accelerator(Component):
                 return cycle + 1
         if self._k >= self._n:
             return None
-        allowed = max(
-            self._ready_at, 0 if self._last_fire is None else self._last_fire + self.cfg.ii
-        )
+        allowed = self._allowed()
         if cycle + 1 <= allowed:
             # II gap or drain, or its last cycle is next: wake exactly when a
             # firing is allowed, since the class changes there. Same answer at

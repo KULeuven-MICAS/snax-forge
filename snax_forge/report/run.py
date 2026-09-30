@@ -259,11 +259,10 @@ def _next_task(rows: list[TaskRow] | None, after: int) -> TaskRow | None:
     return min(later, key=lambda r: (r.start, r.block)) if later else None
 
 
-def _handed(tasks: Any, src: str, dst: str, cluster: Any) -> list[str]:
+def _handed(tasks: Any, src: str, dst: str, owner: dict[str, str]) -> list[str]:
     """``dst``'s streamers whose task waits for a task of ``src`` in the task list."""
     if tasks is None:
         return []
-    owner = _owners(cluster)
     comp = {
         st.task_name: st.component for st in tasks.steps if getattr(st, "op", None) == "configure"
     }
@@ -275,6 +274,15 @@ def _handed(tasks: Any, src: str, dst: str, cluster: Any) -> list[str]:
             if owner.get(comp.get(a, "")) == src and st.component not in out:
                 out.append(st.component)
     return out
+
+
+def _chain_text(ch: ChainRow) -> str:
+    """``mul → sum: 17 cycles waiting on mul_out, which sum_a reads``."""
+    text = f"{ch.src} → {ch.dst}: {ch.cycles} cycles waiting on {ch.block}"
+    if not ch.readers:
+        return text
+    verb = "reads" if len(ch.readers) == 1 else "read"
+    return f"{text}, which {', '.join(ch.readers)} {verb}"
 
 
 def build_run(rv: api.RunView, tasks: Any = None) -> RunReport:
@@ -340,7 +348,7 @@ def build_run(rv: api.RunView, tasks: Any = None) -> RunReport:
             src, dst = owner.get(w["block"]), None if nxt is None else owner.get(nxt.block)
             if src and dst and src != dst:
                 chains.append(
-                    ChainRow(src, dst, w["block"], row.cycles, _handed(tasks, src, dst, rv.cluster))
+                    ChainRow(src, dst, w["block"], row.cycles, _handed(tasks, src, dst, owner))
                 )
         controller = ControllerRun(
             ctl["name"],
@@ -548,13 +556,7 @@ def render_run(r: RunReport) -> str:
                 "Chaining waits (one accelerator's output read by the next through L1):",
                 "",
             ]
-            for ch in c.chains:
-                via = (
-                    f", which {', '.join(ch.readers)} read{'s' if len(ch.readers) == 1 else ''}"
-                    if ch.readers
-                    else ""
-                )
-                out.append(f"- {ch.src} → {ch.dst}: {ch.cycles} cycles waiting on {ch.block}{via}")
+            out += [f"- {_chain_text(ch)}" for ch in c.chains]
     if r.dmas:
         out += ["", "## DMA", ""]
         out += table(

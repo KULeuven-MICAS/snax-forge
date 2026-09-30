@@ -100,6 +100,7 @@ tables as they were written are in git history.
 | SBX2 | the `reduce` pattern matcher; `bind` of a folding output as one lane; named rates from the loops a memlet does not use (`named_rates`), run by the reference executor; `recipes/dot.json` (one `W`, `mul` on `elementwise_mul`, `sum` on `accumulate`) gives `tests/dfg/fixtures/dot_accelerated.snaxdfg` and equals `np.dot` for every W that divides N | D104 |
 | LOW2, LOW3a | chaining through L1: named rates in the accelerator task (`named_rates`), a rated port streamed over the loops its memlet uses; the one wait between dot's accelerators is D89's data dependence; containers the DMA moves padded to whole beats in placement, DMA and memory checks. `pixi run flow recipes/dot.json` runs and equals `np.dot` and REF1: 99 cycles at W = 4, 87 at W = 8, 219 at W = 1 | D105 |
 | E2E2 | `dot` end to end: `recipes/dot.json` (adder tree) and `recipes/dot_serial.json` (the Chisel Accumulator) from the kernel to a checked run, every cycle count pinned (`tests/flow/test_dot.py`: 99 / 87 / 79 / 219 at W = 4 / 8 / 16 / 1, serial 147 / 143 / 219 at W = 4 / 8 / 1); `run.md` names the task after each wait and lists the chaining wait (`mul → sum`, 17 cycles on `mul_out`); `design.md` gains the drain and a note per padded container; a product's journey from `mul` through L1 into `sum`; `flow.log` ends with each stage's wall-clock time | D106, D107 |
+| — | housekeeping after M5: `Memlet.names` for the loops a memlet uses (named rates, bind, the task list); the firing schedule (`AccelConfig.rates`, `due`) shared by SNAX-MODEL and the reference executor; the drain and II in one `_allowed`; one `round_up`; the moved containers computed once per memory check; stale docstrings of BRM4–E2E2; `import_sdfg`'s Reduce output mapping in a function of its own; the C3 flow test reads its runs | — |
 
 ## Open Tasks
 
@@ -201,7 +202,7 @@ model, not the platform.
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | GEN1 | Chisel generation through BRM bindings into one accelerator top (through `Emit` and the blocks in hw/chisel/, D91) | BRM1 | Elaborates for the BRM3 and BRM4 parameter sets | todo |
-| GEN2 | C backend for SNAX-LOWER | LOW3 | C kernel command sequence equals the JSON program (D18); builds with the SNAX toolchain | todo |
+| GEN2 | C backend for SNAX-LOWER | LOW3b | C kernel command sequence equals the JSON program (D18); builds with the SNAX toolchain | todo |
 | COS1 | cocotb bridge replacing accelerator models with RTL | GEN1, MOD7 | `vecadd` and `dot` outputs match the model's | todo |
 | COS2 | Mismatch report per accelerator (D52) | COS1 | Deviation of each accelerator's RTL from its declared `latency` and `ii` reported per BRM | todo |
 

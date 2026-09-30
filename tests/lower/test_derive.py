@@ -22,7 +22,7 @@ from snax_forge.lower.derive import addresses
 from snax_forge.sandbox import Recipe, apply_recipe
 from snax_forge.snax_model.ctrl import Wait
 from snax_forge.snax_model.scenario import MemInit, Scenario, run
-from tests.design.helpers import bound_w8, chained, design, two_loops
+from tests.design.helpers import FIXTURES, bound_w8, chained, design, two_loops
 
 from .helpers import REPO, SCEN
 
@@ -39,7 +39,7 @@ def point(graph="vecadd_accelerated", memory=(), sets=None, edit_graph=None) -> 
 
 def dot() -> Graph:
     """dot as imported (DFG3)."""
-    return Graph.load(REPO / "tests" / "dfg" / "fixtures" / "dot.snaxdfg")
+    return Graph.load(FIXTURES / "dot.snaxdfg")
 
 
 def run_point(p: DesignPoint, seed: int = 3):

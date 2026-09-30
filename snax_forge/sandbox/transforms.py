@@ -47,7 +47,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.dfg import DfgError, Graph, Memlet, Node, dim_names, named_rates, parse_dim
+from snax_forge.dfg import DfgError, Graph, Memlet, Node, named_rates, parse_dim
 from snax_forge.dfg.subset import format_dim
 from snax_forge.expr import ExprError
 
@@ -257,9 +257,9 @@ def bind(
     var_s = smap.attrs["var"]
     memlets = tasklet.inputs | tasklet.outputs
     # a folding output (D102) that does not use the spatial variable takes one lane (D104)
-    folds = {c for c, m in tasklet.outputs.items() if m.reduce is not None and not _uses(m, var_s)}
+    folds = {c for c, m in tasklet.outputs.items() if m.reduce is not None and var_s not in m.names}
     for c, m in memlets.items():
-        if c not in folds and not _uses(m, var_s):
+        if c not in folds and var_s not in m.names:
             raise SandboxError(
                 f"{what}: {c} {m.data}{m.subset} does not use the spatial variable {var_s!r}"
             )
@@ -321,8 +321,7 @@ def bind(
             if c in folds:  # one lane: the last index becomes a range of one (D104)
                 dims = [*m.subset[:-1], _one_lane(m.subset[-1], f"{what}.{side}.{c}")]
                 out[port] = Memlet(m.data, dims)
-                beats = [lp for lp, (var, _) in zip(temporal, loops, strict=True)
-                         if any(var in dim_names(d) for d in m.subset)]  # fmt: skip
+                beats = [lp for lp in temporal if lp.attrs["var"] in m.names]
                 _check_order(g, m, beats, None, nest.indices(), f"{what} port {port!r}")
                 continue
             out[port] = Memlet(
@@ -354,10 +353,6 @@ def _length(m: Node) -> str:
     if step != 1:
         raise SandboxError(f"map {m.id!r}: a temporal map with a step is not bound yet")
     return end if begin == 0 else f"({end}) - ({begin})"
-
-
-def _uses(m: Memlet, var: str) -> bool:
-    return any(var in dim_names(d) for d in m.subset)
 
 
 def _one_lane(d: Any, what: str) -> Any:

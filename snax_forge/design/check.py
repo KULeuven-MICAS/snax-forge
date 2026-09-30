@@ -39,7 +39,7 @@ from snax_forge import expr
 from snax_forge.brm import BrmError, Instance
 from snax_forge.dfg import DfgError, Graph, Node
 from snax_forge.dfg.subset import parse_dim
-from snax_forge.lower.layout import moved_bytes
+from snax_forge.lower.layout import moved_bytes, round_up
 from snax_forge.snax_model.ctrl import STATUS, DmaAdapter, StreamerAdapter
 
 from .memory import MemoryContext, MemoryPlan, MemorySpec, pin_problems, plan
@@ -588,7 +588,7 @@ def _memory_align(design: Design) -> Iterable[Problem]:
                 "memory.align", where,
                 f"base {lay.base} and strides {list(lay.strides)} must be multiples of the "
                 f"{word}-byte word",
-                f"--set memory.{c}.{m}.base={_align_up(lay.base, word)}",
+                f"--set memory.{c}.{m}.base={round_up(lay.base, word)}",
             )  # fmt: skip
             continue
         mems = design.memory.layouts.get(c, {})
@@ -606,12 +606,8 @@ def _memory_align(design: Design) -> Iterable[Problem]:
             yield Problem(
                 "memory.align", where,
                 f"base {lay.base} is not on a {beat}-byte beat, and the DMA moves whole beats",
-                f"--set memory.{c}.{m}.base={_align_up(lay.base, beat)}",
+                f"--set memory.{c}.{m}.base={round_up(lay.base, beat)}",
             )  # fmt: skip
-
-
-def _align_up(x: int, a: int) -> int:
-    return -(-x // a) * a
 
 
 def _extent(lay: Any, word: int, beat: int | None = None) -> tuple[int, int]:
@@ -622,10 +618,12 @@ def _extent(lay: Any, word: int, beat: int | None = None) -> tuple[int, int]:
     return lo, hi + word
 
 
-def _moved_beat(design: Design, c: str) -> int | None:
-    """The DMA's beat if the DMA moves container ``c`` (it lives in L2 and L1), else None."""
-    mems = design.memory.layouts.get(c, {}) if design.memory is not None else {}
-    return design.context().beat_bytes if "l1" in mems and "l2" in mems else None
+def _moved_beats(design: Design, beat: int) -> dict[str, int | None]:
+    """Per container, the DMA's ``beat`` if the DMA moves it (it lives in L2 and L1), else None."""
+    return {
+        c: beat if "l1" in mems and "l2" in mems else None
+        for c, mems in design.memory.layouts.items()
+    }
 
 
 def _memory_fit(design: Design) -> Iterable[Problem]:
@@ -633,11 +631,12 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
         return
     ctx = design.context()
     pf = design.platform
+    moved = _moved_beats(design, ctx.beat_bytes)
     for c, m, lay in _layouts(design):
         if m not in ctx.memories:
             continue
         start, end = ctx.span(m)
-        lo, hi = _extent(lay, ctx.word_bytes(m), _moved_beat(design, c))
+        lo, hi = _extent(lay, ctx.word_bytes(m), moved[c])
         if lo < start or hi > end:
             if m == "l1":
                 l1 = pf.l1
@@ -646,7 +645,7 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
                 fix = f"--set platform.l1.rows={max(rows, l1.rows)}, or tile the loop in the recipe"
                 size = f"L1 is {end - start} B ({l1.n_banks} banks x {l1.rows} rows x {row // l1.n_banks} B)"  # fmt: skip
             else:
-                fix = f"--set platform.l2.size_bytes={_align_up(hi - start, pf.l2.beat_bytes)}"
+                fix = f"--set platform.l2.size_bytes={round_up(hi - start, pf.l2.beat_bytes)}"
                 size = f"L2 is {end - start} B"
             if (c, m) in design.memory.spec.pins():
                 fix = f"pin it lower (--set memory.{c}.{m}.base=...), or {fix}"
@@ -658,15 +657,16 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
         return
     ctx = design.context()
     pins = design.memory.spec.pins()
+    moved = _moved_beats(design, ctx.beat_bytes)
     for m in ctx.memories:
         word = ctx.word_bytes(m)
         items = [(c, lay) for c, mm, lay in _layouts(design) if mm == m]
         for (a, la), (b, lb) in _pairs(items):
-            alo, ahi = _extent(la, word, _moved_beat(design, a))
-            blo, bhi = _extent(lb, word, _moved_beat(design, b))
+            alo, ahi = _extent(la, word, moved[a])
+            blo, bhi = _extent(lb, word, moved[b])
             if alo >= bhi or blo >= ahi:
                 continue
-            shared = _shared(la, lb, word, _moved_beat(design, a), _moved_beat(design, b))
+            shared = _shared(la, lb, word, moved[a], moved[b])
             if not shared:
                 continue
             pinned = [x for x in (a, b) if (x, m) in pins]
@@ -675,7 +675,7 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
                 order = list(design.memory.changes)
                 p = max(pinned, key=lambda x: order.index(f"{x}.{m}.base"))  # the latest pin
                 end = max(_extent(lay, word)[1] for _, mm, lay in _layouts(design) if mm == m)
-                free = _align_up(end, ctx.beat_bytes)
+                free = round_up(end, ctx.beat_bytes)
                 fix = (
                     f"move the pin past everything: --set memory.{p}.{m}.base={free}, or remove it"
                 )

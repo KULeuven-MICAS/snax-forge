@@ -403,7 +403,7 @@ def _stages(
     with _timed(times, "check"):
         check = functional_check(spec, point, inputs, result, seed)
     result.profile.functional_check = check
-    with _timed(times, "run"):
+    with _timed(times, "run"):  # the check goes into the profile first, so run/ is written after
         write_outputs(result, out / "run")
     return Flow(
         name, out, recipe, steps, point, cluster, tasks, len(program), scenario, result, check,

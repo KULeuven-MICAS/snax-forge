@@ -191,9 +191,10 @@ class Function:
     SNAX-SANDBOX's ``bind`` compares a tasklet against and what an
     accelerated node carries, so a bound graph says what each accelerator
     does without its BRM. The registered kind is how SNAX-MODEL and the
-    reference executor compute it; the two must agree (tests/brm). Null for
-    a BRM that cannot say it this way yet (a reduction, DFG3 / BRM4); such a
-    BRM cannot be bound.
+    reference executor compute it; the two must agree (tests/brm). A
+    reduction says what one element contributes (``accumulate``'s ``out = a``);
+    that it folds, and with which op, is its pattern's and kind's (D103). A
+    BRM with a null ``code`` cannot be bound.
     """
 
     accel: str

@@ -131,6 +131,14 @@ class Memlet:
         if self.reduce is not None and not isinstance(self.reduce, Reduction):
             raise DfgError(f"reduce: must be a Reduction or None, got {self.reduce!r}")
 
+    @property
+    def names(self) -> set[str]:
+        """Every name its subset uses: the loop variables (and symbols) it moves with."""
+        out: set[str] = set()
+        for d in self.subset:
+            out |= dim_names(d)
+        return out
+
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"data": self.data, "subset": list(self.subset)}
         if self.reduce is not None:

@@ -76,8 +76,9 @@ def test_dot_from_the_kernel(tmp_path):
 def test_a_wider_multiplier_buys_little_behind_one_lane(flows):
     """C3's first data: 4 -> 8 multiplier lanes save 4 cycles behind the one-lane accumulator,
     12 when the accumulator widens with it."""
-    serial = CYCLES[(SERIAL, 4)] - CYCLES[(SERIAL, 8)]
-    both = CYCLES[(DOT, 4)] - CYCLES[(DOT, 8)]
+    cycles = {k: f.result.total_cycles for k, f in flows.items()}
+    serial = cycles[(SERIAL, 4)] - cycles[(SERIAL, 8)]
+    both = cycles[(DOT, 4)] - cycles[(DOT, 8)]
     assert (serial, both) == (4, 12)
 
 

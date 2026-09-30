@@ -9,7 +9,9 @@ registered kind. BRM2 (D70): the ``affine`` dataflow notation, whose nests
 ``task_nest`` resolves and enumerates for one task; SNAX-LOWER maps them
 onto streamer values (``snax_forge.lower.streams``). BRM3: the library of
 hand-written BRMs (library.py, ``load_brm``), starting with
-``elementwise_add``.
+``elementwise_add``. BRM4 (D103): ``elementwise_mul`` and ``accumulate``, a
+reduction named by its pattern and kind; ``drain`` as a third timing number;
+port names that can appear in code.
 """
 
 from snax_forge.expr import ExprError

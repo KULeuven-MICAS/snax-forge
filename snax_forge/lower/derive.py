@@ -52,7 +52,7 @@ import numpy as np
 
 from snax_forge import expr
 from snax_forge.design.streamers import Loop, firing_loops, instances
-from snax_forge.dfg import DfgError, Memlet, dim_names, named_rates
+from snax_forge.dfg import DfgError, Memlet, named_rates
 from snax_forge.dfg.subset import parse_dim
 
 from .cluster import cluster_file
@@ -189,8 +189,10 @@ def task_list(point: DesignPoint) -> TaskList:
                 raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
             # a port with a named rate moves one beat per T firings: its streamer
             # runs over the firing loops its memlet uses, not the ones it folds
-            used = [lp for lp in loops if any(lp.var in dim_names(d) for d in m.subset)]
-            port_loops = loops if inst.brm.port(p).rate == 1 else used
+            if inst.brm.port(p).rate == 1:
+                port_loops = loops
+            else:
+                port_loops = [lp for lp in loops if lp.var in m.names]
             values, sb = memlet_values(m, port_loops, lay, symbols, f"{what}.{p}")
             if sb != list(s.spatial_bounds):
                 raise LowerError(

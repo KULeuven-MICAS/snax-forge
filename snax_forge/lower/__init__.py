@@ -8,8 +8,11 @@ buffer layout (layout.py, the memory plan's form since DP1b) onto a streamer's v
 the platform with one streamer per accelerator port and each accelerator's
 entry; the checked-in clusters are built through it too. LOW1a (D89): a
 design point's task list (derive.py), streamer values from memlets through
-the memory plan's layouts, checked against each BRM's nest. The command
-line is ``python -m snax_forge.lower cluster | tasks`` (pixi ``lower``).
+the memory plan's layouts, checked against each BRM's nest. LOW2, LOW3a
+(D105): named rates in the accelerator task, so accelerators chain through
+L1 with one wait between them; containers the DMA moves padded to whole
+beats. The command line is ``python -m snax_forge.lower cluster | tasks``
+(pixi ``lower``).
 """
 
 from .cluster import Accel, accel_of, cluster_config, cluster_file, cluster_of, stub
