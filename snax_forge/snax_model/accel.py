@@ -13,8 +13,8 @@ Interface (``AccelConfig``)
 ---------------------------
 Per port: name, direction, lanes per beat (must equal the attached FIFO's
 lanes, i.e. the streamer's ``n_ports``) and an element rate (D25). Plus
-latency ``L``, initiation interval ``II`` (both user-supplied, D5) and the
-Python function.
+latency ``L``, initiation interval ``II``, ``drain`` (all user-supplied, D5,
+D103) and the Python function.
 
 A *firing* is one step of the datapath. The rate says how often a port
 moves a beat: once every ``rate`` firings. An input port with rate r is
@@ -23,7 +23,8 @@ firings r-1, 2r-1, ... A rate is an int or the name of a start parameter
 (e.g. ``"T"``), so the trip count of a reduction can be set per task.
 
 * elementwise stub: every port has rate 1 (N inputs -> 1 output per firing);
-* reduce stub: input rate 1, output rate ``"T"`` (T beats -> 1 beat).
+* reduce stub: input ``a`` at rate 1, output ``out`` at rate ``"T"`` (T
+  beats -> 1 beat). Ports are named ``a``, ``b``, ..., ``out`` (C§10).
 
 The function is called once per firing:
 
@@ -59,17 +60,23 @@ changes cycle counts:
   clears it the cycle after the last output handshake. Same here:
   ``start`` in cycle s gives busy from s+1; ``done_cycle`` is the cycle
   after the last push.
+* Drain (D103): the Accumulator's ``in.ready`` is low while its result
+  waits, from the cycle after the last input of a sum until the result is
+  taken. ``drain`` = d says: no input is taken in the d cycles that start
+  with the cycle an output is pushed. With L = 1 the push is the cycle the
+  result waits in, so the Accumulator is d = 1 and back-to-back sums take
+  T+1 cycles each, as in RTL, also when the writer's FIFO holds the push
+  back (the cycles before a late push are frozen anyway). A drain cycle is
+  ``busy``, like the II gap. A single sum per task (``dot``) is not
+  affected. The rule lives in ``_ii_ok`` and ``tick``.
 
-Not copied (open item 8; the drain cycle at the latest in BRM4):
+Not copied (open item 8):
 
 * Per-stage ready. Here the pipeline has a global stall (see below). Many
   SNAX accelerators instead give each stage its own ready, so a stage can
   move into an empty stage ahead during a stall and bubbles get squeezed
   out. That changes stall lengths, not data. The rule lives in
   ``_frozen`` and ``_advance`` only.
-* The Accumulator's drain cycle: its ``in.ready`` is low while the result
-  waits, so back-to-back reductions take T+1 cycles each in RTL but T here.
-  A single reduction (``dot``) is not affected.
 
 Pipeline and global stall
 -------------------------
@@ -165,8 +172,9 @@ Each cycle counts as exactly one of, in this order:
 
 * ``busy``: a firing happened;
 * ``stall_out``: the pipeline was frozen on a full output FIFO;
-* ``busy`` (II gap, D59): a task is running and the cycle is less than
-  ``ii`` cycles after the last firing, whether or not the inputs are there.
+* ``busy`` (II gap, D59, or drain, D103): a task is running and the cycle
+  is less than ``ii`` cycles after the last firing, or in the ``drain``
+  after a push, whether or not the inputs are there.
   A firing occupies the datapath for ``ii`` cycles, so a multi-cycle unit
   (``ii`` = 5) is busy for all 5, not only in the cycle it fires;
 * ``stall_in``: a task is running, II allows, not frozen, and some due
@@ -249,6 +257,7 @@ class AccelConfig:
     latency: int = 0  # L: pipeline stages between firing and push
     ii: int = 1  # II: minimum cycles between firings
     kind: str = "custom"  # for printing only
+    drain: int = 0  # cycles from a push in which no input is taken (D103)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "ports", tuple(self.ports))
@@ -261,6 +270,8 @@ class AccelConfig:
             raise ValueError("latency must be >= 0")
         if self.ii < 1:
             raise ValueError("ii must be >= 1")
+        if self.drain < 0:
+            raise ValueError("drain must be >= 0")
 
     @property
     def inputs(self) -> tuple[AccelPort, ...]:
@@ -290,6 +301,7 @@ def elementwise_stub(
     ii: int = 1,
     inputs: Sequence[str] | None = None,
     output: str = "out",
+    drain: int = 0,
 ) -> AccelConfig:
     """N inputs -> 1 output, one beat each per firing, lane by lane.
 
@@ -305,7 +317,7 @@ def elementwise_stub(
         return {output: _fold(op, (ins[n] for n in names))}
 
     ports = [AccelPort(n, "in", lanes) for n in names] + [AccelPort(output, "out", lanes)]
-    return AccelConfig(tuple(ports), fn, latency, ii, kind="elementwise")
+    return AccelConfig(tuple(ports), fn, latency, ii, kind="elementwise", drain=drain)
 
 
 def reduce_stub(
@@ -314,14 +326,16 @@ def reduce_stub(
     op: Callable[[Any, Any], Any] = np.add,
     latency: int = 1,
     ii: int = 1,
-    input: str = "in",
+    input: str = "a",
     output: str = "out",
+    drain: int = 0,
 ) -> AccelConfig:
     """T input beats -> 1 output beat; T is the start parameter ``"T"``.
 
     ``lanes_out = lanes`` (default): each lane is reduced over T beats (the
     snax-forge Accumulator is the case lanes = 1). ``lanes_out = 1``: the
-    lanes are reduced too. Default L = 1, II = 1 as in the Accumulator.
+    lanes are reduced too. Default L = 1, II = 1 as in the Accumulator; its
+    drain of 1 (D103) is the BRM implementation's to declare, default 0.
     """
     lanes_out = lanes if lanes_out is None else lanes_out
     if lanes_out not in (lanes, 1):
@@ -338,7 +352,7 @@ def reduce_stub(
         return {}
 
     ports = (AccelPort(input, "in", lanes, 1), AccelPort(output, "out", lanes_out, "T"))
-    return AccelConfig(ports, fn, latency, ii, kind="reduce")
+    return AccelConfig(ports, fn, latency, ii, kind="reduce", drain=drain)
 
 
 # =============================================================================
@@ -401,6 +415,7 @@ class Accelerator(Component):
         self._rate: dict[str, int] = {}
         self._k = 0
         self._last_fire: int | None = None
+        self._ready_at = 0  # no input taken before this cycle: the drain after a push
         self._slots: list[dict[str, Any] | None] = [None] * cfg.latency
         self.state: dict[str, Any] = {}
         self.done_cycle: int | None = None
@@ -518,6 +533,9 @@ class Accelerator(Component):
         return all(self.fifos[n].can_push() for n in ports)
 
     def _ii_ok(self, cycle: int) -> bool:
+        """II allows a firing in ``cycle``, and so does the drain after the last push."""
+        if cycle < self._ready_at:
+            return False
         return self._last_fire is None or cycle >= self._last_fire + self.cfg.ii
 
     def _can_fire(self, cycle: int) -> bool:
@@ -540,8 +558,12 @@ class Accelerator(Component):
             self._slots = [new] + self._slots[:-1]
 
     def _occupied(self, cycle: int) -> bool:
-        """``cycle`` is in the II gap after a firing of a running task (D59)."""
-        return self.busy and self._last_fire is not None and cycle < self._last_fire + self.cfg.ii
+        """``cycle`` is in the II gap after a firing (D59) or a drain (D103) of a running task."""
+        if not self.busy:
+            return False
+        return cycle < self._ready_at or (
+            self._last_fire is not None and cycle < self._last_fire + self.cfg.ii
+        )
 
     def _sleep_class(self, cycle: int) -> str:
         """Class of a cycle without a firing, from committed state."""
@@ -568,6 +590,9 @@ class Accelerator(Component):
         # 1. push the head (L >= 1). Not frozen, so every output it needs has room.
         if self.cfg.latency and self._slots[-1] is not None:
             self._push(cycle, self._slots[-1])
+            if self.cfg.drain and self._k < self._n:
+                w.cls = "busy"  # the drain starts with the push: no input taken (D103)
+                return
 
         # 2. fire
         if not self._can_fire(cycle):
@@ -612,6 +637,8 @@ class Accelerator(Component):
             self._k += 1
             self._last_fire = cycle
             self.firings += 1
+        if w.pushed and self.cfg.drain:
+            self._ready_at = cycle + self.cfg.drain
         if not w.frozen:
             self._advance(w.new)
         if was_busy and not self.busy:
@@ -648,10 +675,14 @@ class Accelerator(Component):
                 return cycle + 1
         if self._k >= self._n:
             return None
-        if self._last_fire is not None and cycle + 1 <= self._last_fire + self.cfg.ii:
-            # II gap, or its last cycle is next: wake exactly when II allows,
-            # since the class changes there. Same answer at every cycle before.
-            return self._last_fire + self.cfg.ii
+        allowed = max(
+            self._ready_at, 0 if self._last_fire is None else self._last_fire + self.cfg.ii
+        )
+        if cycle + 1 <= allowed:
+            # II gap or drain, or its last cycle is next: wake exactly when a
+            # firing is allowed, since the class changes there. Same answer at
+            # every cycle before.
+            return allowed
         if not self._inputs_ready():
             return None
         if not self.cfg.latency and not self._room(self._due_out(self._k)):

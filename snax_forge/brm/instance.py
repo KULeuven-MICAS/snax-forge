@@ -10,7 +10,7 @@ SNAX-LOWER turns into the accelerator entry of the cluster file (LOW1c):
 
 The entry's ``params`` are the function params resolved, in their order,
 then the implementation's ``latency`` and ``ii`` (the BRM's
-``initiation_interval``). The model is not changed: the cluster file keeps
+``initiation_interval``), and its ``drain`` when not 0 (D103). The model is not changed: the cluster file keeps
 naming the registered accelerator kind (D43, D51).
 
 Resolving checks the values: an unknown implementation or param, a runtime
@@ -19,7 +19,7 @@ value of the wrong type, outside the param's ``values`` or outside the
 implementation's ``supports``, and a design param with neither a value nor a
 default are errors. It then builds the ``AccelConfig`` through the
 registered kind and checks it against the BRM: the same ports in the same
-order (names, directions, lanes, rates) and the same ``latency`` and ``ii``.
+order (names, directions, lanes, rates) and the same ``latency``, ``ii`` and ``drain``.
 An instance that exists is therefore consistent with the model.
 """
 
@@ -64,6 +64,10 @@ class Instance:
     def initiation_interval(self) -> int:
         return self.value(self.impl.timing.initiation_interval)
 
+    @property
+    def drain(self) -> int:
+        return self.value(self.impl.timing.drain)
+
     def lanes(self, port: str) -> int:
         return self.value(self.brm.port(port).lanes)
 
@@ -72,6 +76,8 @@ class Instance:
         params = {k: self.value(v) for k, v in self.brm.function.params.items()}
         params["latency"] = self.latency
         params["ii"] = self.initiation_interval
+        if self.drain:  # written only when not 0 (D103), so the other entries are unchanged
+            params["drain"] = self.drain
         return self.brm.function.accel, params
 
     def accel_config(self) -> AccelConfig:
@@ -153,6 +159,7 @@ def _check_values(inst: Instance, what: str) -> None:
         num(p.lanes, f"port {p.name!r} lanes", 1)
     num(inst.impl.timing.latency, "latency", 0)
     num(inst.impl.timing.initiation_interval, "initiation_interval", 1)
+    num(inst.impl.timing.drain, "drain", 0)
 
 
 def _check_model(inst: Instance, what: str) -> None:
@@ -165,9 +172,10 @@ def _check_model(inst: Instance, what: str) -> None:
             f"{what}: ports (name, direction, lanes, rate) differ from kind "
             f"{inst.brm.function.accel!r}: declared {declared}, built {built}"
         )
-    timing = (inst.latency, inst.initiation_interval)
-    if (cfg.latency, cfg.ii) != timing:
+    timing = (inst.latency, inst.initiation_interval, inst.drain)
+    if (cfg.latency, cfg.ii, cfg.drain) != timing:
         raise BrmError(
-            f"{what}: kind {inst.brm.function.accel!r} builds latency {cfg.latency}, ii {cfg.ii}; "
-            f"the implementation declares latency {timing[0]}, initiation_interval {timing[1]}"
+            f"{what}: kind {inst.brm.function.accel!r} builds latency {cfg.latency}, ii {cfg.ii}, "
+            f"drain {cfg.drain}; the implementation declares latency {timing[0]}, "
+            f"initiation_interval {timing[1]}, drain {timing[2]}"
         )

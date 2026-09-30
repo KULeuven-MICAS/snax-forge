@@ -40,7 +40,7 @@ edges cross as little as possible.
 
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box. Its
-text is the subset, and for a folding write the op (``out[0] (wcr add)``,
+text is the subset, and for a folding write the op (``out[0] (reduce add)``,
 D102). An
 edge between a container and a connector inside a top-level node is drawn
 only up to that node's outer box, above or below the connector it belongs
@@ -194,7 +194,7 @@ def _container(g: Graph, name: str) -> dict[str, Any]:
 
 def memlet_text(m: Memlet) -> str:
     text = f"{m.data}[{', '.join(str(d) for d in m.subset)}]"
-    return text if m.wcr is None else f"{text} (wcr {m.wcr.op})"
+    return text if m.reduce is None else f"{text} (reduce {m.reduce.op})"
 
 
 def _iterations(g: Graph, rng: str) -> int | None:

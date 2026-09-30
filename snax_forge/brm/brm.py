@@ -251,18 +251,30 @@ class Pattern:
 
 @dataclass
 class Timing:
-    """``latency`` (L) and ``initiation_interval`` (II, written ``ii`` in the cluster file)."""
+    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in the cluster file) and ``drain``.
+
+    L: cycles from a firing to its push. II: the least number of cycles
+    between two firings. ``drain`` (D103): the cycles, starting with the
+    cycle an output is pushed, in which no input is taken (the Chisel
+    Accumulator's 1: ``in.ready`` is low while its result waits). Optional,
+    default 0; always written here, and in the cluster file only when not 0.
+    """
 
     latency: Value
     initiation_interval: Value
+    drain: Value = 0
 
     def to_dict(self) -> dict[str, Any]:
-        return {"latency": self.latency, "initiation_interval": self.initiation_interval}
+        return {
+            "latency": self.latency,
+            "initiation_interval": self.initiation_interval,
+            "drain": self.drain,
+        }
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Timing:
-        _keys(d, ("latency", "initiation_interval"), (), what)
-        return cls(d["latency"], d["initiation_interval"])
+        _keys(d, ("latency", "initiation_interval"), ("drain",), what)
+        return cls(d["latency"], d["initiation_interval"], d.get("drain", 0))
 
 
 @dataclass
@@ -439,6 +451,26 @@ def _check_params(b: Brm, what: str) -> dict[str, Param]:
     return b.params("design")
 
 
+def _port_name(name: Any, what: str) -> None:
+    """A port name: used in ``function.code`` and in the streamer name ``<instance>_<port>``.
+
+    So not a Python keyword (``out = in`` does not parse) and no leading
+    underscore (``acc__in``). The convention (C§10) is ``a``, ``b``, ... for
+    inputs and ``out`` for the output.
+    """
+    _ident(name, what)
+    if keyword.iskeyword(name):
+        raise BrmError(
+            f"{what}: {name!r} is a Python keyword and cannot appear in code; "
+            "name the port 'a', 'b', ... or 'out' (C§10)"
+        )
+    if name.startswith("_"):
+        raise BrmError(
+            f"{what}: {name!r} starts with an underscore, which the streamer name "
+            "<instance>_<port> would double; name the port 'a', 'b', ... or 'out' (C§10)"
+        )
+
+
 def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
     ports = b.interface.ports
     names = [p.name for p in ports]
@@ -446,7 +478,7 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
         raise BrmError(f"{what}: duplicate port names {names}")
     for p in ports:
         w = f"{what}.port {p.name!r}"
-        _ident(p.name, w)
+        _port_name(p.name, w)
         if p.direction not in DIRECTIONS:
             raise BrmError(f"{w}: direction must be 'in' or 'out', got {p.direction!r}")
         _uses(p.lanes, design, f"{w}.lanes")
@@ -526,6 +558,9 @@ def _check_implementations(b: Brm, design: dict[str, Param], what: str) -> None:
         t = impl.timing
         _uses(t.latency, design, f"{w}.timing.latency")
         _uses(t.initiation_interval, design, f"{w}.timing.initiation_interval")
+        _uses(t.drain, design, f"{w}.timing.drain")
+        if (c := expr.constant(t.drain)) is not None and c < 0:
+            raise BrmError(f"{w}.timing.drain: must be >= 0, got {c}")
         if (c := expr.constant(t.latency)) is not None and c < 0:
             raise BrmError(f"{w}.timing.latency: must be >= 0, got {c}")
         if (c := expr.constant(t.initiation_interval)) is not None and c < 1:

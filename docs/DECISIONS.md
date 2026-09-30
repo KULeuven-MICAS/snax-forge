@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D103**.
+  area tag. Next free number: **D104**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -32,7 +32,7 @@ By area:
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 |
-| brm | D3 D5 D15 D68 D70 D82 |
+| brm | D3 D5 D15 D68 D70 D82 D103 |
 | dfg | D1 D2 D19 D71 D77 D78 D102 |
 | ref | D17 D20 D28 D79 |
 | sandbox | D72 D73 D80 |
@@ -411,11 +411,24 @@ M5 and planned in its own round, because it touches the platform shell, SNAX-DFG
 SNAX-LOWER and SNAX-MODEL, and amends D12 and D51 when built. Amends D100 (order).
 → STATUS, ARCHITECTURE section 8.
 
-**D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `wcr`: a
+**D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `reduce`: a
 registered op, associative and commutative on integers, and the identity the elements start from
 when the node runs, as DaCe's `Reduce` and the Chisel accumulator do. So split_map and bind treat
 it like any map, and no reduce node kind is needed. The importer turns a `Reduce` into such a map
 and folds the scalar and copy tasklet DaCe stores its result through, its one fold of its own;
-`wcr` is written only when set, so graphs without one are unchanged. dot's kernel becomes `int64`,
-as vecadd's did. Amends D77 and D78; a fold into what the element holds (DaCe's plain `wcr`) waits
-for FE1. → C§11, `dfg/wcr.py`, `dfg/import_sdfg.py`.
+`reduce` is written only when set, so graphs without one are unchanged. The field is named for
+what it means, not after DaCe's `wcr` or MLIR's reduction iterators, so every importer writes the
+same one and DaCe's word stays in the SDFG importer. dot's kernel becomes `int64`, as vecadd's did.
+Amends D77 and D78; a fold into what the element holds (DaCe's plain `wcr`) waits for FE1.
+→ C§11, `dfg/reduce.py`, `dfg/import_sdfg.py`.
+
+**D103** · brm — The library gets `accumulate` (the sum of every lane of T beats of `a`, one
+element of `out`; pattern family `reduce`, kind `reduce`) and `elementwise_mul`, the two halves of
+dot. A BRM names a reduction by its pattern and kind, never by an IR's term (`wcr`, MLIR's
+reduction iterators), so the BRM stays free of any front end; `code` says what one element
+contributes. Timing gets a third number, `drain`: the cycles, starting with a push, in which no
+input is taken, so the Chisel Accumulator (drain 1) takes T + 1 cycles per sum, as in RTL, while
+stubs and planned designs keep 0; the cluster file writes it only when not 0. Port names may not
+be Python keywords or start with an underscore (they appear in `code` and in streamer names), so
+the reduce stub's `in` becomes `a`, and red4 is built from `accumulate`. Amends D35 and D68; settles
+the drain half of open item 8. → C§4, C§10, `brm/library/accumulate.json`, `snax_model/accel.py`.

@@ -224,7 +224,7 @@ def test_stubs_are_configs():
     assert [(p.name, p.direction, p.lanes, p.rate) for p in ew.ports] == [
         ("a", "in", 4, 1), ("b", "in", 4, 1), ("out", "out", 4, 1)]  # fmt: skip
     assert [(p.name, p.direction, p.lanes, p.rate) for p in rd.ports] == [
-        ("in", "in", 2, 1), ("out", "out", 2, "T")]  # fmt: skip
+        ("a", "in", 2, 1), ("out", "out", 2, "T")]  # fmt: skip
     assert (ew.latency, ew.ii, rd.latency, rd.ii) == (0, 1, 1, 1)
     assert type(Accelerator("x", Cluster(), ew)) is Accelerator
 
@@ -273,7 +273,7 @@ def test_attach_to_streamer_fifos():
 
 
 def test_rate_must_divide_n():
-    _, acc, _, _ = toy_setup(reduce_stub(), {"in": []}, {"out": 0})
+    _, acc, _, _ = toy_setup(reduce_stub(), {"a": []}, {"out": 0})
     with pytest.raises(ValueError):
         acc.start({"n": 10, "T": 4})
     with pytest.raises(ValueError):
@@ -352,7 +352,7 @@ def test_reduce_ideal(T, latency, ii, lanes_out, skip):
     n = T * n_out
     x = rand_beats(np.random.default_rng(T + 10 * latency + 100 * ii), n, lanes)
     cfg = reduce_stub(lanes=lanes, lanes_out=lanes_out, latency=latency, ii=ii)
-    cl, acc, _, cons = toy_setup(cfg, {"in": x}, {"out": n_out}, skip)
+    cl, acc, _, cons = toy_setup(cfg, {"a": x}, {"out": n_out}, skip)
     acc.start({"n": n, "T": T})
     total = cl.run(max_cycles=500)
 
@@ -362,7 +362,7 @@ def test_reduce_ideal(T, latency, ii, lanes_out, skip):
     assert acc.push_cycles == [f + latency for f in last]
     assert acc.done_cycle == fires[-1] + latency + 1
     # Unequal rates: T beats in per beat out.
-    assert acc.beats == {"in": n, "out": n_out}
+    assert acc.beats == {"a": n, "out": n_out}
     expect = x.reshape(n_out, T, lanes).sum(axis=1)
     if lanes_out == 1:
         expect = expect.sum(axis=1, keepdims=True)
@@ -392,6 +392,56 @@ def test_input_rate_above_one(skip):
     cl.run(max_cycles=500)
     assert np.array_equal(cons["y"].values, x * np.repeat(c, T, axis=0))
     assert acc.beats == {"x": T * groups, "c": groups, "y": T * groups}
+
+
+# =============================================================================
+# 4b. Drain (D103): no input taken in the drain cycles that start with a push
+# =============================================================================
+
+
+@pytest.mark.parametrize("skip", [True, False])
+@pytest.mark.parametrize("drain", [0, 1, 2])
+def test_drain_after_each_sum(drain, skip):
+    """The Chisel Accumulator (L = 1, II = 1, drain 1): T + drain cycles per sum, same data."""
+    T, n_out = 4, 3
+    x = rand_beats(np.random.default_rng(drain), T * n_out, 1)
+    cfg = reduce_stub(lanes=1, latency=1, ii=1, drain=drain)
+    cl, acc, _, cons = toy_setup(cfg, {"a": x}, {"out": n_out}, skip)
+    acc.start({"n": T * n_out, "T": T})
+    total = cl.run(max_cycles=500)
+
+    fires = [1 + j * (T + drain) + k for j in range(n_out) for k in range(T)]
+    assert acc.fire_cycles == fires
+    assert acc.push_cycles == [fires[(j + 1) * T - 1] + 1 for j in range(n_out)]
+    assert acc.done_cycle == fires[-1] + 2  # the last sum's drain delays nothing
+    assert np.array_equal(cons["out"].values, x.reshape(n_out, T).sum(axis=1, keepdims=True))
+    assert acc.cycles["busy"] == T * n_out + drain * (n_out - 1)  # drain cycles are busy
+    assert_cycles_add_up(acc, total)
+
+
+@pytest.mark.parametrize("skip", [True, False])
+def test_drain_follows_a_late_push(skip):
+    """With the writer's FIFO full the push waits; the next input is taken a drain after it."""
+    T, n_out = 2, 3
+    x = rand_beats(np.random.default_rng(3), T * n_out, 1)
+    cfg = reduce_stub(lanes=1, latency=1, ii=1, drain=1)
+    cl, acc, _, cons = toy_setup(
+        cfg, {"a": x}, {"out": n_out}, skip,
+        depth_out=1, willing_out={"out": Willing([10], after=20)})  # fmt: skip
+    acc.start({"n": T * n_out, "T": T})
+    total = cl.run(max_cycles=500)
+
+    pushes = acc.push_cycles
+    assert pushes[1] > acc.fire_cycles[2 * T - 1] + 1  # a late push, held back by the FIFO
+    for j in range(n_out - 1):
+        assert acc.fire_cycles[(j + 1) * T] == pushes[j] + 1
+    assert np.array_equal(cons["out"].values, x.reshape(n_out, T).sum(axis=1, keepdims=True))
+    assert_cycles_add_up(acc, total)
+
+
+def test_drain_must_not_be_negative():
+    with pytest.raises(ValueError, match="drain must be >= 0"):
+        reduce_stub(drain=-1)
 
 
 # =============================================================================
@@ -452,7 +502,7 @@ def test_reduce_freeze_keeps_partial_state(skip):
     T, n_out = 4, 3
     x = np.arange(T * n_out * 2).reshape(-1, 2)
     cl, acc, _, cons = toy_setup(
-        reduce_stub(lanes=2, latency=2, ii=2), {"in": x}, {"out": n_out}, skip,
+        reduce_stub(lanes=2, latency=2, ii=2), {"a": x}, {"out": n_out}, skip,
         depth_out=1, willing_out={"out": Willing([25], after=60)})  # fmt: skip
     acc.start({"n": T * n_out, "T": T})
     total = cl.run(max_cycles=500)
@@ -638,7 +688,7 @@ def expected_toy(cfg, params, in_beats):
     if cfg.kind == "elementwise":
         return sum(in_beats[p.name] for p in cfg.inputs)
     T = params["T"]
-    x = in_beats["in"]
+    x = in_beats["a"]
     s = x.reshape(-1, T, x.shape[1]).sum(axis=1)
     return s if cfg.port("out").lanes == x.shape[1] else s.sum(axis=1, keepdims=True)
 

@@ -7,12 +7,13 @@ cannot drift apart:
 
     alu4   platforms/small16.json with the elementwise_add BRM at W = 4
            (instance ``acc``): exactly the cluster of vecadd's design point
-    red4   an L1-only platform with the ``reduce`` stub (no BRM yet, BRM4)
+    red4   an L1-only platform with the accumulate BRM at W = 4, its
+           chisel_adder_tree implementation (instance ``acc``, BRM4, D103)
     mul1   32 banks and 2-loop streamers with a 1-lane ``elementwise`` mul
            stub (no BRM for mul yet)
 
 Streamers are named after the accelerator port they serve, ``<instance>_<port>``
-(D75): alu4's and mul1's ``acc_a``, ``acc_b``, ``acc_out``, red4's ``acc_in``,
+(D75): alu4's and mul1's ``acc_a``, ``acc_b``, ``acc_out``, red4's ``acc_a``,
 ``acc_out``.
 """
 
@@ -46,16 +47,15 @@ def alu4() -> ClusterConfig:
 
 
 def red4() -> ClusterConfig:
-    """A reduce over 4 lanes into one lane (lanes_out = 1), L1 only."""
+    """accumulate over 4 lanes into one lane, L1 only: the reduce stub's entry, from the BRM."""
     pf = Platform(
         "red4",
         l1=L1Config(n_banks=16, rows=64, read_latency=1),
         controller=CTL,
         default=StreamerOptions(fifo_depth=2),
     )
-    params = {"lanes": LANES, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1}
-    acc = stub(pf, "acc", "reduce", params, [("in", False, LANES), ("out", True, 1)])
-    return cluster_config(pf, [acc])
+    inst = load_brm("accumulate").resolve("chisel_adder_tree", {"W": LANES})
+    return cluster_of(pf, {"acc": inst})
 
 
 # mul1: a multi-cycle multiplier with 1-lane streamers, for fmul.

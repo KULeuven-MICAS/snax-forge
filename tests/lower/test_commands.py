@@ -208,7 +208,7 @@ def test_the_writer_covers_only_tasks_started_with_it():
 
 def test_upstream_follows_attach_and_the_write_flag():
     assert upstream(cluster("alu4")) == {"acc": ["acc_a", "acc_b"], "acc_out": ["acc"]}
-    assert upstream(cluster("red4")) == {"acc": ["acc_in"], "acc_out": ["acc"]}
+    assert upstream(cluster("red4")) == {"acc": ["acc_a"], "acc_out": ["acc"]}
 
 
 # =============================================================================

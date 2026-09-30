@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.dfg import Container, Graph, Memlet, Node, Wcr
+from snax_forge.dfg import Container, Graph, Memlet, Node, Reduction
 
 from .helpers import ALL, NAMES, as_dict, fixture
 
@@ -96,17 +96,17 @@ def test_missing_keys_take_defaults_and_every_field_is_written():
     }
 
 
-def test_wcr_is_written_only_when_set():
-    """A memlet without a wcr reads as before D102; dot's sum writes one (D102)."""
-    assert "wcr" not in "".join(fixture(n).read_text() for n in NAMES)
+def test_reduce_is_written_only_when_set():
+    """A memlet without a reduce reads as before D102; dot's sum writes one (D102)."""
+    assert "reduce" not in "".join(fixture(n).read_text() for n in NAMES)
     g = Graph.load(fixture("dot"))
-    assert g.node("sum").outputs["out"] == Memlet("out", [0], Wcr("add", 0))
+    assert g.node("sum").outputs["out"] == Memlet("out", [0], Reduction("add", 0))
     assert g.node("sum").outputs["out"].to_dict() == {
         "data": "out",
         "subset": [0],
-        "wcr": {"op": "add", "identity": 0},
+        "reduce": {"op": "add", "identity": 0},
     }
-    assert g.node("mult").outputs["out"].wcr is None
+    assert g.node("mult").outputs["out"].reduce is None
 
 
 def test_body_is_written_only_for_kinds_that_have_one():

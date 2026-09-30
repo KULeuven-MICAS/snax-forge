@@ -103,7 +103,7 @@ def test_dot_is_a_multiply_map_then_a_sum_map():
     assert s.outputs["out"].to_dict() == {
         "data": "out",
         "subset": [0],
-        "wcr": {"op": "add", "identity": 0},
+        "reduce": {"op": "add", "identity": 0},
     }
 
 
@@ -117,8 +117,8 @@ def test_max_reduction():
     g = import_sdfg(progs.amax.to_sdfg(simplify=True), "amax")
     assert list(g.containers) == ["A", "out"]
     assert [n.id for n, _ in g.walk()] == ["max_map", "max"]
-    wcr = g.node("max").outputs["out"].wcr
-    assert (wcr.op, wcr.identity) == ("max", int(np.iinfo(np.int64).min))
+    red = g.node("max").outputs["out"].reduce
+    assert (red.op, red.identity) == ("max", int(np.iinfo(np.int64).min))
 
 
 def test_reduce_over_one_axis():

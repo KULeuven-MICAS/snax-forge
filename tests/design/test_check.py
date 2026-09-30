@@ -141,7 +141,7 @@ def test_an_empty_map_and_an_empty_graph_are_unbound():
 @pytest.mark.parametrize(
     "attr, value, text",
     [
-        ("brm", "elementwise_mul", "no BRM 'elementwise_mul'"),
+        ("brm", "elementwise_div", "no BRM 'elementwise_div'"),
         ("implementation", "verilog", "no implementation 'verilog'"),
         ("params", {"W": 4, "op": "sub"}, "not in the param's values"),
         ("code", "out = a - b", "computes 'out = a - b', but elementwise_add computes"),

@@ -35,7 +35,7 @@
      "id": "sum",
      "kind": "tasklet",
      "inputs": {"in1": {"data": "tmp0", "subset": ["i"]}},
-     "outputs": {"out": {"data": "out", "subset": [0], "wcr": {"op": "add", "identity": 0}}},
+     "outputs": {"out": {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}},
      "attrs": {"code": "out = in1"}
     }
    ]

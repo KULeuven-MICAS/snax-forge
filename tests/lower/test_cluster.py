@@ -98,10 +98,10 @@ def test_spatial_bounds_other_than_the_lanes_go_in_the_register_map():
     assert build_cluster(cfg).regmap.blocks["acc_a"].adapter.spatial_bounds == (2, 2)
 
 
-def test_stub_clusters_keep_their_checked_in_form():
-    """red4 and mul1 have no BRM: their streamers come from the platform shell all the same."""
+def test_red4_and_mul1_keep_their_checked_in_form():
+    """red4 (from accumulate, BRM4) and mul1 (a stub): their streamers come from the platform shell."""
     red4 = ClusterConfig.load(SCEN / "clusters" / "red4.json")
-    assert [c.name for c in red4.components] == ["xbar", "acc_in", "acc_out", "acc", "ctl"]
+    assert [c.name for c in red4.components] == ["xbar", "acc_a", "acc_out", "acc", "ctl"]
     assert [c.config["n_ports"] for c in red4.components[1:3]] == [4, 1]
     mul1 = ClusterConfig.load(SCEN / "clusters" / "mul1.json")
     assert {c.config["temporal_dims"] for c in mul1.components if c.kind == "streamer"} == {2}

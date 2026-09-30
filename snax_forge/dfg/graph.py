@@ -13,8 +13,8 @@ A node is ``id``, ``kind``, ``inputs``, ``outputs``, ``attrs`` and, for a
 kind that has one, ``body`` (kinds.py). ``inputs`` and ``outputs`` map a
 connector name to a memlet ``{"data": container, "subset": [dim, ...]}``,
 one dimension per container dimension (subset.py), and on a tasklet's
-output an optional ``"wcr": {"op", "identity"}`` that folds the writes of
-every iteration into the element instead of overwriting it (wcr.py, D102). The graph is a tree:
+output an optional ``"reduce": {"op", "identity"}`` that folds the writes of
+every iteration into the element instead of overwriting it (reduce.py, D102). The graph is a tree:
 scopes hold ordered bodies, memlets sit on the connectors of the nodes that
 use the data, and there are no map entry/exit nodes, access nodes or outer
 memlets, which are derived (D77).
@@ -25,7 +25,7 @@ only. Node ids are unique in the graph and are identifiers, since derived
 task names are built from them (D75). Symbols, containers and variables
 never share a name.
 
-**Stored form.** Every field is written, except a memlet's ``wcr`` when it
+**Stored form.** Every field is written, except a memlet's ``reduce`` when it
 is null (D102), so a graph with no reduction reads as before; missing keys take defaults
 (``inputs``, ``outputs``, ``attrs`` and a scope's ``body`` empty,
 ``transient`` false) and unknown keys are errors (D26, D41). ``body`` is
@@ -54,8 +54,8 @@ from snax_forge.expr import ExprError, Value
 from snax_forge.snax_model.config import check_keys, plain, to_json
 
 from .kinds import KINDS, DfgError, Scope, _wrap, ident, kind_of
+from .reduce import Reduction
 from .subset import canonical_dim, dim_names, parse_dim
-from .wcr import Wcr
 
 
 def _keys(d: Any, required: tuple[str, ...], optional: tuple[str, ...], what: str) -> None:
@@ -122,28 +122,30 @@ class Memlet:
 
     data: str
     subset: list[Value]
-    wcr: Wcr | None = None  # how the writes of every iteration combine (D102)
+    reduce: Reduction | None = None  # how the writes of every iteration combine (D102)
 
     def __post_init__(self) -> None:
         if not isinstance(self.subset, (list, tuple)) or not self.subset:
             raise DfgError(f"subset: must be a non-empty list, got {self.subset!r}")
         self.subset = [_wrap(lambda d=d: canonical_dim(d, "subset")) for d in self.subset]
-        if self.wcr is not None and not isinstance(self.wcr, Wcr):
-            raise DfgError(f"wcr: must be a Wcr or None, got {self.wcr!r}")
+        if self.reduce is not None and not isinstance(self.reduce, Reduction):
+            raise DfgError(f"reduce: must be a Reduction or None, got {self.reduce!r}")
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {"data": self.data, "subset": list(self.subset)}
-        if self.wcr is not None:
-            d["wcr"] = self.wcr.to_dict()
+        if self.reduce is not None:
+            d["reduce"] = self.reduce.to_dict()
         return d
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Memlet:
-        _keys(d, ("data", "subset"), ("wcr",), what)
-        wcr = d.get("wcr")
+        _keys(d, ("data", "subset"), ("reduce",), what)
+        reduce = d.get("reduce")
         try:
             return cls(
-                d["data"], list(d["subset"]), None if wcr is None else Wcr.from_dict(wcr, "wcr")
+                d["data"],
+                list(d["subset"]),
+                None if reduce is None else Reduction.from_dict(reduce, "reduce"),
             )
         except (DfgError, TypeError) as e:
             raise DfgError(f"{what}: {e}") from None
@@ -388,9 +390,9 @@ def _check_memlets(node: Node, scope: Scope, what: str) -> None:
             ident(c, w)
             if m.data not in scope.containers:
                 raise DfgError(f"{w}: unknown container {m.data!r}")
-            if m.wcr is not None and (side == "inputs" or not kind_of(node.kind, what).wcr):
+            if m.reduce is not None and (side == "inputs" or not kind_of(node.kind, what).reduce):
                 raise DfgError(
-                    f"{w}: a wcr folds writes, so it sits on an output of a kind that takes one "
+                    f"{w}: a reduce folds writes, so it sits on an output of a kind that takes one "
                     f"(a tasklet), not on the {side} of a {node.kind!r} (D102)"
                 )
             rank = len(scope.containers[m.data].shape)

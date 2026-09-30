@@ -1,9 +1,9 @@
 {
- "name": "elementwise_add",
+ "name": "elementwise_mul",
  "interface": {
   "params": {
    "W": {"stage": "design", "type": "int", "default": 4, "values": null},
-   "op": {"stage": "design", "type": "str", "default": "add", "values": ["add"]},
+   "op": {"stage": "design", "type": "str", "default": "mul", "values": ["mul"]},
    "n": {"stage": "runtime", "type": "int", "default": null, "values": null}
   },
   "ports": [
@@ -15,7 +15,7 @@
  "function": {
   "accel": "elementwise",
   "params": {"lanes": "W", "n_inputs": 2, "op": "op"},
-  "code": "out = a + b"
+  "code": "out = a * b"
  },
  "dataflow": {
   "notation": "affine",
@@ -46,7 +46,7 @@
    }
   }
  },
- "pattern": {"family": "elementwise", "attrs": {"op": "add", "arity": 2}, "predicate": null},
+ "pattern": {"family": "elementwise", "attrs": {"op": "mul", "arity": 2}, "predicate": null},
  "implementations": {
   "chisel_tiled_spatial": {
    "source": "chisel",

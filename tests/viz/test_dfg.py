@@ -127,10 +127,10 @@ def test_vecadd_accelerated():
 
 
 def test_a_folding_write_names_its_op():
-    """dot's sum map writes out[0] with wcr add, and the edge says so (D102)."""
+    """dot's sum map writes out[0] with reduce add, and the edge says so (D102)."""
     v = view(FIXTURES / "dot.snaxdfg")
     writes = [(e["from"], e["text"]) for e in v["edges"] if e["dir"] == "write"]
-    assert writes == [("mult.out", "tmp0[i]"), ("sum.out", "out[0] (wcr add)")]
+    assert writes == [("mult.out", "tmp0[i]"), ("sum.out", "out[0] (reduce add)")]
 
 
 def test_iterations_need_bound_symbols():

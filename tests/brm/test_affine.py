@@ -157,7 +157,7 @@ def test_task_nest_of_the_adder():
 
 def test_reducer_output_beats_follow_the_rate():
     inst = Brm.from_dict(affine_reducer()).resolve("chisel_accumulator", {"W": 4})
-    assert task_nest(inst, "in", {"n": 8, "T": 4}).n_beats == 8
+    assert task_nest(inst, "a", {"n": 8, "T": 4}).n_beats == 8
     assert task_nest(inst, "out", {"n": 8, "T": 4}).n_beats == 2
 
 

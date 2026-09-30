@@ -163,6 +163,8 @@ A component entry is `name`, `kind` and `config`; an accelerator uses
 (`register_accel`): `elementwise` and `reduce` are the two stubs, and
 `params` are the stub's own keyword arguments with `op` given by a
 registered name (`add`, `sub`, `mul`, `min`, `max`, `and`, `or`, `xor`).
+`drain` (section 4) is written only when it is not 0 (D103), so an entry
+without one reads as before.
 
 <!-- snippet: scenarios/clusters/alu4.json -->
 ```json
@@ -180,7 +182,7 @@ registered name (`add`, `sub`, `mul`, `min`, `max`, `and`, `or`, `xor`).
    "kind": "accel",
    "accel": "reduce",
    "params": {"lanes": 4, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1},
-   "attach": {"in": "acc_in", "out": "acc_out"}
+   "attach": {"a": "acc_a", "out": "acc_out"}
   },
 ```
 
@@ -274,12 +276,15 @@ An accelerator is a set of ports, two timing numbers and a Python function:
 | port `rate` | the port moves one beat every `rate` firings (D25); an int, or the name of a start parameter |
 | `latency` (`L`) | pipeline stages between a firing and its push; 0 = same cycle |
 | `ii` | minimum cycles between firings |
+| `drain` | cycles, starting with the cycle an output is pushed, in which no input is taken; 0 by default (D103) |
 | `fn` | the Python implementation, called once per firing |
 
 A *firing* is one step of the datapath. Input port with rate `r` is popped at
 firings `0, r, 2r, ...`; output port with rate `r` is pushed at firings
 `r-1, 2r-1, ...`. So an elementwise block has rate 1 everywhere, and a
-reduction has input rate 1 and output rate `T`.
+reduction has input rate 1 and output rate `T`. Ports are named `a`, `b`,
+... for inputs and `out` for the output (section 10): the reduce stub's are
+`a` and `out`.
 
 ```python
 fn(k, ins, state, params) -> outs
@@ -305,8 +310,10 @@ Timing, as the model runs it (D35): a start in cycle `s` makes the block busy
 from `s+1`; a firing in cycle `t` is pushed in `t + L`; the output FIFO is
 checked at push time, and if the head cannot be pushed the whole pipeline
 freezes for that cycle (no firing, no pop); `II` counts wall-clock cycles, so
-a freeze longer than `II` does not delay the next firing; `done_cycle` is the
-cycle after the last push. An `AccelConfig` is not serialisable — it holds
+a freeze longer than `II` does not delay the next firing; with a `drain` of
+`d`, no input is taken in the `d` cycles starting with a push, so
+back-to-back sums of the Chisel Accumulator (`d` = 1) take `T + 1` cycles
+each; `done_cycle` is the cycle after the last push. An `AccelConfig` is not serialisable — it holds
 `fn` — which is why a cluster file names a registered kind and its params
 (D43).
 
@@ -364,7 +371,7 @@ built), so `done_cycle` always belongs to the task the wait is for.
 
 <!-- snippet: scenarios/reduce/scenario.json -->
 ```json
-  {"op": "csr_write", "reg": "acc_in.start", "value": 1},
+  {"op": "csr_write", "reg": "acc_a.start", "value": 1},
   {"op": "csr_write", "reg": "acc_out.start", "value": 1},
   {"op": "csr_write", "reg": "acc.start", "value": 1},
   {"op": "wait", "block": "acc_out", "mode": "signal"},
@@ -529,8 +536,8 @@ order — identical with skipping on and off.
 
 <!-- snippet: run:reduce/trace.jsonl -->
 ```json
-{"t": 0, "k": "cmd", "src": "ctl", "pc": 0, "op": "csr_write", "last": 0, "reg": "acc_in.base", "value": 0}
-{"t": 14, "k": "fifo", "src": "acc_in.fifo", "lane": 0, "count": 1}
+{"t": 0, "k": "cmd", "src": "ctl", "pc": 0, "op": "csr_write", "last": 0, "reg": "acc_a.base", "value": 0}
+{"t": 14, "k": "fifo", "src": "acc_a.fifo", "lane": 0, "count": 1}
 ```
 
 **Class intervals** are not events: `on_gap` reports a skipped range only
@@ -540,7 +547,7 @@ kept per component and written to `trace_meta.json` as half-open runs
 
 <!-- snippet: run:reduce/trace_meta.json -->
 ```json
-  "acc_in": [["idle", 0, 12], ["busy", 12, 28], ["idle", 28, 35]],
+  "acc_a": [["idle", 0, 12], ["busy", 12, 28], ["idle", 28, 35]],
 ```
 
 Two things need the intervals rather than the totals, so they need at least a
@@ -735,15 +742,26 @@ name.
 
 | Part | Holds | Read by |
 |---|---|---|
-| `interface` | params (`design` / `runtime`) and ports (direction, lanes, rate, dtype) | everything below |
+| `interface` | params (`design` / `runtime`) and ports (name, direction, lanes, rate, dtype) | everything below |
 | `function` | a registered accelerator kind (D43), its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing`, `binding` (null until M10) | the accelerator entry, the HW generator (later) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until M10) | the accelerator entry, the HW generator (later) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source
 are implementations of one BRM.
+
+**Port names** are used in `code` and in the streamer names
+`<instance>_<port>` (D75), so a Python keyword (`in`) and a leading
+underscore (`_in`) are rejected. The convention is `a`, `b`, ... for inputs
+and `out` for the output (D103).
+
+**Timing** is three numbers, each an int or an expression over design
+params: `latency` (L, a firing to its push), `initiation_interval` (II, the
+least cycles between firings) and `drain` (the cycles, starting with a push,
+in which no input is taken; optional, 0 by default). Only L delays a result;
+II and the drain limit how often inputs are taken.
 
 **Params.** A `design` param is fixed per instance and ends up in the
 cluster file (lanes, the op); its `default` is used when the design point
@@ -758,7 +776,7 @@ a design param with one allowed value.
 **The accelerator entry** of an instance (`brm.resolve(implementation,
 params)`, then `accel_entry()`) is the function's params resolved, in their
 order, then the implementation's `latency` and `ii` (its
-`initiation_interval`). The first library BRM resolves to exactly the
+`initiation_interval`), and its `drain` when not 0. The first library BRM resolves to exactly the
 accelerator of `scenarios/clusters/alu4.json`:
 
 <!-- snippet: snax_forge/brm/library/elementwise_add.json -->
@@ -773,16 +791,29 @@ accelerator of `scenarios/clusters/alu4.json`:
 `code` is one `output = expression` per output port over the input ports,
 per lane of one firing, in the grammar of the value fields. It says what
 the accelerator computes without running it: `bind` compares a tasklet
-against it, and the accelerated node carries it. It is null for a BRM
-that cannot say it per lane yet (a reduction, DFG3 / BRM4), which cannot
-be bound. The library tests check it against the registered kind.
+against it, and the accelerated node carries it. A reduction says what one
+element contributes (`accumulate`'s `out = a`); that it is folded, and with
+which op, is its pattern's (`family: reduce`, `attrs.op`) and its kind's
+(`reduce`, `op`), so no IR's word for a reduction enters a BRM (D103). A
+BRM with a null `code` cannot be bound. The library tests check `code`
+against the registered kind.
+
+<!-- snippet: snax_forge/brm/library/accumulate.json -->
+```json
+  "chisel_accumulator": {
+   "source": "chisel",
+   "supports": {"W": [1]},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 1},
+   "binding": null
+  },
+```
 
 <!-- snippet: snax_forge/brm/library/elementwise_add.json -->
 ```json
   "chisel_tiled_spatial": {
    "source": "chisel",
    "supports": {},
-   "timing": {"latency": 0, "initiation_interval": 1},
+   "timing": {"latency": 0, "initiation_interval": 1, "drain": 0},
    "binding": null
   }
 ```
@@ -842,11 +873,11 @@ end exclusive. Node ids are identifiers and unique in the graph, because
 derived task names are built from them (D75).
 
 **Folding writes** (D102). A tasklet's output memlet may hold a third key,
-`"wcr": {"op": ..., "identity": ...}`: the elements it writes are set to
+`"reduce": {"op": ..., "identity": ...}`: the elements it writes are set to
 `identity` when the node runs, and every iteration's value is folded in with
 `op` instead of overwriting (a reduction). `op` is a registered name (`add`,
-`mul`, `min`, `max`; `register_wcr`), each associative and commutative on
-integers; `identity` is an int. `wcr` is written only when it is set, the one
+`mul`, `min`, `max`; `register_reduction`), each associative and commutative on
+integers; `identity` is an int. `reduce` is written only when it is set, the one
 field that is not always written, so graphs without a reduction read as
 before; it is an error on an input and on an accelerated node, whose BRM
 folds on its own. dot as imported: the sum map folds `tmp0` into `out[0]`:
@@ -856,7 +887,7 @@ folds on its own. dot as imported: the sum map folds `tmp0` into `out[0]`:
      "id": "sum",
      "kind": "tasklet",
      "inputs": {"in1": {"data": "tmp0", "subset": ["i"]}},
-     "outputs": {"out": {"data": "out", "subset": [0], "wcr": {"op": "add", "identity": 0}}},
+     "outputs": {"out": {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}},
      "attrs": {"code": "out = in1"}
 ```
 

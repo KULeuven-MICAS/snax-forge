@@ -3,9 +3,9 @@
  "steps": [
   {
    "op": "configure",
-   "task_name": "sum_acc_in",
+   "task_name": "sum_acc_a",
    "type": "streamer",
-   "component": "acc_in",
+   "component": "acc_a",
    "after": [],
    "wait_mode": "poll",
    "values": {"base": 0, "temporal_bounds": [16], "temporal_strides": [32], "spatial_strides": [8]}
@@ -28,7 +28,7 @@
    "wait_mode": "poll",
    "values": {"n": 16, "T": 4}
   },
-  {"op": "start", "tasks": ["sum_acc_in", "sum_acc_out", "sum_acc"]},
+  {"op": "start", "tasks": ["sum_acc_a", "sum_acc_out", "sum_acc"]},
   {"op": "sync", "task": "sum_acc_out", "mode": "signal"},
   {"op": "sync", "task": "sum_acc", "mode": "poll"},
   {"op": "read", "reg": "acc.busy_cycles"}

@@ -1,5 +1,5 @@
 """
-Dot product via reduction. Yields a Reduce library node, not a WCR memlet.
+Dot product via reduction. DaCe yields a Reduce library node, not a WCR memlet.
 
 int64, one element per 64-bit L1 word, as vecadd (open item 30, D78): the
 importer turns the Reduce into a sum map whose output memlet folds with

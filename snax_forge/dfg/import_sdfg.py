@@ -16,7 +16,7 @@ D77:
     edges into / out of a tasklet     memlets on its connectors
     Reduce library node               nested maps, one per input dimension,
                                       around a tasklet ``out = in1`` whose
-                                      output memlet has a ``wcr`` (D102)
+                                      output memlet has a ``reduce`` (D102)
     access nodes, map connectors,     not stored: derived (D77)
     outer memlets on a map
 
@@ -37,7 +37,8 @@ then becomes a map per input dimension (``sum_map``, ``prod_map``,
 ``min_map``, ``max_map`` after its reduction type), variables by depth as
 for any map, around a tasklet (``sum``, ...) with code ``out = in1``. The
 input memlet takes one element per iteration; the output memlet drops the
-reduced dimensions and carries ``wcr``: the op (``add``, ``mul``, ``min``,
+reduced dimensions and carries ``reduce``, the SNAX-DFG's own name for
+what DaCe calls write-conflict resolution: the op (``add``, ``mul``, ``min``,
 ``max``) and the Reduce's identity (the op's for the dtype when DaCe gives
 none). dot becomes ``mult_map`` then ``sum_map``, with ``tmp0`` between
 them.
@@ -84,11 +85,11 @@ from snax_forge.expr import ExprError, Value
 
 from .graph import Container, Graph, Memlet, Node
 from .kinds import DfgError
+from .reduce import REDUCE_OPS, Reduction
 from .subset import format_dim
-from .wcr import WCR_OPS, Wcr
 
 VARIABLES = ("i", "j", "k", "l")
-# DaCe's reduction type -> (wcr op, base name of the map and tasklet)
+# DaCe's reduction type -> (reduce op, base name of the map and tasklet)
 REDUCTIONS = {
     dace.dtypes.ReductionType.Sum: ("add", "sum"),
     dace.dtypes.ReductionType.Product: ("mul", "prod"),
@@ -340,7 +341,7 @@ class _Importer:
         return Node(node_id, "map", attrs=attrs, body=body)
 
     def _reduce(self, red: Reduce) -> Node:
-        """A top-level Reduce as nested maps around ``out = in1`` with a ``wcr`` output (D102)."""
+        """A top-level Reduce as nested maps around ``out = in1`` with a ``reduce`` output (D102)."""
         what = f"{self.name}: reduce {red.label!r}"
         rtype = detect_reduction_type(red.wcr)
         if rtype not in REDUCTIONS:
@@ -402,14 +403,14 @@ class _Importer:
         dtype = np.dtype(self.sdfg.arrays[dst.data].dtype.as_numpy_dtype())
         identity = red.identity
         if identity is None:
-            identity = WCR_OPS[op].identity(dtype)
+            identity = REDUCE_OPS[op].identity(dtype)
         elif int(identity) != identity:
             raise SdfgImportError(f"{what}: identity {identity!r} is not an integer (D28)")
         tasklet = Node(
             fresh(base, self.ids),
             "tasklet",
             inputs={"in1": Memlet(self.containers[src.data], list(variables))},
-            outputs={"out": Memlet(target, out_subset, Wcr(op, int(identity)))},
+            outputs={"out": Memlet(target, out_subset, Reduction(op, int(identity)))},
             attrs={"code": "out = in1"},
         )
         ids = [fresh(f"{base}_map", self.ids) for _ in variables]

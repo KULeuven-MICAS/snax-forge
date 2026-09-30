@@ -1,0 +1,56 @@
+{
+ "name": "accumulate",
+ "interface": {
+  "params": {
+   "W": {"stage": "design", "type": "int", "default": 4, "values": null},
+   "op": {"stage": "design", "type": "str", "default": "add", "values": ["add"]},
+   "n": {"stage": "runtime", "type": "int", "default": null, "values": null},
+   "T": {"stage": "runtime", "type": "int", "default": null, "values": null}
+  },
+  "ports": [
+   {"name": "a", "direction": "in", "lanes": "W", "rate": 1, "dtype": "int64"},
+   {"name": "out", "direction": "out", "lanes": 1, "rate": "T", "dtype": "int64"}
+  ]
+ },
+ "function": {
+  "accel": "reduce",
+  "params": {"lanes": "W", "lanes_out": 1, "op": "op"},
+  "code": "out = a"
+ },
+ "dataflow": {
+  "notation": "affine",
+  "ports": {
+   "a": {
+    "shape": ["n * W"],
+    "offset": [0],
+    "loops": [
+     {"bound": "n", "strides": ["W"], "spatial": false},
+     {"bound": "W", "strides": [1], "spatial": true}
+    ]
+   },
+   "out": {
+    "shape": ["n // T"],
+    "offset": [0],
+    "loops": [
+     {"bound": "n // T", "strides": [1], "spatial": false},
+     {"bound": 1, "strides": [1], "spatial": true}
+    ]
+   }
+  }
+ },
+ "pattern": {"family": "reduce", "attrs": {"op": "add"}, "predicate": null},
+ "implementations": {
+  "chisel_accumulator": {
+   "source": "chisel",
+   "supports": {"W": [1]},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 1},
+   "binding": null
+  },
+  "chisel_adder_tree": {
+   "source": "chisel",
+   "supports": {},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0},
+   "binding": null
+  }
+ }
+}

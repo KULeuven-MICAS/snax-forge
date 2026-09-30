@@ -10,7 +10,7 @@ adds is registered here with ``register_kind``:
   attr (``loop.kind``, ``mem.*``, ``hw.*``, ``user.*``) is passed through
   untouched, and whoever knows the namespace checks it;
 * ``body``: whether the node holds an ordered body of nodes (a scope);
-* ``wcr``: whether its output memlets may carry a ``wcr`` (D102);
+* ``reduce``: whether its output memlets may carry a ``reduce`` (D102);
 * ``binds``: the variables the node binds for its body (a map's ``var``);
 * ``normalize(attrs, what)``: the attrs in their stored form (canonical
   expressions), run before ``check``;
@@ -31,7 +31,7 @@ Built-in kinds (DFG1):
     tasklet      ``code``: one assignment per output connector over the input
                  connectors, in the expression grammar. One element per
                  connector: its memlets are indices, never ranges. An output
-                 memlet may carry a ``wcr`` (D102): the writes of every
+                 memlet may carry a ``reduce`` (D102): the writes of every
                  iteration fold into the element (a reduction).
     accelerated  a bound BRM instance (``instance``, ``brm``, ``implementation``,
                  design ``params``) doing one beat: its connectors are the BRM's
@@ -41,7 +41,7 @@ Built-in kinds (DFG1):
                  ``replaced`` is the subtree ``bind`` replaced, in stored form
                  and checked in this node's scope, so ``unbind`` gives it back
                  (null for a node written by hand). A body is allowed for a
-                 nested block (D71); a leaf block has an empty one. No ``wcr``
+                 nested block (D71); a leaf block has an empty one. No ``reduce``
                  on its memlets: the BRM's function does its own folding.
 
 ``loop`` (a sequential loop) and ``branch`` come with the kernels that need
@@ -109,7 +109,7 @@ class Kind:
     binds: Callable[[Node], list[str]] | None = None
     normalize: Normalize | None = None
     check: Check | None = None
-    wcr: bool = False
+    reduce: bool = False
 
     def owns(self, key: str) -> bool:
         return key in self.required or key in self.defaults
@@ -127,12 +127,12 @@ def register_kind(
     binds: Callable[[Node], list[str]] | None = None,
     normalize: Normalize | None = None,
     check: Check | None = None,
-    wcr: bool = False,
+    reduce: bool = False,
 ) -> None:
     """Make ``"kind": name`` usable in a ``.snaxdfg`` (principle 6)."""
     if name in KINDS:
         raise ValueError(f"node kind {name!r} already registered")
-    KINDS[name] = Kind(required, dict(defaults or {}), body, binds, normalize, check, wcr)
+    KINDS[name] = Kind(required, dict(defaults or {}), body, binds, normalize, check, reduce)
 
 
 def kind_of(name: Any, what: str) -> Kind:
@@ -222,7 +222,7 @@ def _check_tasklet(node: Node, scope: Scope, what: str) -> None:
 
 
 register_kind(
-    "tasklet", required=("code",), normalize=_normalize_code, check=_check_tasklet, wcr=True
+    "tasklet", required=("code",), normalize=_normalize_code, check=_check_tasklet, reduce=True
 )
 
 

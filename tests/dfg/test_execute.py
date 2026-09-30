@@ -3,7 +3,7 @@
 Accepted when the imported vecadd equals the kernel's ``reference`` on
 ``make_inputs``, for N a multiple of the lane count and not, and the plain,
 split and accelerated graphs agree; and when the imported dot equals
-``np.dot`` on integer inputs (DFG3, D28), its sum map folding with ``wcr``
+``np.dot`` on integer inputs (DFG3, D28), its sum map folding with ``reduce``
 from the identity (D102). Also: transients and offset subsets, the
 accelerated node's firing order and tasks, and every check named.
 """

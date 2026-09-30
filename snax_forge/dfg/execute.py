@@ -28,7 +28,7 @@ How a node runs is registered per kind (``register_executor``, principle
     index array, cast to the container's dtype (integer overflow wraps as in
     C). All reads come before all writes. Two iterations writing one
     element is an error (a write conflict), unless the output memlet has a
-    ``wcr`` (D102): then the elements it writes are set to its identity and
+    ``reduce`` (D102): then the elements it writes are set to its identity and
     every iteration's value is folded in with the op's ufunc (``ufunc.at``,
     which wraps as C does), so dot's sum map leaves ``sum(tmp0)`` in
     ``out[0]`` whatever ``out`` held before.
@@ -276,15 +276,15 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
         idx = _grid_indices(m, env, ctx, f"{what}.outputs.{c}")
         full = tuple(np.broadcast_to(i, grid) for i in idx)
         value = np.broadcast_to(results[c], grid).astype(arr.dtype)
-        if m.wcr is not None:  # a reduction (D102): start from the identity, fold every write
-            arr[full] = np.array(m.wcr.identity).astype(arr.dtype)
-            m.wcr.ufunc.at(arr, full, value)
+        if m.reduce is not None:  # a reduction (D102): start from the identity, fold every write
+            arr[full] = np.array(m.reduce.identity).astype(arr.dtype)
+            m.reduce.ufunc.at(arr, full, value)
             continue
         flat = np.ravel_multi_index(full, arr.shape)
         if np.unique(flat).size != np.size(flat):
             raise ExecutionError(
                 f"{what}.outputs.{c}: several iterations write one element of {m.data!r} "
-                "(a write conflict; a reduction needs a wcr on the memlet, D102)"
+                "(a write conflict; a reduction says so with a reduce on the memlet, D102)"
             )
         arr[full] = value
 

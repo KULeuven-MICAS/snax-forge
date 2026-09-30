@@ -412,7 +412,7 @@ def test_fifo_occupancy_slow_accelerator(skip):
     rd = cl.add(Streamer("rd", xb, StreamerConfig(n_ports=1, fifo_depth=2)))
     wr = cl.add(Streamer("wr", xb, StreamerConfig(write=True, n_ports=1, fifo_depth=2)))
     acc = cl.add(Accelerator("acc", cl, reduce_stub(lanes=1, latency=0, ii=4)))
-    acc.attach("in", rd.fifo)
+    acc.attach("a", rd.fifo)
     acc.attach("out", wr.fifo)
     mem.load(0, [1, 2, 3, 4])
     rd.start(StreamerRegs(0, (4,), (WORD,), (1,), (WORD,)))

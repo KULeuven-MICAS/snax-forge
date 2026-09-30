@@ -8,7 +8,7 @@ The fixtures are vecadd at three steps of the flow, kept in the form
     vecadd_accelerated.snaxdfg  after bind to elementwise_add, instance acc
 
 and dot as imported (DFG3): a multiply map into ``tmp0``, then a sum map
-whose output memlet folds into ``out[0]`` with ``wcr`` add (``dot.snaxdfg``).
+whose output memlet folds into ``out[0]`` with ``reduce`` add (``dot.snaxdfg``).
 
 Graphs in the error tests are the plain fixture as a dict, changed by one
 edit (``edited``), the way a person or an LLM edits the file.

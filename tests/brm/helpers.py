@@ -77,7 +77,7 @@ def adder() -> dict[str, Any]:
                 "chisel_tiled_spatial": {
                     "source": "chisel",
                     "supports": {"W": [1, 2, 4, 8]},
-                    "timing": {"latency": 0, "initiation_interval": 1},
+                    "timing": {"latency": 0, "initiation_interval": 1, "drain": 0},
                     "binding": None,
                 }
             },
@@ -98,12 +98,12 @@ def reducer() -> dict[str, Any]:
                     "T": {"stage": "runtime"},
                 },
                 "ports": [
-                    {"name": "in", "direction": "in", "lanes": "W"},
+                    {"name": "a", "direction": "in", "lanes": "W"},
                     {"name": "out", "direction": "out", "lanes": "lanes_out", "rate": "T"},
                 ],
             },
             "function": {"accel": "reduce", "params": {"lanes": "W", "lanes_out": "lanes_out"}},
-            "dataflow": {"notation": "test_list", "ports": {"in": [0, 1], "out": [0]}},
+            "dataflow": {"notation": "test_list", "ports": {"a": [0, 1], "out": [0]}},
             "pattern": {"family": "reduce"},
             "implementations": {
                 "chisel_accumulator": {
@@ -137,6 +137,6 @@ def affine_reducer() -> dict[str, Any]:
     d = reducer()
     d["dataflow"] = {
         "notation": "affine",
-        "ports": {"in": vector_nest("n", "W"), "out": vector_nest("n // T", "lanes_out")},
+        "ports": {"a": vector_nest("n", "W"), "out": vector_nest("n // T", "lanes_out")},
     }
     return copy.deepcopy(d)

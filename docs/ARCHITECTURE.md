@@ -178,7 +178,7 @@ its JSON.
   (open item 36).
 - **Loop kinds:** a map carries `loop.kind`: absent as imported, `tile`,
   `temporal` or `spatial` once SNAX-SANDBOX maps it (D73).
-- **Reductions** (D102): a tasklet's output memlet may carry a `wcr`, a
+- **Reductions** (D102): a tasklet's output memlet may carry a `reduce`, a
   registered op (`add`, `mul`, `min`, `max`) and an identity. The elements it
   writes start from the identity when the node runs and every iteration folds
   its value in, so a reduction is a map like any other, and SNAX-SANDBOX
@@ -201,7 +201,8 @@ kernel's container names and gives maps, tasklets, variables and connectors
 readable names (`add_map`, `add`, `i`, `in1`). It decides nothing, and a
 construct it does not support is an error that names it. A DaCe `Reduce`
 becomes a map per input dimension around `out = in1`, its output memlet with a
-`wcr`, named after the reduction (`sum_map`, `sum`); the scalar and copy
+`reduce` (what DaCe calls `wcr`; the word stays in the importer), named after
+the reduction (`sum_map`, `sum`); the scalar and copy
 tasklet DaCe stores its result through are folded into a direct write, the one
 fold the importer does itself (D102). dot imports as `mult_map` into the
 transient `tmp0`, then `sum_map` into `out[0]`. An MLIR importer
@@ -216,7 +217,7 @@ A NumPy interpreter that runs any `.snaxdfg`, as imported, split or
 accelerated, and gives the golden output (D20, D79; `pixi run check-dfg FILE
 --kernel K`). Maps run over their whole iteration space at once; an
 accelerated node runs firing by firing through the same function SNAX-MODEL
-runs. A `wcr` output sets its elements to the identity, then folds every
+runs. A `reduce` output sets its elements to the identity, then folds every
 iteration in (`ufunc.at`, wrapping as C does; D102). On the imported graph it
 must equal the kernel's own `reference`;
 SNAX-SANDBOX checks every transform step against it, and the flow checks every
@@ -250,18 +251,29 @@ Shared:
    in the sandbox (`family`) and its parameters (`attrs`).
 
 Per implementation: its `source` (only `chisel` for now, open item 28), the
-design-param values it supports, its **timing** (`latency` and
-`initiation_interval`, ints or expressions over design params; always the
-user's numbers, D5) and an optional **hardware binding** (null until M10).
+design-param values it supports, its **timing** (`latency`,
+`initiation_interval` and `drain`, ints or expressions over design params;
+always the user's numbers, D5, D103) and an optional **hardware binding**
+(null until M10). Ports are named `a`, `b`, ... and `out`; a Python keyword
+or a leading underscore is rejected, since port names appear in `code` and
+in streamer names.
 
 Designs that differ only in timing, supported values or RTL source are
 implementations of one BRM; different ports, rates or data order make a
 different BRM. `Brm.resolve` turns one implementation and its design params
 into the accelerator entry of the cluster file, checked against the model's
 registered kind, so an instance that exists fits the model (D68). The library
-holds `elementwise_add` (W lanes, 4 by default; implementation
-`chisel_tiled_spatial`, L = 0, II = 1), whose reference implementation is
-`ElementwiseTiledSpatial` in `hw/chisel/`.
+holds:
+
+- `elementwise_add` and `elementwise_mul` (W lanes, 4 by default;
+  implementation `chisel_tiled_spatial`, L = 0, II = 1), whose reference
+  implementation is `ElementwiseTiledSpatial` in `hw/chisel/`;
+- `accumulate` (D103): the sum of every lane of T beats of `a` as one element
+  of `out`, code `out = a`, pattern family `reduce` with op `add`, kind
+  `reduce`. Implementations `chisel_accumulator` (the Chisel `Accumulator`:
+  1 lane, L = 1, II = 1, drain 1) and `chisel_adder_tree` (W lanes, L = 1,
+  II = 1, drain 0; no RTL yet). A BRM names a reduction by its pattern and
+  kind, not by an IR's term for it.
 
 ### 5.4 SNAX-DSE: SNAX-SANDBOX and the design step
 
@@ -398,10 +410,13 @@ a block must follow for that are in C§8 (D47).
 3. **Streamers** (`streamer.py`, D12, D32, D69): one per accelerator port,
    programmed by raw register values (base, bounds and strides per loop);
    affine address generation, FIFO buffering, valid/ready.
-4. **Accelerators** (`accel.py`, D25, D35, D59): ports with a per-port element
-   rate, latency, II and a Python function producing real data; between the
-   streamers' FIFOs, with an L-stage pipeline that stalls on a full output.
-   Generic `elementwise` and `reduce` kinds stand in where no BRM exists yet.
+4. **Accelerators** (`accel.py`, D25, D35, D59, D103): ports with a per-port
+   element rate, latency, II, a drain and a Python function producing real
+   data; between the streamers' FIFOs, with an L-stage pipeline that stalls on
+   a full output. The drain is the cycles after a push in which no input is
+   taken (the Chisel Accumulator's `in.ready` while its result waits). The
+   generic `elementwise` and `reduce` kinds are what every BRM's function
+   names.
 5. **DMA and L2** (`dma.py`, `l2.py`, D34): a flat L2 and a DMA on one wide
    interconnect port moving affine beat patterns (open item 7 lists the iDMA
    features not copied).

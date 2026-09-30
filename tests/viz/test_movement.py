@@ -105,11 +105,11 @@ def test_a_reduced_element_lists_every_firing_it_came_from(runs):
     j = api.journey_view(runs["reduce"], "OUT", 1)
     fs = [f for f in j["firings"] if f["role"] == "produced"]
     assert [f["n"] for f in fs] == [4, 5, 6, 7]
-    assert [x for f in fs for x in f["inputs"]["in"]] == [f"IN[{i}]" for i in range(16, 32)]
+    assert [x for f in fs for x in f["inputs"]["a"]] == [f"IN[{i}]" for i in range(16, 32)]
     assert all(f["outputs"] == {"out": ["OUT[1]"]} for f in fs)
     j = api.journey_view(runs["reduce"], "IN", 17)
     (f,) = j["firings"]
-    assert (f["n"], f["inputs"], list(f["results"])) == (4, {"in": ["IN[17]"]}, ["OUT[1]"])
+    assert (f["n"], f["inputs"], list(f["results"])) == (4, {"a": ["IN[17]"]}, ["OUT[1]"])
 
 
 def test_an_index_outside_the_region_is_refused(runs):

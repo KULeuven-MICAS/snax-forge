@@ -138,6 +138,8 @@ CASES = [
     ("rate design", lambda d: _port(d, 2).update(rate="W"), "runtime param name"),
     ("rate expr", lambda d: _port(d, 2).update(rate="n*2"), "runtime param name"),
     ("dtype", lambda d: _port(d, 0).update(dtype="int65"), "is not a dtype"),
+    ("keyword port", lambda d: _port(d, 0).update(name="in"), "'in' is a Python keyword"),
+    ("underscore port", lambda d: _port(d, 0).update(name="_a"), "starts with an underscore"),
     ("extra runtime", lambda d: _params(d).update(T={"stage": "runtime"}), "exactly n and"),
     ("no n", lambda d: _params(d).pop("n"), "exactly n and"),
     # function
@@ -150,6 +152,8 @@ CASES = [
     ("supports values", lambda d: _impl(d)["supports"].update(op=["sub"]), "not within"),
     ("ii zero", lambda d: _impl(d)["timing"].update(initiation_interval=0), "must be >= 1"),
     ("latency runtime", lambda d: _impl(d)["timing"].update(latency="n"), "not design params"),
+    ("drain negative", lambda d: _impl(d)["timing"].update(drain=-1), "drain: must be >= 0"),
+    ("drain runtime", lambda d: _impl(d)["timing"].update(drain="n"), "not design params"),
     ("binding", lambda d: _impl(d).update(binding="chisel"), "null or an object"),
     # pattern and dataflow
     ("family", lambda d: d["pattern"].update(family=""), "family: must be"),
