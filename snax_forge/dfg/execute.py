@@ -42,14 +42,26 @@ How a node runs is registered per kind (``register_executor``, principle
     ``k`` counts firings, ``state`` lives for one task, ``n`` is the number
     of firings. Maps further out (a tile, an untagged map) start a new task
     per iteration. Each port's beat is gathered from its memlet (the lanes,
-    row-major), and each output beat is written back the same way.
+    row-major), and each output beat is written back the same way. A port
+    with a named rate (``T``, dot's accumulator) moves one beat every T
+    firings, T from ``named_rates`` (D104): an input is read at firings 0, T,
+    2T, ..., an output written at T-1, 2T-1, ... where its memlet points in
+    the firing that completes it.
 
 **Checks on the way.** Every index is inside its container (NumPy would
 wrap a negative one silently); an accelerated node's connectors are its
 BRM's ports, each beat has the port's lanes and the port's dtype is the
-container's (open item 30); only ports of rate 1 are run for now (a rate
-``T`` output, dot's accumulator, comes with DFG3 and BRM4); a spatial map
-around an accelerated node is an error, since its lanes are in the memlet.
+container's (open item 30); a spatial map around an accelerated node is
+an error, since its lanes are in the memlet.
+
+**Named rates** (``named_rates``, D104). A rate that names a start
+parameter gets its value from the graph: the product of the counts of the
+innermost firing loops the port's memlet does not depend on, the loops its
+beat folds over. dot's sum port ``out[0:1]`` depends on no loop, so T is
+every firing (N / W). A memlet that skips a loop outside one it uses would
+move a beat per firing yet land on one element, and is an error. The
+sandbox's ``bind`` and SNAX-LOWER use the same function, so the order check,
+the reference and the task list agree on T.
 Everything raises ``ExecutionError`` naming the node.
 """
 
@@ -67,7 +79,7 @@ from snax_forge.expr import ExprError, Value
 
 from .graph import Graph, Memlet, Node
 from .kinds import DfgError
-from .subset import parse_dim
+from .subset import dim_names, parse_dim
 
 
 class ExecutionError(DfgError):
@@ -305,6 +317,38 @@ def _accel(node: Node, what: str) -> Any:
         raise ExecutionError(f"{what}: {e}") from None
 
 
+def named_rates(
+    ports: Mapping[str, tuple[Memlet, int | str]], loops: list[tuple[str, int]], what: str
+) -> dict[str, int]:
+    """Each named rate's value over the firing ``loops`` (var, count), outermost first (D104).
+
+    ``ports`` maps a port to its memlet and rate. For a named rate, the
+    innermost loops its memlet does not use are the ones one beat folds over;
+    the rate is the product of their counts. Two ports naming one rate must
+    agree. Raises ExecutionError naming the port.
+    """
+    out: dict[str, int] = {}
+    for port, (m, rate) in ports.items():
+        if not isinstance(rate, str):
+            continue
+        used: set[str] = set()
+        for d in m.subset:
+            used |= dim_names(d)
+        k = len(loops)
+        while k and loops[k - 1][0] not in used:
+            k -= 1
+        skipped = [var for var, _ in loops[:k] if var not in used]
+        if skipped:
+            raise ExecutionError(
+                f"{what}: port {port!r} ({m.data}{m.subset}) does not use loop {skipped[0]!r}, "
+                "which is outside a loop it uses: a named rate folds innermost loops only"
+            )
+        value = int(np.prod([count for _, count in loops[k:]], dtype=int))
+        if out.setdefault(rate, value) != value:
+            raise ExecutionError(f"{what}: rate {rate!r} is {out[rate]} and {value} on two ports")
+    return out
+
+
 def _run_accelerated(node: Node, ctx: Context) -> None:
     what = f"node {node.id!r}"
     if node.body:
@@ -326,8 +370,6 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
                 f"{what}.{side}: connectors {list(conns)}, the BRM's ports {names}"
             )
     for p in cfg.ports:
-        if p.rate != 1:
-            raise ExecutionError(f"{what}: port {p.name!r} has rate {p.rate!r}; only 1 is run yet")
         m = (node.inputs | node.outputs)[p.name]
         want = instance.brm.port(p.name).dtype
         if ctx.graph.containers[m.data].dtype != want:
@@ -344,6 +386,16 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
         task += 1
     outer, inner = ctx.loops[: len(ctx.loops) - task], ctx.loops[len(ctx.loops) - task :]
     n = int(np.prod([len(loop.values) for loop in inner], dtype=int))
+    memlets = node.inputs | node.outputs
+    params = {"n": n} | named_rates(
+        {p.name: (memlets[p.name], p.rate) for p in cfg.ports},
+        [(loop.var, len(loop.values)) for loop in inner],
+        what,
+    )
+    rate = {p.name: p.rate if isinstance(p.rate, int) else params[p.rate] for p in cfg.ports}
+    for name, r in rate.items():
+        if n % r:
+            raise ExecutionError(f"{what}: n = {n} is not a multiple of port {name!r}'s rate {r}")
     written = {m.data: np.zeros(ctx.data[m.data].shape, bool) for m in node.outputs.values()}
     for point in itertools.product(*(loop.values for loop in outer)):
         state: dict[str, Any] = {}
@@ -352,13 +404,16 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
             env = env0 | {lp.var: int(v) for lp, v in zip(inner, beat, strict=True)}
             ins = {}
             for p in cfg.inputs:
+                if k % rate[p.name]:
+                    continue
                 m = node.inputs[p.name]
                 idx = _beat_indices(m, env, ctx, f"{what}.inputs.{p.name}")
                 ins[p.name] = _lanes(ctx.data[m.data][idx], p, what)
-            outs = cfg.fn(k, ins, state, {"n": n})
-            if sorted(outs) != sorted(p.name for p in cfg.outputs):
+            outs = cfg.fn(k, ins, state, params)
+            due = [p for p in cfg.outputs if (k + 1) % rate[p.name] == 0]
+            if sorted(outs) != sorted(p.name for p in due):
                 raise ExecutionError(f"{what}: firing {k} gave {sorted(outs)}")
-            for p in cfg.outputs:
+            for p in due:
                 m = node.outputs[p.name]
                 idx = _beat_indices(m, env, ctx, f"{what}.outputs.{p.name}")
                 arr = ctx.data[m.data]

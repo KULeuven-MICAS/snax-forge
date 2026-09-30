@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D104**.
+  area tag. Next free number: **D105**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -35,7 +35,7 @@ By area:
 | brm | D3 D5 D15 D68 D70 D82 D103 |
 | dfg | D1 D2 D19 D71 D77 D78 D102 |
 | ref | D17 D20 D28 D79 |
-| sandbox | D72 D73 D80 |
+| sandbox | D72 D73 D80 D104 |
 | design | D7 D74 D84–D87 |
 | flow | D90 D94 |
 | viz | D16 D54–D58 D60 D61 D76 D81 D96 D97 D99 |
@@ -432,3 +432,13 @@ stubs and planned designs keep 0; the cluster file writes it only when not 0. Po
 be Python keywords or start with an underscore (they appear in `code` and in streamer names), so
 the reduce stub's `in` becomes `a`, and red4 is built from `accumulate`. Amends D35 and D68; settles
 the drain half of open item 8. → C§4, C§10, `brm/library/accumulate.json`, `snax_model/accel.py`.
+
+**D104** · sandbox — `bind` binds a reduction: a `reduce` pattern matcher pairs a tasklet that
+copies its input into an output folding with the BRM's op and identity, so the SNAX-DFG's word and
+the BRM's pattern meet only there. A folding output that does not use the spatial variable folds
+every lane into one, so its memlet becomes one lane (`out[0:1]`, no `reduce` on the accelerated
+node). A named rate is the product of the counts of the innermost firing loops the port's memlet
+does not use, one function (`named_rates`) for bind's order check, the reference executor and
+SNAX-LOWER, so they cannot disagree on T. dot's recipe uses one `W` for both accelerators; a
+serial accumulator is a recipe of its own. Amends D73, D79, D80. → C§12, `sandbox/patterns.py`,
+`dfg/execute.py`.

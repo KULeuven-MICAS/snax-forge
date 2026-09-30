@@ -1,0 +1,106 @@
+{
+ "name": "dot",
+ "symbols": {"N": 64},
+ "containers": {
+  "A": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "B": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "out": {"shape": [1], "dtype": "int64", "transient": false, "attrs": {}},
+  "tmp0": {"shape": ["N"], "dtype": "int64", "transient": true, "attrs": {}}
+ },
+ "body": [
+  {
+   "id": "mult_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {
+    "var": "i_t",
+    "range": "0:N // 4",
+    "loop.kind": "temporal",
+    "loop.split": {"var": "i", "range": "0:N"}
+   },
+   "body": [
+    {
+     "id": "mult",
+     "kind": "accelerated",
+     "inputs": {
+      "a": {"data": "A", "subset": ["4 * i_t:4 * i_t + 4"]},
+      "b": {"data": "B", "subset": ["4 * i_t:4 * i_t + 4"]}
+     },
+     "outputs": {"out": {"data": "tmp0", "subset": ["4 * i_t:4 * i_t + 4"]}},
+     "attrs": {
+      "instance": "mul",
+      "brm": "elementwise_mul",
+      "implementation": "chisel_tiled_spatial",
+      "code": "out = a * b",
+      "params": {"W": 4, "op": "mul"},
+      "replaced": {
+       "id": "mult_map_s",
+       "kind": "map",
+       "inputs": {},
+       "outputs": {},
+       "attrs": {"var": "i_s", "range": "0:4", "loop.kind": "spatial"},
+       "body": [
+        {
+         "id": "mult",
+         "kind": "tasklet",
+         "inputs": {
+          "in1": {"data": "A", "subset": ["4 * i_t + i_s"]},
+          "in2": {"data": "B", "subset": ["4 * i_t + i_s"]}
+         },
+         "outputs": {"out": {"data": "tmp0", "subset": ["4 * i_t + i_s"]}},
+         "attrs": {"code": "out = in1 * in2"}
+        }
+       ]
+      }
+     },
+     "body": []
+    }
+   ]
+  },
+  {
+   "id": "sum_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {
+    "var": "i_t_1",
+    "range": "0:N // 4",
+    "loop.kind": "temporal",
+    "loop.split": {"var": "i", "range": "0:N"}
+   },
+   "body": [
+    {
+     "id": "sum",
+     "kind": "accelerated",
+     "inputs": {"a": {"data": "tmp0", "subset": ["4 * i_t_1:4 * i_t_1 + 4"]}},
+     "outputs": {"out": {"data": "out", "subset": ["0:1"]}},
+     "attrs": {
+      "instance": "sum",
+      "brm": "accumulate",
+      "implementation": "chisel_adder_tree",
+      "code": "out = a",
+      "params": {"W": 4, "op": "add"},
+      "replaced": {
+       "id": "sum_map_s",
+       "kind": "map",
+       "inputs": {},
+       "outputs": {},
+       "attrs": {"var": "i_s", "range": "0:4", "loop.kind": "spatial"},
+       "body": [
+        {
+         "id": "sum",
+         "kind": "tasklet",
+         "inputs": {"in1": {"data": "tmp0", "subset": ["4 * i_t_1 + i_s"]}},
+         "outputs": {"out": {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}},
+         "attrs": {"code": "out = in1"}
+        }
+       ]
+      }
+     },
+     "body": []
+    }
+   ]
+  }
+ ]
+}

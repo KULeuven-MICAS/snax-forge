@@ -18,7 +18,7 @@ DFG3 (D102): reduce.py, a reduction on a tasklet's output memlet
 importer turns DaCe's ``Reduce`` into one and the executor folds it.
 """
 
-from .execute import EXECUTORS, ExecutionError, execute, register_executor
+from .execute import EXECUTORS, ExecutionError, execute, named_rates, register_executor
 from .graph import Container, Graph, Memlet, Node
 from .kinds import KINDS, LOOP_KINDS, DfgError, Kind, Scope, register_kind
 from .reduce import REDUCE_OPS, Reduction, register_reduction
@@ -43,6 +43,7 @@ __all__ = [
     "execute",
     "format_dim",
     "is_range",
+    "named_rates",
     "parse_dim",
     "register_executor",
     "register_kind",

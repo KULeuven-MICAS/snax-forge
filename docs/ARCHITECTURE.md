@@ -217,7 +217,9 @@ A NumPy interpreter that runs any `.snaxdfg`, as imported, split or
 accelerated, and gives the golden output (D20, D79; `pixi run check-dfg FILE
 --kernel K`). Maps run over their whole iteration space at once; an
 accelerated node runs firing by firing through the same function SNAX-MODEL
-runs. A `reduce` output sets its elements to the identity, then folds every
+runs, a port with a named rate one beat every `T` firings, `T` from the loops
+its memlet does not use (`named_rates`, shared with the sandbox and
+SNAX-LOWER, D104). A `reduce` output sets its elements to the identity, then folds every
 iteration in (`ufunc.at`, wrapping as C does; D102). On the imported graph it
 must equal the kernel's own `reference`;
 SNAX-SANDBOX checks every transform step against it, and the flow checks every
@@ -298,7 +300,11 @@ Transforms so far:
 - `bind`: a tasklet alone in a spatial map becomes an accelerated node bound
   to a BRM instance; the BRM's pattern matches it, its code must equal the
   tasklet's, and the lanes design param is read off the spatial bound, so it
-  is decided once, in the graph (D73, D82)
+  is decided once, in the graph (D73, D82). Pattern families: `elementwise`
+  and `reduce`; the `reduce` matcher is where the SNAX-DFG's `reduce` memlet
+  meets a BRM's pattern. A folding output that does not use the spatial
+  variable (dot's `out[0]`) folds every lane into one lane, `out[0:1]`, and
+  its named rate `T` is the count of the firing loops it folds (D104)
 - `unbind`, `join_map`: their inverses, from what the graph records (D82)
 - later: a tile transform, with a DMA per tile
 

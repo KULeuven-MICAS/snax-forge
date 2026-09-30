@@ -16,6 +16,13 @@ other extension (principle 6).
 with one operator; ``attrs.op`` names the operator (``add``, ``sub``,
 ``mul``) and ``attrs.arity`` the number of inputs. Inputs map onto the
 BRM's input ports in fold order, the output onto its one output port.
+
+``reduce`` (D104): the tasklet copies its one input into its one output
+(``out = in1``), and the output memlet folds (``reduce``, D102) with the op
+``attrs.op`` names, from that op's identity for the port's dtype. That is
+what DFG3 makes of DaCe's ``Reduce``, and what a BRM of family ``reduce``
+(``accumulate``) does: this matcher is the one place where the SNAX-DFG's
+``reduce`` and the BRM's pattern meet, so the BRM names no IR's term.
 """
 
 from __future__ import annotations
@@ -24,7 +31,9 @@ import ast
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from snax_forge.dfg import Node
+import numpy as np
+
+from snax_forge.dfg import REDUCE_OPS, Node
 
 from .recipe import SandboxError
 
@@ -89,3 +98,37 @@ def _elementwise(node: Node, attrs: Mapping[str, Any], brm: Any) -> dict[str, st
 
 
 register_pattern("elementwise", _elementwise)
+
+
+def _reduce(node: Node, attrs: Mapping[str, Any], brm: Any) -> dict[str, str]:
+    what = f"node {node.id!r} as {brm.name!r}"
+    if node.kind != "tasklet":
+        raise SandboxError(f"{what}: a {node.kind!r} is not a reduce tasklet")
+    if len(node.inputs) != 1 or len(node.outputs) != 1:
+        raise SandboxError(f"{what}: a reduce folds one input into one output")
+    (cin,), (cout,) = node.inputs, node.outputs
+    if node.attrs["code"] != f"{cout} = {cin}":
+        raise SandboxError(
+            f"{what}: {node.attrs['code']!r} is not a copy of its input ({cout} = {cin})"
+        )
+    ins = [p for p in brm.interface.ports if p.direction == "in"]
+    outs = [p for p in brm.interface.ports if p.direction == "out"]
+    if len(ins) != 1 or len(outs) != 1:
+        raise SandboxError(f"{what}: the BRM has ports {[p.name for p in brm.interface.ports]}")
+    red = node.outputs[cout].reduce
+    if red is None:
+        raise SandboxError(f"{what}: its output {cout!r} does not fold (no reduce on the memlet)")
+    op = attrs.get("op")
+    if op not in REDUCE_OPS:
+        raise SandboxError(f"{what}: the pattern's op {op!r} is not a registered reduce op")
+    if red.op != op:
+        raise SandboxError(f"{what}: the tasklet folds with {red.op!r}, the pattern with {op!r}")
+    identity = REDUCE_OPS[op].identity(np.dtype(outs[0].dtype))
+    if red.identity != identity:
+        raise SandboxError(
+            f"{what}: the fold starts from {red.identity}, the BRM from {op}'s identity {identity}"
+        )
+    return {cin: ins[0].name, cout: outs[0].name}
+
+
+register_pattern("reduce", _reduce)

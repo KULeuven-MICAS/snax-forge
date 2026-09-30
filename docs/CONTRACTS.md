@@ -975,13 +975,30 @@ non-transient container equals the input graph's. Each step is written as
 | Transform | Params | Does |
 |---|---|---|
 | `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor` |
-| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; the lanes param comes from the spatial bound; the tasklet's code on the port names must be the BRM's `function.code` |
+| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; the lanes param comes from the spatial bound; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D104) |
 | `unbind` | `node` (accelerated id) | the accelerated node becomes the subtree it `replaced` |
 | `join_map` | `map` (id) | a temporal map with `loop.split` and its spatial map become the map they were split from |
 
 The vecadd recipe: W lanes, one temporal map of N / W beats, bound to
 `elementwise_add`. `recipes/vecadd_undo.json` (`unbind`, then `join_map`)
-takes its last step back to the first.
+takes its last step back to the first. The dot recipe binds two accelerators
+with one `W` for both: the multiply map to `elementwise_mul` (instance
+`mul`), the sum map to `accumulate`'s `chisel_adder_tree` (instance `sum`),
+whose `out` is one lane every `T = N / W` firings (D104):
+
+<!-- snippet: recipes/dot.json -->
+```json
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "sum"
+   }
+  }
+```
 
 <!-- snippet: recipes/vecadd.json -->
 ```json

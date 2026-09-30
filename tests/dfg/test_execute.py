@@ -16,7 +16,7 @@ import importlib
 import numpy as np
 import pytest
 
-from snax_forge.dfg import KINDS, Graph, register_kind
+from snax_forge.dfg import KINDS, Graph, Memlet, register_kind
 from snax_forge.dfg.__main__ import main
 from snax_forge.dfg.execute import EXECUTORS, ExecutionError, execute, register_executor
 from snax_forge.dfg.import_sdfg import import_sdfg
@@ -118,6 +118,38 @@ def test_other_folds():
     ]
     m = np.arange(36).reshape(6, 6)
     assert execute(g, {"A": m, "out": np.zeros(1, np.int64)})["out"].tolist() == [m.sum()]
+
+
+def test_the_bound_dot_runs_its_accumulator():
+    """dot_accelerated: accumulate's out has rate T = N / 4 = 16, one beat per task (D104)."""
+    inputs, ref = kernel_run(64, kernel="dot")
+    out = execute(Graph.load(fixture("dot_accelerated")), inputs)
+    assert out["out"].tolist() == ref["out"].tolist()
+    assert out["tmp0"].tolist() == (inputs["A"] * inputs["B"]).tolist()
+
+
+def _m(*subset):
+    return Memlet("x", list(subset))
+
+
+NAMED_RATES = [
+    ({"out": (_m("0:1"), "T")}, [("i_t", 16)], {"T": 16}),  # dot: every firing
+    ({"out": (_m("i"), "T")}, [("i", 4), ("j", 6)], {"T": 6}),  # a row sum: the inner loop
+    ({"a": (_m("i"), 1), "out": (_m("i"), "T")}, [("i", 4)], {"T": 1}),  # folds nothing
+    ({"out": (_m(0), "T"), "c": (_m(1), "T")}, [("i", 2), ("j", 3)], {"T": 6}),
+]
+
+
+@pytest.mark.parametrize(("ports", "loops", "want"), NAMED_RATES)
+def test_named_rates(ports, loops, want):
+    assert ex.named_rates(ports, loops, "t") == want
+
+
+def test_named_rates_rejected():
+    with pytest.raises(ExecutionError, match="does not use loop 'i', which is outside"):
+        ex.named_rates({"out": (_m("j"), "T")}, [("i", 4), ("j", 6)], "t")
+    with pytest.raises(ExecutionError, match="rate 'T' is 6 and 3 on two ports"):
+        ex.named_rates({"a": (_m(0), "T"), "b": (_m("i"), "T")}, [("i", 2), ("j", 3)], "t")
 
 
 def test_cli_check_dot(capsys):

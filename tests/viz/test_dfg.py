@@ -133,6 +133,16 @@ def test_a_folding_write_names_its_op():
     assert writes == [("mult.out", "tmp0[i]"), ("sum.out", "out[0] (reduce add)")]
 
 
+def test_the_bound_dot_shows_both_accelerators():
+    """dot after its recipe (SBX2): mul and sum, each over N // 4 beats; tmp0 between them."""
+    v = view(FIXTURES / "dot_accelerated.snaxdfg")
+    tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
+    assert [(t["id"], t["iterations"]) for t in tops] == [("mult_map", 16), ("sum_map", 16)]
+    assert [t["body"][0]["title"] for t in tops] == ["mul = elementwise_mul", "sum = accumulate"]
+    writes = [(e["from"], e["text"]) for e in v["edges"] if e["dir"] == "write"]
+    assert writes == [("mult.out", "tmp0[4 * i_t:4 * i_t + 4]"), ("sum.out", "out[0:1]")]
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
     assert plain["rows"][1]["node"]["iterations"] is None

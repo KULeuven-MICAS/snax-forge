@@ -25,7 +25,12 @@ is (D77); the reference check after the step is run.py's.
     the temporal maps around must give the elements in the order of the
     port's nest (D70, D73). The tasklet's code, on the BRM's port names,
     must be the BRM's ``function.code``; the accelerated node carries that
-    code and the replaced subtree (D82).
+    code and the replaced subtree (D82). A folding output (``reduce``,
+    D102) whose memlet does not use the spatial variable (dot's
+    ``out[0]``) folds every lane into one: its port must have one lane, its
+    index becomes the range of that lane (``out[0:1]``, no ``reduce`` on
+    the accelerated node), and its order is checked over the temporal maps
+    it uses, one beat per T firings, T from ``named_rates`` (D104).
 ``unbind(node)`` and ``join_map(map)``
     the inverses (D82): the subtree an accelerated node replaced, and the
     map a temporal / spatial pair was split from (``loop.split``), so a
@@ -42,7 +47,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.dfg import DfgError, Graph, Memlet, Node, parse_dim
+from snax_forge.dfg import DfgError, Graph, Memlet, Node, dim_names, named_rates, parse_dim
 from snax_forge.dfg.subset import format_dim
 from snax_forge.expr import ExprError
 
@@ -249,7 +254,16 @@ def bind(
         raise SandboxError(
             f"{what}: the spatial map must run over 0:<int>, not {smap.attrs['range']}"
         )
-    lanes = {b.port(p).lanes for p in ports.values()}
+    var_s = smap.attrs["var"]
+    memlets = tasklet.inputs | tasklet.outputs
+    # a folding output (D102) that does not use the spatial variable takes one lane (D104)
+    folds = {c for c, m in tasklet.outputs.items() if m.reduce is not None and not _uses(m, var_s)}
+    for c, m in memlets.items():
+        if c not in folds and not _uses(m, var_s):
+            raise SandboxError(
+                f"{what}: {c} {m.data}{m.subset} does not use the spatial variable {var_s!r}"
+            )
+    lanes = {b.port(ports[c]).lanes for c in memlets if c not in folds}
     if len(lanes) != 1:
         raise SandboxError(
             f"{what}: the BRM's ports have different lanes {sorted(map(str, lanes))}"
@@ -266,14 +280,27 @@ def bind(
         inst = b.resolve(implementation, given)
     except BrmError as e:
         raise SandboxError(f"{what}: {e}") from None
-    if inst.lanes(next(iter(ports.values()))) != end:
-        raise SandboxError(
-            f"{what}: the BRM has {inst.lanes(next(iter(ports.values())))} lanes, the map {end}"
-        )
+    lane_port = next(ports[c] for c in memlets if c not in folds)
+    if inst.lanes(lane_port) != end:
+        raise SandboxError(f"{what}: the BRM has {inst.lanes(lane_port)} lanes, the map {end}")
+    for c in folds:
+        if inst.lanes(ports[c]) != 1:
+            raise SandboxError(
+                f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
+                f"{inst.lanes(ports[c])} lanes"
+            )
 
     # memlets: the spatial variable becomes the lanes' range; dtype and order checked
-    var_s = smap.attrs["var"]
-    n = int(np.prod([_bound(g, _length(m), what) for m in temporal], dtype=int))
+    counts = [_bound(g, _length(m), what) for m in temporal]
+    n = int(np.prod(counts, dtype=int))
+    loops = [(m.attrs["var"], k) for m, k in zip(temporal, counts, strict=True)]
+    try:
+        rates = named_rates(
+            {ports[c]: (m, b.port(ports[c]).rate) for c, m in memlets.items()}, loops, what
+        )
+    except DfgError as e:
+        raise SandboxError(str(e)) from None
+    task = {"n": n} | rates
     new_in: dict[str, Memlet] = {}
     new_out: dict[str, Memlet] = {}
     for side, conns, out in (
@@ -287,13 +314,20 @@ def bind(
                 raise SandboxError(
                     f"{what}: port {port!r} is {want}, container {m.data!r} is {g.containers[m.data].dtype}"
                 )
+            try:
+                nest = task_nest(inst, port, task)
+            except ValueError as e:
+                raise SandboxError(f"{what}: {e}") from None
+            if c in folds:  # one lane: the last index becomes a range of one (D104)
+                dims = [*m.subset[:-1], _one_lane(m.subset[-1], f"{what}.{side}.{c}")]
+                out[port] = Memlet(m.data, dims)
+                beats = [lp for lp, (var, _) in zip(temporal, loops, strict=True)
+                         if any(var in dim_names(d) for d in m.subset)]  # fmt: skip
+                _check_order(g, m, beats, None, nest.indices(), f"{what} port {port!r}")
+                continue
             out[port] = Memlet(
                 m.data, [_lanes_dim(d, var_s, end, f"{what}.{side}.{c}") for d in m.subset]
             )
-            try:
-                nest = task_nest(inst, port, {"n": n})
-            except ValueError as e:
-                raise SandboxError(f"{what}: {e}") from None
             _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
     acc = Node(
         tasklet.id,
@@ -322,6 +356,18 @@ def _length(m: Node) -> str:
     return end if begin == 0 else f"({end}) - ({begin})"
 
 
+def _uses(m: Memlet, var: str) -> bool:
+    return any(var in dim_names(d) for d in m.subset)
+
+
+def _one_lane(d: Any, what: str) -> Any:
+    """An index as the range of one lane, ``c`` -> ``c:c + 1``."""
+    parts = parse_dim(d, what)
+    if len(parts) != 1:
+        raise SandboxError(f"{what}: {d!r} is already a range")
+    return format_dim((parts[0], expr.canonical(f"({parts[0]}) + 1"), 1))
+
+
 def _lanes_dim(d: Any, var: str, lanes: int, what: str) -> Any:
     """A dimension over the spatial variable as the range of the lanes."""
     parts = parse_dim(d, what)
@@ -340,11 +386,15 @@ def _lanes_dim(d: Any, var: str, lanes: int, what: str) -> Any:
 
 
 def _check_order(
-    g: Graph, m: Memlet, temporal: list[Node], smap: Node, want: np.ndarray, what: str
+    g: Graph, m: Memlet, temporal: list[Node], smap: Node | None, want: np.ndarray, what: str
 ) -> None:
-    """The memlet over the temporal maps and the lanes gives the nest's order."""
+    """The memlet over the temporal maps and the lanes gives the nest's order.
+
+    ``smap`` None: a folding output, one lane, over the temporal maps its
+    memlet uses (one beat per T firings, D104).
+    """
     env: dict[str, Any] = {k: v for k, v in g.symbols.items() if v is not None}
-    loops = [*temporal, smap]
+    loops = [*temporal, *([smap] if smap is not None else [])]
     for d, lp in enumerate(loops):
         begin, end, step = parse_dim(lp.attrs["range"], lp.id)
         values = np.arange(_bound(g, begin, what), _bound(g, end, what), step)
@@ -352,9 +402,10 @@ def _check_order(
         shape[d] = len(values)
         env[lp.attrs["var"]] = values.reshape(shape)
     full = tuple(len(np.asarray(env[lp.attrs["var"]]).reshape(-1)) for lp in loops)
+    lanes = full[-1] if smap is not None else 1
     got = np.stack(
         [np.broadcast_to(np.asarray(expr.evaluate(dim, env)), full) for dim in m.subset], axis=-1
-    ).reshape(-1, full[-1], len(m.subset))
+    ).reshape(-1, lanes, len(m.subset))
     if got.shape != want.shape or not np.array_equal(got - got[0, 0], want - want[0, 0]):
         raise SandboxError(f"{what}: the memlet {m.data}{m.subset} does not give the BRM's order")
 
