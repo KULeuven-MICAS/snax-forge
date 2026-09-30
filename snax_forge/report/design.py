@@ -9,7 +9,7 @@ SNAX-LOWER derives from it; the model is not run. For a plain run directory
                  changes), memory plan passes and pins      (design point only)
     components   the cluster file's components in order
     accelerators instance, BRM and implementation (design point only), params,
-                 latency, target II, ports
+                 latency, target II, ports, drain (D103)
     streamers    instance port, direction, lanes, FIFO depth, temporal loops and
                  the container it streams (from the graph's memlets, else from
                  the task list's base address, else unknown)
@@ -17,7 +17,8 @@ SNAX-LOWER derives from it; the model is not run. For a plain run directory
                  (the memory tab's numbers, viz/memory.py)
     notes        facts about addresses only: streamers of one accelerator that
                  start in the same banks, or whose containers lie a whole number
-                 of bank rows apart, so that element i of both is in one bank
+                 of bank rows apart, so that element i of both is in one bank;
+                 and containers the DMA moves as padded beats (D105)
 """
 
 from __future__ import annotations
@@ -62,6 +63,7 @@ class AccelRow(Record):
     latency: int
     target_ii: int
     ports: list[str]
+    drain: int = 0  # cycles from a push in which no input is taken (D103)
 
 
 @dataclass
@@ -209,6 +211,28 @@ def _notes(
     return notes
 
 
+def _padding_notes(cluster: ClusterConfig, regions: list[Region]) -> list[str]:
+    """Containers the DMA moves (in L2 and L1) whose size is not whole beats (D105)."""
+    if cluster.l2 is None:
+        return []
+    beat = cluster.l1.wide_bits // 8
+    word = cluster.l1.width_bits // 8
+    in_l2 = {r.name for r in regions if r.mem == "l2"}
+    notes = []
+    for r in regions:
+        if r.mem != "l1" or r.name not in in_l2:
+            continue
+        size = r.size * word
+        if size % beat:
+            moved = -(-size // beat) * beat
+            notes.append(
+                f"{r.name}: {size} B, moved by the DMA as {moved // beat} whole {beat}-byte "
+                f"beat{'s' if moved > beat else ''}; bytes {r.base + size}–{r.base + moved} are "
+                "kept free in L1 and L2."
+            )
+    return notes
+
+
 def _container_by_task_base(tasks: Any, regions: list[Region]) -> dict[str, str]:
     """Streamer -> the L1 region holding the base of its first task (a task list), if any."""
     out: dict[str, str] = {}
@@ -273,7 +297,7 @@ def build_design(
         if c.kind != "accel":
             continue
         inst = instances.get(c.name)
-        params = {k: v for k, v in c.params.items() if k not in ("latency", "ii")}
+        params = {k: v for k, v in c.params.items() if k not in ("latency", "ii", "drain")}
         ports = [f"{p} ← {s}" for p, s in c.attach.items()]
         accels.append(
             AccelRow(
@@ -285,6 +309,7 @@ def build_design(
                 int(c.params.get("latency", 0)),
                 int(c.params.get("ii", 1)),
                 ports,
+                int(c.params.get("drain", 0)),
             )
         )
     streamers = []
@@ -312,7 +337,7 @@ def build_design(
         accels,
         streamers,
         _memory_tables(cluster, regions),
-        _notes(cluster, streamers, regions),
+        _notes(cluster, streamers, regions) + _padding_notes(cluster, regions),
     )
 
 
@@ -349,7 +374,17 @@ def render_design(r: DesignReport) -> str:
     )
     out += ["", "## Accelerators", ""]
     out += table(
-        ["Instance", "Kind", "BRM", "Implementation", "Params", "Latency", "Target II", "Ports"],
+        [
+            "Instance",
+            "Kind",
+            "BRM",
+            "Implementation",
+            "Params",
+            "Latency",
+            "Target II",
+            "Drain",
+            "Ports",
+        ],
         [
             [
                 a.instance,
@@ -359,11 +394,12 @@ def render_design(r: DesignReport) -> str:
                 kv(a.params),
                 a.latency,
                 a.target_ii,
+                a.drain,
                 "; ".join(a.ports),
             ]
             for a in r.accelerators
         ],
-        {5, 6},
+        {5, 6, 7},
     )
     out += ["", "## Streamers", ""]
     out += table(

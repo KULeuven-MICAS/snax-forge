@@ -35,13 +35,22 @@ that ran; a flow that fails writes the failure there instead, and the reports
 of an earlier run in the same folder are removed first, so the folder never
 holds reports of a run other than its last. A report that cannot be built is
 named in the summary; the run and its check stand without it.
+
+**Stage times** (D106). ``flow.log`` ends with the wall-clock seconds of each
+stage (``import``, ``sandbox``, ``design``, ``lower``, ``scenario``, ``run``,
+``check``, ``report``) and their total, on this machine. They change from run
+to run, so they are in the log only: the command line, ``run/`` (byte
+identical on every run, D44) and the reports never hold them. They are the
+raw material of the paper's turnaround baseline (BASE1, C1).
 """
 
 from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping, Sequence
+import time
+from collections.abc import Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -70,6 +79,7 @@ from snax_forge.snax_model.scenario import (
 
 OUT = _repo_root() / "out" / "flow"
 LOG = "flow.log"
+STAGE_NAMES = ("import", "sandbox", "design", "lower", "scenario", "run", "check", "report")
 REPORT = "report"
 
 
@@ -94,6 +104,7 @@ class Flow:
     check: dict[str, Any]
     checks: dict[str, list[str]] = field(default_factory=dict)  # stage -> codes that ran
     report_error: str | None = None  # why report/ could not be written, if it could not
+    times: dict[str, float] = field(default_factory=dict)  # stage -> wall-clock seconds (D106)
 
     @property
     def passed(self) -> bool:
@@ -244,11 +255,25 @@ def summary(f: Flow) -> str:
 
 
 def log_text(f: Flow) -> str:
-    """``flow.log``: the summary, then the design checks that ran, per stage."""
+    """``flow.log``: the summary, the design checks that ran per stage, the stage times."""
     n = sum(len(v) for v in f.checks.values())
     lines = [summary(f), "", f"design checks that ran ({n}, all passed):"]
     lines += [f"  {st:<9} {', '.join(codes)}" for st, codes in f.checks.items() if codes]
+    if f.times:
+        lines += ["", "stage times (wall clock, this machine):"]
+        lines += [f"  {st:<9} {t:.3f} s" for st, t in f.times.items()]
+        lines.append(f"  {'total':<9} {sum(f.times.values()):.3f} s")
     return "\n".join(lines) + "\n"
+
+
+@contextmanager
+def _timed(times: dict[str, float], stage: str) -> Iterator[None]:
+    """Add the wall-clock seconds of the block to ``times[stage]`` (D106)."""
+    t0 = time.perf_counter()
+    try:
+        yield
+    finally:
+        times[stage] = times.get(stage, 0.0) + time.perf_counter() - t0
 
 
 def _clear(out: Path) -> None:
@@ -282,10 +307,11 @@ def run_flow(
     out = Path(out) if out is not None else OUT / name
     out.mkdir(parents=True, exist_ok=True)
     _clear(out)
+    times: dict[str, float] = {}
     try:
         f = _stages(
             recipe, name, point_name, out, platform_path, platform_sets, memory_path,
-            memory_sets, graph_path, seed, trace_level,
+            memory_sets, graph_path, seed, trace_level, times,
         )  # fmt: skip
     except (
         DesignError,
@@ -299,9 +325,11 @@ def run_flow(
         (out / LOG).write_text(f"flow {name} FAILED\n{e}\n")
         raise
     try:
-        write_reports(out)
+        with _timed(times, "report"):
+            write_reports(out)
     except (ValueError, KeyError, OSError) as e:
         f.report_error = f"{type(e).__name__}: {e}"
+    f.times = {st: times[st] for st in STAGE_NAMES if st in times}
     (out / LOG).write_text(log_text(f))
     return f
 
@@ -318,56 +346,65 @@ def _stages(
     graph_path: str | Path | None,
     seed: int,
     trace_level: str,
+    times: dict[str, float],
 ) -> Flow:
-    """The stages of ``run_flow``, up to the check."""
+    """The stages of ``run_flow``, up to the check; each stage's seconds go to ``times``."""
     # SNAX-SANDBOX
-    if graph_path is not None:
-        graph = Graph.load(graph_path)
-    else:
-        from snax_forge.dfg.import_sdfg import import_kernel
+    with _timed(times, "import"):
+        if graph_path is not None:
+            graph = Graph.load(graph_path)
+        else:
+            from snax_forge.dfg.import_sdfg import import_kernel
 
-        graph = import_kernel(recipe.kernel)
-    steps = write_steps(recipe, apply_recipe(recipe, graph, seed=seed), out / "sandbox")
+            graph = import_kernel(recipe.kernel)
+    with _timed(times, "sandbox"):
+        steps = write_steps(recipe, apply_recipe(recipe, graph, seed=seed), out / "sandbox")
 
     # SNAX-DESIGN
-    design = load(steps[-1], platform_path, platform_sets, memory_path, memory_sets)
-    problems = run_checks(design)
-    if problems:
-        raise DesignError(problems, f"design check of {steps[-1]} on {platform_path}")
-    point = DesignPoint.of(design, point_name)
-    ddir = out / "design"
-    ddir.mkdir(exist_ok=True)
-    design.platform.save(ddir / "platform.json")
-    design.memory.save(ddir / "memory.json")
-    point.save(ddir / "design_point.json")
+    with _timed(times, "design"):
+        design = load(steps[-1], platform_path, platform_sets, memory_path, memory_sets)
+        problems = run_checks(design)
+        if problems:
+            raise DesignError(problems, f"design check of {steps[-1]} on {platform_path}")
+        point = DesignPoint.of(design, point_name)
+        ddir = out / "design"
+        ddir.mkdir(exist_ok=True)
+        design.platform.save(ddir / "platform.json")
+        design.memory.save(ddir / "memory.json")
+        point.save(ddir / "design_point.json")
 
     # SNAX-LOWER
-    cluster = cluster_file(point)
-    tasks = task_list(point)
-    program = lower_program(tasks, cluster)
-    cluster.save(out / "cluster.json")
-    tasks.save(out / "tasks.json")
+    with _timed(times, "lower"):
+        cluster = cluster_file(point)
+        tasks = task_list(point)
+        program = lower_program(tasks, cluster)
+        cluster.save(out / "cluster.json")
+        tasks.save(out / "tasks.json")
 
     # Scenario: the kernel's inputs at their layouts
-    spec = load_kernel(recipe.kernel)
-    inputs = kernel_inputs(spec, point.graph, seed)
-    fills = []
-    for c, arr in inputs.items():
-        mems = point.memory.layouts.get(c, {})
-        mem = "l2" if "l2" in mems else "l1"
-        np.save(out / f"{c}.npy", np.ascontiguousarray(arr), allow_pickle=False)
-        fills.append(MemInit(mem, mems[mem].base, npy=f"{c}.npy"))
-    scenario = Scenario(
-        name, cluster, fills, program, cluster_ref="cluster.json", base_dir=out,
-        regions=regions_of(point),
-    )  # fmt: skip
-    scenario.save(out / "scenario.json")
+    with _timed(times, "scenario"):
+        spec = load_kernel(recipe.kernel)
+        inputs = kernel_inputs(spec, point.graph, seed)
+        fills = []
+        for c, arr in inputs.items():
+            mems = point.memory.layouts.get(c, {})
+            mem = "l2" if "l2" in mems else "l1"
+            np.save(out / f"{c}.npy", np.ascontiguousarray(arr), allow_pickle=False)
+            fills.append(MemInit(mem, mems[mem].base, npy=f"{c}.npy"))
+        scenario = Scenario(
+            name, cluster, fills, program, cluster_ref="cluster.json", base_dir=out,
+            regions=regions_of(point),
+        )  # fmt: skip
+        scenario.save(out / "scenario.json")
 
     # SNAX-MODEL and the check
-    result = run(scenario, trace_level=trace_level)
-    check = functional_check(spec, point, inputs, result, seed)
+    with _timed(times, "run"):
+        result = run(scenario, trace_level=trace_level)
+    with _timed(times, "check"):
+        check = functional_check(spec, point, inputs, result, seed)
     result.profile.functional_check = check
-    write_outputs(result, out / "run")
+    with _timed(times, "run"):
+        write_outputs(result, out / "run")
     return Flow(
         name, out, recipe, steps, point, cluster, tasks, len(program), scenario, result, check,
         checks_that_ran(),

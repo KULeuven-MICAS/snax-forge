@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D106**.
+  area tag. Next free number: **D108**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -37,8 +37,8 @@ By area:
 | ref | D17 D20 D28 D79 |
 | sandbox | D72 D73 D80 D104 |
 | design | D7 D74 D84–D87 |
-| flow | D90 D94 |
-| viz | D16 D54–D58 D60 D61 D76 D81 D96 D97 D99 |
+| flow | D90 D94 D107 |
+| viz | D16 D54–D58 D60 D61 D76 D81 D96 D97 D99 D106 |
 | docs, test | D26 D46 D92 D93 |
 
 ---
@@ -452,3 +452,14 @@ to whole beats: the DMA moves the last beat whole, and placement and the memory 
 beat free in both memories, so one-element results (dot's `out`) need no new DMA feature. Amends
 D86 and D89; the partial-beat half of open item 38. → C§9, C§15, `lower/derive.py`,
 `lower/layout.py`.
+
+**D106** · viz — The run report names what a wait was for: the task that starts after it, and a
+chaining wait when the waited block belongs to one accelerator (the accelerator or a streamer
+attached to it) and that task to another, with the reader streamers the task list says wait on
+it. So C3's stitching shows up in the text humans and LLMs read, not only in the schedule. The
+design report gains each accelerator's drain and a note per container the DMA moves as padded
+beats. Amends D99. → `report/run.py`, `report/design.py`.
+
+**D107** · flow — `flow.log` ends with the wall-clock seconds of each flow stage and their total.
+They change from run to run, so they stay out of the command line, `run/` (D44) and the reports;
+they are the raw material of the turnaround baseline (BASE1, C1). Amends D90. → `flow/run.py`.

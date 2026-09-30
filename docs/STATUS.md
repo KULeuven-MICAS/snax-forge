@@ -40,7 +40,7 @@ D101). P1 revisits the order after M5 (PAP3).
 | M3 | Close `vecadd` end to end, from the kernel (D76, D90) | `done` |
 | M4b | Remaining views and first manual loop | `done` |
 | P1 | Paper plan: claims, evidence, baselines, evaluation plan (alongside M5, D100) | todo |
-| M5 | `dot`: a multiplier and an accumulator chained through L1 (D101) | todo |
+| M5 | `dot`: a multiplier and an accumulator chained through L1 (D101) | `done` |
 | M13 | Accelerator-to-accelerator links (A2A), planned in its own round (D101) | todo |
 | M6 | Contract freeze | todo |
 | M7 | Front ends: NPBench kernels (D100) | todo |
@@ -99,6 +99,7 @@ tables as they were written are in git history.
 | BRM4 | `accumulate` (pattern family and kind `reduce`, code `out = a`, out rate `T`) with `chisel_accumulator` (1 lane, drain 1, the Chisel `Accumulator`) and `chisel_adder_tree` (W lanes, drain 0, no RTL yet); `elementwise_mul`; `drain` as a third timing number, run by the model; port names checked (no keyword, no leading underscore), the reduce stub's `in` renamed `a`; red4 built from `accumulate`, `reduce` still 35 cycles; the SNAX-DFG's `wcr` renamed `reduce` | D102, D103 |
 | SBX2 | the `reduce` pattern matcher; `bind` of a folding output as one lane; named rates from the loops a memlet does not use (`named_rates`), run by the reference executor; `recipes/dot.json` (one `W`, `mul` on `elementwise_mul`, `sum` on `accumulate`) gives `tests/dfg/fixtures/dot_accelerated.snaxdfg` and equals `np.dot` for every W that divides N | D104 |
 | LOW2, LOW3a | chaining through L1: named rates in the accelerator task (`named_rates`), a rated port streamed over the loops its memlet uses; the one wait between dot's accelerators is D89's data dependence; containers the DMA moves padded to whole beats in placement, DMA and memory checks. `pixi run flow recipes/dot.json` runs and equals `np.dot` and REF1: 99 cycles at W = 4, 87 at W = 8, 219 at W = 1 | D105 |
+| E2E2 | `dot` end to end: `recipes/dot.json` (adder tree) and `recipes/dot_serial.json` (the Chisel Accumulator) from the kernel to a checked run, every cycle count pinned (`tests/flow/test_dot.py`: 99 / 87 / 79 / 219 at W = 4 / 8 / 16 / 1, serial 147 / 143 / 219 at W = 4 / 8 / 1); `run.md` names the task after each wait and lists the chaining wait (`mul → sum`, 17 cycles on `mul_out`); `design.md` gains the drain and a note per padded container; a product's journey from `mul` through L1 into `sum`; `flow.log` ends with each stage's wall-clock time | D106, D107 |
 
 ## Open Tasks
 
@@ -115,20 +116,6 @@ they deliver.
 | BASE1 | Baseline for C1: the time from an accelerator idea to a cycle count in today's SNAX flow (RTL, integration, program, RTL simulation) for `vecadd`, and `dot` after M5, each step logged | none | Numbers and steps checked in | todo |
 | BASE2 | SNAX-MODEL speed: simulated cycles per second on large runs (`vecadd` at 100k elements; a tiled GEMM once it runs), at trace off, task and beat | none | Numbers checked in; says whether M12 needs extrapolation | todo |
 | PAP3 | Evaluation plan: the workload ladder (kernels, layers, blocks, models) mapped onto C1–C4 and the milestones; the order after M5; open items 42 and 43 settled or left open | PAP1, PAP2, BASE1, BASE2 | Decision logged with the order | todo |
-
-### M5: `dot`
-
-| ID | Scope | Depends | Acceptance | Status |
-|---|---|---|---|---|
-dot runs as two accelerators chained through L1 (D101): a multiplier writes
-the products to L1, and an accumulator reads them after a wait on the
-multiplier's writer. `pixi run flow recipes/dot.json --platform
-platforms/small16.json` is the target. The direct link between the two is
-M13.
-
-| ID | Scope | Depends | Acceptance | Status |
-|---|---|---|---|---|
-| E2E2 | `dot` end to end: kernel → import → recipe (two binds) → design point → cluster file and task list → run; the chaining wait listed in `run.md` | all of the above, VIS2 | Output equals `np.dot` and REF exactly; cycles pinned at the multiplier's and the accumulator's lanes 4/4, 8/8 and 4/1 (the 1-lane Chisel accumulator); the schedule shows the multiplier, the wait, then the accumulator | todo |
 
 ### M13: Accelerator-to-accelerator links (A2A, D101)
 

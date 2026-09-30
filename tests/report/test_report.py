@@ -306,7 +306,8 @@ def test_cli_writes_next_to_the_run(flows, scenario_runs, capsys):
     assert "report default: 85 cycles, trace beat" in capsys.readouterr().out
     d = scenario_runs["vecadd"]
     assert main([str(d), "--tasks", str(SCEN / "vecadd" / "tasks.json")]) == 0
-    assert (d.with_name("vecadd_report") / "run.md").read_text().count("add_acc_a") == 1
+    # the task table and the wait before it ("Then starts", D106)
+    assert (d.with_name("vecadd_report") / "run.md").read_text().count("add_acc_a") == 2
 
 
 def test_cli_rejects_a_folder_that_is_not_a_run(tmp_path, capsys):

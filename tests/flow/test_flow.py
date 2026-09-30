@@ -13,6 +13,7 @@ from snax_forge.design.check import CHECKS
 from snax_forge.flow import __main__ as cli
 from snax_forge.flow import default_name, functional_check, run_flow, summary
 from snax_forge.flow import run as flow_run
+from snax_forge.flow.run import STAGE_NAMES
 from snax_forge.lower import TaskList
 from snax_forge.report import render_design, render_run, reports_of
 from snax_forge.sandbox import Recipe
@@ -179,7 +180,8 @@ def test_the_flow_writes_its_reports_and_log_beside_the_run(tmp_path):
 def test_the_log_is_the_summary_and_the_checks_that_ran(tmp_path):
     f = flow(tmp_path)
     log = (tmp_path / "flow" / "flow.log").read_text()
-    head, _, checks = log.partition("\n\ndesign checks that ran ")
+    head, _, rest = log.partition("\n\ndesign checks that ran ")
+    checks, _, times = rest.partition("\n\nstage times ")
     assert head == summary(f)
     assert f"  design    {len(CHECKS)} checks passed;" in head
     lines = checks.splitlines()
@@ -188,6 +190,24 @@ def test_the_log_is_the_summary_and_the_checks_that_ran(tmp_path):
     listed = [c for line in lines[1:] for c in line.split(None, 1)[1].split(", ")]
     assert listed == list(CHECKS)  # every registered check once, in the order it ran
     assert f.checks == {st: [c for c in CHECKS if CHECKS[c].stage == st] for st in f.checks}
+    assert times.startswith("(wall clock, this machine):")
+
+
+def test_the_log_ends_with_the_stage_times(tmp_path):
+    """Every stage once, in order, seconds >= 0 that add up to the total; never a pinned value
+    (they are this machine's, D106), and never in the summary or run/ (D44)."""
+    f = flow(tmp_path)
+    log = (tmp_path / "flow" / "flow.log").read_text()
+    lines = log.partition("\n\nstage times (wall clock, this machine):\n")[2].splitlines()
+    rows = [line.split() for line in lines]
+    assert [r[0] for r in rows] == [*STAGE_NAMES, "total"] and all(r[2] == "s" for r in rows)
+    secs = [float(r[1]) for r in rows]
+    assert all(s >= 0 for s in secs) and abs(sum(secs[:-1]) - secs[-1]) < 0.01
+    assert list(f.times) == list(STAGE_NAMES)
+    assert "stage times" not in summary(f)
+    assert not any(
+        "stage times" in p.read_text() for p in (tmp_path / "flow" / "run").glob("*.json")
+    )
 
 
 def test_a_failing_flow_logs_why_and_leaves_no_old_reports(tmp_path):

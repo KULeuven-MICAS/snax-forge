@@ -11,7 +11,10 @@ is a counter, an interval or an event the model wrote.
     accelerators  firings, target II, achieved II, utilisation over its task
                   window, cycles starved and blocked
     controller    command, wait and idle cycles, and each wait: block, mode,
-                  cycles
+                  cycles and the task that starts after it; a wait on one
+                  accelerator (itself or a streamer attached to it) followed
+                  by a task of another is a chaining wait, listed as
+                  ``mul -> sum`` (D106)
     DMAs          busy cycles, beats and bytes each way, bytes per busy cycle
     memory        banks with conflicts as ranges, streamers' stall cycles and
                   port stalls, FIFO highest count against depth
@@ -77,6 +80,18 @@ class WaitRow(Record):
     first: int
     last: int
     cycles: int
+    then: str | None = None  # the task that starts next (needs a task trace)
+
+
+@dataclass
+class ChainRow(Record):
+    """A wait between two accelerators: ``dst`` starts after ``src``'s ``block`` (D106)."""
+
+    src: str
+    dst: str
+    block: str
+    cycles: int
+    readers: list[str] = field(default_factory=list)  # dst's streamers that read what src wrote
 
 
 @dataclass
@@ -86,6 +101,7 @@ class ControllerRun(Record):
     wait: int
     idle: int
     waits: list[WaitRow] = field(default_factory=list)
+    chains: list[ChainRow] = field(default_factory=list)
 
 
 @dataclass
@@ -226,6 +242,41 @@ def _bank_ranges(banks: dict[str, list[int]]) -> list[BankRange]:
     return out
 
 
+def _owners(cluster: Any) -> dict[str, str]:
+    """Component -> the accelerator it belongs to: the accelerator itself and its streamers."""
+    out: dict[str, str] = {}
+    for c in cluster.components:
+        if c.kind == "accel":
+            out[c.name] = c.name
+            for s in (c.attach or {}).values():
+                out[s] = c.name
+    return out
+
+
+def _next_task(rows: list[TaskRow] | None, after: int) -> TaskRow | None:
+    """The first task that starts after cycle ``after`` (the one a wait held back)."""
+    later = [r for r in rows or [] if r.start > after]
+    return min(later, key=lambda r: (r.start, r.block)) if later else None
+
+
+def _handed(tasks: Any, src: str, dst: str, cluster: Any) -> list[str]:
+    """``dst``'s streamers whose task waits for a task of ``src`` in the task list."""
+    if tasks is None:
+        return []
+    owner = _owners(cluster)
+    comp = {
+        st.task_name: st.component for st in tasks.steps if getattr(st, "op", None) == "configure"
+    }
+    out: list[str] = []
+    for st in tasks.steps:
+        if getattr(st, "op", None) != "configure" or owner.get(st.component) != dst:
+            continue
+        for a in st.after:
+            if owner.get(comp.get(a, "")) == src and st.component not in out:
+                out.append(st.component)
+    return out
+
+
 def build_run(rv: api.RunView, tasks: Any = None) -> RunReport:
     """The run report of one loaded run directory; ``tasks`` a TaskList for task names."""
     prof = rv.outputs.profile.to_dict()
@@ -277,16 +328,27 @@ def build_run(rv: api.RunView, tasks: Any = None) -> RunReport:
     ctl = prof.get("controller")
     controller = None
     if ctl:
-        waits = [
-            WaitRow(w["block"], w["mode"], w["first"], w["last"], w["last"] - w["first"] + 1)
-            for w in ctl["waits"]
-        ]
+        owner = _owners(rv.cluster)
+        waits, chains = [], []
+        for w in ctl["waits"]:
+            nxt = _next_task(task_rows, w["last"])
+            row = WaitRow(
+                w["block"], w["mode"], w["first"], w["last"], w["last"] - w["first"] + 1,
+                None if nxt is None else (nxt.name or f"{nxt.block} #{nxt.index}"),
+            )  # fmt: skip
+            waits.append(row)
+            src, dst = owner.get(w["block"]), None if nxt is None else owner.get(nxt.block)
+            if src and dst and src != dst:
+                chains.append(
+                    ChainRow(src, dst, w["block"], row.cycles, _handed(tasks, src, dst, rv.cluster))
+                )
         controller = ControllerRun(
             ctl["name"],
             ctl["cycles"]["command"],
             ctl["cycles"]["wait"],
             ctl["cycles"]["idle"],
             waits,
+            chains,
         )
     dmas = []
     for name, d in prof["dmas"].items():
@@ -476,10 +538,23 @@ def render_run(r: RunReport) -> str:
             "",
         ]
         out += table(
-            ["Waits on", "Mode", "From", "To", "Cycles"],
-            [[w.block, w.mode, w.first, w.last, w.cycles] for w in c.waits],
+            ["Waits on", "Mode", "From", "To", "Cycles", "Then starts"],
+            [[w.block, w.mode, w.first, w.last, w.cycles, w.then or "–"] for w in c.waits],
             {2, 3, 4},
         )
+        if c.chains:
+            out += [
+                "",
+                "Chaining waits (one accelerator's output read by the next through L1):",
+                "",
+            ]
+            for ch in c.chains:
+                via = (
+                    f", which {', '.join(ch.readers)} read{'s' if len(ch.readers) == 1 else ''}"
+                    if ch.readers
+                    else ""
+                )
+                out.append(f"- {ch.src} → {ch.dst}: {ch.cycles} cycles waiting on {ch.block}{via}")
     if r.dmas:
         out += ["", "## DMA", ""]
         out += table(

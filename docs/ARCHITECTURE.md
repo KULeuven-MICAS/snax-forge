@@ -536,14 +536,17 @@ of HLS reports, as Markdown built from dataclasses so humans, LLMs and GitHub
 read the same text. `design.md` says what was built, from the design point and
 its recipe with no model run: kernel, params, symbols, platform and its
 changes, memory pins, the cluster's components, each accelerator's BRM,
-implementation, latency and target II, each streamer's lanes, FIFO depth and
-container, a table of regions per memory (the memory tab's numbers), and notes
-that are facts about addresses (streamers of one accelerator whose containers
-start in the same banks, or lie a whole number of bank rows apart). `run.md`
+implementation, latency, target II and drain, each streamer's lanes, FIFO
+depth and container, a table of regions per memory (the memory tab's numbers),
+and notes that are facts about addresses (streamers of one accelerator whose
+containers start in the same banks, or lie a whole number of bank rows apart;
+a container the DMA moves as padded beats, D105). `run.md`
 says where the cycles went: each task's start, done and length; per
 accelerator its firings, target and achieved II (the busy span divided by the
 firings, from the class intervals) and utilisation over its task window; the
-controller's command, wait and idle cycles and each wait; DMA bytes and bytes
+controller's command, wait and idle cycles and each wait with the task that
+starts after it, and the chaining waits among them: a wait on one accelerator
+followed by a task of another (`mul → sum`, D106); DMA bytes and bytes
 per busy cycle; banks with conflicts as ranges, streamer stalls and FIFO
 highs; and on a beat trace the residency and per-port patterns of D97, with
 the first cycles held back. Nothing in them grows with cycles or elements.
@@ -595,7 +598,10 @@ and the viewer names a flow's `run/` after that folder; the design point and
 task list keep the recipe's name and params only. The run is traced at `task`
 level unless `--trace` says otherwise, so it opens with a schedule (D94).
 After the run the flow writes `report/design.md` and `report/run.md` (D99) and
-`flow.log`: the summary it prints and the design checks that ran, per stage.
+`flow.log`: the summary it prints, the design checks that ran per stage, and
+each stage's wall-clock time on this machine (import, sandbox, design, lower,
+scenario, run, check, report; D107), in the log only, since it changes from
+run to run.
 A flow that stops writes why to `flow.log` instead, and the reports of an
 earlier run in the folder are removed first, so `report/` always describes the
 folder's last run. A report that cannot be built is named in the summary and
@@ -645,7 +651,8 @@ M10 is independent of them and M2 comes last (D24, D51, D54, D76, D100,
 D101). Done: M1
 (SNAX-MODEL), M4a (run views), M3 (`vecadd` from the kernel to a checked
 model run), M4b (memory tab, data movement, reports, one documented loop on
-`vecadd`). `docs/STATUS.md` has the tasks of every milestone.
+`vecadd`), M5 (`dot`: a multiplier chained into an accumulator through L1,
+from the kernel to a checked run). `docs/STATUS.md` has the tasks of every milestone.
 
 - **P1: paper plan.** The hypothesis as claims with their measurements and
   baselines (the SNAX flow's turnaround, the model's speed), related work,
