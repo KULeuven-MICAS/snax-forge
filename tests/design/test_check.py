@@ -10,7 +10,7 @@ import pytest
 from snax_forge.design import CHECKS, Design, DesignError, Platform, check, load, register_check
 from snax_forge.design.memory import MEMORY_PASSES, MemorySpec
 from snax_forge.design.problems import Problem
-from snax_forge.lower.layout import Layout
+from snax_forge.lower.layout import Layout, LayoutError, dma_side
 
 from .helpers import (
     BOUND,
@@ -379,22 +379,36 @@ def test_a_moved_layout_must_start_on_a_beat():
     assert "multiples of the 8-byte word" in p.message and p.fix == "--set memory.B.l1.base=608"
 
 
-def test_a_moved_container_must_be_whole_beats():
-    """N = 60: 480 bytes, not whole 64-byte beats (open item 38)."""
+def test_a_moved_container_is_padded_to_whole_beats():
+    """N = 60: 480 bytes, moved as 8 beats; the next container starts after the padding (D105)."""
 
     def n60(g):
         g["symbols"]["N"] = 60
 
-    got = [p for p in problems(with_memory(edit_graph=n60)) if p.code == "memory.align"]
-    assert [p.where for p in got] == [
-        "A in l2",
-        "A in l1",
-        "B in l2",
-        "B in l1",
-        "C in l2",
-        "C in l1",
-    ]
-    assert "480 bytes, not whole 64-byte beats" in got[0].message and "8 elements" in got[0].fix
+    d = with_memory(edit_graph=n60)
+    assert problems(d) == []
+    lay = d.memory.layouts
+    assert [lay[c]["l2"].base for c in "ABC"] == [0, 512, 1024]
+    assert [lay[c]["l1"].base for c in "ABC"] == [0, 512, 1024]
+    assert dma_side(lay["A"]["l2"], 8, 64) == {"base": 0, "bounds": [8], "strides": [64]}
+
+
+def test_dot_keeps_the_last_beat_of_out_to_itself():
+    """out is one element moved as one beat: tmp0 (L1 only) starts after it, and pinned inside
+    it is an overlap (D105)."""
+    d = with_memory(graph="dot_accelerated")
+    assert problems(d) == []
+    lay = d.memory.layouts
+    assert (lay["out"]["l1"].base, lay["tmp0"]["l1"].base) == (1024, 1088)
+    pins = [("out.l1.base", 1024), ("tmp0.l1.base", 1032)]
+    (p,) = problems(with_memory(pins, graph="dot_accelerated"))
+    assert (p.code, p.where) == ("memory.overlap", "out and tmp0 in l1")
+    assert "share 56 bytes: out [1024, 1088)" in p.message
+
+
+def test_the_dma_refuses_a_layout_off_a_beat():
+    with pytest.raises(LayoutError, match="not contiguous from a 64-byte beat"):
+        dma_side(Layout(8, (1,), (8,)), 8, 64)
 
 
 def test_a_layout_must_fit_its_memory():

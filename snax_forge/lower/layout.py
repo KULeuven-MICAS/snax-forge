@@ -88,14 +88,21 @@ class Layout(Config):
             )
 
 
+def moved_bytes(lay: Layout, word: int, beat: int) -> int:
+    """The bytes the DMA moves for a layout: its size padded to whole beats (LOW3a, D105)."""
+    size = int(np.prod(lay.shape)) * word
+    return -(-size // beat) * beat
+
+
 def dma_side(lay: Layout, word: int, beat: int) -> dict[str, int | list[int]]:
     """One side of a DMA task moving a whole layout: ``base``, ``bounds``, ``strides``.
 
-    A contiguous layout of whole wide beats, starting on a beat, is one loop of
-    beats (open item 38); anything else raises LayoutError, which the design
-    check ``memory.align`` reports first.
+    A contiguous layout starting on a wide beat is one loop of beats (open
+    item 38). A size that is not whole beats is padded (D105): the last beat
+    also moves the bytes after the layout, up to the beat's end, which the
+    memory plan keeps free in both memories. Anything else raises
+    LayoutError, which the design check ``memory.align`` reports first.
     """
-    size = int(np.prod(lay.shape)) * word
-    if lay != Layout.contiguous(lay.base, lay.shape, word) or size % beat or lay.base % beat:
-        raise LayoutError(f"layout {lay} is not whole contiguous {beat}-byte beats")
-    return {"base": lay.base, "bounds": [size // beat], "strides": [beat]}
+    if lay != Layout.contiguous(lay.base, lay.shape, word) or lay.base % beat:
+        raise LayoutError(f"layout {lay} is not contiguous from a {beat}-byte beat")
+    return {"base": lay.base, "bounds": [moved_bytes(lay, word, beat) // beat], "strides": [beat]}

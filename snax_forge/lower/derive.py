@@ -52,7 +52,7 @@ import numpy as np
 
 from snax_forge import expr
 from snax_forge.design.streamers import Loop, firing_loops, instances
-from snax_forge.dfg import Memlet
+from snax_forge.dfg import DfgError, Memlet, dim_names, named_rates
 from snax_forge.dfg.subset import parse_dim
 
 from .cluster import cluster_file
@@ -162,13 +162,17 @@ def task_list(point: DesignPoint) -> TaskList:
         n_fire = 1
         for lp in loops:
             n_fire *= lp.count
-        if inst.brm.registers != ["n"]:
-            raise LowerError(
-                f"{what}: {inst.brm.name} has named rates {inst.brm.registers[1:]}; "
-                "their values are not derived yet (DFG3, BRM4)"
-            )
         ports = [p.name for p in inst.brm.interface.ports]
         memlets = {**n.inputs, **n.outputs}
+        try:  # named rates from the loops a memlet does not use (D104), as REF and bind do
+            rates = named_rates(
+                {p: (memlets[p], inst.brm.port(p).rate) for p in ports},
+                [(lp.var, lp.count) for lp in loops],
+                what,
+            )
+        except DfgError as e:
+            raise LowerError(str(e)) from None
+        start = {"n": n_fire} | rates  # the accelerator task's values
 
         for p in ports:  # loads
             c = memlets[p].data
@@ -183,14 +187,18 @@ def task_list(point: DesignPoint) -> TaskList:
             lay = layout(m.data, "l1")
             if lay is None:
                 raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
-            values, sb = memlet_values(m, loops, lay, symbols, f"{what}.{p}")
+            # a port with a named rate moves one beat per T firings: its streamer
+            # runs over the firing loops its memlet uses, not the ones it folds
+            used = [lp for lp in loops if any(lp.var in dim_names(d) for d in m.subset)]
+            port_loops = loops if inst.brm.port(p).rate == 1 else used
+            values, sb = memlet_values(m, port_loops, lay, symbols, f"{what}.{p}")
             if sb != list(s.spatial_bounds):
                 raise LowerError(
                     f"{what}.{p}: the memlet gives spatial bounds {sb}, streamer {s.name} has "
                     f"{list(s.spatial_bounds)}"
                 )
             try:
-                want = streamer_values(inst, p, {"n": n_fire}, lay, cluster, s.name)
+                want = streamer_values(inst, p, start, lay, cluster, s.name)
             except StreamError as e:
                 raise LowerError(f"{what}.{p}: {e}") from None
             if not np.array_equal(addresses(values, sb), addresses(want, sb)):
@@ -208,7 +216,7 @@ def task_list(point: DesignPoint) -> TaskList:
             steps.append(Configure(task, "streamer", s.name, values, after, mode))
             group.append(task)
         acc_task = f"{n.id}_{name}"
-        steps.append(Configure(acc_task, "accel", name, {"n": n_fire}, [], mode))
+        steps.append(Configure(acc_task, "accel", name, start, [], mode))
         steps.append(Start([*group, acc_task]))
 
         for p, task in zip(ports, group, strict=True):  # after the group: writes land in L1

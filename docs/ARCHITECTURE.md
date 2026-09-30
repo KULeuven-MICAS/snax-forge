@@ -362,10 +362,16 @@ vecadd's design point gives `alu4.json` byte for byte.
 group of tasks per accelerated node in execution order. A group loads its
 inputs that are not in L1 yet, configures one streamer per port with values
 from the memlet through the container's L1 layout (checked against the BRM's
-nest by address), configures the accelerator with `n` = its firing count,
-starts them, and stores each output after its last write. `after` holds data
-dependences only. For now every map around a node must be a temporal firing
-loop (a single tile); tiles and general DMA insertion come with LOW3.
+nest by address), configures the accelerator with `n` = its firing count and
+each named rate from `named_rates` (D104), starts them, and stores each output
+after its last write. A port with a named rate is streamed over the firing
+loops its memlet uses only: dot's `sum_out` writes one beat. `after` holds
+data dependences only, so two nodes chain through L1: the second node's
+reader waits for the first node's writer, and that is the only wait between
+them (D101, D105). A container the DMA moves is padded to whole beats: its
+last beat is moved whole and kept free in both memories (D105). For now every
+map around a node must be a temporal firing loop (a single tile); tiles and
+per-tile DMA come with LOW3b.
 
 **Control program** (`lower/commands.py`, D45, D64, D66). The task list's
 steps (`configure`, `start`, `sync`, `read`) are expanded into `csr_write`,

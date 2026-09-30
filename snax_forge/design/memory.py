@@ -17,7 +17,9 @@ replace any one of them (``register_memory_pass``):
     placement   base per container and memory            contiguous: per
                 memory, in the graph's container order,
                 from the memory's first byte, no gaps; a layout the DMA
-                moves (in L2 and L1) starts on a wide beat, others on a word
+                moves (in L2 and L1) starts on a wide beat and keeps its
+                last beat to itself (a size that is not whole beats is
+                padded, D105), others start on a word
 
 **Pins.** ``--set memory.<container>.<memory>.base=N`` fixes a base; the
 placement puts everything else around the pinned layouts, never over them.
@@ -56,7 +58,7 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import parse_dim
-from snax_forge.lower.layout import Layout
+from snax_forge.lower.layout import Layout, moved_bytes
 from snax_forge.snax_model.config import plain, to_json
 
 from .platform import Platform
@@ -334,6 +336,8 @@ def contiguous_placement(
             moved = "l1" in layouts[c] and "l2" in layouts[c]
             a = ctx.beat_bytes if moved else word
             lo0, hi0 = _extent(lay, word)  # with base 0
+            if moved:  # the DMA moves whole beats: keep the padding free (D105)
+                hi0 = lo0 + moved_bytes(lay, word, a)
             base = _align(cursor - lo0, a)
             clash = True
             while clash:

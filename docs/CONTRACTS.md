@@ -675,13 +675,19 @@ execution order, one group each; every map around a node is one of its
 temporal firing loops (a single tile). A group is: `load_<C>` (configure,
 start) for each input, in BRM port order, whose container has an L2 and an
 L1 layout and is not in L1 yet; `<node>_<instance>_<port>` for every port,
-the streamer's values from the memlet through the L1 layout; `<node>_<instance>`
-with `n` = the firing count; one `start` of the streamer tasks and then the
+the streamer's values from the memlet through the L1 layout (a port with a
+named rate over the firing loops its memlet uses only, one beat per `T`
+firings); `<node>_<instance>` with `n` = the firing count and each named rate
+from `named_rates` (D104, D105: dot's `sum` gets `{"n": 16, "T": 16}`); one
+`start` of the streamer tasks and then the
 accelerator task; `store_<C>` after the writer's task for each output
 written for the last time. At the end one `sync` per non-transient
 container the graph writes, on its store (or its writer without an L2).
 `after` holds data dependences only: a reader waits for the task that last
-put its container in L1, a writer for the readers and writer since. Every
+put its container in L1, a writer for the readers and writer since. So a
+node that reads what an earlier node wrote waits for that node's writer, and
+the lowering turns that into the one wait between the two accelerators
+(dot's `sum_sum_a` after `mult_mul_out`: chaining through L1, D101). Every
 configure and sync uses the platform's `wait_mode`. Streamer values, with
 firing loops `v_k` (begin `b_k`, `count_k`, step `s_k`) and a subset
 dimension `d` whose begin is `c_d + sum_k a_dk v_k`: `base` = layout base +
@@ -1111,7 +1117,7 @@ registered by name (`register_memory_pass(kind, name, fn)`):
 |---|---|---|
 | `residency` | the memories of each container | `default`: not transient: L2 and L1 with an L2, else L1; transient: L1 |
 | `layout` | shape and strides, base 0 | `contiguous`: row-major, one element per word |
-| `placement` | the base per container and memory | `contiguous`: graph container order from the memory's first byte, no gaps; a layout in both L2 and L1 on a wide beat, others on a word; around the pins |
+| `placement` | the base per container and memory | `contiguous`: graph container order from the memory's first byte, no gaps; a layout in both L2 and L1 on a wide beat and to the end of its last beat (the DMA moves whole beats, so a size that is not whole beats is padded, D105), others on a word; around the pins |
 
 `--set memory.<container>.<memory>.base=N` pins a base; `--set
 memory.passes.<pass>=NAME` picks a pass. Passes read a `MemoryContext`:

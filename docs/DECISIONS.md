@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D105**.
+  area tag. Next free number: **D106**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -31,7 +31,7 @@ By area:
 | scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 D101 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
-| lower | D18 D45 D53 D64 D66 D75 D88 D89 |
+| lower | D18 D45 D53 D64 D66 D75 D88 D89 D105 |
 | brm | D3 D5 D15 D68 D70 D82 D103 |
 | dfg | D1 D2 D19 D71 D77 D78 D102 |
 | ref | D17 D20 D28 D79 |
@@ -442,3 +442,13 @@ does not use, one function (`named_rates`) for bind's order check, the reference
 SNAX-LOWER, so they cannot disagree on T. dot's recipe uses one `W` for both accelerators; a
 serial accumulator is a recipe of its own. Amends D73, D79, D80. → C§12, `sandbox/patterns.py`,
 `dfg/execute.py`.
+
+**D105** · lower — The task list lowers a chain of accelerators through L1: an accelerator task
+gets each named rate from `named_rates` (D104), and a port with one is streamed over the firing
+loops its memlet uses, one beat per T firings. The wait between two accelerators is the existing
+data dependence of D89 (a reader after the writer that put its container in L1), so it appears
+exactly where data crosses from one accelerator to the next. A container the DMA moves is padded
+to whole beats: the DMA moves the last beat whole, and placement and the memory checks keep that
+beat free in both memories, so one-element results (dot's `out`) need no new DMA feature. Amends
+D86 and D89; the partial-beat half of open item 38. → C§9, C§15, `lower/derive.py`,
+`lower/layout.py`.

@@ -7,7 +7,7 @@ import pytest
 
 from snax_forge.design import DesignPoint, MemorySpec, run_checks
 from snax_forge.design.streamers import Loop
-from snax_forge.dfg import Memlet
+from snax_forge.dfg import Graph, Memlet
 from snax_forge.lower import (
     Layout,
     LowerError,
@@ -19,10 +19,12 @@ from snax_forge.lower import (
 )
 from snax_forge.lower import __main__ as cli
 from snax_forge.lower.derive import addresses
+from snax_forge.sandbox import Recipe, apply_recipe
+from snax_forge.snax_model.ctrl import Wait
 from snax_forge.snax_model.scenario import MemInit, Scenario, run
 from tests.design.helpers import bound_w8, chained, design, two_loops
 
-from .helpers import SCEN
+from .helpers import REPO, SCEN
 
 VECADD = SCEN / "vecadd"
 PINS = [("B.l1.base", 576), ("C.l1.base", 1152)]
@@ -35,6 +37,11 @@ def point(graph="vecadd_accelerated", memory=(), sets=None, edit_graph=None) -> 
     return DesignPoint.of(d, "vecadd")
 
 
+def dot() -> Graph:
+    """dot as imported (DFG3)."""
+    return Graph.load(REPO / "tests" / "dfg" / "fixtures" / "dot.snaxdfg")
+
+
 def run_point(p: DesignPoint, seed: int = 3):
     """Run a design point in the model with random inputs; its containers from L2 after."""
     rng = np.random.default_rng(seed)
@@ -42,7 +49,8 @@ def run_point(p: DesignPoint, seed: int = 3):
         m.data for n, _ in p.graph.walk() if n.kind == "accelerated" for m in n.outputs.values()
     }
     data, fills = {}, []
-    for c in p.graph.containers:
+    in_l2 = [c for c in p.graph.containers if "l2" in p.memory.layouts[c]]  # not a transient
+    for c in in_l2:
         lay = p.memory.layouts[c]["l2"]
         n = int(np.prod(lay.shape))
         if c not in written:
@@ -52,7 +60,7 @@ def run_point(p: DesignPoint, seed: int = 3):
     sc = Scenario(p.name, cl, fills, lower_program(task_list(p), cl), max_cycles=5000)
     res = run(sc)
     out = {}
-    for c in p.graph.containers:
+    for c in in_l2:
         lay = p.memory.layouts[c]["l2"]
         out[c] = res.l2[lay.base // 8 : lay.base // 8 + int(np.prod(lay.shape)), 0]
     return res, data, out
@@ -131,6 +139,46 @@ def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():
     _, data, out = run_point(p)
     assert np.array_equal(out["C"], data["A"] + data["B"])
     assert np.array_equal(out["D"], data["A"] + 2 * data["B"])
+
+
+# =============================================================================
+# dot: a multiplier chained into an accumulator through L1 (LOW2, LOW3a, D105)
+# =============================================================================
+
+
+def test_dot_gives_its_task_list():
+    """mul, then sum after mul's writer; sum's out one beat, T = N / W; out stored as one beat."""
+    tl = task_list(point("dot_accelerated"))
+    names = [s.task_name for s in tl.steps if s.op == "configure"]
+    assert names == [
+        "load_A", "load_B", "mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_mul",
+        "sum_sum_a", "sum_sum_out", "sum_sum", "store_out",
+    ]  # fmt: skip
+    c = tl.configured()
+    assert c["sum_sum_a"].after == ["mult_mul_out"]  # tmp0 comes from mul, through L1
+    assert c["mult_mul"].values == {"n": 16}
+    assert c["sum_sum"].values == {"n": 16, "T": 16}
+    assert c["sum_sum_out"].values == {
+        "base": 1024, "temporal_bounds": [1], "temporal_strides": [0], "spatial_strides": [8]
+    }  # fmt: skip
+    assert c["store_out"].values["src"] == {"base": 1024, "bounds": [1], "strides": [64]}
+    assert [s.task for s in tl.steps if s.op == "sync"] == ["store_out"]
+
+
+def test_dot_waits_once_between_its_accelerators():
+    """Of the lowered waits, one is on an accelerator's writer: mul_out, before sum starts."""
+    p = point("dot_accelerated")
+    cl = cluster_file(p)
+    waits = [c.block for c in lower_program(task_list(p), cl) if isinstance(c, Wait)]
+    assert waits == ["dma", "dma", "mul_out", "sum_out", "dma"]
+
+
+@pytest.mark.parametrize(("w", "cycles"), [(4, 99), (8, 87), (1, 219)])
+def test_dot_runs_right_in_the_model(w, cycles):
+    g = apply_recipe(Recipe.load(REPO / "recipes" / "dot.json").with_params({"W": w}), dot())
+    res, data, out = run_point(point(g[-1].graph))
+    assert out["out"].tolist() == [int(data["A"] @ data["B"])]
+    assert res.total_cycles == cycles
 
 
 def test_a_memlet_the_nest_disagrees_with_is_refused():
