@@ -841,6 +841,25 @@ dimension per container dimension. A dimension is an index (`i`,
 end exclusive. Node ids are identifiers and unique in the graph, because
 derived task names are built from them (D75).
 
+**Folding writes** (D102). A tasklet's output memlet may hold a third key,
+`"wcr": {"op": ..., "identity": ...}`: the elements it writes are set to
+`identity` when the node runs, and every iteration's value is folded in with
+`op` instead of overwriting (a reduction). `op` is a registered name (`add`,
+`mul`, `min`, `max`; `register_wcr`), each associative and commutative on
+integers; `identity` is an int. `wcr` is written only when it is set, the one
+field that is not always written, so graphs without a reduction read as
+before; it is an error on an input and on an accelerated node, whose BRM
+folds on its own. dot as imported: the sum map folds `tmp0` into `out[0]`:
+
+<!-- snippet: tests/dfg/fixtures/dot.snaxdfg -->
+```json
+     "id": "sum",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "tmp0", "subset": ["i"]}},
+     "outputs": {"out": {"data": "out", "subset": [0], "wcr": {"op": "add", "identity": 0}}},
+     "attrs": {"code": "out = in1"}
+```
+
 | Kind | Attrs | Body | Connectors |
 |---|---|---|---|
 | `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`) | yes: runs once per value of `var` | none (derived from the body) |

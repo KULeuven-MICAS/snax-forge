@@ -7,6 +7,9 @@ The fixtures are vecadd at three steps of the flow, kept in the form
     vecadd_split.snaxdfg        after split_map with W = 4, N bound to 64
     vecadd_accelerated.snaxdfg  after bind to elementwise_add, instance acc
 
+and dot as imported (DFG3): a multiply map into ``tmp0``, then a sum map
+whose output memlet folds into ``out[0]`` with ``wcr`` add (``dot.snaxdfg``).
+
 Graphs in the error tests are the plain fixture as a dict, changed by one
 edit (``edited``), the way a person or an LLM edits the file.
 """
@@ -20,7 +23,8 @@ from pathlib import Path
 from typing import Any
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
-NAMES = ("vecadd", "vecadd_split", "vecadd_accelerated")
+NAMES = ("vecadd", "vecadd_split", "vecadd_accelerated")  # the vecadd steps
+ALL = (*NAMES, "dot")
 
 
 def fixture(name: str) -> Path:

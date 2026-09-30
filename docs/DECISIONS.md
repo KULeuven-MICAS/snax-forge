@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D102**.
+  area tag. Next free number: **D103**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -33,7 +33,7 @@ By area:
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 |
 | brm | D3 D5 D15 D68 D70 D82 |
-| dfg | D1 D2 D19 D71 D77 D78 |
+| dfg | D1 D2 D19 D71 D77 D78 D102 |
 | ref | D17 D20 D28 D79 |
 | sandbox | D72 D73 D80 |
 | design | D7 D74 D84–D87 |
@@ -410,3 +410,12 @@ padding small containers to whole beats now (LOW3a), per-tile slices with a tile
 M5 and planned in its own round, because it touches the platform shell, SNAX-DFG, SNAX-SANDBOX,
 SNAX-LOWER and SNAX-MODEL, and amends D12 and D51 when built. Amends D100 (order).
 → STATUS, ARCHITECTURE section 8.
+
+**D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `wcr`: a
+registered op, associative and commutative on integers, and the identity the elements start from
+when the node runs, as DaCe's `Reduce` and the Chisel accumulator do. So split_map and bind treat
+it like any map, and no reduce node kind is needed. The importer turns a `Reduce` into such a map
+and folds the scalar and copy tasklet DaCe stores its result through, its one fold of its own;
+`wcr` is written only when set, so graphs without one are unchanged. dot's kernel becomes `int64`,
+as vecadd's did. Amends D77 and D78; a fold into what the element holds (DaCe's plain `wcr`) waits
+for FE1. → C§11, `dfg/wcr.py`, `dfg/import_sdfg.py`.

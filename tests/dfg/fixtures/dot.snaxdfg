@@ -1,0 +1,44 @@
+{
+ "name": "dot",
+ "symbols": {"N": null},
+ "containers": {
+  "A": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "B": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "out": {"shape": [1], "dtype": "int64", "transient": false, "attrs": {}},
+  "tmp0": {"shape": ["N"], "dtype": "int64", "transient": true, "attrs": {}}
+ },
+ "body": [
+  {
+   "id": "mult_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i", "range": "0:N"},
+   "body": [
+    {
+     "id": "mult",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "A", "subset": ["i"]}, "in2": {"data": "B", "subset": ["i"]}},
+     "outputs": {"out": {"data": "tmp0", "subset": ["i"]}},
+     "attrs": {"code": "out = in1 * in2"}
+    }
+   ]
+  },
+  {
+   "id": "sum_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i", "range": "0:N"},
+   "body": [
+    {
+     "id": "sum",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "tmp0", "subset": ["i"]}},
+     "outputs": {"out": {"data": "out", "subset": [0], "wcr": {"op": "add", "identity": 0}}},
+     "attrs": {"code": "out = in1"}
+    }
+   ]
+  }
+ ]
+}

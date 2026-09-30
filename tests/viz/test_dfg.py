@@ -126,6 +126,13 @@ def test_vecadd_accelerated():
     ]  # fmt: skip
 
 
+def test_a_folding_write_names_its_op():
+    """dot's sum map writes out[0] with wcr add, and the edge says so (D102)."""
+    v = view(FIXTURES / "dot.snaxdfg")
+    writes = [(e["from"], e["text"]) for e in v["edges"] if e["dir"] == "write"]
+    assert writes == [("mult.out", "tmp0[i]"), ("sum.out", "out[0] (wcr add)")]
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
     assert plain["rows"][1]["node"]["iterations"] is None

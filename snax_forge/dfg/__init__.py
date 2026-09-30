@@ -12,17 +12,23 @@ IMP1 (D78): import_sdfg.py maps a simplified DaCe SDFG onto the format
 here). REF1 (D79): execute.py runs a graph in NumPy (``execute``), an
 accelerated node through its BRM's function. The command line is
 ``python -m snax_forge.dfg import | check``.
+
+DFG3 (D102): wcr.py, write-conflict resolution on a tasklet's output memlet
+(``Wcr``, ``register_wcr``), so a reduction is a map like any other; the
+importer turns DaCe's ``Reduce`` into one and the executor folds it.
 """
 
 from .execute import EXECUTORS, ExecutionError, execute, register_executor
 from .graph import Container, Graph, Memlet, Node
 from .kinds import KINDS, LOOP_KINDS, DfgError, Kind, Scope, register_kind
 from .subset import canonical_dim, dim_names, format_dim, is_range, parse_dim
+from .wcr import WCR_OPS, Wcr, register_wcr
 
 __all__ = [
     "EXECUTORS",
     "KINDS",
     "LOOP_KINDS",
+    "WCR_OPS",
     "Container",
     "DfgError",
     "ExecutionError",
@@ -31,6 +37,7 @@ __all__ = [
     "Memlet",
     "Node",
     "Scope",
+    "Wcr",
     "canonical_dim",
     "dim_names",
     "execute",
@@ -39,4 +46,5 @@ __all__ = [
     "parse_dim",
     "register_executor",
     "register_kind",
+    "register_wcr",
 ]

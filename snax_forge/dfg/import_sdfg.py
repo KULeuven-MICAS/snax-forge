@@ -14,6 +14,9 @@ D77:
                                       map's scope, in topological order
     Tasklet                           tasklet node: code, connector memlets
     edges into / out of a tasklet     memlets on its connectors
+    Reduce library node               nested maps, one per input dimension,
+                                      around a tasklet ``out = in1`` whose
+                                      output memlet has a ``wcr`` (D102)
     access nodes, map connectors,     not stored: derived (D77)
     outer memlets on a map
 
@@ -21,6 +24,23 @@ What DaCe's simplify already did is kept as it is: for vecadd it folded the
 transient-plus-copy of ``C[:] = A + B`` into a direct write into ``C``, so
 there is nothing left to fold. A copy between containers that simplify left
 is an error here.
+
+**Reductions** (DFG3, D102). DaCe writes ``np.sum(A * B)`` as a map into a
+transient, a ``Reduce`` library node, and, for a result stored with
+``out[0] = ...``, a scalar transient copied into ``out`` by a tasklet
+``__out = __inp``; simplify leaves that copy. The importer folds it, as
+simplify folded vecadd's (the one fold it does itself): the Reduce writes
+straight into the copy's target, and the scalar and the copy are gone. It
+is folded only when the scalar has that one writer and that one copy as its
+only reader; any other use of a Reduce's scalar is an error. The Reduce
+then becomes a map per input dimension (``sum_map``, ``prod_map``,
+``min_map``, ``max_map`` after its reduction type), variables by depth as
+for any map, around a tasklet (``sum``, ...) with code ``out = in1``. The
+input memlet takes one element per iteration; the output memlet drops the
+reduced dimensions and carries ``wcr``: the op (``add``, ``mul``, ``min``,
+``max``) and the Reduce's identity (the op's for the dtype when DaCe gives
+none). dot becomes ``mult_map`` then ``sum_map``, with ``tmp0`` between
+them.
 
 **Names** (D75, D77). Containers keep the kernel's names (``A``, ``B``,
 ``C``); a transient loses its underscores (``__tmp0`` -> ``tmp0``). Maps and
@@ -35,12 +55,14 @@ already taken.
 decision: one state; arrays with the default strides and no offset; maps
 over one parameter with a positive constant step; Python tasklets whose
 code is one ``output = expression`` per output in the expression grammar;
-plain memlets. Everything else raises ``SdfgImportError`` naming the
+plain memlets; the ``Reduce`` library node at the top level, over
+unit-step ranges. Everything else raises ``SdfgImportError`` naming the
 construct and, where one exists, the open item or task that adds it:
-several states (open item 36, M9), library nodes such as dot's ``Reduce``
-(DFG3), write-conflict resolution (DFG3), maps over several parameters,
-scalars, nested SDFGs, code outside the grammar (open item 37). FE1 and FE2
-extend this list (M7).
+several states (open item 36, M9), other library nodes, a ``wcr`` memlet
+DaCe wrote itself (a fold into the element's contents, FE1), maps over
+several parameters, scalars and views (``np.sum(A, axis=1)`` stored with
+``B[:] = ...`` goes through a view, FE1), nested SDFGs, code outside the
+grammar (open item 37). FE1 and FE2 extend this list (M7).
 """
 
 from __future__ import annotations
@@ -51,6 +73,9 @@ from collections.abc import Iterable
 from typing import Any
 
 import dace
+import numpy as np
+from dace.frontend.operations import detect_reduction_type
+from dace.libraries.standard import Reduce
 from dace.sdfg import nodes as dn
 from dace.sdfg.utils import dfs_topological_sort
 
@@ -60,8 +85,16 @@ from snax_forge.expr import ExprError, Value
 from .graph import Container, Graph, Memlet, Node
 from .kinds import DfgError
 from .subset import format_dim
+from .wcr import WCR_OPS, Wcr
 
 VARIABLES = ("i", "j", "k", "l")
+# DaCe's reduction type -> (wcr op, base name of the map and tasklet)
+REDUCTIONS = {
+    dace.dtypes.ReductionType.Sum: ("add", "sum"),
+    dace.dtypes.ReductionType.Product: ("mul", "prod"),
+    dace.dtypes.ReductionType.Min: ("min", "min"),
+    dace.dtypes.ReductionType.Max: ("max", "max"),
+}
 
 
 class SdfgImportError(DfgError):
@@ -164,6 +197,7 @@ class _Importer:
             if not s.isidentifier():
                 raise SdfgImportError(f"{self.name}: symbol {s!r} is not a name")
         self._check_nodes()
+        self._fold_reduce_copies()
         containers = self._containers(set(symbols))
         self.outer_names = set(symbols) | set(containers)  # never a map variable
         body = self._scope(None, {}, 0)
@@ -173,6 +207,8 @@ class _Importer:
         out: dict[str, Container] = {}
         taken = set(symbols)
         for name, d in self.sdfg.arrays.items():
+            if name in self.gone:
+                continue
             what = f"{self.name}: array {name!r}"
             if type(d) is not dace.data.Array:
                 raise SdfgImportError(f"{what}: a {type(d).__name__} is not imported (only arrays)")
@@ -194,10 +230,13 @@ class _Importer:
         st = self.state
         for n in st.nodes():
             what = f"{self.name}: node {n.label!r}"
+            if isinstance(n, Reduce):
+                if st.entry_node(n) is not None:
+                    raise SdfgImportError(f"{what}: a Reduce inside a map is not imported")
+                continue
             if isinstance(n, dn.LibraryNode):
                 raise SdfgImportError(
-                    f"{what}: library node {type(n).__name__} is not imported "
-                    "(dot's Reduce comes with DFG3)"
+                    f"{what}: library node {type(n).__name__} is not imported (only Reduce, D102)"
                 )
             if isinstance(n, dn.NestedSDFG):
                 raise SdfgImportError(f"{what}: nested SDFGs are not imported")
@@ -206,6 +245,17 @@ class _Importer:
             if isinstance(n, dn.AccessNode) and st.entry_node(n) is not None:
                 raise SdfgImportError(f"{what}: an access node inside a map is not imported")
         for e in st.edges():
+            views = [
+                n.data
+                for n in (e.src, e.dst)
+                if isinstance(n, dn.AccessNode)
+                and isinstance(self.sdfg.arrays[n.data], dace.data.View)
+            ]
+            if views:
+                raise SdfgImportError(
+                    f"{self.name}: view {views[0]!r} is not imported (a result stored through a "
+                    "view, as B[:] = np.sum(A, axis=1) is, comes with FE1)"
+                )
             if isinstance(e.src, dn.AccessNode) and isinstance(e.dst, dn.AccessNode):
                 raise SdfgImportError(
                     f"{self.name}: copy {e.src.data!r} -> {e.dst.data!r} is not imported "
@@ -213,10 +263,48 @@ class _Importer:
                 )
             if e.data.wcr is not None:
                 raise SdfgImportError(
-                    f"{self.name}: write-conflict resolution on {e.data} is not imported (DFG3)"
+                    f"{self.name}: write-conflict resolution on {e.data} not from a Reduce is "
+                    "not imported (a fold into the element's contents, FE1)"
                 )
             if e.data.dynamic:
                 raise SdfgImportError(f"{self.name}: dynamic memlet {e.data} is not imported")
+
+    def _fold_reduce_copies(self) -> None:
+        """Every Reduce's output: its own memlet, or the target of the copy of its scalar."""
+        st = self.state
+        self.reduce_out: dict[Reduce, dace.Memlet] = {}
+        self.skip: set[Any] = set()  # the folded copy tasklets
+        self.gone: set[str] = set()  # the folded scalars
+        for red in (n for n in st.nodes() if isinstance(n, Reduce)):
+            what = f"{self.name}: reduce {red.label!r}"
+            ins, outs = st.in_edges(red), st.out_edges(red)
+            if len(ins) != 1 or len(outs) != 1:
+                raise SdfgImportError(
+                    f"{what}: {len(ins)} inputs and {len(outs)} outputs, not 1 and 1"
+                )
+            tmp = outs[0].dst
+            desc = self.sdfg.arrays[tmp.data]
+            readers = st.out_edges(tmp)
+            copy = readers[0].dst if len(readers) == 1 else None
+            if not desc.transient or type(desc) is not dace.data.Scalar:
+                self.reduce_out[red] = outs[0].data
+                continue
+            ok = (
+                isinstance(copy, dn.Tasklet)
+                and len(st.in_edges(tmp)) == 1
+                and [n for n in st.data_nodes() if n.data == tmp.data] == [tmp]
+                and _is_copy(copy)
+                and len(st.out_edges(copy)) == 1
+                and isinstance(st.out_edges(copy)[0].dst, dn.AccessNode)
+            )
+            if not ok:
+                raise SdfgImportError(
+                    f"{what}: its result {tmp.data!r} is used other than by one copy into a "
+                    "container; only that copy is folded (D102)"
+                )
+            self.reduce_out[red] = st.out_edges(copy)[0].data
+            self.skip.add(copy)
+            self.gone.add(tmp.data)
 
     # --- scopes ---
 
@@ -228,7 +316,9 @@ class _Importer:
                 continue
             if isinstance(n, dn.MapEntry):
                 body.append(self._map(n, rename, depth))
-            elif isinstance(n, dn.Tasklet):
+            elif isinstance(n, Reduce):
+                body.append(self._reduce(n))
+            elif isinstance(n, dn.Tasklet) and n not in self.skip:
                 body.append(self._tasklet(n, rename))
         return body
 
@@ -248,6 +338,90 @@ class _Importer:
         body = self._scope(entry, inner, depth + 1)
         attrs = {"var": var, "range": format_dim((begin, end, step))}
         return Node(node_id, "map", attrs=attrs, body=body)
+
+    def _reduce(self, red: Reduce) -> Node:
+        """A top-level Reduce as nested maps around ``out = in1`` with a ``wcr`` output (D102)."""
+        what = f"{self.name}: reduce {red.label!r}"
+        rtype = detect_reduction_type(red.wcr)
+        if rtype not in REDUCTIONS:
+            raise SdfgImportError(
+                f"{what}: a {rtype.name} reduction is not imported (Sum, Product, Min, Max)"
+            )
+        op, base = REDUCTIONS[rtype]
+        src = self.state.in_edges(red)[0].data
+        dst = self.reduce_out[red]
+        in_ranges, out_ranges = src.subset.ndrange(), dst.subset.ndrange()
+        rank = len(in_ranges)
+        axes = list(range(rank)) if red.axes is None else sorted(red.axes)
+        kept = [d for d in range(rank) if d not in axes]
+
+        variables: list[str] = []
+        taken = set(self.outer_names)
+        ranges = []
+        for d, r in enumerate(in_ranges):
+            b, e, s = _range(r, {}, f"{what} input")
+            if s != 1:
+                raise SdfgImportError(f"{what}: input dimension {d} has step {s}, not 1")
+            variables.append(_variable(d, taken))
+            ranges.append((b, e, s))
+
+        def length(r: tuple[Any, Any, Any]) -> Any:
+            b, e, _ = (dace.symbolic.pystr_to_symbolic(str(x)) for x in r)
+            return e - b + 1
+
+        if not kept and all(length(r) == 1 for r in out_ranges):  # to one element
+            pairs = {}
+        elif len(out_ranges) == len(kept):
+            pairs = dict(zip(range(len(out_ranges)), kept, strict=True))
+        elif len(out_ranges) == rank:  # the reduced dimensions kept with length 1
+            pairs = {k: k for k in kept}
+            for k in axes:
+                if length(out_ranges[k]) != 1:
+                    raise SdfgImportError(f"{what}: reduced dimension {k} of the output is not 1")
+        else:
+            raise SdfgImportError(
+                f"{what}: an output of {len(out_ranges)} dimensions for {rank} input dimensions "
+                f"reduced over {axes}"
+            )
+        out_subset: list[Value] = []
+        for k, r in enumerate(out_ranges):
+            ob = dace.symbolic.pystr_to_symbolic(str(r[0]))
+            if k not in pairs:
+                out_subset.append(_value(ob, {}, f"{what} output"))
+                continue
+            d = pairs[k]
+            if r[2] != 1 or (length(r) - length(in_ranges[d])) != 0:
+                raise SdfgImportError(
+                    f"{what}: output dimension {k} does not match input dimension {d} one to one"
+                )
+            ib = dace.symbolic.pystr_to_symbolic(str(in_ranges[d][0]))
+            index = ob - ib + dace.symbolic.pystr_to_symbolic(variables[d])
+            out_subset.append(_value(index, {}, f"{what} output"))
+
+        target = self.containers[dst.data]
+        dtype = np.dtype(self.sdfg.arrays[dst.data].dtype.as_numpy_dtype())
+        identity = red.identity
+        if identity is None:
+            identity = WCR_OPS[op].identity(dtype)
+        elif int(identity) != identity:
+            raise SdfgImportError(f"{what}: identity {identity!r} is not an integer (D28)")
+        tasklet = Node(
+            fresh(base, self.ids),
+            "tasklet",
+            inputs={"in1": Memlet(self.containers[src.data], list(variables))},
+            outputs={"out": Memlet(target, out_subset, Wcr(op, int(identity)))},
+            attrs={"code": "out = in1"},
+        )
+        ids = [fresh(f"{base}_map", self.ids) for _ in variables]
+        node = tasklet
+        for d in reversed(range(rank)):
+            node = Node(
+                ids[d],
+                "map",
+                attrs={"var": variables[d], "range": format_dim(ranges[d])},
+                body=[node],
+            )
+        return node
 
     def _tasklet(self, t: dn.Tasklet, rename: dict[str, str]) -> Node:
         what = f"{self.name}: tasklet {t.label!r}"
@@ -280,6 +454,24 @@ class _Importer:
                 )
             out[conn] = m
         return out
+
+
+def _is_copy(t: dn.Tasklet) -> bool:
+    """A tasklet ``out = in`` with one input and one output: what a store of a scalar leaves."""
+    if t.code.language != dace.Language.Python or len(t.in_connectors) != 1:
+        return False
+    if len(t.out_connectors) != 1:
+        return False
+    try:
+        (st,) = ast.parse(t.code.as_string).body
+    except (SyntaxError, ValueError):
+        return False
+    return (
+        isinstance(st, ast.Assign)
+        and [ast.unparse(x) for x in st.targets] == list(t.out_connectors)
+        and isinstance(st.value, ast.Name)
+        and st.value.id in t.in_connectors
+    )
 
 
 def fresh_all(names: list[str], taken: set[str]) -> dict[str, str]:

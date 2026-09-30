@@ -1,22 +1,22 @@
-"""The .snaxdfg format (DFG1, D71, D77): fixtures, round trips, stored form, access."""
+"""The .snaxdfg format (DFG1, D71, D77, D102): fixtures, round trips, stored form, access."""
 
 from __future__ import annotations
 
 import pytest
 
-from snax_forge.dfg import Container, Graph, Memlet, Node
+from snax_forge.dfg import Container, Graph, Memlet, Node, Wcr
 
-from .helpers import NAMES, as_dict, fixture
+from .helpers import ALL, NAMES, as_dict, fixture
 
 
-@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("name", ALL)
 def test_fixture_is_in_written_form(name):
     """A fixture reads back to exactly its own text: every field written, canonical."""
     text = fixture(name).read_text()
     assert Graph.load(fixture(name)).to_json() == text
 
 
-@pytest.mark.parametrize("name", NAMES)
+@pytest.mark.parametrize("name", ALL)
 def test_round_trip(name):
     g = Graph.load(fixture(name))
     assert Graph.from_dict(g.to_dict()) == g
@@ -94,6 +94,19 @@ def test_missing_keys_take_defaults_and_every_field_is_written():
         "attrs": {"var": "i", "range": "0:8"},
         "body": [],
     }
+
+
+def test_wcr_is_written_only_when_set():
+    """A memlet without a wcr reads as before D102; dot's sum writes one (D102)."""
+    assert "wcr" not in "".join(fixture(n).read_text() for n in NAMES)
+    g = Graph.load(fixture("dot"))
+    assert g.node("sum").outputs["out"] == Memlet("out", [0], Wcr("add", 0))
+    assert g.node("sum").outputs["out"].to_dict() == {
+        "data": "out",
+        "subset": [0],
+        "wcr": {"op": "add", "identity": 0},
+    }
+    assert g.node("mult").outputs["out"].wcr is None
 
 
 def test_body_is_written_only_for_kinds_that_have_one():

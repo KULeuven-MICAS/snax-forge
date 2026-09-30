@@ -3,8 +3,11 @@
 DaCe programs have to live in a file (DaCe reads their source), so the ones
 the tests import are here. ``two`` keeps a transient between two maps in one
 state; ``shift`` has offset subsets and a shortened range, like one half-step
-of jacobi1d. The ``unsupported_*`` builders make one construct each that the
-importer must reject by name.
+of jacobi1d; ``amax`` is a Max reduction stored through a scalar and a copy,
+as dot's Sum is (DFG3), and ``total`` a Sum over both dimensions of a matrix. ``row_sum`` is a Reduce over one axis of two, built by
+hand since NumPy's ``B[:] = np.sum(A, axis=1)`` goes through a view
+(``row_sum_view``, rejected). The ``unsupported_*`` builders make one
+construct each that the importer must reject by name.
 
 No ``from __future__ import annotations`` here: DaCe reads the type hints of
 a program as objects, and postponed annotations turn every array into a
@@ -12,6 +15,7 @@ scalar.
 """
 
 import dace
+import numpy as np
 
 N = dace.symbol("N")
 
@@ -19,6 +23,21 @@ N = dace.symbol("N")
 @dace.program
 def two(A: dace.int64[N], B: dace.int64[N], C: dace.int64[N]):
     C[:] = (A + B) * B
+
+
+@dace.program
+def amax(A: dace.int64[N], out: dace.int64[1]):
+    out[0] = np.max(A)
+
+
+@dace.program
+def total(A: dace.int64[N, N], out: dace.int64[1]):
+    out[0] = np.sum(A)
+
+
+@dace.program
+def row_sum_view(A: dace.int64[N, N], B: dace.int64[N]):
+    B[:] = np.sum(A, axis=1)
 
 
 @dace.program
@@ -88,4 +107,28 @@ def unsupported_strides() -> dace.SDFG:
         {"o": dace.Memlet("B[i]")},
         external_edges=True,
     )
+    return sdfg
+
+
+def row_sum() -> dace.SDFG:
+    """B[i] = sum over j of A[i, j]: a Reduce over axis 1, writing B directly."""
+    sdfg, st = _one_state({"A": ([4, 6], {}), "B": ([4], {})})
+    red = st.add_reduce("lambda a, b: a + b", axes=[1], identity=0)
+    st.add_edge(st.add_read("A"), None, red, "_in", dace.Memlet("A[0:4, 0:6]"))
+    st.add_edge(red, "_out", st.add_write("B"), None, dace.Memlet("B[0:4]"))
+    return sdfg
+
+
+def unsupported_reduce_used_twice() -> dace.SDFG:
+    """A Reduce into a scalar that two copies read: not the one-copy store that is folded."""
+    sdfg, st = _one_state({"A": ([8], {}), "B": ([1], {}), "C": ([1], {})})
+    sdfg.add_scalar("s", dace.int64, transient=True)
+    red = st.add_reduce("lambda a, b: a + b", axes=None, identity=0)
+    s = st.add_access("s")
+    st.add_edge(st.add_read("A"), None, red, "_in", dace.Memlet("A[0:8]"))
+    st.add_edge(red, "_out", s, None, dace.Memlet("s[0]"))
+    for out in ("B", "C"):
+        t = st.add_tasklet(f"copy_{out}", {"i"}, {"o"}, "o = i")
+        st.add_edge(s, None, t, "i", dace.Memlet("s[0]"))
+        st.add_edge(t, "o", st.add_write(out), None, dace.Memlet(f"{out}[0]"))
     return sdfg

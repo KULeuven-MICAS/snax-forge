@@ -178,6 +178,12 @@ its JSON.
   (open item 36).
 - **Loop kinds:** a map carries `loop.kind`: absent as imported, `tile`,
   `temporal` or `spatial` once SNAX-SANDBOX maps it (D73).
+- **Reductions** (D102): a tasklet's output memlet may carry a `wcr`, a
+  registered op (`add`, `mul`, `min`, `max`) and an identity. The elements it
+  writes start from the identity when the node runs and every iteration folds
+  its value in, so a reduction is a map like any other, and SNAX-SANDBOX
+  splits and binds it the same way. Every registered op is associative and
+  commutative on integers (D28), so the order of the writes never matters.
 - **Expressions** in subsets, ranges and shapes use one grammar shared with the
   BRM (`snax_forge/expr.py`: ints, names, `+ - * //`, open item 37), stored
   canonical. A symbol is `null` as imported and gets its value from the recipe.
@@ -193,7 +199,12 @@ its JSON.
 SDFG that `pixi run forge <kernel>` writes (or builds it in-process), keeps the
 kernel's container names and gives maps, tasklets, variables and connectors
 readable names (`add_map`, `add`, `i`, `in1`). It decides nothing, and a
-construct it does not support is an error that names it. An MLIR importer
+construct it does not support is an error that names it. A DaCe `Reduce`
+becomes a map per input dimension around `out = in1`, its output memlet with a
+`wcr`, named after the reduction (`sum_map`, `sum`); the scalar and copy
+tasklet DaCe stores its result through are folded into a direct write, the one
+fold the importer does itself (D102). dot imports as `mult_map` into the
+transient `tmp0`, then `sum_map` into `out[0]`. An MLIR importer
 writing `.snaxdfg` directly may come later (open item 33).
 
 Generated `.snaxdfg` files go under `out/`; test fixtures in
@@ -205,7 +216,9 @@ A NumPy interpreter that runs any `.snaxdfg`, as imported, split or
 accelerated, and gives the golden output (D20, D79; `pixi run check-dfg FILE
 --kernel K`). Maps run over their whole iteration space at once; an
 accelerated node runs firing by firing through the same function SNAX-MODEL
-runs. On the imported graph it must equal the kernel's own `reference`;
+runs. A `wcr` output sets its elements to the identity, then folds every
+iteration in (`ufunc.at`, wrapping as C does; D102). On the imported graph it
+must equal the kernel's own `reference`;
 SNAX-SANDBOX checks every transform step against it, and the flow checks every
 model run against it. Only integer containers run for now (D28).
 

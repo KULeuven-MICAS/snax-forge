@@ -27,7 +27,11 @@ How a node runs is registered per kind (``register_executor``, principle
     the gathered arrays (``expr.evaluate``), write each output back at its
     index array, cast to the container's dtype (integer overflow wraps as in
     C). All reads come before all writes. Two iterations writing one
-    element is an error: that is a write conflict, which needs DFG3.
+    element is an error (a write conflict), unless the output memlet has a
+    ``wcr`` (D102): then the elements it writes are set to its identity and
+    every iteration's value is folded in with the op's ufunc (``ufunc.at``,
+    which wraps as C does), so dot's sum map leaves ``sum(tmp0)`` in
+    ``out[0]`` whatever ``out`` held before.
 ``accelerated``
     one firing at a time, through the BRM's function, the same
     ``fn(k, ins, state, params)`` SNAX-MODEL runs (the instance's
@@ -270,14 +274,19 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
     for c, m in node.outputs.items():
         arr = ctx.data[m.data]
         idx = _grid_indices(m, env, ctx, f"{what}.outputs.{c}")
-        full = [np.broadcast_to(i, grid) for i in idx]
+        full = tuple(np.broadcast_to(i, grid) for i in idx)
+        value = np.broadcast_to(results[c], grid).astype(arr.dtype)
+        if m.wcr is not None:  # a reduction (D102): start from the identity, fold every write
+            arr[full] = np.array(m.wcr.identity).astype(arr.dtype)
+            m.wcr.ufunc.at(arr, full, value)
+            continue
         flat = np.ravel_multi_index(full, arr.shape)
         if np.unique(flat).size != np.size(flat):
             raise ExecutionError(
                 f"{what}.outputs.{c}: several iterations write one element of {m.data!r} "
-                "(a write conflict; reductions come with DFG3)"
+                "(a write conflict; a reduction needs a wcr on the memlet, D102)"
             )
-        arr[tuple(full)] = np.broadcast_to(results[c], grid).astype(arr.dtype)
+        arr[full] = value
 
 
 # =============================================================================

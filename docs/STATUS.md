@@ -95,6 +95,7 @@ tables as they were written are in git history.
 | LOOP1 | one turn of the loop by hand, `examples/loop1/README.md`: vecadd's bank conflicts read from the reports and the memory tab, a written prediction, B moved, the prediction checked; every number checked by `tests/flow/test_loop1.py` | D98 |
 | VIEW1 | viewer housekeeping: a play / pause control stepping the selected cycle on a timer (Space toggles it), streamer boxes as wide as their lanes, every view as wide as the page less 1.5 in on each side | — |
 | — | housekeeping after M4b: shared element, word and register helpers in `viz/memory.py` and `viz/movement.py`, report Markdown helpers in `report/markdown.py`, repeated viewer text and cycle clamping in `events.js` and `dom.js`, unused JS exports removed, shared flow test helpers in `tests/flow/helpers.py`, stale docstrings and decision back-links; Reload now also refreshes the schedule's beat rows (its cache was keyed by directory name, not by run) | — |
+| DFG3 | reduction in SNAX-DFG: a `wcr` on a tasklet's output memlet (a registered op, associative and commutative, and the identity the elements start from); DaCe's `Reduce` imported as a map per dimension with the scalar-and-copy store folded; REF folds from the identity; `dot` as `int64` imports to `tests/dfg/fixtures/dot.snaxdfg` and equals `np.dot` | D102 |
 
 ## Open Tasks
 
@@ -124,9 +125,8 @@ M13.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| DFG3 | Reduction in SNAX-DFG: a `wcr` field on memlets (op name, identity from the op); the importer expands DaCe's `Reduce` into a map whose tasklet writes through a `wcr` memlet and folds the scalar transient and its copy into `out`; REF runs `wcr` writes; `kernels/polybench/dot.py` becomes `int64` (as D78 did for vecadd) | IMP1, REF1 | The import equals a checked-in `dot.snaxdfg` fixture (a multiply map and a sum map); REF on it equals `np.dot` on integer inputs (D28) | todo |
 | BRM4 | `accumulate` BRM (pattern family `reduce`, out rate `T`), with `chisel_accumulator` (1 lane, drain 1, as the Chisel `Accumulator`) and a wider implementation (drain 0, binding null); `drain` as an implementation timing parameter and in the model (D101, open item 8); `elementwise_mul` BRM; red4 built from `accumulate` | BRM1, BRM2 | Same cycles and data as the reduce stub (red4 and `scenarios/reduce` unchanged at drain 0); a drain of 1 adds one cycle per back-to-back reduction | todo |
-| SBX2 | The `reduce` pattern matcher for `bind`; `split_map` on a map with a `wcr` memlet, only for an associative and commutative op | SBX1, DFG3, BRM4 | The dot recipe gives a graph with two accelerated nodes, each passing the reference check; a `sub` reduction is rejected by name | todo |
+| SBX2 | The `reduce` pattern matcher for `bind`: a tasklet `out = in1` whose output folds with the BRM's op. `split_map` needs no change for a `wcr` map, since every registered op is associative and commutative (D102) | SBX1, DFG3, BRM4 | The dot recipe gives a graph with two accelerated nodes, each passing the reference check; a tasklet whose op or identity differs from the BRM's is rejected by name | todo |
 | LOW2 | Chaining through L1: a named rate (`T`) derived from the firing loops the rated memlet does not depend on, the writer streamer running over the others; the accumulator's task waits on the multiplier's writer | LOW1a, BRM4, SBX2 | dot's task list has one wait between the two accelerators and none inside either; `T` equals the product of the loops it folds | todo |
 | LOW3a | A container the DMA moves is padded to whole beats in both memories, and the DMA moves the padding (D101, part of open item 38) | LOW1a | dot's `out` (one word) is loaded or stored as one beat; vecadd's design point is unchanged | todo |
 | E2E2 | `dot` end to end: kernel → import → recipe (two binds) → design point → cluster file and task list → run; the chaining wait listed in `run.md` | all of the above, VIS2 | Output equals `np.dot` and REF exactly; cycles pinned at the multiplier's and the accumulator's lanes 4/4, 8/8 and 4/1 (the 1-lane Chisel accumulator); the schedule shows the multiplier, the wait, then the accumulator | todo |
@@ -161,7 +161,7 @@ sub-milestones there. The rows below are a first cut, not the plan.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| FE1 | SDFG importer for the remaining constructs (jacobi1d's stencil), reusing the existing ingest; vecadd and dot are imported in M3 and M5 (D76) | DFG3, F2 | `jacobi1d` imports; REF output equals the kernel's reference | todo |
+| FE1 | SDFG importer for the remaining constructs (jacobi1d's stencil; results stored through a view, as `B[:] = np.sum(A, axis=1)`; DaCe's plain `wcr` memlet, a fold into the element's contents, as `identity: null`, D102), reusing the existing ingest; vecadd and dot are imported in M3 and M5 (D76) | DFG3, F2 | `jacobi1d` imports; REF output equals the kernel's reference | todo |
 | FE2 | Named errors for unsupported SDFG constructs | FE1 | Each unsupported construct in the fixtures gets a named error | todo |
 | FE3 | NPBench as the kernel set: its NumPy kernels with their inputs and sizes, starting with the ones in `kernels/` (atax, bicg, mvt, jacobi1d) and gemm, then conv2d and softmax for M11; the constructs they need (open items 36, 37) | FE1, FE2 | A coverage table: every kernel tried is imported and checked by REF1, or stops at a named error (C2's number) | todo |
 

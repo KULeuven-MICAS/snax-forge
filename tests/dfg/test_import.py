@@ -1,16 +1,19 @@
-"""The SDFG importer (IMP1): vecadd's simplified SDFG becomes the vecadd fixture.
+"""The SDFG importer (IMP1, DFG3): vecadd's and dot's simplified SDFGs become their fixtures.
 
 Accepted when the import of ``kernels/polybench/vecadd.py`` equals the
 checked-in ``tests/dfg/fixtures/vecadd.snaxdfg``, with no transient and no
-copy left. The importer builds the simplified SDFG as ``pixi run forge``
-does, and a stored ``.sdfg`` gives the same graph. Beyond vecadd: a
-transient between two maps, offset subsets, and every construct the
-importer does not support rejected by name.
+copy left, and the import of ``dot.py`` equals ``dot.snaxdfg``: a multiply
+map, then its ``Reduce`` as a sum map folding into ``out[0]`` (D102). The
+importer builds the simplified SDFG as ``pixi run forge`` does, and a stored
+``.sdfg`` gives the same graph. Beyond them: a transient between two maps,
+offset subsets, a Max reduction, a Reduce over one axis of two, and every
+construct the importer does not support rejected by name.
 """
 
 from __future__ import annotations
 
 import dace
+import numpy as np
 import pytest
 
 from snax_forge.dfg import Graph
@@ -73,9 +76,62 @@ def test_cli_writes_the_fixture(tmp_path, capsys):
 
 
 def test_cli_reports_an_unsupported_kernel(tmp_path, capsys):
-    assert main(["import", "dot", "--out", str(tmp_path)]) == 1
-    assert "library node Reduce" in capsys.readouterr().err
-    assert not (tmp_path / "dot.snaxdfg").exists()
+    assert main(["import", "jacobi1d", "--out", str(tmp_path)]) == 1
+    assert "control flow is open item 36" in capsys.readouterr().err
+    assert not (tmp_path / "jacobi1d.snaxdfg").exists()
+
+
+# =============================================================================
+# dot: a reduction (DFG3, the acceptance)
+# =============================================================================
+
+
+def test_dot_import_is_the_fixture():
+    assert import_kernel("dot").to_json() == fixture("dot").read_text()
+
+
+def test_dot_is_a_multiply_map_then_a_sum_map():
+    """The Reduce's scalar and its copy are folded: the sum map writes out[0] (D102)."""
+    g = import_kernel("dot")
+    assert list(g.containers) == ["A", "B", "out", "tmp0"]
+    assert [c for c, cont in g.containers.items() if cont.transient] == ["tmp0"]
+    assert {c.dtype for c in g.containers.values()} == {"int64"}
+    assert [(n.id, n.attrs.get("var")) for n in g.body] == [("mult_map", "i"), ("sum_map", "i")]
+    s = g.node("sum")
+    assert s.attrs["code"] == "out = in1"
+    assert s.inputs["in1"].to_dict() == {"data": "tmp0", "subset": ["i"]}
+    assert s.outputs["out"].to_dict() == {
+        "data": "out",
+        "subset": [0],
+        "wcr": {"op": "add", "identity": 0},
+    }
+
+
+def test_cli_writes_the_dot_fixture(tmp_path):
+    assert main(["import", "dot", "--out", str(tmp_path)]) == 0
+    assert (tmp_path / "dot.snaxdfg").read_text() == fixture("dot").read_text()
+
+
+def test_max_reduction():
+    """np.max: op max, identity the dtype's smallest value, named after the reduction."""
+    g = import_sdfg(progs.amax.to_sdfg(simplify=True), "amax")
+    assert list(g.containers) == ["A", "out"]
+    assert [n.id for n, _ in g.walk()] == ["max_map", "max"]
+    wcr = g.node("max").outputs["out"].wcr
+    assert (wcr.op, wcr.identity) == ("max", int(np.iinfo(np.int64).min))
+
+
+def test_reduce_over_one_axis():
+    """A Reduce over axis 1 of A[4, 6]: a map per dimension, the output keeps i."""
+    g = import_sdfg(progs.row_sum(), "row_sum")
+    assert [(n.id, n.attrs.get("var")) for n, _ in g.walk()] == [
+        ("sum_map", "i"),
+        ("sum_map_1", "j"),
+        ("sum", None),
+    ]
+    s = g.node("sum")
+    assert s.inputs["in1"].subset == ["i", "j"]
+    assert s.outputs["out"].subset == ["i"]
 
 
 # =============================================================================
@@ -122,7 +178,6 @@ def test_names():
 @pytest.mark.parametrize(
     ("kernel", "message"),
     [
-        ("dot", "library node Reduce is not imported"),
         ("jacobi1d", "4 states .*control flow is open item 36"),
     ],
 )
@@ -140,7 +195,9 @@ def test_raw_vecadd_has_three_states():
 @pytest.mark.parametrize(
     ("make", "message"),
     [
-        (progs.unsupported_wcr, "write-conflict resolution .* \\(DFG3\\)"),
+        (progs.unsupported_wcr, "write-conflict resolution .* not from a Reduce .*FE1"),
+        (progs.unsupported_reduce_used_twice, "result 's' is used other than by one copy"),
+        (lambda: progs.row_sum_view.to_sdfg(simplify=True), "view '__tmp0' is not imported"),
         (progs.unsupported_two_params, "over 2 parameters"),
         (progs.unsupported_cast, "Call is not allowed .* open item 37"),
         (progs.unsupported_copy, "copy 'A' -> 'B'"),

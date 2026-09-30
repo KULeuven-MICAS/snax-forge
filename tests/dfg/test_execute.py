@@ -2,8 +2,10 @@
 
 Accepted when the imported vecadd equals the kernel's ``reference`` on
 ``make_inputs``, for N a multiple of the lane count and not, and the plain,
-split and accelerated graphs agree. Also: transients and offset subsets,
-the accelerated node's firing order and tasks, and every check named.
+split and accelerated graphs agree; and when the imported dot equals
+``np.dot`` on integer inputs (DFG3, D28), its sum map folding with ``wcr``
+from the identity (D102). Also: transients and offset subsets, the
+accelerated node's firing order and tasks, and every check named.
 """
 
 from __future__ import annotations
@@ -27,9 +29,9 @@ from .helpers import NAMES, as_dict, fixture
 ex = importlib.import_module("snax_forge.dfg.execute")
 
 
-def kernel_run(n: int, seed: int = 0) -> tuple[dict, dict]:
-    """vecadd's inputs and the kernel's own reference output."""
-    spec = load("vecadd")
+def kernel_run(n: int, seed: int = 0, kernel: str = "vecadd") -> tuple[dict, dict]:
+    """A kernel's inputs and its own reference output (vecadd unless named)."""
+    spec = load(kernel)
     inputs = spec.make_inputs(np.random.default_rng(seed), n=n)
     ref = {k: v.copy() for k, v in inputs.items()}
     spec.reference(**ref)
@@ -73,6 +75,54 @@ def test_int64_wraps_as_in_c():
     big = np.iinfo(np.int64).max
     inputs = {"A": np.array([big, 1]), "B": np.array([1, 1]), "C": np.zeros(2, np.int64)}
     assert execute(Graph.load(fixture("vecadd")), inputs)["C"].tolist() == [-big - 1, 2]
+
+
+# =============================================================================
+# dot: a reduction (DFG3, the acceptance)
+# =============================================================================
+
+
+@pytest.mark.parametrize("n", [64, 10, 1024])
+def test_imported_dot_equals_np_dot(n):
+    inputs, ref = kernel_run(n, kernel="dot")
+    out = execute(Graph.load(fixture("dot")), inputs)
+    assert out["out"].tolist() == ref["out"].tolist() == [int(inputs["A"] @ inputs["B"])]
+    assert out["tmp0"].tolist() == (inputs["A"] * inputs["B"]).tolist()
+
+
+def test_the_fold_starts_from_the_identity():
+    """What out held before does not count: the sum map writes the sum, as the Reduce does."""
+    inputs, ref = kernel_run(64, kernel="dot")
+    inputs["out"] = np.array([12345])
+    assert execute(Graph.load(fixture("dot")), inputs)["out"].tolist() == ref["out"].tolist()
+
+
+def test_the_fold_wraps_as_in_c():
+    big = np.iinfo(np.int64).max
+    inputs = {"A": np.array([big, 1]), "B": np.array([1, 1]), "out": np.zeros(1, np.int64)}
+    assert execute(Graph.load(fixture("dot")), inputs)["out"].tolist() == [-big - 1]
+
+
+def test_other_folds():
+    """max from the dtype's smallest value; a sum over one axis of two; over both into one."""
+    a = np.random.default_rng(2).integers(-1000, 1000, 10)
+    g = import_sdfg(progs.amax.to_sdfg(simplify=True), "amax")
+    assert execute(g, {"A": a, "out": np.zeros(1, np.int64)})["out"].tolist() == [a.max()]
+    m = np.arange(24).reshape(4, 6)
+    g = import_sdfg(progs.row_sum(), "row_sum")
+    assert execute(g, {"A": m, "B": np.zeros(4, np.int64)})["B"].tolist() == m.sum(1).tolist()
+    g = import_sdfg(progs.total.to_sdfg(simplify=True), "total")
+    assert [(n.id, n.attrs.get("var")) for n, _ in g.walk()][:2] == [
+        ("sum_map", "i"),
+        ("sum_map_1", "j"),
+    ]
+    m = np.arange(36).reshape(6, 6)
+    assert execute(g, {"A": m, "out": np.zeros(1, np.int64)})["out"].tolist() == [m.sum()]
+
+
+def test_cli_check_dot(capsys):
+    assert main(["check", str(fixture("dot")), "--kernel", "dot", "--n", "64"]) == 0
+    assert "['out'] equal the dot reference (N = 64)" in capsys.readouterr().out
 
 
 def test_cli_check(capsys):

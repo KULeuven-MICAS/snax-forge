@@ -28,6 +28,18 @@ def _map(edit):
     return lambda d: edit(d["body"][0])
 
 
+WCR = {"op": "add", "identity": 0}
+
+
+def _sum(d):
+    """dot's sum tasklet, inside the second top-level map."""
+    return d["body"][1]["body"][0]
+
+
+def _wcr(**change):
+    return lambda d: _sum(d)["outputs"]["out"]["wcr"].update(change)
+
+
 CASES = [
     # kinds and keys
     ("vecadd", _node(lambda n: n.update(kind="gemm")), "unknown kind 'gemm'"),
@@ -58,6 +70,25 @@ CASES = [
     ("vecadd", _map(lambda m: m["attrs"].update(var="N")), "'N' is already a symbol"),
     ("vecadd", _map(lambda m: m["attrs"].update(var="A")), "'A' is already a symbol, container"),
     ("vecadd_split", lambda d: d["body"][0]["body"][0]["attrs"].update(var="i_t"), "variable"),
+    # wcr (D102)
+    ("dot", _wcr(op="sub"), "wcr.op: 'sub' is not a registered op"),
+    ("dot", _wcr(identity=None), "wcr.identity: null .* not accepted yet \\(FE1\\)"),
+    ("dot", _wcr(identity="0"), "wcr.identity: must be an int, got '0'"),
+    (
+        "dot",
+        lambda d: _sum(d)["outputs"]["out"].update(wcr={"op": "add"}),
+        "must be \\{op, identity\\}",
+    ),
+    (
+        "vecadd",
+        _node(lambda n: n["inputs"]["in1"].update(wcr=WCR)),
+        "in1: a wcr folds writes, .* not on the inputs of a 'tasklet'",
+    ),
+    (
+        "vecadd_accelerated",
+        _node(lambda n: n["outputs"]["out"].update(wcr=WCR)),
+        "out: a wcr folds writes, .* not on the outputs of a 'accelerated'",
+    ),
     ("vecadd", _set(("symbols", "A"), None), "'A' is also a symbol"),
     ("vecadd", _set(("symbols", "N"), 6.5), "symbols.N: must be an int or null"),
     # maps
