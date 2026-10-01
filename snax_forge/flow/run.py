@@ -36,7 +36,7 @@ of an earlier run in the same folder are removed first, so the folder never
 holds reports of a run other than its last. A report that cannot be built is
 named in the summary; the run and its check stand without it.
 
-**Stage times** (D106). ``flow.log`` ends with the wall-clock seconds of each
+**Stage times** (D107). ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``scenario``, ``run``,
 ``check``, ``report``) and their total, on this machine. They change from run
 to run, so they are in the log only: the command line, ``run/`` (byte
@@ -104,7 +104,7 @@ class Flow:
     check: dict[str, Any]
     checks: dict[str, list[str]] = field(default_factory=dict)  # stage -> codes that ran
     report_error: str | None = None  # why report/ could not be written, if it could not
-    times: dict[str, float] = field(default_factory=dict)  # stage -> wall-clock seconds (D106)
+    times: dict[str, float] = field(default_factory=dict)  # stage -> wall-clock seconds (D107)
 
     @property
     def passed(self) -> bool:
@@ -268,7 +268,7 @@ def log_text(f: Flow) -> str:
 
 @contextmanager
 def _timed(times: dict[str, float], stage: str) -> Iterator[None]:
-    """Add the wall-clock seconds of the block to ``times[stage]`` (D106)."""
+    """Add the wall-clock seconds of the block to ``times[stage]`` (D107)."""
     t0 = time.perf_counter()
     try:
         yield

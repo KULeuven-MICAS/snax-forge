@@ -9,6 +9,7 @@ Read before designing or changing a component:
   checked against the file it came from, so update both together; section 8 holds the rules a new
   block kind must follow.
 - `docs/STATUS.md`: milestones, tasks, open items. Update it with every change.
+- `docs/PAPER.md`: the paper's claims and the evidence each needs (P1, D100).
 
 ## Principles
 - Model first: Python models are the source of truth; RTL is checked against them.

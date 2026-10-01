@@ -39,7 +39,7 @@ D101). P1 revisits the order after M5 (PAP3).
 | M4a | Run views: profile report, schedule, cluster view | `done` |
 | M3 | Close `vecadd` end to end, from the kernel (D76, D90) | `done` |
 | M4b | Remaining views and first manual loop | `done` |
-| P1 | Paper plan: claims, evidence, baselines, evaluation plan (alongside M5, D100) | todo |
+| P1 | Paper plan: claims, evidence, baselines, evaluation plan (D100) | `wip` |
 | M5 | `dot`: a multiplier and an accumulator chained through L1 (D101) | `done` |
 | M13 | Accelerator-to-accelerator links (A2A), planned in its own round (D101) | todo |
 | M6 | Contract freeze | todo |
@@ -104,7 +104,7 @@ tables as they were written are in git history.
 
 ## Open Tasks
 
-### P1: Paper plan (alongside M5, D100)
+### P1: Paper plan (D100)
 
 P1 writes the paper's hypothesis down as claims that a measurement can
 confirm or break (`docs/PAPER.md`), and orders the milestones by the evidence
@@ -112,11 +112,11 @@ they deliver.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| PAP1 | The hypothesis as claims in `docs/PAPER.md`: C1 feedback speed (idea to checked cycle count, against today's SNAX flow), C2 the bridge from SDFG/MLIR to a SNAX model (NPBench kernels that run with no hand edits), C3 composing BRMs and the system effects kernel-level tools cannot see (the best accelerator alone is not always the best in the cluster), C4 pre-RTL seconds against RTL and FPGA flows (SODA-OPT, Richie) | none | Every claim names its measurement, its baseline and the milestone that delivers it | todo |
-| PAP2 | Related work, one line each on what it does and what SNAX-FORGE adds: DaCe GPU/FPGA offload, SNAX-MLIR, HLS (Vitis HLS, Bambu), XLS/DSLX, SODA-OPT, Richie, gem5-Aladdin and gem5-SALAM, ZigZag/Stream, Timeloop/Accelergy | none | Each entry points to the claim it bears on | todo |
+| PAP1 | The hypothesis as claims in `docs/PAPER.md` (section 5): C1 time to insight (the cost and the cause of a design choice in seconds, against today's SNAX flow), C3 composition decided at cluster level (the best engine or mix alone is not the best in the shell), C4 fidelity (the model ranks design points as SNAX RTL does), C5 an engine-agnostic shell (SNAX accelerators and HLS engines as BRMs, generated RTL that plugs into SNAX), C2 supporting (NumPy kernels with no hand edits); the evaluation plan E1–E10, the kernel set, the cost model and the features the evidence needs | none | Every claim names its measurement, its baseline and the milestone that delivers it | `done` |
+| PAP2 | Related work in `docs/PAPER.md` section 8, one line each on what it does and what SNAX-FORGE adds: Aladdin, gem5-Aladdin and gem5-SALAM, GVSoC and its Snitch shared-L1 model, ZigZag/Stream, Timeloop/Accelergy, AccelForge, Herald, CHARM (2012 and Versal) and SSR, PULP HWPE, Gemmini, Richie, DaCe and NPBench, SNAX-MLIR, SODA-OPT, Union, Allo and HIDA, HLS (Vitis HLS, Bambu), XLS/DSLX, MATCHA, Beacon and Explainable-DSE; ARCHITECTURE section 2 rewritten from it | none | Each entry points to the claim it bears on | todo |
 | BASE1 | Baseline for C1: the time from an accelerator idea to a cycle count in today's SNAX flow (RTL, integration, program, RTL simulation) for `vecadd`, and `dot` after M5, each step logged | none | Numbers and steps checked in | todo |
 | BASE2 | SNAX-MODEL speed: simulated cycles per second on large runs (`vecadd` at 100k elements; a tiled GEMM once it runs), at trace off, task and beat | none | Numbers checked in; says whether M12 needs extrapolation | todo |
-| PAP3 | Evaluation plan: the workload ladder (kernels, layers, blocks, models) mapped onto C1–C4 and the milestones; the order after M5; open items 42 and 43 settled or left open | PAP1, PAP2, BASE1, BASE2 | Decision logged with the order | todo |
+| PAP3 | Evaluation plan: the workload ladder (kernels, layers, blocks, models) mapped onto C1–C5 and the milestones (`docs/PAPER.md` section 10); the order after M5, including the cost estimator, a sweep view and generation into SNAX; open items 42 and 43 settled or left open | PAP1, PAP2, BASE1, BASE2 | Decision logged with the order | todo |
 
 ### M13: Accelerator-to-accelerator links (A2A, D101)
 
@@ -236,10 +236,13 @@ number (D98). The viewer steps the selected cycle on a timer and uses the
 width of the window in every view (VIEW1). VIS6, VIS7 and VIS8 are dropped
 (D98).
 
-Next are P1 and M5, side by side (D100): P1 turns the paper's hypothesis
-into claims, measures the two baselines and fixes the order of the
-milestones after M5; M5 brings `dot`, whose multiply-then-accumulate chain
-is the first case of stitching BRMs together (C3).
+M5 is closed: `dot` runs from the kernel to a checked run, through L1
+(`recipes/dot.json`) or the Chisel Accumulator (`recipes/dot_serial.json`),
+the first case of stitching BRMs together (C3).
+
+Next is the rest of P1 (D100). PAP1 wrote the claims and the evaluation plan
+into `docs/PAPER.md`; PAP2 adds the related work, BASE1 and BASE2 measure the
+two baselines, and PAP3 fixes the order of the milestones after M5.
 
 ## Open Items
 
@@ -282,8 +285,8 @@ and the decision that closed it says so. Next free number: 45.
 39. Beat-trace size: about 1.1 KB per vecadd element (grant, response and FIFO events for each word moved), so vecadd at N = 4096 writes 4.4 MB and a 128k-element run about 140 MB. The views work on filtered traces (D49), and the movement index of the N = 4096 run builds in under a second; a more compact trace format is decided when a run needs it.
 40. Switching runs in the viewer clears the cycle window, the selected cycle and the picked element; keeping the cycle would make flipping between two runs land on the same cycle. Left as is until a comparison needs it.
 41. Report glossary and reading aids, on hold. A glossary kept in code that generates a "How to read" section in `design.md` and `run.md` and a doc page, with a test that every column and term in the reports is defined; a "Where the cycles went" summary in `run.md` that ranks the losses and links them to the design report's notes; and a list of the knobs (recipe params, platform fields, memory pins) with their `--set` paths and current values, without recommendations (principle 4: reports derive, the thinker decides). A decision of its own when built.
-42. A light anchor before M2 (D51): whether the model ranks design points the way the SNAX RTL does, on a few configurations, rather than absolute cycles. The paper's C1 and C3 need it; settled in PAP3, and would amend D51.
-43. Plugging generated accelerators into the real SNAX cluster: D52 keeps it outside the plan, and GEN1 generates only the accelerator's RTL. Settled in PAP3 if the paper claims it, and would amend D52.
+42. A light anchor before M2 (D51): whether the model ranks design points the way the SNAX RTL does, on a few configurations, rather than absolute cycles. The paper's C4 (fidelity, `docs/PAPER.md` E1) needs it; settled in PAP3, and would amend D51.
+43. Plugging generated accelerators into the real SNAX cluster: D52 keeps it outside the plan, and GEN1 generates only the accelerator's RTL. `docs/PAPER.md` claims it (C5); settled in PAP3, and would amend D52.
 44. Reductions over tiles: an accumulator task starts from the op's identity and overwrites its output, so a reduction split by a tile loop needs partial sums per tile and a final combine. Until then no tile loop may sit around a `reduce` memlet (D101); decided with LOW3b.
 
 ## Sync Reminders
