@@ -25,6 +25,7 @@ an edited or stale file is caught rather than lowered.
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -40,6 +41,13 @@ from .problems import DesignError, Problem
 from .streamers import Streamer, resolve
 
 KEYS = ("name", "graph_from", "graph", "platform", "streamers", "memory")
+STEP = re.compile(r"\d+_\w+\.snaxdfg")
+
+
+def design_name(graph: Path) -> str:
+    """The default name of a graph's design: the sandbox folder of a step's graph
+    (``out/sandbox/vecadd_w8/2_bind.snaxdfg`` -> ``vecadd_w8``), else the file's stem."""
+    return graph.parent.name if STEP.fullmatch(graph.name) else graph.stem
 
 
 @dataclass(frozen=True)

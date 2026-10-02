@@ -3,8 +3,8 @@
 A folder is one of two things:
 
 * a flow folder (``out/flow/<name>/``): ``run/`` holds the run, ``design/``
-  the design point, ``sandbox/recipe.json`` the recipe and ``tasks.json`` the
-  task list. Both reports are complete; they go to ``<folder>/report/``,
+  the design point, ``sandbox/recipe.json`` the recipe (a flow from a bound
+  graph has none, D108) and ``tasks.json`` the task list. Both reports are complete; they go to ``<folder>/report/``,
   next to ``run/`` and never inside it, since a run directory holds only what
   the model wrote (D44).
 * a run directory (``run.json`` in it), e.g. a scenario run: the run report,
@@ -78,7 +78,10 @@ def reports_of(
         if (folder / "sandbox" / "recipe.json").is_file():
             recipe = Recipe.load(folder / "sandbox" / "recipe.json")
     cluster = ClusterConfig.from_dict(rv.outputs.run["cluster"])
-    design = build_design(name, cluster, list(rv.outputs.regions), point, recipe, tasks)
+    check = rv.outputs.profile.functional_check or {}
+    design = build_design(
+        name, cluster, list(rv.outputs.regions), point, recipe, tasks, check.get("kernel", "")
+    )
     run = build_run(rv, tasks)
     if out is None:
         out = folder / "report" if kind == "flow" else run_dir.with_name(run_dir.name + "_report")

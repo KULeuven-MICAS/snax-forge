@@ -35,7 +35,6 @@ fix), 2 on bad arguments. pixi: ``design``.
 from __future__ import annotations
 
 import argparse
-import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -44,14 +43,13 @@ from snax_forge.sdfg.paths import _repo_root
 
 from .check import Design, load, run_checks
 from .platform import Platform, parse_value
-from .point import DesignPoint
+from .point import DesignPoint, design_name
 from .problems import DesignError, report
 from .streamers import resolve
 
 ROOT = _repo_root()
 OUT = ROOT / "out" / "design"
 PLATFORMS = ROOT / "platforms"
-STEP = re.compile(r"\d+_\w+\.snaxdfg")
 
 
 def _setting(text: str) -> tuple[str, str, Any]:
@@ -69,11 +67,6 @@ def _rel(p: Path) -> str:
         return str(p.resolve().relative_to(Path.cwd()))
     except ValueError:
         return str(p)
-
-
-def design_name(graph: Path) -> str:
-    """The sandbox folder of a step's graph, else the file's stem."""
-    return graph.parent.name if STEP.fullmatch(graph.name) else graph.stem
 
 
 def _inputs(ap: argparse.ArgumentParser) -> None:

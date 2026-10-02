@@ -1,4 +1,4 @@
-"""The whole path, kernel to model run (E2E1, D90).
+"""The whole path, kernel to model run (E2E1, D90), or from a bound graph on (FLOW2, D108).
 
     recipe + platform
       -> SNAX-SANDBOX   the kernel's import (IMP1), the recipe's steps, each
@@ -42,6 +42,22 @@ stage (``import``, ``sandbox``, ``design``, ``lower``, ``scenario``, ``run``,
 to run, so they are in the log only: the command line, ``run/`` (byte
 identical on every run, D44) and the reports never hold them. They are the
 raw material of the paper's turnaround baseline (BASE1, C1).
+
+**From a bound graph** (FLOW2, D108). ``run_bound(graph, platform, ...)`` is
+the same path without its first stage: the graph is a bound ``.snaxdfg``
+(the last step of a sandbox run, or one edited by hand) and goes straight to
+SNAX-DESIGN, as ``steps[-1]`` does above. No recipe is read and ``sandbox/``
+is not written, so the per-step reference check does not run; the design
+checks and the check of the run's output against the kernel's reference and
+REF1 do, which is what stops a graph that computes something else. The
+kernel, needed for ``make_inputs`` and the reference only, is the graph's
+``name`` unless one is given. The default name is the design step's
+(``design_name``: the sandbox folder of a step's graph, else the file's
+stem; a flow's own ``sandbox/`` gives its flow folder) with the platform and
+memory ``--set`` appended as above. The recipe and step graphs an earlier
+flow left in the folder's ``sandbox/`` are removed, unless the graph is one
+of them, so the folder never shows a recipe its run did not come from.
+``flow.log`` has no ``import`` or ``sandbox`` time.
 """
 
 from __future__ import annotations
@@ -49,7 +65,7 @@ from __future__ import annotations
 import json
 import re
 import time
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -57,7 +73,7 @@ from typing import Any
 
 import numpy as np
 
-from snax_forge.design import DesignError, DesignPoint, load, run_checks
+from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.execute import execute
@@ -93,8 +109,8 @@ class Flow:
 
     name: str
     out: Path
-    recipe: Recipe
-    steps: list[Path]
+    recipe: Recipe | None  # None for a flow from a bound graph (D108)
+    steps: list[Path]  # the sandbox's graphs; none for a flow from a bound graph
     point: DesignPoint
     cluster: ClusterConfig
     tasks: TaskList
@@ -129,6 +145,29 @@ def default_name(
     (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``)."""
     sets = [*recipe_sets.items(), *platform_sets, *memory_sets]
     return "_".join([recipe.name, *(_name_part(k, v) for k, v in sets)])
+
+
+def bound_name(
+    graph_path: str | Path,
+    platform_sets: Sequence[tuple[str, Any]] = (),
+    memory_sets: Sequence[tuple[str, Any]] = (),
+) -> str:
+    """The default name of a flow from a bound graph (D108): the design step's name for the
+    graph (its sandbox folder, else the file's stem; for a flow's own ``sandbox/`` the flow
+    folder above it), then every ``--set`` as ``default_name`` appends them."""
+    p = Path(graph_path).resolve()
+    base = design_name(p)
+    if p.parent.name == "sandbox" and base != p.stem:  # a step in a flow's own sandbox/
+        base = p.parent.parent.name
+    return "_".join([base, *(_name_part(k, v) for k, v in [*platform_sets, *memory_sets])])
+
+
+def kernel_spec(kernel: str, why: str) -> Any:
+    """The kernel's spec; an unknown name is a FlowError that says where the name came from."""
+    try:
+        return load_kernel(kernel)
+    except KeyError as e:
+        raise FlowError(f"kernel ({why}): {e.args[0]}") from None
 
 
 def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
@@ -211,18 +250,22 @@ def _rel(p: Path) -> str:
 def summary(f: Flow) -> str:
     """What the command line prints: one line per stage."""
     p, check = f.point, f.check
-    params = ", ".join(f"{k}={v}" for k, v in f.recipe.params.items())
     syms = ", ".join(f"{k}={v}" for k, v in check["symbols"].items())
+    if f.recipe is not None:
+        params = ", ".join(f"{k}={v}" for k, v in f.recipe.params.items())
+        what = f"{f.recipe.name}: {params}; {syms}"
+        sandbox = (
+            f"{len(f.steps) - 1} steps, each equal to the input graph on the reference "
+            "check -> sandbox/"
+        )
+    else:
+        what = f"graph {_rel(Path(p.graph_from))}; kernel {check['kernel']}; {syms}"
+        sandbox = "skipped: the bound graph is the input (D108)"
     plan = f.point.memory
     inputs = ", ".join(m.npy for m in f.scenario.memory)
     n_checks = sum(len(v) for v in f.checks.values())
-    lines = [
-        f"flow {f.name} ({f.recipe.name}: {params}; {syms}) on {p.platform.name} -> {_rel(f.out)}/"
-    ]
-    lines.append(
-        f"  sandbox   {len(f.steps) - 1} steps, each equal to the input graph on the reference "
-        "check -> sandbox/"
-    )
+    lines = [f"flow {f.name} ({what}) on {p.platform.name} -> {_rel(f.out)}/"]
+    lines.append(f"  sandbox   {sandbox}")
     lines.append(
         f"  design    {n_checks} checks passed; platform base {p.platform.base}, "
         f"{len(p.platform.changes)} changes; memory {plan.passes['placement']}, "
@@ -282,6 +325,21 @@ def _clear(out: Path) -> None:
         p.unlink(missing_ok=True)
 
 
+def _clear_sandbox(out: Path, graph_path: Path) -> None:
+    """Remove what an earlier flow's sandbox stage left in ``out`` (its recipe and step
+    graphs), unless ``graph_path`` is one of them (module doc, D108)."""
+    folder = out / "sandbox"
+    if not folder.is_dir() or folder.resolve() == graph_path.resolve().parent:
+        return
+    for p in [folder / "recipe.json", *folder.glob("*.snaxdfg")]:
+        p.unlink(missing_ok=True)
+    if not any(folder.iterdir()):
+        folder.rmdir()
+
+
+FAILURES = (DesignError, FlowError, SandboxError, DfgError, LowerError, ScenarioError, OSError)
+
+
 def run_flow(
     recipe_path: str | Path,
     platform_path: str | Path,
@@ -308,20 +366,69 @@ def run_flow(
     out.mkdir(parents=True, exist_ok=True)
     _clear(out)
     times: dict[str, float] = {}
-    try:
-        f = _stages(
-            recipe, name, point_name, out, platform_path, platform_sets, memory_path,
-            memory_sets, graph_path, seed, trace_level, times,
+
+    def stages() -> Flow:
+        # SNAX-SANDBOX
+        with _timed(times, "import"):
+            if graph_path is not None:
+                graph = Graph.load(graph_path)
+            else:
+                from snax_forge.dfg.import_sdfg import import_kernel
+
+                graph = import_kernel(recipe.kernel)
+        with _timed(times, "sandbox"):
+            steps = write_steps(recipe, apply_recipe(recipe, graph, seed=seed), out / "sandbox")
+        f = _from_graph(
+            steps[-1], recipe.kernel, f"recipe {recipe.name}", name, point_name, out,
+            platform_path, platform_sets, memory_path, memory_sets, seed, trace_level, times,
         )  # fmt: skip
-    except (
-        DesignError,
-        FlowError,
-        SandboxError,
-        DfgError,
-        LowerError,
-        ScenarioError,
-        OSError,
-    ) as e:
+        f.recipe, f.steps = recipe, steps
+        return f
+
+    return _finish(stages, name, out, times)
+
+
+def run_bound(
+    graph_path: str | Path,
+    platform_path: str | Path,
+    *,
+    kernel: str | None = None,
+    platform_sets: Sequence[tuple[str, Any]] = (),
+    memory_path: str | Path | None = None,
+    memory_sets: Sequence[tuple[str, Any]] = (),
+    name: str | None = None,
+    out: str | Path | None = None,
+    seed: int = 0,
+    trace_level: str = "task",
+) -> Flow:
+    """The path from a bound ``.snaxdfg`` on, without the sandbox (FLOW2, D108); see the
+    module doc. ``kernel`` names the kernel when the graph's ``name`` does not. Raises
+    FlowError or DesignError."""
+    graph_path = Path(graph_path)
+    # As in run_flow: the design point keeps the graph's name, the folder carries every --set.
+    point_name = name or bound_name(graph_path)
+    name = name or bound_name(graph_path, platform_sets, memory_sets)
+    out = Path(out) if out is not None else OUT / name
+    out.mkdir(parents=True, exist_ok=True)
+    _clear(out)
+    _clear_sandbox(out, graph_path)
+    times: dict[str, float] = {}
+
+    def stages() -> Flow:
+        why = "--kernel" if kernel is not None else f"the name of {graph_path}; --kernel K names it"
+        return _from_graph(
+            graph_path, kernel, why, name, point_name, out, platform_path, platform_sets,
+            memory_path, memory_sets, seed, trace_level, times,
+        )  # fmt: skip
+
+    return _finish(stages, name, out, times)
+
+
+def _finish(stages: Callable[[], Flow], name: str, out: Path, times: dict[str, float]) -> Flow:
+    """Run the stages, then write the reports and the log; a failing stage is logged."""
+    try:
+        f = stages()
+    except FAILURES as e:
         (out / LOG).write_text(f"flow {name} FAILED\n{e}\n")
         raise
     try:
@@ -334,8 +441,10 @@ def run_flow(
     return f
 
 
-def _stages(
-    recipe: Recipe,
+def _from_graph(
+    graph_path: str | Path,
+    kernel: str | None,
+    kernel_why: str,
     name: str,
     point_name: str,
     out: Path,
@@ -343,29 +452,18 @@ def _stages(
     platform_sets: Sequence[tuple[str, Any]],
     memory_path: str | Path | None,
     memory_sets: Sequence[tuple[str, Any]],
-    graph_path: str | Path | None,
     seed: int,
     trace_level: str,
     times: dict[str, float],
 ) -> Flow:
-    """The stages of ``run_flow``, up to the check; each stage's seconds go to ``times``."""
-    # SNAX-SANDBOX
-    with _timed(times, "import"):
-        if graph_path is not None:
-            graph = Graph.load(graph_path)
-        else:
-            from snax_forge.dfg.import_sdfg import import_kernel
-
-            graph = import_kernel(recipe.kernel)
-    with _timed(times, "sandbox"):
-        steps = write_steps(recipe, apply_recipe(recipe, graph, seed=seed), out / "sandbox")
-
+    """The stages from a bound graph to the check, shared by ``run_flow`` and ``run_bound``;
+    each stage's seconds go to ``times``. ``kernel`` None means the graph's name."""
     # SNAX-DESIGN
     with _timed(times, "design"):
-        design = load(steps[-1], platform_path, platform_sets, memory_path, memory_sets)
+        design = load(graph_path, platform_path, platform_sets, memory_path, memory_sets)
         problems = run_checks(design)
         if problems:
-            raise DesignError(problems, f"design check of {steps[-1]} on {platform_path}")
+            raise DesignError(problems, f"design check of {graph_path} on {platform_path}")
         point = DesignPoint.of(design, point_name)
         ddir = out / "design"
         ddir.mkdir(exist_ok=True)
@@ -383,7 +481,7 @@ def _stages(
 
     # Scenario: the kernel's inputs at their layouts
     with _timed(times, "scenario"):
-        spec = load_kernel(recipe.kernel)
+        spec = kernel_spec(kernel or point.graph.name, kernel_why)
         inputs = kernel_inputs(spec, point.graph, seed)
         fills = []
         for c, arr in inputs.items():
@@ -406,6 +504,6 @@ def _stages(
     with _timed(times, "run"):  # the check goes into the profile first, so run/ is written after
         write_outputs(result, out / "run")
     return Flow(
-        name, out, recipe, steps, point, cluster, tasks, len(program), scenario, result, check,
+        name, out, None, [], point, cluster, tasks, len(program), scenario, result, check,
         checks_that_ran(),
     )  # fmt: skip

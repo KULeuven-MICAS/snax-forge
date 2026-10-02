@@ -22,7 +22,7 @@ from .memory import (
     register_memory_pass,
 )
 from .platform import Platform, StreamerOptions, parse_value
-from .point import DesignPoint
+from .point import DesignPoint, design_name
 from .problems import DesignError, Problem, report
 from .streamers import Streamer, instances, nest_spatial_bounds, resolve
 
@@ -41,6 +41,7 @@ __all__ = [
     "Streamer",
     "StreamerOptions",
     "check",
+    "design_name",
     "instances",
     "load",
     "nest_spatial_bounds",

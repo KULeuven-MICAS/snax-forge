@@ -26,6 +26,8 @@ Read before designing or changing a component:
 - Lint: `pixi run lint` (CI runs it); `pixi run fmt` fixes.
 - The whole path: `pixi run flow recipes/vecadd.json --platform platforms/small16.json [--set W=8]
   [--set platform.PATH=VALUE] [--set memory.B.l1.base=576]`, everything in `out/flow/<name>/`.
+  From a bound graph instead of a recipe (no sandbox, D108): `pixi run flow
+  out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json [--kernel K]`.
   The single steps (`forge`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in
   README.md section 2.
 - Model on its own: `pixi run scenarios` writes the scenario files; `pixi run model-run

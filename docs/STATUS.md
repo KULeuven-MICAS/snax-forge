@@ -101,6 +101,7 @@ tables as they were written are in git history.
 | LOW2, LOW3a | chaining through L1: named rates in the accelerator task (`named_rates`), a rated port streamed over the loops its memlet uses; the one wait between dot's accelerators is D89's data dependence; containers the DMA moves padded to whole beats in placement, DMA and memory checks. `pixi run flow recipes/dot.json` runs and equals `np.dot` and REF1: 99 cycles at W = 4, 87 at W = 8, 219 at W = 1 | D105 |
 | E2E2 | `dot` end to end: `recipes/dot.json` (adder tree) and `recipes/dot_serial.json` (the Chisel Accumulator) from the kernel to a checked run, every cycle count pinned (`tests/flow/test_dot.py`: 99 / 87 / 79 / 219 at W = 4 / 8 / 16 / 1, serial 147 / 143 / 219 at W = 4 / 8 / 1); `run.md` names the task after each wait and lists the chaining wait (`mul → sum`, 17 cycles on `mul_out`); `design.md` gains the drain and a note per padded container; a product's journey from `mul` through L1 into `sum`; `flow.log` ends with each stage's wall-clock time | D106, D107 |
 | — | housekeeping after M5: `Memlet.names` for the loops a memlet uses (named rates, bind, the task list); the firing schedule (`AccelConfig.rates`, `due`) shared by SNAX-MODEL and the reference executor; the drain and II in one `_allowed`; one `round_up`; the moved containers computed once per memory check; stale docstrings of BRM4–E2E2; `import_sdfg`'s Reduce output mapping in a function of its own; the C3 flow test reads its runs | — |
+| FLOW2 | the flow from a bound graph: `pixi run flow GRAPH.snaxdfg --platform P [--kernel K]` runs design, lowering, the model and the check on a bound `.snaxdfg` without a recipe or the sandbox (`run_bound`), the suffix picking the form; the last step of a recipe flow gives the recipe flow's cluster file, task list and run byte for byte (`tests/flow/test_bound.py`); `design.md` names the graph in place of the recipe | D108 |
 
 ## Open Tasks
 
@@ -240,6 +241,10 @@ M5 is closed: `dot` runs from the kernel to a checked run, through L1
 (`recipes/dot.json`) or the Chisel Accumulator (`recipes/dot_serial.json`),
 the first case of stitching BRMs together (C3).
 
+The flow also starts from a bound `.snaxdfg` (FLOW2, D108): the last step of a
+sandbox run, or a graph edited by hand, goes straight to the design step and
+on to a checked run.
+
 Next is the rest of P1 (D100). PAP1 wrote the claims and the evaluation plan
 into `docs/PAPER.md`; PAP2 adds the related work, BASE1 and BASE2 measure the
 two baselines, and PAP3 fixes the order of the milestones after M5.
@@ -278,7 +283,7 @@ and the decision that closed it says so. Next free number: 45.
 31. A loop whose bound is not a multiple of the spatial bound (N not a multiple of W): `split_map` rejects it for now (D73); a tail task or padding later. The reference executor still runs such N (REF1).
 32. The DFG viewer's layout: rows computed in Python, nested HTML boxes, SVG edges between neighbouring rows, no library (D76, D81). Revisit if graphs outgrow it (edge crossings in wide rows, very deep nesting).
 33. An MLIR importer that writes `.snaxdfg` directly, without SDFG (D71).
-34. A hand-edited `.snaxdfg` cannot be replayed or swept (D72); whether a recipe may start from an edited file is decided when it is needed.
+34. A hand-edited `.snaxdfg` cannot be replayed or swept (D72). It can be run and checked: the flow takes a bound graph (FLOW2, D108), though without the sandbox's per-step reference check, and the design checks' fixes still speak of the recipe. Whether a recipe may start from an edited file is decided when it is needed.
 36. Control flow in the SNAX-DFG (D77): a sequential `loop` kind (`var`, `range`, a body; iterations in order, unlike a map) for jacobi1d's time steps, which the importer finds with DaCe's `find_for_loop`, and a `branch` kind whose body holds `case` nodes, each with a `cond` and a body. Registered when a kernel needs them (M9); state machines that are neither get a named error in the importer.
 37. The expression grammar (D68, D77) has `+ - * //` only: a tail tile needs `min` (open item 31), a branch needs comparisons, and jacobi1d's tasklet a cast (`dace.int64(x) // 3`). Extended when a kernel needs it.
 38. The DMA moves a container as contiguous 64-byte beats from a beat-aligned base, so a container in L2 and L1 must be contiguous; `memory.align` rejects the rest (D86). A size that is not whole beats is padded: the last beat is moved whole and kept free (LOW3a, D105). Strided or 2D transfers when a kernel needs them (a tail tile, open item 31, or a 2D tile); a check of the DMA's loop count (`dma.dims`) comes with them (D89).

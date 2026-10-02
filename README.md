@@ -81,6 +81,17 @@ pixi run flow recipes/dot.json --platform platforms/small16.json --set W=8     #
 pixi run flow recipes/dot_serial.json --platform platforms/small16.json        # out/flow/dot_serial: 147 cycles
 ```
 
+The flow also starts from a bound graph: a file ending in `.snaxdfg` (the
+last step of a sandbox run, or one you edited by hand) skips the import and
+the recipe and goes straight to the design step. The kernel is the graph's
+`name` (`--kernel K` otherwise), and there is no recipe, so only `platform.`
+and `memory.` settings apply:
+
+```bash
+pixi run sandbox recipes/dot.json                                                   # out/sandbox/dot/4_bind.snaxdfg
+pixi run flow out/sandbox/dot/4_bind.snaxdfg --platform platforms/small16.json     # out/flow/dot: 99 cycles, as the recipe
+```
+
 A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
 the design step. `examples/loop1/README.md` walks through one turn of the loop
 this way: reading why the default run takes 85 cycles, predicting what moving
@@ -102,6 +113,7 @@ The flow runs these tools in turn; each also runs on its own.
 | Keep a platform | `pixi run design save out/design/vecadd/platform.json NAME` | `platforms/NAME.json` |
 | Cluster file | `pixi run lower cluster out/design/vecadd/design_point.json` | `cluster.json` beside the point |
 | Task list | `pixi run lower tasks out/design/vecadd/design_point.json` | `tasks.json` beside the point |
+| The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | `out/flow/vecadd/`: design point, cluster file, task list, scenario, checked run, reports |
 
 The design step names every problem with its fix, and writes working copies
 of the platform and the memory plan (`platform.json`, `memory.json`) that

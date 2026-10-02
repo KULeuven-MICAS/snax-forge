@@ -291,7 +291,8 @@ transforms with their parameters; `--set W=8` overrides a param, so a sweep is
 one recipe with a parameter over several values. After every step the new
 graph and the input graph run in the reference executor and must agree. `pixi
 run sandbox RECIPE` writes every step to `out/sandbox/<name>/`. A hand-edited
-`.snaxdfg` cannot be replayed or swept (open item 34).
+`.snaxdfg` runs through the flow as a bound graph (D108), but cannot be
+replayed or swept (open item 34).
 
 Transforms so far:
 
@@ -565,7 +566,9 @@ panel.
 
 Humans and a commercial LLM (D8) read the feedback and close the loop: they
 edit the recipe, the platform (`--set` and working copies), or a `.snaxdfg`
-directly. Recipes can be replayed and swept, hand edits cannot (open item 34).
+directly. Recipes can be replayed and swept. A hand-edited graph is run and
+checked as a bound graph (section 5.10, D108), but cannot be replayed or swept
+(open item 34).
 Automated search (M8) later writes recipes itself.
 
 ### 5.9 Outer Path (later, independent of the inner loop)
@@ -606,6 +609,19 @@ A flow that stops writes why to `flow.log` instead, and the reports of an
 earlier run in the folder are removed first, so `report/` always describes the
 folder's last run. A report that cannot be built is named in the summary and
 does not fail the flow.
+
+`pixi run flow GRAPH.snaxdfg --platform P [--kernel K]` is the same path from
+a bound graph on (D108): the file's suffix picks the form, and the graph, the
+last step of a sandbox run or one edited by hand, goes straight to the design
+step, as the recipe's last graph does. There is no recipe and no `sandbox/`,
+so the per-step reference check does not run; the design checks (an unbound
+symbol or tasklet stops it there) and the check of the output against the
+kernel's reference and the reference executor do. The kernel is the graph's
+`name` unless `--kernel` gives it. The folder is named as the design step
+names the graph (its sandbox folder, else the file's stem), with every
+`platform.` and `memory.` `--set` appended; recipe params and `--graph` are
+refused. The design report names the graph in place of the recipe, and
+`flow.log` has no import or sandbox time.
 
 The manual loop is flow, reports and viewer, then a changed `--set`.
 `examples/loop1/README.md` is one turn of it on vecadd, with the prediction

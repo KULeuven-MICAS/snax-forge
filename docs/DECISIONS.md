@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D108**.
+  area tag. Next free number: **D109**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -37,7 +37,7 @@ By area:
 | ref | D17 D20 D28 D79 |
 | sandbox | D72 D73 D80 D104 |
 | design | D7 D74 D84–D87 |
-| flow | D90 D94 D107 |
+| flow | D90 D94 D107 D108 |
 | viz | D16 D54–D58 D60 D61 D76 D81 D96 D97 D99 D106 |
 | docs, test | D26 D46 D92 D93 |
 
@@ -341,7 +341,7 @@ nest by address. → `lower/derive.py`.
 
 **D90** · flow — `pixi run flow` runs recipe → design point → cluster file and task list → scenario
 → model run, and checks the output against the kernel's reference and the reference executor. It
-closes M3 and open item 13. Amended by D94. → `flow/run.py`.
+closes M3 and open item 13. Amended by D94, D107, D108. → `flow/run.py`.
 
 **D91** · scope — The old SDFG → descriptor → RTL path is removed: M3's flow never used it. The
 Chisel blocks and `Emit` stay as a project of their own in `hw/chisel/`, the `hw` environment is
@@ -359,7 +359,8 @@ schedule, and its default folder name carries every `--set` (recipe params, then
 memory paths without their prefix), so runs that differ only in the platform or the memory plan
 no longer overwrite each other. The design point and its task list keep the name of the recipe
 and its params, so pinning B and C still gives `scenarios/vecadd/tasks.json`, and the viewer names
-a flow's `run/` after its folder. Amends D55 (run names) and D90. → `flow/run.py`, `viz/api.py`.
+a flow's `run/` after its folder. Amends D55 (run names) and D90. Amended by D108. →
+`flow/run.py`, `viz/api.py`.
 
 **D95** · scenario — A scenario may name its data: `regions` (name, memory, base, shape, strides),
 which the model ignores and `run.json` records, so a run directory says where its data lives as it
@@ -463,3 +464,12 @@ beats. Amends D99. → `report/run.py`, `report/design.py`.
 **D107** · flow — `flow.log` ends with the wall-clock seconds of each flow stage and their total.
 They change from run to run, so they stay out of the command line, `run/` (D44) and the reports;
 they are the raw material of the turnaround baseline (BASE1, C1). Amends D90. → `flow/run.py`.
+
+**D108** · flow — The flow also starts from a bound `.snaxdfg`: `pixi run flow GRAPH.snaxdfg`
+runs design, lowering, the model and the output check on it without a recipe or the sandbox, the
+file's suffix telling the two forms apart. The design step already read the recipe's last graph
+from its file, and a design point holds no recipe (D87), so this is the same path entered one
+stage later; it is how a graph edited by hand is run and checked, though still not replayed or
+swept (D72, open item 34). The kernel is the graph's name, the folder is named as the design step
+names the graph, and its stage times have no import or sandbox. Amends D90, D94. →
+`flow/run.py`.

@@ -112,7 +112,8 @@ design     = "python -m snax_forge.design"
 # cluster.json or tasks.json beside it
 lower      = "python -m snax_forge.lower"
 # The whole path (E2E1): `pixi run flow recipes/vecadd.json --platform platforms/small16.json [--set W=8]`
-# writes out/flow/vecadd/ and checks the run against the kernel reference and REF1
+# writes out/flow/vecadd/ and checks the run against the kernel reference and REF1; a bound graph in
+# place of the recipe (`pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform ...`) skips the sandbox (D108)
 flow       = "python -m snax_forge.flow"
 # Reports (REP1, D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/;
 # a run directory gets DIR_report/ (`--tasks scenarios/<name>/tasks.json` names a scenario's tasks)

@@ -486,7 +486,8 @@ bytes each way and the peak buffer; `banks` gives per-bank reads, writes,
 grants, conflicts, stalls and cycles blocked by a wider grant; `ports` gives
 per xbar port its owner, width, grants, stalls and the stalls caused by a
 wider grant. `functional_check` is null for a scenario run on its own; a run
-of the flow (E2E1, D90, `pixi run flow`) fills it: `kernel`, `seed`,
+of the flow (E2E1, D90, `pixi run flow`; from a recipe or a bound graph,
+D108) fills it: `kernel`, `seed`,
 `symbols`, `passed`, and per `inout` container of the kernel the `memory` it
 was read back from (L2 when it has an L2 layout), its `elements`, whether it
 equals the kernel's `reference` and the reference executor (`ref1`) on the
@@ -1135,14 +1136,15 @@ passed; not edited by hand. It is what SNAX-LOWER reads.
 
 | Field | Holds |
 |---|---|
-| `name` | the design (the graph's sandbox folder, else its stem) |
-| `graph_from` | the `.snaxdfg` it was made from |
+| `name` | the design (the graph's sandbox folder, else its stem; in a flow, the recipe's name and params, D94) |
+| `graph_from` | the `.snaxdfg` it was made from: a sandbox step, or any bound graph given to the design step or the flow (D108) |
 | `graph` | that graph as read: instances, `code`, `replaced`, `loop.split` |
 | `platform` | the platform working copy (section 13) |
 | `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `fifo_depth`, `addr_depth`, `prio` |
 | `memory` | the memory plan: `passes`, `changes`, `layouts` (container -> memory -> layout) |
 
 There is no recipe in it: the graph holds every instance, and the sandbox
-folder keeps the recipe. Loading one runs every check again on what it
+folder keeps the recipe, when there was one (a flow from a bound graph has
+none, D108). Loading one runs every check again on what it
 holds (the stored layouts as they are) and requires `streamers` to be the
 platform's shell for the graph.

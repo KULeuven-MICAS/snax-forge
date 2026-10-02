@@ -1,12 +1,15 @@
 """The design report, ``design.md`` (REP1, D99): what was built, before any cycle is counted.
 
 Everything here comes from the design point, its recipe and the cluster file
-SNAX-LOWER derives from it; the model is not run. For a plain run directory
+SNAX-LOWER derives from it; the model is not run. A flow from a bound graph
+has no recipe (D108): its header names the graph the design point was made
+from instead, and takes the kernel from the run's functional check. For a plain run directory
 (a scenario run, no design point) the report has the cluster part only, from
 ``run.json``'s cluster and regions.
 
-    header       kernel, recipe and its params, symbols, platform (base and
-                 changes), memory plan passes and pins      (design point only)
+    header       kernel, recipe and its params (or the graph, D108), symbols,
+                 platform (base and changes), memory plan passes and pins
+                                                            (design point only)
     components   the cluster file's components in order
     accelerators instance, BRM and implementation (design point only), params,
                  latency, target II, ports, drain (D103)
@@ -45,6 +48,7 @@ class Header(Record):
     platform_changes: dict[str, Any]
     passes: dict[str, str]
     pins: dict[str, Any]
+    graph_from: str = ""  # a flow from a bound graph: the graph, in place of a recipe (D108)
 
 
 @dataclass
@@ -258,9 +262,11 @@ def build_design(
     point: Any = None,
     recipe: Any = None,
     tasks: Any = None,
+    kernel: str = "",
 ) -> DesignReport:
-    """The design report of a flow (``point`` a DesignPoint and its ``recipe``) or, with
-    neither, of a plain run's cluster and regions; ``tasks`` names streamed containers."""
+    """The design report of a flow (``point`` a DesignPoint and its ``recipe``, or for a flow
+    from a bound graph its ``kernel``, D108) or, with neither, of a plain run's cluster and
+    regions; ``tasks`` names streamed containers."""
     header = None
     instances: dict[str, Any] = {}
     containers: dict[str, str] = {}
@@ -272,7 +278,7 @@ def build_design(
         run_checks(design)  # resolves the instances (BRM, implementation, params)
         instances = dict(design.instances)
         header = Header(
-            kernel=recipe.kernel if recipe is not None else "",
+            kernel=recipe.kernel if recipe is not None else kernel or point.graph.name,
             recipe=recipe.name if recipe is not None else point.name,
             params=dict(recipe.params) if recipe is not None else {},
             symbols={k: v for k, v in point.graph.symbols.items() if v is not None},
@@ -281,6 +287,7 @@ def build_design(
             platform_changes=dict(point.platform.changes),
             passes=dict(point.memory.passes),
             pins=dict(point.memory.changes),
+            graph_from="" if recipe is not None else point.graph_from,
         )
         for n in accelerated(point.graph):
             for side in (n.inputs, n.outputs):
@@ -362,7 +369,9 @@ def render_design(r: DesignReport) -> str:
             ["", ""],
             [
                 ["Kernel", h.kernel],
-                ["Recipe", f"{h.recipe} ({kv(h.params)})"],
+                ["Graph", h.graph_from]
+                if h.graph_from
+                else ["Recipe", f"{h.recipe} ({kv(h.params)})"],
                 ["Symbols", kv(h.symbols)],
                 ["Platform", f"{h.platform}{base}; changes: {kv(h.platform_changes)}"],
                 ["Memory plan", f"{kv(h.passes)}; pins: {kv(h.pins)}"],
