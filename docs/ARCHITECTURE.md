@@ -627,6 +627,10 @@ The manual loop is flow, reports and viewer, then a changed `--set`.
 `examples/loop1/README.md` is one turn of it on vecadd, with the prediction
 written before the rerun; `tests/flow/test_loop1.py` runs its commands and
 checks every number it states against the reports and the viewer API (D98).
+`examples/dot/README.md` (EX2) does the same for dot: the graph of every
+recipe step in the DFG viewer, then the bound graphs of `recipes/dot.json`
+and `recipes/dot_serial.json` run through the flow (D108) and compared in
+the reports; `tests/flow/test_dot_example.py` checks it.
 
 ## 6. Correctness Strategy
 

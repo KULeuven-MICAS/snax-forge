@@ -20,7 +20,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | Flow | `snax_forge/flow/` | `tests/flow/` | |
 | Viewers | `snax_forge/viz/` | `tests/viz/` | |
 | Reports | `snax_forge/report/` | `tests/report/` | |
-| Examples | `examples/` (walk-throughs) | `tests/flow/test_loop1.py` | |
+| Examples | `examples/` (walk-throughs) | `tests/flow/test_loop1.py`, `tests/flow/test_dot_example.py` | |
 | Chisel blocks | `hw/chisel/` | `hw/chisel/src/test/` | |
 
 Shared test helpers live in each test package's `helpers.py`. Generated
@@ -102,6 +102,7 @@ tables as they were written are in git history.
 | E2E2 | `dot` end to end: `recipes/dot.json` (adder tree) and `recipes/dot_serial.json` (the Chisel Accumulator) from the kernel to a checked run, every cycle count pinned (`tests/flow/test_dot.py`: 99 / 87 / 79 / 219 at W = 4 / 8 / 16 / 1, serial 147 / 143 / 219 at W = 4 / 8 / 1); `run.md` names the task after each wait and lists the chaining wait (`mul → sum`, 17 cycles on `mul_out`); `design.md` gains the drain and a note per padded container; a product's journey from `mul` through L1 into `sum`; `flow.log` ends with each stage's wall-clock time | D106, D107 |
 | — | housekeeping after M5: `Memlet.names` for the loops a memlet uses (named rates, bind, the task list); the firing schedule (`AccelConfig.rates`, `due`) shared by SNAX-MODEL and the reference executor; the drain and II in one `_allowed`; one `round_up`; the moved containers computed once per memory check; stale docstrings of BRM4–E2E2; `import_sdfg`'s Reduce output mapping in a function of its own; the C3 flow test reads its runs | — |
 | FLOW2 | the flow from a bound graph: `pixi run flow GRAPH.snaxdfg --platform P [--kernel K]` runs design, lowering, the model and the check on a bound `.snaxdfg` without a recipe or the sandbox (`run_bound`), the suffix picking the form; the last step of a recipe flow gives the recipe flow's cluster file, task list and run byte for byte (`tests/flow/test_bound.py`); `design.md` names the graph in place of the recipe | D108 |
+| EX2 | `examples/dot/README.md`: dot from its graph to two runs. The five graphs of each recipe in the DFG viewer and what each step changed; the two bound graphs side by side; `recipes/dot.json` and `recipes/dot_serial.json` run from their bound graphs (99 and 147 cycles) and compared in the reports: the 48 cycles are the serial accumulator's 48 more firings. Every number and viewer label checked by `tests/flow/test_dot_example.py`; the excerpt check is shared with LOOP1 (`tests/flow/helpers.py`) | D98, D108 |
 
 ## Open Tasks
 
@@ -243,7 +244,8 @@ the first case of stitching BRMs together (C3).
 
 The flow also starts from a bound `.snaxdfg` (FLOW2, D108): the last step of a
 sandbox run, or a graph edited by hand, goes straight to the design step and
-on to a checked run.
+on to a checked run. `examples/dot/README.md` (EX2) walks dot that way, from
+its graphs in the DFG viewer to the two accumulators compared.
 
 Next is the rest of P1 (D100). PAP1 wrote the claims and the evaluation plan
 into `docs/PAPER.md`; PAP2 adds the related work, BASE1 and BASE2 measure the

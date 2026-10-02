@@ -9,7 +9,6 @@ README's order.
 
 from __future__ import annotations
 
-import re
 import shlex
 
 import pytest
@@ -20,6 +19,8 @@ from snax_forge.report import run as report_run
 from snax_forge.viz import api
 from tests.design.helpers import RECIPE, SMALL16
 
+from .helpers import excerpts_hold
+
 REPO = RECIPE.parents[1]
 README = REPO / "examples" / "loop1" / "README.md"
 DEFAULT, MOVED = "vecadd", "vecadd_B.l1.base576"
@@ -28,7 +29,6 @@ COMMANDS = {
     MOVED: "pixi run flow recipes/vecadd.json --platform platforms/small16.json --trace beat "
     "--set memory.B.l1.base=576",
 }
-EXCERPT = re.compile(r"<!-- excerpt: (\S+) -->")
 
 
 @pytest.fixture(scope="module")
@@ -90,23 +90,7 @@ def test_the_flows_get_the_folder_names_the_readme_uses(runs):
 
 def test_every_excerpt_is_a_part_of_its_report(runs):
     root, _ = runs
-    lines = text().splitlines()
-    seen = 0
-    for i, line in enumerate(lines):
-        m = EXCERPT.fullmatch(line.strip())
-        if not m:
-            continue
-        report = set((root / m.group(1)).read_text().splitlines())
-        block = []
-        for x in lines[i + 1 :]:
-            if not x.strip():
-                break
-            block.append(x)
-        assert block, f"excerpt at line {i + 1} is empty"
-        missing = [x for x in block if x not in report]
-        assert not missing, f"README line {i + 1}: not in {m.group(1)}: {missing}"
-        seen += 1
-    assert seen == 16
+    assert excerpts_hold(text(), root) == 16
 
 
 # =============================================================================
