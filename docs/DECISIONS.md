@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D109**.
+  area tag. Next free number: **D110**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -28,7 +28,7 @@ By area:
 
 | Area | Decisions |
 |---|---|
-| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 D101 |
+| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 D101 D109 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 D105 |
@@ -399,7 +399,7 @@ M5 and turns the hypothesis into claims with their measurements and baselines, a
 from kernels (M5, M7, M9) to layers (M11) to blocks and models (M12: ResNet, Transformer, NVSA),
 because the claims are about the whole path on real workloads. P1 revisits the order after M5;
 the anchor (D51) and generated accelerators in SNAX (D52) stay as they are, open items 42 and 43.
-Amends D9 and D24 (order). → STATUS, ARCHITECTURE section 8.
+Amends D9 and D24 (order). Amended by D101, D109. → STATUS, ARCHITECTURE section 8.
 
 **D101** · scope — M5 chains dot's two operations through L1: a multiplier and an accumulator,
 one `bind` each, the accumulator's task waiting on the multiplier's writer, so C3's first evidence
@@ -410,7 +410,7 @@ padding small containers to whole beats now (LOW3a), per-tile slices with a tile
 (LOW3b, M9). A direct accelerator-to-accelerator link (A2A) is a milestone of its own, M13, after
 M5 and planned in its own round, because it touches the platform shell, SNAX-DFG, SNAX-SANDBOX,
 SNAX-LOWER and SNAX-MODEL, and amends D12 and D51 when built. Amends D100 (order).
-→ STATUS, ARCHITECTURE section 8.
+Amended by D109. → STATUS, ARCHITECTURE section 8.
 
 **D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `reduce`: a
 registered op, associative and commutative on integers, and the identity the elements start from
@@ -473,3 +473,10 @@ stage later; it is how a graph edited by hand is run and checked, though still n
 swept (D72, open item 34). The kernel is the graph's name, the folder is named as the design step
 names the graph, and its stage times have no import or sandbox. Amends D90, D94. →
 `flow/run.py`.
+
+**D109** · scope — P1 runs alongside development, no longer only alongside M5: PAP2 stays a brief
+until the related work has been read, and BASE1, BASE2 and PAP3 are a round of their own. Until
+PAP3 fixes the order, development takes the two steps every order under discussion needs, the
+kernel set at sizes that fit in L1 (a slice of M7) and the unit BRMs it calls for, and M13 waits
+for PAP3, because the paper's evidence starts from those kernels and A2A is not needed for it yet.
+Amends D100 and D101 (order). → STATUS, ARCHITECTURE section 8, `docs/PAPER.md` sections 10 and 13.

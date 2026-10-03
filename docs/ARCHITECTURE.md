@@ -666,9 +666,10 @@ before the first comparison.
 
 ## 8. Build Order (milestones, not a schedule)
 
-Order: M1, M4a, M3, M4b, then P1 alongside M5, M13, M6–M9, M11, M12 and P2;
-M10 is independent of them and M2 comes last (D24, D51, D54, D76, D100,
-D101). Done: M1
+Order: M1, M4a, M3, M4b, M5, then P1 alongside development: the kernel set
+at sizes that fit in L1 and its unit BRMs first (D109), then M13, M6–M9, M11,
+M12 and P2 in the order PAP3 fixes; M10 is independent of them and M2 comes
+last (D24, D51, D54, D76, D100, D101, D109). Done: M1
 (SNAX-MODEL), M4a (run views), M3 (`vecadd` from the kernel to a checked
 model run), M4b (memory tab, data movement, reports, one documented loop on
 `vecadd`), M5 (`dot`: a multiplier chained into an accumulator through L1,
@@ -676,7 +677,8 @@ from the kernel to a checked run). `docs/STATUS.md` has the tasks of every miles
 
 - **P1: paper plan.** The hypothesis as claims with their measurements and
   baselines (the SNAX flow's turnaround, the model's speed), related work,
-  and the order of the milestones after M5 (D100).
+  and the order of the milestones after M5 (D100). It runs alongside
+  development (D109).
 - **M5: `dot`.** Reduction in SNAX-DFG and its import, the accumulator BRM
   with its drain cycle as a timing parameter, a multiplier and an
   accumulator chained through L1 with a wait between them, small containers
