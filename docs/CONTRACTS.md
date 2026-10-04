@@ -553,7 +553,7 @@ kept per component and written to `trace_meta.json` as half-open runs
 
 Two things need the intervals rather than the totals, so they need at least a
 task-level trace: the anchor report's overlap of accelerator-active phases
-with control overhead (section 7 of ARCHITECTURE.md, deferred) and FIFO occupancy
+with control overhead (section 7 of ARCHITECTURE.md) and FIFO occupancy
 over the owner's busy window (D56, shown by the viewer since VIS1). The
 first is open item 11; the second closed it for the views.
 
@@ -753,7 +753,7 @@ name.
 | `function` | a registered accelerator kind (D43), its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until M10) | the accelerator entry, the HW generator (later) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN1) | the accelerator entry, the HW generator (later) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source

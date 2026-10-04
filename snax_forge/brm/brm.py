@@ -18,7 +18,7 @@ implementations, which differ in how they are built:
 Designs that differ only in timing, the param values they support or their
 RTL source are implementations of one BRM. Different ports, rates or data
 order make a different BRM. Only ``source: chisel`` is accepted for now
-(open item 28), and ``binding`` may be null until M10.
+(open item 28), and ``binding`` may be null until GEN1.
 
 Which part serves which component: interface, function and the chosen
 implementation's timing give the accelerator entry of the cluster file

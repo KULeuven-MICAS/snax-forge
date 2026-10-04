@@ -1,13 +1,13 @@
 # SNAX-FORGE Paper Plan
 
 What the paper claims, how each claim is measured, and which milestones deliver
-the evidence. Written in P1 (D100); the order of the milestones it implies is
-logged as a decision (PAP3). Every number the paper states will come from a
-checked-in command and be checked by a test, as `examples/loop1` is (PAP4).
+the evidence. Written in P1 (D100); the order of the milestones is logged as
+a decision (D114). Every number the paper states will come from a checked-in
+command and be checked by a test, as `examples/loop1` is (PAP4).
 
 Written by PAP1 (claims, evidence, evaluation plan). PAP2 added section 8 as
 a draft and section 13, the questions that shape the paper; section 10 is
-decided by PAP3, and section 14 follows the answers to section 13. Items marked
+D114's order, and section 14 follows the answers to section 13. Items marked
 **[open]** are listed in section 11; they are about the paper, so they live
 here, and those that change the system become open items in `docs/STATUS.md`
 when PAP3 decides them.
@@ -100,18 +100,18 @@ Richie, moves into C1 and related work), C5 is new.
 |---|---|---|---|---|
 | C1 | Time to insight: the cost and the cause of a design choice in seconds, not a week of integration and waveform reading | Time to a first cycle count and time to the cause, per step; simulated cycles per second | The SNAX RTL flow with each step logged (BASE1); RTL simulation speed; Aladdin's and GVSoC's reported speedups for context | BASE1, BASE2, `flow.log` (D107) |
 | C3 | Composition must be decided at cluster level: the best engine or mix in isolation is not the best in the shell | Rank of compositions alone against in the cluster; cycles against area | Per-engine evaluation (the BRM alone, roofline); Stream's analytical ranking on the DNN overlap (E9) | E4, E5, E6 |
-| C4 | The model ranks design points as SNAX RTL does | Kendall tau and top-1 agreement over 3–5 configurations; mean absolute cycle error stated | SNAX RTL simulation of the default 8x8x8 GeMM, plus one DMA-heavy case | E1 (open item 42, amends D51) |
-| C5 | The shell is engine-agnostic: existing SNAX accelerators and HLS engines fit the unit-engine description, and generated RTL plugs into SNAX | Number of SNAX accelerators expressed as BRMs; an HLS engine run as a BRM implementation; generated RTL running in SNAX | Hand integration in SNAX | E7, E8, GEN |
-| C2 | (supporting) NumPy kernels reach the model with no hand edits | Coverage table: imported and checked, or a named error | — | FE1–FE3 |
+| C4 | The model ranks design points as SNAX RTL does | Kendall tau and top-1 agreement over 3–5 configurations; mean absolute cycle error stated | SNAX RTL simulation: `snax_alu` first, then the default 8x8x8 GeMM, plus one DMA-heavy case | E1 (M14, D110) |
+| C5 | The shell is engine-agnostic: existing SNAX accelerators and HLS engines fit the unit-engine description, and generated RTL plugs into SNAX | Number of SNAX accelerators expressed as BRMs; an HLS engine run as a BRM implementation; generated RTL running in SNAX | Hand integration in SNAX | E7, E8, M14 (D111) |
+| C2 | (supporting) NumPy kernels reach the model with no hand edits: NPBench's own DaCe sources and data types (D113) | Coverage table: imported and checked, or a named error | — | FE1–FE3 |
 
 ## 6. Evaluation plan
 
 | ID | Experiment | Workload | Output | Paper |
 |---|---|---|---|---|
-| E1 | Fidelity: model against SNAX RTL | Default 8x8x8 GeMM at 3–5 sizes from 8x8x8 to 128x128x128; one DMA-heavy case | Rank metrics and error table | DAC and full |
+| E1 | Fidelity: model against SNAX RTL | `snax_alu` (`vecadd` at W = 4, hand-written and generated) at a few sizes and layouts; dot's composed accelerator; the default 8x8x8 GeMM at 3–5 sizes from 8x8x8 to 128x128x128; one DMA-heavy case | Rank metrics and error table | DAC and full |
 | E2 | Turnaround and speed | GeMM bring-up (logged), `vecadd`, `dot`, one PolyBench chain | Table: steps and times, model against RTL; cycles per second | DAC and full |
 | E3 | Breadth | The kernel set in section 6.1 | Coverage table and one cycles-per-kernel figure | Full (one line in DAC) |
-| E4 | Composition sweep | PolyBench chains (mat-vec and mat-mat) at sizes that fit in L1 | Cycles against area, one point per composition; the per-engine choice marked | DAC and full |
+| E4 | Composition sweep | PolyBench chains (mat-vec and mat-mat) at PolyBench's MINI and SMALL sizes, on SNAX's bank count | Cycles against area, one point per composition; the per-engine choice marked | DAC and full |
 | E5 | Headline case: prefill against decode | One attention block of a small Transformer, 2–3 sequence lengths | The best shell for each phase and the best single shell for both, at equal area | Full (DAC if ready) |
 | E6 | Familiar case | A TinyML ResNet slice: conv as GeMM, SIMD requant, maxpool | Where the cycles go per layer; one composition change and its effect | Full (DAC if ready) |
 | E7 | Engine quality | One unit (mat-vec or 8x8x8 GeMM) in Chisel, Vitis HLS or Bambu, and XLS, at equal II and clock | Post-synthesis area and timing | Full |
@@ -121,18 +121,34 @@ Richie, moves into C1 and related work), C5 is new.
 
 ### 6.1 Kernel set
 
-Chosen by the unit pattern each exercises; about a dozen, with the rest in the
-coverage table as named errors (FE2).
+NPBench's own DaCe sources with their data types (D113): float64 for the
+PolyBench kernels, float32 for the deep-learning ones. `vecadd` and `dot`
+stay `int64` as the first two examples. About a dozen, chosen by the unit
+pattern each exercises, with the rest in the coverage table as named errors
+(FE2).
 
 | Pattern | Kernels |
 |---|---|
 | Elementwise, reduction | `vecadd`, `dot` (done) |
 | Mat-vec chains | `atax`, `bicg`, `mvt`, `gesummv`, `gemver` |
-| Mat-mat chains | `gemm`, `2mm`, `3mm` |
+| Mat-mat chains | `gemm`, `k2mm`, `k3mm` |
 | Batched contraction | `doitgen` |
-| Stencil | `jacobi1d`, `jacobi2d` |
+| Stencil | `jacobi_1d`, `jacobi_2d` |
 | Mixed | `covariance` |
-| NPBench DL kernels | `softmax`, `mlp`, `conv2d` |
+| NPBench DL kernels | `softmax`, `mlp`, `conv2d_bias`, `resnet` |
+
+The order they are built in follows what each needs from DaCe's simplified
+SDFG (the tiers of `docs/STATUS.md`, M7): `atax`, `bicg`, `mvt` and `k3mm`
+first (MatMul only), then the kernels with scalar arguments, then `softmax`
+and `mlp` (float32, `exp`, `max`, division), then the kernels with loops and
+several states.
+
+Sizes: NPBench's presets start at hundreds of megabytes (`atax` at S is
+4000 x 5000 doubles), so the kernels run at PolyBench's own MINI sizes
+(`atax` 38 x 42, `gemm` 20 x 25 x 30), and at SMALL (`atax` 116 x 124, `gemm`
+60 x 70 x 80) where the containers and transients fit SNAX's 128 KiB L1;
+several do not at SMALL, `gesummv` and `k3mm` among them (open item 54).
+NPBench's own sizes wait for tiling (M15).
 
 Left out on purpose (named errors): triangular and data-dependent kernels
 (`cholesky`, `lu`, `trisolv`, `durbin`, `nussinov`), outside `split_map`'s
@@ -369,47 +385,60 @@ section 13 (Q11).
 
 | Feature | Needed by | Where it lives today |
 |---|---|---|
-| Import and run the kernel set | E3, E4 | M7 (FE1, FE3) |
-| Mat-vec, spatial-array and SIMD unit BRMs | E1, E4–E6 | new BRM tasks |
+| Light anchor against SNAX RTL | E1 | M14 (ANC1–ANC3), first in the order (D110) |
+| Generated RTL, cluster hjson and program that plug into SNAX | C5, and E1 on the same design | M14 (GEN1, LNK2, GEN2; D111) |
+| 2-D plumbing: rank-free unit dataflow, map tagging, N-D fills | E3, E4 | ND1 (open items 45, 46, 48) |
+| Import and run the kernel set | E3, E4 | M7 (FE1a–FE1d, FE3) |
+| In-place updates, scalar arguments | E3, E4 (mvt, gemm) | LOW4, FE1b (open item 47) |
+| Composed bind: units as one accelerator | E1, E4–E6 | M13 (D112) |
+| Spatial-array and SIMD unit BRMs | E1, E5, E6 | new BRM tasks |
+| The engine-alone number | C3's baseline in E4 | DSE0 (open item 49) |
 | Cost model and characterisation | E4–E7 | "Later" in ARCHITECTURE section 8 |
 | Sweep runner and a sweep view (cycles against area) | E4, E5 | DSE5 in M8; a sweep view is new (VIS6 was dropped, D98) |
-| Light anchor against SNAX RTL | E1 | open item 42, M2 deferred (D51) |
-| Tiling, per-tile DMA, reductions over tiles, 2D DMA | E1 at large sizes, E5, E6 | LOW3b (M9), open items 38, 44 |
-| `exp` and casts in the expression grammar | softmax in E5 | open item 37 |
-| Generated RTL that plugs into SNAX | C5, and an easier E1 | GEN1 (M10); kept outside the plan by D52, open item 43 |
-| Long runs at trace off; extrapolation if needed | E5, E6 | BASE2, BLK1 |
+| Sub-word packing and port widths (int8, float32) | E1 on the GeMM, E5, E6 | PACK1 (open items 20, 21) |
+| Tiling, per-tile DMA, reductions over tiles, 2D DMA | E1 at large sizes, E5, E6 | LOW3b (M15), open items 38, 44 |
+| `exp`, `max`, division and casts in the expression grammar | softmax in E5 | FE1c (open item 37) |
+| Long runs: timing-only, extrapolation | E5, E6 | BASE2, TIM1, BLK1 (M15; open item 50) |
 | HLS engine as a BRM implementation | E8 | open item 28 (only `chisel` sources accepted) |
 
-## 10. Proposed order
+## 10. Order
 
-A proposal, decided in PAP3. Until then the order of D100 and D101 stands,
-except that steps 1 and 2 go ahead alongside P1 and M13 waits (D109).
+Decided (D114); it replaces PAP1's proposal.
 
-1. Kernel set at sizes that fit in L1: import and run (slice of M7).
-2. Unit BRMs: mat-vec, spatial array, SIMD.
-3. Cost model and characterisation; sweep runner and sweep view.
-4. Light anchor on the default 8x8x8 SNAX GeMM (E1).
-5. Generation into SNAX for the anchored design (amends D52).
-6. Tiling and per-tile DMA (LOW3b, open items 38, 44).
-7. TinyML ResNet slice, then the attention block (E6, E5).
-8. HLS and XLS engines (E7, E8); Stream comparison if feasible (E9).
-9. Later: M13 (A2A), M6 (contract freeze), the rest of M7–M9, M11, M12.
+1. M14 on `snax_alu`: the control run, the model on SNAX's platform, the
+   generated datapath, the generated program (E1's first numbers, BASE1's
+   first log).
+2. 2-D plumbing, MatMul and float64: `atax`, `bicg`, `mvt`, `k3mm`.
+3. Composed bind (M13): dot, mat-vec, mat-mat as one accelerator (E4).
+4. The composed accelerator generated into SNAX.
+5. Scalars and in-place updates: `gesummv`, `gemver`, `gemm`, `k2mm`.
+6. Tiling, timing-only runs and extrapolation (M15).
+7. Packing and float32: `softmax`, `mlp`; the 8x8x8 GeMM anchor (E1).
+8. Loops and multi-state kernels: stencils, `doitgen`, `covariance`, conv2d,
+   the ResNet slice and the attention block (E6, E5).
 
-Mid-November checkpoint after step 4 or 5 (section 1). Amends D100 and D101
-(order), D51 (light anchor), D52 (generated accelerators in SNAX), and moves
-the HW cost estimator forward.
+Not placed yet, and settled in PAP3: the cost model and characterisation, the
+sweep runner and sweep view, HLS and XLS engines (E7, E8). Parked: the Stream
+comparison (E9) and an analytical estimator of our own (open item 4).
+
+Mid-November checkpoint after step 1, with whatever of steps 2 and 3 exists
+(section 1).
 
 ## 11. Open questions
 
-1. The SNAX RTL flow baseline (BASE1): who logs the steps and times, on which
-   accelerator (the GeMM bring-up is the natural one)?
+1. The SNAX RTL flow baseline (BASE1): the author logs the steps and times,
+   starting with `snax_alu` in M14 (ANC1); whether the GeMM bring-up is logged
+   as well is open.
 2. The PDK for characterisation, the synthesis tool, and what may be published.
-3. Data types: SNAX GeMM is int8 with int32 accumulation; the model's kernels
-   are int64 today (D102). Precision affects area and the SIMD requant unit.
+3. Data types: decided for the kernels (D113: NPBench's own, float64 and
+   float32). Still open: SNAX GeMM is int8 with int32 accumulation, which
+   needs packing (PACK1), and floating-point units for the generated
+   hardware. Precision affects area and the SIMD requant unit.
 4. The exact Transformer (model, head size, sequence lengths, precision) and
    ResNet slice for E5 and E6.
-5. Generation into SNAX: which SNAX version and which of its configuration
-   files the generator should emit, so SNAX's own build consumes them.
+5. Generation into SNAX: decided (D111). The generator emits the accelerator
+   with its shell wrapper, the cluster's hjson, a `Bender.yml` and the
+   program; SNAX builds the rest. Still open: the SNAX version to pin.
 6. The newer DIMC: when it joins (planned with a colleague), and whether as a
    second anchor or as the heterogeneous case.
 7. E9: effort of describing the same layers in Stream, and who to involve.
@@ -501,6 +530,9 @@ believable?**
   case because E5's decode phase rests on the DMA model (open item 7).
 - Settled by: E1, and which mechanisms the C3 cases depend on. Each of those
   mechanisms needs its own anchor point.
+- Update (D110): the anchor starts on `snax_alu`, where SNAX already has the
+  design the model calls `elementwise_add` at W = 4, so the first comparison
+  needs no generation; the GeMM follows once packing exists.
 
 **Q7. Which C3 case carries the paper, and what if no ranking flips?**
 
@@ -514,6 +546,12 @@ believable?**
   result, and gem5-Aladdin's own was of this kind.
 - Settled by: running E4 early; it is cheap and tells whether flips exist at
   all.
+- Update: a scratch run, with checks relaxed and nothing pinned, suggests
+  they do. With as many columns as banks, the lanes of a column access all
+  land in one bank, so `x @ A` gains little from more lanes, while one extra
+  column of padding restores the gain: a small engine with the right layout
+  beat a larger one on the contiguous layout. `atax`, `bicg` and `mvt` all
+  contain `x @ A`. To be pinned on SNAX's bank count once ND1 is in.
 
 **Q8. What exactly does C1 measure?**
 
@@ -525,6 +563,9 @@ believable?**
   reported separately (BASE2).
 - Settled by: BASE1, with every step of the SNAX flow logged, on the GeMM
   bring-up.
+- Update: simulation speed will not carry C1. A scratch run gave about 4,000
+  simulated cycles per second, which is in the range of RTL simulators (open
+  item 50); the claim rests on the time to a first number and to the cause.
 
 **Q9. Area only, or energy too?**
 
@@ -539,10 +580,12 @@ believable?**
 - Why: it closes the loop and makes E1 a comparison of the same design in model
   and RTL, but it is the largest feature still to build, and D52 keeps it
   outside the plan today.
-- So far: wanted as a feature; in the proposed order it comes right after the
-  anchor (section 10, step 5).
+- So far: wanted as a feature; in PAP1's proposed order it came right after
+  the anchor.
 - Settled by: PAP3, and whether the first paper is the focused one or the full
   one (Q15).
+- Update (D110, D111): yes. Generation into SNAX is built first, on
+  `snax_alu`, so E1 compares the same design in model and RTL from the start.
 
 ### Against related work
 
@@ -566,6 +609,9 @@ believable?**
   effort, if at all.
 - Settled by: the venue (a feature table carries a 6-page paper; a full paper
   is expected to run something) and the effort E9 turns out to need.
+- Update (D114): parked. Stream would join as a proposer for DNN-shaped
+  workloads only; kernels it cannot describe would get an analytical
+  estimator of our own (open item 4).
 
 **Q13. Are HLS and XLS an input or a competitor?**
 

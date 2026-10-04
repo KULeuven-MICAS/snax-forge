@@ -6,7 +6,7 @@ configurations to SystemVerilog. It is a project of its own: nothing here
 imports `snax_forge/`, and the Python side does not call it. The blocks are
 the reference implementations of the BRMs (`elementwise_add` names
 `ElementwiseTiledSpatial`); generating them from a BRM's hardware binding is
-GEN1 (M10).
+GEN1 (M14).
 
 ## Why these versions
 
@@ -102,4 +102,4 @@ two reductions and a barrier between each.
 
 Elastic wrapper, skid buffer, typed integer ALU set and lane replication.
 Elaborating from a BRM's hardware binding instead of the hand-written
-catalogue is GEN1 (M10, `docs/STATUS.md`).
+catalogue is GEN1 (M14, `docs/STATUS.md`).

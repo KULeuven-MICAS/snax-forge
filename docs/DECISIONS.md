@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D110**.
+  area tag. Next free number: **D115**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -28,7 +28,7 @@ By area:
 
 | Area | Decisions |
 |---|---|
-| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 D101 D109 |
+| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 D101 D109–D114 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 D105 |
@@ -104,11 +104,11 @@ array-friendly so it can be accelerated later without changing results. Amended 
 the model validated against RTL early (now deferred to M2).
 
 **D23** · scope — SNAX-FORGE complements ZigZag and Stream: cycle-level and RTL-backed rather than
-analytical (open item 4).
+analytical (open item 4). How each could join later: D114.
 
 **D24** · scope — Build order: the kernel-agnostic SNAX-MODEL first, then vecadd end to end, the
-visualiser before dot, and the contract freeze after dot. The order is now M1, M4a, M3, M4b,
-P1 with M5, M6–M9, M11, M12, P2, with M10 independent and M2 last (D51, D54, D76, D100).
+visualiser before dot, and the contract freeze after dot. M1, M4a, M3, M4b and M5 were built in
+that order (D54, D76, D100); the order after M5 is D114's.
 
 **D25** · model — The accelerator interface has a per-port element rate, so reductions and
 elementwise blocks share one interface. → C§4.
@@ -120,7 +120,7 @@ JSON until the M6 freeze, versioned schemas after. Written down by D46.
 directly.
 
 **D28** · ref — Reductions use integer types first; a float reduction follows the accumulation
-order its BRM defines, so results match exactly.
+order its BRM defines, so results match exactly. Floats come with NPBench's kernels (D113).
 
 **D29** · model — RTL-like cycle semantics: fixed phases per cycle, reads see the previous cycle's
 committed state, and everything commits at the end of the cycle. → `sched.py`, rules in C§8
@@ -200,10 +200,12 @@ own which hardware produced it.
 
 **D51** · scope — The user owns the accelerator entry (lanes, rates, latency, II, op); everything
 else is SNAX-MODEL's model of the SNAX platform, with declared defaults. Model cycles compare
-design points and do not predict SNAX's timing; the RTL anchor (M2) comes after M10.
+design points and do not predict SNAX's timing; the RTL anchor (M2) comes after M10. Amended by
+D110: the anchor comes first, on `snax_alu` (M14); the ownership stays.
 
 **D52** · scope — Cosim does not block the inner loop: it swaps only the accelerator for its RTL
-and checks its output, latency and II, not the platform.
+and checks its output, latency and II, not the platform. Amended by D110 and D111: generated
+accelerators also run in the SNAX cluster itself (M14).
 
 **D53** · lower — SNAX-LOWER produces both inputs of a model run: the cluster file and the control
 program. Refines D18; built by D88 and D89.
@@ -294,7 +296,7 @@ kinds (`map`, `tasklet`, `accelerated`), memlets on connectors, and one expressi
 
 **D78** · dfg — The SDFG importer maps a simplified SDFG onto `.snaxdfg` with readable names, and
 raises a named error for anything it does not support. The vecadd kernel became `int64`
-(open item 30). → `dfg/import_sdfg.py`.
+(open item 30). Amended by D113. → `dfg/import_sdfg.py`.
 
 **D79** · ref — The reference executor runs a `.snaxdfg` in NumPy, accelerated nodes through their
 BRM's function, and is what every sandbox step and model run is compared with.
@@ -345,7 +347,7 @@ closes M3 and open item 13. Amended by D94, D107, D108. → `flow/run.py`.
 
 **D91** · scope — The old SDFG → descriptor → RTL path is removed: M3's flow never used it. The
 Chisel blocks and `Emit` stay as a project of their own in `hw/chisel/`, the `hw` environment is
-JVM-only, and unused dependencies are dropped. Amends D72, D78 and GEN1.
+JVM-only, and unused dependencies are dropped. Amends D72, D78 and GEN1. Amended by D111.
 
 **D92** · test — Scenario helpers that SNAX-LOWER replaced are removed, the two hand-written MOD7
 vecadds become one test helper, and tests that only repeated others are removed.
@@ -399,7 +401,8 @@ M5 and turns the hypothesis into claims with their measurements and baselines, a
 from kernels (M5, M7, M9) to layers (M11) to blocks and models (M12: ResNet, Transformer, NVSA),
 because the claims are about the whole path on real workloads. P1 revisits the order after M5;
 the anchor (D51) and generated accelerators in SNAX (D52) stay as they are, open items 42 and 43.
-Amends D9 and D24 (order). Amended by D101, D109. → STATUS, ARCHITECTURE section 8.
+Amends D9 and D24 (order). Amended by D101, D109, D110, D113, D114. → STATUS, ARCHITECTURE
+section 8.
 
 **D101** · scope — M5 chains dot's two operations through L1: a multiplier and an accumulator,
 one `bind` each, the accumulator's task waiting on the multiplier's writer, so C3's first evidence
@@ -410,7 +413,7 @@ padding small containers to whole beats now (LOW3a), per-tile slices with a tile
 (LOW3b, M9). A direct accelerator-to-accelerator link (A2A) is a milestone of its own, M13, after
 M5 and planned in its own round, because it touches the platform shell, SNAX-DFG, SNAX-SANDBOX,
 SNAX-LOWER and SNAX-MODEL, and amends D12 and D51 when built. Amends D100 (order).
-Amended by D109. → STATUS, ARCHITECTURE section 8.
+Amended by D109, D112 (M13 becomes the composed bind), D114. → STATUS, ARCHITECTURE section 8.
 
 **D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `reduce`: a
 registered op, associative and commutative on integers, and the identity the elements start from
@@ -421,6 +424,7 @@ and folds the scalar and copy tasklet DaCe stores its result through, its one fo
 what it means, not after DaCe's `wcr` or MLIR's reduction iterators, so every importer writes the
 same one and DaCe's word stays in the SDFG importer. dot's kernel becomes `int64`, as vecadd's did.
 Amends D77 and D78; a fold into what the element holds (DaCe's plain `wcr`) waits for FE1.
+Amended by D113.
 → C§11, `dfg/reduce.py`, `dfg/import_sdfg.py`.
 
 **D103** · brm — The library gets `accumulate` (the sum of every lane of T beats of `a`, one
@@ -479,4 +483,59 @@ until the related work has been read, and BASE1, BASE2 and PAP3 are a round of t
 PAP3 fixes the order, development takes the two steps every order under discussion needs, the
 kernel set at sizes that fit in L1 (a slice of M7) and the unit BRMs it calls for, and M13 waits
 for PAP3, because the paper's evidence starts from those kernels and A2A is not needed for it yet.
-Amends D100 and D101 (order). → STATUS, ARCHITECTURE section 8, `docs/PAPER.md` sections 10 and 13.
+Amends D100 and D101 (order). Amended by D110, D112 and D114: P1 still runs alongside, but the
+order is fixed and M13 no longer waits. → STATUS, ARCHITECTURE section 8, `docs/PAPER.md` sections
+10 and 13.
+
+**D110** · scope — SNAX-FORGE is attached to the SNAX cluster first, not last: a milestone of its
+own, M14, runs the same design in SNAX-MODEL and in SNAX RTL from the first kernel on, starting
+with `snax_alu`, which is `elementwise_add` at W = 4. It goes in four parts that change one thing
+each (the hand-written `snax-alu` app as a control, the model on a platform read from the
+cluster's hjson, the generated datapath, the generated program), so a difference in cycles has
+one cause; the RTL runs are made on the author's side. SNAX-FORGE is meant as support for the SNAX
+cluster, and the paper's C4 and C5 need the comparison early. M2 and the generation half of M10
+become M14; cosim stays M10. Amends D24, D51 (the anchor no longer waits for M10), D52 (generated
+accelerators in SNAX are in the plan; cosim still does not block the inner loop) and D100; closes
+open items 42 and 43. → STATUS (M14), ARCHITECTURE sections 5.9, 7 and 8.
+
+**D111** · scope — What SNAX-FORGE generates for SNAX is a bundle per design point: the
+accelerator's RTL with a shell wrapper on SNAX's ports, the cluster's hjson (TCDM size and banks,
+DMA width, and per accelerator the CSR counts and the streamer template), a `Bender.yml` of its
+own, and the program with a header of the accelerator's CSR names and `data.h`. SNAX's own
+generators build the streamers, the CSR manager, the wrappers and the memories from the hjson, so
+SNAX-FORGE never generates the cluster, and the same hjson is read back as a platform file, so
+model and cluster are described once. The program is written by hand first (`snax-alu.c` is
+vecadd's) and then generated from the task list as direct CSR writes with a cycle mark per task,
+not as a library. What SNAX has to change is kept as one list (open item 51). Amends D52, D91 (the
+Python side writes the bundle around `hw/chisel`'s output), GEN1 and GEN2. → STATUS (M14),
+ARCHITECTURE sections 5.5 and 5.9.
+
+**D112** · scope — A composition is one accelerator: one recipe step binds a connected group of
+tasklets to a chain of unit BRMs (a multiplier into an accumulator as a MAC), the links inside are
+FIFOs, and only the outer ports get streamers. The cluster file then holds one accelerator with
+one register window, which is one SNAX shell wrapper, so neither D12 nor D51 is amended and the
+SNAX shell does not change. M13 is re-scoped to this and no longer waits for PAP3: every MatMul is
+such a chain, and a mat-mat kernel cannot chain through L1, since its product is M·N·K elements.
+A link between two shell accelerators, M13's first form, is parked (open item 53). Amends D101 and
+D109. → STATUS (M13), ARCHITECTURE section 5.4.
+
+**D113** · scope — The kernels are NPBench's own DaCe sources with their data types (float64 for
+PolyBench, float32 for the deep-learning kernels), not hand-written integer variants, because that
+is what the paper can truthfully call unedited (C2); the model and the SNAX side are adjusted to
+them. Sizes are PolyBench's own MINI, and SMALL where a kernel's containers fit SNAX's 128 KiB L1,
+since NPBench's presets start at hundreds of megabytes; the cluster explored is SNAX's (32 banks,
+read from its hjson), with other bank counts as exploration afterwards. A float sum follows the
+accumulation order of its BRM (D28), so the check against the reference executor stays exact and
+the check against NumPy becomes a tolerance. Amends D28, D78, D100 and D102; `vecadd` and `dot`
+stay `int64` as the first two examples. → `docs/PAPER.md` sections 5 and 6.1, STATUS (M7).
+
+**D114** · scope — The order after M5: M14 on `snax_alu`; the 2-D kernels with MatMul and float64
+(atax, bicg, mvt, k3mm); the composed bind (M13) on dot, mat-vec and mat-mat; the composed
+accelerator generated into SNAX; scalars and in-place updates (gesummv, gemver, gemm, k2mm);
+tiling with timing-only runs and periodic extrapolation (M15); packing and the float32 kernels
+(softmax, mlp) with the GeMM anchor; then loops and multi-state kernels. It replaces the proposal
+in `docs/PAPER.md` section 10, so PAP3 keeps the evaluation plan and no longer decides the order.
+Parked: Stream as a proposer for DNN-shaped workloads and an analytical estimator of SNAX-FORGE's
+own for the rest (open item 4), a compiled core for the model (open item 50), links between two
+shells (open item 53). Amends D23, D24, D100, D101 and D109; LOW3b leaves M9 and BLK1 leaves M12
+for M15. → STATUS, ARCHITECTURE section 8, `docs/PAPER.md` section 10.
