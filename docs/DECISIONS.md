@@ -16,7 +16,7 @@ Rules (D93):
 - A decision that a later one replaces keeps its entry, shortened to what it
   said and which decision replaced it.
 - A new decision gets the next number at the end of this file, with its
-  area tag. Next free number: **D115**.
+  area tag. Next free number: **D116**.
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL),
 `scenario` (scenario files), `lower` (SNAX-LOWER), `brm` (SNAX-BRM),
@@ -28,7 +28,7 @@ By area:
 
 | Area | Decisions |
 |---|---|
-| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 D101 D109–D114 |
+| scope | D4 D8 D9 D14 D22 D23 D24 D27 D51 D52 D63 D91 D98 D100 D101 D109–D115 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D18 D45 D53 D64 D66 D75 D88 D89 D105 |
@@ -539,3 +539,12 @@ Parked: Stream as a proposer for DNN-shaped workloads and an analytical estimato
 own for the rest (open item 4), a compiled core for the model (open item 50), links between two
 shells (open item 53). Amends D23, D24, D100, D101 and D109; LOW3b leaves M9 and BLK1 leaves M12
 for M15. → STATUS, ARCHITECTURE section 8, `docs/PAPER.md` section 10.
+
+**D115** · scope — Development is frozen from 6 Oct 2026 for a week of exploration (X1): learn
+GVSoC and price a GVSoC model of the SNAX cluster, SNAX-GVSoC, against SNAX-MODEL. The reasons are
+the CPU (control cost measured on a Snitch core running the real program, not declared defaults),
+simulation speed (open item 50) and a path to several clusters; the composition flow upstream of
+the model (SNAX-DFG, sandbox, BRMs, design point, task list) is not in question. Nothing is
+amended yet. GVS4 decides, and a yes would amend D6, D36, D37, D45, D51, D52 and D53, the profile
+and trace decisions the viewer reads (D38–D40), principles 1 and 3 and the non-goal on RISC-V
+cores. → STATUS (X1, open item 55), `docs/PAPER.md` sections 1, 8.10 and 11.

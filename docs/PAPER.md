@@ -20,8 +20,11 @@ when PAP3 decides them.
   (17:00 PST), 6 pages + 1 page of references, double-blind. Around mid-November
   we check whether E1, E4 and one case of E5 or E6 (section 6) exist and tell a
   clean story in six pages. If yes, submit a focused DAC paper; if not, carry on.
-- **Fallback:** ICCAD 2027 or MICRO 2027 (deadlines usually in spring; check
-  once their calls are out). ISCA 2027 falls in the same week as DAC, so it is
+- **Fallback:** ISPASS 2027 if DAC is missed (check its call for the dates; it
+  is a performance-analysis venue, so the model and its fidelity would lead
+  there), then ICCAD 2027 or MICRO 2027 (deadlines usually in spring; check
+  once their calls are out). The GVSoC exploration (D115) started six weeks
+  before the DAC deadline and comes out of the time for M14 and M13. ISCA 2027 falls in the same week as DAC, so it is
   not a later option. A focused DAC paper followed by a full paper needs
   substantially new results in the second (E5 and E6 at scale).
 - **Double-blind:** SNAX, SNAX-MLIR, OpenGeMM, DataMaestro and Hypercorex are
@@ -380,6 +383,10 @@ section 13 (Q11).
 | SODA-OPT, SODA Synthesizer | Model engines sharing a banked scratchpad; answer in seconds | |
 | MATCHA | Choose the silicon; it deploys on a fixed SoC | |
 | AccelForge | Model cycle-level contention; it is analytical | |
+| DSAGEN (Weng et al., ISCA 2020) | [unread] Build a fixed ASIC datapath from designer-written units; its primitives are single operators and switches of a reconfigurable fabric | |
+| APEX (Melchert et al., ASPLOS 2023) | [unread] The same: it merges frequent subgraphs of primitive operations into CGRA processing elements | |
+| Aetherling (Durst et al., PLDI 2020) | [unread] Go beyond image pipelines on FPGA or model a shared memory; its space-time types are close to `split_map`'s temporal and spatial loops (D73) | |
+| Softbrain, stream-dataflow (Nowatzki et al., ISCA 2017) | [unread] To read as the reference for the streamer-shell pattern (memory, affine streams, a datapath between FIFOs) | |
 
 ## 9. Features the evidence needs
 
@@ -446,6 +453,15 @@ Mid-November checkpoint after step 1, with whatever of steps 2 and 3 exists
    compositions are hand-written recipes (search is M8); accelerators whose
    dataflow changes per kernel (Hypercorex, CGRAs) do not fit a fixed BRM yet;
    the model is Python, so speed must be shown (BASE2).
+9. The simulator (D115): SNAX-MODEL, or a GVSoC model of the SNAX cluster with
+   a Snitch core running the generated program. Sections 8.1, 8.2 and 8.9 hold
+   their GVSoC lines until GVS4 decides.
+10. The story (raised 6 Oct 2026, not decided): composition first, that is
+    kernel-sized, designer-written RTL units stitched from the SNAX-DFG into a
+    fixed datapath in a shell, with the simulator as the evaluation engine and
+    not a contribution. "Mid-level synthesis" is XLS's own term, so the flow
+    needs another name. Operators (HLS, DSAGEN, APEX) sit below this unit
+    size, layers (FINN) and whole accelerators above it.
 
 ## 12. Figure budget (DAC version)
 

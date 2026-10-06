@@ -6,6 +6,10 @@ field: `docs/CONTRACTS.md`.
 
 Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 
+**Frozen since 6 Oct 2026 (D115).** Development is paused for a week of
+SNAX-GVSoC exploration (X1). The open tasks below keep their status and their
+order; GVS4 decides what resumes and in which form.
+
 ## Where the Code Lives
 
 | Component | Code | Tests | Data |
@@ -35,7 +39,7 @@ the composed accelerator in SNAX (LNK3); the scalar and in-place kernels of M7
 (tier B); M15; packing and the float32 kernels (tier C) with the GeMM anchor;
 then the loop and multi-state kernels (M9, tiers D and E), M11, M12 and P2.
 M6 and M8 are not placed by D114 and come when the contracts and the sweeps
-call for them; M10 is cosim only (D110).
+call for them; M10 is cosim only (D110). All of it waits for X1 (D115).
 
 | Milestone | Content | Status |
 |---|---|---|
@@ -45,6 +49,7 @@ call for them; M10 is cosim only (D110).
 | M4b | Remaining views and first manual loop | `done` |
 | P1 | Paper plan: claims, evidence, baselines, evaluation plan (D100) | `wip` |
 | M5 | `dot`: a multiplier and an accumulator chained through L1 (D101) | `done` |
+| X1 | SNAX-GVSoC exploration: learn GVSoC, then decide the simulator (D115) | `wip` |
 | M14 | SNAX link: `snax_alu` in the model and in SNAX RTL, the generated accelerator and program (D110, D111) | todo |
 | M7 | Front ends: NPBench's own sources and data types (D100, D113) | todo |
 | M13 | Composed bind: several unit BRMs as one accelerator (D112) | todo |
@@ -110,6 +115,24 @@ tables as they were written are in git history.
 | EX2 | `examples/dot/README.md`: dot from its graph to two runs. The five graphs of each recipe in the DFG viewer and what each step changed; the two bound graphs side by side; `recipes/dot.json` and `recipes/dot_serial.json` run from their bound graphs (99 and 147 cycles) and compared in the reports: the 48 cycles are the serial accumulator's 48 more firings. Every number and viewer label checked by `tests/flow/test_dot_example.py`; the excerpt check is shared with LOOP1 (`tests/flow/helpers.py`) | D98, D108 |
 
 ## Open Tasks
+
+### X1: SNAX-GVSoC exploration (D115)
+
+One week, from 6 Oct 2026, to learn GVSoC and to price a GVSoC model of the
+SNAX cluster (SNAX-GVSoC, later HEMAIA) against SNAX-MODEL. GVSoC brings a
+Snitch core running the real program, so control cost is measured and not a
+declared default (D37), a compiled engine, and a path to several clusters.
+The work is done in a fork of GVSoC outside this repository, in a thread of
+its own; nothing in `snax_forge/` changes. Learning is guided: Claude gives
+each tutorial as steps to run, with the command and the output to expect, and
+the author runs them.
+
+| ID | Scope | Depends | Acceptance | Status |
+|---|---|---|---|---|
+| GVS1 | Learn GVSoC. Build it and run a stock Snitch program built from the matching `snitch_cluster` commit; then the developer tutorials, step by step: a component from scratch, components talking to each other, system and VCD traces, a register map, timing, the IO request interface, interconnect timing, control from a Python script | none | The stock program runs; each tutorial is run; build steps, commands and notes kept in the fork | todo |
+| GVS2 | Read GVSoC's Snitch cluster target and its L1 model: whether a port that is not a core (a streamer) is arbitrated per bank, and how far the target is from the SNAX fork (registers, memory map, DMA) | GVS1 | A written answer to both | todo |
+| GVS3 | A toy component on the cluster: a register block with `start` and `busy` that reads and writes L1, driven by a small C program on the Snitch core; whether its events can feed the run viewer | GVS1 | It runs; the effort for a streamer and a generic accelerator is estimated in days | todo |
+| GVS4 | Decision: SNAX-GVSoC replaces SNAX-MODEL, joins it as a second backend behind SNAX-LOWER, or is dropped; the new order of the milestones | GVS2, GVS3 | Logged as a decision that names what it amends (D115 lists the candidates); closes open item 55 | todo |
 
 ### P1: Paper plan (D100, D109)
 
@@ -314,14 +337,20 @@ own sources and data types at PolyBench's MINI and SMALL sizes (M7). The
 composed bind, several unit BRMs as one accelerator, comes before the wider
 kernels (M13).
 
-Next in development: M14 on `snax_alu`, starting with the control run of
-SNAX's `snax-alu` app (ANC1) and the platform read from its hjson (LNK1);
-then ND1 and FE1a for the tier A kernels.
+Development is frozen at this point (D115). Next is X1: a week on GVSoC,
+starting with the build, a stock Snitch program and the tutorials (GVS1), then
+the L1 model and the distance to SNAX (GVS2), a toy component on the cluster
+(GVS3) and the decision (GVS4).
+
+Waiting for GVS4: M14 on `snax_alu`, starting with the control run of SNAX's
+`snax-alu` app (ANC1) and the platform read from its hjson (LNK1); then ND1
+and FE1a for the tier A kernels. ANC1 and GEN2 are needed on either path,
+since GVSoC runs the compiled program.
 
 ## Open Items
 
 Questions not decided yet. Numbers are never reused; a closed item is removed,
-and the decision that closed it says so. Next free number: 55.
+and the decision that closed it says so. Next free number: 56.
 
 1. BRM per-port affine loop nest notation and its mapping to streamer registers
    (streamer register layout fixed in MOD10; first notation `affine` and the
@@ -371,6 +400,7 @@ and the decision that closed it says so. Next free number: 55.
 52. Known differences between SNAX-MODEL and the SNAX cluster on `snax_alu`: SNAX starts all streamers of an accelerator with one CSR write, the model starts each streamer on its own (D36); SNAX loads data on a DMA core of its own behind a barrier, the model has one controller (D37). Both change control overhead only, and both are fixed in the model. Decided in ANC2.
 53. A link between two shell accelerators (M13's first form, D101): it amends D12 and D51 and needs a change to the SNAX shell. Parked (D112); the composed bind covers chains inside one accelerator.
 54. Sizes and float checks for NPBench's kernels (D113): which kernels take PolyBench's SMALL in a 128 KiB L1 with their transients (gesummv and k3mm do not), and the tolerance of the NumPy comparison for float sums. Decided in FE1a.
+55. What a GVSoC backend would do to the rest (D115): SNAX-MODEL kept as the reference the C++ components are checked against, or retired; the run viewer and the reports, which read the model's profile and trace (D38–D40), fed by a converter or rewritten; the second half of SNAX-LOWER (task list → command list, D45) replaced by the C program (GEN2); the scenarios and `docs/CONTRACTS.md`. Decided in GVS4.
 
 ## Sync Reminders
 
