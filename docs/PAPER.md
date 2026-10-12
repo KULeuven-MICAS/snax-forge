@@ -1,34 +1,17 @@
 # SNAX-FORGE Paper Plan
 
-What the paper claims, how each claim is measured, and which milestones deliver
-the evidence. Written in P1 (D100); the order of the milestones is logged as
-a decision (D114). Every number the paper states will come from a checked-in
-command and be checked by a test, as `examples/loop1` is (PAP4).
+What the paper claims, how each claim is measured, and which milestones
+deliver the evidence (P1, D100). Every number the paper states will come from
+a checked-in command and be checked by a test, as `examples/loop1` is (PAP4).
+Items marked **[open]** are listed in section 10.
 
-Written by PAP1 (claims, evidence, evaluation plan). PAP2 added section 8 as
-a draft and section 13, the questions that shape the paper; section 10 is
-D114's order, and section 14 follows the answers to section 13. Items marked
-**[open]** are listed in section 11; they are about the paper, so they live
-here, and those that change the system become open items in `docs/STATUS.md`
-when PAP3 decides them.
+## 1. Venue
 
-## 1. Venue and timeline
-
-- **Quality first.** The full system does not fit in six pages; the target is
-  the paper the work deserves, not the nearest deadline.
-- **DAC 2027 as a checkpoint.** Abstract 11 Nov 2026, paper 18 Nov 2026
-  (17:00 PST), 6 pages + 1 page of references, double-blind. Around mid-November
-  we check whether E1, E4 and one case of E5 or E6 (section 6) exist and tell a
-  clean story in six pages. If yes, submit a focused DAC paper; if not, carry on.
-- **Fallback:** ISPASS 2027 if DAC is missed (check its call for the dates; it
-  is a performance-analysis venue, so the model and its fidelity would lead
-  there), then ICCAD 2027 or MICRO 2027 (deadlines usually in spring; check
-  once their calls are out). The GVSoC exploration (D115) started six weeks
-  before the DAC deadline and comes out of the time for M14 and M13. ISCA 2027 falls in the same week as DAC, so it is
-  not a later option. A focused DAC paper followed by a full paper needs
-  substantially new results in the second (E5 and E6 at scale).
-- **Double-blind:** SNAX, SNAX-MLIR, OpenGeMM, DataMaestro and Hypercorex are
-  cited in the third person; the repository goes through an anonymous mirror.
+Quality first, with no fixed deadline (D100): the target is the paper the work
+deserves. DAC 2027 is dropped. Candidates once the evidence exists: ISPASS
+(performance analysis, so fidelity would lead), ICCAD, MICRO. Double-blind:
+SNAX, SNAX-MLIR, OpenGeMM, DataMaestro and Hypercorex are cited in the third
+person, and the repository goes through an anonymous mirror.
 
 ## 2. Problem
 
@@ -37,98 +20,90 @@ control interface) that holds accelerators. Deciding which accelerators it
 should hold is slow today:
 
 - **Integration takes about a week** before a first number: the first SNAX
-  GeMM ran an 8x8x8 case after a week of integrating the accelerator,
-  configuring the streamers and writing the program.
-- **Finding the cause takes longer than the number.** When performance varied,
-  the reason was found in waveforms: poor bank-conflict management in the GeMM
-  convolutions of the OpenGeMM and DataMaestro work, and in Hypercorex an
-  encoding and an associative-memory search that ran one after the other where
-  they could have been pipelined.
-- **Non-uniform control makes it worse.** Hypercorex needed CSRs plus a custom
-  instruction buffer, which made programming it inside a multi-accelerator SoC
-  hard.
+  GeMM ran an 8x8x8 case after a week of integrating, configuring the
+  streamers and writing the program.
+- **Finding the cause takes longer than the number.** It was found in
+  waveforms: bank conflicts in the GeMM convolutions of OpenGeMM and
+  DataMaestro; in Hypercorex, an encoding and a search that ran one after the
+  other where they could have been pipelined.
+- **Non-uniform control makes it worse.** Hypercorex needed CSRs plus a
+  custom instruction buffer.
 - **The costs that decide are cluster costs:** bank conflicts, streamer
   back-pressure, control overhead and the hand-off between accelerators. They
   appear only after RTL integration.
 
-HLS and XLS produce engines, not the shell around them. Analytical tools
-(ZigZag, Stream, Timeloop) treat shared memory as a bandwidth budget and cover
-DNN-shaped loop nests. Pre-RTL simulators (Aladdin, gem5-SALAM) model one
-accelerator next to a CPU and caches. None of them evaluates compositions of
-engines inside a shared-L1 shell, at cycle level, before RTL, from the
-workload's dataflow graph.
+HLS and XLS produce engines, not the shell. Analytical tools (ZigZag, Stream,
+Timeloop) treat shared memory as a bandwidth budget over DNN-shaped loop
+nests. Pre-RTL simulators (Aladdin, gem5-SALAM) model one accelerator next to
+a CPU and caches. None evaluates compositions of engines inside a shared-L1
+shell, at cycle level, before RTL, from the workload's dataflow graph.
 
 ## 3. Thesis
 
 > An accelerator cluster is a shell holding accelerators that are themselves
-> compositions of unit engines. SNAX-FORGE binds unit engines onto a workload's
-> dataflow graph, evaluates the composed cluster in a cycle-level model of the
-> shell in seconds, and reports the cause of every lost cycle, so that shell
-> compositions can be compared and explained before RTL, and the chosen one
-> generated as RTL that plugs into SNAX.
+> compositions of unit engines. SNAX-FORGE binds unit engines onto a
+> workload's dataflow graph, evaluates the composed cluster in a cycle-level
+> model of the shell with the real control program, reports the cause of
+> every lost cycle, and generates the chosen composition as RTL that plugs
+> into SNAX, so shell compositions can be compared and explained before RTL.
 
 Composition is one spectrum: unit engines stitched on the graph (a multiplier
 into an accumulator, `dot`), a unit set that forms a known accelerator (SNAX's
-GeMM core as a spatial array plus a SIMD unit), or a full accelerator. The same
-mechanism, `bind` in a recipe (D79, D104), covers all three.
+GeMM core as a spatial array plus a SIMD unit), or a full accelerator. `bind`
+in a recipe covers all three (D104, D112).
 
 ## 4. Contributions
 
 1. **The engine–shell split.** A unit engine is a BRM (interface, per-port
-   affine dataflow, latency, II, drain, function, D68, D103); the shell is
-   modelled once (TCDM banks and arbitration, streamers, DMA, uniform register
-   interface, D36). Shown to capture existing SNAX accelerators and an engine
-   from HLS.
+   affine dataflow, latency, II, drain, function; D68, D103); the shell is
+   modelled once, in SNAX-GVSoC, and checked against snax_cluster RTL (D116).
+   Shown to capture existing SNAX accelerators and an engine from HLS.
 2. **A pre-RTL path from NumPy to a composed cluster.** DaCe SDFG, SNAX-DFG,
-   recipes that bind unit engines, a design point, a lowered control program,
-   and a cycle-level model with reports that name causes (D99, D106). Checked
-   against SNAX RTL.
+   recipes that bind unit engines, a design point, a generated program, and a
+   cycle-level run with reports that name causes (D99).
 3. **Composition as design-space exploration.** Sweeps over compositions with
-   cycles against area, and case studies where the cluster-level choice differs
-   from the per-engine choice.
-4. **Generation into SNAX.** The chosen composition is emitted as Chisel RTL
-   that plugs into the SNAX cluster, closing the loop from model to hardware.
+   cycles against area, and cases where the cluster-level choice differs from
+   the per-engine choice.
+4. **One description, two outputs.** Each BRM gives the model's accelerator
+   and its Chisel RTL, and the hjson describes the cluster to both, so the
+   chosen composition runs in the model and in SNAX from the same design
+   (D111, D116).
 
-Not a contribution: the LLM. The tool works as a black box an LLM agent can
-drive, because every input and output is text; the paper shows this in one
-short demonstration (E10).
+Not contributions: the simulation technique (GVSoC's) and the LLM. The tool
+works as a black box an LLM agent can drive, shown in one short demonstration
+(E10).
 
 ## 5. Claims
 
-The claim IDs replace PAP1's first cut: C1 and C3 keep their meaning, C2 becomes
-supporting, C4 becomes fidelity (the old C4, pre-RTL seconds against SODA and
-Richie, moves into C1 and related work), C5 is new.
-
 | ID | Claim | Measurement | Baseline | Delivered by |
 |---|---|---|---|---|
-| C1 | Time to insight: the cost and the cause of a design choice in seconds, not a week of integration and waveform reading | Time to a first cycle count and time to the cause, per step; simulated cycles per second | The SNAX RTL flow with each step logged (BASE1); RTL simulation speed; Aladdin's and GVSoC's reported speedups for context | BASE1, BASE2, `flow.log` (D107) |
-| C3 | Composition must be decided at cluster level: the best engine or mix in isolation is not the best in the shell | Rank of compositions alone against in the cluster; cycles against area | Per-engine evaluation (the BRM alone, roofline); Stream's analytical ranking on the DNN overlap (E9) | E4, E5, E6 |
-| C4 | The model ranks design points as SNAX RTL does | Kendall tau and top-1 agreement over 3–5 configurations; mean absolute cycle error stated | SNAX RTL simulation: `snax_alu` first, then the default 8x8x8 GeMM, plus one DMA-heavy case | E1 (M14, D110) |
-| C5 | The shell is engine-agnostic: existing SNAX accelerators and HLS engines fit the unit-engine description, and generated RTL plugs into SNAX | Number of SNAX accelerators expressed as BRMs; an HLS engine run as a BRM implementation; generated RTL running in SNAX | Hand integration in SNAX | E7, E8, M14 (D111) |
+| C1 | Time to insight: the cost and the cause of a design choice in minutes, not a week of integration and waveform reading | Time to a first cycle count and time to the cause, per step; simulated cycles per second | The SNAX RTL flow with each step logged (BASE1); RTL simulation speed | BASE1, BASE2, `flow.log` |
+| C3 | Composition must be decided at cluster level: the best engine or mix in isolation is not the best in the shell | Rank of compositions alone against in the cluster; cycles against area | Per-engine evaluation (the BRM alone, roofline); Stream's ranking on the DNN overlap (E9) | E4, E5, E6 |
+| C4 | The model ranks design points as SNAX RTL does | Kendall tau and top-1 agreement over 3–5 configurations; mean absolute cycle error | snax_cluster RTL: `snax_alu` first, then the 8x8x8 GeMM, plus one DMA-heavy case | E1 (M16, M14) |
+| C5 | The shell is engine-agnostic: SNAX accelerators and HLS engines fit the unit-engine description, and generated RTL plugs into SNAX | SNAX accelerators expressed as BRMs; an HLS engine as a BRM implementation; generated RTL running in SNAX | Hand integration in SNAX | E7, E8, M14 |
 | C2 | (supporting) NumPy kernels reach the model with no hand edits: NPBench's own DaCe sources and data types (D113) | Coverage table: imported and checked, or a named error | — | FE1–FE3 |
 
 ## 6. Evaluation plan
 
-| ID | Experiment | Workload | Output | Paper |
-|---|---|---|---|---|
-| E1 | Fidelity: model against SNAX RTL | `snax_alu` (`vecadd` at W = 4, hand-written and generated) at a few sizes and layouts; dot's composed accelerator; the default 8x8x8 GeMM at 3–5 sizes from 8x8x8 to 128x128x128; one DMA-heavy case | Rank metrics and error table | DAC and full |
-| E2 | Turnaround and speed | GeMM bring-up (logged), `vecadd`, `dot`, one PolyBench chain | Table: steps and times, model against RTL; cycles per second | DAC and full |
-| E3 | Breadth | The kernel set in section 6.1 | Coverage table and one cycles-per-kernel figure | Full (one line in DAC) |
-| E4 | Composition sweep | PolyBench chains (mat-vec and mat-mat) at PolyBench's MINI and SMALL sizes, on SNAX's bank count | Cycles against area, one point per composition; the per-engine choice marked | DAC and full |
-| E5 | Headline case: prefill against decode | One attention block of a small Transformer, 2–3 sequence lengths | The best shell for each phase and the best single shell for both, at equal area | Full (DAC if ready) |
-| E6 | Familiar case | A TinyML ResNet slice: conv as GeMM, SIMD requant, maxpool | Where the cycles go per layer; one composition change and its effect | Full (DAC if ready) |
-| E7 | Engine quality | One unit (mat-vec or 8x8x8 GeMM) in Chisel, Vitis HLS or Bambu, and XLS, at equal II and clock | Post-synthesis area and timing | Full |
-| E8 | Engine-agnostic shell | The HLS engine from E7 plugged in as a BRM implementation (latency and II from its report) | Cluster-level cycles against the Chisel engine | Full |
-| E9 | Against Stream (exploratory) | DNN layers of E5 and E6 only | Stream's chosen allocation and its rank against SNAX-FORGE's | Full, if feasible |
-| E10 | LLM demo | One E4 composition found by an agent reading the reports | A short trace of the agent's steps | One paragraph |
+| ID | Experiment | Workload | Output |
+|---|---|---|---|
+| E1 | Fidelity: SNAX-GVSoC against snax_cluster RTL | `snax_alu` hand-written and generated, at a few sizes and layouts; dot's composed accelerator; the 8x8x8 GeMM at 3–5 sizes up to 128x128x128; one DMA-heavy case | Rank metrics and error table |
+| E2 | Turnaround and speed | GeMM bring-up (logged), `vecadd`, `dot`, one PolyBench chain | Steps and times, model against RTL; cycles per second |
+| E3 | Breadth | The kernel set (section 6.1) | Coverage table, one cycles-per-kernel figure |
+| E4 | Composition sweep | PolyBench chains (mat-vec, mat-mat) at MINI and SMALL, on SNAX's bank count | Cycles against area per composition, the per-engine choice marked |
+| E5 | Headline case: prefill against decode | One attention block of a small Transformer, 2–3 sequence lengths | The best shell per phase and the best single shell for both, at equal area |
+| E6 | Familiar case | A TinyML ResNet slice: conv as GeMM, SIMD requant, maxpool | Where the cycles go per layer; one composition change and its effect |
+| E7 | Engine quality | One unit (mat-vec or 8x8x8 GeMM) in Chisel, Vitis HLS or Bambu, and XLS, at equal II and clock | Post-synthesis area and timing |
+| E8 | Engine-agnostic shell | E7's HLS engine as a BRM implementation | Cluster-level cycles against the Chisel engine |
+| E9 | Against Stream (exploratory) | The DNN layers of E5 and E6 | Stream's allocation and its rank in SNAX-FORGE; where and why they disagree |
+| E10 | LLM demo | One E4 composition found by an agent reading the reports | A short trace of the agent's steps |
 
 ### 6.1 Kernel set
 
-NPBench's own DaCe sources with their data types (D113): float64 for the
-PolyBench kernels, float32 for the deep-learning ones. `vecadd` and `dot`
-stay `int64` as the first two examples. About a dozen, chosen by the unit
-pattern each exercises, with the rest in the coverage table as named errors
-(FE2).
+NPBench's own DaCe sources with their data types (D113): float64 for
+PolyBench, float32 for the deep-learning kernels; `vecadd` and `dot` stay
+`int64`. About a dozen, chosen by the unit pattern each exercises, the rest
+in the coverage table as named errors (FE2).
 
 | Pattern | Kernels |
 |---|---|
@@ -140,219 +115,141 @@ pattern each exercises, with the rest in the coverage table as named errors
 | Mixed | `covariance` |
 | NPBench DL kernels | `softmax`, `mlp`, `conv2d_bias`, `resnet` |
 
-The order they are built in follows what each needs from DaCe's simplified
-SDFG (the tiers of `docs/STATUS.md`, M7): `atax`, `bicg`, `mvt` and `k3mm`
-first (MatMul only), then the kernels with scalar arguments, then `softmax`
-and `mlp` (float32, `exp`, `max`, division), then the kernels with loops and
-several states.
-
-Sizes: NPBench's presets start at hundreds of megabytes (`atax` at S is
-4000 x 5000 doubles), so the kernels run at PolyBench's own MINI sizes
-(`atax` 38 x 42, `gemm` 20 x 25 x 30), and at SMALL (`atax` 116 x 124, `gemm`
-60 x 70 x 80) where the containers and transients fit SNAX's 128 KiB L1;
-several do not at SMALL, `gesummv` and `k3mm` among them (open item 54).
-NPBench's own sizes wait for tiling (M15).
-
-Left out on purpose (named errors): triangular and data-dependent kernels
-(`cholesky`, `lu`, `trisolv`, `durbin`, `nussinov`), outside `split_map`'s
-rectangular maps. SODA-OPT reported `2mm`, `3mm`, `atax`, `bicg`, `gemm`,
+They are built in the tiers of STATUS (M7). Sizes are PolyBench's MINI
+(`atax` 38 x 42, `gemm` 20 x 25 x 30), and SMALL where containers and
+transients fit SNAX's 128 KiB L1 (open item 54); NPBench's own presets
+(hundreds of megabytes) wait for tiling (M15). Left out on purpose:
+triangular and data-dependent kernels (`cholesky`, `lu`, `trisolv`, `durbin`,
+`nussinov`). SODA-OPT reported `2mm`, `3mm`, `atax`, `bicg`, `gemm`,
 `gesummv` and `mvt`, so their numbers can be cited next to ours.
 
-### 6.2 Comparison with Stream (E9)
-
-Stream is not plugged into SNAX-FORGE. The same DNN layers and the same
-accelerators are described once in Stream's inputs (workload graph, cores) and
-once in SNAX-FORGE; Stream proposes an allocation, SNAX-FORGE runs it and its
-alternatives at cycle level, and the paper reports where the two rankings
-disagree and why (bank conflicts, chaining waits, control). This only covers
-the DNN-shaped parts; that the stencil and mixed kernels of E3 have no Stream
-counterpart is itself part of C3's argument. **[open]** effort and whether an
-export from SNAX-DFG to Stream's workload format is worth automating.
+E9 runs Stream on its own inputs for the same layers and accelerators;
+SNAX-FORGE runs its allocation and the alternatives at cycle level. That the
+stencil and mixed kernels have no Stream counterpart is part of C3's argument.
+**[open]** the effort, and whether an export from SNAX-DFG to Stream's format
+is worth automating.
 
 ## 7. Cost model
 
-Area first, energy if characterisation allows. Pre-characterise once, then the
-DSE reads tables:
-
-- Unit engines: post-synthesis area per BRM parameter (lanes, width, depth),
-  fitted as linear in the parameters where it is.
-- Memories: the L1 macros and bank counts from post-synthesis on a PDK.
-- TCDM interconnect: area against the number of banks and ports.
-- Energy (second): per-access energy per component, multiplied by the counts
-  the model already keeps (bank grants, beats, firings), as Accelergy does.
-
-The paper states each fit's error. No place and route. This moves the HW cost
-estimator out of "Later" (ARCHITECTURE section 8). **[open]** the PDK and what
-can be published under its NDA.
+Area first, energy if characterisation allows; characterised once, then read
+from tables: post-synthesis area per BRM parameter (lanes, width, depth),
+fitted linearly where it is; the L1 macros and bank counts on a PDK; TCDM
+interconnect area against banks and ports; later per-access energy times the
+counts the model keeps, as Accelergy does. Each fit's error is stated. No
+place and route. **[open]** the PDK and what may be published under its NDA.
 
 ## 8. Related work and positioning
 
-A draft (PAP2, `brief`): written from abstracts, documentation and a first
-pass over the papers, before the author's own reading. **[check]** marks a
-statement that the full paper has to confirm. Section 8.10 is the reading
-table that turns the draft into the final text; until it is filled,
-ARCHITECTURE section 2 and D23 stand as they are. The citations are kept
-outside the repository until they are rebuilt from DBLP.
-
-SNAX-FORGE asks which engines a cluster shell should hold, and how they should
-be composed for a workload, before RTL. No single group of prior work answers
-this. Analytical DSE tools are fast but treat shared memory as a bandwidth
-budget. Pre-RTL simulators model accelerators next to a CPU and caches rather
-than inside a shared-L1 shell. Generators and system flows produce RTL for one
-engine or assemble a platform, and give feedback only after synthesis or on
-FPGA. Each line below says what a work does, what SNAX-FORGE adds, and which
-claim it bears on.
+A draft (PAP2, `brief`) from abstracts and a first pass, before the author's
+own reading. **[check]** marks a statement the paper has to confirm; section
+8.4 is the reading table that turns the draft into the final text.
 
 ### 8.1 Comparison
 
-✓ yes, ◐ partly, ✗ no. The last two columns are where SNAX-FORGE is still
-behind: they depend on E1 and on generation into SNAX.
+✓ yes, ◐ partly, ✗ no.
 
-| Work | Kernels beyond DNN loop nests (C2) | Engines composed at design time (C3) | Shared banked L1, streamers and control at cycle level (C3) | Reports that name the cause (C1) | Seconds per design point (C1) | Hardware into a cluster (C5) | Checked against RTL or silicon (C4) |
+| Work | Kernels beyond DNN loop nests (C2) | Engines composed at design time (C3) | Shared banked L1, streamers and control at cycle level (C3) | Reports that name the cause (C1) | Minutes per design point (C1) | Hardware into a cluster (C5) | Checked against RTL or silicon (C4) |
 |---|---|---|---|---|---|---|---|
-| gem5-SALAM | ✓ | ◐ | ◐ [check: no explicit bank arbitration] | ✗ | ◐ | ✗ | ✓ |
+| gem5-SALAM | ✓ | ◐ | ◐ [check: bank arbitration] | ✗ | ◐ | ✗ | ✓ |
 | GVSoC (with its Snitch shared-L1 model) | ✓ (as binaries on cores) | ✗ | ✓ for cores, ✗ for accelerators | ✗ | ✓ | ✗ | ✓ |
-| Stream | ◐ (DNN, Transformer, SSM) | ◐ (layers onto heterogeneous cores) | ✗ (shared bus) | ◐ | ✓ | ✗ | ✓ |
+| Stream | ◐ (DNN, Transformer, SSM) | ◐ (layers onto cores) | ✗ (shared bus) | ◐ | ✓ | ✗ | ✓ |
 | Timeloop/Accelergy, AccelForge | ◐ (einsums) | ✗ / ◐ | ✗ | ◐ | ✓ | ✗ | ✓ / ✗ |
 | CHARM (Versal), SSR | ✗ (GeMM, Transformer) | ✓ | ✗ | ✗ | ✓ (analytical) | ✓ (FPGA) | ✓ |
 | Richie | ✓ | ◐ | ✓ in RTL, after RTL | ◐ [check] | ✗ (FPGA build) | ✓ | ✓ |
 | SODA-OPT / SODA Synthesizer | ✓ | ◐ | ✗ | ◐ | ✗ (hours) | ✓ (single engine) | ✓ |
 | Allo, HIDA, Stream-HLS | ✓ | ✓ | ✗ | ◐ (HLS reports) | ✗ | ✓ (FPGA) | ✓ |
-| **SNAX-FORGE** | ✓ | ✓ | ✓ | ✓ | ✓ | planned (C5) | planned (E1) |
+| **SNAX-FORGE** | ✓ | ✓ | ✓ (on GVSoC) | ✓ | planned (BASE2) | planned (M14) | planned (E1) |
 
-### 8.2 Pre-RTL and platform simulators
+### 8.2 Works, one line each
 
-- **Aladdin** (Shao et al., ISCA 2014). Pre-RTL power and performance of one
-  accelerator, from a C kernel's dependence graph, about 1 minute per point
-  against 87 minutes in the RTL flow. Credited for pre-RTL DSE and for the C1
+Pre-RTL and platform simulators:
+
+- **Aladdin** (ISCA 2014): pre-RTL power and performance of one accelerator,
+  1 minute per point against 87 in RTL; credited for pre-RTL DSE and the C1
   table layout. (C1)
-- **gem5-Aladdin** (Shao et al., MICRO 2016). Aladdin inside gem5, showing that
-  an accelerator designed in isolation is over-provisioned and that co-design
-  with the SoC interface gives up to 7.4x better EDP. Credited for the general
-  form of C3. SNAX-FORGE adds composition of several engines in a shared-L1
-  shell. (C3)
-- **gem5-SALAM** (Rogers et al., MICRO 2020) and **SALAMv2** (Spencer et al.,
-  JSA 2024), now in gem5 mainline. Several LLVM-IR accelerators with
-  scratchpads, DMA and stream buffers inside full-system gem5. This is the
-  closest simulator. SNAX-FORGE differs in three ways. Its engines are
-  hand-written block models bound on a dataflow graph, not compiled from C. It
-  models bank arbitration, streamers and a uniform register interface
-  explicitly [check SALAM's scratchpad model]. It needs no CPU or OS, and a
-  design point takes seconds. (C1, C3)
-- **GVSoC** (Bruschi et al., ICCD 2021) and its **Snitch shared-L1 model** (Li
-  et al., 2026). An event-driven PULP platform simulator; the 2026 model
-  reproduces shared-L1 contention of 1024 cores within 7% of RTL, 115x faster.
-  SNAX-FORGE does not claim the simulation technique. It adds accelerator
-  streamers rather than cores, composition from a NumPy kernel, and reports
-  that name causes. (C1, C3)
-- **gem5-accel** (Vieira et al., CAL 2024), **PARADE** (Cong et al., ICCAD
-  2015), **MosaicSim** (ISPASS 2020). Other accelerator-in-system simulators.
-  PARADE's timing from HLS II and depth is close to the BRM's latency and II.
+- **gem5-Aladdin** (MICRO 2016): an accelerator designed in isolation is
+  over-provisioned, co-design with the SoC gives up to 7.4x better EDP; the
+  general form of C3. We add composition in a shared-L1 shell. (C3)
+- **gem5-SALAM, SALAMv2** (MICRO 2020, JSA 2024): LLVM-IR accelerators with
+  scratchpads, DMA and stream buffers in full-system gem5; the closest
+  simulator. Our engines are block models bound on a graph, not compiled from
+  C; the shell is SNAX's, bank arbitration and streamers included [check
+  SALAM's scratchpad], on a bare-metal core with no OS. (C1, C3)
+- **GVSoC** (ICCD 2021) and its **Snitch shared-L1 model** (2026: 1024 cores
+  within 7% of RTL, 115x faster): SNAX-GVSoC is built on it (D116). We do not
+  claim the simulation technique; we add SNAX's accelerators, streamers and
+  register blocks, the path from a NumPy kernel to a design point, generation
+  of the model's accelerator and its RTL from one BRM, and reports that name
+  causes. (C1, C3)
+- **gem5-accel, PARADE, MosaicSim**: other accelerator-in-system simulators;
+  PARADE's timing from HLS II and depth is close to the BRM's. (C3)
+
+Analytical DSE:
+
+- **ZigZag** (TC 2021): one accelerator over DNN layers, the "best
+  accelerator alone" view C3 argues against. (C3)
+- **Stream** (TC 2025): layer-fused scheduling on heterogeneous multi-cores,
+  2–5 s per point, shared resources as a bus and a DRAM port; complementary,
+  it proposes and we check at cycle level (E9). (C3)
+- **Timeloop/Accelergy, AccelForge**: analytical models over einsums;
+  Accelergy is the precedent for section 7; AccelForge claims heterogeneous
+  architectures without an evaluation yet [check]. (C3)
+- **Herald, MAGMA** (HPCA 2021, 2022): choose and schedule heterogeneous
+  sub-accelerators with static partitions; the closest idea-level
+  predecessor to "which mix in one cluster". (C3)
+
+Composition:
+
+- **CHARM, CAMEL** (ISLPED 2012, 2013): accelerators composed from building
+  blocks at runtime; we compose at design time on the graph. (C3)
+- **CHARM on Versal, CHARM 2.0** (FPGA 2023, TRETS 2024): several sized
+  matrix-multiply accelerators beat one large one (5.4x BERT, 32.5x ViT),
+  analytically, on FPGA. (C3)
+- **SSR** (FPGA 2024): spatial, sequential and hybrid Transformer
+  accelerators; the closest precedent for E5. (C3)
+
+Shells and integration:
+
+- **PULP HWPE**: accelerators on a shared TCDM through streamers with a
+  register file, the shell SNAX uses; credited for it. (C5)
+- **Gemmini** (DAC 2021): SoC-level choices change the best configuration.
   (C3)
+- **Richie** (TPDS 2025): generates accelerator-rich multi-cluster SoCs from
+  HWPE-wrapped engines and explores them by FPGA emulation; the same problem,
+  but every point is an FPGA build [check: whether software is generated].
+  (C1, C5)
+- **ESP, Chipyard**: agile SoC flows; ESP's first accelerator on FPGA "in a
+  few hours" is a C1 reference point. (C1)
 
-### 8.3 Analytical design-space exploration
+Compilers and HLS:
 
-- **ZigZag** (Mei et al., TC 2021). Analytical cost model and mapping search
-  for one accelerator, over DNN layers. This is the "best accelerator alone"
-  view that C3 argues against. (C3)
-- **Stream** (Symons et al., TC 2025), with its Transformer and SSM extensions.
-  Layer-fused scheduling on heterogeneous multi-core accelerators, 2–5 s per
-  point, 91–99% latency accuracy on three chips. Shared resources are a
-  first-come-first-serve bus and a DRAM port. SNAX-FORGE is complementary:
-  Stream proposes an allocation, and SNAX-FORGE checks it at cycle level and
-  shows where bank conflicts, chaining and control change the ranking (E9).
-  (C3)
-- **Timeloop/Accelergy** (Parashar et al., ISPASS 2019; Wu et al., ICCAD 2019)
-  and **AccelForge** (Emer et al., 2026). Analytical models over einsums, with
-  energy and area from per-component tables. Accelergy is the precedent for the
-  cost model in section 7. AccelForge claims heterogeneous architectures,
-  analytically, without an experimental evaluation yet [check]. (C3, cost
-  model)
-- **Herald** (Kwon et al., HPCA 2021) and **MAGMA** (Kao and Krishna, HPCA
-  2022). Choose and schedule heterogeneous sub-accelerators with shared
-  resources as static partitions. Herald is the closest idea-level predecessor
-  to "which mix in one cluster". (C3)
+- **DaCe/SDFG, NPBench**: our front end and benchmark set; DaCe has no PULP
+  or SNAX target. (C2)
+- **SNAX-MLIR, xDSL Snitch backend** (CGO 2025): compile onto a fixed
+  cluster; we decide what it holds. (C2)
+- **SODA-OPT, SODA Synthesizer** (ICCAD 2022): Python to GDSII in under 3
+  hours per design, feedback after synthesis, no engines sharing a banked
+  scratchpad. (C1, C3)
+- **Union** (PACT 2021 [check]): MLIR into Timeloop and MAESTRO, analytical.
+  (C2, C3)
+- **Allo, HIDA, Stream-HLS, TAPA**: compose kernels into HLS dataflow
+  designs; their engines can be BRM implementations (E8). (C3, C5)
+- **Vitis HLS, Bambu, XLS/DSLX**: engine generators, inputs to E7 and E8;
+  Lahti et al. (TCAD 2019) for HLS quality against hand RTL. (C5)
 
-### 8.4 Composition
+Deployment and LLM-driven DSE:
 
-- **CHARM** (Cong et al., ISLPED 2012), with **CAMEL** (ISLPED 2013). Small
-  building blocks composed into accelerators at runtime by a hardware composer.
-  Credited for composing accelerators from units. SNAX-FORGE composes at design
-  time, on the dataflow graph, and evaluates the shell. (C3)
-- **CHARM on Versal** (Zhuang et al., FPGA 2023) and **CHARM 2.0** (TRETS
-  2024). Several differently sized matrix-multiply accelerators beat one large
-  one: 5.4x on BERT, 32.5x on ViT. This is the published "one big accelerator
-  is not the best mix" result, for GeMM on FPGA with an analytical partitioner.
-  (C3)
-- **SSR** (Zhuang et al., FPGA 2024). Spatial, sequential and hybrid
-  Transformer accelerators trading latency against throughput. The closest
-  precedent for E5 (prefill against decode). SNAX-FORGE asks the same question
-  for a shared-L1 cluster, at cycle level, beyond GeMM. (C3)
+- **MATCHA** (DAC 2026): deploys DNNs across the accelerators of a fixed
+  PULP SoC; we choose the silicon. (C3)
+- **The Configuration Wall** (ASPLOS 2026): configuration overhead caps
+  accelerators below peak; motivates the control part of C3, which the core
+  now measures. (C3, C4)
+- **Explainable-DSE** (ASPLOS): bottleneck analysis with hand-written fixes;
+  the precedent for feedback that names causes. (C1)
+- **Beacon, AgentDSE, LLM-DSE**: LLM agents driving simulators or HLS; we
+  claim only that the tool is usable by one (E10).
 
-### 8.5 Shells and system integration
-
-- **PULP HWPE** (Conti et al., CODES+ISSS 2013; Dehyadegari et al., TC 2015).
-  Accelerators on a shared TCDM through streamers, with a register-file control
-  interface: the same shell SNAX uses. Credited for the shell. SNAX-FORGE adds
-  one executable model of it that any engine plugs into. (C5)
-- **Gemmini** (Genc et al., DAC 2021). Full-stack evaluation showing that
-  SoC-level choices change the best configuration, and that accelerators are
-  often evaluated in isolation. (C3)
-- **Richie** (Bellocchi et al., TPDS 2025). Generates accelerator-rich
-  multi-cluster SoCs from HLS or HDL engines wrapped as HWPEs, and explores
-  them by FPGA emulation. It has the same problem statement as SNAX-FORGE, but
-  every design point is an FPGA build and the feedback is execution-time
-  breakdowns and counters [check: whether the software is generated]. (C1, C5)
-- **ESP** (Mantovani et al., ICCAD 2020) and **Chipyard** (Amid et al., IEEE
-  Micro 2020). Agile SoC flows with standard accelerator sockets. ESP reports a
-  first accelerator on FPGA "in a few hours". These are C1 reference points for
-  mature flows. (C1)
-
-### 8.6 Compilers and HLS
-
-- **DaCe/SDFG** (Ben-Nun et al., SC 2019) and **NPBench** (Ziogas et al., ICS
-  2021). The front end and the benchmark set SNAX-FORGE builds on. DaCe
-  offloads to CPU, GPU and FPGA, but has no PULP or SNAX target. (C2)
-- **SNAX-MLIR** (in the SNAX work) and the **xDSL Snitch backend** (Lopoukhine
-  et al., CGO 2025). Compile onto a fixed cluster. SNAX-FORGE decides what the
-  cluster holds before that. (C2)
-- **SODA-OPT and the SODA Synthesizer** (Agostini et al., ICCAD 2022; IEEE
-  Micro 2022). MLIR outlining into Bambu HLS, a DSE over compiler passes,
-  Python to GDSII in under 3 hours per design. Hardware is generated
-  automatically. Feedback comes per design after synthesis, and nothing models
-  engines sharing a banked scratchpad. Their PolyBench kernels overlap section
-  6.1. (C1, C3)
-- **Union** (Jeong et al., PACT 2021 [check venue]). An MLIR front end feeding
-  Timeloop and MAESTRO for one accelerator. Same intent, analytical. (C2, C3)
-- **Allo** (Chen et al., PLDI 2024), **HIDA** (ASPLOS 2024), **Stream-HLS**
-  (FPGA 2025), **TAPA** (TRETS 2023). Compose kernels into HLS dataflow
-  designs. Composing kernels is solved on the HLS side. SNAX-FORGE composes
-  fixed engines that share a banked L1 and evaluates the cluster before RTL.
-  Their engines can be BRM implementations (E8). (C3, C5)
-- **Vitis HLS, Bambu, XLS/DSLX.** Engine generators, used as inputs in E7 and
-  E8. Lahti et al. (TCAD 2019) is the safe citation for HLS quality against
-  hand RTL. (C5)
-
-### 8.7 Deployment on fixed silicon
-
-- **MATCHA** (Russo et al., DAC 2026). Deploys DNNs across several accelerators
-  of a PULP SoC with a shared scratchpad. It is a compiler for silicon that
-  exists. SNAX-FORGE chooses the silicon. (C3)
-- **The Configuration Wall** (Van Delm et al., ASPLOS 2026). Configuration
-  overhead caps accelerators well below peak. Motivates the control part of C3;
-  SNAX-FORGE's control costs are declared defaults until E1 (D37). (C3, C4)
-
-### 8.8 LLM and explainable DSE
-
-- **Explainable-DSE** (Dave et al., ASPLOS). Bottleneck analysis with
-  hand-written fixes, 47x fewer iterations than black-box search. The non-LLM
-  precedent for feedback that names causes. (C1)
-- **Beacon** (Li et al., 2026), **AgentDSE** (Wang et al., 2026), **LLM-DSE**
-  (2025). LLM agents driving simulators or HLS from reports. SNAX-FORGE does
-  not claim the agent. It claims that its text artefacts and reports make it
-  usable by one (E10). (E10)
-
-### 8.9 Statements to avoid
+### 8.3 Statements to avoid
 
 | Avoid | Write instead |
 |---|---|
@@ -362,338 +259,129 @@ behind: they depend on E1 and on generation into SNAX.
 | SODA builds hardware by hand, single kernel | SODA generates hardware automatically, with feedback per design after synthesis |
 | HLS has 10–30% control overhead | Cite Lahti et al., or measure it (E7) |
 | XLS is more efficient than HLS | XLS is one more engine generator |
-| GVSoC is hard to use | GVSoC runs binaries on modelled cores and has no path from a kernel to a cluster design point |
+| SNAX-FORGE's simulator is new | SNAX-GVSoC builds on GVSoC; the contribution is the SNAX components and the path to them |
 | SNAX-FORGE is the first to stitch kernels | First to evaluate compositions of fixed engines in a shared-L1 shell at cycle level before RTL (to our knowledge) |
 
-### 8.10 Reading table
+### 8.4 Reading table
 
-One row per work a reviewer will put next to SNAX-FORGE. The first line is the
-draft's; the second is the author's, after reading, and wins where they differ.
-A row whose second line cannot be written is a threat to deal with in
-section 13 (Q11).
+The draft's line, then the author's after reading, which wins. A row whose
+second line cannot be written is a threat (Q11).
 
 | Work | Draft: what it cannot do | After reading |
 |---|---|---|
-| gem5-SALAM, SALAMv2 | Compose engines from a dataflow graph; model bank arbitration and streamers; run without a CPU model, in seconds | |
-| GVSoC shared-L1 model | Model accelerator streamers rather than cores; go from a kernel to a cluster design point; report causes | |
+| gem5-SALAM, SALAMv2 | Compose engines from a dataflow graph; model bank arbitration and streamers | |
+| GVSoC shared-L1 model | Model accelerator streamers; go from a kernel to a design point; report causes | |
 | Stream | See bank conflicts, chaining waits and control; take kernels that are not DNN-shaped | |
 | CHARM (Versal), CHARM 2.0 | Leave GeMM; model contention in a shared L1 at cycle level | |
-| SSR | The same, for the spatial against sequential trade-off | |
+| SSR | The same, for spatial against sequential | |
 | Richie | Give a result without an FPGA build; name bank conflicts or layout as the cause | |
-| SODA-OPT, SODA Synthesizer | Model engines sharing a banked scratchpad; answer in seconds | |
-| MATCHA | Choose the silicon; it deploys on a fixed SoC | |
-| AccelForge | Model cycle-level contention; it is analytical | |
-| DSAGEN (Weng et al., ISCA 2020) | [unread] Build a fixed ASIC datapath from designer-written units; its primitives are single operators and switches of a reconfigurable fabric | |
-| APEX (Melchert et al., ASPLOS 2023) | [unread] The same: it merges frequent subgraphs of primitive operations into CGRA processing elements | |
-| Aetherling (Durst et al., PLDI 2020) | [unread] Go beyond image pipelines on FPGA or model a shared memory; its space-time types are close to `split_map`'s temporal and spatial loops (D73) | |
-| Softbrain, stream-dataflow (Nowatzki et al., ISCA 2017) | [unread] To read as the reference for the streamer-shell pattern (memory, affine streams, a datapath between FIFOs) | |
+| SODA-OPT, SODA Synthesizer | Model engines sharing a banked scratchpad; answer in minutes | |
+| MATCHA | Choose the silicon | |
+| AccelForge | Model cycle-level contention | |
+| DSAGEN (ISCA 2020), OverGen (MICRO 2022) | [unread] Their primitives are single operators and switches of a fabric; worth reading for how one architecture graph drives compiler, simulator and RTL | |
+| APEX (ASPLOS 2023) | [unread] Merges frequent subgraphs of primitive operations into CGRA elements | |
+| Aetherling (PLDI 2020) | [unread] Image pipelines on FPGA; its space-time types are close to `split_map`'s temporal and spatial loops | |
+| Softbrain, stream-dataflow (ISCA 2017) | [unread] The reference for the streamer-shell pattern | |
 
 ## 9. Features the evidence needs
 
-| Feature | Needed by | Where it lives today |
+| Feature | Needed by | Where |
 |---|---|---|
-| Light anchor against SNAX RTL | E1 | M14 (ANC1–ANC3), first in the order (D110) |
-| Generated RTL, cluster hjson and program that plug into SNAX | C5, and E1 on the same design | M14 (GEN1, LNK2, GEN2; D111) |
-| 2-D plumbing: rank-free unit dataflow, map tagging, N-D fills | E3, E4 | ND1 (open items 45, 46, 48) |
-| Import and run the kernel set | E3, E4 | M7 (FE1a–FE1d, FE3) |
-| In-place updates, scalar arguments | E3, E4 (mvt, gemm) | LOW4, FE1b (open item 47) |
-| Composed bind: units as one accelerator | E1, E4–E6 | M13 (D112) |
+| SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (SG0–SG4) |
+| Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (GEN1–GEN3, LNK1, LNK2) |
+| 2-D plumbing, the kernel set | E3, E4 | M7 (ND1, FE1a–FE3, LOW4) |
+| Composed bind | E1, E4–E6 | M13 |
 | Spatial-array and SIMD unit BRMs | E1, E5, E6 | new BRM tasks |
 | The engine-alone number | C3's baseline in E4 | DSE0 (open item 49) |
-| Cost model and characterisation | E4–E7 | "Later" in ARCHITECTURE section 8 |
-| Sweep runner and a sweep view (cycles against area) | E4, E5 | DSE5 in M8; a sweep view is new (VIS6 was dropped, D98) |
-| Sub-word packing and port widths (int8, float32) | E1 on the GeMM, E5, E6 | PACK1 (open items 20, 21) |
-| Tiling, per-tile DMA, reductions over tiles, 2D DMA | E1 at large sizes, E5, E6 | LOW3b (M15), open items 38, 44 |
-| `exp`, `max`, division and casts in the expression grammar | softmax in E5 | FE1c (open item 37) |
-| Long runs: timing-only, extrapolation | E5, E6 | BASE2, TIM1, BLK1 (M15; open item 50) |
-| HLS engine as a BRM implementation | E8 | open item 28 (only `chisel` sources accepted) |
+| Cost model and characterisation | E4–E7 | section 7, not placed yet |
+| Sweep runner and a sweep view | E4, E5 | DSE5 (M8); the view is new |
+| Packing and port widths (int8, float32) | E1 on the GeMM, E5, E6 | PACK1 |
+| Tiling, per-tile DMA, reductions over tiles | E1 at large sizes, E5, E6 | LOW3b (M15) |
+| `exp`, `max`, division, casts | softmax in E5 | FE1c (open item 37) |
+| Speed on long runs | E5, E6 | BASE2 (open item 50) |
+| HLS engine as a BRM implementation | E8 | open item 28 |
 
-## 10. Order
+## 10. Open questions
 
-Decided (D114); it replaces PAP1's proposal.
-
-1. M14 on `snax_alu`: the control run, the model on SNAX's platform, the
-   generated datapath, the generated program (E1's first numbers, BASE1's
-   first log).
-2. 2-D plumbing, MatMul and float64: `atax`, `bicg`, `mvt`, `k3mm`.
-3. Composed bind (M13): dot, mat-vec, mat-mat as one accelerator (E4).
-4. The composed accelerator generated into SNAX.
-5. Scalars and in-place updates: `gesummv`, `gemver`, `gemm`, `k2mm`.
-6. Tiling, timing-only runs and extrapolation (M15).
-7. Packing and float32: `softmax`, `mlp`; the 8x8x8 GeMM anchor (E1).
-8. Loops and multi-state kernels: stencils, `doitgen`, `covariance`, conv2d,
-   the ResNet slice and the attention block (E6, E5).
-
-Not placed yet, and settled in PAP3: the cost model and characterisation, the
-sweep runner and sweep view, HLS and XLS engines (E7, E8). Parked: the Stream
-comparison (E9) and an analytical estimator of our own (open item 4).
-
-Mid-November checkpoint after step 1, with whatever of steps 2 and 3 exists
-(section 1).
-
-## 11. Open questions
-
-1. The SNAX RTL flow baseline (BASE1): the author logs the steps and times,
-   starting with `snax_alu` in M14 (ANC1); whether the GeMM bring-up is logged
-   as well is open.
-2. The PDK for characterisation, the synthesis tool, and what may be published.
-3. Data types: decided for the kernels (D113: NPBench's own, float64 and
-   float32). Still open: SNAX GeMM is int8 with int32 accumulation, which
-   needs packing (PACK1), and floating-point units for the generated
-   hardware. Precision affects area and the SIMD requant unit.
+1. BASE1: whether the GeMM bring-up is logged as well as `snax_alu` (SG4).
+2. The PDK, the synthesis tool, and what may be published.
+3. SNAX GeMM is int8 with int32 accumulation, which needs packing (PACK1),
+   and the generated hardware needs floating-point units for NPBench's
+   types.
 4. The exact Transformer (model, head size, sequence lengths, precision) and
    ResNet slice for E5 and E6.
-5. Generation into SNAX: decided (D111). The generator emits the accelerator
-   with its shell wrapper, the cluster's hjson, a `Bender.yml` and the
-   program; SNAX builds the rest. Still open: the SNAX version to pin.
-6. The newer DIMC: when it joins (planned with a colleague), and whether as a
-   second anchor or as the heterogeneous case.
-7. E9: effort of describing the same layers in Stream, and who to involve.
-8. Limitations to state: platform values are declared defaults until E1;
-   compositions are hand-written recipes (search is M8); accelerators whose
-   dataflow changes per kernel (Hypercorex, CGRAs) do not fit a fixed BRM yet;
-   the model is Python, so speed must be shown (BASE2).
-9. The simulator (D115): SNAX-MODEL, or a GVSoC model of the SNAX cluster with
-   a Snitch core running the generated program. Sections 8.1, 8.2 and 8.9 hold
-   their GVSoC lines until GVS4 decides.
-10. The story (raised 6 Oct 2026, not decided): composition first, that is
-    kernel-sized, designer-written RTL units stitched from the SNAX-DFG into a
-    fixed datapath in a shell, with the simulator as the evaluation engine and
-    not a contribution. "Mid-level synthesis" is XLS's own term, so the flow
-    needs another name. Operators (HLS, DSAGEN, APEX) sit below this unit
-    size, layers (FINN) and whole accelerators above it.
+5. The snax_cluster version to pin for SNAX-GVSoC and the bundle.
+6. The newer DIMC: when it joins, and whether as a second anchor or as the
+   heterogeneous case.
+7. E9's effort and who to involve.
+8. Limitations to state: compositions are hand-written recipes (search is
+   M8); engines whose dataflow changes per kernel (Hypercorex, CGRAs) do not
+   fit a fixed BRM yet; fidelity holds as far as E1 shows.
+9. The story: composition first (kernel-sized, designer-written units
+   stitched from the SNAX-DFG into a datapath in a shell), with the simulator
+   as the evaluation engine; the flow needs a name of its own, since
+   "mid-level synthesis" is XLS's term.
 
-## 12. Figure budget (DAC version)
+## 11. Questions that shape the paper
 
-1. The flow and the engine–shell split (one diagram).
-2. A report excerpt naming a cause (bank conflicts or a chaining wait).
-3. E1: model against RTL.
-4. E2: turnaround table.
-5. E4: cycles against area for the PolyBench compositions.
-6. E5 or E6: one case where the cluster-level choice differs.
+A guide, not a verdict: what has to be settled before the outline (section
+12). Answers are written under the question as they come.
 
-## 13. Questions that shape the paper
+**The claim.**
 
-A guide, not a verdict: what has to be settled before the outline (section 14)
-can be written, with what has been thought so far. Each question says why it
-matters, where the thinking stands, and what settles it: a paper to read, an
-experiment, or a choice only the author can make. Answers are written here,
-under the question, as they come.
+- **Q1. Tool or finding?** The thesis reads as a finding, the contributions
+  as a tool. Settled once E4–E6 show whether a result stands without the
+  tool's name.
+- **Q2. C1 or C3 first?** Leaning to the pair. Settled by which evidence is
+  stronger: a turnaround table (E2) or a ranking that flips (E4–E6).
+- **Q3. Is the engine–shell split a contribution?** Claim one model of the
+  shell any engine plugs into, and composition at design time on the graph;
+  not the shell (HWPE, SNAX) nor composition as such (CHARM). Settled by
+  reading HWPE and CHARM.
 
-### The claim
+**The reader.**
 
-**Q1. A tool paper or a finding paper?**
+- **Q4. Beyond SNAX?** A PULP HWPE cluster has the same shell; one paragraph,
+  or a second platform file as evidence.
+- **Q5. How much SNAX to explain?** One figure that shows the flow and the
+  shell together.
 
-- Why: a tool paper says "here is SNAX-FORGE and what it can do"; a finding
-  paper says "which engines a shell holds must be decided at cluster level, and
-  can be, before RTL", with the tool as the means. Reviewers read "a
-  combination of many things" as integration work, and the venues weigh the two
-  differently (DAC and ICCAD take tools, MICRO wants the finding).
-- So far: the thesis (section 3) is written as a finding, the contributions
-  (section 4) as a tool.
-- Settled by: the author, after seeing whether E4–E6 give a result that stands
-  without the tool's name on it.
+**The evidence.**
 
-**Q2. Which claim leads, C1 or C3?**
+- **Q6. Least fidelity evidence?** Ranking agreement on 3–5 GeMM sizes with
+  the absolute error beside it, plus one DMA-heavy case; it starts on
+  `snax_alu` in M16, where SNAX already has the design.
+- **Q7. Which C3 case, and what if no ranking flips?** E4 is cheap and run
+  first; a scratch run suggests flips exist (`x @ A` with as many columns as
+  banks puts a column's lanes in one bank, and one column of padding restores
+  the gain). Fallback: the cluster changes how much an engine is worth, with
+  the cause named.
+- **Q8. What does C1 measure?** The time to a first number and the time to
+  the cause, with simulation speed apart (BASE2).
+- **Q9. Area only, or energy too?** Area first.
+- **Q10. Generation in the first paper?** Yes (D111): E1 compares the same
+  design in model and RTL.
 
-- Why: the first figure and the title follow the lead claim; six pages carry
-  one.
-- So far: both, leaning to the pair. C1 is the pain every SNAX user knows; C3
-  is the result a reader outside SNAX can use.
-- Settled by: which evidence is stronger by the checkpoint: a turnaround table
-  (E2) or a ranking that flips (E4–E6).
+**Related work.**
 
-**Q3. Is the engine–shell split a contribution or the background?**
+- **Q11. Does each separating sentence hold after the reading?** Tested in
+  section 8.4; one that fails changes the claim.
+- **Q12. Head-to-head run or a feature table?** Stream as E9, exploratory and
+  parked (D23).
+- **Q13. HLS and XLS: input or competitor?** Input (E7, E8).
+- **Q14. The name clash with AccelForge?** At least one sentence of contrast.
 
-- Why: PULP HWPE and SNAX own the shell in hardware, and CHARM (2012) owns
-  composing accelerators from building blocks. Claiming either as new invites a
-  rejection.
-- So far: claim one executable model of the shell that any engine plugs into,
-  and composition at design time on the dataflow graph. Not the shell, and not
-  composition as such.
-- Settled by: reading the HWPE and CHARM papers (section 8.10), then one
-  sentence that survives both.
+**Scope and story.**
 
-### The reader
+- **Q15. One paper or two?** Decided when the evidence exists, now that there
+  is no deadline.
+- **Q16. The LLM paragraph?** One short demonstration (E10), if clean.
+- **Q17. Limitations up front?** Section 10, item 8.
+- **Q18. Open with the experience or the question?** The question first,
+  the experience as its evidence in two or three sentences.
+- **Q19. Figure 1?** The flow with the shell for a tool paper; the
+  composition spectrum on one graph for a finding paper.
 
-**Q4. What supports "cluster designers in general" beyond SNAX?**
+## 12. Paper outline
 
-- Why: every experiment runs on SNAX; a reviewer can call it a SNAX tool.
-- So far: a PULP cluster with HWPEs has the same shell (streamers, a register
-  file, a shared TCDM), and Richie builds on it. One paragraph arguing that the
-  platform file would describe it.
-- Settled by: whether a second platform file (an HWPE cluster's parameters) is
-  worth writing as evidence, or the paragraph is enough.
-
-**Q5. How much of SNAX does the paper explain?**
-
-- Why: space. Streamers, the TCDM and the CSR interface need a figure before
-  any result makes sense, and the SNAX work must be cited in the third person.
-- So far: one figure that shows the flow and the shell together (section 12,
-  figure 1).
-- Settled by: the outline; a first draft of that figure.
-
-### The evidence
-
-**Q6. What is the least fidelity evidence that makes a cycle count
-believable?**
-
-- Why: every comparable tool reports model against RTL. Platform values are
-  declared defaults today (D51), and "the trends are right even if the numbers
-  are not" is not accepted unless shown.
-- So far: ranking agreement on 3–5 sizes of the default 8x8x8 GeMM (Kendall
-  tau, the same best point), absolute error stated beside it, and one DMA-heavy
-  case because E5's decode phase rests on the DMA model (open item 7).
-- Settled by: E1, and which mechanisms the C3 cases depend on. Each of those
-  mechanisms needs its own anchor point.
-- Update (D110): the anchor starts on `snax_alu`, where SNAX already has the
-  design the model calls `elementwise_add` at W = 4, so the first comparison
-  needs no generation; the GeMM follows once packing exists.
-
-**Q7. Which C3 case carries the paper, and what if no ranking flips?**
-
-- Why: C3 is only persuasive with a case where the per-engine choice loses in
-  the cluster. `dot` does not show one: the adder tree wins at every W.
-- So far: three candidates, by cost: PolyBench chains at sizes that fit in L1
-  (E4), a ResNet slice (E6), prefill against decode (E5). Prefill against
-  decode is the best story and the most expensive.
-- Fallback if nothing flips: the weaker claim that the cluster changes how much
-  an engine is worth (the gain shrinks), with the cause named. That is still a
-  result, and gem5-Aladdin's own was of this kind.
-- Settled by: running E4 early; it is cheap and tells whether flips exist at
-  all.
-- Update: a scratch run, with checks relaxed and nothing pinned, suggests
-  they do. With as many columns as banks, the lanes of a column access all
-  land in one bank, so `x @ A` gains little from more lanes, while one extra
-  column of padding restores the gain: a small engine with the right layout
-  beat a larger one on the contiguous layout. `atax`, `bicg` and `mvt` all
-  contain `x @ A`. To be pinned on SNAX's bank count once ND1 is in.
-
-**Q8. What exactly does C1 measure?**
-
-- Why: the SNAX work reports a Verilator build of about three minutes, so
-  "weeks against seconds" will be challenged.
-- So far: two times, not one: the time to a first number (integration, streamer
-  configuration, program; about a week for the first GeMM) and the time to the
-  cause (reading waveforms to find bank conflicts). Simulation speed is
-  reported separately (BASE2).
-- Settled by: BASE1, with every step of the SNAX flow logged, on the GeMM
-  bring-up.
-- Update: simulation speed will not carry C1. A scratch run gave about 4,000
-  simulated cycles per second, which is in the range of RTL simulators (open
-  item 50); the claim rests on the time to a first number and to the cause.
-
-**Q9. Area only, or energy too?**
-
-- Why: without a cost, more lanes always wins. Each cost axis is one more thing
-  to validate.
-- So far: area first, from pre-characterised tables (section 7); energy if
-  characterisation is cheap.
-- Settled by: the PDK and what may be published (section 11, item 2).
-
-**Q10. Does generation into SNAX belong in the first paper?**
-
-- Why: it closes the loop and makes E1 a comparison of the same design in model
-  and RTL, but it is the largest feature still to build, and D52 keeps it
-  outside the plan today.
-- So far: wanted as a feature; in PAP1's proposed order it came right after
-  the anchor.
-- Settled by: PAP3, and whether the first paper is the focused one or the full
-  one (Q15).
-- Update (D110, D111): yes. Generation into SNAX is built first, on
-  `snax_alu`, so E1 compares the same design in model and RTL from the start.
-
-### Against related work
-
-**Q11. After the reading, does each separating sentence still hold?**
-
-- Why: four works can say "already done" for part of a claim: gem5-Aladdin (C3
-  in general), CHARM on Versal and SSR (composition), GVSoC's shared-L1 model
-  (the TCDM model), AccelForge (heterogeneous, and the name).
-- So far: one sentence per work in section 8; the table in section 8.10 is
-  where they are tested.
-- Settled by: the reading. A sentence that does not survive changes the claim,
-  not only the wording.
-
-**Q12. Is a head-to-head run needed, or is a feature table enough?**
-
-- Why: "nobody does the same thing" does not excuse a paper from comparison.
-  The closest overlaps are Stream (same lab, DNN-shaped parts only) and
-  gem5-SALAM (heavy to set up).
-- So far: Stream as E9, exploratory: the same layers and engines described in
-  both, and where the rankings disagree. gem5-SALAM only for speed and set-up
-  effort, if at all.
-- Settled by: the venue (a feature table carries a 6-page paper; a full paper
-  is expected to run something) and the effort E9 turns out to need.
-- Update (D114): parked. Stream would join as a proposer for DNN-shaped
-  workloads only; kernels it cannot describe would get an analytical
-  estimator of our own (open item 4).
-
-**Q13. Are HLS and XLS an input or a competitor?**
-
-- Why: comparing "our RTL" with HLS RTL measures the unit library and its
-  author, not the method, and the engines are hand-written Chisel.
-- So far: an input. E7 compares one unit across Chisel, HLS and XLS after
-  synthesis; E8 plugs the HLS engine in as a BRM implementation and shows the
-  shell matters as much as the engine.
-- Settled by: whether E7 and E8 fit the first paper (Q15).
-
-**Q14. Does the name clash with AccelForge matter?**
-
-- Why: AccelForge (September 2026) is an analytical co-design framework for
-  accelerators, from a well-known group, and appeared weeks before the
-  checkpoint.
-- So far: noted, not decided.
-- Settled by: the author; at the least, one sentence of contrast in the related
-  work.
-
-### Scope and venue
-
-**Q15. One paper or two, and what is cut from six pages?**
-
-- Why: a focused paper followed by a full one needs substantially new results
-  in the second.
-- So far: the focused version holds E1, E2, E4 and one of E5 or E6; the full
-  version adds scale (E5, E6), E7–E9 and generation.
-- Settled by: the mid-November checkpoint (section 1).
-
-**Q16. Is the LLM paragraph in or out?**
-
-- Why: it is not a claim, and agent-driven DSE is crowded in 2026 (Beacon,
-  AgentDSE); a weak paragraph draws questions it cannot answer.
-- So far: one short demonstration (E10): an agent drives the tool as a black
-  box because every input and output is text.
-- Settled by: space, and whether the demonstration is clean.
-
-**Q17. Which limitations are stated up front?**
-
-- Why: stated limitations are forgiven; discovered ones are not.
-- So far: declared default platform values until E1; compositions are
-  hand-written recipes; engines whose dataflow changes per kernel (Hypercorex,
-  CGRAs) do not fit a fixed BRM yet; the model is Python.
-- Settled by: the outline; which of these the evidence has removed by then.
-
-### Story order
-
-**Q18. Does the paper open with the experience or with the question?**
-
-- Why: the week of integration and the waveforms are concrete and true, but
-  they are one lab's experience, cited in the third person; the question
-  ("which engines should a shell hold?") is general.
-- So far: the question first, the experience as its evidence, in two or three
-  sentences.
-- Settled by: the author's own outline.
-
-**Q19. What is figure 1?**
-
-- Why: it is what a reviewer remembers. Candidates: the flow with the shell;
-  one composition spectrum (units, a unit set, a full accelerator) on the same
-  graph; a report excerpt that names a cause.
-- So far: the flow with the engine–shell split (section 12).
-- Settled by: Q1 and Q2: a finding paper leads with the composition spectrum, a
-  tool paper with the flow.
-
-## 14. Paper outline
-
-After the questions of section 13: the sections of the paper, what each holds
-and which figure or table carries it, starting from the author's own outline.
+After the questions of section 11, starting from the author's own outline.

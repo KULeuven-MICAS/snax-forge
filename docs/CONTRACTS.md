@@ -1,25 +1,25 @@
 # SNAX-FORGE Contracts
 
-> What the artefacts between the components *mean*, field by field, so each
-> component can produce its output without reading another's code.
-> Sections 1–8 are the model side (D26, D46): cluster configuration,
-> streamer registers, accelerator interface, control program, scenario,
-> profile and trace, and the rules a new block kind must follow. Sections
-> 9–15 are the rest of the flow: the task list (D64), the BRM (D68, D70),
-> the SNAX-DFG (D77), the recipe (D80), the platform (D84), the design
-> checks (D85), and the memory plan and design point (D86, D87).
+> What the artefacts between the components mean, field by field, so each
+> component can produce its output without reading another's code. Why each
+> is the way it is: the module docstrings and `docs/DECISIONS.md`.
 >
-> Until the M6 freeze these are plain dataclasses and plain JSON; versioned
-> schemas are F2's job (D26). Every value marked **default** is a declared
-> platform default, not a measurement (D51); nothing else about the format
-> depends on it.
+> Sections 1 and 9–15 are the flow: conventions, the task list (D64), the BRM
+> (D68, D70), the SNAX-DFG (D77), the recipe (D72), the platform (D84), the
+> design checks (D85), and the memory plan and design point (D86, D87).
+> Sections 2–8 are SNAX-MODEL's (cluster configuration, streamer registers,
+> accelerator interface, control program, scenario, profile and trace, rules
+> for a new block kind); they are kept as they are until SNAX-MODEL is
+> removed (RET1, D116), and SNAX-GVSoC's contracts replace them.
+>
+> These are dataclasses and plain JSON until the M6 freeze (D26). Every value
+> marked **default** is a declared platform default, not a measurement.
 >
 > Every fenced block below is copied verbatim out of a checked-in file, a
-> file `scenarios/make.py` generates (D67), or the output of
-> `scenarios/reduce`, and `tests/snax_model/test_contracts.py` fails if one
-> of them drifts. The `<!-- snippet: ... -->` line above each block names its
-> source; `run:` means "produced by running that scenario". Why each
-> contract is the way it is: the module docstrings and `docs/DECISIONS.md`.
+> file `scenarios/make.py` generates, or the output of `scenarios/reduce`,
+> and `tests/snax_model/test_contracts.py` fails if one of them drifts. The
+> `<!-- snippet: ... -->` line above each block names its source; `run:`
+> means "produced by running that scenario".
 
 ---
 
@@ -612,14 +612,13 @@ registered with `register_check` (section 14).
 
 ## 9. Task list
 
-SNAX-LOWER's ordered list of tasks (LOW1b, D45, D64): which component runs
-which task with which values, where each task is configured and started,
-and what it waits for. `lower_program(tasks, cluster)` turns it into the
-program of section 5; the model never reads a task list. LOW1a produces it
-from a design point (D89, `snax_forge/lower/derive.py`, `pixi run lower tasks
-DESIGN_POINT`; the rules below); it can still be written by hand (D63). Every
-scenario has one as `tasks.json`, the hand-written source its `scenario.py`
-lowers into the program of its generated `scenario.json` (D65, D66, D67).
+SNAX-LOWER's ordered list of tasks (D64): which component runs which task
+with which values, where each task is configured and started, and what it
+waits for. It is the hand-off to every backend: `lower_program(tasks,
+cluster)` turns it into SNAX-MODEL's program of section 5, and GEN2 will
+turn it into C (D116). It is derived from a design point (D89,
+`snax_forge/lower/derive.py`, `pixi run lower tasks DESIGN_POINT`; the rules
+below) or written by hand, as every scenario's `tasks.json` is (D65, D67).
 
 A task list is `name` and `steps`, each step with an `op`:
 
@@ -640,7 +639,7 @@ dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with base,
 accel     its start parameters by name: n, then any named rate (e.g. T)
 ```
 
-**Names** (D75, D83). A streamer is named after the accelerator port it
+**Names** (D75). A streamer is named after the accelerator port it
 serves, `<instance>_<port>` (`acc_a`, `acc_out`). A task is
 `<node>_<component>` (`add_acc_a`, `add_acc`), a DMA task
 `load_<container>` or `store_<container>` (`load_A`, `store_C`), with node
@@ -663,15 +662,15 @@ tasks have started; every configured task is started.
 
 **Waits.** Before a `start`, the lowering adds one wait per component, for
 every `after` task and every listed component whose latest task is not yet
-covered, leaves out a wait that another of these waits covers (D66), and
-orders the rest by when the task each one ends on was started. A wait is on a component, so it ends on that component's latest
-task and covers every earlier one. A wait on a writer streamer also covers
+covered, leaves out a wait that another of these waits covers (D64), and
+orders the rest by when the task each one ends on was started. A wait is
+on a component, so it ends on that component's latest task and covers every earlier one. A wait on a writer streamer also covers
 the accelerator attached to it and that accelerator's reader streamers when
 the same start launched them: their data flows into the writer, so it
 finishes last. Nothing else is added; where configures, starts and syncs
 go, and so how programming overlaps running blocks, is the task list's.
 
-**Derived from a design point** (LOW1a, D89). The accelerated nodes run in
+**Derived from a design point** (D89). The accelerated nodes run in
 execution order, one group each; every map around a node is one of its
 temporal firing loops (a single tile). A group is: `load_<C>` (configure,
 start) for each input, in BRM port order, whose container has an L2 and an
@@ -688,7 +687,7 @@ container the graph writes, on its store (or its writer without an L2).
 put its container in L1, a writer for the readers and writer since. So a
 node that reads what an earlier node wrote waits for that node's writer, and
 the lowering turns that into the one wait between the two accelerators
-(dot's `sum_sum_a` after `mult_mul_out`: chaining through L1, D101). Every
+(dot's `sum_sum_a` after `mult_mul_out`: chaining through L1, D105). Every
 configure and sync uses the platform's `wait_mode`. Streamer values, with
 firing loops `v_k` (begin `b_k`, `count_k`, step `s_k`) and a subset
 dimension `d` whose begin is `c_d + sum_k a_dk v_k`: `base` = layout base +
@@ -740,8 +739,8 @@ last 32 of the 57 commands of `scenarios/vecadd/scenario.json`.
 
 ## 10. Block runtime model
 
-What SNAX-BRM hands the rest of the flow (BRM1–BRM3, D68, D70): one
-accelerator as plain data. A BRM is a hand-written JSON file in
+What SNAX-BRM hands the rest of the flow (D68, D70): one accelerator as
+plain data. A BRM is a hand-written JSON file in
 `snax_forge/brm/library/`, one per accelerator, named after it and kept in
 the form `Brm.to_json` writes (every field, defaults included). Loaded with
 `load_brm(name)`; unknown keys are errors and a missing part is rejected by
@@ -750,10 +749,10 @@ name.
 | Part | Holds | Read by |
 |---|---|---|
 | `interface` | params (`design` / `runtime`) and ports (name, direction, lanes, rate, dtype) | everything below |
-| `function` | a registered accelerator kind (D43), its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
+| `function` | a registered accelerator kind, its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN1) | the accelerator entry, the HW generator (later) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN1) | the accelerator entry, the HW generator (GEN1), the GVSoC accelerator (GEN3) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source
@@ -857,9 +856,8 @@ ports agree on element positions, which is the BRM author's responsibility
 
 ## 11. SNAX-DFG
 
-The workload as SNAX-FORGE's own dataflow graph (DFG1, D71, D77): one
-`.snaxdfg` JSON file, written by an importer (IMP1) and rewritten by each
-sandbox transform (SBX1). Loaded with `Graph.load(path)`; every field is
+The workload as SNAX-FORGE's own dataflow graph (D71, D77): one `.snaxdfg`
+JSON file, written by an importer and rewritten by each sandbox transform. Loaded with `Graph.load(path)`; every field is
 written, missing keys take defaults, unknown keys are errors, and a graph is
 validated when it is made. Generated files live under `out/`; the fixtures
 in `tests/dfg/fixtures/` are the exception.
@@ -954,20 +952,20 @@ So a bound graph says on its own what each accelerator does, and
 `unbind` and `join_map` (section 12) take it back to the imported graph.
 `replaced` is history: checked in the node's scope, never run, and its ids
 may repeat live ones. Whether the connectors, params and `code` agree with
-the BRM is checked where the BRM is loaded: by `bind` (SBX1) and the
-reference executor (REF1).
+the BRM is checked where the BRM is loaded: by `bind` and the reference
+executor.
 
 ## 12. Recipe
 
-SNAX-SANDBOX's ordered list of transforms (SBX1, D72, D80): what a thinker
-edits to change the mapping of a kernel. A recipe is a hand-written JSON
+SNAX-SANDBOX's ordered list of transforms (D72): what a thinker edits to
+change the mapping of a kernel. A recipe is a hand-written JSON
 file in `recipes/`, loaded with `Recipe.load(path)`; every field is written,
 `params`, `symbols` and `steps` default to empty, unknown keys are errors.
 
 | Field | Holds |
 |---|---|
 | `name` | the recipe; its steps are written to `out/sandbox/<name>/` |
-| `kernel` | the kernel whose import (IMP1) the recipe starts from |
+| `kernel` | the kernel whose import the recipe starts from |
 | `params` | recipe params, each an int or a string; `--set NAME=VALUE` overrides one |
 | `symbols` | a value for graph symbols: an int or an expression over the params |
 | `steps` | in order: `transform` (a registered name) and its `params` |
@@ -1017,8 +1015,9 @@ whose `out` is one lane every `T = N / W` firings (D104):
 
 ## 13. Platform
 
-The SNAX cluster around the accelerators (DP1a, D84): everything of the
-cluster file that is not the accelerator. A platform file lives in
+The SNAX cluster around the accelerators (D84): everything of the cluster
+file that is not the accelerator. A platform read from snax_cluster's hjson
+comes with LNK1. A platform file lives in
 `platforms/` (`small16.json`, alu4's platform); it never names a recipe,
 and a recipe never names it. `Platform.load(path)`; every field is written,
 missing keys take their defaults (`l2` missing: no L2), unknown keys and
@@ -1067,7 +1066,7 @@ the root `base`, so `changes` is always the difference from it.
 ## 14. Design checks
 
 Before the design step writes anything it runs every registered check on
-the pairing of a bound graph and a platform (DP1a, D85) and reports every
+the pairing of a bound graph and a platform (D85) and reports every
 problem found, each as `[code] where: why` with a `fix:` line where one
 exists: the `--set` or recipe change that removes it. `pixi run design
 check GRAPH --platform P [--set ...]` runs them only. Stages: `platform`
@@ -1107,7 +1106,7 @@ The model's own checks, when a cluster file is built, stay as a backstop.
 
 ## 15. Memory plan and design point
 
-**Memory plan** (DP1b, D86, `snax_forge/design/memory.py`). A layout per
+**Memory plan** (D86, `snax_forge/design/memory.py`). A layout per
 container and memory it lives in: `base` (byte address of index 0),
 `shape` and one byte stride per dimension, the form of
 `snax_forge/lower/layout.py`. Banks follow from addresses (word `i` in bank
@@ -1130,13 +1129,13 @@ together. The design step writes `out/design/<name>/memory.json`:
 `passes`, `changes` (every memory path set, in order) and `layouts`;
 `--memory` continues from it.
 
-**Design point** (D74, D87, `snax_forge/design/point.py`). Written by the
+**Design point** (D87, `snax_forge/design/point.py`). Written by the
 design step to `out/design/<name>/design_point.json` once every check has
 passed; not edited by hand. It is what SNAX-LOWER reads.
 
 | Field | Holds |
 |---|---|
-| `name` | the design (the graph's sandbox folder, else its stem; in a flow, the recipe's name and params, D94) |
+| `name` | the design (the graph's sandbox folder, else its stem; in a flow, the recipe's name and params, D90) |
 | `graph_from` | the `.snaxdfg` it was made from: a sandbox step, or any bound graph given to the design step or the flow (D108) |
 | `graph` | that graph as read: instances, `code`, `replaced`, `loop.split` |
 | `platform` | the platform working copy (section 13) |

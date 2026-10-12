@@ -1,21 +1,25 @@
 # SNAX-FORGE
 
-Read before designing or changing a component:
+Read before designing or changing a component, and only what the task needs (D117):
 
-- `docs/ARCHITECTURE.md`: what each component does, as it is now.
-- `docs/DECISIONS.md`: the decisions behind it (D-numbers). Do not contradict one; propose a new
-  one with the next free number, following the rules at the top of that file.
-- `docs/CONTRACTS.md`: every artefact between the components, field by field. A snippet in it is
-  checked against the file it came from, so update both together; section 8 holds the rules a new
-  block kind must follow.
-- `docs/STATUS.md`: milestones, tasks, open items. Update it with every change.
-- `docs/PAPER.md`: the paper's claims and the evidence each needs (P1, D100).
+- `docs/ARCHITECTURE.md`: section 4 (the overview) and the section of the component you change.
+- `docs/DECISIONS.md`: the entries cited there. Do not contradict one; propose a new one with the
+  next free number, following the rules at the top of that file.
+- `docs/CONTRACTS.md`: the section of the artefact you produce or read. A snippet in it is checked
+  against the file it came from, so update both together.
+- `docs/STATUS.md`: the task you work on and its open items. Update it with every change.
+- `docs/PAPER.md`: only for paper work (P1).
+
+Keep the documents short (D117): one fact in one place, a decision only for a choice someone may
+want to reverse, implementation details in module docstrings and tests.
 
 ## Principles
-- Model first: Python models are the source of truth; RTL is checked against them.
-- DSE decides, LOWER derives command sequences, MODEL measures. Never mix roles.
-- All artefacts (DFG, BRM, recipe, platform, design point, task list, control program, profile,
-  trace) are serialisable text and must round-trip.
+- The BRM is the user's source of truth; the model's accelerator and the RTL come from it and are
+  checked against each other by one program on both (D116).
+- The model is SNAX-GVSoC, checked against snax_cluster RTL; SNAX-MODEL is frozen until RET1.
+- DSE decides, LOWER derives, the model measures. Never mix roles.
+- All artefacts (DFG, BRM, recipe, platform, design point, task list, program, profile, trace) are
+  serialisable text and must round-trip.
 - Extend by registration and namespaced attrs, never by editing core classes.
 - Build the vecadd vertical slice before generalising.
 
