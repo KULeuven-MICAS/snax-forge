@@ -65,7 +65,7 @@ Each task is planned in its own round.
 |---|---|---|---|---|
 | SG0 | The snax-gvsoc repository: a detached copy of the chosen GVSoC commit (history kept, submodules folded in, upstream hashes in `UPSTREAM.md`, license kept). One development image in snax-forge's `container/` with GVSoC's build tools, snax_cluster's toolchain and pixi (D118). The probe that chooses the commit: a plain test built with snax_cluster's own flow (compiler, start-up code, linker script) run on GVSoC's Snitch target | none | Probe result and chosen commit logged; the image builds and runs on the MICAS server: GVSoC builds and runs, `pixi run test` passes | `done` |
 | SG1 | The `snax_alu` target written by hand from snax_cluster's `cfg/snax_alu_cluster_old.hjson` (2 `rv32ima` cores, 128 KiB TCDM in 32 banks, plain interconnect); the CSR port (D120); a stub register block; the `snax-alu` app copied into snax-gvsoc (D119) | SG0 | A CSR program reads back what it wrote; `snax-alu` runs to the end on the stub; the 17 plain tests still pass on `snitch` | `done` |
-| SG2 | DMA matched to the RTL: a timing program at a few sizes on both sides; GVSoC's iDMA parameters and a DRAM with the testbench's latency and two transfers in flight; a new model only if tuning misses | SG1 | Cycles per size on both sides logged, the gap explained | todo |
+| SG2 | The iDMA model adapted to snax_cluster's iDMA RTL (bursts in flight, reads per beat, the burst split, done on the last write response) and the DRAM to the testbench's; a timing program at a few sizes with `mcycle` and the cluster's DMA perf counters, run on both sides; the counters added to SNAX-GVSoC | SG1 | Cycles per size on both sides logged, the gap explained | `wip` |
 | SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | todo |
 | SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter) | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | todo |
 | SG5 | The baseline: SNAX's `snax-alu` app unchanged on snax_cluster RTL and on SNAX-GVSoC at a few `DATA_LEN` values; `mcycle` marks and the ALU's counter; the deviation per phase against an error target fixed first (open item 3); every build and run step logged with its time (BASE1's first log); a regression test locking the numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | todo |
@@ -103,12 +103,11 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 is done (log in snax-gvsoc's `docs/notes/NOTES.md`, branch
-`ry/snax-alu-init`): the `snax_alu` target, the CSR port (D120) and a stub
-register block. A CSR program reads back what it wrote, and SNAX's
-`snax-alu` app runs to the end on the stub (0 cycles, 100 errors: nothing
-computes yet). Next is a housekeeping pass on that branch (loose code,
-formatting, simulation speed), then SG2, the DMA, planned in its own round.
+SG1 is done and merged (snax-gvsoc PR #1): the `snax_alu` target, the CSR
+port (D120) and a stub register block; `snax-alu` runs to the end on the
+stub. SG2, the DMA, is under way on snax-gvsoc's `ry/sg2-dma`; its plan is
+`docs/plans/SG2.md` there. The housekeeping pass over snax-gvsoc's code
+moves to after SG5, after all SG tasks.
 
 ## Open Items
 
