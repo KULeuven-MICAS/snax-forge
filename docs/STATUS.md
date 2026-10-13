@@ -63,7 +63,7 @@ Each task is planned in its own round.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| SG0 | The snax-gvsoc repository: a detached copy of the chosen GVSoC commit (history kept, submodules folded in, upstream hashes in `UPSTREAM.md`, license kept). One development image in snax-forge's `container/` with GVSoC's build tools, snax_cluster's toolchain and pixi (D118). The probe that chooses the commit: a plain test built with snax_cluster's own flow (compiler, start-up code, linker script) run on GVSoC's Snitch target | none | Probe result and chosen commit logged; the image builds and runs on the MICAS server: GVSoC builds and runs, `pixi run test` passes | `wip` |
+| SG0 | The snax-gvsoc repository: a detached copy of the chosen GVSoC commit (history kept, submodules folded in, upstream hashes in `UPSTREAM.md`, license kept). One development image in snax-forge's `container/` with GVSoC's build tools, snax_cluster's toolchain and pixi (D118). The probe that chooses the commit: a plain test built with snax_cluster's own flow (compiler, start-up code, linker script) run on GVSoC's Snitch target | none | Probe result and chosen commit logged; the image builds and runs on the MICAS server: GVSoC builds and runs, `pixi run test` passes | `done` |
 | SG1 | SNAX target generated from snax_cluster's cluster hjson: Snitch cores, TCDM size and banks, DMA; where GVSoC keeps its Snitch model settled | SG0 | snax_cluster's plain tests (no accelerator) give the same output as its RTL; cycles recorded per test | todo |
 | SG2 | CSR path: a core patch sending a CSR address range as IO requests on a new port (whether the core can wait for the response checked in the source); register blocks with SNAX's CSR layout, read off `snax-alu.c` and `streamer_csr_addr_map.h` | SG1 | A C program writes and reads them with the values RTL gives | todo |
 | SG3 | Shell components: streamers (affine address generation, FIFOs, valid/ready, one start for an accelerator's streamers as in SNAX), a generic accelerator (lanes, rates, latency, II, drain, op), the hand-written `snax_alu` model; the trace events the views need, also from GVSoC's own L1 and interconnect | SG2 | Unit tests per component; per-bank arbitration of a streamer port shown in a trace | todo |
@@ -102,11 +102,13 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG0 is under way in the snax-gvsoc repository (plan and log in its
-`docs/plans/SG0.md` and `docs/notes/NOTES.md`): the detached copy is made, the
-probe ran (snax_cluster's start-up code needs the cluster CSRs 0xBC1 to 0xBC3,
-now in GVSoC's Snitch core) and the development image moved here (D118). SG0
-closes once the image runs on the MICAS server.
+SG0 is done (log in snax-gvsoc's `docs/notes/NOTES.md`): snax-gvsoc is a
+detached copy of GVSoC `93cedc4` with one core patch, the cluster CSRs 0xBC1
+to 0xBC3 that snax_cluster's start-up code reads; with it all 17 of
+snax_cluster's plain tests pass on GVSoC's `snitch` target. The development
+image is `snax-forge:main` from `container/` (D118). Next is SG1, planned in
+its own round: the SNAX target generated from snax_cluster's cluster hjson,
+and cycles per test against its RTL.
 
 ## Open Items
 
