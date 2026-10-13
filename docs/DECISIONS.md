@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D118**.
+  number: **D119**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -30,7 +30,7 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
@@ -365,3 +365,8 @@ stays, the layout becomes SNAX's), D45, D51–D53, D68, principles 1 and 3, the 
 **D117** · docs — The documents stay short: one fact in one place, a decision only for a choice
 someone may want to reverse, each entry in its current form in at most three lines, and the done
 tasks out of STATUS at every milestone close. The rules are at the top of this file. Replaces D93.
+
+**D118** · scope — One development image, `ghcr.io/kuleuven-micas/snax-forge:main` from
+`container/`, for snax-forge, snax-gvsoc and the programs built from snax_cluster: the hub owns
+the tools (GVSoC's build tools, snax_cluster's RISC-V toolchain, pixi); each repo keeps its own
+environment. Replaces SG0's two images (one in snax-gvsoc). → README (Setup).

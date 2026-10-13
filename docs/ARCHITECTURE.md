@@ -129,8 +129,8 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | Reports | `report/` | a flow folder or run directory | `design.md`, `run.md` | built |
 
 Packages are under `snax_forge/` except `hw/chisel/`. SNAX-GVSoC lives in its
-own KULeuven-MICAS repository, with a container image that snax-forge's image
-builds on, pixi inside (D116).
+own KULeuven-MICAS repository (D116) and is built and run in snax-forge's
+development image from `container/` (D118).
 
 ### 5.1 SNAX-DFG and the importer
 

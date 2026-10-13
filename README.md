@@ -32,6 +32,35 @@ pixi run check      # OK  python 3.11…  dace 1.0.2  networkx …  numpy …
 
 Every command below runs through pixi, from the repository root.
 
+## In the container
+
+SNAX-GVSoC and the programs built from snax_cluster need tools pixi does not
+carry: GVSoC's build tools, snax_cluster's RISC-V toolchain (clang 21.1.6,
+bender 0.28.2). One image holds them, with pixi 0.41.4 and zsh (D118). Build
+and push it from this repository's root:
+
+```bash
+docker build -t ghcr.io/kuleuven-micas/snax-forge:main container
+docker push ghcr.io/kuleuven-micas/snax-forge:main
+```
+
+Run it from the folder that holds `snax-forge`, `snax-gvsoc` and
+`snax_cluster`, mounted at its own path:
+
+```bash
+podman run --rm -it -v "$PWD":"$PWD" -w "$PWD" ghcr.io/kuleuven-micas/snax-forge:main
+cd snax-forge && pixi install && pixi run check
+```
+
+- The image holds tools only. `pixi install` writes the environment to
+  `.pixi/` in this repository; since the path is the same inside and outside
+  the container, the same environment works from the host too, with the same
+  pixi version (0.41.4, as CI).
+- Adding `-v ~/.cache/rattler:/root/.cache/rattler` keeps pixi's downloads
+  across containers.
+- Build GVSoC in the plain container shell, not in `pixi shell`: this
+  environment sets `CC` and `CXX` to conda's gcc.
+
 # 1. The whole path
 
 One command takes a kernel to a checked model run:

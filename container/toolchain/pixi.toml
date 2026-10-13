@@ -1,0 +1,16 @@
+# The RISC-V toolchain of the snax-gvsoc image: the exact builds that
+# snax_cluster's pixi.lock holds at 8ebd422, so programs built here match the
+# ones snax_cluster builds for its RTL. pixi.lock next to this file is made
+# once with `pixi lock` and installed with `pixi install --locked`.
+
+[workspace]
+name = "snax-gvsoc-toolchain"
+channels = ["conda-forge", "kuleuven-micas"]
+platforms = ["linux-64"]
+
+[dependencies]
+clang = { version = "==21.1.6", build = "default_h36abe19_0" }
+lld = { version = "==21.1.6", build = "hef48ded_0" }
+llvm-tools = { version = "==21.1.6", build = "hb700be7_0" }
+clang-format = { version = "==21.1.6", build = "default_h99862b1_0" }
+bender = { version = "==0.28.2", build = "hb0f4dca_0", channel = "kuleuven-micas" }
