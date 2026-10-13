@@ -18,22 +18,23 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D119**.
+  number: **D121**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
 
 Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL), `scenario` (scenario files),
-`lower` (SNAX-LOWER), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference
+`lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference
 executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `viz`,
 `docs`.
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
+| gvsoc | D120 |
 | brm | D68 D70 D82 D103 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
@@ -370,3 +371,12 @@ tasks out of STATUS at every milestone close. The rules are at the top of this f
 `container/`, for snax-forge, snax-gvsoc and the programs built from snax_cluster: the hub owns
 the tools (GVSoC's build tools, snax_cluster's RISC-V toolchain, pixi); each repo keeps its own
 environment. Replaces SG0's two images (one in snax-gvsoc). → README (Setup).
+
+**D119** · scope — M16 follows what `snax-alu` needs on one cluster (`snax_alu_cluster_old.hjson`,
+plain interconnect): target by hand and CSR port (SG1), DMA (SG2), streamer (SG3), ALU (SG4),
+cycles against RTL (SG5). Reading the hjson moves to LNK2, the generic accelerator to GEN3.
+→ STATUS (M16).
+
+**D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests at 4 × CSR on
+its `snax_csr` port, bound to an accelerator component per core, so a SNAX block is a plain IO
+slave. → ARCHITECTURE §5.6.

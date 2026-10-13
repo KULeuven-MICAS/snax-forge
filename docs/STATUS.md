@@ -64,23 +64,24 @@ Each task is planned in its own round.
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | SG0 | The snax-gvsoc repository: a detached copy of the chosen GVSoC commit (history kept, submodules folded in, upstream hashes in `UPSTREAM.md`, license kept). One development image in snax-forge's `container/` with GVSoC's build tools, snax_cluster's toolchain and pixi (D118). The probe that chooses the commit: a plain test built with snax_cluster's own flow (compiler, start-up code, linker script) run on GVSoC's Snitch target | none | Probe result and chosen commit logged; the image builds and runs on the MICAS server: GVSoC builds and runs, `pixi run test` passes | `done` |
-| SG1 | SNAX target generated from snax_cluster's cluster hjson: Snitch cores, TCDM size and banks, DMA; where GVSoC keeps its Snitch model settled | SG0 | snax_cluster's plain tests (no accelerator) give the same output as its RTL; cycles recorded per test | todo |
-| SG2 | CSR path: a core patch sending a CSR address range as IO requests on a new port (whether the core can wait for the response checked in the source); register blocks with SNAX's CSR layout, read off `snax-alu.c` and `streamer_csr_addr_map.h` | SG1 | A C program writes and reads them with the values RTL gives | todo |
-| SG3 | Shell components: streamers (affine address generation, FIFOs, valid/ready, one start for an accelerator's streamers as in SNAX), a generic accelerator (lanes, rates, latency, II, drain, op), the hand-written `snax_alu` model; the trace events the views need, also from GVSoC's own L1 and interconnect | SG2 | Unit tests per component; per-bank arbitration of a streamer port shown in a trace | todo |
-| SG4 | The baseline: SNAX's `snax-alu` app unchanged on snax_cluster RTL and on SNAX-GVSoC at a few `DATA_LEN` values; `mcycle` marks and the ALU's counter; the deviation per phase against an error target fixed first (open item 3); every build and run step logged with its time (BASE1's first log); a regression test locking the numbers | SG3 | Deviation explained per phase and inside the target; the test fails when cycles drift | todo |
+| SG1 | The `snax_alu` target written by hand from snax_cluster's `cfg/snax_alu_cluster_old.hjson` (2 `rv32ima` cores, 128 KiB TCDM in 32 banks, plain interconnect); the CSR port (D120); a stub register block; the `snax-alu` app copied into snax-gvsoc (D119) | SG0 | A CSR program reads back what it wrote; `snax-alu` runs to the end on the stub; the 17 plain tests still pass on `snitch` | `done` |
+| SG2 | DMA matched to the RTL: a timing program at a few sizes on both sides; GVSoC's iDMA parameters and a DRAM with the testbench's latency and two transfers in flight; a new model only if tuning misses | SG1 | Cycles per size on both sides logged, the gap explained | todo |
+| SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | todo |
+| SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter) | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | todo |
+| SG5 | The baseline: SNAX's `snax-alu` app unchanged on snax_cluster RTL and on SNAX-GVSoC at a few `DATA_LEN` values; `mcycle` marks and the ALU's counter; the deviation per phase against an error target fixed first (open item 3); every build and run step logged with its time (BASE1's first log); a regression test locking the numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | todo |
 
 ## M14: Generation against the baseline (D111, D116)
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
-| GEN1 | Generated datapath: the BRM's hardware binding through `Emit` and `hw/chisel/` (D91), a CSR adapter (SNAX's `csr_reg_set` onto the block's parameters and a start pulse; busy and a cycle counter onto the read-only registers), a shell wrapper named as SNAX's template expects | SG4 | Elaborates for `elementwise_add` and `accumulate`; in snax_cluster with the hand-written app it gives SG4's RTL cycles | todo |
-| GEN3 | BRM → GVSoC accelerator: the generic accelerator's parameters from the BRM's interface, function and timing; its registers through GVSoC's regmap tool | SG4 | `elementwise_add` at W = 4 gives SG4's SNAX-GVSoC output and cycles | todo |
+| GEN1 | Generated datapath: the BRM's hardware binding through `Emit` and `hw/chisel/` (D91), a CSR adapter (SNAX's `csr_reg_set` onto the block's parameters and a start pulse; busy and a cycle counter onto the read-only registers), a shell wrapper named as SNAX's template expects | SG5 | Elaborates for `elementwise_add` and `accumulate`; in snax_cluster with the hand-written app it gives SG5's RTL cycles | todo |
+| GEN3 | BRM → GVSoC accelerator: a generic accelerator (lanes, rates, latency, II, drain, op) whose parameters come from the BRM's interface, function and timing; its registers through GVSoC's regmap tool (D119) | SG5 | `elementwise_add` at W = 4 gives SG5's SNAX-GVSoC output and cycles | todo |
 | LNK1 | A platform read from a cluster hjson (`platforms/snax_alu.json`), checked as any platform is | none | The platform round-trips; `vecadd` at W = 4 designs on it | todo |
-| LNK2 | The bundle: the cluster hjson from the design point, a `Bender.yml` of its own, the changes snax_cluster needs (open item 51) | GEN1, LNK1 | snax_cluster builds from it with only the listed changes; SNAX-GVSoC runs on the same hjson | todo |
-| GEN2 | The program: task list → C as direct CSR writes in SNAX's layout, an `mcycle` mark per task, a header of CSR names and `data.h` from the kernel's inputs | LNK2, GEN3 | The same CSR writes as `snax-alu.c`; SG4's cycles on both sides | todo |
-| FLOW3 | The flow ends in a SNAX-GVSoC run: bundle and program built and run in the container; a converter from GVSoC's trace into the profile and trace the views and reports read (open item 55) | GEN2 | `vecadd` and `dot` flows give checked runs on SNAX-GVSoC; the viewer and the reports open them | todo |
+| LNK2 | The bundle: the cluster hjson from the design point, a `Bender.yml` of its own, the changes snax_cluster needs (open item 51); SNAX-GVSoC's target read from the hjson (D119) | GEN1, LNK1 | snax_cluster builds from it with only the listed changes; SNAX-GVSoC runs on the same hjson | todo |
+| GEN2 | The program: task list → C as direct CSR writes in SNAX's layout, an `mcycle` mark per task, a header of CSR names and `data.h` from the kernel's inputs | LNK2, GEN3 | The same CSR writes as `snax-alu.c`; SG5's cycles on both sides | todo |
+| FLOW3 | The flow ends in a SNAX-GVSoC run: bundle and program built and run in the container; the trace events the views need, also from GVSoC's own L1 and interconnect; a converter from GVSoC's trace into the profile and trace the views and reports read (open item 55) | GEN2 | `vecadd` and `dot` flows give checked runs on SNAX-GVSoC; the viewer and the reports open them | todo |
 | RET1 | SNAX-MODEL removed: `snax_model/`, `scenarios/`, their tests, the command list (D45), C§2–C§8, the model entries of DECISIONS (to Retired) | FLOW3 | `pixi run test` passes without it | todo |
-| LNK3 | The composed accelerator (dot's MAC) generated to both sides and compared as SG4 does | M13, GEN2 | Deviation explained per phase | todo |
+| LNK3 | The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2 | Deviation explained per phase | todo |
 
 ## Later Milestones
 
@@ -102,19 +103,18 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG0 is done (log in snax-gvsoc's `docs/notes/NOTES.md`): snax-gvsoc is a
-detached copy of GVSoC `93cedc4` with one core patch, the cluster CSRs 0xBC1
-to 0xBC3 that snax_cluster's start-up code reads; with it all 17 of
-snax_cluster's plain tests pass on GVSoC's `snitch` target. The development
-image is `snax-forge:main` from `container/` (D118). Next is SG1, planned in
-its own round: the SNAX target generated from snax_cluster's cluster hjson,
-and cycles per test against its RTL.
+SG1 is done (log in snax-gvsoc's `docs/notes/NOTES.md`, branch
+`ry/snax-alu-init`): the `snax_alu` target, the CSR port (D120) and a stub
+register block. A CSR program reads back what it wrote, and SNAX's
+`snax-alu` app runs to the end on the stub (0 cycles, 100 errors: nothing
+computes yet). Next is a housekeeping pass on that branch (loose code,
+formatting, simulation speed), then SG2, the DMA, planned in its own round.
 
 ## Open Items
 
 Questions not decided yet. Numbers are never reused; a closed item is
 removed. Closed with D116: 5, 6, 7, 8 and 10 (SNAX-GVSoC follows
-snax_cluster's RTL), 9 (into SG2), 11 (into SG4), 14, 15 and 22 (SNAX-MODEL
+snax_cluster's RTL), 9 (into SG1, D120), 11 (into SG5), 14, 15 and 22 (SNAX-MODEL
 details), 52 (the real program and cores do both), 55 (into
 FLOW3). Next free number: 57.
 
@@ -122,7 +122,7 @@ FLOW3). Next free number: 57.
    notation for unit BRMs comes earlier, with ND1 (open item 45).
 2. What automated search reads and how a sweep is configured (DSE1, M8); a
    sweep is one recipe with a parameter (D72).
-3. The error target between SNAX-GVSoC and snax_cluster RTL, fixed in SG4
+3. The error target between SNAX-GVSoC and snax_cluster RTL, fixed in SG5
    before the first comparison.
 4. Stream as a proposer for DNN-shaped workloads, replayed as a recipe at
    cycle level, and an analytical estimator of our own for the kernels Stream

@@ -287,7 +287,7 @@ second line cannot be written is a threat (Q11).
 
 | Feature | Needed by | Where |
 |---|---|---|
-| SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (SG0–SG4) |
+| SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (SG0–SG5) |
 | Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (GEN1–GEN3, LNK1, LNK2) |
 | 2-D plumbing, the kernel set | E3, E4 | M7 (ND1, FE1a–FE3, LOW4) |
 | Composed bind | E1, E4–E6 | M13 |
@@ -303,7 +303,7 @@ second line cannot be written is a threat (Q11).
 
 ## 10. Open questions
 
-1. BASE1: whether the GeMM bring-up is logged as well as `snax_alu` (SG4).
+1. BASE1: whether the GeMM bring-up is logged as well as `snax_alu` (SG5).
 2. The PDK, the synthesis tool, and what may be published.
 3. SNAX GeMM is int8 with int32 accumulation, which needs packing (PACK1),
    and the generated hardware needs floating-point units for NPBench's

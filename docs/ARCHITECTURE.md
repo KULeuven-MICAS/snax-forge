@@ -215,16 +215,19 @@ A GVSoC model of the SNAX cluster in its own repository: a detached copy of a
 chosen GVSoC commit with its history, the submodules folded in, the upstream
 hashes recorded and the license kept (D116). It holds:
 
-- a **SNAX target** generated from snax_cluster's cluster hjson: Snitch
-  cores, TCDM banks, DMA (SG1);
-- a small **core patch**: a CSR address range sent as IO requests on a new
-  port, so a `csrw` reaches an accelerator's registers as in RTL (SG2);
-- **register blocks** with SNAX's CSR layout, **streamers** with affine
-  address generation and FIFOs, and a **generic accelerator** (lanes, rates,
-  latency, II, drain, op) that a BRM parameterises (SG2, SG3);
+- a **SNAX target** per cluster: `snax_alu` written by hand (SG1), read
+  from the cluster hjson later (LNK2);
+- a small **core patch**: the Snitch core sends CSRs 0x3C0 to 0x5FF as
+  32-bit IO requests at 4 × CSR on its `snax_csr` port, bound to an
+  accelerator component per core, so a `csrw` reaches the accelerator's
+  registers as in RTL (SG1, D120);
+- the **DMA** matched to the RTL (SG2), **streamers** with affine address
+  generation (SG3), the hand-written **`snax_alu`** (SG4), and a **generic
+  accelerator** (lanes, rates, latency, II, drain, op) that a BRM
+  parameterises (GEN3);
 - **trace events** for the views (grants, stalls, responses, firings, FIFO
-  counts), from SNAX's components and from GVSoC's own L1 and interconnect
-  (SG3), turned into SNAX-FORGE's profile and trace by a converter (FLOW3).
+  counts), from SNAX's components and from GVSoC's own L1 and interconnect,
+  turned into SNAX-FORGE's profile and trace by a converter (FLOW3).
 
 What it models is what snax_cluster's RTL does; where the two differ, the
 RTL wins. Memory-mapped register writes may replace the CSR path later; the
@@ -304,7 +307,7 @@ SNAX-GVSoC is checked against snax_cluster RTL before anything is generated.
 It starts on `snax_alu` (SNAX's adder, `elementwise_add` at W = 4): SNAX's
 hand-written `snax-alu` app runs unchanged on both, at a few sizes, and the
 deviation is explained per phase against an error target fixed beforehand
-(open item 3); a regression test locks the numbers (SG4). Generation (M14)
+(open item 3); a regression test locks the numbers (SG5). Generation (M14)
 is then accepted when the generated accelerator, hjson and program reproduce
 that baseline on both sides.
 
