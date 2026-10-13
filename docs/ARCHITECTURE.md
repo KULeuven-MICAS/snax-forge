@@ -221,7 +221,8 @@ hashes recorded and the license kept (D116). It holds:
   32-bit IO requests at 4 × CSR on its `snax_csr` port, bound to an
   accelerator component per core, so a `csrw` reaches the accelerator's
   registers as in RTL (SG1, D120);
-- the **DMA** matched to the RTL (SG2), **streamers** with affine address
+- the **DMA**: GVSoC's iDMA model fitted to the RTL by measurement, with the
+  cluster's DMA perf counters (SG2, D121); **streamers** with affine address
   generation (SG3), the hand-written **`snax_alu`** (SG4), and a **generic
   accelerator** (lanes, rates, latency, II, drain, op) that a BRM
   parameterises (GEN3);
