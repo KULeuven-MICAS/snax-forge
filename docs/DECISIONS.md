@@ -378,9 +378,9 @@ cycles against RTL (SG5), Zicsr on SNAX CSRs on both sides (SG6). Reading the hj
 the generic accelerator to GEN3. → STATUS (M16).
 
 **D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests at 4 × CSR on
-its `snax_csr` port, bound to an accelerator component per core, so a SNAX block is a plain IO
-slave. It follows Zicsr but for three forms GVSoC's ISS writes on; those and snax_cluster's RTL
-are brought to Zicsr in SG6 (open item 62). → ARCHITECTURE §5.6.
+its `snax_csr` port to an accelerator component per core, so a SNAX block is a plain IO slave. Both
+sides follow Zicsr since SG6: snax_cluster #657 (decoder, translator), GVSoC's `priv.hpp`, all cores.
+→ ARCHITECTURE §5.6, snax-gvsoc `SG6.md`.
 
 **D121** · gvsoc — SNAX-GVSoC keeps GVSoC's iDMA model and fits it to snax_cluster's iDMA RTL by
 measurement (`dma-timing` and the cluster's DMA perf counters on both sides), not a new model: the
@@ -394,14 +394,13 @@ arbiter, which stays SNAX-MODEL's; cores and DMA keep GVSoC's paths for now (ope
 **D123** · scope — A SNAX-GVSoC model is checked against snax_cluster's RTL by building one ELF
 and running it on both, comparing the counters that do not depend on the core's timing (each
 program names them), not by predicted values. Build once, run both, compare becomes a feature of
-the whole system: SG5's regression, FLOW3 and GEN2 build on it. → snax-gvsoc `SG4.md`,
+the whole system: D124's comparison, FLOW3 and GEN2 build on it. → snax-gvsoc `SG4.md`,
 STATUS (M16).
 
 **D124** · scope — SNAX-GVSoC is held to snax_cluster's RTL per phase of one ELF: counters and
-errors equal; the phases that grow with the problem size within 10%; the rest explained. A gap in a
-SNAX block or a target parameter is fixed, the core's or the testbench's own timing is accepted as
-an open item (65–67). `make regress` locks SNAX-GVSoC's numbers and checks this target against RTL
-references from the same ELF, hash-checked. → snax-gvsoc `SG5.md`, STATUS (M16, CI1).
+errors equal, growing phases within 10%, the rest explained (accepted gaps: open items 65–67),
+checked by hand from fresh runs on both sides; `make regress` only checks every program exits 0.
+→ snax-gvsoc `SG5.md`, `SG6.md`, STATUS (M16, CI1).
 
 **D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight
 (`num_int_outstanding_loads`; a core property in GVSoC's LSU, no limit elsewhere) and the RTL's
