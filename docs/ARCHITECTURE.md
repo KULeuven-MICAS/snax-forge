@@ -230,8 +230,9 @@ hashes recorded and the license kept (D116). It holds:
   (SG4), and a **generic accelerator** (lanes, rates, latency, II, drain,
   op) that a BRM parameterises (GEN3); each checked against the RTL by
   running the same ELF on both and comparing counters (D123), and the
-  whole cluster per phase against a three-tier target that `make regress`
-  locks (SG5, D124);
+  whole cluster per phase against a three-tier target, checked by hand from
+  fresh runs of one ELF on both sides, while `make regress` checks that
+  every program finishes (SG5, SG6, D124);
 - **trace events** for the views (grants, stalls, responses, firings, FIFO
   counts), from SNAX's components and from GVSoC's own L1 and interconnect,
   turned into SNAX-FORGE's profile and trace by a converter (FLOW3); today
@@ -315,9 +316,10 @@ SNAX-GVSoC is checked against snax_cluster RTL before anything is generated.
 It starts on `snax_alu` (SNAX's adder, `elementwise_add` at W = 4): SNAX's
 hand-written `snax-alu` app runs unchanged on both, at a few sizes, and the
 deviation is explained per phase against an error target fixed beforehand
-(open item 3); a regression test locks the numbers (SG5). Generation (M14)
-is then accepted when the generated accelerator, hjson and program reproduce
-that baseline on both sides.
+(open item 3), checked by hand from fresh runs of one ELF; a regression
+checks that every program finishes (SG5, SG6, D124). Generation (M14) is then
+accepted when the generated accelerator, hjson and program reproduce that
+baseline on both sides.
 
 ## 8. Build Order
 

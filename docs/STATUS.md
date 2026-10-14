@@ -61,8 +61,9 @@ accepted against. Work happens in the snax-gvsoc repository on the MICAS
 server, and the RTL runs in a `snax_cluster` checkout on the author's side.
 Each task is planned in its own round. A SNAX-GVSoC model is checked by
 running the same ELF on both sides and comparing the counters that do not
-depend on the core's timing (D123), a feature of the whole system that SG5's
-regression, FLOW3 and GEN2 build on.
+depend on the core's timing (D123), a feature of the whole system that the
+comparison by hand (D124), FLOW3 and GEN2 build on. `make regress` in
+snax-gvsoc checks only that every program finishes with exit 0 (D124).
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
@@ -71,9 +72,9 @@ regression, FLOW3 and GEN2 build on.
 | SG2 | GVSoC's iDMA model fitted to snax_cluster's iDMA RTL by measurement (D121): a timing program at a few sizes with `mcycle` and the cluster's DMA perf counters, run on both sides; the counters added to SNAX-GVSoC; the DMA's queue, bursts in flight, beat width and read latency and the DRAM's latency and width from the RTL run | SG1 | Cycles per size on both sides logged, the gap explained | `done` |
 | SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests; the SNAX ports' crossbar (D122); a test datapath in the ALU's place | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | `done` |
 | SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter), in the test datapath's place | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | `done` |
-| SG5 | The baseline: SNAX's `snax-alu` app, unchanged once snax_cluster's copy waits for its DMA before the barrier (SG5 P2), on snax_cluster RTL and on SNAX-GVSoC at five `DATA_LEN` values (4, 100, 128, 1024, 4096); per-phase cycles cut from both sides' instruction traces of the same ELF, beside the ALU's counter; the deviation per phase against the error target of snax-gvsoc `SG5.md` (open item 3); a regression test (`make regress` in snax-gvsoc) locking SNAX-GVSoC's numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | `done` |
-| SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed. Right after SG5, before the housekeeping pass | SG5 | `snax-csr` gives four lines of `0 errors` on the RTL and on SNAX-GVSoC with no warning; SG5's regression unchanged | todo |
-| CI1 | CI for snax-gvsoc: on every push, in snax-forge's image, GVSoC built for `snitch;snax_alu` and snax_cluster's runtime at the pinned commit, then `make regress-plain` and `make regress` (D124); only the SNAX parts are built and tested, GVSoC's other components stay out. After SG6 and the housekeeping pass | SG6 | A push that moves a locked number or breaks the target fails the check; main passes | todo |
+| SG5 | The baseline: SNAX's `snax-alu` app, unchanged once snax_cluster's copy waits for its DMA before the barrier (SG5 P2), on snax_cluster RTL and on SNAX-GVSoC at five `DATA_LEN` values (4, 100, 128, 1024, 4096); per-phase cycles cut from both sides' instruction traces of the same ELF, beside the ALU's counter; the deviation per phase against the error target of snax-gvsoc `SG5.md` (open item 3); a regression test (`make regress` in snax-gvsoc) locking SNAX-GVSoC's numbers (pass/finish only since SG6, D124) | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | `done` |
+| SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed; `make regress` pass/finish only, the RTL compared by hand (D124); snax_cluster pinned at `9fbf35d` (#657). Right after SG5, before the housekeeping pass | SG5 | `snax-csr`, extended with every CSR form, passes on SNAX-GVSoC with no warning; its original four parts pass on the RTL; `snax-alu` at five sizes on the RTL equals SG5's RTL tables | `done` |
+| CI1 | CI for snax-gvsoc: on every push, in snax-forge's image, GVSoC built for `snitch;snax_alu` and snax_cluster's runtime at the pinned commit, then `make regress-plain` and `make regress` (D124); only the SNAX parts are built and tested, GVSoC's other components stay out. After SG6 and the housekeeping pass | SG6 | A push that makes a program fail or not finish fails the check; main passes (D124) | todo |
 
 ## M14: Generation against the baseline (D111, D116)
 
@@ -108,14 +109,16 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 to SG5 are done (snax-gvsoc; SG5 on `ry/sg5-baseline`, log in
-`docs/notes/NOTES.md` there). SNAX-GVSoC is the baseline: `snax-alu` at
-five sizes is within 2% of snax_cluster's RTL on the cluster's phases and
-on the total up to the ALU's counter at 1024 and 4096, every counter and
-error count equal, the remaining gaps explained (D124, open items 65 to 67);
-the core's loads follow the hjson and the RTL (D125). `make regress` locks
-it. Next is SG6 (Zicsr on SNAX CSRs on both sides), then the housekeeping
-pass over snax-gvsoc's code, then CI1.
+SG1 to SG6 are done (snax-gvsoc; SG6 on `ry/sg6-zicsr`, log in
+`docs/notes/NOTES.md` there; snax_cluster pinned at `9fbf35d`, #657).
+SNAX-GVSoC is the baseline: `snax-alu` at five sizes is within 2% of
+snax_cluster's RTL on the cluster's phases and on the total up to the ALU's
+counter at 1024 and 4096, every counter and error count equal, the remaining
+gaps explained (D124, open items 65 to 67); the core's loads follow the hjson
+and the RTL (D125); SNAX CSRs follow Zicsr on both sides (D120). The RTL is
+compared by hand from fresh runs; `make regress` checks that every program
+finishes (D124). Next is the housekeeping pass over snax-gvsoc's code, then
+CI1.
 
 ## Open Items
 
@@ -125,6 +128,7 @@ snax_cluster's RTL), 9 (into SG1, D120), 11 (into SG5), 14, 15 and 22 (SNAX-MODE
 details), 52 (the real program and cores do both), 55 (into
 FLOW3). Closed in SG3: 59 (the streamer's cycle classes and queue counts)
 and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D124).
+Closed in SG6: 62 (D120).
 Next free number: 68.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
@@ -215,12 +219,6 @@ Next free number: 68.
 60. `cmd` and `poll` events with the pc, and the controller's cycle
     classes (`command`, `wait`), from the Snitch core's SNAX CSR path (an
     upstream file in snax-gvsoc). Decided with FLOW3.
-62. SNAX CSRs differ from Zicsr on both sides. On the RTL a SNAX `csrrw` /
-    `csrrwi` with `rd` not `x0` writes without reading and gives `rd` the
-    ALU's sum of `rs1` (or the immediate) and the CSR number, and `csrrs` /
-    `csrrc` only read. GVSoC's ISS (`priv.hpp`, every core) writes on
-    `csrrc` with `x0` and on `csrrsi` / `csrrci` with 0. No SNAX program uses
-    these forms; SNAX-GVSoC warns on them since SG4. Fixed in SG6.
 63. A common start and busy protocol for all accelerators. Today they differ:
     the ALU (`snax_alu_csr.sv`) never holds a start, also while busy, keeps
     `len_counter` across a start, lets the end win over a start in the same
@@ -246,7 +244,7 @@ Next free number: 68.
     with atomics in DRAM.
 67. The core's own timing beyond its loads (D125): the RTL polls `dmstati`
     every 5 cycles against GVSoC's 2, so the end of a short DMA is seen up to
-    9 cycles later on the RTL (SG5's D2 at 128, accepted in the regression);
+    9 cycles later on the RTL (SG5's D2 at 128, accepted in SG5);
     a SNAX CSR poll takes 5 cycles against 6; an L1 load's write-back waits
     2 more cycles in SG5's check loop. Kept as is (D124) unless a kernel's
     numbers need it.
