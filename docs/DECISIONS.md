@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D124**.
+  number: **D126**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -30,11 +30,11 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D124 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
-| gvsoc | D120 D121 D122 |
+| gvsoc | D120 D121 D122 D125 |
 | brm | D68 D70 D82 D103 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
@@ -396,3 +396,14 @@ and running it on both, comparing the counters that do not depend on the core's 
 program names them), not by predicted values. Build once, run both, compare becomes a feature of
 the whole system: SG5's regression, FLOW3 and GEN2 build on it. → snax-gvsoc `SG4.md`,
 STATUS (M16).
+
+**D124** · scope — SNAX-GVSoC is held to snax_cluster's RTL per phase of one ELF: counters and
+errors equal; the phases that grow with the problem size within 10%; the rest explained. A gap in a
+SNAX block or a target parameter is fixed, the core's or the testbench's own timing is accepted as
+an open item (65–67). `make regress` locks SNAX-GVSoC's numbers and checks this target against RTL
+references from the same ELF, hash-checked. → snax-gvsoc `SG5.md`, STATUS (M16, CI1).
+
+**D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight
+(`num_int_outstanding_loads`; a core property in GVSoC's LSU, no limit elsewhere) and the RTL's
+load-to-load cycles (4 from L1, 14 from DRAM) on the core's data path. Instruction fetch keeps
+GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`, `snax/snax_alu.py`.

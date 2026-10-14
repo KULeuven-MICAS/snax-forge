@@ -71,8 +71,9 @@ regression, FLOW3 and GEN2 build on.
 | SG2 | GVSoC's iDMA model fitted to snax_cluster's iDMA RTL by measurement (D121): a timing program at a few sizes with `mcycle` and the cluster's DMA perf counters, run on both sides; the counters added to SNAX-GVSoC; the DMA's queue, bursts in flight, beat width and read latency and the DRAM's latency and width from the RTL run | SG1 | Cycles per size on both sides logged, the gap explained | `done` |
 | SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests; the SNAX ports' crossbar (D122); a test datapath in the ALU's place | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | `done` |
 | SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter), in the test datapath's place | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | `done` |
-| SG5 | The baseline: SNAX's `snax-alu` app, unchanged once snax_cluster's copy waits for its DMA before the barrier (SG5 P2), on snax_cluster RTL and on SNAX-GVSoC at five `DATA_LEN` values (4, 100, 128, 1024, 4096); per-phase cycles cut from both sides' instruction traces of the same ELF, beside the ALU's counter; the deviation per phase against the error target of snax-gvsoc `SG5.md` (open item 3); a regression test (`make regress` in snax-gvsoc) locking SNAX-GVSoC's numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | `wip` |
+| SG5 | The baseline: SNAX's `snax-alu` app, unchanged once snax_cluster's copy waits for its DMA before the barrier (SG5 P2), on snax_cluster RTL and on SNAX-GVSoC at five `DATA_LEN` values (4, 100, 128, 1024, 4096); per-phase cycles cut from both sides' instruction traces of the same ELF, beside the ALU's counter; the deviation per phase against the error target of snax-gvsoc `SG5.md` (open item 3); a regression test (`make regress` in snax-gvsoc) locking SNAX-GVSoC's numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | `done` |
 | SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed. Right after SG5, before the housekeeping pass | SG5 | `snax-csr` gives four lines of `0 errors` on the RTL and on SNAX-GVSoC with no warning; SG5's regression unchanged | todo |
+| CI1 | CI for snax-gvsoc: on every push, in snax-forge's image, GVSoC built for `snitch;snax_alu` and snax_cluster's runtime at the pinned commit, then `make regress-plain` and `make regress` (D124); only the SNAX parts are built and tested, GVSoC's other components stay out. After SG6 and the housekeeping pass | SG6 | A push that moves a locked number or breaks the target fails the check; main passes | todo |
 
 ## M14: Generation against the baseline (D111, D116)
 
@@ -107,15 +108,14 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 to SG4 are done (snax-gvsoc; SG4 on `ry/sg4-alu`, log in
-`docs/notes/NOTES.md` there). `snax-alu` prints `Accelerator Cycles: 25`
-and `Number of errors: 0` on SNAX-GVSoC, as on snax_cluster's RTL, with the
-ALU modelled after `snax_alu_csr.sv`; the same ELFs (`snax-alu`,
-`snax-stream`, `alu-timing`) give the RTL's counters wherever they do not
-depend on the core's timing (D123). SG5, the baseline, is under way
-(snax-gvsoc `ry/sg5-baseline`, plan in `docs/plans/SG5.md`); then SG6
-(Zicsr on SNAX CSRs on both sides), then the housekeeping pass over
-snax-gvsoc's code.
+SG1 to SG5 are done (snax-gvsoc; SG5 on `ry/sg5-baseline`, log in
+`docs/notes/NOTES.md` there). SNAX-GVSoC is the baseline: `snax-alu` at
+five sizes is within 2% of snax_cluster's RTL on the cluster's phases and
+on the total up to the ALU's counter at 1024 and 4096, every counter and
+error count equal, the remaining gaps explained (D124, open items 65 to 67);
+the core's loads follow the hjson and the RTL (D125). `make regress` locks
+it. Next is SG6 (Zicsr on SNAX CSRs on both sides), then the housekeeping
+pass over snax-gvsoc's code, then CI1.
 
 ## Open Items
 
@@ -124,15 +124,13 @@ removed. Closed with D116: 5, 6, 7, 8 and 10 (SNAX-GVSoC follows
 snax_cluster's RTL), 9 (into SG1, D120), 11 (into SG5), 14, 15 and 22 (SNAX-MODEL
 details), 52 (the real program and cores do both), 55 (into
 FLOW3). Closed in SG3: 59 (the streamer's cycle classes and queue counts)
-and 61 (the crossbar's ports named by owner). Next free number: 65.
+and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D124).
+Next free number: 68.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
 2. What automated search reads and how a sweep is configured (DSE1, M8); a
    sweep is one recipe with a parameter (D72).
-3. The error target between SNAX-GVSoC and snax_cluster RTL: three tiers,
-   fixed in snax-gvsoc `SG5.md` (SG5 P1) before the first comparison, and
-   logged in `docs/DECISIONS.md` when SG5 closes.
 4. Stream as a proposer for DNN-shaped workloads, replayed as a recipe at
    cycle level, and an analytical estimator of our own for the kernels Stream
    cannot describe (the engine alone, open item 49, plus bank conflicts from
@@ -213,7 +211,7 @@ and 61 (the crossbar's ports named by owner). Next free number: 65.
     (D122): their accesses and their clashes with streamers are not in its
     events, and a clash costs the later access one cycle instead of a
     round-robin stall. Events from the bank memories, or the cores in the
-    crossbar, when a program's numbers need it (SG5 or later).
+    crossbar, when a program's numbers need it (none of SG5's did).
 60. `cmd` and `poll` events with the pc, and the controller's cycle
     classes (`command`, `wait`), from the Snitch core's SNAX CSR path (an
     upstream file in snax-gvsoc). Decided with FLOW3.
@@ -235,6 +233,23 @@ and 61 (the crossbar's ports named by owner). Next free number: 65.
     towards the data may need modelling more generally, with hooks for how
     an accelerator waits for its data. Taken up with GEN3, starting from the
     ALU's `try_fire` and `compute` in snax-gvsoc.
+65. Instruction fetch: snax_cluster's L0 (`cluster_icache`'s
+    `snitch_icache_l0.sv`) prefetches the next line and the targets of taken
+    branches and `jal`; GVSoC's Snitch I-cache does not, so SNAX-GVSoC misses
+    more lines, each for fewer cycles: tens of cycles in fixed-cost phases
+    (SG5 at 100: C2a 133 against 110, D1 112 against 98). Modelled when a
+    kernel's numbers need it.
+66. Atomics to DRAM: the RTL testbench runs them in `axi_riscv_atomics_wrap`
+    (read-modify-write, 2 reads and 2 writes in flight), SNAX-GVSoC as one
+    access, so the exit's global barrier and reduction are about 50 cycles
+    shorter here (SG5's C7). Outside the cluster; matters only for programs
+    with atomics in DRAM.
+67. The core's own timing beyond its loads (D125): the RTL polls `dmstati`
+    every 5 cycles against GVSoC's 2, so the end of a short DMA is seen up to
+    9 cycles later on the RTL (SG5's D2 at 128, accepted in the regression);
+    a SNAX CSR poll takes 5 cycles against 6; an L1 load's write-back waits
+    2 more cycles in SG5's check loop. Kept as is (D124) unless a kernel's
+    numbers need it.
 
 ## Sync Reminders
 

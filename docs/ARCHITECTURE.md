@@ -220,14 +220,18 @@ hashes recorded and the license kept (D116). It holds:
 - a small **core patch**: the Snitch core sends CSRs 0x3C0 to 0x5FF as
   32-bit IO requests at 4 × CSR on its `snax_csr` port, bound to an
   accelerator component per core, so a `csrw` reaches the accelerator's
-  registers as in RTL (SG1, D120);
+  registers as in RTL (SG1, D120); the cores' **loads** as the hjson and
+  the RTL have them, one integer load in flight and the measured path
+  cycles (SG5, D125);
 - the **DMA**: GVSoC's iDMA model fitted to the RTL by measurement, with the
   cluster's DMA perf counters (SG2, D121); a **streamer** configured from the
   hjson's streamer template, its ports arbitrated per bank by a crossbar that
   copies the plain interconnect (SG3, D122); the hand-written **`snax_alu`**
   (SG4), and a **generic accelerator** (lanes, rates, latency, II, drain,
   op) that a BRM parameterises (GEN3); each checked against the RTL by
-  running the same ELF on both and comparing counters (D123);
+  running the same ELF on both and comparing counters (D123), and the
+  whole cluster per phase against a three-tier target that `make regress`
+  locks (SG5, D124);
 - **trace events** for the views (grants, stalls, responses, firings, FIFO
   counts), from SNAX's components and from GVSoC's own L1 and interconnect,
   turned into SNAX-FORGE's profile and trace by a converter (FLOW3); today
