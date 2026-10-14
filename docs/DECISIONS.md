@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D122**.
+  number: **D123**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -34,7 +34,7 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
-| gvsoc | D120 D121 |
+| gvsoc | D120 D121 D122 |
 | brm | D68 D70 D82 D103 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
@@ -384,3 +384,8 @@ slave. → ARCHITECTURE §5.6.
 **D121** · gvsoc — SNAX-GVSoC keeps GVSoC's iDMA model and fits it to snax_cluster's iDMA RTL by
 measurement (`dma-timing` and the cluster's DMA perf counters on both sides), not a new model: the
 target sets the DMA and DRAM values, the model the DMA's own read path. → snax-gvsoc `SG2.md`.
+
+**D122** · gvsoc — SNAX-GVSoC's SNAX ports reach the banks through a crossbar copying the plain
+interconnect's per-bank `rr_arb_tree` (checked against common_cells and the RTL), not D31's sparse
+arbiter, which stays SNAX-MODEL's; cores and DMA keep GVSoC's paths for now (open item 58).
+→ snax-gvsoc `SG3.md`.

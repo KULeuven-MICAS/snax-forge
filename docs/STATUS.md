@@ -66,8 +66,8 @@ Each task is planned in its own round.
 | SG0 | The snax-gvsoc repository: a detached copy of the chosen GVSoC commit (history kept, submodules folded in, upstream hashes in `UPSTREAM.md`, license kept). One development image in snax-forge's `container/` with GVSoC's build tools, snax_cluster's toolchain and pixi (D118). The probe that chooses the commit: a plain test built with snax_cluster's own flow (compiler, start-up code, linker script) run on GVSoC's Snitch target | none | Probe result and chosen commit logged; the image builds and runs on the MICAS server: GVSoC builds and runs, `pixi run test` passes | `done` |
 | SG1 | The `snax_alu` target written by hand from snax_cluster's `cfg/snax_alu_cluster_old.hjson` (2 `rv32ima` cores, 128 KiB TCDM in 32 banks, plain interconnect); the CSR port (D120); a stub register block; the `snax-alu` app copied into snax-gvsoc (D119) | SG0 | A CSR program reads back what it wrote; `snax-alu` runs to the end on the stub; the 17 plain tests still pass on `snitch` | `done` |
 | SG2 | GVSoC's iDMA model fitted to snax_cluster's iDMA RTL by measurement (D121): a timing program at a few sizes with `mcycle` and the cluster's DMA perf counters, run on both sides; the counters added to SNAX-GVSoC; the DMA's queue, bursts in flight, beat width and read latency and the DRAM's latency and width from the RTL run | SG1 | Cycles per size on both sides logged, the gap explained | `done` |
-| SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | todo |
-| SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter) | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | todo |
+| SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests; the SNAX ports' crossbar (D122); a test datapath in the ALU's place | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | `done` |
+| SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter), in the test datapath's place | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | todo |
 | SG5 | The baseline: SNAX's `snax-alu` app unchanged on snax_cluster RTL and on SNAX-GVSoC at a few `DATA_LEN` values; `mcycle` marks and the ALU's counter; the deviation per phase against an error target fixed first (open item 3); every build and run step logged with its time (BASE1's first log); a regression test locking the numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | todo |
 
 ## M14: Generation against the baseline (D111, D116)
@@ -103,12 +103,13 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 and SG2 are done (snax-gvsoc PR #1; SG2 on `ry/sg2-dma`, log in
-`docs/notes/NOTES.md` there). SNAX-GVSoC's DMA now matches snax_cluster's
-RTL in engine time on every case of the `dma-timing` program (D121); the
-2 to 6 cycles left per transfer are the core's issue and polling, for SG5.
-Next is SG3, the streamer, planned in its own round. The housekeeping pass
-over snax-gvsoc's code comes after SG5, after all SG tasks.
+SG1 to SG3 are done (snax-gvsoc; SG3 on `ry/sg3-streamer`, log in
+`docs/notes/NOTES.md` there). SNAX-GVSoC's streamer matches snax_cluster's
+RTL in its counter on every case of the `stream-timing` program, with the
+SNAX ports arbitrated per bank as the plain interconnect does (D122);
+`snax-alu` runs to the end with a test datapath in the ALU's place. Next is
+SG4, the ALU, planned in its own round. The housekeeping pass over
+snax-gvsoc's code comes after SG5, after all SG tasks.
 
 ## Open Items
 
@@ -116,7 +117,8 @@ Questions not decided yet. Numbers are never reused; a closed item is
 removed. Closed with D116: 5, 6, 7, 8 and 10 (SNAX-GVSoC follows
 snax_cluster's RTL), 9 (into SG1, D120), 11 (into SG5), 14, 15 and 22 (SNAX-MODEL
 details), 52 (the real program and cores do both), 55 (into
-FLOW3). Next free number: 57.
+FLOW3). Closed in SG3: 59 (the streamer's cycle classes and queue counts)
+and 61 (the crossbar's ports named by owner). Next free number: 63.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -194,6 +196,24 @@ FLOW3). Next free number: 57.
 56. `gvrun` ends in `exec python3 -m gvrun`; inside a pixi task `python3` is
     pixi's Python, without GVSoC's packages (`/opt/venv` in the image). How
     the flow calls `gvrun` is decided in FLOW3.
+57. SNAX-GVSoC's components trace for people (`vp::Trace` text). The views
+    and reports need SNAX-MODEL's events (C§7: task and beat levels, the
+    source and window filters of D49, a `fifo` event at the first cycle its
+    count holds) and its profile counters written at the end (D38). A
+    shared event writer in snax-gvsoc that writes them would leave FLOW3's
+    converter almost nothing to do. Decided with FLOW3.
+58. The cores and the DMA reach the TCDM banks outside the SNAX crossbar
+    (D122): their accesses and their clashes with streamers are not in its
+    events, and a clash costs the later access one cycle instead of a
+    round-robin stall. Events from the bank memories, or the cores in the
+    crossbar, when a program's numbers need it (SG5 or later).
+60. `cmd` and `poll` events with the pc, and the controller's cycle
+    classes (`command`, `wait`), from the Snitch core's SNAX CSR path (an
+    upstream file in snax-gvsoc). Decided with FLOW3.
+62. On the RTL a SNAX `csrrw` only writes and `csrrs` / `csrrc` only read;
+    D120 reads before a write when `rd` is not `x0` and lets set and clear
+    write. `snax-alu` uses neither; `snax-csr` tests D120's paths on
+    SNAX-GVSoC only. Decided in SG5.
 
 ## Sync Reminders
 

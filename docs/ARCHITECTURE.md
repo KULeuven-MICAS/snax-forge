@@ -222,13 +222,15 @@ hashes recorded and the license kept (D116). It holds:
   accelerator component per core, so a `csrw` reaches the accelerator's
   registers as in RTL (SG1, D120);
 - the **DMA**: GVSoC's iDMA model fitted to the RTL by measurement, with the
-  cluster's DMA perf counters (SG2, D121); **streamers** with affine address
-  generation (SG3), the hand-written **`snax_alu`** (SG4), and a **generic
-  accelerator** (lanes, rates, latency, II, drain, op) that a BRM
-  parameterises (GEN3);
+  cluster's DMA perf counters (SG2, D121); a **streamer** configured from the
+  hjson's streamer template, its ports arbitrated per bank by a crossbar that
+  copies the plain interconnect (SG3, D122); the hand-written **`snax_alu`**
+  (SG4), and a **generic accelerator** (lanes, rates, latency, II, drain,
+  op) that a BRM parameterises (GEN3);
 - **trace events** for the views (grants, stalls, responses, firings, FIFO
   counts), from SNAX's components and from GVSoC's own L1 and interconnect,
-  turned into SNAX-FORGE's profile and trace by a converter (FLOW3).
+  turned into SNAX-FORGE's profile and trace by a converter (FLOW3); today
+  they are text traces for people (open item 57).
 
 What it models is what snax_cluster's RTL does; where the two differ, the
 RTL wins. Memory-mapped register writes may replace the CSR path later; the
