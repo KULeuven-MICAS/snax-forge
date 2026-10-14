@@ -59,7 +59,10 @@ SNAX-GVSoC is built by hand to match snax_cluster, and checked against its
 RTL before anything is generated, so it is the baseline M14's generators are
 accepted against. Work happens in the snax-gvsoc repository on the MICAS
 server, and the RTL runs in a `snax_cluster` checkout on the author's side.
-Each task is planned in its own round.
+Each task is planned in its own round. A SNAX-GVSoC model is checked by
+running the same ELF on both sides and comparing the counters that do not
+depend on the core's timing (D123), a feature of the whole system that SG5's
+regression, FLOW3 and GEN2 build on.
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
@@ -67,8 +70,9 @@ Each task is planned in its own round.
 | SG1 | The `snax_alu` target written by hand from snax_cluster's `cfg/snax_alu_cluster_old.hjson` (2 `rv32ima` cores, 128 KiB TCDM in 32 banks, plain interconnect); the CSR port (D120); a stub register block; the `snax-alu` app copied into snax-gvsoc (D119) | SG0 | A CSR program reads back what it wrote; `snax-alu` runs to the end on the stub; the 17 plain tests still pass on `snitch` | `done` |
 | SG2 | GVSoC's iDMA model fitted to snax_cluster's iDMA RTL by measurement (D121): a timing program at a few sizes with `mcycle` and the cluster's DMA perf counters, run on both sides; the counters added to SNAX-GVSoC; the DMA's queue, bursts in flight, beat width and read latency and the DRAM's latency and width from the RTL run | SG1 | Cycles per size on both sides logged, the gap explained | `done` |
 | SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests; the SNAX ports' crossbar (D122); a test datapath in the ALU's place | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | `done` |
-| SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter), in the test datapath's place | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | todo |
+| SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter), in the test datapath's place | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | `done` |
 | SG5 | The baseline: SNAX's `snax-alu` app unchanged on snax_cluster RTL and on SNAX-GVSoC at a few `DATA_LEN` values; `mcycle` marks and the ALU's counter; the deviation per phase against an error target fixed first (open item 3); every build and run step logged with its time (BASE1's first log); a regression test locking the numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | todo |
+| SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed. Right after SG5, before the housekeeping pass | SG5 | `snax-csr` gives four lines of `0 errors` on the RTL and on SNAX-GVSoC with no warning; SG5's regression unchanged | todo |
 
 ## M14: Generation against the baseline (D111, D116)
 
@@ -103,13 +107,14 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 to SG3 are done (snax-gvsoc; SG3 on `ry/sg3-streamer`, log in
-`docs/notes/NOTES.md` there). SNAX-GVSoC's streamer matches snax_cluster's
-RTL in its counter on every case of the `stream-timing` program, with the
-SNAX ports arbitrated per bank as the plain interconnect does (D122);
-`snax-alu` runs to the end with a test datapath in the ALU's place. Next is
-SG4, the ALU, planned in its own round. The housekeeping pass over
-snax-gvsoc's code comes after SG5, after all SG tasks.
+SG1 to SG4 are done (snax-gvsoc; SG4 on `ry/sg4-alu`, log in
+`docs/notes/NOTES.md` there). `snax-alu` prints `Accelerator Cycles: 25`
+and `Number of errors: 0` on SNAX-GVSoC, as on snax_cluster's RTL, with the
+ALU modelled after `snax_alu_csr.sv`; the same ELFs (`snax-alu`,
+`snax-stream`, `alu-timing`) give the RTL's counters wherever they do not
+depend on the core's timing (D123). Next is SG5, the baseline, planned in
+its own round; then SG6 (Zicsr on SNAX CSRs on both sides), then the
+housekeeping pass over snax-gvsoc's code.
 
 ## Open Items
 
@@ -118,7 +123,7 @@ removed. Closed with D116: 5, 6, 7, 8 and 10 (SNAX-GVSoC follows
 snax_cluster's RTL), 9 (into SG1, D120), 11 (into SG5), 14, 15 and 22 (SNAX-MODEL
 details), 52 (the real program and cores do both), 55 (into
 FLOW3). Closed in SG3: 59 (the streamer's cycle classes and queue counts)
-and 61 (the crossbar's ports named by owner). Next free number: 63.
+and 61 (the crossbar's ports named by owner). Next free number: 65.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -210,10 +215,24 @@ and 61 (the crossbar's ports named by owner). Next free number: 63.
 60. `cmd` and `poll` events with the pc, and the controller's cycle
     classes (`command`, `wait`), from the Snitch core's SNAX CSR path (an
     upstream file in snax-gvsoc). Decided with FLOW3.
-62. On the RTL a SNAX `csrrw` only writes and `csrrs` / `csrrc` only read;
-    D120 reads before a write when `rd` is not `x0` and lets set and clear
-    write. `snax-alu` uses neither; `snax-csr` tests D120's paths on
-    SNAX-GVSoC only. Decided in SG5.
+62. SNAX CSRs differ from Zicsr on both sides. On the RTL a SNAX `csrrw` /
+    `csrrwi` with `rd` not `x0` writes without reading and gives `rd` the
+    ALU's sum of `rs1` (or the immediate) and the CSR number, and `csrrs` /
+    `csrrc` only read. GVSoC's ISS (`priv.hpp`, every core) writes on
+    `csrrc` with `x0` and on `csrrsi` / `csrrci` with 0. No SNAX program uses
+    these forms; SNAX-GVSoC warns on them since SG4. Fixed in SG6.
+63. A common start and busy protocol for all accelerators. Today they differ:
+    the ALU (`snax_alu_csr.sv`) never holds a start, also while busy, keeps
+    `len_counter` across a start, lets the end win over a start in the same
+    cycle, and never ends with length 0; the streamer holds a start while
+    busy, which SNAX-GVSoC refuses with a warning. The protocol, and the
+    snax_cluster changes it needs (`snax_alu_csr.sv`, the ReqRspManager's
+    `ready`), are formalized with GEN1 and GEN3.
+64. Accelerators made from BRMs need not take their data as the ALU does
+    (both inputs and room for the output in one cycle): the interface
+    towards the data may need modelling more generally, with hooks for how
+    an accelerator waits for its data. Taken up with GEN3, starting from the
+    ALU's `try_fire` and `compute` in snax-gvsoc.
 
 ## Sync Reminders
 

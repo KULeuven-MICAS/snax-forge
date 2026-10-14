@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D123**.
+  number: **D124**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -30,7 +30,7 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
@@ -374,12 +374,13 @@ environment. Replaces SG0's two images (one in snax-gvsoc). → README (Setup).
 
 **D119** · scope — M16 follows what `snax-alu` needs on one cluster (`snax_alu_cluster_old.hjson`,
 plain interconnect): target by hand and CSR port (SG1), DMA (SG2), streamer (SG3), ALU (SG4),
-cycles against RTL (SG5). Reading the hjson moves to LNK2, the generic accelerator to GEN3.
-→ STATUS (M16).
+cycles against RTL (SG5), Zicsr on SNAX CSRs on both sides (SG6). Reading the hjson moves to LNK2,
+the generic accelerator to GEN3. → STATUS (M16).
 
 **D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests at 4 × CSR on
 its `snax_csr` port, bound to an accelerator component per core, so a SNAX block is a plain IO
-slave. → ARCHITECTURE §5.6.
+slave. It follows Zicsr but for three forms GVSoC's ISS writes on; those and snax_cluster's RTL
+are brought to Zicsr in SG6 (open item 62). → ARCHITECTURE §5.6.
 
 **D121** · gvsoc — SNAX-GVSoC keeps GVSoC's iDMA model and fits it to snax_cluster's iDMA RTL by
 measurement (`dma-timing` and the cluster's DMA perf counters on both sides), not a new model: the
@@ -389,3 +390,9 @@ target sets the DMA and DRAM values, the model the DMA's own read path. → snax
 interconnect's per-bank `rr_arb_tree` (checked against common_cells and the RTL), not D31's sparse
 arbiter, which stays SNAX-MODEL's; cores and DMA keep GVSoC's paths for now (open item 58).
 → snax-gvsoc `SG3.md`.
+
+**D123** · scope — A SNAX-GVSoC model is checked against snax_cluster's RTL by building one ELF
+and running it on both, comparing the counters that do not depend on the core's timing (each
+program names them), not by predicted values. Build once, run both, compare becomes a feature of
+the whole system: SG5's regression, FLOW3 and GEN2 build on it. → snax-gvsoc `SG4.md`,
+STATUS (M16).
