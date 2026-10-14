@@ -71,7 +71,7 @@ regression, FLOW3 and GEN2 build on.
 | SG2 | GVSoC's iDMA model fitted to snax_cluster's iDMA RTL by measurement (D121): a timing program at a few sizes with `mcycle` and the cluster's DMA perf counters, run on both sides; the counters added to SNAX-GVSoC; the DMA's queue, bursts in flight, beat width and read latency and the DRAM's latency and width from the RTL run | SG1 | Cycles per size on both sides logged, the gap explained | `done` |
 | SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests; the SNAX ports' crossbar (D122); a test datapath in the ALU's place | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | `done` |
 | SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter), in the test datapath's place | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | `done` |
-| SG5 | The baseline: SNAX's `snax-alu` app unchanged on snax_cluster RTL and on SNAX-GVSoC at a few `DATA_LEN` values; `mcycle` marks and the ALU's counter; the deviation per phase against an error target fixed first (open item 3); every build and run step logged with its time (BASE1's first log); a regression test locking the numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | todo |
+| SG5 | The baseline: SNAX's `snax-alu` app, unchanged once snax_cluster's copy waits for its DMA before the barrier (SG5 P2), on snax_cluster RTL and on SNAX-GVSoC at five `DATA_LEN` values (4, 100, 128, 1024, 4096); per-phase cycles cut from both sides' instruction traces of the same ELF, beside the ALU's counter; the deviation per phase against the error target of snax-gvsoc `SG5.md` (open item 3); a regression test (`make regress` in snax-gvsoc) locking SNAX-GVSoC's numbers | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | `wip` |
 | SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed. Right after SG5, before the housekeeping pass | SG5 | `snax-csr` gives four lines of `0 errors` on the RTL and on SNAX-GVSoC with no warning; SG5's regression unchanged | todo |
 
 ## M14: Generation against the baseline (D111, D116)
@@ -93,7 +93,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 | Milestone | Tasks | Content |
 |---|---|---|
-| P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step (BASE1); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
+| P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step (BASE1, after the SG series, once the snax-forge flow runs end to end again); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
 | M7 | ND1, FE1a, LOW4, FE1b, PACK1, FE1c, FE1d, FE2, FE3 | Tier A: atax, bicg, mvt, k3mm (MatMul, float64, returned results); B: gesummv, gemver, gemm, k2mm (scalars, in-place updates, open item 47); C: softmax, mlp (float32, `exp`, `max`, division, packing, open items 20, 21, 37); D: jacobi, doitgen, covariance (several states, open item 36); E: conv2d_bias, resnet, lenet. ND1 first: rank-free unit dataflow, map tagging, N-D fills (open items 45, 46, 48). FE3 is C2's coverage table |
 | M13 | CMP0–CMP4 | One recipe step binds a connected group of tasklets to a chain of unit BRMs as one accelerator, FIFOs inside, streamers outside (D112): the BRM format, the model, the sandbox, the lowering, then composed `dot`, mat-vec and mat-mat against E2E2's chain through L1 |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
@@ -112,9 +112,10 @@ SG1 to SG4 are done (snax-gvsoc; SG4 on `ry/sg4-alu`, log in
 and `Number of errors: 0` on SNAX-GVSoC, as on snax_cluster's RTL, with the
 ALU modelled after `snax_alu_csr.sv`; the same ELFs (`snax-alu`,
 `snax-stream`, `alu-timing`) give the RTL's counters wherever they do not
-depend on the core's timing (D123). Next is SG5, the baseline, planned in
-its own round; then SG6 (Zicsr on SNAX CSRs on both sides), then the
-housekeeping pass over snax-gvsoc's code.
+depend on the core's timing (D123). SG5, the baseline, is under way
+(snax-gvsoc `ry/sg5-baseline`, plan in `docs/plans/SG5.md`); then SG6
+(Zicsr on SNAX CSRs on both sides), then the housekeeping pass over
+snax-gvsoc's code.
 
 ## Open Items
 
@@ -129,8 +130,9 @@ and 61 (the crossbar's ports named by owner). Next free number: 65.
    notation for unit BRMs comes earlier, with ND1 (open item 45).
 2. What automated search reads and how a sweep is configured (DSE1, M8); a
    sweep is one recipe with a parameter (D72).
-3. The error target between SNAX-GVSoC and snax_cluster RTL, fixed in SG5
-   before the first comparison.
+3. The error target between SNAX-GVSoC and snax_cluster RTL: three tiers,
+   fixed in snax-gvsoc `SG5.md` (SG5 P1) before the first comparison, and
+   logged in `docs/DECISIONS.md` when SG5 closes.
 4. Stream as a proposer for DNN-shaped workloads, replayed as a recipe at
    cycle level, and an analytical estimator of our own for the kernels Stream
    cannot describe (the engine alone, open item 49, plus bank conflicts from
