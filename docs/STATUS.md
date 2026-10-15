@@ -109,7 +109,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 to SG6 are done (snax-gvsoc; SG6 on `ry/sg6-zicsr`, log in
+SG1 to SG6 are done (snax-gvsoc; SG6 merged as snax-gvsoc #6, log in
 `docs/notes/NOTES.md` there; snax_cluster pinned at `9fbf35d`, #657).
 SNAX-GVSoC is the baseline: `snax-alu` at five sizes is within 2% of
 snax_cluster's RTL on the cluster's phases and on the total up to the ALU's
@@ -117,8 +117,8 @@ counter at 1024 and 4096, every counter and error count equal, the remaining
 gaps explained (D124, open items 65 to 67); the core's loads follow the hjson
 and the RTL (D125); SNAX CSRs follow Zicsr on both sides (D120). The RTL is
 compared by hand from fresh runs; `make regress` checks that every program
-finishes (D124). Next is the housekeeping pass over snax-gvsoc's code, then
-CI1.
+finishes (D124). The housekeeping pass over snax-gvsoc's code is done
+(`ry/housekeeping`); next is CI1.
 
 ## Open Items
 
