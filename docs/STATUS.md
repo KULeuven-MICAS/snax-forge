@@ -58,7 +58,8 @@ tier B, M15, tier C with the GeMM, then M9 and tiers D and E.
 SNAX-GVSoC is built by hand to match snax_cluster, and checked against its
 RTL before anything is generated, so it is the baseline M14's generators are
 accepted against. Work happens in the snax-gvsoc repository on the MICAS
-server, and the RTL runs in a `snax_cluster` checkout on the author's side.
+server; the programs build from snax-gvsoc's copy of snax_cluster's software
+(D126), and the RTL runs in a `snax_cluster` checkout on the author's side.
 Each task is planned in its own round. A SNAX-GVSoC model is checked by
 running the same ELF on both sides and comparing the counters that do not
 depend on the core's timing (D123), a feature of the whole system that the
@@ -74,7 +75,8 @@ snax-gvsoc checks only that every program finishes with exit 0 (D124).
 | SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter), in the test datapath's place | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | `done` |
 | SG5 | The baseline: SNAX's `snax-alu` app, unchanged once snax_cluster's copy waits for its DMA before the barrier (SG5 P2), on snax_cluster RTL and on SNAX-GVSoC at five `DATA_LEN` values (4, 100, 128, 1024, 4096); per-phase cycles cut from both sides' instruction traces of the same ELF, beside the ALU's counter; the deviation per phase against the error target of snax-gvsoc `SG5.md` (open item 3); a regression test (`make regress` in snax-gvsoc) locking SNAX-GVSoC's numbers (pass/finish only since SG6, D124) | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | `done` |
 | SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed; `make regress` pass/finish only, the RTL compared by hand (D124); snax_cluster pinned at `9fbf35d` (#657). Right after SG5, before the housekeeping pass | SG5 | `snax-csr`, extended with every CSR form, passes on SNAX-GVSoC with no warning; its original four parts pass on the RTL; `snax-alu` at five sizes on the RTL equals SG5's RTL tables | `done` |
-| CI1 | CI for snax-gvsoc: on every push, in snax-forge's image, GVSoC built for `snitch;snax_alu` and snax_cluster's runtime at the pinned commit, then `make regress-plain` and `make regress` (D124); only the SNAX parts are built and tested, GVSoC's other components stay out. After SG6 and the housekeeping pass | SG6 | A push that makes a program fail or not finish fails the check; main passes (D124) | todo |
+| CI1 | CI for snax-gvsoc, in two rounds: first the programs build from a pinned copy of snax_cluster's software in `sw/` with `make sw` (D126); then a workflow on push to main and on pull requests, in snax-forge's image, GVSoC built for `snitch;snax_alu` and `make regress` (D124), building and testing only `snax/`, `sw/` and `tests/snax/`, GVSoC's other components out. After SG6 and the housekeeping pass | SG6 | A fresh clone with no snax_cluster beside it passes `make regress`; the stripped ELFs equal those built from snax_cluster at the pin; a pull request that breaks a program fails the check | `done` |
+| SG7 | snax_cluster's sparse interconnect in SNAX-GVSoC, planned in its own round; amends D119 (plain interconnect) | CI1 | Set in its planning round | todo |
 
 ## M14: Generation against the baseline (D111, D116)
 
@@ -118,7 +120,10 @@ gaps explained (D124, open items 65 to 67); the core's loads follow the hjson
 and the RTL (D125); SNAX CSRs follow Zicsr on both sides (D120). The RTL is
 compared by hand from fresh runs; `make regress` checks that every program
 finishes (D124). The housekeeping pass over snax-gvsoc's code is done
-(`ry/housekeeping`); next is CI1.
+(`ry/housekeeping`). CI1 is done (the `ry/ci1` pull requests of snax-gvsoc
+and here): the programs build from snax-gvsoc's `sw/` (D126), and its
+workflow runs `make regress` on every push to main and every pull request
+(D124). Next: SG7, then planning one generator (open item 68), then GEN1.
 
 ## Open Items
 
@@ -129,7 +134,7 @@ details), 52 (the real program and cores do both), 55 (into
 FLOW3). Closed in SG3: 59 (the streamer's cycle classes and queue counts)
 and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D124).
 Closed in SG6: 62 (D120).
-Next free number: 68.
+Next free number: 69.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -248,6 +253,12 @@ Next free number: 68.
     a SNAX CSR poll takes 5 cycles against 6; an L1 load's write-back waits
     2 more cycles in SG5's check loop. Kept as is (D124) unless a kernel's
     numbers need it.
+68. Generation is spread out: snaxgen and Chisel in snax_cluster (the
+    wrappers, `streamer_csr_addr_map.h`), clustergen and regtool outputs
+    copied into snax-gvsoc's `sw/` (D126), the hand-written `snax_alu`
+    target, and GEN1, GEN2, GEN3 and LNK2 to come. One generator in
+    snax-forge, planned after SG7 and before GEN1, which also decides
+    whether it makes `sw/generated/`.
 
 ## Sync Reminders
 

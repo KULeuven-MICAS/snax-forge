@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D126**.
+  number: **D127**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -30,7 +30,7 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D124 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D124 D126 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
@@ -398,11 +398,16 @@ the whole system: D124's comparison, FLOW3 and GEN2 build on it. → snax-gvsoc 
 STATUS (M16).
 
 **D124** · scope — SNAX-GVSoC is held to snax_cluster's RTL per phase of one ELF: counters and
-errors equal, growing phases within 10%, the rest explained (accepted gaps: open items 65–67),
-checked by hand from fresh runs on both sides; `make regress` only checks every program exits 0.
+errors equal, growing phases within 10%, the rest explained (open items 65–67), checked by hand
+from fresh runs; `make regress` checks every program exits 0, in CI on each push to main and PR.
 → snax-gvsoc `SG5.md`, `SG6.md`, STATUS (M16, CI1).
 
 **D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight
 (`num_int_outstanding_loads`; a core property in GVSoC's LSU, no limit elsewhere) and the RTL's
 load-to-load cycles (4 from L1, 14 from DRAM) on the core's data path. Instruction fetch keeps
 GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`, `snax/snax_alu.py`.
+
+**D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software and
+generated headers in `sw/`, refreshed by hand with `make sync-snax-cluster`, whose diff is the check
+that the two still match; a snax_cluster checkout is needed only for the RTL and for sync.
+→ snax-gvsoc `sw/README.md`, STATUS (M16, CI1).
