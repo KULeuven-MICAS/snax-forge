@@ -398,8 +398,8 @@ the whole system: D124's comparison, FLOW3 and GEN2 build on it. → snax-gvsoc 
 STATUS (M16).
 
 **D124** · scope — SNAX-GVSoC is held to snax_cluster's RTL per phase of one ELF: counters and
-errors equal, growing phases within 10%, the rest explained (accepted gaps: open items 65–67),
-checked by hand from fresh runs on both sides; `make regress` only checks every program exits 0.
+errors equal, growing phases within 10%, the rest explained (open items 65–67), checked by hand
+from fresh runs; `make regress` checks every program exits 0, in CI on each push to main and PR.
 → snax-gvsoc `SG5.md`, `SG6.md`, STATUS (M16, CI1).
 
 **D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight
