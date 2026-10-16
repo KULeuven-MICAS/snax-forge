@@ -64,7 +64,8 @@ Each task is planned in its own round. A SNAX-GVSoC model is checked by
 running the same ELF on both sides and comparing the counters that do not
 depend on the core's timing (D123), a feature of the whole system that the
 comparison by hand (D124), FLOW3 and GEN2 build on. `make regress` in
-snax-gvsoc checks only that every program finishes with exit 0 (D124).
+snax-gvsoc checks that every program finishes with exit 0, and `dma-timing`
+that the DMA's counters stay the RTL's (D124).
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
@@ -76,7 +77,8 @@ snax-gvsoc checks only that every program finishes with exit 0 (D124).
 | SG5 | The baseline: SNAX's `snax-alu` app, unchanged once snax_cluster's copy waits for its DMA before the barrier (SG5 P2), on snax_cluster RTL and on SNAX-GVSoC at five `DATA_LEN` values (4, 100, 128, 1024, 4096); per-phase cycles cut from both sides' instruction traces of the same ELF, beside the ALU's counter; the deviation per phase against the error target of snax-gvsoc `SG5.md` (open item 3); a regression test (`make regress` in snax-gvsoc) locking SNAX-GVSoC's numbers (pass/finish only since SG6, D124) | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | `done` |
 | SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed; `make regress` pass/finish only, the RTL compared by hand (D124); snax_cluster pinned at `9fbf35d` (#657). Right after SG5, before the housekeeping pass | SG5 | `snax-csr`, extended with every CSR form, passes on SNAX-GVSoC with no warning; its original four parts pass on the RTL; `snax-alu` at five sizes on the RTL equals SG5's RTL tables | `done` |
 | CI1 | CI for snax-gvsoc, in two rounds: first the programs build from a pinned copy of snax_cluster's software in `sw/` with `make sw` (D126); then a workflow on push to main and on pull requests, in snax-forge's image, GVSoC built for `snitch;snax_alu` and `make regress` (D124), building and testing only `snax/`, `sw/` and `tests/snax/`, GVSoC's other components out. After SG6 and the housekeeping pass | SG6 | A fresh clone with no snax_cluster beside it passes `make regress`; the stripped ELFs equal those built from snax_cluster at the pin; a pull request that breaks a program fails the check | `done` |
-| SG7 | snax_cluster's sparse interconnect in SNAX-GVSoC, planned in its own round; amends D119 (plain interconnect) | CI1 | Set in its planning round | todo |
+| SG7 | snax_cluster's sparse interconnect in SNAX-GVSoC (D119, D122): the crossbar's sparse pick and the streamer's priority bit, and a `snax_alu_sparse` target from `cfg/snax_alu_cluster.hjson` sharing `snax_alu`'s ELFs (D126); the cores and AXI into the crossbar on both SNAX targets, the core going on after a pending L1 load (D125); the DMA's superbank as a wide input that refuses narrow winners, its beat cycles split against the RTL (D121); `core-tcdm`, `dma-tcdm` and two `stream-timing` cases; `dma-timing` failing when `busy`, `r` or `w` leave the RTL's (D124). Detail in snax-gvsoc `SG7.md` | CI1 | Both picks equal their RTL modules in Verilator; the compared counters equal on the plain RTL and target and on the sparse RTL and target, but `subword`'s SC on the sparse RTL (SG8); `snax-alu`'s phases within SG5's target; `make regress` passes on both targets | `done` |
+| SG8 | snax_cluster's sparse wrapper drives the memory side's user field (`core_id`, `is_core`), so the AMO shim's LR/SC works on the sparse RTL; agreed with the sparse interconnect's other users first | SG7 | `core-tcdm`'s `subword` returns 0 on the sparse RTL, as on the other three sides | todo |
 
 ## M14: Generation against the baseline (D111, D116)
 
@@ -111,7 +113,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 to SG6 are done (snax-gvsoc; SG6 merged as snax-gvsoc #6, log in
+SG1 to SG7 are done (snax-gvsoc; SG6 merged as snax-gvsoc #6, log in
 `docs/notes/NOTES.md` there; snax_cluster pinned at `9fbf35d`, #657).
 SNAX-GVSoC is the baseline: `snax-alu` at five sizes is within 2% of
 snax_cluster's RTL on the cluster's phases and on the total up to the ALU's
@@ -123,7 +125,13 @@ finishes (D124). The housekeeping pass over snax-gvsoc's code is done
 (`ry/housekeeping`). CI1 is done (the `ry/ci1` pull requests of snax-gvsoc
 and here): the programs build from snax-gvsoc's `sw/` (D126), and its
 workflow runs `make regress` on every push to main and every pull request
-(D124). Next: SG7, then planning one generator (open item 68), then GEN1.
+(D124). SG7 is done (snax-gvsoc `ry/sg7-sparse`, `SG7.md`): both SNAX
+targets put the streamer's ports, the cores, AXI and the DMA's superbanks
+through one crossbar with the plain or the sparse interconnect's arbiter
+(D122), and give that RTL's compared counters on every program but the
+`subword` SC on the sparse RTL, an RTL issue (SG8); `dma-timing` fails when
+the DMA's own timing leaves the RTL's. Next: SG8, then planning one
+generator (open item 68), then GEN1.
 
 ## Open Items
 
@@ -133,8 +141,9 @@ snax_cluster's RTL), 9 (into SG1, D120), 11 (into SG5), 14, 15 and 22 (SNAX-MODE
 details), 52 (the real program and cores do both), 55 (into
 FLOW3). Closed in SG3: 59 (the streamer's cycle classes and queue counts)
 and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D124).
-Closed in SG6: 62 (D120).
-Next free number: 69.
+Closed in SG6: 62 (D120). Closed in SG7: 58 (the cores, AXI and the DMA in
+the SNAX crossbar, D122).
+Next free number: 76.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -216,11 +225,6 @@ Next free number: 69.
     count holds) and its profile counters written at the end (D38). A
     shared event writer in snax-gvsoc that writes them would leave FLOW3's
     converter almost nothing to do. Decided with FLOW3.
-58. The cores and the DMA reach the TCDM banks outside the SNAX crossbar
-    (D122): their accesses and their clashes with streamers are not in its
-    events, and a clash costs the later access one cycle instead of a
-    round-robin stall. Events from the bank memories, or the cores in the
-    crossbar, when a program's numbers need it (none of SG5's did).
 60. `cmd` and `poll` events with the pc, and the controller's cycle
     classes (`command`, `wait`), from the Snitch core's SNAX CSR path (an
     upstream file in snax-gvsoc). Decided with FLOW3.
@@ -251,14 +255,41 @@ Next free number: 69.
     every 5 cycles against GVSoC's 2, so the end of a short DMA is seen up to
     9 cycles later on the RTL (SG5's D2 at 128, accepted in SG5);
     a SNAX CSR poll takes 5 cycles against 6; an L1 load's write-back waits
-    2 more cycles in SG5's check loop. Kept as is (D124) unless a kernel's
-    numbers need it.
+    2 more cycles in SG5's check loop; the DMA core issues a copy (`dmsrc`,
+    `dmdst`, `dmcpyi`) in 9 cycles against 10, and in `dma-tcdm` 9, 5, 6
+    against 10, 7, 7 between copies, so its beats land 3 to 7 cycles early
+    (snax-gvsoc `SG7.md`, round 4 follow-up). Kept as is (D124) unless a
+    kernel's numbers need it.
 68. Generation is spread out: snaxgen and Chisel in snax_cluster (the
     wrappers, `streamer_csr_addr_map.h`), clustergen and regtool outputs
     copied into snax-gvsoc's `sw/` (D126), the hand-written `snax_alu`
     target, and GEN1, GEN2, GEN3 and LNK2 to come. One generator in
     snax-forge, planned after SG7 and before GEN1, which also decides
     whether it makes `sw/generated/`.
+69. The SNAX crossbar's AXI input (14) is wired on both SNAX targets but no
+    program sends through it, on either side (snax-gvsoc `SG7.md`, round 3).
+70. On SNAX-GVSoC a store or AMO after a pending L1 load waits for the
+    load's data (the LSU keeps one request); the RTL sends it
+    (`num_int_outstanding_mem` 4). No measured loop has one (snax-gvsoc
+    NOTES, SG7 round 3b step 2).
+71. An L1 load after a DRAM load sends its request at the start of D125's
+    wait, so it reaches the crossbar up to 13 cycles early; the core's
+    timing is right, and no streamer request meets it yet (snax-gvsoc NOTES,
+    SG7 round 3b step 2).
+72. An L1-to-L1 DMA copy's read and a delayed write go to the crossbar in
+    one cycle, where the RTL's `axi_to_mem` takes one a cycle; no program
+    makes one (snax-gvsoc `SG7.md`, round 4 follow-up).
+73. The DMA reading L1 was not split against the RTL (where the bank read
+    falls in D121's read path; the TCDM back-end has no stage per cycle); no
+    program has it read L1 against a narrow request (snax-gvsoc `SG7.md`,
+    round 4 follow-up).
+74. The iDMA through the sparse interconnect as ports, instead of the
+    superbank mux that refuses narrow winners: a snax_cluster design change,
+    for exploration (snax-gvsoc `SG7.md`, "The sparse interconnect on the
+    RTL").
+75. Sparse granularity above 1: the crossbar supports it and was checked
+    against an elaborated RTL module (snax-gvsoc `SG7.md`, step 5), but no
+    target uses it yet.
 
 ## Sync Reminders
 
