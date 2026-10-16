@@ -372,10 +372,10 @@ tasks out of STATUS at every milestone close. The rules are at the top of this f
 the tools (GVSoC's build tools, snax_cluster's RISC-V toolchain, pixi); each repo keeps its own
 environment. Replaces SG0's two images (one in snax-gvsoc). → README (Setup).
 
-**D119** · scope — M16 follows what `snax-alu` needs on one cluster (`snax_alu_cluster_old.hjson`,
-plain interconnect): target by hand and CSR port (SG1), DMA (SG2), streamer (SG3), ALU (SG4),
-cycles against RTL (SG5), Zicsr on SNAX CSRs on both sides (SG6). Reading the hjson moves to LNK2,
-the generic accelerator to GEN3. → STATUS (M16).
+**D119** · scope — M16 follows what `snax-alu` needs on the snax_alu cluster, plain interconnect as
+baseline and sparse: target and CSR port (SG1), DMA (SG2), streamer (SG3), ALU (SG4), cycles against
+RTL (SG5), Zicsr (SG6), the sparse interconnect (SG7), LR/SC on the sparse RTL (SG8). Reading the
+hjson moves to LNK2, the generic accelerator to GEN3. → STATUS (M16).
 
 **D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests at 4 × CSR on
 its `snax_csr` port to an accelerator component per core, so a SNAX block is a plain IO slave. Both
@@ -383,13 +383,16 @@ sides follow Zicsr since SG6: snax_cluster #657 (decoder, translator), GVSoC's `
 → ARCHITECTURE §5.6, snax-gvsoc `SG6.md`.
 
 **D121** · gvsoc — SNAX-GVSoC keeps GVSoC's iDMA model and fits it to snax_cluster's iDMA RTL by
-measurement (`dma-timing` and the cluster's DMA perf counters on both sides), not a new model: the
-target sets the DMA and DRAM values, the model the DMA's own read path. → snax-gvsoc `SG2.md`.
+measurement, not a new model: the target sets the DMA and DRAM values (with SG7, the TCDM write
+latency and one stage per cycle, from splitting beat cycles against the RTL), the model the DMA's
+own read path; `dma-timing` checks `busy`, `r` and `w` against the RTL's on every run. → snax-gvsoc
+`SG2.md`, `SG7.md`.
 
-**D122** · gvsoc — SNAX-GVSoC's SNAX ports reach the banks through a crossbar copying the plain
-interconnect's per-bank `rr_arb_tree` (checked against common_cells and the RTL), not D31's sparse
-arbiter, which stays SNAX-MODEL's; cores and DMA keep GVSoC's paths for now (open item 58).
-→ snax-gvsoc `SG3.md`.
+**D122** · gvsoc — SNAX-GVSoC's crossbar takes the SNAX ports, cores and AXI, numbered as on the
+RTL, and copies its arbiter, checked against the RTL module in Verilator: `rr_arb_tree` with
+`LockIn` (plain); priority from the streamer's bit, round robin from the last pick, idle restart,
+lock (sparse). The DMA takes whole superbanks (`dma_data_width / data_width` banks), refusing narrow
+winners. Closes open item 58 (SG7). → snax-gvsoc `SG3.md`, `SG7.md`.
 
 **D123** · scope — A SNAX-GVSoC model is checked against snax_cluster's RTL by building one ELF
 and running it on both, comparing the counters that do not depend on the core's timing (each
@@ -398,16 +401,19 @@ the whole system: D124's comparison, FLOW3 and GEN2 build on it. → snax-gvsoc 
 STATUS (M16).
 
 **D124** · scope — SNAX-GVSoC is held to snax_cluster's RTL per phase of one ELF: counters and
-errors equal, growing phases within 10%, the rest explained (open items 65–67), checked by hand
-from fresh runs; `make regress` checks every program exits 0, in CI on each push to main and PR.
-→ snax-gvsoc `SG5.md`, `SG6.md`, STATUS (M16, CI1).
+errors equal, growing phases within 10%, the rest explained (open items 65–67), checked by hand from
+fresh runs; `make regress` (CI, each push to main and PR) checks every program exits 0, and
+`dma-timing` that `busy`, `r`, `w` stay the RTL's (D123, SG7). → snax-gvsoc `SG5.md`–`SG7.md`,
+STATUS (M16, CI1).
 
 **D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight
-(`num_int_outstanding_loads`; a core property in GVSoC's LSU, no limit elsewhere) and the RTL's
-load-to-load cycles (4 from L1, 14 from DRAM) on the core's data path. Instruction fetch keeps
-GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`, `snax/snax_alu.py`.
+(`num_int_outstanding_loads`, a core property in GVSoC's LSU), the RTL's load-to-load cycles (4 from
+L1, 14 from DRAM; `tcdm` 2), and, since SG7, the core going on after a load answered later until the
+next load or a use of its register. Fetch keeps GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`,
+`SG7.md`, `snax/snax_alu.py`.
 
 **D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software and
 generated headers in `sw/`, refreshed by hand with `make sync-snax-cluster`, whose diff is the check
-that the two still match; a snax_cluster checkout is needed only for the RTL and for sync.
-→ snax-gvsoc `sw/README.md`, STATUS (M16, CI1).
+that the two still match; the sparse hjson is copied too, its headers checked equal to the old one's
+(SG7). A snax_cluster checkout is needed only for the RTL and sync. → snax-gvsoc `sw/README.md`,
+STATUS (M16, CI1).
