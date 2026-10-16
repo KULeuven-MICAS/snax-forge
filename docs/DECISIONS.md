@@ -415,5 +415,5 @@ next load or a use of its register. Fetch keeps GVSoC's cache (open item 65). �
 **D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software and
 generated headers in `sw/`, refreshed by hand with `make sync-snax-cluster`, whose diff is the check
 that the two still match; the sparse hjson is copied too, its headers checked equal to the old one's
-(SG7). A snax_cluster checkout is needed only for the RTL and sync. → snax-gvsoc `sw/README.md`,
-STATUS (M16, CI1).
+(SG7). A snax_cluster checkout is needed only for the RTL and sync. Pin: snax_cluster `05615e4`
+(#658, SG8). → snax-gvsoc `sw/README.md`, STATUS (M16, CI1).

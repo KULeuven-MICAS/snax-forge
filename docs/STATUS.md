@@ -78,7 +78,7 @@ that the DMA's counters stay the RTL's (D124).
 | SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed; `make regress` pass/finish only, the RTL compared by hand (D124); snax_cluster pinned at `9fbf35d` (#657). Right after SG5, before the housekeeping pass | SG5 | `snax-csr`, extended with every CSR form, passes on SNAX-GVSoC with no warning; its original four parts pass on the RTL; `snax-alu` at five sizes on the RTL equals SG5's RTL tables | `done` |
 | CI1 | CI for snax-gvsoc, in two rounds: first the programs build from a pinned copy of snax_cluster's software in `sw/` with `make sw` (D126); then a workflow on push to main and on pull requests, in snax-forge's image, GVSoC built for `snitch;snax_alu` and `make regress` (D124), building and testing only `snax/`, `sw/` and `tests/snax/`, GVSoC's other components out. After SG6 and the housekeeping pass | SG6 | A fresh clone with no snax_cluster beside it passes `make regress`; the stripped ELFs equal those built from snax_cluster at the pin; a pull request that breaks a program fails the check | `done` |
 | SG7 | snax_cluster's sparse interconnect in SNAX-GVSoC (D119, D122): the crossbar's sparse pick and the streamer's priority bit, and a `snax_alu_sparse` target from `cfg/snax_alu_cluster.hjson` sharing `snax_alu`'s ELFs (D126); the cores and AXI into the crossbar on both SNAX targets, the core going on after a pending L1 load (D125); the DMA's superbank as a wide input that refuses narrow winners, its beat cycles split against the RTL (D121); `core-tcdm`, `dma-tcdm` and two `stream-timing` cases; `dma-timing` failing when `busy`, `r` or `w` leave the RTL's (D124). Detail in snax-gvsoc `SG7.md` | CI1 | Both picks equal their RTL modules in Verilator; the compared counters equal on the plain RTL and target and on the sparse RTL and target, but `subword`'s SC on the sparse RTL (SG8); `snax-alu`'s phases within SG5's target; `make regress` passes on both targets | `done` |
-| SG8 | snax_cluster's sparse wrapper drives the memory side's user field (`core_id`, `is_core`), so the AMO shim's LR/SC works on the sparse RTL; agreed with the sparse interconnect's other users first | SG7 | `core-tcdm`'s `subword` returns 0 on the sparse RTL, as on the other three sides | todo |
+| SG8 | snax_cluster's sparse wrapper drives the memory side's user field (`core_id`, `is_core`), so the AMO shim's LR/SC works on the sparse RTL; agreed with the sparse interconnect's other users first | SG7 | `core-tcdm`'s `subword` returns 0 on the sparse RTL, as on the other three sides | `done` |
 
 ## M14: Generation against the baseline (D111, D116)
 
@@ -113,8 +113,8 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 to SG7 are done (snax-gvsoc; SG6 merged as snax-gvsoc #6, log in
-`docs/notes/NOTES.md` there; snax_cluster pinned at `9fbf35d`, #657).
+SG1 to SG8 are done (snax-gvsoc; SG6 merged as snax-gvsoc #6, log in
+`docs/notes/NOTES.md` there; snax_cluster pinned at `05615e4`, #658).
 SNAX-GVSoC is the baseline: `snax-alu` at five sizes is within 2% of
 snax_cluster's RTL on the cluster's phases and on the total up to the ALU's
 counter at 1024 and 4096, every counter and error count equal, the remaining
@@ -125,13 +125,14 @@ finishes (D124). The housekeeping pass over snax-gvsoc's code is done
 (`ry/housekeeping`). CI1 is done (the `ry/ci1` pull requests of snax-gvsoc
 and here): the programs build from snax-gvsoc's `sw/` (D126), and its
 workflow runs `make regress` on every push to main and every pull request
-(D124). SG7 is done (snax-gvsoc `ry/sg7-sparse`, `SG7.md`): both SNAX
+(D124). SG7 is done (snax-gvsoc #10, main 9de5ec9e, `SG7.md`): both SNAX
 targets put the streamer's ports, the cores, AXI and the DMA's superbanks
 through one crossbar with the plain or the sparse interconnect's arbiter
-(D122), and give that RTL's compared counters on every program but the
-`subword` SC on the sparse RTL, an RTL issue (SG8); `dma-timing` fails when
-the DMA's own timing leaves the RTL's. Next: SG8, then planning one
-generator (open item 68), then GEN1.
+(D122), and give that RTL's compared counters on every program; `dma-timing`
+fails when the DMA's own timing leaves the RTL's. SG8 is done: snax_cluster
+#658 carries the TCDM user field through the sparse interconnect, so
+`subword`'s SC passes on the sparse RTL too; snax-gvsoc pins snax_cluster at
+`05615e4`. Next: planning the single generator (open item 68), then GEN1.
 
 ## Open Items
 
