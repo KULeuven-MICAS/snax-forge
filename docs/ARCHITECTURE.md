@@ -117,13 +117,13 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 |---|---|---|---|---|
 | Importer | `dfg/import_sdfg.py` | a kernel's simplified SDFG | `.snaxdfg` | built |
 | Reference executor | `dfg/execute.py` | `.snaxdfg`, inputs | golden output | built |
-| SNAX-BRM | `brm/` | hand-written BRMs | instances, accelerator entries | built; GVSoC output M14 |
+| SNAX-BRM | `brm/` | hand-written BRMs | instances, accelerator entries | built; binding GEN3 (D129) |
 | SNAX-SANDBOX | `sandbox/` | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step | built |
 | Design step | `design/` | bound graph, platform | design point | built |
 | SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program | built; C program M14 |
 | SNAX-GVSoC | `snax-gvsoc` repo | hjson, program, accelerators | profile, trace, output | M16 |
 | SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | until RET1 |
-| HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14 |
+| HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
 | Flow | `flow/` | recipe or bound graph, platform | all of the above, checked | built |
 | Viewers | `viz/` | run directories, `.snaxdfg` files | local HTML views | built |
 | Reports | `report/` | a flow folder or run directory | `design.md`, `run.md` | built |
@@ -168,9 +168,10 @@ Timing is always the user's numbers. `Brm.resolve` makes an instance from an
 implementation and its design params. The library holds `elementwise_add`,
 `elementwise_mul` and `accumulate`.
 
-Each BRM has two outputs **[PLANNED, M14]**: the GVSoC accelerator (at first
-the generic accelerator's parameters, GEN3) and the Chisel RTL with SNAX's
-shell wrapper (GEN1). Both are accepted when they reproduce the M16 baseline.
+Each BRM has two outputs **[PLANNED, M14]**: first the GVSoC accelerator
+from its binding on `SnaxUnit` and `SnaxShell` (GEN3, D128, D129), then the
+Chisel RTL with the generated shell wrapper (GEN1, D130). Both are accepted
+when they reproduce the M16 baseline.
 
 ### 5.4 SNAX-SANDBOX and the design step
 
@@ -229,8 +230,9 @@ hashes recorded and the license kept (D116). It holds:
   streamer's ports, the cores and AXI, copying the plain or the sparse
   interconnect's arbiter, with the DMA taking whole superbanks (SG3, SG7,
   snax-gvsoc #10, D122); the hand-written **`snax_alu`**
-  (SG4), and a **generic accelerator** (lanes, rates, latency, II, drain,
-  op) that a BRM parameterises (GEN3); each checked against the RTL by
+  (SG4), and the generic **`SnaxUnit`** and **`SnaxShell`** with a
+  composite generated per design point in place of the hand-written
+  `SnaxAluAcc` (GEN3, D128); each checked against the RTL by
   running the same ELF on both and comparing counters (D123), and the
   whole cluster per phase against a three-tier target, checked by hand from
   fresh runs of one ELF on both sides, while `make regress` checks that
@@ -267,7 +269,9 @@ runs (D111) **[PLANNED, M14]**:
   and SNAX-GVSoC reads the same file (LNK2);
 - a **`Bender.yml`** that snax_cluster takes as one dependency (open item
   51);
-- the **program** (section 5.5).
+- the **program** (section 5.5);
+- for SNAX-GVSoC, the **accelerator composite** on `SnaxUnit` and
+  `SnaxShell` and the **CSR headers** (GEN3, D128).
 
 **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output,
 latency and II.
@@ -330,8 +334,9 @@ Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`). The order
 from here (D116, `docs/STATUS.md` has the tasks):
 
 1. **M16:** SNAX-GVSoC aligned with snax_cluster, the baseline.
-2. **M14:** generation against the baseline (GEN1, GEN3, LNK1, LNK2, GEN2),
-   the flow on SNAX-GVSoC (FLOW3), SNAX-MODEL removed (RET1).
+2. **M14** (D127): to SNAX-GVSoC first (LNK1, GEN3, LNK2a, GEN2a, FLOW3),
+   then to snax_cluster (GEN1, LNK2b, GEN2b), then clean-up (RET1, a
+   housekeeping pass, one generator).
 3. **M7 tier A:** 2-D plumbing, MatMul, float64 (atax, bicg, mvt, k3mm).
 4. **M13:** the composed bind, then the composed accelerator in SNAX (LNK3).
 5. **M7 tier B:** scalar arguments and in-place updates.
