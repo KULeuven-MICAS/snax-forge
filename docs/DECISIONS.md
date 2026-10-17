@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D127**.
+  number: **D131**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -30,12 +30,12 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D124 D126 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D124 D126 D127 D130 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
-| gvsoc | D120 D121 D122 D125 |
-| brm | D68 D70 D82 D103 |
+| gvsoc | D120 D121 D122 D125 D128 |
+| brm | D68 D70 D82 D103 D129 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D104 |
@@ -345,7 +345,8 @@ apart. That is how a hand-edited graph is run and checked, though it cannot be r
 
 **D111** · scope — SNAX-FORGE generates a bundle per design point for SNAX: the accelerator RTL
 with a shell wrapper, the cluster hjson, a `Bender.yml` and the program from the task list as
-direct CSR writes. SNAX's own generators build the rest, so the hjson describes the cluster once.
+direct CSR writes; for SNAX-GVSoC also the accelerator composite and the CSR headers (D128).
+SNAX's own generators build the rest, so the hjson describes the cluster once.
 
 **D112** · scope — A composition is one accelerator: one recipe step binds a connected group of
 tasklets to a chain of unit BRMs linked by FIFOs, with streamers on the outer ports only, so one
@@ -417,3 +418,25 @@ generated headers in `sw/`, refreshed by hand with `make sync-snax-cluster`, who
 that the two still match; the sparse hjson is copied too, its headers checked equal to the old one's
 (SG7). A snax_cluster checkout is needed only for the RTL and sync. Pin: snax_cluster `05615e4`
 (#658, SG8). → snax-gvsoc `sw/README.md`, STATUS (M16, CI1).
+
+**D127** · scope — M14 goes to SNAX-GVSoC first, then to snax_cluster, then clean-up: LNK1, GEN3,
+LNK2a, GEN2a, FLOW3; GEN1, LNK2b, GEN2b; RET1, a housekeeping pass, one generator (open item 68).
+GEN3 models the Chisel blocks before GEN1 generates them, so the model side is tried first.
+→ STATUS (M14).
+
+**D128** · gvsoc — Generated accelerators run on two hand-written generic components in
+snax-gvsoc, `SnaxUnit` (a Chisel block's datapath) and `SnaxShell` (the CSR manager), every number a
+property, so a sweep compiles nothing; snax-forge generates only Python (composite, target) and
+headers per design point. One generated point is a fixture in snax-gvsoc (as D126), so neither
+repo's CI needs the other. → snax-gvsoc `GEN3.md`.
+
+**D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it:
+`block`, `args`, `control` (`counted`, `stream`), `csrs` (configuration fields in CSR order, then
+start), `wait` (`lockstep`, `pipelined`), each kind registered (D19); GEN3 models it, GEN1
+elaborates it. Amends D68. Closes open item 64. → C§10.
+
+**D130** · scope — Generated accelerators follow GeMMX's shell contract in snax_cluster: a `ctrl`
+configuration with valid and ready (a start waits while busy), busy and a counter (cycles from an
+accepted start to done) read-only, data ports to the streamer as GeMMX's, the shell wrapper written
+by the generator. snax_alu keeps its own rules as the baseline. Narrows open item 63.
+→ snax-gvsoc `GEN3.md`.
