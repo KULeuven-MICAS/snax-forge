@@ -170,8 +170,9 @@ implementation and its design params. The library holds `elementwise_add`,
 
 Each BRM has two outputs **[PLANNED, M14]**: first the GVSoC accelerator
 from its binding on `SnaxUnit` and `SnaxShell` (GEN3, D128, D129), then the
-Chisel RTL with the generated shell wrapper (GEN1, D130). Both are accepted
-when they reproduce the M16 baseline.
+Chisel RTL with the generated shell wrapper (GEN1, D130). The pair is
+accepted when one ELF gives the same counters on both (D123, GEN2b), the
+GVSoC side first against the BRM's predicted counter (GEN3, D127).
 
 ### 5.4 SNAX-SANDBOX and the design step
 
@@ -196,7 +197,7 @@ platform read from snax_cluster's hjson (LNK1).
 Turns a design point into what a run needs, and decides nothing.
 
 - **Cluster file** (D88, `lower/cluster.py`): SNAX-MODEL's input. Under
-  SNAX-GVSoC its role goes to the cluster hjson **[PLANNED, M14: LNK2]**.
+  SNAX-GVSoC its role goes to the cluster hjson **[PLANNED, M14: LNK2a]**.
 - **Task list** (D89, `lower/derive.py`; C§9): one group of tasks per
   accelerated node in execution order, loads before and stores after,
   streamer values from the memlets through the memory plan, `after` holding
@@ -205,7 +206,7 @@ Turns a design point into what a run needs, and decides nothing.
 - **Command list** (D45, D64, `lower/commands.py`): the task list expanded
   into SNAX-MODEL's `csr_write`, `csr_read` and `wait`, with only the waits
   correctness needs. Goes with SNAX-MODEL (RET1).
-- **C program** **[PLANNED, M14: GEN2]**: the task list as direct CSR writes
+- **C program** **[PLANNED, M14: GEN2a]**: the task list as direct CSR writes
   on the Snitch core, with a cycle mark per task, a header of the
   accelerator's CSR names and `data.h`, in SNAX's real register layout. The
   same program runs on SNAX-GVSoC and on snax_cluster RTL.
@@ -217,7 +218,7 @@ chosen GVSoC commit with its history, the submodules folded in, the upstream
 hashes recorded and the license kept (D116). It holds:
 
 - a **SNAX target** per cluster: `snax_alu` written by hand (SG1), read
-  from the cluster hjson later (LNK2);
+  from the cluster hjson later (LNK2a);
 - a small **core patch**: the Snitch core sends CSRs 0x3C0 to 0x5FF as
   32-bit IO requests at 4 × CSR on its `snax_csr` port, bound to an
   accelerator component per core, so a `csrw` reaches the accelerator's
@@ -265,10 +266,10 @@ runs (D111) **[PLANNED, M14]**:
   the Chisel blocks in `hw/chisel/` (D91), with a CSR adapter and a shell
   wrapper on SNAX's ports (GEN1);
 - **cluster hjson**: TCDM size and banks, DMA width, and per accelerator its
-  CSR counts and streamer template; SNAX's own generators build the rest,
-  and SNAX-GVSoC reads the same file (LNK2);
-- a **`Bender.yml`** that snax_cluster takes as one dependency (open item
-  51);
+  CSR counts and streamer template; SNAX's own generators build the rest
+  (LNK2b), and SNAX-GVSoC reads the same file (LNK2a);
+- a **`Bender.yml`** that snax_cluster takes as one dependency (LNK2b, open
+  item 51);
 - the **program** (section 5.5);
 - for SNAX-GVSoC, the **accelerator composite** on `SnaxUnit` and
   `SnaxShell` and the **CSR headers** (GEN3, D128).
@@ -325,8 +326,9 @@ hand-written `snax-alu` app runs unchanged on both, at a few sizes, and the
 deviation is explained per phase against an error target fixed beforehand
 (open item 3), checked by hand from fresh runs of one ELF; a regression
 checks that every program finishes (SG5, SG6, D124). Generation (M14) is then
-accepted when the generated accelerator, hjson and program reproduce that
-baseline on both sides.
+accepted when one ELF gives the same counters on the generated GVSoC
+accelerator and the generated RTL (D123, GEN2b), the GVSoC side first against
+the BRM's predicted counter (GEN3, D127).
 
 ## 8. Build Order
 

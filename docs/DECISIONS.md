@@ -224,7 +224,8 @@ not in git; `pixi run scenarios`, `model-run` and every test session write them.
 
 **D68** · brm — A BRM is a hand-written JSON file: a shared part (interface, function, dataflow,
 pattern) and implementations (source, supported values, timing, binding); timing is always the
-user's numbers. `resolve` makes an instance and checks it against the model's kind. → C§10.
+user's numbers; `binding` names the Chisel block and how the BRM fills it (D129). `resolve` makes
+an instance and checks it against the model's kind. → C§10.
 
 **D69** · model — A reader whose loop-0 temporal stride is 0 reads each group once and hands it
 out `bound[0]` times, as SNAX's reader does. Closes that half of open item 5.
@@ -359,10 +360,10 @@ its hjson). `vecadd` and `dot` stay `int64`. → STATUS (M7).
 **D116** · scope — SNAX-GVSoC replaces SNAX-MODEL (GVS4, closing X1): a GVSoC model of the SNAX
 cluster in which a Snitch core runs the real program, so control cost is measured, not declared.
 It is first aligned with snax_cluster by hand and checked against its RTL (M16); then each BRM
-generates a GVSoC accelerator and its Chisel RTL, accepted when the pair reproduces that baseline
-(M14), and SNAX-MODEL goes with its entries here (RET1). Amends D6, D36–D40 (the CSR transport
-stays, the layout becomes SNAX's), D45, D51–D53, D68, principles 1 and 3, the RISC-V non-goal.
-→ STATUS (M16).
+generates a GVSoC accelerator and its Chisel RTL, accepted when one ELF gives the same counters on
+both (D123, GEN2b), the GVSoC side first against the BRM's predicted counter (GEN3, D127), and
+SNAX-MODEL goes with its entries here (RET1). Amends D6, D36–D40 (the CSR transport stays, the
+layout becomes SNAX's), D45, D51–D53, D68, principles 1 and 3, the RISC-V non-goal. → STATUS (M16).
 
 **D117** · docs — The documents stay short: one fact in one place, a decision only for a choice
 someone may want to reverse, each entry in its current form in at most three lines, and the done
@@ -376,7 +377,7 @@ environment. Replaces SG0's two images (one in snax-gvsoc). → README (Setup).
 **D119** · scope — M16 follows what `snax-alu` needs on the snax_alu cluster, plain interconnect as
 baseline and sparse: target and CSR port (SG1), DMA (SG2), streamer (SG3), ALU (SG4), cycles against
 RTL (SG5), Zicsr (SG6), the sparse interconnect (SG7), LR/SC on the sparse RTL (SG8). Reading the
-hjson moves to LNK2, the generic accelerator to GEN3. → STATUS (M16).
+hjson moves to LNK2a, the generic accelerator to GEN3. → STATUS (M16).
 
 **D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests at 4 × CSR on
 its `snax_csr` port to an accelerator component per core, so a SNAX block is a plain IO slave. Both
@@ -398,7 +399,7 @@ winners. Closes open item 58 (SG7). → snax-gvsoc `SG3.md`, `SG7.md`.
 **D123** · scope — A SNAX-GVSoC model is checked against snax_cluster's RTL by building one ELF
 and running it on both, comparing the counters that do not depend on the core's timing (each
 program names them), not by predicted values. Build once, run both, compare becomes a feature of
-the whole system: D124's comparison, FLOW3 and GEN2 build on it. → snax-gvsoc `SG4.md`,
+the whole system: D124's comparison, FLOW3 and GEN2b build on it. → snax-gvsoc `SG4.md`,
 STATUS (M16).
 
 **D124** · scope — SNAX-GVSoC is held to snax_cluster's RTL per phase of one ELF: counters and
@@ -433,7 +434,7 @@ repo's CI needs the other. → snax-gvsoc `GEN3.md`.
 **D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it:
 `block`, `args`, `control` (`counted`, `stream`), `csrs` (configuration fields in CSR order, then
 start), `wait` (`lockstep`, `pipelined`), each kind registered (D19); GEN3 models it, GEN1
-elaborates it. Amends D68. Closes open item 64. → C§10.
+elaborates it. Folded into D68. Closes open item 64. → C§10.
 
 **D130** · scope — Generated accelerators follow GeMMX's shell contract in snax_cluster: a `ctrl`
 configuration with valid and ready (a start waits while busy), busy and a counter (cycles from an

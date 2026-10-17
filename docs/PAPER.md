@@ -288,7 +288,7 @@ second line cannot be written is a threat (Q11).
 | Feature | Needed by | Where |
 |---|---|---|
 | SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (SG0–SG5) |
-| Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (GEN1–GEN3, LNK1, LNK2) |
+| Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (LNK1, GEN3, LNK2a, GEN2a, FLOW3, GEN1, LNK2b, GEN2b) |
 | 2-D plumbing, the kernel set | E3, E4 | M7 (ND1, FE1a–FE3, LOW4) |
 | Composed bind | E1, E4–E6 | M13 |
 | Spatial-array and SIMD unit BRMs | E1, E5, E6 | new BRM tasks |

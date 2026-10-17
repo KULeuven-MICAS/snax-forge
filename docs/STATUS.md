@@ -63,7 +63,7 @@ server; the programs build from snax-gvsoc's copy of snax_cluster's software
 Each task is planned in its own round. A SNAX-GVSoC model is checked by
 running the same ELF on both sides and comparing the counters that do not
 depend on the core's timing (D123), a feature of the whole system that the
-comparison by hand (D124), FLOW3 and GEN2 build on. `make regress` in
+comparison by hand (D124), FLOW3 and GEN2b build on. `make regress` in
 snax-gvsoc checks that every program finishes with exit 0, and `dma-timing`
 that the DMA's counters stay the RTL's (D124).
 
@@ -80,7 +80,7 @@ that the DMA's counters stay the RTL's (D124).
 | SG7 | snax_cluster's sparse interconnect in SNAX-GVSoC (D119, D122): the crossbar's sparse pick and the streamer's priority bit, and a `snax_alu_sparse` target from `cfg/snax_alu_cluster.hjson` sharing `snax_alu`'s ELFs (D126); the cores and AXI into the crossbar on both SNAX targets, the core going on after a pending L1 load (D125); the DMA's superbank as a wide input that refuses narrow winners, its beat cycles split against the RTL (D121); `core-tcdm`, `dma-tcdm` and two `stream-timing` cases; `dma-timing` failing when `busy`, `r` or `w` leave the RTL's (D124). Detail in snax-gvsoc `SG7.md` | CI1 | Both picks equal their RTL modules in Verilator; the compared counters equal on the plain RTL and target and on the sparse RTL and target, but `subword`'s SC on the sparse RTL (SG8); `snax-alu`'s phases within SG5's target; `make regress` passes on both targets | `done` |
 | SG8 | snax_cluster's sparse wrapper drives the memory side's user field (`core_id`, `is_core`), so the AMO shim's LR/SC works on the sparse RTL; agreed with the sparse interconnect's other users first | SG7 | `core-tcdm`'s `subword` returns 0 on the sparse RTL, as on the other three sides | `done` |
 
-## M14: Generation against the baseline (D111, D116)
+## M14: Generation: SNAX-GVSoC, then snax_cluster (D111, D116, D127)
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
@@ -93,7 +93,7 @@ that the DMA's counters stay the RTL's (D124).
 | LNK2b | B. The bundle for snax_cluster: the hjson, a `Bender.yml`, the changes snax_cluster needs (open item 51) | GEN1, LNK2a | snax_cluster builds from it with only the listed changes | todo |
 | GEN2b | B. GEN2a's ELF on snax_cluster's RTL, compared as D123 and D124 do | LNK2b, GEN2a | Deviation explained per phase | todo |
 | RET1 | C. SNAX-MODEL removed: `snax_model/`, `scenarios/`, their tests, the command list (D45), C§2–C§8, the model entries of DECISIONS (to Retired) | FLOW3 | `pixi run test` passes without it | todo |
-| LNK3 | The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2b | Deviation explained per phase | todo |
+| LNK3 | After M13. The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2b | Deviation explained per phase | todo |
 
 After RET1, a housekeeping pass and the single generator (open item 68).
 
@@ -136,8 +136,9 @@ through one crossbar with the plain or the sparse interconnect's arbiter
 fails when the DMA's own timing leaves the RTL's. SG8 is done: snax_cluster
 #658 carries the TCDM user field through the sparse interconnect, so
 `subword`'s SC passes on the sparse RTL too; snax-gvsoc pins snax_cluster at
-`05615e4`. M16 closes once its round 2 pull requests are merged. Next: GEN3,
-planned in snax-gvsoc `GEN3.md` (D127), with LNK1 before GEN3's step 3.
+`05615e4`. M16 closes once SG8's round 2 pull requests (the snax-gvsoc pin
+bump, the SG8 notes, these docs) are merged. Next: GEN3, planned in
+snax-gvsoc `GEN3.md` (D127), with LNK1 before GEN3's step 3.
 
 ## Open Items
 
@@ -217,7 +218,7 @@ Next free number: 77.
 51. What snax_cluster has to change for a generated accelerator: a Bender
     dependency on the bundle (through `Bender.local`), a target listing the
     files `snaxgen` generates, later a file list `snaxgen` writes itself; the
-    wrapper is named `<name>_shell_wrapper`. Settled in LNK2.
+    wrapper is named `<name>_shell_wrapper`. Settled in LNK2b.
 53. A link between two shell accelerators: amends D12 and D51 and the SNAX
     shell. Parked (D112).
 54. Which kernels take PolyBench's SMALL in a 128 KiB L1, and the tolerance
@@ -263,9 +264,9 @@ Next free number: 77.
 68. Generation is spread out: snaxgen and Chisel in snax_cluster (the
     wrappers, `streamer_csr_addr_map.h`), clustergen and regtool outputs
     copied into snax-gvsoc's `sw/` (D126), the hand-written `snax_alu`
-    target, and GEN1, GEN2, GEN3 and LNK2 to come. One generator in
-    snax-forge, planned in phase C, after RET1 (D127), which also decides
-    whether it makes `sw/generated/`.
+    target, and GEN1, GEN2a, GEN2b, GEN3, LNK2a and LNK2b to come. One
+    generator in snax-forge, planned in phase C, after RET1 (D127), which
+    also decides whether it makes `sw/generated/`.
 69. The SNAX crossbar's AXI input (14) is wired on both SNAX targets but no
     program sends through it, on either side (snax-gvsoc `SG7.md`, round 3).
 70. On SNAX-GVSoC a store or AMO after a pending L1 load waits for the
