@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D127**.
+  number: **D131**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -30,12 +30,12 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D124 D126 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D124 D126 D127 D130 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
-| gvsoc | D120 D121 D122 D125 |
-| brm | D68 D70 D82 D103 |
+| gvsoc | D120 D121 D122 D125 D128 |
+| brm | D68 D70 D82 D103 D129 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D104 |
@@ -224,7 +224,8 @@ not in git; `pixi run scenarios`, `model-run` and every test session write them.
 
 **D68** · brm — A BRM is a hand-written JSON file: a shared part (interface, function, dataflow,
 pattern) and implementations (source, supported values, timing, binding); timing is always the
-user's numbers. `resolve` makes an instance and checks it against the model's kind. → C§10.
+user's numbers; `binding` names the Chisel block and how the BRM fills it (D129). `resolve` makes
+an instance and checks it against the model's kind. → C§10.
 
 **D69** · model — A reader whose loop-0 temporal stride is 0 reads each group once and hands it
 out `bound[0]` times, as SNAX's reader does. Closes that half of open item 5.
@@ -345,7 +346,8 @@ apart. That is how a hand-edited graph is run and checked, though it cannot be r
 
 **D111** · scope — SNAX-FORGE generates a bundle per design point for SNAX: the accelerator RTL
 with a shell wrapper, the cluster hjson, a `Bender.yml` and the program from the task list as
-direct CSR writes. SNAX's own generators build the rest, so the hjson describes the cluster once.
+direct CSR writes; for SNAX-GVSoC also the accelerator composite and the CSR headers (D128).
+SNAX's own generators build the rest, so the hjson describes the cluster once.
 
 **D112** · scope — A composition is one accelerator: one recipe step binds a connected group of
 tasklets to a chain of unit BRMs linked by FIFOs, with streamers on the outer ports only, so one
@@ -358,10 +360,10 @@ its hjson). `vecadd` and `dot` stay `int64`. → STATUS (M7).
 **D116** · scope — SNAX-GVSoC replaces SNAX-MODEL (GVS4, closing X1): a GVSoC model of the SNAX
 cluster in which a Snitch core runs the real program, so control cost is measured, not declared.
 It is first aligned with snax_cluster by hand and checked against its RTL (M16); then each BRM
-generates a GVSoC accelerator and its Chisel RTL, accepted when the pair reproduces that baseline
-(M14), and SNAX-MODEL goes with its entries here (RET1). Amends D6, D36–D40 (the CSR transport
-stays, the layout becomes SNAX's), D45, D51–D53, D68, principles 1 and 3, the RISC-V non-goal.
-→ STATUS (M16).
+generates a GVSoC accelerator and its Chisel RTL, accepted when one ELF gives the same counters on
+both (D123, GEN2b), the GVSoC side first against the BRM's predicted counter (GEN3, D127), and
+SNAX-MODEL goes with its entries here (RET1). Amends D6, D36–D40 (the CSR transport stays, the
+layout becomes SNAX's), D45, D51–D53, D68, principles 1 and 3, the RISC-V non-goal. → STATUS (M16).
 
 **D117** · docs — The documents stay short: one fact in one place, a decision only for a choice
 someone may want to reverse, each entry in its current form in at most three lines, and the done
@@ -375,7 +377,7 @@ environment. Replaces SG0's two images (one in snax-gvsoc). → README (Setup).
 **D119** · scope — M16 follows what `snax-alu` needs on the snax_alu cluster, plain interconnect as
 baseline and sparse: target and CSR port (SG1), DMA (SG2), streamer (SG3), ALU (SG4), cycles against
 RTL (SG5), Zicsr (SG6), the sparse interconnect (SG7), LR/SC on the sparse RTL (SG8). Reading the
-hjson moves to LNK2, the generic accelerator to GEN3. → STATUS (M16).
+hjson moves to LNK2a, the generic accelerator to GEN3. → STATUS (M16).
 
 **D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests at 4 × CSR on
 its `snax_csr` port to an accelerator component per core, so a SNAX block is a plain IO slave. Both
@@ -397,7 +399,7 @@ winners. Closes open item 58 (SG7). → snax-gvsoc `SG3.md`, `SG7.md`.
 **D123** · scope — A SNAX-GVSoC model is checked against snax_cluster's RTL by building one ELF
 and running it on both, comparing the counters that do not depend on the core's timing (each
 program names them), not by predicted values. Build once, run both, compare becomes a feature of
-the whole system: D124's comparison, FLOW3 and GEN2 build on it. → snax-gvsoc `SG4.md`,
+the whole system: D124's comparison, FLOW3 and GEN2b build on it. → snax-gvsoc `SG4.md`,
 STATUS (M16).
 
 **D124** · scope — SNAX-GVSoC is held to snax_cluster's RTL per phase of one ELF: counters and
@@ -417,3 +419,25 @@ generated headers in `sw/`, refreshed by hand with `make sync-snax-cluster`, who
 that the two still match; the sparse hjson is copied too, its headers checked equal to the old one's
 (SG7). A snax_cluster checkout is needed only for the RTL and sync. Pin: snax_cluster `05615e4`
 (#658, SG8). → snax-gvsoc `sw/README.md`, STATUS (M16, CI1).
+
+**D127** · scope — M14 goes to SNAX-GVSoC first, then to snax_cluster, then clean-up: LNK1, GEN3,
+LNK2a, GEN2a, FLOW3; GEN1, LNK2b, GEN2b; RET1, a housekeeping pass, one generator (open item 68).
+GEN3 models the Chisel blocks before GEN1 generates them, so the model side is tried first.
+→ STATUS (M14).
+
+**D128** · gvsoc — Generated accelerators run on two hand-written generic components in
+snax-gvsoc, `SnaxUnit` (a Chisel block's datapath) and `SnaxShell` (the CSR manager), every number a
+property, so a sweep compiles nothing; snax-forge generates only Python (composite, target) and
+headers per design point. One generated point is a fixture in snax-gvsoc (as D126), so neither
+repo's CI needs the other. → snax-gvsoc `GEN3.md`.
+
+**D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it:
+`block`, `args`, `control` (`counted`, `stream`), `csrs` (configuration fields in CSR order, then
+start), `wait` (`lockstep`, `pipelined`), each kind registered (D19); GEN3 models it, GEN1
+elaborates it. Folded into D68. Closes open item 64. → C§10.
+
+**D130** · scope — Generated accelerators follow GeMMX's shell contract in snax_cluster: a `ctrl`
+configuration with valid and ready (a start waits while busy), busy and a counter (cycles from an
+accepted start to done) read-only, data ports to the streamer as GeMMX's, the shell wrapper written
+by the generator. snax_alu keeps its own rules as the baseline. Narrows open item 63.
+→ snax-gvsoc `GEN3.md`.

@@ -288,7 +288,7 @@ second line cannot be written is a threat (Q11).
 | Feature | Needed by | Where |
 |---|---|---|
 | SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (SG0–SG5) |
-| Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (GEN1–GEN3, LNK1, LNK2) |
+| Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (LNK1, GEN3, LNK2a, GEN2a, FLOW3, GEN1, LNK2b, GEN2b) |
 | 2-D plumbing, the kernel set | E3, E4 | M7 (ND1, FE1a–FE3, LOW4) |
 | Composed bind | E1, E4–E6 | M13 |
 | Spatial-array and SIMD unit BRMs | E1, E5, E6 | new BRM tasks |
@@ -321,6 +321,11 @@ second line cannot be written is a threat (Q11).
    stitched from the SNAX-DFG into a datapath in a shell), with the simulator
    as the evaluation engine; the flow needs a name of its own, since
    "mid-level synthesis" is XLS's term.
+10. Not settled: in a shared-L1 cluster, how should a workload be split into
+    accelerators, and each accelerator into units and loop placements, given
+    limits on any of bandwidth, area and throughput, when every level is
+    described to the one above by the same small set of numbers (open item
+    76)?
 
 ## 11. Questions that shape the paper
 

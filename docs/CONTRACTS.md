@@ -615,7 +615,7 @@ registered with `register_check` (section 14).
 SNAX-LOWER's ordered list of tasks (D64): which component runs which task
 with which values, where each task is configured and started, and what it
 waits for. It is the hand-off to every backend: `lower_program(tasks,
-cluster)` turns it into SNAX-MODEL's program of section 5, and GEN2 will
+cluster)` turns it into SNAX-MODEL's program of section 5, and GEN2a will
 turn it into C (D116). It is derived from a design point (D89,
 `snax_forge/lower/derive.py`, `pixi run lower tasks DESIGN_POINT`; the rules
 below) or written by hand, as every scenario's `tasks.json` is (D65, D67).
@@ -752,7 +752,7 @@ name.
 | `function` | a registered accelerator kind, its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN1) | the accelerator entry, the HW generator (GEN1), the GVSoC accelerator (GEN3) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN3, then `block`, `args`, `control`, `csrs`, `wait`, D129) | the accelerator entry, the GVSoC accelerator (GEN3), the HW generator (GEN1) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source
