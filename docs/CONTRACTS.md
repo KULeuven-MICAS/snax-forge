@@ -752,7 +752,7 @@ name.
 | `function` | a registered accelerator kind, its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN1) | the accelerator entry, the HW generator (GEN1), the GVSoC accelerator (GEN3) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN3, then `block`, `args`, `control`, `csrs`, `wait`, D129) | the accelerator entry, the GVSoC accelerator (GEN3), the HW generator (GEN1) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source
