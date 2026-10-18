@@ -42,9 +42,9 @@ and the counter (D130).
 instance (``gen.instances``: snax_alu's board has one accelerator slot), a
 null binding (``gen.binding``), an unregistered block (``gen.block``), what
 the block's adapter refuses, a port whose lanes are not whole 64-bit
-channels (``gen.dtype``), CSRs past ``SNAX_CSR_LAST`` (``gen.csrs``), a
-symbol of the bound graph still null (``gen.symbols``) and the install
-check (``gen.install``).
+channels (``gen.dtype``), CSRs past ``SNAX_CSR_LAST`` (``gen.csrs``) and
+the install check (``gen.install``). A symbol of the bound graph still null
+never gets here: ``DesignPoint.load`` refuses it (``graph.symbols``).
 
 **The manifest**: ``design``, ``design_point``, ``symbols`` (the bound
 graph's, e.g. ``{"N": 64}``: what a program sizes its data by), ``target``,
@@ -541,9 +541,6 @@ def generate(
         raise GenError(
             "gen.name", f"design {design!r} cannot name a Python module (forge_<design>)"
         )
-    unbound = [s for s, v in point.graph.symbols.items() if v is None]
-    if unbound:
-        raise GenError("gen.symbols", f"symbols {unbound} of {design!r} are null: bind them")
     name, inst, unit = accelerator(point)
     template = streamer_template(point, name, inst)
     l1 = point.platform.l1

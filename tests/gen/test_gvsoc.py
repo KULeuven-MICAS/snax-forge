@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import json
 import re
 from dataclasses import replace
 from pathlib import Path
@@ -12,7 +13,7 @@ import hjson
 import pytest
 
 from snax_forge.brm import Brm, Instance, load_brm
-from snax_forge.design import DesignPoint
+from snax_forge.design import DesignError
 from snax_forge.dfg import Graph
 from snax_forge.gen import (
     BLOCKS,
@@ -315,16 +316,15 @@ def test_a_design_name_that_is_no_identifier(tmp_path):
     assert e.value.code == "gen.name" and not (tmp_path / "out").exists()
 
 
-def test_a_null_symbol_is_refused(tmp_path, monkeypatch):
-    # DesignPoint.load refuses one in a file (graph.symbols); gen.symbols holds
-    # for a point whose graph lost a value after it was checked
+def test_a_null_symbol_stops_at_the_load(tmp_path):
+    """No rule of the generator's own: DesignPoint.load refuses it (graph.symbols)."""
     path = point(tmp_path)
-    loaded = DesignPoint.load(path)
-    loaded.graph.symbols["N"] = None
-    monkeypatch.setattr(gen_mod.DesignPoint, "load", staticmethod(lambda _: loaded))
-    with pytest.raises(GenError, match=r"\['N'\]") as e:
+    d = json.loads(path.read_text())
+    d["graph"]["symbols"]["N"] = None
+    path.write_text(json.dumps(d))
+    with pytest.raises(DesignError, match=r"graph\.symbols"):
         generate(path, tmp_path / "out", root=tmp_path)
-    assert e.value.code == "gen.symbols" and not (tmp_path / "out").exists()
+    assert not (tmp_path / "out").exists()
 
 
 def test_two_instances_are_refused(tmp_path):
