@@ -32,6 +32,9 @@ hjson-py = "==3.1.0"
 # DaCe shells out to cmake + a C++ compiler at *runtime* to build generated
 # code. Pinning them here is what makes the golden-reference CPU compile
 # reproducible across your laptop and the ESAT server.
+# DaCe's setup.py also asks PyPI for scikit-build and cmake when no cmake
+# >= 3.15 is on PATH while the lock is solved (ESAT's Vitis cmake 3.3.2):
+# lock in the image (pixi 0.41.4, as CI), where they stay out; nothing uses them.
 cmake = ">=3.27"
 ninja = ">=1.11"
 cxx-compiler = ">=1.7"
