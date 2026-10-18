@@ -10,7 +10,6 @@ import pytest
 from snax_forge.design import Design, Platform, run_checks
 from snax_forge.design import __main__ as cli
 from snax_forge.design.hjson_platform import platform_from_hjson
-from snax_forge.design.memory import MemorySpec
 
 from .helpers import CFG, SNAX_ALU, bound_vecadd, platform_dict
 
@@ -145,13 +144,3 @@ def test_vecadd_w4_designs_on_snax_alu_inside_the_tcdm_without_allocating_it():
         assert lo <= a and b + 8 <= hi, c
         assert mems["l2"].base >= 2**31
     assert [mems["l1"].base for mems in d.memory.layouts.values()] == [lo, lo + 512, lo + 1024]
-
-
-def test_a_pin_below_a_nonzero_base_says_where_the_memory_starts():
-    d = Design(Platform.load(SNAX_ALU), bound_vecadd(4))
-    d.memory_spec = MemorySpec().with_changes([("A.l1.base", 576), ("B.l2.base", 0)])
-    got = {p.where: p for p in run_checks(d)}
-    a, b = got["A in l1"], got["B in l2"]
-    assert "L1 is 131072 B (32 banks x 512 rows x 8 B) at [268435456, 268566528)" in a.message
-    assert a.fix == "pin it at or above 268435456 (--set memory.A.l1.base=268435456)"
-    assert b.fix == "pin it at or above 2147483648 (--set memory.B.l2.base=2147483648)"

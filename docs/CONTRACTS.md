@@ -1125,7 +1125,7 @@ problems.
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
 | `memory.layout` | a layout whose shape is not its container's |
 | `memory.align` | a base or stride that is not a multiple of the word; a container the DMA moves (in L2 and L1) that is not contiguous, not whole wide beats (open item 38) or not on a beat |
-| `memory.fit` | a layout that leaves its memory (the fix names the rows or L2 size that would hold it, or, below a nonzero base, the pin at the memory's first byte) |
+| `memory.fit` | a layout that leaves its memory, the message naming the memory's bytes `[start, end)`. Past the end the fix names the rows or L2 size that would hold it, after "pin it lower" for a pinned layout; below the start (a nonzero base) it names the pin that puts the layout at the memory's first byte |
 | `memory.overlap` | two layouts in one memory that share bytes, naming the pins (the fix moves the latest pin past everything) |
 | `point.keys` | a design point with unknown or missing keys or a malformed streamer entry |
 | `point.streamers` | a design point whose `streamers` are not the platform's shell for its graph |
