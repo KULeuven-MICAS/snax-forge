@@ -153,7 +153,11 @@ target and manifest to `out/gvsoc/<design>/` (D132); `forge_vecadd`
 (W = 4 on `snax_alu.json`) runs snax-shell with `snax_tiled_add`'s lines.
 Step 4: it also writes the streamer's `streamer_csr_addr_map.h` (the Chisel
 header's defines) and `<instance>_csr.h` (vecadd's `ACC_RW_LOOP_COUNT` 978
-to `ACC_RO_PERF_COUNT` 981). Next, round 3: steps 5 and 6.
+to `ACC_RO_PERF_COUNT` 981). Round 2b: `pixi.lock` written with pixi 0.41.4
+(CI's and the image's); `pixi run -e ci test` passes in full; the generator
+names the design point by its path from the root, so its output is
+byte-identical wherever it is written (`gen.point` outside the root); the
+install check run against the real install. Next, round 3: steps 5 and 6.
 
 ## Open Items
 
