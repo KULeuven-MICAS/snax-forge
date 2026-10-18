@@ -6,6 +6,7 @@ import ast
 import copy
 import re
 from dataclasses import replace
+from pathlib import Path
 
 import hjson
 import pytest
@@ -57,7 +58,7 @@ TILED_ADD_SHELL = {"csr_base": 978, "fields": ["loopCount"]}
 def w4(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("w4")
     out = tmp / "gvsoc" / "vecadd"
-    return out, generate(point(tmp), out)
+    return out, generate(point(tmp), out, root=tmp)
 
 
 def _calls(tree: ast.Module, name: str) -> dict:
@@ -90,8 +91,8 @@ def test_vecadd_w4_files_and_manifest(w4):
     ]  # fmt: skip
     assert sorted(str(f.relative_to(out)) for f in out.rglob("*") if f.is_file()) == sorted(m.files)
     assert m.target_dirs == ["."] and m.trace == "snax_acc0/unit"
-    assert m.design_point == "../../design/vecadd/design_point.json"
-    assert (out / m.design_point).resolve().is_file()
+    assert m.design_point == "design/vecadd/design_point.json"
+    assert (out.parent.parent / m.design_point).is_file()
     assert m.csrs.to_dict() == {
         "streamer": {"first": 960, "last": 977}, "fields": {"loopCount": 978},
         "start": 979, "busy": 980, "counter": 981,
@@ -176,7 +177,7 @@ def test_the_target_puts_the_composite_in_snax_alus_slot(w4):
 
 
 def test_vecadd_w8_gives_eight_channels_per_mover(tmp_path):
-    m = generate(point(tmp_path, w=8, name="vecadd_w8"), tmp_path / "out")
+    m = generate(point(tmp_path, w=8, name="vecadd_w8"), tmp_path / "out", root=tmp_path)
     consts = _constants(ast.parse((tmp_path / "out" / "forge_vecadd_w8_acc.py").read_text()))
     assert consts["STREAMER_TEMPLATE"]["data_reader_params"]["num_channel"] == [8, 8]
     assert gen_mod.tcdm_port_names(consts["STREAMER_TEMPLATE"])[-1] == "streamer.writer0.lane7"
@@ -190,9 +191,31 @@ def test_elementwise_op_is_chisels():
     assert table == ELEMENTWISE_OP
 
 
+def test_two_out_folders_give_byte_identical_files(tmp_path, monkeypatch):
+    """Nothing written depends on the out folder or the working directory: the fixture diff."""
+    path = point(tmp_path)
+    a, b = tmp_path / "a", tmp_path / "b" / "deeper" / "vecadd"
+    ma = generate(path, a, root=tmp_path)
+    monkeypatch.chdir(path.parent.parent)  # and the design point given relative to it
+    mb = generate(Path("vecadd/design_point.json"), b, root=tmp_path)
+    assert ma == mb
+    for f in ma.files:
+        text = (a / f).read_bytes()
+        assert text == (b / f).read_bytes(), f
+        assert str(tmp_path).encode() not in text, f
+    for f in ma.files[:-1]:
+        assert b"design point design/vecadd/design_point.json" in (a / f).read_bytes(), f
+
+
 # =============================================================================
 # Refusals
 # =============================================================================
+
+
+def test_a_design_point_outside_the_root(tmp_path):
+    with pytest.raises(GenError) as e:
+        generate(point(tmp_path / "elsewhere"), tmp_path / "out", root=tmp_path / "root")
+    assert e.value.code == "gen.point" and not (tmp_path / "out").exists()
 
 
 def _instance(edit=None, params=None) -> Instance:
@@ -261,7 +284,7 @@ def test_three_ports_are_refused():
 
 def test_a_design_name_that_is_no_identifier(tmp_path):
     with pytest.raises(GenError) as e:
-        generate(point(tmp_path, name="vecadd-2"), tmp_path / "out")
+        generate(point(tmp_path, name="vecadd-2"), tmp_path / "out", root=tmp_path)
     assert e.value.code == "gen.name" and not (tmp_path / "out").exists()
 
 
@@ -269,7 +292,7 @@ def test_two_instances_are_refused(tmp_path):
     gd = graph_dict()
     chained(gd)
     with pytest.raises(GenError) as e:
-        generate(point(tmp_path, graph=Graph.from_dict(gd)), tmp_path / "out")
+        generate(point(tmp_path, graph=Graph.from_dict(gd)), tmp_path / "out", root=tmp_path)
     assert e.value.code == "gen.instances" and "['acc', 'acc2']" in str(e.value)
 
 
@@ -288,7 +311,7 @@ def test_a_null_binding_and_an_unregistered_block(tmp_path, monkeypatch, binding
     path = point(tmp_path)
     monkeypatch.setattr(gen_mod, "instances", edited)
     with pytest.raises(GenError) as e:
-        generate(path, tmp_path / "out")
+        generate(path, tmp_path / "out", root=tmp_path)
     assert e.value.code == code
     assert "ElementwiseTiledSpatial" in BLOCKS
 
@@ -310,11 +333,12 @@ def test_generate_checks_the_install_before_writing(tmp_path):
     path = point(tmp_path)
     bad = fake_install(tmp_path, {"generators/forge_vecadd.py": ""})
     with pytest.raises(GenError):
-        generate(path, tmp_path / "out", install=bad)
+        generate(path, tmp_path / "out", install=bad, root=tmp_path)
     assert not (tmp_path / "out").exists()
 
 
-def test_the_command(tmp_path, capsys):
+def test_the_command(tmp_path, capsys, monkeypatch):
+    monkeypatch.setattr(gen_mod, "ROOT", tmp_path)
     path = point(tmp_path)
     out = tmp_path / "out"
     install = fake_install(tmp_path)

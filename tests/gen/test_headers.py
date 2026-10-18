@@ -43,7 +43,7 @@ def defines(text: str) -> list[tuple[str, int]]:
 @pytest.fixture(scope="module")
 def include(tmp_path_factory):
     tmp = tmp_path_factory.mktemp("w4")
-    m = generate(point(tmp), tmp / "out")
+    m = generate(point(tmp), tmp / "out", root=tmp)
     assert [f for f in m.files if f.startswith("include/")] == [
         "include/streamer_csr_addr_map.h", "include/acc_csr.h"
     ]  # fmt: skip

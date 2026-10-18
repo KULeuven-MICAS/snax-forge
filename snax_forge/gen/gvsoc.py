@@ -1,6 +1,6 @@
 """A design point -> a generated accelerator on SNAX-GVSoC (GEN3 steps 3 and 4, D128, D132).
 
-    generate(design_point, out_dir, install=None) -> Manifest
+    generate(design_point, out_dir, install=None, root=None) -> Manifest
 
 The design point's one accelerated instance becomes a composite on
 snax-gvsoc's hand-written components, as ``snax/snax_tiled_add_acc.py`` is
@@ -36,20 +36,32 @@ names follow ``snax/snax_streamer.py`` (``movers_of``, ``nb_csrs``,
 streamer's from ``SNAX_CSR_FIRST``, then the shell's fields, start, busy
 and the counter (D130).
 
-**Refused**, each a ``GenError`` (``gen.<rule>``): a design name that is
-not an identifier (``gen.name``), more or fewer than one accelerated
+**Refused**, each a ``GenError`` (``gen.<rule>``): a design point outside
+``root`` (``gen.point``), a design name that is not an identifier
+(``gen.name``), more or fewer than one accelerated
 instance (``gen.instances``: snax_alu's board has one accelerator slot), a
 null binding (``gen.binding``), an unregistered block (``gen.block``), what
 the block's adapter refuses, a port whose lanes are not whole 64-bit
 channels (``gen.dtype``), CSRs past ``SNAX_CSR_LAST`` (``gen.csrs``) and
 the install check (``gen.install``).
 
-**The manifest** (paths relative to its folder): ``design``,
-``design_point``, ``target``, ``files``, ``target_dirs`` (for gvrun's
-``--target-dir``, after the install's own), ``trace`` (the unit's trace
-path), ``csrs`` (the layout) and ``tasks``: per accelerator task of the
-derived task list (snax_forge/lower/derive.py, D89) its name, its ``beats``
-(the unit's trip count, the task's ``n``) and its ``csrs`` values.
+**The manifest**: ``design``, ``design_point``, ``target``, ``files``,
+``target_dirs`` (for gvrun's ``--target-dir``, after the install's own),
+``trace`` (the unit's trace path), ``csrs`` (the layout) and ``tasks``: per
+accelerator task of the derived task list (snax_forge/lower/derive.py, D89)
+its name, its ``beats`` (the unit's trip count, the task's ``n``) and its
+``csrs`` values.
+
+**Stable paths.** The design point is named once, by its path relative to
+``root`` (snax-forge's root by default), ``/``-separated: the manifest's
+``design_point`` and every generated file's header comment hold the same
+string (``out/design/vecadd/design_point.json``). ``files`` and
+``target_dirs`` are relative to the manifest's folder. Nothing written
+depends on where ``out_dir`` is, the working directory or the host: one
+design point generated into two folders gives byte-identical files, which
+is what lets snax-gvsoc's checked-in fixture be compared with a fresh run
+by diff. A design point outside ``root`` has no such name and is refused
+(``gen.point``).
 
 Not verified: the order of ``spatial_bounds`` against snax_cluster's
 template for more than one spatial dimension (every template so far has one).
@@ -59,7 +71,6 @@ from __future__ import annotations
 
 import json
 import keyword
-import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -306,11 +317,16 @@ def _camel(name: str) -> str:
     return "".join(p[:1].upper() + p[1:] for p in name.split("_") if p)
 
 
-def _shown(path: Path) -> str:
+def point_name(path: Path, root: Path) -> str:
+    """The design point's name in everything generated: its path relative to ``root``."""
     try:
-        return str(path.resolve().relative_to(ROOT))
+        return path.resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
-        return str(path.resolve())
+        raise GenError(
+            "gen.point",
+            f"design point {path} is outside {root}: it is named by its path from there, "
+            "the same on every host",
+        ) from None
 
 
 def _wrapped(items: list[Any], indent: int, width: int = 96) -> str:
@@ -506,10 +522,14 @@ class Target(gvsoc.runner.Target):
 
 
 def generate(
-    design_point: str | Path, out_dir: str | Path, install: str | Path | None = None
+    design_point: str | Path,
+    out_dir: str | Path,
+    install: str | Path | None = None,
+    root: str | Path | None = None,
 ) -> Manifest:
     """Write the composite, the target and the manifest to ``out_dir``; see the module doc."""
     point_path, out = Path(design_point), Path(out_dir)
+    shown = point_name(point_path, ROOT if root is None else Path(root))
     point = DesignPoint.load(point_path)
     design = point.name
     if not design.isidentifier() or keyword.iskeyword(design):
@@ -526,7 +546,6 @@ def generate(
     if install is not None:
         check_install(Path(install), [acc_mod, target_mod])
 
-    shown = _shown(point_path)
     streamer_h, streamer_last = streamer_header(movers(template), SNAX_CSR_FIRST, shown)
     assert streamer_last == layout.streamer_last, (streamer_last, layout)
     files = {
@@ -540,7 +559,7 @@ def generate(
         (out / f).write_text(text)
     manifest = Manifest(
         design=design,
-        design_point=_relative(point_path, out),
+        design_point=shown,
         target=target_mod,
         files=[*files, "manifest.json"],
         target_dirs=["."],
@@ -550,7 +569,3 @@ def generate(
     )
     (out / "manifest.json").write_text(manifest.to_json())
     return manifest
-
-
-def _relative(path: Path, folder: Path) -> str:
-    return os.path.relpath(path.resolve(), folder.resolve())
