@@ -5,6 +5,13 @@ snax-forge's own GVSoC targets: Python modules gvrun reads with
 components snax-gvsoc installs. Nothing here is compiled: a target here may
 use only components already built into the install (`make build`).
 
+A target here, or one snax-forge generates, never takes the name of an
+installed target: gvrun puts the install's `targets` ahead of this folder on
+its path, so an installed `snax_alu` is run even when a `snax_alu.py` is
+here (tried: a `snax_alu.py` that stops on import, in a `--target-dir`, was
+never loaded). The same holds for any module a target imports. GEN3's
+generator (step 3) checks it.
+
 | Target | What |
 |---|---|
 | `alu_probe` | snax-gvsoc's `snax_alu` under another name, its accelerator and streamer template copied in (`AluProbeAcc`), kept as a smoke test (GEN3 step 0b) |
