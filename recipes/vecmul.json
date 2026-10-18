@@ -1,0 +1,18 @@
+{
+ "name": "vecmul",
+ "kernel": "vecmul",
+ "params": {"W": 4},
+ "symbols": {"N": 64},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "elementwise_mul",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

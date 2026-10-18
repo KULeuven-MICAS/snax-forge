@@ -28,7 +28,7 @@ from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.blocks import elementwise_tiled_spatial
 from tests.design.helpers import REPO, chained, graph_dict
 
-from .helpers import HJSON, SUB, fake_install, point, snax_streamer
+from .helpers import HJSON, SUB, bound_vecmul, fake_install, point, snax_streamer
 
 needs_submodule = pytest.mark.skipif(
     not HJSON.exists(), reason="the snax-gvsoc submodule is not checked out (CI never fetches it)"
@@ -185,6 +185,30 @@ def test_vecadd_w8_gives_eight_channels_per_mover(tmp_path):
     assert consts["STREAMER_TEMPLATE"]["data_reader_params"]["num_channel"] == [8, 8]
     assert gen_mod.tcdm_port_names(consts["STREAMER_TEMPLATE"])[-1] == "streamer.writer0.lane7"
     assert m.csrs.start == 979 and m.tasks[0].beats == 8
+
+
+def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
+    """GEN3 step 6a: elementwise_mul's binding gives vecadd's accelerator with op 2."""
+    out = tmp_path / "gvsoc" / "vecmul"
+    m = generate(point(tmp_path, name="vecmul", graph=bound_vecmul()), out, root=tmp_path)
+    tree = ast.parse((out / "forge_vecmul_acc.py").read_text())
+    unit = {k: ast.literal_eval(v) if not isinstance(v, ast.Name) else _constants(tree)[v.id]
+            for k, v in _calls(tree, "SnaxUnit").items()}  # fmt: skip
+    assert unit == {**TILED_ADD_UNIT, "op": 2}
+    assert _constants(tree)["STREAMER_TEMPLATE"] == TEMPLATE_W4
+    assert m.target == "forge_vecmul" and m.symbols == {"N": 64}
+    assert m.design_point == "design/vecmul/design_point.json"
+    assert m.files == [
+        "forge_vecmul_acc.py", "forge_vecmul.py", "include/streamer_csr_addr_map.h",
+        "include/acc_csr.h", "manifest.json",
+    ]  # fmt: skip
+    assert m.csrs == w4[1].csrs and m.trace == "snax_acc0/unit"
+    assert [t.to_dict() for t in m.tasks] == [
+        {"name": "mult_acc", "beats": 16, "csrs": {"loopCount": 16}}
+    ]
+    for h in ("streamer_csr_addr_map.h", "acc_csr.h"):
+        mine, add = (out / "include" / h).read_text(), (w4[0] / "include" / h).read_text()
+        assert mine.replace("vecmul", "vecadd") == add, h
 
 
 def test_elementwise_op_is_chisels():

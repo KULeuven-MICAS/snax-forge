@@ -3,7 +3,8 @@
 Accepted when the import of ``kernels/polybench/vecadd.py`` equals the
 checked-in ``tests/dfg/fixtures/vecadd.snaxdfg``, with no transient and no
 copy left, and the import of ``dot.py`` equals ``dot.snaxdfg``: a multiply
-map, then its ``Reduce`` as a sum map folding into ``out[0]`` (D102). The
+map, then its ``Reduce`` as a sum map folding into ``out[0]`` (D102); and
+``vecmul.py``'s equals ``vecmul.snaxdfg`` (GEN3 step 6a). The
 importer builds the simplified SDFG as ``pixi run forge`` does, and a stored
 ``.sdfg`` gives the same graph. Beyond them: a transient between two maps,
 offset subsets, a Max reduction, a Reduce over one axis of two, and every
@@ -88,6 +89,13 @@ def test_cli_reports_an_unsupported_kernel(tmp_path, capsys):
 
 def test_dot_import_is_the_fixture():
     assert import_kernel("dot").to_json() == fixture("dot").read_text()
+
+
+def test_vecmul_import_is_the_fixture():
+    """vecadd with ``*``: the importer names the map and the tasklet after Mult."""
+    g = import_kernel("vecmul")
+    assert g.to_json() == fixture("vecmul").read_text()
+    assert [n.id for n, _ in g.walk()] == ["mult_map", "mult"]
 
 
 def test_dot_is_a_multiply_map_then_a_sum_map():

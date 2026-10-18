@@ -44,12 +44,18 @@ def test_library_has_dots_blocks():
     assert {"elementwise_add", "elementwise_mul", "accumulate"} <= set(library_names())
 
 
-def test_only_elementwise_add_is_bound_so_far():
-    """GEN3 step 3: GEN3.md's binding; elementwise_mul and accumulate come with step 6."""
+def test_the_elementwise_brms_are_bound():
+    """GEN3.md's binding: elementwise_add (step 3) and elementwise_mul (step 6a), the same
+    block with the op through ElementwiseOp; accumulate comes with step 6b."""
+    from snax_forge.gen import ELEMENTWISE_OP
+
     from .test_brm import BINDING
 
-    assert load_brm("elementwise_add").implementations[IMPL].binding == BINDING
-    assert load_brm("elementwise_mul").implementations[IMPL].binding is None
+    for name, op in (("elementwise_add", "add"), ("elementwise_mul", "mul")):
+        brm = load_brm(name)
+        assert brm.implementations[IMPL].binding == BINDING
+        assert brm.resolve(IMPL).params["op"] == op
+    assert ELEMENTWISE_OP["mul"] == 2
     assert all(i.binding is None for i in load_brm("accumulate").implementations.values())
 
 

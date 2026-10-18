@@ -1,7 +1,8 @@
 """Shared helpers for the GVSoC generator's tests (GEN3 step 3).
 
 ``point`` writes a design point of vecadd (bound by the checked-in recipe,
-W = 4 by default), or of a given graph, on ``platforms/snax_alu.json``; ``fake_install`` makes an install folder holding every module the
+W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by
+``recipes/vecmul.json``), on ``platforms/snax_alu.json``; ``fake_install`` makes an install folder holding every module the
 generated files import, as empty files. The snax-gvsoc submodule (``SUB``)
 is read only where it is checked out (CI never fetches it, D128).
 """
@@ -16,7 +17,8 @@ from pathlib import Path
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
 from snax_forge.gen import IMPORTS
-from tests.design.helpers import REPO, SNAX_ALU, bound_vecadd
+from snax_forge.sandbox import Recipe, apply_recipe
+from tests.design.helpers import FIXTURES, REPO, SNAX_ALU, bound_vecadd
 
 SUB = REPO / "gvsoc" / "snax-gvsoc"
 HJSON = SUB / "sw" / "cfg" / "snax_alu_cluster.hjson"
@@ -30,6 +32,12 @@ def point(tmp_path: Path, w: int = 4, name: str = "vecadd", graph: Graph | None 
     path.parent.mkdir(parents=True, exist_ok=True)
     DesignPoint.of(design, name).save(path)
     return path
+
+
+def bound_vecmul(w: int = 4) -> Graph:
+    """vecmul bound with W = ``w`` by the checked-in recipe (elementwise_mul, instance acc)."""
+    recipe = Recipe.load(REPO / "recipes" / "vecmul.json").with_params({"W": w})
+    return apply_recipe(recipe, Graph.load(FIXTURES / "vecmul.snaxdfg"))[-1].graph
 
 
 def fake_install(tmp_path: Path, extra: dict[str, str] | None = None) -> Path:

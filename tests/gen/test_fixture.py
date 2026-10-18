@@ -26,7 +26,7 @@ from .helpers import SUB
 
 FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_alu.json
-DESIGNS = ["vecadd"]
+DESIGNS = ["vecadd", "vecmul"]
 
 pytestmark = [
     pytest.mark.skipif(
@@ -41,7 +41,9 @@ pytestmark = [
 
 
 def files(folder: Path) -> list[str]:
-    return sorted(f.relative_to(folder).as_posix() for f in folder.rglob("*") if f.is_file())
+    """The folder's files; gvrun's ``__pycache__`` (ignored by snax-gvsoc's git) left out."""
+    return sorted(f.relative_to(folder).as_posix() for f in folder.rglob("*")
+                  if f.is_file() and "__pycache__" not in f.parts)  # fmt: skip
 
 
 def regenerate(root: Path, design: str) -> Path:
@@ -60,6 +62,8 @@ def regenerate(root: Path, design: str) -> Path:
 @pytest.mark.parametrize("design", DESIGNS)
 def test_the_fixture_is_reproduced(tmp_path, design):
     fixture = FORGE / design
+    if not fixture.is_dir():
+        pytest.skip(f"the snax-gvsoc submodule has no forge/{design}: bump the submodule")
     out = regenerate(tmp_path, design)
     assert files(out) == files(fixture)
     for f in files(fixture):
