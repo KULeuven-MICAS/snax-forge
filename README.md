@@ -304,7 +304,7 @@ its environment sets `CC` and `CXX` to conda's gcc.
 ```bash
 git submodule update --init gvsoc/snax-gvsoc
 cd gvsoc
-make build                      # GVSoC for TARGETS (default snax_alu;snax_alu_sparse) into out/snax-gvsoc/
+make build                      # GVSoC for TARGETS (default snax_alu;snax_alu_sparse;snax_tiled_add) into out/snax-gvsoc/
 make sw APPS=snax-alu           # sw/ and the named apps, into snax-gvsoc/build/sw/
 make run TARGET=snax_alu ELF=snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
 ```
@@ -317,8 +317,7 @@ after the install's own `targets` and `generators`; `GVRUN_ARGS` goes before
 sibling checkout instead of the submodule; `build` clears `out/snax-gvsoc`
 when the checkout changes, since CMake refuses a build folder of another one.
 A target in `gvsoc/targets/` that no build made has no platform tree: gvrun
-warns and runs it on the JSON config path, with snax-gvsoc from GEN3 round
-1b on; the submodule's pin still stops on it (`gvsoc/targets/README.md`).
+warns and runs it on the JSON config path (`gvsoc/targets/README.md`).
 
 # 6. Tests and lint
 

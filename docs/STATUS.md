@@ -139,8 +139,8 @@ fails when the DMA's own timing leaves the RTL's. SG8 is done: snax_cluster
 `05615e4`. M16 closes once SG8's round 2 pull requests (the snax-gvsoc pin
 bump, the SG8 notes, these docs) are merged. Next: GEN3, planned in
 snax-gvsoc `GEN3.md` (D127), with LNK1 before GEN3's step 3. GEN3 round 1
-(branches `ry/gen3` here and in snax-gvsoc, not merged): snax-gvsoc a
-submodule at `gvsoc/`; `SnaxUnit` and `SnaxShell` in snax-gvsoc, the start
+(merged in snax-gvsoc, #12; the submodule at `gvsoc/` pinned at its
+`21830e3`): `SnaxUnit` and `SnaxShell` in snax-gvsoc, the start
 held while busy, on a hand-written `snax_tiled_add` target. Round 1b: a
 target from `gvsoc/targets/` runs on the JSON config path (gvrun warns that
 it has no platform tree); `alu_probe` and `tiled_add_sparse_probe` there.

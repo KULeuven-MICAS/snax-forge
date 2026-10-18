@@ -20,13 +20,16 @@ generator (step 3) checks it.
 A target here has no platform tree in the install (`libplatform_tree_<target>.so`,
 built only for `TARGETS`): gvrun prints one line on stderr, `Warning: target
 '<target>': no platform tree, using the JSON config (...)`, and runs it on
-the JSON config path. That needs snax-gvsoc from GEN3 round 1b on (the
-sibling checkout, `SNAX_GVSOC=../../snax-gvsoc`); the submodule's pin,
-`c911569`, still stops with `Missing platform_tree library`.
-`tiled_add_sparse_probe` also needs snax-gvsoc from GEN3 step 2 on, built
-with `snax_tiled_add` in `TARGETS` (its `SnaxShell` and `SnaxUnit`):
+the JSON config path. The submodule's pin (`21830e3`) runs both probes;
+`tiled_add_sparse_probe` uses `snax_tiled_add`'s `SnaxShell` and `SnaxUnit`,
+built by default (`TARGETS`). From `gvsoc/`:
 
-    make build SNAX_GVSOC=../../snax-gvsoc TARGETS="snax_alu;snax_alu_sparse;snax_tiled_add"
-    make sw SNAX_GVSOC=../../snax-gvsoc APPS="snax-alu snax-shell"
-    make run SNAX_GVSOC=../../snax-gvsoc TARGET=alu_probe ELF=../../snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
-    make run SNAX_GVSOC=../../snax-gvsoc TARGET=tiled_add_sparse_probe ELF=../../snax-gvsoc/build/sw/apps/snax-shell/snax-shell.elf
+    make build
+    make sw APPS="snax-alu snax-shell"
+    make run TARGET=alu_probe ELF=snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
+    make run TARGET=tiled_add_sparse_probe ELF=snax-gvsoc/build/sw/apps/snax-shell/snax-shell.elf
+
+Each prints the warning, then `Accelerator Cycles: 25` and `Number of
+errors: 0`, and `snax-shell errors: 0`. `SNAX_GVSOC=../../snax-gvsoc` (on
+each command, the ELFs under `../../snax-gvsoc/build/sw/`) points at a
+sibling checkout instead.
