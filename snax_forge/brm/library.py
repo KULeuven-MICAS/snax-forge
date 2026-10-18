@@ -11,7 +11,8 @@ Library BRMs so far:
     elementwise_add   c = a + b over W lanes (W = 4 by default); one Chisel
                       implementation, ElementwiseTiledSpatial (L = 0, II = 1)
     elementwise_mul   c = a * b, the same with op mul (ElementwiseTiledSpatial
-                      supports it), dot's multiplier
+                      supports it, bound as elementwise_add, GEN3 step 6a),
+                      dot's multiplier and vecmul's
     accumulate        the sum of every lane of T beats of ``a``, one element
                       of ``out`` per T beats (pattern family ``reduce``, D103):
                       chisel_accumulator, the Chisel Accumulator (1 lane,

@@ -52,7 +52,13 @@
    "source": "chisel",
    "supports": {},
    "timing": {"latency": 0, "initiation_interval": 1, "drain": 0},
-   "binding": null
+   "binding": {
+    "block": "ElementwiseTiledSpatial",
+    "args": {"lanes": "W", "supportedOps": "op"},
+    "control": "counted",
+    "csrs": [{"field": "loopCount", "value": "n"}],
+    "wait": "lockstep"
+   }
   }
  }
 }
