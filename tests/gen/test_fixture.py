@@ -41,9 +41,7 @@ pytestmark = [
 
 
 def files(folder: Path) -> list[str]:
-    """The folder's files; gvrun's ``__pycache__`` (ignored by snax-gvsoc's git) left out."""
-    return sorted(f.relative_to(folder).as_posix() for f in folder.rglob("*")
-                  if f.is_file() and "__pycache__" not in f.parts)  # fmt: skip
+    return sorted(f.relative_to(folder).as_posix() for f in folder.rglob("*") if f.is_file())
 
 
 def regenerate(root: Path, design: str) -> Path:
