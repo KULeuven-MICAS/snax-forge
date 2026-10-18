@@ -215,7 +215,9 @@ Turns a design point into what a run needs, and decides nothing.
 
 A GVSoC model of the SNAX cluster in its own repository: a detached copy of a
 chosen GVSoC commit with its history, the submodules folded in, the upstream
-hashes recorded and the license kept (D116). It holds:
+hashes recorded and the license kept (D116). snax-forge holds it as a submodule at `gvsoc/`,
+with a Makefile that builds and runs it and snax-forge's own targets beside it (GEN3, D128). It
+holds:
 
 - a **SNAX target** per cluster: `snax_alu` written by hand (SG1), read
   from the cluster hjson later (LNK2a);
