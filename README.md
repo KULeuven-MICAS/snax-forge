@@ -292,7 +292,32 @@ pixi run -e hw chisel-gen     # every catalogue configuration to out/hw/*.sv
 
 See `hw/chisel/README.md`.
 
-# 5. Tests and lint
+# 5. SNAX-GVSoC from snax-forge
+
+[snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
+`gvsoc/snax-gvsoc` (D128); CI never fetches it. `gvsoc/targets/` holds
+snax-forge's own GVSoC targets, run on the components snax-gvsoc installs.
+`gvsoc/Makefile` runs in the container's plain shell, not through pixi: pixi's
+Python lacks GVSoC's packages (gvrun stops at `No module named 'rich'`) and
+its environment sets `CC` and `CXX` to conda's gcc.
+
+```bash
+git submodule update --init gvsoc/snax-gvsoc
+cd gvsoc
+make build                      # GVSoC for TARGETS (default snax_alu;snax_alu_sparse) into out/snax-gvsoc/
+make sw APPS=snax-alu           # sw/ and the named apps, into snax-gvsoc/build/sw/
+make run TARGET=snax_alu ELF=snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
+```
+
+`run` prints `Accelerator Done!`, `Accelerator Cycles: 25` and `Number of
+errors: 0`. It calls the install's `gvrun` with `--target-dir=gvsoc/targets`
+after the install's own `targets` and `generators`; `GVRUN_ARGS` goes before
+`run` (e.g. `GVRUN_ARGS=--trace=snax_acc0`) and the work directory is
+`out/snax-gvsoc/work/<target>/<elf name>`. `SNAX_GVSOC=../../snax-gvsoc` uses a
+sibling checkout instead of the submodule; `build` clears `out/snax-gvsoc`
+when the checkout changes, since CMake refuses a build folder of another one.
+
+# 6. Tests and lint
 
 ```bash
 pixi run test          # everything; writes the generated scenario files first
