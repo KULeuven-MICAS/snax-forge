@@ -12,6 +12,7 @@ import hjson
 import pytest
 
 from snax_forge.brm import Brm, Instance, load_brm
+from snax_forge.design import DesignPoint
 from snax_forge.dfg import Graph
 from snax_forge.gen import (
     BLOCKS,
@@ -92,6 +93,8 @@ def test_vecadd_w4_files_and_manifest(w4):
     assert sorted(str(f.relative_to(out)) for f in out.rglob("*") if f.is_file()) == sorted(m.files)
     assert m.target_dirs == ["."] and m.trace == "snax_acc0/unit"
     assert m.design_point == "design/vecadd/design_point.json"
+    assert m.symbols == {"N": 64}
+    assert list(m.to_dict())[:3] == ["design", "design_point", "symbols"]
     assert (out.parent.parent / m.design_point).is_file()
     assert m.csrs.to_dict() == {
         "streamer": {"first": 960, "last": 977}, "fields": {"loopCount": 978},
@@ -286,6 +289,18 @@ def test_a_design_name_that_is_no_identifier(tmp_path):
     with pytest.raises(GenError) as e:
         generate(point(tmp_path, name="vecadd-2"), tmp_path / "out", root=tmp_path)
     assert e.value.code == "gen.name" and not (tmp_path / "out").exists()
+
+
+def test_a_null_symbol_is_refused(tmp_path, monkeypatch):
+    # DesignPoint.load refuses one in a file (graph.symbols); gen.symbols holds
+    # for a point whose graph lost a value after it was checked
+    path = point(tmp_path)
+    loaded = DesignPoint.load(path)
+    loaded.graph.symbols["N"] = None
+    monkeypatch.setattr(gen_mod.DesignPoint, "load", staticmethod(lambda _: loaded))
+    with pytest.raises(GenError, match=r"\['N'\]") as e:
+        generate(path, tmp_path / "out", root=tmp_path)
+    assert e.value.code == "gen.symbols" and not (tmp_path / "out").exists()
 
 
 def test_two_instances_are_refused(tmp_path):

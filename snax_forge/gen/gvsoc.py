@@ -42,11 +42,13 @@ and the counter (D130).
 instance (``gen.instances``: snax_alu's board has one accelerator slot), a
 null binding (``gen.binding``), an unregistered block (``gen.block``), what
 the block's adapter refuses, a port whose lanes are not whole 64-bit
-channels (``gen.dtype``), CSRs past ``SNAX_CSR_LAST`` (``gen.csrs``) and
-the install check (``gen.install``).
+channels (``gen.dtype``), CSRs past ``SNAX_CSR_LAST`` (``gen.csrs``), a
+symbol of the bound graph still null (``gen.symbols``) and the install
+check (``gen.install``).
 
-**The manifest**: ``design``, ``design_point``, ``target``, ``files``,
-``target_dirs`` (for gvrun's ``--target-dir``, after the install's own),
+**The manifest**: ``design``, ``design_point``, ``symbols`` (the bound
+graph's, e.g. ``{"N": 64}``: what a program sizes its data by), ``target``,
+``files``, ``target_dirs`` (for gvrun's ``--target-dir``, after the install's own),
 ``trace`` (the unit's trace path), ``csrs`` (the layout) and ``tasks``: per
 accelerator task of the derived task list (snax_forge/lower/derive.py, D89)
 its name, its ``beats`` (the unit's trip count, the task's ``n``) and its
@@ -160,6 +162,7 @@ class Manifest:
 
     design: str
     design_point: str
+    symbols: dict[str, int]
     target: str
     files: list[str]
     target_dirs: list[str]
@@ -171,6 +174,7 @@ class Manifest:
         return {
             "design": self.design,
             "design_point": self.design_point,
+            "symbols": dict(self.symbols),
             "target": self.target,
             "files": list(self.files),
             "target_dirs": list(self.target_dirs),
@@ -182,8 +186,9 @@ class Manifest:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Manifest:
         return cls(
-            d["design"], d["design_point"], d["target"], list(d["files"]), list(d["target_dirs"]),
-            d["trace"], CsrLayout.from_dict(d["csrs"]), [AccTask.from_dict(t) for t in d["tasks"]],
+            d["design"], d["design_point"], dict(d["symbols"]), d["target"], list(d["files"]),
+            list(d["target_dirs"]), d["trace"], CsrLayout.from_dict(d["csrs"]),
+            [AccTask.from_dict(t) for t in d["tasks"]],
         )  # fmt: skip
 
     def to_json(self) -> str:
@@ -536,6 +541,9 @@ def generate(
         raise GenError(
             "gen.name", f"design {design!r} cannot name a Python module (forge_<design>)"
         )
+    unbound = [s for s, v in point.graph.symbols.items() if v is None]
+    if unbound:
+        raise GenError("gen.symbols", f"symbols {unbound} of {design!r} are null: bind them")
     name, inst, unit = accelerator(point)
     template = streamer_template(point, name, inst)
     l1 = point.platform.l1
@@ -560,6 +568,7 @@ def generate(
     manifest = Manifest(
         design=design,
         design_point=shown,
+        symbols=dict(point.graph.symbols),
         target=target_mod,
         files=[*files, "manifest.json"],
         target_dirs=["."],
