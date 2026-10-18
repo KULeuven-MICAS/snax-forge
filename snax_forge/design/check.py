@@ -638,6 +638,7 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
         start, end = ctx.span(m)
         lo, hi = _extent(lay, ctx.word_bytes(m), moved[c])
         if lo < start or hi > end:
+            pinned = (c, m) in design.memory.spec.pins()
             if m == "l1":
                 l1 = pf.l1
                 row = l1.n_banks * (l1.width_bits // 8)
@@ -647,7 +648,14 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
             else:
                 fix = f"--set platform.l2.size_bytes={round_up(hi - start, pf.l2.beat_bytes)}"
                 size = f"L2 is {end - start} B"
-            if (c, m) in design.memory.spec.pins():
+            size += f" at [{start}, {end})"
+            if lo < start:  # below the memory's first byte (a nonzero base): only a pin moves it
+                fix = (
+                    f"pin it at or above {start} (--set memory.{c}.{m}.base={start + lay.base - lo})"
+                    if pinned
+                    else None
+                )
+            elif pinned:
                 fix = f"pin it lower (--set memory.{c}.{m}.base=...), or {fix}"
             yield Problem("memory.fit", f"{c} in {m}", f"spans bytes [{lo}, {hi}); {size}", fix)
 

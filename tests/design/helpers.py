@@ -1,6 +1,8 @@
 """Shared helpers for the SNAX-DESIGN tests (DP1a).
 
-The platform is the checked-in ``platforms/small16.json``; the graphs are
+The platform is the checked-in ``platforms/small16.json`` (``snax_alu.json``
+for LNK1, read from the snax-gvsoc submodule's cluster files, which CI never
+fetches, D128); the graphs are
 the SNAX-DFG fixtures of tests/dfg/fixtures (vecadd bound to
 ``elementwise_add`` with W = 4, split, as imported), and vecadd bound with
 W = 8 through the checked-in recipe. ``design`` pairs them in memory, with
@@ -23,6 +25,8 @@ from snax_forge.sandbox import Recipe, apply_recipe
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "dfg" / "fixtures"
 SMALL16 = REPO / "platforms" / "small16.json"
+SNAX_ALU = REPO / "platforms" / "snax_alu.json"
+CFG = REPO / "gvsoc" / "snax-gvsoc" / "sw" / "cfg"  # empty unless the submodule is checked out
 ALU4 = REPO / "scenarios" / "clusters" / "alu4.json"
 RECIPE = REPO / "recipes" / "vecadd.json"
 BOUND = FIXTURES / "vecadd_accelerated.snaxdfg"
@@ -38,10 +42,15 @@ def graph_dict(name: str = "vecadd_accelerated") -> dict[str, Any]:
     return json.loads((FIXTURES / f"{name}.snaxdfg").read_text())
 
 
+def bound_vecadd(w: int) -> Graph:
+    """vecadd bound with W = ``w`` by the checked-in recipe."""
+    recipe = Recipe.load(RECIPE).with_params({"W": w})
+    return apply_recipe(recipe, Graph.load(FIXTURES / "vecadd.snaxdfg"))[-1].graph
+
+
 def bound_w8() -> Graph:
     """vecadd bound with W = 8 by the checked-in recipe."""
-    recipe = Recipe.load(RECIPE).with_params({"W": 8})
-    return apply_recipe(recipe, Graph.load(FIXTURES / "vecadd.snaxdfg"))[-1].graph
+    return bound_vecadd(8)
 
 
 def design(

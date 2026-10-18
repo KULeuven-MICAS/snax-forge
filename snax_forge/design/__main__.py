@@ -6,6 +6,7 @@
                                       [--name NAME] [--out DIR]
     python -m snax_forge.design check GRAPH --platform P [--memory M] [--set ...]
     python -m snax_forge.design save SRC DST [--force]
+    python -m snax_forge.design from-hjson HJSON NAME [--force]
 
 The first form pairs a bound graph (the last ``.snaxdfg`` of a sandbox run)
 with a platform, makes the memory plan, runs every design check and, when
@@ -26,7 +27,9 @@ DIR/memory.json``) continues from it: new ``--set`` paths add to its
 ``check`` runs the checks only and writes nothing. ``save`` keeps a
 platform, usually a working copy, under a new name: DST is a path, or a
 bare name for ``platforms/<DST>.json``; an existing file is kept unless
-``--force``.
+``--force``. ``from-hjson`` reads snax_cluster's cluster file into
+``platforms/<NAME>.json`` (LNK1, hjson_platform.py), checked as any
+platform, an existing file kept unless ``--force``.
 
 Exit 0 when everything passed, 1 with every problem found (each with its
 fix), 2 on bad arguments. pixi: ``design``.
@@ -42,6 +45,7 @@ from typing import Any
 from snax_forge.sdfg.paths import _repo_root
 
 from .check import Design, load, run_checks
+from .hjson_platform import platform_from_hjson
 from .platform import Platform, parse_value
 from .point import DesignPoint, design_name
 from .problems import DesignError, report
@@ -184,12 +188,39 @@ def _save(argv: list[str]) -> int:
     return 0
 
 
+def _from_hjson(argv: list[str]) -> int:
+    ap = argparse.ArgumentParser(prog="python -m snax_forge.design from-hjson")
+    ap.add_argument("hjson", type=Path, help="snax_cluster's cluster file (cfg/<cluster>.hjson)")
+    ap.add_argument("name", help="the platform's name: writes platforms/<name>.json")
+    ap.add_argument("--force", action="store_true", help="replace an existing file")
+    args = ap.parse_args(argv)
+    dst = PLATFORMS / f"{args.name}.json"
+    if dst.exists() and not args.force:
+        print(f"{dst} exists; pass --force to replace it", file=sys.stderr)
+        return 1
+    try:
+        platform = platform_from_hjson(args.hjson, args.name)
+    except DesignError as e:
+        print(e, file=sys.stderr)
+        return 1
+    problems = run_checks(Design(platform, None), ["platform"])
+    if problems:
+        print(report(problems, f"platform check of {args.hjson}"), file=sys.stderr)
+        return 1
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    platform.save(dst)
+    print(f"wrote {_rel(dst)} from {_rel(args.hjson)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
     if argv and argv[0] == "check":
         return _check(argv[1:])
     if argv and argv[0] == "save":
         return _save(argv[1:])
+    if argv and argv[0] == "from-hjson":
+        return _from_hjson(argv[1:])
     return _run(argv)
 
 

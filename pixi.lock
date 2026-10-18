@@ -32,6 +32,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gxx-14.3.0-hd47ba16_20.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gxx_impl_linux-64-14.3.0-h99ea42b_20.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gxx_linux-64-14.3.0-hd240bd5_27.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/hjson-py-3.1.0-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-h54a6638_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/iniconfig-2.3.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/ipython-9.15.0-pyh53cf698_0.conda
@@ -165,6 +166,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gxx_impl_linux-64-14.3.0-h99ea42b_20.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/gxx_linux-64-14.3.0-hd240bd5_27.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/harfbuzz-14.2.1-ha770c72_1.conda
+      - conda: https://conda.anaconda.org/conda-forge/noarch/hjson-py-3.1.0-pyhd8ed1ab_1.conda
       - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-h54a6638_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/iniconfig-2.3.0-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/ipython-9.15.0-pyh53cf698_0.conda
@@ -922,6 +924,17 @@ packages:
   purls: []
   size: 11039
   timestamp: 1782800611635
+- conda: https://conda.anaconda.org/conda-forge/noarch/hjson-py-3.1.0-pyhd8ed1ab_1.conda
+  sha256: b1ffd36565dc2a583ef938533aa7d3eaef0143bb5df3dccea2eb7a1b9f1ee031
+  md5: 404a42a57137c137b03102161c5bb2a8
+  depends:
+  - python >=3.9
+  license: Apache-2.0
+  license_family: APACHE
+  purls:
+  - pkg:pypi/hjson?source=hash-mapping
+  size: 44540
+  timestamp: 1734896878029
 - conda: https://conda.anaconda.org/conda-forge/linux-64/icu-78.3-h54a6638_2.conda
   sha256: d7c260b7e1cf22ce04d6ba8a86eabf4e6c50bc96a5c27fe2ecb32298af3e88eb
   md5: 4ef4b977bb216a3001a3334696a80850
