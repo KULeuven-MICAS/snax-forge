@@ -44,6 +44,15 @@ def test_library_has_dots_blocks():
     assert {"elementwise_add", "elementwise_mul", "accumulate"} <= set(library_names())
 
 
+def test_only_elementwise_add_is_bound_so_far():
+    """GEN3 step 3: GEN3.md's binding; elementwise_mul and accumulate come with step 6."""
+    from .test_brm import BINDING
+
+    assert load_brm("elementwise_add").implementations[IMPL].binding == BINDING
+    assert load_brm("elementwise_mul").implementations[IMPL].binding is None
+    assert all(i.binding is None for i in load_brm("accumulate").implementations.values())
+
+
 def test_unknown_name():
     with pytest.raises(BrmError, match="no BRM 'gemm' in the library"):
         load_brm("gemm")

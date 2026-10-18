@@ -26,10 +26,15 @@ networkx = ">=3.1,<3.6"
 
 numpy = ">=1.26,<2"
 sympy = ">=1.12"
+# snax_cluster's cluster files (LNK1, design/hjson_platform.py).
+hjson-py = "==3.1.0"
 
 # DaCe shells out to cmake + a C++ compiler at *runtime* to build generated
 # code. Pinning them here is what makes the golden-reference CPU compile
 # reproducible across your laptop and the ESAT server.
+# DaCe's setup.py also asks PyPI for scikit-build and cmake when no cmake
+# >= 3.15 is on PATH while the lock is solved (ESAT's Vitis cmake 3.3.2):
+# lock in the image (pixi 0.41.4, as CI), where they stay out; nothing uses them.
 cmake = ">=3.27"
 ninja = ">=1.11"
 cxx-compiler = ">=1.7"
@@ -93,6 +98,7 @@ test-sandbox = "pytest -q tests/sandbox"
 test-design = "pytest -q tests/design"
 test-flow  = "pytest -q tests/flow"
 test-report = "pytest -q tests/report"
+test-gen   = "pytest -q tests/gen"
 lint       = "ruff check util kernels snax_forge tests scenarios && ruff format --check util kernels snax_forge tests scenarios"
 fmt        = "ruff check --fix util kernels snax_forge tests scenarios && ruff format util kernels snax_forge tests scenarios"
 # SDFG ingest: `pixi run forge vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
@@ -106,7 +112,8 @@ sandbox    = "python -m snax_forge.sandbox"
 # SNAX-DESIGN (DP1a, DP1b): `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json
 # [--set platform.PATH=VALUE] [--set memory.C.l1.base=N]` checks the pairing and writes out/design/vecadd/
 # platform.json, memory.json and design_point.json; `design check ...` only checks, `design save SRC NAME`
-# keeps a platform working copy as platforms/NAME.json
+# keeps a platform working copy as platforms/NAME.json; `design from-hjson HJSON NAME` reads snax_cluster's
+# cluster file into platforms/NAME.json (LNK1)
 design     = "python -m snax_forge.design"
 # SNAX-LOWER (LOW1c, LOW1a): `pixi run lower cluster|tasks out/design/vecadd/design_point.json` writes
 # cluster.json or tasks.json beside it
@@ -115,6 +122,9 @@ lower      = "python -m snax_forge.lower"
 # writes out/flow/vecadd/ and checks the run against the kernel reference and REF1; a bound graph in
 # place of the recipe (`pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform ...`) skips the sandbox (D108)
 flow       = "python -m snax_forge.flow"
+# GVSoC generator (GEN3): `pixi run gen-gvsoc out/design/vecadd/design_point.json [--out DIR] [--install DIR]`
+# writes the composite, target and manifest.json to out/gvsoc/<design>/ (default install out/snax-gvsoc/install)
+gen-gvsoc  = "python -m snax_forge.gen"
 # Reports (REP1, D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/;
 # a run directory gets DIR_report/ (`--tasks scenarios/<name>/tasks.json` names a scenario's tasks)
 report     = "python -m snax_forge.report"

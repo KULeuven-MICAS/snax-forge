@@ -752,7 +752,7 @@ name.
 | `function` | a registered accelerator kind, its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN3, then `block`, `args`, `control`, `csrs`, `wait`, D129) | the accelerator entry, the GVSoC accelerator (GEN3), the HW generator (GEN1) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null, or `block`, `args`, `control`, `csrs`, `wait`, D129) | the accelerator entry, the GVSoC accelerator (GEN3), the HW generator (GEN1) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source
@@ -820,9 +820,25 @@ against the registered kind.
    "source": "chisel",
    "supports": {},
    "timing": {"latency": 0, "initiation_interval": 1, "drain": 0},
-   "binding": null
+   "binding": {
+    "block": "ElementwiseTiledSpatial",
+    "args": {"lanes": "W", "supportedOps": "op"},
+    "control": "counted",
+    "csrs": [{"field": "loopCount", "value": "n"}],
+    "wait": "lockstep"
+   }
   }
 ```
+
+**The binding** (D129, `brm/binding.py`) names the Chisel block and how
+the BRM fills it; null until the implementation is generated. `block` is
+the block's name (the generators register what they can build); `args` its
+parameters, each an expression over design params; `control` (`counted`:
+the block counts its firings, `stream`: the shell counts) and `wait`
+(`lockstep`, `pipelined`) are registered kinds (D19); `csrs` the
+configuration fields in CSR order, each `{field, value}` with the value an
+expression over params, start following them. A fixed op gives no `opSel`
+field. Expressions are stored canonical.
 
 `resolve` builds the `AccelConfig` through the kind and rejects a BRM whose
 declared ports (name, direction, lanes, rate, in order) or timing differ
@@ -1016,9 +1032,9 @@ whose `out` is one lane every `T = N / W` firings (D104):
 ## 13. Platform
 
 The SNAX cluster around the accelerators (D84): everything of the cluster
-file that is not the accelerator. A platform read from snax_cluster's hjson
-comes with LNK1. A platform file lives in
-`platforms/` (`small16.json`, alu4's platform); it never names a recipe,
+file that is not the accelerator. A platform file lives in
+`platforms/` (`small16.json`, alu4's platform; `snax_alu.json`, read from
+snax_cluster's hjson); it never names a recipe,
 and a recipe never names it. `Platform.load(path)`; every field is written,
 missing keys take their defaults (`l2` missing: no L2), unknown keys and
 values of the wrong type are errors, and loading reports every problem at
@@ -1063,6 +1079,18 @@ the working copy as `--platform` continues from it, adding to `changes`.
 `base` and `changes` as its record; continuing from a saved platform keeps
 the root `base`, so `changes` is always the difference from it.
 
+**From snax_cluster's hjson** (LNK1, D131, `design/hjson_platform.py`).
+`pixi run design from-hjson HJSON NAME` writes `platforms/NAME.json`, an
+original (`base` null), from a cluster file (`$ref`s resolved): the L1 from
+`cluster.tcdm`, `data_width`, `cluster_base_addr` and `dma_data_width`; the
+L2 from the `dram` range; `streamers.default`'s `temporal_dims` and
+`fifo_depth` from the one accelerator's streamer template, whose movers must
+agree. What the hjson does not hold (dtype, elements per word, latencies,
+`addr_depth`, `prio`, and SNAX-MODEL's `xbar`, `dma`, `controller`,
+`register_window`, `wait_mode`) is small16's. `snax_alu.json` comes from
+snax-gvsoc's `sw/cfg/snax_alu_cluster.hjson`; its `_old` copy gives the same
+platform.
+
 ## 14. Design checks
 
 Before the design step writes anything it runs every registered check on
@@ -1097,7 +1125,7 @@ problems.
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
 | `memory.layout` | a layout whose shape is not its container's |
 | `memory.align` | a base or stride that is not a multiple of the word; a container the DMA moves (in L2 and L1) that is not contiguous, not whole wide beats (open item 38) or not on a beat |
-| `memory.fit` | a layout that leaves its memory (the fix names the rows or L2 size that would hold it) |
+| `memory.fit` | a layout that leaves its memory, the message naming the memory's bytes `[start, end)`. Past the end the fix names the rows or L2 size that would hold it, after "pin it lower" for a pinned layout; below the start (a nonzero base) it names the pin that puts the layout at the memory's first byte |
 | `memory.overlap` | two layouts in one memory that share bytes, naming the pins (the fix moves the latest pin past everything) |
 | `point.keys` | a design point with unknown or missing keys or a malformed streamer entry |
 | `point.streamers` | a design point whose `streamers` are not the platform's shell for its graph |

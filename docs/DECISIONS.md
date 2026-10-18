@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D131**.
+  number: **D133**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -34,12 +34,12 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
-| gvsoc | D120 D121 D122 D125 D128 |
+| gvsoc | D120 D121 D122 D125 D128 D132 |
 | brm | D68 D70 D82 D103 D129 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D104 |
-| design | D84–D87 |
+| design | D84–D87 D131 |
 | flow | D90 D108 |
 | viz | D55 D57 D81 D96 D97 D99 |
 | docs | D26 D46 D117 |
@@ -442,3 +442,14 @@ configuration with valid and ready (a start waits while busy), busy and a counte
 accepted start to done) read-only, data ports to the streamer as GeMMX's, the shell wrapper written
 by the generator. snax_alu keeps its own rules as the baseline. Narrows open item 63.
 → snax-gvsoc `GEN3.md`.
+
+**D131** · design — LNK1 reads a platform from snax_cluster's hjson (`design from-hjson`): its
+one accelerator's movers must agree, and go into `streamers.default`; `num_channel` and
+`spatial_bounds` stay derived from the ports (D84); what only SNAX-MODEL reads is small16's until
+RET1. Per-accelerator templates as the hjson has them are open item 77. → C§13.
+
+**D132** · gvsoc — The GVSoC generator (`gen/`) writes Python that imports only installed
+snax-gvsoc components, every value a literal; every module is named `forge_*` and checked against
+the install's names, which would shadow it. Blocks are adapters registered by name (D19). Its
+manifest carries each accelerator task's beats, so regressions read them instead of a hand copy.
+→ `gen/gvsoc.py`.

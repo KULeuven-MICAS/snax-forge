@@ -123,6 +123,7 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program | built; C program M14 |
 | SNAX-GVSoC | `snax-gvsoc` repo | hjson, program, accelerators | profile, trace, output | M16 |
 | SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | until RET1 |
+| GVSoC generator | `gen/` | design point, snax-gvsoc install | accelerator composite, target, CSR headers, manifest | GEN3 (D132) |
 | HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
 | Flow | `flow/` | recipe or bound graph, platform | all of the above, checked | built |
 | Viewers | `viz/` | run directories, `.snaxdfg` files | local HTML views | built |
@@ -274,7 +275,7 @@ runs (D111) **[PLANNED, M14]**:
   item 51);
 - the **program** (section 5.5);
 - for SNAX-GVSoC, the **accelerator composite** on `SnaxUnit` and
-  `SnaxShell` and the **CSR headers** (GEN3, D128).
+  `SnaxShell` and the **CSR headers** (GEN3, D128; `gen/`, D132).
 
 **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output,
 latency and II.

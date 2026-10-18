@@ -11,13 +11,15 @@ onto streamer values (``snax_forge.lower.streams``). BRM3: the library of
 hand-written BRMs (library.py, ``load_brm``), starting with
 ``elementwise_add``. BRM4 (D103): ``elementwise_mul`` and ``accumulate``, a
 reduction named by its pattern and kind; ``drain`` as a third timing number;
-port names that can appear in code.
+port names that can appear in code. GEN3 (D129): an implementation's
+``binding`` (binding.py), its ``control`` and ``wait`` kinds registered.
 """
 
 from snax_forge.expr import ExprError
 
 from . import affine  # registers the "affine" notation (D70)
 from .affine import Nest, resolve_nest, task_nest
+from .binding import CONTROLS, WAITS, register_control, register_wait
 from .brm import (
     Brm,
     BrmError,
@@ -35,8 +37,10 @@ from .library import LIBRARY, library_names, load_brm
 from .notation import NOTATIONS, register_notation
 
 __all__ = [
+    "CONTROLS",
     "LIBRARY",
     "NOTATIONS",
+    "WAITS",
     "Brm",
     "BrmError",
     "Dataflow",
@@ -53,7 +57,9 @@ __all__ = [
     "affine",
     "library_names",
     "load_brm",
+    "register_control",
     "register_notation",
+    "register_wait",
     "resolve",
     "resolve_nest",
     "task_nest",

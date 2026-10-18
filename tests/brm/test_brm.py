@@ -85,15 +85,69 @@ def test_no_implementation_is_rejected():
         Brm.from_dict(d)
 
 
+# GEN3.md's binding of ElementwiseTiledSpatial (D129)
+BINDING = {
+    "block": "ElementwiseTiledSpatial",
+    "args": {"lanes": "W", "supportedOps": "op"},
+    "control": "counted",
+    "csrs": [{"field": "loopCount", "value": "n"}],
+    "wait": "lockstep",
+}
+
+
 def test_binding_is_optional():
     d = adder()
     del d["implementations"]["chisel_tiled_spatial"]["binding"]
     assert Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding is None
-    binding = {"module": "snax.forge.elementwise.ElementwiseTiledSpatial", "params": {}}
-    d["implementations"]["chisel_tiled_spatial"]["binding"] = binding
-    assert (
-        Brm.from_dict(d).to_dict()["implementations"]["chisel_tiled_spatial"]["binding"] == binding
+    d["implementations"]["chisel_tiled_spatial"]["binding"] = BINDING
+    assert Brm.from_dict(d).to_dict()["implementations"]["chisel_tiled_spatial"]["binding"] == (
+        BINDING
     )
+
+
+def test_binding_expressions_are_stored_canonical():
+    d = adder()
+    _impl(d)["binding"] = {**BINDING, "args": {"lanes": "W*1", "supportedOps": "op"},
+                           "csrs": [{"field": "loopCount", "value": "(n)"}]}  # fmt: skip
+    got = Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding
+    assert got["args"]["lanes"] == "W * 1" and got["csrs"] == [{"field": "loopCount", "value": "n"}]
+
+
+def _binding(**kw):
+    return lambda d: _impl(d).update(binding={**BINDING, **kw})
+
+
+BINDING_CASES = [
+    ("binding key", lambda d: _impl(d).update(binding={**BINDING, "op": 0}), "unknown keys"),
+    ("binding missing", lambda d: _impl(d).update(binding={"block": "X"}), "missing key 'args'"),
+    ("block", _binding(block=3), "block: must name a Chisel block"),
+    ("control", _binding(control="free"), "control: 'free' not registered"),
+    ("wait", _binding(wait="buffered"), "wait: 'buffered' not registered"),
+    ("args object", _binding(args=["W"]), "args: must be an object"),
+    ("args runtime", _binding(args={"lanes": "n"}), "not design params"),
+    ("args expr", _binding(args={"lanes": "'W'"}), "not allowed"),
+    ("csrs list", _binding(csrs={"loopCount": "n"}), "csrs: must be a list"),
+    ("csr keys", _binding(csrs=[{"field": "loopCount"}]), "must be {field, value}"),
+    ("csr name", _binding(csrs=[{"field": "T", "value": "m"}]), "uses \\['m'\\]"),
+    ("csr field", _binding(csrs=[{"field": "a b", "value": "n"}]), "not a field name"),
+    ("csr twice", _binding(csrs=[{"field": "x", "value": "n"}] * 2), "duplicate fields"),
+]
+
+
+@pytest.mark.parametrize(("case", "edit", "msg"), BINDING_CASES, ids=[c[0] for c in BINDING_CASES])
+def test_invalid_binding(case, edit, msg):
+    d = adder()
+    edit(d)
+    with pytest.raises(BrmError, match=msg):
+        Brm.from_dict(d)
+
+
+def test_control_and_wait_are_registered_kinds():
+    from snax_forge.brm import CONTROLS, WAITS, register_wait
+
+    assert list(CONTROLS) == ["counted", "stream"] and list(WAITS) == ["lockstep", "pipelined"]
+    with pytest.raises(ValueError, match="already registered"):
+        register_wait("lockstep", "again")
 
 
 def test_unknown_keys_are_rejected():

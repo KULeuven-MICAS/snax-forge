@@ -15,7 +15,9 @@ from snax_forge.lower.layout import Layout, LayoutError, dma_side
 from .helpers import (
     BOUND,
     SMALL16,
+    SNAX_ALU,
     accel_node,
+    bound_vecadd,
     bound_w8,
     codes,
     design,
@@ -418,6 +420,24 @@ def test_a_layout_must_fit_its_memory():
     assert got[0].fix.startswith("--set platform.l1.rows=12")
     (p,) = problems(with_memory([("C.l1.base", 8000)]))
     assert p.code == "memory.fit" and p.fix.startswith("pin it lower")
+
+
+def test_a_pin_below_a_nonzero_base_gets_the_pin_at_the_memorys_first_byte():
+    """snax_alu's L1 starts at 0x1000_0000 and its L2 at 2**31: a pin below either is
+    outside, and the fix pins it at the first byte, which then fits."""
+
+    def pinned(a: int, b: int) -> Design:
+        d = Design(Platform.load(SNAX_ALU), bound_vecadd(4))
+        d.memory_spec = MemorySpec().with_changes([("A.l1.base", a), ("B.l2.base", b)])
+        return d
+
+    got = {p.where: p for p in problems(pinned(576, 0))}
+    assert [p.code for p in got.values()] == ["memory.fit", "memory.fit"]
+    a, b = got["A in l1"], got["B in l2"]
+    assert "L1 is 131072 B (32 banks x 512 rows x 8 B) at [268435456, 268566528)" in a.message
+    assert a.fix == "pin it at or above 268435456 (--set memory.A.l1.base=268435456)"
+    assert b.fix == "pin it at or above 2147483648 (--set memory.B.l2.base=2147483648)"
+    assert problems(pinned(268435456, 2147483648)) == []
 
 
 def test_pins_may_not_overlap():
