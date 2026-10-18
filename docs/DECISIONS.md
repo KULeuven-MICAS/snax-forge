@@ -428,9 +428,9 @@ GEN3 models the Chisel blocks before GEN1 generates them, so the model side is t
 **D128** · gvsoc — Generated accelerators run on two hand-written generic components in
 snax-gvsoc, `SnaxUnit` (a Chisel block's datapath) and `SnaxShell` (the CSR manager), every number a
 property, so a sweep compiles nothing; snax-forge generates only Python (composite, target) and
-headers per design point. One generated point is a fixture in snax-gvsoc (as D126), so neither
-repo's CI needs the other; snax-gvsoc is a submodule at `gvsoc/`, never fetched by CI.
-→ snax-gvsoc `GEN3.md`.
+headers per design point. Each design point snax-gvsoc's regression runs is a fixture there, in
+`forge/<design>/` (as D126), so neither repo's CI needs the other; snax-gvsoc is a submodule at
+`gvsoc/`, never fetched by CI. → snax-gvsoc `GEN3.md`, `forge/README.md`.
 
 **D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it:
 `block`, `args`, `control` (`counted`, `stream`), `csrs` (configuration fields in CSR order, then

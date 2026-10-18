@@ -86,7 +86,7 @@ that the DMA's counters stay the RTL's (D124).
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | LNK1 | A. A platform read from snax_cluster's `cfg/snax_alu_cluster.hjson` (`platforms/snax_alu.json`, `design from-hjson`) with the streamer template fields, checked as any platform is: `temporal_dim` and `fifo_depth` into the default, `spatial_bounds` and `num_channel` derived from the ports (D131, open item 77) | none | The platform round-trips; `vecadd` at W = 4 designs on it | done |
-| GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written vecadd program; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `wip` |
+| GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written program (`forge-elementwise`, until GEN2a) on fixtures in snax-gvsoc `forge/<design>/`; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `wip` |
 | LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119) | GEN3 | GEN3's runs on the read target | todo |
 | GEN2a | A. The program: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking | LNK2a | `vecadd` and `dot` check themselves on SNAX-GVSoC | todo |
 | FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `dot` flows give checked runs; the viewer and the reports open them | todo |
@@ -157,7 +157,19 @@ to `ACC_RO_PERF_COUNT` 981). Round 2b: `pixi.lock` written with pixi 0.41.4
 (CI's and the image's); `pixi run -e ci test` passes in full; the generator
 names the design point by its path from the root, so its output is
 byte-identical wherever it is written (`gen.point` outside the root); the
-install check run against the real install. Next, round 3: steps 5 and 6.
+install check run against the real install. GEN3 round 3 (steps 5, 6a and
+7): the manifest carries the bound graph's `symbols`; snax-gvsoc checks in
+the generator's output for vecadd and vecmul as fixtures in
+`forge/<design>/` (D128), and `make regress` runs each from its manifest
+through `--target-dir` with a hand-written program, `forge-elementwise`, on
+the generated headers (its counter through `check_counter`);
+`tests/gen/test_fixture.py` reproduces each fixture byte for byte (skipped
+until the submodule is bumped past `forge/`); `elementwise_mul` has
+`elementwise_add`'s binding with op mul, exercised by the test kernel
+`vecmul` (`recipes/vecmul.json`); `ElementwiseTiledSpatialLockstepSpec`
+drives the Chisel block through snax-gvsoc's lockstep unit cases
+(`SNAX_GVSOC_UNIT_CASES`). Next, round 4: step 6b, `accumulate` (`control:
+stream`, an output rate, the drain), planned first.
 
 ## Open Items
 

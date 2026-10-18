@@ -324,6 +324,27 @@ point's accelerator to `out/gvsoc/<design>/` (target `forge_<design>`, GEN3);
 `make run TARGET=forge_<design> TARGET_DIRS=../out/gvsoc/<design> ELF=...`
 adds that folder to gvrun's target folders.
 
+## Refreshing a fixture
+
+snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
+(vecadd, vecmul), which its `make regress` runs (D128).
+`tests/gen/test_fixture.py` generates each again and compares it byte for
+byte with the submodule's copy; it skips when the submodule is not checked
+out or has no `forge/`. When the generator or the design point changes,
+refresh the folder from a snax-gvsoc checkout next to this one, in the
+image, with snax-gvsoc installed at `out/snax-gvsoc/install` so the install
+check runs:
+
+```bash
+pixi run sandbox recipes/vecadd.json
+pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json
+pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd \
+    --install out/snax-gvsoc/install
+```
+
+(the same with `vecmul`), commit the folder in snax-gvsoc as written, then
+bump the submodule here so the test compares against it.
+
 # 6. Tests and lint
 
 ```bash
