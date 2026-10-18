@@ -316,8 +316,9 @@ after the install's own `targets` and `generators`; `GVRUN_ARGS` goes before
 `out/snax-gvsoc/work/<target>/<elf name>`. `SNAX_GVSOC=../../snax-gvsoc` uses a
 sibling checkout instead of the submodule; `build` clears `out/snax-gvsoc`
 when the checkout changes, since CMake refuses a build folder of another one.
-A target in `gvsoc/targets/` that no build made stops in gvrun for want of its
-platform tree (`gvsoc/targets/README.md`).
+A target in `gvsoc/targets/` that no build made has no platform tree: gvrun
+warns and runs it on the JSON config path, with snax-gvsoc from GEN3 round
+1b on; the submodule's pin still stops on it (`gvsoc/targets/README.md`).
 
 # 6. Tests and lint
 

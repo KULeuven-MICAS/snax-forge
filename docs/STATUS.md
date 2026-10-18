@@ -141,9 +141,9 @@ bump, the SG8 notes, these docs) are merged. Next: GEN3, planned in
 snax-gvsoc `GEN3.md` (D127), with LNK1 before GEN3's step 3. GEN3 round 1
 (branches `ry/gen3` here and in snax-gvsoc, not merged): snax-gvsoc a
 submodule at `gvsoc/`; `SnaxUnit` and `SnaxShell` in snax-gvsoc, the start
-held while busy, on a hand-written `snax_tiled_add` target. A target from
-`gvsoc/targets/` does not run yet: gvrun wants a platform tree only a build
-makes (`GEN3.md`, Open; to decide before step 3).
+held while busy, on a hand-written `snax_tiled_add` target. Round 1b: a
+target from `gvsoc/targets/` runs on the JSON config path (gvrun warns that
+it has no platform tree); `alu_probe` and `tiled_add_sparse_probe` there.
 
 ## Open Items
 
