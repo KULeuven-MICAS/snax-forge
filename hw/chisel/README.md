@@ -40,6 +40,11 @@ hw/chisel/
     └── test/scala/snax/forge/          # one spec per module, plus a model
 ```
 
+`ElementwiseTiledSpatialLockstepSpec` drives `ElementwiseTiledSpatial` through
+snax-gvsoc's lockstep `SnaxUnit` cases (GEN3): set `SNAX_GVSOC_UNIT_CASES` to
+their folder, e.g. `SNAX_GVSOC_UNIT_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/unit/cases
+pixi run -e hw chisel-test`; without it the test is canceled.
+
 Package root is `snax.forge`, matching `snax.streamer` / `snax.xdma` in
 snax_cluster.
 
