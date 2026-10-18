@@ -752,7 +752,7 @@ name.
 | `function` | a registered accelerator kind, its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null until GEN3, then `block`, `args`, `control`, `csrs`, `wait`, D129) | the accelerator entry, the GVSoC accelerator (GEN3), the HW generator (GEN1) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null, or `block`, `args`, `control`, `csrs`, `wait`, D129) | the accelerator entry, the GVSoC accelerator (GEN3), the HW generator (GEN1) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source
@@ -820,9 +820,25 @@ against the registered kind.
    "source": "chisel",
    "supports": {},
    "timing": {"latency": 0, "initiation_interval": 1, "drain": 0},
-   "binding": null
+   "binding": {
+    "block": "ElementwiseTiledSpatial",
+    "args": {"lanes": "W", "supportedOps": "op"},
+    "control": "counted",
+    "csrs": [{"field": "loopCount", "value": "n"}],
+    "wait": "lockstep"
+   }
   }
 ```
+
+**The binding** (D129, `brm/binding.py`) names the Chisel block and how
+the BRM fills it; null until the implementation is generated. `block` is
+the block's name (the generators register what they can build); `args` its
+parameters, each an expression over design params; `control` (`counted`:
+the block counts its firings, `stream`: the shell counts) and `wait`
+(`lockstep`, `pipelined`) are registered kinds (D19); `csrs` the
+configuration fields in CSR order, each `{field, value}` with the value an
+expression over params, start following them. A fixed op gives no `opSel`
+field. Expressions are stored canonical.
 
 `resolve` builds the `AccelConfig` through the kind and rejects a BRM whose
 declared ports (name, direction, lanes, rate, in order) or timing differ

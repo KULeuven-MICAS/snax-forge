@@ -319,6 +319,10 @@ sibling checkout instead of the submodule; `build` clears `out/snax-gvsoc`
 when the checkout changes, since CMake refuses a build folder of another one.
 A target in `gvsoc/targets/` that no build made has no platform tree: gvrun
 warns and runs it on the JSON config path (`gvsoc/targets/README.md`).
+`pixi run gen-gvsoc out/design/<design>/design_point.json` writes a design
+point's accelerator to `out/gvsoc/<design>/` (target `forge_<design>`, GEN3);
+`make run TARGET=forge_<design> TARGET_DIRS=../out/gvsoc/<design> ELF=...`
+adds that folder to gvrun's target folders.
 
 # 6. Tests and lint
 

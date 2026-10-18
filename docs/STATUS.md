@@ -16,6 +16,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | SNAX-BRM | `snax_forge/brm/` | `tests/brm/` | `snax_forge/brm/library/` |
 | SNAX-SANDBOX | `snax_forge/sandbox/` | `tests/sandbox/` | `recipes/` |
 | Design step | `snax_forge/design/` | `tests/design/` | `platforms/` |
+| GVSoC generator | `snax_forge/gen/` | `tests/gen/` | |
 | SNAX-LOWER | `snax_forge/lower/` | `tests/lower/` | |
 | SNAX-MODEL (until RET1) | `snax_forge/snax_model/` | `tests/snax_model/` | `scenarios/` |
 | Flow | `snax_forge/flow/` | `tests/flow/` | |
@@ -85,7 +86,7 @@ that the DMA's counters stay the RTL's (D124).
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | LNK1 | A. A platform read from snax_cluster's `cfg/snax_alu_cluster.hjson` (`platforms/snax_alu.json`, `design from-hjson`) with the streamer template fields, checked as any platform is: `temporal_dim` and `fifo_depth` into the default, `spatial_bounds` and `num_channel` derived from the ports (D131, open item 77) | none | The platform round-trips; `vecadd` at W = 4 designs on it | done |
-| GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written vecadd program; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | todo |
+| GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written vecadd program; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `wip` |
 | LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119) | GEN3 | GEN3's runs on the read target | todo |
 | GEN2a | A. The program: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking | LNK2a | `vecadd` and `dot` check themselves on SNAX-GVSoC | todo |
 | FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `dot` flows give checked runs; the viewer and the reports open them | todo |
@@ -146,7 +147,10 @@ target from `gvsoc/targets/` runs on the JSON config path (gvrun warns that
 it has no platform tree); `alu_probe` and `tiled_add_sparse_probe` there. LNK1 is
 done: `platforms/snax_alu.json` is read from snax_cluster's hjson (D131),
 the first platform with a nonzero L1 base (`0x1000_0000`) and a 2 GiB L2;
-vecadd designs on it.
+vecadd designs on it. GEN3 round 2, step 3: `elementwise_add` has its
+binding (D129), and `pixi run gen-gvsoc` writes a design point's composite,
+target and manifest to `out/gvsoc/<design>/` (D132); `forge_vecadd`
+(W = 4 on `snax_alu.json`) runs snax-shell with `snax_tiled_add`'s lines.
 
 ## Open Items
 

@@ -18,13 +18,14 @@ implementations, which differ in how they are built:
 Designs that differ only in timing, the param values they support or their
 RTL source are implementations of one BRM. Different ports, rates or data
 order make a different BRM. Only ``source: chisel`` is accepted for now
-(open item 28), and ``binding`` may be null until GEN1.
+(open item 28), and ``binding`` may be null until it is generated
+(binding.py, D129: the Chisel block and how the BRM fills it).
 
 Which part serves which component: interface, function and the chosen
 implementation's timing give the accelerator entry of the cluster file
 (SNAX-MODEL, through LOW1c); the dataflow gives the streamer values
 (SNAX-LOWER, through LOW1a); the pattern serves SNAX-SANDBOX's ``bind`` and the
-binding the HW generator (GEN1).
+binding the generators (GEN3's GVSoC accelerator, GEN1's Chisel).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
 and end up in the cluster file. ``runtime`` params are the accelerator's
@@ -59,6 +60,7 @@ from snax_forge import expr
 from snax_forge.expr import Value
 from snax_forge.snax_model.config import check_keys, plain, to_json
 
+from .binding import check_binding
 from .notation import NOTATIONS
 
 if TYPE_CHECKING:
@@ -566,8 +568,13 @@ def _check_implementations(b: Brm, design: dict[str, Param], what: str) -> None:
             raise BrmError(f"{w}.timing.latency: must be >= 0, got {c}")
         if (c := expr.constant(t.initiation_interval)) is not None and c < 1:
             raise BrmError(f"{w}.timing.initiation_interval: must be >= 1, got {c}")
-        if impl.binding is not None and not isinstance(impl.binding, dict):
-            raise BrmError(f"{w}.binding: must be null or an object")
+        if impl.binding is not None:
+            try:
+                impl.binding = check_binding(
+                    impl.binding, design, b.interface.params, f"{w}.binding"
+                )
+            except ValueError as e:
+                raise BrmError(str(e)) from None
 
 
 def _check_dataflow(b: Brm, what: str) -> None:

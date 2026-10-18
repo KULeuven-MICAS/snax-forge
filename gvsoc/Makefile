@@ -33,6 +33,9 @@ TARGET ?=
 ELF ?=
 WORK_DIR ?= $(GVSOC_WORKDIR)/work/$(TARGET)/$(basename $(notdir $(ELF)))
 GVRUN_ARGS ?=
+# More target folders, after targets/ (e.g. the generator's out/gvsoc/<design>,
+# its manifest's target_dirs)
+TARGET_DIRS ?=
 
 .PHONY: build sw run
 
@@ -53,10 +56,12 @@ sw:
 # USE_GVRUN and USE_GVRUN2 for the install, and passes
 # --target-dir=$(INSTALL)/targets --target-dir=$(INSTALL)/generators
 # --model-dir=$(INSTALL)/models before these arguments; gvrun puts the target
-# directories at the head of sys.path in that order, so targets/ comes last.
+# directories at the head of sys.path in that order, so targets/ and then
+# TARGET_DIRS come last.
 run:
 	$(if $(TARGET),,$(error set TARGET))
 	$(if $(ELF),,$(error set ELF))
 	mkdir -p $(WORK_DIR)
-	$(INSTALL)/bin/gvrun --target-dir=$(CURDIR)/targets --target $(TARGET) \
+	$(INSTALL)/bin/gvrun --target-dir=$(CURDIR)/targets \
+		$(foreach dir,$(TARGET_DIRS),--target-dir=$(abspath $(dir))) --target $(TARGET) \
 		--work-dir $(WORK_DIR) --param chip/soc/binary=$(abspath $(ELF)) $(GVRUN_ARGS) run
