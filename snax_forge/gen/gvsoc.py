@@ -1,4 +1,4 @@
-"""A design point -> a generated accelerator on SNAX-GVSoC (GEN3 step 3, D128, D132).
+"""A design point -> a generated accelerator on SNAX-GVSoC (GEN3 steps 3 and 4, D128, D132).
 
     generate(design_point, out_dir, install=None) -> Manifest
 
@@ -12,6 +12,8 @@ point compiles nothing (D128). ``out_dir`` gets:
     forge_<design>.py       the target forge_<design>: snax_alu's board
                             (SnaxAluBoard) with the composite in its
                             accelerator slot
+    include/                the C headers (headers.py): the streamer's
+                            streamer_csr_addr_map.h and <instance>_csr.h
     manifest.json           what was generated (Manifest)
 
 **Only installed components.** The generated files import nothing but
@@ -72,6 +74,7 @@ from snax_forge.sdfg.paths import _repo_root
 from snax_forge.snax_model.config import to_json
 
 from .blocks import BLOCKS, GenError, Unit, port_dtype
+from .headers import STREAMER_HEADER, accelerator_header, streamer_header
 
 ROOT = _repo_root()
 OUT = ROOT / "out" / "gvsoc"
@@ -524,11 +527,15 @@ def generate(
         check_install(Path(install), [acc_mod, target_mod])
 
     shown = _shown(point_path)
+    streamer_h, streamer_last = streamer_header(movers(template), SNAX_CSR_FIRST, shown)
+    assert streamer_last == layout.streamer_last, (streamer_last, layout)
     files = {
         f"{acc_mod}.py": composite(design, shown, name, inst, unit, template, tcdm_size, layout),
         f"{target_mod}.py": target(design, shown),
+        f"include/{STREAMER_HEADER}": streamer_h,
+        f"include/{name}_csr.h": accelerator_header(name, layout, shown),
     }
-    out.mkdir(parents=True, exist_ok=True)
+    (out / "include").mkdir(parents=True, exist_ok=True)
     for f, text in files.items():
         (out / f).write_text(text)
     manifest = Manifest(

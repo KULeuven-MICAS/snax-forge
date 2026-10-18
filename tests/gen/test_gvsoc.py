@@ -84,8 +84,11 @@ def _constants(tree: ast.Module) -> dict:
 def test_vecadd_w4_files_and_manifest(w4):
     out, m = w4
     assert m.target == "forge_vecadd" and m.design == "vecadd"
-    assert m.files == ["forge_vecadd_acc.py", "forge_vecadd.py", "manifest.json"]
-    assert sorted(f.name for f in out.iterdir()) == sorted(m.files)
+    assert m.files == [
+        "forge_vecadd_acc.py", "forge_vecadd.py", "include/streamer_csr_addr_map.h",
+        "include/acc_csr.h", "manifest.json",
+    ]  # fmt: skip
+    assert sorted(str(f.relative_to(out)) for f in out.rglob("*") if f.is_file()) == sorted(m.files)
     assert m.target_dirs == ["."] and m.trace == "snax_acc0/unit"
     assert m.design_point == "../../design/vecadd/design_point.json"
     assert (out / m.design_point).resolve().is_file()

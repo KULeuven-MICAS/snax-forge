@@ -1,8 +1,9 @@
 """SNAX-GEN: generated accelerators from a design point (M14).
 
-Built so far, GEN3 step 3 (D128, D132): a design point's accelerator on
-SNAX-GVSoC, as Python on snax-gvsoc's installed components (gvsoc.py),
-each Chisel block an adapter registered by name (blocks.py). The command
+Built so far, GEN3 steps 3 and 4 (D128, D132): a design point's accelerator
+on SNAX-GVSoC, as Python on snax-gvsoc's installed components (gvsoc.py),
+each Chisel block an adapter registered by name (blocks.py), and the C
+headers a program drives it with (headers.py). The command
 line is ``python -m snax_forge.gen`` (pixi ``gen-gvsoc``).
 """
 

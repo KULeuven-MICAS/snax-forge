@@ -151,6 +151,9 @@ vecadd designs on it. GEN3 round 2, step 3: `elementwise_add` has its
 binding (D129), and `pixi run gen-gvsoc` writes a design point's composite,
 target and manifest to `out/gvsoc/<design>/` (D132); `forge_vecadd`
 (W = 4 on `snax_alu.json`) runs snax-shell with `snax_tiled_add`'s lines.
+Step 4: it also writes the streamer's `streamer_csr_addr_map.h` (the Chisel
+header's defines) and `<instance>_csr.h` (vecadd's `ACC_RW_LOOP_COUNT` 978
+to `ACC_RO_PERF_COUNT` 981). Next, round 3: steps 5 and 6.
 
 ## Open Items
 
