@@ -9,8 +9,9 @@ A target here, or one snax-forge generates, never takes the name of an
 installed target: gvrun puts the install's `targets` ahead of this folder on
 its path, so an installed `snax_alu` is run even when a `snax_alu.py` is
 here (tried: a `snax_alu.py` that stops on import, in a `--target-dir`, was
-never loaded). The same holds for any module a target imports. GEN3's
-generator (step 3) checks it.
+never loaded). The same holds for any module a target imports. snax-forge's
+generator writes no targets since LNK2a: a design point runs on the
+installed `snax_hjson` with its cluster file (`--param hjson=`).
 
 | Target | What |
 |---|---|

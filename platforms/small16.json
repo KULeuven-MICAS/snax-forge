@@ -2,6 +2,8 @@
  "name": "small16",
  "base": null,
  "changes": {},
+ "hjson": null,
+ "accelerator_slot": null,
  "l1": {
   "n_banks": 16,
   "width_bits": 64,

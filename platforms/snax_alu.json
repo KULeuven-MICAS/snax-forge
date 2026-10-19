@@ -2,6 +2,8 @@
  "name": "snax_alu",
  "base": null,
  "changes": {},
+ "hjson": "platforms/snax_alu.hjson",
+ "accelerator_slot": "snax_alu",
  "l1": {
   "n_banks": 32,
   "width_bits": 64,

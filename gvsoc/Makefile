@@ -22,7 +22,7 @@ INSTALL = $(GVSOC_WORKDIR)/install
 BUILT_FROM = $(GVSOC_WORKDIR)/checkout.txt
 
 # The targets GVSoC compiles (components and platform trees)
-TARGETS ?= snax_alu;snax_alu_sparse;snax_tiled_add
+TARGETS ?= snax_alu;snax_alu_sparse;snax_tiled_add;snax_hjson
 
 # Programs of $(SNAX_GVSOC)/sw/apps/ that `sw` builds after sw/ itself
 APPS ?=
@@ -33,8 +33,7 @@ TARGET ?=
 ELF ?=
 WORK_DIR ?= $(GVSOC_WORKDIR)/work/$(TARGET)/$(basename $(notdir $(ELF)))
 GVRUN_ARGS ?=
-# More target folders, after targets/ (e.g. the generator's out/gvsoc/<design>,
-# its manifest's target_dirs)
+# More target folders, after targets/
 TARGET_DIRS ?=
 
 .PHONY: build sw run

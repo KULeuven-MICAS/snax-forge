@@ -9,6 +9,9 @@ recipe never names it; the design step pairs a bound graph with a platform.
      "name":     "small16",
      "base":     null,              the platform this one was made from
      "changes":  {},                what differs from ``base``, path -> value
+     "hjson":    null,              the source cluster file, a path from
+                                    snax-forge's root (``design from-hjson``)
+     "accelerator_slot": null,      its accelerator slot (``snax_acc_name``)
      "l1":       {...},             L1Config
      "l2":       {...} or null,     L2Config; no L2, no DMA
      "xbar":     {"check_hold": true},
@@ -31,6 +34,15 @@ and an entry named after the streamer overrides any of it for that one
 streamer only. Resolving the shell against a graph is streamers.py; an entry
 that matches no port is a check (``connect.streamer_key``), not a load error,
 because only the graph knows the ports.
+
+**The source hjson.** A platform read from snax_cluster's cluster file
+(hjson_platform.py) keeps the file it came from (``hjson``, a copy in
+``platforms/``) and the name of its one accelerator slot
+(``accelerator_slot``): the GVSoC generator writes the design's cluster file
+from that source, with that slot set (snax_forge/gen). Both are null for a
+platform not read from one (small16). ``--set accelerator_slot=NAME`` changes
+it as any field: the generator then sets the source's slot of that name, and
+refuses a source whose only slot has another (``gen.slot``).
 
 **Changes and working copies.** ``with_changes`` applies ``--set`` paths
 (``l1.n_banks``, ``streamers.acc_a.temporal_dims``) and returns a working
@@ -65,14 +77,16 @@ from snax_forge.snax_model.config import Config, plain, to_json
 
 from .problems import DesignError, Problem
 
-KEYS = ("name", "base", "changes", "l1", "l2", "xbar", "dma", "controller",
-        "register_window", "wait_mode", "streamers")  # fmt: skip
+KEYS = ("name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2", "xbar", "dma",
+        "controller", "register_window", "wait_mode", "streamers")  # fmt: skip
 WAIT_MODES = ("poll", "signal")
 XBAR_KEYS = ("check_hold",)
 # Streamer fields the port decides; an entry may not set them (connect.derived).
 DERIVED = ("write", "n_ports")
 # Paths the tools write; --set may not change them.
 PROVENANCE = ("name", "base", "changes")
+# Top-level fields that are a string or null (the source hjson's)
+NULLABLE = ("hjson", "accelerator_slot")
 
 
 @dataclass(frozen=True)
@@ -112,6 +126,8 @@ class Platform:
     entries: dict[str, dict[str, Any]] = field(default_factory=dict)  # per streamer, as written
     base: str | None = None
     changes: dict[str, Any] = field(default_factory=dict)
+    hjson: str | None = None  # the source cluster file, from snax-forge's root
+    accelerator_slot: str | None = None  # its accelerator slot, snax_acc_name
 
     # --- the streamer shell ---
 
@@ -152,6 +168,8 @@ class Platform:
             "name": self.name,
             "base": self.base,
             "changes": plain(self.changes),
+            "hjson": self.hjson,
+            "accelerator_slot": self.accelerator_slot,
             "l1": self.l1.to_dict(),
             "l2": None if self.l2 is None else self.l2.to_dict(),
             "xbar": dict(self.xbar),
@@ -302,6 +320,19 @@ def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
     changes = d.get("changes", {})
     if not isinstance(changes, Mapping):
         out.append(Problem("platform.keys", "changes", f"must be an object, got {changes!r}"))
+    source, slot = d.get("hjson"), d.get("accelerator_slot")
+    if source is not None and (not isinstance(source, str) or not source):
+        out.append(
+            Problem(
+                "platform.keys", "hjson", f"must be a path from the root or null, got {source!r}"
+            )
+        )
+    if slot is not None and (not isinstance(slot, str) or not slot.isidentifier()):
+        out.append(
+            Problem(
+                "platform.keys", "accelerator_slot", f"must be an identifier or null, got {slot!r}"
+            )
+        )
 
     l1 = _section(L1Config, d.get("l1", {}), "l1", out)
     l2 = None if d.get("l2") is None else _section(L2Config, d["l2"], "l2", out)
@@ -350,7 +381,8 @@ def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
     return Platform(
         name=name, l1=l1, l2=l2, xbar={"check_hold": bool(xbar.get("check_hold", True))},
         dma=dma, controller=ctl, register_window=window, wait_mode=wait_mode,
-        default=default, entries=entries, base=base, changes=dict(changes),
+        default=default, entries=entries, base=base, changes=dict(changes), hjson=source,
+        accelerator_slot=slot,
     ), []  # fmt: skip
 
 
@@ -375,6 +407,11 @@ def _apply(d: dict[str, Any], path: str, value: Any) -> list[Problem]:
         return [Problem("platform.keys", where, "not a path")]
     if parts[0] in PROVENANCE:
         return [Problem("platform.keys", where, "is written by the tools, not by --set")]
+    if parts[0] in NULLABLE:
+        if len(parts) != 1 or not (value is None or isinstance(value, str)):
+            return [Problem("platform.keys", where, f"must be a string or null, got {value!r}")]
+        d[path] = value
+        return []
     if parts[0] == "streamers":
         if len(parts) != 3:
             return [Problem("platform.keys", where, "give streamers.<streamer>.<option>")]

@@ -1,33 +1,49 @@
-"""Shared helpers for the GVSoC generator's tests (GEN3 step 3).
+"""Shared helpers for the generator's tests (GEN3 step 3, LNK2a).
 
 ``point`` writes a design point of vecadd (bound by the checked-in recipe,
 W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by
 ``recipes/vecmul.json``; ``bound_vsum``: vsum by ``recipes/vsum.json``), on
-``platforms/snax_alu.json``; ``fake_install`` makes an install folder
-holding every module the generated files import, as empty files. The snax-gvsoc submodule (``SUB``)
-is read only where it is checked out (CI never fetches it, D128).
+``platforms/snax_alu.json`` (or a given platform), in a folder that stands
+for snax-forge's root: the platform's source hjson is copied into its
+``platforms/``. The snax-gvsoc submodule (``SUB``) is read only where it is
+checked out (CI never fetches it, D128); ``snax_cfg`` imports its reader
+where the pin has one.
 """
 
 from __future__ import annotations
 
 import importlib.util
+import shutil
 import sys
 import types
 from pathlib import Path
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
-from snax_forge.gen import IMPORTS
 from snax_forge.sandbox import Recipe, apply_recipe
 from tests.design.helpers import FIXTURES, REPO, SNAX_ALU, bound_vecadd
 
 SUB = REPO / "gvsoc" / "snax-gvsoc"
 HJSON = SUB / "sw" / "cfg" / "snax_alu_cluster.hjson"
+# snax_alu's source hjson (platforms/snax_alu.json's hjson)
+SOURCE = REPO / "platforms" / "snax_alu.hjson"
 
 
-def point(tmp_path: Path, w: int = 4, name: str = "vecadd", graph: Graph | None = None) -> Path:
-    """A design point file of vecadd at ``w`` (or of ``graph``) on snax_alu, named ``name``."""
-    design = Design(Platform.load(SNAX_ALU), graph or bound_vecadd(w))
+def root(tmp_path: Path) -> Path:
+    """``tmp_path`` as snax-forge's root: snax_alu's source hjson in its platforms/."""
+    (tmp_path / "platforms").mkdir(parents=True, exist_ok=True)
+    shutil.copy(SOURCE, tmp_path / "platforms" / SOURCE.name)
+    return tmp_path
+
+
+def point(
+    tmp_path: Path, w: int = 4, name: str = "vecadd", graph: Graph | None = None,
+    platform: Platform | None = None,
+) -> Path:  # fmt: skip
+    """A design point file of vecadd at ``w`` (or of ``graph``) on snax_alu (or ``platform``),
+    named ``name``, under ``tmp_path`` as the root (``root``)."""
+    root(tmp_path)
+    design = Design(platform or Platform.load(SNAX_ALU), graph or bound_vecadd(w))
     assert run_checks(design) == []
     path = tmp_path / "design" / name / "design_point.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -47,22 +63,17 @@ def bound_vsum() -> Graph:
     return apply_recipe(recipe, Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
 
 
-def fake_install(tmp_path: Path, extra: dict[str, str] | None = None) -> Path:
-    """An install folder with every module of IMPORTS (empty), and ``extra`` (relative path -> text)."""
-    root = tmp_path / "install"
-    for d in ("targets", "generators", "python"):
-        (root / d).mkdir(parents=True, exist_ok=True)
-    places = {"gvsoc": "python", "interco": "generators"}
-    for imp in IMPORTS:
-        parts = imp.split(".")
-        where = root / places.get(parts[0], "generators")
-        path = where.joinpath(*parts).with_suffix(".py")
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.touch()
-    for rel, text in (extra or {}).items():
-        (root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (root / rel).write_text(text)
-    return root
+def snax_cfg() -> types.ModuleType | None:
+    """snax-gvsoc's snax/snax_cfg.py (the reader of the cluster hjson, LNK2a round 1), or None
+    where the submodule is not checked out or its pin predates it."""
+    path = SUB / "snax" / "snax_cfg.py"
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("snax_cfg", path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("snax_cfg", mod)  # its dataclasses look their module up
+    spec.loader.exec_module(mod)
+    return mod
 
 
 def snax_streamer() -> types.ModuleType:

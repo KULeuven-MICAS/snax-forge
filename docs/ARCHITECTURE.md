@@ -123,7 +123,7 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program | built; C program M14 |
 | SNAX-GVSoC | `snax-gvsoc` repo | hjson, program, accelerators | profile, trace, output | M16 |
 | SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | until RET1 |
-| GVSoC generator | `gen/` | design point, snax-gvsoc install | accelerator composite, target, CSR headers, manifest | GEN3 (D132) |
+| Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, manifest | GEN3, LNK2a (D134) |
 | HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
 | Flow | `flow/` | recipe or bound graph, platform | all of the above, checked | built |
 | Viewers | `viz/` | run directories, `.snaxdfg` files | local HTML views | built |
@@ -220,8 +220,9 @@ hashes recorded and the license kept (D116). snax-forge holds it as a submodule 
 with a Makefile that builds and runs it and snax-forge's own targets beside it (GEN3, D128). It
 holds:
 
-- a **SNAX target** per cluster: `snax_alu` written by hand (SG1), read
-  from the cluster hjson later (LNK2a);
+- one **SNAX target**, `snax_hjson`, read from a cluster hjson at run time
+  (LNK2a, D134): `snax_alu` and `snax_alu_sparse` are it on their fixed
+  file, a design point's cluster file is passed with `--param hjson=`;
 - a small **core patch**: the Snitch core sends CSRs 0x3C0 to 0x5FF as
   32-bit IO requests at 4 × CSR on its `snax_csr` port, bound to an
   accelerator component per core, so a `csrw` reaches the accelerator's
@@ -234,9 +235,9 @@ holds:
   streamer's ports, the cores and AXI, copying the plain or the sparse
   interconnect's arbiter, with the DMA taking whole superbanks (SG3, SG7,
   snax-gvsoc #10, D122); the hand-written **`snax_alu`**
-  (SG4), and the generic **`SnaxUnit`** and **`SnaxShell`** with a
-  composite generated per design point in place of the hand-written
-  `SnaxAluAcc` (GEN3, D128); each checked against the RTL by
+  (SG4), and the generic **`SnaxUnit`** and **`SnaxShell`** in one standard
+  composite built from a slot's datapath block, in place of the
+  hand-written `SnaxAluAcc` (GEN3, LNK2a, D128, D134); each checked against the RTL by
   running the same ELF on both and comparing counters (D123), and the
   whole cluster per phase against a three-tier target, checked by hand from
   fresh runs of one ELF on both sides, while `make regress` checks that
@@ -268,14 +269,17 @@ runs (D111) **[PLANNED, M14]**:
 - **accelerator RTL** from each BRM's hardware binding, through `Emit` and
   the Chisel blocks in `hw/chisel/` (D91), with a CSR adapter and a shell
   wrapper on SNAX's ports (GEN1);
-- **cluster hjson**: TCDM size and banks, DMA width, and per accelerator its
-  CSR counts and streamer template; SNAX's own generators build the rest
-  (LNK2b), and SNAX-GVSoC reads the same file (LNK2a);
+- **cluster hjson**, three files (D134): the cluster (the platform's source
+  with its TCDM, DMA width and DRAM written back and the slot's CSR and
+  port counts set), the streamer template lowered per design point, and
+  the datapath block; SNAX's own generators build the rest (LNK2b, once
+  they resolve a cross-file `$ref`), and SNAX-GVSoC reads the same files
+  (LNK2a);
 - a **`Bender.yml`** that snax_cluster takes as one dependency (LNK2b, open
   item 51);
 - the **program** (section 5.5);
-- for SNAX-GVSoC, the **accelerator composite** on `SnaxUnit` and
-  `SnaxShell` and the **CSR headers** (GEN3, D128; `gen/`, D132).
+- for SNAX-GVSoC, the same hjson files and the **CSR headers**, no
+  generated Python (GEN3, LNK2a, D128; `gen/`, D134).
 
 **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output,
 latency and II.

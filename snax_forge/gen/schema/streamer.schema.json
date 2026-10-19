@@ -1,0 +1,46 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "SNAX-FORGE streamer file",
+ "description": "<slot>_streamer.hjson: a slot's streamer template as snax_cluster's hjson has it, lowered per design point (snax_forge/gen/gvsoc.py, D134). Readers are the input ports in the BRM's port order, writers the output ports; per group, one list entry per mover.",
+ "type": "object",
+ "properties": {
+  "data_reader_params": {"$ref": "#/$defs/movers"},
+  "data_writer_params": {"$ref": "#/$defs/movers"}
+ },
+ "minProperties": 1,
+ "additionalProperties": false,
+ "$defs": {
+  "count": {"type": "integer", "minimum": 1},
+  "movers": {
+   "type": "object",
+   "properties": {
+    "spatial_bounds": {
+     "description": "Per mover, its spatial loops' bounds, fastest first.",
+     "type": "array",
+     "minItems": 1,
+     "items": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/count"}}
+    },
+    "temporal_dim": {
+     "description": "Per mover, its temporal dimensions.",
+     "type": "array",
+     "minItems": 1,
+     "items": {"$ref": "#/$defs/count"}
+    },
+    "num_channel": {
+     "description": "Per mover, its 64-bit TCDM channels: the slot's snax_tcdm_ports is their sum.",
+     "type": "array",
+     "minItems": 1,
+     "items": {"$ref": "#/$defs/count"}
+    },
+    "fifo_depth": {
+     "description": "Per mover, its data FIFO's depth.",
+     "type": "array",
+     "minItems": 1,
+     "items": {"$ref": "#/$defs/count"}
+    }
+   },
+   "required": ["spatial_bounds", "temporal_dim", "num_channel", "fifo_depth"],
+   "additionalProperties": false
+  }
+ }
+}
