@@ -305,7 +305,7 @@ its environment sets `CC` and `CXX` to conda's gcc.
 ```bash
 git submodule update --init gvsoc/snax-gvsoc
 cd gvsoc
-make build                      # GVSoC for TARGETS (default snax_alu;snax_alu_sparse;snax_tiled_add) into out/snax-gvsoc/
+make build                      # GVSoC for TARGETS (default snax_alu;snax_alu_sparse;snax_tiled_add;snax_hjson) into out/snax-gvsoc/
 make sw APPS=snax-alu           # sw/ and the named apps, into snax-gvsoc/build/sw/
 make run TARGET=snax_alu ELF=snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
 ```

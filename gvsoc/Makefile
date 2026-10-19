@@ -22,7 +22,7 @@ INSTALL = $(GVSOC_WORKDIR)/install
 BUILT_FROM = $(GVSOC_WORKDIR)/checkout.txt
 
 # The targets GVSoC compiles (components and platform trees)
-TARGETS ?= snax_alu;snax_alu_sparse;snax_tiled_add
+TARGETS ?= snax_alu;snax_alu_sparse;snax_tiled_add;snax_hjson
 
 # Programs of $(SNAX_GVSOC)/sw/apps/ that `sw` builds after sw/ itself
 APPS ?=
