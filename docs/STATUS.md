@@ -38,7 +38,7 @@ Done: M1, M4a, M3, M4b, M5, X1. Open, in order (D116):
 | Milestone | Content | Status |
 |---|---|---|
 | M16 | SNAX-GVSoC aligned with snax_cluster: the baseline | `wip` |
-| M14 | Generation, to SNAX-GVSoC first, then to snax_cluster, then clean-up (D111, D116, D127) | todo |
+| M14 | Generation, to SNAX-GVSoC first, then to snax_cluster, then clean-up (D111, D116, D127) | `wip` |
 | M7 | Front ends: NPBench's own sources and data types, tier A first (D113) | todo |
 | M13 | Composed bind: several unit BRMs as one accelerator (D112) | todo |
 | M15 | Tiling: a DMA per tile | todo |
@@ -138,8 +138,9 @@ fails when the DMA's own timing leaves the RTL's. SG8 is done: snax_cluster
 #658 carries the TCDM user field through the sparse interconnect, so
 `subword`'s SC passes on the sparse RTL too; snax-gvsoc pins snax_cluster at
 `05615e4`. M16 closes once SG8's round 2 pull requests (the snax-gvsoc pin
-bump, the SG8 notes, these docs) are merged. Next: GEN3, planned in
-snax-gvsoc `GEN3.md` (D127), with LNK1 before GEN3's step 3. GEN3 round 1
+bump, the SG8 notes, these docs) are merged. GEN3 is done, M14's first
+task after LNK1 (snax-gvsoc `GEN3.md`, D127; LNK1 before GEN3's step 3); next
+is LNK2a. GEN3 round 1
 (merged in snax-gvsoc, #12; the submodule at `gvsoc/` pinned at its
 `21830e3`): `SnaxUnit` and `SnaxShell` in snax-gvsoc, the start
 held while busy, on a hand-written `snax_tiled_add` target. Round 1b: a
@@ -177,7 +178,9 @@ drain cycle (D133, so `chisel_accumulator`'s drain is 0, D103 amended);
 `snax_alu.json`, its fixture `forge/vsum/` runs in `make regress` with
 `forge-reduce`, `test_fixture.py` reproduces it (skipped until the
 submodule is bumped past it), and `AccumulatorRateSpec` drives the Chisel
-block through snax-gvsoc's rate cases. Next: LNK2a.
+block through snax-gvsoc's rate cases. Round 4b: snax-gvsoc's `make regress`
+also runs vsum with its len overridden by hand to 16, four sums per run
+(`forge-reduce.vsum-r16`), until a kernel gives T < N. Next: LNK2a.
 
 ## Open Items
 
