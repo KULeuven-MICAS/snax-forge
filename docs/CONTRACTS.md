@@ -4,9 +4,10 @@
 > component can produce its output without reading another's code. Why each
 > is the way it is: the module docstrings and `docs/DECISIONS.md`.
 >
-> Sections 1 and 9–15 are the flow: conventions, the task list (D64), the BRM
+> Sections 1 and 9–16 are the flow: conventions, the task list (D64), the BRM
 > (D68, D70), the SNAX-DFG (D77), the recipe (D72), the platform (D84), the
-> design checks (D85), and the memory plan and design point (D86, D87).
+> design checks (D85), the memory plan and design point (D86, D87), and the
+> generated hjson files (D134).
 > Sections 2–8 are SNAX-MODEL's (cluster configuration, streamer registers,
 > accelerator interface, control program, scenario, profile and trace, rules
 > for a new block kind); they are kept as they are until SNAX-MODEL is
@@ -1052,6 +1053,8 @@ once (section 14).
 | `name` | the platform (an identifier) |
 | `base` | the platform this one was made from, or null for an original |
 | `changes` | what differs from `base`: `--set` path -> value, in the order set |
+| `hjson` | the source cluster file, a path from snax-forge's root, or null (small16): what the generator writes the cluster file from (section 16) |
+| `accelerator_slot` | the source's one accelerator slot (`snax_acc_name`), or null; `--set accelerator_slot=NAME` picks another, which the source must have |
 | `l1`, `l2` | `L1Config`, `L2Config` (section 2); `l2` null for an L1-only cluster |
 | `xbar` | `{"check_hold": bool}` |
 | `dma` | `DmaConfig` (section 2), used when there is an L2 |
@@ -1066,7 +1069,9 @@ direction is `out`), `n_ports` (its lanes) and, unless an entry gives them,
 `spatial_bounds` (the port nest's spatial loops, fastest first); an entry
 may not set `write` or `n_ports`. `default` holds `temporal_dims`,
 `fifo_depth`, `addr_depth` and `prio`; an entry named after a streamer
-overrides any of them, and `spatial_bounds`, for that streamer only.
+overrides any of them, and `spatial_bounds`, for that streamer only. These
+are knobs, never a template: the generator lowers the streamer per design
+point from them (section 16); a streamer input of its own is open item 78.
 
 <!-- snippet: platforms/small16.json -->
 ```json
@@ -1094,9 +1099,18 @@ L2 from the `dram` range; `streamers.default`'s `temporal_dims` and
 `fifo_depth` from the one accelerator's streamer template, whose movers must
 agree. What the hjson does not hold (dtype, elements per word, latencies,
 `addr_depth`, `prio`, and SNAX-MODEL's `xbar`, `dma`, `controller`,
-`register_window`, `wait_mode`) is small16's. `snax_alu.json` comes from
-snax-gvsoc's `sw/cfg/snax_alu_cluster.hjson`; its `_old` copy gives the same
-platform.
+`register_window`, `wait_mode`) is small16's. The platform records the
+file (`hjson`, which must be under snax-forge's root, `hjson.path`) and its
+slot (`accelerator_slot`). `snax_alu.json` comes from
+`platforms/snax_alu.hjson`, a verbatim copy of snax-gvsoc's
+`sw/cfg/snax_alu_cluster.hjson` refreshed by hand (its diff the check, as
+D126); snax-gvsoc's `_old` copy gives the same platform.
+
+<!-- snippet: platforms/snax_alu.json -->
+```json
+ "hjson": "platforms/snax_alu.hjson",
+ "accelerator_slot": "snax_alu",
+```
 
 ## 14. Design checks
 
@@ -1182,3 +1196,46 @@ folder keeps the recipe, when there was one (a flow from a bound graph has
 none, D108). Loading one runs every check again on what it
 holds (the stored layouts as they are) and requires `streamers` to be the
 platform's shell for the graph.
+
+## 16. Generated hjson files
+
+What `pixi run gen-gvsoc DESIGN_POINT [--out DIR]` writes per design point
+(D134, `snax_forge/gen/gvsoc.py`), default `out/gvsoc/<design>/`, and what
+SNAX-GVSoC's `snax_hjson` reads (`--param hjson=<dir>/<platform>.hjson`,
+snax-gvsoc `snax/snax_cfg.py`). Each hjson file starts with a `//` comment
+naming the design point by its path from the root; the rest is JSON, which
+hjson reads. One design point gives byte-identical files wherever they are
+written.
+
+| File | Holds |
+|---|---|
+| `<platform>.hjson` | the cluster: the platform's `hjson`, its comments dropped and its key order kept, with `cluster.tcdm.banks`, `.size` (KiB), `data_width`, `cluster_base_addr`, `dma_data_width` and `dram` written from the platform, and the slot `accelerator_slot` set; the source's template, referred to only by the slot, dropped |
+| `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds`, `temporal_dim`, `num_channel` (64-bit channels) and `fifo_depth` |
+| `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
+| `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h` (`gen/headers.py`) |
+| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
+
+**The slot.** `snax_tcdm_ports` is the streamer's channels; the source's
+`sparse_interconnect_config` becomes one group of that width (its
+granularity kept), or `snax_narrow_tcdm_ports` that many and
+`snax_wide_tcdm_ports` 0; `snax_num_rw_csr` is the fields and start,
+`snax_num_ro_csr` 2 (busy and the counter, D130); `snax_streamer_cfg` is
+`{$ref: "<slot>_streamer.hjson"}` and `snax_datapath_cfg`
+`{$ref: "<slot>_acc.hjson"}`. SNAX-GVSoC's reader checks the counts against
+the two files; snax_cluster's clustergen and snaxgen resolve a cross-file
+`$ref` only after LNK2b (open item 51).
+
+**Checks.** The streamer and accelerator files have snax-forge's schemas
+(`snax_forge/gen/schema/`, JSON Schema 2020-12); the cluster file
+validates against snax_cluster's (snax-gvsoc's copy,
+`sw/docs/schema/snitch_cluster.schema.json`, where the submodule is checked
+out). A platform value the cluster file cannot express (an L1 that is not
+whole KiB, an L1 or L2 field it does not give back) is `gen.platform`, a
+platform without a source `gen.source`, a slot that is not the source's only
+one `gen.slot`.
+
+<!-- snippet: snax_forge/gen/schema/accelerator.schema.json -->
+```json
+ "required": ["unit", "inputs", "outputs", "lanes", "data_width", "op", "signed", "control",
+              "wait", "latency", "ii", "fields"],
+```

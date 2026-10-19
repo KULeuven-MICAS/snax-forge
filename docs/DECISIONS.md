@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D134**.
+  number: **D135**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -34,7 +34,7 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
-| gvsoc | D120 D121 D122 D125 D128 D132 |
+| gvsoc | D120 D121 D122 D125 D128 D134 |
 | brm | D68 D70 D82 D103 D129 D133 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
@@ -70,6 +70,7 @@ Retired, and where each now lives:
 | D113 | D9 |
 | D116 | D4 D24 D110 D114 D115 |
 | D117 | D93 |
+| D134 | D132 |
 
 ---
 
@@ -270,9 +271,10 @@ against it. A bound graph records what it replaced, so `unbind` and `join_map` t
 vecadd's L2 is packed as the default memory plan packs it; every cycle count is kept.
 Amends D75.
 
-**D84** · design — The platform is a file of its own in `platforms/`, streamer shell included; the
-design step pairs it with the recipe's bound graph, so either changes without the other. Cluster
-parameters are design knobs. → C§13.
+**D84** · design — The platform is a file of its own in `platforms/`; the design step pairs it with
+the recipe's bound graph, so either changes without the other. Cluster parameters are design knobs.
+It holds the streamer knobs for now (`default` and per-streamer overrides), never a template: the
+streamer is lowered per design point (D134); a streamer input of its own is open item 78. → C§13.
 
 **D85** · design — Design checks report every problem before anything is written, each with its
 fix. → C§14.
@@ -282,7 +284,8 @@ contiguous by default, with pins. Passes see each port's element-index stream, s
 avoid bank conflicts without a run. → C§15.
 
 **D87** · design — `design_point.json` holds the bound graph, the platform, the resolved streamers
-and the memory plan; it is checked again on load and is SNAX-LOWER's only input. → C§15.
+and the memory plan; it is checked again on load and is SNAX-LOWER's and the generator's only
+input, the streamer file lowered from its streamers (D134). → C§15.
 
 **D88** · lower — The cluster file is derived from a design point, and the checked-in clusters are
 built by the same code. → `lower/cluster.py`.
@@ -345,9 +348,10 @@ apart. That is how a hand-edited graph is run and checked, though it cannot be r
 (open item 34).
 
 **D111** · scope — SNAX-FORGE generates a bundle per design point for SNAX: the accelerator RTL
-with a shell wrapper, the cluster hjson, a `Bender.yml` and the program from the task list as
-direct CSR writes; for SNAX-GVSoC also the accelerator composite and the CSR headers (D128).
-SNAX's own generators build the rest, so the hjson describes the cluster once.
+with a shell wrapper, the cluster hjson (the three files of D134), a `Bender.yml` and the program
+from the task list as direct CSR writes; for SNAX-GVSoC the same hjson files and the CSR headers,
+no generated Python (D128). SNAX's own generators build the rest, so the hjson describes the
+cluster once.
 
 **D112** · scope — A composition is one accelerator: one recipe step binds a connected group of
 tasklets to a chain of unit BRMs linked by FIFOs, with streamers on the outer ports only, so one
@@ -427,10 +431,11 @@ GEN3 models the Chisel blocks before GEN1 generates them, so the model side is t
 
 **D128** · gvsoc — Generated accelerators run on two hand-written generic components in
 snax-gvsoc, `SnaxUnit` (a Chisel block's datapath) and `SnaxShell` (the CSR manager), every number a
-property, so a sweep compiles nothing; snax-forge generates only Python (composite, target) and
-headers per design point. Each design point snax-gvsoc's regression runs is a fixture there, in
-`forge/<design>/` (as D126), so neither repo's CI needs the other; snax-gvsoc is a submodule at
-`gvsoc/`, never fetched by CI. → snax-gvsoc `GEN3.md`, `forge/README.md`.
+property, so a sweep compiles nothing; snax-forge generates only the hjson files (D134) and the
+headers per design point, which the installed `snax_hjson` reads at run time. Each design point
+snax-gvsoc's regression runs is a fixture there, in `forge/<design>/` (as D126), hjson and
+headers, so neither repo's CI needs the other; snax-gvsoc is a submodule at `gvsoc/`, never fetched
+by CI. → snax-gvsoc `GEN3.md`, `LNK2a.md`, `forge/README.md`.
 
 **D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it:
 `block`, `args`, `control` (`counted` only: every block counts its firings), `csrs` (one or more
@@ -446,15 +451,21 @@ by the generator. snax_alu keeps its own rules as the baseline. Narrows open ite
 **D131** · design — LNK1 reads a platform from snax_cluster's hjson (`design from-hjson`): its
 one accelerator's movers must agree, and go into `streamers.default`; `num_channel` and
 `spatial_bounds` stay derived from the ports (D84); what only SNAX-MODEL reads is small16's until
-RET1. Per-accelerator templates as the hjson has them are open item 77. → C§13.
-
-**D132** · gvsoc — The GVSoC generator (`gen/`) writes Python that imports only installed
-snax-gvsoc components, every value a literal; every module is named `forge_*` and checked against
-the install's names, which would shadow it. Blocks are adapters registered by name (D19). Its
-manifest carries each accelerator task's beats, so regressions read them instead of a hand copy.
-→ `gen/gvsoc.py`.
+RET1. The platform keeps its source (`hjson`, a copy in `platforms/`) and its slot's name
+(`accelerator_slot`), which the generator writes the cluster file from (D134). → C§13.
 
 **D133** · brm — The Chisel Accumulator follows `ElementwiseTiledSpatial`'s control (start, busy,
 done, `loopCount`) plus `len`, so both run under one shell contract (D130); one register holds the
 sum and the result and loads the next input instead of clearing in the cycle the result leaves, so
 its drain is 0 with no second register. Amends D103. → `samples/Accumulator.scala`.
+
+**D134** · gvsoc — The hjson is the contract between snax-forge and SNAX-GVSoC: per design point
+three files, each changing for its own reason: the cluster (`<platform>.hjson`, the platform's
+source with its values written back and the slot set), the streamer (`<slot>_streamer.hjson`,
+lowered per design point from the ports and the platform's knobs) and the accelerator
+(`<slot>_acc.hjson`, the datapath block), the slot's two `$ref`s each a whole file. SNAX-GVSoC
+reads them at run time (`snax_hjson`, `snax_cfg.py`): a slot with a datapath block gets the
+standard composite, one without is looked up by name in a registry; the measured timing stays
+constants there. forge/'s designs use the sparse interconnect; the slot's name comes from the
+platform (`accelerator_slot`). Blocks are adapters registered by name (D19); the manifest carries
+each task's beats. Retires D132. → `gen/gvsoc.py`, C§16, snax-gvsoc `LNK2a.md`.
