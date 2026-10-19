@@ -187,9 +187,9 @@ def test_a_bad_set_is_named(path, value, text):
     assert p.code == "platform.keys" and p.where == f"platform.{path}" and text in p.message
 
 
-def test_set_accelerator_slot_renames_the_slot():
-    """The slot's name is a platform field as any: the cluster file the generator writes
-    takes it."""
+def test_set_accelerator_slot_changes_the_slot():
+    """The slot's name is a platform field as any: the generator sets the source's slot of
+    that name (tests/gen: gen.slot when the source has none)."""
     w = Platform.load(SNAX_ALU).with_changes([("accelerator_slot", "snax_forge_acc")])
     assert (w.accelerator_slot, w.hjson) == ("snax_forge_acc", "platforms/snax_alu.hjson")
     assert w.changes == {"accelerator_slot": "snax_forge_acc"} and w.base == "snax_alu"

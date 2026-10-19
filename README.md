@@ -320,9 +320,10 @@ when the checkout changes, since CMake refuses a build folder of another one.
 A target in `gvsoc/targets/` that no build made has no platform tree: gvrun
 warns and runs it on the JSON config path (`gvsoc/targets/README.md`).
 `pixi run gen-gvsoc out/design/<design>/design_point.json` writes a design
-point's accelerator to `out/gvsoc/<design>/` (target `forge_<design>`, GEN3);
-`make run TARGET=forge_<design> TARGET_DIRS=../out/gvsoc/<design> ELF=...`
-adds that folder to gvrun's target folders.
+point's cluster to `out/gvsoc/<design>/` as three hjson files (the cluster
+`snax_alu.hjson`, the streamer and the datapath block) and its headers
+(GEN3, LNK2a); the installed `snax_hjson` reads it at run time:
+`make run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_alu.hjson" ELF=...`.
 
 ## Refreshing a fixture
 
@@ -331,16 +332,14 @@ snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
 `make regress` runs (D128). `tests/gen/test_fixture.py` generates each again
 and compares it byte for byte with the submodule's copy; it skips when the
 submodule is not checked out or has no `forge/`, and a design whose folder
-the submodule's pin does not have yet. When the generator or the design point changes,
-refresh the folder from a snax-gvsoc checkout next to this one, in the
-image, with snax-gvsoc installed at `out/snax-gvsoc/install` so the install
-check runs:
+the submodule's pin does not have yet, or a pin whose fixtures predate the
+hjson ones. When the generator or the design point changes, refresh the
+folder in a snax-gvsoc checkout next to this one:
 
 ```bash
 pixi run sandbox recipes/vecadd.json
 pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json
-pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd \
-    --install out/snax-gvsoc/install
+pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd
 ```
 
 (the same with `vecmul` or `vsum`), commit the folder in snax-gvsoc as written, then

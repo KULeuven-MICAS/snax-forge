@@ -33,8 +33,7 @@ TARGET ?=
 ELF ?=
 WORK_DIR ?= $(GVSOC_WORKDIR)/work/$(TARGET)/$(basename $(notdir $(ELF)))
 GVRUN_ARGS ?=
-# More target folders, after targets/ (e.g. the generator's out/gvsoc/<design>,
-# its manifest's target_dirs)
+# More target folders, after targets/
 TARGET_DIRS ?=
 
 .PHONY: build sw run

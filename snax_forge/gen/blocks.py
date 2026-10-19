@@ -1,4 +1,4 @@
-"""The blocks the GVSoC generator can build: a binding's ``block`` -> a SnaxUnit (GEN3, D132).
+"""The blocks the GVSoC generator can build: a binding's ``block`` -> a SnaxUnit (GEN3, D134).
 
 An adapter reads an instance (its BRM, implementation and design params,
 snax_forge/brm/instance.py) and gives the properties of snax-gvsoc's
@@ -44,7 +44,7 @@ D133): a fold, one sum every T inputs.
     args         none: the block's widths come from the dtype
 
 ``config`` is a SnaxUnit property only when it is not the default
-``["count"]``, so the composite of an elementwise block is as before.
+``["count"]``, so an elementwise block's datapath block has none.
 """
 
 from __future__ import annotations

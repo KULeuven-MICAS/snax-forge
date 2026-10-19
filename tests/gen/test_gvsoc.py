@@ -1,8 +1,8 @@
-"""The GVSoC generator (GEN3 step 3, D132): vecadd on snax_alu, vecmul, vsum, and every refusal."""
+"""The generator (GEN3 step 3, LNK2a, D134): vecadd on snax_alu as three hjson files, vecmul,
+vsum, and every refusal."""
 
 from __future__ import annotations
 
-import ast
 import copy
 import json
 import re
@@ -13,28 +13,28 @@ import hjson
 import pytest
 
 from snax_forge.brm import CONTROLS, Brm, Instance, load_brm
-from snax_forge.design import DesignError
+from snax_forge.design import DesignError, Platform
 from snax_forge.dfg import Graph
-from snax_forge.gen import (
-    BLOCKS,
-    ELEMENTWISE_OP,
-    IMPORTS,
-    GenError,
-    Manifest,
-    check_install,
-    generate,
-)
+from snax_forge.gen import BLOCKS, ELEMENTWISE_OP, GenError, Manifest, generate
 from snax_forge.gen import __main__ as cli
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.blocks import accumulator, elementwise_tiled_spatial
-from tests.design.helpers import REPO, chained, graph_dict
+from tests.design.helpers import REPO, SNAX_ALU, chained, graph_dict
 
-from .helpers import HJSON, SUB, bound_vecmul, bound_vsum, fake_install, point, snax_streamer
+from .helpers import HJSON, SOURCE, SUB, bound_vecmul, bound_vsum, point, snax_cfg, snax_streamer
 
 needs_submodule = pytest.mark.skipif(
     not HJSON.exists(), reason="the snax-gvsoc submodule is not checked out (CI never fetches it)"
 )
+needs_reader = pytest.mark.skipif(
+    snax_cfg() is None,
+    reason="no snax-gvsoc reader (snax/snax_cfg.py): the submodule is not checked out or its "
+    "pin predates LNK2a",
+)
 IMPL = "chisel_tiled_spatial"
+FILES = ["snax_alu.hjson", "snax_alu_streamer.hjson", "snax_alu_acc.hjson"]
+# The slot of snax_alu's source, the one the cluster file sets
+SLOT = ("snax_alu_core_template", "snax_acc_cfg", 0)
 
 # vecadd at W = 4 on snax_alu: the template the design point's streamers give
 TEMPLATE_W4 = {
@@ -48,18 +48,27 @@ TEMPLATE_W4 = {
 }  # fmt: skip
 # snax-gvsoc snax/snax_tiled_add_acc.py's SnaxUnit and SnaxShell, but signed: the
 # hand file has False; int64 gives True (only min and max read it)
-TILED_ADD_UNIT = {
-    "inputs": ["a", "b"], "outputs": ["out"], "lanes": 4, "data_width": 64, "op": 0,
-    "signed": True, "control": "counted", "wait": "lockstep", "latency": 0, "ii": 1,
-    "csr_base": 978,
+TILED_ADD = {
+    "unit": "SnaxUnit", "inputs": ["a", "b"], "outputs": ["out"], "lanes": 4, "data_width": 64,
+    "op": 0, "signed": True, "control": "counted", "wait": "lockstep", "latency": 0, "ii": 1,
+    "fields": ["loopCount"],
 }  # fmt: skip
-TILED_ADD_SHELL = {"csr_base": 978, "fields": ["loopCount"]}
 # vsum on snax_alu: the Accumulator, a fold of one lane, one sum per T inputs
-ACCUMULATOR_UNIT = {
-    "inputs": ["a"], "outputs": ["out"], "lanes": 1, "data_width": 64, "op": 0,
-    "signed": True, "control": "counted", "config": ["count", "rate"], "wait": "pipelined",
-    "latency": 1, "ii": 1, "csr_base": 973,
+ACCUMULATOR = {
+    "unit": "SnaxUnit", "inputs": ["a"], "outputs": ["out"], "lanes": 1, "data_width": 64,
+    "op": 0, "signed": True, "control": "counted", "config": ["count", "rate"],
+    "wait": "pipelined", "latency": 1, "ii": 1, "fields": ["loopCount", "len"],
 }  # fmt: skip
+
+
+def parsed(path: Path):
+    """An hjson file as plain dicts and lists."""
+    return json.loads(json.dumps(hjson.loads(path.read_text())))
+
+
+def slot(cluster: dict) -> dict:
+    t, k, i = SLOT
+    return cluster[t][k][i]
 
 
 @pytest.fixture(scope="module")
@@ -69,22 +78,6 @@ def w4(tmp_path_factory):
     return out, generate(point(tmp), out, root=tmp)
 
 
-def _calls(tree: ast.Module, name: str) -> dict:
-    """The keyword arguments of the call to ``name`` in a generated file, as literals."""
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and getattr(node.func, "id", None) == name:
-            return {k.arg: k.value for k in node.keywords}
-    raise AssertionError(f"no call to {name}")
-
-
-def _constants(tree: ast.Module) -> dict:
-    return {
-        t.id: ast.literal_eval(n.value)
-        for n in tree.body if isinstance(n, ast.Assign)
-        for t in n.targets if isinstance(t, ast.Name)
-    }  # fmt: skip
-
-
 # =============================================================================
 # vecadd at W = 4 on snax_alu
 # =============================================================================
@@ -92,16 +85,17 @@ def _constants(tree: ast.Module) -> dict:
 
 def test_vecadd_w4_files_and_manifest(w4):
     out, m = w4
-    assert m.target == "forge_vecadd" and m.design == "vecadd"
+    assert m.design == "vecadd" and m.cluster == "snax_alu.hjson"
     assert m.files == [
-        "forge_vecadd_acc.py", "forge_vecadd.py", "include/streamer_csr_addr_map.h",
-        "include/acc_csr.h", "manifest.json",
+        *FILES, "include/streamer_csr_addr_map.h", "include/acc_csr.h", "manifest.json"
     ]  # fmt: skip
     assert sorted(str(f.relative_to(out)) for f in out.rglob("*") if f.is_file()) == sorted(m.files)
-    assert m.target_dirs == ["."] and m.trace == "snax_acc0/unit"
+    assert m.trace == "snax_acc0/unit"
     assert m.design_point == "design/vecadd/design_point.json"
     assert m.symbols == {"N": 64}
-    assert list(m.to_dict())[:3] == ["design", "design_point", "symbols"]
+    d = json.loads((out / "manifest.json").read_text())
+    assert list(d) == ["design", "design_point", "symbols", "cluster", "files", "trace", "csrs",
+                       "tasks"]  # fmt: skip
     assert (out.parent.parent / m.design_point).is_file()
     assert m.csrs.to_dict() == {
         "streamer": {"first": 960, "last": 977}, "fields": {"loopCount": 978},
@@ -114,83 +108,81 @@ def test_vecadd_w4_files_and_manifest(w4):
     assert Manifest.from_dict(m.to_dict()) == m
 
 
-def test_the_template_is_the_design_points_streamers(w4):
+def test_the_streamer_file_is_the_design_points_streamers(w4):
     out, _ = w4
-    consts = _constants(ast.parse((out / "forge_vecadd_acc.py").read_text()))
-    assert consts["STREAMER_TEMPLATE"] == TEMPLATE_W4
-    assert (consts["TCDM_SIZE"], consts["SNAX_CSR_FIRST"], consts["SNAX_CSR_LAST"]) == (
-        131072, 960, 0x5FF
-    )  # fmt: skip
-    assert consts["SHELL_CSR_FIRST"] == 978 and consts["SHELL_FIELDS"] == ["loopCount"]
+    assert parsed(out / "snax_alu_streamer.hjson") == TEMPLATE_W4
 
 
 @needs_submodule
-def test_the_template_is_the_hjsons(w4):
+def test_the_streamer_file_is_the_hjsons_template(w4):
+    """Lowered per design point, vecadd at W = 4 gives snax_alu's own template back."""
     out, _ = w4
-    consts = _constants(ast.parse((out / "forge_vecadd_acc.py").read_text()))
-    hand = hjson.loads(HJSON.read_text())["snax_alu_streamer_template"]
+    hand = parsed(HJSON)["snax_alu_streamer_template"]
     for group in ("data_reader_params", "data_writer_params"):
-        assert consts["STREAMER_TEMPLATE"][group] == dict(hand[group])
+        assert parsed(out / "snax_alu_streamer.hjson")[group] == hand[group]
+
+
+def test_the_accelerator_file_is_snax_tiled_adds_unit_but_signed(w4):
+    out, _ = w4
+    assert parsed(out / "snax_alu_acc.hjson") == TILED_ADD
+    assert "config" not in parsed(out / "snax_alu_acc.hjson")  # the default, left out
+
+
+def test_the_cluster_file_is_the_source_with_the_slot_set(w4):
+    out, _ = w4
+    cluster, source = parsed(out / "snax_alu.hjson"), parsed(SOURCE)
+    assert slot(cluster) == {
+        "snax_acc_name": "snax_alu", "bender_target": ["snax_alu"], "snax_tcdm_ports": 12,
+        "sparse_interconnect_config": [[12, 1]], "snax_num_rw_csr": 2, "snax_num_ro_csr": 2,
+        "snax_streamer_cfg": {"$ref": "snax_alu_streamer.hjson"},
+        "snax_datapath_cfg": {"$ref": "snax_alu_acc.hjson"},
+    }  # fmt: skip
+    # Outside the slot, the source: its template, which only the slot referred to, gone
+    assert "snax_alu_streamer_template" not in cluster
+    del source["snax_alu_streamer_template"]
+    slot(cluster).clear()
+    slot(source).clear()
+    assert cluster == source
+    assert list(cluster) == list(source)  # the source's key order
+
+
+@needs_reader
+def test_snax_gvsocs_reader_takes_the_folder(w4):
+    """snax-gvsoc's snax_cfg.load: the whole-file refs resolve and the slot's counts agree."""
+    out, _ = w4
+    cfg = snax_cfg().load(out / "snax_alu.hjson")
+    (acc,) = cfg.cores[0].accelerators
+    assert (acc.name, acc.tcdm_ports, acc.streamer) == ("snax_alu", 12, TEMPLATE_W4)
+    assert acc.datapath.fields == ["loopCount"] and acc.datapath.config == ["count"]
+    assert (cfg.tcdm.size, cfg.tcdm.banks, cfg.tcdm.sparse_interconnect) == (131072, 32, True)
 
 
 @needs_submodule
-def test_movers_csrs_and_port_names_are_snax_streamers(w4):
-    """The generator's copies of snax_streamer.py's helpers give what the real ones give."""
+def test_streamer_csrs_are_snax_streamers(w4):
+    """The generator's copy of snax_streamer.py's nb_csrs gives what the real one gives."""
     out, _ = w4
-    tree = ast.parse((out / "forge_vecadd_acc.py").read_text())
-    template = _constants(tree)["STREAMER_TEMPLATE"]
-    ss = snax_streamer()
-    assert gen_mod.streamer_csrs(template) == ss.nb_csrs(template) == 18
-    assert gen_mod.tcdm_port_names(template) == [
-        "streamer." + n for n in ss.tcdm_port_names(template)
-    ]
-    cls = next(n for n in tree.body if isinstance(n, ast.ClassDef))
-    attrs = {t.id: ast.literal_eval(a.value) for a in cls.body if isinstance(a, ast.Assign)
-             for t in a.targets}  # fmt: skip
-    assert attrs["nb_tcdm_ports"] == ss.nb_tcdm_ports(template) == 12
-    assert attrs["tcdm_port_names"] == gen_mod.tcdm_port_names(template)
+    template = parsed(out / "snax_alu_streamer.hjson")
+    assert gen_mod.streamer_csrs(template) == snax_streamer().nb_csrs(template) == 18
+    assert gen_mod.channels(template) == snax_streamer().nb_tcdm_ports(template) == 12
 
 
-def test_unit_and_shell_are_snax_tiled_adds_but_signed(w4):
+def test_every_hjson_file_names_the_design_point(w4):
     out, _ = w4
-    tree = ast.parse((out / "forge_vecadd_acc.py").read_text())
-    consts = _constants(tree)
-    unit = {k: ast.literal_eval(v) if not isinstance(v, ast.Name) else consts[v.id]
-            for k, v in _calls(tree, "SnaxUnit").items()}  # fmt: skip
-    shell = {k: consts[v.id] for k, v in _calls(tree, "SnaxShell").items()}
-    assert unit == TILED_ADD_UNIT and shell == TILED_ADD_SHELL
-
-
-def test_generated_files_import_only_installed_components(w4):
-    out, m = w4
-    generated = {f.removesuffix(".py") for f in m.files if f.endswith(".py")}
-    for f in generated:
-        text = (out / f"{f}.py").read_text()
-        tree = ast.parse(text)
-        mods = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
-        mods |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
-        assert mods <= set(IMPORTS) | generated, f
-        assert f.startswith("forge_") and "snax_forge" not in mods
-        assert "design point " in text and "snax-forge's GVSoC generator" in text
-
-
-def test_the_target_puts_the_composite_in_snax_alus_slot(w4):
-    out, _ = w4
-    tree = ast.parse((out / "forge_vecadd.py").read_text())
-    board = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name.endswith("Board"))
-    assert [b.id for b in board.bases] == ["SnaxAluBoard"]
-    assert ast.unparse(board.body[0]) == "accelerator = ForgeVecaddAcc"
-    tgt = next(n for n in tree.body if isinstance(n, ast.ClassDef) and n.name == "Target")
-    assert {ast.unparse(a) for a in tgt.body if isinstance(a, ast.Assign)} >= {
-        "name = 'forge_vecadd'", "model = ForgeVecaddBoard"
-    }  # fmt: skip
+    for f in FILES:
+        text = (out / f).read_text()
+        assert text.startswith(
+            "// Generated by snax-forge's generator (snax_forge/gen, LNK2a) from the\n"
+            "// design point design/vecadd/design_point.json. Do not edit: run\n"
+        ), f
+        assert all(len(line) <= 80 for line in text.splitlines() if line.startswith("//")), f
 
 
 def test_vecadd_w8_gives_eight_channels_per_mover(tmp_path):
-    m = generate(point(tmp_path, w=8, name="vecadd_w8"), tmp_path / "out", root=tmp_path)
-    consts = _constants(ast.parse((tmp_path / "out" / "forge_vecadd_w8_acc.py").read_text()))
-    assert consts["STREAMER_TEMPLATE"]["data_reader_params"]["num_channel"] == [8, 8]
-    assert gen_mod.tcdm_port_names(consts["STREAMER_TEMPLATE"])[-1] == "streamer.writer0.lane7"
+    out = tmp_path / "out"
+    m = generate(point(tmp_path, w=8, name="vecadd_w8"), out, root=tmp_path)
+    assert parsed(out / "snax_alu_streamer.hjson")["data_reader_params"]["num_channel"] == [8, 8]
+    s = slot(parsed(out / "snax_alu.hjson"))
+    assert (s["snax_tcdm_ports"], s["sparse_interconnect_config"]) == (24, [[24, 1]])
     assert m.csrs.start == 979 and m.tasks[0].beats == 8
 
 
@@ -198,21 +190,14 @@ def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
     """GEN3 step 6a: elementwise_mul's binding gives vecadd's accelerator with op 2."""
     out = tmp_path / "gvsoc" / "vecmul"
     m = generate(point(tmp_path, name="vecmul", graph=bound_vecmul()), out, root=tmp_path)
-    tree = ast.parse((out / "forge_vecmul_acc.py").read_text())
-    unit = {k: ast.literal_eval(v) if not isinstance(v, ast.Name) else _constants(tree)[v.id]
-            for k, v in _calls(tree, "SnaxUnit").items()}  # fmt: skip
-    assert unit == {**TILED_ADD_UNIT, "op": 2}
-    assert _constants(tree)["STREAMER_TEMPLATE"] == TEMPLATE_W4
-    assert m.target == "forge_vecmul" and m.symbols == {"N": 64}
-    assert m.design_point == "design/vecmul/design_point.json"
-    assert m.files == [
-        "forge_vecmul_acc.py", "forge_vecmul.py", "include/streamer_csr_addr_map.h",
-        "include/acc_csr.h", "manifest.json",
-    ]  # fmt: skip
-    assert m.csrs == w4[1].csrs and m.trace == "snax_acc0/unit"
+    assert parsed(out / "snax_alu_acc.hjson") == {**TILED_ADD, "op": 2}
+    assert parsed(out / "snax_alu_streamer.hjson") == TEMPLATE_W4
+    assert m.symbols == {"N": 64} and m.design_point == "design/vecmul/design_point.json"
+    assert m.files == w4[1].files and m.csrs == w4[1].csrs and m.trace == "snax_acc0/unit"
     assert [t.to_dict() for t in m.tasks] == [
         {"name": "mult_acc", "beats": 16, "csrs": {"loopCount": 16}}
     ]
+    assert parsed(out / "snax_alu.hjson") == parsed(w4[0] / "snax_alu.hjson")
     for h in ("streamer_csr_addr_map.h", "acc_csr.h"):
         mine, add = (out / "include" / h).read_text(), (w4[0] / "include" / h).read_text()
         assert mine.replace("vecmul", "vecadd") == add, h
@@ -223,16 +208,15 @@ def test_vsum_is_the_accumulator(tmp_path):
     fields loopCount and len, one task of 64 beats summing all 64 (T = n)."""
     out = tmp_path / "gvsoc" / "vsum"
     m = generate(point(tmp_path, name="vsum", graph=bound_vsum()), out, root=tmp_path)
-    tree = ast.parse((out / "forge_vsum_acc.py").read_text())
-    consts = _constants(tree)
-    unit = {k: ast.literal_eval(v) if not isinstance(v, ast.Name) else consts[v.id]
-            for k, v in _calls(tree, "SnaxUnit").items()}  # fmt: skip
-    shell = {k: consts[v.id] for k, v in _calls(tree, "SnaxShell").items()}
-    assert unit == ACCUMULATOR_UNIT
-    assert shell == {"csr_base": 973, "fields": ["loopCount", "len"]}
+    assert parsed(out / "snax_alu_acc.hjson") == ACCUMULATOR
     one = {"spatial_bounds": [[1]], "temporal_dim": [1], "num_channel": [1], "fifo_depth": [8]}
-    assert consts["STREAMER_TEMPLATE"] == {"data_reader_params": one, "data_writer_params": one}
-    assert m.target == "forge_vsum" and m.symbols == {"N": 64}
+    assert parsed(out / "snax_alu_streamer.hjson") == {
+        "data_reader_params": one, "data_writer_params": one
+    }  # fmt: skip
+    s = slot(parsed(out / "snax_alu.hjson"))
+    assert (s["snax_tcdm_ports"], s["sparse_interconnect_config"]) == (2, [[2, 1]])
+    assert (s["snax_num_rw_csr"], s["snax_num_ro_csr"]) == (3, 2)
+    assert m.symbols == {"N": 64}
     assert m.csrs.to_dict() == {
         "streamer": {"first": 960, "last": 972}, "fields": {"loopCount": 973, "len": 974},
         "start": 975, "busy": 976, "counter": 977,
@@ -243,17 +227,36 @@ def test_vsum_is_the_accumulator(tmp_path):
     assert "#define ACC_RW_LEN 974\n" in (out / "include" / "acc_csr.h").read_text()
 
 
-def test_config_is_a_property_only_when_not_the_default(w4):
-    """The elementwise unit's composite has no config, as before step 6b (the fixtures)."""
-    out, _ = w4
-    assert "config=" not in (out / "forge_vecadd_acc.py").read_text()
+def test_the_platforms_values_are_written_back(tmp_path):
+    """The reverse of hjson_platform.py's mapping: a platform with --set changes gives a cluster
+    file that reads back as that platform."""
+    sets = [("l1.n_banks", 16), ("l1.rows", 2048), ("l1.base_addr", 0x2000_0000),
+            ("l1.wide_bits", 256), ("l2.beat_bits", 256), ("l2.base_addr", 0x9000_0000),
+            ("l2.size_bytes", 1 << 30)]  # fmt: skip
+    platform = Platform.load(SNAX_ALU).with_changes(sets)
+    out = tmp_path / "out"
+    generate(point(tmp_path, platform=platform), out, root=tmp_path)
+    c = parsed(out / "snax_alu.hjson")
+    assert (c["cluster"]["tcdm"]["banks"], c["cluster"]["tcdm"]["size"]) == (16, 256)
+    assert (c["cluster"]["cluster_base_addr"], c["cluster"]["dma_data_width"]) == (0x2000_0000, 256)
+    assert c["dram"] == {"address": 0x9000_0000, "length": 1 << 30}
+    assert c["cluster"]["data_width"] == 64
 
 
-def test_elementwise_op_is_chisels():
-    src = REPO / "hw/chisel/src/main/scala/snax/forge/elementwise/ElementwiseAlu.scala"
-    body = src.read_text().split("object ElementwiseOp")[1].split("val width")[0]
-    table = {k.lower(): int(v) for k, v in re.findall(r"val (\w+):\s*Int = (\d+)", body)}
-    assert table == ELEMENTWISE_OP
+@needs_submodule
+def test_the_plain_source_sets_narrow_and_wide_ports(tmp_path):
+    """A source with the plain interconnect (snax_alu_cluster_old.hjson): narrow ports, no wide."""
+    old = HJSON.with_name("snax_alu_cluster_old.hjson")
+    (tmp_path / "platforms").mkdir()
+    (tmp_path / "platforms" / "old.hjson").write_bytes(old.read_bytes())
+    platform = Platform.load(SNAX_ALU).with_changes([("hjson", "platforms/old.hjson")])
+    out = tmp_path / "out"
+    generate(point(tmp_path, platform=platform), out, root=tmp_path)
+    s = slot(parsed(out / "snax_alu.hjson"))
+    assert (s["snax_tcdm_ports"], s["snax_narrow_tcdm_ports"], s["snax_wide_tcdm_ports"]) == (
+        12, 12, 0
+    )  # fmt: skip
+    assert "sparse_interconnect_config" not in s
 
 
 def test_two_out_folders_give_byte_identical_files(tmp_path, monkeypatch):
@@ -272,6 +275,13 @@ def test_two_out_folders_give_byte_identical_files(tmp_path, monkeypatch):
         assert b"design point design/vecadd/design_point.json" in (a / f).read_bytes(), f
 
 
+def test_elementwise_op_is_chisels():
+    src = REPO / "hw/chisel/src/main/scala/snax/forge/elementwise/ElementwiseAlu.scala"
+    body = src.read_text().split("object ElementwiseOp")[1].split("val width")[0]
+    table = {k.lower(): int(v) for k, v in re.findall(r"val (\w+):\s*Int = (\d+)", body)}
+    assert table == ELEMENTWISE_OP
+
+
 # =============================================================================
 # Refusals
 # =============================================================================
@@ -281,6 +291,58 @@ def test_a_design_point_outside_the_root(tmp_path):
     with pytest.raises(GenError) as e:
         generate(point(tmp_path / "elsewhere"), tmp_path / "out", root=tmp_path / "root")
     assert e.value.code == "gen.point" and not (tmp_path / "out").exists()
+
+
+def _refused(tmp_path, code, platform=None, source=None):
+    """generate on snax_alu (or ``platform``), the root's source replaced by ``source``;
+    refused with ``code`` before anything is written."""
+    path = point(tmp_path, platform=platform)
+    if source is not None:
+        (tmp_path / "platforms" / "snax_alu.hjson").write_text(source)
+    with pytest.raises(GenError) as e:
+        generate(path, tmp_path / "out", root=tmp_path)
+    assert e.value.code == code
+    assert not (tmp_path / "out").exists()
+    return str(e.value)
+
+
+def test_a_platform_without_a_source_hjson(tmp_path):
+    p = Platform.load(SNAX_ALU).with_changes([("hjson", None)])
+    assert "pixi run design from-hjson" in _refused(tmp_path, "gen.source", p)
+
+
+def test_a_slot_name_that_is_not_the_sources(tmp_path):
+    p = Platform.load(SNAX_ALU).with_changes([("accelerator_slot", "snax_gemm")])
+    msg = _refused(tmp_path, "gen.slot", p)
+    assert "['snax_alu']" in msg and "'snax_gemm'" in msg
+
+
+def test_a_source_with_two_slots(tmp_path):
+    text = SOURCE.read_text().replace(
+        "        snax_acc_cfg: [{\n", '        snax_acc_cfg: [{snax_acc_name: "other"}, {\n'
+    )  # fmt: skip
+    assert "['other', 'snax_alu']" in _refused(tmp_path, "gen.slot", source=text)
+
+
+@pytest.mark.parametrize(
+    ("sets", "text"),
+    [
+        ([("l1.rows", 501)], "not whole KiB"),
+        ([("l2.read_latency", 3)], "l2.read_latency 3 (the hjson gives 1)"),
+        ([("l1.read_latency", 2)], "l1.read_latency 2 (the hjson gives 1)"),
+    ],
+)
+def test_a_platform_value_the_hjson_cannot_express(tmp_path, sets, text):
+    p = Platform.load(SNAX_ALU).with_changes(sets)
+    assert text in _refused(tmp_path, "gen.platform", p)
+
+
+def test_a_source_the_values_cannot_be_written_into(tmp_path):
+    text = SOURCE.read_text().replace("        tcdm: {\n", '        tcdm: {$ref: "#/tcdm"},\n'
+                                      "        old_tcdm: {\n")  # fmt: skip
+    assert "cluster.tcdm is not an object written out" in _refused(
+        tmp_path, "gen.source", source=text
+    )
 
 
 def _instance(edit=None, params=None, name="elementwise_add", impl=IMPL) -> Instance:
@@ -412,12 +474,6 @@ def test_three_ports_are_refused():
     assert e.value.code == "gen.ports"
 
 
-def test_a_design_name_that_is_no_identifier(tmp_path):
-    with pytest.raises(GenError) as e:
-        generate(point(tmp_path, name="vecadd-2"), tmp_path / "out", root=tmp_path)
-    assert e.value.code == "gen.name" and not (tmp_path / "out").exists()
-
-
 def test_a_null_symbol_stops_at_the_load(tmp_path):
     """No rule of the generator's own: DesignPoint.load refuses it (graph.symbols)."""
     path = point(tmp_path)
@@ -457,39 +513,18 @@ def test_a_null_binding_and_an_unregistered_block(tmp_path, monkeypatch, binding
     assert "ElementwiseTiledSpatial" in BLOCKS
 
 
-def test_the_install_check(tmp_path):
-    good = fake_install(tmp_path / "a")
-    check_install(good, ["forge_vecadd_acc", "forge_vecadd"])
-    for rel in ("generators/forge_vecadd.py", "targets/forge_vecadd_acc.py"):
-        bad = fake_install(tmp_path / rel.replace("/", "_"), {rel: ""})
-        with pytest.raises(GenError, match="would shadow") as e:
-            check_install(bad, ["forge_vecadd_acc", "forge_vecadd"])
-        assert e.value.code == "gen.install"
-    (good / "generators" / "snax_unit.py").unlink()
-    with pytest.raises(GenError, match="no 'snax_unit'"):
-        check_install(good, ["forge_vecadd"])
-
-
-def test_generate_checks_the_install_before_writing(tmp_path):
-    path = point(tmp_path)
-    bad = fake_install(tmp_path, {"generators/forge_vecadd.py": ""})
-    with pytest.raises(GenError):
-        generate(path, tmp_path / "out", install=bad, root=tmp_path)
-    assert not (tmp_path / "out").exists()
-
-
 def test_the_command(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(gen_mod, "ROOT", tmp_path)
     path = point(tmp_path)
     out = tmp_path / "out"
-    install = fake_install(tmp_path)
-    assert cli.main([str(path), "--out", str(out), "--install", str(install)]) == 0
+    assert cli.main([str(path), "--out", str(out)]) == 0
     text = capsys.readouterr().out
-    assert "target forge_vecadd" in text and "task add_acc: 16 beats" in text
+    assert "cluster snax_alu.hjson" in text and "task add_acc: 16 beats" in text
+    assert "TARGET=snax_hjson" in text and f"--param hjson={out / 'snax_alu.hjson'}" in text
     assert (out / "manifest.json").is_file()
-    (install / "generators" / "forge_vecadd.py").touch()
-    assert cli.main([str(path), "--out", str(out), "--install", str(install)]) == 1
-    assert "[gen.install]" in capsys.readouterr().err
+    (tmp_path / "platforms" / "snax_alu.hjson").unlink()
+    assert cli.main([str(path), "--out", str(out)]) == 1
+    assert "[gen.source]" in capsys.readouterr().err
 
 
 @pytest.mark.skipif(

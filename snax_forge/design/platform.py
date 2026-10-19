@@ -39,9 +39,10 @@ because only the graph knows the ports.
 (hjson_platform.py) keeps the file it came from (``hjson``, a copy in
 ``platforms/``) and the name of its one accelerator slot
 (``accelerator_slot``): the GVSoC generator writes the design's cluster file
-from that source, with the slot set (snax_forge/gen). Both are null for a
-platform not read from one (small16); ``--set accelerator_slot=NAME`` changes
-the slot's name as any field.
+from that source, with that slot set (snax_forge/gen). Both are null for a
+platform not read from one (small16). ``--set accelerator_slot=NAME`` changes
+it as any field: the generator then sets the source's slot of that name, and
+refuses a source whose only slot has another (``gen.slot``).
 
 **Changes and working copies.** ``with_changes`` applies ``--set`` paths
 (``l1.n_banks``, ``streamers.acc_a.temporal_dims``) and returns a working

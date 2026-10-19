@@ -1,13 +1,10 @@
-"""The GVSoC generator's command line (GEN3 step 3).
+"""The generator's command line (GEN3 step 3, LNK2a).
 
-    python -m snax_forge.gen DESIGN_POINT [--out DIR] [--install DIR]
+    python -m snax_forge.gen DESIGN_POINT [--out DIR]
 
-Writes the composite, the target and ``manifest.json`` of the design point
-(gvsoc.py) to ``DIR`` (default ``out/gvsoc/<design>/``) and prints the
-target and what to pass gvrun. ``--install`` is snax-gvsoc's install
-folder, checked for names the generated modules would be shadowed by and
-for the modules they import; default ``out/snax-gvsoc/install`` when it
-exists, else no check.
+Writes the three hjson files, the headers and ``manifest.json`` of the
+design point (gvsoc.py) to ``DIR`` (default ``out/gvsoc/<design>/``) and
+prints the cluster file and what to pass gvrun.
 
 Exit 0 when written, 1 when refused (the rule named), 2 on bad arguments.
 pixi: ``gen-gvsoc``.
@@ -23,29 +20,27 @@ from snax_forge.design import DesignError
 from snax_forge.design.point import DesignPoint
 
 from .blocks import GenError
-from .gvsoc import INSTALL, OUT, generate
+from .gvsoc import OUT, generate
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.gen")
     ap.add_argument("design_point", type=Path, help="a design_point.json (the design step's)")
     ap.add_argument("--out", type=Path, help="output directory (default out/gvsoc/<design>)")
-    ap.add_argument("--install", type=Path, help="snax-gvsoc's install folder to check against")
     args = ap.parse_args(argv)
-    install = args.install or (INSTALL if INSTALL.is_dir() else None)
     try:
         out = args.out or OUT / DesignPoint.load(args.design_point).name
-        manifest = generate(args.design_point, out, install)
+        manifest = generate(args.design_point, out)
     except (GenError, DesignError) as e:
         print(e, file=sys.stderr)
         return 1
-    print(f"target {manifest.target} from {args.design_point}"
-          + (f", checked against {install}" if install else ", no install checked"))  # fmt: skip
+    print(f"cluster {manifest.cluster} from {args.design_point}")
     for t in manifest.tasks:
         print(f"  task {t.name}: {t.beats} beats, {t.csrs}")
     for f in manifest.files:
         print(f"wrote {out / f}")
-    print(f"run: make -C gvsoc run TARGET={manifest.target} TARGET_DIRS={out.resolve()} ELF=...")
+    cluster = (out / manifest.cluster).resolve()
+    print(f'run: make -C gvsoc run TARGET=snax_hjson GVRUN_ARGS="--param hjson={cluster}" ELF=...')
     return 0
 
 
