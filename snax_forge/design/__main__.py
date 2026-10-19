@@ -29,7 +29,8 @@ platform, usually a working copy, under a new name: DST is a path, or a
 bare name for ``platforms/<DST>.json``; an existing file is kept unless
 ``--force``. ``from-hjson`` reads snax_cluster's cluster file into
 ``platforms/<NAME>.json`` (LNK1, hjson_platform.py), checked as any
-platform, an existing file kept unless ``--force``.
+platform, an existing file kept unless ``--force``; the file must be under
+snax-forge's root, since the platform names it as its source (``hjson``).
 
 Exit 0 when everything passed, 1 with every problem found (each with its
 fix), 2 on bad arguments. pixi: ``design``.
@@ -199,7 +200,7 @@ def _from_hjson(argv: list[str]) -> int:
         print(f"{dst} exists; pass --force to replace it", file=sys.stderr)
         return 1
     try:
-        platform = platform_from_hjson(args.hjson, args.name)
+        platform = platform_from_hjson(args.hjson, args.name, ROOT)
     except DesignError as e:
         print(e, file=sys.stderr)
         return 1

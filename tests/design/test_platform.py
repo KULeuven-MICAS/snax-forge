@@ -9,7 +9,7 @@ import pytest
 from snax_forge.design import DesignError, Platform, StreamerOptions, parse_value
 from snax_forge.design.platform import parse
 
-from .helpers import ALU4, SMALL16, platform_dict
+from .helpers import ALU4, SMALL16, SNAX_ALU, platform_dict
 
 # =============================================================================
 # 1. small16 and the format
@@ -38,12 +38,20 @@ def test_small16_is_alu4_without_the_accelerator():
     assert (p.name, p.base, p.changes, p.entries, p.wait_mode) == ("small16", None, {}, {}, "poll")
 
 
+def test_small16_has_no_source_hjson():
+    """Not read from a cluster file: no source and no slot, so nothing to write a cluster from."""
+    p = Platform.load(SMALL16)
+    assert (p.hjson, p.accelerator_slot) == (None, None)
+    assert json.loads(SMALL16.read_text())["hjson"] is None
+
+
 def test_missing_keys_take_defaults_and_every_field_is_written():
     p = Platform.from_dict({"name": "bare"})
     assert p.l2 is None and p.default == StreamerOptions() and p.register_window == 32
     d = p.to_dict()
-    assert list(d) == ["name", "base", "changes", "l1", "l2", "xbar", "dma", "controller",
-                       "register_window", "wait_mode", "streamers"]  # fmt: skip
+    assert list(d) == ["name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2", "xbar",
+                       "dma", "controller", "register_window", "wait_mode", "streamers"]  # fmt: skip
+    assert (d["hjson"], d["accelerator_slot"]) == (None, None)
     assert d["l2"] is None and d["streamers"] == {"default": StreamerOptions().to_dict()}
 
 
@@ -168,6 +176,8 @@ def test_saved_as_renames_and_keeps_the_record():
         ("streamers.acc_a.spatial_bounds", 4, "must be a list"),
         ("streamers.acc-a.fifo_depth", 4, "not a streamer name"),
         ("l1..rows", 4, "not a path"),
+        ("accelerator_slot", 4, "must be a string or null"),
+        ("accelerator_slot.x", "a", "must be a string or null"),
     ],
 )
 def test_a_bad_set_is_named(path, value, text):
@@ -175,6 +185,19 @@ def test_a_bad_set_is_named(path, value, text):
         Platform.load(SMALL16).with_changes([(path, value)])
     (p,) = e.value.problems
     assert p.code == "platform.keys" and p.where == f"platform.{path}" and text in p.message
+
+
+def test_set_accelerator_slot_renames_the_slot():
+    """The slot's name is a platform field as any: the cluster file the generator writes
+    takes it."""
+    w = Platform.load(SNAX_ALU).with_changes([("accelerator_slot", "snax_forge_acc")])
+    assert (w.accelerator_slot, w.hjson) == ("snax_forge_acc", "platforms/snax_alu.hjson")
+    assert w.changes == {"accelerator_slot": "snax_forge_acc"} and w.base == "snax_alu"
+    assert Platform.from_dict(json.loads(w.to_json())) == w
+    with pytest.raises(DesignError) as e:
+        Platform.load(SNAX_ALU).with_changes([("accelerator_slot", "snax-alu")])
+    assert e.value.problems[0].where == "accelerator_slot"
+    assert "must be an identifier or null" in e.value.problems[0].message
 
 
 def test_a_set_on_a_missing_l2_and_a_close_miss_say_what_to_do():
