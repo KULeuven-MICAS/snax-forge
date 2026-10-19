@@ -2,7 +2,8 @@
 
 Each fixture is a folder of the snax-gvsoc submodule's ``forge/``, the
 generator's output for one design point, checked in untouched
-(``forge/README.md`` there). Its refresh commands are run here as written,
+(``forge/README.md`` there): vecadd, vecmul and vsum (GEN3 step 6b), each
+skipped where the submodule's pin predates it. Its refresh commands are run here as written,
 from a temporary folder that stands for the repo root (the recipe and the
 platform the checked-in ones), so the design point is
 ``out/design/<design>/design_point.json`` and every header comment names it
@@ -26,7 +27,7 @@ from .helpers import SUB
 
 FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_alu.json
-DESIGNS = ["vecadd", "vecmul"]
+DESIGNS = ["vecadd", "vecmul", "vsum"]
 
 pytestmark = [
     pytest.mark.skipif(
