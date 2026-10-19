@@ -81,7 +81,7 @@ works as a black box an LLM agent can drive, shown in one short demonstration
 | C3 | Composition must be decided at cluster level: the best engine or mix in isolation is not the best in the shell | Rank of compositions alone against in the cluster; cycles against area | Per-engine evaluation (the BRM alone, roofline); Stream's ranking on the DNN overlap (E9) | E4, E5, E6 |
 | C4 | The model ranks design points as SNAX RTL does | Kendall tau and top-1 agreement over 3–5 configurations; mean absolute cycle error | snax_cluster RTL: `snax_alu` first, then the 8x8x8 GeMM, plus one DMA-heavy case | E1 (M16, M14) |
 | C5 | The shell is engine-agnostic: SNAX accelerators and HLS engines fit the unit-engine description, and generated RTL plugs into SNAX | SNAX accelerators expressed as BRMs; an HLS engine as a BRM implementation; generated RTL running in SNAX | Hand integration in SNAX | E7, E8, M14 |
-| C2 | (supporting) NumPy kernels reach the model with no hand edits: NPBench's own DaCe sources and data types (D113) | Coverage table: imported and checked, or a named error | — | FE1–FE3 |
+| C2 | (supporting) NumPy kernels reach the model with no hand edits: NPBench's own DaCe sources, the dtype a parameter (D113) | Coverage table: imported and checked, or a named error | — | FE1–FE3 |
 
 ## 6. Evaluation plan
 
@@ -100,20 +100,22 @@ works as a black box an LLM agent can drive, shown in one short demonstration
 
 ### 6.1 Kernel set
 
-NPBench's own DaCe sources with their data types (D113): float64 for
-PolyBench, float32 for the deep-learning kernels; `vecadd` and `dot` stay
-`int64`. About a dozen, chosen by the unit pattern each exercises, the rest
-in the coverage table as named errors (FE2).
+NPBench's DaCe sources, their structure kept, with the dtype as one
+parameter (D113). Integers come first: `int64` with an exact reference check
+through tier C, then `int8` in and `int32` accumulate from tier P on, as
+SNAX's GeMM (OpenGeMM) does. Float is a second pass per kernel, as a new BRM
+implementation. About a dozen kernels, chosen by the tier each exercises,
+the rest in the coverage table as named errors (FE2).
 
-| Pattern | Kernels |
-|---|---|
-| Elementwise, reduction | `vecadd`, `dot` (done) |
-| Mat-vec chains | `atax`, `bicg`, `mvt`, `gesummv`, `gemver` |
-| Mat-mat chains | `gemm`, `k2mm`, `k3mm` |
-| Batched contraction | `doitgen` |
-| Stencil | `jacobi_1d`, `jacobi_2d` |
-| Mixed | `covariance` |
-| NPBench DL kernels | `softmax`, `mlp`, `conv2d_bias`, `resnet` |
+| Tier | Compute row | Kernels | Width |
+|---|---|---|---|
+| done | II 1, fold | vecadd, vecmul, vsum, dot | int64 |
+| A | fold, no reuse | atax, bicg, mvt, gesummv | int64, exact |
+| B | multi-cycle, II > 1 | an integer divider unit; covariance's mean | int64, integer divide |
+| C | multi-phase | covariance (mean, center, product), then softmax | int64; softmax quantized: integer max, polynomial or table exp, integer divide (I-BERT style) |
+| P | int8 on kernels that already work | vecadd, dot, atax | int8 in, int32 out |
+| D | reuse (access axis) | gemver (rank-1 update, stride 0, D69), gemm, k2mm, k3mm, doitgen; jacobi_1d, jacobi_2d | int8 in, int32 accumulate; jacobi in a wider fixed-point type |
+| E | DL layers | mlp, conv2d_bias, lenet, resnet | int8 with requantization between layers |
 
 They are built in the tiers of STATUS (M7). Sizes are PolyBench's MINI
 (`atax` 38 x 42, `gemm` 20 x 25 x 30), and SMALL where containers and
@@ -151,7 +153,7 @@ moves from lanes and ports to state, latency, II and phases. To the right,
 the streamer alone stops being enough: reuse has to live somewhere (open
 item 76), or the accesses stop being affine. The compute axis comes first
 (down the first column), since it is easier to implement; the access axis
-(2-D, reuse) after.
+(2-D, reuse) after. Along the compute axis, integers come first (D113).
 
 ## 7. Cost model
 
@@ -329,12 +331,9 @@ second line cannot be written is a threat (Q11).
 
 1. BASE1: whether the GeMM bring-up is logged as well as `snax_alu` (SG5).
 2. The PDK, the synthesis tool, and what may be published.
-3. SNAX GeMM is int8 with int32 accumulation, which needs packing (PACK1),
-   and the generated hardware needs floating-point units for NPBench's
-   types. An option before floating point: integer (fixed-point, quantized)
-   versions of the kernels, which would amend D113. Floating point later
-   through Berkeley HardFloat ops inside the existing blocks' lanes. Either
-   way the multi-cycle rows of section 6.2 stay.
+3. Floating point, the second pass per kernel after the integer tiers
+   (D113): Berkeley HardFloat ops inside the existing blocks' lanes is one
+   option. Either way the multi-cycle rows of section 6.2 stay.
 4. The exact Transformer (model, head size, sequence lengths, precision) and
    ResNet slice for E5 and E6.
 5. The snax_cluster version to pin for SNAX-GVSoC and the bundle.

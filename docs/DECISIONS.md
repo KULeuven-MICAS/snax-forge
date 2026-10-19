@@ -357,9 +357,12 @@ cluster once.
 tasklets to a chain of unit BRMs linked by FIFOs, with streamers on the outer ports only, so one
 register window and one SNAX shell wrapper (M13). Links between shells are parked (open item 53).
 
-**D113** · scope — The kernels are NPBench's own DaCe sources with their data types, at PolyBench's
-MINI and SMALL sizes where they fit SNAX's 128 KiB L1, on SNAX's own cluster first (32 banks, from
-its hjson). `vecadd` and `dot` stay `int64`. → STATUS (M7).
+**D113** · scope — The kernels keep NPBench's DaCe structure with the dtype as one parameter, at
+PolyBench's MINI and SMALL sizes where they fit the 128 KiB L1. Integers first: `int64` with an exact
+reference check through tier C, `int8` in and `int32` accumulate from tier P on, as SNAX's GeMM
+(OpenGeMM); float is a second pass per kernel, as a new BRM implementation (ports carry dtype, D68).
+Reverses "NPBench's own data types" for an exact check and the GeMM's int8 × int8 → int32.
+→ STATUS (M7), PAPER §6.1.
 
 **D116** · scope — SNAX-GVSoC replaces SNAX-MODEL (GVS4, closing X1): a GVSoC model of the SNAX
 cluster in which a Snitch core runs the real program, so control cost is measured, not declared.

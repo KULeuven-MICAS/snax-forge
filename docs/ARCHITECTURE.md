@@ -346,13 +346,12 @@ from here (D116, `docs/STATUS.md` has the tasks):
 2. **M14** (D127): to SNAX-GVSoC first (LNK1, GEN3, LNK2a, GEN2a, FLOW3),
    then to snax_cluster (GEN1, LNK2b, GEN2b), then clean-up (RET1, a
    housekeeping pass, one generator).
-3. **M7 tier A:** 2-D plumbing, MatMul, float64 (atax, bicg, mvt, k3mm).
+3. **M7 tier A:** 2-D plumbing, int64 mat-vecs (D113, PAPER §6.1).
 4. **M13:** the composed bind, then the composed accelerator in SNAX (LNK3).
-5. **M7 tier B:** scalar arguments and in-place updates.
+5. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
 6. **M15:** tiling, a DMA per tile.
-7. **M7 tier C:** packing, float32, softmax and mlp, the 8x8x8 GeMM.
-8. **M9, M7 tiers D and E,** then **M11** and **M12** (layers, blocks,
-   models) and the paper draft (P2).
+7. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.
+8. **M11** and **M12** (layers, blocks, models) and the paper draft (P2).
 
 Alongside: P1 (paper plan). When called for: M6 (contract freeze), M8
 (automated DSE), M10 (cosim).

@@ -39,7 +39,7 @@ Done: M1, M4a, M3, M4b, M5, X1. Open, in order (D116):
 |---|---|---|
 | M16 | SNAX-GVSoC aligned with snax_cluster: the baseline | `wip` |
 | M14 | Generation, to SNAX-GVSoC first, then to snax_cluster, then clean-up (D111, D116, D127) | `wip` |
-| M7 | Front ends: NPBench's own sources and data types, tier A first (D113) | todo |
+| M7 | Front ends: NPBench's DaCe sources in tiers, integers first (D113) | todo |
 | M13 | Composed bind: several unit BRMs as one accelerator (D112) | todo |
 | M15 | Tiling: a DMA per tile | todo |
 | M9 | `jacobi1d` | todo |
@@ -52,7 +52,7 @@ Done: M1, M4a, M3, M4b, M5, X1. Open, in order (D116):
 | M10 | Cosim of one accelerator (D52) | todo |
 
 M7's tiers interleave with the rest: tier A after M14, then M13 and LNK3,
-tier B, M15, tier C with the GeMM, then M9 and tiers D and E.
+tiers B, C and P, M15, tier D with the GeMM (M9 inside it), then tier E.
 
 ## M16: SNAX-GVSoC aligned with snax_cluster (D116)
 
@@ -88,8 +88,8 @@ that the DMA's counters stay the RTL's (D124).
 | LNK1 | A. A platform read from snax_cluster's `cfg/snax_alu_cluster.hjson` (`platforms/snax_alu.json`, `design from-hjson`) with the streamer template fields, checked as any platform is: `temporal_dim` and `fifo_depth` into the default, `spatial_bounds` and `num_channel` derived from the ports (D131) | none | The platform round-trips; `vecadd` at W = 4 designs on it | done |
 | GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written program (`forge-elementwise`, `forge-reduce`, until GEN2a) on fixtures in snax-gvsoc `forge/<design>/`; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `done` |
 | LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119, D134). Round 1 in snax-gvsoc: the reader, the generic target `snax_hjson`, forge/'s fixtures as hjson by hand; round 2 here: the platform's source hjson and slot, the writer of three hjson files (cluster, streamer, accelerator) and the schemas, forge/'s fixtures from it. Steps and findings in snax-gvsoc `LNK2a.md` | GEN3 | GEN3's runs on the read target | done |
-| GEN2a | A. The program: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking | LNK2a | `vecadd` and `dot` check themselves on SNAX-GVSoC | todo |
-| FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `dot` flows give checked runs; the viewer and the reports open them | todo |
+| GEN2a | A. The program for single-accelerator designs: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking. Several accelerators on one core are not modelled (open item 79); dot, mul and accumulate driven by one core, is M13's composite (D112). Round 1: the datagen, the C backend, a generic app on snax-gvsoc's fixtures (snax-gvsoc `GEN2a.md`); round 2: the adder tree | LNK2a | `vecadd`, `vecmul`, `vsum`, and `vsum` on the adder tree at W = 4 check themselves on SNAX-GVSoC | `wip` |
+| FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `vsum` flows give checked runs; the viewer and the reports open them | todo |
 | GEN1 | B. The Chisel datapath from the binding through `Emit` (D91), the `ctrl` adapter and the generated shell wrapper (D130) | GEN3 | Elaborates for `elementwise_add` and `accumulate` | todo |
 | LNK2b | B. The bundle for snax_cluster: the hjson, a `Bender.yml`, the changes snax_cluster needs (open item 51) | GEN1, LNK2a | snax_cluster builds from it with only the listed changes | todo |
 | GEN2b | B. GEN2a's ELF on snax_cluster's RTL, compared as D123 and D124 do | LNK2b, GEN2a | Deviation explained per phase | todo |
@@ -105,8 +105,8 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 | Milestone | Tasks | Content |
 |---|---|---|
 | P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step (BASE1, after the SG series, once the snax-forge flow runs end to end again); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
-| M7 | ND1, FE1a, LOW4, FE1b, PACK1, FE1c, FE1d, FE2, FE3 | Tier A: atax, bicg, mvt, k3mm (MatMul, float64, returned results); B: gesummv, gemver, gemm, k2mm (scalars, in-place updates, open item 47); C: softmax, mlp (float32, `exp`, `max`, division, packing, open items 20, 21, 37); D: jacobi, doitgen, covariance (several states, open item 36); E: conv2d_bias, resnet, lenet. ND1 first: rank-free unit dataflow, map tagging, N-D fills (open items 45, 46, 48). FE3 is C2's coverage table |
-| M13 | CMP0–CMP4 | One recipe step binds a connected group of tasklets to a chain of unit BRMs as one accelerator, FIFOs inside, streamers outside (D112): the BRM format, the model, the sandbox, the lowering, then composed `dot`, mat-vec and mat-mat against E2E2's chain through L1 |
+| M7 | ND1, FE1a, FE1b, FE1c, PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 (D113). ND1 first: rank-free unit dataflow, map tagging, N-D fills, the streamer as an input of its own (open items 45, 46, 48, 78). FE1a is tier A, with LOW4 in it (mvt's in-place update, open item 47; gesummv's scalars); FE1b tier B; FE1c tier C; PACK1 tier P (open items 20 and 21; the reference executor accumulates as the hardware does; requantization); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
+| M13 | CMP0–CMP4 | One recipe step binds a connected group of tasklets to a chain of unit BRMs as one accelerator, FIFOs inside, streamers outside (D112): the BRM format, the model, the sandbox, the lowering, then composed `dot`, mat-vec and mat-mat against E2E2's chain through L1. That chain on SNAX-GVSoC needs several accelerators on one core (open item 79); M13 decides its baseline |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
 | M11 | LAY1–LAY3 | conv2d tiled on a MAC-array BRM; softmax and attention with several BRMs; HDC bind, bundle and similarity |
@@ -205,7 +205,7 @@ and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D124).
 Closed in SG6: 62 (D120). Closed in SG7: 58 (the cores, AXI and the DMA in
 the SNAX crossbar, D122). Closed in GEN3's plan: 64 (D129). Closed in
 LNK2a: 77 (the streamer lowered per design point, D134).
-Next free number: 79.
+Next free number: 82.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -286,8 +286,9 @@ Next free number: 79.
     Settled in LNK2b.
 53. A link between two shell accelerators: amends D12 and D51 and the SNAX
     shell. Parked (D112).
-54. Which kernels take PolyBench's SMALL in a 128 KiB L1, and the tolerance
-    of the NumPy check for float sums. Decided in FE1a.
+54. Which kernels take PolyBench's SMALL in a 128 KiB L1, decided in FE1a;
+    the tolerance of the NumPy check for float sums waits for the float pass
+    (D113).
 56. `gvrun` ends in `exec python3 -m gvrun`; inside a pixi task `python3` is
     pixi's Python, without GVSoC's packages (`/opt/venv` in the image). How
     the flow calls `gvrun` is decided in FLOW3.
@@ -371,6 +372,24 @@ Next free number: 79.
     beside the platform and the BRM, together with a frozen streamer file
     given as input (checked against the ports) and `temporal_dim` lowered
     from the DFG's temporal loops instead of the platform's knob.
+79. Several accelerators on one core. snax_cluster has `snax_acc_mux_demux`
+    and core CSR 1990 (`multi_acc_mux`), with `snax_multi_alu_cluster.hjson`
+    and `snax-multi-alu`. SNAX-GVSoC lacks CSR 1990; `snax_hjson` refuses
+    more than one slot per core and the generator refuses with
+    `gen.instances`. Every accelerator on a core uses the same CSR
+    addresses, so their headers collide by name. Decided with M13's
+    baseline.
+80. One Snitch core driving both the DMA and the accelerator: snax_cluster
+    can, but rarely does. The C backend takes core roles from the cluster
+    file; `snax_hjson` wants xdma on the last core, so with one core that is
+    core 0. Never run.
+81. No kernel gives a reduction with more than one sum per run (T < n).
+    `vsum-r16` overrides the task list by hand (`forge-reduce`,
+    `RATE_OVERRIDE=16`: one run, four sums of 16-element chunks). The 1-D
+    form `out[i // 16] += A[i]` has a non-affine index; making it affine
+    splits i into r and k, both temporal, ND1's split-and-tag transform
+    (open item 46). `forge-reduce` retires once ND1 or tier A gives a real
+    T < n. Revisited at ND1.
 
 ## Sync Reminders
 
