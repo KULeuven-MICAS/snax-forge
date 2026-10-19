@@ -11,12 +11,16 @@ order; the generator writes ``main.c`` beside them.
 
 **Cores.** Each step runs on the core that owns its component, from the
 cluster file: the DMA's core is the one with ``xdma``, the accelerator's
-the one whose ``snax_acc_cfg`` holds the slot. ``main`` branches on
-``snrt_cluster_core_idx()``, not ``snrt_is_compute_core()``: with one core
-snRuntime counts zero compute cores (open item 80). The index is kept in a
-``volatile``, so every branch reads it: with a constant, clang threads the
-branches into one path per core and copies the code every core passes (the
-exit mark) onto each, defining its label twice.
+the one whose ``snax_acc_cfg`` holds the slot. Each core with a task gets a
+function of its own, ``forge_core_<n>`` (``static``, ``noinline``): its steps
+in task-list order, a straight line with the barriers at the same points as
+every other core's; a core with none runs ``forge_core_idle``, the barriers
+only. ``main`` marks its entry, reads ``snrt_cluster_core_idx()`` once (not
+``snrt_is_compute_core()``: with one core snRuntime counts zero compute
+cores, open item 80), calls its core's function through a table, marks its
+exit and returns what the function returned. ``main`` has no branch, so the
+compiler has no path to copy a mark onto (a branch per core in one function
+let clang copy the exit mark per core, defining its label twice).
 
 **Configure.** A streamer task is ``csrw_ss`` on streamer_csr_addr_map.h's
 names: the base (``BASE_PTR_<M>_LOW`` / ``_HIGH``), the spatial strides,
@@ -83,7 +87,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from snax_forge import expr
@@ -161,14 +165,6 @@ def cores(cluster: Mapping[str, Any], slot: str) -> Cores:
     return Cores(len(flat), dma[0], owner[0])
 
 
-@dataclass
-class _Block:
-    """Lines one core runs (``core`` None: every core)."""
-
-    core: int | None
-    lines: list[str] = field(default_factory=list)
-
-
 class _Program:
     def __init__(self, point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any],
                  layout: Any, arrays: Sequence[Array]) -> None:  # fmt: skip
@@ -179,7 +175,8 @@ class _Program:
         self.conf = tasks.configured()
         self.beat = point.platform.l2.beat_bits // 8
         self.movers = self._movers()
-        self.blocks: list[_Block] = []
+        self.lines: dict[int, list[str]] = {k: [] for k in range(self.cores.count)}
+        self.barriers = 0
         self.labels: list[str] = []
         self.started: dict[str, list[str]] = {}  # component -> its tasks, in start order
         self.order: list[str] = []  # every task, in start order
@@ -203,17 +200,24 @@ class _Program:
 
     # -- emitting --------------------------------------------------------------------------
 
-    def emit(self, core: int | None, *lines: str) -> None:
-        if not self.blocks or self.blocks[-1].core != core:
-            self.blocks.append(_Block(core))
-        self.blocks[-1].lines += lines
+    def emit(self, core: int, *lines: str) -> None:
+        self.lines[core] += lines
 
-    def mark(self, core: int | None, task: str, event: str) -> None:
+    def barrier(self) -> None:
+        """A barrier at this point of every core's line."""
+        self.barriers += 1
+        for lines in self.lines.values():
+            lines.append("snrt_cluster_hw_barrier();")
+
+    def label(self, task: str, event: str) -> str:
         label = f"forge_{task}_{event}"
         if not SYMBOL.fullmatch(label) or label in self.labels:
             raise CError("c.label", f"{label!r} is not a C symbol or not unique")
         self.labels.append(label)
-        self.emit(core, f"FORGE_MARK({label});")
+        return label
+
+    def mark(self, core: int, task: str, event: str) -> None:
+        self.emit(core, f"FORGE_MARK({self.label(task, event)});")
 
     # -- the steps -------------------------------------------------------------------------
 
@@ -331,7 +335,7 @@ class _Program:
                 self.counters.append(t)
                 self.emit(tc, f"counter_{t} = csrr_ss({inst}_RO_PERF_COUNT);")
         if consumers - {core}:
-            self.emit(None, "snrt_cluster_hw_barrier();")
+            self.barrier()
 
     def dma_wait(self, i: int, s: Start) -> list[PlacedWait]:
         """The DMA wait the start ``s`` needs: one when a task of it has an ``after`` on a DMA
@@ -400,11 +404,22 @@ class _Program:
         lines.append('printf("forge errors: %d\\n", err);')
         return lines
 
+    def function(self, name: str, what: str, lines: list[str], slot: bool) -> list[str]:
+        """One core's function: ``lines`` in order; the accelerator's core also declares the
+        counters and the error count, checks and returns it."""
+        body = (
+            ["int err = 0;", *(f"uint32_t counter_{t} = 0;" for t in self.counters)] if slot else []
+        )
+        body += lines
+        body += [*self.check(), "return err;"] if slot else ["return 0;"]
+        return [f"// {what}", f"static __attribute__((noinline)) int {name}(void) {{",
+                *(INDENT + x for x in body), "}", ""]  # fmt: skip
+
     def text(self, includes: Sequence[str], point_path: str) -> str:
-        self.mark(None, "main", "entry")
+        entry, exit_ = self.label("main", "entry"), self.label("main", "exit")
         self.run()
-        self.emit(self.cores.slot, *self.check())
-        self.mark(None, "main", "exit")
+        working = {k: v for k, v in self.lines.items()
+                   if k == self.cores.slot or any(x != "snrt_cluster_hw_barrier();" for x in v)}  # fmt: skip
         head = [
             "// Generated by snax-forge's generator (snax_forge/gen, GEN2a) from the",
             f"// design point {point_path}. Do not edit: run",
@@ -412,7 +427,7 @@ class _Program:
             f"// The task list {self.tasks.name} on snRuntime: core {self.cores.dma} runs the DMA,",
             f"// core {self.cores.slot} the accelerator {self.name}; the SNAX waits as the lowering",
             "// places them (D64), the DMA's on dependences only (D135), a barrier where another",
-            "// core goes on; a mark per task event.",
+            "// core goes on; a mark per task event. One function per core, a straight line.",
             "",
             '#include "snrt.h"',
             "",
@@ -422,23 +437,31 @@ class _Program:
             "#define FORGE_MARK(label) \\",
             MARK_ASM,
             "",
+        ]
+        out = list(head)
+        for k, lines in working.items():
+            roles = [r for r, c in (("the DMA", self.cores.dma), (f"the accelerator {self.name}",
+                                    self.cores.slot)) if c == k]  # fmt: skip
+            out += self.function(f"forge_core_{k}", f"Core {k}: {' and '.join(roles)}", lines,
+                                 k == self.cores.slot)  # fmt: skip
+        table = [f"forge_core_{k}" if k in working else "forge_core_idle"
+                 for k in range(self.cores.count)]  # fmt: skip
+        if len(working) < self.cores.count:
+            idle = [f"for (int i = 0; i < {self.barriers}; i++) {{",
+                    f"{INDENT}snrt_cluster_hw_barrier();", "}"] if self.barriers else []  # fmt: skip
+            out += self.function("forge_core_idle", "Cores with no task: the barriers only", idle,
+                                 False)  # fmt: skip
+        out += [
+            "// Each core's function, by snrt_cluster_core_idx()",
+            f"static int (*const forge_cores[{self.cores.count}])(void) = {{{', '.join(table)}}};",
+            "",
             "int main() {",
+            f"{INDENT}FORGE_MARK({entry});",
+            f"{INDENT}int err = forge_cores[snrt_cluster_core_idx()]();",
+            f"{INDENT}FORGE_MARK({exit_});",
+            f"{INDENT}return err;",
+            "}",
         ]
-        body = [
-            "// volatile: read at each branch, so the code every core passes stays one copy",
-            "volatile uint32_t core = snrt_cluster_core_idx();",
-            "int err = 0;",
-        ]
-        body += [f"uint32_t counter_{t} = 0;" for t in self.counters]
-        out = head + [INDENT + x for x in body]
-        for b in self.blocks:
-            if b.core is None:
-                out += [INDENT + x for x in b.lines]
-            else:
-                out.append(f"{INDENT}if (core == {b.core}) {{")
-                out += [INDENT * 2 + x for x in b.lines]
-                out.append(INDENT + "}")
-        out += [f"{INDENT}return err;", "}"]
         return "\n".join(out) + "\n"
 
 

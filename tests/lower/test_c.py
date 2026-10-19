@@ -17,7 +17,7 @@ from snax_forge.gen.data import arrays as data_arrays
 from snax_forge.lower import CError, TaskList, main_c, task_list
 from snax_forge.lower.c import cores
 from tests.design.helpers import chained, graph_dict
-from tests.gen.helpers import SUB, bound_vsum, point
+from tests.gen.helpers import SUB, bound_vecmul, bound_vsum, point
 
 POINT = "out/design/vecadd/design_point.json"
 
@@ -46,54 +46,62 @@ def text(tmp_path, edit_tasks=None, edit_cluster=None, **kw) -> str:
     return main_c(p, tasks, cluster, layout, arrays, INCLUDES, POINT)
 
 
-def branches(src: str) -> list[tuple[str, list[str]]]:
-    """main's top-level blocks: ``("all", lines)`` or ``("core N", lines)``, in order."""
-    body = src[src.index("int main() {") :].splitlines()[1:]
-    out: list[tuple[str, list[str]]] = []
-    for line in body:
-        m = re.fullmatch(r" {4}if \(core == (\d+)\) \{", line)
+def functions(src: str) -> dict[str, list[str]]:
+    """main.c's functions by name (``forge_core_0``, ``forge_core_idle``, ``main``): their
+    lines, stripped."""
+    out: dict[str, list[str]] = {}
+    name = None
+    for line in src.splitlines():
+        m = re.fullmatch(
+            r"(?:static __attribute__\(\(noinline\)\) )?int (\w+)\((?:void)?\) \{", line
+        )
         if m:
-            out.append((f"core {m[1]}", []))
-        elif line.startswith("        "):
-            out[-1][1].append(line.strip())
-        elif line not in ("    }", "}"):
-            out.append(("all", [line.strip()]))
+            name = m[1]
+            out[name] = []
+        elif line == "}":
+            name = None
+        elif name is not None:
+            out[name].append(line.strip())
     return out
+
+
+BARRIER = "snrt_cluster_hw_barrier();"
 
 
 def test_vecadd_runs_the_dma_on_core_1_and_the_accelerator_on_core_0(tmp_path):
     src = text(tmp_path)
-    for who, lines in branches(src):
-        joined = "\n".join(lines)
-        if "snrt_dma" in joined:
-            assert who == "core 1", lines
-        if "csrw_ss" in joined or "csrr_ss" in joined:
-            assert who == "core 0", lines
-    assert "volatile uint32_t core = snrt_cluster_core_idx();" in src
-    assert "snrt_is_compute_core" not in src
+    f = functions(src)
+    assert list(f) == ["forge_core_0", "forge_core_1", "main"]
+    assert not any("snrt_dma" in x for x in f["forge_core_0"])
+    assert not any("csrw_ss" in x or "csrr_ss" in x for x in f["forge_core_1"])
+    assert "static int (*const forge_cores[2])(void) = {forge_core_0, forge_core_1};" in src
+    assert f["main"] == [
+        "FORGE_MARK(forge_main_entry);", "int err = forge_cores[snrt_cluster_core_idx()]();",
+        "FORGE_MARK(forge_main_exit);", "return err;",
+    ]  # fmt: skip
+    assert "volatile" not in "\n".join(f["main"]) and "snrt_is_compute_core" not in src
+    assert f["forge_core_1"][-1] == "return 0;" and f["forge_core_0"][-1] == "return err;"
 
 
 def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
-    seq = [(who, line) for who, lines in branches(text(tmp_path)) for line in lines]
-    barriers = [i for i, (who, line) in enumerate(seq) if "hw_barrier" in line]
-    assert len(barriers) == 3 and all(seq[i][0] == "all" for i in barriers)
-    before = [seq[i - 1][1] for i in barriers]
-    # the loads' wait, the writer's wait (its counter read last), the store's sync: each the
-    # owner's, then the barrier
-    assert before == [
-        "FORGE_MARK(forge_load_B_wait);", "counter_add_acc = csrr_ss(ACC_RO_PERF_COUNT);",
-        "FORGE_MARK(forge_store_C_wait);",
-    ]  # fmt: skip
-    after = [seq[i + 1][1] for i in barriers[:2]]
-    assert after == ["FORGE_MARK(forge_add_acc_a_start);", "FORGE_MARK(forge_store_C_start);"]
+    f = functions(text(tmp_path))
+    c0, c1 = f["forge_core_0"], f["forge_core_1"]
+    b0 = [i for i, x in enumerate(c0) if x == BARRIER]
+    b1 = [i for i, x in enumerate(c1) if x == BARRIER]
+    assert len(b0) == len(b1) == 3
+    # the loads' wait (core 1), the writer's wait (core 0, its counter read last), the store's
+    # sync (core 1): each the owner's, then the barrier on both
+    assert c1[b1[0] - 1] == "FORGE_MARK(forge_load_B_wait);"
+    assert c0[b0[1] - 1] == "counter_add_acc = csrr_ss(ACC_RO_PERF_COUNT);"
+    assert c1[b1[2] - 1] == "FORGE_MARK(forge_store_C_wait);"
+    assert c0[b0[0] + 1] == "FORGE_MARK(forge_add_acc_a_start);"
+    assert c1[b1[1] + 1] == "FORGE_MARK(forge_store_C_start);"
+    # the check after the last barrier, on the accelerator's core
+    assert c0[b0[2] + 1] == "int data_errors = 0;"
     # load_B starts with no wait after load_A: the DMA queues (D135); one wait ends both
-    lines = [line for _, line in seq]
-    a, b = (
-        lines.index("FORGE_MARK(forge_load_B_start);"),
-        lines.index("FORGE_MARK(forge_load_A_wait);"),
-    )
-    assert "snrt_dma_wait_all();" not in lines[:a] and lines.count("snrt_dma_wait_all();") == 2
-    assert lines[b - 1 : b + 2] == [
+    a, b = c1.index("FORGE_MARK(forge_load_B_start);"), c1.index("FORGE_MARK(forge_load_A_wait);")
+    assert "snrt_dma_wait_all();" not in c1[:a] and c1.count("snrt_dma_wait_all();") == 2
+    assert c1[b - 1 : b + 2] == [
         "snrt_dma_wait_all();", "FORGE_MARK(forge_load_A_wait);", "FORGE_MARK(forge_load_B_wait);"
     ]  # fmt: skip
 
@@ -102,7 +110,7 @@ def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
     def b_after_a(steps):
         next(s for s in steps if s.get("task_name") == "load_B")["after"] = ["load_A"]
 
-    lines = [line for _, ls in branches(text(tmp_path, edit_tasks=b_after_a)) for line in ls]
+    lines = functions(text(tmp_path, edit_tasks=b_after_a))["forge_core_1"]
     i = lines.index("FORGE_MARK(forge_load_B_start);")
     assert lines[i - 3 : i] == [
         "FORGE_MARK(forge_load_B_configure);", "snrt_dma_wait_all();",
@@ -112,12 +120,12 @@ def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
 
 
 def test_vecadd_marks_every_task_event_once(tmp_path):
-    labels = re.findall(r"FORGE_MARK\((\w+)\);", text(tmp_path))
+    src = text(tmp_path)
+    labels = re.findall(r"FORGE_MARK\((\w+)\);", src)
     tasks = ["load_A", "load_B", "add_acc_a", "add_acc_b", "add_acc_out", "add_acc", "store_C"]
     want = {f"forge_{t}_{e}" for t in tasks for e in ("configure", "start", "wait")}
     assert set(labels) == want | {"forge_main_entry", "forge_main_exit"}
     assert len(labels) == len(set(labels))
-    assert labels[0] == "forge_main_entry" and labels[-1] == "forge_main_exit"
     # a wait's marks in start order, then the counter read after the accelerator's
     i = labels.index("forge_add_acc_a_wait")
     assert labels[i : i + 4] == [f"forge_add_acc_{x}_wait" for x in ("a", "b", "out")] + [
@@ -136,7 +144,7 @@ def test_vecadd_starts_the_movers_with_one_csr_then_the_accelerator(tmp_path):
     ]  # fmt: skip
     assert [src.index(x, start) for x in order] == sorted(src.index(x, start) for x in order)
     # every mark of the step before its first write: the two start CSRs back to back
-    assert "csrw_ss(STREAMER_START_CSR, 1);\n        csrw_ss(ACC_RW_START, 1);" in src
+    assert "csrw_ss(STREAMER_START_CSR, 1);\n    csrw_ss(ACC_RW_START, 1);" in src
 
 
 def test_vecadd_configures_from_the_task_values(tmp_path):
@@ -161,7 +169,7 @@ def test_vecadd_checks_itself(tmp_path):
 
 def test_vsum_sets_len_and_reads_its_counter(tmp_path):
     src = text(tmp_path, graph=bound_vsum(), name="vsum")
-    assert "csrw_ss(ACC_RW_LOOP_COUNT, 64);\n        csrw_ss(ACC_RW_LEN, 64);" in src
+    assert "csrw_ss(ACC_RW_LOOP_COUNT, 64);\n    csrw_ss(ACC_RW_LEN, 64);" in src
     assert "err += counter_sum_acc < 64;" in src
 
 
@@ -176,7 +184,19 @@ def test_one_core_has_no_barriers(tmp_path):
         c["cluster"]["hives"][0]["cores"] = [{"$ref": "#/dma_core_template"}]
 
     src = text(tmp_path, edit_cluster=one_core)
-    assert "hw_barrier" not in src and {w for w, _ in branches(src)} == {"all", "core 0"}
+    assert "hw_barrier" not in src and list(functions(src)) == ["forge_core_0", "main"]
+    assert "// Core 0: the DMA and the accelerator acc" in src
+
+
+def test_a_core_with_no_task_takes_part_in_the_barriers_only(tmp_path):
+    def three_cores(c):
+        c["cluster"]["hives"][0]["cores"].append({"isa": "rv32ima", "xdma": False})
+
+    src = text(tmp_path, edit_cluster=three_cores)
+    f = functions(src)
+    assert list(f) == ["forge_core_0", "forge_core_1", "forge_core_idle", "main"]
+    assert f["forge_core_idle"] == ["for (int i = 0; i < 3; i++) {", BARRIER, "}", "return 0;"]
+    assert "forge_cores[3])(void) = {forge_core_0, forge_core_1, forge_core_idle};" in src
 
 
 # =============================================================================
@@ -292,6 +312,7 @@ def test_refused_two_instances(tmp_path):
 # =============================================================================
 
 CLANG = shutil.which("clang")
+NM = shutil.which("llvm-nm")
 SW = SUB / "sw"
 # sw/toolchain.mk's and sw/common.mk's compile flags (the image's clang, snax_cluster's
 # toolchain); the generated folder's headers before sw/generated/, as the forge apps put them
@@ -310,8 +331,8 @@ SW_INCDIRS = [
 
 def _riscv_clang() -> str | None:
     """Why vecadd's main.c cannot be compiled here, or None."""
-    if CLANG is None:
-        return "no clang on PATH (the image's, snax_cluster's toolchain)"
+    if CLANG is None or NM is None:
+        return "no clang or llvm-nm on PATH (the image's, snax_cluster's toolchain)"
     if not (SW / "snRuntime").is_dir():
         return "the snax-gvsoc submodule is not checked out (CI never fetches it)"
     probe = subprocess.run([CLANG, "-print-targets"], capture_output=True, text=True, check=False)
@@ -321,15 +342,23 @@ def _riscv_clang() -> str | None:
 
 
 @pytest.mark.skipif(_riscv_clang() is not None, reason=str(_riscv_clang()))
-@pytest.mark.parametrize("design", ["vecadd", "vsum"])
+@pytest.mark.parametrize("design", ["vecadd", "vecmul", "vsum"])
 def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
-    """vsum too: with the core index a constant, clang copied its exit mark (one label twice)."""
+    """Each mark's label defined once in the object (llvm-nm): a branch per core in one function
+    once let clang copy vsum's exit mark, one label twice."""
     gen = tmp_path / "gen"
-    graph = bound_vsum() if design == "vsum" else None
-    m = gen_mod.generate(point(tmp_path, name=design, graph=graph), gen, root=tmp_path)
+    graph = {"vecmul": bound_vecmul, "vsum": bound_vsum}.get(design)
+    m = gen_mod.generate(point(tmp_path, name=design, graph=graph and graph()), gen,
+                         root=tmp_path)  # fmt: skip
     assert {"main.c", "data.h", "include/acc_csr.h"} <= set(m.files) and m.program == "main.c"
     incs = [f"-I{gen}", f"-I{gen / 'include'}", *(f"-I{SW / d}" for d in SW_INCDIRS)]
     run = subprocess.run([CLANG, *FLAGS, *incs, "-Werror", "-c", str(gen / "main.c"), "-o",
                           str(gen / "main.o")], capture_output=True, text=True,
                          check=False)  # fmt: skip
     assert run.returncode == 0, run.stderr
+    labels = re.findall(r"FORGE_MARK\((\w+)\);", (gen / "main.c").read_text())
+    nm = subprocess.run([NM, "--defined-only", str(gen / "main.o")], capture_output=True,
+                        text=True, check=True).stdout  # fmt: skip
+    defined = [line.split()[-1] for line in nm.splitlines()]
+    assert sorted(x for x in defined if x.startswith("forge_") and x in labels) == sorted(labels)
+    assert all(defined.count(x) == 1 for x in labels)
