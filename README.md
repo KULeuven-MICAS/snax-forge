@@ -72,7 +72,7 @@ pixi run flow recipes/vecadd.json --platform platforms/small16.json
 ```
 flow vecadd (vecadd: W=4; N=64) on small16 -> out/flow/vecadd/
   sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-  design    20 checks passed; platform base small16, 0 changes; memory contiguous, 0 changes -> design/
+  design    21 checks passed; platform base small16, 0 changes; memory contiguous, 0 changes -> design/
   lower     cluster.json (7 components), tasks.json (12 steps, 57 commands)
   scenario  scenario.json, inputs A.npy, B.npy, C.npy (make_inputs, seed 0)
   run       85 cycles -> run/  (pixi run view out/flow/vecadd/run)

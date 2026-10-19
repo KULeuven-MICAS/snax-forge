@@ -8,6 +8,7 @@ import json
 import pytest
 
 from snax_forge.design import CHECKS, Design, DesignError, Platform, check, load, register_check
+from snax_forge.design.check import RUNTIME_MARGIN, RUNTIME_STACK
 from snax_forge.design.memory import MEMORY_PASSES, MemorySpec
 from snax_forge.design.problems import Problem
 from snax_forge.lower.layout import Layout, LayoutError, dma_side
@@ -438,6 +439,37 @@ def test_a_pin_below_a_nonzero_base_gets_the_pin_at_the_memorys_first_byte():
     assert a.fix == "pin it at or above 268435456 (--set memory.A.l1.base=268435456)"
     assert b.fix == "pin it at or above 2147483648 (--set memory.B.l2.base=2147483648)"
     assert problems(pinned(268435456, 2147483648)) == []
+
+
+def test_layouts_stay_below_snruntimes_top_of_l1():
+    """snax_alu's hjson has 2 cores: snRuntime keeps 2 x 1 KiB of stacks and 256 B at the top
+    of L1 (start.S), so C's L1 layout (512 bytes, moved) may end there but not one beat past."""
+    l1_end = 268435456 + 131072
+    top = 2 * RUNTIME_STACK + RUNTIME_MARGIN
+    assert top == 2304
+
+    def pinned(c: int) -> Design:
+        d = Design(Platform.load(SNAX_ALU), bound_vecadd(4))
+        d.memory_spec = MemorySpec().with_changes([("C.l1.base", c)])
+        return d
+
+    assert problems(pinned(l1_end - top - 512)) == []
+    (p,) = problems(pinned(l1_end - top - 512 + 64))
+    assert (p.code, p.where) == ("memory.runtime", "C in l1")
+    assert f"snRuntime keeps [{l1_end - top}, {l1_end}) at the top of L1" in p.message
+    assert "2 cores of platforms/snax_alu.hjson, 256 B for CLS and TLS" in p.message
+    assert p.fix == f"pin it lower (--set memory.C.l1.base={l1_end - top - 512})"
+    (p,) = problems(pinned(l1_end - 256))  # past the end: memory.fit's, not this check's
+    assert p.code == "memory.fit"
+
+
+def test_a_platform_without_an_hjson_has_no_runtime_top():
+    d = with_memory([("C.l1.base", 16 * 64 * 8 - 512)])  # small16: C ends at L1's end
+    assert d.platform.hjson is None and problems(d) == []
+    d = Design(Platform.load(SNAX_ALU).with_changes([("hjson", "platforms/elsewhere.hjson")]),
+               bound_vecadd(4))  # fmt: skip
+    d.memory_spec = MemorySpec().with_changes([("C.l1.base", 268435456 + 131072 - 512)])
+    assert problems(d) == []
 
 
 def test_pins_may_not_overlap():
