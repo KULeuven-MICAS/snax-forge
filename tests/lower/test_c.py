@@ -113,10 +113,12 @@ def test_vecadd_starts_the_movers_with_one_csr_then_the_accelerator(tmp_path):
     start = src.index("FORGE_MARK(forge_add_acc_a_start);")
     order = [
         "FORGE_MARK(forge_add_acc_a_start);", "FORGE_MARK(forge_add_acc_b_start);",
-        "FORGE_MARK(forge_add_acc_out_start);", "csrw_ss(STREAMER_START_CSR, 1);",
-        "FORGE_MARK(forge_add_acc_start);", "csrw_ss(ACC_RW_START, 1);",
+        "FORGE_MARK(forge_add_acc_out_start);", "FORGE_MARK(forge_add_acc_start);",
+        "csrw_ss(STREAMER_START_CSR, 1);", "csrw_ss(ACC_RW_START, 1);",
     ]  # fmt: skip
     assert [src.index(x, start) for x in order] == sorted(src.index(x, start) for x in order)
+    # every mark of the step before its first write: the two start CSRs back to back
+    assert "csrw_ss(STREAMER_START_CSR, 1);\n        csrw_ss(ACC_RW_START, 1);" in src
 
 
 def test_vecadd_configures_from_the_task_values(tmp_path):

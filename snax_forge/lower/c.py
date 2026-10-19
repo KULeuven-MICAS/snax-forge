@@ -31,7 +31,10 @@ call, so it is ``snrt_dma_start_1d`` (one loop of whole beats) or
 
 **Start.** One start step writes ``STREAMER_START_CSR`` once for all of an
 accelerator's movers, then the accelerator's start CSR, in the step's
-order; a DMA task starts at its place in the step.
+order; a DMA task starts at its place in the step. The step's start marks
+all come before its first write, so nothing sits between the streamer's
+start and the accelerator's (a mark there gave the streamer a cycle more,
+one stall_in cycle fewer on the counter).
 
 **Waits**, as ``lower_program`` places them (D64, ``placed_waits``). On
 the owner's core, a wait on the accelerator or one of its streamers polls
@@ -251,23 +254,22 @@ class _Program:
             acc = [i for i, t in enumerate(s.tasks) if types[t] == "accel"]
             if acc and acc[0] < s.tasks.index(movers[0]):
                 raise CError("c.start", f"{where}: {self.name} starts before its movers")
+        for t in s.tasks:  # every mark first, so none sits between the step's writes
+            c = self.conf[t]
+            self.started.setdefault(c.component, []).append(t)
+            self.order.append(t)
+            self.mark(self.core_of(c.component), t, "start")
         streamer_started = False
         for t in s.tasks:
             c = self.conf[t]
             core = self.core_of(c.component)
-            self.started.setdefault(c.component, []).append(t)
-            self.order.append(t)
             if c.type == "dma":
-                self.mark(core, t, "start")
                 self.emit(core, self.dma(c, where))
             elif c.type == "streamer":
                 if not streamer_started:
-                    for m in movers:
-                        self.mark(core, m, "start")
                     self.emit(core, "csrw_ss(STREAMER_START_CSR, 1);")
                     streamer_started = True
             else:
-                self.mark(core, t, "start")
                 self.emit(core, f"csrw_ss({self.name.upper()}_RW_START, 1);")
 
     def dma(self, c: Configure, where: str) -> str:
