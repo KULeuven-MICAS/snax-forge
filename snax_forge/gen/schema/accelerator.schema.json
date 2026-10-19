@@ -1,0 +1,39 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "SNAX-FORGE accelerator file",
+ "description": "<slot>_acc.hjson: a slot's datapath block, what SNAX-GVSoC's standard composite builds the slot's SnaxUnit and SnaxShell from (snax-gvsoc snax/snax_cfg.py, snax/snax_unit_acc.py; snax_forge/gen/gvsoc.py, D134).",
+ "type": "object",
+ "properties": {
+  "unit": {"description": "The unit kind.", "enum": ["SnaxUnit"]},
+  "inputs": {
+   "description": "The unit's input ports in order, one per streamer reader.",
+   "$ref": "#/$defs/names"
+  },
+  "outputs": {
+   "description": "The unit's output ports in order, one per streamer writer.",
+   "$ref": "#/$defs/names"
+  },
+  "lanes": {"type": "integer", "minimum": 1},
+  "data_width": {"description": "A lane's bits.", "enum": [8, 16, 32, 64]},
+  "op": {"description": "ElementwiseOp's encoding (gen/blocks.py).", "type": "integer", "minimum": 0},
+  "signed": {"type": "boolean"},
+  "control": {"description": "A registered control (D129).", "enum": ["counted"]},
+  "config": {
+   "description": "The role of each configuration word; [\"count\"] when left out.",
+   "$ref": "#/$defs/names"
+  },
+  "wait": {"description": "A registered wait (D129).", "enum": ["lockstep", "pipelined"]},
+  "latency": {"type": "integer", "minimum": 0},
+  "ii": {"type": "integer", "minimum": 1},
+  "fields": {
+   "description": "The shell's configuration CSRs in order; start follows them.",
+   "$ref": "#/$defs/names"
+  }
+ },
+ "required": ["unit", "inputs", "outputs", "lanes", "data_width", "op", "signed", "control",
+              "wait", "latency", "ii", "fields"],
+ "additionalProperties": false,
+ "$defs": {
+  "names": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+ }
+}

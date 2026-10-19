@@ -28,6 +28,8 @@ numpy = ">=1.26,<2"
 sympy = ">=1.12"
 # snax_cluster's cluster files (LNK1, design/hjson_platform.py).
 hjson-py = "==3.1.0"
+# The generator's own schemas, and snax_cluster's for its cluster file (LNK2a, gen/).
+jsonschema = ">=4.17,<5"
 
 # DaCe shells out to cmake + a C++ compiler at *runtime* to build generated
 # code. Pinning them here is what makes the golden-reference CPU compile
