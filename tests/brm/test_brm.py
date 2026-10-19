@@ -145,7 +145,7 @@ def test_invalid_binding(case, edit, msg):
 def test_control_and_wait_are_registered_kinds():
     from snax_forge.brm import CONTROLS, WAITS, register_wait
 
-    assert list(CONTROLS) == ["counted", "stream"] and list(WAITS) == ["lockstep", "pipelined"]
+    assert list(CONTROLS) == ["counted"] and list(WAITS) == ["lockstep", "pipelined"]
     with pytest.raises(ValueError, match="already registered"):
         register_wait("lockstep", "again")
 

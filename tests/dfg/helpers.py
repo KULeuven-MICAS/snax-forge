@@ -11,8 +11,10 @@ and dot as imported (DFG3): a multiply map into ``tmp0``, then a sum map
 whose output memlet folds into ``out[0]`` with ``reduce`` add (``dot.snaxdfg``),
 and dot after ``recipes/dot.json`` (SBX2): the multiply map bound to
 elementwise_mul, the sum map to accumulate, W = 4 (``dot_accelerated.snaxdfg``),
-and vecmul as imported (GEN3 step 6a, vecadd with ``*``: ``mult_map`` and
-``mult``, ``vecmul.snaxdfg``).
+vecmul as imported (GEN3 step 6a, vecadd with ``*``: ``mult_map`` and
+``mult``, ``vecmul.snaxdfg``), and vsum as imported (GEN3 step 6b, dot's sum
+map on its own: ``sum_map`` and ``sum`` folding ``A`` into ``out[0]``,
+``vsum.snaxdfg``).
 
 Graphs in the error tests are the plain fixture as a dict, changed by one
 edit (``edited``), the way a person or an LLM edits the file.
@@ -28,7 +30,7 @@ from typing import Any
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 NAMES = ("vecadd", "vecadd_split", "vecadd_accelerated")  # the vecadd steps
-ALL = (*NAMES, "dot", "dot_accelerated", "vecmul")
+ALL = (*NAMES, "dot", "dot_accelerated", "vecmul", "vsum")
 
 
 def fixture(name: str) -> Path:

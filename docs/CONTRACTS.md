@@ -312,8 +312,8 @@ checked at push time, and if the head cannot be pushed the whole pipeline
 freezes for that cycle (no firing, no pop); `II` counts wall-clock cycles, so
 a freeze longer than `II` does not delay the next firing; with a `drain` of
 `d`, no input is taken in the `d` cycles starting with a push, so
-back-to-back sums of the Chisel Accumulator (`d` = 1) take `T + 1` cycles
-each; `done_cycle` is the cycle after the last push. An `AccelConfig` is not serialisable — it holds
+back-to-back sums of a block with `d` = 1 take `T + 1` cycles each (the
+Chisel Accumulator's `d` is 0, D133); `done_cycle` is the cycle after the last push. An `AccelConfig` is not serialisable — it holds
 `fn` — which is why a cluster file names a registered kind and its params
 (D43).
 
@@ -809,8 +809,14 @@ against the registered kind.
   "chisel_accumulator": {
    "source": "chisel",
    "supports": {"W": [1]},
-   "timing": {"latency": 1, "initiation_interval": 1, "drain": 1},
-   "binding": null
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0},
+   "binding": {
+    "block": "Accumulator",
+    "args": {},
+    "control": "counted",
+    "csrs": [{"field": "loopCount", "value": "n"}, {"field": "len", "value": "T"}],
+    "wait": "pipelined"
+   }
   },
 ```
 
@@ -834,10 +840,11 @@ against the registered kind.
 the BRM fills it; null until the implementation is generated. `block` is
 the block's name (the generators register what they can build); `args` its
 parameters, each an expression over design params; `control` (`counted`:
-the block counts its firings, `stream`: the shell counts) and `wait`
-(`lockstep`, `pipelined`) are registered kinds (D19); `csrs` the
-configuration fields in CSR order, each `{field, value}` with the value an
-expression over params, start following them. A fixed op gives no `opSel`
+the block counts its firings, the only kind) and `wait` (`lockstep`,
+`pipelined`) are registered kinds (D19); `csrs` the configuration fields in
+CSR order, each `{field, value}` with the value an expression over params,
+start following them: one for `ElementwiseTiledSpatial` (`loopCount`), two
+for the Accumulator (`loopCount` = `n`, then `len` = `T`). A fixed op gives no `opSel`
 field. Expressions are stored canonical.
 
 `resolve` builds the `AccelConfig` through the kind and rejects a BRM whose

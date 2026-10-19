@@ -60,13 +60,14 @@ changes cycle counts:
   clears it the cycle after the last output handshake. Same here:
   ``start`` in cycle s gives busy from s+1; ``done_cycle`` is the cycle
   after the last push.
-* Drain (D103): the Accumulator's ``in.ready`` is low while its result
-  waits, from the cycle after the last input of a sum until the result is
-  taken. ``drain`` = d says: no input is taken in the d cycles that start
-  with the cycle an output is pushed. With L = 1 the push is the cycle the
-  result waits in, so the Accumulator is d = 1 and back-to-back sums take
-  T+1 cycles each, as in RTL, also when the writer's FIFO holds the push
-  back (the cycles before a late push are frozen anyway). A drain cycle is
+* Drain (D103): a block whose ``in.ready`` is low while its result waits,
+  from the cycle after the last input of a sum until the result is taken.
+  ``drain`` = d says: no input is taken in the d cycles that start with
+  the cycle an output is pushed. With L = 1 the push is the cycle the
+  result waits in, so such a block is d = 1 and back-to-back sums take T+1
+  cycles each, also when the writer's FIFO holds the push back (the cycles
+  before a late push are frozen anyway). The Chisel Accumulator is d = 0
+  (D133): it takes the next input in the cycle its result leaves. A drain cycle is
   ``busy``, like the II gap. A single sum per task (``dot``) is not
   affected. The rule lives in ``_allowed`` and ``tick``.
 
@@ -366,8 +367,9 @@ def reduce_stub(
 
     ``lanes_out = lanes`` (default): each lane is reduced over T beats (the
     snax-forge Accumulator is the case lanes = 1). ``lanes_out = 1``: the
-    lanes are reduced too. Default L = 1, II = 1 as in the Accumulator; its
-    drain of 1 (D103) is the BRM implementation's to declare, default 0.
+    lanes are reduced too. Default L = 1, II = 1 as in the Accumulator; a
+    drain (D103) is the BRM implementation's to declare, default 0 (the
+    Accumulator's is 0, D133).
     """
     lanes_out = lanes if lanes_out is None else lanes_out
     if lanes_out not in (lanes, 1):

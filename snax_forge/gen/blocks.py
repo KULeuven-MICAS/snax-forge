@@ -4,7 +4,8 @@ An adapter reads an instance (its BRM, implementation and design params,
 snax_forge/brm/instance.py) and gives the properties of snax-gvsoc's
 ``SnaxUnit`` and the fields of its ``SnaxShell`` (``Unit``), or refuses
 with a ``GenError`` naming what does not fit. Adapters are registered by
-the block's name (``register_block``, D19).
+the block's name (``register_block``, D19). Both blocks are ``counted``
+(the only control, D129): the start's configuration holds the count.
 
 **ElementwiseTiledSpatial** (snax-forge
 ``hw/chisel/.../elementwise/ElementwiseTiledSpatial.scala``):
@@ -24,17 +25,40 @@ the block's name (``register_block``, D19).
     fields       the binding's csrs[].field, in order
 
 ``lanes`` must be every port's lanes: the unit's beat is the streamer's.
+
+**Accumulator** (snax-forge ``hw/chisel/.../samples/Accumulator.scala``,
+D133): a fold, one sum every T inputs.
+
+    inputs       one input port of rate 1 and one output port of a named
+    outputs      rate (T), both of one lane
+    lanes        1
+    data_width   the ports' dtype, as above (lanes x N whole 64-bit
+    signed       channels, so N is 64)
+    op           add (0): the BRM's op param
+    control      counted
+    wait         pipelined, with the implementation's latency 1, II 1 and
+                 drain 0 (the block's one register)
+    fields       loopCount then len, their values n and the output's rate
+    config       ["count", "rate"]: SnaxUnit reads the first word as the
+                 run's firings and the second as firings per output
+    args         none: the block's widths come from the dtype
+
+``config`` is a SnaxUnit property only when it is not the default
+``["count"]``, so the composite of an elementwise block is as before.
 """
 
 from __future__ import annotations
 
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
+
+# SnaxUnit's config when none is given: one word, the count
+DEFAULT_CONFIG = ["count"]
 
 
 class GenError(ValueError):
@@ -60,10 +84,12 @@ class Unit:
     latency: int
     ii: int
     fields: list[str]
+    config: list[str] = field(default_factory=lambda: list(DEFAULT_CONFIG))
 
     def properties(self) -> dict[str, Any]:
-        """SnaxUnit's keyword arguments, in snax_unit.py's order (csr_base aside)."""
-        return {
+        """SnaxUnit's keyword arguments, in snax_unit.py's order (csr_base aside); ``config``
+        only when it is not the default."""
+        props = {
             "inputs": list(self.inputs),
             "outputs": list(self.outputs),
             "lanes": self.lanes,
@@ -71,10 +97,14 @@ class Unit:
             "op": self.op,
             "signed": self.signed,
             "control": self.control,
+            "config": list(self.config),
             "wait": self.wait,
             "latency": self.latency,
             "ii": self.ii,
         }
+        if self.config == DEFAULT_CONFIG:
+            del props["config"]
+        return props
 
 
 Adapter = Callable[[Instance], Unit]
@@ -160,3 +190,66 @@ def elementwise_tiled_spatial(inst: Instance) -> Unit:
 
 
 register_block("ElementwiseTiledSpatial", elementwise_tiled_spatial)
+
+
+def accumulator(inst: Instance) -> Unit:
+    """The Accumulator's unit; see the module doc."""
+    brm, b = inst.brm, inst.impl.binding
+    what = f"{brm.name}.{inst.implementation}"
+    if b["control"] != "counted":
+        raise GenError(
+            "gen.control", f"{what}: control {b['control']!r}; the block counts (counted)"
+        )
+    if b["wait"] != "pipelined":
+        raise GenError("gen.wait", f"{what}: wait {b['wait']!r}; the block is pipelined")
+    timing = (inst.latency, inst.initiation_interval, inst.drain)
+    if timing != (1, 1, 0):
+        raise GenError(
+            "gen.timing",
+            f"{what}: latency {timing[0]}, II {timing[1]}, drain {timing[2]}; "
+            "the Accumulator is latency 1, II 1, drain 0",
+        )
+    if b["args"]:
+        raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; the Accumulator takes none")
+    op = inst.params.get("op")
+    if op != "add":
+        raise GenError("gen.op", f"{what}: op {op!r}; the Accumulator adds")
+    ins = [p for p in brm.interface.ports if p.direction == "in"]
+    outs = [p for p in brm.interface.ports if p.direction == "out"]
+    if (len(ins), len(outs)) != (1, 1):
+        raise GenError(
+            "gen.ports",
+            f"{what}: {len(ins)} inputs and {len(outs)} outputs; the Accumulator takes 1 and 1",
+        )
+    (a,), (out,) = ins, outs
+    if a.rate != 1 or not isinstance(out.rate, str):
+        raise GenError(
+            "gen.rate",
+            f"{what}: rates {a.rate!r} in and {out.rate!r} out; the Accumulator takes 1 in and "
+            "a named rate out (one sum per T inputs)",
+        )
+    dtypes = {p.dtype for p in brm.interface.ports}
+    if len(dtypes) != 1:
+        raise GenError("gen.dtype", f"{what}: ports of dtypes {sorted(dtypes)}; one is needed")
+    bits, signed = port_dtype(dtypes.pop(), what)
+    for p in (a, out):
+        if inst.lanes(p.name) != 1:
+            raise GenError(
+                "gen.lanes", f"{what}: port {p.name} has {inst.lanes(p.name)} lanes; one is needed"
+            )
+    if bits % 64:
+        raise GenError("gen.lanes", f"{what}: 1 lane of {bits} bits is not whole 64-bit channels")
+    csrs = [(c["field"], c["value"]) for c in b["csrs"]]
+    if csrs != [("loopCount", "n"), ("len", out.rate)]:
+        raise GenError(
+            "gen.fields",
+            f"{what}: csrs {csrs}; the Accumulator's are loopCount = n, then len = {out.rate}",
+        )
+    return Unit(
+        inputs=[a.name], outputs=[out.name], lanes=1, data_width=bits, op=ELEMENTWISE_OP["add"],
+        signed=signed, control="counted", wait="pipelined", latency=1, ii=1,
+        fields=["loopCount", "len"], config=["count", "rate"],
+    )  # fmt: skip
+
+
+register_block("Accumulator", accumulator)

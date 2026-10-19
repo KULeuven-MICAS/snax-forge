@@ -1,0 +1,26 @@
+{
+ "name": "vsum",
+ "symbols": {"N": null},
+ "containers": {
+  "A": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+  "out": {"shape": [1], "dtype": "int64", "transient": false, "attrs": {}}
+ },
+ "body": [
+  {
+   "id": "sum_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i", "range": "0:N"},
+   "body": [
+    {
+     "id": "sum",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "A", "subset": ["i"]}},
+     "outputs": {"out": {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}},
+     "attrs": {"code": "out = in1"}
+    }
+   ]
+  }
+ ]
+}

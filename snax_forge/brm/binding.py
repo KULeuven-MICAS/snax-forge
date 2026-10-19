@@ -7,11 +7,15 @@
      "csrs":    [{"field": "loopCount", "value": "n"}],
                                                       the configuration fields in
                                                       CSR order (start follows), each
-                                                      value an expression over params
+                                                      value an expression over params;
+                                                      several for a block with more
+                                                      than a count (the Accumulator's
+                                                      loopCount then len)
      "wait":    "lockstep"}                           when the block takes a beat
 
 ``control`` and ``wait`` are registered kinds (D19): ``register_control``
-and ``register_wait``. Which blocks exist is the generators' business
+and ``register_wait``. ``counted`` is the only control: every block counts
+its own firings (D129). Which blocks exist is the generators' business
 (snax_forge/gen registers the GVSoC adapters; GEN1 the Chisel side), so
 ``block`` is only a name here. Every expression is checked and stored
 canonical (snax_forge/expr.py). A binding may be null: the implementation
@@ -55,7 +59,6 @@ def register_wait(name: str, meaning: str) -> None:
 register_control(
     "counted", "the block counts its firings; the start's configuration holds the count"
 )
-register_control("stream", "the shell counts; the block takes what the stream brings (Accumulator)")
 register_wait(
     "lockstep", "a firing takes a beat on every input and room on every output in one cycle"
 )

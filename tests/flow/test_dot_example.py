@@ -295,17 +295,17 @@ def test_the_48_cycles_are_the_48_more_firings(made):
     assert "The\n48 cycles between 99 and 147 are all in that one task: 48 more firings" in text()
 
 
-def test_the_drain_is_declared_and_costs_nothing_here(made):
+def test_neither_accumulator_has_a_drain(made):
     _, rv = made
     drain = {}
     for n in NAMES:
         (acc,) = [c for c in rv[n].cluster.components if c.name == "sum"]
         drain[n] = acc.params.get("drain", 0)
-        # firings + 3 cycles in both: the drain adds none
+        # firings + 3 cycles in both
         t = task(rv[n], "sum")
         firings = rv[n].outputs.profile.to_dict()["accelerators"]["sum"]["firings"]
         assert t["done"] - t["start"] == firings + 3
-    assert drain == {"dot": 0, "dot_serial": 1}
+    assert drain == {"dot": 0, "dot_serial": 0}
 
 
 def test_the_multiplier_is_held_back_as_vecadd_is_in_loop1(made):

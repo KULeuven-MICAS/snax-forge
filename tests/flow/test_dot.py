@@ -126,7 +126,7 @@ def test_vecadd_has_no_chaining_wait(tmp_path):
 
 
 def test_the_serial_accumulator_declares_its_drain(flows):
-    """drain 1 in the cluster file and the design report; dot's one sum per task does not pay it."""
+    """drain 0 (D133): not in the cluster file (written only when not 0), 0 in the design report."""
     f = flows[(SERIAL, 4)]
     cluster = json.loads((f.out / "cluster.json").read_text())
     (sum_,) = [c for c in cluster["components"] if c["name"] == "sum"]
@@ -136,12 +136,11 @@ def test_the_serial_accumulator_declares_its_drain(flows):
         "op": "add",
         "latency": 1,
         "ii": 1,
-        "drain": 1,
     }
     design = reports_of(f.out).design
     assert [(a.instance, a.implementation, a.drain) for a in design.accelerators] == [
         ("mul", "chisel_tiled_spatial", 0),
-        ("sum", "chisel_accumulator", 1),
+        ("sum", "chisel_accumulator", 0),
     ]
 
 

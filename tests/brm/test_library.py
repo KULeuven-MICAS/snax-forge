@@ -4,7 +4,7 @@ elementwise_add is accepted against the elementwise stub on scenarios/vecadd:
 the entry the BRM resolves to is alu4's ``acc`` entry, and vecadd run with it
 gives the same cycles, profile and data. accumulate is accepted against the
 reduce stub on scenarios/reduce the same way (D103), and its Chisel
-implementation declares the Accumulator's drain.
+implementation declares the Accumulator's drain, 0 (D133).
 """
 
 from __future__ import annotations
@@ -44,9 +44,10 @@ def test_library_has_dots_blocks():
     assert {"elementwise_add", "elementwise_mul", "accumulate"} <= set(library_names())
 
 
-def test_the_elementwise_brms_are_bound():
+def test_the_brms_are_bound():
     """GEN3.md's binding: elementwise_add (step 3) and elementwise_mul (step 6a), the same
-    block with the op through ElementwiseOp; accumulate comes with step 6b."""
+    block with the op through ElementwiseOp; accumulate's Accumulator (step 6b), counted with
+    loopCount = n then len = T, pipelined; the adder tree not yet."""
     from snax_forge.gen import ELEMENTWISE_OP
 
     from .test_brm import BINDING
@@ -56,7 +57,13 @@ def test_the_elementwise_brms_are_bound():
         assert brm.implementations[IMPL].binding == BINDING
         assert brm.resolve(IMPL).params["op"] == op
     assert ELEMENTWISE_OP["mul"] == 2
-    assert all(i.binding is None for i in load_brm("accumulate").implementations.values())
+    acc = load_brm("accumulate").implementations
+    assert acc["chisel_accumulator"].binding == {
+        "block": "Accumulator", "args": {}, "control": "counted",
+        "csrs": [{"field": "loopCount", "value": "n"}, {"field": "len", "value": "T"}],
+        "wait": "pipelined",
+    }  # fmt: skip
+    assert acc["chisel_adder_tree"].binding is None
 
 
 def test_unknown_name():
@@ -191,14 +198,12 @@ def test_reduce_same_cycles_and_data_as_the_stub():
 
 
 def test_the_chisel_accumulator_declares_its_drain():
-    """One lane, drain 1: in the entry only because it is not 0 (D103)."""
+    """One lane, drain 0 since D133, so not in the entry (written only when not 0, D103)."""
     brm = load_brm("accumulate")
     inst = brm.resolve("chisel_accumulator", {"W": 1})
-    assert (inst.latency, inst.initiation_interval, inst.drain) == (1, 1, 1)
-    assert inst.accel_entry()[1] == {
-        "lanes": 1, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1, "drain": 1
-    }  # fmt: skip
-    assert inst.accel_config().drain == 1
+    assert (inst.latency, inst.initiation_interval, inst.drain) == (1, 1, 0)
+    assert inst.accel_entry()[1] == {"lanes": 1, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1}
+    assert inst.accel_config().drain == 0
     assert "drain" not in brm.resolve("chisel_adder_tree").accel_entry()[1]
     with pytest.raises(BrmError, match="W = 4 not supported"):
         brm.resolve("chisel_accumulator", {"W": 4})
