@@ -192,11 +192,17 @@ point (the cluster, the streamer lowered per design point, the datapath
 block), checked against snax-forge's schemas and snax_cluster's, and no
 Python. forge/'s fixtures are its output on the sparse interconnect, with
 GEN3's cycles, and `test_fixture.py` reproduces them byte for byte. GEN2a
-round 1 is under way (snax-gvsoc `GEN2a.md`): `gen-gvsoc` also writes
-`data.h` (`gen/data.py`: inputs from `make_inputs`, goldens from REF1,
-padded to beats) and `main.c` (`lower/c.py`, D135: the task list on
+round 1 is done (snax-gvsoc `GEN2a.md`, tag `gen2a-r1`): `gen-gvsoc` also
+writes `data.h` (`gen/data.py`: inputs from `make_inputs`, goldens from
+REF1, padded to beats) and `main.c` (`lower/c.py`, D135: the task list on
 snRuntime, self-checking, a mark per task event); the design check
-`memory.runtime` keeps L1 layouts below snRuntime's stacks.
+`memory.runtime` keeps L1 layouts below snRuntime's stacks (vecadd's ELF
+uses 40 B of its declared 256 B). snax-gvsoc builds every `forge/` folder's
+`main.c` with one generic app, `sw/apps/forge/`: vecadd, vecmul and vsum
+check themselves (0 data errors; counters 18, 18 and 66, one below the
+hand-written apps' because the start mark gives the streamer a cycle more),
+and `make regress` passes. Next is GEN2a round 2: the adder tree, `vsum` at
+W = 4.
 
 ## Open Items
 
