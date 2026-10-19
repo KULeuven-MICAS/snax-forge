@@ -36,10 +36,15 @@ all come before its first write, so nothing sits between the streamer's
 start and the accelerator's (a mark there gave the streamer a cycle more,
 one stall_in cycle fewer on the counter).
 
-**Waits**, as ``lower_program`` places them (D64, ``placed_waits``). On
-the owner's core, a wait on the accelerator or one of its streamers polls
-the accelerator's busy, then the streamer's; a wait on the DMA is
-``snrt_dma_wait_all()``. When the wait is for another core (a task of the
+**Waits.** On the SNAX components, as ``lower_program`` places them (D64,
+``placed_waits``): on the owner's core, a wait on the accelerator or one of
+its streamers polls the accelerator's busy, then the streamer's. On the
+DMA, from dependences only: the iDMA queues transfers (the hjson's
+``dma_req_fifo_depth``; a full queue stalls the core), so a DMA task starts
+without waiting for the one before it, and ``snrt_dma_wait_all()`` comes
+only before a start whose task has an ``after`` on a DMA task not yet
+waited for, and at a sync on a DMA task. SNAX-MODEL's command list keeps the
+lowering's wait for a busy DMA (D36). When the wait is for another core (a task of the
 start it comes before runs elsewhere, or it is a sync, which every core
 passes), every core then calls ``snrt_cluster_hw_barrier()``: every core
 walks the same steps, so the barrier counts match by construction.
@@ -86,7 +91,7 @@ from snax_forge.brm import Instance
 from snax_forge.design.streamers import instances, streamer_name
 
 from .cluster import cluster_file
-from .commands import placed_waits
+from .commands import PlacedWait, placed_waits
 from .tasks import Configure, Start, Sync, TaskList, TaskListError
 
 if TYPE_CHECKING:  # design imports lower, gen imports lower
@@ -328,6 +333,16 @@ class _Program:
         if consumers - {core}:
             self.emit(None, "snrt_cluster_hw_barrier();")
 
+    def dma_wait(self, i: int, s: Start) -> list[PlacedWait]:
+        """The DMA wait the start ``s`` needs: one when a task of it has an ``after`` on a DMA
+        task not waited for yet, ending on the latest DMA task started; else none."""
+        pending = [a for t in s.tasks for a in self.conf[t].after
+                   if self.conf[a].type == "dma" and a not in self.waited]  # fmt: skip
+        if not pending:
+            return []
+        last = self.started["dma"][-1]
+        return [PlacedWait(i, "dma", self.conf[last].wait_mode, {"dma": last})]
+
     def run(self) -> None:
         for i, s in enumerate(self.tasks.steps):
             if not isinstance(s, (Configure, Start, Sync)):
@@ -346,7 +361,10 @@ class _Program:
                 self.configure(s)
             elif isinstance(s, Start):
                 needs = {self.core_of(self.conf[t].component) for t in s.tasks}
-                for w in waits.get(i, []):
+                # The DMA queues: none of the lowering's waits on it, one where a dependence needs it
+                here = [w for w in waits.get(i, []) if w.component != "dma"]
+                here += self.dma_wait(i, s)
+                for w in sorted(here, key=lambda w: self.order.index(w.covers[w.component])):
                     self.wait(w.component, w.mode, w.covers, needs)
                 self.start(s, where)
             else:
@@ -392,8 +410,9 @@ class _Program:
             f"// design point {point_path}. Do not edit: run",
             f"// `pixi run gen-gvsoc {point_path}` again.",
             f"// The task list {self.tasks.name} on snRuntime: core {self.cores.dma} runs the DMA,",
-            f"// core {self.cores.slot} the accelerator {self.name}; the waits as the lowering places",
-            "// them (D64), a barrier where another core goes on; a mark per task event.",
+            f"// core {self.cores.slot} the accelerator {self.name}; the SNAX waits as the lowering",
+            "// places them (D64), the DMA's on dependences only (D135), a barrier where another",
+            "// core goes on; a mark per task event.",
             "",
             '#include "snrt.h"',
             "",

@@ -474,7 +474,8 @@ platform (`accelerator_slot`). Blocks are adapters registered by name (D19); the
 each task's beats. Retires D132. → `gen/gvsoc.py`, C§16, snax-gvsoc `LNK2a.md`.
 
 **D135** · lower — The task list becomes C on snRuntime as SNAX-LOWER's second backend: each step
-on the core that owns its component in the cluster file, D64's waits as polls with a hardware
-barrier where another core goes on, the DMA programmed at its start, a cycle mark per task event,
-and a self-check against `data.h`'s goldens. One accelerator per program; `signal` waits refused.
-D45 stays as first written until RET1. → `lower/c.py`, `gen/data.py`, C§16.
+on the core that owns its component in the cluster file, D64's waits on SNAX components as polls
+with a hardware barrier where another core goes on, the DMA waited for on dependences only (the
+iDMA queues transfers; SNAX-MODEL's no-start-while-busy rule, D36, stays the model's), a cycle
+mark per task event, a self-check against `data.h`'s goldens. One accelerator per program;
+`signal` waits refused. D45 stays as first written until RET1. → `lower/c.py`, `gen/data.py`, C§16.

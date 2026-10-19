@@ -86,11 +86,29 @@ def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
     ]  # fmt: skip
     after = [seq[i + 1][1] for i in barriers[:2]]
     assert after == ["FORGE_MARK(forge_add_acc_a_start);", "FORGE_MARK(forge_store_C_start);"]
-    # load_B starts after a wait on load_A (lower_program's: the DMA's latest task), same core
+    # load_B starts with no wait after load_A: the DMA queues (D135); one wait ends both
     lines = [line for _, line in seq]
-    assert lines.index("FORGE_MARK(forge_load_A_wait);") < lines.index(
-        "FORGE_MARK(forge_load_B_start);"
+    a, b = (
+        lines.index("FORGE_MARK(forge_load_B_start);"),
+        lines.index("FORGE_MARK(forge_load_A_wait);"),
     )
+    assert "snrt_dma_wait_all();" not in lines[:a] and lines.count("snrt_dma_wait_all();") == 2
+    assert lines[b - 1 : b + 2] == [
+        "snrt_dma_wait_all();", "FORGE_MARK(forge_load_A_wait);", "FORGE_MARK(forge_load_B_wait);"
+    ]  # fmt: skip
+
+
+def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
+    def b_after_a(steps):
+        next(s for s in steps if s.get("task_name") == "load_B")["after"] = ["load_A"]
+
+    lines = [line for _, ls in branches(text(tmp_path, edit_tasks=b_after_a)) for line in ls]
+    i = lines.index("FORGE_MARK(forge_load_B_start);")
+    assert lines[i - 3 : i] == [
+        "FORGE_MARK(forge_load_B_configure);", "snrt_dma_wait_all();",
+        "FORGE_MARK(forge_load_A_wait);",
+    ]  # fmt: skip
+    assert lines.count("snrt_dma_wait_all();") == 3
 
 
 def test_vecadd_marks_every_task_event_once(tmp_path):
