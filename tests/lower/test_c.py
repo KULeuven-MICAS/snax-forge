@@ -14,7 +14,6 @@ from snax_forge.design import DesignPoint
 from snax_forge.dfg import Graph
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.data import arrays as data_arrays
-from snax_forge.gen.data import data_h
 from snax_forge.lower import CError, TaskList, main_c, task_list
 from snax_forge.lower.c import cores
 from tests.design.helpers import chained, graph_dict
@@ -307,12 +306,8 @@ def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
     """vsum too: with the core index a constant, clang copied its exit mark (one label twice)."""
     gen = tmp_path / "gen"
     graph = bound_vsum() if design == "vsum" else None
-    out = gen_mod.generate(point(tmp_path / "root", name=design, graph=graph), gen,
-                           root=tmp_path / "root")  # fmt: skip
-    assert "include/acc_csr.h" in out.files
-    p, tasks, cluster, layout, arrays = parts(tmp_path / "root", graph=graph, name=design)
-    (gen / "main.c").write_text(main_c(p, tasks, cluster, layout, arrays, INCLUDES, POINT))
-    (gen / "data.h").write_text(data_h(p, POINT))
+    m = gen_mod.generate(point(tmp_path, name=design, graph=graph), gen, root=tmp_path)
+    assert {"main.c", "data.h", "include/acc_csr.h"} <= set(m.files) and m.program == "main.c"
     incs = [f"-I{gen}", f"-I{gen / 'include'}", *(f"-I{SW / d}" for d in SW_INCDIRS)]
     run = subprocess.run([CLANG, *FLAGS, *incs, "-Werror", "-c", str(gen / "main.c"), "-o",
                           str(gen / "main.o")], capture_output=True, text=True,

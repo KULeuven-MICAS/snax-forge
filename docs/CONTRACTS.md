@@ -1203,10 +1203,11 @@ platform's shell for the graph.
 What `pixi run gen-gvsoc DESIGN_POINT [--out DIR]` writes per design point
 (D134, `snax_forge/gen/gvsoc.py`), default `out/gvsoc/<design>/`, and what
 SNAX-GVSoC's `snax_hjson` reads (`--param hjson=<dir>/<platform>.hjson`,
-snax-gvsoc `snax/snax_cfg.py`). Each hjson file starts with a `//` comment
-naming the design point by its path from the root; the rest is JSON, which
-hjson reads. One design point gives byte-identical files wherever they are
-written.
+snax-gvsoc `snax/snax_cfg.py`), with the program snax-gvsoc's generic app
+builds from it (`sw/apps/forge/` there). Each hjson and C file starts with a
+`//` comment naming the design point by its path from the root; the rest of
+an hjson file is JSON, which hjson reads. One design point gives
+byte-identical files wherever they are written.
 
 | File | Holds |
 |---|---|
@@ -1214,7 +1215,9 @@ written.
 | `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds`, `temporal_dim`, `num_channel` (64-bit channels) and `fifo_depth` |
 | `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
 | `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h` (`gen/headers.py`) |
-| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
+| `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, padded to whole DMA beats as its L2 layout (D105) and aligned to the beat |
+| `main.c` | the program (`lower/c.py`, D135): the task list on snRuntime, each step on its component's core, a mark `forge_<task>_<event>` per task event, then the self-check: the outputs against their goldens and each accelerator task's counter against its beats, printed and returned |
+| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
 
 **The slot.** `snax_tcdm_ports` is the streamer's channels; the source's
 `sparse_interconnect_config` becomes one group of that width (its

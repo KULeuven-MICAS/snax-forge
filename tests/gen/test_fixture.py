@@ -11,7 +11,8 @@ copied into its ``platforms/``), so the design point is
 as the fixture's do. The generated folder must equal the fixture byte for
 byte, file list included. Skipped where the submodule is not checked out
 (CI never fetches it), predates ``forge/``, or predates the hjson fixtures
-(LNK2a round 2: a manifest without ``cluster`` is GEN3's generated Python).
+(LNK2a round 2: a manifest without ``cluster`` is GEN3's generated Python), or
+predates the program (GEN2a: a manifest without ``program``).
 """
 
 from __future__ import annotations
@@ -67,10 +68,13 @@ def test_the_fixture_is_reproduced(tmp_path, design):
     fixture = FORGE / design
     if not fixture.is_dir():
         pytest.skip(f"the snax-gvsoc submodule has no forge/{design}: bump the submodule")
-    if "cluster" not in json.loads((fixture / "manifest.json").read_text()):
+    manifest = json.loads((fixture / "manifest.json").read_text())
+    if "cluster" not in manifest:
         pytest.skip(
             f"the submodule's forge/{design} predates the hjson fixtures: bump the submodule"
         )
+    if "program" not in manifest:
+        pytest.skip(f"the submodule's forge/{design} predates main.c (GEN2a): bump the submodule")
     out = regenerate(tmp_path, design)
     assert files(out) == files(fixture)
     for f in files(fixture):
