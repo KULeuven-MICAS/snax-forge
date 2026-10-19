@@ -93,7 +93,7 @@ that the DMA's counters stay the RTL's (D124).
 | GEN1 | B. The Chisel datapath from the binding through `Emit` (D91), the `ctrl` adapter and the generated shell wrapper (D130) | GEN3 | Elaborates for `elementwise_add` and `accumulate` | todo |
 | LNK2b | B. The bundle for snax_cluster: the hjson, a `Bender.yml`, the changes snax_cluster needs (open item 51) | GEN1, LNK2a | snax_cluster builds from it with only the listed changes | todo |
 | GEN2b | B. GEN2a's ELF on snax_cluster's RTL, compared as D123 and D124 do | LNK2b, GEN2a | Deviation explained per phase | todo |
-| RET1 | C. SNAX-MODEL removed: `snax_model/`, `scenarios/`, their tests, the command list (D45), C§2–C§8, the model entries of DECISIONS (to Retired) | FLOW3 | `pixi run test` passes without it | todo |
+| RET1 | C. SNAX-MODEL removed: `snax_model/`, `scenarios/`, their tests, the command list (D45), C§2–C§8, the model entries of DECISIONS (to Retired). What the C backend (`lower/c.py`, D135) takes from them stays or moves first: its waits on SNAX components are `placed_waits` (`lower/commands.py`, the command list's wait placement, D64) on the derived cluster file (`lower/cluster.py`, SNAX-MODEL's `ClusterConfig`: which streamers attach to the accelerator and which one writes), which also checks each task's values through the model's register adapters (`c.tasks`); `derive.py` builds the task list on the same cluster file | FLOW3 | `pixi run test` passes without it | todo |
 | LNK3 | After M13. The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2b | Deviation explained per phase | todo |
 
 After RET1, a housekeeping pass and the single generator (open item 68).

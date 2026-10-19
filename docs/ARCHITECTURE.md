@@ -208,9 +208,10 @@ Turns a design point into what a run needs, and decides nothing.
   into SNAX-MODEL's `csr_write`, `csr_read` and `wait`, with only the waits
   correctness needs. Goes with SNAX-MODEL (RET1).
 - **C program** (D135, `lower/c.py`; C§16): the task list as `main.c` on
-  snRuntime, each step on its component's core from the cluster file:
-  direct CSR writes on the generated headers' names, the DMA through
-  snRuntime, the lowering's waits as polls with a hardware barrier where
+  snRuntime, one function per core from the cluster file, each a straight
+  line: direct CSR writes on the generated headers' names, the DMA through
+  snRuntime, the lowering's waits on SNAX components as polls and the
+  DMA's on dependences only (its transfers queue), a hardware barrier where
   another core goes on, a cycle mark per task event, and a self-check
   against `data.h`'s goldens (`gen/data.py`). The generator writes it with
   the hjson files; the same ELF is to run on SNAX-GVSoC and on snax_cluster

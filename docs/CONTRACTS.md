@@ -1217,7 +1217,7 @@ byte-identical files wherever they are written.
 | `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
 | `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h` (`gen/headers.py`) |
 | `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, padded to whole DMA beats as its L2 layout (D105) and aligned to the beat |
-| `main.c` | the program (`lower/c.py`, D135): the task list on snRuntime, each step on its component's core, a mark `forge_<task>_<event>` per task event, then the self-check: the outputs against their goldens and each accelerator task's counter against its beats, printed and returned |
+| `main.c` | the program (`lower/c.py`, D135): the task list on snRuntime, one function per core with each step on its component's core, a mark `forge_<task>_<event>` per task event, then the self-check: the outputs against their goldens and each accelerator task's counter against its beats, printed and returned |
 | `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
 
 **The slot.** `snax_tcdm_ports` is the streamer's channels; the source's
