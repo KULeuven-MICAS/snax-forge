@@ -87,7 +87,7 @@ that the DMA's counters stay the RTL's (D124).
 |---|---|---|---|---|
 | LNK1 | A. A platform read from snax_cluster's `cfg/snax_alu_cluster.hjson` (`platforms/snax_alu.json`, `design from-hjson`) with the streamer template fields, checked as any platform is: `temporal_dim` and `fifo_depth` into the default, `spatial_bounds` and `num_channel` derived from the ports (D131, open item 77) | none | The platform round-trips; `vecadd` at W = 4 designs on it | done |
 | GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written program (`forge-elementwise`, `forge-reduce`, until GEN2a) on fixtures in snax-gvsoc `forge/<design>/`; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `done` |
-| LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119) | GEN3 | GEN3's runs on the read target | todo |
+| LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119). Round 1 in snax-gvsoc: the reader, the generic target `snax_hjson`, forge/'s fixtures as hjson by hand; round 2 the writer here. Steps and findings in snax-gvsoc `LNK2a.md` | GEN3 | GEN3's runs on the read target | `wip` |
 | GEN2a | A. The program: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking | LNK2a | `vecadd` and `dot` check themselves on SNAX-GVSoC | todo |
 | FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `dot` flows give checked runs; the viewer and the reports open them | todo |
 | GEN1 | B. The Chisel datapath from the binding through `Emit` (D91), the `ctrl` adapter and the generated shell wrapper (D130) | GEN3 | Elaborates for `elementwise_add` and `accumulate` | todo |
@@ -180,7 +180,14 @@ drain cycle (D133, so `chisel_accumulator`'s drain is 0, D103 amended);
 submodule is bumped past it), and `AccumulatorRateSpec` drives the Chisel
 block through snax-gvsoc's rate cases. Round 4b: snax-gvsoc's `make regress`
 also runs vsum with its len overridden by hand to 16, four sums per run
-(`forge-reduce.vsum-r16`), until a kernel gives T < N. Next: LNK2a.
+(`forge-reduce.vsum-r16`), until a kernel gives T < N. LNK2a is `wip`:
+round 1 (snax-gvsoc `LNK2a.md`, tag `lnk2a-r1`) reads the cluster hjson in
+snax-gvsoc (`snax/snax_cfg.py`, cross-file `$ref`s), runs it on one
+installed target, `snax_hjson`, with the standard composite for a slot's
+datapath block, and checks in forge/'s fixtures as a cluster file and an
+accelerator file written by hand, on the sparse interconnect; `snax_alu`
+and `snax_alu_sparse` are that target on their `sw/cfg/` file. Round 2 is
+the writer here, which replaces the hand-written fixtures.
 
 ## Open Items
 
@@ -260,7 +267,13 @@ Next free number: 78.
 51. What snax_cluster has to change for a generated accelerator: a Bender
     dependency on the bundle (through `Bender.local`), a target listing the
     files `snaxgen` generates, later a file list `snaxgen` writes itself; the
-    wrapper is named `<name>_shell_wrapper`. Settled in LNK2b.
+    wrapper is named `<name>_shell_wrapper`. Also from LNK2a round 1
+    (snax-gvsoc `LNK2a.md`): clustergen (`util/clustergen.py`) and snaxgen
+    (`util/snaxgen/snaxgen.py`) call `JsonRef.replace_refs` without a
+    `base_uri`, so a cross-file `$ref` (`snax_alu_acc.hjson#/datapath`) does
+    not resolve; and `docs/schema/snitch_cluster.schema.json` names the
+    `snax_acc_cfg` item schema `"items:"`, so no `snax_acc_cfg` entry is
+    validated. Settled in LNK2b.
 53. A link between two shell accelerators: amends D12 and D51 and the SNAX
     shell. Parked (D112).
 54. Which kernels take PolyBench's SMALL in a 128 KiB L1, and the tolerance
@@ -309,7 +322,10 @@ Next free number: 78.
     target, GEN3's `snax_forge/gen`, and GEN1, GEN2a, GEN2b, LNK2a and LNK2b
     to come. One
     generator in snax-forge, planned in phase C, after RET1 (D127), which
-    also decides whether it makes `sw/generated/`.
+    also decides whether it makes `sw/generated/`. The L1's size and base
+    reach the program only through `sw/generated/` (LNK2a round 1): a design
+    point that changes them needs it and the ELF rebuilt; its bank count
+    does not.
 69. The SNAX crossbar's AXI input (14) is wired on both SNAX targets but no
     program sends through it, on either side (snax-gvsoc `SG7.md`, round 3).
 70. On SNAX-GVSoC a store or AMO after a pending L1 load waits for the
