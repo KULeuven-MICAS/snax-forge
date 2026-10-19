@@ -31,8 +31,9 @@ Neither header has an include guard, as the Chisel one has none.
 
 from __future__ import annotations
 
-import re
 from typing import Any
+
+from snax_forge.lower.c import define_name
 
 STREAMER_HEADER = "streamer_csr_addr_map.h"
 
@@ -71,11 +72,6 @@ def streamer_header(movers: list[dict[str, Any]], first: int, point_path: str) -
         f"#define STREAMER_PERFORMANCE_COUNTER_CSR {csr + 2}",
     ]
     return "\n".join(lines) + "\n", csr + 2
-
-
-def define_name(field: str) -> str:
-    """A camelCase field as a define: ``loopCount`` -> ``LOOP_COUNT``, ``opSel`` -> ``OP_SEL``."""
-    return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", field).upper()
 
 
 def accelerator_header(instance: str, csrs: Any, point_path: str) -> str:

@@ -87,15 +87,17 @@ def test_vecadd_w4_files_and_manifest(w4):
     out, m = w4
     assert m.design == "vecadd" and m.cluster == "snax_alu.hjson"
     assert m.files == [
-        *FILES, "include/streamer_csr_addr_map.h", "include/acc_csr.h", "manifest.json"
+        *FILES, "include/streamer_csr_addr_map.h", "include/acc_csr.h", "data.h", "main.c",
+        "manifest.json",
     ]  # fmt: skip
+    assert m.program == "main.c"
     assert sorted(str(f.relative_to(out)) for f in out.rglob("*") if f.is_file()) == sorted(m.files)
     assert m.trace == "snax_acc0/unit"
     assert m.design_point == "design/vecadd/design_point.json"
     assert m.symbols == {"N": 64}
     d = json.loads((out / "manifest.json").read_text())
-    assert list(d) == ["design", "design_point", "symbols", "cluster", "files", "trace", "csrs",
-                       "tasks"]  # fmt: skip
+    assert list(d) == ["design", "design_point", "symbols", "cluster", "files", "program",
+                       "trace", "csrs", "tasks"]  # fmt: skip
     assert (out.parent.parent / m.design_point).is_file()
     assert m.csrs.to_dict() == {
         "streamer": {"first": 960, "last": 977}, "fields": {"loopCount": 978},

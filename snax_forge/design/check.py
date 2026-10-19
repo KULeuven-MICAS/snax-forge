@@ -10,8 +10,8 @@ why it fails and the change that fixes it. Checks belong to stages:
                accelerator, BRMs and implementations known, instance names
     connect    the two together: streamer entries, lanes, dtypes, registers
     memory     the memory plan (DP1b, D86): pins and passes, then the plan
-               the passes make, its residency, shapes, alignment, fit and
-               overlaps
+               the passes make, its residency, shapes, alignment, fit,
+               snRuntime's top of L1 and overlaps
 
 ``platform`` and ``graph`` run independently; ``connect`` runs only when
 both passed, since its checks read what they established, and ``memory``
@@ -42,6 +42,7 @@ from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import moved_bytes, round_up
 from snax_forge.snax_model.ctrl import STATUS, DmaAdapter, StreamerAdapter
 
+from .hjson_platform import ROOT, core_count
 from .memory import MemoryContext, MemoryPlan, MemorySpec, pin_problems, plan
 from .platform import DERIVED, Platform
 from .problems import DesignError, Problem
@@ -64,6 +65,12 @@ STAGES: dict[str, tuple[str, ...]] = {
 }
 # Component names of the cluster besides the shell and the accelerators (LOW1c).
 FIXED = ("xbar", "dma", "ctl")
+# snRuntime's top of L1 (snax-gvsoc sw/snRuntime/src/start.S): a stack of
+# 1 << SNRT_LOG2_STACK_SIZE bytes per hart, the thread-local storage inside it;
+# below the stacks, a declared default for the rest: CLS (.cdata, .cbss), main's
+# return word and the stacks' misalignment (8 B per hart)
+RUNTIME_STACK = 1 << 10
+RUNTIME_MARGIN = 256
 
 
 @dataclass
@@ -660,6 +667,47 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
             yield Problem("memory.fit", f"{c} in {m}", f"spans bytes [{lo}, {hi}); {size}", fix)
 
 
+def runtime_cores(platform: Platform) -> int | None:
+    """The cores of a platform's source hjson, whose stacks snRuntime keeps at the top of L1;
+    None without one (no program runs on it) or when it is not under snax-forge's root (the
+    generator reads it from its own root, and refuses one it cannot read: gen.source)."""
+    if platform.hjson is None or not (ROOT / platform.hjson).is_file():
+        return None
+    return core_count(ROOT / platform.hjson)
+
+
+def _memory_runtime(design: Design) -> Iterable[Problem]:
+    if design.memory is None or "l1" not in design.context().memories:
+        return
+    try:
+        cores = runtime_cores(design.platform)
+    except DesignError as e:
+        yield Problem("memory.runtime", "platform.hjson", f"cannot count its cores: {e}")
+        return
+    if cores is None:
+        return
+    top = cores * RUNTIME_STACK + RUNTIME_MARGIN
+    ctx = design.context()
+    start, end = ctx.span("l1")
+    limit = end - top
+    moved = _moved_beats(design, ctx.beat_bytes)
+    for c, m, lay in _layouts(design):
+        if m != "l1":
+            continue
+        lo, hi = _extent(lay, ctx.word_bytes(m), moved[c])
+        if hi <= limit or lo < start or hi > end:  # past the end is memory.fit's
+            continue
+        align = moved[c] or ctx.word_bytes(m)
+        base = (limit - (hi - lo)) // align * align + lay.base - lo
+        yield Problem(
+            "memory.runtime", f"{c} in l1",
+            f"spans bytes [{lo}, {hi}); snRuntime keeps [{limit}, {end}) at the top of L1 "
+            f"({top} B: a {RUNTIME_STACK} B stack for each of the {cores} cores of "
+            f"{design.platform.hjson}, {RUNTIME_MARGIN} B for CLS and TLS)",
+            f"pin it lower (--set memory.{c}.l1.base={base})" if base >= start else None,
+        )  # fmt: skip
+
+
 def _memory_overlap(design: Design) -> Iterable[Problem]:
     if design.memory is None:
         return
@@ -736,6 +784,7 @@ for _code, _stage, _fn in (
     ("memory.layout", "memory", _memory_layout),
     ("memory.align", "memory", _memory_align),
     ("memory.fit", "memory", _memory_fit),
+    ("memory.runtime", "memory", _memory_runtime),
     ("memory.overlap", "memory", _memory_overlap),
 ):
     register_check(_code, _stage, _fn)

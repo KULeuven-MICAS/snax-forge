@@ -72,7 +72,7 @@ pixi run flow recipes/vecadd.json --platform platforms/small16.json
 ```
 flow vecadd (vecadd: W=4; N=64) on small16 -> out/flow/vecadd/
   sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-  design    20 checks passed; platform base small16, 0 changes; memory contiguous, 0 changes -> design/
+  design    21 checks passed; platform base small16, 0 changes; memory contiguous, 0 changes -> design/
   lower     cluster.json (7 components), tasks.json (12 steps, 57 commands)
   scenario  scenario.json, inputs A.npy, B.npy, C.npy (make_inputs, seed 0)
   run       85 cycles -> run/  (pixi run view out/flow/vecadd/run)
@@ -321,8 +321,9 @@ A target in `gvsoc/targets/` that no build made has no platform tree: gvrun
 warns and runs it on the JSON config path (`gvsoc/targets/README.md`).
 `pixi run gen-gvsoc out/design/<design>/design_point.json` writes a design
 point's cluster to `out/gvsoc/<design>/` as three hjson files (the cluster
-`snax_alu.hjson`, the streamer and the datapath block) and its headers
-(GEN3, LNK2a); the installed `snax_hjson` reads it at run time:
+`snax_alu.hjson`, the streamer and the datapath block), its headers (GEN3,
+LNK2a) and its self-checking program, `main.c` and `data.h` (GEN2a); the
+installed `snax_hjson` reads the cluster at run time:
 `make run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_alu.hjson" ELF=...`.
 
 ## Refreshing a fixture
@@ -333,7 +334,7 @@ snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
 and compares it byte for byte with the submodule's copy; it skips when the
 submodule is not checked out or has no `forge/`, and a design whose folder
 the submodule's pin does not have yet, or a pin whose fixtures predate the
-hjson ones. When the generator or the design point changes, refresh the
+hjson ones or `main.c`. When the generator or the design point changes, refresh the
 folder in a snax-gvsoc checkout next to this one:
 
 ```bash

@@ -616,8 +616,9 @@ registered with `register_check` (section 14).
 SNAX-LOWER's ordered list of tasks (D64): which component runs which task
 with which values, where each task is configured and started, and what it
 waits for. It is the hand-off to every backend: `lower_program(tasks,
-cluster)` turns it into SNAX-MODEL's program of section 5, and GEN2a will
-turn it into C (D116). It is derived from a design point (D89,
+cluster)` turns it into SNAX-MODEL's program of section 5, and `main_c`
+(`lower/c.py`, D135) into C on snRuntime, the program SNAX-GVSoC runs
+(section 16). It is derived from a design point (D89,
 `snax_forge/lower/derive.py`, `pixi run lower tasks DESIGN_POINT`; the rules
 below) or written by hand, as every scenario's `tasks.json` is (D65, D67).
 
@@ -1147,6 +1148,7 @@ problems.
 | `memory.layout` | a layout whose shape is not its container's |
 | `memory.align` | a base or stride that is not a multiple of the word; a container the DMA moves (in L2 and L1) that is not contiguous, not whole wide beats (open item 38) or not on a beat |
 | `memory.fit` | a layout that leaves its memory, the message naming the memory's bytes `[start, end)`. Past the end the fix names the rows or L2 size that would hold it, after "pin it lower" for a pinned layout; below the start (a nonzero base) it names the pin that puts the layout at the memory's first byte |
+| `memory.runtime` | an L1 layout (with its padding, D105) reaching into the top of L1 that snRuntime keeps at start-up (`start.S` in snax-gvsoc's `sw/snRuntime/src/`): a 1 KiB stack (`1 << SNRT_LOG2_STACK_SIZE`) for each core of the platform's `hjson`, plus 256 B for CLS (`.cdata`, `.cbss`), main's return word and the stacks' misalignment. The 256 B is a declared default (`RUNTIME_MARGIN`, `design/check.py`); a platform without an `hjson` runs no program and is not checked, nor is one whose `hjson` is not under snax-forge's root (the generator reads it from its own root, `gen.source`). The fix pins the layout just below |
 | `memory.overlap` | two layouts in one memory that share bytes, naming the pins (the fix moves the latest pin past everything) |
 | `point.keys` | a design point with unknown or missing keys or a malformed streamer entry |
 | `point.streamers` | a design point whose `streamers` are not the platform's shell for its graph |
@@ -1202,10 +1204,11 @@ platform's shell for the graph.
 What `pixi run gen-gvsoc DESIGN_POINT [--out DIR]` writes per design point
 (D134, `snax_forge/gen/gvsoc.py`), default `out/gvsoc/<design>/`, and what
 SNAX-GVSoC's `snax_hjson` reads (`--param hjson=<dir>/<platform>.hjson`,
-snax-gvsoc `snax/snax_cfg.py`). Each hjson file starts with a `//` comment
-naming the design point by its path from the root; the rest is JSON, which
-hjson reads. One design point gives byte-identical files wherever they are
-written.
+snax-gvsoc `snax/snax_cfg.py`), with the program snax-gvsoc's generic app
+builds from it (`sw/apps/forge/` there). Each hjson and C file starts with a
+`//` comment naming the design point by its path from the root; the rest of
+an hjson file is JSON, which hjson reads. One design point gives
+byte-identical files wherever they are written.
 
 | File | Holds |
 |---|---|
@@ -1213,7 +1216,9 @@ written.
 | `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds`, `temporal_dim`, `num_channel` (64-bit channels) and `fifo_depth` |
 | `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
 | `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h` (`gen/headers.py`) |
-| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
+| `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, padded to whole DMA beats as its L2 layout (D105) and aligned to the beat |
+| `main.c` | the program (`lower/c.py`, D135): the task list on snRuntime, one function per core with each step on its component's core, a mark `forge_<task>_<event>` per task event, then the self-check: the outputs against their goldens and each accelerator task's counter against its beats, printed and returned |
+| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
 
 **The slot.** `snax_tcdm_ports` is the streamer's channels; the source's
 `sparse_interconnect_config` becomes one group of that width (its

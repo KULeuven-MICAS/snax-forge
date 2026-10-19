@@ -5,7 +5,8 @@
 The hjson is the contract: SNAX-GVSoC's ``snax_hjson`` target reads it at
 run time (snax-gvsoc ``snax/snax_cfg.py``), so a design point compiles
 nothing and no Python is generated (D128). ``out_dir`` gets three hjson
-files, each changing for its own reason, the C headers and the manifest:
+files, each changing for its own reason, the C headers, the program and its
+data, and the manifest:
 
     <platform>.hjson         the cluster: the platform's source hjson with
                              the platform's values written back and the
@@ -14,6 +15,10 @@ files, each changing for its own reason, the C headers and the manifest:
     <slot>_acc.hjson         the datapath block
     include/                 the C headers (headers.py): the streamer's
                              streamer_csr_addr_map.h and <instance>_csr.h
+    data.h                   the program's data (data.py, GEN2a): inputs,
+                             outputs and goldens
+    main.c                   the program (lower/c.py, GEN2a, D135): the
+                             task list on snRuntime, self-checking
     manifest.json            what was written (Manifest)
 
 ``<platform>`` is the platform's base (its name when it has none), ``<slot>``
@@ -73,7 +78,7 @@ graph still null never gets here: ``DesignPoint.load`` refuses it
 **The manifest**: ``design``, ``design_point``, ``symbols`` (the bound
 graph's, e.g. ``{"N": 64}``: what a program sizes its data by),
 ``cluster`` (the cluster file, what gvrun's ``--param hjson=`` takes),
-``files``, ``trace`` (the unit's trace path), ``csrs`` (the layout) and
+``files``, ``program`` (``main.c``), ``trace`` (the unit's trace path), ``csrs`` (the layout) and
 ``tasks``: per accelerator task of the derived task list
 (snax_forge/lower/derive.py, D89) its name, its ``beats`` (the unit's trip
 count, the task's ``n``) and its ``csrs`` values.
@@ -110,12 +115,14 @@ from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import instances, streamer_name
+from snax_forge.lower.c import MAIN_C, main_c
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure
 from snax_forge.sdfg.paths import _repo_root
 from snax_forge.snax_model.config import to_json
 
 from .blocks import BLOCKS, GenError, Unit, port_dtype
+from .data import DATA_H, arrays, data_h
 from .headers import STREAMER_HEADER, accelerator_header, streamer_header
 
 ROOT = _repo_root()
@@ -192,6 +199,7 @@ class Manifest:
     symbols: dict[str, int]
     cluster: str
     files: list[str]
+    program: str
     trace: str
     csrs: CsrLayout
     tasks: list[AccTask] = field(default_factory=list)
@@ -203,6 +211,7 @@ class Manifest:
             "symbols": dict(self.symbols),
             "cluster": self.cluster,
             "files": list(self.files),
+            "program": self.program,
             "trace": self.trace,
             "csrs": self.csrs.to_dict(),
             "tasks": [t.to_dict() for t in self.tasks],
@@ -212,7 +221,8 @@ class Manifest:
     def from_dict(cls, d: dict[str, Any]) -> Manifest:
         return cls(
             d["design"], d["design_point"], dict(d["symbols"]), d["cluster"], list(d["files"]),
-            d["trace"], CsrLayout.from_dict(d["csrs"]), [AccTask.from_dict(t) for t in d["tasks"]],
+            d["program"], d["trace"], CsrLayout.from_dict(d["csrs"]),
+            [AccTask.from_dict(t) for t in d["tasks"]],
         )  # fmt: skip
 
     def to_json(self) -> str:
@@ -521,8 +531,8 @@ def _hjson(point_path: str, what: str, value: Any) -> str:
 def generate(
     design_point: str | Path, out_dir: str | Path, root: str | Path | None = None
 ) -> Manifest:
-    """Write the three hjson files, the headers and the manifest to ``out_dir``; see the
-    module doc."""
+    """Write the three hjson files, the headers, data.h, main.c and the manifest to
+    ``out_dir``; see the module doc."""
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
     shown = point_name(point_path, root)
@@ -532,6 +542,7 @@ def generate(
     template = streamer_template(point, name, inst)
     layout = csr_layout(template, unit.fields)
     tasks = acc_tasks(point, name, inst)
+    data = arrays(point)
 
     cluster = source(platform, root)
     at, found = find_slot(cluster, platform)
@@ -554,6 +565,9 @@ def generate(
         names[2]: _hjson(shown, f"Slot {slot}'s datapath block: {accel}.", datapath(unit)),
         f"include/{STREAMER_HEADER}": streamer_h,
         f"include/{name}_csr.h": accelerator_header(name, layout, shown),
+        DATA_H: data_h(point, shown, data),
+        MAIN_C: main_c(point, task_list(point), cluster, layout, data,
+                       [DATA_H, f"{name}_csr.h", STREAMER_HEADER], shown),
     }  # fmt: skip
     (out / "include").mkdir(parents=True, exist_ok=True)
     for f, text in files.items():
@@ -564,6 +578,7 @@ def generate(
         symbols=dict(point.graph.symbols),
         cluster=names[0],
         files=[*files, "manifest.json"],
+        program=MAIN_C,
         trace=UNIT_TRACE,
         csrs=layout,
         tasks=tasks,

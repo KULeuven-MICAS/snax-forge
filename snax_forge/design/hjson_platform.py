@@ -37,7 +37,9 @@ ports (D84): the GVSoC generator lowers the streamer per design point (D134).
 The rest of a platform (``xbar``, ``dma``, ``controller``,
 ``register_window``, ``wait_mode``) is small16's: these are SNAX-MODEL's
 fields, unused by SNAX-GVSoC, and go with RET1. The cores, the I-cache, the
-interconnect and the CSR counts are not read; they are LNK2a's.
+interconnect and the CSR counts are not read; they are LNK2a's. The core
+count is read on its own (``core_count``) by the design check that keeps the
+layouts out of snRuntime's top of L1 (``memory.runtime``, check.py).
 
 Everything wrong is a ``DesignError``, each problem coded ``hjson.<what>``:
 ``hjson.parse`` (the file), ``hjson.path`` (a file outside ``root``), ``hjson.ref`` (a ``$ref``), ``hjson.key`` (a key
@@ -117,6 +119,15 @@ def accelerators(d: Mapping[str, Any]) -> list[tuple[str, Any]]:
                 raise _fail("hjson.key", f"{at}.cores[{c}].snax_acc_cfg", "must be a list")
             out += [(f"{at}.cores[{c}].snax_acc_cfg[{i}]", a) for i, a in enumerate(accs)]
     return out
+
+
+def core_count(path: str | Path) -> int:
+    """The cores of every hive of the cluster file at ``path``; a DesignError when it cannot."""
+    try:
+        d = hjson.loads(Path(path).read_text())
+    except (OSError, hjson.HjsonDecodeError) as e:
+        raise _fail("hjson.parse", str(path), str(e)) from None
+    return sum(len(_get(h, "cores", list)) for h in _get(d, "cluster.hives", list))
 
 
 def _mover_value(template: Mapping[str, Any], key: str, at: str) -> int:

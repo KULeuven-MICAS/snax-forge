@@ -2,8 +2,8 @@
 
     python -m snax_forge.gen DESIGN_POINT [--out DIR]
 
-Writes the three hjson files, the headers and ``manifest.json`` of the
-design point (gvsoc.py) to ``DIR`` (default ``out/gvsoc/<design>/``) and
+Writes the three hjson files, the headers, ``data.h``, ``main.c`` and
+``manifest.json`` of the design point (gvsoc.py) to ``DIR`` (default ``out/gvsoc/<design>/``) and
 prints the cluster file and what to pass gvrun.
 
 Exit 0 when written, 1 when refused (the rule named), 2 on bad arguments.
@@ -18,6 +18,7 @@ from pathlib import Path
 
 from snax_forge.design import DesignError
 from snax_forge.design.point import DesignPoint
+from snax_forge.lower import CError
 
 from .blocks import GenError
 from .gvsoc import OUT, generate
@@ -31,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         out = args.out or OUT / DesignPoint.load(args.design_point).name
         manifest = generate(args.design_point, out)
-    except (GenError, DesignError) as e:
+    except (GenError, CError, DesignError) as e:
         print(e, file=sys.stderr)
         return 1
     print(f"cluster {manifest.cluster} from {args.design_point}")

@@ -27,9 +27,16 @@ while busy.
 Nothing here decides anything (principle 4): where configures, starts and
 syncs go, and every dependency, are the task list's; only the waits
 correctness requires are added.
+
+``placed_waits(tasks, cluster)`` gives the same waits as data, for the C
+backend (``c.py``, GEN2a): each with the step it belongs to (the start
+it comes before, or the sync it is), its component and mode, and what it
+covers.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from snax_forge.snax_model.scenario import ClusterConfig, ScenarioCommand
 
@@ -62,6 +69,16 @@ def upstream(cluster: ClusterConfig) -> dict[str, list[str]]:
     return up
 
 
+@dataclass(frozen=True)
+class PlacedWait:
+    """One wait of the lowering: before the start at ``step``, or the sync at ``step``."""
+
+    step: int
+    component: str
+    mode: str
+    covers: dict[str, str]  # component -> the latest task the wait ends on
+
+
 class _Lowering:
     def __init__(self, tasks: TaskList, cluster: ClusterConfig) -> None:
         tasks.check()
@@ -72,6 +89,8 @@ class _Lowering:
         self.started_at: dict[str, tuple[int, int]] = {}  # task -> (step, place in the start)
         self.latest: dict[str, str] = {}  # component -> its latest started task
         self.covered: dict[str, str] = {}  # component -> latest task a wait has covered
+        self.step = 0  # the step being lowered
+        self.placed: list[PlacedWait] = []
 
     def is_covered(self, task: str) -> bool:
         c = self.covered.get(self.conf[task].component)
@@ -94,7 +113,9 @@ class _Lowering:
     def wait(self, comp: str, mode: str) -> None:
         """One wait on ``comp``: covers its latest task and, from a writer, its group."""
         self.p.wait(comp, mode)
-        self.covered.update(self.covers(comp))
+        covers = self.covers(comp)
+        self.placed.append(PlacedWait(self.step, comp, mode, covers))
+        self.covered.update(covers)
 
     def configure(self, s: Configure, where: str) -> None:
         blocks = self.p.map.blocks
@@ -140,6 +161,7 @@ class _Lowering:
 
     def run(self) -> list[ScenarioCommand]:
         for i, s in enumerate(self.tasks.steps):
+            self.step = i
             where = f"{self.tasks.name}: step {i} ({s.op})"
             if isinstance(s, Configure):
                 self.configure(s, where)
@@ -155,3 +177,10 @@ class _Lowering:
 def lower_program(tasks: TaskList, cluster: ClusterConfig) -> list[ScenarioCommand]:
     """The command list of ``tasks`` on ``cluster`` (module doc); raises TaskListError."""
     return _Lowering(tasks, cluster).run()
+
+
+def placed_waits(tasks: TaskList, cluster: ClusterConfig) -> list[PlacedWait]:
+    """The waits ``lower_program`` places, in program order (module doc)."""
+    lowering = _Lowering(tasks, cluster)
+    lowering.run()
+    return lowering.placed
