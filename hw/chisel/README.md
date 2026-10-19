@@ -73,7 +73,7 @@ already sitting in `kernels/polybench/`:
 L = 0, II = 1. Stateless. Chains freely with a downstream consumer, because
 each output element is produced in producer order and read exactly once.
 
-**Reduction (`Accumulator`, cf. `dot.py`).** N beats in, 1 beat out. Carries
+**Reduction (`Accumulator`, cf. `dot.py`).** T beats in, 1 beat out. Carries
 state across beats. It is a **chaining barrier**: no output exists until the
 last input is absorbed, so a downstream consumer cannot be fed element by
 element and gets control chaining instead of data chaining.
