@@ -327,10 +327,11 @@ adds that folder to gvrun's target folders.
 ## Refreshing a fixture
 
 snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
-(vecadd, vecmul), which its `make regress` runs (D128).
-`tests/gen/test_fixture.py` generates each again and compares it byte for
-byte with the submodule's copy; it skips when the submodule is not checked
-out or has no `forge/`. When the generator or the design point changes,
+(vecadd, vecmul, and vsum, `accumulate`'s Chisel Accumulator), which its
+`make regress` runs (D128). `tests/gen/test_fixture.py` generates each again
+and compares it byte for byte with the submodule's copy; it skips when the
+submodule is not checked out or has no `forge/`, and a design whose folder
+the submodule's pin does not have yet. When the generator or the design point changes,
 refresh the folder from a snax-gvsoc checkout next to this one, in the
 image, with snax-gvsoc installed at `out/snax-gvsoc/install` so the install
 check runs:
@@ -342,7 +343,7 @@ pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge
     --install out/snax-gvsoc/install
 ```
 
-(the same with `vecmul`), commit the folder in snax-gvsoc as written, then
+(the same with `vecmul` or `vsum`), commit the folder in snax-gvsoc as written, then
 bump the submodule here so the test compares against it.
 
 # 6. Tests and lint

@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D133**.
+  number: **D134**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -35,7 +35,7 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 |
 | gvsoc | D120 D121 D122 D125 D128 D132 |
-| brm | D68 D70 D82 D103 D129 |
+| brm | D68 D70 D82 D103 D129 D133 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D104 |
@@ -330,7 +330,7 @@ turns DaCe's `Reduce` into one; the field is named for what it means. → C§11,
 
 **D103** · brm — Timing has a third number, `drain`: the cycles from a push in which no input is
 taken (1 for the Chisel Accumulator). Port names are not Python keywords and do not start with
-`_`, since they appear in `code` and in streamer names. → C§10.
+`_`, since they appear in `code` and in streamer names. Amended by D133. → C§10.
 
 **D104** · sandbox — `bind` binds a reduction through a `reduce` matcher; a folding output without
 the spatial variable folds every lane into one. Named rates come from one function, `named_rates`,
@@ -433,9 +433,9 @@ headers per design point. Each design point snax-gvsoc's regression runs is a fi
 `gvsoc/`, never fetched by CI. → snax-gvsoc `GEN3.md`, `forge/README.md`.
 
 **D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it:
-`block`, `args`, `control` (`counted`, `stream`), `csrs` (configuration fields in CSR order, then
-start), `wait` (`lockstep`, `pipelined`), each kind registered (D19); GEN3 models it, GEN1
-elaborates it. Folded into D68. Closes open item 64. → C§10.
+`block`, `args`, `control` (`counted` only: every block counts its firings), `csrs` (one or more
+configuration fields in CSR order, then start), `wait` (`lockstep`, `pipelined`), each kind
+registered (D19); GEN3 models it, GEN1 elaborates it. Folded into D68. Closes open item 64. → C§10.
 
 **D130** · scope — Generated accelerators follow GeMMX's shell contract in snax_cluster: a `ctrl`
 configuration with valid and ready (a start waits while busy), busy and a counter (cycles from an
@@ -453,3 +453,8 @@ snax-gvsoc components, every value a literal; every module is named `forge_*` an
 the install's names, which would shadow it. Blocks are adapters registered by name (D19). Its
 manifest carries each accelerator task's beats, so regressions read them instead of a hand copy.
 → `gen/gvsoc.py`.
+
+**D133** · brm — The Chisel Accumulator follows `ElementwiseTiledSpatial`'s control (start, busy,
+done, `loopCount`) plus `len`, so both run under one shell contract (D130); one register holds the
+sum and the result and loads the next input instead of clearing in the cycle the result leaves, so
+its drain is 0 with no second register. Amends D103. → `samples/Accumulator.scala`.

@@ -4,7 +4,8 @@ Accepted when the import of ``kernels/polybench/vecadd.py`` equals the
 checked-in ``tests/dfg/fixtures/vecadd.snaxdfg``, with no transient and no
 copy left, and the import of ``dot.py`` equals ``dot.snaxdfg``: a multiply
 map, then its ``Reduce`` as a sum map folding into ``out[0]`` (D102); and
-``vecmul.py``'s equals ``vecmul.snaxdfg`` (GEN3 step 6a). The
+``vecmul.py``'s equals ``vecmul.snaxdfg`` (GEN3 step 6a), ``vsum.py``'s
+``vsum.snaxdfg`` (step 6b). The
 importer builds the simplified SDFG as ``pixi run forge`` does, and a stored
 ``.sdfg`` gives the same graph. Beyond them: a transient between two maps,
 offset subsets, a Max reduction, a Reduce over one axis of two, and every
@@ -96,6 +97,14 @@ def test_vecmul_import_is_the_fixture():
     g = import_kernel("vecmul")
     assert g.to_json() == fixture("vecmul").read_text()
     assert [n.id for n, _ in g.walk()] == ["mult_map", "mult"]
+
+
+def test_vsum_import_is_the_fixture():
+    """dot's sum map on its own: the Reduce folds A into out[0] with add (D102)."""
+    g = import_kernel("vsum")
+    assert g.to_json() == fixture("vsum").read_text()
+    assert [n.id for n, _ in g.walk()] == ["sum_map", "sum"]
+    assert g.node("sum").outputs["out"].to_dict()["reduce"] == {"op": "add", "identity": 0}
 
 
 def test_dot_is_a_multiply_map_then_a_sum_map():

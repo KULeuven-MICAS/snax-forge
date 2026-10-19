@@ -38,8 +38,8 @@ import chisel3.util._
   *
   * `loopCount` is sampled only at start, so it may change freely afterwards -- which is what a CSR write followed by a
   * start pulse gives you anyway. A start pulsed with `loopCount === 0` is ignored and the unit stays idle; a
-  * zero-length run has no meaningful completion, and silently hanging (as `samples.Accumulator` does in the same
-  * situation) is the worse failure.
+  * zero-length run has no meaningful completion, and silently hanging is the worse failure (`samples.Accumulator`
+  * ignores a start with `len === 0` too).
   *
   * @param dataWidth
   *   bits per element, from the BRM port's dtype

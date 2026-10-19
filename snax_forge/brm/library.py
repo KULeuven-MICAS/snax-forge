@@ -16,7 +16,8 @@ Library BRMs so far:
     accumulate        the sum of every lane of T beats of ``a``, one element
                       of ``out`` per T beats (pattern family ``reduce``, D103):
                       chisel_accumulator, the Chisel Accumulator (1 lane,
-                      L = 1, II = 1, drain 1), and chisel_adder_tree, W lanes
+                      L = 1, II = 1, drain 0, D133; bound, GEN3 step 6b,
+                      vsum's), and chisel_adder_tree, W lanes
                       summed and accumulated (L = 1, II = 1, drain 0; no RTL
                       yet, binding null)
 """

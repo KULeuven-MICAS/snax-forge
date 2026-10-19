@@ -2,8 +2,9 @@
 
 ``point`` writes a design point of vecadd (bound by the checked-in recipe,
 W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by
-``recipes/vecmul.json``), on ``platforms/snax_alu.json``; ``fake_install`` makes an install folder holding every module the
-generated files import, as empty files. The snax-gvsoc submodule (``SUB``)
+``recipes/vecmul.json``; ``bound_vsum``: vsum by ``recipes/vsum.json``), on
+``platforms/snax_alu.json``; ``fake_install`` makes an install folder
+holding every module the generated files import, as empty files. The snax-gvsoc submodule (``SUB``)
 is read only where it is checked out (CI never fetches it, D128).
 """
 
@@ -38,6 +39,12 @@ def bound_vecmul(w: int = 4) -> Graph:
     """vecmul bound with W = ``w`` by the checked-in recipe (elementwise_mul, instance acc)."""
     recipe = Recipe.load(REPO / "recipes" / "vecmul.json").with_params({"W": w})
     return apply_recipe(recipe, Graph.load(FIXTURES / "vecmul.snaxdfg"))[-1].graph
+
+
+def bound_vsum() -> Graph:
+    """vsum bound by the checked-in recipe (accumulate's chisel_accumulator, instance acc)."""
+    recipe = Recipe.load(REPO / "recipes" / "vsum.json")
+    return apply_recipe(recipe, Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
 
 
 def fake_install(tmp_path: Path, extra: dict[str, str] | None = None) -> Path:

@@ -129,6 +129,30 @@ stencil and mixed kernels have no Stream counterpart is part of C3's argument.
 **[open]** the effort, and whether an export from SNAX-DFG to Stream's format
 is worth automating.
 
+### 6.2 Kernel regularity: two axes
+
+The kernels are ordered by two kinds of regularity. Access is what the
+streamers do: affine with no reuse, affine with reuse, then non-rectangular
+or data-dependent. Compute is what the unit does: one firing per cycle at a
+fixed latency, a fold with a loop-carried dependency, multi-cycle at a fixed
+latency or II > 1, multi-phase (a global result gates the next pass), then
+data-dependent latency or control.
+
+| Compute ↓ / Access → | Affine, no reuse | Affine with reuse | Non-rectangular or data-dependent |
+|---|---|---|---|
+| II 1, fixed latency (elementwise) | `vecadd`, `vecmul`, scale by α/β | `gemm` (lanes) | triangular kernels (left out) |
+| Fold, loop-carried (reduction) | `vsum`, `dot`, mat-vecs (`atax`, `bicg`, `mvt`) | `gemm`, `k2mm`, `k3mm`, `doitgen`, conv | |
+| Multi-cycle, fixed latency or II > 1 (div, sqrt, exp by polynomial, CORDIC or Newton-Raphson; FP adders) | `covariance`'s divide | `jacobi` with FP | |
+| Multi-phase | `softmax` (max, then exp and sum, then divide), `covariance` (mean, center, product) | attention, `mlp` | |
+| Data-dependent latency or control | early-exit dividers, LUT methods | | `durbin`, `nussinov` (left out) |
+
+Down the table, the unit stops being one firing per cycle, and the question
+moves from lanes and ports to state, latency, II and phases. To the right,
+the streamer alone stops being enough: reuse has to live somewhere (open
+item 76), or the accesses stop being affine. The compute axis comes first
+(down the first column), since it is easier to implement; the access axis
+(2-D, reuse) after.
+
 ## 7. Cost model
 
 Area first, energy if characterisation allows; characterised once, then read
@@ -307,7 +331,10 @@ second line cannot be written is a threat (Q11).
 2. The PDK, the synthesis tool, and what may be published.
 3. SNAX GeMM is int8 with int32 accumulation, which needs packing (PACK1),
    and the generated hardware needs floating-point units for NPBench's
-   types.
+   types. An option before floating point: integer (fixed-point, quantized)
+   versions of the kernels, which would amend D113. Floating point later
+   through Berkeley HardFloat ops inside the existing blocks' lanes. Either
+   way the multi-cycle rows of section 6.2 stay.
 4. The exact Transformer (model, head size, sequence lengths, precision) and
    ResNet slice for E5 and E6.
 5. The snax_cluster version to pin for SNAX-GVSoC and the bundle.

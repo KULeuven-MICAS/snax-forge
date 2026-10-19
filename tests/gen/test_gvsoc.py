@@ -1,4 +1,4 @@
-"""The GVSoC generator (GEN3 step 3, D132): vecadd on snax_alu, and every refusal."""
+"""The GVSoC generator (GEN3 step 3, D132): vecadd on snax_alu, vecmul, vsum, and every refusal."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from pathlib import Path
 import hjson
 import pytest
 
-from snax_forge.brm import Brm, Instance, load_brm
+from snax_forge.brm import CONTROLS, Brm, Instance, load_brm
 from snax_forge.design import DesignError
 from snax_forge.dfg import Graph
 from snax_forge.gen import (
@@ -26,10 +26,10 @@ from snax_forge.gen import (
 )
 from snax_forge.gen import __main__ as cli
 from snax_forge.gen import gvsoc as gen_mod
-from snax_forge.gen.blocks import elementwise_tiled_spatial
+from snax_forge.gen.blocks import accumulator, elementwise_tiled_spatial
 from tests.design.helpers import REPO, chained, graph_dict
 
-from .helpers import HJSON, SUB, bound_vecmul, fake_install, point, snax_streamer
+from .helpers import HJSON, SUB, bound_vecmul, bound_vsum, fake_install, point, snax_streamer
 
 needs_submodule = pytest.mark.skipif(
     not HJSON.exists(), reason="the snax-gvsoc submodule is not checked out (CI never fetches it)"
@@ -54,6 +54,12 @@ TILED_ADD_UNIT = {
     "csr_base": 978,
 }  # fmt: skip
 TILED_ADD_SHELL = {"csr_base": 978, "fields": ["loopCount"]}
+# vsum on snax_alu: the Accumulator, a fold of one lane, one sum per T inputs
+ACCUMULATOR_UNIT = {
+    "inputs": ["a"], "outputs": ["out"], "lanes": 1, "data_width": 64, "op": 0,
+    "signed": True, "control": "counted", "config": ["count", "rate"], "wait": "pipelined",
+    "latency": 1, "ii": 1, "csr_base": 973,
+}  # fmt: skip
 
 
 @pytest.fixture(scope="module")
@@ -212,6 +218,37 @@ def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
         assert mine.replace("vecmul", "vecadd") == add, h
 
 
+def test_vsum_is_the_accumulator(tmp_path):
+    """GEN3 step 6b: accumulate's Accumulator, one reader and one writer of one lane, the shell's
+    fields loopCount and len, one task of 64 beats summing all 64 (T = n)."""
+    out = tmp_path / "gvsoc" / "vsum"
+    m = generate(point(tmp_path, name="vsum", graph=bound_vsum()), out, root=tmp_path)
+    tree = ast.parse((out / "forge_vsum_acc.py").read_text())
+    consts = _constants(tree)
+    unit = {k: ast.literal_eval(v) if not isinstance(v, ast.Name) else consts[v.id]
+            for k, v in _calls(tree, "SnaxUnit").items()}  # fmt: skip
+    shell = {k: consts[v.id] for k, v in _calls(tree, "SnaxShell").items()}
+    assert unit == ACCUMULATOR_UNIT
+    assert shell == {"csr_base": 973, "fields": ["loopCount", "len"]}
+    one = {"spatial_bounds": [[1]], "temporal_dim": [1], "num_channel": [1], "fifo_depth": [8]}
+    assert consts["STREAMER_TEMPLATE"] == {"data_reader_params": one, "data_writer_params": one}
+    assert m.target == "forge_vsum" and m.symbols == {"N": 64}
+    assert m.csrs.to_dict() == {
+        "streamer": {"first": 960, "last": 972}, "fields": {"loopCount": 973, "len": 974},
+        "start": 975, "busy": 976, "counter": 977,
+    }  # fmt: skip
+    assert [t.to_dict() for t in m.tasks] == [
+        {"name": "sum_acc", "beats": 64, "csrs": {"loopCount": 64, "len": 64}}
+    ]
+    assert "#define ACC_RW_LEN 974\n" in (out / "include" / "acc_csr.h").read_text()
+
+
+def test_config_is_a_property_only_when_not_the_default(w4):
+    """The elementwise unit's composite has no config, as before step 6b (the fixtures)."""
+    out, _ = w4
+    assert "config=" not in (out / "forge_vecadd_acc.py").read_text()
+
+
 def test_elementwise_op_is_chisels():
     src = REPO / "hw/chisel/src/main/scala/snax/forge/elementwise/ElementwiseAlu.scala"
     body = src.read_text().split("object ElementwiseOp")[1].split("val width")[0]
@@ -246,17 +283,18 @@ def test_a_design_point_outside_the_root(tmp_path):
     assert e.value.code == "gen.point" and not (tmp_path / "out").exists()
 
 
-def _instance(edit=None, params=None) -> Instance:
-    """elementwise_add's instance, its BRM dict edited (no resolve: the adapter's checks only)."""
-    d = copy.deepcopy(load_brm("elementwise_add").to_dict())
+def _instance(edit=None, params=None, name="elementwise_add", impl=IMPL) -> Instance:
+    """An instance (elementwise_add's by default), its BRM dict edited (no resolve: the
+    adapter's checks only)."""
+    d = copy.deepcopy(load_brm(name).to_dict())
     if edit:
         edit(d)
     brm = Brm.from_dict(d)
-    return Instance(brm, IMPL, params or {"W": 4, "op": "add"})
+    return Instance(brm, impl, params or {"W": 4, "op": "add"})
 
 
-def _binding(**kw):
-    return lambda d: d["implementations"][IMPL]["binding"].update(kw)
+def _binding(impl=IMPL, **kw):
+    return lambda d: d["implementations"][impl]["binding"].update(kw)
 
 
 def _ports(**kw):
@@ -268,7 +306,6 @@ def _ports(**kw):
 
 
 ADAPTER_CASES = [
-    ("control", _binding(control="stream"), {}, "gen.control"),
     ("wait", _binding(wait="pipelined"), {}, "gen.wait"),
     ("latency", lambda d: d["implementations"][IMPL]["timing"].update(latency=1), {}, "gen.timing"),
     ("ii", lambda d: d["implementations"][IMPL]["timing"].update(initiation_interval=2), {},
@@ -291,6 +328,71 @@ def test_the_adapter_refuses(case, edit, params, code):
     with pytest.raises(GenError) as e:
         elementwise_tiled_spatial(_instance(edit, params or None))
     assert e.value.code == code
+
+
+ACC = "chisel_accumulator"
+
+
+def _acc(edit=None, params=None) -> Instance:
+    return _instance(edit, params or {"W": 1, "op": "add"}, name="accumulate", impl=ACC)
+
+
+def _timing(**kw):
+    return lambda d: d["implementations"][ACC]["timing"].update(kw)
+
+
+def _csrs(*pairs):
+    return _binding(ACC, csrs=[{"field": f, "value": v} for f, v in pairs])
+
+
+def _second_input(d):
+    d["interface"]["ports"].insert(1, dict(d["interface"]["ports"][0], name="b"))
+    d["dataflow"]["ports"]["b"] = d["dataflow"]["ports"]["a"]
+
+
+ACCUMULATOR_CASES = [
+    ("wait", _binding(ACC, wait="lockstep"), {}, "gen.wait"),
+    ("latency", _timing(latency=0), {}, "gen.timing"),
+    ("drain", _timing(drain=1), {}, "gen.timing"),
+    ("args", _binding(ACC, args={"lanes": "W"}), {}, "gen.args"),
+    ("op", None, {"W": 1, "op": "max"}, "gen.op"),
+    ("two inputs", _second_input, {}, "gen.ports"),
+    ("rate in", _ports(a={"rate": "T"}), {}, "gen.rate"),
+    ("mixed dtype", _ports(a={"dtype": "int32"}), {}, "gen.dtype"),
+    ("lanes", None, {"W": 2, "op": "add"}, "gen.lanes"),
+    ("narrow", _ports(a={"dtype": "int32"}, out={"dtype": "int32"}), {}, "gen.lanes"),
+    ("fields order", _csrs(("len", "T"), ("loopCount", "n")), {}, "gen.fields"),
+    ("no len", _csrs(("loopCount", "n")), {}, "gen.fields"),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("case", "edit", "params", "code"), ACCUMULATOR_CASES, ids=[c[0] for c in ACCUMULATOR_CASES]
+)
+def test_the_accumulator_adapter_refuses(case, edit, params, code):
+    with pytest.raises(GenError) as e:
+        accumulator(_acc(edit, params or None))
+    assert e.value.code == code
+
+
+def test_the_accumulator_adapter_gives_a_fold():
+    unit = accumulator(_acc())
+    assert (unit.inputs, unit.outputs, unit.lanes, unit.fields, unit.config) == (
+        ["a"], ["out"], 1, ["loopCount", "len"], ["count", "rate"]
+    )  # fmt: skip
+    assert BLOCKS["Accumulator"] is accumulator
+
+
+@pytest.mark.parametrize(("adapter", "inst"), [
+    (elementwise_tiled_spatial, lambda: _instance(_binding(control="other"))),
+    (accumulator, lambda: _acc(_binding(ACC, control="other"))),
+])  # fmt: skip
+def test_a_control_other_than_counted_is_refused(monkeypatch, adapter, inst):
+    """counted is the only control (D129); one registered later is not generated."""
+    monkeypatch.setitem(CONTROLS, "other", "a test's")
+    with pytest.raises(GenError) as e:
+        adapter(inst())
+    assert e.value.code == "gen.control"
 
 
 def test_the_adapter_reads_unsigned_and_narrow_dtypes():

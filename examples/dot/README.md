@@ -155,14 +155,14 @@ The folder is `out/flow/dot_serial/`. `report/design.md`:
 | Instance | Kind | BRM | Implementation | Params | Latency | Target II | Drain | Ports |
 |---|---|---|---|---|---:|---:|---:|---|
 | mul | elementwise | elementwise_mul | chisel_tiled_spatial | W=4, op=mul | 0 | 1 | 0 | a ← mul_a; b ← mul_b; out ← mul_out |
-| sum | reduce | accumulate | chisel_accumulator | W=1, op=add | 1 | 1 | 1 | a ← sum_a; out ← sum_out |
+| sum | reduce | accumulate | chisel_accumulator | W=1, op=add | 1 | 1 | 0 | a ← sum_a; out ← sum_out |
 
 <!-- excerpt: dot_serial/report/design.md -->
 | sum_a | sum.a | read | 1 | 2 | 1 | tmp0 |
 
 The multiplier is the same. The accumulator has one lane, so its reader
-`sum_a` has one lane too, and it declares a drain of 1: one cycle to hand
-over the sum before it can start the next one.
+`sum_a` has one lane too, and its result leaves as the next input comes in:
+no drain (D133).
 
 `report/run.md`:
 
@@ -203,9 +203,6 @@ The two runs are the same up to cycle 72, when `sum_sum` starts in both. The
 one a cycle. Both accumulators fire every cycle once they run (achieved II
 1.00), so neither is held back; the serial one simply has four times as many
 firings to do.
-
-The drain of 1 costs nothing here. It is a cycle between one sum and the
-next, and dot has only one sum.
 
 To flip between the two runs in the run viewer:
 

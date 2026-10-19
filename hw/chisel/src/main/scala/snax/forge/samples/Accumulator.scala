@@ -5,24 +5,36 @@ import chisel3.util._
 
 /** Serial integer accumulator -- the hardware image of the WCR edge in `kernels/polybench/dot.py`.
   *
-  * Consumes `len` elements from an elastic input stream and emits their sum on an elastic output stream. This is the
-  * second archetype the toolchain has to cover, and it is qualitatively different from `SimpleAdder`: a reduction
-  * collapses N input beats into 1 output beat, so it is a *chaining barrier*. A downstream consumer cannot be fed
-  * element-by-element in producer order, because no output element exists until the last input has been absorbed.
-  * Chained reductions therefore get control chaining, not data chaining.
+  * Sums every `len` consecutive elements of an elastic input stream and emits each sum on an elastic output stream,
+  * `loopCount` input beats per run. A reduction collapses T input beats into 1 output beat, so it is a *chaining
+  * barrier*: a downstream consumer cannot be fed element-by-element in producer order, because no output element exists
+  * until the last input of its sum has been absorbed. Chained reductions therefore get control chaining, not data
+  * chaining.
   *
-  * The `len` port is a placeholder for what will become a register once the accelerator is generated from its BRM
-  * (GEN1). It is sampled continuously rather than latched, so it must be held stable for the duration of a run -- which
-  * is what a CSR write followed by a start pulse gives you anyway.
+  * ==Control==
   *
-  * Protocol: `in.ready` is high while absorbing and low while a result is waiting to be collected, so absorb and drain
-  * are mutually exclusive by construction and the two `when` blocks below can never both fire in the same cycle. After
-  * `out` fires the unit resets itself and is immediately ready for the next run; back-to-back runs need no external
-  * reset.
+  * As `ElementwiseTiledSpatial`'s: `start`, `busy`, `done`, with two configuration inputs, `loopCount` (n, the input
+  * beats of the run) and `len` (T, the inputs per output). A start while idle clears the sum and the counts, latches
+  * both and raises `busy`; a start while busy is ignored, and so is one with `loopCount === 0` or `len === 0` (the unit
+  * stays idle; a zero-length run has no meaningful completion). Both inputs are sampled only at start. `busy` falls in
+  * the cycle after the (n / T)-th output fires, and `done` is high in that cycle of the last output.
   *
-  * Not handled, deliberately: `len === 0`. A zero-length run never reaches the drain state and the unit sits waiting
-  * forever. Guarding it in RTL costs a comparator on a case the toolchain should reject before hardware exists, where
-  * the error message can actually name the offending loop.
+  * n not a multiple of T is the toolchain's to refuse. The block then ends the last sum at the n-th input: its last
+  * output is the sum of the n mod T inputs left, and the run ends as any other.
+  *
+  * ==One register, no drain cycle==
+  *
+  * `acc` holds the sum in progress and, once its T-th input has fired, the result: `out.valid` rises the cycle after
+  * (latency 1) and stays high until `out` fires. In the cycle the result leaves, the next input is taken by loading
+  * `acc` with it instead of adding, so with `out` always ready a sum takes T cycles and back-to-back sums have no gap;
+  * `len === 1` makes every input a sum, `out.valid` staying high while `in` and `out` both fire. The only stall is
+  * `out` not ready. After the n-th input `in.ready` stays low, so a beat of the next run is never taken.
+  *
+  * ==Handshake==
+  *
+  * `out.valid` is a register, so `valid` never depends on `ready`. `in.ready` does depend on `out.ready`
+  * combinationally (the input is taken only when the result can leave), a path GEN1 has to keep in mind when it puts
+  * the block behind the streamer.
   *
   * @param width
   *   bits per input element, from the BRM port's dtype
@@ -39,29 +51,59 @@ class Accumulator(val width: Int = 32, val accWidth: Int = 32) extends Module {
   )
 
   val io = IO(new Bundle {
-    val len = Input(UInt(32.W))
+    val loopCount = Input(UInt(32.W))
+    val len       = Input(UInt(32.W))
+    val start     = Input(Bool())
+    val busy      = Output(Bool())
+    val done      = Output(Bool())
+
     val in  = Flipped(Decoupled(UInt(width.W)))
     val out = Decoupled(UInt(accWidth.W))
   })
 
-  private val acc      = RegInit(0.U(accWidth.W))
-  private val count    = RegInit(0.U(32.W))
-  private val draining = RegInit(false.B)
+  private val busy   = RegInit(false.B)
+  private val target = RegInit(0.U(32.W))
+  private val len    = RegInit(0.U(32.W))
+  private val taken  = RegInit(0.U(32.W)) // inputs taken this run
+  private val count  = RegInit(0.U(32.W)) // inputs in the sum in progress
+  private val acc    = RegInit(0.U(accWidth.W))
+  private val valid  = RegInit(false.B)
 
-  io.in.ready  := !draining
-  io.out.valid := draining
+  private val allIn = taken === target
+
+  io.in.ready  := busy && !allIn && (!valid || io.out.ready)
+  io.out.valid := valid
   io.out.bits  := acc
 
-  when(io.in.fire) {
-    val next = count + 1.U
-    acc      := acc + io.in.bits
-    count    := next
-    draining := next === io.len
+  private val lastIn  = io.in.fire  && (taken + 1.U) === target
+  private val lastSum = io.in.fire  && ((count + 1.U) === len || lastIn)
+  private val last    = io.out.fire && allIn
+
+  when(!busy) {
+    when(io.start && io.loopCount =/= 0.U && io.len =/= 0.U) {
+      busy   := true.B
+      target := io.loopCount
+      len    := io.len
+      taken  := 0.U
+      count  := 0.U
+      acc    := 0.U
+      valid  := false.B
+    }
+  }.otherwise {
+    when(io.in.fire) {
+      // In the cycle the result leaves, the next sum starts from this input.
+      acc   := Mux(io.out.fire, io.in.bits, acc + io.in.bits)
+      taken := taken + 1.U
+      count := Mux(lastSum, 0.U, count + 1.U)
+    }.elsewhen(io.out.fire) {
+      acc := 0.U
+    }
+    valid := lastSum || (valid && !io.out.fire)
+    when(last) {
+      busy := false.B
+    }
   }
 
-  when(io.out.fire) {
-    acc      := 0.U
-    count    := 0.U
-    draining := false.B
-  }
+  io.busy := busy
+  io.done := last
 }
