@@ -616,8 +616,9 @@ registered with `register_check` (section 14).
 SNAX-LOWER's ordered list of tasks (D64): which component runs which task
 with which values, where each task is configured and started, and what it
 waits for. It is the hand-off to every backend: `lower_program(tasks,
-cluster)` turns it into SNAX-MODEL's program of section 5, and GEN2a will
-turn it into C (D116). It is derived from a design point (D89,
+cluster)` turns it into SNAX-MODEL's program of section 5, and `main_c`
+(`lower/c.py`, D135) into C on snRuntime, the program SNAX-GVSoC runs
+(section 16). It is derived from a design point (D89,
 `snax_forge/lower/derive.py`, `pixi run lower tasks DESIGN_POINT`; the rules
 below) or written by hand, as every scenario's `tasks.json` is (D65, D67).
 

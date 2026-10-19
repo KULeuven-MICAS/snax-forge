@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D135**.
+  number: **D136**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -33,7 +33,7 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 | scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D124 D126 D127 D130 |
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
-| lower | D45 D53 D64 D75 D88 D89 D105 |
+| lower | D45 D53 D64 D75 D88 D89 D105 D135 |
 | gvsoc | D120 D121 D122 D125 D128 D134 |
 | brm | D68 D70 D82 D103 D129 D133 |
 | dfg | D19 D71 D77 D78 D102 |
@@ -472,3 +472,9 @@ standard composite, one without is looked up by name in a registry; the measured
 constants there. forge/'s designs use the sparse interconnect; the slot's name comes from the
 platform (`accelerator_slot`). Blocks are adapters registered by name (D19); the manifest carries
 each task's beats. Retires D132. → `gen/gvsoc.py`, C§16, snax-gvsoc `LNK2a.md`.
+
+**D135** · lower — The task list becomes C on snRuntime as SNAX-LOWER's second backend: each step
+on the core that owns its component in the cluster file, D64's waits as polls with a hardware
+barrier where another core goes on, the DMA programmed at its start, a cycle mark per task event,
+and a self-check against `data.h`'s goldens. One accelerator per program; `signal` waits refused.
+D45 stays as first written until RET1. → `lower/c.py`, `gen/data.py`, C§16.

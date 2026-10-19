@@ -120,10 +120,10 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | SNAX-BRM | `brm/` | hand-written BRMs | instances, accelerator entries | built; binding GEN3 (D129) |
 | SNAX-SANDBOX | `sandbox/` | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step | built |
 | Design step | `design/` | bound graph, platform | design point | built |
-| SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program | built; C program M14 |
+| SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program, `main.c` | built (C program GEN2a, D135) |
 | SNAX-GVSoC | `snax-gvsoc` repo | hjson, program, accelerators | profile, trace, output | M16 |
 | SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | until RET1 |
-| Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, manifest | GEN3, LNK2a (D134) |
+| Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, `data.h`, `main.c`, manifest | GEN3, LNK2a, GEN2a (D134, D135) |
 | HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
 | Flow | `flow/` | recipe or bound graph, platform | all of the above, checked | built |
 | Viewers | `viz/` | run directories, `.snaxdfg` files | local HTML views | built |
@@ -207,10 +207,14 @@ Turns a design point into what a run needs, and decides nothing.
 - **Command list** (D45, D64, `lower/commands.py`): the task list expanded
   into SNAX-MODEL's `csr_write`, `csr_read` and `wait`, with only the waits
   correctness needs. Goes with SNAX-MODEL (RET1).
-- **C program** **[PLANNED, M14: GEN2a]**: the task list as direct CSR writes
-  on the Snitch core, with a cycle mark per task, a header of the
-  accelerator's CSR names and `data.h`, in SNAX's real register layout. The
-  same program runs on SNAX-GVSoC and on snax_cluster RTL.
+- **C program** (D135, `lower/c.py`; C§16): the task list as `main.c` on
+  snRuntime, each step on its component's core from the cluster file:
+  direct CSR writes on the generated headers' names, the DMA through
+  snRuntime, the lowering's waits as polls with a hardware barrier where
+  another core goes on, a cycle mark per task event, and a self-check
+  against `data.h`'s goldens (`gen/data.py`). The generator writes it with
+  the hjson files; the same ELF is to run on SNAX-GVSoC and on snax_cluster
+  RTL (GEN2b). One accelerator per program (open item 79).
 
 ### 5.6 SNAX-GVSoC [PLANNED, M16]
 

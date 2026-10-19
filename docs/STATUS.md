@@ -16,7 +16,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | SNAX-BRM | `snax_forge/brm/` | `tests/brm/` | `snax_forge/brm/library/` |
 | SNAX-SANDBOX | `snax_forge/sandbox/` | `tests/sandbox/` | `recipes/` |
 | Design step | `snax_forge/design/` | `tests/design/` | `platforms/` |
-| Generator (hjson, headers) | `snax_forge/gen/` | `tests/gen/` | `platforms/*.hjson` |
+| Generator (hjson, headers, `data.h`) | `snax_forge/gen/` | `tests/gen/` | `platforms/*.hjson` |
 | SNAX-LOWER | `snax_forge/lower/` | `tests/lower/` | |
 | SNAX-MODEL (until RET1) | `snax_forge/snax_model/` | `tests/snax_model/` | `scenarios/` |
 | Flow | `snax_forge/flow/` | `tests/flow/` | |
@@ -191,8 +191,12 @@ that target on their `sw/cfg/` file. Here, a platform keeps its source hjson
 point (the cluster, the streamer lowered per design point, the datapath
 block), checked against snax-forge's schemas and snax_cluster's, and no
 Python. forge/'s fixtures are its output on the sparse interconnect, with
-GEN3's cycles, and `test_fixture.py` reproduces them byte for byte. Next is
-GEN2a.
+GEN3's cycles, and `test_fixture.py` reproduces them byte for byte. GEN2a
+round 1 is under way (snax-gvsoc `GEN2a.md`): `gen-gvsoc` also writes
+`data.h` (`gen/data.py`: inputs from `make_inputs`, goldens from REF1,
+padded to beats) and `main.c` (`lower/c.py`, D135: the task list on
+snRuntime, self-checking, a mark per task event); the design check
+`memory.runtime` keeps L1 layouts below snRuntime's stacks.
 
 ## Open Items
 
