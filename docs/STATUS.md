@@ -86,7 +86,7 @@ that the DMA's counters stay the RTL's (D124).
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | LNK1 | A. A platform read from snax_cluster's `cfg/snax_alu_cluster.hjson` (`platforms/snax_alu.json`, `design from-hjson`) with the streamer template fields, checked as any platform is: `temporal_dim` and `fifo_depth` into the default, `spatial_bounds` and `num_channel` derived from the ports (D131, open item 77) | none | The platform round-trips; `vecadd` at W = 4 designs on it | done |
-| GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written program (`forge-elementwise`, until GEN2a) on fixtures in snax-gvsoc `forge/<design>/`; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `wip` |
+| GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written program (`forge-elementwise`, `forge-reduce`, until GEN2a) on fixtures in snax-gvsoc `forge/<design>/`; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `done` |
 | LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119) | GEN3 | GEN3's runs on the read target | todo |
 | GEN2a | A. The program: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking | LNK2a | `vecadd` and `dot` check themselves on SNAX-GVSoC | todo |
 | FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `dot` flows give checked runs; the viewer and the reports open them | todo |
@@ -168,8 +168,16 @@ until the submodule is bumped past `forge/`); `elementwise_mul` has
 `elementwise_add`'s binding with op mul, exercised by the test kernel
 `vecmul` (`recipes/vecmul.json`); `ElementwiseTiledSpatialLockstepSpec`
 drives the Chisel block through snax-gvsoc's lockstep unit cases
-(`SNAX_GVSOC_UNIT_CASES`). Next, round 4: step 6b, `accumulate` (`control:
-stream`, an output rate, the drain), planned first.
+(`SNAX_GVSOC_UNIT_CASES`). GEN3 round 4 (step 6b) closes GEN3: the Chisel
+Accumulator has `ElementwiseTiledSpatial`'s start, busy and done and no
+drain cycle (D133, so `chisel_accumulator`'s drain is 0, D103 amended);
+`SnaxUnit` folds one input with a runtime rate; `accumulate`'s binding is
+`counted`, the only control (D129 amended), with `loopCount` = n then
+`len` = T; the test kernel `vsum` (`recipes/vsum.json`) generates on
+`snax_alu.json`, its fixture `forge/vsum/` runs in `make regress` with
+`forge-reduce`, `test_fixture.py` reproduces it (skipped until the
+submodule is bumped past it), and `AccumulatorRateSpec` drives the Chisel
+block through snax-gvsoc's rate cases. Next: LNK2a.
 
 ## Open Items
 
@@ -295,7 +303,8 @@ Next free number: 78.
 68. Generation is spread out: snaxgen and Chisel in snax_cluster (the
     wrappers, `streamer_csr_addr_map.h`), clustergen and regtool outputs
     copied into snax-gvsoc's `sw/` (D126), the hand-written `snax_alu`
-    target, and GEN1, GEN2a, GEN2b, GEN3, LNK2a and LNK2b to come. One
+    target, GEN3's `snax_forge/gen`, and GEN1, GEN2a, GEN2b, LNK2a and LNK2b
+    to come. One
     generator in snax-forge, planned in phase C, after RET1 (D127), which
     also decides whether it makes `sw/generated/`.
 69. The SNAX crossbar's AXI input (14) is wired on both SNAX targets but no
