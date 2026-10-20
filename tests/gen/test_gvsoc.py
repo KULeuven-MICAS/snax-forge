@@ -19,6 +19,7 @@ from snax_forge.gen import BLOCKS, ELEMENTWISE_OP, GenError, Manifest, generate
 from snax_forge.gen import __main__ as cli
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.blocks import accumulator, elementwise_tiled_spatial
+from snax_forge.lower import c as c_mod
 from tests.design.helpers import REPO, SNAX_ALU, chained, graph_dict
 
 from .helpers import HJSON, SOURCE, SUB, bound_vecmul, bound_vsum, point, snax_cfg, snax_streamer
@@ -516,7 +517,7 @@ def test_two_instances_are_refused(tmp_path):
 
 @pytest.mark.parametrize(("binding", "code"), [(None, "gen.binding"), ("Gemm", "gen.block")])
 def test_a_null_binding_and_an_unregistered_block(tmp_path, monkeypatch, binding, code):
-    real = gen_mod.instances
+    real = c_mod.instances
 
     def edited(graph):
         (name, inst), = real(graph).items()  # fmt: skip
@@ -527,7 +528,7 @@ def test_a_null_binding_and_an_unregistered_block(tmp_path, monkeypatch, binding
         return {name: Instance(brm, IMPL, inst.params)}
 
     path = point(tmp_path)
-    monkeypatch.setattr(gen_mod, "instances", edited)
+    monkeypatch.setattr(c_mod, "instances", edited)
     with pytest.raises(GenError) as e:
         generate(path, tmp_path / "out", root=tmp_path)
     assert e.value.code == code

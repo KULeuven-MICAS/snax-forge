@@ -2,7 +2,7 @@
 D44).
 
 * ``repo_root``, the directory holding ``pixi.toml``: where ``out/``, ``kernels/`` and the
-  platforms are found.
+  platforms are found; ``cwd_relative``, a path as a command line prints it.
 * ``plain`` and ``check_keys``: JSON-ready values, and unknown keys refused, so a typo never
   silently falls back to a default.
 * ``Config``, a mixin giving a flat dataclass ``to_dict`` / ``from_dict``. Every field is
@@ -36,6 +36,14 @@ def repo_root() -> Path:
         if (parent / "pixi.toml").is_file():
             return parent
     raise RuntimeError(f"no pixi.toml found above {Path(__file__).resolve()}")
+
+
+def cwd_relative(p: Path) -> str:
+    """``p`` as a command line prints it: relative to the working directory when inside it."""
+    try:
+        return str(p.resolve().relative_to(Path.cwd()))
+    except ValueError:
+        return str(p)
 
 
 # =============================================================================

@@ -73,7 +73,7 @@ from typing import Any
 
 import numpy as np
 
-from snax_forge.common import repo_root
+from snax_forge.common import cwd_relative, repo_root
 from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
@@ -240,13 +240,6 @@ def checks_that_ran() -> dict[str, list[str]]:
     return {st: [c.code for c in CHECKS.values() if c.stage == st] for st in STAGES}
 
 
-def _rel(p: Path) -> str:
-    try:
-        return str(p.resolve().relative_to(Path.cwd()))
-    except ValueError:
-        return str(p)
-
-
 def summary(f: Flow) -> str:
     """What the command line prints: one line per stage."""
     p, check = f.point, f.check
@@ -259,12 +252,12 @@ def summary(f: Flow) -> str:
             "check -> sandbox/"
         )
     else:
-        what = f"graph {_rel(Path(p.graph_from))}; kernel {check['kernel']}; {syms}"
+        what = f"graph {cwd_relative(Path(p.graph_from))}; kernel {check['kernel']}; {syms}"
         sandbox = "skipped: the bound graph is the input (D108)"
     plan = f.point.memory
     inputs = ", ".join(m.npy for m in f.scenario.memory)
     n_checks = sum(len(v) for v in f.checks.values())
-    lines = [f"flow {f.name} ({what}) on {p.platform.name} -> {_rel(f.out)}/"]
+    lines = [f"flow {f.name} ({what}) on {p.platform.name} -> {cwd_relative(f.out)}/"]
     lines.append(f"  sandbox   {sandbox}")
     lines.append(
         f"  design    {n_checks} checks passed; platform base {p.platform.base}, "
@@ -277,7 +270,7 @@ def summary(f: Flow) -> str:
     )
     lines.append(f"  scenario  scenario.json, inputs {inputs} (make_inputs, seed {check['seed']})")
     lines.append(
-        f"  run       {f.result.total_cycles} cycles -> run/  (pixi run view {_rel(f.out / 'run')})"
+        f"  run       {f.result.total_cycles} cycles -> run/  (pixi run view {cwd_relative(f.out / 'run')})"
     )
     for c, x in check["containers"].items():
         if x["reference"] and x["ref1"]:

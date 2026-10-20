@@ -106,18 +106,35 @@ def _get(d: Any, path: str, kind: type = int, at: str = "") -> Any:
     return node
 
 
-def accelerators(d: Mapping[str, Any]) -> list[tuple[str, Any]]:
-    """Every ``snax_acc_cfg`` entry of the cluster's cores with its path, in hive and core order."""
+def cores(d: Mapping[str, Any]) -> list[tuple[str, Mapping[str, Any]]]:
+    """Every core of the cluster file ``d`` with its path, in hive and core order. A core that is
+    ``{"$ref": "#/<key>"}`` is that top-level key's object itself, not a copy, so what is found
+    through it can be set in place (gen/gvsoc.py)."""
     out = []
     for h, hive in enumerate(_get(d, "cluster.hives", list)):
         at = f"cluster.hives[{h}]"
         for c, core in enumerate(_get(hive, "cores", list, at)):
+            where = f"{at}.cores[{c}]"
+            ref = core.get("$ref") if isinstance(core, Mapping) else None
+            if ref is not None:
+                if not (isinstance(ref, str) and ref.startswith("#/") and ref[2:] in d):
+                    raise _fail("hjson.ref", where, f"{ref!r}: no top-level key it names")
+                core = d[ref[2:]]
             if not isinstance(core, Mapping):
-                raise _fail("hjson.key", f"{at}.cores[{c}]", f"must be an object, got {core!r}")
-            accs = core.get("snax_acc_cfg", [])
-            if not isinstance(accs, list):
-                raise _fail("hjson.key", f"{at}.cores[{c}].snax_acc_cfg", "must be a list")
-            out += [(f"{at}.cores[{c}].snax_acc_cfg[{i}]", a) for i, a in enumerate(accs)]
+                raise _fail("hjson.key", where, f"must be an object, got {core!r}")
+            out.append((where, core))
+    return out
+
+
+def accelerators(d: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """Every ``snax_acc_cfg`` entry of the cluster's cores (``cores``) with its path, in hive and
+    core order."""
+    out = []
+    for where, core in cores(d):
+        accs = core.get("snax_acc_cfg", [])
+        if not isinstance(accs, list):
+            raise _fail("hjson.key", f"{where}.snax_acc_cfg", "must be a list")
+        out += [(f"{where}.snax_acc_cfg[{i}]", a) for i, a in enumerate(accs)]
     return out
 
 

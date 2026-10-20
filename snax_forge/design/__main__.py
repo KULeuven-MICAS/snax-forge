@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from snax_forge.common import repo_root
+from snax_forge.common import cwd_relative, repo_root
 
 from .check import Design, load, run_checks
 from .hjson_platform import platform_from_hjson
@@ -65,13 +65,6 @@ def _setting(text: str) -> tuple[str, str, Any]:
             f"{text!r} is not platform.PATH=VALUE or memory.PATH=VALUE"
         )
     return head, rest, parse_value(value)
-
-
-def _rel(p: Path) -> str:
-    try:
-        return str(p.resolve().relative_to(Path.cwd()))
-    except ValueError:
-        return str(p)
 
 
 def _inputs(ap: argparse.ArgumentParser) -> None:
@@ -147,7 +140,7 @@ def _run(argv: list[str]) -> int:
     point.save(out / "design_point.json")
     print(_summary(design))
     for f in ("platform.json", "memory.json", "design_point.json"):
-        print(f"wrote {_rel(out / f)}")
+        print(f"wrote {cwd_relative(out / f)}")
     return 0
 
 
@@ -185,7 +178,7 @@ def _save(argv: list[str]) -> int:
         return 1
     dst.parent.mkdir(parents=True, exist_ok=True)
     platform.save(dst)
-    print(f"wrote {_rel(dst)} (base {platform.base}, {len(platform.changes)} changes)")
+    print(f"wrote {cwd_relative(dst)} (base {platform.base}, {len(platform.changes)} changes)")
     return 0
 
 
@@ -210,7 +203,7 @@ def _from_hjson(argv: list[str]) -> int:
         return 1
     dst.parent.mkdir(parents=True, exist_ok=True)
     platform.save(dst)
-    print(f"wrote {_rel(dst)} from {_rel(args.hjson)}")
+    print(f"wrote {cwd_relative(dst)} from {cwd_relative(args.hjson)}")
     return 0
 
 

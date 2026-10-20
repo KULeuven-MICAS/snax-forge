@@ -52,7 +52,7 @@ def streamer_header(movers: list[dict[str, Any]], first: int, point_path: str) -
     lines = [_comment(point_path, "the streamer's CSRs, as snax_cluster's Streamer.scala")]
     csr = first
     for m in movers:
-        tag = m["name"].replace("reader", "READER_").replace("writer", "WRITER_")
+        tag = m["name"]
         lines.append(f"// CSR Map for {tag}")
         lines.append(f"#define BASE_PTR_{tag}_LOW {csr}")
         lines.append(f"#define BASE_PTR_{tag}_HIGH {csr + 1}")

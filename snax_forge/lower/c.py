@@ -86,12 +86,14 @@ point, same text.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
+from snax_forge.design.hjson_platform import cores as hjson_cores
+from snax_forge.design.problems import DesignError
 from snax_forge.design.streamers import instances, streamer_name
 
 from .cluster import cluster_file
@@ -123,15 +125,29 @@ def define_name(field: str) -> str:
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", field).upper()
 
 
-def accelerator(point: DesignPoint) -> tuple[str, Instance]:
-    """The one accelerated instance and its name; it must have a binding."""
+def mover_name(write: bool, index: int) -> str:
+    """A streamer mover's name in the headers and the program: ``READER_<i>`` or ``WRITER_<j>``,
+    readers the input ports in the BRM's port order, writers the outputs (gen/headers.py)."""
+    return f"{'WRITER' if write else 'READER'}_{index}"
+
+
+def accelerator(
+    point: DesignPoint, fail: Callable[[str, str], Exception] | None = None
+) -> tuple[str, Instance]:
+    """The one accelerated instance and its name; it must have a binding. ``fail(rule,
+    message)`` makes the error of the rule broken (``instances``, ``binding``): a
+    ``c.instances`` CError by default, the generator's own (gen/gvsoc.py)."""
+    if fail is None:
+        fail = lambda rule, message: CError("c.instances", message)
     found = instances(point.graph)
     if len(found) != 1:
-        raise CError("c.instances", f"{len(found)} accelerated instances {list(found)}; the "
-                     "program drives one accelerator (open item 79)")  # fmt: skip
+        raise fail("instances", f"{len(found)} accelerated instances {list(found)}; the platform "
+                   "has one accelerator slot and the program drives one accelerator (open item "
+                   "79)")  # fmt: skip
     (name, inst), = found.items()  # fmt: skip
     if inst.impl.binding is None:
-        raise CError("c.instances", f"{name}: binding null, no CSRs to write")
+        raise fail("binding", f"{inst.brm.name}.{inst.implementation}: binding null, nothing to "
+                   "generate")  # fmt: skip
     return name, inst
 
 
@@ -145,16 +161,12 @@ class Cores:
 
 
 def cores(cluster: Mapping[str, Any], slot: str) -> Cores:
-    """The cores of the cluster file (a core that is a ``#/<key>`` ``$ref`` read from that key),
-    in hive and core order."""
-    flat = []
+    """The cores of the cluster file (design/hjson_platform.py's ``cores``), in hive and core
+    order."""
     try:
-        for hive in cluster["cluster"]["hives"]:
-            for core in hive["cores"]:
-                ref = core.get("$ref")
-                flat.append(cluster[ref[2:]] if isinstance(ref, str) and ref[:2] == "#/" else core)
-    except (KeyError, TypeError, AttributeError) as e:
-        raise CError("c.cores", f"the cluster file's hives and cores do not read: {e!r}") from None
+        flat = [core for _, core in hjson_cores(cluster)]
+    except DesignError as e:
+        raise CError("c.cores", f"the cluster file's hives and cores do not read: {e}") from None
     dma = [i for i, c in enumerate(flat) if c.get("xdma")]
     owner = [i for i, c in enumerate(flat)
              if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
@@ -187,12 +199,11 @@ class _Program:
 
     def _movers(self) -> dict[str, str]:
         """Streamer component -> its mover in the headers (``READER_0``, ``WRITER_0``)."""
-        out, n = {}, {"READER": 0, "WRITER": 0}
+        out, n = {}, {False: 0, True: 0}
         for p in self.inst.brm.interface.ports:
             s = self.point.streamers[streamer_name(self.name, p.name)]
-            kind = "WRITER" if s.write else "READER"
-            out[s.name] = f"{kind}_{n[kind]}"
-            n[kind] += 1
+            out[s.name] = mover_name(s.write, n[s.write])
+            n[s.write] += 1
         return out
 
     def core_of(self, component: str) -> int:

@@ -76,7 +76,7 @@ def test_the_accelerator_header_has_snax_shells_hand_numbers(include):
 
 def test_more_dimensions_follow_streamer_scalas_loops():
     """Per mover: the pointer, then each index of the spatial strides, temporal bounds, strides."""
-    movers = [{"name": "reader0", "spatial_bounds": [2, 4], "temporal_dim": 3}]
+    movers = [{"name": "READER_0", "spatial_bounds": [2, 4], "temporal_dim": 3}]
     text, last = streamer_header(movers, 960, "p")
     assert defines(text) == [
         ("BASE_PTR_READER_0_LOW", 960), ("BASE_PTR_READER_0_HIGH", 961),
