@@ -4,6 +4,8 @@ Produces ZERO map entries -- the whole kernel becomes Transpose + MatMul +
 MatMul library nodes. A map-scope walker finds nothing here, which is why
 library-node expansion is mandatory rather than optional. Also the canonical
 chaining barrier: the second reduction cannot start until the first completes.
+
+Tier A (PAPER §6.1). int64 (D113).
 """
 
 import dace
@@ -20,9 +22,9 @@ def atax(A, x, y):
 
 def make_inputs(rng, m=256, n=256):
     return {
-        "A": rng.integers(-4, 4, size=(m, n), dtype=np.int32),
-        "x": rng.integers(-4, 4, size=n, dtype=np.int32),
-        "y": np.zeros(n, dtype=np.int32),  # assigned, not accumulated
+        "A": rng.integers(-4, 4, size=(m, n), dtype=np.int64),
+        "x": rng.integers(-4, 4, size=n, dtype=np.int64),
+        "y": np.zeros(n, dtype=np.int64),  # assigned, not accumulated
     }
 
 
@@ -30,11 +32,11 @@ SPEC = KernelSpec(
     name="atax",
     func=atax,
     domain="linalg",
-    descriptors={"A": dace.int32[M, N], "x": dace.int32[N], "y": dace.int32[N]},
+    descriptors={"A": dace.int64[M, N], "x": dace.int64[N], "y": dace.int64[N]},
     make_inputs=make_inputs,
     inout=("y",),
     flops=lambda m=256, n=256: 4 * m * n,
-    bytes_moved=lambda m=256, n=256: 8 * m * n,
+    bytes_moved=lambda m=256, n=256: 16 * m * n,
     tags=("chaining-barrier", "no-maps", "library-nodes"),
     sweep_sizes=(
         {"m": 128, "n": 128},

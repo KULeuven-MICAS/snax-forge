@@ -5,6 +5,8 @@ int64, one element per 64-bit L1 word, as vecadd. A test kernel: it exists
 to exercise the elementwise_mul BRM on its own (GEN3 step 6a), since dot
 binds two instances (elementwise_mul and accumulate) and snax_alu's board
 has one accelerator slot.
+
+Tier done (PAPER §6.1).
 """
 
 import dace
