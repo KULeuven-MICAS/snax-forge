@@ -15,7 +15,7 @@ snax-gvsoc is a submodule; CI never fetches it, so initialise it once. Clone
 into any folder, `$ROOT` below (the outputs' absolute paths start there;
 yours will be your own):
 
-    git clone -b ry/housekeeping-2 git@github.com:KULeuven-MICAS/snax-forge.git
+    git clone https://github.com/KULeuven-MICAS/snax-forge.git
     cd snax-forge && git submodule update --init gvsoc/snax-gvsoc
 
     Cloning into 'snax-forge'...
