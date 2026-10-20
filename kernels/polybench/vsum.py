@@ -6,6 +6,8 @@ exercise accumulate's Chisel Accumulator on its own (GEN3 step 6b), since dot
 binds two instances (elementwise_mul and accumulate) and snax_alu's board has
 one accelerator slot. The importer turns the Reduce into a sum map folding
 into ``out[0]`` with ``add`` (D102).
+
+Tier done (PAPER §6.1).
 """
 
 import dace

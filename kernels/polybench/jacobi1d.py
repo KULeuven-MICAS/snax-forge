@@ -2,6 +2,8 @@
 
 The only kernel here that stays multi-state after simplify (4 states), so it is
 the one that exercises per-state instrumentation. Pure maps, no library nodes.
+
+Tier D (PAPER §6.1). int32 until M9.
 """
 
 import dace

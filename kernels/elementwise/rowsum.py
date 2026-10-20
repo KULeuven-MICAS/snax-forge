@@ -3,6 +3,8 @@
 Partial reduction: the reduced axis differs from the output axis, unlike dot
 where they coincide. This is the shape softmax's normalisation pass takes,
 so it is worth having the structure characterised early.
+
+int64 (D113).
 """
 
 import dace
@@ -19,8 +21,8 @@ def rowsum(A, y):
 
 def make_inputs(rng, m=256, n=256):
     return {
-        "A": rng.integers(-100, 100, size=(m, n), dtype=np.int32),
-        "y": np.zeros(m, dtype=np.int32),
+        "A": rng.integers(-100, 100, size=(m, n), dtype=np.int64),
+        "y": np.zeros(m, dtype=np.int64),
     }
 
 
@@ -28,11 +30,11 @@ SPEC = KernelSpec(
     name="rowsum",
     func=rowsum,
     domain="reduction",
-    descriptors={"A": dace.int32[M, N], "y": dace.int32[M]},
+    descriptors={"A": dace.int64[M, N], "y": dace.int64[M]},
     make_inputs=make_inputs,
     inout=("y",),
     flops=lambda m=256, n=256: m * n,
-    bytes_moved=lambda m=256, n=256: 4 * m * n + 4 * m,
+    bytes_moved=lambda m=256, n=256: 8 * m * n + 8 * m,
     sweep_sizes=(
         {"m": 128, "n": 128},
         {"m": 256, "n": 256},
