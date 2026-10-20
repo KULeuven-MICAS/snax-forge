@@ -21,7 +21,7 @@ yours will be your own):
     Cloning into 'snax-forge'...
     Submodule 'gvsoc/snax-gvsoc' (https://github.com/KULeuven-MICAS/snax-gvsoc) registered for path 'gvsoc/snax-gvsoc'
     Cloning into '$ROOT/snax-forge/gvsoc/snax-gvsoc'...
-    Submodule path 'gvsoc/snax-gvsoc': checked out '25944aeeba7c8731d6918c36016abbe849f9860d'
+    Submodule path 'gvsoc/snax-gvsoc': checked out '4808f8eeb05c6bb99dd64f9f6246413f889a54c5'
 
 Everything else runs in snax-forge's image (D118), started from the folder
 that holds `snax-forge`:
