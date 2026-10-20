@@ -121,7 +121,7 @@ def test_the_streamer_file_is_the_hjsons_template(w4):
         assert parsed(out / "snax_alu_streamer.hjson")[group] == hand[group]
 
 
-def test_the_accelerator_file_is_snax_tiled_adds_unit_but_signed(w4):
+def test_the_accelerator_file_is_vecadds_datapath_block(w4):
     out, _ = w4
     assert parsed(out / "snax_alu_acc.hjson") == TILED_ADD
     assert "config" not in parsed(out / "snax_alu_acc.hjson")  # the default, left out
