@@ -13,10 +13,15 @@ by eye); the claims made in prose are checked below in its order.
 
 from __future__ import annotations
 
+import pytest
+
+pytest.skip(
+    "dot is parked until M13: two accelerators, which the generator refuses (gen.instances)",
+    allow_module_level=True,
+)
+
 import json
 import shlex
-
-import pytest
 
 from snax_forge.flow import __main__ as flow_cli
 from snax_forge.report import reports_of

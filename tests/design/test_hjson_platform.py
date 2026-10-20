@@ -17,7 +17,8 @@ NEW, OLD = CFG / "snax_alu_cluster.hjson", CFG / "snax_alu_cluster_old.hjson"
 # snax_alu's source: a copy of snax-gvsoc's sw/cfg/snax_alu_cluster.hjson
 SOURCE = REPO / "platforms" / "snax_alu.hjson"
 needs_submodule = pytest.mark.skipif(
-    not NEW.exists(), reason="the snax-gvsoc submodule is not checked out (CI never fetches it)"
+    not NEW.exists(),
+    reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
 
 # A cluster file with what the reader needs, in the hjson's own form.

@@ -1,19 +1,20 @@
 # From a recipe to a run on SNAX-GVSoC
 
-One design point the whole way: a recipe through `sandbox` and `design` on
-`platforms/snax_alu.json`, `gen-gvsoc`, GVSoC built through `gvsoc/Makefile`,
-the generated program built and run, and what the run prints. Each block is
-the command as typed, then what it printed in a fresh clone with the
-submodule initialised (long outputs cut to their last lines, marked `...`).
-The flow (`pixi run flow`) still runs on SNAX-MODEL until FLOW3; this is the
-SNAX-GVSoC path by hand. snax-gvsoc's own `docs/RUN.md` runs its checked-in
-fixtures and its regression.
+One design point the whole way, with one command: `pixi run flow` takes a
+recipe through `sandbox` and `design` on `platforms/snax_alu.json`,
+generates the design point's hjson files, headers, data and program, builds
+SNAX-GVSoC when needed and the program, runs it on `snax_hjson`, and takes
+the program's own check (D136). Each block is the command as typed, then
+what it printed in a fresh tree with the submodule initialised (long
+outputs cut to their last lines, marked `...`). Section 5 is the same path
+by hand. snax-gvsoc's own `docs/RUN.md` runs its checked-in fixtures and its
+regression.
 
 ## 1. A clone and the container
 
-snax-gvsoc is a submodule; CI never fetches it, so initialise it once. Clone
-into any folder, `$ROOT` below (the outputs' absolute paths start there;
-yours will be your own):
+snax-gvsoc is a submodule, so initialise it once. Clone into any folder,
+`$ROOT` below (the outputs' absolute paths start there; yours will be your
+own):
 
     git clone https://github.com/KULeuven-MICAS/snax-forge.git
     cd snax-forge && git submodule update --init gvsoc/snax-gvsoc
@@ -21,7 +22,7 @@ yours will be your own):
     Cloning into 'snax-forge'...
     Submodule 'gvsoc/snax-gvsoc' (https://github.com/KULeuven-MICAS/snax-gvsoc) registered for path 'gvsoc/snax-gvsoc'
     Cloning into '$ROOT/snax-forge/gvsoc/snax-gvsoc'...
-    Submodule path 'gvsoc/snax-gvsoc': checked out '4808f8eeb05c6bb99dd64f9f6246413f889a54c5'
+    Submodule path 'gvsoc/snax-gvsoc': checked out '6e59daaf67eb9005a3393b21896e89d4c956f488'
 
 Everything else runs in snax-forge's image (D118), started from the folder
 that holds `snax-forge`:
@@ -32,211 +33,223 @@ that holds `snax-forge`:
 
     The default environment has been installed.
 
-## 2. The recipe and the design point
+## 2. The flow
 
-`recipes/vecadd.json` binds vecadd's add to `elementwise_add` at W = 4:
+`recipes/vecadd.json` binds vecadd's add to `elementwise_add` at W = 4. The
+first flow builds SNAX-GVSoC into `out/snax-gvsoc/` (a few minutes; its
+output goes to `out/flow/vecadd/build.log`):
 
-    pixi run sandbox recipes/vecadd.json
+    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json
 
-    Pixi task (sandbox in default): python -m snax_forge.sandbox recipes/vecadd.json
-    $ROOT/snax-forge/out/sandbox/vecadd/0_input.snaxdfg
-    $ROOT/snax-forge/out/sandbox/vecadd/1_split_map.snaxdfg
-    $ROOT/snax-forge/out/sandbox/vecadd/2_bind.snaxdfg
-    2 steps, each equal to the input graph on the reference check
-
-The design step pairs the bound graph with `platforms/snax_alu.json`, the
-platform read from snax_cluster's cluster file (its source is
-`platforms/snax_alu.hjson`, its accelerator slot `snax_alu`):
-
-    pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json
-
-    Pixi task (design in default): python -m snax_forge.design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json
-    out/sandbox/vecadd/2_bind.snaxdfg on snax_alu (base snax_alu, 0 changes): checks passed
-    streamer shell:
-      acc_a        acc.a      reader  4 lanes [4]  temporal_dims 1  fifo_depth 8  addr_depth 8  prio 0
-      acc_b        acc.b      reader  4 lanes [4]  temporal_dims 1  fifo_depth 8  addr_depth 8  prio 0
-      acc_out      acc.out    writer  4 lanes [4]  temporal_dims 1  fifo_depth 8  addr_depth 8  prio 0
-    memory plan (residency default, layout contiguous, placement contiguous; 0 changes):
-      A            l2 [2147483648, 2147484160)   l1 [268435456, 268435968) bank 0
-      B            l2 [2147484160, 2147484672)   l1 [268435968, 268436480) bank 0
-      C            l2 [2147484672, 2147485184)   l1 [268436480, 268436992) bank 0
-    wrote out/design/vecadd/platform.json
-    wrote out/design/vecadd/memory.json
-    wrote out/design/vecadd/design_point.json
-
-## 3. Generate the cluster, the headers and the program
-
-    pixi run gen-gvsoc out/design/vecadd/design_point.json
-
-    Pixi task (gen-gvsoc in default): python -m snax_forge.gen out/design/vecadd/design_point.json
-    cluster snax_alu.hjson from out/design/vecadd/design_point.json
-      task add_acc: 16 beats, {'loopCount': 16}
-    wrote $ROOT/snax-forge/out/gvsoc/vecadd/snax_alu.hjson
-    wrote $ROOT/snax-forge/out/gvsoc/vecadd/snax_alu_streamer.hjson
-    wrote $ROOT/snax-forge/out/gvsoc/vecadd/snax_alu_acc.hjson
-    wrote $ROOT/snax-forge/out/gvsoc/vecadd/include/streamer_csr_addr_map.h
-    wrote $ROOT/snax-forge/out/gvsoc/vecadd/include/acc_csr.h
-    wrote $ROOT/snax-forge/out/gvsoc/vecadd/data.h
-    wrote $ROOT/snax-forge/out/gvsoc/vecadd/main.c
-    wrote $ROOT/snax-forge/out/gvsoc/vecadd/manifest.json
-    run: make -C gvsoc run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$ROOT/snax-forge/out/gvsoc/vecadd/snax_alu.hjson" ELF=...
-
-`out/gvsoc/vecadd/` now holds the cluster file `snax_alu.hjson` (the
-platform's source with the slot set for this design), the streamer and
-datapath files it refers to, the headers, `main.c` with its `data.h`, and
-`manifest.json`. Nothing is compiled for a design point: SNAX-GVSoC's
-installed `snax_hjson` target reads the cluster file at run time.
-
-## 4. Build GVSoC, then the program
-
-`gvsoc/Makefile` runs in the container's plain shell, not through pixi (its
-environment sets `CC` and `CXX` to conda's gcc). `make build` builds
-snax-gvsoc's `SNAX_TARGETS` into `out/snax-gvsoc/`, a few minutes the first
-time:
-
-    cd gvsoc
-    make build
-
-    ...
-    -- Up-to-date: $ROOT/snax-forge/out/snax-gvsoc/install/python/./requirements.txt
-    -- Up-to-date: $ROOT/snax-forge/out/snax-gvsoc/install/python/./.gitignore
-    make[1]: Leaving directory '$ROOT/snax-forge/gvsoc/snax-gvsoc'
-
-`make sw` builds snax_cluster's runtime and the generic app's program from
-the generated folder, into `out/snax-gvsoc/sw/vecadd/`:
-
-    make sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
-
-    ...
-    clang --target=riscv32-unknown-elf -mcpu=generic-rv32 -march=rv32imafdzfh -fno-builtin-memset -DPRINTF_DISABLE_SUPPORT_LONG_LONG -I$ROOT/snax-forge/out/gvsoc/vecadd -I$ROOT/snax-forge/out/gvsoc/vecadd/include -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/generated/snax_alu_cluster_old -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic/src -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic/../common -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/api -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/api/omp -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/src -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/src/omp -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/deps/riscv-opcodes -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/math/include -mabi=ilp32d -mcmodel=medany -ffast-math -fno-builtin-printf -fno-builtin-sqrtf -fno-common -fopenmp -ftls-model=local-exec -O3 -D__DEFINED_uint64_t -MMD -MP -MT $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf -MF $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.d  -fuse-ld=lld -nostdlib -L$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic -T$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/base.ld -L$ROOT/snax-forge/gvsoc/snax-gvsoc/build/sw/ -L$ROOT/snax-forge/gvsoc/snax-gvsoc/build/sw/snax_alu_cluster_old/ -lmath -lsnRuntime $ROOT/snax-forge/out/gvsoc/vecadd/main.c -o $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf
-    llvm-objdump -D $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf > $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.dump
-    make[1]: Leaving directory '$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/apps/forge'
-
-## 5. Run it
-
-`snax_hjson` takes the cluster file with `--param hjson=`;
-`--trace=snax_acc0/unit` turns on the unit's trace. The work directory is
-`out/snax-gvsoc/work/snax_hjson/vecadd/`:
-
-    make run TARGET=snax_hjson DESIGN=vecadd \
-        GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/vecadd/snax_alu.hjson --trace=snax_acc0/unit" \
-        ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
-
-    mkdir -p $ROOT/snax-forge/out/snax-gvsoc/work/snax_hjson/vecadd
-    $ROOT/snax-forge/out/snax-gvsoc/install/bin/gvrun --target snax_hjson \
-    	--work-dir $ROOT/snax-forge/out/snax-gvsoc/work/snax_hjson/vecadd --param chip/soc/binary=$ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf --param hjson=$ROOT/snax-forge/gvsoc/../out/gvsoc/vecadd/snax_alu.hjson --trace=snax_acc0/unit run
-    Warning: installed platform tree $ROOT/snax-forge/out/snax-gvsoc/install/lib/libplatform_tree_snax_hjson.so does not match the live system tree, falling back to the JSON config path (rebuild the target to regenerate the tree).
-    forge data: 0 errors (64 words)
-    forge counter add_acc: 19
-    forge errors: 0
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/trace                                 ] New slave port (name: clock, port: 0x5629f29da2c8)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/trace                                 ] New slave port (name: reset, port: 0x5629f29da0d0)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] New slave port (name: power_supply, port: 0x5629f29da178)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] New slave port (name: voltage, port: 0x5629f29da220)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] New master port (name: a, port: 0x5629f29ddc80)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] New master port (name: b, port: 0x5629f29ddd58)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] New master port (name: out, port: 0x5629f29da608)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] New slave port (name: ctrl, port: 0x5629f29da450)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] New master port (name: busy, port: 0x5629f29da508)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/trace                                 ] add, 4 lanes of 64 bits, lockstep, latency 0, ii 1
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] Creating final bindings
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] Creating final binding (/chip/soc/cluster_0/snax_acc0/unit:busy -> /chip/soc/cluster_0/snax_acc0/shell:busy)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] Creating final binding (/chip/soc/cluster_0/snax_acc0/unit:out -> /chip/soc/cluster_0/snax_acc0/streamer:writer_0)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] Creating final binding (/chip/soc/cluster_0/snax_acc0/unit:b -> /chip/soc/cluster_0/snax_acc0/streamer:reader_1)
-    0: -1: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] Creating final binding (/chip/soc/cluster_0/snax_acc0/unit:a -> /chip/soc/cluster_0/snax_acc0/streamer:reader_0)
-    0: 0: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] Reset (active: 1)
-    0: 0: [/chip/soc/cluster_0/snax_acc0/unit/comp                                  ] Reset (active: 0)
-    292200000: 2922: [/chip/soc/cluster_0/snax_acc0/unit/trace                                 ] Start at cycle 2922: count 16
-    294100000: 2941: [/chip/soc/cluster_0/snax_acc0/unit/trace                                 ] run 0: firings 16 busy 16 stall_in 3 stall_out 0 flush 0
+    Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_alu.json
+    flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
+      sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
+      design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      lower     tasks.json (12 steps)
+      gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
+      build     built: no install in out/snax-gvsoc (snax-gvsoc 6e59daaf)
+      sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
+      gvsoc     snax_hjson, exit 0 -> run/
+      check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
+      report    none in FLOW3 round 1a; the reports come back in FLOW3 round 1b
 
     echo "exit $?"
 
     exit 0
 
-## 6. Reading the output
+One line per stage:
 
-- The warning is expected: `make build` made `snax_hjson`'s platform tree
-  from its default cluster file, with snax_cluster's ALU in the slot; this
-  cluster file puts the generated accelerator there, so gvrun builds the
-  system from its JSON configuration instead, on the same installed
-  components.
-- `forge data: 0 errors (64 words)`: every output word against its golden
-  in `data.h` (the reference executor's result).
-- `forge counter add_acc: 19`: the shell's cycle counter for the
-  accelerator task `add_acc`.
-- The unit's run line, `run 0: firings 16 busy 16 stall_in 3 stall_out 0
-  flush 0`: the counter is busy + stall_in + stall_out + flush (16 + 3 +
-  0 + 0 = 19), and the firings are the task's beats in the manifest:
+- `sandbox`, `design`: the recipe's steps, each checked by the reference
+  executor, then the design checks, the memory plan and the design point.
+- `lower`: the task list, `tasks.json`.
+- `gen`: the generator's output in `gen/`: the cluster file `snax_alu.hjson`
+  (the platform's source with the slot set for this design), the streamer
+  and datapath files it refers to, the headers, `data.h` (the kernel's
+  `make_inputs` at seed 0, and the reference executor's goldens, checked
+  against the kernel's reference first) and `main.c`. Nothing is compiled
+  for a design point: SNAX-GVSoC's installed `snax_hjson` reads the cluster
+  file at run time.
+- `build`: GVSoC through `gvsoc/Makefile`, here because there was no install;
+  later flows say `up to date` until the submodule's commit or path changes
+  or its tree is dirty.
+- `sw`: the program, built by snax-gvsoc's generic app into `sw/`.
+- `gvsoc`: the run, its output in `run/stdout.txt` and `run/stderr.txt`.
+- `check`: what the program printed and returned. `226 cycles` is its
+  window, from `mcycle` at main's entry to `mcycle` at `forge_check()`'s
+  entry; `data 0 errors (64 words)` every output word against its golden;
+  `add_acc 19 (16 beats)` the shell's cycle counter for the accelerator task
+  `add_acc` beside the task's beats. `passed` is the program's exit code 0,
+  and the flow's exit follows it.
 
-      cd ..
-      grep '"tasks"' out/gvsoc/vecadd/manifest.json
+The folder holds every stage's output:
 
-      "tasks": [{"name": "add_acc", "beats": 16, "csrs": {"loopCount": 16}}]
+    ls out/flow/vecadd out/flow/vecadd/gen out/flow/vecadd/run
 
-- `forge errors: 0`: the data errors plus one per counter below its beats;
-  `main` returns it, and `make run` exits 0.
+    out/flow/vecadd:
+    build.log
+    design
+    flow.log
+    gen
+    run
+    sandbox
+    sw
+    sw.log
+    tasks.json
 
-## 7. What the generator refuses
+    out/flow/vecadd/gen:
+    data.h
+    include
+    main.c
+    manifest.json
+    snax_alu.hjson
+    snax_alu_acc.hjson
+    snax_alu_streamer.hjson
+
+    out/flow/vecadd/run:
+    profile.json
+    run.json
+    stderr.txt
+    stdout.txt
+    work
+
+What the program printed, after make's own lines:
+
+    cat out/flow/vecadd/run/stdout.txt
+
+    make: Entering directory '$ROOT/snax-forge/gvsoc'
+    mkdir -p $ROOT/snax-forge/out/flow/vecadd/run/work
+    $ROOT/snax-forge/out/snax-gvsoc/install/bin/gvrun --target snax_hjson \
+    	--work-dir $ROOT/snax-forge/out/flow/vecadd/run/work --param chip/soc/binary=$ROOT/snax-forge/out/flow/vecadd/sw/forge.elf --param hjson=$ROOT/snax-forge/out/flow/vecadd/gen/snax_alu.hjson run
+    forge cycles: 226
+    forge data: 0 errors (64 words)
+    forge counter add_acc: 19
+    forge errors: 0
+    make: Leaving directory '$ROOT/snax-forge/gvsoc'
+
+`run.json` says what ran, `profile.json` what it measured (C§7):
+
+    cat out/flow/vecadd/run/run.json out/flow/vecadd/run/profile.json
+
+    {
+     "design_point": "design/design_point.json",
+     "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
+     "elf": "sw/forge.elf",
+     "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
+     "target": "snax_hjson",
+     "snax_gvsoc": {"commit": "6e59daaf67eb9005a3393b21896e89d4c956f488", "dirty": false},
+     "trace_level": "off"
+    }
+    {
+     "total_cycles": 226,
+     "functional_check": {
+      "kernel": "vecadd",
+      "seed": 0,
+      "symbols": {"N": 64},
+      "exit_code": 0,
+      "data_errors": 0,
+      "words": 64,
+      "tasks": {"add_acc": {"counter": 19, "beats": 16}},
+      "passed": true
+     }
+    }
+
+The trace is `off`; `--trace task` and `--trace beat` stop with a named
+error until FLOW3 round 1b brings the events (D137), and there are no
+reports until then either.
+
+## 3. A second kernel: vsum
+
+`recipes/vsum.json` binds vsum's reduction to the one-lane Chisel
+Accumulator. GVSoC is built now, so the whole flow takes seconds:
+
+    pixi run flow recipes/vsum.json --platform platforms/snax_alu.json
+
+    Pixi task (flow in default): python -m snax_forge.flow recipes/vsum.json --platform platforms/snax_alu.json
+    flow vsum (vsum: W=1; N=64) on snax_alu -> out/flow/vsum/
+      sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
+      design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      lower     tasks.json (9 steps)
+      gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
+      build     up to date (snax-gvsoc 6e59daaf)
+      sw        sw/forge.elf (sha256 26b545a3812000c8)
+      gvsoc     snax_hjson, exit 0 -> run/
+      check     passed: 255 cycles (main to forge_check); data 0 errors (1 words); counters sum_acc 67 (64 beats)
+      report    none in FLOW3 round 1a; the reports come back in FLOW3 round 1b
+
+`flow.log` holds the same lines, the design checks that ran and each
+stage's time (this machine's; they change from run to run):
+
+    tail -12 out/flow/vsum/flow.log
+
+    stage times (wall clock, this machine):
+      import    0.331 s
+      sandbox   0.034 s
+      design    0.051 s
+      lower     0.011 s
+      gen       0.124 s
+      build     0.462 s
+      sw        0.511 s
+      gvsoc     2.209 s
+      check     0.012 s
+      total     3.746 s
+
+## 4. What the flow refuses
 
 The generator writes a cluster file from the platform's source hjson and
-puts one accelerator in its one slot, so two kinds of design point stop
-with a named rule. `small16` is a hand-written platform with no source
-hjson (`gen.source`):
+puts one accelerator in its one slot, so two kinds of design point stop at
+`gen` with a named rule, before anything is built. `small16` is a
+hand-written platform with no source hjson (`gen.source`):
 
-    pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json --out out/design/vecadd_small16
-    pixi run gen-gvsoc out/design/vecadd_small16/design_point.json
+    pixi run flow recipes/vecadd.json --platform platforms/small16.json
 
-    Pixi task (design in default): python -m snax_forge.design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json --out out/design/vecadd_small16
-    out/sandbox/vecadd/2_bind.snaxdfg on small16 (base small16, 0 changes): checks passed
-    streamer shell:
-      acc_a        acc.a      reader  4 lanes [4]  temporal_dims 1  fifo_depth 2  addr_depth 8  prio 0
-      acc_b        acc.b      reader  4 lanes [4]  temporal_dims 1  fifo_depth 2  addr_depth 8  prio 0
-      acc_out      acc.out    writer  4 lanes [4]  temporal_dims 1  fifo_depth 2  addr_depth 8  prio 0
-    memory plan (residency default, layout contiguous, placement contiguous; 0 changes):
-      A            l2 [0, 512)                   l1 [0, 512) bank 0
-      B            l2 [512, 1024)                l1 [512, 1024) bank 0
-      C            l2 [1024, 1536)               l1 [1024, 1536) bank 0
-    wrote out/design/vecadd_small16/platform.json
-    wrote out/design/vecadd_small16/memory.json
-    wrote out/design/vecadd_small16/design_point.json
-
-    Pixi task (gen-gvsoc in default): python -m snax_forge.gen out/design/vecadd_small16/design_point.json
-    [gen.source] platform small16 has no source hjson: read it from one with `pixi run design from-hjson`
+    Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/small16.json
+    FAILED recipes/vecadd.json: gen: [gen.source] platform small16 has no source hjson: read it from one with `pixi run design from-hjson`
 
 `dot` binds two accelerators, a multiplier and a sum, and the platform has
 one slot and the program drives one accelerator (`gen.instances`; several
 accelerators on one core are open item 79, a composed one is M13):
 
-    pixi run sandbox recipes/dot.json
-    pixi run design out/sandbox/dot/4_bind.snaxdfg --platform platforms/snax_alu.json
-    pixi run gen-gvsoc out/design/dot/design_point.json
+    pixi run flow recipes/dot.json --platform platforms/snax_alu.json
 
-    Pixi task (sandbox in default): python -m snax_forge.sandbox recipes/dot.json
-    $ROOT/snax-forge/out/sandbox/dot/0_input.snaxdfg
-    $ROOT/snax-forge/out/sandbox/dot/1_split_map.snaxdfg
-    $ROOT/snax-forge/out/sandbox/dot/2_bind.snaxdfg
-    $ROOT/snax-forge/out/sandbox/dot/3_split_map.snaxdfg
-    $ROOT/snax-forge/out/sandbox/dot/4_bind.snaxdfg
-    4 steps, each equal to the input graph on the reference check
+    Pixi task (flow in default): python -m snax_forge.flow recipes/dot.json --platform platforms/snax_alu.json
+    FAILED recipes/dot.json: gen: [gen.instances] 2 accelerated instances ['mul', 'sum']; the platform has one accelerator slot and the program drives one accelerator (open item 79)
 
-    Pixi task (design in default): python -m snax_forge.design out/sandbox/dot/4_bind.snaxdfg --platform platforms/snax_alu.json
-    out/sandbox/dot/4_bind.snaxdfg on snax_alu (base snax_alu, 0 changes): checks passed
-    streamer shell:
-      mul_a        mul.a      reader  4 lanes [4]  temporal_dims 1  fifo_depth 8  addr_depth 8  prio 0
-      mul_b        mul.b      reader  4 lanes [4]  temporal_dims 1  fifo_depth 8  addr_depth 8  prio 0
-      mul_out      mul.out    writer  4 lanes [4]  temporal_dims 1  fifo_depth 8  addr_depth 8  prio 0
-      sum_a        sum.a      reader  4 lanes [4]  temporal_dims 1  fifo_depth 8  addr_depth 8  prio 0
-      sum_out      sum.out    writer  1 lanes [1]  temporal_dims 1  fifo_depth 8  addr_depth 8  prio 0
-    memory plan (residency default, layout contiguous, placement contiguous; 0 changes):
-      A            l2 [2147483648, 2147484160)   l1 [268435456, 268435968) bank 0
-      B            l2 [2147484160, 2147484672)   l1 [268435968, 268436480) bank 0
-      out          l2 [2147484672, 2147484680)   l1 [268436480, 268436488) bank 0
-      tmp0         l1 [268436544, 268437056) bank 8
-    wrote out/design/dot/platform.json
-    wrote out/design/dot/memory.json
-    wrote out/design/dot/design_point.json
+Both exit 1 and write the failure to `flow.log`.
 
-    Pixi task (gen-gvsoc in default): python -m snax_forge.gen out/design/dot/design_point.json
-    [gen.instances] 2 accelerated instances ['mul', 'sum']; the platform has one accelerator slot and the program drives one accelerator (open item 79)
+## 5. The same path by hand
 
-Both exit 1 and write nothing to `out/gvsoc/`.
+The flow's stages are tools of their own. The design point, the generator
+into `out/gvsoc/vecadd/`, then `gvsoc/Makefile` (from pixi or the plain
+container shell: it names the image's tools) for the program and the run:
+
+    pixi run sandbox recipes/vecadd.json
+    pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json
+    pixi run gen-gvsoc out/design/vecadd/design_point.json
+
+    ...
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/main.c
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/manifest.json
+    run: make -C gvsoc run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$ROOT/snax-forge/out/gvsoc/vecadd/snax_alu.hjson" ELF=...
+
+`make -C gvsoc build` builds GVSoC (the flow did already), `make sw` the
+program into `out/snax-gvsoc/sw/vecadd/`, and `make run` runs it:
+
+    make -C gvsoc sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
+    make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd \
+        GVRUN_ARGS="--param hjson=$PWD/out/gvsoc/vecadd/snax_alu.hjson" \
+        ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
+
+    ...
+    Warning: installed platform tree $ROOT/snax-forge/out/snax-gvsoc/install/lib/libplatform_tree_snax_hjson.so does not match the live system tree, falling back to the JSON config path (rebuild the target to regenerate the tree).
+    forge cycles: 226
+    forge data: 0 errors (64 words)
+    forge counter add_acc: 19
+    forge errors: 0
+    make: Leaving directory '$ROOT/snax-forge/gvsoc'
+
+The warning (also in the flow's `run/stderr.txt`) is expected: `make build`
+made `snax_hjson`'s platform tree from its default cluster file, with
+snax_cluster's ALU in the slot; this cluster file puts the generated
+accelerator there, so gvrun builds the system from its JSON configuration
+instead, on the same installed components. `GVRUN_ARGS` takes gvrun's own
+options too, such as `--trace=snax_acc0/unit` for the unit's trace.

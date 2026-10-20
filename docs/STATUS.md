@@ -22,7 +22,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | Flow | `snax_forge/flow/` | `tests/flow/` | |
 | Viewers | `snax_forge/viz/` | `tests/viz/` | |
 | Reports | `snax_forge/report/` | `tests/report/` | |
-| Examples | `examples/` | `tests/flow/test_loop1.py`, `tests/flow/test_dot_example.py` | |
+| Examples | `examples/` | `tests/flow/test_loop1.py` (skipped until FLOW3 round 3), `tests/flow/test_dot_example.py` (skipped while dot is parked) | |
 | Chisel blocks | `hw/chisel/` | `hw/chisel/src/test/` | |
 | SNAX-GVSoC | the submodule `gvsoc/snax-gvsoc` (its own KULeuven-MICAS repository) | in that repository (`make regress`) | its `forge/` fixtures |
 | SNAX-GVSoC from snax-forge | `gvsoc/Makefile` | | |
@@ -69,14 +69,13 @@ its tasks SG0 to SG8 and CI1 are in snax-gvsoc's `docs/plans/`.
 | GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (the hjson files since LNK2a, D134; the manifest) and the two headers; fixtures in snax-gvsoc `forge/<design>/`, run by hand-written programs until GEN2a (`forge-reduce` stays for T < n); `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `done` |
 | LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119, D134). Round 1 in snax-gvsoc: the reader, the generic target `snax_hjson`, forge/'s fixtures as hjson by hand; round 2 here: the platform's source hjson and slot, the writer of three hjson files (cluster, streamer, accelerator) and the schemas, forge/'s fixtures from it. Steps and findings in snax-gvsoc `LNK2a.md` | GEN3 | GEN3's runs on the read target | done |
 | GEN2a | A. The program for single-accelerator designs: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking. Several accelerators on one core are not modelled (open item 79); dot, mul and accumulate driven by one core, is M13's composite (D112). Round 1: the datagen, the C backend, a generic app on snax-gvsoc's fixtures (snax-gvsoc `GEN2a.md`); round 2: the adder tree | LNK2a | `vecadd`, `vecmul`, `vsum`, and `vsum` on the adder tree at W = 4 check themselves on SNAX-GVSoC | `done` |
-| FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `vsum` flows give checked runs; the viewer and the reports open them | todo |
+| FLOW3 | A. The flow ends in a SNAX-GVSoC run (D136, D137). Round 1, one PR: **1a** the flow on SNAX-GVSoC: `gvsoc/Makefile` names the image's tools so the flow calls make from pixi, `forge_check()` and the program's window in place of the marks (D135), the stages lower, gen, build, sw, gvsoc and check, `run.json`, a CI job `gvsoc`; **1b** the events (D137): an `events` trace per SNAX component in snax-gvsoc, the converter into C§7, the levels `task` and `beat`, the reports again; **1c** RET1, SNAX-MODEL removed: `snax_model/`, `scenarios/`, their tests, the command list (D45), C§2–C§8, the model entries of DECISIONS (to Retired). What the C backend (`lower/c.py`, D135) takes from them stays or moves first: its waits on SNAX components are `placed_waits` (`lower/commands.py`, the command list's wait placement, D64) on the derived cluster file (`lower/cluster.py`, SNAX-MODEL's `ClusterConfig`: which streamers attach to the accelerator and which one writes), which also checks each task's values through the model's register adapters (`c.tasks`); `derive.py` builds the task list on the same cluster file. RET1 moves the config types that the design step (`design/platform.py`, `hjson_platform.py`, `streamers.py`, `check.py`), `brm/instance.py`, the reports (`report/design.py`, `files.py`) and the viewers (`viz/api.py`, `memory.py`, `movement.py`) import from SNAX-MODEL to their users before deleting `snax_model/`. Round 2: data values on beat events and the push event (open items 23, 25), the level `finegrained` and the VCD dump, the memory and movement views. Round 3: the schedule inside the window, with core lanes and folded stretches (D57), and `examples/loop1/` again. Steps in snax-gvsoc `FLOW3.md` | GEN2a | 1a: `pixi run flow` on `vecadd` and `vsum` on `platforms/snax_alu.json` ends in a checked SNAX-GVSoC run (passed, exit 0), in the container and in CI's `gvsoc` job; 1b: the reports open those runs; 1c: `pixi run test` passes without SNAX-MODEL; round 3: the viewer opens them | `wip` |
 | GEN1 | B. The Chisel datapath from the binding through `Emit` (D91), the `ctrl` adapter and the generated shell wrapper (D130) | GEN3 | Elaborates for `elementwise_add` and `accumulate` | todo |
 | LNK2b | B. The bundle for snax_cluster: the hjson, a `Bender.yml`, the changes snax_cluster needs (open item 51) | GEN1, LNK2a | snax_cluster builds from it with only the listed changes | todo |
 | GEN2b | B. GEN2a's ELF on snax_cluster's RTL, compared as D123 does | LNK2b, GEN2a | Deviation explained per phase | todo |
-| RET1 | C. SNAX-MODEL removed: `snax_model/`, `scenarios/`, their tests, the command list (D45), C§2–C§8, the model entries of DECISIONS (to Retired). What the C backend (`lower/c.py`, D135) takes from them stays or moves first: its waits on SNAX components are `placed_waits` (`lower/commands.py`, the command list's wait placement, D64) on the derived cluster file (`lower/cluster.py`, SNAX-MODEL's `ClusterConfig`: which streamers attach to the accelerator and which one writes), which also checks each task's values through the model's register adapters (`c.tasks`); `derive.py` builds the task list on the same cluster file. RET1 moves the config types that the design step (`design/platform.py`, `hjson_platform.py`, `streamers.py`, `check.py`), `brm/instance.py`, the reports (`report/design.py`, `files.py`) and the viewers (`viz/api.py`, `memory.py`, `movement.py`) import from SNAX-MODEL to their users before deleting `snax_model/` | FLOW3 | `pixi run test` passes without it | todo |
 | LNK3 | After M13. The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2b | Deviation explained per phase | todo |
 
-After RET1, a housekeeping pass and the single generator (open item 68).
+After FLOW3, a housekeeping pass and the single generator (open item 68).
 
 ## Later Milestones
 
@@ -86,7 +85,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 |---|---|---|
 | P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step (BASE1, after the SG series, once the snax-forge flow runs end to end again); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
 | M7 | KER0 (`done`), ND1, FE1a, FE1b, FE1c, PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 (D113). KER0 stages every target kernel in `kernels/`, not linked to the flow, with `kernels/README.md` and `pixi run kernels`. ND1 first: rank-free unit dataflow, map tagging, N-D fills, the streamer as an input of its own (open items 45, 46, 48, 78). FE1a is tier A, with LOW4 in it (mvt's in-place update, open item 47; gesummv's scalars); FE1b tier B; FE1c tier C; PACK1 tier P (open items 20 and 21; the reference executor accumulates as the hardware does; requantization); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
-| M13 | CMP0–CMP4 | One recipe step binds a connected group of tasklets to a chain of unit BRMs as one accelerator, FIFOs inside, streamers outside (D112): the BRM format, the model, the sandbox, the lowering, then composed `dot`, mat-vec and mat-mat against E2E2's chain through L1. That chain on SNAX-GVSoC needs several accelerators on one core (open item 79); M13 decides its baseline |
+| M13 | CMP0–CMP4 | dot is parked until M13: `recipes/dot.json` and `examples/dot/` are kept, out of the tests since FLOW3 (two accelerators, `gen.instances`). One recipe step binds a connected group of tasklets to a chain of unit BRMs as one accelerator, FIFOs inside, streamers outside (D112): the BRM format, the model, the sandbox, the lowering, then composed `dot`, mat-vec and mat-mat against E2E2's chain through L1. That chain on SNAX-GVSoC needs several accelerators on one core (open item 79); M13 decides its baseline |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
 | M11 | LAY1–LAY3 | conv2d tiled on a MAC-array BRM; softmax and attention with several BRMs; HDC bind, bundle and similarity |
@@ -100,9 +99,13 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 M16 is done (D123). In M14, LNK1, GEN3, LNK2a and GEN2a are done: a design
 point generates its three hjson files, headers, `data.h` and `main.c`, and
-vecadd, vecmul, vsum and vsum_tree check themselves on SNAX-GVSoC
-(`docs/RUN.md`); KER0 (M7) staged the target kernels. Next is FLOW3: the
-flow ends in a SNAX-GVSoC run.
+vecadd, vecmul, vsum and vsum_tree check themselves on SNAX-GVSoC; KER0
+(M7) staged the target kernels. FLOW3 is under way: round 1a put the flow
+on SNAX-GVSoC (D136, `docs/RUN.md`; tag `flow3-r1a`): vecadd and vsum end
+in a checked run in the container, and CI's `gvsoc` job, rehearsed on a
+fresh clone, still has to run on GitHub (snax-gvsoc `FLOW3.md`). Next, 1b
+brings the events and the reports back (D137), 1c removes SNAX-MODEL
+(RET1); then rounds 2 and 3, then GEN1.
 
 ## Open Items
 
@@ -114,8 +117,9 @@ FLOW3). Closed in SG3: 59 (the streamer's cycle classes and queue counts)
 and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D123).
 Closed in SG6: 62 (D120). Closed in SG7: 58 (the cores, AXI and the DMA in
 the SNAX crossbar, D122). Closed in GEN3's plan: 64 (D129). Closed in
-LNK2a: 77 (the streamer lowered per design point, D134).
-Next free number: 82.
+LNK2a: 77 (the streamer lowered per design point, D134). Closed in
+FLOW3: 56 (D136), 57 and 60 (D137).
+Next free number: 83.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -135,10 +139,10 @@ Next free number: 82.
     The Accumulator's tree zero-extends its lanes (`UInt.pad`), so PACK1
     makes it sign-extend before int8 lanes feed an int32 accumulator.
 23. Data values on beat-level events, so the cluster view can show them.
-    Decided with FLOW3's converter, together with open item 25.
+    Decided in FLOW3 round 2, together with open item 25.
 25. No trace event for an accelerator's push into its output FIFO, so a push
-    and a pop in one cycle show no arrow in the cluster view. Decided with
-    FLOW3, together with open item 23.
+    and a pop in one cycle show no arrow in the cluster view. Decided in
+    FLOW3 round 2, together with open item 23.
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources instead of by
     hand. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel`
@@ -201,18 +205,6 @@ Next free number: 82.
 54. Which kernels take PolyBench's SMALL in a 128 KiB L1, decided in FE1a;
     the tolerance of the NumPy check for float sums waits for the float pass
     (D113).
-56. `gvrun` ends in `exec python3 -m gvrun`; inside a pixi task `python3` is
-    pixi's Python, without GVSoC's packages (`/opt/venv` in the image). How
-    the flow calls `gvrun` is decided in FLOW3.
-57. SNAX-GVSoC's components trace for people (`vp::Trace` text). The views
-    and reports need SNAX-MODEL's events (C§7: task and beat levels, the
-    source and window filters of D49, a `fifo` event at the first cycle its
-    count holds) and its profile counters written at the end (D38). A
-    shared event writer in snax-gvsoc that writes them would leave FLOW3's
-    converter almost nothing to do. Decided with FLOW3.
-60. `cmd` and `poll` events with the pc, and the controller's cycle
-    classes (`command`, `wait`), from the Snitch core's SNAX CSR path (an
-    upstream file in snax-gvsoc). Decided with FLOW3.
 63. snax_alu's start and busy rules, and the snax_cluster changes they would
     need (`snax_alu_csr.sv`, the ReqRspManager's `ready`): the ALU never
     holds a start, also while busy, keeps `len_counter` across a start, lets
@@ -305,6 +297,10 @@ Next free number: 82.
     splits i into r and k, both temporal, ND1's split-and-tag transform
     (open item 46). `forge-reduce` retires once ND1 or tier A gives a real
     T < n. Revisited at ND1.
+82. SNAX-GVSoC dumps the output regions at exit (the manifest names them),
+    so the program can drop its check code and the flow compares them with
+    the reference itself; until then the check is the program's own
+    (D136).
 
 ## Sync Reminders
 

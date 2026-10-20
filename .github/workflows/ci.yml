@@ -105,3 +105,83 @@ jobs:
           test -f out/hw/Accumulator.sv
           test -f out/hw/ElementwiseLoop_w32_t32_sel8.sv
           test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
+
+  # The flow on SNAX-GVSoC (D136): GVSoC built from the submodule, then
+  # `pixi run flow` on vecadd and vsum and the tests marked `gvsoc`. The only
+  # job that fetches the submodule (D128); snax-gvsoc's own CI never needs
+  # snax-forge.
+  gvsoc:
+    name: Flow on SNAX-GVSoC
+    # Only hosts Docker and Node; pinned as snax-gvsoc's CI is.
+    runs-on: ubuntu-24.04
+    # A cold GVSoC build (no ccache) takes most of it; snax-gvsoc's job (build
+    # and regress) fits in 30.
+    timeout-minutes: 45
+    # Public image with GVSoC's build tools, snax_cluster's toolchain and pixi (D118).
+    container: ghcr.io/kuleuven-micas/snax-forge:main
+    defaults:
+      run:
+        shell: bash
+    steps:
+      # gvsoc/snax-gvsoc, the only submodule, at the pinned commit, shallow.
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 1
+
+      # ccache for GVSoC's C++ build, as snax-gvsoc's CI: $GITHUB_WORKSPACE is
+      # the container's path; CMake takes the launchers from the environment.
+      - name: ccache environment
+        run: |
+          echo "CCACHE_DIR=$GITHUB_WORKSPACE/.ccache" >> "$GITHUB_ENV"
+          echo "CCACHE_BASEDIR=$GITHUB_WORKSPACE" >> "$GITHUB_ENV"
+          echo "CCACHE_MAXSIZE=500M" >> "$GITHUB_ENV"
+          echo "CMAKE_C_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+          echo "CMAKE_CXX_COMPILER_LAUNCHER=ccache" >> "$GITHUB_ENV"
+
+      # The latest saved ccache of this job, from any branch this run may read.
+      - name: Restore ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: ccache-gvsoc-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: ccache-gvsoc-
+
+      # GVSoC for snax-gvsoc's SNAX_TARGETS into out/snax-gvsoc/, then ccache's hit rate.
+      - name: Build GVSoC
+        id: build
+        run: |
+          make -C gvsoc build CMAKE_FLAGS=-j$(nproc)
+          ccache -s
+
+      # The image's pixi; pixi.lock as checked in.
+      - name: pixi environment
+        run: pixi install -e ci
+
+      - name: Flow on vecadd
+        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_alu.json
+
+      - name: Flow on vsum
+        run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_alu.json
+
+      - name: Tests marked gvsoc
+        run: pixi run -e ci pytest -q -m gvsoc
+
+      # Each flow's log, make output and run, when a step failed.
+      - name: Upload flow logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: flow-logs
+          path: |
+            out/flow/*/*.log
+            out/flow/*/run/*.txt
+          if-no-files-found: ignore
+
+      # Saved on every run with a build, PRs included, as snax-gvsoc's CI.
+      - name: Save ccache
+        if: always() && steps.build.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: ccache-gvsoc-${{ github.run_id }}-${{ github.run_attempt }}

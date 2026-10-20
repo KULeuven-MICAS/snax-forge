@@ -26,7 +26,8 @@ from tests.design.helpers import REPO, SNAX_ALU, chained, graph_dict
 from .helpers import HJSON, SOURCE, SUB, bound_vecmul, bound_vsum, point, snax_cfg, snax_streamer
 
 needs_submodule = pytest.mark.skipif(
-    not HJSON.exists(), reason="the snax-gvsoc submodule is not checked out (CI never fetches it)"
+    not HJSON.exists(),
+    reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
 IMPL = "chisel_tiled_spatial"
 FILES = ["snax_alu.hjson", "snax_alu_streamer.hjson", "snax_alu_acc.hjson"]

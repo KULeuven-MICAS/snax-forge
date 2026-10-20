@@ -7,7 +7,7 @@ another W and implementation), on
 ``platforms/snax_alu.json`` (or a given platform), in a folder that stands
 for snax-forge's root: the platform's source hjson is copied into its
 ``platforms/``. The snax-gvsoc submodule (``SUB``) is read only where it is
-checked out (CI never fetches it, D128); ``snax_cfg`` imports its reader.
+checked out (only CI's gvsoc job fetches it, D128); ``snax_cfg`` imports its reader.
 """
 
 from __future__ import annotations

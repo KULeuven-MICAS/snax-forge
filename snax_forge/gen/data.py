@@ -84,11 +84,12 @@ def moved(point: DesignPoint) -> list[str]:
     return [c for c in point.graph.containers if {"l1", "l2"} <= set(lays.get(c, {}))]
 
 
-def arrays(point: DesignPoint, seed: int = 0) -> list[Array]:
-    """data.h's arrays; see the module doc."""
+def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None) -> list[Array]:
+    """data.h's arrays; see the module doc. ``kernel`` names the kernel when the graph's name
+    does not (the flow's ``--kernel``)."""
     graph = point.graph
     try:
-        spec = kernel_spec(graph.name, "the graph's name")
+        spec = kernel_spec(kernel or graph.name, "--kernel" if kernel else "the graph's name")
         inputs = kernel_inputs(spec, graph, seed)
     except FlowError as e:
         raise GenError("gen.inputs", str(e)) from None

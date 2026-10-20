@@ -488,13 +488,18 @@ mean and a histogram per lane, D40); a DMA gives cycles per class, beats and
 bytes each way and the peak buffer; `banks` gives per-bank reads, writes,
 grants, conflicts, stalls and cycles blocked by a wider grant; `ports` gives
 per xbar port its owner, width, grants, stalls and the stalls caused by a
-wider grant. `functional_check` is null for a scenario run on its own; a run
-of the flow (E2E1, D90, `pixi run flow`; from a recipe or a bound graph,
-D108) fills it: `kernel`, `seed`,
-`symbols`, `passed`, and per `inout` container of the kernel the `memory` it
-was read back from (L2 when it has an L2 layout), its `elements`, whether it
-equals the kernel's `reference` and the reference executor (`ref1`) on the
-same inputs, and the number of `mismatches` against the reference.
+wider grant. `functional_check` is null for a scenario run on its own.
+
+**A flow run** (D90, D136, `pixi run flow`; from a recipe or a bound graph,
+D108) is a SNAX-GVSoC run of the generated program, and its check is the
+program's own (C§16's `main.c`). `total_cycles` is the program's window:
+`mcycle` at `forge_check()`'s entry minus `mcycle` at main's entry, the
+`forge cycles:` line. `functional_check` holds the `kernel`, `seed` and
+`symbols` of the run, then what the program printed and returned:
+`exit_code` (the run's), `data_errors` and `words` (the `forge data:` line,
+every output word against its golden), `tasks` (per accelerator task its
+`counter`, the `forge counter` line, and its `beats`, from the manifest),
+and `passed`, true when the exit code is 0.
 
 Cycle classes, one per cycle per component, in this order:
 
@@ -1221,7 +1226,7 @@ byte-identical files wherever they are written.
 | `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
 | `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h` (`gen/headers.py`) |
 | `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, padded to whole DMA beats as its L2 layout (D105) and aligned to the beat |
-| `main.c` | the program (`lower/c.py`, D135): the task list on snRuntime, one function per core with each step on its component's core, a mark `forge_<task>_<event>` per task event, then the self-check: the outputs against their goldens and each accelerator task's counter against its beats, printed and returned |
+| `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens (`forge data:`), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
 | `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
 
 **The slot.** `snax_tcdm_ports` is the streamer's channels; the source's

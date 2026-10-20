@@ -1,8 +1,9 @@
 # SNAX-GVSoC from snax-forge (D128): builds snax-gvsoc, its programs, and
 # runs gvrun on a target of the install.
 #
-# Run it in snax-forge's image, in the plain container shell, not in pixi
-# (pixi's environment sets CC and CXX to conda's gcc), from this folder:
+# Run it in snax-forge's image, from the plain shell or through pixi (`pixi
+# run make -C gvsoc ...`, as the flow does, D136): it names the image's tools
+# below, so both build and run the same. From this folder:
 #
 #     make build                     # GVSoC for TARGETS into out/snax-gvsoc/
 #     make sw APPS=snax-alu          # sw/ and the apps, into $(SNAX_GVSOC)/build/sw/
@@ -22,9 +23,41 @@
 SNAX_GVSOC ?= $(CURDIR)/snax-gvsoc
 SNAX_GVSOC_ABS = $(abspath $(SNAX_GVSOC))
 
+# The image's tools, whatever environment make runs in: GVSoC's Python (with
+# its packages), CMake and the host compilers. pixi's environment sets CC,
+# CXX, their flags and CMAKE_PREFIX_PATH to conda's, puts its own python3,
+# make, ld and as first on PATH, and CMake clears its cache when CC changes.
+# CC and CXX are this file's unless given on the command line (make's own
+# default and the environment's do not count). The image's Python and the
+# host compilers' folder go first on PATH for the recipes; gvrun runs on
+# GVRUN_PYTHON (its last line).
+PYTHON ?= /opt/venv/bin/python3
+CMAKE ?= /usr/bin/cmake
+ifneq ($(origin CC),command line)
+CC = /usr/bin/gcc
+endif
+ifneq ($(origin CXX),command line)
+CXX = /usr/bin/g++
+endif
+GVRUN_PYTHON = $(PYTHON)
+export PYTHON CMAKE CC CXX GVRUN_PYTHON
+export PATH := $(dir $(PYTHON)):$(dir $(CC)):$(PATH)
+
+# What pixi's environment adds for conda's compilers (the diff of `env`
+# between `pixi run` and the plain shell), kept from the sub-makes, CMake
+# and the compilers
+unexport CPP CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CMAKE_ARGS CMAKE_PREFIX_PATH \
+	AR AS LD NM RANLIB STRIP OBJCOPY OBJDUMP READELF ADDR2LINE CXXFILT ELFEDIT \
+	GPROF SIZE STRINGS GCC GXX GCC_AR GCC_NM GCC_RANLIB CC_FOR_BUILD CXX_FOR_BUILD \
+	CPP_FOR_BUILD DEBUG_CFLAGS DEBUG_CXXFLAGS DEBUG_CPPFLAGS LDFLAGS_LD MESON_ARGS \
+	CONDA_BUILD_SYSROOT CONDA_BUILD_CROSS_COMPILATION CONDA_TOOLCHAIN_BUILD \
+	CONDA_TOOLCHAIN_HOST HOST BUILD build_alias host_alias
+
 # GVSoC's build/ and install/ (snax-gvsoc's Makefile puts both under it).
 # CMake refuses a build folder made from another checkout, so `build` keeps
-# the checkout it built in checkout.txt and clears both when it changes.
+# the checkout it built in checkout.txt (its path, then the commit, written
+# once the build passed) and clears both when the path changes. The flow
+# builds again when the path or the commit differs or the tree is dirty.
 GVSOC_WORKDIR ?= $(abspath $(CURDIR)/../out/snax-gvsoc)
 INSTALL = $(GVSOC_WORKDIR)/install
 BUILT_FROM = $(GVSOC_WORKDIR)/checkout.txt
@@ -54,13 +87,14 @@ GVRUN_ARGS ?=
 .PHONY: build sw run
 
 build:
-	@if [ -d $(GVSOC_WORKDIR)/build ] && [ "$$(cat $(BUILT_FROM) 2>/dev/null)" != "$(SNAX_GVSOC_ABS)" ]; then \
+	@if [ -d $(GVSOC_WORKDIR)/build ] && [ "$$(head -n 1 $(BUILT_FROM) 2>/dev/null)" != "$(SNAX_GVSOC_ABS)" ]; then \
 		echo "$(GVSOC_WORKDIR) was built from another checkout: clearing it"; \
 		rm -rf $(GVSOC_WORKDIR)/build $(GVSOC_WORKDIR)/install; \
 	fi
 	mkdir -p $(GVSOC_WORKDIR)
 	echo "$(SNAX_GVSOC_ABS)" > $(BUILT_FROM)
 	$(MAKE) -C $(SNAX_GVSOC_ABS) build GVSOC_WORKDIR=$(GVSOC_WORKDIR) TARGETS="$(TARGETS)"
+	git -c safe.directory='*' -C $(SNAX_GVSOC_ABS) rev-parse HEAD >> $(BUILT_FROM)
 
 sw:
 	$(MAKE) -C $(SNAX_GVSOC_ABS) sw

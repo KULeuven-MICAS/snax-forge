@@ -9,7 +9,7 @@ copied into its ``platforms/``), so the design point is
 ``out/design/<design>/design_point.json`` and every header comment names it
 as the fixture's do. The generated folder must equal the fixture byte for
 byte, file list included. Skipped where the submodule is not checked out
-(CI never fetches it).
+(only CI's gvsoc job fetches it).
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ DESIGNS = ["vecadd", "vecmul", "vsum", "vsum_tree"]
 
 pytestmark = pytest.mark.skipif(
     not (SUB / "snax").is_dir(),
-    reason="the snax-gvsoc submodule is not checked out (CI never fetches it)",
+    reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
 
 

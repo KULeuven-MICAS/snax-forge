@@ -20,7 +20,7 @@ from .helpers import SOURCE, SUB, bound_vsum, point
 CLUSTER_SCHEMA = SUB / "sw" / "docs" / "schema" / "snitch_cluster.schema.json"
 needs_cluster_schema = pytest.mark.skipif(
     not CLUSTER_SCHEMA.is_file(),
-    reason="the snax-gvsoc submodule is not checked out (CI never fetches it)",
+    reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
 
 

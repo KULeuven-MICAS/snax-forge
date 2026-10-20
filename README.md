@@ -6,8 +6,9 @@ kernel and a model of your accelerator (a BRM); SNAX-FORGE imports the kernel
 into its own dataflow graph, maps it onto the cluster by a recipe you edit,
 runs it on a model of the cluster, and shows where the cycles go. The model
 is SNAX-GVSoC, a GVSoC model in which a Snitch core runs the real program,
-checked against snax_cluster's RTL; until FLOW3 the flow still runs on
-SNAX-MODEL, the cycle-level Python model it replaces. Humans and LLMs close
+checked against snax_cluster's RTL; the flow runs on it since FLOW3, and
+SNAX-MODEL, the cycle-level Python model it replaces, goes in FLOW3 round
+1c. Humans and LLMs close
 the loop by editing the recipe or the platform and running again.
 
 Where to read more:
@@ -21,7 +22,7 @@ Where to read more:
 | `docs/PAPER.md` | the paper plan |
 | `docs/RUN.md` | a design point from recipe to a run on SNAX-GVSoC, each command with its output |
 | `kernels/README.md` | the target kernels, staged |
-| `examples/` | walk-throughs of the flow (on SNAX-MODEL) |
+| `examples/` | walk-throughs of the flow (on SNAX-MODEL, out of date until FLOW3 round 3) |
 | `hw/chisel/README.md` | the Chisel accelerator blocks |
 
 # Setup
@@ -65,56 +66,43 @@ cd snax-forge && pixi install && pixi run check
   pixi version (0.41.4, as CI).
 - Adding `-v ~/.cache/rattler:/root/.cache/rattler` keeps pixi's downloads
   across containers.
-- Build GVSoC in the plain container shell, not in `pixi shell`: this
-  environment sets `CC` and `CXX` to conda's gcc.
 
 # 1. The whole path
 
-One command takes a kernel to a checked model run:
+One command takes a kernel to a checked run on SNAX-GVSoC, in snax-forge's
+image (D118), with the snax-gvsoc submodule checked out:
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/small16.json
+pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json
 ```
 
 ```
-flow vecadd (vecadd: W=4; N=64) on small16 -> out/flow/vecadd/
+flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
   sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-  design    21 checks passed; platform base small16, 0 changes; memory contiguous, 0 changes -> design/
-  lower     cluster.json (7 components), tasks.json (12 steps, 57 commands)
-  scenario  scenario.json, inputs A.npy, B.npy, C.npy (make_inputs, seed 0)
-  run       85 cycles -> run/  (pixi run view out/flow/vecadd/run)
-  check     C (64 elements, from l2) equals the vecadd reference and REF1
-  report    report/design.md, report/run.md, flow.log
+  design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+  lower     tasks.json (12 steps)
+  gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
+  build     up to date (snax-gvsoc 69b9569f)
+  sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
+  gvsoc     snax_hjson, exit 0 -> run/
+  check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
+  report    none in FLOW3 round 1a; the reports come back in FLOW3 round 1b
 ```
 
 It imports the kernel, applies the recipe, pairs the result with the
-platform, derives the cluster file and the task list, runs the model and
-checks the output against the kernel's own reference and the reference
-executor, then writes a design report and a run report (`report/`) and
-`flow.log`, which holds what it printed, the design checks that ran and how
-long each stage took.
-Everything lands in `out/flow/<name>/`, traced at `task` level
-(`--trace beat` for the data movement, `--trace off` for none). Change a
-design point with `--set`; each one is added to the name, so the runs sit side
-by side:
+platform, derives the task list, generates the design point's hjson files,
+headers, data (the reference executor's goldens) and program, builds
+SNAX-GVSoC when needed (the first time, a few minutes), builds the program
+and runs it on `snax_hjson`; the program checks itself and prints its cycles
+from main's entry to its check (D136, `docs/RUN.md`). Everything lands in
+`out/flow/<name>/`, with `flow.log`, which holds what it printed, the design
+checks that ran and how long each stage took. Change a design point with
+`--set`; each one is added to the name, so the runs sit side by side:
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/small16.json --set W=8                  # out/flow/vecadd_W8: 73 cycles
-pixi run flow recipes/vecadd.json --platform platforms/small16.json --set platform.l1.n_banks=32 # out/flow/vecadd_l1.n_banks32
-pixi run flow recipes/vecadd.json --platform platforms/small16.json --set memory.B.l1.base=576  # out/flow/vecadd_B.l1.base576: b in other banks, 77 cycles
-pixi run view out/flow/vecadd/run out/flow/vecadd_B.l1.base576/run                            # then open http://127.0.0.1:8765/
-pixi run report out/flow/vecadd                                                                # writes report/ again, e.g. after a code change
-```
-
-`dot` runs the same way, as a multiplier chained into an accumulator through
-L1 (`recipes/dot.json`: the accumulator as a W-lane adder tree;
-`recipes/dot_serial.json`: the one-lane Chisel Accumulator). `run.md` lists
-the chaining wait between the two:
-
-```bash
-pixi run flow recipes/dot.json --platform platforms/small16.json               # out/flow/dot: 99 cycles
-pixi run flow recipes/dot.json --platform platforms/small16.json --set W=8     # out/flow/dot_W8: 87 cycles
-pixi run flow recipes/dot_serial.json --platform platforms/small16.json        # out/flow/dot_serial: 147 cycles
+pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set W=8                                    # out/flow/vecadd_W8: 220 cycles, counter 11
+pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set platform.streamers.default.fifo_depth=2 # 232 cycles, counter 26
+pixi run flow recipes/vsum.json --platform platforms/snax_alu.json                                                # out/flow/vsum: 255 cycles
 ```
 
 The flow also starts from a bound graph: a file ending in `.snaxdfg` (the
@@ -124,16 +112,16 @@ the recipe and goes straight to the design step. The kernel is the graph's
 and `memory.` settings apply:
 
 ```bash
-pixi run sandbox recipes/dot.json                                                   # out/sandbox/dot/4_bind.snaxdfg
-pixi run flow out/sandbox/dot/4_bind.snaxdfg --platform platforms/small16.json     # out/flow/dot: 99 cycles, as the recipe
+pixi run sandbox recipes/vecadd.json                                                 # out/sandbox/vecadd/2_bind.snaxdfg
+pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json   # out/flow/vecadd: 226 cycles, as the recipe
 ```
 
 A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
-the design step. `examples/loop1/README.md` walks through one turn of the loop
-this way: reading why the default run takes 85 cycles, predicting what moving
-B does, and checking it.
-`examples/dot/README.md` walks dot from its graph to two runs: every recipe
-step in the DFG viewer, then the adder tree against the serial accumulator.
+the design step. The platform needs a source hjson (`platforms/snax_alu.json`
+has one; `small16` does not, `gen.source`), and the design point one
+accelerator (`dot` binds two, `gen.instances`: parked until M13).
+`examples/loop1/` walks the SNAX-MODEL flow and is out of date until FLOW3
+round 3; `examples/dot/` is parked with dot.
 
 # 2. Step by step
 
@@ -153,7 +141,7 @@ The flow runs these tools in turn; each also runs on its own.
 | Platform from snax_cluster | `pixi run design from-hjson platforms/snax_alu.hjson snax_alu --force` | `platforms/snax_alu.json` from its source, a copy of snax_cluster's cluster file (LNK1) |
 | Cluster file | `pixi run lower cluster out/design/vecadd/design_point.json` | `cluster.json` beside the point |
 | Task list | `pixi run lower tasks out/design/vecadd/design_point.json` | `tasks.json` beside the point |
-| The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | `out/flow/vecadd/`: design point, cluster file, task list, scenario, checked run, reports |
+| The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json` | `out/flow/vecadd/`: design point, task list, generated folder, program, checked SNAX-GVSoC run |
 
 The design step names every problem with its fix, and writes working copies
 of the platform and the memory plan (`platform.json`, `memory.json`) that
@@ -304,9 +292,9 @@ See `hw/chisel/README.md`.
 # 5. SNAX-GVSoC from snax-forge
 
 [snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
-`gvsoc/snax-gvsoc` (D128); CI never fetches it. `gvsoc/Makefile` runs in the container's plain shell, not through pixi: pixi's
-Python lacks GVSoC's packages (gvrun stops at `No module named 'rich'`) and
-its environment sets `CC` and `CXX` to conda's gcc.
+`gvsoc/snax-gvsoc` (D128); CI fetches it in one job (`gvsoc`). `gvsoc/Makefile` names the image's
+Python, CMake and host compilers, so it runs the same from the container's plain shell and through
+pixi (`pixi run make -C gvsoc ...`, as the flow does).
 
 ```bash
 git submodule update --init gvsoc/snax-gvsoc

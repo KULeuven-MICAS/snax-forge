@@ -30,8 +30,9 @@ The user describes the accelerator; the platform around it is the model's
 (D51). Model cycles are trusted as far as the comparison with snax_cluster
 RTL shows (section 7).
 
-Until SNAX-GVSoC runs the flow, the runs happen in SNAX-MODEL, a pure-Python
-cluster model (section 5.7), which is then removed (RET1).
+The flow's runs happen in SNAX-GVSoC since FLOW3 (D136). SNAX-MODEL, the
+pure-Python cluster model they happened in before (section 5.7), is removed
+in FLOW3 round 1c (RET1).
 
 ## 2. Positioning
 
@@ -105,8 +106,8 @@ flowchart LR
 **Inner loop:** kernel → importer → SNAX-DFG → SNAX-SANDBOX (recipe) →
 design step (platform) → design point → SNAX-LOWER → a run → reports and
 views → the thinker edits the recipe or the platform. `pixi run flow` runs it
-once (section 5.9). Today the run is SNAX-MODEL's; FLOW3 moves it to
-SNAX-GVSoC **[PLANNED, M14]**.
+once (section 5.9). The run is SNAX-GVSoC's (FLOW3, D136); the profile and
+trace from its events come with FLOW3 round 1b **[PLANNED, M14]**.
 
 **SNAX link:** the same design point gives the bundle snax_cluster builds and
 runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
@@ -122,8 +123,8 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | SNAX-SANDBOX | `sandbox/` | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step | built |
 | Design step | `design/` | bound graph, platform | design point | built |
 | SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program, `main.c` | built (C program GEN2a, D135) |
-| SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | hjson, program | output, counters, unit trace; profile and trace with FLOW3 | built (M16) |
-| SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | until RET1 |
+| SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | hjson, program | the program's check and window; profile and trace with FLOW3 round 1b (D137) | built (M16) |
+| SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | frozen, not run by the flow; removed in FLOW3 round 1c (RET1) |
 | Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, `data.h`, `main.c`, manifest | GEN3, LNK2a, GEN2a (D134, D135) |
 | HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
 | Flow | `flow/` | recipe or bound graph, platform | all of the above, checked | built |
@@ -214,8 +215,10 @@ Turns a design point into what a run needs, and decides nothing.
   line: direct CSR writes on the generated headers' names, the DMA through
   snRuntime, the lowering's waits on SNAX components as polls and the
   DMA's on dependences only (its transfers queue), a hardware barrier where
-  another core goes on, a cycle mark per task event, and a self-check
-  against `data.h`'s goldens (`gen/data.py`). The generator writes it with
+  another core goes on, each accelerator task's counter stored after its
+  wait, and `forge_check()`: the self-check against `data.h`'s goldens
+  (`gen/data.py`), whose entry ends the program's window, which main's
+  entry starts (one `mcycle` read at each, no task marks). The generator writes it with
   the hjson files; the same ELF is to run on SNAX-GVSoC and on snax_cluster
   RTL (GEN2b). One accelerator per program (open item 79).
 
@@ -251,22 +254,25 @@ it (D128). It holds:
   every program finishes and `dma-timing` that the DMA's counters stay the
   RTL's (SG5, SG6, SG7, D123);
 - **trace events** for the views (grants, stalls, responses, firings, FIFO
-  counts), from SNAX's components and from GVSoC's own L1 and interconnect,
-  turned into SNAX-FORGE's profile and trace by a converter (FLOW3); today
-  they are text traces for people (open item 57).
+  counts), from SNAX's components and from GVSoC's own L1 and interconnect:
+  an `events` trace per SNAX component in snax-gvsoc's own grammar, which
+  snax-forge's converter renames into its profile and trace, never
+  recounting (D137, FLOW3 round 1b); today they are text traces for people.
 
 What it models is what snax_cluster's RTL does; where the two differ, the
 RTL wins. Memory-mapped register writes may replace the CSR path later; the
 register blocks then sit on the interconnect, with no new core patch.
 
-### 5.7 SNAX-MODEL (until RET1)
+### 5.7 The model: SNAX-GVSoC (SNAX-MODEL until RET1)
 
-The pure-Python, event-driven cluster model that the flow runs today: banks,
-interconnect, streamers, accelerators, DMA and L2, a register interface and
-a controller instead of a core (D6, D10, D29–D44). Its contracts are C§2–C§8
-and its timing is in the module docstrings. It is frozen: nothing new is
-built on it, and RET1 removes it with its scenarios once FLOW3 runs vecadd
-and dot on SNAX-GVSoC.
+The model is SNAX-GVSoC (section 5.6): the flow builds the generated
+program and runs it there (D136). SNAX-MODEL, the pure-Python,
+event-driven cluster model the flow ran before (banks, interconnect,
+streamers, accelerators, DMA and L2, a register interface and a controller
+instead of a core; D6, D10, D29–D44), is frozen and no longer run by the
+flow. Its contracts are C§2–C§8 and its timing is in the module
+docstrings; FLOW3 round 1c (RET1) removes it with its scenarios, keeping
+what SNAX-LOWER takes from it.
 
 ### 5.8 SNAX link
 
@@ -297,8 +303,10 @@ latency and II.
 utilisation and firings per accelerator, grants, conflicts and stalls per
 bank and port, FIFO occupancy, DMA traffic, control overhead apart from
 waiting, and the functional check. The trace is an event log at level
-`off`, `task` or `beat`. Under SNAX-GVSoC both come from the converter in the
-same form, so the viewers and reports keep working (FLOW3).
+`off`, `task` or `beat`. Under SNAX-GVSoC a flow run gives the program's
+check and its window (total cycles) today; the rest comes from the converter
+in the same form (D137, FLOW3 round 1b), so the viewers and reports keep
+working.
 
 **Viewers** (D55, `pixi run view DIR ...`, `pixi run view-dfg FILE ...`): a
 local server on 127.0.0.1 and a static page, stdlib only, offline. Run views
@@ -310,12 +318,14 @@ movement (D97). The DFG viewer (D81) shows graphs side by side.
 `run.md` (where the cycles went), Markdown from dataclasses, for humans and
 LLMs alike.
 
-**The flow** (D90, D108): `pixi run flow RECIPE --platform P [--set ...]`, or
-from a bound `.snaxdfg`, runs the inner loop once, checks every output
-against the kernel's reference and the reference executor, and writes
-everything to `out/flow/<name>/`, with `report/` and `flow.log`. The manual
-loop is flow, reports and viewer, then a changed `--set`; `examples/loop1/`
-and `examples/dot/` walk it, each number checked by a test (D98).
+**The flow** (D90, D108, D136): `pixi run flow RECIPE --platform P [--set
+...]`, or from a bound `.snaxdfg`, runs the inner loop once on SNAX-GVSoC:
+the design point is generated (hjson, headers, `data.h` with the reference
+executor's goldens, `main.c`), built and run, and the program checks itself;
+everything goes to `out/flow/<name>/`, with `flow.log`. The manual loop is
+flow, reports and viewer, then a changed `--set`; `examples/loop1/` walks
+it, out of date until FLOW3 round 3, and `examples/dot/` is parked until
+M13.
 
 ## 6. Correctness
 
@@ -323,7 +333,7 @@ Three levels, each checked against the one above:
 
 1. **Reference executor:** the workload's golden output, equal to the
    kernel's reference.
-2. **SNAX-GVSoC** (SNAX-MODEL until RET1): the same workload through the
+2. **SNAX-GVSoC**: the same workload through the
    accelerators, streamers and memory; output equal to level 1.
 3. **snax_cluster RTL:** the same program on the real cluster; output equal,
    cycles compared per phase (section 7). Cosim checks one accelerator on its
@@ -350,9 +360,9 @@ Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), and M16,
 SNAX-GVSoC aligned with snax_cluster, the baseline. The order from here
 (D116, `docs/STATUS.md` has the tasks):
 
-1. **M14** (D127): to SNAX-GVSoC first (LNK1, GEN3, LNK2a, GEN2a, FLOW3),
-   then to snax_cluster (GEN1, LNK2b, GEN2b), then clean-up (RET1, a
-   housekeeping pass, one generator).
+1. **M14** (D127): to SNAX-GVSoC first (LNK1, GEN3, LNK2a, GEN2a, FLOW3,
+   whose round 1c is RET1), then to snax_cluster (GEN1, LNK2b, GEN2b), then
+   clean-up (a housekeeping pass, one generator).
 2. **M7 tier A:** 2-D plumbing, int64 mat-vecs (D113, PAPER §6.1).
 3. **M13:** the composed bind, then the composed accelerator in SNAX (LNK3).
 4. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
