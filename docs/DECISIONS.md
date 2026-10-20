@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D136**.
+  number: **D138**.
 
 The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
 as first written until SNAX-MODEL is removed (RET1, D116).
@@ -34,13 +34,13 @@ executor), `sandbox`, `design` (platform, checks, memory plan, design point), `f
 | model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
 | scenario | D41 D42 D65 D67 D83 D95 |
 | lower | D45 D53 D64 D75 D88 D89 D105 D135 |
-| gvsoc | D120 D121 D122 D125 D128 D134 |
+| gvsoc | D120 D121 D122 D125 D128 D134 D137 |
 | brm | D68 D70 D82 D103 D129 D133 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D104 |
 | design | D84–D87 D131 |
-| flow | D90 D108 |
+| flow | D90 D108 D136 |
 | viz | D55 D57 D81 D96 D97 D99 |
 | docs | D26 D46 D117 |
 
@@ -206,7 +206,9 @@ dataclasses, not raw JSON. → `viz/`.
 
 **D57** · viz — The run views: a schedule (per component its classes, tasks and commands over a
 cycle window) with the cluster view under it at the selected cycle, kept in the URL hash; tasks
-are paired once in Python, and one colour means one thing in every view. → `viz/api.py`.
+are paired once in Python, and one colour means one thing in every view. On SNAX-GVSoC the
+schedule covers the program's window only (D135), with a lane per core and folded stretches
+(FLOW3 round 3). → `viz/api.py`.
 
 **D59** · model — An accelerator's `busy` class includes its II gap, so utilisation is the share of
 cycles the datapath is occupied; the profile also counts firings. Amends D35, D38.
@@ -296,8 +298,8 @@ loads and stores from the memory plan, streamer values from memlets checked agai
 nest, and `after` holding data dependences only. → `lower/derive.py`.
 
 **D90** · flow — `pixi run flow` runs the inner loop once, from a recipe to a checked run, and
-decides nothing. Everything goes to a folder named after every `--set`: the run (traced at
-`task`), the reports and `flow.log` with each stage's time. → `flow/run.py`.
+decides nothing. Everything goes to a folder named after every `--set`: the run (on SNAX-GVSoC,
+D136), the reports and `flow.log` with each stage's time. → `flow/run.py`.
 
 **D91** · scope — The old SDFG → descriptor → RTL path is gone; the Chisel blocks and `Emit` are a
 project of their own in `hw/chisel/`.
@@ -423,17 +425,18 @@ that the two still match; the sparse hjson is copied too, its headers checked eq
 (#658, SG8). → snax-gvsoc `sw/README.md`, STATUS (M16, CI1).
 
 **D127** · scope — M14 goes to SNAX-GVSoC first, then to snax_cluster, then clean-up: LNK1, GEN3,
-LNK2a, GEN2a, FLOW3; GEN1, LNK2b, GEN2b; RET1, a housekeeping pass, one generator (open item 68).
-GEN3 models the Chisel blocks before GEN1 generates them, so the model side is tried first.
-→ STATUS (M14).
+LNK2a, GEN2a, FLOW3 (RET1 its round 1c, in round 1's PR); GEN1, LNK2b, GEN2b; a housekeeping
+pass, one generator (open item 68). GEN3 models the Chisel blocks before GEN1 generates them, so
+the model side is tried first. → STATUS (M14).
 
 **D128** · gvsoc — Generated accelerators run on two hand-written generic components in
 snax-gvsoc, `SnaxUnit` (a Chisel block's datapath) and `SnaxShell` (the CSR manager), every number a
 property, so a sweep compiles nothing; snax-forge generates only the hjson files (D134) and the
 headers per design point, which the installed `snax_hjson` reads at run time. Each design point
 snax-gvsoc's regression runs is a fixture there, in `forge/<design>/` (as D126), hjson and
-headers, so neither repo's CI needs the other; snax-gvsoc is a submodule at `gvsoc/`, never fetched
-by CI. → snax-gvsoc `GEN3.md`, `LNK2a.md`, `forge/README.md`.
+headers, so snax-gvsoc's CI never needs snax-forge and forge/'s fixtures stay its anchor;
+snax-gvsoc is a submodule at `gvsoc/`, which snax-forge's CI fetches in one job (`gvsoc`, the flow
+on SNAX-GVSoC, D136). → snax-gvsoc `GEN3.md`, `LNK2a.md`, `forge/README.md`.
 
 **D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it:
 `block`, `args`, `control` (`counted` only: every block counts its firings), `csrs` (one or more
@@ -475,6 +478,19 @@ each task's beats. Retires D132. → `gen/gvsoc.py`, C§16, snax-gvsoc `LNK2a.md
 **D135** · lower — The task list becomes C on snRuntime as SNAX-LOWER's second backend: each step
 on the core that owns its component in the cluster file, D64's waits on SNAX components as polls
 with a hardware barrier where another core goes on, the DMA waited for on dependences only (the
-iDMA queues transfers; SNAX-MODEL's no-start-while-busy rule, D36, stays the model's), a cycle
-mark per task event, a self-check against `data.h`'s goldens. One accelerator per program;
-`signal` waits refused. D45 stays as first written until RET1. → `lower/c.py`, `gen/data.py`, C§16.
+iDMA queues transfers; SNAX-MODEL's no-start-while-busy rule, D36, stays the model's), no task
+marks: one `mcycle` read at main's entry and one at `forge_check()`'s, the self-check against
+`data.h`'s goldens, which bound the program's window. One accelerator per program; `signal` waits
+refused. D45 stays as first written until RET1. → `lower/c.py`, `gen/data.py`, C§16.
+
+**D136** · flow — The flow runs SNAX-GVSoC only, with no backend flag: after design come lower
+(`tasks.json`), gen, build (when needed), sw, gvsoc and check. The check is the program's own (its
+exit code), `total_cycles` the program's window (main's entry to `forge_check()`'s, D135);
+`gvsoc/Makefile` names the image's tools, so the flow calls make from pixi. Trace `off` by default
+until FLOW3 round 1b. Amends D90; closes open item 56. → `flow/run.py`, C§7.
+
+**D137** · gvsoc — Events in two stages: each SNAX component gets an `events` `vp::Trace` in
+snax-gvsoc's own grammar (component path, port, address, cycle; class runs; counters at the end of
+the run), enabled per path; snax-forge's converter renames them into C§7 and never recounts.
+Levels `off`, `task`, `beat`, `finegrained`; VCD only as a gtkwave dump. Closes open items 57 and
+60; 23 and 25 stay for FLOW3 round 2. → STATUS (FLOW3).
