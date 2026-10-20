@@ -105,7 +105,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 | Milestone | Tasks | Content |
 |---|---|---|
 | P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step (BASE1, after the SG series, once the snax-forge flow runs end to end again); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
-| M7 | ND1, FE1a, FE1b, FE1c, PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 (D113). ND1 first: rank-free unit dataflow, map tagging, N-D fills, the streamer as an input of its own (open items 45, 46, 48, 78). FE1a is tier A, with LOW4 in it (mvt's in-place update, open item 47; gesummv's scalars); FE1b tier B; FE1c tier C; PACK1 tier P (open items 20 and 21; the reference executor accumulates as the hardware does; requantization); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
+| M7 | KER0 (`done`), ND1, FE1a, FE1b, FE1c, PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 (D113). KER0 stages every target kernel in `kernels/`, not linked to the flow, with `kernels/README.md` and `pixi run kernels`. ND1 first: rank-free unit dataflow, map tagging, N-D fills, the streamer as an input of its own (open items 45, 46, 48, 78). FE1a is tier A, with LOW4 in it (mvt's in-place update, open item 47; gesummv's scalars); FE1b tier B; FE1c tier C; PACK1 tier P (open items 20 and 21; the reference executor accumulates as the hardware does; requantization); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M13 | CMP0–CMP4 | One recipe step binds a connected group of tasklets to a chain of unit BRMs as one accelerator, FIFOs inside, streamers outside (D112): the BRM format, the model, the sandbox, the lowering, then composed `dot`, mat-vec and mat-mat against E2E2's chain through L1. That chain on SNAX-GVSoC needs several accelerators on one core (open item 79); M13 decides its baseline |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
@@ -209,7 +209,11 @@ through the tree, checked on lanes-4 unit cases (T = n and T < n) by its tb
 and by `AccumulatorRateSpec`; `recipes/vsum_tree.json` (vsum at W = 4)
 generates `forge/vsum_tree/`, which checks itself in `make regress` (0 data
 errors, its counter its run line's) and `test_fixture.py` reproduces with
-the other three. Next is FLOW3.
+the other three. KER0 is done (M7): every target kernel is staged in
+`kernels/` (NPBench's DaCe sources in int64; softmax, mlp, lenet and resnet
+in float32 until their tier), with `kernels/README.md` and `pixi run
+kernels`; not linked to the flow.
+Next is FLOW3.
 
 ## Open Items
 
@@ -239,6 +243,8 @@ Next free number: 82.
     (PACK1).
 21. `elems_per_word > 1` (packed words) has never been moved by streamers,
     accelerators or the DMA. Decided with sub-word packing (PACK1).
+    The Accumulator's tree zero-extends its lanes (`UInt.pad`), so PACK1
+    makes it sign-extend before int8 lanes feed an int32 accumulator.
 23. Data values on beat-level events, so the cluster view can show them.
     Decided with FLOW3's converter, together with open item 25.
 25. No trace event for an accelerator's push into its output FIFO, so a push
