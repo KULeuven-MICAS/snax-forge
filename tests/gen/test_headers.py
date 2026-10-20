@@ -6,6 +6,7 @@ import re
 
 import pytest
 
+from snax_forge.common import generated_header
 from snax_forge.gen import generate
 from snax_forge.gen.headers import define_name, streamer_header
 
@@ -53,7 +54,7 @@ def include(tmp_path_factory):
 def test_the_streamer_header_numbers(include):
     text = (include / "streamer_csr_addr_map.h").read_text()
     assert defines(text) == STREAMER_W4
-    assert "snax-forge's GVSoC generator" in text and "design point" in text
+    assert text.startswith(generated_header("design/vecadd/design_point.json", ""))
 
 
 @pytest.mark.skipif(not CHISEL.exists(), reason="the snax-gvsoc submodule is not checked out")
@@ -66,12 +67,11 @@ def test_the_accelerator_header_numbers(include):
 
 
 @pytest.mark.skipif(not SHELL.exists(), reason="the snax-gvsoc submodule is not checked out")
-def test_the_accelerator_header_has_snax_shells_hand_numbers(include):
-    hand = dict(defines(SHELL.read_text()))
+def test_snax_shell_drives_the_accelerator_header(include):
+    """snax-gvsoc's snax-shell includes vecadd's acc_csr.h: every CSR name it uses is ours."""
     ours = dict(defines((include / "acc_csr.h").read_text()))
-    assert [hand[f"SHELL_{k}"] for k in ("LOOP_COUNT", "START", "BUSY", "COUNTER")] == list(
-        ours.values()
-    )
+    used = set(re.findall(r"\bACC_\w+", SHELL.read_text()))
+    assert used and used <= set(ours), used - set(ours)
 
 
 def test_more_dimensions_follow_streamer_scalas_loops():

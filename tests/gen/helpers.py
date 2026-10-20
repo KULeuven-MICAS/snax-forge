@@ -80,7 +80,9 @@ def snax_cfg() -> types.ModuleType | None:
 
 
 def snax_streamer() -> types.ModuleType:
-    """snax-gvsoc's snax/snax_streamer.py, imported with a stub gvsoc.systree (its helpers only)."""
+    """snax-gvsoc's snax/snax_streamer.py, imported with a stub gvsoc.systree (its helpers only),
+    after its snax_cfg (``snax_cfg``), which it imports."""
+    snax_cfg()
     stub = types.ModuleType("gvsoc.systree")
     stub.Component = stub.SlaveItf = object
     pkg = types.ModuleType("gvsoc")

@@ -29,8 +29,10 @@ GVSOC_WORKDIR ?= $(abspath $(CURDIR)/../out/snax-gvsoc)
 INSTALL = $(GVSOC_WORKDIR)/install
 BUILT_FROM = $(GVSOC_WORKDIR)/checkout.txt
 
-# The targets GVSoC compiles (components and platform trees)
-TARGETS ?= snax_alu;snax_alu_sparse;snax_tiled_add;snax_hjson
+# The targets GVSoC compiles (components and platform trees): snax-gvsoc's
+# SNAX_TARGETS, read from its Makefile
+SNAX_TARGETS := $(shell sed -n 's/^SNAX_TARGETS = //p' $(SNAX_GVSOC_ABS)/Makefile)
+TARGETS ?= $(SNAX_TARGETS)
 
 # Programs of $(SNAX_GVSOC)/sw/apps/ that `sw` builds after sw/ itself. FORGE,
 # a folder of gen-gvsoc's form, goes to the forge app as an absolute path, with
