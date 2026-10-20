@@ -140,13 +140,7 @@ fixed latency, a fold with a loop-carried dependency, multi-cycle at a fixed
 latency or II > 1, multi-phase (a global result gates the next pass), then
 data-dependent latency or control.
 
-| Compute ↓ / Access → | Affine, no reuse | Affine with reuse | Non-rectangular or data-dependent |
-|---|---|---|---|
-| II 1, fixed latency (elementwise) | `vecadd`, `vecmul`, scale by α/β | `gemm` (lanes) | triangular kernels (left out) |
-| Fold, loop-carried (reduction) | `vsum`, `dot`, mat-vecs (`atax`, `bicg`, `mvt`) | `gemm`, `k2mm`, `k3mm`, `doitgen`, conv | |
-| Multi-cycle, fixed latency or II > 1 (div, sqrt, exp by polynomial, CORDIC or Newton-Raphson; FP adders) | `covariance`'s divide | `jacobi` with FP | |
-| Multi-phase | `softmax` (max, then exp and sum, then divide), `covariance` (mean, center, product) | attention, `mlp` | |
-| Data-dependent latency or control | early-exit dividers, LUT methods | | `durbin`, `nussinov` (left out) |
+The table, with every kernel placed in it, is in `kernels/README.md`.
 
 Down the table, the unit stops being one firing per cycle, and the question
 moves from lanes and ports to state, latency, II and phases. To the right,
