@@ -28,11 +28,6 @@ from .helpers import HJSON, SOURCE, SUB, bound_vecmul, bound_vsum, point, snax_c
 needs_submodule = pytest.mark.skipif(
     not HJSON.exists(), reason="the snax-gvsoc submodule is not checked out (CI never fetches it)"
 )
-needs_reader = pytest.mark.skipif(
-    snax_cfg() is None,
-    reason="no snax-gvsoc reader (snax/snax_cfg.py): the submodule is not checked out or its "
-    "pin predates LNK2a",
-)
 IMPL = "chisel_tiled_spatial"
 FILES = ["snax_alu.hjson", "snax_alu_streamer.hjson", "snax_alu_acc.hjson"]
 # The slot of snax_alu's source, the one the cluster file sets
@@ -150,7 +145,7 @@ def test_the_cluster_file_is_the_source_with_the_slot_set(w4):
     assert list(cluster) == list(source)  # the source's key order
 
 
-@needs_reader
+@needs_submodule
 def test_snax_gvsocs_reader_takes_the_folder(w4):
     """snax-gvsoc's snax_cfg.load: the whole-file refs resolve and the slot's counts agree."""
     out, _ = w4

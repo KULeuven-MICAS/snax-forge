@@ -336,13 +336,12 @@ name.
 ## Refreshing a fixture
 
 snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
-(vecadd, vecmul, and vsum, `accumulate`'s Chisel Accumulator), which its
-`make regress` runs (D128). `tests/gen/test_fixture.py` generates each again
-and compares it byte for byte with the submodule's copy; it skips when the
-submodule is not checked out or has no `forge/`, and a design whose folder
-the submodule's pin does not have yet, or a pin whose fixtures predate the
-hjson ones or `main.c`. When the generator or the design point changes, refresh the
-folder in a snax-gvsoc checkout next to this one:
+(vecadd, vecmul, vsum on `accumulate`'s Chisel Accumulator, and vsum_tree on
+its adder tree), which its `make regress` runs (D128).
+`tests/gen/test_fixture.py` generates each again and compares it byte for
+byte with the submodule's copy; it skips when the submodule is not checked
+out. When the generator or the design point changes, refresh the folder in a
+snax-gvsoc checkout next to this one, the folder cleared first:
 
 ```bash
 pixi run sandbox recipes/vecadd.json
@@ -350,7 +349,7 @@ pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.
 pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd
 ```
 
-(the same with `vecmul` or `vsum`), commit the folder in snax-gvsoc as written, then
+(the same with `vecmul`, `vsum` or `vsum_tree`), commit the folder in snax-gvsoc as written, then
 bump the submodule here so the test compares against it.
 
 # 6. Tests and lint
