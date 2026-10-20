@@ -4,25 +4,25 @@
 > component can produce its output without reading another's code. Why each
 > is the way it is: the module docstrings and `docs/DECISIONS.md`.
 >
-> Sections 1 and 9–16 are the flow: conventions, the task list (D64), the BRM
-> (D68, D70), the SNAX-DFG (D77), the recipe (D72), the platform (D84), the
-> design checks (D85), the memory plan and design point (D86, D87), and the
-> generated hjson files (D134).
-> Sections 2–8 are SNAX-MODEL's (cluster configuration, streamer registers,
-> accelerator interface, control program, scenario, profile and trace, rules
-> for a new block kind); they are kept as they are until SNAX-MODEL is
-> removed (RET1, D116), and SNAX-GVSoC's contracts replace them.
+> Sections 1, 7 and 9–16 are the flow: conventions, a run's profile and
+> trace (D137), the task list (D64), the BRM (D68, D70), the SNAX-DFG (D77),
+> the recipe (D72), the platform (D84), the design checks (D85), the memory
+> plan and design point (D86, D87), and the generated hjson files (D134).
+> Sections 2–6 and 8 are SNAX-MODEL's (cluster configuration, streamer
+> registers, accelerator interface, control program, scenario, rules for a
+> new block kind; its own profile and trace are in the docstrings of
+> `snax_model/profile.py` and `trace.py`); they are kept as they are until
+> SNAX-MODEL is removed (RET1, D116), and SNAX-GVSoC's contracts replace them.
 >
 > These are dataclasses and plain JSON until the M6 freeze (D26), which brings
 > versioned schemas for them; the generated hjson files already have schemas
 > (section 16). Every value marked **default** is a declared platform default,
 > not a measurement.
 >
-> Every fenced block below is copied verbatim out of a checked-in file, a
-> file `scenarios/make.py` generates, or the output of `scenarios/reduce`,
-> and `tests/snax_model/test_contracts.py` fails if one of them drifts. The
-> `<!-- snippet: ... -->` line above each block names its source; `run:`
-> means "produced by running that scenario".
+> Every fenced block below is copied verbatim out of a checked-in file or a
+> file `scenarios/make.py` generates, and `tests/snax_model/test_contracts.py`
+> fails if one of them drifts. The `<!-- snippet: ... -->` line above each
+> block names its source.
 
 ---
 
@@ -455,121 +455,88 @@ identical on every run and with skipping on and off.
 
 ## 7. Profile and trace
 
-This is what the views (M4a, M4b) and the reports (D99) read.
+What the reports (D99) and the viewer read of a flow run (D136, D137). A
+run directory (`out/flow/<name>/run/`, `run/outputs.py`) holds `run.json`
+(what ran), `profile.json`, and at a trace level above `off`
+`trace.jsonl` and `trace_meta.json`. SNAX-GVSoC writes its events in its
+own grammar (snax-gvsoc `docs/EVENTS.md`) into `run/events.log`; the
+converter (`run/convert.py`) renames them into what follows and never
+recounts (D38).
 
-**Profile** (`profile.py`): the totals of one run, read off the counters the
-components already keep. It never recounts, and it changes nothing (D38).
-`skip_idle` is deliberately not in it. The fields:
+**The window.** `total_cycles` is the program's: `mcycle` at
+`forge_check()`'s entry minus `mcycle` at main's entry, the `forge cycles:`
+line. With events, the converter finds the same window as `[func main,
+func forge_check)` on the accelerator's core, checks it against
+`total_cycles` within the two `mcycle` reads, and shifts every cycle so
+that t = 0 is main's entry; the shift (the boot's length) is in
+`trace_meta.json`, and events outside the window are dropped.
 
-<!-- snippet: snax_forge/snax_model/profile.py -->
+**Profile** (`run/profile.py`): the totals of one run. The fields:
+
+<!-- snippet: snax_forge/run/profile.py -->
 ```python
 @dataclass
 class Profile:
-    total_cycles: int
-    controller: ControllerProfile | None = None
+    total_cycles: int  # the program's window, its `forge cycles:` line
     accelerators: dict[str, AccelProfile] = field(default_factory=dict)
     streamers: dict[str, StreamerProfile] = field(default_factory=dict)
+    cores: dict[str, CoreProfile] = field(default_factory=dict)
     dmas: dict[str, DmaProfile] = field(default_factory=dict)
-    banks: BankProfile | None = None
     ports: dict[str, PortProfile] = field(default_factory=dict)
-    l2: dict[str, L2Profile] = field(default_factory=dict)
-    functional_check: dict[str, Any] | None = None  # a flow run fills it
+    banks: BankProfile | None = None
+    functional_check: dict[str, Any] | None = None
 ```
 
-Per part: the controller gives cycles per class (`command` = control
-overhead, kept apart from `wait`), the command and read counts, the poll
-count and every wait with its first cycle, the block's `done_cycle` and its
-last cycle; an accelerator gives cycles per class, utilisation
-(`busy / total`, the share of cycles its datapath is occupied: a firing and
-the II gap after it, D59), beats per port and `firings` (equal to `busy`
-only when `ii` = 1); a streamer gives
-cycles per class, its xbar ports and its FIFO occupancy (max, time-weighted
-mean and a histogram per lane, D40); a DMA gives cycles per class, beats and
-bytes each way and the peak buffer; `banks` gives per-bank reads, writes,
-grants, conflicts, stalls and cycles blocked by a wider grant; `ports` gives
-per xbar port its owner, width, grants, stalls and the stalls caused by a
-wider grant. `functional_check` is null for a scenario run on its own.
+Per part: an accelerator gives its classes summed over its runs (`busy` a
+firing or the II gap after one, `stall_in`, `stall_out`, `flush`), `idle`
+the rest of the window, its `firings` and `utilisation` (`busy` over the
+window); a streamer, one entry per mover, gives `busy`, `stall_xbar`,
+`stall_fifo` and `idle` likewise, its crossbar ports, and its FIFO's name,
+depth and highest count per lane; a core gives its cycles in the window as
+`barrier`, else `poll` (a run of reads of one CSR with one value, first to
+last), else `sleep` (`wfi`), else `run`, its SNAX CSR writes and reads, and
+each wait (`poll` or `barrier`) with the block, its first and last cycle;
+the classes and waits need the events (`None` and empty at trace `off`); a
+DMA gives its transfers, the cycles its busy signal is high (what
+`DMA_BUSY` counts), its read and write beats and the bytes each way; a port,
+per crossbar input, its grants, stalls and the stalls lost to the DMA's
+superbank, a core's or AXI's over the whole run (`whole_run`); a bank its
+reads, writes and conflicts (cycles with two requests or more on it), from
+the streamers and the DMA only. Names, ports, `write` and the FIFO depths
+come from the hjson files and the design point.
 
-**A flow run** (D90, D136, `pixi run flow`; from a recipe or a bound graph,
-D108) is a SNAX-GVSoC run of the generated program, and its check is the
-program's own (C§16's `main.c`). `total_cycles` is the program's window:
-`mcycle` at `forge_check()`'s entry minus `mcycle` at main's entry, the
-`forge cycles:` line. `functional_check` holds the `kernel`, `seed` and
-`symbols` of the run, then what the program printed and returned:
-`exit_code` (the run's), `data_errors` and `words` (the `forge data:` line,
-every output word against its golden), `tasks` (per accelerator task its
-`counter`, the `forge counter` line, and its `beats`, from the manifest),
-and `passed`, true when the exit code is 0.
+`functional_check` holds the `kernel`, `seed` and `symbols` of the run,
+then what the program printed and returned: `exit_code` (the run's),
+`data_errors` and `words` (the `forge data:` line, every output word against
+its golden), `tasks` (per accelerator task its `counter`, the `forge
+counter` line, and its `beats`, from the manifest), and `passed`, true when
+the exit code is 0.
 
-Cycle classes, one per cycle per component, in this order:
+**Trace** (`run/trace.py`): one event per line of `trace.jsonl`, at level
+`task` the `events` lines of every SNAX component (`beat` adds the `beats`
+lines, FLOW3 round 2). Every event is a flat dict of `t`, `k`, `src` and the
+kind's own fields:
 
-| Component | Classes |
-|---|---|
-| accelerator | `busy` (a firing) > `stall_out` (frozen on a full output) > `busy` (II gap of a running task, D59) > `stall_in` (a due input empty) > `idle` |
-| streamer | `busy` (a port granted) > `stall_xbar` (requested, none granted) > `stall_fifo` (an address but no credit or no data) > `idle` |
-| DMA | `busy` (a beat moved) > `stall_l1` (an L1 request refused) > `idle` (bandwidth gap) > `stall_mem` (waiting for memory) > `idle` |
-| controller | `command` (control overhead) / `wait` / `idle` |
-
-**Trace** (`trace.py`): an independent event log, written from each cycle's
-final wires in commit. Levels: `off`; `task` = controller commands, block
-starts and dones, and the class intervals; `beat` = adds xbar grants and
-stalls (these *are* the L1 accesses: there is no separate access event),
-read responses, accelerator firings, DMA beats, controller polls and FIFO
-count changes.
-Every event is a flat dict of `t`, `k`, `src` and the kind's own fields:
-
-<!-- snippet: snax_forge/snax_model/trace.py -->
+<!-- snippet: snax_forge/run/trace.py -->
 ```
-    task  cmd       pc, op, reg | block, value, mode, done, last  (t = first cycle)
-    task  start     (t = cycle the start landed; busy from t + 1)
-    task  done      (t = done_cycle: first cycle busy reads 0)
-    beat  grant     port, mem, w, addr, banks, row
-    beat  stall     port, mem, w, addr, banks, row, wider
-    beat  resp      mem, addr, then port, banks, row (L1) | i (L2)  (t = data returns)
-    beat  fire      n (firing index)
-    beat  dma_beat  side (src/dst), i (beat index), mem (l1/l2), addr
-    beat  poll      block, value (busy as sampled)
-    beat  fifo      lane, count (t = first cycle the count holds)
+    task  start    task  (t = the cycle the start is taken; busy from t + 1)
+    task  done     task, then firings, first, last for an accelerator  (t = first idle cycle)
+    task  csr      pc, csr, block, op (r/w), value, held (a held write's cycles)
+    task  poll     pc, csr, block, value, count, last  (t = the first read)
+    task  barrier  last  (t = the barrier's read; last = the cycle it is released)
+    task  state    mode (run/sleep)  (t = the first cycle in it)
+    task  func     name, pc  (t = the function's first instruction)
+    task  issue    task, id, dir, from, to, size, from_stride, to_stride, reps  (a DMA copy)
+    task  done     task, id  (a DMA copy; t = the cycle it completes)
 ```
 
-An action event carries the cycle it happens in; a state change (`done`,
-`fifo`) the first cycle its new state is visible. A read shows up twice (D62):
-its `grant` in the cycle the request is accepted, and its `resp` in the
-cycle the data returns (`grant` + `L1Config.read_latency`, from the xbar
-with the same `port`, `addr`, `banks` and `row`). An L2 read is a DMA
-`dma_beat` with `side: src`, `mem: l2`, and a `resp` from the DMA with the
-same `i` and `addr`, `L2Config.read_latency` later. Writes have no `resp`.
-A reader's FIFO count rises the cycle after the `resp` (`Queue`, D32). Inside a cycle the order is
-state changes, then phase, then source in registration order, then emission
-order — identical with skipping on and off.
-
-<!-- snippet: run:reduce/trace.jsonl -->
-```json
-{"t": 0, "k": "cmd", "src": "ctl", "pc": 0, "op": "csr_write", "last": 0, "reg": "acc_a.base", "value": 0}
-{"t": 14, "k": "fifo", "src": "acc_a.fifo", "lane": 0, "count": 1}
-```
-
-**Class intervals** are not events: `on_gap` reports a skipped range only
-when the component wakes, after other components' later events. They are
-kept per component and written to `trace_meta.json` as half-open runs
-`[class, start, stop)` covering `[0, total)`:
-
-<!-- snippet: run:reduce/trace_meta.json -->
-```json
-  "acc_a": [["idle", 0, 12], ["busy", 12, 28], ["idle", 28, 35]],
-```
-
-Two things need the intervals rather than the totals, so they need at least a
-task-level trace: the anchor report's overlap of accelerator-active phases
-with control overhead (section 7 of ARCHITECTURE.md) and FIFO occupancy
-over the owner's busy window (D56, shown by the viewer since VIS1). The
-first is open item 11; the second closed it for the views.
-
-**Filter** (D49). A beat-level run writes about a kilobyte per word the
-accelerator reads or writes (4.4 MB for vecadd at N = 4096, open item 39), so a
-long run needs `--trace-source NAME` (repeatable) or `--trace-window A:B`.
-These drop beat events only; the task-level skeleton and every profile number
-stay complete, and `trace_meta.json` records what was filtered.
+`src` is a C§7 name: `acc`, a mover (`acc_a`), `dma`, `core0`. A core's
+`poll` folds the reads of one CSR that return one value; a single read is a
+`csr`. `block` is the component whose CSR it is (`acc`, `acc_streamer`). A
+DMA copy's `dir` (`l2_to_l1`, `l1_to_l2`) comes from its addresses and the
+cluster's L1 range, and copies are matched to the task list's `load_<C>` and
+`store_<C>` tasks in issue order. `trace_meta.json` holds the `level`,
+`total_cycles`, the `boot` shift and the `sources`.
 
 ## 8. Rules for a new block kind
 

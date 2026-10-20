@@ -3,8 +3,8 @@
 Two things are checked:
 
 * every fenced block in the document that names a source is really in that
-  source, either a checked-in file or a file produced by running
-  ``scenarios/reduce``;
+  source, a checked-in file or one ``scenarios/make.py`` generates (C§7's
+  are the flow's ``run/profile.py`` and ``run/trace.py``);
 * the register names the document gives per block kind are the names the
   adapters produce, for every block of both checked-in clusters.
 
@@ -22,13 +22,7 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.snax_model.scenario import (
-    ClusterConfig,
-    Scenario,
-    register_map_of,
-    run,
-    write_outputs,
-)
+from snax_forge.snax_model.scenario import ClusterConfig, register_map_of
 
 REPO = Path(__file__).resolve().parents[2]
 DOC = REPO / "docs" / "CONTRACTS.md"
@@ -42,18 +36,6 @@ SNIPPET = re.compile(r"<!-- snippet: ([^\n]+?) -->\n```[a-z]*\n(.*?)```", re.DOT
 # =============================================================================
 # 1. Helpers
 # =============================================================================
-
-
-@pytest.fixture(scope="module")
-def produced(tmp_path_factory):
-    """The output files of ``scenarios/reduce`` at beat level, by name.
-
-    The profile and the trace have no checked-in file (a scenario holds
-    inputs only, D41), so the document quotes a run and this test makes it.
-    """
-    sc = Scenario.load(SCEN / "reduce" / "scenario.json")
-    out = write_outputs(run(sc, trace_level="beat"), tmp_path_factory.mktemp("reduce"))
-    return {f"reduce/{f.name}": f.read_text() for f in out.iterdir() if f.suffix != ".npy"}
 
 
 def snippets():
@@ -73,12 +55,12 @@ def test_the_document_has_snippets():
     """A document with no snippets would make every check below vacuous."""
     sources = {src for src, _ in snippets()}
     assert len(snippets()) >= 10
-    assert any(s.startswith("run:") for s in sources)
+    assert {"snax_forge/run/profile.py", "snax_forge/run/trace.py"} <= sources
     assert {"scenarios/clusters/alu4.json", "scenarios/clusters/red4.json"} <= sources
 
 
 @pytest.mark.parametrize("i", range(len(snippets())))
-def test_snippet_is_verbatim(i, produced):
+def test_snippet_is_verbatim(i):
     """Every fenced block is copied out of the file it names.
 
     A ``.jsonl`` source is one event per line, so a snippet may pick lines
@@ -86,12 +68,9 @@ def test_snippet_is_verbatim(i, produced):
     other source must contain the block as it stands.
     """
     source, block = snippets()[i]
-    if source.startswith("run:"):
-        text = produced[source[len("run:") :]]
-    else:
-        path = REPO / source
-        assert path.is_file(), f"{source}: no such file"
-        text = path.read_text()
+    path = REPO / source
+    assert path.is_file(), f"{source}: no such file"
+    text = path.read_text()
     if source.endswith(".jsonl"):
         lines = set(text.splitlines())
         for line in block.splitlines():
