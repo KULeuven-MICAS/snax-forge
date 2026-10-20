@@ -82,11 +82,12 @@ flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
   design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
   lower     tasks.json (12 steps)
   gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-  build     up to date (snax-gvsoc 69b9569f)
+  build     up to date (snax-gvsoc 0e01c6e2)
   sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
   gvsoc     snax_hjson, exit 0 -> run/
   check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
-  report    none in FLOW3 round 1a; the reports come back in FLOW3 round 1b
+  convert   run/events.log -> profile.json (the summary lines; trace off)
+  report    report/design.md, report/run.md
 ```
 
 It imports the kernel, applies the recipe, pairs the result with the
@@ -96,8 +97,14 @@ SNAX-GVSoC when needed (the first time, a few minutes), builds the program
 and runs it on `snax_hjson`; the program checks itself and prints its cycles
 from main's entry to its check (D136, `docs/RUN.md`). Everything lands in
 `out/flow/<name>/`, with `flow.log`, which holds what it printed, the design
-checks that ran and how long each stage took. Change a design point with
-`--set`; each one is added to the name, so the runs sit side by side:
+checks that ran and how long each stage took. `run/profile.json` holds
+what SNAX-GVSoC's components counted, and `report/design.md` and
+`report/run.md` say what was built and where the cycles went (D99, D137).
+With `--trace task` the run also records every start, done, CSR access,
+wait and DMA copy in the program's window (`run/trace.jsonl`, C§7), into
+`out/flow/vecadd_task/`; `pixi run view out/flow/vecadd_task` shows its
+profile in the browser (section 3.3). Change a design point with `--set`;
+each one is added to the name, so the runs sit side by side:
 
 ```bash
 pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set W=8                                    # out/flow/vecadd_W8: 220 cycles, counter 11
@@ -226,24 +233,24 @@ disagree, that is a bug in the model.
 
 ### 3.3 View a run
 
+The viewer and the reports read flow runs (section 1, C§7), not SNAX-MODEL's
+run directories:
+
 ```bash
-pixi run view out/vecadd out/vecadd_conflict
+pixi run view out/flow/vecadd_task out/flow/vsum_task
 ```
 
 ```
-serving vecadd, vecadd_conflict at http://127.0.0.1:8765/ (Ctrl-C to stop)
+serving vecadd_task, vsum_task at http://127.0.0.1:8765/ (Ctrl-C to stop)
 ```
 
-With several runs, pick one in the Run menu at the top. The tabs switch
-between the profile report, the schedule (every component's activity per
-cycle) and the memory tab (where each region lies in L1 and L2); under the
-schedule, the cluster view shows the selected cycle (banks, interconnect,
-streamers, accelerator, DMA). Click a cycle in the schedule or use the arrow
-keys to step; Play steps it on a timer (Space plays and pauses). The schedule
-needs at least `--trace task`; the per-beat rows, the cluster view's traffic
-and the memory tab's data movement need `--trace beat`. After rerunning into
-the same directory, press Reload. `pixi run report DIR` writes the same run as
-Markdown reports for reading or for an LLM (`DIR_report/`).
+With several runs, pick one in the Run menu at the top. The profile report
+shows where each component's cycles went, the accelerator, the movers and
+their FIFOs, the cores' waits, the banks and ports, and the DMA. The schedule
+and the cluster view come back in FLOW3 round 3, the memory tab in round 2.
+After rerunning into the same folder, press Reload. `pixi run report DIR`
+writes a flow folder's reports again (`DIR/report/`); the flow writes them
+after every run.
 
 The server listens on 127.0.0.1 only. On a remote machine, forward the port
 from your laptop (`ssh -L 8765:127.0.0.1:8765 you@server`) and open

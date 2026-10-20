@@ -15,7 +15,8 @@
 #     make sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
 #     make run TARGET=snax_hjson DESIGN=vecadd \
 #         GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/vecadd/snax_alu.hjson" \
-#         ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
+#         ELF=../out/snax-gvsoc/sw/vecadd/forge.elf \
+#         EVENTS=../out/gvsoc/vecadd/events.log TRACES="summary events"
 #
 # SNAX_GVSOC is the snax-gvsoc checkout: the submodule by default, or a
 # sibling checkout (SNAX_GVSOC=../../snax-gvsoc from here).
@@ -78,11 +79,15 @@ FORGE_BUILD = $(GVSOC_WORKDIR)/sw/$(DESIGN)
 
 # `run`: the installed target, the ELF, the work directory (one per design
 # when DESIGN is set, else per ELF name), and gvrun options put before the
-# command (e.g. --trace=snax_acc0)
+# command (e.g. --trace=snax_acc0). EVENTS, a file: the SNAX components'
+# traces named in TRACES (summary, events, beats; snax-gvsoc docs/EVENTS.md)
+# written into it, one --trace each, in simulation order (snax-forge D137)
 TARGET ?=
 ELF ?=
 WORK_DIR ?= $(GVSOC_WORKDIR)/work/$(TARGET)/$(or $(DESIGN),$(basename $(notdir $(ELF))))
 GVRUN_ARGS ?=
+EVENTS ?=
+TRACES ?= summary
 
 .PHONY: build sw run
 
@@ -108,4 +113,5 @@ run:
 	$(if $(ELF),,$(error set ELF))
 	mkdir -p $(WORK_DIR)
 	$(INSTALL)/bin/gvrun --target $(TARGET) \
-		--work-dir $(WORK_DIR) --param chip/soc/binary=$(abspath $(ELF)) $(GVRUN_ARGS) run
+		--work-dir $(WORK_DIR) --param chip/soc/binary=$(abspath $(ELF)) $(GVRUN_ARGS) \
+		$(if $(EVENTS),$(foreach t,$(TRACES),--trace='/$(t)$$:$(abspath $(EVENTS))')) run

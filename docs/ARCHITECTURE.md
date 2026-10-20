@@ -107,7 +107,7 @@ flowchart LR
 design step (platform) → design point → SNAX-LOWER → a run → reports and
 views → the thinker edits the recipe or the platform. `pixi run flow` runs it
 once (section 5.9). The run is SNAX-GVSoC's (FLOW3, D136); the profile and
-trace from its events come with FLOW3 round 1b **[PLANNED, M14]**.
+trace come from its events (D137).
 
 **SNAX link:** the same design point gives the bundle snax_cluster builds and
 runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
@@ -123,7 +123,8 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | SNAX-SANDBOX | `sandbox/` | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step | built |
 | Design step | `design/` | bound graph, platform | design point | built |
 | SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program, `main.c` | built (C program GEN2a, D135) |
-| SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | hjson, program | the program's check and window; profile and trace with FLOW3 round 1b (D137) | built (M16) |
+| SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | hjson, program | the program's check and window; counters and events in its own grammar (D137) | built (M16) |
+| Run | `run/` | SNAX-GVSoC's events, the hjson files, design point and task list | profile, trace (C§7) | FLOW3 round 1b |
 | SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | frozen, not run by the flow; removed in FLOW3 round 1c (RET1) |
 | Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, `data.h`, `main.c`, manifest | GEN3, LNK2a, GEN2a (D134, D135) |
 | HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
@@ -253,11 +254,11 @@ it (D128). It holds:
   fresh runs of one ELF on both sides, while `make regress` checks that
   every program finishes and `dma-timing` that the DMA's counters stay the
   RTL's (SG5, SG6, SG7, D123);
-- **trace events** for the views (grants, stalls, responses, firings, FIFO
-  counts), from SNAX's components and from GVSoC's own L1 and interconnect:
-  an `events` trace per SNAX component in snax-gvsoc's own grammar, which
-  snax-forge's converter renames into its profile and trace, never
-  recounting (D137, FLOW3 round 1b); today they are text traces for people.
+- **events** for the profile and the views: a `summary`, `events` and
+  `beats` trace per SNAX component (unit, streamer, crossbar, core, iDMA) in
+  snax-gvsoc's own grammar, which snax-forge's converter renames into its
+  profile and trace, never recounting (D137); the beat lines (grants,
+  stalls, responses, firings, FIFO counts) come in FLOW3 round 2.
 
 What it models is what snax_cluster's RTL does; where the two differ, the
 RTL wins. Memory-mapped register writes may replace the CSR path later; the
@@ -299,20 +300,20 @@ latency and II.
 
 ### 5.9 Feedback and the flow
 
-**Profile and trace** (C§7): total cycles, cycle classes per component,
-utilisation and firings per accelerator, grants, conflicts and stalls per
-bank and port, FIFO occupancy, DMA traffic, control overhead apart from
-waiting, and the functional check. The trace is an event log at level
-`off`, `task` or `beat`. Under SNAX-GVSoC a flow run gives the program's
-check and its window (total cycles) today; the rest comes from the converter
-in the same form (D137, FLOW3 round 1b), so the viewers and reports keep
-working.
+**Profile and trace** (C§7): the program's window (total cycles), cycle
+classes per accelerator, streamer mover and core, firings and utilisation,
+CSR accesses and waits per core, grants, conflicts and stalls per bank and
+port, FIFO maxima, DMA traffic, and the functional check. SNAX-GVSoC writes
+its counters and events in its own grammar into one file, and `run/`
+converts them (D137). The trace is an event log at level `off`, `task` or
+`beat`.
 
 **Viewers** (D55, `pixi run view DIR ...`, `pixi run view-dfg FILE ...`): a
 local server on 127.0.0.1 and a static page, stdlib only, offline. Run views
-(D57): the profile report, the schedule with a selected cycle kept in the
-URL hash, the cluster view at that cycle, the memory tab (D96) and data
-movement (D97). The DFG viewer (D81) shows graphs side by side.
+(D57) of a flow run: the profile report; the schedule with a selected cycle
+kept in the URL hash and the cluster view at that cycle come back in FLOW3
+round 3, the memory tab (D96) and data movement (D97) in round 2. The DFG
+viewer (D81) shows graphs side by side.
 
 **Reports** (D99, `pixi run report DIR`): `design.md` (what was built) and
 `run.md` (where the cycles went), Markdown from dataclasses, for humans and

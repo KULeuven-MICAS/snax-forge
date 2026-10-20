@@ -26,12 +26,14 @@ want to reverse, implementation details in module docstrings and tests.
 ## Commands
 - Environment: `pixi install`; `pixi run check` checks DaCe and its pins.
 - Tests: `pixi run test` (all), or one block: `test-model`, `test-lower`, `test-brm`, `test-dfg`,
-  `test-sandbox`, `test-design`, `test-flow`, `test-report`, `test-gen`, `test-kernels`. CI runs
-  `pixi run -e ci test`.
+  `test-sandbox`, `test-design`, `test-flow`, `test-run`, `test-report`, `test-gen`,
+  `test-kernels`. CI runs `pixi run -e ci test`.
 - Lint: `pixi run lint` (CI runs it); `pixi run fmt` fixes.
 - The whole path, on SNAX-GVSoC (D136, in the image, submodule checked out): `pixi run flow
   recipes/vecadd.json --platform platforms/snax_alu.json [--set W=8] [--set platform.PATH=VALUE]
-  [--set memory.PATH=VALUE]`, everything in `out/flow/<name>/`; it builds GVSoC when needed.
+  [--set memory.PATH=VALUE] [--trace off|task]`, everything in `out/flow/<name>/` (`<name>_task`
+  at `--trace task`); it builds GVSoC when needed. The run's events become `run/profile.json`
+  and, at `task`, `run/trace.jsonl` (`snax_forge/run/`, D137).
   From a bound graph instead of a recipe (no sandbox, D108): `pixi run flow
   out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json [--kernel K]`.
   The single steps (`forge`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in
@@ -44,10 +46,10 @@ want to reverse, implementation details in module docstrings and tests.
   SDFG builds).
 - SNAX-MODEL on its own: `pixi run scenarios` writes the scenario files; `pixi run model-run
   scenarios/<name>/scenario.json --out out/<name> [--trace beat]`.
-- Viewers: `pixi run view DIR ...` (runs, port 8765), `pixi run view-dfg FILE|DIR ...` (graphs,
-  port 8766).
-- Reports: `pixi run report DIR` writes `report/design.md` and `report/run.md` for a SNAX-MODEL
-  run directory; the flow writes none until FLOW3 round 1b, only `flow.log`.
+- Viewers: `pixi run view DIR ...` (flow runs, port 8765), `pixi run view-dfg FILE|DIR ...`
+  (graphs, port 8766).
+- Reports: the flow writes `report/design.md` and `report/run.md`; `pixi run report DIR` writes
+  them again for a flow folder.
 - Chisel: `pixi run -e hw chisel-test`, `chisel-gen`; `hw/chisel/` is a project of its own.
 - Clean slate: `pixi run clean` (`--dry-run` lists first; it keeps the GVSoC build in
   `out/snax-gvsoc/`, `--all` removes it too).

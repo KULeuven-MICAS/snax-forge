@@ -4,8 +4,9 @@ The flow runs on SNAX-GVSoC, so CI (which never builds it) runs everything up
 to the generator for real and SNAX-GVSoC through ``stub``: ``run_gvsoc``
 replaced by a fake make that records each call, makes the install on
 ``build``, an ELF on ``sw`` and on ``run`` prints what the generated program
-would (a window, no data errors, each counter its beats plus 3) and exits
-0; the checkout is a clean one at ``COMMIT``, pinned there, and the GVSoC
+would (a window, no data errors, each counter its beats plus 3), writes the
+events SNAX-GVSoC would for the level (``tests/run/helpers.synthetic``) and
+exits 0; the checkout is a clean one at ``COMMIT``, pinned there, and the GVSoC
 build's folder is the test's own. The recipe flows start from the import
 fixtures (``PLAIN``), so they need no DaCe. The full flow on SNAX-GVSoC is
 marked ``gvsoc`` and skipped where ``out/snax-gvsoc/install`` is missing.
@@ -21,12 +22,16 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from snax_forge.flow import Checkout
 from snax_forge.flow import run as flow_run
+from snax_forge.lower.tasks import TaskList
+from snax_forge.run import load_cluster
 from tests.design.helpers import FIXTURES, REPO
+from tests.run.helpers import synthetic
 
 PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel
 PLAINS = {"vecadd": PLAIN, "vsum": FIXTURES / "vsum.snaxdfg"}
@@ -70,6 +75,8 @@ class FakeMake:
             elf.write_bytes(b"\x7fELF fake")
         elif goal == "run":
             text = self.stdout if self.stdout is not None else program_output(variables)
+            if variables.get("EVENTS"):
+                write_events(variables)
         log.write_text(text + self.stderr.get(goal, "") * (err is None))
         if err is not None:
             err.write_text(self.stderr.get(goal, ""))
@@ -84,6 +91,16 @@ def program_output(variables: dict[str, str]) -> str:
     lines = ["forge cycles: 226", "forge data: 0 errors (64 words)"]
     lines += [f"forge counter {t['name']}: {t['beats'] + 3}" for t in manifest["tasks"]]
     return "\n".join([*lines, "forge errors: 0", ""])
+
+
+def write_events(variables: dict[str, str]) -> None:
+    """The events a passing run writes to ``EVENTS`` for its ``TRACES``: the synthetic run of
+    its cluster (beside the cluster file) and its task list (in the flow's folder)."""
+    gen = Path(variables["GVRUN_ARGS"].partition("hjson=")[2]).parent
+    cluster = load_cluster(gen / "snax_alu.hjson", gen.parent / "design" / "design_point.json")
+    tasks = TaskList.from_dict(json.loads((gen.parent / "tasks.json").read_text()))
+    level = "task" if "events" in variables["TRACES"].split() else "off"
+    Path(variables["EVENTS"]).write_text("\n".join(synthetic(cluster, tasks, level)) + "\n")
 
 
 def stub(monkeypatch, tmp_path: Path, pinned: str = COMMIT, dirty: bool = False) -> FakeMake:
@@ -132,3 +149,18 @@ def excerpts_hold(readme: str, root: Path) -> int:
         assert not missing, f"README line {i + 1}: not in {m.group(1)}: {missing}"
         seen += 1
     return seen
+
+
+def stubbed_flow(base: Path, design: str = "vecadd", level: str = "task", out: Path | None = None,
+                 **kw: Any) -> Path:  # fmt: skip
+    """A flow folder (``base/<design>_<level>`` unless ``out``) made with SNAX-GVSoC stubbed
+    (``stub``, its synthetic events), outside a test's own monkeypatch, so module-scoped
+    fixtures can share it; returns the folder."""
+    from snax_forge.flow import run_flow
+
+    out = out or base / f"{design}_{level}"
+    with pytest.MonkeyPatch.context() as mp:
+        stub(mp, out.parent / f".gvsoc_{out.name}")
+        run_flow(REPO / "recipes" / f"{design}.json", REPO / "platforms" / "snax_alu.json",
+                 graph_path=PLAINS[design], out=out, trace_level=level, **kw)  # fmt: skip
+    return out

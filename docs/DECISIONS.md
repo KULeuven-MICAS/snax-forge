@@ -489,8 +489,14 @@ exit code), `total_cycles` the program's window (main's entry to `forge_check()`
 `gvsoc/Makefile` names the image's tools, so the flow calls make from pixi. Trace `off` by default
 until FLOW3 round 1b. Amends D90; closes open item 56. → `flow/run.py`, C§7.
 
-**D137** · gvsoc — Events in two stages: each SNAX component gets an `events` `vp::Trace` in
-snax-gvsoc's own grammar (component path, port, address, cycle; class runs; counters at the end of
-the run), enabled per path; snax-forge's converter renames them into C§7 and never recounts.
-Levels `off`, `task`, `beat`, `finegrained`; VCD only as a gtkwave dump. Closes open items 57 and
-60; 23 and 25 stay for FLOW3 round 2. → STATUS (FLOW3).
+**D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only
+names it: each SNAX component (unit, streamer, crossbar, core, iDMA) gets three `vp::Trace`s,
+`summary` (counters, always on), `events` (level `task`) and `beats` (level `beat`), in
+snax-gvsoc's own grammar, all into one `run/events.log` so lines keep simulation order; the
+converter renames them into C§7, never recounts, cuts the program's window at its two `mcycle`
+reads (the core logs them) and shifts it to the first (the boot kept as a number), so the
+profile, the cores and the trace share one window, and the profile keeps only what the counters
+give. Crossbar banks count the SNAX inputs (streamers, DMA) only; the cores' traffic, boot
+included, counts per input over the whole run. Levels `off`, `task`, `beat`, `finegrained`; VCD
+only as a gtkwave dump. Closes open items 57 and 60; 23 and 25 stay for FLOW3 round 2. → `run/`,
+C§7, snax-gvsoc `docs/EVENTS.md`.

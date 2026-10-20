@@ -2,10 +2,10 @@
 
 ``design.md`` says what was built (design.py), ``run.md`` where the cycles
 went (run.py); both are dataclass trees (record.py) rendered as Markdown, so
-humans, LLMs and GitHub read the same text; ``run.md`` names the chaining
-waits between accelerators. ``write_reports(DIR)`` writes them for a flow
-folder or a run directory (files.py); the flow calls it after every run;
-the command line is ``python -m snax_forge.report DIR`` (pixi ``report``).
+humans, LLMs and GitHub read the same text. They read a flow run as the
+viewer does (run/, C§7). ``write_reports(DIR)`` writes them for a flow folder
+(files.py); the flow calls it after every run; the command line is
+``python -m snax_forge.report DIR`` (pixi ``report``).
 """
 
 from .design import DesignReport, build_design, render_design

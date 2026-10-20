@@ -3,7 +3,7 @@
     python -m snax_forge.flow RECIPE --platform P [--set NAME=VALUE ...]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--graph FILE] [--name NAME] [--out DIR]
-                              [--seed S] [--trace off]  (task, beat: FLOW3 round 1b)
+                              [--seed S] [--trace off|task]  (beat: FLOW3 round 2)
     python -m snax_forge.flow GRAPH.snaxdfg --platform P [--kernel K]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--name NAME] [--out DIR] [--seed S] [--trace ...]
@@ -19,10 +19,12 @@ exit code and what it printed (run.py, D136). ``--set W=8`` sets a recipe param,
 commands take them. Everything goes to ``out/flow/<name>/``. The default
 name is the recipe's with every ``--set`` appended: recipe params, then
 platform and memory paths without their prefix, each in the order given
-(``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``). ``--trace``
-is ``off``, the default; ``task`` and ``beat`` stop with a named error until
-FLOW3 round 1b (D137). What it prints is also in ``flow.log``, with the
-design checks that ran; there are no reports in FLOW3 round 1a.
+(``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``), then the
+trace level when it is not ``off``. ``--trace off`` (the default) gives the
+profile from the components' counters, ``--trace task`` the trace of every
+start, done, CSR access, wait and DMA copy too (D137, ``run/``); ``beat``
+stops with a named error until FLOW3 round 2. What it prints is also in
+``flow.log``, with the design checks that ran.
 
 The second form starts from a bound graph instead (D108): a file ending in
 ``.snaxdfg`` is the last step of a sandbox run, or a graph edited by hand,
@@ -85,7 +87,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--out", type=Path, help="output directory (default out/flow/<name>)")
     ap.add_argument("--seed", type=int, default=0, help="seed of make_inputs and the checks")
     ap.add_argument("--trace", default="off", choices=["off", "task", "beat"],
-                    help="off; task and beat come in FLOW3 round 1b")  # fmt: skip
+                    help="off (the counters) or task (and the events); beat comes in FLOW3 "
+                    "round 2")  # fmt: skip
     args = ap.parse_args(argv)
     sets: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
     for head, path, value in args.set:

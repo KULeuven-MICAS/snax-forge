@@ -1,0 +1,20 @@
+{
+ "total_cycles": 226,
+ "functional_check": {
+  "kernel": "vecadd",
+  "seed": 0,
+  "symbols": {
+   "N": 64
+  },
+  "exit_code": 0,
+  "data_errors": 0,
+  "words": 64,
+  "tasks": {
+   "add_acc": {
+    "counter": 19,
+    "beats": 16
+   }
+  },
+  "passed": true
+ }
+}

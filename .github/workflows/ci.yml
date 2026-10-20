@@ -107,7 +107,8 @@ jobs:
           test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
 
   # The flow on SNAX-GVSoC (D136): GVSoC built from the submodule, then
-  # `pixi run flow` on vecadd and vsum and the tests marked `gvsoc`. The only
+  # `pixi run flow` on vecadd and vsum, at trace off and task (D137: the events
+  # converted, the reports written), and the tests marked `gvsoc`. The only
   # job that fetches the submodule (D128); snax-gvsoc's own CI never needs
   # snax-forge.
   gvsoc:
@@ -164,10 +165,16 @@ jobs:
       - name: Flow on vsum
         run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_alu.json
 
+      - name: Flow on vecadd, trace task
+        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
+
+      - name: Flow on vsum, trace task
+        run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_alu.json --trace task
+
       - name: Tests marked gvsoc
         run: pixi run -e ci pytest -q -m gvsoc
 
-      # Each flow's log, make output and run, when a step failed.
+      # Each flow's log, make output, run, events and reports, when a step failed.
       - name: Upload flow logs
         if: failure()
         uses: actions/upload-artifact@v4
@@ -176,6 +183,8 @@ jobs:
           path: |
             out/flow/*/*.log
             out/flow/*/run/*.txt
+            out/flow/*/run/events.log
+            out/flow/*/report/*.md
           if-no-files-found: ignore
 
       # Saved on every run with a build, PRs included, as snax-gvsoc's CI.

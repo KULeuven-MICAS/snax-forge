@@ -4,7 +4,8 @@ One design point the whole way, with one command: `pixi run flow` takes a
 recipe through `sandbox` and `design` on `platforms/snax_alu.json`,
 generates the design point's hjson files, headers, data and program, builds
 SNAX-GVSoC when needed and the program, runs it on `snax_hjson`, and takes
-the program's own check (D136). Each block is the command as typed, then
+the program's own check (D136), then turns SNAX-GVSoC's events into the
+run's profile and reports (D137). Each block is the command as typed, then
 what it printed in a fresh tree with the submodule initialised (long
 outputs cut to their last lines, marked `...`). Section 5 is the same path
 by hand. snax-gvsoc's own `docs/RUN.md` runs its checked-in fixtures and its
@@ -22,7 +23,7 @@ own):
     Cloning into 'snax-forge'...
     Submodule 'gvsoc/snax-gvsoc' (https://github.com/KULeuven-MICAS/snax-gvsoc) registered for path 'gvsoc/snax-gvsoc'
     Cloning into '$ROOT/snax-forge/gvsoc/snax-gvsoc'...
-    Submodule path 'gvsoc/snax-gvsoc': checked out '6e59daaf67eb9005a3393b21896e89d4c956f488'
+    Submodule path 'gvsoc/snax-gvsoc': checked out '0e01c6e2111479acc5b4d212a6e57de87aca7ecb'
 
 Everything else runs in snax-forge's image (D118), started from the folder
 that holds `snax-forge`:
@@ -47,11 +48,12 @@ output goes to `out/flow/vecadd/build.log`):
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     built: no install in out/snax-gvsoc (snax-gvsoc 6e59daaf)
+      build     built: no install in out/snax-gvsoc (snax-gvsoc 0e01c6e2)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
-      report    none in FLOW3 round 1a; the reports come back in FLOW3 round 1b
+      convert   run/events.log -> profile.json (the summary lines; trace off)
+      report    report/design.md, report/run.md
 
     echo "exit $?"
 
@@ -80,32 +82,34 @@ One line per stage:
   `add_acc 19 (16 beats)` the shell's cycle counter for the accelerator task
   `add_acc` beside the task's beats. `passed` is the program's exit code 0,
   and the flow's exit follows it.
+- `convert`: the counters SNAX-GVSoC's components wrote to `run/events.log`
+  (snax-gvsoc `docs/EVENTS.md`) named into `run/profile.json` (C§7). At the
+  default trace level, `off`, these are the `summary` lines alone.
+- `report`: `report/design.md` (what was built) and `report/run.md` (where
+  the cycles went).
 
 The folder holds every stage's output:
 
-    ls out/flow/vecadd out/flow/vecadd/gen out/flow/vecadd/run
+    ls out/flow/vecadd out/flow/vecadd/run out/flow/vecadd/report
 
     out/flow/vecadd:
     build.log
     design
     flow.log
     gen
+    report
     run
     sandbox
     sw
     sw.log
     tasks.json
 
-    out/flow/vecadd/gen:
-    data.h
-    include
-    main.c
-    manifest.json
-    snax_alu.hjson
-    snax_alu_acc.hjson
-    snax_alu_streamer.hjson
+    out/flow/vecadd/report:
+    design.md
+    run.md
 
     out/flow/vecadd/run:
+    events.log
     profile.json
     run.json
     stderr.txt
@@ -119,16 +123,19 @@ What the program printed, after make's own lines:
     make: Entering directory '$ROOT/snax-forge/gvsoc'
     mkdir -p $ROOT/snax-forge/out/flow/vecadd/run/work
     $ROOT/snax-forge/out/snax-gvsoc/install/bin/gvrun --target snax_hjson \
-    	--work-dir $ROOT/snax-forge/out/flow/vecadd/run/work --param chip/soc/binary=$ROOT/snax-forge/out/flow/vecadd/sw/forge.elf --param hjson=$ROOT/snax-forge/out/flow/vecadd/gen/snax_alu.hjson run
+    	--work-dir $ROOT/snax-forge/out/flow/vecadd/run/work --param chip/soc/binary=$ROOT/snax-forge/out/flow/vecadd/sw/forge.elf --param hjson=$ROOT/snax-forge/out/flow/vecadd/gen/snax_alu.hjson \
+    	--trace='/summary$:$ROOT/snax-forge/out/flow/vecadd/run/events.log' run
     forge cycles: 226
     forge data: 0 errors (64 words)
     forge counter add_acc: 19
     forge errors: 0
     make: Leaving directory '$ROOT/snax-forge/gvsoc'
 
-`run.json` says what ran, `profile.json` what it measured (C§7):
+`run.json` says what ran, `profile.json` what it measured (C§7), from the
+accelerator's classes and firings to the cores' CSR counts, the DMA, the
+crossbar's ports and the banks:
 
-    cat out/flow/vecadd/run/run.json out/flow/vecadd/run/profile.json
+    cat out/flow/vecadd/run/run.json; head -n 14 out/flow/vecadd/run/profile.json
 
     {
      "design_point": "design/design_point.json",
@@ -136,26 +143,97 @@ What the program printed, after make's own lines:
      "elf": "sw/forge.elf",
      "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
      "target": "snax_hjson",
-     "snax_gvsoc": {"commit": "6e59daaf67eb9005a3393b21896e89d4c956f488", "dirty": false},
+     "snax_gvsoc": {"commit": "0e01c6e2111479acc5b4d212a6e57de87aca7ecb", "dirty": false},
      "trace_level": "off"
     }
     {
      "total_cycles": 226,
-     "functional_check": {
-      "kernel": "vecadd",
-      "seed": 0,
-      "symbols": {"N": 64},
-      "exit_code": 0,
-      "data_errors": 0,
-      "words": 64,
-      "tasks": {"add_acc": {"counter": 19, "beats": 16}},
-      "passed": true
-     }
+     "accelerators": {
+      "acc": {
+       "cycles": {"busy": 16, "stall_in": 3, "stall_out": 0, "flush": 0, "idle": 207},
+       "firings": 16,
+       "utilisation": 0.07079646017699115
+      }
+     },
+     "streamers": {
+      "acc_a": {
+       "write": false,
+       "cycles": {"busy": 16, "stall_xbar": 0, "stall_fifo": 0, "idle": 210},
+       "ports": ["acc_a.lane0", "acc_a.lane1", "acc_a.lane2", "acc_a.lane3"],
+    ...
+
+`--trace task` also turns on the components' `events` lines; the folder
+gets the level in its name:
+
+    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
+
+    Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
+    flow vecadd_task (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd_task/
+      sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
+      design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      lower     tasks.json (12 steps)
+      gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
+      build     up to date (snax-gvsoc 0e01c6e2)
+      sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
+      gvsoc     snax_hjson, exit 0 -> run/
+      check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
+      convert   run/events.log -> profile.json, trace.jsonl (49 events in the window; boot 2812)
+      report    report/design.md, report/run.md
+
+The trace is every start, done, SNAX CSR access, poll, barrier, state
+change, function entry and DMA copy in the program's window, the one the
+profile uses: from the program's `mcycle` read in main (`t = 0`) to its
+read in `forge_check()`, which the core logs; `trace_meta.json` holds
+`boot`, that first read in SNAX-GVSoC's cycles:
+
+    head -n 4 out/flow/vecadd_task/run/trace.jsonl; cat out/flow/vecadd_task/run/trace_meta.json
+
+    {"t": 33, "k": "func", "src": "core0", "name": "forge_core_0", "pc": 2147484444}
+    {"t": 33, "k": "func", "src": "core1", "name": "forge_core_1", "pc": 2147484580}
+    {"t": 62, "k": "csr", "src": "core0", "pc": 2147484452, "csr": 960, "block": "acc_streamer", "op": "w", "value": 268435456}
+    {"t": 63, "k": "csr", "src": "core0", "pc": 2147484456, "csr": 961, "block": "acc_streamer", "op": "w", "value": 0}
+    {
+     "level": "task",
+     "total_cycles": 226,
+     "boot": 2812,
+     "sources": ["acc", "acc_a", "acc_b", "acc_out", "dma", "core0", "core1"]
     }
 
-The trace is `off`; `--trace task` and `--trace beat` stop with a named
-error until FLOW3 round 1b brings the events (D137), and there are no
-reports until then either.
+The run report names each task from the task list:
+
+    sed -n 1,22p out/flow/vecadd_task/report/run.md
+
+    # Run report: vecadd_task
+
+    |  |  |
+    |---|---|
+    | Window (main to forge_check, the program's mcycle) | 226 |
+    | Functional check | passed |
+    | Data | 0 errors over 64 words |
+    | Counters | add_acc 19 |
+    | Trace | task; boot 2812 cycles (to the mcycle read in main) |
+
+    ## Tasks
+
+    | Block | # | Task | Start | Done | Cycles | Direction | Bytes |
+    |---|---:|---|---:|---:|---:|---|---:|
+    | dma | 0 | load_A | 75 | 97 | 22 | L2 → L1 | 512 |
+    | dma | 1 | load_B | 93 | 114 | 21 | L2 → L1 | 512 |
+    | acc_a | 0 | add_acc_a | 119 | 137 | 18 | – | – |
+    | acc_b | 0 | add_acc_b | 119 | 138 | 19 | – | – |
+    | acc_out | 0 | add_acc_out | 119 | 141 | 22 | – | – |
+    | acc | 0 | add_acc | 120 | 140 | 20 | – | – |
+    | dma | 2 | store_C | 162 | 177 | 15 | L1 → L2 | 512 |
+
+and the viewer shows the profile in the browser (open the address it
+prints; the schedule comes back in FLOW3 round 3):
+
+    pixi run view out/flow/vecadd_task out/flow/vsum_task
+
+    Pixi task (view in default): python -m snax_forge.viz out/flow/vecadd_task out/flow/vsum_task
+    serving vecadd_task, vsum_task at http://127.0.0.1:8765/ (Ctrl-C to stop)
+
+`--trace beat` stops with a named error until FLOW3 round 2.
 
 ## 3. A second kernel: vsum
 
@@ -170,28 +248,31 @@ Accumulator. GVSoC is built now, so the whole flow takes seconds:
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (9 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc 6e59daaf)
+      build     up to date (snax-gvsoc 0e01c6e2)
       sw        sw/forge.elf (sha256 26b545a3812000c8)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 255 cycles (main to forge_check); data 0 errors (1 words); counters sum_acc 67 (64 beats)
-      report    none in FLOW3 round 1a; the reports come back in FLOW3 round 1b
+      convert   run/events.log -> profile.json (the summary lines; trace off)
+      report    report/design.md, report/run.md
 
 `flow.log` holds the same lines, the design checks that ran and each
 stage's time (this machine's; they change from run to run):
 
-    tail -12 out/flow/vsum/flow.log
+    tail -n 14 out/flow/vsum/flow.log
 
     stage times (wall clock, this machine):
-      import    0.331 s
-      sandbox   0.034 s
-      design    0.051 s
-      lower     0.011 s
-      gen       0.124 s
-      build     0.462 s
-      sw        0.511 s
-      gvsoc     2.209 s
-      check     0.012 s
-      total     3.746 s
+      import    0.232 s
+      sandbox   0.020 s
+      design    0.015 s
+      lower     0.006 s
+      gen       0.052 s
+      build     0.342 s
+      sw        0.593 s
+      gvsoc     1.941 s
+      check     0.003 s
+      convert   0.013 s
+      report    0.046 s
+      total     3.263 s
 
 ## 4. What the flow refuses
 

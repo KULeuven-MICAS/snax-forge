@@ -99,6 +99,7 @@ test-dfg   = "pytest -q tests/dfg tests/test_expr.py"
 test-sandbox = "pytest -q tests/sandbox"
 test-design = "pytest -q tests/design"
 test-flow  = "pytest -q tests/flow"
+test-run   = "pytest -q tests/run"
 test-report = "pytest -q tests/report"
 test-gen   = "pytest -q tests/gen"
 test-kernels = "pytest -q tests/kernels"
@@ -129,8 +130,8 @@ flow       = "python -m snax_forge.flow"
 # the cluster, streamer and accelerator hjson files, the headers, data.h, main.c and manifest.json to
 # out/gvsoc/<design>/
 gen-gvsoc  = "python -m snax_forge.gen"
-# Reports (REP1, D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/;
-# a run directory gets DIR_report/ (`--tasks scenarios/<name>/tasks.json` names a scenario's tasks)
+# Reports (REP1, D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/
+# (the flow writes them after every run)
 report     = "python -m snax_forge.report"
 # Kernels (KER0): `pixi run kernels` prints each kernel's directory, tier, dtype, and whether its SDFG builds
 # and import-dfg takes it; it only reports

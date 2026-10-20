@@ -30,13 +30,15 @@ def test_server_serves_viewer_and_runs(tmp_path):
         assert get(srv, "/memory.js")[1] == "text/javascript"  # the memory tab
         runs = get_json(srv, "/api/runs")
         assert runs == [
-            {"name": "vecadd", "path": str(d), "scenario": "vecadd",
-             "trace_level": "task", "total_cycles": 77}
+            {"name": "vecadd", "path": str(d), "design": "vecadd",
+             "trace_level": "task", "total_cycles": 226}
         ]  # fmt: skip
-        evs = get_json(srv, "/api/run/vecadd/events?from=0&to=5&src=ctl")["events"]
-        assert evs and all(e["src"] == "ctl" and e["t"] < 5 for e in evs)
-        evs = get_json(srv, "/api/run/vecadd/events?from=0&to=200&k=start,done")["events"]
+        evs = get_json(srv, "/api/run/vecadd/events?from=0&to=60&src=core0")["events"]
+        assert evs and all(e["src"] == "core0" and e["t"] < 60 for e in evs)
+        evs = get_json(srv, "/api/run/vecadd/events?from=0&to=226&k=start,done")["events"]
         assert evs and {e["k"] for e in evs} == {"start", "done"}
+        detail = get_json(srv, "/api/run/vecadd")
+        assert detail["profile"]["total_cycles"] == 226 and detail["cluster"]["design"] == "vecadd"
 
 
 def test_every_module_the_viewer_imports_is_served(tmp_path):
@@ -55,13 +57,12 @@ def test_every_module_the_viewer_imports_is_served(tmp_path):
 def test_reload_picks_up_a_changed_directory(tmp_path):
     d = run_dir(tmp_path / "run", "vecadd", "off")
     with serving([d]) as srv:
-        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 77
-        run_dir(d, "vecadd_conflict", "task")  # overwrite the directory
-        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 77  # read once, not watched
+        assert get_json(srv, "/api/runs")[0]["trace_level"] == "off"
+        run_dir(d, "vecadd", "task")  # the folder made again
+        assert get_json(srv, "/api/runs")[0]["trace_level"] == "off"  # read once, not watched
         req = Request(srv.url + "api/reload", method="POST")
         with urlopen(req, timeout=10) as r:
             assert json.loads(r.read()) == {"runs": ["run"]}
-        assert get_json(srv, "/api/runs")[0]["total_cycles"] == 85
         assert get_json(srv, "/api/run/run")["trace"]["level"] == "task"
 
 
@@ -72,41 +73,11 @@ def status_of(srv, path):
         return e.code
 
 
-def test_memory_routes(tmp_path):
-    """The memory tab's two routes: the folded view and rows on request."""
-    d = run_dir(tmp_path / "vecadd", "vecadd", "off")
+def test_memory_and_movement_routes_say_round_2(tmp_path):
+    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
     with serving([d]) as srv:
-        view = get_json(srv, "/api/run/vecadd/memory")
-        assert view["has_regions"] and [m["mem"] for m in view["memories"]] == ["l1", "l2"]
-        rows = get_json(srv, "/api/run/vecadd/memory/l1/rows?from=4&to=6")
-        assert [r["row"] for r in rows["rows"]] == [4, 5]
-        # B's first element in bank 8 of row 4; regions are numbered per memory (A, B, C in L1)
-        assert rows["rows"][0]["cells"][8] == [[1, 0]]
-        assert len(get_json(srv, "/api/run/vecadd/memory/l2/rows")["rows"]) == 256  # default
-        assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=0&to=300") == 400
-        assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=x") == 400
-        assert status_of(srv, "/api/run/vecadd/memory/l3/rows") == 404
+        assert status_of(srv, "/api/run/vecadd/memory") == 400
+        assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=0&to=4") == 404
+        assert get_json(srv, "/api/run/vecadd/movement")["available"] is False
+        assert get_json(srv, "/api/run/vecadd/fifo")["available"] is False
         assert status_of(srv, "/api/run/nope/memory") == 404
-
-
-def test_movement_routes(tmp_path):
-    """The data movement routes: movement, journey, conflicts and marks."""
-    beat = run_dir(tmp_path / "beat", "vecadd_conflict", "beat")
-    task = run_dir(tmp_path / "task", "vecadd", "task")
-    with serving([beat, task]) as srv:
-        m = get_json(srv, "/api/run/beat/movement")
-        assert m["available"] and m["conflicts"]["count"] == 28
-        j = get_json(srv, "/api/run/beat/journey?region=B&index=8")
-        assert j["element"] == "B[8]" and any(h["act"] == "held back" for h in j["hops"])
-        c = get_json(srv, "/api/run/beat/conflicts?from=44&to=45")
-        assert c["count"] == 4
-        marked = get_json(srv, "/api/run/beat/memory?marks=conflicts")
-        assert marked["marks"] == "conflicts" and "marks" in marked["memories"][0]["lines"][0]
-        rows = get_json(srv, "/api/run/beat/memory/l1/rows?from=4&to=5&marks=conflicts")
-        assert sum(rows["rows"][0]["marks"]) == 4
-        assert get_json(srv, "/api/run/task/movement")["available"] is False
-        assert status_of(srv, "/api/run/task/memory?marks=conflicts") == 400
-        assert status_of(srv, "/api/run/beat/memory?marks=nope") == 400
-        assert status_of(srv, "/api/run/beat/journey?region=B") == 400
-        assert status_of(srv, "/api/run/beat/journey?region=B&index=99") == 400
-        assert status_of(srv, "/api/run/beat/journey?region=B&index=x") == 400

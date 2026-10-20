@@ -95,22 +95,21 @@ function fillTabs(view) {
 
 function traceText(tr, level) {
   if (!tr) return level;
-  const parts = [tr.level];
-  if (tr.filter_sources) parts.push(`beat events of ${tr.filter_sources.join(", ")} only`);
-  if (tr.filter_window) parts.push(`beat events in cycles [${tr.filter_window[0]}, ${tr.filter_window[1]}) only`);
-  return parts.join("; ");
+  return `${tr.level}; ${int(tr.n_events)} events in the window (boot ${int(tr.boot)} cycles)`;
 }
 
 function fillHeader(detail) {
   const run = detail.run;
+  const check = detail.profile.functional_check;
   $("run-title").textContent = detail.name;
   document.title = `${detail.name}: SNAX-FORGE run viewer`;
   const facts = [
-    ["Scenario", run.scenario],
-    ["Cluster file", run.cluster_file || "inline"],
+    ["Design point", `${detail.cluster.design} (${run.design_point})`],
+    ["Cluster file", (run.hjson || [])[0] || "–"],
     ["Directory", detail.path],
     ["Trace", traceText(detail.trace, run.trace_level)],
-    ["Total cycles", int(run.total_cycles)],
+    ["Total cycles", `${int(detail.total_cycles)} (main to forge_check)`],
+    ["Check", check ? (check.passed ? "passed" : "FAILED") : "–"],
   ];
   $("facts").replaceChildren(...facts.flatMap(([k, v]) => [h("dt", {}, k), h("dd", {}, v)]));
 }
