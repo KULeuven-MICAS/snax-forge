@@ -143,7 +143,8 @@ scenarios  = "python scenarios/make.py"
 model-run  = { cmd = "python -m snax_forge.snax_model run", depends-on = ["scenarios"] }
 # Viewer (VIS1, D55): `pixi run view out/vecadd [out/other ...]`, then open http://127.0.0.1:8765/
 view       = "python -m snax_forge.viz"
-# Remove out/, Python and test caches and Chisel build trees; `pixi run clean --dry-run` only lists them
+# Remove out/ (but the GVSoC build, out/snax-gvsoc/, unless --all), Python and test caches and
+# Chisel build trees; `pixi run clean --dry-run` only lists them
 clean      = "python util/clean.py"
 
 # --- Chisel ---------------------------------------------------------------

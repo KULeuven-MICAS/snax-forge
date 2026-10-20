@@ -41,7 +41,8 @@ want to reverse, implementation details in module docstrings and tests.
 - Reports: every flow writes `report/design.md`, `report/run.md` and `flow.log` beside `run/`;
   `pixi run report DIR` writes the reports for any flow folder or run directory.
 - Chisel: `pixi run -e hw chisel-test`, `chisel-gen`; `hw/chisel/` is a project of its own.
-- Clean slate: `pixi run clean` (`--dry-run` lists first).
+- Clean slate: `pixi run clean` (`--dry-run` lists first; it keeps the GVSoC build in
+  `out/snax-gvsoc/`, `--all` removes it too).
 
 ## Conventions
 - Python 3.11, type hints on all public functions, dataclasses for artefacts.

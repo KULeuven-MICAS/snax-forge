@@ -358,5 +358,5 @@ bump the submodule here so the test compares against it.
 pixi run test          # everything; writes the generated scenario files first
 pixi run test-model    # one block: test-model, test-lower, test-brm, test-dfg, test-sandbox, test-design, test-flow
 pixi run lint          # ruff check and format check (CI runs it); pixi run fmt fixes
-pixi run clean         # remove out/, caches and Chisel build trees (--dry-run lists them)
+pixi run clean         # remove out/ but out/snax-gvsoc/, caches and Chisel build trees (--all: out/snax-gvsoc/ too; --dry-run lists them)
 ```
