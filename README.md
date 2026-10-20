@@ -297,9 +297,7 @@ See `hw/chisel/README.md`.
 # 5. SNAX-GVSoC from snax-forge
 
 [snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
-`gvsoc/snax-gvsoc` (D128); CI never fetches it. `gvsoc/targets/` holds
-snax-forge's own GVSoC targets, run on the components snax-gvsoc installs.
-`gvsoc/Makefile` runs in the container's plain shell, not through pixi: pixi's
+`gvsoc/snax-gvsoc` (D128); CI never fetches it. `gvsoc/Makefile` runs in the container's plain shell, not through pixi: pixi's
 Python lacks GVSoC's packages (gvrun stops at `No module named 'rich'`) and
 its environment sets `CC` and `CXX` to conda's gcc.
 
@@ -312,20 +310,24 @@ make run TARGET=snax_alu ELF=snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
 ```
 
 `run` prints `Accelerator Done!`, `Accelerator Cycles: 25` and `Number of
-errors: 0`. It calls the install's `gvrun` with `--target-dir=gvsoc/targets`
-after the install's own `targets` and `generators`; `GVRUN_ARGS` goes before
+errors: 0`. It calls the install's `gvrun`; `GVRUN_ARGS` goes before
 `run` (e.g. `GVRUN_ARGS=--trace=snax_acc0`) and the work directory is
+`out/snax-gvsoc/work/<target>/<design>` with `DESIGN` set, else
 `out/snax-gvsoc/work/<target>/<elf name>`. `SNAX_GVSOC=../../snax-gvsoc` uses a
 sibling checkout instead of the submodule; `build` clears `out/snax-gvsoc`
 when the checkout changes, since CMake refuses a build folder of another one.
-A target in `gvsoc/targets/` that no build made has no platform tree: gvrun
-warns and runs it on the JSON config path (`gvsoc/targets/README.md`).
 `pixi run gen-gvsoc out/design/<design>/design_point.json` writes a design
 point's cluster to `out/gvsoc/<design>/` as three hjson files (the cluster
 `snax_alu.hjson`, the streamer and the datapath block), its headers (GEN3,
 LNK2a) and its self-checking program, `main.c` and `data.h` (GEN2a); the
-installed `snax_hjson` reads the cluster at run time:
-`make run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_alu.hjson" ELF=...`.
+installed `snax_hjson` reads the cluster at run time. From `gvsoc/`:
+
+```bash
+make sw APPS=forge FORGE=../out/gvsoc/<design> DESIGN=<design>
+make run TARGET=snax_hjson DESIGN=<design> \
+    GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_alu.hjson" \
+    ELF=snax-gvsoc/build/sw/apps/forge/<design>/forge.elf
+```
 
 ## Refreshing a fixture
 
