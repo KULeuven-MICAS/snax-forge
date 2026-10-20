@@ -105,8 +105,13 @@ vecadd, vecmul, vsum and vsum_tree check themselves on SNAX-GVSoC; KER0
 on SNAX-GVSoC (D136, `docs/RUN.md`; tag `flow3-r1a`): vecadd and vsum end
 in a checked run in the container, and CI's `gvsoc` job, rehearsed on a
 fresh clone, still has to run on GitHub (snax-gvsoc `FLOW3.md`). Round 1b
-is under way on `ry/flow3-2`: the events and the reports back (D137); then
-1c removes SNAX-MODEL (RET1), rounds 2 and 3, then GEN1.
+brought the events and the reports back (D137, tag `flow3-r1b` on
+`ry/flow3-2`): SNAX-GVSoC's components write `summary` and `events` lines
+into one `run/events.log`, `snax_forge/run/` converts them into the profile
+and the trace, and the flow writes the reports again; vecadd and vsum pass
+at `--trace off` and `task` on fresh clones in the container, and CI's runs
+on the branch wait for a dispatch. Next, 1c removes SNAX-MODEL (RET1); then
+rounds 2 and 3, then GEN1.
 
 ## Open Items
 
