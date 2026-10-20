@@ -7,14 +7,15 @@
 3. the check: the program's output parsed (pass, data errors, a missing
    line, a nonzero exit) and the run's exit code from make
 4. what stops the flow: a design problem, the generator's refusals, a make
-   failure, a trace level of round 1b
-5. names, the log and the command line
-6. the full flow on SNAX-GVSoC (marker ``gvsoc``)
+   failure, the trace level beat, a run without its events
+5. names, the log and the command line; the trace level task, stubbed
+6. the full flow on SNAX-GVSoC (marker ``gvsoc``), at trace off and task
 """
 
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import numpy as np
 import pytest
@@ -35,11 +36,14 @@ from snax_forge.flow import (
 )
 from snax_forge.flow import __main__ as cli
 from snax_forge.flow import run as flow_run
+from snax_forge.flow.run import with_level
 from snax_forge.gen import Manifest
+from snax_forge.run import read_run
 from snax_forge.sandbox import Recipe
 from snax_forge.sdfg.loader import load as load_kernel
 from tests.design.helpers import REPO, SMALL16, SNAX_ALU
 
+from . import helpers
 from .helpers import COMMIT, PLAIN, PLAINS, built, golden, needs_gvsoc, stub
 
 RECIPES = REPO / "recipes"
@@ -66,7 +70,8 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
             "tasks.json", "gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson",
             "gen/snax_alu_acc.hjson", "gen/main.c", "gen/data.h", "gen/manifest.json",
             "gen/include/acc_csr.h", "sw/forge.elf", "run/stdout.txt", "run/stderr.txt",
-            "run/run.json", "run/profile.json", "flow.log"} <= names  # fmt: skip
+            "run/run.json", "run/profile.json", "run/events.log", "flow.log"} <= names  # fmt: skip
+    assert not {"run/trace.jsonl", "run/trace_meta.json"} & names  # trace off
     assert not {"cluster.json", "scenario.json"} & names  # SNAX-MODEL's, gone
     main_c = (out / "gen" / "main.c").read_text()
     assert "FORGE_MARK" not in main_c and "forge_main" not in main_c
@@ -87,6 +92,8 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
     assert run["TARGET"] == "snax_hjson" and run["ELF"] == str((out / "sw/forge.elf").resolve())
     assert run["GVRUN_ARGS"] == f"--param hjson={(out / 'gen/snax_alu.hjson').resolve()}"
     assert run["WORK_DIR"] == str((out / "run" / "work").resolve())
+    assert run["EVENTS"] == str((out / "run" / "events.log").resolve())
+    assert run["TRACES"] == "summary"
     beats = {t.name: t.beats for t in Manifest.load(out / "gen" / "manifest.json").tasks}
     assert f.check["tasks"] == {t: {"counter": n + 3, "beats": n} for t, n in beats.items()}
 
@@ -117,7 +124,9 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
         "trace_level": "off",
     }
     prof = json.loads((out / "run" / "profile.json").read_text())
-    assert prof == {"total_cycles": 226, "functional_check": f.check}
+    assert (prof["total_cycles"], prof["functional_check"]) == (226, f.check)
+    assert set(prof) == {"total_cycles", "accelerators", "streamers", "cores", "dmas", "ports",
+                         "banks", "functional_check"}  # fmt: skip
     assert f.check == {
         "kernel": "vecadd", "seed": 0, "symbols": {"N": 64}, "exit_code": 0, "data_errors": 0,
         "words": 64, "tasks": {"add_acc": {"counter": 19, "beats": 16}}, "passed": True,
@@ -278,14 +287,29 @@ def test_a_make_failure_names_its_log(tmp_path, monkeypatch):
     assert (tmp_path / "flow" / "flow.log").read_text().startswith("flow vecadd FAILED\nsw: ")
 
 
-@pytest.mark.parametrize("level", ["task", "beat"])
-def test_the_trace_levels_of_round_1b_are_refused(tmp_path, monkeypatch, level):
+def test_the_trace_level_beat_is_refused(tmp_path, monkeypatch):
     fake = stub(monkeypatch, tmp_path)
-    with pytest.raises(
-        FlowError, match=f"trace level '{level}': the events come in FLOW3 round 1b"
-    ):
-        flow(tmp_path, trace_level=level)
+    with pytest.raises(FlowError, match="trace level 'beat': the beat lines come in FLOW3 round 2"):
+        flow(tmp_path, trace_level="beat")
     assert fake.calls == [] and not (tmp_path / "flow").exists()
+
+
+def test_a_run_without_its_events_stops_at_convert(tmp_path, monkeypatch):
+    stub(monkeypatch, tmp_path)
+    monkeypatch.setattr(helpers, "write_events", lambda variables: None)
+    with pytest.raises(FlowError, match=r"convert: no .*run/events.log after the run"):
+        flow(tmp_path)
+
+
+def test_events_that_do_not_convert_stop_at_convert(tmp_path, monkeypatch):
+    stub(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        helpers,
+        "write_events",
+        lambda variables: Path(variables["EVENTS"]).write_text("forge cycles: 226\n"),
+    )
+    with pytest.raises(FlowError, match=r"convert: \[events.line\]"):
+        flow(tmp_path)
 
 
 # =============================================================================
@@ -309,11 +333,28 @@ def test_the_summary_says_there_are_no_reports_yet(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
     lines = summary(flow(tmp_path)).splitlines()
     assert [x.split()[0] for x in lines[1:]] == [
-        "sandbox", "design", "lower", "gen", "build", "sw", "gvsoc", "check", "report"
+        "sandbox", "design", "lower", "gen", "build", "sw", "gvsoc", "check", "convert", "report"
     ]  # fmt: skip
-    assert (
-        lines[-1] == "  report    none in FLOW3 round 1a; the reports come back in FLOW3 round 1b"
+    assert lines[-2] == (
+        "  convert   run/events.log -> profile.json (the summary lines; trace off)"
     )
+    assert lines[-1] == "  report    none yet; the reports come back in FLOW3 round 1b step 6"
+
+
+def test_the_trace_level_task_stubbed(tmp_path, monkeypatch):
+    """At task the run turns the events on, the folder's default name carries the level, and
+    convert writes the trace (its invariants checked, tests/run)."""
+    fake = stub(monkeypatch, tmp_path)
+    f = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, trace_level="task",
+                 out=tmp_path / "flow")  # fmt: skip
+    assert fake.calls[-1][1]["TRACES"] == "summary events"
+    run = tmp_path / "flow" / "run"
+    meta = json.loads((run / "trace_meta.json").read_text())
+    assert (meta["level"], meta["total_cycles"], meta["window"]) == ("task", 226, 226)
+    assert len((run / "trace.jsonl").read_text().splitlines()) == len(f.trace.events) > 0
+    assert json.loads((run / "run.json").read_text())["trace_level"] == "task"
+    assert f"{len(f.trace.events)} events in 226 cycles from main; boot 1000" in summary(f)
+    assert with_level("vecadd", "task") == "vecadd_task" and with_level("vecadd", "off") == "vecadd"
 
 
 def test_the_log_is_the_summary_the_checks_and_the_stage_times(tmp_path, monkeypatch):
@@ -358,8 +399,8 @@ def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
 def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch, capsys):
     fake = stub(monkeypatch, tmp_path)
     args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN, "--out", tmp_path / "f"]  # fmt: skip
-    assert main(*args, "--trace", "task") == 1
-    assert "the events come in FLOW3 round 1b" in capsys.readouterr().err
+    assert main(*args, "--trace", "beat") == 1
+    assert "the beat lines come in FLOW3 round 2" in capsys.readouterr().err
     assert main(*args, "--set", "Q=1") == 1
     assert "no param 'Q'" in capsys.readouterr().err
     fake.rc["run"] = 2
@@ -375,11 +416,18 @@ def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch
 
 @pytest.mark.gvsoc
 @needs_gvsoc
+@pytest.mark.parametrize("level", ["off", "task"])
 @pytest.mark.parametrize("design", ["vecadd", "vsum"])
-def test_the_flow_on_snax_gvsoc(tmp_path, design):
-    """From the kernel: a checked SNAX-GVSoC run, exit 0, its window and counters printed."""
-    f = run_flow(RECIPES / f"{design}.json", SNAX_ALU, out=tmp_path / design)
+def test_the_flow_on_snax_gvsoc(tmp_path, design, level):
+    """From the kernel: a checked SNAX-GVSoC run, exit 0, its window and counters printed; its
+    events converted (convert's invariants hold, or the flow fails)."""
+    f = run_flow(RECIPES / f"{design}.json", SNAX_ALU, out=tmp_path / design, trace_level=level)
     assert f.passed, summary(f)
+    run = read_run(tmp_path / design / "run")
+    assert run.profile.total_cycles == f.total_cycles and (run.trace is None) == (level == "off")
+    assert run.profile.accelerators["acc"].firings == sum(
+        t["beats"] for t in f.check["tasks"].values()
+    )
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
     assert all(t["counter"] >= t["beats"] for t in f.check["tasks"].values())
     stdout = (tmp_path / design / "run" / "stdout.txt").read_text()

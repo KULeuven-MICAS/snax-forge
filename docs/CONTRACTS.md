@@ -536,7 +536,9 @@ kind's own fields:
 DMA copy's `dir` (`l2_to_l1`, `l1_to_l2`) comes from its addresses and the
 cluster's L1 range, and copies are matched to the task list's `load_<C>` and
 `store_<C>` tasks in issue order. `trace_meta.json` holds the `level`,
-`total_cycles`, the `boot` shift and the `sources`.
+`total_cycles`, the `boot` shift, the `window` (main's entry to
+`forge_check()`'s, the cycles the events and a core's classes cover) and
+the `sources`.
 
 ## 8. Rules for a new block kind
 

@@ -31,9 +31,9 @@ def events():
 
 
 def test_round_trip():
-    t = Trace("task", 226, 2799, ["acc", "acc_a", "dma", "core0", "core1"], events())
+    t = Trace("task", 226, 2799, 211, ["acc", "acc_a", "dma", "core0", "core1"], events())
     assert Trace.from_dict(json.loads(json.dumps(t.to_dict()))) == t
-    assert t.meta() == {"level": "task", "total_cycles": 226, "boot": 2799,
+    assert t.meta() == {"level": "task", "total_cycles": 226, "boot": 2799, "window": 211,
                         "sources": ["acc", "acc_a", "dma", "core0", "core1"]}  # fmt: skip
     assert [e["task"] for e in t.of_kind("done")] == ["add_acc", "add_acc_a", "load_A"]
     assert [e["task"] for e in t.of_kind("done", "dma")] == ["load_A"]
@@ -51,11 +51,11 @@ def test_round_trip():
 )
 def test_an_event_not_of_its_kind_is_a_named_error(event, code):
     with pytest.raises(RunError) as e:
-        Trace("task", 1, 0, [], [event])
+        Trace("task", 1, 0, 1, [], [event])
     assert e.value.code == code
 
 
 def test_off_has_no_trace():
     with pytest.raises(RunError) as e:
-        Trace("off", 1, 0)
+        Trace("off", 1, 0, 1)
     assert e.value.code == "trace.level"

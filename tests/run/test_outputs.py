@@ -10,7 +10,7 @@ from snax_forge.run import Profile, RunError, Trace, read_run, write_run
 def test_write_and_read(tmp_path):
     (tmp_path / "run.json").write_text(json.dumps({"trace_level": "task"}))
     p = Profile(total_cycles=226, functional_check={"passed": True})
-    t = Trace("task", 226, 2799, ["core0"], [
+    t = Trace("task", 226, 2799, 211, ["core0"], [
         {"t": 0, "k": "func", "src": "core0", "name": "main", "pc": 16},
         {"t": 3, "k": "state", "src": "core0", "mode": "run"},
     ])  # fmt: skip
@@ -22,7 +22,7 @@ def test_write_and_read(tmp_path):
 
 def test_no_trace_removes_an_earlier_one(tmp_path):
     (tmp_path / "run.json").write_text("{}")
-    write_run(tmp_path, Profile(1), Trace("task", 1, 0, [], []))
+    write_run(tmp_path, Profile(1), Trace("task", 1, 0, 1, [], []))
     write_run(tmp_path, Profile(1), None)
     assert not (tmp_path / "trace.jsonl").exists() and not (tmp_path / "trace_meta.json").exists()
     assert read_run(tmp_path).trace is None

@@ -12,9 +12,12 @@
                         and main.c                                  gen/
       -> build          SNAX-GVSoC, when needed (below)            out/snax-gvsoc/
       -> sw             the program, by snax-gvsoc's generic app    sw/forge.elf
-      -> gvsoc          the run on snax_hjson with gen/'s cluster   run/
+      -> gvsoc          the run on snax_hjson with gen/'s cluster, its
+                        events into run/events.log (D137)           run/
       -> check          the program's own check: its exit code and
                         what it printed (``check_output``)          run/run.json
+      -> convert        the events into the profile and the trace
+                        (snax_forge/run/, C§7)                      run/profile.json
       -> log            the summary and the design checks that ran flow.log
 
 The flow runs SNAX-GVSoC only (D136). ``build``, ``sw`` and ``gvsoc`` each call
@@ -45,15 +48,22 @@ from the manifest. ``passed`` is an exit code of 0. A missing line is a
 FlowError that names it. ``run/run.json`` records what ran: the design
 point, the three hjson files, the ELF's sha256, the target, the snax-gvsoc
 commit and whether its tree was dirty, and the trace level;
-``run/profile.json`` holds ``total_cycles`` and ``functional_check``.
+``run/profile.json`` holds ``total_cycles`` and ``functional_check``, with
+what ``convert`` adds.
 
-**Trace.** ``off`` only, the default, until FLOW3 round 1b brings the
-events (D137); ``task`` and ``beat`` stop with a FlowError that says so.
-There are no reports in round 1a either; the summary says so.
+**Trace** (D137). The run writes the SNAX components' ``summary`` traces into
+``run/events.log`` at every level, and their ``events`` traces at ``task``
+(``gvsoc/Makefile``'s ``EVENTS`` and ``TRACES``); ``beat`` is a FlowError until
+FLOW3 round 2. ``convert`` reads the log, names it after the cluster
+(``run/cluster.py``: the generator's hjson files and the design point) and the
+task list, and writes the profile and, at ``task``, the trace (``run/convert.py``,
+whose invariants hold or the stage fails). There are no reports until FLOW3
+round 1b's step 6; the summary says so.
 
 Everything goes to one folder, ``out/flow/<name>/``, overwritten on every
 run; the default name carries every ``--set``, so runs that differ only in
-the platform or the memory plan land in folders of their own. ``flow.log``
+the platform or the memory plan land in folders of their own, then the
+trace level when it is not ``off`` (``vecadd_task``). ``flow.log``
 is what the command line prints plus the design checks that ran; a flow
 that fails writes the failure there instead. The log, the reports, ``gen/``
 and ``run/`` of an earlier run in the same folder, and the scenario files
@@ -61,7 +71,7 @@ SNAX-MODEL's flow left there, are removed first.
 
 **Stage times** (D90). ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``gen``, ``build``,
-``sw``, ``gvsoc``, ``check``) and their total, on this machine. They change
+``sw``, ``gvsoc``, ``check``, ``convert``) and their total, on this machine. They change
 from run to run, so they are in the log only. They are the raw material of
 the paper's turnaround baseline (claim C1).
 
@@ -105,6 +115,9 @@ from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.execute import execute
 from snax_forge.lower import CError, LowerError, TaskList, task_list
+from snax_forge.run import RunError, Trace, load_cluster, read_events, write_run
+from snax_forge.run.convert import convert
+from snax_forge.run.outputs import EVENTS_FILE
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
 from snax_forge.sdfg.loader import load as load_kernel
 
@@ -114,7 +127,18 @@ if TYPE_CHECKING:  # gen imports the flow's kernel helpers (gen/data.py)
 ROOT = repo_root()
 OUT = ROOT / "out" / "flow"
 LOG = "flow.log"
-STAGE_NAMES = ("import", "sandbox", "design", "lower", "gen", "build", "sw", "gvsoc", "check")
+STAGE_NAMES = (
+    "import",
+    "sandbox",
+    "design",
+    "lower",
+    "gen",
+    "build",
+    "sw",
+    "gvsoc",
+    "check",
+    "convert",
+)
 REPORT = "report"
 # SNAX-GVSoC: gvsoc/Makefile, the submodule and the build's folder (that Makefile's defaults)
 GVSOC_MAKE = ROOT / "gvsoc"
@@ -124,7 +148,9 @@ GVSOC_WORKDIR = ROOT / "out" / "snax-gvsoc"
 TARGET = "snax_hjson"
 ELF = "forge.elf"
 TRACE_LEVELS = ("off", "task", "beat")
-ROUND_1B = "FLOW3 round 1b"
+# The SNAX components' traces each level turns on (snax-gvsoc docs/EVENTS.md)
+TRACES = {"off": "summary", "task": "summary events"}
+REPORTS_IN = "FLOW3 round 1b step 6"
 
 
 class FlowError(ValueError):
@@ -160,6 +186,8 @@ class Flow:
     check: dict[str, Any]
     checks: dict[str, list[str]] = field(default_factory=dict)  # stage -> codes that ran
     times: dict[str, float] = field(default_factory=dict)  # stage -> wall-clock seconds
+    trace_level: str = "off"
+    trace: Trace | None = None  # convert's, above off
 
     @property
     def passed(self) -> bool:
@@ -191,6 +219,11 @@ def default_name(
     (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``)."""
     sets = [*recipe_sets.items(), *platform_sets, *memory_sets]
     return "_".join([recipe.name, *(_name_part(k, v) for k, v in sets)])
+
+
+def with_level(name: str, level: str) -> str:
+    """A default name with the trace level appended when it is not ``off`` (``vecadd_task``)."""
+    return name if level == "off" else f"{name}_{level}"
 
 
 def bound_name(
@@ -428,7 +461,15 @@ def summary(f: Flow) -> str:
         f"  check     {verdict}: {f.total_cycles} cycles (main to forge_check); data "
         f"{check['data_errors']} errors ({check['words']} words); counters {tasks}"
     )
-    lines.append(f"  report    none in FLOW3 round 1a; the reports come back in {ROUND_1B}")
+    if f.trace is None:
+        conv = "run/events.log -> profile.json (the summary lines; trace off)"
+    else:
+        conv = (
+            f"run/events.log -> profile.json, trace.jsonl ({len(f.trace.events)} events in "
+            f"{f.trace.window} cycles from main; boot {f.trace.boot})"
+        )
+    lines.append(f"  convert   {conv}")
+    lines.append(f"  report    none yet; the reports come back in {REPORTS_IN}")
     lines += [f"  WARNING   {w}" for w in f.warnings]
     return "\n".join(lines)
 
@@ -479,12 +520,12 @@ def _clear_sandbox(out: Path, graph_path: Path) -> None:
 def _trace(level: str) -> None:
     if level not in TRACE_LEVELS:
         raise FlowError(f"trace level {level!r}: one of {', '.join(TRACE_LEVELS)}")
-    if level != "off":
-        raise FlowError(f"trace level {level!r}: the events come in {ROUND_1B} (D137); "
-                        "only 'off' runs now")  # fmt: skip
+    if level not in TRACES:
+        raise FlowError(f"trace level {level!r}: the beat lines come in FLOW3 round 2 (D137); "
+                        f"{' and '.join(repr(x) for x in TRACES)} run now")  # fmt: skip
 
 
-FAILURES = (DesignError, FlowError, SandboxError, DfgError, LowerError, OSError)
+FAILURES = (DesignError, FlowError, SandboxError, DfgError, LowerError, RunError, OSError)
 
 
 def run_flow(
@@ -508,7 +549,8 @@ def run_flow(
     # The design point, and with it the task list, is named after the recipe and its params
     # only; the folder carries every --set (D90).
     point_name = name or default_name(recipe, recipe_sets)
-    name = name or default_name(recipe, recipe_sets, platform_sets, memory_sets)
+    name = name or with_level(default_name(recipe, recipe_sets, platform_sets, memory_sets),
+                              trace_level)  # fmt: skip
     out = Path(out) if out is not None else OUT / name
     out.mkdir(parents=True, exist_ok=True)
     _clear(out)
@@ -555,7 +597,7 @@ def run_bound(
     graph_path = Path(graph_path)
     # As in run_flow: the design point keeps the graph's name, the folder carries every --set.
     point_name = name or bound_name(graph_path)
-    name = name or bound_name(graph_path, platform_sets, memory_sets)
+    name = name or with_level(bound_name(graph_path, platform_sets, memory_sets), trace_level)
     out = Path(out) if out is not None else OUT / name
     out.mkdir(parents=True, exist_ok=True)
     _clear(out)
@@ -662,6 +704,7 @@ def _from_graph(
             "TARGET": TARGET, "DESIGN": name, "ELF": str(elf.resolve()),
             "GVRUN_ARGS": f"--param hjson={(gen / manifest.cluster).resolve()}",
             "WORK_DIR": str((run / "work").resolve()),
+            "EVENTS": str((run / EVENTS_FILE).resolve()), "TRACES": TRACES[trace_level],
         }  # fmt: skip
         rc = run_gvsoc("run", variables, run / "stdout.txt", run / "stderr.txt")
         exit_code = run_exit_code(rc, (run / "stderr.txt").read_text())
@@ -687,9 +730,21 @@ def _from_graph(
             "trace_level": trace_level,
         }
         (run / "run.json").write_text(to_json(record))
-        (run / "profile.json").write_text(to_json({"total_cycles": cycles,
-                                                   "functional_check": check}))  # fmt: skip
+
+    # convert: the events into the profile and the trace (D137)
+    with _timed(times, "convert"):
+        events = run / EVENTS_FILE
+        if not events.is_file():
+            raise FlowError(f"convert: no {cwd_relative(events)} after the run; see "
+                            f"{cwd_relative(run / 'stderr.txt')}")  # fmt: skip
+        try:
+            cluster = load_cluster(gen / manifest.cluster, ddir / "design_point.json")
+            profile, trace = convert(read_events(events), cluster, tasks, cycles, trace_level,
+                                     check)  # fmt: skip
+        except RunError as e:
+            raise FlowError(f"convert: {e}") from None
+        write_run(run, profile, trace)
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
-        checks_that_ran(),
+        checks_that_ran(), trace_level=trace_level, trace=trace,
     )  # fmt: skip

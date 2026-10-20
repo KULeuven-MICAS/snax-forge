@@ -107,7 +107,7 @@ flowchart LR
 design step (platform) → design point → SNAX-LOWER → a run → reports and
 views → the thinker edits the recipe or the platform. `pixi run flow` runs it
 once (section 5.9). The run is SNAX-GVSoC's (FLOW3, D136); the profile and
-trace from its events come with FLOW3 round 1b **[PLANNED, M14]**.
+trace come from its events (D137).
 
 **SNAX link:** the same design point gives the bundle snax_cluster builds and
 runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
@@ -254,11 +254,11 @@ it (D128). It holds:
   fresh runs of one ELF on both sides, while `make regress` checks that
   every program finishes and `dma-timing` that the DMA's counters stay the
   RTL's (SG5, SG6, SG7, D123);
-- **trace events** for the views (grants, stalls, responses, firings, FIFO
-  counts), from SNAX's components and from GVSoC's own L1 and interconnect:
-  an `events` trace per SNAX component in snax-gvsoc's own grammar, which
-  snax-forge's converter renames into its profile and trace, never
-  recounting (D137, FLOW3 round 1b); today they are text traces for people.
+- **events** for the profile and the views: a `summary`, `events` and
+  `beats` trace per SNAX component (unit, streamer, crossbar, core, iDMA) in
+  snax-gvsoc's own grammar, which snax-forge's converter renames into its
+  profile and trace, never recounting (D137); the beat lines (grants,
+  stalls, responses, firings, FIFO counts) come in FLOW3 round 2.
 
 What it models is what snax_cluster's RTL does; where the two differ, the
 RTL wins. Memory-mapped register writes may replace the CSR path later; the

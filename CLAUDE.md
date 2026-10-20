@@ -31,7 +31,9 @@ want to reverse, implementation details in module docstrings and tests.
 - Lint: `pixi run lint` (CI runs it); `pixi run fmt` fixes.
 - The whole path, on SNAX-GVSoC (D136, in the image, submodule checked out): `pixi run flow
   recipes/vecadd.json --platform platforms/snax_alu.json [--set W=8] [--set platform.PATH=VALUE]
-  [--set memory.PATH=VALUE]`, everything in `out/flow/<name>/`; it builds GVSoC when needed.
+  [--set memory.PATH=VALUE] [--trace off|task]`, everything in `out/flow/<name>/` (`<name>_task`
+  at `--trace task`); it builds GVSoC when needed. The run's events become `run/profile.json`
+  and, at `task`, `run/trace.jsonl` (`snax_forge/run/`, D137).
   From a bound graph instead of a recipe (no sandbox, D108): `pixi run flow
   out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json [--kernel K]`.
   The single steps (`forge`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in

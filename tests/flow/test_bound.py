@@ -75,7 +75,7 @@ def test_a_checked_in_bound_graph_runs(tmp_path, monkeypatch):
     )  # fmt: skip
     assert f.check["kernel"] == "vecadd" and f.point.graph_from == str(BOUND)
     assert not (tmp_path / "f" / "sandbox").exists()
-    assert list(f.times) == ["design", "lower", "gen", "build", "sw", "gvsoc", "check"]
+    assert list(f.times) == ["design", "lower", "gen", "build", "sw", "gvsoc", "check", "convert"]
 
 
 def test_the_summary_and_the_log_name_the_graph(tmp_path, monkeypatch):

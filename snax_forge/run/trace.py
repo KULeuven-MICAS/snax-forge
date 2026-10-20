@@ -17,7 +17,8 @@ Every event is a flat dict of ``t``, ``k``, ``src`` and the kind's own fields:
 ``KINDS`` holds each kind's fields, required and optional; ``Trace.from_dict`` refuses an
 event with an unknown kind or field. The events are kept as the dicts they are written as, in
 time order (by ``t``, then as SNAX-GVSoC wrote them). ``trace_meta.json`` is the rest: the
-``level``, ``total_cycles``, the ``boot`` shift (main's entry in SNAX-GVSoC's cycles) and the
+``level``, ``total_cycles``, the ``boot`` shift (main's entry in SNAX-GVSoC's cycles), the
+``window`` (main's entry to ``forge_check``'s, the cycles the events cover) and the
 ``sources`` in the cluster's order.
 """
 
@@ -74,6 +75,7 @@ class Trace:
     level: str
     total_cycles: int
     boot: int  # main's entry in SNAX-GVSoC's cycles: every t is shifted by it
+    window: int  # main's entry to forge_check's: the events' t are in [0, window)
     sources: list[str] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
 
@@ -89,12 +91,12 @@ class Trace:
 
     def meta(self) -> dict[str, Any]:
         return {"level": self.level, "total_cycles": self.total_cycles, "boot": self.boot,
-                "sources": list(self.sources)}  # fmt: skip
+                "window": self.window, "sources": list(self.sources)}  # fmt: skip
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.meta(), "events": [dict(e) for e in self.events]}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Trace:
-        return cls(d["level"], d["total_cycles"], d["boot"], list(d.get("sources", [])),
-                   [dict(e) for e in d.get("events", [])])  # fmt: skip
+        return cls(d["level"], d["total_cycles"], d["boot"], d["window"],
+                   list(d.get("sources", [])), [dict(e) for e in d.get("events", [])])  # fmt: skip
