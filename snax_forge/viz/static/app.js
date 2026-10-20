@@ -95,7 +95,7 @@ function fillTabs(view) {
 
 function traceText(tr, level) {
   if (!tr) return level;
-  return `${tr.level}; ${int(tr.n_events)} events over ${int(tr.window)} cycles from main (boot ${int(tr.boot)} cycles)`;
+  return `${tr.level}; ${int(tr.n_events)} events in the window (boot ${int(tr.boot)} cycles)`;
 }
 
 function fillHeader(detail) {

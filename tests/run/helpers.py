@@ -61,14 +61,16 @@ def line(path: str, trace: str, text: str, cycle: int = 0) -> str:
     return f"{cycle * 100000}: {cycle}: [\x1b[34m{full:<80}\x1b[0m] {text}"
 
 
-MAIN = 1000  # main's entry in the synthetic runs: the boot
+MAIN = 1000  # main's entry in the synthetic runs
+READ = 5  # the cycles from a function's entry to its mcycle read
+BOOT = MAIN + READ  # the mcycle read in main: the window's start
 
 
 def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) -> list[str]:
     """An events.log a passing program on ``cluster`` could write, for ``tasks`` (a TaskList):
-    boot, then from main's entry (``MAIN``) each DMA copy, each accelerator task with its
-    movers and the core's poll, forge_check's entry ``cycles`` later; the summary lines to
-    match. ``level`` off writes the summary lines only."""
+    boot, then from main's entry (``MAIN``) and its mcycle read (``BOOT``) each DMA copy, each
+    accelerator task with its movers and the core's poll, forge_check's entry and its mcycle
+    read ``cycles`` later; the summary lines to match. ``level`` off writes the summary lines only."""
     from snax_forge.lower.tasks import Configure
 
     acc = cluster.accelerator
@@ -85,6 +87,7 @@ def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) 
         add(MAIN - 50, f"pe{i}", "events", "func name=snrt_main pc=0x80002000")
         add(MAIN - 40, f"pe{i}", "events", f"barrier first={MAIN - 40} last={MAIN - 20}")
         add(MAIN, f"pe{i}", "events", "func name=main pc=0x800001e0")
+        add(BOOT, f"pe{i}", "events", f"mcycle pc=0x800001f0 value={BOOT}")
         add(MAIN + 10, f"pe{i}", "events", f"func name=forge_core_{i} pc=0x80000300")
     steps = [s for s in tasks.steps if isinstance(s, Configure)]
     t, ident = MAIN + 20, 2
@@ -125,6 +128,7 @@ def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) 
     add(t + 3, pd, "events", f"barrier first={t + 3} last={t + 3}")
     add(MAIN + cycles - 20, pa, "events", "func name=main pc=0x80000218")
     add(MAIN + cycles, pa, "events", "func name=forge_check pc=0x80000254")
+    add(BOOT + cycles, pa, "events", f"mcycle pc=0x80000264 value={BOOT + cycles}")
     add(MAIN + cycles + 30, pa, "events", "func name=printf_ pc=0x80000c18")
     end = MAIN + 20000
     add(end - 5, pa, "events", "state mode=sleep")

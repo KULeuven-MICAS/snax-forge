@@ -351,10 +351,10 @@ def test_the_trace_level_task_stubbed(tmp_path, monkeypatch):
     assert fake.calls[-1][1]["TRACES"] == "summary events"
     run = tmp_path / "flow" / "run"
     meta = json.loads((run / "trace_meta.json").read_text())
-    assert (meta["level"], meta["total_cycles"], meta["window"]) == ("task", 226, 226)
+    assert (meta["level"], meta["total_cycles"], meta["boot"]) == ("task", 226, 1005)
     assert len((run / "trace.jsonl").read_text().splitlines()) == len(f.trace.events) > 0
     assert json.loads((run / "run.json").read_text())["trace_level"] == "task"
-    assert f"{len(f.trace.events)} events in 226 cycles from main; boot 1000" in summary(f)
+    assert f"{len(f.trace.events)} events in the window; boot 1005" in summary(f)
     assert with_level("vecadd", "task") == "vecadd_task" and with_level("vecadd", "off") == "vecadd"
 
 

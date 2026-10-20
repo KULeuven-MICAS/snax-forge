@@ -49,10 +49,10 @@ function cyclesSection(detail) {
   const rows = [
     ...Object.entries(profile.accelerators).map(([n, a]) => ({ n, kind: "accel", label: "accelerator", cycles: a.cycles, total })),
     ...Object.entries(profile.streamers).map(([n, s]) => ({ n, kind: "streamer", label: s.write ? "writer" : "reader", cycles: s.cycles, total })),
-    ...Object.entries(profile.cores).filter(([, c]) => c.cycles).map(([n, c]) => ({ n, kind: "core", label: "core", cycles: c.cycles, total: trace.window })),
+    ...Object.entries(profile.cores).filter(([, c]) => c.cycles).map(([n, c]) => ({ n, kind: "core", label: "core", cycles: c.cycles, total })),
   ];
   const coresNote = trace
-    ? ` The cores' ${int(trace.window)} cycles are the events' window, main's entry to forge_check()'s (boot ${int(trace.boot)} cycles before it).`
+    ? ` The cores' too, the same window (boot ${int(trace.boot)} cycles before it).`
     : " The cores' classes need the events (--trace task).";
   return section("cycles", "Where the cycles go",
     `The accelerator's and the movers' ${int(total)} cycles (the program's window) by class.${coresNote} Totals only; when they happen is the schedule view (FLOW3 round 3).`,
@@ -117,7 +117,7 @@ function coreSection(detail) {
   const cores = Object.entries(profile.cores);
   if (!cores.length) return null;
   return section("cores", "Cores",
-    "SNAX CSR accesses over the whole run, and each wait in the events' window: a poll of a block's CSR (first to last read of one value) or a barrier.",
+    "SNAX CSR accesses over the whole run, and each wait in the window: a poll of a block's CSR (first to last read of one value) or a barrier.",
     cores.map(([n, c]) => h("div", { class: "block" },
       h("h3", {}, n, h("span", { class: "kind" }, `${int(c.csr_writes)} CSR writes, ${int(c.csr_reads)} CSR reads`)),
       c.cycles === null ? h("p", { class: "note" }, "Classes and waits need the events (--trace task).")

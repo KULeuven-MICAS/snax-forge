@@ -463,13 +463,14 @@ own grammar (snax-gvsoc `docs/EVENTS.md`) into `run/events.log`; the
 converter (`run/convert.py`) renames them into what follows and never
 recounts (D38).
 
-**The window.** `total_cycles` is the program's: `mcycle` at
-`forge_check()`'s entry minus `mcycle` at main's entry, the `forge cycles:`
-line. With events, the converter finds the same window as `[func main,
-func forge_check)` on the accelerator's core, checks it against
-`total_cycles` within the two `mcycle` reads, and shifts every cycle so
-that t = 0 is main's entry; the shift (the boot's length) is in
-`trace_meta.json`, and events outside the window are dropped.
+**The window.** `total_cycles` is the program's: its `mcycle` read in
+`forge_check()` minus its `mcycle` read in main, the `forge cycles:` line.
+With events, the converter takes the same two reads from the accelerator's
+core's `mcycle` lines (each picked by the function span it falls in),
+checks that they are exactly `total_cycles` apart, and shifts every cycle
+so that t = 0 is the read in main; the shift (the boot's length) is in
+`trace_meta.json`, and events outside `[0, total_cycles)` are dropped. The
+profile, a core's classes and the trace cover this one window.
 
 **Profile** (`run/profile.py`): the totals of one run. The fields:
 
@@ -536,9 +537,7 @@ kind's own fields:
 DMA copy's `dir` (`l2_to_l1`, `l1_to_l2`) comes from its addresses and the
 cluster's L1 range, and copies are matched to the task list's `load_<C>` and
 `store_<C>` tasks in issue order. `trace_meta.json` holds the `level`,
-`total_cycles`, the `boot` shift, the `window` (main's entry to
-`forge_check()`'s, the cycles the events and a core's classes cover) and
-the `sources`.
+`total_cycles`, the `boot` shift and the `sources`.
 
 ## 8. Rules for a new block kind
 

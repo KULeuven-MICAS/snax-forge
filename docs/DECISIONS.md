@@ -493,9 +493,10 @@ until FLOW3 round 1b. Amends D90; closes open item 56. → `flow/run.py`, C§7.
 names it: each SNAX component (unit, streamer, crossbar, core, iDMA) gets three `vp::Trace`s,
 `summary` (counters, always on), `events` (level `task`) and `beats` (level `beat`), in
 snax-gvsoc's own grammar, all into one `run/events.log` so lines keep simulation order; the
-converter renames them into C§7, never recounts, cuts the window and shifts it to main's entry
-(the boot kept as a number), and the profile keeps only what the counters give. Crossbar banks
-count the SNAX inputs (streamers, DMA) only; the cores' traffic, boot included, counts per input
-over the whole run. Levels `off`, `task`, `beat`, `finegrained`; VCD only as a gtkwave dump.
-Closes open items 57 and 60; 23 and 25 stay for FLOW3 round 2. → `run/`, C§7, snax-gvsoc
-`docs/EVENTS.md`.
+converter renames them into C§7, never recounts, cuts the program's window at its two `mcycle`
+reads (the core logs them) and shifts it to the first (the boot kept as a number), so the
+profile, the cores and the trace share one window, and the profile keeps only what the counters
+give. Crossbar banks count the SNAX inputs (streamers, DMA) only; the cores' traffic, boot
+included, counts per input over the whole run. Levels `off`, `task`, `beat`, `finegrained`; VCD
+only as a gtkwave dump. Closes open items 57 and 60; 23 and 25 stay for FLOW3 round 2. → `run/`,
+C§7, snax-gvsoc `docs/EVENTS.md`.

@@ -56,6 +56,8 @@ GRAMMAR: dict[str, dict[str, list[tuple[Fields, Fields]]]] = {
         "barrier": _forms(({"first", "last"}, set())),
         "state": _forms(({"mode"}, set())),
         "func": _forms(({"name", "pc"}, set())),
+        "mcycle": _forms(({"pc", "value"}, set())),
+        "mcycleh": _forms(({"pc", "value"}, set())),
         "issue": _forms(({"id", "src", "dst", "size", "src_stride", "dst_stride", "reps"}, set())),
     },
     "beats": {},  # FLOW3 round 2

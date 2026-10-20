@@ -93,12 +93,7 @@ def test_the_run_report_equals_its_sources(flows):
     out = read_run(folder / "run")
     p, tr = out.profile, out.trace
     fc = p.functional_check
-    assert (r.cycles, r.trace_level, r.boot, r.window) == (
-        p.total_cycles,
-        "task",
-        tr.boot,
-        tr.window,
-    )
+    assert (r.cycles, r.trace_level, r.boot) == (p.total_cycles, "task", tr.boot)
     assert (r.check.passed, r.check.data_errors, r.check.words) == (
         True,
         fc["data_errors"],
@@ -124,7 +119,7 @@ def test_the_run_report_equals_its_sources(flows):
     for c in r.cores:
         pc = p.cores[c.name]
         assert (c.cycles, c.csr_writes, c.csr_reads) == (pc.cycles, pc.csr_writes, pc.csr_reads)
-        assert sum(c.cycles.values()) == tr.window
+        assert sum(c.cycles.values()) == p.total_cycles
         assert [(w.block, w.first, w.last) for w in c.waits] == [
             (w.block, w.first, w.last) for w in pc.waits
         ]
@@ -156,7 +151,7 @@ def test_a_wait_names_the_task_that_starts_after_it(flows):
 
 def test_off_has_no_tasks_no_classes_no_achieved_ii(flows):
     r = reports_of(flows[("vecadd", "off")]).run
-    assert (r.trace_level, r.boot, r.window, r.tasks) == ("off", None, None, None)
+    assert (r.trace_level, r.boot, r.tasks) == ("off", None, None)
     assert all(c.cycles is None and not c.waits for c in r.cores)
     assert r.accelerators[0].achieved_ii is None and r.accelerators[0].span is None
     text = render_run(r)
@@ -225,7 +220,7 @@ def test_the_recorded_vecadd_run(flows, tmp_path):
                              check["functional_check"])  # fmt: skip
     write_run(folder / "run", profile, trace)
     r = reports_of(folder)
-    assert r.run.cycles == check["total_cycles"] and r.run.window == trace.window
+    assert r.run.cycles == check["total_cycles"] == trace.total_cycles
     assert "# Run report: vecadd_task" in render_run(r.run)
 
 

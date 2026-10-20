@@ -2,7 +2,7 @@
 
 A recorded SNAX-GVSoC run, so CI converts real events without GVSoC
 (`tests/run/test_fixture.py`, no expected numbers). Made in snax-forge's
-image with snax-gvsoc at `5a8bfbd4` (FLOW3 1b step 3):
+image with snax-gvsoc at `0e01c6e2` (FLOW3 1b fix step 1):
 
     pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
 

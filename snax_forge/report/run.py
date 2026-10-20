@@ -7,14 +7,15 @@ named it (D137).
 
     summary       the program's window (total cycles), passed, data errors over
                   the output words, each task's counter as the program printed
-                  it, the trace level, the boot's length and the events' window
+                  it, the trace level and the boot's length (the cycles before
+                  the window, which the profile, the cores and the trace share)
     tasks         per block each task's start, done and length, named from the
                   task list; a DMA copy with its direction and bytes
                                                          (needs a task trace)
     accelerators  firings, target II (the datapath file's), achieved II,
                   utilisation over the window and over its tasks' span,
                   stall_in, stall_out, flush
-    cores         cycles per class in the events' window, SNAX CSR writes and
+    cores         cycles per class in the window, SNAX CSR writes and
                   reads, and each wait: block, first, last, cycles and the
                   task that starts next                  (classes and waits
                                                          need a task trace)
@@ -140,7 +141,6 @@ class RunReport(Record):
     cycles: int
     trace_level: str
     boot: int | None
-    window: int | None
     check: CheckRow | None
     tasks: list[TaskRow] | None  # None: no task trace
     accelerators: list[AccelRun]
@@ -241,7 +241,7 @@ def build_run(rv: api.RunView) -> RunReport:
     ]  # fmt: skip
     return RunReport(
         rv.name, total, rv.trace_level, None if tr is None else tr.boot,
-        None if tr is None else tr.window, check, task_rows, accels, cores, dmas, ports,
+        check, task_rows, accels, cores, dmas, ports,
         _bank_ranges(p.banks.conflicts if p.banks else []), streamers, MOVEMENT,
     )  # fmt: skip
 
@@ -262,7 +262,7 @@ def render_run(r: RunReport) -> str:
         counters = ", ".join(f"{t} {n}" for t, n in r.check.counters.items()) or "none"
     trace = r.trace_level
     if r.boot is not None:
-        trace += f"; boot {r.boot} cycles; events from main over {r.window} cycles"
+        trace += f"; boot {r.boot} cycles (to the mcycle read in main)"
     out += table(["", ""], [
         ["Window (main to forge_check, the program's mcycle)", r.cycles],
         ["Functional check", check],

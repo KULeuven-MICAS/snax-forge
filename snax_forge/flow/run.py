@@ -467,7 +467,7 @@ def summary(f: Flow) -> str:
     else:
         conv = (
             f"run/events.log -> profile.json, trace.jsonl ({len(f.trace.events)} events in "
-            f"{f.trace.window} cycles from main; boot {f.trace.boot})"
+            f"the window; boot {f.trace.boot})"
         )
     lines.append(f"  convert   {conv}")
     lines.append(f"  report    {REPORT}/design.md, {REPORT}/run.md")

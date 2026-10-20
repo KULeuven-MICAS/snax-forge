@@ -28,6 +28,8 @@
 279600000: 2796: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2796 barrier first=2796 last=2796
 279900000: 2799: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2799 func name=main pc=0x800001e0
 279900000: 2799: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2799 func name=main pc=0x800001e0
+281200000: 2812: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2812 mcycle pc=0x800001f0 value=2812
+281200000: 2812: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2812 mcycle pc=0x800001f0 value=2812
 284500000: 2845: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2845 func name=forge_core_0 pc=0x8000031c
 284500000: 2845: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2845 func name=forge_core_1 pc=0x800003a4
 287400000: 2874: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2874 csr pc=0x80000324 csr=0x3c0 op=w value=268435456
@@ -79,6 +81,7 @@
 299600000: 2996: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2996 func name=main pc=0x80000218
 301000000: 3010: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 3010 func name=forge_check pc=0x80000254
 301500000: 3015: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 3015 func name=snrt_main pc=0x80002840
+303800000: 3038: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 3038 mcycle pc=0x80000264 value=3038
 304400000: 3044: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 3044 func name=printf_ pc=0x80000c18
 310000000: 3100: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 3100 func name=_vsnprintf pc=0x80000c70
 319800000: 3198: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 3198 func name=_out_char pc=0x80001494

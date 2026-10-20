@@ -10,7 +10,7 @@ from snax_forge.lower.tasks import TaskList
 from snax_forge.run import RunError, cluster_from, parse_line
 from snax_forge.run.convert import convert, direction, invariants, port_of, source_of
 
-from .helpers import MAIN, files, line, synthetic
+from .helpers import BOOT, MAIN, files, line, synthetic
 
 TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"
 
@@ -76,13 +76,19 @@ def test_dma_direction_by_the_l1(cluster):
 def test_the_synthetic_run(cluster, tasks):
     profile, trace = convert(parse(synthetic(cluster, tasks)), cluster, tasks, 226, "task",
                              {"passed": True})  # fmt: skip
-    assert (trace.boot, trace.window, trace.total_cycles) == (MAIN, 226, 226)
+    assert (trace.boot, trace.total_cycles) == (BOOT, 226)
     assert invariants(profile, trace, cluster) == []
     assert profile.functional_check == {"passed": True}
     # every event in the window, in time order, boot dropped
     ts = [e["t"] for e in trace.events]
-    assert ts == sorted(ts) and 0 <= ts[0] and ts[-1] < trace.window
-    assert [e["name"] for e in trace.of_kind("func", "core0")] == ["main", "forge_core_0", "main"]
+    assert ts == sorted(ts) and 0 <= ts[0] and ts[-1] < trace.total_cycles
+    # func lines stay as function spans; main's entry is before the window, its read at 0
+    assert [e["name"] for e in trace.of_kind("func", "core0")] == [
+        "forge_core_0",
+        "main",
+        "forge_check",
+    ]
+    assert not [e for e in trace.events if e["k"].startswith("mcycle")]
     # tasks named from the task list
     assert [e["task"] for e in trace.of_kind("issue")] == ["load_A", "load_B", "store_C"]
     assert [e["dir"] for e in trace.of_kind("issue")] == ["l2_to_l1", "l2_to_l1", "l1_to_l2"]
@@ -113,7 +119,7 @@ def test_poll_and_barrier_lines(cluster, tasks):
     ]
     assert core0.cycles["poll"] == poll["last"] - poll["t"] + 1
     assert core0.cycles["barrier"] == 4
-    assert sum(core0.cycles.values()) == trace.window
+    assert sum(core0.cycles.values()) == trace.total_cycles
     assert profile.cores["core1"].cycles == {"run": 225, "poll": 0, "barrier": 1, "sleep": 0}
 
 
@@ -129,7 +135,7 @@ def test_a_barrier_over_a_poll_and_sleep_under_a_poll(cluster, tasks):
     ]  # fmt: skip
     profile, trace = convert(parse(lines + extra), cluster, tasks, 226, "task")
     c = profile.cores["core0"]
-    assert sum(c.cycles.values()) == trace.window
+    assert sum(c.cycles.values()) == trace.total_cycles
     assert c.cycles["sleep"] == 2 + 4  # 200, 201, then 211 to 214
     assert [w.block for w in c.waits][-2:] == ["acc_streamer", "barrier"]
 
@@ -141,19 +147,25 @@ def test_main_and_forge_check_are_needed(cluster, tasks):
     assert e.value.code == "convert.window"
 
 
-@pytest.mark.parametrize("cycles", [200, 260])
-def test_forge_cycles_outside_what_the_reads_allow(cluster, tasks, cycles):
-    """main left at MAIN + 10, forge_check entered at MAIN + 226 and left at MAIN + 256: the
-    reads allow 217 to 255."""
-    with pytest.raises(RunError) as e:
+@pytest.mark.parametrize("cycles", [225, 227])
+def test_forge_cycles_must_be_the_reads_apart(cluster, tasks, cycles):
+    """The two mcycle reads are 226 cycles apart: any other forge cycles is a named error."""
+    with pytest.raises(RunError, match="226 cycles apart") as e:
         convert(parse(synthetic(cluster, tasks)), cluster, tasks, cycles, "task")
     assert e.value.code == "convert.window"
 
 
-@pytest.mark.parametrize("cycles", [217, 255])
-def test_forge_cycles_at_the_edges_of_what_the_reads_allow(cluster, tasks, cycles):
-    profile, trace = convert(parse(synthetic(cluster, tasks)), cluster, tasks, cycles, "task")
-    assert (profile.total_cycles, trace.window) == (cycles, 226)
+def test_the_reads_are_picked_by_their_function_spans(cluster, tasks):
+    """A read of mcycle outside main's span (here after forge_core_0 is entered) is not main's."""
+    lines = synthetic(cluster, tasks)
+    moved = [x.replace(f"{BOOT} mcycle", f"{MAIN + 12} mcycle") if "/pe0/" in x else x
+             for x in lines]  # fmt: skip
+    with pytest.raises(RunError, match="no mcycle read in main") as e:
+        convert(parse(moved), cluster, tasks, 226, "task")
+    assert e.value.code == "convert.window"
+    late = [x.replace(f"{BOOT + 226} mcycle", f"{MAIN + 226 + 40} mcycle") for x in lines]
+    with pytest.raises(RunError, match="no mcycle read in forge_check"):
+        convert(parse(late), cluster, tasks, 266, "task")
 
 
 def test_a_copy_against_its_tasks_direction(cluster, tasks):

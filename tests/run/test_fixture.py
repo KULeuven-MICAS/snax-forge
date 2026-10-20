@@ -27,7 +27,9 @@ def test_task_level(recorded, tmp_path):
     profile, trace = convert(lines, cluster, tasks, check["total_cycles"], "task",
                              check["functional_check"])  # fmt: skip
     assert invariants(profile, trace, cluster) == []
-    assert trace.boot > 0 and 0 < trace.window and trace.sources == cluster.sources
+    assert trace.boot > 0 and trace.total_cycles == check["total_cycles"]
+    assert trace.sources == cluster.sources
+    assert all(sum(c.cycles.values()) == trace.total_cycles for c in profile.cores.values())
     assert {e["src"] for e in trace.events} <= set(cluster.sources)
     # every task of the list starts (or is issued) in the window
     named = {e["task"] for e in trace.events if e["k"] in ("start", "issue")}

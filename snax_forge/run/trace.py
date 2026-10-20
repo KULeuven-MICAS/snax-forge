@@ -1,7 +1,8 @@
 """The trace of a flow run (C§7, D137).
 
-SNAX-GVSoC's ``events`` lines, renamed into C§7 and cut to the program's window: t = 0 is
-main's entry on the accelerator's core, and events outside ``[0, total_cycles)`` are dropped.
+SNAX-GVSoC's ``events`` lines, renamed into C§7 and cut to the program's window: t = 0 is the
+program's ``mcycle`` read in main on the accelerator's core, and events outside
+``[0, total_cycles)`` (up to its read in ``forge_check``) are dropped.
 Every event is a flat dict of ``t``, ``k``, ``src`` and the kind's own fields:
 
     task  start    task  (t = the cycle the start is taken; busy from t + 1)
@@ -17,9 +18,8 @@ Every event is a flat dict of ``t``, ``k``, ``src`` and the kind's own fields:
 ``KINDS`` holds each kind's fields, required and optional; ``Trace.from_dict`` refuses an
 event with an unknown kind or field. The events are kept as the dicts they are written as, in
 time order (by ``t``, then as SNAX-GVSoC wrote them). ``trace_meta.json`` is the rest: the
-``level``, ``total_cycles``, the ``boot`` shift (main's entry in SNAX-GVSoC's cycles), the
-``window`` (main's entry to ``forge_check``'s, the cycles the events cover) and the
-``sources`` in the cluster's order.
+``level``, ``total_cycles``, the ``boot`` shift (the first ``mcycle`` read in SNAX-GVSoC's
+cycles) and the ``sources`` in the cluster's order.
 """
 
 from __future__ import annotations
@@ -74,8 +74,7 @@ class Trace:
 
     level: str
     total_cycles: int
-    boot: int  # main's entry in SNAX-GVSoC's cycles: every t is shifted by it
-    window: int  # main's entry to forge_check's: the events' t are in [0, window)
+    boot: int  # the program's first mcycle read in SNAX-GVSoC's cycles: every t is shifted by it
     sources: list[str] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
 
@@ -91,12 +90,12 @@ class Trace:
 
     def meta(self) -> dict[str, Any]:
         return {"level": self.level, "total_cycles": self.total_cycles, "boot": self.boot,
-                "window": self.window, "sources": list(self.sources)}  # fmt: skip
+                "sources": list(self.sources)}  # fmt: skip
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.meta(), "events": [dict(e) for e in self.events]}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Trace:
-        return cls(d["level"], d["total_cycles"], d["boot"], d["window"],
-                   list(d.get("sources", [])), [dict(e) for e in d.get("events", [])])  # fmt: skip
+        return cls(d["level"], d["total_cycles"], d["boot"], list(d.get("sources", [])),
+                   [dict(e) for e in d.get("events", [])])  # fmt: skip

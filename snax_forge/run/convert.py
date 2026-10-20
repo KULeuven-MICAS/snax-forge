@@ -12,13 +12,15 @@ the profile is the ``summary`` lines renamed, the trace the ``events`` lines ren
 whose inputs become ports (``snax_acc<i>.streamer.reader0.lane1`` -> ``acc_a.lane1``,
 ``core<i>`` and ``axi`` as they are). Any other path is a RunError (``convert.path``).
 
-**The window** (task level). On the accelerator's core, ``main``'s first ``func`` line and the
-first ``forge_check`` after it bound it: ``[main, forge_check)``, ``window`` cycles. The
-program's two ``mcycle`` reads come after those entries and before the core's next ``func``
-line, so ``total_cycles`` must lie between ``forge_check``'s entry minus the cycle main is
-left and the cycle ``forge_check`` is left minus main's entry; otherwise a RunError
-(``convert.window``). Every cycle is shifted by main's entry (``boot``), so t = 0 is main's
-entry; events outside ``[0, window)`` are dropped. ``total_cycles`` stays the program's.
+**The window** (task level) is the program's own (D135): on the accelerator's core, from its
+``mcycle`` read in ``main`` to its ``mcycle`` read in ``forge_check``, each read picked by the
+function span it falls in (from the function's ``func`` line to the core's next one). The
+window's length must be ``total_cycles`` exactly, the ``forge cycles:`` the program printed
+from the same two reads; a read missing or another length is a RunError
+(``convert.window``). Every cycle is shifted by the first read's (``boot``), so t = 0 is that
+read, and events outside ``[0, total_cycles)`` are dropped: the profile, the cores' classes
+and the trace cover one window. The ``mcycle`` lines bound it and are not in the trace;
+``func`` lines stay as function spans.
 
 **Trace.** A unit's or a mover's ``done`` is written in its last busy cycle, so its t is one
 more (the first idle cycle); an accelerator's ``done`` keeps its firings and its first and
@@ -119,33 +121,37 @@ def direction(src: int, dst: int, cluster: Cluster) -> str:
 # =============================================================================
 
 
-def window(
-    lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles: int
-) -> tuple[int, int]:
-    """Main's entry on the accelerator's core and the window's length; checked against
-    ``total_cycles`` (module doc)."""
+def _read_in(funcs: list[Line], reads: list[Line], name: str, after: int, core: str) -> Line:
+    """The first ``mcycle`` read in the first span of function ``name`` that starts at or after
+    cycle ``after``: from its ``func`` line to the core's next one."""
+    for i, f in enumerate(funcs):
+        if f.fields["name"] != name or f.cycle < after:
+            continue
+        end = funcs[i + 1].cycle if i + 1 < len(funcs) else None
+        inside = [r for r in reads if r.cycle >= f.cycle and (end is None or r.cycle < end)]
+        if inside:
+            return inside[0]
+    raise RunError("convert.window", f"{core}: no mcycle read in {name} (no `mcycle` line in a "
+                   f"span of `func name={name}`)")  # fmt: skip
+
+
+def window(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles: int) -> int:
+    """The cycle of the program's first ``mcycle`` read, the window's start; its length checked
+    against ``total_cycles`` (module doc)."""
     core = core_name(cluster.accelerator.core)
-    funcs = sorted((x for s, x in lines if s == core and x.kind == "func"), key=lambda x: x.cycle)
-    names = [f.fields["name"] for f in funcs]
-    if "main" not in names:
-        raise RunError("convert.window", f"{core} never enters main (no `func name=main` line)")
-    i = names.index("main")
-    if "forge_check" not in names[i + 1 :]:
-        raise RunError("convert.window", f"{core} never enters forge_check after main")
-    j = names.index("forge_check", i + 1)
-    main, check = funcs[i].cycle, funcs[j].cycle
-    left_main = funcs[i + 1].cycle
-    left_check = funcs[j + 1].cycle if j + 1 < len(funcs) else None
-    lo = check - (left_main - 1)
-    hi = None if left_check is None else (left_check - 1) - main
-    if total_cycles < lo or (hi is not None and total_cycles > hi):
+    mine = sorted((x for s, x in lines if s == core and x.trace == "events"), key=lambda x: x.cycle)
+    funcs = [x for x in mine if x.kind == "func"]
+    reads = [x for x in mine if x.kind == "mcycle"]
+    first = _read_in(funcs, reads, "main", 0, core)
+    last = _read_in(funcs, reads, "forge_check", first.cycle, core)
+    if last.cycle - first.cycle != total_cycles:
         raise RunError(
             "convert.window",
-            f"forge cycles {total_cycles}: main at {main} (left at {left_main}), forge_check at "
-            f"{check} (left at {left_check}) allow {lo} to {hi if hi is not None else 'any'} for "
-            "the two mcycle reads",
+            f"{core}'s mcycle reads at {first.cycle} (main) and {last.cycle} (forge_check) are "
+            f"{last.cycle - first.cycle} cycles apart, the program printed forge cycles "
+            f"{total_cycles}",
         )
-    return main, check - main
+    return first.cycle
 
 
 # =============================================================================
@@ -181,7 +187,7 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
     dma_tasks = _dma_tasks(tasks)
     order = sorted(enumerate(lines), key=lambda x: (x[1][1].cycle, x[0]))
     for n, (src, x) in order:
-        if x.trace != "events":
+        if x.trace != "events" or x.kind in ("mcycle", "mcycleh"):
             continue
         f, k = x.fields, x.kind
         t = x.cycle - boot
@@ -351,9 +357,9 @@ def invariants(profile: Profile, trace: Trace, cluster: Cluster) -> list[str]:
             bad.append(f"{src}: {starts} {'issues' if src == DMA else 'starts'} and {dones} "
                        "dones in the window")  # fmt: skip
     for name, c in profile.cores.items():
-        if c.cycles is not None and sum(c.cycles.values()) != trace.window:
+        if c.cycles is not None and sum(c.cycles.values()) != trace.total_cycles:
             bad.append(f"{name}: classes add up to {sum(c.cycles.values())}, the window is "
-                       f"{trace.window}")  # fmt: skip
+                       f"{trace.total_cycles}")  # fmt: skip
     acc = cluster.accelerator.name
     fired = sum(e["firings"] for e in trace.of_kind("done", acc))
     if fired != profile.accelerators[acc].firings:
@@ -375,7 +381,8 @@ def convert(
     profile = profile_of(named, cluster, total_cycles, functional_check)
     if level == "off":
         return profile, None
-    boot, width = window(named, cluster, total_cycles)
+    boot = window(named, cluster, total_cycles)
+    width = total_cycles
     events = trace_events(named, cluster, tasks, boot, width)
     for core in cluster.cores:
         cycles, waits = core_cycles(named, core, boot, width)
@@ -384,7 +391,7 @@ def convert(
         p.waits = [WaitProfile(
             "barrier" if kind == "barrier" else cluster.accelerator.block_of(x.fields["csr"]) or "-",
             a, b) for a, b, kind, x in waits]  # fmt: skip
-    trace = Trace(level, total_cycles, boot, width, cluster.sources, events)
+    trace = Trace(level, total_cycles, boot, cluster.sources, events)
     bad = invariants(profile, trace, cluster)
     if bad:
         raise RunError("convert.invariant", "; ".join(bad))
