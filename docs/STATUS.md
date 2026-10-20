@@ -88,7 +88,7 @@ that the DMA's counters stay the RTL's (D124).
 | LNK1 | A. A platform read from snax_cluster's `cfg/snax_alu_cluster.hjson` (`platforms/snax_alu.json`, `design from-hjson`) with the streamer template fields, checked as any platform is: `temporal_dim` and `fifo_depth` into the default, `spatial_bounds` and `num_channel` derived from the ports (D131) | none | The platform round-trips; `vecadd` at W = 4 designs on it | done |
 | GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written program (`forge-elementwise`, `forge-reduce`, until GEN2a) on fixtures in snax-gvsoc `forge/<design>/`; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `done` |
 | LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119, D134). Round 1 in snax-gvsoc: the reader, the generic target `snax_hjson`, forge/'s fixtures as hjson by hand; round 2 here: the platform's source hjson and slot, the writer of three hjson files (cluster, streamer, accelerator) and the schemas, forge/'s fixtures from it. Steps and findings in snax-gvsoc `LNK2a.md` | GEN3 | GEN3's runs on the read target | done |
-| GEN2a | A. The program for single-accelerator designs: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking. Several accelerators on one core are not modelled (open item 79); dot, mul and accumulate driven by one core, is M13's composite (D112). Round 1: the datagen, the C backend, a generic app on snax-gvsoc's fixtures (snax-gvsoc `GEN2a.md`); round 2: the adder tree | LNK2a | `vecadd`, `vecmul`, `vsum`, and `vsum` on the adder tree at W = 4 check themselves on SNAX-GVSoC | `wip` |
+| GEN2a | A. The program for single-accelerator designs: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking. Several accelerators on one core are not modelled (open item 79); dot, mul and accumulate driven by one core, is M13's composite (D112). Round 1: the datagen, the C backend, a generic app on snax-gvsoc's fixtures (snax-gvsoc `GEN2a.md`); round 2: the adder tree | LNK2a | `vecadd`, `vecmul`, `vsum`, and `vsum` on the adder tree at W = 4 check themselves on SNAX-GVSoC | `done` |
 | FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `vsum` flows give checked runs; the viewer and the reports open them | todo |
 | GEN1 | B. The Chisel datapath from the binding through `Emit` (D91), the `ctrl` adapter and the generated shell wrapper (D130) | GEN3 | Elaborates for `elementwise_add` and `accumulate` | todo |
 | LNK2b | B. The bundle for snax_cluster: the hjson, a `Bender.yml`, the changes snax_cluster needs (open item 51) | GEN1, LNK2a | snax_cluster builds from it with only the listed changes | todo |
@@ -201,8 +201,15 @@ uses 40 B of its declared 256 B). snax-gvsoc builds every `forge/` folder's
 `main.c` with one generic app, `sw/apps/forge/`: vecadd, vecmul and vsum
 check themselves (0 data errors; counters 18, 18 and 66, one below the
 hand-written apps' because the start mark gives the streamer a cycle more),
-and `make regress` passes. Next is GEN2a round 2: the adder tree, `vsum` at
-W = 4.
+and `make regress` passes. GEN2a is done (round 2, tag `gen2a-r2`), its
+acceptance met: the Accumulator takes `lanes`, a combinational adder tree in
+front of its one register (D133), and `chisel_adder_tree` binds it at
+`lanes` = W as `chisel_accumulator` does at 1; `SnaxUnit` folds W lanes
+through the tree, checked on lanes-4 unit cases (T = n and T < n) by its tb
+and by `AccumulatorRateSpec`; `recipes/vsum_tree.json` (vsum at W = 4)
+generates `forge/vsum_tree/`, which checks itself in `make regress` (0 data
+errors, its counter its run line's) and `test_fixture.py` reproduces with
+the other three. Next is FLOW3.
 
 ## Open Items
 
@@ -322,7 +329,10 @@ Next free number: 82.
     branches and `jal`; GVSoC's Snitch I-cache does not, so SNAX-GVSoC misses
     more lines, each for fewer cycles: tens of cycles in fixed-cost phases
     (SG5 at 100: C2a 133 against 110, D1 112 against 98). Modelled when a
-    kernel's numbers need it.
+    kernel's numbers need it. A forge accelerator's counter depends on the
+    core's timing between the streamer's and the accelerator's start writes
+    (GEN2a round 1b F2: an L0 line starting between them gave 16 instead of
+    19), so GEN2b compares that counter with care (D123).
 66. Atomics to DRAM: the RTL testbench runs them in `axi_riscv_atomics_wrap`
     (read-modify-write, 2 reads and 2 writes in flight), SNAX-GVSoC as one
     access, so the exit's global barrier and reduction are about 50 cycles

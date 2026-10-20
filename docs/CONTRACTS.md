@@ -814,7 +814,7 @@ against the registered kind.
    "timing": {"latency": 1, "initiation_interval": 1, "drain": 0},
    "binding": {
     "block": "Accumulator",
-    "args": {},
+    "args": {"lanes": "W"},
     "control": "counted",
     "csrs": [{"field": "loopCount", "value": "n"}, {"field": "len", "value": "T"}],
     "wait": "pipelined"
@@ -841,7 +841,9 @@ against the registered kind.
 **The binding** (D129, `brm/binding.py`) names the Chisel block and how
 the BRM fills it; null until the implementation is generated. `block` is
 the block's name (the generators register what they can build); `args` its
-parameters, each an expression over design params; `control` (`counted`:
+parameters, each an expression over design params (`ElementwiseTiledSpatial`'s
+`lanes` = W and `supportedOps` = op; the Accumulator's `lanes` = W, which
+`chisel_accumulator` and `chisel_adder_tree` both bind, D133); `control` (`counted`:
 the block counts its firings, the only kind) and `wait` (`lockstep`,
 `pipelined`) are registered kinds (D19); `csrs` the configuration fields in
 CSR order, each `{field, value}` with the value an expression over params,

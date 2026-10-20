@@ -5,11 +5,12 @@ import chisel3.util._
 
 /** Serial integer accumulator -- the hardware image of the WCR edge in `kernels/polybench/dot.py`.
   *
-  * Sums every `len` consecutive elements of an elastic input stream and emits each sum on an elastic output stream,
-  * `loopCount` input beats per run. A reduction collapses T input beats into 1 output beat, so it is a *chaining
-  * barrier*: a downstream consumer cannot be fed element-by-element in producer order, because no output element exists
-  * until the last input of its sum has been absorbed. Chained reductions therefore get control chaining, not data
-  * chaining.
+  * Sums every `len` consecutive beats of an elastic input stream and emits each sum on an elastic output stream,
+  * `loopCount` input beats per run. A beat is `lanes` elements; a combinational tree of `lanes` → 1 adders in front of
+  * the register sums them, so each beat adds its lanes' sum (D133). `lanes = 1` is the serial accumulator. A reduction
+  * collapses T input beats into 1 output beat, so it is a *chaining barrier*: a downstream consumer cannot be fed
+  * element-by-element in producer order, because no output element exists until the last input of its sum has been
+  * absorbed. Chained reductions therefore get control chaining, not data chaining.
   *
   * ==Control==
   *
@@ -21,6 +22,12 @@ import chisel3.util._
   *
   * n not a multiple of T is the toolchain's to refuse. The block then ends the last sum at the n-th input: its last
   * output is the sum of the n mod T inputs left, and the run ends as any other.
+  *
+  * ==The tree==
+  *
+  * `lanes` → 1 adders (`reduceTree`), each `accWidth` bits and wrapping as the register does, between `in.bits` and
+  * `acc`, with no register of its own: latency stays 1 for every `lanes`. Pipeline stages in the tree would make the
+  * latency depend on `lanes`; that is GEN1's choice.
   *
   * ==One register, no drain cycle==
   *
@@ -41,9 +48,12 @@ import chisel3.util._
   * @param accWidth
   *   bits of accumulator; widening here is how you buy headroom against overflow that the NumPy reference would also
   *   wrap on
+  * @param lanes
+  *   elements per input beat, the BRM's W (the binding's `args`)
   */
-class Accumulator(val width: Int = 32, val accWidth: Int = 32) extends Module {
+class Accumulator(val width: Int = 32, val accWidth: Int = 32, val lanes: Int = 1) extends Module {
   require(width > 0, s"width must be positive, got $width")
+  require(lanes > 0, s"lanes must be positive, got $lanes")
   require(
     accWidth >= width,
     s"accWidth ($accWidth) must be at least width ($width), otherwise every " +
@@ -57,7 +67,7 @@ class Accumulator(val width: Int = 32, val accWidth: Int = 32) extends Module {
     val busy      = Output(Bool())
     val done      = Output(Bool())
 
-    val in  = Flipped(Decoupled(UInt(width.W)))
+    val in  = Flipped(Decoupled(Vec(lanes, UInt(width.W))))
     val out = Decoupled(UInt(accWidth.W))
   })
 
@@ -74,6 +84,9 @@ class Accumulator(val width: Int = 32, val accWidth: Int = 32) extends Module {
   io.in.ready  := busy && !allIn && (!valid || io.out.ready)
   io.out.valid := valid
   io.out.bits  := acc
+
+  // The tree: the beat's lanes summed, wrapping at accWidth bits.
+  private val beat = VecInit(io.in.bits.map(_.pad(accWidth))).reduceTree(_ + _)
 
   private val lastIn  = io.in.fire  && (taken + 1.U) === target
   private val lastSum = io.in.fire  && ((count + 1.U) === len || lastIn)
@@ -92,7 +105,7 @@ class Accumulator(val width: Int = 32, val accWidth: Int = 32) extends Module {
   }.otherwise {
     when(io.in.fire) {
       // In the cycle the result leaves, the next sum starts from this input.
-      acc   := Mux(io.out.fire, io.in.bits, acc + io.in.bits)
+      acc   := Mux(io.out.fire, beat, acc + beat)
       taken := taken + 1.U
       count := Mux(lastSum, 0.U, count + 1.U)
     }.elsewhen(io.out.fire) {

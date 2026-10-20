@@ -42,8 +42,8 @@ hw/chisel/
 
 `ElementwiseTiledSpatialLockstepSpec` drives `ElementwiseTiledSpatial` through
 snax-gvsoc's lockstep `SnaxUnit` cases (GEN3), and `AccumulatorRateSpec` the
-Accumulator through its pipelined fold cases (rate, GEN3 step 6b), run lines
-included; both read the cases with `SnaxUnitCases`. Set
+Accumulator through its pipelined fold cases (rate, GEN3 step 6b; at the
+case's `lanes`, GEN2a round 2), run lines included; both read the cases with `SnaxUnitCases`. Set
 `SNAX_GVSOC_UNIT_CASES` to their folder, e.g.
 `SNAX_GVSOC_UNIT_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/unit/cases pixi run -e hw
 chisel-test`; without it both are canceled, and the Accumulator's also when
@@ -77,7 +77,8 @@ already sitting in `kernels/polybench/`:
 L = 0, II = 1. Stateless. Chains freely with a downstream consumer, because
 each output element is produced in producer order and read exactly once.
 
-**Reduction (`Accumulator`, cf. `dot.py`).** T beats in, 1 beat out. Carries
+**Reduction (`Accumulator`, cf. `dot.py`).** T beats in, 1 beat out; a beat
+of `lanes` elements goes through an adder tree in front of the register. Carries
 state across beats. It is a **chaining barrier**: no output exists until the
 last input is absorbed, so a downstream consumer cannot be fed element by
 element and gets control chaining instead of data chaining.

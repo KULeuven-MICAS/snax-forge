@@ -2,7 +2,8 @@
 
 ``point`` writes a design point of vecadd (bound by the checked-in recipe,
 W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by
-``recipes/vecmul.json``; ``bound_vsum``: vsum by ``recipes/vsum.json``), on
+``recipes/vecmul.json``; ``bound_vsum``: vsum by ``recipes/vsum.json``, or at
+another W and implementation), on
 ``platforms/snax_alu.json`` (or a given platform), in a folder that stands
 for snax-forge's root: the platform's source hjson is copied into its
 ``platforms/``. The snax-gvsoc submodule (``SUB``) is read only where it is
@@ -57,10 +58,12 @@ def bound_vecmul(w: int = 4) -> Graph:
     return apply_recipe(recipe, Graph.load(FIXTURES / "vecmul.snaxdfg"))[-1].graph
 
 
-def bound_vsum() -> Graph:
-    """vsum bound by the checked-in recipe (accumulate's chisel_accumulator, instance acc)."""
-    recipe = Recipe.load(REPO / "recipes" / "vsum.json")
-    return apply_recipe(recipe, Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
+def bound_vsum(w: int = 1, impl: str = "chisel_accumulator") -> Graph:
+    """vsum bound by the checked-in recipe (accumulate's chisel_accumulator, instance acc), or
+    with W = ``w`` to ``impl``."""
+    d = Recipe.load(REPO / "recipes" / "vsum.json").with_params({"W": w}).to_dict()
+    d["steps"][-1]["params"]["implementation"] = impl
+    return apply_recipe(Recipe.from_dict(d), Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
 
 
 def snax_cfg() -> types.ModuleType | None:

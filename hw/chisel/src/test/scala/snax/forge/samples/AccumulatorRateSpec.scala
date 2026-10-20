@@ -10,12 +10,13 @@ import snax.forge.SnaxUnitCases.{RunLine, Start}
 /** The fold half of GEN3's unit cross-check: the Accumulator driven through snax-gvsoc's `SnaxUnit` rate cases.
   *
   * Every case that is a pipelined fold with a rate (`inputs 1`, `config` holding `rate`; `SnaxUnitCases`, read from
-  * `SNAX_GVSOC_UNIT_CASES`) is the Accumulator at L = 1, II 1, `loopCount` the start's count and `len` its rate. Cycle
-  * by cycle: `in.valid` and `out.ready` as the case line gives them, a start poked in the cycle the case offers it, and
-  * fire (`in.fire`), push (`out.fire`) and busy compared every cycle; each start's answer against the block's state
-  * (`refused` busy, `ignored` idle with count or rate 0, `taken` otherwise). Each pushed sum is checked against the
-  * inputs it folds (the k-th input of a case is k + 1). A cases folder with no such case (snax-gvsoc before GEN3 step
-  * 6b, the submodule's pin until it is bumped) cancels the test too.
+  * `SNAX_GVSOC_UNIT_CASES`) is the Accumulator at L = 1, II 1, `lanes` the case's lanes (1 without the line),
+  * `loopCount` the start's count and `len` its rate. Cycle by cycle: `in.valid` and `out.ready` as the case line gives
+  * them, a start poked in the cycle the case offers it, and fire (`in.fire`), push (`out.fire`) and busy compared every
+  * cycle; each start's answer against the block's state (`refused` busy, `ignored` idle with count or rate 0, `taken`
+  * otherwise). Each pushed sum is checked against the inputs it folds (lane j of a case's k-th input, from 0, is k *
+  * lanes + j + 1). A cases folder with no such case (snax-gvsoc before GEN3 step 6b, the submodule's pin until it is
+  * bumped) cancels the test too.
   *
   * The `expect run` lines are compared too, each busy cycle classed by `SnaxUnit`'s rule (D59) from what the block
   * shows: a result waiting with no room (`out.valid && !out.ready`) is stall_out, an input taken busy, no input with
@@ -37,8 +38,8 @@ class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
     if (all.isEmpty) cancel(s"no pipelined fold case in ${sys.env(Env)}: the snax-gvsoc checkout predates GEN3 step 6b")
     for (c <- all) {
       require((c.latency, c.ii) == (1, 1), s"${c.name}: the Accumulator is L = 1, II 1")
-      test(new Accumulator(width = 64, accWidth = 64)) { dut =>
-        var next    = BigInt(1)         // the value of the next input
+      test(new Accumulator(width = 64, accWidth = 64, lanes = c.lanes)) { dut =>
+        var next    = BigInt(0)         // the index of the next input
         var count   = 0                 // the run's count
         var rate    = 1
         var taken   = 0                 // inputs taken this run
@@ -47,8 +48,8 @@ class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
         var classes = RunLine(0, 0, 0, 0, 0)
         var runs    = Seq.empty[RunLine]
         for ((cyc, i) <- c.cycles.zipWithIndex) {
-          val clue = s"${c.name}, cycle $i"
-          val busy = high(dut.io.busy)
+          val clue  = s"${c.name}, cycle $i"
+          val busy  = high(dut.io.busy)
           c.starts.get(i) match {
             case Some(st @ Start(_, answer)) =>
               val (n, t) = (c.word(st, "count", 0), c.word(st, "rate", 1))
@@ -62,7 +63,8 @@ class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
               dut.io.start.poke(false.B)
           }
           dut.io.in.valid.poke(cyc.valids(0).B)
-          dut.io.in.bits.poke(next.U)
+          val lanes = (0 until c.lanes).map(j => next * c.lanes + j + 1)
+          for ((v, j) <- lanes.zipWithIndex) dut.io.in.bits(j).poke(v.U)
           dut.io.out.ready.poke(cyc.ready.B)
           val fire = high(dut.io.in.valid)  && high(dut.io.in.ready)
           val push = high(dut.io.out.valid) && cyc.ready
@@ -83,7 +85,7 @@ class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
               else classes.copy(flush                      = classes.flush + 1)
           }
           if (fire) {
-            group :+= next
+            group :+= lanes.sum
             next += 1
             taken += 1
             if (group.size == rate || taken == count) { sums :+= group.sum; group = Seq.empty }

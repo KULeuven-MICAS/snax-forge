@@ -214,8 +214,8 @@ pixi run view out/flow/dot/run out/flow/dot_serial/run
 
 The cycle counts compare design points on the model; they are not RTL cycles
 until the model is anchored against the SNAX cluster (D51). The adder tree
-has no RTL yet, so only its declared latency and II stand behind the 19
-cycles. The two accelerators are chained through L1 here; a direct link
+is the Chisel Accumulator at W lanes (D133), but no RTL run stands behind
+the 19 cycles. The two accelerators are chained through L1 here; a direct link
 between them is M13.
 
 The bound-graph flow writes to `out/flow/dot/`, the folder a recipe flow of

@@ -27,13 +27,14 @@ the block's name (``register_block``, D19). Both blocks are ``counted``
 ``lanes`` must be every port's lanes: the unit's beat is the streamer's.
 
 **Accumulator** (snax-forge ``hw/chisel/.../samples/Accumulator.scala``,
-D133): a fold, one sum every T inputs.
+D133): a fold, one sum every T inputs, each input's lanes summed by the
+adder tree in front of its register.
 
     inputs       one input port of rate 1 and one output port of a named
-    outputs      rate (T), both of one lane
-    lanes        1
-    data_width   the ports' dtype, as above (lanes x N whole 64-bit
-    signed       channels, so N is 64)
+    outputs      rate (T), the output of one lane
+    lanes        args.lanes, the input port's lanes
+    data_width   the ports' dtype, as above (the output's one lane whole
+    signed       64-bit channels, so N is 64)
     op           add (0): the BRM's op param
     control      counted
     wait         pipelined, with the implementation's latency 1, II 1 and
@@ -41,7 +42,7 @@ D133): a fold, one sum every T inputs.
     fields       loopCount then len, their values n and the output's rate
     config       ["count", "rate"]: SnaxUnit reads the first word as the
                  run's firings and the second as firings per output
-    args         none: the block's widths come from the dtype
+    args         lanes only: the block's widths come from the dtype
 
 ``config`` is a SnaxUnit property only when it is not the default
 ``["count"]``, so an elementwise block's datapath block has none.
@@ -209,8 +210,11 @@ def accumulator(inst: Instance) -> Unit:
             f"{what}: latency {timing[0]}, II {timing[1]}, drain {timing[2]}; "
             "the Accumulator is latency 1, II 1, drain 0",
         )
-    if b["args"]:
-        raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; the Accumulator takes none")
+    if set(b["args"]) != {"lanes"}:
+        raise GenError(
+            "gen.args", f"{what}: args {sorted(b['args'])}; the Accumulator takes lanes only"
+        )
+    lanes = expr.evaluate(b["args"]["lanes"], inst.params)
     op = inst.params.get("op")
     if op != "add":
         raise GenError("gen.op", f"{what}: op {op!r}; the Accumulator adds")
@@ -232,10 +236,11 @@ def accumulator(inst: Instance) -> Unit:
     if len(dtypes) != 1:
         raise GenError("gen.dtype", f"{what}: ports of dtypes {sorted(dtypes)}; one is needed")
     bits, signed = port_dtype(dtypes.pop(), what)
-    for p in (a, out):
-        if inst.lanes(p.name) != 1:
+    for p, want in ((a, lanes), (out, 1)):
+        if inst.lanes(p.name) != want:
             raise GenError(
-                "gen.lanes", f"{what}: port {p.name} has {inst.lanes(p.name)} lanes; one is needed"
+                "gen.lanes",
+                f"{what}: port {p.name} has {inst.lanes(p.name)} lanes, the block {want}",
             )
     if bits % 64:
         raise GenError("gen.lanes", f"{what}: 1 lane of {bits} bits is not whole 64-bit channels")
@@ -246,7 +251,7 @@ def accumulator(inst: Instance) -> Unit:
             f"{what}: csrs {csrs}; the Accumulator's are loopCount = n, then len = {out.rate}",
         )
     return Unit(
-        inputs=[a.name], outputs=[out.name], lanes=1, data_width=bits, op=ELEMENTWISE_OP["add"],
+        inputs=[a.name], outputs=[out.name], lanes=lanes, data_width=bits, op=ELEMENTWISE_OP["add"],
         signed=signed, control="counted", wait="pipelined", latency=1, ii=1,
         fields=["loopCount", "len"], config=["count", "rate"],
     )  # fmt: skip

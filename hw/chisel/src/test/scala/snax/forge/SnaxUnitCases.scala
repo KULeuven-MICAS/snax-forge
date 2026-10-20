@@ -30,6 +30,7 @@ object SnaxUnitCases {
     latency:  Int,
     ii:       Int,
     inputs:   Int,
+    lanes:    Int,
     config:   Seq[String],
     starts:   Map[Int, Start],
     runs:     Seq[RunLine],
@@ -54,6 +55,7 @@ object SnaxUnitCases {
     var latency  = 0
     var ii       = 1
     var inputs   = 2
+    var lanes    = 1
     var config   = Seq("count")
     var starts   = Map.empty[Int, Start]
     var runs     = Seq.empty[RunLine]
@@ -66,6 +68,7 @@ object SnaxUnitCases {
       case "latency" :: n :: Nil                                => latency  = n.toInt
       case "ii" :: n :: Nil                                     => ii       = n.toInt
       case "inputs" :: n :: Nil                                 => inputs   = n.toInt
+      case "lanes" :: n :: Nil                                  => lanes    = n.toInt
       case "config" :: roles if roles.nonEmpty                  => config   = roles
       case "start" :: c :: rest if rest.size == config.size + 1 =>
         starts += c.toInt -> Start(rest.init.map(_.toInt), rest.last)
@@ -81,7 +84,18 @@ object SnaxUnitCases {
       Cycle(v.take(inputs), v(inputs), v(inputs + 1), v(inputs + 2), v(inputs + 3))
     }
     Some(
-      Case(path.getFileName.toString.stripSuffix(".txt"), waitKind, latency, ii, inputs, config, starts, runs, cycles)
+      Case(
+        path.getFileName.toString.stripSuffix(".txt"),
+        waitKind,
+        latency,
+        ii,
+        inputs,
+        lanes,
+        config,
+        starts,
+        runs,
+        cycles
+      )
     )
   }
 
