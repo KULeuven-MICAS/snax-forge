@@ -42,7 +42,7 @@ class AccumulatorSpec extends AnyFlatSpec with ChiselScalatestTester {
     (0 until cycles).map { c =>
       val offer = left.nonEmpty && inValid(c)
       dut.io.in.valid.poke(offer.B)
-      dut.io.in.bits.poke(left.headOption.getOrElse(BigInt(0)).U)
+      dut.io.in.bits(0).poke(left.headOption.getOrElse(BigInt(0)).U)
       dut.io.out.ready.poke(outReady(c).B)
       val busy  = isHigh(dut.io.busy)
       if (!busy) dut.io.in.ready.expect(false.B, s"cycle $c: in.ready while idle")
@@ -193,6 +193,22 @@ class AccumulatorSpec extends AnyFlatSpec with ChiselScalatestTester {
       begin(dut, n = 4, t = 4)
       val trace = run(dut, data, cycles = 6)
       assert(trace.flatMap(_.push) == Seq(data.sum))
+    }
+  }
+
+  it should "sum each beat's lanes through the tree, wrapping at accWidth" in {
+    test(new Accumulator(width = W, accWidth = W, lanes = 4)) { dut =>
+      val beats = Seq(Seq(Mask, BigInt(1), BigInt(2), BigInt(3)), Seq(BigInt(10), BigInt(20), BigInt(30), BigInt(40)))
+      begin(dut, n = 2, t = 2)
+      var got = Seq.empty[BigInt]
+      for (beat <- beats ++ Seq.fill(2)(Seq.fill(4)(BigInt(0)))) {
+        dut.io.in.valid.poke(true.B)
+        for ((v, j) <- beat.zipWithIndex) dut.io.in.bits(j).poke(v.U)
+        dut.io.out.ready.poke(true.B)
+        if (isHigh(dut.io.out.valid)) got :+= dut.io.out.bits.peek().litValue
+        dut.clock.step()
+      }
+      assert(got == Seq(beats.flatten.sum & Mask))
     }
   }
 }
