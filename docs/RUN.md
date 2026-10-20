@@ -11,15 +11,17 @@ fixtures and its regression.
 
 ## 1. A clone and the container
 
-snax-gvsoc is a submodule; CI never fetches it, so initialise it once:
+snax-gvsoc is a submodule; CI never fetches it, so initialise it once. Clone
+into any folder, `$ROOT` below (the outputs' absolute paths start there;
+yours will be your own):
 
     git clone -b ry/housekeeping-2 git@github.com:KULeuven-MICAS/snax-forge.git
     cd snax-forge && git submodule update --init gvsoc/snax-gvsoc
 
     Cloning into 'snax-forge'...
     Submodule 'gvsoc/snax-gvsoc' (https://github.com/KULeuven-MICAS/snax-gvsoc) registered for path 'gvsoc/snax-gvsoc'
-    Cloning into '/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc'...
-    Submodule path 'gvsoc/snax-gvsoc': checked out '11a73d1d7c440a2cc47d4f576502dc7e0f755788'
+    Cloning into '$ROOT/snax-forge/gvsoc/snax-gvsoc'...
+    Submodule path 'gvsoc/snax-gvsoc': checked out '25944aeeba7c8731d6918c36016abbe849f9860d'
 
 Everything else runs in snax-forge's image (D118), started from the folder
 that holds `snax-forge`:
@@ -37,9 +39,9 @@ that holds `snax-forge`:
     pixi run sandbox recipes/vecadd.json
 
     Pixi task (sandbox in default): python -m snax_forge.sandbox recipes/vecadd.json
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/sandbox/vecadd/0_input.snaxdfg
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/sandbox/vecadd/1_split_map.snaxdfg
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/sandbox/vecadd/2_bind.snaxdfg
+    $ROOT/snax-forge/out/sandbox/vecadd/0_input.snaxdfg
+    $ROOT/snax-forge/out/sandbox/vecadd/1_split_map.snaxdfg
+    $ROOT/snax-forge/out/sandbox/vecadd/2_bind.snaxdfg
     2 steps, each equal to the input graph on the reference check
 
 The design step pairs the bound graph with `platforms/snax_alu.json`, the
@@ -69,15 +71,15 @@ platform read from snax_cluster's cluster file (its source is
     Pixi task (gen-gvsoc in default): python -m snax_forge.gen out/design/vecadd/design_point.json
     cluster snax_alu.hjson from out/design/vecadd/design_point.json
       task add_acc: 16 beats, {'loopCount': 16}
-    wrote /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/snax_alu.hjson
-    wrote /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/snax_alu_streamer.hjson
-    wrote /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/snax_alu_acc.hjson
-    wrote /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/include/streamer_csr_addr_map.h
-    wrote /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/include/acc_csr.h
-    wrote /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/data.h
-    wrote /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/main.c
-    wrote /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/manifest.json
-    run: make -C gvsoc run TARGET=snax_hjson GVRUN_ARGS="--param hjson=/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/snax_alu.hjson" ELF=...
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/snax_alu.hjson
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/snax_alu_streamer.hjson
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/snax_alu_acc.hjson
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/include/streamer_csr_addr_map.h
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/include/acc_csr.h
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/data.h
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/main.c
+    wrote $ROOT/snax-forge/out/gvsoc/vecadd/manifest.json
+    run: make -C gvsoc run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$ROOT/snax-forge/out/gvsoc/vecadd/snax_alu.hjson" ELF=...
 
 `out/gvsoc/vecadd/` now holds the cluster file `snax_alu.hjson` (the
 platform's source with the slot set for this design), the streamer and
@@ -96,9 +98,9 @@ time:
     make build
 
     ...
-    -- Up-to-date: /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/install/python/./requirements.txt
-    -- Up-to-date: /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/install/python/./.gitignore
-    make[1]: Leaving directory '/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc'
+    -- Up-to-date: $ROOT/snax-forge/out/snax-gvsoc/install/python/./requirements.txt
+    -- Up-to-date: $ROOT/snax-forge/out/snax-gvsoc/install/python/./.gitignore
+    make[1]: Leaving directory '$ROOT/snax-forge/gvsoc/snax-gvsoc'
 
 `make sw` builds snax_cluster's runtime and the generic app's program from
 the generated folder, into `out/snax-gvsoc/sw/vecadd/`:
@@ -106,9 +108,9 @@ the generated folder, into `out/snax-gvsoc/sw/vecadd/`:
     make sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
 
     ...
-    clang --target=riscv32-unknown-elf -mcpu=generic-rv32 -march=rv32imafdzfh -fno-builtin-memset -DPRINTF_DISABLE_SUPPORT_LONG_LONG -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/include -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/generated/snax_alu_cluster_old -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic/src -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic/../common -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/api -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/api/omp -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/src -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/src/omp -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/deps/riscv-opcodes -I/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/math/include -mabi=ilp32d -mcmodel=medany -ffast-math -fno-builtin-printf -fno-builtin-sqrtf -fno-common -fopenmp -ftls-model=local-exec -O3 -D__DEFINED_uint64_t -MMD -MP -MT /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf -MF /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/sw/vecadd/forge.d  -fuse-ld=lld -nostdlib -L/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic -T/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/base.ld -L/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/build/sw/ -L/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/build/sw/snax_alu_cluster_old/ -lmath -lsnRuntime /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/gvsoc/vecadd/main.c -o /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf
-    llvm-objdump -D /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf > /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/sw/vecadd/forge.dump
-    make[1]: Leaving directory '/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/snax-gvsoc/sw/apps/forge'
+    clang --target=riscv32-unknown-elf -mcpu=generic-rv32 -march=rv32imafdzfh -fno-builtin-memset -DPRINTF_DISABLE_SUPPORT_LONG_LONG -I$ROOT/snax-forge/out/gvsoc/vecadd -I$ROOT/snax-forge/out/gvsoc/vecadd/include -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/generated/snax_alu_cluster_old -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic/src -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic/../common -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/api -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/api/omp -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/src -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/src/omp -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/deps/riscv-opcodes -I$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/math/include -mabi=ilp32d -mcmodel=medany -ffast-math -fno-builtin-printf -fno-builtin-sqrtf -fno-common -fopenmp -ftls-model=local-exec -O3 -D__DEFINED_uint64_t -MMD -MP -MT $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf -MF $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.d  -fuse-ld=lld -nostdlib -L$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/runtime/rtl-generic -T$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/snRuntime/base.ld -L$ROOT/snax-forge/gvsoc/snax-gvsoc/build/sw/ -L$ROOT/snax-forge/gvsoc/snax-gvsoc/build/sw/snax_alu_cluster_old/ -lmath -lsnRuntime $ROOT/snax-forge/out/gvsoc/vecadd/main.c -o $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf
+    llvm-objdump -D $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf > $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.dump
+    make[1]: Leaving directory '$ROOT/snax-forge/gvsoc/snax-gvsoc/sw/apps/forge'
 
 ## 5. Run it
 
@@ -120,10 +122,10 @@ the generated folder, into `out/snax-gvsoc/sw/vecadd/`:
         GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/vecadd/snax_alu.hjson --trace=snax_acc0/unit" \
         ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
 
-    mkdir -p /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/work/snax_hjson/vecadd
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/install/bin/gvrun --target snax_hjson \
-    	--work-dir /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/work/snax_hjson/vecadd --param chip/soc/binary=/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf --param hjson=/users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/gvsoc/../out/gvsoc/vecadd/snax_alu.hjson --trace=snax_acc0/unit run
-    Warning: installed platform tree /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/snax-gvsoc/install/lib/libplatform_tree_snax_hjson.so does not match the live system tree, falling back to the JSON config path (rebuild the target to regenerate the tree).
+    mkdir -p $ROOT/snax-forge/out/snax-gvsoc/work/snax_hjson/vecadd
+    $ROOT/snax-forge/out/snax-gvsoc/install/bin/gvrun --target snax_hjson \
+    	--work-dir $ROOT/snax-forge/out/snax-gvsoc/work/snax_hjson/vecadd --param chip/soc/binary=$ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf --param hjson=$ROOT/snax-forge/gvsoc/../out/gvsoc/vecadd/snax_alu.hjson --trace=snax_acc0/unit run
+    Warning: installed platform tree $ROOT/snax-forge/out/snax-gvsoc/install/lib/libplatform_tree_snax_hjson.so does not match the live system tree, falling back to the JSON config path (rebuild the target to regenerate the tree).
     forge data: 0 errors (64 words)
     forge counter add_acc: 19
     forge errors: 0
@@ -210,11 +212,11 @@ accelerators on one core are open item 79, a composed one is M13):
     pixi run gen-gvsoc out/design/dot/design_point.json
 
     Pixi task (sandbox in default): python -m snax_forge.sandbox recipes/dot.json
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/sandbox/dot/0_input.snaxdfg
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/sandbox/dot/1_split_map.snaxdfg
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/sandbox/dot/2_bind.snaxdfg
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/sandbox/dot/3_split_map.snaxdfg
-    /users/micas/rantonio/no_backup/kul_main/_rundoc/snax-forge/out/sandbox/dot/4_bind.snaxdfg
+    $ROOT/snax-forge/out/sandbox/dot/0_input.snaxdfg
+    $ROOT/snax-forge/out/sandbox/dot/1_split_map.snaxdfg
+    $ROOT/snax-forge/out/sandbox/dot/2_bind.snaxdfg
+    $ROOT/snax-forge/out/sandbox/dot/3_split_map.snaxdfg
+    $ROOT/snax-forge/out/sandbox/dot/4_bind.snaxdfg
     4 steps, each equal to the input graph on the reference check
 
     Pixi task (design in default): python -m snax_forge.design out/sandbox/dot/4_bind.snaxdfg --platform platforms/snax_alu.json
