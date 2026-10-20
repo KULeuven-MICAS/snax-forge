@@ -460,7 +460,11 @@ RET1. The platform keeps its source (`hjson`, a copy in `platforms/`) and its sl
 **D133** · brm — The Chisel Accumulator follows `ElementwiseTiledSpatial`'s control (start, busy,
 done, `loopCount`) plus `len`, so both run under one shell contract (D130); one register holds the
 sum and the result and loads the next input instead of clearing in the cycle the result leaves, so
-its drain is 0 with no second register. Amends D103. → `samples/Accumulator.scala`.
+its drain is 0 with no second register. Its input is `lanes` elements (the BRM's W), summed by a
+tree of W → 1 adders in front of the register, so `chisel_accumulator` (W = 1, the block unchanged)
+and `chisel_adder_tree` are one block. The tree is combinational, so the latency stays 1 for every
+W; for GEN1, pipeline stages in it would make the latency depend on W. Amends D103.
+→ `samples/Accumulator.scala`.
 
 **D134** · gvsoc — The hjson is the contract between snax-forge and SNAX-GVSoC: per design point
 three files, each changing for its own reason: the cluster (`<platform>.hjson`, the platform's
