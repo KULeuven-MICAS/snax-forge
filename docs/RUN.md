@@ -23,7 +23,7 @@ own):
     Cloning into 'snax-forge'...
     Submodule 'gvsoc/snax-gvsoc' (https://github.com/KULeuven-MICAS/snax-gvsoc) registered for path 'gvsoc/snax-gvsoc'
     Cloning into '$ROOT/snax-forge/gvsoc/snax-gvsoc'...
-    Submodule path 'gvsoc/snax-gvsoc': checked out '5a8bfbd46bdd19c19aaa3db52f06045e666349d6'
+    Submodule path 'gvsoc/snax-gvsoc': checked out '0e01c6e2111479acc5b4d212a6e57de87aca7ecb'
 
 Everything else runs in snax-forge's image (D118), started from the folder
 that holds `snax-forge`:
@@ -48,7 +48,7 @@ output goes to `out/flow/vecadd/build.log`):
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     built: no install in out/snax-gvsoc (snax-gvsoc 5a8bfbd4)
+      build     built: no install in out/snax-gvsoc (snax-gvsoc 0e01c6e2)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
@@ -143,7 +143,7 @@ crossbar's ports and the banks:
      "elf": "sw/forge.elf",
      "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
      "target": "snax_hjson",
-     "snax_gvsoc": {"commit": "5a8bfbd46bdd19c19aaa3db52f06045e666349d6", "dirty": false},
+     "snax_gvsoc": {"commit": "0e01c6e2111479acc5b4d212a6e57de87aca7ecb", "dirty": false},
      "trace_level": "off"
     }
     {
@@ -173,31 +173,29 @@ gets the level in its name:
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc 5a8bfbd4)
+      build     up to date (snax-gvsoc 0e01c6e2)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
-      convert   run/events.log -> profile.json, trace.jsonl (48 events in 211 cycles from main; boot 2799)
+      convert   run/events.log -> profile.json, trace.jsonl (49 events in the window; boot 2812)
       report    report/design.md, report/run.md
 
 The trace is every start, done, SNAX CSR access, poll, barrier, state
-change, function entry and DMA copy in the program's window, `t = 0` at
-main's entry; `trace_meta.json` says where that window lies (`boot`: main's
-entry in SNAX-GVSoC's cycles; `window`: up to `forge_check()`'s entry, 211
-cycles against the 226 between the program's two `mcycle` reads, which come
-a few instructions into each function):
+change, function entry and DMA copy in the program's window, the one the
+profile uses: from the program's `mcycle` read in main (`t = 0`) to its
+read in `forge_check()`, which the core logs; `trace_meta.json` holds
+`boot`, that first read in SNAX-GVSoC's cycles:
 
     head -n 4 out/flow/vecadd_task/run/trace.jsonl; cat out/flow/vecadd_task/run/trace_meta.json
 
-    {"t": 0, "k": "func", "src": "core0", "name": "main", "pc": 2147484128}
-    {"t": 0, "k": "func", "src": "core1", "name": "main", "pc": 2147484128}
-    {"t": 46, "k": "func", "src": "core0", "name": "forge_core_0", "pc": 2147484444}
-    {"t": 46, "k": "func", "src": "core1", "name": "forge_core_1", "pc": 2147484580}
+    {"t": 33, "k": "func", "src": "core0", "name": "forge_core_0", "pc": 2147484444}
+    {"t": 33, "k": "func", "src": "core1", "name": "forge_core_1", "pc": 2147484580}
+    {"t": 62, "k": "csr", "src": "core0", "pc": 2147484452, "csr": 960, "block": "acc_streamer", "op": "w", "value": 268435456}
+    {"t": 63, "k": "csr", "src": "core0", "pc": 2147484456, "csr": 961, "block": "acc_streamer", "op": "w", "value": 0}
     {
      "level": "task",
      "total_cycles": 226,
-     "boot": 2799,
-     "window": 211,
+     "boot": 2812,
      "sources": ["acc", "acc_a", "acc_b", "acc_out", "dma", "core0", "core1"]
     }
 
@@ -213,19 +211,19 @@ The run report names each task from the task list:
     | Functional check | passed |
     | Data | 0 errors over 64 words |
     | Counters | add_acc 19 |
-    | Trace | task; boot 2799 cycles; events from main over 211 cycles |
+    | Trace | task; boot 2812 cycles (to the mcycle read in main) |
 
     ## Tasks
 
     | Block | # | Task | Start | Done | Cycles | Direction | Bytes |
     |---|---:|---|---:|---:|---:|---|---:|
-    | dma | 0 | load_A | 88 | 110 | 22 | L2 → L1 | 512 |
-    | dma | 1 | load_B | 106 | 127 | 21 | L2 → L1 | 512 |
-    | acc_a | 0 | add_acc_a | 132 | 150 | 18 | – | – |
-    | acc_b | 0 | add_acc_b | 132 | 151 | 19 | – | – |
-    | acc_out | 0 | add_acc_out | 132 | 154 | 22 | – | – |
-    | acc | 0 | add_acc | 133 | 153 | 20 | – | – |
-    | dma | 2 | store_C | 175 | 190 | 15 | L1 → L2 | 512 |
+    | dma | 0 | load_A | 75 | 97 | 22 | L2 → L1 | 512 |
+    | dma | 1 | load_B | 93 | 114 | 21 | L2 → L1 | 512 |
+    | acc_a | 0 | add_acc_a | 119 | 137 | 18 | – | – |
+    | acc_b | 0 | add_acc_b | 119 | 138 | 19 | – | – |
+    | acc_out | 0 | add_acc_out | 119 | 141 | 22 | – | – |
+    | acc | 0 | add_acc | 120 | 140 | 20 | – | – |
+    | dma | 2 | store_C | 162 | 177 | 15 | L1 → L2 | 512 |
 
 and the viewer shows the profile in the browser (open the address it
 prints; the schedule comes back in FLOW3 round 3):
@@ -250,7 +248,7 @@ Accumulator. GVSoC is built now, so the whole flow takes seconds:
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (9 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc 5a8bfbd4)
+      build     up to date (snax-gvsoc 0e01c6e2)
       sw        sw/forge.elf (sha256 26b545a3812000c8)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 255 cycles (main to forge_check); data 0 errors (1 words); counters sum_acc 67 (64 beats)

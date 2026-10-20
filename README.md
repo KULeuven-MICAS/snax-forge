@@ -82,7 +82,7 @@ flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
   design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
   lower     tasks.json (12 steps)
   gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-  build     up to date (snax-gvsoc 5a8bfbd4)
+  build     up to date (snax-gvsoc 0e01c6e2)
   sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
   gvsoc     snax_hjson, exit 0 -> run/
   check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
