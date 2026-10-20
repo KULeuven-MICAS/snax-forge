@@ -304,9 +304,9 @@ See `hw/chisel/README.md`.
 # 5. SNAX-GVSoC from snax-forge
 
 [snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
-`gvsoc/snax-gvsoc` (D128); CI never fetches it. `gvsoc/Makefile` runs in the container's plain shell, not through pixi: pixi's
-Python lacks GVSoC's packages (gvrun stops at `No module named 'rich'`) and
-its environment sets `CC` and `CXX` to conda's gcc.
+`gvsoc/snax-gvsoc` (D128); CI fetches it in one job (`gvsoc`). `gvsoc/Makefile` names the image's
+Python, CMake and host compilers, so it runs the same from the container's plain shell and through
+pixi (`pixi run make -C gvsoc ...`, as the flow does).
 
 ```bash
 git submodule update --init gvsoc/snax-gvsoc

@@ -37,8 +37,8 @@ want to reverse, implementation details in module docstrings and tests.
   README.md section 2.
 - Generator: `pixi run gen-gvsoc out/design/<name>/design_point.json` writes a design point's
   hjson files, headers, `data.h` and `main.c` to `out/gvsoc/<name>/`.
-- SNAX-GVSoC: `gvsoc/Makefile` (`make build`, `make sw`, `make run`) in the container's plain
-  shell, not pixi; `docs/RUN.md` walks through it.
+- SNAX-GVSoC: `gvsoc/Makefile` (`make build`, `make sw`, `make run`), from the container's plain
+  shell or through pixi (`pixi run make -C gvsoc ...`); `docs/RUN.md` walks through it.
 - Kernels: `pixi run kernels` lists the staged kernels in `kernels/` (tier, dtype, whether the
   SDFG builds).
 - SNAX-MODEL on its own: `pixi run scenarios` writes the scenario files; `pixi run model-run

@@ -89,8 +89,9 @@ installed `snax_hjson` target reads the cluster file at run time.
 
 ## 4. Build GVSoC, then the program
 
-`gvsoc/Makefile` runs in the container's plain shell, not through pixi (its
-environment sets `CC` and `CXX` to conda's gcc). `make build` builds
+`gvsoc/Makefile` names the image's Python, CMake and host compilers, so it
+runs the same in the container's plain shell and through pixi (`pixi run
+make -C gvsoc build`). `make build` builds
 snax-gvsoc's `SNAX_TARGETS` into `out/snax-gvsoc/`, a few minutes the first
 time:
 
