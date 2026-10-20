@@ -14,7 +14,7 @@
 #     make sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
 #     make run TARGET=snax_hjson DESIGN=vecadd \
 #         GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/vecadd/snax_alu.hjson" \
-#         ELF=$(SNAX_GVSOC)/build/sw/apps/forge/vecadd/forge.elf
+#         ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
 #
 # SNAX_GVSOC is the snax-gvsoc checkout: the submodule by default, or a
 # sibling checkout (SNAX_GVSOC=../../snax-gvsoc from here).
@@ -34,10 +34,12 @@ TARGETS ?= snax_alu;snax_alu_sparse;snax_tiled_add;snax_hjson
 
 # Programs of $(SNAX_GVSOC)/sw/apps/ that `sw` builds after sw/ itself. FORGE,
 # a folder of gen-gvsoc's form, goes to the forge app as an absolute path, with
-# DESIGN, the folder's design.
+# DESIGN, the folder's design; its ELF goes to FORGE_BUILD, never beside the
+# submodule's fixtures' ELFs.
 APPS ?=
 FORGE ?=
 DESIGN ?=
+FORGE_BUILD = $(GVSOC_WORKDIR)/sw/$(DESIGN)
 
 # `run`: the installed target, the ELF, the work directory (one per design
 # when DESIGN is set, else per ELF name), and gvrun options put before the
@@ -60,7 +62,7 @@ build:
 
 sw:
 	$(MAKE) -C $(SNAX_GVSOC_ABS) sw
-	$(foreach app,$(APPS),$(MAKE) -C $(SNAX_GVSOC_ABS)/sw/apps/$(app) $(if $(FORGE),FORGE=$(abspath $(FORGE))) &&) true
+	$(foreach app,$(APPS),$(MAKE) -C $(SNAX_GVSOC_ABS)/sw/apps/$(app) $(if $(FORGE),FORGE=$(abspath $(FORGE)) FORGE_BUILD=$(FORGE_BUILD)) &&) true
 
 # The install's gvrun script sets LD_LIBRARY_PATH, PATH, PYTHONPATH,
 # USE_GVRUN and USE_GVRUN2 for the install, and passes its targets,

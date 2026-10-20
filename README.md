@@ -326,8 +326,12 @@ installed `snax_hjson` reads the cluster at run time. From `gvsoc/`:
 make sw APPS=forge FORGE=../out/gvsoc/<design> DESIGN=<design>
 make run TARGET=snax_hjson DESIGN=<design> \
     GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_alu.hjson" \
-    ELF=snax-gvsoc/build/sw/apps/forge/<design>/forge.elf
+    ELF=../out/snax-gvsoc/sw/<design>/forge.elf
 ```
+
+The program of an `out/` design is built into `out/snax-gvsoc/sw/<design>/`
+(`FORGE_BUILD`), never where the submodule builds its fixture of the same
+name.
 
 ## Refreshing a fixture
 
