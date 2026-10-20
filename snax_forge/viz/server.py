@@ -1,4 +1,4 @@
-"""Local HTTP server of the visualiser (VIS1, D55).
+"""Local HTTP server of the visualiser (D55).
 
 What it does
 ------------
@@ -12,22 +12,22 @@ Routes (every answer is JSON except the static files):
 
     GET  /api/runs                          name, trace level, total cycles per run
     GET  /api/run/<name>                    run.json, profile, class intervals,
-                                            tasks per block (D60)
+                                            tasks per block
     GET  /api/run/<name>/events?from=A&to=B&src=S[&src=T]&k=K[&k=L]
-                                            events with A <= t < B (D39), of these
+                                            events with A <= t < B, of these
                                             sources and kinds only if src / k is
                                             given (repeat it, or separate names
-                                            with commas; k is D57)
-    GET  /api/run/<name>/fifo               FIFO busy window per streamer (D56)
+                                            with commas)
+    GET  /api/run/<name>/fifo               FIFO busy window per streamer
     GET  /api/run/<name>/memory[?marks=M]    per memory its geometry, regions and
-                                            folded lines (D96); with marks, folded
+                                            folded lines; with marks, folded
                                             by a mark per word: M is conflicts
                                             (L1 conflict counts), arrival, use or
-                                            wait (a cycle per word, D97)
+                                            wait (a cycle per word)
     GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=M]
                                             rows A <= r < B in full, at most 256
     GET  /api/run/<name>/movement           residency, patterns and conflict
-                                            counts (D97)
+                                            counts
     GET  /api/run/<name>/journey?region=R&index=I
                                             every hop of element R[I] (I a flat
                                             index, or indices separated by commas)

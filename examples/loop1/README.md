@@ -1,10 +1,13 @@
 # LOOP1: one turn of the loop by hand
 
+It walks the flow on SNAX-MODEL, which RET1 removes; `docs/RUN.md` is the
+SNAX-GVSoC path.
+
 This walk-through takes vecadd on the `small16` platform once around the
 loop: run it, read why it takes the cycles it takes, write down what a change
 should do, make the change, and check. Every number below is checked by
 `tests/flow/test_loop1.py`, so the text stays true as the code moves. The
-outputs are not in git (D67): the commands make them again in a few seconds.
+outputs are not in git (D98): the commands make them again in a few seconds.
 
 Every quoted table is copied line for line from the report named above it.
 
@@ -184,8 +187,9 @@ pixi run view out/flow/vecadd/run out/flow/vecadd_B.l1.base576/run
 
 ## What this does not show
 
-The cycle counts compare design points on the model; they are not RTL cycles
-until the model is anchored against the SNAX cluster (D51). The move worked
+The cycle counts compare design points on SNAX-MODEL; they are not RTL
+cycles. The model anchored against the SNAX cluster is SNAX-GVSoC (D51,
+D123), which the flow runs from FLOW3 on. The move worked
 because acc_b stayed within one beat of acc_a here; a longer or differently
 paced workload can line the streamers up differently, so check the Conflicts
 mode again after any change to the recipe or the platform.

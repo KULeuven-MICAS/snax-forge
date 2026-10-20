@@ -1,4 +1,4 @@
-# Python packages for the snax-gvsoc container.
+# Python packages of snax-forge's development image (D118).
 
 # GVSoC: union of core/, gapy/ and gvrun/ requirements.txt at gvsoc 93cedc4.
 beautifulsoup4>=4.11.1

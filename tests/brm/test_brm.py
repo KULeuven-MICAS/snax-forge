@@ -1,4 +1,4 @@
-"""The BRM format (BRM1, D68): parts, round trip and validation."""
+"""The BRM format: parts, round trip and validation."""
 
 from __future__ import annotations
 
@@ -85,7 +85,7 @@ def test_no_implementation_is_rejected():
         Brm.from_dict(d)
 
 
-# GEN3.md's binding of ElementwiseTiledSpatial (D129)
+# The binding of ElementwiseTiledSpatial
 BINDING = {
     "block": "ElementwiseTiledSpatial",
     "args": {"lanes": "W", "supportedOps": "op"},
@@ -234,7 +234,7 @@ def test_python_construction_is_validated():
 
 
 # =============================================================================
-# function.code: what one lane computes (D82)
+# function.code: what one lane computes
 # =============================================================================
 
 

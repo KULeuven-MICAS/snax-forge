@@ -1,6 +1,6 @@
-"""Tests for the SNAX-MODEL L2 and DMA (MOD6, D33, D34).
+"""Tests for the SNAX-MODEL L2 and DMA (D33, D34).
 
-MOD6 acceptance (docs/STATUS.md): DMA bandwidth test; DMA-streamer
+Acceptance: DMA bandwidth test; DMA-streamer
 contention shows up in the counters. Plus: address patterns against a NumPy
 enumeration, overlap of DMA and compute, a vecadd from L2 to L2, and skip
 on/off identical under random descriptors and streamer traffic.
@@ -317,7 +317,7 @@ def test_start_while_busy_raises():
 
 
 def test_dims_limits_the_loops():
-    """DmaConfig.dims (the loops the registers hold, MOD7): more loops is rejected."""
+    """DmaConfig.dims (the loops the registers hold): more loops is rejected."""
     cl, _, xb, l2 = build()
     dma = cl.add(Dma("dma", xb, l2, DmaConfig(dims=1)))
     flat = contiguous(0, 4)

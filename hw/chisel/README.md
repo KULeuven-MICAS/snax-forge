@@ -70,8 +70,8 @@ Python side.
 ## The two archetypes
 
 `SimpleAdder` and `Accumulator` are not arbitrary toys. They are the two
-distinct hardware shapes the toolchain has to cover, and the two kernels
-already sitting in `kernels/polybench/`:
+distinct hardware shapes the toolchain has to cover, the shapes of
+`vecadd` and `dot` in `kernels/polybench/` among the staged kernels:
 
 **Elementwise (`SimpleAdder`, cf. `vecadd.py`).** N beats in, N beats out,
 L = 0, II = 1. Stateless. Chains freely with a downstream consumer, because

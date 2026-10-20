@@ -1,8 +1,8 @@
-"""A BRM instance and its accelerator entry (BRM1, D68).
+"""A BRM instance and its accelerator entry.
 
 An instance is one BRM built one way: an implementation and a value for
-every design param. It is what a design point will hold (DP1) and what
-SNAX-LOWER turns into the accelerator entry of the cluster file (LOW1c):
+every design param. It is what a design point holds and what SNAX-LOWER
+turns into the accelerator entry of the cluster file:
 
     inst = brm.resolve("chisel_tiled_spatial", {"W": 4})
     inst.accel_entry()
@@ -10,8 +10,9 @@ SNAX-LOWER turns into the accelerator entry of the cluster file (LOW1c):
 
 The entry's ``params`` are the function params resolved, in their order,
 then the implementation's ``latency`` and ``ii`` (the BRM's
-``initiation_interval``), and its ``drain`` when not 0 (D103). The model is not changed: the cluster file keeps
-naming the registered accelerator kind (D43, D51).
+``initiation_interval``), and its ``drain`` when not 0. The model is not
+changed: the cluster file keeps naming the registered accelerator kind (D43,
+D51).
 
 Resolving checks the values: an unknown implementation or param, a runtime
 param given here (runtime params are the task's, CONTRACTS.md section 4), a
@@ -76,12 +77,12 @@ class Instance:
         params = {k: self.value(v) for k, v in self.brm.function.params.items()}
         params["latency"] = self.latency
         params["ii"] = self.initiation_interval
-        if self.drain:  # written only when not 0 (D103), so the other entries are unchanged
+        if self.drain:  # written only when not 0, so the other entries are unchanged
             params["drain"] = self.drain
         return self.brm.function.accel, params
 
     def accel_config(self) -> AccelConfig:
-        """The model's accelerator, built through the registered kind (D43)."""
+        """The model's accelerator, built through the registered kind."""
         kind, params = self.accel_entry()
         if kind not in ACCEL_KINDS:
             raise BrmError(

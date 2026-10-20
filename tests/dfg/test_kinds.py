@@ -1,4 +1,4 @@
-"""Node kinds are registered, never subclassed (D19, D77): a kind added from outside the core."""
+"""Node kinds are registered, never subclassed (D19): a kind added from outside the core."""
 
 from __future__ import annotations
 

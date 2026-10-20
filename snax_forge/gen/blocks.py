@@ -1,4 +1,4 @@
-"""The blocks the GVSoC generator can build: a binding's ``block`` -> a SnaxUnit (GEN3, D134).
+"""The blocks the GVSoC generator can build: a binding's ``block`` -> a SnaxUnit (D134).
 
 An adapter reads an instance (its BRM, implementation and design params,
 snax_forge/brm/instance.py) and gives the properties of snax-gvsoc's

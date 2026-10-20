@@ -1,11 +1,12 @@
-"""dot end to end (E2E2, D106): a multiplier chained into an accumulator through L1, M5's acceptance.
+"""dot end to end: a multiplier chained into an accumulator through L1.
 
 ``recipes/dot.json`` (the adder tree, W lanes) and ``recipes/dot_serial.json``
 (the Chisel Accumulator, one lane) run from the import fixture to a checked
-model run. Accepted when every run equals the kernel's reference and REF1 at
-its pinned cycle count, the task list holds the one wait between the two
-accelerators, ``run.md`` names it as a chaining wait, and on a beat trace a
-product's journey goes from ``mul`` through L1 into ``sum``. The cycle counts
+model run. Accepted when every run equals the kernel's reference and the
+reference executor at its pinned cycle count, the task list holds the one
+wait between the two accelerators, ``run.md`` names it as a chaining wait,
+and on a beat trace a product's journey goes from ``mul`` through L1 into
+``sum``. The cycle counts
 are the first data of the paper's claim C3: behind a one-lane accumulator a
 wider multiplier buys little.
 """
@@ -27,7 +28,7 @@ from .helpers import PLAIN as VECADD
 
 DOT = REPO / "recipes" / "dot.json"
 SERIAL = REPO / "recipes" / "dot_serial.json"
-PLAIN = FIXTURES / "dot.snaxdfg"  # the import of the dot kernel (DFG3)
+PLAIN = FIXTURES / "dot.snaxdfg"  # the import of the dot kernel
 
 # (recipe, W) -> cycles on small16 at N = 64
 CYCLES = {

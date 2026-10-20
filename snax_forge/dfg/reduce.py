@@ -1,4 +1,4 @@
-"""Reductions on a memlet (DFG3, D102): how many writes to one element combine.
+"""Reductions on a memlet (D102): how many writes to one element combine.
 
 A tasklet output whose memlet has a ``reduce`` does not overwrite its element:
 every iteration of the maps around it folds its value in with the op. The
@@ -22,7 +22,7 @@ defines and is not registered here.
 
 A fold into what the element already holds (DaCe's plain ``wcr`` memlet,
 ``C[i] += ...`` in a loop) would be ``identity: null``; it is not accepted
-yet (FE1).
+yet.
 """
 
 from __future__ import annotations

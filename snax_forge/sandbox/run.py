@@ -1,18 +1,19 @@
-"""Running a recipe (SBX1, D72, D80): every step applied, written and checked.
+"""Running a recipe (D72): every step applied, written and checked.
 
 ``apply_recipe(recipe, graph)`` binds the recipe's symbols in the input
 graph (step 0, ``input``), then applies the steps in order. After every
-step the reference executor (D79) runs the new graph and the input graph on
+step the reference executor runs the new graph and the input graph on
 the same seeded inputs, and every non-transient container must come out
 equal: a transform that changes what the graph computes stops the recipe at
 that step. The inputs are random integers of each container's dtype and
 shape, independent of the kernel; that the input graph computes what the
-kernel does is REF1's check (``pixi run check-dfg``).
+kernel does is checked against the kernel's reference (``pixi run
+check-dfg``).
 
 The result is one ``Result`` per step (index, transform, graph);
 ``write_steps`` writes them as ``<i>_<transform>.snaxdfg`` next to the
 recipe it ran (``recipe.json``, with the param values used), so every step
-can be loaded, run and viewed on its own (D72).
+can be loaded, run and viewed on its own.
 """
 
 from __future__ import annotations

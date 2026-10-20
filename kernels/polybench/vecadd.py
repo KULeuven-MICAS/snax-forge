@@ -2,8 +2,7 @@
 Elementwise vector add.
 
 int64, one element per 64-bit L1 word, as the SNAX-MODEL scenarios and the
-elementwise_add BRM use (open item 30, decided for vecadd; dot followed in
-M5, D102; jacobi1d stays int32 until M9).
+elementwise_add BRM use (D113); jacobi1d stays int32 until its stencil BRM.
 
 Tier done (PAPER §6.1).
 """

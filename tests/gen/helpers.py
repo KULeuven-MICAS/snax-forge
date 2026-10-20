@@ -1,4 +1,4 @@
-"""Shared helpers for the generator's tests (GEN3 step 3, LNK2a).
+"""Shared helpers for the generator's tests.
 
 ``point`` writes a design point of vecadd (bound by the checked-in recipe,
 W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by
@@ -7,8 +7,7 @@ another W and implementation), on
 ``platforms/snax_alu.json`` (or a given platform), in a folder that stands
 for snax-forge's root: the platform's source hjson is copied into its
 ``platforms/``. The snax-gvsoc submodule (``SUB``) is read only where it is
-checked out (CI never fetches it, D128); ``snax_cfg`` imports its reader
-where the pin has one.
+checked out (CI never fetches it, D128); ``snax_cfg`` imports its reader.
 """
 
 from __future__ import annotations
@@ -67,8 +66,8 @@ def bound_vsum(w: int = 1, impl: str = "chisel_accumulator") -> Graph:
 
 
 def snax_cfg() -> types.ModuleType | None:
-    """snax-gvsoc's snax/snax_cfg.py (the reader of the cluster hjson, LNK2a round 1), or None
-    where the submodule is not checked out or its pin predates it."""
+    """snax-gvsoc's snax/snax_cfg.py (the reader of the cluster hjson), or None where the
+    submodule is not checked out."""
     path = SUB / "snax" / "snax_cfg.py"
     if not path.is_file():
         return None
@@ -80,7 +79,9 @@ def snax_cfg() -> types.ModuleType | None:
 
 
 def snax_streamer() -> types.ModuleType:
-    """snax-gvsoc's snax/snax_streamer.py, imported with a stub gvsoc.systree (its helpers only)."""
+    """snax-gvsoc's snax/snax_streamer.py, imported with a stub gvsoc.systree (its helpers only),
+    after its snax_cfg (``snax_cfg``), which it imports."""
+    snax_cfg()
     stub = types.ModuleType("gvsoc.systree")
     stub.Component = stub.SlaveItf = object
     pkg = types.ModuleType("gvsoc")

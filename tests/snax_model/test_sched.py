@@ -1,6 +1,6 @@
-"""Tests for the SNAX-MODEL scheduler (MOD1).
+"""Tests for the SNAX-MODEL scheduler.
 
-MOD1 acceptance (docs/STATUS.md):
+Acceptance:
   * toy components give identical results with skipping on and off, and
   * two runs of the same setup give identical results.
 
@@ -231,7 +231,7 @@ def build(skip, seed=1):
 
 @pytest.mark.parametrize("seed", range(5))
 def test_skip_on_off_identical(seed):
-    """Main MOD1 acceptance test: skipping must not change any result.
+    """Main acceptance test: skipping must not change any result.
 
     The same setup runs once with skipping and once without. Total cycles,
     every pop with its cycle, and every sleeper wake-up must be equal. Five
@@ -283,8 +283,8 @@ def test_ticks_plus_gaps_cover_run(skip):
     """For every component, ticked cycles + gap cycles = total cycles.
 
     Would catch a missing on_gap call, a gap of the wrong length, or a gap
-    overlapping a tick. MOD8's check "busy + idle + stalled = total" relies
-    on this.
+    overlapping a tick. The profile's check "busy + idle + stalled = total"
+    relies on this.
     """
     cl, *comps = build(skip=skip)
     total = cl.run()

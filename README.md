@@ -4,9 +4,11 @@ SNAX-FORGE is a platform for exploring how domain-specific accelerators perform
 when plugged into a SNAX compute cluster, before committing to RTL. You bring a
 kernel and a model of your accelerator (a BRM); SNAX-FORGE imports the kernel
 into its own dataflow graph, maps it onto the cluster by a recipe you edit,
-runs it in a cycle-level Python model of the cluster, and shows where the
-cycles go. Humans and LLMs close the loop by editing the recipe or the
-platform and running again.
+runs it on a model of the cluster, and shows where the cycles go. The model
+is SNAX-GVSoC, a GVSoC model in which a Snitch core runs the real program,
+checked against snax_cluster's RTL; until FLOW3 the flow still runs on
+SNAX-MODEL, the cycle-level Python model it replaces. Humans and LLMs close
+the loop by editing the recipe or the platform and running again.
 
 Where to read more:
 
@@ -16,6 +18,10 @@ Where to read more:
 | `docs/CONTRACTS.md` | every artefact between the components, field by field |
 | `docs/DECISIONS.md` | the decisions behind it, D1 onwards |
 | `docs/STATUS.md` | milestones, tasks and open items |
+| `docs/PAPER.md` | the paper plan |
+| `docs/RUN.md` | a design point from recipe to a run on SNAX-GVSoC, each command with its output |
+| `kernels/README.md` | the target kernels, staged |
+| `examples/` | walk-throughs of the flow (on SNAX-MODEL) |
 | `hw/chisel/README.md` | the Chisel accelerator blocks |
 
 # Setup
@@ -44,8 +50,9 @@ docker build -t ghcr.io/kuleuven-micas/snax-forge:main container
 docker push ghcr.io/kuleuven-micas/snax-forge:main
 ```
 
-Run it from the folder that holds `snax-forge`, `snax-gvsoc` and
-`snax_cluster`, mounted at its own path:
+Run it from the folder that holds `snax-forge`, mounted at its own path.
+snax-gvsoc comes with it as a submodule (`gvsoc/snax-gvsoc`); a
+`snax_cluster` checkout beside it is needed only to run the RTL:
 
 ```bash
 podman run --rm -it -v "$PWD":"$PWD" -w "$PWD" ghcr.io/kuleuven-micas/snax-forge:main
@@ -143,7 +150,7 @@ The flow runs these tools in turn; each also runs on its own.
 | Design point | `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | `out/design/vecadd/` platform, memory plan, design point |
 | Only check | `pixi run design check out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | nothing |
 | Keep a platform | `pixi run design save out/design/vecadd/platform.json NAME` | `platforms/NAME.json` |
-| Platform from snax_cluster | `pixi run design from-hjson gvsoc/snax-gvsoc/sw/cfg/snax_alu_cluster.hjson snax_alu` | `platforms/snax_alu.json` (LNK1) |
+| Platform from snax_cluster | `pixi run design from-hjson platforms/snax_alu.hjson snax_alu --force` | `platforms/snax_alu.json` from its source, a copy of snax_cluster's cluster file (LNK1) |
 | Cluster file | `pixi run lower cluster out/design/vecadd/design_point.json` | `cluster.json` beside the point |
 | Task list | `pixi run lower tasks out/design/vecadd/design_point.json` | `tasks.json` beside the point |
 | The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | `out/flow/vecadd/`: design point, cluster file, task list, scenario, checked run, reports |
@@ -158,10 +165,10 @@ To look at graphs, e.g. every step of a recipe side by side:
 pixi run view-dfg out/sandbox/vecadd/     # then open http://127.0.0.1:8766/
 ```
 
-# 3. The model on its own: scenarios
+# 3. SNAX-MODEL on its own: scenarios
 
-The model also runs hand-written scenarios, which is how SNAX-MODEL is tested
-and how a platform feature is tried before any kernel needs it.
+SNAX-MODEL also runs hand-written scenarios, which is how it is tested and
+how a platform feature was tried before any kernel needed it.
 
 ```bash
 pixi run scenarios                                                                 # 1. generate the scenario files
@@ -297,46 +304,51 @@ See `hw/chisel/README.md`.
 # 5. SNAX-GVSoC from snax-forge
 
 [snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
-`gvsoc/snax-gvsoc` (D128); CI never fetches it. `gvsoc/targets/` holds
-snax-forge's own GVSoC targets, run on the components snax-gvsoc installs.
-`gvsoc/Makefile` runs in the container's plain shell, not through pixi: pixi's
+`gvsoc/snax-gvsoc` (D128); CI never fetches it. `gvsoc/Makefile` runs in the container's plain shell, not through pixi: pixi's
 Python lacks GVSoC's packages (gvrun stops at `No module named 'rich'`) and
 its environment sets `CC` and `CXX` to conda's gcc.
 
 ```bash
 git submodule update --init gvsoc/snax-gvsoc
 cd gvsoc
-make build                      # GVSoC for TARGETS (default snax_alu;snax_alu_sparse;snax_tiled_add;snax_hjson) into out/snax-gvsoc/
+make build                      # GVSoC for TARGETS (default snax-gvsoc's SNAX_TARGETS) into out/snax-gvsoc/
 make sw APPS=snax-alu           # sw/ and the named apps, into snax-gvsoc/build/sw/
 make run TARGET=snax_alu ELF=snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
 ```
 
 `run` prints `Accelerator Done!`, `Accelerator Cycles: 25` and `Number of
-errors: 0`. It calls the install's `gvrun` with `--target-dir=gvsoc/targets`
-after the install's own `targets` and `generators`; `GVRUN_ARGS` goes before
+errors: 0`. It calls the install's `gvrun`; `GVRUN_ARGS` goes before
 `run` (e.g. `GVRUN_ARGS=--trace=snax_acc0`) and the work directory is
+`out/snax-gvsoc/work/<target>/<design>` with `DESIGN` set, else
 `out/snax-gvsoc/work/<target>/<elf name>`. `SNAX_GVSOC=../../snax-gvsoc` uses a
 sibling checkout instead of the submodule; `build` clears `out/snax-gvsoc`
 when the checkout changes, since CMake refuses a build folder of another one.
-A target in `gvsoc/targets/` that no build made has no platform tree: gvrun
-warns and runs it on the JSON config path (`gvsoc/targets/README.md`).
 `pixi run gen-gvsoc out/design/<design>/design_point.json` writes a design
 point's cluster to `out/gvsoc/<design>/` as three hjson files (the cluster
 `snax_alu.hjson`, the streamer and the datapath block), its headers (GEN3,
 LNK2a) and its self-checking program, `main.c` and `data.h` (GEN2a); the
-installed `snax_hjson` reads the cluster at run time:
-`make run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_alu.hjson" ELF=...`.
+installed `snax_hjson` reads the cluster at run time. From `gvsoc/`:
+
+```bash
+make sw APPS=forge FORGE=../out/gvsoc/<design> DESIGN=<design>
+make run TARGET=snax_hjson DESIGN=<design> \
+    GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_alu.hjson" \
+    ELF=../out/snax-gvsoc/sw/<design>/forge.elf
+```
+
+The program of an `out/` design is built into `out/snax-gvsoc/sw/<design>/`
+(`FORGE_BUILD`), never where the submodule builds its fixture of the same
+name.
 
 ## Refreshing a fixture
 
 snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
-(vecadd, vecmul, and vsum, `accumulate`'s Chisel Accumulator), which its
-`make regress` runs (D128). `tests/gen/test_fixture.py` generates each again
-and compares it byte for byte with the submodule's copy; it skips when the
-submodule is not checked out or has no `forge/`, and a design whose folder
-the submodule's pin does not have yet, or a pin whose fixtures predate the
-hjson ones or `main.c`. When the generator or the design point changes, refresh the
-folder in a snax-gvsoc checkout next to this one:
+(vecadd, vecmul, vsum on `accumulate`'s Chisel Accumulator, and vsum_tree on
+its adder tree), which its `make regress` runs (D128).
+`tests/gen/test_fixture.py` generates each again and compares it byte for
+byte with the submodule's copy; it skips when the submodule is not checked
+out. When the generator or the design point changes, refresh the folder in a
+snax-gvsoc checkout next to this one, the folder cleared first:
 
 ```bash
 pixi run sandbox recipes/vecadd.json
@@ -344,14 +356,14 @@ pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.
 pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd
 ```
 
-(the same with `vecmul` or `vsum`), commit the folder in snax-gvsoc as written, then
+(the same with `vecmul`, `vsum` or `vsum_tree`), commit the folder in snax-gvsoc as written, then
 bump the submodule here so the test compares against it.
 
 # 6. Tests and lint
 
 ```bash
 pixi run test          # everything; writes the generated scenario files first
-pixi run test-model    # one block: test-model, test-lower, test-brm, test-dfg, test-sandbox, test-design, test-flow
+pixi run test-model    # one block: test-model, test-lower, test-brm, test-dfg, test-sandbox, test-design, test-flow, test-report, test-gen, test-kernels
 pixi run lint          # ruff check and format check (CI runs it); pixi run fmt fixes
-pixi run clean         # remove out/, caches and Chisel build trees (--dry-run lists them)
+pixi run clean         # remove out/ but out/snax-gvsoc/, caches and Chisel build trees (--all: out/snax-gvsoc/ too; --dry-run lists them)
 ```

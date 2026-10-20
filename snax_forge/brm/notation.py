@@ -1,4 +1,4 @@
-"""Dataflow notations: how a BRM writes its per-port nests (D68, D70, open item 1).
+"""Dataflow notations: how a BRM writes its per-port nests (D70, open item 1).
 
 The dataflow part of a BRM names a notation and gives one nest per port:
 
@@ -21,8 +21,8 @@ by name with ``register_notation(name, check, check_instance=None)``:
 * ``normalize(nest)``, optional, returns the nest with every field written
   (defaults filled in), which the BRM keeps once the nest is checked.
 
-The first notation, ``affine``, is in affine.py (D70); M6 may add a second
-one without changing the BRM structure (open item 1).
+The first notation, ``affine``, is in affine.py; a second may come when the
+contracts freeze, without changing the BRM structure (open item 1).
 """
 
 from __future__ import annotations

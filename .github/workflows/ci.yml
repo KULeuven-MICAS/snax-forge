@@ -53,8 +53,8 @@ jobs:
       - name: Lint
         run: pixi run -e ci lint
 
-      # SNAX-MODEL unit tests (MOD1 onward). `test` runs everything under
-      # tests/, so new model tests are picked up without touching CI.
+      # Every test block. `test` runs everything under tests/, so new tests
+      # are picked up without touching CI.
       - name: Tests
         run: pixi run -e ci test
 

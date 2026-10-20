@@ -1,4 +1,4 @@
-"""A platform read from snax_cluster's cluster file (LNK1, D131), and its source (LNK2a)."""
+"""A platform read from snax_cluster's cluster file (D131), and its source."""
 
 from __future__ import annotations
 

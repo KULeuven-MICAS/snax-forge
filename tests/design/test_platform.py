@@ -1,4 +1,4 @@
-"""The platform file (DP1a, D84): format, round trip, --set changes, working copies, save."""
+"""The platform file (D84): format, round trip, --set changes, working copies, save."""
 
 from __future__ import annotations
 

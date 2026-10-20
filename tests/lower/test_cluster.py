@@ -1,4 +1,4 @@
-"""Design point -> cluster file (LOW1c, D53, D88)."""
+"""Design point -> cluster file (D53, D88)."""
 
 from __future__ import annotations
 
@@ -8,11 +8,11 @@ import json
 import pytest
 
 from snax_forge.brm import load_brm
+from snax_forge.common import to_json
 from snax_forge.design import DesignPoint, Platform, run_checks
 from snax_forge.design.streamers import Streamer
 from snax_forge.lower import __main__ as cli
 from snax_forge.lower import cluster_config, cluster_file, cluster_of, stub
-from snax_forge.snax_model.config import to_json
 from snax_forge.snax_model.scenario import ClusterConfig, build_cluster
 from tests.design.helpers import SMALL16, bound_w8, design
 
@@ -33,7 +33,7 @@ def point(graph="vecadd_accelerated", sets=None) -> DesignPoint:
 
 
 def test_vecadd_design_point_gives_alu4_byte_for_byte():
-    """LOW1c acceptance."""
+    """The derived cluster file is the checked-in alu4.json."""
     assert to_json(cluster_file(point()).to_dict()) == ALU4.read_text()
 
 
@@ -99,7 +99,7 @@ def test_spatial_bounds_other_than_the_lanes_go_in_the_register_map():
 
 
 def test_red4_and_mul1_keep_their_checked_in_form():
-    """red4 (from accumulate, BRM4) and mul1 (a stub): their streamers come from the platform shell."""
+    """red4 (from accumulate) and mul1 (a stub): their streamers come from the platform shell."""
     red4 = ClusterConfig.load(SCEN / "clusters" / "red4.json")
     assert [c.name for c in red4.components] == ["xbar", "acc_a", "acc_out", "acc", "ctl"]
     assert [c.config["n_ports"] for c in red4.components[1:3]] == [4, 1]

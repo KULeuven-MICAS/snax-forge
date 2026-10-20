@@ -7,7 +7,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.SnaxUnitCases
 import snax.forge.SnaxUnitCases.Start
 
-/** The lockstep half of GEN3's unit cross-check: ElementwiseTiledSpatial driven through snax-gvsoc's `SnaxUnit` cases.
+/** The lockstep half of the unit cross-check: ElementwiseTiledSpatial driven through snax-gvsoc's `SnaxUnit` cases.
   *
   * Every case with `wait lockstep` (`SnaxUnitCases`, read from `SNAX_GVSOC_UNIT_CASES`) drives the Chisel block the
   * same way, cycle by cycle: each input's valid and the output's ready as the case line gives them, a start poked in

@@ -1,4 +1,4 @@
-"""Cycle-level, event-driven scheduler for SNAX-MODEL (MOD1, D10, D21).
+"""Cycle-level, event-driven scheduler for SNAX-MODEL (D10, D21).
 
 Cycle semantics (RTL-like):
 
@@ -21,7 +21,7 @@ component is not ticked are reported to it through ``on_gap`` so statistics
 still add up to the total cycle count. With ``skip_idle=False`` every
 component is ticked every cycle; results must be identical either way.
 
-Cycle classes (MOD8, D40): components that classify their cycles keep a
+Cycle classes (D40): components that classify their cycles keep a
 ``ClassLog`` and call ``add(cls, start, stop)`` both from ``commit`` (one
 cycle) and from ``on_gap`` (the skipped range). The log keeps the totals
 per class and, when a trace asks for it, the runs ``[cls, start, stop)``
@@ -104,7 +104,7 @@ class Component:
     Subclasses set ``phases`` and override ``tick``. The remaining methods have
     safe defaults.
 
-    ``_trace`` is set by ``Trace.bind`` (MOD8) when the run is traced;
+    ``_trace`` is set by ``Trace.bind`` when the run is traced;
     components emit events through it only if it is not None, and never
     read anything back from it.
     """

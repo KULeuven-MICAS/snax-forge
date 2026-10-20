@@ -1,23 +1,19 @@
-"""snax-forge reproduces snax-gvsoc's fixtures (GEN3 step 5, LNK2a, D128).
+"""snax-forge reproduces snax-gvsoc's fixtures (D128).
 
 Each fixture is a folder of the snax-gvsoc submodule's ``forge/``, the
 generator's output for one design point, checked in untouched
-(``forge/README.md`` there): vecadd, vecmul, vsum (GEN3 step 6b) and vsum_tree
-(GEN2a round 2), each skipped where the submodule's pin predates it. Its refresh commands are run
+(``forge/README.md`` there): vecadd, vecmul, vsum and vsum_tree. Its refresh commands are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson
 copied into its ``platforms/``), so the design point is
 ``out/design/<design>/design_point.json`` and every header comment names it
 as the fixture's do. The generated folder must equal the fixture byte for
 byte, file list included. Skipped where the submodule is not checked out
-(CI never fetches it), predates ``forge/``, or predates the hjson fixtures
-(LNK2a round 2: a manifest without ``cluster`` is GEN3's generated Python), or
-predates the program (GEN2a: a manifest without ``program``).
+(CI never fetches it).
 """
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import pytest
@@ -33,16 +29,10 @@ FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_alu.json
 DESIGNS = ["vecadd", "vecmul", "vsum", "vsum_tree"]
 
-pytestmark = [
-    pytest.mark.skipif(
-        not (SUB / "snax").is_dir(),
-        reason="the snax-gvsoc submodule is not checked out (CI never fetches it)",
-    ),
-    pytest.mark.skipif(
-        (SUB / "snax").is_dir() and not FORGE.is_dir(),
-        reason="the snax-gvsoc submodule has no forge/: bump the submodule",
-    ),
-]
+pytestmark = pytest.mark.skipif(
+    not (SUB / "snax").is_dir(),
+    reason="the snax-gvsoc submodule is not checked out (CI never fetches it)",
+)
 
 
 def files(folder: Path) -> list[str]:
@@ -66,15 +56,6 @@ def regenerate(tmp: Path, design: str) -> Path:
 @pytest.mark.parametrize("design", DESIGNS)
 def test_the_fixture_is_reproduced(tmp_path, design):
     fixture = FORGE / design
-    if not fixture.is_dir():
-        pytest.skip(f"the snax-gvsoc submodule has no forge/{design}: bump the submodule")
-    manifest = json.loads((fixture / "manifest.json").read_text())
-    if "cluster" not in manifest:
-        pytest.skip(
-            f"the submodule's forge/{design} predates the hjson fixtures: bump the submodule"
-        )
-    if "program" not in manifest:
-        pytest.skip(f"the submodule's forge/{design} predates main.c (GEN2a): bump the submodule")
     out = regenerate(tmp_path, design)
     assert files(out) == files(fixture)
     for f in files(fixture):

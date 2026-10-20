@@ -1,6 +1,6 @@
-"""Tests for the SNAX-MODEL accelerator interface and stubs (MOD5).
+"""Tests for the SNAX-MODEL accelerator interface and stubs.
 
-MOD5 acceptance (docs/STATUS.md):
+Acceptance:
   * with ideal streams, both stubs hit their cycle formulas, and
   * the reduce stub proves unequal port rates work.
 Plus: a slow consumer freezes the pipeline and the freeze reaches the
@@ -458,7 +458,7 @@ def test_freeze_holds_pipeline_and_inputs(skip):
     pushed: frozen. Nothing fires, the input FIFO (depth 2) fills and the
     producer stops. The consumer pops at 30, room is visible at 31, and the
     pipeline moves on: push at 31, fire at 31. After that a depth-1 output
-    FIFO without pipe takes one beat every 2 cycles (as the MOD4 writer).
+    FIFO without pipe takes one beat every 2 cycles (as a streamer's writer).
     """
     n, L, wake = 10, 2, 30
     rng = np.random.default_rng(1)

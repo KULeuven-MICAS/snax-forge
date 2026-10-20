@@ -1,4 +1,4 @@
-"""Malformed graphs are rejected, and the error names what is wrong (DFG1)."""
+"""Malformed graphs are rejected, and the error names what is wrong."""
 
 from __future__ import annotations
 
@@ -70,7 +70,7 @@ CASES = [
     ("vecadd", _map(lambda m: m["attrs"].update(var="N")), "'N' is already a symbol"),
     ("vecadd", _map(lambda m: m["attrs"].update(var="A")), "'A' is already a symbol, container"),
     ("vecadd_split", lambda d: d["body"][0]["body"][0]["attrs"].update(var="i_t"), "variable"),
-    # reduce (D102)
+    # reduce
     ("dot", _reduce(op="sub"), "reduce.op: 'sub' is not a registered op"),
     ("dot", _reduce(identity=None), "reduce.identity: null .* not accepted yet \\(FE1\\)"),
     ("dot", _reduce(identity="0"), "reduce.identity: must be an int, got '0'"),

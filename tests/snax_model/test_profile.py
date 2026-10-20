@@ -1,14 +1,14 @@
-"""Tests for the SNAX-MODEL profile and trace (MOD8, D38, D39, D40).
+"""Tests for the SNAX-MODEL profile and trace (D38, D39, D40).
 
-MOD8 acceptance (docs/STATUS.md): per accelerator, busy + idle + stalled =
-total; per-bank access counts equal trace event counts. Plus: the other
-components' classes add up, the trace is cross-checked against every
-counter it can see, class intervals cover the run, FIFO occupancy on a
-hand-worked case, control overhead in the MOD7 vecadd, round trips, and
-recording does not change results (tracing off vs on, skipping off vs on).
+Acceptance: per accelerator, busy + idle + stalled = total; per-bank
+access counts equal trace event counts. Plus: the other components' classes
+add up, the trace is cross-checked against every counter it can see, class
+intervals cover the run, FIFO occupancy on a hand-worked case, control
+overhead in the hand-written vecadd, round trips, and recording does not
+change results (tracing off vs on, skipping off vs on).
 
 Sections:
-  1. helpers (the MOD7 vecadd with this file's costs, and random programs, traced)
+  1. helpers (the hand-written vecadd with this file's costs, and random programs, traced)
   2. ClassLog
   3. classes add up; control overhead
   4. trace vs counters
@@ -64,7 +64,7 @@ VECADD_CFG = ControllerConfig(
 
 
 def run_vecadd(mode="poll", skip=True, level=None, cfg=VECADD_CFG):
-    """The MOD7 vecadd (helpers.mod7_vecadd) with this file's controller costs."""
+    """The hand-written vecadd (helpers.mod7_vecadd) with this file's controller costs."""
     return mod7_vecadd(mode, skip, cfg, level)
 
 
@@ -237,7 +237,7 @@ def test_control_overhead_in_vecadd(mode):
 
 
 def test_vecadd_profile_numbers():
-    """The example of the MOD8 proposal: a fixed point for later changes."""
+    """A worked example: a fixed point for later changes."""
     p = build_profile(run_vecadd("poll")["cl"])
     assert p.total_cycles == 109
     assert p.accelerators["acc"].cycles == {"busy": 16, "stall_out": 0, "stall_in": 1, "idle": 92}

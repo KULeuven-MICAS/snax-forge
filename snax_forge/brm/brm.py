@@ -1,4 +1,4 @@
-"""The block runtime model (BRM1, D3, D68): one accelerator as plain data.
+"""The block runtime model (D68): one accelerator as plain data.
 
 A BRM is a hand-written JSON file. It has a shared part, which every
 implementation of the accelerator has in common, and a map of
@@ -7,11 +7,11 @@ implementations, which differ in how they are built:
     {
      "name": ...,
      "interface":       params (design / runtime) and ports
-     "function":        a registered accelerator kind and its params (D43),
+     "function":        a registered accelerator kind and its params,
                         and what one lane computes, as code (D82)
      "dataflow":        a notation and one nest per port (notation.py)
      "pattern":         the DFG subgraph it can replace: a family matched by
-                        SNAX-SANDBOX (snax_forge/sandbox/patterns.py, D80)
+                        SNAX-SANDBOX (snax_forge/sandbox/patterns.py)
      "implementations": {name: {source, supports, timing, binding}}
     }
 
@@ -23,9 +23,9 @@ order make a different BRM. Only ``source: chisel`` is accepted for now
 
 Which part serves which component: interface, function and the chosen
 implementation's timing give the accelerator entry of the cluster file
-(SNAX-MODEL, through LOW1c); the dataflow gives the streamer values
-(SNAX-LOWER, through LOW1a); the pattern serves SNAX-SANDBOX's ``bind`` and the
-binding the generators (GEN3's GVSoC accelerator, GEN1's Chisel).
+(SNAX-MODEL); the dataflow gives the streamer values (SNAX-LOWER); the pattern
+serves SNAX-SANDBOX's ``bind`` and the binding the generators (the GVSoC
+accelerator, and the Chisel block once that generator is built).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
 and end up in the cluster file. ``runtime`` params are the accelerator's
@@ -40,7 +40,7 @@ the name of a runtime param.
 
 Every field is written by ``to_dict``; a missing required part is an error
 that names it, optional fields take their defaults, and unknown keys are
-errors (D26, D41). A BRM is validated when it is made, whether from a file
+errors (D26). A BRM is validated when it is made, whether from a file
 or in Python. Nothing here reads the model: ``resolve`` builds an instance,
 whose accelerator entry is checked against the model in instance.py.
 """
@@ -57,8 +57,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import check_keys, plain, to_json
 from snax_forge.expr import Value
-from snax_forge.snax_model.config import check_keys, plain, to_json
 
 from .binding import check_binding
 from .notation import NOTATIONS
@@ -185,7 +185,7 @@ class Interface:
 
 @dataclass
 class Function:
-    """A registered accelerator kind (D43), its factory params, and what it computes (D82).
+    """A registered accelerator kind, its factory params, and what it computes (D82).
 
     ``code`` says what the accelerator computes, symbolically: one
     ``output = expression`` per output port over the input ports, per lane
@@ -195,7 +195,7 @@ class Function:
     does without its BRM. The registered kind is how SNAX-MODEL and the
     reference executor compute it; the two must agree (tests/brm). A
     reduction says what one element contributes (``accumulate``'s ``out = a``);
-    that it folds, and with which op, is its pattern's and kind's (D103). A
+    that it folds, and with which op, is its pattern's and kind's. A
     BRM with a null ``code`` cannot be bound.
     """
 
@@ -232,7 +232,7 @@ class Dataflow:
 
 @dataclass
 class Pattern:
-    """The DFG subgraph the BRM can replace: a family, matched by SNAX-SANDBOX (D80).
+    """The DFG subgraph the BRM can replace: a family, matched by SNAX-SANDBOX.
 
     ``family`` names a matcher registered in snax_forge/sandbox/patterns.py
     and ``attrs`` are its parameters. ``predicate`` is kept for a later,

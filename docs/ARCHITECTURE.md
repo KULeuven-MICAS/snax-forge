@@ -115,13 +115,14 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 
 | Component | Code | Consumes | Produces | Status |
 |---|---|---|---|---|
+| SDFG ingest | `sdfg/` | a kernel's DaCe source in `kernels/` | raw and simplified SDFG | built |
 | Importer | `dfg/import_sdfg.py` | a kernel's simplified SDFG | `.snaxdfg` | built |
 | Reference executor | `dfg/execute.py` | `.snaxdfg`, inputs | golden output | built |
 | SNAX-BRM | `brm/` | hand-written BRMs | instances, accelerator entries | built; binding GEN3 (D129) |
 | SNAX-SANDBOX | `sandbox/` | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step | built |
 | Design step | `design/` | bound graph, platform | design point | built |
 | SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program, `main.c` | built (C program GEN2a, D135) |
-| SNAX-GVSoC | `snax-gvsoc` repo | hjson, program, accelerators | profile, trace, output | M16 |
+| SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | hjson, program | output, counters, unit trace; profile and trace with FLOW3 | built (M16) |
 | SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | until RET1 |
 | Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, `data.h`, `main.c`, manifest | GEN3, LNK2a, GEN2a (D134, D135) |
 | HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
@@ -129,9 +130,10 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | Viewers | `viz/` | run directories, `.snaxdfg` files | local HTML views | built |
 | Reports | `report/` | a flow folder or run directory | `design.md`, `run.md` | built |
 
-Packages are under `snax_forge/` except `hw/chisel/`. SNAX-GVSoC lives in its
-own KULeuven-MICAS repository (D116) and is built and run in snax-forge's
-development image from `container/` (D118).
+Packages are under `snax_forge/` except `hw/chisel/`. SNAX-GVSoC is its own
+KULeuven-MICAS repository (D116), a submodule at `gvsoc/snax-gvsoc` that
+`gvsoc/Makefile` builds and runs in snax-forge's development image from
+`container/` (D118).
 
 ### 5.1 SNAX-DFG and the importer
 
@@ -169,8 +171,8 @@ Timing is always the user's numbers. `Brm.resolve` makes an instance from an
 implementation and its design params. The library holds `elementwise_add`,
 `elementwise_mul` and `accumulate`.
 
-Each BRM has two outputs **[PLANNED, M14]**: first the GVSoC accelerator
-from its binding on `SnaxUnit` and `SnaxShell` (GEN3, D128, D129), then the
+Each BRM has two outputs: the GVSoC accelerator from its binding on
+`SnaxUnit` and `SnaxShell` (GEN3, D128, D129), and **[PLANNED, M14]** the
 Chisel RTL with the generated shell wrapper (GEN1, D130). The pair is
 accepted when one ELF gives the same counters on both (D123, GEN2b), the
 GVSoC side first against the BRM's predicted counter (GEN3, D127).
@@ -190,15 +192,15 @@ platform file from `platforms/`, resolves the streamer shell (one streamer
 per port, `<instance>_<port>`, D75), makes the memory plan from registered
 passes (contiguous by default, with pins), runs every design check, and
 writes `design_point.json`, SNAX-LOWER's only input. `--set platform.PATH=V`
-and `--set memory.C.l1.base=N` change a working copy. **[PLANNED, M14]** the
-platform read from snax_cluster's hjson (LNK1).
+and `--set memory.C.l1.base=N` change a working copy. A platform can also be
+read from snax_cluster's hjson (`design from-hjson`, LNK1, D131).
 
 ### 5.5 SNAX-LOWER
 
 Turns a design point into what a run needs, and decides nothing.
 
 - **Cluster file** (D88, `lower/cluster.py`): SNAX-MODEL's input. Under
-  SNAX-GVSoC its role goes to the cluster hjson **[PLANNED, M14: LNK2a]**.
+  SNAX-GVSoC the cluster hjson has its role (LNK2a, D134).
 - **Task list** (D89, `lower/derive.py`; C§9): one group of tasks per
   accelerated node in execution order, loads before and stores after,
   streamer values from the memlets through the memory plan, `after` holding
@@ -217,13 +219,13 @@ Turns a design point into what a run needs, and decides nothing.
   the hjson files; the same ELF is to run on SNAX-GVSoC and on snax_cluster
   RTL (GEN2b). One accelerator per program (open item 79).
 
-### 5.6 SNAX-GVSoC [PLANNED, M16]
+### 5.6 SNAX-GVSoC
 
 A GVSoC model of the SNAX cluster in its own repository: a detached copy of a
 chosen GVSoC commit with its history, the submodules folded in, the upstream
-hashes recorded and the license kept (D116). snax-forge holds it as a submodule at `gvsoc/`,
-with a Makefile that builds and runs it and snax-forge's own targets beside it (GEN3, D128). It
-holds:
+hashes recorded and the license kept (D116). snax-forge holds it as a
+submodule at `gvsoc/snax-gvsoc`, with `gvsoc/Makefile` that builds and runs
+it (D128). It holds:
 
 - one **SNAX target**, `snax_hjson`, read from a cluster hjson at run time
   (LNK2a, D134): `snax_alu` and `snax_alu_sparse` are it on their fixed
@@ -247,7 +249,7 @@ holds:
   whole cluster per phase against a three-tier target, checked by hand from
   fresh runs of one ELF on both sides, while `make regress` checks that
   every program finishes and `dma-timing` that the DMA's counters stay the
-  RTL's (SG5, SG6, SG7, D124);
+  RTL's (SG5, SG6, SG7, D123);
 - **trace events** for the views (grants, stalls, responses, firings, FIFO
   counts), from SNAX's components and from GVSoC's own L1 and interconnect,
   turned into SNAX-FORGE's profile and trace by a converter (FLOW3); today
@@ -268,8 +270,10 @@ and dot on SNAX-GVSoC.
 
 ### 5.8 SNAX link
 
-For a design point SNAX-FORGE writes a bundle that snax_cluster builds and
-runs (D111) **[PLANNED, M14]**:
+For SNAX-GVSoC, a design point gives the hjson files, the CSR headers and the
+program, no generated Python (GEN3, LNK2a, GEN2a; `gen/`, D128, D134, D135).
+For snax_cluster SNAX-FORGE writes a bundle it builds and runs (D111)
+**[PLANNED, M14]**:
 
 - **accelerator RTL** from each BRM's hardware binding, through `Emit` and
   the Chisel blocks in `hw/chisel/` (D91), with a CSR adapter and a shell
@@ -282,9 +286,7 @@ runs (D111) **[PLANNED, M14]**:
   (LNK2a);
 - a **`Bender.yml`** that snax_cluster takes as one dependency (LNK2b, open
   item 51);
-- the **program** (section 5.5);
-- for SNAX-GVSoC, the same hjson files and the **CSR headers**, no
-  generated Python (GEN3, LNK2a, D128; `gen/`, D134).
+- the **program** (section 5.5).
 
 **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output,
 latency and II.
@@ -337,26 +339,26 @@ It starts on `snax_alu` (SNAX's adder, `elementwise_add` at W = 4): SNAX's
 hand-written `snax-alu` app runs unchanged on both, at a few sizes, and the
 deviation is explained per phase against an error target fixed beforehand
 (open item 3), checked by hand from fresh runs of one ELF; a regression
-checks that every program finishes (SG5, SG6, D124). Generation (M14) is then
+checks that every program finishes (SG5, SG6, D123). Generation (M14) is then
 accepted when one ELF gives the same counters on the generated GVSoC
 accelerator and the generated RTL (D123, GEN2b), the GVSoC side first against
 the BRM's predicted counter (GEN3, D127).
 
 ## 8. Build Order
 
-Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`). The order
-from here (D116, `docs/STATUS.md` has the tasks):
+Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), and M16,
+SNAX-GVSoC aligned with snax_cluster, the baseline. The order from here
+(D116, `docs/STATUS.md` has the tasks):
 
-1. **M16:** SNAX-GVSoC aligned with snax_cluster, the baseline.
-2. **M14** (D127): to SNAX-GVSoC first (LNK1, GEN3, LNK2a, GEN2a, FLOW3),
+1. **M14** (D127): to SNAX-GVSoC first (LNK1, GEN3, LNK2a, GEN2a, FLOW3),
    then to snax_cluster (GEN1, LNK2b, GEN2b), then clean-up (RET1, a
    housekeeping pass, one generator).
-3. **M7 tier A:** 2-D plumbing, int64 mat-vecs (D113, PAPER §6.1).
-4. **M13:** the composed bind, then the composed accelerator in SNAX (LNK3).
-5. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
-6. **M15:** tiling, a DMA per tile.
-7. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.
-8. **M11** and **M12** (layers, blocks, models) and the paper draft (P2).
+2. **M7 tier A:** 2-D plumbing, int64 mat-vecs (D113, PAPER §6.1).
+3. **M13:** the composed bind, then the composed accelerator in SNAX (LNK3).
+4. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
+5. **M15:** tiling, a DMA per tile.
+6. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.
+7. **M11** and **M12** (layers, blocks, models) and the paper draft (P2).
 
 Alongside: P1 (paper plan). When called for: M6 (contract freeze), M8
 (automated DSE), M10 (cosim).

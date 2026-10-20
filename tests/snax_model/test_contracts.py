@@ -1,4 +1,4 @@
-"""Tests that docs/CONTRACTS.md and the code cannot drift apart (MOD10c).
+"""Tests that docs/CONTRACTS.md and the code cannot drift apart (D46).
 
 Two things are checked:
 

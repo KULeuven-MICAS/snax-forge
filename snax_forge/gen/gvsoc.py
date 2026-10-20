@@ -1,4 +1,4 @@
-"""A design point -> its cluster on SNAX-GVSoC: three hjson files and headers (LNK2a, D128, D134).
+"""A design point -> its cluster on SNAX-GVSoC: three hjson files and headers (D128, D134).
 
     generate(design_point, out_dir, root=None) -> Manifest
 
@@ -15,9 +15,9 @@ data, and the manifest:
     <slot>_acc.hjson         the datapath block
     include/                 the C headers (headers.py): the streamer's
                              streamer_csr_addr_map.h and <instance>_csr.h
-    data.h                   the program's data (data.py, GEN2a): inputs,
+    data.h                   the program's data (data.py): inputs,
                              outputs and goldens
-    main.c                   the program (lower/c.py, GEN2a, D135): the
+    main.c                   the program (lower/c.py, D135): the
                              task list on snRuntime, self-checking
     manifest.json            what was written (Manifest)
 
@@ -100,7 +100,6 @@ template for more than one spatial dimension (every template so far has one).
 from __future__ import annotations
 
 import json
-import textwrap
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -110,25 +109,25 @@ import hjson
 
 from snax_forge import expr
 from snax_forge.brm import Instance
+from snax_forge.common import generated_header, plain, repo_root, to_json
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
-from snax_forge.design.streamers import instances, streamer_name
-from snax_forge.lower.c import MAIN_C, main_c
+from snax_forge.design.streamers import streamer_name
+from snax_forge.lower.c import MAIN_C, main_c, mover_name
+from snax_forge.lower.c import accelerator as c_accelerator
 from snax_forge.lower.derive import task_list
-from snax_forge.lower.tasks import Configure
-from snax_forge.sdfg.paths import _repo_root
-from snax_forge.snax_model.config import to_json
+from snax_forge.lower.tasks import Configure, TaskList
 
 from .blocks import BLOCKS, GenError, Unit, port_dtype
 from .data import DATA_H, arrays, data_h
 from .headers import STREAMER_HEADER, accelerator_header, streamer_header
 
-ROOT = _repo_root()
+ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
 
-# snax-gvsoc snax/snax_alu_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
+# snax-gvsoc snax/snax_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
 # last one the core sends out (SNAX_CSR_FIRST, SNAX_CSR_LAST)
 SNAX_CSR_FIRST = 0x3C0
 SNAX_CSR_LAST = 0x5FF
@@ -140,8 +139,6 @@ UNIT_TRACE = "snax_acc0/unit"
 UNIT = "SnaxUnit"
 # A shell's read-only CSRs: busy and the counter (D130)
 SHELL_RO_CSRS = 2
-# The width of an hjson file's header comment, after "// "
-COMMENT_WIDTH = 77
 
 
 @dataclass(frozen=True)
@@ -239,22 +236,15 @@ class Manifest:
 
 
 def accelerator(point: DesignPoint) -> tuple[str, Instance, Unit]:
-    """The one accelerated instance, its name and its unit (the block's adapter)."""
-    found = instances(point.graph)
-    if len(found) != 1:
-        raise GenError(
-            "gen.instances",
-            f"{len(found)} accelerated instances {list(found)}; the platform has one "
-            "accelerator slot",
-        )
-    (name, inst), = found.items()  # fmt: skip
+    """The one accelerated instance (lower/c.py's ``accelerator``, its rules ``gen.instances``
+    and ``gen.binding``), its name and its unit (the block's adapter)."""
+    name, inst = c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
     b = inst.impl.binding
-    what = f"{inst.brm.name}.{inst.implementation}"
-    if b is None:
-        raise GenError("gen.binding", f"{what}: binding null, nothing to generate")
     if b["block"] not in BLOCKS:
         raise GenError(
-            "gen.block", f"{what}: block {b['block']!r} not registered ({sorted(BLOCKS)})"
+            "gen.block",
+            f"{inst.brm.name}.{inst.implementation}: block {b['block']!r} not registered "
+            f"({sorted(BLOCKS)})",
         )
     return name, inst, BLOCKS[b["block"]](inst)
 
@@ -283,12 +273,13 @@ def streamer_template(point: DesignPoint, name: str, inst: Instance) -> dict[str
 
 
 def movers(template: dict[str, Any]) -> list[dict[str, Any]]:
-    """The template's movers, readers first, named as snax_streamer.py's movers_of names them."""
+    """The template's movers, readers first, named as the headers and the program name them
+    (lower/c.py's ``mover_name``)."""
     out = []
-    for group, kind in (("data_reader_params", "reader"), ("data_writer_params", "writer")):
+    for group, write in (("data_reader_params", False), ("data_writer_params", True)):
         params = template.get(group, {})
         for i in range(len(params.get("num_channel", []))):
-            out.append({"name": f"{kind}{i}", **{k: v[i] for k, v in params.items()}})
+            out.append({"name": mover_name(write, i), **{k: v[i] for k, v in params.items()}})
     return out
 
 
@@ -319,10 +310,10 @@ def datapath(unit: Unit) -> dict[str, Any]:
     return {"unit": UNIT, **unit.properties(), "fields": list(unit.fields)}
 
 
-def acc_tasks(point: DesignPoint, name: str, inst: Instance) -> list[AccTask]:
+def acc_tasks(tasks: TaskList, name: str, inst: Instance) -> list[AccTask]:
     """The accelerator tasks of the derived task list (D89), with the binding's csrs values."""
     out = []
-    for step in task_list(point).steps:
+    for step in tasks.steps:
         if isinstance(step, Configure) and step.type == "accel" and step.component == name:
             env = {**inst.params, **step.values}
             csrs = {c["field"]: expr.evaluate(c["value"], env) for c in inst.impl.binding["csrs"]}
@@ -349,16 +340,7 @@ def source(platform: Platform, root: Path) -> dict[str, Any]:
         raise GenError("gen.source", f"{platform.hjson}: {e}") from None
     if not isinstance(d, Mapping):
         raise GenError("gen.source", f"{platform.hjson}: not an object")
-    return _plain(d)
-
-
-def _plain(v: Any) -> Any:
-    """hjson's OrderedDicts as dicts, recursively, the order kept."""
-    if isinstance(v, Mapping):
-        return {k: _plain(x) for k, x in v.items()}
-    if isinstance(v, list):
-        return [_plain(x) for x in v]
-    return v
+    return plain(d)
 
 
 def _set(d: dict[str, Any], path: str, value: Any, where: str) -> None:
@@ -429,7 +411,7 @@ def find_slot(d: dict[str, Any], platform: Platform) -> tuple[str, dict[str, Any
     where = platform.hjson
     slots: list[tuple[str, dict[str, Any]]] = []
     try:
-        found = accelerators(_resolved_cores(d, where))
+        found = accelerators(d)
     except DesignError as e:
         raise GenError("gen.source", f"{where}: {e}") from None
     for at, acc in found:
@@ -473,27 +455,6 @@ def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], template: dict[st
             del d[key]
 
 
-def _resolved_cores(d: dict[str, Any], where: str) -> dict[str, Any]:
-    """``d`` with every core that is a ``{"$ref": "#/<key>"}`` replaced by that key's object
-    itself (not a copy), so a slot found through it is the one to set."""
-    view = dict(d)
-    cluster = dict(d.get("cluster", {})) if isinstance(d.get("cluster"), Mapping) else {}
-    hives = []
-    for hive in cluster.get("hives", []) if isinstance(cluster.get("hives"), list) else []:
-        if not isinstance(hive, Mapping):
-            raise GenError("gen.source", f"{where}: a hive is not an object")
-        cores = []
-        for core in hive.get("cores", []):
-            ref = core.get("$ref") if isinstance(core, Mapping) else None
-            if isinstance(ref, str) and ref.startswith("#/") and ref[2:] in d:
-                core = d[ref[2:]]
-            cores.append(core)
-        hives.append({**hive, "cores": cores})
-    cluster["hives"] = hives
-    view["cluster"] = cluster
-    return view
-
-
 # =============================================================================
 # The files
 # =============================================================================
@@ -512,15 +473,8 @@ def point_name(path: Path, root: Path) -> str:
 
 
 def _hjson(point_path: str, what: str, value: Any) -> str:
-    """An hjson file: the header comment, ``what`` wrapped, then ``value`` as JSON (which
-    hjson reads)."""
-    head = [
-        "Generated by snax-forge's generator (snax_forge/gen, LNK2a) from the",
-        f"design point {point_path}. Do not edit: run",
-        f"`pixi run gen-gvsoc {point_path}` again.",
-        *textwrap.wrap(what, COMMENT_WIDTH, break_on_hyphens=False),
-    ]
-    return "".join(f"// {line}\n" for line in head) + to_json(value)
+    """An hjson file: the header comment, then ``value`` as JSON (which hjson reads)."""
+    return generated_header(point_path, what) + to_json(value)
 
 
 # =============================================================================
@@ -541,7 +495,7 @@ def generate(
     name, inst, unit = accelerator(point)
     template = streamer_template(point, name, inst)
     layout = csr_layout(template, unit.fields)
-    tasks = acc_tasks(point, name, inst)
+    tasks = task_list(point)
     data = arrays(point)
 
     cluster = source(platform, root)
@@ -566,7 +520,7 @@ def generate(
         f"include/{STREAMER_HEADER}": streamer_h,
         f"include/{name}_csr.h": accelerator_header(name, layout, shown),
         DATA_H: data_h(point, shown, data),
-        MAIN_C: main_c(point, task_list(point), cluster, layout, data,
+        MAIN_C: main_c(point, tasks, cluster, layout, data,
                        [DATA_H, f"{name}_csr.h", STREAMER_HEADER], shown),
     }  # fmt: skip
     (out / "include").mkdir(parents=True, exist_ok=True)
@@ -581,7 +535,7 @@ def generate(
         program=MAIN_C,
         trace=UNIT_TRACE,
         csrs=layout,
-        tasks=tasks,
+        tasks=acc_tasks(tasks, name, inst),
     )
     (out / "manifest.json").write_text(manifest.to_json())
     return manifest

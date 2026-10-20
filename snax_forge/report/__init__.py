@@ -1,12 +1,11 @@
-"""Design and run reports in the layout of HLS reports (REP1, D99).
+"""Design and run reports in the layout of HLS reports (D99).
 
 ``design.md`` says what was built (design.py), ``run.md`` where the cycles
 went (run.py); both are dataclass trees (record.py) rendered as Markdown, so
 humans, LLMs and GitHub read the same text; ``run.md`` names the chaining
-waits between accelerators (D106). ``write_reports(DIR)`` writes
-them for a flow folder or a run directory (files.py); the flow calls it
-after every run; the command line is ``python -m snax_forge.report DIR``
-(pixi ``report``).
+waits between accelerators. ``write_reports(DIR)`` writes them for a flow
+folder or a run directory (files.py); the flow calls it after every run;
+the command line is ``python -m snax_forge.report DIR`` (pixi ``report``).
 """
 
 from .design import DesignReport, build_design, render_design

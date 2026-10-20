@@ -1,4 +1,4 @@
-"""Tests for the visualiser's API functions (VIS1, D55, D56).
+"""Tests for the visualiser's API functions.
 
 The report itself is HTML and is checked by eye (D55); what is tested here
 is what the viewer is given:
@@ -6,7 +6,7 @@ is what the viewer is given:
   1. a run loads as read_outputs gives it
   2. the events window is exactly [A, B), of the asked sources and kinds
   3. the FIFO busy window equals a direct count from beat-level fifo events
-  4. tasks pair starts with dones; a DMA task's direction matches its reads (D58, D60)
+  4. tasks pair starts with dones; a DMA task's direction matches its reads
 """
 
 import pytest
@@ -61,7 +61,7 @@ def test_same_directory_names_get_suffixes(tmp_path):
 
 
 def test_a_flow_run_is_named_after_its_flow_folder(tmp_path):
-    """out/flow/<name>/run takes <name>, so flow runs side by side are told apart (D94);
+    """out/flow/<name>/run takes <name>, so flow runs side by side are told apart;
     a run directory without a scenario beside it keeps its own name."""
     flow = tmp_path / "out" / "flow"
     for n in ("vecadd", "vecadd_W8"):
@@ -84,7 +84,7 @@ def test_a_flow_run_is_named_after_its_flow_folder(tmp_path):
         (20, 60, ["acc_a", "ctl"], None),
         (60, 20, None, None),
         (70, 71, ["xbar"], None),
-        (0, None, None, ["cmd", "start", "done"]),  # the schedule's task events (D57)
+        (0, None, None, ["cmd", "start", "done"]),  # the schedule's task events
         (20, 80, ["xbar"], ["stall"]),
     ],
 )
@@ -105,7 +105,7 @@ def test_events_window(dirs, a, b, srcs, kinds):
 
 
 # =============================================================================
-# 3. FIFO busy window (D56)
+# 3. FIFO busy window
 # =============================================================================
 
 
@@ -149,7 +149,7 @@ def test_fifo_window_needs_task_events(dirs):
 
 
 # =============================================================================
-# 4. Tasks and DMA directions (D58, D60)
+# 4. Tasks and DMA directions
 # =============================================================================
 
 

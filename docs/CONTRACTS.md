@@ -13,8 +13,10 @@
 > for a new block kind); they are kept as they are until SNAX-MODEL is
 > removed (RET1, D116), and SNAX-GVSoC's contracts replace them.
 >
-> These are dataclasses and plain JSON until the M6 freeze (D26). Every value
-> marked **default** is a declared platform default, not a measurement.
+> These are dataclasses and plain JSON until the M6 freeze (D26), which brings
+> versioned schemas for them; the generated hjson files already have schemas
+> (section 16). Every value marked **default** is a declared platform default,
+> not a measurement.
 >
 > Every fenced block below is copied verbatim out of a checked-in file, a
 > file `scenarios/make.py` generates, or the output of `scenarios/reduce`,
@@ -471,7 +473,7 @@ class Profile:
     banks: BankProfile | None = None
     ports: dict[str, PortProfile] = field(default_factory=dict)
     l2: dict[str, L2Profile] = field(default_factory=dict)
-    functional_check: dict[str, Any] | None = None  # MOD9 / E2E1
+    functional_check: dict[str, Any] | None = None  # a flow run fills it
 ```
 
 Per part: the controller gives cycles per class (`command` = control

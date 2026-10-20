@@ -1,4 +1,4 @@
-"""DMA between L2 and L1 for SNAX-MODEL (MOD6, D29, D33, D34).
+"""DMA between L2 and L1 for SNAX-MODEL.
 
 What this models
 ----------------
@@ -9,7 +9,7 @@ to L2. It is a master on the xbar with one wide port of
 the only user of the L2.
 
 It is started by ``start(descriptor, cycle)``, like the streamer and the
-accelerator; ctrl.py (MOD7) drives that start from registers, with
+accelerator; ctrl.py drives that start from registers, with
 ``DmaConfig.dims`` loops per side. No descriptor chaining, no data path
 extensions, no L1 -> L1.
 
@@ -108,8 +108,8 @@ which lands at the end of its cycle (``_StartReg``) before the next
 ``next_wake``. So asking again before the returned cycle gives the same
 answer.
 
-Cycle classes (for MOD8)
-------------------------
+Cycle classes
+-------------
 Each cycle counts as exactly one of, in this order:
 
 * ``busy``: a beat moved on either side (read issued or write done);
@@ -137,7 +137,8 @@ from math import prod
 
 import numpy as np
 
-from .config import Config
+from snax_forge.common import Config
+
 from .l2 import L2Config, L2Memory
 from .mem import BankReq, L1Config
 from .sched import ClassLog, Component, Phase, SimulationError
@@ -244,7 +245,7 @@ class DmaConfig(Config):
     beat_interval: int = 1  # bandwidth: min cycles between beats on each side
     l1_read_extra: int = 0  # L1 source: cycles from L1 read data to the buffer
     done_latency: int = 0  # last write -> its response (AXI B)
-    # Loops per side that the DMA's registers hold (MOD7, ctrl.py). A pattern
+    # Loops per side that the DMA's registers hold (ctrl.py). A pattern
     # may use fewer; unused loops are bound 1. 2 as the iDMA's 2D shape.
     dims: int = 2
 
@@ -299,10 +300,10 @@ class Dma(Component):
       (ready cycle, beat)), ``_buf`` (buffered beats: (visible cycle, beat,
       data)), ``_resp_at`` (response cycle of the last write), ``done_cycle``;
     * wires: ``_w``;
-    * statistics (for MOD8): ``cycles`` per class (a ``ClassLog``),
+    * statistics: ``cycles`` per class (a ``ClassLog``),
       ``beats_read``, ``beats_written``, ``max_buffered``. Trace events:
       ``start``, ``done`` (task), ``dma_beat`` per moved beat and ``resp``
-      per L2 read whose data returns (beat, D62); the L1 side's grants and
+      per L2 read whose data returns (beat); the L1 side's grants and
       read responses are the xbar's.
     """
 

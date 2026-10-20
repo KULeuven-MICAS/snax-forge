@@ -1,10 +1,10 @@
-"""Sandbox transforms (SBX1, D72, D73, D80): each takes a graph and returns a new one.
+"""Sandbox transforms (D72, D73): each takes a graph and returns a new one.
 
 A transform is registered with ``register_transform(name, fn, ints=...)``;
 ``fn(graph, **params) -> graph`` never changes its input. ``ints`` names the
 params that are ints, which a recipe may give as expressions over its own
 params (recipe.py). The result is a new ``Graph``, validated as any graph
-is (D77); the reference check after the step is run.py's.
+is; the reference check after the step is run.py's.
 
 ``split_map(map, factor)``
     splits a map ``v`` over ``b:e`` (step 1, no ``loop.kind`` yet) into an
@@ -19,14 +19,14 @@ is (D77); the reference check after the step is run.py's.
     instance of a library BRM. The BRM's pattern matcher (patterns.py) says
     which connector feeds which port. The lanes design param is read off the
     spatial bound (D73), the other design params come from ``params`` or
-    the BRM's defaults, and ``Brm.resolve`` checks them all (D68). Each
+    the BRM's defaults, and ``Brm.resolve`` checks them all. Each
     memlet becomes the port's lanes as a range over the spatial variable,
     the container dtype must be the port's, and the memlets together with
     the temporal maps around must give the elements in the order of the
     port's nest (D70, D73). The tasklet's code, on the BRM's port names,
     must be the BRM's ``function.code``; the accelerated node carries that
-    code and the replaced subtree (D82). A folding output (``reduce``,
-    D102) whose memlet does not use the spatial variable (dot's
+    code and the replaced subtree (D82). A folding output (``reduce``)
+    whose memlet does not use the spatial variable (dot's
     ``out[0]``) folds every lane into one: its port must have one lane, its
     index becomes the range of that lane (``out[0:1]``, no ``reduce`` on
     the accelerated node), and its order is checked over the temporal maps
@@ -192,7 +192,7 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
         "range": format_dim((0, expr.canonical(f"({length}) // {factor}"), 1)),
         **{k: v for k, v in node.attrs.items() if k not in ("var", "range")},
         "loop.kind": "temporal",
-        "loop.split": {"var": var, "range": node.attrs["range"]},  # for join_map (D82)
+        "loop.split": {"var": var, "range": node.attrs["range"]},  # for join_map
     }
     node.body = [inner]
     return _result(g)
@@ -256,7 +256,7 @@ def bind(
         )
     var_s = smap.attrs["var"]
     memlets = tasklet.inputs | tasklet.outputs
-    # a folding output (D102) that does not use the spatial variable takes one lane (D104)
+    # a folding output that does not use the spatial variable takes one lane (D104)
     folds = {c for c, m in tasklet.outputs.items() if m.reduce is not None and var_s not in m.names}
     for c, m in memlets.items():
         if c not in folds and var_s not in m.names:
@@ -339,7 +339,7 @@ def bind(
             "implementation": implementation,
             "code": b.function.code,
             "params": dict(inst.params),
-            "replaced": smap.to_dict(),  # for unbind (D82)
+            "replaced": smap.to_dict(),  # for unbind
         },
         body=[],
     )
@@ -406,7 +406,7 @@ def _check_order(
 
 
 # =============================================================================
-# unbind and join_map: the inverses (D82)
+# unbind and join_map: the inverses
 # =============================================================================
 
 

@@ -3,7 +3,7 @@ package snax.forge.samples
 import chisel3._
 import chisel3.util._
 
-/** Serial integer accumulator -- the hardware image of the WCR edge in `kernels/polybench/dot.py`.
+/** The `accumulate` BRM's integer accumulator -- the hardware image of the reduction in `kernels/polybench/vsum.py`.
   *
   * Sums every `len` consecutive beats of an elastic input stream and emits each sum on an elastic output stream,
   * `loopCount` input beats per run. A beat is `lanes` elements; a combinational tree of `lanes` → 1 adders in front of
@@ -27,7 +27,7 @@ import chisel3.util._
   *
   * `lanes` → 1 adders (`reduceTree`), each `accWidth` bits and wrapping as the register does, between `in.bits` and
   * `acc`, with no register of its own: latency stays 1 for every `lanes`. Pipeline stages in the tree would make the
-  * latency depend on `lanes`; that is GEN1's choice.
+  * latency depend on `lanes`; that is the choice of the generator from the hardware binding.
   *
   * ==One register, no drain cycle==
   *
@@ -40,8 +40,8 @@ import chisel3.util._
   * ==Handshake==
   *
   * `out.valid` is a register, so `valid` never depends on `ready`. `in.ready` does depend on `out.ready`
-  * combinationally (the input is taken only when the result can leave), a path GEN1 has to keep in mind when it puts
-  * the block behind the streamer.
+  * combinationally (the input is taken only when the result can leave), a path the generated shell wrapper has to keep
+  * in mind when it puts the block behind the streamer.
   *
   * @param width
   *   bits per input element, from the BRM port's dtype

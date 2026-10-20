@@ -1,4 +1,4 @@
-"""Markdown helpers shared by the design and run reports (REP1, D99).
+"""Markdown helpers shared by the design and run reports.
 
 Tables, number and range formatting, one definition each, so both reports
 write a number the same way.

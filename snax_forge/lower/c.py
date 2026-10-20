@@ -1,11 +1,11 @@
-"""The C backend: a design point's task list -> ``main.c`` on snRuntime (GEN2a, D135).
+"""The C backend: a design point's task list -> ``main.c`` on snRuntime (D135).
 
     main_c(point, tasks, cluster, layout, arrays, includes, point_path) -> str
 
 SNAX-LOWER's second backend of the task list (derive.py, C§9); SNAX-MODEL's
-command list (commands.py) stays as first written until RET1 (D45). It
-reads the cluster file the generator writes (gen/gvsoc.py: its cores), the
-accelerator's CSR layout (gen's ``CsrLayout``: the field names of
+command list (commands.py) stays as first written until SNAX-MODEL is
+removed (D45). It reads the cluster file the generator writes (gen/gvsoc.py:
+its cores), the accelerator's CSR layout (gen's ``CsrLayout``: the field names of
 ``include/``), data.h's arrays (gen/data.py) and the files to include, in
 order; the generator writes ``main.c`` beside them.
 
@@ -55,8 +55,8 @@ walks the same steps, so the barrier counts match by construction.
 
 **Marks.** ``csrr zero, mcycle`` at a global label ``forge_<task>_<event>``
 for each task's configure, start and the end of the wait that covers it,
-and ``forge_main_entry`` / ``forge_main_exit``: FLOW3 reads their cycles
-from the trace.
+and ``forge_main_entry`` / ``forge_main_exit``: the flow will read their
+cycles from the trace once it runs on SNAX-GVSoC.
 
 **Addresses.** L1 addresses are the memory plan's, absolute. A DMA's L2
 side is the container's data.h symbol plus the task's offset into its L2
@@ -86,12 +86,15 @@ point, same text.
 from __future__ import annotations
 
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
+from snax_forge.common import generated_header
+from snax_forge.design.hjson_platform import cores as hjson_cores
+from snax_forge.design.problems import DesignError
 from snax_forge.design.streamers import instances, streamer_name
 
 from .cluster import cluster_file
@@ -123,15 +126,29 @@ def define_name(field: str) -> str:
     return re.sub(r"(?<=[a-z0-9])(?=[A-Z])", "_", field).upper()
 
 
-def accelerator(point: DesignPoint) -> tuple[str, Instance]:
-    """The one accelerated instance and its name; it must have a binding."""
+def mover_name(write: bool, index: int) -> str:
+    """A streamer mover's name in the headers and the program: ``READER_<i>`` or ``WRITER_<j>``,
+    readers the input ports in the BRM's port order, writers the outputs (gen/headers.py)."""
+    return f"{'WRITER' if write else 'READER'}_{index}"
+
+
+def accelerator(
+    point: DesignPoint, fail: Callable[[str, str], Exception] | None = None
+) -> tuple[str, Instance]:
+    """The one accelerated instance and its name; it must have a binding. ``fail(rule,
+    message)`` makes the error of the rule broken (``instances``, ``binding``): a
+    ``c.instances`` CError by default, the generator's own (gen/gvsoc.py)."""
+    if fail is None:
+        fail = lambda rule, message: CError("c.instances", message)
     found = instances(point.graph)
     if len(found) != 1:
-        raise CError("c.instances", f"{len(found)} accelerated instances {list(found)}; the "
-                     "program drives one accelerator (open item 79)")  # fmt: skip
+        raise fail("instances", f"{len(found)} accelerated instances {list(found)}; the platform "
+                   "has one accelerator slot and the program drives one accelerator (open item "
+                   "79)")  # fmt: skip
     (name, inst), = found.items()  # fmt: skip
     if inst.impl.binding is None:
-        raise CError("c.instances", f"{name}: binding null, no CSRs to write")
+        raise fail("binding", f"{inst.brm.name}.{inst.implementation}: binding null, nothing to "
+                   "generate")  # fmt: skip
     return name, inst
 
 
@@ -145,16 +162,12 @@ class Cores:
 
 
 def cores(cluster: Mapping[str, Any], slot: str) -> Cores:
-    """The cores of the cluster file (a core that is a ``#/<key>`` ``$ref`` read from that key),
-    in hive and core order."""
-    flat = []
+    """The cores of the cluster file (design/hjson_platform.py's ``cores``), in hive and core
+    order."""
     try:
-        for hive in cluster["cluster"]["hives"]:
-            for core in hive["cores"]:
-                ref = core.get("$ref")
-                flat.append(cluster[ref[2:]] if isinstance(ref, str) and ref[:2] == "#/" else core)
-    except (KeyError, TypeError, AttributeError) as e:
-        raise CError("c.cores", f"the cluster file's hives and cores do not read: {e!r}") from None
+        flat = [core for _, core in hjson_cores(cluster)]
+    except DesignError as e:
+        raise CError("c.cores", f"the cluster file's hives and cores do not read: {e}") from None
     dma = [i for i, c in enumerate(flat) if c.get("xdma")]
     owner = [i for i, c in enumerate(flat)
              if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
@@ -187,12 +200,11 @@ class _Program:
 
     def _movers(self) -> dict[str, str]:
         """Streamer component -> its mover in the headers (``READER_0``, ``WRITER_0``)."""
-        out, n = {}, {"READER": 0, "WRITER": 0}
+        out, n = {}, {False: 0, True: 0}
         for p in self.inst.brm.interface.ports:
             s = self.point.streamers[streamer_name(self.name, p.name)]
-            kind = "WRITER" if s.write else "READER"
-            out[s.name] = f"{kind}_{n[kind]}"
-            n[kind] += 1
+            out[s.name] = mover_name(s.write, n[s.write])
+            n[s.write] += 1
         return out
 
     def core_of(self, component: str) -> int:
@@ -420,14 +432,14 @@ class _Program:
         self.run()
         working = {k: v for k, v in self.lines.items()
                    if k == self.cores.slot or any(x != "snrt_cluster_hw_barrier();" for x in v)}  # fmt: skip
+        what = (
+            f"The task list {self.tasks.name} on snRuntime: core {self.cores.dma} runs the DMA, "
+            f"core {self.cores.slot} the accelerator {self.name}; the SNAX waits as the lowering "
+            "places them (D64), the DMA's on dependences only (D135), a barrier where another "
+            "core goes on; a mark per task event. One function per core, a straight line."
+        )
         head = [
-            "// Generated by snax-forge's generator (snax_forge/gen, GEN2a) from the",
-            f"// design point {point_path}. Do not edit: run",
-            f"// `pixi run gen-gvsoc {point_path}` again.",
-            f"// The task list {self.tasks.name} on snRuntime: core {self.cores.dma} runs the DMA,",
-            f"// core {self.cores.slot} the accelerator {self.name}; the SNAX waits as the lowering",
-            "// places them (D64), the DMA's on dependences only (D135), a barrier where another",
-            "// core goes on; a mark per task event. One function per core, a straight line.",
+            *generated_header(point_path, what).splitlines(),
             "",
             '#include "snrt.h"',
             "",

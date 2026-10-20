@@ -1,4 +1,4 @@
-"""Plain dataclass records with ``to_dict`` / ``from_dict`` for the reports (REP1, D99).
+"""Plain dataclass records with ``to_dict`` / ``from_dict`` for the reports (D99).
 
 A report is a tree of records: every field is a plain value (int, float,
 str, bool, None), a list or dict of plain values, a record, or a list of

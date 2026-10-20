@@ -1,4 +1,4 @@
-"""The whole path, kernel to model run (E2E1, D90): M3's acceptance."""
+"""The whole path, kernel to model run (D90)."""
 
 from __future__ import annotations
 
@@ -55,9 +55,9 @@ def test_vecadd_from_the_kernel(tmp_path):
             "run/trace.jsonl", "run/trace_meta.json"} <= names  # fmt: skip
     got = read_outputs(out / "run")
     assert got.profile.functional_check == f.check
-    assert got.run["trace_level"] == "task"  # the default (D94): the schedule has class runs
+    assert got.run["trace_level"] == "task"  # the default (D90): the schedule has class runs
     assert {"acc", "acc_a", "acc_b", "acc_out", "dma", "ctl"} <= set(got.trace.intervals)
-    # one region per container and memory, from the memory plan (D95)
+    # one region per container and memory, from the memory plan
     assert got.regions == f.scenario.regions and len(got.regions) == 6
     for r in got.regions:
         lay = f.point.memory.layouts[r.name][r.mem]
@@ -128,7 +128,7 @@ def test_a_design_problem_stops_the_flow_before_the_run(tmp_path):
 
 
 def test_default_name():
-    """Every --set: recipe params, then platform and memory paths without their prefix (D94)."""
+    """Every --set: recipe params, then platform and memory paths without their prefix."""
     r = Recipe.load(RECIPE)
     assert default_name(r, {}) == "vecadd" and default_name(r, {"W": 8}) == "vecadd_W8"
     assert default_name(r, {}, memory_sets=[("B.l1.base", 576)]) == "vecadd_B.l1.base576"
@@ -140,7 +140,7 @@ def test_default_name():
 
 
 def test_the_guard_rail_flows_get_names_of_their_own(tmp_path):
-    """Default, W = 8 and B pinned no longer share out/flow/vecadd (D94)."""
+    """Default, W = 8 and B pinned each get a folder of their own."""
     names = {
         flow(tmp_path / "0").name,
         flow(tmp_path / "1", recipe_sets={"W": 8}).name,
@@ -157,7 +157,7 @@ def test_the_trace_level_can_still_be_lowered(tmp_path):
 
 
 # =============================================================================
-# 3. The reports and the log (REP1, D99)
+# 3. The reports and the log
 # =============================================================================
 
 
@@ -195,7 +195,7 @@ def test_the_log_is_the_summary_and_the_checks_that_ran(tmp_path):
 
 def test_the_log_ends_with_the_stage_times(tmp_path):
     """Every stage once, in order, seconds >= 0 that add up to the total; never a pinned value
-    (they are this machine's, D106), and never in the summary or run/ (D44)."""
+    (they are this machine's), and never in the summary or run/ (D44)."""
     f = flow(tmp_path)
     log = (tmp_path / "flow" / "flow.log").read_text()
     lines = log.partition("\n\nstage times (wall clock, this machine):\n")[2].splitlines()

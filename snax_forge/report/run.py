@@ -1,4 +1,4 @@
-"""The run report, ``run.md`` (REP1, D99): where one run's cycles went.
+"""The run report, ``run.md``: where one run's cycles went.
 
 Read from the run directory the way the viewer reads it (viz/api.py): the
 profile, the class intervals and task events of the trace, and on a beat
@@ -14,7 +14,7 @@ is a counter, an interval or an event the model wrote.
                   cycles and the task that starts after it; a wait on one
                   accelerator (itself or a streamer attached to it) followed
                   by a task of another is a chaining wait, listed as
-                  ``mul -> sum`` (D106)
+                  ``mul -> sum`` (D99)
     DMAs          busy cycles, beats and bytes each way, bytes per busy cycle
     memory        banks with conflicts as ranges, streamers' stall cycles and
                   port stalls, FIFO highest count against depth
@@ -85,7 +85,7 @@ class WaitRow(Record):
 
 @dataclass
 class ChainRow(Record):
-    """A wait between two accelerators: ``dst`` starts after ``src``'s ``block`` (D106)."""
+    """A wait between two accelerators: ``dst`` starts after ``src``'s ``block``."""
 
     src: str
     dst: str

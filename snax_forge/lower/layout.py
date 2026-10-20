@@ -1,4 +1,4 @@
-"""Buffer layout: where an operand's elements live in a memory (BRM2, D70; D74, D86).
+"""Buffer layout: where an operand's elements live in a memory (D70, D86, D87).
 
 A layout is affine, like the nests it serves:
 
@@ -9,10 +9,10 @@ extent per dimension, ``strides`` the bytes per step of each dimension. One
 form covers storage order (row- or column-major) and padding. Choosing it is
 SNAX-DSE's decision (section 5.4); SNAX-LOWER only reads it.
 
-This is the form of the design point's memory plan (DP1b, D86, closing open
-item 29): snax_forge/design/memory.py makes one per container and memory,
-and SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs;
-the design checks judge a whole plan, in L1 and L2.
+This is the form of the design point's memory plan (D86):
+snax_forge/design/memory.py makes one per container and memory, and
+SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs; the
+design checks judge a whole plan, in L1 and L2.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from snax_forge.snax_model.config import Config
+from snax_forge.common import Config
 from snax_forge.snax_model.mem import L1Config
 
 
@@ -94,7 +94,7 @@ def round_up(x: int, a: int) -> int:
 
 
 def moved_bytes(lay: Layout, word: int, beat: int) -> int:
-    """The bytes the DMA moves for a layout: its size padded to whole beats (LOW3a, D105)."""
+    """The bytes the DMA moves for a layout: its size padded to whole beats (D105)."""
     return round_up(int(np.prod(lay.shape)) * word, beat)
 
 

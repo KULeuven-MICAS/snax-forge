@@ -1,12 +1,12 @@
-"""One line per kernel under kernels/ (KER0): where it lives, its tier and dtype, how far it gets.
+"""One line per kernel under kernels/: where it lives, its tier and dtype, how far it gets.
 
     python util/kernels.py   (pixi run kernels)
 
 Columns: the kernel, its directory, its tier (the ``Tier X`` line of its
 docstring, PAPER §6.1; ``-`` when it has none), its dtypes (those of its
 descriptors), whether its simplified SDFG builds, and whether the SNAX-DFG
-importer (IMP1) accepts it, else the class of what it raised and its first
-line. The importer has no error codes; the class names the error (FE2). It
+importer accepts it, else the class of what it raised and its first
+line. The importer has no error codes yet; the class names the error. It
 only reports: the exit status is always 0.
 """
 

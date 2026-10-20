@@ -1,4 +1,4 @@
-"""The memory plan (DP1b, D86): passes, pins, the context later policies read."""
+"""The memory plan (D86): passes, pins, the context later policies read."""
 
 from __future__ import annotations
 

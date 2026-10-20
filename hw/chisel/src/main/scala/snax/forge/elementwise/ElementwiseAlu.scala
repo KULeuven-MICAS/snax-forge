@@ -9,8 +9,8 @@ import chisel3.util._
   * `supportedOps.size` on purpose: a fixed-function unit and a fully selectable one then present the same port list,
   * and swapping one for the other is a generator decision that does not ripple into whatever instantiates it.
   *
-  * A BRM names the operation (`op: "add"`) and a generator from its hardware binding (GEN1) will resolve it here, so
-  * these values must not be renumbered casually.
+  * A BRM names the operation (`op: "add"`) and a generator from its hardware binding will resolve it here, so these
+  * values must not be renumbered casually.
   */
 object ElementwiseOp {
   val Add: Int = 0
@@ -55,8 +55,8 @@ object ElementwiseOp {
   * ports on this one.
   *
   * Being a module rather than an inlined function costs nothing at the gate level (synthesis flattens the hierarchy)
-  * and buys two things. Area reports break down per module, so the W17 HLS comparison can say what the ALU costs
-  * separately from the streamer interface. And it is testable on its own instead of only through a datapath wrapper.
+  * and buys two things. Area reports break down per module, so an HLS comparison can say what the ALU costs separately
+  * from the streamer interface. And it is testable on its own instead of only through a datapath wrapper.
   *
   * Handshaking deliberately stops at the datapath boundary: this module has plain Input/Output ports and no ready/valid
   * of its own. A lane has no capacity to fill and nothing to stall on, so a handshake here would be ceremony -- the

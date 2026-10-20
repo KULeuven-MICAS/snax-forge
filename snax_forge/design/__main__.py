@@ -1,4 +1,4 @@
-"""SNAX-DESIGN command line (DP1a, DP1b).
+"""SNAX-DESIGN command line.
 
     python -m snax_forge.design GRAPH --platform P [--memory M]
                                       [--set platform.PATH=VALUE ...]
@@ -28,7 +28,7 @@ DIR/memory.json``) continues from it: new ``--set`` paths add to its
 platform, usually a working copy, under a new name: DST is a path, or a
 bare name for ``platforms/<DST>.json``; an existing file is kept unless
 ``--force``. ``from-hjson`` reads snax_cluster's cluster file into
-``platforms/<NAME>.json`` (LNK1, hjson_platform.py), checked as any
+``platforms/<NAME>.json`` (hjson_platform.py), checked as any
 platform, an existing file kept unless ``--force``; the file must be under
 snax-forge's root, since the platform names it as its source (``hjson``).
 
@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from snax_forge.sdfg.paths import _repo_root
+from snax_forge.common import cwd_relative, repo_root
 
 from .check import Design, load, run_checks
 from .hjson_platform import platform_from_hjson
@@ -52,7 +52,7 @@ from .point import DesignPoint, design_name
 from .problems import DesignError, report
 from .streamers import resolve
 
-ROOT = _repo_root()
+ROOT = repo_root()
 OUT = ROOT / "out" / "design"
 PLATFORMS = ROOT / "platforms"
 
@@ -65,13 +65,6 @@ def _setting(text: str) -> tuple[str, str, Any]:
             f"{text!r} is not platform.PATH=VALUE or memory.PATH=VALUE"
         )
     return head, rest, parse_value(value)
-
-
-def _rel(p: Path) -> str:
-    try:
-        return str(p.resolve().relative_to(Path.cwd()))
-    except ValueError:
-        return str(p)
 
 
 def _inputs(ap: argparse.ArgumentParser) -> None:
@@ -147,7 +140,7 @@ def _run(argv: list[str]) -> int:
     point.save(out / "design_point.json")
     print(_summary(design))
     for f in ("platform.json", "memory.json", "design_point.json"):
-        print(f"wrote {_rel(out / f)}")
+        print(f"wrote {cwd_relative(out / f)}")
     return 0
 
 
@@ -185,7 +178,7 @@ def _save(argv: list[str]) -> int:
         return 1
     dst.parent.mkdir(parents=True, exist_ok=True)
     platform.save(dst)
-    print(f"wrote {_rel(dst)} (base {platform.base}, {len(platform.changes)} changes)")
+    print(f"wrote {cwd_relative(dst)} (base {platform.base}, {len(platform.changes)} changes)")
     return 0
 
 
@@ -210,7 +203,7 @@ def _from_hjson(argv: list[str]) -> int:
         return 1
     dst.parent.mkdir(parents=True, exist_ok=True)
     platform.save(dst)
-    print(f"wrote {_rel(dst)} from {_rel(args.hjson)}")
+    print(f"wrote {cwd_relative(dst)} from {cwd_relative(args.hjson)}")
     return 0
 
 

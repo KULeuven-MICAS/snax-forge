@@ -1,4 +1,4 @@
-"""Shared helpers for the SNAX-SANDBOX tests (SBX1).
+"""Shared helpers for the SNAX-SANDBOX tests.
 
 The graphs are the SNAX-DFG fixtures of tests/dfg/fixtures (vecadd as
 imported, split, accelerated); the recipe is the checked-in

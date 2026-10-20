@@ -1,4 +1,4 @@
-"""The generator's files against their schemas (LNK2a): snax-forge's own for the streamer and
+"""The generator's files against their schemas: snax-forge's own for the streamer and
 accelerator files, always; snax_cluster's for the cluster file, where the submodule has it."""
 
 from __future__ import annotations
@@ -20,8 +20,7 @@ from .helpers import SOURCE, SUB, bound_vsum, point
 CLUSTER_SCHEMA = SUB / "sw" / "docs" / "schema" / "snitch_cluster.schema.json"
 needs_cluster_schema = pytest.mark.skipif(
     not CLUSTER_SCHEMA.is_file(),
-    reason="no snax_cluster schema in the snax-gvsoc submodule (not checked out, or its pin "
-    "predates LNK2a round 2)",
+    reason="the snax-gvsoc submodule is not checked out (CI never fetches it)",
 )
 
 
@@ -78,8 +77,8 @@ def test_the_kinds_are_the_registered_ones():
 
 
 def _resolved(node, top, folder: Path):
-    """The cluster file with its refs replaced, as clustergen does once it takes a base_uri
-    (LNK2b): ``#/<key>`` from the file itself, ``<file>`` the whole file beside it."""
+    """The cluster file with its refs replaced, as clustergen will once it takes a base_uri:
+    ``#/<key>`` from the file itself, ``<file>`` the whole file beside it."""
     if isinstance(node, dict):
         if "$ref" in node:
             ref = node["$ref"]

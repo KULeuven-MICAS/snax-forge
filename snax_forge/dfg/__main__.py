@@ -1,10 +1,10 @@
-"""SNAX-DFG command line (IMP1, REF1).
+"""SNAX-DFG command line.
 
     python -m snax_forge.dfg import KERNEL [KERNEL ...] [--out DIR]
     python -m snax_forge.dfg import --sdfg PATH --name NAME [--out DIR]
     python -m snax_forge.dfg check FILE [FILE ...] --kernel KERNEL [--n N] [--seed S]
 
-``import`` writes ``DIR/<kernel>.snaxdfg`` (default ``out/dfg``, D71). Given
+``import`` writes ``DIR/<kernel>.snaxdfg`` (default ``out/dfg``). Given
 kernel names it builds each kernel's simplified SDFG in-process, as ``pixi
 run forge <kernel>`` does; given ``--sdfg`` it reads a stored ``.sdfg``
 instead. Exit 0 when everything was written, 1 when a construct is not
@@ -24,11 +24,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from snax_forge.sdfg.paths import _repo_root
+from snax_forge.common import repo_root
 
 from .kinds import DfgError
 
-OUT = _repo_root() / "out" / "dfg"
+OUT = repo_root() / "out" / "dfg"
 
 
 def main(argv: list[str] | None = None) -> int:

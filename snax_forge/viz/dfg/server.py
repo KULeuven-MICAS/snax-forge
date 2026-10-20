@@ -1,4 +1,4 @@
-"""The DFG viewer's HTTP server (VIS5, D76, D81): the viewer's server in a second mode.
+"""The DFG viewer's HTTP server (D81): the viewer's server in a second mode.
 
 Same stdlib ``ThreadingHTTPServer`` on 127.0.0.1, same static files and
 the same ``Handler`` for them (server.py), with the page ``dfg.html`` at

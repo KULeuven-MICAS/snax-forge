@@ -1,4 +1,4 @@
-"""What the viewer asks for, as plain Python functions (VIS1-VIS4b, D54-D56, D96, D97).
+"""What the viewer asks for, as plain Python functions.
 
 What this is
 ------------
@@ -7,13 +7,13 @@ from the functions here, so the tests call them directly and the server
 only turns their results into JSON. Nothing here draws anything: the
 viewer (static/) formats the numbers, and HTML is checked by eye (D55).
 
-Loading (D50, D54)
-------------------
+Loading
+-------
 A run is one model output directory (``python -m snax_forge.snax_model run
 ... --out DIR``). It is read with ``snax_model.scenario.read_outputs``,
 exactly as a test would, and its cluster configuration is rebuilt with
 ``ClusterConfig.from_dict(run["cluster"])`` from run.json (D50), so the views
-use the model's own dataclasses and never parse the files themselves (D54).
+use the model's own dataclasses and never parse the files themselves (D55).
 Everything is read once, at start-up or on an explicit reload (``RunSet``);
 nothing watches the files.
 
@@ -24,20 +24,20 @@ across reloads.
 Events
 ------
 The trace events are kept as the flat dicts of trace.jsonl, sorted by
-cycle (``Trace.finish`` sorts them, D39), with their cycles in a separate
+cycle (``Trace.finish`` sorts them), with their cycles in a separate
 list so a window ``[a, b)`` is two bisects. The source filter is applied
 after the window, on the few events left.
 
-Memory layout (D96)
--------------------
+Memory layout
+-------------
 The memory tab's rows are computed in memory.py from the run's regions
-(D95) and its cluster, once per memory on first use, and folded so the
-answer grows with the regions, not with the depth; folded rows come on
+and its cluster, once per memory on first use, and folded so the answer
+grows with the regions, not with the depth (D96); folded rows come on
 request, at most ``memory.MAX_ROWS`` at a time.
 
-FIFO busy window (D56)
-----------------------
-The profile's FIFO statistics are over the whole run (D40), which dilutes
+FIFO busy window
+----------------
+The profile's FIFO statistics are over the whole run, which dilutes
 the mean of a FIFO that is used for a tenth of the run. The busy window of
 a streamer's FIFO is the union over tasks of ``[first start, last done)``
 of the streamer and the accelerators attached to it (``attach`` in the
@@ -119,7 +119,7 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
 def run_names(dirs: Sequence[str | Path]) -> list[str]:
     """Directory names, made unique with -2, -3, ... in the order given. A flow's ``run/``
     (a ``run`` directory beside its ``scenario.json``) takes the name of its flow folder,
-    so ``out/flow/vecadd_W8/run`` is ``vecadd_W8`` (D94)."""
+    so ``out/flow/vecadd_W8/run`` is ``vecadd_W8``."""
     names: list[str] = []
     for d in dirs:
         p = Path(d).resolve()
@@ -134,7 +134,7 @@ def run_names(dirs: Sequence[str | Path]) -> list[str]:
 
 
 # =============================================================================
-# Memory layout (VIS4a, D96)
+# Memory layout
 # =============================================================================
 
 
@@ -155,7 +155,7 @@ MARKS = ("conflicts", *movement.TIMES)
 
 
 def _marks(rv: RunView, mem: str, marks: str | None) -> memory.Marks | None:
-    """The fold marks asked for (D97): ``conflicts`` gives L1's conflict counts per word,
+    """The fold marks asked for: ``conflicts`` gives L1's conflict counts per word,
     ``arrival``, ``use`` and ``wait`` a cycle per word in every memory."""
     if marks is None:
         return None
@@ -187,7 +187,7 @@ def memory_rows(
 
 
 # =============================================================================
-# Data movement (VIS4b, D97)
+# Data movement
 # =============================================================================
 
 
@@ -279,7 +279,7 @@ def run_summary(rv: RunView) -> dict[str, Any]:
 def run_detail(rv: RunView) -> dict[str, Any]:
     """/api/run/<name>: run.json, the profile and the class intervals.
 
-    ``trace`` holds what the header needs about the trace (level, D49 filter,
+    ``trace`` holds what the header needs about the trace (level, beat filter,
     sources, event count) and the class intervals, or is None at level off.
     """
     tr = rv.outputs.trace
@@ -304,9 +304,9 @@ def run_detail(rv: RunView) -> dict[str, Any]:
 
 
 def tasks(rv: RunView) -> dict[str, list[dict[str, Any]]]:
-    """Per block that ran a task: its tasks as ``start`` / ``done``, for the schedule (D60).
+    """Per block that ran a task: its tasks as ``start`` / ``done``, for the schedule.
 
-    A DMA's tasks also carry their ``direction`` (D58): the last
+    A DMA's tasks also carry their ``direction``: the last
     ``csr_write`` to ``<dma>.direction`` that ended before the start landed,
     since a start copies the buffered registers (D36); registers reset to
     0, so with no write it is ``DIRECTIONS[0]``. Needs the task events, so
@@ -335,10 +335,10 @@ def events_window(
 ) -> list[dict[str, Any]]:
     """The events with ``start <= t < stop``, of the given sources and kinds only if given.
 
-    Events keep their trace order (D39). ``stop`` defaults to the end of the
+    Events keep their trace order. ``stop`` defaults to the end of the
     run. ``kinds`` lets the viewer ask for the task events or the FIFO counts
     of the whole run, once per run, without the beat events in between
-    (D57, D61).
+    (D57).
     """
     stop = rv.total_cycles + 1 if stop is None else stop
     if stop <= start:
@@ -356,7 +356,7 @@ def events_window(
 
 
 # =============================================================================
-# FIFO busy window (D56)
+# FIFO busy window
 # =============================================================================
 
 
@@ -467,7 +467,7 @@ def fifo_windows(rv: RunView) -> dict[str, Any]:
 
 
 class RunSet:
-    """The run directories given on the command line, loaded once (D55).
+    """The run directories given on the command line, loaded once.
 
     ``reload`` reads every directory again and swaps the whole set at once,
     so a request never sees half of a reload. If a directory cannot be read,

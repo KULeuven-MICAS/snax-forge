@@ -1,4 +1,4 @@
-"""Event trace of a SNAX-MODEL run (MOD8, D38, D39, D40).
+"""Event trace of a SNAX-MODEL run (C§7).
 
 What it is
 ----------
@@ -73,8 +73,8 @@ New event kinds are added with ``register_event`` (principle 6).
 
 Filter (D49)
 ------------
-A beat-level run writes roughly a kilobyte per cycle, so a long run (M4a)
-is unreadable and large. ``Trace(level, sources=..., window=...)`` drops
+A beat-level run writes roughly a kilobyte per cycle, so a long run is
+unreadable and large. ``Trace(level, sources=..., window=...)`` drops
 beat events outside the filter in ``emit``, and nowhere else:
 
 * ``sources``: keep beat events of these sources only (component or FIFO
@@ -154,7 +154,7 @@ def event_from_dict(d: dict[str, Any]) -> Event:
 @register_event
 @dataclass(frozen=True)
 class Cmd(Event):
-    """A controller command, from its first cycle ``t`` to ``last`` (D37).
+    """A controller command, from its first cycle ``t`` to ``last``.
 
     csr_write: ``reg`` (block.name), ``value`` written. csr_read: ``reg``,
     ``value`` read. wait: ``block``, ``mode``, ``done`` (the block's
@@ -212,7 +212,7 @@ class Grant(Event):
 @register_event
 @dataclass(frozen=True)
 class Stall(Event):
-    """A refused request; ``wider``: refused because a wider grant took a bank (D33)."""
+    """A refused request; ``wider``: refused because a wider grant took a bank."""
 
     port: str = ""
     mem: str = "l1"
@@ -230,7 +230,7 @@ class Stall(Event):
 @register_event
 @dataclass(frozen=True)
 class Resp(Event):
-    """Read data returning in ``t`` (D62): an L1 read of ``port``, or an L2 read of DMA beat ``i``."""
+    """Read data returning in ``t``: an L1 read of ``port``, or an L2 read of DMA beat ``i``."""
 
     mem: str = "l1"
     addr: int = 0
@@ -274,7 +274,7 @@ class DmaBeat(Event):
 @register_event
 @dataclass(frozen=True)
 class Poll(Event):
-    """A poll sample of ``block``'s ``busy`` register in ``t`` (D37)."""
+    """A poll sample of ``block``'s ``busy`` register in ``t``."""
 
     block: str = ""
     value: int = 0
@@ -374,7 +374,7 @@ class Trace:
             self.sources.append(name)
 
     def emit(self, ev: Event) -> None:
-        """Record one event, unless a filter drops it (module doc, D49).
+        """Record one event, unless a filter drops it (module doc).
 
         The hook has already checked the level. Only beat events are
         filtered: the task-level skeleton is always complete.
@@ -403,7 +403,7 @@ class Trace:
     def of_kind(self, kind: str) -> list[Event]:
         return [e for e in self.events if e.kind == kind]
 
-    # -- serialisation (D26: plain dicts until the M6 freeze) ---------------------
+    # -- serialisation (D26: plain dicts until the contracts freeze) --------------
 
     def to_dict(self) -> dict[str, Any]:
         return {

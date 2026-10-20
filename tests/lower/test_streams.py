@@ -1,4 +1,4 @@
-"""A BRM port's nest through a layout onto streamer values (BRM2, D70)."""
+"""A BRM port's nest through a layout onto streamer values (D70)."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def instance(nest_a=None, W=4):
 
 
 def test_vecadd_streamer_values():
-    """The library's elementwise_add (BRM3): a, b and c of 64 int64 at L1 bytes 0, 576
+    """The library's elementwise_add: a, b and c of 64 int64 at L1 bytes 0, 576
     and 1152, n = 16 beats of 4, give vecadd's four task values."""
     tasks = json.loads((SCEN / "vecadd" / "tasks.json").read_text())["steps"]
     want = {s["task_name"]: s["values"] for s in tasks if s.get("type") in ("streamer", "accel")}
@@ -77,7 +77,7 @@ def test_vecadd_streamer_values():
 
 
 # =============================================================================
-# The mapped registers reproduce the enumerated addresses (MOD4 streams)
+# The mapped registers reproduce the enumerated addresses
 # =============================================================================
 
 COLUMN_WALK = {

@@ -1,4 +1,4 @@
-"""The SNAX-DFG: a workload graph as plain data, one ``.snaxdfg`` JSON file (DFG1, D71, D77).
+"""The SNAX-DFG: a workload graph as plain data, one ``.snaxdfg`` JSON file (D71).
 
 A graph borrows SDFG's concepts, not its format:
 
@@ -14,10 +14,10 @@ kind that has one, ``body`` (kinds.py). ``inputs`` and ``outputs`` map a
 connector name to a memlet ``{"data": container, "subset": [dim, ...]}``,
 one dimension per container dimension (subset.py), and on a tasklet's
 output an optional ``"reduce": {"op", "identity"}`` that folds the writes of
-every iteration into the element instead of overwriting it (reduce.py, D102). The graph is a tree:
-scopes hold ordered bodies, memlets sit on the connectors of the nodes that
-use the data, and there are no map entry/exit nodes, access nodes or outer
-memlets, which are derived (D77).
+every iteration into the element instead of overwriting it (reduce.py).
+The graph is a tree: scopes hold ordered bodies, memlets sit on the
+connectors of the nodes that use the data, and there are no map entry/exit
+nodes, access nodes or outer memlets, which are derived (D77).
 
 **Names.** Every name in an expression is bound by exactly one thing: a
 symbol, or the variable of an enclosing map. Container shapes use symbols
@@ -26,16 +26,16 @@ task names are built from them (D75). Symbols, containers and variables
 never share a name.
 
 **Stored form.** Every field is written, except a memlet's ``reduce`` when it
-is null (D102), so a graph with no reduction reads as before; missing keys take defaults
+is null, so a graph with no reduction reads as before; missing keys take defaults
 (``inputs``, ``outputs``, ``attrs`` and a scope's ``body`` empty,
-``transient`` false) and unknown keys are errors (D26, D41). ``body`` is
+``transient`` false) and unknown keys are errors (D26). ``body`` is
 written exactly for kinds that have one. Expressions are kept canonical
 (``expr.canonical``, subset.py), so a transform's output and a hand-written
 file diff cleanly. A graph is validated when it is made, from a file or in
 Python.
 
 **Not checked here.** An accelerated node's connectors and params against
-its BRM: that is ``bind``'s job (SBX1) and the reference executor's (REF1),
+its BRM: that is ``bind``'s job and the reference executor's,
 which load the BRM.
 """
 
@@ -50,8 +50,8 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import check_keys, plain, to_json
 from snax_forge.expr import ExprError, Value
-from snax_forge.snax_model.config import check_keys, plain, to_json
 
 from .kinds import KINDS, DfgError, Scope, _wrap, ident, kind_of
 from .reduce import Reduction
@@ -84,7 +84,7 @@ def _namespaced(key: Any) -> bool:
 
 @dataclass
 class Container:
-    """A data container: logical shape and element type. Its layout is the memory plan's (D74)."""
+    """A data container: logical shape and element type. Its layout is the memory plan's (D87)."""
 
     shape: list[Value]
     dtype: str

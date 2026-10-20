@@ -1,4 +1,4 @@
-"""Design point -> cluster file (LOW1c, D53, D88).
+"""Design point -> cluster file (D53, D88).
 
 The cluster file SNAX-MODEL builds (CONTRACTS.md section 2) is derived, never
 decided: the platform gives the memories, the xbar, the DMA and the
@@ -22,8 +22,7 @@ written only when they are not the default ``[n_ports]``.
 ``Accel`` is one accelerator with its streamers. ``accel_of`` makes one from
 a BRM instance and the resolved shell; ``stub`` makes one from a registered
 accelerator kind and its params directly, for a cluster whose accelerator
-has no BRM (mul1's multi-cycle ``mul`` stub; red4 comes from ``accumulate``
-since BRM4).
+has no BRM (mul1's multi-cycle ``mul`` stub; red4 comes from ``accumulate``).
 ``cluster_config`` assembles the file; ``cluster_file`` does it for a design
 point (snax_forge/design/point.py). scenarios/clusters/clusters.py builds
 alu4, red4 and mul1 through these, so the checked-in clusters and the

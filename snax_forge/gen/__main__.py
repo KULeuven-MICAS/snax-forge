@@ -1,4 +1,4 @@
-"""The generator's command line (GEN3 step 3, LNK2a).
+"""The generator's command line.
 
     python -m snax_forge.gen DESIGN_POINT [--out DIR]
 

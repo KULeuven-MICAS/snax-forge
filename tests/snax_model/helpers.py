@@ -1,10 +1,9 @@
-"""Shared helpers for the SNAX-MODEL tests (MOD10, housekeeping).
+"""Shared helpers for the SNAX-MODEL tests.
 
-Every test file used to carry its own copy of these; they are one thing now,
-so a change to the cluster shape or to a timing formula happens once. Only
-helpers used by more than one file live here. Anything specific to one file
-(the accelerator's Producer / Consumer toys, the DMA's Chain, the random
-case generators) stays with its test.
+They live in one place, so a change to the cluster shape or to a timing
+formula happens once. Only helpers used by more than one file live here.
+Anything specific to one file (the accelerator's Producer / Consumer toys,
+the DMA's Chain, the random case generators) stays with its test.
 
 Not imported by the model or by scenarios/make.py: this is test code.
 """
@@ -102,7 +101,7 @@ def unit(word, n_beats, lanes):
 
 
 # =============================================================================
-# The MOD7 vecadd
+# The hand-written vecadd
 # =============================================================================
 
 
@@ -111,10 +110,10 @@ def mod7_vecadd(mode="poll", skip=True, cfg=None, level=None):
 
     Transfer b and the compute blocks are programmed while the previous
     transfer runs; each start comes after a wait on the block it needs. Named
-    and placed as scenarios/vecadd (NAME1, D83): streamers acc_a, acc_b,
+    and placed as scenarios/vecadd (D83): streamers acc_a, acc_b,
     acc_out, and a, b, c packed in L2 at 0, 512 and 1024. Written without
     SNAX-LOWER, so it is an independent reference for that scenario
-    (test_scenario, D92). ``cfg`` sets the controller costs (the model's
+    (test_scenario, D65). ``cfg`` sets the controller costs (the model's
     defaults when None), ``level`` the trace level (no trace when None).
     """
     n_elems, lanes = 64, 4
@@ -167,18 +166,18 @@ def mod7_vecadd(mode="poll", skip=True, cfg=None, level=None):
 
 
 def dma_total(cfg, n, src_latency):
-    """done_cycle - start cycle for N beats without contention (D34)."""
+    """done_cycle - start cycle for N beats without contention."""
     return cfg.startup + src_latency + cfg.beat_interval * (n - 1) + 2 + cfg.done_latency
 
 
 def w_poll(t, d, c_r, p):
-    """Length of a poll wait beginning in ``t`` for a block done in ``d`` (D37)."""
+    """Length of a poll wait beginning in ``t`` for a block done in ``d``."""
     i = max(0, -(-(d - t - c_r + 1) // p))
     return i * p + c_r
 
 
 def w_signal(t, d, s):
-    """Length of a signal wait beginning in ``t`` for a block done in ``d`` (D37)."""
+    """Length of a signal wait beginning in ``t`` for a block done in ``d``."""
     return max(t, d) - t + s
 
 

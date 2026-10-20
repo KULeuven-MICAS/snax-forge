@@ -1,4 +1,4 @@
-"""Design point -> task list (LOW1a, D89)."""
+"""Design point -> task list (D89)."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ def point(graph="vecadd_accelerated", memory=(), sets=None, edit_graph=None) -> 
 
 
 def dot() -> Graph:
-    """dot as imported (DFG3)."""
+    """dot as imported."""
     return Graph.load(FIXTURES / "dot.snaxdfg")
 
 
@@ -72,7 +72,7 @@ def run_point(p: DesignPoint, seed: int = 3):
 
 
 def test_vecadd_with_its_l1_places_gives_its_task_list():
-    """LOW1a acceptance: equal to the hand-written scenarios/vecadd/tasks.json."""
+    """Equal to the hand-written scenarios/vecadd/tasks.json."""
     got = task_list(point(memory=PINS))
     want = TaskList.load(VECADD / "tasks.json")
     assert got == want and got.to_dict() == want.to_dict()
@@ -142,7 +142,7 @@ def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():
 
 
 # =============================================================================
-# dot: a multiplier chained into an accumulator through L1 (LOW2, LOW3a, D105)
+# dot: a multiplier chained into an accumulator through L1 (D105)
 # =============================================================================
 
 

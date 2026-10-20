@@ -1,4 +1,4 @@
-"""Shared helpers for the SNAX-LOWER tests (LOW1b).
+"""Shared helpers for the SNAX-LOWER tests.
 
 Clusters come from the checked-in cluster files, so the tests lower against
 exactly what the scenarios run on. Task lists in the rule tests are written
@@ -15,7 +15,7 @@ from snax_forge.snax_model.scenario import ClusterConfig
 
 REPO = Path(__file__).resolve().parents[2]
 SCEN = REPO / "scenarios"
-# Every scenario with a hand-written task list: all of them (D66).
+# Every scenario with a hand-written task list: all of them.
 TASK_SCENARIOS = tuple(sorted(p.parent.name for p in SCEN.glob("*/tasks.json")))
 
 

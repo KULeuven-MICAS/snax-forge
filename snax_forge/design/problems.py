@@ -1,4 +1,4 @@
-"""What the design checks report (DP1a, D85): one ``Problem`` per thing that does not fit.
+"""What the design checks report (D85): one ``Problem`` per thing that does not fit.
 
 A problem has a ``code`` (``<stage>.<check>``, CONTRACTS.md section 14),
 ``where`` (the platform field, graph node or streamer it is about), a

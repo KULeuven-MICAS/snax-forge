@@ -1,8 +1,8 @@
-"""Tests for the SNAX-MODEL scenario runner (MOD9, D41-D44).
+"""Tests for the SNAX-MODEL scenario runner (D41-D44).
 
-MOD9 acceptance (docs/STATUS.md): the elementwise, reduce and DMA scenarios
+Acceptance: the elementwise, reduce and DMA scenarios
 run from the CLI; final memory checked against NumPy. Plus: the vecadd
-scenario gives exactly the profile and trace of the hand-built MOD7 run
+scenario gives exactly the profile and trace of the hand-built run
 (helpers.mod7_vecadd), round trips, byte-identical output files, output files reload,
 registration order kept, and every named error on a small broken scenario.
 
@@ -114,7 +114,7 @@ def files(out):
 
 
 # =============================================================================
-# 2. Checked-in scenarios from the CLI, against NumPy (MOD9 acceptance)
+# 2. Checked-in scenarios from the CLI, against NumPy (acceptance)
 # =============================================================================
 
 
@@ -225,7 +225,7 @@ def test_generated_files_equal_the_generator():
 
 
 # =============================================================================
-# 3. vecadd equals the hand-built MOD7 run, with the scenario's costs
+# 3. vecadd equals the hand-built run, with the scenario's costs
 # =============================================================================
 
 
@@ -233,7 +233,7 @@ def test_vecadd_equals_hand_built_run():
     """scenarios/vecadd (its task list lowered) against a program written without
     SNAX-LOWER: every `cmd` event carries its command, so an equal beat trace is an
     equal program. Skip and trace levels are covered for every scenario by
-    test_output_files_byte_identical (D92)."""
+    test_output_files_byte_identical (D65)."""
     sc = load("vecadd")
     # The hand-built run gets the scenario's controller costs: test_profile keeps
     # its own non-default ones (VECADD_CFG) to exercise the D37 formulas.

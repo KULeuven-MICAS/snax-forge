@@ -1,4 +1,4 @@
-"""A platform read from snax_cluster's cluster file (LNK1, D131).
+"""A platform read from snax_cluster's cluster file (D131).
 
     platform_from_hjson(path, name, root=None) -> Platform
 
@@ -36,10 +36,11 @@ ports (D84): the GVSoC generator lowers the streamer per design point (D134).
 
 The rest of a platform (``xbar``, ``dma``, ``controller``,
 ``register_window``, ``wait_mode``) is small16's: these are SNAX-MODEL's
-fields, unused by SNAX-GVSoC, and go with RET1. The cores, the I-cache, the
-interconnect and the CSR counts are not read; they are LNK2a's. The core
-count is read on its own (``core_count``) by the design check that keeps the
-layouts out of snRuntime's top of L1 (``memory.runtime``, check.py).
+fields, unused by SNAX-GVSoC, and go when SNAX-MODEL is removed. The cores,
+the I-cache, the interconnect and the CSR counts are not read; they are the
+generator's (gen/gvsoc.py). The core count is read on its own
+(``core_count``) by the design check that keeps the layouts out of
+snRuntime's top of L1 (``memory.runtime``, check.py).
 
 Everything wrong is a ``DesignError``, each problem coded ``hjson.<what>``:
 ``hjson.parse`` (the file), ``hjson.path`` (a file outside ``root``), ``hjson.ref`` (a ``$ref``), ``hjson.key`` (a key
@@ -57,13 +58,13 @@ from typing import Any
 
 import hjson
 
-from snax_forge.sdfg.paths import _repo_root
+from snax_forge.common import repo_root
 from snax_forge.snax_model import L1Config, L2Config
 
 from .platform import Platform
 from .problems import DesignError, Problem
 
-ROOT = _repo_root()
+ROOT = repo_root()
 SMALL16 = ROOT / "platforms" / "small16.json"
 # The movers of a streamer template, in snax_cluster's order.
 MOVERS = ("data_reader_params", "data_writer_params", "data_reader_writer_params")
@@ -106,18 +107,35 @@ def _get(d: Any, path: str, kind: type = int, at: str = "") -> Any:
     return node
 
 
-def accelerators(d: Mapping[str, Any]) -> list[tuple[str, Any]]:
-    """Every ``snax_acc_cfg`` entry of the cluster's cores with its path, in hive and core order."""
+def cores(d: Mapping[str, Any]) -> list[tuple[str, Mapping[str, Any]]]:
+    """Every core of the cluster file ``d`` with its path, in hive and core order. A core that is
+    ``{"$ref": "#/<key>"}`` is that top-level key's object itself, not a copy, so what is found
+    through it can be set in place (gen/gvsoc.py)."""
     out = []
     for h, hive in enumerate(_get(d, "cluster.hives", list)):
         at = f"cluster.hives[{h}]"
         for c, core in enumerate(_get(hive, "cores", list, at)):
+            where = f"{at}.cores[{c}]"
+            ref = core.get("$ref") if isinstance(core, Mapping) else None
+            if ref is not None:
+                if not (isinstance(ref, str) and ref.startswith("#/") and ref[2:] in d):
+                    raise _fail("hjson.ref", where, f"{ref!r}: no top-level key it names")
+                core = d[ref[2:]]
             if not isinstance(core, Mapping):
-                raise _fail("hjson.key", f"{at}.cores[{c}]", f"must be an object, got {core!r}")
-            accs = core.get("snax_acc_cfg", [])
-            if not isinstance(accs, list):
-                raise _fail("hjson.key", f"{at}.cores[{c}].snax_acc_cfg", "must be a list")
-            out += [(f"{at}.cores[{c}].snax_acc_cfg[{i}]", a) for i, a in enumerate(accs)]
+                raise _fail("hjson.key", where, f"must be an object, got {core!r}")
+            out.append((where, core))
+    return out
+
+
+def accelerators(d: Mapping[str, Any]) -> list[tuple[str, Any]]:
+    """Every ``snax_acc_cfg`` entry of the cluster's cores (``cores``) with its path, in hive and
+    core order."""
+    out = []
+    for where, core in cores(d):
+        accs = core.get("snax_acc_cfg", [])
+        if not isinstance(accs, list):
+            raise _fail("hjson.key", f"{where}.snax_acc_cfg", "must be a list")
+        out += [(f"{where}.snax_acc_cfg[{i}]", a) for i, a in enumerate(accs)]
     return out
 
 

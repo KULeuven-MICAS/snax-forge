@@ -1,4 +1,4 @@
-"""The affine dataflow notation (BRM2, D70): structure, lanes, beats and enumeration."""
+"""The affine dataflow notation: structure, lanes, beats and enumeration."""
 
 from __future__ import annotations
 

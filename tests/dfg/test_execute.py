@@ -1,10 +1,10 @@
-"""The reference executor (REF1, D79): .snaxdfg graphs run in NumPy.
+"""The reference executor: .snaxdfg graphs run in NumPy.
 
 Accepted when the imported vecadd equals the kernel's ``reference`` on
 ``make_inputs``, for N a multiple of the lane count and not, and the plain,
 split and accelerated graphs agree; and when the imported dot equals
-``np.dot`` on integer inputs (DFG3, D28), its sum map folding with ``reduce``
-from the identity (D102). Also: transients and offset subsets, the
+``np.dot`` on integer inputs (D28), its sum map folding with ``reduce``
+from the identity. Also: transients and offset subsets, the
 accelerated node's firing order and tasks, and every check named.
 """
 
@@ -78,7 +78,7 @@ def test_int64_wraps_as_in_c():
 
 
 # =============================================================================
-# dot: a reduction (DFG3, the acceptance)
+# dot: a reduction
 # =============================================================================
 
 
@@ -121,7 +121,7 @@ def test_other_folds():
 
 
 def test_the_bound_dot_runs_its_accumulator():
-    """dot_accelerated: accumulate's out has rate T = N / 4 = 16, one beat per task (D104)."""
+    """dot_accelerated: accumulate's out has rate T = N / 4 = 16, one beat per task."""
     inputs, ref = kernel_run(64, kernel="dot")
     out = execute(Graph.load(fixture("dot_accelerated")), inputs)
     assert out["out"].tolist() == ref["out"].tolist()
@@ -166,7 +166,7 @@ def test_cli_check(capsys):
 
 
 # =============================================================================
-# Beyond vecadd: transients and offsets (imported with IMP1)
+# Beyond vecadd: transients and offsets, imported
 # =============================================================================
 
 

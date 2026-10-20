@@ -1,4 +1,4 @@
-"""The platform: the SNAX cluster around the accelerators (DP1a, D84).
+"""The platform: the SNAX cluster around the accelerators (D84).
 
 A platform file describes everything of the cluster that is not the
 accelerator itself: L1, L2, xbar, DMA, controller, the register window, how
@@ -66,6 +66,7 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
+from snax_forge.common import Config, plain, to_json
 from snax_forge.snax_model import (
     ControllerConfig,
     DmaConfig,
@@ -73,7 +74,6 @@ from snax_forge.snax_model import (
     L2Config,
     StreamerConfig,
 )
-from snax_forge.snax_model.config import Config, plain, to_json
 
 from .problems import DesignError, Problem
 

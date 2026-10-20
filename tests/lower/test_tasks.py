@@ -1,4 +1,4 @@
-"""Tests for the task-list format (LOW1b, D64).
+"""Tests for the task-list format (D64).
 
 Sections:
   1. round trips (checked-in files, builder, values)
@@ -10,9 +10,9 @@ import json
 
 import pytest
 
+from snax_forge.common import to_json
 from snax_forge.lower import TaskList, TaskListError, Tasks, arg_of, values_of
 from snax_forge.snax_model import DmaDescriptor, DmaPattern, StreamerRegs
-from snax_forge.snax_model.config import to_json
 from snax_forge.snax_model.scenario import register_map_of
 
 from .helpers import SCEN, TASK_SCENARIOS, add, cluster, dma, start, stream, sync, task_list
@@ -23,7 +23,7 @@ from .helpers import SCEN, TASK_SCENARIOS, add, cluster, dma, start, stream, syn
 
 
 def test_every_scenario_is_a_task_list():
-    """Every scenario folder has a hand-written task list (D66)."""
+    """Every scenario folder has a hand-written task list."""
     scenarios = tuple(sorted(p.parent.name for p in SCEN.glob("*/scenario.py")))
     assert TASK_SCENARIOS == scenarios
     assert "fmul" in scenarios and "vecadd" in scenarios

@@ -1,4 +1,4 @@
-"""The flow command line (E2E1, FLOW2).
+"""The flow command line.
 
     python -m snax_forge.flow RECIPE --platform P [--set NAME=VALUE ...]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
@@ -11,7 +11,7 @@
 Runs the recipe on its kernel's import (or ``--graph``), pairs the result
 with the platform, lowers the design point, runs it in SNAX-MODEL on the
 kernel's ``make_inputs`` and checks the output against the kernel's
-reference and REF1 (run.py). ``--set W=8`` sets a recipe param,
+reference and the reference executor (run.py). ``--set W=8`` sets a recipe param,
 ``--set platform.l1.n_banks=32`` a platform field and
 ``--set memory.B.l1.base=576`` pins a base, as the sandbox and design
 commands take them. Everything goes to ``out/flow/<name>/``. The default
@@ -19,8 +19,8 @@ name is the recipe's with every ``--set`` appended: recipe params, then
 platform and memory paths without their prefix, each in the order given
 (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``). The run is
 traced at ``task`` level unless ``--trace`` says otherwise; the data
-movement views need ``--trace beat`` (D94). What it prints is also in
-``flow.log``, with the design checks that ran, next to ``report/`` (D99).
+movement views need ``--trace beat`` (D90). What it prints is also in
+``flow.log``, with the design checks that ran, next to ``report/``.
 
 The second form starts from a bound graph instead (D108): a file ending in
 ``.snaxdfg`` is the last step of a sandbox run, or a graph edited by hand,

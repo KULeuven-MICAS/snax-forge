@@ -1,8 +1,8 @@
-"""Shared helpers for the visualiser tests (VIS1).
+"""Shared helpers for the visualiser tests.
 
 Run directories are made the way a user makes them: a checked-in scenario
 run through ``snax_model.scenario.run`` and written with ``write_outputs``,
-so the viewer reads exactly what the CLI writes (D44, D54).
+so the viewer reads exactly what the CLI writes.
 """
 
 from __future__ import annotations

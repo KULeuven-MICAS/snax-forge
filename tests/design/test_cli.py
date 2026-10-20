@@ -1,4 +1,4 @@
-"""The design command line (DP1a): run, check, save."""
+"""The design command line: run, check, save."""
 
 from __future__ import annotations
 
@@ -103,7 +103,7 @@ def test_save_refuses_a_broken_platform(tmp_path, capsys):
 
 
 # =============================================================================
-# Memory plan and design point (DP1b)
+# Memory plan and design point
 # =============================================================================
 
 

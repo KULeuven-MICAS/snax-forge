@@ -1,12 +1,12 @@
-"""Where the reports read from and write to (REP1, D99).
+"""Where the reports read from and write to.
 
 A folder is one of two things:
 
 * a flow folder (``out/flow/<name>/``): ``run/`` holds the run, ``design/``
   the design point, ``sandbox/recipe.json`` the recipe (a flow from a bound
-  graph has none, D108) and ``tasks.json`` the task list. Both reports are complete; they go to ``<folder>/report/``,
-  next to ``run/`` and never inside it, since a run directory holds only what
-  the model wrote (D44).
+  graph has none) and ``tasks.json`` the task list. Both reports are
+  complete; they go to ``<folder>/report/``, next to ``run/`` and never
+  inside it, since a run directory holds only what the model wrote (D44).
 * a run directory (``run.json`` in it), e.g. a scenario run: the run report,
   and the design report's cluster part from ``run.json``'s cluster and
   regions. They go to ``<dir>_report/`` beside it. A ``tasks.json`` next to

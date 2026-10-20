@@ -46,10 +46,6 @@ class SimpleAdder(val width: Int = 32, val lanes: Int = 4) extends Module {
   require(width > 0, s"width must be positive, got $width")
   require(lanes > 0, s"lanes must be positive, got $lanes")
 
-  // Distinguishes hand-written stand-ins from emitter output once both are
-  // landing in out/hw. SystemVerilog's module namespace is flat and global,
-  // and Chisel derives the module name from the class name alone -- the Scala
-  // package is discarded, so it cannot do this job.
   override def desiredName = "SimpleAdder"
 
   val io = IO(new ElementwiseBinaryIO(width, lanes))

@@ -1,9 +1,9 @@
-"""Tests for the SNAX-MODEL TCDM interconnect (MOD3, MOD6 multi-width ports).
+"""Tests for the SNAX-MODEL TCDM interconnect, with multi-width ports.
 
-MOD3 acceptance (docs/STATUS.md):
+Acceptance:
   * grant sequences for 2-3 masters on one bank match hand-worked tables, and
   * distinct banks proceed in parallel.
-MOD6 (D33): ports wider than a bank; wider wins per cycle and per group.
+Multi-width ports (D33): ports wider than a bank; wider wins per cycle and per group.
 Plus: skip on/off identical under random traffic, checked against a
 reference that follows the Chisel RoundRobinArbiter line by line.
 
@@ -22,7 +22,7 @@ refused request, the RTL case the lock rule has to handle.
 ``Blocker`` owns one wide port and reads its bank group in scripted
 cycles. It always wins (it is the widest port on its group), so the narrow
 ports of that group see "not ready", as with the DMA in SNAX
-(mem_wide_narrow_mux). It replaces the MOD3 ``block_bank`` hook (D33).
+(mem_wide_narrow_mux).
 
 In the hand-worked tables, ``prev`` is the per-bank pointer at the start of
 the cycle and N-1 is its reset value ("start from port 0").
@@ -35,7 +35,7 @@ Sections:
   5. data routing and read latency
   6. hold rule and misuse
   7. random traffic: skip on/off and a reference arbiter
-  8. multi-width ports (MOD6)
+  8. multi-width ports
 """
 
 import random
@@ -608,7 +608,7 @@ def test_random_traffic(seed):
 
 
 # =============================================================================
-# 8. Multi-width ports (MOD6, D33)
+# 8. Multi-width ports (D33)
 # =============================================================================
 
 NB16 = 16  # two superbanks of 8 banks with the default 512-bit wide port

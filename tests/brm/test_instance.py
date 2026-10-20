@@ -1,4 +1,4 @@
-"""BRM instances and their accelerator entry (BRM1, D68)."""
+"""BRM instances and their accelerator entry."""
 
 from __future__ import annotations
 

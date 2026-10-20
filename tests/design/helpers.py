@@ -1,13 +1,12 @@
-"""Shared helpers for the SNAX-DESIGN tests (DP1a).
+"""Shared helpers for the SNAX-DESIGN tests.
 
 The platform is the checked-in ``platforms/small16.json`` (``snax_alu.json``
-for LNK1, read from the snax-gvsoc submodule's cluster files, which CI never
-fetches, D128); the graphs are
-the SNAX-DFG fixtures of tests/dfg/fixtures (vecadd bound to
-``elementwise_add`` with W = 4, split, as imported), and vecadd bound with
-W = 8 through the checked-in recipe. ``design`` pairs them in memory, with
-optional edits to either side as plain dicts, the way a person edits the
-files.
+for a platform read from snax_cluster's hjson, the snax-gvsoc submodule's
+cluster files, which CI never fetches, D128); the graphs are the SNAX-DFG
+fixtures of tests/dfg/fixtures (vecadd bound to ``elementwise_add`` with
+W = 4, split, as imported), and vecadd bound with W = 8 through the
+checked-in recipe. ``design`` pairs them in memory, with optional edits to
+either side as plain dicts, the way a person edits the files.
 """
 
 from __future__ import annotations
@@ -93,7 +92,7 @@ def accel_node(gd: dict[str, Any]) -> dict[str, Any]:
     return gd["body"][0]["body"][0]
 
 
-# --- graph edits for the lowering cases (LOW1a) ---
+# --- graph edits for the lowering cases ---
 
 
 def two_loops(g: dict[str, Any]) -> None:

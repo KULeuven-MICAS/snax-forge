@@ -3,7 +3,7 @@ package snax.forge
 import java.nio.file.{Files, Path, Paths}
 import scala.jdk.CollectionConverters._
 
-/** snax-gvsoc's `SnaxUnit` cases, the hand-worked half of GEN3's unit cross-check.
+/** snax-gvsoc's `SnaxUnit` cases, the hand-worked half of the unit cross-check between snax-gvsoc and Chisel.
   *
   * The case files (`tests/snax/unit/cases/`, one `.txt` each, in `tb.cpp`'s format: header lines, then `cycles` and one
   * line per cycle) are worked by hand from `SnaxUnit`'s rule (`snax/snax_unit.hpp`); snax-gvsoc's `tb.cpp` checks the

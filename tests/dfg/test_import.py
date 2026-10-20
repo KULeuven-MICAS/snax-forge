@@ -1,11 +1,10 @@
-"""The SDFG importer (IMP1, DFG3): vecadd's and dot's simplified SDFGs become their fixtures.
+"""The SDFG importer: vecadd's and dot's simplified SDFGs become their fixtures.
 
 Accepted when the import of ``kernels/polybench/vecadd.py`` equals the
 checked-in ``tests/dfg/fixtures/vecadd.snaxdfg``, with no transient and no
 copy left, and the import of ``dot.py`` equals ``dot.snaxdfg``: a multiply
-map, then its ``Reduce`` as a sum map folding into ``out[0]`` (D102); and
-``vecmul.py``'s equals ``vecmul.snaxdfg`` (GEN3 step 6a), ``vsum.py``'s
-``vsum.snaxdfg`` (step 6b). The
+map, then its ``Reduce`` as a sum map folding into ``out[0]``; and
+``vecmul.py``'s equals ``vecmul.snaxdfg``, ``vsum.py``'s ``vsum.snaxdfg``. The
 importer builds the simplified SDFG as ``pixi run forge`` does, and a stored
 ``.sdfg`` gives the same graph. Beyond them: a transient between two maps,
 offset subsets, a Max reduction, a Reduce over one axis of two, and every
@@ -50,7 +49,7 @@ def test_vecadd_import_is_the_fixture(vecadd_sdfg):
 
 
 def test_no_transient_and_no_copy_left(vecadd_sdfg):
-    """simplify already folded C[:] = A + B into a direct write (D77)."""
+    """simplify already folded C[:] = A + B into a direct write."""
     g = import_sdfg(vecadd_sdfg, "vecadd")
     assert list(g.containers) == ["A", "B", "C"]
     assert not any(c.transient for c in g.containers.values())
@@ -84,7 +83,7 @@ def test_cli_reports_an_unsupported_kernel(tmp_path, capsys):
 
 
 # =============================================================================
-# dot: a reduction (DFG3, the acceptance)
+# dot: a reduction
 # =============================================================================
 
 
@@ -100,7 +99,7 @@ def test_vecmul_import_is_the_fixture():
 
 
 def test_vsum_import_is_the_fixture():
-    """dot's sum map on its own: the Reduce folds A into out[0] with add (D102)."""
+    """dot's sum map on its own: the Reduce folds A into out[0] with add."""
     g = import_kernel("vsum")
     assert g.to_json() == fixture("vsum").read_text()
     assert [n.id for n, _ in g.walk()] == ["sum_map", "sum"]
@@ -108,7 +107,7 @@ def test_vsum_import_is_the_fixture():
 
 
 def test_dot_is_a_multiply_map_then_a_sum_map():
-    """The Reduce's scalar and its copy are folded: the sum map writes out[0] (D102)."""
+    """The Reduce's scalar and its copy are folded: the sum map writes out[0]."""
     g = import_kernel("dot")
     assert list(g.containers) == ["A", "B", "out", "tmp0"]
     assert [c for c, cont in g.containers.items() if cont.transient] == ["tmp0"]

@@ -1,4 +1,5 @@
-"""LOOP1 (D98): every number examples/loop1/README.md states, checked on the runs it describes.
+"""The loop1 walk-through (D98): every number examples/loop1/README.md states, checked on the
+runs it describes.
 
 The README's two flow commands are run as written (from the repo root, into a
 temporary folder named as the README names it). Each quoted table is marked

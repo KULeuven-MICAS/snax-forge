@@ -1,8 +1,8 @@
-"""The memory layout of a run, for the memory tab (VIS4a, D95, D96).
+"""The memory layout of a run, for the memory tab (D96).
 
 What this is
 ------------
-Where each region of a run (``run.json``'s ``regions``, D95) lies in its
+Where each region of a run (``run.json``'s ``regions``) lies in its
 memory, as rows of words, folded so that the answer grows with the regions
 and not with the depth of the memory. Everything is computed here, in
 Python, as the DFG viewer's rows are (D81); the viewer only draws.
@@ -40,7 +40,7 @@ number of elements plus the occupied rows, not the size of the memory.
 
 Marks
 -----
-A view may carry one mark per word (D97), in one of two kinds:
+A view may carry one mark per word, in one of two kinds:
 
 * counts (how many L1 conflicts the word took part in): rows are alike only
   when their marks are equal column by column, so a row with conflicts stays

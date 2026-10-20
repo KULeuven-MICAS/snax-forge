@@ -1,4 +1,4 @@
-"""The affine dataflow notation (BRM2, D70): the first version of open item 1.
+"""The affine dataflow notation (D70): the first version of open item 1.
 
 One nest per port says in which order the accelerator consumes or produces
 its operand's elements, in logical indices. It describes only the

@@ -1,4 +1,4 @@
-"""The memory layout of a run (VIS4a, D95, D96): what the memory tab is given.
+"""The memory layout of a run: what the memory tab is given.
 
 1. the folded lines of the flow runs, written out
 2. the lines do not grow with the depth of a memory

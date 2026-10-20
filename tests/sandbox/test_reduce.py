@@ -1,4 +1,4 @@
-"""dot through SNAX-SANDBOX (SBX2, D104): a multiplier and an accumulator bound in one recipe.
+"""dot through SNAX-SANDBOX: a multiplier and an accumulator bound in one recipe.
 
 Accepted when ``recipes/dot.json`` gives ``dot_accelerated.snaxdfg`` (the
 multiply map bound to elementwise_mul, the sum map to accumulate, each step
@@ -79,7 +79,7 @@ def test_every_w_that_divides_n(w):
 
 
 def test_the_sum_folds_every_lane_into_one():
-    """out[0] becomes the one lane out[0:1], with no reduce: the BRM folds (D102, D104)."""
+    """out[0] becomes the one lane out[0:1], with no reduce: the BRM folds (D104)."""
     s = Graph.load(FIXTURES / "dot_accelerated.snaxdfg").node("sum")
     assert s.outputs["out"].to_dict() == {"data": "out", "subset": ["0:1"]}
     assert s.inputs["a"].subset == ["4 * i_t_1:4 * i_t_1 + 4"]

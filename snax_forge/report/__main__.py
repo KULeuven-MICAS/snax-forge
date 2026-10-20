@@ -1,4 +1,4 @@
-"""The report command line (REP1, D99).
+"""The report command line.
 
     python -m snax_forge.report DIR [--out OUT] [--tasks TASKS]
 

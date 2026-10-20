@@ -1,4 +1,4 @@
-"""Values: an int, or a small integer expression over names (D68, D77).
+"""Values: an int, or a small integer expression over names (D77).
 
 Shared by SNAX-BRM and SNAX-DFG. A value field holds either a plain int or a
 string. Every string is an expression: a name (``"W"``, ``"N"``, ``"i_t"``)
@@ -132,7 +132,7 @@ def evaluate(v: Value, env: Mapping[str, Any]) -> Any:
 
 
 # =============================================================================
-# Stored form, substitution, affine parts (D77)
+# Stored form, substitution, affine parts
 # =============================================================================
 
 
@@ -255,7 +255,7 @@ def _fold(node: ast.expr) -> ast.expr:
 
 
 # =============================================================================
-# Code: one assignment per line (D77, D82)
+# Code: one assignment per line
 # =============================================================================
 
 

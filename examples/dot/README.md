@@ -1,12 +1,15 @@
 # EX2: dot, its graph and two accumulators
 
+It walks the flow on SNAX-MODEL, which RET1 removes; `docs/RUN.md` is the
+SNAX-GVSoC path.
+
 This walk-through takes the `dot` kernel on the `small16` platform from its
 dataflow graph to two checked runs: one recipe binds the sum to a 4-lane
 adder tree, the other to the one-lane Chisel Accumulator. It shows how to
 look at the graph each recipe step makes, how to run a bound graph, and
 where the reports say the two runs differ. Every number below is checked by
 `tests/flow/test_dot_example.py`, so the text stays true as the code moves.
-The outputs are not in git (D67): the commands make them again in a few
+The outputs are not in git (D98): the commands make them again in a few
 seconds.
 
 Every quoted table is copied line for line from the report named above it.
@@ -128,7 +131,7 @@ the multiplier runs, the accumulator runs, the result is stored.
 | dma | 2 | store_out | 93 | 98 | 5 | L1 → L2 |
 
 The accumulator does not start until the multiplier has written all of
-`tmp0` into L1. The controller waits for that, and the report names it:
+`tmp0` into L1. SNAX-MODEL's controller waits for that, and the report names it:
 
 <!-- excerpt: dot/report/run.md -->
 - mul → sum: 17 cycles waiting on mul_out, which sum_a reads
@@ -212,11 +215,14 @@ pixi run view out/flow/dot/run out/flow/dot_serial/run
 
 ## What this does not show
 
-The cycle counts compare design points on the model; they are not RTL cycles
-until the model is anchored against the SNAX cluster (D51). The adder tree
-is the Chisel Accumulator at W lanes (D133), but no RTL run stands behind
-the 19 cycles. The two accelerators are chained through L1 here; a direct link
-between them is M13.
+The cycle counts compare design points on SNAX-MODEL; they are not RTL
+cycles. The model anchored against the SNAX cluster is SNAX-GVSoC (D51,
+D123), which the flow runs from FLOW3 on. The adder tree is the Chisel
+Accumulator at W lanes (D133); it runs on SNAX-GVSoC as snax-gvsoc's
+`forge/vsum_tree` (vsum at W = 4), and no RTL run stands behind the 19
+cycles here. The two accelerators are chained through L1 on SNAX-MODEL; on
+SNAX-GVSoC two accelerators on one core are open item 79, and M13 makes such
+a chain one composed accelerator (D112).
 
 The bound-graph flow writes to `out/flow/dot/`, the folder a recipe flow of
 `recipes/dot.json` also uses. Give one of them `--name` to keep both.

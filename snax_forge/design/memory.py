@@ -1,8 +1,8 @@
-"""The memory plan: where every container lives (DP1b, D86).
+"""The memory plan: where every container lives (D86).
 
 The plan gives each container a layout per memory it lives in: ``base``
 (byte address of index (0, ..., 0)), ``shape`` and one byte stride per
-dimension (``snax_forge.lower.layout.Layout``, D70, D74). Banks follow from
+dimension (``snax_forge.lower.layout.Layout``). Banks follow from
 addresses under the fixed word-interleaved map (open item 18) and are not
 stated. It is made by three passes, each registered by name so a policy can
 replace any one of them (``register_memory_pass``):
@@ -35,7 +35,7 @@ for later policies, every accelerator port's element-index stream
 from its memlet over the temporal maps around it; independent of any
 layout) grouped by the node that runs them together. A policy that avoids
 bank conflicts turns candidate layouts into bank sequences for the ports of
-one group and compares them, without running the model (DSE4). The
+one group and compares them, without running the model. The
 defaults read only shapes and sizes.
 
 Nothing here judges the plan: the ``memory`` checks (check.py) do, so a
@@ -56,10 +56,10 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import plain, to_json
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import Layout, moved_bytes, round_up
-from snax_forge.snax_model.config import plain, to_json
 
 from .platform import Platform
 from .problems import DesignError, Problem

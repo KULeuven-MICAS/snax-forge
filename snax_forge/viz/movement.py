@@ -1,4 +1,4 @@
-"""Data movement of a run, from its beat trace and its regions (VIS4b, D95, D97).
+"""Data movement of a run, from its beat trace and its regions (D97).
 
 What this is
 ------------
@@ -32,7 +32,7 @@ memory layout (memory.py).
 Firings
 -------
 An accelerator's task k is taken with the k-th task of each streamer attached
-to it (as the FIFO busy window does, D56); inside a task, beats and firings are
+to it (as the FIFO busy window does); inside a task, beats and firings are
 matched by order. Lane l of a reader carries its port's lane l, one beat per
 granted read in grant order. An input port with rate r is popped at firings
 0, r, 2r, ...; when a reader hands each beat out T times (the repeat of D69),
@@ -44,7 +44,7 @@ before the task started. A firing's operands on a lane are the beats of every
 port on that lane, or on every lane of a port whose lane count differs.
 
 A run traced below beat level gets a named reason instead of partial numbers.
-A filtered beat trace (D49) gives what it kept, and the answer says what was
+A filtered beat trace gives what it kept, and the answer says what was
 filtered.
 """
 
@@ -312,7 +312,7 @@ def build_index(
 
 
 def accel_config(spec: Any) -> AccelConfig:
-    """The AccelConfig of a cluster's accelerator entry, as the model builds it (D43)."""
+    """The AccelConfig of a cluster's accelerator entry, as the model builds it."""
     return ACCEL_KINDS[spec.accel](**spec.params)
 
 
@@ -764,7 +764,7 @@ TIMES = ("arrival", "use", "wait")
 
 
 def time_marks(idx: Index, mem: str, kind: str) -> TimeMarks:
-    """Per word of ``mem`` a cycle (D97): ``arrival`` its first write, ``use`` its first read by
+    """Per word of ``mem`` a cycle: ``arrival`` its first write, ``use`` its first read by
     anything but a DMA, ``wait`` the cycles between the two; None where there is none."""
     if kind not in TIMES:
         raise ValueError(f"a time mark is one of {list(TIMES)}, got {kind!r}")

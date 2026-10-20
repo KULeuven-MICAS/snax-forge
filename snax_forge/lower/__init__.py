@@ -1,19 +1,18 @@
 """SNAX-LOWER: design point -> cluster file and control program (ARCHITECTURE.md 5.5).
 
-Built so far, LOW1b (D45, D63, D64): an ordered task list (tasks.py) is
-lowered to the plain command list the model runs (commands.py), through the
-model's register adapters. BRM2 (D70): a BRM port's nest is mapped through a
-buffer layout (layout.py, the memory plan's form since DP1b) onto a streamer's values
-(streams.py). LOW1c (D53, D88): a design point's cluster file (cluster.py),
-the platform with one streamer per accelerator port and each accelerator's
-entry; the checked-in clusters are built through it too. LOW1a (D89): a
-design point's task list (derive.py), streamer values from memlets through
-the memory plan's layouts, checked against each BRM's nest. LOW2, LOW3a
-(D105): named rates in the accelerator task, so accelerators chain through
-L1 with one wait between them; containers the DMA moves padded to whole
-beats. GEN2a (D135): the task list as C on snRuntime (c.py), the second
-backend beside the command list. The command line is ``python -m snax_forge.lower cluster | tasks``
-(pixi ``lower``).
+An ordered task list (tasks.py, D45, D64) is lowered to the plain command
+list the model runs (commands.py), through the model's register adapters. A
+BRM port's nest is mapped through a buffer layout (layout.py, the memory
+plan's form) onto a streamer's values (streams.py, D70). A design point's
+cluster file (cluster.py, D53, D88): the platform with one streamer per
+accelerator port and each accelerator's entry; the checked-in clusters are
+built through it too. A design point's task list (derive.py, D89): streamer
+values from memlets through the memory plan's layouts, checked against each
+BRM's nest; named rates in the accelerator task, so accelerators chain through
+L1 with one wait between them; containers the DMA moves padded to whole beats
+(D105). The task list as C on snRuntime (c.py, D135), the second backend
+beside the command list. The command line is
+``python -m snax_forge.lower cluster | tasks`` (pixi ``lower``).
 """
 
 from .c import CError, main_c

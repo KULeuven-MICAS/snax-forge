@@ -1,4 +1,4 @@
-"""The flow from a bound graph (FLOW2, D108): the path without its sandbox stage.
+"""The flow from a bound graph (D108): the path without its sandbox stage.
 
 1. the last step of a recipe flow runs as the recipe did, for vecadd and dot
 2. a checked-in bound graph runs on its own; what the folder, the summary, the
