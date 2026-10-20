@@ -16,7 +16,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | SNAX-BRM | `snax_forge/brm/` | `tests/brm/` | `snax_forge/brm/library/` |
 | SNAX-SANDBOX | `snax_forge/sandbox/` | `tests/sandbox/` | `recipes/` |
 | Design step | `snax_forge/design/` | `tests/design/` | `platforms/` |
-| Generator (hjson, headers, `data.h`) | `snax_forge/gen/` | `tests/gen/` | `platforms/*.hjson` |
+| Generator (hjson, headers, `data.h`; `main.c` from SNAX-LOWER's `lower/c.py`) | `snax_forge/gen/` | `tests/gen/` | `platforms/*.hjson` |
 | SNAX-LOWER | `snax_forge/lower/` | `tests/lower/` | |
 | SNAX-MODEL (until RET1) | `snax_forge/snax_model/` | `tests/snax_model/` | `scenarios/` |
 | Flow | `snax_forge/flow/` | `tests/flow/` | |
@@ -24,7 +24,10 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | Reports | `snax_forge/report/` | `tests/report/` | |
 | Examples | `examples/` | `tests/flow/test_loop1.py`, `tests/flow/test_dot_example.py` | |
 | Chisel blocks | `hw/chisel/` | `hw/chisel/src/test/` | |
-| SNAX-GVSoC (M16) | its own KULeuven-MICAS repository | in that repository | |
+| SNAX-GVSoC | the submodule `gvsoc/snax-gvsoc` (its own KULeuven-MICAS repository) | in that repository (`make regress`) | its `forge/` fixtures |
+| SNAX-GVSoC from snax-forge | `gvsoc/Makefile` | | |
+| Kernels (KER0) | `kernels/` | `tests/kernels/` | |
+| Utilities (clean, environment check, kernel list) | `util/` | | |
 | Development image (D118) | `container/` | | `container/toolchain/` |
 
 Generated files (`.snaxdfg`, design points, runs) go under `out/`; the
@@ -33,11 +36,10 @@ in `KULeuven-MICAS/snax-gvsoc-experiment` (X1), which stays a playground.
 
 ## Milestones
 
-Done: M1, M4a, M3, M4b, M5, X1. Open, in order (D116):
+Done: M1, M4a, M3, M4b, M5, X1, M16. Open, in order (D116):
 
 | Milestone | Content | Status |
 |---|---|---|
-| M16 | SNAX-GVSoC aligned with snax_cluster: the baseline | `wip` |
 | M14 | Generation, to SNAX-GVSoC first, then to snax_cluster, then clean-up (D111, D116, D127) | `wip` |
 | M7 | Front ends: NPBench's DaCe sources in tiers, integers first (D113) | todo |
 | M13 | Composed bind: several unit BRMs as one accelerator (D112) | todo |
@@ -56,44 +58,22 @@ tiers B, C and P, M15, tier D with the GeMM (M9 inside it), then tier E.
 
 ## M16: SNAX-GVSoC aligned with snax_cluster (D116)
 
-SNAX-GVSoC is built by hand to match snax_cluster, and checked against its
-RTL before anything is generated, so it is the baseline M14's generators are
-accepted against. Work happens in the snax-gvsoc repository on the MICAS
-server; the programs build from snax-gvsoc's copy of snax_cluster's software
-(D126), and the RTL runs in a `snax_cluster` checkout on the author's side.
-Each task is planned in its own round. A SNAX-GVSoC model is checked by
-running the same ELF on both sides and comparing the counters that do not
-depend on the core's timing (D123), a feature of the whole system that the
-comparison by hand (D124), FLOW3 and GEN2b build on. `make regress` in
-snax-gvsoc checks that every program finishes with exit 0, and `dma-timing`
-that the DMA's counters stay the RTL's (D124).
-
-| ID | Scope | Depends | Acceptance | Status |
-|---|---|---|---|---|
-| SG0 | The snax-gvsoc repository: a detached copy of the chosen GVSoC commit (history kept, submodules folded in, upstream hashes in `UPSTREAM.md`, license kept). One development image in snax-forge's `container/` with GVSoC's build tools, snax_cluster's toolchain and pixi (D118). The probe that chooses the commit: a plain test built with snax_cluster's own flow (compiler, start-up code, linker script) run on GVSoC's Snitch target | none | Probe result and chosen commit logged; the image builds and runs on the MICAS server: GVSoC builds and runs, `pixi run test` passes | `done` |
-| SG1 | The `snax_alu` target written by hand from snax_cluster's `cfg/snax_alu_cluster_old.hjson` (2 `rv32ima` cores, 128 KiB TCDM in 32 banks, plain interconnect); the CSR port (D120); a stub register block; the `snax-alu` app copied into snax-gvsoc (D119) | SG0 | A CSR program reads back what it wrote; `snax-alu` runs to the end on the stub; the 17 plain tests still pass on `snitch` | `done` |
-| SG2 | GVSoC's iDMA model fitted to snax_cluster's iDMA RTL by measurement (D121): a timing program at a few sizes with `mcycle` and the cluster's DMA perf counters, run on both sides; the counters added to SNAX-GVSoC; the DMA's queue, bursts in flight, beat width and read latency and the DRAM's latency and width from the RTL run | SG1 | Cycles per size on both sides logged, the gap explained | `done` |
-| SG3 | Streamer model: parameters named as in the hjson's streamer template, simple timing with hooks, standalone tests; the SNAX ports' crossbar (D122); a test datapath in the ALU's place | SG2 | Standalone tests of `snax-alu`'s three streamers; per-bank arbitration of a streamer port shown in a trace | `done` |
-| SG4 | The hand-written ALU model with `snax_alu_csr.sv`'s rules (start handshake, busy, counter), in the test datapath's place | SG3 | `snax-alu` prints `Accelerator Cycles: 25` and `Number of errors: 0` | `done` |
-| SG5 | The baseline: SNAX's `snax-alu` app, unchanged once snax_cluster's copy waits for its DMA before the barrier (SG5 P2), on snax_cluster RTL and on SNAX-GVSoC at five `DATA_LEN` values (4, 100, 128, 1024, 4096); per-phase cycles cut from both sides' instruction traces of the same ELF, beside the ALU's counter; the deviation per phase against the error target of snax-gvsoc `SG5.md` (open item 3); a regression test (`make regress` in snax-gvsoc) locking SNAX-GVSoC's numbers (pass/finish only since SG6, D124) | SG4 | Deviation explained per phase and inside the target; the test fails when cycles drift | `done` |
-| SG6 | Zicsr on SNAX CSRs on both sides (D120, open item 62): snax_cluster's `snitch.sv` decode and `snax_intf_translator.sv` (`csrrw` reads before it writes when `rd` is not `x0`, set and clear write); SNAX-GVSoC's `priv.hpp` writes nothing on `csrrc` with `x0` and `csrrsi` / `csrrci` with 0; SG4's CSR-form warnings removed; `make regress` pass/finish only, the RTL compared by hand (D124); snax_cluster pinned at `9fbf35d` (#657). Right after SG5, before the housekeeping pass | SG5 | `snax-csr`, extended with every CSR form, passes on SNAX-GVSoC with no warning; its original four parts pass on the RTL; `snax-alu` at five sizes on the RTL equals SG5's RTL tables | `done` |
-| CI1 | CI for snax-gvsoc, in two rounds: first the programs build from a pinned copy of snax_cluster's software in `sw/` with `make sw` (D126); then a workflow on push to main and on pull requests, in snax-forge's image, GVSoC built for `snitch;snax_alu` and `make regress` (D124), building and testing only `snax/`, `sw/` and `tests/snax/`, GVSoC's other components out. After SG6 and the housekeeping pass | SG6 | A fresh clone with no snax_cluster beside it passes `make regress`; the stripped ELFs equal those built from snax_cluster at the pin; a pull request that breaks a program fails the check | `done` |
-| SG7 | snax_cluster's sparse interconnect in SNAX-GVSoC (D119, D122): the crossbar's sparse pick and the streamer's priority bit, and a `snax_alu_sparse` target from `cfg/snax_alu_cluster.hjson` sharing `snax_alu`'s ELFs (D126); the cores and AXI into the crossbar on both SNAX targets, the core going on after a pending L1 load (D125); the DMA's superbank as a wide input that refuses narrow winners, its beat cycles split against the RTL (D121); `core-tcdm`, `dma-tcdm` and two `stream-timing` cases; `dma-timing` failing when `busy`, `r` or `w` leave the RTL's (D124). Detail in snax-gvsoc `SG7.md` | CI1 | Both picks equal their RTL modules in Verilator; the compared counters equal on the plain RTL and target and on the sparse RTL and target, but `subword`'s SC on the sparse RTL (SG8); `snax-alu`'s phases within SG5's target; `make regress` passes on both targets | `done` |
-| SG8 | snax_cluster's sparse wrapper drives the memory side's user field (`core_id`, `is_core`), so the AMO shim's LR/SC works on the sparse RTL; agreed with the sparse interconnect's other users first | SG7 | `core-tcdm`'s `subword` returns 0 on the sparse RTL, as on the other three sides | `done` |
+Done: SNAX-GVSoC is the baseline, checked against snax_cluster's RTL (D123);
+its tasks SG0 to SG8 and CI1 are in snax-gvsoc's `docs/plans/`.
 
 ## M14: Generation: SNAX-GVSoC, then snax_cluster (D111, D116, D127)
 
 | ID | Scope | Depends | Acceptance | Status |
 |---|---|---|---|---|
 | LNK1 | A. A platform read from snax_cluster's `cfg/snax_alu_cluster.hjson` (`platforms/snax_alu.json`, `design from-hjson`) with the streamer template fields, checked as any platform is: `temporal_dim` and `fifo_depth` into the default, `spatial_bounds` and `num_channel` derived from the ports (D131) | none | The platform round-trips; `vecadd` at W = 4 designs on it | done |
-| GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (composite, target, manifest) and the two headers; a hand-written program (`forge-elementwise`, `forge-reduce`, until GEN2a) on fixtures in snax-gvsoc `forge/<design>/`; `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `done` |
+| GEN3 | A. BRM → GVSoC accelerator (D128–D130): snax-gvsoc as a submodule of snax-forge (`gvsoc/`); `SnaxUnit` and `SnaxShell` in snax-gvsoc; the BRM binding; the generator (the hjson files since LNK2a, D134; the manifest) and the two headers; fixtures in snax-gvsoc `forge/<design>/`, run by hand-written programs until GEN2a (`forge-reduce` stays for T < n); `elementwise_mul`, then `accumulate`. Steps in snax-gvsoc `GEN3.md` | LNK1 for step 3 on | vecadd on the generated accelerator: data correct, counter as predicted, `make regress` passes on the fixture; snax-forge reproduces the fixture; the same for mul and accumulate | `done` |
 | LNK2a | A. The cluster hjson from the design point; SNAX-GVSoC's target read from it (D119, D134). Round 1 in snax-gvsoc: the reader, the generic target `snax_hjson`, forge/'s fixtures as hjson by hand; round 2 here: the platform's source hjson and slot, the writer of three hjson files (cluster, streamer, accelerator) and the schemas, forge/'s fixtures from it. Steps and findings in snax-gvsoc `LNK2a.md` | GEN3 | GEN3's runs on the read target | done |
 | GEN2a | A. The program for single-accelerator designs: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking. Several accelerators on one core are not modelled (open item 79); dot, mul and accumulate driven by one core, is M13's composite (D112). Round 1: the datagen, the C backend, a generic app on snax-gvsoc's fixtures (snax-gvsoc `GEN2a.md`); round 2: the adder tree | LNK2a | `vecadd`, `vecmul`, `vsum`, and `vsum` on the adder tree at W = 4 check themselves on SNAX-GVSoC | `done` |
 | FLOW3 | A. The flow ends in a SNAX-GVSoC run: a runner (open item 56), events through GVSoC's signals, a converter into C§7 (open items 23, 25, 57, 60), the schedule inside `main()`, core lanes, `run.json` | GEN2a | `vecadd` and `vsum` flows give checked runs; the viewer and the reports open them | todo |
 | GEN1 | B. The Chisel datapath from the binding through `Emit` (D91), the `ctrl` adapter and the generated shell wrapper (D130) | GEN3 | Elaborates for `elementwise_add` and `accumulate` | todo |
 | LNK2b | B. The bundle for snax_cluster: the hjson, a `Bender.yml`, the changes snax_cluster needs (open item 51) | GEN1, LNK2a | snax_cluster builds from it with only the listed changes | todo |
-| GEN2b | B. GEN2a's ELF on snax_cluster's RTL, compared as D123 and D124 do | LNK2b, GEN2a | Deviation explained per phase | todo |
-| RET1 | C. SNAX-MODEL removed: `snax_model/`, `scenarios/`, their tests, the command list (D45), C§2–C§8, the model entries of DECISIONS (to Retired). What the C backend (`lower/c.py`, D135) takes from them stays or moves first: its waits on SNAX components are `placed_waits` (`lower/commands.py`, the command list's wait placement, D64) on the derived cluster file (`lower/cluster.py`, SNAX-MODEL's `ClusterConfig`: which streamers attach to the accelerator and which one writes), which also checks each task's values through the model's register adapters (`c.tasks`); `derive.py` builds the task list on the same cluster file | FLOW3 | `pixi run test` passes without it | todo |
+| GEN2b | B. GEN2a's ELF on snax_cluster's RTL, compared as D123 does | LNK2b, GEN2a | Deviation explained per phase | todo |
+| RET1 | C. SNAX-MODEL removed: `snax_model/`, `scenarios/`, their tests, the command list (D45), C§2–C§8, the model entries of DECISIONS (to Retired). What the C backend (`lower/c.py`, D135) takes from them stays or moves first: its waits on SNAX components are `placed_waits` (`lower/commands.py`, the command list's wait placement, D64) on the derived cluster file (`lower/cluster.py`, SNAX-MODEL's `ClusterConfig`: which streamers attach to the accelerator and which one writes), which also checks each task's values through the model's register adapters (`c.tasks`); `derive.py` builds the task list on the same cluster file. RET1 moves the config types that the design step (`design/platform.py`, `hjson_platform.py`, `streamers.py`, `check.py`), `brm/instance.py`, the reports (`report/design.py`, `files.py`) and the viewers (`viz/api.py`, `memory.py`, `movement.py`) import from SNAX-MODEL to their users before deleting `snax_model/` | FLOW3 | `pixi run test` passes without it | todo |
 | LNK3 | After M13. The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2b | Deviation explained per phase | todo |
 
 After RET1, a housekeeping pass and the single generator (open item 68).
@@ -118,102 +98,11 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 ## Next Up
 
-SG1 to SG8 are done (snax-gvsoc; SG6 merged as snax-gvsoc #6, log in
-`docs/notes/NOTES.md` there; snax_cluster pinned at `05615e4`, #658).
-SNAX-GVSoC is the baseline: `snax-alu` at five sizes is within 2% of
-snax_cluster's RTL on the cluster's phases and on the total up to the ALU's
-counter at 1024 and 4096, every counter and error count equal, the remaining
-gaps explained (D124, open items 65 to 67); the core's loads follow the hjson
-and the RTL (D125); SNAX CSRs follow Zicsr on both sides (D120). The RTL is
-compared by hand from fresh runs; `make regress` checks that every program
-finishes (D124). The housekeeping pass over snax-gvsoc's code is done
-(`ry/housekeeping`). CI1 is done (the `ry/ci1` pull requests of snax-gvsoc
-and here): the programs build from snax-gvsoc's `sw/` (D126), and its
-workflow runs `make regress` on every push to main and every pull request
-(D124). SG7 is done (snax-gvsoc #10, main 9de5ec9e, `SG7.md`): both SNAX
-targets put the streamer's ports, the cores, AXI and the DMA's superbanks
-through one crossbar with the plain or the sparse interconnect's arbiter
-(D122), and give that RTL's compared counters on every program; `dma-timing`
-fails when the DMA's own timing leaves the RTL's. SG8 is done: snax_cluster
-#658 carries the TCDM user field through the sparse interconnect, so
-`subword`'s SC passes on the sparse RTL too; snax-gvsoc pins snax_cluster at
-`05615e4`. M16 closes once SG8's round 2 pull requests (the snax-gvsoc pin
-bump, the SG8 notes, these docs) are merged. GEN3 is done, M14's first
-task after LNK1 (snax-gvsoc `GEN3.md`, D127; LNK1 before GEN3's step 3); next
-is LNK2a. GEN3 round 1
-(merged in snax-gvsoc, #12; the submodule at `gvsoc/` pinned at its
-`21830e3`): `SnaxUnit` and `SnaxShell` in snax-gvsoc, the start
-held while busy, on a hand-written `snax_tiled_add` target. Round 1b: a
-target from `gvsoc/targets/` runs on the JSON config path (gvrun warns that
-it has no platform tree); `alu_probe` and `tiled_add_sparse_probe` there. LNK1 is
-done: `platforms/snax_alu.json` is read from snax_cluster's hjson (D131),
-the first platform with a nonzero L1 base (`0x1000_0000`) and a 2 GiB L2;
-vecadd designs on it. GEN3 round 2, step 3: `elementwise_add` has its
-binding (D129), and `pixi run gen-gvsoc` writes a design point's composite,
-target and manifest to `out/gvsoc/<design>/` (D132); `forge_vecadd`
-(W = 4 on `snax_alu.json`) runs snax-shell with `snax_tiled_add`'s lines.
-Step 4: it also writes the streamer's `streamer_csr_addr_map.h` (the Chisel
-header's defines) and `<instance>_csr.h` (vecadd's `ACC_RW_LOOP_COUNT` 978
-to `ACC_RO_PERF_COUNT` 981). Round 2b: `pixi.lock` written with pixi 0.41.4
-(CI's and the image's); `pixi run -e ci test` passes in full; the generator
-names the design point by its path from the root, so its output is
-byte-identical wherever it is written (`gen.point` outside the root); the
-install check run against the real install. GEN3 round 3 (steps 5, 6a and
-7): the manifest carries the bound graph's `symbols`; snax-gvsoc checks in
-the generator's output for vecadd and vecmul as fixtures in
-`forge/<design>/` (D128), and `make regress` runs each from its manifest
-through `--target-dir` with a hand-written program, `forge-elementwise`, on
-the generated headers (its counter through `check_counter`);
-`tests/gen/test_fixture.py` reproduces each fixture byte for byte (skipped
-until the submodule is bumped past `forge/`); `elementwise_mul` has
-`elementwise_add`'s binding with op mul, exercised by the test kernel
-`vecmul` (`recipes/vecmul.json`); `ElementwiseTiledSpatialLockstepSpec`
-drives the Chisel block through snax-gvsoc's lockstep unit cases
-(`SNAX_GVSOC_UNIT_CASES`). GEN3 round 4 (step 6b) closes GEN3: the Chisel
-Accumulator has `ElementwiseTiledSpatial`'s start, busy and done and no
-drain cycle (D133, so `chisel_accumulator`'s drain is 0, D103 amended);
-`SnaxUnit` folds one input with a runtime rate; `accumulate`'s binding is
-`counted`, the only control (D129 amended), with `loopCount` = n then
-`len` = T; the test kernel `vsum` (`recipes/vsum.json`) generates on
-`snax_alu.json`, its fixture `forge/vsum/` runs in `make regress` with
-`forge-reduce`, `test_fixture.py` reproduces it (skipped until the
-submodule is bumped past it), and `AccumulatorRateSpec` drives the Chisel
-block through snax-gvsoc's rate cases. Round 4b: snax-gvsoc's `make regress`
-also runs vsum with its len overridden by hand to 16, four sums per run
-(`forge-reduce.vsum-r16`), until a kernel gives T < N. LNK2a is done
-(snax-gvsoc `LNK2a.md`, tags `lnk2a-r1` and `lnk2a-r2`, D134): snax-gvsoc
-reads the cluster hjson (`snax/snax_cfg.py`, `$ref`s across files and to
-whole files) on one installed target, `snax_hjson`, with the standard
-composite for a slot's datapath block; `snax_alu` and `snax_alu_sparse` are
-that target on their `sw/cfg/` file. Here, a platform keeps its source hjson
-(`platforms/snax_alu.hjson`, a copy of snax-gvsoc's) and its
-`accelerator_slot`; `pixi run gen-gvsoc` writes three hjson files per design
-point (the cluster, the streamer lowered per design point, the datapath
-block), checked against snax-forge's schemas and snax_cluster's, and no
-Python. forge/'s fixtures are its output on the sparse interconnect, with
-GEN3's cycles, and `test_fixture.py` reproduces them byte for byte. GEN2a
-round 1 is done (snax-gvsoc `GEN2a.md`, tag `gen2a-r1`): `gen-gvsoc` also
-writes `data.h` (`gen/data.py`: inputs from `make_inputs`, goldens from
-REF1, padded to beats) and `main.c` (`lower/c.py`, D135: the task list on
-snRuntime, self-checking, a mark per task event); the design check
-`memory.runtime` keeps L1 layouts below snRuntime's stacks (vecadd's ELF
-uses 40 B of its declared 256 B). snax-gvsoc builds every `forge/` folder's
-`main.c` with one generic app, `sw/apps/forge/`: vecadd, vecmul and vsum
-check themselves (0 data errors; counters 18, 18 and 66, one below the
-hand-written apps' because the start mark gives the streamer a cycle more),
-and `make regress` passes. GEN2a is done (round 2, tag `gen2a-r2`), its
-acceptance met: the Accumulator takes `lanes`, a combinational adder tree in
-front of its one register (D133), and `chisel_adder_tree` binds it at
-`lanes` = W as `chisel_accumulator` does at 1; `SnaxUnit` folds W lanes
-through the tree, checked on lanes-4 unit cases (T = n and T < n) by its tb
-and by `AccumulatorRateSpec`; `recipes/vsum_tree.json` (vsum at W = 4)
-generates `forge/vsum_tree/`, which checks itself in `make regress` (0 data
-errors, its counter its run line's) and `test_fixture.py` reproduces with
-the other three. KER0 is done (M7): every target kernel is staged in
-`kernels/` (NPBench's DaCe sources in int64; softmax, mlp, lenet and resnet
-in float32 until their tier), with `kernels/README.md` and `pixi run
-kernels`; not linked to the flow.
-Next is FLOW3.
+M16 is done (D123). In M14, LNK1, GEN3, LNK2a and GEN2a are done: a design
+point generates its three hjson files, headers, `data.h` and `main.c`, and
+vecadd, vecmul, vsum and vsum_tree check themselves on SNAX-GVSoC
+(`docs/RUN.md`); KER0 (M7) staged the target kernels. Next is FLOW3: the
+flow ends in a SNAX-GVSoC run.
 
 ## Open Items
 
@@ -222,7 +111,7 @@ removed. Closed with D116: 5, 6, 7, 8 and 10 (SNAX-GVSoC follows
 snax_cluster's RTL), 9 (into SG1, D120), 11 (into SG5), 14, 15 and 22 (SNAX-MODEL
 details), 52 (the real program and cores do both), 55 (into
 FLOW3). Closed in SG3: 59 (the streamer's cycle classes and queue counts)
-and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D124).
+and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D123).
 Closed in SG6: 62 (D120). Closed in SG7: 58 (the cores, AXI and the DMA in
 the SNAX crossbar, D122). Closed in GEN3's plan: 64 (D129). Closed in
 LNK2a: 77 (the streamer lowered per design point, D134).
@@ -351,7 +240,7 @@ Next free number: 82.
     2 more cycles in SG5's check loop; the DMA core issues a copy (`dmsrc`,
     `dmdst`, `dmcpyi`) in 9 cycles against 10, and in `dma-tcdm` 9, 5, 6
     against 10, 7, 7 between copies, so its beats land 3 to 7 cycles early
-    (snax-gvsoc `SG7.md`, round 4 follow-up). Kept as is (D124) unless a
+    (snax-gvsoc `SG7.md`, round 4 follow-up). Kept as is (D123) unless a
     kernel's numbers need it.
 68. Generation is spread out: snaxgen and Chisel in snax_cluster (the
     wrappers, `streamer_csr_addr_map.h`), clustergen and regtool outputs

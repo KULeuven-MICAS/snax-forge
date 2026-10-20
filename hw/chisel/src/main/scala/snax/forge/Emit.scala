@@ -71,7 +71,7 @@ object Emit {
     ),
     Target(
       "Accumulator",
-      "sample: WCR-style accumulation, for contrast with the elementwise units",
+      "accumulate's block (D133): one lane here, a sum per len inputs",
       () => new Accumulator(width = DataWidth, accWidth = DataWidth)
     ),
     Target(

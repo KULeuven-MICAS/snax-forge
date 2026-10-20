@@ -1,4 +1,4 @@
-# The RISC-V toolchain of the snax-gvsoc image: the exact builds that
+# The RISC-V toolchain of snax-forge's development image (D118): the exact builds that
 # snax_cluster's pixi.lock holds at 8ebd422, so programs built here match the
 # ones snax_cluster builds for its RTL. pixi.lock next to this file is made
 # once with `pixi lock` and installed with `pixi install --locked`.
