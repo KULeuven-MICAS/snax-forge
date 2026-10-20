@@ -22,7 +22,7 @@ own):
     Cloning into 'snax-forge'...
     Submodule 'gvsoc/snax-gvsoc' (https://github.com/KULeuven-MICAS/snax-gvsoc) registered for path 'gvsoc/snax-gvsoc'
     Cloning into '$ROOT/snax-forge/gvsoc/snax-gvsoc'...
-    Submodule path 'gvsoc/snax-gvsoc': checked out 'f9c7b4c951419ce081153abb0f180d9728eed2d6'
+    Submodule path 'gvsoc/snax-gvsoc': checked out '6e59daaf67eb9005a3393b21896e89d4c956f488'
 
 Everything else runs in snax-forge's image (D118), started from the folder
 that holds `snax-forge`:
@@ -47,7 +47,7 @@ output goes to `out/flow/vecadd/build.log`):
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     built: no install in out/snax-gvsoc (snax-gvsoc f9c7b4c9)
+      build     built: no install in out/snax-gvsoc (snax-gvsoc 6e59daaf)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
@@ -136,7 +136,7 @@ What the program printed, after make's own lines:
      "elf": "sw/forge.elf",
      "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
      "target": "snax_hjson",
-     "snax_gvsoc": {"commit": "f9c7b4c951419ce081153abb0f180d9728eed2d6", "dirty": false},
+     "snax_gvsoc": {"commit": "6e59daaf67eb9005a3393b21896e89d4c956f488", "dirty": false},
      "trace_level": "off"
     }
     {
@@ -170,7 +170,7 @@ Accumulator. GVSoC is built now, so the whole flow takes seconds:
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (9 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc f9c7b4c9)
+      build     up to date (snax-gvsoc 6e59daaf)
       sw        sw/forge.elf (sha256 26b545a3812000c8)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 255 cycles (main to forge_check); data 0 errors (1 words); counters sum_acc 67 (64 beats)
