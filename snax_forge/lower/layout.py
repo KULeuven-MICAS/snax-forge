@@ -21,7 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from snax_forge.snax_model.config import Config
+from snax_forge.common import Config
 from snax_forge.snax_model.mem import L1Config
 
 

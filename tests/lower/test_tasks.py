@@ -10,9 +10,9 @@ import json
 
 import pytest
 
+from snax_forge.common import to_json
 from snax_forge.lower import TaskList, TaskListError, Tasks, arg_of, values_of
 from snax_forge.snax_model import DmaDescriptor, DmaPattern, StreamerRegs
-from snax_forge.snax_model.config import to_json
 from snax_forge.snax_model.scenario import register_map_of
 
 from .helpers import SCEN, TASK_SCENARIOS, add, cluster, dma, start, stream, sync, task_list

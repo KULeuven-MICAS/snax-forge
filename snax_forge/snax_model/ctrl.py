@@ -132,8 +132,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from snax_forge.common import Config
+
 from .accel import Accelerator
-from .config import Config
 from .dma import DIRECTIONS, Dma, DmaDescriptor, DmaPattern
 from .sched import ClassLog, Component, Phase, SimulationError
 from .streamer import Streamer, StreamerRegs

@@ -57,8 +57,8 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import check_keys, plain, to_json
 from snax_forge.expr import Value
-from snax_forge.snax_model.config import check_keys, plain, to_json
 
 from .binding import check_binding
 from .notation import NOTATIONS

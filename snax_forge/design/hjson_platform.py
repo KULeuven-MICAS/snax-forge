@@ -57,13 +57,13 @@ from typing import Any
 
 import hjson
 
-from snax_forge.sdfg.paths import _repo_root
+from snax_forge.common import repo_root
 from snax_forge.snax_model import L1Config, L2Config
 
 from .platform import Platform
 from .problems import DesignError, Problem
 
-ROOT = _repo_root()
+ROOT = repo_root()
 SMALL16 = ROOT / "platforms" / "small16.json"
 # The movers of a streamer template, in snax_cluster's order.
 MOVERS = ("data_reader_params", "data_writer_params", "data_reader_writer_params")

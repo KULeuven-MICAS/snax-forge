@@ -8,11 +8,11 @@ import json
 import pytest
 
 from snax_forge.brm import load_brm
+from snax_forge.common import to_json
 from snax_forge.design import DesignPoint, Platform, run_checks
 from snax_forge.design.streamers import Streamer
 from snax_forge.lower import __main__ as cli
 from snax_forge.lower import cluster_config, cluster_file, cluster_of, stub
-from snax_forge.snax_model.config import to_json
 from snax_forge.snax_model.scenario import ClusterConfig, build_cluster
 from tests.design.helpers import SMALL16, bound_w8, design
 

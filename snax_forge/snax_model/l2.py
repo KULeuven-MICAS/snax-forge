@@ -51,7 +51,8 @@ from typing import Any
 
 import numpy as np
 
-from .config import Config
+from snax_forge.common import Config
+
 from .sched import SimulationError
 
 

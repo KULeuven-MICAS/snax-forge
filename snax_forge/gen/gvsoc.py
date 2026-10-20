@@ -110,6 +110,7 @@ import hjson
 
 from snax_forge import expr
 from snax_forge.brm import Instance
+from snax_forge.common import repo_root, to_json
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
@@ -118,14 +119,12 @@ from snax_forge.design.streamers import instances, streamer_name
 from snax_forge.lower.c import MAIN_C, main_c
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure
-from snax_forge.sdfg.paths import _repo_root
-from snax_forge.snax_model.config import to_json
 
 from .blocks import BLOCKS, GenError, Unit, port_dtype
 from .data import DATA_H, arrays, data_h
 from .headers import STREAMER_HEADER, accelerator_header, streamer_header
 
-ROOT = _repo_root()
+ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
 
 # snax-gvsoc snax/snax_alu_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the

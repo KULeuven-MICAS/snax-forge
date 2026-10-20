@@ -56,10 +56,10 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import plain, to_json
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import Layout, moved_bytes, round_up
-from snax_forge.snax_model.config import plain, to_json
 
 from .platform import Platform
 from .problems import DesignError, Problem

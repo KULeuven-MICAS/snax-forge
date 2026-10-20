@@ -137,7 +137,8 @@ from math import prod
 
 import numpy as np
 
-from .config import Config
+from snax_forge.common import Config
+
 from .l2 import L2Config, L2Memory
 from .mem import BankReq, L1Config
 from .sched import ClassLog, Component, Phase, SimulationError

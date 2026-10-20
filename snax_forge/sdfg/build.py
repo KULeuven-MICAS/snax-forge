@@ -8,10 +8,11 @@ import time
 import dace
 import numpy as np
 
-from .paths import _repo_root
+from snax_forge.common import repo_root
+
 from .spec import KernelSpec
 
-OUT = _repo_root() / "out" / "sdfg"
+OUT = repo_root() / "out" / "sdfg"
 
 
 def build(spec: KernelSpec, simplify: bool = False) -> dace.SDFG:

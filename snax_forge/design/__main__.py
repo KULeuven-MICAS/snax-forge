@@ -43,7 +43,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from snax_forge.sdfg.paths import _repo_root
+from snax_forge.common import repo_root
 
 from .check import Design, load, run_checks
 from .hjson_platform import platform_from_hjson
@@ -52,7 +52,7 @@ from .point import DesignPoint, design_name
 from .problems import DesignError, report
 from .streamers import resolve
 
-ROOT = _repo_root()
+ROOT = repo_root()
 OUT = ROOT / "out" / "design"
 PLATFORMS = ROOT / "platforms"
 

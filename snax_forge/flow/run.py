@@ -73,6 +73,7 @@ from typing import Any
 
 import numpy as np
 
+from snax_forge.common import repo_root
 from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
@@ -81,7 +82,6 @@ from snax_forge.lower import LowerError, TaskList, cluster_file, lower_program, 
 from snax_forge.report import DESIGN_MD, RUN_MD, write_reports
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
 from snax_forge.sdfg.loader import load as load_kernel
-from snax_forge.sdfg.paths import _repo_root
 from snax_forge.snax_model.scenario import (
     ClusterConfig,
     MemInit,
@@ -93,7 +93,7 @@ from snax_forge.snax_model.scenario import (
     write_outputs,
 )
 
-OUT = _repo_root() / "out" / "flow"
+OUT = repo_root() / "out" / "flow"
 LOG = "flow.log"
 STAGE_NAMES = ("import", "sandbox", "design", "lower", "scenario", "run", "check", "report")
 REPORT = "report"

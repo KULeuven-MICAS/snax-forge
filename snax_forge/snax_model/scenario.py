@@ -105,9 +105,10 @@ from typing import Any
 
 import numpy as np
 
+from snax_forge.common import Config, check_keys, plain, to_json
+
 from .accel import AccelConfig, Accelerator, elementwise_stub, reduce_stub
 from .cluster import Cluster
-from .config import Config, check_keys, plain, to_json
 from .ctrl import (
     Command,
     Controller,

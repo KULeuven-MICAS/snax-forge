@@ -3,10 +3,11 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from .paths import _repo_root
+from snax_forge.common import repo_root
+
 from .spec import KernelSpec
 
-KERNEL_ROOT = _repo_root() / "kernels"
+KERNEL_ROOT = repo_root() / "kernels"
 
 
 def kernel_paths() -> dict[str, Path]:

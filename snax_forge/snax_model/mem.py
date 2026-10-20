@@ -74,7 +74,8 @@ from typing import Any, Protocol
 
 import numpy as np
 
-from .config import Config
+from snax_forge.common import Config
+
 from .sched import SimulationError
 
 # Default sizes follow snax_cluster target/snitch_cluster/cfg/snax_alu_cluster.hjson:

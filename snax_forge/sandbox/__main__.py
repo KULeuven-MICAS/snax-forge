@@ -18,13 +18,13 @@ import argparse
 import sys
 from pathlib import Path
 
+from snax_forge.common import repo_root
 from snax_forge.dfg import DfgError, Graph
-from snax_forge.sdfg.paths import _repo_root
 
 from .recipe import Recipe, SandboxError
 from .run import apply_recipe, write_steps
 
-OUT = _repo_root() / "out" / "sandbox"
+OUT = repo_root() / "out" / "sandbox"
 
 
 def _setting(text: str) -> tuple[str, int | str]:

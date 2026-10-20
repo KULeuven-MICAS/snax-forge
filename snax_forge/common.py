@@ -1,31 +1,19 @@
-"""Configuration dataclasses and the JSON format of SNAX-MODEL (MOD10, D26, D44).
+"""What every package shares: the repository root and the JSON form of every artefact (D26,
+D44).
 
-What this holds
----------------
-Two things every configuration class needs and nothing else does:
+* ``repo_root``, the directory holding ``pixi.toml``: where ``out/``, ``kernels/`` and the
+  platforms are found.
+* ``plain`` and ``check_keys``: JSON-ready values, and unknown keys refused, so a typo never
+  silently falls back to a default.
+* ``Config``, a mixin giving a flat dataclass ``to_dict`` / ``from_dict``. Every field is
+  written, defaults included, so a written file says everything and a missing key takes the
+  class default.
+* ``to_json``, the one JSON writer for every file snax-forge writes: insertion order, small
+  containers on one line, final newline. It is deterministic, and ``json.loads`` gives the
+  object back (D44).
 
-* ``Config``, a mixin giving a flat dataclass ``to_dict`` / ``from_dict``.
-  Every field is written, defaults included, so a written file says
-  everything and a missing key takes the class default. Unknown keys are an
-  error, so a typo never silently falls back to a default.
-* ``to_json``, the one JSON writer used for every file the model writes:
-  insertion order, small containers on one line, final newline. It is
-  deterministic, and ``json.loads`` gives the object back (D44).
-
-Until the M6 freeze these are plain dataclasses and plain JSON; versioned
-schemas are F2's job (D26).
-
-This module imports nothing from the package, so every config class can use
-it: ``L1Config`` (mem.py), ``L2Config`` (l2.py), ``StreamerConfig``
-(streamer.py), ``DmaConfig`` (dma.py) and ``ControllerConfig`` (ctrl.py).
-``AccelConfig`` is *not* one of them: it holds a Python function, so an
-accelerator is described by a registered kind plus parameters instead (D43,
-CONTRACTS.md section 4).
-
-Scenario-level classes (``ClusterConfig``, ``ComponentSpec``,
-``RegisterMapSpec``, ``MemInit``, ``Scenario``) keep their own ``to_dict`` /
-``from_dict`` in scenario.py: they are not flat, and their errors name the
-scenario.
+Until the M6 freeze these are plain dataclasses and plain JSON; versioned schemas are F2's job
+(D26). This module imports nothing from the package, so every package can use it.
 """
 
 from __future__ import annotations
@@ -33,7 +21,22 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import fields
+from pathlib import Path
 from typing import Any
+
+# =============================================================================
+# The repository
+# =============================================================================
+
+
+def repo_root() -> Path:
+    """The directory holding pixi.toml, found by walking up from this module, so it does not
+    depend on how deep the module sits."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pixi.toml").is_file():
+            return parent
+    raise RuntimeError(f"no pixi.toml found above {Path(__file__).resolve()}")
+
 
 # =============================================================================
 # Plain values and key checks

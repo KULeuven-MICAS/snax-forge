@@ -50,8 +50,8 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import check_keys, plain, to_json
 from snax_forge.expr import ExprError, Value
-from snax_forge.snax_model.config import check_keys, plain, to_json
 
 from .kinds import KINDS, DfgError, Scope, _wrap, ident, kind_of
 from .reduce import Reduction

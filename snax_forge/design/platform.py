@@ -66,6 +66,7 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
+from snax_forge.common import Config, plain, to_json
 from snax_forge.snax_model import (
     ControllerConfig,
     DmaConfig,
@@ -73,7 +74,6 @@ from snax_forge.snax_model import (
     L2Config,
     StreamerConfig,
 )
-from snax_forge.snax_model.config import Config, plain, to_json
 
 from .problems import DesignError, Problem
 

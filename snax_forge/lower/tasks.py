@@ -44,7 +44,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, ClassVar
 
-from snax_forge.snax_model.config import check_keys, plain, to_json
+from snax_forge.common import check_keys, plain, to_json
 from snax_forge.snax_model.ctrl import WAIT_MODES
 from snax_forge.snax_model.scenario import ClusterConfig, register_map_of
 

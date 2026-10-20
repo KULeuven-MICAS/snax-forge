@@ -24,11 +24,11 @@ import argparse
 import sys
 from pathlib import Path
 
-from snax_forge.sdfg.paths import _repo_root
+from snax_forge.common import repo_root
 
 from .kinds import DfgError
 
-OUT = _repo_root() / "out" / "dfg"
+OUT = repo_root() / "out" / "dfg"
 
 
 def main(argv: list[str] | None = None) -> int:

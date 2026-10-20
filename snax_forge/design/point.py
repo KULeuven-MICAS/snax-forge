@@ -31,8 +31,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from snax_forge.common import check_keys, to_json
 from snax_forge.dfg import DfgError, Graph
-from snax_forge.snax_model.config import check_keys, to_json
 
 from .check import Design, run_checks
 from .memory import MemoryPlan
