@@ -814,7 +814,7 @@ against the registered kind.
    "timing": {"latency": 1, "initiation_interval": 1, "drain": 0},
    "binding": {
     "block": "Accumulator",
-    "args": {},
+    "args": {"lanes": "W"},
     "control": "counted",
     "csrs": [{"field": "loopCount", "value": "n"}, {"field": "len", "value": "T"}],
     "wait": "pipelined"

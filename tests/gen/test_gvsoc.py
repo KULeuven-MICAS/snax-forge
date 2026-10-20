@@ -229,6 +229,18 @@ def test_vsum_is_the_accumulator(tmp_path):
     assert "#define ACC_RW_LEN 974\n" in (out / "include" / "acc_csr.h").read_text()
 
 
+def test_vsum_at_w4_is_the_adder_tree(tmp_path):
+    """GEN2a round 2: accumulate's adder tree at W = 4 is the Accumulator with lanes 4, one task
+    of 16 beats of 4 lanes summing all 64 (T = n)."""
+    out = tmp_path / "gvsoc" / "vsum_tree"
+    graph = bound_vsum(4, "chisel_adder_tree")
+    m = generate(point(tmp_path, name="vsum_tree", graph=graph), out, root=tmp_path)
+    assert parsed(out / "snax_alu_acc.hjson") == {**ACCUMULATOR, "lanes": 4}
+    assert [t.to_dict() for t in m.tasks] == [
+        {"name": "sum_acc", "beats": 16, "csrs": {"loopCount": 16, "len": 16}}
+    ]
+
+
 def test_the_platforms_values_are_written_back(tmp_path):
     """The reverse of hjson_platform.py's mapping: a platform with --set changes gives a cluster
     file that reads back as that platform."""
@@ -418,12 +430,14 @@ ACCUMULATOR_CASES = [
     ("wait", _binding(ACC, wait="lockstep"), {}, "gen.wait"),
     ("latency", _timing(latency=0), {}, "gen.timing"),
     ("drain", _timing(drain=1), {}, "gen.timing"),
-    ("args", _binding(ACC, args={"lanes": "W"}), {}, "gen.args"),
+    ("no args", _binding(ACC, args={}), {}, "gen.args"),
+    ("args", _binding(ACC, args={"lanes": "W", "accWidth": 64}), {}, "gen.args"),
     ("op", None, {"W": 1, "op": "max"}, "gen.op"),
     ("two inputs", _second_input, {}, "gen.ports"),
     ("rate in", _ports(a={"rate": "T"}), {}, "gen.rate"),
     ("mixed dtype", _ports(a={"dtype": "int32"}), {}, "gen.dtype"),
-    ("lanes", None, {"W": 2, "op": "add"}, "gen.lanes"),
+    ("lanes", _binding(ACC, args={"lanes": 1}), {"W": 2, "op": "add"}, "gen.lanes"),
+    ("lanes out", _ports(out={"lanes": "W"}), {"W": 2, "op": "add"}, "gen.lanes"),
     ("narrow", _ports(a={"dtype": "int32"}, out={"dtype": "int32"}), {}, "gen.lanes"),
     ("fields order", _csrs(("len", "T"), ("loopCount", "n")), {}, "gen.fields"),
     ("no len", _csrs(("loopCount", "n")), {}, "gen.fields"),
@@ -445,6 +459,11 @@ def test_the_accumulator_adapter_gives_a_fold():
         ["a"], ["out"], 1, ["loopCount", "len"], ["count", "rate"]
     )  # fmt: skip
     assert BLOCKS["Accumulator"] is accumulator
+
+
+def test_the_adder_tree_is_the_accumulator_at_w_lanes():
+    tree = _instance(None, {"W": 4, "op": "add"}, name="accumulate", impl="chisel_adder_tree")
+    assert accumulator(tree) == replace(accumulator(_acc()), lanes=4)
 
 
 @pytest.mark.parametrize(("adapter", "inst"), [

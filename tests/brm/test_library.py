@@ -47,7 +47,8 @@ def test_library_has_dots_blocks():
 def test_the_brms_are_bound():
     """GEN3.md's binding: elementwise_add (step 3) and elementwise_mul (step 6a), the same
     block with the op through ElementwiseOp; accumulate's Accumulator (step 6b), counted with
-    loopCount = n then len = T, pipelined; the adder tree not yet."""
+    loopCount = n then len = T, pipelined, its lanes W; the adder tree the same block (GEN2a
+    round 2)."""
     from snax_forge.gen import ELEMENTWISE_OP
 
     from .test_brm import BINDING
@@ -59,11 +60,11 @@ def test_the_brms_are_bound():
     assert ELEMENTWISE_OP["mul"] == 2
     acc = load_brm("accumulate").implementations
     assert acc["chisel_accumulator"].binding == {
-        "block": "Accumulator", "args": {}, "control": "counted",
+        "block": "Accumulator", "args": {"lanes": "W"}, "control": "counted",
         "csrs": [{"field": "loopCount", "value": "n"}, {"field": "len", "value": "T"}],
         "wait": "pipelined",
     }  # fmt: skip
-    assert acc["chisel_adder_tree"].binding is None
+    assert acc["chisel_adder_tree"].binding == acc["chisel_accumulator"].binding
 
 
 def test_unknown_name():
