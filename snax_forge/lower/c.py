@@ -15,12 +15,17 @@ the one whose ``snax_acc_cfg`` holds the slot. Each core with a task gets a
 function of its own, ``forge_core_<n>`` (``static``, ``noinline``): its steps
 in task-list order, a straight line with the barriers at the same points as
 every other core's; a core with none runs ``forge_core_idle``, the barriers
-only. ``main`` marks its entry, reads ``snrt_cluster_core_idx()`` once (not
-``snrt_is_compute_core()``: with one core snRuntime counts zero compute
-cores, open item 80), calls its core's function through a table, marks its
-exit and returns what the function returned. ``main`` has no branch, so the
-compiler has no path to copy a mark onto (a branch per core in one function
-let clang copy the exit mark per core, defining its label twice).
+only. ``main`` reads ``mcycle`` first (``t0``), reads
+``snrt_cluster_core_idx()`` once (not ``snrt_is_compute_core()``: with one
+core snRuntime counts zero compute cores, open item 80) and calls its core's
+function through a table; on the accelerator's core it then adds
+``forge_check(t0)``, and it returns the sum.
+
+**The window.** The program's cycles are one window, from ``mcycle`` at
+main's entry to ``mcycle`` read first in ``forge_check()``, which prints it
+as ``forge cycles: <n>``; the flow takes it as ``total_cycles`` (D136, C§7).
+No task marks: nothing is read inside the window but the counters, so the
+core's timing between the steps is the program's own.
 
 **Configure.** A streamer task is ``csrw_ss`` on streamer_csr_addr_map.h's
 names: the base (``BASE_PTR_<M>_LOW`` / ``_HIGH``), the spatial strides,
@@ -35,10 +40,7 @@ call, so it is ``snrt_dma_start_1d`` (one loop of whole beats) or
 
 **Start.** One start step writes ``STREAMER_START_CSR`` once for all of an
 accelerator's movers, then the accelerator's start CSR, in the step's
-order; a DMA task starts at its place in the step. The step's start marks
-all come before its first write, so nothing sits between the streamer's
-start and the accelerator's (a mark there gave the streamer a cycle more,
-one stall_in cycle fewer on the counter).
+order, back to back; a DMA task starts at its place in the step.
 
 **Waits.** On the SNAX components, as ``lower_program`` places them (D64,
 ``placed_waits``): on the owner's core, a wait on the accelerator or one of
@@ -53,21 +55,19 @@ start it comes before runs elsewhere, or it is a sync, which every core
 passes), every core then calls ``snrt_cluster_hw_barrier()``: every core
 walks the same steps, so the barrier counts match by construction.
 
-**Marks.** ``csrr zero, mcycle`` at a global label ``forge_<task>_<event>``
-for each task's configure, start and the end of the wait that covers it,
-and ``forge_main_entry`` / ``forge_main_exit``: the flow will read their
-cycles from the trace once it runs on SNAX-GVSoC.
 
 **Addresses.** L1 addresses are the memory plan's, absolute. A DMA's L2
 side is the container's data.h symbol plus the task's offset into its L2
 layout.
 
-**Self-check**, on the accelerator's core after the last step: every output
+**Self-check**, ``forge_check(t0)`` (``static``, ``noinline``), on the
+accelerator's core after its function: after ``forge cycles:``, every output
 against its golden (``forge data: <e> errors (<words> words)``), each
-accelerator task's counter, read after its wait (``forge counter <task>:
-<c>``), and ``forge errors: <err>``, the data errors plus one per counter
-below its task's beats, which main returns there (0 on the other cores;
-snRuntime sums them at exit).
+accelerator task's counter (``forge counter <task>: <c>``), stored in its
+slot of the global ``forge_counter[]`` right after the wait that covers the
+task, slots in the order the counters are read, and ``forge errors:
+<err>``, the data errors plus one per counter below its task's beats, which
+it returns to main (0 on the other cores; snRuntime sums them at exit).
 
 **Refused**, each a ``CError`` (``c.<rule>``): other than one accelerator
 instance, or one without a binding (``c.instances``; the generator refuses
@@ -77,10 +77,9 @@ accelerator's movers or starting it before them (``c.start``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
 pattern that is neither form (``c.dma``), a binding field the CSR layout
 lacks (``c.csrs``), a read step (``c.read``), a task list the lowering
-refuses (``c.tasks``: values that do not fit their component), a label
-that is not a C symbol or not unique (``c.label``), and an accelerator
-task no wait covers (``c.wait``: its counter is never read). Same design
-point, same text.
+refuses (``c.tasks``: values that do not fit their component), and an
+accelerator task no wait covers (``c.wait``: its counter is never read).
+Same design point, same text.
 """
 
 from __future__ import annotations
@@ -106,8 +105,6 @@ if TYPE_CHECKING:  # design imports lower, gen imports lower
     from snax_forge.gen.data import Array
 
 MAIN_C = "main.c"
-MARK_ASM = '    asm volatile(".globl " #label "\\n" #label ":\\n\\tcsrr zero, mcycle" ::: "memory")'
-SYMBOL = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 INDENT = "    "
 
 
@@ -190,7 +187,6 @@ class _Program:
         self.movers = self._movers()
         self.lines: dict[int, list[str]] = {k: [] for k in range(self.cores.count)}
         self.barriers = 0
-        self.labels: list[str] = []
         self.started: dict[str, list[str]] = {}  # component -> its tasks, in start order
         self.order: list[str] = []  # every task, in start order
         self.waited: set[str] = set()
@@ -221,21 +217,10 @@ class _Program:
         for lines in self.lines.values():
             lines.append("snrt_cluster_hw_barrier();")
 
-    def label(self, task: str, event: str) -> str:
-        label = f"forge_{task}_{event}"
-        if not SYMBOL.fullmatch(label) or label in self.labels:
-            raise CError("c.label", f"{label!r} is not a C symbol or not unique")
-        self.labels.append(label)
-        return label
-
-    def mark(self, core: int, task: str, event: str) -> None:
-        self.emit(core, f"FORGE_MARK({self.label(task, event)});")
-
     # -- the steps -------------------------------------------------------------------------
 
     def configure(self, s: Configure) -> None:
         core = self.core_of(s.component)
-        self.mark(core, s.task_name, "configure")
         if s.type == "streamer":
             self.emit(core, *self.streamer(s))
         elif s.type == "accel":
@@ -275,11 +260,9 @@ class _Program:
             acc = [i for i, t in enumerate(s.tasks) if types[t] == "accel"]
             if acc and acc[0] < s.tasks.index(movers[0]):
                 raise CError("c.start", f"{where}: {self.name} starts before its movers")
-        for t in s.tasks:  # every mark first, so none sits between the step's writes
-            c = self.conf[t]
-            self.started.setdefault(c.component, []).append(t)
+        for t in s.tasks:
+            self.started.setdefault(self.conf[t].component, []).append(t)
             self.order.append(t)
-            self.mark(self.core_of(c.component), t, "start")
         streamer_started = False
         for t in s.tasks:
             c = self.conf[t]
@@ -341,11 +324,11 @@ class _Program:
                  if t not in self.waited]  # fmt: skip
         for t in sorted(ended, key=self.order.index):  # in start order
             self.waited.add(t)
-            tc = self.core_of(self.conf[t].component)
-            self.mark(tc, t, "wait")
             if self.conf[t].type == "accel":
+                slot = len(self.counters)
                 self.counters.append(t)
-                self.emit(tc, f"counter_{t} = csrr_ss({inst}_RO_PERF_COUNT);")
+                self.emit(self.core_of(self.conf[t].component),
+                          f"forge_counter[{slot}] = csrr_ss({inst}_RO_PERF_COUNT);")  # fmt: skip
         if consumers - {core}:
             self.barrier()
 
@@ -393,9 +376,15 @@ class _Program:
     # -- the file --------------------------------------------------------------------------
 
     def check(self) -> list[str]:
+        """``forge_check``'s body: the window first, then the self-check."""
         outputs = [a for a in self.arrays if a.role == "output"]
         words = sum(a.elements for a in outputs)
-        lines = ["int data_errors = 0;"]
+        lines = [
+            "uint32_t cycles = snrt_mcycle() - t0;",
+            'printf("forge cycles: %u\\n", cycles);',
+            "int err = 0;",
+            "int data_errors = 0;",
+        ]
         for a in outputs:
             lines += [
                 f"for (uint32_t i = 0; i < {a.elements}; i++) {{",
@@ -408,27 +397,20 @@ class _Program:
             "err += data_errors;",
             f'printf("forge data: %d errors (%u words)\\n", data_errors, {words}u);',
         ]
-        for t in self.counters:
+        for slot, t in enumerate(self.counters):
             lines += [
-                f'printf("forge counter {t}: %u\\n", counter_{t});',
-                f"err += counter_{t} < {self.conf[t].values['n']};",
+                f'printf("forge counter {t}: %u\\n", forge_counter[{slot}]);',
+                f"err += forge_counter[{slot}] < {self.conf[t].values['n']};",
             ]
-        lines.append('printf("forge errors: %d\\n", err);')
+        lines += ['printf("forge errors: %d\\n", err);', "return err;"]
         return lines
 
-    def function(self, name: str, what: str, lines: list[str], slot: bool) -> list[str]:
-        """One core's function: ``lines`` in order; the accelerator's core also declares the
-        counters and the error count, checks and returns it."""
-        body = (
-            ["int err = 0;", *(f"uint32_t counter_{t} = 0;" for t in self.counters)] if slot else []
-        )
-        body += lines
-        body += [*self.check(), "return err;"] if slot else ["return 0;"]
-        return [f"// {what}", f"static __attribute__((noinline)) int {name}(void) {{",
-                *(INDENT + x for x in body), "}", ""]  # fmt: skip
+    def function(self, name: str, what: str, lines: list[str], args: str = "void") -> list[str]:
+        """A ``static noinline`` function returning int: ``lines`` in order."""
+        return [f"// {what}", f"static __attribute__((noinline)) int {name}({args}) {{",
+                *(INDENT + x for x in lines), "}", ""]  # fmt: skip
 
     def text(self, includes: Sequence[str], point_path: str) -> str:
-        entry, exit_ = self.label("main", "entry"), self.label("main", "exit")
         self.run()
         working = {k: v for k, v in self.lines.items()
                    if k == self.cores.slot or any(x != "snrt_cluster_hw_barrier();" for x in v)}  # fmt: skip
@@ -436,7 +418,8 @@ class _Program:
             f"The task list {self.tasks.name} on snRuntime: core {self.cores.dma} runs the DMA, "
             f"core {self.cores.slot} the accelerator {self.name}; the SNAX waits as the lowering "
             "places them (D64), the DMA's on dependences only (D135), a barrier where another "
-            "core goes on; a mark per task event. One function per core, a straight line."
+            "core goes on. One function per core, a straight line; the window from main's entry "
+            "to forge_check()'s."
         )
         head = [
             *generated_header(point_path, what).splitlines(),
@@ -445,32 +428,36 @@ class _Program:
             "",
             *(f'#include "{f}"' for f in includes),
             "",
-            "// A mark: mcycle read into x0 at a global label, which names its pc",
-            "#define FORGE_MARK(label) \\",
-            MARK_ASM,
+            "// Each accelerator task's counter, stored right after the wait that covers it",
+            f"static uint32_t forge_counter[{len(self.counters)}];",
             "",
         ]
         out = list(head)
         for k, lines in working.items():
             roles = [r for r, c in (("the DMA", self.cores.dma), (f"the accelerator {self.name}",
                                     self.cores.slot)) if c == k]  # fmt: skip
-            out += self.function(f"forge_core_{k}", f"Core {k}: {' and '.join(roles)}", lines,
-                                 k == self.cores.slot)  # fmt: skip
+            out += self.function(f"forge_core_{k}", f"Core {k}: {' and '.join(roles)}",
+                                 [*lines, "return 0;"])  # fmt: skip
         table = [f"forge_core_{k}" if k in working else "forge_core_idle"
                  for k in range(self.cores.count)]  # fmt: skip
         if len(working) < self.cores.count:
             idle = [f"for (int i = 0; i < {self.barriers}; i++) {{",
                     f"{INDENT}snrt_cluster_hw_barrier();", "}"] if self.barriers else []  # fmt: skip
-            out += self.function("forge_core_idle", "Cores with no task: the barriers only", idle,
-                                 False)  # fmt: skip
+            out += self.function("forge_core_idle", "Cores with no task: the barriers only",
+                                 [*idle, "return 0;"])  # fmt: skip
+        out += self.function("forge_check", "The window's end, then the self-check",
+                             self.check(), "uint32_t t0")  # fmt: skip
         out += [
             "// Each core's function, by snrt_cluster_core_idx()",
             f"static int (*const forge_cores[{self.cores.count}])(void) = {{{', '.join(table)}}};",
             "",
             "int main() {",
-            f"{INDENT}FORGE_MARK({entry});",
-            f"{INDENT}int err = forge_cores[snrt_cluster_core_idx()]();",
-            f"{INDENT}FORGE_MARK({exit_});",
+            f"{INDENT}uint32_t t0 = snrt_mcycle();",
+            f"{INDENT}uint32_t core = snrt_cluster_core_idx();",
+            f"{INDENT}int err = forge_cores[core]();",
+            f"{INDENT}if (core == {self.cores.slot}) {{",
+            f"{INDENT * 2}err += forge_check(t0);",
+            f"{INDENT}}}",
             f"{INDENT}return err;",
             "}",
         ]

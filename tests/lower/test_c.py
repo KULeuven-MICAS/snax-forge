@@ -1,5 +1,5 @@
-"""The C backend (D135): vecadd's main.c read as text, vsum's counter, every
-refusal, and vecadd's main.c compiled against snax-gvsoc's sw/ where the image's clang is."""
+"""The C backend (D135): vecadd's main.c read as text (no marks, the window, forge_check), vsum's
+counter, every refusal, and main.c compiled against snax-gvsoc's sw/ where the image's clang is."""
 
 from __future__ import annotations
 
@@ -47,14 +47,12 @@ def text(tmp_path, edit_tasks=None, edit_cluster=None, **kw) -> str:
 
 
 def functions(src: str) -> dict[str, list[str]]:
-    """main.c's functions by name (``forge_core_0``, ``forge_core_idle``, ``main``): their
-    lines, stripped."""
+    """main.c's functions by name (``forge_core_0``, ``forge_core_idle``, ``forge_check``,
+    ``main``): their lines, stripped."""
     out: dict[str, list[str]] = {}
     name = None
     for line in src.splitlines():
-        m = re.fullmatch(
-            r"(?:static __attribute__\(\(noinline\)\) )?int (\w+)\((?:void)?\) \{", line
-        )
+        m = re.fullmatch(r"(?:static __attribute__\(\(noinline\)\) )?int (\w+)\([^)]*\) \{", line)
         if m:
             name = m[1]
             out[name] = []
@@ -71,16 +69,29 @@ BARRIER = "snrt_cluster_hw_barrier();"
 def test_vecadd_runs_the_dma_on_core_1_and_the_accelerator_on_core_0(tmp_path):
     src = text(tmp_path)
     f = functions(src)
-    assert list(f) == ["forge_core_0", "forge_core_1", "main"]
+    assert list(f) == ["forge_core_0", "forge_core_1", "forge_check", "main"]
     assert not any("snrt_dma" in x for x in f["forge_core_0"])
     assert not any("csrw_ss" in x or "csrr_ss" in x for x in f["forge_core_1"])
     assert "static int (*const forge_cores[2])(void) = {forge_core_0, forge_core_1};" in src
     assert f["main"] == [
-        "FORGE_MARK(forge_main_entry);", "int err = forge_cores[snrt_cluster_core_idx()]();",
-        "FORGE_MARK(forge_main_exit);", "return err;",
+        "uint32_t t0 = snrt_mcycle();", "uint32_t core = snrt_cluster_core_idx();",
+        "int err = forge_cores[core]();", "if (core == 0) {", "err += forge_check(t0);", "}",
+        "return err;",
     ]  # fmt: skip
     assert "volatile" not in "\n".join(f["main"]) and "snrt_is_compute_core" not in src
-    assert f["forge_core_1"][-1] == "return 0;" and f["forge_core_0"][-1] == "return err;"
+    assert f["forge_core_1"][-1] == "return 0;" and f["forge_core_0"][-1] == "return 0;"
+
+
+def test_vecadd_has_no_marks_and_reads_mcycle_at_the_windows_ends(tmp_path):
+    src = text(tmp_path)
+    f = functions(src)
+    assert "FORGE_MARK" not in src and "asm" not in src and "forge_main" not in src
+    assert src.count("snrt_mcycle()") == 2
+    assert f["main"][0] == "uint32_t t0 = snrt_mcycle();"
+    assert f["forge_check"][:2] == [
+        "uint32_t cycles = snrt_mcycle() - t0;", 'printf("forge cycles: %u\\n", cycles);'
+    ]  # fmt: skip
+    assert "static __attribute__((noinline)) int forge_check(uint32_t t0) {" in src
 
 
 def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
@@ -89,21 +100,19 @@ def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
     b0 = [i for i, x in enumerate(c0) if x == BARRIER]
     b1 = [i for i, x in enumerate(c1) if x == BARRIER]
     assert len(b0) == len(b1) == 3
-    # the loads' wait (core 1), the writer's wait (core 0, its counter read last), the store's
-    # sync (core 1): each the owner's, then the barrier on both
-    assert c1[b1[0] - 1] == "FORGE_MARK(forge_load_B_wait);"
-    assert c0[b0[1] - 1] == "counter_add_acc = csrr_ss(ACC_RO_PERF_COUNT);"
-    assert c1[b1[2] - 1] == "FORGE_MARK(forge_store_C_wait);"
-    assert c0[b0[0] + 1] == "FORGE_MARK(forge_add_acc_a_start);"
-    assert c1[b1[1] + 1] == "FORGE_MARK(forge_store_C_start);"
-    # the check after the last barrier, on the accelerator's core
-    assert c0[b0[2] + 1] == "int data_errors = 0;"
+    # the loads' wait (core 1), the writer's wait (core 0, its counter stored last), the
+    # store's sync (core 1): each the owner's, then the barrier on both
+    assert c1[b1[0] - 1] == "snrt_dma_wait_all();"
+    assert c0[b0[1] - 1] == "forge_counter[0] = csrr_ss(ACC_RO_PERF_COUNT);"
+    assert c1[b1[2] - 1] == "snrt_dma_wait_all();"
+    assert c0[b0[0] + 1] == "csrw_ss(STREAMER_START_CSR, 1);"
+    assert c1[b1[1] + 1] == "snrt_dma_start_1d(C, (void *)0x10000400, 512);"
+    # the function ends after the last barrier; forge_check follows in main
+    assert c0[b0[2] + 1] == "return 0;"
     # load_B starts with no wait after load_A: the DMA queues (D135); one wait ends both
-    a, b = c1.index("FORGE_MARK(forge_load_B_start);"), c1.index("FORGE_MARK(forge_load_A_wait);")
+    a = c1.index("snrt_dma_start_1d((void *)0x10000200, B, 512);")
     assert "snrt_dma_wait_all();" not in c1[:a] and c1.count("snrt_dma_wait_all();") == 2
-    assert c1[b - 1 : b + 2] == [
-        "snrt_dma_wait_all();", "FORGE_MARK(forge_load_A_wait);", "FORGE_MARK(forge_load_B_wait);"
-    ]  # fmt: skip
+    assert c1[a + 1] == "snrt_dma_wait_all();"
 
 
 def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
@@ -111,39 +120,16 @@ def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
         next(s for s in steps if s.get("task_name") == "load_B")["after"] = ["load_A"]
 
     lines = functions(text(tmp_path, edit_tasks=b_after_a))["forge_core_1"]
-    i = lines.index("FORGE_MARK(forge_load_B_start);")
-    assert lines[i - 3 : i] == [
-        "FORGE_MARK(forge_load_B_configure);", "snrt_dma_wait_all();",
-        "FORGE_MARK(forge_load_A_wait);",
-    ]  # fmt: skip
+    i = lines.index("snrt_dma_start_1d((void *)0x10000200, B, 512);")
+    assert lines[i - 2 : i] == ["snrt_dma_start_1d((void *)0x10000000, A, 512);",
+                                "snrt_dma_wait_all();"]  # fmt: skip
     assert lines.count("snrt_dma_wait_all();") == 3
-
-
-def test_vecadd_marks_every_task_event_once(tmp_path):
-    src = text(tmp_path)
-    labels = re.findall(r"FORGE_MARK\((\w+)\);", src)
-    tasks = ["load_A", "load_B", "add_acc_a", "add_acc_b", "add_acc_out", "add_acc", "store_C"]
-    want = {f"forge_{t}_{e}" for t in tasks for e in ("configure", "start", "wait")}
-    assert set(labels) == want | {"forge_main_entry", "forge_main_exit"}
-    assert len(labels) == len(set(labels))
-    # a wait's marks in start order, then the counter read after the accelerator's
-    i = labels.index("forge_add_acc_a_wait")
-    assert labels[i : i + 4] == [f"forge_add_acc_{x}_wait" for x in ("a", "b", "out")] + [
-        "forge_add_acc_wait"
-    ]
 
 
 def test_vecadd_starts_the_movers_with_one_csr_then_the_accelerator(tmp_path):
     src = text(tmp_path)
     assert src.count("csrw_ss(STREAMER_START_CSR, 1);") == 1
-    start = src.index("FORGE_MARK(forge_add_acc_a_start);")
-    order = [
-        "FORGE_MARK(forge_add_acc_a_start);", "FORGE_MARK(forge_add_acc_b_start);",
-        "FORGE_MARK(forge_add_acc_out_start);", "FORGE_MARK(forge_add_acc_start);",
-        "csrw_ss(STREAMER_START_CSR, 1);", "csrw_ss(ACC_RW_START, 1);",
-    ]  # fmt: skip
-    assert [src.index(x, start) for x in order] == sorted(src.index(x, start) for x in order)
-    # every mark of the step before its first write: the two start CSRs back to back
+    # the two start CSRs back to back
     assert "csrw_ss(STREAMER_START_CSR, 1);\n    csrw_ss(ACC_RW_START, 1);" in src
 
 
@@ -162,15 +148,19 @@ def test_vecadd_checks_itself(tmp_path):
     src = text(tmp_path)
     assert "if (((volatile int64_t *)C)[i] != C_golden[i]) {" in src
     assert 'printf("forge data: %d errors (%u words)\\n", data_errors, 64u);' in src
-    assert 'printf("forge counter add_acc: %u\\n", counter_add_acc);' in src
-    assert "err += counter_add_acc < 16;" in src
-    assert src.index("counter_add_acc = csrr_ss(ACC_RO_PERF_COUNT);") < src.index("forge data")
+    assert 'printf("forge counter add_acc: %u\\n", forge_counter[0]);' in src
+    assert "err += forge_counter[0] < 16;" in src
+    assert "static uint32_t forge_counter[1];" in src
+    f = functions(src)
+    assert "forge_counter[0] = csrr_ss(ACC_RO_PERF_COUNT);" in f["forge_core_0"]
+    assert f["forge_check"][-2:] == ['printf("forge errors: %d\\n", err);', "return err;"]
 
 
 def test_vsum_sets_len_and_reads_its_counter(tmp_path):
     src = text(tmp_path, graph=bound_vsum(), name="vsum")
     assert "csrw_ss(ACC_RW_LOOP_COUNT, 64);\n    csrw_ss(ACC_RW_LEN, 64);" in src
-    assert "err += counter_sum_acc < 64;" in src
+    assert "err += forge_counter[0] < 64;" in src
+    assert 'printf("forge counter sum_acc: %u\\n", forge_counter[0]);' in src
 
 
 def test_the_same_point_gives_the_same_text(tmp_path):
@@ -184,7 +174,8 @@ def test_one_core_has_no_barriers(tmp_path):
         c["cluster"]["hives"][0]["cores"] = [{"$ref": "#/dma_core_template"}]
 
     src = text(tmp_path, edit_cluster=one_core)
-    assert "hw_barrier" not in src and list(functions(src)) == ["forge_core_0", "main"]
+    assert "hw_barrier" not in src
+    assert list(functions(src)) == ["forge_core_0", "forge_check", "main"]
     assert "// Core 0: the DMA and the accelerator acc" in src
 
 
@@ -194,7 +185,7 @@ def test_a_core_with_no_task_takes_part_in_the_barriers_only(tmp_path):
 
     src = text(tmp_path, edit_cluster=three_cores)
     f = functions(src)
-    assert list(f) == ["forge_core_0", "forge_core_1", "forge_core_idle", "main"]
+    assert list(f) == ["forge_core_0", "forge_core_1", "forge_core_idle", "forge_check", "main"]
     assert f["forge_core_idle"] == ["for (int i = 0; i < 3; i++) {", BARRIER, "}", "return 0;"]
     assert "forge_cores[3])(void) = {forge_core_0, forge_core_1, forge_core_idle};" in src
 
@@ -257,20 +248,6 @@ def test_refused_a_streamer_task_with_too_many_loops(tmp_path):
 
     with pytest.raises(CError, match=r"\[c.tasks\] .*acc_a: 2 loops, registers hold 1"):
         text(tmp_path, edit_tasks=two_loops)
-
-
-def test_refused_a_label_that_is_not_a_symbol(tmp_path):
-    def rename(steps):
-        for s in steps:
-            if s.get("task_name") == "store_C":
-                s["task_name"] = "store-C"
-            if s["op"] == "start" and s["tasks"] == ["store_C"]:
-                s["tasks"] = ["store-C"]
-            if s["op"] == "sync":
-                s["task"] = "store-C"
-
-    with pytest.raises(CError, match=r"\[c.label\] 'forge_store-C_configure'"):
-        text(tmp_path, edit_tasks=rename)
 
 
 def test_refused_an_accelerator_task_no_wait_covers(tmp_path):
@@ -344,8 +321,8 @@ def _riscv_clang() -> str | None:
 @pytest.mark.skipif(_riscv_clang() is not None, reason=str(_riscv_clang()))
 @pytest.mark.parametrize("design", ["vecadd", "vecmul", "vsum"])
 def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
-    """Each mark's label defined once in the object (llvm-nm): a branch per core in one function
-    once let clang copy vsum's exit mark, one label twice."""
+    """main.c compiles with -Werror; the object defines main and forge_check once each and no
+    forge_ symbol but the core functions, their table and the counters (llvm-nm)."""
     gen = tmp_path / "gen"
     graph = {"vecmul": bound_vecmul, "vsum": bound_vsum}.get(design)
     m = gen_mod.generate(point(tmp_path, name=design, graph=graph and graph()), gen,
@@ -356,9 +333,10 @@ def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
                           str(gen / "main.o")], capture_output=True, text=True,
                          check=False)  # fmt: skip
     assert run.returncode == 0, run.stderr
-    labels = re.findall(r"FORGE_MARK\((\w+)\);", (gen / "main.c").read_text())
     nm = subprocess.run([NM, "--defined-only", str(gen / "main.o")], capture_output=True,
                         text=True, check=True).stdout  # fmt: skip
     defined = [line.split()[-1] for line in nm.splitlines()]
-    assert sorted(x for x in defined if x.startswith("forge_") and x in labels) == sorted(labels)
-    assert all(defined.count(x) == 1 for x in labels)
+    assert defined.count("main") == defined.count("forge_check") == 1
+    # clang may split the static counters into one symbol per slot (forge_counter.0)
+    forge = {x.split(".")[0] for x in defined if x.startswith("forge_")}
+    assert forge == {"forge_check", "forge_counter", "forge_cores", "forge_core_0", "forge_core_1"}
