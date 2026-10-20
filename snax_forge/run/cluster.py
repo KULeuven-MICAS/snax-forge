@@ -1,0 +1,256 @@
+"""A flow run's cluster, as the converter, the reports and the viewer name it (C§7, D137).
+
+``load_cluster(cluster_hjson, design_point)`` reads the generator's three hjson files (the
+cluster file, and the streamer and datapath files its slot refers to, D134) and the design
+point, and gives what the events need to be named and read: the accelerator (the design
+point's one accelerated instance, ``acc``) on the core whose ``snax_acc_cfg`` holds the
+platform's slot; its movers, readers first as the streamer orders them, each named by its
+port as the design point names its streamers (``acc_a``, ``acc_out``), with its lanes (the
+crossbar ports ``acc_a.lane<l>``) and FIFO depth; its CSRs (the streamer's, then the
+shell's fields, start, busy and counter, from 0x3C0, as snax_cluster lays them out and
+snax-gvsoc's ``snax_streamer.py`` counts them); the cores (``core<i>``) and the DMA's; the
+L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks. Nothing is
+inferred from a run.
+
+``Cluster`` round-trips through ``to_dict`` / ``from_dict``. A file that does not read as
+expected is a ``RunError`` (``cluster.<rule>``).
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import hjson
+
+from snax_forge.design.hjson_platform import cores as hjson_cores
+from snax_forge.design.problems import DesignError
+
+from .events import RunError
+
+SNAX_CSR_FIRST = 0x3C0
+DMA = "dma"
+
+
+def core_name(index: int) -> str:
+    return f"core{index}"
+
+
+@dataclass(frozen=True)
+class Mover:
+    name: str  # C§7: the instance and its port, acc_a
+    gvsoc: str  # SNAX-GVSoC's: reader<i>, writer<j>
+    port: str
+    write: bool
+    lanes: int
+    fifo_depth: int
+
+    @property
+    def ports(self) -> list[str]:
+        """Its crossbar inputs, one per lane."""
+        return [f"{self.name}.lane{lane}" for lane in range(self.lanes)]
+
+    @property
+    def fifo(self) -> str:
+        return f"{self.name}.fifo"
+
+
+@dataclass(frozen=True)
+class Csrs:
+    """The accelerator's CSR numbers: the streamer's range with its start, busy and counter,
+    then the shell's fields, start, busy and counter."""
+
+    streamer_first: int
+    streamer_start: int
+    streamer_busy: int
+    streamer_counter: int
+    fields: dict[str, int]
+    start: int
+    busy: int
+    counter: int
+
+    @property
+    def streamer_last(self) -> int:
+        return self.streamer_counter
+
+
+@dataclass(frozen=True)
+class Accelerator:
+    name: str  # the instance, acc
+    core: int
+    slot: str
+    unit: dict[str, Any]  # the datapath file as written (SnaxUnit's properties, fields)
+    movers: list[Mover]
+    csrs: Csrs
+
+    @property
+    def streamer(self) -> str:
+        """The streamer as a block (its CSRs), ``<instance>_streamer``."""
+        return f"{self.name}_streamer"
+
+    def block_of(self, csr: int) -> str | None:
+        """The block a CSR number belongs to: the streamer's or the accelerator's (shell)."""
+        c = self.csrs
+        if c.streamer_first <= csr <= c.streamer_last:
+            return self.streamer
+        if c.streamer_last < csr <= c.counter:
+            return self.name
+        return None
+
+    def mover(self, gvsoc: str) -> Mover:
+        for m in self.movers:
+            if m.gvsoc == gvsoc:
+                return m
+        raise RunError("cluster.mover", f"no mover {gvsoc!r} in {self.name}'s streamer "
+                       f"({[m.gvsoc for m in self.movers]})")  # fmt: skip
+
+
+@dataclass(frozen=True)
+class Cluster:
+    design: str
+    nb_cores: int
+    dma_core: int
+    accelerator: Accelerator
+    l1_base: int
+    l1_size: int  # bytes
+    banks: int
+    bank_bytes: int
+    meta: dict[str, Any] = field(default_factory=dict)  # free: e.g. the files it was read from
+
+    @property
+    def cores(self) -> list[str]:
+        return [core_name(i) for i in range(self.nb_cores)]
+
+    @property
+    def sources(self) -> list[str]:
+        """Every C§7 source, in the cluster's order: the accelerator, its movers, the DMA, the
+        cores."""
+        a = self.accelerator
+        return [a.name, *(m.name for m in a.movers), DMA, *self.cores]
+
+    def is_l1(self, addr: int) -> bool:
+        """In the cluster's L1, the iDMA's local area (the rule its summary counts bytes by)."""
+        return self.l1_base <= addr < self.l1_base + self.l1_size
+
+    def to_dict(self) -> dict[str, Any]:
+        a = self.accelerator
+        c = a.csrs
+        return {
+            "design": self.design, "nb_cores": self.nb_cores, "dma_core": self.dma_core,
+            "accelerator": {
+                "name": a.name, "core": a.core, "slot": a.slot, "unit": dict(a.unit),
+                "movers": [{"name": m.name, "gvsoc": m.gvsoc, "port": m.port, "write": m.write,
+                            "lanes": m.lanes, "fifo_depth": m.fifo_depth} for m in a.movers],
+                "csrs": {"streamer_first": c.streamer_first, "streamer_start": c.streamer_start,
+                         "streamer_busy": c.streamer_busy,
+                         "streamer_counter": c.streamer_counter, "fields": dict(c.fields),
+                         "start": c.start, "busy": c.busy, "counter": c.counter},
+            },
+            "l1_base": self.l1_base, "l1_size": self.l1_size, "banks": self.banks,
+            "bank_bytes": self.bank_bytes, "meta": dict(self.meta),
+        }  # fmt: skip
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> Cluster:
+        a = d["accelerator"]
+        acc = Accelerator(a["name"], a["core"], a["slot"], dict(a["unit"]),
+                          [Mover(**m) for m in a["movers"]],
+                          Csrs(**{**a["csrs"], "fields": dict(a["csrs"]["fields"])}))  # fmt: skip
+        return cls(d["design"], d["nb_cores"], d["dma_core"], acc, d["l1_base"], d["l1_size"],
+                   d["banks"], d["bank_bytes"], dict(d.get("meta", {})))  # fmt: skip
+
+
+def _get(d: Any, path: str, what: str) -> Any:
+    node = d
+    for key in path.split("."):
+        if not isinstance(node, dict) or key not in node:
+            raise RunError("cluster.key", f"{what}: no {path}")
+        node = node[key]
+    return node
+
+
+def csrs_of(streamer: dict[str, Any], fields: list[str]) -> Csrs:
+    """The CSR numbers of a streamer template and a shell's fields (module doc)."""
+    rw = 0
+    for group in ("data_reader_params", "data_writer_params"):
+        params = streamer.get(group, {})
+        for i in range(len(params.get("num_channel", []))):
+            rw += 2 + len(params["spatial_bounds"][i]) + 2 * params["temporal_dim"][i]
+    s_start = SNAX_CSR_FIRST + rw
+    first = s_start + 3
+    start = first + len(fields)
+    return Csrs(SNAX_CSR_FIRST, s_start, s_start + 1, s_start + 2,
+                {f: first + i for i, f in enumerate(fields)}, start, start + 1, start + 2)  # fmt: skip
+
+
+def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[str, Any],
+                 point: dict[str, Any]) -> Cluster:  # fmt: skip
+    """The description from the three files' contents and the design point's (module doc)."""
+    slot = _get(point, "platform.accelerator_slot", "the design point")
+    try:
+        flat = [core for _, core in hjson_cores(cluster)]
+    except DesignError as e:
+        raise RunError("cluster.cores", f"the cluster file's cores do not read: {e}") from None
+    dma = [i for i, c in enumerate(flat) if c.get("xdma")]
+    owner = [i for i, c in enumerate(flat)
+             if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
+    if len(dma) != 1 or len(owner) != 1:
+        raise RunError("cluster.cores", f"xdma on cores {dma}, the slot {slot} on cores {owner}; "
+                       "a flow run has one of each")  # fmt: skip
+
+    streamers = _get(point, "streamers", "the design point")
+    names = {s["instance"] for s in streamers.values()}
+    if len(names) != 1:
+        raise RunError("cluster.instances", f"streamers of instances {sorted(names)}; a flow run "
+                       "has one accelerator")  # fmt: skip
+    (inst,) = names
+    movers = []
+    for write, group, kind in ((False, "data_reader_params", "reader"),
+                               (True, "data_writer_params", "writer")):  # fmt: skip
+        mine = [(n, s) for n, s in streamers.items() if bool(s["write"]) == write]
+        params = streamer.get(group, {})
+        if len(params.get("num_channel", [])) != len(mine):
+            raise RunError("cluster.movers", f"the streamer file has {len(params.get('num_channel', []))} "
+                           f"{kind}s, the design point {len(mine)}")  # fmt: skip
+        for i, (n, s) in enumerate(mine):
+            movers.append(Mover(n, f"{kind}{i}", s["port"], write, params["num_channel"][i],
+                                params["fifo_depth"][i]))  # fmt: skip
+
+    tcdm = _get(cluster, "cluster.tcdm", "the cluster file")
+    acc = Accelerator(inst, owner[0], slot, dict(unit), movers,
+                      csrs_of(streamer, list(unit.get("fields", []))))  # fmt: skip
+    return Cluster(
+        design=point.get("name", ""), nb_cores=len(flat), dma_core=dma[0], accelerator=acc,
+        l1_base=_get(cluster, "cluster.cluster_base_addr", "the cluster file"),
+        l1_size=tcdm["size"] * 1024, banks=tcdm["banks"],
+        bank_bytes=_get(cluster, "cluster.data_width", "the cluster file") // 8,
+    )  # fmt: skip
+
+
+def _ref(slot: dict[str, Any], key: str, base: Path) -> dict[str, Any]:
+    ref = slot.get(key)
+    if not (isinstance(ref, dict) and isinstance(ref.get("$ref"), str) and "#" not in ref["$ref"]):
+        raise RunError("cluster.ref", f"the slot's {key} is not a whole file's $ref: {ref!r}")
+    path = base / ref["$ref"]
+    if not path.is_file():
+        raise RunError("cluster.ref", f"{key}: no {path}")
+    return hjson.loads(path.read_text())
+
+
+def load_cluster(cluster_hjson: str | Path, design_point: str | Path) -> Cluster:
+    """The description from the generator's cluster file (its slot's two files beside it) and
+    the design point's file."""
+    cp, pp = Path(cluster_hjson), Path(design_point)
+    cluster = hjson.loads(cp.read_text())
+    point = json.loads(pp.read_text())
+    slot_name = _get(point, "platform.accelerator_slot", str(pp))
+    slots = [a for _, core in hjson_cores(cluster) for a in core.get("snax_acc_cfg", [])
+             if a.get("snax_acc_name") == slot_name]  # fmt: skip
+    if len(slots) != 1:
+        raise RunError("cluster.slot", f"{cp}: {len(slots)} slots named {slot_name!r}")
+    streamer = _ref(slots[0], "snax_streamer_cfg", cp.parent)
+    unit = _ref(slots[0], "snax_datapath_cfg", cp.parent)
+    c = cluster_from(cluster, streamer, unit, point)
+    return Cluster.from_dict({**c.to_dict(), "meta": {"cluster": cp.name}})

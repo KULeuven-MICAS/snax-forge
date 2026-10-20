@@ -11,7 +11,7 @@ order.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
@@ -89,3 +89,33 @@ class Profile:
     ports: dict[str, PortProfile] = field(default_factory=dict)
     banks: BankProfile | None = None
     functional_check: dict[str, Any] | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> Profile:
+        banks = d.get("banks")
+        return cls(
+            total_cycles=d["total_cycles"],
+            accelerators={k: AccelProfile(**v) for k, v in d.get("accelerators", {}).items()},
+            streamers={
+                k: StreamerProfile(
+                    v["write"], dict(v["cycles"]), list(v["ports"]), FifoProfile(**v["fifo"])
+                )
+                for k, v in d.get("streamers", {}).items()
+            },
+            cores={
+                k: CoreProfile(
+                    v["cycles"],
+                    v["csr_writes"],
+                    v["csr_reads"],
+                    [WaitProfile(**w) for w in v.get("waits", [])],
+                )
+                for k, v in d.get("cores", {}).items()
+            },
+            dmas={k: DmaProfile(**v) for k, v in d.get("dmas", {}).items()},
+            ports={k: PortProfile(**v) for k, v in d.get("ports", {}).items()},
+            banks=None if banks is None else BankProfile(**banks),
+            functional_check=d.get("functional_check"),
+        )

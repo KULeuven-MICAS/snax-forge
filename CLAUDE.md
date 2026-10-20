@@ -26,8 +26,8 @@ want to reverse, implementation details in module docstrings and tests.
 ## Commands
 - Environment: `pixi install`; `pixi run check` checks DaCe and its pins.
 - Tests: `pixi run test` (all), or one block: `test-model`, `test-lower`, `test-brm`, `test-dfg`,
-  `test-sandbox`, `test-design`, `test-flow`, `test-report`, `test-gen`, `test-kernels`. CI runs
-  `pixi run -e ci test`.
+  `test-sandbox`, `test-design`, `test-flow`, `test-run`, `test-report`, `test-gen`,
+  `test-kernels`. CI runs `pixi run -e ci test`.
 - Lint: `pixi run lint` (CI runs it); `pixi run fmt` fixes.
 - The whole path, on SNAX-GVSoC (D136, in the image, submodule checked out): `pixi run flow
   recipes/vecadd.json --platform platforms/snax_alu.json [--set W=8] [--set platform.PATH=VALUE]
