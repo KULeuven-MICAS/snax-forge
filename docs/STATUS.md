@@ -100,9 +100,12 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 M16 is done (D123). In M14, LNK1, GEN3, LNK2a and GEN2a are done: a design
 point generates its three hjson files, headers, `data.h` and `main.c`, and
 vecadd, vecmul, vsum and vsum_tree check themselves on SNAX-GVSoC; KER0
-(M7) staged the target kernels. FLOW3 is under way: round 1a puts the flow
-on SNAX-GVSoC (D136, `docs/RUN.md`), 1b brings the events and the reports
-back (D137), 1c removes SNAX-MODEL (RET1); then rounds 2 and 3, then GEN1.
+(M7) staged the target kernels. FLOW3 is under way: round 1a put the flow
+on SNAX-GVSoC (D136, `docs/RUN.md`; tag `flow3-r1a`): vecadd and vsum end
+in a checked run in the container, and CI's `gvsoc` job, rehearsed on a
+fresh clone, still has to run on GitHub (snax-gvsoc `FLOW3.md`). Next, 1b
+brings the events and the reports back (D137), 1c removes SNAX-MODEL
+(RET1); then rounds 2 and 3, then GEN1.
 
 ## Open Items
 
