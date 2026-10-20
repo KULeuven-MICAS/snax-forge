@@ -1,4 +1,4 @@
-"""L1 memory banks for SNAX-MODEL (MOD2, D13, D29).
+"""L1 memory banks for SNAX-MODEL.
 
 What this models
 ----------------
@@ -9,7 +9,7 @@ ports, DMA) share the banks through the interconnect.
 What this does NOT model
 ------------------------
 Arbitration. Choosing which master gets a bank when several want it, and
-stalling the others, is the interconnect's job (MOD3, a separate module).
+stalling the others, is the interconnect's job (xbar.py).
 The interconnect only passes one access per bank per cycle to this file. If
 two accesses still reach the same bank in one cycle, the interconnect has a
 bug, so ``request`` raises ``BankConflictError`` instead of guessing.
@@ -18,8 +18,8 @@ Who calls what, per cycle
 -------------------------
 The cycle phases come from ``sched.Phase``:
 
-    REQUEST    masters drive requests            (MOD3 / MOD4 / MOD6)
-    ARBITRATE  interconnect picks one per bank   (MOD3)
+    REQUEST    masters drive requests            (streamers, DMA)
+    ARBITRATE  interconnect picks one per bank   (xbar.py)
     MEMORY     interconnect calls L1Memory.request for each winner
     RESPONSE   interconnect reads L1Memory.resp per bank and routes data back
 
@@ -43,7 +43,7 @@ Timing rules (RTL-like, D29)
 
 Data layout (D13)
 -----------------
-The unit of access is one bank word (``width_bits`` wide). In v1 a word holds
+The unit of access is one bank word (``width_bits`` wide). For now a word holds
 one element. Storage is already ``[banks, rows, elems_per_word]`` and writes
 take a per-element strobe, so packing several elements into a word (e.g.
 8 x int8 in 64 bits) can be switched on later without changing the interface.
@@ -51,8 +51,8 @@ take a per-element strobe, so packing several elements into a word (e.g.
 Addresses are byte addresses of whole words, starting at ``base_addr``
 (0 by default).
 
-Bank groups (MOD6, D33)
------------------------
+Bank groups (D33)
+-----------------
 A master port can be wider than a bank. A port of ``w`` bits covers
 ``g = w / width_bits`` consecutive banks in an aligned group, and each of
 its accesses is one access on every bank of the group. In SNAX the DMA
@@ -86,7 +86,7 @@ from .sched import SimulationError
 class BankConflictError(SimulationError):
     """Two accesses reached the same bank in the same cycle.
 
-    Should never happen once the interconnect (MOD3) is in place; it means
+    Should never happen with the interconnect in place; it means
     arbitration let two masters through to one bank.
     """
 
@@ -263,7 +263,7 @@ class L1Memory:
         ``_now``      cycle being served (None between cycles)
         ``_busy``     banks already accessed this cycle
         ``_writes``   writes to apply at the end of the cycle
-    * statistics (for MOD8), never read by the model itself:
+    * statistics, never read by the model itself:
         ``reads``, ``writes``   per-bank access counts
     """
 
@@ -455,7 +455,7 @@ class L1Memory:
     def dump(self, addr: int, n: int) -> np.ndarray:
         """Read ``n`` consecutive words starting at ``addr``, shape [n, epw].
 
-        Every run dumps the whole L1 (MOD9), so with the default map this is
+        Every run dumps the whole L1, so with the default map this is
         one reshape instead of a Python loop over every word (D48). A custom
         address map falls back to the loop.
         """

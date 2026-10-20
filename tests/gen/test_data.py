@@ -1,4 +1,4 @@
-"""data.h (GEN2a step 2): vecadd, vecmul and vsum's inputs, outputs and goldens, padded and
+"""data.h: vecadd, vecmul and vsum's inputs, outputs and goldens, padded and
 aligned as the memory plan's L2 layouts, and every refusal."""
 
 from __future__ import annotations

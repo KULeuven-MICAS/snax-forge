@@ -1,4 +1,4 @@
-"""Shared helpers for the report tests (REP1)."""
+"""Shared helpers for the report tests."""
 
 from __future__ import annotations
 

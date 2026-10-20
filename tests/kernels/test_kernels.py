@@ -1,4 +1,4 @@
-"""Every kernel under kernels/ (KER0): its inputs, its NumPy reference and its SDFG.
+"""Every kernel under kernels/: its inputs, its NumPy reference and its SDFG.
 
 For each kernel, ``make_inputs`` runs at its defaults, the kernel's reference
 (``ref``, else the function itself) runs on them, and its simplified SDFG

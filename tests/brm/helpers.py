@@ -1,12 +1,12 @@
-"""Shared helpers for the SNAX-BRM tests (BRM1).
+"""Shared helpers for the SNAX-BRM tests.
 
 BRMs in the tests are written as plain dicts, the way a person or an LLM
-writes the JSON file. Until BRM2 registers ``affine``, the tests use a
+writes the JSON file. Besides ``affine``, the tests use a
 notation of their own, ``test_list``: a nest is a list of logical indices,
 and a port's list must hold a multiple of its lanes when they are constant.
 
 ``affine_adder`` and ``affine_reducer`` are the same BRMs with ``affine``
-nests (D70): a vector walked W elements per beat.
+nests: a vector walked W elements per beat.
 
 ``test_fixed_latency`` is an accelerator kind registered here: the
 elementwise stub with latency 3 whatever it is given, so a BRM whose
@@ -86,7 +86,7 @@ def adder() -> dict[str, Any]:
 
 
 def reducer() -> dict[str, Any]:
-    """A reduce shaped like the reduce stub: output rate is the runtime param T (D25)."""
+    """A reduce shaped like the reduce stub: output rate is the runtime param T."""
     return copy.deepcopy(
         {
             "name": "test_reduce",

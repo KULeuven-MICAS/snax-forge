@@ -1,8 +1,8 @@
-"""Reference executor (REF1, D20, D79): run a ``.snaxdfg`` in NumPy.
+"""Reference executor (D79): run a ``.snaxdfg`` in NumPy.
 
 It gives the golden output of a graph at any step of the flow: as imported,
 split, or with accelerated nodes, so SNAX-SANDBOX can check every transform
-against it (D72), and SNAX-MODEL's output is compared with it (E2E1).
+against it, and SNAX-MODEL's output is compared with it.
 
     execute(graph, inputs) -> {container: array}
 
@@ -36,7 +36,7 @@ How a node runs is registered per kind (``register_executor``, principle
     one firing at a time, through the BRM's function, the same
     ``fn(k, ins, state, params)`` SNAX-MODEL runs (the instance's
     ``accel_config``). The ``temporal`` maps directly around the node are
-    its firing loop, outermost first, as the BRM nest orders them (D70);
+    its firing loop, outermost first, as the BRM nest orders them;
     the node's ``code`` must be the BRM's ``function.code`` (D82), and its
     ``replaced`` subtree is history, never run;
     ``k`` counts firings, ``state`` lives for one task, ``n`` is the number
@@ -51,7 +51,7 @@ How a node runs is registered per kind (``register_executor``, principle
 **Checks on the way.** Every index is inside its container (NumPy would
 wrap a negative one silently); an accelerated node's connectors are its
 BRM's ports, each beat has the port's lanes and the port's dtype is the
-container's (open item 30); a spatial map around an accelerated node is
+container's; a spatial map around an accelerated node is
 an error, since its lanes are in the memlet.
 
 **Named rates** (``named_rates``, D104). A rate that names a start
@@ -288,7 +288,7 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
         idx = _grid_indices(m, env, ctx, f"{what}.outputs.{c}")
         full = tuple(np.broadcast_to(i, grid) for i in idx)
         value = np.broadcast_to(results[c], grid).astype(arr.dtype)
-        if m.reduce is not None:  # a reduction (D102): start from the identity, fold every write
+        if m.reduce is not None:  # a reduction: start from the identity, fold every write
             arr[full] = np.array(m.reduce.identity).astype(arr.dtype)
             m.reduce.ufunc.at(arr, full, value)
             continue

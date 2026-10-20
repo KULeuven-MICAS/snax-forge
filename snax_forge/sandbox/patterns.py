@@ -1,6 +1,6 @@
-"""Pattern matchers (SBX1, D80): what a BRM's ``pattern`` part means in a graph.
+"""Pattern matchers: what a BRM's ``pattern`` part means in a graph.
 
-A BRM's pattern names a ``family`` and gives ``attrs`` (D68). The family is
+A BRM's pattern names a ``family`` and gives ``attrs``. The family is
 a matcher registered here; the attrs are its parameters. ``bind`` asks the
 matcher whether a tasklet is an instance of the pattern, and if so which
 tasklet connector feeds which BRM port:
@@ -18,9 +18,9 @@ with one operator; ``attrs.op`` names the operator (``add``, ``sub``,
 BRM's input ports in fold order, the output onto its one output port.
 
 ``reduce`` (D104): the tasklet copies its one input into its one output
-(``out = in1``), and the output memlet folds (``reduce``, D102) with the op
+(``out = in1``), and the output memlet folds (``reduce``) with the op
 ``attrs.op`` names, from that op's identity for the port's dtype. That is
-what DFG3 makes of DaCe's ``Reduce``, and what a BRM of family ``reduce``
+what the importer makes of DaCe's ``Reduce``, and what a BRM of family ``reduce``
 (``accumulate``) does: this matcher is the one place where the SNAX-DFG's
 ``reduce`` and the BRM's pattern meet, so the BRM names no IR's term.
 """

@@ -1,4 +1,4 @@
-"""Running a recipe (SBX1, D80): the vecadd recipe gives the split and accelerated fixtures.
+"""Running a recipe: the vecadd recipe gives the split and accelerated fixtures.
 
 Accepted when the vecadd recipe gives vecadd_accelerated.snaxdfg (a temporal
 loop of N / W, a spatial loop of W, bound to elementwise_add), W = 4 and
@@ -129,7 +129,7 @@ def test_cli_fails_by_name(tmp_path, capsys):
 
 
 def test_cli_starts_from_the_kernel_import(tmp_path):
-    """Without --graph the recipe starts from IMP1's import of its kernel."""
+    """Without --graph the recipe starts from the import of its kernel."""
     assert main([str(RECIPE), "--out", str(tmp_path)]) == 0
     assert (tmp_path / "2_bind.snaxdfg").read_text() == (
         FIXTURES / "vecadd_accelerated.snaxdfg"

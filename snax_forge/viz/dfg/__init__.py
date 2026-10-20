@@ -1,4 +1,4 @@
-"""The DFG viewer (VIS5, D76, D81): ``.snaxdfg`` files in the browser.
+"""The DFG viewer (D81): ``.snaxdfg`` files in the browser.
 
 A second mode of the visualiser's server: ``python -m snax_forge.viz.dfg
 FILE|DIR ...`` (pixi ``view-dfg``) shows graphs side by side, drawn top to

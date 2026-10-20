@@ -1,18 +1,18 @@
-"""The design report, ``design.md`` (REP1, D99): what was built, before any cycle is counted.
+"""The design report, ``design.md``: what was built, before any cycle is counted.
 
 Everything here comes from the design point, its recipe and the cluster file
 SNAX-LOWER derives from it; the model is not run. A flow from a bound graph
-has no recipe (D108): its header names the graph the design point was made
-from instead, and takes the kernel from the run's functional check. For a plain run directory
-(a scenario run, no design point) the report has the cluster part only, from
-``run.json``'s cluster and regions.
+has no recipe: its header names the graph the design point was made from
+instead, and takes the kernel from the run's functional check. For a plain
+run directory (a scenario run, no design point) the report has the cluster
+part only, from ``run.json``'s cluster and regions.
 
-    header       kernel, recipe and its params (or the graph, D108), symbols,
+    header       kernel, recipe and its params (or the graph), symbols,
                  platform (base and changes), memory plan passes and pins
                                                             (design point only)
     components   the cluster file's components in order
     accelerators instance, BRM and implementation (design point only), params,
-                 latency, target II, ports, drain (D103)
+                 latency, target II, ports, drain
     streamers    instance port, direction, lanes, FIFO depth, temporal loops and
                  the container it streams (from the graph's memlets, else from
                  the task list's base address, else unknown)
@@ -21,7 +21,7 @@ from instead, and takes the kernel from the run's functional check. For a plain 
     notes        facts about addresses only: streamers of one accelerator that
                  start in the same banks, or whose containers lie a whole number
                  of bank rows apart, so that element i of both is in one bank;
-                 and containers the DMA moves as padded beats (D105)
+                 and containers the DMA moves as padded beats
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ class Header(Record):
     platform_changes: dict[str, Any]
     passes: dict[str, str]
     pins: dict[str, Any]
-    graph_from: str = ""  # a flow from a bound graph: the graph, in place of a recipe (D108)
+    graph_from: str = ""  # a flow from a bound graph: the graph, in place of a recipe
 
 
 @dataclass
@@ -68,7 +68,7 @@ class AccelRow(Record):
     latency: int
     target_ii: int
     ports: list[str]
-    drain: int = 0  # cycles from a push in which no input is taken (D103)
+    drain: int = 0  # cycles from a push in which no input is taken
 
 
 @dataclass
@@ -217,7 +217,7 @@ def _notes(
 
 
 def _padding_notes(cluster: ClusterConfig, regions: list[Region]) -> list[str]:
-    """Containers the DMA moves (in L2 and L1) whose size is not whole beats (D105)."""
+    """Containers the DMA moves (in L2 and L1) whose size is not whole beats."""
     if cluster.l2 is None:
         return []
     beat = cluster.l1.wide_bits // 8
@@ -265,7 +265,7 @@ def build_design(
     kernel: str = "",
 ) -> DesignReport:
     """The design report of a flow (``point`` a DesignPoint and its ``recipe``, or for a flow
-    from a bound graph its ``kernel``, D108) or, with neither, of a plain run's cluster and
+    from a bound graph its ``kernel``) or, with neither, of a plain run's cluster and
     regions; ``tasks`` names streamed containers."""
     header = None
     instances: dict[str, Any] = {}

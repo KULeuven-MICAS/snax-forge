@@ -1,9 +1,9 @@
-"""A design point -> the program's data, ``data.h`` (GEN2a step 2).
+"""A design point -> the program's data, ``data.h``.
 
     arrays(point, seed=0) -> list[Array]
     data_h(point, point_path, seed=0) -> str
 
-Every container the DMA moves (it lives in L2 and L1, D105), in the graph's
+Every container the DMA moves (it lives in L2 and L1), in the graph's
 container order, as one C array or two:
 
     input    the kernel's ``make_inputs`` at the size the graph binds,
@@ -11,7 +11,7 @@ container order, as one C array or two:
              ``const``
     output   zeroed (the kernel's ``inout``), the array the DMA stores into,
              then ``<name>_golden``: the reference executor
-             (``dfg/execute.py``, REF1) on the bound graph and those
+             (``dfg/execute.py``) on the bound graph and those
              inputs, as the flow checks a run, ``const``
 
 The C type is the container's dtype (``int64_t`` for every design so far).

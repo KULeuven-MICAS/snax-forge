@@ -1,4 +1,4 @@
-"""TCDM interconnect for SNAX-MODEL (MOD3, MOD6, D29, D30, D31, D33).
+"""TCDM interconnect for SNAX-MODEL.
 
 What this models
 ----------------
@@ -55,7 +55,7 @@ The policy (D33), all in ``_priority``:
   already took a bank of its group (counted in ``port_stalls_wider``);
 * among requests of equal width on the same group, the D31 arbiter above
   decides, with one pointer and one lock per (width, group). For 64-bit
-  ports that is exactly the per-bank arbiter of MOD3.
+  ports that is exactly SparseInterconnect's per-bank arbiter.
 
 Only 64 (streamers) and 512 (DMA) are used in SNAX; 128 and 256 are hooks.
 A share-based priority (N wide and M narrow accesses per group) is open
@@ -98,8 +98,8 @@ so the minimum does too. The xbar's own state never needs a wake of its own:
   owner to drive again next cycle;
 * outstanding reads are collected by their owner, which wakes for them.
 
-Trace (MOD8, D39)
------------------
+Trace (D39)
+-----------
 At beat level, ``commit`` emits one event per port that requested in the
 cycle: ``grant`` or ``stall`` (``wider`` from the ``_wider`` wire). These are
 the L1 accesses: the grant is served in the same cycle, one access on each
@@ -171,7 +171,7 @@ class Xbar(Component):
     * committed state, read by anyone at any time:
         ``prev[g]``  round-robin pointer (last selection) per group of g banks
         ``lock[g]``  lock (selection was refused) per group of g banks
-                     (``prev[1]`` / ``lock[1]`` are the per-bank ones of MOD3)
+                     (``prev[1]`` / ``lock[1]`` are the per-bank ones)
         ``_held``    per port: request refused last cycle, for the hold check
         ``_due``     per port: (ready cycle, banks, addr) of outstanding reads
                      (addr only for the trace's ``resp`` event, D62)
@@ -181,7 +181,7 @@ class Xbar(Component):
         ``_sel`` / ``_lock_next`` are sparse: only the (width, group) pairs
         that had a request this cycle; every other group takes the idle
         default in ``commit``.
-    * statistics (for MOD8), never read by the model itself:
+    * statistics, never read by the model itself:
         per bank: ``bank_grants`` (accesses; a wide grant counts on each of
         its banks), ``bank_conflicts`` (cycles with >= 2 requests covering
         the bank), ``bank_stalls`` (refused requests covering the bank),

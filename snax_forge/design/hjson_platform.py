@@ -1,4 +1,4 @@
-"""A platform read from snax_cluster's cluster file (LNK1, D131).
+"""A platform read from snax_cluster's cluster file (D131).
 
     platform_from_hjson(path, name, root=None) -> Platform
 
@@ -36,10 +36,11 @@ ports (D84): the GVSoC generator lowers the streamer per design point (D134).
 
 The rest of a platform (``xbar``, ``dma``, ``controller``,
 ``register_window``, ``wait_mode``) is small16's: these are SNAX-MODEL's
-fields, unused by SNAX-GVSoC, and go with RET1. The cores, the I-cache, the
-interconnect and the CSR counts are not read; they are LNK2a's. The core
-count is read on its own (``core_count``) by the design check that keeps the
-layouts out of snRuntime's top of L1 (``memory.runtime``, check.py).
+fields, unused by SNAX-GVSoC, and go when SNAX-MODEL is removed. The cores,
+the I-cache, the interconnect and the CSR counts are not read; they are the
+generator's (gen/gvsoc.py). The core count is read on its own
+(``core_count``) by the design check that keeps the layouts out of
+snRuntime's top of L1 (``memory.runtime``, check.py).
 
 Everything wrong is a ``DesignError``, each problem coded ``hjson.<what>``:
 ``hjson.parse`` (the file), ``hjson.path`` (a file outside ``root``), ``hjson.ref`` (a ``$ref``), ``hjson.key`` (a key

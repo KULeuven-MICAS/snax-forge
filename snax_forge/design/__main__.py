@@ -1,4 +1,4 @@
-"""SNAX-DESIGN command line (DP1a, DP1b).
+"""SNAX-DESIGN command line.
 
     python -m snax_forge.design GRAPH --platform P [--memory M]
                                       [--set platform.PATH=VALUE ...]
@@ -28,7 +28,7 @@ DIR/memory.json``) continues from it: new ``--set`` paths add to its
 platform, usually a working copy, under a new name: DST is a path, or a
 bare name for ``platforms/<DST>.json``; an existing file is kept unless
 ``--force``. ``from-hjson`` reads snax_cluster's cluster file into
-``platforms/<NAME>.json`` (LNK1, hjson_platform.py), checked as any
+``platforms/<NAME>.json`` (hjson_platform.py), checked as any
 platform, an existing file kept unless ``--force``; the file must be under
 snax-forge's root, since the platform names it as its source (``hjson``).
 

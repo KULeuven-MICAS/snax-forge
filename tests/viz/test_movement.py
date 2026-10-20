@@ -1,4 +1,4 @@
-"""Data movement (VIS4b, D97): journeys, residency, patterns and conflicts from the beat trace.
+"""Data movement: journeys, residency, patterns and conflicts from the beat trace.
 
 1. the journey of one element, and a reduction's many firings
 2. residency windows equal the extremes of the elements' journeys

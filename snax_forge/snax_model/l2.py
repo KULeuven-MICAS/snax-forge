@@ -1,4 +1,4 @@
-"""L2 memory for SNAX-MODEL (MOD6, D13, D29, D34).
+"""L2 memory for SNAX-MODEL (D34).
 
 What this models
 ----------------
@@ -136,7 +136,7 @@ class L2Memory:
       to leave, keyed by its ready cycle;
     * this cycle's uncommitted state: ``_now``, ``_read_now``,
       ``_write_now``, ``_writes``;
-    * statistics (for MOD8): ``reads``, ``writes`` (beats).
+    * statistics: ``reads``, ``writes`` (beats).
     """
 
     cluster: Any  # anything with touch(elem)

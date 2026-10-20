@@ -13,8 +13,8 @@ import snax.forge.samples.{Accumulator, SimpleAdder}
   * ==Why emission lives here and not in each module==
   *
   * A `main` inside every module would work, and would spare this file a catalogue. One catalogue keeps the mapping from
-  * a configuration to a module and its constructor arguments in one place, which is where a later generator (a BRM's
-  * hardware binding, GEN1) plugs in. It also keeps one copy of the firtool flags rather than one per module, and one
+  * a configuration to a module and its constructor arguments in one place, which is where a later generator (from a
+  * BRM's hardware binding) plugs in. It also keeps one copy of the firtool flags rather than one per module, and one
   * `runMain` target rather than N.
   *
   * ==Usage==
@@ -30,8 +30,8 @@ object Emit {
 
   /** firtool flags shared by every SNAX-FORGE emission.
     *
-    * Not private: a later generator (GEN1) elaborates through the same flags. Two entry points with two copies of the
-    * flag list would eventually produce RTL that differs depending on which one built it.
+    * Not private: a later generator (from a BRM's hardware binding) elaborates through the same flags. Two entry points
+    * with two copies of the flag list would eventually produce RTL that differs depending on which one built it.
     *
     *   - `-disable-all-randomization` removes the `RANDOMIZE_*` ifdef soup, so one .sv file is consumable by Verilator
     *     and by a synthesis flow without a per-tool define set.

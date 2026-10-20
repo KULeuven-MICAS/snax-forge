@@ -1,4 +1,4 @@
-"""snax-forge reproduces snax-gvsoc's fixtures (GEN3 step 5, LNK2a, D128).
+"""snax-forge reproduces snax-gvsoc's fixtures (D128).
 
 Each fixture is a folder of the snax-gvsoc submodule's ``forge/``, the
 generator's output for one design point, checked in untouched

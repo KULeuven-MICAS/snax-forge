@@ -1,4 +1,4 @@
-"""The generated accelerator's C headers (GEN3 step 4): what a program needs to drive it.
+"""The generated accelerator's C headers: what a program needs to drive it.
 
 ``generate`` writes both to ``out/gvsoc/<design>/include/`` and lists them
 in the manifest:

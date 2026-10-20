@@ -1,10 +1,10 @@
-"""Tests for the SNAX-MODEL register interface and controller (MOD7, D36, D37).
+"""Tests for the SNAX-MODEL register interface and controller (D36, D37).
 
-MOD7 acceptance (docs/STATUS.md): poll and signal give the same output data;
+Acceptance: poll and signal give the same output data;
 cycle counts differ only by the expected control overhead. Plus: the
 register map, the adapters per block kind, busy and busy_cycles at the right
 cycles, programming the next task while a block runs, command costs, the
-MOD6 vecadd driven by a control program, the error cases, and skip on/off
+L2 -> L2 vecadd driven by a control program, the error cases, and skip on/off
 identical under random programs.
 
 Sections:

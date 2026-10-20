@@ -1,4 +1,4 @@
-"""Tests for the skipping machinery of SNAX-MODEL (MOD10, D29, D40, D47).
+"""Tests for the skipping machinery of SNAX-MODEL (D29, D40, D47).
 
 A component that sleeps wrongly does not crash: it reports wrong statistics.
 These tests are the guard against that, for the cases the per-module tests do

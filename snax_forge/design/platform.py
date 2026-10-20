@@ -1,4 +1,4 @@
-"""The platform: the SNAX cluster around the accelerators (DP1a, D84).
+"""The platform: the SNAX cluster around the accelerators (D84).
 
 A platform file describes everything of the cluster that is not the
 accelerator itself: L1, L2, xbar, DMA, controller, the register window, how

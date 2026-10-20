@@ -1,4 +1,4 @@
-"""The generator (GEN3 step 3, LNK2a, D134): vecadd on snax_alu as three hjson files, vecmul,
+"""The generator (D134): vecadd on snax_alu as three hjson files, vecmul,
 vsum, and every refusal."""
 
 from __future__ import annotations
@@ -43,8 +43,8 @@ TEMPLATE_W4 = {
         "spatial_bounds": [[4]], "temporal_dim": [1], "num_channel": [4], "fifo_depth": [8],
     },
 }  # fmt: skip
-# snax-gvsoc snax/snax_tiled_add_acc.py's SnaxUnit and SnaxShell, but signed: the
-# hand file has False; int64 gives True (only min and max read it)
+# vecadd's datapath block at W = 4: ElementwiseTiledSpatial as a SnaxUnit and its
+# SnaxShell's field; int64 gives signed True (only min and max read it)
 TILED_ADD = {
     "unit": "SnaxUnit", "inputs": ["a", "b"], "outputs": ["out"], "lanes": 4, "data_width": 64,
     "op": 0, "signed": True, "control": "counted", "wait": "lockstep", "latency": 0, "ii": 1,
@@ -188,7 +188,7 @@ def test_vecadd_w8_gives_eight_channels_per_mover(tmp_path):
 
 
 def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
-    """GEN3 step 6a: elementwise_mul's binding gives vecadd's accelerator with op 2."""
+    """elementwise_mul's binding gives vecadd's accelerator with op 2."""
     out = tmp_path / "gvsoc" / "vecmul"
     m = generate(point(tmp_path, name="vecmul", graph=bound_vecmul()), out, root=tmp_path)
     assert parsed(out / "snax_alu_acc.hjson") == {**TILED_ADD, "op": 2}
@@ -205,8 +205,8 @@ def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
 
 
 def test_vsum_is_the_accumulator(tmp_path):
-    """GEN3 step 6b: accumulate's Accumulator, one reader and one writer of one lane, the shell's
-    fields loopCount and len, one task of 64 beats summing all 64 (T = n)."""
+    """accumulate's Accumulator, one reader and one writer of one lane, the shell's fields
+    loopCount and len, one task of 64 beats summing all 64 (T = n)."""
     out = tmp_path / "gvsoc" / "vsum"
     m = generate(point(tmp_path, name="vsum", graph=bound_vsum()), out, root=tmp_path)
     assert parsed(out / "snax_alu_acc.hjson") == ACCUMULATOR
@@ -229,8 +229,8 @@ def test_vsum_is_the_accumulator(tmp_path):
 
 
 def test_vsum_at_w4_is_the_adder_tree(tmp_path):
-    """GEN2a round 2: accumulate's adder tree at W = 4 is the Accumulator with lanes 4, one task
-    of 16 beats of 4 lanes summing all 64 (T = n)."""
+    """accumulate's adder tree at W = 4 is the Accumulator with lanes 4, one task of 16 beats
+    of 4 lanes summing all 64 (T = n)."""
     out = tmp_path / "gvsoc" / "vsum_tree"
     graph = bound_vsum(4, "chisel_adder_tree")
     m = generate(point(tmp_path, name="vsum_tree", graph=graph), out, root=tmp_path)

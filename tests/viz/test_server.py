@@ -1,6 +1,6 @@
-"""Tests for the visualiser's HTTP server (VIS1, D55): it starts, serves the
-viewer and the run list, answers an events query, and a reload picks up a
-changed directory. Only the plumbing; api.py's answers are test_api.py's."""
+"""Tests for the visualiser's HTTP server: it starts, serves the viewer and
+the run list, answers an events query, and a reload picks up a changed
+directory. Only the plumbing; api.py's answers are test_api.py's."""
 
 import json
 import re
@@ -27,7 +27,7 @@ def test_server_serves_viewer_and_runs(tmp_path):
         status, ctype, body = get(srv, "/")
         assert status == 200 and ctype == "text/html" and b"app.js" in body
         assert get(srv, "/app.js")[1] == "text/javascript"  # modules need a JS type
-        assert get(srv, "/memory.js")[1] == "text/javascript"  # the memory tab (VIS4a)
+        assert get(srv, "/memory.js")[1] == "text/javascript"  # the memory tab
         runs = get_json(srv, "/api/runs")
         assert runs == [
             {"name": "vecadd", "path": str(d), "scenario": "vecadd",
@@ -45,7 +45,7 @@ def test_every_module_the_viewer_imports_is_served(tmp_path):
     wanted = {
         m for f in static.glob("*.js") for m in re.findall(r'from "\./([\w-]+\.js)"', f.read_text())
     }
-    assert "player.js" in wanted  # the play button (VIEW1)
+    assert "player.js" in wanted  # the play button
     d = run_dir(tmp_path / "vecadd", "vecadd", "task")
     with serving([d]) as srv:
         for m in sorted(wanted):
@@ -73,7 +73,7 @@ def status_of(srv, path):
 
 
 def test_memory_routes(tmp_path):
-    """The memory tab's two routes (D96): the folded view and rows on request."""
+    """The memory tab's two routes: the folded view and rows on request."""
     d = run_dir(tmp_path / "vecadd", "vecadd", "off")
     with serving([d]) as srv:
         view = get_json(srv, "/api/run/vecadd/memory")
@@ -90,7 +90,7 @@ def test_memory_routes(tmp_path):
 
 
 def test_movement_routes(tmp_path):
-    """The data movement routes (D97): movement, journey, conflicts and marks."""
+    """The data movement routes: movement, journey, conflicts and marks."""
     beat = run_dir(tmp_path / "beat", "vecadd_conflict", "beat")
     task = run_dir(tmp_path / "task", "vecadd", "task")
     with serving([beat, task]) as srv:

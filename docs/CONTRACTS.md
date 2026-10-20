@@ -473,7 +473,7 @@ class Profile:
     banks: BankProfile | None = None
     ports: dict[str, PortProfile] = field(default_factory=dict)
     l2: dict[str, L2Profile] = field(default_factory=dict)
-    functional_check: dict[str, Any] | None = None  # MOD9 / E2E1
+    functional_check: dict[str, Any] | None = None  # a flow run fills it
 ```
 
 Per part: the controller gives cycles per class (`command` = control

@@ -1,4 +1,4 @@
-"""split_map and bind (SBX1, D73, D80) on the vecadd fixtures."""
+"""split_map and bind on the vecadd fixtures."""
 
 from __future__ import annotations
 

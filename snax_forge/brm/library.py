@@ -1,4 +1,4 @@
-"""The BRM library: hand-written BRMs, one JSON file each (BRM3, D68).
+"""The BRM library: hand-written BRMs, one JSON file each (D68).
 
 ``library/<name>.json`` holds the BRM called ``name``; the file name and the
 BRM's ``name`` must agree. Files are kept in the form ``Brm.to_json``
@@ -6,19 +6,19 @@ writes, every field included, so a hand edit that leaves that form shows up
 in tests/brm/test_library.py. Generating BRMs from RTL sources is open item
 27; until then every file here is written by hand.
 
-Library BRMs so far:
+Library BRMs:
 
     elementwise_add   c = a + b over W lanes (W = 4 by default); one Chisel
                       implementation, ElementwiseTiledSpatial (L = 0, II = 1)
     elementwise_mul   c = a * b, the same with op mul (ElementwiseTiledSpatial
-                      supports it, bound as elementwise_add, GEN3 step 6a),
+                      supports it, bound as elementwise_add),
                       dot's multiplier and vecmul's
     accumulate        the sum of every lane of T beats of ``a``, one element
-                      of ``out`` per T beats (pattern family ``reduce``, D103):
+                      of ``out`` per T beats (pattern family ``reduce``):
                       the Chisel Accumulator (L = 1, II = 1, drain 0,
-                      D133) twice: chisel_accumulator at 1 lane (GEN3 step
-                      6b, vsum's) and chisel_adder_tree at W lanes, summed
-                      by its tree and accumulated (GEN2a round 2)
+                      D133) twice: chisel_accumulator at 1 lane (vsum's)
+                      and chisel_adder_tree at W lanes, summed by its tree
+                      and accumulated
 """
 
 from __future__ import annotations

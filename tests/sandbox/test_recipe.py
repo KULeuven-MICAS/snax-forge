@@ -1,4 +1,4 @@
-"""The recipe format (SBX1, D80): fields, params, the checked-in vecadd recipe."""
+"""The recipe format: fields, params, the checked-in vecadd recipe."""
 
 from __future__ import annotations
 

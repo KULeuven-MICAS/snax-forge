@@ -1,4 +1,4 @@
-"""Command line of the DFG viewer (VIS5, D76, D81).
+"""Command line of the DFG viewer.
 
     python -m snax_forge.viz.dfg FILE|DIR [FILE|DIR ...] [--port 8766] [--verbose]
 

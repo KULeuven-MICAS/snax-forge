@@ -1,4 +1,4 @@
-"""The streamer shell against a bound graph (DP1a, D84)."""
+"""The streamer shell against a bound graph (D84)."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def shell(platform: Platform, graph: Graph) -> dict:
 
 
 def test_vecadd_on_small16_gives_alu4s_streamers():
-    """Names, order and every config field of alu4.json's streamer entries (LOW1c's input)."""
+    """Names, order and every config field of alu4.json's streamer entries (cluster.py's input)."""
     got = shell(Platform.load(SMALL16), Graph.load(BOUND))
     want = alu4_streamers()
     assert list(got) == list(want) == ["acc_a", "acc_b", "acc_out"]

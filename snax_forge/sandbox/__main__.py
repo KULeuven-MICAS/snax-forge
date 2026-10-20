@@ -1,9 +1,9 @@
-"""SNAX-SANDBOX command line (SBX1).
+"""SNAX-SANDBOX command line.
 
     python -m snax_forge.sandbox RECIPE [--graph FILE] [--set NAME=VALUE ...]
                                         [--out DIR] [--seed S]
 
-Applies RECIPE to the import of its kernel (IMP1; ``--graph`` starts from a
+Applies RECIPE to the import of its kernel (``--graph`` starts from a
 ``.snaxdfg`` file instead, without DaCe), checks every step against the
 reference executor and writes ``DIR/<i>_<transform>.snaxdfg`` for every step
 plus the recipe it ran, ``recipe.json`` (default ``out/sandbox/<recipe

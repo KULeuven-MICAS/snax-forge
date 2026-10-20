@@ -1,11 +1,11 @@
-"""Small SDFGs for the importer tests (IMP1).
+"""Small SDFGs for the importer tests.
 
 DaCe programs have to live in a file (DaCe reads their source), so the ones
 the tests import are here. ``two`` keeps a transient between two maps in one
 state; ``shift`` has offset subsets and a shortened range, like one half-step
 of jacobi1d; ``amax`` is a Max reduction stored through a scalar and a copy,
-as dot's Sum is (DFG3), and ``total`` a Sum over both dimensions of a matrix. ``row_sum`` is a Reduce over one axis of two, built by
-hand since NumPy's ``B[:] = np.sum(A, axis=1)`` goes through a view
+as dot's Sum is, and ``total`` a Sum over both dimensions of a matrix.
+``row_sum`` is a Reduce over one axis of two, built by hand since NumPy's ``B[:] = np.sum(A, axis=1)`` goes through a view
 (``row_sum_view``, rejected). The ``unsupported_*`` builders make one
 construct each that the importer must reject by name.
 

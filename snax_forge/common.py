@@ -1,5 +1,4 @@
-"""What every package shares: the repository root and the JSON form of every artefact (D26,
-D44).
+"""What every package shares: the repository root and the JSON form of every artefact.
 
 * ``repo_root``, the directory holding ``pixi.toml``: where ``out/``, ``kernels/`` and the
   platforms are found; ``cwd_relative``, a path as a command line prints it;
@@ -13,8 +12,8 @@ D44).
   containers on one line, final newline. It is deterministic, and ``json.loads`` gives the
   object back (D44).
 
-Until the M6 freeze these are plain dataclasses and plain JSON; versioned schemas are F2's job
-(D26). This module imports nothing from the package, so every package can use it.
+Until the contracts freeze these are plain dataclasses and plain JSON, with versioned schemas
+after (D26). This module imports nothing from the package, so every package can use it.
 """
 
 from __future__ import annotations
@@ -94,7 +93,7 @@ def check_keys(d: Mapping[str, Any], allowed: Sequence[str], what: str = "") -> 
 
 
 class Config:
-    """Flat dataclass <-> plain dict (D26). Mixed into every config class."""
+    """Flat dataclass <-> plain dict. Mixed into every config class."""
 
     def to_dict(self) -> dict[str, Any]:
         """Every field, in declaration order, as JSON-ready values."""
@@ -112,7 +111,7 @@ class Config:
 
 
 # =============================================================================
-# JSON writing (D44)
+# JSON writing
 # =============================================================================
 
 JSON_WIDTH = 100  # line length of written JSON, as ruff's for the code
@@ -146,5 +145,5 @@ def _json(v: Any, indent: int, col: int) -> str:
 
 
 def to_json(obj: Any) -> str:
-    """The one JSON format of every written file (D44)."""
+    """The one JSON format of every written file."""
     return _json(obj, 0, 0) + "\n"

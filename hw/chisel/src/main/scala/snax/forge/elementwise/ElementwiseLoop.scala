@@ -6,9 +6,9 @@ import chisel3.util._
 /** One lane, fed `loopCount` times -- the hardware image of the `loop` variant.
   *
   * W = 1, T = N: the fully temporal end of the elementwise family. A single ALU is cycled once per element, which is
-  * almost certainly slower than running the loop on the CVA6 core. Its value is as a bring-up target: when the cluster
-  * integration is what is being debugged, the smallest possible datapath is the one you want on the other end of the
-  * streamer.
+  * almost certainly slower than running the loop on the Snitch core. Its value is as a bring-up target: when the
+  * cluster integration is what is being debugged, the smallest possible datapath is the one you want on the other end
+  * of the streamer.
   *
   * ==Why the counter is here and not in the streamer==
   *

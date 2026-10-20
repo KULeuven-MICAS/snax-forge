@@ -1,4 +1,4 @@
-"""The generated accelerator's C headers (GEN3 step 4)."""
+"""The generated accelerator's C headers."""
 
 from __future__ import annotations
 

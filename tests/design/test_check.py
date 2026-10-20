@@ -1,4 +1,4 @@
-"""The design checks (DP1a, D85): one case per problem code, each naming its fix."""
+"""The design checks (D85): one case per problem code, each naming its fix."""
 
 from __future__ import annotations
 
@@ -306,7 +306,7 @@ def test_the_working_copy_is_what_the_checks_read():
 
 
 # =============================================================================
-# 6. Stage memory (DP1b)
+# 6. Stage memory
 # =============================================================================
 
 
@@ -505,7 +505,7 @@ def test_memory_waits_for_connect():
 
 
 # =============================================================================
-# 7. Firing loops (LOW1a)
+# 7. Firing loops
 # =============================================================================
 
 

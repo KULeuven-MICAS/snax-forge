@@ -1,14 +1,14 @@
-"""Tests for the SNAX-MODEL L1 banks (MOD2).
+"""Tests for the SNAX-MODEL L1 banks.
 
-MOD2 acceptance (docs/STATUS.md):
+Acceptance:
   * read latency is exact, and
   * a second access to the same bank in the same cycle is refused.
 
 How the tests are built
 -----------------------
-There is no interconnect yet (MOD3), so ``ToyMaster`` stands in for it. It
+The tests use no interconnect: ``ToyMaster`` stands in for it. It
 calls ``L1Memory.request`` in its MEMORY tick and collects read data in its
-RESPONSE tick, the same phases the interconnect will use. Its requests come
+RESPONSE tick, the same phases the interconnect uses. Its requests come
 from a fixed script, so every test knows exactly which access happens in
 which cycle.
 
@@ -324,7 +324,7 @@ def test_random_traffic(seed, latency):
 def test_access_counts():
     """Per-bank read and write counts equal the accesses in the script.
 
-    Bank 0: two reads. Bank 3: two writes. Bank 31: one read. MOD8 builds
+    Bank 0: two reads. Bank 3: two writes. Bank 31: one read. The profile builds
     its per-bank access numbers on these counters.
     """
     script = [
@@ -407,7 +407,7 @@ def test_strobed_write_packed_word():
 
 
 def test_bank_groups_for_wide_ports():
-    """MOD6 (D33): group sizes per width, and the banks of an aligned wide access.
+    """Bank groups (D33): group sizes per width, and the banks of an aligned wide access.
 
     With 16 banks of 64 bits, a 512-bit access at byte 64 is row 0 of banks
     8..15; at byte 128 it is row 1 of banks 0..7.

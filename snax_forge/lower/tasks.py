@@ -1,4 +1,4 @@
-"""The task list: SNAX-LOWER's ordered list of tasks (LOW1b, D45, D64).
+"""The task list: SNAX-LOWER's ordered list of tasks (D45, D64).
 
 A task list says which component runs which task with which values, where
 each task is configured and started, and what it depends on. ``lower_program``
@@ -31,9 +31,8 @@ component; a task starts once, after its ``after`` tasks have started; every
 configured task is started. What needs the cluster (component, type, values,
 register names) is checked by ``lower_program``.
 
-``Tasks`` builds a task list from start arguments, for Python generators
-(LOW1a, tests). The checked-in scenarios' task lists are written by hand
-(D65).
+``Tasks`` builds a task list from start arguments, for tests. The
+checked-in scenarios' task lists are written by hand (D65).
 """
 
 from __future__ import annotations

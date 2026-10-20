@@ -3,10 +3,10 @@
 It is a named registry around the scheduler: components are ticked in the
 order they are added. Building a cluster from a configuration (banks,
 interconnect, streamers, accelerators, DMA/L2, controller) is done by
-``scenario.build`` (MOD9, D41), which adds the components in the order of the
+``scenario.build``, which adds the components in the order of the
 scenario's component list, so this class stays a plain registry.
 
-Tracing (MOD8): ``Cluster(trace=Trace(level))`` records a trace of the run.
+Tracing: ``Cluster(trace=Trace(level))`` records a trace of the run.
 ``run`` binds it to the components before the scheduler starts and sorts
 it afterwards. Without a trace (the default) nothing extra happens.
 """

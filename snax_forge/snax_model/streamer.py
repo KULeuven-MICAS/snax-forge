@@ -1,4 +1,4 @@
-"""Streamers and streamer FIFOs for SNAX-MODEL (MOD4, D12, D29, D31).
+"""Streamers and streamer FIFOs for SNAX-MODEL.
 
 What this models
 ----------------
@@ -47,7 +47,7 @@ Only what changes cycle counts:
   per port are in flight or buffered, and the FIFO cannot overflow. The
   counter is never reset, so credit carries over between tasks.
 * Writer: a port writes when it has an address and its FIFO lane has data.
-  It does not wait for write responses (the model returns none, MOD3).
+  It does not wait for write responses (the model returns none).
 * FIFO timing (chisel3.util.Queue): a pushed element is visible one cycle
   later (flow = false). The reader's data buffer has pipe = true: in a
   cycle in which the accelerator pops a lane, that lane accepts a push even
@@ -80,8 +80,8 @@ Not copied (they change cycles, open item 5):
 
 Who calls what, per cycle
 -------------------------
-    CONTROL    controller:   streamer.start(regs, cycle)        (MOD7)
-    COMPUTE    accelerator:  fifo.pop(cycle) / fifo.push(cycle, beat)   (MOD5)
+    CONTROL    controller:   streamer.start(regs, cycle)        (ctrl.py)
+    COMPUTE    accelerator:  fifo.pop(cycle) / fifo.push(cycle, beat)   (accel.py)
     REQUEST    streamer:     xbar.request(...) for each port that can issue
     ARBITRATE  xbar
     MEMORY     xbar -> L1
@@ -118,8 +118,8 @@ FIFO's other side. After cycle t:
 None of these can change unless something the streamer reads changes, so
 asking again before the returned cycle gives the same answer.
 
-Cycle classes (for MOD8)
-------------------------
+Cycle classes
+-------------
 Each cycle counts as exactly one of, in this order:
 ``busy`` (some port granted), ``stall_xbar`` (some port requested, none
 granted), ``stall_fifo`` (some port has an address but no credit or no
@@ -128,8 +128,8 @@ address or for read data). Skipped cycles are classified from the
 committed state; the streamer only sleeps in the ``stall_fifo`` or ``idle``
 states, and neither can change while it sleeps.
 
-Statistics and trace (MOD8)
----------------------------
+Statistics and trace
+--------------------
 ``cycles`` is a ``ClassLog``: commit and on_gap add their cycles to it, and
 it keeps the class runs when the run is traced. Trace events (task level):
 ``start`` when a start lands, ``done`` with the done_cycle. The FIFO keeps an
@@ -167,7 +167,7 @@ CYCLE_CLASSES = ("busy", "stall_xbar", "stall_fifo", "idle")
 class StreamerRegs:
     """Streamer register set: base address, temporal and spatial loops.
 
-    Separate from the accelerator CSRs; the CSR addresses are fixed in MOD7.
+    Separate from the accelerator CSRs; the CSR addresses are fixed in ctrl.py.
     Loop 0 is innermost (temporal) or fastest (spatial). Strides are in
     bytes and may be negative. Lists are stored as tuples.
     """
@@ -282,7 +282,7 @@ class Fifo:
     ``pusher`` / ``popper`` are the components on each side. The reader uses
     ``popper.next_wake`` while it waits for credit (see streamer waking).
 
-    Occupancy (MOD8, D40): ``occ[lane, c]`` counts the cycles in which the
+    Occupancy (D40): ``occ[lane, c]`` counts the cycles in which the
     lane held ``c`` elements. Counts change only in ``commit`` (a pushed
     element is visible from the next cycle), so ``commit`` in cycle t closes
     the old count's run at t + 1. ``commit`` runs only when the FIFO was
@@ -316,7 +316,7 @@ class Fifo:
         self.repeat = 1
         self._rep = 0  # committed hand-outs of the current head
         self._rep_tick = False  # wire: a hand-out this cycle
-        # Statistics (MOD8): cycles per (lane, count), and where the open run began.
+        # Statistics: cycles per (lane, count), and where the open run began.
         self.occ = np.zeros((self.lanes, self.depth + 1), dtype=np.int64)
         self._occ_since = np.zeros(self.lanes, dtype=np.int64)
 
@@ -496,7 +496,7 @@ class Streamer(Component):
         ``_issued``   per port: reads granted over all tasks (credit)
         ``done_cycle`` first cycle in which ``busy`` is False after a task
     * this cycle's wires: ``_now``, ``_req``, ``_fire``, ``_agu_push``, ``_cls``
-    * statistics (for MOD8): ``cycles`` per class (a ``ClassLog``), see the
+    * statistics: ``cycles`` per class (a ``ClassLog``), see the
       module doc
     """
 

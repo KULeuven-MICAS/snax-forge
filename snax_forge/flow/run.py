@@ -1,7 +1,7 @@
-"""The whole path, kernel to model run (E2E1, D90), or from a bound graph on (FLOW2, D108).
+"""The whole path, kernel to model run (D90), or from a bound graph on (D108).
 
     recipe + platform
-      -> SNAX-SANDBOX   the kernel's import (IMP1), the recipe's steps, each
+      -> SNAX-SANDBOX   the kernel's import, the recipe's steps, each
                         checked by the reference executor         sandbox/
       -> SNAX-DESIGN    the last graph on the platform: the checks, the
                         memory plan, the design point               design/
@@ -10,14 +10,14 @@
       -> scenario       the kernel's make_inputs, each input at its
                         container's layout in its first memory,    scenario.json
                         and one region per container and memory    <C>.npy
-                        from the memory plan (D95)
+                        from the memory plan
       -> SNAX-MODEL     the run                                     run/
       -> check          every ``inout`` container, read back from its last
                         memory through its layout, against the kernel's
-                        reference and the reference executor (REF1) on the
+                        reference and the reference executor on the
                         same inputs; written into the profile's
-                        ``functional_check`` (open item 13)
-      -> reports        design.md and run.md (REP1, D99)           report/
+                        ``functional_check``
+      -> reports        design.md and run.md (D99)                 report/
       -> log            the summary and the design checks that ran flow.log
 
 Everything goes to one folder, ``out/flow/<name>/``, overwritten on every
@@ -27,31 +27,31 @@ traced at ``task`` level by default, so ``run/`` opens in the run viewer
 (``pixi run view``) with its schedule; the data movement views need
 ``trace_level="beat"``. ``scenario.json`` runs again on its own (``pixi run
 model-run``). Nothing is decided here: each stage is the tool of that name,
-called as its CLI would (D90, D94).
+called as its CLI would (D90).
 
-``report/`` and ``flow.log`` sit next to ``run/``, never inside it (D44,
-D99). ``flow.log`` is what the command line prints plus the design checks
+``report/`` and ``flow.log`` sit next to ``run/``, never inside it (D44).
+``flow.log`` is what the command line prints plus the design checks
 that ran; a flow that fails writes the failure there instead, and the reports
 of an earlier run in the same folder are removed first, so the folder never
 holds reports of a run other than its last. A report that cannot be built is
 named in the summary; the run and its check stand without it.
 
-**Stage times** (D107). ``flow.log`` ends with the wall-clock seconds of each
+**Stage times** (D90). ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``scenario``, ``run``,
 ``check``, ``report``) and their total, on this machine. They change from run
 to run, so they are in the log only: the command line, ``run/`` (byte
 identical on every run, D44) and the reports never hold them. They are the
-raw material of the paper's turnaround baseline (BASE1, C1).
+raw material of the paper's turnaround baseline (claim C1).
 
-**From a bound graph** (FLOW2, D108). ``run_bound(graph, platform, ...)`` is
+**From a bound graph** (D108). ``run_bound(graph, platform, ...)`` is
 the same path without its first stage: the graph is a bound ``.snaxdfg``
 (the last step of a sandbox run, or one edited by hand) and goes straight to
 SNAX-DESIGN, as ``steps[-1]`` does above. No recipe is read and ``sandbox/``
 is not written, so the per-step reference check does not run; the design
 checks and the check of the run's output against the kernel's reference and
-REF1 do, which is what stops a graph that computes something else. The
-kernel, needed for ``make_inputs`` and the reference only, is the graph's
-``name`` unless one is given. The default name is the design step's
+the reference executor do, which is what stops a graph that computes
+something else. The kernel, needed for ``make_inputs`` and the reference
+only, is the graph's ``name`` unless one is given. The default name is the design step's
 (``design_name``: the sandbox folder of a step's graph, else the file's
 stem; a flow's own ``sandbox/`` gives its flow folder) with the platform and
 memory ``--set`` appended as above. The recipe and step graphs an earlier
@@ -109,7 +109,7 @@ class Flow:
 
     name: str
     out: Path
-    recipe: Recipe | None  # None for a flow from a bound graph (D108)
+    recipe: Recipe | None  # None for a flow from a bound graph
     steps: list[Path]  # the sandbox's graphs; none for a flow from a bound graph
     point: DesignPoint
     cluster: ClusterConfig
@@ -120,7 +120,7 @@ class Flow:
     check: dict[str, Any]
     checks: dict[str, list[str]] = field(default_factory=dict)  # stage -> codes that ran
     report_error: str | None = None  # why report/ could not be written, if it could not
-    times: dict[str, float] = field(default_factory=dict)  # stage -> wall-clock seconds (D107)
+    times: dict[str, float] = field(default_factory=dict)  # stage -> wall-clock seconds
 
     @property
     def passed(self) -> bool:
@@ -140,7 +140,7 @@ def default_name(
     platform_sets: Sequence[tuple[str, Any]] = (),
     memory_sets: Sequence[tuple[str, Any]] = (),
 ) -> str:
-    """The recipe's name with every ``--set`` appended (D94): recipe params, then platform and
+    """The recipe's name with every ``--set`` appended (D90): recipe params, then platform and
     memory paths without their ``platform.`` / ``memory.`` prefix, each in the order given
     (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``)."""
     sets = [*recipe_sets.items(), *platform_sets, *memory_sets]
@@ -152,7 +152,7 @@ def bound_name(
     platform_sets: Sequence[tuple[str, Any]] = (),
     memory_sets: Sequence[tuple[str, Any]] = (),
 ) -> str:
-    """The default name of a flow from a bound graph (D108): the design step's name for the
+    """The default name of a flow from a bound graph: the design step's name for the
     graph (its sandbox folder, else the file's stem; for a flow's own ``sandbox/`` the flow
     folder above it), then every ``--set`` as ``default_name`` appends them."""
     p = Path(graph_path).resolve()
@@ -187,7 +187,7 @@ def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
 
 
 def regions_of(point: DesignPoint) -> list[Region]:
-    """One region per container per memory, from the memory plan (D95), in its order."""
+    """One region per container per memory, from the memory plan, in its order."""
     return [
         Region(c, mem, lay.base, lay.shape, lay.strides)
         for c, mems in point.memory.layouts.items()
@@ -211,7 +211,8 @@ def read_container(point: DesignPoint, result: RunResult, c: str) -> tuple[str, 
 def functional_check(
     spec: Any, point: DesignPoint, inputs: Mapping[str, np.ndarray], result: RunResult, seed: int
 ) -> dict[str, Any]:
-    """Every ``inout`` container of the run against the kernel's reference and REF1."""
+    """Every ``inout`` container of the run against the kernel's reference and the reference
+    executor."""
     ref = {k: np.copy(v) for k, v in inputs.items()}
     spec.reference(**ref)
     ref1 = execute(point.graph, {k: np.copy(v) for k, v in inputs.items()})
@@ -304,7 +305,7 @@ def log_text(f: Flow) -> str:
 
 @contextmanager
 def _timed(times: dict[str, float], stage: str) -> Iterator[None]:
-    """Add the wall-clock seconds of the block to ``times[stage]`` (D107)."""
+    """Add the wall-clock seconds of the block to ``times[stage]``."""
     t0 = time.perf_counter()
     try:
         yield
@@ -320,7 +321,7 @@ def _clear(out: Path) -> None:
 
 def _clear_sandbox(out: Path, graph_path: Path) -> None:
     """Remove what an earlier flow's sandbox stage left in ``out`` (its recipe and step
-    graphs), unless ``graph_path`` is one of them (module doc, D108)."""
+    graphs), unless ``graph_path`` is one of them (module doc)."""
     folder = out / "sandbox"
     if not folder.is_dir() or folder.resolve() == graph_path.resolve().parent:
         return
@@ -352,7 +353,7 @@ def run_flow(
     recipe = Recipe.load(recipe_path).with_params(recipe_sets)
     # The design point, and with it the task list, is named after the recipe and its params
     # only, so pinning B and C still gives scenarios/vecadd's tasks.json byte for byte; the
-    # folder carries every --set (D94).
+    # folder carries every --set (D90).
     point_name = name or default_name(recipe, recipe_sets)
     name = name or default_name(recipe, recipe_sets, platform_sets, memory_sets)
     out = Path(out) if out is not None else OUT / name
@@ -394,7 +395,7 @@ def run_bound(
     seed: int = 0,
     trace_level: str = "task",
 ) -> Flow:
-    """The path from a bound ``.snaxdfg`` on, without the sandbox (FLOW2, D108); see the
+    """The path from a bound ``.snaxdfg`` on, without the sandbox; see the
     module doc. ``kernel`` names the kernel when the graph's ``name`` does not. Raises
     FlowError or DesignError."""
     graph_path = Path(graph_path)

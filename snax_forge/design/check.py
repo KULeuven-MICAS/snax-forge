@@ -1,4 +1,4 @@
-"""The design checks: does this platform fit this bound graph (DP1a, D85)?
+"""The design checks: does this platform fit this bound graph (D85)?
 
 The design step pairs a bound graph (the last step of a recipe) with a
 platform. Before it writes anything it runs every registered check and
@@ -9,7 +9,7 @@ why it fails and the change that fixes it. Checks belong to stages:
     graph      the graph alone: symbols bound, everything bound to an
                accelerator, BRMs and implementations known, instance names
     connect    the two together: streamer entries, lanes, dtypes, registers
-    memory     the memory plan (DP1b, D86): pins and passes, then the plan
+    memory     the memory plan (D86): pins and passes, then the plan
                the passes make, its residency, shapes, alignment, fit,
                snRuntime's top of L1 and overlaps
 
@@ -63,7 +63,7 @@ STAGES: dict[str, tuple[str, ...]] = {
     "connect": ("platform", "graph"),
     "memory": ("connect",),
 }
-# Component names of the cluster besides the shell and the accelerators (LOW1c).
+# Component names of the cluster besides the shell and the accelerators (lower/cluster.py).
 FIXED = ("xbar", "dma", "ctl")
 # snRuntime's top of L1 (snax-gvsoc sw/snRuntime/src/start.S): a stack of
 # 1 << SNRT_LOG2_STACK_SIZE bytes per hart, the thread-local storage inside it;
@@ -457,7 +457,7 @@ def _connect_dtype(design: Design) -> Iterable[Problem]:
 
 
 def _connect_temporal(design: Design) -> Iterable[Problem]:
-    """Each port needs one streamer temporal loop per firing loop around its node (LOW1a)."""
+    """Each port needs one streamer temporal loop per firing loop around its node."""
     pf, g = design.platform, design.graph
     for n in accelerated(g):
         try:

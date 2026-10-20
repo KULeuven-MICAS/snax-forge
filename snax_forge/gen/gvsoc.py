@@ -1,4 +1,4 @@
-"""A design point -> its cluster on SNAX-GVSoC: three hjson files and headers (LNK2a, D128, D134).
+"""A design point -> its cluster on SNAX-GVSoC: three hjson files and headers (D128, D134).
 
     generate(design_point, out_dir, root=None) -> Manifest
 
@@ -15,9 +15,9 @@ data, and the manifest:
     <slot>_acc.hjson         the datapath block
     include/                 the C headers (headers.py): the streamer's
                              streamer_csr_addr_map.h and <instance>_csr.h
-    data.h                   the program's data (data.py, GEN2a): inputs,
+    data.h                   the program's data (data.py): inputs,
                              outputs and goldens
-    main.c                   the program (lower/c.py, GEN2a, D135): the
+    main.c                   the program (lower/c.py, D135): the
                              task list on snRuntime, self-checking
     manifest.json            what was written (Manifest)
 
@@ -127,7 +127,7 @@ from .headers import STREAMER_HEADER, accelerator_header, streamer_header
 ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
 
-# snax-gvsoc snax/snax_alu_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
+# snax-gvsoc snax/snax_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
 # last one the core sends out (SNAX_CSR_FIRST, SNAX_CSR_LAST)
 SNAX_CSR_FIRST = 0x3C0
 SNAX_CSR_LAST = 0x5FF

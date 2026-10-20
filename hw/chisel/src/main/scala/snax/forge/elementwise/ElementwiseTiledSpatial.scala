@@ -12,8 +12,8 @@ import chisel3.util._
   * ==No accumulator==
   *
   * A tile boundary is not a reduction. Each pass reads its own operands and writes its own results, and nothing is
-  * carried between passes, so there is no accumulation register and none is wanted. Cross-beat state appears when a WCR
-  * edge does -- see `samples.Accumulator` -- and that is a different pattern with a different hazard profile: a
+  * carried between passes, so there is no accumulation register and none is wanted. Cross-beat state appears when a
+  * reduction does -- see `samples.Accumulator` -- and that is a different pattern with a different hazard profile: a
   * reduction is a chaining barrier, an elementwise tile is not.
   *
   * ==loopCount is given, not derived==

@@ -1,4 +1,4 @@
-"""Shared helpers for the generator's tests (GEN3 step 3, LNK2a).
+"""Shared helpers for the generator's tests.
 
 ``point`` writes a design point of vecadd (bound by the checked-in recipe,
 W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by

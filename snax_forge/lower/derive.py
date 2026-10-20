@@ -1,4 +1,4 @@
-"""Design point -> task list (LOW1a, D45, D73, D89).
+"""Design point -> task list (D45, D73, D89).
 
 The task list (tasks.py, CONTRACTS.md section 9) is derived from a design
 point and decides nothing. The accelerated nodes run in the graph's

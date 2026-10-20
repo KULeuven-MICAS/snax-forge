@@ -1,4 +1,4 @@
-"""Tests for the task-list format (LOW1b, D64).
+"""Tests for the task-list format (D64).
 
 Sections:
   1. round trips (checked-in files, builder, values)
@@ -23,7 +23,7 @@ from .helpers import SCEN, TASK_SCENARIOS, add, cluster, dma, start, stream, syn
 
 
 def test_every_scenario_is_a_task_list():
-    """Every scenario folder has a hand-written task list (D66)."""
+    """Every scenario folder has a hand-written task list."""
     scenarios = tuple(sorted(p.parent.name for p in SCEN.glob("*/scenario.py")))
     assert TASK_SCENARIOS == scenarios
     assert "fmul" in scenarios and "vecadd" in scenarios

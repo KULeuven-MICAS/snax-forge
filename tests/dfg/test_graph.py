@@ -1,4 +1,4 @@
-"""The .snaxdfg format (DFG1, D71, D77, D102): fixtures, round trips, stored form, access."""
+"""The .snaxdfg format: fixtures, round trips, stored form, access."""
 
 from __future__ import annotations
 
@@ -97,7 +97,7 @@ def test_missing_keys_take_defaults_and_every_field_is_written():
 
 
 def test_reduce_is_written_only_when_set():
-    """A memlet without a reduce reads as before D102; dot's sum writes one (D102)."""
+    """A memlet without a reduce writes no ``reduce`` key; dot's sum writes one."""
     assert "reduce" not in "".join(fixture(n).read_text() for n in NAMES)
     g = Graph.load(fixture("dot"))
     assert g.node("sum").outputs["out"] == Memlet("out", [0], Reduction("add", 0))
@@ -183,7 +183,7 @@ def test_save_and_load(tmp_path):
 
 
 def test_nested_accelerated_node():
-    """An accelerated node may hold a body (a nested block, D71); names bind as usual."""
+    """An accelerated node may hold a body (a nested block); names bind as usual."""
     d = as_dict("vecadd_accelerated")
     outer = d["body"][0]["body"][0]
     inner = {**outer, "id": "add_inner", "attrs": {**outer["attrs"], "instance": "acc2"}}

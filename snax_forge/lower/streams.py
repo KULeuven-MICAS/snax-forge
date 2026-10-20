@@ -1,4 +1,4 @@
-"""A BRM port's nest, through a layout, onto a streamer's values (BRM2, D70).
+"""A BRM port's nest, through a layout, onto a streamer's values (D70).
 
 The nest (``snax_forge.brm.affine``) says in which order the accelerator
 takes an operand's elements, in logical indices; the layout (layout.py) says

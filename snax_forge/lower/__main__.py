@@ -1,4 +1,4 @@
-"""SNAX-LOWER command line (LOW1c, LOW1a).
+"""SNAX-LOWER command line.
 
     python -m snax_forge.lower cluster DESIGN_POINT [--out FILE]
     python -m snax_forge.lower tasks DESIGN_POINT [--out FILE]

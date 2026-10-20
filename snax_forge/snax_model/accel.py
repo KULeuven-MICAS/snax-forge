@@ -1,4 +1,4 @@
-"""Accelerator interface and generic stubs for SNAX-MODEL (MOD5, D5, D25, D29, D32).
+"""Accelerator interface and generic stubs for SNAX-MODEL.
 
 What this models
 ----------------
@@ -7,13 +7,14 @@ reader streamers, runs a Python function, holds the results in an L-stage
 pipeline, and pushes beats into the FIFOs of its writer streamers. It is the
 mirror image of the streamer, which sits between the xbar and a FIFO.
 
-It is a model only: no CSRs (MOD7), no BRM structure (M3), no RTL binding.
+It is a model only: no CSRs (ctrl.py adds the register window), no BRM
+structure, no RTL binding.
 
 Interface (``AccelConfig``)
 ---------------------------
 Per port: name, direction, lanes per beat (must equal the attached FIFO's
 lanes, i.e. the streamer's ``n_ports``) and an element rate (D25). Plus
-latency ``L``, initiation interval ``II``, ``drain`` (all user-supplied, D5,
+latency ``L``, initiation interval ``II``, ``drain`` (all user-supplied, D68,
 D103) and the Python function.
 
 A *firing* is one step of the datapath. The rate says how often a port
@@ -167,8 +168,8 @@ The other direction works too: a reader blocked on credit wakes exactly
 when this accelerator is ticked, and the accelerator only pops in cycles
 in which it is ticked.
 
-Cycle classes (for MOD8)
-------------------------
+Cycle classes
+-------------
 Each cycle counts as exactly one of, in this order:
 
 * ``busy``: a firing happened;
@@ -431,8 +432,8 @@ class Accelerator(Component):
       ``_slots`` (pipeline, slot L-1 is next to push), ``state`` (the
       function's task state), ``done_cycle``;
     * wires: ``_w``;
-    * statistics: ``cycles`` per class (a ``ClassLog``, MOD8), ``beats`` per
-      port, ``firings`` (D59). Trace events: ``start``, ``done`` (task), ``fire`` (beat), all
+    * statistics: ``cycles`` per class (a ``ClassLog``), ``beats`` per
+      port, ``firings``. Trace events: ``start``, ``done`` (task), ``fire`` (beat), all
       emitted when the state they describe commits.
     """
 
@@ -499,7 +500,7 @@ class Accelerator(Component):
 
         Other entries name port rates (e.g. ``T``). During a run, call it in
         Phase.CONTROL with the current cycle; before a run, without
-        ``cycle`` (as if started in cycle -1). The CSR mapping is MOD7.
+        ``cycle`` (as if started in cycle -1). The CSR mapping is in ctrl.py.
         """
         params = {k: int(v) for k, v in params.items()}
         self._check(params)

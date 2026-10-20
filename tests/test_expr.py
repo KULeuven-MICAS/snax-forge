@@ -1,4 +1,4 @@
-"""Value expressions (D68, D77): ints, names and small integer arithmetic, shared by BRM and DFG."""
+"""Value expressions (D77): ints, names and small integer arithmetic, shared by BRM and DFG."""
 
 import numpy as np
 import pytest
@@ -52,7 +52,7 @@ def test_evaluate_errors():
 
 
 # =============================================================================
-# Shared with the SNAX-DFG (D77)
+# Shared with the SNAX-DFG
 # =============================================================================
 
 

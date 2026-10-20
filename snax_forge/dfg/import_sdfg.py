@@ -1,4 +1,4 @@
-"""SDFG importer (IMP1, D71, D77): a simplified DaCe SDFG -> a ``.snaxdfg`` graph.
+"""SDFG importer (D71, D77): a simplified DaCe SDFG -> a ``.snaxdfg`` graph.
 
 The importer derives and decides nothing (principle 4). It reads the
 simplified SDFG that ``pixi run forge <kernel>`` writes (or builds the same
@@ -25,7 +25,7 @@ transient-plus-copy of ``C[:] = A + B`` into a direct write into ``C``, so
 there is nothing left to fold. A copy between containers that simplify left
 is an error here.
 
-**Reductions** (DFG3, D102). DaCe writes ``np.sum(A * B)`` as a map into a
+**Reductions** (D102). DaCe writes ``np.sum(A * B)`` as a map into a
 transient, a ``Reduce`` library node, and, for a result stored with
 ``out[0] = ...``, a scalar transient copied into ``out`` by a tasklet
 ``__out = __inp``; simplify leaves that copy. The importer folds it, as
@@ -59,11 +59,11 @@ code is one ``output = expression`` per output in the expression grammar;
 plain memlets; the ``Reduce`` library node at the top level, over
 unit-step ranges. Everything else raises ``SdfgImportError`` naming the
 construct and, where one exists, the open item or task that adds it:
-several states (open item 36, M9), other library nodes, a ``wcr`` memlet
-DaCe wrote itself (a fold into the element's contents, FE1), maps over
-several parameters, scalars and views (``np.sum(A, axis=1)`` stored with
-``B[:] = ...`` goes through a view, FE1), nested SDFGs, code outside the
-grammar (open item 37). FE1 and FE2 extend this list (M7).
+several states (open item 36), other library nodes, a ``wcr`` memlet DaCe
+wrote itself (a fold into the element's contents), maps over several
+parameters, scalars and views (``np.sum(A, axis=1)`` stored with
+``B[:] = ...`` goes through a view), nested SDFGs, code outside the grammar
+(open item 37). The kernel tiers' front-end work extends this list.
 """
 
 from __future__ import annotations
@@ -341,7 +341,7 @@ class _Importer:
         return Node(node_id, "map", attrs=attrs, body=body)
 
     def _reduce(self, red: Reduce) -> Node:
-        """A top-level Reduce as nested maps around ``out = in1`` with a ``reduce`` output (D102)."""
+        """A top-level Reduce as nested maps around ``out = in1`` with a ``reduce`` output."""
         what = f"{self.name}: reduce {red.label!r}"
         rtype = detect_reduction_type(red.wcr)
         if rtype not in REDUCTIONS:

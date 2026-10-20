@@ -1,8 +1,8 @@
-"""The design point: one bound graph on one platform, with its memory plan (DP1b, D74, D87).
+"""The design point: one bound graph on one platform, with its memory plan (D87).
 
-What SNAX-LOWER reads to make the cluster file (LOW1c) and the task list
-(LOW1a). The design step writes it once every check has passed; it is not
-edited by hand.
+What SNAX-LOWER reads to make the cluster file (lower/cluster.py) and the
+task list (lower/derive.py). The design step writes it once every check
+has passed; it is not edited by hand.
 
     {
      "name":       "vecadd",

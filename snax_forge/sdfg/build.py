@@ -23,7 +23,7 @@ def build(spec: KernelSpec, simplify: bool = False) -> dace.SDFG:
 
 
 def structural_summary(sdfg: dace.SDFG) -> dict:
-    """Seed of the W2 census. Deliberately shallow for now."""
+    """A deliberately shallow summary of the SDFG: its states, maps and arrays."""
     states = list(sdfg.states())
     scopes, maps = 0, 0
     for state in states:

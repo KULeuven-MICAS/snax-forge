@@ -1,8 +1,8 @@
-"""Task list -> plain command list (LOW1b, D45, D64).
+"""Task list -> plain command list (D45, D64).
 
 ``lower_program(tasks, cluster)`` walks the steps in order and emits the
 commands the model runs (D42), in name form, through the model's register
-adapters (D36), the same path the Python generators used before:
+adapters (D36):
 
     configure  the component's configuration writes, here (config_writes)
     start      the waits its tasks need, then their starts in list order
@@ -12,7 +12,7 @@ adapters (D36), the same path the Python generators used before:
 The waits a start needs: one for every ``after`` task not yet waited for,
 and one for every listed component whose latest task has not been waited
 for (a start while busy is an error, D36). There is at most one wait per
-component, and a wait that another of these waits covers is left out (D66);
+component, and a wait that another of these waits covers is left out (D64);
 waits are ordered by when the task they end on was started, and each uses
 that task's ``wait_mode``. A wait is on a component, so it ends on
 the component's latest task and covers every earlier one on it.
@@ -29,9 +29,8 @@ syncs go, and every dependency, are the task list's; only the waits
 correctness requires are added.
 
 ``placed_waits(tasks, cluster)`` gives the same waits as data, for the C
-backend (``c.py``, GEN2a): each with the step it belongs to (the start
-it comes before, or the sync it is), its component and mode, and what it
-covers.
+backend (``c.py``): each with the step it belongs to (the start it comes
+before, or the sync it is), its component and mode, and what it covers.
 """
 
 from __future__ import annotations

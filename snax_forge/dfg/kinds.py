@@ -19,7 +19,7 @@ adds is registered here with ``register_kind``:
   container, one dimension per container dimension, bound names) are
   checked in graph.py before it.
 
-Built-in kinds (DFG1):
+Built-in kinds:
 
     map          one loop variable over a range, parallel iterations; a body.
                  ``loop.kind`` (tile, temporal, spatial) says how SNAX-SANDBOX
@@ -63,7 +63,7 @@ from .subset import canonical_dim, is_range, parse_dim
 if TYPE_CHECKING:
     from .graph import Container, Node
 
-LOOP_KINDS = ("tile", "temporal", "spatial")  # values of loop.kind (D73, D77)
+LOOP_KINDS = ("tile", "temporal", "spatial")  # values of loop.kind (D73)
 
 
 class DfgError(ValueError):

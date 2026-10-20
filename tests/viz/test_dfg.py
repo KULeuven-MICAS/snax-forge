@@ -1,4 +1,4 @@
-"""The DFG viewer (VIS5, D76, D81): loading files, the view of a graph, the routes.
+"""The DFG viewer: loading files, the view of a graph, the routes.
 
 The rows, boxes and edges are what the panel draws, so they are checked here
 exactly; where the browser puts them, and the SVG curves, are checked by eye
@@ -127,14 +127,14 @@ def test_vecadd_accelerated():
 
 
 def test_a_folding_write_names_its_op():
-    """dot's sum map writes out[0] with reduce add, and the edge says so (D102)."""
+    """dot's sum map writes out[0] with reduce add, and the edge says so."""
     v = view(FIXTURES / "dot.snaxdfg")
     writes = [(e["from"], e["text"]) for e in v["edges"] if e["dir"] == "write"]
     assert writes == [("mult.out", "tmp0[i]"), ("sum.out", "out[0] (reduce add)")]
 
 
 def test_the_bound_dot_shows_both_accelerators():
-    """dot after its recipe (SBX2): mul and sum, each over N // 4 beats; tmp0 between them."""
+    """dot after its recipe: mul and sum, each over N // 4 beats; tmp0 between them."""
     v = view(FIXTURES / "dot_accelerated.snaxdfg")
     tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
     assert [(t["id"], t["iterations"]) for t in tops] == [("mult_map", 16), ("sum_map", 16)]

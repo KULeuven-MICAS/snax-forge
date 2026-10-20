@@ -1,9 +1,9 @@
-"""The BRM library: elementwise_add (BRM3), elementwise_mul and accumulate (BRM4).
+"""The BRM library: elementwise_add, elementwise_mul and accumulate.
 
 elementwise_add is accepted against the elementwise stub on scenarios/vecadd:
 the entry the BRM resolves to is alu4's ``acc`` entry, and vecadd run with it
 gives the same cycles, profile and data. accumulate is accepted against the
-reduce stub on scenarios/reduce the same way (D103), and its Chisel
+reduce stub on scenarios/reduce the same way, and its Chisel
 implementation declares the Accumulator's drain, 0 (D133).
 """
 
@@ -45,10 +45,9 @@ def test_library_has_dots_blocks():
 
 
 def test_the_brms_are_bound():
-    """GEN3.md's binding: elementwise_add (step 3) and elementwise_mul (step 6a), the same
-    block with the op through ElementwiseOp; accumulate's Accumulator (step 6b), counted with
-    loopCount = n then len = T, pipelined, its lanes W; the adder tree the same block (GEN2a
-    round 2)."""
+    """The bindings: elementwise_add and elementwise_mul, the same block with the op through
+    ElementwiseOp; accumulate's Accumulator, counted with loopCount = n then len = T, pipelined,
+    its lanes W; the adder tree the same block."""
     from snax_forge.gen import ELEMENTWISE_OP
 
     from .test_brm import BINDING
@@ -118,7 +117,7 @@ def test_vecadd_same_cycles_and_data_as_the_stub():
     assert np.array_equal(a.l1, b.l1) and np.array_equal(a.l2, b.l2)
     assert a.reads == b.reads
     x, y = (np.load(SCEN / "vecadd" / f) for f in ("a.npy", "b.npy"))
-    # c = a + b in L2 where vecadd's store_C puts it (1024 since NAME1, D83)
+    # c = a + b in L2 where vecadd's store_C puts it (1024, D83)
     c = store_base(SCEN / "vecadd" / "tasks.json", "store_C") // 8
     assert np.array_equal(b.l2[c : c + 64, 0], x + y)
 
@@ -132,7 +131,7 @@ def store_base(tasks: Path, task: str) -> int:
 
 @pytest.mark.parametrize("w", [1, 4, 8])
 def test_function_code_agrees_with_the_model(w):
-    """The BRM's code and the kind SNAX-MODEL runs compute the same lanes (D82)."""
+    """The BRM's code and the kind SNAX-MODEL runs compute the same lanes."""
     import numpy as np
 
     from snax_forge import expr
@@ -157,7 +156,7 @@ def test_elementwise_mul_is_add_with_mul():
 
 @pytest.mark.parametrize("w", [1, 4, 8])
 def test_mul_code_agrees_with_the_model(w):
-    """Per lane, elementwise_mul's code and its kind compute the same (D82)."""
+    """Per lane, elementwise_mul's code and its kind compute the same."""
     from snax_forge import expr
 
     inst = load_brm("elementwise_mul").resolve(IMPL, {"W": w})
@@ -170,7 +169,7 @@ def test_mul_code_agrees_with_the_model(w):
 
 
 # =============================================================================
-# accumulate against the reduce stub (BRM4, D103)
+# accumulate against the reduce stub
 # =============================================================================
 
 
@@ -199,7 +198,7 @@ def test_reduce_same_cycles_and_data_as_the_stub():
 
 
 def test_the_chisel_accumulator_declares_its_drain():
-    """One lane, drain 0 since D133, so not in the entry (written only when not 0, D103)."""
+    """One lane, drain 0 (D133), so not in the entry (written only when not 0)."""
     brm = load_brm("accumulate")
     inst = brm.resolve("chisel_accumulator", {"W": 1})
     assert (inst.latency, inst.initiation_interval, inst.drain) == (1, 1, 0)

@@ -1,9 +1,9 @@
 """
 Dot product via reduction. DaCe yields a Reduce library node, not a WCR memlet.
 
-int64, one element per 64-bit L1 word, as vecadd (open item 30, D78): the
-importer turns the Reduce into a sum map whose output memlet folds with
-``add`` (D102), and integer sums match exactly in any order (D28).
+int64, one element per 64-bit L1 word, as vecadd (D113): the importer turns
+the Reduce into a sum map whose output memlet folds with ``add``, and integer
+sums match exactly in any order (D28).
 
 Tier done (PAPER §6.1).
 """

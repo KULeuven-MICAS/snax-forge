@@ -7,7 +7,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.SnaxUnitCases
 import snax.forge.SnaxUnitCases.{RunLine, Start}
 
-/** The fold half of GEN3's unit cross-check: the Accumulator driven through snax-gvsoc's `SnaxUnit` rate cases.
+/** The fold half of the unit cross-check: the Accumulator driven through snax-gvsoc's `SnaxUnit` rate cases.
   *
   * Every case that is a pipelined fold with a rate (`inputs 1`, `config` holding `rate`; `SnaxUnitCases`, read from
   * `SNAX_GVSOC_UNIT_CASES`) is the Accumulator at L = 1, II 1, `lanes` the case's lanes (1 without the line),
@@ -15,8 +15,7 @@ import snax.forge.SnaxUnitCases.{RunLine, Start}
   * them, a start poked in the cycle the case offers it, and fire (`in.fire`), push (`out.fire`) and busy compared every
   * cycle; each start's answer against the block's state (`refused` busy, `ignored` idle with count or rate 0, `taken`
   * otherwise). Each pushed sum is checked against the inputs it folds (lane j of a case's k-th input, from 0, is k *
-  * lanes + j + 1). A cases folder with no such case (snax-gvsoc before GEN3 step 6b, the submodule's pin until it is
-  * bumped) cancels the test too.
+  * lanes + j + 1). A cases folder with no such case (an older snax-gvsoc checkout) cancels the test too.
   *
   * The `expect run` lines are compared too, each busy cycle classed by `SnaxUnit`'s rule (D59) from what the block
   * shows: a result waiting with no room (`out.valid && !out.ready`) is stall_out, an input taken busy, no input with

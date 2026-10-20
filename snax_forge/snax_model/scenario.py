@@ -1,4 +1,4 @@
-"""Scenario runner for SNAX-MODEL (MOD9, D26, D29, D38, D39, D41-D44).
+"""Scenario runner for SNAX-MODEL.
 
 What a scenario is
 ------------------
@@ -89,10 +89,10 @@ insertion order and ``np.save`` is deterministic. Files of a kind the run
 does not produce (a trace at level off, l2.npy without an L2) are removed,
 so the directory always matches its run.json.
 
-Contracts are written down in MOD10; the dataclasses here are kept minimal
-(D26). None of this changes a component: the builder calls the same
-constructors, ``attach``, ``RegisterMap`` and ``Controller`` a hand-written
-test would, in the same order.
+Contracts are written down in docs/CONTRACTS.md; the dataclasses here are
+kept minimal (D26). None of this changes a component: the builder calls the
+same constructors, ``attach``, ``RegisterMap`` and ``Controller`` a
+hand-written test would, in the same order.
 """
 
 from __future__ import annotations
@@ -162,7 +162,7 @@ class PortAttachError(ScenarioError):
 
 
 class RegionError(ScenarioError):
-    """A region that does not fit its memory, or a name given twice (D95)."""
+    """A region that does not fit its memory, or a name given twice."""
 
 
 class MemoryInitError(ScenarioError):
@@ -177,8 +177,8 @@ class MemoryInitError(ScenarioError):
 def _check_keys(d: Mapping[str, Any], allowed: Sequence[str], what: str) -> None:
     """Reject unknown keys, so a typo never silently falls back to a default.
 
-    config.check_keys with the scenario's error type; the config classes use
-    the plain one (MOD10b).
+    ``common.check_keys`` with the scenario's error type; the config classes
+    use the plain one.
     """
     try:
         check_keys(d, allowed, what)
@@ -187,10 +187,10 @@ def _check_keys(d: Mapping[str, Any], allowed: Sequence[str], what: str) -> None
 
 
 def config_from_dict(cls: type, d: Mapping[str, Any], what: str) -> Any:
-    """``cls.from_dict`` (config.py) with the name of the field being read.
+    """``cls.from_dict`` (``common.Config``) with the name of the field being read.
 
-    The config classes carry the conversion themselves since MOD10b; this
-    only turns their ValueError into a ScenarioError naming the field.
+    The config classes carry the conversion themselves; this only turns
+    their ValueError into a ScenarioError naming the field.
     """
     try:
         return cls.from_dict(d)

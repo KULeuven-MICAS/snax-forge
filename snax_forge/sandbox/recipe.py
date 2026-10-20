@@ -1,4 +1,4 @@
-"""Recipes (SBX1, D72, D80): an ordered list of transforms applied to an imported graph.
+"""Recipes (D72): an ordered list of transforms applied to an imported graph.
 
 A recipe is a hand-written JSON file, kept under ``recipes/``:
 
@@ -19,12 +19,12 @@ A transform declares which of its own params are ints (``split_map``'s
 ``factor``); those take an int or an expression over the recipe params
 (snax_forge/expr.py), everything else is taken as written. ``--set W=8`` on
 the command line (``Recipe.with_params``) overrides a param, so one recipe
-covers a sweep: the same steps, one run per value (D72; the sweep runner
-itself is DSE5). The recipe written next to a run's output has the values
+covers a sweep: the same steps, one run per value (D72; there is no sweep
+runner yet). The recipe written next to a run's output has the values
 that run used.
 
 Every field is written; ``params`` and ``symbols`` default to empty, unknown
-keys are errors (D26, D41). Whether a step's transform exists and takes its
+keys are errors (D26). Whether a step's transform exists and takes its
 params is checked when the recipe runs (run.py), where the transforms are
 registered.
 """

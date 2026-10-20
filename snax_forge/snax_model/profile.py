@@ -1,4 +1,4 @@
-"""Profile of a SNAX-MODEL run (MOD8, D38, section 5.7).
+"""Profile of a SNAX-MODEL run (C§7).
 
 What it is
 ----------
@@ -8,24 +8,24 @@ nothing in the cluster (the FIFO occupancy is closed on a copy). The trace
 (trace.py) is written independently, and the tests check the two against
 each other (D38).
 
-Contents (section 5.7)
-----------------------
+Contents
+--------
 * ``total_cycles``;
 * ``controller``: cycles per class (``command`` = control overhead, kept
-  apart from ``wait`` as section 7 needs), commands, csr reads, polls and
-  every wait (D37);
+  apart from ``wait``, D37), commands, csr reads, polls and every wait;
 * per accelerator: cycles per class, utilisation (busy / total: the share
   of cycles the datapath is occupied, a firing plus its II gap, D59), beats
   per port and the number of firings (equal to busy only when ii = 1);
 * per streamer: cycles per class, its xbar ports, and its FIFO occupancy
-  (max, time-weighted mean and histogram per lane, D40);
+  (max, time-weighted mean and histogram per lane);
 * per DMA: cycles per class, beats and bytes each way, max buffered beats;
 * per L1 bank: reads, writes (L1Memory), grants, conflicts, stalls and
   blocked (Xbar);
 * per xbar port: owner, width, grants, stalls, stalls caused by a wider
   grant;
 * per L2: reads and writes (beats);
-* ``functional_check``: empty until the reference executor exists (E2E1).
+* ``functional_check``: null for a scenario run on its own; a run of the
+  flow fills it.
 
 ``skip_idle`` is not part of the profile on purpose: the profile must be
 the same with skipping on and off.
@@ -79,7 +79,7 @@ class AccelProfile:
     cycles: dict[str, int]  # accel.py cycle classes; busy includes II gaps (D59)
     utilisation: float  # busy / total: share of cycles the datapath is occupied
     beats: dict[str, int]
-    firings: int = 0  # equals busy only when ii = 1 (D59)
+    firings: int = 0  # equals busy only when ii = 1
 
 
 @dataclass
@@ -94,7 +94,7 @@ class DmaProfile:
 
 @dataclass
 class WaitProfile:
-    """One wait: first and last cycle, and the block's done_cycle at the end (D37)."""
+    """One wait: first and last cycle, and the block's done_cycle at the end."""
 
     pc: int
     block: str
@@ -161,7 +161,7 @@ class Profile:
     banks: BankProfile | None = None
     ports: dict[str, PortProfile] = field(default_factory=dict)
     l2: dict[str, L2Profile] = field(default_factory=dict)
-    functional_check: dict[str, Any] | None = None  # MOD9 / E2E1
+    functional_check: dict[str, Any] | None = None  # a flow run fills it
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)

@@ -3,7 +3,7 @@
 The flow runs vecadd from the checked-in recipe on ``platforms/small16.json``,
 starting from the import fixture (``PLAIN``) rather than the kernel, so these
 tests need no DaCe. ``PINS`` puts B and C where ``scenarios/vecadd`` has them
-(77 cycles); ``B_PIN`` moves B alone, as LOOP1 does.
+(77 cycles); ``B_PIN`` moves B alone, as ``examples/loop1`` does.
 
 ``excerpts_hold`` is the check the walk-throughs in ``examples/`` share: a
 table quoted in a README under ``<!-- excerpt: FOLDER/report/FILE -->`` must
@@ -20,7 +20,7 @@ from snax_forge.flow import Flow, run_flow
 from tests.design.helpers import FIXTURES, RECIPE, REPO, SMALL16
 
 SCEN = REPO / "scenarios"
-PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel (IMP1)
+PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel
 B_PIN = [("B.l1.base", 576)]
 PINS = [*B_PIN, ("C.l1.base", 1152)]
 EXCERPT = re.compile(r"<!-- excerpt: (\S+) -->")

@@ -1,4 +1,4 @@
-"""The C backend (GEN2a, D135): vecadd's main.c read as text, vsum's counter, every
+"""The C backend (D135): vecadd's main.c read as text, vsum's counter, every
 refusal, and vecadd's main.c compiled against snax-gvsoc's sw/ where the image's clang is."""
 
 from __future__ import annotations

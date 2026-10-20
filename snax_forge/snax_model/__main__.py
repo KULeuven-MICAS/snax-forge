@@ -1,4 +1,4 @@
-"""Command line for SNAX-MODEL (MOD9, D44).
+"""Command line for SNAX-MODEL.
 
     python -m snax_forge.snax_model run SCENARIO --out DIR
            [--trace off|task|beat] [--no-skip] [--max-cycles N]

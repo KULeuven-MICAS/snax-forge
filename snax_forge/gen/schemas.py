@@ -1,4 +1,4 @@
-"""The generator's own schemas (LNK2a): the streamer file and the accelerator file.
+"""The generator's own schemas: the streamer file and the accelerator file.
 
     schema(name) -> dict        name: "streamer" or "accelerator"
     validate(name, value)       raises jsonschema.ValidationError

@@ -1,4 +1,4 @@
-"""Uniform register interface and controller for SNAX-MODEL (MOD7, D6, D11, D26, D29, D36, D37).
+"""Uniform register interface and controller for SNAX-MODEL (D36).
 
 What this models
 ----------------
@@ -7,7 +7,7 @@ commands, ``csr_write``, ``csr_read`` and ``wait``, against a register
 interface that is the same for every block: streamers, accelerators, the
 DMA and any later block kind. It does not copy the SNAX interfaces
 (ReqRspManager CSRs, iDMA instructions); mapping onto them is the job of
-SNAX-LOWER's C backend (D18, GEN2), by register *name*.
+SNAX-LOWER's C backend (D111), by register *name*.
 
 Register blocks
 ---------------
@@ -41,7 +41,7 @@ Each block kind has an adapter, found by component class
 (``register_adapter``). It lists the configuration registers from the
 component's config, ``decode``s their values into the component's start
 argument, and ``encode``s a start argument back into values (for the
-``start_writes`` helper, tests and later SNAX-LOWER). Component classes do
+``start_writes`` helper, tests and SNAX-LOWER). Component classes do
 not change for this. First adapters:
 
 * streamer: ``base``, ``tbound[0..D-1]``, ``tstride[0..D-1]``,
@@ -107,14 +107,14 @@ committed ``done_cycle``, so asking again before the returned cycle gives
 the same answer. If the run ends with a signal wait pending, the block
 never finished: ``finished`` is False.
 
-Cycle classes (for MOD8)
-------------------------
+Cycle classes
+-------------
 Each cycle is exactly one of ``command`` (a write or read runs: control
 overhead), ``wait`` (poll or signal) or ``idle`` (program done). A skipped
 gap always lies inside one command or in the idle tail, because the
 controller ticks at the end of every command, so ``on_gap`` credits it to
 that class. The controller also records ``spans`` (pc, first, last) per
-command and ``waits`` (pc, block, t, D, last) per wait, for tests and MOD8.
+command and ``waits`` (pc, block, t, D, last) per wait, for tests and the profile.
 
 Errors
 ------
@@ -419,7 +419,7 @@ class Block:
 class RegisterMap:
     """Blocks with their windows, built from a list of (name, component).
 
-    Built from a cluster config in MOD9/MOD10. ``spatial_bounds`` gives
+    Built from a cluster config by ``scenario.build``. ``spatial_bounds`` gives
     design-time spatial bounds per streamer name (default ``(n_ports,)``).
     """
 
@@ -552,7 +552,7 @@ class Controller(Component):
       start landed);
     * wires: ``_done`` (the current command ends this cycle), ``_write``,
       ``_read``, ``_cls``;
-    * statistics: ``cycles`` per class (a ``ClassLog``, MOD8), ``reads``,
+    * statistics: ``cycles`` per class (a ``ClassLog``), ``reads``,
       ``polls``, ``spans``, ``waits``. Trace events: ``cmd`` per finished
       command (task), ``poll`` per poll sample (beat), both from commit.
     """

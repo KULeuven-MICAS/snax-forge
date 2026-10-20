@@ -1,11 +1,11 @@
-"""The C backend: a design point's task list -> ``main.c`` on snRuntime (GEN2a, D135).
+"""The C backend: a design point's task list -> ``main.c`` on snRuntime (D135).
 
     main_c(point, tasks, cluster, layout, arrays, includes, point_path) -> str
 
 SNAX-LOWER's second backend of the task list (derive.py, C§9); SNAX-MODEL's
-command list (commands.py) stays as first written until RET1 (D45). It
-reads the cluster file the generator writes (gen/gvsoc.py: its cores), the
-accelerator's CSR layout (gen's ``CsrLayout``: the field names of
+command list (commands.py) stays as first written until SNAX-MODEL is
+removed (D45). It reads the cluster file the generator writes (gen/gvsoc.py:
+its cores), the accelerator's CSR layout (gen's ``CsrLayout``: the field names of
 ``include/``), data.h's arrays (gen/data.py) and the files to include, in
 order; the generator writes ``main.c`` beside them.
 
@@ -55,8 +55,8 @@ walks the same steps, so the barrier counts match by construction.
 
 **Marks.** ``csrr zero, mcycle`` at a global label ``forge_<task>_<event>``
 for each task's configure, start and the end of the wait that covers it,
-and ``forge_main_entry`` / ``forge_main_exit``: FLOW3 reads their cycles
-from the trace.
+and ``forge_main_entry`` / ``forge_main_exit``: the flow will read their
+cycles from the trace once it runs on SNAX-GVSoC.
 
 **Addresses.** L1 addresses are the memory plan's, absolute. A DMA's L2
 side is the container's data.h symbol plus the task's offset into its L2

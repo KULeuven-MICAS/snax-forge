@@ -1,6 +1,6 @@
-"""Tests for the SNAX-MODEL streamers (MOD4).
+"""Tests for the SNAX-MODEL streamers.
 
-MOD4 acceptance (docs/STATUS.md):
+Acceptance:
   * address streams equal a NumPy enumeration for 1D, 2D and strided nests,
   * a full FIFO causes stalls, and
   * conflict-free throughput equals the port count per cycle.
@@ -8,9 +8,9 @@ Plus: skip on/off identical under random configs and consumer timing.
 
 How the tests are built
 -----------------------
-There is no accelerator yet (MOD5). ``Consumer`` pops beats from a reader's
+The tests use no accelerator. ``Consumer`` pops beats from a reader's
 FIFO and ``Producer`` pushes beats into a writer's FIFO, both in COMPUTE,
-the phase the accelerator will use. Each is "willing" in a given set of
+the phase the accelerator uses. Each is "willing" in a given set of
 cycles (every cycle by default) and acts when willing and the FIFO allows.
 
 ``LogStreamer`` is a Streamer that also logs grants as (cycle, port) and

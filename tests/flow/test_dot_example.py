@@ -1,4 +1,5 @@
-"""EX2: every number and name examples/dot/README.md states, checked on what its commands make.
+"""The dot walk-through: every number and name examples/dot/README.md states, checked on what
+its commands make.
 
 The README's two sandbox commands and two flow commands are run as written,
 from a temporary folder that stands for the repo root: the recipes and the
@@ -7,7 +8,7 @@ bound graphs are ``out/sandbox/<name>/4_bind.snaxdfg`` as the README has
 them. Each quoted table is marked ``<!-- excerpt: FOLDER/report/FILE -->``
 and must be part of that report line for line. What the README says the DFG
 viewer shows is checked on the viewer's API (the drawing itself is checked
-by eye, D55); the claims made in prose are checked below in its order.
+by eye); the claims made in prose are checked below in its order.
 """
 
 from __future__ import annotations

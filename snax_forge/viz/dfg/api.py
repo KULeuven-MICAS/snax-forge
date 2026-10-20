@@ -1,4 +1,4 @@
-"""What the DFG viewer asks for, as plain Python functions (VIS5, D76, D81).
+"""What the DFG viewer asks for, as plain Python functions (D81).
 
 The server (server.py) only turns these results into JSON; the tests call
 them directly, and the drawing is checked by eye (D55).
@@ -40,11 +40,10 @@ edges cross as little as possible.
 
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box. Its
-text is the subset, and for a folding write the op (``out[0] (reduce add)``,
-D102). An
-edge between a container and a connector inside a top-level node is drawn
+text is the subset, and for a folding write the op (``out[0] (reduce add)``).
+An edge between a container and a connector inside a top-level node is drawn
 only up to that node's outer box, above or below the connector it belongs
-to (``stop``, D82), so it never crosses the text inside; an edge between
+to (``stop``), so it never crosses the text inside; an edge between
 two connectors inside one node is drawn in full. The
 nodes are the graph's own tree, with what a panel shows about each one
 already worked out: a map's iteration count when its range evaluates with
@@ -339,5 +338,5 @@ def _writes(top: Node, c: str) -> list[tuple[Node, str, Memlet]]:
 def _edge(
     src: str, dst: str, data: str, text: str, side: str, stop: str | None = None
 ) -> dict[str, Any]:
-    """One memlet; ``stop`` is the top-level node whose box the drawn edge ends at (D82)."""
+    """One memlet; ``stop`` is the top-level node whose box the drawn edge ends at."""
     return {"from": src, "to": dst, "data": data, "text": text, "dir": side, "stop": stop}

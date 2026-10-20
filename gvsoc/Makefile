@@ -1,5 +1,5 @@
-# SNAX-GVSoC from snax-forge (GEN3 step 0a, D128): builds snax-gvsoc, its
-# programs, and runs gvrun on a target of the install.
+# SNAX-GVSoC from snax-forge (D128): builds snax-gvsoc, its programs, and
+# runs gvrun on a target of the install.
 #
 # Run it in snax-forge's image, in the plain container shell, not in pixi
 # (pixi's environment sets CC and CXX to conda's gcc), from this folder:

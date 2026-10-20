@@ -1,4 +1,4 @@
-"""Command line of the visualiser (VIS1, D55).
+"""Command line of the visualiser.
 
     python -m snax_forge.viz DIR [DIR ...] [--port 8765] [--verbose]
 

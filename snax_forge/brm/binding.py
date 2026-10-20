@@ -1,4 +1,4 @@
-"""An implementation's binding: its Chisel block and how the BRM fills it (D129, GEN3).
+"""An implementation's binding: its Chisel block and how the BRM fills it (D129).
 
     {"block":   "ElementwiseTiledSpatial",            the Chisel block's name
      "args":    {"lanes": "W", "supportedOps": "op"}, its parameters, each an
@@ -16,10 +16,10 @@
 ``control`` and ``wait`` are registered kinds (D19): ``register_control``
 and ``register_wait``. ``counted`` is the only control: every block counts
 its own firings (D129). Which blocks exist is the generators' business
-(snax_forge/gen registers the GVSoC adapters; GEN1 the Chisel side), so
-``block`` is only a name here. Every expression is checked and stored
-canonical (snax_forge/expr.py). A binding may be null: the implementation
-is not generated yet.
+(snax_forge/gen registers the GVSoC adapters; the Chisel side is not
+generated yet), so ``block`` is only a name here. Every expression is
+checked and stored canonical (snax_forge/expr.py). A binding may be null:
+the implementation is not generated yet.
 """
 
 from __future__ import annotations

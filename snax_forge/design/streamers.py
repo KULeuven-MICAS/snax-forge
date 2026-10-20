@@ -1,4 +1,4 @@
-"""The streamer shell against a bound graph (DP1a, D84).
+"""The streamer shell against a bound graph (D84).
 
 For every accelerated node's instance, in the order the graph first uses
 them, and every port of its BRM in port order, one streamer:
@@ -48,7 +48,7 @@ class Streamer:
         return prod(self.spatial_bounds)
 
     def config(self) -> StreamerConfig:
-        """The streamer's entry in the cluster file (LOW1c)."""
+        """The streamer's entry in the cluster file (lower/cluster.py)."""
         return self.options.config(write=self.write, n_ports=self.n_ports)
 
     def to_dict(self) -> dict[str, Any]:
@@ -109,8 +109,8 @@ def firing_loops(graph: Graph, node: Node) -> list[Loop]:
     """The temporal maps around ``node``, outermost first: its firing loop (D70, D79).
 
     Every map around an accelerated node must be ``temporal`` for now: a tile
-    or untagged map would start a new task per iteration, which LOW1a does
-    not lower yet (a tile transform and per-tile DMA come later).
+    or untagged map would start a new task per iteration, which SNAX-LOWER
+    does not lower yet (a tile transform and per-tile DMA come later).
     """
     outer = next(o for n, o in graph.walk() if n is node)
     symbols = {k: v for k, v in graph.symbols.items() if v is not None}

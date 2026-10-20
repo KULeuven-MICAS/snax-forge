@@ -1,4 +1,4 @@
-"""Command builder in name form (moved from scenarios/make.py, open item 24, D65).
+"""Command builder in name form (D65).
 
 ``Program`` programs one block at a time through the model's register map:
 ``config`` writes every configuration register of a block for a start

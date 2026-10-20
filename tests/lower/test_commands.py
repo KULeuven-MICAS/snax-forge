@@ -1,10 +1,10 @@
-"""Tests for the lowering of task lists into programs (LOW1b, D45, D64).
+"""Tests for the lowering of task lists into programs (D45, D64).
 
-LOW1b acceptance (docs/STATUS.md): the program lowered from
-scenarios/vecadd/tasks.json equals vecadd's hand-scheduled program, the one
-scenarios/vecadd held before its program was generated (D65, D67), written
-out here without the lowering. Plus: every scenario keeps its cycle count,
-the wait rule on small cases, and the errors that need the cluster.
+The program lowered from scenarios/vecadd/tasks.json equals vecadd's
+hand-scheduled program, the one scenarios/vecadd held before its program was
+generated (D65, D67), written out here without the lowering. Plus: every
+scenario keeps its cycle count, the wait rule on small cases, and the errors
+that need the cluster.
 
 Sections:
   1. the scenarios' task lists
@@ -40,7 +40,7 @@ from .helpers import (
 
 def vecadd_by_hand() -> list:
     """vecadd's program as scheduled by hand (tests/snax_model helpers.mod7_vecadd,
-    and the program scenarios/make.py wrote before D64): the LOW1b reference."""
+    and the program scenarios/make.py wrote before D64): the reference."""
     p = Program(cluster("alu4"))
 
     def beats(base: int) -> DmaPattern:
@@ -68,7 +68,7 @@ def vecadd_by_hand() -> list:
 
 
 def test_vecadd_task_list_gives_the_vecadd_program():
-    """LOW1b acceptance, against a program written without the lowering."""
+    """Against a program written without the lowering."""
     program = lower_program(TaskList.load(SCEN / "vecadd" / "tasks.json"), cluster("alu4"))
     assert [c.to_dict() for c in program] == [c.to_dict() for c in vecadd_by_hand()]
     assert len(program) == 57
@@ -190,7 +190,7 @@ def test_a_wait_on_the_writer_covers_its_group():
 
 
 def test_a_needed_wait_the_writer_covers_is_left_out():
-    """acc_a and acc_b are busy too, but waiting for acc_out covers them (fmul's tiles, D66)."""
+    """acc_a and acc_b are busy too, but waiting for acc_out covers them (fmul's tiles, D64)."""
     prog = lowered(*group(0), *group(1))
     assert shape(prog)[-5:] == ["Wacc_out:poll", "Sacc_a", "Sacc_b", "Sacc_out", "Sacc"]
 
