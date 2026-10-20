@@ -3,37 +3,40 @@
     python -m snax_forge.flow RECIPE --platform P [--set NAME=VALUE ...]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--graph FILE] [--name NAME] [--out DIR]
-                              [--seed S] [--trace off|task|beat]  (default task)
+                              [--seed S] [--trace off]  (task, beat: FLOW3 round 1b)
     python -m snax_forge.flow GRAPH.snaxdfg --platform P [--kernel K]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--name NAME] [--out DIR] [--seed S] [--trace ...]
 
 Runs the recipe on its kernel's import (or ``--graph``), pairs the result
-with the platform, lowers the design point, runs it in SNAX-MODEL on the
-kernel's ``make_inputs`` and checks the output against the kernel's
-reference and the reference executor (run.py). ``--set W=8`` sets a recipe param,
+with the platform, lowers the design point to its task list, generates its
+hjson files, headers, data (the kernel's ``make_inputs``, the reference
+executor's goldens) and ``main.c``, builds SNAX-GVSoC when needed and the
+program, runs it on ``snax_hjson`` and takes the program's own check: its
+exit code and what it printed (run.py, D136). ``--set W=8`` sets a recipe param,
 ``--set platform.l1.n_banks=32`` a platform field and
 ``--set memory.B.l1.base=576`` pins a base, as the sandbox and design
 commands take them. Everything goes to ``out/flow/<name>/``. The default
 name is the recipe's with every ``--set`` appended: recipe params, then
 platform and memory paths without their prefix, each in the order given
-(``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``). The run is
-traced at ``task`` level unless ``--trace`` says otherwise; the data
-movement views need ``--trace beat`` (D90). What it prints is also in
-``flow.log``, with the design checks that ran, next to ``report/``.
+(``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``). ``--trace``
+is ``off``, the default; ``task`` and ``beat`` stop with a named error until
+FLOW3 round 1b (D137). What it prints is also in ``flow.log``, with the
+design checks that ran; there are no reports in FLOW3 round 1a.
 
 The second form starts from a bound graph instead (D108): a file ending in
 ``.snaxdfg`` is the last step of a sandbox run, or a graph edited by hand,
 and goes straight to the design step; any other file is a recipe. Nothing
-else changes: the same checks, lowering, run and output check, in
+else changes: the same checks, lowering, run and check, in
 ``out/flow/<name>/``, where the default name is the design step's for the
 graph (its sandbox folder, else the file's stem) with every ``--set``
 appended. The kernel is the graph's ``name`` unless ``--kernel`` names it.
 There is no recipe, so a recipe param (``--set W=8``) and ``--graph`` are
 refused, as ``--kernel`` is with a recipe.
 
-Exit 0 when the output matches, 1 when a stage fails (its problems named) or
-the output does not match, 2 on bad arguments. pixi: ``flow``.
+Exit 0 when the program's check passed, 1 when a stage fails (its problems
+named, a make failure with its log) or the check failed, 2 on bad arguments.
+pixi: ``flow``.
 """
 
 from __future__ import annotations
@@ -47,7 +50,6 @@ from snax_forge.design import DesignError, parse_value
 from snax_forge.dfg import DfgError
 from snax_forge.lower import LowerError
 from snax_forge.sandbox import SandboxError
-from snax_forge.snax_model.scenario import ScenarioError
 
 from .run import FlowError, run_bound, run_flow, summary
 
@@ -82,7 +84,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--name", help="flow name (default: recipe name and every --set)")
     ap.add_argument("--out", type=Path, help="output directory (default out/flow/<name>)")
     ap.add_argument("--seed", type=int, default=0, help="seed of make_inputs and the checks")
-    ap.add_argument("--trace", default="task", choices=["off", "task", "beat"])
+    ap.add_argument("--trace", default="off", choices=["off", "task", "beat"],
+                    help="off; task and beat come in FLOW3 round 1b")  # fmt: skip
     args = ap.parse_args(argv)
     sets: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
     for head, path, value in args.set:
@@ -117,7 +120,7 @@ def main(argv: list[str] | None = None) -> int:
     except DesignError as e:
         print(e, file=sys.stderr)
         return 1
-    except (FlowError, SandboxError, DfgError, LowerError, ScenarioError, OSError) as e:
+    except (FlowError, SandboxError, DfgError, LowerError, OSError) as e:
         print(f"FAILED {args.recipe}: {e}", file=sys.stderr)
         return 1
     print(summary(f))

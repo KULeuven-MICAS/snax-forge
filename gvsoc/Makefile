@@ -55,7 +55,9 @@ unexport CPP CFLAGS CXXFLAGS CPPFLAGS LDFLAGS CMAKE_ARGS CMAKE_PREFIX_PATH \
 
 # GVSoC's build/ and install/ (snax-gvsoc's Makefile puts both under it).
 # CMake refuses a build folder made from another checkout, so `build` keeps
-# the checkout it built in checkout.txt and clears both when it changes.
+# the checkout it built in checkout.txt (its path, then the commit, written
+# once the build passed) and clears both when the path changes. The flow
+# builds again when the path or the commit differs or the tree is dirty.
 GVSOC_WORKDIR ?= $(abspath $(CURDIR)/../out/snax-gvsoc)
 INSTALL = $(GVSOC_WORKDIR)/install
 BUILT_FROM = $(GVSOC_WORKDIR)/checkout.txt
@@ -85,13 +87,14 @@ GVRUN_ARGS ?=
 .PHONY: build sw run
 
 build:
-	@if [ -d $(GVSOC_WORKDIR)/build ] && [ "$$(cat $(BUILT_FROM) 2>/dev/null)" != "$(SNAX_GVSOC_ABS)" ]; then \
+	@if [ -d $(GVSOC_WORKDIR)/build ] && [ "$$(head -n 1 $(BUILT_FROM) 2>/dev/null)" != "$(SNAX_GVSOC_ABS)" ]; then \
 		echo "$(GVSOC_WORKDIR) was built from another checkout: clearing it"; \
 		rm -rf $(GVSOC_WORKDIR)/build $(GVSOC_WORKDIR)/install; \
 	fi
 	mkdir -p $(GVSOC_WORKDIR)
 	echo "$(SNAX_GVSOC_ABS)" > $(BUILT_FROM)
 	$(MAKE) -C $(SNAX_GVSOC_ABS) build GVSOC_WORKDIR=$(GVSOC_WORKDIR) TARGETS="$(TARGETS)"
+	git -c safe.directory='*' -C $(SNAX_GVSOC_ABS) rev-parse HEAD >> $(BUILT_FROM)
 
 sw:
 	$(MAKE) -C $(SNAX_GVSOC_ABS) sw

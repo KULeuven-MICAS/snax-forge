@@ -10,9 +10,14 @@
 
 from __future__ import annotations
 
-import json
-
 import pytest
+
+pytest.skip(
+    "FLOW3 round 1b: the reports come back with the events (D137); the flow writes none in round 1a",
+    allow_module_level=True,
+)
+
+import json
 
 from snax_forge.design import DesignPoint
 from snax_forge.flow import regions_of, run_flow

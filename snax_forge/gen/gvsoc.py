@@ -84,7 +84,8 @@ graph's, e.g. ``{"N": 64}``: what a program sizes its data by),
 count, the task's ``n``) and its ``csrs`` values.
 
 **Stable paths.** The design point is named once, by its path relative to
-``root`` (snax-forge's root by default), ``/``-separated: the manifest's
+``root`` (snax-forge's root by default; ``named_from`` when given, the
+flow's folder in a flow), ``/``-separated: the manifest's
 ``design_point`` and every written file's header comment hold the same
 string (``out/design/vecadd/design_point.json``); the platform's source is
 read from ``root`` too. ``files`` and ``cluster`` are relative to the
@@ -483,20 +484,23 @@ def _hjson(point_path: str, what: str, value: Any) -> str:
 
 
 def generate(
-    design_point: str | Path, out_dir: str | Path, root: str | Path | None = None
-) -> Manifest:
+    design_point: str | Path, out_dir: str | Path, root: str | Path | None = None, *,
+    named_from: str | Path | None = None, kernel: str | None = None, seed: int = 0,
+) -> Manifest:  # fmt: skip
     """Write the three hjson files, the headers, data.h, main.c and the manifest to
-    ``out_dir``; see the module doc."""
+    ``out_dir``; see the module doc. ``named_from`` is the folder the design point is named
+    from (``root`` by default; the flow's folder for a flow, D136); ``kernel`` and ``seed``
+    go to data.h's inputs (data.py's ``arrays``)."""
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
-    shown = point_name(point_path, root)
+    shown = point_name(point_path, root if named_from is None else Path(named_from))
     point = DesignPoint.load(point_path)
     platform = point.platform
     name, inst, unit = accelerator(point)
     template = streamer_template(point, name, inst)
     layout = csr_layout(template, unit.fields)
     tasks = task_list(point)
-    data = arrays(point)
+    data = arrays(point, seed, kernel)
 
     cluster = source(platform, root)
     at, found = find_slot(cluster, platform)

@@ -10,8 +10,14 @@
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
+
+pytest.skip(
+    "FLOW3 round 2: the memory views read SNAX-MODEL's runs; the SNAX-GVSoC flow writes no memory dumps yet",
+    allow_module_level=True,
+)
+
+import numpy as np
 
 from snax_forge.snax_model.scenario import ClusterConfig, Region
 from snax_forge.viz import api, memory

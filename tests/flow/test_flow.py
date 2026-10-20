@@ -1,135 +1,301 @@
-"""The whole path, kernel to model run (D90)."""
+"""The whole path, kernel to a SNAX-GVSoC run (D90, D136).
+
+1. up to the generator on vecadd and vsum, SNAX-GVSoC stubbed (helpers.stub):
+   main.c without marks and with forge_check, data.h's goldens the kernel's
+   reference, the make calls, the folder, run.json
+2. the build stage: when it runs, the checkout's warning
+3. the check: the program's output parsed (pass, data errors, a missing
+   line, a nonzero exit) and the run's exit code from make
+4. what stops the flow: a design problem, the generator's refusals, a make
+   failure, a trace level of round 1b
+5. names, the log and the command line
+6. the full flow on SNAX-GVSoC (marker ``gvsoc``)
+"""
 
 from __future__ import annotations
 
-import copy
 import json
 
 import numpy as np
 import pytest
 
-from snax_forge.design import DesignError
+from snax_forge.design import DesignError, DesignPoint
 from snax_forge.design.check import CHECKS
+from snax_forge.flow import (
+    STAGE_NAMES,
+    Checkout,
+    FlowError,
+    build_reason,
+    check_output,
+    checkout,
+    default_name,
+    run_exit_code,
+    run_flow,
+    summary,
+)
 from snax_forge.flow import __main__ as cli
-from snax_forge.flow import default_name, functional_check, run_flow, summary
 from snax_forge.flow import run as flow_run
-from snax_forge.flow.run import STAGE_NAMES
-from snax_forge.lower import TaskList
-from snax_forge.report import render_design, render_run, reports_of
+from snax_forge.gen import Manifest
 from snax_forge.sandbox import Recipe
 from snax_forge.sdfg.loader import load as load_kernel
-from snax_forge.snax_model.scenario import Scenario, read_outputs, run
-from tests.design.helpers import RECIPE, SMALL16
+from tests.design.helpers import REPO, SMALL16, SNAX_ALU
 
-from .helpers import PINS, PLAIN, SCEN
+from .helpers import COMMIT, PLAIN, PLAINS, built, golden, needs_gvsoc, stub
 
-
-def flow(tmp_path, **kw):
-    kw.setdefault("graph_path", PLAIN)
-    return run_flow(RECIPE, SMALL16, out=tmp_path / "flow", **kw)
+RECIPES = REPO / "recipes"
 
 
-def profile_without_check(p: dict) -> dict:
-    p = dict(p)
-    p.pop("functional_check")
-    return p
+def flow(tmp_path, design="vecadd", **kw):
+    kw.setdefault("graph_path", PLAINS[design])
+    return run_flow(RECIPES / f"{design}.json", SNAX_ALU, out=tmp_path / "flow", **kw)
 
 
 # =============================================================================
-# 1. The acceptance
+# 1. Up to the generator, SNAX-GVSoC stubbed
 # =============================================================================
 
 
-def test_vecadd_from_the_kernel(tmp_path):
-    """Kernel -> import -> recipe -> design point -> cluster and tasks -> scenario -> run."""
-    f = run_flow(RECIPE, SMALL16, out=tmp_path / "flow")
-    assert f.passed and f.result.total_cycles == 85  # contiguous: A and B share banks
-    c = f.check["containers"]["C"]
-    assert c == {"memory": "l2", "elements": 64, "reference": True, "ref1": True, "mismatches": 0}
+@pytest.mark.parametrize("design", ["vecadd", "vsum"])
+def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
+    fake = stub(monkeypatch, tmp_path)
+    f = flow(tmp_path, design)
     out = tmp_path / "flow"
+    assert f.passed and f.total_cycles == 226 and f.check["exit_code"] == 0
     names = {p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()}
-    assert {"sandbox/recipe.json", "sandbox/0_input.snaxdfg", "sandbox/2_bind.snaxdfg",
-            "design/platform.json", "design/memory.json", "design/design_point.json",
-            "cluster.json", "tasks.json", "scenario.json", "A.npy", "B.npy", "C.npy",
-            "run/run.json", "run/profile.json", "run/l2.npy",
-            "run/trace.jsonl", "run/trace_meta.json"} <= names  # fmt: skip
-    got = read_outputs(out / "run")
-    assert got.profile.functional_check == f.check
-    assert got.run["trace_level"] == "task"  # the default (D90): the schedule has class runs
-    assert {"acc", "acc_a", "acc_b", "acc_out", "dma", "ctl"} <= set(got.trace.intervals)
-    # one region per container and memory, from the memory plan
-    assert got.regions == f.scenario.regions and len(got.regions) == 6
-    for r in got.regions:
-        lay = f.point.memory.layouts[r.name][r.mem]
-        assert (r.base, r.shape, r.strides) == (lay.base, lay.shape, lay.strides)
-
-
-def test_with_vecadds_places_it_is_scenarios_vecadd(tmp_path):
-    """B and C pinned: the cluster, task list, cycles and profile of scenarios/vecadd."""
-    f = flow(tmp_path, memory_sets=PINS)
-    out = tmp_path / "flow"
-    assert f.passed and f.result.total_cycles == 77
-    assert f.name == "vecadd_B.l1.base576_C.l1.base1152" and f.point.name == "vecadd"
-    assert (out / "tasks.json").read_text() == (SCEN / "vecadd" / "tasks.json").read_text()
-    assert f.scenario.regions == Scenario.load(SCEN / "vecadd" / "scenario.json").regions
-    assert (out / "cluster.json").read_text() == (SCEN / "clusters" / "alu4.json").read_text()
-    assert TaskList.load(out / "tasks.json") == TaskList.load(SCEN / "vecadd" / "tasks.json")
-    want = run(Scenario.load(SCEN / "vecadd" / "scenario.json")).profile.to_dict()
-    assert profile_without_check(f.result.profile.to_dict()) == profile_without_check(want)
-
-
-def test_the_output_is_the_kernels_reference(tmp_path):
-    f = flow(tmp_path, seed=5)
-    spec = load_kernel("vecadd")
-    inputs = spec.make_inputs(np.random.default_rng(5), n=64)
-    l2 = np.load(tmp_path / "flow" / "run" / "l2.npy")
-    assert np.array_equal(l2[1024 // 8 : 1024 // 8 + 64, 0], inputs["A"] + inputs["B"])
-    assert f.check["seed"] == 5 and f.check["symbols"] == {"N": 64}
-
-
-def test_w8_and_platform_changes_run_right(tmp_path):
-    f = flow(tmp_path, recipe_sets={"W": 8},
-             platform_sets=[("l1.n_banks", 32), ("streamers.acc_out.fifo_depth", 4)])  # fmt: skip
-    assert f.passed and f.point.streamers["acc_out"].n_ports == 8
-    assert f.name == "vecadd_W8_l1.n_banks32_streamers.acc_out.fifo_depth4"
-    assert f.cluster.l1.n_banks == 32 and f.tasks.configured()["add_acc"].values == {"n": 8}
-
-
-def test_the_written_scenario_runs_again_the_same(tmp_path):
-    f = flow(tmp_path, memory_sets=PINS)
-    again = run(Scenario.load(tmp_path / "flow" / "scenario.json"))
-    assert again.total_cycles == f.result.total_cycles and np.array_equal(again.l2, f.result.l2)
-
-
-# =============================================================================
-# 2. What fails
-# =============================================================================
-
-
-def test_a_wrong_output_fails_the_check(tmp_path):
-    f = flow(tmp_path)
-    bad = copy.copy(f.result)
-    bad.l2 = f.result.l2.copy()
-    bad.l2[1024 // 8 + 3, 0] += 1  # one element of C
-    spec = load_kernel("vecadd")
+    assert {"sandbox/recipe.json", "sandbox/2_bind.snaxdfg", "design/design_point.json",
+            "tasks.json", "gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson",
+            "gen/snax_alu_acc.hjson", "gen/main.c", "gen/data.h", "gen/manifest.json",
+            "gen/include/acc_csr.h", "sw/forge.elf", "run/stdout.txt", "run/stderr.txt",
+            "run/run.json", "run/profile.json", "flow.log"} <= names  # fmt: skip
+    assert not {"cluster.json", "scenario.json"} & names  # SNAX-MODEL's, gone
+    main_c = (out / "gen" / "main.c").read_text()
+    assert "FORGE_MARK" not in main_c and "forge_main" not in main_c
+    assert "static __attribute__((noinline)) int forge_check(uint32_t t0) {" in main_c
+    # data.h's goldens are the kernel's reference on its make_inputs (seed 0)
+    spec = load_kernel(design)
     inputs = spec.make_inputs(np.random.default_rng(0), n=64)
-    check = functional_check(spec, f.point, inputs, bad, 0)
-    assert not check["passed"]
-    assert check["containers"]["C"] == {
-        "memory": "l2", "elements": 64, "reference": False, "ref1": False, "mismatches": 1
+    spec.reference(**inputs)
+    data_h = (out / "gen" / "data.h").read_text()
+    for c in spec.inout:
+        want = inputs[c].ravel().tolist()
+        assert golden(data_h, f"{c}_golden")[: len(want)] == want
+    # build (none yet), sw and run, each through gvsoc/Makefile with the flow's folders
+    assert [g for g, _ in fake.calls] == ["build", "sw", "run"]
+    sw, run = fake.calls[1][1], fake.calls[2][1]
+    assert sw == {"APPS": "forge", "FORGE": str((out / "gen").resolve()), "DESIGN": f.name,
+                  "FORGE_BUILD": str((out / "sw").resolve())}  # fmt: skip
+    assert run["TARGET"] == "snax_hjson" and run["ELF"] == str((out / "sw/forge.elf").resolve())
+    assert run["GVRUN_ARGS"] == f"--param hjson={(out / 'gen/snax_alu.hjson').resolve()}"
+    assert run["WORK_DIR"] == str((out / "run" / "work").resolve())
+    beats = {t.name: t.beats for t in Manifest.load(out / "gen" / "manifest.json").tasks}
+    assert f.check["tasks"] == {t: {"counter": n + 3, "beats": n} for t, n in beats.items()}
+
+
+def test_the_generated_folder_names_the_design_point_from_the_flows_folder(tmp_path, monkeypatch):
+    """gen/ is byte-identical wherever the flow's folder is: its files name the design point
+    as design/design_point.json."""
+    stub(monkeypatch, tmp_path)
+    a = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, out=tmp_path / "a" / "x")
+    b = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, out=tmp_path / "b" / "y")
+    assert a.manifest.design_point == b.manifest.design_point == "design/design_point.json"
+    for f in a.manifest.files:
+        assert (a.out / "gen" / f).read_bytes() == (b.out / "gen" / f).read_bytes(), f
+
+
+def test_run_json_records_what_ran(tmp_path, monkeypatch):
+    stub(monkeypatch, tmp_path, dirty=True)
+    f = flow(tmp_path)
+    out = tmp_path / "flow"
+    rec = json.loads((out / "run" / "run.json").read_text())
+    assert rec == {
+        "design_point": "design/design_point.json",
+        "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
+        "elf": "sw/forge.elf",
+        "elf_sha256": f.elf_sha256,
+        "target": "snax_hjson",
+        "snax_gvsoc": {"commit": COMMIT, "dirty": True},
+        "trace_level": "off",
+    }
+    prof = json.loads((out / "run" / "profile.json").read_text())
+    assert prof == {"total_cycles": 226, "functional_check": f.check}
+    assert f.check == {
+        "kernel": "vecadd", "seed": 0, "symbols": {"N": 64}, "exit_code": 0, "data_errors": 0,
+        "words": 64, "tasks": {"add_acc": {"counter": 19, "beats": 16}}, "passed": True,
     }  # fmt: skip
 
 
-def test_a_design_problem_stops_the_flow_before_the_run(tmp_path):
+def test_an_earlier_runs_files_go_first(tmp_path, monkeypatch):
+    stub(monkeypatch, tmp_path)
+    out = tmp_path / "flow"
+    for stale in ("cluster.json", "scenario.json", "A.npy", "report/run.md", "run/trace.jsonl",
+                  "gen/old.h"):  # fmt: skip
+        (out / stale).parent.mkdir(parents=True, exist_ok=True)
+        (out / stale).write_text("old")
+    flow(tmp_path)
+    for stale in ("cluster.json", "scenario.json", "A.npy", "report/run.md", "run/trace.jsonl",
+                  "gen/old.h"):  # fmt: skip
+        assert not (out / stale).exists(), stale
+
+
+# =============================================================================
+# 2. The build stage
+# =============================================================================
+
+
+def test_the_build_is_skipped_when_up_to_date(tmp_path, monkeypatch):
+    fake = stub(monkeypatch, tmp_path)
+    built(fake)
+    f = flow(tmp_path)
+    assert [g for g, _ in fake.calls] == ["sw", "run"]
+    assert f.build == "up to date"
+    assert "  build     up to date (snax-gvsoc aaaaaaaa)" in summary(f)
+
+
+def test_build_reason(tmp_path):
+    work = tmp_path / "w"
+    c = Checkout(tmp_path / "sub", COMMIT, False, COMMIT)
+    assert build_reason(c, work).startswith("no install in ")
+    (work / "install" / "bin").mkdir(parents=True)
+    (work / "install" / "bin" / "gvrun").write_text("")
+    assert "was built from an unknown checkout" in build_reason(c, work)
+    (work / "checkout.txt").write_text(f"{tmp_path / 'other'}\n{COMMIT}\n")
+    assert build_reason(c, work).endswith(f"was built from {tmp_path / 'other'}")
+    (work / "checkout.txt").write_text(f"{c.path}\n")  # a build that failed: no commit
+    assert (
+        build_reason(c, work)
+        == "built at snax-gvsoc an unknown commit, the checkout is at aaaaaaaa"
+    )
+    (work / "checkout.txt").write_text(f"{c.path}\n{'b' * 40}\n")
+    assert build_reason(c, work) == "built at snax-gvsoc bbbbbbbb, the checkout is at aaaaaaaa"
+    (work / "checkout.txt").write_text(f"{c.path}\n{COMMIT}\n")
+    assert build_reason(c, work) is None
+    dirty = Checkout(c.path, COMMIT, True, COMMIT)
+    assert build_reason(dirty, work) == "gvsoc/snax-gvsoc has uncommitted changes"
+
+
+def test_a_submodule_off_its_pin_is_warned_about(tmp_path, monkeypatch):
+    stub(monkeypatch, tmp_path, pinned="b" * 40)
+    f = flow(tmp_path)
+    line = "  WARNING   gvsoc/snax-gvsoc is at aaaaaaaa, snax-forge's tree pins bbbbbbbb"
+    assert line in summary(f).splitlines()
+    assert line in (tmp_path / "flow" / "flow.log").read_text().splitlines()
+
+
+def test_a_submodule_not_checked_out_is_named(tmp_path):
+    with pytest.raises(FlowError, match=r"build: .* is not checked out: git submodule update"):
+        checkout(tmp_path)
+
+
+# =============================================================================
+# 3. The check
+# =============================================================================
+
+PASS = """make: Entering directory '/x/gvsoc'
+forge cycles: 226
+forge data: 0 errors (64 words)
+forge counter add_acc: 19
+forge errors: 0
+make: Leaving directory '/x/gvsoc'
+"""
+
+
+def test_the_check_of_a_passing_program():
+    assert check_output(PASS, 0, {"add_acc": 16}) == (226, {
+        "exit_code": 0, "data_errors": 0, "words": 64,
+        "tasks": {"add_acc": {"counter": 19, "beats": 16}}, "passed": True,
+    })  # fmt: skip
+
+
+def test_the_check_of_data_errors_and_a_nonzero_exit():
+    text = PASS.replace("0 errors (64", "2 errors (64").replace(
+        "forge errors: 0", "forge errors: 2"
+    )
+    cycles, check = check_output(text, 1, {"add_acc": 16})
+    assert cycles == 226 and check["data_errors"] == 2 and check["exit_code"] == 1
+    assert not check["passed"]
+    # the exit code alone decides
+    assert not check_output(PASS, 3, {"add_acc": 16})[1]["passed"]
+
+
+@pytest.mark.parametrize(
+    ("drop", "says"),
+    [("forge cycles: 226\n", "forge cycles:"), ("forge data: 0 errors (64 words)\n", "forge data:"),
+     ("forge counter add_acc: 19\n", "forge counter add_acc:")],
+    ids=["cycles", "data", "counter"],
+)  # fmt: skip
+def test_a_missing_line_is_named(drop, says):
+    with pytest.raises(FlowError, match=f"check: no `{says}` line in the program's output"):
+        check_output(PASS.replace(drop, ""), 0, {"add_acc": 16})
+
+
+def test_the_runs_exit_code_from_make():
+    assert run_exit_code(0, "") == 0
+    assert run_exit_code(2, "Warning: ...\nmake: *** [Makefile:110: run] Error 1\n") == 1
+    with pytest.raises(FlowError, match=r"gvsoc: make run failed \(exit 2\) before running gvrun"):
+        run_exit_code(2, "make: *** No rule to make target 'run'.  Stop.\n")
+
+
+def test_a_failing_program_fails_the_flow_not_the_stage(tmp_path, monkeypatch):
+    fake = stub(monkeypatch, tmp_path)
+    fake.rc["run"] = 2
+    fake.stderr["run"] = "make: *** [Makefile:110: run] Error 1\n"
+    fake.stdout = PASS.replace("0 errors (64", "2 errors (64")
+    f = flow(tmp_path)
+    assert not f.passed and f.check["exit_code"] == 1 and f.check["data_errors"] == 2
+    assert "  check     FAILED: 226 cycles (main to forge_check); data 2 errors" in summary(f)
+
+
+# =============================================================================
+# 4. What stops it
+# =============================================================================
+
+
+def test_a_design_problem_stops_the_flow_before_gen(tmp_path, monkeypatch):
+    fake = stub(monkeypatch, tmp_path)
     with pytest.raises(DesignError) as e:
-        flow(tmp_path, platform_sets=[("l1.rows", 8)])
-    assert e.value.codes == ["memory.fit"]
-    assert not (tmp_path / "flow" / "run").exists()
+        flow(tmp_path, platform_sets=[("l1.rows", 1)])
+    assert "memory.fit" in e.value.codes
+    assert not (tmp_path / "flow" / "gen").exists() and fake.calls == []
+
+
+def test_a_platform_without_a_source_stops_at_gen(tmp_path, monkeypatch):
+    fake = stub(monkeypatch, tmp_path)
+    with pytest.raises(FlowError, match=r"gen: \[gen.source\] platform small16 has no source"):
+        run_flow(RECIPES / "vecadd.json", SMALL16, graph_path=PLAIN, out=tmp_path / "flow")
+    assert fake.calls == []
+    assert (tmp_path / "flow" / "flow.log").read_text().startswith("flow vecadd FAILED\n")
+
+
+def test_a_make_failure_names_its_log(tmp_path, monkeypatch):
+    fake = stub(monkeypatch, tmp_path)
+    fake.rc["sw"] = 2
+    fake.stderr["sw"] = "clang: error: no such file\n"
+    with pytest.raises(FlowError) as e:
+        flow(tmp_path)
+    msg = str(e.value)
+    assert msg.startswith("sw: make sw failed (exit 2); its output is in ")
+    assert "sw.log" in msg and "clang: error: no such file" in msg
+    assert (tmp_path / "flow" / "flow.log").read_text().startswith("flow vecadd FAILED\nsw: ")
+
+
+@pytest.mark.parametrize("level", ["task", "beat"])
+def test_the_trace_levels_of_round_1b_are_refused(tmp_path, monkeypatch, level):
+    fake = stub(monkeypatch, tmp_path)
+    with pytest.raises(
+        FlowError, match=f"trace level '{level}': the events come in FLOW3 round 1b"
+    ):
+        flow(tmp_path, trace_level=level)
+    assert fake.calls == [] and not (tmp_path / "flow").exists()
+
+
+# =============================================================================
+# 5. Names, the log, the command line
+# =============================================================================
 
 
 def test_default_name():
     """Every --set: recipe params, then platform and memory paths without their prefix."""
-    r = Recipe.load(RECIPE)
+    r = Recipe.load(RECIPES / "vecadd.json")
     assert default_name(r, {}) == "vecadd" and default_name(r, {"W": 8}) == "vecadd_W8"
     assert default_name(r, {}, memory_sets=[("B.l1.base", 576)]) == "vecadd_B.l1.base576"
     assert default_name(r, {}, [("l1.n_banks", 32)]) == "vecadd_l1.n_banks32"
@@ -139,136 +305,83 @@ def test_default_name():
     assert default_name(r, {}, [("x.y", [2, 2]), ("z", "a/b c")]) == "vecadd_x.y2,2_zabc"
 
 
-def test_the_guard_rail_flows_get_names_of_their_own(tmp_path):
-    """Default, W = 8 and B pinned each get a folder of their own."""
-    names = {
-        flow(tmp_path / "0").name,
-        flow(tmp_path / "1", recipe_sets={"W": 8}).name,
-        flow(tmp_path / "2", memory_sets=[("B.l1.base", 576)]).name,
-    }
-    assert names == {"vecadd", "vecadd_W8", "vecadd_B.l1.base576"}
-
-
-def test_the_trace_level_can_still_be_lowered(tmp_path):
-    f = flow(tmp_path, trace_level="off")
-    assert f.result.total_cycles == 85 and f.result.trace is None
-    assert not (tmp_path / "flow" / "run" / "trace_meta.json").exists()
-    assert f.report_error is None  # the reports say what needs a trace instead
-
-
-# =============================================================================
-# 3. The reports and the log
-# =============================================================================
-
-
-def test_the_flow_writes_its_reports_and_log_beside_the_run(tmp_path):
-    f = flow(tmp_path)
-    out = tmp_path / "flow"
-    assert (out / "report" / "design.md").is_file() and (out / "report" / "run.md").is_file()
-    # run/ holds only what the model wrote (D44)
-    assert sorted(p.name for p in (out / "run").iterdir()) == [
-        "l1.npy", "l2.npy", "profile.json", "run.json", "trace.jsonl", "trace_meta.json"
+def test_the_summary_says_there_are_no_reports_yet(tmp_path, monkeypatch):
+    stub(monkeypatch, tmp_path)
+    lines = summary(flow(tmp_path)).splitlines()
+    assert [x.split()[0] for x in lines[1:]] == [
+        "sandbox", "design", "lower", "gen", "build", "sw", "gvsoc", "check", "report"
     ]  # fmt: skip
-    # the same reports as `pixi run report` on the folder
-    r = reports_of(out)
-    assert (out / "report" / "design.md").read_text() == render_design(r.design)
-    assert (out / "report" / "run.md").read_text() == render_run(r.run)
-    assert f.report_error is None
-    assert "  report    report/design.md, report/run.md, flow.log" in summary(f)
+    assert (
+        lines[-1] == "  report    none in FLOW3 round 1a; the reports come back in FLOW3 round 1b"
+    )
 
 
-def test_the_log_is_the_summary_and_the_checks_that_ran(tmp_path):
+def test_the_log_is_the_summary_the_checks_and_the_stage_times(tmp_path, monkeypatch):
+    stub(monkeypatch, tmp_path)
     f = flow(tmp_path)
     log = (tmp_path / "flow" / "flow.log").read_text()
     head, _, rest = log.partition("\n\ndesign checks that ran ")
-    checks, _, times = rest.partition("\n\nstage times ")
+    checks, _, times = rest.partition("\n\nstage times (wall clock, this machine):\n")
     assert head == summary(f)
-    assert f"  design    {len(CHECKS)} checks passed;" in head
-    lines = checks.splitlines()
-    assert lines[0] == f"({len(CHECKS)}, all passed):"
-    assert lines[1] == "  platform  platform.load, platform.l2, platform.banks"
-    listed = [c for line in lines[1:] for c in line.split(None, 1)[1].split(", ")]
-    assert listed == list(CHECKS)  # every registered check once, in the order it ran
-    assert f.checks == {st: [c for c in CHECKS if CHECKS[c].stage == st] for st in f.checks}
-    assert times.startswith("(wall clock, this machine):")
-
-
-def test_the_log_ends_with_the_stage_times(tmp_path):
-    """Every stage once, in order, seconds >= 0 that add up to the total; never a pinned value
-    (they are this machine's), and never in the summary or run/ (D44)."""
-    f = flow(tmp_path)
-    log = (tmp_path / "flow" / "flow.log").read_text()
-    lines = log.partition("\n\nstage times (wall clock, this machine):\n")[2].splitlines()
-    rows = [line.split() for line in lines]
+    listed = [c for line in checks.splitlines()[1:] for c in line.split(None, 1)[1].split(", ")]
+    assert listed == list(CHECKS)
+    rows = [line.split() for line in times.splitlines()]
     assert [r[0] for r in rows] == [*STAGE_NAMES, "total"] and all(r[2] == "s" for r in rows)
     secs = [float(r[1]) for r in rows]
     assert all(s >= 0 for s in secs) and abs(sum(secs[:-1]) - secs[-1]) < 0.01
     assert list(f.times) == list(STAGE_NAMES)
-    assert "stage times" not in summary(f)
-    assert not any(
-        "stage times" in p.read_text() for p in (tmp_path / "flow" / "run").glob("*.json")
-    )
-
-
-def test_a_failing_flow_logs_why_and_leaves_no_old_reports(tmp_path):
-    flow(tmp_path)
-    out = tmp_path / "flow"
-    with pytest.raises(DesignError):
-        flow(tmp_path, platform_sets=[("l1.rows", 8)])
-    log = (out / "flow.log").read_text()
-    assert log.startswith("flow vecadd_l1.rows8 FAILED\n") and "[memory.fit] C in l1" in log
-    assert not (out / "report" / "design.md").exists() and not (out / "report" / "run.md").exists()
-
-
-def test_a_report_that_cannot_be_built_is_named_not_fatal(tmp_path, monkeypatch):
-    def broken(folder):
-        raise ValueError("no such thing")
-
-    monkeypatch.setattr(flow_run, "write_reports", broken)
-    f = flow(tmp_path)
-    assert f.passed and f.report_error == "ValueError: no such thing"
-    assert "  report    NOT WRITTEN: ValueError: no such thing" in summary(f)
-    assert (tmp_path / "flow" / "flow.log").read_text().startswith(summary(f))
-
-
-# =============================================================================
-# 4. Command line
-# =============================================================================
+    assert "gen" in f.times and "gvsoc" in f.times and "report" not in f.times
 
 
 def main(*argv) -> int:
     return cli.main([str(a) for a in argv])
 
 
-def test_cli_runs_and_says_what_it_did(tmp_path, capsys):
-    args = [RECIPE, "--platform", SMALL16, "--graph", PLAIN, "--out", tmp_path / "f"]
-    assert main(*args, "--set", "memory.B.l1.base=576", "--set", "memory.C.l1.base=1152") == 0
+def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
+    stub(monkeypatch, tmp_path)
+    args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN]
+    assert main(*args, "--out", tmp_path / "f") == 0
     out = capsys.readouterr().out
-    assert "flow vecadd_B.l1.base576_C.l1.base1152 (vecadd: W=4; N=64) on small16" in out
-    assert "lower     cluster.json (7 components), tasks.json (12 steps, 57 commands)" in out
-    assert "run       77 cycles" in out
-    assert "check     C (64 elements, from l2) equals the vecadd reference and REF1" in out
-    assert (tmp_path / "f" / "flow.log").read_text().startswith(out)  # what it printed
-    d = json.loads((tmp_path / "f" / "design" / "memory.json").read_text())
-    assert d["changes"] == {"B.l1.base": 576, "C.l1.base": 1152}
-
-
-def test_cli_routes_each_set(tmp_path, capsys):
-    args = [RECIPE, "--platform", SMALL16, "--graph", PLAIN, "--out", tmp_path / "f"]
-    assert main(*args, "--set", "W=8", "--set", "platform.streamers.default.fifo_depth=4") == 0
+    assert out.startswith("flow vecadd (vecadd: W=4; N=64) on snax_alu -> ")
+    assert "  check     passed: 226 cycles (main to forge_check)" in out
+    assert (tmp_path / "f" / "flow.log").read_text().startswith(out)
+    # the sets route as before; the folder carries them
+    assert main(*args, "--out", tmp_path / "g", "--set", "W=8",
+                "--set", "platform.streamers.default.fifo_depth=4") == 0  # fmt: skip
     out = capsys.readouterr().out
     assert "flow vecadd_W8_streamers.default.fifo_depth4 (vecadd: W=8; N=64)" in out
-    assert (tmp_path / "f" / "run" / "trace_meta.json").exists()  # --trace task by default
-    pf = json.loads((tmp_path / "f" / "design" / "platform.json").read_text())
+    pf = json.loads((tmp_path / "g" / "design" / "platform.json").read_text())
     assert pf["changes"] == {"streamers.default.fifo_depth": 4}
+    assert DesignPoint.load(tmp_path / "g" / "design" / "design_point.json").name == "vecadd_W8"
 
 
-def test_cli_reports_a_failing_stage(tmp_path, capsys):
-    args = [RECIPE, "--platform", SMALL16, "--graph", PLAIN, "--out", tmp_path / "f"]
-    assert main(*args, "--set", "platform.l1.rows=8") == 1
-    assert "[memory.fit] C in l1" in capsys.readouterr().err
+def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch, capsys):
+    fake = stub(monkeypatch, tmp_path)
+    args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN, "--out", tmp_path / "f"]  # fmt: skip
+    assert main(*args, "--trace", "task") == 1
+    assert "the events come in FLOW3 round 1b" in capsys.readouterr().err
     assert main(*args, "--set", "Q=1") == 1
     assert "no param 'Q'" in capsys.readouterr().err
-    with pytest.raises(SystemExit) as e:
-        main(*args, "--set", "l1.rows=8")
-    assert e.value.code == 2
+    fake.rc["run"] = 2
+    fake.stderr["run"] = "make: *** [Makefile:110: run] Error 1\n"
+    assert main(*args) == 1
+    assert "  check     FAILED: " in capsys.readouterr().out
+
+
+# =============================================================================
+# 6. The full flow on SNAX-GVSoC
+# =============================================================================
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+@pytest.mark.parametrize("design", ["vecadd", "vsum"])
+def test_the_flow_on_snax_gvsoc(tmp_path, design):
+    """From the kernel: a checked SNAX-GVSoC run, exit 0, its window and counters printed."""
+    f = run_flow(RECIPES / f"{design}.json", SNAX_ALU, out=tmp_path / design)
+    assert f.passed, summary(f)
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
+    assert all(t["counter"] >= t["beats"] for t in f.check["tasks"].values())
+    stdout = (tmp_path / design / "run" / "stdout.txt").read_text()
+    assert f"forge cycles: {f.total_cycles}\n" in stdout
+    assert flow_run.checkout().commit == f.checkout.commit
