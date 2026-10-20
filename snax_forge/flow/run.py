@@ -18,6 +18,7 @@
                         what it printed (``check_output``)          run/run.json
       -> convert        the events into the profile and the trace
                         (snax_forge/run/, C§7)                      run/profile.json
+      -> report         design.md and run.md (snax_forge/report/)  report/
       -> log            the summary and the design checks that ran flow.log
 
 The flow runs SNAX-GVSoC only (D136). ``build``, ``sw`` and ``gvsoc`` each call
@@ -57,8 +58,8 @@ what ``convert`` adds.
 FLOW3 round 2. ``convert`` reads the log, names it after the cluster
 (``run/cluster.py``: the generator's hjson files and the design point) and the
 task list, and writes the profile and, at ``task``, the trace (``run/convert.py``,
-whose invariants hold or the stage fails). There are no reports until FLOW3
-round 1b's step 6; the summary says so.
+whose invariants hold or the stage fails). ``report`` then writes
+``report/design.md`` and ``report/run.md`` from them (D99).
 
 Everything goes to one folder, ``out/flow/<name>/``, overwritten on every
 run; the default name carries every ``--set``, so runs that differ only in
@@ -71,7 +72,7 @@ SNAX-MODEL's flow left there, are removed first.
 
 **Stage times** (D90). ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``gen``, ``build``,
-``sw``, ``gvsoc``, ``check``, ``convert``) and their total, on this machine. They change
+``sw``, ``gvsoc``, ``check``, ``convert``, ``report``) and their total, on this machine. They change
 from run to run, so they are in the log only. They are the raw material of
 the paper's turnaround baseline (claim C1).
 
@@ -138,6 +139,7 @@ STAGE_NAMES = (
     "gvsoc",
     "check",
     "convert",
+    "report",
 )
 REPORT = "report"
 # SNAX-GVSoC: gvsoc/Makefile, the submodule and the build's folder (that Makefile's defaults)
@@ -150,7 +152,6 @@ ELF = "forge.elf"
 TRACE_LEVELS = ("off", "task", "beat")
 # The SNAX components' traces each level turns on (snax-gvsoc docs/EVENTS.md)
 TRACES = {"off": "summary", "task": "summary events"}
-REPORTS_IN = "FLOW3 round 1b step 6"
 
 
 class FlowError(ValueError):
@@ -469,7 +470,7 @@ def summary(f: Flow) -> str:
             f"{f.trace.window} cycles from main; boot {f.trace.boot})"
         )
     lines.append(f"  convert   {conv}")
-    lines.append(f"  report    none yet; the reports come back in {REPORTS_IN}")
+    lines.append(f"  report    {REPORT}/design.md, {REPORT}/run.md")
     lines += [f"  WARNING   {w}" for w in f.warnings]
     return "\n".join(lines)
 
@@ -744,6 +745,15 @@ def _from_graph(
         except RunError as e:
             raise FlowError(f"convert: {e}") from None
         write_run(run, profile, trace)
+
+    # report: design.md and run.md from what convert wrote
+    with _timed(times, "report"):
+        from snax_forge.report import ReportError, write_reports
+
+        try:
+            write_reports(out)
+        except ReportError as e:
+            raise FlowError(f"report: {e}") from None
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
         checks_that_ran(), trace_level=trace_level, trace=trace,

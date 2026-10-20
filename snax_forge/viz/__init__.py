@@ -1,9 +1,9 @@
 """SNAX-FORGE visualiser (D55).
 
 A local server plus a static viewer, for humans: ``python -m snax_forge.viz
-DIR [DIR ...]`` serves the model output directories given (``snax_model``'s
-``run ... --out DIR``) at http://127.0.0.1:8765/. LLMs read the profile and
-the reports (``snax_forge.report``, D99) instead.
+DIR [DIR ...]`` serves the flow runs given (``out/flow/<name>/`` or its
+``run/``, C§7) at http://127.0.0.1:8765/. LLMs read the profile and the
+reports (``snax_forge.report``, D99) instead.
 
 * api.py: loading runs and every answer of the API, as plain functions;
 * memory.py: the memory layout of a run, folded (D96);
@@ -13,7 +13,7 @@ the reports (``snax_forge.report``, D99) instead.
   no external file, so it works offline).
 
 The tabs are the profile report, the schedule with the cluster view under
-it, and the memory tab, all on the same API. The DFG viewer (D81) is the
+it (FLOW3 round 3), and the memory tab (round 2), all on the same API. The DFG viewer (D81) is the
 subpackage dfg/, a second mode of the same server for ``.snaxdfg`` files
 (``python -m snax_forge.viz.dfg``).
 """

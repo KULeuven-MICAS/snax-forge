@@ -1,17 +1,18 @@
-"""Tests for the visualiser's API functions.
+"""Tests for the visualiser's API functions on flow runs (C§7, run/).
 
 The report itself is HTML and is checked by eye (D55); what is tested here
 is what the viewer is given:
 
-  1. a run loads as read_outputs gives it
+  1. a run loads as read_run and load_cluster give it, from its folder or its run/
   2. the events window is exactly [A, B), of the asked sources and kinds
-  3. the FIFO busy window equals a direct count from beat-level fifo events
-  4. tasks pair starts with dones; a DMA task's direction matches its reads
+  3. tasks pair starts with dones, named from the task list; a DMA task's
+     direction and bytes are its issue's
+  4. the memory and movement views, and the FIFO busy window, say why not
 """
 
 import pytest
 
-from snax_forge.snax_model.scenario import ClusterConfig, read_outputs
+from snax_forge.run import RunError, load_cluster, read_run
 from snax_forge.viz import api
 
 from .helpers import run_dir
@@ -19,17 +20,10 @@ from .helpers import run_dir
 
 @pytest.fixture(scope="module")
 def dirs(tmp_path_factory):
-    """vecadd and vecadd_conflict at beat level, vecadd at task and off."""
+    """vecadd at task and off, vsum at task."""
     base = tmp_path_factory.mktemp("runs")
-    return {
-        (name, level): run_dir(base / f"{name}-{level}", name, level)
-        for name, level in [
-            ("vecadd", "beat"),
-            ("vecadd_conflict", "beat"),
-            ("vecadd", "task"),
-            ("vecadd", "off"),
-        ]
-    }
+    return {(n, lv): run_dir(base / f"{n}-{lv}", n, lv)
+            for n, lv in [("vecadd", "task"), ("vecadd", "off"), ("vsum", "task")]}  # fmt: skip
 
 
 # =============================================================================
@@ -37,149 +31,91 @@ def dirs(tmp_path_factory):
 # =============================================================================
 
 
-@pytest.mark.parametrize("level", ["beat", "off"])
-def test_run_loads_as_read_outputs(dirs, level):
+@pytest.mark.parametrize("level", ["task", "off"])
+def test_a_run_loads_as_run_gives_it(dirs, level):
     d = dirs[("vecadd", level)]
-    rv, ref = api.load_run(d), read_outputs(d)
-    assert rv.name == d.name
-    assert rv.outputs.run == ref.run and rv.outputs.profile == ref.profile
-    assert (rv.outputs.l1 == ref.l1).all() and (rv.outputs.l2 == ref.l2).all()
-    assert rv.cluster == ClusterConfig.from_dict(ref.run["cluster"])
-    if level == "off":
-        assert rv.outputs.trace is None and rv.events == []
-    else:
-        assert rv.outputs.trace.to_dict() == ref.trace.to_dict()
-        assert rv.events == [e.to_dict() for e in ref.trace.events]
+    rv = api.load_run(d)
+    out = read_run(d / "run")
+    assert (rv.name, rv.path, rv.folder) == (f"vecadd-{level}", d / "run", d)
+    assert rv.outputs == out and rv.total_cycles == out.profile.total_cycles == 226
+    assert rv.cluster == load_cluster(d / "gen" / "snax_alu.hjson",
+                                      d / "design" / "design_point.json")  # fmt: skip
+    assert rv.trace_level == level
+    assert (rv.events == []) == (level == "off")
+    assert rv.times == sorted(rv.times) and rv.times == [e["t"] for e in rv.events]
+    assert api.load_run(d / "run").outputs == out  # its run/ too
 
 
-def test_same_directory_names_get_suffixes(tmp_path):
-    assert api.run_names([tmp_path / "a" / "x", tmp_path / "b" / "x", tmp_path / "y"]) == [
-        "x",
-        "x-2",
-        "y",
+def test_not_a_flow_run(tmp_path):
+    with pytest.raises(RunError):
+        api.load_run(tmp_path)
+
+
+def test_names_are_the_folders_and_unique(dirs, tmp_path):
+    d = dirs[("vecadd", "task")]
+    assert api.run_names([d, d / "run", d]) == ["vecadd-task", "vecadd-task-2", "vecadd-task-3"]
+
+
+def test_detail_and_summary(dirs):
+    rv = api.load_run(dirs[("vecadd", "task")])
+    s = api.run_summary(rv)
+    assert (s["design"], s["trace_level"], s["total_cycles"]) == ("vecadd", "task", 226)
+    d = api.run_detail(rv)
+    assert d["profile"] == rv.outputs.profile.to_dict() and d["cluster"] == rv.cluster.to_dict()
+    assert d["trace"] == {**rv.outputs.trace.meta(), "n_events": len(rv.events)}
+    assert d["total_cycles"] == 226 and d["tasks"] == api.tasks(rv)
+    assert api.run_detail(api.load_run(dirs[("vecadd", "off")]))["trace"] is None
+
+
+# =============================================================================
+# 2. The events window
+# =============================================================================
+
+
+def test_events_window(dirs):
+    rv = api.load_run(dirs[("vecadd", "task")])
+    assert api.events_window(rv) == rv.events
+    w = api.events_window(rv, 50, 120)
+    assert w and all(50 <= e["t"] < 120 for e in w)
+    assert w == [e for e in rv.events if 50 <= e["t"] < 120]
+    only = api.events_window(rv, 0, None, ["core0"], ["csr", "poll"])
+    assert only and {(e["src"], e["k"]) for e in only} <= {("core0", "csr"), ("core0", "poll")}
+    assert api.events_window(rv, 5, 5) == []
+
+
+# =============================================================================
+# 3. Tasks
+# =============================================================================
+
+
+def test_tasks_pair_starts_and_dones(dirs):
+    rv = api.load_run(dirs[("vecadd", "task")])
+    t = api.tasks(rv)
+    assert [x["task"] for x in t["acc"]] == ["add_acc"]
+    assert [x["task"] for x in t["acc_out"]] == ["add_acc_out"]
+    assert [(x["task"], x["direction"]) for x in t["dma"]] == [
+        ("load_A", "l2_to_l1"),
+        ("load_B", "l2_to_l1"),
+        ("store_C", "l1_to_l2"),
     ]
-
-
-def test_a_flow_run_is_named_after_its_flow_folder(tmp_path):
-    """out/flow/<name>/run takes <name>, so flow runs side by side are told apart;
-    a run directory without a scenario beside it keeps its own name."""
-    flow = tmp_path / "out" / "flow"
-    for n in ("vecadd", "vecadd_W8"):
-        (flow / n).mkdir(parents=True)
-        (flow / n / "scenario.json").write_text("{}")
-    dirs = [flow / "vecadd" / "run", flow / "vecadd_W8" / "run", tmp_path / "run"]
-    assert api.run_names(dirs) == ["vecadd", "vecadd_W8", "run"]
-
-
-# =============================================================================
-# 2. Events window
-# =============================================================================
-
-
-@pytest.mark.parametrize(
-    "a, b, srcs, kinds",
-    [
-        (0, None, None, None),
-        (20, 60, None, None),
-        (20, 60, ["acc_a", "ctl"], None),
-        (60, 20, None, None),
-        (70, 71, ["xbar"], None),
-        (0, None, None, ["cmd", "start", "done"]),  # the schedule's task events
-        (20, 80, ["xbar"], ["stall"]),
-    ],
-)
-def test_events_window(dirs, a, b, srcs, kinds):
-    rv = api.load_run(dirs[("vecadd", "beat")])
-    got = api.events_window(rv, a, b, srcs, kinds)
-    stop = 10**9 if b is None else b
-    want = [
-        e
-        for e in rv.events
-        if a <= e["t"] < stop
-        and (srcs is None or e["src"] in srcs)
-        and (kinds is None or e["k"] in kinds)
-    ]
-    assert got == want
-    if (a, b) == (20, 60):
-        assert got  # the window is not trivially empty
-
-
-# =============================================================================
-# 3. FIFO busy window
-# =============================================================================
-
-
-def direct_count(rv, fifo, lanes, window):
-    """Per lane, cycles per count over ``window``, replayed from the fifo events."""
-    changes = [e for e in rv.events if e["k"] == "fifo" and e["src"] == fifo]
-    hists = []
-    for lane in range(lanes):
-        at = {e["t"]: e["count"] for e in changes if e["lane"] == lane}
-        count, hist = 0, {}
-        for t in range(rv.total_cycles):
-            count = at.get(t, count)
-            if any(a <= t < b for a, b in window):
-                hist[count] = hist.get(count, 0) + 1
-        hists.append(hist)
-    return hists
-
-
-@pytest.mark.parametrize("name", ["vecadd", "vecadd_conflict"])
-def test_fifo_window_equals_direct_count(dirs, name):
-    rv = api.load_run(dirs[(name, "beat")])
-    res = api.fifo_windows(rv)
-    assert res["available"] and set(res["streamers"]) == {"acc_a", "acc_b", "acc_out"}
-    for s, win in res["streamers"].items():
-        assert win["reason"] is None and win["owners"] == [s, "acc"]
-        f = rv.outputs.profile.streamers[s].fifo
-        want = direct_count(rv, f.name, len(f.hist), win["window"])
-        for lane, got in enumerate(win["lanes"]):
-            assert {c: n for c, n in enumerate(got["hist"]) if n} == want[lane]
-            assert sum(got["hist"]) == win["window_cycles"]
-            n = win["window_cycles"]
-            assert got["mean"] == pytest.approx(sum(c * k for c, k in want[lane].items()) / n)
-
-
-def test_fifo_window_needs_task_events(dirs):
-    task = api.fifo_windows(api.load_run(dirs[("vecadd", "task")]))
-    beat = api.fifo_windows(api.load_run(dirs[("vecadd", "beat")]))
-    assert task == beat  # start and done are task events: beat events add nothing
-    off = api.fifo_windows(api.load_run(dirs[("vecadd", "off")]))
-    assert not off["available"] and off["streamers"] == {} and "off" in off["reason"]
-
-
-# =============================================================================
-# 4. Tasks and DMA directions
-# =============================================================================
-
-
-@pytest.mark.parametrize("name", ["vecadd", "vecadd_conflict"])
-def test_tasks_and_dma_direction(dirs, name):
-    """Tasks pair each start with its done; a DMA task's direction is where its reads went."""
-    rv = api.load_run(dirs[(name, "beat")])
-    got = api.tasks(rv)
-    starts = [e for e in rv.events if e["k"] == "start"]
-    assert sum(len(ts) for ts in got.values()) == len(starts)
-    seen = set()
-    for block, ts in got.items():
-        assert [(t["start"], t["done"]) for t in ts] == api.task_spans(rv, block)
-        assert all(t["start"] < t["done"] for t in ts)
-        if block != "dma":
-            assert all("direction" not in t for t in ts)
-            continue
-        for t in ts:
-            src = {
-                e["mem"]
-                for e in api.events_window(rv, t["start"], t["done"] + 1, [block], ["dma_beat"])
-                if e["side"] == "src"
-            }
-            assert src == {t["direction"].split("_to_")[0]}
-            seen.add(t["direction"])
-    if name == "vecadd_conflict":
-        assert seen == {"l2_to_l1", "l1_to_l2"}  # both directions are exercised
-
-
-def test_tasks_need_task_events(dirs):
-    task = api.tasks(api.load_run(dirs[("vecadd", "task")]))
-    assert task and task == api.tasks(api.load_run(dirs[("vecadd", "beat")]))
+    issues = rv.outputs.trace.of_kind("issue")
+    assert [x["bytes"] for x in t["dma"]] == [e["size"] * e["reps"] for e in issues]
+    for block, xs in t.items():
+        assert all(x["start"] < x["done"] for x in xs), block
     assert api.tasks(api.load_run(dirs[("vecadd", "off")])) == {}
+
+
+# =============================================================================
+# 4. Not yet
+# =============================================================================
+
+
+def test_memory_and_movement_wait_for_round_2(dirs):
+    rv = api.load_run(dirs[("vecadd", "task")])
+    assert api.memories(rv) == []
+    with pytest.raises(api.MemoryViewError, match="FLOW3 round 2"):
+        api.memory_view(rv)
+    for view in (api.movement_view(rv), api.conflicts_view(rv), api.journey_view(rv, "A", 0)):
+        assert view == {"name": rv.name, "available": False, "reason": api.ROUND_2}
+    fifo = api.fifo_windows(rv)
+    assert fifo["available"] is False and fifo["streamers"] == {}

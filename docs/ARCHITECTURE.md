@@ -310,9 +310,10 @@ converts them (D137). The trace is an event log at level `off`, `task` or
 
 **Viewers** (D55, `pixi run view DIR ...`, `pixi run view-dfg FILE ...`): a
 local server on 127.0.0.1 and a static page, stdlib only, offline. Run views
-(D57): the profile report, the schedule with a selected cycle kept in the
-URL hash, the cluster view at that cycle, the memory tab (D96) and data
-movement (D97). The DFG viewer (D81) shows graphs side by side.
+(D57) of a flow run: the profile report; the schedule with a selected cycle
+kept in the URL hash and the cluster view at that cycle come back in FLOW3
+round 3, the memory tab (D96) and data movement (D97) in round 2. The DFG
+viewer (D81) shows graphs side by side.
 
 **Reports** (D99, `pixi run report DIR`): `design.md` (what was built) and
 `run.md` (where the cycles went), Markdown from dataclasses, for humans and

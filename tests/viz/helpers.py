@@ -1,8 +1,9 @@
 """Shared helpers for the visualiser tests.
 
-Run directories are made the way a user makes them: a checked-in scenario
-run through ``snax_model.scenario.run`` and written with ``write_outputs``,
-so the viewer reads exactly what the CLI writes.
+Runs are flow folders made the way the flow makes them, SNAX-GVSoC stubbed
+(tests/flow/helpers.py: ``stubbed_flow``, its synthetic events), so the
+viewer reads exactly what the flow writes. ``SCEN`` is for the memory and
+movement tests, skipped until FLOW3 round 2.
 """
 
 from __future__ import annotations
@@ -11,17 +12,16 @@ import threading
 from contextlib import contextmanager
 from pathlib import Path
 
-from snax_forge.snax_model.scenario import Scenario, run, write_outputs
 from snax_forge.viz.server import make_server
+from tests.flow.helpers import stubbed_flow
 
 REPO = Path(__file__).resolve().parents[2]
 SCEN = REPO / "scenarios"
 
 
-def run_dir(out: Path, name: str = "vecadd", level: str = "beat", **kw) -> Path:
-    """Run ``scenarios/<name>`` at trace ``level`` into ``out``; returns ``out``."""
-    sc = Scenario.load(SCEN / name / "scenario.json")
-    return write_outputs(run(sc, trace_level=level, **kw), out)
+def run_dir(out: Path, name: str = "vecadd", level: str = "task") -> Path:
+    """The flow of recipe ``name`` at trace ``level`` into the folder ``out``; returns it."""
+    return stubbed_flow(out.parent, name, level, out=out)
 
 
 @contextmanager

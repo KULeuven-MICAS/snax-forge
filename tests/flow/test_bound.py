@@ -52,7 +52,7 @@ def test_the_last_step_runs_as_the_recipe_did(tmp_path, monkeypatch):
     a = run_flow(RECIPE, SNAX_ALU, graph_path=PLAIN, out=tmp_path / "a" / "x", name="x")
     b = run_bound(a.steps[-1], SNAX_ALU, out=tmp_path / "b" / "x", name="x")
     assert b.passed and a.total_cycles == b.total_cycles and b.check == a.check
-    keep = {"flow.log", "design/design_point.json"}
+    keep = {"flow.log", "design/design_point.json", "report/design.md"}  # graph, not recipe
     same = {f for f in files(a.out) - keep - {"build.log"} if not f.startswith("sandbox/")}
     assert files(b.out) == same | keep
     for f in sorted(same):
@@ -75,7 +75,17 @@ def test_a_checked_in_bound_graph_runs(tmp_path, monkeypatch):
     )  # fmt: skip
     assert f.check["kernel"] == "vecadd" and f.point.graph_from == str(BOUND)
     assert not (tmp_path / "f" / "sandbox").exists()
-    assert list(f.times) == ["design", "lower", "gen", "build", "sw", "gvsoc", "check", "convert"]
+    assert list(f.times) == [
+        "design",
+        "lower",
+        "gen",
+        "build",
+        "sw",
+        "gvsoc",
+        "check",
+        "convert",
+        "report",
+    ]
 
 
 def test_the_summary_and_the_log_name_the_graph(tmp_path, monkeypatch):

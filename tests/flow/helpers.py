@@ -22,6 +22,7 @@ import json
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -148,3 +149,18 @@ def excerpts_hold(readme: str, root: Path) -> int:
         assert not missing, f"README line {i + 1}: not in {m.group(1)}: {missing}"
         seen += 1
     return seen
+
+
+def stubbed_flow(base: Path, design: str = "vecadd", level: str = "task", out: Path | None = None,
+                 **kw: Any) -> Path:  # fmt: skip
+    """A flow folder (``base/<design>_<level>`` unless ``out``) made with SNAX-GVSoC stubbed
+    (``stub``, its synthetic events), outside a test's own monkeypatch, so module-scoped
+    fixtures can share it; returns the folder."""
+    from snax_forge.flow import run_flow
+
+    out = out or base / f"{design}_{level}"
+    with pytest.MonkeyPatch.context() as mp:
+        stub(mp, out.parent / f".gvsoc_{out.name}")
+        run_flow(REPO / "recipes" / f"{design}.json", REPO / "platforms" / "snax_alu.json",
+                 graph_path=PLAINS[design], out=out, trace_level=level, **kw)  # fmt: skip
+    return out

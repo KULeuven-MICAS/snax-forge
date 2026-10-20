@@ -2,7 +2,7 @@
 
     python -m snax_forge.viz DIR [DIR ...] [--port 8765] [--verbose]
 
-Loads each model output directory once and serves the viewer on
+Loads each flow run (``out/flow/<name>/`` or its ``run/``) once and serves the viewer on
 127.0.0.1 until Ctrl-C. The page's Reload button reads the directories
 again; nothing watches the files. ``--port 0`` takes any free port.
 
@@ -24,7 +24,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         prog="python -m snax_forge.viz", description=__doc__.split("\n\n")[0]
     )
     p.add_argument(
-        "dirs", nargs="+", metavar="DIR", help="model output directory (run ... --out DIR)"
+        "dirs", nargs="+", metavar="DIR", help="a flow folder (out/flow/<name>) or its run/"
     )
     p.add_argument(
         "--port", type=int, default=DEFAULT_PORT, help=f"port on 127.0.0.1 (default {DEFAULT_PORT})"
@@ -33,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = p.parse_args(argv)
     try:
         srv = make_server(args.dirs, args.port, args.verbose)
-    except READ_ERRORS as e:  # a directory that is not a run output, or a taken port
+    except READ_ERRORS as e:  # a folder that is not a flow run, or a taken port
         print(f"error: {e}", file=sys.stderr)
         return 2
     names = ", ".join(r["name"] for r in srv.runs.summaries())

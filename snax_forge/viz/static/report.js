@@ -1,36 +1,26 @@
-// The profile report of one run (VIS1): the model's Profile (CONTRACTS.md
-// section 7), the run's run.json and the FIFO busy windows (D56), drawn top
-// to bottom. Works at every trace level; only the busy-window FIFO numbers
-// need a task or beat trace, and they say so when missing.
+// The profile report of one flow run (VIS1, D137): the profile (CONTRACTS.md
+// section 7), the cluster as the run names it (run/cluster.py) and run.json,
+// drawn top to bottom. Works at both trace levels; a core's classes and waits
+// need the events (trace task) and say so when missing.
 //
 // Nothing is computed here that the profile already has; the report only
-// arranges numbers. Components appear in registration order (the cluster
-// file's `components`), which is also the tick and trace-source order (D41).
+// arranges numbers. Components appear in the cluster's order: the
+// accelerator, its movers, the DMA, the cores.
 
-import { CLASS_GROUP as GROUP, dec, h, int, pct, section, table } from "./dom.js";
+import { CLASS_GROUP as GROUP, h, int, pct, section, table } from "./dom.js";
 
 // Cycle classes per component kind, in CONTRACTS.md section 7 order.
 const CLASS_ORDER = {
-  accel: ["busy", "stall_out", "stall_in", "idle"],
+  accel: ["busy", "stall_out", "stall_in", "flush", "idle"],
   streamer: ["busy", "stall_xbar", "stall_fifo", "idle"],
-  dma: ["busy", "stall_l1", "stall_mem", "idle"],
-  controller: ["command", "wait", "idle"],
+  core: ["run", "poll", "barrier", "sleep"],
 };
 
 const LEGEND = [
-  ["busy", "Busy"], ["mem", "Memory stall (stall_xbar, stall_l1)"],
-  ["flow", "Flow stall (stall_fifo, stall_in, stall_out, stall_mem)"],
-  ["idle", "Idle"], ["command", "Controller command (control overhead)"], ["wait", "Controller wait"],
+  ["busy", "Busy (a core: run)"], ["mem", "Memory stall (stall_xbar)"],
+  ["flow", "Flow stall (stall_fifo, stall_in, stall_out, flush)"],
+  ["wait", "A core polling"], ["command", "A core in a barrier"], ["idle", "Idle (a core: sleep)"],
 ];
-
-/** Cycles per class of a component, from the profile, or null if it has none (the xbar). */
-function cyclesOf(profile, spec) {
-  if (spec.kind === "accel") return profile.accelerators[spec.name]?.cycles;
-  if (spec.kind === "streamer") return profile.streamers[spec.name]?.cycles;
-  if (spec.kind === "dma") return profile.dmas[spec.name]?.cycles;
-  if (spec.kind === "controller" && profile.controller?.name === spec.name) return profile.controller.cycles;
-  return null;
-}
 
 function ordered(kind, cycles) {
   const known = CLASS_ORDER[kind] || [];
@@ -51,208 +41,172 @@ function classCounts(kind, cycles, total) {
         h("i", { class: `key g-${GROUP[c] || "other"}` }), `${c} `, h("b", {}, int(cycles[c])), ` ${pct(cycles[c], total)}`)));
 }
 
-// -- 2. Where the cycles go ----------------------------------------------------
+// -- 1. Where the cycles go ----------------------------------------------------
 
 function cyclesSection(detail) {
-  const { profile, run } = detail;
+  const { profile, trace } = detail;
   const total = profile.total_cycles;
-  const rows = run.cluster.components
-    .map((spec) => ({ spec, cycles: cyclesOf(profile, spec) }))
-    .filter((r) => r.cycles);
+  const rows = [
+    ...Object.entries(profile.accelerators).map(([n, a]) => ({ n, kind: "accel", label: "accelerator", cycles: a.cycles, total })),
+    ...Object.entries(profile.streamers).map(([n, s]) => ({ n, kind: "streamer", label: s.write ? "writer" : "reader", cycles: s.cycles, total })),
+    ...Object.entries(profile.cores).filter(([, c]) => c.cycles).map(([n, c]) => ({ n, kind: "core", label: "core", cycles: c.cycles, total: trace.window })),
+  ];
+  const coresNote = trace
+    ? ` The cores' ${int(trace.window)} cycles are the events' window, main's entry to forge_check()'s (boot ${int(trace.boot)} cycles before it).`
+    : " The cores' classes need the events (--trace task).";
   return section("cycles", "Where the cycles go",
-    `Every component's ${int(total)} cycles by class, in registration order. Totals only; when they happen is the schedule view.`,
+    `The accelerator's and the movers' ${int(total)} cycles (the program's window) by class.${coresNote} Totals only; when they happen is the schedule view (FLOW3 round 3).`,
     h("ul", { class: "legend" }, LEGEND.map(([g, label]) => h("li", {}, h("i", { class: `key g-${g}` }), label))),
-    h("div", { class: "rows" }, rows.map(({ spec, cycles }) =>
+    h("div", { class: "rows" }, rows.map((r) =>
       h("div", { class: "row" },
-        h("div", { class: "who" }, h("b", {}, spec.name), h("span", { class: "kind" }, spec.kind === "accel" ? spec.accel : spec.kind)),
-        classBar(spec.kind, cycles, total),
-        classCounts(spec.kind, cycles, total)))));
+        h("div", { class: "who" }, h("b", {}, r.n), h("span", { class: "kind" }, r.label)),
+        classBar(r.kind, r.cycles, r.total),
+        classCounts(r.kind, r.cycles, r.total)))));
 }
 
-// -- 3. Accelerators -----------------------------------------------------------
+// -- 2. The accelerator ----------------------------------------------------------
 
 function accelSection(detail) {
-  const { profile, run } = detail;
-  const specs = Object.fromEntries(run.cluster.components.map((c) => [c.name, c]));
+  const { profile, cluster } = detail;
   const names = Object.keys(profile.accelerators);
   if (!names.length) return null;
-  return section("accelerators", "Accelerators",
-    "Utilisation is busy cycles over the whole run: a firing and the II gap after it (D59), so a unit with ii 5 is busy 5 cycles per firing. Beats are counted per port.",
+  const acc = cluster.accelerator;
+  const unit = acc.unit;
+  const params = ["wait", "latency", "ii", "lanes", "data_width"].filter((k) => k in unit).map((k) => `${k} ${unit[k]}`).join(", ");
+  return section("accelerators", "Accelerator",
+    "Utilisation is busy cycles over the program's window: a firing and the II gap after it (D59).",
     names.map((n) => {
       const a = profile.accelerators[n];
-      const spec = specs[n] || {};
-      const params = Object.entries(spec.params || {}).map(([k, v]) => `${k} ${v}`).join(", ");
       return h("div", { class: "block" },
-        h("h3", {}, n, h("span", { class: "kind" }, `${spec.accel || ""} ${params ? `(${params})` : ""}`)),
+        h("h3", {}, n, h("span", { class: "kind" }, `${unit.unit || ""} on core${acc.core} (${params})`)),
         h("div", { class: "util" },
           h("div", { class: "meter" }, h("span", { class: "g-busy", style: { width: `${100 * a.utilisation}%` } })),
           h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.firings)} firings`),
         table(
-          [{ key: "port", label: "Port" }, { key: "stream", label: "Streamer" }, { key: "beats", label: "Beats", num: true, fmt: int }],
-          Object.entries(a.beats).map(([port, beats]) => ({ port, beats, stream: spec.attach?.[port] ?? "" }))));
+          [{ key: "port", label: "Port" }, { key: "mover", label: "Mover" }, { key: "dir", label: "Direction" }, { key: "lanes", label: "Lanes", num: true }],
+          acc.movers.map((m) => ({ port: m.port, mover: m.name, dir: m.write ? "write" : "read", lanes: m.lanes }))));
     }));
 }
 
-// -- 4. Streamers and FIFOs ----------------------------------------------------
+// -- 3. Streamers and FIFOs ----------------------------------------------------
 
-/** Tiny histogram: one bar per count 0..depth, heights relative to the largest bucket. */
-function histogram(hist, label) {
-  const top = Math.max(1, ...hist);
-  return h("div", { class: "hist", role: "img", "aria-label": `${label}: ${hist.join(", ")}` },
-    hist.map((n, c) => h("span", { title: `${c} held: ${int(n)} cycles` },
-      h("i", { style: { height: `${(100 * n) / top}%` } }), h("small", {}, c))));
-}
-
-function streamerSection(detail, fifo) {
+function streamerSection(detail) {
   const { profile } = detail;
   const names = Object.keys(profile.streamers);
   if (!names.length) return null;
-  const note = fifo.available
-    ? "Occupancy per lane over the whole run, and over the busy window: the cycles in which the streamer or its accelerator had a task (D56). The histogram shows the window."
-    : `Occupancy per lane over the whole run. Busy-window numbers need a task or beat trace (${fifo.reason}).`;
-  const key = [
-    ["Lane", "one FIFO lane per streamer port"],
-    ["Max", "the most beats the lane ever held (at most the FIFO depth)"],
-    ["Mean (run)", "average beats held over every cycle of the run"],
-    ["Mean (busy window)", "average beats held over the busy window only"],
-    ["Cycles per count", "how many cycles the lane held 0, 1, 2, … beats"],
-  ];
-  return section("streamers", "Streamers and FIFOs", note,
-    h("ul", { class: "col-key" }, key.map(([k, v]) => h("li", {}, h("b", {}, k), `: ${v}`))),
+  return section("streamers", "Streamers and FIFOs",
+    "One entry per mover. The FIFO's highest count per lane over the run, against its depth (D137 keeps the maximum only).",
     names.map((n) => {
       const s = profile.streamers[n];
       const f = s.fifo;
-      const win = fifo.streamers?.[n];
-      const winLanes = win && !win.reason ? win.lanes : null;
-      const rows = f.hist.map((hist, lane) => ({
-        lane, max: f.max[lane], mean: f.mean[lane],
-        wmean: winLanes ? winLanes[lane].mean : null,
-        hist: winLanes ? winLanes[lane].hist : hist,
-      }));
-      const winText = !win ? null : win.reason ? `Busy window withheld: ${win.reason}.`
-        : `Busy window: ${int(win.window_cycles)} of ${int(profile.total_cycles)} cycles, owners ${win.owners.join(" and ")}.`;
       return h("div", { class: "block" },
         h("h3", {}, n, h("span", { class: "kind" }, `${s.write ? "writer" : "reader"}, ${s.ports.length} ports, FIFO ${f.name} depth ${f.depth}`)),
-        winText ? h("p", { class: "note" }, winText) : null,
         table([
           { key: "lane", label: "Lane", num: true },
-          { key: "max", label: "Max", num: true },
-          { key: "mean", label: "Mean (run)", num: true, fmt: (v) => dec(v) },
-          { key: "wmean", label: "Mean (busy window)", num: true, fmt: (v) => dec(v) },
-          { key: "hist", label: winLanes ? "Cycles per count (window)" : "Cycles per count (run)", fmt: (v) => histogram(v, "cycles per count") },
-        ], rows));
+          { key: "port", label: "Port" },
+          { key: "max", label: "Highest count", num: true },
+          { key: "depth", label: "Depth", num: true },
+        ], f.max.map((mx, lane) => ({ lane, port: s.ports[lane], max: mx, depth: f.depth }))));
     }));
+}
+
+// -- 4. Cores ------------------------------------------------------------------
+
+function coreSection(detail) {
+  const { profile } = detail;
+  const cores = Object.entries(profile.cores);
+  if (!cores.length) return null;
+  return section("cores", "Cores",
+    "SNAX CSR accesses over the whole run, and each wait in the events' window: a poll of a block's CSR (first to last read of one value) or a barrier.",
+    cores.map(([n, c]) => h("div", { class: "block" },
+      h("h3", {}, n, h("span", { class: "kind" }, `${int(c.csr_writes)} CSR writes, ${int(c.csr_reads)} CSR reads`)),
+      c.cycles === null ? h("p", { class: "note" }, "Classes and waits need the events (--trace task).")
+        : c.waits.length ? table([
+          { key: "block", label: "Waits on" },
+          { key: "first", label: "From", num: true, fmt: int },
+          { key: "last", label: "To", num: true, fmt: int },
+          { key: "cycles", label: "Cycles", num: true, fmt: int },
+        ], c.waits.map((w) => ({ ...w, cycles: w.last - w.first + 1 })))
+          : h("p", { class: "note" }, "No wait in the window."))));
 }
 
 // -- 5. Memory -----------------------------------------------------------------
 
 function memorySection(detail) {
-  const { profile, run } = detail;
+  const { profile, cluster } = detail;
   const b = profile.banks;
-  if (!b) return null;
-  const l1 = run.cluster.l1;
-  const group = Math.max(1, (l1.wide_bits || 512) / (l1.width_bits || 64)); // banks per superbank (D33)
-  const top = Math.max(1, ...b.grants);
-  const hot = b.conflicts.map((c, i) => c > 0 || b.stalls[i] > 0 || b.blocked[i] > 0);
-  const nHot = hot.filter(Boolean).length;
-
-  // The strip: one cell per bank, height = grants, superbanks separated.
-  const strip = h("div", { class: "strip scroll" },
-    b.grants.map((g, i) => h("div", {
-      class: `bank${hot[i] ? " hot" : ""}${i % group === 0 && i ? " sb" : ""}`,
-      title: `bank ${i}: ${g} grants, ${b.reads[i]} reads, ${b.writes[i]} writes, ${b.conflicts[i]} conflicts, ${b.stalls[i]} stalls, ${b.blocked[i]} blocked by a wider grant`,
-    }, h("div", { class: "fill" }, h("i", { style: { height: `${(100 * g) / top}%` } })), h("small", {}, i))));
-
-  const metrics = ["reads", "writes", "grants", "conflicts", "stalls", "blocked"];
-  const bankTable = h("div", { class: "scroll" }, h("table", { class: "banks" },
-    h("thead", {}, h("tr", {}, h("th", {}, "Bank"), b.grants.map((_, i) => h("th", { class: `num${hot[i] ? " hot" : ""}` }, i)))),
-    h("tbody", {}, metrics.map((m) => h("tr", {}, h("th", {}, m),
-      b[m].map((v, i) => h("td", { class: `num${hot[i] ? " hot" : ""}${v ? "" : " zero"}` }, int(v))))))));
-
   const ports = Object.entries(profile.ports).map(([name, p]) => ({ name, ...p }));
-  const portTable = table([
-    { key: "name", label: "Port" }, { key: "owner", label: "Owner" },
-    { key: "width", label: "Width (bits)", num: true },
-    { key: "grants", label: "Grants", num: true, fmt: int },
-    { key: "stalls", label: "Stalls", num: true, fmt: int },
-    { key: "stalls_wider", label: "Stalls by a wider grant", num: true, fmt: int },
-  ], ports, (p) => (p.stalls ? "hot" : null));
-
-  const stalled = ports.filter((p) => p.stalls).map((p) => p.name);
+  if (!b && !ports.length) return null;
+  const parts = [];
+  if (b) {
+    const used = b.reads.map((r, i) => r + b.writes[i]);
+    const top = Math.max(1, ...used);
+    const hot = b.conflicts.map((c) => c > 0);
+    parts.push(h("h3", {}, "Accesses per L1 bank (streamers and DMA)"),
+      h("div", { class: "strip scroll" },
+        used.map((g, i) => h("div", {
+          class: `bank${hot[i] ? " hot" : ""}`,
+          title: `bank ${i}: ${b.reads[i]} reads, ${b.writes[i]} writes, ${b.conflicts[i]} conflicts`,
+        }, h("div", { class: "fill" }, h("i", { style: { height: `${(100 * g) / top}%` } })), h("small", {}, i)))),
+      h("div", { class: "scroll" }, h("table", { class: "banks" },
+        h("thead", {}, h("tr", {}, h("th", {}, "Bank"), b.reads.map((_, i) => h("th", { class: `num${hot[i] ? " hot" : ""}` }, i)))),
+        h("tbody", {}, ["reads", "writes", "conflicts"].map((m) => h("tr", {}, h("th", {}, m),
+          b[m].map((v, i) => h("td", { class: `num${hot[i] ? " hot" : ""}${v ? "" : " zero"}` }, int(v)))))))));
+  }
+  if (ports.length) {
+    parts.push(h("h3", {}, "Crossbar ports"),
+      table([
+        { key: "name", label: "Port" },
+        { key: "grants", label: "Grants", num: true, fmt: int },
+        { key: "stalls", label: "Stalls", num: true, fmt: int },
+        { key: "stalls_dma", label: "Stalls by the DMA", num: true, fmt: int },
+        { key: "whole_run", label: "Counted", fmt: (v) => (v ? "whole run, boot included" : "") },
+      ], ports, (p) => (p.stalls ? "hot" : null)));
+  }
   return section("memory", "Memory",
-    `${l1.n_banks} banks of ${l1.width_bits} bits, ${group} per superbank. ` +
-      (nHot ? `${nHot} banks saw conflicts or stalls (marked).` : "No bank saw a conflict or a stall."),
-    h("h3", {}, "Grants per L1 bank"), strip, bankTable,
-    h("h3", {}, "Interconnect ports", h("span", { class: "kind" },
-      stalled.length ? `stalls on ${stalled.join(", ")}` : "no stalls")),
-    portTable);
+    `${cluster.banks} banks of ${cluster.bank_bytes} bytes. Banks count the streamers' and the DMA's accesses only; a core's and AXI's port counts from reset.`,
+    parts);
 }
 
-// -- 6. DMA and L2 -------------------------------------------------------------
+// -- 6. DMA --------------------------------------------------------------------
 
 function dmaSection(detail) {
-  const { profile } = detail;
-  const dmas = Object.entries(profile.dmas).map(([name, d]) => ({ name, ...d }));
-  const l2 = Object.entries(profile.l2).map(([name, m]) => ({ name, ...m }));
-  if (!dmas.length && !l2.length) return null;
-  return section("dma", "DMA and L2", "Beats are wide (one per cycle at most, D34); bytes follow from the beat width.",
-    dmas.length ? table([
+  const dmas = Object.entries(detail.profile.dmas).map(([name, d]) => ({ name, ...d }));
+  if (!dmas.length) return null;
+  return section("dma", "DMA", "Busy cycles are those DMA_BUSY counts; bytes each way by the copies' addresses against the L1.",
+    table([
       { key: "name", label: "DMA" },
+      { key: "transfers", label: "Transfers", num: true, fmt: int },
+      { key: "busy", label: "Busy cycles", num: true, fmt: int },
       { key: "beats_read", label: "Beats read", num: true, fmt: int },
       { key: "beats_written", label: "Beats written", num: true, fmt: int },
-      { key: "bytes_read", label: "Bytes read", num: true, fmt: int },
-      { key: "bytes_written", label: "Bytes written", num: true, fmt: int },
-      { key: "max_buffered", label: "Peak buffer (beats)", num: true, fmt: int },
-      { key: "busy", label: "Busy cycles", num: true, fmt: (_, r) => int(r.cycles.busy) },
-    ], dmas) : null,
-    l2.length ? table([
-      { key: "name", label: "L2" },
-      { key: "reads", label: "Reads (beats)", num: true, fmt: int },
-      { key: "writes", label: "Writes (beats)", num: true, fmt: int },
-    ], l2) : null);
+      { key: "bytes_l2_to_l1", label: "Bytes L2 → L1", num: true, fmt: int },
+      { key: "bytes_l1_to_l2", label: "Bytes L1 → L2", num: true, fmt: int },
+    ], dmas));
 }
 
-// -- 7. Controller -------------------------------------------------------------
-
-function controllerSection(detail) {
-  const { profile, run } = detail;
-  const c = profile.controller;
-  if (!c) return null;
-  const total = profile.total_cycles;
-  return section("controller", "Controller",
-    `${int(c.commands)} commands (${int(c.reads)} reads), ${int(c.polls)} poll samples. Command cycles are control overhead, kept apart from waiting (D37).`,
-    h("div", { class: "row single" }, classBar("controller", c.cycles, total), classCounts("controller", c.cycles, total)),
-    h("h3", {}, "csr_read values"),
-    run.reads.length ? table([
-      { key: "cycle", label: "Cycle", num: true, fmt: int },
-      { key: "reg", label: "Register" },
-      { key: "addr", label: "Address", num: true },
-      { key: "value", label: "Value", num: true, fmt: int },
-    ], run.reads) : h("p", { class: "note" }, "The program reads no register."));
-}
-
-// -- 8. Cluster configuration --------------------------------------------------
+// -- 7. Cluster ----------------------------------------------------------------
 
 function clusterSection(detail) {
-  const cl = detail.run.cluster;
-  return section("cluster", "Cluster configuration", null,
+  const cl = detail.cluster;
+  return section("cluster", "Cluster", null,
     h("details", {},
-      h("summary", {}, `${detail.run.cluster_file || "inline"}: ${cl.components.length} components, register map with ${Object.keys(detail.run.register_map.blocks || {}).length} blocks`),
+      h("summary", {}, `${cl.meta?.cluster || "cluster"}: ${cl.accelerator.name} with ${cl.accelerator.movers.length} movers, ${cl.nb_cores} cores`),
       h("pre", {}, JSON.stringify(cl, null, 1))),
     h("details", {},
-      h("summary", {}, "Register map"),
-      h("pre", {}, JSON.stringify(detail.run.register_map, null, 1))));
+      h("summary", {}, "run.json"),
+      h("pre", {}, JSON.stringify(detail.run, null, 1))));
 }
 
-/** Replace `root`'s content with the report of `detail` (/api/run) and `fifo` (/api/run/fifo). */
-export function renderReport(root, detail, fifo) {
+/** Replace `root`'s content with the report of `detail` (/api/run). */
+export function renderReport(root, detail) {
   root.replaceChildren(...[
     cyclesSection(detail),
     accelSection(detail),
-    streamerSection(detail, fifo),
+    streamerSection(detail),
+    coreSection(detail),
     memorySection(detail),
     dmaSection(detail),
-    controllerSection(detail),
     clusterSection(detail),
   ].filter(Boolean));
 }

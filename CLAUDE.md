@@ -46,10 +46,10 @@ want to reverse, implementation details in module docstrings and tests.
   SDFG builds).
 - SNAX-MODEL on its own: `pixi run scenarios` writes the scenario files; `pixi run model-run
   scenarios/<name>/scenario.json --out out/<name> [--trace beat]`.
-- Viewers: `pixi run view DIR ...` (runs, port 8765), `pixi run view-dfg FILE|DIR ...` (graphs,
-  port 8766).
-- Reports: `pixi run report DIR` writes `report/design.md` and `report/run.md` for a SNAX-MODEL
-  run directory; the flow writes none until FLOW3 round 1b, only `flow.log`.
+- Viewers: `pixi run view DIR ...` (flow runs, port 8765), `pixi run view-dfg FILE|DIR ...`
+  (graphs, port 8766).
+- Reports: the flow writes `report/design.md` and `report/run.md`; `pixi run report DIR` writes
+  them again for a flow folder.
 - Chisel: `pixi run -e hw chisel-test`, `chisel-gen`; `hw/chisel/` is a project of its own.
 - Clean slate: `pixi run clean` (`--dry-run` lists first; it keeps the GVSoC build in
   `out/snax-gvsoc/`, `--all` removes it too).

@@ -1,26 +1,24 @@
 """The design report, ``design.md``: what was built, before any cycle is counted.
 
-Everything here comes from the design point, its recipe and the cluster file
-SNAX-LOWER derives from it; the model is not run. A flow from a bound graph
-has no recipe: its header names the graph the design point was made from
-instead, and takes the kernel from the run's functional check. For a plain
-run directory (a scenario run, no design point) the report has the cluster
-part only, from ``run.json``'s cluster and regions.
+Everything here comes from the design point, its recipe and the cluster as a
+run names it (run/cluster.py: the generator's hjson files and the design
+point, D137); SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
+its header names the graph the design point was made from instead, and takes
+the kernel from the run's functional check.
 
     header       kernel, recipe and its params (or the graph), symbols,
                  platform (base and changes), memory plan passes and pins
-                                                            (design point only)
-    components   the cluster file's components in order
-    accelerators instance, BRM and implementation (design point only), params,
-                 latency, target II, ports, drain
-    streamers    instance port, direction, lanes, FIFO depth, temporal loops and
-                 the container it streams (from the graph's memlets, else from
-                 the task list's base address, else unknown)
-    memories     per memory its regions: base, end, bytes, share, banks, rows
-                 (the memory tab's numbers, viz/memory.py)
-    notes        facts about addresses only: streamers of one accelerator that
-                 start in the same banks, or whose containers lie a whole number
-                 of bank rows apart, so that element i of both is in one bank;
+    components   the accelerator, its movers, the DMA and the cores
+    accelerators instance, unit, BRM and implementation, params, latency,
+                 target II (the datapath file's), ports
+    streamers    one per mover: instance port, direction, lanes, FIFO depth,
+                 temporal loops and the container it streams (from the
+                 graph's memlets)
+    memories     per memory the design point's layouts: base, end, bytes,
+                 share, banks (L1) or words of a beat (L2), rows or beats
+    notes        facts about addresses only: movers of the accelerator whose
+                 containers start in the same banks, or lie a whole number of
+                 bank rows apart, so that element i of both is in one bank;
                  and containers the DMA moves as padded beats
 """
 
@@ -29,10 +27,11 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from snax_forge.lower.layout import round_up
-from snax_forge.snax_model.scenario import ClusterConfig, Region
+import numpy as np
 
-from ..viz import memory as memview
+from snax_forge.lower.layout import Layout, round_up
+from snax_forge.run import Cluster
+
 from .markdown import kib, kv, pct, span_text, spans, table
 from .record import Record
 
@@ -68,7 +67,6 @@ class AccelRow(Record):
     latency: int
     target_ii: int
     ports: list[str]
-    drain: int = 0  # cycles from a push in which no input is taken
 
 
 @dataclass
@@ -121,232 +119,141 @@ class DesignReport(Record):
 # =============================================================================
 
 
-def _component_detail(c: Any) -> str:
-    cfg = c.config
-    if c.kind == "streamer":
-        return (
-            f"{'writer' if cfg.get('write') else 'reader'}, {cfg.get('n_ports', 1)} lanes, "
-            f"FIFO depth {cfg.get('fifo_depth')}, {cfg.get('temporal_dims', 1)} temporal loop(s)"
-        )
-    if c.kind == "accel":
-        attach = ", ".join(f"{p} ← {s}" for p, s in c.attach.items())
-        return f"{c.accel}; {attach}"
-    if c.kind == "dma":
-        return (
-            f"startup {cfg.get('startup', 0)}, a beat every {cfg.get('beat_interval', 1)} cycle(s)"
-        )
-    if c.kind == "controller":
-        return f"write cost {cfg.get('write_cost', 1)}, poll every {cfg.get('poll_interval', 1)}"
-    return ", ".join(f"{k} {v}" for k, v in cfg.items())
+def _words(lay: Layout, base: int, word: int) -> np.ndarray:
+    """The word index from ``base`` of every element of a layout, one element per word."""
+    idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
+    return (lay.address(idx) - base) // word
 
 
-def _memory_tables(cluster: ClusterConfig, regions: list[Region]) -> list[MemoryTable]:
+def _memory_tables(cluster: Cluster, point: Any) -> list[MemoryTable]:
+    """L1 as banks by rows, L2 as the words of a beat by beats; the regions from the layouts."""
+    word = cluster.bank_bytes
+    l2 = point.platform.l2
+    geo = {
+        "l1": (cluster.l1_base, cluster.banks, cluster.l1_size // (word * cluster.banks)),
+        "l2": (l2.base_addr, l2.beat_bits // 8 // word, l2.size_bytes // (l2.beat_bits // 8)),
+    }
     out = []
-    for mem in ["l1"] + (["l2"] if cluster.l2 is not None else []):
-        s = memview.summary(memview.layout_of(mem, cluster, regions))
-        g = s["geometry"]
-        col = "banks" if mem == "l1" else "words"
-        rows = [
-            RegionRow(
-                r["name"],
-                r["start"],
-                r["end"],
-                r["bytes"],
-                r["share"],
-                spans(r[col]),
-                span_text(r["rows"]),
-            )
-            for r in s["regions"]
-        ]
-        out.append(
-            MemoryTable(
-                mem,
-                g["columns"],
-                g["rows"],
-                g["word_bytes"],
-                g["size_bytes"],
-                s["used"]["words"] * g["word_bytes"],
-                rows,
-            )
-        )
+    for mem, (base, columns, rows) in geo.items():
+        size = columns * rows * word
+        regions = []
+        for name, lays in point.memory.layouts.items():
+            lay = lays.get(mem)
+            if lay is None:
+                continue
+            w = _words(lay, base, word)
+            n = int(w.size) * word
+            lo, hi = lay.span()
+            regions.append(RegionRow(name, lo, hi + word, n, n / size,
+                                     spans(sorted({int(x) % columns for x in w})),
+                                     span_text([int(w.min()) // columns, int(w.max()) // columns])))  # fmt: skip
+        regions.sort(key=lambda r: r.base)
+        out.append(MemoryTable(mem, columns, rows, word, size, sum(r.bytes for r in regions),
+                               regions))  # fmt: skip
     return out
 
 
-def _notes(
-    cluster: ClusterConfig, streamers: list[StreamerRow], regions: list[Region]
-) -> list[str]:
-    """Address facts about the streamers of each accelerator (module doc)."""
-    lay = memview.layout_of("l1", cluster, [])
-    row_bytes = lay.word_bytes * lay.columns
-    by_name = {r.name: r for r in regions if r.mem == "l1"}
+def _notes(cluster: Cluster, point: Any, streamers: list[StreamerRow]) -> list[str]:
+    """Address facts about the movers of the accelerator (module doc)."""
+    word, banks = cluster.bank_bytes, cluster.banks
+    row_bytes = word * banks
+    lays = {s.container: point.memory.layouts[s.container]["l1"] for s in streamers
+            if s.container in point.memory.layouts and "l1" in point.memory.layouts[s.container]}  # fmt: skip
+    ss = [s for s in streamers if s.container in lays]
     notes = []
-    groups: dict[str, list[StreamerRow]] = {}
-    for s in streamers:
-        if s.instance and s.container in by_name:
-            groups.setdefault(s.instance, []).append(s)
-    for ss in groups.values():
-        for i, a in enumerate(ss):
-            for b in ss[i + 1 :]:
-                ra, rb = by_name[a.container], by_name[b.container]  # type: ignore[index]
+    for i, a in enumerate(ss):
+        for b in ss[i + 1 :]:
+            la, lb = lays[a.container], lays[b.container]  # type: ignore[index]
 
-                def first_banks(r: Region, lanes: int) -> list[int]:
-                    words = [lay.element_word(r, k) for k in range(min(lanes, r.size))]
-                    return sorted({lay.place(w)[0] for w in words})
+            def first_banks(lay: Layout, lanes: int) -> list[int]:
+                w = _words(lay, cluster.l1_base, word)[:lanes]
+                return sorted({int(x) % banks for x in w})
 
-                ba, bb = first_banks(ra, a.lanes), first_banks(rb, b.lanes)
-                both = sorted(set(ba) & set(bb))
-                rows_apart = (
-                    ra.strides == rb.strides
-                    and ra.shape == rb.shape
-                    and (rb.base - ra.base) % row_bytes == 0
+            both = sorted(set(first_banks(la, a.lanes)) & set(first_banks(lb, b.lanes)))
+            if (
+                la.strides == lb.strides
+                and la.shape == lb.shape
+                and (lb.base - la.base) % row_bytes == 0
+            ):
+                notes.append(
+                    f"{a.name} and {b.name}: {a.container} and {b.container} lie "
+                    f"{abs(lb.base - la.base)} B apart, a whole number of {row_bytes}-byte bank "
+                    f"rows, so {a.container}[i] and {b.container}[i] are in the same bank for every i."
                 )
-                if rows_apart:  # the stronger fact: every element, not only the first beat
-                    notes.append(
-                        f"{a.name} and {b.name}: {a.container} and {b.container} lie "
-                        f"{abs(rb.base - ra.base)} B apart, a whole number of {row_bytes}-byte bank "
-                        f"rows, so {a.container}[i] and {b.container}[i] are in the same bank for every i."
-                    )
-                elif both:
-                    notes.append(
-                        f"{a.name} ({a.container}) and {b.name} ({b.container}) start in the same "
-                        f"banks, {spans(both)}."
-                    )
-    if not notes and groups:
-        notes.append("No two streamers of one accelerator start in the same banks.")
-    return notes
-
-
-def _padding_notes(cluster: ClusterConfig, regions: list[Region]) -> list[str]:
-    """Containers the DMA moves (in L2 and L1) whose size is not whole beats."""
-    if cluster.l2 is None:
-        return []
-    beat = cluster.l1.wide_bits // 8
-    word = cluster.l1.width_bits // 8
-    in_l2 = {r.name for r in regions if r.mem == "l2"}
-    notes = []
-    for r in regions:
-        if r.mem != "l1" or r.name not in in_l2:
+            elif both:
+                notes.append(f"{a.name} ({a.container}) and {b.name} ({b.container}) start in "
+                             f"the same banks, {spans(both)}.")  # fmt: skip
+    if not notes and ss:
+        notes.append("No two streamers of the accelerator start in the same banks.")
+    beat = point.platform.l2.beat_bits // 8
+    for name, lay in point.memory.layouts.items():
+        if "l1" not in lay or "l2" not in lay:
             continue
-        size = r.size * word
+        size = int(np.prod(lay["l1"].shape)) * word
         if size % beat:
             moved = round_up(size, beat)
+            base = lay["l1"].base
             notes.append(
-                f"{r.name}: {size} B, moved by the DMA as {moved // beat} whole {beat}-byte "
-                f"beat{'s' if moved > beat else ''}; bytes {r.base + size}–{r.base + moved} are "
+                f"{name}: {size} B, moved by the DMA as {moved // beat} whole {beat}-byte "
+                f"beat{'s' if moved > beat else ''}; bytes {base + size}–{base + moved} are "
                 "kept free in L1 and L2."
             )
     return notes
 
 
-def _container_by_task_base(tasks: Any, regions: list[Region]) -> dict[str, str]:
-    """Streamer -> the L1 region holding the base of its first task (a task list), if any."""
-    out: dict[str, str] = {}
-    if tasks is None:
-        return out
-    for st in tasks.steps:
-        if getattr(st, "type", None) != "streamer" or st.component in out:
-            continue
-        base = st.values.get("base") if isinstance(st.values, dict) else None
-        for r in regions:
-            lo, hi = r.span()
-            if r.mem == "l1" and base is not None and lo <= base <= hi:
-                out[st.component] = r.name
-                break
-    return out
-
-
 def build_design(
-    name: str,
-    cluster: ClusterConfig,
-    regions: list[Region],
-    point: Any = None,
-    recipe: Any = None,
-    tasks: Any = None,
-    kernel: str = "",
+    name: str, cluster: Cluster, point: Any, recipe: Any = None, kernel: str = ""
 ) -> DesignReport:
-    """The design report of a flow (``point`` a DesignPoint and its ``recipe``, or for a flow
-    from a bound graph its ``kernel``) or, with neither, of a plain run's cluster and
-    regions; ``tasks`` names streamed containers."""
-    header = None
-    instances: dict[str, Any] = {}
-    containers: dict[str, str] = {}
-    if point is not None:
-        from snax_forge.design import run_checks
-        from snax_forge.design.streamers import accelerated, streamer_name
+    """The design report of a flow (``point`` its DesignPoint, ``recipe`` its recipe, or for a
+    flow from a bound graph its ``kernel``)."""
+    from snax_forge.design import run_checks
+    from snax_forge.design.streamers import accelerated, streamer_name
 
-        design = point.design()
-        run_checks(design)  # resolves the instances (BRM, implementation, params)
-        instances = dict(design.instances)
-        header = Header(
-            kernel=recipe.kernel if recipe is not None else kernel or point.graph.name,
-            recipe=recipe.name if recipe is not None else point.name,
-            params=dict(recipe.params) if recipe is not None else {},
-            symbols={k: v for k, v in point.graph.symbols.items() if v is not None},
-            platform=point.platform.name,
-            platform_base=point.platform.base,
-            platform_changes=dict(point.platform.changes),
-            passes=dict(point.memory.passes),
-            pins=dict(point.memory.changes),
-            graph_from="" if recipe is not None else point.graph_from,
-        )
-        for n in accelerated(point.graph):
-            for side in (n.inputs, n.outputs):
-                for port, m in side.items():
-                    containers[streamer_name(n.attrs["instance"], port)] = m.data
-    else:
-        containers = _container_by_task_base(tasks, regions)
-
-    components = [ComponentRow(c.name, c.kind, _component_detail(c)) for c in cluster.components]
-    attach = {
-        s: (c.name, p) for c in cluster.components if c.kind == "accel" for p, s in c.attach.items()
-    }
-    accels = []
-    for c in cluster.components:
-        if c.kind != "accel":
-            continue
-        inst = instances.get(c.name)
-        params = {k: v for k, v in c.params.items() if k not in ("latency", "ii", "drain")}
-        ports = [f"{p} ← {s}" for p, s in c.attach.items()]
-        accels.append(
-            AccelRow(
-                c.name,
-                c.accel or "",
-                inst.brm.name if inst else None,
-                inst.implementation if inst else None,
-                dict(inst.params) if inst else params,
-                int(c.params.get("latency", 0)),
-                int(c.params.get("ii", 1)),
-                ports,
-                int(c.params.get("drain", 0)),
-            )
-        )
-    streamers = []
-    for c in cluster.components:
-        if c.kind != "streamer":
-            continue
-        cfg = c.config
-        inst, port = attach.get(c.name, (None, None))
-        streamers.append(
-            StreamerRow(
-                c.name,
-                inst,
-                port,
-                "write" if cfg.get("write") else "read",
-                int(cfg.get("n_ports", 1)),
-                int(cfg.get("fifo_depth", 0)),
-                int(cfg.get("temporal_dims", 1)),
-                containers.get(c.name),
-            )
-        )
-    return DesignReport(
-        name,
-        header,
-        components,
-        accels,
-        streamers,
-        _memory_tables(cluster, regions),
-        _notes(cluster, streamers, regions) + _padding_notes(cluster, regions),
+    design = point.design()
+    run_checks(design)  # resolves the instances (BRM, implementation, params)
+    instances = dict(design.instances)
+    header = Header(
+        kernel=recipe.kernel if recipe is not None else kernel or point.graph.name,
+        recipe=recipe.name if recipe is not None else point.name,
+        params=dict(recipe.params) if recipe is not None else {},
+        symbols={k: v for k, v in point.graph.symbols.items() if v is not None},
+        platform=point.platform.name,
+        platform_base=point.platform.base,
+        platform_changes=dict(point.platform.changes),
+        passes=dict(point.memory.passes),
+        pins=dict(point.memory.changes),
+        graph_from="" if recipe is not None else point.graph_from,
     )
+    containers: dict[str, str] = {}
+    for n in accelerated(point.graph):
+        for side in (n.inputs, n.outputs):
+            for port, m in side.items():
+                containers[streamer_name(n.attrs["instance"], port)] = m.data
+
+    a = cluster.accelerator
+    u = a.unit
+    components = [ComponentRow(a.name, "accelerator", f"{u.get('unit', '')} on core{a.core}, "
+                               f"{u.get('wait', '')}, slot {a.slot}")]  # fmt: skip
+    components += [ComponentRow(m.name, "streamer", f"{'writer' if m.write else 'reader'} "
+                                f"{m.gvsoc}, {m.lanes} lanes, FIFO depth {m.fifo_depth}")
+                   for m in a.movers]  # fmt: skip
+    components.append(ComponentRow("dma", "dma", f"the iDMA on core{cluster.dma_core}"))
+    components += [ComponentRow(c, "core", "the accelerator's" if i == a.core
+                                else "the DMA's" if i == cluster.dma_core else "")
+                   for i, c in enumerate(cluster.cores)]  # fmt: skip
+
+    inst = instances.get(a.name)
+    accels = [AccelRow(a.name, str(u.get("unit", "")), inst.brm.name if inst else None,
+                       inst.implementation if inst else None,
+                       dict(inst.params) if inst else {}, int(u.get("latency", 0)),
+                       int(u.get("ii", 1)), [f"{m.port} ← {m.name}" for m in a.movers])]  # fmt: skip
+    streamers = [
+        StreamerRow(m.name, a.name, m.port, "write" if m.write else "read", m.lanes, m.fifo_depth,
+                    point.streamers[m.name].options.temporal_dims, containers.get(m.name))
+        for m in a.movers
+    ]  # fmt: skip
+    return DesignReport(name, header, components, accels, streamers,
+                        _memory_tables(cluster, point), _notes(cluster, point, streamers))  # fmt: skip
 
 
 # =============================================================================
@@ -357,12 +264,7 @@ def build_design(
 def render_design(r: DesignReport) -> str:
     """``design.md``: the report as Markdown, one section per part."""
     out = [f"# Design report: {r.name}", ""]
-    if r.header is None:
-        out += [
-            "From the run's cluster file and regions only: this directory has no design point.",
-            "",
-        ]
-    else:
+    if r.header is not None:
         h = r.header
         base = f", base {h.platform_base}" if h.platform_base else ""
         out += table(
@@ -392,7 +294,6 @@ def render_design(r: DesignReport) -> str:
             "Params",
             "Latency",
             "Target II",
-            "Drain",
             "Ports",
         ],
         [
@@ -404,12 +305,11 @@ def render_design(r: DesignReport) -> str:
                 kv(a.params),
                 a.latency,
                 a.target_ii,
-                a.drain,
                 "; ".join(a.ports),
             ]
             for a in r.accelerators
         ],
-        {5, 6, 7},
+        {5, 6},
     )
     out += ["", "## Streamers", ""]
     out += table(

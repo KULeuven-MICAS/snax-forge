@@ -6,8 +6,9 @@
 export const CLASS_GROUP = {
   busy: "busy", idle: "idle",
   stall_xbar: "mem", stall_l1: "mem",
-  stall_fifo: "flow", stall_in: "flow", stall_out: "flow", stall_mem: "flow",
+  stall_fifo: "flow", stall_in: "flow", stall_out: "flow", stall_mem: "flow", flush: "flow",
   command: "command", wait: "wait",
+  run: "busy", poll: "wait", barrier: "command", sleep: "idle", // a core's (D137)
 };
 
 /** Create an element: h("td", {class: "num"}, "12"). Children may be nested arrays or null. */

@@ -141,9 +141,9 @@ def test_an_earlier_runs_files_go_first(tmp_path, monkeypatch):
         (out / stale).parent.mkdir(parents=True, exist_ok=True)
         (out / stale).write_text("old")
     flow(tmp_path)
-    for stale in ("cluster.json", "scenario.json", "A.npy", "report/run.md", "run/trace.jsonl",
-                  "gen/old.h"):  # fmt: skip
+    for stale in ("cluster.json", "scenario.json", "A.npy", "run/trace.jsonl", "gen/old.h"):
         assert not (out / stale).exists(), stale
+    assert (out / "report" / "run.md").read_text().startswith("# Run report: ")  # written again
 
 
 # =============================================================================
@@ -329,7 +329,7 @@ def test_default_name():
     assert default_name(r, {}, [("x.y", [2, 2]), ("z", "a/b c")]) == "vecadd_x.y2,2_zabc"
 
 
-def test_the_summary_says_there_are_no_reports_yet(tmp_path, monkeypatch):
+def test_the_summary_names_every_stage(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
     lines = summary(flow(tmp_path)).splitlines()
     assert [x.split()[0] for x in lines[1:]] == [
@@ -338,7 +338,8 @@ def test_the_summary_says_there_are_no_reports_yet(tmp_path, monkeypatch):
     assert lines[-2] == (
         "  convert   run/events.log -> profile.json (the summary lines; trace off)"
     )
-    assert lines[-1] == "  report    none yet; the reports come back in FLOW3 round 1b step 6"
+    assert lines[-1] == "  report    report/design.md, report/run.md"
+    assert (tmp_path / "flow" / "report" / "run.md").read_text().startswith("# Run report: ")
 
 
 def test_the_trace_level_task_stubbed(tmp_path, monkeypatch):
@@ -371,7 +372,7 @@ def test_the_log_is_the_summary_the_checks_and_the_stage_times(tmp_path, monkeyp
     secs = [float(r[1]) for r in rows]
     assert all(s >= 0 for s in secs) and abs(sum(secs[:-1]) - secs[-1]) < 0.01
     assert list(f.times) == list(STAGE_NAMES)
-    assert "gen" in f.times and "gvsoc" in f.times and "report" not in f.times
+    assert "gen" in f.times and "gvsoc" in f.times and "report" in f.times
 
 
 def main(*argv) -> int:
