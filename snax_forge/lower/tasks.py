@@ -1,9 +1,8 @@
-"""The task list: SNAX-LOWER's ordered list of tasks (D45, D64).
+"""The task list: SNAX-LOWER's ordered list of tasks (D64, D135).
 
 A task list says which component runs which task with which values, where
-each task is configured and started, and what it depends on. ``lower_program``
-turns it into the plain command list the model runs (D42); the model never
-reads a task list.
+each task is configured and started, and what it depends on. The C backend
+(c.py) turns it into the program; waits.py places its waits.
 
     {"name": ..., "steps": [step, ...]}
 
@@ -17,8 +16,8 @@ Steps, each with an ``op``:
     sync       task, mode: waits here for that task's component
     read       reg: a csr_read of "block.register"
 
-``type`` is the component's type (``streamer``, ``accel``, ``dma``: the kind
-of its register adapter) and decides how ``values`` are read (values.py).
+``type`` is the component's type (``streamer``, ``accel``, ``dma``) and
+decides how ``values`` are read (CONTRACTS.md section 9).
 ``after`` names earlier tasks whose results this task needs, including a
 buffer it overwrites; ``wait_mode`` (``poll`` / ``signal``) is how the
 program waits for this task when the lowering inserts a wait for it.
@@ -28,11 +27,17 @@ unique; ``after``, ``start`` and ``sync`` refer to tasks configured earlier;
 a component has at most one configured task that has not started yet (its
 registers are buffered, D36), so one start never launches two tasks on one
 component; a task starts once, after its ``after`` tasks have started; every
-configured task is started. What needs the cluster (component, type, values,
-register names) is checked by ``lower_program``.
+configured task is started.
 
-``Tasks`` builds a task list from start arguments, for tests. The
-checked-in scenarios' task lists are written by hand (D65).
+What needs the design point is ``check_values(tasks, point)``: the
+component exists and has the task's type (the DMA when the platform has an
+L2, every streamer of the shell, every accelerated instance); the values
+have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
+``temporal_strides``, ``spatial_strides``; a DMA's ``direction``, ``src`` and
+``dst``, each side ``base``, ``bounds`` and ``strides``; an accelerator's
+runtime params, ``n`` and its named rates); a streamer's loops fit it (as
+many temporal strides as bounds, no more than its ``temporal_dims``, one
+spatial stride per spatial bound); a DMA's sides have one stride per bound.
 """
 
 from __future__ import annotations
@@ -41,13 +46,14 @@ import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar
 
 from snax_forge.common import check_keys, plain, to_json
-from snax_forge.snax_model.ctrl import WAIT_MODES
-from snax_forge.snax_model.scenario import ClusterConfig, register_map_of
+from snax_forge.design.platform import WAIT_MODES
+from snax_forge.design.streamers import instances, streamer_name
 
-from .values import values_of
+if TYPE_CHECKING:
+    from snax_forge.design.point import DesignPoint
 
 
 class TaskListError(ValueError):
@@ -266,48 +272,95 @@ class TaskList:
 
 
 # =============================================================================
-# Builder
+# Values against the design point
 # =============================================================================
 
+STREAMER = ("base", "temporal_bounds", "temporal_strides", "spatial_strides")
+DMA = ("direction", "src", "dst")
+DMA_SIDE = ("base", "bounds", "strides")
 
-class Tasks:
-    """Builds a TaskList from start arguments (``StreamerRegs``, ``DmaDescriptor``, ...).
 
-    ``configure`` takes the component's type from the cluster and checks the
-    argument with the component's adapter, so a mistake shows up where the
-    generator makes it.
-    """
+def _exact(v: Any, keys: list[str] | tuple[str, ...], what: str) -> None:
+    """``v`` is a mapping with exactly ``keys``."""
+    if not isinstance(v, Mapping):
+        raise TypeError(f"{what} must be an object, got {v!r}")
+    missing = [k for k in keys if k not in v]
+    unknown = sorted(set(v) - set(keys))
+    if missing or unknown:
+        raise ValueError(f"{what}: missing {missing}, unknown {unknown} (expected {list(keys)})")
 
-    def __init__(self, name: str, cluster: ClusterConfig) -> None:
-        self.name = name
-        self.map = register_map_of(cluster)
-        self.steps: list[Step] = []
 
-    def configure(
-        self,
-        task_name: str,
-        component: str,
-        arg: Any,
-        after: tuple[str, ...] | list[str] = (),
-        wait_mode: str = "poll",
-    ) -> None:
-        if component not in self.map.blocks:
-            raise TaskListError(f"{task_name}: no component {component!r}")
-        block = self.map.blocks[component]
-        block.adapter.encode(arg)
-        values = values_of(block.kind, arg)
-        self.steps.append(
-            Configure(task_name, block.kind, component, values, list(after), wait_mode)
+def _ints(v: Any, what: str) -> list[int]:
+    if not isinstance(v, (list, tuple)):
+        raise TypeError(f"{what} must be a list, got {v!r}")
+    return [int(x) for x in v]
+
+
+def _fit(n: int, dims: int, what: str) -> None:
+    if n > dims:
+        raise ValueError(f"{what}: {n} loops, registers hold {dims}")
+
+
+def components(point: DesignPoint) -> dict[str, str]:
+    """The design point's components and their types: the DMA (with an L2), then per instance
+    its streamers in port order and the instance."""
+    out = {"dma": "dma"} if point.platform.l2 is not None else {}
+    for name, inst in instances(point.graph).items():
+        for p in inst.brm.interface.ports:
+            out[streamer_name(name, p.name)] = "streamer"
+        out[name] = "accel"
+    return out
+
+
+def _check(s: Configure, point: DesignPoint) -> None:
+    v = s.values
+    if s.type == "streamer":
+        _exact(v, STREAMER, "streamer values")
+        tb, ts = (
+            _ints(v["temporal_bounds"], "temporal_bounds"),
+            _ints(v["temporal_strides"], "temporal_strides"),
         )
+        ss = _ints(v["spatial_strides"], "spatial_strides")
+        shell = point.streamers[s.component]
+        if len(tb) != len(ts):
+            raise ValueError(f"{len(tb)} temporal bounds but {len(ts)} temporal strides")
+        if len(shell.spatial_bounds) != len(ss):
+            raise ValueError(
+                f"{len(shell.spatial_bounds)} spatial bounds but {len(ss)} spatial strides"
+            )
+        _fit(len(tb), shell.options.temporal_dims, s.component)
+    elif s.type == "dma":
+        _exact(v, DMA, "dma values")
+        for side in ("src", "dst"):
+            _exact(v[side], DMA_SIDE, side)
+            b, st = (
+                _ints(v[side]["bounds"], f"{side} bounds"),
+                _ints(v[side]["strides"], f"{side} strides"),
+            )
+            if len(b) != len(st):
+                raise ValueError(f"{len(b)} bounds but {len(st)} strides")
+    else:
+        if not isinstance(v, Mapping):
+            raise TypeError(f"accel values must be an object, got {v!r}")
+        names = instances(point.graph)[s.component].brm.registers
+        if set(v) != set(names):
+            raise ValueError(f"{s.component}: parameters {sorted(v)}, registers {names}")
 
-    def start(self, *task_names: str) -> None:
-        self.steps.append(Start(list(task_names)))
 
-    def sync(self, task: str, mode: str = "poll") -> None:
-        self.steps.append(Sync(task, mode))
-
-    def read(self, reg: str) -> None:
-        self.steps.append(Read(reg))
-
-    def task_list(self) -> TaskList:
-        return TaskList(self.name, list(self.steps))
+def check_values(tasks: TaskList, point: DesignPoint) -> None:
+    """Every configure step against the design point (module doc); raises TaskListError."""
+    comps = components(point)
+    for i, s in enumerate(tasks.steps):
+        if not isinstance(s, Configure):
+            continue
+        where = f"{tasks.name}: step {i} ({s.op})"
+        if s.component not in comps:
+            raise TaskListError(
+                f"{where}: no component {s.component!r} (components: {list(comps)})"
+            )
+        if s.type != comps[s.component]:
+            raise TaskListError(f"{where}: {s.component} is a {comps[s.component]}, not a {s.type}")
+        try:
+            _check(s, point)
+        except (KeyError, TypeError, ValueError) as e:
+            raise TaskListError(f"{where}: {e}") from e

@@ -1,7 +1,7 @@
 """The checked-in clusters: alu4.json, red4.json and mul1.json (MOD9, D41, D88).
 
 Each is a platform plus its accelerators, assembled by SNAX-LOWER's cluster
-builder (snax_forge/lower/cluster.py, LOW1c), the same code that derives a
+builder (snax_forge/snax_model/lowering.py, LOW1c), the same code that derived a
 design point's cluster file, so the checked-in clusters and the derived ones
 cannot drift apart:
 
@@ -25,8 +25,8 @@ from pathlib import Path
 from snax_forge.brm import load_brm
 from snax_forge.design import Platform, StreamerOptions
 from snax_forge.design.platform import L1Config, L2Config
-from snax_forge.lower import cluster_config, cluster_of, stub
 from snax_forge.snax_model import ControllerConfig
+from snax_forge.snax_model.lowering import cluster_config, cluster_of, stub
 from snax_forge.snax_model.scenario import ClusterConfig
 
 PLATFORMS = Path(__file__).resolve().parents[2] / "platforms"

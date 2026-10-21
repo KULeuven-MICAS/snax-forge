@@ -1,26 +1,44 @@
 """Shared helpers for the SNAX-LOWER tests.
 
-Clusters come from the checked-in cluster files, so the tests lower against
-exactly what the scenarios run on. Task lists in the rule tests are written
-as plain dicts, the way a person or an LLM writes them.
+The components are the design points': vecadd at W = 4 on small16 (the DMA,
+``acc_a``, ``acc_b``, ``acc_out`` and ``acc``) and vsum (``acc_a``,
+``acc_out``, ``acc``). Task lists in the rule tests are written as plain dicts,
+the way a person or an LLM writes them.
 """
 
 from __future__ import annotations
 
+from functools import cache
 from pathlib import Path
 from typing import Any
 
-from snax_forge.lower import TaskList, lower_program
-from snax_forge.snax_model.scenario import ClusterConfig
+from snax_forge.design import DesignPoint, run_checks
+from snax_forge.dfg import Graph
+from snax_forge.lower import Configure, Start, Sync, TaskList, placed_waits
+from snax_forge.sandbox import Recipe, apply_recipe
+from tests.design.helpers import FIXTURES, design
 
 REPO = Path(__file__).resolve().parents[2]
-SCEN = REPO / "scenarios"
-# Every scenario with a hand-written task list: all of them.
-TASK_SCENARIOS = tuple(sorted(p.parent.name for p in SCEN.glob("*/tasks.json")))
+# vecadd's task list on snax_alu, as derived and checked in for tests/run (C§9)
+VECADD_TASKS = REPO / "tests" / "run" / "fixtures" / "vecadd" / "tasks.json"
 
 
-def cluster(name: str = "alu4") -> ClusterConfig:
-    return ClusterConfig.load(SCEN / "clusters" / f"{name}.json")
+@cache
+def vecadd_point() -> DesignPoint:
+    """vecadd at W = 4 on small16."""
+    d = design()
+    assert not run_checks(d)
+    return DesignPoint.of(d, "vecadd")
+
+
+@cache
+def vsum_point() -> DesignPoint:
+    """vsum bound by its recipe, on small16."""
+    recipe = Recipe.load(REPO / "recipes" / "vsum.json")
+    g = apply_recipe(recipe, Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
+    d = design(g)
+    assert not run_checks(d)
+    return DesignPoint.of(d, "vsum")
 
 
 def contiguous(base: int, n: int) -> dict[str, Any]:
@@ -29,14 +47,14 @@ def contiguous(base: int, n: int) -> dict[str, Any]:
 
 
 def dma(task: str, direction: str = "l2_to_l1", src: int = 0, dst: int = 0, **kw: Any) -> dict:
-    """A configure step for alu4's DMA: 8 beats from ``src`` to ``dst``."""
+    """A configure step for vecadd's DMA: 8 beats from ``src`` to ``dst``."""
     values = {"direction": direction, "src": contiguous(src, 8), "dst": contiguous(dst, 8)}
     return {"op": "configure", "task_name": task, "type": "dma", "component": "dma",
             "values": values, **kw}  # fmt: skip
 
 
 def stream(task: str, comp: str, word: int = 0, nb: int = 16, **kw: Any) -> dict:
-    """A configure step for one of alu4's 4-lane streamers: nb beats from ``word``."""
+    """A configure step for one of vecadd's 4-lane streamers: nb beats from ``word``."""
     values = {"base": word * 8, "temporal_bounds": [nb], "temporal_strides": [32],
               "spatial_strides": [8]}  # fmt: skip
     return {"op": "configure", "task_name": task, "type": "streamer", "component": comp,
@@ -44,7 +62,7 @@ def stream(task: str, comp: str, word: int = 0, nb: int = 16, **kw: Any) -> dict
 
 
 def add(task: str, nb: int = 16, **kw: Any) -> dict:
-    """A configure step for alu4's adder."""
+    """A configure step for vecadd's adder."""
     return {"op": "configure", "task_name": task, "type": "accel", "component": "acc",
             "values": {"n": nb}, **kw}  # fmt: skip
 
@@ -61,24 +79,25 @@ def task_list(*steps: dict, name: str = "t") -> TaskList:
     return TaskList.from_dict({"name": name, "steps": list(steps)})
 
 
-def lowered(*steps: dict, cl: str = "alu4") -> list[dict]:
-    """The program of a task list, as command dicts."""
-    return [c.to_dict() for c in lower_program(task_list(*steps), cluster(cl))]
-
-
-def shape(program: list[dict]) -> list[str]:
-    """A program in short: writes of one block collapse to "C<block>", starts to
-    "S<block>", waits to "W<block>:<mode>", reads to "R<reg>"."""
+def shape(*steps: dict, point: DesignPoint | None = None) -> list[str]:
+    """A task list with its placed waits, in short: a configure is "C<component>" (several of
+    one component in a row collapse), a wait "W<component>:<mode>", a start "S<component>" per
+    task, a read "R<reg>"."""
+    tl = task_list(*steps)
+    waits: dict[int, list[str]] = {}
+    for w in placed_waits(tl, point or vecadd_point()):
+        waits.setdefault(w.step, []).append(f"W{w.component}:{w.mode}")
+    conf = tl.configured()
     out: list[str] = []
-    for c in program:
-        if c["op"] == "wait":
-            out.append(f"W{c['block']}:{c['mode']}")
-        elif c["op"] == "csr_read":
-            out.append(f"R{c['reg']}")
+    for i, s in enumerate(tl.steps):
+        if isinstance(s, Configure):
+            if not out or out[-1] != f"C{s.component}":
+                out.append(f"C{s.component}")
+        elif isinstance(s, Start):
+            out += waits.get(i, [])
+            out += [f"S{conf[t].component}" for t in s.tasks]
+        elif isinstance(s, Sync):
+            out += waits[i]
         else:
-            block, reg = c["reg"].split(".", 1)
-            if reg == "start":
-                out.append(f"S{block}")
-            elif not out or out[-1] != f"C{block}":
-                out.append(f"C{block}")
+            out.append(f"R{s.reg}")
     return out

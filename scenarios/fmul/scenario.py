@@ -26,7 +26,8 @@ from pathlib import Path
 import numpy as np
 from clusters.clusters import mul1
 
-from snax_forge.lower import TaskList, lower_program
+from snax_forge.lower import TaskList
+from snax_forge.snax_model.lowering import lower_program
 from snax_forge.snax_model.scenario import MemInit, Scenario
 
 HERE = Path(__file__).resolve().parent

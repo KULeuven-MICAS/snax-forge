@@ -22,7 +22,6 @@ import numpy as np
 import pytest
 from helpers import BEAT, WORD, assert_cycles_add_up, build, contiguous, unit
 
-from snax_forge.lower import Program
 from snax_forge.snax_model import (
     CsrRead,
     CsrWrite,
@@ -38,6 +37,7 @@ from snax_forge.snax_model import (
     Trace,
     Wait,
 )
+from snax_forge.snax_model.lowering import Program
 from snax_forge.snax_model.profile import build_profile
 from snax_forge.snax_model.scenario import (
     ClusterConfig,
