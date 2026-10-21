@@ -20,14 +20,17 @@ Routes (every answer is JSON except the static files):
                                             with commas)
     GET  /api/run/<name>/fifo               FIFO busy window per streamer
     GET  /api/run/<name>/memory[?marks=M]    per memory its geometry, regions and
-                                            folded lines; with marks, folded
-                                            by a mark per word: M is conflicts
-                                            (L1 conflict counts), arrival, use or
-                                            wait (a cycle per word)
+                                            folded lines, the marks the run has
+                                            and why it lacks the others; with
+                                            marks, folded by mark M per word
+                                            (index.py's registry: conflicts,
+                                            arrival, use, wait)
     GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=M]
                                             rows A <= r < B in full, at most 256
+    GET  /api/run/<name>/memory/cycle?t=T   the cycle overlay of cycle T: its accesses
+                                            and the reads whose data comes back in it
     GET  /api/run/<name>/movement           residency, patterns and conflict
-                                            counts
+                                            counts (movement.py)
     GET  /api/run/<name>/journey?region=R&index=I
                                             every hop of element R[I] (I a flat
                                             index, or indices separated by commas)
@@ -38,10 +41,9 @@ Routes (every answer is JSON except the static files):
 
 All the work is in api.py; this module only parses paths and queries and
 turns results and errors into responses: 404 for an unknown run, memory or
-file, 400 for a bad query (marks on a run without a beat trace included, with
-the reason), 500 with the message when a reload fails (the old runs stay
-loaded). The movement routes answer a run without a beat trace with
-``available`` false and the reason.
+file, 400 for a bad query (a mark the run lacks included, with the reason), 500 with the message when a reload fails (the old runs stay
+loaded). A movement route answers a run below the level it needs (beat, or
+stall for the conflicts) with ``available`` false and the reason.
 """
 
 from __future__ import annotations
@@ -144,6 +146,16 @@ class Handler(BaseHTTPRequestHandler):
         runs = self.server.runs
         if parts == ["runs"]:
             self._json(runs.summaries())
+            return
+        if len(parts) == 4 and parts[0] == "run" and parts[2:] == ["memory", "cycle"]:
+            rv = runs.get(parts[1])
+            if rv is None:
+                self._error(HTTPStatus.NOT_FOUND, f"no run named {parts[1]!r}")
+                return
+            t = _int_arg(q, "t", None)
+            if t is None:
+                raise _BadRequest("give t=T, the cycle")
+            self._json(api.memory_cycle(rv, t))
             return
         if len(parts) == 5 and parts[0] == "run" and parts[2:] == ["memory", parts[3], "rows"]:
             rv = runs.get(parts[1])

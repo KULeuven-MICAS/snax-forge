@@ -49,6 +49,8 @@ const api = {
     if (marks) q.set("marks", marks);
     return getJSON(`/api/run/${enc(name)}/memory/${enc(mem)}/rows?${q}`);
   },
+  /** The cycle overlay of cycle t: its accesses (events) and the reads whose data comes back in it (returns). */
+  memoryCycle: (name, t) => getJSON(`/api/run/${enc(name)}/memory/cycle?t=${enc(String(t))}`),
   journey: (name, region, index) => getJSON(`/api/run/${enc(name)}/journey?${new URLSearchParams({ region, index: String(index) })}`),
   conflicts: (name, from, to) => getJSON(`/api/run/${enc(name)}/conflicts?${new URLSearchParams({ from: String(from), to: String(to) })}`),
   reload: () => getJSON("/api/reload", { method: "POST" }),

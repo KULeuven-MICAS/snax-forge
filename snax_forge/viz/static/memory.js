@@ -1,14 +1,15 @@
 // The memory tab (VIS4a, VIS4b, D95-D97): where a run's regions sit in each
-// memory, and on a beat-level run how its words move.
+// memory, and on a run traced at beat or above how its words move.
 //
-// Everything shown is computed by the server (viz/api.py; FLOW3 round 2): per memory its
-// geometry, its regions and its rows, folded where a row repeats the one
-// above with one constant step per region. This module only draws:
+// Everything shown is computed by the server (viz/api.py, memory.py on index.py): per
+// memory its geometry, its regions and its rows, folded where a row repeats the one
+// above with one constant step per region, and the marks the run has. This module
+// only draws:
 //
 //   heading      the memory's geometry and how much of it the regions use
 //   scale bar    the whole memory to scale, one segment per region
 //   region table base, end, bytes, share, banks (or words) and rows touched
-//   grid         L1 as banks × rows, L2 as beats of words; a cell is one word,
+//   grid         L1 as banks × rows, L2 as DMA beats of words; a cell is one word,
 //                in its region's colour with the element's flat index; the
 //                tooltip gives the index, the address, the bank and the row
 //   fold lines   click to show the hidden rows, at most MAX_ROWS at a time;
@@ -102,28 +103,42 @@ export function elementAt(detail, mem, column, row) {
 
 // -- drawing -----------------------------------------------------------------------------
 //
-// What the grid shows depends on `show` in the hash (D97, beat-level runs only):
+// What the grid shows depends on `show` in the hash: the layout, or one of the marks the
+// run has (the memory view's `marks_available`, each a count or a time; the server says
+// why the others are missing). The built-in ones:
 //   (none)     region colours, the layout of VIS4a
 //   conflicts  region colours, a red badge per word with the conflicts it took part in
-//              (waited or won), and a count per bank column; rows fold by equal counts
+//              (waited or served), and a count per bank column; rows fold by equal counts
 //   arrival    a cycle per word, coloured on one scale: its first write
-//   use        its first read by anything but a DMA
+//   use        its first read after that by anything but the DMA
 //   wait       the cycles between the two
-// In every mode the selected cycle (`cycle`, shared with the schedule and stepped
-// by the arrow keys) is drawn over the grid: a word requested in that cycle is
-// outlined teal, a word whose read data comes back green and a word held back
-// red, the colours of D61 and D62; a folded line says how many of its words moved.
+// A mark registered later is drawn by its kind, with its name as the label.
+// On a run traced at beat or above, the selected cycle (`cycle`, shared with the schedule
+// and stepped by the arrow keys) is drawn over the grid: a word requested in that cycle is
+// outlined teal, a word whose read data comes back green and a word held back red, the
+// colours of D61 and D62; a folded line says how many of its words moved.
 // Clicking a word picks its element (`pick`): its words are outlined in every
 // memory and a drawer shows its journey, its firings and, in L1, its conflicts.
 
-const SHOWS = { "": "Layout", conflicts: "Conflicts", arrival: "Arrival", use: "First use", wait: "Wait" };
+const LABELS = { "": "Layout", conflicts: "Conflicts", arrival: "Arrival", use: "First use", wait: "Wait" };
 const SHOW_NOTES = {
   conflicts: "Red badge: the L1 conflicts a word took part in, waiting or served; the count over a bank is its conflicts. Rows fold only when their counts match.",
   arrival: "Colour and number: the cycle a word was first written. Rows fold when every word's time moves by one step.",
-  use: "Colour and number: the cycle a word was first read by a streamer (not the DMA). Rows fold when every word's time moves by one step.",
+  use: "Colour and number: the cycle a word was first read after its arrival by a streamer (not the DMA). Rows fold when every word's time moves by one step.",
   wait: "Colour and number: the cycles between a word's arrival and its first use. Rows fold when every word's wait moves by one step.",
 };
-const OVERLAY_KINDS = ["grant", "stall", "resp", "dma_beat"];
+const KIND_NOTES = {
+  count: "Badge: the mark's count per word. Rows fold only when their counts match.",
+  time: "Colour and number: the mark's value per word. Rows fold when every word's value moves by one step.",
+};
+const LEVELS = ["off", "task", "beat", "stall", "finegrained"]; // run/trace.py LEVELS
+
+/** The views of the tab: the layout, then the run's marks; label and kind of each. */
+function showsOf(view) {
+  const out = { "": { label: LABELS[""], kind: null } };
+  for (const [name, kind] of Object.entries(view.marks_available ?? {})) out[name] = { label: LABELS[name] ?? name, kind };
+  return out;
+}
 
 const expanded = new Map(); // "run|show|mem|from" -> number of hidden rows shown; kept until the page reloads
 const marked = new WeakMap(); // detail -> Map(show -> Promise of the marked view)
@@ -211,7 +226,9 @@ function grid(ctx, m, colours, redraw) {
   const g = m.geometry;
   const n = g.columns;
   const show = ctx.show;
-  const timed = show && show !== "conflicts";
+  const kind = ctx.shows[show]?.kind;
+  const timed = kind === "time";
+  const counted = kind === "count";
   const labelAll = n <= LABEL_EVERY_CELL;
   const el = h("div", { class: `mem-grid${timed ? " timed" : ""}`, style: { gridTemplateColumns: `4.2rem repeat(${n}, minmax(${labelAll ? "1.7rem" : "1.1rem"}, 1fr))` } });
   const sb = (c) => (c > 0 && c % g.group === 0 ? " sb-first" : "");
@@ -249,19 +266,19 @@ function grid(ctx, m, colours, redraw) {
         if (t === null) {
           cls += " untimed";
           text = "";
-          tip.push(`${SHOWS[show]}: none`);
+          tip.push(`${ctx.shows[show].label}: none`);
         } else {
           style["--t"] = t.toFixed(3);
           if (t > 0.6) cls += " dark-text";
           text = String(mark);
-          tip.push(`${SHOWS[show]}: ${show === "wait" ? `${mark} cycles` : `cycle ${mark}`}`);
+          tip.push(`${ctx.shows[show].label}: ${show === "wait" ? `${mark} cycles` : show in LABELS ? `cycle ${mark}` : mark}`);
         }
       } else {
         const cont = prev && prev[0] === ri && prev[1] + 1 === flat;
         text = labelAll || !cont ? String(flat) : "";
-        if (show === "conflicts" && mark) {
+        if (counted && mark) {
           badge = h("span", { class: "mem-badge" }, String(mark));
-          tip.push(`${mark} conflict${mark === 1 ? "" : "s"} over the run`);
+          tip.push(show === "conflicts" ? `${mark} conflict${mark === 1 ? "" : "s"} over the run` : `${ctx.shows[show].label}: ${mark}`);
         }
       }
       const picks = cell.map(([rj, fj]) => `${m.regions[rj].name}:${fj}`);
@@ -280,10 +297,10 @@ function grid(ctx, m, colours, redraw) {
   const stepText = (line) => Object.entries(line.step)
     .map(([ri, d]) => `${m.regions[ri].name} ${d >= 0 ? "+" : "−"}${Math.abs(d)} per ${g.row_label}`).join(", ");
   const markText = (line) => {
-    if (show === "conflicts") return line.marked ? `; ${int(line.marked)} conflict${line.marked === 1 ? "" : "s"} inside` : "";
+    if (counted) return line.marked ? `; ${int(line.marked)} ${show === "conflicts" ? `conflict${line.marked === 1 ? "" : "s"}` : ctx.shows[show].label} inside` : "";
     if (timed && line.mark_span) {
-      const d = line.mark_step;
-      return `; ${SHOWS[show].toLowerCase()} ${d >= 0 ? "+" : "−"}${Math.abs(d)} per ${g.row_label} (${line.mark_span[0]}–${line.mark_span[1]})`;
+      const d = line.mark_step ?? 0;
+      return `; ${ctx.shows[show].label.toLowerCase()} ${d >= 0 ? "+" : "−"}${Math.abs(d)} per ${g.row_label} (${line.mark_span[0]}–${line.mark_span[1]})`;
     }
     return "";
   };
@@ -344,7 +361,7 @@ function memorySection(ctx, m, colours) {
     ctx.redrawn();
   };
   holder.replaceChildren(grid(ctx, m, colours, redraw));
-  const range = ctx.show && ctx.show !== "conflicts" ? ctx.range(m.mem) : null;
+  const range = ctx.shows[ctx.show]?.kind === "time" ? ctx.range(m.mem) : null;
   return h("section", { id: `memory-${m.mem}` },
     h("h2", {}, name, h("span", { class: "kind" }, geometryText(m))),
     h("p", { class: "note" }, used),
@@ -356,10 +373,16 @@ function memorySection(ctx, m, colours) {
 
 // -- the control bar, the cycle overlay and the picked element -----------------------------
 
-function controls(ctx, beat) {
+function missingText(view) {
+  const lack = Object.entries(view.marks_missing ?? {});
+  return lack.length ? `Not in this run: ${lack.map(([m, why]) => `${(LABELS[m] ?? m).toLowerCase()} (${why})`).join("; ")}.` : null;
+}
+
+function controls(ctx, beat, view) {
+  const missing = missingText(view);
   if (!beat) {
     return { el: h("section", { class: "mem-controls" }, h("p", { class: "note" },
-      "Run with --trace beat for the selected cycle's accesses, the conflicts, arrival and use times, and each element's journey.")) };
+      "Run with --trace beat or above for the selected cycle's accesses and each element's journey."), missing ? h("p", { class: "note" }, missing) : null) };
   }
   const input = h("input", { type: "number", min: 0, max: ctx.total - 1, value: ctx.cycle ?? "", inputmode: "numeric", "aria-label": "Cycle",
     onchange: (e) => ctx.setHash({ cycle: clampCycle(Number.parseInt(e.target.value, 10) || 0, ctx.total) }) });
@@ -368,15 +391,16 @@ function controls(ctx, beat) {
   const el = h("section", { class: "mem-controls" },
     h("div", { class: "mem-bar" },
       h("div", { class: "mem-modes", role: "tablist", "aria-label": "Colour the words by" },
-        Object.entries(SHOWS).map(([k, label]) => h("button", { type: "button", role: "tab", "aria-selected": String(k === ctx.show),
-          onclick: () => ctx.setHash({ show: k || null }) }, label))),
+        Object.entries(ctx.shows).map(([k, s]) => h("button", { type: "button", role: "tab", "aria-selected": String(k === ctx.show),
+          onclick: () => ctx.setHash({ show: k || null }) }, s.label))),
       h("div", { class: "cycle-head" },
         h("button", { type: "button", onclick: () => step(-1), "aria-label": "Previous cycle" }, "‹"),
         h("label", {}, "Cycle ", input),
         h("button", { type: "button", onclick: () => step(1), "aria-label": "Next cycle" }, "›"),
         playControl(),
         h("button", { type: "button", onclick: () => { stopPlaying(); ctx.setHash({ cycle: null }); } }, "Clear"))),
-    ctx.show ? h("p", { class: "note" }, SHOW_NOTES[ctx.show]) : null,
+    ctx.show ? h("p", { class: "note" }, SHOW_NOTES[ctx.show] ?? KIND_NOTES[ctx.shows[ctx.show].kind]) : null,
+    missing ? h("p", { class: "note" }, missing) : null,
     h("ul", { class: "legend" },
       [["ov-req", "Requested in the cycle"], ["ov-resp", "Read data back in the cycle"], ["ov-held", "Held back in the cycle"], ["picked", "The picked element"]]
         .map(([c, label]) => h("li", {}, h("i", { class: `key outline ${c}` }), label))),
@@ -384,25 +408,32 @@ function controls(ctx, beat) {
   return { el, input, summary };
 }
 
-/** Where the words of an event lie: [{mem, row, col}]. */
+/**
+ * Where the words of an event lie: [{mem, row, col}], every bank word of [addr, addr + size)
+ * (a grant's or stall's one word, a DMA beat's or burst's several). A word's column and row
+ * are its index in the memory modulo and over the columns: in L1 its bank and row (the
+ * word-interleaved map, as the server's rows), in L2 its word in a DMA beat and the beat.
+ */
 function wordsOf(e, geo) {
-  if (e.mem === "l1" && e.banks) return e.banks.map((b) => ({ mem: "l1", row: e.row, col: b })); // word-interleaved (open item 18)
-  if (e.mem === "l2" && geo.l2) {
-    const g = geo.l2;
-    const word = Math.floor((e.addr - g.base_addr) / g.word_bytes);
-    return Array.from({ length: g.columns }, (_, j) => ({ mem: "l2", row: Math.floor((word + j) / g.columns), col: (word + j) % g.columns }));
-  }
-  return [];
+  const mem = e.mem ?? "l1"; // a stall is a crossbar line: L1
+  const g = geo[mem];
+  if (!g) return [];
+  const first = Math.floor((e.addr - g.base_addr) / g.word_bytes);
+  const last = Math.floor((e.addr + (e.size ?? g.word_bytes) - 1 - g.base_addr) / g.word_bytes);
+  const out = [];
+  for (let w = first; w <= last; w++) out.push({ mem, row: Math.floor(w / g.columns), col: w % g.columns });
+  return out;
 }
 
-function describeEvent(e, c) {
+function describeEvent(e, kind, c) {
   if (e.k === "stall") {
-    const s = c && c.served ? `: bank ${c.bank} served ${c.served.port} for ${c.served.element ?? "a word"}` : "";
-    return `${e.port} held back (${c?.waiting?.element ?? `addr ${e.addr}`} waited${s})`;
+    const s = c && c.served ? `: bank ${c.bank} served ${c.served.port} for ${c.served.element ?? "a word"}` : `: bank ${e.bank} served ${e.by}`;
+    return `${e.src} held back (${c?.waiting?.element ?? `addr ${e.addr}`} waited${s})`;
   }
-  if (e.k === "resp") return `${e.port ?? e.src} read data back`;
-  if (e.k === "dma_beat") return `${e.src} ${e.side === "src" ? "reads" : "writes"} L2 beat ${e.i}`;
-  return `${e.port} ${e.w ? "write" : "read"} accepted`;
+  if (kind === "resp") return e.k === "grant" ? `${e.src} read data back (asked in cycle ${e.t})` : `DMA copy ${e.id}: read data back (asked in cycle ${e.t})`;
+  if (e.k === "dma") return `DMA copy ${e.id} beat ${e.i} ${e.op === "w" ? "writes" : "reads"} L1`;
+  if (e.k === "burst") return `DMA copy ${e.id} ${e.op === "w" ? "writes" : "reads"} ${int(e.size)} B of L2`;
+  return `${e.src} ${e.op === "w" ? "write" : "read"} accepted`;
 }
 
 /** Draw the accesses of `cycle` over the grids (null clears them). */
@@ -419,28 +450,28 @@ async function applyCycle(cur, cycle) {
     if (cur.bar?.summary) cur.bar.summary.textContent = cur.beat ? "Pick a cycle (or step with the arrow keys) to see which words move in it." : "";
     return;
   }
-  const [events, conf] = await Promise.all([
-    cur.api.events(cur.detail.name, cycle, cycle + 1, { k: OVERLAY_KINDS }),
-    cur.api.conflicts(cur.detail.name, cycle, cycle + 1),
+  const [at, conf] = await Promise.all([
+    cur.api.memoryCycle(cur.detail.name, cycle),
+    cur.conflicts?.available ? cur.api.conflicts(cur.detail.name, cycle, cycle + 1) : Promise.resolve({ conflicts: [] }),
   ]);
   if (current !== cur || cur.cycle !== cycle) return;
   const stalls = new Map((conf.conflicts ?? []).map((c) => [`${c.bank}|${c.waiting.port}`, c]));
   const counts = { req: 0, resp: 0, held: 0 };
   const hidden = { l1: [], l2: [] };
-  for (const e of events) {
-    if (e.k === "dma_beat" && e.mem !== "l2") continue; // the xbar's grant carries the L1 side
-    const kind = e.k === "stall" ? "held" : e.k === "resp" ? "resp" : "req";
+  // requested or held back in the cycle, then read data back in it (the server's lists: api.memory_cycle)
+  const drawn = [...at.events.map((e) => [e, e.k === "stall" ? "held" : "req"]), ...at.returns.map((e) => [e, "resp"])];
+  for (const [e, kind] of drawn) {
     for (const w of wordsOf(e, cur.geo)) {
       counts[kind]++;
       const cell = cur.cellsBy[w.mem]?.get(`${w.row}|${w.col}`);
-      const c = e.k === "stall" ? stalls.get(`${w.col}|${e.port}`) : null;
+      const c = e.k === "stall" ? stalls.get(`${e.bank}|${e.src}`) : null;
       if (!cell) {
         hidden[w.mem]?.push({ row: w.row, kind });
         continue;
       }
       cell.el.dataset.tip ??= cell.tip;
       cell.el.classList.add(`ov-${kind}`);
-      cell.el.title = `${cell.el.title}\ncycle ${cycle}: ${describeEvent(e, c)}`;
+      cell.el.title = `${cell.el.title}\ncycle ${cycle}: ${describeEvent(e, kind, c)}`;
       cur.decorated.push(cell.el);
     }
   }
@@ -485,7 +516,7 @@ async function applyPick(cur, pick) {
   cur.drawer.hidden = false;
   const body = cur.drawer.querySelector(".drawer-body");
   if (!cur.beat) {
-    body.replaceChildren(h("p", { class: "note" }, "The journey needs a beat-level trace: run with --trace beat."));
+    body.replaceChildren(h("p", { class: "note" }, "The journey needs the beat level: run with --trace beat or above."));
     return;
   }
   body.replaceChildren(h("p", { class: "note" }, "Loading…"));
@@ -512,16 +543,17 @@ async function applyPick(cur, pick) {
   }
   const hopRows = j.hops.map((x) => h("tr", { class: x.act === "held back" ? "bad" : null }, h("td", {}, go(x.t)), h("td", {}, hopText(x))));
   const firing = (f) => h("div", { class: "fire" },
-    h("div", {}, go(f.t), ` firing ${f.n} of ${f.acc} (task ${f.task}, lane ${f.lane}) ${f.role} it: `, operandsText(f)),
+    h("div", {}, go(f.t), ` firing ${f.n} of ${f.acc} (task ${f.task}, via ${f.via}) ${f.role} it: `, operandsText(f)),
+    f.push ? h("div", { class: "note" }, "pushed at ", go(f.push.t), ` as result ${f.push.n}${f.push.first === f.push.last ? "" : `, folding firings ${f.push.first}–${f.push.last}`}`) : null,
     f.results ? Object.entries(f.results).map(([el, hs]) => h("div", { class: "note" }, `${el}: `,
-      hs.map((x, i) => [i ? " · " : "", go(x.t), ` ${x.mem.toUpperCase()} ${x.act} by ${x.by}`]))) : null);
+      hs.map((x, i) => [i ? " · " : "", go(x.t), ` ${x.mem.toUpperCase()} ${x.act} by ${x.by}${x.value !== undefined ? ` = ${x.value}` : ""}`]))) : null);
   const words = (cur.conflicts?.words ?? []).filter((w) => w.element === j.element);
   const held = words.flatMap((w) => w.held);
   const won = words.flatMap((w) => w.won);
   body.replaceChildren(h("div", {}, // h() drops nulls and flattens arrays
     h("p", { class: "note" }, `In ${j.memories.map((m) => m.toUpperCase()).join(" and ")}. Click a cycle to show it here.`),
     h("p", {}, toggle, " ", h("button", { type: "button", class: "cyc link", onclick: () => cur.setHash({ view: "schedule" }) }, "open the schedule")),
-    j.filtered ? h("p", { class: "note" }, "This beat trace is filtered (see the header): hops outside it are missing.") : null,
+    j.filtered ? h("p", { class: "note" }, `This trace's beat lines cover ${j.filtered.sources.join(", ")} only: hops of the others are missing.`) : null,
     h("h3", {}, "Hops"),
     hopRows.length ? h("table", { class: "journey" }, h("tbody", {}, hopRows)) : h("p", { class: "note" }, "No access to this element was traced."),
     j.firings.length ? [h("h3", {}, "Firings"), j.firings.map(firing)] : null,
@@ -564,20 +596,21 @@ function cycleOf(st, total) {
  */
 export async function renderMemory(root, detail, ctx) {
   const { api, st, setHash } = ctx;
-  const beat = detail.trace?.level === "beat";
-  const show = beat && st.show in SHOWS ? st.show : "";
+  const beat = LEVELS.indexOf(detail.trace?.level ?? "off") >= LEVELS.indexOf("beat");
   const total = detail.run.total_cycles;
   const plain = await memoryData(api, detail);
+  const shows = showsOf(plain);
+  const show = st.show in shows ? st.show : "";
   let view = plain;
   let conflicts = null;
-  if (beat) {
+  if ("conflicts" in shows) {
     if (!whole.has(detail)) whole.set(detail, api.conflicts(detail.name, 0, total + 1));
     conflicts = await whole.get(detail);
-    if (show) {
-      const cache = cacheOf(marked, detail);
-      if (!cache.has(show)) cache.set(show, api.memory(detail.name, show));
-      view = await cache.get(show);
-    }
+  }
+  if (show) {
+    const cache = cacheOf(marked, detail);
+    if (!cache.has(show)) cache.set(show, api.memory(detail.name, show));
+    view = await cache.get(show);
   }
   const s = stateOf(api, detail);
   const rowsFor = (mem) => {
@@ -590,12 +623,13 @@ export async function renderMemory(root, detail, ctx) {
   const cellsBy = {};
   const foldsBy = {};
   const cur = {
-    detail, api, setHash, beat, show, total, st: ctx.hashState, cycle: null, pick: null, decorated: [], picked: [], cellsBy, foldsBy, conflicts,
+    detail, api, setHash, beat, show, shows, total, st: ctx.hashState, cycle: null, pick: null, decorated: [], picked: [], cellsBy, foldsBy, conflicts,
     geo: Object.fromEntries(view.memories.map((m) => [m.mem, m.geometry])),
   };
   const draw = {
     detail,
     show,
+    shows,
     total,
     conflicts,
     status: ctx.status,
@@ -618,8 +652,8 @@ export async function renderMemory(root, detail, ctx) {
   const intro = view.has_regions
     ? null
     : h("section", {}, h("h2", {}, "Memory"),
-      h("p", { class: "note" }, "This run names no regions, so only the memories' geometry is shown. The flow writes regions from the memory plan; a hand-written scenario may declare them (CONTRACTS.md section 6)."));
-  const bar = view.has_regions ? controls({ ...draw, cycle: cycleOf(st, total) }, beat) : null;
+      h("p", { class: "note" }, "This run names no regions, so only the memories' geometry is shown. The flow's regions come from the memory plan (L1) and the program's ELF (L2)."));
+  const bar = view.has_regions ? controls({ ...draw, cycle: cycleOf(st, total) }, beat, plain) : null;
   cur.bar = bar;
   cur.drawer = drawer(setHash);
   root.replaceChildren(...[intro, bar?.el, ...view.memories.map((m) => memorySection(draw, m, colours)), cur.drawer].filter(Boolean));
@@ -635,7 +669,7 @@ export async function renderMemory(root, detail, ctx) {
  */
 export async function updateMemory(detail, st) {
   const cur = current;
-  if (!cur || cur.detail !== detail || (cur.beat && st.show in SHOWS ? st.show : "") !== cur.show) return false;
+  if (!cur || cur.detail !== detail || (st.show in cur.shows ? st.show : "") !== cur.show) return false;
   const cycle = cycleOf(st, cur.total);
   if (cycle !== cur.cycle) await applyCycle(cur, cycle);
   if ((st.pick ?? null) !== cur.pick || (st.tracers ?? "") !== cur.tracers) {

@@ -238,8 +238,9 @@ The run report names each task from the task list:
     | acc | 0 | add_acc | 120 | 140 | 20 | – | – |
     | dma | 2 | store_C | 162 | 177 | 15 | L1 → L2 | 512 |
 
-and the viewer shows the profile in the browser (open the address it
-prints; the schedule comes back in FLOW3 round 3):
+and the viewer shows the profile and the memory tab in the browser (open
+the address it prints, or see "The viewer" below for the MICAS server; the
+schedule comes back in FLOW3 round 3):
 
     pixi run view out/flow/vecadd_task out/flow/vsum_task
 
@@ -284,6 +285,27 @@ snax-forge never reads them:
     ...
       convert   run/events.log -> profile.json, trace.jsonl (343 events in the window; boot 2812; sources acc, acc_a, acc_b, acc_out, dma); run/all.vcd, run/view.gtkw (gtkwave)
       report    report/design.md, report/run.md
+
+### The viewer
+
+From `beat` on, the viewer's memory tab shows where each container lies in
+L1 and L2 and how its words move (D96, D97): the marks the run's level has
+(`arrival`, `use`, `wait`, and at `stall` `conflicts`), a click on a word
+for its element's journey (its DMA beats, grants, firings with their values,
+the push and where the result went), and the selected cycle's accesses. On
+the MICAS server, start it in the container on the host's network, so its
+port 8765 is the server's (from the folder that holds `snax-forge`):
+
+    podman run --rm -it --network host -v "$PWD":"$PWD" -w "$PWD/snax-forge" ghcr.io/kuleuven-micas/snax-forge:main
+    pixi run view out/flow/vecadd_stall out/flow/vsum_stall
+
+    Pixi task (view in default): python -m snax_forge.viz out/flow/vecadd_stall out/flow/vsum_stall
+    serving vecadd_stall, vsum_stall at http://127.0.0.1:8765/ (Ctrl-C to stop)
+
+It listens on 127.0.0.1 only, so on your own machine forward the port, then
+open `http://localhost:8765/`:
+
+    ssh -N -L 8765:127.0.0.1:8765 <user>@micaseb19
 
 ## 3. A second kernel: vsum
 

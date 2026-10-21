@@ -73,11 +73,28 @@ def status_of(srv, path):
         return e.code
 
 
-def test_memory_and_movement_routes_say_round_2(tmp_path):
+def test_memory_routes_answer_and_movement_says_why_not(tmp_path):
     d = run_dir(tmp_path / "vecadd", "vecadd", "task")
     with serving([d]) as srv:
-        assert status_of(srv, "/api/run/vecadd/memory") == 400
-        assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=0&to=4") == 404
+        view = get_json(srv, "/api/run/vecadd/memory")
+        assert [m["mem"] for m in view["memories"]] == ["l1", "l2"]
+        assert "needs --trace stall" in view["marks_missing"]["conflicts"]
+        rows = get_json(srv, "/api/run/vecadd/memory/l1/rows?from=0&to=4")["rows"]
+        assert [r["row"] for r in rows] == [0, 1, 2, 3]
+        assert status_of(srv, "/api/run/vecadd/memory?marks=conflicts") == 400  # needs stall
+        assert status_of(srv, "/api/run/vecadd/memory?marks=later") == 400
+        assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=0&to=999") == 400
+        assert status_of(srv, "/api/run/vecadd/memory/l3/rows?from=0&to=4") == 404
+        assert get_json(srv, "/api/run/vecadd/memory/cycle?t=5") == {
+            "t": 5,
+            "level": "task",
+            "events": [],
+            "returns": [],
+        }  # no beat lines at task
+        assert status_of(srv, "/api/run/vecadd/memory/cycle") == 400
+        assert status_of(srv, "/api/run/nope/memory/cycle?t=5") == 404
         assert get_json(srv, "/api/run/vecadd/movement")["available"] is False
+        assert get_json(srv, "/api/run/vecadd/journey?region=A&index=0")["available"] is False
+        assert status_of(srv, "/api/run/vecadd/journey?region=Q&index=0") == 400
         assert get_json(srv, "/api/run/vecadd/fifo")["available"] is False
         assert status_of(srv, "/api/run/nope/memory") == 404

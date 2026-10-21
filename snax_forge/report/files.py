@@ -40,11 +40,10 @@ def reports_of(folder: str | Path, out: str | Path | None = None) -> Reports:
         rv = api.load_run(folder)
     except RunError as e:
         raise ReportError(f"{folder}: not a flow run ({e})") from None
-    from snax_forge.design import DesignPoint
     from snax_forge.sandbox import Recipe
 
     flow = rv.folder
-    point = DesignPoint.load(flow / rv.outputs.run["design_point"])
+    point = rv.point
     recipe = None
     if (flow / "sandbox" / "recipe.json").is_file():
         recipe = Recipe.load(flow / "sandbox" / "recipe.json")

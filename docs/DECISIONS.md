@@ -199,12 +199,12 @@ D136), the reports and `flow.log` with each stage's time. → `flow/run.py`.
 project of their own in `hw/chisel/`.
 
 **D96** · viz — The memory tab shows L1 as banks × rows through the address map and L2 as rows of
-one DMA beat, folded so the answer grows with the regions, not with the depth. → rebuilt in FLOW3
-round 2.
+one DMA beat, folded so the answer grows with the regions, not with the depth. → `viz/memory.py`
+on `viz/index.py`.
 
 **D97** · viz — Data movement is read off the beat trace and the regions, with no timing model: an
-element's journey, residency, per-port address nests and the L1 conflicts on the layout. → rebuilt
-in FLOW3 round 2.
+element's journey, residency, per-port address nests and the L1 conflicts on the layout. →
+`viz/movement.py` on `viz/index.py`.
 
 **D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their
 reports, until sweeps need one. Walk-throughs live in `examples/`, with a test checking every

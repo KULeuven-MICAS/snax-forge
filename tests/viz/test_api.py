@@ -7,7 +7,9 @@ is what the viewer is given:
   2. the events window is exactly [A, B), of the asked sources and kinds
   3. tasks pair starts with dones, named from the task list; a DMA task's
      direction and bytes are its issue's
-  4. the memory and movement views, and the FIFO busy window, say why not
+  4. the memory view answers on every run (its cases are test_memory.py's);
+     the movement views say why not below beat (test_movement.py's), the FIFO
+     busy window always
 """
 
 import pytest
@@ -106,16 +108,24 @@ def test_tasks_pair_starts_and_dones(dirs):
 
 
 # =============================================================================
-# 4. Not yet
+# 4. Memory, and not yet
 # =============================================================================
 
 
-def test_memory_and_movement_wait_for_round_2(dirs):
+def test_the_memory_view_answers_and_movement_says_why_not(dirs):
     rv = api.load_run(dirs[("vecadd", "task")])
-    assert api.memories(rv) == []
-    with pytest.raises(api.MemoryViewError, match="FLOW3 round 2"):
-        api.memory_view(rv)
+    assert api.memories(rv) == ["l1", "l2"]
+    view = api.memory_view(rv)
+    assert [m["mem"] for m in view["memories"]] == ["l1", "l2"] and view["marks_available"] == {}
     for view in (api.movement_view(rv), api.conflicts_view(rv), api.journey_view(rv, "A", 0)):
-        assert view == {"name": rv.name, "available": False, "reason": api.ROUND_2}
+        assert view["available"] is False and view["reason"].endswith("traced at task")
     fifo = api.fifo_windows(rv)
     assert fifo["available"] is False and fifo["streamers"] == {}
+
+
+def test_a_run_has_its_regions_and_index(dirs):
+    rv = api.load_run(dirs[("vecadd", "task")])
+    assert [(r.container, r.memory) for r in rv.regions] == [
+        (c, m) for c in "ABC" for m in ("l2", "l1")]  # fmt: skip
+    assert rv.index.level == "task" and rv.index.events == rv.outputs.trace.events
+    assert api.load_run(dirs[("vecadd", "off")]).index.level == "off"

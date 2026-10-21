@@ -26,6 +26,7 @@ from snax_forge.report import (
     reports_of,
 )
 from snax_forge.report.__main__ import main
+from snax_forge.report.run import build_run, render_movement
 from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
 from snax_forge.viz import api
@@ -140,7 +141,7 @@ def test_the_run_report_equals_its_sources(flows):
     ]
     assert sum(len(b.banks.split(",")) for b in r.banks) <= len(p.banks.conflicts)
     assert [s.name for s in r.streamers] == list(p.streamers)
-    assert "beat level" in r.movement
+    assert r.movement.reason == "Needs --trace beat; this run was traced at task."
 
 
 def test_a_wait_names_the_task_that_starts_after_it(flows):
@@ -226,6 +227,62 @@ def test_the_recorded_vecadd_run(flows, tmp_path):
     r = reports_of(folder)
     assert r.run.cycles == check["total_cycles"] == trace.total_cycles
     assert "# Run report: vecadd_task" in render_run(r.run)
+
+
+@pytest.fixture(scope="module")
+def recorded(tmp_path_factory):
+    """The recorded vecadd run converted at task, beat and stall into flow folders."""
+    from tests.viz.helpers import recorded_run
+
+    base = tmp_path_factory.mktemp("recorded")
+    return {lv: recorded_run(base / f"vecadd_{lv}", lv) for lv in ("task", "beat", "stall")}
+
+
+@pytest.mark.parametrize("level", ["beat", "stall"])
+def test_the_movement_section_is_the_index(recorded, level):
+    """At beat and above: per region its spans, per lane its nest and pace (viz/movement.py's
+    answers), and at stall the stalls per bank and port, which are the profile's."""
+    rv = api.load_run(recorded[level])
+    m = build_run(rv).movement
+    assert m.reason is None and m.sources is None
+    view = api.movement_view(rv)
+    assert [(r.region, r.mem, r.arrival, r.use, r.departure) for r in m.residency] == [
+        (r["region"], r["mem"], r["arrival"], r["use"], r["departure"]) for r in view["residency"]]  # fmt: skip
+    lanes = [p for p in view["patterns"] if p["port"] != "dma"]
+    assert [(p.port, p.task, p.base, p.nest, p.beats, p.first, p.last) for p in m.patterns] == [
+        (p["port"], p["task"], p["addr"]["base"], p["addr"]["nest"], p["beats"], p["first"],
+         p["last"]) for p in lanes]  # fmt: skip
+    md = "\n".join(render_movement(m))
+    assert (
+        "| A | L1 | 64 | 0 |" in md
+        and "| acc_a.lane0 | add_acc_a | 0x10000000 | 16 × 32 | 16 |" in md
+    )
+    if level == "beat":
+        assert m.conflicts is None and all(p.held is None for p in m.patterns)
+        assert "L1 stalls: Needs --trace stall; this run was traced at beat." in md
+    else:
+        snax = {n: x.stalls for n, x in rv.outputs.profile.ports.items() if n.startswith("acc_")}
+        assert m.conflicts == sum(snax.values()) == 4
+        assert [(b.where, b.stalls) for b in m.banks] == [("0–3", 1)]
+        assert [(p.where, p.stalls) for p in m.ports] == [(n, x) for n, x in snax.items() if x]
+        assert [p.held for p in m.patterns if p.port.startswith("acc_b.")] == [1, 1, 1, 1]
+        assert "4 L1 stalls" in md
+    assert RunReport.from_dict(json.loads(json.dumps(build_run(rv).to_dict()))) == build_run(rv)
+
+
+def test_the_movement_section_below_beat(recorded, flows):
+    for folder, level in ((recorded["task"], "task"), (flows[("vecadd", "off")], "off")):
+        r = build_run(api.load_run(folder))
+        assert render_movement(r.movement) == [
+            f"Needs --trace beat; this run was traced at {level}."
+        ]
+
+
+def test_a_filtered_trace_says_its_sources(tmp_path):
+    folder = stubbed_flow(tmp_path, "vecadd", "beat", trace_sources=["acc", "acc_a"])
+    m = build_run(api.load_run(folder)).movement
+    assert m.sources == ["acc", "acc_a"]
+    assert render_movement(m)[0] == "The beat lines cover acc, acc_a only."
 
 
 def test_the_command_line(flows, tmp_path, capsys):
