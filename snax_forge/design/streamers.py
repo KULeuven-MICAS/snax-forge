@@ -8,7 +8,7 @@ them, and every port of its BRM in port order, one streamer:
     spatial_bounds  the platform entry's, else the port nest's spatial loops,
                     fastest first (what snax_forge/lower/streams.py requires)
     n_ports         their product: the port's lanes
-    temporal_dims, fifo_depth, addr_depth, prio
+    temporal_dims, fifo_depth
                     the platform's ``default`` with the streamer's entry on top
 
 ``instances`` reads the instances off the graph and resolves them against
@@ -27,7 +27,6 @@ from snax_forge import expr
 from snax_forge.brm import Instance, load_brm, task_nest
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import parse_dim
-from snax_forge.snax_model import StreamerConfig
 
 from .platform import Platform, StreamerOptions
 
@@ -46,10 +45,6 @@ class Streamer:
     @property
     def n_ports(self) -> int:
         return prod(self.spatial_bounds)
-
-    def config(self) -> StreamerConfig:
-        """The streamer's entry in the cluster file (lower/cluster.py)."""
-        return self.options.config(write=self.write, n_ports=self.n_ports)
 
     def to_dict(self) -> dict[str, Any]:
         return {

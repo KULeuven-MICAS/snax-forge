@@ -24,8 +24,9 @@ from pathlib import Path
 
 from snax_forge.brm import load_brm
 from snax_forge.design import Platform, StreamerOptions
+from snax_forge.design.platform import L1Config, L2Config
 from snax_forge.lower import cluster_config, cluster_of, stub
-from snax_forge.snax_model import ControllerConfig, L1Config, L2Config
+from snax_forge.snax_model import ControllerConfig
 from snax_forge.snax_model.scenario import ClusterConfig
 
 PLATFORMS = Path(__file__).resolve().parents[2] / "platforms"
@@ -36,7 +37,7 @@ LANES = 4  # alu4 and red4
 # (D51, open item 10). test_profile.VECADD_CFG keeps its own non-default costs
 # (DMA writes and reads 2) to exercise the D37 formulas; test_scenario runs the
 # hand-built vecadd (helpers.mod7_vecadd) with these instead.
-# platforms/small16.json holds the same.
+# lower/cluster.py's MODEL holds the same.
 CTL = ControllerConfig(write_cost=1, read_cost=1, poll_interval=4)
 
 
@@ -50,8 +51,7 @@ def red4() -> ClusterConfig:
     """accumulate over 4 lanes into one lane, L1 only: the reduce stub's entry, from the BRM."""
     pf = Platform(
         "red4",
-        l1=L1Config(n_banks=16, rows=64, read_latency=1),
-        controller=CTL,
+        l1=L1Config(n_banks=16, rows=64),
         default=StreamerOptions(fifo_depth=2),
     )
     inst = load_brm("accumulate").resolve("chisel_adder_tree", {"W": LANES})
@@ -73,9 +73,8 @@ def mul1() -> ClusterConfig:
     """
     pf = Platform(
         "mul1",
-        l1=L1Config(n_banks=MUL_BANKS, rows=32, read_latency=1),
-        l2=L2Config(size_bytes=1 << 15, read_latency=1),
-        controller=CTL,
+        l1=L1Config(n_banks=MUL_BANKS, rows=32),
+        l2=L2Config(size_bytes=1 << 15),
         default=StreamerOptions(temporal_dims=2, fifo_depth=2),
     )
     params = {"lanes": 1, "n_inputs": 2, "op": "mul", "latency": MUL_LATENCY, "ii": MUL_II}

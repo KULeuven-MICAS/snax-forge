@@ -47,7 +47,7 @@ Retired, and where each now lives:
 | D55 | D54 |
 | D57 | D56 D58 D60 D61 |
 | D64 | D63 D66 |
-| D68 | D3 D5 D25 D35 |
+| D68 | D3 D5 D25 |
 | D70 | D15 |
 | D71 | D1 |
 | D72 | D14 D27 D80 |
@@ -65,6 +65,7 @@ Retired, and where each now lives:
 | D116 | D4 D6 D10 D11 D21 D24 D29 D30 D31 D32 D33 D34 D36 D37 D40 D41 D42 D44 D47 D48 D49 D53 D62 D65 D67 D83 D88 D92 D95 D110 D114 D115 |
 | D117 | D93 |
 | D123 | D124 |
+| D129 | D35 |
 | D134 | D132 |
 | D135 | D45 |
 | D137 | D38 D39 D59 |
@@ -127,7 +128,7 @@ wait another one already covers. → C§9, `lower/waits.py`.
 **D68** · brm — A BRM is a hand-written JSON file: a shared part (an interface with a rate per port,
 so reductions and elementwise blocks share one; function, dataflow, pattern) and implementations
 (source, supports, timing, binding D129), its timing the user's numbers (D51). `resolve` checks an
-instance against the generator's `BLOCKS`. Merges D25, D35. → C§10, `brm/`.
+instance against the generator's `BLOCKS`. Merges D25. → C§10, `brm/`.
 
 **D69** · brm — A reader whose innermost temporal stride is 0 reads a beat once and hands it out
 `bound[0]` times, as SNAX's reader does, so a BRM nest may repeat a beat with a stride of 0. →

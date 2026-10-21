@@ -343,8 +343,6 @@ def test_a_source_with_two_slots(tmp_path):
     ("sets", "text"),
     [
         ([("l1.rows", 501)], "not whole KiB"),
-        ([("l2.read_latency", 3)], "l2.read_latency 3 (the hjson gives 1)"),
-        ([("l1.read_latency", 2)], "l1.read_latency 2 (the hjson gives 1)"),
     ],
 )
 def test_a_platform_value_the_hjson_cannot_express(tmp_path, sets, text):

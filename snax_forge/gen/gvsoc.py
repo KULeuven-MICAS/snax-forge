@@ -52,8 +52,7 @@ is written as JSON, which hjson reads).
 streamers give it (D87): readers the input ports in the BRM's port order,
 writers the output ports, each with ``spatial_bounds``, ``temporal_dim``
 (the streamer's ``temporal_dims``), ``num_channel`` (``n_ports * N / 64``
-for the port's N-bit dtype) and ``fifo_depth``; ``addr_depth`` and ``prio``
-are SNAX-MODEL's and not in it.
+for the port's N-bit dtype) and ``fifo_depth``.
 
 **The datapath block** (snax-gvsoc ``snax/snax_cfg.py``): ``unit``
 (``SnaxUnit``), then the block's adapter's unit (blocks.py: ``inputs``,

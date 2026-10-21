@@ -9,7 +9,7 @@ import pytest
 from snax_forge.design import DesignError, Platform, StreamerOptions, parse_value
 from snax_forge.design.platform import parse
 
-from .helpers import ALU4, SMALL16, SNAX_ALU, platform_dict
+from .helpers import SMALL16, SNAX_ALU, platform_dict
 
 # =============================================================================
 # 1. small16 and the format
@@ -22,22 +22,6 @@ def test_small16_round_trips_byte_for_byte():
     assert Platform.from_dict(json.loads(p.to_json())) == p
 
 
-def test_small16_is_alu4_without_the_accelerator():
-    """Every platform value is the one alu4.json has; the streamer default is alu4's streamers
-    without what the port decides (write, n_ports)."""
-    p, a = Platform.load(SMALL16), json.loads(ALU4.read_text())
-    comps = {c["name"]: c for c in a["components"]}
-    assert p.l1.to_dict() == a["l1"] and p.l2.to_dict() == a["l2"]
-    assert p.xbar == comps["xbar"]["config"] and p.dma.to_dict() == comps["dma"]["config"]
-    assert p.controller.to_dict() == comps["ctl"]["config"]
-    assert p.register_window == a["register_map"]["window"]
-    for s in ("acc_a", "acc_b", "acc_out"):
-        cfg = dict(comps[s]["config"])
-        del cfg["write"], cfg["n_ports"]
-        assert p.default.to_dict() == cfg
-    assert (p.name, p.base, p.changes, p.entries, p.wait_mode) == ("small16", None, {}, {}, "poll")
-
-
 def test_small16_has_no_source_hjson():
     """Not read from a cluster file: no source and no slot, so nothing to write a cluster from."""
     p = Platform.load(SMALL16)
@@ -47,10 +31,10 @@ def test_small16_has_no_source_hjson():
 
 def test_missing_keys_take_defaults_and_every_field_is_written():
     p = Platform.from_dict({"name": "bare"})
-    assert p.l2 is None and p.default == StreamerOptions() and p.register_window == 32
+    assert p.l2 is None and p.default == StreamerOptions() and p.wait_mode == "poll"
     d = p.to_dict()
-    assert list(d) == ["name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2", "xbar",
-                       "dma", "controller", "register_window", "wait_mode", "streamers"]  # fmt: skip
+    assert list(d) == ["name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2",
+                       "wait_mode", "streamers"]  # fmt: skip
     assert (d["hjson"], d["accelerator_slot"]) == (None, None)
     assert d["l2"] is None and d["streamers"] == {"default": StreamerOptions().to_dict()}
 
@@ -73,7 +57,7 @@ def test_every_problem_is_reported_at_once():
     d = platform_dict()
     d["colour"] = "blue"  # unknown key
     d["l1"]["n_banks"] = "16"  # wrong type
-    d["dma"]["dims"] = 0  # rejected by DmaConfig
+    d["l2"]["size_bytes"] = 100  # rejected by L2Config: not whole beats
     d["wait_mode"] = "sleep"
     d["streamers"]["default"]["fifo_depth"] = 0
     _, found = parse(d)
@@ -81,7 +65,7 @@ def test_every_problem_is_reported_at_once():
     assert got == {
         ("platform.keys", "platform"),
         ("platform.keys", "l1.n_banks"),
-        ("platform.values", "dma"),
+        ("platform.values", "l2"),
         ("platform.values", "wait_mode"),
         ("platform.streamer", "streamers.default"),
     }
@@ -167,7 +151,6 @@ def test_saved_as_renames_and_keeps_the_record():
         ("l1.nbanks", 32, "no such field"),
         ("l1.n_banks", "32", "must be an int"),
         ("l1.n_banks.x", 1, "is a value, not a section"),
-        ("xbar.check_hold", 1, "must be a bool"),
         ("streamers.acc_a", 4, "streamers.<streamer>.<option>"),
         ("streamers.acc_a.write", True, "comes from the accelerator port"),
         ("streamers.acc_a.n_ports", 8, "comes from the accelerator port"),

@@ -44,7 +44,6 @@ The L1 of `platforms/snax_alu.json` (section 13):
   "n_banks": 32,
   "width_bits": 64,
   "rows": 512,
-  "read_latency": 1,
   "dtype": "int64",
   "elems_per_word": 1,
   "base_addr": 268435456,
@@ -657,9 +656,8 @@ point from them (section 16); a streamer input of its own is open item 78.
 
 <!-- snippet: platforms/small16.json -->
 ```json
- "register_window": 32,
  "wait_mode": "poll",
- "streamers": {"default": {"temporal_dims": 1, "fifo_depth": 2, "addr_depth": 8, "prio": 0}}
+ "streamers": {"default": {"temporal_dims": 1, "fifo_depth": 2}}
 ```
 
 **Changes and working copies.** `pixi run design GRAPH --platform P --set

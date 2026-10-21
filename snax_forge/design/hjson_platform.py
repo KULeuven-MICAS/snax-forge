@@ -28,15 +28,12 @@ reader takes from it:
                              writes the design's cluster file from
     accelerator_slot         the one accelerator's ``snax_acc_name``
 
-Not in the hjson, so fixed here: the L1's ``read_latency`` 1, both memories'
-``dtype`` int64 and ``elems_per_word`` 1, the L2's ``read_latency`` and the
-streamers' ``addr_depth`` and ``prio`` small16's. ``spatial_bounds`` and
-``num_channel`` are not stored: the shell derives them from the accelerator's
-ports (D84): the GVSoC generator lowers the streamer per design point (D134).
+Not in the hjson, so fixed here: both memories' ``dtype`` int64 and
+``elems_per_word`` 1. ``spatial_bounds`` and ``num_channel`` are not stored:
+the shell derives them from the accelerator's ports (D84): the GVSoC
+generator lowers the streamer per design point (D134).
 
-The rest of a platform (``xbar``, ``dma``, ``controller``,
-``register_window``, ``wait_mode``) is small16's: these are SNAX-MODEL's
-fields, unused by SNAX-GVSoC, and go when SNAX-MODEL is removed. The cores,
+The rest of a platform (``wait_mode``) is small16's. The cores,
 the I-cache, the interconnect and the CSR counts are not read; they are the
 generator's (gen/gvsoc.py). The core count is read on its own
 (``core_count``) by the design check that keeps the layouts out of
@@ -59,9 +56,8 @@ from typing import Any
 import hjson
 
 from snax_forge.common import repo_root
-from snax_forge.snax_model import L1Config, L2Config
 
-from .platform import Platform
+from .platform import L1Config, L2Config, Platform
 from .problems import DesignError, Problem
 
 ROOT = repo_root()
@@ -206,12 +202,12 @@ def platform_from_dict(d: Mapping[str, Any], name: str, source: str | None = Non
     small = Platform.load(SMALL16)
     try:
         l1 = L1Config(
-            n_banks=banks, width_bits=width, rows=bits // (banks * width), read_latency=1,
-            dtype="int64", elems_per_word=1, base_addr=base, wide_bits=wide,
+            n_banks=banks, width_bits=width, rows=bits // (banks * width), dtype="int64",
+            elems_per_word=1, base_addr=base, wide_bits=wide,
         )  # fmt: skip
         l2 = L2Config(
-            size_bytes=dram_size, base_addr=dram, read_latency=small.l2.read_latency,
-            beat_bits=wide, width_bits=width, dtype="int64", elems_per_word=1,
+            size_bytes=dram_size, base_addr=dram, beat_bits=wide, width_bits=width,
+            dtype="int64", elems_per_word=1,
         )  # fmt: skip
         default = replace(small.default, temporal_dims=temporal, fifo_depth=fifo)
     except ValueError as e:

@@ -42,7 +42,7 @@ def test_run_with_sets_then_continue_from_the_working_copy(tmp_path):
         "l1.n_banks", "streamers.acc_out.fifo_depth", "streamers.acc_a.temporal_dims"
     ]  # fmt: skip
     assert d["streamers"] == {
-        "default": {"temporal_dims": 1, "fifo_depth": 2, "addr_depth": 8, "prio": 0},
+        "default": {"temporal_dims": 1, "fifo_depth": 2},
         "acc_out": {"fifo_depth": 4},
         "acc_a": {"temporal_dims": 2},
     }
@@ -50,7 +50,7 @@ def test_run_with_sets_then_continue_from_the_working_copy(tmp_path):
 
 def test_problems_exit_1_write_nothing_and_name_the_fix(tmp_path, capsys):
     out = tmp_path / "d"
-    sets = ["--set", "platform.l1.n_banks=12", "--set", "platform.streamers.acc_ou.prio=1"]
+    sets = ["--set", "platform.l1.n_banks=12", "--set", "platform.streamers.acc_ou.fifo_depth=1"]
     assert run(BOUND, "--platform", SMALL16, "--out", out, *sets) == 1
     assert not out.exists()
     err = capsys.readouterr().err

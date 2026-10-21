@@ -18,11 +18,14 @@ design checks judge a whole plan, in L1 and L2.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from snax_forge.common import Config
-from snax_forge.snax_model.mem import L1Config
+
+if TYPE_CHECKING:  # design imports lower.layout
+    from snax_forge.design.platform import L1Config
 
 
 class LayoutError(ValueError):

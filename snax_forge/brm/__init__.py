@@ -3,8 +3,9 @@
 A BRM is a hand-written JSON file (D68) with a shared part (interface,
 function, dataflow, pattern) and a map of implementations (source, supports,
 timing, binding). ``Brm.resolve`` builds an instance from an implementation
-and design-param values; its ``accel_entry`` is the accelerator entry of the
-cluster file, checked against the model's registered kind. The ``affine``
+and design-param values, checked against the generator's blocks; its
+function (function.py, ``function_of``) is a registered accelerator kind the
+reference executor runs. The ``affine
 dataflow notation (D70) gives nests that ``task_nest`` resolves and
 enumerates for one task; SNAX-LOWER maps them onto streamer values
 (``snax_forge.lower.streams``). The library of hand-written BRMs
@@ -32,15 +33,20 @@ from .brm import (
     Port,
     Timing,
 )
+from .function import KINDS, OPS, AccelFunction, AccelPort, function_of, register_kind, register_op
 from .instance import Instance, resolve
 from .library import LIBRARY, library_names, load_brm
 from .notation import NOTATIONS, register_notation
 
 __all__ = [
     "CONTROLS",
+    "KINDS",
     "LIBRARY",
     "NOTATIONS",
+    "OPS",
     "WAITS",
+    "AccelFunction",
+    "AccelPort",
     "Brm",
     "BrmError",
     "Dataflow",
@@ -55,10 +61,13 @@ __all__ = [
     "Port",
     "Timing",
     "affine",
+    "function_of",
     "library_names",
     "load_brm",
     "register_control",
+    "register_kind",
     "register_notation",
+    "register_op",
     "register_wait",
     "resolve",
     "resolve_nest",

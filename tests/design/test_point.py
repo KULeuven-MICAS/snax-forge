@@ -11,7 +11,7 @@ from snax_forge.design import DesignError, run_checks
 from snax_forge.design.memory import MemorySpec
 from snax_forge.design.point import DesignPoint
 
-from .helpers import BOUND, alu4_streamers, bound_w8, design
+from .helpers import BOUND, VECADD_STREAMERS, bound_w8, design
 
 
 def point(memory=(), **kw) -> DesignPoint:
@@ -27,8 +27,7 @@ def test_vecadd_design_point_holds_every_part():
     assert list(d) == ["name", "graph_from", "graph", "platform", "streamers", "memory"]
     assert d["graph"] == json.loads(BOUND.read_text())  # carried unchanged: code, replaced, split
     assert d["platform"]["name"] == "small16" and d["platform"]["base"] == "small16"
-    assert list(d["streamers"]) == list(alu4_streamers())
-    assert {k: p.streamers[k].config().to_dict() for k in p.streamers} == alu4_streamers()
+    assert d["streamers"] == VECADD_STREAMERS
     assert d["memory"]["changes"] == {"B.l1.base": 576, "C.l1.base": 1152}
     assert d["memory"]["layouts"]["B"] == {
         "l2": {"base": 512, "shape": [64], "strides": [8]},

@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import itertools
 import json
-
-import pytest
 
 from snax_forge.brm import load_brm
 from snax_forge.common import to_json
@@ -41,15 +38,6 @@ def test_the_cluster_of_small16_and_the_brm_is_alu4():
     inst = load_brm("elementwise_add").resolve("chisel_tiled_spatial", {"W": 4})
     cfg = cluster_of(Platform.load(SMALL16), {"acc": inst})
     assert to_json(cfg.to_dict()) == ALU4.read_text()
-
-
-def test_platform_changes_reach_the_cluster():
-    sets = [("streamers.acc_out.fifo_depth", 4), ("l1.n_banks", 32), ("register_window", 64)]
-    cfg = cluster_file(point(sets=sets))
-    comps = {c.name: c for c in cfg.components}
-    assert comps["acc_out"].config["fifo_depth"] == 4 and comps["acc_a"].config["fifo_depth"] == 2
-    assert cfg.l1.n_banks == 32 and cfg.register_map.window == 64
-    build_cluster(cfg)
 
 
 def test_w8_gives_8_lane_streamers_and_accelerator():
@@ -105,45 +93,6 @@ def test_red4_and_mul1_keep_their_checked_in_form():
     assert [c.config["n_ports"] for c in red4.components[1:3]] == [4, 1]
     mul1 = ClusterConfig.load(SCEN / "clusters" / "mul1.json")
     assert {c.config["temporal_dims"] for c in mul1.components if c.kind == "streamer"} == {2}
-
-
-# =============================================================================
-# 3. What passes the design checks builds
-# =============================================================================
-
-GRID = list(itertools.product((1, 2, 4, 8), (1, 2, 6), (8, 16, 32), (16, 32)))
-
-
-@pytest.fixture(scope="module")
-def graphs():
-    from snax_forge.dfg import Graph
-    from snax_forge.sandbox import Recipe, apply_recipe
-    from tests.design.helpers import FIXTURES, RECIPE
-
-    plain = Graph.load(FIXTURES / "vecadd.snaxdfg")
-    return {
-        w: apply_recipe(Recipe.load(RECIPE).with_params({"W": w}), plain)[-1].graph
-        for w in (1, 2, 4, 8)
-    }
-
-
-def test_every_combination_that_passes_the_checks_builds(graphs):
-    """W x temporal_dims x n_banks x register_window: every passing design builds; the
-    failing ones are 6 temporal loops in a 16-register window (17 registers), by name."""
-    passed, failed = 0, set()
-    for w, t, banks, window in GRID:
-        sets = [("streamers.default.temporal_dims", t), ("l1.n_banks", banks),
-                ("register_window", window)]  # fmt: skip
-        d = design(graphs[w], sets=sets)
-        problems = run_checks(d)
-        if problems:
-            failed |= {p.code for p in problems}
-            continue
-        cfg = cluster_file(DesignPoint.of(d, f"w{w}"))
-        built = build_cluster(cfg)
-        assert built.regmap.blocks["acc_a"].comp.cfg.n_ports == w
-        passed += 1
-    assert passed == len(GRID) - 4 * 3 and failed == {"connect.regmap"}
 
 
 # =============================================================================

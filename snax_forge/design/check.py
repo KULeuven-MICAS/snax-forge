@@ -8,7 +8,7 @@ why it fails and the change that fixes it. Checks belong to stages:
     platform   the platform alone: keys, values, L1 and L2 agreeing, banks
     graph      the graph alone: symbols bound, everything bound to an
                accelerator, BRMs and implementations known, instance names
-    connect    the two together: streamer entries, lanes, dtypes, registers
+    connect    the two together: streamer entries, lanes, dtypes, temporal loops
     memory     the memory plan (D86): pins and passes, then the plan
                the passes make, its residency, shapes, alignment, fit,
                snRuntime's top of L1 and overlaps
@@ -19,9 +19,6 @@ only when ``connect`` passed. ``memory.pin`` makes the plan (memory.py)
 when its pins and passes name what exists, unless the Design already holds
 one (a design point, judged as stored). A new check is registered with
 ``register_check(code, stage, fn)``; ``fn(design)`` yields Problems.
-
-The model's own checks (scenario.py, when a cluster is built) stay as a
-backstop; these run earlier and speak in platform, graph and recipe terms.
 """
 
 from __future__ import annotations
@@ -32,7 +29,6 @@ from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from math import prod
 from pathlib import Path
-from types import SimpleNamespace
 from typing import Any
 
 from snax_forge import expr
@@ -40,7 +36,6 @@ from snax_forge.brm import BrmError, Instance
 from snax_forge.dfg import DfgError, Graph, Node
 from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import moved_bytes, round_up
-from snax_forge.snax_model.ctrl import STATUS, DmaAdapter, StreamerAdapter
 
 from .hjson_platform import ROOT, core_count
 from .memory import MemoryContext, MemoryPlan, MemorySpec, pin_problems, plan
@@ -63,8 +58,8 @@ STAGES: dict[str, tuple[str, ...]] = {
     "connect": ("platform", "graph"),
     "memory": ("connect",),
 }
-# Component names of the cluster besides the shell and the accelerators (lower/cluster.py).
-FIXED = ("xbar", "dma", "ctl")
+# Component names besides the shell and the accelerators: the DMA's (lower/derive.py).
+FIXED = ("dma",)
 # snRuntime's top of L1 (snax-gvsoc sw/snRuntime/src/start.S): a stack of
 # 1 << SNRT_LOG2_STACK_SIZE bytes per hart, the thread-local storage inside it;
 # below the stacks, a declared default for the rest: CLS (.cdata, .cbss), main's
@@ -186,13 +181,6 @@ def _set(path: str, value: Any) -> str:
     return f"--set platform.{path}={json.dumps(value)}"
 
 
-def _pow2_at_least(n: int) -> int:
-    p = 1
-    while p < n:
-        p *= 2
-    return p
-
-
 def _subtree(node: Node) -> Iterator[Node]:
     for n in node.body or []:
         yield n
@@ -284,7 +272,7 @@ def _graph_unbound(design: Design) -> Iterable[Problem]:
             found = True
             yield Problem(
                 "graph.unbound", f"tasklet {n.id}{inside}",
-                "is not bound to an accelerator: SNAX-MODEL has no core to run it",
+                "is not bound to an accelerator: the program drives accelerators only",
                 "bind it in the recipe: "
                 f'{{"transform": "bind", "params": {{"node": "{n.id}", ...}}}}',
             )  # fmt: skip
@@ -486,33 +474,6 @@ def _connect_temporal(design: Design) -> Iterable[Problem]:
                     f"({', '.join(lp.map for lp in loops)}), the streamer has {have}",
                     _set(f"streamers.{s}.temporal_dims", len(loops)),
                 )  # fmt: skip
-
-
-def _connect_regmap(design: Design) -> Iterable[Problem]:
-    pf = design.platform
-    window = pf.register_window
-
-    def over(block: str, regs: list[str], alternative: str | None = None) -> Iterable[Problem]:
-        n = len(STATUS) + len(regs)
-        if n > window:
-            fix = _set("register_window", _pow2_at_least(n))
-            yield Problem(
-                "connect.regmap", block,
-                f"needs {n} registers ({len(STATUS)} status + {len(regs)} configuration), "
-                f"the register window is {window}",
-                f"{fix}, or {alternative}" if alternative else fix,
-            )  # fmt: skip
-
-    for s, (i, p) in _streamers(design).items():
-        sb = pf.spatial_bounds(s) or nest_spatial_bounds(design.instances[i], p)
-        cfg = pf.options(s).config(write=False, n_ports=prod(sb))
-        regs = StreamerAdapter(SimpleNamespace(name=s, cfg=cfg), spatial_bounds=sb).registers
-        yield from over(f"streamer {s}", regs, f"lower platform.streamers.{s}.temporal_dims")
-    for i, inst in design.instances.items():
-        yield from over(f"accelerator {i}", list(inst.brm.registers))
-    if pf.l2 is not None:
-        regs = DmaAdapter(SimpleNamespace(name="dma", cfg=pf.dma)).registers
-        yield from over("dma", regs, "lower platform.dma.dims")
 
 
 # =============================================================================
@@ -778,7 +739,6 @@ for _code, _stage, _fn in (
     ("connect.lanes", "connect", _connect_lanes),
     ("connect.dtype", "connect", _connect_dtype),
     ("connect.temporal", "connect", _connect_temporal),
-    ("connect.regmap", "connect", _connect_regmap),
     ("memory.pin", "memory", _memory_pin),
     ("memory.residency", "memory", _memory_residency),
     ("memory.layout", "memory", _memory_layout),

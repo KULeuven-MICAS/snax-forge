@@ -26,7 +26,6 @@ FIXTURES = REPO / "tests" / "dfg" / "fixtures"
 SMALL16 = REPO / "platforms" / "small16.json"
 SNAX_ALU = REPO / "platforms" / "snax_alu.json"
 CFG = REPO / "gvsoc" / "snax-gvsoc" / "sw" / "cfg"  # empty unless the submodule is checked out
-ALU4 = REPO / "scenarios" / "clusters" / "alu4.json"
 RECIPE = REPO / "recipes" / "vecadd.json"
 BOUND = FIXTURES / "vecadd_accelerated.snaxdfg"
 
@@ -81,10 +80,14 @@ def codes(d: Design) -> list[str]:
     return [p.code for p in run_checks(d)]
 
 
-def alu4_streamers() -> dict[str, dict[str, Any]]:
-    """alu4's streamer entries by name, in component order."""
-    comps = json.loads(ALU4.read_text())["components"]
-    return {c["name"]: c["config"] for c in comps if c["kind"] == "streamer"}
+def _streamer(port: str, write: bool) -> dict[str, Any]:
+    return {"instance": "acc", "port": port, "write": write, "n_ports": 4, "spatial_bounds": [4],
+            "temporal_dims": 1, "fifo_depth": 2}  # fmt: skip
+
+
+# vecadd at W = 4 on small16: its streamers as the design point holds them, in port order
+VECADD_STREAMERS = {"acc_a": _streamer("a", False), "acc_b": _streamer("b", False),
+                    "acc_out": _streamer("out", True)}  # fmt: skip
 
 
 def accel_node(gd: dict[str, Any]) -> dict[str, Any]:

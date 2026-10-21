@@ -6,19 +6,18 @@ from snax_forge.brm import load_brm
 from snax_forge.design import Platform, instances, nest_spatial_bounds, resolve
 from snax_forge.dfg import Graph
 
-from .helpers import BOUND, SMALL16, alu4_streamers, bound_w8, platform_dict
+from .helpers import BOUND, SMALL16, VECADD_STREAMERS, bound_w8, platform_dict
 
 
 def shell(platform: Platform, graph: Graph) -> dict:
     return resolve(platform, instances(graph))
 
 
-def test_vecadd_on_small16_gives_alu4s_streamers():
-    """Names, order and every config field of alu4.json's streamer entries (cluster.py's input)."""
+def test_vecadd_on_small16_gives_its_streamers():
+    """Names, order and every field of vecadd's three streamers."""
     got = shell(Platform.load(SMALL16), Graph.load(BOUND))
-    want = alu4_streamers()
-    assert list(got) == list(want) == ["acc_a", "acc_b", "acc_out"]
-    assert {k: s.config().to_dict() for k, s in got.items()} == want
+    assert list(got) == list(VECADD_STREAMERS) == ["acc_a", "acc_b", "acc_out"]
+    assert {k: s.to_dict() for k, s in got.items()} == VECADD_STREAMERS
     assert [(s.instance, s.port, s.write, s.spatial_bounds) for s in got.values()] == [
         ("acc", "a", False, (4,)), ("acc", "b", False, (4,)), ("acc", "out", True, (4,))
     ]  # fmt: skip
@@ -57,5 +56,5 @@ def test_streamer_to_dict():
     s = shell(Platform.load(SMALL16), Graph.load(BOUND))["acc_out"]
     assert s.to_dict() == {
         "instance": "acc", "port": "out", "write": True, "n_ports": 4, "spatial_bounds": [4],
-        "temporal_dims": 1, "fifo_depth": 2, "addr_depth": 8, "prio": 0,
+        "temporal_dims": 1, "fifo_depth": 2,
     }  # fmt: skip
