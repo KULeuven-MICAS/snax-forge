@@ -44,6 +44,12 @@ Routes (every answer is JSON except the static files):
     GET  /api/run/<name>/schedule/detail?from=A&to=B
                                             the beat and stall lines of A <= t < B
                                             per lane
+    GET  /api/run/<name>/cluster?t=T        the data side of the cluster at T
+                                            (cluster.py)
+    GET  /api/run/<name>/step?t=T&dir=D&by=B
+                                            the next (D 1) or previous (D -1)
+                                            cycle with an event (B event) or a
+                                            task boundary (B boundary)
     POST /api/reload                        read every run directory again
 
 All the work is in api.py; this module only parses paths and queries and
@@ -237,6 +243,18 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if parts[2] == "schedule":
                 self._json(api.schedule_view(rv, _ints_arg(q, "open"), _int_arg(q, "cycle", None)))
+                return
+            if parts[2] == "cluster":
+                t = _int_arg(q, "t", None)
+                if t is None:
+                    raise _BadRequest("give t=T, the cycle")
+                self._json(api.cluster_view(rv, t))
+                return
+            if parts[2] == "step":
+                t, d, by = _int_arg(q, "t", None), _int_arg(q, "dir", None), _str_arg(q, "by")
+                if t is None or d not in (1, -1) or by not in ("event", "boundary"):
+                    raise _BadRequest("give t=T, dir=1 or -1 and by=event or boundary")
+                self._json(api.step_view(rv, t, d, by))
                 return
             if parts[2] == "conflicts":
                 a = _int_arg(q, "from", 0)

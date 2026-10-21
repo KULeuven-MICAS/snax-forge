@@ -53,7 +53,8 @@ movement.py's queries on the index; one a run's level cannot give is
 Schedule and cluster
 --------------------
 The schedule (lanes, folded segments, detail rows) is schedule.py's queries
-on the index (D57); a run below the level an answer needs gets ``available``
+on the index, the cluster view at a cycle and the stepping between cycles
+cluster.py's (D57); a run below the level an answer needs gets ``available``
 false with the reason. The routes ``/events``, ``/fifo`` and the run
 detail's ``tasks`` stay while static/ still reads them. The profile keeps
 each FIFO's highest count only (D137), so there is no busy-window
@@ -74,8 +75,8 @@ from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
 from snax_forge.run.cluster import DMA
 
+from . import cluster, memory, movement, schedule
 from . import index as ix
-from . import memory, movement, schedule
 from .index import RunIndex
 from .memory import MemoryLayout, MemoryViewError, RowMarks
 from .movement import MovementUnavailable
@@ -286,7 +287,7 @@ def conflicts_view(rv: RunView, start: int = 0, stop: int | None = None) -> dict
 
 
 # =============================================================================
-# The schedule (schedule.py on index.py)
+# The schedule and the cluster view (schedule.py, cluster.py on index.py)
 # =============================================================================
 
 
@@ -309,6 +310,18 @@ def schedule_detail(rv: RunView, start: int, stop: int) -> dict[str, Any]:
         return {"name": rv.name, "available": True, **schedule.detail(rv.index, start, stop)}
     except ScheduleUnavailable as e:
         return {"name": rv.name, "available": False, "reason": str(e)}
+
+
+def cluster_view(rv: RunView, t: int) -> dict[str, Any]:
+    """/api/run/<name>/cluster?t=T: the data side of the cluster at cycle ``T``."""
+    return {"name": rv.name, **cluster.cluster_at(rv.index, t)}
+
+
+def step_view(rv: RunView, t: int, dir: int, by: str) -> dict[str, Any]:
+    """/api/run/<name>/step?t=T&dir=D&by=B: the next (D 1) or previous (-1) cycle with an
+    event (B ``event``) or a task boundary (``boundary``); T at the window's ends."""
+    return {"name": rv.name, "from": t, "dir": dir, "by": by,
+            "t": cluster.step(rv.index, t, dir, by)}  # fmt: skip
 
 
 # =============================================================================
@@ -461,6 +474,7 @@ __all__ = [
     "RunSet",
     "RunView",
     "ScheduleUnavailable",
+    "cluster_view",
     "conflicts_view",
     "events_window",
     "fifo_windows",
@@ -477,5 +491,6 @@ __all__ = [
     "run_summary",
     "schedule_detail",
     "schedule_view",
+    "step_view",
     "tasks",
 ]

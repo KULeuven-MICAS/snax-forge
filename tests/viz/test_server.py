@@ -118,3 +118,20 @@ def test_schedule_routes_answer_and_say_why_not(tmp_path):
         assert status_of(srv, "/api/run/vecadd/schedule?open=x") == 400
         s = get_json(srv, "/api/run/vsum/schedule")
         assert s["available"] is False and "traced at off" in s["reason"]
+
+
+def test_cluster_and_step_routes_answer(tmp_path):
+    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+    with serving([d]) as srv:
+        first = get_json(srv, "/api/run/vecadd/step?t=0&dir=1&by=boundary")["t"]
+        assert first > 0
+        second = get_json(srv, f"/api/run/vecadd/step?t={first}&dir=1&by=boundary")["t"]
+        assert second > first
+        assert get_json(srv, f"/api/run/vecadd/step?t={second}&dir=-1&by=boundary")["t"] == first
+        assert get_json(srv, f"/api/run/vecadd/step?t={first}&dir=-1&by=boundary")["t"] == first
+        at = get_json(srv, f"/api/run/vecadd/cluster?t={first}")
+        assert at["t"] == first and at["events"] and all(e["t"] == first for e in at["events"])
+        assert at["needs"]["grant"] == "beat"
+        assert status_of(srv, "/api/run/vecadd/cluster") == 400
+        assert status_of(srv, "/api/run/vecadd/step?t=0&dir=2&by=event") == 400
+        assert status_of(srv, "/api/run/vecadd/step?t=0&dir=1&by=later") == 400
