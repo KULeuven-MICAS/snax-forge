@@ -147,6 +147,15 @@ GOOD_STREAM = stream("x", "acc_a")["values"]
         ([{**dma("x"), "type": "gpu", "component": "dma"}, start("x")], "is a dma, not a gpu"),
         ([bad_values({k: v for k, v in GOOD_DMA.items() if k != "dst"}), start("x")], "missing"),
         ([bad_values({**GOOD_DMA, "burst": 4}), start("x")], "unknown"),
+        ([bad_values({**GOOD_DMA, "direction": "l1_to_l1"}), start("x")], "direction must be one of"),
+        (
+            [bad_values({**GOOD_DMA, "src": {"base": 0, "bounds": [0], "strides": [64]}}), start("x")],
+            "bounds must be >= 1",
+        ),
+        (
+            [{**stream("x", "acc_a"), "values": {**GOOD_STREAM, "temporal_bounds": [0]}}, start("x")],
+            "temporal bounds must be >= 1",
+        ),
         ([bad_values({**GOOD_DMA, "src": {"base": 0, "bounds": [8]}}), start("x")], "missing"),
         (
             [bad_values({**GOOD_DMA, "src": {"base": 0, "bounds": 8, "strides": [64]}}), start("x")],

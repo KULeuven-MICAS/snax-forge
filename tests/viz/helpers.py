@@ -2,8 +2,7 @@
 
 Runs are flow folders made the way the flow makes them, SNAX-GVSoC stubbed
 (tests/flow/helpers.py: ``stubbed_flow``, its synthetic events), so the
-viewer reads exactly what the flow writes. ``SCEN`` is for the memory and
-movement tests, skipped until FLOW3 round 2.
+viewer reads exactly what the flow writes.
 """
 
 from __future__ import annotations
@@ -16,7 +15,6 @@ from snax_forge.viz.server import make_server
 from tests.flow.helpers import stubbed_flow
 
 REPO = Path(__file__).resolve().parents[2]
-SCEN = REPO / "scenarios"
 
 
 def run_dir(out: Path, name: str = "vecadd", level: str = "task") -> Path:

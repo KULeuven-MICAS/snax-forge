@@ -49,15 +49,21 @@ from typing import Any
 from snax_forge.run import Cluster, RunError, RunOutputs, load_cluster, read_run
 from snax_forge.run.cluster import DMA
 
-from . import memory  # noqa: F401  (the server's row limit; the memory view is round 2's)
-from .memory import MemoryViewError
-from .movement import MovementUnavailable
-
+MAX_ROWS = 256  # memory rows per request (static/memory.js); the memory view is round 2's
 ROUND_2 = (
     "FLOW3 round 2: the memory and movement views need beat-level events and memory dumps, "
     "which the SNAX-GVSoC flow does not write yet"
 )
 NO_FIFO_WINDOW = "the profile keeps each FIFO's highest count only (D137): no busy window"
+
+
+class MemoryViewError(ValueError):
+    """A request the memory view cannot answer; the message says why."""
+
+
+class MovementUnavailable(Exception):
+    """The run cannot answer a movement question; the message is the reason shown."""
+
 
 # =============================================================================
 # One run
@@ -319,6 +325,7 @@ class RunSet:
 
 
 __all__ = [
+    "MAX_ROWS",
     "ROUND_2",
     "MemoryViewError",
     "MovementUnavailable",

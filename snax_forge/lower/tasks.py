@@ -37,7 +37,9 @@ have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
 ``dst``, each side ``base``, ``bounds`` and ``strides``; an accelerator's
 runtime params, ``n`` and its named rates); a streamer's loops fit it (as
 many temporal strides as bounds, no more than its ``temporal_dims``, one
-spatial stride per spatial bound); a DMA's sides have one stride per bound.
+spatial stride per spatial bound, every bound >= 1); a DMA's direction is
+``l2_to_l1`` or ``l1_to_l2`` and its sides have one stride per bound, every
+bound >= 1.
 """
 
 from __future__ import annotations
@@ -278,6 +280,7 @@ class TaskList:
 STREAMER = ("base", "temporal_bounds", "temporal_strides", "spatial_strides")
 DMA = ("direction", "src", "dst")
 DMA_SIDE = ("base", "bounds", "strides")
+DIRECTIONS = ("l2_to_l1", "l1_to_l2")
 
 
 def _exact(v: Any, keys: list[str] | tuple[str, ...], what: str) -> None:
@@ -329,8 +332,12 @@ def _check(s: Configure, point: DesignPoint) -> None:
                 f"{len(shell.spatial_bounds)} spatial bounds but {len(ss)} spatial strides"
             )
         _fit(len(tb), shell.options.temporal_dims, s.component)
+        if any(b < 1 for b in tb):
+            raise ValueError("temporal bounds must be >= 1")
     elif s.type == "dma":
         _exact(v, DMA, "dma values")
+        if v["direction"] not in DIRECTIONS:
+            raise ValueError(f"direction must be one of {DIRECTIONS}, got {v['direction']!r}")
         for side in ("src", "dst"):
             _exact(v[side], DMA_SIDE, side)
             b, st = (
@@ -339,6 +346,8 @@ def _check(s: Configure, point: DesignPoint) -> None:
             )
             if len(b) != len(st):
                 raise ValueError(f"{len(b)} bounds but {len(st)} strides")
+            if any(x < 1 for x in b):
+                raise ValueError("bounds must be >= 1")
     else:
         if not isinstance(v, Mapping):
             raise TypeError(f"accel values must be an object, got {v!r}")

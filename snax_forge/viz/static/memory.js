@@ -1,7 +1,7 @@
 // The memory tab (VIS4a, VIS4b, D95-D97): where a run's regions sit in each
 // memory, and on a beat-level run how its words move.
 //
-// Everything shown is computed by the server (viz/memory.py): per memory its
+// Everything shown is computed by the server (viz/api.py; FLOW3 round 2): per memory its
 // geometry, its regions and its rows, folded where a row repeats the one
 // above with one constant step per region. This module only draws:
 //
@@ -27,7 +27,7 @@ import { clampCycle, h, int, pct } from "./dom.js";
 import { hopText, operandsText } from "./events.js";
 import { playControl, stopPlaying } from "./player.js";
 
-const MAX_ROWS = 256; // viz/memory.py MAX_ROWS: rows per request
+const MAX_ROWS = 256; // viz/api.py MAX_ROWS: rows per request
 const LABEL_EVERY_CELL = 32; // above this many columns only the first cell of a run is labelled
 const N_COLOURS = 8; // style.css --region-0 ... --region-7
 

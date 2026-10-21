@@ -152,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._error(HTTPStatus.NOT_FOUND, f"no {what}")
                 return
             a = _int_arg(q, "from", 0) or 0
-            b = _int_arg(q, "to", a + api.memory.MAX_ROWS)
+            b = _int_arg(q, "to", a + api.MAX_ROWS)
             try:
                 self._json(api.memory_rows(rv, parts[3], a, b or 0, _str_arg(q, "marks")))
             except (api.MemoryViewError, api.MovementUnavailable) as e:

@@ -214,9 +214,10 @@ started; every configured task is started.
 
 **Values** are checked against the design point before the backend runs
 (`check_values`, `lower/tasks.py`; `c.tasks`): the component exists and has
-the task's type, the values have exactly the type's keys, and a streamer's
-loops fit it (no more temporal loops than its `temporal_dims`, one spatial
-stride per spatial bound).
+the task's type, the values have exactly the type's keys, a streamer's loops
+fit it (no more temporal loops than its `temporal_dims`, one spatial stride
+per spatial bound), a DMA's direction is `l2_to_l1` or `l1_to_l2`, and every
+bound is at least 1.
 
 **Waits** (`placed_waits`, `lower/waits.py`). Before a `start`, the lowering
 places one wait per component, for every `after` task and every listed
