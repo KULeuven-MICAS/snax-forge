@@ -29,7 +29,10 @@ and the trace cover one window. The ``mcycle`` lines bound it and are not in the
 
 **Trace.** A unit's or a mover's ``done`` is written in its last busy cycle, so its t is one
 more (the first idle cycle); an accelerator's ``done`` keeps its firings and its first and
-last firing, shifted. Starts are matched to the task list's tasks of their component in order
+last firing, shifted, and carries its run's ``cycles``, the classes of its summary ``run``
+line (``index`` the run's start among the unit's starts); a mover's ``done`` carries its
+summary ``mover`` line's (``run`` the start's index among the streamer's starts), its four
+classes by name. A run without its summary line is a RunError (``convert.summary``). Starts are matched to the task list's tasks of their component in order
 (accelerator tasks, a mover's streamer tasks), a done to its start. A core's ``csr`` and
 ``poll`` get the ``block`` whose CSR it is (``acc``, ``acc_streamer``, else ``-``); a ``poll``
 or ``barrier`` is at its first cycle. A DMA ``issue`` gets its direction from its addresses
@@ -43,9 +46,9 @@ task. A count or direction that does not match is a RunError (``convert.tasks``)
 ``total_cycles``, ``utilisation`` busy over ``total_cycles``; a mover's likewise from its
 ``mover`` lines, its FIFO maximum per lane the highest over its runs; a core's CSR counts are
 its ``csrs`` line; the DMA's and the ports' and banks' their lines. A core's cycles in the
-window are, per cycle, ``barrier`` (in a barrier line's ``[first, last]``), else ``poll`` (in
-a poll's ``[first, last]``), else ``sleep`` (its last ``state`` is sleep), else ``run``; its
-waits are its polls and barriers in the window, clipped to it. At trace ``off`` there are no
+window are its spans' (cores.py: ``barrier`` > ``poll`` > ``sleep`` > ``run``) counted, from
+its ``state``, ``poll`` and ``barrier`` lines, those before the window included; its waits
+are its polls and barriers in the window, clipped to it. At trace ``off`` there are no
 events: the cores' cycles are None and there is no trace.
 
 **Invariants** (``invariants``), checked on every conversion, a RunError
@@ -70,6 +73,7 @@ from snax_forge.lower.tasks import Configure, TaskList
 
 from .beats import Context, beat_events, beat_invariants
 from .cluster import DMA, Cluster, core_name
+from .cores import core_counts, core_spans
 from .events import Line, RunError
 from .profile import (
     AccelProfile,
@@ -88,7 +92,6 @@ from .trace import LEVELS, Trace
 XBAR = "xbar"
 UNIT_CLASSES = ("busy", "stall_in", "stall_out", "flush")
 MOVER_CLASSES = ("busy", "stall_xbar", "stall_fifo")
-CORE_CLASSES = ("run", "poll", "barrier", "sleep")
 
 
 def source_of(line: Line, cluster: Cluster) -> str:
@@ -189,6 +192,22 @@ def _need(names: list[str], k: int, what: str) -> str:
     return names[k]
 
 
+def run_classes(lines: Sequence[tuple[str, Line]], cluster: Cluster
+                ) -> dict[tuple[str, int], dict[str, int]]:  # fmt: skip
+    """Per (accelerator or mover, its run index among its starts), its summary line's classes
+    by name (module doc)."""
+    acc = cluster.accelerator
+    out = {}
+    for s, x in lines:
+        if x.trace != "summary":
+            continue
+        if x.kind == "run" and s == acc.name:
+            out[(s, x.fields["index"])] = {c: x.fields[c] for c in UNIT_CLASSES}
+        elif x.kind == "mover":
+            out[(s, x.fields["run"])] = {c: x.fields[c] for c in (*MOVER_CLASSES, "idle")}
+    return out
+
+
 def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: TaskList,
                  boot: int, width: int) -> list[tuple[int, int, dict[str, Any]]]:  # fmt: skip
     """The events lines renamed, shifted and cut (module doc), in time order, each with its
@@ -197,6 +216,9 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
     out: list[tuple[int, int, dict[str, Any]]] = []
     started: dict[str, list[str]] = {}  # src -> its tasks, in start order
     done_count: dict[str, int] = {}
+    runs: dict[str, int] = {}  # src -> its starts so far, the window's or not
+    run_of: dict[str, int] = {}  # task -> its run index among its component's starts
+    classes = run_classes(lines, cluster)
     issued: dict[int, str] = {}  # DMA copy id -> its task
     dma_tasks = _dma_tasks(tasks)
     order = sorted(enumerate(lines), key=lambda x: (x[1][1].cycle, x[0]))
@@ -204,6 +226,10 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
         if x.trace != "events" or x.kind in ("mcycle", "mcycleh"):
             continue
         f, k = x.fields, x.kind
+        run = None
+        if k == "start":
+            run = runs.get(src, 0)
+            runs[src] = run + 1
         t = x.cycle - boot
         if k in ("done",) and src != DMA:
             t += 1
@@ -217,6 +243,7 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
             mine = started.setdefault(src, [])
             e["task"] = _need(_tasks(tasks, kind, src), len(mine), f"{src}'s tasks")
             mine.append(e["task"])
+            run_of[e["task"]] = run
         elif k == "done" and src == DMA:
             if f["id"] not in issued:
                 raise RunError("convert.tasks", f"DMA copy {f['id']} done at {t}, never issued "
@@ -229,6 +256,11 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
             if i >= len(mine):
                 raise RunError("convert.tasks", f"{src}: done at {t} with no start before it")
             e["task"] = mine[i]
+            cycles = classes.get((src, run_of[mine[i]]))
+            if cycles is None:
+                raise RunError("convert.summary", f"{src} ({mine[i]}): no summary line for its run "
+                               f"{run_of[mine[i]]}")  # fmt: skip
+            e["cycles"] = cycles
             if src == acc.name:
                 e.update(firings=f["firings"], first=f["first"] - boot, last=f["last"] - boot)
         elif k in ("csr", "poll"):
@@ -269,36 +301,19 @@ def core_cycles(lines: Sequence[tuple[str, Line]], core: str, boot: int, width: 
     """A core's classes in the window, and its waits clipped to it: first, last, kind and
     line (module doc)."""
     mine = sorted((x for s, x in lines if s == core and x.trace == "events"), key=lambda x: x.cycle)
-    cls = bytearray(width)  # 0 run, 1 poll, 2 barrier, 3 sleep
-    sleep = False
-    states = []
+    events: list[dict[str, Any]] = []
+    waits = []
     for x in mine:
         if x.kind == "state":
-            t = x.cycle - boot
-            if t <= 0:
-                sleep = x.fields["mode"] == "sleep"
-            else:
-                states.append((t, x.fields["mode"] == "sleep"))
-    t0 = 0
-    for t, s in [*states, (width, sleep)]:
-        if sleep:
-            cls[t0 : min(t, width)] = b"\x03" * (min(t, width) - t0)
-        t0, sleep = min(t, width), s
-    waits = []
-    for code, kind in ((1, "poll"), (2, "barrier")):
-        for x in mine:
-            if x.kind != kind:
-                continue
-            a, b = max(x.fields["first"] - boot, 0), min(x.fields["last"] - boot, width - 1)
-            if a > b:
-                continue
-            for c in range(a, b + 1):
-                if cls[c] < code or cls[c] == 3:
-                    cls[c] = code
-            waits.append((a, b, kind, x))
-    counts = {name: cls.count(code) for code, name in ((0, "run"), (1, "poll"), (2, "barrier"),
-                                                         (3, "sleep"))}  # fmt: skip
-    return {c: counts[c] for c in CORE_CLASSES}, sorted(waits, key=lambda w: w[0])
+            events.append({"t": x.cycle - boot, "k": "state", "mode": x.fields["mode"]})
+        elif x.kind in ("poll", "barrier"):
+            first, last = x.fields["first"] - boot, x.fields["last"] - boot
+            events.append({"t": first, "k": x.kind, "last": last})
+            a, b = max(first, 0), min(last, width - 1)
+            if a <= b:
+                waits.append((a, b, x.kind, x))
+    waits.sort(key=lambda w: (w[0], w[2] == "barrier"))  # a poll before a barrier of one cycle
+    return core_counts(core_spans(events, width)), waits
 
 
 # =============================================================================

@@ -15,7 +15,8 @@ when it is named).
 
 ``gvsoc_options`` maps them onto SNAX-GVSoC: the trace names for ``gvsoc/Makefile``'s
 ``TRACES`` (one ``--trace`` regex each: ``summary`` and ``events`` whole, then per component,
-the unit's ``beats`` for ``acc``, the streamer's ``stalls`` for a mover, the crossbar's
+the unit's ``beats`` for ``acc``, the streamer's ``beats`` (its ``class`` lines) and ``stalls``
+for a mover, the crossbar's
 ``beats`` and ``stalls`` for its inputs, the AXI backend's ``beats`` for ``dma``, ``pe<i>/insn``
 for a core), the crossbar's ``trace_inputs`` parameter (the named inputs by name: a mover's
 lanes ``snax_acc<i>.streamer.<mover>.lane<l>``, ``core<i>``, ``axi``, and ``dma``), and with
@@ -99,6 +100,8 @@ def gvsoc_options(cluster: Cluster, level: str, sources: list[str], vcd: bool,
     if "beat" in on:
         if a.name in sources:
             o.traces.append(f"{acc}/unit/beats")
+        if movers:
+            o.traces.append(f"{acc}/streamer/beats")
         if inputs:
             o.traces.append("tcdm/snax_xbar/beats")
         if DMA in sources:

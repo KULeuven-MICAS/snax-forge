@@ -212,7 +212,9 @@ class Traffic:
     reader's beat b granted at t + 1 + b on every lane, the others' one cycle later (their
     beat 0 stalls behind it at t + 1 on the same banks), firing b at t + 4 + b pushing at once,
     the writer's grant at t + 5 + b; words A[i] = i + 1 on reader 0, 100 + i on the others,
-    their sum written. A copy of ``size`` bytes: one beat of 64 bytes a cycle from t + 1, its
+    their sum written; the class runs of the summary lines ``synthetic`` writes (the unit
+    stall_in for 2 cycles from t + 2, then busy; each mover busy for n cycles from t + 1, then
+    stall_xbar for 1, then idle for 2). A copy of ``size`` bytes: one beat of 64 bytes a cycle from t + 1, its
     bursts (one read, or one write per beat)."""
 
     def __init__(self, cluster: Any) -> None:
@@ -282,6 +284,11 @@ class Traffic:
             return (1 if r == 0 else 100) + b * readers[0].lanes + lane
 
         run = sum(1 for k in self._qmax if k[0] == writer.name and k[1] == 0)
+        self.add(t + 2, unit, "beats", "class mode=stall_in")
+        self.add(t + 4, unit, "beats", "class mode=busy")
+        for m in acc.movers:
+            for cyc, mode in ((t + 1, "busy"), (t + 1 + n, "stall_xbar"), (t + 2 + n, "idle")):
+                self.add(cyc, streamer, "beats", f"class mover={m.gvsoc} mode={mode}")
         for r, m in enumerate(readers):
             for b in range(n):
                 g = t + 1 + b + (r > 0)

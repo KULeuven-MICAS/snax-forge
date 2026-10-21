@@ -56,8 +56,8 @@ def _fields(names: str) -> frozenset[str]:
 KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
     "start": [(frozenset({"task"}), frozenset())],
     "done": [
-        (frozenset({"task", "firings", "first", "last"}), frozenset()),
-        (frozenset({"task"}), frozenset()),
+        (frozenset({"task", "cycles", "firings", "first", "last"}), frozenset()),
+        (frozenset({"task", "cycles"}), frozenset()),
         (frozenset({"task", "id"}), frozenset()),
     ],
     "csr": [(frozenset({"pc", "csr", "block", "op", "value"}), frozenset({"held"}))],
@@ -82,6 +82,7 @@ KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
     "burst": [(_fields("task id op mem addr size back region elems"), frozenset())],
     "fire": [(frozenset({"task", "n", "b", "value", "vals"}), frozenset())],
     "push": [(frozenset({"task", "n", "first", "last", "value", "vals"}), frozenset())],
+    "class": [(frozenset({"task", "mode"}), frozenset())],
     "stall": [
         (
             frozenset({"task", "addr", "bank", "row", "by", "by_addr", "region", "elems"}),

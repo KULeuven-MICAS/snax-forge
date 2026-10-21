@@ -12,11 +12,14 @@ trace the reports and the viewer read.
 * trace.py: the trace, one event per line, in the program's window;
 * beats.py: the converter's beat, stall and instruction part and its invariants (convert.py
   the rest);
+* cores.py: a core's cycles classed barrier > poll > sleep > run, as spans: what the profile
+  counts and the viewer's schedule draws;
 * sources.py: a trace level and its sources, as SNAX-GVSoC's traces and options;
 * outputs.py: a run directory written and read back.
 """
 
 from .cluster import Accelerator, Cluster, Csrs, Mover, cluster_from, load_cluster
+from .cores import CORE_CLASSES, core_counts, core_spans
 from .events import GRAMMAR, Line, RunError, parse_line, read_events
 from .outputs import RunOutputs, read_run, write_run
 from .profile import (
@@ -34,6 +37,7 @@ from .regions import Region, region_at, regions_of
 from .trace import KINDS, LEVELS, Trace
 
 __all__ = [
+    "CORE_CLASSES",
     "GRAMMAR",
     "KINDS",
     "LEVELS",
@@ -56,6 +60,8 @@ __all__ = [
     "Trace",
     "WaitProfile",
     "cluster_from",
+    "core_counts",
+    "core_spans",
     "load_cluster",
     "parse_line",
     "read_events",

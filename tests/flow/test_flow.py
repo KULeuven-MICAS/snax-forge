@@ -468,7 +468,8 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
                  out=tmp_path / level)  # fmt: skip
     v = fake.calls[-1][1]
     traces = v["TRACES"].split()
-    assert traces[:4] == ["summary", "events", "snax_acc0/unit/beats", "tcdm/snax_xbar/beats"]
+    assert traces[:5] == ["summary", "events", "snax_acc0/unit/beats", "snax_acc0/streamer/beats",
+                          "tcdm/snax_xbar/beats"]  # fmt: skip
     assert ("snax_acc0/streamer/stalls" in traces) == (level != "beat")
     assert [x for x in traces if x.endswith("/insn")] == (
         ["pe0/insn", "pe1/insn"] if level == "finegrained" else []
@@ -477,7 +478,7 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
                      for i in range(4))  # fmt: skip
     assert f"'chip/soc/cluster_0/tcdm/snax_xbar/trace_inputs={lanes},dma'" in v["GVRUN_ARGS"]
     kinds = {e["k"] for e in f.trace.events}
-    assert {"grant", "dma", "burst", "fire", "push"} <= kinds
+    assert {"grant", "dma", "burst", "fire", "push", "class"} <= kinds
     assert ("fifo" in kinds) == ("stall" in kinds) == (level != "beat")
     assert ("insn" in kinds) == (level == "finegrained")
     sources = ["acc", "acc_a", "acc_b", "acc_out", "dma"]
@@ -498,7 +499,8 @@ def test_named_sources_and_the_vcd_stubbed(tmp_path, monkeypatch):
                  trace_sources=["core0", "acc_a", "acc"], vcd=True, out=tmp_path / "f")  # fmt: skip
     v = fake.calls[-1][1]
     assert v["TRACES"].split() == ["summary", "events", "snax_acc0/unit/beats",
-                                   "tcdm/snax_xbar/beats", "snax_acc0/streamer/stalls",
+                                   "snax_acc0/streamer/beats", "tcdm/snax_xbar/beats",
+                                   "snax_acc0/streamer/stalls",
                                    "tcdm/snax_xbar/stalls"]  # fmt: skip
     lanes = ",".join(f"snax_acc0.streamer.reader0.lane{i}" for i in range(4))
     assert f"trace_inputs={lanes},core0'" in v["GVRUN_ARGS"]

@@ -42,6 +42,8 @@ def serving(dirs):
 # =============================================================================
 
 L1 = 0x10000000  # the cluster's L1 base (tests/run/helpers.CLUSTER)
+UNIT_CLASSES = ("busy", "stall_in", "stall_out", "flush")
+MOVER_CLASSES = ("busy", "stall_xbar", "stall_fifo", "idle")
 L2 = 0x80000000
 
 
@@ -154,10 +156,15 @@ class Events:
         return self.add({"t": t, "k": "push", "src": "acc", "task": task, "n": n, "first": first,
                          "last": last, "value": list(vals), "vals": list(vals)})  # fmt: skip
 
-    def task(self, t, src, task, done=None):
+    def task(self, t, src, task, done=None, cycles=None):
+        """A task of ``src`` from ``t`` to ``done``; its run's ``cycles`` on the done, by
+        default all ``busy`` from ``t + 1`` to ``done - 1``."""
         self.add({"t": t, "k": "start", "src": src, "task": task})
         if done is not None:
-            self.add({"t": done, "k": "done", "src": src, "task": task})
+            names = UNIT_CLASSES if src == self.c.accelerator.name else MOVER_CLASSES
+            default = {c: done - t - 1 if c == "busy" else 0 for c in names}
+            self.add({"t": done, "k": "done", "src": src, "task": task,
+                      "cycles": dict(cycles or default)})  # fmt: skip
 
     def csr(self, t, csr, value, block="acc_streamer"):
         return self.add({"t": t, "k": "csr", "src": "core0", "pc": 0x80000360, "csr": csr,

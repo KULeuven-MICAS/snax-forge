@@ -4,6 +4,7 @@ look up, and the invariants they must hold.
 
     beat_events(named, ctx) -> [(t, n, event)]
     beat_invariants(trace, profile, ctx) -> [what fails]
+    class_invariants(events, class_events, srcs) -> [what fails]
 
 ``named`` are events.log's lines with their C§7 source (convert.py); ``ctx`` (``Context``) is
 the rest of the run: the cluster, the design point's regions, the window, the filter, and
@@ -27,7 +28,10 @@ its elements in the word (a DMA beat's words together, a burst's bytes), ``vals`
 by the region's dtype; a fire's and a push's come from the grants of their beats (its reader's
 ``b``, the writer's ``b = n``), null for a mover not in the trace. An ``insn``'s ``func`` is the
 function its core was in at ``t`` (its last ``func`` line at or before it, boot included),
-``text`` the instruction as GVSoC writes it.
+``text`` the instruction as GVSoC writes it. A ``class`` line (the accelerator's, or a mover's:
+SNAX-GVSoC's own class of the cycle, never derived here) keeps its ``mode``; a run's class
+runs (``class_runs``) go from each line to the next one of its task, the last to the end of
+the cycles its ``done``'s ``cycles`` add up over (from its start + 1).
 
 **Invariants**, each checked where the trace has its lines (its level and filter), each
 failure named:
@@ -44,6 +48,10 @@ failure named:
 - every ``b`` a fire names was granted on every lane of its mover with the fire's words;
   every push's words are its writer grants' (``b = n``);
 - every L1 line's ``bank`` and ``row`` are its address's (``Cluster.bank_row``);
+- per run of the accelerator and of each mover, its class runs start at its first counted
+  cycle (its start + 1), each changes the class, the last ends where its ``done``'s
+  ``cycles`` add up to, and per class their lengths add up to that class's count; no
+  ``class`` line of a component lies outside its runs;
 - each mover's grant addresses in a task, lane by lane in time order, are the nest its CSR
   writes gave that task: the pointer, a spatial stride per lane, the temporal bounds and
   strides (``agu_nest``, as the streamer's AGU walks it; with a repeat, loop 0 once);
@@ -60,6 +68,7 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from itertools import pairwise
 from typing import Any
 
 from .cluster import DMA, Cluster, Mover
@@ -106,6 +115,18 @@ def brackets(events: list[dict[str, Any]]) -> dict[str, list[tuple[int, int, str
                 if task == e["task"]:
                     out[e["src"]].append((t, e["t"], task))
     return out
+
+
+def run_end(start: dict[str, Any], done: dict[str, Any]) -> int:
+    """The cycle after a run's last counted one: its classes add up from its start + 1."""
+    return start["t"] + 1 + sum(done["cycles"].values())
+
+
+def class_runs(lines: list[dict[str, Any]], end: int) -> list[tuple[int, int, str]]:
+    """One run's class lines (time order) as ``(first, end, mode)``: each to the next line,
+    the last to ``end``, the cycle after the run's last counted one."""
+    ts = [e["t"] for e in lines] + [end]
+    return [(e["t"], ts[i + 1], e["mode"]) for i, e in enumerate(lines)]
 
 
 def task_at(spans: list[tuple[int, int, str]], t: int) -> tuple[int, str] | None:
@@ -356,6 +377,11 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
                 continue
             run = task_at(spans.get(m.name, []), t)
             e.update(src=m.name, task=run[1] if run else None, lane=f["lane"], count=f["count"])
+        elif k == "class":
+            if src not in ctx.filter:
+                continue
+            run = task_at(spans.get(src, []), t)
+            e.update(src=src, task=run[1] if run else None, mode=f["mode"])
         elif k == "insn":
             if src not in ctx.filter:
                 continue
@@ -516,6 +542,10 @@ def beat_invariants(trace: Trace, profile: Profile, ctx: Context) -> list[str]:
             bad.append(f"{e['k']} at {e['t']} ({e['src']}): bank {e['bank']} row {e['row']}, "
                        f"its address {e['addr']:#x} is bank and row {c.bank_row(e['addr'])}")  # fmt: skip
 
+    # the class runs per component run against its summary's classes
+    bad += class_invariants(ev, of["class"], [s for s in (acc.name, *(m.name for m in traced))
+                                               if s in ctx.filter])  # fmt: skip
+
     # each mover's addresses, task by task, against its CSR nest
     expected = nests(ctx)
     for m in traced:
@@ -533,6 +563,43 @@ def beat_invariants(trace: Trace, profile: Profile, ctx: Context) -> list[str]:
 
     if ctx.on("stall"):
         bad += _stall_invariants(trace, profile, ctx, of, traced, all_in)
+    return bad
+
+
+def class_invariants(events: list[dict[str, Any]], lines: list[dict[str, Any]],
+                      srcs: list[str]) -> list[str]:  # fmt: skip
+    bad: list[str] = []
+    starts = {e["task"]: e for e in events if e["k"] == "start"}
+    for src in srcs:
+        mine = [e for e in lines if e["src"] == src]
+        runs = [d for d in events if d["k"] == "done" and d["src"] == src]
+        tasks = {d["task"] for d in runs}
+        for e in mine:
+            if e["task"] not in tasks:
+                bad.append(f"{src}: class {e['mode']} at {e['t']} outside its runs")
+                break
+        for d in runs:
+            first, end = starts[d["task"]]["t"] + 1, run_end(starts[d["task"]], d)
+            seq = [e for e in mine if e["task"] == d["task"]]
+            where = f"{src} ({d['task']}, cycles {first} to {end - 1})"
+            if not seq or seq[0]["t"] != first:
+                bad.append(f"{where}: no class line at its first cycle {first}")
+                continue
+            if any(a["t"] >= b["t"] or a["mode"] == b["mode"] for a, b in pairwise(seq)):
+                bad.append(f"{where}: class lines overlap or repeat a class")
+                continue
+            if seq[-1]["t"] >= end:
+                bad.append(f"{where}: class line at {seq[-1]['t']} past its run")
+                continue
+            got = dict.fromkeys(d["cycles"], 0)
+            for a, b, mode in class_runs(seq, end):
+                if mode not in got:
+                    bad.append(f"{where}: class {mode} at {a}, not one of {list(got)}")
+                    break
+                got[mode] += b - a
+            else:
+                if got != d["cycles"]:
+                    bad.append(f"{where}: class runs {got}, its summary {d['cycles']}")
     return bad
 
 
