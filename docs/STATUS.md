@@ -106,7 +106,9 @@ a checked SNAX-GVSoC run (1a, D136, `docs/RUN.md`), SNAX-GVSoC's `summary`
 and `events` lines become the profile and the trace and the flow writes the
 reports again (1b, D137), and the GVSoC build's output is on the terminal
 (1c). RET1 removed SNAX-MODEL (merged). Round 2a, the beat- and stall-level
-events and the converter's beat part, is under way on `ry/flow3-4`; then
+events and the converter's beat part, is under way on `ry/flow3-4` (a
+streamer's `qmax` is now the RTL queue's count: vecadd's writer 1, not 2,
+snax-gvsoc `FLOW3.md`); then
 2b, the memory and movement views, on `ry/flow3-5`; then round 3, then
 GEN1.
 
