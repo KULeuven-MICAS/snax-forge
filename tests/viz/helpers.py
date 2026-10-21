@@ -66,6 +66,23 @@ def regions(n: int = 64):
     return out
 
 
+def tasks(*runs: str, name: str = "vecadd"):
+    """A vecadd task list: copies ``load_A`` and ``load_B``, then per run prefix ``p`` (``add``
+    by default) the tasks ``p_acc_a``, ``p_acc_b``, ``p_acc_out`` and ``p_acc`` launched by one
+    start, then the copy ``store_C``. Values are left empty: the index reads only the steps."""
+    from snax_forge.lower.tasks import Configure, Start, TaskList
+
+    def copy(task, direction):
+        return [Configure(task, "dma", "dma", {"direction": direction}), Start([task])]
+
+    steps = copy("load_A", "l2_to_l1") + copy("load_B", "l2_to_l1")
+    for p in runs or ("add",):
+        mine = [f"{p}_acc_a", f"{p}_acc_b", f"{p}_acc_out", f"{p}_acc"]
+        steps += [Configure(t, "streamer", t.removeprefix(f"{p}_"), {}) for t in mine[:3]]
+        steps += [Configure(mine[3], "accel", "acc", {}), Start(mine)]
+    return TaskList(name, steps + copy("store_C", "l1_to_l2"))
+
+
 class Events:
     """Builds C§7 events with the converter's lookups done from the cluster and the regions:
     ``bank`` and ``row``, ``region``, ``elems`` and ``vals`` (each word's value its element's)."""
@@ -146,8 +163,9 @@ class Events:
         return self.add({"t": t, "k": "csr", "src": "core0", "pc": 0x80000360, "csr": csr,
                          "block": block, "op": "w", "value": value})  # fmt: skip
 
-    def index(self, level="stall", filter=None):
-        """The RunIndex of these events (sorted by t, stable) at ``level``."""
+    def index(self, level="stall", filter=None, task_list=None):
+        """The RunIndex of these events (sorted by t, stable) at ``level``, paired by
+        ``task_list`` (``tasks()``, one run, by default)."""
         from snax_forge.run import RunOutputs, Trace
         from snax_forge.viz.index import RunIndex
 
@@ -155,7 +173,25 @@ class Events:
             filter = ["acc", *(m.name for m in self.c.accelerator.movers), "dma"]
         evs = sorted(self.events, key=lambda e: e["t"])
         trace = Trace(level, 1000, 0, self.c.sources, evs, list(filter))
-        return RunIndex.from_run(RunOutputs({}, None, trace), self.c, self.regions)
+        return RunIndex.from_run(RunOutputs({}, None, trace), self.c, self.regions,
+                                 task_list or tasks())  # fmt: skip
+
+
+def two_runs():
+    """Two runs of acc and its movers (tasks add_* then add2_*): b and n restart at 0 in the
+    second, which reads A[1] where the first read A[0]."""
+    ev = Events()
+    for run, (p, t) in enumerate((("add", 0), ("add2", 100))):
+        for m in ("acc_a", "acc_b", "acc_out"):
+            ev.task(t, m, f"{p}_{m}", t + 20)
+        ev.task(t, "acc", f"{p}_acc", t + 20)
+        ev.grant(t + 1, "acc_a.lane0", L1 + 8 * run, b=0, task=f"{p}_acc_a")
+        ev.grant(t + 1, "acc_b.lane0", L1 + 512 + 8 * run, b=0, task=f"{p}_acc_b")
+        ev.fire(t + 3, 0, {"acc_a": 0, "acc_b": 0}, {"acc_a": [run + 1], "acc_b": [100 + run]},
+                task=f"{p}_acc")  # fmt: skip
+        ev.push(t + 3, 0, 0, 0, [101 + 2 * run], task=f"{p}_acc")
+        ev.grant(t + 4, "acc_out.lane0", L1 + 1024 + 8 * run, op="w", b=0, task=f"{p}_acc_out")
+    return ev
 
 
 # =============================================================================
@@ -167,7 +203,7 @@ RECORDED = REPO / "tests" / "run" / "fixtures" / "vecadd"
 
 def recorded_run(out: Path, level: str = "stall") -> Path:
     """The recorded vecadd run converted at ``level`` into the flow folder ``out``, laid out
-    as the flow lays it out (``gen/``, ``design/``, ``run/``): ``task`` from its task-level
+    as the flow lays it out (``gen/``, ``design/``, ``run/``, ``tasks.json``): ``task`` from its task-level
     events, ``beat`` and ``stall`` from its stall-level ones (at ``beat`` without the
     ``stalls`` lines). Returns ``out``."""
     import json
@@ -184,6 +220,7 @@ def recorded_run(out: Path, level: str = "stall") -> Path:
     for name in ("snax_alu.hjson", "snax_alu_streamer.hjson", "snax_alu_acc.hjson"):
         shutil.copy(RECORDED / name, out / "gen" / name)
     shutil.copy(RECORDED / "design_point.json", out / "design" / "design_point.json")
+    shutil.copy(RECORDED / "tasks.json", out / "tasks.json")
     cluster = load_cluster(out / "gen" / "snax_alu.hjson", out / "design" / "design_point.json")
     tasks = TaskList.from_dict(json.loads((RECORDED / "tasks.json").read_text()))
     check = json.loads((RECORDED / "check.json").read_text())

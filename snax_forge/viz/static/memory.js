@@ -131,8 +131,6 @@ const KIND_NOTES = {
   count: "Badge: the mark's count per word. Rows fold only when their counts match.",
   time: "Colour and number: the mark's value per word. Rows fold when every word's value moves by one step.",
 };
-const OVERLAY_KINDS = ["grant", "stall", "dma", "burst"];
-const BACK_WINDOW = 64; // cycles before the selected one whose read data may come back in it
 const LEVELS = ["off", "task", "beat", "stall", "finegrained"]; // run/trace.py LEVELS
 
 /** The views of the tab: the layout, then the run's marks; label and kind of each. */
@@ -438,12 +436,6 @@ function describeEvent(e, kind, c) {
   return `${e.src} ${e.op === "w" ? "write" : "read"} accepted`;
 }
 
-/** What an event does in `cycle`: requested (req), held back (held), read data back (resp). */
-function overlayKind(e, cycle) {
-  if (e.t === cycle) return e.k === "stall" ? "held" : "req";
-  return e.op === "r" && e.back === cycle && e.k !== "stall" ? "resp" : null;
-}
-
 /** Draw the accesses of `cycle` over the grids (null clears them). */
 async function applyCycle(cur, cycle) {
   cur.cycle = cycle;
@@ -458,17 +450,17 @@ async function applyCycle(cur, cycle) {
     if (cur.bar?.summary) cur.bar.summary.textContent = cur.beat ? "Pick a cycle (or step with the arrow keys) to see which words move in it." : "";
     return;
   }
-  const [events, conf] = await Promise.all([
-    cur.api.events(cur.detail.name, Math.max(0, cycle - BACK_WINDOW), cycle + 1, { k: OVERLAY_KINDS }),
+  const [at, conf] = await Promise.all([
+    cur.api.memoryCycle(cur.detail.name, cycle),
     cur.conflicts?.available ? cur.api.conflicts(cur.detail.name, cycle, cycle + 1) : Promise.resolve({ conflicts: [] }),
   ]);
   if (current !== cur || cur.cycle !== cycle) return;
   const stalls = new Map((conf.conflicts ?? []).map((c) => [`${c.bank}|${c.waiting.port}`, c]));
   const counts = { req: 0, resp: 0, held: 0 };
   const hidden = { l1: [], l2: [] };
-  for (const e of events) {
-    const kind = overlayKind(e, cycle);
-    if (!kind) continue;
+  // requested or held back in the cycle, then read data back in it (the server's lists: api.memory_cycle)
+  const drawn = [...at.events.map((e) => [e, e.k === "stall" ? "held" : "req"]), ...at.returns.map((e) => [e, "resp"])];
+  for (const [e, kind] of drawn) {
     for (const w of wordsOf(e, cur.geo)) {
       counts[kind]++;
       const cell = cur.cellsBy[w.mem]?.get(`${w.row}|${w.col}`);

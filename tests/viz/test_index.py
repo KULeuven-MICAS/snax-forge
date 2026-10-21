@@ -1,15 +1,19 @@
 """The run index (viz/index.py) on hand-written events with obvious keys, and its marks.
 
-1. each key holds the events it names, in time order; null tasks are kept
-2. a key named twice (two runs of one component) unlinks the ids
+1. each key holds the events it names, in time order; null tasks are kept; the reads by the
+   cycle their data comes back
+2. ids keyed by task: two runs of one component, a full key named twice, the pairing of an
+   accelerator task with its streamer tasks from the task list and its refusals
 3. the marks: conflicts, arrival, use, wait; which a run has, and why not
 """
 
 import pytest
 
+from snax_forge.lower.tasks import Configure, Start, TaskList, TaskListError
+from snax_forge.run import RunError
 from snax_forge.viz import index as ix
 
-from .helpers import L1, L2, Events
+from .helpers import L1, L2, Events, tasks, two_runs
 
 # A[0..7] in L1 row 0 banks 0-7, B[0..7] at L1 + 512: row 2 banks 0-7, C at L1 + 1024
 
@@ -63,18 +67,23 @@ def test_a_word_has_every_access_that_covers_it():
 
 def test_the_ids():
     idx = vecadd_beat0().index()
-    assert [e["src"] for e in idx.beat[("acc_a", 0)].values()] == ["acc_a.lane0"]
-    assert list(idx.beat[("acc_out", 0)]) == [0]  # by lane
-    assert idx.fire[0]["b"] == {"acc_a": 0, "acc_b": 0} and idx.push[0]["vals"] == [101]
-    assert idx.folded[0] is idx.push[0]
-    assert idx.fired[("acc_a", 0)] == [idx.fire[0]] and ("acc_a", 1) not in idx.fired
+    assert [e["src"] for e in idx.beat[("add_acc_a", "acc_a", 0)].values()] == ["acc_a.lane0"]
+    assert list(idx.beat[("add_acc_out", "acc_out", 0)]) == [0]  # by lane
+    fire, push = idx.fire[("add_acc", 0)], idx.push[("add_acc", 0)]
+    assert fire["b"] == {"acc_a": 0, "acc_b": 0} and push["vals"] == [101]
+    assert idx.folded[("add_acc", 0)] is push
+    assert idx.fired[("add_acc", "acc_a", 0)] == [fire]
+    assert ("add_acc", "acc_a", 1) not in idx.fired
     assert idx.dma[(2, 0)]["elems"] == list(range(8)) and idx.dma[(4, 0)]["op"] == "r"
     assert [e["op"] for e in idx.burst[4]] == ["w"] and idx.burst[2][0]["size"] == 512
     assert [(e["src"], e["task"]) for e in idx.stalls_bank[0]] == [("acc_b.lane0", "add_acc_b")]
     assert list(idx.stalls_port) == ["acc_b.lane0"]
     assert [e["t"] for e in idx.grants_port["acc_a.lane0"]] == [10]
     assert idx.start["add_acc"]["t"] == 1 and idx.done["add_acc_a"]["t"] == 20
-    assert idx.linked is None and idx.filtered is None
+    assert idx.filtered is None
+    assert idx.streamers == {"add_acc": {"acc_a": "add_acc_a", "acc_b": "add_acc_b",
+                                         "acc_out": "add_acc_out"}}  # fmt: skip
+    assert idx.accel == {"add_acc_a": "add_acc", "add_acc_b": "add_acc", "add_acc_out": "add_acc"}
 
 
 def test_a_null_task_event_is_kept():
@@ -83,7 +92,7 @@ def test_a_null_task_event_is_kept():
     ev = Events()
     ev.grant(5, "acc_a.lane0", L1, b=0, task=None)
     idx = ev.index()
-    assert idx.beat[("acc_a", 0)][0]["task"] is None and idx.elem[("A", 0)][0]["t"] == 5
+    assert idx.beat[(None, "acc_a", 0)][0]["task"] is None and idx.elem[("A", 0)][0]["t"] == 5
 
 
 def test_a_push_folds_its_firings():
@@ -92,14 +101,16 @@ def test_a_push_folds_its_firings():
         ev.fire(n, n, {"acc_a": n}, {"acc_a": [n]})
     ev.push(4, 0, 0, 3, [6])
     idx = ev.index()
-    assert all(idx.folded[n] is idx.push[0] for n in range(4)) and 4 not in idx.folded
+    push = idx.push[("add_acc", 0)]
+    assert all(idx.folded[("add_acc", n)] is push for n in range(4))
+    assert ("add_acc", 4) not in idx.folded
 
 
 def test_no_trace_gives_an_empty_index():
     from snax_forge.run import RunOutputs
 
     ev = Events()
-    idx = ix.RunIndex.from_run(RunOutputs({}, None, None), ev.c, ev.regions)
+    idx = ix.RunIndex.from_run(RunOutputs({}, None, None), ev.c, ev.regions, tasks())
     assert idx.level == "off" and idx.events == [] and dict(idx.word) == {}
 
 
@@ -108,17 +119,72 @@ def test_a_filter_without_the_dma_is_said():
     assert idx.filtered == {"sources": ["acc", "acc_a"]}
 
 
+def test_a_read_is_under_the_cycle_its_data_comes_back():
+    """A grant's read and a DMA beat's back far later than 64 cycles, a write never."""
+    ev = vecadd_beat0()
+    late = ev.grant(100, "acc_a.lane1", L1 + 8, b=1, task="add_acc_a", back=300)
+    idx = ev.index()
+    assert idx.returns[300] == [late] and all(late not in v for t, v in idx.returns.items()
+                                              if t != 300)  # fmt: skip
+    assert [e["src"] for e in idx.returns[11]] == ["acc_a.lane0"]  # asked at 10
+    assert [e["k"] for e in idx.returns[30]] == ["dma"]  # store_C's L1 read, back in its cycle
+    assert [e["k"] for e in idx.returns[2]] == ["burst"]  # load_A's AXI read
+    writes = [e for e in idx.events if e.get("op") == "w"]
+    assert not any(e in v for v in idx.returns.values() for e in writes)
+
+
 # =============================================================================
-# 2. Two runs of one component
+# 2. Ids keyed by task
 # =============================================================================
 
 
-def test_a_key_named_twice_unlinks_the_ids():
+def test_two_runs_of_a_component_have_their_own_keys():
+    idx = two_runs().index(task_list=tasks("add", "add2"))
+    assert idx.beat[("add_acc_a", "acc_a", 0)][0]["elems"] == [0]
+    assert idx.beat[("add2_acc_a", "acc_a", 0)][0]["elems"] == [1]
+    assert idx.fire[("add_acc", 0)]["t"] == 3 and idx.fire[("add2_acc", 0)]["t"] == 103
+    assert idx.folded[("add2_acc", 0)] is idx.push[("add2_acc", 0)]
+    assert idx.accel["add2_acc_out"] == "add2_acc"
+    assert idx.streamers["add2_acc"]["acc_a"] == "add2_acc_a"
+
+
+def test_a_full_key_named_twice_is_refused_naming_both_lines():
     ev = Events()
     ev.fire(5, 0, {"acc_a": 0}, {"acc_a": [1]}, task="add_acc")
-    ev.fire(50, 0, {"acc_a": 0}, {"acc_a": [2]}, task="add2_acc")
-    idx = ev.index()
-    assert idx.linked is not None and "firing 0" in idx.linked
+    ev.fire(50, 0, {"acc_a": 0}, {"acc_a": [2]}, task="add_acc")
+    with pytest.raises(RunError, match=r"firing \('add_acc', 0\).*t 5 fire.*t 50 fire"):
+        ev.index()
+    ev = Events()
+    ev.grant(5, "acc_a.lane0", L1, b=0, task="add_acc_a")
+    ev.grant(9, "acc_a.lane0", L1 + 8, b=0, task="add_acc_a")
+    with pytest.raises(RunError, match="add_acc_a acc_a beat 0 lane 0.*t 5 grant.*t 9 grant"):
+        ev.index()
+
+
+def test_a_start_with_two_streamer_tasks_for_one_mover_is_refused():
+    """The task list's own check refuses it when the list is made; the index refuses a list
+    whose steps changed after that check."""
+    with pytest.raises(TaskListError):
+        TaskList("bad", [*tasks().steps[:4], Configure("x_acc_a", "streamer", "acc_a", {}),
+                         *tasks().steps[4:]])  # fmt: skip
+    tl = tasks()
+    start = next(s for s in tl.steps if isinstance(s, Start) and "add_acc" in s.tasks)
+    tl.steps.insert(tl.steps.index(start), Configure("x_acc_a", "streamer", "acc_a", {}))
+    start.tasks.append("x_acc_a")
+    with pytest.raises(RunError, match=r"'add_acc' has 2 streamer tasks for acc_a "
+                                       r"\(\['add_acc_a', 'x_acc_a'\]\)"):  # fmt: skip
+        Events().index(task_list=tl)
+
+
+def test_an_accelerator_task_without_a_streamer_task_for_a_mover_is_refused():
+    tl = TaskList("vecadd", [
+        Configure("add_acc_a", "streamer", "acc_a", {}),
+        Configure("add_acc_b", "streamer", "acc_b", {}),
+        Configure("add_acc", "accel", "acc", {}),
+        Start(["add_acc_a", "add_acc_b", "add_acc"]),
+    ])  # fmt: skip
+    with pytest.raises(RunError, match=r"'add_acc' has 0 streamer tasks for acc_out \(\[\]\)"):
+        Events().index(task_list=tl)
 
 
 # =============================================================================

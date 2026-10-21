@@ -7,6 +7,7 @@
 4. layouts that are not one row per step: 2D, transposed, overlapping
 5. a memory without regions, and the limits of a rows request
 6. the marks: the ones a level allows, conflict counts and times on the rows
+7. the cycle overlay: a cycle's accesses and the reads whose data comes back in it
 
 Runs are flow folders with SNAX-GVSoC stubbed (helpers.run_dir), regions from
 their design points and ELFs (run.regions.regions_of).
@@ -14,6 +15,7 @@ their design points and ELFs (run.regions.regions_of).
 
 from __future__ import annotations
 
+from dataclasses import replace
 from types import SimpleNamespace
 
 import numpy as np
@@ -24,7 +26,7 @@ from snax_forge.run import Region
 from snax_forge.viz import api, memory
 from tests.flow.helpers import stubbed_flow
 
-from .helpers import L1, cluster
+from .helpers import L1, Events, cluster
 
 B_PIN = [("B.l1.base", L1 + 576)]  # B from bank 8 of row 2
 FLOWS = {
@@ -374,3 +376,31 @@ def test_the_time_step_rule():
         ("row", 3),
         ("empty", 4),
     ]  # step 2, then 3
+
+
+# =============================================================================
+# 7. The cycle overlay
+# =============================================================================
+
+
+def test_every_read_is_in_the_overlay_of_the_cycle_its_data_comes_back(runs):
+    rv = runs["default"]
+    reads = [e for e in rv.events if e["k"] in ("grant", "dma", "burst") and e.get("op") == "r"]
+    assert reads and {e["k"] for e in reads} == {"grant", "dma", "burst"}
+    for e in reads:
+        assert e in api.memory_cycle(rv, e["back"])["returns"]
+    for t in range(rv.total_cycles):
+        at = api.memory_cycle(rv, t)
+        assert all(e["back"] == t for e in at["returns"])
+        assert at["events"] == [e for e in rv.events if e["t"] == t and e["k"] in api.OVERLAY_KINDS]
+
+
+def test_a_read_back_long_after_its_grant_is_in_that_cycle_only(runs):
+    """A held read: acc_a's grant at 10 gets its data at 210, 200 cycles later."""
+    ev = Events()
+    late = ev.grant(10, "acc_a.lane0", L1, b=0, task="add_acc_a", back=210)
+    rv = replace(runs["default"], index=ev.index(), events=list(ev.events), times=[10])
+    assert api.memory_cycle(rv, 210) == {"t": 210, "level": "stall", "events": [],
+                                         "returns": [late]}  # fmt: skip
+    assert api.memory_cycle(rv, 10)["events"] == [late]
+    assert not any(api.memory_cycle(rv, t)["returns"] for t in range(300) if t != 210)

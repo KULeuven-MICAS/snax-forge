@@ -27,6 +27,8 @@ Routes (every answer is JSON except the static files):
                                             arrival, use, wait)
     GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=M]
                                             rows A <= r < B in full, at most 256
+    GET  /api/run/<name>/memory/cycle?t=T   the cycle overlay of cycle T: its accesses
+                                            and the reads whose data comes back in it
     GET  /api/run/<name>/movement           residency, patterns and conflict
                                             counts (movement.py)
     GET  /api/run/<name>/journey?region=R&index=I
@@ -144,6 +146,16 @@ class Handler(BaseHTTPRequestHandler):
         runs = self.server.runs
         if parts == ["runs"]:
             self._json(runs.summaries())
+            return
+        if len(parts) == 4 and parts[0] == "run" and parts[2:] == ["memory", "cycle"]:
+            rv = runs.get(parts[1])
+            if rv is None:
+                self._error(HTTPStatus.NOT_FOUND, f"no run named {parts[1]!r}")
+                return
+            t = _int_arg(q, "t", None)
+            if t is None:
+                raise _BadRequest("give t=T, the cycle")
+            self._json(api.memory_cycle(rv, t))
             return
         if len(parts) == 5 and parts[0] == "run" and parts[2:] == ["memory", parts[3], "rows"]:
             rv = runs.get(parts[1])

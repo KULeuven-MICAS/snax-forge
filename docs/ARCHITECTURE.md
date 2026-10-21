@@ -308,8 +308,9 @@ the cluster view at that cycle come back in FLOW3 round 3. The DFG viewer
 (D81) shows graphs side by side. A run view goes through four layers, one
 job each: `run/`'s dataclasses (the events with their ids and lookups, the
 regions, the cluster); `viz/index.py`, the run's events grouped by those
-keys once at load, never matched by order, with the memory tab's marks
-registered on it; `viz/memory.py` and `viz/movement.py`, queries on the
+keys once at load, never matched by order, ids with their task (the
+accelerator's tasks paired with their streamers' through the task list),
+with the memory tab's marks registered on it; `viz/memory.py` and `viz/movement.py`, queries on the
 index that read no file; and `viz/api.py`, whose routes return one query's
 dict for `static/` to draw.
 

@@ -16,7 +16,9 @@ cluster with ``run.cluster.load_cluster`` from the hjson files and the
 design point ``run.json`` names, so the views use run/'s dataclasses and
 never parse the files themselves (D55). The design point gives the regions
 (``run.regions.regions_of``, L2 from run.json's ``elf_symbols``) and the
-events are grouped once by their ids and lookups (index.py, ``RunIndex``).
+events are grouped once by their ids and lookups (index.py, ``RunIndex``),
+with the flow folder's task list (``tasks.json``) pairing each accelerator
+task with its streamer tasks.
 Everything is read once, at start-up or on an explicit reload (``RunSet``);
 nothing watches the files.
 
@@ -38,7 +40,9 @@ its cluster, once per memory on first use, and folded so the answer grows
 with the regions; folded rows are fetched on request, at most
 ``memory.MAX_ROWS`` at a time. A mark (index.py's registry) is computed once
 per run on first use; the view lists the marks the run has and why it lacks
-the others.
+the others. The cycle overlay of the tab asks for one cycle: its accesses
+and, from the index's ``returns``, every read whose data comes back in it,
+however many cycles after its request.
 
 Movement
 --------
@@ -63,6 +67,7 @@ from pathlib import Path
 from typing import Any
 
 from snax_forge.design import DesignPoint
+from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
 from snax_forge.run.cluster import DMA
 
@@ -73,6 +78,7 @@ from .memory import MemoryLayout, MemoryViewError, RowMarks
 from .movement import MovementUnavailable
 
 MAX_ROWS = memory.MAX_ROWS  # memory rows per request (static/memory.js)
+OVERLAY_KINDS = ("grant", "stall", "dma", "burst")  # what the memory tab's cycle overlay draws
 NO_FIFO_WINDOW = "the profile keeps each FIFO's highest count only (D137): no busy window"
 
 
@@ -127,9 +133,12 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
     if not hjson or "design_point" not in out.run:
         raise RunError("outputs.missing", f"{run_dir / 'run.json'}: names no hjson files or "
                        "design point")  # fmt: skip
+    if not (folder / "tasks.json").is_file():
+        raise RunError("outputs.missing", f"{folder}: no tasks.json, the run's task list")
     cluster = load_cluster(folder / hjson[0], folder / out.run["design_point"])
     point = DesignPoint.load(folder / out.run["design_point"])
     regions = regions_of(point, out.elf_symbols)
+    task_list = TaskList.load(folder / "tasks.json")
     events = [] if out.trace is None else sorted(out.trace.events, key=lambda e: e["t"])
     return RunView(
         name=name or folder.resolve().name,
@@ -139,7 +148,7 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
         cluster=cluster,
         point=point,
         regions=regions,
-        index=RunIndex.from_run(out, cluster, regions),
+        index=RunIndex.from_run(out, cluster, regions, task_list),
         events=events,
         times=[int(e["t"]) for e in events],
         spans=_pair_tasks(events, out.profile.total_cycles),
@@ -214,6 +223,15 @@ def memory_rows(rv: RunView, mem: str, start: int, stop: int, marks: str | None 
     """/api/run/<name>/memory/<mem>/rows: rows ``start <= r < stop`` in full."""
     rows = memory.rows(_layout(rv, mem), start, stop, _marks(rv, mem, marks))
     return {"mem": mem, "from": start, "to": stop, "rows": rows}
+
+
+def memory_cycle(rv: RunView, t: int) -> dict[str, Any]:
+    """/api/run/<name>/memory/cycle?t=T: what the cycle overlay draws in cycle ``t``: the
+    grants, stalls, DMA beats and bursts of the cycle (``events``) and the reads whose data
+    comes back in it (``returns``, index.py), both as trace events."""
+    return {"t": t, "level": rv.index.level,
+            "events": events_window(rv, t, t + 1, None, OVERLAY_KINDS),
+            "returns": rv.index.returns.get(t, [])}  # fmt: skip
 
 
 # =============================================================================
@@ -423,6 +441,7 @@ __all__ = [
     "journey_view",
     "load_run",
     "memories",
+    "memory_cycle",
     "memory_rows",
     "memory_view",
     "movement_view",

@@ -2,7 +2,8 @@
 on the run index.
 
 1. the journey of one element: its accesses, its firings with their operands' values, the push
-   and where the results went; a push that folds many firings; a repeated read
+   and where the results went; a push that folds many firings; a repeated read; two runs of one
+   component, crossed through the task pairing
 2. residency: each element's arrival, uses and departure, and the windows of them
 3. patterns: the configured nest gives every lane's grant addresses; held cycles are the
    profile's stalls
@@ -24,7 +25,7 @@ import pytest
 
 from snax_forge.viz import api, movement
 
-from .helpers import L1, Events, recorded_run, run_dir
+from .helpers import L1, Events, recorded_run, run_dir, tasks, two_runs
 
 B_PIN = [("B.l1.base", L1 + 576)]
 
@@ -111,10 +112,10 @@ def test_a_push_that_folds_many_firings():
     written by acc_out as C[0]; every input's journey reaches it."""
     ev = Events()
     for n in range(4):
-        ev.grant(n, "acc_a.lane0", L1 + 8 * n, b=n)
+        ev.grant(n, "acc_a.lane0", L1 + 8 * n, b=n, task="add_acc_a")
         ev.fire(n + 2, n, {"acc_a": n}, {"acc_a": [n + 1]})
     ev.push(6, 0, 0, 3, [10])
-    ev.grant(7, "acc_out.lane0", L1 + 1024, op="w", b=0)
+    ev.grant(7, "acc_out.lane0", L1 + 1024, op="w", b=0, task="add_acc_out")
     idx = ev.index()
     j = movement.journey(idx, "C", 0)
     assert [f["n"] for f in j["firings"]] == [0, 1, 2, 3]
@@ -128,9 +129,9 @@ def test_a_push_that_folds_many_firings():
 def test_a_read_handed_out_twice_feeds_two_firings():
     """acc_a's beat 0 is fired twice (a repeat), with acc_b's beats 0 and 1."""
     ev = Events()
-    ev.grant(1, "acc_a.lane0", L1, b=0)
-    ev.grant(1, "acc_b.lane0", L1 + 512, b=0)
-    ev.grant(2, "acc_b.lane0", L1 + 520, b=1)
+    ev.grant(1, "acc_a.lane0", L1, b=0, task="add_acc_a")
+    ev.grant(1, "acc_b.lane0", L1 + 512, b=0, task="add_acc_b")
+    ev.grant(2, "acc_b.lane0", L1 + 520, b=1, task="add_acc_b")
     ev.fire(3, 0, {"acc_a": 0, "acc_b": 0}, {"acc_a": [1], "acc_b": [100]})
     ev.fire(4, 1, {"acc_a": 0, "acc_b": 1}, {"acc_a": [1], "acc_b": [101]})
     j = movement.journey(ev.index(), "A", 0)
@@ -140,12 +141,21 @@ def test_a_read_handed_out_twice_feeds_two_firings():
     assert all(f["push"] is None for f in j["firings"])  # no push traced
 
 
-def test_two_runs_of_a_component_refuse_the_journey():
-    ev = Events()
-    ev.fire(5, 0, {"acc_a": 0}, {"acc_a": [1]}, task="add_acc")
-    ev.fire(50, 0, {"acc_a": 0}, {"acc_a": [2]}, task="add2_acc")
-    with pytest.raises(movement.MovementUnavailable, match="several runs"):
-        movement.journey(ev.index(), "A", 0)
+def test_the_journey_in_a_second_run_stays_in_it():
+    """b and n restart at 0 in the second run: A[1]'s journey reaches the second run's firing,
+    push and writer's grant (C[1]), A[0]'s the first's (C[0])."""
+    idx = two_runs().index(task_list=tasks("add", "add2"))
+    for flat, (p, t) in enumerate((("add", 0), ("add2", 100))):
+        (f,) = movement.journey(idx, "A", flat)["firings"]
+        assert (f["task"], f["n"], f["t"], f["role"]) == (f"{p}_acc", 0, t + 3, "consumed")
+        assert f["inputs"] == {"acc_a": [f"A[{flat}]"], "acc_b": [f"B[{flat}]"]}
+        assert f["operands"]["acc_b"]["grants"][0]["task"] == f"{p}_acc_b"
+        assert (f["push"]["t"], f["push"]["vals"]) == (t + 3, [101 + 2 * flat])
+        assert f["outputs"] == {"acc_out": [f"C[{flat}]"]}
+        (g,) = [x for x in f["push"]["writer"]["grants"] if x is not None]
+        assert (g["t"], g["task"]) == (t + 4, f"{p}_acc_out")
+        (back,) = movement.journey(idx, "C", flat)["firings"]  # and back, from the writer
+        assert (back["task"], back["t"], back["role"]) == (f"{p}_acc", t + 3, "produced")
 
 
 def test_an_index_outside_the_region_is_refused(runs):

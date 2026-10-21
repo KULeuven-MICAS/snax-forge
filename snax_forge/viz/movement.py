@@ -7,12 +7,15 @@ by order here, every link is an id the events carry (snax-gvsoc
 ``docs/EVENTS.md``) and every number a cycle or a value SNAX-GVSoC wrote.
 
   journey     every access to one element in both memories, in time order;
-              from a reader's grant its beat ``b`` gives the firings that name
-              it, each with its other operands (their beats' grants, the fire's
-              ``vals``); a firing gives the push that folds it, the push the
-              writer's grants (``b = n``), and each written element its outgoing
-              DMA beat and that copy's burst (``id``); a writer's grant gives its
-              push and the firings it folds
+              from a reader's grant its beat ``(task, mover, b)`` gives the
+              firings that name it, each with its other operands (their beats'
+              grants, the fire's ``vals``); a firing ``(task, n)`` gives the push
+              that folds it, the push the writer's grants (``b = n``), and each
+              written element its outgoing DMA beat and that copy's burst
+              (``id``); a writer's grant gives its push and the firings it folds.
+              A grant carries its streamer's task and a firing its accelerator's:
+              the index's pairing (``streamers``, ``accel``, from the task list's
+              start steps) crosses between them, both ways
   residency   per region and memory: each element's arrival (its first write
               there), uses (reads by anything but the DMA after it), departure
               (the DMA's first read after it) and wait (first use - arrival),
@@ -33,9 +36,7 @@ Journey, residency and patterns need the beat level, conflicts and the held
 cycles the stall level; below it an answer is ``available`` false with the
 reason (``MovementUnavailable``). A filtered trace gives what it kept, and
 every answer says which sources it has (``filtered``, None when the
-accelerator, its movers and the DMA are all in). Ids count from 0 in each run:
-the journey refuses when the index says they do not name one line each
-(``RunIndex.linked``).
+accelerator, its movers and the DMA are all in).
 """
 
 from __future__ import annotations
@@ -135,9 +136,10 @@ def hop(idx: RunIndex, e: Event, flat: int | None = None) -> dict[str, Any]:
     return d
 
 
-def _beat(idx: RunIndex, mover: str, b: int) -> dict[str, Any]:
-    """A streamer beat: its grants by lane, their elements and values."""
-    grants = [idx.beat.get((mover, b), {}).get(lane) for lane in range(_lanes(idx, mover))]
+def _beat(idx: RunIndex, task: str | None, mover: str, b: int) -> dict[str, Any]:
+    """A streamer beat of streamer task ``task``: its grants by lane, their elements and
+    values."""
+    grants = [idx.beat.get((task, mover, b), {}).get(lane) for lane in range(_lanes(idx, mover))]
     return {
         "b": b,
         "grants": [None if g is None else hop(idx, g) for g in grants],
@@ -175,22 +177,24 @@ def _results(idx: RunIndex, grant: Event) -> dict[str, list[dict[str, Any]]]:
 def firing(idx: RunIndex, f: Event) -> dict[str, Any]:
     """A firing: its operands (each reader's beat), the push that folds it, the writer's
     grants of that push and where each written element went."""
-    operands = {m: {**_beat(idx, m, b), "vals": f["vals"].get(m)} for m, b in f["b"].items()}
+    mine = idx.streamers.get(f["task"], {})  # the streamer task of each mover
+    operands = {m: {**_beat(idx, mine.get(m), m, b), "vals": f["vals"].get(m)}
+                for m, b in f["b"].items()}  # fmt: skip
     d: dict[str, Any] = {"acc": f["src"], "task": f["task"], "n": f["n"], "t": f["t"],
                          "operands": operands,
                          "inputs": {m: o["elements"] for m, o in operands.items()},
                          "push": None, "outputs": {}, "results": {}}  # fmt: skip
-    p = idx.folded.get(f["n"])
+    p = idx.folded.get((f["task"], f["n"]))
     w = _writer(idx)
     if p is not None:
         d["push"] = {"n": p["n"], "t": p["t"], "first": p["first"], "last": p["last"],
                      "vals": p["vals"]}  # fmt: skip
         if w is not None:
-            beat = _beat(idx, w, p["n"])
+            beat = _beat(idx, mine.get(w), w, p["n"])
             d["push"]["writer"] = beat
             d["outputs"] = {w: beat["elements"]}
             for lane in range(_lanes(idx, w)):
-                g = idx.beat.get((w, p["n"]), {}).get(lane)
+                g = idx.beat.get((mine.get(w), w, p["n"]), {}).get(lane)
                 if g is not None:
                     d["results"].update(_results(idx, g))
     return d
@@ -201,8 +205,6 @@ def journey(idx: RunIndex, container: str, index: Sequence[int] | int) -> dict[s
     (module doc)."""
     flat = flat_of(idx, container, index)
     need(idx, "beat")
-    if idx.linked is not None:
-        raise MovementUnavailable(f"the journey: {idx.linked}")
     evs = idx.elem.get((container, flat), [])
     firings = []
     for e in evs:
@@ -210,15 +212,16 @@ def journey(idx: RunIndex, container: str, index: Sequence[int] | int) -> dict[s
         if m is None or "b" not in e:
             continue
         lane = m.ports.index(e["src"])
+        acc = idx.accel.get(e["task"])  # the accelerator task its streamer task ran with
         if not m.write:
-            for f in idx.fired.get((m.name, e["b"]), []):
+            for f in idx.fired.get((acc, m.name, e["b"]), []):
                 firings.append({**firing(idx, f), "role": "consumed", "via": e["src"],
                                 "lane": lane})  # fmt: skip
-        elif e["b"] in idx.push:
-            p = idx.push[e["b"]]
+        elif (acc, e["b"]) in idx.push:
+            p = idx.push[(acc, e["b"])]
             for n in range(p["first"], p["last"] + 1):
-                if n in idx.fire:
-                    firings.append({**firing(idx, idx.fire[n]), "role": "produced",
+                if (acc, n) in idx.fire:
+                    firings.append({**firing(idx, idx.fire[(acc, n)]), "role": "produced",
                                     "via": e["src"], "lane": lane})  # fmt: skip
     return {
         "element": names(idx, container, [flat])[0],
