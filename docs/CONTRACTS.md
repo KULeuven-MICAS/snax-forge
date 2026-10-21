@@ -131,33 +131,79 @@ its golden), `tasks` (per accelerator task its `counter`, the `forge
 counter` line, and its `beats`, from the manifest), and `passed`, true when
 the exit code is 0.
 
-**Trace** (`run/trace.py`): one event per line of `trace.jsonl`, at level
-`task` the `events` lines of every SNAX component (`beat` adds the `beats`
-lines, FLOW3 round 2). Every event is a flat dict of `t`, `k`, `src` and the
+**Trace** (`run/trace.py`): one event per line of `trace.jsonl`. The
+levels are cumulative, each the SNAX-GVSoC traces it turns on (snax-gvsoc
+`docs/EVENTS.md`): `off` none (the profile only), `task` the `events` lines,
+`beat` the `beats` lines, `stall` the `stalls` lines, `finegrained` the
+cores' `insn` lines. Every event is a flat dict of `t`, `k`, `src` and the
 kind's own fields:
 
 <!-- snippet: snax_forge/run/trace.py -->
 ```
-    task  start    task  (t = the cycle the start is taken; busy from t + 1)
-    task  done     task, then firings, first, last for an accelerator  (t = first idle cycle)
-    task  csr      pc, csr, block, op (r/w), value, held (a held write's cycles)
-    task  poll     pc, csr, block, value, count, last  (t = the first read)
-    task  barrier  last  (t = the barrier's read; last = the cycle it is released)
-    task  state    mode (run/sleep)  (t = the first cycle in it)
-    task  func     name, pc  (t = the function's first instruction)
-    task  issue    task, id, dir, from, to, size, from_stride, to_stride, reps  (a DMA copy)
-    task  done     task, id  (a DMA copy; t = the cycle it completes)
+    task         start    task  (t = the cycle the start is taken; busy from t + 1)
+    task         done     task, then firings, first, last for an accelerator  (t = first idle)
+    task         csr      pc, csr, block, op (r/w), value, held (a held write's cycles)
+    task         poll     pc, csr, block, value, count, last  (t = the first read)
+    task         barrier  last  (t = the barrier's read; last = the cycle it is released)
+    task         state    mode (run/sleep)  (t = the first cycle in it)
+    task         func     name, pc  (t = the function's first instruction)
+    task         issue    task, id, dir, from, to, size, from_stride, to_stride, reps  (a copy)
+    task         done     task, id  (a DMA copy; t = the cycle it completes)
+    beat         grant    task, op, mem, addr, bank, row, value, back, region, elems, vals;
+                          b (a SNAX port's), size (under a word)  (src = the port)
+    beat         dma      task, id, i, op, mem, addr, size, bank, row, value, l2, region,
+                          elems, vals; back (a read's)  (a DMA beat on L1)
+    beat         burst    task, id, op, mem, addr, size, back, region  (a DMA request to AXI)
+    beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
+    beat         push     task, n, first, last, value, vals
+    stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
+                          port's)  (src = the port; one per cycle refused)
+    stall        fifo     task, lane, count  (src = the mover; t = the first cycle it holds)
+    finegrained  insn     pc, func, text  (src = the core)
 ```
 
-`src` is a C§7 name: `acc`, a mover (`acc_a`), `dma`, `core0`. A core's
+`src` is a C§7 name: `acc`, a mover (`acc_a`), `dma`, `core0`, and for a
+`grant` or `stall` the crossbar port (`acc_a.lane0`, `core0`, `axi`). A core's
 `poll` folds the reads of one CSR that return one value; a single read is a
 `csr`. `block` is the component whose CSR it is (`acc`, `acc_streamer`). A
 DMA copy's `dir` (`l2_to_l1`, `l1_to_l2`) comes from its addresses and the
 cluster's L1 range, and copies are matched to the task list's `load_<C>` and
-`store_<C>` tasks in issue order. `trace_meta.json` holds the `level`,
-`total_cycles`, the `boot` shift and the `sources`. The levels are `off`,
-`task`, then `beat` and `finegrained` with FLOW3 round 2; a VCD is only a
-gtkwave dump, never read here.
+`store_<C>` tasks in issue order.
+
+**Beats** (FLOW3 round 2a). Lines are linked by ids, never by order: a
+streamer beat is its mover and `b` (a reader's beats numbered in its AGU's
+order from 0 per run, a writer's in the order the accelerator hands them
+over; a reader with a repeat hands one beat out several times, so several
+firings name one `b`); a firing's `n` is its index in the run, a push's its
+index among the run's results, equal to the writer's `b`; a DMA beat on L1
+is its copy's `id` and `i`, its index within the copy. `fire`'s `b`,
+`value` and `vals` are dicts keyed by reader mover; `push`'s `first` and
+`last` are the firings it folds (equal at rate 1). The converter renames
+(crossbar input index to port, `reader0` to `acc_a`, `by` -1 to `dma`),
+shifts every cycle and `back` by the boot, drops lines outside the window,
+and adds what no reader should look up: `task` (the task whose start and
+done bracket the line on its component, a copy's task for the DMA, null for
+a core's or AXI's access), `mem` (`l1`, `l2`) and the absolute `addr`,
+`region` (the design point's container the address is in, or null) and
+`elems` (the flat indexes of its elements in the word), and `vals` (those
+elements' values by the region's dtype). Every line keeps its raw words
+too: `value` is the bank word (`dma`: one per bank it covers), `bank` and
+`row` the word-interleaved map of `addr`. `back` is the cycle the response
+arrives, known at the grant; there is no request or response event. The
+beat and stall lines only feed the trace: the profile stays the summary
+lines (D137).
+
+**Sources.** `--trace LEVEL[:SOURCES]` names the C§7 sources whose beat,
+stall and instruction lines are written (`acc`, the movers, `dma`,
+`core<i>`, `axi`, joined by `,`); by default at `beat` and `stall` the
+accelerator, its movers and the DMA, at `finegrained` also every core.
+`summary` and `events` lines are always whole. `trace_meta.json` holds the
+`level`, `total_cycles`, the `boot` shift, the `sources` in the cluster's
+order and the `filter` (the sources the beat lines were written for).
+`--vcd` writes a VCD and `view.gtkw` beside the run for gtkwave, never read
+here.
+
+The invariants every conversion checks are `run/convert.py`'s.
 
 ## 8. Rules for a new block kind
 

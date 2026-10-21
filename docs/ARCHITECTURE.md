@@ -252,8 +252,9 @@ it (D128). It holds:
 - **events** for the profile and the views: a `summary`, `events` and
   `beats` trace per SNAX component (unit, streamer, crossbar, core, iDMA) in
   snax-gvsoc's own grammar, which snax-forge's converter renames into its
-  profile and trace, never recounting (D137); the beat lines (grants,
-  stalls, responses, firings, FIFO counts) come in FLOW3 round 2.
+  profile and trace, never recounting (D137); a `stalls` trace and the beat
+  and stall lines (grants, DMA beats, firings, pushes, stalls, queue counts,
+  linked by ids) come in FLOW3 round 2a.
 
 What it models is what snax_cluster's RTL does; where the two differ, the
 RTL wins. Memory-mapped register writes may replace the CSR path later; the
