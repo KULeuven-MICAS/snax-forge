@@ -49,7 +49,7 @@ output shows as it comes and goes to `out/flow/vecadd/build.log`):
     make: Leaving directory '$ROOT/snax-forge/gvsoc'
     flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-      design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      design    20 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
       build     built: no install in out/snax-gvsoc (snax-gvsoc 3f8a3e9d)
@@ -174,7 +174,7 @@ gets the level in its name:
     Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
     flow vecadd_task (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd_task/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-      design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      design    20 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
       build     up to date (snax-gvsoc 3f8a3e9d)
@@ -249,7 +249,7 @@ Accumulator. GVSoC is built now, so the whole flow takes seconds:
     Pixi task (flow in default): python -m snax_forge.flow recipes/vsum.json --platform platforms/snax_alu.json
     flow vsum (vsum: W=1; N=64) on snax_alu -> out/flow/vsum/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-      design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      design    20 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (9 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
       build     up to date (snax-gvsoc 3f8a3e9d)
