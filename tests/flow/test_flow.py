@@ -3,7 +3,9 @@
 1. up to the generator on vecadd and vsum, SNAX-GVSoC stubbed (helpers.stub):
    main.c without marks and with forge_check, data.h's goldens the kernel's
    reference, the make calls, the folder, run.json
-2. the build stage: when it runs, the checkout's warning
+2. the build stage: when it runs, its output live on the terminal and in
+   build.log (the stub's, then make's own through a fake make on PATH), the
+   checkout's warning
 3. the check: the program's output parsed (pass, data errors, a missing
    line, a nonzero exit) and the run's exit code from make
 4. what stops the flow: a design problem, the generator's refusals, a make
@@ -15,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import numpy as np
@@ -158,6 +161,75 @@ def test_the_build_is_skipped_when_up_to_date(tmp_path, monkeypatch):
     assert [g for g, _ in fake.calls] == ["sw", "run"]
     assert f.build == "up to date"
     assert "  build     up to date (snax-gvsoc aaaaaaaa)" in summary(f)
+
+
+def test_a_build_is_shown_live_and_logged(tmp_path, monkeypatch, capsys):
+    fake = stub(monkeypatch, tmp_path)
+    f = flow(tmp_path)
+    log = tmp_path / "flow" / "build.log"
+    first, *lines = capsys.readouterr().out.splitlines()
+    assert first == (f"  build     building SNAX-GVSoC: no install in {fake.workdir}; log in {log}")
+    assert lines == log.read_text().splitlines() == ["make build"]
+    assert fake.live == ["build"]  # sw and gvsoc to their logs only
+    assert f.build.startswith("built: no install in ")
+    text = (tmp_path / "flow" / "flow.log").read_text()
+    assert "building SNAX-GVSoC" not in text and "make build" not in text
+
+
+def test_a_failed_build_names_its_log_and_tail(tmp_path, monkeypatch, capsys):
+    fake = stub(monkeypatch, tmp_path)
+    fake.rc["build"] = 2
+    fake.stderr["build"] = "c++: error: no such file\n"
+    with pytest.raises(FlowError) as e:
+        flow(tmp_path)
+    msg = str(e.value)
+    assert msg.startswith("build: make build failed (exit 2); its output is in ")
+    assert msg.endswith("build.log:\nmake build\nc++: error: no such file")
+    assert capsys.readouterr().out.splitlines()[1:] == ["make build", "c++: error: no such file"]
+
+
+def test_an_up_to_date_build_prints_nothing(tmp_path, monkeypatch, capsys):
+    fake = stub(monkeypatch, tmp_path)
+    built(fake)
+    flow(tmp_path)
+    assert capsys.readouterr().out == ""
+    assert fake.live == [] and not (tmp_path / "flow" / "build.log").exists()
+
+
+def fake_make(tmp_path, monkeypatch, script: str) -> Path:
+    """A ``make`` on PATH that runs ``script`` (sh) in place of gvsoc/Makefile."""
+    bin_ = tmp_path / "bin"
+    bin_.mkdir()
+    make = bin_ / "make"
+    make.write_text(f"#!/bin/sh\n{script}\n")
+    make.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_}:{os.environ['PATH']}")
+    return make
+
+
+def test_a_live_make_is_teed_merged_and_unbuffered(tmp_path, monkeypatch, capsys):
+    fake_make(
+        tmp_path, monkeypatch, 'echo "one $PYTHONUNBUFFERED"\necho two >&2\necho three\nexit 3'
+    )
+    log = tmp_path / "build.log"
+    assert flow_run.run_gvsoc("build", {}, log, live=True) == 3
+    assert capsys.readouterr().out == log.read_text() == "one 1\ntwo\nthree\n"
+
+
+def test_an_interrupted_live_make_is_terminated(tmp_path, monkeypatch):
+    pid = tmp_path / "pid"
+    fake_make(tmp_path, monkeypatch, f"echo $$ > {pid}\necho started\nexec sleep 60")
+
+    class Interrupt:
+        def write(self, line):
+            raise KeyboardInterrupt
+
+    monkeypatch.setattr(flow_run.sys, "stdout", Interrupt())
+    with pytest.raises(KeyboardInterrupt):
+        flow_run.run_gvsoc("build", {}, tmp_path / "build.log", live=True)
+    with pytest.raises(ProcessLookupError):  # terminated and waited for
+        os.kill(int(pid.read_text()), 0)
+    assert (tmp_path / "build.log").read_text() == "started\n"
 
 
 def test_build_reason(tmp_path):
@@ -380,7 +452,7 @@ def main(*argv) -> int:
 
 
 def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
-    stub(monkeypatch, tmp_path)
+    built(stub(monkeypatch, tmp_path))  # a build would print its lines first
     args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN]
     assert main(*args, "--out", tmp_path / "f") == 0
     out = capsys.readouterr().out

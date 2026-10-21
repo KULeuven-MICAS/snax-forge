@@ -31,7 +31,12 @@ line would be (D90).
 ``build``) when its install is missing, when the checkout it was built from
 (``checkout.txt``: the path, then the snax-gvsoc commit) is not the
 submodule's path and HEAD, or when the submodule's tree is dirty; otherwise
-the stage says it is up to date. When the submodule's HEAD is not the commit
+the stage says it is up to date. A build first prints why and where its log
+is, then make's output, stdout and stderr merged, line by line as it comes,
+to the terminal and to ``build.log`` (``run_gvsoc``'s ``live``); neither line
+goes to ``flow.log``, and ``sw`` and ``gvsoc`` write their logs only. An
+interrupted build is not up to date: ``checkout.txt`` gets its commit only
+once the build passed. When the submodule's HEAD is not the commit
 snax-forge's tree pins (``git ls-tree HEAD gvsoc/snax-gvsoc``), the summary
 and ``flow.log`` warn.
 
@@ -98,15 +103,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
+import sys
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import IO, TYPE_CHECKING, Any
 
 import numpy as np
 
@@ -294,13 +301,18 @@ def checks_that_ran() -> dict[str, list[str]]:
 # =============================================================================
 
 
-def run_gvsoc(goal: str, variables: Mapping[str, str], log: Path, err: Path | None = None) -> int:
+def run_gvsoc(goal: str, variables: Mapping[str, str], log: Path, err: Path | None = None,
+              live: bool = False) -> int:  # fmt: skip
     """``make -C gvsoc <goal> NAME=VALUE ...`` (gvsoc/Makefile, D136): stdout to ``log``,
-    stderr to ``err`` (into ``log`` when None); make's exit code."""
+    stderr to ``err`` (into ``log`` when None); make's exit code. ``live``: stdout and stderr,
+    merged, to ``log`` and to the terminal line by line as they come, as tee would, with
+    PYTHONUNBUFFERED=1; on KeyboardInterrupt make is terminated first."""
     cmd = ["make", "-C", str(GVSOC_MAKE), goal, *(f"{k}={v}" for k, v in variables.items())]
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
         with log.open("w") as o:
+            if live:
+                return _tee(cmd, o)
             if err is None:
                 return subprocess.run(
                     cmd, stdout=o, stderr=subprocess.STDOUT, check=False
@@ -311,6 +323,26 @@ def run_gvsoc(goal: str, variables: Mapping[str, str], log: Path, err: Path | No
         raise FlowError(
             f"{goal}: no make on PATH; run the flow in snax-forge's image (D118)"
         ) from None
+
+
+def _tee(cmd: list[str], log: IO[str]) -> int:
+    """``cmd``'s stdout and stderr, merged, to ``log`` and ``sys.stdout``, each line flushed;
+    its exit code."""
+    env = {**os.environ, "PYTHONUNBUFFERED": "1"}
+    with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
+                          text=True, errors="replace") as p:  # fmt: skip
+        try:
+            assert p.stdout is not None
+            for line in p.stdout:
+                log.write(line)
+                log.flush()
+                sys.stdout.write(line)
+                sys.stdout.flush()
+            return p.wait()
+        except KeyboardInterrupt:
+            p.terminate()
+            p.wait()
+            raise
 
 
 def _git(path: Path, *args: str) -> str | None:
@@ -356,9 +388,9 @@ def build_reason(c: Checkout, workdir: Path) -> str | None:
 
 
 def _make(stage: str, goal: str, variables: Mapping[str, str], log: Path,
-          err: Path | None = None) -> int:  # fmt: skip
+          err: Path | None = None, live: bool = False) -> int:  # fmt: skip
     """``run_gvsoc``; a nonzero exit is a FlowError naming the log and its last lines."""
-    rc = run_gvsoc(goal, variables, log, err)
+    rc = run_gvsoc(goal, variables, log, err, live)
     if rc != 0:
         tail = "\n".join((err or log).read_text().splitlines()[-15:])
         raise FlowError(f"{stage}: make {goal} failed (exit {rc}); its output is in "
@@ -680,7 +712,9 @@ def _from_graph(
         c = checkout()
         why = build_reason(c, GVSOC_WORKDIR)
         if why is not None:
-            _make("build", "build", {}, out / "build.log")
+            print(f"  build     building SNAX-GVSoC: {why}; log in "
+                  f"{cwd_relative(out / 'build.log')}", flush=True)  # fmt: skip
+            _make("build", "build", {}, out / "build.log", live=True)
             if not (GVSOC_WORKDIR / "install" / "bin" / "gvrun").is_file():
                 raise FlowError(f"build: no GVSoC install in {cwd_relative(GVSOC_WORKDIR)} after "
                                 f"the build; see {cwd_relative(out / 'build.log')}")  # fmt: skip

@@ -3,7 +3,8 @@
 The flow runs on SNAX-GVSoC, so CI (which never builds it) runs everything up
 to the generator for real and SNAX-GVSoC through ``stub``: ``run_gvsoc``
 replaced by a fake make that records each call, makes the install on
-``build``, an ELF on ``sw`` and on ``run`` prints what the generated program
+``build`` (its lines also on the terminal when called ``live``, as the real
+make's are), an ELF on ``sw`` and on ``run`` prints what the generated program
 would (a window, no data errors, each counter its beats plus 3), writes the
 events SNAX-GVSoC would for the level (``tests/run/helpers.synthetic``) and
 exits 0; the checkout is a clean one at ``COMMIT``, pinned there, and the GVSoC
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import json
 import re
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -48,18 +50,21 @@ needs_gvsoc = pytest.mark.skipif(
 
 @dataclass
 class FakeMake:
-    """``run_gvsoc``'s stand-in: each call's goal and variables, in order; ``rc`` and
-    ``stderr`` per goal for the ones that should fail, ``stdout`` for ``run`` in place of the
-    program's lines."""
+    """``run_gvsoc``'s stand-in: each call's goal and variables, in order, and the goals called
+    ``live``; ``rc`` and ``stderr`` per goal for the ones that should fail, ``stdout`` for
+    ``run`` in place of the program's lines."""
 
     workdir: Path
     calls: list[tuple[str, dict[str, str]]] = field(default_factory=list)
+    live: list[str] = field(default_factory=list)
     rc: dict[str, int] = field(default_factory=dict)
     stderr: dict[str, str] = field(default_factory=dict)
     stdout: str | None = None
 
-    def __call__(self, goal, variables, log, err=None):
+    def __call__(self, goal, variables, log, err=None, live=False):
         self.calls.append((goal, dict(variables)))
+        if live:
+            self.live.append(goal)
         log.parent.mkdir(parents=True, exist_ok=True)
         text = f"make {goal}\n"
         if goal == "build":
@@ -78,6 +83,8 @@ class FakeMake:
             if variables.get("EVENTS"):
                 write_events(variables)
         log.write_text(text + self.stderr.get(goal, "") * (err is None))
+        if live:
+            sys.stdout.write(log.read_text())
         if err is not None:
             err.write_text(self.stderr.get(goal, ""))
         return self.rc.get(goal, 0)
