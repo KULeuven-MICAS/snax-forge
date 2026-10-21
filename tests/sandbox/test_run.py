@@ -109,7 +109,7 @@ def test_cli_writes_every_step(tmp_path, capsys):
         "2_bind.snaxdfg",
         "recipe.json",
     ]
-    assert Recipe.load(out / "recipe.json").params == {"W": 8}
+    assert Recipe.load(out / "recipe.json").params == {"W": 8, "N": 64}
     assert Graph.load(out / "2_bind.snaxdfg").node("add").attrs["params"]["W"] == 8
     assert "2 steps" in capsys.readouterr().out
 

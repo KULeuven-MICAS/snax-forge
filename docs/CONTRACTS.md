@@ -667,8 +667,8 @@ whose `out` is one lane every `T = N / W` firings (D104):
 
 <!-- snippet: recipes/vecadd.json -->
 ```json
- "params": {"W": 4},
- "symbols": {"N": 64},
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
  "steps": [
   {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
 ```

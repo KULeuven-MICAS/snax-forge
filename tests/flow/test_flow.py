@@ -542,14 +542,14 @@ def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
     args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN]
     assert main(*args, "--out", tmp_path / "f") == 0
     out = capsys.readouterr().out
-    assert out.startswith("flow vecadd (vecadd: W=4; N=64) on snax_alu -> ")
+    assert out.startswith("flow vecadd (vecadd: W=4, N=64; N=64) on snax_alu -> ")
     assert "  check     passed: 226 cycles (main to forge_check)" in out
     assert (tmp_path / "f" / "flow.log").read_text().startswith(out)
     # the sets route as before; the folder carries them
     assert main(*args, "--out", tmp_path / "g", "--set", "W=8",
                 "--set", "platform.streamers.default.fifo_depth=4") == 0  # fmt: skip
     out = capsys.readouterr().out
-    assert "flow vecadd_W8_streamers.default.fifo_depth4 (vecadd: W=8; N=64)" in out
+    assert "flow vecadd_W8_streamers.default.fifo_depth4 (vecadd: W=8, N=64; N=64)" in out
     pf = json.loads((tmp_path / "g" / "design" / "platform.json").read_text())
     assert pf["changes"] == {"streamers.default.fifo_depth": 4}
     assert DesignPoint.load(tmp_path / "g" / "design" / "design_point.json").name == "vecadd_W8"

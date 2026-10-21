@@ -91,7 +91,7 @@ def test_the_flows_get_the_folder_names_the_readme_uses(runs):
     root, _ = runs
     for folder in COMMANDS:
         log = (root / folder / "flow.log").read_text()
-        assert log.startswith(f"flow {folder} (vecadd: W=4; N=64) on small16")
+        assert log.startswith(f"flow {folder} (vecadd: W=4, N=64; N=64) on small16")
 
 
 def test_every_excerpt_is_a_part_of_its_report(runs):
