@@ -4,7 +4,10 @@ generator writes them for vecadd on snax_alu (cut to what run/ reads), and GVSoC
 from __future__ import annotations
 
 import copy
+from collections import defaultdict
 from typing import Any
+
+from snax_forge.run.trace import LEVELS
 
 PATH = "/chip/soc/cluster_0"
 
@@ -71,13 +74,17 @@ def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) 
     """An events.log a passing program on ``cluster`` could write, for ``tasks`` (a TaskList):
     boot, then from main's entry (``MAIN``) and its mcycle read (``BOOT``) each DMA copy, each
     accelerator task with its movers and the core's poll, forge_check's entry and its mcycle
-    read ``cycles`` later; the summary lines to match. ``level`` off writes the summary lines only."""
+    read ``cycles`` later; the summary lines to match. ``level`` off writes the summary lines
+    only; from ``beat`` on, the streamer's CSR writes before each start and the lines of each
+    beat (``beat_lines``), from ``finegrained`` three instructions per core. The summary's
+    grants, stalls, banks and queue maxima are the beats' at every level."""
     from snax_forge.lower.tasks import Configure
 
     acc = cluster.accelerator
     unit, streamer = f"snax_acc{acc.core}/unit", f"snax_acc{acc.core}/streamer"
     pa, pd = f"pe{acc.core}", f"pe{cluster.dma_core}"
     ev: list[tuple[int, str, str, str]] = []  # cycle, path, trace, text
+    on = LEVELS.index(level) if level in LEVELS else 0
 
     def add(cycle: int, path: str, trace: str, text: str) -> None:
         ev.append((cycle, path, trace, f"{cycle} {text}"))
@@ -90,6 +97,10 @@ def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) 
         add(MAIN, f"pe{i}", "events", "func name=main pc=0x800001e0")
         add(BOOT, f"pe{i}", "events", f"mcycle pc=0x800001f0 value={BOOT}")
         add(MAIN + 10, f"pe{i}", "events", f"func name=forge_core_{i} pc=0x80000300")
+        if on >= LEVELS.index("finegrained"):
+            for k, text in enumerate(INSNS):  # GVSoC's own line, no cycle first
+                ev.append((BOOT + 1 + k, f"pe{i}", "insn", text))
+    traffic = Traffic(cluster)
     steps = [s for s in tasks.steps if isinstance(s, Configure)]
     t, ident = MAIN + 20, 2
     copies = 0
@@ -100,13 +111,18 @@ def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) 
         size = src["bounds"][0] * src["strides"][0]
         add(t, "idma/fe", "events", f"issue id={ident} src={src['base']:#x} dst={dst['base']:#x} "
             f"size={size} src_stride=0 dst_stride=0 reps=1")  # fmt: skip
+        traffic.copy(t, ident, src["base"], dst["base"], size)
         add(t + 10, "idma/fe", "events", f"done id={ident}")
         t, ident, copies = t + 12, ident + 1, copies + 1
     firings, runs = 0, 0
+    config = {s.component: s.values for s in steps if s.type == "streamer"}
     for s in steps:
         if s.type != "accel":
             continue
         n = s.values["n"]
+        if on >= LEVELS.index("beat"):
+            for csr, value in streamer_csrs(cluster, config):
+                add(t - 1, pa, "events", f"csr pc=0x80000360 csr={csr:#x} op=w value={value}")
         add(t, pa, "events", f"csr pc=0x80000370 csr={acc.csrs.streamer_start:#x} op=w value=1")
         for m in acc.movers:
             add(t, streamer, "events", f"start mover={m.gvsoc}")
@@ -118,10 +134,12 @@ def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) 
         add(e, unit, "events", f"done firings={n} first={t + 4} last={e}")
         add(e, unit, "summary", f"run index={runs} firings={n} busy={n} stall_in=2 "
             "stall_out=0 flush=0")  # fmt: skip
+        traffic.run(t, n, config)
         for m in acc.movers:
             add(e + 1, streamer, "events", f"done mover={m.gvsoc}")
+            qmax = ",".join(str(traffic.qmax(m, lane, runs)) for lane in range(m.lanes))
             add(e + 2, streamer, "summary", f"mover mover={m.gvsoc} run={runs} busy={n} stall_xbar=1 "
-                f"stall_fifo=0 idle=2 qmax={','.join(['2'] * m.lanes)}")  # fmt: skip
+                f"stall_fifo=0 idle=2 qmax={qmax}")  # fmt: skip
         add(e + 1, pa, "events", f"csr pc=0x80000378 csr={acc.csrs.busy:#x} op=r value=0")
         firings, runs = firings + n, runs + 1
         t = e + 4
@@ -135,19 +153,179 @@ def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) 
     add(end - 5, pa, "events", "state mode=sleep")
     for i, p in enumerate(acc.movers):
         for lane, port in enumerate(p.ports):
-            add(end, "tcdm/snax_xbar", "summary", f"input index={i * 100 + lane} name=snax_acc"
-                f"{acc.core}.streamer.{p.gvsoc}.lane{lane} grants={firings} stalls=1 "
-                "stalls_dma=0 whole_run=0")  # fmt: skip
+            index = input_index(cluster, port)
+            add(end, "tcdm/snax_xbar", "summary", f"input index={index} name=snax_acc"
+                f"{acc.core}.streamer.{p.gvsoc}.lane{lane} grants={traffic.grants[index]} "
+                f"stalls={traffic.stalls[index]} stalls_dma=0 whole_run=0")  # fmt: skip
     for i in range(cluster.nb_cores):
         add(end, "tcdm/snax_xbar", "summary", f"input index={1000 + i} name=core{i} grants=300 "
             "stalls=0 stalls_dma=0 whole_run=1")  # fmt: skip
     for b in range(cluster.banks):
-        add(end, "tcdm/snax_xbar", "summary", f"bank index={b} reads=6 writes=6 conflicts=0")
+        add(end, "tcdm/snax_xbar", "summary", f"bank index={b} reads={traffic.reads[b]} "
+            f"writes={traffic.writes[b]} conflicts={traffic.conflicts[b]}")  # fmt: skip
     for i in range(cluster.nb_cores):
         add(end, f"pe{i}", "summary", f"csrs writes={18 if i == acc.core else 0} "
             f"reads={13 if i == acc.core else 0}")  # fmt: skip
     add(end, "idma/fe", "summary", f"dma transfers={copies} busy={copies * 18} "
-        f"r_beats={copies * 8} w_beats={copies * 8} bytes_to_l1=1024 bytes_from_l1=512")  # fmt: skip
+        f"r_beats={traffic.r_beats} w_beats={traffic.w_beats} bytes_to_l1=1024 "
+        "bytes_from_l1=512")  # fmt: skip
     keep = {"summary", "events"} if level != "off" else {"summary"}
+    keep |= {"beats", "stalls", "insn"} if on >= LEVELS.index("beat") else set()
+    ev += [x for x in traffic.lines if on >= LEVELS.index(TRAFFIC_LEVEL[x[2]])]
     ev.sort(key=lambda x: x[0])  # as GVSoC writes them, nearly
     return [line(path, trace, text, cycle) for cycle, path, trace, text in ev if trace in keep]
+
+
+INSNS = (
+    "main:0                           M 800001e4 sw                  ra, 12(sp)",
+    "main:0                           M 800001e8 sw                  s0, 8(sp)",
+    "main:0                           M 800001ec addi                s0, sp, 16",
+)
+TRAFFIC_LEVEL = {"beats": "beat", "stalls": "stall"}
+
+
+def input_index(cluster: Any, port: str) -> int:
+    """The synthetic runs' crossbar index of a mover's lane: 100 per mover, then the lane."""
+    for i, m in enumerate(cluster.accelerator.movers):
+        if port in m.ports:
+            return i * 100 + m.ports.index(port)
+    raise KeyError(port)
+
+
+def streamer_csrs(cluster: Any, config: dict[str, Any]) -> list[tuple[int, int]]:
+    """Each mover's CSR writes for its task's values: pointer low and high, spatial strides,
+    temporal bounds and strides, in the streamer's layout."""
+    from snax_forge.run.beats import mover_csrs
+
+    out = []
+    for m in cluster.accelerator.movers:
+        v = config[m.name]
+        csr = mover_csrs(cluster)[m.name]
+        regs = [v["base"], 0, *v["spatial_strides"], *v["temporal_bounds"], *v["temporal_strides"]]
+        out += [(csr + i, r) for i, r in enumerate(regs)]
+    return out
+
+
+class Traffic:
+    """The beat and stall lines of a synthetic run, and the summary counts they make. Per
+    accelerator run of n firings started at t (streamer start t, unit start t + 1): the first
+    reader's beat b granted at t + 1 + b on every lane, the others' one cycle later (their
+    beat 0 stalls behind it at t + 1 on the same banks), firing b at t + 4 + b pushing at once,
+    the writer's grant at t + 5 + b; words A[i] = i + 1 on reader 0, 100 + i on the others,
+    their sum written. A copy of ``size`` bytes: one beat of 64 bytes a cycle from t + 1, its
+    bursts (one read, or one write per beat)."""
+
+    def __init__(self, cluster: Any) -> None:
+        self.c = cluster
+        self.lines: list[tuple[int, str, str, str]] = []
+        self.grants: dict[int, int] = defaultdict(int)
+        self.stalls: dict[int, int] = defaultdict(int)
+        self.reads = [0] * cluster.banks
+        self.writes = [0] * cluster.banks
+        self.conflicts = [0] * cluster.banks
+        self.r_beats = self.w_beats = 0
+        self._qmax: dict[tuple[str, int, int], int] = {}
+
+    def add(self, cycle: int, path: str, trace: str, text: str) -> None:
+        self.lines.append((cycle, path, trace, f"{cycle} {text}"))
+
+    def copy(self, t: int, ident: int, src: int, dst: int, size: int) -> None:
+        c = self.c
+        into = c.is_l1(dst)
+        l1, l2 = (dst, src) if into else (src, dst)
+        nb = size // c.dma_beat_bytes
+        self.r_beats += nb
+        self.w_beats += nb
+        if into:
+            self.add(t + 1, "idma/axi_read", "beats", f"burst id={ident} op=r addr={l2:#x} "
+                     f"size={size} back={t + 1}")  # fmt: skip
+        for j in range(nb):
+            a = l1 + j * c.dma_beat_bytes
+            bank, row = c.bank_row(a)
+            words = c.dma_beat_bytes // c.bank_bytes
+            for w in range(words):
+                (self.writes if into else self.reads)[(bank + w) % c.banks] += 1
+            value = ",".join(hex(j * words + w + 1) for w in range(words))
+            back = "" if into else f" back={t + 1 + j}"
+            self.add(t + 1 + j, "tcdm/snax_xbar", "beats", f"dma id={ident} i={j} "
+                     f"op={'w' if into else 'r'} addr={a - c.l1_base:#x} size={c.dma_beat_bytes} "
+                     f"bank={bank} row={row} value={value} l2={l2 + j * c.dma_beat_bytes:#x}"
+                     f"{back}")  # fmt: skip
+            if not into:
+                self.add(t + 1 + j, "idma/axi_write", "beats", f"burst id={ident} op=w "
+                         f"addr={l2 + j * c.dma_beat_bytes:#x} size={c.dma_beat_bytes} "
+                         f"back={t + 1 + j}")  # fmt: skip
+
+    def _grant(self, cycle: int, m: Any, lane: int, addr: int, op: str, value: int, b: int) -> None:
+        c = self.c
+        index = input_index(c, m.ports[lane])
+        bank, row = c.bank_row(addr)
+        self.grants[index] += 1
+        (self.reads if op == "r" else self.writes)[bank] += 1
+        self.add(cycle, "tcdm/snax_xbar", "beats", f"grant in={index} op={op} "
+                 f"addr={addr - c.l1_base:#x} bank={bank} row={row} value={value:#x} "
+                 f"back={cycle + 1} b={b}")  # fmt: skip
+
+    def run(self, t: int, n: int, config: dict[str, Any]) -> None:
+        c = self.c
+        acc = c.accelerator
+        readers = [m for m in acc.movers if not m.write]
+        writer = next(m for m in acc.movers if m.write)
+        streamer = f"snax_acc{acc.core}/streamer"
+        unit = f"snax_acc{acc.core}/unit"
+
+        def addr(m: Any, b: int, lane: int) -> int:
+            v = config[m.name]
+            return v["base"] + b * v["temporal_strides"][0] + lane * v["spatial_strides"][0]
+
+        def word(r: int, b: int, lane: int) -> int:
+            return (1 if r == 0 else 100) + b * readers[0].lanes + lane
+
+        run = sum(1 for k in self._qmax if k[0] == writer.name and k[1] == 0)
+        for r, m in enumerate(readers):
+            for b in range(n):
+                g = t + 1 + b + (r > 0)
+                for lane in range(m.lanes):
+                    self._grant(g, m, lane, addr(m, b, lane), "r", word(r, b, lane), b)
+            if r > 0:  # beat 0 stalls behind reader 0's on the same banks
+                for lane in range(m.lanes):
+                    a, by = addr(m, 0, lane), addr(readers[0], 0, lane)
+                    bank, row = c.bank_row(a)
+                    index = input_index(c, m.ports[lane])
+                    self.stalls[index] += 1
+                    self.conflicts[bank] += 1
+                    self.add(t + 1, "tcdm/snax_xbar", "stalls", f"stall in={index} "
+                             f"addr={a - c.l1_base:#x} bank={bank} row={row} "
+                             f"by={input_index(c, readers[0].ports[lane])} "
+                             f"by_addr={by - c.l1_base:#x} b=0")  # fmt: skip
+            # visible at back + 1, popped by firing b at t + 4 + b
+            self._fifo(streamer, m, run, [(t + 3 + b + (r > 0), t + 4 + b) for b in range(n)])
+        for b in range(n):
+            f = t + 4 + b
+            beats = ",".join(str(b) for _ in readers)
+            values = ",".join(hex(word(r, b, lane)) for r, m in enumerate(readers)
+                              for lane in range(m.lanes))  # fmt: skip
+            self.add(f, unit, "beats", f"fire n={b} b={beats} value={values}")
+            out = [sum(word(r, b, lane) for r in range(len(readers)))
+                   for lane in range(writer.lanes)]  # fmt: skip
+            self.add(f, unit, "beats", f"push n={b} first={b} last={b} "
+                     f"value={','.join(hex(x) for x in out)}")  # fmt: skip
+            for lane in range(writer.lanes):
+                self._grant(f + 1, writer, lane, addr(writer, b, lane), "w", out[lane], b)
+        self._fifo(streamer, writer, run, [(t + 5 + b, t + 5 + b) for b in range(n)])
+
+    def _fifo(self, streamer: str, m: Any, run: int, words: list[tuple[int, int]]) -> None:
+        """A lane's count lines from its words (visible, popped), the same on every lane."""
+        prev, top = 0, 0
+        for cyc in range(min(v for v, _ in words), max(p for _, p in words) + 2):
+            count = sum(1 for v, p in words if v <= cyc <= p)
+            if count != prev:
+                for lane in range(m.lanes):
+                    self.add(cyc, streamer, "stalls", f"fifo mover={m.gvsoc} lane={lane} "
+                             f"count={count}")  # fmt: skip
+                prev, top = count, max(top, count)
+        for lane in range(m.lanes):
+            self._qmax[(m.name, lane, run)] = top
+
+    def qmax(self, m: Any, lane: int, run: int) -> int:
+        return self._qmax.get((m.name, lane, run), 0)

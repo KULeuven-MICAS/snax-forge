@@ -82,6 +82,11 @@ class FakeMake:
             text = self.stdout if self.stdout is not None else program_output(variables)
             if variables.get("EVENTS"):
                 write_events(variables)
+            if "'--vcd'" in variables.get("GVRUN_ARGS", ""):
+                work = Path(variables["WORK_DIR"])
+                work.mkdir(parents=True, exist_ok=True)
+                (work / "all.vcd").write_text("$timescale 1ps $end\n")
+                (work / "view.gtkw").write_text(f'[dumpfile] "{(work / "all.vcd").resolve()}"\n')
         log.write_text(text + self.stderr.get(goal, "") * (err is None))
         if live:
             sys.stdout.write(log.read_text())
@@ -93,7 +98,7 @@ class FakeMake:
 def program_output(variables: dict[str, str]) -> str:
     """What the generated program prints when it passes, from the manifest beside the cluster
     file the run is given: a window, no data errors, each counter its beats plus 3."""
-    cluster = Path(variables["GVRUN_ARGS"].partition("hjson=")[2])
+    cluster = Path(variables["GVRUN_ARGS"].partition("hjson=")[2].split()[0])
     manifest = json.loads((cluster.parent / "manifest.json").read_text())
     lines = ["forge cycles: 226", "forge data: 0 errors (64 words)"]
     lines += [f"forge counter {t['name']}: {t['beats'] + 3}" for t in manifest["tasks"]]
@@ -103,11 +108,21 @@ def program_output(variables: dict[str, str]) -> str:
 def write_events(variables: dict[str, str]) -> None:
     """The events a passing run writes to ``EVENTS`` for its ``TRACES``: the synthetic run of
     its cluster (beside the cluster file) and its task list (in the flow's folder)."""
-    gen = Path(variables["GVRUN_ARGS"].partition("hjson=")[2]).parent
+    gen = Path(variables["GVRUN_ARGS"].partition("hjson=")[2].split()[0]).parent
     cluster = load_cluster(gen / "snax_alu.hjson", gen.parent / "design" / "design_point.json")
     tasks = TaskList.from_dict(json.loads((gen.parent / "tasks.json").read_text()))
-    level = "task" if "events" in variables["TRACES"].split() else "off"
-    Path(variables["EVENTS"]).write_text("\n".join(synthetic(cluster, tasks, level)) + "\n")
+    Path(variables["EVENTS"]).write_text("\n".join(synthetic(cluster, tasks, level_of(variables)))
+                                         + "\n")  # fmt: skip
+
+
+def level_of(variables: dict[str, str]) -> str:
+    """The trace level a run's TRACES turn on (run/sources.py)."""
+    names = " ".join(variables["TRACES"].split())
+    for level, trace in (("finegrained", "/insn"), ("stall", "/stalls"), ("beat", "/beats"),
+                         ("task", "events")):  # fmt: skip
+        if trace in names:
+            return level
+    return "off"
 
 
 def stub(monkeypatch, tmp_path: Path, pinned: str = COMMIT, dirty: bool = False) -> FakeMake:

@@ -1,14 +1,19 @@
 """SNAX-GVSoC's events -> a run's profile and trace (C§7, D137).
 
-    convert(lines, cluster, tasks, total_cycles, level, functional_check) -> (Profile, Trace)
+    convert(lines, cluster, tasks, total_cycles, level, functional_check, regions, filter)
+        -> (Profile, Trace)
 
 ``lines`` are events.log's (events.py), ``cluster`` the run's (cluster.py), ``tasks`` its task
-list, ``total_cycles`` the program's window (its ``forge cycles:`` line). Nothing is recounted:
-the profile is the ``summary`` lines renamed, the trace the ``events`` lines renamed and cut.
+list, ``total_cycles`` the program's window (its ``forge cycles:`` line), ``regions`` the
+design point's (regions.py) and ``filter`` the sources whose beat lines the run wrote
+(sources.py). Nothing is recounted: the profile is the ``summary`` lines renamed, the trace
+the ``events`` lines renamed and cut, and above ``task`` the ``beats``, ``stalls`` and
+``insn`` lines too (beats.py); the beat lines only feed the trace.
 
 **Names.** A line's component path becomes a C§7 name: ``snax_acc<i>/unit`` the accelerator
 (``acc``), ``snax_acc<i>/streamer`` with its ``mover`` the mover (``reader0`` -> ``acc_a``),
-``pe<i>`` the core ``core<i>``, ``idma/fe`` the DMA (``dma``), ``tcdm/snax_xbar`` the crossbar,
+``pe<i>`` the core ``core<i>``, ``idma/fe`` and the AXI backend (``idma/axi_read``,
+``idma/axi_write``) the DMA (``dma``), ``tcdm/snax_xbar`` the crossbar,
 whose inputs become ports (``snax_acc<i>.streamer.reader0.lane1`` -> ``acc_a.lane1``,
 ``core<i>`` and ``axi`` as they are). Any other path is a RunError (``convert.path``).
 
@@ -46,7 +51,7 @@ events: the cores' cycles are None and there is no trace.
 **Invariants** (``invariants``), checked on every conversion, a RunError
 (``convert.invariant``) naming each that fails: every start has a done in the window, and
 every DMA issue; a core's classes add up to the window; the accelerator's firings in its
-``done`` events are its summary's.
+``done`` events are its summary's; above ``task``, the beat part's (beats.py).
 """
 
 from __future__ import annotations
@@ -57,6 +62,7 @@ from typing import Any
 
 from snax_forge.lower.tasks import Configure, TaskList
 
+from .beats import Context, beat_events, beat_invariants
 from .cluster import DMA, Cluster, core_name
 from .events import Line, RunError
 from .profile import (
@@ -70,7 +76,8 @@ from .profile import (
     StreamerProfile,
     WaitProfile,
 )
-from .trace import Trace
+from .regions import Region
+from .trace import LEVELS, Trace
 
 XBAR = "xbar"
 UNIT_CLASSES = ("busy", "stall_in", "stall_out", "flush")
@@ -92,7 +99,7 @@ def source_of(line: Line, cluster: Cluster) -> str:
         return acc.mover(mover).name
     if last == "snax_xbar":
         return XBAR
-    if parent == "idma" and last == "fe":
+    if parent == "idma" and last in ("fe", "axi_read", "axi_write"):
         return DMA
     m = re.fullmatch(r"pe(\d+)", last)
     if m and int(m[1]) < cluster.nb_cores:
@@ -177,8 +184,9 @@ def _need(names: list[str], k: int, what: str) -> str:
 
 
 def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: TaskList,
-                 boot: int, width: int) -> list[dict[str, Any]]:  # fmt: skip
-    """The events lines renamed, shifted and cut (module doc), in time order."""
+                 boot: int, width: int) -> list[tuple[int, int, dict[str, Any]]]:  # fmt: skip
+    """The events lines renamed, shifted and cut (module doc), in time order, each with its
+    line's index in the file."""
     acc = cluster.accelerator
     out: list[tuple[int, int, dict[str, Any]]] = []
     started: dict[str, list[str]] = {}  # src -> its tasks, in start order
@@ -247,7 +255,7 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
                       "to_stride": f["dst_stride"]})  # fmt: skip
         out.append((t, n, e))
     out.sort(key=lambda x: (x[0], x[1]))
-    return [e for _, _, e in out]
+    return out
 
 
 def core_cycles(lines: Sequence[tuple[str, Line]], core: str, boot: int, width: int
@@ -347,8 +355,10 @@ def profile_of(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles
 # =============================================================================
 
 
-def invariants(profile: Profile, trace: Trace, cluster: Cluster) -> list[str]:
-    """What every converted run must hold (module doc); each that fails, said."""
+def invariants(profile: Profile, trace: Trace, cluster: Cluster,
+               ctx: Context | None = None) -> list[str]:  # fmt: skip
+    """What every converted run must hold (module doc); each that fails, said. ``ctx``, the
+    beat part's, adds its invariants."""
     bad = []
     for src in trace.sources:
         starts = len(trace.of_kind("issue" if src == DMA else "start", src))
@@ -365,6 +375,8 @@ def invariants(profile: Profile, trace: Trace, cluster: Cluster) -> list[str]:
     if fired != profile.accelerators[acc].firings:
         bad.append(f"{acc}: {fired} firings in its done events, "
                    f"{profile.accelerators[acc].firings} in its summary")  # fmt: skip
+    if ctx is not None:
+        bad += beat_invariants(trace, profile, ctx)
     return bad
 
 
@@ -375,6 +387,8 @@ def convert(
     total_cycles: int,
     level: str,
     functional_check: dict[str, Any] | None = None,
+    regions: list[Region] | None = None,
+    filter: list[str] | None = None,
 ) -> tuple[Profile, Trace | None]:
     """The profile and, above ``off``, the trace of a run (module doc)."""
     named = [(source_of(x, cluster), x) for x in lines]
@@ -383,7 +397,13 @@ def convert(
         return profile, None
     boot = window(named, cluster, total_cycles)
     width = total_cycles
-    events = trace_events(named, cluster, tasks, boot, width)
+    triples = trace_events(named, cluster, tasks, boot, width)
+    ctx = None
+    if LEVELS.index(level) >= LEVELS.index("beat"):
+        ctx = Context(cluster, list(regions or []), boot, width, level, list(filter or []),
+                      [e for _, _, e in triples], named)  # fmt: skip
+        triples = sorted(triples + beat_events(named, ctx), key=lambda x: (x[0], x[1]))
+    events = [e for _, _, e in triples]
     for core in cluster.cores:
         cycles, waits = core_cycles(named, core, boot, width)
         p = profile.cores[core]
@@ -391,8 +411,8 @@ def convert(
         p.waits = [WaitProfile(
             "barrier" if kind == "barrier" else cluster.accelerator.block_of(x.fields["csr"]) or "-",
             a, b) for a, b, kind, x in waits]  # fmt: skip
-    trace = Trace(level, total_cycles, boot, cluster.sources, events)
-    bad = invariants(profile, trace, cluster)
+    trace = Trace(level, total_cycles, boot, cluster.sources, events, list(filter or []))
+    bad = invariants(profile, trace, cluster, ctx)
     if bad:
         raise RunError("convert.invariant", "; ".join(bad))
     return profile, trace

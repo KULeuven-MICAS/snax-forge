@@ -183,10 +183,13 @@ is its copy's `id` and `i`, its index within the copy. `fire`'s `b`,
 shifts every cycle and `back` by the boot, drops lines outside the window,
 and adds what no reader should look up: `task` (the task whose start and
 done bracket the line on its component, a copy's task for the DMA, null for
-a core's or AXI's access), `mem` (`l1`, `l2`) and the absolute `addr`,
-`region` (the design point's container the address is in, or null) and
-`elems` (the flat indexes of its elements in the word), and `vals` (those
-elements' values by the region's dtype). Every line keeps its raw words
+a core's or AXI's access and outside its tasks), `mem` (`l1`, `l2`) and the
+absolute `addr`, `region` (the design point's container the address is in,
+or null; for a burst, the program's L2 data being placed by its linker, the
+container of its copy's L1 side), `elems` (the flat indexes of its elements
+in the word) and `vals` (those elements' values by the region's dtype; a
+fire's and a push's from their beats' grants, null for a mover not
+traced); an `insn`'s `func` is the function its core is in. Every line keeps its raw words
 too: `value` is the bank word (`dma`: one per bank it covers), `bank` and
 `row` the word-interleaved map of `addr`. `back` is the cycle the response
 arrives, known at the grant; there is no request or response event. The
@@ -201,7 +204,7 @@ accelerator, its movers and the DMA, at `finegrained` also every core.
 `level`, `total_cycles`, the `boot` shift, the `sources` in the cluster's
 order and the `filter` (the sources the beat lines were written for).
 `--vcd` writes a VCD and `view.gtkw` beside the run for gtkwave, never read
-here.
+here. `run.json` records the `trace_level`, the `trace_sources` and `vcd`.
 
 The invariants every conversion checks are `run/convert.py`'s.
 

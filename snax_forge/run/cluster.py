@@ -6,7 +6,7 @@ point, and gives what the events need to be named and read: the accelerator (the
 point's one accelerated instance, ``acc``) on the core whose ``snax_acc_cfg`` holds the
 platform's slot; its movers, readers first as the streamer orders them, each named by its
 port as the design point names its streamers (``acc_a``, ``acc_out``), with its lanes (the
-crossbar ports ``acc_a.lane<l>``) and FIFO depth; its CSRs (the streamer's, then the
+crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial bounds and temporal loops (its CSRs); its CSRs (the streamer's, then the
 shell's fields, start, busy and counter, from 0x3C0, as snax_cluster lays them out and
 snax-gvsoc's ``snax_streamer.py`` counts them); the cores (``core<i>``) and the DMA's; the
 L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
@@ -48,6 +48,8 @@ class Mover:
     write: bool
     lanes: int
     fifo_depth: int
+    spatial_bounds: tuple[int, ...]
+    temporal_dim: int
 
     @property
     def ports(self) -> list[str]:
@@ -150,7 +152,9 @@ class Cluster:
             "accelerator": {
                 "name": a.name, "core": a.core, "slot": a.slot, "unit": dict(a.unit),
                 "movers": [{"name": m.name, "gvsoc": m.gvsoc, "port": m.port, "write": m.write,
-                            "lanes": m.lanes, "fifo_depth": m.fifo_depth} for m in a.movers],
+                            "lanes": m.lanes, "fifo_depth": m.fifo_depth,
+                            "spatial_bounds": list(m.spatial_bounds),
+                            "temporal_dim": m.temporal_dim} for m in a.movers],
                 "csrs": {"streamer_first": c.streamer_first, "streamer_start": c.streamer_start,
                          "streamer_busy": c.streamer_busy,
                          "streamer_counter": c.streamer_counter, "fields": dict(c.fields),
@@ -165,7 +169,8 @@ class Cluster:
     def from_dict(cls, d: dict[str, Any]) -> Cluster:
         a = d["accelerator"]
         acc = Accelerator(a["name"], a["core"], a["slot"], dict(a["unit"]),
-                          [Mover(**m) for m in a["movers"]],
+                          [Mover(**{**m, "spatial_bounds": tuple(m["spatial_bounds"])})
+                           for m in a["movers"]],
                           Csrs(**{**a["csrs"], "fields": dict(a["csrs"]["fields"])}))  # fmt: skip
         return cls(d["design"], d["nb_cores"], d["dma_core"], acc, d["l1_base"], d["l1_size"],
                    d["banks"], d["bank_bytes"], d["dma_beat_bytes"],
@@ -226,7 +231,8 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[s
                            f"{kind}s, the design point {len(mine)}")  # fmt: skip
         for i, (n, s) in enumerate(mine):
             movers.append(Mover(n, f"{kind}{i}", s["port"], write, params["num_channel"][i],
-                                params["fifo_depth"][i]))  # fmt: skip
+                                params["fifo_depth"][i], tuple(params["spatial_bounds"][i]),
+                                params["temporal_dim"][i]))  # fmt: skip
 
     tcdm = _get(cluster, "cluster.tcdm", "the cluster file")
     acc = Accelerator(inst, owner[0], slot, dict(unit), movers,

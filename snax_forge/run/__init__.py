@@ -9,6 +9,9 @@ trace the reports and the viewer read.
 * regions.py: where each container lives in each memory, from the design point's layouts;
 * profile.py: the profile, the totals of one run, from the components' own counters;
 * trace.py: the trace, one event per line, in the program's window;
+* beats.py: the converter's beat, stall and instruction part and its invariants (convert.py
+  the rest);
+* sources.py: a trace level and its sources, as SNAX-GVSoC's traces and options;
 * outputs.py: a run directory written and read back.
 """
 

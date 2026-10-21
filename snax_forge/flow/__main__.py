@@ -3,7 +3,7 @@
     python -m snax_forge.flow RECIPE --platform P [--set NAME=VALUE ...]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--graph FILE] [--name NAME] [--out DIR]
-                              [--seed S] [--trace off|task]  (beat: FLOW3 round 2)
+                              [--seed S] [--trace LEVEL[:SOURCES]] [--vcd]
     python -m snax_forge.flow GRAPH.snaxdfg --platform P [--kernel K]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--name NAME] [--out DIR] [--seed S] [--trace ...]
@@ -22,9 +22,13 @@ platform and memory paths without their prefix, each in the order given
 (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``), then the
 trace level when it is not ``off``. ``--trace off`` (the default) gives the
 profile from the components' counters, ``--trace task`` the trace of every
-start, done, CSR access, wait and DMA copy too (D137, ``run/``); ``beat``
-stops with a named error until FLOW3 round 2. What it prints is also in
-``flow.log``, with the design checks that ran.
+start, done, CSR access, wait and DMA copy too (D137, ``run/``), ``beat`` every
+grant, DMA beat, firing and push, ``stall`` every refused request and queue
+count, ``finegrained`` every instruction; ``--trace stall:acc,acc_a`` names the
+sources of those lines (C§7 names: ``acc``, the movers, ``dma``, ``core<i>``,
+``axi``; ``run/sources.py``). ``--vcd`` also writes gtkwave's VCD of them,
+``run/all.vcd`` and ``run/view.gtkw``. What it prints is also in ``flow.log``,
+with the design checks that ran.
 
 The second form starts from a bound graph instead (D108): a file ending in
 ``.snaxdfg`` is the last step of a sandbox run, or a graph edited by hand,
@@ -51,6 +55,8 @@ from typing import Any
 from snax_forge.design import DesignError, parse_value
 from snax_forge.dfg import DfgError
 from snax_forge.lower import LowerError
+from snax_forge.run import RunError
+from snax_forge.run.sources import parse_trace
 from snax_forge.sandbox import SandboxError
 
 from .run import FlowError, run_bound, run_flow, summary
@@ -86,10 +92,16 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--name", help="flow name (default: recipe name and every --set)")
     ap.add_argument("--out", type=Path, help="output directory (default out/flow/<name>)")
     ap.add_argument("--seed", type=int, default=0, help="seed of make_inputs and the checks")
-    ap.add_argument("--trace", default="off", choices=["off", "task", "beat"],
-                    help="off (the counters) or task (and the events); beat comes in FLOW3 "
-                    "round 2")  # fmt: skip
+    ap.add_argument("--trace", default="off", metavar="LEVEL[:SOURCES]",
+                    help="off, task, beat, stall or finegrained, and from beat on the sources "
+                    "of the beat lines (acc,acc_a,dma,core0,...)")  # fmt: skip
+    ap.add_argument("--vcd", action="store_true",
+                    help="also write gtkwave's VCD of the sources into run/")  # fmt: skip
     args = ap.parse_args(argv)
+    try:
+        level, sources = parse_trace(args.trace)
+    except RunError as e:
+        ap.error(f"--trace: {e}")
     sets: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
     for head, path, value in args.set:
         sets[head].append((path, value))
@@ -110,7 +122,9 @@ def main(argv: list[str] | None = None) -> int:
         "name": args.name,
         "out": args.out,
         "seed": args.seed,
-        "trace_level": args.trace,
+        "trace_level": level,
+        "trace_sources": sources,
+        "vcd": args.vcd,
     }
     try:
         if bound:

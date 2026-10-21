@@ -53,18 +53,25 @@ over the output words and each accelerator task's counter, beside its beats
 from the manifest. ``passed`` is an exit code of 0. A missing line is a
 FlowError that names it. ``run/run.json`` records what ran: the design
 point, the three hjson files, the ELF's sha256, the target, the snax-gvsoc
-commit and whether its tree was dirty, and the trace level;
+commit and whether its tree was dirty, the trace level, its sources and whether a VCD was
+written;
 ``run/profile.json`` holds ``total_cycles`` and ``functional_check``, with
 what ``convert`` adds.
 
 **Trace** (D137). The run writes the SNAX components' ``summary`` traces into
-``run/events.log`` at every level, and their ``events`` traces at ``task``
-(``gvsoc/Makefile``'s ``EVENTS`` and ``TRACES``); ``beat`` is a FlowError until
-FLOW3 round 2. ``convert`` reads the log, names it after the cluster
-(``run/cluster.py``: the generator's hjson files and the design point) and the
-task list, and writes the profile and, at ``task``, the trace (``run/convert.py``,
-whose invariants hold or the stage fails). ``report`` then writes
-``report/design.md`` and ``report/run.md`` from them (D99).
+``run/events.log`` at every level, their ``events`` traces from ``task``, and
+from ``beat``, ``stall`` and ``finegrained`` the ``beats``, ``stalls`` and the
+cores' ``insn`` lines of the trace's sources (``trace_sources``, by default the
+accelerator, its movers and the DMA, at ``finegrained`` every core too); the
+cluster, read from gen's files, gives ``gvsoc/Makefile``'s ``TRACES`` and the
+crossbar's ``trace_inputs`` (``run/sources.py``). With ``vcd`` the run also
+writes gtkwave's VCD of the same sources: ``run/all.vcd`` and ``run/view.gtkw``,
+never read here. ``convert`` reads the log, names it after the cluster
+(``run/cluster.py``: the generator's hjson files and the design point), the
+task list and the design point's regions, and writes the profile and, above
+``off``, the trace (``run/convert.py``, whose invariants hold or the stage
+fails); ``trace_meta.json`` keeps the sources as its ``filter``. ``report``
+then writes ``report/design.md`` and ``report/run.md`` from them (D99).
 
 Everything goes to one folder, ``out/flow/<name>/``, overwritten on every
 run; the default name carries every ``--set``, so runs that differ only in
@@ -122,9 +129,10 @@ from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.execute import execute
 from snax_forge.lower import CError, LowerError, TaskList, task_list
-from snax_forge.run import RunError, Trace, load_cluster, read_events, write_run
+from snax_forge.run import LEVELS, RunError, Trace, load_cluster, read_events, regions_of, write_run
 from snax_forge.run.convert import convert
 from snax_forge.run.outputs import EVENTS_FILE
+from snax_forge.run.sources import gvsoc_options, sources_for
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
 from snax_forge.sdfg.loader import load as load_kernel
 
@@ -155,9 +163,8 @@ SUBMODULE = "gvsoc/snax-gvsoc"
 GVSOC_WORKDIR = ROOT / "out" / "snax-gvsoc"
 TARGET = "snax_hjson"
 ELF = "forge.elf"
-TRACE_LEVELS = ("off", "task", "beat")
-# The SNAX components' traces each level turns on (snax-gvsoc docs/EVENTS.md)
-TRACES = {"off": "summary", "task": "summary events"}
+TRACE_LEVELS = LEVELS
+VCD, GTKW = "all.vcd", "view.gtkw"
 
 
 class FlowError(ValueError):
@@ -195,6 +202,8 @@ class Flow:
     times: dict[str, float] = field(default_factory=dict)  # stage -> wall-clock seconds
     trace_level: str = "off"
     trace: Trace | None = None  # convert's, above off
+    trace_sources: list[str] = field(default_factory=list)
+    vcd: bool = False
 
     @property
     def passed(self) -> bool:
@@ -498,8 +507,12 @@ def summary(f: Flow) -> str:
     else:
         conv = (
             f"run/events.log -> profile.json, trace.jsonl ({len(f.trace.events)} events in "
-            f"the window; boot {f.trace.boot})"
+            f"the window; boot {f.trace.boot}"
+            + (f"; sources {', '.join(f.trace_sources)}" if f.trace_sources else "")
+            + ")"
         )
+    if f.vcd:
+        conv += f"; run/{VCD}, run/{GTKW} (gtkwave)"
     lines.append(f"  convert   {conv}")
     lines.append(f"  report    {REPORT}/design.md, {REPORT}/run.md")
     lines += [f"  WARNING   {w}" for w in f.warnings]
@@ -528,6 +541,21 @@ def _timed(times: dict[str, float], stage: str) -> Iterator[None]:
         times[stage] = times.get(stage, 0.0) + time.perf_counter() - t0
 
 
+def _keep_vcd(run: Path) -> None:
+    """gvrun's VCD and its gtkwave view, from the work directory into ``run/``, the view
+    pointing at the VCD's new place (its map files stay in ``work/``)."""
+    work = run / "work"
+    if not (work / VCD).is_file() or not (work / GTKW).is_file():
+        raise FlowError(f"gvsoc: --vcd, but no {VCD} and {GTKW} in {cwd_relative(work)}")
+    (work / VCD).replace(run / VCD)
+    view = (work / GTKW).read_text()
+    view = view.replace(
+        f'[dumpfile] "{(work / VCD).resolve()}"', f'[dumpfile] "{(run / VCD).resolve()}"'
+    )
+    (run / GTKW).write_text(view)
+    (work / GTKW).unlink()
+
+
 def _clear(out: Path) -> None:
     """Remove what an earlier run left in ``out`` (module doc)."""
     for p in (out / LOG, out / REPORT / "design.md", out / REPORT / "run.md"):
@@ -548,12 +576,11 @@ def _clear_sandbox(out: Path, graph_path: Path) -> None:
         folder.rmdir()
 
 
-def _trace(level: str) -> None:
+def _trace(level: str, sources: Sequence[str] | None) -> None:
     if level not in TRACE_LEVELS:
         raise FlowError(f"trace level {level!r}: one of {', '.join(TRACE_LEVELS)}")
-    if level not in TRACES:
-        raise FlowError(f"trace level {level!r}: the beat lines come in FLOW3 round 2 (D137); "
-                        f"{' and '.join(repr(x) for x in TRACES)} run now")  # fmt: skip
+    if sources is not None and TRACE_LEVELS.index(level) < TRACE_LEVELS.index("beat"):
+        raise FlowError(f"trace sources {list(sources)}: they go with beat, stall or finegrained")
 
 
 FAILURES = (DesignError, FlowError, SandboxError, DfgError, LowerError, RunError, OSError)
@@ -572,9 +599,11 @@ def run_flow(
     out: str | Path | None = None,
     seed: int = 0,
     trace_level: str = "off",
+    trace_sources: Sequence[str] | None = None,
+    vcd: bool = False,
 ) -> Flow:
     """Run the whole path; see the module doc. Raises FlowError or DesignError."""
-    _trace(trace_level)
+    _trace(trace_level, trace_sources)
     recipe_sets = dict(recipe_sets or {})
     recipe = Recipe.load(recipe_path).with_params(recipe_sets)
     # The design point, and with it the task list, is named after the recipe and its params
@@ -601,6 +630,7 @@ def run_flow(
         f = _from_graph(
             steps[-1], recipe.kernel, f"recipe {recipe.name}", name, point_name, out,
             platform_path, platform_sets, memory_path, memory_sets, seed, trace_level, times,
+            trace_sources, vcd,
         )  # fmt: skip
         f.recipe, f.steps = recipe, steps
         return f
@@ -620,11 +650,13 @@ def run_bound(
     out: str | Path | None = None,
     seed: int = 0,
     trace_level: str = "off",
+    trace_sources: Sequence[str] | None = None,
+    vcd: bool = False,
 ) -> Flow:
     """The path from a bound ``.snaxdfg`` on, without the sandbox; see the
     module doc. ``kernel`` names the kernel when the graph's ``name`` does not. Raises
     FlowError or DesignError."""
-    _trace(trace_level)
+    _trace(trace_level, trace_sources)
     graph_path = Path(graph_path)
     # As in run_flow: the design point keeps the graph's name, the folder carries every --set.
     point_name = name or bound_name(graph_path)
@@ -639,7 +671,7 @@ def run_bound(
         why = "--kernel" if kernel is not None else f"the name of {graph_path}; --kernel K names it"
         return _from_graph(
             graph_path, kernel, why, name, point_name, out, platform_path, platform_sets,
-            memory_path, memory_sets, seed, trace_level, times,
+            memory_path, memory_sets, seed, trace_level, times, trace_sources, vcd,
         )  # fmt: skip
 
     return _finish(stages, name, out, times)
@@ -671,6 +703,8 @@ def _from_graph(
     seed: int,
     trace_level: str,
     times: dict[str, float],
+    trace_sources: Sequence[str] | None = None,
+    vcd: bool = False,
 ) -> Flow:
     """The stages from a bound graph to the check, shared by ``run_flow`` and ``run_bound``;
     each stage's seconds go to ``times``. ``kernel`` None means the graph's name."""
@@ -730,17 +764,27 @@ def _from_graph(
                             f"{cwd_relative(out / 'sw.log')}")  # fmt: skip
         sha = hashlib.sha256(elf.read_bytes()).hexdigest()
 
-    # gvsoc: the run on snax_hjson with gen/'s cluster file
+    # gvsoc: the run on snax_hjson with gen/'s cluster file, its traces from the cluster
     run = out / "run"
     with _timed(times, "gvsoc"):
+        try:
+            cluster = load_cluster(gen / manifest.cluster, ddir / "design_point.json")
+            sources = sources_for(cluster, trace_level,
+                                  list(trace_sources) if trace_sources is not None else None)  # fmt: skip
+        except RunError as e:
+            raise FlowError(f"gvsoc: {e}") from None
+        opts = gvsoc_options(cluster, trace_level, sources, vcd, trace_sources is not None)
+        args = " ".join([f"--param hjson={(gen / manifest.cluster).resolve()}",
+                         *(f"'{a}'" for a in opts.args)])  # fmt: skip
         variables = {
-            "TARGET": TARGET, "DESIGN": name, "ELF": str(elf.resolve()),
-            "GVRUN_ARGS": f"--param hjson={(gen / manifest.cluster).resolve()}",
+            "TARGET": TARGET, "DESIGN": name, "ELF": str(elf.resolve()), "GVRUN_ARGS": args,
             "WORK_DIR": str((run / "work").resolve()),
-            "EVENTS": str((run / EVENTS_FILE).resolve()), "TRACES": TRACES[trace_level],
+            "EVENTS": str((run / EVENTS_FILE).resolve()), "TRACES": " ".join(opts.traces),
         }  # fmt: skip
         rc = run_gvsoc("run", variables, run / "stdout.txt", run / "stderr.txt")
         exit_code = run_exit_code(rc, (run / "stderr.txt").read_text())
+        if vcd:
+            _keep_vcd(run)
 
     # check: the program's own
     with _timed(times, "check"):
@@ -761,6 +805,8 @@ def _from_graph(
             "target": TARGET,
             "snax_gvsoc": {"commit": c.commit, "dirty": c.dirty},
             "trace_level": trace_level,
+            "trace_sources": sources,
+            "vcd": vcd,
         }
         (run / "run.json").write_text(to_json(record))
 
@@ -771,9 +817,8 @@ def _from_graph(
             raise FlowError(f"convert: no {cwd_relative(events)} after the run; see "
                             f"{cwd_relative(run / 'stderr.txt')}")  # fmt: skip
         try:
-            cluster = load_cluster(gen / manifest.cluster, ddir / "design_point.json")
             profile, trace = convert(read_events(events), cluster, tasks, cycles, trace_level,
-                                     check)  # fmt: skip
+                                     check, regions_of(point), sources)  # fmt: skip
         except RunError as e:
             raise FlowError(f"convert: {e}") from None
         write_run(run, profile, trace)
@@ -788,5 +833,5 @@ def _from_graph(
             raise FlowError(f"report: {e}") from None
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
-        checks_that_ran(), trace_level=trace_level, trace=trace,
+        checks_that_ran(), trace_level=trace_level, trace=trace, trace_sources=sources, vcd=vcd,
     )  # fmt: skip

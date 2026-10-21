@@ -124,7 +124,7 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | Design step | `design/` | bound graph, platform | design point | built |
 | SNAX-LOWER | `lower/` | design point, BRMs | task list, `main.c` | built (C program GEN2a, D135) |
 | SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | hjson, program | the program's check and window; counters and events in its own grammar (D137) | built (M16) |
-| Run | `run/` | SNAX-GVSoC's events, the hjson files, design point and task list | profile, trace (C§7) | FLOW3 round 1b |
+| Run | `run/` | SNAX-GVSoC's events, the hjson files, design point and task list | profile, trace (C§7); the traces and options a level and its sources turn on | FLOW3 rounds 1b, 2a |
 | Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, `data.h`, `main.c`, manifest | GEN3, LNK2a, GEN2a (D134, D135) |
 | HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
 | Flow | `flow/` | recipe or bound graph, platform | all of the above, checked | built |
@@ -297,14 +297,14 @@ classes per accelerator, streamer mover and core, firings and utilisation,
 CSR accesses and waits per core, grants, conflicts and stalls per bank and
 port, FIFO maxima, DMA traffic, and the functional check. SNAX-GVSoC writes
 its counters and events in its own grammar into one file, and `run/`
-converts them (D137). The trace is an event log at level `off`, `task` or
-`beat`.
+converts them (D137). The trace is an event log at level `task`, `beat`,
+`stall` or `finegrained` (none at `off`), and `--vcd` a gtkwave dump.
 
 **Viewers** (D55, `pixi run view DIR ...`, `pixi run view-dfg FILE ...`): a
 local server on 127.0.0.1 and a static page, stdlib only, offline. Run views
 (D57) of a flow run: the profile report; the schedule with a selected cycle
 kept in the URL hash and the cluster view at that cycle come back in FLOW3
-round 3, the memory tab (D96) and data movement (D97) in round 2. The DFG
+round 3, the memory tab (D96) and data movement (D97) in round 2b. The DFG
 viewer (D81) shows graphs side by side.
 
 **Reports** (D99, `pixi run report DIR`): `design.md` (what was built) and

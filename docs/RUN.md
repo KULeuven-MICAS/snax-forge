@@ -147,8 +147,10 @@ crossbar's ports and the banks:
      "elf": "sw/forge.elf",
      "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
      "target": "snax_hjson",
-     "snax_gvsoc": {"commit": "3f8a3e9d7dbaecc7b977c45c1785cf187fa307ac", "dirty": false},
-     "trace_level": "off"
+     "snax_gvsoc": {"commit": "fec4c2196808a18d3c7ba84c56fca11924a613b0", "dirty": false},
+     "trace_level": "off",
+     "trace_sources": [],
+     "vcd": false
     }
     {
      "total_cycles": 226,
@@ -200,7 +202,8 @@ read in `forge_check()`, which the core logs; `trace_meta.json` holds
      "level": "task",
      "total_cycles": 226,
      "boot": 2812,
-     "sources": ["acc", "acc_a", "acc_b", "acc_out", "dma", "core0", "core1"]
+     "sources": ["acc", "acc_a", "acc_b", "acc_out", "dma", "core0", "core1"],
+     "filter": []
     }
 
 The run report names each task from the task list:
@@ -237,7 +240,44 @@ prints; the schedule comes back in FLOW3 round 3):
     Pixi task (view in default): python -m snax_forge.viz out/flow/vecadd_task out/flow/vsum_task
     serving vecadd_task, vsum_task at http://127.0.0.1:8765/ (Ctrl-C to stop)
 
-`--trace beat` stops with a named error until FLOW3 round 2.
+### The beat levels
+
+Above `task` the levels add a line per beat (C§7, snax-gvsoc
+`docs/EVENTS.md`): `beat` every grant, DMA beat and burst, firing and push,
+`stall` every refused request and queue count, `finegrained` every
+instruction of the cores. Lines are linked by ids, not by order: a mover's
+beat `b`, a firing's `n`, a DMA beat's copy `id` and index `i`. By default
+the sources are the accelerator, its movers and the DMA (at `finegrained`
+every core too, for its instructions); `--trace stall:acc,acc_a` names
+them. The profile is the task level's, byte for byte:
+
+    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --trace stall
+
+    ...
+      check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
+      convert   run/events.log -> profile.json, trace.jsonl (343 events in the window; boot 2812; sources acc, acc_a, acc_b, acc_out, dma)
+      report    report/design.md, report/run.md
+
+Each event carries its raw words and what they mean: the region, the
+elements and their values; a stall names the port that won the bank:
+
+    grep -m1 '"k": "grant"' out/flow/vecadd_stall/run/trace.jsonl
+    grep -m1 '"k": "stall"' out/flow/vecadd_stall/run/trace.jsonl
+    grep -m1 '"k": "push"' out/flow/vecadd_stall/run/trace.jsonl
+
+    {"t": 121, "k": "grant", "src": "acc_a.lane0", "task": "add_acc_a", "op": "r", "mem": "l1", "addr": 268435456, "bank": 0, "row": 0, "value": 701, "back": 122, "b": 0, "region": "A", "elems": [0], "vals": [701]}
+    {"t": 121, "k": "stall", "src": "acc_b.lane0", "task": "add_acc_b", "addr": 268435968, "bank": 0, "row": 2, "by": "acc_a.lane0", "by_addr": 268435456, "b": 0, "region": "B", "elems": [0]}
+    {"t": 124, "k": "push", "src": "acc", "task": "add_acc", "n": 0, "first": 0, "last": 0, "value": [1451, 18446744073709551159, 179, 18446744073709551597], "vals": [1451, -457, 179, -19]}
+
+`--vcd` writes gtkwave's VCD of the same sources and its view into `run/`
+(`gtkwave out/flow/vecadd_stall/run/view.gtkw`, outside the container);
+snax-forge never reads them:
+
+    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --trace stall --vcd --name vecadd_stall_vcd
+
+    ...
+      convert   run/events.log -> profile.json, trace.jsonl (343 events in the window; boot 2812; sources acc, acc_a, acc_b, acc_out, dma); run/all.vcd, run/view.gtkw (gtkwave)
+      report    report/design.md, report/run.md
 
 ## 3. A second kernel: vsum
 
