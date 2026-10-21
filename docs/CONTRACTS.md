@@ -141,7 +141,8 @@ kind's own fields:
 <!-- snippet: snax_forge/run/trace.py -->
 ```
     task         start    task  (t = the cycle the start is taken; busy from t + 1)
-    task         done     task, then firings, first, last for an accelerator  (t = first idle)
+    task         done     task, cycles (the run's classes), then firings, first, last for an
+                          accelerator  (t = first idle)
     task         csr      pc, csr, block, op (r/w), value, held (a held write's cycles)
     task         poll     pc, csr, block, value, count, last  (t = the first read)
     task         barrier  last  (t = the barrier's read; last = the cycle it is released)
@@ -156,6 +157,7 @@ kind's own fields:
     beat         burst    task, id, op, mem, addr, size, back, region, elems  (a request to AXI)
     beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
     beat         push     task, n, first, last, value, vals
+    beat         class    task, mode  (src = acc or the mover; t = the first cycle in it)
     stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
                           port's)  (src = the port; one per cycle refused)
     stall        fifo     task, lane, count  (src = the mover; t = the first cycle it holds)
@@ -194,6 +196,16 @@ too: `value` is the bank word (`dma`: one per bank it covers), `bank` and
 arrives, known at the grant; there is no request or response event. The
 beat and stall lines only feed the trace: the profile stays the summary
 lines (D137).
+
+**Classes** (FLOW3 round 3). An accelerator's or a mover's `done` carries
+its run's `cycles`, the classes of its summary line by name (`busy`,
+`stall_in`, `stall_out`, `flush`; a mover's `busy`, `stall_xbar`,
+`stall_fifo`, `idle`), from `task` on. From `beat` on, a `class` event
+gives the first cycle of each run of one class, as SNAX-GVSoC classed the
+cycle for those counts (never derived here from the other lines): per
+component run they cover the cycles its counts add up over (a mover's past
+its `done`, up to the streamer's end), with no gap and no overlap, and the
+lengths of each class's runs add up to its count.
 
 **Sources.** `--trace LEVEL[:SOURCES]` names the C§7 sources whose beat,
 stall and instruction lines are written (`acc`, the movers, `dma`,

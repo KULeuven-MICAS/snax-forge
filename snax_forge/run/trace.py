@@ -7,7 +7,8 @@ main on the accelerator's core, and events outside ``[0, total_cycles)`` (up to 
 kind's own fields, by the lowest level that has it:
 
     task         start    task  (t = the cycle the start is taken; busy from t + 1)
-    task         done     task, then firings, first, last for an accelerator  (t = first idle)
+    task         done     task, cycles (the run's classes), then firings, first, last for an
+                          accelerator  (t = first idle)
     task         csr      pc, csr, block, op (r/w), value, held (a held write's cycles)
     task         poll     pc, csr, block, value, count, last  (t = the first read)
     task         barrier  last  (t = the barrier's read; last = the cycle it is released)
@@ -22,6 +23,7 @@ kind's own fields, by the lowest level that has it:
     beat         burst    task, id, op, mem, addr, size, back, region, elems  (a request to AXI)
     beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
     beat         push     task, n, first, last, value, vals
+    beat         class    task, mode  (src = acc or the mover; t = the first cycle in it)
     stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
                           port's)  (src = the port; one per cycle refused)
     stall        fifo     task, lane, count  (src = the mover; t = the first cycle it holds)
