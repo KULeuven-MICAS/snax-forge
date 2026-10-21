@@ -264,7 +264,7 @@ register blocks then sit on the interconnect, with no new core patch.
 The model is SNAX-GVSoC (section 5.6): the flow builds the generated
 program and runs it there (D136). SNAX-MODEL, the pure-Python cluster model
 the flow ran before, was removed in RET1 with its scenarios and contracts
-(C§2–C§6, C§8; D116); its text is in git history (tag `pre-ret1`).
+(C§2–C§6, C§8; D116); its text is in git history (commit `cad6619`).
 
 ### 5.8 SNAX link
 
