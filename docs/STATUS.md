@@ -106,9 +106,12 @@ a checked SNAX-GVSoC run (1a, D136, `docs/RUN.md`), SNAX-GVSoC's `summary`
 and `events` lines become the profile and the trace and the flow writes the
 reports again (1b, D137), and the GVSoC build's output is on the terminal
 (1c). RET1 removed SNAX-MODEL (merged). Round 2a, the beat- and stall-level
-events and the converter's beat part, is under way on `ry/flow3-4` (a
-streamer's `qmax` is now the RTL queue's count: vecadd's writer 1, not 2,
-snax-gvsoc `FLOW3.md`); then
+events and the converter's beat part, passed its acceptance on
+`ry/flow3-4` (tag `flow3-r2a`; CI's run waits for a dispatch): vecadd and
+vsum at every level with every invariant, the profile above `task` the task
+run's; a streamer's `qmax` is now the RTL queue's count (vecadd's writer 1,
+not 2); vecadd at `stall` writes 1.7 KB of `events.log` and 1.1 KB of
+`trace.jsonl` per output element (snax-gvsoc `FLOW3.md`); then
 2b, the memory and movement views, on `ry/flow3-5`; then round 3, then
 GEN1.
 
@@ -123,7 +126,9 @@ and 61 (the crossbar's ports named by owner). Closed in SG5: 3 (D123).
 Closed in SG6: 62 (D120). Closed in SG7: 58 (the cores, AXI and the DMA in
 the SNAX crossbar, D122). Closed in GEN3's plan: 64 (D129). Closed in
 LNK2a: 77 (the streamer lowered per design point, D134). Closed in
-FLOW3: 56 (D136), 57 and 60 (D137).
+FLOW3: 56 (D136), 57 and 60 (D137), and in its round 2a 23 and 25 (the
+values on beat events and the push event) and 39 (the beat trace's size,
+measured on SNAX-GVSoC).
 Next free number: 83.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
@@ -143,11 +148,6 @@ Next free number: 83.
     accelerators or the DMA. Decided with sub-word packing (PACK1).
     The Accumulator's tree zero-extends its lanes (`UInt.pad`), so PACK1
     makes it sign-extend before int8 lanes feed an int32 accumulator.
-23. Data values on beat-level events, so the cluster view can show them.
-    Decided in FLOW3 round 2, together with open item 25.
-25. No trace event for an accelerator's push into its output FIFO, so a push
-    and a pop in one cycle show no arrow in the cluster view. Decided in
-    FLOW3 round 2, together with open item 23.
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources instead of by
     hand. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel`
@@ -167,8 +167,6 @@ Next free number: 83.
 38. The DMA moves a container as contiguous whole beats (padded, D105);
     strided or 2-D transfers when a kernel needs them, with a check of the
     DMA's loop count.
-39. Beat-trace size, about 1.1 KB per vecadd element; a more compact format
-    when a run needs it. Measured again on SNAX-GVSoC (FLOW3).
 40. Switching runs in the viewer clears the selected cycle; kept as is until
     a comparison needs it.
 41. A report glossary, a "where the cycles went" ranking and a list of the

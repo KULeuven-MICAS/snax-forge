@@ -171,6 +171,9 @@ jobs:
       - name: Flow on vsum, trace task
         run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_alu.json --trace task
 
+      - name: Flow on vecadd, trace stall
+        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_alu.json --trace stall
+
       - name: Tests marked gvsoc
         run: pixi run -e ci pytest -q -m gvsoc
 
