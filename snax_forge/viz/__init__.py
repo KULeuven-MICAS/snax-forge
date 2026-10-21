@@ -5,9 +5,9 @@ DIR [DIR ...]`` serves the flow runs given (``out/flow/<name>/`` or its
 ``run/``, C§7) at http://127.0.0.1:8765/. LLMs read the profile and the
 reports (``snax_forge.report``, D99) instead.
 
-* api.py: loading runs and every answer of the API, as plain functions;
-* memory.py: the memory layout of a run, folded (D96);
-* movement.py: data movement read off a beat trace (D97);
+* api.py: loading runs and every answer of the API, as plain functions; the
+  memory and movement routes answer "FLOW3 round 2", which rebuilds both
+  views on SNAX-GVSoC's beat events (D96, D97);
 * server.py: the stdlib HTTP server around them;
 * static/: the viewer (index.html, plain JS modules, CSS; no build step and
   no external file, so it works offline).

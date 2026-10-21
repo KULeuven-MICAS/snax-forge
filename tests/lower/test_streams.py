@@ -8,43 +8,30 @@ import numpy as np
 import pytest
 
 from snax_forge.brm import Brm, load_brm, task_nest
-from snax_forge.lower import Layout, LayoutError, StreamError, arg_of, streamer_values
-from snax_forge.snax_model import ControllerConfig, L1Config, StreamerConfig
-from snax_forge.snax_model.scenario import (
-    ClusterConfig,
-    ComponentSpec,
-    RegisterMapSpec,
-    register_map_of,
-)
-from snax_forge.snax_model.streamer import address_stream
+from snax_forge.design import Platform, StreamerOptions
+from snax_forge.design.platform import L1Config
+from snax_forge.design.streamers import Streamer
+from snax_forge.lower import Layout, LayoutError, StreamError, streamer_values
+from snax_forge.lower.derive import addresses
 from tests.brm.helpers import affine_adder, vector_nest
+from tests.design.helpers import SNAX_ALU
 
-from .helpers import SCEN, cluster
+from .helpers import VECADD_TASKS, vecadd_point
 
 IMPL = "chisel_tiled_spatial"
 
 
-def _streamer(name, write, lanes, dims):
-    cfg = StreamerConfig(write=write, n_ports=lanes, fifo_depth=2, temporal_dims=dims)
-    return ComponentSpec(name, "streamer", cfg.to_dict())
+def _streamer(name, write, spatial_bounds, dims):
+    options = StreamerOptions(temporal_dims=dims, fifo_depth=2)
+    return Streamer(name, "x", "a", write, tuple(spatial_bounds), options)
 
 
-def streams_cluster() -> ClusterConfig:
-    """Streamers of every shape the cases need, on a 16-bank L1 of 64 rows."""
-    return ClusterConfig(
-        l1=L1Config(n_banks=16, rows=64),
-        components=[
-            ComponentSpec("xbar", "xbar", {}),
-            _streamer("r4", False, 4, 3),
-            _streamer("r22", False, 4, 3),
-            _streamer("r1", False, 1, 3),
-            _streamer("w4", True, 4, 3),
-            ComponentSpec("ctl", "controller", ControllerConfig().to_dict()),
-        ],
-        register_map=RegisterMapSpec(
-            blocks=["r4", "r22", "r1", "w4"], spatial_bounds={"r22": [2, 2]}
-        ),
-    )
+# Streamers of every shape the cases need, on a 16-bank L1 of 64 rows
+STREAMERS = {s.name: s for s in (
+    _streamer("r4", False, [4], 3), _streamer("r22", False, [2, 2], 3),
+    _streamer("r1", False, [1], 3), _streamer("w4", True, [4], 3), _streamer("r4d1", False, [4], 1),
+)}  # fmt: skip
+L1 = L1Config(n_banks=16, rows=64)
 
 
 def instance(nest_a=None, W=4):
@@ -56,28 +43,29 @@ def instance(nest_a=None, W=4):
 
 
 # =============================================================================
-# vecadd: the three streamer tasks of scenarios/vecadd/tasks.json
+# vecadd: the three streamer tasks of its task list on snax_alu
 # =============================================================================
 
 
 def test_vecadd_streamer_values():
-    """The library's elementwise_add: a, b and c of 64 int64 at L1 bytes 0, 576
-    and 1152, n = 16 beats of 4, give vecadd's four task values."""
-    tasks = json.loads((SCEN / "vecadd" / "tasks.json").read_text())["steps"]
+    """The library's elementwise_add: a, b and c of 64 int64 at the first three 512-byte blocks
+    of snax_alu's L1, n = 16 beats of 4, give vecadd's four task values."""
+    tasks = json.loads(VECADD_TASKS.read_text())["steps"]
     want = {s["task_name"]: s["values"] for s in tasks if s.get("type") in ("streamer", "accel")}
-    inst, cl = load_brm("elementwise_add").resolve(IMPL), cluster("alu4")
+    inst, l1 = load_brm("elementwise_add").resolve(IMPL), Platform.load(SNAX_ALU).l1
+    shell = vecadd_point().streamers
     task = {"n": 16}
     assert want.pop("add_acc") == task and list(task) == inst.brm.registers
     got = {
-        "add_acc_a": streamer_values(inst, "a", task, Layout(0, (64,), (8,)), cl, "acc_a"),
-        "add_acc_b": streamer_values(inst, "b", task, Layout(576, (64,), (8,)), cl, "acc_b"),
-        "add_acc_out": streamer_values(inst, "out", task, Layout(1152, (64,), (8,)), cl, "acc_out"),
-    }
+        f"add_{s}": streamer_values(inst, p, task, Layout(l1.base_addr + base, (64,), (8,)),
+                                    shell[s], l1)
+        for p, s, base in (("a", "acc_a", 0), ("b", "acc_b", 512), ("out", "acc_out", 1024))
+    }  # fmt: skip
     assert got == want
 
 
 # =============================================================================
-# The mapped registers reproduce the enumerated addresses
+# The mapped values reproduce the enumerated addresses
 # =============================================================================
 
 COLUMN_WALK = {
@@ -130,17 +118,17 @@ STREAMS = {
 @pytest.mark.parametrize("name", list(STREAMS))
 def test_registers_reproduce_the_enumeration(name):
     nest, W, n, layout, s = STREAMS[name]
-    inst, cl = instance(nest, W), streams_cluster()
-    values = streamer_values(inst, "a", {"n": n}, layout, cl, s)
-    regs = arg_of("streamer", values, register_map_of(cl)[s])
+    inst = instance(nest, W)
+    values = streamer_values(inst, "a", {"n": n}, layout, STREAMERS[s], L1)
     want = layout.address(task_nest(inst, "a", {"n": n}).indices())
-    assert np.array_equal(address_stream(regs), want)
+    got = addresses(values, list(STREAMERS[s].spatial_bounds))
+    assert np.array_equal(got.reshape(want.shape), want)
 
 
 def test_column_walk_values_by_hand():
     """Row-major 4x4: a column is 4 lanes 32 bytes apart, the next column 8 bytes on."""
     inst = instance(COLUMN_WALK)
-    v = streamer_values(inst, "a", {"n": 4}, Layout(1024, (4, 4), (32, 8)), streams_cluster(), "r4")
+    v = streamer_values(inst, "a", {"n": 4}, Layout(1024, (4, 4), (32, 8)), STREAMERS["r4"], L1)
     assert v == {
         "base": 1024,
         "temporal_bounds": [4],
@@ -154,20 +142,18 @@ def test_column_walk_values_by_hand():
 # =============================================================================
 
 
-def _values(nest=None, W=4, n=16, layout=None, s="r4", port="a", cl=None):
+def _values(nest=None, W=4, n=16, layout=None, s="r4", port="a"):
     return streamer_values(
-        instance(nest, W), port, {"n": n}, layout or Layout(0, (64,), (8,)),
-        cl or streams_cluster(), s,
-    )  # fmt: skip
+        instance(nest, W), port, {"n": n}, layout or Layout(0, (64,), (8,)), STREAMERS[s], L1
+    )
 
 
 ERRORS = [
-    ("not a streamer", {"s": "acc"}, "not a streamer"),
     ("reader for out", {"port": "out"}, "a reader cannot serve an 'out' port"),
     ("writer for in", {"s": "w4"}, "a writer cannot serve an 'in' port"),
     ("spatial bounds", {"s": "r22"}, r"spatial bounds \[4\] .* design-time \[2, 2\]"),
     ("temporal loops",
-     {"nest": REUSE, "n": 6, "layout": Layout(0, (8,), (8,)), "cl": cluster("alu4"), "s": "acc_a"},
+     {"nest": REUSE, "n": 6, "layout": Layout(0, (8,), (8,)), "s": "r4d1"},
      "2 temporal loops, the streamer has 1"),
     ("shape", {"layout": Layout(0, (32,), (8,))}, r"layout shape \[32\]"),
     ("unaligned base", {"layout": Layout(4, (64,), (8,))}, "multiples of the 8-byte word"),

@@ -77,7 +77,7 @@ def test_a_transient_lives_in_l1_only():
 # =============================================================================
 
 
-def test_pins_give_scenarios_vecadd():
+def test_pins_place_b_and_c():
     spec = MemorySpec().with_changes([("B.l1.base", 576), ("C.l1.base", 1152)])
     assert bases(plan(ctx(), spec)) == {
         "A": {"l2": 0, "l1": 0}, "B": {"l2": 512, "l1": 576}, "C": {"l2": 1024, "l1": 1152}

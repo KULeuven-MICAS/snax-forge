@@ -2,7 +2,7 @@
 
 It gives the golden output of a graph at any step of the flow: as imported,
 split, or with accelerated nodes, so SNAX-SANDBOX can check every transform
-against it, and SNAX-MODEL's output is compared with it.
+against it, and the goldens of a run's ``data.h`` come from it (gen/data.py).
 
     execute(graph, inputs) -> {container: array}
 
@@ -33,9 +33,8 @@ How a node runs is registered per kind (``register_executor``, principle
     which wraps as C does), so dot's sum map leaves ``sum(tmp0)`` in
     ``out[0]`` whatever ``out`` held before.
 ``accelerated``
-    one firing at a time, through the BRM's function, the same
-    ``fn(k, ins, state, params)`` SNAX-MODEL runs (the instance's
-    ``accel_config``). The ``temporal`` maps directly around the node are
+    one firing at a time, through the BRM's function, its registered
+    kind's ``fn(k, ins, state, params)`` (``brm.function_of``). The ``temporal`` maps directly around the node are
     its firing loop, outermost first, as the BRM nest orders them;
     the node's ``code`` must be the BRM's ``function.code`` (D82), and its
     ``replaced`` subtree is history, never run;
@@ -307,12 +306,12 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
 
 
 def _accel(node: Node, what: str) -> Any:
-    from snax_forge.brm import BrmError, load_brm
+    from snax_forge.brm import BrmError, function_of, load_brm
 
     a = node.attrs
     try:
         instance = load_brm(a["brm"]).resolve(a["implementation"], a["params"])
-        return instance, instance.accel_config()
+        return instance, function_of(instance)
     except BrmError as e:
         raise ExecutionError(f"{what}: {e}") from None
 
@@ -390,7 +389,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
         [(loop.var, len(loop.values)) for loop in inner],
         what,
     )
-    try:  # the model's own schedule (snax_model/accel.py): rates, then the ports due at k
+    try:  # the kind's schedule (brm/function.py): rates, then the ports due at k
         rate = cfg.rates(params)
     except ValueError as e:
         raise ExecutionError(f"{what}: {e}") from None
@@ -424,7 +423,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
 
 
 def _lanes(x: np.ndarray, port: Any, what: str) -> np.ndarray:
-    """A beat as the model sees it: one axis of ``lanes`` elements."""
+    """A beat as the kind takes it: one axis of ``lanes`` elements."""
     flat = np.asarray(x).reshape(-1)
     if flat.size != port.lanes:
         raise ExecutionError(f"{what}: port {port.name!r} has {port.lanes} lanes, got {flat.size}")

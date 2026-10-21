@@ -1,6 +1,6 @@
 # EX2: dot, its graph and two accumulators
 
-It walks the flow on SNAX-MODEL, which RET1 removes; `docs/RUN.md` is the
+It walks the flow on SNAX-MODEL, which RET1 removed; `docs/RUN.md` is the
 SNAX-GVSoC path.
 
 This walk-through takes the `dot` kernel on the `small16` platform from its

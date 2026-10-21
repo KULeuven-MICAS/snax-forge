@@ -7,10 +7,6 @@ and a port's list must hold a multiple of its lanes when they are constant.
 
 ``affine_adder`` and ``affine_reducer`` are the same BRMs with ``affine``
 nests: a vector walked W elements per beat.
-
-``test_fixed_latency`` is an accelerator kind registered here: the
-elementwise stub with latency 3 whatever it is given, so a BRM whose
-implementation declares another latency is caught.
 """
 
 from __future__ import annotations
@@ -20,8 +16,6 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import NOTATIONS, register_notation
-from snax_forge.snax_model.accel import elementwise_stub
-from snax_forge.snax_model.scenario import ACCEL_KINDS, register_accel
 
 
 def _test_list(nest: Any, port: Any, brm: Any) -> None:
@@ -36,16 +30,8 @@ if "test_list" not in NOTATIONS:
     register_notation("test_list", _test_list)
 
 
-def _fixed_latency(lanes: int = 1, latency: int = 0, ii: int = 1, **_: object):
-    return elementwise_stub(lanes=lanes, latency=3, ii=ii)
-
-
-if "test_fixed_latency" not in ACCEL_KINDS:
-    register_accel("test_fixed_latency", _fixed_latency)
-
-
 def adder() -> dict[str, Any]:
-    """A two-input adder shaped like the elementwise stub, every field written."""
+    """A two-input adder of the elementwise kind, every field written."""
     nest = list(range(8))
     return copy.deepcopy(
         {
@@ -86,7 +72,7 @@ def adder() -> dict[str, Any]:
 
 
 def reducer() -> dict[str, Any]:
-    """A reduce shaped like the reduce stub: output rate is the runtime param T."""
+    """A reduce of the reduce kind: output rate is the runtime param T."""
     return copy.deepcopy(
         {
             "name": "test_reduce",

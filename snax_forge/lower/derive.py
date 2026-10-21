@@ -1,4 +1,4 @@
-"""Design point -> task list (D45, D73, D89).
+"""Design point -> task list (D73, D89).
 
 The task list (tasks.py, CONTRACTS.md section 9) is derived from a design
 point and decides nothing. The accelerated nodes run in the graph's
@@ -21,8 +21,8 @@ and at the end one ``sync`` per non-transient container the graph writes,
 on the task that leaves it in its last memory (its store, or its writer
 without an L2). ``after`` holds the data dependences only: a reader waits
 for the task that last put its container in L1 (a load or a writer), a
-writer for the tasks that read or wrote its container since; ``lower_program``
-adds the waits a busy component needs. Every configure uses the platform's
+writer for the tasks that read or wrote its container since; the waits a
+busy component needs are placed later (waits.py). Every configure uses the platform's
 ``wait_mode``; so does every sync.
 
 **Streamer values from a memlet** (D73). With the firing loops ``v_k``
@@ -55,7 +55,6 @@ from snax_forge.design.streamers import Loop, firing_loops, instances
 from snax_forge.dfg import DfgError, Memlet, named_rates
 from snax_forge.dfg.subset import parse_dim
 
-from .cluster import cluster_file
 from .layout import Layout, dma_side
 from .streams import StreamError, streamer_values
 from .tasks import Configure, Start, Sync, TaskList
@@ -124,7 +123,6 @@ def task_list(point: DesignPoint) -> TaskList:
     g, pf, plan = point.graph, point.platform, point.memory
     symbols = {k: v for k, v in g.symbols.items() if v is not None}
     insts = instances(g)
-    cluster = cluster_file(point)
     mode = pf.wait_mode
     word = pf.l1.width_bits // 8
     beat = pf.l1.wide_bits // 8
@@ -200,7 +198,7 @@ def task_list(point: DesignPoint) -> TaskList:
                     f"{list(s.spatial_bounds)}"
                 )
             try:
-                want = streamer_values(inst, p, start, lay, cluster, s.name)
+                want = streamer_values(inst, p, start, lay, s, pf.l1)
             except StreamError as e:
                 raise LowerError(f"{what}.{p}: {e}") from None
             if not np.array_equal(addresses(values, sb), addresses(want, sb)):

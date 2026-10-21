@@ -1,27 +1,19 @@
-"""A BRM instance and its accelerator entry.
+"""A BRM instance: one BRM built one way (D68).
 
-An instance is one BRM built one way: an implementation and a value for
-every design param. It is what a design point holds and what SNAX-LOWER
-turns into the accelerator entry of the cluster file:
+An instance is an implementation and a value for every design param. It is
+what a design point holds, what SNAX-LOWER and the generator read, and what
+the reference executor runs (its function, function.py):
 
     inst = brm.resolve("chisel_tiled_spatial", {"W": 4})
-    inst.accel_entry()
-    # ("elementwise", {"lanes": 4, "n_inputs": 2, "op": "add", "latency": 0, "ii": 1})
-
-The entry's ``params`` are the function params resolved, in their order,
-then the implementation's ``latency`` and ``ii`` (the BRM's
-``initiation_interval``), and its ``drain`` when not 0. The model is not
-changed: the cluster file keeps naming the registered accelerator kind (D43,
-D51).
 
 Resolving checks the values: an unknown implementation or param, a runtime
-param given here (runtime params are the task's, CONTRACTS.md section 4), a
+param given here (runtime params are the task's, CONTRACTS.md section 10), a
 value of the wrong type, outside the param's ``values`` or outside the
 implementation's ``supports``, and a design param with neither a value nor a
-default are errors. It then builds the ``AccelConfig`` through the
-registered kind and checks it against the BRM: the same ports in the same
-order (names, directions, lanes, rates) and the same ``latency``, ``ii`` and ``drain``.
-An instance that exists is therefore consistent with the model.
+default are errors. It then checks a bound implementation against the
+generator's blocks (``gen.BLOCKS``): its ``block`` must be registered and the
+block's adapter must take the instance, so an instance that exists can be
+generated.
 """
 
 from __future__ import annotations
@@ -31,8 +23,6 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 from snax_forge import expr
-from snax_forge.snax_model.accel import AccelConfig
-from snax_forge.snax_model.scenario import ACCEL_KINDS
 
 from .brm import TYPES, BrmError
 from .notation import NOTATIONS
@@ -72,30 +62,6 @@ class Instance:
     def lanes(self, port: str) -> int:
         return self.value(self.brm.port(port).lanes)
 
-    def accel_entry(self) -> tuple[str, dict[str, Any]]:
-        """``(accel, params)`` of the accelerator entry in the cluster file."""
-        params = {k: self.value(v) for k, v in self.brm.function.params.items()}
-        params["latency"] = self.latency
-        params["ii"] = self.initiation_interval
-        if self.drain:  # written only when not 0, so the other entries are unchanged
-            params["drain"] = self.drain
-        return self.brm.function.accel, params
-
-    def accel_config(self) -> AccelConfig:
-        """The model's accelerator, built through the registered kind."""
-        kind, params = self.accel_entry()
-        if kind not in ACCEL_KINDS:
-            raise BrmError(
-                f"{self._what()}: accelerator kind {kind!r} not registered ({sorted(ACCEL_KINDS)})"
-            )
-        try:
-            return ACCEL_KINDS[kind](**params)
-        except (TypeError, ValueError) as e:
-            raise BrmError(f"{self._what()}: kind {kind!r} rejects {params}: {e}") from None
-
-    def _what(self) -> str:
-        return f"brm {self.brm.name!r} implementation {self.implementation!r}"
-
 
 def resolve(brm: Brm, implementation: str, params: Mapping[str, Any] | None = None) -> Instance:
     """The instance of ``brm`` built as ``implementation`` with ``params``; see the module doc."""
@@ -128,7 +94,7 @@ def resolve(brm: Brm, implementation: str, params: Mapping[str, Any] | None = No
     inst = Instance(brm, implementation, values)
     _check_values(inst, what)
     _check_dataflow(inst, what)
-    _check_model(inst, what)
+    _check_block(inst, what)
     return inst
 
 
@@ -163,20 +129,18 @@ def _check_values(inst: Instance, what: str) -> None:
     num(inst.impl.timing.drain, "drain", 0)
 
 
-def _check_model(inst: Instance, what: str) -> None:
-    """The AccelConfig the registered kind builds is the accelerator the BRM declares."""
-    cfg = inst.accel_config()
-    declared = [(p.name, p.direction, inst.lanes(p.name), p.rate) for p in inst.brm.interface.ports]
-    built = [(p.name, p.direction, p.lanes, p.rate) for p in cfg.ports]
-    if declared != built:
+def _check_block(inst: Instance, what: str) -> None:
+    """A bound implementation's block is one the generator builds and takes this instance."""
+    if inst.impl.binding is None:
+        return
+    from snax_forge.gen.blocks import BLOCKS, GenError  # gen imports brm
+
+    block = inst.impl.binding["block"]
+    if block not in BLOCKS:
         raise BrmError(
-            f"{what}: ports (name, direction, lanes, rate) differ from kind "
-            f"{inst.brm.function.accel!r}: declared {declared}, built {built}"
+            f"{what}: block {block!r} is not one the generator builds ({sorted(BLOCKS)})"
         )
-    timing = (inst.latency, inst.initiation_interval, inst.drain)
-    if (cfg.latency, cfg.ii, cfg.drain) != timing:
-        raise BrmError(
-            f"{what}: kind {inst.brm.function.accel!r} builds latency {cfg.latency}, ii {cfg.ii}, "
-            f"drain {cfg.drain}; the implementation declares latency {timing[0]}, "
-            f"initiation_interval {timing[1]}, drain {timing[2]}"
-        )
+    try:
+        BLOCKS[block](inst)
+    except GenError as e:
+        raise BrmError(f"{what}: block {block!r} refuses the instance: {e}") from None

@@ -21,17 +21,17 @@ order make a different BRM. Only ``source: chisel`` is accepted for now
 (open item 28), and ``binding`` may be null until it is generated
 (binding.py, D129: the Chisel block and how the BRM fills it).
 
-Which part serves which component: interface, function and the chosen
-implementation's timing give the accelerator entry of the cluster file
-(SNAX-MODEL); the dataflow gives the streamer values (SNAX-LOWER); the pattern
-serves SNAX-SANDBOX's ``bind`` and the binding the generators (the GVSoC
+Which part serves which component: interface and function give what the
+reference executor runs (function.py); the dataflow gives the streamer values
+(SNAX-LOWER); the pattern serves SNAX-SANDBOX's ``bind``; the chosen
+implementation's timing and binding serve the generators (the GVSoC
 accelerator, and the Chisel block once that generator is built).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
-and end up in the cluster file. ``runtime`` params are the accelerator's
-start parameters: exactly ``n`` and every named port rate (D25, CONTRACTS.md
-section 4). The register map is derived from them, and a port's interconnect
-ports from its lanes (D12, D36); neither is written in the BRM.
+and reach the design point and the accelerator hjson. ``runtime`` params are
+the accelerator's start parameters: exactly ``n`` and every named port rate
+(D68, CONTRACTS.md section 10). A port's streamer width comes from its lanes
+(D12); it is not written in the BRM.
 
 Value fields (lanes, rate, timing, function params) hold an int or an
 expression over params (snax_forge/expr.py, shared with the SNAX-DFG). Lanes,
@@ -41,8 +41,8 @@ the name of a runtime param.
 Every field is written by ``to_dict``; a missing required part is an error
 that names it, optional fields take their defaults, and unknown keys are
 errors (D26). A BRM is validated when it is made, whether from a file
-or in Python. Nothing here reads the model: ``resolve`` builds an instance,
-whose accelerator entry is checked against the model in instance.py.
+or in Python; ``resolve`` builds an instance, checked against the
+generator's blocks in instance.py.
 """
 
 from __future__ import annotations
@@ -192,8 +192,8 @@ class Function:
     of one firing, in the expression grammar (``"out = a + b"``). It is what
     SNAX-SANDBOX's ``bind`` compares a tasklet against and what an
     accelerated node carries, so a bound graph says what each accelerator
-    does without its BRM. The registered kind is how SNAX-MODEL and the
-    reference executor compute it; the two must agree (tests/brm). A
+    does without its BRM. The registered kind (function.py) is how the
+    reference executor computes it; the two must agree (tests/brm). A
     reduction says what one element contributes (``accumulate``'s ``out = a``);
     that it folds, and with which op, is its pattern's and kind's. A
     BRM with a null ``code`` cannot be bound.
@@ -254,14 +254,13 @@ class Pattern:
 
 @dataclass
 class Timing:
-    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in the cluster file) and ``drain``.
+    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in the accelerator hjson) and ``drain``.
 
     L: cycles from a firing to its push. II: the least number of cycles
     between two firings. ``drain`` (D103): the cycles, starting with the
     cycle an output is pushed, in which no input is taken (1 for a block
     whose ``in.ready`` is low while its result waits; the Chisel
-    Accumulator's is 0, D133). Optional,
-    default 0; always written here, and in the cluster file only when not 0.
+    Accumulator's is 0, D133). Optional, default 0; always written here.
     """
 
     latency: Value

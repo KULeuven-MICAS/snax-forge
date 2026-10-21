@@ -8,450 +8,68 @@
 > trace (D137), the task list (D64), the BRM (D68, D70), the SNAX-DFG (D77),
 > the recipe (D72), the platform (D84), the design checks (D85), the memory
 > plan and design point (D86, D87), and the generated hjson files (D134).
-> Sections 2–6 and 8 are SNAX-MODEL's (cluster configuration, streamer
-> registers, accelerator interface, control program, scenario, rules for a
-> new block kind; its own profile and trace are in the docstrings of
-> `snax_model/profile.py` and `trace.py`); they are kept as they are until
-> SNAX-MODEL is removed (RET1, D116), and SNAX-GVSoC's contracts replace them.
+> Sections 2–6 and 8 were SNAX-MODEL's and were retired with it in RET1
+> (D116); their numbers are kept, their text is in git history (tag
+> `pre-ret1`).
 >
 > These are dataclasses and plain JSON until the M6 freeze (D26), which brings
 > versioned schemas for them; the generated hjson files already have schemas
-> (section 16). Every value marked **default** is a declared platform default,
-> not a measurement.
+> (section 16).
 >
-> Every fenced block below is copied verbatim out of a checked-in file or a
-> file `scenarios/make.py` generates, and `tests/snax_model/test_contracts.py`
-> fails if one of them drifts. The `<!-- snippet: ... -->` line above each
-> block names its source.
+> Every fenced block below is copied verbatim out of a checked-in file, and
+> `tests/test_contracts.py` fails if one of them drifts. The
+> `<!-- snippet: ... -->` line above each block names its source.
 
 ---
 
 ## 1. Conventions
 
-**Byte addresses vs register indices.** Memory addresses — L1 and L2
-addresses, streamer `base`, all strides, DMA bases — are byte addresses.
-Control-program addresses are *register indices*, not bytes: register `n` of
-a block at base `b` is address `b + n` (section 5).
+**Byte addresses.** Every memory address (L1 and L2 addresses, streamer
+`base`, all strides, DMA bases) is a byte address.
 
-**The bank word is the unit of transfer** (D13). A word is
-`L1Config.width_bits` wide and holds `elems_per_word` elements of `dtype`.
-In v1 `elems_per_word` is 1: one element per word. The data model is ready
-for packing (storage is `[banks, rows, elems_per_word]`, writes take a
-per-element strobe), but nothing above the L1 has been exercised with
-`elems_per_word > 1`; treat anything else as unsupported until a kernel
-needs it.
+**The bank word is the unit of transfer** (D13). A word is the L1's
+`width_bits` wide and holds `elems_per_word` elements of `dtype`, one in v1:
+nothing has moved packed words yet, and the design check `connect.dtype`
+refuses them (open item 21).
 
-**Integers first** (D28). The default `dtype` is `int64`. Floating point
-works through the L1 and the streamers, but a reduction's result then
-depends on accumulation order, which the reference executor cannot match
-until a BRM defines that order (D28, M5).
+**Integers first** (D28). The default `dtype` is `int64`. A float
+reduction's result depends on accumulation order, which the reference
+executor matches only once a BRM defines that order.
 
-**One cycle** is one sweep of the phases `CONTROL, COMPUTE, REQUEST,
-ARBITRATE, MEMORY, RESPONSE` (D29). A cycle number in any artefact — a
-trace timestamp, a wait's `done`, a class interval — counts these sweeps
-from 0.
+The L1 of `platforms/snax_alu.json` (section 13):
 
-<!-- snippet: scenarios/clusters/alu4.json -->
+<!-- snippet: platforms/snax_alu.json -->
 ```json
  "l1": {
-  "n_banks": 16,
+  "n_banks": 32,
   "width_bits": 64,
-  "rows": 64,
-  "read_latency": 1,
+  "rows": 512,
   "dtype": "int64",
   "elems_per_word": 1,
-  "base_addr": 0,
+  "base_addr": 268435456,
   "wide_bits": 512
  },
 ```
 
 ## 2. Cluster configuration
 
-The cluster file (`ClusterConfig`) holds `l1`, optional `l2`, `components`
-and `register_map` (D41). Every config class writes all of its fields
-(`to_dict`), missing keys take the class default, and unknown keys are an
-error.
-
-**Who fills what** (D51, D53). The accelerator entries are the user's: an
-accelerator's `lanes`, rates, `latency`, `ii` and `op` (later its BRM).
-Everything else describes the SNAX platform, with the defaults below; they
-are design knobs for SNAX-DSE, not measurements. SNAX-LOWER derives the whole
-file (LOW1c, D88, `snax_forge/lower/cluster.py`): from a design point with
-`pixi run lower cluster out/design/<name>/design_point.json`, and for the
-checked-in clusters through the same builder, which `scenarios/make.py`
-writes. Components: `xbar`, `dma` (with an L2), then per accelerator in the
-order the graph first uses it its streamers in port order
-(`<instance>_<port>`, from the platform's shell, section 13) and the
-accelerator itself, then `ctl`; the register map lists all but the xbar and
-the controller, with spatial bounds only where they are not `[n_ports]`.
-
-**`components` is one ordered list** of every ticked component, the xbar and
-the controller included. The builder adds them in exactly that order, and
-that order fixes three things: the scheduler's tick order, the xbar's port
-order (which decides round-robin tie-breaks, D31) and the trace's source
-order (D39). The L1 and the L2 are shared elements, not components (D30,
-D34), so they have their own keys. There is one L1, one xbar and at most one
-L2; streamers and the DMA find them without naming them. The register map is
-built when the builder reaches the controller, so every block it lists must
-come before it.
-
-### L1Config (mem.py)
-
-| Field | Meaning | Default | Checked |
-|---|---|---|---|
-| `n_banks` | single-port banks, one access per bank per cycle | 32 | >= 1 |
-| `width_bits` | bits per bank word | 64 | multiple of 8 |
-| `rows` | words per bank | 512 | >= 1 |
-| `read_latency` | cycles from a read to its data | 1 | >= 0 |
-| `dtype` | element type, any NumPy dtype name | `int64` | fits the word |
-| `elems_per_word` | elements packed in one word | 1 | >= 1, fits the word |
-| `base_addr` | byte address of the first L1 word | 0 | — |
-| `wide_bits` | widest port allowed (the DMA's) | 512 | power-of-two multiple of `width_bits` |
-
-A port of `w` bits covers `w / width_bits` consecutive banks in an aligned
-group; `n_banks` must be a multiple of that group, checked when the port is
-added (D33). The address-to-bank map is word-interleaved (word `i` in bank
-`i % n_banks`, row `i // n_banks`); a different map can be passed in Python
-but cannot yet be named in a scenario (open item 18).
-
-### L2Config (l2.py)
-
-| Field | Meaning | Default | Checked |
-|---|---|---|---|
-| `size_bytes` | flat size | 1 MiB | positive multiple of `beat_bytes` |
-| `base_addr` | byte address of the first word | 0 | — |
-| `read_latency` | cycles from a read to the DMA's buffer | 1 **default** | >= 0 |
-| `beat_bits` | one access | 512 | multiple of `width_bits`; must equal `L1Config.wide_bits` |
-| `width_bits`, `dtype`, `elems_per_word` | as the L1, and must agree with it | 64, `int64`, 1 | fits the word |
-
-One read and one write per cycle (independent AXI channels); a second of
-either in one cycle is a bug in the DMA and raises.
-
-### StreamerConfig (streamer.py)
-
-| Field | Meaning | Default | Checked |
-|---|---|---|---|
-| `write` | false: reader (L1 -> FIFO); true: writer | false | — |
-| `n_ports` | interconnect ports = lanes per beat (D12) | 1 | >= 1 |
-| `temporal_dims` | temporal counters in hardware | 1 | >= 1 |
-| `fifo_depth` | data buffer per lane | 8 | >= 1 |
-| `addr_depth` | address buffer per port | 8 | >= 1 |
-| `prio` | static TCDM priority of every port | 0 | — |
-
-### DmaConfig (dma.py) — every value a declared **default** (D51)
-
-| Field | Meaning | Default | Checked |
-|---|---|---|---|
-| `startup` | start in `s` -> first source request in `s + startup` | 2 | >= 1 |
-| `beat_interval` | minimum cycles between beats on each side | 1 | >= 1 |
-| `l1_read_extra` | L1 source: extra cycles from read data to the buffer | 0 | >= 0 |
-| `done_latency` | last write -> its response | 0 | >= 0 |
-| `dims` | loops per side held in registers | 2 | >= 1 |
-
-### ControllerConfig (ctrl.py) — every cost a declared **default** (D51)
-
-| Field | Meaning | Default | Checked |
-|---|---|---|---|
-| `write_cost`, `read_cost` | cycles per `csr_write` / `csr_read` | 1, 1 | >= 1 |
-| `kind_write_cost`, `kind_read_cost` | the same per block kind, e.g. `{"dma": 2}` | `{}` | >= 1 |
-| `poll_interval` | `P`: cycles from one poll sample to the next | 1 | >= 1, >= the block's read cost |
-| `signal_latency` | `S`: done -> the controller continues | 1 | >= 1 |
-
-### Components
-
-A component entry is `name`, `kind` and `config`; an accelerator uses
-`accel`, `params` and `attach` instead. Kinds are registered
-(`register_component`, D43): `xbar`, `streamer`, `dma`, `accel`,
-`controller`. Accelerator kinds are registered separately
-(`register_accel`): `elementwise` and `reduce` are the two stubs, and
-`params` are the stub's own keyword arguments with `op` given by a
-registered name (`add`, `sub`, `mul`, `min`, `max`, `and`, `or`, `xor`).
-`drain` (section 4) is written only when it is not 0 (D103), so an entry
-without one reads as before.
-
-<!-- snippet: scenarios/clusters/alu4.json -->
-```json
-  {
-   "name": "dma",
-   "kind": "dma",
-   "config": {"startup": 2, "beat_interval": 1, "l1_read_extra": 0, "done_latency": 0, "dims": 2}
-  },
-```
-
-<!-- snippet: scenarios/clusters/red4.json -->
-```json
-  {
-   "name": "acc",
-   "kind": "accel",
-   "accel": "reduce",
-   "params": {"lanes": 4, "lanes_out": 1, "op": "add", "latency": 1, "ii": 1},
-   "attach": {"a": "acc_a", "out": "acc_out"}
-  },
-```
-
-`attach` names, per accelerator port, the streamer whose FIFO it uses: a
-reader's FIFO for an input, a writer's for an output. Every port must be
-attached exactly once, to a streamer listed before the accelerator, and the
-streamer's `n_ports` must equal the port's `lanes`.
-
-`register_map` gives `window` (registers per block, a power of two, default
-32), `blocks` (the blocks in address order; left out, every component except
-the xbar and the controller, in component order), `bases` (a block's window
-base, a multiple of `window`) and `spatial_bounds` (per streamer, design-time
-spatial bounds whose product is `n_ports`; default `(n_ports,)`).
+Retired in RET1 (SNAX-MODEL).
 
 ## 3. Streamer register layout
 
-This is what BRM2 is tested against.
-
-A streamer's configuration registers, in offset order after the three status
-registers (section 5):
-
-```
-base            byte address of element (0, 0)
-tbound[0..D-1]  temporal loop bounds,  D = StreamerConfig.temporal_dims
-tstride[0..D-1] temporal loop strides in bytes, signed
-sstride[0..S-1] spatial loop strides in bytes, signed, S = len(spatial_bounds)
-```
-
-They enumerate, with loop 0 innermost and spatial dimension 0 fastest:
-
-```
-for i[D-1] in range(tbound[D-1]):          # outermost
-  ...
-    for i[0] in range(tbound[0]):          # one beat per step
-      parfor j[0..S-1]:                    # one interconnect port per lane
-        lane  = j[0] + sbound[0] * (j[1] + sbound[1] * ...)
-        addr  = base + sum(i[t] * tstride[t]) + sum(j[k] * sstride[k])
-```
-
-One temporal step is one beat of `n_ports` elements, issued as one request
-per port. `n_beats` is the product of the temporal bounds; if any of them is
-0 the streamer never becomes busy (the AGU ignores the start), and a bound
-of 1 runs once. **Spatial bounds are design time**: they are part of
-`register_map.spatial_bounds`, not registers, as in the RTL, where only the
-spatial strides are CSRs. Unused temporal loops are padded with bound 1 and
-stride 0, which the model treats as fewer loops.
-
-A reader with `tstride[0] == 0` repeats instead of re-reading, as the RTL
-does (D69): it reads each group of `tbound[0]` beats once and hands that beat
-to the accelerator `tbound[0]` times, so the accelerator sees every beat of
-the enumeration above while L1 sees one read per group. A stride of 0 on any
-other loop, or on a writer, is an ordinary stride.
-
-**Where the values come from** (D73, D89). SNAX-LOWER derives a
-streamer's values from the memlet on the accelerated node's connector,
-through the container's L1 layout in the memory plan (base, shape and one
-byte stride per dimension, section 15): one temporal loop per firing loop
-around the node, innermost first, and one spatial loop per range dimension
-of the memlet, fastest first, whose bounds must be the streamer's
-design-time spatial bounds (so their product is `n_ports`); a loop's byte
-stride is its index strides dotted with the layout's, and `base` is the
-layout's address of the memlet's first element (`lower/derive.py`). The
-BRM's per-port nest (D70) then checks the order: mapped through the same
-layout (`lower/streams.py`), it must visit the same addresses beat by beat.
-The first nest notation is `affine`; later ones are open item 1, and this
-register side does not change with them.
-
-<!-- snippet: scenarios/vecadd/scenario.json -->
-```json
-  {"op": "csr_write", "reg": "acc_a.base", "value": 0},
-  {"op": "csr_write", "reg": "acc_a.tbound[0]", "value": 16},
-  {"op": "csr_write", "reg": "acc_a.tstride[0]", "value": 32},
-  {"op": "csr_write", "reg": "acc_a.sstride[0]", "value": 8},
-```
-
-16 beats of 4 words: 4 lanes 8 bytes apart (`sstride[0]`), one beat every 32
-bytes (`tstride[0]`), from L1 byte 0.
+Retired in RET1 (SNAX-MODEL).
 
 ## 4. Accelerator interface
 
-This is what BRM3 and BRM4 are accepted against: plugged into the model, a
-BRM must give the same cycles and the same data as the matching stub.
-
-An accelerator is a set of ports, two timing numbers and a Python function:
-
-| Part | Meaning |
-|---|---|
-| port `name` | matches an `attach` key and a function argument |
-| port `direction` | `in` (popped from a reader's FIFO) or `out` (pushed into a writer's) |
-| port `lanes` | elements per beat; equals the attached streamer's `n_ports` |
-| port `rate` | the port moves one beat every `rate` firings (D25); an int, or the name of a start parameter |
-| `latency` (`L`) | pipeline stages between a firing and its push; 0 = same cycle |
-| `ii` | minimum cycles between firings |
-| `drain` | cycles, starting with the cycle an output is pushed, in which no input is taken; 0 by default (D103) |
-| `fn` | the Python implementation, called once per firing |
-
-A *firing* is one step of the datapath. Input port with rate `r` is popped at
-firings `0, r, 2r, ...`; output port with rate `r` is pushed at firings
-`r-1, 2r-1, ...`. So an elementwise block has rate 1 everywhere, and a
-reduction has input rate 1 and output rate `T`. Ports are named `a`, `b`,
-... for inputs and `out` for the output (section 10): the reduce stub's are
-`a` and `out`.
-
-```python
-fn(k, ins, state, params) -> outs
-```
-
-`k` is the firing index in the task; `ins` maps every input port due at `k`
-to its beat (a NumPy array, first axis = lanes); `state` is a dict that lives
-for one task (the reduction's partial sum) and changes only when a firing
-happens; `params` are the start parameters. `outs` must hold exactly the
-output ports due at `k`, each with `lanes` elements.
-
-Registers: `n` (firings in the task), then every port rate that is named
-rather than an int, in port order without duplicates. A reduce stub
-therefore has `n` and `T`; `n` must be a multiple of every resolved rate.
-
-<!-- snippet: scenarios/reduce/scenario.json -->
-```json
-  {"op": "csr_write", "reg": "acc.n", "value": 16},
-  {"op": "csr_write", "reg": "acc.T", "value": 4},
-```
-
-Timing, as the model runs it (D35): a start in cycle `s` makes the block busy
-from `s+1`; a firing in cycle `t` is pushed in `t + L`; the output FIFO is
-checked at push time, and if the head cannot be pushed the whole pipeline
-freezes for that cycle (no firing, no pop); `II` counts wall-clock cycles, so
-a freeze longer than `II` does not delay the next firing; with a `drain` of
-`d`, no input is taken in the `d` cycles starting with a push, so
-back-to-back sums of a block with `d` = 1 take `T + 1` cycles each (the
-Chisel Accumulator's `d` is 0, D133); `done_cycle` is the cycle after the last push. An `AccelConfig` is not serialisable — it holds
-`fn` — which is why a cluster file names a registered kind and its params
-(D43).
+Retired in RET1 (SNAX-MODEL).
 
 ## 5. Control program
 
-This is LOW1b's target. The program is a plain list of commands, one command
-per entry, as the controller runs them; nothing expands inside the model
-(principle 4, D42).
-
-| Command | Fields | Effect |
-|---|---|---|
-| `csr_write` | `addr` or `reg`, `value` | writes a configuration register, or launches the block when it is `start` |
-| `csr_read` | `addr` or `reg` | samples committed state into the run's read log |
-| `wait` | `block`, `mode` (`poll` or `signal`) | blocks until the block is done |
-
-A register is named either by raw index (`"addr": 4`) or by name
-(`"reg": "dma.src_base"`), exactly one of the two, and a command keeps the
-form it was written in through a round trip.
-
-**Every block has the same window** of `window` registers (default 32, one
-word each, D36):
-
-```
-offset 0   start        write-only; writing 1 launches the block
-offset 1   busy         read-only; the component's committed busy
-offset 2   busy_cycles  read-only; busy cycles of the current or last task
-offset 3.. configuration registers, read/write, listed by the block's adapter
-```
-
-Configuration registers are **buffered**: they are shadow values, and a start
-copies them into the block's start argument, so the next task can be
-programmed while the block runs. They reset to 0. A start while the block is
-busy is an error — the program must wait first. `busy_cycles` read in cycle
-`r` after a start that landed in `s` is `min(r, D) - s - 1`, with `D` the
-block's `done_cycle`; a task with no work reads 0.
-
-**Timing** (D37, every cost a declared **default**, D51). The program starts
-in cycle 0 and runs one command at a time. A command beginning in `t` with
-cost `c` covers `[t, t + c - 1]` and takes effect in its last cycle; the next
-begins in `t + c`. A start landing in `w` makes the block busy from `w + 1`.
-With `c_r` the block's read cost, `P` the poll interval, `S` the signal
-latency and `D` the block's `done_cycle`:
-
-```
-poll:    sample i is taken in cycle t + i*P + c_r - 1, and the wait ends on
-         the first sample that reads busy = 0, so its length is
-             W_poll   = i* * P + c_r ,   i* = max(0, ceil((D - t - c_r + 1) / P))
-signal:  the wait covers [t, max(t, D) + S - 1], so its length is
-             W_signal = max(t, D) - t + S
-```
-
-Both modes give the same data; only the cycle count differs. A wait may only
-follow a start of its block in program order (checked when the controller is
-built), so `done_cycle` always belongs to the task the wait is for.
-
-<!-- snippet: scenarios/reduce/scenario.json -->
-```json
-  {"op": "csr_write", "reg": "acc_a.start", "value": 1},
-  {"op": "csr_write", "reg": "acc_out.start", "value": 1},
-  {"op": "csr_write", "reg": "acc.start", "value": 1},
-  {"op": "wait", "block": "acc_out", "mode": "signal"},
-  {"op": "wait", "block": "acc", "mode": "poll"},
-  {"op": "csr_read", "reg": "acc.busy_cycles"}
-```
-
-Mapping these register blocks onto the real SNAX interfaces (ReqRspManager
-CSRs, iDMA instructions) is SNAX-LOWER's C backend, by register *name*
-(D36, open item 9). `RegisterMap.to_dict` lists every register with its
-address, and every run writes that listing into `run.json`.
+Retired in RET1 (SNAX-MODEL).
 
 ## 6. Scenario and memory
 
-A scenario is the input of one run and nothing else: expected results live in
-the tests (D41). Two files, because one cluster serves many programs:
-
-* the **cluster file** (section 2), shared;
-* the **scenario file**: `name`, optional `max_cycles`, `cluster` (a path
-  relative to the scenario file, or the cluster object inline), `memory`,
-  `regions` and `program`.
-
-<!-- snippet: scenarios/vecadd/scenario.json -->
-```json
-{
- "name": "vecadd",
- "max_cycles": 5000,
- "cluster": "../clusters/alu4.json",
- "memory": [{"mem": "l2", "addr": 0, "npy": "a.npy"}, {"mem": "l2", "addr": 512, "npy": "b.npy"}],
-```
-
-`memory` is a list of fills applied in order before the run. Each has `mem`
-(`"l1"` or `"l2"`), a byte `addr` (the L1 one includes `base_addr`) and
-exactly one source:
-
-| Source | Meaning |
-|---|---|
-| `data` | inline words, `[n]` or `[n, elems_per_word]` |
-| `npy` | a `.npy` file, path relative to the scenario file |
-| `random` | `seed`, `n`, `low`, `high`: `default_rng(seed).integers(low, high, n)`, integers only (D28) |
-
-`regions` names the data the scenario places (D95), for the views; the model
-does not use it, and a run is the same without it. Each region has a `name`
-(the container), `mem` (`"l1"` or `"l2"`), a byte `base`, a `shape` and one
-byte stride per dimension (`strides`): element `i` is at
-`base + sum(i[d] * strides[d])`, the form of a memory-plan layout (section
-15). The flow writes one per container and memory from the memory plan, in
-its order; vecadd and vecadd_conflict declare theirs by hand, the other
-scenarios have none. The list is always written, empty or not, and may be left
-out of a file.
-
-<!-- snippet: scenarios/vecadd/scenario.json -->
-```json
- "regions": [
-  {"name": "A", "mem": "l2", "base": 0, "shape": [64], "strides": [8]},
-  {"name": "A", "mem": "l1", "base": 0, "shape": [64], "strides": [8]},
-  {"name": "B", "mem": "l2", "base": 512, "shape": [64], "strides": [8]},
-  {"name": "B", "mem": "l1", "base": 576, "shape": [64], "strides": [8]},
-  {"name": "C", "mem": "l2", "base": 1024, "shape": [64], "strides": [8]},
-  {"name": "C", "mem": "l1", "base": 1152, "shape": [64], "strides": [8]}
- ],
-```
-
-When a scenario is made, each region must lie inside its memory, with its base
-and strides on element boundaries, and a name may appear once per memory
-(`RegionError`, a `ScenarioError`). Regions may overlap, since a buffer can
-serve two containers. The model does not check that a region matches a fill
-or a program.
-
-The run writes into a directory (D44, D50): `run.json` (scenario name,
-cluster file, trace level, total cycles, the cluster configuration, the
-scenario's regions, the register map, the `csr_read` values),
-`profile.json`, `trace.jsonl` and
-`trace_meta.json` when traced, `l1.npy` and `l2.npy` (flat words
-`[n_words, elems_per_word]` in address order). Files a run does not produce
-are removed, so the directory always matches its `run.json`. The bytes are
-identical on every run and with skipping on and off.
+Retired in RET1 (SNAX-MODEL).
 
 ## 7. Profile and trace
 
@@ -461,7 +79,7 @@ run directory (`out/flow/<name>/run/`, `run/outputs.py`) holds `run.json`
 `trace.jsonl` and `trace_meta.json`. SNAX-GVSoC writes its events in its
 own grammar (snax-gvsoc `docs/EVENTS.md`) into `run/events.log`; the
 converter (`run/convert.py`) renames them into what follows and never
-recounts (D38).
+recounts (D137).
 
 **The window.** `total_cycles` is the program's: its `mcycle` read in
 `forge_check()` minus its `mcycle` read in main, the `forge cycles:` line.
@@ -537,80 +155,38 @@ kind's own fields:
 DMA copy's `dir` (`l2_to_l1`, `l1_to_l2`) comes from its addresses and the
 cluster's L1 range, and copies are matched to the task list's `load_<C>` and
 `store_<C>` tasks in issue order. `trace_meta.json` holds the `level`,
-`total_cycles`, the `boot` shift and the `sources`.
+`total_cycles`, the `boot` shift and the `sources`. The levels are `off`,
+`task`, then `beat` and `finegrained` with FLOW3 round 2; a VCD is only a
+gtkwave dump, never read here.
 
 ## 8. Rules for a new block kind
 
-A component that sleeps wrongly does not crash — it reports wrong
-statistics. These are the rules that keep skipping honest (D29, D40, D47);
-`tests/snax_model/test_gaps.py` checks them.
-
-**R1. `next_wake` is a pure answer about committed state.** It is asked only
-after a commit, it may be asked several times in the same cycle, and other
-components ask it too (the xbar asks its port owners, a reader asks its
-FIFO's consumer). Every call in a cycle must give the same answer. The only
-state it may change is a memo keyed by that cycle — today the accelerator's
-recorded gap class.
-
-**R2. A shared element changes only in a cycle in which the component
-changing it is ticked.** That is what makes it safe for a component to
-answer `None` while waiting for someone else: the scheduler asks *every*
-component again after every simulated cycle, so a change that happened is
-seen before the next one can. A new shared element (a FIFO, a memory, a
-queue) must keep this property, or a sleeping reader of it will miss a
-change.
-
-**R3. Wake at every cycle in which your own cycle class can change, and
-classify a whole gap with the class of its first cycle.** Two ways are in
-use: recompute the class from committed state in `on_gap` (streamer, DMA),
-or record it when the gap begins and end the gap with a tick as soon as it
-would change (accelerator). Changes driven by time alone — `II`,
-`beat_interval`, a startup delay — are wakes too.
-
-**R4. The class runs cover `[0, total)` exactly.** `build_profile` checks
-this for every classified component on every run and raises otherwise;
-`ClassLog` additionally checks that the runs are contiguous while a trace
-records them.
-
-**R5. A start before the run (`start(arg, cycle=None)`) is setup only.** It
-behaves as a start in cycle -1 and is not traced (open item 14). Do not use
-it once a trace is bound.
-
-A block kind also needs a register adapter (`register_adapter`, D36): it
-lists the configuration registers in offset order from the component's own
-config, decodes their values into the component's start argument, and
-encodes an argument back. The register *names* are the contract (section 5),
-so pick them as SNAX-LOWER's C backend will want to read them. To appear in
-task lists (section 9) it also needs its `values` form, registered under the
-adapter's kind with `register_values` in `snax_forge/lower/values.py`. What
-must hold for it to fit a platform and a graph is a design check,
-registered with `register_check` (section 14).
+Retired in RET1 (SNAX-MODEL).
 
 ## 9. Task list
 
 SNAX-LOWER's ordered list of tasks (D64): which component runs which task
 with which values, where each task is configured and started, and what it
-waits for. It is the hand-off to every backend: `lower_program(tasks,
-cluster)` turns it into SNAX-MODEL's program of section 5, and `main_c`
-(`lower/c.py`, D135) into C on snRuntime, the program SNAX-GVSoC runs
-(section 16). It is derived from a design point (D89,
-`snax_forge/lower/derive.py`, `pixi run lower tasks DESIGN_POINT`; the rules
-below) or written by hand, as every scenario's `tasks.json` is (D65, D67).
+waits for. It is the hand-off to the backend: `main_c` (`lower/c.py`, D135)
+turns it into C on snRuntime, the program SNAX-GVSoC runs (section 16). It
+is derived from a design point (D89, `snax_forge/lower/derive.py`, `pixi run
+lower tasks DESIGN_POINT`; the rules below) or written by hand.
 
 A task list is `name` and `steps`, each step with an `op`:
 
 | `op` | Fields | Becomes |
 |---|---|---|
-| `configure` | `task_name`, `type`, `component`, `after`, `wait_mode`, `values` | every configuration register of the component, written here |
+| `configure` | `task_name`, `type`, `component`, `after`, `wait_mode`, `values` | the component's configuration, written here |
 | `start` | `tasks` | the waits these tasks need, then their `start` writes in list order |
-| `sync` | `task`, `mode` | one `wait` on the task's component, always emitted |
-| `read` | `reg` | one `csr_read` of `block.register` |
+| `sync` | `task`, `mode` | one wait on the task's component, always placed |
+| `read` | `reg` | a read of `block.register`; the C backend has no form for it yet (`c.read`) |
 
-`type` is the component's adapter kind and says how `values` are read:
+`type` is the component's type and says how `values` are read:
 
 ```
 streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes);
-          spatial bounds are design-time and come from the cluster file
+          spatial bounds are design-time and come from the design point's
+          streamers
 dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with base,
           bounds and strides (bytes, one wide beat per step)
 accel     its start parameters by name: n, then any named rate (e.g. T)
@@ -621,10 +197,9 @@ serves, `<instance>_<port>` (`acc_a`, `acc_out`). A task is
 `<node>_<component>` (`add_acc_a`, `add_acc`), a DMA task
 `load_<container>` or `store_<container>` (`load_A`, `store_C`), with node
 and container names as the imported graph has them, and `_<k>` appended for
-tile `k` (`add_acc_a_2`). Scenarios without a kernel (fmul, reduce, dma)
-name their containers `A`, `B`, `C` as vecadd does.
+tile `k` (`add_acc_a_2`).
 
-Only the loops a task uses are given; the adapter pads the rest with bound
+Only the loops a task uses are given; the backend pads the rest with bound
 1 and stride 0. `after` names earlier tasks this one needs finished before
 it starts: data it reads, and a buffer it overwrites. `wait_mode` (`poll`
 or `signal`) is used whenever the lowering waits for this task; a `sync`
@@ -634,15 +209,23 @@ gives its own `mode`. Missing `after` and `wait_mode` default to `[]` and
 **Structural rules**, checked when a task list is made: task names are
 unique; `after`, `start` and `sync` refer to tasks configured earlier; a
 component has at most one configured task that has not started, because its
-registers are buffered (section 5); a task starts once, after its `after`
-tasks have started; every configured task is started.
+registers are buffered; a task starts once, after its `after` tasks have
+started; every configured task is started.
 
-**Waits.** Before a `start`, the lowering adds one wait per component, for
-every `after` task and every listed component whose latest task is not yet
-covered, leaves out a wait that another of these waits covers (D64), and
-orders the rest by when the task each one ends on was started. A wait is
-on a component, so it ends on that component's latest task and covers every earlier one. A wait on a writer streamer also covers
-the accelerator attached to it and that accelerator's reader streamers when
+**Values** are checked against the design point before the backend runs
+(`check_values`, `lower/tasks.py`; `c.tasks`): the component exists and has
+the task's type, the values have exactly the type's keys, a streamer's loops
+fit it (no more temporal loops than its `temporal_dims`, one spatial stride
+per spatial bound), a DMA's direction is `l2_to_l1` or `l1_to_l2`, and every
+bound is at least 1.
+
+**Waits** (`placed_waits`, `lower/waits.py`). Before a `start`, the lowering
+places one wait per component, for every `after` task and every listed
+component whose latest task is not yet covered, leaves out a wait that
+another of these waits covers (D64), and orders the rest by when the task
+each one ends on was started. A wait is on a component, so it ends on that
+component's latest task and covers every earlier one. A wait on a writer
+streamer also covers the accelerator attached to it and that accelerator's reader streamers when
 the same start launched them: their data flows into the writer, so it
 finishes last. Nothing else is added; where configures, starts and syncs
 go, and so how programming overlaps running blocks, is the task list's.
@@ -672,14 +255,15 @@ sum_d (c_d + sum_k a_dk b_k) * stride_d; temporal loop k (innermost first):
 bound `count_k`, stride sum_d a_dk s_k stride_d; one spatial loop per range
 dimension (the last first): its length and step * stride_d. The spatial
 bounds must be the streamer's and the addresses must be those the BRM's
-nest gives through the same layout. vecadd's design point with B and C
-pinned to 576 and 1152 gives `scenarios/vecadd/tasks.json` exactly.
+nest gives through the same layout (`lower/streams.py`). vecadd's design
+point on `platforms/snax_alu.json` gives `tests/run/fixtures/vecadd/tasks.json`
+exactly.
 
 The end of `vecadd`'s task list: the adder's four tasks are configured one
 by one (the last one is shown), started together, and the store waits for
 the writer.
 
-<!-- snippet: scenarios/vecadd/tasks.json -->
+<!-- snippet: tests/run/fixtures/vecadd/tasks.json -->
 ```json
   {
    "op": "configure",
@@ -700,19 +284,13 @@ the writer.
    "wait_mode": "poll",
    "values": {
     "direction": "l1_to_l2",
-    "src": {"base": 1152, "bounds": [8], "strides": [64]},
-    "dst": {"base": 1024, "bounds": [8], "strides": [64]}
+    "src": {"base": 268436480, "bounds": [8], "strides": [64]},
+    "dst": {"base": 2147484672, "bounds": [8], "strides": [64]}
    }
   },
   {"op": "start", "tasks": ["store_C"]},
   {"op": "sync", "task": "store_C", "mode": "poll"}
 ```
-
-From the first of the adder's configures on, this lowers to the 13
-configuration writes of `acc_a`, `acc_b`, `acc_out` and `acc`, `wait dma` (for
-the loads in `add_acc_a`'s and `add_acc_b`'s `after`), the four starts, the
-DMA's 11 configuration writes, `wait acc_out`, the DMA's start and a final `wait dma`: the
-last 32 of the 57 commands of `scenarios/vecadd/scenario.json`.
 
 ## 10. Block runtime model
 
@@ -726,10 +304,10 @@ name.
 | Part | Holds | Read by |
 |---|---|---|
 | `interface` | params (`design` / `runtime`) and ports (name, direction, lanes, rate, dtype) | everything below |
-| `function` | a registered accelerator kind, its factory params without timing, and `code`: what one lane computes (D82) | the accelerator entry; `bind` and the accelerated node (`code`) |
+| `function` | an accelerator kind registered in `brm/function.py`, its factory params without timing, and `code`: what one lane computes (D82) | the reference executor; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null, or `block`, `args`, `control`, `csrs`, `wait`, D129) | the accelerator entry, the GVSoC accelerator (GEN3), the HW generator (GEN1) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null, or `block`, `args`, `control`, `csrs`, `wait`, D129) | the GVSoC accelerator (GEN3), the HW generator (GEN1) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source
@@ -740,27 +318,35 @@ are implementations of one BRM.
 underscore (`_in`) are rejected. The convention is `a`, `b`, ... for inputs
 and `out` for the output (D103).
 
+**Rates** (D68). A port moves one beat every `rate` firings, an int or the
+name of a runtime param: an input of rate `r` is taken at firings `0, r, 2r,
+...`, an output of rate `r` is given at firings `r-1, 2r-1, ...`. An
+elementwise block has rate 1 everywhere, a reduction input rate 1 and output
+rate `T`.
+
 **Timing** is three numbers, each an int or an expression over design
 params: `latency` (L, a firing to its push), `initiation_interval` (II, the
 least cycles between firings) and `drain` (the cycles, starting with a push,
 in which no input is taken; optional, 0 by default). Only L delays a result;
 II and the drain limit how often inputs are taken.
 
-**Params.** A `design` param is fixed per instance and ends up in the
-cluster file (lanes, the op); its `default` is used when the design point
-gives none, and `values` limits what any implementation may take. An
-implementation's `supports` limits it further for that RTL. A `runtime`
-param is a start parameter of the accelerator: the runtime params are
-exactly `n` and every named port rate, and they are the registers of
-section 4 and the accelerator task's `values` in section 9. A value field
+**Params.** A `design` param is fixed per instance (lanes, the op) and
+reaches the design point and the accelerator hjson (section 16); its
+`default` is used when the design point gives none, and `values` limits what
+any implementation may take. An implementation's `supports` limits it
+further for that RTL. A `runtime` param is a start parameter of the
+accelerator, given per task: the runtime params are exactly `n` (the
+firings in the task) and every named port rate, in port order without
+duplicates, and they are the accelerator task's `values` in section 9
+(`accumulate`'s `n` and `T`); `n` must be a multiple of every resolved rate.
+A value field
 holds an int or an expression over params (`+ - * //`); a fixed string is
 a design param with one allowed value.
 
-**The accelerator entry** of an instance (`brm.resolve(implementation,
-params)`, then `accel_entry()`) is the function's params resolved, in their
-order, then the implementation's `latency` and `ii` (its
-`initiation_interval`), and its `drain` when not 0. The first library BRM resolves to exactly the
-accelerator of `scenarios/clusters/alu4.json`:
+**The function** names an accelerator kind registered in `brm/function.py`
+(`elementwise`, `reduce`, with an op by name) and the kind's params over the
+design params; the reference executor runs an accelerated node through it,
+firing by firing (D79):
 
 <!-- snippet: snax_forge/brm/library/elementwise_add.json -->
 ```json
@@ -826,9 +412,9 @@ start following them: one for `ElementwiseTiledSpatial` (`loopCount`), two
 for the Accumulator (`loopCount` = `n`, then `len` = `T`). A fixed op gives no `opSel`
 field. Expressions are stored canonical.
 
-`resolve` builds the `AccelConfig` through the kind and rejects a BRM whose
-declared ports (name, direction, lanes, rate, in order) or timing differ
-from it.
+`resolve(implementation, params)` makes an instance and checks a bound
+implementation against the generator's blocks (`gen.BLOCKS`): its `block`
+must be registered and the block's adapter must take the instance.
 
 **The affine nest** of a port lists the operand's `shape`, an `offset` and
 `loops`, outermost first; each loop has a `bound`, one stride per operand
@@ -837,8 +423,9 @@ dimension and a `spatial` flag, and the element of a step is
 them is one beat, the last one innermost), spatial loops last (the lanes,
 the last one fastest). Spatial bounds use design params only and multiply
 to the port's lanes; per task the nest gives n / rate beats inside the
-shape. The nest says nothing about addresses: section 3 gives how
-SNAX-LOWER maps it through a layout onto streamer registers.
+shape. A temporal stride of 0 repeats a beat, as SNAX's reader does (D69).
+The nest says nothing about addresses: section 9 gives how SNAX-LOWER maps
+it through a layout onto a streamer's values.
 
 <!-- snippet: snax_forge/brm/library/elementwise_add.json -->
 ```json
@@ -1018,9 +605,9 @@ whose `out` is one lane every `T = N / W` firings (D104):
 ## 13. Platform
 
 The SNAX cluster around the accelerators (D84): everything of the cluster
-file that is not the accelerator. A platform file lives in
-`platforms/` (`small16.json`, alu4's platform; `snax_alu.json`, read from
-snax_cluster's hjson); it never names a recipe,
+that is not the accelerator. A platform file lives in `platforms/`
+(`small16.json`, a small one without a source hjson; `snax_alu.json`, read
+from snax_cluster's hjson); it never names a recipe,
 and a recipe never names it. `Platform.load(path)`; every field is written,
 missing keys take their defaults (`l2` missing: no L2), unknown keys and
 values of the wrong type are errors, and loading reports every problem at
@@ -1033,29 +620,45 @@ once (section 14).
 | `changes` | what differs from `base`: `--set` path -> value, in the order set |
 | `hjson` | the source cluster file, a path from snax-forge's root, or null (small16): what the generator writes the cluster file from (section 16) |
 | `accelerator_slot` | the source's one accelerator slot (`snax_acc_name`), or null; `--set accelerator_slot=NAME` picks another, which the source must have |
-| `l1`, `l2` | `L1Config`, `L2Config` (section 2); `l2` null for an L1-only cluster |
-| `xbar` | `{"check_hold": bool}` |
-| `dma` | `DmaConfig` (section 2), used when there is an L2 |
-| `controller` | `ControllerConfig` (section 2) |
-| `register_window` | registers per block, a power of two |
-| `wait_mode` | `poll` or `signal`: how the controller waits for a task |
+| `l1`, `l2` | `L1Config`, `L2Config` (below); `l2` null for an L1-only cluster |
+| `wait_mode` | `poll` or `signal`: how the program waits for a task (the C backend refuses `signal`, `c.signal`) |
 | `streamers` | the streamer shell: `default`, then an entry per streamer it changes |
+
+`L1Config` (`design/platform.py`):
+
+| Field | Meaning | Default | Checked |
+|---|---|---|---|
+| `n_banks` | single-port banks | 32 | >= 1 |
+| `width_bits` | bits per bank word | 64 | multiple of 8 |
+| `rows` | words per bank | 512 | >= 1 |
+| `dtype` | element type, any NumPy dtype name | `int64` | fits the word |
+| `elems_per_word` | elements packed in one word (1 only, section 1) | 1 | >= 1, fits the word |
+| `base_addr` | byte address of the first L1 word | 0 | — |
+| `wide_bits` | widest port (the DMA's) | 512 | power-of-two multiple of `width_bits` |
+
+`L2Config`:
+
+| Field | Meaning | Default | Checked |
+|---|---|---|---|
+| `size_bytes` | flat size | 1 MiB | positive multiple of the beat |
+| `base_addr` | byte address of the first word | 0 | — |
+| `beat_bits` | one DMA beat | 512 | multiple of `width_bits`; equal to the L1's `wide_bits` (`platform.l2`) |
+| `width_bits`, `dtype`, `elems_per_word` | as the L1, and must agree with it (`platform.l2`) | 64, `int64`, 1 | fits the word |
 
 **The streamer shell.** One streamer per port of every accelerated node's
 instance, named `<instance>_<port>` (D75). The port decides `write` (its
 direction is `out`), `n_ports` (its lanes) and, unless an entry gives them,
 `spatial_bounds` (the port nest's spatial loops, fastest first); an entry
-may not set `write` or `n_ports`. `default` holds `temporal_dims`,
-`fifo_depth`, `addr_depth` and `prio`; an entry named after a streamer
+may not set `write` or `n_ports`. `default` holds `temporal_dims` and
+`fifo_depth` (each >= 1); an entry named after a streamer
 overrides any of them, and `spatial_bounds`, for that streamer only. These
 are knobs, never a template: the generator lowers the streamer per design
 point from them (section 16); a streamer input of its own is open item 78.
 
 <!-- snippet: platforms/small16.json -->
 ```json
- "register_window": 32,
  "wait_mode": "poll",
- "streamers": {"default": {"temporal_dims": 1, "fifo_depth": 2, "addr_depth": 8, "prio": 0}}
+ "streamers": {"default": {"temporal_dims": 1, "fifo_depth": 2}}
 ```
 
 **Changes and working copies.** `pixi run design GRAPH --platform P --set
@@ -1075,9 +678,8 @@ original (`base` null), from a cluster file (`$ref`s resolved): the L1 from
 `cluster.tcdm`, `data_width`, `cluster_base_addr` and `dma_data_width`; the
 L2 from the `dram` range; `streamers.default`'s `temporal_dims` and
 `fifo_depth` from the one accelerator's streamer template, whose movers must
-agree. What the hjson does not hold (dtype, elements per word, latencies,
-`addr_depth`, `prio`, and SNAX-MODEL's `xbar`, `dma`, `controller`,
-`register_window`, `wait_mode`) is small16's. The platform records the
+agree. What the hjson does not hold (dtype, elements per word,
+`wait_mode`) is small16's. The platform records the
 file (`hjson`, which must be under snax-forge's root, `hjson.path`) and its
 slot (`accelerator_slot`). `snax_alu.json` comes from
 `platforms/snax_alu.hjson`, a verbatim copy of snax-gvsoc's
@@ -1105,21 +707,20 @@ problems.
 | Code | Fails when |
 |---|---|
 | `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
-| `platform.values` | a value its section rejects (`n_banks` 0, `dims` 0, a `wait_mode` or `register_window` that is not allowed) |
+| `platform.values` | a value its section rejects (`n_banks` 0, a `wait_mode` that is not allowed) |
 | `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1 |
 | `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`), word width, dtype or elements per word |
 | `platform.banks` | with an L2, `n_banks` is not a multiple of the DMA's port group (`wide_bits / width_bits`) |
 | `graph.load` | a graph file that does not load (section 11) |
 | `graph.symbols` | a symbol still null: bind it in the recipe |
-| `graph.unbound` | a tasklet or a map holding nothing to run outside every accelerated node, or no accelerated node: SNAX-MODEL has no core |
+| `graph.unbound` | a tasklet or a map holding nothing to run outside every accelerated node, or no accelerated node: the program drives accelerators only |
 | `graph.brm` | an unknown BRM or implementation, design params that do not resolve, connectors that are not the BRM's ports, code that is not the BRM's |
-| `graph.instance` | an instance named `xbar`, `dma` or `ctl` or after a streamer, or two streamers with one name |
+| `graph.instance` | an instance named `dma` or after a streamer, or two streamers with one name |
 | `connect.streamer_key` | a streamer entry that matches no port of the graph (the fix names the closest streamer) |
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
 | `connect.dtype` | a container whose dtype is not the L1's or not its port's, or an L1 with more than one element per word (open item 21) |
 | `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), a subset that is not affine in the firing loops, or a streamer with fewer `temporal_dims` than the node's firing loops (the fix names the count) |
-| `connect.regmap` | a streamer, accelerator or DMA whose status and configuration registers do not fit `register_window` |
 | `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest) or on a memory the container does not live in; an unknown pass. The plan is made after these pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
 | `memory.layout` | a layout whose shape is not its container's |
@@ -1129,8 +730,6 @@ problems.
 | `memory.overlap` | two layouts in one memory that share bytes, naming the pins (the fix moves the latest pin past everything) |
 | `point.keys` | a design point with unknown or missing keys or a malformed streamer entry |
 | `point.streamers` | a design point whose `streamers` are not the platform's shell for its graph |
-
-The model's own checks, when a cluster file is built, stay as a backstop.
 
 ## 15. Memory plan and design point
 
@@ -1167,7 +766,7 @@ passed; not edited by hand. It is what SNAX-LOWER reads.
 | `graph_from` | the `.snaxdfg` it was made from: a sandbox step, or any bound graph given to the design step or the flow (D108) |
 | `graph` | that graph as read: instances, `code`, `replaced`, `loop.split` |
 | `platform` | the platform working copy (section 13) |
-| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `fifo_depth`, `addr_depth`, `prio` |
+| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `fifo_depth` |
 | `memory` | the memory plan: `passes`, `changes`, `layouts` (container -> memory -> layout) |
 
 There is no recipe in it: the graph holds every instance, and the sandbox

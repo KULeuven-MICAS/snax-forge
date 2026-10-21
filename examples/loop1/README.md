@@ -2,7 +2,7 @@
 
 **Out of date until FLOW3 round 3:** the flow runs on SNAX-GVSoC since FLOW3 (D136), and this walk-through's commands and numbers are SNAX-MODEL's.
 
-It walks the flow on SNAX-MODEL, which RET1 removes; `docs/RUN.md` is the
+It walks the flow on SNAX-MODEL, which RET1 removed; `docs/RUN.md` is the
 SNAX-GVSoC path.
 
 This walk-through takes vecadd on the `small16` platform once around the

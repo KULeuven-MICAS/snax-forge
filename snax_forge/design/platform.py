@@ -1,9 +1,9 @@
 """The platform: the SNAX cluster around the accelerators (D84).
 
 A platform file describes everything of the cluster that is not the
-accelerator itself: L1, L2, xbar, DMA, controller, the register window, how
-the controller waits, and the streamer shell. It never names a recipe, and a
-recipe never names it; the design step pairs a bound graph with a platform.
+accelerator itself: L1, L2, how the program waits, and the streamer shell. It
+never names a recipe, and a recipe never names it; the design step pairs a
+bound graph with a platform.
 
     {
      "name":     "small16",
@@ -14,16 +14,15 @@ recipe never names it; the design step pairs a bound graph with a platform.
      "accelerator_slot": null,      its accelerator slot (``snax_acc_name``)
      "l1":       {...},             L1Config
      "l2":       {...} or null,     L2Config; no L2, no DMA
-     "xbar":     {"check_hold": true},
-     "dma":      {...},             DmaConfig, used when there is an L2
-     "controller": {...},           ControllerConfig
-     "register_window": 32,
-     "wait_mode": "poll",           how the controller waits for a task
+     "wait_mode": "poll",           how the program waits for a task
      "streamers": {
-      "default": {"temporal_dims": 1, "fifo_depth": 2, "addr_depth": 8, "prio": 0},
+      "default": {"temporal_dims": 1, "fifo_depth": 2},
       "acc_out": {"fifo_depth": 4}
      }
     }
+
+``L1Config`` and ``L2Config`` hold only what the design step, SNAX-LOWER and
+the generator read (CONTRACTS.md section 13); each checks its own values.
 
 **The streamer shell.** SNAX's streamers are a shell shaped to what an
 accelerator needs, so the platform does not list them: one streamer is made
@@ -66,21 +65,15 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from snax_forge.common import Config, plain, to_json
-from snax_forge.snax_model import (
-    ControllerConfig,
-    DmaConfig,
-    L1Config,
-    L2Config,
-    StreamerConfig,
-)
 
 from .problems import DesignError, Problem
 
-KEYS = ("name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2", "xbar", "dma",
-        "controller", "register_window", "wait_mode", "streamers")  # fmt: skip
+KEYS = ("name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2", "wait_mode",
+        "streamers")  # fmt: skip
 WAIT_MODES = ("poll", "signal")
-XBAR_KEYS = ("check_hold",)
 # Streamer fields the port decides; an entry may not set them (connect.derived).
 DERIVED = ("write", "n_ports")
 # Paths the tools write; --set may not change them.
@@ -89,21 +82,76 @@ PROVENANCE = ("name", "base", "changes")
 NULLABLE = ("hjson", "accelerator_slot")
 
 
+def _fits(dtype: str, elems_per_word: int, width_bits: int) -> None:
+    """``elems_per_word`` elements of ``dtype`` fit one word of ``width_bits``."""
+    if elems_per_word < 1:
+        raise ValueError("elems_per_word must be >= 1")
+    if np.dtype(dtype).itemsize * 8 * elems_per_word > width_bits:
+        raise ValueError(f"{elems_per_word} x {dtype} does not fit in {width_bits} bits")
+
+
+@dataclass(frozen=True)
+class L1Config(Config):
+    """The L1: single-port banks of one word each, word-interleaved (CONTRACTS.md 13)."""
+
+    n_banks: int = 32
+    width_bits: int = 64  # bits per bank word
+    rows: int = 512  # words per bank; 32 * 512 * 8 B = 128 KiB
+    dtype: str = "int64"  # element type, any NumPy dtype name
+    elems_per_word: int = 1  # 1 only (open item 21)
+    base_addr: int = 0  # byte address of the first L1 word
+    wide_bits: int = 512  # widest port, the DMA's: one superbank of 8 banks in SNAX
+
+    def __post_init__(self) -> None:
+        if self.n_banks < 1 or self.rows < 1:
+            raise ValueError("n_banks and rows must be >= 1")
+        if self.width_bits % 8:
+            raise ValueError("width_bits must be a multiple of 8")
+        _fits(self.dtype, self.elems_per_word, self.width_bits)
+        g, rest = divmod(self.wide_bits, self.width_bits)
+        if self.wide_bits < 1 or rest or g & (g - 1):
+            raise ValueError(
+                f"wide_bits {self.wide_bits} must be a power-of-two multiple of the bank width "
+                f"{self.width_bits}"
+            )
+
+
+@dataclass(frozen=True)
+class L2Config(Config):
+    """The L2: flat, moved by the DMA in beats (CONTRACTS.md 13)."""
+
+    size_bytes: int = 1 << 20
+    base_addr: int = 0  # byte address of the first L2 word
+    beat_bits: int = 512  # one DMA beat; must equal L1Config.wide_bits
+    width_bits: int = 64  # word = the L1 bank word (D13)
+    dtype: str = "int64"  # element type, as in the L1
+    elems_per_word: int = 1  # as in the L1
+
+    def __post_init__(self) -> None:
+        if self.width_bits % 8 or self.width_bits < 8:
+            raise ValueError("width_bits must be a positive multiple of 8")
+        if self.beat_bits < self.width_bits or self.beat_bits % self.width_bits:
+            raise ValueError("beat_bits must be a multiple of width_bits")
+        if self.size_bytes < 1 or self.size_bytes % self.beat_bytes:
+            raise ValueError(f"size_bytes must be a positive multiple of {self.beat_bytes}")
+        _fits(self.dtype, self.elems_per_word, self.width_bits)
+
+    @property
+    def beat_bytes(self) -> int:
+        """Bytes per beat; also the alignment of every DMA access."""
+        return self.beat_bits // 8
+
+
 @dataclass(frozen=True)
 class StreamerOptions(Config):
-    """The streamer knobs a platform sets: StreamerConfig without what the port decides."""
+    """The streamer knobs a platform sets; the port decides the rest (``write``, ``n_ports``)."""
 
     temporal_dims: int = 1
     fifo_depth: int = 8
-    addr_depth: int = 8
-    prio: int = 0
 
     def __post_init__(self) -> None:
-        self.config(write=False, n_ports=1)  # StreamerConfig's own checks
-
-    def config(self, write: bool, n_ports: int) -> StreamerConfig:
-        """The model's StreamerConfig for a port with this direction and lane count."""
-        return StreamerConfig(write=write, n_ports=n_ports, **self.to_dict())
+        if min(self.temporal_dims, self.fifo_depth) < 1:
+            raise ValueError("temporal_dims and fifo_depth must be >= 1")
 
 
 OPTIONS = tuple(f.name for f in fields(StreamerOptions))
@@ -117,10 +165,6 @@ class Platform:
     name: str
     l1: L1Config = field(default_factory=L1Config)
     l2: L2Config | None = None
-    xbar: dict[str, Any] = field(default_factory=lambda: {"check_hold": True})
-    dma: DmaConfig = field(default_factory=DmaConfig)
-    controller: ControllerConfig = field(default_factory=ControllerConfig)
-    register_window: int = 32
     wait_mode: str = "poll"
     default: StreamerOptions = field(default_factory=StreamerOptions)
     entries: dict[str, dict[str, Any]] = field(default_factory=dict)  # per streamer, as written
@@ -172,10 +216,6 @@ class Platform:
             "accelerator_slot": self.accelerator_slot,
             "l1": self.l1.to_dict(),
             "l2": None if self.l2 is None else self.l2.to_dict(),
-            "xbar": dict(self.xbar),
-            "dma": self.dma.to_dict(),
-            "controller": self.controller.to_dict(),
-            "register_window": self.register_window,
             "wait_mode": self.wait_mode,
             "streamers": {"default": self.default.to_dict(), **plain(self.entries)},
         }
@@ -336,21 +376,6 @@ def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
 
     l1 = _section(L1Config, d.get("l1", {}), "l1", out)
     l2 = None if d.get("l2") is None else _section(L2Config, d["l2"], "l2", out)
-    dma = _section(DmaConfig, d.get("dma", {}), "dma", out)
-    ctl = _section(ControllerConfig, d.get("controller", {}), "controller", out)
-
-    xbar = d.get("xbar", {"check_hold": True})
-    if not isinstance(xbar, Mapping) or set(xbar) - set(XBAR_KEYS):
-        out.append(
-            Problem("platform.keys", "xbar", f"allowed keys {list(XBAR_KEYS)}, got {xbar!r}")
-        )
-    elif not isinstance(xbar.get("check_hold", True), bool):
-        out.append(Problem("platform.keys", "xbar.check_hold", "must be a bool"))
-    window = d.get("register_window", 32)
-    if isinstance(window, bool) or type(window) is not int:
-        out.append(Problem("platform.keys", "register_window", f"must be an int, got {window!r}"))
-    elif window < 1 or window & (window - 1):
-        out.append(Problem("platform.values", "register_window", f"{window} is not a power of two"))
     wait_mode = d.get("wait_mode", "poll")
     if wait_mode not in WAIT_MODES:
         out.append(
@@ -379,9 +404,7 @@ def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
     if out:
         return None, out
     return Platform(
-        name=name, l1=l1, l2=l2, xbar={"check_hold": bool(xbar.get("check_hold", True))},
-        dma=dma, controller=ctl, register_window=window, wait_mode=wait_mode,
-        default=default, entries=entries, base=base, changes=dict(changes), hjson=source,
+        name=name, l1=l1, l2=l2, wait_mode=wait_mode, default=default, entries=entries, base=base, changes=dict(changes), hjson=source,
         accelerator_slot=slot,
     ), []  # fmt: skip
 

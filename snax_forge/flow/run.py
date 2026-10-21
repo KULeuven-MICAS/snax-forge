@@ -72,8 +72,7 @@ the platform or the memory plan land in folders of their own, then the
 trace level when it is not ``off`` (``vecadd_task``). ``flow.log``
 is what the command line prints plus the design checks that ran; a flow
 that fails writes the failure there instead. The log, the reports, ``gen/``
-and ``run/`` of an earlier run in the same folder, and the scenario files
-SNAX-MODEL's flow left there, are removed first.
+and ``run/`` of an earlier run in the same folder are removed first.
 
 **Stage times** (D90). ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``gen``, ``build``,
@@ -531,8 +530,7 @@ def _timed(times: dict[str, float], stage: str) -> Iterator[None]:
 
 def _clear(out: Path) -> None:
     """Remove what an earlier run left in ``out`` (module doc)."""
-    for p in (out / LOG, out / REPORT / "design.md", out / REPORT / "run.md",
-              out / "cluster.json", out / "scenario.json", *out.glob("*.npy")):  # fmt: skip
+    for p in (out / LOG, out / REPORT / "design.md", out / REPORT / "run.md"):
         p.unlink(missing_ok=True)
     for d in (out / "gen", out / "run"):
         shutil.rmtree(d, ignore_errors=True)

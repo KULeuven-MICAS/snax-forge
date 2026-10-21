@@ -97,10 +97,7 @@ def test_what_is_read_and_what_is_small16s(tmp_path):
     )  # fmt: skip
     assert (l2.base_addr, l2.size_bytes, l2.beat_bits, l2.width_bits) == (2**31, 2**31, 512, 64)
     assert (p.default.temporal_dims, p.default.fifo_depth) == (1, 8)
-    small = platform_dict()
-    assert (p.default.addr_depth, p.default.prio) == (8, 0)
-    for k in ("xbar", "dma", "controller", "register_window", "wait_mode"):
-        assert p.to_dict()[k] == small[k]
+    assert p.wait_mode == platform_dict()["wait_mode"]
     assert (p.base, p.changes, p.entries) == (None, {}, {})
 
 

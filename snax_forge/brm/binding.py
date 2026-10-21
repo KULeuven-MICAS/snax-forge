@@ -62,7 +62,7 @@ register_control(
 register_wait(
     "lockstep", "a firing takes a beat on every input and room on every output in one cycle"
 )
-register_wait("pipelined", "an L-stage pipeline or output register, one firing per II (D35)")
+register_wait("pipelined", "an L-stage pipeline or output register, one firing per II (D129)")
 
 
 def check_binding(

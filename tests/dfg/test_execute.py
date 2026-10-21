@@ -225,7 +225,7 @@ def test_firings_in_order_and_a_task_per_tile(monkeypatch):
             state["seen"] = state.get("seen", 0) + 1
             return cfg.fn(k, ins, state, params)
 
-        return instance, type(cfg)(cfg.ports, fn, cfg.latency, cfg.ii, cfg.kind)
+        return instance, type(cfg)(cfg.ports, fn, cfg.kind)
 
     monkeypatch.setattr(ex, "_accel", spy)
     inputs, ref = kernel_run(64)

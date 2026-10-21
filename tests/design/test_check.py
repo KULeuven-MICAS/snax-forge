@@ -43,7 +43,7 @@ def test_vecadd_w8_passes_on_the_same_platform():
 
 def test_changes_that_still_fit_pass():
     sets = [("l1.n_banks", 32), ("streamers.acc_out.fifo_depth", 4),
-            ("streamers.acc_a.temporal_dims", 2), ("register_window", 64)]  # fmt: skip
+            ("streamers.acc_a.temporal_dims", 2)]  # fmt: skip
     assert problems(design(sets=sets)) == []
 
 
@@ -124,7 +124,7 @@ def test_a_tasklet_left_is_unbound(name):
     """The imported graph also leaves N unbound (graph.symbols); the split one binds it."""
     (p,) = [p for p in problems(design(name)) if p.code != "graph.symbols"]
     assert p.code == "graph.unbound" and p.where.startswith("tasklet add")
-    assert "no core" in p.message and '"bind"' in p.fix
+    assert "accelerators only" in p.message and '"bind"' in p.fix
 
 
 def test_an_empty_map_and_an_empty_graph_are_unbound():
@@ -197,7 +197,9 @@ def test_platform_and_graph_problems_come_together_and_stop_connect():
     def graph(g):
         g["symbols"]["N"] = None
 
-    got = codes(design(edit_graph=graph, sets=[("l1.n_banks", 12), ("streamers.acc_c.prio", 1)]))
+    got = codes(
+        design(edit_graph=graph, sets=[("l1.n_banks", 12), ("streamers.acc_c.fifo_depth", 1)])
+    )
     assert got == ["platform.banks", "graph.symbols"]  # connect.streamer_key waits
 
 
@@ -256,15 +258,6 @@ def test_one_element_per_word_only():
             ("l1.elems_per_word", 2), ("l2.elems_per_word", 2)]  # fmt: skip
     got = [p for p in problems(design(sets=sets)) if p.where == "platform.l1.elems_per_word"]
     assert [p.code for p in got] == ["connect.dtype"] and "open item 21" in got[0].message
-
-
-def test_registers_must_fit_the_window():
-    got = problems(design(sets=[("register_window", 8)]))
-    assert [(p.code, p.where) for p in got] == [("connect.regmap", "dma")]
-    assert got[0].fix == "--set platform.register_window=16, or lower platform.dma.dims"
-    got = problems(design(sets=[("register_window", 16), ("streamers.acc_b.temporal_dims", 6)]))
-    assert [(p.code, p.where) for p in got] == [("connect.regmap", "streamer acc_b")]
-    assert "17 registers" in got[0].message and "temporal_dims" in got[0].fix
 
 
 # =============================================================================
@@ -500,7 +493,7 @@ def test_strided_layouts_that_interleave_do_not_overlap():
 
 
 def test_memory_waits_for_connect():
-    got = codes(with_memory([("Q.l1.base", 0)], sets=[("streamers.acc_q.prio", 1)]))
+    got = codes(with_memory([("Q.l1.base", 0)], sets=[("streamers.acc_q.fifo_depth", 1)]))
     assert got == ["connect.streamer_key"]
 
 

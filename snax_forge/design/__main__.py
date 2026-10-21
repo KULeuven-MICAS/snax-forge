@@ -101,7 +101,7 @@ def _summary(design: Design) -> str:
         lines.append(
             f"  {s.name:<12} {s.instance}.{s.port:<6} {side}  {s.n_ports} lanes "
             f"{list(s.spatial_bounds)}  temporal_dims {o.temporal_dims}  "
-            f"fifo_depth {o.fifo_depth}  addr_depth {o.addr_depth}  prio {o.prio}"
+            f"fifo_depth {o.fifo_depth}"
         )
     plan = design.memory
     n = len(plan.changes)

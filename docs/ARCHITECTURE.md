@@ -30,9 +30,9 @@ The user describes the accelerator; the platform around it is the model's
 (D51). Model cycles are trusted as far as the comparison with snax_cluster
 RTL shows (section 7).
 
-The flow's runs happen in SNAX-GVSoC since FLOW3 (D136). SNAX-MODEL, the
-pure-Python cluster model they happened in before (section 5.7), is removed
-in FLOW3 round 1c (RET1).
+The flow's runs happen in SNAX-GVSoC since FLOW3 (D136); SNAX-MODEL, the
+pure-Python cluster model they happened in before, was removed in RET1
+(D116).
 
 ## 2. Positioning
 
@@ -119,13 +119,12 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | SDFG ingest | `sdfg/` | a kernel's DaCe source in `kernels/` | raw and simplified SDFG | built |
 | Importer | `dfg/import_sdfg.py` | a kernel's simplified SDFG | `.snaxdfg` | built |
 | Reference executor | `dfg/execute.py` | `.snaxdfg`, inputs | golden output | built |
-| SNAX-BRM | `brm/` | hand-written BRMs | instances, accelerator entries | built; binding GEN3 (D129) |
+| SNAX-BRM | `brm/` | hand-written BRMs | instances | built; binding GEN3 (D129) |
 | SNAX-SANDBOX | `sandbox/` | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step | built |
 | Design step | `design/` | bound graph, platform | design point | built |
-| SNAX-LOWER | `lower/` | design point, BRMs | cluster file, task list, program, `main.c` | built (C program GEN2a, D135) |
+| SNAX-LOWER | `lower/` | design point, BRMs | task list, `main.c` | built (C program GEN2a, D135) |
 | SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | hjson, program | the program's check and window; counters and events in its own grammar (D137) | built (M16) |
 | Run | `run/` | SNAX-GVSoC's events, the hjson files, design point and task list | profile, trace (C§7) | FLOW3 round 1b |
-| SNAX-MODEL | `snax_model/` | cluster file, command list | profile, trace, output | frozen, not run by the flow; removed in FLOW3 round 1c (RET1) |
 | Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, `data.h`, `main.c`, manifest | GEN3, LNK2a, GEN2a (D134, D135) |
 | HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
 | Flow | `flow/` | recipe or bound graph, platform | all of the above, checked | built |
@@ -201,18 +200,14 @@ read from snax_cluster's hjson (`design from-hjson`, LNK1, D131).
 
 Turns a design point into what a run needs, and decides nothing.
 
-- **Cluster file** (D88, `lower/cluster.py`): SNAX-MODEL's input. Under
-  SNAX-GVSoC the cluster hjson has its role (LNK2a, D134).
 - **Task list** (D89, `lower/derive.py`; C§9): one group of tasks per
   accelerated node in execution order, loads before and stores after,
   streamer values from the memlets through the memory plan, `after` holding
   data dependences only, so two accelerators chain through L1 with one wait
-  (D105). It stays the hand-off to every backend.
-- **Command list** (D45, D64, `lower/commands.py`): the task list expanded
-  into SNAX-MODEL's `csr_write`, `csr_read` and `wait`, with only the waits
-  correctness needs. Goes with SNAX-MODEL (RET1).
+  (D105). It is the hand-off to the backend, and its waits are placed
+  once, only those correctness needs (D64, `lower/waits.py`).
 - **C program** (D135, `lower/c.py`; C§16): the task list as `main.c` on
-  snRuntime, one function per core from the cluster file, each a straight
+  snRuntime, one function per core from the cluster hjson, each a straight
   line: direct CSR writes on the generated headers' names, the DMA through
   snRuntime, the lowering's waits on SNAX components as polls and the
   DMA's on dependences only (its transfers queue), a hardware barrier where
@@ -264,16 +259,12 @@ What it models is what snax_cluster's RTL does; where the two differ, the
 RTL wins. Memory-mapped register writes may replace the CSR path later; the
 register blocks then sit on the interconnect, with no new core patch.
 
-### 5.7 The model: SNAX-GVSoC (SNAX-MODEL until RET1)
+### 5.7 The model: SNAX-GVSoC
 
 The model is SNAX-GVSoC (section 5.6): the flow builds the generated
-program and runs it there (D136). SNAX-MODEL, the pure-Python,
-event-driven cluster model the flow ran before (banks, interconnect,
-streamers, accelerators, DMA and L2, a register interface and a controller
-instead of a core; D6, D10, D29–D44), is frozen and no longer run by the
-flow. Its contracts are C§2–C§8 and its timing is in the module
-docstrings; FLOW3 round 1c (RET1) removes it with its scenarios, keeping
-what SNAX-LOWER takes from it.
+program and runs it there (D136). SNAX-MODEL, the pure-Python cluster model
+the flow ran before, was removed in RET1 with its scenarios and contracts
+(C§2–C§6, C§8; D116); its text is in git history (tag `pre-ret1`).
 
 ### 5.8 SNAX link
 
@@ -362,7 +353,7 @@ SNAX-GVSoC aligned with snax_cluster, the baseline. The order from here
 (D116, `docs/STATUS.md` has the tasks):
 
 1. **M14** (D127): to SNAX-GVSoC first (LNK1, GEN3, LNK2a, GEN2a, FLOW3,
-   whose round 1c is RET1), then to snax_cluster (GEN1, LNK2b, GEN2b), then
+   RET1 after its round 1), then to snax_cluster (GEN1, LNK2b, GEN2b), then
    clean-up (a housekeeping pass, one generator).
 2. **M7 tier A:** 2-D plumbing, int64 mat-vecs (D113, PAPER §6.1).
 3. **M13:** the composed bind, then the composed accelerator in SNAX (LNK3).

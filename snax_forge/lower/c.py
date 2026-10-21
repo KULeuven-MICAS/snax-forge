@@ -2,9 +2,8 @@
 
     main_c(point, tasks, cluster, layout, arrays, includes, point_path) -> str
 
-SNAX-LOWER's second backend of the task list (derive.py, C§9); SNAX-MODEL's
-command list (commands.py) stays as first written until SNAX-MODEL is
-removed (D45). It reads the cluster file the generator writes (gen/gvsoc.py:
+SNAX-LOWER's backend of the task list (derive.py, C§9). It reads the
+cluster file the generator writes (gen/gvsoc.py:
 its cores), the accelerator's CSR layout (gen's ``CsrLayout``: the field names of
 ``include/``), data.h's arrays (gen/data.py) and the files to include, in
 order; the generator writes ``main.c`` beside them.
@@ -42,15 +41,14 @@ call, so it is ``snrt_dma_start_1d`` (one loop of whole beats) or
 accelerator's movers, then the accelerator's start CSR, in the step's
 order, back to back; a DMA task starts at its place in the step.
 
-**Waits.** On the SNAX components, as ``lower_program`` places them (D64,
+**Waits.** On the SNAX components, as waits.py places them (D64,
 ``placed_waits``): on the owner's core, a wait on the accelerator or one of
 its streamers polls the accelerator's busy, then the streamer's. On the
 DMA, from dependences only: the iDMA queues transfers (the hjson's
 ``dma_req_fifo_depth``; a full queue stalls the core), so a DMA task starts
 without waiting for the one before it, and ``snrt_dma_wait_all()`` comes
 only before a start whose task has an ``after`` on a DMA task not yet
-waited for, and at a sync on a DMA task. SNAX-MODEL's command list keeps the
-lowering's wait for a busy DMA (D36). When the wait is for another core (a task of the
+waited for, and at a sync on a DMA task. When the wait is for another core (a task of the
 start it comes before runs elsewhere, or it is a sync, which every core
 passes), every core then calls ``snrt_cluster_hw_barrier()``: every core
 walks the same steps, so the barrier counts match by construction.
@@ -76,8 +74,8 @@ without the slot (``c.cores``), a start covering only some of an
 accelerator's movers or starting it before them (``c.start``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
 pattern that is neither form (``c.dma``), a binding field the CSR layout
-lacks (``c.csrs``), a read step (``c.read``), a task list the lowering
-refuses (``c.tasks``: values that do not fit their component), and an
+lacks (``c.csrs``), a read step (``c.read``), a task list whose values do
+not fit the design point (``c.tasks``, ``check_values``), and an
 accelerator task no wait covers (``c.wait``: its counter is never read).
 Same design point, same text.
 """
@@ -96,9 +94,8 @@ from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
 from snax_forge.design.streamers import instances, streamer_name
 
-from .cluster import cluster_file
-from .commands import PlacedWait, placed_waits
-from .tasks import Configure, Start, Sync, TaskList, TaskListError
+from .tasks import Configure, Start, Sync, TaskList, TaskListError, check_values
+from .waits import PlacedWait, placed_waits
 
 if TYPE_CHECKING:  # design imports lower, gen imports lower
     from snax_forge.design.point import DesignPoint
@@ -235,7 +232,7 @@ class _Program:
         m, v = self.movers[s.component], s.values
         dims = self.point.streamers[s.component].options.temporal_dims
         bounds, strides = list(v["temporal_bounds"]), list(v["temporal_strides"])
-        spatial = list(v["spatial_strides"])  # the lowering checked every count against the dims
+        spatial = list(v["spatial_strides"])  # check_values checked every count against the dims
         bounds += [1] * (dims - len(bounds))
         strides += [0] * (dims - len(strides))
         base = v["base"]
@@ -347,8 +344,9 @@ class _Program:
             if not isinstance(s, (Configure, Start, Sync)):
                 raise CError("c.read", f"{self.tasks.name}: step {i} ({s.op}) has no C form yet")
         waits: dict[int, list[Any]] = {}
-        try:  # the lowering also checks every task's values against its component
-            placed = placed_waits(self.tasks, cluster_file(self.point))
+        try:
+            check_values(self.tasks, self.point)
+            placed = placed_waits(self.tasks, self.point)
         except TaskListError as e:
             raise CError("c.tasks", str(e)) from None
         for w in placed:
