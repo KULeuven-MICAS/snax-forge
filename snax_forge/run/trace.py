@@ -27,11 +27,13 @@ kind's own fields, by the lowest level that has it:
     stall        fifo     task, lane, count  (src = the mover; t = the first cycle it holds)
     finegrained  insn     pc, func, text  (src = the core)
 
-``KINDS`` holds each kind's fields, required and optional; ``Trace.from_dict`` refuses an
-event with an unknown kind or field. The events are kept as the dicts they are written as, in
-time order (by ``t``, then as SNAX-GVSoC wrote them). ``trace_meta.json`` is the rest: the
-``level``, ``total_cycles``, the ``boot`` shift (the first ``mcycle`` read in SNAX-GVSoC's
-cycles) and the ``sources`` in the cluster's order.
+``LEVELS`` are cumulative, each the one before plus its kinds. ``KINDS`` holds each kind's
+fields, required and optional; ``Trace.from_dict`` refuses an event with an unknown kind or
+field. The events are kept as the dicts they are written as, in time order (by ``t``, then as
+SNAX-GVSoC wrote them). ``trace_meta.json`` is the rest: the ``level``, ``total_cycles``, the
+``boot`` shift (the first ``mcycle`` read in SNAX-GVSoC's cycles), the ``sources`` in the
+cluster's order and the ``filter``, the sources the beat, stall and instruction lines were
+written for (empty at ``task``).
 """
 
 from __future__ import annotations
@@ -41,7 +43,12 @@ from typing import Any
 
 from .events import RunError
 
-LEVELS = ("off", "task", "beat")
+LEVELS = ("off", "task", "beat", "stall", "finegrained")
+
+
+def _fields(names: str) -> frozenset[str]:
+    return frozenset(names.split())
+
 
 # kind -> the alternatives of its fields: (required, optional)
 KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
@@ -64,6 +71,25 @@ KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
             frozenset(),
         ),
     ],
+    "grant": [
+        (_fields("task op mem addr bank row value back region elems vals"), _fields("b size"))
+    ],
+    "dma": [
+        (_fields("task id i op mem addr size bank row value l2 region elems vals"), _fields("back"))
+    ],
+    "burst": [
+        (frozenset({"task", "id", "op", "mem", "addr", "size", "back", "region"}), frozenset())
+    ],
+    "fire": [(frozenset({"task", "n", "b", "value", "vals"}), frozenset())],
+    "push": [(frozenset({"task", "n", "first", "last", "value", "vals"}), frozenset())],
+    "stall": [
+        (
+            frozenset({"task", "addr", "bank", "row", "by", "by_addr", "region", "elems"}),
+            frozenset({"b"}),
+        ),
+    ],
+    "fifo": [(frozenset({"task", "lane", "count"}), frozenset())],
+    "insn": [(frozenset({"pc", "func", "text"}), frozenset())],
 }
 HEAD = ("t", "k", "src")
 
@@ -89,6 +115,7 @@ class Trace:
     boot: int  # the program's first mcycle read in SNAX-GVSoC's cycles: every t is shifted by it
     sources: list[str] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
+    filter: list[str] = field(default_factory=list)  # the sources of the beat lines
 
     def __post_init__(self) -> None:
         if self.level not in LEVELS[1:]:
@@ -102,7 +129,7 @@ class Trace:
 
     def meta(self) -> dict[str, Any]:
         return {"level": self.level, "total_cycles": self.total_cycles, "boot": self.boot,
-                "sources": list(self.sources)}  # fmt: skip
+                "sources": list(self.sources), "filter": list(self.filter)}  # fmt: skip
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.meta(), "events": [dict(e) for e in self.events]}
@@ -110,4 +137,4 @@ class Trace:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Trace:
         return cls(d["level"], d["total_cycles"], d["boot"], list(d.get("sources", [])),
-                   [dict(e) for e in d.get("events", [])])  # fmt: skip
+                   [dict(e) for e in d.get("events", [])], list(d.get("filter", [])))  # fmt: skip

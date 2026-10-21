@@ -88,6 +88,17 @@ def test_l1_and_banks():
     assert not c.is_l1(0x10020000) and not c.is_l1(0x80000000)
 
 
+def test_the_word_interleaved_map_and_the_dma_beat():
+    c = vecadd()
+    assert c.dma_beat_bytes == 64
+    # bank = (a / w) mod B, row = a / (w B): 8-byte words over 32 banks
+    assert c.bank_row(0x10000000) == (0, 0)
+    assert c.bank_row(0x10000008) == (1, 0)
+    assert c.bank_row(0x10000100) == (0, 1)
+    assert c.bank_row(0x10000208) == (1, 2)
+    assert c.bank_row(0x100005F8) == (31, 5)
+
+
 def test_round_trip():
     c = vecadd()
     assert Cluster.from_dict(json.loads(json.dumps(c.to_dict()))) == c

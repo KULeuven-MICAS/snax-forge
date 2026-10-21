@@ -12,6 +12,7 @@ CLUSTER: dict[str, Any] = {
     "cluster": {
         "cluster_base_addr": 0x10000000,
         "data_width": 64,
+        "dma_data_width": 512,
         "tcdm": {"size": 128, "banks": 32},
         "hives": [{"cores": [{"$ref": "#/acc_core"}, {"$ref": "#/dma_core"}]}],
     },

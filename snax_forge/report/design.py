@@ -2,7 +2,7 @@
 
 Everything here comes from the design point, its recipe and the cluster as a
 run names it (run/cluster.py: the generator's hjson files and the design
-point, D137); SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
+point, D137), its regions as run/regions.py reads them; SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
 its header names the graph the design point was made from instead, and takes
 the kernel from the run's functional check.
 
@@ -30,7 +30,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.lower.layout import Layout, round_up
-from snax_forge.run import Cluster
+from snax_forge.run import Cluster, regions_of
 
 from .markdown import kib, kv, pct, span_text, spans, table
 from .record import Record
@@ -137,10 +137,10 @@ def _memory_tables(cluster: Cluster, point: Any) -> list[MemoryTable]:
     for mem, (base, columns, rows) in geo.items():
         size = columns * rows * word
         regions = []
-        for name, lays in point.memory.layouts.items():
-            lay = lays.get(mem)
-            if lay is None:
+        for region in regions_of(point):
+            if region.memory != mem:
                 continue
+            name, lay = region.container, region.layout
             w = _words(lay, base, word)
             n = int(w.size) * word
             lo, hi = lay.span()
@@ -157,8 +157,9 @@ def _notes(cluster: Cluster, point: Any, streamers: list[StreamerRow]) -> list[s
     """Address facts about the movers of the accelerator (module doc)."""
     word, banks = cluster.bank_bytes, cluster.banks
     row_bytes = word * banks
-    lays = {s.container: point.memory.layouts[s.container]["l1"] for s in streamers
-            if s.container in point.memory.layouts and "l1" in point.memory.layouts[s.container]}  # fmt: skip
+    regions = regions_of(point)
+    l1 = {r.container: r.layout for r in regions if r.memory == "l1"}
+    lays = {s.container: l1[s.container] for s in streamers if s.container in l1}
     ss = [s for s in streamers if s.container in lays]
     notes = []
     for i, a in enumerate(ss):
@@ -186,13 +187,14 @@ def _notes(cluster: Cluster, point: Any, streamers: list[StreamerRow]) -> list[s
     if not notes and ss:
         notes.append("No two streamers of the accelerator start in the same banks.")
     beat = point.platform.l2.beat_bits // 8
-    for name, lay in point.memory.layouts.items():
-        if "l1" not in lay or "l2" not in lay:
+    l2 = {r.container for r in regions if r.memory == "l2"}
+    for name, lay in l1.items():
+        if name not in l2:
             continue
-        size = int(np.prod(lay["l1"].shape)) * word
+        size = int(np.prod(lay.shape)) * word
         if size % beat:
             moved = round_up(size, beat)
-            base = lay["l1"].base
+            base = lay.base
             notes.append(
                 f"{name}: {size} B, moved by the DMA as {moved // beat} whole {beat}-byte "
                 f"beat{'s' if moved > beat else ''}; bytes {base + size}–{base + moved} are "

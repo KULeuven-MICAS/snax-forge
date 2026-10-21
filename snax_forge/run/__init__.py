@@ -4,7 +4,9 @@ trace the reports and the viewer read.
 * events.py: ``run/events.log`` read, line by line, in snax-gvsoc's grammar (its
   ``docs/EVENTS.md``);
 * cluster.py: the cluster as the run is named: the accelerator, its movers and CSRs, the
-  cores, the DMA, the L1, from the generator's hjson files and the design point;
+  cores, the DMA, the L1 and its word-interleaved map, from the generator's hjson files and
+  the design point;
+* regions.py: where each container lives in each memory, from the design point's layouts;
 * profile.py: the profile, the totals of one run, from the components' own counters;
 * trace.py: the trace, one event per line, in the program's window;
 * outputs.py: a run directory written and read back.
@@ -24,6 +26,7 @@ from .profile import (
     StreamerProfile,
     WaitProfile,
 )
+from .regions import Region, region_at, regions_of
 from .trace import KINDS, LEVELS, Trace
 
 __all__ = [
@@ -42,6 +45,7 @@ __all__ = [
     "Mover",
     "PortProfile",
     "Profile",
+    "Region",
     "RunError",
     "RunOutputs",
     "StreamerProfile",
@@ -52,5 +56,7 @@ __all__ = [
     "parse_line",
     "read_events",
     "read_run",
+    "region_at",
+    "regions_of",
     "write_run",
 ]

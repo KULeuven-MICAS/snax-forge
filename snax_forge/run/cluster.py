@@ -9,8 +9,10 @@ port as the design point names its streamers (``acc_a``, ``acc_out``), with its 
 crossbar ports ``acc_a.lane<l>``) and FIFO depth; its CSRs (the streamer's, then the
 shell's fields, start, busy and counter, from 0x3C0, as snax_cluster lays them out and
 snax-gvsoc's ``snax_streamer.py`` counts them); the cores (``core<i>``) and the DMA's; the
-L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks. Nothing is
-inferred from a run.
+L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
+(``bank_row``: bank = (a / w) mod B, row = a / (w B) for the offset a, w the bank's bytes, B
+the banks); the DMA's beat (the cluster file's ``dma_data_width``). Nothing is inferred from
+a run.
 
 ``Cluster`` round-trips through ``to_dict`` / ``from_dict``. A file that does not read as
 expected is a ``RunError`` (``cluster.<rule>``).
@@ -117,6 +119,7 @@ class Cluster:
     l1_size: int  # bytes
     banks: int
     bank_bytes: int
+    dma_beat_bytes: int
     meta: dict[str, Any] = field(default_factory=dict)  # free: e.g. the files it was read from
 
     @property
@@ -134,6 +137,11 @@ class Cluster:
         """In the cluster's L1, the iDMA's local area (the rule its summary counts bytes by)."""
         return self.l1_base <= addr < self.l1_base + self.l1_size
 
+    def bank_row(self, addr: int) -> tuple[int, int]:
+        """The bank and row of an L1 address, word-interleaved (module doc)."""
+        offset = addr - self.l1_base
+        return (offset // self.bank_bytes) % self.banks, offset // (self.bank_bytes * self.banks)
+
     def to_dict(self) -> dict[str, Any]:
         a = self.accelerator
         c = a.csrs
@@ -149,7 +157,8 @@ class Cluster:
                          "start": c.start, "busy": c.busy, "counter": c.counter},
             },
             "l1_base": self.l1_base, "l1_size": self.l1_size, "banks": self.banks,
-            "bank_bytes": self.bank_bytes, "meta": dict(self.meta),
+            "bank_bytes": self.bank_bytes, "dma_beat_bytes": self.dma_beat_bytes,
+            "meta": dict(self.meta),
         }  # fmt: skip
 
     @classmethod
@@ -159,7 +168,8 @@ class Cluster:
                           [Mover(**m) for m in a["movers"]],
                           Csrs(**{**a["csrs"], "fields": dict(a["csrs"]["fields"])}))  # fmt: skip
         return cls(d["design"], d["nb_cores"], d["dma_core"], acc, d["l1_base"], d["l1_size"],
-                   d["banks"], d["bank_bytes"], dict(d.get("meta", {})))  # fmt: skip
+                   d["banks"], d["bank_bytes"], d["dma_beat_bytes"],
+                   dict(d.get("meta", {})))  # fmt: skip
 
 
 def _get(d: Any, path: str, what: str) -> Any:
@@ -226,6 +236,7 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[s
         l1_base=_get(cluster, "cluster.cluster_base_addr", "the cluster file"),
         l1_size=tcdm["size"] * 1024, banks=tcdm["banks"],
         bank_bytes=_get(cluster, "cluster.data_width", "the cluster file") // 8,
+        dma_beat_bytes=_get(cluster, "cluster.dma_data_width", "the cluster file") // 8,
     )  # fmt: skip
 
 
