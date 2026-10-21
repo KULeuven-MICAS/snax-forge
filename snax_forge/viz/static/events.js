@@ -148,15 +148,20 @@ export function describe(e) {
 
 // -- a journey's hops and firings (/api/run/<n>/journey, D97) ----------------------
 
-/** One hop of an element: "L1 read by acc_a.1 (bank 5, row 0); bank served ...". */
+/** One hop of an element: "L1 read by acc_a.lane1 (bank 5, row 0) = 7; bank served ...". */
 export function hopText(x) {
-  const where = x.mem === "l1" ? `bank ${x.bank}, row ${x.row}` : `beat ${x.beat}`;
+  const where = x.k === "dma" ? `DMA copy ${x.id} beat ${x.i}, bank ${x.bank}, row ${x.row}`
+    : x.k === "burst" ? `DMA copy ${x.id}, ${x.size} B from ${x.addr}`
+      : `bank ${x.bank}, row ${x.row}`;
+  const value = x.value !== undefined ? ` = ${x.value}` : "";
   const served = x.served ? `; bank served ${x.served.port} for ${x.served.element ?? `row ${x.served.row}`}` : "";
-  return `${x.mem.toUpperCase()} ${x.act} by ${x.by} (${where})${served}`;
+  return `${x.mem.toUpperCase()} ${x.act} by ${x.by} (${where})${value}${served}`;
 }
 
-/** A firing's operands: "a A[5]; b B[5] → out C[5]". */
+/** A firing's operands and results with their values: "acc_a A[4], A[5] (1, 2) → acc_out C[4], C[5] (101, 103)". */
 export function operandsText(f) {
-  const side = (ports) => Object.entries(ports).map(([p, xs]) => `${p} ${xs.join(", ")}`).join("; ");
-  return `${side(f.inputs)}${Object.keys(f.outputs).length ? ` → ${side(f.outputs)}` : ""}`;
+  const vals = (xs) => (xs && xs.length ? ` (${xs.join(", ")})` : "");
+  const ins = Object.entries(f.inputs).map(([m, xs]) => `${m} ${xs.join(", ")}${vals(f.operands?.[m]?.vals)}`).join("; ");
+  const outs = Object.entries(f.outputs).map(([m, xs]) => `${m} ${xs.join(", ")}${vals(f.push?.vals)}`).join("; ");
+  return `${ins}${outs ? ` → ${outs}` : ""}`;
 }

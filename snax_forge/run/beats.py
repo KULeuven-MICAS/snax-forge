@@ -171,6 +171,24 @@ def mover_csrs(cluster: Cluster) -> dict[str, int]:
     return out
 
 
+def mover_values(cluster: Cluster, mover: Mover, regs: dict[int, int]
+                 ) -> tuple[int, list[int], list[int], list[int]]:  # fmt: skip
+    """A mover's pointer, spatial strides, temporal bounds and temporal strides from the
+    streamer's CSR values (number -> the last value written; 0 when never written)."""
+    csr = mover_csrs(cluster)[mover.name]
+    n_sp = len(mover.spatial_bounds)
+    get = [regs.get(csr + i, 0) for i in range(2 + n_sp + 2 * mover.temporal_dim)]
+    return (get[0], get[2 : 2 + n_sp], get[2 + n_sp : 2 + n_sp + mover.temporal_dim],
+            get[2 + n_sp + mover.temporal_dim :])  # fmt: skip
+
+
+def mover_nest(cluster: Cluster, mover: Mover, regs: dict[int, int]) -> list[list[int]]:
+    """Each lane's addresses (TCDM offsets) from the streamer's CSR values (``agu_nest``)."""
+    ptr, sp, tb, ts = mover_values(cluster, mover, regs)
+    return agu_nest(ptr, mover.spatial_bounds, sp, tb, ts, mover.lanes, cluster.l1_size - 1,
+                    not mover.write)  # fmt: skip
+
+
 def nests(ctx: Context) -> dict[tuple[str, int], list[list[int]]]:
     """Per (mover, its run index in the window), each lane's addresses (TCDM offsets) from
     the CSR writes before its start."""
@@ -178,8 +196,6 @@ def nests(ctx: Context) -> dict[tuple[str, int], list[list[int]]]:
     core = f"core{c.accelerator.core}"
     raw = sorted((x for s, x in ctx.lines if s == core and x.trace == "events"
                   and x.kind == "csr" and x.fields["op"] == "w"), key=lambda x: x.cycle)  # fmt: skip
-    first = mover_csrs(c)
-    mask = c.l1_size - 1
     out = {}
     for m in c.accelerator.movers:
         starts = sorted(x.cycle for s, x in ctx.lines
@@ -192,15 +208,7 @@ def nests(ctx: Context) -> dict[tuple[str, int], list[list[int]]]:
             for x in raw:
                 if x.cycle <= s:
                     regs[x.fields["csr"]] = x.fields["value"]
-            csr = first[m.name]
-            n_sp = len(m.spatial_bounds)
-            get = [regs.get(csr + i, 0) for i in range(2 + n_sp + 2 * m.temporal_dim)]
-            ptr = get[0]
-            sp = get[2 : 2 + n_sp]
-            tb = get[2 + n_sp : 2 + n_sp + m.temporal_dim]
-            ts = get[2 + n_sp + m.temporal_dim :]
-            out[(m.name, k)] = agu_nest(ptr, m.spatial_bounds, sp, tb, ts, m.lanes, mask,
-                                        not m.write)  # fmt: skip
+            out[(m.name, k)] = mover_nest(c, m, regs)
             k += 1
     return out
 

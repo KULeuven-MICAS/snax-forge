@@ -28,7 +28,7 @@ Routes (every answer is JSON except the static files):
     GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=M]
                                             rows A <= r < B in full, at most 256
     GET  /api/run/<name>/movement           residency, patterns and conflict
-                                            counts
+                                            counts (movement.py)
     GET  /api/run/<name>/journey?region=R&index=I
                                             every hop of element R[I] (I a flat
                                             index, or indices separated by commas)
@@ -40,8 +40,8 @@ Routes (every answer is JSON except the static files):
 All the work is in api.py; this module only parses paths and queries and
 turns results and errors into responses: 404 for an unknown run, memory or
 file, 400 for a bad query (a mark the run lacks included, with the reason), 500 with the message when a reload fails (the old runs stay
-loaded). The movement routes answer a run without a beat trace with
-``available`` false and the reason.
+loaded). A movement route answers a run below the level it needs (beat, or
+stall for the conflicts) with ``available`` false and the reason.
 """
 
 from __future__ import annotations

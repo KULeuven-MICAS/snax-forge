@@ -40,12 +40,17 @@ with the regions; folded rows are fetched on request, at most
 per run on first use; the view lists the marks the run has and why it lacks
 the others.
 
+Movement
+--------
+The movement answers (journey, residency, patterns, conflicts) are
+movement.py's queries on the index; one a run's level cannot give is
+``available`` false with the reason.
+
 Not yet
 -------
-The movement views come with FLOW3 round 2b's step 3: their routes answer
-with the reason. The schedule and the cluster view come back in round 3
-(D57). The profile keeps each FIFO's highest count only (D137), so there is
-no busy-window occupancy.
+The schedule and the cluster view come back in round 3 (D57). The profile
+keeps each FIFO's highest count only (D137), so there is no busy-window
+occupancy.
 """
 
 from __future__ import annotations
@@ -62,15 +67,12 @@ from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, 
 from snax_forge.run.cluster import DMA
 
 from . import index as ix
-from . import memory
+from . import memory, movement
 from .index import RunIndex
 from .memory import MemoryLayout, MemoryViewError, RowMarks
+from .movement import MovementUnavailable
 
 MAX_ROWS = memory.MAX_ROWS  # memory rows per request (static/memory.js)
-ROUND_2 = (
-    "FLOW3 round 2: the memory and movement views need beat-level events and memory dumps, "
-    "which the SNAX-GVSoC flow does not write yet"
-)
 NO_FIFO_WINDOW = "the profile keeps each FIFO's highest count only (D137): no busy window"
 
 
@@ -215,24 +217,50 @@ def memory_rows(rv: RunView, mem: str, start: int, stop: int, marks: str | None 
 
 
 # =============================================================================
-# Movement: FLOW3 round 2b
+# Data movement (movement.py on index.py)
 # =============================================================================
 
 
-def _unavailable(rv: RunView) -> dict[str, Any]:
-    return {"name": rv.name, "available": False, "reason": ROUND_2}
+def _unavailable(rv: RunView, e: MovementUnavailable) -> dict[str, Any]:
+    return {"name": rv.name, "available": False, "reason": str(e),
+            "filtered": rv.index.filtered}  # fmt: skip
 
 
 def movement_view(rv: RunView) -> dict[str, Any]:
-    return _unavailable(rv)
+    """/api/run/<name>/movement: residency per region and memory, patterns per port and
+    task, and the conflict counts (``available`` false with the reason below ``stall``), or
+    ``available`` false with the reason below ``beat``."""
+    idx = rv.index
+    try:
+        residency, patterns = movement.residency(idx), movement.patterns(idx)
+    except MovementUnavailable as e:
+        return _unavailable(rv, e)
+    try:
+        c = movement.conflicts(idx)
+        counts = {"available": True, **{k: c[k] for k in ("count", "banks", "ports")}}
+    except MovementUnavailable as e:
+        counts = {"available": False, "reason": str(e)}
+    return {"name": rv.name, "available": True, "level": idx.level, "filtered": idx.filtered,
+            "residency": residency, "patterns": patterns, "conflicts": counts}  # fmt: skip
 
 
 def journey_view(rv: RunView, region: str, index: Sequence[int] | int) -> dict[str, Any]:
-    return _unavailable(rv)
+    """/api/run/<name>/journey?region=A&index=5: every access to one element and the
+    firings it fed or came from (movement.py); a ValueError for an element the run lacks."""
+    try:
+        return {"name": rv.name, "available": True,
+                **movement.journey(rv.index, region, index)}  # fmt: skip
+    except MovementUnavailable as e:
+        return _unavailable(rv, e)
 
 
 def conflicts_view(rv: RunView, start: int = 0, stop: int | None = None) -> dict[str, Any]:
-    return _unavailable(rv)
+    """/api/run/<name>/conflicts?from=A&to=B: the L1 stalls placed on the layout."""
+    try:
+        return {"name": rv.name, "available": True,
+                **movement.conflicts(rv.index, start, stop)}  # fmt: skip
+    except MovementUnavailable as e:
+        return _unavailable(rv, e)
 
 
 # =============================================================================
@@ -385,8 +413,8 @@ class RunSet:
 
 __all__ = [
     "MAX_ROWS",
-    "ROUND_2",
     "MemoryViewError",
+    "MovementUnavailable",
     "RunSet",
     "RunView",
     "conflicts_view",

@@ -86,5 +86,7 @@ def test_memory_routes_answer_and_movement_says_why_not(tmp_path):
         assert status_of(srv, "/api/run/vecadd/memory/l1/rows?from=0&to=999") == 400
         assert status_of(srv, "/api/run/vecadd/memory/l3/rows?from=0&to=4") == 404
         assert get_json(srv, "/api/run/vecadd/movement")["available"] is False
+        assert get_json(srv, "/api/run/vecadd/journey?region=A&index=0")["available"] is False
+        assert status_of(srv, "/api/run/vecadd/journey?region=Q&index=0") == 400
         assert get_json(srv, "/api/run/vecadd/fifo")["available"] is False
         assert status_of(srv, "/api/run/nope/memory") == 404

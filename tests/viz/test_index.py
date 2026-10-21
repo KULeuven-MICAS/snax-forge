@@ -67,6 +67,7 @@ def test_the_ids():
     assert list(idx.beat[("acc_out", 0)]) == [0]  # by lane
     assert idx.fire[0]["b"] == {"acc_a": 0, "acc_b": 0} and idx.push[0]["vals"] == [101]
     assert idx.folded[0] is idx.push[0]
+    assert idx.fired[("acc_a", 0)] == [idx.fire[0]] and ("acc_a", 1) not in idx.fired
     assert idx.dma[(2, 0)]["elems"] == list(range(8)) and idx.dma[(4, 0)]["op"] == "r"
     assert [e["op"] for e in idx.burst[4]] == ["w"] and idx.burst[2][0]["size"] == 512
     assert [(e["src"], e["task"]) for e in idx.stalls_bank[0]] == [("acc_b.lane0", "add_acc_b")]

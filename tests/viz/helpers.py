@@ -17,9 +17,10 @@ from tests.flow.helpers import stubbed_flow
 REPO = Path(__file__).resolve().parents[2]
 
 
-def run_dir(out: Path, name: str = "vecadd", level: str = "task") -> Path:
-    """The flow of recipe ``name`` at trace ``level`` into the folder ``out``; returns it."""
-    return stubbed_flow(out.parent, name, level, out=out)
+def run_dir(out: Path, name: str = "vecadd", level: str = "task", **kw) -> Path:
+    """The flow of recipe ``name`` at trace ``level`` into the folder ``out`` (``kw`` to
+    ``run_flow``: ``memory_sets``, ``trace_sources``, ...); returns it."""
+    return stubbed_flow(out.parent, name, level, out=out, **kw)
 
 
 @contextmanager
@@ -155,3 +156,52 @@ class Events:
         evs = sorted(self.events, key=lambda e: e["t"])
         trace = Trace(level, 1000, 0, self.c.sources, evs, list(filter))
         return RunIndex.from_run(RunOutputs({}, None, trace), self.c, self.regions)
+
+
+# =============================================================================
+# The recorded run (tests/run/fixtures/vecadd), converted into a flow folder
+# =============================================================================
+
+RECORDED = REPO / "tests" / "run" / "fixtures" / "vecadd"
+
+
+def recorded_run(out: Path, level: str = "stall") -> Path:
+    """The recorded vecadd run converted at ``level`` into the flow folder ``out``, laid out
+    as the flow lays it out (``gen/``, ``design/``, ``run/``): ``task`` from its task-level
+    events, ``beat`` and ``stall`` from its stall-level ones (at ``beat`` without the
+    ``stalls`` lines). Returns ``out``."""
+    import json
+    import shutil
+
+    from snax_forge.common import to_json
+    from snax_forge.design import DesignPoint
+    from snax_forge.lower.tasks import TaskList
+    from snax_forge.run import load_cluster, read_events, regions_of, write_run
+    from snax_forge.run.convert import convert
+
+    (out / "gen").mkdir(parents=True)
+    (out / "design").mkdir()
+    for name in ("snax_alu.hjson", "snax_alu_streamer.hjson", "snax_alu_acc.hjson"):
+        shutil.copy(RECORDED / name, out / "gen" / name)
+    shutil.copy(RECORDED / "design_point.json", out / "design" / "design_point.json")
+    cluster = load_cluster(out / "gen" / "snax_alu.hjson", out / "design" / "design_point.json")
+    tasks = TaskList.from_dict(json.loads((RECORDED / "tasks.json").read_text()))
+    check = json.loads((RECORDED / "check.json").read_text())
+    syms = json.loads((RECORDED / "elf_symbols.json").read_text())
+    sources = (
+        [] if level == "task" else ["acc", *(m.name for m in cluster.accelerator.movers), "dma"]
+    )
+    lines = read_events(RECORDED / ("events.log" if level == "task" else "events_stall.log"))
+    if level == "beat":
+        lines = [x for x in lines if x.trace != "stalls"]
+    regions = regions_of(DesignPoint.load(out / "design" / "design_point.json"), syms)
+    profile, trace = convert(lines, cluster, tasks, check["total_cycles"], level,
+                             check["functional_check"], regions, sources)  # fmt: skip
+    (out / "run").mkdir()
+    (out / "run" / "run.json").write_text(to_json({
+        "design_point": "design/design_point.json",
+        "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
+        "elf_symbols": syms, "trace_level": level, "trace_sources": sources,
+    }))  # fmt: skip
+    write_run(out / "run", profile, trace)
+    return out

@@ -15,6 +15,7 @@ time order (by ``t``, then as SNAX-GVSoC wrote them):
                              stall's word, every word a DMA beat or a burst covers
     beat[(mover, b)]         a streamer beat's grants, one per lane, by lane
     fire[n], push[n]         the accelerator's firings and pushes
+    fired[(mover, b)]        the firings that name a reader's beat (several with a repeat)
     folded[n]                the push whose ``[first, last]`` holds firing ``n``
     dma[(id, i)]             a DMA beat on L1; ``burst[id]`` a copy's bursts
     stalls_bank[bank], stalls_port[port]   the stalls, each with its ``task``
@@ -72,6 +73,7 @@ class RunIndex:
     word: dict[Key, list[Event]] = field(default_factory=lambda: defaultdict(list))
     beat: dict[tuple[str, int], dict[int, Event]] = field(default_factory=lambda: defaultdict(dict))
     fire: dict[int, Event] = field(default_factory=dict)
+    fired: dict[tuple[str, int], list[Event]] = field(default_factory=lambda: defaultdict(list))
     push: dict[int, Event] = field(default_factory=dict)
     folded: dict[int, Event] = field(default_factory=dict)
     dma: dict[tuple[int, int], Event] = field(default_factory=dict)
@@ -154,6 +156,8 @@ class RunIndex:
                 idx.burst[e["id"]].append(e)
             elif k == "fire":
                 once(idx.fire, e["n"], e, "firing")
+                for mover, b in e["b"].items():
+                    idx.fired[(mover, b)].append(e)
             elif k == "push":
                 once(idx.push, e["n"], e, "push")
                 for n in range(e["first"], e["last"] + 1):
@@ -169,8 +173,8 @@ class RunIndex:
         if twice:
             idx.linked = (f"ids count from 0 in each run and this trace has several runs per "
                           f"component ({', '.join(twice[:3])} named twice): not linked yet")  # fmt: skip
-        for table in (idx.elem, idx.word, idx.beat, idx.burst, idx.stalls_bank, idx.stalls_port,
-                      idx.grants_port, idx.csr):  # fmt: skip
+        for table in (idx.elem, idx.word, idx.beat, idx.fired, idx.burst, idx.stalls_bank,
+                      idx.stalls_port, idx.grants_port, idx.csr):  # fmt: skip
             table.default_factory = None  # type: ignore[attr-defined]
         return idx
 

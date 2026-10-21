@@ -524,7 +524,7 @@ async function applyPick(cur, pick) {
   cur.drawer.hidden = false;
   const body = cur.drawer.querySelector(".drawer-body");
   if (!cur.beat) {
-    body.replaceChildren(h("p", { class: "note" }, "The journey needs a beat-level trace: run with --trace beat."));
+    body.replaceChildren(h("p", { class: "note" }, "The journey needs the beat level: run with --trace beat or above."));
     return;
   }
   body.replaceChildren(h("p", { class: "note" }, "Loading…"));
@@ -551,16 +551,17 @@ async function applyPick(cur, pick) {
   }
   const hopRows = j.hops.map((x) => h("tr", { class: x.act === "held back" ? "bad" : null }, h("td", {}, go(x.t)), h("td", {}, hopText(x))));
   const firing = (f) => h("div", { class: "fire" },
-    h("div", {}, go(f.t), ` firing ${f.n} of ${f.acc} (task ${f.task}, lane ${f.lane}) ${f.role} it: `, operandsText(f)),
+    h("div", {}, go(f.t), ` firing ${f.n} of ${f.acc} (task ${f.task}, via ${f.via}) ${f.role} it: `, operandsText(f)),
+    f.push ? h("div", { class: "note" }, "pushed at ", go(f.push.t), ` as result ${f.push.n}${f.push.first === f.push.last ? "" : `, folding firings ${f.push.first}–${f.push.last}`}`) : null,
     f.results ? Object.entries(f.results).map(([el, hs]) => h("div", { class: "note" }, `${el}: `,
-      hs.map((x, i) => [i ? " · " : "", go(x.t), ` ${x.mem.toUpperCase()} ${x.act} by ${x.by}`]))) : null);
+      hs.map((x, i) => [i ? " · " : "", go(x.t), ` ${x.mem.toUpperCase()} ${x.act} by ${x.by}${x.value !== undefined ? ` = ${x.value}` : ""}`]))) : null);
   const words = (cur.conflicts?.words ?? []).filter((w) => w.element === j.element);
   const held = words.flatMap((w) => w.held);
   const won = words.flatMap((w) => w.won);
   body.replaceChildren(h("div", {}, // h() drops nulls and flattens arrays
     h("p", { class: "note" }, `In ${j.memories.map((m) => m.toUpperCase()).join(" and ")}. Click a cycle to show it here.`),
     h("p", {}, toggle, " ", h("button", { type: "button", class: "cyc link", onclick: () => cur.setHash({ view: "schedule" }) }, "open the schedule")),
-    j.filtered ? h("p", { class: "note" }, "This beat trace is filtered (see the header): hops outside it are missing.") : null,
+    j.filtered ? h("p", { class: "note" }, `This trace's beat lines cover ${j.filtered.sources.join(", ")} only: hops of the others are missing.`) : null,
     h("h3", {}, "Hops"),
     hopRows.length ? h("table", { class: "journey" }, h("tbody", {}, hopRows)) : h("p", { class: "note" }, "No access to this element was traced."),
     j.firings.length ? [h("h3", {}, "Firings"), j.firings.map(firing)] : null,
