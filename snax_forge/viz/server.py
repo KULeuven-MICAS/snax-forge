@@ -37,13 +37,21 @@ Routes (every answer is JSON except the static files):
     GET  /api/run/<name>/conflicts?from=A&to=B
                                             the L1 conflicts with A <= t < B,
                                             placed on the layout
+    GET  /api/run/<name>/schedule[?open=A,B&cycle=C]
+                                            the lanes and the segments of the
+                                            window, folds starting at A, B or
+                                            holding C opened (schedule.py)
+    GET  /api/run/<name>/schedule/detail?from=A&to=B
+                                            the beat and stall lines of A <= t < B
+                                            per lane
     POST /api/reload                        read every run directory again
 
 All the work is in api.py; this module only parses paths and queries and
 turns results and errors into responses: 404 for an unknown run, memory or
 file, 400 for a bad query (a mark the run lacks included, with the reason), 500 with the message when a reload fails (the old runs stay
-loaded). A movement route answers a run below the level it needs (beat, or
-stall for the conflicts) with ``available`` false and the reason.
+loaded). A movement or schedule route answers a run below the level it needs
+(beat, or stall for the conflicts; task for the schedule, beat for its
+detail) with ``available`` false and the reason.
 """
 
 from __future__ import annotations
@@ -82,6 +90,14 @@ def _int_arg(q: dict[str, list[str]], key: str, default: int | None) -> int | No
         return int(vals[-1])
     except ValueError as e:
         raise _BadRequest(f"{key} must be an integer, got {vals[-1]!r}") from e
+
+
+def _ints_arg(q: dict[str, list[str]], key: str) -> list[int]:
+    """A list of integers, repeated or separated by commas."""
+    try:
+        return [int(x) for v in q.get(key, []) for x in v.split(",") if x]
+    except ValueError as e:
+        raise _BadRequest(f"{key} must be integers separated by commas") from e
 
 
 def _str_arg(q: dict[str, list[str]], key: str) -> str | None:
@@ -157,6 +173,16 @@ class Handler(BaseHTTPRequestHandler):
                 raise _BadRequest("give t=T, the cycle")
             self._json(api.memory_cycle(rv, t))
             return
+        if len(parts) == 4 and parts[0] == "run" and parts[2:] == ["schedule", "detail"]:
+            rv = runs.get(parts[1])
+            if rv is None:
+                self._error(HTTPStatus.NOT_FOUND, f"no run named {parts[1]!r}")
+                return
+            a, b = _int_arg(q, "from", None), _int_arg(q, "to", None)
+            if a is None or b is None:
+                raise _BadRequest("give from=A and to=B, the cycles")
+            self._json(api.schedule_detail(rv, a, b))
+            return
         if len(parts) == 5 and parts[0] == "run" and parts[2:] == ["memory", parts[3], "rows"]:
             rv = runs.get(parts[1])
             if rv is None or parts[3] not in api.memories(rv):
@@ -208,6 +234,9 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(api.journey_view(rv, region, idx[0] if len(idx) == 1 else idx))
                 except ValueError as e:
                     raise _BadRequest(str(e)) from e
+                return
+            if parts[2] == "schedule":
+                self._json(api.schedule_view(rv, _ints_arg(q, "open"), _int_arg(q, "cycle", None)))
                 return
             if parts[2] == "conflicts":
                 a = _int_arg(q, "from", 0)

@@ -1,5 +1,6 @@
 """A run's events grouped by their ids and lookups, built once per run when the viewer loads
-it: what the memory tab's marks (D96) and the movement view (D97) query.
+it: what the memory tab's marks (D96), the movement view (D97), the schedule and the cluster
+view (D57) query.
 
     RunIndex.from_run(outputs, cluster, regions, tasks) -> RunIndex
 
@@ -25,7 +26,25 @@ time order (by ``t``, then as SNAX-GVSoC wrote them):
     stalls_bank[bank], stalls_port[port]   the stalls, each with its ``task``
     grants_port[port]        a crossbar port's grants
     csr[block]               the cores' CSR accesses per block (``acc_streamer``, ``acc``)
-    start[task], done[task]  a component's task brackets; ``issue[id]`` a DMA copy
+    start[task], done[task]  a component's task brackets; ``issue[id]`` a DMA copy and
+                             ``copy_done[id]`` its done; ``tasks_of[src]`` the accelerator's
+                             and each mover's tasks in start order
+    runs[task]               an accelerator or mover task's class runs, ``(first, end, mode)``
+                             (run/beats.py's ``class_runs``: each line to the next, the last
+                             to the end its ``done``'s ``cycles`` add up to)
+    fifo[(mover, lane)]      a lane's queue counts ``(t, count)``
+    dma_beats[(id, op)]      a copy's DMA beats on L1 of each op
+    core_spans[core]         its cycles classed (run/cores.py, the profile's rule), checked
+                             against the profile's counts when the run has them
+    funcs[core]              its function spans ``(first, end, name)``, from its ``func``
+                             lines; before its first one in the window the name is None (the
+                             trace drops the line in force at 0)
+    core_csr[core]           its CSR accesses, ``csr`` and ``poll`` events
+    event_cycles             the distinct cycles with an event: from ``beat`` on, of a
+                             ``grant``, ``dma``, ``burst``, ``fire``, ``push``, ``class``,
+                             ``stall`` or ``fifo``; at ``task``, of any task-level event
+    boundary_cycles          the distinct cycles of a task's start or done, a copy's issue or
+                             done, a ``func`` line
 
 A beat's ``b`` and a firing's ``n`` count from 0 in each run of their component (snax-gvsoc
 ``docs/EVENTS.md``), and the converter puts on every line the task its component's
@@ -65,13 +84,16 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from snax_forge.lower.tasks import Configure, Start, TaskList
-from snax_forge.run import Cluster, Region, RunError, RunOutputs
+from snax_forge.run import Cluster, Region, RunError, RunOutputs, core_counts, core_spans
+from snax_forge.run.beats import class_runs, run_end
 from snax_forge.run.cluster import DMA
 from snax_forge.run.trace import LEVELS
 
 Key = tuple[str, int]  # (mem, addr) of a word, or (container, flat) of an element
 Event = dict[str, Any]
 DMA_KINDS = ("dma", "burst")  # the DMA's accesses: an L1 beat and an AXI request
+BEAT_KINDS = ("grant", "dma", "burst", "fire", "push", "class", "stall", "fifo")
+TASK_KINDS = ("start", "done", "csr", "poll", "barrier", "state", "func", "issue")
 
 
 @dataclass
@@ -106,6 +128,19 @@ class RunIndex:
     issue: dict[int, Event] = field(default_factory=dict)
     streamers: dict[str, dict[str, str]] = field(default_factory=dict)  # the pairing
     accel: dict[str, str] = field(default_factory=dict)
+    total_cycles: int = 0  # the window
+    boot: int = 0  # the cycles before it
+    times: list[int] = field(default_factory=list)  # events[i]["t"], for bisect
+    copy_done: dict[int, Event] = field(default_factory=dict)
+    tasks_of: dict[str, list[str]] = field(default_factory=dict)
+    runs: dict[str, list[tuple[int, int, str]]] = field(default_factory=dict)
+    fifo: dict[tuple[str, int], list[tuple[int, int]]] = field(default_factory=dict)
+    dma_beats: dict[tuple[int, str], int] = field(default_factory=dict)
+    core_spans: dict[str, list[tuple[int, int, str]]] = field(default_factory=dict)
+    funcs: dict[str, list[tuple[int, int, str | None]]] = field(default_factory=dict)
+    core_csr: dict[str, list[Event]] = field(default_factory=dict)
+    event_cycles: list[int] = field(default_factory=list)
+    boundary_cycles: list[int] = field(default_factory=list)
 
     def on(self, level: str) -> bool:
         """Traced at ``level`` or above."""
@@ -139,15 +174,19 @@ class RunIndex:
     @classmethod
     def from_run(cls, outputs: RunOutputs, cluster: Cluster, regions: list[Region],
                  tasks: TaskList) -> RunIndex:  # fmt: skip
-        """The index of a run (module doc); a RunError on a duplicate key or a task list
-        that does not pair."""
+        """The index of a run (module doc); a RunError on a duplicate key, a task list
+        that does not pair, or a core's spans that are not the profile's counts."""
         streamers = pairing(tasks, cluster)
         accel = {st: t for t, ms in streamers.items() for st in ms.values()}
         tr = outputs.trace
         if tr is None:
-            return cls("off", [], cluster, list(regions), streamers=streamers, accel=accel)
+            total = outputs.profile.total_cycles if outputs.profile is not None else 0
+            return cls("off", [], cluster, list(regions), streamers=streamers, accel=accel,
+                       total_cycles=total)  # fmt: skip
         idx = cls(tr.level, list(tr.filter), cluster, list(regions), list(tr.events),
-                  streamers=streamers, accel=accel)  # fmt: skip
+                  streamers=streamers, accel=accel, total_cycles=tr.total_cycles,
+                  boot=tr.boot)  # fmt: skip
+        idx.times = [e["t"] for e in idx.events]
 
         def once(table: dict, key: Any, e: Event, what: str) -> None:
             if key in table:
@@ -198,10 +237,61 @@ class RunIndex:
                 once(idx.issue, e["id"], e, "DMA copy")
             if k in ("grant", "dma", "burst") and e.get("op") == "r":
                 idx.returns[e["back"]].append(e)
+        idx._schedule(outputs)
         for table in (idx.elem, idx.word, idx.beat, idx.fired, idx.returns, idx.burst,
                       idx.stalls_bank, idx.stalls_port, idx.grants_port, idx.csr):  # fmt: skip
             table.default_factory = None  # type: ignore[attr-defined]
         return idx
+
+    def _schedule(self, outputs: RunOutputs) -> None:
+        """The schedule's and the cluster view's keys (module doc)."""
+        acc = self.cluster.accelerator
+        owners = {acc.name, *(m.name for m in acc.movers)}
+        classes: dict[str, list[Event]] = defaultdict(list)
+        func_lines: dict[str, list[Event]] = defaultdict(list)
+        waits: dict[str, list[Event]] = defaultdict(list)
+        events, bounds = set(), set()
+        kinds = BEAT_KINDS if self.on("beat") else TASK_KINDS
+        for e in self.events:
+            k, src = e["k"], e["src"]
+            if k in kinds:
+                events.add(e["t"])
+            if k in ("start", "done", "issue") or k == "func":
+                bounds.add(e["t"])
+            if k == "start" and src in owners:
+                self.tasks_of.setdefault(src, []).append(e["task"])
+            elif k == "done" and "id" in e:
+                self.copy_done[e["id"]] = e
+            elif k == "class":
+                classes[e["task"]].append(e)
+            elif k == "fifo":
+                self.fifo.setdefault((src, e["lane"]), []).append((e["t"], e["count"]))
+            elif k == "dma":
+                self.dma_beats[(e["id"], e["op"])] = self.dma_beats.get((e["id"], e["op"]), 0) + 1
+            elif k == "func":
+                func_lines[src].append(e)
+            elif k in ("csr", "poll"):
+                self.core_csr.setdefault(src, []).append(e)
+            if k in ("state", "poll", "barrier"):
+                waits[src].append(e)
+        for task, lines in classes.items():
+            if task in self.start and task in self.done:
+                self.runs[task] = class_runs(lines, run_end(self.start[task], self.done[task]))
+        T = self.total_cycles
+        for core in self.cluster.cores:
+            self.core_spans[core] = core_spans(waits.get(core, []), T)
+            p = outputs.profile.cores.get(core) if outputs.profile is not None else None
+            got = core_counts(self.core_spans[core])
+            if p is not None and p.cycles is not None and got != p.cycles:
+                raise RunError("index.cores", f"{core}: its spans in the window count {got}, "
+                               f"the profile {p.cycles}")  # fmt: skip
+            fl = func_lines.get(core, [])
+            ts = [0] + [e["t"] for e in fl] + [T]
+            names = [None] + [e["name"] for e in fl]
+            self.funcs[core] = [(a, b, n) for a, b, n in zip(ts, ts[1:], names, strict=False)
+                                if a < b]  # fmt: skip
+        self.event_cycles = sorted(t for t in events if 0 <= t < T)
+        self.boundary_cycles = sorted(t for t in bounds if 0 <= t < T)
 
 
 def _line(e: Event) -> str:
