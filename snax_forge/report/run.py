@@ -25,7 +25,12 @@ named it (D137).
                   (a core's or AXI's over the whole run, marked); banks with
                   conflicts as ranges; streamers' stall cycles; FIFO highest
                   count against depth
-    movement      one line: it needs the beat level (FLOW3 round 2)
+    movement      from the run index (viz/movement.py), at beat and above: per
+                  region and memory its arrival, use and departure spans; per
+                  streamer lane and task its configured nest and pace against
+                  one beat per cycle; at stall, the L1 stalls per bank and per
+                  port (and the held cycles per lane). At off and task one line
+                  says why there is none
 
 Achieved II = (last firing − first firing) / (firings − 1), over the
 accelerator's tasks (their ``done`` events carry both). The report's length
@@ -37,13 +42,13 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..viz import api
+from ..viz import api, movement
+from ..viz.movement import MovementUnavailable
 from .markdown import pct, spans, table
 from .record import Record
 
 DIRECTION = {"l2_to_l1": "L2 → L1", "l1_to_l2": "L1 → L2", "l1_to_l1": "L1 → L1",
              "l2_to_l2": "L2 → L2"}  # fmt: skip
-MOVEMENT = "Needs the beat level (FLOW3 round 2): no data movement at this trace level."
 
 
 @dataclass
@@ -136,6 +141,48 @@ class StreamerRun(Record):
 
 
 @dataclass
+class ResidencyRow(Record):
+    region: str
+    mem: str
+    elements: int
+    present_at_start: int
+    arrival: list[int] | None  # [first, last] over the elements
+    use: list[int] | None
+    departure: list[int] | None
+
+
+@dataclass
+class PatternRow(Record):
+    port: str
+    task: str
+    base: int | None
+    nest: list[list[int]]  # [bound, stride] per loop, innermost first
+    beats: int
+    first: int | None
+    last: int | None
+    ideal_last: int | None  # first + beats - 1: one beat per cycle
+    held: int | None  # cycles; None below stall
+
+
+@dataclass
+class StallCount(Record):
+    where: str  # banks (as ranges) or a port
+    stalls: int
+
+
+@dataclass
+class MovementReport(Record):
+    reason: str | None  # why there is none (below beat), else None
+    sources: list[str] | None  # the beat lines' sources when they are not all, else None
+    residency: list[ResidencyRow] = field(default_factory=list)
+    patterns: list[PatternRow] = field(default_factory=list)
+    conflicts: int | None = None  # L1 stalls; None below stall
+    banks: list[StallCount] = field(default_factory=list)
+    ports: list[StallCount] = field(default_factory=list)
+    conflicts_reason: str | None = None
+
+
+@dataclass
 class RunReport(Record):
     name: str
     cycles: int
@@ -149,7 +196,7 @@ class RunReport(Record):
     ports: list[PortRow]
     banks: list[BankRange]
     streamers: list[StreamerRun]
-    movement: str
+    movement: MovementReport
 
 
 # =============================================================================
@@ -178,6 +225,32 @@ def _bank_ranges(conflicts: list[int]) -> list[BankRange]:
             j += 1
         out.append(BankRange(spans(list(range(i, j + 1))), conflicts[i]))
         i = j + 1
+    return out
+
+
+def build_movement(rv: api.RunView) -> MovementReport:
+    """The data movement section from the run index (module doc)."""
+    idx = rv.index
+    filtered = idx.filtered
+    try:
+        res, pats = movement.residency(idx), movement.patterns(idx)
+    except MovementUnavailable:
+        return MovementReport(f"Needs --trace beat; this run was traced at {idx.level}.", None)
+    out = MovementReport(None, None if filtered is None else filtered["sources"])
+    out.residency = [ResidencyRow(r["region"], r["mem"], r["elements"], r["present_at_start"],
+                                  r["arrival"], r["use"], r["departure"]) for r in res]  # fmt: skip
+    out.patterns = [PatternRow(p["port"], p["task"], p["addr"]["base"], p["addr"]["nest"],
+                               p["beats"], p["first"], p["last"], p["ideal_last"],
+                               p.get("held_cycles")) for p in pats if p["port"] != "dma"]  # fmt: skip
+    try:
+        c = movement.conflicts(idx)
+    except MovementUnavailable:
+        out.conflicts_reason = f"Needs --trace stall; this run was traced at {idx.level}."
+        return out
+    out.conflicts = c["count"]
+    counts = [c["banks"].get(str(b), 0) for b in range(rv.cluster.banks)]
+    out.banks = [StallCount(b.banks, b.conflicts) for b in _bank_ranges(counts)]
+    out.ports = [StallCount(port, n) for port, n in c["ports"].items()]
     return out
 
 
@@ -242,7 +315,7 @@ def build_run(rv: api.RunView) -> RunReport:
     return RunReport(
         rv.name, total, rv.trace_level, None if tr is None else tr.boot,
         check, task_rows, accels, cores, dmas, ports,
-        _bank_ranges(p.banks.conflicts if p.banks else []), streamers, MOVEMENT,
+        _bank_ranges(p.banks.conflicts if p.banks else []), streamers, build_movement(rv),
     )  # fmt: skip
 
 
@@ -346,5 +419,49 @@ def render_run(r: RunReport) -> str:
         {1, 2},
     )  # fmt: skip
 
-    out += ["", "## Data movement", "", r.movement]
+    out += ["", "## Data movement", ""] + render_movement(r.movement)
     return "\n".join(out) + "\n"
+
+
+def _span(w: list[int] | None) -> str | None:
+    return None if w is None else str(w[0]) if w[0] == w[1] else f"{w[0]}–{w[1]}"
+
+
+def render_movement(m: MovementReport) -> list[str]:
+    """The data movement section's lines (module doc)."""
+    if m.reason is not None:
+        return [m.reason]
+    out = []
+    if m.sources is not None:
+        out += [f"The beat lines cover {', '.join(m.sources)} only.", ""]
+    out += table(
+        ["Region", "Memory", "Elements", "There from the start", "Arrival", "Use", "Departure"],
+        [[r.region, r.mem.upper(), r.elements, r.present_at_start, _span(r.arrival), _span(r.use),
+          _span(r.departure)] for r in m.residency],
+        {2, 3},
+    )  # fmt: skip
+    out += ["", ("Arrival is an element's first write in that memory, use a read by anything but "
+                 "the DMA after it, departure the DMA's first read after it; each column spans "
+                 "the region's elements.")]  # fmt: skip
+    out.append("")
+    out += table(
+        ["Port", "Task", "Base", "Nest (bound × stride, innermost first)", "Beats", "First",
+         "Last", "Last at one a cycle", "Held (cycles)"],
+        [[p.port, p.task, None if p.base is None else hex(p.base),
+          ", ".join(f"{b} × {st}" for b, st in p.nest), p.beats, p.first, p.last, p.ideal_last,
+          p.held] for p in m.patterns],
+        {4, 5, 6, 7, 8},
+    )  # fmt: skip
+    out += ["", ("The nest is the one each task's CSR writes configured (the converter checked it "
+                 "against the grants).")]  # fmt: skip
+    out.append("")
+    if m.conflicts is None:
+        out.append(f"L1 stalls: {m.conflicts_reason}")
+    elif not m.conflicts:
+        out.append("No L1 stalls.")
+    else:
+        out += [f"{m.conflicts} L1 stalls (one per port and cycle a request was refused):", ""]
+        out += table(["Banks", "Stalls per bank"], [[b.where, b.stalls] for b in m.banks], {1})
+        out.append("")
+        out += table(["Port", "Stalls"], [[p.where, p.stalls] for p in m.ports], {1})
+    return out
