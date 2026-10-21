@@ -31,13 +31,21 @@ bisects. The source filter is applied after the window, on the few events
 left. A block's tasks pair each ``start`` (a DMA's ``issue``) with its
 ``done``.
 
+Memory
+------
+The memory tab's rows are computed in memory.py from the run's regions and
+its cluster, once per memory on first use, and folded so the answer grows
+with the regions; folded rows are fetched on request, at most
+``memory.MAX_ROWS`` at a time. A mark (index.py's registry) is computed once
+per run on first use; the view lists the marks the run has and why it lacks
+the others.
+
 Not yet
 -------
-The memory and movement views read beat-level events and memory dumps,
-which come in FLOW3 round 2: their routes answer with the reason. The
-schedule and the cluster view come back in round 3 (D57). The profile keeps
-each FIFO's highest count only (D137), so there is no busy-window
-occupancy.
+The movement views come with FLOW3 round 2b's step 3: their routes answer
+with the reason. The schedule and the cluster view come back in round 3
+(D57). The profile keeps each FIFO's highest count only (D137), so there is
+no busy-window occupancy.
 """
 
 from __future__ import annotations
@@ -53,18 +61,17 @@ from snax_forge.design import DesignPoint
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
 from snax_forge.run.cluster import DMA
 
+from . import index as ix
+from . import memory
 from .index import RunIndex
+from .memory import MemoryLayout, MemoryViewError, RowMarks
 
-MAX_ROWS = 256  # memory rows per request (static/memory.js); the memory view is round 2's
+MAX_ROWS = memory.MAX_ROWS  # memory rows per request (static/memory.js)
 ROUND_2 = (
     "FLOW3 round 2: the memory and movement views need beat-level events and memory dumps, "
     "which the SNAX-GVSoC flow does not write yet"
 )
 NO_FIFO_WINDOW = "the profile keeps each FIFO's highest count only (D137): no busy window"
-
-
-class MemoryViewError(ValueError):
-    """A request the memory view cannot answer; the message says why."""
 
 
 # =============================================================================
@@ -87,6 +94,8 @@ class RunView:
     events: list[dict[str, Any]] = field(default_factory=list)  # sorted by t
     times: list[int] = field(default_factory=list)  # events[i]["t"], for bisect
     spans: dict[str, list[tuple[int, int]]] = field(default_factory=dict)  # per block
+    layouts: dict[str, MemoryLayout] = field(default_factory=dict, repr=False)  # lazy, per memory
+    marks: dict[str, Any] = field(default_factory=dict, repr=False)  # lazy, per mark
 
     @property
     def total_cycles(self) -> int:
@@ -153,21 +162,61 @@ def run_names(dirs: Sequence[str | Path]) -> list[str]:
 
 
 # =============================================================================
-# Memory and movement: FLOW3 round 2
+# The memory tab (memory.py on index.py's marks)
 # =============================================================================
 
 
 def memories(rv: RunView) -> list[str]:
-    """The memories the memory view shows: none until FLOW3 round 2."""
-    return []
+    """The run's memories, L1 first (L2 when the platform has one)."""
+    return ["l1"] + (["l2"] if rv.point.platform.l2 is not None else [])
+
+
+def _layout(rv: RunView, mem: str) -> MemoryLayout:
+    if mem not in memories(rv):
+        raise MemoryViewError(f"run {rv.name!r} has no memory {mem!r}")
+    if mem not in rv.layouts:  # computed once per load; the same answer if two threads race
+        rv.layouts[mem] = memory.layout_of(mem, rv.cluster, rv.point, rv.regions)
+    return rv.layouts[mem]
+
+
+def _marks(rv: RunView, mem: str, marks: str | None) -> RowMarks | None:
+    """The mark asked for on ``mem``'s rows (index.py's registry); a MemoryViewError with the
+    reason when the name is unknown or the run lacks it."""
+    if marks is None:
+        return None
+    if marks not in rv.marks:
+        try:
+            rv.marks[marks] = ix.mark(rv.index, marks)
+        except ValueError as e:
+            raise MemoryViewError(str(e)) from None
+    return memory.row_marks(_layout(rv, mem), rv.marks[marks], ix.MARKS[marks].kind)
 
 
 def memory_view(rv: RunView, marks: str | None = None) -> dict[str, Any]:
-    raise MemoryViewError(ROUND_2)
+    """/api/run/<name>/memory: per memory its geometry, regions, use and folded lines
+    (memory.py), the marks the run has (``marks_available``, with each one's kind) and the
+    reason for each it lacks (``marks_missing``). ``marks`` folds by one of them."""
+    have, lack = ix.marks_of(rv.index)
+    return {
+        "name": rv.name,
+        "has_regions": bool(rv.regions),
+        "marks": marks,
+        "marks_available": {m: ix.MARKS[m].kind for m in have},
+        "marks_missing": lack,
+        "memories": [memory.summary(_layout(rv, m), _marks(rv, m, marks)) for m in memories(rv)],
+    }
 
 
-def memory_rows(rv: RunView, mem: str, start: int, stop: int, marks: str | None = None) -> Any:
-    raise MemoryViewError(ROUND_2)
+def memory_rows(rv: RunView, mem: str, start: int, stop: int, marks: str | None = None
+                ) -> dict[str, Any]:  # fmt: skip
+    """/api/run/<name>/memory/<mem>/rows: rows ``start <= r < stop`` in full."""
+    rows = memory.rows(_layout(rv, mem), start, stop, _marks(rv, mem, marks))
+    return {"mem": mem, "from": start, "to": stop, "rows": rows}
+
+
+# =============================================================================
+# Movement: FLOW3 round 2b
+# =============================================================================
 
 
 def _unavailable(rv: RunView) -> dict[str, Any]:

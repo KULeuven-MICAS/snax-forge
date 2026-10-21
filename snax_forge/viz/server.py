@@ -20,10 +20,11 @@ Routes (every answer is JSON except the static files):
                                             with commas)
     GET  /api/run/<name>/fifo               FIFO busy window per streamer
     GET  /api/run/<name>/memory[?marks=M]    per memory its geometry, regions and
-                                            folded lines; with marks, folded
-                                            by a mark per word: M is conflicts
-                                            (L1 conflict counts), arrival, use or
-                                            wait (a cycle per word)
+                                            folded lines, the marks the run has
+                                            and why it lacks the others; with
+                                            marks, folded by mark M per word
+                                            (index.py's registry: conflicts,
+                                            arrival, use, wait)
     GET  /api/run/<name>/memory/<mem>/rows?from=A&to=B[&marks=M]
                                             rows A <= r < B in full, at most 256
     GET  /api/run/<name>/movement           residency, patterns and conflict
@@ -38,8 +39,7 @@ Routes (every answer is JSON except the static files):
 
 All the work is in api.py; this module only parses paths and queries and
 turns results and errors into responses: 404 for an unknown run, memory or
-file, 400 for a bad query (marks on a run without a beat trace included, with
-the reason), 500 with the message when a reload fails (the old runs stay
+file, 400 for a bad query (a mark the run lacks included, with the reason), 500 with the message when a reload fails (the old runs stay
 loaded). The movement routes answer a run without a beat trace with
 ``available`` false and the reason.
 """

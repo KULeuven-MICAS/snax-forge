@@ -6,16 +6,17 @@ DIR [DIR ...]`` serves the flow runs given (``out/flow/<name>/`` or its
 reports (``snax_forge.report``, D99) instead.
 
 * api.py: loading runs and every answer of the API, as plain functions; the
-  memory and movement routes answer "FLOW3 round 2", which rebuilds both
-  views on SNAX-GVSoC's beat events (D96, D97);
+  movement routes answer "FLOW3 round 2" until round 2b rebuilds them on
+  SNAX-GVSoC's beat events (D97);
 * index.py: a run's events grouped by their ids and lookups once at load
   (``RunIndex``), and the memory tab's marks, added by registration;
+* memory.py: the memory tab's layout, folded rows and marks on them (D96);
 * server.py: the stdlib HTTP server around them;
 * static/: the viewer (index.html, plain JS modules, CSS; no build step and
   no external file, so it works offline).
 
 The tabs are the profile report, the schedule with the cluster view under
-it (FLOW3 round 3), and the memory tab (round 2), all on the same API. The DFG viewer (D81) is the
+it (FLOW3 round 3), and the memory tab, all on the same API. The DFG viewer (D81) is the
 subpackage dfg/, a second mode of the same server for ``.snaxdfg`` files
 (``python -m snax_forge.viz.dfg``).
 """
