@@ -80,7 +80,8 @@ FORGE_BUILD = $(GVSOC_WORKDIR)/sw/$(DESIGN)
 # `run`: the installed target, the ELF, the work directory (one per design
 # when DESIGN is set, else per ELF name), and gvrun options put before the
 # command (e.g. --trace=snax_acc0). EVENTS, a file: the SNAX components'
-# traces named in TRACES (summary, events, beats; snax-gvsoc docs/EVENTS.md)
+# traces named in TRACES (summary, events, or a component's, as
+# tcdm/snax_xbar/beats; snax-gvsoc docs/EVENTS.md, snax-forge run/sources.py)
 # written into it, one --trace each, in simulation order (snax-forge D137)
 TARGET ?=
 ELF ?=

@@ -3,12 +3,20 @@ writes it, one ``Line`` per line.
 
 A line is GVSoC's header, ``<ps>: <cycles>: [<path>] `` with ANSI colour codes around the
 path, then ``<cycle> <kind> <key>=<value> ...``. The path is the component's, then ``/`` and
-the trace's name (``summary``, ``events``, ``beats``); only the path is kept from the header.
-``GRAMMAR`` holds, per trace and kind, the fields of each form a line may take; a value is an
-integer (decimal, or hexadecimal with ``0x``), a list of integers joined by ``,`` (``LISTS``)
-or a name (``NAMES``). A line that does not read, a trace, kind or field not in the grammar,
-or a value of the wrong type is a ``RunError`` naming the line (``events.<rule>``). Nothing
-is renamed or reordered here: that is convert.py's.
+the trace's name (``summary``, ``events``, ``beats``, ``stalls``); only the path is kept from
+the header. ``GRAMMAR`` holds, per trace and kind, the fields of each form a line may take; a
+value is an integer (decimal, or hexadecimal with ``0x``), a list of integers joined by ``,``
+(``LISTS``, per trace and kind) or a name (``NAMES``).
+
+A core's ``insn`` line (GVSoC's instruction trace, ``pe<i>/insn``) is GVSoC's own, not this
+grammar: after the header, the function and line, the mode, the PC in hexadecimal without
+``0x``, then the instruction (mnemonic, operands, the registers it writes and reads). It reads
+as kind ``insn`` at the header's cycle, with ``pc`` and ``text``, the instruction with its runs
+of spaces made one.
+
+A line that does not read, a trace, kind or field not in the grammar, or a value of the wrong
+type is a ``RunError`` naming the line (``events.<rule>``). Nothing is renamed or reordered
+here: that is convert.py's.
 """
 
 from __future__ import annotations
@@ -60,12 +68,29 @@ GRAMMAR: dict[str, dict[str, list[tuple[Fields, Fields]]]] = {
         "mcycleh": _forms(({"pc", "value"}, set())),
         "issue": _forms(({"id", "src", "dst", "size", "src_stride", "dst_stride", "reps"}, set())),
     },
-    "beats": {},  # FLOW3 round 2
+    "beats": {
+        "grant": _forms(({"in", "op", "addr", "bank", "row", "value", "back"}, {"b", "size"})),
+        "dma": _forms(({"id", "i", "op", "addr", "size", "bank", "row", "value", "l2"}, {"back"})),
+        "burst": _forms(({"id", "op", "addr", "size", "back"}, set())),
+        "fire": _forms(({"n", "b", "value"}, set())),
+        "push": _forms(({"n", "first", "last", "value"}, set())),
+    },
+    "stalls": {
+        "stall": _forms(({"in", "addr", "bank", "row", "by", "by_addr"}, {"b"})),
+        "fifo": _forms(({"mover", "lane", "count"}, set())),
+    },
+    "insn": {"insn": _forms(({"pc", "text"}, set()))},
 }
 NAMES = {"mover", "name", "op", "mode"}
-LISTS = {"qmax"}
+# (trace, kind) -> its fields that are lists
+LISTS = {
+    ("summary", "mover"): {"qmax"},
+    ("beats", "dma"): {"value"},
+    ("beats", "fire"): {"b", "value"},
+    ("beats", "push"): {"value"},
+}
 
-HEADER = re.compile(r"^-?\d+: -?\d+: \[(?:\x1b\[[0-9;]*m)?(.*?)\s*(?:\x1b\[[0-9;]*m)?\] (.*)$")
+HEADER = re.compile(r"^-?\d+: (-?\d+): \[(?:\x1b\[[0-9;]*m)?(.*?)\s*(?:\x1b\[[0-9;]*m)?\] (.*)$")
 
 
 @dataclass(frozen=True)
@@ -80,18 +105,31 @@ class Line:
     fields: dict[str, Any]
 
 
-def _value(key: str, text: str, where: str) -> Any:
+def _value(key: str, text: str, lists: set[str], where: str) -> Any:
     try:
         if key in NAMES:
             if not text:
                 raise ValueError
             return text
-        if key in LISTS:
+        if key in lists:
             return [int(x, 0) for x in text.split(",")]
         return int(text, 0)
     except ValueError:
-        want = "name" if key in NAMES else "list of integers" if key in LISTS else "integer"
+        want = "name" if key in NAMES else "list of integers" if key in lists else "integer"
         raise RunError("events.value", f"{where}: {key}={text!r} is not a {want}") from None
+
+
+def _insn(path: str, cycles: str, rest: str, where: str) -> Line:
+    """A core's instruction line (module doc)."""
+    words = rest.split(None, 3)
+    try:
+        if len(words) < 4:
+            raise ValueError
+        pc = int(words[2], 16)
+    except ValueError:
+        raise RunError("events.line", f"{where}: not an instruction line (function, mode, pc, "
+                       f"instruction): {rest!r}") from None  # fmt: skip
+    return Line(path, "insn", int(cycles), "insn", {"pc": pc, "text": " ".join(words[3].split())})
 
 
 def parse_line(text: str, where: str = "line") -> Line:
@@ -99,13 +137,15 @@ def parse_line(text: str, where: str = "line") -> Line:
     m = HEADER.match(text.rstrip("\n"))
     if m is None:
         raise RunError("events.line", f"{where}: not a GVSoC trace line: {text.rstrip()!r}")
-    path, trace = m[1].rsplit("/", 1) if "/" in m[1] else ("", m[1])
+    path, trace = m[2].rsplit("/", 1) if "/" in m[2] else ("", m[2])
     if trace not in GRAMMAR:
         raise RunError("events.trace", f"{where}: trace {trace!r} of {path} is not one of "
                        f"{sorted(GRAMMAR)}")  # fmt: skip
-    words = m[2].split()
+    if trace == "insn":
+        return _insn(path, m[1], m[3], where)
+    words = m[3].split()
     if len(words) < 2:
-        raise RunError("events.line", f"{where}: no `<cycle> <kind>` in {m[2]!r}")
+        raise RunError("events.line", f"{where}: no `<cycle> <kind>` in {m[3]!r}")
     try:
         cycle = int(words[0])
     except ValueError:
@@ -125,7 +165,8 @@ def parse_line(text: str, where: str = "line") -> Line:
     if not any(req <= keys <= req | opt for req, opt in forms):
         raise RunError("events.field", f"{where}: a {trace} {kind} line has the fields "
                        f"{sorted(keys)}, not one of {[sorted(r | o) for r, o in forms]}")  # fmt: skip
-    fields = {k: _value(k, v, where) for k, v in fields.items()}
+    lists = LISTS.get((trace, kind), set())
+    fields = {k: _value(k, v, lists, where) for k, v in fields.items()}
     return Line(path, trace, cycle, kind, fields)
 
 

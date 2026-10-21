@@ -79,6 +79,10 @@ def test_the_design_report_equals_its_sources(flows, key):
         c: lay["l1"].base for c, lay in point.memory.layouts.items() if "l1" in lay
     }
     assert l1.used_bytes == sum(x.bytes for x in l1.regions)
+    # L2 at the program's link: the ELF's addresses run.json records
+    l2 = next(m for m in r.memories if m.mem == "l2")
+    syms = json.loads((folder / "run" / "run.json").read_text())["elf_symbols"]
+    assert {x.name: x.base for x in l2.regions} == {c: s["addr"] for c, s in syms.items()}
     assert r.notes
 
 

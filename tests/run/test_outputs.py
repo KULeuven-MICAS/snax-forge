@@ -20,6 +20,15 @@ def test_write_and_read(tmp_path):
     assert (got.run, got.profile, got.trace) == ({"trace_level": "task"}, p, t)
 
 
+def test_the_elf_symbols_read_back(tmp_path):
+    syms = {"A": {"addr": 0x80002900, "size": 512}}
+    (tmp_path / "run.json").write_text(json.dumps({"elf_symbols": syms}))
+    write_run(tmp_path, Profile(1), None)
+    assert read_run(tmp_path).elf_symbols == syms
+    (tmp_path / "run.json").write_text("{}")
+    assert read_run(tmp_path).elf_symbols is None
+
+
 def test_no_trace_removes_an_earlier_one(tmp_path):
     (tmp_path / "run.json").write_text("{}")
     write_run(tmp_path, Profile(1), Trace("task", 1, 0, [], []))

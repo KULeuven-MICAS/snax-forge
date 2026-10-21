@@ -45,6 +45,7 @@ from snax_forge.run import read_run
 from snax_forge.sandbox import Recipe
 from snax_forge.sdfg.loader import load as load_kernel
 from tests.design.helpers import REPO, SMALL16, SNAX_ALU
+from tests.run.helpers import point_symbols
 
 from . import helpers
 from .helpers import COMMIT, PLAIN, PLAINS, built, golden, needs_gvsoc, stub
@@ -121,9 +122,16 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
         "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
         "elf": "sw/forge.elf",
         "elf_sha256": f.elf_sha256,
+        "elf_symbols": {
+            c: {"addr": a, "size": n}
+            for c, (a, n) in point_symbols(f.point).items()
+            if not c.endswith("_golden")
+        },
         "target": "snax_hjson",
         "snax_gvsoc": {"commit": COMMIT, "dirty": True},
         "trace_level": "off",
+        "trace_sources": [],
+        "vcd": False,
     }
     prof = json.loads((out / "run" / "profile.json").read_text())
     assert (prof["total_cycles"], prof["functional_check"]) == (226, f.check)
@@ -357,11 +365,31 @@ def test_a_make_failure_names_its_log(tmp_path, monkeypatch):
     assert (tmp_path / "flow" / "flow.log").read_text().startswith("flow vecadd FAILED\nsw: ")
 
 
-def test_the_trace_level_beat_is_refused(tmp_path, monkeypatch):
+def test_trace_sources_go_with_the_beat_levels_and_name_this_run(tmp_path, monkeypatch):
     fake = stub(monkeypatch, tmp_path)
-    with pytest.raises(FlowError, match="trace level 'beat': the beat lines come in FLOW3 round 2"):
-        flow(tmp_path, trace_level="beat")
+    with pytest.raises(FlowError, match="trace sources \\['acc'\\]: they go with beat"):
+        flow(tmp_path, trace_level="task", trace_sources=["acc"])
+    with pytest.raises(FlowError, match="trace level 'cycle': one of off, task, beat"):
+        flow(tmp_path, trace_level="cycle")
     assert fake.calls == [] and not (tmp_path / "flow").exists()
+    with pytest.raises(FlowError, match=r"gvsoc: \[sources.unknown\] sources \['acc_z'\]"):
+        flow(tmp_path, trace_level="beat", trace_sources=["acc", "acc_z"])
+
+
+@pytest.mark.parametrize(
+    "change, said",
+    [
+        (lambda s: {k: v for k, v in s.items() if k != "C"}, "container C lives in L2, the ELF"),
+        (lambda s: {**s, "A": (s["A"][0], 8)}, "container A: its symbol is 8 bytes"),
+    ],
+)
+def test_the_elf_must_hold_each_l2_container(tmp_path, monkeypatch, change, said):
+    stub(monkeypatch, tmp_path)
+    real = helpers.point_symbols
+    monkeypatch.setattr(helpers, "point_symbols", lambda point: change(real(point)))
+    with pytest.raises(FlowError, match=r"^sw: .*forge\.elf: \[elf\.") as e:
+        flow(tmp_path)
+    assert said in str(e.value)
 
 
 def test_a_run_without_its_events_stops_at_convert(tmp_path, monkeypatch):
@@ -428,6 +456,66 @@ def test_the_trace_level_task_stubbed(tmp_path, monkeypatch):
     assert with_level("vecadd", "task") == "vecadd_task" and with_level("vecadd", "off") == "vecadd"
 
 
+@pytest.mark.parametrize("level", ["beat", "stall", "finegrained"])
+def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
+    """Above task the run turns on the beat traces of its sources and the crossbar's inputs
+    property, convert keeps its beat events (their invariants checked) and the filter, and the
+    profile is the task run's, byte for byte."""
+    fake = stub(monkeypatch, tmp_path)
+    run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, trace_level="task",
+             out=tmp_path / "task")  # fmt: skip
+    f = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, trace_level=level,
+                 out=tmp_path / level)  # fmt: skip
+    v = fake.calls[-1][1]
+    traces = v["TRACES"].split()
+    assert traces[:4] == ["summary", "events", "snax_acc0/unit/beats", "tcdm/snax_xbar/beats"]
+    assert ("snax_acc0/streamer/stalls" in traces) == (level != "beat")
+    assert [x for x in traces if x.endswith("/insn")] == (
+        ["pe0/insn", "pe1/insn"] if level == "finegrained" else []
+    )
+    lanes = ",".join(f"snax_acc0.streamer.{m}.lane{i}" for m in ("reader0", "reader1", "writer0")
+                     for i in range(4))  # fmt: skip
+    assert f"'chip/soc/cluster_0/tcdm/snax_xbar/trace_inputs={lanes},dma'" in v["GVRUN_ARGS"]
+    kinds = {e["k"] for e in f.trace.events}
+    assert {"grant", "dma", "burst", "fire", "push"} <= kinds
+    assert ("fifo" in kinds) == ("stall" in kinds) == (level != "beat")
+    assert ("insn" in kinds) == (level == "finegrained")
+    sources = ["acc", "acc_a", "acc_b", "acc_out", "dma"]
+    sources += ["core0", "core1"] if level == "finegrained" else []
+    run = tmp_path / level / "run"
+    assert json.loads((run / "trace_meta.json").read_text())["filter"] == sources
+    assert json.loads((run / "run.json").read_text())["trace_sources"] == sources
+    assert f"sources {', '.join(sources)})" in summary(f)
+    task = (tmp_path / "task" / "run" / "profile.json").read_bytes()
+    assert (run / "profile.json").read_bytes() == task
+
+
+def test_named_sources_and_the_vcd_stubbed(tmp_path, monkeypatch):
+    """Named sources say whose lines are written, a core's crossbar lines too; --vcd puts
+    gvrun's VCD and its gtkwave view into run/."""
+    fake = stub(monkeypatch, tmp_path)
+    f = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, trace_level="stall",
+                 trace_sources=["core0", "acc_a", "acc"], vcd=True, out=tmp_path / "f")  # fmt: skip
+    v = fake.calls[-1][1]
+    assert v["TRACES"].split() == ["summary", "events", "snax_acc0/unit/beats",
+                                   "tcdm/snax_xbar/beats", "snax_acc0/streamer/stalls",
+                                   "tcdm/snax_xbar/stalls"]  # fmt: skip
+    lanes = ",".join(f"snax_acc0.streamer.reader0.lane{i}" for i in range(4))
+    assert f"trace_inputs={lanes},core0'" in v["GVRUN_ARGS"]
+    assert (
+        "'--vcd' '--event=.*/snax_acc0/unit/.*' '--event=.*/snax_acc0/streamer/.*'"
+        in (v["GVRUN_ARGS"])
+    )
+    assert {e["src"] for e in f.trace.events if e["k"] in ("grant", "fifo")} == {
+        "acc_a", *(f"acc_a.lane{i}" for i in range(4))}  # fmt: skip
+    run = tmp_path / "f" / "run"
+    assert (run / "all.vcd").is_file() and not (run / "work" / "all.vcd").exists()
+    assert (run / "view.gtkw").read_text() == f'[dumpfile] "{(run / "all.vcd").resolve()}"\n'
+    rec = json.loads((run / "run.json").read_text())
+    assert (rec["trace_sources"], rec["vcd"]) == (["acc", "acc_a", "core0"], True)
+    assert "run/all.vcd, run/view.gtkw (gtkwave)" in summary(f)
+
+
 def test_the_log_is_the_summary_the_checks_and_the_stage_times(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
     f = flow(tmp_path)
@@ -470,8 +558,9 @@ def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
 def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch, capsys):
     fake = stub(monkeypatch, tmp_path)
     args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN, "--out", tmp_path / "f"]  # fmt: skip
-    assert main(*args, "--trace", "beat") == 1
-    assert "the beat lines come in FLOW3 round 2" in capsys.readouterr().err
+    with pytest.raises(SystemExit):
+        main(*args, "--trace", "task:acc")
+    assert "sources go with beat, stall or finegrained" in capsys.readouterr().err
     assert main(*args, "--set", "Q=1") == 1
     assert "no param 'Q'" in capsys.readouterr().err
     fake.rc["run"] = 2

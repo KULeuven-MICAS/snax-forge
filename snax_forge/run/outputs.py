@@ -1,7 +1,9 @@
 """A flow run's directory, written and read back (C§7): what the reports and the viewer open.
 
     run.json          what ran (flow/run.py writes it: the design point, the hjson files, the
-                      ELF, the target, the snax-gvsoc commit, the trace level)
+                      ELF and its L2 containers' symbols, ``elf_symbols``, container ->
+                      ``addr``, ``size``; the target, the snax-gvsoc commit, the trace level,
+                      its sources, whether a VCD was written)
     profile.json      the profile (profile.py)
     trace.jsonl       the trace's events, one JSON object per line (trace.py), at a level
                       above off
@@ -39,6 +41,12 @@ class RunOutputs:
     run: dict[str, Any]
     profile: Profile
     trace: Trace | None
+
+    @property
+    def elf_symbols(self) -> dict[str, dict[str, int]] | None:
+        """run.json's ``elf_symbols`` (regions.py's L2 regions), None in a run without them."""
+        syms = self.run.get("elf_symbols")
+        return None if syms is None else {k: dict(v) for k, v in syms.items()}
 
 
 def write_run(out: str | Path, profile: Profile, trace: Trace | None) -> Path:

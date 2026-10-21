@@ -202,7 +202,7 @@ def test_off_is_the_summary_lines_alone(cluster, tasks):
         226 - 17,
         "acc_out.fifo",
         8,
-        [2, 2, 2, 2],
+        [1, 1, 1, 1],
     )
     assert s.ports == [f"acc_out.lane{i}" for i in range(4)]
     assert (profile.cores["core0"].cycles, profile.cores["core0"].csr_writes) == (None, 18)

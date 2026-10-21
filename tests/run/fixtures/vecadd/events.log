@@ -68,7 +68,7 @@
 295300000: 2953: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2933 poll pc=0x80000378 csr=0x3d4 value=1 first=2933 last=2951 count=10
 295300000: 2953: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2953 mover mover=reader0 run=0 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=2,2,2,2
 295300000: 2953: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2953 mover mover=reader1 run=0 busy=16 stall_xbar=1 stall_fifo=0 idle=5 qmax=1,1,1,1
-295300000: 2953: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2953 mover mover=writer0 run=0 busy=16 stall_xbar=0 stall_fifo=4 idle=2 qmax=2,2,2,2
+295300000: 2953: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2953 mover mover=writer0 run=0 busy=16 stall_xbar=0 stall_fifo=4 idle=2 qmax=1,1,1,1
 295500000: 2955: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2953 csr pc=0x80000378 csr=0x3d4 op=r value=0
 296600000: 2966: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2955 csr pc=0x80000380 csr=0x3d0 op=r value=0
 296900000: 2969: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2940 barrier first=2940 last=2969

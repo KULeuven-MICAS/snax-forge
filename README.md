@@ -102,7 +102,9 @@ what SNAX-GVSoC's components counted, and `report/design.md` and
 With `--trace task` the run also records every start, done, CSR access,
 wait and DMA copy in the program's window (`run/trace.jsonl`, C§7), into
 `out/flow/vecadd_task/`; `pixi run view out/flow/vecadd_task` shows its
-profile in the browser (section 2, View a run). Change a design point with `--set`;
+profile in the browser (section 2, View a run). `--trace beat`, `stall` and
+`finegrained` add every grant, firing and push, every stall and queue
+count, every instruction, and `--vcd` a gtkwave dump (`docs/RUN.md`). Change a design point with `--set`;
 each one is added to the name, so the runs sit side by side:
 
 ```bash

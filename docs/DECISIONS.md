@@ -179,8 +179,9 @@ C§13.
 fix. → C§14.
 
 **D86** · design — The memory plan comes from registered residency, layout and placement passes,
-contiguous by default, with pins. Passes see each port's element-index stream, so a policy can
-avoid bank conflicts without a run. → C§15.
+contiguous by default, with pins, seeing each port's element-index stream to avoid bank conflicts
+without a run; it fixes residency and shape in both memories and the L1 base, the L2 base being the
+program's link (its ELF's symbols, in `run.json`). → C§15, C§7.
 
 **D87** · design — `design_point.json` holds the bound graph, the platform, the resolved streamers
 and the memory plan; it is checked again on load and is SNAX-LOWER's and the generator's only
@@ -340,6 +341,7 @@ needed, sw, gvsoc, check; the check is the program's own exit code and `total_cy
 C§7.
 
 **D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only names
-it: SNAX-GVSoC writes `summary`, `events` and `beats` traces per SNAX component into one
-`events.log`; the converter renames them into C§7, never recounts, and cuts one window at the
-program's two `mcycle` reads. Merges D38, D39, D59. → `run/`, C§7, snax-gvsoc `docs/EVENTS.md`.
+it: SNAX-GVSoC's traces go to one `events.log`, a level is the trace names on (`beat`: `beats`,
+`stall`: `stalls`, `finegrained`: `insn`), lines linked by ids, filtered by source at the crossbar;
+the converter renames, never recounts, cuts the window; `--vcd` is a gtkwave dump only. Merges
+D38, D39, D59. → `run/`, C§7, snax-gvsoc `docs/EVENTS.md`.
