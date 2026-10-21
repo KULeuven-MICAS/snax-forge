@@ -302,10 +302,16 @@ converts them (D137). The trace is an event log at level `task`, `beat`,
 
 **Viewers** (D55, `pixi run view DIR ...`, `pixi run view-dfg FILE ...`): a
 local server on 127.0.0.1 and a static page, stdlib only, offline. Run views
-(D57) of a flow run: the profile report; the schedule with a selected cycle
-kept in the URL hash and the cluster view at that cycle come back in FLOW3
-round 3, the memory tab (D96) and data movement (D97) in round 2b. The DFG
-viewer (D81) shows graphs side by side.
+(D57) of a flow run: the profile report, the memory tab (D96) with data
+movement (D97); the schedule with a selected cycle kept in the URL hash and
+the cluster view at that cycle come back in FLOW3 round 3. The DFG viewer
+(D81) shows graphs side by side. A run view goes through four layers, one
+job each: `run/`'s dataclasses (the events with their ids and lookups, the
+regions, the cluster); `viz/index.py`, the run's events grouped by those
+keys once at load, never matched by order, with the memory tab's marks
+registered on it; `viz/memory.py` and `viz/movement.py`, queries on the
+index that read no file; and `viz/api.py`, whose routes return one query's
+dict for `static/` to draw.
 
 **Reports** (D99, `pixi run report DIR`): `design.md` (what was built) and
 `run.md` (where the cycles went), Markdown from dataclasses, for humans and
