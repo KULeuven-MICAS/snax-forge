@@ -8,6 +8,8 @@ reports (``snax_forge.report``, D99) instead.
 * api.py: loading runs and every answer of the API, as plain functions; the
   memory and movement routes answer "FLOW3 round 2", which rebuilds both
   views on SNAX-GVSoC's beat events (D96, D97);
+* index.py: a run's events grouped by their ids and lookups once at load
+  (``RunIndex``), and the memory tab's marks, added by registration;
 * server.py: the stdlib HTTP server around them;
 * static/: the viewer (index.html, plain JS modules, CSS; no build step and
   no external file, so it works offline).

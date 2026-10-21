@@ -14,8 +14,11 @@ A run is a flow's (D136, D137): its folder ``out/flow/<name>/`` or the
 (run.json, the profile and, above trace ``off``, the trace, C§7), and the
 cluster with ``run.cluster.load_cluster`` from the hjson files and the
 design point ``run.json`` names, so the views use run/'s dataclasses and
-never parse the files themselves (D55). Everything is read once, at start-up
-or on an explicit reload (``RunSet``); nothing watches the files.
+never parse the files themselves (D55). The design point gives the regions
+(``run.regions.regions_of``, L2 from run.json's ``elf_symbols``) and the
+events are grouped once by their ids and lookups (index.py, ``RunIndex``).
+Everything is read once, at start-up or on an explicit reload (``RunSet``);
+nothing watches the files.
 
 A run is named after its flow folder. Two folders with the same name get
 ``-2``, ``-3``, ... in the order given, so names stay stable across reloads.
@@ -46,8 +49,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from snax_forge.run import Cluster, RunError, RunOutputs, load_cluster, read_run
+from snax_forge.design import DesignPoint
+from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
 from snax_forge.run.cluster import DMA
+
+from .index import RunIndex
 
 MAX_ROWS = 256  # memory rows per request (static/memory.js); the memory view is round 2's
 ROUND_2 = (
@@ -75,6 +81,9 @@ class RunView:
     folder: Path  # the flow folder around it
     outputs: RunOutputs
     cluster: Cluster
+    point: DesignPoint
+    regions: list[Region]
+    index: RunIndex
     events: list[dict[str, Any]] = field(default_factory=list)  # sorted by t
     times: list[int] = field(default_factory=list)  # events[i]["t"], for bisect
     spans: dict[str, list[tuple[int, int]]] = field(default_factory=dict)  # per block
@@ -108,6 +117,8 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
         raise RunError("outputs.missing", f"{run_dir / 'run.json'}: names no hjson files or "
                        "design point")  # fmt: skip
     cluster = load_cluster(folder / hjson[0], folder / out.run["design_point"])
+    point = DesignPoint.load(folder / out.run["design_point"])
+    regions = regions_of(point, out.elf_symbols)
     events = [] if out.trace is None else sorted(out.trace.events, key=lambda e: e["t"])
     return RunView(
         name=name or folder.resolve().name,
@@ -115,6 +126,9 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
         folder=folder,
         outputs=out,
         cluster=cluster,
+        point=point,
+        regions=regions,
+        index=RunIndex.from_run(out, cluster, regions),
         events=events,
         times=[int(e["t"]) for e in events],
         spans=_pair_tasks(events, out.profile.total_cycles),
