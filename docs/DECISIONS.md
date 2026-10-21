@@ -340,7 +340,7 @@ needed, sw, gvsoc, check; the check is the program's own exit code and `total_cy
 C§7.
 
 **D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only names
-it: SNAX-GVSoC's traces go to one `events.log`, a level the names on (`beat`: `beats`, `stall`:
-`stalls`, `finegrained`: `insn`), lines linked by ids, filtered by source at the crossbar; the
-converter renames, never recounts, cuts the window; `--vcd` is a gtkwave dump only. Merges D38,
-D39, D59. → `run/`, C§7, snax-gvsoc `docs/EVENTS.md`.
+it: SNAX-GVSoC's traces go to one `events.log`, a level is the trace names on (`beat`: `beats`,
+`stall`: `stalls`, `finegrained`: `insn`), lines linked by ids, filtered by source at the crossbar;
+the converter renames, never recounts, cuts the window; `--vcd` is a gtkwave dump only. Merges
+D38, D39, D59. → `run/`, C§7, snax-gvsoc `docs/EVENTS.md`.
