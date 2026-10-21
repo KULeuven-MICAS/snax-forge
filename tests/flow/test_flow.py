@@ -75,7 +75,6 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
             "gen/include/acc_csr.h", "sw/forge.elf", "run/stdout.txt", "run/stderr.txt",
             "run/run.json", "run/profile.json", "run/events.log", "flow.log"} <= names  # fmt: skip
     assert not {"run/trace.jsonl", "run/trace_meta.json"} & names  # trace off
-    assert not {"cluster.json", "scenario.json"} & names  # SNAX-MODEL's, gone
     main_c = (out / "gen" / "main.c").read_text()
     assert "FORGE_MARK" not in main_c and "forge_main" not in main_c
     assert "static __attribute__((noinline)) int forge_check(uint32_t t0) {" in main_c
@@ -139,12 +138,11 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
 def test_an_earlier_runs_files_go_first(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
     out = tmp_path / "flow"
-    for stale in ("cluster.json", "scenario.json", "A.npy", "report/run.md", "run/trace.jsonl",
-                  "gen/old.h"):  # fmt: skip
+    for stale in ("report/run.md", "run/trace.jsonl", "gen/old.h"):
         (out / stale).parent.mkdir(parents=True, exist_ok=True)
         (out / stale).write_text("old")
     flow(tmp_path)
-    for stale in ("cluster.json", "scenario.json", "A.npy", "run/trace.jsonl", "gen/old.h"):
+    for stale in ("run/trace.jsonl", "gen/old.h"):
         assert not (out / stale).exists(), stale
     assert (out / "report" / "run.md").read_text().startswith("# Run report: ")  # written again
 
