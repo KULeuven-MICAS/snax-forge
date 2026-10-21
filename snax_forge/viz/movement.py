@@ -57,11 +57,10 @@ class MovementUnavailable(Exception):
     """The run's trace cannot answer; the message is the reason shown to the user."""
 
 
-def need(idx: RunIndex, level: str, what: str) -> None:
+def need(idx: RunIndex, level: str) -> None:
     """A MovementUnavailable unless the run was traced at ``level`` or above."""
     if not idx.on(level):
-        raise MovementUnavailable(f"{what} needs --trace {level}; this run was traced at "
-                                  f"{idx.level}")  # fmt: skip
+        raise MovementUnavailable(f"needs --trace {level}; this run was traced at {idx.level}")
 
 
 # =============================================================================
@@ -201,7 +200,7 @@ def journey(idx: RunIndex, container: str, index: Sequence[int] | int) -> dict[s
     """Every access to element ``container[index]`` and the firings it fed or came from
     (module doc)."""
     flat = flat_of(idx, container, index)
-    need(idx, "beat", "the journey")
+    need(idx, "beat")
     if idx.linked is not None:
         raise MovementUnavailable(f"the journey: {idx.linked}")
     evs = idx.elem.get((container, flat), [])
@@ -244,7 +243,7 @@ def _window(xs: list[int]) -> list[int] | None:
 def residency(idx: RunIndex) -> list[dict[str, Any]]:
     """Per region and memory, in the run's region order: each element's times and their
     windows (module doc)."""
-    need(idx, "beat", "residency")
+    need(idx, "beat")
     out = []
     for r in idx.regions:
         elements, arr, uses_all, dep, w_in, w_out = [], [], [], [], [], []
@@ -305,7 +304,7 @@ def _held(idx: RunIndex, port: str, task: str) -> list[dict[str, Any]]:
 
 def patterns(idx: RunIndex) -> list[dict[str, Any]]:
     """Per streamer lane and task, then per DMA copy (module doc)."""
-    need(idx, "beat", "the patterns")
+    need(idx, "beat")
     c = idx.cluster
     out = []
     for m in c.accelerator.movers:
@@ -368,7 +367,7 @@ def _side(idx: RunIndex, port: str, addr: int, element: str | None) -> dict[str,
 def conflicts(idx: RunIndex, start: int = 0, stop: int | None = None) -> dict[str, Any]:
     """The L1 stalls in ``start <= t < stop`` (all by default), placed on the layout, with
     counts per word, per bank and per port over the same window."""
-    need(idx, "stall", "the conflicts")
+    need(idx, "stall")
     stalls = sorted((e for es in idx.stalls_bank.values() for e in es
                      if e["t"] >= start and (stop is None or e["t"] < stop)),
                     key=lambda e: e["t"])  # fmt: skip

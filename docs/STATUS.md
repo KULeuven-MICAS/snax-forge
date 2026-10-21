@@ -108,8 +108,13 @@ reports again (1b, D137), and the GVSoC build's output is on the terminal
 (1c). RET1 removed SNAX-MODEL (merged). Round 2a is merged (snax-gvsoc
 #23, snax-forge #23): the beat- and stall-level events and the converter's
 beat part, vecadd and vsum at every level with every invariant. Round 2b,
-the memory and movement views on those events, is under way on
-`ry/flow3-5`; then round 3, then GEN1.
+the memory and movement views on those events, passed its acceptance on
+`ry/flow3-5` (tag `flow3-r2b`): vecadd and vsum at `off`, `task`, `beat`
+and `stall` on a fresh GVSoC build, every check through `viz/api.py` equal;
+`docs/RUN.md` has the commands to open the tabs on the MICAS server. A
+beat's `b` and a firing's `n` count per run, so the journey refuses a trace
+with several runs of one component (`RunIndex.linked`); no flow program has
+one yet. Then round 3, then GEN1.
 
 ## Open Items
 
