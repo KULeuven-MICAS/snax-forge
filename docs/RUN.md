@@ -38,11 +38,15 @@ that holds `snax-forge`:
 
 `recipes/vecadd.json` binds vecadd's add to `elementwise_add` at W = 4. The
 first flow builds SNAX-GVSoC into `out/snax-gvsoc/` (a few minutes; its
-output goes to `out/flow/vecadd/build.log`):
+output shows as it comes and goes to `out/flow/vecadd/build.log`):
 
     pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json
 
     Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_alu.json
+      build     building SNAX-GVSoC: no install in out/snax-gvsoc; log in out/flow/vecadd/build.log
+    make: Entering directory '$ROOT/snax-forge/gvsoc'
+    ...
+    make: Leaving directory '$ROOT/snax-forge/gvsoc'
     flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/

@@ -22,7 +22,7 @@ from snax_forge.flow import FlowError, bound_name, run_bound, run_flow, summary
 from snax_forge.flow import __main__ as cli
 from tests.design.helpers import BOUND, RECIPE, SNAX_ALU
 
-from .helpers import PLAIN, stub
+from .helpers import PLAIN, built, stub
 
 FIFO = [("streamers.default.fifo_depth", 4)]
 
@@ -207,7 +207,7 @@ def main(*argv) -> int:
 
 
 def test_cli_takes_a_bound_graph_by_its_suffix(tmp_path, monkeypatch, capsys):
-    stub(monkeypatch, tmp_path)
+    built(stub(monkeypatch, tmp_path))  # a build would print its lines first
     assert main(BOUND, "--platform", SNAX_ALU, "--out", tmp_path / "f") == 0
     out = capsys.readouterr().out
     assert out.startswith("flow vecadd_accelerated (graph ") and "  check     passed: " in out
