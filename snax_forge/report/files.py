@@ -49,7 +49,8 @@ def reports_of(folder: str | Path, out: str | Path | None = None) -> Reports:
     if (flow / "sandbox" / "recipe.json").is_file():
         recipe = Recipe.load(flow / "sandbox" / "recipe.json")
     check = rv.outputs.profile.functional_check or {}
-    design = build_design(rv.name, rv.cluster, point, recipe, check.get("kernel", ""))
+    design = build_design(rv.name, rv.cluster, point, recipe, check.get("kernel", ""),
+                          rv.outputs.elf_symbols)  # fmt: skip
     return Reports(design, build_run(rv), Path(out) if out is not None else flow / "report")
 
 

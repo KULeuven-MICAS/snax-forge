@@ -6,7 +6,8 @@ trace the reports and the viewer read.
 * cluster.py: the cluster as the run is named: the accelerator, its movers and CSRs, the
   cores, the DMA, the L1 and its word-interleaved map, from the generator's hjson files and
   the design point;
-* regions.py: where each container lives in each memory, from the design point's layouts;
+* regions.py: where each container lives in each memory: L1 from the design point's layouts,
+  L2 from the program's ELF (elf.py, its symbols as run.json records them);
 * profile.py: the profile, the totals of one run, from the components' own counters;
 * trace.py: the trace, one event per line, in the program's window;
 * beats.py: the converter's beat, stall and instruction part and its invariants (convert.py

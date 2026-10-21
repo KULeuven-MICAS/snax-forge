@@ -153,7 +153,7 @@ kind's own fields:
                           b (a SNAX port's), size (under a word)  (src = the port)
     beat         dma      task, id, i, op, mem, addr, size, bank, row, value, l2, region,
                           elems, vals; back (a read's)  (a DMA beat on L1)
-    beat         burst    task, id, op, mem, addr, size, back, region  (a DMA request to AXI)
+    beat         burst    task, id, op, mem, addr, size, back, region, elems  (a request to AXI)
     beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
     beat         push     task, n, first, last, value, vals
     stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
@@ -184,10 +184,9 @@ shifts every cycle and `back` by the boot, drops lines outside the window,
 and adds what no reader should look up: `task` (the task whose start and
 done bracket the line on its component, a copy's task for the DMA, null for
 a core's or AXI's access and outside its tasks), `mem` (`l1`, `l2`) and the
-absolute `addr`, `region` (the design point's container the address is in,
-or null; for a burst, the program's L2 data being placed by its linker, the
-container of its copy's L1 side), `elems` (the flat indexes of its elements
-in the word) and `vals` (those elements' values by the region's dtype; a
+absolute `addr`, `region` (the container the address is in, or null: in L1
+by the design point's layouts, in L2 by the ELF's symbols, below), `elems`
+(the flat indexes of its elements in the word, a burst's bytes) and `vals` (those elements' values by the region's dtype; a
 fire's and a push's from their beats' grants, null for a mover not
 traced); an `insn`'s `func` is the function its core is in. Every line keeps its raw words
 too: `value` is the bank word (`dma`: one per bank it covers), `bank` and
@@ -205,6 +204,17 @@ accelerator, its movers and the DMA, at `finegrained` also every core.
 order and the `filter` (the sources the beat lines were written for).
 `--vcd` writes a VCD and `view.gtkw` beside the run for gtkwave, never read
 here. `run.json` records the `trace_level`, the `trace_sources` and `vcd`.
+
+**Regions** (`run/regions.py`, `run/elf.py`, D86). Both memories are known
+before the run: a container's L1 region is the design point's layout; its L2
+region has the plan's shape and dtype at its array's address in the linked
+program. The flow reads the ELF's symbol table once the program is built
+(`sw`) into `run.json`'s `elf_symbols`, container -> `addr` and `size` (its
+bytes padded to whole DMA beats, as `data.h` declares it; a container in L2
+with no symbol or another size stops the flow). The converter, the reports
+and the viewer take regions from `regions_of(point, elf_symbols)` only. From
+`task` on, the converter checks that each container's L2 bytes its copies
+touch are its array's, padded to whole beats, and that no copy leaves it.
 
 The invariants every conversion checks are `run/convert.py`'s.
 
@@ -793,7 +803,7 @@ registered by name (`register_memory_pass(kind, name, fn)`):
 |---|---|---|
 | `residency` | the memories of each container | `default`: not transient: L2 and L1 with an L2, else L1; transient: L1 |
 | `layout` | shape and strides, base 0 | `contiguous`: row-major, one element per word |
-| `placement` | the base per container and memory | `contiguous`: graph container order from the memory's first byte, no gaps; a layout in both L2 and L1 on a wide beat and to the end of its last beat (the DMA moves whole beats, so a size that is not whole beats is padded, D105), others on a word; around the pins |
+| `placement` | the base per container and memory (in L2 the program's link replaces it: C§7's regions, D86) | `contiguous`: graph container order from the memory's first byte, no gaps; a layout in both L2 and L1 on a wide beat and to the end of its last beat (the DMA moves whole beats, so a size that is not whole beats is padded, D105), others on a word; around the pins |
 
 `--set memory.<container>.<memory>.base=N` pins a base; `--set
 memory.passes.<pass>=NAME` picks a pass. Passes read a `MemoryContext`:

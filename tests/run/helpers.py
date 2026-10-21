@@ -329,3 +329,70 @@ class Traffic:
 
     def qmax(self, m: Any, lane: int, run: int) -> int:
         return self._qmax.get((m.name, lane, run), 0)
+
+
+def tiny_elf(symbols: dict[str, tuple[int, int]], wide: bool = False) -> bytes:
+    """A minimal little-endian ELF (32-bit, or 64-bit when ``wide``) with only a symbol table:
+    each ``name -> (value, size)`` an object symbol, as a linker writes them."""
+    import struct
+
+    strtab = b"\0" + b"".join(n.encode() + b"\0" for n in symbols)
+    entry = "<IBBHQQ" if wide else "<IIIBBH"
+    syms, off = [struct.pack(entry, *([0] * 6))], 1
+    for name, (value, size) in symbols.items():
+        info = 0x11  # GLOBAL OBJECT
+        syms.append(struct.pack(entry, off, info, 0, 1, value, size) if wide
+                    else struct.pack(entry, off, value, size, info, 0, 1))  # fmt: skip
+        off += len(name) + 1
+    symtab = b"".join(syms)
+    ehsize, shentsize = (64, 64) if wide else (52, 40)
+    sym_off = ehsize
+    str_off = sym_off + len(symtab)
+    sh_off = str_off + len(strtab)
+    sect = "<IIQQQQIIQQ" if wide else "<IIIIIIIIII"
+    sections = [
+        struct.pack(sect, *([0] * 10)),
+        struct.pack(sect, 0, 2, 0, 0, sym_off, len(symtab), 2, 1, 4, struct.calcsize(entry)),
+        struct.pack(sect, 0, 3, 0, 0, str_off, len(strtab), 0, 0, 1, 0),
+    ]
+    ident = b"\x7fELF" + bytes([2 if wide else 1, 1, 1]) + bytes(9)
+    hdr = "<16sHHIQQQIHHHHHH" if wide else "<16sHHIIIIIHHHHHH"
+    header = struct.pack(hdr, ident, 2, 0xF3, 1, 0, 0, sh_off, 0, ehsize, 0, 0, shentsize, 3, 0)
+    return header + symtab + strtab + b"".join(sections)
+
+
+def point_symbols(point: Any) -> dict[str, tuple[int, int]]:
+    """The symbols a program of ``point`` would link: each container in L2 at its plan's L2
+    base, its bytes padded to whole beats (gen/data.py), and a golden beside an output."""
+    import numpy as np
+
+    from snax_forge.lower.layout import round_up
+
+    beat = point.platform.l2.beat_bits // 8
+    out = {}
+    for name, lays in point.memory.layouts.items():
+        if "l2" in lays:
+            lay = lays["l2"]
+            n = int(np.prod(lay.shape)) * np.dtype(point.graph.containers[name].dtype).itemsize
+            out[name] = (lay.base, round_up(n, beat))
+            out[f"{name}_golden"] = (0x90000000 + lay.base % 0x10000, round_up(n, beat))
+    return out
+
+
+def synthetic_regions(tasks: Any) -> list[Any]:
+    """The regions of a synthetic run (``synthetic``): each container a DMA task moves, in L1 and
+    in L2 at the task's bases, its elements int64 words."""
+    from snax_forge.lower.tasks import Configure
+    from snax_forge.run import Region
+
+    out = []
+    for s in tasks.steps:
+        if not isinstance(s, Configure) or s.type != "dma":
+            continue
+        name = s.task_name.split("_", 1)[1]
+        l1, l2 = ("dst", "src") if s.values["direction"] == "l2_to_l1" else ("src", "dst")
+        side = s.values[l2]
+        n = side["bounds"][0] * side["strides"][0] // 8
+        out += [Region(name, "l1", s.values[l1]["base"], (n,), (8,), "int64"),
+                Region(name, "l2", side["base"], (n,), (8,), "int64")]  # fmt: skip
+    return out

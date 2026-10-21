@@ -28,12 +28,13 @@ from typing import Any
 
 import pytest
 
+from snax_forge.design import DesignPoint
 from snax_forge.flow import Checkout
 from snax_forge.flow import run as flow_run
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import load_cluster
 from tests.design.helpers import FIXTURES, REPO
-from tests.run.helpers import synthetic
+from tests.run.helpers import point_symbols, synthetic, tiny_elf
 
 PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel
 PLAINS = {"vecadd": PLAIN, "vsum": FIXTURES / "vsum.snaxdfg"}
@@ -77,7 +78,10 @@ class FakeMake:
         elif goal == "sw":
             elf = Path(variables["FORGE_BUILD"]) / "forge.elf"
             elf.parent.mkdir(parents=True, exist_ok=True)
-            elf.write_bytes(b"\x7fELF fake")
+            point = DesignPoint.load(
+                Path(variables["FORGE"]).parent / "design" / "design_point.json"
+            )
+            elf.write_bytes(tiny_elf(point_symbols(point)))
         elif goal == "run":
             text = self.stdout if self.stdout is not None else program_output(variables)
             if variables.get("EVENTS"):

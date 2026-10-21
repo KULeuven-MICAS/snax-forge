@@ -19,7 +19,7 @@ kind's own fields, by the lowest level that has it:
                           b (a SNAX port's), size (under a word)  (src = the port)
     beat         dma      task, id, i, op, mem, addr, size, bank, row, value, l2, region,
                           elems, vals; back (a read's)  (a DMA beat on L1)
-    beat         burst    task, id, op, mem, addr, size, back, region  (a DMA request to AXI)
+    beat         burst    task, id, op, mem, addr, size, back, region, elems  (a request to AXI)
     beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
     beat         push     task, n, first, last, value, vals
     stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
@@ -77,9 +77,7 @@ KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
     "dma": [
         (_fields("task id i op mem addr size bank row value l2 region elems vals"), _fields("back"))
     ],
-    "burst": [
-        (frozenset({"task", "id", "op", "mem", "addr", "size", "back", "region"}), frozenset())
-    ],
+    "burst": [(_fields("task id op mem addr size back region elems"), frozenset())],
     "fire": [(frozenset({"task", "n", "b", "value", "vals"}), frozenset())],
     "push": [(frozenset({"task", "n", "first", "last", "value", "vals"}), frozenset())],
     "stall": [

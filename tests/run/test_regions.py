@@ -15,15 +15,19 @@ def word(*values: int, fmt: str = "<q") -> bytes:
 
 def test_vecadd_regions_in_the_points_order():
     point = vecadd_point()
-    regions = regions_of(point)
+    syms = {c: {"addr": 0x80002900 + 0x200 * i, "size": 512} for i, c in enumerate("ABC")}
+    regions = regions_of(point, syms)
     assert [(r.container, r.memory) for r in regions] == [
         (name, mem) for name, lays in point.memory.layouts.items() for mem in lays
     ]
     assert {r.container for r in regions} == {"A", "B", "C"}
     for r in regions:
         lay = point.memory.layouts[r.container][r.memory]
-        assert (r.base, r.shape, r.strides, r.layout) == (lay.base, lay.shape, lay.strides, lay)
+        # L1 from the plan's layout; L2 the plan's shape at the ELF's address
+        base = syms[r.container]["addr"] if r.memory == "l2" else lay.base
+        assert (r.base, r.shape, r.strides) == (base, lay.shape, lay.strides)
         assert r.dtype == point.graph.containers[r.container].dtype == "int64"
+    assert [r.memory for r in regions_of(point, None)] == ["l1"] * 3
     b = next(r for r in regions if (r.container, r.memory) == ("B", "l1"))
     assert region_at(regions, "l1", b.base + 8) == b
     assert region_at(regions, "l1", max(r.span()[1] for r in regions if r.memory == "l1")) is None

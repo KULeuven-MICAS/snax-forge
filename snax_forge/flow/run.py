@@ -52,7 +52,8 @@ window from main's entry to ``forge_check()``'s entry), the data errors
 over the output words and each accelerator task's counter, beside its beats
 from the manifest. ``passed`` is an exit code of 0. A missing line is a
 FlowError that names it. ``run/run.json`` records what ran: the design
-point, the three hjson files, the ELF's sha256, the target, the snax-gvsoc
+point, the three hjson files, the ELF's sha256 and the symbols of its L2 containers'
+arrays (``elf_symbols``, ``run/elf.py``: their L2 regions), the target, the snax-gvsoc
 commit and whether its tree was dirty, the trace level, its sources and whether a VCD was
 written;
 ``run/profile.json`` holds ``total_cycles`` and ``functional_check``, with
@@ -131,6 +132,7 @@ from snax_forge.dfg.execute import execute
 from snax_forge.lower import CError, LowerError, TaskList, task_list
 from snax_forge.run import LEVELS, RunError, Trace, load_cluster, read_events, regions_of, write_run
 from snax_forge.run.convert import convert
+from snax_forge.run.elf import l2_symbols, read_symbols
 from snax_forge.run.outputs import EVENTS_FILE
 from snax_forge.run.sources import gvsoc_options, sources_for
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
@@ -763,6 +765,10 @@ def _from_graph(
             raise FlowError(f"sw: no {cwd_relative(elf)} after make sw; see "
                             f"{cwd_relative(out / 'sw.log')}")  # fmt: skip
         sha = hashlib.sha256(elf.read_bytes()).hexdigest()
+        try:
+            elf_symbols = l2_symbols(point, read_symbols(elf))
+        except RunError as e:
+            raise FlowError(f"sw: {cwd_relative(elf)}: {e}") from None
 
     # gvsoc: the run on snax_hjson with gen/'s cluster file, its traces from the cluster
     run = out / "run"
@@ -802,6 +808,7 @@ def _from_graph(
             "hjson": [f"gen/{x}" for x in hjson],
             "elf": f"sw/{ELF}",
             "elf_sha256": sha,
+            "elf_symbols": elf_symbols,
             "target": TARGET,
             "snax_gvsoc": {"commit": c.commit, "dirty": c.dirty},
             "trace_level": trace_level,
@@ -818,7 +825,7 @@ def _from_graph(
                             f"{cwd_relative(run / 'stderr.txt')}")  # fmt: skip
         try:
             profile, trace = convert(read_events(events), cluster, tasks, cycles, trace_level,
-                                     check, regions_of(point), sources)  # fmt: skip
+                                     check, regions_of(point, elf_symbols), sources)  # fmt: skip
         except RunError as e:
             raise FlowError(f"convert: {e}") from None
         write_run(run, profile, trace)

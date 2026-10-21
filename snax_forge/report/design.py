@@ -2,7 +2,8 @@
 
 Everything here comes from the design point, its recipe and the cluster as a
 run names it (run/cluster.py: the generator's hjson files and the design
-point, D137), its regions as run/regions.py reads them; SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
+point, D137), its regions as run/regions.py gives them (L2's from the ELF's symbols in
+run.json); SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
 its header names the graph the design point was made from instead, and takes
 the kernel from the run's functional check.
 
@@ -30,7 +31,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.lower.layout import Layout, round_up
-from snax_forge.run import Cluster, regions_of
+from snax_forge.run import Cluster, Region, regions_of
 
 from .markdown import kib, kv, pct, span_text, spans, table
 from .record import Record
@@ -125,8 +126,8 @@ def _words(lay: Layout, base: int, word: int) -> np.ndarray:
     return (lay.address(idx) - base) // word
 
 
-def _memory_tables(cluster: Cluster, point: Any) -> list[MemoryTable]:
-    """L1 as banks by rows, L2 as the words of a beat by beats; the regions from the layouts."""
+def _memory_tables(cluster: Cluster, regions: list[Region], point: Any) -> list[MemoryTable]:
+    """L1 as banks by rows, L2 as the words of a beat by beats; the run's regions."""
     word = cluster.bank_bytes
     l2 = point.platform.l2
     geo = {
@@ -136,28 +137,28 @@ def _memory_tables(cluster: Cluster, point: Any) -> list[MemoryTable]:
     out = []
     for mem, (base, columns, rows) in geo.items():
         size = columns * rows * word
-        regions = []
-        for region in regions_of(point):
+        region_rows = []
+        for region in regions:
             if region.memory != mem:
                 continue
             name, lay = region.container, region.layout
             w = _words(lay, base, word)
             n = int(w.size) * word
             lo, hi = lay.span()
-            regions.append(RegionRow(name, lo, hi + word, n, n / size,
+            region_rows.append(RegionRow(name, lo, hi + word, n, n / size,
                                      spans(sorted({int(x) % columns for x in w})),
                                      span_text([int(w.min()) // columns, int(w.max()) // columns])))  # fmt: skip
-        regions.sort(key=lambda r: r.base)
-        out.append(MemoryTable(mem, columns, rows, word, size, sum(r.bytes for r in regions),
-                               regions))  # fmt: skip
+        region_rows.sort(key=lambda r: r.base)
+        out.append(MemoryTable(mem, columns, rows, word, size, sum(r.bytes for r in region_rows),
+                               region_rows))  # fmt: skip
     return out
 
 
-def _notes(cluster: Cluster, point: Any, streamers: list[StreamerRow]) -> list[str]:
+def _notes(cluster: Cluster, regions: list[Region], point: Any,
+           streamers: list[StreamerRow]) -> list[str]:  # fmt: skip
     """Address facts about the movers of the accelerator (module doc)."""
     word, banks = cluster.bank_bytes, cluster.banks
     row_bytes = word * banks
-    regions = regions_of(point)
     l1 = {r.container: r.layout for r in regions if r.memory == "l1"}
     lays = {s.container: l1[s.container] for s in streamers if s.container in l1}
     ss = [s for s in streamers if s.container in lays]
@@ -204,13 +205,19 @@ def _notes(cluster: Cluster, point: Any, streamers: list[StreamerRow]) -> list[s
 
 
 def build_design(
-    name: str, cluster: Cluster, point: Any, recipe: Any = None, kernel: str = ""
+    name: str,
+    cluster: Cluster,
+    point: Any,
+    recipe: Any = None,
+    kernel: str = "",
+    elf_symbols: dict[str, Any] | None = None,
 ) -> DesignReport:
     """The design report of a flow (``point`` its DesignPoint, ``recipe`` its recipe, or for a
-    flow from a bound graph its ``kernel``)."""
+    flow from a bound graph its ``kernel``; ``elf_symbols`` its run.json's)."""
     from snax_forge.design import run_checks
     from snax_forge.design.streamers import accelerated, streamer_name
 
+    regions = regions_of(point, elf_symbols)
     design = point.design()
     run_checks(design)  # resolves the instances (BRM, implementation, params)
     instances = dict(design.instances)
@@ -255,7 +262,8 @@ def build_design(
         for m in a.movers
     ]  # fmt: skip
     return DesignReport(name, header, components, accels, streamers,
-                        _memory_tables(cluster, point), _notes(cluster, point, streamers))  # fmt: skip
+                        _memory_tables(cluster, regions, point),
+                        _notes(cluster, regions, point, streamers))  # fmt: skip
 
 
 # =============================================================================

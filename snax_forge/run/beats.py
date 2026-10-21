@@ -21,13 +21,11 @@ Lines of a source the filter does not name are dropped (the streamer writes ever
 dropped. ``task`` is the task whose start and done bracket the line's ``t`` on its component
 (a port's mover, the accelerator), a copy's for the DMA, null for a core's or AXI's access.
 ``mem`` is ``l1`` for the crossbar's lines and ``l2`` for a burst, ``addr`` absolute (the
-crossbar's TCDM offset plus the L1's base; ``by_addr`` likewise). ``region`` is the design
-point's container the address is in (null if none), ``elems`` the flat indexes of its
-elements in the word (a DMA beat's words together), ``vals`` their values by the region's
-dtype; a fire's and a push's come from the grants of their beats (its reader's ``b``, the
-writer's ``b = n``), null for a mover not in the trace. The program's L2 data is placed by its
-linker, not at the design point's L2 layouts, so a burst's ``region`` is its copy's L1 side's
-for the same bytes (through the copy's ``issue``: row, offset). An ``insn``'s ``func`` is the
+crossbar's TCDM offset plus the L1's base; ``by_addr`` likewise). ``region`` is the
+run's container the address is in (regions.py; null if none), ``elems`` the flat indexes of
+its elements in the word (a DMA beat's words together, a burst's bytes), ``vals`` their values
+by the region's dtype; a fire's and a push's come from the grants of their beats (its reader's
+``b``, the writer's ``b = n``), null for a mover not in the trace. An ``insn``'s ``func`` is the
 function its core was in at ``t`` (its last ``func`` line at or before it, boot included),
 ``text`` the instruction as GVSoC writes it.
 
@@ -36,6 +34,7 @@ failure named:
 
 - the grants per SNAX port in the window are its summary's; per bank, the SNAX grants plus
   the DMA's words are its reads and writes;
+- (convert.py, from ``task`` on: each container's L2 bytes its copies touch are its array's)
 - per copy, the ``dma`` lines into L1 are its written beats and those out of L1 its read
   beats, counted as the iDMA counts them (``dma_beat_bytes``), and over all copies those are
   the summary's ``r_beats`` and ``w_beats``;
@@ -236,18 +235,6 @@ def _lookup(ctx: Context, mem: str, addr: int, data: bytes) -> tuple[str | None,
     return r.container, r.elems(addr, len(data)), r.vals(addr, data)
 
 
-def _l1_of_l2(copy: dict[str, Any], cluster: Cluster, addr: int) -> int | None:
-    """The L1 address a copy moves the byte at L2 ``addr`` to or from, if any."""
-    if cluster.is_l1(copy["from"]) == cluster.is_l1(copy["to"]):
-        return None
-    l2, l1 = ("from", "to") if cluster.is_l1(copy["to"]) else ("to", "from")
-    for r in range(copy["reps"]):
-        start = copy[l2] + r * copy[f"{l2}_stride"]
-        if start <= addr < start + copy["size"]:
-            return copy[l1] + r * copy[f"{l1}_stride"] + addr - start
-    return None
-
-
 def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[int, int, dict]]:
     """The beat, stall and instruction lines as events (module doc), with each line's index
     in the file for the order of a cycle."""
@@ -330,14 +317,11 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
             if DMA not in ctx.filter:
                 continue
             copy = dma.get(f["id"])
-            l1 = _l1_of_l2(copy, c, f["addr"]) if copy else None
-            region = None
-            if l1 is not None:
-                r = region_at(ctx.regions, "l1", l1)
-                region = r.container if r else None
+            r = region_at(ctx.regions, "l2", f["addr"])
             e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], op=f["op"],
                      mem="l2", addr=f["addr"], size=f["size"], back=f["back"] - ctx.boot,
-                     region=region)  # fmt: skip
+                     region=r.container if r else None,
+                     elems=r.elems(f["addr"], f["size"]) if r else [])  # fmt: skip
         elif k == "fire":
             if acc.name not in ctx.filter:
                 continue

@@ -1,11 +1,14 @@
-"""The design point's regions (C§7, D137): where each container lives in each memory, so an
-address on an event can be named.
+"""A run's regions (C§7, D137): where each container lives in each memory, so an address on
+an event can be named.
 
-    regions_of(point) -> [Region]
+    regions_of(point, elf_symbols) -> [Region]
 
-A region is a container's layout in one memory (the design point's memory plan, D86):
-``container``, ``memory`` (``l1``, ``l2``), ``base``, ``shape``, ``strides`` (bytes) and the
-container's ``dtype``. ``Region.elems(addr, size)`` gives the flat indexes (row-major over
+A region is a container's layout in one memory: ``container``, ``memory`` (``l1``, ``l2``),
+``base``, ``shape``, ``strides`` (bytes) and the container's ``dtype``. Both memories are known
+before the run, nothing is inferred from it (D86): in L1 the design point's memory plan gives
+the layout; in L2 the plan gives the shape and the program's link the base, the address of the
+container's array in the ELF (``run.json``'s ``elf_symbols``, elf.py), the strides the plan's
+(contiguous, as data.h declares it). Without ``elf_symbols`` there are no L2 regions. ``Region.elems(addr, size)`` gives the flat indexes (row-major over
 ``shape``) of the elements whose first byte lies in ``[addr, addr + size)``, and
 ``Region.vals(addr, data)`` their values, read from the bytes ``data`` that start at
 ``addr`` by the region's dtype. ``region_at`` finds the region an address is in. Regions come
@@ -79,15 +82,24 @@ class Region:
                    tuple(d["strides"]), d["dtype"])  # fmt: skip
 
 
-def regions_of(point: Any) -> list[Region]:
-    """Every container's layout in every memory of a design point (``DesignPoint``), in its
-    order."""
+def regions_of(point: Any, elf_symbols: dict[str, Any] | None) -> list[Region]:
+    """Every container's region in every memory of a run (module doc): a design point
+    (``DesignPoint``) and the ELF's symbols of its L2 containers (container -> ``addr``,
+    ``size``), in the point's order."""
     containers = point.graph.containers
-    return [
-        Region(name, mem, lay.base, tuple(lay.shape), tuple(lay.strides), containers[name].dtype)
-        for name, lays in point.memory.layouts.items()
-        for mem, lay in lays.items()
-    ]
+    out = []
+    for name, lays in point.memory.layouts.items():
+        for mem, lay in lays.items():
+            if mem == "l2":
+                sym = (elf_symbols or {}).get(name)
+                if sym is None:
+                    continue
+                base = sym["addr"]
+            else:
+                base = lay.base
+            out.append(Region(name, mem, base, tuple(lay.shape), tuple(lay.strides),
+                              containers[name].dtype))  # fmt: skip
+    return out
 
 
 def region_at(regions: list[Region], memory: str, addr: int) -> Region | None:

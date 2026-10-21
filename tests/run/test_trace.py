@@ -52,7 +52,7 @@ def beat_events():
          "mem": "l1", "addr": 0x10000000, "size": 64, "bank": 0, "row": 0, "value": [0x2BD] * 8,
          "l2": 0x80002900, "region": "A", "elems": list(range(8)), "vals": [701] * 8},
         {"t": 78, "k": "burst", "src": "dma", "task": "load_A", "id": 2, "op": "r", "mem": "l2",
-         "addr": 0x80002900, "size": 512, "back": 90, "region": "A"},
+         "addr": 0x80002900, "size": 512, "back": 90, "region": "A", "elems": list(range(64))},
         {"t": 124, "k": "fire", "src": "acc", "task": "add_acc", "n": 0,
          "b": {"acc_a": 0, "acc_b": 0}, "value": {"acc_a": [0x2BD], "acc_b": [0x2EE]},
          "vals": {"acc_a": [701], "acc_b": [750]}},

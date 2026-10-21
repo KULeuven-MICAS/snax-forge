@@ -51,7 +51,10 @@ events: the cores' cycles are None and there is no trace.
 **Invariants** (``invariants``), checked on every conversion, a RunError
 (``convert.invariant``) naming each that fails: every start has a done in the window, and
 every DMA issue; a core's classes add up to the window; the accelerator's firings in its
-``done`` events are its summary's; above ``task``, the beat part's (beats.py).
+``done`` events are its summary's; with the run's regions, each container's L2 bytes its
+copies touch (``load_<C>``, ``store_<C>``, every row) are its array's (the ELF's symbol,
+regions.py) padded to whole DMA beats (D105, ``Cluster.dma_beat_bytes``), and no copy touches
+L2 outside it; above ``task``, the beat part's (beats.py).
 """
 
 from __future__ import annotations
@@ -60,6 +63,9 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
+import numpy as np
+
+from snax_forge.lower.layout import round_up
 from snax_forge.lower.tasks import Configure, TaskList
 
 from .beats import Context, beat_events, beat_invariants
@@ -355,10 +361,44 @@ def profile_of(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles
 # =============================================================================
 
 
+def l2_copies(trace: Trace, regions: list[Region], cluster: Cluster) -> list[str]:
+    """Each container's L2 bytes against its copies' (module doc); each that fails, said."""
+    beat = cluster.dma_beat_bytes
+    l2 = {r.container: r for r in regions if r.memory == "l2"}
+    touched: dict[str, list[tuple[int, int]]] = {c: [] for c in l2}
+    bad = []
+    for e in trace.of_kind("issue"):
+        sides = [s for s in ("from", "to") if not cluster.is_l1(e[s])]
+        if not sides:
+            continue
+        m = re.fullmatch(r"(?:load|store)_(\w+)", e["task"])
+        if m is None or m[1] not in l2:
+            bad.append(f"DMA copy {e['id']} ({e['task']}) touches L2 and is no container's load or "
+                       f"store (the containers in L2: {sorted(l2)})")  # fmt: skip
+            continue
+        for s in sides:
+            for row in range(e["reps"]):
+                lo = e[s] + row * e[f"{s}_stride"]
+                touched[m[1]].append((lo, lo + e["size"]))
+    for name, r in l2.items():
+        want = [(r.base, r.base + round_up(int(np.prod(r.shape)) * r.itemsize, beat))]
+        got: list[tuple[int, int]] = []
+        for lo, hi in sorted(touched[name]):
+            if got and lo <= got[-1][1]:
+                got[-1] = (got[-1][0], max(got[-1][1], hi))
+            else:
+                got.append((lo, hi))
+        if got != want:
+            bad.append(f"container {name}: its copies touch L2 {[(hex(a), hex(b)) for a, b in got]}, "
+                       f"its array (padded to {beat}-byte beats) is [{want[0][0]:#x}, "
+                       f"{want[0][1]:#x})")  # fmt: skip
+    return bad
+
+
 def invariants(profile: Profile, trace: Trace, cluster: Cluster,
-               ctx: Context | None = None) -> list[str]:  # fmt: skip
+               ctx: Context | None = None, regions: list[Region] | None = None) -> list[str]:  # fmt: skip
     """What every converted run must hold (module doc); each that fails, said. ``ctx``, the
-    beat part's, adds its invariants."""
+    beat part's, adds its invariants; ``regions``, the run's, the L2 copies'."""
     bad = []
     for src in trace.sources:
         starts = len(trace.of_kind("issue" if src == DMA else "start", src))
@@ -375,6 +415,8 @@ def invariants(profile: Profile, trace: Trace, cluster: Cluster,
     if fired != profile.accelerators[acc].firings:
         bad.append(f"{acc}: {fired} firings in its done events, "
                    f"{profile.accelerators[acc].firings} in its summary")  # fmt: skip
+    if regions is not None:
+        bad += l2_copies(trace, regions, cluster)
     if ctx is not None:
         bad += beat_invariants(trace, profile, ctx)
     return bad
@@ -412,7 +454,7 @@ def convert(
             "barrier" if kind == "barrier" else cluster.accelerator.block_of(x.fields["csr"]) or "-",
             a, b) for a, b, kind, x in waits]  # fmt: skip
     trace = Trace(level, total_cycles, boot, cluster.sources, events, list(filter or []))
-    bad = invariants(profile, trace, cluster, ctx)
+    bad = invariants(profile, trace, cluster, ctx, regions)
     if bad:
         raise RunError("convert.invariant", "; ".join(bad))
     return profile, trace

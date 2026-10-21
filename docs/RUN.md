@@ -135,7 +135,8 @@ What the program printed, after make's own lines:
     forge errors: 0
     make: Leaving directory '$ROOT/snax-forge/gvsoc'
 
-`run.json` says what ran, `profile.json` what it measured (C§7), from the
+`run.json` says what ran, with where the linker put each L2 container's
+array (`elf_symbols`, the L2 regions, D86), `profile.json` what it measured (C§7), from the
 accelerator's classes and firings to the cores' CSR counts, the DMA, the
 crossbar's ports and the banks:
 
@@ -146,8 +147,13 @@ crossbar's ports and the banks:
      "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
      "elf": "sw/forge.elf",
      "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
+     "elf_symbols": {
+      "A": {"addr": 2147494144, "size": 512},
+      "B": {"addr": 2147494656, "size": 512},
+      "C": {"addr": 2147496704, "size": 512}
+     },
      "target": "snax_hjson",
-     "snax_gvsoc": {"commit": "fec4c2196808a18d3c7ba84c56fca11924a613b0", "dirty": false},
+     "snax_gvsoc": {"commit": "c64c8e7b2e3a25a320293649b095f48573c16926", "dirty": false},
      "trace_level": "off",
      "trace_sources": [],
      "vcd": false

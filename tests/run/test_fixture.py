@@ -23,11 +23,17 @@ def recorded():
     return cluster, tasks, check, read_events(HERE / "events.log")
 
 
+def regions():
+    """The recorded run's regions: L1 from its design point, L2 from its ELF's symbols."""
+    point = DesignPoint.load(HERE / "design_point.json")
+    return regions_of(point, json.loads((HERE / "elf_symbols.json").read_text()))
+
+
 def test_task_level(recorded, tmp_path):
     cluster, tasks, check, lines = recorded
     profile, trace = convert(lines, cluster, tasks, check["total_cycles"], "task",
-                             check["functional_check"])  # fmt: skip
-    assert invariants(profile, trace, cluster) == []
+                             check["functional_check"], regions())  # fmt: skip
+    assert invariants(profile, trace, cluster, None, regions()) == []
     assert trace.boot > 0 and trace.total_cycles == check["total_cycles"]
     assert trace.sources == cluster.sources
     assert all(sum(c.cycles.values()) == trace.total_cycles for c in profile.cores.values())
@@ -57,11 +63,10 @@ def test_stall_level(recorded, tmp_path):
     """The stall-level recording: every beat and stall invariant holds on real events, and the
     profile is the task level's."""
     cluster, tasks, check, lines = recorded
-    point = DesignPoint.load(HERE / "design_point.json")
     sources = ["acc", *(m.name for m in cluster.accelerator.movers), "dma"]
     profile, trace = convert(read_events(HERE / "events_stall.log"), cluster, tasks,
                              check["total_cycles"], "stall", check["functional_check"],
-                             regions_of(point), sources)  # fmt: skip
+                             regions(), sources)  # fmt: skip
     kinds = {e["k"] for e in trace.events}
     assert {"grant", "dma", "burst", "fire", "push", "stall", "fifo"} <= kinds
     assert trace.filter == sources and trace.level == "stall"
@@ -70,6 +75,11 @@ def test_stall_level(recorded, tmp_path):
     assert profile.to_dict() == task.to_dict()
     assert {e["region"] for e in trace.events if e["k"] in ("grant", "dma", "burst")} == {
         "A", "B", "C"}  # fmt: skip
+    # a burst's region is the container whose symbol holds its address
+    syms = json.loads((HERE / "elf_symbols.json").read_text())
+    for e in trace.of_kind("burst"):
+        (name,) = [c for c, s in syms.items() if s["addr"] <= e["addr"] < s["addr"] + s["size"]]
+        assert e["region"] == name and e["elems"]
     (tmp_path / "run.json").write_text("{}")
     write_run(tmp_path, profile, trace)
     assert read_run(tmp_path).trace.events == trace.events

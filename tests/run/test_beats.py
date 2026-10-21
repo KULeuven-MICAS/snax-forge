@@ -13,7 +13,7 @@ from snax_forge.run import RunError, cluster_from, parse_line
 from snax_forge.run.beats import agu_nest, beats
 from snax_forge.run.convert import convert
 
-from .helpers import files, synthetic
+from .helpers import files, synthetic, synthetic_regions
 
 TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"
 SOURCES = ["acc", "acc_a", "acc_b", "acc_out", "dma"]
@@ -32,7 +32,9 @@ def text(x: str) -> str:
 
 def convert_lines(run, lines, level="stall", sources=SOURCES):
     cluster, tasks = run
-    return convert([parse_line(x) for x in lines], cluster, tasks, 226, level, None, [], sources)
+    sources = sources if level != "task" else None
+    return convert([parse_line(x) for x in lines], cluster, tasks, 226, level, None,
+                   synthetic_regions(tasks), sources)  # fmt: skip
 
 
 def test_a_synthetic_run_holds_every_invariant(run):
@@ -61,7 +63,8 @@ def test_the_events_carry_their_lookups(run):
     d = next(e for e in trace.events if e["k"] == "dma")
     assert (d["task"], d["mem"], len(d["value"])) == ("load_A", "l1", 8)
     b = next(e for e in trace.events if e["k"] == "burst")
-    assert (b["task"], b["mem"]) == ("load_A", "l2")
+    assert (b["task"], b["mem"], b["region"], b["elems"]) == ("load_A", "l2", "A", list(range(64)))
+    assert (g["region"], g["elems"], d["region"], d["elems"]) == ("A", [1], "A", list(range(8)))
     i = next(e for e in trace.events if e["k"] == "insn")
     assert (i["src"], i["func"], i["pc"], i["text"]) == ("core0", "main", 0x800001E4,
                                                           "sw ra, 12(sp)")  # fmt: skip
@@ -148,6 +151,26 @@ def test_each_invariant_broken_is_named(run, change, said):
         convert_lines(run, change(lines))
     assert e.value.code == "convert.invariant"
     assert said in str(e.value), str(e.value)
+
+
+def test_a_copy_outside_its_containers_l2_array_is_named(run):
+    """From task on: each container's L2 bytes are its copies', and no copy leaves them."""
+    cluster, tasks = run
+    for level in ("task", "stall"):
+        lines = synthetic(cluster, tasks, level)
+        convert_lines(run, lines, level)  # holds
+        moved = sub(r"issue id=2 ", "src=0x80000000", "src=0x80000040")(lines)
+        with pytest.raises(RunError) as e:
+            convert_lines(run, moved, level)
+        assert e.value.code == "convert.invariant"
+        assert (
+            "container A: its copies touch L2 [('0x80000040', '0x80000240')], its array "
+            "(padded to 64-byte beats) is [0x80000000, 0x80000200)"
+        ) in str(e.value)
+    # a run without L2 regions: every copy touching L2 is named
+    lines = [parse_line(x) for x in synthetic(cluster, tasks, "task")]
+    with pytest.raises(RunError, match=r"DMA copy 2 \(load_A\) touches L2 and is no container"):
+        convert(lines, cluster, tasks, 226, "task", None, [])
 
 
 def test_a_fifo_above_its_depth_or_not_empty_at_the_end_is_named(run):

@@ -45,6 +45,7 @@ from snax_forge.run import read_run
 from snax_forge.sandbox import Recipe
 from snax_forge.sdfg.loader import load as load_kernel
 from tests.design.helpers import REPO, SMALL16, SNAX_ALU
+from tests.run.helpers import point_symbols
 
 from . import helpers
 from .helpers import COMMIT, PLAIN, PLAINS, built, golden, needs_gvsoc, stub
@@ -121,6 +122,11 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
         "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
         "elf": "sw/forge.elf",
         "elf_sha256": f.elf_sha256,
+        "elf_symbols": {
+            c: {"addr": a, "size": n}
+            for c, (a, n) in point_symbols(f.point).items()
+            if not c.endswith("_golden")
+        },
         "target": "snax_hjson",
         "snax_gvsoc": {"commit": COMMIT, "dirty": True},
         "trace_level": "off",
@@ -368,6 +374,22 @@ def test_trace_sources_go_with_the_beat_levels_and_name_this_run(tmp_path, monke
     assert fake.calls == [] and not (tmp_path / "flow").exists()
     with pytest.raises(FlowError, match=r"gvsoc: \[sources.unknown\] sources \['acc_z'\]"):
         flow(tmp_path, trace_level="beat", trace_sources=["acc", "acc_z"])
+
+
+@pytest.mark.parametrize(
+    "change, said",
+    [
+        (lambda s: {k: v for k, v in s.items() if k != "C"}, "container C lives in L2, the ELF"),
+        (lambda s: {**s, "A": (s["A"][0], 8)}, "container A: its symbol is 8 bytes"),
+    ],
+)
+def test_the_elf_must_hold_each_l2_container(tmp_path, monkeypatch, change, said):
+    stub(monkeypatch, tmp_path)
+    real = helpers.point_symbols
+    monkeypatch.setattr(helpers, "point_symbols", lambda point: change(real(point)))
+    with pytest.raises(FlowError, match=r"^sw: .*forge\.elf: \[elf\.") as e:
+        flow(tmp_path)
+    assert said in str(e.value)
 
 
 def test_a_run_without_its_events_stops_at_convert(tmp_path, monkeypatch):
