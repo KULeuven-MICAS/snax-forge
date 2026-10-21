@@ -23,7 +23,7 @@ own):
     Cloning into 'snax-forge'...
     Submodule 'gvsoc/snax-gvsoc' (https://github.com/KULeuven-MICAS/snax-gvsoc) registered for path 'gvsoc/snax-gvsoc'
     Cloning into '$ROOT/snax-forge/gvsoc/snax-gvsoc'...
-    Submodule path 'gvsoc/snax-gvsoc': checked out '0e01c6e2111479acc5b4d212a6e57de87aca7ecb'
+    Submodule path 'gvsoc/snax-gvsoc': checked out '3f8a3e9d7dbaecc7b977c45c1785cf187fa307ac'
 
 Everything else runs in snax-forge's image (D118), started from the folder
 that holds `snax-forge`:
@@ -52,7 +52,7 @@ output shows as it comes and goes to `out/flow/vecadd/build.log`):
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     built: no install in out/snax-gvsoc (snax-gvsoc 0e01c6e2)
+      build     built: no install in out/snax-gvsoc (snax-gvsoc 3f8a3e9d)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
@@ -147,7 +147,7 @@ crossbar's ports and the banks:
      "elf": "sw/forge.elf",
      "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
      "target": "snax_hjson",
-     "snax_gvsoc": {"commit": "0e01c6e2111479acc5b4d212a6e57de87aca7ecb", "dirty": false},
+     "snax_gvsoc": {"commit": "3f8a3e9d7dbaecc7b977c45c1785cf187fa307ac", "dirty": false},
      "trace_level": "off"
     }
     {
@@ -177,7 +177,7 @@ gets the level in its name:
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc 0e01c6e2)
+      build     up to date (snax-gvsoc 3f8a3e9d)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
@@ -252,7 +252,7 @@ Accumulator. GVSoC is built now, so the whole flow takes seconds:
       design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (9 steps)
       gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc 0e01c6e2)
+      build     up to date (snax-gvsoc 3f8a3e9d)
       sw        sw/forge.elf (sha256 26b545a3812000c8)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 255 cycles (main to forge_check); data 0 errors (1 words); counters sum_acc 67 (64 beats)

@@ -15,32 +15,26 @@ Rules (D117):
   detail lives. An amendment is folded into the entry it changes, not chained after it.
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that
   holds it now. A number is never changed or reused, since code, tests and docs cite them; the
-  text of every retired entry is in git history (tag `pre-gvsoc`).
+  text of every retired entry is in git history (tags `pre-gvsoc`, `pre-ret1`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
   number: **D138**.
 
-The `model` and `scenario` entries, and D45 and D53, which lower into SNAX-MODEL's inputs, are kept
-as first written until SNAX-MODEL is removed (RET1, D116).
-
-Area tags: `scope` (plan, ownership, order), `model` (SNAX-MODEL), `scenario` (scenario files),
-`lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference
-executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `viz`,
-`docs`.
+Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm`
+(SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design`
+(platform, checks, memory plan, design point), `flow`, `viz`, `docs`.
 
 | Area | Decisions |
 |---|---|
 | scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D126 D127 D130 |
-| model | D6 D10–D13 D21 D25 D29–D40 D43 D44 D47–D50 D59 D62 D69 |
-| scenario | D41 D42 D65 D67 D83 D95 |
-| lower | D45 D53 D64 D75 D88 D89 D105 D135 |
+| lower | D64 D75 D89 D105 D135 |
 | gvsoc | D120 D121 D122 D125 D128 D134 D137 |
-| brm | D68 D70 D82 D103 D129 D133 |
+| brm | D68 D69 D70 D82 D103 D129 D133 |
 | dfg | D19 D71 D77 D78 D102 |
 | ref | D28 D79 |
 | sandbox | D72 D73 D104 |
-| design | D84–D87 D131 |
-| flow | D90 D108 D136 |
+| design | D12 D13 D84–D87 D131 |
+| flow | D50 D90 D108 D136 |
 | viz | D55 D57 D81 D96 D97 D99 |
 | docs | D26 D46 D117 |
 
@@ -48,12 +42,12 @@ Retired, and where each now lives:
 
 | Now in | Retired |
 |---|---|
+| D19 | D43 |
 | D51 | D22 |
 | D55 | D54 |
 | D57 | D56 D58 D60 D61 |
 | D64 | D63 D66 |
-| D65 | D92 |
-| D68 | D3 D5 |
+| D68 | D3 D5 D25 D35 |
 | D70 | D15 |
 | D71 | D1 |
 | D72 | D14 D27 D80 |
@@ -68,43 +62,32 @@ Retired, and where each now lives:
 | D105 | D101 |
 | D111 | D18 |
 | D113 | D9 |
-| D116 | D4 D24 D110 D114 D115 |
+| D116 | D4 D6 D10 D11 D21 D24 D29 D30 D31 D32 D33 D34 D36 D37 D40 D41 D42 D44 D47 D48 D49 D53 D62 D65 D67 D83 D88 D92 D95 D110 D114 D115 |
 | D117 | D93 |
 | D123 | D124 |
 | D134 | D132 |
+| D135 | D45 |
+| D137 | D38 D39 D59 |
 
 ---
-
-**D6** · model — SNAX-MODEL is pure Python: banks, TCDM interconnect, streamers, DMA and L2, a
-register interface and a controller. It has no CPU.
 
 **D8** · scope — The AI thinker is a commercial LLM, so every artefact is text that humans and LLMs
 read alike.
 
-**D10** · model — Cycle-level and event-driven: only components with pending work are ticked, and
-idle cycle ranges are skipped. → `sched.py`.
+**D12** · design — One streamer per accelerator port, named after it (D75), its width (`n_ports`,
+the hjson's `num_channel`) the port's lanes. → `design/streamers.py`, C§13.
 
-**D11** · model — The control program is JSON; a wait polls a block's `busy` register or blocks on
-its completion signal. Commands: D36, D42.
+**D13** · design — The unit of transfer is a bank word, one element per word for now; element type
+and elements per word are in the platform so packing can come later (open item 21, tier P). → C§1,
+C§13.
 
-**D12** · model — One streamer per accelerator port; how many interconnect ports a streamer has is
-configurable.
-
-**D13** · model — The unit of transfer is a bank word, one element per word for now; element type
-and elements per word are in the data model so packing can come later (open item 21).
-
-**D19** · dfg — Everything is extended by registration (node kinds, transforms, checks, passes,
-accelerator kinds) and namespaced attrs, never by editing core classes. → principle 6.
-
-**D21** · model — The exact sequential simulator is the source of truth; its state is kept
-array-friendly so it can be accelerated later without changing results. Amended by D48.
+**D19** · dfg — Everything is extended by registration (node kinds, transforms, checks, passes, the
+accelerator kinds and ops of `brm/function.py`, the generator's blocks) and namespaced attrs, never
+by editing core classes. Merges D43. → principle 6.
 
 **D23** · scope — SNAX-FORGE complements ZigZag and Stream: cycle-level and RTL-backed rather than
 analytical. Parked: Stream as a proposer for DNN-shaped workloads, and an analytical estimator of
 our own for the kernels Stream cannot describe (open item 4).
-
-**D25** · model — The accelerator interface has a per-port element rate, so reductions and
-elementwise blocks share one interface. → C§4.
 
 **D26** · docs — Contracts are Python dataclasses with `to_dict` / `from_dict` and plain JSON until
 the contract freeze (M6), versioned schemas after. → C§1.
@@ -113,81 +96,12 @@ the contract freeze (M6), versioned schemas after. → C§1.
 accumulation order its BRM defines, so the check against the reference executor stays exact and
 the check against NumPy is a tolerance (D113).
 
-**D29** · model — RTL-like cycle semantics: fixed phases per cycle, reads see the previous cycle's
-committed state, and everything commits at the end of the cycle. → `sched.py`, rules in C§8
-(D47).
+**D46** · docs — The contracts are written in `docs/CONTRACTS.md`, and every snippet in it is
+checked against its source (`tests/test_contracts.py`).
 
-**D30** · model — L1 banks are shared state touched by whoever requests them, not a ticked
-component. Two accesses to one bank in a cycle is an error, because arbitration is the
-interconnect's job. → `mem.py`.
-
-**D31** · model — The interconnect copies the SNAX SparseInterconnect arbiter: per bank a priority
-mask, then round-robin from the last selection, and a lock on a refused request; no added latency.
-Extended by D33. → `xbar.py`.
-
-**D32** · model — The streamer copies SNAX's reader/writer timing: each port advances on its own
-with an address queue and credit, and the FIFO depth bounds reads in flight. Dynamic TCDM priority
-is not copied (open item 5). → `streamer.py`.
-
-**D33** · model — Interconnect ports have a width: a w-bit port covers an aligned group of banks
-(512 bits = 8 banks), the wider port wins per cycle and group, and stalls caused by a wider grant
-are counted apart (open item 6). → `xbar.py`.
-
-**D34** · model — The DMA sits on one wide port between a flat L2 and L1 and moves affine beat
-patterns, one beat per `beat_interval`, with declared startup and latencies. iDMA features not
-copied: open item 7. → `dma.py`, `l2.py`.
-
-**D35** · model — The accelerator sits between FIFOs: it joins its inputs, runs an L-stage pipeline
-that stalls as a whole on a full output, and fires at most once per II (open item 8). Cycle
-classes amended by D59. → `accel.py`.
-
-**D36** · model — Every block (streamer, accelerator, DMA) has one register window: `start`,
-`busy`, `busy_cycles`, then buffered configuration registers listed by a per-kind adapter; writing
-1 to `start` launches it. Mapping onto SNAX's real registers: open item 9. → C§3, C§5.
-
-**D37** · model — The controller runs the program in order, one command at a time, with a cost per
-command kind, and keeps control overhead apart from waiting. Costs are declared defaults (open
-item 10). → `ctrl.py`.
-
-**D38** · model — The profile is built only from counters the components already keep; the trace
-is an independent log that tests check against them. → C§7.
-
-**D39** · model — Trace levels `off`, `task` and `beat`; an event is a flat record with its cycle,
-kind and source, and kinds are registered. Amended by D49, D62. → C§7.
-
-**D40** · model — Cycle-class intervals and FIFO occupancy are recorded so they come out identical
-with skipping on and off. → C§7.
-
-**D41** · scenario — A run's inputs are two JSON files: the cluster file (the hardware) and the
-scenario (memory, program, cycle limit), so one cluster serves many programs. Expected results
-live in the tests (open item 15). → C§2, C§6.
-
-**D42** · scenario — A scenario's program is a plain command list; nothing expands inside the
-model. Expanding blocks into register writes is SNAX-LOWER's job.
-
-**D43** · model — Components, accelerator kinds and operations are registered, so new ones need no
-change to the core.
-
-**D44** · model — `pixi run model-run` writes the run record, profile, trace and memory dumps,
-byte-identical on every run and with skipping on or off. Amended by D50, D95. → C§6, C§7.
-
-**D45** · lower — SNAX-LOWER works in two steps: design point → task list → command list, the
-second through the model's own register adapters. Refines D18.
-
-**D46** · docs — The model-side contracts are written in `docs/CONTRACTS.md`, and every snippet in
-it is checked against its source (`test_contracts.py`).
-
-**D47** · model — Rules for skipping idle cycles, so a sleeping component cannot report wrong
-statistics. → C§8, `test_gaps.py`.
-
-**D48** · model — Everything touched every cycle is plain Python, not NumPy; arrays only hold data
-and address streams. Faster at cluster sizes, with identical results. Amends D21.
-
-**D49** · model — The beat-level trace can be filtered by source and cycle window; task events and
-the profile never are. Closes open item 12. → C§7.
-
-**D50** · model — `run.json` records the cluster configuration, so an output directory says on its
-own which hardware produced it.
+**D50** · flow — A run's `run.json` records what ran (the design point, the hjson files, the ELF,
+the snax-gvsoc commit), so a run directory says on its own which hardware produced it. →
+`flow/run.py`, C§7.
 
 **D51** · scope — The user owns the accelerator, through its BRM (lanes, rates, latency, II, op);
 everything around it is the model of the SNAX platform. Model cycles are trusted only as far as
@@ -197,42 +111,27 @@ the comparison with SNAX RTL shows (M16, D116).
 II; the whole cluster is checked by running the same program on SNAX-GVSoC and on snax_cluster
 RTL (D116). Neither blocks the inner loop.
 
-**D53** · lower — SNAX-LOWER produces both inputs of a model run: the cluster file and the control
-program. Refines D18; built by D88 and D89.
-
 **D55** · viz — The viewers are a local server bound to 127.0.0.1 plus a static page: stdlib only,
-no build step, offline, for humans; LLMs read the reports (D99). Views read the model's own
-dataclasses, not raw JSON. → `viz/`.
+no build step, offline, for humans; LLMs read the reports (D99). Views read the run's and the
+design's dataclasses, not raw JSON. → `viz/`.
 
-**D57** · viz — The run views: a schedule (per component its classes, tasks and commands over a
-cycle window) with the cluster view under it at the selected cycle, kept in the URL hash; tasks
-are paired once in Python, and one colour means one thing in every view. On SNAX-GVSoC the
-schedule covers the program's window only (D135), with a lane per core and folded stretches
-(FLOW3 round 3). → `viz/api.py`.
-
-**D59** · model — An accelerator's `busy` class includes its II gap, so utilisation is the share of
-cycles the datapath is occupied; the profile also counts firings. Amends D35, D38.
-
-**D62** · model — Read responses are traced as `resp` events and drawn apart from requests.
-Amends D39, D61.
+**D57** · viz — The run views are a schedule with the cluster view under it at the selected cycle,
+kept in the URL hash; tasks are paired once in Python, and one colour means one thing in every view.
+On SNAX-GVSoC the schedule covers the program's window, with core lanes (FLOW3 round 3). →
+`viz/api.py`, `viz/static/`.
 
 **D64** · lower — The task list has `configure`, `start`, `sync` and `read` steps, placed where the
 list chooses. Lowering adds only the waits correctness needs, one per component, and leaves out a
-wait another one already covers. → C§9, `lower/commands.py`.
+wait another one already covers. → C§9, `lower/waits.py`.
 
-**D65** · scenario — One folder per scenario, holding its `scenario.py` and a hand-written
-`tasks.json` that it lowers into the program. Amended by D67, D92, D95.
+**D68** · brm — A BRM is a hand-written JSON file: a shared part (an interface with a rate per port,
+so reductions and elementwise blocks share one; function, dataflow, pattern) and implementations
+(source, supports, timing, binding D129), its timing the user's numbers (D51). `resolve` checks an
+instance against the generator's `BLOCKS`. Merges D25, D35. → C§10, `brm/`.
 
-**D67** · scenario — Generated scenario files (`scenario.json`, `.npy` inputs, cluster files) are
-not in git; `pixi run scenarios`, `model-run` and every test session write them. Amended by D92.
-
-**D68** · brm — A BRM is a hand-written JSON file: a shared part (interface, function, dataflow,
-pattern) and implementations (source, supported values, timing, binding); timing is always the
-user's numbers; `binding` names the Chisel block and how the BRM fills it (D129). `resolve` makes
-an instance and checks it against the model's kind. → C§10.
-
-**D69** · model — A reader whose loop-0 temporal stride is 0 reads each group once and hands it
-out `bound[0]` times, as SNAX's reader does. Closes that half of open item 5.
+**D69** · brm — A reader whose innermost temporal stride is 0 reads a beat once and hands it out
+`bound[0]` times, as SNAX's reader does, so a BRM nest may repeat a beat with a stride of 0. →
+`brm/affine.py`, C§10, snax-gvsoc `snax/snax_streamer.cpp`.
 
 **D70** · brm — A port's dataflow is a nest in a registered notation. The first, `affine`, gives
 the operand's shape, an offset and loops (bound, strides, spatial flag), spatial loops last; it
@@ -270,14 +169,10 @@ bottom in execution order, rows computed in Python, edges in SVG, no library. �
 **D82** · brm — A BRM says what one lane computes (`function.code`), and `bind` checks the tasklet
 against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
 
-**D83** · scenario — The scenarios use the derived names (`acc_a`, `add_acc_a`, `load_A`), and
-vecadd's L2 is packed as the default memory plan packs it; every cycle count is kept.
-Amends D75.
-
-**D84** · design — The platform is a file of its own in `platforms/`; the design step pairs it with
-the recipe's bound graph, so either changes without the other. Cluster parameters are design knobs.
-It holds the streamer knobs for now (`default` and per-streamer overrides), never a template: the
-streamer is lowered per design point (D134); a streamer input of its own is open item 78. → C§13.
+**D84** · design — The platform is a file of its own in `platforms/`, paired with the recipe's bound
+graph by the design step, so either changes without the other; cluster parameters are design knobs.
+It holds the streamer knobs, never a template (D134); a streamer input of its own is open item 78. →
+C§13.
 
 **D85** · design — Design checks report every problem before anything is written, each with its
 fix. → C§14.
@@ -290,9 +185,6 @@ avoid bank conflicts without a run. → C§15.
 and the memory plan; it is checked again on load and is SNAX-LOWER's and the generator's only
 input, the streamer file lowered from its streamers (D134). → C§15.
 
-**D88** · lower — The cluster file is derived from a design point, and the checked-in clusters are
-built by the same code. → `lower/cluster.py`.
-
 **D89** · lower — The task list is derived from a design point: a group per accelerated node,
 loads and stores from the memory plan, streamer values from memlets checked against the BRM's
 nest, and `after` holding data dependences only. → `lower/derive.py`.
@@ -304,19 +196,13 @@ D136), the reports and `flow.log` with each stage's time. → `flow/run.py`.
 **D91** · scope — The old SDFG → descriptor → RTL path is gone; the Chisel blocks and `Emit` are a
 project of their own in `hw/chisel/`.
 
-**D95** · scenario — A scenario may name its data: `regions` (name, memory, base, shape, strides),
-which the model ignores and `run.json` records, so a run directory says where its data lives as it
-says which hardware ran it (D50). The flow fills them from the memory plan; vecadd and
-vecadd_conflict declare theirs, and a region must fit its memory when the scenario is made.
-Amends D44, D65. → C§6.
-
 **D96** · viz — The memory tab shows L1 as banks × rows through the address map and L2 as rows of
-one DMA beat, folded in Python so the answer grows with the regions, not with the depth.
-→ `viz/memory.py`.
+one DMA beat, folded so the answer grows with the regions, not with the depth. → rebuilt in FLOW3
+round 2.
 
 **D97** · viz — Data movement is read off the beat trace and the regions, with no timing model: an
-element's journey, residency, per-port address nests and the L1 conflicts on the layout.
-→ `viz/movement.py`.
+element's journey, residency, per-port address nests and the L1 conflicts on the layout. → rebuilt
+in FLOW3 round 2.
 
 **D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their
 reports, until sweeps need one. Walk-throughs live in `examples/`, with a test checking every
@@ -350,153 +236,109 @@ and the padding is kept free in both memories. → `lower/derive.py`, `lower/lay
 apart. That is how a hand-edited graph is run and checked, though it cannot be replayed or swept
 (open item 34).
 
-**D111** · scope — SNAX-FORGE generates a bundle per design point for SNAX: the accelerator RTL
-with a shell wrapper, the cluster hjson (the three files of D134), a `Bender.yml` and the program
-from the task list as direct CSR writes; for SNAX-GVSoC the same hjson files and the CSR headers,
-no generated Python (D128). SNAX's own generators build the rest, so the hjson describes the
-cluster once.
+**D111** · scope — SNAX-FORGE generates a bundle per design point for snax_cluster (the accelerator
+RTL with a shell wrapper, the hjson of D134, a `Bender.yml`, the program as direct CSR writes) and
+for SNAX-GVSoC the same hjson and headers (D128); SNAX's own generators build the rest, so the hjson
+describes the cluster once. → ARCHITECTURE §5.8.
 
 **D112** · scope — A composition is one accelerator: one recipe step binds a connected group of
 tasklets to a chain of unit BRMs linked by FIFOs, with streamers on the outer ports only, so one
 register window and one SNAX shell wrapper (M13). Links between shells are parked (open item 53).
 
 **D113** · scope — The kernels keep NPBench's DaCe structure with the dtype as one parameter, at
-PolyBench's MINI and SMALL sizes where they fit the 128 KiB L1. Integers first: `int64` with an exact
-reference check through tier C, `int8` in and `int32` accumulate from tier P on, as SNAX's GeMM
-(OpenGeMM); float is a second pass per kernel, as a new BRM implementation (ports carry dtype, D68).
-Reverses "NPBench's own data types" for an exact check and the GeMM's int8 × int8 → int32.
-→ STATUS (M7), PAPER §6.1.
+PolyBench's MINI and SMALL sizes. Integers first, for an exact reference check: `int64` through tier
+C, `int8` in and `int32` accumulate from tier P (as OpenGeMM); float later, as a new BRM
+implementation. Reverses NPBench's own dtypes. → PAPER §6.1, STATUS (M7).
 
-**D116** · scope — SNAX-GVSoC replaces SNAX-MODEL (GVS4, closing X1): a GVSoC model of the SNAX
-cluster in which a Snitch core runs the real program, so control cost is measured, not declared.
-It is first aligned with snax_cluster by hand and checked against its RTL (M16); then each BRM
-generates a GVSoC accelerator and its Chisel RTL, accepted when one ELF gives the same counters on
-both (D123, GEN2b), the GVSoC side first against the BRM's predicted counter (GEN3, D127), and
-SNAX-MODEL goes with its entries here (RET1). Amends D6, D36–D40 (the CSR transport stays, the
-layout becomes SNAX's), D45, D51–D53, D68, principles 1 and 3, the RISC-V non-goal. → STATUS (M16).
+**D116** · scope — SNAX-GVSoC replaced SNAX-MODEL (GVS4, closing X1): a GVSoC model of the SNAX
+cluster in which a Snitch core runs the real program, so control cost is measured, not declared,
+checked against snax_cluster's RTL (M16, D123); RET1 removed SNAX-MODEL and its entries. Amends D51,
+D52, D68, principles 1 and 3, the RISC-V non-goal. → STATUS (M16, M14).
 
 **D117** · docs — The documents stay short: one fact in one place, a decision only for a choice
 someone may want to reverse, each entry in its current form in at most three lines, and the done
 tasks out of STATUS at every milestone close. The rules are at the top of this file. Replaces D93.
 
 **D118** · scope — One development image, `ghcr.io/kuleuven-micas/snax-forge:main` from
-`container/`, for snax-forge, snax-gvsoc and the programs built from snax_cluster: the hub owns
-the tools (GVSoC's build tools, snax_cluster's RISC-V toolchain, pixi); each repo keeps its own
-environment. Replaces SG0's two images (one in snax-gvsoc). → README (Setup).
+`container/`, for snax-forge, snax-gvsoc and the programs built from snax_cluster: the image holds
+the tools, each repo keeps its own environment. → `container/Dockerfile`, README (In the container).
 
-**D119** · scope — M16 follows what `snax-alu` needs on the snax_alu cluster, plain interconnect as
-baseline and sparse: target and CSR port (SG1), DMA (SG2), streamer (SG3), ALU (SG4), cycles against
-RTL (SG5), Zicsr (SG6), the sparse interconnect (SG7), LR/SC on the sparse RTL (SG8). Reading the
-hjson moves to LNK2a, the generic accelerator to GEN3. → STATUS (M16).
+**D119** · scope — M16 followed what `snax-alu` needs on the snax_alu cluster, plain interconnect
+first and then sparse, one block per task (SG1–SG8); reading the hjson moved to LNK2a, the generic
+accelerator to GEN3. → snax-gvsoc `docs/plans/` (SG1–SG7), `docs/notes/NOTES.md` (SG8).
 
-**D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests at 4 × CSR on
-its `snax_csr` port to an accelerator component per core, so a SNAX block is a plain IO slave. Both
-sides follow Zicsr since SG6: snax_cluster #657 (decoder, translator), GVSoC's `priv.hpp`, all cores.
-→ ARCHITECTURE §5.6, snax-gvsoc `SG6.md`.
+**D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests on its `snax_csr`
+port to an accelerator component per core, so a SNAX block is a plain IO slave; both sides follow
+Zicsr since SG6. → ARCHITECTURE §5.6, snax-gvsoc `SG1.md`, `SG6.md`.
 
 **D121** · gvsoc — SNAX-GVSoC keeps GVSoC's iDMA model and fits it to snax_cluster's iDMA RTL by
-measurement, not a new model: the target sets the DMA and DRAM values (with SG7, the TCDM write
-latency and one stage per cycle, from splitting beat cycles against the RTL), the model the DMA's
-own read path. → snax-gvsoc `SG2.md`, `SG7.md`.
+measurement, not a new model: the target sets the DMA and DRAM values, the model keeps the DMA's own
+read path. → snax-gvsoc `SG2.md`, `SG7.md`, `snax/snax_hjson.py`.
 
 **D122** · gvsoc — SNAX-GVSoC's crossbar takes the SNAX ports, cores and AXI, numbered as on the
-RTL, and copies its arbiter, checked against the RTL module in Verilator: `rr_arb_tree` with
-`LockIn` (plain); priority from the streamer's bit, round robin from the last pick, idle restart,
-lock (sparse). The DMA takes whole superbanks (`dma_data_width / data_width` banks), refusing narrow
-winners. Closes open item 58 (SG7). → snax-gvsoc `SG3.md`, `SG7.md`.
+RTL, and copies its arbiter (plain and sparse), checked against the RTL module in Verilator; the DMA
+takes whole superbanks and refuses narrow winners. Closes open item 58. → snax-gvsoc `SG3.md`,
+`SG7.md`.
 
-**D123** · scope — SNAX-GVSoC is checked against snax_cluster's RTL by building one ELF and
-running it on both, comparing the counters that do not depend on the core's timing (each program
-names them), not predicted values: per phase, counters and errors equal, growing phases within 10%,
-the rest explained (open items 65–67), by hand from fresh runs. `make regress` (CI) checks every
-program exits 0, and `dma-timing` that `busy`, `r`, `w` stay the RTL's. FLOW3 and GEN2b build on
-it. Merges D124. → snax-gvsoc `SG4.md`–`SG7.md`.
+**D123** · scope — SNAX-GVSoC is checked against snax_cluster's RTL by running one ELF on both and
+comparing the counters that do not depend on the core's timing, not predicted values, by hand from
+fresh runs against SG5's tiers; CI's `make regress` checks exit codes and `dma-timing`'s DMA
+counters. Merges D124. → snax-gvsoc README (Comparing with the RTL), `SG5.md`.
 
-**D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight
-(`num_int_outstanding_loads`, a core property in GVSoC's LSU), the RTL's load-to-load cycles (4 from
-L1, 14 from DRAM; `tcdm` 2), and, since SG7, the core going on after a load answered later until the
-next load or a use of its register. Fetch keeps GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`,
-`SG7.md`, `snax/snax_hjson.py`.
+**D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight,
+the RTL's load-to-load cycles, and the core going on after a load answered later until the next load
+or a use of its register; fetch keeps GVSoC's cache (open item 65). → snax-gvsoc
+`snax/snax_hjson.py`, `SG5.md`, `SG7.md`.
 
 **D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software and
 generated headers in `sw/`, refreshed by hand with `make sync-snax-cluster`, whose diff is the check
-that the two still match; the sparse hjson is copied too, its headers checked equal to the old one's
-(SG7). A snax_cluster checkout is needed only for the RTL and sync. Pin: snax_cluster `05615e4`
-(#658, SG8). → snax-gvsoc `sw/README.md`, STATUS (M16, CI1).
+that the two still match; a snax_cluster checkout is needed only for the RTL. → snax-gvsoc
+`sw/README.md`, STATUS (CI1).
 
-**D127** · scope — M14 goes to SNAX-GVSoC first, then to snax_cluster, then clean-up: LNK1, GEN3,
-LNK2a, GEN2a, FLOW3 (RET1 its round 1c, in round 1's PR); GEN1, LNK2b, GEN2b; a housekeeping
-pass, one generator (open item 68). GEN3 models the Chisel blocks before GEN1 generates them, so
-the model side is tried first. → STATUS (M14).
+**D127** · scope — M14 goes to SNAX-GVSoC first, then to snax_cluster, then clean-up, so the model
+side is tried first: LNK1, GEN3, LNK2a, GEN2a, FLOW3, and RET1 as its own task after FLOW3 round 1;
+GEN1, LNK2b, GEN2b; a housekeeping pass and one generator (open item 68). → STATUS (M14).
 
-**D128** · gvsoc — Generated accelerators run on two hand-written generic components in
-snax-gvsoc, `SnaxUnit` (a Chisel block's datapath) and `SnaxShell` (the CSR manager), every number a
-property, so a sweep compiles nothing; snax-forge generates only the hjson files (D134) and the
-headers per design point, which the installed `snax_hjson` reads at run time. Each design point
-snax-gvsoc's regression runs is a fixture there, in `forge/<design>/` (as D126), hjson and
-headers, so snax-gvsoc's CI never needs snax-forge and forge/'s fixtures stay its anchor;
-snax-gvsoc is a submodule at `gvsoc/`, which snax-forge's CI fetches in one job (`gvsoc`, the flow
-on SNAX-GVSoC, D136). → snax-gvsoc `GEN3.md`, `LNK2a.md`, `forge/README.md`.
+**D128** · gvsoc — Generated accelerators run on two hand-written generic components in snax-gvsoc,
+`SnaxUnit` and `SnaxShell`, every number a property, so snax-forge generates only hjson and headers
+(D134); each design point snax-gvsoc regresses is a fixture in its `forge/`, so its CI never needs
+snax-forge. → snax-gvsoc `GEN3.md`, `forge/README.md`.
 
-**D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it:
-`block`, `args`, `control` (`counted` only: every block counts its firings), `csrs` (one or more
-configuration fields in CSR order, then start), `wait` (`lockstep`, `pipelined`), each kind
-registered (D19); GEN3 models it, GEN1 elaborates it. Folded into D68. Closes open item 64. → C§10.
+**D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it
+(`block`, `args`, `control`, `csrs`, `wait`), each kind registered (D19), so one description drives
+both generators: GEN3 models it, GEN1 elaborates it. Closes open item 64. → C§10, `brm/binding.py`.
 
-**D130** · scope — Generated accelerators follow GeMMX's shell contract in snax_cluster: a `ctrl`
-configuration with valid and ready (a start waits while busy), busy and a counter (cycles from an
-accepted start to done) read-only, data ports to the streamer as GeMMX's, the shell wrapper written
-by the generator. snax_alu keeps its own rules as the baseline. Narrows open item 63.
-→ snax-gvsoc `GEN3.md`.
+**D130** · scope — Generated accelerators follow GeMMX's shell contract in snax_cluster (a `ctrl`
+with valid and ready, busy and a counter read-only, GeMMX's data ports, a generated shell wrapper),
+so one contract serves every block; snax_alu keeps its own rules as the baseline. Narrows open item
+63. → snax-gvsoc `GEN3.md`.
 
-**D131** · design — LNK1 reads a platform from snax_cluster's hjson (`design from-hjson`): its
-one accelerator's movers must agree, and go into `streamers.default`; `num_channel` and
-`spatial_bounds` stay derived from the ports (D84); what only SNAX-MODEL reads is small16's until
-RET1. The platform keeps its source (`hjson`, a copy in `platforms/`) and its slot's name
-(`accelerator_slot`), which the generator writes the cluster file from (D134). → C§13.
+**D131** · design — LNK1 reads a platform from snax_cluster's hjson (`design from-hjson`): its one
+accelerator's movers must agree and go into `streamers.default`, `num_channel` and `spatial_bounds`
+stay derived (D84), and what the hjson lacks is small16's. The platform keeps its source (`hjson`)
+and slot (`accelerator_slot`) for the generator (D134). → `design/hjson_platform.py`, C§13.
 
-**D133** · brm — The Chisel Accumulator follows `ElementwiseTiledSpatial`'s control (start, busy,
-done, `loopCount`) plus `len`, so both run under one shell contract (D130); one register holds the
-sum and the result and loads the next input instead of clearing in the cycle the result leaves, so
-its drain is 0 with no second register. Its input is `lanes` elements (the BRM's W), summed by a
-tree of W → 1 adders in front of the register, so `chisel_accumulator` (W = 1, the block unchanged)
-and `chisel_adder_tree` are one block. The tree is combinational, so the latency stays 1 for every
-W; for GEN1, pipeline stages in it would make the latency depend on W. Amends D103.
-→ `samples/Accumulator.scala`.
+**D133** · brm — The Chisel Accumulator takes `ElementwiseTiledSpatial`'s control plus `len`, so
+both run under one shell contract (D130); one register loads the next input as the result leaves
+(drain 0), and a combinational W → 1 adder tree makes `chisel_accumulator` and `chisel_adder_tree`
+one block. Amends D103. → `samples/Accumulator.scala`.
 
-**D134** · gvsoc — The hjson is the contract between snax-forge and SNAX-GVSoC: per design point
-three files, each changing for its own reason: the cluster (`<platform>.hjson`, the platform's
-source with its values written back and the slot set), the streamer (`<slot>_streamer.hjson`,
-lowered per design point from the ports and the platform's knobs) and the accelerator
-(`<slot>_acc.hjson`, the datapath block), the slot's two `$ref`s each a whole file. SNAX-GVSoC
-reads them at run time (`snax_hjson`, `snax_cfg.py`): a slot with a datapath block gets the
-standard composite, one without is looked up by name in a registry; the measured timing stays
-constants there. forge/'s designs use the sparse interconnect; the slot's name comes from the
-platform (`accelerator_slot`). Blocks are adapters registered by name (D19); the manifest carries
-each task's beats. Retires D132. → `gen/gvsoc.py`, C§16, snax-gvsoc `LNK2a.md`.
+**D134** · gvsoc — The hjson is the contract between snax-forge and SNAX-GVSoC, so a sweep compiles
+nothing: per design point three files, each changing for its own reason (cluster, streamer,
+accelerator), which `snax_hjson` reads at run time. Retires D132. → `gen/gvsoc.py`, C§16, snax-gvsoc
+`LNK2a.md`.
 
-**D135** · lower — The task list becomes C on snRuntime as SNAX-LOWER's second backend: each step
-on the core that owns its component in the cluster file, D64's waits on SNAX components as polls
-with a hardware barrier where another core goes on, the DMA waited for on dependences only (the
-iDMA queues transfers; SNAX-MODEL's no-start-while-busy rule, D36, stays the model's), no task
-marks: one `mcycle` read at main's entry and one at `forge_check()`'s, the self-check against
-`data.h`'s goldens, which bound the program's window. One accelerator per program; `signal` waits
-refused. D45 stays as first written until RET1. → `lower/c.py`, `gen/data.py`, C§16.
+**D135** · lower — The task list becomes C on snRuntime: each step on the core that owns its
+component, D64's waits as polls with a hardware barrier where another core goes on, the DMA waited
+for on dependences only, and two `mcycle` reads (main, `forge_check()`) bounding the self-checking
+program's window. One accelerator per program. Merges D45. → `lower/c.py`, `gen/data.py`, C§16.
 
-**D136** · flow — The flow runs SNAX-GVSoC only, with no backend flag: after design come lower
-(`tasks.json`), gen, build (when needed), sw, gvsoc and check. The check is the program's own (its
-exit code), `total_cycles` the program's window (main's entry to `forge_check()`'s, D135);
-`gvsoc/Makefile` names the image's tools, so the flow calls make from pixi. Trace `off` by default
-until FLOW3 round 1b. Amends D90; closes open item 56. → `flow/run.py`, C§7.
+**D136** · flow — The flow runs SNAX-GVSoC only, with no backend flag: lower, gen, build when
+needed, sw, gvsoc, check; the check is the program's own exit code and `total_cycles` its window
+(D135), and it calls `gvsoc/Makefile` from pixi. Amends D90; closes open item 56. → `flow/run.py`,
+C§7.
 
-**D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only
-names it: each SNAX component (unit, streamer, crossbar, core, iDMA) gets three `vp::Trace`s,
-`summary` (counters, always on), `events` (level `task`) and `beats` (level `beat`), in
-snax-gvsoc's own grammar, all into one `run/events.log` so lines keep simulation order; the
-converter renames them into C§7, never recounts, cuts the program's window at its two `mcycle`
-reads (the core logs them) and shifts it to the first (the boot kept as a number), so the
-profile, the cores and the trace share one window, and the profile keeps only what the counters
-give. Crossbar banks count the SNAX inputs (streamers, DMA) only; the cores' traffic, boot
-included, counts per input over the whole run. Levels `off`, `task`, `beat`, `finegrained`; VCD
-only as a gtkwave dump. Closes open items 57 and 60; 23 and 25 stay for FLOW3 round 2. → `run/`,
-C§7, snax-gvsoc `docs/EVENTS.md`.
+**D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only names
+it: SNAX-GVSoC writes `summary`, `events` and `beats` traces per SNAX component into one
+`events.log`; the converter renames them into C§7, never recounts, and cuts one window at the
+program's two `mcycle` reads. Merges D38, D39, D59. → `run/`, C§7, snax-gvsoc `docs/EVENTS.md`.

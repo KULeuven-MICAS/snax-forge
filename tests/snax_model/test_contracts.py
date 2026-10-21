@@ -1,20 +1,15 @@
 """Tests that docs/CONTRACTS.md and the code cannot drift apart (D46).
 
-Two things are checked:
-
-* every fenced block in the document that names a source is really in that
-  source, a checked-in file or one ``scenarios/make.py`` generates (C§7's
-  are the flow's ``run/profile.py`` and ``run/trace.py``);
-* the register names the document gives per block kind are the names the
-  adapters produce, for every block of both checked-in clusters.
-
-A failure here means one of the two moved: fix whichever is wrong.
+Every fenced block in the document that names a source is really in that
+source, a checked-in file (C§7's are the flow's ``run/profile.py`` and
+``run/trace.py``), and the document still has its sections, the retired ones
+(C§2–C§6, C§8) included, so their numbers stay. A failure here means one of
+the two moved: fix whichever is wrong.
 
 Sections:
   1. helpers
   2. snippets are verbatim
-  3. register names match the adapters
-  4. the document still has its sections
+  3. the document still has its sections
 """
 
 import re
@@ -22,12 +17,8 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.snax_model.scenario import ClusterConfig, register_map_of
-
 REPO = Path(__file__).resolve().parents[2]
 DOC = REPO / "docs" / "CONTRACTS.md"
-SCEN = REPO / "scenarios"
-CLUSTERS = ("alu4", "red4")
 
 # <!-- snippet: path --> on its own line, immediately before a fenced block.
 SNIPPET = re.compile(r"<!-- snippet: ([^\n]+?) -->\n```[a-z]*\n(.*?)```", re.DOTALL)
@@ -42,10 +33,6 @@ def snippets():
     return SNIPPET.findall(DOC.read_text())
 
 
-def cluster(name):
-    return ClusterConfig.load(SCEN / "clusters" / f"{name}.json")
-
-
 # =============================================================================
 # 2. Snippets are verbatim
 # =============================================================================
@@ -56,7 +43,6 @@ def test_the_document_has_snippets():
     sources = {src for src, _ in snippets()}
     assert len(snippets()) >= 10
     assert {"snax_forge/run/profile.py", "snax_forge/run/trace.py"} <= sources
-    assert {"scenarios/clusters/alu4.json", "scenarios/clusters/red4.json"} <= sources
 
 
 @pytest.mark.parametrize("i", range(len(snippets())))
@@ -80,82 +66,7 @@ def test_snippet_is_verbatim(i):
 
 
 # =============================================================================
-# 3. Register names match the adapters
-# =============================================================================
-
-# The layout of section 3 (streamer), section 4 (accelerator) and section 5
-# (the DMA's registers and the three status registers), written out so that a
-# change on either side shows up here.
-STATUS = ["start", "busy", "busy_cycles"]
-
-
-def documented_registers(block, spec, regmap):
-    """The configuration registers section 3 / 4 / 5 gives for this block kind."""
-    kind = regmap[block].kind
-    if kind == "streamer":
-        d = spec.config.get("temporal_dims", 1)
-        s = len(regmap[block].adapter.spatial_bounds)
-        return (
-            ["base"]
-            + [f"tbound[{i}]" for i in range(d)]
-            + [f"tstride[{i}]" for i in range(d)]
-            + [f"sstride[{i}]" for i in range(s)]
-        )
-    if kind == "accel":
-        rates = []
-        for p in regmap[block].comp.cfg.ports:
-            if isinstance(p.rate, str) and p.rate not in rates:
-                rates.append(p.rate)
-        return ["n"] + rates
-    if kind == "dma":
-        d = spec.config.get("dims", 2)
-        out = ["direction"]
-        for side in ("src", "dst"):
-            out += [f"{side}_base"]
-            out += [f"{side}_bound[{i}]" for i in range(d)]
-            out += [f"{side}_stride[{i}]" for i in range(d)]
-        return out
-    raise AssertionError(f"{block}: undocumented block kind {kind}")
-
-
-@pytest.mark.parametrize("name", CLUSTERS)
-def test_register_names_are_the_documented_ones(name):
-    """Per block: status registers at 0..2, then the documented configuration ones."""
-    cfg = cluster(name)
-    regmap = register_map_of(cfg)
-    specs = {c.name: c for c in cfg.components}
-    for block, blk in regmap.blocks.items():
-        expected = documented_registers(block, specs[block], regmap)
-        assert blk.config_names == expected, block
-        assert [blk.addr(r) - blk.base for r in STATUS] == [0, 1, 2], block
-        assert blk.addr(expected[0]) == blk.base + 3, block
-
-
-@pytest.mark.parametrize("name", CLUSTERS)
-def test_every_register_named_in_the_document_exists(name):
-    """Every ``block.register`` the document mentions resolves in a cluster."""
-    text = DOC.read_text()
-    regmap = register_map_of(cluster(name))
-    # Registers are written either as a program's "reg" or in backticks;
-    # anything else with a dot (a trace source, a file name) is not one.
-    pattern = r"[a-z][a-z0-9_]*\.[a-z_]+(?:\[[^\]]*\])?"
-    named = set(re.findall(rf'"reg": "({pattern})"', text))
-    named |= set(re.findall(rf"`({pattern})`", text))
-    named = {tuple(n.split(".", 1)) for n in named}
-    seen = 0
-    for block, reg in named:
-        if block not in regmap.blocks:
-            continue  # a block of the other cluster, or a file name
-        seen += 1
-        names = [*STATUS, *regmap[block].config_names]
-        # A loop register may be written as a family (``tbound`` for
-        # ``tbound[0]``, ``tbound[1]``, ...) in the prose.
-        assert reg in names or any(n.startswith(reg + "[") for n in names), f"{block}.{reg}"
-    assert seen, f"{name}: the document names no register of this cluster"
-
-
-# =============================================================================
-# 4. The document still has its sections
+# 3. The document still has its sections
 # =============================================================================
 
 
@@ -174,6 +85,10 @@ def test_every_register_named_in_the_document_exists(name):
         "## 10. Block runtime model",
         "## 11. SNAX-DFG",
         "## 12. Recipe",
+        "## 13. Platform",
+        "## 14. Design checks",
+        "## 15. Memory plan and design point",
+        "## 16. Generated hjson files",
     ],
 )
 def test_section_exists(heading):

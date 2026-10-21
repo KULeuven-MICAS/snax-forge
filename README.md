@@ -7,9 +7,8 @@ into its own dataflow graph, maps it onto the cluster by a recipe you edit,
 runs it on a model of the cluster, and shows where the cycles go. The model
 is SNAX-GVSoC, a GVSoC model in which a Snitch core runs the real program,
 checked against snax_cluster's RTL; the flow runs on it since FLOW3, and
-SNAX-MODEL, the cycle-level Python model it replaces, goes in FLOW3 round
-1c. Humans and LLMs close
-the loop by editing the recipe or the platform and running again.
+SNAX-MODEL, the cycle-level Python model it replaced, was removed in RET1.
+Humans and LLMs close the loop by editing the recipe or the platform and running again.
 
 Where to read more:
 
@@ -22,7 +21,7 @@ Where to read more:
 | `docs/PAPER.md` | the paper plan |
 | `docs/RUN.md` | a design point from recipe to a run on SNAX-GVSoC, each command with its output |
 | `kernels/README.md` | the target kernels, staged |
-| `examples/` | walk-throughs of the flow (on SNAX-MODEL, out of date until FLOW3 round 3) |
+| `examples/` | walk-throughs of the flow (written on SNAX-MODEL, out of date until FLOW3 round 3) |
 | `hw/chisel/README.md` | the Chisel accelerator blocks |
 
 # Setup
@@ -82,7 +81,7 @@ flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
   design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
   lower     tasks.json (12 steps)
   gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
-  build     up to date (snax-gvsoc 0e01c6e2)
+  build     up to date (snax-gvsoc 3f8a3e9d)
   sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
   gvsoc     snax_hjson, exit 0 -> run/
   check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
@@ -103,7 +102,7 @@ what SNAX-GVSoC's components counted, and `report/design.md` and
 With `--trace task` the run also records every start, done, CSR access,
 wait and DMA copy in the program's window (`run/trace.jsonl`, C§7), into
 `out/flow/vecadd_task/`; `pixi run view out/flow/vecadd_task` shows its
-profile in the browser (section 3.3). Change a design point with `--set`;
+profile in the browser (section 2, View a run). Change a design point with `--set`;
 each one is added to the name, so the runs sit side by side:
 
 ```bash
@@ -127,8 +126,8 @@ A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
 the design step. The platform needs a source hjson (`platforms/snax_alu.json`
 has one; `small16` does not, `gen.source`), and the design point one
 accelerator (`dot` binds two, `gen.instances`: parked until M13).
-`examples/loop1/` walks the SNAX-MODEL flow and is out of date until FLOW3
-round 3; `examples/dot/` is parked with dot.
+`examples/loop1/` walks the flow as it ran on SNAX-MODEL and is out of date
+until FLOW3 round 3; `examples/dot/` is parked with dot.
 
 # 2. Step by step
 
@@ -146,7 +145,6 @@ The flow runs these tools in turn; each also runs on its own.
 | Only check | `pixi run design check out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | nothing |
 | Keep a platform | `pixi run design save out/design/vecadd/platform.json NAME` | `platforms/NAME.json` |
 | Platform from snax_cluster | `pixi run design from-hjson platforms/snax_alu.hjson snax_alu --force` | `platforms/snax_alu.json` from its source, a copy of snax_cluster's cluster file (LNK1) |
-| Cluster file | `pixi run lower cluster out/design/vecadd/design_point.json` | `cluster.json` beside the point |
 | Task list | `pixi run lower tasks out/design/vecadd/design_point.json` | `tasks.json` beside the point |
 | The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json` | `out/flow/vecadd/`: design point, task list, generated folder, program, checked SNAX-GVSoC run |
 
@@ -160,81 +158,9 @@ To look at graphs, e.g. every step of a recipe side by side:
 pixi run view-dfg out/sandbox/vecadd/     # then open http://127.0.0.1:8766/
 ```
 
-# 3. SNAX-MODEL on its own: scenarios
+## View a run
 
-SNAX-MODEL also runs hand-written scenarios, which is how it is tested and
-how a platform feature was tried before any kernel needed it.
-
-```bash
-pixi run scenarios                                                                 # 1. generate the scenario files
-pixi run model-run scenarios/vecadd/scenario.json --out out/vecadd --trace beat   # 2. run one
-pixi run view out/vecadd                                                           # 3. open http://127.0.0.1:8765/
-```
-
-### 3.1 The scenario files
-
-Each scenario is a folder under `scenarios/`. Two files in it are the sources
-you edit; the rest is generated and ignored by git:
-
-```
-scenarios/
-  make.py              writes every generated file below
-  clusters/
-    clusters.py        source: the clusters (alu4, red4, mul1)
-    alu4.json ...      generated: one cluster file each
-  vecadd/
-    tasks.json         source: the task list (what runs, in which order, what it waits for)
-    scenario.py        source: data, memory layout, cluster, cycle limit
-    scenario.json      generated: the scenario the model runs, with the lowered program
-    a.npy, b.npy       generated: input data
-```
-
-`pixi run scenarios --check` prints `stale: nothing` when the generated files
-match their sources. `pixi run model-run` and `pixi run test` write them first
-on their own. The scenarios are `vecadd`, `vecadd_conflict` (a and b in the
-same banks), `vecadd_tiled` (3 tiles, 471 cycles), `fmul` (double buffered
-multiply, 525 cycles), `reduce` and `dma`.
-
-### 3.2 Run a scenario
-
-```bash
-pixi run model-run scenarios/vecadd/scenario.json          --out out/vecadd --trace beat
-pixi run model-run scenarios/vecadd_conflict/scenario.json --out out/vecadd_conflict --trace beat
-```
-
-```
-vecadd: 77 cycles (skip on, trace beat) -> out/vecadd
-```
-
-Outputs in the `--out` directory: `run.json` (register map, total cycles,
-`csr_read` values), `profile.json`, `trace.jsonl` with `trace_meta.json` when
-tracing is on, and `l1.npy` / `l2.npy` (flat words in address order). The
-files are byte-identical on every run and with `--no-skip`, so two runs can be
-compared with `diff`:
-
-```bash
-diff out/vecadd/profile.json out/vecadd_conflict/profile.json
-grep '"k": "stall"' out/vecadd_conflict/trace.jsonl | head
-python -c "import numpy as np; print(np.load('out/vecadd/l2.npy')[128:136, 0])"   # first words of c
-```
-
-| Option | Meaning |
-|---|---|
-| `--out DIR` | Output directory, created if missing (required) |
-| `--trace off\|task\|beat` | Trace level: off (default), tasks and commands, or per-beat detail |
-| `--trace-source NAME` | Beat events of this component only (repeatable) |
-| `--trace-window A:B` | Beat events of cycles A to B only |
-| `--no-skip` | Tick every cycle; same results, slower |
-| `--max-cycles N` | Overrides the scenario's own limit |
-
-Exit codes: 0 done, 1 the run failed or did not finish, 2 the scenario is
-invalid. `--no-skip` only changes the speed, never the results; if the two ever
-disagree, that is a bug in the model.
-
-### 3.3 View a run
-
-The viewer and the reports read flow runs (section 1, C§7), not SNAX-MODEL's
-run directories:
+The viewer and the reports read flow runs (section 1, C§7):
 
 ```bash
 pixi run view out/flow/vecadd_task out/flow/vsum_task
@@ -256,35 +182,7 @@ The server listens on 127.0.0.1 only. On a remote machine, forward the port
 from your laptop (`ssh -L 8765:127.0.0.1:8765 you@server`) and open
 http://127.0.0.1:8765/ there. Use `--port N` for another port.
 
-### 3.4 Change a scenario
-
-A task list is a readable list of steps that SNAX-LOWER turns into the
-controller's program of `csr_write`, `csr_read` and `wait` commands:
-
-| `op` | Fields | Becomes |
-|---|---|---|
-| `configure` | `task_name`, `type`, `component`, `after`, `wait_mode`, `values` | the component's register writes, at this point |
-| `start` | `tasks` | the waits these tasks need, then their starts |
-| `sync` | `task`, `mode` | a wait on that task's component, here |
-| `read` | `reg` | a register read, e.g. `acc.busy_cycles` |
-
-`after` names the tasks that must finish before this one starts; the lowering
-adds only the waits that needs. Edit a `tasks.json`, then regenerate and run:
-
-```bash
-pixi run scenarios
-pixi run model-run scenarios/vecadd_tiled/scenario.json --out out/tiled_try --trace task
-pixi run view out/tiled_try
-```
-
-For example, deleting the two `sync` steps in the middle of
-`vecadd_tiled/tasks.json` overlaps each tile's first load with the previous
-store: 447 cycles instead of 471, same result. Every field of a task list is
-in `docs/CONTRACTS.md` section 9. A new scenario is a new folder with a
-`tasks.json` and a `scenario.py` whose `make()` returns the scenario and its
-input arrays; `scenarios/make.py` finds it on its own.
-
-# 4. Chisel blocks
+# 3. Chisel blocks
 
 The accelerator blocks behind the BRMs are a Chisel project of their own in
 `hw/chisel/`, with its own environment (`-e hw`):
@@ -296,7 +194,7 @@ pixi run -e hw chisel-gen     # every catalogue configuration to out/hw/*.sv
 
 See `hw/chisel/README.md`.
 
-# 5. SNAX-GVSoC from snax-forge
+# 4. SNAX-GVSoC from snax-forge
 
 [snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
 `gvsoc/snax-gvsoc` (D128); CI fetches it in one job (`gvsoc`). `gvsoc/Makefile` names the image's
@@ -354,11 +252,11 @@ pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge
 (the same with `vecmul`, `vsum` or `vsum_tree`), commit the folder in snax-gvsoc as written, then
 bump the submodule here so the test compares against it.
 
-# 6. Tests and lint
+# 5. Tests and lint
 
 ```bash
-pixi run test          # everything; writes the generated scenario files first
-pixi run test-model    # one block: test-model, test-lower, test-brm, test-dfg, test-sandbox, test-design, test-flow, test-report, test-gen, test-kernels
+pixi run test          # everything
+pixi run test-lower    # one block: test-lower, test-brm, test-dfg, test-sandbox, test-design, test-flow, test-run, test-report, test-gen, test-kernels
 pixi run lint          # ruff check and format check (CI runs it); pixi run fmt fixes
 pixi run clean         # remove out/ but out/snax-gvsoc/, caches and Chisel build trees (--all: out/snax-gvsoc/ too; --dry-run lists them)
 ```
