@@ -15,7 +15,7 @@ Rules (D117):
   detail lives. An amendment is folded into the entry it changes, not chained after it.
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that
   holds it now. A number is never changed or reused, since code, tests and docs cite them; the
-  text of every retired entry is in git history (tags `pre-gvsoc`, `pre-ret1`).
+  text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
   number: **D138**.

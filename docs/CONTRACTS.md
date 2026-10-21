@@ -9,8 +9,8 @@
 > the recipe (D72), the platform (D84), the design checks (D85), the memory
 > plan and design point (D86, D87), and the generated hjson files (D134).
 > Sections 2–6 and 8 were SNAX-MODEL's and were retired with it in RET1
-> (D116); their numbers are kept, their text is in git history (tag
-> `pre-ret1`).
+> (D116); their numbers are kept, their text is in git history (commit
+> `cad6619`, before RET1).
 >
 > These are dataclasses and plain JSON until the M6 freeze (D26), which brings
 > versioned schemas for them; the generated hjson files already have schemas
