@@ -104,7 +104,7 @@ class Config:
         """Inverse of ``to_dict``; missing keys take the class default.
 
         Raises ValueError for unknown keys and for values the class itself
-        rejects; scenario.py adds the name of the field it was reading.
+        rejects.
         """
         check_keys(d, [f.name for f in fields(cls)])
         return cls(**d)

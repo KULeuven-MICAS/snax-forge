@@ -61,10 +61,6 @@ class MemoryViewError(ValueError):
     """A request the memory view cannot answer; the message says why."""
 
 
-class MovementUnavailable(Exception):
-    """The run cannot answer a movement question; the message is the reason shown."""
-
-
 # =============================================================================
 # One run
 # =============================================================================
@@ -328,7 +324,6 @@ __all__ = [
     "MAX_ROWS",
     "ROUND_2",
     "MemoryViewError",
-    "MovementUnavailable",
     "RunSet",
     "RunView",
     "conflicts_view",

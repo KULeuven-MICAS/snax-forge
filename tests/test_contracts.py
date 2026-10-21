@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[2]
+REPO = Path(__file__).resolve().parents[1]
 DOC = REPO / "docs" / "CONTRACTS.md"
 
 # <!-- snippet: path --> on its own line, immediately before a fenced block.

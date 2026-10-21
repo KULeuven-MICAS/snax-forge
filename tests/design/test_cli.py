@@ -107,7 +107,7 @@ def test_save_refuses_a_broken_platform(tmp_path, capsys):
 # =============================================================================
 
 
-def test_pins_reproduce_scenarios_vecadd_and_the_point_loads(tmp_path, capsys):
+def test_pins_place_b_and_c_and_the_point_loads(tmp_path, capsys):
     out = tmp_path / "d"
     pins = ["--set", "memory.B.l1.base=576", "--set", "memory.C.l1.base=1152"]
     assert run(BOUND, "--platform", SMALL16, "--out", out, *pins) == 0

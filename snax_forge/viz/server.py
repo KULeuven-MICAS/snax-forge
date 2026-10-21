@@ -155,7 +155,7 @@ class Handler(BaseHTTPRequestHandler):
             b = _int_arg(q, "to", a + api.MAX_ROWS)
             try:
                 self._json(api.memory_rows(rv, parts[3], a, b or 0, _str_arg(q, "marks")))
-            except (api.MemoryViewError, api.MovementUnavailable) as e:
+            except api.MemoryViewError as e:
                 raise _BadRequest(str(e)) from e
             return
         if len(parts) in (2, 3) and parts[0] == "run":
@@ -180,7 +180,7 @@ class Handler(BaseHTTPRequestHandler):
             if parts[2] == "memory":
                 try:
                     self._json(api.memory_view(rv, _str_arg(q, "marks")))
-                except (api.MemoryViewError, api.MovementUnavailable) as e:
+                except api.MemoryViewError as e:
                     raise _BadRequest(str(e)) from e
                 return
             if parts[2] == "movement":

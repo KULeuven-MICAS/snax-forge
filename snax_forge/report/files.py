@@ -5,8 +5,7 @@ in one: ``run/`` holds the run (C§7, run/), ``design/`` the design point,
 ``gen/`` the hjson files, ``sandbox/recipe.json`` the recipe (a flow from a
 bound graph has none) and ``tasks.json`` the task list. Both reports go to
 ``<folder>/report/``, next to ``run/`` and never inside it, since a run
-directory holds only what the run wrote (D44). A SNAX-MODEL run directory is
-not read: its reports went with FLOW3 round 1b (D137).
+directory holds only what the run wrote.
 """
 
 from __future__ import annotations
