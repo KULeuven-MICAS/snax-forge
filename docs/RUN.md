@@ -456,3 +456,39 @@ writes `rtl.json` (C§17), then elaborates it through `hw/chisel/`'s
 `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`, and
 carries its own CSR manager (D130); `emitted.json` lists its modules and
 files. `hw/chisel/README.md` has the specs that check it.
+
+## 7. Bundle for snax_cluster
+
+The bundle (C§18, D139) is what snax_cluster builds the design's cluster
+from: gen-gvsoc's files at the root, the accelerator's RTL under `rtl/`
+with its file list, and `bundle.json`, all made again (sbt, as section 6):
+
+    pixi run bundle out/design/vecadd/design_point.json
+
+    ...
+    bundle out/bundle/vecadd: snax_forge_shell_wrapper from out/design/vecadd/design_point.json, snax-forge $COMMIT
+    wrote out/bundle/vecadd/snax_forge.hjson
+    ...
+    wrote out/bundle/vecadd/rtl/rtl.json
+    wrote out/bundle/vecadd/rtl/sv/ElementwiseAlu_w64_add.sv
+    ...
+    wrote out/bundle/vecadd/rtl/emitted.json
+    wrote out/bundle/vecadd/rtl/files.f
+    wrote out/bundle/vecadd/bundle.json
+
+(`$COMMIT` is the checkout's `git rev-parse HEAD`, followed by `, dirty`
+when the work tree has uncommitted changes.) `rtl/files.f` lists the RTL
+from `rtl/`, in `emitted.json`'s order:
+
+    cat out/bundle/vecadd/rtl/files.f
+
+    sv/ElementwiseAlu_w64_add.sv
+    sv/ElementwiseTiledSpatial_w64_n4_t32_add.sv
+    sv/snax_forge_csr_manager.sv
+    sv/snax_forge_ctrl_adapter.sv
+    sv/snax_forge_shell_wrapper.sv
+
+The cluster file's slot names it (`snax_forge_rtl: "rtl/files.f"`). In
+LNK2b round 2 snax_cluster's snaxgen reads that key and writes
+`generated/snax_forge.f`, which its vsim and Verilator builds read, with
+the cluster `snax_forge_cluster` as its Bender target (open item 51).

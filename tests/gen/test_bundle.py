@@ -1,0 +1,144 @@
+"""The bundle for snax_cluster (D111, D139, C§18): gen-gvsoc's files at the root, the RTL under
+``rtl/`` with its file list, and ``bundle.json``.
+
+No JVM here: ``elaborate`` is replaced by a fake that writes two files and an ``emitted.json``
+in Emit's form, and the checkout's commit is stubbed. The real ``Emit --spec`` runs in the
+chisel job (``gen-rtl``) and by hand (``pixi run bundle``, docs/RUN.md).
+"""
+
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
+
+from snax_forge.gen import GenError, generate
+from snax_forge.gen import bundle as bundle_mod
+from snax_forge.gen import gvsoc as gvsoc_mod
+from snax_forge.gen import rtl as rtl_mod
+from snax_forge.gen.bundle import Bundle, write_bundle
+from snax_forge.gen.rtl import EMITTED_JSON
+
+from .helpers import point
+
+# The fake Emit's files, in emitted.json's order (not sorted, so files.f's order is its)
+SV = ["sv/snax_forge_shell_wrapper.sv", "sv/ElementwiseAlu_w64_add.sv"]
+COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
+def files(folder: Path) -> list[str]:
+    return sorted(f.relative_to(folder).as_posix() for f in folder.rglob("*") if f.is_file())
+
+
+@pytest.fixture
+def fake(monkeypatch):
+    """``elaborate`` writes ``SV`` and lists ``fake.listed`` in emitted.json (``SV`` unless a
+    test changes it); the checkout is ``COMMIT``, clean."""
+    fake = SimpleNamespace(listed=list(SV))
+
+    def elaborate(rtl_json: Path, out_dir: Path) -> list[Path]:
+        tag = json.loads(rtl_json.read_text())["tag"]
+        for f in SV:
+            (out_dir / f).parent.mkdir(parents=True, exist_ok=True)
+            (out_dir / f).write_text(f"module {Path(f).stem};\nendmodule\n")
+        emitted = {"rtl": str(rtl_json), "top": f"{tag}_shell_wrapper",
+                   "modules": [Path(f).stem for f in fake.listed], "files": fake.listed}  # fmt: skip
+        (out_dir / EMITTED_JSON).write_text(json.dumps(emitted))
+        return [*(out_dir / f for f in fake.listed), out_dir / EMITTED_JSON]
+
+    monkeypatch.setattr(bundle_mod, "elaborate", elaborate)
+    monkeypatch.setattr(bundle_mod, "provenance", lambda checkout: (COMMIT, False))
+    return fake
+
+
+def test_the_layout(tmp_path, fake):
+    out = tmp_path / "bundle"
+    b, written = write_bundle(point(tmp_path), out, tmp_path)
+    assert files(out) == sorted([
+        "snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson",
+        "include/streamer_csr_addr_map.h", "include/acc_csr.h", "data.h", "main.c",
+        "manifest.json", "rtl/rtl.json", *(f"rtl/{f}" for f in SV), "rtl/emitted.json",
+        "rtl/files.f", "bundle.json",
+    ])  # fmt: skip
+    assert sorted(f.relative_to(out).as_posix() for f in written) == files(out)
+    assert written[-3:] == [out / "rtl" / "emitted.json", out / "rtl" / "files.f",
+                            out / "bundle.json"]  # fmt: skip
+    assert b.tag == "snax_forge"
+
+
+def test_the_root_is_gen_gvsocs_output(tmp_path, fake):
+    """Byte for byte what ``generate`` writes for the design point, the cluster file's slot
+    naming the bundle's file list."""
+    path = point(tmp_path)
+    out, alone = tmp_path / "bundle", tmp_path / "gvsoc"
+    write_bundle(path, out, tmp_path)
+    m = generate(path, alone, tmp_path)
+    for f in m.files:
+        assert (out / f).read_bytes() == (alone / f).read_bytes(), f
+    assert '"snax_forge_rtl": "rtl/files.f"' in (out / "snax_forge.hjson").read_text()
+    assert gvsoc_mod.RTL_FILE_LIST == "rtl/files.f"
+
+
+def test_files_f_is_emitted_jsons_files_in_order(tmp_path, fake):
+    out = tmp_path / "bundle"
+    write_bundle(point(tmp_path), out, tmp_path)
+    assert (out / "rtl" / "files.f").read_text() == "".join(f"{f}\n" for f in SV)
+    assert all((out / "rtl" / f).is_file() for f in SV)
+
+
+def test_bundle_json(tmp_path, fake):
+    out = tmp_path / "bundle"
+    b, _ = write_bundle(point(tmp_path), out, tmp_path)
+    d = json.loads((out / "bundle.json").read_text())
+    assert d == {"design_point": "design/vecadd/design_point.json", "tag": "snax_forge",
+                 "snax_forge_commit": COMMIT, "dirty": False}  # fmt: skip
+    assert Bundle.load(out / "bundle.json") == b == Bundle.from_dict(b.to_dict())
+    assert d["design_point"] == json.loads((out / "manifest.json").read_text())["design_point"]
+
+
+def test_provenance_outside_git_and_in_this_checkout(tmp_path):
+    assert bundle_mod.provenance(tmp_path) == (None, False)
+    commit, dirty = bundle_mod.provenance(gvsoc_mod.ROOT)
+    assert commit is None or len(commit) == 40
+    assert isinstance(dirty, bool)
+
+
+@pytest.mark.parametrize(
+    ("listed", "code"),
+    [
+        ([], "bundle.empty"),
+        ([EMITTED_JSON], "bundle.empty"),
+        ([*SV, "sv/not_written.sv"], "bundle.missing"),
+    ],
+)
+def test_a_file_list_that_cannot_be_written(tmp_path, fake, listed, code):
+    fake.listed = listed
+    out = tmp_path / "bundle"
+    with pytest.raises(GenError) as e:
+        write_bundle(point(tmp_path), out, tmp_path)
+    assert e.value.code == code
+    assert not (out / "rtl" / "files.f").exists() and not (out / "bundle.json").exists()
+
+
+def test_the_command(tmp_path, fake, monkeypatch, capsys):
+    monkeypatch.setattr(gvsoc_mod, "ROOT", tmp_path)
+    monkeypatch.setattr(rtl_mod, "ROOT", tmp_path)
+    monkeypatch.setattr(bundle_mod, "OUT", tmp_path / "out" / "bundle")
+    path = point(tmp_path)
+    monkeypatch.chdir(tmp_path)
+    assert bundle_mod.main([str(path)]) == 0
+    text = capsys.readouterr().out
+    assert text.startswith(
+        f"bundle out/bundle/vecadd: snax_forge_shell_wrapper from "
+        f"design/vecadd/design_point.json, snax-forge {COMMIT}\n"
+    )
+    assert "wrote out/bundle/vecadd/rtl/files.f\n" in text
+    assert text.endswith("wrote out/bundle/vecadd/bundle.json\n")
+    fake.listed = []
+    assert bundle_mod.main([str(path), "--out", "elsewhere"]) == 1
+    assert "[bundle.empty]" in capsys.readouterr().err
+    with pytest.raises(SystemExit) as e:
+        bundle_mod.main([])
+    assert e.value.code == 2

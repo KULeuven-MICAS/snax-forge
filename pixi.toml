@@ -133,6 +133,10 @@ gen-gvsoc  = "python -m snax_forge.gen"
 # does not call it); `--fixture DIR` writes a fixture of the Chisel specs instead (rtl.json, the streamer hjson,
 # vectors.json)
 gen-rtl    = "python -m snax_forge.gen.rtl"
+# Bundle for snax_cluster (LNK2b, D139): `pixi run bundle out/design/vecadd/design_point.json [--out DIR]` writes
+# gen-gvsoc's files, the RTL under rtl/ (rtl.json, sv/, emitted.json; sbt) with its file list rtl/files.f, and
+# bundle.json to out/bundle/<design>/, everything made again; the flow does not call it
+bundle     = "python -m snax_forge.gen.bundle"
 # Reports (REP1, D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/
 # (the flow writes them after every run)
 report     = "python -m snax_forge.report"

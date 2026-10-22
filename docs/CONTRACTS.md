@@ -989,9 +989,13 @@ the snax-forge checked out, never copied from `out/gvsoc/` or `out/rtl/`.
 |---|---|
 | the root | section 16's files (gen-gvsoc's), the cluster file among them |
 | `rtl/rtl.json` | section 17's spec |
-| `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 17) |
-| `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out |
-| `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git) and `dirty` (true when the work tree has uncommitted changes) |
+| `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 17); firtool also writes `sv/filelist.f`, which `emitted.json` does not list |
+| `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out; only this run's files, so one an earlier run left in `sv/` is not built |
+| `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git) and `dirty` (true when the work tree has uncommitted changes, untracked files included; false outside git) |
+
+**Refused**: what sections 16 and 17 refuse, then `bundle.empty`
+(`emitted.json` lists no file) and `bundle.missing` (it lists a file that
+is not there).
 
 **How snax_cluster takes it** (D139, LNK2b round 2): the cluster file's
 slot names `rtl/files.f` (`snax_forge_rtl`, relative to the cluster file);

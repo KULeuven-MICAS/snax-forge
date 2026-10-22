@@ -273,7 +273,8 @@ the flow ran before, was removed in RET1 with its scenarios and contracts
 For SNAX-GVSoC, a design point gives the hjson files, the CSR headers and the
 program, no generated Python (GEN3, LNK2a, GEN2a; `gen/`, D128, D134, D135).
 For snax_cluster SNAX-FORGE writes a bundle, a folder per design point
-(`pixi run bundle`, C§18, D111) **[PLANNED, LNK2b round 1 S2]**. The
+(`pixi run bundle`, `gen/bundle.py`, C§18, D111; the flow does not call
+it). The
 generated accelerator is `snax_forge` and its cluster `snax_forge_cluster`,
 so neither takes a name of snax_cluster's own (D131, D139):
 
