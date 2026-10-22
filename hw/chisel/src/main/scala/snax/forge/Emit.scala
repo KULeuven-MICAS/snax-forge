@@ -1,9 +1,14 @@
 package snax.forge
 
+import java.nio.file.{Files, Path}
+
+import scala.jdk.CollectionConverters._
+
 import chisel3.RawModule
 import circt.stage.ChiselStage
 import snax.forge.elementwise.{ElementwiseLoop, ElementwiseOp, ElementwiseSpatial, ElementwiseTiledSpatial}
 import snax.forge.samples.{Accumulator, SimpleAdder}
+import snax.forge.shell.{RtlSpec, ShellWrapper}
 
 /** Elaboration entry point: Chisel -> CHIRRTL -> firtool -> SystemVerilog.
   *
@@ -25,6 +30,7 @@ import snax.forge.samples.{Accumulator, SimpleAdder}
   * pixi run chisel-gen -- ElementwiseLoop     # substring match, so both loop configs
   * pixi run chisel-gen -- --out /tmp/rtl Tiled
   * pixi run chisel-gen -- --describe          # the block catalogue (Blocks), as blocks.json holds it
+  * pixi run chisel-gen -- --spec out/rtl/vecadd/rtl.json   # the accelerator of an rtl.json (gen-rtl)
   * }}}
   */
 object Emit {
@@ -140,6 +146,17 @@ object Emit {
       return
     }
 
+    args.sliding(2).collectFirst { case Array("--spec", path) => path } match {
+      case Some(path) =>
+        val spec = RepoPaths.resolve(path)
+        val dir  = args.sliding(2).collectFirst { case Array("--out", d) => RepoPaths.resolve(d) }
+        val done = emitSpec(spec, dir.getOrElse(spec.toAbsolutePath.getParent))
+        done.files.foreach(f => println(s"[snax-forge] wrote ${RepoPaths.display(f)}"))
+        println(s"[snax-forge] ${done.top} from ${RepoPaths.display(spec)}: ${done.modules.size} module(s)")
+        return
+      case None       =>
+    }
+
     if (flags.contains("--list")) {
       println("[snax-forge] emittable targets:")
       catalogue.foreach(t => println(f"  ${t.label}%-30s ${t.note}"))
@@ -167,6 +184,49 @@ object Emit {
     }
     println(s"[snax-forge] emitted ${chosen.size} module(s) to $outDir")
   }
+
+  /** What `emitSpec` wrote: the top module, every module, and the files (those in `sv/`, then `emitted.json`). */
+  case class Emitted(top: String, modules: Seq[String], files: Seq[Path])
+
+  /** `--spec <rtl.json> [--out DIR]`: the accelerator of `rtl.json` (C§17, D138), `<tag>_shell_wrapper` and what it
+    * holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of `rtl.json`), and
+    * `DIR/emitted.json`: `top`, `modules` and `files` (paths from `DIR`). The files a previous `emitted.json` lists are
+    * removed first, so `sv/` holds this spec's files only.
+    */
+  def emitSpec(specPath: Path, dir: Path): Emitted = {
+    val spec    = RtlSpec.load(specPath)
+    val sv      = dir.resolve("sv")
+    val listing = dir.resolve("emitted.json")
+    if (Files.exists(listing))
+      ujson.read(Files.readString(listing))("files").arr.foreach(f => Files.deleteIfExists(dir.resolve(f.str)))
+    var top     = "<unknown>"
+    ChiselStage.emitSystemVerilogFile(
+      {
+        val m = new ShellWrapper(spec)
+        top = m.name
+        m
+      },
+      args = Array("--target-dir", sv.toString, "--split-verilog"),
+      firtoolOpts = firtoolOpts
+    )
+    val files   = Files.list(sv).iterator.asScala.filter(_.toString.endsWith(".sv")).toSeq.sortBy(_.toString)
+    val modules = files.flatMap(f => Files.readAllLines(f).asScala.collect { case ModuleLine(m) => m })
+    Files.writeString(
+      listing,
+      ujson.write(
+        ujson.Obj(
+          "rtl"     -> RepoPaths.display(specPath),
+          "top"     -> top,
+          "modules" -> ujson.Arr.from(modules),
+          "files"   -> ujson.Arr.from(files.map(f => dir.relativize(f).toString))
+        ),
+        indent = 1
+      ) + "\n"
+    )
+    Emitted(top, modules, files :+ listing)
+  }
+
+  private val ModuleLine = raw"module (\w+)\b.*".r
 
   /** `--describe`: the block catalogue from the registry (`Blocks`), as `hw/chisel/blocks.json` holds it (D138). */
   def describe: String = ujson.write(Blocks.describe, indent = 1)
