@@ -5,8 +5,9 @@
 
 A bundle is one folder per design point holding what snax_cluster builds the
 design's cluster from. Everything in it is made again by the snax-forge
-checked out, never copied from ``out/gvsoc/`` or ``out/rtl/``, in this
-order:
+checked out, never copied from ``out/gvsoc/`` or ``out/rtl/``. ``rtl/`` is
+the bundle's own, so it is removed first and holds only this run's files;
+the rest of the folder is left as it is. Then, in this order:
 
     <the root>            gvsoc.py's ``generate``: the three hjson files, the
                           headers, data.h, main.c and manifest.json; the
@@ -27,8 +28,7 @@ order:
 
 snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
-builds read (D139). ``files.f`` lists only what this run's ``emitted.json``
-lists, so a file left in ``rtl/sv/`` by an earlier run is not built.
+builds read (D139).
 
 **Refused**, each a ``GenError``: what ``generate``, ``write_rtl`` and
 ``elaborate`` refuse (``gen.*``), then ``bundle.empty`` (``emitted.json``
@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
@@ -121,6 +122,7 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
     out = Path(out_dir)
     files_f = out / RTL_FILE_LIST
     rtl_dir = files_f.parent
+    shutil.rmtree(rtl_dir, ignore_errors=True)
     manifest = generate(design_point, out, root)
     spec = write_rtl(design_point, rtl_dir, root)
     elaborate(rtl_dir / RTL_JSON, rtl_dir)

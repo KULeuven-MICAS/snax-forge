@@ -362,8 +362,5 @@ chisel job checks `Emit --describe` equal to the catalogue, so the Python side n
 → C§17, `gen/rtl.py`, `hw/chisel/README.md`.
 
 **D139** · scope — snax-forge and snax_cluster are separate checkouts joined only by the bundle's
-files: snaxgen turns the slot's `snax_forge_rtl` into `generated/snax_forge.f`, which the builds
-read, so snax_cluster never depends on snax-forge and a bundle is always made by the snax-forge
-checked out. snax-gvsoc stays a submodule: snax-forge's flow and tests need it pinned. The cluster
-is fixed as `snax_forge_cluster` with one Bender target, because the testharness imports
-`<cluster>_pkg` from the cluster wrapper, which must come through Bender's ordered list. → C§18.
+files, so snax_cluster never depends on snax-forge and a bundle is made by the snax-forge checked
+out; snax-gvsoc stays a submodule, pinned for snax-forge's flow and tests. → C§18.

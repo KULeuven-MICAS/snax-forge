@@ -81,6 +81,20 @@ def test_the_root_is_gen_gvsocs_output(tmp_path, fake):
     assert gvsoc_mod.RTL_FILE_LIST == "rtl/files.f"
 
 
+def test_rtl_is_made_again_and_the_rest_left(tmp_path, fake):
+    """A file an earlier run left in rtl/sv/ is gone; a file of the user's beside rtl/ stays."""
+    out = tmp_path / "bundle"
+    (out / "rtl" / "sv").mkdir(parents=True)
+    (out / "rtl" / "sv" / "old.sv").write_text("module old;\nendmodule\n")
+    (out / "notes.txt").write_text("mine\n")
+    write_bundle(point(tmp_path), out, tmp_path)
+    assert not (out / "rtl" / "sv" / "old.sv").exists()
+    assert sorted(f.name for f in (out / "rtl" / "sv").iterdir()) == sorted(
+        Path(f).name for f in SV
+    )
+    assert (out / "notes.txt").read_text() == "mine\n"
+
+
 def test_files_f_is_emitted_jsons_files_in_order(tmp_path, fake):
     out = tmp_path / "bundle"
     write_bundle(point(tmp_path), out, tmp_path)

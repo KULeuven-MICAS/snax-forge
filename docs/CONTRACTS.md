@@ -984,13 +984,15 @@ What `pixi run bundle DESIGN_POINT [--out DIR]` writes per design point
 (D111, D139, `snax_forge/gen/bundle.py`), default `out/bundle/<design>/`:
 everything snax_cluster needs to build the design's cluster, made afresh by
 the snax-forge checked out, never copied from `out/gvsoc/` or `out/rtl/`.
+`rtl/` is the bundle's own and is removed before each run, so it never
+keeps a stale file; nothing else in `DIR` is removed.
 
 | File | Holds |
 |---|---|
 | the root | section 16's files (gen-gvsoc's), the cluster file among them |
 | `rtl/rtl.json` | section 17's spec |
 | `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 17); firtool also writes `sv/filelist.f`, which `emitted.json` does not list |
-| `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out; only this run's files, so one an earlier run left in `sv/` is not built |
+| `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out |
 | `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git) and `dirty` (true when the work tree has uncommitted changes, untracked files included; false outside git) |
 
 **Refused**: what sections 16 and 17 refuse, then `bundle.empty`
@@ -1001,4 +1003,7 @@ is not there).
 slot names `rtl/files.f` (`snax_forge_rtl`, relative to the cluster file);
 snaxgen reads the key and writes `generated/snax_forge.f`, which the vsim
 and Verilator builds read, so snax_cluster holds no dependency on
-snax-forge. The cluster is `snax_forge_cluster`, one Bender target.
+snax-forge. The cluster is always `snax_forge_cluster` with one Bender
+target of that name: the testharness imports `<cluster>_pkg` from the
+cluster wrapper, which must therefore come through Bender's ordered file
+list, not through `snax_forge.f`.
