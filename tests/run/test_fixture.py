@@ -10,6 +10,7 @@ import pytest
 from snax_forge.design import DesignPoint
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import load_cluster, read_events, read_run, regions_of, write_run
+from snax_forge.run.cluster import core_name
 from snax_forge.run.convert import convert, invariants
 
 HERE = Path(__file__).parent / "fixtures" / "vecadd"
@@ -42,6 +43,9 @@ def test_task_level(recorded, tmp_path):
     named = {e["task"] for e in trace.events if e["k"] in ("start", "issue")}
     assert named == set(tasks.configured())
     assert all(c.cycles is not None for c in profile.cores.values())
+    # what each core is in at 0: main, running, on the accelerator's core
+    assert trace.start[core_name(cluster.accelerator.core)] == {"func": "main", "mode": "run"}
+    assert list(trace.start) == cluster.cores
     (tmp_path / "run.json").write_text("{}")
     write_run(tmp_path, profile, trace)
     back = read_run(tmp_path)

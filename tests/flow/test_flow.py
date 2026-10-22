@@ -468,7 +468,8 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
                  out=tmp_path / level)  # fmt: skip
     v = fake.calls[-1][1]
     traces = v["TRACES"].split()
-    assert traces[:4] == ["summary", "events", "snax_acc0/unit/beats", "tcdm/snax_xbar/beats"]
+    assert traces[:5] == ["summary", "events", "snax_acc0/unit/beats", "snax_acc0/streamer/beats",
+                          "tcdm/snax_xbar/beats"]  # fmt: skip
     assert ("snax_acc0/streamer/stalls" in traces) == (level != "beat")
     assert [x for x in traces if x.endswith("/insn")] == (
         ["pe0/insn", "pe1/insn"] if level == "finegrained" else []
@@ -477,7 +478,7 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
                      for i in range(4))  # fmt: skip
     assert f"'chip/soc/cluster_0/tcdm/snax_xbar/trace_inputs={lanes},dma'" in v["GVRUN_ARGS"]
     kinds = {e["k"] for e in f.trace.events}
-    assert {"grant", "dma", "burst", "fire", "push"} <= kinds
+    assert {"grant", "dma", "burst", "fire", "push", "class"} <= kinds
     assert ("fifo" in kinds) == ("stall" in kinds) == (level != "beat")
     assert ("insn" in kinds) == (level == "finegrained")
     sources = ["acc", "acc_a", "acc_b", "acc_out", "dma"]
@@ -498,7 +499,8 @@ def test_named_sources_and_the_vcd_stubbed(tmp_path, monkeypatch):
                  trace_sources=["core0", "acc_a", "acc"], vcd=True, out=tmp_path / "f")  # fmt: skip
     v = fake.calls[-1][1]
     assert v["TRACES"].split() == ["summary", "events", "snax_acc0/unit/beats",
-                                   "tcdm/snax_xbar/beats", "snax_acc0/streamer/stalls",
+                                   "snax_acc0/streamer/beats", "tcdm/snax_xbar/beats",
+                                   "snax_acc0/streamer/stalls",
                                    "tcdm/snax_xbar/stalls"]  # fmt: skip
     lanes = ",".join(f"snax_acc0.streamer.reader0.lane{i}" for i in range(4))
     assert f"trace_inputs={lanes},core0'" in v["GVRUN_ARGS"]
@@ -542,14 +544,14 @@ def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
     args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN]
     assert main(*args, "--out", tmp_path / "f") == 0
     out = capsys.readouterr().out
-    assert out.startswith("flow vecadd (vecadd: W=4; N=64) on snax_alu -> ")
+    assert out.startswith("flow vecadd (vecadd: W=4, N=64; N=64) on snax_alu -> ")
     assert "  check     passed: 226 cycles (main to forge_check)" in out
     assert (tmp_path / "f" / "flow.log").read_text().startswith(out)
     # the sets route as before; the folder carries them
     assert main(*args, "--out", tmp_path / "g", "--set", "W=8",
                 "--set", "platform.streamers.default.fifo_depth=4") == 0  # fmt: skip
     out = capsys.readouterr().out
-    assert "flow vecadd_W8_streamers.default.fifo_depth4 (vecadd: W=8; N=64)" in out
+    assert "flow vecadd_W8_streamers.default.fifo_depth4 (vecadd: W=8, N=64; N=64)" in out
     pf = json.loads((tmp_path / "g" / "design" / "platform.json").read_text())
     assert pf["changes"] == {"streamers.default.fifo_depth": 4}
     assert DesignPoint.load(tmp_path / "g" / "design" / "design_point.json").name == "vecadd_W8"

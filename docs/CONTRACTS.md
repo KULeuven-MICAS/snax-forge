@@ -141,7 +141,8 @@ kind's own fields:
 <!-- snippet: snax_forge/run/trace.py -->
 ```
     task         start    task  (t = the cycle the start is taken; busy from t + 1)
-    task         done     task, then firings, first, last for an accelerator  (t = first idle)
+    task         done     task, cycles (the run's classes), then firings, first, last for an
+                          accelerator  (t = first idle)
     task         csr      pc, csr, block, op (r/w), value, held (a held write's cycles)
     task         poll     pc, csr, block, value, count, last  (t = the first read)
     task         barrier  last  (t = the barrier's read; last = the cycle it is released)
@@ -156,6 +157,7 @@ kind's own fields:
     beat         burst    task, id, op, mem, addr, size, back, region, elems  (a request to AXI)
     beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
     beat         push     task, n, first, last, value, vals
+    beat         class    task, mode  (src = acc or the mover; t = the first cycle in it)
     stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
                           port's)  (src = the port; one per cycle refused)
     stall        fifo     task, lane, count  (src = the mover; t = the first cycle it holds)
@@ -195,13 +197,28 @@ arrives, known at the grant; there is no request or response event. The
 beat and stall lines only feed the trace: the profile stays the summary
 lines (D137).
 
+**Classes** (FLOW3 round 3). An accelerator's or a mover's `done` carries
+its run's `cycles`, the classes of its summary line by name (`busy`,
+`stall_in`, `stall_out`, `flush`; a mover's `busy`, `stall_xbar`,
+`stall_fifo`, `idle`), from `task` on. From `beat` on, a `class` event
+gives the first cycle of each run of one class, as SNAX-GVSoC classed the
+cycle for those counts (never derived here from the other lines): per
+component run they cover the cycles its counts add up over (a mover's past
+its `done`, up to the streamer's end), with no gap and no overlap, and the
+lengths of each class's runs add up to its count.
+
 **Sources.** `--trace LEVEL[:SOURCES]` names the C§7 sources whose beat,
 stall and instruction lines are written (`acc`, the movers, `dma`,
 `core<i>`, `axi`, joined by `,`); by default at `beat` and `stall` the
 accelerator, its movers and the DMA, at `finegrained` also every core.
 `summary` and `events` lines are always whole. `trace_meta.json` holds the
 `level`, `total_cycles`, the `boot` shift, the `sources` in the cluster's
-order and the `filter` (the sources the beat lines were written for).
+order, the `filter` (the sources the beat lines were written for) and
+`start`: per core in the cluster's order, `{"func": ..., "mode": ...}`, the
+name of its last `func` line at or before the window's first cycle (null
+without one) and its state there (`run`/`sleep`, the one its classes start
+from). No `func` line is written at t = 0, whose t would not be the
+function's first instruction.
 `--vcd` writes a VCD and `view.gtkw` beside the run for gtkwave, never read
 here. `run.json` records the `trace_level`, the `trace_sources` and `vcd`.
 
@@ -655,8 +672,8 @@ whose `out` is one lane every `T = N / W` firings (D104):
 
 <!-- snippet: recipes/vecadd.json -->
 ```json
- "params": {"W": 4},
- "symbols": {"N": 64},
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
  "steps": [
   {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
 ```

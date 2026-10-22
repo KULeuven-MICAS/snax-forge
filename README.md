@@ -76,7 +76,7 @@ pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json
 ```
 
 ```
-flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
+flow vecadd (vecadd: W=4, N=64; N=64) on snax_alu -> out/flow/vecadd/
   sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
   design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
   lower     tasks.json (12 steps)

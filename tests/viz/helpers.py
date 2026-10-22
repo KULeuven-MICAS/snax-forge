@@ -42,6 +42,8 @@ def serving(dirs):
 # =============================================================================
 
 L1 = 0x10000000  # the cluster's L1 base (tests/run/helpers.CLUSTER)
+UNIT_CLASSES = ("busy", "stall_in", "stall_out", "flush")
+MOVER_CLASSES = ("busy", "stall_xbar", "stall_fifo", "idle")
 L2 = 0x80000000
 
 
@@ -154,25 +156,41 @@ class Events:
         return self.add({"t": t, "k": "push", "src": "acc", "task": task, "n": n, "first": first,
                          "last": last, "value": list(vals), "vals": list(vals)})  # fmt: skip
 
-    def task(self, t, src, task, done=None):
+    def task(self, t, src, task, done=None, cycles=None):
+        """A task of ``src`` from ``t`` to ``done``; its run's ``cycles`` on the done, by
+        default all ``busy`` from ``t + 1`` to ``done - 1``."""
         self.add({"t": t, "k": "start", "src": src, "task": task})
         if done is not None:
-            self.add({"t": done, "k": "done", "src": src, "task": task})
+            names = UNIT_CLASSES if src == self.c.accelerator.name else MOVER_CLASSES
+            default = {c: done - t - 1 if c == "busy" else 0 for c in names}
+            self.add({"t": done, "k": "done", "src": src, "task": task,
+                      "cycles": dict(cycles or default)})  # fmt: skip
 
     def csr(self, t, csr, value, block="acc_streamer"):
         return self.add({"t": t, "k": "csr", "src": "core0", "pc": 0x80000360, "csr": csr,
                          "block": block, "op": "w", "value": value})  # fmt: skip
 
-    def index(self, level="stall", filter=None, task_list=None):
-        """The RunIndex of these events (sorted by t, stable) at ``level``, paired by
-        ``task_list`` (``tasks()``, one run, by default)."""
+    def copy(self, t, ident, task, done, size=512):
+        """A DMA copy of ``size`` bytes from L2 to L1 issued at ``t``, done at ``done``."""
+        self.add({"t": t, "k": "issue", "src": "dma", "task": task, "id": ident,
+                  "dir": "l2_to_l1", "from": L2, "to": L1, "size": size, "from_stride": 0,
+                  "to_stride": 0, "reps": 1})  # fmt: skip
+        self.add({"t": done, "k": "done", "src": "dma", "task": task, "id": ident})
+
+    def core(self, t, k, src="core0", **kw):
+        """A core's task-level event (``state``, ``poll``, ``barrier``, ``func``)."""
+        return self.add({"t": t, "k": k, "src": src, **kw})
+
+    def index(self, level="stall", filter=None, task_list=None, total=1000):
+        """The RunIndex of these events (sorted by t, stable) at ``level`` in a window of
+        ``total`` cycles, paired by ``task_list`` (``tasks()``, one run, by default)."""
         from snax_forge.run import RunOutputs, Trace
         from snax_forge.viz.index import RunIndex
 
         if filter is None:
             filter = ["acc", *(m.name for m in self.c.accelerator.movers), "dma"]
         evs = sorted(self.events, key=lambda e: e["t"])
-        trace = Trace(level, 1000, 0, self.c.sources, evs, list(filter))
+        trace = Trace(level, total, 0, self.c.sources, evs, list(filter))
         return RunIndex.from_run(RunOutputs({}, None, trace), self.c, self.regions,
                                  task_list or tasks())  # fmt: skip
 

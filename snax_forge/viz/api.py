@@ -50,10 +50,14 @@ The movement answers (journey, residency, patterns, conflicts) are
 movement.py's queries on the index; one a run's level cannot give is
 ``available`` false with the reason.
 
-Not yet
--------
-The schedule and the cluster view come back in round 3 (D57). The profile
-keeps each FIFO's highest count only (D137), so there is no busy-window
+Schedule and cluster
+--------------------
+The schedule (lanes, folded segments, detail rows) is schedule.py's queries
+on the index, the cluster view at a cycle and the stepping between cycles
+cluster.py's (D57); a run below the level an answer needs gets ``available``
+false with the reason. The routes ``/events``, ``/fifo`` and the run
+detail's ``tasks`` stay while static/ still reads them. The profile keeps
+each FIFO's highest count only (D137), so there is no busy-window
 occupancy.
 """
 
@@ -71,11 +75,12 @@ from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
 from snax_forge.run.cluster import DMA
 
+from . import cluster, memory, movement, schedule
 from . import index as ix
-from . import memory, movement
 from .index import RunIndex
 from .memory import MemoryLayout, MemoryViewError, RowMarks
 from .movement import MovementUnavailable
+from .schedule import ScheduleUnavailable
 
 MAX_ROWS = memory.MAX_ROWS  # memory rows per request (static/memory.js)
 OVERLAY_KINDS = ("grant", "stall", "dma", "burst")  # what the memory tab's cycle overlay draws
@@ -282,6 +287,44 @@ def conflicts_view(rv: RunView, start: int = 0, stop: int | None = None) -> dict
 
 
 # =============================================================================
+# The schedule and the cluster view (schedule.py, cluster.py on index.py)
+# =============================================================================
+
+
+def schedule_view(rv: RunView, open: Sequence[int] = (), cycle: int | None = None
+                  ) -> dict[str, Any]:  # fmt: skip
+    """/api/run/<name>/schedule?open=A,B&cycle=C: the lanes and the segments, the folds whose
+    first cycle is in ``open`` or that hold ``cycle`` opened; ``available`` false with the
+    reason below ``task``."""
+    try:
+        return {"name": rv.name, "available": True,
+                **schedule.schedule(rv.index, open, cycle)}  # fmt: skip
+    except ScheduleUnavailable as e:
+        return {"name": rv.name, "available": False, "reason": str(e)}
+
+
+def schedule_detail(rv: RunView, start: int, stop: int) -> dict[str, Any]:
+    """/api/run/<name>/schedule/detail?from=A&to=B: the beat and stall lines of ``[A, B)``
+    per lane; ``available`` false with the reason below ``beat``."""
+    try:
+        return {"name": rv.name, "available": True, **schedule.detail(rv.index, start, stop)}
+    except ScheduleUnavailable as e:
+        return {"name": rv.name, "available": False, "reason": str(e)}
+
+
+def cluster_view(rv: RunView, t: int) -> dict[str, Any]:
+    """/api/run/<name>/cluster?t=T: the data side of the cluster at cycle ``T``."""
+    return {"name": rv.name, **cluster.cluster_at(rv.index, t)}
+
+
+def step_view(rv: RunView, t: int, dir: int, by: str) -> dict[str, Any]:
+    """/api/run/<name>/step?t=T&dir=D&by=B: the next (D 1) or previous (-1) cycle with an
+    event (B ``event``) or a task boundary (``boundary``); T at the window's ends."""
+    return {"name": rv.name, "from": t, "dir": dir, "by": by,
+            "t": cluster.step(rv.index, t, dir, by)}  # fmt: skip
+
+
+# =============================================================================
 # Answers of the API routes
 # =============================================================================
 
@@ -379,11 +422,6 @@ def _pair_tasks(events: Sequence[dict[str, Any]], total: int) -> dict[str, list[
     return spans
 
 
-def task_spans(rv: RunView, block: str) -> list[tuple[int, int]]:
-    """``(start, done)`` of every task of ``block`` (computed once, at load)."""
-    return rv.spans.get(block, [])
-
-
 def fifo_windows(rv: RunView) -> dict[str, Any]:
     """/api/run/<name>/fifo: no busy-window occupancy (module doc), with the reason."""
     return {"available": False, "reason": NO_FIFO_WINDOW, "streamers": {}}
@@ -435,6 +473,8 @@ __all__ = [
     "MovementUnavailable",
     "RunSet",
     "RunView",
+    "ScheduleUnavailable",
+    "cluster_view",
     "conflicts_view",
     "events_window",
     "fifo_windows",
@@ -449,6 +489,8 @@ __all__ = [
     "run_dir_of",
     "run_names",
     "run_summary",
-    "task_spans",
+    "schedule_detail",
+    "schedule_view",
+    "step_view",
     "tasks",
 ]

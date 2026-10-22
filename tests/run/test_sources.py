@@ -41,9 +41,11 @@ def test_the_default_sources(cluster):
     [
         ("off", ["summary"]),
         ("task", ["summary", "events"]),
-        ("beat", ["summary", "events", "snax_acc0/unit/beats", "tcdm/snax_xbar/beats",
+        ("beat", ["summary", "events", "snax_acc0/unit/beats", "snax_acc0/streamer/beats",
+                  "tcdm/snax_xbar/beats",
                   "idma/axi_read/beats", "idma/axi_write/beats"]),
-        ("stall", ["summary", "events", "snax_acc0/unit/beats", "tcdm/snax_xbar/beats",
+        ("stall", ["summary", "events", "snax_acc0/unit/beats", "snax_acc0/streamer/beats",
+                  "tcdm/snax_xbar/beats",
                    "idma/axi_read/beats", "idma/axi_write/beats", "snax_acc0/streamer/stalls",
                    "tcdm/snax_xbar/stalls"]),
     ],

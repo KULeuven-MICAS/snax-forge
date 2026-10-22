@@ -7,7 +7,8 @@ main on the accelerator's core, and events outside ``[0, total_cycles)`` (up to 
 kind's own fields, by the lowest level that has it:
 
     task         start    task  (t = the cycle the start is taken; busy from t + 1)
-    task         done     task, then firings, first, last for an accelerator  (t = first idle)
+    task         done     task, cycles (the run's classes), then firings, first, last for an
+                          accelerator  (t = first idle)
     task         csr      pc, csr, block, op (r/w), value, held (a held write's cycles)
     task         poll     pc, csr, block, value, count, last  (t = the first read)
     task         barrier  last  (t = the barrier's read; last = the cycle it is released)
@@ -22,6 +23,7 @@ kind's own fields, by the lowest level that has it:
     beat         burst    task, id, op, mem, addr, size, back, region, elems  (a request to AXI)
     beat         fire     task, n, b, value, vals  (b, value, vals keyed by reader mover)
     beat         push     task, n, first, last, value, vals
+    beat         class    task, mode  (src = acc or the mover; t = the first cycle in it)
     stall        stall    task, addr, bank, row, by, by_addr, region, elems; b (a SNAX
                           port's)  (src = the port; one per cycle refused)
     stall        fifo     task, lane, count  (src = the mover; t = the first cycle it holds)
@@ -32,8 +34,11 @@ fields, required and optional; ``Trace.from_dict`` refuses an event with an unkn
 field. The events are kept as the dicts they are written as, in time order (by ``t``, then as
 SNAX-GVSoC wrote them). ``trace_meta.json`` is the rest: the ``level``, ``total_cycles``, the
 ``boot`` shift (the first ``mcycle`` read in SNAX-GVSoC's cycles), the ``sources`` in the
-cluster's order and the ``filter``, the sources the beat, stall and instruction lines were
-written for (empty at ``task``).
+cluster's order, the ``filter``, the sources the beat, stall and instruction lines were
+written for (empty at ``task``), and ``start``, per core in the cluster's order what is in
+force at t = 0: ``func``, the name of its last ``func`` line at or before 0 (None without
+one), and ``mode``, its state (cores.py's ``start_mode``). No ``func`` event is written at 0:
+a ``func`` event's t is the function's first instruction.
 """
 
 from __future__ import annotations
@@ -54,8 +59,8 @@ def _fields(names: str) -> frozenset[str]:
 KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
     "start": [(frozenset({"task"}), frozenset())],
     "done": [
-        (frozenset({"task", "firings", "first", "last"}), frozenset()),
-        (frozenset({"task"}), frozenset()),
+        (frozenset({"task", "cycles", "firings", "first", "last"}), frozenset()),
+        (frozenset({"task", "cycles"}), frozenset()),
         (frozenset({"task", "id"}), frozenset()),
     ],
     "csr": [(frozenset({"pc", "csr", "block", "op", "value"}), frozenset({"held"}))],
@@ -80,6 +85,7 @@ KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
     "burst": [(_fields("task id op mem addr size back region elems"), frozenset())],
     "fire": [(frozenset({"task", "n", "b", "value", "vals"}), frozenset())],
     "push": [(frozenset({"task", "n", "first", "last", "value", "vals"}), frozenset())],
+    "class": [(frozenset({"task", "mode"}), frozenset())],
     "stall": [
         (
             frozenset({"task", "addr", "bank", "row", "by", "by_addr", "region", "elems"}),
@@ -114,6 +120,7 @@ class Trace:
     sources: list[str] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     filter: list[str] = field(default_factory=list)  # the sources of the beat lines
+    start: dict[str, dict[str, Any]] = field(default_factory=dict)  # core -> func, mode at 0
 
     def __post_init__(self) -> None:
         if self.level not in LEVELS[1:]:
@@ -127,7 +134,8 @@ class Trace:
 
     def meta(self) -> dict[str, Any]:
         return {"level": self.level, "total_cycles": self.total_cycles, "boot": self.boot,
-                "sources": list(self.sources), "filter": list(self.filter)}  # fmt: skip
+                "sources": list(self.sources), "filter": list(self.filter),
+                "start": {c: dict(v) for c, v in self.start.items()}}  # fmt: skip
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.meta(), "events": [dict(e) for e in self.events]}
@@ -135,4 +143,5 @@ class Trace:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Trace:
         return cls(d["level"], d["total_cycles"], d["boot"], list(d.get("sources", [])),
-                   [dict(e) for e in d.get("events", [])], list(d.get("filter", [])))  # fmt: skip
+                   [dict(e) for e in d.get("events", [])], list(d.get("filter", [])),
+                   {c: dict(v) for c, v in d.get("start", {}).items()})  # fmt: skip

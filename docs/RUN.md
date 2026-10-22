@@ -47,7 +47,7 @@ output shows as it comes and goes to `out/flow/vecadd/build.log`):
     make: Entering directory '$ROOT/snax-forge/gvsoc'
     ...
     make: Leaving directory '$ROOT/snax-forge/gvsoc'
-    flow vecadd (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd/
+    flow vecadd (vecadd: W=4, N=64; N=64) on snax_alu -> out/flow/vecadd/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
       design    20 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
@@ -180,7 +180,7 @@ gets the level in its name:
     pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
 
     Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
-    flow vecadd_task (vecadd: W=4; N=64) on snax_alu -> out/flow/vecadd_task/
+    flow vecadd_task (vecadd: W=4, N=64; N=64) on snax_alu -> out/flow/vecadd_task/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
       design    20 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)

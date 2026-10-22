@@ -74,6 +74,7 @@ GRAMMAR: dict[str, dict[str, list[tuple[Fields, Fields]]]] = {
         "burst": _forms(({"id", "op", "addr", "size", "back"}, set())),
         "fire": _forms(({"n", "b", "value"}, set())),
         "push": _forms(({"n", "first", "last", "value"}, set())),
+        "class": _forms(({"mode"}, set()), ({"mover", "mode"}, set())),
     },
     "stalls": {
         "stall": _forms(({"in", "addr", "bank", "row", "by", "by_addr"}, {"b"})),

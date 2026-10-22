@@ -20,8 +20,9 @@ def events():
         {"t": 133, "k": "csr", "src": "core0", "pc": 0x80000374, "csr": 0x3D3, "block": "acc",
          "op": "w", "value": 1, "held": 2},
         {"t": 153, "k": "done", "src": "acc", "task": "add_acc", "firings": 16, "first": 137,
-         "last": 152},
-        {"t": 150, "k": "done", "src": "acc_a", "task": "add_acc_a"},
+         "last": 152, "cycles": {"busy": 16, "stall_in": 3, "stall_out": 0, "flush": 0}},
+        {"t": 150, "k": "done", "src": "acc_a", "task": "add_acc_a",
+         "cycles": {"busy": 16, "stall_xbar": 0, "stall_fifo": 2, "idle": 1}},
         {"t": 88, "k": "issue", "src": "dma", "task": "load_A", "id": 2, "dir": "l2_to_l1",
          "from": 0x80002900, "to": 0x10000000, "size": 512, "from_stride": 0, "to_stride": 0,
          "reps": 1},
@@ -31,10 +32,12 @@ def events():
 
 
 def test_round_trip():
-    t = Trace("task", 226, 2812, ["acc", "acc_a", "dma", "core0", "core1"], events())
+    start = {"core0": {"func": "main", "mode": "run"}, "core1": {"func": None, "mode": "sleep"}}
+    t = Trace("task", 226, 2812, ["acc", "acc_a", "dma", "core0", "core1"], events(), [], start)
     assert Trace.from_dict(json.loads(json.dumps(t.to_dict()))) == t
     assert t.meta() == {"level": "task", "total_cycles": 226, "boot": 2812,
-                        "sources": ["acc", "acc_a", "dma", "core0", "core1"], "filter": []}  # fmt: skip
+                        "sources": ["acc", "acc_a", "dma", "core0", "core1"], "filter": [],
+                        "start": start}  # fmt: skip
     assert [e["task"] for e in t.of_kind("done")] == ["add_acc", "add_acc_a", "load_A"]
     assert [e["task"] for e in t.of_kind("done", "dma")] == ["load_A"]
 

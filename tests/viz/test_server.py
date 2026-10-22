@@ -98,3 +98,40 @@ def test_memory_routes_answer_and_movement_says_why_not(tmp_path):
         assert status_of(srv, "/api/run/vecadd/journey?region=Q&index=0") == 400
         assert get_json(srv, "/api/run/vecadd/fifo")["available"] is False
         assert status_of(srv, "/api/run/nope/memory") == 404
+
+
+def test_schedule_routes_answer_and_say_why_not(tmp_path):
+    """The schedule at task (its detail needs beat), and at off neither."""
+    task = run_dir(tmp_path / "vecadd", "vecadd", "task")
+    off = run_dir(tmp_path / "vsum", "vsum", "off")
+    with serving([task, off]) as srv:
+        s = get_json(srv, "/api/run/vecadd/schedule")
+        assert s["available"] and s["segments"][0]["from"] == 0 and s["segments"][-1]["to"] == 226
+        folds = [x["from"] for x in s["segments"] if x["folded"]]
+        opened = get_json(srv, f"/api/run/vecadd/schedule?open={folds[0]}")["segments"]
+        assert [x["from"] for x in opened if x["folded"]] == folds[1:]
+        held = get_json(srv, f"/api/run/vecadd/schedule?cycle={folds[0]}")["segments"]
+        assert [x["from"] for x in held if x["folded"]] == folds[1:]
+        d = get_json(srv, "/api/run/vecadd/schedule/detail?from=0&to=50")
+        assert d["available"] is False and "needs --trace beat" in d["reason"]
+        assert status_of(srv, "/api/run/vecadd/schedule/detail?from=0") == 400
+        assert status_of(srv, "/api/run/vecadd/schedule?open=x") == 400
+        s = get_json(srv, "/api/run/vsum/schedule")
+        assert s["available"] is False and "traced at off" in s["reason"]
+
+
+def test_cluster_and_step_routes_answer(tmp_path):
+    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+    with serving([d]) as srv:
+        first = get_json(srv, "/api/run/vecadd/step?t=0&dir=1&by=boundary")["t"]
+        assert first > 0
+        second = get_json(srv, f"/api/run/vecadd/step?t={first}&dir=1&by=boundary")["t"]
+        assert second > first
+        assert get_json(srv, f"/api/run/vecadd/step?t={second}&dir=-1&by=boundary")["t"] == first
+        assert get_json(srv, f"/api/run/vecadd/step?t={first}&dir=-1&by=boundary")["t"] == first
+        at = get_json(srv, f"/api/run/vecadd/cluster?t={first}")
+        assert at["t"] == first and at["events"] and all(e["t"] == first for e in at["events"])
+        assert at["needs"]["grant"] == "beat"
+        assert status_of(srv, "/api/run/vecadd/cluster") == 400
+        assert status_of(srv, "/api/run/vecadd/step?t=0&dir=2&by=event") == 400
+        assert status_of(srv, "/api/run/vecadd/step?t=0&dir=1&by=later") == 400
