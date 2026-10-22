@@ -4,8 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.SnaxUnitCases
+import snax.forge.{Blocks, SnaxUnitCases}
 import snax.forge.SnaxUnitCases.{RunLine, Start}
+import snax.forge.shell.RtlFixtures
 
 /** The fold half of the unit cross-check: the Accumulator driven through snax-gvsoc's `SnaxUnit` rate cases.
   *
@@ -15,11 +16,14 @@ import snax.forge.SnaxUnitCases.{RunLine, Start}
   * them, a start poked in the cycle the case offers it, and fire (`in.fire`), push (`out.fire`) and busy compared every
   * cycle; each start's answer against the block's state (`refused` busy, `ignored` idle with count or rate 0, `taken`
   * otherwise). Each pushed sum is checked against the inputs it folds (lane j of a case's k-th input, from 0, is k *
-  * lanes + j + 1). A cases folder with no such case (an older snax-gvsoc checkout) cancels the test too.
+  * lanes + j + 1, at the block's lanes). A cases folder with no such case (an older snax-gvsoc checkout) cancels the
+  * test too.
   *
   * The `expect run` lines are compared too, each busy cycle classed by `SnaxUnit`'s rule (D59) from what the block
   * shows: a result waiting with no room (`out.valid && !out.ready`) is stall_out, an input taken busy, no input with
-  * inputs left stall_in, and the rest flush. Without the variable the test is canceled.
+  * inputs left stall_in, and the rest flush. Without the variable the test is canceled. It runs at 64 bits and the
+  * case's lanes, and at each `RtlFixtures` fixture's Accumulator (vsum's, vsum_tree's at W = 4 and 8): the cycles do
+  * not depend on the lanes.
   */
 class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
 
@@ -32,12 +36,30 @@ class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
 
   behavior of "Accumulator against SnaxUnit's rate cases"
 
-  it should "fire, push, be busy and end its runs as every pipelined fold case gives" in {
+  /** Each fixture's Accumulator (GEN1, `RtlFixtures`): its width, accWidth and lanes. */
+  private val fixtures: Seq[(String, Int, Int, Int)] =
+    RtlFixtures.all.map(f => f -> f.spec.units.head).collect {
+      case (f, u) if u.block == "Accumulator" =>
+        val p = Blocks.Params(u.params)
+        (f.name, p.int("width"), p.int("accWidth"), p.int("lanes"))
+    }
+
+  /** The configurations: 64 bits at the case's lanes, then each fixture's. */
+  private val configs: Seq[(String, Option[(Int, Int, Int)])] =
+    ("w64, the case's lanes", None) +: fixtures.map { case (n, w, a, l) => n -> Some((w, a, l)) }
+
+  for ((config, params) <- configs)
+    it should s"fire, push, be busy and end its runs as every pipelined fold case gives ($config)" in {
+      runCases(params)
+    }
+
+  private def runCases(params: Option[(Int, Int, Int)]): Unit = {
     val all = cases.getOrElse(cancel(s"$Env is not set (snax-gvsoc's tests/snax/unit/cases)"))
     if (all.isEmpty) cancel(s"no pipelined fold case in ${sys.env(Env)}: the snax-gvsoc checkout predates GEN3 step 6b")
     for (c <- all) {
       require((c.latency, c.ii) == (1, 1), s"${c.name}: the Accumulator is L = 1, II 1")
-      test(new Accumulator(width = 64, accWidth = 64, lanes = c.lanes)) { dut =>
+      val (width, accWidth, lanes) = params.getOrElse((64, 64, c.lanes))
+      test(new Accumulator(width = width, accWidth = accWidth, lanes = lanes)) { dut =>
         var next    = BigInt(0)         // the index of the next input
         var count   = 0                 // the run's count
         var rate    = 1
@@ -47,8 +69,8 @@ class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
         var classes = RunLine(0, 0, 0, 0, 0)
         var runs    = Seq.empty[RunLine]
         for ((cyc, i) <- c.cycles.zipWithIndex) {
-          val clue  = s"${c.name}, cycle $i"
-          val busy  = high(dut.io.busy)
+          val clue   = s"${c.name}, cycle $i"
+          val busy   = high(dut.io.busy)
           c.starts.get(i) match {
             case Some(st @ Start(_, answer)) =>
               val (n, t) = (c.word(st, "count", 0), c.word(st, "rate", 1))
@@ -62,8 +84,8 @@ class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
               dut.io.start.poke(false.B)
           }
           dut.io.in.valid.poke(cyc.valids(0).B)
-          val lanes = (0 until c.lanes).map(j => next * c.lanes + j + 1)
-          for ((v, j) <- lanes.zipWithIndex) dut.io.in.bits(j).poke(v.U)
+          val inputs = (0 until lanes).map(j => next * lanes + j + 1)
+          for ((v, j) <- inputs.zipWithIndex) dut.io.in.bits(j).poke(v.U)
           dut.io.out.ready.poke(cyc.ready.B)
           val fire = high(dut.io.in.valid)  && high(dut.io.in.ready)
           val push = high(dut.io.out.valid) && cyc.ready
@@ -84,7 +106,7 @@ class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
               else classes.copy(flush                      = classes.flush + 1)
           }
           if (fire) {
-            group :+= lanes.sum
+            group :+= inputs.sum
             next += 1
             taken += 1
             if (group.size == rate || taken == count) { sums :+= group.sum; group = Seq.empty }
