@@ -11,14 +11,8 @@ the viewer loads no external file.
 Routes (every answer is JSON except the static files):
 
     GET  /api/runs                          name, trace level, total cycles per run
-    GET  /api/run/<name>                    run.json, profile, class intervals,
-                                            tasks per block
-    GET  /api/run/<name>/events?from=A&to=B&src=S[&src=T]&k=K[&k=L]
-                                            events with A <= t < B, of these
-                                            sources and kinds only if src / k is
-                                            given (repeat it, or separate names
-                                            with commas)
-    GET  /api/run/<name>/fifo               FIFO busy window per streamer
+    GET  /api/run/<name>                    run.json, the profile, the cluster,
+                                            the trace's level and window
     GET  /api/run/<name>/memory[?marks=M]    per memory its geometry, regions and
                                             folded lines, the marks the run has
                                             and why it lacks the others; with
@@ -209,17 +203,6 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if len(parts) == 2:
                 self._json(api.run_detail(rv))
-                return
-            if parts[2] == "events":
-                srcs = [s for v in q.get("src", []) for s in v.split(",") if s]
-                kinds = [k for v in q.get("k", []) for k in v.split(",") if k]
-                a = _int_arg(q, "from", 0)
-                b = _int_arg(q, "to", None)
-                evs = api.events_window(rv, a or 0, b, srcs or None, kinds or None)
-                self._json({"level": rv.trace_level, "from": a, "to": b, "events": evs})
-                return
-            if parts[2] == "fifo":
-                self._json(api.fifo_windows(rv))
                 return
             if parts[2] == "memory":
                 try:

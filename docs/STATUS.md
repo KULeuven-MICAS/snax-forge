@@ -110,10 +110,12 @@ reports again (1b, D137), and the GVSoC build's output is on the terminal
 beat part, vecadd and vsum at every level with every invariant. Round 2b,
 the memory and movement views on those events, is merged (snax-forge #24);
 `docs/RUN.md` has the commands to open the tabs on the MICAS server. Round
-3 is under way on `ry/flow3-6`: its first half (snax-gvsoc's `class` lines,
-the converter's class part, `N` as a recipe param and the `N=512` stress
-run, the schedule's and the cluster view's queries); the views drawn in
-`static/`, loop1 and the closing docs follow on another branch. Then GEN1.
+3's first half is merged (snax-gvsoc's `class` lines, the converter's class
+part, `N` as a recipe param and the `N=512` stress run, the schedule's and
+the cluster view's queries, snax-forge #25); its second half is under way on
+`ry/flow3-7`: the schedule and the cluster view drawn from those answers
+only (S5, the old `/events` and `/fifo` routes removed), loop1 on
+SNAX-GVSoC (S6) and the closing docs (S7). Then GEN1.
 
 ## Open Items
 

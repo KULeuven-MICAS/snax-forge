@@ -5,12 +5,14 @@
 // (memory.js).
 //
 // All view state lives in the URL hash, e.g.
-//   #run=vecadd&view=schedule&from=0&to=120&cycle=42
+//   #run=vecadd&view=schedule&open=142&cycle=42
 // so a browser refresh or a shared link shows the same thing. The selected
 // cycle is what the cluster view shows; a change of the cycle alone updates
-// the page in place, anything else redraws the view. The arrow keys step
-// the cycle while the schedule or the memory tab is shown, and Space plays
-// and pauses it (player.js, VIEW1).
+// the page in place, anything else redraws the view. On the schedule the
+// arrow keys step to the next or previous event cycle, shift + arrow to the
+// next or previous task boundary (the server's /step); on the memory tab they
+// step one cycle. Space plays and pauses (player.js, VIEW1), stepping as the
+// right arrow does.
 // A run's detail is fetched once and kept until Reload, which asks the server
 // to read the directories again (POST /api/reload) and clears the cache.
 
@@ -18,7 +20,7 @@ import { h, int } from "./dom.js";
 import { renderMemory, stepMemoryCycle, updateMemory } from "./memory.js";
 import { setStepper, stopPlaying, togglePlaying } from "./player.js";
 import { renderReport } from "./report.js";
-import { renderSchedule, selectCycle, stepCycle } from "./schedule.js";
+import { renderSchedule, selectCycle, stepSchedule } from "./schedule.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,14 +35,19 @@ const enc = encodeURIComponent;
 const api = {
   runs: () => getJSON("/api/runs"),
   run: (name) => getJSON(`/api/run/${enc(name)}`),
-  fifo: (name) => getJSON(`/api/run/${enc(name)}/fifo`),
-  /** Events with from <= t < to; opts.src / opts.k are lists of sources / kinds. */
-  events: (name, from, to, opts = {}) => {
-    const q = new URLSearchParams({ from: String(from), to: String(to) });
-    if (opts.src?.length) q.set("src", opts.src.join(","));
-    if (opts.k?.length) q.set("k", opts.k.join(","));
-    return getJSON(`/api/run/${enc(name)}/events?${q}`).then((r) => r.events);
+  /** The lanes and segments; the folds starting at a cycle of `open` or holding `cycle` opened. */
+  schedule: (name, open, cycle) => {
+    const q = new URLSearchParams();
+    if (open.length) q.set("open", open.join(","));
+    if (cycle !== null && cycle !== undefined) q.set("cycle", String(cycle));
+    return getJSON(`/api/run/${enc(name)}/schedule${q.size ? `?${q}` : ""}`);
   },
+  /** The beat and stall lines of from <= t < to, per lane. */
+  scheduleDetail: (name, from, to) => getJSON(`/api/run/${enc(name)}/schedule/detail?${new URLSearchParams({ from: String(from), to: String(to) })}`),
+  /** The data side of the cluster at cycle t. */
+  cluster: (name, t) => getJSON(`/api/run/${enc(name)}/cluster?t=${enc(String(t))}`),
+  /** The next (dir 1) or previous (-1) cycle with an event (by "event") or a task boundary (by "boundary"). */
+  step: (name, t, dir, by) => getJSON(`/api/run/${enc(name)}/step?${new URLSearchParams({ t: String(t), dir: String(dir), by })}`),
   /** The memory view; `marks` (conflicts, arrival, use, wait) folds by those marks (D97). */
   memory: (name, marks) => getJSON(`/api/run/${enc(name)}/memory${marks ? `?marks=${enc(marks)}` : ""}`),
   /** Rows from <= r < to of memory `mem` in full (at most 256). */
@@ -118,7 +125,7 @@ function fillHeader(detail) {
 
 // -- showing a run ----------------------------------------------------------------
 
-let cache = {}; // run name -> {detail, fifo}; cleared by Reload
+let cache = {}; // run name -> its detail; cleared by Reload
 let shown = null; // "run/view" last drawn, so a cycle change does not refetch
 let drawnWith = null; // hash of the last full draw without `cycle`
 
@@ -138,16 +145,15 @@ async function show() {
     fillTabs(view);
     if (!cache[name]) {
       status("Loading…");
-      const [detail, fifo] = await Promise.all([api.run(name), api.fifo(name)]);
-      cache[name] = { detail, fifo };
+      cache[name] = await api.run(name);
     }
-    const { detail, fifo } = cache[name];
+    const detail = cache[name];
     if (shown !== null && shown !== `${name}/${view}`) stopPlaying(); // another run or view
     fillHeader(detail);
     const root = $("report");
     if (view !== "memory") document.body.classList.remove("drawer-open"); // only the memory tab has the drawer
     if (view === "report") {
-      if (shown !== `${name}/report`) renderReport(root, detail, fifo);
+      if (shown !== `${name}/report`) renderReport(root, detail);
     } else if (view === "memory") {
       const same = shown === `${name}/memory` && (await updateMemory(detail, st));
       if (!same) await renderMemory(root, detail, { api, status, st, setHash, hashState });
@@ -155,7 +161,7 @@ async function show() {
       const same = shown === `${name}/schedule` && drawnWith === withoutCycle(st);
       if (!(same && (await selectCycle(detail, st)))) {
         await renderSchedule(root, detail, { api, st, setHash });
-        drawnWith = withoutCycle(hashState()); // the window may have moved to the cycle
+        drawnWith = withoutCycle(hashState());
       }
     }
     shown = `${name}/${view}`;
@@ -183,7 +189,7 @@ async function showLatest() {
   drawing = null;
 }
 
-$("run-select").addEventListener("change", (e) => setHash({ run: e.target.value, from: null, to: null, cycle: null, pick: null }));
+$("run-select").addEventListener("change", (e) => setHash({ run: e.target.value, open: null, zoom: null, cycle: null, pick: null }));
 window.addEventListener("hashchange", showLatest);
 $("reload").addEventListener("click", async () => {
   status("Reloading…");
@@ -199,17 +205,18 @@ $("reload").addEventListener("click", async () => {
   }
 });
 
-/** The shown view's cycle moved by d, or null when it has none to step. */
-function stepShown(d) {
+/** The shown view's next cycle (d 1) or previous one (-1), by event or boundary on the schedule; null when it has none to step to. */
+async function stepShown(d, by = "event") {
   const view = hashState().view ?? "report";
-  return view === "schedule" ? stepCycle(d) : view === "memory" ? stepMemoryCycle(d) : null;
+  if (view === "schedule") return stepSchedule(d, by);
+  return view === "memory" ? stepMemoryCycle(d) : null;
 }
 
-// The player steps as the right arrow does and stops at the last cycle; a
+// The player steps as the right arrow does and stops where it cannot step; a
 // tick waits while a draw runs, so the shown cycle is the one it steps from.
 setStepper({
-  next: () => {
-    const n = stepShown(1);
+  next: async () => {
+    const n = await stepShown(1);
     const now = Number.parseInt(hashState().cycle, 10);
     return n === null || n === now ? null : n;
   },
@@ -235,8 +242,9 @@ window.addEventListener("resize", () => {
 });
 
 // Left and right arrows step the selected cycle while the schedule or the memory
-// tab is shown; Space plays and pauses (a focused button keeps Space for itself).
-document.addEventListener("keydown", (e) => {
+// tab is shown (shift on the schedule: by task boundary); Space plays and
+// pauses (a focused button keeps Space for itself).
+document.addEventListener("keydown", async (e) => {
   const view = hashState().view ?? "report";
   if (view !== "schedule" && view !== "memory") return;
   if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement) return;
@@ -247,10 +255,10 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   const d = e.key === "ArrowLeft" ? -1 : e.key === "ArrowRight" ? 1 : 0;
-  const next = d ? stepShown(d) : null;
-  if (next === null) return;
+  if (!d) return;
   e.preventDefault();
-  setHash({ cycle: next });
+  const next = await stepShown(d, e.shiftKey ? "boundary" : "event");
+  if (next !== null) setHash({ cycle: next });
 });
 
 showLatest();

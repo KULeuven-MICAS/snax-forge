@@ -8,7 +8,8 @@ the run's index (index.py) that read no file; the viewer only draws their answer
 
 - ``dma``: the copies open at ``t`` (issue to done, both included) with their task,
   direction and bytes; from ``beat`` on, its L1 beat at ``t`` (``i`` of the copy's ``n``
-  beats of that op) and its AXI bursts at ``t``, each with its region, elements and values;
+  beats of that op) and its AXI bursts at ``t``, each with its region, elements and values,
+  and its reads whose data comes back at ``t`` (``back``: L1 beats and L2 bursts);
 - ``movers``, per lane (crossbar port): whether its mover's task is open; from ``beat`` its
   mover's class at ``t`` (the class run holding it), its grant at ``t`` and the read data
   coming back at ``t`` (the index's ``returns``); from ``stall`` its stall at ``t`` and its
@@ -106,6 +107,7 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
                 cp["beat"] = [{**b, "n": index.dma_beats.get((i, b["op"]), 0)}
                               for b in of["dma"] if b["id"] == i]  # fmt: skip
                 cp["burst"] = [b for b in of["burst"] if b["id"] == i]
+                cp["back"] = [b for b in back if b["k"] in ("dma", "burst") and b["id"] == i]
             copies.append(cp)
 
     movers = {}

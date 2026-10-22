@@ -2,7 +2,8 @@
 
 1. at a cycle: a grant's element and value, on its lane and its bank; a read's data at its
    ``back``; a FIFO count held between two ``fifo`` lines; a mover's class inside a class
-   run; the DMA's open copy and its beat; only that cycle's lines; what a level lacks
+   run; the DMA's open copy, its beat and its read data back from L1 and L2; only that
+   cycle's lines; what a level lacks
 2. stepping: it skips empty cycles, goes both ways, stops at the window's ends
 """
 
@@ -85,6 +86,19 @@ def test_the_dmas_open_copy_and_its_beat():
     assert [(banks[j]["access"][0]["elems"], banks[j]["access"][0]["vals"]) for j in (0, 7)] == [
         ([0], [1]), ([7], [8])]  # fmt: skip
     assert cv.cluster_at(idx, 7)["dma"]["copies"] == []
+
+
+def test_a_copys_read_data_comes_back_at_its_back():
+    """A store's L2 burst back at 3 (the helper's back is its t) and its L1 beat at 4."""
+    ev = Events()
+    ev.copy(2, 7, "store_C", 6)
+    ev.burst(3, 7, "r", L2, 64, "store_C")
+    ev.dma(4, 7, 0, "r", L1, L2, "store_C")
+    idx = ev.index("beat", total=30)
+    for t, want in ((2, []), (3, [("burst", 3)]), (4, [("dma", 4)]), (5, [])):
+        (cp,) = cv.cluster_at(idx, t)["dma"]["copies"]
+        assert [(e["k"], e["t"]) for e in cp["back"]] == want
+    assert "back" not in cv.cluster_at(ev.index("task", total=30), 3)["dma"]["copies"][0]
 
 
 def test_a_cycle_lists_only_its_lines_and_its_conflicts():

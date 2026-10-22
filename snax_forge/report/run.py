@@ -42,7 +42,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..viz import api, movement
+from ..viz import api, movement, schedule
 from ..viz.movement import MovementUnavailable
 from .markdown import pct, spans, table
 from .record import Record
@@ -271,20 +271,21 @@ def build_run(rv: api.RunView) -> RunReport:
         check = CheckRow(bool(fc["passed"]), fc.get("kernel", ""), fc["data_errors"], fc["words"],
                          {t: x["counter"] for t, x in fc.get("tasks", {}).items()})  # fmt: skip
     task_rows = None
-    if tr is not None:
+    if tr is not None:  # per block its tasks: the schedule's bars
         task_rows = []
-        for block, ts in api.tasks(rv).items():
+        lanes = schedule.lanes(rv.index)["lanes"]
+        for block, ts in ((x["name"], x["bars"]) for x in lanes if "bars" in x):
             for k, t in enumerate(ts):
-                task_rows.append(TaskRow(block, k, t["task"], t["start"], t["done"],
-                                         t["done"] - t["start"], t.get("direction"),
-                                         t.get("bytes")))  # fmt: skip
+                done = total if t["to"] is None else t["to"]  # still open at the end
+                task_rows.append(TaskRow(block, k, t["task"], t["from"], done, done - t["from"],
+                                         t.get("dir"), t.get("bytes")))  # fmt: skip
         task_rows.sort(key=lambda r: (r.start, r.block))
 
     accels = []
     acc = rv.cluster.accelerator
     for name, a in p.accelerators.items():
         busy = a.cycles["busy"]
-        span = sum(d - s for s, d in rv.spans.get(name, [])) or None
+        span = sum(r.cycles for r in task_rows or [] if r.block == name) or None
         dones = tr.of_kind("done", name) if tr is not None else []
         accels.append(AccelRun(
             name, a.firings, int(acc.unit.get("ii", 1)), achieved_ii(dones), a.utilisation, span,

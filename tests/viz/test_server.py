@@ -1,6 +1,7 @@
 """Tests for the visualiser's HTTP server: it starts, serves the viewer and
-the run list, answers an events query, and a reload picks up a changed
-directory. Only the plumbing; api.py's answers are test_api.py's."""
+the run list, answers each route, refuses the removed ones, and a reload
+picks up a changed directory. Only the plumbing; api.py's answers are
+test_api.py's."""
 
 import json
 import re
@@ -33,12 +34,10 @@ def test_server_serves_viewer_and_runs(tmp_path):
             {"name": "vecadd", "path": str(d), "design": "vecadd",
              "trace_level": "task", "total_cycles": 226}
         ]  # fmt: skip
-        evs = get_json(srv, "/api/run/vecadd/events?from=0&to=60&src=core0")["events"]
-        assert evs and all(e["src"] == "core0" and e["t"] < 60 for e in evs)
-        evs = get_json(srv, "/api/run/vecadd/events?from=0&to=226&k=start,done")["events"]
-        assert evs and {e["k"] for e in evs} == {"start", "done"}
         detail = get_json(srv, "/api/run/vecadd")
         assert detail["profile"]["total_cycles"] == 226 and detail["cluster"]["design"] == "vecadd"
+        for gone in ("events?from=0&to=60", "fifo"):  # the old viewer's, removed in FLOW3 round 3
+            assert status_of(srv, f"/api/run/vecadd/{gone}") == 404
 
 
 def test_every_module_the_viewer_imports_is_served(tmp_path):
@@ -52,6 +51,20 @@ def test_every_module_the_viewer_imports_is_served(tmp_path):
     with serving([d]) as srv:
         for m in sorted(wanted):
             assert get(srv, f"/{m}")[:2] == (200, "text/javascript"), m
+
+
+def test_every_route_the_viewer_calls_exists(tmp_path):
+    """Each ``/api/run/${enc(name)}/<route>`` in app.js is a route of the server: a bad or
+    missing query is a 400, never a 404, so no removed route stays in the viewer (the
+    memory rows' route, ``memory/<mem>/rows``, is test_memory_routes_answer...'s)."""
+    app = (Path(__file__).parents[2] / "snax_forge" / "viz" / "static" / "app.js").read_text()
+    routes = set(re.findall(r"/api/run/\$\{enc\(name\)\}/(\w+(?:/\w+)*)", app))
+    assert routes == {"schedule", "schedule/detail", "cluster", "step", "memory", "memory/cycle",
+                      "journey", "conflicts"}  # fmt: skip
+    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+    with serving([d]) as srv:
+        for r in sorted(routes):
+            assert status_of(srv, f"/api/run/vecadd/{r}") in (200, 400), r
 
 
 def test_reload_picks_up_a_changed_directory(tmp_path):
@@ -96,7 +109,6 @@ def test_memory_routes_answer_and_movement_says_why_not(tmp_path):
         assert get_json(srv, "/api/run/vecadd/movement")["available"] is False
         assert get_json(srv, "/api/run/vecadd/journey?region=A&index=0")["available"] is False
         assert status_of(srv, "/api/run/vecadd/journey?region=Q&index=0") == 400
-        assert get_json(srv, "/api/run/vecadd/fifo")["available"] is False
         assert status_of(srv, "/api/run/nope/memory") == 404
 
 

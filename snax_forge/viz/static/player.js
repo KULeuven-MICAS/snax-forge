@@ -1,9 +1,10 @@
 // Play / pause for the selected cycle (VIEW1). A play button steps the hash's
-// `cycle` forward on a timer, as the right arrow key does, so the schedule
-// cursor, the cluster view and the memory tab's overlay all follow it. It
-// stops at the last cycle, on another run or view, and on Reload; Space
-// toggles it. A tick waits while a draw is still running, so a slow cycle
-// (a beat-event fetch) is never skipped and the page never falls behind.
+// `cycle` forward on a timer, as the right arrow key does (on the schedule to
+// the next event cycle, the server's /step), so the schedule cursor, the
+// cluster view and the memory tab's overlay all follow it. It stops where
+// there is nothing left to step to, on another run or view, and on Reload;
+// Space toggles it. A tick waits while a draw or a step is still running, so
+// a slow cycle is never skipped and the page never falls behind.
 //
 // Playing is not kept in the hash: a refresh or a shared link shows the
 // cycle, paused. The interval is kept in the browser (localStorage) when it
@@ -19,7 +20,8 @@ const KEY = "snax-forge.play.ms";
 
 let ms = loadSpeed();
 let timer = null;
-let stepper = null; // {next(): cycle | null, go(cycle), busy(): bool}
+let stepper = null; // {next(): Promise of a cycle | null, go(cycle), busy(): bool}
+let stepping = false; // a next() is under way
 const controls = new Set(); // {button, select, seen} on the page
 
 function loadSpeed() {
@@ -39,7 +41,7 @@ function saveSpeed(v) {
   }
 }
 
-/** How to step: next() is the cycle after the shown one, or null at the end or with none to step. */
+/** How to step: next() gives the cycle after the shown one, or null with none to step to. */
 export function setStepper(s) {
   stepper = s;
 }
@@ -59,18 +61,21 @@ function refresh() {
   }
 }
 
-function tick() {
-  if (!stepper || stepper.busy()) return; // the last cycle is still being drawn
-  const n = stepper.next();
-  if (n === null) {
-    stopPlaying();
-    return;
+async function tick() {
+  if (!stepper || stepping || stepper.busy()) return; // the last cycle is still being stepped or drawn
+  stepping = true;
+  try {
+    const n = await stepper.next();
+    if (!timer) return; // stopped meanwhile
+    if (n === null) stopPlaying();
+    else stepper.go(n);
+  } finally {
+    stepping = false;
   }
-  stepper.go(n);
 }
 
 function startPlaying() {
-  if (timer || !stepper || stepper.next() === null) return;
+  if (timer || !stepper) return;
   timer = setInterval(tick, ms);
   tick();
   refresh();

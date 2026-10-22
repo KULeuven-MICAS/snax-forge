@@ -597,7 +597,7 @@ function cycleOf(st, total) {
 export async function renderMemory(root, detail, ctx) {
   const { api, st, setHash } = ctx;
   const beat = LEVELS.indexOf(detail.trace?.level ?? "off") >= LEVELS.indexOf("beat");
-  const total = detail.run.total_cycles;
+  const total = detail.total_cycles;
   const plain = await memoryData(api, detail);
   const shows = showsOf(plain);
   const show = st.show in shows ? st.show : "";
