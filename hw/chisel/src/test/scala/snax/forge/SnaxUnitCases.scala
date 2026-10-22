@@ -15,13 +15,17 @@ object SnaxUnitCases {
 
   val Env = "SNAX_GVSOC_UNIT_CASES"
 
+  private val RunKeys = List("index", "firings", "busy", "stall_in", "stall_out", "flush")
+
   /** A start offered before a cycle's step: its words in `config`'s order and the answer the case expects. */
   case class Start(words: Seq[Int], answer: String)
 
   /** One cycle line: each input's valid, the output's ready, then the expected fire, push and busy. */
   case class Cycle(valids: Seq[Boolean], ready: Boolean, fire: Boolean, push: Boolean, busy: Boolean)
 
-  /** An `expect run` line: the trace line at the end of a run. */
+  /** An `expect run` line: the trace line at the end of a run, `expect run index=I firings=F busy=B stall_in=S
+    * stall_out=O flush=L` (snax-gvsoc's `run` line since FLOW3 round 1b), runs numbered from 0 in order.
+    */
   case class RunLine(firings: Int, busy: Int, stallIn: Int, stallOut: Int, flush: Int)
 
   case class Case(
@@ -64,19 +68,20 @@ object SnaxUnitCases {
       return None
     }
     for (line <- lines.take(at)) line.split("\\s+").toList match {
-      case "wait" :: w :: Nil                                   => waitKind = w
-      case "latency" :: n :: Nil                                => latency  = n.toInt
-      case "ii" :: n :: Nil                                     => ii       = n.toInt
-      case "inputs" :: n :: Nil                                 => inputs   = n.toInt
-      case "lanes" :: n :: Nil                                  => lanes    = n.toInt
-      case "config" :: roles if roles.nonEmpty                  => config   = roles
-      case "start" :: c :: rest if rest.size == config.size + 1 =>
+      case "wait" :: w :: Nil                                                          => waitKind = w
+      case "latency" :: n :: Nil                                                       => latency  = n.toInt
+      case "ii" :: n :: Nil                                                            => ii       = n.toInt
+      case "inputs" :: n :: Nil                                                        => inputs   = n.toInt
+      case "lanes" :: n :: Nil                                                         => lanes    = n.toInt
+      case "config" :: roles if roles.nonEmpty                                         => config   = roles
+      case "start" :: c :: rest if rest.size == config.size + 1                        =>
         starts += c.toInt -> Start(rest.init.map(_.toInt), rest.last)
-      case "expect" :: "run" :: _ :: "firings" :: f :: "busy" :: b :: "stall_in" :: si :: "stall_out" :: so ::
-          "flush" :: fl :: Nil =>
-        runs :+= RunLine(f.toInt, b.toInt, si.toInt, so.toInt, fl.toInt)
-      case "like" :: _ :: Nil                                   => // only in files without cycles
-      case _ => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
+      case "expect" :: "run" :: fields if fields.map(_.takeWhile(_ != '=')) == RunKeys =>
+        val v = fields.map(_.dropWhile(_ != '=').drop(1).toInt)
+        require(v.head == runs.size, s"$path: `$line` is not run ${runs.size}")
+        runs :+= RunLine(v(1), v(2), v(3), v(4), v(5))
+      case "like" :: _ :: Nil => // only in files without cycles
+      case _                  => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
     }
     val cycles = lines.drop(at + 1).map { line =>
       val v = line.split("\\s+").map(_ == "1").toSeq

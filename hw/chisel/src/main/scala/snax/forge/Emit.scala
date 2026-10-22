@@ -24,6 +24,7 @@ import snax.forge.samples.{Accumulator, SimpleAdder}
   * pixi run chisel-gen -- --list              # names only, no elaboration
   * pixi run chisel-gen -- ElementwiseLoop     # substring match, so both loop configs
   * pixi run chisel-gen -- --out /tmp/rtl Tiled
+  * pixi run chisel-gen -- --describe          # the block catalogue (Blocks), as blocks.json holds it
   * }}}
   */
 object Emit {
@@ -134,6 +135,11 @@ object Emit {
   def main(args: Array[String]): Unit = {
     val (flags, selectors) = args.toSeq.partition(_.startsWith("--"))
 
+    if (flags.contains("--describe")) {
+      println(describe)
+      return
+    }
+
     if (flags.contains("--list")) {
       println("[snax-forge] emittable targets:")
       catalogue.foreach(t => println(f"  ${t.label}%-30s ${t.note}"))
@@ -161,6 +167,9 @@ object Emit {
     }
     println(s"[snax-forge] emitted ${chosen.size} module(s) to $outDir")
   }
+
+  /** `--describe`: the block catalogue from the registry (`Blocks`), as `hw/chisel/blocks.json` holds it (D138). */
+  def describe: String = ujson.write(Blocks.describe, indent = 1)
 
   /** `--out <dir>`, else `$SNAX_FORGE_HW_OUT`, else `out/hw` under the repo root.
     *
