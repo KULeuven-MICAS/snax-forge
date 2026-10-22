@@ -27,11 +27,8 @@ A run is named after its flow folder. Two folders with the same name get
 
 Events
 ------
-The trace events are kept as the flat dicts of trace.jsonl, sorted by
-cycle, with their cycles in a separate list so a window ``[a, b)`` is two
-bisects. The source filter is applied after the window, on the few events
-left. A block's tasks pair each ``start`` (a DMA's ``issue``) with its
-``done``.
+The trace events are the index's (``RunIndex.events``), sorted by cycle; a route answers
+from the index's queries (schedule.py's ``window`` for a range of cycles).
 
 Memory
 ------
@@ -55,17 +52,14 @@ Schedule and cluster
 The schedule (lanes, folded segments, detail rows) is schedule.py's queries
 on the index, the cluster view at a cycle and the stepping between cycles
 cluster.py's (D57); a run below the level an answer needs gets ``available``
-false with the reason. The routes ``/events``, ``/fifo`` and the run
-detail's ``tasks`` stay while static/ still reads them. The profile keeps
-each FIFO's highest count only (D137), so there is no busy-window
-occupancy.
+false with the reason. The viewer draws these answers and computes nothing
+of its own.
 """
 
 from __future__ import annotations
 
 import threading
-from bisect import bisect_left
-from collections.abc import Iterable, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -73,7 +67,6 @@ from typing import Any
 from snax_forge.design import DesignPoint
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
-from snax_forge.run.cluster import DMA
 
 from . import cluster, memory, movement, schedule
 from . import index as ix
@@ -84,7 +77,6 @@ from .schedule import ScheduleUnavailable
 
 MAX_ROWS = memory.MAX_ROWS  # memory rows per request (static/memory.js)
 OVERLAY_KINDS = ("grant", "stall", "dma", "burst")  # what the memory tab's cycle overlay draws
-NO_FIFO_WINDOW = "the profile keeps each FIFO's highest count only (D137): no busy window"
 
 
 # =============================================================================
@@ -104,11 +96,13 @@ class RunView:
     point: DesignPoint
     regions: list[Region]
     index: RunIndex
-    events: list[dict[str, Any]] = field(default_factory=list)  # sorted by t
-    times: list[int] = field(default_factory=list)  # events[i]["t"], for bisect
-    spans: dict[str, list[tuple[int, int]]] = field(default_factory=dict)  # per block
     layouts: dict[str, MemoryLayout] = field(default_factory=dict, repr=False)  # lazy, per memory
     marks: dict[str, Any] = field(default_factory=dict, repr=False)  # lazy, per mark
+
+    @property
+    def events(self) -> list[dict[str, Any]]:
+        """The trace events, sorted by cycle (the index's)."""
+        return self.index.events
 
     @property
     def total_cycles(self) -> int:
@@ -144,7 +138,6 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
     point = DesignPoint.load(folder / out.run["design_point"])
     regions = regions_of(point, out.elf_symbols)
     task_list = TaskList.load(folder / "tasks.json")
-    events = [] if out.trace is None else sorted(out.trace.events, key=lambda e: e["t"])
     return RunView(
         name=name or folder.resolve().name,
         path=run_dir,
@@ -154,9 +147,6 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
         point=point,
         regions=regions,
         index=RunIndex.from_run(out, cluster, regions, task_list),
-        events=events,
-        times=[int(e["t"]) for e in events],
-        spans=_pair_tasks(events, out.profile.total_cycles),
     )
 
 
@@ -235,7 +225,8 @@ def memory_cycle(rv: RunView, t: int) -> dict[str, Any]:
     grants, stalls, DMA beats and bursts of the cycle (``events``) and the reads whose data
     comes back in it (``returns``, index.py), both as trace events."""
     return {"t": t, "level": rv.index.level,
-            "events": events_window(rv, t, t + 1, None, OVERLAY_KINDS),
+            "events": [e for e in schedule.window(rv.index, t, t + 1)
+                       if e["k"] in OVERLAY_KINDS],
             "returns": rv.index.returns.get(t, [])}  # fmt: skip
 
 
@@ -341,9 +332,8 @@ def run_summary(rv: RunView) -> dict[str, Any]:
 
 
 def run_detail(rv: RunView) -> dict[str, Any]:
-    """/api/run/<name>: run.json, the profile, the cluster (run/cluster.py), what the header
-    needs about the trace (level, boot, window, sources, event count; None at off) and the
-    tasks per block."""
+    """/api/run/<name>: run.json, the profile, the cluster (run/cluster.py) and what the
+    header needs about the trace (level, boot, window, sources, event count; None at off)."""
     tr = rv.outputs.trace
     trace = None if tr is None else {**tr.meta(), "n_events": len(rv.events)}
     return {
@@ -354,77 +344,7 @@ def run_detail(rv: RunView) -> dict[str, Any]:
         "profile": rv.outputs.profile.to_dict(),
         "cluster": rv.cluster.to_dict(),
         "trace": trace,
-        "tasks": tasks(rv),
     }
-
-
-def tasks(rv: RunView) -> dict[str, list[dict[str, Any]]]:
-    """Per block that ran a task: its tasks as ``start`` / ``done`` and ``task`` (the task
-    list's name); a DMA's also carry their ``direction`` and ``bytes``. Needs the events, so
-    at trace off the answer is empty."""
-    named: dict[str, list[dict[str, Any]]] = {}
-    for e in rv.events:
-        if e["k"] in ("start", "issue"):
-            named.setdefault(e["src"], []).append(e)
-    out: dict[str, list[dict[str, Any]]] = {}
-    for block, spans in rv.spans.items():
-        out[block] = []
-        for k, (start, done) in enumerate(spans):
-            e = named[block][k]
-            task: dict[str, Any] = {"start": start, "done": done, "task": e["task"]}
-            if block == DMA:
-                task.update(direction=e["dir"], bytes=e["size"] * e["reps"])
-            out[block].append(task)
-    return out
-
-
-def events_window(
-    rv: RunView,
-    start: int = 0,
-    stop: int | None = None,
-    srcs: Iterable[str] | None = None,
-    kinds: Iterable[str] | None = None,
-) -> list[dict[str, Any]]:
-    """The events with ``start <= t < stop``, of the given sources and kinds only if given.
-
-    Events keep their trace order. ``stop`` defaults to the end of the run.
-    """
-    stop = rv.total_cycles + 1 if stop is None else stop
-    if stop <= start:
-        return []
-    lo, hi = bisect_left(rv.times, start), bisect_left(rv.times, stop)
-    keep_src = set(srcs) if srcs else None  # None or empty: every source
-    keep_k = set(kinds) if kinds else None  # None or empty: every kind
-    if keep_src is None and keep_k is None:
-        return rv.events[lo:hi]
-    return [
-        e
-        for e in rv.events[lo:hi]
-        if (keep_src is None or e["src"] in keep_src) and (keep_k is None or e["k"] in keep_k)
-    ]
-
-
-def _pair_tasks(events: Sequence[dict[str, Any]], total: int) -> dict[str, list[tuple[int, int]]]:
-    """``(start, done)`` of every task, per block, in one pass over the events: a block's
-    starts (a DMA's issues, matched by id: the iDMA queues them) closed by its dones in order;
-    a task still open at the end is closed at the run's total."""
-    spans: dict[str, list[tuple[int, int]]] = {}
-    open_at: dict[str, list[int]] = {}
-    for e in events:
-        src, k = e["src"], e["k"]
-        if k in ("start", "issue"):
-            open_at.setdefault(src, []).append(e["t"])
-            spans.setdefault(src, [])
-        elif k == "done" and open_at.get(src):
-            spans[src].append((open_at[src].pop(0), e["t"]))
-    for src, ts in open_at.items():
-        spans[src] += [(t, total) for t in ts]
-    return spans
-
-
-def fifo_windows(rv: RunView) -> dict[str, Any]:
-    """/api/run/<name>/fifo: no busy-window occupancy (module doc), with the reason."""
-    return {"available": False, "reason": NO_FIFO_WINDOW, "streamers": {}}
 
 
 # =============================================================================
@@ -476,8 +396,6 @@ __all__ = [
     "ScheduleUnavailable",
     "cluster_view",
     "conflicts_view",
-    "events_window",
-    "fifo_windows",
     "journey_view",
     "load_run",
     "memories",
@@ -492,5 +410,4 @@ __all__ = [
     "schedule_detail",
     "schedule_view",
     "step_view",
-    "tasks",
 ]

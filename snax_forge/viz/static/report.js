@@ -55,7 +55,7 @@ function cyclesSection(detail) {
     ? ` The cores' too, the same window (boot ${int(trace.boot)} cycles before it).`
     : " The cores' classes need the events (--trace task).";
   return section("cycles", "Where the cycles go",
-    `The accelerator's and the movers' ${int(total)} cycles (the program's window) by class.${coresNote} Totals only; when they happen is the schedule view (FLOW3 round 3).`,
+    `The accelerator's and the movers' ${int(total)} cycles (the program's window) by class.${coresNote} Totals only; when they happen is the Schedule tab.`,
     h("ul", { class: "legend" }, LEGEND.map(([g, label]) => h("li", {}, h("i", { class: `key g-${g}` }), label))),
     h("div", { class: "rows" }, rows.map((r) =>
       h("div", { class: "row" },

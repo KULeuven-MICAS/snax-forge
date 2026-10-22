@@ -4,12 +4,10 @@ The report itself is HTML and is checked by eye (D55); what is tested here
 is what the viewer is given:
 
   1. a run loads as read_run and load_cluster give it, from its folder or its run/
-  2. the events window is exactly [A, B), of the asked sources and kinds
-  3. tasks pair starts with dones, named from the task list; a DMA task's
-     direction and bytes are its issue's
-  4. the memory view answers on every run (its cases are test_memory.py's);
-     the movement views say why not below beat (test_movement.py's), the FIFO
-     busy window always
+  2. the memory view answers on every run (its cases are test_memory.py's);
+     the movement views say why not below beat (test_movement.py's)
+
+A task's bars and a range of events are the schedule's (test_schedule.py).
 """
 
 import pytest
@@ -44,7 +42,7 @@ def test_a_run_loads_as_run_gives_it(dirs, level):
                                       d / "design" / "design_point.json")  # fmt: skip
     assert rv.trace_level == level
     assert (rv.events == []) == (level == "off")
-    assert rv.times == sorted(rv.times) and rv.times == [e["t"] for e in rv.events]
+    assert [e["t"] for e in rv.events] == sorted(e["t"] for e in rv.events)
     assert api.load_run(d / "run").outputs == out  # its run/ too
 
 
@@ -65,50 +63,12 @@ def test_detail_and_summary(dirs):
     d = api.run_detail(rv)
     assert d["profile"] == rv.outputs.profile.to_dict() and d["cluster"] == rv.cluster.to_dict()
     assert d["trace"] == {**rv.outputs.trace.meta(), "n_events": len(rv.events)}
-    assert d["total_cycles"] == 226 and d["tasks"] == api.tasks(rv)
+    assert d["total_cycles"] == 226 and "tasks" not in d
     assert api.run_detail(api.load_run(dirs[("vecadd", "off")]))["trace"] is None
 
 
 # =============================================================================
-# 2. The events window
-# =============================================================================
-
-
-def test_events_window(dirs):
-    rv = api.load_run(dirs[("vecadd", "task")])
-    assert api.events_window(rv) == rv.events
-    w = api.events_window(rv, 50, 120)
-    assert w and all(50 <= e["t"] < 120 for e in w)
-    assert w == [e for e in rv.events if 50 <= e["t"] < 120]
-    only = api.events_window(rv, 0, None, ["core0"], ["csr", "poll"])
-    assert only and {(e["src"], e["k"]) for e in only} <= {("core0", "csr"), ("core0", "poll")}
-    assert api.events_window(rv, 5, 5) == []
-
-
-# =============================================================================
-# 3. Tasks
-# =============================================================================
-
-
-def test_tasks_pair_starts_and_dones(dirs):
-    rv = api.load_run(dirs[("vecadd", "task")])
-    t = api.tasks(rv)
-    assert [x["task"] for x in t["acc"]] == ["add_acc"]
-    assert [x["task"] for x in t["acc_out"]] == ["add_acc_out"]
-    assert [(x["task"], x["direction"]) for x in t["dma"]] == [
-        ("load_A", "l2_to_l1"),
-        ("load_B", "l2_to_l1"),
-        ("store_C", "l1_to_l2"),
-    ]
-    issues = rv.outputs.trace.of_kind("issue")
-    assert [x["bytes"] for x in t["dma"]] == [e["size"] * e["reps"] for e in issues]
-    for block, xs in t.items():
-        assert all(x["start"] < x["done"] for x in xs), block
-    assert api.tasks(api.load_run(dirs[("vecadd", "off")])) == {}
-
-
-# =============================================================================
-# 4. Memory, and not yet
+# 2. Memory, and not yet
 # =============================================================================
 
 
@@ -119,8 +79,6 @@ def test_the_memory_view_answers_and_movement_says_why_not(dirs):
     assert [m["mem"] for m in view["memories"]] == ["l1", "l2"] and view["marks_available"] == {}
     for view in (api.movement_view(rv), api.conflicts_view(rv), api.journey_view(rv, "A", 0)):
         assert view["available"] is False and view["reason"].endswith("traced at task")
-    fifo = api.fifo_windows(rv)
-    assert fifo["available"] is False and fifo["streamers"] == {}
 
 
 def test_a_run_has_its_regions_and_index(dirs):

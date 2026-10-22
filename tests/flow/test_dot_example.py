@@ -26,7 +26,7 @@ import shlex
 from snax_forge.flow import __main__ as flow_cli
 from snax_forge.report import reports_of
 from snax_forge.sandbox import __main__ as sandbox_cli
-from snax_forge.viz import api
+from snax_forge.viz import api, schedule
 from snax_forge.viz.dfg import api as dfg
 from tests.design.helpers import REPO
 
@@ -96,8 +96,15 @@ def edges(v: dict) -> list[str]:
     return [e["text"] for e in v["edges"]]
 
 
+def tasks(rv) -> dict[str, list[dict]]:
+    """Per block its tasks as the schedule's bars, ``start`` and ``done``."""
+    lanes = schedule.lanes(rv.index)["lanes"]
+    return {x["name"]: [{"start": b["from"], "done": b["to"]} for b in x["bars"]]
+            for x in lanes if "bars" in x}  # fmt: skip
+
+
 def task(rv, block: str) -> dict:
-    (t,) = api.tasks(rv)[block]
+    (t,) = tasks(rv)[block]
     return t
 
 
@@ -282,7 +289,7 @@ def test_the_runs_are_the_same_until_sum_starts_at_72(made):
     _, rv = made
     starts, done = [], []
     for n in NAMES:
-        ts = [(b, t["start"], t["done"]) for b, rows in api.tasks(rv[n]).items() for t in rows]
+        ts = [(b, t["start"], t["done"]) for b, rows in tasks(rv[n]).items() for t in rows]
         starts.append(sorted((b, s) for b, s, _ in ts if s <= 72))
         done.append(sorted((b, s, d) for b, s, d in ts if d < 72))
         assert task(rv[n], "sum")["start"] == 72

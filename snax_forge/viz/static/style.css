@@ -4,7 +4,7 @@
    request teal (dashed where it is an arrow); busy, read data coming back and
    a firing green; idle grey; memory stalls (stall_xbar, stall_l1, a stalled
    port, a contested bank) red; flow stalls violet; FIFO contents lilac;
-   controller command and wait blue. */
+   a barrier blue and a poll light blue. */
 
 :root {
   --bg: #f5f6f7;
@@ -197,12 +197,27 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .s-command { fill: var(--command); }
 .s-wait { fill: var(--wait); }
 .s-fifo { fill: var(--fifo); }
-.cmd-edge { fill: none; stroke: var(--panel); stroke-width: 1; }
-.task { stroke: var(--ink); stroke-width: 1.5; }
-.task-mark { fill: var(--ink); }
 .cell-text { font-size: 10px; fill: var(--ink); pointer-events: none; }
 .cell-text.on-dark { fill: #fff; }
 .cell-text.mid { text-anchor: middle; }
+.s-dma { fill: var(--req); fill-opacity: 0.85; }
+.s-req.burst { fill-opacity: 0.6; }
+.s-busy.push { fill-opacity: 0.6; }
+.bar { fill: none; stroke: var(--ink); stroke-width: 1; stroke-opacity: 0.55; }
+.fn { fill: var(--muted); }
+.fn.fn-1 { fill-opacity: 0.45; }
+.csr-tick { fill: var(--command); }
+.csr-tick.poll { fill: var(--wait); }
+.seg-edge { stroke: var(--muted); stroke-opacity: 0.6; }
+.fold { fill: url(#fold-hatch); stroke: var(--rule); cursor: zoom-in; }
+.fold.boot { cursor: default; fill-opacity: 0.5; }
+.fold:hover { stroke: var(--command); }
+.hatch { stroke: var(--idle); stroke-width: 2; }
+.ruler-text.mid { text-anchor: middle; }
+.refold { cursor: pointer; }
+.refold rect { fill: var(--panel); stroke: var(--rule); }
+.refold:hover rect { stroke: var(--command); }
+i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--rule); }
 .cursor { fill: var(--command); fill-opacity: 0.18; stroke: var(--command); stroke-width: 1; pointer-events: none; }
 
 .cycle-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
@@ -285,7 +300,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .cl-conflicts { margin: 0; padding: 0; list-style: none; }
 .cl-conflicts .stalled { color: var(--mem); font-weight: 600; }
 
-/* requesters, accelerators and controller in one grid: rows arrows, block, arrow, accelerator, controller */
+/* requesters and the accelerator in one grid: rows arrows, block, arrow, accelerator */
 .cl-req { display: grid; column-gap: 0.6rem; }
 .cl-box { min-width: 0; padding: 0.3rem 0.5rem 0.4rem; border: 1px solid var(--rule); border-left: 4px solid var(--rule); border-radius: 3px; background: var(--panel); font-size: 0.85em; transition: background-color 0.12s, border-color 0.12s; }
 .cl-box[data-group="busy"] { border-left-color: var(--busy); }
@@ -296,15 +311,13 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .cl-box[data-group="wait"] { border-left-color: var(--wait); }
 .cl-box.bad { border-color: var(--mem); border-left-color: var(--mem); background: var(--hot-bg); }
 .cl-box.plain { border-left-width: 1px; }
-.cl-box.ctl { margin-top: 0.6rem; }
 .cl-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.4rem; }
 .cl-head small { color: var(--muted); }
 .cl-cls { margin-left: auto; color: var(--muted); font-size: 0.92em; white-space: nowrap; }
 .cl-body { display: grid; gap: 0.25rem; margin-top: 0.25rem; }
 .cl-line { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cl-line.req { color: var(--req); font-weight: 600; }
-.cl-line.resp, .cl-line.done { color: var(--busy); font-weight: 600; }
-.cl-line.waiting { color: var(--command); font-weight: 600; }
+.cl-line.resp { color: var(--busy); font-weight: 600; }
 .cl-sub { color: var(--muted); font-size: 0.8em; }
 
 /* port chips: teal = request accepted, red = stalled, green underline = read data back */

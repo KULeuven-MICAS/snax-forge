@@ -12,17 +12,20 @@ reports (``snax_forge.report``, D99) instead.
 * memory.py: the memory tab's layout, folded rows and marks on them (D96);
 * movement.py: data movement as queries on the index: journey, residency,
   patterns, conflicts (D97);
+* schedule.py, cluster.py: the schedule's lanes, folded segments and detail
+  rows, the cluster at one cycle and the stepping between cycles (D57);
 * server.py: the stdlib HTTP server around them;
 * static/: the viewer (index.html, plain JS modules, CSS; no build step and
-  no external file, so it works offline).
+  no external file, so it works offline). It draws the API's answers and
+  computes nothing of its own.
 
 The tabs are the profile report, the schedule with the cluster view under
-it (FLOW3 round 3), and the memory tab, all on the same API. The DFG viewer (D81) is the
+it, and the memory tab, all on the same API. The DFG viewer (D81) is the
 subpackage dfg/, a second mode of the same server for ``.snaxdfg`` files
 (``python -m snax_forge.viz.dfg``).
 """
 
-from .api import RunSet, RunView, fifo_windows, load_run
+from .api import RunSet, RunView, load_run
 from .server import make_server
 
-__all__ = ["RunSet", "RunView", "fifo_windows", "load_run", "make_server"]
+__all__ = ["RunSet", "RunView", "load_run", "make_server"]

@@ -304,8 +304,7 @@ converts them (D137). The trace is an event log at level `task`, `beat`,
 local server on 127.0.0.1 and a static page, stdlib only, offline. Run views
 (D57) of a flow run: the profile report, the memory tab (D96) with data
 movement (D97), and the schedule over the window with the cluster view at
-the selected cycle (their queries in FLOW3 round 3's first half, drawn in
-its second). The DFG viewer
+the selected cycle. The DFG viewer
 (D81) shows graphs side by side. A run view goes through four layers, one
 job each: `run/`'s dataclasses (the events with their ids and lookups, the
 regions, the cluster); `viz/index.py`, the run's events grouped by those
@@ -314,7 +313,7 @@ accelerator's tasks paired with their streamers' through the task list),
 with the memory tab's marks registered on it; `viz/memory.py`, `viz/movement.py`,
 `viz/schedule.py` (lanes, folded segments, detail rows) and `viz/cluster.py` (the cluster at
 a cycle, event stepping), queries on the index that read no file; and `viz/api.py`, whose routes return one query's
-dict for `static/` to draw.
+dict for `static/` to draw; the page computes nothing of its own (D57).
 
 **Reports** (D99, `pixi run report DIR`): `design.md` (what was built) and
 `run.md` (where the cycles went), Markdown from dataclasses, for humans and
@@ -326,8 +325,7 @@ the design point is generated (hjson, headers, `data.h` with the reference
 executor's goldens, `main.c`), built and run, and the program checks itself;
 everything goes to `out/flow/<name>/`, with `flow.log`. The manual loop is
 flow, reports and viewer, then a changed `--set`; `examples/loop1/` walks
-it, out of date until FLOW3 round 3, and `examples/dot/` is parked until
-M13.
+it on SNAX-GVSoC, and `examples/dot/` is parked until M13.
 
 ## 6. Correctness
 

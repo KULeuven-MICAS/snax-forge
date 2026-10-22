@@ -29,7 +29,7 @@ from snax_forge.report.__main__ import main
 from snax_forge.report.run import build_run, render_movement
 from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
-from snax_forge.viz import api
+from snax_forge.viz import api, schedule
 from tests.flow.helpers import stubbed_flow
 
 FIXTURE = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "vecadd"
@@ -119,7 +119,8 @@ def test_the_run_report_equals_its_sources(flows):
         pa.cycles["stall_out"],
         pa.cycles["flush"],
     )
-    assert a.span == sum(d - s for s, d in api.load_run(folder).spans["acc"])
+    (acc,) = [x for x in schedule.lanes(api.load_run(folder).index)["lanes"] if x["name"] == "acc"]
+    assert a.span == sum(b["to"] - b["from"] for b in acc["bars"])
     assert a.utilisation_span == pa.cycles["busy"] / a.span
     for c in r.cores:
         pc = p.cores[c.name]

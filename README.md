@@ -21,7 +21,7 @@ Where to read more:
 | `docs/PAPER.md` | the paper plan |
 | `docs/RUN.md` | a design point from recipe to a run on SNAX-GVSoC, each command with its output |
 | `kernels/README.md` | the target kernels, staged |
-| `examples/` | walk-throughs of the flow (written on SNAX-MODEL, out of date until FLOW3 round 3) |
+| `examples/` | walk-throughs of the flow: `loop1/` on SNAX-GVSoC; `dot/` parked until M13 |
 | `hw/chisel/README.md` | the Chisel accelerator blocks |
 
 # Setup
@@ -128,8 +128,8 @@ A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
 the design step. The platform needs a source hjson (`platforms/snax_alu.json`
 has one; `small16` does not, `gen.source`), and the design point one
 accelerator (`dot` binds two, `gen.instances`: parked until M13).
-`examples/loop1/` walks the flow as it ran on SNAX-MODEL and is out of date
-until FLOW3 round 3; `examples/dot/` is parked with dot.
+`examples/loop1/` walks one turn of the loop on SNAX-GVSoC (vecadd at `N=512`,
+then at `W=8`); `examples/dot/` is parked with dot.
 
 # 2. Step by step
 
@@ -175,7 +175,9 @@ serving vecadd_task, vsum_task at http://127.0.0.1:8765/ (Ctrl-C to stop)
 With several runs, pick one in the Run menu at the top. The profile report
 shows where each component's cycles went, the accelerator, the movers and
 their FIFOs, the cores' waits, the banks and ports, and the DMA. The schedule
-and the cluster view come back in FLOW3 round 3, the memory tab in round 2.
+draws the window as lanes with the cluster view at the selected cycle under
+it, and the memory tab where each container lies and how its words move
+(`docs/RUN.md`, "The viewer").
 After rerunning into the same folder, press Reload. `pixi run report DIR`
 writes a flow folder's reports again (`DIR/report/`); the flow writes them
 after every run.

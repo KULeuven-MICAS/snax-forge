@@ -1,58 +1,52 @@
-// The schedule of one run (VIS2, D57), HLS-schedule style, with the cluster
-// view (VIS3, D61) under it: one row per component in registration order,
-// one column per cycle, over a cycle window [from, to). Built from what the
-// run already wrote (D39, D40):
+// The schedule of one run (D57), with the cluster view under it (cluster.js).
+// It draws /api/run/<n>/schedule and nothing else: the lanes, top to bottom
+// as the answer orders them, over the segments of the window [0, T), and the
+// boot before 0.
 //
-//   main row      the component's class runs (trace intervals); idle is left
-//                 blank, so the rows read like a Gantt chart. Under it a thin
-//                 line per task, from its start to its done. The controller's
-//                 row shows each command (cmd events) with its register.
-//                 A DMA's tasks carry their direction (L2 → L1, L1 → L2, D58).
-//   detail rows   beat level only, for components that ran a task: one per
-//                 xbar port the component owns, labelled `<port>.target_banks`
-//                 (`<owner>.target_banks` for a single port, D58): accepted
-//                 requests (teal) and stalls (red) with bank numbers when
-//                 there is room, and a green strip under the cell when read
-//                 data comes back (resp, D62); its FIFO (largest lane count),
-//                 its firings or its DMA requests (with the L2 read data
-//                 coming back under the read requests).
+//   core lane     its class spans (dom.js CLASS_GROUP; sleep left blank), a
+//                 thin band of its function spans under them, a tick per CSR
+//                 access (a poll's at its first read)
+//   DMA lane      one bar per copy, issue to done, with its direction
+//   mover, acc    one bar per task, start to done, coloured by its class runs
+//                 from beat on (idle left blank), its class totals on hover
+//   detail rows   from beat on, inside the open segments in view only, from
+//                 /api/run/<n>/schedule/detail: per crossbar port its grants
+//                 and refusals (a green strip where read data comes back), the
+//                 DMA's beats and bursts, the accelerator's fires and pushes,
+//                 each lane's FIFO count (each line holds until the next)
+//   tracer rows   the elements traced from the memory tab (hash `tracers`),
+//                 straight from /api/run/<n>/journey: a mark per hop (L1 in
+//                 the upper half, L2 in the lower) and a diamond per firing
 //
-// The chart scrolls in one box with the row labels pinned on the left, and
-// its height is capped so the cluster view fits under it. The mouse wheel
-// over the chart zooms around the pointer; shift + wheel and a sideways
-// swipe scroll (D58).
-//
-// Clicking a cycle selects it (hash `cycle`); the arrow keys step it and the
-// play button beside the cluster heading steps it on a timer (app.js, player.js).
-// A cycle change only moves the cursor and updates the cluster view and the
-// cycle's event list in place (selectCycle); a selected cycle outside the
-// window moves the window to it, keeping its width (D61).
-//
-// Tracer rows (VIS4b, D97): the elements traced from the memory tab (hash
-// `tracers=A:5,B:5`) get a row each at the top, from their journey: a thin
-// line over the element's life, L1 hops in the upper half and L2 hops in the
-// lower half (request teal, read data back green, held back red), and each
-// firing that consumed or produced it as a green diamond. The label opens the
-// element in the memory tab; × stops tracing it. Beat-level runs only.
-//
-// Data: the class intervals and each block's tasks (start paired with done,
-// D60) come with the run detail; task events and FIFO counts are fetched once
-// per run (events.js); beat events only for the window and for the selected
-// cycle. Events come through /api/run/<n>/events with its k filter (D57).
+// A folded segment is drawn at a fixed width, its length in the ruler and its
+// per-core counts on hover; a click opens it (its first cycle joins the hash's
+// `open`), and the ruler's ✕ over an opened one folds it again. Open segments
+// are drawn at the zoom's pixels per cycle (hash `zoom`, fitted to the width
+// by default; the wheel zooms around the pointer, shift + wheel scrolls). A
+// click on a cycle selects it (hash `cycle`); the answer opens the fold that
+// holds the selected cycle. The arrow keys step to the next or previous event
+// cycle, shift + arrow to the next or previous task boundary (/api/run/<n>/step);
+// the play button steps as the right arrow does (app.js, player.js). A cycle
+// change moves the cursor and updates the cluster view in place.
 
-import { clampCycle, dec, h, int } from "./dom.js";
-import { clusterView } from "./cluster.js";
-import { elementAt, ensureRows, journeyOf, tracersOf } from "./memory.js";
+import { CLASS_GROUP, clampCycle, dec, h, int } from "./dom.js";
+import { clusterView, eventList } from "./cluster.js";
+import { journeyOf, tracersOf } from "./memory.js";
 import { playControl } from "./player.js";
-import { BEAT_KINDS, DIRECTION_TEXT, GROUP, beatTraced, byOwner, classAt, describe, fifoCount, fifoIndex, hopText, onPort, operandsText, taskEvents } from "./events.js";
+import { DIRECTION_TEXT, eventText, hopText, operandsText } from "./events.js";
 
 const SVG = "http://www.w3.org/2000/svg";
-const MAIN_H = 24; // px, main row
-const SUB_H = 17; // px, detail row
-const RULER_H = 22;
-const LABEL_W = 150;
-const BEAT_WINDOW = 400; // default window of a beat-level run
-const MAX_CW = 64; // px per cycle, largest zoom
+const LANE_H = 28; // px, a lane
+const BAND_H = 5; // px, a core's function band
+const SUB_H = 16; // px, a detail row
+const RULER_H = 24;
+const LABEL_W = 170;
+const FOLD_W = 30; // px, a folded segment, whatever its length
+const MIN_CW = 0.05; // px per cycle, the zoom's limits
+const MAX_CW = 64;
+const FIT_MAX = 32; // the fitted zoom's largest
+const LEVELS = ["off", "task", "beat", "stall", "finegrained"]; // run/trace.py LEVELS
+const atLeast = (level, l) => LEVELS.indexOf(level) >= LEVELS.indexOf(l);
 
 /** An SVG element with attributes; `title` becomes a native tooltip. */
 function s(tag, attrs = {}, title = null) {
@@ -73,216 +67,199 @@ function txt(g, attrs, text) {
   g.append(t);
 }
 
+const fits = (w, text) => w >= String(text).length * 6 + 6;
+
 // -- data --------------------------------------------------------------------------
 
-// Keyed by the run's detail, as events.js and memory.js key theirs: Reload fetches a
-// new detail, so a run written again into the same directory gets its new events.
-const beatsOf = new WeakMap(); // detail -> Map("from|to" -> beat events of the window)
+// Keyed by the run's detail, as memory.js keys its own: Reload fetches a new
+// detail, so a run written again into the same directory is fetched again.
+const answers = new WeakMap(); // detail -> Map(query -> Promise)
 
-/** Beat events in [from, to), fetched once per run and window. */
-async function beatEvents(api, detail, from, to) {
-  if (!beatsOf.has(detail)) beatsOf.set(detail, new Map());
-  const cache = beatsOf.get(detail);
-  const key = `${from}|${to}`;
-  if (!cache.has(key)) cache.set(key, await api.events(detail.name, from, to, { k: BEAT_KINDS }));
-  return cache.get(key);
+function cached(detail, key, load) {
+  if (!answers.has(detail)) answers.set(detail, new Map());
+  const m = answers.get(detail);
+  if (!m.has(key)) m.set(key, load());
+  return m.get(key);
 }
 
-// -- rows -------------------------------------------------------------------------
+// -- layout: the segments as columns ------------------------------------------------
 
-/** The rows to draw, in order: [{name, label, sub, height, draw(g, x, cw)}]. */
-function buildRows(detail, win, tasks, beats, fifo, showDetail) {
-  const { profile, run, trace } = detail;
-  const { from, to } = win;
-  const clip = (a, b) => [Math.max(a, from), Math.min(b, to)];
-  const intervals = trace.intervals;
-  const cmds = tasks.filter((e) => e.k === "cmd");
-  const beatBy = byOwner(beats ?? [], profile);
+/** The columns of an answer: the boot, then each segment; a fold FOLD_W wide, an open one cw per cycle. */
+function columns(ans, cw) {
+  const cols = [];
+  let x = 0;
+  for (const seg of [ans.boot, ...ans.segments]) {
+    const w = seg.folded ? FOLD_W : (seg.to - seg.from) * cw;
+    cols.push({ seg, x, w, boot: seg === ans.boot });
+    x += w;
+  }
+  const open = cols.filter((c) => !c.seg.folded);
+  /** The open column holding cycle t, or null (t folded or outside the window). */
+  const colAt = (t) => {
+    let lo = 0;
+    let hi = open.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >> 1;
+      if (open[mid].seg.to <= t) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo < open.length && open[lo].seg.from <= t ? open[lo] : null;
+  };
+  const x0 = (t) => { const c = colAt(t); return c ? c.x + (t - c.seg.from) * cw : null; };
+  /** [x1, x2] of each open part of the cycles [a, b). */
+  const pieces = (a, b) => open.filter((c) => c.seg.from < b && a < c.seg.to)
+    .map((c) => [c.x + (Math.max(a, c.seg.from) - c.seg.from) * cw, c.x + (Math.min(b, c.seg.to) - c.seg.from) * cw]);
+  return { cols, open, width: Math.max(x, 1), cw, colAt, x: x0, pieces };
+}
 
+// -- rows ---------------------------------------------------------------------------
+
+const sub = (label, title, drawDetail) => ({ label, sub: "", title, height: SUB_H, detail: true, drawDetail });
+
+/** A cell per event at its cycle: `cls(e)` its class, `text(e)` the label drawn when it fits. */
+function cells(g, m, evs, cls, text) {
+  const cw = m.cw;
+  for (const e of evs) {
+    const x = m.x(e.t);
+    if (x === null) continue;
+    g.append(s("rect", { x: x + 0.5, y: 2, width: Math.max(cw - 1, 0.5), height: SUB_H - 7, class: cls(e) }, `cycle ${e.t}: ${eventText(e)}`));
+    const label = text(e);
+    if (label !== null && fits(cw, label)) txt(g, { x: x + cw / 2, y: SUB_H - 7, class: "cell-text mid on-dark" }, label);
+    if (e.op === "r" && e.back !== undefined) { // the read's data back, a strip under its cell
+      const xb = m.x(e.back);
+      if (xb !== null) g.append(s("rect", { x: xb + 0.5, y: SUB_H - 4, width: Math.max(cw - 1, 0.5), height: 3, class: "s-resp" }, `cycle ${e.back}: read data back (asked in cycle ${e.t})`));
+    }
+  }
+}
+
+/** The rows of the lanes (module doc), in the answer's order, detail rows under their lane. */
+function laneRows(detail, ans, showDetail) {
+  const T = ans.total_cycles;
+  const filter = detail.trace?.filter ?? [];
+  const movers = Object.fromEntries(detail.cluster.accelerator.movers.map((m) => [m.name, m]));
   const rows = [];
-  for (const spec of run.cluster.components) {
-    const name = spec.name;
-    const runs = intervals[name];
-    if (!runs) continue; // the xbar has no classes; its work shows on the port rows
-    const isCtl = spec.kind === "controller";
-    const mySpans = detail.tasks[name] ?? []; // {start, done[, direction]} (D60)
-    rows.push({
-      name, label: name, sub: spec.kind === "accel" ? spec.accel : spec.kind, height: MAIN_H,
-      draw(g, x, cw) {
-        for (const [cls, a0, b0] of runs) {
-          if (!GROUP[cls]) continue; // idle stays blank
-          const [a, b] = clip(a0, b0);
-          if (b <= a) continue;
-          g.append(s("rect", { x: x(a), y: 3, width: (b - a) * cw, height: MAIN_H - 9, class: `s-${GROUP[cls]}` },
-            `${name} ${cls}: cycles ${a0}–${b0 - 1} (${b0 - a0})`));
-        }
-        if (isCtl) {
-          for (const c of cmds) {
-            const [a, b] = clip(c.t, c.last + 1);
-            if (b <= a) continue;
-            g.append(s("rect", { x: x(a), y: 3, width: (b - a) * cw, height: MAIN_H - 9, class: "cmd-edge" }, describe(c)));
-            const text = c.op === "wait" ? `wait ${c.block}` : (c.reg ?? "").split(".").pop();
-            if ((b - a) * cw >= text.length * 6 + 6) {
-              txt(g, { x: x(a) + 3, y: MAIN_H - 10, class: "cell-text on-dark" }, text);
-            }
+  for (const lane of ans.lanes) {
+    const name = lane.name;
+    if (lane.kind === "core") {
+      rows.push({ label: name, sub: "core", height: LANE_H, draw(g, m) {
+        const top = 3;
+        const hgt = LANE_H - BAND_H - 8;
+        for (const sp of lane.spans) {
+          const group = CLASS_GROUP[sp.class];
+          if (!group || group === "idle") continue; // sleep stays blank
+          for (const [x1, x2] of m.pieces(sp.from, sp.to)) {
+            g.append(s("rect", { x: x1, y: top, width: x2 - x1, height: hgt, class: `s-${group}` }, `${name} ${sp.class}: cycles ${sp.from}–${sp.to - 1}`));
           }
         }
-        for (const sp of mySpans) {
-          const [a, b] = clip(sp.start, sp.done);
-          if (b < a) continue;
-          g.append(s("line", { x1: x(a), x2: x(Math.max(b, a)), y1: MAIN_H - 3, y2: MAIN_H - 3, class: "task" },
-            `${name} task: start in ${sp.start}, done in ${sp.done}`));
-          if (sp.start >= from && sp.start < to) g.append(s("path", { d: `M${x(sp.start)},${MAIN_H - 7} l4,4 l-4,4 z`, class: "task-mark" }, `${name} start in ${sp.start}`));
-          if (sp.done >= from && sp.done <= to) g.append(s("rect", { x: x(sp.done) - 1, y: MAIN_H - 8, width: 2, height: 8, class: "task-mark" }, `${name} done in ${sp.done}`));
-          if (sp.direction && b > a) { // a DMA task's direction (D58)
-            const text = DIRECTION_TEXT[sp.direction] ?? sp.direction;
-            if ((b - a) * cw >= text.length * 6 + 8) txt(g, { x: x(a) + 4, y: MAIN_H - 10, class: "cell-text on-dark" }, text);
+        lane.funcs.forEach((f, i) => {
+          for (const [x1, x2] of m.pieces(f.from, f.to)) {
+            g.append(s("rect", { x: x1, y: LANE_H - BAND_H - 3, width: x2 - x1, height: BAND_H, class: `fn fn-${i % 2}` }, `${name} in ${f.name ?? "(no function line yet)"}: cycles ${f.from}–${f.to - 1}`));
           }
-        }
-      },
-    });
-    // Detail rows only for a component that ran a task (an unused block adds
-    // nothing), and for the controller, which never starts but polls.
-    if (!showDetail || (!mySpans.length && !isCtl)) continue;
-    const mine = beatBy[name] ?? [];
-
-    // One row per xbar port the component owns, named after what it shows (D58).
-    const ports = Object.entries(profile.ports).filter(([, p]) => p.owner === name);
-    for (const [port, p] of ports) {
-      const evs = mine.filter((e) => onPort(e) && e.k !== "resp" && e.port === port);
-      const back = mine.filter((e) => e.k === "resp" && e.port === port);
-      rows.push({
-        name, label: `${ports.length === 1 ? name : port}.target_banks`, sub: `${p.width} bits`,
-        title: `port ${port}, ${p.width} bits: the bank of each request and stall; a green strip where read data comes back`, height: SUB_H, detail: true,
-        draw(g, x, cw) {
-          for (const e of back) { // under the request cells, so both show in a cycle with both
-            g.append(s("rect", { x: x(e.t) + 0.5, y: SUB_H - 4, width: Math.max(cw - 1, 0.5), height: 3, class: "s-resp" }, `cycle ${e.t}: ${describe(e)}`));
-          }
-          for (const e of evs) {
-            const cls = e.k === "grant" ? "s-req" : e.wider ? "s-mem wider" : "s-mem";
-            g.append(s("rect", { x: x(e.t) + 0.5, y: 2, width: Math.max(cw - 1, 0.5), height: SUB_H - 7, class: cls }, `cycle ${e.t}: ${describe(e)}`));
-            const text = e.banks.length > 1 ? `${e.banks[0]}+` : String(e.banks[0]);
-            if (cw >= text.length * 6 + 4) txt(g, { x: x(e.t) + cw / 2, y: SUB_H - 7, class: "cell-text mid on-dark" }, text);
-          }
-        },
-      });
-    }
-
-    const fifoName = profile.streamers[name]?.fifo.name;
-    if (fifoName) {
-      const depth = profile.streamers[name].fifo.depth;
-      const lanes = profile.streamers[name].fifo.hist.length;
-      const counts = Array.from({ length: lanes }, (_, l) => fifoCount(fifo, trace, fifoName, l, from)); // null: unknown
-      const changes = mine.filter((e) => e.k === "fifo");
-      rows.push({
-        name, label: fifoName, sub: `depth ${depth}, largest lane`, height: SUB_H, detail: true,
-        draw(g, x, cw) {
-          // Step through the window: the count of each lane holds until its next fifo event.
-          // A cycle the beat filter dropped (D49) and a lane whose count is unknown are left out.
-          let i = 0;
-          const cur = [...counts];
-          for (let t = from; t < to; t++) {
-            while (i < changes.length && changes[i].t <= t) { cur[changes[i].lane] = changes[i].count; i++; }
-            if (!beatTraced(trace, fifoName, t)) continue;
-            const known = cur.filter((c) => c !== null);
-            const top = known.length ? Math.max(...known) : 0;
-            if (!top) continue;
-            const hgt = ((SUB_H - 4) * Math.min(top, depth)) / depth;
-            g.append(s("rect", { x: x(t), y: SUB_H - 2 - hgt, width: cw, height: hgt, class: "s-fifo" },
-              `cycle ${t}: ${fifoName} lanes hold ${cur.map((c) => (c === null ? "?" : c)).join(", ")} (depth ${depth})`));
-            if (cw >= 10) txt(g, { x: x(t) + cw / 2, y: SUB_H - 5, class: "cell-text mid" }, String(top));
-          }
-        },
-      });
-    }
-
-    const fires = mine.filter((e) => e.k === "fire");
-    if (spec.kind === "accel") {
-      rows.push({
-        name, label: `${name} firings`, sub: "", height: SUB_H, detail: true,
-        draw(g, x, cw) {
-          for (const e of fires) {
-            g.append(s("rect", { x: x(e.t) + 0.5, y: 2, width: Math.max(cw - 1, 0.5), height: SUB_H - 4, class: "s-busy" }, `cycle ${e.t}: firing ${e.n}`));
-            if (cw >= String(e.n).length * 6 + 4) txt(g, { x: x(e.t) + cw / 2, y: SUB_H - 5, class: "cell-text mid on-dark" }, String(e.n));
-          }
-        },
-      });
-    }
-
-    if (spec.kind === "dma") {
-      for (const side of ["src", "dst"]) {
-        const evs = mine.filter((e) => e.k === "dma_beat" && e.side === side);
-        const back = side === "src" ? mine.filter((e) => e.k === "resp" && !e.port) : []; // L2 read data (D62)
-        rows.push({
-          name, label: `${name} ${side === "src" ? "reads" : "writes"}`, sub: "requests", height: SUB_H, detail: true,
-          title: side === "src" ? "read requests by beat; a green strip where L2 read data comes back" : "write requests by beat",
-          draw(g, x, cw) {
-            for (const e of back) {
-              g.append(s("rect", { x: x(e.t) + 0.5, y: SUB_H - 4, width: Math.max(cw - 1, 0.5), height: 3, class: "s-resp" }, `cycle ${e.t}: ${describe(e)}`));
-            }
-            for (const e of evs) {
-              g.append(s("rect", { x: x(e.t) + 0.5, y: 2, width: Math.max(cw - 1, 0.5), height: SUB_H - 7, class: "s-req" }, `cycle ${e.t}: ${describe(e)}`));
-              if (cw >= String(e.i).length * 6 + 4) txt(g, { x: x(e.t) + cw / 2, y: SUB_H - 7, class: "cell-text mid on-dark" }, String(e.i));
-            }
-          },
         });
+        for (const e of lane.csr) {
+          const x = m.x(e.t);
+          if (x === null) continue;
+          g.append(s("path", { d: `M${x + m.cw / 2 - 3},0 l6,0 l-3,4 z`, class: `csr-tick${e.k === "poll" ? " poll" : ""}` }, `cycle ${e.t}: ${eventText(e)}`));
+        }
+      } });
+      if (showDetail && filter.includes(name)) {
+        rows.push(sub(`${name} port`, `${name}'s crossbar port: grants (teal), refusals (red), read data back (green strip)`,
+          (g, d, m) => cells(g, m, d.ports[name] ?? [], (e) => (e.k === "grant" ? "s-req" : "s-mem"), (e) => e.bank)));
       }
-    }
-
-    if (isCtl) {
-      const polls = mine.filter((e) => e.k === "poll");
-      if (polls.length) {
-        rows.push({
-          name, label: `${name} polls`, sub: "", height: SUB_H, detail: true,
-          draw(g, x, cw) {
-            for (const e of polls) {
-              g.append(s("circle", { cx: x(e.t) + cw / 2, cy: SUB_H / 2, r: Math.min(4, Math.max(cw / 2 - 1, 1.5)), class: e.value ? "s-wait" : "s-busy" }, `cycle ${e.t}: ${describe(e)}`));
+    } else if (lane.kind === "dma") {
+      rows.push({ label: name, sub: "DMA", height: LANE_H, draw(g, m) {
+        for (const b of lane.bars) {
+          const to = b.to ?? T - 1;
+          const tip = `copy ${b.id} ${b.task}: ${DIRECTION_TEXT[b.dir] ?? b.dir}, ${int(b.bytes)} B; issued in ${b.from}, done in ${b.to ?? "–"}`;
+          for (const [x1, x2] of m.pieces(b.from, to + 1)) {
+            g.append(s("rect", { x: x1, y: 4, width: x2 - x1, height: LANE_H - 10, class: "s-dma" }, tip));
+            const label = DIRECTION_TEXT[b.dir] ?? b.dir;
+            if (fits(x2 - x1, label)) txt(g, { x: x1 + 4, y: LANE_H - 10, class: "cell-text on-dark" }, label);
+          }
+        }
+      } });
+      if (showDetail) {
+        rows.push(sub("dma beats", "the DMA's beats on L1 (its index in the copy), read data back as a green strip",
+          (g, d, m) => cells(g, m, d.dma.filter((e) => e.k === "dma"), () => "s-req", (e) => e.i)));
+        rows.push(sub("dma bursts", "the DMA's requests to L2 over AXI (r or w), read data back as a green strip",
+          (g, d, m) => cells(g, m, d.dma.filter((e) => e.k === "burst"), () => "s-req burst", (e) => e.op)));
+      }
+    } else {
+      rows.push({ label: name, sub: lane.kind === "mover" ? (movers[name]?.write ? "writer" : "reader") : "accelerator", height: LANE_H, draw(g, m) {
+        for (const b of lane.bars) {
+          const to = b.to ?? T - 1;
+          const totals = b.cycles ? Object.entries(b.cycles).map(([k, v]) => `${k} ${int(v)}`).join(", ") : "–";
+          const tip = `${b.task}: start in ${b.from}, done in ${b.to ?? "–"}; ${totals}${b.firings !== undefined ? `; ${int(b.firings)} firings` : ""}`;
+          for (const r of b.classes ?? []) {
+            const group = CLASS_GROUP[r.mode];
+            if (!group || group === "idle") continue;
+            for (const [x1, x2] of m.pieces(r.from, r.to)) {
+              g.append(s("rect", { x: x1, y: 4, width: x2 - x1, height: LANE_H - 10, class: `s-${group}` }, `${b.task} ${r.mode}: cycles ${r.from}–${r.to - 1}\n${tip}`));
             }
-          },
-        });
+          }
+          for (const [x1, x2] of m.pieces(b.from, to + 1)) {
+            g.append(s("rect", { x: x1, y: 3, width: x2 - x1, height: LANE_H - 8, class: "bar" }, tip));
+            if (!b.classes && fits(x2 - x1, b.task)) txt(g, { x: x1 + 4, y: LANE_H - 10, class: "cell-text" }, b.task);
+          }
+        }
+      } });
+      if (!showDetail) continue;
+      if (lane.kind === "accelerator") {
+        rows.push(sub(`${name} fire`, "its firings (n)", (g, d, m) => cells(g, m, d.acc.filter((e) => e.k === "fire"), () => "s-busy", (e) => e.n)));
+        rows.push(sub(`${name} push`, "its results handed to the writer (n)", (g, d, m) => cells(g, m, d.acc.filter((e) => e.k === "push"), () => "s-busy push", (e) => e.n)));
+      } else {
+        const mv = movers[name];
+        for (let l = 0; l < (mv?.lanes ?? 0); l++) {
+          const port = `${name}.lane${l}`;
+          rows.push(sub(port, `${port}: grants (teal, the bank), refusals (red), read data back (green strip)`,
+            (g, d, m) => cells(g, m, d.ports[port] ?? [], (e) => (e.k === "grant" ? "s-req" : "s-mem"), (e) => e.bank)));
+          rows.push(sub(`${port} FIFO`, `${port}'s FIFO count of ${mv.fifo_depth}, each line holding until the next (stall level)`,
+            (g, d, m) => fifoSteps(g, m, d.fifo[port] ?? [], d.to, mv.fifo_depth)));
+        }
       }
     }
   }
   return rows;
 }
 
-// -- tracer rows ---------------------------------------------------------------------
-
-const HOP_CLASS = { read: "s-req", write: "s-req", "data back": "s-resp", "held back": "s-mem" };
-const HOP_TEXT = { read: "R", write: "W", "data back": "", "held back": "✕" };
-
-const hopTip = (x) => `cycle ${x.t}: ${x.element ?? ""} ${hopText(x)}`;
-const fireTip = (f) => `cycle ${f.t}: firing ${f.n} of ${f.acc} (task ${f.task}) ${f.role} it: ${operandsText(f)}`;
+/** A lane's FIFO lines: each count from its cycle to the next line's, or the range's end. */
+function fifoSteps(g, m, evs, end, depth) {
+  evs.forEach((e, i) => {
+    const next = i + 1 < evs.length ? evs[i + 1].t : end;
+    if (!e.count) return;
+    const hgt = ((SUB_H - 4) * Math.min(e.count, depth)) / depth;
+    for (const [x1, x2] of m.pieces(e.t, next)) {
+      g.append(s("rect", { x: x1, y: SUB_H - 2 - hgt, width: x2 - x1, height: hgt, class: "s-fifo" }, `cycles ${e.t}–${next - 1}: ${e.src} lane ${e.lane} holds ${e.count} of ${depth}`));
+      if (fits(x2 - x1, e.count)) txt(g, { x: x1 + 3, y: SUB_H - 4, class: "cell-text" }, String(e.count));
+    }
+  });
+}
 
 /** One row per traced element (module doc), from its journey. */
-function tracerRows(journeys, win) {
-  const { from, to } = win;
+function tracerRows(journeys) {
   return journeys.map(({ pick, j }) => {
     const fail = !j || !j.available;
     return {
-      name: pick, label: fail ? pick : j.element, sub: fail ? "not traced" : "tracer", height: MAIN_H, tracer: pick,
+      label: fail ? pick : j.element, sub: fail ? "not traced" : "tracer", height: LANE_H, tracer: pick,
       title: fail ? (j?.reason ?? "no journey") : `${j.element}: L1 hops above, L2 hops below, firings as diamonds`,
-      draw(g, x, cw) {
+      draw(g, m) {
         if (fail) return;
-        const ts = [...j.hops.map((h) => h.t), ...j.firings.map((f) => f.t)];
-        if (!ts.length) return;
-        const a = Math.max(Math.min(...ts), from);
-        const b = Math.min(Math.max(...ts) + 1, to);
-        if (b > a) g.append(s("line", { x1: x(a), x2: x(b), y1: MAIN_H / 2, y2: MAIN_H / 2, class: "task" }, `${j.element}: cycles ${Math.min(...ts)}–${Math.max(...ts)}`));
+        const cw = m.cw;
         for (const hop of j.hops) {
-          if (hop.t < from || hop.t >= to) continue;
-          const top = hop.mem === "l1" ? 2 : MAIN_H / 2 + 1;
-          const hgt = hop.act === "data back" ? 3 : MAIN_H / 2 - 3;
-          const y = hop.act === "data back" ? top + MAIN_H / 2 - 6 : top;
-          g.append(s("rect", { x: x(hop.t) + 0.5, y, width: Math.max(cw - 1, 0.5), height: hgt, class: HOP_CLASS[hop.act] ?? "s-req" }, hopTip(hop)));
-          const text = HOP_TEXT[hop.act];
-          if (text && cw >= 10) txt(g, { x: x(hop.t) + cw / 2, y: top + MAIN_H / 2 - 5, class: "cell-text mid on-dark" }, text);
+          const x = m.x(hop.t);
+          if (x === null) continue;
+          const top = hop.mem === "l1" ? 2 : LANE_H / 2 + 1;
+          const back = hop.act === "data back";
+          const cls = back ? "s-resp" : hop.act === "held back" ? "s-mem" : "s-req";
+          g.append(s("rect", { x: x + 0.5, y: back ? top + LANE_H / 2 - 6 : top, width: Math.max(cw - 1, 0.5), height: back ? 3 : LANE_H / 2 - 3, class: cls }, `cycle ${hop.t}: ${hopText(hop)}`));
         }
         for (const f of j.firings) {
-          if (f.t < from || f.t >= to) continue;
-          const cx = x(f.t) + cw / 2;
-          const r = Math.min(MAIN_H / 2 - 2, Math.max(cw / 2, 3));
-          g.append(s("path", { d: `M${cx},${MAIN_H / 2 - r} l${r},${r} l${-r},${r} l${-r},${-r} z`, class: "s-busy fire-mark" }, fireTip(f)));
+          const x = m.x(f.t);
+          if (x === null) continue;
+          const cx = x + cw / 2;
+          const r = Math.min(LANE_H / 2 - 2, Math.max(cw / 2, 3));
+          g.append(s("path", { d: `M${cx},${LANE_H / 2 - r} l${r},${r} l${-r},${r} l${-r},${-r} z`, class: "s-busy fire-mark" },
+            `cycle ${f.t}: firing ${f.n} of ${f.acc} (task ${f.task}) ${f.role} it: ${operandsText(f)}`));
         }
       },
     };
@@ -293,47 +270,75 @@ function tracerRows(journeys, win) {
 
 /** Tick step so that labels are at least 44 px apart. */
 function tickStep(cw) {
-  for (const m of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000]) if (m * cw >= 44) return m;
+  for (const k of [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000, 2000, 5000, 10000, 20000, 50000]) if (k * cw >= 44) return k;
   return 100000;
 }
 
-/** The chart and its cursor (moved in place by selectCycle). */
-function chart(rows, win, cw, onPick) {
-  const { from, to } = win;
-  const n = to - from;
-  const width = Math.max(n * cw, 1);
-  const height = RULER_H + rows.reduce((a, r) => a + r.height, 0);
-  const x = (t) => (t - from) * cw;
-  const svg = s("svg", { width, height, viewBox: `0 0 ${width} ${height}`, class: "sched" });
+/** A fold's tooltip: its cycles, length and per-core counts. */
+function foldTip(seg, boot) {
+  if (boot) return `boot: ${int(seg.cycles)} cycles before the window (main's first mcycle read); never opens`;
+  const cores = Object.entries(seg.cores ?? {}).map(([core, c]) =>
+    `${core}: ${Object.entries(c.cycles).map(([k, v]) => `${k} ${int(v)}`).join(", ")}; ${c.csr_writes} CSR writes, ${c.csr_reads} reads; in ${c.funcs.join(", ") || "–"}`);
+  return [`cycles ${seg.from}–${seg.to - 1} folded (${int(seg.to - seg.from)} cycles): no task or copy open`, ...cores, "Click to open"].join("\n");
+}
 
-  // Row backgrounds, then the cycle grid, then the rows.
+/** The chart: ruler, folds, rows; returns the svg, the cursor and each detail row's group. */
+function chart(rows, m, ans, onPick, onFold) {
+  const height = RULER_H + rows.reduce((a, r) => a + r.height, 0);
+  const svg = s("svg", { width: m.width, height, viewBox: `0 0 ${m.width} ${height}`, class: "sched" });
+  const defs = s("defs");
+  const pat = s("pattern", { id: "fold-hatch", width: 6, height: 6, patternUnits: "userSpaceOnUse", patternTransform: "rotate(45)" });
+  pat.append(s("line", { x1: 0, y1: 0, x2: 0, y2: 6, class: "hatch" }));
+  defs.append(pat);
+  svg.append(defs);
+
   let y = RULER_H;
   rows.forEach((r, i) => {
-    svg.append(s("rect", { x: 0, y, width, height: r.height, class: `row-bg${r.detail ? " sub" : ""}${i % 2 ? " odd" : ""}` }));
+    svg.append(s("rect", { x: 0, y, width: m.width, height: r.height, class: `row-bg${r.detail ? " sub" : ""}${i % 2 ? " odd" : ""}` }));
     y += r.height;
   });
-  const step = tickStep(cw);
   const ruler = s("g", {});
-  for (let t = Math.ceil(from / step) * step; t < to; t += step) {
-    ruler.append(s("line", { x1: x(t), x2: x(t), y1: RULER_H - 6, y2: height, class: "tick" }));
-    txt(ruler, { x: x(t) + 2, y: RULER_H - 9, class: "ruler-text" }, String(t));
+  const step = tickStep(m.cw);
+  for (const c of m.cols) {
+    const seg = c.seg;
+    if (seg.folded) {
+      svg.append(s("rect", { x: c.x, y: 0, width: c.w, height, class: `fold${c.boot ? " boot" : ""}` }, foldTip(seg, c.boot)));
+      txt(ruler, { x: c.x + c.w / 2, y: RULER_H - 8, class: "ruler-text mid" }, c.boot ? "boot" : int(seg.to - seg.from));
+      continue;
+    }
+    ruler.append(s("line", { x1: c.x, x2: c.x, y1: 0, y2: height, class: "seg-edge" }));
+    for (let t = Math.ceil(seg.from / step) * step; t < seg.to; t += step) {
+      const x = m.x(t);
+      ruler.append(s("line", { x1: x, x2: x, y1: RULER_H - 6, y2: height, class: "tick" }));
+      txt(ruler, { x: x + 2, y: RULER_H - 9, class: "ruler-text" }, String(t));
+    }
+    if (m.cw >= 6) for (let t = seg.from; t < seg.to; t++) if (t % step) ruler.append(s("line", { x1: m.x(t), x2: m.x(t), y1: RULER_H, y2: height, class: "grid" }));
+    if (seg.foldable) { // opened: a ✕ in the ruler folds it again
+      const b = s("g", { class: "refold" }, `Fold cycles ${seg.from}–${seg.to - 1} again`);
+      b.append(s("rect", { x: c.x + 1, y: 1, width: 14, height: 12, rx: 2 }));
+      txt(b, { x: c.x + 8, y: 11, class: "ruler-text mid" }, "✕");
+      b.addEventListener("click", (ev) => { ev.stopPropagation(); onFold(seg.from, false); });
+      ruler.append(b);
+    }
   }
-  if (cw >= 6) for (let t = from; t < to; t++) if (t % step) ruler.append(s("line", { x1: x(t), x2: x(t), y1: RULER_H, y2: height, class: "grid" }));
   svg.append(ruler);
 
   y = RULER_H;
   for (const r of rows) {
     const g = s("g", { transform: `translate(0,${y})` });
-    r.draw(g, x, cw);
+    if (r.draw) r.draw(g, m);
+    r.g = g;
     svg.append(g);
     y += r.height;
   }
-  const cursor = s("rect", { x: 0, y: 0, width: Math.max(cw, 2), height, class: "cursor", visibility: "hidden" });
+  const cursor = s("rect", { x: 0, y: 0, width: Math.max(m.cw, 2), height, class: "cursor", visibility: "hidden" });
   svg.append(cursor);
   svg.addEventListener("click", (ev) => {
-    const box = svg.getBoundingClientRect();
-    const t = from + Math.floor((ev.clientX - box.left) / cw);
-    if (t >= from && t < to) onPick(t);
+    const px = ev.clientX - svg.getBoundingClientRect().left;
+    const c = m.cols.find((x) => px >= x.x && px < x.x + x.w);
+    if (!c || c.boot) return;
+    if (c.seg.folded) onFold(c.seg.from, true);
+    else onPick(Math.min(c.seg.from + Math.floor((px - c.x) / m.cw), c.seg.to - 1));
   });
   return { svg, cursor };
 }
@@ -351,126 +356,111 @@ function labels(rows, setHash, tracers) {
       r.tracer ? tracerLabel(r) : [h("span", {}, r.label), r.sub ? h("small", {}, r.sub) : null])));
 }
 
-// -- the cycle's event list --------------------------------------------------------
-
-function eventList(detail, cycle, tasks, events) {
-  const { profile, run, trace } = detail;
-  const running = tasks.filter((e) => e.k === "cmd" && e.t <= cycle && cycle <= e.last);
-  const by = byOwner([...running, ...tasks.filter((e) => e.k !== "cmd" && e.t === cycle), ...events], profile);
-  const rows = run.cluster.components
-    .filter((c) => trace.intervals[c.name] || by[c.name])
-    .map((c) => {
-      const cls = classAt(trace.intervals[c.name], cycle);
-      return h("tr", {},
-        h("th", {}, c.name),
-        h("td", {}, cls ? h("span", {}, h("i", { class: `key g-${GROUP[cls] || "idle"}` }), cls) : ""),
-        h("td", {}, (by[c.name] ?? []).map((e) => h("div", {}, describe(e)))));
-    });
-  return h("div", { class: "scroll" }, h("table", { class: "cycle-table" },
-    h("thead", {}, h("tr", {}, h("th", {}, "Component"), h("th", {}, "Class"), h("th", {}, "Events in this cycle"))),
-    h("tbody", {}, rows)));
-}
-
 // -- the schedule on screen --------------------------------------------------------
 //
 // `current` is what the last full render left on the page, so a cycle change
-// can update it in place.
+// or a scroll can update it in place.
 
 let current = null;
 
-/** The shown cycle moved by d and kept inside the run, or null if no schedule is on screen (arrow keys). */
-export function stepCycle(d) {
-  if (!current || current.cycle === null || !current.detail.trace) return null;
-  return clampCycle(current.cycle + d, current.total);
+/** Fetch and draw the detail rows of each open segment in view, once per render. */
+function loadDetail(c) {
+  if (!c.detailRows.length) return;
+  const left = c.scroller.scrollLeft;
+  const right = left + c.scroller.clientWidth - LABEL_W;
+  for (const col of c.m.open) {
+    if (col.x + col.w < left || col.x > right) continue;
+    const key = `${col.seg.from}|${col.seg.to}`;
+    if (c.loaded.has(key)) continue;
+    c.loaded.add(key);
+    cached(c.detail, `detail|${key}`, () => c.api.scheduleDetail(c.detail.name, col.seg.from, col.seg.to)).then((d) => {
+      if (current !== c) return;
+      if (!d.available) {
+        c.detailNote.textContent = d.reason;
+        return;
+      }
+      for (const r of c.detailRows) r.drawDetail(r.g, d, c.m);
+    }).catch((e) => { c.detailNote.textContent = String(e.message || e); });
+  }
 }
 
-/** The first cycle any block is busy (a start lands in s, busy from s + 1), or 0. */
-function firstBusy(detail) {
-  let t = Infinity;
-  for (const spans of Object.values(detail.tasks ?? {})) for (const sp of spans) t = Math.min(t, sp.start + 1);
-  return Number.isFinite(t) ? Math.min(t, detail.run.total_cycles - 1) : 0;
-}
-
-/** Move the cursor, and fill the cluster view and the event list for `cycle`. */
+/** Move the cursor, and fill the cluster view and the event list for `cycle` (null clears them). */
 async function showCycle(cycle, keepInView = true) {
   const c = current;
-  if (!c.detail.trace) return; // level off: the structure only, no cycle
   c.cycle = cycle;
+  const x = cycle === null ? null : c.m?.x(cycle) ?? null;
   if (c.cursor) {
-    c.cursor.setAttribute("x", String((cycle - c.from) * c.cw));
-    c.cursor.setAttribute("visibility", "visible");
-    const sc = c.scroller;
-    const plotW = sc.clientWidth - LABEL_W;
-    const cx = (cycle - c.from) * c.cw;
-    if (keepInView && plotW > 0 && (cx < sc.scrollLeft || cx + c.cw > sc.scrollLeft + plotW)) sc.scrollLeft = Math.max(cx - plotW / 2, 0);
+    c.cursor.setAttribute("visibility", x === null ? "hidden" : "visible");
+    if (x !== null) {
+      c.cursor.setAttribute("x", String(x));
+      const sc = c.scroller;
+      const plotW = sc.clientWidth - LABEL_W;
+      if (keepInView && plotW > 0 && (x < sc.scrollLeft || x + c.m.cw > sc.scrollLeft + plotW)) sc.scrollLeft = Math.max(x - plotW / 2, 0);
+    }
   }
-  const tr = c.detail.trace;
-  const events = tr?.level === "beat" ? await c.api.events(c.detail.name, cycle, cycle + 1, { k: BEAT_KINDS }) : [];
-  const names = await elementNames(c, events);
+  if (cycle === null) {
+    c.cs.cluster?.update(null);
+    c.cs.title.textContent = "Cluster";
+    c.cs.events.replaceChildren(h("p", { class: "note" }, "Select a cycle."));
+    return;
+  }
+  const a = await cached(c.detail, `cluster|${cycle}`, () => c.api.cluster(c.detail.name, cycle));
   if (current !== c || c.cycle !== cycle) return; // a newer cycle or render took over
-  c.cluster.update(tr ? cycle : null, { tasks: c.tasks, fifo: c.fifo, events, names });
-  c.title.textContent = `Cluster at cycle ${int(cycle)}`;
-  c.prev.disabled = cycle <= 0;
-  c.next.disabled = cycle >= c.total - 1;
-  if (tr) c.events.replaceChildren(eventList(c.detail, cycle, c.tasks, events));
-}
-
-/**
- * When the run names its regions (D95): a function (bank, row) -> the element
- * there (`A[17]`), after loading the L1 rows the cycle's accesses touch, for
- * the cluster view's tooltips. Null without regions, or if the rows cannot be
- * loaded; the tooltips then say what they said before.
- */
-async function elementNames(c, events) {
-  if (!c.detail.run.regions?.length) return null;
-  const rows = events.filter((e) => e.mem === "l1" && e.row !== undefined).map((e) => e.row);
-  try {
-    if (rows.length) await ensureRows(c.api, c.detail, "l1", rows);
-  } catch {
-    return null;
-  }
-  return (bank, row) => elementAt(c.detail, "l1", bank, row);
+  c.cs.cluster.update(a);
+  c.cs.title.textContent = `Cluster at cycle ${int(cycle)}`;
+  c.cs.events.replaceChildren(eventList(a));
 }
 
 /**
  * A change of the hash's `cycle` only: update in place if the schedule of
- * `detail` is on screen and the cycle lies in its window. Returns false when
- * a full render is needed instead.
+ * `detail` is on screen and the cycle lies in an open segment. Returns false
+ * when a full render is needed instead (the cycle is in a fold).
  */
 export async function selectCycle(detail, st) {
   if (!current || current.detail !== detail) return false;
-  const cycle = st.cycle === undefined ? current.defaultCycle : clampCycle(intArg(st.cycle, 0), current.total);
-  if (current.cursor && (cycle < current.from || cycle >= current.to)) return false;
+  const cycle = cycleOf(st, current.total);
+  if (cycle !== null && current.m && current.m.x(cycle) === null) return false;
   await showCycle(cycle);
   return true;
+}
+
+/** The cycle /step gives from the shown one, d 1 or -1, by event or boundary; null with none to step to. */
+export async function stepSchedule(d, by) {
+  const c = current;
+  if (!c || !c.available) return null;
+  const from = c.cycle ?? (d > 0 ? -1 : c.total);
+  const r = await c.api.step(c.detail.name, from, d, by);
+  return r.t === from ? null : r.t;
 }
 
 // -- wheel zoom (D58) --------------------------------------------------------------
 //
 // Wheel events come in bursts; they are gathered for a short moment and
 // applied as one zoom change, which keeps the cycle under the pointer where
-// it was. The anchor survives the redraw in `anchorNext`. Positions are
-// measured from the plot's left edge, right of the pinned labels.
+// it was. The anchor survives the redraw in `anchorNext`.
 
 let anchorNext = null; // {t, px}: put cycle t at px from the plot's left edge after the redraw
 const wheel = { factor: 1, anchor: null, timer: null };
 
-function onWheel(ev, scroller, view) {
+function onWheel(ev, view) {
   if (ev.shiftKey || Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return; // sideways: native scroll
   ev.preventDefault();
+  const { scroller, m } = view;
   const dy = ev.deltaY * (ev.deltaMode === 1 ? 16 : ev.deltaMode === 2 ? 400 : 1);
   wheel.factor *= Math.exp(-dy * 0.002);
   if (!wheel.anchor) {
-    const px = ev.clientX - scroller.getBoundingClientRect().left - scroller.clientLeft - LABEL_W;
-    wheel.anchor = { t: view.from + (scroller.scrollLeft + Math.max(px, 0)) / view.cw, px: Math.max(px, 0) };
+    const px = Math.max(ev.clientX - scroller.getBoundingClientRect().left - scroller.clientLeft - LABEL_W, 0);
+    const x = scroller.scrollLeft + px;
+    const c = m.open.find((k) => x >= k.x && x < k.x + k.w);
+    wheel.anchor = c ? { t: c.seg.from + (x - c.x) / m.cw, px } : null;
   }
   clearTimeout(wheel.timer);
   wheel.timer = setTimeout(() => {
-    const next = Math.min(Math.max(view.cw * wheel.factor, view.fit), MAX_CW).toFixed(3);
+    const next = Math.min(Math.max(m.cw * wheel.factor, MIN_CW), MAX_CW).toFixed(3);
     const anchor = wheel.anchor;
     wheel.factor = 1;
     wheel.anchor = null;
-    if (Math.abs(Number(next) - view.cw) < 1e-3) return; // at a limit: nothing to redraw
+    if (Math.abs(Number(next) - m.cw) < 1e-3) return; // at a limit: nothing to redraw
     anchorNext = anchor;
     view.setHash({ zoom: next });
   }, 60);
@@ -478,24 +468,33 @@ function onWheel(ev, scroller, view) {
 
 // -- the view ----------------------------------------------------------------------
 
-function intArg(v, dflt) {
-  const n = Number.parseInt(v, 10);
-  return Number.isFinite(n) ? n : dflt;
+function cycleOf(st, total) {
+  if (st.cycle === undefined || st.cycle === "") return null;
+  const c = Number.parseInt(st.cycle, 10);
+  return Number.isFinite(c) ? clampCycle(c, total) : null;
 }
 
-/** The cluster section: heading with cycle stepping and play, the cluster view, the event list. */
-function clusterSection(detail, total, setHash) {
-  const go = (d) => setHash({ cycle: clampCycle((current?.cycle ?? 0) + d, total) });
+const opensOf = (st) => [...new Set((st.open ?? "").split(",").map((x) => Number.parseInt(x, 10)).filter(Number.isFinite))];
+
+/** The cluster section: heading with the step buttons and play, the cluster view, the cycle's lines. */
+function clusterSection(setHash) {
+  const go = (d, by) => async () => {
+    const n = await stepSchedule(d, by);
+    if (n !== null) setHash({ cycle: n });
+  };
+  const btn = (label, d, by, what) => h("button", { type: "button", onclick: go(d, by), "aria-label": what, title: what }, label);
   const title = h("h2", {}, "Cluster");
-  const prev = h("button", { type: "button", onclick: () => go(-1), "aria-label": "Previous cycle" }, "‹");
-  const next = h("button", { type: "button", onclick: () => go(1), "aria-label": "Next cycle" }, "›");
+  const holder = h("div", {});
   const events = h("div", {});
-  const cluster = clusterView(detail);
   const el = h("section", { id: "cluster" },
-    h("div", { class: "cycle-head" }, prev, title, next, detail.trace ? playControl() : null),
-    cluster.el,
-    detail.trace ? h("details", { class: "cycle-events", open: true }, h("summary", {}, "Events in this cycle"), events) : null);
-  return { el, title, prev, next, events, cluster };
+    h("div", { class: "cycle-head" },
+      btn("«", -1, "boundary", "Previous task boundary (shift + ←)"), btn("‹", -1, "event", "Previous event (←)"),
+      title,
+      btn("›", 1, "event", "Next event (→)"), btn("»", 1, "boundary", "Next task boundary (shift + →)"),
+      playControl()),
+    holder,
+    h("details", { class: "cycle-events", open: true }, h("summary", {}, "Lines in this cycle"), events));
+  return { el, title, holder, events, cluster: null };
 }
 
 /**
@@ -504,44 +503,29 @@ function clusterSection(detail, total, setHash) {
  */
 export async function renderSchedule(root, detail, ctx) {
   const { api, st, setHash } = ctx;
-  const total = detail.run.total_cycles;
-  const tr = detail.trace;
-  const cs = clusterSection(detail, total, setHash);
-  if (!tr) {
-    root.replaceChildren(h("section", {}, h("h2", {}, "Schedule"),
-      h("p", { class: "note" }, "This run was traced at level off. The schedule needs at least a task trace: run the scenario again with --trace task or --trace beat.")),
-    cs.el);
-    current = { detail, total, from: 0, to: total, cw: 1, cursor: null, scroller: null, api, tasks: [], fifo: new Map(), defaultCycle: 0, cycle: null, ...cs };
+  const total = detail.total_cycles;
+  const opened = opensOf(st);
+  const cycle = cycleOf(st, total);
+  const query = `schedule|${opened.join(",")}|${cycle ?? ""}`;
+  const [ans, first] = await Promise.all([
+    cached(detail, query, () => api.schedule(detail.name, opened, cycle)),
+    cached(detail, `cluster|${cycle ?? 0}`, () => api.cluster(detail.name, cycle ?? 0)),
+  ]);
+  const cs = clusterSection(setHash);
+  cs.cluster = clusterView(detail, first);
+  cs.holder.replaceChildren(cs.cluster.el);
+
+  if (!ans.available) {
+    root.replaceChildren(h("section", { id: "schedule" }, h("h2", {}, "Schedule"), h("p", { class: "note" }, `No schedule: ${ans.reason}. Run the flow again with --trace task or above.`)), cs.el);
+    current = { detail, api, total, available: false, cs, m: null, cursor: null, cycle: null };
     cs.cluster.update(null);
     cs.title.textContent = "Cluster";
-    cs.prev.disabled = cs.next.disabled = true;
+    cs.events.replaceChildren(h("p", { class: "note" }, "No lines at trace off."));
     return;
   }
-  const beat = tr.level === "beat";
-  let from = Math.min(Math.max(intArg(st.from, 0), 0), Math.max(total - 1, 0));
-  let to = Math.min(Math.max(intArg(st.to, beat ? Math.min(total, from + BEAT_WINDOW) : total), from + 1), total);
-  const picked = st.cycle === undefined ? null : clampCycle(intArg(st.cycle, 0), total);
-  if (picked !== null && (picked < from || picked >= to)) { // stepped out of the window: move it, same width (D61)
-    const width = to - from;
-    from = Math.min(Math.max(picked - Math.floor(width / 2), 0), Math.max(total - width, 0));
-    to = Math.min(from + width, total);
-    const q = new URLSearchParams(location.hash.slice(1));
-    q.set("from", String(from));
-    q.set("to", String(to));
-    history.replaceState(null, "", `#${q}`);
-  }
-  const win = { from, to };
+
+  const beat = atLeast(ans.level, "beat");
   const showDetail = beat && st.detail !== "0";
-  const busy = firstBusy(detail);
-  const defaultCycle = busy >= from && busy < to ? busy : from;
-  const cycle = picked ?? defaultCycle;
-
-  const [tasks, beats, fifo] = await Promise.all([
-    taskEvents(api, detail),
-    beat ? beatEvents(api, detail, from, to) : null,
-    fifoIndex(api, detail),
-  ]);
-
   const tracers = beat ? tracersOf(st) : [];
   const journeys = await Promise.all(tracers.map(async (pick) => {
     try {
@@ -550,65 +534,60 @@ export async function renderSchedule(root, detail, ctx) {
       return { pick, j: { available: false, reason: String(e.message || e) } };
     }
   }));
-  const rows = [...tracerRows(journeys, win), ...buildRows(detail, win, tasks, beats, fifo, showDetail)];
-  // Width left for the plot: the main column less its padding, the labels and the borders.
+  const rows = [...tracerRows(journeys), ...laneRows(detail, ans, showDetail)];
+
+  // The zoom: the hash's, or the open cycles fitted to the width the folds leave.
   const cst = getComputedStyle(root);
   const pad = (Number.parseFloat(cst.paddingLeft) || 0) + (Number.parseFloat(cst.paddingRight) || 0);
   const avail = Math.max((root.clientWidth || 1100) - pad - LABEL_W - 4, 200);
-  const fit = Math.min(Math.max(avail / (to - from), 0.02), 32); // the window fills the plot
-  const cw = st.zoom ? Math.min(Math.max(Number(st.zoom), fit), MAX_CW) : fit;
+  const openCycles = ans.segments.filter((x) => !x.folded).reduce((a, x) => a + x.to - x.from, 0);
+  const folds = 1 + ans.segments.filter((x) => x.folded).length;
+  const fit = Math.min(Math.max((avail - folds * FOLD_W) / Math.max(openCycles, 1), MIN_CW), FIT_MAX);
+  const cw = st.zoom ? Math.min(Math.max(Number(st.zoom), MIN_CW), MAX_CW) : fit;
+  const m = columns(ans, cw);
 
-  const input = (id, value) => h("input", { id, type: "number", min: 0, max: total, value, inputmode: "numeric" });
-  const fromIn = input("sched-from", from);
-  const toIn = input("sched-to", to);
-  const apply = () => { // a new window drops a selected cycle outside it, so it does not pull the window back
-    const a = intArg(fromIn.value, from);
-    const b = intArg(toIn.value, to);
-    setHash({ from: a, to: b, zoom: null, cycle: picked !== null && picked >= a && picked < b ? picked : null });
-  };
-  const zoom = (f) => setHash({ zoom: Math.min(Math.max(cw * f, fit), MAX_CW).toFixed(3) });
-
-  const filtered = tr.filter_sources || tr.filter_window;
-  const note = beat
-    ? `Cycles ${int(from)} to ${int(to - 1)} of ${int(total)}. Idle is blank. Under each row, a line runs from each task's start to its done. Click a cycle, or step with the arrow keys, to show it in the cluster view below.` +
-      (filtered ? " This beat trace is filtered (see the header), so some detail rows are empty." : "")
-    : `Cycles ${int(from)} to ${int(to - 1)} of ${int(total)}. Task-level trace: class runs, tasks and commands; run with --trace beat for requests, read data, FIFO counts and firings.`;
-
+  const setOpen = (from, open) => setHash({ open: (open ? [...opened, from] : opened.filter((x) => x !== from)).join(",") || null });
+  const zoom = (f) => setHash({ zoom: Math.min(Math.max(cw * f, MIN_CW), MAX_CW).toFixed(3) });
+  const nFolded = ans.segments.filter((x) => x.folded).length;
+  const note = `${int(total)} cycles in the window, after ${int(ans.boot.cycles)} cycles of boot. ${nFolded} quiet stretch${nFolded === 1 ? "" : "es"} of at least ${ans.fold_min} cycles folded: hover for what the cores did, click to open. Click a cycle, or step with the arrow keys (shift: task boundaries), to show it in the cluster view below.`;
+  const detailNote = h("p", { class: "note" }, beat ? "" : `Traced at ${ans.level}: run with --trace beat or above for the detail rows.`);
   const tracerNote = !beat ? null : h("p", { class: "note" }, tracers.length
-    ? "Tracer rows: L1 hops in the upper half, L2 hops in the lower half; R a read, W a write, a green strip read data back, ✕ held back, a diamond a firing. Click a label to open the element in the Memory tab."
+    ? "Tracer rows: L1 hops in the upper half, L2 hops in the lower half; teal a request, green read data back, red held back, a diamond a firing. Click a label to open the element in the Memory tab."
     : "To follow one element through the run, pick a word in the Memory tab and trace it in the schedule.");
   const legend = h("ul", { class: "legend" },
-    [["busy", "Busy, firing, read data back (strip)"], ["req", "Request (accepted)"], ["mem", "Memory stall"], ["flow", "Flow stall"], ["command", "Controller command"], ["wait", "Controller wait"], ["fifo", "FIFO count (largest lane)"]]
-      .map(([g, label]) => h("li", {}, h("i", { class: `key g-${g}` }), label)));
-
-  const controls = h("form", { class: "sched-controls", onsubmit: (e) => { e.preventDefault(); apply(); } },
-    h("label", {}, "From ", fromIn), h("label", {}, "to ", toIn),
-    h("button", { type: "submit" }, "Show"),
-    h("button", { type: "button", onclick: () => setHash({ from: 0, to: total, zoom: null }) }, "Whole run"),
+    [["busy", "Busy, run, fire, push, read data back (strip)"], ["req", "Request (accepted), DMA copy"], ["mem", "Memory stall, refused"], ["flow", "Flow stall"], ["command", "Barrier"], ["wait", "Poll"], ["fifo", "FIFO count"]]
+      .map(([g, label]) => h("li", {}, h("i", { class: `key g-${g}` }), label)),
+    h("li", {}, h("i", { class: "key fold-key" }), "Folded (fixed width)"));
+  const controls = h("div", { class: "sched-controls" },
     h("button", { type: "button", onclick: () => zoom(1 / 1.5), "aria-label": "Zoom out" }, "−"),
     h("button", { type: "button", onclick: () => zoom(1.5), "aria-label": "Zoom in" }, "+"),
     h("button", { type: "button", onclick: () => setHash({ zoom: null }) }, "Fit"),
+    h("button", { type: "button", disabled: !opened.length, onclick: () => setHash({ open: null }) }, "Fold all again"),
     h("label", {}, h("input", { type: "checkbox", checked: showDetail, disabled: !beat,
-      onchange: (e) => setHash({ detail: e.target.checked ? null : 0 }) }), " Beat detail"),
-    h("span", { class: "zoom-read" }, `${dec(cw, cw < 1 ? 2 : 1)} px per cycle`));
+      onchange: (e) => setHash({ detail: e.target.checked ? null : 0 }) }), " Detail rows"),
+    h("span", { class: "zoom-read" }, `${dec(cw, cw < 1 ? 2 : 1)} px per cycle in the open segments`));
 
   const keepLeft = root.querySelector(".sched-scroll")?.scrollLeft ?? 0; // survive a redraw
   const keepTop = root.querySelector(".sched-scroll")?.scrollTop ?? 0;
-  const { svg, cursor } = chart(rows, win, cw, (t) => setHash({ cycle: t }));
+  const { svg, cursor } = chart(rows, m, ans, (t) => setHash({ cycle: t }), setOpen);
   const scroller = h("div", { class: "sched sched-scroll" }, labels(rows, setHash, tracers), svg);
   root.replaceChildren(
-    h("section", { id: "schedule" },
-      h("h2", {}, "Schedule"), h("p", { class: "note" }, note), tracerNote, legend, controls, scroller),
+    h("section", { id: "schedule" }, h("h2", {}, "Schedule"), h("p", { class: "note" }, note), tracerNote, legend, controls, detailNote, scroller),
     cs.el);
-  scroller.addEventListener("wheel", (ev) => onWheel(ev, scroller, { from, cw, fit, setHash }), { passive: false });
+  scroller.addEventListener("wheel", (ev) => onWheel(ev, { scroller, m, setHash }), { passive: false });
   scroller.scrollTop = keepTop;
   const zoomed = !!anchorNext;
   if (anchorNext) { // a wheel zoom: keep the cycle under the pointer in place
-    scroller.scrollLeft = Math.max((anchorNext.t - from) * cw - anchorNext.px, 0);
+    const x = m.x(Math.floor(anchorNext.t));
+    scroller.scrollLeft = Math.max((x ?? 0) - anchorNext.px, 0);
     anchorNext = null;
   } else {
     scroller.scrollLeft = keepLeft;
   }
-  current = { detail, total, from, to, cw, cursor, scroller, api, tasks, fifo, defaultCycle, cycle: null, ...cs };
+  const c = { detail, api, total, available: true, cs, m, cursor, scroller, cycle: null, loaded: new Set(), detailNote, detailRows: rows.filter((r) => r.drawDetail) };
+  current = c;
+  let timer = null;
+  scroller.addEventListener("scroll", () => { clearTimeout(timer); timer = setTimeout(() => loadDetail(c), 120); });
   await showCycle(cycle, !zoomed);
+  loadDetail(c);
 }

@@ -238,9 +238,9 @@ The run report names each task from the task list:
     | acc | 0 | add_acc | 120 | 140 | 20 | – | – |
     | dma | 2 | store_C | 162 | 177 | 15 | L1 → L2 | 512 |
 
-and the viewer shows the profile and the memory tab in the browser (open
-the address it prints, or see "The viewer" below for the MICAS server; the
-schedule comes back in FLOW3 round 3):
+and the viewer shows the profile, the schedule with the cluster view and
+the memory tab in the browser (open the address it prints, or see "The
+viewer" below for the MICAS server):
 
     pixi run view out/flow/vecadd_task out/flow/vsum_task
 
@@ -287,6 +287,33 @@ snax-forge never reads them:
       report    report/design.md, report/run.md
 
 ### The viewer
+
+From `task` on, the Schedule tab draws the window as lanes: one per core
+(its classes, a band of its functions, a tick per CSR access), the DMA (a
+bar per copy), each mover and the accelerator (a bar per task, coloured by
+its classes from `beat` on). A quiet stretch of 16 cycles or more, where no
+task or copy is open, is folded to a fixed width: hover it for what the
+cores did there, click it to open it (the ✕ in the ruler folds it again);
+the boot before the window stays folded. The wheel zooms the open cycles,
+shift + wheel scrolls. Click a cycle to show it in the cluster view under
+the schedule: every L1 bank by superbank, the interconnect, each mover's
+lanes and FIFO slots, the DMA with L2, the accelerator, and the cycle's
+lines. The right and left arrows step to the next or previous cycle with an
+event, shift + arrow to the next or previous task boundary; Play steps as
+the right arrow does. From `beat` on, detail rows under the lanes show each
+port's grants and refusals, the DMA's beats and bursts, the firings and
+pushes and each lane's FIFO count. Everything is in the address bar
+(`#run=...&view=schedule&open=...&cycle=...`), so a link shows the same.
+
+The recipe's `N` makes the vectors longer, so the accelerator's work stands
+out against the cores' and the DMA's; `examples/loop1/` walks such a run:
+
+    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set N=512 --trace stall
+
+    ...
+      check     passed: 486 cycles (main to forge_check); data 0 errors (512 words); counters add_acc 131 (128 beats)
+      convert   run/events.log -> profile.json, trace.jsonl (2150 events in the window; boot 7238; sources acc, acc_a, acc_b, acc_out, dma)
+      report    report/design.md, report/run.md
 
 From `beat` on, the viewer's memory tab shows where each container lies in
 L1 and L2 and how its words move (D96, D97): the marks the run's level has

@@ -117,10 +117,11 @@ no build step, offline, for humans; LLMs read the reports (D99). Views read the 
 design's dataclasses, not raw JSON. → `viz/`.
 
 **D57** · viz — The run views are a schedule with the cluster view under it at the selected cycle,
-kept in the URL hash; tasks are paired once in Python, one colour means one thing in every view. The
-schedule covers the program's window with core lanes; quiet stretches of at least FOLD_MIN cycles
-fold, open on a click and stay open in the hash. The cluster view shows the data side at the cycle,
-stepped by event or task boundary. → `viz/schedule.py`, `viz/cluster.py`, `viz/static/`.
+kept in the URL hash. Python answers every fold, pairing, lookup and step and `static/` only draws
+the answers, so a view never disagrees with the reports; one colour means one thing in every view.
+The schedule covers the program's window with core lanes; quiet stretches of at least FOLD_MIN
+cycles fold, open on a click and stay open in the hash. The cluster view shows the data side at the
+cycle, stepped by event or task boundary. → `viz/schedule.py`, `viz/cluster.py`, `viz/static/`.
 
 **D64** · lower — The task list has `configure`, `start`, `sync` and `read` steps, placed where the
 list chooses. Lowering adds only the waits correctness needs, one per component, and leaves out a

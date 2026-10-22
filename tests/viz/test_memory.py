@@ -399,7 +399,7 @@ def test_a_read_back_long_after_its_grant_is_in_that_cycle_only(runs):
     """A held read: acc_a's grant at 10 gets its data at 210, 200 cycles later."""
     ev = Events()
     late = ev.grant(10, "acc_a.lane0", L1, b=0, task="add_acc_a", back=210)
-    rv = replace(runs["default"], index=ev.index(), events=list(ev.events), times=[10])
+    rv = replace(runs["default"], index=ev.index())
     assert api.memory_cycle(rv, 210) == {"t": 210, "level": "stall", "events": [],
                                          "returns": [late]}  # fmt: skip
     assert api.memory_cycle(rv, 10)["events"] == [late]
