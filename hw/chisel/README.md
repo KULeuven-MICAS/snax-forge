@@ -94,6 +94,18 @@ variable to the submodule's cases.
 
 ## Tests
 
+Every module has a spec; the random ones drive it with seeded random data,
+configurations, Decoupled gaps and stalls (`Source` and `Sink` hold valid
+and bits until fire) and compare it every cycle with a Scala model written
+from the documented behaviour, never from the Chisel code:
+
+| Spec | Random | Model |
+|---|---|---|
+| `AccumulatorRandomSpec` | lanes, n, T, data, input gaps, output stalls | lane sums every T inputs (the docstring) |
+| `ElementwiseRandomSpec` | the three elementwise blocks: lanes, n, op, data, `a` and `b` gaps each its own, output stalls | `ElementwiseModel` |
+| `CsrManagerRandomSpec` | fields and widths, reads, writes and starts in and out of range, `rsp`/`ctrl` ready, `ro` | the protocol in `CsrManager`'s docstring |
+| `ShellRandomSpec` | per fixture: n, T, data, streamer gaps and stalls, polled or held starts | the two block models; the counter as `snax_shell.cpp` states it |
+
 The random specs run one test per seed of `Seeds` (scalatest names it
 "seed N"); `SNAX_FORGE_SEED=N pixi run -e hw chisel-test` runs only seed N.
 
@@ -141,6 +153,9 @@ two reductions and a barrier between each.
 
 ## Conventions the generated code will have to follow
 
+- **Random tests for every module.** Each Chisel module gets a seeded random
+  spec against a Scala model (Tests above): not necessarily comprehensive,
+  but its function under random data and random stalls.
 - **Elastic everywhere.** Every port is `Decoupled`. Because the SDFG has
   already fixed allocation, schedule and binding, latency balancing is the only
   residual problem, and ready/valid turns it from a correctness obligation into

@@ -67,5 +67,7 @@ want to reverse, implementation details in module docstrings and tests.
   hjson files have schemas (`snax_forge/gen/schema/`); versioned schemas for the contracts come
   with M6 (F2), not before.
 - Shared test helpers live in `tests/<package>/helpers.py`, not copied per file.
+- Every Chisel module gets a seeded random spec against a Scala model written from its documented
+  behaviour (random data and Decoupled stalls; `hw/chisel/README.md`, Tests).
 - Walk-throughs live in `examples/<name>/README.md`; a test checks every number one states, and
   their outputs are not checked in.
