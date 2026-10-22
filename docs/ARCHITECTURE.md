@@ -325,8 +325,7 @@ the design point is generated (hjson, headers, `data.h` with the reference
 executor's goldens, `main.c`), built and run, and the program checks itself;
 everything goes to `out/flow/<name>/`, with `flow.log`. The manual loop is
 flow, reports and viewer, then a changed `--set`; `examples/loop1/` walks
-it, out of date until FLOW3 round 3, and `examples/dot/` is parked until
-M13.
+it on SNAX-GVSoC, and `examples/dot/` is parked until M13.
 
 ## 6. Correctness
 
