@@ -1,0 +1,24 @@
+{
+ "design_point": "out/design/vecadd/design_point.json",
+ "tag": "snax_alu",
+ "units": [
+  {
+   "name": "acc",
+   "block": "ElementwiseTiledSpatial",
+   "params": {
+    "dataWidth": 64,
+    "lanes": 4,
+    "loopCountWidth": 32,
+    "supportedOps": ["add"],
+    "signed": true
+   },
+   "ports": [{"brm": "a", "block": "a"}, {"brm": "b", "block": "b"}, {"brm": "out", "block": "out"}],
+   "csrs": {
+    "rw": [{"pin": "loopCount", "width": 32}],
+    "start": "start",
+    "ro": ["busy", "counter"],
+    "tie": {"opSel": 0}
+   }
+  }
+ ]
+}

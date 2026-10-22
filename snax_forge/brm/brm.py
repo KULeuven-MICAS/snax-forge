@@ -571,8 +571,9 @@ def _check_implementations(b: Brm, design: dict[str, Param], what: str) -> None:
         if impl.binding is not None:
             try:
                 impl.binding = check_binding(
-                    impl.binding, design, b.interface.params, f"{w}.binding"
-                )
+                    impl.binding, design, b.interface.params,
+                    [p.name for p in b.interface.ports], f"{w}.binding",
+                )  # fmt: skip
             except ValueError as e:
                 raise BrmError(str(e)) from None
 

@@ -16,7 +16,10 @@ import importlib.util
 import shutil
 import sys
 import types
+from collections.abc import Sequence
 from pathlib import Path
+
+import pytest
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
@@ -63,6 +66,23 @@ def bound_vsum(w: int = 1, impl: str = "chisel_accumulator") -> Graph:
     d = Recipe.load(REPO / "recipes" / "vsum.json").with_params({"W": w}).to_dict()
     d["steps"][-1]["params"]["implementation"] = impl
     return apply_recipe(Recipe.from_dict(d), Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
+
+
+def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str:
+    """The design point of ``recipes/<recipe>.json`` (``--set`` each of ``sets``) on snax_alu,
+    made by the sandbox's and the design step's commands under ``tmp`` as the root (``root``),
+    as ``out/design/<name>/design_point.json``; that path, from ``tmp``."""
+    from snax_forge.design import __main__ as design_cli
+    from snax_forge.sandbox import __main__ as sandbox_cli
+
+    root(tmp)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp)
+        args = [str(REPO / "recipes" / f"{recipe}.json"), "--out", f"out/sandbox/{name}"]
+        assert sandbox_cli.main([*args, *(a for s in sets for a in ("--set", s))]) == 0
+        assert design_cli.main([f"out/sandbox/{name}/2_bind.snaxdfg", "--platform",
+                                str(SNAX_ALU), "--out", f"out/design/{name}"]) == 0  # fmt: skip
+    return f"out/design/{name}/design_point.json"
 
 
 def snax_cfg() -> types.ModuleType | None:

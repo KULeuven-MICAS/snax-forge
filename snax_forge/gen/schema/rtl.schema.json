@@ -1,0 +1,74 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "title": "SNAX-FORGE accelerator RTL spec",
+ "description": "rtl.json: a design point's accelerator resolved for hw/chisel's Emit --spec, concrete values only (snax_forge/gen/rtl.py, D138, C§17).",
+ "type": "object",
+ "properties": {
+  "design_point": {"description": "The design point by its path from the root.", "type": "string", "minLength": 1},
+  "tag": {"description": "The platform's accelerator_slot: the wrapper is <tag>_shell_wrapper.", "$ref": "#/$defs/name"},
+  "units": {"type": "array", "minItems": 1, "maxItems": 1, "items": {"$ref": "#/$defs/unit"}}
+ },
+ "required": ["design_point", "tag", "units"],
+ "additionalProperties": false,
+ "$defs": {
+  "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+  "unit": {
+   "type": "object",
+   "properties": {
+    "name": {"description": "The accelerated instance.", "$ref": "#/$defs/name"},
+    "block": {"description": "A block of hw/chisel/blocks.json.", "$ref": "#/$defs/name"},
+    "params": {
+     "description": "Every param of the block, concrete.",
+     "type": "object",
+     "additionalProperties": {
+      "anyOf": [
+       {"type": "integer"},
+       {"type": "boolean"},
+       {"type": "array", "minItems": 1, "items": {"type": "string"}}
+      ]
+     }
+    },
+    "ports": {
+     "description": "BRM port -> block port, in the BRM's port order.",
+     "type": "array",
+     "minItems": 1,
+     "items": {
+      "type": "object",
+      "properties": {"brm": {"$ref": "#/$defs/name"}, "block": {"$ref": "#/$defs/name"}},
+      "required": ["brm", "block"],
+      "additionalProperties": false
+     }
+    },
+    "csrs": {
+     "type": "object",
+     "properties": {
+      "rw": {
+       "description": "The configuration fields in CSR order from offset 0.",
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "pin": {"$ref": "#/$defs/name"},
+         "width": {"type": "integer", "minimum": 1, "maximum": 32}
+        },
+        "required": ["pin", "width"],
+        "additionalProperties": false
+       }
+      },
+      "start": {"description": "The start pin; its CSR follows the fields.", "$ref": "#/$defs/name"},
+      "ro": {"description": "The read-only CSRs after start (D130).", "const": ["busy", "counter"]},
+      "tie": {
+       "description": "Block pins tied to a constant.",
+       "type": "object",
+       "additionalProperties": {"type": "integer", "minimum": 0}
+      }
+     },
+     "required": ["rw", "start", "ro", "tie"],
+     "additionalProperties": false
+    }
+   },
+   "required": ["name", "block", "params", "ports", "csrs"],
+   "additionalProperties": false
+  }
+ }
+}

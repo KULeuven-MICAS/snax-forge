@@ -113,6 +113,15 @@ def test_binding_expressions_are_stored_canonical():
     assert got["args"]["lanes"] == "W * 1" and got["csrs"] == [{"field": "loopCount", "value": "n"}]
 
 
+def test_binding_ports_are_kept_in_port_order_when_given():
+    d = adder()
+    _impl(d)["binding"] = {**BINDING, "ports": {"out": "y", "b": "x1", "a": "x0"}}
+    got = Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding
+    assert list(got["ports"].items()) == [("a", "x0"), ("b", "x1"), ("out", "y")]
+    _impl(d)["binding"] = BINDING
+    assert "ports" not in Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding
+
+
 def _binding(**kw):
     return lambda d: _impl(d).update(binding={**BINDING, **kw})
 
@@ -131,6 +140,11 @@ BINDING_CASES = [
     ("csr name", _binding(csrs=[{"field": "T", "value": "m"}]), "uses \\['m'\\]"),
     ("csr field", _binding(csrs=[{"field": "a b", "value": "n"}]), "not a field name"),
     ("csr twice", _binding(csrs=[{"field": "x", "value": "n"}] * 2), "duplicate fields"),
+    ("ports object", _binding(ports=["a"]), "ports: must be an object"),
+    ("ports missing", _binding(ports={"a": "a", "b": "b"}), "must map every BRM port"),
+    ("ports unknown", _binding(ports={"a": "a", "b": "b", "out": "o", "c": "c"}), "every BRM"),
+    ("ports name", _binding(ports={"a": "a", "b": "b", "out": "o x"}), "not a block port name"),
+    ("ports twice", _binding(ports={"a": "x", "b": "x", "out": "out"}), "two BRM ports"),
 ]
 
 

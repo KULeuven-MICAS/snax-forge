@@ -455,7 +455,8 @@ against the registered kind.
     "args": {"lanes": "W"},
     "control": "counted",
     "csrs": [{"field": "loopCount", "value": "n"}, {"field": "len", "value": "T"}],
-    "wait": "pipelined"
+    "wait": "pipelined",
+    "ports": {"a": "in", "out": "out"}
    }
   },
 ```
@@ -920,7 +921,35 @@ binding's `csrs` field, and its `width`), then `start`, the start CSR's pin
 (bit 0 written 1 starts), then `ro`, busy and the counter. `tie` gives the
 block's pins tied to a constant (`opSel`, the op's encoding). No module
 names: `Emit` picks them and lists what it wrote in `emitted.json`, beside
-`sv/`.
+`sv/`. vecadd's, a fixture of the Chisel specs:
+
+<!-- snippet: hw/chisel/src/test/resources/rtl/vecadd/rtl.json -->
+```json
+{
+ "design_point": "out/design/vecadd/design_point.json",
+ "tag": "snax_alu",
+ "units": [
+  {
+   "name": "acc",
+   "block": "ElementwiseTiledSpatial",
+   "params": {
+    "dataWidth": 64,
+    "lanes": 4,
+    "loopCountWidth": 32,
+    "supportedOps": ["add"],
+    "signed": true
+   },
+   "ports": [{"brm": "a", "block": "a"}, {"brm": "b", "block": "b"}, {"brm": "out", "block": "out"}],
+   "csrs": {
+    "rw": [{"pin": "loopCount", "width": 32}],
+    "start": "start",
+    "ro": ["busy", "counter"],
+    "tie": {"opSel": 0}
+   }
+  }
+ ]
+}
+```
 
 **The wrapper**, `<tag>_shell_wrapper`, has the ports
 `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`: `clk_i`,
