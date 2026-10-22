@@ -235,11 +235,11 @@ def recorded_run(out: Path, level: str = "stall") -> Path:
 
     (out / "gen").mkdir(parents=True)
     (out / "design").mkdir()
-    for name in ("snax_alu.hjson", "snax_alu_streamer.hjson", "snax_alu_acc.hjson"):
+    for name in ("snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"):
         shutil.copy(RECORDED / name, out / "gen" / name)
     shutil.copy(RECORDED / "design_point.json", out / "design" / "design_point.json")
     shutil.copy(RECORDED / "tasks.json", out / "tasks.json")
-    cluster = load_cluster(out / "gen" / "snax_alu.hjson", out / "design" / "design_point.json")
+    cluster = load_cluster(out / "gen" / "snax_forge.hjson", out / "design" / "design_point.json")
     tasks = TaskList.from_dict(json.loads((RECORDED / "tasks.json").read_text()))
     check = json.loads((RECORDED / "check.json").read_text())
     syms = json.loads((RECORDED / "elf_symbols.json").read_text())
@@ -255,7 +255,7 @@ def recorded_run(out: Path, level: str = "stall") -> Path:
     (out / "run").mkdir()
     (out / "run" / "run.json").write_text(to_json({
         "design_point": "design/design_point.json",
-        "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
+        "hjson": ["gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson", "gen/snax_forge_acc.hjson"],
         "elf_symbols": syms, "trace_level": level, "trace_sources": sources,
     }))  # fmt: skip
     write_run(out / "run", profile, trace)

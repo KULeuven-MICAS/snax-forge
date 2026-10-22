@@ -4,7 +4,7 @@
 W = 4 by default), or of a given graph (``bound_vecmul``: vecmul bound by
 ``recipes/vecmul.json``; ``bound_vsum``: vsum by ``recipes/vsum.json``, or at
 another W and implementation), on
-``platforms/snax_alu.json`` (or a given platform), in a folder that stands
+``platforms/snax_forge.json`` (or a given platform), in a folder that stands
 for snax-forge's root: the platform's source hjson is copied into its
 ``platforms/``. The snax-gvsoc submodule (``SUB``) is read only where it is
 checked out (only CI's gvsoc job fetches it, D128); ``snax_cfg`` imports its reader.
@@ -24,16 +24,16 @@ import pytest
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.design.helpers import FIXTURES, REPO, SNAX_ALU, bound_vecadd
+from tests.design.helpers import FIXTURES, REPO, SNAX_FORGE, bound_vecadd
 
 SUB = REPO / "gvsoc" / "snax-gvsoc"
 HJSON = SUB / "sw" / "cfg" / "snax_alu_cluster.hjson"
-# snax_alu's source hjson (platforms/snax_alu.json's hjson)
-SOURCE = REPO / "platforms" / "snax_alu.hjson"
+# snax_forge's source hjson (platforms/snax_forge.json's hjson)
+SOURCE = REPO / "platforms" / "snax_alu_cluster.hjson"
 
 
 def root(tmp_path: Path) -> Path:
-    """``tmp_path`` as snax-forge's root: snax_alu's source hjson in its platforms/."""
+    """``tmp_path`` as snax-forge's root: snax_forge's source hjson in its platforms/."""
     (tmp_path / "platforms").mkdir(parents=True, exist_ok=True)
     shutil.copy(SOURCE, tmp_path / "platforms" / SOURCE.name)
     return tmp_path
@@ -43,10 +43,10 @@ def point(
     tmp_path: Path, w: int = 4, name: str = "vecadd", graph: Graph | None = None,
     platform: Platform | None = None,
 ) -> Path:  # fmt: skip
-    """A design point file of vecadd at ``w`` (or of ``graph``) on snax_alu (or ``platform``),
+    """A design point file of vecadd at ``w`` (or of ``graph``) on snax_forge (or ``platform``),
     named ``name``, under ``tmp_path`` as the root (``root``)."""
     root(tmp_path)
-    design = Design(platform or Platform.load(SNAX_ALU), graph or bound_vecadd(w))
+    design = Design(platform or Platform.load(SNAX_FORGE), graph or bound_vecadd(w))
     assert run_checks(design) == []
     path = tmp_path / "design" / name / "design_point.json"
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -69,7 +69,7 @@ def bound_vsum(w: int = 1, impl: str = "chisel_accumulator") -> Graph:
 
 
 def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str:
-    """The design point of ``recipes/<recipe>.json`` (``--set`` each of ``sets``) on snax_alu,
+    """The design point of ``recipes/<recipe>.json`` (``--set`` each of ``sets``) on snax_forge,
     made by the sandbox's and the design step's commands under ``tmp`` as the root (``root``),
     as ``out/design/<name>/design_point.json``; that path, from ``tmp``."""
     from snax_forge.design import __main__ as design_cli
@@ -81,7 +81,7 @@ def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str
         args = [str(REPO / "recipes" / f"{recipe}.json"), "--out", f"out/sandbox/{name}"]
         assert sandbox_cli.main([*args, *(a for s in sets for a in ("--set", s))]) == 0
         assert design_cli.main([f"out/sandbox/{name}/2_bind.snaxdfg", "--platform",
-                                str(SNAX_ALU), "--out", f"out/design/{name}"]) == 0  # fmt: skip
+                                str(SNAX_FORGE), "--out", f"out/design/{name}"]) == 0  # fmt: skip
     return f"out/design/{name}/design_point.json"
 
 

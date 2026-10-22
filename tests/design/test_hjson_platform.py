@@ -11,11 +11,11 @@ from snax_forge.design import Design, Platform, run_checks
 from snax_forge.design import __main__ as cli
 from snax_forge.design.hjson_platform import platform_from_hjson
 
-from .helpers import CFG, REPO, SNAX_ALU, bound_vecadd, platform_dict
+from .helpers import CFG, REPO, SNAX_FORGE, bound_vecadd, platform_dict
 
 NEW, OLD = CFG / "snax_alu_cluster.hjson", CFG / "snax_alu_cluster_old.hjson"
-# snax_alu's source: a copy of snax-gvsoc's sw/cfg/snax_alu_cluster.hjson
-SOURCE = REPO / "platforms" / "snax_alu.hjson"
+# snax_forge's source: a copy of snax-gvsoc's sw/cfg/snax_alu_cluster.hjson
+SOURCE = REPO / "platforms" / "snax_alu_cluster.hjson"
 needs_submodule = pytest.mark.skipif(
     not NEW.exists(),
     reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
@@ -30,7 +30,7 @@ CLUSTER = """{
   },
   dram: {address: 2147483648, length: 2147483648},
   acc_core: {snax_acc_cfg: [ACCS]},
-  // a streamer template as snax_alu's
+  // a streamer template as snax_alu_cluster's
   template: {
     data_reader_params: {temporal_dim: [1, 1], fifo_depth: [8, 8]},
     data_writer_params: {temporal_dim: [1], fifo_depth: [8]},
@@ -51,17 +51,18 @@ def read(path, name: str = "c"):
     return platform_from_hjson(path, name, path.parent)
 
 
-def test_snax_alu_round_trips_byte_for_byte():
-    p = Platform.load(SNAX_ALU)
-    assert p.to_json() == SNAX_ALU.read_text()
+def test_snax_forge_round_trips_byte_for_byte():
+    p = Platform.load(SNAX_FORGE)
+    assert p.to_json() == SNAX_FORGE.read_text()
     assert Platform.from_dict(p.to_dict()) == p
 
 
 def test_the_source_gives_the_checked_in_platform():
-    """platforms/snax_alu.json is `design from-hjson platforms/snax_alu.hjson snax_alu`."""
-    p = platform_from_hjson(SOURCE, "snax_alu")
-    assert p.to_json() == SNAX_ALU.read_text()
-    assert (p.hjson, p.accelerator_slot) == ("platforms/snax_alu.hjson", "snax_alu")
+    """platforms/snax_forge.json is `design from-hjson platforms/snax_alu_cluster.hjson
+    snax_forge`; its accelerator_slot is snax_forge, not the source's snax_alu."""
+    p = platform_from_hjson(SOURCE, "snax_forge")
+    assert p.to_json() == SNAX_FORGE.read_text()
+    assert (p.hjson, p.accelerator_slot) == ("platforms/snax_alu_cluster.hjson", "snax_forge")
 
 
 @needs_submodule
@@ -78,8 +79,8 @@ def test_the_old_hjson_gives_the_same_platform_but_for_the_name():
         "gvsoc/snax-gvsoc/sw/cfg/snax_alu_cluster_old.hjson",
     )
     assert replace(
-        old, name="snax_alu", hjson=SOURCE.relative_to(REPO).as_posix()
-    ) == Platform.load(SNAX_ALU)
+        old, name="snax_forge", hjson=SOURCE.relative_to(REPO).as_posix()
+    ) == Platform.load(SNAX_FORGE)
 
 
 def test_a_source_outside_the_root_is_refused(tmp_path):
@@ -90,7 +91,7 @@ def test_a_source_outside_the_root_is_refused(tmp_path):
 
 def test_what_is_read_and_what_is_small16s(tmp_path):
     p = read(cluster(tmp_path))
-    assert p == replace(Platform.load(SNAX_ALU), name="c", hjson="c.hjson", accelerator_slot="a")
+    assert p == replace(Platform.load(SNAX_FORGE), name="c", hjson="c.hjson")
     l1, l2 = p.l1, p.l2
     assert (l1.n_banks, l1.width_bits, l1.rows, l1.base_addr, l1.wide_bits) == (
         32, 64, 512, 0x1000_0000, 512
@@ -146,12 +147,12 @@ def test_from_hjson_writes_the_platform_and_keeps_an_existing_one(tmp_path, monk
     monkeypatch.setattr(cli, "PLATFORMS", tmp_path / "platforms")
     monkeypatch.setattr(cli, "ROOT", tmp_path)
     acc = ACC.replace("NAME", "snax_alu")
-    src = cluster(tmp_path, accs=acc, name="platforms/snax_alu.hjson")
-    assert cli.main(["from-hjson", str(src), "snax_alu"]) == 0
-    assert (tmp_path / "platforms" / "snax_alu.json").read_text() == SNAX_ALU.read_text()
-    assert cli.main(["from-hjson", str(src), "snax_alu"]) == 1
+    src = cluster(tmp_path, accs=acc, name="platforms/snax_alu_cluster.hjson")
+    assert cli.main(["from-hjson", str(src), "snax_forge"]) == 0
+    assert (tmp_path / "platforms" / "snax_forge.json").read_text() == SNAX_FORGE.read_text()
+    assert cli.main(["from-hjson", str(src), "snax_forge"]) == 1
     assert "pass --force" in capsys.readouterr().err
-    assert cli.main(["from-hjson", str(src), "snax_alu", "--force"]) == 0
+    assert cli.main(["from-hjson", str(src), "snax_forge", "--force"]) == 0
     bad = cluster(tmp_path, accs="")
     assert cli.main(["from-hjson", str(bad), "other"]) == 1
     assert "[hjson.accelerators]" in capsys.readouterr().err
@@ -166,10 +167,10 @@ def test_a_slot_name_that_is_no_identifier(tmp_path):
     assert e.value.codes == ["hjson.value"] and "snax_acc_name" in str(e.value)
 
 
-def test_vecadd_w4_designs_on_snax_alu_inside_the_tcdm_without_allocating_it():
+def test_vecadd_w4_designs_on_snax_forge_inside_the_tcdm_without_allocating_it():
     """The first nonzero L1 base end to end in the design step, beside a 2 GiB L2."""
     tracemalloc.start()
-    d = Design(Platform.load(SNAX_ALU), bound_vecadd(4))
+    d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
     assert run_checks(d) == []
     _, peak = tracemalloc.get_traced_memory()
     tracemalloc.stop()

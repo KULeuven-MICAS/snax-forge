@@ -53,7 +53,7 @@ def test_the_vecadd_spec(vecadd):
     assert d == spec.to_dict()
     assert d == {
         "design_point": "design/vecadd/design_point.json",
-        "tag": "snax_alu",
+        "tag": "snax_forge",
         "units": [{
             "name": "acc",
             "block": "ElementwiseTiledSpatial",
@@ -180,6 +180,6 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
         mp.chdir(root)
         assert rtl.main([str(path), "--fixture", "fx"]) == 0
     assert sorted(f.name for f in (root / "fx").iterdir()) == [
-        "rtl.json", "snax_alu_streamer.hjson", "vectors.json"
+        "rtl.json", "snax_forge_streamer.hjson", "vectors.json"
     ]  # fmt: skip
     assert "wrote fx/rtl.json" in capsys.readouterr().out

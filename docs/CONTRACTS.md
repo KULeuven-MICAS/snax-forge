@@ -37,9 +37,9 @@ refuses them (open item 21).
 reduction's result depends on accumulation order, which the reference
 executor matches only once a BRM defines that order.
 
-The L1 of `platforms/snax_alu.json` (section 13):
+The L1 of `platforms/snax_forge.json` (section 13):
 
-<!-- snippet: platforms/snax_alu.json -->
+<!-- snippet: platforms/snax_forge.json -->
 ```json
  "l1": {
   "n_banks": 32,
@@ -333,7 +333,7 @@ bound `count_k`, stride sum_d a_dk s_k stride_d; one spatial loop per range
 dimension (the last first): its length and step * stride_d. The spatial
 bounds must be the streamer's and the addresses must be those the BRM's
 nest gives through the same layout (`lower/streams.py`). vecadd's design
-point on `platforms/snax_alu.json` gives `tests/run/fixtures/vecadd/tasks.json`
+point on `platforms/snax_forge.json` gives `tests/run/fixtures/vecadd/tasks.json`
 exactly.
 
 The end of `vecadd`'s task list: the adder's four tasks are configured one
@@ -686,7 +686,7 @@ whose `out` is one lane every `T = N / W` firings (D104):
 
 The SNAX cluster around the accelerators (D84): everything of the cluster
 that is not the accelerator. A platform file lives in `platforms/`
-(`small16.json`, a small one without a source hjson; `snax_alu.json`, read
+(`small16.json`, a small one without a source hjson; `snax_forge.json`, read
 from snax_cluster's hjson); it never names a recipe,
 and a recipe never names it. `Platform.load(path)`; every field is written,
 missing keys take their defaults (`l2` missing: no L2), unknown keys and
@@ -762,15 +762,15 @@ agree. What the hjson does not hold (dtype, elements per word,
 `wait_mode`) is small16's. The platform records the
 file (`hjson`, which must be under snax-forge's root, `hjson.path`) and
 `accelerator_slot`, `snax_forge`, not the source's `snax_acc_name`; the
-source must still have exactly one accelerator, its name an identifier. `snax_alu.json` comes from
-`platforms/snax_alu.hjson`, a verbatim copy of snax-gvsoc's
-`sw/cfg/snax_alu_cluster.hjson` refreshed by hand (its diff the check, as
-D126); snax-gvsoc's `_old` copy gives the same platform.
+source must still have exactly one accelerator, its name an identifier.
+`snax_forge.json` comes from `platforms/snax_alu_cluster.hjson`, a verbatim
+copy of snax-gvsoc's `sw/cfg/snax_alu_cluster.hjson` refreshed by hand (its
+diff the check, as D126); snax-gvsoc's `_old` copy gives the same platform.
 
-<!-- snippet: platforms/snax_alu.json -->
+<!-- snippet: platforms/snax_forge.json -->
 ```json
- "hjson": "platforms/snax_alu.hjson",
- "accelerator_slot": "snax_alu",
+ "hjson": "platforms/snax_alu_cluster.hjson",
+ "accelerator_slot": "snax_forge",
 ```
 
 ## 14. Design checks
@@ -941,7 +941,7 @@ names: `Emit` picks them and lists what it wrote in `emitted.json`, beside
 ```json
 {
  "design_point": "out/design/vecadd/design_point.json",
- "tag": "snax_alu",
+ "tag": "snax_forge",
  "units": [
   {
    "name": "acc",

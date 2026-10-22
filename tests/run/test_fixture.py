@@ -18,7 +18,7 @@ HERE = Path(__file__).parent / "fixtures" / "vecadd"
 
 @pytest.fixture(scope="module")
 def recorded():
-    cluster = load_cluster(HERE / "snax_alu.hjson", HERE / "design_point.json")
+    cluster = load_cluster(HERE / "snax_forge.hjson", HERE / "design_point.json")
     tasks = TaskList.from_dict(json.loads((HERE / "tasks.json").read_text()))
     check = json.loads((HERE / "check.json").read_text())
     return cluster, tasks, check, read_events(HERE / "events.log")

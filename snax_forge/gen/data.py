@@ -17,7 +17,7 @@ container order, as one C array or two:
 The C type is the container's dtype (``int64_t`` for every design so far).
 Each array, golden included, is padded with zeros to whole DMA beats exactly
 as the memory plan's L2 layout is (``lower/layout.py``'s ``moved_bytes``,
-D105) and aligned to the beat (``l2.beat_bits``, 64 bytes on snax_alu).
+D105) and aligned to the beat (``l2.beat_bits``, 64 bytes on snax_forge).
 main.c (lower/c.py) reads the arrays by name: a DMA's L2 side is the array's symbol
 plus the task's offset into the container's L2 layout.
 

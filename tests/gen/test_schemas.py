@@ -43,23 +43,23 @@ def test_the_schemas_are_schemas(name):
 
 
 def test_the_writers_files_validate(folder):
-    validate("streamer", parsed(folder / "snax_alu_streamer.hjson"))
-    validate("accelerator", parsed(folder / "snax_alu_acc.hjson"))
+    validate("streamer", parsed(folder / "snax_forge_streamer.hjson"))
+    validate("accelerator", parsed(folder / "snax_forge_acc.hjson"))
 
 
 @pytest.mark.parametrize(
     ("name", "file", "edit"),
     [
-        ("streamer", "snax_alu_streamer.hjson", lambda d: d["data_reader_params"].pop("fifo_depth")),
-        ("streamer", "snax_alu_streamer.hjson", lambda d: d.update(snax_library_name="snax-alu")),
-        ("streamer", "snax_alu_streamer.hjson",
+        ("streamer", "snax_forge_streamer.hjson", lambda d: d["data_reader_params"].pop("fifo_depth")),
+        ("streamer", "snax_forge_streamer.hjson", lambda d: d.update(snax_library_name="snax-alu")),
+        ("streamer", "snax_forge_streamer.hjson",
          lambda d: d["data_writer_params"].update(num_channel=[0])),
-        ("streamer", "snax_alu_streamer.hjson", lambda d: d.clear()),
-        ("accelerator", "snax_alu_acc.hjson", lambda d: d.pop("fields")),
-        ("accelerator", "snax_alu_acc.hjson", lambda d: d.update(unit="SnaxAlu")),
-        ("accelerator", "snax_alu_acc.hjson", lambda d: d.update(signed=1)),
-        ("accelerator", "snax_alu_acc.hjson", lambda d: d.update(csr_base=978)),
-        ("accelerator", "snax_alu_acc.hjson", lambda d: d.update(inputs=[])),
+        ("streamer", "snax_forge_streamer.hjson", lambda d: d.clear()),
+        ("accelerator", "snax_forge_acc.hjson", lambda d: d.pop("fields")),
+        ("accelerator", "snax_forge_acc.hjson", lambda d: d.update(unit="SnaxAlu")),
+        ("accelerator", "snax_forge_acc.hjson", lambda d: d.update(signed=1)),
+        ("accelerator", "snax_forge_acc.hjson", lambda d: d.update(csr_base=978)),
+        ("accelerator", "snax_forge_acc.hjson", lambda d: d.update(inputs=[])),
     ],
 )  # fmt: skip
 def test_a_broken_file_does_not_validate(folder, name, file, edit):
@@ -98,7 +98,7 @@ def test_the_cluster_file_validates_against_snax_clusters_schema(folder):
     its refs resolved; its snax_acc_cfg entries go unchecked (the schema's "items:" typo, snax-forge
     open item 51)."""
     validator = Draft7Validator(json.loads(CLUSTER_SCHEMA.read_text()))
-    cluster = parsed(folder / "snax_alu.hjson")
+    cluster = parsed(folder / "snax_forge.hjson")
     validator.validate(_resolved(cluster, cluster, folder)["cluster"])
     source = parsed(SOURCE)
     validator.validate(_resolved(source, source, SOURCE.parent)["cluster"])
@@ -108,9 +108,15 @@ def test_the_cluster_file_validates_against_snax_clusters_schema(folder):
 
 
 @needs_cluster_schema
-def test_the_cluster_file_is_the_source_outside_the_slot(folder):
-    cluster, source = parsed(folder / "snax_alu.hjson"), parsed(SOURCE)
+def test_the_cluster_file_is_the_source_outside_the_slot_and_the_clusters_name(folder):
+    """The writer changes the slot, cluster.name and its entry in cluster.bender_target."""
+    cluster, source = parsed(folder / "snax_forge.hjson"), parsed(SOURCE)
+    assert cluster["cluster"]["name"] == "snax_forge_cluster"
+    renamed = [t.replace("snax_alu_cluster", "snax_forge_cluster")
+               for t in source["cluster"]["bender_target"]]  # fmt: skip
+    assert cluster["cluster"]["bender_target"] == renamed
     for d in (cluster, source):
         d["snax_alu_core_template"]["snax_acc_cfg"][0].clear()
+        del d["cluster"]["name"], d["cluster"]["bender_target"]
     del source["snax_alu_streamer_template"]
     assert cluster == source

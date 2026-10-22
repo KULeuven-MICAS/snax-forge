@@ -16,7 +16,7 @@ from snax_forge.lower.layout import Layout, LayoutError, dma_side
 from .helpers import (
     BOUND,
     SMALL16,
-    SNAX_ALU,
+    SNAX_FORGE,
     accel_node,
     bound_vecadd,
     bound_w8,
@@ -417,11 +417,11 @@ def test_a_layout_must_fit_its_memory():
 
 
 def test_a_pin_below_a_nonzero_base_gets_the_pin_at_the_memorys_first_byte():
-    """snax_alu's L1 starts at 0x1000_0000 and its L2 at 2**31: a pin below either is
+    """snax_forge's L1 starts at 0x1000_0000 and its L2 at 2**31: a pin below either is
     outside, and the fix pins it at the first byte, which then fits."""
 
     def pinned(a: int, b: int) -> Design:
-        d = Design(Platform.load(SNAX_ALU), bound_vecadd(4))
+        d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
         d.memory_spec = MemorySpec().with_changes([("A.l1.base", a), ("B.l2.base", b)])
         return d
 
@@ -435,14 +435,14 @@ def test_a_pin_below_a_nonzero_base_gets_the_pin_at_the_memorys_first_byte():
 
 
 def test_layouts_stay_below_snruntimes_top_of_l1():
-    """snax_alu's hjson has 2 cores: snRuntime keeps 2 x 1 KiB of stacks and 256 B at the top
+    """snax_forge's hjson has 2 cores: snRuntime keeps 2 x 1 KiB of stacks and 256 B at the top
     of L1 (start.S), so C's L1 layout (512 bytes, moved) may end there but not one beat past."""
     l1_end = 268435456 + 131072
     top = 2 * RUNTIME_STACK + RUNTIME_MARGIN
     assert top == 2304
 
     def pinned(c: int) -> Design:
-        d = Design(Platform.load(SNAX_ALU), bound_vecadd(4))
+        d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
         d.memory_spec = MemorySpec().with_changes([("C.l1.base", c)])
         return d
 
@@ -450,7 +450,7 @@ def test_layouts_stay_below_snruntimes_top_of_l1():
     (p,) = problems(pinned(l1_end - top - 512 + 64))
     assert (p.code, p.where) == ("memory.runtime", "C in l1")
     assert f"snRuntime keeps [{l1_end - top}, {l1_end}) at the top of L1" in p.message
-    assert "2 cores of platforms/snax_alu.hjson, 256 B for CLS and TLS" in p.message
+    assert "2 cores of platforms/snax_alu_cluster.hjson, 256 B for CLS and TLS" in p.message
     assert p.fix == f"pin it lower (--set memory.C.l1.base={l1_end - top - 512})"
     (p,) = problems(pinned(l1_end - 256))  # past the end: memory.fit's, not this check's
     assert p.code == "memory.fit"
@@ -459,7 +459,7 @@ def test_layouts_stay_below_snruntimes_top_of_l1():
 def test_a_platform_without_an_hjson_has_no_runtime_top():
     d = with_memory([("C.l1.base", 16 * 64 * 8 - 512)])  # small16: C ends at L1's end
     assert d.platform.hjson is None and problems(d) == []
-    d = Design(Platform.load(SNAX_ALU).with_changes([("hjson", "platforms/elsewhere.hjson")]),
+    d = Design(Platform.load(SNAX_FORGE).with_changes([("hjson", "platforms/elsewhere.hjson")]),
                bound_vecadd(4))  # fmt: skip
     d.memory_spec = MemorySpec().with_changes([("C.l1.base", 268435456 + 131072 - 512)])
     assert problems(d) == []

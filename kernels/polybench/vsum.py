@@ -3,7 +3,7 @@ Vector sum.
 
 int64, one element per 64-bit L1 word, as dot. A test kernel: it exists to
 exercise accumulate's Chisel Accumulator on its own, since dot binds two
-instances (elementwise_mul and accumulate) and snax_alu's board has one
+instances (elementwise_mul and accumulate) and snax_forge's board has one
 accelerator slot. The importer turns the Reduce into a sum map folding into
 ``out[0]`` with ``add``.
 

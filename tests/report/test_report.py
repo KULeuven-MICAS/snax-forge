@@ -56,7 +56,7 @@ def test_the_design_report_equals_its_sources(flows, key):
     cluster = api.load_run(folder).cluster
     h = r.header
     assert (h.kernel, h.recipe, h.symbols) == (key[0], key[0], {"N": 64})
-    assert (h.platform, h.passes) == ("snax_alu", dict(point.memory.passes))
+    assert (h.platform, h.passes) == ("snax_forge", dict(point.memory.passes))
     assert [c.name for c in r.components] == cluster.sources
     (a,) = r.accelerators
     unit = cluster.accelerator.unit
@@ -216,11 +216,11 @@ def test_the_recorded_vecadd_run(flows, tmp_path):
     real events render."""
     folder = tmp_path / "vecadd_task"
     shutil.copytree(flows[("vecadd", "task")], folder)
-    for f in ("snax_alu.hjson", "snax_alu_streamer.hjson", "snax_alu_acc.hjson"):
+    for f in ("snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"):
         shutil.copy(FIXTURE / f, folder / "gen" / f)
     shutil.copy(FIXTURE / "tasks.json", folder / "tasks.json")
     check = json.loads((FIXTURE / "check.json").read_text())
-    cluster = load_cluster(FIXTURE / "snax_alu.hjson", FIXTURE / "design_point.json")
+    cluster = load_cluster(FIXTURE / "snax_forge.hjson", FIXTURE / "design_point.json")
     profile, trace = convert(read_events(FIXTURE / "events.log"), cluster,
                              TaskList.load(FIXTURE / "tasks.json"), check["total_cycles"], "task",
                              check["functional_check"])  # fmt: skip

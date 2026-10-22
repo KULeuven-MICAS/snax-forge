@@ -323,7 +323,8 @@ Next free number: 88.
     `tb.cpp` in snax-gvsoc that both sides read, as the unit's cases are.
     At the latest in GEN2b.
 86. Generated accelerators beyond the default: a custom tag
-    (`--set accelerator_slot=snax_forge_<x>`) is untested, nothing checks
+    (`--set accelerator_slot=snax_forge_<x>`) is untested past the
+    generator's file names (not in a bundle or on snax_cluster), nothing checks
     that a tag starts with `snax_forge` (a `gen.tag` rule), and several
     generated accelerators per cluster wait for M13.
 87. snax_cluster's `hw/chisel/src/main/scala/snax/streamer/StreamParamGen.scala`

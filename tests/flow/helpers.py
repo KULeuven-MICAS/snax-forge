@@ -113,7 +113,7 @@ def write_events(variables: dict[str, str]) -> None:
     """The events a passing run writes to ``EVENTS`` for its ``TRACES``: the synthetic run of
     its cluster (beside the cluster file) and its task list (in the flow's folder)."""
     gen = Path(variables["GVRUN_ARGS"].partition("hjson=")[2].split()[0]).parent
-    cluster = load_cluster(gen / "snax_alu.hjson", gen.parent / "design" / "design_point.json")
+    cluster = load_cluster(gen / "snax_forge.hjson", gen.parent / "design" / "design_point.json")
     tasks = TaskList.from_dict(json.loads((gen.parent / "tasks.json").read_text()))
     Path(variables["EVENTS"]).write_text("\n".join(synthetic(cluster, tasks, level_of(variables)))
                                          + "\n")  # fmt: skip
@@ -187,6 +187,6 @@ def stubbed_flow(base: Path, design: str = "vecadd", level: str = "task", out: P
     out = out or base / f"{design}_{level}"
     with pytest.MonkeyPatch.context() as mp:
         stub(mp, out.parent / f".gvsoc_{out.name}")
-        run_flow(REPO / "recipes" / f"{design}.json", REPO / "platforms" / "snax_alu.json",
+        run_flow(REPO / "recipes" / f"{design}.json", REPO / "platforms" / "snax_forge.json",
                  graph_path=PLAINS[design], out=out, trace_level=level, **kw)  # fmt: skip
     return out

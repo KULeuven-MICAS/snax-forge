@@ -16,7 +16,7 @@ import snax.forge.Emit
   * (`data_writer_params`) `acc2stream_<k>_data_o` of `num_channel[k] * tcdm_data_width` bits, `_valid_o`, `_ready_i`;
   * per reader mover k `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; then `csr_req_addr_i`, `csr_req_data_i`
   * (`RegAddrWidth`, `RegDataWidth`: 32), `csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o`
-  * (32), `csr_rsp_valid_o`, `csr_rsp_ready_i`. `tcdm_data_width` is the cluster's `data_width`, 64 on snax_alu. No
+  * (32), `csr_rsp_valid_o`, `csr_rsp_ready_i`. `tcdm_data_width` is the cluster's `data_width`, 64 on snax_forge. No
   * fixture has reader-writer movers.
   *
   * The wrapper's ports are read from the emitted SystemVerilog's module header (firtool's: `input` or `output`, an

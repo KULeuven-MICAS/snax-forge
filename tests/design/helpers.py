@@ -1,6 +1,6 @@
 """Shared helpers for the SNAX-DESIGN tests.
 
-The platform is the checked-in ``platforms/small16.json`` (``snax_alu.json``
+The platform is the checked-in ``platforms/small16.json`` (``snax_forge.json``
 for a platform read from snax_cluster's hjson, the snax-gvsoc submodule's
 cluster files, which only CI's gvsoc job fetches, D128); the graphs are the SNAX-DFG
 fixtures of tests/dfg/fixtures (vecadd bound to ``elementwise_add`` with
@@ -24,7 +24,7 @@ from snax_forge.sandbox import Recipe, apply_recipe
 REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "dfg" / "fixtures"
 SMALL16 = REPO / "platforms" / "small16.json"
-SNAX_ALU = REPO / "platforms" / "snax_alu.json"
+SNAX_FORGE = REPO / "platforms" / "snax_forge.json"
 CFG = REPO / "gvsoc" / "snax-gvsoc" / "sw" / "cfg"  # empty unless the submodule is checked out
 RECIPE = REPO / "recipes" / "vecadd.json"
 BOUND = FIXTURES / "vecadd_accelerated.snaxdfg"
