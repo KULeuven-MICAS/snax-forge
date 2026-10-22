@@ -4,7 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-class SimpleAdderSpec extends AnyFlatSpec with ChiselScalatestTester {
+import snax.forge.ForgeTester
+
+class SimpleAdderSpec extends AnyFlatSpec with ForgeTester {
 
   private val W     = 32
   private val Lanes = 4

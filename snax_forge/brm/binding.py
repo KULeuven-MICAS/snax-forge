@@ -11,20 +11,25 @@
                                                       several for a block with more
                                                       than a count (the Accumulator's
                                                       loopCount then len)
-     "wait":    "lockstep"}                           when the block takes a beat
+     "wait":    "lockstep",                           when the block takes a beat
+     "ports":   {"a": "in", "out": "out"}}            optional: every BRM port -> the
+                                                      block's port of that role (by
+                                                      default the same name; GEN1)
 
 ``control`` and ``wait`` are registered kinds (D19): ``register_control``
 and ``register_wait``. ``counted`` is the only control: every block counts
 its own firings (D129). Which blocks exist is the generators' business
 (snax_forge/gen registers the GVSoC adapters; the Chisel side is not
 generated yet), so ``block`` is only a name here. Every expression is
-checked and stored canonical (snax_forge/expr.py). A binding may be null:
-the implementation is not generated yet.
+checked and stored canonical (snax_forge/expr.py). ``ports`` is written
+only when given, in the BRM's port order; whether its names are the block's
+ports is snax_forge/gen/rtl.py's check against the block catalogue. A
+binding may be null: the implementation is not generated yet.
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from typing import Any
 
 from snax_forge import expr
@@ -35,6 +40,7 @@ class BindingError(ValueError):
 
 
 KEYS = ("block", "args", "control", "csrs", "wait")
+OPTIONAL = ("ports",)
 CSR_KEYS = ("field", "value")
 
 # name -> what it means; extended by registration (D19)
@@ -66,18 +72,20 @@ register_wait("pipelined", "an L-stage pipeline or output register, one firing p
 
 
 def check_binding(
-    binding: Any, design: Mapping[str, Any], params: Mapping[str, Any], what: str
-) -> dict[str, Any]:
+    binding: Any, design: Mapping[str, Any], params: Mapping[str, Any], ports: Sequence[str],
+    what: str,
+) -> dict[str, Any]:  # fmt: skip
     """The binding with its expressions canonical; ``BindingError`` naming what is wrong.
 
     ``design`` are the BRM's design params (``args`` may use them), ``params``
-    all of its params (``csrs`` values may use them; ``n`` is a runtime one).
+    all of its params (``csrs`` values may use them; ``n`` is a runtime one),
+    ``ports`` the BRM's port names in order (``ports`` maps each of them).
     """
     if not isinstance(binding, Mapping):
         raise BindingError(f"{what}: must be null or an object")
-    unknown = sorted(set(binding) - set(KEYS))
+    unknown = sorted(set(binding) - set(KEYS) - set(OPTIONAL))
     if unknown:
-        raise BindingError(f"{what}: unknown keys {unknown} (allowed: {list(KEYS)})")
+        raise BindingError(f"{what}: unknown keys {unknown} (allowed: {list(KEYS + OPTIONAL)})")
     missing = [k for k in KEYS if k not in binding]
     if missing:
         raise BindingError(f"{what}: missing key {missing[0]!r}")
@@ -111,8 +119,26 @@ def check_binding(
     fields = [c["field"] for c in out_csrs]
     if len(set(fields)) != len(fields):
         raise BindingError(f"{what}.csrs: duplicate fields {fields}")
-    return {"block": block, "args": out_args, "control": binding["control"], "csrs": out_csrs,
-            "wait": binding["wait"]}  # fmt: skip
+    out = {"block": block, "args": out_args, "control": binding["control"], "csrs": out_csrs,
+           "wait": binding["wait"]}  # fmt: skip
+    if "ports" in binding:
+        out["ports"] = _ports(binding["ports"], ports, f"{what}.ports")
+    return out
+
+
+def _ports(m: Any, ports: Sequence[str], what: str) -> dict[str, str]:
+    """``ports`` checked: every BRM port once, each to a distinct block port name; in the BRM's
+    port order."""
+    if not isinstance(m, Mapping):
+        raise BindingError(f"{what}: must be an object, BRM port -> block port")
+    if set(m) != set(ports):
+        raise BindingError(f"{what}: maps {sorted(m)}; it must map every BRM port {list(ports)}")
+    for k, v in m.items():
+        if not isinstance(v, str) or not v.isidentifier():
+            raise BindingError(f"{what}.{k}: {v!r} is not a block port name")
+    if len(set(m.values())) != len(m):
+        raise BindingError(f"{what}: two BRM ports on one block port ({dict(m)})")
+    return {p: m[p] for p in ports}
 
 
 def _value(v: Any, allowed: Mapping[str, Any], what: str, noun: str) -> expr.Value:

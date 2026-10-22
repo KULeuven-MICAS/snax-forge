@@ -1,0 +1,28 @@
+{
+ "design_point": "out/design/vsum/design_point.json",
+ "ports": [
+  {
+   "port": "a",
+   "array": "A",
+   "lanes": 1,
+   "beats": 64,
+   "values": [701, 273, 22, -461, -385, -919, -850, -967, -650, 626, 298, 825, 7, 213, 941, 458, 264, 87, 119, 870, -446, 631, 341, -995, -212, 714, 108, -933, 529, 459, 693, -649, -822, 726, -956, 82, -840, -401, -38, -155, -194, -944, -990, -752, -984, 341, 51, 294, -486, 230, 528, -233, -79, 994, 609, 961, -241, 371, 900, 300, 680, 376, 408, -223]
+  },
+  {
+   "port": "out",
+   "array": "out_golden",
+   "lanes": 1,
+   "beats": 1,
+   "values": [1225, 0, 0, 0, 0, 0, 0, 0]
+  }
+ ],
+ "tasks": [
+  {
+   "name": "sum_acc",
+   "csrs": {"loopCount": 64, "len": 64},
+   "firings": 64,
+   "counter": 65,
+   "working": "SnaxShell: the counter is reset by the accepted start and counts each busy cycle; busy rises the cycle after the start. Pipelined, L 1, II 1, drain 0, inputs always valid and the output always ready: firing k (from 0) in busy cycle 1 + 1 * k, the last (63) in 64, its result pushed 1 later, the run's last cycle (a sum before it leaves while the next input is taken): 65 busy cycles"
+  }
+ ]
+}

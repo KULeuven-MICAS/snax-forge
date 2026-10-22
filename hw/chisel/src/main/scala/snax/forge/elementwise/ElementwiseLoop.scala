@@ -17,24 +17,12 @@ import chisel3.util._
   * FIFO that pushes data continuously and has no notion of when a run ends. Owning the trip count means the datapath
   * decides when it stops accepting, rather than trusting the producer to stop offering.
   *
-  * ==Handshake, and the two properties it gives up==
+  * ==Handshake: a join==
   *
-  * `ready` is passed straight through from the consumer: `a.ready` and `b.ready` are `out.ready`, gated only by `busy`.
-  * `out.valid` is the conjunction of both operand handshakes, i.e. it asserts on the cycle a transfer actually
-  * completes. Simple control, and correct as long as the producer supplies both operands together -- which is what a
-  * streamer delivering a tile does.
-  *
-  * Two consequences follow, and neither is a bug in the wiring so much as a contract on the producer:
-  *
-  *   1. '''Operands must arrive in lockstep.''' If `a.valid` is high while `b.valid` is low and the consumer is ready,
-  *      `a.ready` is still asserted, so that beat of `a` is consumed while no output is produced. The element is lost
-  *      and the two streams desynchronise permanently. A join would gate each operand's ready on the other's valid and
-  *      make this impossible; that is one extra AND term per operand, and it is the fix if this assumption ever has to
-  *      be relaxed. `ElementwiseLoopSpec` pins the behaviour explicitly so it cannot change silently.
-  *   1. '''`valid` depends on `ready`.''' Because `out.valid` includes both operand handshakes, and those include
-  *      `out.ready`, this unit will not assert `out.valid` into a consumer that is not ready. A consumer whose `ready`
-  *      is in turn a function of `valid` deadlocks against it. SNAX's streamer write port does not behave that way, so
-  *      this is safe in the intended setting and hazardous outside it.
+  * A firing takes a beat from `a` and `b` and gives one to `out` in the same cycle (D129's lockstep): `out.valid` is
+  * busy and both operands valid, `a.ready` busy, `b.valid` and `out.ready`, `b.ready` the same with `a.valid`. An
+  * operand that arrives alone waits for the other, so the two streams cannot desynchronise, and `valid` does not depend
+  * on `ready`. `ready` depends on the other operand's `valid`, which is legal (`SimpleAdder` is the same join).
   *
   * `loopCount` is sampled only at start, so it may change freely afterwards -- which is what a CSR write followed by a
   * start pulse gives you anyway. A start pulsed with `loopCount === 0` is ignored and the unit stays idle; a
@@ -88,15 +76,12 @@ class ElementwiseLoop(
   alu.io.b     := io.b.bits
   io.out.bits  := alu.io.out
 
-  // Ready is the consumer's ready, gated by busy. The busy term is not
-  // optional decoration: without it an idle unit would consume and discard
-  // whatever a free-running producer offered, which is precisely what owning
-  // the trip count exists to prevent.
-  io.a.ready := busy && io.out.ready
-  io.b.ready := busy && io.out.ready
-
-  // A transfer is happening on both operand channels this cycle.
-  io.out.valid := io.a.valid && io.a.ready && io.b.valid && io.b.ready
+  // The join. The busy term is not optional decoration: without it an idle
+  // unit would consume and discard whatever a free-running producer offered,
+  // which is precisely what owning the trip count exists to prevent.
+  io.a.ready   := busy && io.b.valid && io.out.ready
+  io.b.ready   := busy && io.a.valid && io.out.ready
+  io.out.valid := busy && io.a.valid && io.b.valid
 
   private val advance = io.a.fire && io.b.fire
   private val last    = advance   && (count + 1.U) === target

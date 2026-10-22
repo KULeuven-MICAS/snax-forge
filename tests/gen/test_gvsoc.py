@@ -423,6 +423,8 @@ def _csrs(*pairs):
 def _second_input(d):
     d["interface"]["ports"].insert(1, dict(d["interface"]["ports"][0], name="b"))
     d["dataflow"]["ports"]["b"] = d["dataflow"]["ports"]["a"]
+    for impl in d["implementations"].values():  # the binding's ports map every BRM port
+        impl["binding"]["ports"]["b"] = "b"
 
 
 ACCUMULATOR_CASES = [

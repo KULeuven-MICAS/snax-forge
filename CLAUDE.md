@@ -40,7 +40,9 @@ want to reverse, implementation details in module docstrings and tests.
   The single steps (`forge`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in
   README.md section 2.
 - Generator: `pixi run gen-gvsoc out/design/<name>/design_point.json` writes a design point's
-  hjson files, headers, `data.h` and `main.c` to `out/gvsoc/<name>/`.
+  hjson files, headers, `data.h` and `main.c` to `out/gvsoc/<name>/`. `pixi run gen-rtl
+  out/design/<name>/design_point.json` writes its `rtl.json` and the accelerator's RTL (sbt) to
+  `out/rtl/<name>/` (GEN1).
 - SNAX-GVSoC: `gvsoc/Makefile` (`make build`, `make sw`, `make run`), from the container's plain
   shell or through pixi (`pixi run make -C gvsoc ...`); `docs/RUN.md` walks through it.
 - Kernels: `pixi run kernels` lists the staged kernels in `kernels/` (tier, dtype, whether the
@@ -65,5 +67,7 @@ want to reverse, implementation details in module docstrings and tests.
   hjson files have schemas (`snax_forge/gen/schema/`); versioned schemas for the contracts come
   with M6 (F2), not before.
 - Shared test helpers live in `tests/<package>/helpers.py`, not copied per file.
+- Every Chisel module gets a seeded random spec against a Scala model written from its documented
+  behaviour (random data and Decoupled stalls; `hw/chisel/README.md`, Tests).
 - Walk-throughs live in `examples/<name>/README.md`; a test checks every number one states, and
   their outputs are not checked in.

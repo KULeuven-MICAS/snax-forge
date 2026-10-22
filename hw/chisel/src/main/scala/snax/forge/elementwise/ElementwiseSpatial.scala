@@ -24,9 +24,8 @@ import chisel3.util._
   *
   * ==Handshake==
   *
-  * `ready` passes straight through from the consumer and `out.valid` asserts when both operand transfers complete. See
-  * `ElementwiseLoop` for the two properties this trades away: operands must arrive in lockstep or a beat is silently
-  * dropped, and `valid` depends on `ready`, so a consumer whose `ready` is a function of `valid` deadlocks against it.
+  * A join, as `ElementwiseLoop`'s without busy: a firing takes a beat from `a` and `b` and gives one to `out` in the
+  * same cycle, an operand that arrives alone waits, and `valid` does not depend on `ready`.
   *
   * @param dataWidth
   *   bits per element, from the BRM port's dtype
@@ -67,8 +66,7 @@ class ElementwiseSpatial(
   }
   io.out.bits := VecInit(alus.map(_.io.out))
 
-  io.a.ready := io.out.ready
-  io.b.ready := io.out.ready
-
-  io.out.valid := io.a.valid && io.a.ready && io.b.valid && io.b.ready
+  io.a.ready   := io.b.valid && io.out.ready
+  io.b.ready   := io.a.valid && io.out.ready
+  io.out.valid := io.a.valid && io.b.valid
 }

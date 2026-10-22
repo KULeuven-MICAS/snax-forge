@@ -1,0 +1,18 @@
+{
+ "design_point": "out/design/vsum/design_point.json",
+ "tag": "snax_alu",
+ "units": [
+  {
+   "name": "acc",
+   "block": "Accumulator",
+   "params": {"width": 64, "accWidth": 64, "lanes": 1},
+   "ports": [{"brm": "a", "block": "in"}, {"brm": "out", "block": "out"}],
+   "csrs": {
+    "rw": [{"pin": "loopCount", "width": 32}, {"pin": "len", "width": 32}],
+    "start": "start",
+    "ro": ["busy", "counter"],
+    "tie": {}
+   }
+  }
+ ]
+}

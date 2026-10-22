@@ -4,7 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-class ElementwiseAluSpec extends AnyFlatSpec with ChiselScalatestTester {
+import snax.forge.ForgeTester
+
+class ElementwiseAluSpec extends AnyFlatSpec with ForgeTester {
 
   /** Random operand pairs per operation, on top of the edge cases in `ElementwiseModel.edgePairs`. */
   private val NumTests = 20

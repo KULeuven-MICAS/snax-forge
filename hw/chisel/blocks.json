@@ -1,0 +1,35 @@
+{
+ "ElementwiseTiledSpatial": {
+  "params": {
+   "dataWidth": {"type": "int", "min": 1},
+   "lanes": {"type": "int", "min": 1},
+   "loopCountWidth": {"type": "int", "min": 1, "max": 32},
+   "supportedOps": {
+    "type": "ops",
+    "values": {"add": 0, "sub": 1, "mul": 2, "and": 3, "or": 4, "xor": 5, "min": 6, "max": 7}
+   },
+   "signed": {"type": "bool"}
+  },
+  "ports": {"a": "in", "b": "in", "out": "out"},
+  "csr": {
+   "rw": [{"pin": "loopCount", "width": "loopCountWidth"}],
+   "start": "start",
+   "status": {"busy": "busy", "done": "done"},
+   "tie": [{"pin": "opSel", "width": 4, "op": "supportedOps"}]
+  }
+ },
+ "Accumulator": {
+  "params": {
+   "width": {"type": "int", "min": 1},
+   "accWidth": {"type": "int", "min": 1},
+   "lanes": {"type": "int", "min": 1}
+  },
+  "ports": {"in": "in", "out": "out"},
+  "csr": {
+   "rw": [{"pin": "loopCount", "width": 32}, {"pin": "len", "width": 32}],
+   "start": "start",
+   "status": {"busy": "busy", "done": "done"},
+   "tie": []
+  }
+ }
+}

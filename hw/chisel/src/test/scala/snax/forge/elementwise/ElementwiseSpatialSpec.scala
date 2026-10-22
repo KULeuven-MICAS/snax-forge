@@ -4,7 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-class ElementwiseSpatialSpec extends AnyFlatSpec with ChiselScalatestTester {
+import snax.forge.ForgeTester
+
+class ElementwiseSpatialSpec extends AnyFlatSpec with ForgeTester {
 
   /** Random beats per operation. Each beat carries `Lanes` independent operand pairs. */
   private val NumTests = 20
@@ -165,15 +167,18 @@ class ElementwiseSpatialSpec extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  it should "wire operand ready straight to the consumer ready" in {
+  it should "gate each operand's ready on the other's valid and the consumer's ready" in {
     test(new ElementwiseSpatial(dataWidth = W, lanes = Lanes)) { dut =>
-      // Pass-through, so ready does not depend on either operand's valid.
-      dut.io.a.valid.poke(false.B)
+      // A join: each ready is the other operand's valid and the consumer's ready.
+      dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(false.B)
 
       dut.io.out.ready.poke(true.B)
-      dut.io.a.ready.expect(true.B)
+      dut.io.a.ready.expect(false.B)
       dut.io.b.ready.expect(true.B)
+
+      dut.io.b.valid.poke(true.B)
+      dut.io.a.ready.expect(true.B)
 
       dut.io.out.ready.poke(false.B)
       dut.io.a.ready.expect(false.B)
@@ -181,30 +186,28 @@ class ElementwiseSpatialSpec extends AnyFlatSpec with ChiselScalatestTester {
     }
   }
 
-  it should "hold out.valid low unless the consumer is ready" in {
+  it should "raise out.valid whatever the consumer's ready" in {
     test(new ElementwiseSpatial(dataWidth = W, lanes = Lanes)) { dut =>
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
 
-      // NOTE: out.valid is the conjunction of both operand handshakes and so
-      // depends on out.ready -- the deliberate trade in this wiring.
+      // valid does not depend on ready: both operands valid is enough.
       dut.io.out.ready.poke(false.B)
-      dut.io.out.valid.expect(false.B)
+      dut.io.out.valid.expect(true.B)
 
       dut.io.out.ready.poke(true.B)
       dut.io.out.valid.expect(true.B)
     }
   }
 
-  it should "require operands in lockstep: a lone valid operand is consumed and lost" in {
+  it should "make a lone operand wait for the other" in {
     test(new ElementwiseSpatial(dataWidth = W, lanes = Lanes)) { dut =>
-      // Pins the contract rather than endorsing it: `a` is accepted while `b`
-      // is absent, so that beat is consumed with no output produced.
+      // `b` absent: `a` is not taken and no output is offered.
       dut.io.out.ready.poke(true.B)
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(false.B)
 
-      dut.io.a.ready.expect(true.B)
+      dut.io.a.ready.expect(false.B)
       dut.io.out.valid.expect(false.B)
     }
   }

@@ -23,7 +23,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | Viewers | `snax_forge/viz/` | `tests/viz/` | |
 | Reports | `snax_forge/report/` | `tests/report/` | |
 | Examples | `examples/` | `tests/flow/test_loop1.py` (on SNAX-GVSoC, marker `gvsoc`), `tests/flow/test_dot_example.py` (skipped while dot is parked) | |
-| Chisel blocks | `hw/chisel/` | `hw/chisel/src/test/` | |
+| Chisel blocks; a design point's accelerator RTL (`rtl.json`, the shell wrapper) | `hw/chisel/`, `snax_forge/gen/rtl.py` | `hw/chisel/src/test/`, `tests/gen/test_rtl.py` | `hw/chisel/blocks.json`, `hw/chisel/src/test/resources/rtl/` |
 | SNAX-GVSoC | the submodule `gvsoc/snax-gvsoc` (its own KULeuven-MICAS repository) | in that repository (`make regress`) | its `forge/` fixtures |
 | SNAX-GVSoC from snax-forge | `gvsoc/Makefile` | | |
 | Kernels (KER0) | `kernels/` | `tests/kernels/` | |
@@ -71,7 +71,7 @@ its tasks SG0 to SG7 and CI1 are in snax-gvsoc's `docs/plans/`, SG8 in its
 | GEN2a | A. The program for single-accelerator designs: task list → C with a mark per task, the accelerator's and streamer's headers, `data.h` from a datagen (inputs padded to beats, D105; golden from the reference executor), self-checking. Several accelerators on one core are not modelled (open item 79); dot, mul and accumulate driven by one core, is M13's composite (D112). Round 1: the datagen, the C backend, a generic app on snax-gvsoc's fixtures (snax-gvsoc `GEN2a.md`); round 2: the adder tree | LNK2a | `vecadd`, `vecmul`, `vsum`, and `vsum` on the adder tree at W = 4 check themselves on SNAX-GVSoC | `done` |
 | FLOW3 | A. The flow ends in a SNAX-GVSoC run (D136, D137) with its events at the levels `off` < `task` < `beat` < `stall` < `finegrained`, the converter into C§7, the reports (D99), the memory (D96), movement (D97), schedule and cluster views (D57), and `examples/loop1/`. Steps in snax-gvsoc `docs/plans/FLOW3.md` | GEN2a | 1a: `pixi run flow` on vecadd and vsum (`platforms/snax_alu.json`) ends in a checked SNAX-GVSoC run, in the container and CI's `gvsoc` job; 1b: at `--trace task` they pass with the converter's invariants, write the reports and open on the profile page; 2a: they pass at every level with every invariant, tracing changing neither `forge cycles:` nor the profile; 2b: `viz/api.py` answers their memory tab with exactly the marks each level allows, and each journey reaches its push; 3: they pass at the defaults (windows 226 and 255) and at `N=512` (vecadd at `W=4` and `W=8`, vsum at `W=1`, its accumulator BRM's only width, and vsum_tree at `W=4` and `W=8`) at every level, the class runs' invariant included, and through `viz/api.py` the schedule's segments cover the window exactly (each fold a quiet stretch of at least 16 cycles; a lane per core, the DMA, each mover and the accelerator), stepping visits exactly the event and boundary cycles and the cluster view names only its cycle's lines; the viewer draws them and loop1 runs again | `done` |
 | RET1 | A. SNAX-MODEL removed (D116): `snax_model/`, `scenarios/`, their tests and pixi tasks, the command list (`lower_program`, `program.py`), the cluster file (`lower/cluster.py`), `viz/memory.py` and `movement.py`, C§2–C§6 and C§8, and the entries true of SNAX-MODEL alone (to Retired). What the live path uses stays, trimmed: the task list, its values check and its waits (`placed_waits`, `lower/waits.py`), the streamer values and `derive.py` read the design point; `design/` owns the platform's L1, L2 and streamer types, with only the fields something reads; the accelerator kinds the reference executor runs move to `brm/function.py`; a BRM is checked against the generator's blocks. Nothing new is designed | FLOW3 round 1 | `pixi run test` and `pixi run lint` pass; no `snax_model` under `snax_forge/` or `tests/`; `gen-gvsoc` writes byte-identical files for vecadd, vecmul, vsum and vsum_tree before and after, and `tests/gen/test_fixture.py` passes unchanged; in the container `pixi run flow` on `vecadd` (`--trace task`) and `vsum` on `platforms/snax_alu.json` pass with windows 226 and 255 | done |
-| GEN1 | B. The Chisel datapath from the binding through `Emit` (D91), the `ctrl` adapter and the generated shell wrapper (D130) | GEN3 | Elaborates for `elementwise_add` and `accumulate` | todo |
+| GEN1 | B. The Chisel accelerator from a BRM binding (D91, D130, D138): the block catalogue `hw/chisel/blocks.json` and `Emit --describe`; `rtl.json` per design point (`gen/rtl.py`, checked against the catalogue); `Emit --spec` builds `<tag>_shell_wrapper` with its own `CsrManager` on ReqRspManager's protocol, a `CtrlAdapter` and the unit; `pixi run gen-rtl`, which the flow does not call. Fixtures in `hw/chisel/src/test/resources/rtl/`: vecadd and vecmul at W = 4, vsum at W = 1, vsum_tree at W = 4 and 8; random specs for both blocks, the manager and the wrapper (seeded) | GEN3 | `pixi run test` and `lint` pass and reproduce the fixtures' `rtl.json` and `vectors.json` byte for byte; with `SNAX_GVSOC_UNIT_CASES` set, `chisel-test` passes: `blocks.json` equals `--describe`, every fixture elaborates with exactly the port list of `snax_acc_wrapper.sv.tpl`'s `snax_disable_csr_manager` branch, the unit cases pass at the fixtures' params, the shell cases (worked from `snax_shell.cpp`) pass, and end to end the outputs equal the goldens and the counter the fixture's worked value, and the random specs (both blocks, the manager, the wrapper) equal their models on every seed; `gen-rtl` on vecadd writes the files its `emitted.json` lists; `gen-gvsoc` writes byte-identical files for the four designs; nothing changes in snax-gvsoc or snax_cluster | `done` |
 | LNK2b | B. The bundle for snax_cluster: the hjson, a `Bender.yml`, the changes snax_cluster needs (open item 51) | GEN1, LNK2a | snax_cluster builds from it with only the listed changes | todo |
 | GEN2b | B. GEN2a's ELF on snax_cluster's RTL, compared as D123 does | LNK2b, GEN2a | Deviation explained per phase | todo |
 | LNK3 | After M13. The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2b | Deviation explained per phase | todo |
@@ -109,8 +109,14 @@ reports again (1b, D137), and the GVSoC build's output is on the terminal
 beat, stall and instruction levels and the memory and movement views, round
 3 the `class` lines, `N` as a recipe param, the schedule and the cluster
 view (queries in Python, drawn by `static/` only, D57) and loop1 on
-SNAX-GVSoC (`ry/flow3-7`, snax-gvsoc's line checks strict). Next is GEN1,
-then the housekeeping pass and the single generator (open item 68).
+SNAX-GVSoC (`ry/flow3-7`, snax-gvsoc's line checks strict). GEN1 is done:
+`pixi run gen-rtl` writes a design point's `rtl.json`, checked against the
+block catalogue, and elaborates `<tag>_shell_wrapper` with its own CSR
+manager (D130, D138), checked against snax_cluster's template, `SnaxShell`'s
+rules and the goldens; its round 2 made the elementwise blocks joins (D129's
+lockstep: a lone operand waits, `valid` does not depend on `ready`). Next is LNK2b (the bundle for snax_cluster, open
+items 51 and 85), then the housekeeping pass and the single generator (open
+item 68).
 
 ## Open Items
 
@@ -126,7 +132,7 @@ LNK2a: 77 (the streamer lowered per design point, D134). Closed in
 FLOW3: 56 (D136), 57 and 60 (D137), and in its round 2a 23 and 25 (the
 values on beat events and the push event) and 39 (the beat trace's size,
 measured on SNAX-GVSoC).
-Next free number: 83.
+Next free number: 86.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -301,6 +307,21 @@ Next free number: 83.
     so the program can drop its check code and the flow compares them with
     the reference itself; until then the check is the program's own
     (D136).
+83. Control alignment with snax_cluster: a start with a zero count (the
+    blocks ignore it, the shell reads it as a finished run, counter 0); a
+    done CSR (a sticky bit cleared on start; a third read-only CSR amends
+    D130 and `SnaxShell`); where the counter lives (in the block, as GeMMX,
+    or in the adapter); blocks taking a Decoupled `ctrl`, so the adapter
+    goes; the ALU's own rules (open item 63). Decided with the alignment, at
+    the latest with M13's baseline (open item 79).
+84. `SnaxShell` aligned to the Chisel `CsrManager`: the shell's rule moves
+    from `snax_shell.cpp` into `snax_shell.hpp`, with case files and a
+    `tb.cpp` in snax-gvsoc that both sides read, as the unit's cases are.
+    At the latest in GEN2b.
+85. The `snax_alu` tag clash for LNK2b: the platform's `accelerator_slot`
+    is `snax_alu`, so the generated `snax_alu_shell_wrapper` would clash
+    with snax_cluster's hand-written one; renaming the slot for generated
+    designs is a matter of the hjson.
 
 ## Sync Reminders
 
