@@ -4,11 +4,11 @@
 > component can produce its output without reading another's code. Why each
 > is the way it is: the module docstrings and `docs/DECISIONS.md`.
 >
-> Sections 1, 7 and 9–17 are the flow: conventions, a run's profile and
+> Sections 1, 7 and 9–18 are the flow: conventions, a run's profile and
 > trace (D137), the task list (D64), the BRM (D68, D70), the SNAX-DFG (D77),
 > the recipe (D72), the platform (D84), the design checks (D85), the memory
-> plan and design point (D86, D87), the generated hjson files (D134) and the
-> accelerator RTL's spec (D138).
+> plan and design point (D86, D87), the generated hjson files (D134), the
+> accelerator RTL's spec (D138) and the bundle for snax_cluster (D139).
 > Sections 2–6 and 8 were SNAX-MODEL's and were retired with it in RET1
 > (D116); their numbers are kept, their text is in git history (commit
 > `cad6619`, before RET1).
@@ -699,7 +699,7 @@ once (section 14).
 | `base` | the platform this one was made from, or null for an original |
 | `changes` | what differs from `base`: `--set` path -> value, in the order set |
 | `hjson` | the source cluster file, a path from snax-forge's root, or null (small16): what the generator writes the cluster file from (section 16) |
-| `accelerator_slot` | the source's one accelerator slot (`snax_acc_name`), or null; `--set accelerator_slot=NAME` picks another, which the source must have |
+| `accelerator_slot` | the generated accelerator's name, `snax_forge` from `design from-hjson` (D131), or null; the generator gives it to the source's only slot (section 16); `--set accelerator_slot=NAME` picks another |
 | `l1`, `l2` | `L1Config`, `L2Config` (below); `l2` null for an L1-only cluster |
 | `wait_mode` | `poll` or `signal`: how the program waits for a task (the C backend refuses `signal`, `c.signal`) |
 | `streamers` | the streamer shell: `default`, then an entry per streamer it changes |
@@ -760,8 +760,9 @@ L2 from the `dram` range; `streamers.default`'s `temporal_dims` and
 `fifo_depth` from the one accelerator's streamer template, whose movers must
 agree. What the hjson does not hold (dtype, elements per word,
 `wait_mode`) is small16's. The platform records the
-file (`hjson`, which must be under snax-forge's root, `hjson.path`) and its
-slot (`accelerator_slot`). `snax_alu.json` comes from
+file (`hjson`, which must be under snax-forge's root, `hjson.path`) and
+`accelerator_slot`, `snax_forge`, not the source's `snax_acc_name`; the
+source must still have exactly one accelerator, its name an identifier. `snax_alu.json` comes from
 `platforms/snax_alu.hjson`, a verbatim copy of snax-gvsoc's
 `sw/cfg/snax_alu_cluster.hjson` refreshed by hand (its diff the check, as
 D126); snax-gvsoc's `_old` copy gives the same platform.
@@ -861,14 +862,16 @@ What `pixi run gen-gvsoc DESIGN_POINT [--out DIR]` writes per design point
 (D134, `snax_forge/gen/gvsoc.py`), default `out/gvsoc/<design>/`, and what
 SNAX-GVSoC's `snax_hjson` reads (`--param hjson=<dir>/<platform>.hjson`,
 snax-gvsoc `snax/snax_cfg.py`), with the program snax-gvsoc's generic app
-builds from it (`sw/apps/forge/` there). Each hjson and C file starts with a
+builds from it (`sw/apps/forge/` there). For `platforms/snax_forge.json`
+the three hjson files are `snax_forge.hjson`, `snax_forge_streamer.hjson`
+and `snax_forge_acc.hjson`. Each hjson and C file starts with a
 `//` comment naming the design point by its path from the root; the rest of
 an hjson file is JSON, which hjson reads. One design point gives
 byte-identical files wherever they are written.
 
 | File | Holds |
 |---|---|
-| `<platform>.hjson` | the cluster: the platform's `hjson`, its comments dropped and its key order kept, with `cluster.tcdm.banks`, `.size` (KiB), `data_width`, `cluster_base_addr`, `dma_data_width` and `dram` written from the platform, and the slot `accelerator_slot` set; the source's template, referred to only by the slot, dropped |
+| `<platform>.hjson` | the cluster: the platform's `hjson`, its comments dropped and its key order kept, with `cluster.tcdm.banks`, `.size` (KiB), `data_width`, `cluster_base_addr`, `dma_data_width` and `dram` written from the platform, `cluster.name` `snax_forge_cluster` (also in `cluster.bender_target`, in place of the source's name), and the slot set; the source's template, referred to only by the slot, dropped |
 | `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds`, `temporal_dim`, `num_channel` (64-bit channels) and `fifo_depth` |
 | `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
 | `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h` (`gen/headers.py`) |
@@ -876,15 +879,26 @@ byte-identical files wherever they are written.
 | `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens (`forge data:`), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
 | `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
 
-**The slot.** `snax_tcdm_ports` is the streamer's channels; the source's
+**The slot** is the source's only one, renamed: `snax_acc_name` is the
+platform's `accelerator_slot`, and its `bender_target` goes (the RTL comes
+from the bundle, section 18). `snax_tcdm_ports` is the streamer's channels; the source's
 `sparse_interconnect_config` becomes one group of that width (its
 granularity kept), or `snax_narrow_tcdm_ports` that many and
 `snax_wide_tcdm_ports` 0; `snax_num_rw_csr` is the fields and start,
-`snax_num_ro_csr` 2 (busy and the counter, D130); `snax_streamer_cfg` is
+`snax_num_ro_csr` 2 (busy and the counter, D130); then, after the source's
+other keys in their order, `snax_disable_csr_manager` `true` (the wrapper
+carries its own manager, D130), `snax_forge_rtl` `"rtl/files.f"` (the RTL's
+file list, relative to the cluster file; it exists only in a bundle,
+section 18, and SNAX-GVSoC ignores the key), `snax_streamer_cfg`
 `{$ref: "<slot>_streamer.hjson"}` and `snax_datapath_cfg`
 `{$ref: "<slot>_acc.hjson"}`. SNAX-GVSoC's reader checks the counts against
 the two files; snax_cluster's clustergen and snaxgen resolve a cross-file
 `$ref` only after LNK2b (open item 51).
+
+**The cluster.** `cluster.name` becomes `snax_forge_cluster` and, in
+`cluster.bender_target`, the entry equal to the source's `cluster.name`
+becomes it too (D139); a source whose `bender_target` does not hold its own
+name is `gen.source`.
 
 **Checks.** The streamer and accelerator files have snax-forge's schemas
 (`snax_forge/gen/schema/`, JSON Schema 2020-12); the cluster file
@@ -892,8 +906,8 @@ validates against snax_cluster's (snax-gvsoc's copy,
 `sw/docs/schema/snitch_cluster.schema.json`, where the submodule is checked
 out). A platform value the cluster file cannot express (an L1 that is not
 whole KiB, an L1 or L2 field it does not give back) is `gen.platform`, a
-platform without a source `gen.source`, a slot that is not the source's only
-one `gen.slot`.
+platform without a source `gen.source`, a source with no slot or several
+`gen.slot`.
 
 <!-- snippet: snax_forge/gen/schema/accelerator.schema.json -->
 ```json
@@ -912,7 +926,7 @@ only, no expressions, checked against the block catalogue
 | Key | Holds |
 |---|---|
 | `design_point` | the design point by its path from the root, as C§16's files name it |
-| `tag` | the platform's `accelerator_slot`; the wrapper is `<tag>_shell_wrapper` |
+| `tag` | the platform's `accelerator_slot`, `snax_forge` by default; the wrapper is `<tag>_shell_wrapper` |
 | `units` | one unit (more is `gen.instances`; links come with M13): `name` (the instance), `block` (a catalogue block), `params` (every block param, typed and in its limits), `ports` (`{brm, block}` per BRM port, in the BRM's port order, which is the streamer's reader and writer order) and `csrs` |
 
 A unit's `csrs` are in CSR order from offset 0 (`snax_csr_mux_demux`
@@ -963,3 +977,24 @@ bits with lane i at bits `[64i+63 : 64i]`. Inside: `CsrManager`
 block's start with the fields on its pins; ready is not busy; the counter
 is reset by an accepted start, counts busy cycles and holds after) and the
 unit.
+
+## 18. Bundle
+
+What `pixi run bundle DESIGN_POINT [--out DIR]` writes per design point
+(D111, D139, `snax_forge/gen/bundle.py`), default `out/bundle/<design>/`:
+everything snax_cluster needs to build the design's cluster, made afresh by
+the snax-forge checked out, never copied from `out/gvsoc/` or `out/rtl/`.
+
+| File | Holds |
+|---|---|
+| the root | section 16's files (gen-gvsoc's), the cluster file among them |
+| `rtl/rtl.json` | section 17's spec |
+| `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 17) |
+| `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out |
+| `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git) and `dirty` (true when the work tree has uncommitted changes) |
+
+**How snax_cluster takes it** (D139, LNK2b round 2): the cluster file's
+slot names `rtl/files.f` (`snax_forge_rtl`, relative to the cluster file);
+snaxgen reads the key and writes `generated/snax_forge.f`, which the vsim
+and Verilator builds read, so snax_cluster holds no dependency on
+snax-forge. The cluster is `snax_forge_cluster`, one Bender target.

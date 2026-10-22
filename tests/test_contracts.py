@@ -90,6 +90,7 @@ def test_snippet_is_verbatim(i):
         "## 15. Memory plan and design point",
         "## 16. Generated hjson files",
         "## 17. Accelerator RTL spec",
+        "## 18. Bundle",
     ],
 )
 def test_section_exists(heading):
