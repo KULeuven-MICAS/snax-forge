@@ -128,6 +128,11 @@ flow       = "python -m snax_forge.flow"
 # the cluster, streamer and accelerator hjson files, the headers, data.h, main.c and manifest.json to
 # out/gvsoc/<design>/
 gen-gvsoc  = "python -m snax_forge.gen"
+# Accelerator RTL (GEN1, D138): `pixi run gen-rtl out/design/vecadd/design_point.json [OUT_DIR]` writes rtl.json to
+# out/rtl/<design>/, then elaborates it through hw/chisel's `Emit --spec` into sv/ with emitted.json (sbt; the flow
+# does not call it); `--fixture DIR` writes a fixture of the Chisel specs instead (rtl.json, the streamer hjson,
+# vectors.json)
+gen-rtl    = "python -m snax_forge.gen.rtl"
 # Reports (REP1, D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/
 # (the flow writes them after every run)
 report     = "python -m snax_forge.report"

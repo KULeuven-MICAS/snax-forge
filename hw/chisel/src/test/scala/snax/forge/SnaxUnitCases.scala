@@ -8,8 +8,8 @@ import scala.jdk.CollectionConverters._
   * The case files (`tests/snax/unit/cases/`, one `.txt` each, in `tb.cpp`'s format: header lines, then `cycles` and one
   * line per cycle) are worked by hand from `SnaxUnit`'s rule (`snax/snax_unit.hpp`); snax-gvsoc's `tb.cpp` checks the
   * rule against them, and the Chisel specs drive their blocks through the same cases. They are read from the folder
-  * `SNAX_GVSOC_UNIT_CASES` names (e.g. `gvsoc/snax-gvsoc/tests/snax/unit/cases`); without it a spec cancels, since CI
-  * never fetches snax-gvsoc (D128).
+  * `SNAX_GVSOC_UNIT_CASES` names (e.g. `gvsoc/snax-gvsoc/tests/snax/unit/cases`); without it a spec cancels (the
+  * submodule not checked out). CI's chisel job sets it to the submodule's cases (GEN1).
   */
 object SnaxUnitCases {
 

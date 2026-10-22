@@ -2,11 +2,11 @@
 
 Hardware side of SNAX-FORGE: a hand-written library of accelerator blocks,
 their chiseltest specs, and `Emit`, which elaborates a catalogue of
-configurations to SystemVerilog. It is a project of its own: nothing here
-imports `snax_forge/`, and the Python side does not call it. The blocks are
-the reference implementations of the BRMs (`elementwise_add` names
-`ElementwiseTiledSpatial`); generating them from a BRM's hardware binding is
-GEN1 (M14).
+configurations to SystemVerilog and a design point's accelerator from its
+`rtl.json` (GEN1). It is a project of its own: nothing here imports
+`snax_forge/`, and the Python side calls it only through `pixi run gen-rtl`.
+The blocks are the reference implementations of the BRMs (`elementwise_add`
+names `ElementwiseTiledSpatial`).
 
 ## Why these versions
 
@@ -29,16 +29,57 @@ hw/chisel/
 ├── build.sbt
 ├── project/{build.properties,plugins.sbt}
 ├── .scalafmt.conf                      # copied verbatim from snax_cluster
+├── blocks.json                         # the block catalogue (D138)
 └── src/
     ├── main/scala/snax/forge/
-    │   ├── Emit.scala                  # elaboration entry point and catalogue
+    │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec
+    │   ├── Blocks.scala                # the block registry (blocks.json)
+    │   ├── shell/                      # rtl.json, CsrManager, CtrlAdapter, the shell wrapper
     │   ├── RepoPaths.scala             # out/hw and repository paths
     │   ├── samples/
     │   │   ├── SimpleAdder.scala       # elementwise archetype  (cf. vecadd)
     │   │   └── Accumulator.scala       # reduction archetype    (cf. dot)
     │   └── elementwise/                # ALU, loop, spatial, tiled-spatial
-    └── test/scala/snax/forge/          # one spec per module, plus a model
+    └── test/
+        ├── scala/snax/forge/           # one spec per module, plus a model; shell/ for GEN1
+        └── resources/rtl/<design>/     # GEN1's fixtures
 ```
+
+## A design point's accelerator (GEN1, D138)
+
+The boundary with the Python side is two files. `blocks.json`, checked in,
+is the signature of each block (params with types and limits, data ports,
+the `csr` section: read-write pins, start, busy and done, tied pins); the
+registry `Blocks` holds the same and builds the blocks, and `BlocksSpec`
+checks `Emit --describe` equal to it. `rtl.json`, per design point, is
+written and checked by `snax_forge/gen/rtl.py` against `blocks.json`
+(C§17); `Emit --spec rtl.json [--out DIR]` builds `<tag>_shell_wrapper`
+(`shell/`) into `DIR/sv/`, one file per module, with `DIR/emitted.json`:
+
+- `CsrManager`: snax_cluster's ReqRspManager protocol (the fields, start
+  held while busy, busy and the counter read-only, D130), as the core
+  reaches it after `snax_csr_mux_demux` with snax_cluster's manager off;
+- `CtrlAdapter`: an accepted start to the block's start and configuration
+  pins, ready while not busy, the counter, the tied pins;
+- the unit, a `Blocks` block.
+
+`pixi run gen-rtl DESIGN_POINT` does both steps (`docs/RUN.md` §6). The
+fixtures in `src/test/resources/rtl/<design>/` (`rtl.json`, the streamer
+hjson, `vectors.json`) come from the Python side, which checks them byte
+for byte (`tests/gen/test_rtl.py`); refresh one with
+
+    pixi run sandbox recipes/vsum_tree.json --set W=8 --out out/sandbox/vsum_tree_w8
+    pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_alu.json --out out/design/vsum_tree_w8
+    pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
+
+(the others from their recipe as it is, named after it). The specs on
+them: `ShellPortsSpec` (each wrapper's ports are the template's for its
+streamer hjson), `ShellCasesSpec` (the shell's rules, worked by hand from
+snax-gvsoc's `snax_shell.cpp`) and `ShellEndToEndSpec` (the CSR writes of
+`main.c`, an always-ready streamer: the goldens and the counter of
+`vectors.json`).
+
+## The unit cases
 
 `ElementwiseTiledSpatialLockstepSpec` drives `ElementwiseTiledSpatial` through
 snax-gvsoc's lockstep `SnaxUnit` cases (GEN3), and `AccumulatorRateSpec` the
@@ -47,7 +88,9 @@ case's `lanes`, GEN2a round 2), run lines included; both read the cases with `Sn
 `SNAX_GVSOC_UNIT_CASES` to their folder, e.g.
 `SNAX_GVSOC_UNIT_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/unit/cases pixi run -e hw
 chisel-test`; without it both are canceled, and the Accumulator's also when
-the folder has no fold case (a snax-gvsoc before step 6b).
+the folder has no fold case (a snax-gvsoc before step 6b). Both also run at
+the params of each GEN1 fixture of their block; CI's chisel job sets the
+variable to the submodule's cases.
 
 Package root is `snax.forge`, matching `snax.streamer` / `snax.xdma` in
 snax_cluster.
@@ -62,7 +105,7 @@ Python side.
 |---|---|
 | `pixi run chisel-compile` | compile Scala only |
 | `pixi run chisel-test` | run the chiseltest specs |
-| `pixi run chisel-gen` | elaborate everything to `out/hw/*.sv` |
+| `pixi run chisel-gen` | elaborate everything to `out/hw/*.sv`; `-- --describe` prints the catalogue, `-- --spec rtl.json` builds an accelerator |
 | `pixi run chisel-fmt` | scalafmt in place |
 | `pixi run chisel-check` | fail if unformatted (CI uses this) |
 | `pixi run chisel-clean` | drop build trees, keep the Coursier cache |
@@ -111,5 +154,4 @@ two reductions and a barrier between each.
 ## Not here yet
 
 Elastic wrapper, skid buffer, typed integer ALU set and lane replication.
-Elaborating from a BRM's hardware binding instead of the hand-written
-catalogue is GEN1 (M14, `docs/STATUS.md`).
+The bundle snax_cluster builds from (`Bender.yml`, the hjson) is LNK2b.

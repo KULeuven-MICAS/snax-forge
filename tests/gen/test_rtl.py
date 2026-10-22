@@ -163,3 +163,23 @@ def test_the_fixture_is_reproduced(tmp_path, design):
     for f in files:
         assert (out / f).read_bytes() == (fixture / f).read_bytes(), f
     validate("rtl", json.loads((fixture / "rtl.json").read_text()))
+
+
+def test_gen_rtl_writes_a_fixture(vecadd, capsys):
+    """``gen-rtl --fixture`` writes write_fixture's files, the design point named from the root
+    (the elaboration needs sbt, which the chisel job runs); a design point outside the root is
+    refused."""
+    from snax_forge.gen import gvsoc, rtl
+
+    path, root = vecadd
+    assert rtl.main([str(path), "--fixture", str(root / "fx")]) == 1
+    assert "[gen.point]" in capsys.readouterr().err
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(rtl, "ROOT", root)
+        mp.setattr(gvsoc, "ROOT", root)
+        mp.chdir(root)
+        assert rtl.main([str(path), "--fixture", "fx"]) == 0
+    assert sorted(f.name for f in (root / "fx").iterdir()) == [
+        "rtl.json", "snax_alu_streamer.hjson", "vectors.json"
+    ]  # fmt: skip
+    assert "wrote fx/rtl.json" in capsys.readouterr().out

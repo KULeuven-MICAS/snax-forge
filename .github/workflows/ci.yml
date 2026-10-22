@@ -62,8 +62,15 @@ jobs:
     name: Chisel format + unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # The unit cases the specs drive the blocks through (GEN3, GEN1), from the submodule.
+    env:
+      SNAX_GVSOC_UNIT_CASES: ${{ github.workspace }}/gvsoc/snax-gvsoc/tests/snax/unit/cases
     steps:
+      # gvsoc/snax-gvsoc at the pinned commit, shallow, for its unit cases only: nothing is built.
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 1
 
       - uses: prefix-dev/setup-pixi@v0.8.8
         with:
@@ -106,11 +113,23 @@ jobs:
           test -f out/hw/ElementwiseLoop_w32_t32_sel8.sv
           test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
 
+      # GEN1 (D138): every rtl.json fixture through `Emit --spec`, and every file its
+      # emitted.json lists must exist. (BlocksSpec, in the tests above, checks
+      # `Emit --describe` equal to hw/chisel/blocks.json.)
+      - name: Elaborate the rtl.json fixtures
+        run: |
+          for d in hw/chisel/src/test/resources/rtl/*/; do
+            name=$(basename "$d")
+            pixi run -e hw chisel-gen --spec "$d/rtl.json" --out "out/rtl/$name"
+            test -f "out/rtl/$name/emitted.json"
+            python3 -c 'import json, os, sys; d = sys.argv[1]; files = json.load(open(os.path.join(d, "emitted.json")))["files"]; missing = [f for f in files if not os.path.isfile(os.path.join(d, f))]; print(d, files); sys.exit(1 if missing or not files else 0)' "out/rtl/$name"
+          done
+
   # The flow on SNAX-GVSoC (D136): GVSoC built from the submodule, then
   # `pixi run flow` on vecadd and vsum, at trace off and task (D137: the events
   # converted, the reports written), and the tests marked `gvsoc`. The only
-  # job that fetches the submodule (D128); snax-gvsoc's own CI never needs
-  # snax-forge.
+  # job that builds the submodule (D128; the chisel job reads its unit cases);
+  # snax-gvsoc's own CI never needs snax-forge.
   gvsoc:
     name: Flow on SNAX-GVSoC
     # Only hosts Docker and Node; pinned as snax-gvsoc's CI is.

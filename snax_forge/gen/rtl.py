@@ -3,6 +3,7 @@
     write_rtl(design_point, out_dir, root=None) -> RtlSpec
     vectors(design_point, root=None) -> dict
     write_fixture(design_point, out_dir, root=None) -> list[str]
+    python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]    (pixi gen-rtl)
 
 ``rtl.json`` is the boundary between the Python side and ``hw/chisel/``:
 concrete values only, which ``Emit --spec`` reads to build
@@ -43,6 +44,9 @@ signature of each Chisel block, equal to ``Emit --describe``), each a
                      a width is not 1 to 32 bits
     gen.tie          a tie's ops param holds more than one op
 
+and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or
+did not write a file its ``emitted.json`` lists.
+
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/
 <design>/`` holds ``rtl.json``, the design's streamer hjson (gvsoc.py's) and
 ``vectors.json``, which the Chisel specs drive the wrapper with: per BRM port
@@ -55,7 +59,10 @@ shell's field values and the counter worked from SnaxShell's rules
 
 from __future__ import annotations
 
+import argparse
 import json
+import subprocess
+import sys
 import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -64,9 +71,11 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
-from snax_forge.common import repo_root, to_json
+from snax_forge.common import cwd_relative, repo_root, to_json
+from snax_forge.design import DesignError
 from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import instance_nodes
+from snax_forge.lower import CError
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure
 
@@ -382,3 +391,61 @@ def write_fixture(design_point: str | Path, out_dir: str | Path,
         (out / streamer).write_text((Path(gen) / streamer).read_text())
     (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
     return [RTL_JSON, streamer, VECTORS_JSON]
+
+
+# =============================================================================
+# The command line
+# =============================================================================
+
+CHISEL = ROOT / "hw" / "chisel"
+EMITTED_JSON = "emitted.json"
+
+
+def elaborate(rtl_json: Path, out_dir: Path) -> list[Path]:
+    """``Emit --spec`` on ``rtl_json`` into ``out_dir`` (``sv/`` and ``emitted.json``) through
+    sbt in ``hw/chisel/``; the files ``emitted.json`` lists, each checked to exist (firtool's
+    failures do not always reach sbt's exit status)."""
+    cmd = ["sbt", "-batch",
+           f"runMain snax.forge.Emit --spec {rtl_json.resolve()} --out {out_dir.resolve()}"]  # fmt: skip
+    done = subprocess.run(cmd, cwd=CHISEL, check=False)
+    listing = out_dir / EMITTED_JSON
+    if done.returncode != 0 or not listing.is_file():
+        raise GenError("gen.elaborate", f"Emit --spec {rtl_json} failed (exit {done.returncode})")
+    files = [out_dir / f for f in json.loads(listing.read_text())["files"]]
+    missing = [str(f) for f in files if not f.is_file()]
+    if missing:
+        raise GenError("gen.elaborate", f"{listing} lists files that were not written: {missing}")
+    return [*files, listing]
+
+
+def main(argv: list[str] | None = None) -> int:
+    """``python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]`` (pixi
+    ``gen-rtl``): ``rtl.json`` into ``OUT_DIR`` (default ``out/rtl/<design>/``), then the
+    accelerator through ``Emit --spec`` into its ``sv/`` with ``emitted.json``; with
+    ``--fixture``, a fixture of hw/chisel's specs into ``DIR`` instead (``write_fixture``, no
+    elaboration). The flow does not call it (D136). Exit 0 when written, 1 when refused."""
+    ap = argparse.ArgumentParser(prog="python -m snax_forge.gen.rtl")
+    ap.add_argument("design_point", type=Path, help="a design_point.json (the design step's)")
+    ap.add_argument("out_dir", type=Path, nargs="?", help="output directory (out/rtl/<design>)")
+    ap.add_argument("--fixture", type=Path, help="write a fixture of the Chisel specs here")
+    args = ap.parse_args(argv)
+    try:
+        if args.fixture is not None:
+            for f in write_fixture(args.design_point, args.fixture):
+                print(f"wrote {cwd_relative(args.fixture / f)}")
+            return 0
+        out = args.out_dir or OUT / DesignPoint.load(args.design_point).name
+        spec = write_rtl(args.design_point, out)
+        print(
+            f"wrote {cwd_relative(out / RTL_JSON)}: {spec.tag}_shell_wrapper, {spec.units[0].block}"
+        )
+        for f in elaborate(out / RTL_JSON, out):
+            print(f"wrote {cwd_relative(f)}")
+    except (GenError, CError, DesignError) as e:
+        print(e, file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

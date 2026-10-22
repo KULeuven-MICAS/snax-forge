@@ -433,3 +433,26 @@ snax_cluster's ALU in the slot; this cluster file puts the generated
 accelerator there, so gvrun builds the system from its JSON configuration
 instead, on the same installed components. `GVRUN_ARGS` takes gvrun's own
 options too, such as `--trace=snax_acc0/unit` for the unit's trace.
+
+## 6. The accelerator's RTL
+
+The same design point gives the accelerator's Chisel RTL (GEN1, D138), for
+snax_cluster to build later (LNK2b); the flow does not call it. `gen-rtl`
+writes `rtl.json` (C§17), then elaborates it through `hw/chisel/`'s
+`Emit --spec` (sbt, so the first run fetches the Chisel jars):
+
+    pixi run gen-rtl out/design/vecadd/design_point.json
+
+    ...
+    wrote out/rtl/vecadd/rtl.json: snax_alu_shell_wrapper, ElementwiseTiledSpatial
+    wrote out/rtl/vecadd/sv/ElementwiseAlu_w64_add.sv
+    wrote out/rtl/vecadd/sv/ElementwiseTiledSpatial_w64_n4_t32_add.sv
+    wrote out/rtl/vecadd/sv/snax_alu_csr_manager.sv
+    wrote out/rtl/vecadd/sv/snax_alu_ctrl_adapter.sv
+    wrote out/rtl/vecadd/sv/snax_alu_shell_wrapper.sv
+    wrote out/rtl/vecadd/emitted.json
+
+`snax_alu_shell_wrapper` has the ports snax_cluster's
+`snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`, and
+carries its own CSR manager (D130); `emitted.json` lists its modules and
+files. `hw/chisel/README.md` has the specs that check it.
