@@ -102,7 +102,7 @@ jobs:
         run: |
           ls -la out/hw
           test -f out/hw/SimpleAdder.sv
-          test -f out/hw/Accumulator.sv
+          test -f out/hw/Accumulator_w32_a32_n1.sv
           test -f out/hw/ElementwiseLoop_w32_t32_sel8.sv
           test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
 

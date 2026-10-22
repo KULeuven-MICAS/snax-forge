@@ -60,6 +60,8 @@ class Accumulator(val width: Int = 32, val accWidth: Int = 32, val lanes: Int = 
       "partial sum is truncated on the way in"
   )
 
+  override def desiredName: String = s"Accumulator_w${width}_a${accWidth}_n${lanes}"
+
   val io = IO(new Bundle {
     val loopCount = Input(UInt(32.W))
     val len       = Input(UInt(32.W))
