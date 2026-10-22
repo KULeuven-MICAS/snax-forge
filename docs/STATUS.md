@@ -113,7 +113,8 @@ SNAX-GVSoC (`ry/flow3-7`, snax-gvsoc's line checks strict). GEN1 is done:
 `pixi run gen-rtl` writes a design point's `rtl.json`, checked against the
 block catalogue, and elaborates `<tag>_shell_wrapper` with its own CSR
 manager (D130, D138), checked against snax_cluster's template, `SnaxShell`'s
-rules and the goldens. Next is LNK2b (the bundle for snax_cluster, open
+rules and the goldens; its round 2 made the elementwise blocks joins (D129's
+lockstep: a lone operand waits, `valid` does not depend on `ready`). Next is LNK2b (the bundle for snax_cluster, open
 items 51 and 85), then the housekeeping pass and the single generator (open
 item 68).
 

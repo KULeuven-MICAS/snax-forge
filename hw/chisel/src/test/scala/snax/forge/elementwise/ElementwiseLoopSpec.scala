@@ -164,18 +164,20 @@ class ElementwiseLoopSpec extends AnyFlatSpec with ForgeTester {
     }
   }
 
-  it should "wire operand ready straight to the consumer ready while busy" in {
+  it should "gate each operand's ready on the other's valid and the consumer's ready while busy" in {
     test(new ElementwiseLoop(dataWidth = W, loopCountWidth = T)) { dut =>
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
       dut.io.out.ready.poke(true.B)
       begin(dut, 4)
 
-      // Ready is a pass-through, so it does not depend on the operand valids.
-      dut.io.a.valid.poke(false.B)
-      dut.io.b.valid.poke(false.B)
+      // A join: each ready is the other operand's valid and the consumer's ready.
       dut.io.a.ready.expect(true.B)
       dut.io.b.ready.expect(true.B)
+      dut.io.b.valid.poke(false.B)
+      dut.io.a.ready.expect(false.B)
+      dut.io.b.ready.expect(true.B)
+      dut.io.b.valid.poke(true.B)
 
       dut.io.out.ready.poke(false.B)
       dut.io.a.ready.expect(false.B)
@@ -183,7 +185,7 @@ class ElementwiseLoopSpec extends AnyFlatSpec with ForgeTester {
     }
   }
 
-  it should "hold out.valid low unless the consumer is ready" in {
+  it should "raise out.valid whatever the consumer's ready" in {
     test(new ElementwiseLoop(dataWidth = W, loopCountWidth = T)) { dut =>
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -192,11 +194,10 @@ class ElementwiseLoopSpec extends AnyFlatSpec with ForgeTester {
       dut.io.out.ready.poke(true.B)
       begin(dut, 2)
 
-      // NOTE: out.valid is the conjunction of both operand handshakes, so it
-      // depends on out.ready. This is the deliberate trade in this wiring --
-      // a consumer whose ready is a function of valid will deadlock here.
+      // valid does not depend on ready: both operands valid is enough.
       dut.io.out.ready.poke(false.B)
-      dut.io.out.valid.expect(false.B)
+      dut.io.out.valid.expect(true.B)
+      dut.io.out.bits.expect(2.U)
 
       dut.io.out.ready.poke(true.B)
       dut.io.out.valid.expect(true.B)
@@ -222,7 +223,7 @@ class ElementwiseLoopSpec extends AnyFlatSpec with ForgeTester {
     }
   }
 
-  it should "require operands in lockstep: a lone valid operand is consumed and lost" in {
+  it should "make a lone operand wait for the other" in {
     test(new ElementwiseLoop(dataWidth = W, loopCountWidth = T)) { dut =>
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -231,19 +232,17 @@ class ElementwiseLoopSpec extends AnyFlatSpec with ForgeTester {
       dut.io.out.ready.poke(true.B)
       begin(dut, 4)
 
-      // This pins the contract rather than endorsing it. With ready wired
-      // straight through, `a` is accepted here even though `b` is absent, so
-      // that beat of `a` is consumed while no output is produced and the
-      // counter does not advance. The producer must present both operands
-      // together. Gating each ready on the other operand's valid would make
-      // this impossible, at one AND term per operand.
+      // `b` absent: `a` is not taken and no output is offered.
       dut.io.b.valid.poke(false.B)
-      dut.io.a.ready.expect(true.B) // a.valid is high too, so a fires
+      dut.io.a.ready.expect(false.B)
       dut.io.out.valid.expect(false.B)
-
-      dut.clock.step()
-      // Four trips were programmed and none has been consumed.
+      dut.clock.step(3)
       dut.io.busy.expect(true.B)
+
+      // Four trips were programmed and none has been consumed: four firings end the run.
+      dut.io.b.valid.poke(true.B)
+      dut.clock.step(4)
+      dut.io.busy.expect(false.B)
     }
   }
 

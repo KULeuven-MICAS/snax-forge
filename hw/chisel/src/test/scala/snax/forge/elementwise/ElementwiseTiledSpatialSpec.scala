@@ -220,7 +220,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
       drive(dut, Seq.fill(Lanes)((BigInt(1), BigInt(1))))
       begin(dut, 3)
 
-      // One operand missing: no tile is counted, even though `a` is accepted.
+      // One operand missing: `a` waits and no tile is counted.
       dut.io.b.valid.poke(false.B)
       dut.clock.step(3)
       dut.io.busy.expect(true.B)
@@ -239,8 +239,9 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
       drive(dut, Seq.fill(Lanes)((BigInt(1), BigInt(1))))
       begin(dut, 3)
 
+      // valid does not depend on ready: the tile is offered while the consumer stalls.
       dut.io.out.ready.poke(false.B)
-      dut.io.out.valid.expect(false.B)
+      dut.io.out.valid.expect(true.B)
       dut.clock.step(5)
       // Five idle cycles must not have consumed any of the three tiles.
       dut.io.busy.expect(true.B)

@@ -29,9 +29,9 @@ import chisel3.util._
   *
   * ==Handshake==
   *
-  * One ready/valid pair per port, covering all `lanes` elements. `ready` passes through from the consumer gated by
-  * `busy`, and the trip counter advances on the cycle both operand transfers complete. See `ElementwiseLoop` for the
-  * two properties this wiring trades away -- operands must arrive in lockstep, and `valid` depends on `ready`.
+  * One ready/valid pair per port, covering all `lanes` elements, joined as in `ElementwiseLoop`: a firing takes a beat
+  * from `a` and `b` and gives one to `out` in the same cycle, an operand that arrives alone waits, and `valid` does not
+  * depend on `ready`. The trip counter advances on each firing.
   *
   * @param dataWidth
   *   bits per element, from the BRM port's dtype
@@ -82,12 +82,11 @@ class ElementwiseTiledSpatial(
   }
   io.out.bits := VecInit(alus.map(_.io.out))
 
-  io.a.ready := busy && io.out.ready
-  io.b.ready := busy && io.out.ready
+  io.a.ready   := busy && io.b.valid && io.out.ready
+  io.b.ready   := busy && io.a.valid && io.out.ready
+  io.out.valid := busy && io.a.valid && io.b.valid
 
-  io.out.valid := io.a.valid && io.a.ready && io.b.valid && io.b.ready
-
-  // One tile per completed pair of operand transfers.
+  // One tile per firing.
   private val advance = io.a.fire && io.b.fire
   private val last    = advance   && (count + 1.U) === target
 
