@@ -4,7 +4,7 @@
    keeps its cycles open; ``open`` and ``cycle`` open a fold; the segments cover the window;
    a fold's per-core counts add up to its length; the boot
 2. lanes: one per core, the DMA, each mover, the accelerator; bars with their totals and,
-   from ``beat``, their class runs
+   from ``beat``, their class runs; the recorded run's function band from 0 in main
 3. detail: the beat and stall lines of a range per lane
 4. below the level: the reason
 """
@@ -14,10 +14,11 @@ from itertools import pairwise
 import pytest
 
 from snax_forge.run import RunOutputs
+from snax_forge.viz import api
 from snax_forge.viz import schedule as sc
 from snax_forge.viz.index import RunIndex
 
-from .helpers import L1, Events, cluster, regions, tasks
+from .helpers import L1, Events, cluster, recorded_run, regions, tasks
 
 TWO = tasks("add", "add2")
 
@@ -149,6 +150,14 @@ def test_a_bar_has_its_class_runs_from_beat():
                               {"from": 4, "to": 18, "mode": "busy"},
                               {"from": 18, "to": 20, "mode": "flush"}]  # fmt: skip
     assert bar["cycles"] == {"busy": 14, "stall_in": 3, "stall_out": 0, "flush": 2}
+
+
+def test_the_recorded_runs_function_band_starts_at_0_in_main(tmp_path):
+    rv = api.load_run(recorded_run(tmp_path / "rec", "task"), "rec")
+    for lane in sc.lanes(rv.index)["lanes"][:2]:
+        first, second = lane["funcs"][:2]
+        assert (first["from"], first["name"]) == (0, "main")
+        assert first["to"] == second["from"] and second["name"].startswith("forge_core_")
 
 
 # =============================================================================

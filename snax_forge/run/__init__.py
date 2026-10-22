@@ -19,7 +19,7 @@ trace the reports and the viewer read.
 """
 
 from .cluster import Accelerator, Cluster, Csrs, Mover, cluster_from, load_cluster
-from .cores import CORE_CLASSES, core_counts, core_spans
+from .cores import CORE_CLASSES, core_counts, core_spans, start_mode
 from .events import GRAMMAR, Line, RunError, parse_line, read_events
 from .outputs import RunOutputs, read_run, write_run
 from .profile import (
@@ -68,5 +68,6 @@ __all__ = [
     "read_run",
     "region_at",
     "regions_of",
+    "start_mode",
     "write_run",
 ]

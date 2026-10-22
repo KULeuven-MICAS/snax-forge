@@ -34,8 +34,11 @@ fields, required and optional; ``Trace.from_dict`` refuses an event with an unkn
 field. The events are kept as the dicts they are written as, in time order (by ``t``, then as
 SNAX-GVSoC wrote them). ``trace_meta.json`` is the rest: the ``level``, ``total_cycles``, the
 ``boot`` shift (the first ``mcycle`` read in SNAX-GVSoC's cycles), the ``sources`` in the
-cluster's order and the ``filter``, the sources the beat, stall and instruction lines were
-written for (empty at ``task``).
+cluster's order, the ``filter``, the sources the beat, stall and instruction lines were
+written for (empty at ``task``), and ``start``, per core in the cluster's order what is in
+force at t = 0: ``func``, the name of its last ``func`` line at or before 0 (None without
+one), and ``mode``, its state (cores.py's ``start_mode``). No ``func`` event is written at 0:
+a ``func`` event's t is the function's first instruction.
 """
 
 from __future__ import annotations
@@ -117,6 +120,7 @@ class Trace:
     sources: list[str] = field(default_factory=list)
     events: list[dict[str, Any]] = field(default_factory=list)
     filter: list[str] = field(default_factory=list)  # the sources of the beat lines
+    start: dict[str, dict[str, Any]] = field(default_factory=dict)  # core -> func, mode at 0
 
     def __post_init__(self) -> None:
         if self.level not in LEVELS[1:]:
@@ -130,7 +134,8 @@ class Trace:
 
     def meta(self) -> dict[str, Any]:
         return {"level": self.level, "total_cycles": self.total_cycles, "boot": self.boot,
-                "sources": list(self.sources), "filter": list(self.filter)}  # fmt: skip
+                "sources": list(self.sources), "filter": list(self.filter),
+                "start": {c: dict(v) for c, v in self.start.items()}}  # fmt: skip
 
     def to_dict(self) -> dict[str, Any]:
         return {**self.meta(), "events": [dict(e) for e in self.events]}
@@ -138,4 +143,5 @@ class Trace:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Trace:
         return cls(d["level"], d["total_cycles"], d["boot"], list(d.get("sources", [])),
-                   [dict(e) for e in d.get("events", [])], list(d.get("filter", [])))  # fmt: skip
+                   [dict(e) for e in d.get("events", [])], list(d.get("filter", [])),
+                   {c: dict(v) for c, v in d.get("start", {}).items()})  # fmt: skip

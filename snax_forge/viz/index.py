@@ -37,8 +37,8 @@ time order (by ``t``, then as SNAX-GVSoC wrote them):
     core_spans[core]         its cycles classed (run/cores.py, the profile's rule), checked
                              against the profile's counts when the run has them
     funcs[core]              its function spans ``(first, end, name)``, from its ``func``
-                             lines; before its first one in the window the name is None (the
-                             trace drops the line in force at 0)
+                             lines; from 0 to its first one in the window the function in
+                             force at 0, the trace's ``start`` (None without one)
     core_csr[core]           its CSR accesses, ``csr`` and ``poll`` events
     event_cycles             the distinct cycles with an event: from ``beat`` on, of a
                              ``grant``, ``dma``, ``burst``, ``fire``, ``push``, ``class``,
@@ -278,6 +278,7 @@ class RunIndex:
             if task in self.start and task in self.done:
                 self.runs[task] = class_runs(lines, run_end(self.start[task], self.done[task]))
         T = self.total_cycles
+        start = outputs.trace.start if outputs.trace is not None else {}
         for core in self.cluster.cores:
             self.core_spans[core] = core_spans(waits.get(core, []), T)
             p = outputs.profile.cores.get(core) if outputs.profile is not None else None
@@ -287,7 +288,7 @@ class RunIndex:
                                f"the profile {p.cycles}")  # fmt: skip
             fl = func_lines.get(core, [])
             ts = [0] + [e["t"] for e in fl] + [T]
-            names = [None] + [e["name"] for e in fl]
+            names = [start.get(core, {}).get("func")] + [e["name"] for e in fl]
             self.funcs[core] = [(a, b, n) for a, b, n in zip(ts, ts[1:], names, strict=False)
                                 if a < b]  # fmt: skip
         self.event_cycles = sorted(t for t in events if 0 <= t < T)

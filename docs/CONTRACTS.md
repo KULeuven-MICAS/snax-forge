@@ -213,7 +213,12 @@ stall and instruction lines are written (`acc`, the movers, `dma`,
 accelerator, its movers and the DMA, at `finegrained` also every core.
 `summary` and `events` lines are always whole. `trace_meta.json` holds the
 `level`, `total_cycles`, the `boot` shift, the `sources` in the cluster's
-order and the `filter` (the sources the beat lines were written for).
+order, the `filter` (the sources the beat lines were written for) and
+`start`: per core in the cluster's order, `{"func": ..., "mode": ...}`, the
+name of its last `func` line at or before the window's first cycle (null
+without one) and its state there (`run`/`sleep`, the one its classes start
+from). No `func` line is written at t = 0, whose t would not be the
+function's first instruction.
 `--vcd` writes a VCD and `view.gtkw` beside the run for gtkwave, never read
 here. `run.json` records the `trace_level`, the `trace_sources` and `vcd`.
 

@@ -7,7 +7,8 @@
     profile.json      the profile (profile.py)
     trace.jsonl       the trace's events, one JSON object per line (trace.py), at a level
                       above off
-    trace_meta.json   the rest of the trace (its level, total cycles, boot shift, sources)
+    trace_meta.json   the rest of the trace (its level, total cycles, boot shift, sources,
+                      filter, what each core is in at 0)
 
 ``write_run`` writes the last three (``run.json`` is the flow's) and removes a trace an
 earlier run left when there is none now, so the folder matches ``run.json``; ``read_run``

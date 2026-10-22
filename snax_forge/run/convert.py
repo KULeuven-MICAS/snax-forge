@@ -25,7 +25,9 @@ from the same two reads; a read missing or another length is a RunError
 (``convert.window``). Every cycle is shifted by the first read's (``boot``), so t = 0 is that
 read, and events outside ``[0, total_cycles)`` are dropped: the profile, the cores' classes
 and the trace cover one window. The ``mcycle`` lines bound it and are not in the trace;
-``func`` lines stay as function spans.
+``func`` lines stay as function spans. What each core is in at 0 is the trace's ``start``:
+the name of its last ``func`` line at or before the read (None without one) and its state
+there, the one its classes start from (cores.py's ``start_mode``).
 
 **Trace.** A unit's or a mover's ``done`` is written in its last busy cycle, so its t is one
 more (the first idle cycle); an accelerator's ``done`` keeps its firings and its first and
@@ -73,7 +75,7 @@ from snax_forge.lower.tasks import Configure, TaskList
 
 from .beats import Context, beat_events, beat_invariants
 from .cluster import DMA, Cluster, core_name
-from .cores import core_counts, core_spans
+from .cores import core_counts, core_spans, start_mode
 from .events import Line, RunError
 from .profile import (
     AccelProfile,
@@ -296,17 +298,32 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
     return out
 
 
+def _core_lines(lines: Sequence[tuple[str, Line]], core: str) -> list[Line]:
+    return sorted((x for s, x in lines if s == core and x.trace == "events"), key=lambda x: x.cycle)
+
+
+def _states(mine: list[Line], boot: int) -> list[dict[str, Any]]:
+    return [{"t": x.cycle - boot, "k": "state", "mode": x.fields["mode"]}
+            for x in mine if x.kind == "state"]  # fmt: skip
+
+
+def core_start(lines: Sequence[tuple[str, Line]], core: str, boot: int) -> dict[str, Any]:
+    """What a core is in at t = 0: its function and its state (module doc)."""
+    mine = _core_lines(lines, core)
+    funcs = [x for x in mine if x.kind == "func" and x.cycle <= boot]
+    return {"func": funcs[-1].fields["name"] if funcs else None,
+            "mode": start_mode(_states(mine, boot))}  # fmt: skip
+
+
 def core_cycles(lines: Sequence[tuple[str, Line]], core: str, boot: int, width: int
                 ) -> tuple[dict[str, int], list[tuple[int, int, str, Line]]]:  # fmt: skip
     """A core's classes in the window, and its waits clipped to it: first, last, kind and
     line (module doc)."""
-    mine = sorted((x for s, x in lines if s == core and x.trace == "events"), key=lambda x: x.cycle)
-    events: list[dict[str, Any]] = []
+    mine = _core_lines(lines, core)
+    events: list[dict[str, Any]] = _states(mine, boot)
     waits = []
     for x in mine:
-        if x.kind == "state":
-            events.append({"t": x.cycle - boot, "k": "state", "mode": x.fields["mode"]})
-        elif x.kind in ("poll", "barrier"):
+        if x.kind in ("poll", "barrier"):
             first, last = x.fields["first"] - boot, x.fields["last"] - boot
             events.append({"t": first, "k": x.kind, "last": last})
             a, b = max(first, 0), min(last, width - 1)
@@ -468,7 +485,8 @@ def convert(
         p.waits = [WaitProfile(
             "barrier" if kind == "barrier" else cluster.accelerator.block_of(x.fields["csr"]) or "-",
             a, b) for a, b, kind, x in waits]  # fmt: skip
-    trace = Trace(level, total_cycles, boot, cluster.sources, events, list(filter or []))
+    start = {core: core_start(named, core, boot) for core in cluster.cores}
+    trace = Trace(level, total_cycles, boot, cluster.sources, events, list(filter or []), start)
     bad = invariants(profile, trace, cluster, ctx, regions)
     if bad:
         raise RunError("convert.invariant", "; ".join(bad))

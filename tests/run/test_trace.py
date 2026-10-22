@@ -32,10 +32,12 @@ def events():
 
 
 def test_round_trip():
-    t = Trace("task", 226, 2812, ["acc", "acc_a", "dma", "core0", "core1"], events())
+    start = {"core0": {"func": "main", "mode": "run"}, "core1": {"func": None, "mode": "sleep"}}
+    t = Trace("task", 226, 2812, ["acc", "acc_a", "dma", "core0", "core1"], events(), [], start)
     assert Trace.from_dict(json.loads(json.dumps(t.to_dict()))) == t
     assert t.meta() == {"level": "task", "total_cycles": 226, "boot": 2812,
-                        "sources": ["acc", "acc_a", "dma", "core0", "core1"], "filter": []}  # fmt: skip
+                        "sources": ["acc", "acc_a", "dma", "core0", "core1"], "filter": [],
+                        "start": start}  # fmt: skip
     assert [e["task"] for e in t.of_kind("done")] == ["add_acc", "add_acc_a", "load_A"]
     assert [e["task"] for e in t.of_kind("done", "dma")] == ["load_A"]
 

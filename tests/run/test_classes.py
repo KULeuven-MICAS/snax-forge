@@ -7,6 +7,8 @@ and a core's spans (run/cores.py).
 2. the totals on done: an accelerator's and a mover's run from its summary line; a run
    without one is a named error; the class lines become events with their task
 3. a core's spans: barrier > poll > sleep > run, a state before the window, the cover
+4. what each core is in at 0: its function and state from before the window, null without a
+   ``func`` line, the index's first function span from 0
 """
 
 import json
@@ -15,11 +17,20 @@ from pathlib import Path
 import pytest
 
 from snax_forge.lower.tasks import TaskList
-from snax_forge.run import RunError, cluster_from, core_counts, core_spans, parse_line
+from snax_forge.run import (
+    RunError,
+    RunOutputs,
+    cluster_from,
+    core_counts,
+    core_spans,
+    parse_line,
+    start_mode,
+)
 from snax_forge.run.beats import class_invariants, class_runs
 from snax_forge.run.convert import convert
+from snax_forge.viz.index import RunIndex
 
-from .helpers import files, synthetic
+from .helpers import BOOT, MAIN, files, line, synthetic
 
 TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"
 UNIT = {"busy": 6, "stall_in": 3, "stall_out": 0, "flush": 0}
@@ -160,3 +171,52 @@ def test_the_spans_cover_the_window_merged():
     assert spans == [(0, 2, "run"), (2, 7, "poll"), (7, 30, "run"), (30, 40, "barrier")]
     assert [a for a, _, _ in spans[1:]] == [b for _, b, _ in spans[:-1]]
     assert core_spans([], 7) == [(0, 7, "run")]
+
+
+# =============================================================================
+# 4. What each core is in at 0
+# =============================================================================
+
+
+def with_states(cluster, tasks, *states):
+    """The synthetic run with core1's extra ``state`` lines ``(cycle, mode)``."""
+    lines = synthetic(cluster, tasks)
+    lines += [line("pe1", "events", f"{c} state mode={m}", c) for c, m in states]
+    return convert([parse_line(x) for x in lines], cluster, tasks, 226, "task")
+
+
+def test_start_from_a_func_and_a_state_before_the_window(cluster, tasks):
+    """The synthetic run, core1 asleep 6 to 2 cycles before the window: each core starts in
+    main (its func line at MAIN) and running; the index's function spans start at 0 in main."""
+    profile, trace = with_states(cluster, tasks, (BOOT - 6, "sleep"), (BOOT - 2, "run"))
+    assert trace.start == {"core0": {"func": "main", "mode": "run"},
+                           "core1": {"func": "main", "mode": "run"}}  # fmt: skip
+    assert list(trace.start) == cluster.cores
+    assert not any(e["k"] == "func" and e["t"] == 0 for e in trace.events)
+    idx = RunIndex.from_run(RunOutputs({}, profile, trace), cluster, [], tasks)
+    for core in cluster.cores:
+        assert idx.funcs[core][0] == (0, MAIN + 10 - BOOT, "main")
+        assert idx.funcs[core][1][2] == f"forge_core_{core[-1]}"
+
+
+def test_start_mode_is_the_state_the_classes_start_from(cluster, tasks):
+    """core1 put to sleep 2 cycles before the window and woken 3 cycles in: asleep at 0, and
+    its first 3 cycles count sleep."""
+    profile, trace = with_states(cluster, tasks, (BOOT - 2, "sleep"), (BOOT + 3, "run"))
+    assert trace.start["core1"] == {"func": "main", "mode": "sleep"}
+    assert profile.cores["core1"].cycles["sleep"] == 3
+
+
+def test_a_core_without_a_func_line_before_the_window_starts_in_null(cluster, tasks):
+    lines = [x for x in synthetic(cluster, tasks)
+             if not ("/pe1/" in x and " func " in x and int(x.split(": ")[1]) <= BOOT)]  # fmt: skip
+    _, trace = convert([parse_line(x) for x in lines], cluster, tasks, 226, "task")
+    assert trace.start["core1"] == {"func": None, "mode": "run"}
+    idx = RunIndex.from_run(RunOutputs({}, None, trace), cluster, [], tasks)
+    assert idx.funcs["core1"][0] == (0, MAIN + 10 - BOOT, None)
+
+
+def test_the_start_mode_is_the_one_the_spans_start_from():
+    for evs in ([], [ev("state", -9, mode="sleep")], [ev("state", -9, mode="sleep"),
+                ev("state", -2, mode="run")], [ev("state", 0, mode="sleep")]):  # fmt: skip
+        assert start_mode(evs) == core_spans(evs, 10)[0][2]
