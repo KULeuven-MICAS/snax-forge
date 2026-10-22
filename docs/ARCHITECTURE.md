@@ -126,7 +126,7 @@ runs (section 5.8), and its RTL run is compared with the SNAX-GVSoC run.
 | SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | hjson, program | the program's check and window; counters and events in its own grammar (D137) | built (M16) |
 | Run | `run/` | SNAX-GVSoC's events, the hjson files, design point and task list | profile, trace (C§7); the traces and options a level and its sources turn on | FLOW3 rounds 1b, 2a |
 | Generator | `gen/` | design point, the platform's source hjson | cluster, streamer and accelerator hjson, CSR headers, `data.h`, `main.c`, manifest | GEN3, LNK2a, GEN2a (D134, D135) |
-| HW generator | `hw/chisel/` | BRM hardware bindings | accelerator RTL with shell wrapper | M14, phase B |
+| HW generator | `gen/rtl.py`, `hw/chisel/` | design point, the block catalogue | `rtl.json`, then the accelerator RTL with its shell wrapper | GEN1 (D138) |
 | Flow | `flow/` | recipe or bound graph, platform | all of the above, checked | built |
 | Viewers | `viz/` | run directories, `.snaxdfg` files | local HTML views | built |
 | Reports | `report/` | a flow folder or run directory | `design.md`, `run.md` | built |
@@ -173,8 +173,9 @@ implementation and its design params. The library holds `elementwise_add`,
 `elementwise_mul` and `accumulate`.
 
 Each BRM has two outputs: the GVSoC accelerator from its binding on
-`SnaxUnit` and `SnaxShell` (GEN3, D128, D129), and **[PLANNED, M14]** the
-Chisel RTL with the generated shell wrapper (GEN1, D130). The pair is
+`SnaxUnit` and `SnaxShell` (GEN3, D128, D129), and the Chisel RTL with the
+generated shell wrapper (GEN1, D130, D138): the binding resolved into
+`rtl.json`, checked against the block catalogue, then elaborated. The pair is
 accepted when one ELF gives the same counters on both (D123, GEN2b), the
 GVSoC side first against the BRM's predicted counter (GEN3, D127).
 
@@ -274,9 +275,13 @@ program, no generated Python (GEN3, LNK2a, GEN2a; `gen/`, D128, D134, D135).
 For snax_cluster SNAX-FORGE writes a bundle it builds and runs (D111)
 **[PLANNED, M14]**:
 
-- **accelerator RTL** from each BRM's hardware binding, through `Emit` and
-  the Chisel blocks in `hw/chisel/` (D91), with a CSR adapter and a shell
-  wrapper on SNAX's ports (GEN1);
+- **accelerator RTL** from each BRM's hardware binding (GEN1, D138):
+  `gen/rtl.py` resolves it into `rtl.json` (C§17) and checks it against
+  the block catalogue `hw/chisel/blocks.json`; `Emit --spec` builds the
+  Chisel blocks in `hw/chisel/` (D91) into `<tag>_shell_wrapper` on SNAX's
+  CSR request/response and streamer ports, with its own CSR manager on
+  ReqRspManager's protocol and a `ctrl` adapter (D130); `pixi run gen-rtl`,
+  which the flow does not call (D136);
 - **cluster hjson**, three files (D134): the cluster (the platform's source
   with its TCDM, DMA width and DRAM written back and the slot's CSR and
   port counts set), the streamer template lowered per design point, and

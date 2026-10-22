@@ -4,10 +4,11 @@
 > component can produce its output without reading another's code. Why each
 > is the way it is: the module docstrings and `docs/DECISIONS.md`.
 >
-> Sections 1, 7 and 9–16 are the flow: conventions, a run's profile and
+> Sections 1, 7 and 9–17 are the flow: conventions, a run's profile and
 > trace (D137), the task list (D64), the BRM (D68, D70), the SNAX-DFG (D77),
 > the recipe (D72), the platform (D84), the design checks (D85), the memory
-> plan and design point (D86, D87), and the generated hjson files (D134).
+> plan and design point (D86, D87), the generated hjson files (D134) and the
+> accelerator RTL's spec (D138).
 > Sections 2–6 and 8 were SNAX-MODEL's and were retired with it in RET1
 > (D116); their numbers are kept, their text is in git history (commit
 > `cad6619`, before RET1).
@@ -383,7 +384,7 @@ name.
 | `function` | an accelerator kind registered in `brm/function.py`, its factory params without timing, and `code`: what one lane computes (D82) | the reference executor; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
-| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null, or `block`, `args`, `control`, `csrs`, `wait`, D129) | the GVSoC accelerator (GEN3), the HW generator (GEN1) |
+| `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null, or `block`, `args`, `control`, `csrs`, `wait`, optionally `ports`, D129) | the GVSoC accelerator (GEN3), the HW generator (GEN1) |
 
 The shared part (the first four) is what every implementation has in
 common; designs that differ only in timing, supported values or RTL source
@@ -486,7 +487,9 @@ the block counts its firings, the only kind) and `wait` (`lockstep`,
 CSR order, each `{field, value}` with the value an expression over params,
 start following them: one for `ElementwiseTiledSpatial` (`loopCount`), two
 for the Accumulator (`loopCount` = `n`, then `len` = `T`). A fixed op gives no `opSel`
-field. Expressions are stored canonical.
+field. `ports`, optional, maps every BRM port to the block's port of that role, by default
+the same name (`accumulate`'s `a` is the Accumulator's `in`); it is written only when given.
+Expressions are stored canonical.
 
 `resolve(implementation, params)` makes an instance and checks a bound
 implementation against the generator's blocks (`gen.BLOCKS`): its `block`
@@ -896,3 +899,38 @@ one `gen.slot`.
  "required": ["unit", "inputs", "outputs", "lanes", "data_width", "op", "signed", "control",
               "wait", "latency", "ii", "fields"],
 ```
+
+## 17. Accelerator RTL spec
+
+What `pixi run gen-rtl DESIGN_POINT [OUT_DIR]` writes first (D138,
+`snax_forge/gen/rtl.py`), default `out/rtl/<design>/rtl.json`, and what
+`Emit --spec` reads to build the accelerator (`hw/chisel/`): concrete values
+only, no expressions, checked against the block catalogue
+`hw/chisel/blocks.json` and the schema `snax_forge/gen/schema/rtl.schema.json`.
+
+| Key | Holds |
+|---|---|
+| `design_point` | the design point by its path from the root, as C§16's files name it |
+| `tag` | the platform's `accelerator_slot`; the wrapper is `<tag>_shell_wrapper` |
+| `units` | one unit (more is `gen.instances`; links come with M13): `name` (the instance), `block` (a catalogue block), `params` (every block param, typed and in its limits), `ports` (`{brm, block}` per BRM port, in the BRM's port order, which is the streamer's reader and writer order) and `csrs` |
+
+A unit's `csrs` are in CSR order from offset 0 (`snax_csr_mux_demux`
+removes the streamer's range): `rw`, the configuration fields (`pin`, the
+binding's `csrs` field, and its `width`), then `start`, the start CSR's pin
+(bit 0 written 1 starts), then `ro`, busy and the counter. `tie` gives the
+block's pins tied to a constant (`opSel`, the op's encoding). No module
+names: `Emit` picks them and lists what it wrote in `emitted.json`, beside
+`sv/`.
+
+**The wrapper**, `<tag>_shell_wrapper`, has the ports
+`snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`: `clk_i`,
+`rst_ni` (active low), `csr_req_addr_i` and `csr_req_data_i` (32 bits),
+`csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o`
+(32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`; per input port k, in order,
+`stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`, per output port
+`acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, data `num_channel × 64`
+bits with lane i at bits `[64i+63 : 64i]`. Inside: `CsrManager`
+(ReqRspManager's protocol, D130), `CtrlAdapter` (an accepted start is the
+block's start with the fields on its pins; ready is not busy; the counter
+is reset by an accepted start, counts busy cycles and holds after) and the
+unit.
