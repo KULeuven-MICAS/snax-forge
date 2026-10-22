@@ -43,6 +43,9 @@ class ShellDriver(
   /** The cycles a request was offered and not taken. */
   var held: Seq[Int] = Seq.empty
 
+  /** The last cycle an output beat fired. */
+  var lastOut: Int = -1
+
   private def b(name: String): Bool = io.bool(name)
   private def u(name: String): UInt = io.uint(name)
 
@@ -52,6 +55,7 @@ class ShellDriver(
     * when one came.
     */
   def tick(req: Option[(Int, BigInt, Boolean)] = None): (Boolean, Option[BigInt]) = {
+    assert(cycle < ShellDriver.MaxCycles, s"no end after $cycle cycles")
     for ((src, k) <- sources.zipWithIndex) {
       src.cycle()
       b(s"stream2acc_${k}_valid_i").poke(src.valid.B)
@@ -75,7 +79,8 @@ class ShellDriver(
       if (rspTaken && b("csr_rsp_valid_o").peek().litToBoolean) Some(u("csr_rsp_data_o").peek().litValue) else None
     for ((src, k) <- sources.zipWithIndex) src.fired(b(s"stream2acc_${k}_ready_o").peek().litToBoolean)
     for ((snk, k) <- sinks.zipWithIndex)
-      snk.fired(b(s"acc2stream_${k}_valid_o").peek().litToBoolean, u(s"acc2stream_${k}_data_o").peek().litValue)
+      if (snk.fired(b(s"acc2stream_${k}_valid_o").peek().litToBoolean, u(s"acc2stream_${k}_data_o").peek().litValue))
+        lastOut = cycle
     dut.clock.step()
     cycle += 1
     (accepted, rsp)
@@ -99,6 +104,9 @@ class ShellDriver(
 }
 
 object ShellDriver {
+
+  /** A guard against a run that never ends. */
+  val MaxCycles = 100000
 
   /** Input k offers beat t of `beats(k)` (`data(k, t)`) from the first cycle `valid(cycle)` holds; each output is ready
     * in the cycles `ready(cycle)` holds.
