@@ -4,7 +4,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{Blocks, SnaxUnitCases}
+import snax.forge.{Blocks, ForgeTester, SnaxUnitCases}
 import snax.forge.SnaxUnitCases.Start
 import snax.forge.shell.RtlFixtures
 
@@ -18,7 +18,7 @@ import snax.forge.shell.RtlFixtures
   * (SnaxUnit's trace) have no Chisel counterpart here; the pipelined folds are `AccumulatorRateSpec`'s. Without the
   * variable the test is canceled.
   */
-class ElementwiseTiledSpatialLockstepSpec extends AnyFlatSpec with ChiselScalatestTester {
+class ElementwiseTiledSpatialLockstepSpec extends AnyFlatSpec with ForgeTester {
 
   private val Env = SnaxUnitCases.Env
 

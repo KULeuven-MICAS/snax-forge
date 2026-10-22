@@ -4,7 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-class ElementwiseSpatialSpec extends AnyFlatSpec with ChiselScalatestTester {
+import snax.forge.ForgeTester
+
+class ElementwiseSpatialSpec extends AnyFlatSpec with ForgeTester {
 
   /** Random beats per operation. Each beat carries `Lanes` independent operand pairs. */
   private val NumTests = 20

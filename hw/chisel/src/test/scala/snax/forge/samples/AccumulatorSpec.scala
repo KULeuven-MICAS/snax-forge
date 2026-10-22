@@ -4,7 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-class AccumulatorSpec extends AnyFlatSpec with ChiselScalatestTester {
+import snax.forge.ForgeTester
+
+class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
 
   private val W    = 32
   private val Mask = (BigInt(1) << W) - 1

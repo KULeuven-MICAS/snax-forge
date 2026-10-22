@@ -92,6 +92,15 @@ the folder has no fold case (a snax-gvsoc before step 6b). Both also run at
 the params of each GEN1 fixture of their block; CI's chisel job sets the
 variable to the submodule's cases.
 
+## Tests
+
+The random specs run one test per seed of `Seeds` (scalatest names it
+"seed N"); `SNAX_FORGE_SEED=N pixi run -e hw chisel-test` runs only seed N.
+
+Waveforms: `SNAX_FORGE_VCD=1 pixi run -e hw chisel-test` writes each test's
+to `hw/chisel/test_run_dir/<test name>/<module>.vcd`, e.g. vecadd's end to
+end at `test_run_dir/the_shell_wrapper_end_to_end_should_give_vecadds_goldens_and_its_counter/ShellHarness.vcd`.
+
 Package root is `snax.forge`, matching `snax.streamer` / `snax.xdma` in
 snax_cluster.
 

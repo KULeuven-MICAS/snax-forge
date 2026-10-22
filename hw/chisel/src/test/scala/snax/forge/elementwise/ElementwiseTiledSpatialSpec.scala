@@ -4,7 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ChiselScalatestTester {
+import snax.forge.ForgeTester
+
+class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
 
   /** Random tiles per run. Each tile carries `Lanes` independent operand pairs, so a sweep covers `NumTests * Lanes`
     * elements and doubles as a trip-counter exercise.

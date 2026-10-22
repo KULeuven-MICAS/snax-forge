@@ -3,13 +3,15 @@ package snax.forge.shell
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
+import snax.forge.ForgeTester
+
 /** Each fixture end to end through its `<tag>_shell_wrapper`: per task the fields written in CSR order and start
   * written 1, as `main.c` does; the inputs fed by an always-ready streamer (each port's data.h array, lane i of beat t
   * element `t * lanes + i`, in 64-bit two's complement); busy polled until it reads 0; then the counter read. The
   * outputs must equal the goldens and the counter the fixture's value, worked from `SnaxShell`'s rules
   * (`vectors.json`'s `working`).
   */
-class ShellEndToEndSpec extends AnyFlatSpec with ChiselScalatestTester {
+class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
   private val Mask = (BigInt(1) << 64) - 1
 
@@ -30,7 +32,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ChiselScalatestTester {
           val p = ins(k)
           (0 until p.lanes).map(i => (p.values(t * p.lanes + i) & Mask) << (64 * i)).sum
         }
-        val d    = new ShellDriver(dut, ins.map(_.beats), beat)
+        val d    = ShellDriver(dut, ins.map(_.beats), beat)
         for (task   <- f.tasks) {
           val values = task.csrs.toMap
           unit.rw.zipWithIndex.foreach { case ((pin, _), i) => d.write(i, values(pin)) }

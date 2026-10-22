@@ -3,6 +3,8 @@ package snax.forge.shell
 import chisel3._
 import chiseltest._
 
+import snax.forge.{Sink, Source}
+
 /** `<tag>_shell_wrapper` under chiseltest, which drives a `Module`: the clock and an active-high reset become `clk_i`
   * and `rst_ni`, and the wrapper's other ports are this harness's `io`, with the same names.
   */
@@ -17,27 +19,26 @@ class ShellHarness(spec: RtlSpec) extends Module {
 /** A core and a streamer around a `ShellHarness`, one call per cycle.
   *
   * The core: one CSR request at a time, held until `csr_req_ready_o` (as the Snitch core's write is), the response
-  * always taken (`csr_rsp_ready_i` high). The streamer: input k offers beat t of `beats(k)` (`data(k, t)`, valid while
-  * `valid(cycle)` and beats are left), each output always ready unless `ready(cycle)` says otherwise, its beats kept in
-  * `outputs`.
+  * ready as `rspReady(cycle)` says (always, by default). The streamer: input k is `sources(k)`, output k `sinks(k)`
+  * (`Source`, `Sink`), so a spec gives them fixed or random gaps and stalls.
   *
   * Every cycle the streamer's and the core's signals are poked first, then what fires is read, then the clock steps.
   */
 class ShellDriver(
-  dut:   ShellHarness,
-  beats: Seq[Int],
-  data:  (Int, Int) => BigInt,
-  valid: Int => Boolean = _ => true,
-  ready: Int => Boolean = _ => true
+  dut:      ShellHarness,
+  sources:  Seq[Source],
+  sinks:    Seq[Sink],
+  rspReady: Int => Boolean = _ => true
 ) {
 
-  private val io   = dut.io
-  private val ins  = io.readers.size
-  private val outs = io.writers.size
+  private val io = dut.io
 
-  var cycle:   Int                = 0
-  val taken:   Array[Int]         = Array.fill(ins)(0)
-  val outputs: Array[Seq[BigInt]] = Array.fill(outs)(Seq.empty)
+  require(sources.size == io.readers.size && sinks.size == io.writers.size, "one source per input, one sink per output")
+
+  var cycle: Int = 0
+
+  def taken:   Seq[Int]         = sources.map(_.taken)
+  def outputs: Seq[Seq[BigInt]] = sinks.map(_.got)
 
   /** The cycles a request was offered and not taken. */
   var held: Seq[Int] = Seq.empty
@@ -45,19 +46,20 @@ class ShellDriver(
   private def b(name: String): Bool = io.bool(name)
   private def u(name: String): UInt = io.uint(name)
 
-  b("csr_rsp_ready_i").poke(true.B)
   b("csr_req_valid_i").poke(false.B)
 
   /** One cycle with the request `req` (addr, data, write) offered, or none: whether it was taken, and the response data
     * when one came.
     */
   def tick(req: Option[(Int, BigInt, Boolean)] = None): (Boolean, Option[BigInt]) = {
-    for (k <- 0 until ins) {
-      val v = valid(cycle) && taken(k) < beats(k)
-      b(s"stream2acc_${k}_valid_i").poke(v.B)
-      u(s"stream2acc_${k}_data_i").poke(if (v) data(k, taken(k)).U else 0.U)
+    for ((src, k) <- sources.zipWithIndex) {
+      src.cycle()
+      b(s"stream2acc_${k}_valid_i").poke(src.valid.B)
+      u(s"stream2acc_${k}_data_i").poke(src.bits.U)
     }
-    for (k <- 0 until outs) b(s"acc2stream_${k}_ready_i").poke(ready(cycle).B)
+    for ((snk, k) <- sinks.zipWithIndex) b(s"acc2stream_${k}_ready_i").poke(snk.cycle().B)
+    val rspTaken = rspReady(cycle)
+    b("csr_rsp_ready_i").poke(rspTaken.B)
     req match {
       case Some((addr, d, write)) =>
         b("csr_req_valid_i").poke(true.B)
@@ -69,13 +71,11 @@ class ShellDriver(
     }
     val accepted = req.isDefined && b("csr_req_ready_o").peek().litToBoolean
     if (req.isDefined && !accepted) held :+= cycle
-    val rsp = if (b("csr_rsp_valid_o").peek().litToBoolean) Some(u("csr_rsp_data_o").peek().litValue) else None
-    for (k <- 0 until ins)
-      if (b(s"stream2acc_${k}_valid_i").peek().litToBoolean && b(s"stream2acc_${k}_ready_o").peek().litToBoolean)
-        taken(k) += 1
-    for (k <- 0 until outs)
-      if (b(s"acc2stream_${k}_valid_o").peek().litToBoolean && ready(cycle))
-        outputs(k) :+= u(s"acc2stream_${k}_data_o").peek().litValue
+    val rsp =
+      if (rspTaken && b("csr_rsp_valid_o").peek().litToBoolean) Some(u("csr_rsp_data_o").peek().litValue) else None
+    for ((src, k) <- sources.zipWithIndex) src.fired(b(s"stream2acc_${k}_ready_o").peek().litToBoolean)
+    for ((snk, k) <- sinks.zipWithIndex)
+      snk.fired(b(s"acc2stream_${k}_valid_o").peek().litToBoolean, u(s"acc2stream_${k}_data_o").peek().litValue)
     dut.clock.step()
     cycle += 1
     (accepted, rsp)
@@ -96,4 +96,24 @@ class ShellDriver(
 
   /** Cycles with no request. */
   def idle(n: Int): Unit = for (_ <- 0 until n) tick()
+}
+
+object ShellDriver {
+
+  /** Input k offers beat t of `beats(k)` (`data(k, t)`) from the first cycle `valid(cycle)` holds; each output is ready
+    * in the cycles `ready(cycle)` holds.
+    */
+  def apply(
+    dut:   ShellHarness,
+    beats: Seq[Int],
+    data:  (Int, Int) => BigInt,
+    valid: Int => Boolean = _ => true,
+    ready: Int => Boolean = _ => true
+  ): ShellDriver = {
+    var d: ShellDriver = null
+    val sources = beats.zipWithIndex.map { case (n, k) => new Source(n, data(k, _), () => valid(d.cycle)) }
+    val sinks   = dut.io.writers.map(_ => new Sink(() => ready(d.cycle)))
+    d = new ShellDriver(dut, sources, sinks)
+    d
+  }
 }

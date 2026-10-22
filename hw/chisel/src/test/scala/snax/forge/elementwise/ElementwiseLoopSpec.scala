@@ -4,7 +4,9 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-class ElementwiseLoopSpec extends AnyFlatSpec with ChiselScalatestTester {
+import snax.forge.ForgeTester
+
+class ElementwiseLoopSpec extends AnyFlatSpec with ForgeTester {
 
   /** Random operand pairs per operation, and also the trip count of the run that carries them. */
   private val NumTests = 20

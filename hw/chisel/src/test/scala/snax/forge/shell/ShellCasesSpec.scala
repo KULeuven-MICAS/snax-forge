@@ -3,6 +3,8 @@ package snax.forge.shell
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
+import snax.forge.ForgeTester
+
 /** The shell's rules on `CsrManager` + `CtrlAdapter` + a unit, through vecadd's `<tag>_shell_wrapper`
   * (ElementwiseTiledSpatial, 4 lanes; CSRs from 0: loopCount, start, busy, counter), each case worked by hand from
   * `SnaxShell`'s rules (snax-gvsoc `snax/snax_shell.cpp`, its header), c being the cycle of an access:
@@ -17,7 +19,7 @@ import org.scalatest.flatspec.AnyFlatSpec
   * The streamer's inputs are always valid unless a case says otherwise; with them, a run of count n fires in each of
   * its n busy cycles.
   */
-class ShellCasesSpec extends AnyFlatSpec with ChiselScalatestTester {
+class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
 
   private val fixture   = RtlFixtures.all.find(_.name == "vecadd").get
   private val LoopCount = 0
@@ -27,7 +29,7 @@ class ShellCasesSpec extends AnyFlatSpec with ChiselScalatestTester {
 
   private def shell(valid: Int => Boolean = _ => true)(body: ShellDriver => Unit): Unit =
     test(new ShellHarness(fixture.spec)) { dut =>
-      body(new ShellDriver(dut, Seq(1 << 20, 1 << 20), (_, _) => BigInt(0), valid))
+      body(ShellDriver(dut, Seq(1 << 20, 1 << 20), (_, _) => BigInt(0), valid))
     }
 
   behavior of "the shell wrapper's CSRs"

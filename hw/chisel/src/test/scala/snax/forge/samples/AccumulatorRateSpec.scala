@@ -4,7 +4,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{Blocks, SnaxUnitCases}
+import snax.forge.{Blocks, ForgeTester, SnaxUnitCases}
 import snax.forge.SnaxUnitCases.{RunLine, Start}
 import snax.forge.shell.RtlFixtures
 
@@ -25,7 +25,7 @@ import snax.forge.shell.RtlFixtures
   * case's lanes, and at each `RtlFixtures` fixture's Accumulator (vsum's, vsum_tree's at W = 4 and 8): the cycles do
   * not depend on the lanes.
   */
-class AccumulatorRateSpec extends AnyFlatSpec with ChiselScalatestTester {
+class AccumulatorRateSpec extends AnyFlatSpec with ForgeTester {
 
   private val Env = SnaxUnitCases.Env
 
