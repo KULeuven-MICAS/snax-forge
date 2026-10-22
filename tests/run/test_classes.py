@@ -201,10 +201,17 @@ def test_start_from_a_func_and_a_state_before_the_window(cluster, tasks):
 
 def test_start_mode_is_the_state_the_classes_start_from(cluster, tasks):
     """core1 put to sleep 2 cycles before the window and woken 3 cycles in: asleep at 0, and
-    its first 3 cycles count sleep."""
+    its first 3 cycles count sleep, in the profile and in the index's spans."""
     profile, trace = with_states(cluster, tasks, (BOOT - 2, "sleep"), (BOOT + 3, "run"))
     assert trace.start["core1"] == {"func": "main", "mode": "sleep"}
     assert profile.cores["core1"].cycles["sleep"] == 3
+    idx = RunIndex.from_run(RunOutputs({}, profile, trace), cluster, [], tasks)
+    assert idx.core_spans["core1"][:2] == [
+        (0, 3, "sleep"),
+        (3, idx.core_spans["core1"][1][1], "run"),
+    ]
+    for core in cluster.cores:
+        assert core_counts(idx.core_spans[core]) == profile.cores[core].cycles
 
 
 def test_a_core_without_a_func_line_before_the_window_starts_in_null(cluster, tasks):

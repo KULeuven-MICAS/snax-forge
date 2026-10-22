@@ -34,7 +34,8 @@ time order (by ``t``, then as SNAX-GVSoC wrote them):
                              to the end its ``done``'s ``cycles`` add up to)
     fifo[(mover, lane)]      a lane's queue counts ``(t, count)``
     dma_beats[(id, op)]      a copy's DMA beats on L1 of each op
-    core_spans[core]         its cycles classed (run/cores.py, the profile's rule), checked
+    core_spans[core]         its cycles classed (run/cores.py, the profile's rule, from the
+                             trace's ``start`` mode as a state at 0), checked
                              against the profile's counts when the run has them
     funcs[core]              its function spans ``(first, end, name)``, from its ``func``
                              lines; from 0 to its first one in the window the function in
@@ -280,7 +281,10 @@ class RunIndex:
         T = self.total_cycles
         start = outputs.trace.start if outputs.trace is not None else {}
         for core in self.cluster.cores:
-            self.core_spans[core] = core_spans(waits.get(core, []), T)
+            mine = waits.get(core, [])
+            if core in start:  # the state in force at 0, as the profile reads it
+                mine = [{"t": 0, "k": "state", "mode": start[core]["mode"]}, *mine]
+            self.core_spans[core] = core_spans(mine, T)
             p = outputs.profile.cores.get(core) if outputs.profile is not None else None
             got = core_counts(self.core_spans[core])
             if p is not None and p.cycles is not None and got != p.cycles:
