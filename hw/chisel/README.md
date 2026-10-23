@@ -74,8 +74,8 @@ for byte (`tests/gen/test_rtl.py`); refresh one with
 
 (the others from their recipe as it is, named after it). The specs on
 them: `ShellPortsSpec` (each wrapper's ports are the template's for its
-streamer hjson), `ShellCasesSpec` (the shell's rules, worked by hand from
-snax-gvsoc's `snax_shell.cpp`) and `ShellEndToEndSpec` (the CSR writes of
+streamer hjson), `ShellCasesSpec` (vecadd's, through snax-gvsoc's shell
+cases, below) and `ShellEndToEndSpec` (the CSR writes of
 `main.c`, an always-ready streamer: the goldens and the counter of
 `vectors.json`).
 
@@ -91,6 +91,18 @@ chisel-test`; without it both are canceled, and the Accumulator's also when
 the folder has no fold case (a snax-gvsoc before step 6b). Both also run at
 the params of each GEN1 fixture of their block; CI's chisel job sets the
 variable to the submodule's cases.
+
+## The shell cases
+
+`ShellCasesSpec` drives vecadd's `<tag>_shell_wrapper` (`CsrManager`,
+`CtrlAdapter`, `ElementwiseTiledSpatial`) through snax-gvsoc's `SnaxShell`
+cases (`tests/snax/shell/cases/`, GEN2b, open item 84), which snax-gvsoc's
+`tb.cpp` checks `snax_shell.hpp`'s rule against: every access's result (a
+write's cycle, a read's value) and, every cycle, the unit's busy, tapped from
+the wrapper (`ShellHarness(tapBusy = true)`). It reads them with
+`SnaxShellCases` from the folder `SNAX_GVSOC_SHELL_CASES` names, e.g.
+`SNAX_GVSOC_SHELL_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/shell/cases`; without
+it the spec is canceled. CI's chisel job sets it beside the unit's.
 
 ## Tests
 

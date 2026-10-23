@@ -62,11 +62,13 @@ jobs:
     name: Chisel format + unit tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    # The unit cases the specs drive the blocks through (GEN3, GEN1), from the submodule.
+    # The unit cases the specs drive the blocks through (GEN3, GEN1) and the shell cases the
+    # shell wrapper is driven through (GEN2b, open item 84), from the submodule.
     env:
       SNAX_GVSOC_UNIT_CASES: ${{ github.workspace }}/gvsoc/snax-gvsoc/tests/snax/unit/cases
+      SNAX_GVSOC_SHELL_CASES: ${{ github.workspace }}/gvsoc/snax-gvsoc/tests/snax/shell/cases
     steps:
-      # gvsoc/snax-gvsoc at the pinned commit, shallow, for its unit cases only: nothing is built.
+      # gvsoc/snax-gvsoc at the pinned commit, shallow, for its unit and shell cases only: nothing is built.
       - uses: actions/checkout@v4
         with:
           submodules: true

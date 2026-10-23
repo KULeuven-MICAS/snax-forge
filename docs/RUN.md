@@ -516,7 +516,7 @@ then Questa outside podman, from snax_cluster with `bender` on `PATH`:
 for the accelerator, and `work-vsim/compile.vsim.tcl` compiles it after
 Bender's list. The 18 warnings are `snax_alu_cluster`'s too (the
 testharness's open CSR and `obs_o` ports, the vendored AXI burst splitter,
-`+acc`). Running an ELF on it is GEN2b.
+`+acc`). Section 8 runs an ELF on it.
 
 snax_cluster keeps this bundle as a fixture,
 `target/snitch_cluster/cfg/snax_forge/vecadd/`, which its
@@ -524,3 +524,101 @@ snax_cluster keeps this bundle as a fixture,
 again as above and copy what the fixture's `README.md` lists from
 `out/bundle/vecadd/`: the three hjson files, `bundle.json`, `rtl/files.f`
 and the files `rtl/files.f` lists.
+
+## 8. Running a bundle on snax_cluster's RTL
+
+GEN2b's comparison (D123, D140): one ELF, snax-forge's, built from the
+bundle, runs on SNAX-GVSoC and on snax_cluster's Verilator and Questa
+builds, and the printed lines are compared by hand. snax-forge never runs
+RTL; snax_cluster's `target/snitch_cluster/snax_forge.mk` does (C§18).
+
+The bundle is section 7's, `out/bundle/vecadd/`. Its ELF comes from
+snax-gvsoc's generic app (section 5), in snax-forge's image:
+
+    make -C gvsoc sw APPS=forge FORGE=../out/bundle/vecadd DESIGN=vecadd
+    make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd \
+        GVRUN_ARGS="--param hjson=$PWD/out/bundle/vecadd/snax_forge.hjson" \
+        ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
+    sha256sum out/snax-gvsoc/sw/vecadd/forge.elf
+
+    ...
+    forge cycles: 226
+    forge data: 0 errors (64 words)
+    forge counter add_acc: 19
+    forge errors: 0
+    make: Leaving directory '$ROOT/snax-forge/gvsoc'
+    b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5  out/snax-gvsoc/sw/vecadd/forge.elf
+
+It is the ELF the flow built (section 2): the same `elf_sha256`. Verilator
+runs in snax_cluster's pixi environment, as its CI does; from snax_cluster,
+with `CFG_OVERRIDE` the bundle's cluster file and `ELF` the program, both
+by absolute path:
+
+    B=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
+    E=$PWD/../snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf
+    pixi run make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
+    pixi run make -C target/snitch_cluster snax-forge-sim SIM=vlt CFG_OVERRIDE=$B
+    pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B ELF=$E
+
+    ...
+    bash -c 'set -o pipefail; bin/snitch_cluster.vlt $ROOT/snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf  2>&1 | tee logs/snax-forge-vlt.txt'
+    forge cycles: 239
+    forge data: 0 errors (64 words)
+    forge counter add_acc: 19
+    forge errors: 0
+    [fesvr] Wrote 36 bytes of bootrom to 0x1000
+    ...
+
+The output is also in `target/snitch_cluster/logs/snax-forge-vlt.txt`,
+beside the run's traces; `snax-forge-run` fails on the program's nonzero
+exit code. Without `ELF` it builds and runs snax_cluster's own copy of the
+program from the bundle's `main.c` (`sw/apps/snax-forge`), which its CI
+uses for pass/fail only; both print the same lines. Before that build,
+`snax-forge-sw` checks the bundle's `include/streamer_csr_addr_map.h`
+against the one snaxgen wrote (their `#define` lines).
+
+Questa: `rtl-gen` and `vsim_preparation` in snax_cluster's development image
+(section 7), started from the folder that holds both checkouts, then the
+build and the run outside it, with `bender` and Questa on `PATH`:
+
+    podman run --rm -it -v "$PWD":"$PWD" -w "$PWD" c5db84ad7bce
+    cd snax_cluster
+    B=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
+    make -C target/snitch_cluster clean-vsim CFG_OVERRIDE=$B
+    make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
+    make -C target/snitch_cluster vsim_preparation CFG_OVERRIDE=$B
+
+    B=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
+    E=$PWD/../snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf
+    make -C target/snitch_cluster snax-forge-sim SIM=vsim CFG_OVERRIDE=$B
+    make -C target/snitch_cluster snax-forge-run SIM=vsim CFG_OVERRIDE=$B ELF=$E
+
+    ...
+    forge cycles: 239
+    forge data: 0 errors (64 words)
+    forge counter add_acc: 19
+    forge errors: 0
+    ...
+    # ** Info: [SUCCESS] Program finished successfully
+
+Questa exits 0 whatever the program returns, so `snax-forge-run` reads the
+exit code from that last line. Verilator and Questa print the same lines.
+Against SNAX-GVSoC, the counter is equal and the window within 10% of the
+RTL's (|w_gvsoc − w_rtl| / w_rtl):
+
+| Design | SNAX-GVSoC window | RTL window | Difference | Counter (both) |
+|---|---:|---:|---:|---:|
+| vecadd, default N (64) | 226 | 239 | 5.4% | 19 |
+| vecadd, `N=512` (`--set N=512`, its own bundle) | 486 | 500 | 2.8% | 131 |
+| vsum, default N (64) | 255 | 259 | 1.5% | 67 |
+| vsum, `N=512` (`--set N=512`, its own bundle) | 755 | 739 | 2.2% | 515 |
+
+vsum runs the same way from `out/bundle/vsum/` (`recipes/vsum.json`). `N`
+reaches the hardware only as CSR values (the streamer's bounds and
+addresses, the accelerator's `loopCount` and vsum's `len`), so a design's `N=512` bundle's `rtl/` is the default's (its RTL
+files byte-identical) and one RTL build runs both ELFs. snax_cluster keeps
+each default bundle as a fixture, `target/snitch_cluster/cfg/snax_forge/vecadd/`
+and `vsum/` (section 7), whose READMEs have the same commands with
+`CFG_OVERRIDE=cfg/snax_forge/<design>/snax_forge.hjson`. The shell's rule the
+counter comes from is checked on both sides against one set of cases,
+snax-gvsoc's `tests/snax/shell/` (C§17).

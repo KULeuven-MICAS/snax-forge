@@ -993,6 +993,18 @@ block's start with the fields on its pins; ready is not busy; the counter
 is reset by an accepted start, counts busy cycles and holds after) and the
 unit.
 
+**One rule on both sides.** The shell's rule (a start, a start held while
+busy and answered in E + 1, busy, the counter) is snax-gvsoc's
+`SnaxShellRule` (`snax/snax_shell.hpp`), which `SnaxShell` runs; its
+hand-worked cases are `tests/snax/shell/cases/` (the format in that folder's
+README), which snax-gvsoc's `tb.cpp` checks the rule against, stepped with
+the unit's, and `ShellCasesSpec` drives vecadd's wrapper through
+(`SNAX_GVSOC_SHELL_CASES`). The unit's rule is `snax/snax_unit.hpp` with
+`tests/snax/unit/cases/`, which the block specs drive the blocks through
+(`SNAX_GVSOC_UNIT_CASES`). CI's chisel job sets both to the submodule's
+folders. Where a case shows the two sides disagree, the Chisel behaviour
+stands unless it breaks this section or D130, and SNAX-GVSoC follows it.
+
 ## 18. Bundle
 
 What `pixi run bundle DESIGN_POINT [--out DIR]` writes per design point
@@ -1037,7 +1049,23 @@ snax-forge:
   which must therefore come through Bender's ordered file list, not through
   `snax_forge.f`;
 - snax_cluster keeps a vecadd bundle as a fixture,
-  `target/snitch_cluster/cfg/snax_forge/vecadd/` (refreshed by its README),
-  which its `.github/workflows/snax-forge-ci.yml` builds with Verilator on
-  every PR, failing on an empty or broken `snax_forge.f` or a duplicate
-  module name.
+  `target/snitch_cluster/cfg/snax_forge/vecadd/` (refreshed by its README):
+  the hjson files, `bundle.json`, `rtl/files.f` and the files it lists, and
+  the program, `main.c`, `data.h` and `include/` (not `manifest.json`), all
+  untouched;
+- `target/snitch_cluster/snax_forge.mk` (GEN2b, D140) runs a program on the
+  RTL with snax_cluster's own targets: `CFG_OVERRIDE` the bundle's cluster
+  file, `FORGE` the program's folder (default `CFG_OVERRIDE`'s), `ELF` an
+  ELF to run (default the one built from `FORGE`), `SIM` `vlt` (default) or
+  `vsim`. `snax-forge-sim` builds `bin/snitch_cluster.$(SIM)` (for `vsim`
+  after `vsim_preparation`); `snax-forge-sw` builds `sw/apps/snax-forge`
+  for `FORGE`; `snax-forge-run` runs the ELF, writes its output to
+  `logs/snax-forge-$(SIM).txt` and fails on the program's nonzero exit code;
+- the header check: `snax-forge-sw` fails when the `#define` lines of
+  `$(FORGE)/include/streamer_csr_addr_map.h` and of the header snaxgen
+  wrote (above) differ; comments are ignored;
+- its `.github/workflows/snax-forge-ci.yml` builds the fixture with
+  Verilator on every PR, failing on an empty or broken `snax_forge.f` or a
+  duplicate module name, then builds the fixture's program, runs it with
+  `snax-forge-run SIM=vlt` (pass on exit code 0) and checks the README's
+  expected `forge counter` line.
