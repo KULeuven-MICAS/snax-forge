@@ -3,95 +3,93 @@ package snax.forge.shell
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.ForgeTester
+import snax.forge.{ForgeTester, Sink, SnaxShellCases, Source}
+import snax.forge.SnaxShellCases._
 
-/** The shell's rules on `CsrManager` + `CtrlAdapter` + a unit, through vecadd's `<tag>_shell_wrapper`
-  * (ElementwiseTiledSpatial, 4 lanes; CSRs from 0: loopCount, start, busy, counter), each case worked by hand from
-  * `SnaxShell`'s rules (snax-gvsoc `snax/snax_shell.cpp`, its header), c being the cycle of an access:
+/** The shell cross-check (open item 84): vecadd's `<tag>_shell_wrapper` (`CsrManager` + `CtrlAdapter` +
+  * ElementwiseTiledSpatial, 4 lanes; CSRs from 0: loopCount, start, busy, counter) driven through snax-gvsoc's
+  * `SnaxShell` cases (`SnaxShellCases`, read from `SNAX_GVSOC_SHELL_CASES`), which snax-gvsoc's `tb.cpp` checks
+  * `snax_shell.hpp`'s rule against.
   *
-  *   - a write to a field, or to start with bit 0 clear, is taken at once, and reads back as written;
-  *   - a start goes to the unit when it is idle in c, accepted in c; while the unit is busy in c the write is held,
-  *     then sent and answered in the cycle busy falls, E + 1 (E the run's last cycle);
-  *   - busy reads the unit's busy in c (busy from the cycle after the start, to E);
-  *   - the counter is the busy cycles after the accepted start and before c, held after the run; a start the unit
-  *     ignores (count 0) still resets it.
-  *
-  * The streamer's inputs are always valid unless a case says otherwise; with them, a run of count n fires in each of
-  * its n busy cycles.
+  * Each case drives the wrapper cycle by cycle: each input offers a beat from the cycles its valid column is 1 (a
+  * Decoupled valid stays up until its beat is taken, so a case may not drop it before), the output is ready as the case
+  * says, and the cycle's access is offered to the CSR port (`ShellDriver`; a held write offered again on each `.`
+  * line). Every access's result is compared, a write's cycle it was taken in (the CSR manager answers a write when it
+  * takes it) and a read's value, and every cycle the unit's busy, tapped from the wrapper, against the busy column.
+  * Without the variable the test is canceled.
   */
 class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
 
-  private val fixture   = RtlFixtures.all.find(_.name == "vecadd").get
-  private val LoopCount = 0
-  private val Start     = 1
-  private val Busy      = 2
-  private val Counter   = 3
+  private val fixture = RtlFixtures.all.find(_.name == "vecadd").get
 
-  private def shell(valid: Int => Boolean = _ => true)(body: ShellDriver => Unit): Unit =
-    test(new ShellHarness(fixture.spec)) { dut =>
-      body(ShellDriver(dut, Seq(1 << 20, 1 << 20), (_, _) => BigInt(0), valid))
+  behavior of "vecadd's shell wrapper against SnaxShell's cases"
+
+  private def run(c: Case): Unit = {
+    require(
+      c.fields == Seq("loopCount") && c.config == Seq("count") && c.waitKind == "lockstep" && c.inputs == 2,
+      s"${c.name}: this spec drives vecadd's wrapper (fields loopCount, config count, lockstep, 2 inputs)"
+    )
+    test(new ShellHarness(fixture.spec, tapBusy = true)) { dut =>
+      var d: ShellDriver = null
+      val sources = (0 until c.inputs).map(k => new Source(1 << 20, _ => BigInt(0), () => c.cycles(d.cycle).valids(k)))
+      val sinks   = dut.io.writers.map(_ => new Sink(() => c.cycles(d.cycle).ready))
+      d = new ShellDriver(dut, sources, sinks)
+
+      // The write in flight: the cycle it was first offered, its access and the cycle the case answers it in
+      var pending: Option[(Int, Write, BigInt)] = None
+      for ((cyc, i) <- c.cycles.zipWithIndex) {
+        val clue      = s"${c.name}, cycle $i"
+        // The clue of an assert is built before the check, so it may not read a pending that is None
+        def heldSince = pending.map(_._1).getOrElse(-1)
+        for ((src, k) <- sources.zipWithIndex)
+          assert(!src.valid || cyc.valids(k), s"$clue: input $k's valid drops before its beat is taken")
+        val req             = cyc.access match {
+          case Write(o, v) =>
+            assert(pending.isEmpty, s"$clue: a write while the one of cycle $heldSince is held")
+            Some((o, v, true))
+          case Held        =>
+            val (_, w, _) = pending.getOrElse(fail(s"$clue: `.` with no held write: it was answered by then"))
+            Some((w.offset, w.value, true))
+          case Read(o)     =>
+            assert(pending.isEmpty, s"$clue: a read while the write of cycle $heldSince is held")
+            Some((o, BigInt(0), false))
+          case NoAccess    =>
+            assert(pending.isEmpty, s"$clue: no access while the write of cycle $heldSince is held")
+            None
+        }
+        val busy            = dut.busy.get.peek().litToBoolean
+        val (accepted, rsp) = d.tick(req)
+        assert(busy == cyc.busy, s"$clue: busy $busy, the case says ${cyc.busy}")
+        cyc.access match {
+          case w: Write =>
+            val expected = cyc.result.get
+            if (accepted) assert(expected == i, s"$clue: write taken in cycle $i, the case says $expected")
+            else pending = Some((i, w, expected))
+          case Held =>
+            val (offered, _, expected) = pending.get
+            if (accepted) {
+              assert(expected == i, s"$clue: the write of cycle $offered taken in cycle $i, the case says $expected")
+              pending = None
+            }
+          case Read(o) =>
+            assert(accepted, s"$clue: read $o not taken")
+            val got = rsp.getOrElse(fail(s"$clue: read $o taken but not answered"))
+            assert(cyc.result.contains(got), s"$clue: read $o gives $got, the case says ${cyc.result.mkString}")
+          case NoAccess =>
+        }
+      }
+      pending.foreach { case (offered, _, expected) =>
+        fail(s"${c.name}: the write of cycle $offered still held after the last cycle (the case: taken in $expected)")
+      }
     }
-
-  behavior of "the shell wrapper's CSRs"
-
-  it should "read a field back as written" in shell() { d =>
-    assert(d.write(LoopCount, BigInt("deadbeef", 16)) == 0)
-    assert(d.read(LoopCount) == BigInt("deadbeef", 16))
-    d.write(Start, 6)
-    assert(d.read(Start) == 6)
   }
 
-  it should "only write start with bit 0 clear" in shell() { d =>
-    d.write(LoopCount, 4)
-    assert(d.write(Start, 2) == 1) // taken at once
-    assert(Seq.fill(3)(d.read(Busy)) == Seq(0, 0, 0))
-    assert(d.read(Counter) == 0)
-    assert(d.read(Start) == 2)
-    assert(d.taken.sameElements(Seq(0, 0)), "no input taken")
-  }
-
-  // c0 loopCount 2, c1 start (accepted, busy from c2); inputs valid from c5: firings c5, c6 = E. The second start,
-  // offered from c2, is held through c6 and taken in c7 = E + 1; it runs from c8 and fires in c8, c9.
-  it should "hold a start while busy and answer it the cycle busy falls" in shell(valid = _ >= 5) { d =>
-    d.write(LoopCount, 2)
-    assert(d.write(Start, 1) == 1)
-    assert(d.write(Start, 1) == 7)
-    assert(d.held == (2 to 6))
-    assert(d.read(Busy) == 1) // c8
-    assert(d.read(Busy) == 1) // c9: the second run's last cycle
-    assert(d.read(Busy) == 0) // c10
-    assert(d.taken.sameElements(Seq(4, 4)))
-  }
-
-  // c0 busy 0; c1 loopCount 2, c2 start: busy from c3; inputs valid from c5, firings c5, c6 = E.
-  it should "read the unit's busy" in shell(valid = _ >= 5) { d =>
-    assert(d.read(Busy) == 0)
-    d.write(LoopCount, 2)
-    assert(d.write(Start, 1) == 2)
-    assert(Seq.fill(5)(d.read(Busy)) == Seq(1, 1, 1, 1, 0)) // c3 .. c7
-  }
-
-  // c0 loopCount 3, c1 start: busy c2 .. c4. Counter at c: busy cycles in [c2, c - 1].
-  // c8 loopCount 2, c9 start: busy c10, c11; counter from c10 the busy cycles in [c10, c - 1].
-  it should "reset the counter on an accepted start, count busy cycles and hold it" in shell() { d =>
-    d.write(LoopCount, 3)
-    assert(d.write(Start, 1) == 1)
-    assert(Seq.fill(6)(d.read(Counter)) == Seq(0, 1, 2, 3, 3, 3)) // c2 .. c7
-    d.write(LoopCount, 2)
-    assert(d.write(Start, 1) == 9)
-    assert(Seq.fill(4)(d.read(Counter)) == Seq(0, 1, 2, 2)) // c10 .. c13
-  }
-
-  // c0 loopCount 2, c1 start: busy c2, c3, counter 2 at c4. c5 loopCount 0, c6 start: taken (idle), ignored by the
-  // unit; busy 0 at c7 and the counter 0 at c8.
-  it should "reset the counter on a start of count 0" in shell() { d =>
-    d.write(LoopCount, 2)
-    d.write(Start, 1)
-    d.idle(2)
-    assert(d.read(Counter) == 2)
-    d.write(LoopCount, 0)
-    assert(d.write(Start, 1) == 6)
-    assert(d.read(Busy) == 0)
-    assert(d.read(Counter) == 0)
+  SnaxShellCases.all match {
+    case None      =>
+      it should "give every SnaxShell case's results and busy" in
+        cancel(s"${SnaxShellCases.Env} is not set (snax-gvsoc's tests/snax/shell/cases)")
+    case Some(all) =>
+      it should "find SnaxShell's cases" in assert(all.nonEmpty, s"no case in ${sys.env(SnaxShellCases.Env)}")
+      for (c <- all) it should s"give ${c.name}'s results and busy" in run(c)
   }
 }

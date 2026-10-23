@@ -79,6 +79,11 @@ class ShellWrapper(spec: RtlSpec) extends RawModule {
   private def pin(name:  String): Data              = built.io.elements(name)
   private def port(name: String): DecoupledIO[Data] = pin(name).asInstanceOf[DecoupledIO[Data]]
 
+  /** The unit's busy pin, the busy CSR's source: a handle a test harness can tap (`BoringUtils.bore`). A `def`, so it
+    * names nothing and adds no port: the emitted RTL is the same with or without it.
+    */
+  def unitBusy: Bool = pin(block.busy).asInstanceOf[Bool]
+
   val io = FlatIO(new ShellPorts(ins.map(port(_).bits.getWidth), outs.map(port(_).bits.getWidth)))
 
   withClockAndReset(clk_i, (!rst_ni).asAsyncReset) {
