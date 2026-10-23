@@ -26,7 +26,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D126 D127 D130 D138 D139 D140 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D127 D130 D138 D139 D140 |
 | lower | D64 D75 D89 D105 D135 |
 | gvsoc | D120 D121 D122 D125 D128 D134 D137 |
 | brm | D68 D69 D70 D82 D103 D129 D133 |
@@ -62,7 +62,7 @@ Retired, and where each now lives:
 | D105 | D101 |
 | D111 | D18 |
 | D113 | D9 |
-| D116 | D4 D6 D10 D11 D21 D24 D29 D30 D31 D32 D33 D34 D36 D37 D40 D41 D42 D44 D47 D48 D49 D53 D62 D65 D67 D83 D88 D92 D95 D110 D114 D115 |
+| D116 | D4 D6 D10 D11 D21 D24 D29 D30 D31 D32 D33 D34 D36 D37 D40 D41 D42 D44 D47 D48 D49 D53 D62 D65 D67 D83 D88 D92 D95 D110 D114 D115 D119 |
 | D117 | D93 |
 | D123 | D124 |
 | D129 | D35 |
@@ -269,10 +269,6 @@ tasks out of STATUS at every milestone close. The rules are at the top of this f
 `container/`, for snax-forge, snax-gvsoc and the programs built from snax_cluster: the image holds
 the tools, each repo keeps its own environment. → `container/Dockerfile`, README (In the container).
 
-**D119** · scope — M16 followed what `snax-alu` needs on the snax_alu cluster, plain interconnect
-first and then sparse, one block per task (SG1–SG8); reading the hjson moved to LNK2a, the generic
-accelerator to GEN3. → snax-gvsoc `docs/plans/` (SG1–SG7), `docs/notes/NOTES.md` (SG8).
-
 **D120** · gvsoc — The Snitch core sends CSRs 0x3C0 to 0x5FF as 32-bit IO requests on its `snax_csr`
 port to an accelerator component per core, so a SNAX block is a plain IO slave; both sides follow
 Zicsr since SG6. → ARCHITECTURE §5.6, snax-gvsoc `SG1.md`, `SG6.md`.
@@ -286,20 +282,18 @@ RTL, and copies its arbiter (plain and sparse), checked against the RTL module i
 takes whole superbanks and refuses narrow winners. Closes open item 58. → snax-gvsoc `SG3.md`,
 `SG7.md`.
 
-**D123** · scope — SNAX-GVSoC is checked against snax_cluster's RTL by running one ELF on both and
-comparing the counters that do not depend on the core's timing, not predicted values, by hand from
-fresh runs against SG5's tiers; CI's `make regress` checks exit codes and `dma-timing`'s DMA
-counters. Merges D124. → snax-gvsoc README (Comparing with the RTL), `SG5.md`.
+**D123** · scope — SNAX-GVSoC is checked against snax_cluster's RTL by one ELF on both, comparing
+the counters free of the core's timing, by hand on the forge fixtures against GEN2b's tiers, the
+cluster tests' references on the forge cluster (SG5 is history). Merges D124. → `GEN2b.md`.
 
 **D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight,
 the RTL's load-to-load cycles, and the core going on after a load answered later until the next load
 or a use of its register; fetch keeps GVSoC's cache (open item 65). → snax-gvsoc
 `snax/snax_hjson.py`, `SG5.md`, `SG7.md`.
 
-**D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software and
-generated headers in `sw/`, refreshed by hand with `make sync-snax-cluster`, whose diff is the check
-that the two still match; a snax_cluster checkout is needed only for the RTL. → snax-gvsoc
-`sw/README.md`, STATUS (CI1).
+**D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software in
+`sw/`, its synced config the forge vecadd fixture's, refreshed by `make sync-snax-cluster`, whose
+diff is the check; only the RTL needs a snax_cluster checkout. → snax-gvsoc `sw/README.md`, CI1.
 
 **D127** · scope — M14 goes to SNAX-GVSoC first, then to snax_cluster, then clean-up, so the model
 side is tried first: LNK1, GEN3, LNK2a, GEN2a, FLOW3, and RET1 as its own task after FLOW3 round 1;
@@ -322,12 +316,9 @@ read-only), a `ctrl` with valid and ready to the block inside, and GeMMX's data 
 contract serves every block and `CsrLayout`, the headers and `SnaxShell` stay; snax_alu keeps its
 own rules as the baseline. Narrows open item 63. → C§17, snax-gvsoc `GEN3.md`.
 
-**D131** · design — LNK1 reads a platform from snax_cluster's hjson (`design from-hjson`): its one
-accelerator's movers must agree and go into `streamers.default`, `num_channel` and `spatial_bounds`
-stay derived (D84), and what the hjson lacks is small16's. The platform keeps its source (`hjson`)
-and `accelerator_slot`, the generated accelerator's name (default `snax_forge`, never a hand-written
-accelerator's), which the generator gives the source's only slot whatever its name (D134). →
-`design/hjson_platform.py`, C§13, C§16.
+**D131** · design — The base cluster is snax-forge's own file, `platforms/snax_forge_cluster.hjson`
+(from snax_cluster's), which `design from-hjson` reads: one accelerator, its movers agreeing (D84),
+the rest small16's; `accelerator_slot` names its slot (D134). → `design/hjson_platform.py`, C§13.
 
 **D133** · brm — The Chisel Accumulator takes `ElementwiseTiledSpatial`'s control plus `len`, so
 both run under one shell contract (D130); one register loads the next input as the result leaves

@@ -144,7 +144,8 @@ measured on SNAX-GVSoC). Closed in LNK2b: 85 (generated designs are
 `snax_forge`, D131) and 51 (snax_cluster's changes, its PR #659, C§18).
 Closed in GEN2b: 87 (`StreamerGen` reads its params from the JSON,
 snax_cluster #660) and 84 (the shell's rule in snax-gvsoc's
-`snax_shell.hpp`, its cases read by both sides, C§17). Next free number: 91.
+`snax_shell.hpp`, its cases read by both sides, C§17). Closed in CLN1: 63
+(the ALU left snax-gvsoc; generated accelerators follow D130). Next free number: 92.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -209,12 +210,6 @@ snax_cluster #660) and 84 (the shell's rule in snax-gvsoc's
 54. Which kernels take PolyBench's SMALL in a 128 KiB L1, decided in FE1a;
     the tolerance of the NumPy check for float sums waits for the float pass
     (D113).
-63. snax_alu's start and busy rules, and the snax_cluster changes they would
-    need (`snax_alu_csr.sv`, the ReqRspManager's `ready`): the ALU never
-    holds a start, also while busy, keeps `len_counter` across a start, lets
-    the end win over a start in the same cycle, and never ends with length 0;
-    the streamer holds a start while busy, which SNAX-GVSoC refuses with a
-    warning. Generated accelerators follow D130.
 65. Instruction fetch: snax_cluster's L0 (`cluster_icache`'s
     `snitch_icache_l0.sv`) prefetches the next line and the targets of taken
     branches and `jal`; GVSoC's Snitch I-cache does not, so SNAX-GVSoC misses
@@ -310,8 +305,8 @@ snax_cluster #660) and 84 (the shell's rule in snax-gvsoc's
     done CSR (a sticky bit cleared on start; a third read-only CSR amends
     D130 and `SnaxShell`); where the counter lives (in the block, as GeMMX,
     or in the adapter); blocks taking a Decoupled `ctrl`, so the adapter
-    goes; the ALU's own rules (open item 63). Decided with the alignment, at
-    the latest with M13's baseline (open item 79).
+    goes. Decided with the alignment, at the latest with M13's baseline
+    (open item 79).
 86. Generated accelerators beyond the default: a custom tag
     (`--set accelerator_slot=snax_forge_<x>`) is untested past the
     generator's file names (not in a bundle or on snax_cluster), nothing checks
