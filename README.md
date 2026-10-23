@@ -24,6 +24,79 @@ Where to read more:
 | `examples/` | walk-throughs of the flow: `loop1/` on SNAX-GVSoC; `dot/` parked until M13 |
 | `hw/chisel/README.md` | the Chisel accelerator blocks |
 
+# Getting started
+
+snax-forge makes a design point, then the bundle snax_cluster builds from
+(the cluster file, the accelerator's RTL) and the program that drives it.
+snax-gvsoc, the `gvsoc/snax-gvsoc` submodule, is the model: it builds the
+program into the ELF and runs it. snax_cluster is a separate checkout beside
+snax-forge (D139): it builds the RTL from the bundle and runs the same ELF
+through its `snax_forge.mk`. snax-forge never runs RTL (D140).
+
+```mermaid
+flowchart LR
+  R[recipe] --> F[snax-forge: flow, bundle]
+  F -- program --> G[snax-gvsoc: ELF, model run]
+  F -- bundle --> C[snax_cluster: RTL, snax_forge.mk]
+  G -- ELF --> C
+```
+
+One folder holds both checkouts:
+
+    work/
+    ├── snax-forge/      (gvsoc/snax-gvsoc inside, a submodule)
+    └── snax_cluster/
+
+The shortest path, vecadd. Clone both, from `work/`:
+
+```bash
+git clone https://github.com/KULeuven-MICAS/snax-forge.git
+git clone https://github.com/KULeuven-MICAS/snax_cluster.git --recurse-submodules
+cd snax-forge && git submodule update --init gvsoc/snax-gvsoc && cd ..
+```
+
+In snax-forge's image (Setup), from `work/`, then `cd snax-forge`: the flow
+(it builds SNAX-GVSoC the first time) and the bundle:
+
+```bash
+pixi install
+pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json
+pixi run bundle out/flow/vecadd/design/design_point.json
+```
+
+The ELF and its run on SNAX-GVSoC, in the image:
+
+```bash
+make -C gvsoc sw APPS=forge FORGE=../out/bundle/vecadd DESIGN=vecadd
+make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd \
+    GVRUN_ARGS="--param hjson=$PWD/out/bundle/vecadd/snax_forge.hjson" \
+    ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
+```
+
+    forge cycles: 226
+    forge data: 0 errors (64 words)
+    forge counter add_acc: 19
+    forge errors: 0
+
+The RTL, in snax_cluster with its own pixi environment, on the host:
+
+```bash
+cd ../snax_cluster && pixi install
+B=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
+E=$PWD/../snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf
+pixi run make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
+pixi run make -C target/snitch_cluster snax-forge-sim SIM=vlt CFG_OVERRIDE=$B
+pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B ELF=$E
+```
+
+    forge cycles: 239
+    forge data: 0 errors (64 words)
+    forge counter add_acc: 19
+    forge errors: 0
+
+The counter is equal, the window within 10%. Questa, `N=512`, vsum and the
+bar: `docs/RUN.md` section 8. pixi and the image: Setup, below.
+
 # Setup
 
 You need [pixi](https://pixi.sh):
