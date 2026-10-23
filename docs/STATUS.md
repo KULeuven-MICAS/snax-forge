@@ -337,6 +337,19 @@ snax_cluster #660) and 84 (the shell's rule in snax-gvsoc's
     differ. The fix: a seeded or parameter-hashed suffix and an injected or
     dropped timestamp. Its own snax_cluster PR, since it renames modules
     against main's output.
+91. vsum's window over N (CLN1 R0, `--set N=...` bundles, one RTL build on
+    Verilator): SNAX-GVSoC 255, 755, 2468, 4773 cycles against the RTL's
+    259, 739, 2466, 4787 at N = 64, 512, 2048, 4096, with `forge counter`
+    equal (67, 515, 2051, 4099). Fitted by least squares, w = 180.5 +
+    1.120 N on SNAX-GVSoC and 172.8 + 1.125 N on the RTL: the slopes'
+    ratio is 0.996, so the accumulate path costs the same per element
+    (GEN2b's two-point 500/448 against 480/448 does not hold; the RTL's
+    slope between neighbouring sizes is 1.071, 1.124, 1.133 against
+    1.116, 1.115, 1.125). No per-element gap: the difference stays within
+    ±16 cycles (−4, +16, +2, −14, at most 2.2%) and does not grow with N;
+    SNAX-GVSoC is linear within ±7 cycles of its fit, while the RTL's slope
+    rises from 1.071 to 1.133, within ±14 cycles of its fit. Kept as is
+    (D123) unless a kernel's numbers need it.
 
 ## Sync Reminders
 
