@@ -303,7 +303,7 @@ FLAGS = [
     "-O3", "-D__DEFINED_uint64_t",
 ]  # fmt: skip
 SW_INCDIRS = [
-    "generated/snax_alu_cluster_old", "runtime/rtl-generic/src", "runtime/common",
+    "generated/snax_forge", "runtime/rtl-generic/src", "runtime/common",
     "snRuntime/api", "snRuntime/api/omp", "snRuntime/src", "snRuntime/src/omp",
     "deps/riscv-opcodes", "math/include",
 ]  # fmt: skip

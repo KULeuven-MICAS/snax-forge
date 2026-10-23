@@ -27,9 +27,8 @@ from snax_forge.sandbox import Recipe, apply_recipe
 from tests.design.helpers import FIXTURES, REPO, SNAX_FORGE, bound_vecadd
 
 SUB = REPO / "gvsoc" / "snax-gvsoc"
-HJSON = SUB / "sw" / "cfg" / "snax_alu_cluster.hjson"
-# snax_forge's source hjson (platforms/snax_forge.json's hjson)
-SOURCE = REPO / "platforms" / "snax_alu_cluster.hjson"
+# snax_forge's source hjson (platforms/snax_forge.json's hjson), snax-forge's base cluster
+SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
 
 
 def root(tmp_path: Path) -> Path:

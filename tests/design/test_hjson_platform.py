@@ -11,15 +11,10 @@ from snax_forge.design import Design, Platform, run_checks
 from snax_forge.design import __main__ as cli
 from snax_forge.design.hjson_platform import platform_from_hjson
 
-from .helpers import CFG, REPO, SNAX_FORGE, bound_vecadd, platform_dict
+from .helpers import REPO, SNAX_FORGE, bound_vecadd, platform_dict
 
-NEW, OLD = CFG / "snax_alu_cluster.hjson", CFG / "snax_alu_cluster_old.hjson"
-# snax_forge's source: a copy of snax-gvsoc's sw/cfg/snax_alu_cluster.hjson
-SOURCE = REPO / "platforms" / "snax_alu_cluster.hjson"
-needs_submodule = pytest.mark.skipif(
-    not NEW.exists(),
-    reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
-)
+# snax_forge's source: snax-forge's base cluster (D131)
+SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
 
 # A cluster file with what the reader needs, in the hjson's own form.
 CLUSTER = """{
@@ -58,29 +53,11 @@ def test_snax_forge_round_trips_byte_for_byte():
 
 
 def test_the_source_gives_the_checked_in_platform():
-    """platforms/snax_forge.json is `design from-hjson platforms/snax_alu_cluster.hjson
+    """platforms/snax_forge.json is `design from-hjson platforms/snax_forge_cluster.hjson
     snax_forge`; its accelerator_slot is snax_forge, not the source's snax_alu."""
     p = platform_from_hjson(SOURCE, "snax_forge")
     assert p.to_json() == SNAX_FORGE.read_text()
-    assert (p.hjson, p.accelerator_slot) == ("platforms/snax_alu_cluster.hjson", "snax_forge")
-
-
-@needs_submodule
-def test_the_source_is_the_submodules_hjson_verbatim():
-    """The copy is refreshed by hand; its diff is the check (as D126)."""
-    assert SOURCE.read_bytes() == NEW.read_bytes()
-
-
-@needs_submodule
-def test_the_old_hjson_gives_the_same_platform_but_for_the_name():
-    old = platform_from_hjson(OLD, "snax_alu_old")
-    assert (old.name, old.hjson) == (
-        "snax_alu_old",
-        "gvsoc/snax-gvsoc/sw/cfg/snax_alu_cluster_old.hjson",
-    )
-    assert replace(
-        old, name="snax_forge", hjson=SOURCE.relative_to(REPO).as_posix()
-    ) == Platform.load(SNAX_FORGE)
+    assert (p.hjson, p.accelerator_slot) == ("platforms/snax_forge_cluster.hjson", "snax_forge")
 
 
 def test_a_source_outside_the_root_is_refused(tmp_path):
@@ -147,7 +124,7 @@ def test_from_hjson_writes_the_platform_and_keeps_an_existing_one(tmp_path, monk
     monkeypatch.setattr(cli, "PLATFORMS", tmp_path / "platforms")
     monkeypatch.setattr(cli, "ROOT", tmp_path)
     acc = ACC.replace("NAME", "snax_alu")
-    src = cluster(tmp_path, accs=acc, name="platforms/snax_alu_cluster.hjson")
+    src = cluster(tmp_path, accs=acc, name="platforms/snax_forge_cluster.hjson")
     assert cli.main(["from-hjson", str(src), "snax_forge"]) == 0
     assert (tmp_path / "platforms" / "snax_forge.json").read_text() == SNAX_FORGE.read_text()
     assert cli.main(["from-hjson", str(src), "snax_forge"]) == 1

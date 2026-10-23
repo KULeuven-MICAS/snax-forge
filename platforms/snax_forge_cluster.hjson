@@ -2,7 +2,12 @@
 // Licensed under the Apache License, Version 2.0, see LICENSE for details.
 // SPDX-License-Identifier: Apache-2.0
 
-// Cluster configuration for a simple testbench system.
+// snax-forge's base cluster (D131), read by `pixi run design from-hjson
+// platforms/snax_forge_cluster.hjson snax_forge`: snax_cluster's
+// target/snitch_cluster/cfg/snax_alu_cluster.hjson at the pin
+// (gvsoc/snax-gvsoc/sw/README.md, b9e475b4), unchanged but for this comment. Its
+// accelerator slot is the one the generator sets for a design, and the one
+// the platform's streamer template is read from.
 {
     nr_s1_quadrant: 1,
     s1_quadrant: {

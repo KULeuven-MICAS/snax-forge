@@ -2,9 +2,8 @@
 
     platform_from_hjson(path, name, root=None) -> Platform
 
-snax_cluster describes a cluster in an hjson file (``cfg/<cluster>.hjson``,
-the copy in snax-gvsoc ``sw/cfg/``, and snax_alu_cluster's in
-``platforms/``);
+snax_cluster describes a cluster in an hjson file (``cfg/<cluster>.hjson``;
+snax-forge's base cluster is ``platforms/snax_forge_cluster.hjson``);
 ``{"$ref": "#/<key>"}`` stands for the file's top-level ``<key>``. The
 reader takes from it:
 

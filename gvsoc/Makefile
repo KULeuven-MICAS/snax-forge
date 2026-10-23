@@ -6,15 +6,16 @@
 # below, so both build and run the same. From this folder:
 #
 #     make build                     # GVSoC for TARGETS into out/snax-gvsoc/
-#     make sw APPS=snax-alu          # sw/ and the apps, into $(SNAX_GVSOC)/build/sw/
-#     make run TARGET=snax_alu ELF=$(SNAX_GVSOC)/build/sw/apps/snax-alu/100/snax-alu.elf
+#     make sw APPS=snax-csr          # sw/ and the apps, into $(SNAX_GVSOC)/build/sw/
+#     make run TARGET=snax_hjson ELF=$(SNAX_GVSOC)/build/sw/apps/snax-csr/snax-csr.elf \
+#         GVRUN_ARGS="--param hjson=$(SNAX_GVSOC)/forge/vecadd/snax_forge.hjson"
 #
 # A design point gen-gvsoc wrote to out/gvsoc/<design>/: its program built
 # by the generic app, then run on snax_hjson with its cluster file:
 #
 #     make sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
 #     make run TARGET=snax_hjson DESIGN=vecadd \
-#         GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/vecadd/snax_alu.hjson" \
+#         GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/vecadd/snax_forge.hjson" \
 #         ELF=../out/snax-gvsoc/sw/vecadd/forge.elf \
 #         EVENTS=../out/gvsoc/vecadd/events.log TRACES="summary events"
 #

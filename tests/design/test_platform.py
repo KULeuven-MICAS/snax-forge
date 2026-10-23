@@ -174,7 +174,7 @@ def test_set_accelerator_slot_changes_the_generated_accelerators_name():
     """The generated accelerator's name is a platform field as any: the generator gives it to
     the source's only slot (tests/gen)."""
     w = Platform.load(SNAX_FORGE).with_changes([("accelerator_slot", "snax_forge_acc")])
-    assert (w.accelerator_slot, w.hjson) == ("snax_forge_acc", "platforms/snax_alu_cluster.hjson")
+    assert (w.accelerator_slot, w.hjson) == ("snax_forge_acc", "platforms/snax_forge_cluster.hjson")
     assert w.changes == {"accelerator_slot": "snax_forge_acc"} and w.base == "snax_forge"
     assert Platform.from_dict(json.loads(w.to_json())) == w
     with pytest.raises(DesignError) as e:

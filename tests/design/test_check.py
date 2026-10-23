@@ -450,7 +450,7 @@ def test_layouts_stay_below_snruntimes_top_of_l1():
     (p,) = problems(pinned(l1_end - top - 512 + 64))
     assert (p.code, p.where) == ("memory.runtime", "C in l1")
     assert f"snRuntime keeps [{l1_end - top}, {l1_end}) at the top of L1" in p.message
-    assert "2 cores of platforms/snax_alu_cluster.hjson, 256 B for CLS and TLS" in p.message
+    assert "2 cores of platforms/snax_forge_cluster.hjson, 256 B for CLS and TLS" in p.message
     assert p.fix == f"pin it lower (--set memory.C.l1.base={l1_end - top - 512})"
     (p,) = problems(pinned(l1_end - 256))  # past the end: memory.fit's, not this check's
     assert p.code == "memory.fit"

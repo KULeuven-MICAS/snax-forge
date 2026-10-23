@@ -763,13 +763,13 @@ agree. What the hjson does not hold (dtype, elements per word,
 file (`hjson`, which must be under snax-forge's root, `hjson.path`) and
 `accelerator_slot`, `snax_forge`, not the source's `snax_acc_name`; the
 source must still have exactly one accelerator, its name an identifier.
-`snax_forge.json` comes from `platforms/snax_alu_cluster.hjson`, a verbatim
-copy of snax-gvsoc's `sw/cfg/snax_alu_cluster.hjson` refreshed by hand (its
-diff the check, as D126); snax-gvsoc's `_old` copy gives the same platform.
+`snax_forge.json` comes from `platforms/snax_forge_cluster.hjson`,
+snax-forge's base cluster (D131), taken from snax_cluster's
+`cfg/snax_alu_cluster.hjson`.
 
 <!-- snippet: platforms/snax_forge.json -->
 ```json
- "hjson": "platforms/snax_alu_cluster.hjson",
+ "hjson": "platforms/snax_forge_cluster.hjson",
  "accelerator_slot": "snax_forge",
 ```
 

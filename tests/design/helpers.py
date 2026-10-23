@@ -25,7 +25,6 @@ REPO = Path(__file__).resolve().parents[2]
 FIXTURES = REPO / "tests" / "dfg" / "fixtures"
 SMALL16 = REPO / "platforms" / "small16.json"
 SNAX_FORGE = REPO / "platforms" / "snax_forge.json"
-CFG = REPO / "gvsoc" / "snax-gvsoc" / "sw" / "cfg"  # empty unless the submodule is checked out
 RECIPE = REPO / "recipes" / "vecadd.json"
 BOUND = FIXTURES / "vecadd_accelerated.snaxdfg"
 

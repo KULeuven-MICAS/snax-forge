@@ -228,8 +228,9 @@ submodule at `gvsoc/snax-gvsoc`, with `gvsoc/Makefile` that builds and runs
 it (D128). It holds:
 
 - one **SNAX target**, `snax_hjson`, read from a cluster hjson at run time
-  (LNK2a, D134): `snax_alu` and `snax_alu_sparse` are it on their fixed
-  file, a design point's cluster file is passed with `--param hjson=`;
+  (LNK2a, D134): a design point's cluster file is passed with `--param
+  hjson=`, its default the vecadd fixture's (the `snax_alu` targets went in
+  CLN1);
 - a small **core patch**: the Snitch core sends CSRs 0x3C0 to 0x5FF as
   32-bit IO requests at 4 × CSR on its `snax_csr` port, bound to an
   accelerator component per core, so a `csrw` reaches the accelerator's
@@ -242,7 +243,7 @@ it (D128). It holds:
   streamer's ports, the cores and AXI, copying the plain or the sparse
   interconnect's arbiter, with the DMA taking whole superbanks (SG3, SG7,
   snax-gvsoc #10, D122); the hand-written **`snax_alu`**
-  (SG4), and the generic **`SnaxUnit`** and **`SnaxShell`** in one standard
+  (SG4, removed in CLN1), and the generic **`SnaxUnit`** and **`SnaxShell`** in one standard
   composite built from a slot's datapath block, in place of the
   hand-written `SnaxAluAcc` (GEN3, LNK2a, D128, D134); each checked against the RTL by
   running the same ELF on both and comparing counters (D123), and the
@@ -361,11 +362,13 @@ accumulation order, and the check against NumPy is a tolerance (D28).
 ## 7. The baseline (M16)
 
 SNAX-GVSoC is checked against snax_cluster RTL before anything is generated.
-It starts on `snax_alu` (SNAX's adder, `elementwise_add` at W = 4): SNAX's
-hand-written `snax-alu` app runs unchanged on both, at a few sizes, and the
-deviation is explained per phase against an error target fixed beforehand
+It started on `snax_alu` (SNAX's adder, `elementwise_add` at W = 4): SNAX's
+hand-written `snax-alu` app ran unchanged on both, at a few sizes, and the
+deviation was explained per phase against an error target fixed beforehand
 (open item 3), checked by hand from fresh runs of one ELF; a regression
-checks that every program finishes (SG5, SG6, D123). Generation (M14) is then
+checks that every program finishes (SG5, SG6, D123). Since CLN1 the cluster
+tests run on the forge fixtures' cluster, snax-forge's base cluster (D131).
+Generation (M14) is then
 accepted when one ELF gives the same counters on the generated GVSoC
 accelerator and the generated RTL (D123, GEN2b), the GVSoC side first against
 the BRM's predicted counter (GEN3, D127).

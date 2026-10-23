@@ -23,10 +23,10 @@ from snax_forge.gen.blocks import accumulator, elementwise_tiled_spatial
 from snax_forge.lower import c as c_mod
 from tests.design.helpers import REPO, SNAX_FORGE, chained, graph_dict
 
-from .helpers import HJSON, SOURCE, SUB, bound_vecmul, bound_vsum, point, snax_cfg, snax_streamer
+from .helpers import SOURCE, SUB, bound_vecmul, bound_vsum, point, snax_cfg, snax_streamer
 
 needs_submodule = pytest.mark.skipif(
-    not HJSON.exists(),
+    not (SUB / "snax" / "snax_cfg.py").exists(),
     reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
 IMPL = "chisel_tiled_spatial"
@@ -113,11 +113,10 @@ def test_the_streamer_file_is_the_design_points_streamers(w4):
     assert parsed(out / "snax_forge_streamer.hjson") == TEMPLATE_W4
 
 
-@needs_submodule
 def test_the_streamer_file_is_the_hjsons_template(w4):
     """Lowered per design point, vecadd at W = 4 gives the source's own template back."""
     out, _ = w4
-    hand = parsed(HJSON)["snax_alu_streamer_template"]
+    hand = parsed(SOURCE)["snax_alu_streamer_template"]
     for group in ("data_reader_params", "data_writer_params"):
         assert parsed(out / "snax_forge_streamer.hjson")[group] == hand[group]
 
@@ -266,22 +265,6 @@ def test_the_platforms_values_are_written_back(tmp_path):
     assert c["cluster"]["data_width"] == 64
 
 
-@needs_submodule
-def test_the_plain_source_sets_narrow_and_wide_ports(tmp_path):
-    """A source with the plain interconnect (snax_alu_cluster_old.hjson): narrow ports, no wide."""
-    old = HJSON.with_name("snax_alu_cluster_old.hjson")
-    (tmp_path / "platforms").mkdir()
-    (tmp_path / "platforms" / "old.hjson").write_bytes(old.read_bytes())
-    platform = Platform.load(SNAX_FORGE).with_changes([("hjson", "platforms/old.hjson")])
-    out = tmp_path / "out"
-    generate(point(tmp_path, platform=platform), out, root=tmp_path)
-    s = slot(parsed(out / "snax_forge.hjson"))
-    assert (s["snax_tcdm_ports"], s["snax_narrow_tcdm_ports"], s["snax_wide_tcdm_ports"]) == (
-        12, 12, 0
-    )  # fmt: skip
-    assert "sparse_interconnect_config" not in s
-
-
 def test_two_out_folders_give_byte_identical_files(tmp_path, monkeypatch):
     """Nothing written depends on the out folder or the working directory: the fixture diff."""
     path = point(tmp_path)
@@ -322,7 +305,7 @@ def _refused(tmp_path, code, platform=None, source=None):
     refused with ``code`` before anything is written."""
     path = point(tmp_path, platform=platform)
     if source is not None:
-        (tmp_path / "platforms" / "snax_alu_cluster.hjson").write_text(source)
+        (tmp_path / "platforms" / SOURCE.name).write_text(source)
     with pytest.raises(GenError) as e:
         generate(path, tmp_path / "out", root=tmp_path)
     assert e.value.code == code
@@ -577,7 +560,7 @@ def test_the_command(tmp_path, capsys, monkeypatch):
     assert "cluster snax_forge.hjson" in text and "task add_acc: 16 beats" in text
     assert "TARGET=snax_hjson" in text and f"--param hjson={out / 'snax_forge.hjson'}" in text
     assert (out / "manifest.json").is_file()
-    (tmp_path / "platforms" / "snax_alu_cluster.hjson").unlink()
+    (tmp_path / "platforms" / SOURCE.name).unlink()
     assert cli.main([str(path), "--out", str(out)]) == 1
     assert "[gen.source]" in capsys.readouterr().err
 

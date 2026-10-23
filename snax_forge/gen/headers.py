@@ -23,9 +23,9 @@ in the manifest:
 Only the comments differ from the Chisel header. Streamer.scala's optional
 per-mover CSRs (address remap, channel and byte enables) and its datapath
 extensions are not in snax-gvsoc's streamer model, so they never appear.
-The one-dimensional case is checked against snax-gvsoc's copy of the
-Chisel header (``sw/generated/snax_alu_cluster_old/``); more dimensions
-follow Streamer.scala's loops, read, not compared with a generated file.
+The one-dimensional case is checked against the Chisel header snaxgen
+writes for snax-gvsoc (``sw/generated/snax_forge/``); more dimensions follow
+Streamer.scala's loops, read, not compared with a generated file.
 Neither header has an include guard, as the Chisel one has none.
 """
 

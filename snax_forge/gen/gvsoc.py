@@ -50,9 +50,7 @@ name, is renamed and set, its keys in this order:
                                 after the others):
       snax_tcdm_ports           the streamer's channels
       sparse_interconnect_config  one group of that width (its granularity
-                                kept), or ``snax_narrow_tcdm_ports`` that
-                                many and ``snax_wide_tcdm_ports`` 0,
-                                whichever the source has
+                                kept), when the source has it
       snax_num_rw_csr           the shell's fields and start
       snax_num_ro_csr           2 (busy and the counter, D130)
     snax_disable_csr_manager    true: the wrapper carries its own manager
@@ -491,9 +489,6 @@ def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], name: str,
                 "group [width, granularity]",
             )  # fmt: skip
         slot["sparse_interconnect_config"] = [[ports, groups[0][1]]]
-    if "snax_narrow_tcdm_ports" in slot or "snax_wide_tcdm_ports" in slot:
-        slot["snax_narrow_tcdm_ports"] = ports
-        slot["snax_wide_tcdm_ports"] = 0
     slot["snax_num_rw_csr"] = len(unit.fields) + 1
     slot["snax_num_ro_csr"] = SHELL_RO_CSRS
     old = slot.get("snax_streamer_cfg")

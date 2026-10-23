@@ -219,7 +219,7 @@ The flow runs these tools in turn; each also runs on its own.
 | Design point | `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | `out/design/vecadd/` platform, memory plan, design point |
 | Only check | `pixi run design check out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | nothing |
 | Keep a platform | `pixi run design save out/design/vecadd/platform.json NAME` | `platforms/NAME.json` |
-| Platform from snax_cluster | `pixi run design from-hjson platforms/snax_alu_cluster.hjson snax_forge --force` | `platforms/snax_forge.json` from its source, a copy of snax_cluster's cluster file (LNK1) |
+| Platform from snax_cluster | `pixi run design from-hjson platforms/snax_forge_cluster.hjson snax_forge --force` | `platforms/snax_forge.json` from its source, snax-forge's base cluster, taken from snax_cluster's (LNK1, D131) |
 | Task list | `pixi run lower tasks out/design/vecadd/design_point.json` | `tasks.json` beside the point |
 | The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json` | `out/flow/vecadd/`: design point, task list, generated folder, program, checked SNAX-GVSoC run |
 
@@ -282,12 +282,13 @@ pixi (`pixi run make -C gvsoc ...`, as the flow does).
 git submodule update --init gvsoc/snax-gvsoc
 cd gvsoc
 make build                      # GVSoC for TARGETS (default snax-gvsoc's SNAX_TARGETS) into out/snax-gvsoc/
-make sw APPS=snax-alu           # sw/ and the named apps, into snax-gvsoc/build/sw/
-make run TARGET=snax_alu ELF=snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
+make sw APPS=snax-csr           # sw/ and the named apps, into snax-gvsoc/build/sw/
+make run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$PWD/snax-gvsoc/forge/vecadd/snax_forge.hjson" \
+    ELF=snax-gvsoc/build/sw/apps/snax-csr/snax-csr.elf
 ```
 
-`run` prints `Accelerator Done!`, `Accelerator Cycles: 25` and `Number of
-errors: 0`. It calls the install's `gvrun`; `GVRUN_ARGS` goes before
+`run` prints snax-csr's four lines, `csrw/csrr: 0 errors` to `read-only: 0
+errors`. It calls the install's `gvrun`; `GVRUN_ARGS` goes before
 `run` (e.g. `GVRUN_ARGS=--trace=snax_acc0`) and the work directory is
 `out/snax-gvsoc/work/<target>/<design>` with `DESIGN` set, else
 `out/snax-gvsoc/work/<target>/<elf name>`. `SNAX_GVSOC=../../snax-gvsoc` uses a
