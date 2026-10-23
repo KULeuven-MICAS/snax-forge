@@ -8,6 +8,8 @@ list (SNAX-LOWER's C backend, ``lower/c.py``), and its data, ``data.h``
 (data.py). What is written names the design point by its path from
 snax-forge's root and is byte-identical wherever it is written (gvsoc.py,
 "Stable paths"). The command line is ``python -m snax_forge.gen`` (pixi ``gen-gvsoc``).
+The accelerator's RTL spec is rtl.py (pixi ``gen-rtl``); bundle.py (pixi
+``bundle``) writes both, with the RTL's file list, for snax_cluster.
 """
 
 from .blocks import BLOCKS, ELEMENTWISE_OP, GenError, Unit, register_block

@@ -179,19 +179,19 @@ jobs:
         run: pixi install -e ci
 
       - name: Flow on vecadd
-        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_alu.json
+        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_forge.json
 
       - name: Flow on vsum
-        run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_alu.json
+        run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_forge.json
 
       - name: Flow on vecadd, trace task
-        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
+        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_forge.json --trace task
 
       - name: Flow on vsum, trace task
-        run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_alu.json --trace task
+        run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_forge.json --trace task
 
       - name: Flow on vecadd, trace stall
-        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_alu.json --trace stall
+        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_forge.json --trace stall
 
       - name: Tests marked gvsoc
         run: pixi run -e ci pytest -q -m gvsoc

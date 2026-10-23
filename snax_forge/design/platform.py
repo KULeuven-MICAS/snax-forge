@@ -11,7 +11,7 @@ bound graph with a platform.
      "changes":  {},                what differs from ``base``, path -> value
      "hjson":    null,              the source cluster file, a path from
                                     snax-forge's root (``design from-hjson``)
-     "accelerator_slot": null,      its accelerator slot (``snax_acc_name``)
+     "accelerator_slot": null,      the generated accelerator's name
      "l1":       {...},             L1Config
      "l2":       {...} or null,     L2Config; no L2, no DMA
      "wait_mode": "poll",           how the program waits for a task
@@ -36,12 +36,11 @@ because only the graph knows the ports.
 
 **The source hjson.** A platform read from snax_cluster's cluster file
 (hjson_platform.py) keeps the file it came from (``hjson``, a copy in
-``platforms/``) and the name of its one accelerator slot
-(``accelerator_slot``): the GVSoC generator writes the design's cluster file
-from that source, with that slot set (snax_forge/gen). Both are null for a
-platform not read from one (small16). ``--set accelerator_slot=NAME`` changes
-it as any field: the generator then sets the source's slot of that name, and
-refuses a source whose only slot has another (``gen.slot``).
+``platforms/``) and the generated accelerator's name (``accelerator_slot``,
+``snax_forge``): the GVSoC generator writes the design's cluster file from
+that source, its only slot renamed to it and set (snax_forge/gen). Both are
+null for a platform not read from one (small16). ``--set
+accelerator_slot=NAME`` changes it as any field.
 
 **Changes and working copies.** ``with_changes`` applies ``--set`` paths
 (``l1.n_banks``, ``streamers.acc_a.temporal_dims``) and returns a working
@@ -171,7 +170,7 @@ class Platform:
     base: str | None = None
     changes: dict[str, Any] = field(default_factory=dict)
     hjson: str | None = None  # the source cluster file, from snax-forge's root
-    accelerator_slot: str | None = None  # its accelerator slot, snax_acc_name
+    accelerator_slot: str | None = None  # the generated accelerator's name
 
     # --- the streamer shell ---
 

@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D139**.
+  number: **D140**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm`
 (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design`
@@ -26,7 +26,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D126 D127 D130 D138 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D126 D127 D130 D138 D139 |
 | lower | D64 D75 D89 D105 D135 |
 | gvsoc | D120 D121 D122 D125 D128 D134 D137 |
 | brm | D68 D69 D70 D82 D103 D129 D133 |
@@ -241,9 +241,11 @@ apart. That is how a hand-edited graph is run and checked, though it cannot be r
 (open item 34).
 
 **D111** · scope — SNAX-FORGE generates a bundle per design point for snax_cluster (the accelerator
-RTL with a shell wrapper carrying its own CSR manager (D130), the hjson of D134, a `Bender.yml`, the
-program as direct CSR writes) and for SNAX-GVSoC the same hjson and headers (D128); SNAX's own
-generators build the rest, so the hjson describes the cluster once. → ARCHITECTURE §5.8.
+RTL with a shell wrapper carrying its own CSR manager (D130) in `rtl/` with a file list the cluster
+hjson names (`snax_forge_rtl`), the hjson of D134, the program as direct CSR writes) and for
+SNAX-GVSoC the same hjson and headers (D128); SNAX's own generators build the rest, so the hjson
+describes the cluster once. A file list, not a `Bender.yml`: snax_cluster depends on no bundle
+(D139). → ARCHITECTURE §5.8, C§18.
 
 **D112** · scope — A composition is one accelerator: one recipe step binds a connected group of
 tasklets to a chain of unit BRMs linked by FIFOs, with streamers on the outer ports only, so one
@@ -323,7 +325,9 @@ own rules as the baseline. Narrows open item 63. → C§17, snax-gvsoc `GEN3.md`
 **D131** · design — LNK1 reads a platform from snax_cluster's hjson (`design from-hjson`): its one
 accelerator's movers must agree and go into `streamers.default`, `num_channel` and `spatial_bounds`
 stay derived (D84), and what the hjson lacks is small16's. The platform keeps its source (`hjson`)
-and slot (`accelerator_slot`) for the generator (D134). → `design/hjson_platform.py`, C§13.
+and `accelerator_slot`, the generated accelerator's name (default `snax_forge`, never a hand-written
+accelerator's), which the generator gives the source's only slot whatever its name (D134). →
+`design/hjson_platform.py`, C§13, C§16.
 
 **D133** · brm — The Chisel Accumulator takes `ElementwiseTiledSpatial`'s control plus `len`, so
 both run under one shell contract (D130); one register loads the next input as the result leaves
@@ -356,3 +360,7 @@ D38, D39, D59. → `run/`, C§7, snax-gvsoc `docs/EVENTS.md`.
 the binding and checks it against the catalogue, Scala only constructs (`Emit --spec`), and the
 chisel job checks `Emit --describe` equal to the catalogue, so the Python side never needs a JVM.
 → C§17, `gen/rtl.py`, `hw/chisel/README.md`.
+
+**D139** · scope — snax-forge and snax_cluster are separate checkouts joined only by the bundle's
+files, so snax_cluster never depends on snax-forge and a bundle is made by the snax-forge checked
+out; snax-gvsoc stays a submodule, pinned for snax-forge's flow and tests. → C§18.

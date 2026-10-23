@@ -38,7 +38,7 @@ def test_a_run_loads_as_run_gives_it(dirs, level):
     out = read_run(d / "run")
     assert (rv.name, rv.path, rv.folder) == (f"vecadd-{level}", d / "run", d)
     assert rv.outputs == out and rv.total_cycles == out.profile.total_cycles == 226
-    assert rv.cluster == load_cluster(d / "gen" / "snax_alu.hjson",
+    assert rv.cluster == load_cluster(d / "gen" / "snax_forge.hjson",
                                       d / "design" / "design_point.json")  # fmt: skip
     assert rv.trace_level == level
     assert (rv.events == []) == (level == "off")

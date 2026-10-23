@@ -9,8 +9,8 @@ files, each changing for its own reason, the C headers, the program and its
 data, and the manifest:
 
     <platform>.hjson         the cluster: the platform's source hjson with
-                             the platform's values written back and the
-                             accelerator slot set
+                             the platform's values written back, the
+                             cluster renamed and the accelerator slot set
     <slot>_streamer.hjson    the streamer template, as the hjson has it
     <slot>_acc.hjson         the datapath block
     include/                 the C headers (headers.py): the streamer's
@@ -22,7 +22,9 @@ data, and the manifest:
     manifest.json            what was written (Manifest)
 
 ``<platform>`` is the platform's base (its name when it has none), ``<slot>``
-its ``accelerator_slot``.
+its ``accelerator_slot``: for ``platforms/snax_forge.json``,
+``snax_forge.hjson``, ``snax_forge_streamer.hjson`` and
+``snax_forge_acc.hjson``.
 
 **The cluster file.** The platform's ``hjson`` (a path from ``root``),
 parsed, with the platform's values written back by the reverse of
@@ -35,18 +37,36 @@ parsed, with the platform's values written back by the reverse of
     cluster.dma_data_width     l1.wide_bits (= l2.beat_bits)
     dram.address, dram.length  l2.base_addr, l2.size_bytes
 
-and the slot, the source's one ``snax_acc_cfg`` entry, named
-``accelerator_slot``, set: ``snax_tcdm_ports`` the streamer's channels;
-``sparse_interconnect_config`` one group of that width (its granularity
-kept), or ``snax_narrow_tcdm_ports`` that many and ``snax_wide_tcdm_ports``
-0, whichever the source has; ``snax_num_rw_csr`` the shell's fields and
-start, ``snax_num_ro_csr`` 2 (busy and the counter, D130);
-``snax_streamer_cfg`` ``{"$ref": "<slot>_streamer.hjson"}`` and
-``snax_datapath_cfg`` ``{"$ref": "<slot>_acc.hjson"}``, each the whole file.
-The source's own template, a top-level key the slot referred to
-(``{"$ref": "#/<key>"}``), goes when nothing else refers to it. Everything
-else is the source's, its key order kept; its comments are not (the file
-is written as JSON, which hjson reads).
+``cluster.name`` becomes ``CLUSTER`` (``snax_forge_cluster``), and in
+``cluster.bender_target`` the entry equal to the source's ``cluster.name``
+becomes it too, so the generated cluster takes no name of snax_cluster's own
+(D139). The slot, the source's one ``snax_acc_cfg`` entry whatever its
+name, is renamed and set, its keys in this order:
+
+    snax_acc_name               the platform's accelerator_slot
+    the source's other keys     in their order, ``bender_target`` dropped
+                                (the RTL comes from the bundle, bundle.py),
+                                with these set (a key the source lacks
+                                after the others):
+      snax_tcdm_ports           the streamer's channels
+      sparse_interconnect_config  one group of that width (its granularity
+                                kept), or ``snax_narrow_tcdm_ports`` that
+                                many and ``snax_wide_tcdm_ports`` 0,
+                                whichever the source has
+      snax_num_rw_csr           the shell's fields and start
+      snax_num_ro_csr           2 (busy and the counter, D130)
+    snax_disable_csr_manager    true: the wrapper carries its own manager
+                                (D130)
+    snax_forge_rtl              ``rtl/files.f``, the RTL's file list from
+                                the cluster file's folder, which only a
+                                bundle has; SNAX-GVSoC ignores it
+    snax_streamer_cfg           ``{"$ref": "<slot>_streamer.hjson"}``
+    snax_datapath_cfg           ``{"$ref": "<slot>_acc.hjson"}``
+
+each ``$ref`` the whole file. The source's own template, a top-level key the
+slot referred to (``{"$ref": "#/<key>"}``), goes when nothing else refers to
+it. Everything else is the source's, its key order kept; its comments are
+not (the file is written as JSON, which hjson reads).
 
 **The streamer**, lowered per design point (D134), as the design point's
 streamers give it (D87): readers the input ports in the BRM's port order,
@@ -65,10 +85,11 @@ for the port's N-bit dtype) and ``fifo_depth``.
 (``gen.instances``: the platform has one accelerator slot), a null binding
 (``gen.binding``), an unregistered block (``gen.block``), what the block's
 adapter refuses, a port whose lanes are not whole 64-bit channels
-(``gen.dtype``), CSRs past ``SNAX_CSR_LAST`` (``gen.csrs``), a platform
+(``gen.dtype``), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
 without a source hjson or a source that cannot be read or written into
-(``gen.source``), a slot name that is not the source's only slot
-(``gen.slot``), and a platform value the hjson cannot express
+(``gen.source``, also a ``cluster.bender_target`` without the source's
+``cluster.name``), a source with no slot or several (``gen.slot``), and a
+platform value the hjson cannot express
 (``gen.platform``: what the cluster file gives back through
 hjson_platform.py must be the platform's L1 and L2). A symbol of the bound
 graph still null never gets here: ``DesignPoint.load`` refuses it
@@ -128,9 +149,13 @@ ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
 
 # snax-gvsoc snax/snax_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
-# last one the core sends out (SNAX_CSR_FIRST, SNAX_CSR_LAST)
+# last one an accelerator may use (SNAX_CSR_FIRST, SNAX_ACC_CSR_LAST): the core
+# sends out up to 0x5FF, but snax_cluster's hw/snitch/src/csr_snax_def.sv
+# reserves 0x5FE (CSR_SNAX_READ_TASK_READY_QUEUE) and 0x5FF
+# (CSR_SNAX_WRITE_TASK_DONE_QUEUE), which hw/snax_util/src/snax_intf_translator.sv
+# routes to the cluster's top-level CSR port, not to the accelerator
 SNAX_CSR_FIRST = 0x3C0
-SNAX_CSR_LAST = 0x5FF
+SNAX_ACC_CSR_LAST = 0x5FD
 # The unit's trace path: the compute core's accelerator, named snax_acc<core>
 # by pulp/snitch/snitch_cluster/snitch_cluster.py; the composite
 # (snax/snax_unit_acc.py) calls it unit
@@ -139,6 +164,10 @@ UNIT_TRACE = "snax_acc0/unit"
 UNIT = "SnaxUnit"
 # A shell's read-only CSRs: busy and the counter (D130)
 SHELL_RO_CSRS = 2
+# The generated cluster's name (D139)
+CLUSTER = "snax_forge_cluster"
+# The RTL's file list from the cluster file's folder, written by bundle.py
+RTL_FILE_LIST = "rtl/files.f"
 
 
 @dataclass(frozen=True)
@@ -300,8 +329,11 @@ def csr_layout(template: dict[str, Any], fields: list[str]) -> CsrLayout:
     nums = {f: first + i for i, f in enumerate(fields)}
     start = first + len(fields)
     layout = CsrLayout(SNAX_CSR_FIRST, first - 1, nums, start, start + 1, start + 2)
-    if layout.counter > SNAX_CSR_LAST:
-        raise GenError("gen.csrs", f"the shell's last CSR {layout.counter} is past {SNAX_CSR_LAST}")
+    if layout.counter > SNAX_ACC_CSR_LAST:
+        raise GenError(
+            "gen.csrs", f"the shell's last CSR {layout.counter} is past {SNAX_ACC_CSR_LAST}, the "
+            "last an accelerator may use (0x5FE and 0x5FF are snax_cluster's task queues)",
+        )  # fmt: skip
     return layout
 
 
@@ -407,7 +439,8 @@ def write_back(d: dict[str, Any], platform: Platform) -> None:
 
 
 def find_slot(d: dict[str, Any], platform: Platform) -> tuple[str, dict[str, Any]]:
-    """The source's one slot, which must be named ``accelerator_slot``, and its path."""
+    """The source's only slot, whatever its ``snax_acc_name``, and its path; ``gen.slot`` when
+    the source has none or several."""
     where = platform.hjson
     slots: list[tuple[str, dict[str, Any]]] = []
     try:
@@ -419,18 +452,34 @@ def find_slot(d: dict[str, Any], platform: Platform) -> tuple[str, dict[str, Any
             raise GenError("gen.source", f"{where}: {at} is not an object")
         if all(acc is not s for _, s in slots):
             slots.append((at, acc))
-    names = [s.get("snax_acc_name") for _, s in slots]
-    if names != [platform.accelerator_slot]:
+    if len(slots) != 1:
+        names = [s.get("snax_acc_name") for _, s in slots]
         raise GenError(
-            "gen.slot", f"{where} has the slots {names}; the platform's accelerator_slot "
-            f"{platform.accelerator_slot!r} must be its only one",
+            "gen.slot", f"{where} has the slots {names}; the generated accelerator "
+            f"{platform.accelerator_slot!r} takes the source's only one",
         )  # fmt: skip
     return slots[0]
 
 
-def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], template: dict[str, Any],
-             unit: Unit, files: tuple[str, str], where: str) -> None:  # fmt: skip
-    """The slot (``find_slot``'s, in ``d``) set for the design; see the module doc."""
+def rename_cluster(d: dict[str, Any], where: str) -> None:
+    """``cluster.name`` and its entry in ``cluster.bender_target`` become ``CLUSTER``."""
+    cluster = d.get("cluster")
+    name = cluster.get("name") if isinstance(cluster, Mapping) else None
+    targets = cluster.get("bender_target") if isinstance(cluster, Mapping) else None
+    if not isinstance(targets, list) or name not in targets:
+        raise GenError(
+            "gen.source", f"{where}: cluster.bender_target {targets!r} does not hold "
+            f"cluster.name {name!r}, which the generated cluster {CLUSTER} takes the place of",
+        )  # fmt: skip
+    cluster["name"] = CLUSTER
+    cluster["bender_target"] = [CLUSTER if t == name else t for t in targets]
+
+
+def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], name: str,
+             template: dict[str, Any], unit: Unit, files: tuple[str, str],
+             where: str) -> None:  # fmt: skip
+    """The slot (``find_slot``'s, in ``d``) named ``name`` and set for the design; see the
+    module doc."""
     ports = channels(template)
     slot["snax_tcdm_ports"] = ports
     if "sparse_interconnect_config" in slot:
@@ -448,8 +497,15 @@ def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], template: dict[st
     slot["snax_num_rw_csr"] = len(unit.fields) + 1
     slot["snax_num_ro_csr"] = SHELL_RO_CSRS
     old = slot.get("snax_streamer_cfg")
-    slot["snax_streamer_cfg"] = {"$ref": files[0]}
-    slot["snax_datapath_cfg"] = {"$ref": files[1]}
+    last = {
+        "snax_disable_csr_manager": True,
+        "snax_forge_rtl": RTL_FILE_LIST,
+        "snax_streamer_cfg": {"$ref": files[0]},
+        "snax_datapath_cfg": {"$ref": files[1]},
+    }
+    rest = {k: v for k, v in slot.items() if k not in ("snax_acc_name", "bender_target", *last)}
+    slot.clear()
+    slot.update({"snax_acc_name": name, **rest, **last})
     for key in _local_refs(old):
         if key in d and key not in _local_refs(d):
             del d[key]
@@ -504,18 +560,20 @@ def generate(
     cluster = source(platform, root)
     at, found = find_slot(cluster, platform)
     write_back(cluster, platform)
+    rename_cluster(cluster, platform.hjson)
     slot = platform.accelerator_slot
     names = (f"{platform.base or platform.name}.hjson", f"{slot}_streamer.hjson",
              f"{slot}_acc.hjson")  # fmt: skip
-    set_slot(cluster, at, found, template, unit, names[1:], platform.hjson)
+    set_slot(cluster, at, found, slot, template, unit, names[1:], platform.hjson)
 
     accel = (f"instance {name}, BRM {inst.brm.name}, implementation {inst.implementation}, "
              f"block {inst.impl.binding['block']}")  # fmt: skip
     streamer_h, streamer_last = streamer_header(movers(template), SNAX_CSR_FIRST, shown)
     assert streamer_last == layout.streamer_last, (streamer_last, layout)
     files = {
-        names[0]: _hjson(shown, f"The cluster: {platform.hjson} with platform {platform.name}'s "
-                         f"values and the slot {slot} set for {accel}; its streamer in "
+        names[0]: _hjson(shown, f"The cluster {CLUSTER}: {platform.hjson} with platform "
+                         f"{platform.name}'s values and the slot {slot} set for {accel}; its "
+                         f"streamer in "
                          f"{names[1]}, its datapath in {names[2]}.", cluster),
         names[1]: _hjson(shown, f"Slot {slot}'s streamer template: readers the input ports in the "
                          "BRM's port order, writers the output ports.", template),

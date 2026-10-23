@@ -272,25 +272,36 @@ the flow ran before, was removed in RET1 with its scenarios and contracts
 
 For SNAX-GVSoC, a design point gives the hjson files, the CSR headers and the
 program, no generated Python (GEN3, LNK2a, GEN2a; `gen/`, D128, D134, D135).
-For snax_cluster SNAX-FORGE writes a bundle it builds and runs (D111)
-**[PLANNED, M14]**:
+For snax_cluster SNAX-FORGE writes a bundle, a folder per design point
+(`pixi run bundle`, `gen/bundle.py`, C§18, D111; the flow does not call
+it). The generated accelerator is `snax_forge` and its cluster
+`snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131,
+D139):
 
 - **accelerator RTL** from each BRM's hardware binding (GEN1, D138):
   `gen/rtl.py` resolves it into `rtl.json` (C§17) and checks it against
   the block catalogue `hw/chisel/blocks.json`; `Emit --spec` builds the
   Chisel blocks in `hw/chisel/` (D91) into `<tag>_shell_wrapper` on SNAX's
   CSR request/response and streamer ports, with its own CSR manager on
-  ReqRspManager's protocol and a `ctrl` adapter (D130); `pixi run gen-rtl`,
-  which the flow does not call (D136);
+  ReqRspManager's protocol and a `ctrl` adapter (D130); `pixi run gen-rtl`
+  alone, which the flow does not call (D136), and in the bundle's `rtl/`
+  with `rtl/files.f`, its file list;
 - **cluster hjson**, three files (D134): the cluster (the platform's source
-  with its TCDM, DMA width and DRAM written back and the slot's CSR and
-  port counts set), the streamer template lowered per design point, and
-  the datapath block; SNAX's own generators build the rest (LNK2b, once
-  they resolve a cross-file `$ref`), and SNAX-GVSoC reads the same files
+  with its TCDM, DMA width and DRAM written back, the cluster renamed and
+  the slot's name, CSR and port counts set, its manager off and its RTL's
+  file list named, `snax_forge_rtl`), the streamer template lowered per
+  design point, and the datapath block; SNAX-GVSoC reads the same files
   (LNK2a);
-- a **`Bender.yml`** that snax_cluster takes as one dependency (LNK2b, open
-  item 51);
 - the **program** (section 5.5).
+
+snax_cluster and snax-forge stay separate checkouts, joined only by the
+bundle's files (D139; LNK2b, snax_cluster #659): clustergen and snaxgen
+resolve the cross-file `$ref`s, snaxgen turns `snax_forge_rtl` into
+`generated/snax_forge.f`, which the vsim and Verilator builds read, and the
+`snax_forge_cluster` Bender target builds the rest; snax_cluster's
+`snax-forge-ci.yml` builds a vecadd bundle it keeps as a fixture (C§18).
+Questa elaborates a bundle and Verilator builds it; running its program on
+the RTL is GEN2b.
 
 **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output,
 latency and II.

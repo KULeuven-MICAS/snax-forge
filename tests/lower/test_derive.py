@@ -11,7 +11,7 @@ from snax_forge.lower import Layout, LowerError, TaskList, memlet_values, placed
 from snax_forge.lower import __main__ as cli
 from snax_forge.lower.derive import addresses
 from tests.design.helpers import (
-    SNAX_ALU,
+    SNAX_FORGE,
     bound_vecadd,
     bound_w8,
     chained,
@@ -36,9 +36,9 @@ def point(graph="vecadd_accelerated", memory=(), sets=None, edit_graph=None) -> 
 # =============================================================================
 
 
-def test_vecadd_on_snax_alu_gives_its_checked_in_task_list():
+def test_vecadd_on_snax_forge_gives_its_checked_in_task_list():
     """Equal to tests/run/fixtures/vecadd/tasks.json, the run fixture's (C§9)."""
-    d = Design(Platform.load(SNAX_ALU), bound_vecadd(4))
+    d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
     assert run_checks(d) == []
     got = task_list(DesignPoint.of(d, "vecadd"))
     want = TaskList.load(VECADD_TASKS)

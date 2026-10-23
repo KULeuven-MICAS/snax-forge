@@ -72,15 +72,15 @@ One command takes a kernel to a checked run on SNAX-GVSoC, in snax-forge's
 image (D118), with the snax-gvsoc submodule checked out:
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json
+pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json
 ```
 
 ```
-flow vecadd (vecadd: W=4, N=64; N=64) on snax_alu -> out/flow/vecadd/
+flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> out/flow/vecadd/
   sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-  design    21 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+  design    21 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
   lower     tasks.json (12 steps)
-  gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
+  gen       snax_forge.hjson, snax_forge_streamer.hjson, snax_forge_acc.hjson, main.c, data.h (seed 0) -> gen/
   build     up to date (snax-gvsoc 3f8a3e9d)
   sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
   gvsoc     snax_hjson, exit 0 -> run/
@@ -108,9 +108,9 @@ count, every instruction, and `--vcd` a gtkwave dump (`docs/RUN.md`). Change a d
 each one is added to the name, so the runs sit side by side:
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set W=8                                    # out/flow/vecadd_W8: 220 cycles, counter 11
-pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set platform.streamers.default.fifo_depth=2 # 232 cycles, counter 26
-pixi run flow recipes/vsum.json --platform platforms/snax_alu.json                                                # out/flow/vsum: 255 cycles
+pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set W=8                                    # out/flow/vecadd_W8: 220 cycles, counter 11
+pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set platform.streamers.default.fifo_depth=2 # 232 cycles, counter 26
+pixi run flow recipes/vsum.json --platform platforms/snax_forge.json                                                # out/flow/vsum: 255 cycles
 ```
 
 The flow also starts from a bound graph: a file ending in `.snaxdfg` (the
@@ -121,11 +121,11 @@ and `memory.` settings apply:
 
 ```bash
 pixi run sandbox recipes/vecadd.json                                                 # out/sandbox/vecadd/2_bind.snaxdfg
-pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json   # out/flow/vecadd: 226 cycles, as the recipe
+pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json   # out/flow/vecadd: 226 cycles, as the recipe
 ```
 
 A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to
-the design step. The platform needs a source hjson (`platforms/snax_alu.json`
+the design step. The platform needs a source hjson (`platforms/snax_forge.json`
 has one; `small16` does not, `gen.source`), and the design point one
 accelerator (`dot` binds two, `gen.instances`: parked until M13).
 `examples/loop1/` walks one turn of the loop on SNAX-GVSoC (vecadd at `N=512`,
@@ -146,9 +146,9 @@ The flow runs these tools in turn; each also runs on its own.
 | Design point | `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | `out/design/vecadd/` platform, memory plan, design point |
 | Only check | `pixi run design check out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | nothing |
 | Keep a platform | `pixi run design save out/design/vecadd/platform.json NAME` | `platforms/NAME.json` |
-| Platform from snax_cluster | `pixi run design from-hjson platforms/snax_alu.hjson snax_alu --force` | `platforms/snax_alu.json` from its source, a copy of snax_cluster's cluster file (LNK1) |
+| Platform from snax_cluster | `pixi run design from-hjson platforms/snax_alu_cluster.hjson snax_forge --force` | `platforms/snax_forge.json` from its source, a copy of snax_cluster's cluster file (LNK1) |
 | Task list | `pixi run lower tasks out/design/vecadd/design_point.json` | `tasks.json` beside the point |
-| The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json` | `out/flow/vecadd/`: design point, task list, generated folder, program, checked SNAX-GVSoC run |
+| The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json` | `out/flow/vecadd/`: design point, task list, generated folder, program, checked SNAX-GVSoC run |
 
 The design step names every problem with its fix, and writes working copies
 of the platform and the memory plan (`platform.json`, `memory.json`) that
@@ -222,14 +222,14 @@ sibling checkout instead of the submodule; `build` clears `out/snax-gvsoc`
 when the checkout changes, since CMake refuses a build folder of another one.
 `pixi run gen-gvsoc out/design/<design>/design_point.json` writes a design
 point's cluster to `out/gvsoc/<design>/` as three hjson files (the cluster
-`snax_alu.hjson`, the streamer and the datapath block), its headers (GEN3,
+`snax_forge.hjson`, the streamer and the datapath block), its headers (GEN3,
 LNK2a) and its self-checking program, `main.c` and `data.h` (GEN2a); the
 installed `snax_hjson` reads the cluster at run time. From `gvsoc/`:
 
 ```bash
 make sw APPS=forge FORGE=../out/gvsoc/<design> DESIGN=<design>
 make run TARGET=snax_hjson DESIGN=<design> \
-    GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_alu.hjson" \
+    GVRUN_ARGS="--param hjson=$PWD/../out/gvsoc/<design>/snax_forge.hjson" \
     ELF=../out/snax-gvsoc/sw/<design>/forge.elf
 ```
 
@@ -249,7 +249,7 @@ snax-gvsoc checkout next to this one, the folder cleared first:
 
 ```bash
 pixi run sandbox recipes/vecadd.json
-pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json
+pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json
 pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd
 ```
 

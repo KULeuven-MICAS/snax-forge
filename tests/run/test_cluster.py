@@ -25,7 +25,7 @@ def test_names_and_cores():
         1,
         "acc",
         0,
-        "snax_alu",
+        "snax_forge",
     )
     assert c.cores == ["core0", "core1"]
     assert c.sources == ["acc", "acc_a", "acc_b", "acc_out", "dma", "core0", "core1"]
@@ -122,14 +122,14 @@ def test_movers_must_match_the_design_point():
 
 def test_load_from_files(tmp_path):
     cluster, streamer, unit, point = files()
-    (tmp_path / "snax_alu.hjson").write_text(hjson.dumps(cluster))
-    (tmp_path / "snax_alu_streamer.hjson").write_text(hjson.dumps(streamer))
-    (tmp_path / "snax_alu_acc.hjson").write_text(hjson.dumps(unit))
+    (tmp_path / "snax_forge.hjson").write_text(hjson.dumps(cluster))
+    (tmp_path / "snax_forge_streamer.hjson").write_text(hjson.dumps(streamer))
+    (tmp_path / "snax_forge_acc.hjson").write_text(hjson.dumps(unit))
     (tmp_path / "design_point.json").write_text(json.dumps(point))
-    c = load_cluster(tmp_path / "snax_alu.hjson", tmp_path / "design_point.json")
+    c = load_cluster(tmp_path / "snax_forge.hjson", tmp_path / "design_point.json")
     assert c.accelerator == vecadd().accelerator
-    assert c.meta == {"cluster": "snax_alu.hjson"}
-    (tmp_path / "snax_alu_acc.hjson").unlink()
+    assert c.meta == {"cluster": "snax_forge.hjson"}
+    (tmp_path / "snax_forge_acc.hjson").unlink()
     with pytest.raises(RunError) as e:
-        load_cluster(tmp_path / "snax_alu.hjson", tmp_path / "design_point.json")
+        load_cluster(tmp_path / "snax_forge.hjson", tmp_path / "design_point.json")
     assert e.value.code == "cluster.ref"

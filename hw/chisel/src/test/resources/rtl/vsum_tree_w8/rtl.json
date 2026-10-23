@@ -1,6 +1,6 @@
 {
  "design_point": "out/design/vsum_tree_w8/design_point.json",
- "tag": "snax_alu",
+ "tag": "snax_forge",
  "units": [
   {
    "name": "acc",

@@ -44,7 +44,7 @@ from snax_forge.gen import Manifest
 from snax_forge.run import read_run
 from snax_forge.sandbox import Recipe
 from snax_forge.sdfg.loader import load as load_kernel
-from tests.design.helpers import REPO, SMALL16, SNAX_ALU
+from tests.design.helpers import REPO, SMALL16, SNAX_FORGE
 from tests.run.helpers import point_symbols
 
 from . import helpers
@@ -55,7 +55,7 @@ RECIPES = REPO / "recipes"
 
 def flow(tmp_path, design="vecadd", **kw):
     kw.setdefault("graph_path", PLAINS[design])
-    return run_flow(RECIPES / f"{design}.json", SNAX_ALU, out=tmp_path / "flow", **kw)
+    return run_flow(RECIPES / f"{design}.json", SNAX_FORGE, out=tmp_path / "flow", **kw)
 
 
 # =============================================================================
@@ -71,8 +71,8 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
     assert f.passed and f.total_cycles == 226 and f.check["exit_code"] == 0
     names = {p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()}
     assert {"sandbox/recipe.json", "sandbox/2_bind.snaxdfg", "design/design_point.json",
-            "tasks.json", "gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson",
-            "gen/snax_alu_acc.hjson", "gen/main.c", "gen/data.h", "gen/manifest.json",
+            "tasks.json", "gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson",
+            "gen/snax_forge_acc.hjson", "gen/main.c", "gen/data.h", "gen/manifest.json",
             "gen/include/acc_csr.h", "sw/forge.elf", "run/stdout.txt", "run/stderr.txt",
             "run/run.json", "run/profile.json", "run/events.log", "flow.log"} <= names  # fmt: skip
     assert not {"run/trace.jsonl", "run/trace_meta.json"} & names  # trace off
@@ -93,7 +93,7 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
     assert sw == {"APPS": "forge", "FORGE": str((out / "gen").resolve()), "DESIGN": f.name,
                   "FORGE_BUILD": str((out / "sw").resolve())}  # fmt: skip
     assert run["TARGET"] == "snax_hjson" and run["ELF"] == str((out / "sw/forge.elf").resolve())
-    assert run["GVRUN_ARGS"] == f"--param hjson={(out / 'gen/snax_alu.hjson').resolve()}"
+    assert run["GVRUN_ARGS"] == f"--param hjson={(out / 'gen/snax_forge.hjson').resolve()}"
     assert run["WORK_DIR"] == str((out / "run" / "work").resolve())
     assert run["EVENTS"] == str((out / "run" / "events.log").resolve())
     assert run["TRACES"] == "summary"
@@ -105,8 +105,8 @@ def test_the_generated_folder_names_the_design_point_from_the_flows_folder(tmp_p
     """gen/ is byte-identical wherever the flow's folder is: its files name the design point
     as design/design_point.json."""
     stub(monkeypatch, tmp_path)
-    a = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, out=tmp_path / "a" / "x")
-    b = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, out=tmp_path / "b" / "y")
+    a = run_flow(RECIPES / "vecadd.json", SNAX_FORGE, graph_path=PLAIN, out=tmp_path / "a" / "x")
+    b = run_flow(RECIPES / "vecadd.json", SNAX_FORGE, graph_path=PLAIN, out=tmp_path / "b" / "y")
     assert a.manifest.design_point == b.manifest.design_point == "design/design_point.json"
     for f in a.manifest.files:
         assert (a.out / "gen" / f).read_bytes() == (b.out / "gen" / f).read_bytes(), f
@@ -119,7 +119,11 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
     rec = json.loads((out / "run" / "run.json").read_text())
     assert rec == {
         "design_point": "design/design_point.json",
-        "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
+        "hjson": [
+            "gen/snax_forge.hjson",
+            "gen/snax_forge_streamer.hjson",
+            "gen/snax_forge_acc.hjson",
+        ],
         "elf": "sw/forge.elf",
         "elf_sha256": f.elf_sha256,
         "elf_symbols": {
@@ -444,7 +448,7 @@ def test_the_trace_level_task_stubbed(tmp_path, monkeypatch):
     """At task the run turns the events on, the folder's default name carries the level, and
     convert writes the trace (its invariants checked, tests/run)."""
     fake = stub(monkeypatch, tmp_path)
-    f = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, trace_level="task",
+    f = run_flow(RECIPES / "vecadd.json", SNAX_FORGE, graph_path=PLAIN, trace_level="task",
                  out=tmp_path / "flow")  # fmt: skip
     assert fake.calls[-1][1]["TRACES"] == "summary events"
     run = tmp_path / "flow" / "run"
@@ -462,9 +466,9 @@ def test_the_beat_levels_stubbed(tmp_path, monkeypatch, level):
     property, convert keeps its beat events (their invariants checked) and the filter, and the
     profile is the task run's, byte for byte."""
     fake = stub(monkeypatch, tmp_path)
-    run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, trace_level="task",
+    run_flow(RECIPES / "vecadd.json", SNAX_FORGE, graph_path=PLAIN, trace_level="task",
              out=tmp_path / "task")  # fmt: skip
-    f = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, trace_level=level,
+    f = run_flow(RECIPES / "vecadd.json", SNAX_FORGE, graph_path=PLAIN, trace_level=level,
                  out=tmp_path / level)  # fmt: skip
     v = fake.calls[-1][1]
     traces = v["TRACES"].split()
@@ -495,7 +499,7 @@ def test_named_sources_and_the_vcd_stubbed(tmp_path, monkeypatch):
     """Named sources say whose lines are written, a core's crossbar lines too; --vcd puts
     gvrun's VCD and its gtkwave view into run/."""
     fake = stub(monkeypatch, tmp_path)
-    f = run_flow(RECIPES / "vecadd.json", SNAX_ALU, graph_path=PLAIN, trace_level="stall",
+    f = run_flow(RECIPES / "vecadd.json", SNAX_FORGE, graph_path=PLAIN, trace_level="stall",
                  trace_sources=["core0", "acc_a", "acc"], vcd=True, out=tmp_path / "f")  # fmt: skip
     v = fake.calls[-1][1]
     assert v["TRACES"].split() == ["summary", "events", "snax_acc0/unit/beats",
@@ -541,10 +545,10 @@ def main(*argv) -> int:
 
 def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
     built(stub(monkeypatch, tmp_path))  # a build would print its lines first
-    args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN]
+    args = [RECIPES / "vecadd.json", "--platform", SNAX_FORGE, "--graph", PLAIN]
     assert main(*args, "--out", tmp_path / "f") == 0
     out = capsys.readouterr().out
-    assert out.startswith("flow vecadd (vecadd: W=4, N=64; N=64) on snax_alu -> ")
+    assert out.startswith("flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> ")
     assert "  check     passed: 226 cycles (main to forge_check)" in out
     assert (tmp_path / "f" / "flow.log").read_text().startswith(out)
     # the sets route as before; the folder carries them
@@ -559,7 +563,7 @@ def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
 
 def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch, capsys):
     fake = stub(monkeypatch, tmp_path)
-    args = [RECIPES / "vecadd.json", "--platform", SNAX_ALU, "--graph", PLAIN, "--out", tmp_path / "f"]  # fmt: skip
+    args = [RECIPES / "vecadd.json", "--platform", SNAX_FORGE, "--graph", PLAIN, "--out", tmp_path / "f"]  # fmt: skip
     with pytest.raises(SystemExit):
         main(*args, "--trace", "task:acc")
     assert "sources go with beat, stall or finegrained" in capsys.readouterr().err
@@ -583,7 +587,7 @@ def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch
 def test_the_flow_on_snax_gvsoc(tmp_path, design, level):
     """From the kernel: a checked SNAX-GVSoC run, exit 0, its window and counters printed; its
     events converted (convert's invariants hold, or the flow fails)."""
-    f = run_flow(RECIPES / f"{design}.json", SNAX_ALU, out=tmp_path / design, trace_level=level)
+    f = run_flow(RECIPES / f"{design}.json", SNAX_FORGE, out=tmp_path / design, trace_level=level)
     assert f.passed, summary(f)
     run = read_run(tmp_path / design / "run")
     assert run.profile.total_cycles == f.total_cycles and (run.trace is None) == (level == "off")

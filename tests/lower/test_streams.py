@@ -14,7 +14,7 @@ from snax_forge.design.streamers import Streamer
 from snax_forge.lower import Layout, LayoutError, StreamError, streamer_values
 from snax_forge.lower.derive import addresses
 from tests.brm.helpers import affine_adder, vector_nest
-from tests.design.helpers import SNAX_ALU
+from tests.design.helpers import SNAX_FORGE
 
 from .helpers import VECADD_TASKS, vecadd_point
 
@@ -43,16 +43,16 @@ def instance(nest_a=None, W=4):
 
 
 # =============================================================================
-# vecadd: the three streamer tasks of its task list on snax_alu
+# vecadd: the three streamer tasks of its task list on snax_forge
 # =============================================================================
 
 
 def test_vecadd_streamer_values():
     """The library's elementwise_add: a, b and c of 64 int64 at the first three 512-byte blocks
-    of snax_alu's L1, n = 16 beats of 4, give vecadd's four task values."""
+    of snax_forge's L1, n = 16 beats of 4, give vecadd's four task values."""
     tasks = json.loads(VECADD_TASKS.read_text())["steps"]
     want = {s["task_name"]: s["values"] for s in tasks if s.get("type") in ("streamer", "accel")}
-    inst, l1 = load_brm("elementwise_add").resolve(IMPL), Platform.load(SNAX_ALU).l1
+    inst, l1 = load_brm("elementwise_add").resolve(IMPL), Platform.load(SNAX_FORGE).l1
     shell = vecadd_point().streamers
     task = {"n": 16}
     assert want.pop("add_acc") == task and list(task) == inst.brm.registers

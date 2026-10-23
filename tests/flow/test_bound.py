@@ -20,7 +20,7 @@ import pytest
 from snax_forge.design import DesignError
 from snax_forge.flow import FlowError, bound_name, run_bound, run_flow, summary
 from snax_forge.flow import __main__ as cli
-from tests.design.helpers import BOUND, RECIPE, SNAX_ALU
+from tests.design.helpers import BOUND, RECIPE, SNAX_FORGE
 
 from .helpers import PLAIN, built, stub
 
@@ -49,8 +49,8 @@ def test_the_last_step_runs_as_the_recipe_did(tmp_path, monkeypatch):
     """Same task list, generated folder and run, byte for byte, in folders of one name; only
     the design point's ``graph_from`` differs, and there is no sandbox/."""
     fake = stub(monkeypatch, tmp_path)
-    a = run_flow(RECIPE, SNAX_ALU, graph_path=PLAIN, out=tmp_path / "a" / "x", name="x")
-    b = run_bound(a.steps[-1], SNAX_ALU, out=tmp_path / "b" / "x", name="x")
+    a = run_flow(RECIPE, SNAX_FORGE, graph_path=PLAIN, out=tmp_path / "a" / "x", name="x")
+    b = run_bound(a.steps[-1], SNAX_FORGE, out=tmp_path / "b" / "x", name="x")
     assert b.passed and a.total_cycles == b.total_cycles and b.check == a.check
     keep = {"flow.log", "design/design_point.json", "report/design.md"}  # graph, not recipe
     same = {f for f in files(a.out) - keep - {"build.log"} if not f.startswith("sandbox/")}
@@ -69,7 +69,7 @@ def test_the_last_step_runs_as_the_recipe_did(tmp_path, monkeypatch):
 
 def test_a_checked_in_bound_graph_runs(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
-    f = run_bound(BOUND, SNAX_ALU, out=tmp_path / "f")
+    f = run_bound(BOUND, SNAX_FORGE, out=tmp_path / "f")
     assert f.passed and (f.name, f.point.name, f.recipe, f.steps) == (
         "vecadd_accelerated", "vecadd_accelerated", None, []
     )  # fmt: skip
@@ -90,10 +90,10 @@ def test_a_checked_in_bound_graph_runs(tmp_path, monkeypatch):
 
 def test_the_summary_and_the_log_name_the_graph(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
-    f = run_bound(BOUND, SNAX_ALU, out=tmp_path / "f")
+    f = run_bound(BOUND, SNAX_FORGE, out=tmp_path / "f")
     head, sandbox, *_ = summary(f).splitlines()
     assert head.startswith("flow vecadd_accelerated (graph ")
-    assert "vecadd_accelerated.snaxdfg; kernel vecadd; N=64) on snax_alu -> " in head
+    assert "vecadd_accelerated.snaxdfg; kernel vecadd; N=64) on snax_forge -> " in head
     assert sandbox == "  sandbox   skipped: the bound graph is the input (D108)"
     log = (tmp_path / "f" / "flow.log").read_text()
     assert log.startswith(summary(f)) and "  graph     graph.load, graph.symbols" in log
@@ -110,7 +110,7 @@ def test_a_graph_that_is_not_bound_stops_at_the_design_step(tmp_path, monkeypatc
     """The plain import: its symbol and its tasklet named at once (D85), nothing lowered or run."""
     fake = stub(monkeypatch, tmp_path)
     with pytest.raises(DesignError) as e:
-        run_bound(PLAIN, SNAX_ALU, out=tmp_path / "f")
+        run_bound(PLAIN, SNAX_FORGE, out=tmp_path / "f")
     assert e.value.codes == ["graph.symbols", "graph.unbound"]
     out = tmp_path / "f"
     assert files(out) == {"flow.log"} and fake.calls == []
@@ -128,7 +128,7 @@ def test_a_graph_edited_to_compute_something_else_stops_at_gen(tmp_path, monkeyp
 
     fake = stub(monkeypatch, tmp_path)
     with pytest.raises(FlowError) as e:
-        run_bound(edited(tmp_path, "vecadd.snaxdfg", swap), SNAX_ALU, out=tmp_path / "f")
+        run_bound(edited(tmp_path, "vecadd.snaxdfg", swap), SNAX_FORGE, out=tmp_path / "f")
     assert str(e.value).startswith(
         "gen: the graph's reference executor differs from the vecadd reference: C in "
     )
@@ -139,17 +139,17 @@ def test_the_kernel_is_the_graphs_name_unless_given(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
     path = edited(tmp_path, "mine.snaxdfg", lambda d: d.update(name="mine"))
     with pytest.raises(FlowError) as e:
-        run_bound(path, SNAX_ALU, out=tmp_path / "f")
+        run_bound(path, SNAX_FORGE, out=tmp_path / "f")
     msg = str(e.value)
     assert msg.startswith(
         f"kernel (the name of {path}; --kernel K names it): unknown kernel 'mine'"
     )
     assert "'vecadd'" in msg
     assert (tmp_path / "f" / "flow.log").read_text().startswith("flow mine FAILED")
-    f = run_bound(path, SNAX_ALU, kernel="vecadd", out=tmp_path / "f")
+    f = run_bound(path, SNAX_FORGE, kernel="vecadd", out=tmp_path / "f")
     assert f.passed and f.check["kernel"] == "vecadd"
     with pytest.raises(FlowError, match=r"kernel \(--kernel\): unknown kernel 'nope'"):
-        run_bound(path, SNAX_ALU, kernel="nope", out=tmp_path / "f")
+        run_bound(path, SNAX_FORGE, kernel="nope", out=tmp_path / "f")
 
 
 # =============================================================================
@@ -170,7 +170,7 @@ def test_bound_name():
 
 def test_the_design_point_keeps_the_graphs_name_the_folder_every_set(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
-    f = run_bound(BOUND, SNAX_ALU, platform_sets=FIFO, out=tmp_path / "f")
+    f = run_bound(BOUND, SNAX_FORGE, platform_sets=FIFO, out=tmp_path / "f")
     assert f.name == "vecadd_accelerated_streamers.default.fifo_depth4"
     assert f.point.name == "vecadd_accelerated" and f.passed
 
@@ -180,9 +180,9 @@ def test_an_earlier_recipes_sandbox_does_not_stay_in_the_folder(tmp_path, monkey
     so nothing names a recipe the run did not come from."""
     stub(monkeypatch, tmp_path)
     out = tmp_path / "f"
-    run_flow(RECIPE, SNAX_ALU, graph_path=PLAIN, out=out)
+    run_flow(RECIPE, SNAX_FORGE, graph_path=PLAIN, out=out)
     assert (out / "sandbox" / "recipe.json").is_file()
-    run_bound(BOUND, SNAX_ALU, out=out)
+    run_bound(BOUND, SNAX_FORGE, out=out)
     assert not (out / "sandbox").exists()
 
 
@@ -191,8 +191,8 @@ def test_a_graph_in_the_folders_own_sandbox_is_kept(tmp_path, monkeypatch):
     its recipe stay."""
     stub(monkeypatch, tmp_path)
     out = tmp_path / "vecadd"
-    a = run_flow(RECIPE, SNAX_ALU, graph_path=PLAIN, out=out)
-    b = run_bound(a.steps[-1], SNAX_ALU, out=out)
+    a = run_flow(RECIPE, SNAX_FORGE, graph_path=PLAIN, out=out)
+    b = run_bound(a.steps[-1], SNAX_FORGE, out=out)
     assert (b.name, b.point.name) == ("vecadd", "vecadd") and b.passed
     assert (out / "sandbox" / "recipe.json").is_file() and a.steps[-1].is_file()
 
@@ -208,12 +208,12 @@ def main(*argv) -> int:
 
 def test_cli_takes_a_bound_graph_by_its_suffix(tmp_path, monkeypatch, capsys):
     built(stub(monkeypatch, tmp_path))  # a build would print its lines first
-    assert main(BOUND, "--platform", SNAX_ALU, "--out", tmp_path / "f") == 0
+    assert main(BOUND, "--platform", SNAX_FORGE, "--out", tmp_path / "f") == 0
     out = capsys.readouterr().out
     assert out.startswith("flow vecadd_accelerated (graph ") and "  check     passed: " in out
     assert (tmp_path / "f" / "flow.log").read_text().startswith(out)
     # platform --set as with a recipe
-    args = [BOUND, "--platform", SNAX_ALU, "--out", tmp_path / "g"]
+    args = [BOUND, "--platform", SNAX_FORGE, "--out", tmp_path / "g"]
     assert main(*args, "--set", "platform.streamers.default.fifo_depth=4") == 0
     assert (
         "flow vecadd_accelerated_streamers.default.fifo_depth4 (graph " in capsys.readouterr().out
@@ -222,12 +222,12 @@ def test_cli_takes_a_bound_graph_by_its_suffix(tmp_path, monkeypatch, capsys):
 
 def test_cli_fails_as_the_recipe_form_does(tmp_path, monkeypatch, capsys):
     stub(monkeypatch, tmp_path)
-    assert main(PLAIN, "--platform", SNAX_ALU, "--out", tmp_path / "f") == 1
+    assert main(PLAIN, "--platform", SNAX_FORGE, "--out", tmp_path / "f") == 1
     assert "[graph.unbound] tasklet" in capsys.readouterr().err
     path = edited(tmp_path, "mine.snaxdfg", lambda d: d.update(name="mine"))
-    assert main(path, "--platform", SNAX_ALU, "--out", tmp_path / "g") == 1
+    assert main(path, "--platform", SNAX_FORGE, "--out", tmp_path / "g") == 1
     assert "unknown kernel 'mine'" in capsys.readouterr().err
-    assert main(path, "--platform", SNAX_ALU, "--out", tmp_path / "g", "--kernel", "vecadd") == 0
+    assert main(path, "--platform", SNAX_FORGE, "--out", tmp_path / "g", "--kernel", "vecadd") == 0
 
 
 @pytest.mark.parametrize(
@@ -241,6 +241,6 @@ def test_cli_fails_as_the_recipe_form_does(tmp_path, monkeypatch, capsys):
 )
 def test_cli_refuses_what_belongs_to_the_other_form(tmp_path, capsys, first, extra, says):
     with pytest.raises(SystemExit) as e:
-        main(first, "--platform", SNAX_ALU, "--out", tmp_path / "f", *extra)
+        main(first, "--platform", SNAX_FORGE, "--out", tmp_path / "f", *extra)
     assert e.value.code == 2 and says in capsys.readouterr().err
     assert not (tmp_path / "f").exists()

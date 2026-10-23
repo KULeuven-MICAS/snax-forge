@@ -30,19 +30,20 @@ want to reverse, implementation details in module docstrings and tests.
   `test-kernels`. CI runs `pixi run -e ci test`.
 - Lint: `pixi run lint` (CI runs it); `pixi run fmt` fixes.
 - The whole path, on SNAX-GVSoC (D136, in the image, submodule checked out): `pixi run flow
-  recipes/vecadd.json --platform platforms/snax_alu.json [--set W=8] [--set platform.PATH=VALUE]
+  recipes/vecadd.json --platform platforms/snax_forge.json [--set W=8] [--set platform.PATH=VALUE]
   [--set memory.PATH=VALUE] [--trace LEVEL[:SOURCES]] [--vcd]`, everything in `out/flow/<name>/`
   (`<name>_<level>` above `off`); it builds GVSoC when needed. The run's events become
   `run/profile.json` and, from `task` (then `beat`, `stall`, `finegrained`), `run/trace.jsonl`
   (`snax_forge/run/`, D137); `--vcd` adds gtkwave's `run/all.vcd`.
   From a bound graph instead of a recipe (no sandbox, D108): `pixi run flow
-  out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json [--kernel K]`.
+  out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json [--kernel K]`.
   The single steps (`forge`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in
   README.md section 2.
 - Generator: `pixi run gen-gvsoc out/design/<name>/design_point.json` writes a design point's
   hjson files, headers, `data.h` and `main.c` to `out/gvsoc/<name>/`. `pixi run gen-rtl
   out/design/<name>/design_point.json` writes its `rtl.json` and the accelerator's RTL (sbt) to
-  `out/rtl/<name>/` (GEN1).
+  `out/rtl/<name>/` (GEN1). `pixi run bundle out/design/<name>/design_point.json` writes both, the
+  RTL's file list and `bundle.json` to `out/bundle/<name>/`, snax_cluster's input (C§18, D139).
 - SNAX-GVSoC: `gvsoc/Makefile` (`make build`, `make sw`, `make run`), from the container's plain
   shell or through pixi (`pixi run make -C gvsoc ...`); `docs/RUN.md` walks through it.
 - Kernels: `pixi run kernels` lists the staged kernels in `kernels/` (tier, dtype, whether the

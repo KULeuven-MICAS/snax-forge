@@ -16,7 +16,7 @@ CHISEL = SUB / "sw" / "generated" / "snax_alu_cluster_old" / "streamer_csr_addr_
 SHELL = SUB / "sw" / "apps" / "snax-shell" / "src" / "snax-shell.c"
 DEFINE = re.compile(r"^#define (\w+) (\d+)$", re.MULTILINE)
 
-# vecadd at W = 4 on snax_alu: three movers of one spatial and one temporal dimension
+# vecadd at W = 4 on snax_forge: three movers of one spatial and one temporal dimension
 STREAMER_W4 = [
     ("BASE_PTR_READER_0_LOW", 960), ("BASE_PTR_READER_0_HIGH", 961),
     ("S_STRIDE_BASE_READER_0", 962), ("S_STRIDE_NUM_READER_0", 1), ("S_STRIDE_READER_0_0", 962),

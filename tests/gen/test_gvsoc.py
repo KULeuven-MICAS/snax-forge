@@ -1,4 +1,4 @@
-"""The generator (D134): vecadd on snax_alu as three hjson files, vecmul,
+"""The generator (D134): vecadd on snax_forge as three hjson files, vecmul,
 vsum, and every refusal."""
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from snax_forge.gen import __main__ as cli
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.blocks import accumulator, elementwise_tiled_spatial
 from snax_forge.lower import c as c_mod
-from tests.design.helpers import REPO, SNAX_ALU, chained, graph_dict
+from tests.design.helpers import REPO, SNAX_FORGE, chained, graph_dict
 
 from .helpers import HJSON, SOURCE, SUB, bound_vecmul, bound_vsum, point, snax_cfg, snax_streamer
 
@@ -30,11 +30,11 @@ needs_submodule = pytest.mark.skipif(
     reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
 IMPL = "chisel_tiled_spatial"
-FILES = ["snax_alu.hjson", "snax_alu_streamer.hjson", "snax_alu_acc.hjson"]
-# The slot of snax_alu's source, the one the cluster file sets
+FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"]
+# The slot of snax_forge's source, its only one, which the cluster file renames and sets
 SLOT = ("snax_alu_core_template", "snax_acc_cfg", 0)
 
-# vecadd at W = 4 on snax_alu: the template the design point's streamers give
+# vecadd at W = 4 on snax_forge: the template the design point's streamers give
 TEMPLATE_W4 = {
     "data_reader_params": {
         "spatial_bounds": [[4], [4]], "temporal_dim": [1, 1], "num_channel": [4, 4],
@@ -51,7 +51,7 @@ TILED_ADD = {
     "op": 0, "signed": True, "control": "counted", "wait": "lockstep", "latency": 0, "ii": 1,
     "fields": ["loopCount"],
 }  # fmt: skip
-# vsum on snax_alu: the Accumulator, a fold of one lane, one sum per T inputs
+# vsum on snax_forge: the Accumulator, a fold of one lane, one sum per T inputs
 ACCUMULATOR = {
     "unit": "SnaxUnit", "inputs": ["a"], "outputs": ["out"], "lanes": 1, "data_width": 64,
     "op": 0, "signed": True, "control": "counted", "config": ["count", "rate"],
@@ -77,13 +77,13 @@ def w4(tmp_path_factory):
 
 
 # =============================================================================
-# vecadd at W = 4 on snax_alu
+# vecadd at W = 4 on snax_forge
 # =============================================================================
 
 
 def test_vecadd_w4_files_and_manifest(w4):
     out, m = w4
-    assert m.design == "vecadd" and m.cluster == "snax_alu.hjson"
+    assert m.design == "vecadd" and m.cluster == "snax_forge.hjson"
     assert m.files == [
         *FILES, "include/streamer_csr_addr_map.h", "include/acc_csr.h", "data.h", "main.c",
         "manifest.json",
@@ -110,38 +110,47 @@ def test_vecadd_w4_files_and_manifest(w4):
 
 def test_the_streamer_file_is_the_design_points_streamers(w4):
     out, _ = w4
-    assert parsed(out / "snax_alu_streamer.hjson") == TEMPLATE_W4
+    assert parsed(out / "snax_forge_streamer.hjson") == TEMPLATE_W4
 
 
 @needs_submodule
 def test_the_streamer_file_is_the_hjsons_template(w4):
-    """Lowered per design point, vecadd at W = 4 gives snax_alu's own template back."""
+    """Lowered per design point, vecadd at W = 4 gives the source's own template back."""
     out, _ = w4
     hand = parsed(HJSON)["snax_alu_streamer_template"]
     for group in ("data_reader_params", "data_writer_params"):
-        assert parsed(out / "snax_alu_streamer.hjson")[group] == hand[group]
+        assert parsed(out / "snax_forge_streamer.hjson")[group] == hand[group]
 
 
 def test_the_accelerator_file_is_vecadds_datapath_block(w4):
     out, _ = w4
-    assert parsed(out / "snax_alu_acc.hjson") == TILED_ADD
-    assert "config" not in parsed(out / "snax_alu_acc.hjson")  # the default, left out
+    assert parsed(out / "snax_forge_acc.hjson") == TILED_ADD
+    assert "config" not in parsed(out / "snax_forge_acc.hjson")  # the default, left out
 
 
-def test_the_cluster_file_is_the_source_with_the_slot_set(w4):
+def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
     out, _ = w4
-    cluster, source = parsed(out / "snax_alu.hjson"), parsed(SOURCE)
-    assert slot(cluster) == {
-        "snax_acc_name": "snax_alu", "bender_target": ["snax_alu"], "snax_tcdm_ports": 12,
+    cluster, source = parsed(out / "snax_forge.hjson"), parsed(SOURCE)
+    expected = {
+        "snax_acc_name": "snax_forge", "snax_tcdm_ports": 12,
         "sparse_interconnect_config": [[12, 1]], "snax_num_rw_csr": 2, "snax_num_ro_csr": 2,
-        "snax_streamer_cfg": {"$ref": "snax_alu_streamer.hjson"},
-        "snax_datapath_cfg": {"$ref": "snax_alu_acc.hjson"},
+        "snax_disable_csr_manager": True, "snax_forge_rtl": "rtl/files.f",
+        "snax_streamer_cfg": {"$ref": "snax_forge_streamer.hjson"},
+        "snax_datapath_cfg": {"$ref": "snax_forge_acc.hjson"},
     }  # fmt: skip
-    # Outside the slot, the source: its template, which only the slot referred to, gone
+    assert slot(cluster) == expected
+    assert list(slot(cluster)) == list(expected)  # the slot's key order
+    assert cluster["cluster"]["name"] == "snax_forge_cluster"
+    assert cluster["cluster"]["bender_target"] == [
+        "snitch_cluster", "snax_forge_cluster", "sparse_interconnect"
+    ]  # fmt: skip
+    # Outside the slot and the cluster's names, the source: its template, which only the slot
+    # referred to, gone
     assert "snax_alu_streamer_template" not in cluster
     del source["snax_alu_streamer_template"]
-    slot(cluster).clear()
-    slot(source).clear()
+    for d in (cluster, source):
+        slot(d).clear()
+        del d["cluster"]["name"], d["cluster"]["bender_target"]
     assert cluster == source
     assert list(cluster) == list(source)  # the source's key order
 
@@ -150,9 +159,9 @@ def test_the_cluster_file_is_the_source_with_the_slot_set(w4):
 def test_snax_gvsocs_reader_takes_the_folder(w4):
     """snax-gvsoc's snax_cfg.load: the whole-file refs resolve and the slot's counts agree."""
     out, _ = w4
-    cfg = snax_cfg().load(out / "snax_alu.hjson")
+    cfg = snax_cfg().load(out / "snax_forge.hjson")
     (acc,) = cfg.cores[0].accelerators
-    assert (acc.name, acc.tcdm_ports, acc.streamer) == ("snax_alu", 12, TEMPLATE_W4)
+    assert (acc.name, acc.tcdm_ports, acc.streamer) == ("snax_forge", 12, TEMPLATE_W4)
     assert acc.datapath.fields == ["loopCount"] and acc.datapath.config == ["count"]
     assert (cfg.tcdm.size, cfg.tcdm.banks, cfg.tcdm.sparse_interconnect) == (131072, 32, True)
 
@@ -161,7 +170,7 @@ def test_snax_gvsocs_reader_takes_the_folder(w4):
 def test_streamer_csrs_are_snax_streamers(w4):
     """The generator's copy of snax_streamer.py's nb_csrs gives what the real one gives."""
     out, _ = w4
-    template = parsed(out / "snax_alu_streamer.hjson")
+    template = parsed(out / "snax_forge_streamer.hjson")
     assert gen_mod.streamer_csrs(template) == snax_streamer().nb_csrs(template) == 18
     assert gen_mod.channels(template) == snax_streamer().nb_tcdm_ports(template) == 12
 
@@ -182,8 +191,8 @@ def test_every_generated_file_starts_with_the_one_header(w4):
 def test_vecadd_w8_gives_eight_channels_per_mover(tmp_path):
     out = tmp_path / "out"
     m = generate(point(tmp_path, w=8, name="vecadd_w8"), out, root=tmp_path)
-    assert parsed(out / "snax_alu_streamer.hjson")["data_reader_params"]["num_channel"] == [8, 8]
-    s = slot(parsed(out / "snax_alu.hjson"))
+    assert parsed(out / "snax_forge_streamer.hjson")["data_reader_params"]["num_channel"] == [8, 8]
+    s = slot(parsed(out / "snax_forge.hjson"))
     assert (s["snax_tcdm_ports"], s["sparse_interconnect_config"]) == (24, [[24, 1]])
     assert m.csrs.start == 979 and m.tasks[0].beats == 8
 
@@ -192,14 +201,14 @@ def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
     """elementwise_mul's binding gives vecadd's accelerator with op 2."""
     out = tmp_path / "gvsoc" / "vecmul"
     m = generate(point(tmp_path, name="vecmul", graph=bound_vecmul()), out, root=tmp_path)
-    assert parsed(out / "snax_alu_acc.hjson") == {**TILED_ADD, "op": 2}
-    assert parsed(out / "snax_alu_streamer.hjson") == TEMPLATE_W4
+    assert parsed(out / "snax_forge_acc.hjson") == {**TILED_ADD, "op": 2}
+    assert parsed(out / "snax_forge_streamer.hjson") == TEMPLATE_W4
     assert m.symbols == {"N": 64} and m.design_point == "design/vecmul/design_point.json"
     assert m.files == w4[1].files and m.csrs == w4[1].csrs and m.trace == "snax_acc0/unit"
     assert [t.to_dict() for t in m.tasks] == [
         {"name": "mult_acc", "beats": 16, "csrs": {"loopCount": 16}}
     ]
-    assert parsed(out / "snax_alu.hjson") == parsed(w4[0] / "snax_alu.hjson")
+    assert parsed(out / "snax_forge.hjson") == parsed(w4[0] / "snax_forge.hjson")
     for h in ("streamer_csr_addr_map.h", "acc_csr.h"):
         mine, add = (out / "include" / h).read_text(), (w4[0] / "include" / h).read_text()
         assert mine.replace("vecmul", "vecadd") == add, h
@@ -210,12 +219,12 @@ def test_vsum_is_the_accumulator(tmp_path):
     loopCount and len, one task of 64 beats summing all 64 (T = n)."""
     out = tmp_path / "gvsoc" / "vsum"
     m = generate(point(tmp_path, name="vsum", graph=bound_vsum()), out, root=tmp_path)
-    assert parsed(out / "snax_alu_acc.hjson") == ACCUMULATOR
+    assert parsed(out / "snax_forge_acc.hjson") == ACCUMULATOR
     one = {"spatial_bounds": [[1]], "temporal_dim": [1], "num_channel": [1], "fifo_depth": [8]}
-    assert parsed(out / "snax_alu_streamer.hjson") == {
+    assert parsed(out / "snax_forge_streamer.hjson") == {
         "data_reader_params": one, "data_writer_params": one
     }  # fmt: skip
-    s = slot(parsed(out / "snax_alu.hjson"))
+    s = slot(parsed(out / "snax_forge.hjson"))
     assert (s["snax_tcdm_ports"], s["sparse_interconnect_config"]) == (2, [[2, 1]])
     assert (s["snax_num_rw_csr"], s["snax_num_ro_csr"]) == (3, 2)
     assert m.symbols == {"N": 64}
@@ -235,7 +244,7 @@ def test_vsum_at_w4_is_the_adder_tree(tmp_path):
     out = tmp_path / "gvsoc" / "vsum_tree"
     graph = bound_vsum(4, "chisel_adder_tree")
     m = generate(point(tmp_path, name="vsum_tree", graph=graph), out, root=tmp_path)
-    assert parsed(out / "snax_alu_acc.hjson") == {**ACCUMULATOR, "lanes": 4}
+    assert parsed(out / "snax_forge_acc.hjson") == {**ACCUMULATOR, "lanes": 4}
     assert [t.to_dict() for t in m.tasks] == [
         {"name": "sum_acc", "beats": 16, "csrs": {"loopCount": 16, "len": 16}}
     ]
@@ -247,10 +256,10 @@ def test_the_platforms_values_are_written_back(tmp_path):
     sets = [("l1.n_banks", 16), ("l1.rows", 2048), ("l1.base_addr", 0x2000_0000),
             ("l1.wide_bits", 256), ("l2.beat_bits", 256), ("l2.base_addr", 0x9000_0000),
             ("l2.size_bytes", 1 << 30)]  # fmt: skip
-    platform = Platform.load(SNAX_ALU).with_changes(sets)
+    platform = Platform.load(SNAX_FORGE).with_changes(sets)
     out = tmp_path / "out"
     generate(point(tmp_path, platform=platform), out, root=tmp_path)
-    c = parsed(out / "snax_alu.hjson")
+    c = parsed(out / "snax_forge.hjson")
     assert (c["cluster"]["tcdm"]["banks"], c["cluster"]["tcdm"]["size"]) == (16, 256)
     assert (c["cluster"]["cluster_base_addr"], c["cluster"]["dma_data_width"]) == (0x2000_0000, 256)
     assert c["dram"] == {"address": 0x9000_0000, "length": 1 << 30}
@@ -263,10 +272,10 @@ def test_the_plain_source_sets_narrow_and_wide_ports(tmp_path):
     old = HJSON.with_name("snax_alu_cluster_old.hjson")
     (tmp_path / "platforms").mkdir()
     (tmp_path / "platforms" / "old.hjson").write_bytes(old.read_bytes())
-    platform = Platform.load(SNAX_ALU).with_changes([("hjson", "platforms/old.hjson")])
+    platform = Platform.load(SNAX_FORGE).with_changes([("hjson", "platforms/old.hjson")])
     out = tmp_path / "out"
     generate(point(tmp_path, platform=platform), out, root=tmp_path)
-    s = slot(parsed(out / "snax_alu.hjson"))
+    s = slot(parsed(out / "snax_forge.hjson"))
     assert (s["snax_tcdm_ports"], s["snax_narrow_tcdm_ports"], s["snax_wide_tcdm_ports"]) == (
         12, 12, 0
     )  # fmt: skip
@@ -309,11 +318,11 @@ def test_a_design_point_outside_the_root(tmp_path):
 
 
 def _refused(tmp_path, code, platform=None, source=None):
-    """generate on snax_alu (or ``platform``), the root's source replaced by ``source``;
+    """generate on snax_forge (or ``platform``), the root's source replaced by ``source``;
     refused with ``code`` before anything is written."""
     path = point(tmp_path, platform=platform)
     if source is not None:
-        (tmp_path / "platforms" / "snax_alu.hjson").write_text(source)
+        (tmp_path / "platforms" / "snax_alu_cluster.hjson").write_text(source)
     with pytest.raises(GenError) as e:
         generate(path, tmp_path / "out", root=tmp_path)
     assert e.value.code == code
@@ -322,14 +331,25 @@ def _refused(tmp_path, code, platform=None, source=None):
 
 
 def test_a_platform_without_a_source_hjson(tmp_path):
-    p = Platform.load(SNAX_ALU).with_changes([("hjson", None)])
+    p = Platform.load(SNAX_FORGE).with_changes([("hjson", None)])
     assert "pixi run design from-hjson" in _refused(tmp_path, "gen.source", p)
 
 
-def test_a_slot_name_that_is_not_the_sources(tmp_path):
-    p = Platform.load(SNAX_ALU).with_changes([("accelerator_slot", "snax_gemm")])
-    msg = _refused(tmp_path, "gen.slot", p)
-    assert "['snax_alu']" in msg and "'snax_gemm'" in msg
+def test_the_sources_only_slot_takes_the_accelerator_slot_whatever_its_name(tmp_path):
+    p = Platform.load(SNAX_FORGE).with_changes([("accelerator_slot", "snax_forge_x")])
+    path = point(tmp_path, platform=p)
+    src = tmp_path / "platforms" / SOURCE.name
+    src.write_text(src.read_text().replace('snax_acc_name: "snax_alu"', 'snax_acc_name: "any"'))
+    out = tmp_path / "out"
+    m = generate(path, out, root=tmp_path)
+    assert m.files[:3] == [
+        "snax_forge.hjson",
+        "snax_forge_x_streamer.hjson",
+        "snax_forge_x_acc.hjson",
+    ]
+    s = slot(parsed(out / "snax_forge.hjson"))
+    assert s["snax_acc_name"] == "snax_forge_x"
+    assert s["snax_streamer_cfg"] == {"$ref": "snax_forge_x_streamer.hjson"}
 
 
 def test_a_source_with_two_slots(tmp_path):
@@ -339,6 +359,19 @@ def test_a_source_with_two_slots(tmp_path):
     assert "['other', 'snax_alu']" in _refused(tmp_path, "gen.slot", source=text)
 
 
+def test_a_source_with_no_slot(tmp_path):
+    text = re.sub(r"snax_acc_cfg: \[\{.*?\}\],", "snax_acc_cfg: [],", SOURCE.read_text(),
+                  flags=re.DOTALL)  # fmt: skip
+    assert "has the slots []" in _refused(tmp_path, "gen.slot", source=text)
+
+
+def test_a_cluster_bender_target_without_the_clusters_name(tmp_path):
+    text = SOURCE.read_text().replace('"snax_alu_cluster", "sparse_interconnect"',
+                                      '"sparse_interconnect"')  # fmt: skip
+    msg = _refused(tmp_path, "gen.source", source=text)
+    assert "does not hold cluster.name 'snax_alu_cluster'" in msg
+
+
 @pytest.mark.parametrize(
     ("sets", "text"),
     [
@@ -346,7 +379,7 @@ def test_a_source_with_two_slots(tmp_path):
     ],
 )
 def test_a_platform_value_the_hjson_cannot_express(tmp_path, sets, text):
-    p = Platform.load(SNAX_ALU).with_changes(sets)
+    p = Platform.load(SNAX_FORGE).with_changes(sets)
     assert text in _refused(tmp_path, "gen.platform", p)
 
 
@@ -541,10 +574,10 @@ def test_the_command(tmp_path, capsys, monkeypatch):
     out = tmp_path / "out"
     assert cli.main([str(path), "--out", str(out)]) == 0
     text = capsys.readouterr().out
-    assert "cluster snax_alu.hjson" in text and "task add_acc: 16 beats" in text
-    assert "TARGET=snax_hjson" in text and f"--param hjson={out / 'snax_alu.hjson'}" in text
+    assert "cluster snax_forge.hjson" in text and "task add_acc: 16 beats" in text
+    assert "TARGET=snax_hjson" in text and f"--param hjson={out / 'snax_forge.hjson'}" in text
     assert (out / "manifest.json").is_file()
-    (tmp_path / "platforms" / "snax_alu.hjson").unlink()
+    (tmp_path / "platforms" / "snax_alu_cluster.hjson").unlink()
     assert cli.main([str(path), "--out", str(out)]) == 1
     assert "[gen.source]" in capsys.readouterr().err
 
@@ -554,5 +587,15 @@ def test_the_command(tmp_path, capsys, monkeypatch):
 )
 def test_the_constants_are_snax_accs():
     text = (SUB / "snax" / "snax_acc.py").read_text()
-    assert "SNAX_CSR_FIRST = 0x3C0" in text and "SNAX_CSR_LAST = 0x5FF" in text
-    assert (gen_mod.SNAX_CSR_FIRST, gen_mod.SNAX_CSR_LAST) == (0x3C0, 0x5FF)
+    assert "SNAX_CSR_FIRST = 0x3C0" in text and "SNAX_ACC_CSR_LAST = 0x5FD" in text
+    assert (gen_mod.SNAX_CSR_FIRST, gen_mod.SNAX_ACC_CSR_LAST) == (0x3C0, 0x5FD)
+
+
+def test_the_shells_counter_may_land_on_0x5fd_not_past():
+    """vecadd's streamer (18 CSRs) and 553 fields: the counter on 0x5FD, the last CSR an
+    accelerator may use; one more field puts it on 0x5FE, a task queue of snax_cluster's."""
+    fields = [f"f{i}" for i in range(0x5FD - 0x3C0 - 18 - 2)]
+    assert gen_mod.csr_layout(TEMPLATE_W4, fields).counter == 0x5FD
+    with pytest.raises(GenError) as e:
+        gen_mod.csr_layout(TEMPLATE_W4, [*fields, "one_more"])
+    assert e.value.code == "gen.csrs" and "the shell's last CSR 1534 is past 1533" in str(e.value)

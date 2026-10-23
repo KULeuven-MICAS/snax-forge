@@ -23,11 +23,14 @@ POINT = "out/design/vecadd/design_point.json"
 
 
 def parts(tmp_path, graph=None, name="vecadd"):
-    """What main_c reads for vecadd (or ``graph``) on snax_alu."""
+    """What main_c reads for vecadd (or ``graph``) on snax_forge: the source, its slot named
+    as the generator names it."""
     p = DesignPoint.load(point(tmp_path, name=name, graph=graph))
     inst_name, inst, unit = gen_mod.accelerator(p)
     layout = gen_mod.csr_layout(gen_mod.streamer_template(p, inst_name, inst), unit.fields)
     cluster = gen_mod.source(p.platform, tmp_path)
+    _, slot = gen_mod.find_slot(cluster, p.platform)
+    slot["snax_acc_name"] = p.platform.accelerator_slot
     return p, task_list(p), cluster, layout, data_arrays(p)
 
 

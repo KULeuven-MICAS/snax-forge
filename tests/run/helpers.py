@@ -1,5 +1,5 @@
 """Shared snippets for the run tests: a cluster's three hjson files and design point, as the
-generator writes them for vecadd on snax_alu (cut to what run/ reads), and GVSoC header lines."""
+generator writes them for vecadd on snax_forge (cut to what run/ reads), and GVSoC header lines."""
 
 from __future__ import annotations
 
@@ -22,9 +22,9 @@ CLUSTER: dict[str, Any] = {
     "acc_core": {
         "xdma": False,
         "snax_acc_cfg": [{
-            "snax_acc_name": "snax_alu",
-            "snax_streamer_cfg": {"$ref": "snax_alu_streamer.hjson"},
-            "snax_datapath_cfg": {"$ref": "snax_alu_acc.hjson"},
+            "snax_acc_name": "snax_forge",
+            "snax_streamer_cfg": {"$ref": "snax_forge_streamer.hjson"},
+            "snax_datapath_cfg": {"$ref": "snax_forge_acc.hjson"},
         }],
     },
     "dma_core": {"xdma": True},
@@ -45,7 +45,7 @@ UNIT: dict[str, Any] = {
 
 POINT: dict[str, Any] = {
     "name": "vecadd",
-    "platform": {"accelerator_slot": "snax_alu"},
+    "platform": {"accelerator_slot": "snax_forge"},
     "streamers": {
         "acc_a": {"instance": "acc", "port": "a", "write": False},
         "acc_b": {"instance": "acc", "port": "b", "write": False},

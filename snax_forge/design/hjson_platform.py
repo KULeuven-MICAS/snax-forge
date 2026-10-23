@@ -3,7 +3,8 @@
     platform_from_hjson(path, name, root=None) -> Platform
 
 snax_cluster describes a cluster in an hjson file (``cfg/<cluster>.hjson``,
-the copy in snax-gvsoc ``sw/cfg/``, and snax_alu's in ``platforms/``);
+the copy in snax-gvsoc ``sw/cfg/``, and snax_alu_cluster's in
+``platforms/``);
 ``{"$ref": "#/<key>"}`` stands for the file's top-level ``<key>``. The
 reader takes from it:
 
@@ -26,7 +27,12 @@ reader takes from it:
                              root by default), ``/``-separated: the
                              platform's source, which the GVSoC generator
                              writes the design's cluster file from
-    accelerator_slot         the one accelerator's ``snax_acc_name``
+    accelerator_slot         ``ACCELERATOR_SLOT`` (``snax_forge``), the
+                             generated accelerator's name, never the
+                             source's ``snax_acc_name``, so a generated
+                             design takes no name of snax_cluster's own
+                             (D131); the source must still have one
+                             accelerator, its name an identifier
 
 Not in the hjson, so fixed here: both memories' ``dtype`` int64 and
 ``elems_per_word`` 1. ``spatial_bounds`` and ``num_channel`` are not stored:
@@ -62,6 +68,8 @@ from .problems import DesignError, Problem
 
 ROOT = repo_root()
 SMALL16 = ROOT / "platforms" / "small16.json"
+# The generated accelerator's name, the platform's accelerator_slot
+ACCELERATOR_SLOT = "snax_forge"
 # The movers of a streamer template, in snax_cluster's order.
 MOVERS = ("data_reader_params", "data_writer_params", "data_reader_writer_params")
 
@@ -189,9 +197,9 @@ def platform_from_dict(d: Mapping[str, Any], name: str, source: str | None = Non
             f"{len(accs)} accelerators {names}; a platform has one accelerator slot",
         )  # fmt: skip
     at, acc = accs[0]
-    slot = _get(acc, "snax_acc_name", str, at)
-    if not slot.isidentifier():
-        raise _fail("hjson.value", f"{at}.snax_acc_name", f"{slot!r} is not an identifier")
+    acc_name = _get(acc, "snax_acc_name", str, at)
+    if not acc_name.isidentifier():
+        raise _fail("hjson.value", f"{at}.snax_acc_name", f"{acc_name!r} is not an identifier")
     template = _get(acc, "snax_streamer_cfg", Mapping, at)
     at += ".snax_streamer_cfg"
     temporal = _mover_value(template, "temporal_dim", at)
@@ -213,7 +221,7 @@ def platform_from_dict(d: Mapping[str, Any], name: str, source: str | None = Non
     except ValueError as e:
         raise _fail("hjson.value", "cluster", str(e)) from None
     return replace(small, name=name, l1=l1, l2=l2, default=default, entries={}, base=None,
-                   changes={}, hjson=source, accelerator_slot=slot)  # fmt: skip
+                   changes={}, hjson=source, accelerator_slot=ACCELERATOR_SLOT)  # fmt: skip
 
 
 def source_path(path: str | Path, root: str | Path | None = None) -> str:

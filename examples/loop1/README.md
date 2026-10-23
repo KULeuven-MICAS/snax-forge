@@ -1,6 +1,6 @@
 # LOOP1: one turn of the loop by hand
 
-This walk-through takes vecadd on `platforms/snax_alu.json` once around the
+This walk-through takes vecadd on `platforms/snax_forge.json` once around the
 loop on SNAX-GVSoC: run it, read why it takes the cycles it takes, write down
 what a change should do, make the change, and check. Every number below is
 checked by `tests/flow/test_loop1.py`, so the text stays true as the code
@@ -12,7 +12,7 @@ Every quoted table is copied line for line from the report named above it.
 ## 1. Run the default
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set N=512 --trace stall
+pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set N=512 --trace stall
 ```
 
 `N=512` makes the vectors 512 elements long, so the accelerator's work is
@@ -149,7 +149,7 @@ Prediction, written here before the rerun:
 ## 6. Rerun at W=8
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set N=512 --set W=8 --trace stall
+pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set N=512 --set W=8 --trace stall
 ```
 
 The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one.

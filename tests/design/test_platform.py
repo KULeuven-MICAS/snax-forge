@@ -9,7 +9,7 @@ import pytest
 from snax_forge.design import DesignError, Platform, StreamerOptions, parse_value
 from snax_forge.design.platform import parse
 
-from .helpers import SMALL16, SNAX_ALU, platform_dict
+from .helpers import SMALL16, SNAX_FORGE, platform_dict
 
 # =============================================================================
 # 1. small16 and the format
@@ -170,15 +170,15 @@ def test_a_bad_set_is_named(path, value, text):
     assert p.code == "platform.keys" and p.where == f"platform.{path}" and text in p.message
 
 
-def test_set_accelerator_slot_changes_the_slot():
-    """The slot's name is a platform field as any: the generator sets the source's slot of
-    that name (tests/gen: gen.slot when the source has none)."""
-    w = Platform.load(SNAX_ALU).with_changes([("accelerator_slot", "snax_forge_acc")])
-    assert (w.accelerator_slot, w.hjson) == ("snax_forge_acc", "platforms/snax_alu.hjson")
-    assert w.changes == {"accelerator_slot": "snax_forge_acc"} and w.base == "snax_alu"
+def test_set_accelerator_slot_changes_the_generated_accelerators_name():
+    """The generated accelerator's name is a platform field as any: the generator gives it to
+    the source's only slot (tests/gen)."""
+    w = Platform.load(SNAX_FORGE).with_changes([("accelerator_slot", "snax_forge_acc")])
+    assert (w.accelerator_slot, w.hjson) == ("snax_forge_acc", "platforms/snax_alu_cluster.hjson")
+    assert w.changes == {"accelerator_slot": "snax_forge_acc"} and w.base == "snax_forge"
     assert Platform.from_dict(json.loads(w.to_json())) == w
     with pytest.raises(DesignError) as e:
-        Platform.load(SNAX_ALU).with_changes([("accelerator_slot", "snax-alu")])
+        Platform.load(SNAX_FORGE).with_changes([("accelerator_slot", "snax-alu")])
     assert e.value.problems[0].where == "accelerator_slot"
     assert "must be an identifier or null" in e.value.problems[0].message
 

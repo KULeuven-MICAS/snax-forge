@@ -69,7 +69,7 @@ hjson, `vectors.json`) come from the Python side, which checks them byte
 for byte (`tests/gen/test_rtl.py`); refresh one with
 
     pixi run sandbox recipes/vsum_tree.json --set W=8 --out out/sandbox/vsum_tree_w8
-    pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_alu.json --out out/design/vsum_tree_w8
+    pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_tree_w8
     pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
 
 (the others from their recipe as it is, named after it). The specs on

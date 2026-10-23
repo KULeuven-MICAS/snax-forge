@@ -1,7 +1,7 @@
 # From a recipe to a run on SNAX-GVSoC
 
 One design point the whole way, with one command: `pixi run flow` takes a
-recipe through `sandbox` and `design` on `platforms/snax_alu.json`,
+recipe through `sandbox` and `design` on `platforms/snax_forge.json`,
 generates the design point's hjson files, headers, data and program, builds
 SNAX-GVSoC when needed and the program, runs it on `snax_hjson`, and takes
 the program's own check (D136), then turns SNAX-GVSoC's events into the
@@ -40,18 +40,18 @@ that holds `snax-forge`:
 first flow builds SNAX-GVSoC into `out/snax-gvsoc/` (a few minutes; its
 output shows as it comes and goes to `out/flow/vecadd/build.log`):
 
-    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json
+    pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json
 
-    Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_alu.json
+    Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_forge.json
       build     building SNAX-GVSoC: no install in out/snax-gvsoc; log in out/flow/vecadd/build.log
     make: Entering directory '$ROOT/snax-forge/gvsoc'
     ...
     make: Leaving directory '$ROOT/snax-forge/gvsoc'
-    flow vecadd (vecadd: W=4, N=64; N=64) on snax_alu -> out/flow/vecadd/
+    flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> out/flow/vecadd/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-      design    20 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      design    20 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
-      gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
+      gen       snax_forge.hjson, snax_forge_streamer.hjson, snax_forge_acc.hjson, main.c, data.h (seed 0) -> gen/
       build     built: no install in out/snax-gvsoc (snax-gvsoc 3f8a3e9d)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
@@ -68,7 +68,7 @@ One line per stage:
 - `sandbox`, `design`: the recipe's steps, each checked by the reference
   executor, then the design checks, the memory plan and the design point.
 - `lower`: the task list, `tasks.json`.
-- `gen`: the generator's output in `gen/`: the cluster file `snax_alu.hjson`
+- `gen`: the generator's output in `gen/`: the cluster file `snax_forge.hjson`
   (the platform's source with the slot set for this design), the streamer
   and datapath files it refers to, the headers, `data.h` (the kernel's
   `make_inputs` at seed 0, and the reference executor's goldens, checked
@@ -127,7 +127,7 @@ What the program printed, after make's own lines:
     make: Entering directory '$ROOT/snax-forge/gvsoc'
     mkdir -p $ROOT/snax-forge/out/flow/vecadd/run/work
     $ROOT/snax-forge/out/snax-gvsoc/install/bin/gvrun --target snax_hjson \
-    	--work-dir $ROOT/snax-forge/out/flow/vecadd/run/work --param chip/soc/binary=$ROOT/snax-forge/out/flow/vecadd/sw/forge.elf --param hjson=$ROOT/snax-forge/out/flow/vecadd/gen/snax_alu.hjson \
+    	--work-dir $ROOT/snax-forge/out/flow/vecadd/run/work --param chip/soc/binary=$ROOT/snax-forge/out/flow/vecadd/sw/forge.elf --param hjson=$ROOT/snax-forge/out/flow/vecadd/gen/snax_forge.hjson \
     	--trace='/summary$:$ROOT/snax-forge/out/flow/vecadd/run/events.log' run
     forge cycles: 226
     forge data: 0 errors (64 words)
@@ -144,7 +144,7 @@ crossbar's ports and the banks:
 
     {
      "design_point": "design/design_point.json",
-     "hjson": ["gen/snax_alu.hjson", "gen/snax_alu_streamer.hjson", "gen/snax_alu_acc.hjson"],
+     "hjson": ["gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson", "gen/snax_forge_acc.hjson"],
      "elf": "sw/forge.elf",
      "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
      "elf_symbols": {
@@ -177,14 +177,14 @@ crossbar's ports and the banks:
 `--trace task` also turns on the components' `events` lines; the folder
 gets the level in its name:
 
-    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
+    pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --trace task
 
-    Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_alu.json --trace task
-    flow vecadd_task (vecadd: W=4, N=64; N=64) on snax_alu -> out/flow/vecadd_task/
+    Pixi task (flow in default): python -m snax_forge.flow recipes/vecadd.json --platform platforms/snax_forge.json --trace task
+    flow vecadd_task (vecadd: W=4, N=64; N=64) on snax_forge -> out/flow/vecadd_task/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-      design    20 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      design    20 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
-      gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
+      gen       snax_forge.hjson, snax_forge_streamer.hjson, snax_forge_acc.hjson, main.c, data.h (seed 0) -> gen/
       build     up to date (snax-gvsoc 3f8a3e9d)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
@@ -258,7 +258,7 @@ the sources are the accelerator, its movers and the DMA (at `finegrained`
 every core too, for its instructions); `--trace stall:acc,acc_a` names
 them. The profile is the task level's, byte for byte:
 
-    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --trace stall
+    pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --trace stall
 
     ...
       check     passed: 226 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
@@ -280,7 +280,7 @@ elements and their values; a stall names the port that won the bank:
 (`gtkwave out/flow/vecadd_stall/run/view.gtkw`, outside the container);
 snax-forge never reads them:
 
-    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --trace stall --vcd --name vecadd_stall_vcd
+    pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --trace stall --vcd --name vecadd_stall_vcd
 
     ...
       convert   run/events.log -> profile.json, trace.jsonl (343 events in the window; boot 2812; sources acc, acc_a, acc_b, acc_out, dma); run/all.vcd, run/view.gtkw (gtkwave)
@@ -308,7 +308,7 @@ pushes and each lane's FIFO count. Everything is in the address bar
 The recipe's `N` makes the vectors longer, so the accelerator's work stands
 out against the cores' and the DMA's; `examples/loop1/` walks such a run:
 
-    pixi run flow recipes/vecadd.json --platform platforms/snax_alu.json --set N=512 --trace stall
+    pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set N=512 --trace stall
 
     ...
       check     passed: 486 cycles (main to forge_check); data 0 errors (512 words); counters add_acc 131 (128 beats)
@@ -339,14 +339,14 @@ open `http://localhost:8765/`:
 `recipes/vsum.json` binds vsum's reduction to the one-lane Chisel
 Accumulator. GVSoC is built now, so the whole flow takes seconds:
 
-    pixi run flow recipes/vsum.json --platform platforms/snax_alu.json
+    pixi run flow recipes/vsum.json --platform platforms/snax_forge.json
 
-    Pixi task (flow in default): python -m snax_forge.flow recipes/vsum.json --platform platforms/snax_alu.json
-    flow vsum (vsum: W=1; N=64) on snax_alu -> out/flow/vsum/
+    Pixi task (flow in default): python -m snax_forge.flow recipes/vsum.json --platform platforms/snax_forge.json
+    flow vsum (vsum: W=1; N=64) on snax_forge -> out/flow/vsum/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-      design    20 checks passed; platform base snax_alu, 0 changes; memory contiguous, 0 changes -> design/
+      design    20 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (9 steps)
-      gen       snax_alu.hjson, snax_alu_streamer.hjson, snax_alu_acc.hjson, main.c, data.h (seed 0) -> gen/
+      gen       snax_forge.hjson, snax_forge_streamer.hjson, snax_forge_acc.hjson, main.c, data.h (seed 0) -> gen/
       build     up to date (snax-gvsoc 3f8a3e9d)
       sw        sw/forge.elf (sha256 26b545a3812000c8)
       gvsoc     snax_hjson, exit 0 -> run/
@@ -389,9 +389,9 @@ hand-written platform with no source hjson (`gen.source`):
 one slot and the program drives one accelerator (`gen.instances`; several
 accelerators on one core are open item 79, a composed one is M13):
 
-    pixi run flow recipes/dot.json --platform platforms/snax_alu.json
+    pixi run flow recipes/dot.json --platform platforms/snax_forge.json
 
-    Pixi task (flow in default): python -m snax_forge.flow recipes/dot.json --platform platforms/snax_alu.json
+    Pixi task (flow in default): python -m snax_forge.flow recipes/dot.json --platform platforms/snax_forge.json
     FAILED recipes/dot.json: gen: [gen.instances] 2 accelerated instances ['mul', 'sum']; the platform has one accelerator slot and the program drives one accelerator (open item 79)
 
 Both exit 1 and write the failure to `flow.log`.
@@ -403,20 +403,20 @@ into `out/gvsoc/vecadd/`, then `gvsoc/Makefile` (from pixi or the plain
 container shell: it names the image's tools) for the program and the run:
 
     pixi run sandbox recipes/vecadd.json
-    pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_alu.json
+    pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json
     pixi run gen-gvsoc out/design/vecadd/design_point.json
 
     ...
     wrote $ROOT/snax-forge/out/gvsoc/vecadd/main.c
     wrote $ROOT/snax-forge/out/gvsoc/vecadd/manifest.json
-    run: make -C gvsoc run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$ROOT/snax-forge/out/gvsoc/vecadd/snax_alu.hjson" ELF=...
+    run: make -C gvsoc run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$ROOT/snax-forge/out/gvsoc/vecadd/snax_forge.hjson" ELF=...
 
 `make -C gvsoc build` builds GVSoC (the flow did already), `make sw` the
 program into `out/snax-gvsoc/sw/vecadd/`, and `make run` runs it:
 
     make -C gvsoc sw APPS=forge FORGE=../out/gvsoc/vecadd DESIGN=vecadd
     make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd \
-        GVRUN_ARGS="--param hjson=$PWD/out/gvsoc/vecadd/snax_alu.hjson" \
+        GVRUN_ARGS="--param hjson=$PWD/out/gvsoc/vecadd/snax_forge.hjson" \
         ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
 
     ...
@@ -436,23 +436,91 @@ options too, such as `--trace=snax_acc0/unit` for the unit's trace.
 
 ## 6. The accelerator's RTL
 
-The same design point gives the accelerator's Chisel RTL (GEN1, D138), for
-snax_cluster to build later (LNK2b); the flow does not call it. `gen-rtl`
+The same design point gives the accelerator's Chisel RTL (GEN1, D138),
+which snax_cluster builds from the bundle (section 7); the flow does not
+call it. `gen-rtl`
 writes `rtl.json` (C§17), then elaborates it through `hw/chisel/`'s
 `Emit --spec` (sbt, so the first run fetches the Chisel jars):
 
     pixi run gen-rtl out/design/vecadd/design_point.json
 
     ...
-    wrote out/rtl/vecadd/rtl.json: snax_alu_shell_wrapper, ElementwiseTiledSpatial
+    wrote out/rtl/vecadd/rtl.json: snax_forge_shell_wrapper, ElementwiseTiledSpatial
     wrote out/rtl/vecadd/sv/ElementwiseAlu_w64_add.sv
     wrote out/rtl/vecadd/sv/ElementwiseTiledSpatial_w64_n4_t32_add.sv
-    wrote out/rtl/vecadd/sv/snax_alu_csr_manager.sv
-    wrote out/rtl/vecadd/sv/snax_alu_ctrl_adapter.sv
-    wrote out/rtl/vecadd/sv/snax_alu_shell_wrapper.sv
+    wrote out/rtl/vecadd/sv/snax_forge_csr_manager.sv
+    wrote out/rtl/vecadd/sv/snax_forge_ctrl_adapter.sv
+    wrote out/rtl/vecadd/sv/snax_forge_shell_wrapper.sv
     wrote out/rtl/vecadd/emitted.json
 
-`snax_alu_shell_wrapper` has the ports snax_cluster's
+`snax_forge_shell_wrapper` has the ports snax_cluster's
 `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`, and
 carries its own CSR manager (D130); `emitted.json` lists its modules and
 files. `hw/chisel/README.md` has the specs that check it.
+
+## 7. Bundle for snax_cluster
+
+The bundle (C§18, D139) is what snax_cluster builds the design's cluster
+from: gen-gvsoc's files at the root, the accelerator's RTL under `rtl/`
+with its file list, and `bundle.json`, all made again (sbt, as section 6):
+
+    pixi run bundle out/design/vecadd/design_point.json
+
+    ...
+    bundle out/bundle/vecadd: snax_forge_shell_wrapper from out/design/vecadd/design_point.json, snax-forge $COMMIT
+    wrote out/bundle/vecadd/snax_forge.hjson
+    ...
+    wrote out/bundle/vecadd/rtl/rtl.json
+    wrote out/bundle/vecadd/rtl/sv/ElementwiseAlu_w64_add.sv
+    ...
+    wrote out/bundle/vecadd/rtl/emitted.json
+    wrote out/bundle/vecadd/rtl/files.f
+    wrote out/bundle/vecadd/bundle.json
+
+(`$COMMIT` is the checkout's `git rev-parse HEAD`, followed by `, dirty`
+when the work tree has uncommitted changes.) `rtl/files.f` lists the RTL
+from `rtl/`, in `emitted.json`'s order:
+
+    cat out/bundle/vecadd/rtl/files.f
+
+    sv/ElementwiseAlu_w64_add.sv
+    sv/ElementwiseTiledSpatial_w64_n4_t32_add.sv
+    sv/snax_forge_csr_manager.sv
+    sv/snax_forge_ctrl_adapter.sv
+    sv/snax_forge_shell_wrapper.sv
+
+The cluster file's slot names it (`snax_forge_rtl: "rtl/files.f"`), and
+snax_cluster builds the cluster from that file alone (C§18): its snaxgen
+writes `generated/snax_forge.f`, which its vsim and Verilator builds read,
+with the cluster `snax_forge_cluster` as its Bender target. From the folder
+that holds both checkouts, `rtl-gen` and the vsim preparation in
+snax_cluster's development image (on barnard3 `c5db84ad7bce`), with
+`CFG_OVERRIDE` the bundle's cluster file by its absolute path:
+
+    podman run --rm -it -v "$PWD":"$PWD" -w "$PWD" c5db84ad7bce
+    cd snax_cluster
+    B=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
+    make -C target/snitch_cluster clean
+    make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
+    make -C target/snitch_cluster vsim_preparation CFG_OVERRIDE=$B
+
+then Questa outside podman, from snax_cluster with `bender` on `PATH`:
+
+    make -C target/snitch_cluster bin/snitch_cluster.vsim CFG_OVERRIDE=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
+
+    ...
+    Optimized design name is tb_bin_opt
+    Errors: 0, Warnings: 18
+
+`generated/snax_forge.f` lists the bundle's five files and snaxgen's three
+for the accelerator, and `work-vsim/compile.vsim.tcl` compiles it after
+Bender's list. The 18 warnings are `snax_alu_cluster`'s too (the
+testharness's open CSR and `obs_o` ports, the vendored AXI burst splitter,
+`+acc`). Running an ELF on it is GEN2b.
+
+snax_cluster keeps this bundle as a fixture,
+`target/snitch_cluster/cfg/snax_forge/vecadd/`, which its
+`snax-forge-ci.yml` builds with Verilator. To refresh it, make the bundle
+again as above and copy what the fixture's `README.md` lists from
+`out/bundle/vecadd/`: the three hjson files, `bundle.json`, `rtl/files.f`
+and the files `rtl/files.f` lists.
