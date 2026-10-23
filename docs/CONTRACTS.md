@@ -993,6 +993,18 @@ block's start with the fields on its pins; ready is not busy; the counter
 is reset by an accepted start, counts busy cycles and holds after) and the
 unit.
 
+**One rule on both sides.** The shell's rule (a start, a start held while
+busy and answered in E + 1, busy, the counter) is snax-gvsoc's
+`SnaxShellRule` (`snax/snax_shell.hpp`), which `SnaxShell` runs; its
+hand-worked cases are `tests/snax/shell/cases/` (the format in that folder's
+README), which snax-gvsoc's `tb.cpp` checks the rule against, stepped with
+the unit's, and `ShellCasesSpec` drives vecadd's wrapper through
+(`SNAX_GVSOC_SHELL_CASES`). The unit's rule is `snax/snax_unit.hpp` with
+`tests/snax/unit/cases/`, which the block specs drive the blocks through
+(`SNAX_GVSOC_UNIT_CASES`). CI's chisel job sets both to the submodule's
+folders. Where a case shows the two sides disagree, the Chisel behaviour
+stands unless it breaks this section or D130, and SNAX-GVSoC follows it.
+
 ## 18. Bundle
 
 What `pixi run bundle DESIGN_POINT [--out DIR]` writes per design point

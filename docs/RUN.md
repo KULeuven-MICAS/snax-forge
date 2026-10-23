@@ -610,9 +610,15 @@ RTL's (|w_gvsoc − w_rtl| / w_rtl):
 |---|---:|---:|---:|---:|
 | vecadd, default N (64) | 226 | 239 | 5.4% | 19 |
 | vecadd, `N=512` (`--set N=512`, its own bundle) | 486 | 500 | 2.8% | 131 |
+| vsum, default N (64) | 255 | 259 | 1.5% | 67 |
+| vsum, `N=512` (`--set N=512`, its own bundle) | 755 | 739 | 2.2% | 515 |
 
-`N` reaches the hardware only as the accelerator's `loopCount` CSR, so the
-`N=512` bundle's `rtl/` is the default's (its RTL files byte-identical) and
-one RTL build runs both ELFs. snax_cluster keeps the default bundle as its
-fixture, `target/snitch_cluster/cfg/snax_forge/vecadd/` (section 7), whose
-README has the same commands with `CFG_OVERRIDE=cfg/snax_forge/vecadd/snax_forge.hjson`.
+vsum runs the same way from `out/bundle/vsum/` (`recipes/vsum.json`). `N`
+reaches the hardware only as CSR values (the streamer's bounds and
+addresses, the accelerator's `loopCount` and vsum's `len`), so a design's `N=512` bundle's `rtl/` is the default's (its RTL
+files byte-identical) and one RTL build runs both ELFs. snax_cluster keeps
+each default bundle as a fixture, `target/snitch_cluster/cfg/snax_forge/vecadd/`
+and `vsum/` (section 7), whose READMEs have the same commands with
+`CFG_OVERRIDE=cfg/snax_forge/<design>/snax_forge.hjson`. The shell's rule the
+counter comes from is checked on both sides against one set of cases,
+snax-gvsoc's `tests/snax/shell/` (C§17).

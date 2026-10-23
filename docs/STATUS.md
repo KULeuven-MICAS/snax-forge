@@ -73,7 +73,7 @@ its tasks SG0 to SG7 and CI1 are in snax-gvsoc's `docs/plans/`, SG8 in its
 | RET1 | A. SNAX-MODEL removed (D116): `snax_model/`, `scenarios/`, their tests and pixi tasks, the command list (`lower_program`, `program.py`), the cluster file (`lower/cluster.py`), `viz/memory.py` and `movement.py`, C§2–C§6 and C§8, and the entries true of SNAX-MODEL alone (to Retired). What the live path uses stays, trimmed: the task list, its values check and its waits (`placed_waits`, `lower/waits.py`), the streamer values and `derive.py` read the design point; `design/` owns the platform's L1, L2 and streamer types, with only the fields something reads; the accelerator kinds the reference executor runs move to `brm/function.py`; a BRM is checked against the generator's blocks. Nothing new is designed | FLOW3 round 1 | `pixi run test` and `pixi run lint` pass; no `snax_model` under `snax_forge/` or `tests/`; `gen-gvsoc` writes byte-identical files for vecadd, vecmul, vsum and vsum_tree before and after, and `tests/gen/test_fixture.py` passes unchanged; in the container `pixi run flow` on `vecadd` (`--trace task`) and `vsum` on `platforms/snax_alu.json` pass with windows 226 and 255 | done |
 | GEN1 | B. The Chisel accelerator from a BRM binding (D91, D130, D138): the block catalogue `hw/chisel/blocks.json` and `Emit --describe`; `rtl.json` per design point (`gen/rtl.py`, checked against the catalogue); `Emit --spec` builds `<tag>_shell_wrapper` with its own `CsrManager` on ReqRspManager's protocol, a `CtrlAdapter` and the unit; `pixi run gen-rtl`, which the flow does not call. Fixtures in `hw/chisel/src/test/resources/rtl/`: vecadd and vecmul at W = 4, vsum at W = 1, vsum_tree at W = 4 and 8; random specs for both blocks, the manager and the wrapper (seeded) | GEN3 | `pixi run test` and `lint` pass and reproduce the fixtures' `rtl.json` and `vectors.json` byte for byte; with `SNAX_GVSOC_UNIT_CASES` set, `chisel-test` passes: `blocks.json` equals `--describe`, every fixture elaborates with exactly the port list of `snax_acc_wrapper.sv.tpl`'s `snax_disable_csr_manager` branch, the unit cases pass at the fixtures' params, the shell cases (worked from `snax_shell.cpp`) pass, and end to end the outputs equal the goldens and the counter the fixture's worked value, and the random specs (both blocks, the manager, the wrapper) equal their models on every seed; `gen-rtl` on vecadd writes the files its `emitted.json` lists; `gen-gvsoc` writes byte-identical files for the four designs; nothing changes in snax-gvsoc or snax_cluster | `done` |
 | LNK2b | B. The bundle for snax_cluster (D111, D139): `pixi run bundle` (gen-gvsoc's files, the RTL under `rtl/` with its file list, `bundle.json`), the `snax_forge` slot and `snax_forge_cluster`, the slot's `snax_disable_csr_manager` and `snax_forge_rtl`; in snax_cluster (#659) cross-file `$ref`s, the schema's `"items"`, `generated/snax_forge.f` with its vsim and Verilator hooks, the `snax_forge_cluster` target, the vecadd fixture and `snax-forge-ci.yml`; accelerator CSRs end at `0x5FD` on both sides | GEN1, LNK2a | snax-forge's tests, lint and fixtures pass; Questa compiles and elaborates the vecadd bundle with no errors and no port-width warnings on the `snax_forge` instances; Verilator builds snax_cluster's fixture in its `snax-forge-ci.yml`; no duplicate module names; `snax_alu_cluster` and `snax_hypercorex_cluster` still build; no ELF | `done` |
-| GEN2b | B. snax-forge's ELF on snax_cluster's RTL (D123, D140): the ELF built from the bundle runs on SNAX-GVSoC and on snax_cluster's Verilator and Questa builds, and the printed `forge` lines are compared by hand; snax_cluster's `snax_forge.mk` (`SIM=vlt|vsim`) and `sw/apps/snax-forge` app, which build and run a fixture's own copy of the program for its CI only; the header check (`snax-forge-sw` fails when the bundle's `include/streamer_csr_addr_map.h` and snaxgen's differ in a `#define`). Round 1: snax_cluster #660 (the streamer's params from its JSON); round 2: vecadd; round 3: vsum and open item 84. vecmul, vsum_tree and W = 8 are deferred | LNK2b, GEN2a | `forge counter` equal and the window within 10% or explained, for vecadd and vsum (W = 4 and W = 1, default N and `N=512`) | rounds 1 and 2 done |
+| GEN2b | B. snax-forge's ELF on snax_cluster's RTL (D123, D140): the ELF built from the bundle runs on SNAX-GVSoC and on snax_cluster's Verilator and Questa builds, and the printed `forge` lines are compared by hand; snax_cluster's `snax_forge.mk` (`SIM=vlt|vsim`) and `sw/apps/snax-forge` app, which build and run a fixture's own copy of the program for its CI only; the header check (`snax-forge-sw` fails when the bundle's `include/streamer_csr_addr_map.h` and snaxgen's differ in a `#define`). Steps in snax-gvsoc `docs/plans/GEN2b.md`: snax_cluster #660 (the streamer's params from its JSON), vecadd, the shell's rule shared by both sides (open item 84), vsum. vecmul, vsum_tree and W = 8 are deferred | LNK2b, GEN2a | `forge counter` equal and the window within 10% or explained, for vecadd and vsum (W = 4 and W = 1, default N and `N=512`) | `done` |
 | LNK3 | After M13. The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2b | Deviation explained per phase | todo |
 
 After FLOW3 and RET1, a housekeeping pass and the single generator (open item 68). The pass also takes the memory plan's L2 placement and the `memory.align` and `memory.overlap` checks on L2, which work on bases no program uses since D86's amendment (`memory.fit` stays).
@@ -118,13 +118,14 @@ lockstep: a lone operand waits, `valid` does not depend on `ready`). LNK2b
 is done (D139): `pixi run bundle` writes a design point's bundle, and
 snax_cluster builds it from its cluster hjson alone (`snax_forge.f`,
 the `snax_forge_cluster` target), checked by its `snax-forge-ci.yml` on a
-vecadd fixture. GEN2b's rounds 1 and 2 are done (D140): `StreamerGen` reads
-its params from the JSON (snax_cluster #660), and vecadd's ELF from the
-bundle runs on SNAX-GVSoC, Verilator and Questa with the counter equal and
-the window within 10% (226 against 239 at the default N, 486 against 500 at
-`N=512`, `docs/RUN.md` section 8), checked in snax_cluster's CI on its
-fixture. Next is GEN2b's round 3 (vsum and open item 84), then the
-housekeeping pass and the single generator (open item 68).
+vecadd fixture. GEN2b is done (D140, snax-gvsoc `docs/plans/GEN2b.md`):
+`StreamerGen` reads its params from the JSON (snax_cluster #660), the
+shell's rule is one C++ class with cases both sides read (C§17), and the
+ELFs from vecadd's and vsum's bundles run on SNAX-GVSoC, Verilator and
+Questa with the counter equal and the window within 10% at the default N
+and `N=512` (`docs/RUN.md` section 8), checked in snax_cluster's CI on its
+two fixtures. Next is the housekeeping pass and the single generator (open
+item 68).
 
 ## Open Items
 
@@ -142,7 +143,8 @@ values on beat events and the push event) and 39 (the beat trace's size,
 measured on SNAX-GVSoC). Closed in LNK2b: 85 (generated designs are
 `snax_forge`, D131) and 51 (snax_cluster's changes, its PR #659, C§18).
 Closed in GEN2b: 87 (`StreamerGen` reads its params from the JSON,
-snax_cluster #660). Next free number: 91.
+snax_cluster #660) and 84 (the shell's rule in snax-gvsoc's
+`snax_shell.hpp`, its cases read by both sides, C§17). Next free number: 91.
 
 1. BRM dataflow notation: `affine` since D70, frozen in M6. A rank-free
    notation for unit BRMs comes earlier, with ND1 (open item 45).
@@ -310,10 +312,6 @@ snax_cluster #660). Next free number: 91.
     or in the adapter); blocks taking a Decoupled `ctrl`, so the adapter
     goes; the ALU's own rules (open item 63). Decided with the alignment, at
     the latest with M13's baseline (open item 79).
-84. `SnaxShell` aligned to the Chisel `CsrManager`: the shell's rule moves
-    from `snax_shell.cpp` into `snax_shell.hpp`, with case files and a
-    `tb.cpp` in snax-gvsoc that both sides read, as the unit's cases are.
-    At the latest in GEN2b.
 86. Generated accelerators beyond the default: a custom tag
     (`--set accelerator_slot=snax_forge_<x>`) is untested past the
     generator's file names (not in a bundle or on snax_cluster), nothing checks
