@@ -436,8 +436,9 @@ options too, such as `--trace=snax_acc0/unit` for the unit's trace.
 
 ## 6. The accelerator's RTL
 
-The same design point gives the accelerator's Chisel RTL (GEN1, D138), for
-snax_cluster to build later (LNK2b); the flow does not call it. `gen-rtl`
+The same design point gives the accelerator's Chisel RTL (GEN1, D138),
+which snax_cluster builds from the bundle (section 7); the flow does not
+call it. `gen-rtl`
 writes `rtl.json` (C§17), then elaborates it through `hw/chisel/`'s
 `Emit --spec` (sbt, so the first run fetches the Chisel jars):
 
@@ -488,7 +489,38 @@ from `rtl/`, in `emitted.json`'s order:
     sv/snax_forge_ctrl_adapter.sv
     sv/snax_forge_shell_wrapper.sv
 
-The cluster file's slot names it (`snax_forge_rtl: "rtl/files.f"`). In
-LNK2b round 2 snax_cluster's snaxgen reads that key and writes
-`generated/snax_forge.f`, which its vsim and Verilator builds read, with
-the cluster `snax_forge_cluster` as its Bender target (open item 51).
+The cluster file's slot names it (`snax_forge_rtl: "rtl/files.f"`), and
+snax_cluster builds the cluster from that file alone (C§18): its snaxgen
+writes `generated/snax_forge.f`, which its vsim and Verilator builds read,
+with the cluster `snax_forge_cluster` as its Bender target. From the folder
+that holds both checkouts, `rtl-gen` and the vsim preparation in
+snax_cluster's development image (on barnard3 `c5db84ad7bce`), with
+`CFG_OVERRIDE` the bundle's cluster file by its absolute path:
+
+    podman run --rm -it -v "$PWD":"$PWD" -w "$PWD" c5db84ad7bce
+    cd snax_cluster
+    B=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
+    make -C target/snitch_cluster clean
+    make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
+    make -C target/snitch_cluster vsim_preparation CFG_OVERRIDE=$B
+
+then Questa outside podman, from snax_cluster with `bender` on `PATH`:
+
+    make -C target/snitch_cluster bin/snitch_cluster.vsim CFG_OVERRIDE=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
+
+    ...
+    Optimized design name is tb_bin_opt
+    Errors: 0, Warnings: 18
+
+`generated/snax_forge.f` lists the bundle's five files and snaxgen's three
+for the accelerator, and `work-vsim/compile.vsim.tcl` compiles it after
+Bender's list. The 18 warnings are `snax_alu_cluster`'s too (the
+testharness's open CSR and `obs_o` ports, the vendored AXI burst splitter,
+`+acc`). Running an ELF on it is GEN2b.
+
+snax_cluster keeps this bundle as a fixture,
+`target/snitch_cluster/cfg/snax_forge/vecadd/`, which its
+`snax-forge-ci.yml` builds with Verilator. To refresh it, make the bundle
+again as above and copy what the fixture's `README.md` lists from
+`out/bundle/vecadd/`: the three hjson files, `bundle.json`, `rtl/files.f`
+and the files `rtl/files.f` lists.

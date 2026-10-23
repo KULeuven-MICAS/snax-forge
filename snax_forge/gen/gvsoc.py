@@ -85,7 +85,7 @@ for the port's N-bit dtype) and ``fifo_depth``.
 (``gen.instances``: the platform has one accelerator slot), a null binding
 (``gen.binding``), an unregistered block (``gen.block``), what the block's
 adapter refuses, a port whose lanes are not whole 64-bit channels
-(``gen.dtype``), CSRs past ``SNAX_CSR_LAST`` (``gen.csrs``), a platform
+(``gen.dtype``), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
 without a source hjson or a source that cannot be read or written into
 (``gen.source``, also a ``cluster.bender_target`` without the source's
 ``cluster.name``), a source with no slot or several (``gen.slot``), and a
@@ -149,9 +149,13 @@ ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
 
 # snax-gvsoc snax/snax_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
-# last one the core sends out (SNAX_CSR_FIRST, SNAX_CSR_LAST)
+# last one an accelerator may use (SNAX_CSR_FIRST, SNAX_ACC_CSR_LAST): the core
+# sends out up to 0x5FF, but snax_cluster's hw/snitch/src/csr_snax_def.sv
+# reserves 0x5FE (CSR_SNAX_READ_TASK_READY_QUEUE) and 0x5FF
+# (CSR_SNAX_WRITE_TASK_DONE_QUEUE), which hw/snax_util/src/snax_intf_translator.sv
+# routes to the cluster's top-level CSR port, not to the accelerator
 SNAX_CSR_FIRST = 0x3C0
-SNAX_CSR_LAST = 0x5FF
+SNAX_ACC_CSR_LAST = 0x5FD
 # The unit's trace path: the compute core's accelerator, named snax_acc<core>
 # by pulp/snitch/snitch_cluster/snitch_cluster.py; the composite
 # (snax/snax_unit_acc.py) calls it unit
@@ -325,8 +329,11 @@ def csr_layout(template: dict[str, Any], fields: list[str]) -> CsrLayout:
     nums = {f: first + i for i, f in enumerate(fields)}
     start = first + len(fields)
     layout = CsrLayout(SNAX_CSR_FIRST, first - 1, nums, start, start + 1, start + 2)
-    if layout.counter > SNAX_CSR_LAST:
-        raise GenError("gen.csrs", f"the shell's last CSR {layout.counter} is past {SNAX_CSR_LAST}")
+    if layout.counter > SNAX_ACC_CSR_LAST:
+        raise GenError(
+            "gen.csrs", f"the shell's last CSR {layout.counter} is past {SNAX_ACC_CSR_LAST}, the "
+            "last an accelerator may use (0x5FE and 0x5FF are snax_cluster's task queues)",
+        )  # fmt: skip
     return layout
 
 

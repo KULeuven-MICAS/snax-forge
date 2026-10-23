@@ -274,9 +274,9 @@ For SNAX-GVSoC, a design point gives the hjson files, the CSR headers and the
 program, no generated Python (GEN3, LNK2a, GEN2a; `gen/`, D128, D134, D135).
 For snax_cluster SNAX-FORGE writes a bundle, a folder per design point
 (`pixi run bundle`, `gen/bundle.py`, C§18, D111; the flow does not call
-it). The
-generated accelerator is `snax_forge` and its cluster `snax_forge_cluster`,
-so neither takes a name of snax_cluster's own (D131, D139):
+it). The generated accelerator is `snax_forge` and its cluster
+`snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131,
+D139):
 
 - **accelerator RTL** from each BRM's hardware binding (GEN1, D138):
   `gen/rtl.py` resolves it into `rtl.json` (C§17) and checks it against
@@ -295,10 +295,13 @@ so neither takes a name of snax_cluster's own (D131, D139):
 - the **program** (section 5.5).
 
 snax_cluster and snax-forge stay separate checkouts, joined only by the
-bundle's files (D139) **[PLANNED, LNK2b round 2]**: clustergen and snaxgen
+bundle's files (D139; LNK2b, snax_cluster #659): clustergen and snaxgen
 resolve the cross-file `$ref`s, snaxgen turns `snax_forge_rtl` into
 `generated/snax_forge.f`, which the vsim and Verilator builds read, and the
-`snax_forge_cluster` Bender target builds the rest (open item 51).
+`snax_forge_cluster` Bender target builds the rest; snax_cluster's
+`snax-forge-ci.yml` builds a vecadd bundle it keeps as a fixture (C§18).
+Questa elaborates a bundle and Verilator builds it; running its program on
+the RTL is GEN2b.
 
 **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output,
 latency and II.

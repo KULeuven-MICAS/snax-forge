@@ -95,13 +95,16 @@ def _resolved(node, top, folder: Path):
 @needs_cluster_schema
 def test_the_cluster_file_validates_against_snax_clusters_schema(folder):
     """clustergen's check (util/clustergen/cluster.py: Draft 7 on the cluster), on the file with
-    its refs resolved; its snax_acc_cfg entries go unchecked (the schema's "items:" typo, snax-forge
-    open item 51)."""
+    its refs resolved, the snax_acc_cfg entries included."""
     validator = Draft7Validator(json.loads(CLUSTER_SCHEMA.read_text()))
     cluster = parsed(folder / "snax_forge.hjson")
     validator.validate(_resolved(cluster, cluster, folder)["cluster"])
     source = parsed(SOURCE)
     validator.validate(_resolved(source, source, SOURCE.parent)["cluster"])
+    slot = copy.deepcopy(cluster)
+    slot["snax_alu_core_template"]["snax_acc_cfg"][0]["snax_disable_csr_manager"] = "yes"
+    with pytest.raises(ValidationError, match="'yes' is not of type 'boolean'"):
+        validator.validate(_resolved(slot, slot, folder)["cluster"])
     del cluster["cluster"]["addr_width"]  # the schema does check: a required key
     with pytest.raises(ValidationError):
         validator.validate(_resolved(cluster, cluster, folder)["cluster"])

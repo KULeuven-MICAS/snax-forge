@@ -587,5 +587,15 @@ def test_the_command(tmp_path, capsys, monkeypatch):
 )
 def test_the_constants_are_snax_accs():
     text = (SUB / "snax" / "snax_acc.py").read_text()
-    assert "SNAX_CSR_FIRST = 0x3C0" in text and "SNAX_CSR_LAST = 0x5FF" in text
-    assert (gen_mod.SNAX_CSR_FIRST, gen_mod.SNAX_CSR_LAST) == (0x3C0, 0x5FF)
+    assert "SNAX_CSR_FIRST = 0x3C0" in text and "SNAX_ACC_CSR_LAST = 0x5FD" in text
+    assert (gen_mod.SNAX_CSR_FIRST, gen_mod.SNAX_ACC_CSR_LAST) == (0x3C0, 0x5FD)
+
+
+def test_the_shells_counter_may_land_on_0x5fd_not_past():
+    """vecadd's streamer (18 CSRs) and 553 fields: the counter on 0x5FD, the last CSR an
+    accelerator may use; one more field puts it on 0x5FE, a task queue of snax_cluster's."""
+    fields = [f"f{i}" for i in range(0x5FD - 0x3C0 - 18 - 2)]
+    assert gen_mod.csr_layout(TEMPLATE_W4, fields).counter == 0x5FD
+    with pytest.raises(GenError) as e:
+        gen_mod.csr_layout(TEMPLATE_W4, [*fields, "one_more"])
+    assert e.value.code == "gen.csrs" and "the shell's last CSR 1534 is past 1533" in str(e.value)

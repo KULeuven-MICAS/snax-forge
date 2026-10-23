@@ -892,8 +892,23 @@ file list, relative to the cluster file; it exists only in a bundle,
 section 18, and SNAX-GVSoC ignores the key), `snax_streamer_cfg`
 `{$ref: "<slot>_streamer.hjson"}` and `snax_datapath_cfg`
 `{$ref: "<slot>_acc.hjson"}`. SNAX-GVSoC's reader checks the counts against
-the two files; snax_cluster's clustergen and snaxgen resolve a cross-file
-`$ref` only after LNK2b (open item 51).
+the two files; snax_cluster's clustergen and snaxgen resolve the cross-file
+`$ref`s against the cluster file's real folder (section 18). snax_cluster's
+schema lists the slot's keys `snax_acc_name`, `snax_tcdm_ports`,
+`snax_narrow_tcdm_ports`, `snax_wide_tcdm_ports`, `snax_num_rw_csr`,
+`snax_num_ro_csr`, `snax_disable_csr_manager` (boolean), `snax_datapath_cfg`
+(object) and `snax_forge_rtl` (string), none with a default (open item
+88); the others the slot keeps (`sparse_interconnect_config`,
+`snax_streamer_cfg`) it does not list, and it allows them.
+
+**The CSRs.** The streamer's from `0x3C0`, then the shell's fields, start,
+busy and the counter (`csrs` in the manifest). An accelerator's range is
+`0x3C0` to `0x5FD` (`SNAX_ACC_CSR_LAST`): the core sends out up to `0x5FF`,
+but snax_cluster reserves `0x5FE` and `0x5FF` for its task queues
+(`CSR_SNAX_READ_TASK_READY_QUEUE`, `CSR_SNAX_WRITE_TASK_DONE_QUEUE`) and
+routes them to the cluster's top-level CSR port, not to the accelerator;
+SNAX-GVSoC's `SnaxUnitAcc` refuses the same. A counter past `0x5FD` is
+`gen.csrs`.
 
 **The cluster.** `cluster.name` becomes `snax_forge_cluster` and, in
 `cluster.bender_target`, the entry equal to the source's `cluster.name`
@@ -901,10 +916,10 @@ becomes it too (D139); a source whose `bender_target` does not hold its own
 name is `gen.source`.
 
 **Checks.** The streamer and accelerator files have snax-forge's schemas
-(`snax_forge/gen/schema/`, JSON Schema 2020-12); the cluster file
-validates against snax_cluster's (snax-gvsoc's copy,
-`sw/docs/schema/snitch_cluster.schema.json`, where the submodule is checked
-out). A platform value the cluster file cannot express (an L1 that is not
+(`snax_forge/gen/schema/`, JSON Schema 2020-12); the cluster file, its
+`snax_acc_cfg` entries included, validates against snax_cluster's
+(snax-gvsoc's copy, `sw/docs/schema/snitch_cluster.schema.json`, where the
+submodule is checked out). A platform value the cluster file cannot express (an L1 that is not
 whole KiB, an L1 or L2 field it does not give back) is `gen.platform`, a
 platform without a source `gen.source`, a source with no slot or several
 `gen.slot`.
@@ -999,11 +1014,30 @@ keeps a stale file; nothing else in `DIR` is removed.
 (`emitted.json` lists no file) and `bundle.missing` (it lists a file that
 is not there).
 
-**How snax_cluster takes it** (D139, LNK2b round 2): the cluster file's
-slot names `rtl/files.f` (`snax_forge_rtl`, relative to the cluster file);
-snaxgen reads the key and writes `generated/snax_forge.f`, which the vsim
-and Verilator builds read, so snax_cluster holds no dependency on
-snax-forge. The cluster is always `snax_forge_cluster` with one Bender
-target of that name: the testharness imports `<cluster>_pkg` from the
-cluster wrapper, which must therefore come through Bender's ordered file
-list, not through `snax_forge.f`.
+**How snax_cluster takes it** (D139, snax_cluster #659), through the
+cluster file alone (`CFG_OVERRIDE`), so snax_cluster holds no dependency on
+snax-forge:
+
+- clustergen and snaxgen read the cluster file with one hjson loader that
+  resolves a `$ref` to another file against the cluster file's real folder;
+- the slot names `rtl/files.f` (`snax_forge_rtl`, relative to the cluster
+  file); in RTL mode snaxgen writes `target/snitch_cluster/generated/snax_forge.f`:
+  the paths that list names, then its own `<tag>/<tag>_Streamer.sv`,
+  `<tag>_streamer_wrapper.sv` and `<tag>_wrapper.sv` (no CSR manager), all
+  absolute; it is empty for a cluster file without the key;
+- the builds read it only when it is non-empty: the vsim script gets a
+  `vlog -sv ... -f snax_forge.f` line after Bender's, Verilator a
+  `-f snax_forge.f`; VCS and synthesis do not read it;
+- the streamer template has no `snax_library_name`, which snax_cluster's
+  streamer generator then takes as the tag: the streamer header lands in
+  `target/snitch_cluster/sw/snax/<tag>/include/streamer_csr_addr_map.h`
+  (gitignored), the file GEN2b compares with the bundle's `include/`;
+- the cluster is always `snax_forge_cluster` with one Bender target of that
+  name: the testharness imports `<cluster>_pkg` from the cluster wrapper,
+  which must therefore come through Bender's ordered file list, not through
+  `snax_forge.f`;
+- snax_cluster keeps a vecadd bundle as a fixture,
+  `target/snitch_cluster/cfg/snax_forge/vecadd/` (refreshed by its README),
+  which its `.github/workflows/snax-forge-ci.yml` builds with Verilator on
+  every PR, failing on an empty or broken `snax_forge.f` or a duplicate
+  module name.
