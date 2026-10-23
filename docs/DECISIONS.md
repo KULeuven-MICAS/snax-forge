@@ -18,7 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D140**.
+  number: **D141**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm`
 (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design`
@@ -26,7 +26,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D126 D127 D130 D138 D139 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D119 D123 D126 D127 D130 D138 D139 D140 |
 | lower | D64 D75 D89 D105 D135 |
 | gvsoc | D120 D121 D122 D125 D128 D134 D137 |
 | brm | D68 D69 D70 D82 D103 D129 D133 |
@@ -364,3 +364,8 @@ chisel job checks `Emit --describe` equal to the catalogue, so the Python side n
 **D139** · scope — snax-forge and snax_cluster are separate checkouts joined only by the bundle's
 files, so snax_cluster never depends on snax-forge and a bundle is made by the snax-forge checked
 out; snax-gvsoc stays a submodule, pinned for snax-forge's flow and tests. → C§18.
+
+**D140** · scope — The ELF compared on SNAX-GVSoC and snax_cluster's RTL is snax-forge's, built
+from the bundle, and snax-forge never runs RTL; snax_cluster builds its own ELF from a fixture's
+`main.c` (`sw/apps/snax-forge`) only for its CI's pass/fail. Narrows D123, follows D139. → C§18,
+RUN.md §8.

@@ -1037,7 +1037,23 @@ snax-forge:
   which must therefore come through Bender's ordered file list, not through
   `snax_forge.f`;
 - snax_cluster keeps a vecadd bundle as a fixture,
-  `target/snitch_cluster/cfg/snax_forge/vecadd/` (refreshed by its README),
-  which its `.github/workflows/snax-forge-ci.yml` builds with Verilator on
-  every PR, failing on an empty or broken `snax_forge.f` or a duplicate
-  module name.
+  `target/snitch_cluster/cfg/snax_forge/vecadd/` (refreshed by its README):
+  the hjson files, `bundle.json`, `rtl/files.f` and the files it lists, and
+  the program, `main.c`, `data.h` and `include/` (not `manifest.json`), all
+  untouched;
+- `target/snitch_cluster/snax_forge.mk` (GEN2b, D140) runs a program on the
+  RTL with snax_cluster's own targets: `CFG_OVERRIDE` the bundle's cluster
+  file, `FORGE` the program's folder (default `CFG_OVERRIDE`'s), `ELF` an
+  ELF to run (default the one built from `FORGE`), `SIM` `vlt` (default) or
+  `vsim`. `snax-forge-sim` builds `bin/snitch_cluster.$(SIM)` (for `vsim`
+  after `vsim_preparation`); `snax-forge-sw` builds `sw/apps/snax-forge`
+  for `FORGE`; `snax-forge-run` runs the ELF, writes its output to
+  `logs/snax-forge-$(SIM).txt` and fails on the program's nonzero exit code;
+- the header check: `snax-forge-sw` fails when the `#define` lines of
+  `$(FORGE)/include/streamer_csr_addr_map.h` and of the header snaxgen
+  wrote (above) differ; comments are ignored;
+- its `.github/workflows/snax-forge-ci.yml` builds the fixture with
+  Verilator on every PR, failing on an empty or broken `snax_forge.f` or a
+  duplicate module name, then builds the fixture's program, runs it with
+  `snax-forge-run SIM=vlt` (pass on exit code 0) and checks the README's
+  expected `forge counter` line.
