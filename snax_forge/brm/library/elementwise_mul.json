@@ -46,7 +46,7 @@
    }
   }
  },
- "pattern": {"family": "elementwise", "attrs": {"op": "mul", "arity": 2}, "predicate": null},
+ "pattern": {"family": "elementwise", "attrs": {"op": "mul", "arity": 2}},
  "implementations": {
   "chisel_tiled_spatial": {
    "source": "chisel",

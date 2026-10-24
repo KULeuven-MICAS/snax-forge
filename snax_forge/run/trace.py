@@ -46,54 +46,35 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .events import RunError
+from .events import RunError, fits, forms
 
 LEVELS = ("off", "task", "beat", "stall", "finegrained")
 
 
-def _fields(names: str) -> frozenset[str]:
-    return frozenset(names.split())
+def at_least(level: str, least: str) -> bool:
+    """``level`` is ``least`` or a level above it."""
+    return LEVELS.index(level) >= LEVELS.index(least)
 
 
 # kind -> the alternatives of its fields: (required, optional)
 KINDS: dict[str, list[tuple[frozenset[str], frozenset[str]]]] = {
-    "start": [(frozenset({"task"}), frozenset())],
-    "done": [
-        (frozenset({"task", "cycles", "firings", "first", "last"}), frozenset()),
-        (frozenset({"task", "cycles"}), frozenset()),
-        (frozenset({"task", "id"}), frozenset()),
-    ],
-    "csr": [(frozenset({"pc", "csr", "block", "op", "value"}), frozenset({"held"}))],
-    "poll": [(frozenset({"pc", "csr", "block", "value", "count", "last"}), frozenset())],
-    "barrier": [(frozenset({"last"}), frozenset())],
-    "state": [(frozenset({"mode"}), frozenset())],
-    "func": [(frozenset({"name", "pc"}), frozenset())],
-    "issue": [
-        (
-            frozenset(
-                {"task", "id", "dir", "from", "to", "size", "from_stride", "to_stride", "reps"}
-            ),
-            frozenset(),
-        ),
-    ],
-    "grant": [
-        (_fields("task op mem addr bank row value back region elems vals"), _fields("b size"))
-    ],
-    "dma": [
-        (_fields("task id i op mem addr size bank row value l2 region elems vals"), _fields("back"))
-    ],
-    "burst": [(_fields("task id op mem addr size back region elems"), frozenset())],
-    "fire": [(frozenset({"task", "n", "b", "value", "vals"}), frozenset())],
-    "push": [(frozenset({"task", "n", "first", "last", "value", "vals"}), frozenset())],
-    "class": [(frozenset({"task", "mode"}), frozenset())],
-    "stall": [
-        (
-            frozenset({"task", "addr", "bank", "row", "by", "by_addr", "region", "elems"}),
-            frozenset({"b"}),
-        ),
-    ],
-    "fifo": [(frozenset({"task", "lane", "count"}), frozenset())],
-    "insn": [(frozenset({"pc", "func", "text"}), frozenset())],
+    "start": forms(("task", "")),
+    "done": forms(("task cycles firings first last", ""), ("task cycles", ""), ("task id", "")),
+    "csr": forms(("pc csr block op value", "held")),
+    "poll": forms(("pc csr block value count last", "")),
+    "barrier": forms(("last", "")),
+    "state": forms(("mode", "")),
+    "func": forms(("name pc", "")),
+    "issue": forms(("task id dir from to size from_stride to_stride reps", "")),
+    "grant": forms(("task op mem addr bank row value back region elems vals", "b size")),
+    "dma": forms(("task id i op mem addr size bank row value l2 region elems vals", "back")),
+    "burst": forms(("task id op mem addr size back region elems", "")),
+    "fire": forms(("task n b value vals", "")),
+    "push": forms(("task n first last value vals", "")),
+    "class": forms(("task mode", "")),
+    "stall": forms(("task addr bank row by by_addr region elems", "b")),
+    "fifo": forms(("task lane count", "")),
+    "insn": forms(("pc func text", "")),
 }
 HEAD = ("t", "k", "src")
 
@@ -105,7 +86,7 @@ def check_event(e: dict[str, Any]) -> None:
     if k not in KINDS or any(h not in e for h in HEAD):
         raise RunError("trace.kind", f"not an event of a known kind ({sorted(KINDS)}): {e}")
     own = set(e) - set(HEAD)
-    if not any(req <= own <= req | opt for req, opt in KINDS[k]):
+    if not fits(own, KINDS[k]):
         raise RunError("trace.field", f"a {k} event's fields are {sorted(own)}, not one of "
                        f"{[sorted(req) for req, _ in KINDS[k]]} (C§7): {e}")  # fmt: skip
 

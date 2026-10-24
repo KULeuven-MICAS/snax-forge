@@ -13,7 +13,7 @@ import pytest
 
 from snax_forge.brm import LIBRARY, Brm, BrmError, function_of, library_names, load_brm, task_nest
 
-IMPL = "chisel_tiled_spatial"
+from .helpers import IMPL
 
 
 def function_params(inst) -> dict:
@@ -98,12 +98,13 @@ def test_ports_agree_on_element_positions():
     assert np.array_equal(idx[0], idx[1]) and np.array_equal(idx[0], idx[2])
 
 
+@pytest.mark.parametrize("brm", ["elementwise_add", "elementwise_mul"])
 @pytest.mark.parametrize("w", [1, 4, 8])
-def test_function_code_agrees_with_its_kind(w):
+def test_function_code_agrees_with_its_kind(brm, w):
     """The BRM's code and the kind the reference executor runs compute the same lanes."""
     from snax_forge import expr
 
-    inst = load_brm("elementwise_add").resolve("chisel_tiled_spatial", {"W": w})
+    inst = load_brm(brm).resolve(IMPL, {"W": w})
     cfg = function_of(inst)
     rng = np.random.default_rng(w)
     ins = {p.name: rng.integers(-1000, 1000, p.lanes) for p in cfg.inputs}
@@ -118,20 +119,6 @@ def test_elementwise_mul_is_add_with_mul():
     assert function_params(inst) == {"lanes": 4, "n_inputs": 2, "op": "mul"}
     assert (inst.latency, inst.initiation_interval) == (0, 1)
     assert inst.brm.pattern.attrs == {"op": "mul", "arity": 2}
-
-
-@pytest.mark.parametrize("w", [1, 4, 8])
-def test_mul_code_agrees_with_its_kind(w):
-    """Per lane, elementwise_mul's code and its kind compute the same."""
-    from snax_forge import expr
-
-    inst = load_brm("elementwise_mul").resolve(IMPL, {"W": w})
-    cfg = function_of(inst)
-    rng = np.random.default_rng(w)
-    ins = {p.name: rng.integers(-1000, 1000, p.lanes) for p in cfg.inputs}
-    got = cfg.fn(0, ins, {}, {"n": 1})
-    for target, e in expr.statements(inst.brm.function.code, "code"):
-        assert np.array_equal(got[target], expr.evaluate(e, ins))
 
 
 # =============================================================================
@@ -180,4 +167,4 @@ def test_accumulate_ports_and_beats():
     inst = load_brm("accumulate").resolve("chisel_adder_tree")
     assert task_nest(inst, "a", {"n": 16, "T": 4}).n_beats == 16
     out = task_nest(inst, "out", {"n": 16, "T": 4})
-    assert (out.n_beats, out.n_lanes) == (4, 1)
+    assert out.n_beats == 4

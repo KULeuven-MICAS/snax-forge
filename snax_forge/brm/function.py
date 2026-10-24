@@ -32,7 +32,7 @@ order) are not the BRM's.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from functools import reduce as _fold
 from typing import TYPE_CHECKING, Any
@@ -75,10 +75,9 @@ class AccelFunction:
 
     ports: tuple[AccelPort, ...]
     fn: AccelFn
-    kind: str = "custom"  # for printing only
+    kind: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "ports", tuple(self.ports))
         names = [p.name for p in self.ports]
         if len(set(names)) != len(names):
             raise ValueError(f"duplicate port names: {names}")
@@ -136,27 +135,21 @@ def elementwise(
     lanes: int = 1,
     n_inputs: int = 2,
     op: Callable[[Any, Any], Any] = np.add,
-    inputs: Sequence[str] | None = None,
-    output: str = "out",
 ) -> AccelFunction:
     """N inputs -> 1 output, one beat each per firing, ``op`` folding them left to right."""
-    names = list(inputs) if inputs is not None else [chr(ord("a") + i) for i in range(n_inputs)]
-    if len(names) != n_inputs:
-        raise ValueError(f"{len(names)} input names for {n_inputs} inputs")
+    names = [chr(ord("a") + i) for i in range(n_inputs)]
 
     def fn(k, ins, state, params):
-        return {output: _fold(op, (ins[n] for n in names))}
+        return {"out": _fold(op, (ins[n] for n in names))}
 
-    ports = [AccelPort(n, "in", lanes) for n in names] + [AccelPort(output, "out", lanes)]
-    return AccelFunction(tuple(ports), fn, kind="elementwise")
+    ports = [AccelPort(n, "in", lanes) for n in names] + [AccelPort("out", "out", lanes)]
+    return AccelFunction(tuple(ports), fn, "elementwise")
 
 
 def reduce_kind(
     lanes: int = 1,
     lanes_out: int | None = None,
     op: Callable[[Any, Any], Any] = np.add,
-    input: str = "a",
-    output: str = "out",
 ) -> AccelFunction:
     """T input beats -> 1 output beat, T the runtime param ``"T"``.
 
@@ -168,16 +161,16 @@ def reduce_kind(
         raise ValueError("lanes_out must equal lanes or be 1")
 
     def fn(k, ins, state, params):
-        x = ins[input]
+        x = ins["a"]
         if lanes_out == 1:
             x = _fold(op, (x[j : j + 1] for j in range(x.shape[0])))
         state["acc"] = x.copy() if "acc" not in state else op(state["acc"], x)
         if (k + 1) % params["T"] == 0:
-            return {output: state.pop("acc")}
+            return {"out": state.pop("acc")}
         return {}
 
-    ports = (AccelPort(input, "in", lanes, 1), AccelPort(output, "out", lanes_out, "T"))
-    return AccelFunction(ports, fn, kind="reduce")
+    ports = (AccelPort("a", "in", lanes, 1), AccelPort("out", "out", lanes_out, "T"))
+    return AccelFunction(ports, fn, "reduce")
 
 
 # =============================================================================

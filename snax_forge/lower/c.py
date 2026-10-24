@@ -55,8 +55,7 @@ walks the same steps, so the barrier counts match by construction.
 
 
 **Addresses.** L1 addresses are the memory plan's, absolute. A DMA's L2
-side is the container's data.h symbol plus the task's offset into its L2
-layout.
+side is the data.h array its task names (``symbol``).
 
 **Self-check**, ``forge_check(t0)`` (``static``, ``noinline``), on the
 accelerator's core after its function: after ``forge cycles:``, every output
@@ -89,7 +88,7 @@ from typing import TYPE_CHECKING, Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
-from snax_forge.common import generated_header
+from snax_forge.common import CodedError, generated_header
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
 from snax_forge.design.streamers import instances, streamer_name
@@ -105,13 +104,9 @@ MAIN_C = "main.c"
 INDENT = "    "
 
 
-class CError(ValueError):
+class CError(CodedError):
     """A task list or design point the C backend refuses; ``code`` names the rule
     (``c.<rule>``)."""
-
-    def __init__(self, code: str, message: str) -> None:
-        self.code = code
-        super().__init__(f"[{code}] {message}")
 
 
 def define_name(field: str) -> str:
@@ -277,7 +272,7 @@ class _Program:
         src, dst = c.values["src"], c.values["dst"]
         to_l1 = c.values["direction"] == "l2_to_l1"
         l2, l1 = (src, dst) if to_l1 else (dst, src)
-        sym = self.l2_symbol(l2["base"], c.task_name)
+        sym = self.l2_symbol(l2["symbol"], c.task_name)
         l1p = f"(void *){_hex(l1['base'])}"
         d, s_ = (l1p, sym) if to_l1 else (sym, l1p)
         sb, ss, db, ds = src["bounds"], src["strides"], dst["bounds"], dst["strides"]
@@ -290,18 +285,11 @@ class _Program:
             return f"snrt_dma_start_1d({d}, {s_}, {size});"
         return f"snrt_dma_start_2d({d}, {s_}, {size}, {ds[1]}, {ss[1]}, {sb[1]});"
 
-    def l2_symbol(self, base: int, task: str) -> str:
-        """The data.h symbol plus offset of L2 byte ``base``."""
-        word = self.point.platform.l2.width_bits // 8
-        for a in self.arrays:
-            if a.role == "golden":
-                continue
-            lay = self.point.memory.layouts[a.container]["l2"]
-            if lay.base <= base < lay.base + len(a.values) * word:
-                off = base - lay.base
-                cast = "const uint8_t *" if a.const else "uint8_t *"
-                return a.name if off == 0 else f"({cast}){a.name} + {off}"
-        raise CError("c.dma", f"{task}: L2 byte {base} is in no array of data.h")
+    def l2_symbol(self, symbol: str, task: str) -> str:
+        """``symbol``, checked to be an array of data.h (not a golden)."""
+        if any(a.name == symbol and a.role != "golden" for a in self.arrays):
+            return symbol
+        raise CError("c.dma", f"{task}: {symbol} is no array of data.h")
 
     def wait(self, comp: str, mode: str, covers: Mapping[str, str], consumers: set[int]) -> None:
         if mode != "poll":

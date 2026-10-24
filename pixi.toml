@@ -7,7 +7,7 @@ channels = ["conda-forge"]
 platforms = ["linux-64"]
 
 # ---------------------------------------------------------------------------
-# Python side: the kernels, DaCe (SDFG ingest, IMP1) and every snax_forge
+# Python side: the kernels, DaCe (SDFG ingest) and every snax_forge
 # package. A feature rather than top-level dependencies, so the `hw`
 # environment below stays JVM-only.
 # ---------------------------------------------------------------------------
@@ -26,9 +26,9 @@ networkx = ">=3.1,<3.6"
 
 numpy = ">=1.26,<2"
 sympy = ">=1.12"
-# snax_cluster's cluster files (LNK1, design/hjson_platform.py).
+# snax_cluster's cluster files (design/hjson_platform.py).
 hjson-py = "==3.1.0"
-# The generator's own schemas, and snax_cluster's for its cluster file (LNK2a, gen/).
+# The generator's own schemas, and snax_cluster's for its cluster file (gen/).
 jsonschema = ">=4.17,<5"
 
 # DaCe shells out to cmake + a C++ compiler at *runtime* to build generated
@@ -104,48 +104,52 @@ test-gen   = "pytest -q tests/gen"
 test-kernels = "pytest -q tests/kernels"
 lint       = "ruff check util kernels snax_forge tests && ruff format --check util kernels snax_forge tests"
 fmt        = "ruff check --fix util kernels snax_forge tests && ruff format util kernels snax_forge tests"
-# SDFG ingest: `pixi run forge vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
-forge      = "python -m snax_forge.sdfg"
-# SNAX-DFG importer (IMP1): `pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg
+# SDFG ingest: `pixi run sdfg vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
+sdfg       = "python -m snax_forge.sdfg"
+# SNAX-DFG importer: `pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg
 import-dfg = "python -m snax_forge.dfg import"
-# Reference executor (REF1): `pixi run check-dfg out/dfg/vecadd.snaxdfg --kernel vecadd`
+# Reference executor: `pixi run check-dfg out/dfg/vecadd.snaxdfg --kernel vecadd`
 check-dfg  = "python -m snax_forge.dfg check"
-# SNAX-SANDBOX (SBX1): `pixi run sandbox recipes/vecadd.json [--set W=8]` writes out/sandbox/vecadd/
+# SNAX-SANDBOX: `pixi run sandbox recipes/vecadd.json [--set W=8]` writes out/sandbox/vecadd/
 sandbox    = "python -m snax_forge.sandbox"
-# SNAX-DESIGN (DP1a, DP1b): `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json
+# SNAX-DESIGN: `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json
 # [--set platform.PATH=VALUE] [--set memory.C.l1.base=N]` checks the pairing and writes out/design/vecadd/
 # platform.json, memory.json and design_point.json; `design check ...` only checks, `design save SRC NAME`
 # keeps a platform working copy as platforms/NAME.json; `design from-hjson HJSON NAME` reads snax_cluster's
-# cluster file into platforms/NAME.json (LNK1)
+# cluster file into platforms/NAME.json
 design     = "python -m snax_forge.design"
-# SNAX-LOWER (LOW1a): `pixi run lower tasks out/design/vecadd/design_point.json` writes tasks.json beside it
+# SNAX-LOWER: `pixi run lower tasks out/design/vecadd/design_point.json` writes tasks.json beside it
 lower      = "python -m snax_forge.lower"
-# The whole path (E2E1, D136): `pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json [--set W=8]`
+# The whole path (D136): `pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json [--set W=8]`
 # writes out/flow/vecadd/, builds and runs the generated program on SNAX-GVSoC and takes its own check; a bound
 # graph in place of the recipe (`pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform ...`) skips the sandbox (D108)
 flow       = "python -m snax_forge.flow"
-# Generator (GEN3, LNK2a, GEN2a): `pixi run gen-gvsoc out/design/vecadd/design_point.json [--out DIR]` writes
+# Generator: `pixi run gen-gvsoc out/design/vecadd/design_point.json [--out DIR]` writes
 # the cluster, streamer and accelerator hjson files, the headers, data.h, main.c and manifest.json to
 # out/gvsoc/<design>/
 gen-gvsoc  = "python -m snax_forge.gen"
-# Accelerator RTL (GEN1, D138): `pixi run gen-rtl out/design/vecadd/design_point.json [OUT_DIR]` writes rtl.json to
+# Accelerator RTL (D138): `pixi run gen-rtl out/design/vecadd/design_point.json [OUT_DIR]` writes rtl.json to
 # out/rtl/<design>/, then elaborates it through hw/chisel's `Emit --spec` into sv/ with emitted.json (sbt; the flow
 # does not call it); `--fixture DIR` writes a fixture of the Chisel specs instead (rtl.json, the streamer hjson,
 # vectors.json)
 gen-rtl    = "python -m snax_forge.gen.rtl"
-# Bundle for snax_cluster (LNK2b, D139): `pixi run bundle out/design/vecadd/design_point.json [--out DIR]` writes
+# Bundle for snax_cluster (D139): `pixi run bundle out/design/vecadd/design_point.json [--out DIR]` writes
 # gen-gvsoc's files, the RTL under rtl/ (rtl.json, sv/, emitted.json; sbt) with its file list rtl/files.f, and
 # bundle.json to out/bundle/<design>/, everything made again; the flow does not call it
 bundle     = "python -m snax_forge.gen.bundle"
-# Reports (REP1, D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/
+# Recipe to snax_cluster (CLN1 R3): `pixi run forge recipes/vecadd.json [--platform P] [--set K=V] [--trace LEVEL]`
+# runs the flow, the bundle of its design point (out/bundle/<name>/) and the bundle's program, checked to be the
+# flow's ELF; each step's output in out/forge/<name>/forge.log, then snax_cluster's Verilator commands
+forge      = "python -m snax_forge.flow.forge"
+# Reports (D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/
 # (the flow writes them after every run)
 report     = "python -m snax_forge.report"
-# Kernels (KER0): `pixi run kernels` prints each kernel's directory, tier, dtype, and whether its SDFG builds
+# Kernels: `pixi run kernels` prints each kernel's directory, tier, dtype, and whether its SDFG builds
 # and import-dfg takes it; it only reports
 kernels    = "python util/kernels.py"
-# DFG viewer (VIS5): `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
+# DFG viewer: `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
 view-dfg   = "python -m snax_forge.viz.dfg"
-# Viewer (VIS1, D55): `pixi run view out/vecadd [out/other ...]`, then open http://127.0.0.1:8765/
+# Viewer (D55): `pixi run view out/vecadd [out/other ...]`, then open http://127.0.0.1:8765/
 view       = "python -m snax_forge.viz"
 # Remove out/ (but the GVSoC build, out/snax-gvsoc/, unless --all), Python and test caches and
 # Chisel build trees; `pixi run clean --dry-run` only lists them

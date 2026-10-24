@@ -41,16 +41,14 @@ which load the BRM.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Iterator, Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.common import check_keys, plain, to_json
+from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.expr import ExprError, Value
 
 from .kinds import KINDS, DfgError, Scope, _wrap, ident, kind_of
@@ -59,15 +57,10 @@ from .subset import canonical_dim, dim_names, parse_dim
 
 
 def _keys(d: Any, required: tuple[str, ...], optional: tuple[str, ...], what: str) -> None:
-    if not isinstance(d, Mapping):
-        raise DfgError(f"{what}: must be an object, got {d!r}")
     try:
-        check_keys(d, [*required, *optional], what)
-    except ValueError as e:
+        check_keys(d, [*required, *optional], what, required)
+    except (TypeError, ValueError) as e:
         raise DfgError(str(e)) from None
-    missing = [k for k in required if k not in d]
-    if missing:
-        raise DfgError(f"{what}: missing key {missing[0]!r}")
 
 
 def _namespaced(key: Any) -> bool:
@@ -224,7 +217,7 @@ class Node:
 
 
 @dataclass
-class Graph:
+class Graph(JsonFile):
     """A ``.snaxdfg``: symbols, containers and an ordered body of nodes."""
 
     name: str
@@ -236,6 +229,11 @@ class Graph:
         _validate(self)
 
     # --- access ---
+
+    @property
+    def bound_symbols(self) -> dict[str, int]:
+        """The symbols a recipe has set (the others are null)."""
+        return {k: v for k, v in self.symbols.items() if v is not None}
 
     def walk(self) -> Iterator[tuple[Node, tuple[Node, ...]]]:
         """Every node in execution order (depth first), with its enclosing nodes."""
@@ -286,16 +284,6 @@ class Graph:
             {k: Container.from_dict(c, f"container {k!r}") for k, c in containers.items()},
             [Node.from_dict(n, f"{name}.body[{i}]") for i, n in enumerate(body)],
         )
-
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    @classmethod
-    def load(cls, path: str | Path) -> Graph:
-        return cls.from_dict(json.loads(Path(path).read_text()))
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json())
 
 
 # =============================================================================
@@ -407,13 +395,12 @@ def _check_memlets(node: Node, scope: Scope, what: str) -> None:
             if len(m.subset) != rank:
                 raise DfgError(f"{w}: {len(m.subset)} dimensions for {m.data!r}, which has {rank}")
             for d in m.subset:
-                unbound = sorted(dim_names(d) - scope.names())
-                if unbound:
-                    raise DfgError(f"{w}: {unbound[0]!r} is not a symbol or an enclosing variable")
                 try:
-                    parse_dim(d, w)
+                    parts = parse_dim(d, w)
                 except ExprError as e:
                     raise DfgError(str(e)) from None
+                for part in parts:
+                    scope.uses(part, w)
 
 
 def _check_replaced(node: Node, scope: Scope, what: str) -> None:

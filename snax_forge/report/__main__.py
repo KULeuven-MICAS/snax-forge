@@ -14,7 +14,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from .files import DESIGN_MD, RUN_MD, ReportError, write_reports
+from .files import DESIGN_MD, RUN_MD, write_reports
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,7 +24,7 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     try:
         r = write_reports(args.folder, args.out)
-    except (ReportError, OSError, ValueError, KeyError) as e:
+    except (OSError, ValueError, KeyError) as e:  # ReportError a ValueError
         print(f"FAILED {args.folder}: {e}", file=sys.stderr)
         return 1
     print(

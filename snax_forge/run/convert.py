@@ -75,7 +75,7 @@ from snax_forge.lower.tasks import Configure, TaskList
 
 from .beats import Context, beat_events, beat_invariants
 from .cluster import DMA, Cluster, core_name
-from .cores import core_counts, core_spans, start_mode
+from .cores import core_counts, core_spans, merge_spans, start_mode
 from .events import Line, RunError
 from .profile import (
     AccelProfile,
@@ -89,7 +89,7 @@ from .profile import (
     WaitProfile,
 )
 from .regions import Region
-from .trace import LEVELS, Trace
+from .trace import Trace, at_least
 
 XBAR = "xbar"
 UNIT_CLASSES = ("busy", "stall_in", "stall_out", "flush")
@@ -157,7 +157,7 @@ def window(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles: in
     """The cycle of the program's first ``mcycle`` read, the window's start; its length checked
     against ``total_cycles`` (module doc)."""
     core = core_name(cluster.accelerator.core)
-    mine = sorted((x for s, x in lines if s == core and x.trace == "events"), key=lambda x: x.cycle)
+    mine = _core_lines(lines, core)
     funcs = [x for x in mine if x.kind == "func"]
     reads = [x for x in mine if x.kind == "mcycle"]
     first = _read_in(funcs, reads, "main", 0, core)
@@ -233,7 +233,7 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
             run = runs.get(src, 0)
             runs[src] = run + 1
         t = x.cycle - boot
-        if k in ("done",) and src != DMA:
+        if k == "done" and src != DMA:
             t += 1
         if k in ("poll", "barrier"):
             t = f["first"] - boot
@@ -266,7 +266,7 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
             if src == acc.name:
                 e.update(firings=f["firings"], first=f["first"] - boot, last=f["last"] - boot)
         elif k in ("csr", "poll"):
-            e.update(pc=f["pc"], csr=f["csr"], block=acc.block_of(f["csr"]) or "-")
+            e.update(pc=f["pc"], csr=f["csr"], block=_block(acc, f["csr"]))
             if k == "csr":
                 e.update(op=f["op"], value=f["value"])
                 if "held" in f:
@@ -296,6 +296,11 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
         out.append((t, n, e))
     out.sort(key=lambda x: (x[0], x[1]))
     return out
+
+
+def _block(acc: Any, csr: int) -> str:
+    """The block a CSR belongs to, ``-`` for none (``Accelerator.block_of``)."""
+    return acc.block_of(csr) or "-"
 
 
 def _core_lines(lines: Sequence[tuple[str, Line]], core: str) -> list[Line]:
@@ -414,12 +419,7 @@ def l2_copies(trace: Trace, regions: list[Region], cluster: Cluster) -> list[str
                 touched[m[1]].append((lo, lo + e["size"]))
     for name, r in l2.items():
         want = [(r.base, r.base + round_up(int(np.prod(r.shape)) * r.itemsize, beat))]
-        got: list[tuple[int, int]] = []
-        for lo, hi in sorted(touched[name]):
-            if got and lo <= got[-1][1]:
-                got[-1] = (got[-1][0], max(got[-1][1], hi))
-            else:
-                got.append((lo, hi))
+        got = merge_spans(touched[name])
         if got != want:
             bad.append(f"container {name}: its copies touch L2 {[(hex(a), hex(b)) for a, b in got]}, "
                        f"its array (padded to {beat}-byte beats) is [{want[0][0]:#x}, "
@@ -470,20 +470,19 @@ def convert(
     if level == "off":
         return profile, None
     boot = window(named, cluster, total_cycles)
-    width = total_cycles
-    triples = trace_events(named, cluster, tasks, boot, width)
+    triples = trace_events(named, cluster, tasks, boot, total_cycles)
     ctx = None
-    if LEVELS.index(level) >= LEVELS.index("beat"):
-        ctx = Context(cluster, list(regions or []), boot, width, level, list(filter or []),
+    if at_least(level, "beat"):
+        ctx = Context(cluster, list(regions or []), boot, total_cycles, level, list(filter or []),
                       [e for _, _, e in triples], named)  # fmt: skip
         triples = sorted(triples + beat_events(named, ctx), key=lambda x: (x[0], x[1]))
     events = [e for _, _, e in triples]
     for core in cluster.cores:
-        cycles, waits = core_cycles(named, core, boot, width)
+        cycles, waits = core_cycles(named, core, boot, total_cycles)
         p = profile.cores[core]
         p.cycles = cycles
         p.waits = [WaitProfile(
-            "barrier" if kind == "barrier" else cluster.accelerator.block_of(x.fields["csr"]) or "-",
+            "barrier" if kind == "barrier" else _block(cluster.accelerator, x.fields["csr"]),
             a, b) for a, b, kind, x in waits]  # fmt: skip
     start = {core: core_start(named, core, boot) for core in cluster.cores}
     trace = Trace(level, total_cycles, boot, cluster.sources, events, list(filter or []), start)

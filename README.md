@@ -55,16 +55,59 @@ git clone https://github.com/KULeuven-MICAS/snax_cluster.git --recurse-submodule
 cd snax-forge && git submodule update --init gvsoc/snax-gvsoc && cd ..
 ```
 
-In snax-forge's image (Setup), from `work/`, then `cd snax-forge`: the flow
-(it builds SNAX-GVSoC the first time) and the bundle:
+In snax-forge's image (Setup), from `work/`, then `cd snax-forge`, one
+command runs the flow (it builds SNAX-GVSoC the first time), the bundle and
+the bundle's ELF, checked to be the flow's, and prints what snax_cluster runs
+next (`$ROOT` is `work/` by its absolute path, `$COMMIT` the checkout's
+commit; each step's own output is in the log it names):
 
 ```bash
 pixi install
+pixi run forge recipes/vecadd.json
+```
+
+    forge vecadd: recipes/vecadd.json on platforms/snax_forge.json; every step's output in out/forge/vecadd/forge.log
+      flow      passed: design point out/flow/vecadd/design/design_point.json, run out/flow/vecadd/run/
+      bundle    out/bundle/vecadd/: snax_forge_shell_wrapper, snax-forge $COMMIT
+      sw        out/forge/vecadd/sw/forge.elf from the bundle (sha256 b6b4b1c70d8c8986, the flow's)
+    SNAX-GVSoC (out/flow/vecadd/run/stdout.txt):
+      forge cycles: 226
+      forge data: 0 errors (64 words)
+      forge counter add_acc: 19
+      forge errors: 0
+    snax_cluster on Verilator, from snax_cluster in its pixi environment:
+      B=$ROOT/snax-forge/out/bundle/vecadd/snax_forge.hjson
+      E=$ROOT/snax-forge/out/forge/vecadd/sw/forge.elf
+      pixi run make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
+      pixi run make -C target/snitch_cluster snax-forge-sim SIM=vlt CFG_OVERRIDE=$B
+      pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B ELF=$E
+    Questa: rtl-gen and vsim_preparation in snax_cluster's development image, then snax-forge-sim and snax-forge-run with SIM=vsim and the same B and E: docs/RUN.md section 8.
+
+The RTL, in snax_cluster with its own pixi environment, on the host, with
+the `B` and `E` forge printed:
+
+```bash
+cd ../snax_cluster && pixi install
+B=$ROOT/snax-forge/out/bundle/vecadd/snax_forge.hjson
+E=$ROOT/snax-forge/out/forge/vecadd/sw/forge.elf
+pixi run make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
+pixi run make -C target/snitch_cluster snax-forge-sim SIM=vlt CFG_OVERRIDE=$B
+pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B ELF=$E
+```
+
+    forge cycles: 239
+    forge data: 0 errors (64 words)
+    forge counter add_acc: 19
+    forge errors: 0
+
+The same path step by step, in the image: the flow and the bundle,
+
+```bash
 pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json
 pixi run bundle out/flow/vecadd/design/design_point.json
 ```
 
-The ELF and its run on SNAX-GVSoC, in the image:
+then the ELF and its run on SNAX-GVSoC:
 
 ```bash
 make -C gvsoc sw APPS=forge FORGE=../out/bundle/vecadd DESIGN=vecadd
@@ -78,21 +121,8 @@ make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd \
     forge counter add_acc: 19
     forge errors: 0
 
-The RTL, in snax_cluster with its own pixi environment, on the host:
-
-```bash
-cd ../snax_cluster && pixi install
-B=$PWD/../snax-forge/out/bundle/vecadd/snax_forge.hjson
-E=$PWD/../snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf
-pixi run make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
-pixi run make -C target/snitch_cluster snax-forge-sim SIM=vlt CFG_OVERRIDE=$B
-pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B ELF=$E
-```
-
-    forge cycles: 239
-    forge data: 0 errors (64 words)
-    forge counter add_acc: 19
-    forge errors: 0
+and the RTL as above with `E=$PWD/../snax-forge/out/snax-gvsoc/sw/vecadd/forge.elf`,
+the same ELF (its sha256 is forge's).
 
 The counter is equal, the window within 10%. Questa, `N=512`, vsum and the
 bar: `docs/RUN.md` section 8. pixi and the image: Setup, below.
@@ -211,7 +241,7 @@ The flow runs these tools in turn; each also runs on its own.
 | Step | Command | Writes |
 |---|---|---|
 | Every kernel | `pixi run kernels` | nothing; one line per kernel: directory, tier, dtype, whether its SDFG builds and `import-dfg` takes it |
-| SDFG of a kernel | `pixi run forge vecadd` | `out/sdfg/vecadd.raw.sdfg`, `.simplified.sdfg` |
+| SDFG of a kernel | `pixi run sdfg vecadd` | `out/sdfg/vecadd.raw.sdfg`, `.simplified.sdfg` |
 | Import | `pixi run import-dfg vecadd` | `out/dfg/vecadd.snaxdfg` |
 | Check a graph | `pixi run check-dfg out/dfg/vecadd.snaxdfg --kernel vecadd` | nothing; compares with the kernel's reference |
 | Recipe | `pixi run sandbox recipes/vecadd.json [--set W=8]` | `out/sandbox/vecadd/<i>_<transform>.snaxdfg` |
@@ -219,7 +249,7 @@ The flow runs these tools in turn; each also runs on its own.
 | Design point | `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | `out/design/vecadd/` platform, memory plan, design point |
 | Only check | `pixi run design check out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/small16.json` | nothing |
 | Keep a platform | `pixi run design save out/design/vecadd/platform.json NAME` | `platforms/NAME.json` |
-| Platform from snax_cluster | `pixi run design from-hjson platforms/snax_alu_cluster.hjson snax_forge --force` | `platforms/snax_forge.json` from its source, a copy of snax_cluster's cluster file (LNK1) |
+| Platform from snax_cluster | `pixi run design from-hjson platforms/snax_forge_cluster.hjson snax_forge --force` | `platforms/snax_forge.json` from its source, snax-forge's base cluster, taken from snax_cluster's (LNK1, D131) |
 | Task list | `pixi run lower tasks out/design/vecadd/design_point.json` | `tasks.json` beside the point |
 | The rest at once | `pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json` | `out/flow/vecadd/`: design point, task list, generated folder, program, checked SNAX-GVSoC run |
 
@@ -282,12 +312,13 @@ pixi (`pixi run make -C gvsoc ...`, as the flow does).
 git submodule update --init gvsoc/snax-gvsoc
 cd gvsoc
 make build                      # GVSoC for TARGETS (default snax-gvsoc's SNAX_TARGETS) into out/snax-gvsoc/
-make sw APPS=snax-alu           # sw/ and the named apps, into snax-gvsoc/build/sw/
-make run TARGET=snax_alu ELF=snax-gvsoc/build/sw/apps/snax-alu/100/snax-alu.elf
+make sw APPS=snax-csr           # sw/ and the named apps, into snax-gvsoc/build/sw/
+make run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$PWD/snax-gvsoc/forge/vecadd/snax_forge.hjson" \
+    ELF=snax-gvsoc/build/sw/apps/snax-csr/snax-csr.elf
 ```
 
-`run` prints `Accelerator Done!`, `Accelerator Cycles: 25` and `Number of
-errors: 0`. It calls the install's `gvrun`; `GVRUN_ARGS` goes before
+`run` prints snax-csr's four lines, `csrw/csrr: 0 errors` to `read-only: 0
+errors`. It calls the install's `gvrun`; `GVRUN_ARGS` goes before
 `run` (e.g. `GVRUN_ARGS=--trace=snax_acc0`) and the work directory is
 `out/snax-gvsoc/work/<target>/<design>` with `DESIGN` set, else
 `out/snax-gvsoc/work/<target>/<elf name>`. `SNAX_GVSOC=../../snax-gvsoc` uses a

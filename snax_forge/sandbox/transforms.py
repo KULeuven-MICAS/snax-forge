@@ -47,8 +47,9 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import fresh
 from snax_forge.dfg import DfgError, Graph, Memlet, Node, named_rates, parse_dim
-from snax_forge.dfg.subset import format_dim
+from snax_forge.dfg.subset import format_dim, map_range
 from snax_forge.expr import ExprError
 
 from .patterns import match
@@ -108,22 +109,28 @@ def _locate(g: Graph, node_id: str) -> tuple[list[Node], int, tuple[Node, ...]]:
     return found
 
 
-def _substitute_body(body: list[Node], values: Mapping[str, Any]) -> None:
-    """Replace names in every memlet subset and map range under ``body``."""
+def _map_dims(body: list[Node], fn: Callable[[Any], Any], splits: bool = False) -> None:
+    """``fn`` on every memlet subset dimension and map range under ``body`` (an accelerated
+    node's ``replaced`` subtree included); with ``splits``, on each split's range too."""
     for n in body:
         for m in (*n.inputs.values(), *n.outputs.values()):
-            m.subset = [_substitute_dim(d, values) for d in m.subset]
+            m.subset = [fn(d) for d in m.subset]
         if n.kind == "map":
-            n.attrs["range"] = _substitute_dim(n.attrs["range"], values)
-            if n.attrs.get("loop.split"):
+            n.attrs["range"] = fn(n.attrs["range"])
+            if splits and n.attrs.get("loop.split"):
                 split = n.attrs["loop.split"]
-                n.attrs["loop.split"] = {**split, "range": _substitute_dim(split["range"], values)}
+                n.attrs["loop.split"] = {**split, "range": fn(split["range"])}
         if n.kind == "accelerated" and n.attrs.get("replaced"):
             old = Node.from_dict(n.attrs["replaced"], n.id)
-            _substitute_body([old], values)
+            _map_dims([old], fn, splits)
             n.attrs["replaced"] = old.to_dict()
         if n.body:
-            _substitute_body(n.body, values)
+            _map_dims(n.body, fn, splits)
+
+
+def _substitute_body(body: list[Node], values: Mapping[str, Any]) -> None:
+    """Replace names in every memlet subset, map range and split range under ``body``."""
+    _map_dims(body, lambda d: _substitute_dim(d, values), splits=True)
 
 
 def _substitute_dim(d: Any, values: Mapping[str, Any]) -> Any:
@@ -131,7 +138,7 @@ def _substitute_dim(d: Any, values: Mapping[str, Any]) -> Any:
 
 
 def _bound(g: Graph, v: Any, what: str) -> int:
-    env = {k: x for k, x in g.symbols.items() if x is not None}
+    env = g.bound_symbols
     try:
         return expr.evaluate(v, env)
     except ExprError as e:
@@ -162,10 +169,10 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
         raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
     if type(factor) is not int or factor < 1:
         raise SandboxError(f"{what}: factor {factor!r} must be a positive int")
-    begin, end, step = parse_dim(node.attrs["range"], what)
+    begin, _, step = parse_dim(node.attrs["range"], what)
     if step != 1:
         raise SandboxError(f"{what}: only a step of 1 is split, the range is {node.attrs['range']}")
-    length = end if begin == 0 else f"({end}) - ({begin})"
+    length = _length(node)
     n = _bound(g, length, what)
     if n % factor:
         raise SandboxError(
@@ -177,10 +184,10 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
         | set(g.containers)
         | {nd.attrs["var"] for nd, _ in g.walk() if nd.kind == "map"}
     )
-    var_t, var_s = _fresh(f"{var}_t", taken), _fresh(f"{var}_s", taken)
+    var_t, var_s = fresh(f"{var}_t", taken), fresh(f"{var}_s", taken)
     ids = {nd.id for nd, _ in g.walk()}
     inner = Node(
-        _fresh(f"{map}_s", ids),
+        fresh(f"{map}_s", ids),
         "map",
         attrs={"var": var_s, "range": f"0:{factor}", "loop.kind": "spatial"},
         body=node.body,
@@ -196,15 +203,6 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
     }
     node.body = [inner]
     return _result(g)
-
-
-def _fresh(base: str, taken: set[str]) -> str:
-    name, k = base, 0
-    while name in taken:
-        k += 1
-        name = f"{base}_{k}"
-    taken.add(name)
-    return name
 
 
 # =============================================================================
@@ -388,11 +386,13 @@ def _check_order(
     ``smap`` None: a folding output, one lane, over the temporal maps its
     memlet uses (one beat per T firings, D104).
     """
-    env: dict[str, Any] = {k: v for k, v in g.symbols.items() if v is not None}
+    env: dict[str, Any] = g.bound_symbols
     loops = [*temporal, *([smap] if smap is not None else [])]
     for d, lp in enumerate(loops):
-        begin, end, step = parse_dim(lp.attrs["range"], lp.id)
-        values = np.arange(_bound(g, begin, what), _bound(g, end, what), step)
+        try:
+            values = np.array(map_range(lp.attrs["range"], g.bound_symbols, lp.id))
+        except ExprError as e:
+            raise SandboxError(f"{what}: {e} (bind the symbol in the recipe)") from None
         shape = [1] * len(loops)
         shape[d] = len(values)
         env[lp.attrs["var"]] = values.reshape(shape)
@@ -471,20 +471,7 @@ def join_map(g: Graph, map: str) -> Graph:
     def back_dim(d: Any) -> Any:
         return format_dim(tuple(back(p) for p in parse_dim(d, what)))
 
-    def walk(nodes: list[Node]) -> None:
-        for n in nodes:
-            for m in (*n.inputs.values(), *n.outputs.values()):
-                m.subset = [back_dim(d) for d in m.subset]
-            if n.kind == "map":
-                n.attrs["range"] = back_dim(n.attrs["range"])
-            if n.kind == "accelerated" and n.attrs.get("replaced"):
-                old = Node.from_dict(n.attrs["replaced"], n.id)
-                walk([old])
-                n.attrs["replaced"] = old.to_dict()
-            if n.body:
-                walk(n.body)
-
-    walk(inner.body or [])
+    _map_dims(inner.body or [], back_dim)
     rest = {
         k: v for k, v in outer.attrs.items() if k not in ("var", "range", "loop.kind", "loop.split")
     }

@@ -1,11 +1,11 @@
 """SNAX-LOWER command line.
 
-    python -m snax_forge.lower tasks DESIGN_POINT [--out FILE]
+    python -m snax_forge.lower tasks DESIGN_POINT
 
 ``tasks`` reads a design point (``out/design/<name>/design_point.json``,
 checked again on load), derives its task list (derive.py), checks its values
-against the design point (``check_values``) and writes it (default
-``tasks.json`` next to the design point); it prints the steps. Exit 0 when
+against the design point (``check_values``) and writes it to ``tasks.json``
+next to the design point; it prints the steps. Exit 0 when
 written, 1 when the design point or the task list is rejected (named), 2 on
 bad arguments. pixi: ``lower``.
 """
@@ -16,11 +16,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from snax_forge.design import DesignError
 from snax_forge.design.point import DesignPoint
 
-from .derive import LowerError, task_list
-from .tasks import Configure, Start, Sync, TaskList, TaskListError, check_values
+from .derive import task_list
+from .tasks import Configure, Start, Sync, TaskList, check_values
 
 
 def steps(tl: TaskList) -> str:
@@ -34,25 +33,21 @@ def steps(tl: TaskList) -> str:
             lines.append(f"  start     {', '.join(s.tasks)}")
         elif isinstance(s, Sync):
             lines.append(f"  sync      {s.task} ({s.mode})")
-        else:
-            lines.append(f"  {s.op} {s.to_dict()}")
     return "\n".join(lines)
 
 
 def _tasks(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.lower tasks")
     ap.add_argument("point", type=Path, help="a design point (out/design/<name>/design_point.json)")
-    ap.add_argument("--out", type=Path, help="task list (default: tasks.json beside it)")
     args = ap.parse_args(argv)
     try:
         point = DesignPoint.load(args.point)
         tl = task_list(point)
         check_values(tl, point)
-    except (DesignError, LowerError, TaskListError, ValueError) as e:
+    except ValueError as e:  # DesignError, LowerError and TaskListError among them
         print(f"{args.point}: {e}", file=sys.stderr)
         return 1
-    out = args.out or args.point.with_name("tasks.json")
-    out.parent.mkdir(parents=True, exist_ok=True)
+    out = args.point.with_name("tasks.json")
     tl.save(out)
     print(f"task list of {point.name} ({len(tl.steps)} steps):")
     print(steps(tl))
@@ -60,7 +55,7 @@ def _tasks(argv: list[str]) -> int:
     return 0
 
 
-USAGE = "usage: python -m snax_forge.lower tasks DESIGN_POINT [--out FILE]"
+USAGE = "usage: python -m snax_forge.lower tasks DESIGN_POINT"
 
 
 def main(argv: list[str] | None = None) -> int:

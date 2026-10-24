@@ -12,7 +12,7 @@ from snax_forge.gen.headers import define_name, streamer_header
 
 from .helpers import SUB, point
 
-CHISEL = SUB / "sw" / "generated" / "snax_alu_cluster_old" / "streamer_csr_addr_map.h"
+CHISEL = SUB / "sw" / "generated" / "snax_forge" / "streamer_csr_addr_map.h"
 SHELL = SUB / "sw" / "apps" / "snax-shell" / "src" / "snax-shell.c"
 DEFINE = re.compile(r"^#define (\w+) (\d+)$", re.MULTILINE)
 

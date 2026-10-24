@@ -9,8 +9,11 @@ problem found, so one run shows all of them rather than the first.
 
 from __future__ import annotations
 
+import json
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -27,12 +30,20 @@ class Problem:
         return text + (f"\n    fix: {self.fix}" if self.fix else "")
 
 
-def report(problems: Sequence[Problem], head: str = "design check") -> str:
+def report(problems: Sequence[Problem], head: str) -> str:
     """``head: n problems`` and one indented entry per problem."""
     n = len(problems)
     lines = [f"{head}: {n} problem{'' if n == 1 else 's'}"]
     lines += [" " + str(p).replace("\n", "\n ") for p in problems]
     return "\n".join(lines)
+
+
+def read_json(path: str | Path, code: str, head: str = "design check") -> Any:
+    """The JSON in ``path``; a DesignError with ``code`` when it cannot be read or parsed."""
+    try:
+        return json.loads(Path(path).read_text())
+    except (OSError, json.JSONDecodeError) as e:
+        raise DesignError([Problem(code, str(path), str(e))], head) from None
 
 
 class DesignError(ValueError):

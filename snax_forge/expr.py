@@ -21,7 +21,7 @@ does not know either; the caller passes the names.
 Operations
 ----------
 ``check`` / ``names`` / ``is_name`` / ``constant`` / ``evaluate``
-    as used by the BRM.
+    on one expression; ``outside``, ``check`` then the names a caller does not allow.
 ``canonical``
     the stored form: a value without names is an int, any other string is
     written as ``ast.unparse`` writes it (``"4 * i_t + i_s"``), so a file a
@@ -89,6 +89,12 @@ def names(v: Value) -> set[str]:
     if type(v) is int:
         return set()
     return {n.id for n in ast.walk(_parse(v)) if isinstance(n, ast.Name)}
+
+
+def outside(v: Any, allowed: Iterable[str], what: str) -> list[str]:
+    """``check`` of ``v``, then the names it uses that are not ``allowed``, sorted."""
+    check(v, what)
+    return sorted(names(v) - set(allowed))
 
 
 def is_name(v: Value) -> bool:

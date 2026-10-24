@@ -75,7 +75,7 @@ from .cluster import DMA, Cluster, Mover
 from .events import Line, RunError
 from .profile import Profile
 from .regions import Region, region_at
-from .trace import LEVELS, Trace
+from .trace import Trace, at_least
 
 XBAR = "xbar"
 WORD_MASK = (1 << 64) - 1
@@ -95,7 +95,7 @@ class Context:
     lines: Sequence[tuple[str, Line]] = ()  # every line, named
 
     def on(self, level: str) -> bool:
-        return LEVELS.index(self.level) >= LEVELS.index(level)
+        return at_least(self.level, level)
 
 
 # =============================================================================
@@ -185,10 +185,12 @@ def agu_nest(ptr: int, spatial_bounds: Sequence[int], spatial_strides: Sequence[
 
 def mover_csrs(cluster: Cluster) -> dict[str, int]:
     """Each mover's first CSR number (its pointer's low word), in the streamer's layout."""
+    from snax_forge.gen.gvsoc import mover_csr_count  # here, as cluster.py's csrs_of
+
     out, csr = {}, cluster.accelerator.csrs.streamer_first
     for m in cluster.accelerator.movers:
         out[m.name] = csr
-        csr += 2 + len(m.spatial_bounds) + 2 * m.temporal_dim
+        csr += mover_csr_count(m.spatial_bounds, m.temporal_dim)
     return out
 
 
@@ -285,7 +287,6 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
         f.sort(key=lambda p: p[0])
 
     out: list[tuple[int, int, dict]] = []
-    grants: dict[tuple[str, int, int], dict[int, dict]] = defaultdict(dict)  # (mover, run, b)
     fires, pushes = [], []
     for n, (src, x) in enumerate(named):
         if x.trace not in ("beats", "stalls", "insn"):
@@ -318,9 +319,6 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
                 if "size" in f:
                     e["size"] = f["size"]
                 e.update(region=region, elems=elems, vals=vals)
-                if owner is not None and run is not None and "b" in f:
-                    lane = owner.ports.index(port)
-                    grants[(owner.name, run[0], f["b"])][lane] = e
             else:
                 region, elems, _ = _lookup(ctx, "l1", addr, bytes(word))
                 by = "dma" if f["by"] == -1 else ports.get(f["by"], str(f["by"]))
@@ -390,6 +388,7 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
         else:
             raise RunError("convert.kind", f"{x.trace} {k} line: no event for it ({x})")
         out.append((t, n, e))
+    grants = beat_grants([e for _, _, e in out if e["k"] == "grant"], acc.movers, spans)
 
     def vals_of(mover: Mover, run: tuple[int, str] | None, b: int, words: list[int]) -> Any:
         g = grants.get((mover.name, run[0], b)) if run else None
@@ -415,17 +414,28 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
 # =============================================================================
 
 
+def _runs(spans: dict[str, list[tuple[int, int, str]]], src: str) -> dict[str, int]:
+    """Each of ``src``'s tasks -> its run index, the place of its bracket."""
+    return {task: k for k, (_, _, task) in enumerate(spans.get(src, []))}
+
+
 def _run_of(spans: dict[str, list[tuple[int, int, str]]], src: str, task: str | None) -> int:
-    for k, (_, _, name) in enumerate(spans.get(src, [])):
-        if name == task:
-            return k
-    return -1
+    return _runs(spans, src).get(task, -1)
+
+
+def beat_grants(grants: list[dict], movers: Sequence[Mover], spans: dict[str, list]
+                ) -> dict[tuple[str, int, int], dict[int, dict]]:  # fmt: skip
+    """The movers' grant events of a beat, by (mover, run, b): each lane's grant."""
+    out: dict[tuple[str, int, int], dict[int, dict]] = defaultdict(dict)
+    for e in grants:
+        m = next((m for m in movers if e["src"] in m.ports), None)
+        if m is not None and "b" in e and e["task"] is not None:
+            out[(m.name, _run_of(spans, m.name, e["task"]), e["b"])][m.ports.index(e["src"])] = e
+    return out
 
 
 def beat_invariants(trace: Trace, profile: Profile, ctx: Context) -> list[str]:
     """What the beat and stall events must hold (module doc); each that fails, said."""
-    if not ctx.on("beat"):
-        return []
     c, acc = ctx.cluster, ctx.cluster.accelerator
     bad: list[str] = []
     ev = trace.events
@@ -510,28 +520,25 @@ def beat_invariants(trace: Trace, profile: Profile, ctx: Context) -> list[str]:
                        "firings in its summary")  # fmt: skip
 
         # every beat a firing names, and every push, against the grants
-        by_beat: dict[tuple[str, int, int], dict[int, dict]] = defaultdict(dict)
-        for e in of["grant"]:
-            m = next((m for m in traced if e["src"] in m.ports), None)
-            if m is not None and "b" in e and e["task"] is not None:
-                by_beat[(m.name, _run_of(spans, m.name, e["task"]), e["b"])][
-                    m.ports.index(e["src"])
-                ] = e
+        by_beat = beat_grants(of["grant"], traced, spans)
+
+        def granted(m: Mover, k: int, b: int) -> list[Any]:
+            g = by_beat.get((m.name, k, b), {})
+            return [g[lane]["value"] if lane in g else None for lane in range(m.lanes)]
+
         for e in of["fire"]:
             k = _run_of(spans, acc.name, e["task"])
             for m in traced:
                 if m.write or m.name not in e["b"]:
                     continue
-                g = by_beat.get((m.name, k, e["b"][m.name]), {})
-                got = [g[lane]["value"] if lane in g else None for lane in range(m.lanes)]
+                got = granted(m, k, e["b"][m.name])
                 if got != e["value"][m.name]:
                     bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s beat {e['b'][m.name]} "
                                f"granted as {got}, fired as {e['value'][m.name]}")  # fmt: skip
         for e in of["push"]:
             k = _run_of(spans, acc.name, e["task"])
             for m in (m for m in traced if m.write):
-                g = by_beat.get((m.name, k, e["n"]), {})
-                got = [g[lane]["value"] if lane in g else None for lane in range(m.lanes)]
+                got = granted(m, k, e["n"])
                 if got != e["value"]:
                     bad.append(f"push {e['n']} at {e['t']}: written by {m.name} as {got}, "
                                f"pushed as {e['value']}")  # fmt: skip
@@ -674,7 +681,7 @@ def _stall_invariants(trace: Trace, profile: Profile, ctx: Context, of: dict[str
 def _words(m: Mover, of: dict[str, list], spans: dict, acc: str) -> dict[int, list[tuple]]:
     """Each lane's words: the cycle each becomes visible and the cycle it is popped."""
     out = defaultdict(list)
-    run_of = {task: k for k, (_, _, task) in enumerate(spans.get(m.name, []))}
+    run_of = _runs(spans, m.name)
     if not m.write:
         popped: dict[tuple[int, int], int] = {}
         for e in of["fire"]:

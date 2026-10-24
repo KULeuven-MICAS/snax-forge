@@ -47,8 +47,11 @@ def contiguous(base: int, n: int) -> dict[str, Any]:
 
 
 def dma(task: str, direction: str = "l2_to_l1", src: int = 0, dst: int = 0, **kw: Any) -> dict:
-    """A configure step for vecadd's DMA: 8 beats from ``src`` to ``dst``."""
+    """A configure step for vecadd's DMA: 8 beats from ``src`` to ``dst``, its L2 side A's
+    array (``symbol``) in place of a base."""
+    a = {"symbol": "A", "bounds": [8], "strides": [64]}
     values = {"direction": direction, "src": contiguous(src, 8), "dst": contiguous(dst, 8)}
+    values["src" if direction == "l2_to_l1" else "dst"] = a
     return {"op": "configure", "task_name": task, "type": "dma", "component": "dma",
             "values": values, **kw}  # fmt: skip
 

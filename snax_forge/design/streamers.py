@@ -26,7 +26,7 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.brm import Instance, load_brm, task_nest
 from snax_forge.dfg import Graph, Node
-from snax_forge.dfg.subset import parse_dim
+from snax_forge.dfg.subset import map_range
 
 from .platform import Platform, StreamerOptions
 
@@ -108,7 +108,7 @@ def firing_loops(graph: Graph, node: Node) -> list[Loop]:
     does not lower yet (a tile transform and per-tile DMA come later).
     """
     outer = next(o for n, o in graph.walk() if n is node)
-    symbols = {k: v for k, v in graph.symbols.items() if v is not None}
+    symbols = graph.bound_symbols
     loops = []
     for m in outer:
         kind = m.attrs.get("loop.kind")
@@ -117,9 +117,8 @@ def firing_loops(graph: Graph, node: Node) -> list[Loop]:
                 f"map {m.id} around {node.id} is {kind or 'untagged'}; only temporal maps "
                 "(one task, one firing loop) are lowered for now"
             )
-        b, e, s = parse_dim(m.attrs["range"], m.id)
-        lo, hi = expr.evaluate(b, symbols), expr.evaluate(e, symbols)
-        loops.append(Loop(m.id, m.attrs["var"], lo, len(range(lo, hi, s)), s))
+        r = map_range(m.attrs["range"], symbols, m.id)
+        loops.append(Loop(m.id, m.attrs["var"], r.start, len(r), r.step))
     return loops
 
 

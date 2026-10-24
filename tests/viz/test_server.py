@@ -9,12 +9,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from .helpers import run_dir, serving
-
-
-def get(srv, path):
-    with urlopen(srv.url.rstrip("/") + path, timeout=10) as r:
-        return r.status, r.headers.get("Content-Type"), r.read()
+from .helpers import get, run_dir, serving
 
 
 def get_json(srv, path):
@@ -36,7 +31,7 @@ def test_server_serves_viewer_and_runs(tmp_path):
         ]  # fmt: skip
         detail = get_json(srv, "/api/run/vecadd")
         assert detail["profile"]["total_cycles"] == 226 and detail["cluster"]["design"] == "vecadd"
-        for gone in ("events?from=0&to=60", "fifo"):  # the old viewer's, removed in FLOW3 round 3
+        for gone in ("events?from=0&to=60", "fifo"):  # the old viewer's, removed
             assert status_of(srv, f"/api/run/vecadd/{gone}") == 404
 
 
@@ -106,7 +101,6 @@ def test_memory_routes_answer_and_movement_says_why_not(tmp_path):
         }  # no beat lines at task
         assert status_of(srv, "/api/run/vecadd/memory/cycle") == 400
         assert status_of(srv, "/api/run/nope/memory/cycle?t=5") == 404
-        assert get_json(srv, "/api/run/vecadd/movement")["available"] is False
         assert get_json(srv, "/api/run/vecadd/journey?region=A&index=0")["available"] is False
         assert status_of(srv, "/api/run/vecadd/journey?region=Q&index=0") == 400
         assert status_of(srv, "/api/run/nope/memory") == 404

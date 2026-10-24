@@ -17,6 +17,8 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.brm import NOTATIONS, register_notation
 
+IMPL = "chisel_tiled_spatial"  # the implementation the tests resolve
+
 
 def _test_list(nest: Any, port: Any, brm: Any) -> None:
     if not isinstance(nest, list) or not all(type(i) is int for i in nest):
@@ -54,11 +56,7 @@ def adder() -> dict[str, Any]:
                 "code": "out = a + b",
             },
             "dataflow": {"notation": "test_list", "ports": {"a": nest, "b": nest, "out": nest}},
-            "pattern": {
-                "family": "elementwise",
-                "attrs": {"op": "add", "arity": 2},
-                "predicate": None,
-            },
+            "pattern": {"family": "elementwise", "attrs": {"op": "add", "arity": 2}},
             "implementations": {
                 "chisel_tiled_spatial": {
                     "source": "chisel",

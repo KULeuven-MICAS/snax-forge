@@ -27,7 +27,7 @@ class ElementwiseTiledSpatialLockstepSpec extends AnyFlatSpec with ForgeTester {
 
   behavior of "ElementwiseTiledSpatial against SnaxUnit's lockstep cases"
 
-  /** The block's configurations: 64-bit, 4 lanes, add; then each fixture's of this block (GEN1, `RtlFixtures`). */
+  /** The block's configurations: 64-bit, 4 lanes, add; then each fixture's of this block (`RtlFixtures`). */
   private val configs: Seq[(String, () => ElementwiseTiledSpatial)] =
     (
       "w64 n4 add",

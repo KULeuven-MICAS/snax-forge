@@ -31,29 +31,24 @@ slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
 builds read (D139).
 
 **Refused**, each a ``GenError``: what ``generate``, ``write_rtl`` and
-``elaborate`` refuse (``gen.*``), then ``bundle.empty`` (``emitted.json``
-lists no file) and ``bundle.missing`` (it lists a file that is not there).
+``elaborate`` refuse (``gen.*``, a listed file that is not there among them), then
+``bundle.empty`` (``emitted.json`` lists no file).
 The flow does not call it (D136).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from snax_forge.common import cwd_relative, to_json
-from snax_forge.design import DesignError
-from snax_forge.design.point import DesignPoint
-from snax_forge.lower import CError
+from snax_forge.common import Config, JsonFile, cwd_relative
 
 from .blocks import GenError
-from .gvsoc import ROOT, RTL_FILE_LIST, generate
+from .gvsoc import ROOT, RTL_FILE_LIST, cli, generate, out_dir
 from .rtl import EMITTED_JSON, RTL_JSON, elaborate, write_rtl
 
 OUT = ROOT / "out" / "bundle"
@@ -61,28 +56,13 @@ BUNDLE_JSON = "bundle.json"
 
 
 @dataclass(frozen=True)
-class Bundle:
+class Bundle(Config, JsonFile):
     """``bundle.json``; see the module doc."""
 
     design_point: str
     tag: str
     snax_forge_commit: str | None
     dirty: bool
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"design_point": self.design_point, "tag": self.tag,
-                "snax_forge_commit": self.snax_forge_commit, "dirty": self.dirty}  # fmt: skip
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> Bundle:
-        return cls(d["design_point"], d["tag"], d["snax_forge_commit"], d["dirty"])
-
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    @classmethod
-    def load(cls, path: str | Path) -> Bundle:
-        return cls.from_dict(json.loads(Path(path).read_text()))
 
 
 def provenance(checkout: Path) -> tuple[str | None, bool]:
@@ -102,16 +82,14 @@ def provenance(checkout: Path) -> tuple[str | None, bool]:
     return head.stdout.strip(), bool(git("status", "--porcelain").stdout.strip())
 
 
-def file_list(rtl_dir: Path) -> list[str]:
-    """``emitted.json``'s files, relative to ``rtl_dir``, ``emitted.json`` left out; each must
-    be there."""
-    listing = rtl_dir / EMITTED_JSON
-    files = [f for f in json.loads(listing.read_text())["files"] if f != EMITTED_JSON]
+def file_list(rtl_dir: Path, emitted: list[Path]) -> list[str]:
+    """The files ``elaborate`` wrote and checked (``emitted``), relative to ``rtl_dir``,
+    ``emitted.json`` left out."""
+    files = [f.relative_to(rtl_dir).as_posix() for f in emitted if f.name != EMITTED_JSON]
     if not files:
-        raise GenError("bundle.empty", f"{listing} lists no RTL file: files.f would be empty")
-    missing = [f for f in files if not (rtl_dir / f).is_file()]
-    if missing:
-        raise GenError("bundle.missing", f"{listing} lists files that are not there: {missing}")
+        raise GenError(
+            "bundle.empty", f"{rtl_dir / EMITTED_JSON} lists no RTL file: files.f would be empty"
+        )
     return files
 
 
@@ -125,8 +103,7 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
     shutil.rmtree(rtl_dir, ignore_errors=True)
     manifest = generate(design_point, out, root)
     spec = write_rtl(design_point, rtl_dir, root)
-    elaborate(rtl_dir / RTL_JSON, rtl_dir)
-    files = file_list(rtl_dir)
+    files = file_list(rtl_dir, elaborate(rtl_dir / RTL_JSON, rtl_dir))
     files_f.write_text("".join(f"{f}\n" for f in files))
     commit, dirty = provenance(ROOT)
     bundle = Bundle(manifest.design_point, spec.tag, commit, dirty)
@@ -146,18 +123,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("design_point", type=Path, help="a design_point.json (the design step's)")
     ap.add_argument("--out", type=Path, help="output directory (default out/bundle/<design>)")
     args = ap.parse_args(argv)
-    try:
-        out = args.out or OUT / DesignPoint.load(args.design_point).name
+
+    def write() -> int:
+        out = out_dir(args.out, OUT, args.design_point)
         bundle, written = write_bundle(args.design_point, out)
-    except (GenError, CError, DesignError) as e:
-        print(e, file=sys.stderr)
-        return 1
-    commit = bundle.snax_forge_commit or "outside git"
-    print(f"bundle {cwd_relative(out)}: {bundle.tag}_shell_wrapper from {bundle.design_point}, "
-          f"snax-forge {commit}{', dirty' if bundle.dirty else ''}")  # fmt: skip
-    for f in written:
-        print(f"wrote {cwd_relative(f)}")
-    return 0
+        commit = bundle.snax_forge_commit or "outside git"
+        print(f"bundle {cwd_relative(out)}: {bundle.tag}_shell_wrapper from {bundle.design_point}, "
+              f"snax-forge {commit}{', dirty' if bundle.dirty else ''}")  # fmt: skip
+        for f in written:
+            print(f"wrote {cwd_relative(f)}")
+        return 0
+
+    return cli(write)
 
 
 if __name__ == "__main__":

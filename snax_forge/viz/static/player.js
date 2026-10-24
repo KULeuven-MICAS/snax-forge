@@ -1,4 +1,4 @@
-// Play / pause for the selected cycle (VIEW1). A play button steps the hash's
+// Play / pause for the selected cycle. A play button steps the hash's
 // `cycle` forward on a timer, as the right arrow key does (on the schedule to
 // the next event cycle, the server's /step), so the schedule cursor, the
 // cluster view and the memory tab's overlay all follow it. It stops where

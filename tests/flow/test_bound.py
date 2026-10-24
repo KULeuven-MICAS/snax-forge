@@ -19,10 +19,9 @@ import pytest
 
 from snax_forge.design import DesignError
 from snax_forge.flow import FlowError, bound_name, run_bound, run_flow, summary
-from snax_forge.flow import __main__ as cli
 from tests.design.helpers import BOUND, RECIPE, SNAX_FORGE
 
-from .helpers import PLAIN, built, stub
+from .helpers import PLAIN, built, main, stub
 
 FIFO = [("streamers.default.fifo_depth", 4)]
 
@@ -200,10 +199,6 @@ def test_a_graph_in_the_folders_own_sandbox_is_kept(tmp_path, monkeypatch):
 # =============================================================================
 # 5. Command line
 # =============================================================================
-
-
-def main(*argv) -> int:
-    return cli.main([str(a) for a in argv])
 
 
 def test_cli_takes_a_bound_graph_by_its_suffix(tmp_path, monkeypatch, capsys):

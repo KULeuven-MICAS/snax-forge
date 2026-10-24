@@ -72,7 +72,7 @@ class Reduction:
             raise DfgError(f"reduce.op: {self.op!r} is not a registered op {sorted(REDUCE_OPS)}")
         if self.identity is None:
             raise DfgError(
-                "reduce.identity: null (fold into the element's contents) is not accepted yet (FE1)"
+                "reduce.identity: null (fold into the element's contents) is not accepted yet"
             )
         if type(self.identity) is not int:
             raise DfgError(f"reduce.identity: must be an int, got {self.identity!r}")

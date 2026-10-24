@@ -5,6 +5,7 @@ split, or with accelerated nodes, so SNAX-SANDBOX can check every transform
 against it, and the goldens of a run's ``data.h`` come from it (gen/data.py).
 
     execute(graph, inputs) -> {container: array}
+    against_reference(spec, inputs, run) -> {output: (run's, the reference's)}
 
 **Inputs and symbols.** ``inputs`` holds one array per non-transient
 container, of its dtype. A symbol the graph binds keeps its value; one that
@@ -157,6 +158,21 @@ def execute(graph: Graph, inputs: Mapping[str, np.ndarray]) -> dict[str, np.ndar
     return data
 
 
+def against_reference(
+    spec: Any, inputs: Mapping[str, Any], run: Callable[[dict[str, Any]], Mapping[str, Any]]
+) -> dict[str, tuple[Any, Any]]:
+    """``run`` and a kernel's ``reference`` (its spec's), each on its own copy of ``inputs``:
+    per output container (the spec's ``inout``) what ``run`` gave and what the reference gave."""
+
+    def copy() -> dict[str, Any]:
+        return {k: np.copy(v) if isinstance(v, np.ndarray) else v for k, v in inputs.items()}
+
+    ref = copy()
+    spec.reference(**ref)
+    got = run(copy())
+    return {c: (got[c], ref[c]) for c in spec.inout}
+
+
 def bind_symbols(graph: Graph, inputs: Mapping[str, np.ndarray]) -> dict[str, int]:
     """The graph's symbol values: bound in the graph, or read off the input shapes."""
     missing = [k for k, c in graph.containers.items() if not c.transient and k not in inputs]
@@ -276,8 +292,7 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
     for c, m in node.inputs.items():
         values[c] = ctx.data[m.data][_grid_indices(m, env, ctx, f"{what}.inputs.{c}")]
     results = {}
-    for line in node.attrs["code"].split("\n"):
-        target, rhs = (s.strip() for s in line.split("=", 1))
+    for target, rhs in expr.statements(node.attrs["code"], f"{what}.attrs.code"):
         try:
             results[target] = expr.evaluate(rhs, values)
         except ExprError as e:

@@ -50,9 +50,7 @@ name, is renamed and set, its keys in this order:
                                 after the others):
       snax_tcdm_ports           the streamer's channels
       sparse_interconnect_config  one group of that width (its granularity
-                                kept), or ``snax_narrow_tcdm_ports`` that
-                                many and ``snax_wide_tcdm_ports`` 0,
-                                whichever the source has
+                                kept), when the source has it
       snax_num_rw_csr           the shell's fields and start
       snax_num_ro_csr           2 (busy and the counter, D130)
     snax_disable_csr_manager    true: the wrapper carries its own manager
@@ -120,8 +118,8 @@ template for more than one spatial dimension (every template so far has one).
 
 from __future__ import annotations
 
-import json
-from collections.abc import Mapping
+import sys
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -130,12 +128,13 @@ import hjson
 
 from snax_forge import expr
 from snax_forge.brm import Instance
-from snax_forge.common import generated_header, plain, repo_root, to_json
+from snax_forge.common import JsonFile, generated_header, plain, repo_root, to_json
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import streamer_name
+from snax_forge.lower import CError
 from snax_forge.lower.c import MAIN_C, main_c, mover_name
 from snax_forge.lower.c import accelerator as c_accelerator
 from snax_forge.lower.derive import task_list
@@ -181,10 +180,6 @@ class CsrLayout:
     busy: int
     counter: int
 
-    @property
-    def shell_first(self) -> int:
-        return self.streamer_last + 1
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "streamer": {"first": self.streamer_first, "last": self.streamer_last},
@@ -217,7 +212,7 @@ class AccTask:
 
 
 @dataclass(frozen=True)
-class Manifest:
+class Manifest(JsonFile):
     """What ``generate`` wrote; see the module doc."""
 
     design: str
@@ -250,13 +245,6 @@ class Manifest:
             d["program"], d["trace"], CsrLayout.from_dict(d["csrs"]),
             [AccTask.from_dict(t) for t in d["tasks"]],
         )  # fmt: skip
-
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    @classmethod
-    def load(cls, path: str | Path) -> Manifest:
-        return cls.from_dict(json.loads(Path(path).read_text()))
 
 
 # =============================================================================
@@ -312,10 +300,15 @@ def movers(template: dict[str, Any]) -> list[dict[str, Any]]:
     return out
 
 
+def mover_csr_count(spatial_bounds: Sequence[int], temporal_dim: int) -> int:
+    """A mover's CSRs: the pointer (2), the spatial strides, the temporal bounds and strides."""
+    return 2 + len(spatial_bounds) + 2 * temporal_dim
+
+
 def streamer_csrs(template: dict[str, Any]) -> int:
-    """snax_streamer.nb_csrs: per mover the pointer (2), the spatial strides, the temporal
-    bounds and strides; then start; then busy and the counter."""
-    rw = sum(2 + len(m["spatial_bounds"]) + 2 * m["temporal_dim"] for m in movers(template))
+    """snax_streamer.nb_csrs: per mover its CSRs (``mover_csr_count``); then start; then busy
+    and the counter."""
+    rw = sum(mover_csr_count(m["spatial_bounds"], m["temporal_dim"]) for m in movers(template))
     return rw + 1 + 2
 
 
@@ -409,7 +402,7 @@ def write_back(d: dict[str, Any], platform: Platform) -> None:
         raise GenError(
             "gen.platform", f"platform {platform.name} has no L2; the hjson's dram is one"
         )
-    bits = l1.n_banks * l1.rows * l1.width_bits
+    bits = l1.size_bytes * 8
     if bits % 8192:
         raise GenError(
             "gen.platform", f"l1: {l1.n_banks} banks x {l1.rows} rows x {l1.width_bits} bits is "
@@ -491,9 +484,6 @@ def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], name: str,
                 "group [width, granularity]",
             )  # fmt: skip
         slot["sparse_interconnect_config"] = [[ports, groups[0][1]]]
-    if "snax_narrow_tcdm_ports" in slot or "snax_wide_tcdm_ports" in slot:
-        slot["snax_narrow_tcdm_ports"] = ports
-        slot["snax_wide_tcdm_ports"] = 0
     slot["snax_num_rw_csr"] = len(unit.fields) + 1
     slot["snax_num_ro_csr"] = SHELL_RO_CSRS
     old = slot.get("snax_streamer_cfg")
@@ -528,6 +518,30 @@ def point_name(path: Path, root: Path) -> str:
         ) from None
 
 
+def load_point(
+    design_point: str | Path, root: Path, named_from: str | Path | None = None
+) -> tuple[str, DesignPoint, tuple[str, Instance, Unit]]:
+    """The design point's name (``point_name`` from ``named_from``, else ``root``), the point
+    and its accelerator (``accelerator``)."""
+    shown = point_name(Path(design_point), root if named_from is None else Path(named_from))
+    point = DesignPoint.load(design_point)
+    return shown, point, accelerator(point)
+
+
+def cli(write: Callable[[], int]) -> int:
+    """A generator command: ``write()``, or 1 with the refusal on stderr (its rule named)."""
+    try:
+        return write()
+    except (GenError, CError, DesignError) as e:
+        print(e, file=sys.stderr)
+        return 1
+
+
+def out_dir(given: Path | None, under: Path, design_point: Path) -> Path:
+    """``given``, else ``under/<design>``, the design point's name."""
+    return given or under / DesignPoint.load(design_point).name
+
+
 def _hjson(point_path: str, what: str, value: Any) -> str:
     """An hjson file: the header comment, then ``value`` as JSON (which hjson reads)."""
     return generated_header(point_path, what) + to_json(value)
@@ -548,10 +562,8 @@ def generate(
     go to data.h's inputs (data.py's ``arrays``)."""
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
-    shown = point_name(point_path, root if named_from is None else Path(named_from))
-    point = DesignPoint.load(point_path)
+    shown, point, (name, inst, unit) = load_point(point_path, root, named_from)
     platform = point.platform
-    name, inst, unit = accelerator(point)
     template = streamer_template(point, name, inst)
     layout = csr_layout(template, unit.fields)
     tasks = task_list(point)
@@ -580,7 +592,7 @@ def generate(
         names[2]: _hjson(shown, f"Slot {slot}'s datapath block: {accel}.", datapath(unit)),
         f"include/{STREAMER_HEADER}": streamer_h,
         f"include/{name}_csr.h": accelerator_header(name, layout, shown),
-        DATA_H: data_h(point, shown, data),
+        DATA_H: data_h(point, shown, data, seed=seed),
         MAIN_C: main_c(point, tasks, cluster, layout, data,
                        [DATA_H, f"{name}_csr.h", STREAMER_HEADER], shown),
     }  # fmt: skip

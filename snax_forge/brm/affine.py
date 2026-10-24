@@ -52,6 +52,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import check_keys
 
 from .notation import register_notation
 
@@ -70,14 +71,7 @@ _LOOP_KEYS = ("bound", "strides", "spatial")
 
 
 def _keys(d: Any, required: tuple[str, ...], allowed: tuple[str, ...], what: str) -> None:
-    if not isinstance(d, Mapping):
-        raise TypeError(f"{what}: must be an object, got {d!r}")
-    unknown = sorted(set(d) - set(allowed))
-    if unknown:
-        raise ValueError(f"{what}: unknown keys {unknown} (allowed: {list(allowed)})")
-    missing = [k for k in required if k not in d]
-    if missing:
-        raise ValueError(f"{what}: missing key {missing[0]!r}")
+    check_keys(d, allowed, what, required)
 
 
 def _values(v: Any, what: str, allowed: set[str], length: int | None = None) -> None:
@@ -90,8 +84,7 @@ def _values(v: Any, what: str, allowed: set[str], length: int | None = None) -> 
 
 
 def _value(v: Any, what: str, allowed: set[str]) -> None:
-    expr.check(v, what)
-    unknown = sorted(expr.names(v) - allowed)
+    unknown = expr.outside(v, allowed, what)
     if unknown:
         raise ValueError(f"{what}: {v!r} uses {unknown}, allowed here: {sorted(allowed)}")
 
@@ -177,12 +170,8 @@ class Nest:
     def n_beats(self) -> int:
         return prod(b for b, _ in self.temporal)
 
-    @property
-    def n_lanes(self) -> int:
-        return prod(b for b, _ in self.spatial)
-
     def indices(self) -> np.ndarray:
-        """Every element in order, shape ``[n_beats, n_lanes, rank]``."""
+        """Every element in order, shape ``[n_beats, lanes, rank]``."""
         return _enumerate(self.offset, self.temporal, self.spatial)
 
     def extent(self) -> tuple[tuple[int, int], ...]:

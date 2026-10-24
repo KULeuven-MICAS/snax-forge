@@ -144,8 +144,8 @@ def _memory_tables(cluster: Cluster, regions: list[Region], point: Any) -> list[
             name, lay = region.container, region.layout
             w = _words(lay, base, word)
             n = int(w.size) * word
-            lo, hi = lay.span()
-            region_rows.append(RegionRow(name, lo, hi + word, n, n / size,
+            lo, hi = lay.extent(word)
+            region_rows.append(RegionRow(name, lo, hi, n, n / size,
                                      spans(sorted({int(x) % columns for x in w})),
                                      span_text([int(w.min()) // columns, int(w.max()) // columns])))  # fmt: skip
         region_rows.sort(key=lambda r: r.base)
@@ -225,7 +225,7 @@ def build_design(
         kernel=recipe.kernel if recipe is not None else kernel or point.graph.name,
         recipe=recipe.name if recipe is not None else point.name,
         params=dict(recipe.params) if recipe is not None else {},
-        symbols={k: v for k, v in point.graph.symbols.items() if v is not None},
+        symbols=point.graph.bound_symbols,
         platform=point.platform.name,
         platform_base=point.platform.base,
         platform_changes=dict(point.platform.changes),

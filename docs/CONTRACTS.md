@@ -264,8 +264,9 @@ A task list is `name` and `steps`, each step with an `op`:
 streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes);
           spatial bounds are design-time and come from the design point's
           streamers
-dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with base,
-          bounds and strides (bytes, one wide beat per step)
+dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with
+          bounds and strides (bytes, one wide beat per step), the L1 side
+          with base, the L2 side with symbol (its container's data.h array)
 accel     its start parameters by name: n, then any named rate (e.g. T)
 ```
 
@@ -362,7 +363,7 @@ the writer.
    "values": {
     "direction": "l1_to_l2",
     "src": {"base": 268436480, "bounds": [8], "strides": [64]},
-    "dst": {"base": 2147484672, "bounds": [8], "strides": [64]}
+    "dst": {"symbol": "C", "bounds": [8], "strides": [64]}
    }
   },
   {"op": "start", "tasks": ["store_C"]},
@@ -383,7 +384,7 @@ name.
 | `interface` | params (`design` / `runtime`) and ports (name, direction, lanes, rate, dtype) | everything below |
 | `function` | an accelerator kind registered in `brm/function.py`, its factory params without timing, and `code`: what one lane computes (D82) | the reference executor; `bind` and the accelerated node (`code`) |
 | `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
-| `pattern` | `family` (a matcher registered in the sandbox), its `attrs`; `predicate` null | SNAX-SANDBOX's `bind` (section 12) |
+| `pattern` | `family` (a matcher registered in the sandbox), its `attrs` | SNAX-SANDBOX's `bind` (section 12) |
 | `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null, or `block`, `args`, `control`, `csrs`, `wait`, optionally `ports`, D129) | the GVSoC accelerator (GEN3), the HW generator (GEN1) |
 
 The shared part (the first four) is what every implementation has in
@@ -763,13 +764,13 @@ agree. What the hjson does not hold (dtype, elements per word,
 file (`hjson`, which must be under snax-forge's root, `hjson.path`) and
 `accelerator_slot`, `snax_forge`, not the source's `snax_acc_name`; the
 source must still have exactly one accelerator, its name an identifier.
-`snax_forge.json` comes from `platforms/snax_alu_cluster.hjson`, a verbatim
-copy of snax-gvsoc's `sw/cfg/snax_alu_cluster.hjson` refreshed by hand (its
-diff the check, as D126); snax-gvsoc's `_old` copy gives the same platform.
+`snax_forge.json` comes from `platforms/snax_forge_cluster.hjson`,
+snax-forge's base cluster (D131), taken from snax_cluster's
+`cfg/snax_alu_cluster.hjson`.
 
 <!-- snippet: platforms/snax_forge.json -->
 ```json
- "hjson": "platforms/snax_alu_cluster.hjson",
+ "hjson": "platforms/snax_forge_cluster.hjson",
  "accelerator_slot": "snax_forge",
 ```
 
@@ -802,13 +803,13 @@ problems.
 | `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
 | `connect.dtype` | a container whose dtype is not the L1's or not its port's, or an L1 with more than one element per word (open item 21) |
 | `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), a subset that is not affine in the firing loops, or a streamer with fewer `temporal_dims` than the node's firing loops (the fix names the count) |
-| `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest) or on a memory the container does not live in; an unknown pass. The plan is made after these pass |
+| `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest), on a memory the container does not live in, or on L2 (the link places it, D86); an unknown pass. The plan is made after these pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
 | `memory.layout` | a layout whose shape is not its container's |
-| `memory.align` | a base or stride that is not a multiple of the word; a container the DMA moves (in L2 and L1) that is not contiguous, not whole wide beats (open item 38) or not on a beat |
-| `memory.fit` | a layout that leaves its memory, the message naming the memory's bytes `[start, end)`. Past the end the fix names the rows or L2 size that would hold it, after "pin it lower" for a pinned layout; below the start (a nonzero base) it names the pin that puts the layout at the memory's first byte |
+| `memory.align` | an L1 base or stride that is not a multiple of the word; a container the DMA moves (in L2 and L1) whose L1 layout is not contiguous, not whole wide beats (open item 38) or not on a beat |
+| `memory.fit` | an L1 layout that leaves L1, the message naming its bytes `[start, end)`, or an L2 layout (base 0) larger than L2. Past the end the fix names the rows or L2 size that would hold it, after "pin it lower" for a pinned layout; below the start (a nonzero base) it names the pin that puts the layout at L1's first byte |
 | `memory.runtime` | an L1 layout (with its padding, D105) reaching into the top of L1 that snRuntime keeps at start-up (`start.S` in snax-gvsoc's `sw/snRuntime/src/`): a 1 KiB stack (`1 << SNRT_LOG2_STACK_SIZE`) for each core of the platform's `hjson`, plus 256 B for CLS (`.cdata`, `.cbss`), main's return word and the stacks' misalignment. The 256 B is a declared default (`RUNTIME_MARGIN`, `design/check.py`); a platform without an `hjson` runs no program and is not checked, nor is one whose `hjson` is not under snax-forge's root (the generator reads it from its own root, `gen.source`). The fix pins the layout just below |
-| `memory.overlap` | two layouts in one memory that share bytes, naming the pins (the fix moves the latest pin past everything) |
+| `memory.overlap` | two L1 layouts that share bytes, naming the pins (the fix moves the latest pin past everything) |
 | `point.keys` | a design point with unknown or missing keys or a malformed streamer entry |
 | `point.streamers` | a design point whose `streamers` are not the platform's shell for its graph |
 
@@ -825,9 +826,9 @@ registered by name (`register_memory_pass(kind, name, fn)`):
 |---|---|---|
 | `residency` | the memories of each container | `default`: not transient: L2 and L1 with an L2, else L1; transient: L1 |
 | `layout` | shape and strides, base 0 | `contiguous`: row-major, one element per word |
-| `placement` | the base per container and memory (in L2 the program's link replaces it: C§7's regions, D86) | `contiguous`: graph container order from the memory's first byte, no gaps; a layout in both L2 and L1 on a wide beat and to the end of its last beat (the DMA moves whole beats, so a size that is not whole beats is padded, D105), others on a word; around the pins |
+| `placement` | the L1 base per container (an L2 layout keeps base 0: the program's link places its array, C§7's regions, D86) | `contiguous`: graph container order from L1's first byte, no gaps; a layout in both L2 and L1 on a wide beat and to the end of its last beat (the DMA moves whole beats, so a size that is not whole beats is padded, D105), others on a word; around the pins |
 
-`--set memory.<container>.<memory>.base=N` pins a base; `--set
+`--set memory.<container>.l1.base=N` pins an L1 base; `--set
 memory.passes.<pass>=NAME` picks a pass. Passes read a `MemoryContext`:
 the graph with its symbols bound, the platform, shapes, words, memory
 ranges and, for policies that avoid bank conflicts, each accelerator
@@ -1022,9 +1023,9 @@ keeps a stale file; nothing else in `DIR` is removed.
 | `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out |
 | `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git) and `dirty` (true when the work tree has uncommitted changes, untracked files included; false outside git) |
 
-**Refused**: what sections 16 and 17 refuse, then `bundle.empty`
-(`emitted.json` lists no file) and `bundle.missing` (it lists a file that
-is not there).
+**Refused**: what sections 16 and 17 refuse (a listed file that is not
+there among them, `gen.elaborate`), then `bundle.empty` (`emitted.json`
+lists no file).
 
 **How snax_cluster takes it** (D139, snax_cluster #659), through the
 cluster file alone (`CFG_OVERRIDE`), so snax_cluster holds no dependency on

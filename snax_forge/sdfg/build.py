@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import time
 
 import dace
 import numpy as np
 
-from snax_forge.common import repo_root
+from snax_forge.common import repo_root, to_json
 
 from .spec import KernelSpec
 
@@ -42,17 +41,17 @@ def structural_summary(sdfg: dace.SDFG) -> dict:
     }
 
 
-def verify(spec: KernelSpec, sdfg: dace.SDFG, n: int | None = None) -> bool:
-    rng = np.random.default_rng(0)
-    ref_args = spec.make_inputs(rng) if n is None else spec.make_inputs(rng, n=n)
-    dut_args = {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in ref_args.items()}
-
-    spec.reference(**ref_args)
+def verify(spec: KernelSpec, sdfg: dace.SDFG) -> bool:
+    from snax_forge.dfg.execute import against_reference
 
     csdfg = sdfg.compile()
-    csdfg(**dut_args, **spec.bind_symbols(dut_args))
 
-    return all(np.array_equal(ref_args[k], dut_args[k]) for k in spec.inout)
+    def run(args: dict) -> dict:
+        csdfg(**args, **spec.bind_symbols(args))
+        return args
+
+    pairs = against_reference(spec, spec.make_inputs(np.random.default_rng(0)), run)
+    return all(np.array_equal(got, ref) for got, ref in pairs.values())
 
 
 def run(spec: KernelSpec) -> dict:
@@ -73,5 +72,5 @@ def run(spec: KernelSpec) -> dict:
         if simplify:
             report[tag]["matches_numpy"] = verify(spec, sdfg)
 
-    (OUT / f"{spec.name}.json").write_text(json.dumps(report, indent=2))
+    (OUT / f"{spec.name}.json").write_text(to_json(report))
     return report

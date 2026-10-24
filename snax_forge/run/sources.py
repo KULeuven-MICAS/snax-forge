@@ -2,7 +2,7 @@
 
     parse_trace("stall:acc,acc_a")      -> ("stall", ["acc", "acc_a"])
     sources_for(cluster, level, given)  -> the sources, given or by default
-    gvsoc_options(cluster, level, sources, vcd) -> GvsocOptions
+    gvsoc_options(cluster, level, sources, vcd, given=False) -> GvsocOptions
 
 A level is which traces are on (snax-gvsoc ``docs/EVENTS.md``), cumulative: ``off`` the
 ``summary`` lines, ``task`` and the ``events`` lines, ``beat`` and the ``beats`` lines,
@@ -30,13 +30,10 @@ from dataclasses import dataclass, field
 
 from .cluster import DMA, Cluster
 from .events import RunError
-from .trace import LEVELS
+from .trace import LEVELS, at_least
 
 XBAR_PATH = "chip/soc/cluster_0/tcdm/snax_xbar"
 AXI = "axi"
-# level -> the traces it adds
-LEVEL_TRACES = {"off": "summary", "task": "events", "beat": "beats", "stall": "stalls",
-                "finegrained": "insn"}  # fmt: skip
 
 
 def parse_trace(text: str) -> tuple[str, list[str] | None]:
@@ -60,7 +57,7 @@ def all_sources(cluster: Cluster) -> list[str]:
 
 def sources_for(cluster: Cluster, level: str, given: list[str] | None) -> list[str]:
     """The sources of a run (module doc), in the cluster's order."""
-    if LEVELS.index(level) < LEVELS.index("beat"):
+    if not at_least(level, "beat"):
         return []
     known = all_sources(cluster)
     if given is not None:
@@ -96,35 +93,25 @@ def gvsoc_options(cluster: Cluster, level: str, sources: list[str], vcd: bool,
     xbar_cores = cores if given or level != "finegrained" else []
     inputs = [f"{acc}.streamer.{m.gvsoc}.lane{lane}" for m in movers for lane in range(m.lanes)]
     inputs += xbar_cores + ([AXI] if AXI in sources else []) + ([DMA] if DMA in sources else [])
+    # the traced components by their GVSoC paths: the unit, the streamer, the crossbar; the cores
+    comps = [path for path, on_ in ((f"{acc}/unit", a.name in sources),
+                                    (f"{acc}/streamer", bool(movers)),
+                                    ("tcdm/snax_xbar", bool(inputs))) if on_]  # fmt: skip
+    pes = [c.replace("core", "pe") for c in cores]
     o = GvsocOptions(traces=["summary"] + (["events"] if "task" in on else []))
     if "beat" in on:
-        if a.name in sources:
-            o.traces.append(f"{acc}/unit/beats")
-        if movers:
-            o.traces.append(f"{acc}/streamer/beats")
-        if inputs:
-            o.traces.append("tcdm/snax_xbar/beats")
+        o.traces += [f"{c}/beats" for c in comps]
         if DMA in sources:
             o.traces += ["idma/axi_read/beats", "idma/axi_write/beats"]
+        o.args += ["--param", f"{XBAR_PATH}/trace_inputs={','.join(inputs)}"]
     if "stall" in on:
         if movers:
             o.traces.append(f"{acc}/streamer/stalls")
         if [i for i in inputs if i != DMA]:
             o.traces.append("tcdm/snax_xbar/stalls")
     if "finegrained" in on:
-        o.traces += [f"{c.replace('core', 'pe')}/insn" for c in cores]
-    if "beat" in on:
-        o.args += ["--param", f"{XBAR_PATH}/trace_inputs={','.join(inputs)}"]
+        o.traces += [f"{p}/insn" for p in pes]
     if vcd:
-        events = []
-        if a.name in sources:
-            events.append(f"{acc}/unit/.*")
-        if movers:
-            events.append(f"{acc}/streamer/.*")
-        if inputs:
-            events.append("tcdm/snax_xbar/.*")
-        if DMA in sources:
-            events.append("idma/fe/dma_busy")
-        events += [f"{c.replace('core', 'pe')}/.*" for c in cores]
-        o.args += ["--vcd", *(f"--event=.*/{e}" for e in events)]
+        events = [f"{c}/.*" for c in comps] + (["idma/fe/dma_busy"] if DMA in sources else [])
+        o.args += ["--vcd", *(f"--event=.*/{e}" for e in [*events, *(f"{p}/.*" for p in pes)])]
     return o

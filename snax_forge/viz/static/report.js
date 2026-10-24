@@ -1,4 +1,4 @@
-// The profile report of one flow run (VIS1, D137): the profile (CONTRACTS.md
+// The profile report of one flow run (D137): the profile (CONTRACTS.md
 // section 7), the cluster as the run names it (run/cluster.py) and run.json,
 // drawn top to bottom. Works at both trace levels; a core's classes and waits
 // need the events (trace task) and say so when missing.

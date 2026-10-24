@@ -7,9 +7,8 @@ tasklet connector feeds which BRM port:
 
     matcher(tasklet, attrs, brm) -> {connector: port}
 
-or raises ``SandboxError`` saying why not. The BRM's ``predicate`` field
-stays null: a family's matcher is code in the sandbox, registered like any
-other extension (principle 6).
+or raises ``SandboxError`` saying why not. A family's matcher is code in the
+sandbox, registered like any other extension (principle 6).
 
 ``elementwise`` (the first family): the tasklet's code is one statement,
 ``out = in1 <op> in2 <op> ...``, a left fold of distinct input connectors

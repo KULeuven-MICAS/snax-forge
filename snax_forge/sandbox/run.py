@@ -80,7 +80,7 @@ def step_params(recipe: Recipe, index: int) -> tuple[str, dict[str, Any]]:
 def random_inputs(g: Graph, seed: int) -> dict[str, np.ndarray]:
     """Seeded integers for every non-transient container, at the graph's bound sizes."""
     rng = np.random.default_rng(seed)
-    env = {k: v for k, v in g.symbols.items() if v is not None}
+    env = g.bound_symbols
     from snax_forge import expr
 
     out = {}

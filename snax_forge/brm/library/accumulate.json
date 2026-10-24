@@ -38,7 +38,7 @@
    }
   }
  },
- "pattern": {"family": "reduce", "attrs": {"op": "add"}, "predicate": null},
+ "pattern": {"family": "reduce", "attrs": {"op": "add"}},
  "implementations": {
   "chisel_accumulator": {
    "source": "chisel",

@@ -25,7 +25,7 @@ Which part serves which component: interface and function give what the
 reference executor runs (function.py); the dataflow gives the streamer values
 (SNAX-LOWER); the pattern serves SNAX-SANDBOX's ``bind``; the chosen
 implementation's timing and binding serve the generators (the GVSoC
-accelerator, and the Chisel block once that generator is built).
+accelerator and the Chisel block).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
 and reach the design point and the accelerator hjson. ``runtime`` params are
@@ -47,17 +47,15 @@ generator's blocks in instance.py.
 
 from __future__ import annotations
 
-import json
 import keyword
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.common import check_keys, plain, to_json
+from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.expr import Value
 
 from .binding import check_binding
@@ -81,15 +79,10 @@ def _keys(
     d: Any, required: tuple[str, ...], optional: tuple[str, ...], what: str, noun: str = "key"
 ) -> None:
     """``d`` is an object with every required key and no unknown one."""
-    if not isinstance(d, Mapping):
-        raise BrmError(f"{what}: must be an object, got {d!r}")
     try:
-        check_keys(d, [*required, *optional], what)
-    except ValueError as e:
+        check_keys(d, [*required, *optional], what, required, noun)
+    except (TypeError, ValueError) as e:
         raise BrmError(str(e)) from None
-    missing = [k for k in required if k not in d]
-    if missing:
-        raise BrmError(f"{what}: missing {noun} {missing[0]!r}")
 
 
 def _ident(name: Any, what: str, in_expr: bool = False) -> None:
@@ -235,21 +228,19 @@ class Pattern:
     """The DFG subgraph the BRM can replace: a family, matched by SNAX-SANDBOX.
 
     ``family`` names a matcher registered in snax_forge/sandbox/patterns.py
-    and ``attrs`` are its parameters. ``predicate`` is kept for a later,
-    data-only form of a pattern and is null in every BRM so far.
+    and ``attrs`` are its parameters.
     """
 
     family: str
     attrs: dict[str, Any] = field(default_factory=dict)
-    predicate: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"family": self.family, "attrs": plain(self.attrs), "predicate": self.predicate}
+        return {"family": self.family, "attrs": plain(self.attrs)}
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Pattern:
-        _keys(d, ("family",), ("attrs", "predicate"), what)
-        return cls(d["family"], dict(d.get("attrs", {})), d.get("predicate"))
+        _keys(d, ("family",), ("attrs",), what)
+        return cls(d["family"], dict(d.get("attrs", {})))
 
 
 @dataclass
@@ -322,7 +313,7 @@ _PARTS = ("name", "interface", "function", "dataflow", "pattern", "implementatio
 
 
 @dataclass
-class Brm:
+class Brm(JsonFile):
     """One accelerator: the shared part and its implementations. Validated when made."""
 
     name: str
@@ -390,16 +381,6 @@ class Brm:
             },
         )
 
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    @classmethod
-    def load(cls, path: str | Path) -> Brm:
-        return cls.from_dict(json.loads(Path(path).read_text()))
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json())
-
 
 # =============================================================================
 # Validation
@@ -420,10 +401,9 @@ def _validate(b: Brm) -> None:
 def _uses(v: Value, allowed: dict[str, Param], what: str) -> None:
     """``v`` is a valid expression over ``allowed`` params only."""
     try:
-        expr.check(v, what)
+        unknown = expr.outside(v, allowed, what)
     except expr.ExprError as e:
         raise BrmError(str(e)) from None
-    unknown = sorted(expr.names(v) - set(allowed))
     if unknown:
         raise BrmError(f"{what}: {v!r} uses {unknown}, not design params ({sorted(allowed)})")
 
@@ -479,6 +459,7 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
     names = [p.name for p in ports]
     if len(set(names)) != len(names):
         raise BrmError(f"{what}: duplicate port names {names}")
+    runtime = list(b.params("runtime"))
     for p in ports:
         w = f"{what}.port {p.name!r}"
         _port_name(p.name, w)
@@ -487,7 +468,6 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
         _uses(p.lanes, design, f"{w}.lanes")
         if (c := expr.constant(p.lanes)) is not None and c < 1:
             raise BrmError(f"{w}.lanes: must be >= 1, got {c}")
-        runtime = b.params("runtime")
         if isinstance(p.rate, str):
             if not expr.is_name(p.rate) or p.rate not in runtime:
                 raise BrmError(f"{w}.rate: {p.rate!r} must be an int or a runtime param name")
@@ -500,7 +480,6 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
     dirs = {p.direction for p in ports}
     if dirs != set(DIRECTIONS):
         raise BrmError(f"{what}: needs at least one input and one output port")
-    runtime = list(b.params("runtime"))
     if sorted(runtime) != sorted(b.registers):
         raise BrmError(
             f"{what}: runtime params must be exactly n and the named rates {b.registers}, "
@@ -536,8 +515,6 @@ def _check_pattern(b: Brm, what: str) -> None:
         raise BrmError(f"{w}.family: must be a non-empty string")
     if not isinstance(p.attrs, dict):
         raise BrmError(f"{w}.attrs: must be an object")
-    if p.predicate is not None and not isinstance(p.predicate, str):
-        raise BrmError(f"{w}.predicate: must be null or a registered name")
 
 
 def _check_implementations(b: Brm, design: dict[str, Param], what: str) -> None:

@@ -128,9 +128,18 @@ from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
-from snax_forge.dfg.execute import execute
+from snax_forge.dfg.execute import against_reference, execute
 from snax_forge.lower import CError, LowerError, TaskList, task_list
-from snax_forge.run import LEVELS, RunError, Trace, load_cluster, read_events, regions_of, write_run
+from snax_forge.run import (
+    LEVELS,
+    RunError,
+    Trace,
+    at_least,
+    load_cluster,
+    read_events,
+    regions_of,
+    write_run,
+)
 from snax_forge.run.convert import convert
 from snax_forge.run.elf import l2_symbols, read_symbols
 from snax_forge.run.outputs import EVENTS_FILE
@@ -165,7 +174,6 @@ SUBMODULE = "gvsoc/snax-gvsoc"
 GVSOC_WORKDIR = ROOT / "out" / "snax-gvsoc"
 TARGET = "snax_hjson"
 ELF = "forge.elf"
-TRACE_LEVELS = LEVELS
 VCD, GTKW = "all.vcd", "view.gtkw"
 
 
@@ -269,7 +277,7 @@ def kernel_spec(kernel: str, why: str) -> Any:
 
 def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
     """The kernel's ``make_inputs`` at the size the graph binds (its one bound symbol)."""
-    bound = [v for v in graph.symbols.values() if v is not None]
+    bound = list(graph.bound_symbols.values())
     kw = {"n": bound[0]} if len(bound) == 1 else {}
     inputs = spec.make_inputs(np.random.default_rng(seed), **kw)
     for c, arr in inputs.items():
@@ -288,12 +296,9 @@ def reference_check(spec: Any, graph: Graph, seed: int) -> None:
     inputs: data.h's goldens are the first, so a graph that computes something else (one
     edited by hand, D108) would pass its own check; a FlowError naming each output that
     differs."""
-    inputs = kernel_inputs(spec, graph, seed)
-    ref = {k: np.copy(v) for k, v in inputs.items()}
-    spec.reference(**ref)
-    ref1 = execute(graph, {k: np.copy(v) for k, v in inputs.items()})
-    wrong = [f"{c} in {int(np.count_nonzero(ref1[c] != ref[c]))} of {ref[c].size} elements"
-             for c in spec.inout if not np.array_equal(ref1[c], ref[c])]  # fmt: skip
+    pairs = against_reference(spec, kernel_inputs(spec, graph, seed), lambda x: execute(graph, x))
+    wrong = [f"{c} in {int(np.count_nonzero(got != ref))} of {ref.size} elements"
+             for c, (got, ref) in pairs.items() if not np.array_equal(got, ref)]  # fmt: skip
     if wrong:
         raise FlowError(f"gen: the graph's reference executor differs from the {spec.name} "
                         f"reference: {', '.join(wrong)}; the goldens would not be the kernel's "
@@ -398,11 +403,11 @@ def build_reason(c: Checkout, workdir: Path) -> str | None:
 
 
 def _make(stage: str, goal: str, variables: Mapping[str, str], log: Path,
-          err: Path | None = None, live: bool = False) -> int:  # fmt: skip
+          live: bool = False) -> int:  # fmt: skip
     """``run_gvsoc``; a nonzero exit is a FlowError naming the log and its last lines."""
-    rc = run_gvsoc(goal, variables, log, err, live)
+    rc = run_gvsoc(goal, variables, log, None, live)
     if rc != 0:
-        tail = "\n".join((err or log).read_text().splitlines()[-15:])
+        tail = "\n".join(log.read_text().splitlines()[-15:])
         raise FlowError(f"{stage}: make {goal} failed (exit {rc}); its output is in "
                         f"{cwd_relative(log)}:\n{tail}")  # fmt: skip
     return rc
@@ -579,13 +584,21 @@ def _clear_sandbox(out: Path, graph_path: Path) -> None:
 
 
 def _trace(level: str, sources: Sequence[str] | None) -> None:
-    if level not in TRACE_LEVELS:
-        raise FlowError(f"trace level {level!r}: one of {', '.join(TRACE_LEVELS)}")
-    if sources is not None and TRACE_LEVELS.index(level) < TRACE_LEVELS.index("beat"):
+    if level not in LEVELS:
+        raise FlowError(f"trace level {level!r}: one of {', '.join(LEVELS)}")
+    if sources is not None and not at_least(level, "beat"):
         raise FlowError(f"trace sources {list(sources)}: they go with beat, stall or finegrained")
 
 
 FAILURES = (DesignError, FlowError, SandboxError, DfgError, LowerError, RunError, OSError)
+
+
+def _folder(name: str, out: str | Path | None) -> Path:
+    """The flow's folder (``out``, else ``out/flow/<name>``), made and cleared."""
+    folder = Path(out) if out is not None else OUT / name
+    folder.mkdir(parents=True, exist_ok=True)
+    _clear(folder)
+    return folder
 
 
 def run_flow(
@@ -613,9 +626,7 @@ def run_flow(
     point_name = name or default_name(recipe, recipe_sets)
     name = name or with_level(default_name(recipe, recipe_sets, platform_sets, memory_sets),
                               trace_level)  # fmt: skip
-    out = Path(out) if out is not None else OUT / name
-    out.mkdir(parents=True, exist_ok=True)
-    _clear(out)
+    out = _folder(name, out)
     times: dict[str, float] = {}
 
     def stages() -> Flow:
@@ -663,9 +674,7 @@ def run_bound(
     # As in run_flow: the design point keeps the graph's name, the folder carries every --set.
     point_name = name or bound_name(graph_path)
     name = name or with_level(bound_name(graph_path, platform_sets, memory_sets), trace_level)
-    out = Path(out) if out is not None else OUT / name
-    out.mkdir(parents=True, exist_ok=True)
-    _clear(out)
+    out = _folder(name, out)
     _clear_sandbox(out, graph_path)
     times: dict[str, float] = {}
 
@@ -799,7 +808,7 @@ def _from_graph(
         check = {
             "kernel": spec.name,
             "seed": seed,
-            "symbols": {k: v for k, v in point.graph.symbols.items() if v is not None},
+            "symbols": point.graph.bound_symbols,
             **result,
         }
         hjson = [x for x in manifest.files if x.endswith(".hjson")]

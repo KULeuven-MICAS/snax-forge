@@ -116,7 +116,7 @@ def test_with_changes_gives_a_working_copy():
     assert w.changes == {"l1.n_banks": 32, "streamers.acc_out.fifo_depth": 4}
     assert w.l1.n_banks == 32 and w.entries == {"acc_out": {"fifo_depth": 4}}
     assert base.l1.n_banks == 16 and base.changes == {}  # the input is not changed
-    assert base.with_changes() == base.with_changes([]) and base.with_changes().base == "small16"
+    assert base.with_changes([]).base == "small16"
 
 
 def test_continuing_adds_to_the_changes_and_keeps_the_base():
@@ -174,7 +174,7 @@ def test_set_accelerator_slot_changes_the_generated_accelerators_name():
     """The generated accelerator's name is a platform field as any: the generator gives it to
     the source's only slot (tests/gen)."""
     w = Platform.load(SNAX_FORGE).with_changes([("accelerator_slot", "snax_forge_acc")])
-    assert (w.accelerator_slot, w.hjson) == ("snax_forge_acc", "platforms/snax_alu_cluster.hjson")
+    assert (w.accelerator_slot, w.hjson) == ("snax_forge_acc", "platforms/snax_forge_cluster.hjson")
     assert w.changes == {"accelerator_slot": "snax_forge_acc"} and w.base == "snax_forge"
     assert Platform.from_dict(json.loads(w.to_json())) == w
     with pytest.raises(DesignError) as e:

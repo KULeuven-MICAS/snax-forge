@@ -149,16 +149,16 @@ GOOD_STREAM = stream("x", "acc_a")["values"]
         ([bad_values({**GOOD_DMA, "burst": 4}), start("x")], "unknown"),
         ([bad_values({**GOOD_DMA, "direction": "l1_to_l1"}), start("x")], "direction must be one of"),
         (
-            [bad_values({**GOOD_DMA, "src": {"base": 0, "bounds": [0], "strides": [64]}}), start("x")],
+            [bad_values({**GOOD_DMA, "src": {"symbol": "A", "bounds": [0], "strides": [64]}}), start("x")],
             "bounds must be >= 1",
         ),
         (
             [{**stream("x", "acc_a"), "values": {**GOOD_STREAM, "temporal_bounds": [0]}}, start("x")],
             "temporal bounds must be >= 1",
         ),
-        ([bad_values({**GOOD_DMA, "src": {"base": 0, "bounds": [8]}}), start("x")], "missing"),
+        ([bad_values({**GOOD_DMA, "src": {"symbol": "A", "bounds": [8]}}), start("x")], "missing"),
         (
-            [bad_values({**GOOD_DMA, "src": {"base": 0, "bounds": 8, "strides": [64]}}), start("x")],
+            [bad_values({**GOOD_DMA, "src": {"symbol": "A", "bounds": 8, "strides": [64]}}), start("x")],
             "must be a list",
         ),
         ([{**add("x"), "values": {"n": 16, "T": 4}}, start("x")], "parameters"),

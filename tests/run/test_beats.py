@@ -2,27 +2,21 @@
 synthetic run (helpers.synthetic at stall), then each invariant broken by one hand-made
 change to its lines."""
 
-import json
 import re
-from pathlib import Path
 
 import pytest
 
-from snax_forge.lower.tasks import TaskList
-from snax_forge.run import RunError, cluster_from, parse_line
+from snax_forge.run import RunError, parse_line
 from snax_forge.run.beats import agu_nest, beats
 from snax_forge.run.convert import convert
 
-from .helpers import files, synthetic, synthetic_regions
+from .helpers import synthetic, synthetic_regions
 
-TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"
 SOURCES = ["acc", "acc_a", "acc_b", "acc_out", "dma"]
 
 
 @pytest.fixture
-def run():
-    cluster = cluster_from(*files())
-    tasks = TaskList.from_dict(json.loads(TASKS.read_text()))
+def run(cluster, tasks):
     return cluster, tasks
 
 

@@ -14,14 +14,17 @@ replace any one of them (``register_memory_pass``):
     layout      shape and strides per container and      contiguous:
                 memory, base 0                           row-major, one
                                                          element per word
-    placement   base per container and memory            contiguous: per
-                memory, in the graph's container order,
-                from the memory's first byte, no gaps; a layout the DMA
-                moves (in L2 and L1) starts on a wide beat and keeps its
-                last beat to itself (a size that is not whole beats is
-                padded, D105), others start on a word
+    placement   L1 base per container                    contiguous: in
+                the graph's container order, from L1's first
+                byte, no gaps; a layout the DMA moves (in L2 and L1) starts
+                on a wide beat and keeps its last beat to itself (a size
+                that is not whole beats is padded, D105), others start on a
+                word
 
-**Pins.** ``--set memory.<container>.<memory>.base=N`` fixes a base; the
+An L2 layout keeps base 0: the program's link places its array (data.h's,
+named after the container), not the plan (D86).
+
+**Pins.** ``--set memory.<container>.l1.base=N`` fixes an L1 base; the
 placement puts everything else around the pinned layouts, never over them.
 ``--set memory.passes.<pass>=<name>`` picks another registered pass. Both
 are ``changes`` of the ``MemorySpec``, kept in the working copy
@@ -46,7 +49,6 @@ from __future__ import annotations
 
 import difflib
 import itertools
-import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
@@ -56,13 +58,13 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.common import plain, to_json
+from snax_forge.common import JsonFile, plain
 from snax_forge.dfg import Graph, Node
-from snax_forge.dfg.subset import parse_dim
+from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.layout import Layout, moved_bytes, round_up
 
 from .platform import Platform
-from .problems import DesignError, Problem
+from .problems import DesignError, Problem, read_json
 
 PASS_KINDS = ("residency", "layout", "placement")
 DEFAULT_PASSES = {"residency": "default", "layout": "contiguous", "placement": "contiguous"}
@@ -90,7 +92,7 @@ class MemorySpec:
                 out[(parts[0], parts[1])] = v
         return out
 
-    def with_changes(self, sets: Sequence[tuple[str, Any]] = ()) -> MemorySpec:
+    def with_changes(self, sets: Sequence[tuple[str, Any]]) -> MemorySpec:
         """The spec with ``sets`` applied; the shape of each path is checked here,
         what it names (containers, memories, passes) by the memory.pin check."""
         problems = []
@@ -147,11 +149,7 @@ class MemorySpec:
 
     @classmethod
     def load(cls, path: str | Path) -> MemorySpec:
-        try:
-            d = json.loads(Path(path).read_text())
-        except (OSError, json.JSONDecodeError) as e:
-            raise DesignError([Problem("memory.pin", str(path), str(e))]) from None
-        return cls.from_dict(d)
+        return cls.from_dict(read_json(path, "memory.pin"))
 
 
 # =============================================================================
@@ -180,7 +178,7 @@ class MemoryContext:
 
     @property
     def symbols(self) -> dict[str, int]:
-        return {k: v for k, v in self.graph.symbols.items() if v is not None}
+        return self.graph.bound_symbols
 
     @property
     def containers(self) -> list[str]:
@@ -209,7 +207,7 @@ class MemoryContext:
             l2 = self.platform.l2
             return l2.base_addr, l2.base_addr + l2.size_bytes
         l1 = self.platform.l1
-        return l1.base_addr, l1.base_addr + l1.n_banks * l1.rows * (l1.width_bits // 8)
+        return l1.base_addr, l1.base_addr + l1.size_bytes
 
     @cached_property
     def accesses(self) -> list[Access]:
@@ -242,10 +240,7 @@ def _stream(subset: list[Any], outer: tuple[Node, ...], symbols: dict[str, int])
     for m in outer:
         if m.kind != "map":
             continue
-        b, e, s = parse_dim(m.attrs["range"], m.id)
-        loops.append(
-            (m.attrs["var"], range(expr.evaluate(b, symbols), expr.evaluate(e, symbols), s))
-        )
+        loops.append((m.attrs["var"], map_range(m.attrs["range"], symbols, m.id)))
     beats = []
     for values in itertools.product(*(r for _, r in loops)):
         env = {**symbols, **{v: x for (v, _), x in zip(loops, values, strict=True)}}
@@ -291,7 +286,7 @@ def register_memory_pass(kind: str, name: str, fn: MemoryPass) -> None:
 def default_residency(ctx: MemoryContext) -> dict[str, list[str]]:
     out = {}
     for name, c in ctx.graph.containers.items():
-        out[name] = ["l1"] if c.transient or ctx.platform.l2 is None else ["l2", "l1"]
+        out[name] = ["l1"] if c.transient else ctx.memories
     return out
 
 
@@ -304,46 +299,39 @@ def contiguous_layout(
     }
 
 
-def _extent(lay: Layout, word: int) -> tuple[int, int]:
-    """Bytes ``[lo, hi)`` a layout covers."""
-    lo, hi = lay.span()
-    return lo, hi + word
-
-
 def contiguous_placement(
     ctx: MemoryContext,
     layouts: dict[str, dict[str, Layout]],
     pins: dict[tuple[str, str], int],
 ) -> dict[str, dict[str, int]]:
     bases: dict[str, dict[str, int]] = {c: {} for c in layouts}
-    for mem in ctx.memories:
-        word = ctx.word_bytes(mem)
-        taken: list[tuple[int, int]] = []
-        for (c, m), b in pins.items():
-            if m == mem and c in layouts and mem in layouts[c]:
-                lo, hi = _extent(replace(layouts[c][mem], base=b), word)
-                taken.append((lo, hi))
-                bases[c][mem] = b
-        cursor = ctx.span(mem)[0]
-        for c in ctx.containers:
-            if mem not in layouts.get(c, {}) or (c, mem) in pins:
-                continue
-            lay = layouts[c][mem]
-            moved = "l1" in layouts[c] and "l2" in layouts[c]
-            a = ctx.beat_bytes if moved else word
-            lo0, hi0 = _extent(lay, word)  # with base 0
-            if moved:  # the DMA moves whole beats: keep the padding free (D105)
-                hi0 = lo0 + moved_bytes(lay, word, a)
-            base = round_up(cursor - lo0, a)
-            clash = True
-            while clash:
-                clash = False
-                for tlo, thi in sorted(taken):
-                    if base + lo0 < thi and tlo < base + hi0:
-                        base, clash = round_up(thi - lo0, a), True
-            bases[c][mem] = base
-            taken.append((base + lo0, base + hi0))
-            cursor = base + hi0
+    word = ctx.word_bytes("l1")
+    taken: list[tuple[int, int]] = []
+    for (c, m), b in pins.items():
+        if m == "l1" and c in layouts and "l1" in layouts[c]:
+            lo, hi = replace(layouts[c]["l1"], base=b).extent(word)
+            taken.append((lo, hi))
+            bases[c]["l1"] = b
+    cursor = ctx.span("l1")[0]
+    for c in ctx.containers:
+        if "l1" not in layouts.get(c, {}) or (c, "l1") in pins:
+            continue
+        lay = layouts[c]["l1"]
+        moved = "l2" in layouts[c]
+        a = ctx.beat_bytes if moved else word
+        lo0, hi0 = lay.extent(word)  # with base 0
+        if moved:  # the DMA moves whole beats: keep the padding free (D105)
+            hi0 = lo0 + moved_bytes(lay, word, a)
+        base = round_up(cursor - lo0, a)
+        clash = True
+        while clash:
+            clash = False
+            for tlo, thi in sorted(taken):
+                if base + lo0 < thi and tlo < base + hi0:
+                    base, clash = round_up(thi - lo0, a), True
+        bases[c]["l1"] = base
+        taken.append((base + lo0, base + hi0))
+        cursor = base + hi0
     return bases
 
 
@@ -358,7 +346,7 @@ register_memory_pass("placement", "contiguous", contiguous_placement)
 
 
 @dataclass(frozen=True)
-class MemoryPlan:
+class MemoryPlan(JsonFile):
     """The passes run, the pins, and the layouts they gave: container -> memory -> Layout."""
 
     passes: dict[str, str]
@@ -396,12 +384,6 @@ class MemoryPlan:
             raise DesignError(problems)
         return cls(spec.passes, spec.changes, out)
 
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json())
-
 
 def plan(ctx: MemoryContext, spec: MemorySpec) -> MemoryPlan:
     """Run the spec's passes; the plan is judged by the memory checks, not here."""
@@ -411,7 +393,7 @@ def plan(ctx: MemoryContext, spec: MemorySpec) -> MemoryPlan:
     bases = MEMORY_PASSES["placement"][spec.passes["placement"]](ctx, shapes, pins)
     layouts = {
         c: {
-            m: replace(shapes[c][m], base=bases[c][m])
+            m: replace(shapes[c][m], base=bases[c][m]) if m == "l1" else shapes[c][m]
             for m in MEMORIES
             if m in shapes[c]
         }
@@ -449,6 +431,14 @@ def pin_problems(ctx: MemoryContext, spec: MemorySpec) -> list[Problem]:
                 Problem(
                     "memory.pin", where,
                     f"{c} does not live in {m!r} (it lives in {residency.get(c, [])})",
+                )
+            )  # fmt: skip
+        elif m != "l1":
+            out.append(
+                Problem(
+                    "memory.pin", where,
+                    f"the program's link places {c}'s {m} array, not the plan (D86); "
+                    "pin its L1 base",
                 )
             )  # fmt: skip
     return out

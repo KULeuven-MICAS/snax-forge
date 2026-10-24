@@ -7,9 +7,7 @@ import pytest
 
 from snax_forge.brm import Brm, BrmError, resolve_nest, task_nest
 
-from .helpers import affine_adder, affine_reducer, vector_nest
-
-IMPL = "chisel_tiled_spatial"
+from .helpers import IMPL, affine_adder, affine_reducer, vector_nest
 
 
 def _adder(d=None):
@@ -147,7 +145,7 @@ def test_nests_are_written_in_full():
 def test_task_nest_of_the_adder():
     inst = _adder().resolve(IMPL, {"W": 4})
     nest = task_nest(inst, "out", {"n": 16})
-    assert (nest.n_beats, nest.n_lanes, nest.shape) == (16, 4, (64,))
+    assert (nest.n_beats, nest.shape) == (16, (64,))
     idx = nest.indices()[..., 0]
     assert np.array_equal(idx, np.arange(64).reshape(16, 4))
     # the ports agree on element positions (D70): the same index on a, b and out

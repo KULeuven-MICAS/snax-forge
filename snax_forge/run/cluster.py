@@ -7,8 +7,7 @@ point's one accelerated instance, ``acc``) on the core whose ``snax_acc_cfg`` ho
 platform's slot; its movers, readers first as the streamer orders them, each named by its
 port as the design point names its streamers (``acc_a``, ``acc_out``), with its lanes (the
 crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial bounds and temporal loops (its CSRs); its CSRs (the streamer's, then the
-shell's fields, start, busy and counter, from 0x3C0, as snax_cluster lays them out and
-snax-gvsoc's ``snax_streamer.py`` counts them); the cores (``core<i>``) and the DMA's; the
+shell's fields, start, busy and counter, from 0x3C0: the generator's ``csr_layout``); the cores (``core<i>``) and the DMA's; the
 L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
 (``bank_row``: bank = (a / w) mod B, row = a / (w B) for the offset a, w the bank's bytes, B
 the banks); the DMA's beat (the cluster file's ``dma_data_width``). Nothing is inferred from
@@ -21,7 +20,7 @@ expected is a ``RunError`` (``cluster.<rule>``).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -32,7 +31,6 @@ from snax_forge.design.problems import DesignError
 
 from .events import RunError
 
-SNAX_CSR_FIRST = 0x3C0
 DMA = "dma"
 
 
@@ -188,29 +186,39 @@ def _get(d: Any, path: str, what: str) -> Any:
 
 def csrs_of(streamer: dict[str, Any], fields: list[str]) -> Csrs:
     """The CSR numbers of a streamer template and a shell's fields (module doc)."""
-    rw = 0
-    for group in ("data_reader_params", "data_writer_params"):
-        params = streamer.get(group, {})
-        for i in range(len(params.get("num_channel", []))):
-            rw += 2 + len(params["spatial_bounds"][i]) + 2 * params["temporal_dim"][i]
-    s_start = SNAX_CSR_FIRST + rw
-    first = s_start + 3
-    start = first + len(fields)
-    return Csrs(SNAX_CSR_FIRST, s_start, s_start + 1, s_start + 2,
-                {f: first + i for i, f in enumerate(fields)}, start, start + 1, start + 2)  # fmt: skip
+    from snax_forge.gen import GenError  # here: gen's data.h imports the flow, which imports run
+    from snax_forge.gen.gvsoc import csr_layout
+
+    try:
+        c = csr_layout(streamer, fields)
+    except GenError as e:
+        raise RunError("cluster.csrs", str(e)) from None
+    s_start = c.streamer_last - 2  # the streamer's start, busy and counter end its range
+    return Csrs(c.streamer_first, s_start, s_start + 1, s_start + 2, dict(c.fields), c.start,
+                c.busy, c.counter)  # fmt: skip
+
+
+def _cores(cluster: dict[str, Any]) -> list[dict[str, Any]]:
+    """The cluster file's cores, in hive and core order."""
+    try:
+        return [core for _, core in hjson_cores(cluster)]
+    except DesignError as e:
+        raise RunError("cluster.cores", f"the cluster file's cores do not read: {e}") from None
+
+
+def _slots(cores: list[dict[str, Any]], slot: str) -> list[tuple[int, dict[str, Any]]]:
+    """Every accelerator slot named ``slot``, with the index of its core."""
+    return [(i, a) for i, c in enumerate(cores) for a in c.get("snax_acc_cfg", [])
+            if a.get("snax_acc_name") == slot]  # fmt: skip
 
 
 def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[str, Any],
                  point: dict[str, Any]) -> Cluster:  # fmt: skip
     """The description from the three files' contents and the design point's (module doc)."""
     slot = _get(point, "platform.accelerator_slot", "the design point")
-    try:
-        flat = [core for _, core in hjson_cores(cluster)]
-    except DesignError as e:
-        raise RunError("cluster.cores", f"the cluster file's cores do not read: {e}") from None
+    flat = _cores(cluster)
     dma = [i for i, c in enumerate(flat) if c.get("xdma")]
-    owner = [i for i, c in enumerate(flat)
-             if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
+    owner = sorted({i for i, _ in _slots(flat, slot)})
     if len(dma) != 1 or len(owner) != 1:
         raise RunError("cluster.cores", f"xdma on cores {dma}, the slot {slot} on cores {owner}; "
                        "a flow run has one of each")  # fmt: skip
@@ -263,11 +271,9 @@ def load_cluster(cluster_hjson: str | Path, design_point: str | Path) -> Cluster
     cluster = hjson.loads(cp.read_text())
     point = json.loads(pp.read_text())
     slot_name = _get(point, "platform.accelerator_slot", str(pp))
-    slots = [a for _, core in hjson_cores(cluster) for a in core.get("snax_acc_cfg", [])
-             if a.get("snax_acc_name") == slot_name]  # fmt: skip
+    slots = [a for _, a in _slots(_cores(cluster), slot_name)]
     if len(slots) != 1:
         raise RunError("cluster.slot", f"{cp}: {len(slots)} slots named {slot_name!r}")
     streamer = _ref(slots[0], "snax_streamer_cfg", cp.parent)
     unit = _ref(slots[0], "snax_datapath_cfg", cp.parent)
-    c = cluster_from(cluster, streamer, unit, point)
-    return Cluster.from_dict({**c.to_dict(), "meta": {"cluster": cp.name}})
+    return replace(cluster_from(cluster, streamer, unit, point), meta={"cluster": cp.name})

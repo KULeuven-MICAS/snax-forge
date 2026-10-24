@@ -1,4 +1,4 @@
-"""SDFG ingest (pixi ``forge``): each kernel's raw and simplified SDFG in out/sdfg/.
+"""SDFG ingest (pixi ``sdfg``): each kernel's raw and simplified SDFG in out/sdfg/.
 
     python -m snax_forge.sdfg [KERNEL ...]   ingest the named kernels (all if none)
     python -m snax_forge.sdfg --list         list the kernels in kernels/
@@ -16,7 +16,7 @@ from .loader import kernel_paths, load
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(prog="snax-forge")
+    ap = argparse.ArgumentParser(prog="python -m snax_forge.sdfg")
     ap.add_argument("kernels", nargs="*", help="kernel names; empty = all")
     ap.add_argument("--list", action="store_true", help="list available kernel names")
     args = ap.parse_args()

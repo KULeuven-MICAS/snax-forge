@@ -14,37 +14,19 @@ taken.
 
 from __future__ import annotations
 
-import argparse
 import sys
 from collections.abc import Sequence
 
-from .server import DEFAULT_PORT, make_dfg_server
+from .. import server as viewer
+from . import server
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    p = argparse.ArgumentParser(
-        prog="python -m snax_forge.viz.dfg", description=__doc__.split("\n\n")[0]
-    )
-    p.add_argument("paths", nargs="+", metavar="FILE|DIR", help=".snaxdfg file or directory")
-    p.add_argument(
-        "--port", type=int, default=DEFAULT_PORT, help=f"port on 127.0.0.1 (default {DEFAULT_PORT})"
-    )
-    p.add_argument("--verbose", action="store_true", help="log every request")
-    args = p.parse_args(argv)
-    try:
-        srv = make_dfg_server(args.paths, args.port, args.verbose)
-    except OSError as e:
-        print(f"error: {e}", file=sys.stderr)
-        return 2
-    names = ", ".join(e["name"] for e in srv.graphs.summaries())
-    print(f"serving {names} at {srv.url} (Ctrl-C to stop)")
-    try:
-        srv.serve_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        srv.server_close()
-    return 0
+    return viewer.main(
+        argv, "python -m snax_forge.viz.dfg", __doc__,
+        ("paths", "FILE|DIR", ".snaxdfg file or directory"),
+        server.DEFAULT_PORT, server.make_dfg_server, (OSError,),
+    )  # fmt: skip
 
 
 if __name__ == "__main__":

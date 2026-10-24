@@ -112,13 +112,13 @@ def test_pins_place_b_and_c_and_the_point_loads(tmp_path, capsys):
     pins = ["--set", "memory.B.l1.base=576", "--set", "memory.C.l1.base=1152"]
     assert run(BOUND, "--platform", SMALL16, "--out", out, *pins) == 0
     text = capsys.readouterr().out
-    assert "B            l2 [512, 1024)" in text and "l1 [576, 1088) bank 8 pinned" in text
+    assert "B            l2 512 B" in text and "l1 [576, 1088) bank 8 pinned" in text
     point = DesignPoint.load(out / "design_point.json")
     bases = {
         c: {m: lay.base for m, lay in mems.items()} for c, mems in point.memory.layouts.items()
     }
-    assert bases == {"A": {"l2": 0, "l1": 0}, "B": {"l2": 512, "l1": 576},
-                     "C": {"l2": 1024, "l1": 1152}}  # fmt: skip
+    assert bases == {"A": {"l2": 0, "l1": 0}, "B": {"l2": 0, "l1": 576},
+                     "C": {"l2": 0, "l1": 1152}}  # fmt: skip
     assert json.loads((out / "memory.json").read_text()) == point.memory.to_dict()
 
 

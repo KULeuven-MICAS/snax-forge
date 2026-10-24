@@ -58,12 +58,12 @@ of its own.
 
 from __future__ import annotations
 
-import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from snax_forge.common import LoadedSet, unique_names
 from snax_forge.design import DesignPoint
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
@@ -75,8 +75,9 @@ from .memory import MemoryLayout, MemoryViewError, RowMarks
 from .movement import MovementUnavailable
 from .schedule import ScheduleUnavailable
 
+OVERLAY_KINDS = ix.ACCESS_KINDS  # what the memory tab's cycle overlay draws: the accesses
+
 MAX_ROWS = memory.MAX_ROWS  # memory rows per request (static/memory.js)
-OVERLAY_KINDS = ("grant", "stall", "dma", "burst")  # what the memory tab's cycle overlay draws
 
 
 # =============================================================================
@@ -153,18 +154,13 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
 def run_names(dirs: Sequence[str | Path]) -> list[str]:
     """Flow folder names (a ``run/`` directory takes its folder's), made unique with -2, -3,
     ... in the order given."""
-    names: list[str] = []
-    for d in dirs:
-        p = Path(d).resolve()
-        base = (
+
+    def base(p: Path) -> str:
+        return (
             p.parent.name if p.name == "run" and (p / "run.json").is_file() else p.name
         ) or "run"
-        name, i = base, 1
-        while name in names:
-            i += 1
-            name = f"{base}-{i}"
-        names.append(name)
-    return names
+
+    return unique_names(base(Path(d).resolve()) for d in dirs)
 
 
 # =============================================================================
@@ -235,46 +231,46 @@ def memory_cycle(rv: RunView, t: int) -> dict[str, Any]:
 # =============================================================================
 
 
-def _unavailable(rv: RunView, e: MovementUnavailable) -> dict[str, Any]:
-    return {"name": rv.name, "available": False, "reason": str(e),
-            "filtered": rv.index.filtered}  # fmt: skip
+def _answer(rv: RunView, make: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """``make()``'s answer marked ``available``, or ``available`` false with the reason the
+    run's trace cannot give it (a movement answer also says which sources it has)."""
+    try:
+        return {"name": rv.name, "available": True, **make()}
+    except MovementUnavailable as e:
+        return {"name": rv.name, "available": False, "reason": str(e),
+                "filtered": rv.index.filtered}  # fmt: skip
+    except ScheduleUnavailable as e:
+        return {"name": rv.name, "available": False, "reason": str(e)}
 
 
 def movement_view(rv: RunView) -> dict[str, Any]:
-    """/api/run/<name>/movement: residency per region and memory, patterns per port and
+    """Residency per region and memory, patterns per port and
     task, and the conflict counts (``available`` false with the reason below ``stall``), or
     ``available`` false with the reason below ``beat``."""
     idx = rv.index
-    try:
+
+    def make() -> dict[str, Any]:
         residency, patterns = movement.residency(idx), movement.patterns(idx)
-    except MovementUnavailable as e:
-        return _unavailable(rv, e)
-    try:
-        c = movement.conflicts(idx)
-        counts = {"available": True, **{k: c[k] for k in ("count", "banks", "ports")}}
-    except MovementUnavailable as e:
-        counts = {"available": False, "reason": str(e)}
-    return {"name": rv.name, "available": True, "level": idx.level, "filtered": idx.filtered,
-            "residency": residency, "patterns": patterns, "conflicts": counts}  # fmt: skip
+        try:
+            c = movement.conflicts(idx)
+            counts = {"available": True, **{k: c[k] for k in ("count", "banks", "ports")}}
+        except MovementUnavailable as e:
+            counts = {"available": False, "reason": str(e)}
+        return {"level": idx.level, "filtered": idx.filtered, "residency": residency,
+                "patterns": patterns, "conflicts": counts}  # fmt: skip
+
+    return _answer(rv, make)
 
 
 def journey_view(rv: RunView, region: str, index: Sequence[int] | int) -> dict[str, Any]:
     """/api/run/<name>/journey?region=A&index=5: every access to one element and the
     firings it fed or came from (movement.py); a ValueError for an element the run lacks."""
-    try:
-        return {"name": rv.name, "available": True,
-                **movement.journey(rv.index, region, index)}  # fmt: skip
-    except MovementUnavailable as e:
-        return _unavailable(rv, e)
+    return _answer(rv, lambda: movement.journey(rv.index, region, index))
 
 
 def conflicts_view(rv: RunView, start: int = 0, stop: int | None = None) -> dict[str, Any]:
     """/api/run/<name>/conflicts?from=A&to=B: the L1 stalls placed on the layout."""
-    try:
-        return {"name": rv.name, "available": True,
-                **movement.conflicts(rv.index, start, stop)}  # fmt: skip
-    except MovementUnavailable as e:
-        return _unavailable(rv, e)
+    return _answer(rv, lambda: movement.conflicts(rv.index, start, stop))
 
 
 # =============================================================================
@@ -287,20 +283,13 @@ def schedule_view(rv: RunView, open: Sequence[int] = (), cycle: int | None = Non
     """/api/run/<name>/schedule?open=A,B&cycle=C: the lanes and the segments, the folds whose
     first cycle is in ``open`` or that hold ``cycle`` opened; ``available`` false with the
     reason below ``task``."""
-    try:
-        return {"name": rv.name, "available": True,
-                **schedule.schedule(rv.index, open, cycle)}  # fmt: skip
-    except ScheduleUnavailable as e:
-        return {"name": rv.name, "available": False, "reason": str(e)}
+    return _answer(rv, lambda: schedule.schedule(rv.index, open, cycle))
 
 
 def schedule_detail(rv: RunView, start: int, stop: int) -> dict[str, Any]:
     """/api/run/<name>/schedule/detail?from=A&to=B: the beat and stall lines of ``[A, B)``
     per lane; ``available`` false with the reason below ``beat``."""
-    try:
-        return {"name": rv.name, "available": True, **schedule.detail(rv.index, start, stop)}
-    except ScheduleUnavailable as e:
-        return {"name": rv.name, "available": False, "reason": str(e)}
+    return _answer(rv, lambda: schedule.detail(rv.index, start, stop))
 
 
 def cluster_view(rv: RunView, t: int) -> dict[str, Any]:
@@ -352,39 +341,22 @@ def run_detail(rv: RunView) -> dict[str, Any]:
 # =============================================================================
 
 
-class RunSet:
-    """The flow runs given on the command line, loaded once.
-
-    ``reload`` reads every run again and swaps the whole set at once, so a
-    request never sees half of a reload. If a run cannot be read, the old set
-    stays and the error is raised to the caller.
-    """
+class RunSet(LoadedSet):
+    """The flow runs given on the command line, loaded once (``LoadedSet``)."""
 
     def __init__(self, dirs: Sequence[str | Path]) -> None:
         if not dirs:
             raise ValueError("give at least one flow folder")
         self.dirs = [Path(d) for d in dirs]
-        self._lock = threading.Lock()
-        self._runs: dict[str, RunView] = {}
-        self.reload()
+        super().__init__()
 
-    def reload(self) -> list[str]:
-        """Read every run again; returns the run names."""
+    def load(self) -> dict[str, RunView]:
         names = run_names(self.dirs)
-        fresh = {n: load_run(d, n) for n, d in zip(names, self.dirs, strict=True)}
-        with self._lock:
-            self._runs = fresh
-        return names
-
-    def get(self, name: str) -> RunView | None:
-        with self._lock:
-            return self._runs.get(name)
+        return {n: load_run(d, n) for n, d in zip(names, self.dirs, strict=True)}
 
     def summaries(self) -> list[dict[str, Any]]:
         """/api/runs, in command-line order."""
-        with self._lock:
-            runs = list(self._runs.values())
-        return [run_summary(r) for r in runs]
+        return [run_summary(r) for r in self.values()]
 
 
 __all__ = [

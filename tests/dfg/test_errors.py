@@ -72,7 +72,7 @@ CASES = [
     ("vecadd_split", lambda d: d["body"][0]["body"][0]["attrs"].update(var="i_t"), "variable"),
     # reduce
     ("dot", _reduce(op="sub"), "reduce.op: 'sub' is not a registered op"),
-    ("dot", _reduce(identity=None), "reduce.identity: null .* not accepted yet \\(FE1\\)"),
+    ("dot", _reduce(identity=None), "reduce.identity: null .* not accepted yet$"),
     ("dot", _reduce(identity="0"), "reduce.identity: must be an int, got '0'"),
     (
         "dot",

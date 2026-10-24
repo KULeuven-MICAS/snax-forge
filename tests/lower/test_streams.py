@@ -13,12 +13,10 @@ from snax_forge.design.platform import L1Config
 from snax_forge.design.streamers import Streamer
 from snax_forge.lower import Layout, LayoutError, StreamError, streamer_values
 from snax_forge.lower.derive import addresses
-from tests.brm.helpers import affine_adder, vector_nest
+from tests.brm.helpers import IMPL, affine_adder, vector_nest
 from tests.design.helpers import SNAX_FORGE
 
 from .helpers import VECADD_TASKS, vecadd_point
-
-IMPL = "chisel_tiled_spatial"
 
 
 def _streamer(name, write, spatial_bounds, dims):

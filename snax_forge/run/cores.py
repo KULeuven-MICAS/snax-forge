@@ -3,6 +3,7 @@ the viewer's schedule draws.
 
     core_spans(events, width) -> [(first, end, class)]
     start_mode(events)        -> the core's state at 0: run or sleep
+    merge_spans(spans)        -> [lo, hi) spans, sorted, the ones that touch or overlap merged
 
 ``events`` are one core's ``state``, ``poll`` and ``barrier`` events in C§7's form, shifted to
 the window (t = 0 its first cycle) and not cut to it: a ``state`` at ``t`` with its ``mode``
@@ -64,4 +65,15 @@ def core_counts(spans: Iterable[tuple[int, int, str]]) -> dict[str, int]:
     out = dict.fromkeys(CORE_CLASSES, 0)
     for a, b, cls in spans:
         out[cls] += b - a
+    return out
+
+
+def merge_spans(spans: Iterable[tuple[int, int]]) -> list[tuple[int, int]]:
+    """``[lo, hi)`` spans in order, the ones that touch or overlap merged into one."""
+    out: list[tuple[int, int]] = []
+    for lo, hi in sorted(spans):
+        if out and lo <= out[-1][1]:
+            out[-1] = (out[-1][0], max(out[-1][1], hi))
+        else:
+            out.append((lo, hi))
     return out

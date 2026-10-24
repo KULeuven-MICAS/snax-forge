@@ -56,14 +56,15 @@ from __future__ import annotations
 
 import json
 import re
-import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.dfg import DfgError, Graph, Memlet, Node, parse_dim
+from snax_forge.common import LoadedSet, unique_names
+from snax_forge.dfg import DfgError, Graph, Memlet, Node
+from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
 
 # =============================================================================
@@ -93,14 +94,7 @@ def expand(paths: Sequence[str | Path]) -> list[Path]:
 
 def entry_names(files: Sequence[Path]) -> list[str]:
     """File stems, made unique with -2, -3, ... in the order given."""
-    names: list[str] = []
-    for f in files:
-        name, i = f.stem, 1
-        while name in names:
-            i += 1
-            name = f"{f.stem}-{i}"
-        names.append(name)
-    return names
+    return unique_names(f.stem for f in files)
 
 
 @dataclass
@@ -120,29 +114,19 @@ def load_entry(name: str, path: Path) -> Entry:
         return Entry(name, path, None, msg)
 
 
-class GraphSet:
-    """The files the viewer was given, read once and again on ``reload``."""
+class GraphSet(LoadedSet):
+    """The files the viewer was given, read once and again on ``reload`` (``LoadedSet``)."""
 
     def __init__(self, paths: Sequence[str | Path]):
         self.paths = [Path(p) for p in paths]
-        self._lock = threading.Lock()
-        self.entries: dict[str, Entry] = {}
-        self.reload()
+        super().__init__()
 
-    def reload(self) -> list[str]:
+    def load(self) -> dict[str, Entry]:
         files = expand(self.paths)
-        entries = {n: load_entry(n, f) for n, f in zip(entry_names(files), files, strict=True)}
-        with self._lock:
-            self.entries = entries
-        return list(entries)
-
-    def get(self, name: str) -> Entry | None:
-        with self._lock:
-            return self.entries.get(name)
+        return {n: load_entry(n, f) for n, f in zip(entry_names(files), files, strict=True)}
 
     def summaries(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [entry_summary(e) for e in self.entries.values()]
+        return [entry_summary(e) for e in self.values()]
 
 
 def entry_summary(e: Entry) -> dict[str, Any]:
@@ -176,7 +160,7 @@ def graph_view(e: Entry) -> dict[str, Any]:
 
 def _container(g: Graph, name: str) -> dict[str, Any]:
     c = g.containers[name]
-    env = {k: v for k, v in g.symbols.items() if v is not None}
+    env = g.bound_symbols
     try:
         sizes = [expr.evaluate(s, env) for s in c.shape]
     except ExprError:
@@ -197,21 +181,18 @@ def memlet_text(m: Memlet) -> str:
 
 
 def _iterations(g: Graph, rng: str) -> int | None:
-    env = {k: v for k, v in g.symbols.items() if v is not None}
     try:
-        begin, end, step = (expr.evaluate(p, env) for p in parse_dim(rng, "range"))
+        return len(map_range(rng, g.bound_symbols, "range"))
     except (ExprError, DfgError):
         return None
-    return max(0, -(-(end - begin) // step))
 
 
-def _node(g: Graph, n: Node, top: str) -> dict[str, Any]:
-    """A node as a panel shows it; ``top`` is the id of its top-level node."""
+def _node(g: Graph, n: Node) -> dict[str, Any]:
+    """A node as a panel shows it."""
     a = n.attrs
     d: dict[str, Any] = {
         "id": n.id,
         "kind": n.kind,
-        "top": top,
         "attrs": dict(a),
         "inputs": [_conn(c, m) for c, m in n.inputs.items()],
         "outputs": [_conn(c, m) for c, m in n.outputs.items()],
@@ -234,7 +215,7 @@ def _node(g: Graph, n: Node, top: str) -> dict[str, Any]:
         d["title"] = n.kind
         d["lines"] = [f"{k} = {v}" for k, v in a.items() if "." not in k]
     if n.body is not None:
-        d["body"] = [_node(g, c, top) for c in n.body]
+        d["body"] = [_node(g, c) for c in n.body]
     return d
 
 
@@ -250,7 +231,7 @@ def _replaced_text(r: dict[str, Any] | None) -> str | None:
 
 
 def _conn(c: str, m: Memlet) -> dict[str, Any]:
-    return {"connector": c, "data": m.data, "subset": list(m.subset), "text": memlet_text(m)}
+    return {"connector": c, "data": m.data, "text": memlet_text(m)}
 
 
 def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
@@ -310,29 +291,27 @@ def _layout(g: Graph) -> dict[str, Any]:
     before = reads[0] + [c for c in g.containers if c not in used] if tops else list(g.containers)
     above = box_row(before, {}, 0)
     for k, top in enumerate(tops):
-        rows.append({"kind": "node", "node": _node(g, top, top.id)})
+        rows.append({"kind": "node", "node": _node(g, top)})
         writers: dict[str, list[str]] = {}  # container -> writer connectors inside this node
+        wrote: dict[str, list[tuple[Node, str, Memlet]]] = {}  # container -> its writes here
         for side, n, c, m in _uses(top):
             port, text = f"{n.id}.{c}", memlet_text(m)
             if side == "write":
                 writers.setdefault(m.data, []).append(port)
+                wrote.setdefault(m.data, []).append((n, c, m))
             elif m.data in writers:  # written earlier inside this node: straight from the writer
                 edges.extend(_edge(w, port, m.data, text, "read") for w in writers[m.data])
             else:
                 edges.append(_edge(above[m.data], port, m.data, text, "read", top.id))
         nxt = reads[k + 1] if k + 1 < len(tops) else []
         names = nxt + [c for c in writes[k] if c not in nxt]
-        fresh = {c: list(dict.fromkeys(n.id for n, _, _ in _writes(top, c))) for c in writes[k]}
+        fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[k]}
         below = box_row(names, fresh, k + 1)
         for c in writes[k]:
-            for n, cn, m in _writes(top, c):
+            for n, cn, m in wrote[c]:
                 edges.append(_edge(f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", top.id))
         above = below
     return {"rows": rows, "boxes": boxes, "edges": edges}
-
-
-def _writes(top: Node, c: str) -> list[tuple[Node, str, Memlet]]:
-    return [(n, cn, m) for side, n, cn, m in _uses(top) if side == "write" and m.data == c]
 
 
 def _edge(

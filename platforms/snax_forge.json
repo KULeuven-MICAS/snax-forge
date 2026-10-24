@@ -2,7 +2,7 @@
  "name": "snax_forge",
  "base": null,
  "changes": {},
- "hjson": "platforms/snax_alu_cluster.hjson",
+ "hjson": "platforms/snax_forge_cluster.hjson",
  "accelerator_slot": "snax_forge",
  "l1": {
   "n_banks": 32,

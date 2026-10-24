@@ -52,40 +52,38 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from snax_forge.design import DesignError, parse_value
+from snax_forge.design import DesignError
+from snax_forge.design.__main__ import setting as design_setting
 from snax_forge.dfg import DfgError
 from snax_forge.lower import LowerError
 from snax_forge.run import RunError
 from snax_forge.run.sources import parse_trace
 from snax_forge.sandbox import SandboxError
+from snax_forge.sandbox.__main__ import setting as sandbox_setting
 
 from .run import FlowError, run_bound, run_flow, summary
 
 BOUND = ".snaxdfg"
 
 
-def _setting(text: str) -> tuple[str, str, Any]:
-    path, sep, value = text.partition("=")
-    if not sep or not path:
-        raise argparse.ArgumentTypeError(f"{text!r} is not NAME=VALUE")
-    head, dot, rest = path.partition(".")
-    if dot and head in ("platform", "memory") and rest:
-        return head, rest, parse_value(value)
-    if dot:
+def setting(text: str) -> tuple[str, str, Any]:
+    """A dotted path as the design step reads it (platform. or memory.), else a recipe
+    param as the sandbox reads it."""
+    path = text.partition("=")[0]
+    if "." not in path:
+        return ("recipe", *sandbox_setting(text))
+    if path.partition(".")[0] not in ("platform", "memory"):
         raise argparse.ArgumentTypeError(
             f"{text!r}: a dotted path starts with platform. or memory."
         )
-    try:
-        return "recipe", path, int(value)
-    except ValueError:
-        return "recipe", path, value
+    return design_setting(text)
 
 
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.flow")
     ap.add_argument("recipe", type=Path, metavar="RECIPE|GRAPH.snaxdfg")
     ap.add_argument("--platform", type=Path, required=True)
-    ap.add_argument("--set", type=_setting, action="append", default=[], metavar="NAME=VALUE")
+    ap.add_argument("--set", type=setting, action="append", default=[], metavar="NAME=VALUE")
     ap.add_argument("--memory", type=Path, help="memory working copy to start from")
     ap.add_argument("--graph", type=Path, help="start from this .snaxdfg instead of the import")
     ap.add_argument("--kernel", help="with a bound graph: its kernel (default: the graph's name)")

@@ -3,8 +3,9 @@ and stall lines of an open range. Queries on the run's index (index.py) that rea
 the viewer only draws their answers.
 
     schedule(index, open, cycle)    -> lanes(index) and segments(index, open, cycle) together
-    lanes(index)                    -> {"lanes": [...]}
-    segments(index, open, cycle)    -> {"segments": [...], "boot": {...}}
+    lanes(index)                    -> {"level", "total_cycles", "lanes": [...]}
+    segments(index, open, cycle)    -> {"level", "total_cycles", "fold_min", "boot": {...},
+                                        "segments": [...]}
     detail(index, start, stop)      -> the beat and stall lines of [start, stop) per lane
 
 **Lanes**, top to bottom: one per core (``core<i>``), the DMA, one per mover as the streamer
@@ -39,12 +40,11 @@ from collections.abc import Iterable
 from typing import Any
 
 from snax_forge.run.cluster import DMA
-from snax_forge.run.cores import CORE_CLASSES
+from snax_forge.run.cores import CORE_CLASSES, merge_spans
 
 from .index import Event, RunIndex
 
 FOLD_MIN = 16  # the shortest quiet stretch that folds
-DETAIL_KINDS = ("grant", "stall", "dma", "burst", "fire", "push", "fifo")
 
 
 class ScheduleUnavailable(ValueError):
@@ -53,8 +53,7 @@ class ScheduleUnavailable(ValueError):
 
 def _need(index: RunIndex, level: str, what: str) -> None:
     if not index.on(level):
-        raise ScheduleUnavailable(f"{what} needs --trace {level}; this run was traced at "
-                                  f"{index.level}")  # fmt: skip
+        raise ScheduleUnavailable(f"{what} {index.needs(level)}")
 
 
 # =============================================================================
@@ -89,7 +88,7 @@ def lanes(index: RunIndex) -> dict[str, Any]:
         {"task": e["task"], "id": i, "from": e["t"],
          "to": index.copy_done[i]["t"] if i in index.copy_done else None, "dir": e["dir"],
          "bytes": e["size"] * e["reps"]}
-        for i, e in sorted(index.issue.items(), key=lambda x: x[1]["t"])]})  # fmt: skip
+        for i, e in index.copies()]})  # fmt: skip
     acc = index.cluster.accelerator
     for name, kind in [*((m.name, "mover") for m in acc.movers), (acc.name, "accelerator")]:
         tasks = sorted(index.tasks_of.get(name, []), key=lambda t: index.start[t]["t"])
@@ -104,23 +103,10 @@ def lanes(index: RunIndex) -> dict[str, Any]:
 
 def active(index: RunIndex) -> list[tuple[int, int]]:
     """The window's active cycles as merged ``[first, end)`` stretches (module doc)."""
-    spans = []
-    for task, s in index.start.items():
-        d = index.done.get(task)
-        spans.append((s["t"], (d["t"] if d is not None else index.total_cycles - 1) + 1))
-    for i, e in index.issue.items():
-        d = index.copy_done.get(i)
-        spans.append((e["t"], (d["t"] if d is not None else index.total_cycles - 1) + 1))
-    out: list[tuple[int, int]] = []
-    for a, b in sorted(spans):
-        a, b = max(a, 0), min(b, index.total_cycles)
-        if a >= b:
-            continue
-        if out and a <= out[-1][1]:
-            out[-1] = (out[-1][0], max(out[-1][1], b))
-        else:
-            out.append((a, b))
-    return out
+    spans = [index.span(s, index.done.get(task)) for task, s in index.start.items()]
+    spans += [index.span(e, index.copy_done.get(i)) for i, e in index.issue.items()]
+    clipped = ((max(a, 0), min(b + 1, index.total_cycles)) for a, b in spans)
+    return merge_spans((a, b) for a, b in clipped if a < b)
 
 
 def quiet(index: RunIndex) -> list[tuple[int, int]]:

@@ -34,7 +34,8 @@ component exists and has the task's type (the DMA when the platform has an
 L2, every streamer of the shell, every accelerated instance); the values
 have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
 ``temporal_strides``, ``spatial_strides``; a DMA's ``direction``, ``src`` and
-``dst``, each side ``base``, ``bounds`` and ``strides``; an accelerator's
+``dst``, its L1 side ``base``, ``bounds`` and ``strides``, its L2 side
+``symbol`` (a container in L2: its data.h array), ``bounds`` and ``strides``; an accelerator's
 runtime params, ``n`` and its named rates); a streamer's loops fit it (as
 many temporal strides as bounds, no more than its ``temporal_dims``, one
 spatial stride per spatial bound, every bound >= 1); a DMA's direction is
@@ -44,13 +45,11 @@ bound >= 1.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from snax_forge.common import check_keys, plain, to_json
+from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.design.platform import WAIT_MODES
 from snax_forge.design.streamers import instances, streamer_name
 
@@ -67,12 +66,9 @@ _OPTIONAL = {"configure": ("after", "wait_mode"), "sync": ("mode",)}
 
 def _need(d: Mapping[str, Any], keys: tuple[str, ...], what: str) -> None:
     try:
-        check_keys(d, ["op", *keys, *_OPTIONAL.get(what, ())], what)
+        check_keys(d, ["op", *keys, *_OPTIONAL.get(what, ())], what, keys)
     except ValueError as e:
         raise TaskListError(str(e)) from e
-    missing = [k for k in keys if k not in d]
-    if missing:
-        raise TaskListError(f"{what} {dict(d)}: missing {missing}")
 
 
 # =============================================================================
@@ -184,7 +180,7 @@ def step_from_dict(d: Mapping[str, Any]) -> Step:
 
 
 @dataclass
-class TaskList:
+class TaskList(JsonFile):
     """An ordered list of steps (module doc); checked when it is made."""
 
     name: str
@@ -265,13 +261,6 @@ class TaskList:
             raise TaskListError("task list needs a 'name'")
         return cls(str(d["name"]), [step_from_dict(s) for s in d.get("steps", [])])
 
-    @classmethod
-    def load(cls, path: str | Path) -> TaskList:
-        return cls.from_dict(json.loads(Path(path).read_text()))
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(to_json(self.to_dict()))
-
 
 # =============================================================================
 # Values against the design point
@@ -279,18 +268,13 @@ class TaskList:
 
 STREAMER = ("base", "temporal_bounds", "temporal_strides", "spatial_strides")
 DMA = ("direction", "src", "dst")
-DMA_SIDE = ("base", "bounds", "strides")
+DMA_SIDE = {"l1": ("base", "bounds", "strides"), "l2": ("symbol", "bounds", "strides")}
 DIRECTIONS = ("l2_to_l1", "l1_to_l2")
 
 
 def _exact(v: Any, keys: list[str] | tuple[str, ...], what: str) -> None:
     """``v`` is a mapping with exactly ``keys``."""
-    if not isinstance(v, Mapping):
-        raise TypeError(f"{what} must be an object, got {v!r}")
-    missing = [k for k in keys if k not in v]
-    unknown = sorted(set(v) - set(keys))
-    if missing or unknown:
-        raise ValueError(f"{what}: missing {missing}, unknown {unknown} (expected {list(keys)})")
+    check_keys(v, keys, what, keys)
 
 
 def _ints(v: Any, what: str) -> list[int]:
@@ -338,8 +322,9 @@ def _check(s: Configure, point: DesignPoint) -> None:
         _exact(v, DMA, "dma values")
         if v["direction"] not in DIRECTIONS:
             raise ValueError(f"direction must be one of {DIRECTIONS}, got {v['direction']!r}")
+        l2 = "src" if v["direction"] == "l2_to_l1" else "dst"
         for side in ("src", "dst"):
-            _exact(v[side], DMA_SIDE, side)
+            _exact(v[side], DMA_SIDE["l2" if side == l2 else "l1"], side)
             b, st = (
                 _ints(v[side]["bounds"], f"{side} bounds"),
                 _ints(v[side]["strides"], f"{side} strides"),
@@ -348,6 +333,9 @@ def _check(s: Configure, point: DesignPoint) -> None:
                 raise ValueError(f"{len(b)} bounds but {len(st)} strides")
             if any(x < 1 for x in b):
                 raise ValueError("bounds must be >= 1")
+        sym = v[l2]["symbol"]
+        if "l2" not in point.memory.layouts.get(sym, {}):
+            raise ValueError(f"{l2} symbol {sym!r} is no container in L2")
     else:
         if not isinstance(v, Mapping):
             raise TypeError(f"accel values must be an object, got {v!r}")

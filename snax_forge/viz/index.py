@@ -88,11 +88,12 @@ from snax_forge.lower.tasks import Configure, Start, TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, core_counts, core_spans
 from snax_forge.run.beats import class_runs, run_end
 from snax_forge.run.cluster import DMA
-from snax_forge.run.trace import LEVELS
+from snax_forge.run.trace import LEVELS, at_least
 
 Key = tuple[str, int]  # (mem, addr) of a word, or (container, flat) of an element
 Event = dict[str, Any]
 DMA_KINDS = ("dma", "burst")  # the DMA's accesses: an L1 beat and an AXI request
+ACCESS_KINDS = ("grant", "stall", "dma", "burst")  # the events that touch a memory word
 BEAT_KINDS = ("grant", "dma", "burst", "fire", "push", "class", "stall", "fifo")
 TASK_KINDS = ("start", "done", "csr", "poll", "barrier", "state", "func", "issue")
 
@@ -145,7 +146,21 @@ class RunIndex:
 
     def on(self, level: str) -> bool:
         """Traced at ``level`` or above."""
-        return LEVELS.index(self.level) >= LEVELS.index(level)
+        return at_least(self.level, level)
+
+    def span(self, start: Event, done: Event | None) -> tuple[int, int]:
+        """A task's or a copy's cycles ``[first, last]``: its start (or issue) to its done, or
+        to the window's last cycle, ``total_cycles - 1``, when the window holds no done (the
+        window is ``[0, total_cycles)``, C§7)."""
+        return start["t"], done["t"] if done is not None else self.total_cycles - 1
+
+    def copies(self) -> list[tuple[int, Event]]:
+        """The DMA copies, ``(id, issue)``, in issue order."""
+        return sorted(self.issue.items(), key=lambda x: x[1]["t"])
+
+    def needs(self, level: str) -> str:
+        """Why an answer that needs ``level`` is not given: the reason shown to the user."""
+        return f"needs --trace {level}; this run was traced at {self.level}"
 
     def word_of(self, addr: int) -> int:
         """The first byte of the bank word ``addr`` is in (L2 words are L1's, D13)."""
@@ -197,7 +212,7 @@ class RunIndex:
 
         for e in idx.events:
             k = e["k"]
-            if k in ("grant", "stall", "dma", "burst"):
+            if k in ACCESS_KINDS:
                 for flat in e["elems"]:
                     if e["region"] is not None:
                         idx.elem[(e["region"], flat)].append(e)
@@ -257,7 +272,7 @@ class RunIndex:
             k, src = e["k"], e["src"]
             if k in kinds:
                 events.add(e["t"])
-            if k in ("start", "done", "issue") or k == "func":
+            if k in ("start", "done", "issue", "func"):
                 bounds.add(e["t"])
             if k == "start" and src in owners:
                 self.tasks_of.setdefault(src, []).append(e["task"])
@@ -376,7 +391,7 @@ def marks_of(index: RunIndex) -> tuple[list[str], dict[str, str]]:
         if index.on(m.level):
             have.append(m.name)
         else:
-            lack[m.name] = f"needs --trace {m.level}; this run was traced at {index.level}"
+            lack[m.name] = index.needs(m.level)
     return have, lack
 
 
@@ -408,16 +423,26 @@ def _is_use(e: Event) -> bool:
     return e["k"] == "grant" and e["op"] == "r"
 
 
+def arrival_of(events: list[Event]) -> int | None:
+    """The first write among a word's or an element's events, or None (there from the start)."""
+    return next((e["t"] for e in events if _is_write(e)), None)
+
+
+def uses_of(events: list[Event]) -> list[int]:
+    """The reads among them by anything but the DMA after the arrival (``arrival_of``)."""
+    a = arrival_of(events)
+    return [e["t"] for e in events if _is_use(e) and (a is None or e["t"] > a)]
+
+
 def arrival(index: RunIndex, key: Key) -> int | None:
     """A word's first write in its memory, or None (there from the start)."""
-    return next((e["t"] for e in index.word.get(key, []) if _is_write(e)), None)
+    return arrival_of(index.word.get(key, []))
 
 
 def first_use(index: RunIndex, key: Key) -> int | None:
     """A word's first read after its arrival by anything but the DMA, or None."""
-    a = arrival(index, key)
-    return next((e["t"] for e in index.word.get(key, [])
-                 if _is_use(e) and (a is None or e["t"] > a)), None)  # fmt: skip
+    uses = uses_of(index.word.get(key, []))
+    return uses[0] if uses else None
 
 
 def _times(fn: Callable[[RunIndex, Key], int | None]) -> Callable[[RunIndex], Marks]:

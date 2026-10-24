@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import copy
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from snax_forge.run.trace import LEVELS
 
 PATH = "/chip/soc/cluster_0"
+TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"  # the recorded run's
 
 CLUSTER: dict[str, Any] = {
     "cluster": {
@@ -68,16 +70,36 @@ def line(path: str, trace: str, text: str, cycle: int = 0) -> str:
 MAIN = 1000  # main's entry in the synthetic runs
 READ = 5  # the cycles from a function's entry to its mcycle read
 BOOT = MAIN + READ  # the mcycle read in main: the window's start
+L2 = 0x8000_0000  # snax_forge's L2, where the synthetic link puts data.h's arrays
 
 
-def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) -> list[str]:
+def synthetic_link(tasks: Any) -> dict[str, int]:
+    """The address a synthetic program's link gives each array its DMA tasks name: one after
+    another from ``L2``, in the order they are first named, each its moved bytes."""
+    from snax_forge.lower.tasks import Configure
+
+    out, at = {}, L2
+    for s in tasks.steps:
+        if isinstance(s, Configure) and s.type == "dma":
+            side = s.values["src" if s.values["direction"] == "l2_to_l1" else "dst"]
+            if side["symbol"] not in out:
+                out[side["symbol"]] = at
+                at += side["bounds"][0] * side["strides"][0]
+    return out
+
+
+def synthetic(
+    cluster: Any, tasks: Any, level: str = "task", cycles: int = 226,
+    link: dict[str, int] | None = None,
+) -> list[str]:  # fmt: skip
     """An events.log a passing program on ``cluster`` could write, for ``tasks`` (a TaskList):
     boot, then from main's entry (``MAIN``) and its mcycle read (``BOOT``) each DMA copy, each
     accelerator task with its movers and the core's poll, forge_check's entry and its mcycle
     read ``cycles`` later; the summary lines to match. ``level`` off writes the summary lines
     only; from ``beat`` on, the streamer's CSR writes before each start and the lines of each
     beat (``beat_lines``), from ``finegrained`` three instructions per core. The summary's
-    grants, stalls, banks and queue maxima are the beats' at every level."""
+    grants, stalls, banks and queue maxima are the beats' at every level. A DMA task's L2
+    side is at its array's address in ``link`` (default ``synthetic_link``)."""
     from snax_forge.lower.tasks import Configure
 
     acc = cluster.accelerator
@@ -102,16 +124,18 @@ def synthetic(cluster: Any, tasks: Any, level: str = "task", cycles: int = 226) 
                 ev.append((BOOT + 1 + k, f"pe{i}", "insn", text))
     traffic = Traffic(cluster)
     steps = [s for s in tasks.steps if isinstance(s, Configure)]
+    link = synthetic_link(tasks) if link is None else link
     t, ident = MAIN + 20, 2
     copies = 0
     for s in steps:
         if s.type != "dma":
             continue
-        src, dst = s.values["src"], s.values["dst"]
-        size = src["bounds"][0] * src["strides"][0]
-        add(t, "idma/fe", "events", f"issue id={ident} src={src['base']:#x} dst={dst['base']:#x} "
+        src, dst = (side["base"] if "base" in side else link[side["symbol"]]
+                    for side in (s.values["src"], s.values["dst"]))  # fmt: skip
+        size = s.values["src"]["bounds"][0] * s.values["src"]["strides"][0]
+        add(t, "idma/fe", "events", f"issue id={ident} src={src:#x} dst={dst:#x} "
             f"size={size} src_stride=0 dst_stride=0 reps=1")  # fmt: skip
-        traffic.copy(t, ident, src["base"], dst["base"], size)
+        traffic.copy(t, ident, src, dst, size)
         add(t + 10, "idma/fe", "events", f"done id={ident}")
         t, ident, copies = t + 12, ident + 1, copies + 1
     firings, runs = 0, 0
@@ -369,37 +393,39 @@ def tiny_elf(symbols: dict[str, tuple[int, int]], wide: bool = False) -> bytes:
 
 
 def point_symbols(point: Any) -> dict[str, tuple[int, int]]:
-    """The symbols a program of ``point`` would link: each container in L2 at its plan's L2
-    base, its bytes padded to whole beats (gen/data.py), and a golden beside an output."""
+    """The symbols a program of ``point`` would link: each container in L2 one after another
+    from the L2's first byte in the plan's order, its bytes padded to whole beats (gen/data.py),
+    and a golden beside an output."""
     import numpy as np
 
     from snax_forge.lower.layout import round_up
 
     beat = point.platform.l2.beat_bits // 8
-    out = {}
+    out, at = {}, point.platform.l2.base_addr
     for name, lays in point.memory.layouts.items():
         if "l2" in lays:
             lay = lays["l2"]
             n = int(np.prod(lay.shape)) * np.dtype(point.graph.containers[name].dtype).itemsize
-            out[name] = (lay.base, round_up(n, beat))
-            out[f"{name}_golden"] = (0x90000000 + lay.base % 0x10000, round_up(n, beat))
+            out[name] = (at, round_up(n, beat))
+            out[f"{name}_golden"] = (0x90000000 + at % 0x10000, round_up(n, beat))
+            at += round_up(n, beat)
     return out
 
 
 def synthetic_regions(tasks: Any) -> list[Any]:
-    """The regions of a synthetic run (``synthetic``): each container a DMA task moves, in L1 and
-    in L2 at the task's bases, its elements int64 words."""
+    """The regions of a synthetic run (``synthetic``): each container a DMA task moves, in L1 at
+    the task's base and in L2 at ``synthetic_link``'s, its elements int64 words."""
     from snax_forge.lower.tasks import Configure
     from snax_forge.run import Region
 
+    link = synthetic_link(tasks)
     out = []
     for s in tasks.steps:
         if not isinstance(s, Configure) or s.type != "dma":
             continue
-        name = s.task_name.split("_", 1)[1]
         l1, l2 = ("dst", "src") if s.values["direction"] == "l2_to_l1" else ("src", "dst")
         side = s.values[l2]
-        n = side["bounds"][0] * side["strides"][0] // 8
+        name, n = side["symbol"], side["bounds"][0] * side["strides"][0] // 8
         out += [Region(name, "l1", s.values[l1]["base"], (n,), (8,), "int64"),
-                Region(name, "l2", side["base"], (n,), (8,), "int64")]  # fmt: skip
+                Region(name, "l2", link[name], (n,), (8,), "int64")]  # fmt: skip
     return out

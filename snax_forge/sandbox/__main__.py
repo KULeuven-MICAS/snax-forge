@@ -27,7 +27,7 @@ from .run import apply_recipe, write_steps
 OUT = repo_root() / "out" / "sandbox"
 
 
-def _setting(text: str) -> tuple[str, int | str]:
+def setting(text: str) -> tuple[str, int | str]:
     name, sep, value = text.partition("=")
     if not sep or not name:
         raise argparse.ArgumentTypeError(f"{text!r} is not NAME=VALUE")
@@ -41,7 +41,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.sandbox")
     ap.add_argument("recipe", type=Path)
     ap.add_argument("--graph", type=Path, help="start from this .snaxdfg instead of the import")
-    ap.add_argument("--set", type=_setting, action="append", default=[], metavar="NAME=VALUE")
+    ap.add_argument("--set", type=setting, action="append", default=[], metavar="NAME=VALUE")
     ap.add_argument("--out", type=Path, help="output directory (default out/sandbox/<name>)")
     ap.add_argument("--seed", type=int, default=0, help="seed of the reference-check inputs")
     args = ap.parse_args(argv)

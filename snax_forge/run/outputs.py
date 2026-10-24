@@ -40,7 +40,7 @@ class RunOutputs:
     """A run directory read back."""
 
     run: dict[str, Any]
-    profile: Profile
+    profile: Profile | None  # None only in tests that build a run without its summary
     trace: Trace | None
 
     @property

@@ -66,9 +66,9 @@ from typing import Any
 
 import numpy as np
 
-from snax_forge.common import Config, plain, to_json
+from snax_forge.common import Config, JsonFile, plain
 
-from .problems import DesignError, Problem
+from .problems import DesignError, Problem, read_json
 
 KEYS = ("name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2", "wait_mode",
         "streamers")  # fmt: skip
@@ -114,6 +114,10 @@ class L1Config(Config):
                 f"{self.width_bits}"
             )
 
+    @property
+    def size_bytes(self) -> int:
+        return self.n_banks * self.rows * (self.width_bits // 8)
+
 
 @dataclass(frozen=True)
 class L2Config(Config):
@@ -158,7 +162,7 @@ ENTRY_KEYS = (*OPTIONS, "spatial_bounds")
 
 
 @dataclass(frozen=True)
-class Platform:
+class Platform(JsonFile):
     """A parsed platform file; see the module doc."""
 
     name: str
@@ -186,7 +190,7 @@ class Platform:
 
     # --- changes ---
 
-    def with_changes(self, sets: Sequence[tuple[str, Any]] = ()) -> Platform:
+    def with_changes(self, sets: Sequence[tuple[str, Any]]) -> Platform:
         """The working copy with ``sets`` (path, value) applied; see the module doc."""
         d = self.to_dict()
         problems = [p for path, value in sets for p in _apply(d, path, value)]
@@ -228,19 +232,9 @@ class Platform:
         assert platform is not None
         return platform
 
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
     @classmethod
     def load(cls, path: str | Path) -> Platform:
-        try:
-            d = json.loads(Path(path).read_text())
-        except (OSError, json.JSONDecodeError) as e:
-            raise DesignError([Problem("platform.keys", str(path), str(e))], "platform") from None
-        return cls.from_dict(d)
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json())
+        return cls.from_dict(read_json(path, "platform.keys", "platform"))
 
 
 # =============================================================================
@@ -475,7 +469,7 @@ def _apply(d: dict[str, Any], path: str, value: Any) -> list[Problem]:
             Problem("platform.keys", where, f"{'.'.join(parts[:-1])!r} is a value, not a section")
         ]
     if last not in node:
-        keys = list(node) if isinstance(node, Mapping) else []
+        keys = list(node)
         close = difflib.get_close_matches(last, keys, n=1)
         fix = f"did you mean {'.'.join([*parts[:-1], close[0]])}?" if close else None
         return [Problem("platform.keys", where, f"no such field (fields here: {keys})", fix)]

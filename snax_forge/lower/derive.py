@@ -7,11 +7,13 @@ node is one of its temporal firing loops, ``firing_loops``). For each group:
 
     loads        for each input in port order whose container has an L2 and an
                  L1 layout and is not in L1 yet: configure ``load_<C>`` (DMA,
-                 L2 -> L1, the whole layout as contiguous beats), start it
+                 L2 -> L1, the whole layout as contiguous beats; its L2 side
+                 the container's data.h array, ``symbol`` C), start it
     streamers    configure ``<node>_<instance>_<port>`` for every port, in the
                  BRM's port order, with values from the memlet through the
                  container's L1 layout (below)
-    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count
+    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, and its
+                 named rates
     start        the streamer tasks, then the accelerator task, together
     stores       for each output whose container has an L2 layout and is written
                  for the last time here: configure ``store_<C>`` (L1 -> L2)
@@ -46,12 +48,19 @@ where the nest has one.
 
 from __future__ import annotations
 
+from math import prod
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.design.streamers import Loop, firing_loops, instances
+from snax_forge.design.streamers import (
+    Loop,
+    accelerated,
+    firing_loops,
+    instances,
+    streamer_name,
+)
 from snax_forge.dfg import DfgError, Memlet, named_rates
 from snax_forge.dfg.subset import parse_dim
 
@@ -121,12 +130,12 @@ def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
 def task_list(point: DesignPoint) -> TaskList:
     """The task list of a design point; see the module doc. Raises LowerError."""
     g, pf, plan = point.graph, point.platform, point.memory
-    symbols = {k: v for k, v in g.symbols.items() if v is not None}
+    symbols = g.bound_symbols
     insts = instances(g)
     mode = pf.wait_mode
     word = pf.l1.width_bits // 8
     beat = pf.l1.wide_bits // 8
-    nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]
+    nodes = accelerated(g)
 
     def layout(c: str, mem: str) -> Layout | None:
         return plan.layouts.get(c, {}).get(mem)
@@ -140,12 +149,12 @@ def task_list(point: DesignPoint) -> TaskList:
     readers: dict[str, list[str]] = {}  # container -> reader tasks since that
     final: dict[str, str] = {}  # container -> task that leaves it in its last memory
 
-    def dma(task: str, direction: str, src: Layout, dst: Layout, after: list[str]) -> None:
-        values = {
-            "direction": direction,
-            "src": dma_side(src, word, beat),
-            "dst": dma_side(dst, word, beat),
-        }
+    def dma(task: str, direction: str, c: str, after: list[str]) -> None:
+        l1 = dma_side(layout(c, "l1"), word, beat)
+        l2 = {"symbol": c} | {k: v for k, v in dma_side(layout(c, "l2"), word, beat).items()
+                              if k != "base"}  # fmt: skip
+        src, dst = (l2, l1) if direction == "l2_to_l1" else (l1, l2)
+        values = {"direction": direction, "src": src, "dst": dst}
         steps.append(Configure(task, "dma", "dma", values, after, mode))
         steps.append(Start([task]))
 
@@ -157,9 +166,7 @@ def task_list(point: DesignPoint) -> TaskList:
             loops = firing_loops(g, n)
         except ValueError as e:
             raise LowerError(f"{what}: {e}") from None
-        n_fire = 1
-        for lp in loops:
-            n_fire *= lp.count
+        n_fire = prod(lp.count for lp in loops)
         ports = [p.name for p in inst.brm.interface.ports]
         memlets = {**n.inputs, **n.outputs}
         try:  # named rates from the loops a memlet does not use (D104), as REF and bind do
@@ -176,12 +183,12 @@ def task_list(point: DesignPoint) -> TaskList:
             c = memlets[p].data
             if p in n.inputs and c not in in_l1 and moved(c):
                 task = f"load_{c}"
-                dma(task, "l2_to_l1", layout(c, "l2"), layout(c, "l1"), [])
+                dma(task, "l2_to_l1", c, [])
                 in_l1[c] = task
 
         group = []
         for p in ports:  # streamers
-            m, s = memlets[p], point.streamers[f"{name}_{p}"]
+            m, s = memlets[p], point.streamers[streamer_name(name, p)]
             lay = layout(m.data, "l1")
             if lay is None:
                 raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
@@ -228,7 +235,7 @@ def task_list(point: DesignPoint) -> TaskList:
             c = memlets[p].data
             if p in n.outputs and last_write[c] == n.id and layout(c, "l2") is not None:
                 store = f"store_{c}"
-                dma(store, "l1_to_l2", layout(c, "l1"), layout(c, "l2"), [task])
+                dma(store, "l1_to_l2", c, [task])
                 final[c] = store
 
     for c, cont in g.containers.items():

@@ -30,7 +30,7 @@ def test_vecadd_design_point_holds_every_part():
     assert d["streamers"] == VECADD_STREAMERS
     assert d["memory"]["changes"] == {"B.l1.base": 576, "C.l1.base": 1152}
     assert d["memory"]["layouts"]["B"] == {
-        "l2": {"base": 512, "shape": [64], "strides": [8]},
+        "l2": {"base": 0, "shape": [64], "strides": [8]},
         "l1": {"base": 576, "shape": [64], "strides": [8]},
     }
 
