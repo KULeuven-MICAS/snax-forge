@@ -1,7 +1,7 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
  "title": "SNAX-FORGE accelerator RTL spec",
- "description": "rtl.json: a design point's accelerator resolved for hw/chisel's Emit --spec, concrete values only (snax_forge/gen/rtl.py, D138, C§17).",
+ "description": "rtl.json: a design point's accelerator resolved for hw/chisel's Emit --spec, concrete values only (snax_forge/gen/rtl.py, D130, C§17).",
  "type": "object",
  "properties": {
   "design_point": {"description": "The design point by its path from the root.", "type": "string", "minLength": 1},

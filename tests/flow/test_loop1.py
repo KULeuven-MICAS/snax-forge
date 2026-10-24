@@ -1,5 +1,5 @@
 """The loop1 walk-through (D98): every number examples/loop1/README.md states, checked on the
-runs it describes, on SNAX-GVSoC (marker ``gvsoc``, D128: in the image, skipped where
+runs it describes, on SNAX-GVSoC (marker ``gvsoc``, D134: in the image, skipped where
 out/snax-gvsoc/install is missing).
 
 The README's two flow commands are run as written (from the repo root, into a

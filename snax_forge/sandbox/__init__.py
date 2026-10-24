@@ -5,7 +5,7 @@ params, applied to an imported graph; the transforms ``split_map`` and
 ``bind`` and their inverses ``unbind`` and ``join_map`` (transforms.py);
 the pattern matchers ``bind`` uses to recognise a BRM's pattern
 (patterns.py), among them ``reduce``, with which ``bind`` binds a folding
-output as one lane, its named rate from ``named_rates`` (D104); and the
+output as one lane, its named rate from ``named_rates`` (D102); and the
 runner (run.py), which binds the recipe's symbols, applies every step,
 checks each step against the reference executor and writes every step's
 graph. The command line is ``python -m snax_forge.sandbox RECIPE`` (pixi

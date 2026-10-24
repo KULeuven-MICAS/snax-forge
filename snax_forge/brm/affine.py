@@ -38,7 +38,7 @@ parameters are known: ``n`` is a multiple of the port's rate, the temporal
 bounds give n / rate beats (D25), and every index lies inside the shape.
 
 A stride may be 0 (the same element again; on a reader's innermost
-temporal loop the streamer repeats the beat, D69) or negative. Whether the
+temporal loop the streamer repeats the beat, D70) or negative. Whether the
 ports agree on element positions is the BRM author's responsibility (D70).
 """
 

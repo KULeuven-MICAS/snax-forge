@@ -5,7 +5,7 @@ with which values; ``check_values`` checks it against the design point, and
 waits.py places the waits correctness needs. A BRM port's nest is mapped
 through a buffer layout (layout.py, the memory plan's form) onto a
 streamer's values (streams.py, D70). A design point's task list (derive.py,
-D89): streamer values from memlets through the memory plan's layouts,
+D64): streamer values from memlets through the memory plan's layouts,
 checked against each BRM's nest; named rates in the accelerator task, so
 accelerators chain through L1 with one wait between them; containers the DMA
 moves padded to whole beats (D105). The task list as C on snRuntime (c.py,

@@ -1,4 +1,4 @@
-// Text of the trace's events and of a journey's hops (C§7, D57, D97): how the
+// Text of the trace's events and of a journey's hops (C§7, D57): how the
 // cluster view's event list, the schedule's tooltips and the memory tab's
 // drawer put one event in words. Formatting only: every field is the
 // server's, nothing is looked up or counted here.
@@ -46,7 +46,7 @@ export function eventText(e) {
   }
 }
 
-// -- a journey's hops and firings (/api/run/<n>/journey, D97) ----------------------
+// -- a journey's hops and firings (/api/run/<n>/journey, D57) ----------------------
 
 /** One hop of an element: "L1 read by acc_a.lane1 (bank 5, row 0) = 7; bank served ...". */
 export function hopText(x) {

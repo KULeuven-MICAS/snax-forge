@@ -1,4 +1,4 @@
-"""A design point -> its bundle for snax_cluster (D111, D139, C§18).
+"""A design point -> its bundle for snax_cluster (D111, D130, C§18).
 
     write_bundle(design_point, out_dir, root=None) -> (Bundle, written)
     python -m snax_forge.gen.bundle DESIGN_POINT [--out DIR]    (pixi bundle)
@@ -28,7 +28,7 @@ the rest of the folder is left as it is. Then, in this order:
 
 snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
-builds read (D139).
+builds read (D130).
 
 **Refused**, each a ``GenError``: what ``generate``, ``write_rtl`` and
 ``elaborate`` refuse (``gen.*``, a listed file that is not there among them), then

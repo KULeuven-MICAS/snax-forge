@@ -1,4 +1,4 @@
-"""rtl.json (D138, C§17): the design point resolved for hw/chisel's ``Emit --spec`` and
+"""rtl.json (D130, C§17): the design point resolved for hw/chisel's ``Emit --spec`` and
 checked against the block catalogue, and the fixtures hw/chisel's specs read.
 
 Each refusal of the checks has a test; the GVSoC adapter's refusals, which rtl.py runs first, are

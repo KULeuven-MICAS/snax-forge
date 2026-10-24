@@ -1,4 +1,4 @@
-// Entry point of the viewer (D55, D57, D61, D96): loads the
+// Entry point of the viewer (D55, D57): loads the
 // run list and the selected run from the API, fills the header and hands the
 // page to one view: the profile report (report.js), the schedule with the
 // cluster view under it (schedule.js, cluster.js), or the memory layout
@@ -48,7 +48,7 @@ const api = {
   cluster: (name, t) => getJSON(`/api/run/${enc(name)}/cluster?t=${enc(String(t))}`),
   /** The next (dir 1) or previous (-1) cycle with an event (by "event") or a task boundary (by "boundary"). */
   step: (name, t, dir, by) => getJSON(`/api/run/${enc(name)}/step?${new URLSearchParams({ t: String(t), dir: String(dir), by })}`),
-  /** The memory view; `marks` (conflicts, arrival, use, wait) folds by those marks (D97). */
+  /** The memory view; `marks` (conflicts, arrival, use, wait) folds by those marks (D57). */
   memory: (name, marks) => getJSON(`/api/run/${enc(name)}/memory${marks ? `?marks=${enc(marks)}` : ""}`),
   /** Rows from <= r < to of memory `mem` in full (at most 256). */
   memoryRows: (name, mem, from, to, marks) => {

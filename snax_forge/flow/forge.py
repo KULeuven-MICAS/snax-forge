@@ -4,7 +4,7 @@
                                     [--trace LEVEL[:SOURCES]]          (pixi forge)
 
 Three steps, each the tool of that name called as its command line would be
-(D90), nothing decided here:
+(D136), nothing decided here:
 
     flow     ``python -m snax_forge.flow RECIPE --platform P [--set ...] [--trace ...]``:
              the design point and the run on SNAX-GVSoC      out/flow/<name>/
@@ -21,7 +21,7 @@ line prints it (sbt's and make's lines too), goes to ``out/forge/<name>/forge.lo
 the terminal gets one line per step, SNAX-GVSoC's four ``forge`` lines from
 the flow's ``run/stdout.txt``, and the commands that run the bundle's ELF on
 snax_cluster's Verilator build, ``B`` and ``E`` filled in by absolute path.
-snax-forge never calls into snax_cluster (D139).
+snax-forge never calls into snax_cluster (D130).
 
 Exit 0 when every step passed, 1 when one failed (the step named, the last 30
 lines of the log and its path), 2 on bad arguments.

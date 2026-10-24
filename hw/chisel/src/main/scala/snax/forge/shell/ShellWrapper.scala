@@ -52,7 +52,7 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int]) extends Record {
   * from its params. Its data ports follow `ports`: the block's input ports, in order, are `stream2acc_0`,
   * `stream2acc_1`, ...; its output ports `acc2stream_0`, ... . A port's data is the block's `bits` as `asUInt`, so lane
   * i of a `Vec` sits at bits `[w(i+1)-1 : wi]`: `[64i+63 : 64i]` for 64-bit lanes. That this is the streamer's packing
-  * too is checked on snax_cluster's RTL (D140); here the specs assume it.
+  * too is checked on snax_cluster's RTL (D123); here the specs assume it.
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   * One unit is built (`rtl.json` with more is refused by the Python side, `gen.instances`).

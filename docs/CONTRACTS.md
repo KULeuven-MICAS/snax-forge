@@ -5,10 +5,10 @@
 > is the way it is: the module docstrings and `docs/DECISIONS.md`.
 >
 > Sections 1, 7 and 9–18 are the flow: conventions, a run's profile and
-> trace (D137), the task list (D64), the BRM (D68, D70), the SNAX-DFG (D77),
+> trace (D137), the task list (D64), the BRM (D68, D70), the SNAX-DFG (D71),
 > the recipe (D72), the platform (D84), the design checks (D85), the memory
 > plan and design point (D86, D87), the generated hjson files (D134), the
-> accelerator RTL's spec (D138) and the bundle for snax_cluster (D139).
+> accelerator RTL's spec (D130) and the bundle for snax_cluster (D130).
 > Sections 2–6 and 8 were SNAX-MODEL's and were retired with it in RET1
 > (D116); their numbers are kept, their text is in git history (commit
 > `cad6619`, before RET1).
@@ -246,7 +246,7 @@ SNAX-LOWER's ordered list of tasks (D64): which component runs which task
 with which values, where each task is configured and started, and what it
 waits for. It is the hand-off to the backend: `main_c` (`lower/c.py`, D135)
 turns it into C on snRuntime, the program SNAX-GVSoC runs (section 16). It
-is derived from a design point (D89, `snax_forge/lower/derive.py`, `pixi run
+is derived from a design point (D64, `snax_forge/lower/derive.py`, `pixi run
 lower tasks DESIGN_POINT`; the rules below) or written by hand.
 
 A task list is `name` and `steps`, each step with an `op`:
@@ -308,7 +308,7 @@ the same start launched them: their data flows into the writer, so it
 finishes last. Nothing else is added; where configures, starts and syncs
 go, and so how programming overlaps running blocks, is the task list's.
 
-**Derived from a design point** (D89). The accelerated nodes run in
+**Derived from a design point** (D64). The accelerated nodes run in
 execution order, one group each; every map around a node is one of its
 temporal firing loops (a single tile). A group is: `load_<C>` (configure,
 start) for each input, in BRM port order, whose container has an L2 and an
@@ -316,7 +316,7 @@ L1 layout and is not in L1 yet; `<node>_<instance>_<port>` for every port,
 the streamer's values from the memlet through the L1 layout (a port with a
 named rate over the firing loops its memlet uses only, one beat per `T`
 firings); `<node>_<instance>` with `n` = the firing count and each named rate
-from `named_rates` (D104, D105: dot's `sum` gets `{"n": 16, "T": 16}`); one
+from `named_rates` (D102, D105: dot's `sum` gets `{"n": 16, "T": 16}`); one
 `start` of the streamer tasks and then the
 accelerator task; `store_<C>` after the writer's task for each output
 written for the last time. At the end one `sync` per non-transient
@@ -504,7 +504,7 @@ dimension and a `spatial` flag, and the element of a step is
 them is one beat, the last one innermost), spatial loops last (the lanes,
 the last one fastest). Spatial bounds use design params only and multiply
 to the port's lanes; per task the nest gives n / rate beats inside the
-shape. A temporal stride of 0 repeats a beat, as SNAX's reader does (D69).
+shape. A temporal stride of 0 repeats a beat, as SNAX's reader does (D70).
 The nest says nothing about addresses: section 9 gives how SNAX-LOWER maps
 it through a layout onto a streamer's values.
 
@@ -526,7 +526,7 @@ ports agree on element positions, which is the BRM author's responsibility
 
 ## 11. SNAX-DFG
 
-The workload as SNAX-FORGE's own dataflow graph (D71, D77): one `.snaxdfg`
+The workload as SNAX-FORGE's own dataflow graph (D71): one `.snaxdfg`
 JSON file, written by an importer and rewritten by each sandbox transform. Loaded with `Graph.load(path)`; every field is
 written, missing keys take defaults, unknown keys are errors, and a graph is
 validated when it is made. Generated files live under `out/`; the fixtures
@@ -650,7 +650,7 @@ non-transient container equals the input graph's. Each step is written as
 | Transform | Params | Does |
 |---|---|---|
 | `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor` |
-| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; the lanes param comes from the spatial bound; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D104) |
+| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; the lanes param comes from the spatial bound; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D102) |
 | `unbind` | `node` (accelerated id) | the accelerated node becomes the subtree it `replaced` |
 | `join_map` | `map` (id) | a temporal map with `loop.split` and its spatial map become the map they were split from |
 
@@ -659,7 +659,7 @@ The vecadd recipe: W lanes, one temporal map of N / W beats, bound to
 takes its last step back to the first. The dot recipe binds two accelerators
 with one `W` for both: the multiply map to `elementwise_mul` (instance
 `mul`), the sum map to `accumulate`'s `chisel_adder_tree` (instance `sum`),
-whose `out` is one lane every `T = N / W` firings (D104):
+whose `out` is one lane every `T = N / W` firings (D102):
 
 <!-- snippet: recipes/dot.json -->
 ```json
@@ -844,7 +844,7 @@ passed; not edited by hand. It is what SNAX-LOWER reads.
 
 | Field | Holds |
 |---|---|
-| `name` | the design (the graph's sandbox folder, else its stem; in a flow, the recipe's name and params, D90) |
+| `name` | the design (the graph's sandbox folder, else its stem; in a flow, the recipe's name and params, D136) |
 | `graph_from` | the `.snaxdfg` it was made from: a sandbox step, or any bound graph given to the design step or the flow (D108) |
 | `graph` | that graph as read: instances, `code`, `replaced`, `loop.split` |
 | `platform` | the platform working copy (section 13) |
@@ -913,7 +913,7 @@ SNAX-GVSoC's `SnaxUnitAcc` refuses the same. A counter past `0x5FD` is
 
 **The cluster.** `cluster.name` becomes `snax_forge_cluster` and, in
 `cluster.bender_target`, the entry equal to the source's `cluster.name`
-becomes it too (D139); a source whose `bender_target` does not hold its own
+becomes it too (D130); a source whose `bender_target` does not hold its own
 name is `gen.source`.
 
 **Checks.** The streamer and accelerator files have snax-forge's schemas
@@ -933,7 +933,7 @@ platform without a source `gen.source`, a source with no slot or several
 
 ## 17. Accelerator RTL spec
 
-What `pixi run gen-rtl DESIGN_POINT [OUT_DIR]` writes first (D138,
+What `pixi run gen-rtl DESIGN_POINT [OUT_DIR]` writes first (D130,
 `snax_forge/gen/rtl.py`), default `out/rtl/<design>/rtl.json`, and what
 `Emit --spec` reads to build the accelerator (`hw/chisel/`): concrete values
 only, no expressions, checked against the block catalogue
@@ -1009,7 +1009,7 @@ stands unless it breaks this section or D130, and SNAX-GVSoC follows it.
 ## 18. Bundle
 
 What `pixi run bundle DESIGN_POINT [--out DIR]` writes per design point
-(D111, D139, `snax_forge/gen/bundle.py`), default `out/bundle/<design>/`:
+(D111, D130, `snax_forge/gen/bundle.py`), default `out/bundle/<design>/`:
 everything snax_cluster needs to build the design's cluster, made afresh by
 the snax-forge checked out, never copied from `out/gvsoc/` or `out/rtl/`.
 `rtl/` is the bundle's own and is removed before each run, so it never
@@ -1027,7 +1027,7 @@ keeps a stale file; nothing else in `DIR` is removed.
 there among them, `gen.elaborate`), then `bundle.empty` (`emitted.json`
 lists no file).
 
-**How snax_cluster takes it** (D139, snax_cluster #659), through the
+**How snax_cluster takes it** (D130, snax_cluster #659), through the
 cluster file alone (`CFG_OVERRIDE`), so snax_cluster holds no dependency on
 snax-forge:
 
@@ -1054,7 +1054,7 @@ snax-forge:
   the hjson files, `bundle.json`, `rtl/files.f` and the files it lists, and
   the program, `main.c`, `data.h` and `include/` (not `manifest.json`), all
   untouched;
-- `target/snitch_cluster/snax_forge.mk` (GEN2b, D140) runs a program on the
+- `target/snitch_cluster/snax_forge.mk` (GEN2b, D123) runs a program on the
   RTL with snax_cluster's own targets: `CFG_OVERRIDE` the bundle's cluster
   file, `FORGE` the program's folder (default `CFG_OVERRIDE`'s), `ELF` an
   ELF to run (default the one built from `FORGE`), `SIM` `vlt` (default) or

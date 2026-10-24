@@ -1,4 +1,4 @@
-"""Design point -> task list (D73, D89).
+"""Design point -> task list (D73, D64).
 
 The task list (tasks.py, CONTRACTS.md section 9) is derived from a design
 point and decides nothing. The accelerated nodes run in the graph's
@@ -169,7 +169,7 @@ def task_list(point: DesignPoint) -> TaskList:
         n_fire = prod(lp.count for lp in loops)
         ports = [p.name for p in inst.brm.interface.ports]
         memlets = {**n.inputs, **n.outputs}
-        try:  # named rates from the loops a memlet does not use (D104), as REF and bind do
+        try:  # named rates from the loops a memlet does not use (D102), as REF and bind do
             rates = named_rates(
                 {p: (memlets[p], inst.brm.port(p).rate) for p in ports},
                 [(lp.var, lp.count) for lp in loops],

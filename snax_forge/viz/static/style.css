@@ -340,7 +340,7 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 
 .cluster.task-only .cl-banks, .cluster.task-only .cl-ports, .cluster.task-only .cl-lanes { opacity: 0.45; }
 
-/* -- DFG viewer (VIS5, D81) ---------------------------------------------------------
+/* -- DFG viewer (VIS5, D55) ---------------------------------------------------------
    Loop kinds get colours of their own: green, red and violet already mean busy,
    memory stall and flow stall in the run views (D61). */
 :root {
@@ -433,7 +433,7 @@ path.edge.hl { stroke: var(--hl); stroke-width: 2.4; }
 .box.hl, .op.hl, .port.hl { box-shadow: 0 0 0 2px var(--hl); }
 .scope.hl { box-shadow: 0 0 0 2px var(--hl); }
 
-/* -- memory tab (VIS4a, D96) -------------------------------------------------------
+/* -- memory tab (VIS4a, D57) -------------------------------------------------------
    Region colours are a meaning of this tab only: a region keeps its colour in
    every memory. Soft fills with ink text, so a cell's index stays readable; the
    status colours above (request, busy, stalls) are kept for later overlays. */
@@ -481,7 +481,7 @@ table.mem-regions td:first-child { white-space: nowrap; font-weight: 600; }
 .mem-fold:hover { background: var(--panel); }
 .mem-line.fold.open .mem-fold { color: var(--muted); border-style: solid; }
 
-/* -- memory tab: modes, cycle overlay, picked element (VIS4b, D97) --------------
+/* -- memory tab: modes, cycle overlay, picked element (VIS4b, D57) --------------
    The overlay uses the meanings of D61/D62 as outlines, so the region colours
    stay visible: request teal, read data back green, held back red. The picked
    element is outlined in ink. Time marks use one warm scale, only in this tab. */
@@ -535,7 +535,7 @@ button.cyc { padding: 0 0.35rem; font-size: 0.9em; }
 button.cyc.link { border: none; color: var(--command); background: none; padding: 0; }
 .mem-drawer .fire { margin: 0.3rem 0 0.5rem; }
 
-/* -- tracer rows in the schedule (VIS4b, D97) ------------------------------------- */
+/* -- tracer rows in the schedule (VIS4b, D57) ------------------------------------- */
 .sched-labels .lab.tracer { background: var(--req-bg); }
 .sched-labels .lab.tracer .lab-link { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink); text-decoration: underline dotted; cursor: pointer; }
 .sched-labels .lab.tracer .lab-x { margin-left: auto; border: none; background: none; padding: 0 0.2rem; color: var(--muted); font-size: 1.1em; line-height: 1; cursor: pointer; }

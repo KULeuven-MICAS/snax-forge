@@ -1,4 +1,4 @@
-"""Value expressions (D77): ints, names and small integer arithmetic, shared by BRM and DFG."""
+"""Value expressions (D71): ints, names and small integer arithmetic, shared by BRM and DFG."""
 
 import numpy as np
 import pytest

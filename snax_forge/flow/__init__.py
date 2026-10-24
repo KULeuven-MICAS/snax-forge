@@ -1,4 +1,4 @@
-"""The whole path from a kernel to a SNAX-GVSoC run (D90, D136), or from a bound graph (D108).
+"""The whole path from a kernel to a SNAX-GVSoC run (D136), or from a bound graph (D108).
 
 ``run_flow(recipe, platform, ...)`` runs SNAX-SANDBOX, SNAX-DESIGN,
 SNAX-LOWER and the generator, builds the program and runs it on SNAX-GVSoC,

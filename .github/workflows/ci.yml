@@ -115,7 +115,7 @@ jobs:
           test -f out/hw/ElementwiseLoop_w32_t32_sel8.sv
           test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
 
-      # D138: every rtl.json fixture through `Emit --spec`, and every file its
+      # D130: every rtl.json fixture through `Emit --spec`, and every file its
       # emitted.json lists must exist. (BlocksSpec, in the tests above, checks
       # `Emit --describe` equal to hw/chisel/blocks.json.)
       - name: Elaborate the rtl.json fixtures
@@ -130,7 +130,7 @@ jobs:
   # The flow on SNAX-GVSoC (D136): GVSoC built from the submodule, then
   # `pixi run flow` on vecadd and vsum, at trace off and task (D137: the events
   # converted, the reports written), and the tests marked `gvsoc`. The only
-  # job that builds the submodule (D128; the chisel job reads its unit cases);
+  # job that builds the submodule (D134; the chisel job reads its unit cases);
   # snax-gvsoc's own CI never needs snax-forge.
   gvsoc:
     name: Flow on SNAX-GVSoC

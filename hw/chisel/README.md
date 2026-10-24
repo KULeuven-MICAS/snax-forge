@@ -29,7 +29,7 @@ hw/chisel/
 ├── build.sbt
 ├── project/{build.properties,plugins.sbt}
 ├── .scalafmt.conf                      # copied verbatim from snax_cluster
-├── blocks.json                         # the block catalogue (D138)
+├── blocks.json                         # the block catalogue (D130)
 └── src/
     ├── main/scala/snax/forge/
     │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec
@@ -45,7 +45,7 @@ hw/chisel/
         └── resources/rtl/<design>/     # GEN1's fixtures
 ```
 
-## A design point's accelerator (GEN1, D138)
+## A design point's accelerator (GEN1, D130)
 
 The boundary with the Python side is two files. `blocks.json`, checked in,
 is the signature of each block (params with types and limits, data ports,

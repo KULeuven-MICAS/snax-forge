@@ -50,7 +50,7 @@ shell, at cycle level, before RTL, from the workload's dataflow graph.
 Composition is one spectrum: unit engines stitched on the graph (a multiplier
 into an accumulator, `dot`), a unit set that forms a known accelerator (SNAX's
 GeMM core as a spatial array plus a SIMD unit), or a full accelerator. `bind`
-in a recipe covers all three (D104, D112).
+in a recipe covers all three (D102, D112).
 
 ## 4. Contributions
 
@@ -114,7 +114,7 @@ the rest in the coverage table as named errors (FE2).
 | B | multi-cycle, II > 1 | an integer divider unit; covariance's mean | int64, integer divide |
 | C | multi-phase | covariance (mean, center, product), then softmax | int64; softmax quantized: integer max, polynomial or table exp, integer divide (I-BERT style) |
 | P | int8 on kernels that already work | vecadd, dot, atax | int8 in, int32 out |
-| D | reuse (access axis) | gemver (rank-1 update, stride 0, D69), gemm, k2mm, k3mm, doitgen; jacobi_1d, jacobi_2d | int8 in, int32 accumulate; jacobi in a wider fixed-point type |
+| D | reuse (access axis) | gemver (rank-1 update, stride 0, D70), gemm, k2mm, k3mm, doitgen; jacobi_1d, jacobi_2d | int8 in, int32 accumulate; jacobi in a wider fixed-point type |
 | E | DL layers | mlp, conv2d_bias, lenet, resnet | int8 with requantization between layers |
 
 They are built in the tiers of STATUS (M7). Sizes are PolyBench's MINI

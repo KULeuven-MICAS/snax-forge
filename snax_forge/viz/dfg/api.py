@@ -1,4 +1,4 @@
-"""What the DFG viewer asks for, as plain Python functions (D81).
+"""What the DFG viewer asks for, as plain Python functions (D55).
 
 The server (server.py) only turns these results into JSON; the tests call
 them directly, and the drawing is checked by eye (D55).

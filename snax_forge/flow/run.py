@@ -1,4 +1,4 @@
-"""The whole path, kernel to a SNAX-GVSoC run (D90, D136), or from a bound graph on (D108).
+"""The whole path, kernel to a SNAX-GVSoC run (D136), or from a bound graph on (D108).
 
     recipe + platform
       -> SNAX-SANDBOX   the kernel's import, the recipe's steps, each
@@ -25,7 +25,7 @@ The flow runs SNAX-GVSoC only (D136). ``build``, ``sw`` and ``gvsoc`` each call
 ``run_gvsoc``, ``make`` on ``gvsoc/Makefile`` through a subprocess; that
 Makefile names the image's tools, so the flow calls it from pixi. Nothing is
 decided here: each stage is the tool of that name, called as its command
-line would be (D90).
+line would be (D136).
 
 **Build.** GVSoC is built into ``out/snax-gvsoc/`` (``gvsoc/Makefile``'s
 ``build``) when its install is missing, when the checkout it was built from
@@ -82,7 +82,7 @@ is what the command line prints plus the design checks that ran; a flow
 that fails writes the failure there instead. The log, the reports, ``gen/``
 and ``run/`` of an earlier run in the same folder are removed first.
 
-**Stage times** (D90). ``flow.log`` ends with the wall-clock seconds of each
+**Stage times** (D136). ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``gen``, ``build``,
 ``sw``, ``gvsoc``, ``check``, ``convert``, ``report``) and their total, on this machine. They change
 from run to run, so they are in the log only. They are the raw material of
@@ -240,7 +240,7 @@ def default_name(
     platform_sets: Sequence[tuple[str, Any]] = (),
     memory_sets: Sequence[tuple[str, Any]] = (),
 ) -> str:
-    """The recipe's name with every ``--set`` appended (D90): recipe params, then platform and
+    """The recipe's name with every ``--set`` appended (D136): recipe params, then platform and
     memory paths without their ``platform.`` / ``memory.`` prefix, each in the order given
     (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``)."""
     sets = [*recipe_sets.items(), *platform_sets, *memory_sets]
@@ -622,7 +622,7 @@ def run_flow(
     recipe_sets = dict(recipe_sets or {})
     recipe = Recipe.load(recipe_path).with_params(recipe_sets)
     # The design point, and with it the task list, is named after the recipe and its params
-    # only; the folder carries every --set (D90).
+    # only; the folder carries every --set (D136).
     point_name = name or default_name(recipe, recipe_sets)
     name = name or with_level(default_name(recipe, recipe_sets, platform_sets, memory_sets),
                               trace_level)  # fmt: skip

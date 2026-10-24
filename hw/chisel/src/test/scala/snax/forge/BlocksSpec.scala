@@ -9,7 +9,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.Blocks.{BoolParam, IntParam, OpsParam, Params}
 
 /** The block catalogue: `Emit --describe` (the registry, `Blocks`) equals the checked-in `hw/chisel/blocks.json`, the
-  * file the Python side checks `rtl.json` against (D138). Compared as JSON, key and list order included, so the file
+  * file the Python side checks `rtl.json` against (D130). Compared as JSON, key and list order included, so the file
   * may be laid out by hand. Each block's builder also gives an IO with exactly the catalogue's pins and ports.
   */
 class BlocksSpec extends AnyFlatSpec {

@@ -1,4 +1,4 @@
-// The memory tab (D95-D97): where a run's regions sit in each
+// The memory tab (D57): where a run's regions sit in each
 // memory, and on a run traced at beat or above how its words move.
 //
 // Everything shown is computed by the server (viz/api.py, memory.py on index.py): per
@@ -15,7 +15,7 @@
 //   fold lines   click to show the hidden rows, at most MAX_ROWS at a time;
 //                an empty run is one line
 //
-// Region colours are a meaning of this tab only (D96): a region keeps its
+// Region colours are a meaning of this tab only (D57): a region keeps its
 // colour in every memory, so A in L2 and A in L1 match. The modes, the cycle
 // overlay and the picked element are described under "drawing" below. The
 // cycle bar has the play button of player.js; Clear also stops it.

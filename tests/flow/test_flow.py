@@ -1,4 +1,4 @@
-"""The whole path, kernel to a SNAX-GVSoC run (D90, D136).
+"""The whole path, kernel to a SNAX-GVSoC run (D136).
 
 1. up to the generator on vecadd and vsum, SNAX-GVSoC stubbed (helpers.stub):
    main.c without marks and with forge_check, data.h's goldens the kernel's

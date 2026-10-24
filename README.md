@@ -30,8 +30,8 @@ snax-forge makes a design point, then the bundle snax_cluster builds from
 (the cluster file, the accelerator's RTL) and the program that drives it.
 snax-gvsoc, the `gvsoc/snax-gvsoc` submodule, is the model: it builds the
 program into the ELF and runs it. snax_cluster is a separate checkout beside
-snax-forge (D139): it builds the RTL from the bundle and runs the same ELF
-through its `snax_forge.mk`. snax-forge never runs RTL (D140).
+snax-forge (D130): it builds the RTL from the bundle and runs the same ELF
+through its `snax_forge.mk`. snax-forge never runs RTL (D123).
 
 ```mermaid
 flowchart LR
@@ -304,7 +304,7 @@ See `hw/chisel/README.md`.
 # 4. SNAX-GVSoC from snax-forge
 
 [snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
-`gvsoc/snax-gvsoc` (D128); CI fetches it in one job (`gvsoc`). `gvsoc/Makefile` names the image's
+`gvsoc/snax-gvsoc` (D134); CI fetches it in one job (`gvsoc`). `gvsoc/Makefile` names the image's
 Python, CMake and host compilers, so it runs the same from the container's plain shell and through
 pixi (`pixi run make -C gvsoc ...`, as the flow does).
 
@@ -345,7 +345,7 @@ name.
 
 snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
 (vecadd, vecmul, vsum on `accumulate`'s Chisel Accumulator, and vsum_tree on
-its adder tree), which its `make regress` runs (D128).
+its adder tree), which its `make regress` runs (D134).
 `tests/gen/test_fixture.py` generates each again and compares it byte for
 byte with the submodule's copy; it skips when the submodule is not checked
 out. When the generator or the design point changes, refresh the folder in a

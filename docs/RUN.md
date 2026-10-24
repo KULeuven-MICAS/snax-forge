@@ -316,7 +316,7 @@ out against the cores' and the DMA's; `examples/loop1/` walks such a run:
       report    report/design.md, report/run.md
 
 From `beat` on, the viewer's memory tab shows where each container lies in
-L1 and L2 and how its words move (D96, D97): the marks the run's level has
+L1 and L2 and how its words move (D57): the marks the run's level has
 (`arrival`, `use`, `wait`, and at `stall` `conflicts`), a click on a word
 for its element's journey (its DMA beats, grants, firings with their values,
 the push and where the result went), and the selected cycle's accesses. On
@@ -436,7 +436,7 @@ options too, such as `--trace=snax_acc0/unit` for the unit's trace.
 
 ## 6. The accelerator's RTL
 
-The same design point gives the accelerator's Chisel RTL (GEN1, D138),
+The same design point gives the accelerator's Chisel RTL (GEN1, D130),
 which snax_cluster builds from the bundle (section 7); the flow does not
 call it. `gen-rtl`
 writes `rtl.json` (C§17), then elaborates it through `hw/chisel/`'s
@@ -460,7 +460,7 @@ files. `hw/chisel/README.md` has the specs that check it.
 
 ## 7. Bundle for snax_cluster
 
-The bundle (C§18, D139) is what snax_cluster builds the design's cluster
+The bundle (C§18, D130) is what snax_cluster builds the design's cluster
 from: gen-gvsoc's files at the root, the accelerator's RTL under `rtl/`
 with its file list, and `bundle.json`, all made again (sbt, as section 6):
 
@@ -527,7 +527,7 @@ and the files `rtl/files.f` lists.
 
 ## 8. Running a bundle on snax_cluster's RTL
 
-GEN2b's comparison (D123, D140): one ELF, snax-forge's, built from the
+GEN2b's comparison (D123): one ELF, snax-forge's, built from the
 bundle, runs on SNAX-GVSoC and on snax_cluster's Verilator and Questa
 builds, and the printed lines are compared by hand. snax-forge never runs
 RTL; snax_cluster's `target/snitch_cluster/snax_forge.mk` does (C§18).

@@ -1,10 +1,10 @@
-"""A design point -> its cluster on SNAX-GVSoC: three hjson files and headers (D128, D134).
+"""A design point -> its cluster on SNAX-GVSoC: three hjson files and headers (D134).
 
     generate(design_point, out_dir, root=None) -> Manifest
 
 The hjson is the contract: SNAX-GVSoC's ``snax_hjson`` target reads it at
 run time (snax-gvsoc ``snax/snax_cfg.py``), so a design point compiles
-nothing and no Python is generated (D128). ``out_dir`` gets three hjson
+nothing and no Python is generated (D134). ``out_dir`` gets three hjson
 files, each changing for its own reason, the C headers, the program and its
 data, and the manifest:
 
@@ -40,7 +40,7 @@ parsed, with the platform's values written back by the reverse of
 ``cluster.name`` becomes ``CLUSTER`` (``snax_forge_cluster``), and in
 ``cluster.bender_target`` the entry equal to the source's ``cluster.name``
 becomes it too, so the generated cluster takes no name of snax_cluster's own
-(D139). The slot, the source's one ``snax_acc_cfg`` entry whatever its
+(D130). The slot, the source's one ``snax_acc_cfg`` entry whatever its
 name, is renamed and set, its keys in this order:
 
     snax_acc_name               the platform's accelerator_slot
@@ -98,7 +98,7 @@ graph's, e.g. ``{"N": 64}``: what a program sizes its data by),
 ``cluster`` (the cluster file, what gvrun's ``--param hjson=`` takes),
 ``files``, ``program`` (``main.c``), ``trace`` (the unit's trace path), ``csrs`` (the layout) and
 ``tasks``: per accelerator task of the derived task list
-(snax_forge/lower/derive.py, D89) its name, its ``beats`` (the unit's trip
+(snax_forge/lower/derive.py, D64) its name, its ``beats`` (the unit's trip
 count, the task's ``n``) and its ``csrs`` values.
 
 **Stable paths.** The design point is named once, by its path relative to
@@ -163,7 +163,7 @@ UNIT_TRACE = "snax_acc0/unit"
 UNIT = "SnaxUnit"
 # A shell's read-only CSRs: busy and the counter (D130)
 SHELL_RO_CSRS = 2
-# The generated cluster's name (D139)
+# The generated cluster's name (D130)
 CLUSTER = "snax_forge_cluster"
 # The RTL's file list from the cluster file's folder, written by bundle.py
 RTL_FILE_LIST = "rtl/files.f"
@@ -336,7 +336,7 @@ def datapath(unit: Unit) -> dict[str, Any]:
 
 
 def acc_tasks(tasks: TaskList, name: str, inst: Instance) -> list[AccTask]:
-    """The accelerator tasks of the derived task list (D89), with the binding's csrs values."""
+    """The accelerator tasks of the derived task list (D64), with the binding's csrs values."""
     out = []
     for step in tasks.steps:
         if isinstance(step, Configure) and step.type == "accel" and step.component == name:
