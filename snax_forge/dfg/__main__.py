@@ -68,7 +68,7 @@ def _check(args: argparse.Namespace) -> int:
 
     from snax_forge.sdfg.loader import load
 
-    from .execute import bind_symbols, execute
+    from .execute import against_reference, bind_symbols, execute
     from .graph import Graph
 
     spec = load(args.kernel)
@@ -77,18 +77,16 @@ def _check(args: argparse.Namespace) -> int:
         try:
             g = Graph.load(path)
             n = args.n
-            bound = [v for v in g.symbols.values() if v is not None]
+            bound = list(g.bound_symbols.values())
             if n is None and len(bound) == 1:
                 n = bound[0]
             inputs = spec.make_inputs(np.random.default_rng(0), **({} if n is None else {"n": n}))
-            ref = {k: np.copy(v) for k, v in inputs.items()}
-            spec.reference(**ref)
-            out = execute(g, inputs)
+            pairs = against_reference(spec, inputs, lambda x, g=g: execute(g, x))
         except (DfgError, OSError, ValueError) as e:
             print(f"FAILED {path}: {e}", file=sys.stderr)
             failed += 1
             continue
-        bad = [k for k in spec.inout if not np.array_equal(out[k], ref[k])]
+        bad = [k for k, (got, ref) in pairs.items() if not np.array_equal(got, ref)]
         sizes = ", ".join(f"{s} = {v}" for s, v in bind_symbols(g, inputs).items())
         if bad:
             print(f"MISMATCH {path}: {bad} differ from the {spec.name} reference ({sizes})")

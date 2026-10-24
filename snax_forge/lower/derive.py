@@ -123,7 +123,7 @@ def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
 def task_list(point: DesignPoint) -> TaskList:
     """The task list of a design point; see the module doc. Raises LowerError."""
     g, pf, plan = point.graph, point.platform, point.memory
-    symbols = {k: v for k, v in g.symbols.items() if v is not None}
+    symbols = g.bound_symbols
     insts = instances(g)
     mode = pf.wait_mode
     word = pf.l1.width_bits // 8

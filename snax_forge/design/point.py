@@ -24,20 +24,18 @@ an edited or stale file is caught rather than lowered.
 
 from __future__ import annotations
 
-import json
 import re
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from snax_forge.common import check_keys, to_json
+from snax_forge.common import JsonFile, check_keys
 from snax_forge.dfg import DfgError, Graph
 
 from .check import Design, run_checks
 from .memory import MemoryPlan
 from .platform import Platform, StreamerOptions
-from .problems import DesignError, Problem
+from .problems import DesignError, Problem, read_json
 from .streamers import Streamer, resolve
 
 KEYS = ("name", "graph_from", "graph", "platform", "streamers", "memory")
@@ -51,7 +49,7 @@ def design_name(graph: Path) -> str:
 
 
 @dataclass(frozen=True)
-class DesignPoint:
+class DesignPoint(JsonFile):
     """A checked design; see the module doc."""
 
     name: str
@@ -116,15 +114,10 @@ class DesignPoint:
     @classmethod
     def from_dict(cls, d: Any) -> DesignPoint:
         """Parse and check a design point; raises DesignError."""
-        if not isinstance(d, Mapping):
-            raise DesignError([Problem("point.keys", "design point", "must be an object")])
         try:
-            check_keys(d, KEYS, "design point")
-        except ValueError as e:
+            check_keys(d, KEYS, "design point", KEYS)
+        except (TypeError, ValueError) as e:
             raise DesignError([Problem("point.keys", "design point", str(e))]) from None
-        missing = [k for k in KEYS if k not in d]
-        if missing:
-            raise DesignError([Problem("point.keys", "design point", f"missing keys {missing}")])
         try:
             graph = Graph.from_dict(d["graph"])
         except DfgError as e:
@@ -141,19 +134,9 @@ class DesignPoint:
         point.check()
         return point
 
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
     @classmethod
     def load(cls, path: str | Path) -> DesignPoint:
-        try:
-            d = json.loads(Path(path).read_text())
-        except (OSError, json.JSONDecodeError) as e:
-            raise DesignError([Problem("point.keys", str(path), str(e))]) from None
-        return cls.from_dict(d)
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json())
+        return cls.from_dict(read_json(path, "point.keys"))
 
 
 def _streamer(name: str, d: Any) -> Streamer:

@@ -47,8 +47,9 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.common import fresh
 from snax_forge.dfg import DfgError, Graph, Memlet, Node, named_rates, parse_dim
-from snax_forge.dfg.subset import format_dim
+from snax_forge.dfg.subset import format_dim, map_range
 from snax_forge.expr import ExprError
 
 from .patterns import match
@@ -131,7 +132,7 @@ def _substitute_dim(d: Any, values: Mapping[str, Any]) -> Any:
 
 
 def _bound(g: Graph, v: Any, what: str) -> int:
-    env = {k: x for k, x in g.symbols.items() if x is not None}
+    env = g.bound_symbols
     try:
         return expr.evaluate(v, env)
     except ExprError as e:
@@ -177,10 +178,10 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
         | set(g.containers)
         | {nd.attrs["var"] for nd, _ in g.walk() if nd.kind == "map"}
     )
-    var_t, var_s = _fresh(f"{var}_t", taken), _fresh(f"{var}_s", taken)
+    var_t, var_s = fresh(f"{var}_t", taken), fresh(f"{var}_s", taken)
     ids = {nd.id for nd, _ in g.walk()}
     inner = Node(
-        _fresh(f"{map}_s", ids),
+        fresh(f"{map}_s", ids),
         "map",
         attrs={"var": var_s, "range": f"0:{factor}", "loop.kind": "spatial"},
         body=node.body,
@@ -196,15 +197,6 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
     }
     node.body = [inner]
     return _result(g)
-
-
-def _fresh(base: str, taken: set[str]) -> str:
-    name, k = base, 0
-    while name in taken:
-        k += 1
-        name = f"{base}_{k}"
-    taken.add(name)
-    return name
 
 
 # =============================================================================
@@ -388,11 +380,13 @@ def _check_order(
     ``smap`` None: a folding output, one lane, over the temporal maps its
     memlet uses (one beat per T firings, D104).
     """
-    env: dict[str, Any] = {k: v for k, v in g.symbols.items() if v is not None}
+    env: dict[str, Any] = g.bound_symbols
     loops = [*temporal, *([smap] if smap is not None else [])]
     for d, lp in enumerate(loops):
-        begin, end, step = parse_dim(lp.attrs["range"], lp.id)
-        values = np.arange(_bound(g, begin, what), _bound(g, end, what), step)
+        try:
+            values = np.array(map_range(lp.attrs["range"], g.bound_symbols, lp.id))
+        except ExprError as e:
+            raise SandboxError(f"{what}: {e} (bind the symbol in the recipe)") from None
         shape = [1] * len(loops)
         shape[d] = len(values)
         env[lp.attrs["var"]] = values.reshape(shape)

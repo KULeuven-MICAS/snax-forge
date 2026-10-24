@@ -64,6 +64,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from snax_forge.common import unique_names
 from snax_forge.design import DesignPoint
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
@@ -153,18 +154,13 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
 def run_names(dirs: Sequence[str | Path]) -> list[str]:
     """Flow folder names (a ``run/`` directory takes its folder's), made unique with -2, -3,
     ... in the order given."""
-    names: list[str] = []
-    for d in dirs:
-        p = Path(d).resolve()
-        base = (
+
+    def base(p: Path) -> str:
+        return (
             p.parent.name if p.name == "run" and (p / "run.json").is_file() else p.name
         ) or "run"
-        name, i = base, 1
-        while name in names:
-            i += 1
-            name = f"{base}-{i}"
-        names.append(name)
-    return names
+
+    return unique_names(base(Path(d).resolve()) for d in dirs)
 
 
 # =============================================================================

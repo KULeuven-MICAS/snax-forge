@@ -75,7 +75,7 @@ from snax_forge.lower.tasks import Configure, TaskList
 
 from .beats import Context, beat_events, beat_invariants
 from .cluster import DMA, Cluster, core_name
-from .cores import core_counts, core_spans, start_mode
+from .cores import core_counts, core_spans, merge_spans, start_mode
 from .events import Line, RunError
 from .profile import (
     AccelProfile,
@@ -89,7 +89,7 @@ from .profile import (
     WaitProfile,
 )
 from .regions import Region
-from .trace import LEVELS, Trace
+from .trace import Trace, at_least
 
 XBAR = "xbar"
 UNIT_CLASSES = ("busy", "stall_in", "stall_out", "flush")
@@ -414,12 +414,7 @@ def l2_copies(trace: Trace, regions: list[Region], cluster: Cluster) -> list[str
                 touched[m[1]].append((lo, lo + e["size"]))
     for name, r in l2.items():
         want = [(r.base, r.base + round_up(int(np.prod(r.shape)) * r.itemsize, beat))]
-        got: list[tuple[int, int]] = []
-        for lo, hi in sorted(touched[name]):
-            if got and lo <= got[-1][1]:
-                got[-1] = (got[-1][0], max(got[-1][1], hi))
-            else:
-                got.append((lo, hi))
+        got = merge_spans(touched[name])
         if got != want:
             bad.append(f"container {name}: its copies touch L2 {[(hex(a), hex(b)) for a, b in got]}, "
                        f"its array (padded to {beat}-byte beats) is [{want[0][0]:#x}, "
@@ -473,7 +468,7 @@ def convert(
     width = total_cycles
     triples = trace_events(named, cluster, tasks, boot, width)
     ctx = None
-    if LEVELS.index(level) >= LEVELS.index("beat"):
+    if at_least(level, "beat"):
         ctx = Context(cluster, list(regions or []), boot, width, level, list(filter or []),
                       [e for _, _, e in triples], named)  # fmt: skip
         triples = sorted(triples + beat_events(named, ctx), key=lambda x: (x[0], x[1]))

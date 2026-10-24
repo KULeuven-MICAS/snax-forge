@@ -156,7 +156,7 @@ GOOD_STREAM = stream("x", "acc_a")["values"]
             [{**stream("x", "acc_a"), "values": {**GOOD_STREAM, "temporal_bounds": [0]}}, start("x")],
             "temporal bounds must be >= 1",
         ),
-        ([bad_values({**GOOD_DMA, "src": {"base": 0, "bounds": [8]}}), start("x")], "missing"),
+        ([bad_values({**GOOD_DMA, "src": {"symbol": "A", "bounds": [8]}}), start("x")], "missing"),
         (
             [bad_values({**GOOD_DMA, "src": {"symbol": "A", "bounds": 8, "strides": [64]}}), start("x")],
             "must be a list",

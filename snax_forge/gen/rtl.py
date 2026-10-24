@@ -71,17 +71,14 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
-from snax_forge.common import cwd_relative, repo_root, to_json
-from snax_forge.design import DesignError
-from snax_forge.design.point import DesignPoint
+from snax_forge.common import JsonFile, check_keys, cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
-from snax_forge.lower import CError
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure
 
 from .blocks import ELEMENTWISE_OP, GenError, Unit
 from .data import arrays
-from .gvsoc import ROOT, accelerator, generate, point_name
+from .gvsoc import ROOT, cli, generate, load_point, out_dir
 
 OUT = ROOT / "out" / "rtl"
 CATALOGUE = repo_root() / "hw" / "chisel" / "blocks.json"
@@ -128,7 +125,7 @@ class RtlUnit:
 
 
 @dataclass(frozen=True)
-class RtlSpec:
+class RtlSpec(JsonFile):
     """``rtl.json``; see the module doc."""
 
     design_point: str
@@ -142,13 +139,6 @@ class RtlSpec:
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> RtlSpec:
         return cls(d["design_point"], d["tag"], [RtlUnit.from_dict(u) for u in d["units"]])
-
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    @classmethod
-    def load(cls, path: str | Path) -> RtlSpec:
-        return cls.from_dict(json.loads(Path(path).read_text()))
 
 
 # =============================================================================
@@ -192,13 +182,10 @@ def catalogue() -> dict[str, Any]:
 
 def check_params(block: str, params: Mapping[str, Any], sig: Mapping[str, Any]) -> None:
     """``params`` against the block's catalogue params ``sig``; see the module doc."""
-    missing = [k for k in sig if k not in params]
-    unknown = [k for k in params if k not in sig]
-    if missing or unknown:
-        raise GenError(
-            "gen.params", f"{block}: params missing {missing}, unknown {unknown} (the catalogue "
-            f"has {list(sig)})",
-        )  # fmt: skip
+    try:
+        check_keys(params, list(sig), f"{block} params (the catalogue's)", list(sig))
+    except ValueError as e:
+        raise GenError("gen.params", str(e)) from None
     for k, t in sig.items():
         v, what = params[k], f"{block}.{k}"
         if t["type"] == "int":
@@ -303,10 +290,9 @@ def rtl_unit(name: str, inst: Instance, unit: Unit, cat: Mapping[str, Any]) -> R
 def rtl_spec(design_point: str | Path, root: str | Path | None = None,
              cat: Mapping[str, Any] | None = None) -> RtlSpec:  # fmt: skip
     """The design point's ``rtl.json``, checked; see the module doc."""
-    root = ROOT if root is None else Path(root)
-    shown = point_name(Path(design_point), root)
-    point = DesignPoint.load(design_point)
-    name, inst, unit = accelerator(point)
+    shown, point, (name, inst, unit) = load_point(
+        design_point, ROOT if root is None else Path(root)
+    )
     unit_ = rtl_unit(name, inst, unit, catalogue() if cat is None else cat)
     return RtlSpec(shown, point.platform.accelerator_slot, [unit_])
 
@@ -349,10 +335,9 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
 def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     """``vectors.json``: the data and tasks the Chisel specs drive the wrapper with; see the
     module doc."""
-    root = ROOT if root is None else Path(root)
-    shown = point_name(Path(design_point), root)
-    point = DesignPoint.load(design_point)
-    name, inst, unit = accelerator(point)
+    shown, point, (name, inst, unit) = load_point(
+        design_point, ROOT if root is None else Path(root)
+    )
     node = instance_nodes(point.graph)[name]
     data = {a.name: a for a in arrays(point)}
     tasks = [s for s in task_list(point).steps
@@ -429,22 +414,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("out_dir", type=Path, nargs="?", help="output directory (out/rtl/<design>)")
     ap.add_argument("--fixture", type=Path, help="write a fixture of the Chisel specs here")
     args = ap.parse_args(argv)
-    try:
+
+    def write() -> int:
         if args.fixture is not None:
             for f in write_fixture(args.design_point, args.fixture):
                 print(f"wrote {cwd_relative(args.fixture / f)}")
             return 0
-        out = args.out_dir or OUT / DesignPoint.load(args.design_point).name
+        out = out_dir(args.out_dir, OUT, args.design_point)
         spec = write_rtl(args.design_point, out)
         print(
             f"wrote {cwd_relative(out / RTL_JSON)}: {spec.tag}_shell_wrapper, {spec.units[0].block}"
         )
         for f in elaborate(out / RTL_JSON, out):
             print(f"wrote {cwd_relative(f)}")
-    except (GenError, CError, DesignError) as e:
-        print(e, file=sys.stderr)
-        return 1
-    return 0
+        return 0
+
+    return cli(write)
 
 
 if __name__ == "__main__":

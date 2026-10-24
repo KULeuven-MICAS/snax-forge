@@ -57,17 +57,14 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
+from snax_forge.common import CodedError
 
 # SnaxUnit's config when none is given: one word, the count
 DEFAULT_CONFIG = ["count"]
 
 
-class GenError(ValueError):
+class GenError(CodedError):
     """A design point the GVSoC generator refuses; ``code`` names the rule (``gen.<rule>``)."""
-
-    def __init__(self, code: str, message: str) -> None:
-        self.code = code
-        super().__init__(f"[{code}] {message}")
 
 
 @dataclass(frozen=True)
@@ -134,23 +131,59 @@ def port_dtype(dtype: str, where: str) -> tuple[int, bool]:
     return int(m.group(2)), not m.group(1)
 
 
-def elementwise_tiled_spatial(inst: Instance) -> Unit:
-    """ElementwiseTiledSpatial's unit; see the module doc."""
-    brm, b = inst.brm, inst.impl.binding
-    what = f"{brm.name}.{inst.implementation}"
+def _control(inst: Instance, wait: str, why: str, timing: tuple[int, int, int], who: str,
+             what: str) -> None:  # fmt: skip
+    """The binding counts and waits ``wait`` (else ``why``), and the timing is ``timing``."""
+    b = inst.impl.binding
     if b["control"] != "counted":
         raise GenError(
             "gen.control", f"{what}: control {b['control']!r}; the block counts (counted)"
         )
-    if b["wait"] != "lockstep":
-        raise GenError("gen.wait", f"{what}: wait {b['wait']!r}; only lockstep is generated yet")
-    timing = (inst.latency, inst.initiation_interval, inst.drain)
-    if timing != (0, 1, 0):
+    if b["wait"] != wait:
+        raise GenError("gen.wait", f"{what}: wait {b['wait']!r}; {why}")
+    got = (inst.latency, inst.initiation_interval, inst.drain)
+    if got != timing:
         raise GenError(
             "gen.timing",
-            f"{what}: latency {timing[0]}, II {timing[1]}, drain {timing[2]}; "
-            "lockstep is latency 0, II 1, drain 0",
+            f"{what}: latency {got[0]}, II {got[1]}, drain {got[2]}; "
+            f"{who} is latency {timing[0]}, II {timing[1]}, drain {timing[2]}",
         )
+
+
+def _ports(inst: Instance, n_in: int, n_out: int, who: str, what: str) -> tuple[list, list]:
+    """The BRM's input and output ports, ``n_in`` and ``n_out`` of them."""
+    ins = [p for p in inst.brm.interface.ports if p.direction == "in"]
+    outs = [p for p in inst.brm.interface.ports if p.direction == "out"]
+    if (len(ins), len(outs)) != (n_in, n_out):
+        raise GenError(
+            "gen.ports",
+            f"{what}: {len(ins)} inputs and {len(outs)} outputs; {who} takes {n_in} and {n_out}",
+        )
+    return ins, outs
+
+
+def _dtype(inst: Instance, what: str) -> tuple[int, bool]:
+    """The one dtype of every port, as bits and signedness."""
+    dtypes = {p.dtype for p in inst.brm.interface.ports}
+    if len(dtypes) != 1:
+        raise GenError("gen.dtype", f"{what}: ports of dtypes {sorted(dtypes)}; one is needed")
+    return port_dtype(dtypes.pop(), what)
+
+
+def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
+    """Each port has the lanes ``want`` gives it."""
+    for port, n in want.items():
+        if inst.lanes(port) != n:
+            raise GenError(
+                "gen.lanes", f"{what}: port {port} has {inst.lanes(port)} lanes, the block {n}"
+            )
+
+
+def elementwise_tiled_spatial(inst: Instance) -> Unit:
+    """ElementwiseTiledSpatial's unit; see the module doc."""
+    brm, b = inst.brm, inst.impl.binding
+    what = f"{brm.name}.{inst.implementation}"
+    _control(inst, "lockstep", "only lockstep is generated yet", (0, 1, 0), "lockstep", what)
     args = b["args"]
     for k in ("lanes", "supportedOps"):
         if k not in args:
@@ -162,27 +195,13 @@ def elementwise_tiled_spatial(inst: Instance) -> Unit:
             "gen.op",
             f"{what}: supportedOps {op!r} is not one of ElementwiseOp's {list(ELEMENTWISE_OP)}",
         )
-    ins = [p for p in brm.interface.ports if p.direction == "in"]
-    outs = [p for p in brm.interface.ports if p.direction == "out"]
-    if (len(ins), len(outs)) != (2, 1):
-        raise GenError(
-            "gen.ports",
-            f"{what}: {len(ins)} inputs and {len(outs)} outputs; SnaxUnit takes 2 and 1",
-        )
-    dtypes = {p.dtype for p in brm.interface.ports}
-    if len(dtypes) != 1:
-        raise GenError("gen.dtype", f"{what}: ports of dtypes {sorted(dtypes)}; one is needed")
-    bits, signed = port_dtype(dtypes.pop(), what)
+    ins, outs = _ports(inst, 2, 1, "SnaxUnit", what)
+    bits, signed = _dtype(inst, what)
     if not isinstance(lanes, int) or lanes < 1 or lanes * bits % 64:
         raise GenError(
             "gen.lanes", f"{what}: {lanes} lanes of {bits} bits is not whole 64-bit channels"
         )
-    for p in brm.interface.ports:
-        if inst.lanes(p.name) != lanes:
-            raise GenError(
-                "gen.lanes",
-                f"{what}: port {p.name} has {inst.lanes(p.name)} lanes, the block {lanes}",
-            )
+    _lanes(inst, {p.name: lanes for p in brm.interface.ports}, what)
     return Unit(
         inputs=[p.name for p in ins], outputs=[p.name for p in outs], lanes=lanes,
         data_width=bits, op=ELEMENTWISE_OP[op], signed=signed, control="counted",
@@ -197,19 +216,7 @@ def accumulator(inst: Instance) -> Unit:
     """The Accumulator's unit; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
-    if b["control"] != "counted":
-        raise GenError(
-            "gen.control", f"{what}: control {b['control']!r}; the block counts (counted)"
-        )
-    if b["wait"] != "pipelined":
-        raise GenError("gen.wait", f"{what}: wait {b['wait']!r}; the block is pipelined")
-    timing = (inst.latency, inst.initiation_interval, inst.drain)
-    if timing != (1, 1, 0):
-        raise GenError(
-            "gen.timing",
-            f"{what}: latency {timing[0]}, II {timing[1]}, drain {timing[2]}; "
-            "the Accumulator is latency 1, II 1, drain 0",
-        )
+    _control(inst, "pipelined", "the block is pipelined", (1, 1, 0), "the Accumulator", what)
     if set(b["args"]) != {"lanes"}:
         raise GenError(
             "gen.args", f"{what}: args {sorted(b['args'])}; the Accumulator takes lanes only"
@@ -218,30 +225,15 @@ def accumulator(inst: Instance) -> Unit:
     op = inst.params.get("op")
     if op != "add":
         raise GenError("gen.op", f"{what}: op {op!r}; the Accumulator adds")
-    ins = [p for p in brm.interface.ports if p.direction == "in"]
-    outs = [p for p in brm.interface.ports if p.direction == "out"]
-    if (len(ins), len(outs)) != (1, 1):
-        raise GenError(
-            "gen.ports",
-            f"{what}: {len(ins)} inputs and {len(outs)} outputs; the Accumulator takes 1 and 1",
-        )
-    (a,), (out,) = ins, outs
+    (a,), (out,) = _ports(inst, 1, 1, "the Accumulator", what)
     if a.rate != 1 or not isinstance(out.rate, str):
         raise GenError(
             "gen.rate",
             f"{what}: rates {a.rate!r} in and {out.rate!r} out; the Accumulator takes 1 in and "
             "a named rate out (one sum per T inputs)",
         )
-    dtypes = {p.dtype for p in brm.interface.ports}
-    if len(dtypes) != 1:
-        raise GenError("gen.dtype", f"{what}: ports of dtypes {sorted(dtypes)}; one is needed")
-    bits, signed = port_dtype(dtypes.pop(), what)
-    for p, want in ((a, lanes), (out, 1)):
-        if inst.lanes(p.name) != want:
-            raise GenError(
-                "gen.lanes",
-                f"{what}: port {p.name} has {inst.lanes(p.name)} lanes, the block {want}",
-            )
+    bits, signed = _dtype(inst, what)
+    _lanes(inst, {a.name: lanes, out.name: 1}, what)
     if bits % 64:
         raise GenError("gen.lanes", f"{what}: 1 lane of {bits} bits is not whole 64-bit channels")
     csrs = [(c["field"], c["value"]) for c in b["csrs"]]

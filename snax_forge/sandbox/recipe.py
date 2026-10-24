@@ -31,14 +31,12 @@ registered.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.common import check_keys, plain, to_json
+from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.expr import ExprError, Value
 
 
@@ -47,15 +45,10 @@ class SandboxError(ValueError):
 
 
 def _keys(d: Any, required: tuple[str, ...], optional: tuple[str, ...], what: str) -> None:
-    if not isinstance(d, Mapping):
-        raise SandboxError(f"{what}: must be an object, got {d!r}")
     try:
-        check_keys(d, [*required, *optional], what)
-    except ValueError as e:
+        check_keys(d, [*required, *optional], what, required)
+    except (TypeError, ValueError) as e:
         raise SandboxError(str(e)) from None
-    missing = [k for k in required if k not in d]
-    if missing:
-        raise SandboxError(f"{what}: missing key {missing[0]!r}")
 
 
 @dataclass
@@ -78,7 +71,7 @@ class Step:
 
 
 @dataclass
-class Recipe:
+class Recipe(JsonFile):
     name: str
     kernel: str
     params: dict[str, int | str] = field(default_factory=dict)
@@ -148,13 +141,3 @@ class Recipe:
             dict(d.get("symbols", {})),
             [Step.from_dict(s, f"{name}.steps[{i}]") for i, s in enumerate(steps)],
         )
-
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    @classmethod
-    def load(cls, path: str | Path) -> Recipe:
-        return cls.from_dict(json.loads(Path(path).read_text()))
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json())

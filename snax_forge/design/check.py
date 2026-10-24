@@ -582,10 +582,8 @@ def _memory_align(design: Design) -> Iterable[Problem]:
 
 def _extent(lay: Any, word: int, beat: int | None = None) -> tuple[int, int]:
     """Bytes ``[lo, hi)`` a layout covers; with ``beat``, up to the end of its last beat (D105)."""
-    lo, hi = lay.span()
-    if beat is not None:
-        return lo, lo + moved_bytes(lay, word, beat)
-    return lo, hi + word
+    lo, hi = lay.extent(word)
+    return (lo, lo + moved_bytes(lay, word, beat)) if beat is not None else (lo, hi)
 
 
 def _moved_beats(design: Design, beat: int) -> dict[str, int | None]:

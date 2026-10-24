@@ -45,13 +45,11 @@ bound >= 1.
 
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 
-from snax_forge.common import check_keys, plain, to_json
+from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.design.platform import WAIT_MODES
 from snax_forge.design.streamers import instances, streamer_name
 
@@ -68,12 +66,9 @@ _OPTIONAL = {"configure": ("after", "wait_mode"), "sync": ("mode",)}
 
 def _need(d: Mapping[str, Any], keys: tuple[str, ...], what: str) -> None:
     try:
-        check_keys(d, ["op", *keys, *_OPTIONAL.get(what, ())], what)
+        check_keys(d, ["op", *keys, *_OPTIONAL.get(what, ())], what, keys)
     except ValueError as e:
         raise TaskListError(str(e)) from e
-    missing = [k for k in keys if k not in d]
-    if missing:
-        raise TaskListError(f"{what} {dict(d)}: missing {missing}")
 
 
 # =============================================================================
@@ -185,7 +180,7 @@ def step_from_dict(d: Mapping[str, Any]) -> Step:
 
 
 @dataclass
-class TaskList:
+class TaskList(JsonFile):
     """An ordered list of steps (module doc); checked when it is made."""
 
     name: str
@@ -266,13 +261,6 @@ class TaskList:
             raise TaskListError("task list needs a 'name'")
         return cls(str(d["name"]), [step_from_dict(s) for s in d.get("steps", [])])
 
-    @classmethod
-    def load(cls, path: str | Path) -> TaskList:
-        return cls.from_dict(json.loads(Path(path).read_text()))
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(to_json(self.to_dict()))
-
 
 # =============================================================================
 # Values against the design point
@@ -286,12 +274,7 @@ DIRECTIONS = ("l2_to_l1", "l1_to_l2")
 
 def _exact(v: Any, keys: list[str] | tuple[str, ...], what: str) -> None:
     """``v`` is a mapping with exactly ``keys``."""
-    if not isinstance(v, Mapping):
-        raise TypeError(f"{what} must be an object, got {v!r}")
-    missing = [k for k in keys if k not in v]
-    unknown = sorted(set(v) - set(keys))
-    if missing or unknown:
-        raise ValueError(f"{what}: missing {missing}, unknown {unknown} (expected {list(keys)})")
+    check_keys(v, keys, what, keys)
 
 
 def _ints(v: Any, what: str) -> list[int]:

@@ -19,7 +19,7 @@ trace the reports and the viewer read.
 """
 
 from .cluster import Accelerator, Cluster, Csrs, Mover, cluster_from, load_cluster
-from .cores import CORE_CLASSES, core_counts, core_spans, start_mode
+from .cores import CORE_CLASSES, core_counts, core_spans, merge_spans, start_mode
 from .events import GRAMMAR, Line, RunError, parse_line, read_events
 from .outputs import RunOutputs, read_run, write_run
 from .profile import (
@@ -34,7 +34,7 @@ from .profile import (
     WaitProfile,
 )
 from .regions import Region, region_at, regions_of
-from .trace import KINDS, LEVELS, Trace
+from .trace import KINDS, LEVELS, Trace, at_least
 
 __all__ = [
     "CORE_CLASSES",
@@ -59,10 +59,12 @@ __all__ = [
     "StreamerProfile",
     "Trace",
     "WaitProfile",
+    "at_least",
     "cluster_from",
     "core_counts",
     "core_spans",
     "load_cluster",
+    "merge_spans",
     "parse_line",
     "read_events",
     "read_run",

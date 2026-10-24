@@ -88,7 +88,7 @@ from typing import TYPE_CHECKING, Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
-from snax_forge.common import generated_header
+from snax_forge.common import CodedError, generated_header
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
 from snax_forge.design.streamers import instances, streamer_name
@@ -104,13 +104,9 @@ MAIN_C = "main.c"
 INDENT = "    "
 
 
-class CError(ValueError):
+class CError(CodedError):
     """A task list or design point the C backend refuses; ``code`` names the rule
     (``c.<rule>``)."""
-
-    def __init__(self, code: str, message: str) -> None:
-        self.code = code
-        super().__init__(f"[{code}] {message}")
 
 
 def define_name(field: str) -> str:

@@ -49,7 +49,6 @@ from __future__ import annotations
 
 import difflib
 import itertools
-import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from functools import cached_property
@@ -59,13 +58,13 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.common import plain, to_json
+from snax_forge.common import JsonFile, plain
 from snax_forge.dfg import Graph, Node
-from snax_forge.dfg.subset import parse_dim
+from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.layout import Layout, moved_bytes, round_up
 
 from .platform import Platform
-from .problems import DesignError, Problem
+from .problems import DesignError, Problem, read_json
 
 PASS_KINDS = ("residency", "layout", "placement")
 DEFAULT_PASSES = {"residency": "default", "layout": "contiguous", "placement": "contiguous"}
@@ -150,11 +149,7 @@ class MemorySpec:
 
     @classmethod
     def load(cls, path: str | Path) -> MemorySpec:
-        try:
-            d = json.loads(Path(path).read_text())
-        except (OSError, json.JSONDecodeError) as e:
-            raise DesignError([Problem("memory.pin", str(path), str(e))]) from None
-        return cls.from_dict(d)
+        return cls.from_dict(read_json(path, "memory.pin"))
 
 
 # =============================================================================
@@ -183,7 +178,7 @@ class MemoryContext:
 
     @property
     def symbols(self) -> dict[str, int]:
-        return {k: v for k, v in self.graph.symbols.items() if v is not None}
+        return self.graph.bound_symbols
 
     @property
     def containers(self) -> list[str]:
@@ -212,7 +207,7 @@ class MemoryContext:
             l2 = self.platform.l2
             return l2.base_addr, l2.base_addr + l2.size_bytes
         l1 = self.platform.l1
-        return l1.base_addr, l1.base_addr + l1.n_banks * l1.rows * (l1.width_bits // 8)
+        return l1.base_addr, l1.base_addr + l1.size_bytes
 
     @cached_property
     def accesses(self) -> list[Access]:
@@ -245,10 +240,7 @@ def _stream(subset: list[Any], outer: tuple[Node, ...], symbols: dict[str, int])
     for m in outer:
         if m.kind != "map":
             continue
-        b, e, s = parse_dim(m.attrs["range"], m.id)
-        loops.append(
-            (m.attrs["var"], range(expr.evaluate(b, symbols), expr.evaluate(e, symbols), s))
-        )
+        loops.append((m.attrs["var"], map_range(m.attrs["range"], symbols, m.id)))
     beats = []
     for values in itertools.product(*(r for _, r in loops)):
         env = {**symbols, **{v: x for (v, _), x in zip(loops, values, strict=True)}}
@@ -307,12 +299,6 @@ def contiguous_layout(
     }
 
 
-def _extent(lay: Layout, word: int) -> tuple[int, int]:
-    """Bytes ``[lo, hi)`` a layout covers."""
-    lo, hi = lay.span()
-    return lo, hi + word
-
-
 def contiguous_placement(
     ctx: MemoryContext,
     layouts: dict[str, dict[str, Layout]],
@@ -323,7 +309,7 @@ def contiguous_placement(
     taken: list[tuple[int, int]] = []
     for (c, m), b in pins.items():
         if m == "l1" and c in layouts and "l1" in layouts[c]:
-            lo, hi = _extent(replace(layouts[c]["l1"], base=b), word)
+            lo, hi = replace(layouts[c]["l1"], base=b).extent(word)
             taken.append((lo, hi))
             bases[c]["l1"] = b
     cursor = ctx.span("l1")[0]
@@ -333,7 +319,7 @@ def contiguous_placement(
         lay = layouts[c]["l1"]
         moved = "l2" in layouts[c]
         a = ctx.beat_bytes if moved else word
-        lo0, hi0 = _extent(lay, word)  # with base 0
+        lo0, hi0 = lay.extent(word)  # with base 0
         if moved:  # the DMA moves whole beats: keep the padding free (D105)
             hi0 = lo0 + moved_bytes(lay, word, a)
         base = round_up(cursor - lo0, a)
@@ -360,7 +346,7 @@ register_memory_pass("placement", "contiguous", contiguous_placement)
 
 
 @dataclass(frozen=True)
-class MemoryPlan:
+class MemoryPlan(JsonFile):
     """The passes run, the pins, and the layouts they gave: container -> memory -> Layout."""
 
     passes: dict[str, str]
@@ -397,12 +383,6 @@ class MemoryPlan:
         if problems:
             raise DesignError(problems)
         return cls(spec.passes, spec.changes, out)
-
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json())
 
 
 def plan(ctx: MemoryContext, spec: MemorySpec) -> MemoryPlan:

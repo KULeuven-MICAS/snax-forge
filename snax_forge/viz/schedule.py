@@ -40,7 +40,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from snax_forge.run.cluster import DMA
-from snax_forge.run.cores import CORE_CLASSES
+from snax_forge.run.cores import CORE_CLASSES, merge_spans
 
 from .index import Event, RunIndex
 
@@ -53,8 +53,7 @@ class ScheduleUnavailable(ValueError):
 
 def _need(index: RunIndex, level: str, what: str) -> None:
     if not index.on(level):
-        raise ScheduleUnavailable(f"{what} needs --trace {level}; this run was traced at "
-                                  f"{index.level}")  # fmt: skip
+        raise ScheduleUnavailable(f"{what} {index.needs(level)}")
 
 
 # =============================================================================
@@ -111,16 +110,8 @@ def active(index: RunIndex) -> list[tuple[int, int]]:
     for i, e in index.issue.items():
         d = index.copy_done.get(i)
         spans.append((e["t"], (d["t"] if d is not None else index.total_cycles - 1) + 1))
-    out: list[tuple[int, int]] = []
-    for a, b in sorted(spans):
-        a, b = max(a, 0), min(b, index.total_cycles)
-        if a >= b:
-            continue
-        if out and a <= out[-1][1]:
-            out[-1] = (out[-1][0], max(out[-1][1], b))
-        else:
-            out.append((a, b))
-    return out
+    clipped = ((max(a, 0), min(b, index.total_cycles)) for a, b in spans)
+    return merge_spans((a, b) for a, b in clipped if a < b)
 
 
 def quiet(index: RunIndex) -> list[tuple[int, int]]:

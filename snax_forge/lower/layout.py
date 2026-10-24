@@ -69,6 +69,11 @@ class Layout(Config):
             hi += max(0, (e - 1) * s)
         return lo, hi
 
+    def extent(self, word: int) -> tuple[int, int]:
+        """The bytes ``[lo, hi)`` the operand covers, each element ``word`` bytes."""
+        lo, hi = self.span()
+        return lo, hi + word
+
     def check(self, l1: L1Config) -> None:
         """The layout fits ``l1``: one element per word, word-aligned, inside L1."""
         if l1.elems_per_word != 1:
@@ -82,13 +87,11 @@ class Layout(Config):
                 f"base {self.base} and strides {list(self.strides)} must be multiples of the "
                 f"{word}-byte word"
             )
-        lo, hi = self.span()
+        lo, hi = self.extent(word)
         start = l1.base_addr
-        end = start + l1.n_banks * l1.rows * word
-        if lo < start or hi + word > end:
-            raise LayoutError(
-                f"the operand spans bytes [{lo}, {hi + word}), L1 is [{start}, {end})"
-            )
+        end = start + l1.size_bytes
+        if lo < start or hi > end:
+            raise LayoutError(f"the operand spans bytes [{lo}, {hi}), L1 is [{start}, {end})")
 
 
 def round_up(x: int, a: int) -> int:

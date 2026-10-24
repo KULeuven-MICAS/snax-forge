@@ -128,9 +128,18 @@ from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
-from snax_forge.dfg.execute import execute
+from snax_forge.dfg.execute import against_reference, execute
 from snax_forge.lower import CError, LowerError, TaskList, task_list
-from snax_forge.run import LEVELS, RunError, Trace, load_cluster, read_events, regions_of, write_run
+from snax_forge.run import (
+    LEVELS,
+    RunError,
+    Trace,
+    at_least,
+    load_cluster,
+    read_events,
+    regions_of,
+    write_run,
+)
 from snax_forge.run.convert import convert
 from snax_forge.run.elf import l2_symbols, read_symbols
 from snax_forge.run.outputs import EVENTS_FILE
@@ -269,7 +278,7 @@ def kernel_spec(kernel: str, why: str) -> Any:
 
 def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
     """The kernel's ``make_inputs`` at the size the graph binds (its one bound symbol)."""
-    bound = [v for v in graph.symbols.values() if v is not None]
+    bound = list(graph.bound_symbols.values())
     kw = {"n": bound[0]} if len(bound) == 1 else {}
     inputs = spec.make_inputs(np.random.default_rng(seed), **kw)
     for c, arr in inputs.items():
@@ -288,12 +297,9 @@ def reference_check(spec: Any, graph: Graph, seed: int) -> None:
     inputs: data.h's goldens are the first, so a graph that computes something else (one
     edited by hand, D108) would pass its own check; a FlowError naming each output that
     differs."""
-    inputs = kernel_inputs(spec, graph, seed)
-    ref = {k: np.copy(v) for k, v in inputs.items()}
-    spec.reference(**ref)
-    ref1 = execute(graph, {k: np.copy(v) for k, v in inputs.items()})
-    wrong = [f"{c} in {int(np.count_nonzero(ref1[c] != ref[c]))} of {ref[c].size} elements"
-             for c in spec.inout if not np.array_equal(ref1[c], ref[c])]  # fmt: skip
+    pairs = against_reference(spec, kernel_inputs(spec, graph, seed), lambda x: execute(graph, x))
+    wrong = [f"{c} in {int(np.count_nonzero(got != ref))} of {ref.size} elements"
+             for c, (got, ref) in pairs.items() if not np.array_equal(got, ref)]  # fmt: skip
     if wrong:
         raise FlowError(f"gen: the graph's reference executor differs from the {spec.name} "
                         f"reference: {', '.join(wrong)}; the goldens would not be the kernel's "
@@ -581,7 +587,7 @@ def _clear_sandbox(out: Path, graph_path: Path) -> None:
 def _trace(level: str, sources: Sequence[str] | None) -> None:
     if level not in TRACE_LEVELS:
         raise FlowError(f"trace level {level!r}: one of {', '.join(TRACE_LEVELS)}")
-    if sources is not None and TRACE_LEVELS.index(level) < TRACE_LEVELS.index("beat"):
+    if sources is not None and not at_least(level, "beat"):
         raise FlowError(f"trace sources {list(sources)}: they go with beat, stall or finegrained")
 
 
@@ -799,7 +805,7 @@ def _from_graph(
         check = {
             "kernel": spec.name,
             "seed": seed,
-            "symbols": {k: v for k, v in point.graph.symbols.items() if v is not None},
+            "symbols": point.graph.bound_symbols,
             **result,
         }
         hjson = [x for x in manifest.files if x.endswith(".hjson")]

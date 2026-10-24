@@ -2,15 +2,18 @@
 
 * ``repo_root``, the directory holding ``pixi.toml``: where ``out/``, ``kernels/`` and the
   platforms are found; ``cwd_relative``, a path as a command line prints it;
-  ``generated_header``, the comment every generated file starts with.
-* ``plain`` and ``check_keys``: JSON-ready values, and unknown keys refused, so a typo never
-  silently falls back to a default.
+  ``generated_header``, the comment every generated file starts with; ``fresh`` and
+  ``unique_names``, names that clash with none taken before.
+* ``CodedError``, the base of the refusals that carry a rule code.
+* ``plain`` and ``check_keys``: JSON-ready values, and an object's unknown keys refused (so a
+  typo never silently falls back to a default) and its required ones checked.
 * ``Config``, a mixin giving a flat dataclass ``to_dict`` / ``from_dict``. Every field is
   written, defaults included, so a written file says everything and a missing key takes the
   class default.
 * ``to_json``, the one JSON writer for every file snax-forge writes: insertion order, small
   containers on one line, final newline. It is deterministic, and ``json.loads`` gives the
-  object back (D44).
+  object back (D44). ``JsonFile``, a mixin giving a class with ``to_dict`` / ``from_dict``
+  its ``to_json``, ``save`` and ``load``.
 
 Until the contracts freeze these are plain dataclasses and plain JSON, with versioned schemas
 after (D26). This module imports nothing from the package, so every package can use it.
@@ -20,7 +23,7 @@ from __future__ import annotations
 
 import json
 import textwrap
-from collections.abc import Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import fields
 from pathlib import Path
 from typing import Any
@@ -65,6 +68,28 @@ def cwd_relative(p: Path) -> str:
         return str(p)
 
 
+def fresh(base: str, taken: set[str]) -> str:
+    """``base``, or ``base_1``, ``base_2``, ... whichever is not taken; the result is taken."""
+    name, k = base, 0
+    while name in taken:
+        k += 1
+        name = f"{base}_{k}"
+    taken.add(name)
+    return name
+
+
+def unique_names(bases: Iterable[str]) -> list[str]:
+    """Each base, made unique with -2, -3, ... in the order given."""
+    names: list[str] = []
+    for base in bases:
+        name, i = base, 1
+        while name in names:
+            i += 1
+            name = f"{base}-{i}"
+        names.append(name)
+    return names
+
+
 # =============================================================================
 # Plain values and key checks
 # =============================================================================
@@ -79,12 +104,31 @@ def plain(v: Any) -> Any:
     return v
 
 
-def check_keys(d: Mapping[str, Any], allowed: Sequence[str], what: str = "") -> None:
-    """Reject unknown keys. ``what`` prefixes the message when it is given."""
+def check_keys(
+    d: Any, allowed: Sequence[str], what: str = "", required: Sequence[str] = (),
+    noun: str = "key",
+) -> None:  # fmt: skip
+    """``d`` is an object (else TypeError) with no key outside ``allowed`` and every one of
+    ``required`` (else ValueError, naming the first missing ``noun``). ``what`` prefixes the
+    message when it is given; a caller re-raises in its own error class."""
+    head = f"{what}: " if what else ""
+    if not isinstance(d, Mapping):
+        raise TypeError(f"{head}must be an object, got {d!r}")
     unknown = sorted(set(d) - set(allowed))
     if unknown:
-        head = f"{what}: " if what else ""
         raise ValueError(f"{head}unknown keys {unknown} (allowed: {list(allowed)})")
+    missing = [k for k in required if k not in d]
+    if missing:
+        raise ValueError(f"{head}missing {noun} {missing[0]!r}")
+
+
+class CodedError(ValueError):
+    """A refusal whose ``code`` names the rule (``<module>.<rule>``), shown first in the message.
+    Each package subclasses it so callers catch its own refusals."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        super().__init__(f"[{code}] {message}")
 
 
 # =============================================================================
@@ -147,3 +191,17 @@ def _json(v: Any, indent: int, col: int) -> str:
 def to_json(obj: Any) -> str:
     """The one JSON format of every written file."""
     return _json(obj, 0, 0) + "\n"
+
+
+class JsonFile:
+    """``to_json``, ``save`` and ``load`` for a class with ``to_dict`` and ``from_dict``."""
+
+    def to_json(self) -> str:
+        return to_json(self.to_dict())  # type: ignore[attr-defined]
+
+    def save(self, path: str | Path) -> None:
+        Path(path).write_text(self.to_json())
+
+    @classmethod
+    def load(cls, path: str | Path) -> Any:
+        return cls.from_dict(json.loads(Path(path).read_text()))  # type: ignore[attr-defined]

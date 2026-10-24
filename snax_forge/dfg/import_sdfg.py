@@ -81,6 +81,7 @@ from dace.sdfg import nodes as dn
 from dace.sdfg.utils import dfs_topological_sort
 
 from snax_forge import expr
+from snax_forge.common import fresh
 from snax_forge.expr import ExprError, Value
 
 from .graph import Container, Graph, Memlet, Node
@@ -111,16 +112,6 @@ def clean(label: str) -> str:
     """A DaCe label as a readable name: no leading, trailing or doubled underscores, lower case."""
     name = re.sub(r"_+", "_", label.strip("_")).lower()
     return name if name.isidentifier() else f"n_{re.sub(r'[^0-9a-z_]', '_', name)}"
-
-
-def fresh(base: str, taken: set[str]) -> str:
-    """``base``, or ``base_1``, ``base_2``, ... whichever is not taken; the result is taken."""
-    name, k = base, 0
-    while name in taken:
-        k += 1
-        name = f"{base}_{k}"
-    taken.add(name)
-    return name
 
 
 def _variable(depth: int, taken: set[str]) -> str:
@@ -506,21 +497,11 @@ def _c_stride(shape: list[Value], i: int) -> Value:
 def _rename_code(code: str, conns: dict[str, str], what: str) -> str:
     """Tasklet code with its connectors renamed, checked against the expression grammar."""
     try:
-        tree = ast.parse(code)
-    except SyntaxError as e:
-        raise SdfgImportError(f"{what}: cannot parse its code {code!r}") from e
-    for st in tree.body:
-        ok = isinstance(st, ast.Assign) and len(st.targets) == 1
-        if not ok or not isinstance(st.targets[0], ast.Name):
-            raise SdfgImportError(f"{what}: {ast.unparse(st)!r} is not 'output = expression'")
-        try:
-            expr.check(ast.unparse(st.value), what)
-        except ExprError as e:
-            raise SdfgImportError(f"{e} (outside the expression grammar, open item 37)") from None
-    for n in ast.walk(tree):
-        if isinstance(n, ast.Name) and n.id in conns:
-            n.id = conns[n.id]
-    return "\n".join(ast.unparse(st) for st in tree.body)
+        return expr.rename_code(code, conns)
+    except ExprError as e:
+        raise SdfgImportError(
+            f"{what}: {e} (outside the expression grammar, open item 37)"
+        ) from None
 
 
 # =============================================================================

@@ -63,7 +63,9 @@ from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.dfg import DfgError, Graph, Memlet, Node, parse_dim
+from snax_forge.common import unique_names
+from snax_forge.dfg import DfgError, Graph, Memlet, Node
+from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
 
 # =============================================================================
@@ -93,14 +95,7 @@ def expand(paths: Sequence[str | Path]) -> list[Path]:
 
 def entry_names(files: Sequence[Path]) -> list[str]:
     """File stems, made unique with -2, -3, ... in the order given."""
-    names: list[str] = []
-    for f in files:
-        name, i = f.stem, 1
-        while name in names:
-            i += 1
-            name = f"{f.stem}-{i}"
-        names.append(name)
-    return names
+    return unique_names(f.stem for f in files)
 
 
 @dataclass
@@ -176,7 +171,7 @@ def graph_view(e: Entry) -> dict[str, Any]:
 
 def _container(g: Graph, name: str) -> dict[str, Any]:
     c = g.containers[name]
-    env = {k: v for k, v in g.symbols.items() if v is not None}
+    env = g.bound_symbols
     try:
         sizes = [expr.evaluate(s, env) for s in c.shape]
     except ExprError:
@@ -197,12 +192,10 @@ def memlet_text(m: Memlet) -> str:
 
 
 def _iterations(g: Graph, rng: str) -> int | None:
-    env = {k: v for k, v in g.symbols.items() if v is not None}
     try:
-        begin, end, step = (expr.evaluate(p, env) for p in parse_dim(rng, "range"))
+        return len(map_range(rng, g.bound_symbols, "range"))
     except (ExprError, DfgError):
         return None
-    return max(0, -(-(end - begin) // step))
 
 
 def _node(g: Graph, n: Node) -> dict[str, Any]:

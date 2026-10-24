@@ -88,7 +88,7 @@ from snax_forge.lower.tasks import Configure, Start, TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, core_counts, core_spans
 from snax_forge.run.beats import class_runs, run_end
 from snax_forge.run.cluster import DMA
-from snax_forge.run.trace import LEVELS
+from snax_forge.run.trace import LEVELS, at_least
 
 Key = tuple[str, int]  # (mem, addr) of a word, or (container, flat) of an element
 Event = dict[str, Any]
@@ -145,7 +145,11 @@ class RunIndex:
 
     def on(self, level: str) -> bool:
         """Traced at ``level`` or above."""
-        return LEVELS.index(self.level) >= LEVELS.index(level)
+        return at_least(self.level, level)
+
+    def needs(self, level: str) -> str:
+        """Why an answer that needs ``level`` is not given: the reason shown to the user."""
+        return f"needs --trace {level}; this run was traced at {self.level}"
 
     def word_of(self, addr: int) -> int:
         """The first byte of the bank word ``addr`` is in (L2 words are L1's, D13)."""
@@ -376,7 +380,7 @@ def marks_of(index: RunIndex) -> tuple[list[str], dict[str, str]]:
         if index.on(m.level):
             have.append(m.name)
         else:
-            lack[m.name] = f"needs --trace {m.level}; this run was traced at {index.level}"
+            lack[m.name] = index.needs(m.level)
     return have, lack
 
 

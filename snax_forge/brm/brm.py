@@ -47,17 +47,15 @@ generator's blocks in instance.py.
 
 from __future__ import annotations
 
-import json
 import keyword
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.common import check_keys, plain, to_json
+from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.expr import Value
 
 from .binding import check_binding
@@ -81,15 +79,10 @@ def _keys(
     d: Any, required: tuple[str, ...], optional: tuple[str, ...], what: str, noun: str = "key"
 ) -> None:
     """``d`` is an object with every required key and no unknown one."""
-    if not isinstance(d, Mapping):
-        raise BrmError(f"{what}: must be an object, got {d!r}")
     try:
-        check_keys(d, [*required, *optional], what)
-    except ValueError as e:
+        check_keys(d, [*required, *optional], what, required, noun)
+    except (TypeError, ValueError) as e:
         raise BrmError(str(e)) from None
-    missing = [k for k in required if k not in d]
-    if missing:
-        raise BrmError(f"{what}: missing {noun} {missing[0]!r}")
 
 
 def _ident(name: Any, what: str, in_expr: bool = False) -> None:
@@ -320,7 +313,7 @@ _PARTS = ("name", "interface", "function", "dataflow", "pattern", "implementatio
 
 
 @dataclass
-class Brm:
+class Brm(JsonFile):
     """One accelerator: the shared part and its implementations. Validated when made."""
 
     name: str
@@ -388,16 +381,6 @@ class Brm:
             },
         )
 
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    @classmethod
-    def load(cls, path: str | Path) -> Brm:
-        return cls.from_dict(json.loads(Path(path).read_text()))
-
-    def save(self, path: str | Path) -> None:
-        Path(path).write_text(self.to_json())
-
 
 # =============================================================================
 # Validation
@@ -418,10 +401,9 @@ def _validate(b: Brm) -> None:
 def _uses(v: Value, allowed: dict[str, Param], what: str) -> None:
     """``v`` is a valid expression over ``allowed`` params only."""
     try:
-        expr.check(v, what)
+        unknown = expr.outside(v, allowed, what)
     except expr.ExprError as e:
         raise BrmError(str(e)) from None
-    unknown = sorted(expr.names(v) - set(allowed))
     if unknown:
         raise BrmError(f"{what}: {v!r} uses {unknown}, not design params ({sorted(allowed)})")
 

@@ -61,7 +61,7 @@ class MovementUnavailable(Exception):
 def need(idx: RunIndex, level: str) -> None:
     """A MovementUnavailable unless the run was traced at ``level`` or above."""
     if not idx.on(level):
-        raise MovementUnavailable(f"needs --trace {level}; this run was traced at {idx.level}")
+        raise MovementUnavailable(idx.needs(level))
 
 
 # =============================================================================
@@ -330,7 +330,7 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
                     p["held_cycles"] = len({h["t"] for h in held})
                 else:
                     p["held"] = None
-                    p["held_reason"] = f"needs --trace stall; this run was traced at {idx.level}"
+                    p["held_reason"] = idx.needs("stall")
                 out.append(p)
     for ident, cp in idx.issue.items():
         beats = [idx.dma[key] for key in sorted(k for k in idx.dma if k[0] == ident)]

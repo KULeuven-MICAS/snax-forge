@@ -75,7 +75,7 @@ from .cluster import DMA, Cluster, Mover
 from .events import Line, RunError
 from .profile import Profile
 from .regions import Region, region_at
-from .trace import LEVELS, Trace
+from .trace import Trace, at_least
 
 XBAR = "xbar"
 WORD_MASK = (1 << 64) - 1
@@ -95,7 +95,7 @@ class Context:
     lines: Sequence[tuple[str, Line]] = ()  # every line, named
 
     def on(self, level: str) -> bool:
-        return LEVELS.index(self.level) >= LEVELS.index(level)
+        return at_least(self.level, level)
 
 
 # =============================================================================
@@ -185,10 +185,12 @@ def agu_nest(ptr: int, spatial_bounds: Sequence[int], spatial_strides: Sequence[
 
 def mover_csrs(cluster: Cluster) -> dict[str, int]:
     """Each mover's first CSR number (its pointer's low word), in the streamer's layout."""
+    from snax_forge.gen.gvsoc import mover_csr_count  # here, as cluster.py's csrs_of
+
     out, csr = {}, cluster.accelerator.csrs.streamer_first
     for m in cluster.accelerator.movers:
         out[m.name] = csr
-        csr += 2 + len(m.spatial_bounds) + 2 * m.temporal_dim
+        csr += mover_csr_count(m.spatial_bounds, m.temporal_dim)
     return out
 
 

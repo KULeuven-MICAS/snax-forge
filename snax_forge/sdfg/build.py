@@ -43,15 +43,16 @@ def structural_summary(sdfg: dace.SDFG) -> dict:
 
 
 def verify(spec: KernelSpec, sdfg: dace.SDFG) -> bool:
-    ref_args = spec.make_inputs(np.random.default_rng(0))
-    dut_args = {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in ref_args.items()}
-
-    spec.reference(**ref_args)
+    from snax_forge.dfg.execute import against_reference
 
     csdfg = sdfg.compile()
-    csdfg(**dut_args, **spec.bind_symbols(dut_args))
 
-    return all(np.array_equal(ref_args[k], dut_args[k]) for k in spec.inout)
+    def run(args: dict) -> dict:
+        csdfg(**args, **spec.bind_symbols(args))
+        return args
+
+    pairs = against_reference(spec, spec.make_inputs(np.random.default_rng(0)), run)
+    return all(np.array_equal(got, ref) for got, ref in pairs.values())
 
 
 def run(spec: KernelSpec) -> dict:

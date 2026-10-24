@@ -7,8 +7,7 @@ point's one accelerated instance, ``acc``) on the core whose ``snax_acc_cfg`` ho
 platform's slot; its movers, readers first as the streamer orders them, each named by its
 port as the design point names its streamers (``acc_a``, ``acc_out``), with its lanes (the
 crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial bounds and temporal loops (its CSRs); its CSRs (the streamer's, then the
-shell's fields, start, busy and counter, from 0x3C0, as snax_cluster lays them out and
-snax-gvsoc's ``snax_streamer.py`` counts them); the cores (``core<i>``) and the DMA's; the
+shell's fields, start, busy and counter, from 0x3C0: the generator's ``csr_layout``); the cores (``core<i>``) and the DMA's; the
 L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
 (``bank_row``: bank = (a / w) mod B, row = a / (w B) for the offset a, w the bank's bytes, B
 the banks); the DMA's beat (the cluster file's ``dma_data_width``). Nothing is inferred from
@@ -32,7 +31,6 @@ from snax_forge.design.problems import DesignError
 
 from .events import RunError
 
-SNAX_CSR_FIRST = 0x3C0
 DMA = "dma"
 
 
@@ -188,16 +186,16 @@ def _get(d: Any, path: str, what: str) -> Any:
 
 def csrs_of(streamer: dict[str, Any], fields: list[str]) -> Csrs:
     """The CSR numbers of a streamer template and a shell's fields (module doc)."""
-    rw = 0
-    for group in ("data_reader_params", "data_writer_params"):
-        params = streamer.get(group, {})
-        for i in range(len(params.get("num_channel", []))):
-            rw += 2 + len(params["spatial_bounds"][i]) + 2 * params["temporal_dim"][i]
-    s_start = SNAX_CSR_FIRST + rw
-    first = s_start + 3
-    start = first + len(fields)
-    return Csrs(SNAX_CSR_FIRST, s_start, s_start + 1, s_start + 2,
-                {f: first + i for i, f in enumerate(fields)}, start, start + 1, start + 2)  # fmt: skip
+    from snax_forge.gen import GenError  # here: gen's data.h imports the flow, which imports run
+    from snax_forge.gen.gvsoc import csr_layout
+
+    try:
+        c = csr_layout(streamer, fields)
+    except GenError as e:
+        raise RunError("cluster.csrs", str(e)) from None
+    s_start = c.streamer_last - 2  # the streamer's start, busy and counter end its range
+    return Csrs(c.streamer_first, s_start, s_start + 1, s_start + 2, dict(c.fields), c.start,
+                c.busy, c.counter)  # fmt: skip
 
 
 def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[str, Any],

@@ -49,6 +49,13 @@ def parse_dim(v: Any, what: str) -> tuple[Value, ...]:
     return tuple(out)
 
 
+def map_range(v: Any, env: dict[str, Any], what: str) -> range:
+    """A map's ``range`` (``begin:end[:step]``) over the values ``env`` binds: the values its
+    variable takes. Raises ExprError for a name ``env`` lacks."""
+    b, e, s = parse_dim(v, what)
+    return range(expr.evaluate(b, env), expr.evaluate(e, env), s)
+
+
 def format_dim(parts: tuple[Value, ...]) -> Value:
     """The stored form of a parsed dimension."""
     if len(parts) == 1:

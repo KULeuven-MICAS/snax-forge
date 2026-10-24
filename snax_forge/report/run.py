@@ -228,6 +228,11 @@ def _bank_ranges(conflicts: list[int]) -> list[BankRange]:
     return out
 
 
+def _sentence(reason: str) -> str:
+    """A reason as a sentence: capitalised, with a full stop."""
+    return reason[0].upper() + reason[1:] + "."
+
+
 def build_movement(rv: api.RunView) -> MovementReport:
     """The data movement section from the run index (module doc)."""
     idx = rv.index
@@ -235,7 +240,7 @@ def build_movement(rv: api.RunView) -> MovementReport:
     try:
         res, pats = movement.residency(idx), movement.patterns(idx)
     except MovementUnavailable:
-        return MovementReport(f"Needs --trace beat; this run was traced at {idx.level}.", None)
+        return MovementReport(_sentence(idx.needs("beat")), None)
     out = MovementReport(None, None if filtered is None else filtered["sources"])
     out.residency = [ResidencyRow(r["region"], r["mem"], r["elements"], r["present_at_start"],
                                   r["arrival"], r["use"], r["departure"]) for r in res]  # fmt: skip
@@ -245,7 +250,7 @@ def build_movement(rv: api.RunView) -> MovementReport:
     try:
         c = movement.conflicts(idx)
     except MovementUnavailable:
-        out.conflicts_reason = f"Needs --trace stall; this run was traced at {idx.level}."
+        out.conflicts_reason = _sentence(idx.needs("stall"))
         return out
     out.conflicts = c["count"]
     counts = [c["banks"].get(str(b), 0) for b in range(rv.cluster.banks)]

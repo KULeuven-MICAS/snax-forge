@@ -30,7 +30,7 @@ from dataclasses import dataclass, field
 
 from .cluster import DMA, Cluster
 from .events import RunError
-from .trace import LEVELS
+from .trace import LEVELS, at_least
 
 XBAR_PATH = "chip/soc/cluster_0/tcdm/snax_xbar"
 AXI = "axi"
@@ -57,7 +57,7 @@ def all_sources(cluster: Cluster) -> list[str]:
 
 def sources_for(cluster: Cluster, level: str, given: list[str] | None) -> list[str]:
     """The sources of a run (module doc), in the cluster's order."""
-    if LEVELS.index(level) < LEVELS.index("beat"):
+    if not at_least(level, "beat"):
         return []
     known = all_sources(cluster)
     if given is not None:

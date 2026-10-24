@@ -45,15 +45,11 @@ import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from snax_forge.common import cwd_relative, to_json
-from snax_forge.design import DesignError
-from snax_forge.design.point import DesignPoint
-from snax_forge.lower import CError
+from snax_forge.common import Config, JsonFile, cwd_relative
 
 from .blocks import GenError
-from .gvsoc import ROOT, RTL_FILE_LIST, generate
+from .gvsoc import ROOT, RTL_FILE_LIST, cli, generate, out_dir
 from .rtl import EMITTED_JSON, RTL_JSON, elaborate, write_rtl
 
 OUT = ROOT / "out" / "bundle"
@@ -61,28 +57,13 @@ BUNDLE_JSON = "bundle.json"
 
 
 @dataclass(frozen=True)
-class Bundle:
+class Bundle(Config, JsonFile):
     """``bundle.json``; see the module doc."""
 
     design_point: str
     tag: str
     snax_forge_commit: str | None
     dirty: bool
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"design_point": self.design_point, "tag": self.tag,
-                "snax_forge_commit": self.snax_forge_commit, "dirty": self.dirty}  # fmt: skip
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> Bundle:
-        return cls(d["design_point"], d["tag"], d["snax_forge_commit"], d["dirty"])
-
-    def to_json(self) -> str:
-        return to_json(self.to_dict())
-
-    @classmethod
-    def load(cls, path: str | Path) -> Bundle:
-        return cls.from_dict(json.loads(Path(path).read_text()))
 
 
 def provenance(checkout: Path) -> tuple[str | None, bool]:
@@ -146,18 +127,18 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("design_point", type=Path, help="a design_point.json (the design step's)")
     ap.add_argument("--out", type=Path, help="output directory (default out/bundle/<design>)")
     args = ap.parse_args(argv)
-    try:
-        out = args.out or OUT / DesignPoint.load(args.design_point).name
+
+    def write() -> int:
+        out = out_dir(args.out, OUT, args.design_point)
         bundle, written = write_bundle(args.design_point, out)
-    except (GenError, CError, DesignError) as e:
-        print(e, file=sys.stderr)
-        return 1
-    commit = bundle.snax_forge_commit or "outside git"
-    print(f"bundle {cwd_relative(out)}: {bundle.tag}_shell_wrapper from {bundle.design_point}, "
-          f"snax-forge {commit}{', dirty' if bundle.dirty else ''}")  # fmt: skip
-    for f in written:
-        print(f"wrote {cwd_relative(f)}")
-    return 0
+        commit = bundle.snax_forge_commit or "outside git"
+        print(f"bundle {cwd_relative(out)}: {bundle.tag}_shell_wrapper from {bundle.design_point}, "
+              f"snax-forge {commit}{', dirty' if bundle.dirty else ''}")  # fmt: skip
+        for f in written:
+            print(f"wrote {cwd_relative(f)}")
+        return 0
+
+    return cli(write)
 
 
 if __name__ == "__main__":

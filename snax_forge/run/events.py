@@ -26,61 +26,70 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from snax_forge.common import CodedError
 
-class RunError(ValueError):
+
+class RunError(CodedError):
     """A run the converter cannot read or convert; ``code`` names the rule (``<module>.<rule>``)."""
-
-    def __init__(self, code: str, message: str) -> None:
-        self.code = code
-        super().__init__(f"[{code}] {message}")
 
 
 Fields = frozenset[str]
 
 
-def _forms(*forms: tuple[set[str], set[str]]) -> list[tuple[Fields, Fields]]:
-    return [(frozenset(req), frozenset(opt)) for req, opt in forms]
+def forms(*alternatives: tuple[str | set[str], str | set[str]]) -> list[tuple[Fields, Fields]]:
+    """A table entry: its alternatives, each its required and its optional fields (a set, or
+    the names separated by spaces). The events' grammar here, the C§7 events' in trace.py."""
+
+    def names(x: str | set[str]) -> Fields:
+        return frozenset(x.split() if isinstance(x, str) else x)
+
+    return [(names(req), names(opt)) for req, opt in alternatives]
+
+
+def fits(keys: set[str], alternatives: list[tuple[Fields, Fields]]) -> bool:
+    """``keys`` are one alternative's: its required fields, and optional ones only beside."""
+    return any(req <= keys <= req | opt for req, opt in alternatives)
 
 
 # trace -> kind -> the forms of its fields: (required, optional)
 GRAMMAR: dict[str, dict[str, list[tuple[Fields, Fields]]]] = {
     "summary": {
-        "run": _forms(({"index", "firings", "busy", "stall_in", "stall_out", "flush"}, set())),
-        "mover": _forms(
+        "run": forms(({"index", "firings", "busy", "stall_in", "stall_out", "flush"}, set())),
+        "mover": forms(
             ({"mover", "run", "busy", "stall_xbar", "stall_fifo", "idle", "qmax"}, set())
         ),
-        "input": _forms(({"index", "name", "grants", "stalls", "stalls_dma", "whole_run"}, set())),
-        "bank": _forms(({"index", "reads", "writes", "conflicts"}, set())),
-        "csrs": _forms(({"writes", "reads"}, set())),
-        "dma": _forms(
+        "input": forms(({"index", "name", "grants", "stalls", "stalls_dma", "whole_run"}, set())),
+        "bank": forms(({"index", "reads", "writes", "conflicts"}, set())),
+        "csrs": forms(({"writes", "reads"}, set())),
+        "dma": forms(
             ({"transfers", "busy", "r_beats", "w_beats", "bytes_to_l1", "bytes_from_l1"}, set())
         ),
     },
     "events": {
-        "start": _forms(({"count", "rate"}, set()), ({"mover"}, set())),
-        "done": _forms(({"firings", "first", "last"}, set()), ({"mover"}, set()), ({"id"}, set())),
-        "csr": _forms(({"pc", "csr", "op", "value"}, {"held"})),
-        "poll": _forms(({"pc", "csr", "value", "first", "last", "count"}, set())),
-        "barrier": _forms(({"first", "last"}, set())),
-        "state": _forms(({"mode"}, set())),
-        "func": _forms(({"name", "pc"}, set())),
-        "mcycle": _forms(({"pc", "value"}, set())),
-        "mcycleh": _forms(({"pc", "value"}, set())),
-        "issue": _forms(({"id", "src", "dst", "size", "src_stride", "dst_stride", "reps"}, set())),
+        "start": forms(({"count", "rate"}, set()), ({"mover"}, set())),
+        "done": forms(({"firings", "first", "last"}, set()), ({"mover"}, set()), ({"id"}, set())),
+        "csr": forms(({"pc", "csr", "op", "value"}, {"held"})),
+        "poll": forms(({"pc", "csr", "value", "first", "last", "count"}, set())),
+        "barrier": forms(({"first", "last"}, set())),
+        "state": forms(({"mode"}, set())),
+        "func": forms(({"name", "pc"}, set())),
+        "mcycle": forms(({"pc", "value"}, set())),
+        "mcycleh": forms(({"pc", "value"}, set())),
+        "issue": forms(({"id", "src", "dst", "size", "src_stride", "dst_stride", "reps"}, set())),
     },
     "beats": {
-        "grant": _forms(({"in", "op", "addr", "bank", "row", "value", "back"}, {"b", "size"})),
-        "dma": _forms(({"id", "i", "op", "addr", "size", "bank", "row", "value", "l2"}, {"back"})),
-        "burst": _forms(({"id", "op", "addr", "size", "back"}, set())),
-        "fire": _forms(({"n", "b", "value"}, set())),
-        "push": _forms(({"n", "first", "last", "value"}, set())),
-        "class": _forms(({"mode"}, set()), ({"mover", "mode"}, set())),
+        "grant": forms(({"in", "op", "addr", "bank", "row", "value", "back"}, {"b", "size"})),
+        "dma": forms(({"id", "i", "op", "addr", "size", "bank", "row", "value", "l2"}, {"back"})),
+        "burst": forms(({"id", "op", "addr", "size", "back"}, set())),
+        "fire": forms(({"n", "b", "value"}, set())),
+        "push": forms(({"n", "first", "last", "value"}, set())),
+        "class": forms(({"mode"}, set()), ({"mover", "mode"}, set())),
     },
     "stalls": {
-        "stall": _forms(({"in", "addr", "bank", "row", "by", "by_addr"}, {"b"})),
-        "fifo": _forms(({"mover", "lane", "count"}, set())),
+        "stall": forms(({"in", "addr", "bank", "row", "by", "by_addr"}, {"b"})),
+        "fifo": forms(({"mover", "lane", "count"}, set())),
     },
-    "insn": {"insn": _forms(({"pc", "text"}, set()))},
+    "insn": {"insn": forms(({"pc", "text"}, set()))},
 }
 NAMES = {"mover", "name", "op", "mode"}
 # (trace, kind) -> its fields that are lists
@@ -152,8 +161,8 @@ def parse_line(text: str, where: str = "line") -> Line:
     except ValueError:
         raise RunError("events.line", f"{where}: cycle {words[0]!r} is not an integer") from None
     kind = words[1]
-    forms = GRAMMAR[trace].get(kind)
-    if forms is None:
+    alts = GRAMMAR[trace].get(kind)
+    if alts is None:
         raise RunError("events.kind", f"{where}: kind {kind!r} is not one of the {trace} trace's "
                        f"({sorted(GRAMMAR[trace])}, snax-gvsoc docs/EVENTS.md)")  # fmt: skip
     fields: dict[str, Any] = {}
@@ -163,9 +172,9 @@ def parse_line(text: str, where: str = "line") -> Line:
             raise RunError("events.field", f"{where}: {w!r} is not one key=value")
         fields[key] = val
     keys = set(fields)
-    if not any(req <= keys <= req | opt for req, opt in forms):
+    if not fits(keys, alts):
         raise RunError("events.field", f"{where}: a {trace} {kind} line has the fields "
-                       f"{sorted(keys)}, not one of {[sorted(r | o) for r, o in forms]}")  # fmt: skip
+                       f"{sorted(keys)}, not one of {[sorted(r | o) for r, o in alts]}")  # fmt: skip
     lists = LISTS.get((trace, kind), set())
     fields = {k: _value(k, v, lists, where) for k, v in fields.items()}
     return Line(path, trace, cycle, kind, fields)

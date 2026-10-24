@@ -33,6 +33,7 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from snax_forge import expr
+from snax_forge.common import check_keys
 
 
 class BindingError(ValueError):
@@ -83,12 +84,10 @@ def check_binding(
     """
     if not isinstance(binding, Mapping):
         raise BindingError(f"{what}: must be null or an object")
-    unknown = sorted(set(binding) - set(KEYS) - set(OPTIONAL))
-    if unknown:
-        raise BindingError(f"{what}: unknown keys {unknown} (allowed: {list(KEYS + OPTIONAL)})")
-    missing = [k for k in KEYS if k not in binding]
-    if missing:
-        raise BindingError(f"{what}: missing key {missing[0]!r}")
+    try:
+        check_keys(binding, [*KEYS, *OPTIONAL], what, KEYS)
+    except ValueError as e:
+        raise BindingError(str(e)) from None
     block = binding["block"]
     if not isinstance(block, str) or not block.isidentifier():
         raise BindingError(f"{what}.block: must name a Chisel block, got {block!r}")
@@ -142,8 +141,7 @@ def _ports(m: Any, ports: Sequence[str], what: str) -> dict[str, str]:
 
 
 def _value(v: Any, allowed: Mapping[str, Any], what: str, noun: str) -> expr.Value:
-    expr.check(v, what)
-    unknown = sorted(expr.names(v) - set(allowed))
+    unknown = expr.outside(v, allowed, what)
     if unknown:
         raise BindingError(f"{what}: {v!r} uses {unknown}, not {noun} ({sorted(allowed)})")
     return expr.canonical(v)
