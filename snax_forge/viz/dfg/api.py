@@ -205,13 +205,12 @@ def _iterations(g: Graph, rng: str) -> int | None:
     return max(0, -(-(end - begin) // step))
 
 
-def _node(g: Graph, n: Node, top: str) -> dict[str, Any]:
-    """A node as a panel shows it; ``top`` is the id of its top-level node."""
+def _node(g: Graph, n: Node) -> dict[str, Any]:
+    """A node as a panel shows it."""
     a = n.attrs
     d: dict[str, Any] = {
         "id": n.id,
         "kind": n.kind,
-        "top": top,
         "attrs": dict(a),
         "inputs": [_conn(c, m) for c, m in n.inputs.items()],
         "outputs": [_conn(c, m) for c, m in n.outputs.items()],
@@ -234,7 +233,7 @@ def _node(g: Graph, n: Node, top: str) -> dict[str, Any]:
         d["title"] = n.kind
         d["lines"] = [f"{k} = {v}" for k, v in a.items() if "." not in k]
     if n.body is not None:
-        d["body"] = [_node(g, c, top) for c in n.body]
+        d["body"] = [_node(g, c) for c in n.body]
     return d
 
 
@@ -250,7 +249,7 @@ def _replaced_text(r: dict[str, Any] | None) -> str | None:
 
 
 def _conn(c: str, m: Memlet) -> dict[str, Any]:
-    return {"connector": c, "data": m.data, "subset": list(m.subset), "text": memlet_text(m)}
+    return {"connector": c, "data": m.data, "text": memlet_text(m)}
 
 
 def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
@@ -310,7 +309,7 @@ def _layout(g: Graph) -> dict[str, Any]:
     before = reads[0] + [c for c in g.containers if c not in used] if tops else list(g.containers)
     above = box_row(before, {}, 0)
     for k, top in enumerate(tops):
-        rows.append({"kind": "node", "node": _node(g, top, top.id)})
+        rows.append({"kind": "node", "node": _node(g, top)})
         writers: dict[str, list[str]] = {}  # container -> writer connectors inside this node
         for side, n, c, m in _uses(top):
             port, text = f"{n.id}.{c}", memlet_text(m)

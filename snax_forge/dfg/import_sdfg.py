@@ -395,7 +395,7 @@ class _Importer:
         what = f"{self.name}: tasklet {t.label!r}"
         if t.code.language != dace.Language.Python:
             raise SdfgImportError(f"{what}: {t.code.language} code is not imported (only Python)")
-        conns = fresh_all([*t.in_connectors, *t.out_connectors], set())
+        conns = fresh_all([*t.in_connectors, *t.out_connectors])
         inputs = self._memlets((e.dst_conn, e.data) for e in self.state.in_edges(t))
         outputs = self._memlets((e.src_conn, e.data) for e in self.state.out_edges(t))
         code = _rename_code(t.code.as_string, conns, what)
@@ -491,8 +491,9 @@ def _is_copy(t: dn.Tasklet) -> bool:
     )
 
 
-def fresh_all(names: list[str], taken: set[str]) -> dict[str, str]:
+def fresh_all(names: list[str]) -> dict[str, str]:
     """Readable names for DaCe connectors (``__in1`` -> ``in1``), none clashing."""
+    taken: set[str] = set()
     return {n: fresh(clean(n), taken) for n in names}
 
 
@@ -527,9 +528,9 @@ def _rename_code(code: str, conns: dict[str, str], what: str) -> str:
 # =============================================================================
 
 
-def import_sdfg(sdfg: dace.SDFG, name: str | None = None) -> Graph:
-    """The ``.snaxdfg`` graph of a simplified SDFG; ``name`` defaults to the SDFG's."""
-    return _Importer(sdfg, name or sdfg.name).run()
+def import_sdfg(sdfg: dace.SDFG, name: str) -> Graph:
+    """The ``.snaxdfg`` graph of a simplified SDFG, named ``name``."""
+    return _Importer(sdfg, name).run()
 
 
 def import_kernel(kernel: str) -> Graph:

@@ -106,7 +106,6 @@ def test_memory_routes_answer_and_movement_says_why_not(tmp_path):
         }  # no beat lines at task
         assert status_of(srv, "/api/run/vecadd/memory/cycle") == 400
         assert status_of(srv, "/api/run/nope/memory/cycle?t=5") == 404
-        assert get_json(srv, "/api/run/vecadd/movement")["available"] is False
         assert get_json(srv, "/api/run/vecadd/journey?region=A&index=0")["available"] is False
         assert status_of(srv, "/api/run/vecadd/journey?region=Q&index=0") == 400
         assert status_of(srv, "/api/run/nope/memory") == 404

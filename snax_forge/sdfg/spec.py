@@ -24,7 +24,6 @@ class KernelSpec:
     ref: Callable | None = None
     flops: Callable | None = None  # **sizes -> op count
     bytes_moved: Callable | None = None  # **sizes -> compulsory traffic
-    notes: str = ""
     tags: tuple[str, ...] = ()
     sweep_sizes: tuple = ()  # entries: int (n=) or dict of size kwargs
 

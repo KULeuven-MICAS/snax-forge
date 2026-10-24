@@ -241,7 +241,7 @@ def _unavailable(rv: RunView, e: MovementUnavailable) -> dict[str, Any]:
 
 
 def movement_view(rv: RunView) -> dict[str, Any]:
-    """/api/run/<name>/movement: residency per region and memory, patterns per port and
+    """Residency per region and memory, patterns per port and
     task, and the conflict counts (``available`` false with the reason below ``stall``), or
     ``available`` false with the reason below ``beat``."""
     idx = rv.index

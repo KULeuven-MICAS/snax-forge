@@ -116,7 +116,7 @@ def test_with_changes_gives_a_working_copy():
     assert w.changes == {"l1.n_banks": 32, "streamers.acc_out.fifo_depth": 4}
     assert w.l1.n_banks == 32 and w.entries == {"acc_out": {"fifo_depth": 4}}
     assert base.l1.n_banks == 16 and base.changes == {}  # the input is not changed
-    assert base.with_changes() == base.with_changes([]) and base.with_changes().base == "small16"
+    assert base.with_changes([]).base == "small16"
 
 
 def test_continuing_adds_to_the_changes_and_keeps_the_base():

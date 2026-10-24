@@ -186,7 +186,7 @@ class Platform:
 
     # --- changes ---
 
-    def with_changes(self, sets: Sequence[tuple[str, Any]] = ()) -> Platform:
+    def with_changes(self, sets: Sequence[tuple[str, Any]]) -> Platform:
         """The working copy with ``sets`` (path, value) applied; see the module doc."""
         d = self.to_dict()
         problems = [p for path, value in sets for p in _apply(d, path, value)]

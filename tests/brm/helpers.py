@@ -54,11 +54,7 @@ def adder() -> dict[str, Any]:
                 "code": "out = a + b",
             },
             "dataflow": {"notation": "test_list", "ports": {"a": nest, "b": nest, "out": nest}},
-            "pattern": {
-                "family": "elementwise",
-                "attrs": {"op": "add", "arity": 2},
-                "predicate": None,
-            },
+            "pattern": {"family": "elementwise", "attrs": {"op": "add", "arity": 2}},
             "implementations": {
                 "chisel_tiled_spatial": {
                     "source": "chisel",

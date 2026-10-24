@@ -143,7 +143,8 @@ def test_the_b_pinned_run(runs):
     l1 = mem(view, "l1")
     b = next(r for r in l1["regions"] if r["name"] == "B")
     assert (b["start"], b["end"], b["bytes"], b["rows"]) == (L1 + 576, L1 + 1088, 512, [2, 4])
-    assert b["share"] == 512 / (128 * 1024) and l1["used"] == {"words": 192, "share": 192 / 16384}
+    assert l1["geometry"]["size_bytes"] == 128 * 1024
+    assert l1["used"] == {"words": 192, "share": 192 / 16384}
     assert b["banks"] == list(range(32))
 
 

@@ -42,9 +42,8 @@ def structural_summary(sdfg: dace.SDFG) -> dict:
     }
 
 
-def verify(spec: KernelSpec, sdfg: dace.SDFG, n: int | None = None) -> bool:
-    rng = np.random.default_rng(0)
-    ref_args = spec.make_inputs(rng) if n is None else spec.make_inputs(rng, n=n)
+def verify(spec: KernelSpec, sdfg: dace.SDFG) -> bool:
+    ref_args = spec.make_inputs(np.random.default_rng(0))
     dut_args = {k: (v.copy() if isinstance(v, np.ndarray) else v) for k, v in ref_args.items()}
 
     spec.reference(**ref_args)

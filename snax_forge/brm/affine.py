@@ -177,12 +177,8 @@ class Nest:
     def n_beats(self) -> int:
         return prod(b for b, _ in self.temporal)
 
-    @property
-    def n_lanes(self) -> int:
-        return prod(b for b, _ in self.spatial)
-
     def indices(self) -> np.ndarray:
-        """Every element in order, shape ``[n_beats, n_lanes, rank]``."""
+        """Every element in order, shape ``[n_beats, lanes, rank]``."""
         return _enumerate(self.offset, self.temporal, self.spatial)
 
     def extent(self) -> tuple[tuple[int, int], ...]:

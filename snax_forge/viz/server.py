@@ -23,8 +23,6 @@ Routes (every answer is JSON except the static files):
                                             rows A <= r < B in full, at most 256
     GET  /api/run/<name>/memory/cycle?t=T   the cycle overlay of cycle T: its accesses
                                             and the reads whose data comes back in it
-    GET  /api/run/<name>/movement           residency, patterns and conflict
-                                            counts (movement.py)
     GET  /api/run/<name>/journey?region=R&index=I
                                             every hop of element R[I] (I a flat
                                             index, or indices separated by commas)
@@ -209,9 +207,6 @@ class Handler(BaseHTTPRequestHandler):
                     self._json(api.memory_view(rv, _str_arg(q, "marks")))
                 except api.MemoryViewError as e:
                     raise _BadRequest(str(e)) from e
-                return
-            if parts[2] == "movement":
-                self._json(api.movement_view(rv))
                 return
             if parts[2] == "journey":
                 region = _str_arg(q, "region")

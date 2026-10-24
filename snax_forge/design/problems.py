@@ -27,7 +27,7 @@ class Problem:
         return text + (f"\n    fix: {self.fix}" if self.fix else "")
 
 
-def report(problems: Sequence[Problem], head: str = "design check") -> str:
+def report(problems: Sequence[Problem], head: str) -> str:
     """``head: n problems`` and one indented entry per problem."""
     n = len(problems)
     lines = [f"{head}: {n} problem{'' if n == 1 else 's'}"]

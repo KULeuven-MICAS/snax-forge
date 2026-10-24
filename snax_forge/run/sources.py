@@ -34,9 +34,6 @@ from .trace import LEVELS
 
 XBAR_PATH = "chip/soc/cluster_0/tcdm/snax_xbar"
 AXI = "axi"
-# level -> the traces it adds
-LEVEL_TRACES = {"off": "summary", "task": "events", "beat": "beats", "stall": "stalls",
-                "finegrained": "insn"}  # fmt: skip
 
 
 def parse_trace(text: str) -> tuple[str, list[str] | None]:

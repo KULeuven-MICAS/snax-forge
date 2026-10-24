@@ -44,7 +44,6 @@ from snax_forge.run.cores import CORE_CLASSES
 from .index import Event, RunIndex
 
 FOLD_MIN = 16  # the shortest quiet stretch that folds
-DETAIL_KINDS = ("grant", "stall", "dma", "burst", "fire", "push", "fifo")
 
 
 class ScheduleUnavailable(ValueError):

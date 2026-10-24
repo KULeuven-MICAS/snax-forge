@@ -3,7 +3,7 @@
     python -m snax_forge.design GRAPH --platform P [--memory M]
                                       [--set platform.PATH=VALUE ...]
                                       [--set memory.PATH=VALUE ...]
-                                      [--name NAME] [--out DIR]
+                                      [--out DIR]
     python -m snax_forge.design check GRAPH --platform P [--memory M] [--set ...]
     python -m snax_forge.design save SRC DST [--force]
     python -m snax_forge.design from-hjson HJSON NAME [--force]
@@ -125,14 +125,13 @@ def _summary(design: Design) -> str:
 def _run(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.design")
     _inputs(ap)
-    ap.add_argument("--name", help="design name (default: the graph's sandbox folder)")
     ap.add_argument("--out", type=Path, help="output directory (default out/design/<name>)")
     args = ap.parse_args(argv)
     design = _checked(args)
     if design is None:
         return 1
-    out = args.out or OUT / (args.name or design_name(args.graph))
-    name = args.name or design_name(args.graph)
+    name = design_name(args.graph)
+    out = args.out or OUT / name
     point = DesignPoint.of(design, name)
     out.mkdir(parents=True, exist_ok=True)
     design.platform.save(out / "platform.json")

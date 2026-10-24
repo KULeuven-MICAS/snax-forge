@@ -31,7 +31,7 @@ def test_sparse_file_takes_defaults_and_writes_them():
     }
     assert d["interface"]["ports"][0]["rate"] == 1
     assert d["interface"]["ports"][0]["dtype"] == "int64"
-    assert d["pattern"] == {"family": "reduce", "attrs": {}, "predicate": None}
+    assert d["pattern"] == {"family": "reduce", "attrs": {}}
     assert d["function"]["code"] is None  # a reduction cannot say it per lane yet (D82)
     impl = d["implementations"]["chisel_accumulator"]
     assert impl["supports"] == {} and impl["binding"] is None

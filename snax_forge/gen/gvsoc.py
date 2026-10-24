@@ -179,10 +179,6 @@ class CsrLayout:
     busy: int
     counter: int
 
-    @property
-    def shell_first(self) -> int:
-        return self.streamer_last + 1
-
     def to_dict(self) -> dict[str, Any]:
         return {
             "streamer": {"first": self.streamer_first, "last": self.streamer_last},

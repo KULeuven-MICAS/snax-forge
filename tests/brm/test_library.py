@@ -180,4 +180,4 @@ def test_accumulate_ports_and_beats():
     inst = load_brm("accumulate").resolve("chisel_adder_tree")
     assert task_nest(inst, "a", {"n": 16, "T": 4}).n_beats == 16
     out = task_nest(inst, "out", {"n": 16, "T": 4})
-    assert (out.n_beats, out.n_lanes) == (4, 1)
+    assert out.n_beats == 4

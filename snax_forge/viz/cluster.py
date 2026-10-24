@@ -146,7 +146,7 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
             ]
         if stall:
             refused = [e for e in of["stall"] if e["bank"] == b]
-            x["stalled"] = [{"served": refused[0]["by"], "served_addr": refused[0]["by_addr"]},
+            x["stalled"] = [{"served": refused[0]["by"]},
                             *({"port": e["src"], "addr": e["addr"], "task": e["task"]}
                               for e in refused)] if refused else []  # fmt: skip
         banks.append(x)

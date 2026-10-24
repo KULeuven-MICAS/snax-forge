@@ -235,21 +235,19 @@ class Pattern:
     """The DFG subgraph the BRM can replace: a family, matched by SNAX-SANDBOX.
 
     ``family`` names a matcher registered in snax_forge/sandbox/patterns.py
-    and ``attrs`` are its parameters. ``predicate`` is kept for a later,
-    data-only form of a pattern and is null in every BRM so far.
+    and ``attrs`` are its parameters.
     """
 
     family: str
     attrs: dict[str, Any] = field(default_factory=dict)
-    predicate: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"family": self.family, "attrs": plain(self.attrs), "predicate": self.predicate}
+        return {"family": self.family, "attrs": plain(self.attrs)}
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Pattern:
-        _keys(d, ("family",), ("attrs", "predicate"), what)
-        return cls(d["family"], dict(d.get("attrs", {})), d.get("predicate"))
+        _keys(d, ("family",), ("attrs",), what)
+        return cls(d["family"], dict(d.get("attrs", {})))
 
 
 @dataclass
@@ -536,8 +534,6 @@ def _check_pattern(b: Brm, what: str) -> None:
         raise BrmError(f"{w}.family: must be a non-empty string")
     if not isinstance(p.attrs, dict):
         raise BrmError(f"{w}.attrs: must be an object")
-    if p.predicate is not None and not isinstance(p.predicate, str):
-        raise BrmError(f"{w}.predicate: must be null or a registered name")
 
 
 def _check_implementations(b: Brm, design: dict[str, Param], what: str) -> None:

@@ -90,7 +90,7 @@ class MemorySpec:
                 out[(parts[0], parts[1])] = v
         return out
 
-    def with_changes(self, sets: Sequence[tuple[str, Any]] = ()) -> MemorySpec:
+    def with_changes(self, sets: Sequence[tuple[str, Any]]) -> MemorySpec:
         """The spec with ``sets`` applied; the shape of each path is checked here,
         what it names (containers, memories, passes) by the memory.pin check."""
         problems = []

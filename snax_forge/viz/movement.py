@@ -249,7 +249,7 @@ def residency(idx: RunIndex) -> list[dict[str, Any]]:
     need(idx, "beat")
     out = []
     for r in idx.regions:
-        elements, arr, uses_all, dep, w_in, w_out = [], [], [], [], [], []
+        elements, arr, uses_all, dep = [], [], [], []
         for flat in range(int(np.prod(r.shape))):
             evs = [e for e in idx.elem.get((r.container, flat), [])
                    if e.get("mem", "l1") == r.memory]  # fmt: skip
@@ -263,19 +263,13 @@ def residency(idx: RunIndex) -> list[dict[str, Any]]:
             if a is not None:
                 arr.append(a)
             uses_all += uses
-            if wait is not None:
-                w_in.append(wait)
             if d is not None:
                 dep.append(d)
-                last = max([x for x in (a, uses[-1] if uses else None) if x is not None],
-                           default=None)  # fmt: skip
-                if last is not None:
-                    w_out.append(d - last)
         out.append({
             "region": r.container, "mem": r.memory, "elements": len(elements),
             "present_at_start": sum(1 for x in elements if x["arrival"] is None),
             "arrival": _window(arr), "use": _window(uses_all), "departure": _window(dep),
-            "wait_in": _window(w_in), "wait_out": _window(w_out), "per_element": elements,
+            "per_element": elements,
         })  # fmt: skip
     return out
 
@@ -313,7 +307,7 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
     for m in c.accelerator.movers:
         for s in (s for s in idx.start.values() if s["src"] == m.name):
             regs = _regs(idx, s["t"])
-            ptr, sp, tb, ts = mover_values(c, m, regs)
+            _, _, tb, ts = mover_values(c, m, regs)
             lanes = mover_nest(c, m, regs)
             bounds = [1 if (d == 0 and not m.write and ts[0] == 0) else b for d, b in enumerate(tb)]
             for lane, port in enumerate(m.ports):
@@ -322,7 +316,6 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
                     "port": port, "owner": m.name, "task": s["task"], "mem": "l1",
                     "write": m.write, "beats": len(grants),
                     "addr": {"base": c.l1_base + lanes[lane][0] if lanes[lane] else None,
-                             "ptr": ptr, "spatial_strides": sp,
                              "nest": [[b, st] for b, st in zip(bounds, ts, strict=True)],
                              "addresses": len(lanes[lane])},
                 }  # fmt: skip
@@ -335,9 +328,6 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
                     held = _held(idx, port, s["task"])
                     p["held"] = held
                     p["held_cycles"] = len({h["t"] for h in held})
-                    if grants:
-                        inside = len({h["t"] for h in held if first <= h["t"] <= last})
-                        p["idle"] = max(last - first + 1 - len(grants) - inside, 0)
                 else:
                     p["held"] = None
                     p["held_reason"] = f"needs --trace stall; this run was traced at {idx.level}"
@@ -347,7 +337,7 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
         p = {"port": DMA, "owner": DMA, "task": cp["task"], "copy": ident, "dir": cp["dir"],
              "from": cp["from"], "to": cp["to"], "size": cp["size"], "reps": cp["reps"],
              "from_stride": cp["from_stride"], "to_stride": cp["to_stride"],
-             "beats": len(beats), "bursts": len(idx.burst.get(ident, []))}  # fmt: skip
+             "beats": len(beats)}  # fmt: skip
         if beats:
             first, last = beats[0]["t"], beats[-1]["t"]
             p.update(first=first, last=last, ideal_last=first + len(beats) - 1)

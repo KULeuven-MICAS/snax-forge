@@ -185,9 +185,9 @@ register_rtl_params("Accumulator", _accumulator)
 # =============================================================================
 
 
-def catalogue(path: str | Path = CATALOGUE) -> dict[str, Any]:
+def catalogue() -> dict[str, Any]:
     """The block catalogue, ``hw/chisel/blocks.json``."""
-    return json.loads(Path(path).read_text())
+    return json.loads(CATALOGUE.read_text())
 
 
 def check_params(block: str, params: Mapping[str, Any], sig: Mapping[str, Any]) -> None:
@@ -346,7 +346,7 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
     )
 
 
-def vectors(design_point: str | Path, root: str | Path | None = None, seed: int = 0) -> dict:
+def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     """``vectors.json``: the data and tasks the Chisel specs drive the wrapper with; see the
     module doc."""
     root = ROOT if root is None else Path(root)
@@ -354,7 +354,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None, seed: int 
     point = DesignPoint.load(design_point)
     name, inst, unit = accelerator(point)
     node = instance_nodes(point.graph)[name]
-    data = {a.name: a for a in arrays(point, seed)}
+    data = {a.name: a for a in arrays(point)}
     tasks = [s for s in task_list(point).steps
              if isinstance(s, Configure) and s.type == "accel" and s.component == name]  # fmt: skip
     if len(tasks) != 1:
