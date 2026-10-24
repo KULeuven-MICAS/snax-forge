@@ -532,8 +532,50 @@ bundle, runs on SNAX-GVSoC and on snax_cluster's Verilator and Questa
 builds, and the printed lines are compared by hand. snax-forge never runs
 RTL; snax_cluster's `target/snitch_cluster/snax_forge.mk` does (C§18).
 
-The bundle is section 7's, `out/bundle/vecadd/`. Its ELF comes from
-snax-gvsoc's generic app (section 5), in snax-forge's image:
+The short path, in snax-forge's image: `pixi run forge` runs section 2's
+flow, section 7's bundle of its design point and the bundle's ELF, checks
+that ELF's sha256 against the flow's `elf_sha256` and prints the Verilator
+commands below with `B` and `E` filled in (`$ROOT` is the folder that holds
+both checkouts, `$COMMIT` the checkout's commit). Each step's whole output is
+in `out/forge/<name>/forge.log`; a failing step prints the last 30 lines of
+it. `--platform` (default `platforms/snax_forge.json`), `--set` and `--trace`
+go to the flow.
+
+    pixi run forge recipes/vecadd.json
+
+    forge vecadd: recipes/vecadd.json on platforms/snax_forge.json; every step's output in out/forge/vecadd/forge.log
+      flow      passed: design point out/flow/vecadd/design/design_point.json, run out/flow/vecadd/run/
+      bundle    out/bundle/vecadd/: snax_forge_shell_wrapper, snax-forge $COMMIT
+      sw        out/forge/vecadd/sw/forge.elf from the bundle (sha256 b6b4b1c70d8c8986, the flow's)
+    SNAX-GVSoC (out/flow/vecadd/run/stdout.txt):
+      forge cycles: 226
+      forge data: 0 errors (64 words)
+      forge counter add_acc: 19
+      forge errors: 0
+    snax_cluster on Verilator, from snax_cluster in its pixi environment:
+      B=$ROOT/snax-forge/out/bundle/vecadd/snax_forge.hjson
+      E=$ROOT/snax-forge/out/forge/vecadd/sw/forge.elf
+      pixi run make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B
+      pixi run make -C target/snitch_cluster snax-forge-sim SIM=vlt CFG_OVERRIDE=$B
+      pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B ELF=$E
+    Questa: rtl-gen and vsim_preparation in snax_cluster's development image, then snax-forge-sim and snax-forge-run with SIM=vsim and the same B and E: docs/RUN.md section 8.
+
+    pixi run forge recipes/vsum.json --set N=512
+
+    forge vsum_N512: recipes/vsum.json on platforms/snax_forge.json; every step's output in out/forge/vsum_N512/forge.log
+      flow      passed: design point out/flow/vsum_N512/design/design_point.json, run out/flow/vsum_N512/run/
+      bundle    out/bundle/vsum_N512/: snax_forge_shell_wrapper, snax-forge $COMMIT
+      sw        out/forge/vsum_N512/sw/forge.elf from the bundle (sha256 b173d5254b69346a, the flow's)
+    SNAX-GVSoC (out/flow/vsum_N512/run/stdout.txt):
+      forge cycles: 755
+      forge data: 0 errors (1 words)
+      forge counter sum_acc: 515
+      forge errors: 0
+    snax_cluster on Verilator, from snax_cluster in its pixi environment:
+    ...
+
+The same path step by step: the bundle is section 7's, `out/bundle/vecadd/`.
+Its ELF comes from snax-gvsoc's generic app (section 5), in snax-forge's image:
 
     make -C gvsoc sw APPS=forge FORGE=../out/bundle/vecadd DESIGN=vecadd
     make -C gvsoc run TARGET=snax_hjson DESIGN=vecadd \
