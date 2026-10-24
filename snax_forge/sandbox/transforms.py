@@ -109,22 +109,28 @@ def _locate(g: Graph, node_id: str) -> tuple[list[Node], int, tuple[Node, ...]]:
     return found
 
 
-def _substitute_body(body: list[Node], values: Mapping[str, Any]) -> None:
-    """Replace names in every memlet subset and map range under ``body``."""
+def _map_dims(body: list[Node], fn: Callable[[Any], Any], splits: bool = False) -> None:
+    """``fn`` on every memlet subset dimension and map range under ``body`` (an accelerated
+    node's ``replaced`` subtree included); with ``splits``, on each split's range too."""
     for n in body:
         for m in (*n.inputs.values(), *n.outputs.values()):
-            m.subset = [_substitute_dim(d, values) for d in m.subset]
+            m.subset = [fn(d) for d in m.subset]
         if n.kind == "map":
-            n.attrs["range"] = _substitute_dim(n.attrs["range"], values)
-            if n.attrs.get("loop.split"):
+            n.attrs["range"] = fn(n.attrs["range"])
+            if splits and n.attrs.get("loop.split"):
                 split = n.attrs["loop.split"]
-                n.attrs["loop.split"] = {**split, "range": _substitute_dim(split["range"], values)}
+                n.attrs["loop.split"] = {**split, "range": fn(split["range"])}
         if n.kind == "accelerated" and n.attrs.get("replaced"):
             old = Node.from_dict(n.attrs["replaced"], n.id)
-            _substitute_body([old], values)
+            _map_dims([old], fn, splits)
             n.attrs["replaced"] = old.to_dict()
         if n.body:
-            _substitute_body(n.body, values)
+            _map_dims(n.body, fn, splits)
+
+
+def _substitute_body(body: list[Node], values: Mapping[str, Any]) -> None:
+    """Replace names in every memlet subset, map range and split range under ``body``."""
+    _map_dims(body, lambda d: _substitute_dim(d, values), splits=True)
 
 
 def _substitute_dim(d: Any, values: Mapping[str, Any]) -> Any:
@@ -163,10 +169,10 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
         raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
     if type(factor) is not int or factor < 1:
         raise SandboxError(f"{what}: factor {factor!r} must be a positive int")
-    begin, end, step = parse_dim(node.attrs["range"], what)
+    begin, _, step = parse_dim(node.attrs["range"], what)
     if step != 1:
         raise SandboxError(f"{what}: only a step of 1 is split, the range is {node.attrs['range']}")
-    length = end if begin == 0 else f"({end}) - ({begin})"
+    length = _length(node)
     n = _bound(g, length, what)
     if n % factor:
         raise SandboxError(
@@ -465,20 +471,7 @@ def join_map(g: Graph, map: str) -> Graph:
     def back_dim(d: Any) -> Any:
         return format_dim(tuple(back(p) for p in parse_dim(d, what)))
 
-    def walk(nodes: list[Node]) -> None:
-        for n in nodes:
-            for m in (*n.inputs.values(), *n.outputs.values()):
-                m.subset = [back_dim(d) for d in m.subset]
-            if n.kind == "map":
-                n.attrs["range"] = back_dim(n.attrs["range"])
-            if n.kind == "accelerated" and n.attrs.get("replaced"):
-                old = Node.from_dict(n.attrs["replaced"], n.id)
-                walk([old])
-                n.attrs["replaced"] = old.to_dict()
-            if n.body:
-                walk(n.body)
-
-    walk(inner.body or [])
+    _map_dims(inner.body or [], back_dim)
     rest = {
         k: v for k, v in outer.attrs.items() if k not in ("var", "range", "loop.kind", "loop.split")
     }

@@ -1023,9 +1023,9 @@ keeps a stale file; nothing else in `DIR` is removed.
 | `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out |
 | `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git) and `dirty` (true when the work tree has uncommitted changes, untracked files included; false outside git) |
 
-**Refused**: what sections 16 and 17 refuse, then `bundle.empty`
-(`emitted.json` lists no file) and `bundle.missing` (it lists a file that
-is not there).
+**Refused**: what sections 16 and 17 refuse (a listed file that is not
+there among them, `gen.elaborate`), then `bundle.empty` (`emitted.json`
+lists no file).
 
 **How snax_cluster takes it** (D139, snax_cluster #659), through the
 cluster file alone (`CFG_OVERRIDE`), so snax_cluster holds no dependency on

@@ -20,7 +20,7 @@ expected is a ``RunError`` (``cluster.<rule>``).
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -198,17 +198,27 @@ def csrs_of(streamer: dict[str, Any], fields: list[str]) -> Csrs:
                 c.busy, c.counter)  # fmt: skip
 
 
+def _cores(cluster: dict[str, Any]) -> list[dict[str, Any]]:
+    """The cluster file's cores, in hive and core order."""
+    try:
+        return [core for _, core in hjson_cores(cluster)]
+    except DesignError as e:
+        raise RunError("cluster.cores", f"the cluster file's cores do not read: {e}") from None
+
+
+def _slots(cores: list[dict[str, Any]], slot: str) -> list[tuple[int, dict[str, Any]]]:
+    """Every accelerator slot named ``slot``, with the index of its core."""
+    return [(i, a) for i, c in enumerate(cores) for a in c.get("snax_acc_cfg", [])
+            if a.get("snax_acc_name") == slot]  # fmt: skip
+
+
 def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[str, Any],
                  point: dict[str, Any]) -> Cluster:  # fmt: skip
     """The description from the three files' contents and the design point's (module doc)."""
     slot = _get(point, "platform.accelerator_slot", "the design point")
-    try:
-        flat = [core for _, core in hjson_cores(cluster)]
-    except DesignError as e:
-        raise RunError("cluster.cores", f"the cluster file's cores do not read: {e}") from None
+    flat = _cores(cluster)
     dma = [i for i, c in enumerate(flat) if c.get("xdma")]
-    owner = [i for i, c in enumerate(flat)
-             if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
+    owner = sorted({i for i, _ in _slots(flat, slot)})
     if len(dma) != 1 or len(owner) != 1:
         raise RunError("cluster.cores", f"xdma on cores {dma}, the slot {slot} on cores {owner}; "
                        "a flow run has one of each")  # fmt: skip
@@ -261,11 +271,9 @@ def load_cluster(cluster_hjson: str | Path, design_point: str | Path) -> Cluster
     cluster = hjson.loads(cp.read_text())
     point = json.loads(pp.read_text())
     slot_name = _get(point, "platform.accelerator_slot", str(pp))
-    slots = [a for _, core in hjson_cores(cluster) for a in core.get("snax_acc_cfg", [])
-             if a.get("snax_acc_name") == slot_name]  # fmt: skip
+    slots = [a for _, a in _slots(_cores(cluster), slot_name)]
     if len(slots) != 1:
         raise RunError("cluster.slot", f"{cp}: {len(slots)} slots named {slot_name!r}")
     streamer = _ref(slots[0], "snax_streamer_cfg", cp.parent)
     unit = _ref(slots[0], "snax_datapath_cfg", cp.parent)
-    c = cluster_from(cluster, streamer, unit, point)
-    return Cluster.from_dict({**c.to_dict(), "meta": {"cluster": cp.name}})
+    return replace(cluster_from(cluster, streamer, unit, point), meta={"cluster": cp.name})

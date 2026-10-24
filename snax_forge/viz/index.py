@@ -93,6 +93,7 @@ from snax_forge.run.trace import LEVELS, at_least
 Key = tuple[str, int]  # (mem, addr) of a word, or (container, flat) of an element
 Event = dict[str, Any]
 DMA_KINDS = ("dma", "burst")  # the DMA's accesses: an L1 beat and an AXI request
+ACCESS_KINDS = ("grant", "stall", "dma", "burst")  # the events that touch a memory word
 BEAT_KINDS = ("grant", "dma", "burst", "fire", "push", "class", "stall", "fifo")
 TASK_KINDS = ("start", "done", "csr", "poll", "barrier", "state", "func", "issue")
 
@@ -201,7 +202,7 @@ class RunIndex:
 
         for e in idx.events:
             k = e["k"]
-            if k in ("grant", "stall", "dma", "burst"):
+            if k in ACCESS_KINDS:
                 for flat in e["elems"]:
                     if e["region"] is not None:
                         idx.elem[(e["region"], flat)].append(e)
@@ -261,7 +262,7 @@ class RunIndex:
             k, src = e["k"], e["src"]
             if k in kinds:
                 events.add(e["t"])
-            if k in ("start", "done", "issue") or k == "func":
+            if k in ("start", "done", "issue", "func"):
                 bounds.add(e["t"])
             if k == "start" and src in owners:
                 self.tasks_of.setdefault(src, []).append(e["task"])
@@ -412,16 +413,26 @@ def _is_use(e: Event) -> bool:
     return e["k"] == "grant" and e["op"] == "r"
 
 
+def arrival_of(events: list[Event]) -> int | None:
+    """The first write among a word's or an element's events, or None (there from the start)."""
+    return next((e["t"] for e in events if _is_write(e)), None)
+
+
+def uses_of(events: list[Event]) -> list[int]:
+    """The reads among them by anything but the DMA after the arrival (``arrival_of``)."""
+    a = arrival_of(events)
+    return [e["t"] for e in events if _is_use(e) and (a is None or e["t"] > a)]
+
+
 def arrival(index: RunIndex, key: Key) -> int | None:
     """A word's first write in its memory, or None (there from the start)."""
-    return next((e["t"] for e in index.word.get(key, []) if _is_write(e)), None)
+    return arrival_of(index.word.get(key, []))
 
 
 def first_use(index: RunIndex, key: Key) -> int | None:
     """A word's first read after its arrival by anything but the DMA, or None."""
-    a = arrival(index, key)
-    return next((e["t"] for e in index.word.get(key, [])
-                 if _is_use(e) and (a is None or e["t"] > a)), None)  # fmt: skip
+    uses = uses_of(index.word.get(key, []))
+    return uses[0] if uses else None
 
 
 def _times(fn: Callable[[RunIndex, Key], int | None]) -> Callable[[RunIndex], Marks]:

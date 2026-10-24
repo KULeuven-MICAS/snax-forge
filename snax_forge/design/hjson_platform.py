@@ -142,13 +142,17 @@ def accelerators(d: Mapping[str, Any]) -> list[tuple[str, Any]]:
     return out
 
 
-def core_count(path: str | Path) -> int:
-    """The cores of every hive of the cluster file at ``path``; a DesignError when it cannot."""
+def _load(path: str | Path) -> Any:
+    """The cluster file at ``path``; a DesignError (``hjson.parse``) when it cannot be read."""
     try:
-        d = hjson.loads(Path(path).read_text())
+        return hjson.loads(Path(path).read_text())
     except (OSError, hjson.HjsonDecodeError) as e:
         raise _fail("hjson.parse", str(path), str(e)) from None
-    return sum(len(_get(h, "cores", list)) for h in _get(d, "cluster.hives", list))
+
+
+def core_count(path: str | Path) -> int:
+    """The cores of every hive of the cluster file at ``path``; a DesignError when it cannot."""
+    return len(cores(_load(path)))
 
 
 def _mover_value(template: Mapping[str, Any], key: str, at: str) -> int:
@@ -241,8 +245,4 @@ def platform_from_hjson(path: str | Path, name: str, root: str | Path | None = N
     if not isinstance(name, str) or not name.isidentifier():
         raise _fail("hjson.value", "name", f"{name!r} is not an identifier")
     source = source_path(path, root)
-    try:
-        d = hjson.loads(Path(path).read_text())
-    except (OSError, hjson.HjsonDecodeError) as e:
-        raise _fail("hjson.parse", str(path), str(e)) from None
-    return platform_from_dict(d, name, source)
+    return platform_from_dict(_load(path), name, source)

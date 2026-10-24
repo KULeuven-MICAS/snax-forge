@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-import json
 import time
 
 import dace
 import numpy as np
 
-from snax_forge.common import repo_root
+from snax_forge.common import repo_root, to_json
 
 from .spec import KernelSpec
 
@@ -73,5 +72,5 @@ def run(spec: KernelSpec) -> dict:
         if simplify:
             report[tag]["matches_numpy"] = verify(spec, sdfg)
 
-    (OUT / f"{spec.name}.json").write_text(json.dumps(report, indent=2))
+    (OUT / f"{spec.name}.json").write_text(to_json(report))
     return report

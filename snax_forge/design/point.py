@@ -34,7 +34,7 @@ from snax_forge.dfg import DfgError, Graph
 
 from .check import Design, run_checks
 from .memory import MemoryPlan
-from .platform import Platform, StreamerOptions
+from .platform import OPTIONS, Platform, StreamerOptions
 from .problems import DesignError, Problem, read_json
 from .streamers import Streamer, resolve
 
@@ -141,10 +141,10 @@ class DesignPoint(JsonFile):
 
 def _streamer(name: str, d: Any) -> Streamer:
     what = f"streamers.{name}"
-    keys = ("instance", "port", "write", "n_ports", "spatial_bounds", *StreamerOptions().to_dict())
+    keys = ("instance", "port", "write", "n_ports", "spatial_bounds", *OPTIONS)
     try:
         check_keys(d, keys, what)
-        opts = StreamerOptions.from_dict({k: d[k] for k in StreamerOptions().to_dict()})
+        opts = StreamerOptions.from_dict({k: d[k] for k in OPTIONS})
         s = Streamer(
             name, str(d["instance"]), str(d["port"]), bool(d["write"]),
             tuple(int(x) for x in d["spatial_bounds"]), opts,

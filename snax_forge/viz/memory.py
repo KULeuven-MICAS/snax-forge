@@ -166,7 +166,7 @@ def layout_of(mem: str, cluster: Cluster, point: Any, regions: list[Region]) -> 
             point.platform.l1.elems_per_word, cluster.l1_size, cluster.dma_beat_bytes // word,
             "bank", "row", mine, bank_row=cluster.bank_row,
         )  # fmt: skip
-    elif mem == "l2" and point.platform.l2 is not None:
+    elif mem == "l2":  # the caller lists l2 only for a run with one (api.memories)
         l2 = point.platform.l2
         per_beat = cluster.dma_beat_bytes // word
         lay = MemoryLayout(

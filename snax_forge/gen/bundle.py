@@ -31,15 +31,14 @@ slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
 builds read (D139).
 
 **Refused**, each a ``GenError``: what ``generate``, ``write_rtl`` and
-``elaborate`` refuse (``gen.*``), then ``bundle.empty`` (``emitted.json``
-lists no file) and ``bundle.missing`` (it lists a file that is not there).
+``elaborate`` refuse (``gen.*``, a listed file that is not there among them), then
+``bundle.empty`` (``emitted.json`` lists no file).
 The flow does not call it (D136).
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import shutil
 import subprocess
 import sys
@@ -83,16 +82,14 @@ def provenance(checkout: Path) -> tuple[str | None, bool]:
     return head.stdout.strip(), bool(git("status", "--porcelain").stdout.strip())
 
 
-def file_list(rtl_dir: Path) -> list[str]:
-    """``emitted.json``'s files, relative to ``rtl_dir``, ``emitted.json`` left out; each must
-    be there."""
-    listing = rtl_dir / EMITTED_JSON
-    files = [f for f in json.loads(listing.read_text())["files"] if f != EMITTED_JSON]
+def file_list(rtl_dir: Path, emitted: list[Path]) -> list[str]:
+    """The files ``elaborate`` wrote and checked (``emitted``), relative to ``rtl_dir``,
+    ``emitted.json`` left out."""
+    files = [f.relative_to(rtl_dir).as_posix() for f in emitted if f.name != EMITTED_JSON]
     if not files:
-        raise GenError("bundle.empty", f"{listing} lists no RTL file: files.f would be empty")
-    missing = [f for f in files if not (rtl_dir / f).is_file()]
-    if missing:
-        raise GenError("bundle.missing", f"{listing} lists files that are not there: {missing}")
+        raise GenError(
+            "bundle.empty", f"{rtl_dir / EMITTED_JSON} lists no RTL file: files.f would be empty"
+        )
     return files
 
 
@@ -106,8 +103,7 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
     shutil.rmtree(rtl_dir, ignore_errors=True)
     manifest = generate(design_point, out, root)
     spec = write_rtl(design_point, rtl_dir, root)
-    elaborate(rtl_dir / RTL_JSON, rtl_dir)
-    files = file_list(rtl_dir)
+    files = file_list(rtl_dir, elaborate(rtl_dir / RTL_JSON, rtl_dir))
     files_f.write_text("".join(f"{f}\n" for f in files))
     commit, dirty = provenance(ROOT)
     bundle = Bundle(manifest.design_point, spec.tag, commit, dirty)

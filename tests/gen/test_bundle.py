@@ -124,7 +124,6 @@ def test_provenance_outside_git_and_in_this_checkout(tmp_path):
     [
         ([], "bundle.empty"),
         ([EMITTED_JSON], "bundle.empty"),
-        ([*SV, "sv/not_written.sv"], "bundle.missing"),
     ],
 )
 def test_a_file_list_that_cannot_be_written(tmp_path, fake, listed, code):

@@ -286,7 +286,7 @@ def register_memory_pass(kind: str, name: str, fn: MemoryPass) -> None:
 def default_residency(ctx: MemoryContext) -> dict[str, list[str]]:
     out = {}
     for name, c in ctx.graph.containers.items():
-        out[name] = ["l1"] if c.transient or ctx.platform.l2 is None else ["l2", "l1"]
+        out[name] = ["l1"] if c.transient else ctx.memories
     return out
 
 

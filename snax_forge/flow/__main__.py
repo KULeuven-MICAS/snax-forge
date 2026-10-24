@@ -52,12 +52,14 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from snax_forge.design import DesignError, parse_value
+from snax_forge.design import DesignError
+from snax_forge.design.__main__ import setting as design_setting
 from snax_forge.dfg import DfgError
 from snax_forge.lower import LowerError
 from snax_forge.run import RunError
 from snax_forge.run.sources import parse_trace
 from snax_forge.sandbox import SandboxError
+from snax_forge.sandbox.__main__ import setting as sandbox_setting
 
 from .run import FlowError, run_bound, run_flow, summary
 
@@ -65,20 +67,16 @@ BOUND = ".snaxdfg"
 
 
 def _setting(text: str) -> tuple[str, str, Any]:
-    path, sep, value = text.partition("=")
-    if not sep or not path:
-        raise argparse.ArgumentTypeError(f"{text!r} is not NAME=VALUE")
-    head, dot, rest = path.partition(".")
-    if dot and head in ("platform", "memory") and rest:
-        return head, rest, parse_value(value)
-    if dot:
+    """A dotted path as the design step reads it (platform. or memory.), else a recipe
+    param as the sandbox reads it."""
+    path = text.partition("=")[0]
+    if "." not in path:
+        return ("recipe", *sandbox_setting(text))
+    if path.partition(".")[0] not in ("platform", "memory"):
         raise argparse.ArgumentTypeError(
             f"{text!r}: a dotted path starts with platform. or memory."
         )
-    try:
-        return "recipe", path, int(value)
-    except ValueError:
-        return "recipe", path, value
+    return design_setting(text)
 
 
 def main(argv: list[str] | None = None) -> int:

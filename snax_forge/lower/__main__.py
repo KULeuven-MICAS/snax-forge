@@ -16,11 +16,10 @@ import argparse
 import sys
 from pathlib import Path
 
-from snax_forge.design import DesignError
 from snax_forge.design.point import DesignPoint
 
-from .derive import LowerError, task_list
-from .tasks import Configure, Start, Sync, TaskList, TaskListError, check_values
+from .derive import task_list
+from .tasks import Configure, Start, Sync, TaskList, check_values
 
 
 def steps(tl: TaskList) -> str:
@@ -45,7 +44,7 @@ def _tasks(argv: list[str]) -> int:
         point = DesignPoint.load(args.point)
         tl = task_list(point)
         check_values(tl, point)
-    except (DesignError, LowerError, TaskListError, ValueError) as e:
+    except ValueError as e:  # DesignError, LowerError and TaskListError among them
         print(f"{args.point}: {e}", file=sys.stderr)
         return 1
     out = args.point.with_name("tasks.json")

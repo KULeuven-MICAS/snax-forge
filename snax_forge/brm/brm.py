@@ -459,6 +459,7 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
     names = [p.name for p in ports]
     if len(set(names)) != len(names):
         raise BrmError(f"{what}: duplicate port names {names}")
+    runtime = list(b.params("runtime"))
     for p in ports:
         w = f"{what}.port {p.name!r}"
         _port_name(p.name, w)
@@ -467,7 +468,6 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
         _uses(p.lanes, design, f"{w}.lanes")
         if (c := expr.constant(p.lanes)) is not None and c < 1:
             raise BrmError(f"{w}.lanes: must be >= 1, got {c}")
-        runtime = b.params("runtime")
         if isinstance(p.rate, str):
             if not expr.is_name(p.rate) or p.rate not in runtime:
                 raise BrmError(f"{w}.rate: {p.rate!r} must be an int or a runtime param name")
@@ -480,7 +480,6 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
     dirs = {p.direction for p in ports}
     if dirs != set(DIRECTIONS):
         raise BrmError(f"{what}: needs at least one input and one output port")
-    runtime = list(b.params("runtime"))
     if sorted(runtime) != sorted(b.registers):
         raise BrmError(
             f"{what}: runtime params must be exactly n and the named rates {b.registers}, "

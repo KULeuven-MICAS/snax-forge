@@ -48,12 +48,19 @@ where the nest has one.
 
 from __future__ import annotations
 
+from math import prod
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.design.streamers import Loop, firing_loops, instances
+from snax_forge.design.streamers import (
+    Loop,
+    accelerated,
+    firing_loops,
+    instances,
+    streamer_name,
+)
 from snax_forge.dfg import DfgError, Memlet, named_rates
 from snax_forge.dfg.subset import parse_dim
 
@@ -128,7 +135,7 @@ def task_list(point: DesignPoint) -> TaskList:
     mode = pf.wait_mode
     word = pf.l1.width_bits // 8
     beat = pf.l1.wide_bits // 8
-    nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]
+    nodes = accelerated(g)
 
     def layout(c: str, mem: str) -> Layout | None:
         return plan.layouts.get(c, {}).get(mem)
@@ -159,9 +166,7 @@ def task_list(point: DesignPoint) -> TaskList:
             loops = firing_loops(g, n)
         except ValueError as e:
             raise LowerError(f"{what}: {e}") from None
-        n_fire = 1
-        for lp in loops:
-            n_fire *= lp.count
+        n_fire = prod(lp.count for lp in loops)
         ports = [p.name for p in inst.brm.interface.ports]
         memlets = {**n.inputs, **n.outputs}
         try:  # named rates from the loops a memlet does not use (D104), as REF and bind do
@@ -183,7 +188,7 @@ def task_list(point: DesignPoint) -> TaskList:
 
         group = []
         for p in ports:  # streamers
-            m, s = memlets[p], point.streamers[f"{name}_{p}"]
+            m, s = memlets[p], point.streamers[streamer_name(name, p)]
             lay = layout(m.data, "l1")
             if lay is None:
                 raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")

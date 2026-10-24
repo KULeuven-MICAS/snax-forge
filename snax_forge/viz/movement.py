@@ -50,7 +50,7 @@ from snax_forge.run import region_at
 from snax_forge.run.beats import mover_nest, mover_values
 from snax_forge.run.cluster import DMA
 
-from .index import Event, RunIndex
+from .index import Event, RunIndex, arrival_of, uses_of
 from .memory import element_name
 
 
@@ -81,13 +81,18 @@ def names(idx: RunIndex, container: str | None, elems: Sequence[int]) -> list[st
     return [element_name(container, shape, f) for f in elems]
 
 
+def _text(idx: RunIndex, container: str | None, elems: Sequence[int]) -> str | None:
+    """Elements as one text (``A[4] + A[5]``), None for none."""
+    return " + ".join(names(idx, container, elems)) or None
+
+
 def _served(idx: RunIndex, addr: int) -> str | None:
     """The element at an L1 address no event names (a stall's ``by_addr``)."""
     r = region_at(idx.regions, "l1", addr)
     if r is None:
         return None
     word = idx.word_of(addr)
-    return " + ".join(names(idx, r.container, r.elems(word, idx.cluster.bank_bytes))) or None
+    return _text(idx, r.container, r.elems(word, idx.cluster.bank_bytes))
 
 
 def flat_of(idx: RunIndex, container: str, index: Sequence[int] | int) -> int:
@@ -136,9 +141,10 @@ def hop(idx: RunIndex, e: Event, flat: int | None = None) -> dict[str, Any]:
     return d
 
 
-def _beat(idx: RunIndex, task: str | None, mover: str, b: int) -> dict[str, Any]:
+def _beat(idx: RunIndex, task: str | None, mover: str, b: int
+          ) -> tuple[dict[str, Any], list[Event | None]]:  # fmt: skip
     """A streamer beat of streamer task ``task``: its grants by lane, their elements and
-    values."""
+    values; and the grant events, one per lane (None where the lane has none)."""
     grants = [idx.beat.get((task, mover, b), {}).get(lane) for lane in range(_lanes(idx, mover))]
     return {
         "b": b,
@@ -146,7 +152,7 @@ def _beat(idx: RunIndex, task: str | None, mover: str, b: int) -> dict[str, Any]
         "elements": [
             x for g in grants if g is not None for x in names(idx, g["region"], g["elems"])
         ],
-    }
+    }, grants
 
 
 def _lanes(idx: RunIndex, mover: str) -> int:
@@ -178,7 +184,7 @@ def firing(idx: RunIndex, f: Event) -> dict[str, Any]:
     """A firing: its operands (each reader's beat), the push that folds it, the writer's
     grants of that push and where each written element went."""
     mine = idx.streamers.get(f["task"], {})  # the streamer task of each mover
-    operands = {m: {**_beat(idx, mine.get(m), m, b), "vals": f["vals"].get(m)}
+    operands = {m: {**_beat(idx, mine.get(m), m, b)[0], "vals": f["vals"].get(m)}
                 for m, b in f["b"].items()}  # fmt: skip
     d: dict[str, Any] = {"acc": f["src"], "task": f["task"], "n": f["n"], "t": f["t"],
                          "operands": operands,
@@ -190,11 +196,10 @@ def firing(idx: RunIndex, f: Event) -> dict[str, Any]:
         d["push"] = {"n": p["n"], "t": p["t"], "first": p["first"], "last": p["last"],
                      "vals": p["vals"]}  # fmt: skip
         if w is not None:
-            beat = _beat(idx, mine.get(w), w, p["n"])
+            beat, grants = _beat(idx, mine.get(w), w, p["n"])
             d["push"]["writer"] = beat
             d["outputs"] = {w: beat["elements"]}
-            for lane in range(_lanes(idx, w)):
-                g = idx.beat.get((mine.get(w), w, p["n"]), {}).get(lane)
+            for g in grants:
                 if g is not None:
                     d["results"].update(_results(idx, g))
     return d
@@ -253,9 +258,8 @@ def residency(idx: RunIndex) -> list[dict[str, Any]]:
         for flat in range(int(np.prod(r.shape))):
             evs = [e for e in idx.elem.get((r.container, flat), [])
                    if e.get("mem", "l1") == r.memory]  # fmt: skip
-            a = next((e["t"] for e in evs if e.get("op") == "w"), None)
+            a, uses = arrival_of(evs), uses_of(evs)
             after = [e for e in evs if a is None or e["t"] > a]
-            uses = [e["t"] for e in after if e["k"] == "grant" and e["op"] == "r"]
             d = next((e["t"] for e in after if e["k"] in ("dma", "burst") and e["op"] == "r"), None)
             wait = None if a is None or not uses else uses[0] - a
             elements.append({"flat": flat, "arrival": a, "uses": uses, "departure": d,
@@ -293,10 +297,18 @@ def _held(idx: RunIndex, port: str, task: str) -> list[dict[str, Any]]:
     for e in idx.stalls_port.get(port, []):
         if e["task"] == task:
             out.append({"t": e["t"], "bank": e["bank"], "row": e["row"], "addr": e["addr"],
-                        "element": " + ".join(names(idx, e["region"], e["elems"])) or None,
+                        "element": _text(idx, e["region"], e["elems"]),
                         "by": e["by"], "by_addr": e["by_addr"],
                         "by_element": _served(idx, e["by_addr"])})  # fmt: skip
     return out
+
+
+def _pace(beats: list[Event]) -> dict[str, int | None]:
+    """The first and last cycle of a port's or a copy's beats, and the last at one per cycle."""
+    if not beats:
+        return {"first": None, "last": None, "ideal_last": None}
+    first = beats[0]["t"]
+    return {"first": first, "last": beats[-1]["t"], "ideal_last": first + len(beats) - 1}
 
 
 def patterns(idx: RunIndex) -> list[dict[str, Any]]:
@@ -319,11 +331,7 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
                              "nest": [[b, st] for b, st in zip(bounds, ts, strict=True)],
                              "addresses": len(lanes[lane])},
                 }  # fmt: skip
-                if grants:
-                    first, last = grants[0]["t"], grants[-1]["t"]
-                    p.update(first=first, last=last, ideal_last=first + len(grants) - 1)
-                else:
-                    p.update(first=None, last=None, ideal_last=None)
+                p.update(_pace(grants))
                 if idx.on("stall"):
                     held = _held(idx, port, s["task"])
                     p["held"] = held
@@ -339,8 +347,7 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
              "from_stride": cp["from_stride"], "to_stride": cp["to_stride"],
              "beats": len(beats)}  # fmt: skip
         if beats:
-            first, last = beats[0]["t"], beats[-1]["t"]
-            p.update(first=first, last=last, ideal_last=first + len(beats) - 1)
+            p.update(_pace(beats))
         out.append(p)
     return out
 
@@ -367,8 +374,7 @@ def conflicts(idx: RunIndex, start: int = 0, stop: int | None = None) -> dict[st
     listed, per_bank, per_port = [], {}, {}
     per_word: dict[int, dict[str, Any]] = {}
     for e in stalls:
-        waiting = _side(idx, e["src"], e["addr"], " + ".join(names(idx, e["region"], e["elems"]))
-                        or None)  # fmt: skip
+        waiting = _side(idx, e["src"], e["addr"], _text(idx, e["region"], e["elems"]))
         served = _side(idx, e["by"], e["by_addr"], _served(idx, e["by_addr"]))
         listed.append({"t": e["t"], "bank": e["bank"], "row": e["row"], "task": e["task"],
                        "b": e.get("b"), "waiting": waiting, "served": served})  # fmt: skip

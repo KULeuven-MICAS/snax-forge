@@ -90,6 +90,14 @@ def _int_arg(q: dict[str, list[str]], key: str, default: int | None) -> int | No
         raise _BadRequest(f"{key} must be an integer, got {vals[-1]!r}") from e
 
 
+def _need_int(q: dict[str, list[str]], key: str, say: str) -> int:
+    """``key``'s int; a 400 saying ``say`` when it is not given."""
+    v = _int_arg(q, key, None)
+    if v is None:
+        raise _BadRequest(say)
+    return v
+
+
 def _ints_arg(q: dict[str, list[str]], key: str) -> list[int]:
     """A list of integers, repeated or separated by commas."""
     try:
@@ -161,85 +169,62 @@ class Handler(BaseHTTPRequestHandler):
         if parts == ["runs"]:
             self._json(runs.summaries())
             return
-        if len(parts) == 4 and parts[0] == "run" and parts[2:] == ["memory", "cycle"]:
-            rv = runs.get(parts[1])
-            if rv is None:
-                self._error(HTTPStatus.NOT_FOUND, f"no run named {parts[1]!r}")
-                return
-            t = _int_arg(q, "t", None)
-            if t is None:
-                raise _BadRequest("give t=T, the cycle")
-            self._json(api.memory_cycle(rv, t))
+        if len(parts) < 2 or parts[0] != "run":
+            self._error(HTTPStatus.NOT_FOUND, "unknown API route /api/" + "/".join(parts))
             return
-        if len(parts) == 4 and parts[0] == "run" and parts[2:] == ["schedule", "detail"]:
-            rv = runs.get(parts[1])
-            if rv is None:
-                self._error(HTTPStatus.NOT_FOUND, f"no run named {parts[1]!r}")
+        rv = runs.get(parts[1])
+        if rv is None:
+            self._error(HTTPStatus.NOT_FOUND, f"no run named {parts[1]!r}")
+            return
+        route = parts[2:]
+        if route == []:
+            self._json(api.run_detail(rv))
+        elif route == ["memory"]:
+            try:
+                self._json(api.memory_view(rv, _str_arg(q, "marks")))
+            except api.MemoryViewError as e:
+                raise _BadRequest(str(e)) from e
+        elif route == ["memory", "cycle"]:
+            self._json(api.memory_cycle(rv, _need_int(q, "t", "give t=T, the cycle")))
+        elif len(route) == 3 and route[0] == "memory" and route[2] == "rows":
+            if route[1] not in api.memories(rv):
+                self._error(HTTPStatus.NOT_FOUND, f"no memory {route[1]!r}")
                 return
+            a = _int_arg(q, "from", 0)
+            b = _int_arg(q, "to", a + api.MAX_ROWS)
+            try:
+                self._json(api.memory_rows(rv, route[1], a, b, _str_arg(q, "marks")))
+            except api.MemoryViewError as e:
+                raise _BadRequest(str(e)) from e
+        elif route == ["journey"]:
+            region = _str_arg(q, "region")
+            index = _str_arg(q, "index")
+            if not region or index is None:
+                raise _BadRequest("give region=R and index=I (a flat index or i,j,...)")
+            try:
+                idx = [int(x) for x in index.split(",")]
+                self._json(api.journey_view(rv, region, idx[0] if len(idx) == 1 else idx))
+            except ValueError as e:
+                raise _BadRequest(str(e)) from e
+        elif route == ["schedule"]:
+            self._json(api.schedule_view(rv, _ints_arg(q, "open"), _int_arg(q, "cycle", None)))
+        elif route == ["schedule", "detail"]:
             a, b = _int_arg(q, "from", None), _int_arg(q, "to", None)
             if a is None or b is None:
                 raise _BadRequest("give from=A and to=B, the cycles")
             self._json(api.schedule_detail(rv, a, b))
-            return
-        if len(parts) == 5 and parts[0] == "run" and parts[2:] == ["memory", parts[3], "rows"]:
-            rv = runs.get(parts[1])
-            if rv is None or parts[3] not in api.memories(rv):
-                what = f"run {parts[1]!r}" if rv is None else f"memory {parts[3]!r}"
-                self._error(HTTPStatus.NOT_FOUND, f"no {what}")
-                return
-            a = _int_arg(q, "from", 0) or 0
-            b = _int_arg(q, "to", a + api.MAX_ROWS)
-            try:
-                self._json(api.memory_rows(rv, parts[3], a, b or 0, _str_arg(q, "marks")))
-            except api.MemoryViewError as e:
+        elif route == ["cluster"]:
+            self._json(api.cluster_view(rv, _need_int(q, "t", "give t=T, the cycle")))
+        elif route == ["step"]:
+            t = _need_int(q, "t", "give t=T, dir=1 or -1 and by=event or boundary")
+            try:  # cluster.step checks dir and by
+                self._json(api.step_view(rv, t, _int_arg(q, "dir", None), _str_arg(q, "by")))
+            except ValueError as e:
                 raise _BadRequest(str(e)) from e
-            return
-        if len(parts) in (2, 3) and parts[0] == "run":
-            rv = runs.get(parts[1])
-            if rv is None:
-                self._error(HTTPStatus.NOT_FOUND, f"no run named {parts[1]!r}")
-                return
-            if len(parts) == 2:
-                self._json(api.run_detail(rv))
-                return
-            if parts[2] == "memory":
-                try:
-                    self._json(api.memory_view(rv, _str_arg(q, "marks")))
-                except api.MemoryViewError as e:
-                    raise _BadRequest(str(e)) from e
-                return
-            if parts[2] == "journey":
-                region = _str_arg(q, "region")
-                index = _str_arg(q, "index")
-                if not region or index is None:
-                    raise _BadRequest("give region=R and index=I (a flat index or i,j,...)")
-                try:
-                    idx = [int(x) for x in index.split(",")]
-                    self._json(api.journey_view(rv, region, idx[0] if len(idx) == 1 else idx))
-                except ValueError as e:
-                    raise _BadRequest(str(e)) from e
-                return
-            if parts[2] == "schedule":
-                self._json(api.schedule_view(rv, _ints_arg(q, "open"), _int_arg(q, "cycle", None)))
-                return
-            if parts[2] == "cluster":
-                t = _int_arg(q, "t", None)
-                if t is None:
-                    raise _BadRequest("give t=T, the cycle")
-                self._json(api.cluster_view(rv, t))
-                return
-            if parts[2] == "step":
-                t, d, by = _int_arg(q, "t", None), _int_arg(q, "dir", None), _str_arg(q, "by")
-                if t is None or d not in (1, -1) or by not in ("event", "boundary"):
-                    raise _BadRequest("give t=T, dir=1 or -1 and by=event or boundary")
-                self._json(api.step_view(rv, t, d, by))
-                return
-            if parts[2] == "conflicts":
-                a = _int_arg(q, "from", 0)
-                b = _int_arg(q, "to", None)
-                self._json(api.conflicts_view(rv, a or 0, b))
-                return
-        self._error(HTTPStatus.NOT_FOUND, "unknown API route /api/" + "/".join(parts))
+        elif route == ["conflicts"]:
+            self._json(api.conflicts_view(rv, _int_arg(q, "from", 0), _int_arg(q, "to", None)))
+        else:
+            self._error(HTTPStatus.NOT_FOUND, "unknown API route /api/" + "/".join(parts))
 
     def _static(self, parts: list[str]) -> None:
         """A file below static/, index.html for /; nothing outside it is served."""

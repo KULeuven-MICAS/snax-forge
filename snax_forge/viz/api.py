@@ -59,7 +59,7 @@ of its own.
 from __future__ import annotations
 
 import threading
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -76,8 +76,9 @@ from .memory import MemoryLayout, MemoryViewError, RowMarks
 from .movement import MovementUnavailable
 from .schedule import ScheduleUnavailable
 
+OVERLAY_KINDS = ix.ACCESS_KINDS  # what the memory tab's cycle overlay draws: the accesses
+
 MAX_ROWS = memory.MAX_ROWS  # memory rows per request (static/memory.js)
-OVERLAY_KINDS = ("grant", "stall", "dma", "burst")  # what the memory tab's cycle overlay draws
 
 
 # =============================================================================
@@ -231,9 +232,16 @@ def memory_cycle(rv: RunView, t: int) -> dict[str, Any]:
 # =============================================================================
 
 
-def _unavailable(rv: RunView, e: MovementUnavailable) -> dict[str, Any]:
-    return {"name": rv.name, "available": False, "reason": str(e),
-            "filtered": rv.index.filtered}  # fmt: skip
+def _answer(rv: RunView, make: Callable[[], dict[str, Any]]) -> dict[str, Any]:
+    """``make()``'s answer marked ``available``, or ``available`` false with the reason the
+    run's trace cannot give it (a movement answer also says which sources it has)."""
+    try:
+        return {"name": rv.name, "available": True, **make()}
+    except MovementUnavailable as e:
+        return {"name": rv.name, "available": False, "reason": str(e),
+                "filtered": rv.index.filtered}  # fmt: skip
+    except ScheduleUnavailable as e:
+        return {"name": rv.name, "available": False, "reason": str(e)}
 
 
 def movement_view(rv: RunView) -> dict[str, Any]:
@@ -241,36 +249,29 @@ def movement_view(rv: RunView) -> dict[str, Any]:
     task, and the conflict counts (``available`` false with the reason below ``stall``), or
     ``available`` false with the reason below ``beat``."""
     idx = rv.index
-    try:
+
+    def make() -> dict[str, Any]:
         residency, patterns = movement.residency(idx), movement.patterns(idx)
-    except MovementUnavailable as e:
-        return _unavailable(rv, e)
-    try:
-        c = movement.conflicts(idx)
-        counts = {"available": True, **{k: c[k] for k in ("count", "banks", "ports")}}
-    except MovementUnavailable as e:
-        counts = {"available": False, "reason": str(e)}
-    return {"name": rv.name, "available": True, "level": idx.level, "filtered": idx.filtered,
-            "residency": residency, "patterns": patterns, "conflicts": counts}  # fmt: skip
+        try:
+            c = movement.conflicts(idx)
+            counts = {"available": True, **{k: c[k] for k in ("count", "banks", "ports")}}
+        except MovementUnavailable as e:
+            counts = {"available": False, "reason": str(e)}
+        return {"level": idx.level, "filtered": idx.filtered, "residency": residency,
+                "patterns": patterns, "conflicts": counts}  # fmt: skip
+
+    return _answer(rv, make)
 
 
 def journey_view(rv: RunView, region: str, index: Sequence[int] | int) -> dict[str, Any]:
     """/api/run/<name>/journey?region=A&index=5: every access to one element and the
     firings it fed or came from (movement.py); a ValueError for an element the run lacks."""
-    try:
-        return {"name": rv.name, "available": True,
-                **movement.journey(rv.index, region, index)}  # fmt: skip
-    except MovementUnavailable as e:
-        return _unavailable(rv, e)
+    return _answer(rv, lambda: movement.journey(rv.index, region, index))
 
 
 def conflicts_view(rv: RunView, start: int = 0, stop: int | None = None) -> dict[str, Any]:
     """/api/run/<name>/conflicts?from=A&to=B: the L1 stalls placed on the layout."""
-    try:
-        return {"name": rv.name, "available": True,
-                **movement.conflicts(rv.index, start, stop)}  # fmt: skip
-    except MovementUnavailable as e:
-        return _unavailable(rv, e)
+    return _answer(rv, lambda: movement.conflicts(rv.index, start, stop))
 
 
 # =============================================================================
@@ -283,20 +284,13 @@ def schedule_view(rv: RunView, open: Sequence[int] = (), cycle: int | None = Non
     """/api/run/<name>/schedule?open=A,B&cycle=C: the lanes and the segments, the folds whose
     first cycle is in ``open`` or that hold ``cycle`` opened; ``available`` false with the
     reason below ``task``."""
-    try:
-        return {"name": rv.name, "available": True,
-                **schedule.schedule(rv.index, open, cycle)}  # fmt: skip
-    except ScheduleUnavailable as e:
-        return {"name": rv.name, "available": False, "reason": str(e)}
+    return _answer(rv, lambda: schedule.schedule(rv.index, open, cycle))
 
 
 def schedule_detail(rv: RunView, start: int, stop: int) -> dict[str, Any]:
     """/api/run/<name>/schedule/detail?from=A&to=B: the beat and stall lines of ``[A, B)``
     per lane; ``available`` false with the reason below ``beat``."""
-    try:
-        return {"name": rv.name, "available": True, **schedule.detail(rv.index, start, stop)}
-    except ScheduleUnavailable as e:
-        return {"name": rv.name, "available": False, "reason": str(e)}
+    return _answer(rv, lambda: schedule.detail(rv.index, start, stop))
 
 
 def cluster_view(rv: RunView, t: int) -> dict[str, Any]:

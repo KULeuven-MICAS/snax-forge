@@ -304,27 +304,25 @@ def _layout(g: Graph) -> dict[str, Any]:
     for k, top in enumerate(tops):
         rows.append({"kind": "node", "node": _node(g, top)})
         writers: dict[str, list[str]] = {}  # container -> writer connectors inside this node
+        wrote: dict[str, list[tuple[Node, str, Memlet]]] = {}  # container -> its writes here
         for side, n, c, m in _uses(top):
             port, text = f"{n.id}.{c}", memlet_text(m)
             if side == "write":
                 writers.setdefault(m.data, []).append(port)
+                wrote.setdefault(m.data, []).append((n, c, m))
             elif m.data in writers:  # written earlier inside this node: straight from the writer
                 edges.extend(_edge(w, port, m.data, text, "read") for w in writers[m.data])
             else:
                 edges.append(_edge(above[m.data], port, m.data, text, "read", top.id))
         nxt = reads[k + 1] if k + 1 < len(tops) else []
         names = nxt + [c for c in writes[k] if c not in nxt]
-        fresh = {c: list(dict.fromkeys(n.id for n, _, _ in _writes(top, c))) for c in writes[k]}
+        fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[k]}
         below = box_row(names, fresh, k + 1)
         for c in writes[k]:
-            for n, cn, m in _writes(top, c):
+            for n, cn, m in wrote[c]:
                 edges.append(_edge(f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", top.id))
         above = below
     return {"rows": rows, "boxes": boxes, "edges": edges}
-
-
-def _writes(top: Node, c: str) -> list[tuple[Node, str, Memlet]]:
-    return [(n, cn, m) for side, n, cn, m in _uses(top) if side == "write" and m.data == c]
 
 
 def _edge(

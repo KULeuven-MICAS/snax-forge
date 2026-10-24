@@ -174,7 +174,6 @@ SUBMODULE = "gvsoc/snax-gvsoc"
 GVSOC_WORKDIR = ROOT / "out" / "snax-gvsoc"
 TARGET = "snax_hjson"
 ELF = "forge.elf"
-TRACE_LEVELS = LEVELS
 VCD, GTKW = "all.vcd", "view.gtkw"
 
 
@@ -404,11 +403,11 @@ def build_reason(c: Checkout, workdir: Path) -> str | None:
 
 
 def _make(stage: str, goal: str, variables: Mapping[str, str], log: Path,
-          err: Path | None = None, live: bool = False) -> int:  # fmt: skip
+          live: bool = False) -> int:  # fmt: skip
     """``run_gvsoc``; a nonzero exit is a FlowError naming the log and its last lines."""
-    rc = run_gvsoc(goal, variables, log, err, live)
+    rc = run_gvsoc(goal, variables, log, None, live)
     if rc != 0:
-        tail = "\n".join((err or log).read_text().splitlines()[-15:])
+        tail = "\n".join(log.read_text().splitlines()[-15:])
         raise FlowError(f"{stage}: make {goal} failed (exit {rc}); its output is in "
                         f"{cwd_relative(log)}:\n{tail}")  # fmt: skip
     return rc
@@ -585,13 +584,21 @@ def _clear_sandbox(out: Path, graph_path: Path) -> None:
 
 
 def _trace(level: str, sources: Sequence[str] | None) -> None:
-    if level not in TRACE_LEVELS:
-        raise FlowError(f"trace level {level!r}: one of {', '.join(TRACE_LEVELS)}")
+    if level not in LEVELS:
+        raise FlowError(f"trace level {level!r}: one of {', '.join(LEVELS)}")
     if sources is not None and not at_least(level, "beat"):
         raise FlowError(f"trace sources {list(sources)}: they go with beat, stall or finegrained")
 
 
 FAILURES = (DesignError, FlowError, SandboxError, DfgError, LowerError, RunError, OSError)
+
+
+def _folder(name: str, out: str | Path | None) -> Path:
+    """The flow's folder (``out``, else ``out/flow/<name>``), made and cleared."""
+    folder = Path(out) if out is not None else OUT / name
+    folder.mkdir(parents=True, exist_ok=True)
+    _clear(folder)
+    return folder
 
 
 def run_flow(
@@ -619,9 +626,7 @@ def run_flow(
     point_name = name or default_name(recipe, recipe_sets)
     name = name or with_level(default_name(recipe, recipe_sets, platform_sets, memory_sets),
                               trace_level)  # fmt: skip
-    out = Path(out) if out is not None else OUT / name
-    out.mkdir(parents=True, exist_ok=True)
-    _clear(out)
+    out = _folder(name, out)
     times: dict[str, float] = {}
 
     def stages() -> Flow:
@@ -669,9 +674,7 @@ def run_bound(
     # As in run_flow: the design point keeps the graph's name, the folder carries every --set.
     point_name = name or bound_name(graph_path)
     name = name or with_level(bound_name(graph_path, platform_sets, memory_sets), trace_level)
-    out = Path(out) if out is not None else OUT / name
-    out.mkdir(parents=True, exist_ok=True)
-    _clear(out)
+    out = _folder(name, out)
     _clear_sandbox(out, graph_path)
     times: dict[str, float] = {}
 

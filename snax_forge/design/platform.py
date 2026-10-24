@@ -469,7 +469,7 @@ def _apply(d: dict[str, Any], path: str, value: Any) -> list[Problem]:
             Problem("platform.keys", where, f"{'.'.join(parts[:-1])!r} is a value, not a section")
         ]
     if last not in node:
-        keys = list(node) if isinstance(node, Mapping) else []
+        keys = list(node)
         close = difflib.get_close_matches(last, keys, n=1)
         fix = f"did you mean {'.'.join([*parts[:-1], close[0]])}?" if close else None
         return [Problem("platform.keys", where, f"no such field (fields here: {keys})", fix)]

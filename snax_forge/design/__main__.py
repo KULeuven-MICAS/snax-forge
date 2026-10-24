@@ -40,6 +40,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -57,7 +58,7 @@ OUT = ROOT / "out" / "design"
 PLATFORMS = ROOT / "platforms"
 
 
-def _setting(text: str) -> tuple[str, str, Any]:
+def setting(text: str) -> tuple[str, str, Any]:
     path, sep, value = text.partition("=")
     head, dot, rest = path.partition(".")
     if not sep or head not in ("platform", "memory") or not dot or not rest:
@@ -72,7 +73,7 @@ def _inputs(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--platform", type=Path, required=True, help="platform file or working copy")
     ap.add_argument("--memory", type=Path, help="memory working copy to continue from")
     ap.add_argument(
-        "--set", type=_setting, action="append", default=[], metavar="platform|memory.PATH=VALUE"
+        "--set", type=setting, action="append", default=[], metavar="platform|memory.PATH=VALUE"
     )
 
 
@@ -154,6 +155,28 @@ def _check(argv: list[str]) -> int:
     return 0
 
 
+def _write_platform(dst: Path, force: bool, make: Callable[[], Platform], source: Path,
+                    said: Callable[[Platform], str]) -> int:  # fmt: skip
+    """The platform ``make`` gives, written to ``dst`` once it passes the platform checks; an
+    existing ``dst`` is replaced only with ``force``."""
+    if dst.exists() and not force:
+        print(f"{dst} exists; pass --force to replace it", file=sys.stderr)
+        return 1
+    try:
+        platform = make()
+    except DesignError as e:
+        print(e, file=sys.stderr)
+        return 1
+    problems = run_checks(Design(platform, None), ["platform"])
+    if problems:
+        print(report(problems, f"platform check of {source}"), file=sys.stderr)
+        return 1
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    platform.save(dst)
+    print(f"wrote {cwd_relative(dst)} {said(platform)}")
+    return 0
+
+
 def _save(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.design save")
     ap.add_argument("src", type=Path, help="the platform to keep, usually a working copy")
@@ -163,22 +186,10 @@ def _save(argv: list[str]) -> int:
     dst = Path(args.dst)
     if dst.suffix != ".json" and dst.parent == Path("."):
         dst = PLATFORMS / f"{args.dst}.json"
-    if dst.exists() and not args.force:
-        print(f"{dst} exists; pass --force to replace it", file=sys.stderr)
-        return 1
-    try:
-        platform = Platform.load(args.src).saved_as(dst.stem)
-    except DesignError as e:
-        print(e, file=sys.stderr)
-        return 1
-    problems = run_checks(Design(platform, None), ["platform"])
-    if problems:
-        print(report(problems, f"platform check of {args.src}"), file=sys.stderr)
-        return 1
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    platform.save(dst)
-    print(f"wrote {cwd_relative(dst)} (base {platform.base}, {len(platform.changes)} changes)")
-    return 0
+    return _write_platform(
+        dst, args.force, lambda: Platform.load(args.src).saved_as(dst.stem), args.src,
+        lambda p: f"(base {p.base}, {len(p.changes)} changes)",
+    )  # fmt: skip
 
 
 def _from_hjson(argv: list[str]) -> int:
@@ -187,23 +198,11 @@ def _from_hjson(argv: list[str]) -> int:
     ap.add_argument("name", help="the platform's name: writes platforms/<name>.json")
     ap.add_argument("--force", action="store_true", help="replace an existing file")
     args = ap.parse_args(argv)
-    dst = PLATFORMS / f"{args.name}.json"
-    if dst.exists() and not args.force:
-        print(f"{dst} exists; pass --force to replace it", file=sys.stderr)
-        return 1
-    try:
-        platform = platform_from_hjson(args.hjson, args.name, ROOT)
-    except DesignError as e:
-        print(e, file=sys.stderr)
-        return 1
-    problems = run_checks(Design(platform, None), ["platform"])
-    if problems:
-        print(report(problems, f"platform check of {args.hjson}"), file=sys.stderr)
-        return 1
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    platform.save(dst)
-    print(f"wrote {cwd_relative(dst)} from {cwd_relative(args.hjson)}")
-    return 0
+    return _write_platform(
+        PLATFORMS / f"{args.name}.json", args.force,
+        lambda: platform_from_hjson(args.hjson, args.name, ROOT), args.hjson,
+        lambda p: f"from {cwd_relative(args.hjson)}",
+    )  # fmt: skip
 
 
 def main(argv: list[str] | None = None) -> int:

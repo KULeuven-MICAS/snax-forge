@@ -134,13 +134,19 @@ def _value(v: Any, rename: dict[str, str], what: str) -> Value:
     return expr.substitute(text, rename)
 
 
+def _sym(*xs: Any) -> Any:
+    """DaCe values (range entries, names) as sympy expressions; one value alone, else a tuple."""
+    out = tuple(dace.symbolic.pystr_to_symbolic(str(x)) for x in xs)
+    return out[0] if len(out) == 1 else out
+
+
 def _range(r: tuple[Any, Any, Any], rename: dict[str, str], what: str) -> tuple[Value, ...]:
     """A DaCe range entry (begin, end inclusive, step) as (begin, end exclusive, step).
 
     The arithmetic is done by sympy before anything is written, so ``0:N``
     comes back as ``0:N``, not ``0:N - 1 + 1``.
     """
-    begin, end, step = (dace.symbolic.pystr_to_symbolic(str(x)) for x in r)
+    begin, end, step = _sym(*r)
     s = _value(step, rename, what)
     if type(s) is not int or s < 1:
         raise SdfgImportError(f"{what}: step {step} is not a positive constant")
@@ -153,7 +159,7 @@ def _subset(m: dace.Memlet, rename: dict[str, str], what: str) -> list[Value]:
         raise SdfgImportError(f"{what}: subset {m.subset} is not a range or index")
     dims = []
     for r in m.subset.ndrange():
-        begin, end, _ = (dace.symbolic.pystr_to_symbolic(str(x)) for x in r)
+        begin, end, _ = _sym(*r)
         if (end - begin) == 0:
             dims.append(_value(begin, rename, what))
         else:
@@ -417,7 +423,7 @@ class _Importer:
 
 def _length(r: tuple[Any, Any, Any]) -> Any:
     """The number of elements of a DaCe range entry (begin, end inclusive, step 1)."""
-    b, e, _ = (dace.symbolic.pystr_to_symbolic(str(x)) for x in r)
+    b, e, _ = _sym(*r)
     return e - b + 1
 
 
@@ -449,7 +455,7 @@ def _reduce_out_subset(
         )
     out: list[Value] = []
     for k, r in enumerate(out_ranges):
-        ob = dace.symbolic.pystr_to_symbolic(str(r[0]))
+        ob = _sym(r[0])
         if k not in pairs:
             out.append(_value(ob, {}, f"{what} output"))
             continue
@@ -458,8 +464,7 @@ def _reduce_out_subset(
             raise SdfgImportError(
                 f"{what}: output dimension {k} does not match input dimension {d} one to one"
             )
-        ib = dace.symbolic.pystr_to_symbolic(str(in_ranges[d][0]))
-        index = ob - ib + dace.symbolic.pystr_to_symbolic(variables[d])
+        index = ob - _sym(in_ranges[d][0]) + _sym(variables[d])
         out.append(_value(index, {}, f"{what} output"))
     return out
 

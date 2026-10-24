@@ -78,7 +78,6 @@ class AccelFunction:
     kind: str
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "ports", tuple(self.ports))
         names = [p.name for p in self.ports]
         if len(set(names)) != len(names):
             raise ValueError(f"duplicate port names: {names}")
