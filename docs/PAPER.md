@@ -79,7 +79,7 @@ works as a black box an LLM agent can drive, shown in one short demonstration
 |---|---|---|---|---|
 | C1 | Time to insight: the cost and the cause of a design choice in minutes, not a week of integration and waveform reading | Time to a first cycle count and time to the cause, per step; simulated cycles per second | The SNAX RTL flow with each step logged (BASE1); RTL simulation speed | BASE1, BASE2, `flow.log` |
 | C3 | Composition must be decided at cluster level: the best engine or mix in isolation is not the best in the shell | Rank of compositions alone against in the cluster; cycles against area | Per-engine evaluation (the BRM alone, roofline); Stream's ranking on the DNN overlap (E9) | E4, E5, E6 |
-| C4 | The model ranks design points as SNAX RTL does | Kendall tau and top-1 agreement over 3–5 configurations; mean absolute cycle error | snax_cluster RTL: `snax_alu` first, then the 8x8x8 GeMM, plus one DMA-heavy case | E1 (M16, M14) |
+| C4 | The model ranks design points as SNAX RTL does | Kendall tau and top-1 agreement over 3–5 configurations; mean absolute cycle error | snax_cluster RTL: the generated vecadd and vsum (GEN2b), then the 8x8x8 GeMM, plus one DMA-heavy case | E1 (M16, M14) |
 | C5 | The shell is engine-agnostic: SNAX accelerators and HLS engines fit the unit-engine description, and generated RTL plugs into SNAX | SNAX accelerators expressed as BRMs; an HLS engine as a BRM implementation; generated RTL running in SNAX | Hand integration in SNAX | E7, E8, M14 |
 | C2 | (supporting) NumPy kernels reach the model with no hand edits: NPBench's own DaCe sources, the dtype a parameter (D113) | Coverage table: imported and checked, or a named error | — | FE1–FE3 |
 
@@ -87,7 +87,7 @@ works as a black box an LLM agent can drive, shown in one short demonstration
 
 | ID | Experiment | Workload | Output |
 |---|---|---|---|
-| E1 | Fidelity: SNAX-GVSoC against snax_cluster RTL | `snax_alu` hand-written and generated, at a few sizes and layouts; dot's composed accelerator; the 8x8x8 GeMM at 3–5 sizes up to 128x128x128; one DMA-heavy case | Rank metrics and error table |
+| E1 | Fidelity: SNAX-GVSoC against snax_cluster RTL | The generated vecadd and vsum at a few sizes (GEN2b); dot's composed accelerator; the 8x8x8 GeMM at 3–5 sizes up to 128x128x128; one DMA-heavy case | Rank metrics and error table |
 | E2 | Turnaround and speed | GeMM bring-up (logged), `vecadd`, `dot`, one PolyBench chain | Steps and times, model against RTL; cycles per second |
 | E3 | Breadth | The kernel set (section 6.1) | Coverage table, one cycles-per-kernel figure |
 | E4 | Composition sweep | PolyBench chains (mat-vec, mat-mat) at MINI and SMALL, on SNAX's bank count | Cycles against area per composition, the per-engine choice marked |
@@ -323,7 +323,8 @@ second line cannot be written is a threat (Q11).
 
 ## 10. Open questions
 
-1. BASE1: whether the GeMM bring-up is logged as well as `snax_alu` (SG5).
+1. BASE1: whether the GeMM bring-up is logged as well as SNAX's ALU was in
+   SG5.
 2. The PDK, the synthesis tool, and what may be published.
 3. Floating point, the second pass per kernel after the integer tiers
    (D113): Berkeley HardFloat ops inside the existing blocks' lanes is one
@@ -374,8 +375,9 @@ A guide, not a verdict: what has to be settled before the outline (section
 **The evidence.**
 
 - **Q6. Least fidelity evidence?** Ranking agreement on 3–5 GeMM sizes with
-  the absolute error beside it, plus one DMA-heavy case; it starts on
-  `snax_alu` in M16, where SNAX already has the design.
+  the absolute error beside it, plus one DMA-heavy case; it started on
+  SNAX's ALU in M16 and stands now on the generated vecadd and vsum
+  (GEN2b: counters equal, windows within 10%).
 - **Q7. Which C3 case, and what if no ranking flips?** E4 is cheap and run
   first; a scratch run suggests flips exist (`x @ A` with as many columns as
   banks puts a column's lanes in one bank, and one column of padding restores
