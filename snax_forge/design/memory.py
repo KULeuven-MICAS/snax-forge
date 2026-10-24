@@ -14,14 +14,17 @@ replace any one of them (``register_memory_pass``):
     layout      shape and strides per container and      contiguous:
                 memory, base 0                           row-major, one
                                                          element per word
-    placement   base per container and memory            contiguous: per
-                memory, in the graph's container order,
-                from the memory's first byte, no gaps; a layout the DMA
-                moves (in L2 and L1) starts on a wide beat and keeps its
-                last beat to itself (a size that is not whole beats is
-                padded, D105), others start on a word
+    placement   L1 base per container                    contiguous: in
+                the graph's container order, from L1's first
+                byte, no gaps; a layout the DMA moves (in L2 and L1) starts
+                on a wide beat and keeps its last beat to itself (a size
+                that is not whole beats is padded, D105), others start on a
+                word
 
-**Pins.** ``--set memory.<container>.<memory>.base=N`` fixes a base; the
+An L2 layout keeps base 0: the program's link places its array (data.h's,
+named after the container), not the plan (D86).
+
+**Pins.** ``--set memory.<container>.l1.base=N`` fixes an L1 base; the
 placement puts everything else around the pinned layouts, never over them.
 ``--set memory.passes.<pass>=<name>`` picks another registered pass. Both
 are ``changes`` of the ``MemorySpec``, kept in the working copy
@@ -316,34 +319,33 @@ def contiguous_placement(
     pins: dict[tuple[str, str], int],
 ) -> dict[str, dict[str, int]]:
     bases: dict[str, dict[str, int]] = {c: {} for c in layouts}
-    for mem in ctx.memories:
-        word = ctx.word_bytes(mem)
-        taken: list[tuple[int, int]] = []
-        for (c, m), b in pins.items():
-            if m == mem and c in layouts and mem in layouts[c]:
-                lo, hi = _extent(replace(layouts[c][mem], base=b), word)
-                taken.append((lo, hi))
-                bases[c][mem] = b
-        cursor = ctx.span(mem)[0]
-        for c in ctx.containers:
-            if mem not in layouts.get(c, {}) or (c, mem) in pins:
-                continue
-            lay = layouts[c][mem]
-            moved = "l1" in layouts[c] and "l2" in layouts[c]
-            a = ctx.beat_bytes if moved else word
-            lo0, hi0 = _extent(lay, word)  # with base 0
-            if moved:  # the DMA moves whole beats: keep the padding free (D105)
-                hi0 = lo0 + moved_bytes(lay, word, a)
-            base = round_up(cursor - lo0, a)
-            clash = True
-            while clash:
-                clash = False
-                for tlo, thi in sorted(taken):
-                    if base + lo0 < thi and tlo < base + hi0:
-                        base, clash = round_up(thi - lo0, a), True
-            bases[c][mem] = base
-            taken.append((base + lo0, base + hi0))
-            cursor = base + hi0
+    word = ctx.word_bytes("l1")
+    taken: list[tuple[int, int]] = []
+    for (c, m), b in pins.items():
+        if m == "l1" and c in layouts and "l1" in layouts[c]:
+            lo, hi = _extent(replace(layouts[c]["l1"], base=b), word)
+            taken.append((lo, hi))
+            bases[c]["l1"] = b
+    cursor = ctx.span("l1")[0]
+    for c in ctx.containers:
+        if "l1" not in layouts.get(c, {}) or (c, "l1") in pins:
+            continue
+        lay = layouts[c]["l1"]
+        moved = "l2" in layouts[c]
+        a = ctx.beat_bytes if moved else word
+        lo0, hi0 = _extent(lay, word)  # with base 0
+        if moved:  # the DMA moves whole beats: keep the padding free (D105)
+            hi0 = lo0 + moved_bytes(lay, word, a)
+        base = round_up(cursor - lo0, a)
+        clash = True
+        while clash:
+            clash = False
+            for tlo, thi in sorted(taken):
+                if base + lo0 < thi and tlo < base + hi0:
+                    base, clash = round_up(thi - lo0, a), True
+        bases[c]["l1"] = base
+        taken.append((base + lo0, base + hi0))
+        cursor = base + hi0
     return bases
 
 
@@ -411,7 +413,7 @@ def plan(ctx: MemoryContext, spec: MemorySpec) -> MemoryPlan:
     bases = MEMORY_PASSES["placement"][spec.passes["placement"]](ctx, shapes, pins)
     layouts = {
         c: {
-            m: replace(shapes[c][m], base=bases[c][m])
+            m: replace(shapes[c][m], base=bases[c][m]) if m == "l1" else shapes[c][m]
             for m in MEMORIES
             if m in shapes[c]
         }
@@ -449,6 +451,14 @@ def pin_problems(ctx: MemoryContext, spec: MemorySpec) -> list[Problem]:
                 Problem(
                     "memory.pin", where,
                     f"{c} does not live in {m!r} (it lives in {residency.get(c, [])})",
+                )
+            )  # fmt: skip
+        elif m != "l1":
+            out.append(
+                Problem(
+                    "memory.pin", where,
+                    f"the program's link places {c}'s {m} array, not the plan (D86); "
+                    "pin its L1 base",
                 )
             )  # fmt: skip
     return out

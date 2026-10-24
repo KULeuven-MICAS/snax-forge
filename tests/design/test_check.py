@@ -319,6 +319,9 @@ def test_a_pin_must_name_a_container_and_one_of_its_memories():
 
     (p,) = problems(with_memory([("C.l2.base", 0)], edit_platform=no_l2))
     assert p.code == "memory.pin" and "does not live in 'l2'" in p.message
+    (p,) = problems(with_memory([("C.l2.base", 0)]))
+    assert (p.code, p.where) == ("memory.pin", "memory.C.l2.base")
+    assert "the program's link places C's l2 array, not the plan (D86)" in p.message
 
 
 def test_an_unknown_pass_is_named():
@@ -384,7 +387,6 @@ def test_a_moved_container_is_padded_to_whole_beats():
     d = with_memory(edit_graph=n60)
     assert problems(d) == []
     lay = d.memory.layouts
-    assert [lay[c]["l2"].base for c in "ABC"] == [0, 512, 1024]
     assert [lay[c]["l1"].base for c in "ABC"] == [0, 512, 1024]
     assert dma_side(lay["A"]["l2"], 8, 64) == {"base": 0, "bounds": [8], "strides": [64]}
 
@@ -417,21 +419,27 @@ def test_a_layout_must_fit_its_memory():
 
 
 def test_a_pin_below_a_nonzero_base_gets_the_pin_at_the_memorys_first_byte():
-    """snax_forge's L1 starts at 0x1000_0000 and its L2 at 2**31: a pin below either is
-    outside, and the fix pins it at the first byte, which then fits."""
+    """snax_forge's L1 starts at 0x1000_0000: a pin below it is outside, and the fix pins it
+    at the first byte, which then fits."""
 
-    def pinned(a: int, b: int) -> Design:
+    def pinned(a: int) -> Design:
         d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
-        d.memory_spec = MemorySpec().with_changes([("A.l1.base", a), ("B.l2.base", b)])
+        d.memory_spec = MemorySpec().with_changes([("A.l1.base", a)])
         return d
 
-    got = {p.where: p for p in problems(pinned(576, 0))}
-    assert [p.code for p in got.values()] == ["memory.fit", "memory.fit"]
-    a, b = got["A in l1"], got["B in l2"]
+    (a,) = problems(pinned(576))
+    assert (a.code, a.where) == ("memory.fit", "A in l1")
     assert "L1 is 131072 B (32 banks x 512 rows x 8 B) at [268435456, 268566528)" in a.message
     assert a.fix == "pin it at or above 268435456 (--set memory.A.l1.base=268435456)"
-    assert b.fix == "pin it at or above 2147483648 (--set memory.B.l2.base=2147483648)"
-    assert problems(pinned(268435456, 2147483648)) == []
+    assert problems(pinned(268435456)) == []
+
+
+def test_an_l2_layout_must_fit_the_l2():
+    """An L2 layout has base 0, the link placing its array (D86): only its size is checked."""
+    got = problems(with_memory([], edit_platform=lambda d: d["l2"].update(size_bytes=256)))
+    assert [(p.code, p.where) for p in got] == [("memory.fit", f"{c} in l2") for c in "ABC"]
+    assert got[0].message == "spans bytes [0, 512); L2 is 256 B"
+    assert got[0].fix == "--set platform.l2.size_bytes=512"
 
 
 def test_layouts_stay_below_snruntimes_top_of_l1():

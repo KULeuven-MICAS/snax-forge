@@ -115,8 +115,10 @@ def write_events(variables: dict[str, str]) -> None:
     gen = Path(variables["GVRUN_ARGS"].partition("hjson=")[2].split()[0]).parent
     cluster = load_cluster(gen / "snax_forge.hjson", gen.parent / "design" / "design_point.json")
     tasks = TaskList.from_dict(json.loads((gen.parent / "tasks.json").read_text()))
-    Path(variables["EVENTS"]).write_text("\n".join(synthetic(cluster, tasks, level_of(variables)))
-                                         + "\n")  # fmt: skip
+    point = DesignPoint.load(gen.parent / "design" / "design_point.json")
+    link = {c: a for c, (a, _) in point_symbols(point).items()}  # the ELF's, as the sw goal links
+    Path(variables["EVENTS"]).write_text("\n".join(synthetic(cluster, tasks, level_of(variables),
+                                                             link=link)) + "\n")  # fmt: skip
 
 
 def level_of(variables: dict[str, str]) -> str:

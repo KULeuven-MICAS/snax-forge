@@ -114,7 +114,7 @@ def _summary(design: Design) -> str:
         for m, lay in mems.items():
             word = ctx.word_bytes(m)
             lo, hi = lay.span()
-            where = f"{m} [{lo}, {hi + word})"
+            where = f"{m} [{lo}, {hi + word})" if m == "l1" else f"{m} {hi + word - lo} B"
             if m == "l1":
                 where += f" bank {(lay.base - pf.l1.base_addr) // word % pf.l1.n_banks}"
             parts.append(f"{where + (' pinned' if (c, m) in pins else ''):<30}")

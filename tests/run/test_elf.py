@@ -18,10 +18,10 @@ def test_the_symbol_table_reads(tmp_path, wide):
 
 def test_the_l2_containers_and_their_padded_sizes(tmp_path):
     point = vecadd_point()
-    (tmp_path / "x.elf").write_bytes(tiny_elf(point_symbols(point)))
+    syms = point_symbols(point)
+    (tmp_path / "x.elf").write_bytes(tiny_elf(syms))
     got = l2_symbols(point, read_symbols(tmp_path / "x.elf"))
-    lays = point.memory.layouts
-    assert got == {c: {"addr": lays[c]["l2"].base, "size": 512} for c in ("A", "B", "C")}
+    assert got == {c: {"addr": syms[c][0], "size": 512} for c in ("A", "B", "C")}
 
 
 @pytest.mark.parametrize(

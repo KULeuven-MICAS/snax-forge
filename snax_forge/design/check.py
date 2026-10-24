@@ -549,6 +549,8 @@ def _memory_align(design: Design) -> Iterable[Problem]:
         return
     ctx = design.context()
     for c, m, lay in _layouts(design):
+        if m != "l1":  # an L2 layout's base is the link's (D86)
+            continue
         word = ctx.word_bytes(m)
         where = f"{c} in {m}"
         if lay.base % word or any(s % word for s in lay.strides):
@@ -560,7 +562,7 @@ def _memory_align(design: Design) -> Iterable[Problem]:
             )  # fmt: skip
             continue
         mems = design.memory.layouts.get(c, {})
-        if not ("l1" in mems and "l2" in mems):
+        if "l2" not in mems:
             continue
         beat = ctx.beat_bytes
         contiguous = type(lay).contiguous(lay.base, lay.shape, word)
@@ -603,7 +605,8 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
     for c, m, lay in _layouts(design):
         if m not in ctx.memories:
             continue
-        start, end = ctx.span(m)
+        # an L2 layout has base 0, its array's address the link's (D86): only its size counts
+        start, end = ctx.span(m) if m == "l1" else (0, pf.l2.size_bytes)
         lo, hi = _extent(lay, ctx.word_bytes(m), moved[c])
         if lo < start or hi > end:
             pinned = (c, m) in design.memory.spec.pins()
@@ -613,10 +616,10 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
                 rows = -(-(hi - l1.base_addr) // row)
                 fix = f"--set platform.l1.rows={max(rows, l1.rows)}, or tile the loop in the recipe"
                 size = f"L1 is {end - start} B ({l1.n_banks} banks x {l1.rows} rows x {row // l1.n_banks} B)"  # fmt: skip
+                size += f" at [{start}, {end})"
             else:
-                fix = f"--set platform.l2.size_bytes={round_up(hi - start, pf.l2.beat_bytes)}"
-                size = f"L2 is {end - start} B"
-            size += f" at [{start}, {end})"
+                fix = f"--set platform.l2.size_bytes={round_up(hi, pf.l2.beat_bytes)}"
+                size = f"L2 is {end} B"
             if lo < start:  # below the memory's first byte (a nonzero base): only a pin moves it
                 fix = (
                     f"pin it at or above {start} (--set memory.{c}.{m}.base={start + lay.base - lo})"
@@ -675,7 +678,7 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
     ctx = design.context()
     pins = design.memory.spec.pins()
     moved = _moved_beats(design, ctx.beat_bytes)
-    for m in ctx.memories:
+    for m in ("l1",):  # L2 holds data.h's arrays, which the link places apart (D86)
         word = ctx.word_bytes(m)
         items = [(c, lay) for c, mm, lay in _layouts(design) if mm == m]
         for (a, la), (b, lb) in _pairs(items):

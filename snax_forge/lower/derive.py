@@ -7,7 +7,8 @@ node is one of its temporal firing loops, ``firing_loops``). For each group:
 
     loads        for each input in port order whose container has an L2 and an
                  L1 layout and is not in L1 yet: configure ``load_<C>`` (DMA,
-                 L2 -> L1, the whole layout as contiguous beats), start it
+                 L2 -> L1, the whole layout as contiguous beats; its L2 side
+                 the container's data.h array, ``symbol`` C), start it
     streamers    configure ``<node>_<instance>_<port>`` for every port, in the
                  BRM's port order, with values from the memlet through the
                  container's L1 layout (below)
@@ -140,12 +141,12 @@ def task_list(point: DesignPoint) -> TaskList:
     readers: dict[str, list[str]] = {}  # container -> reader tasks since that
     final: dict[str, str] = {}  # container -> task that leaves it in its last memory
 
-    def dma(task: str, direction: str, src: Layout, dst: Layout, after: list[str]) -> None:
-        values = {
-            "direction": direction,
-            "src": dma_side(src, word, beat),
-            "dst": dma_side(dst, word, beat),
-        }
+    def dma(task: str, direction: str, c: str, after: list[str]) -> None:
+        l1 = dma_side(layout(c, "l1"), word, beat)
+        l2 = {"symbol": c} | {k: v for k, v in dma_side(layout(c, "l2"), word, beat).items()
+                              if k != "base"}  # fmt: skip
+        src, dst = (l2, l1) if direction == "l2_to_l1" else (l1, l2)
+        values = {"direction": direction, "src": src, "dst": dst}
         steps.append(Configure(task, "dma", "dma", values, after, mode))
         steps.append(Start([task]))
 
@@ -176,7 +177,7 @@ def task_list(point: DesignPoint) -> TaskList:
             c = memlets[p].data
             if p in n.inputs and c not in in_l1 and moved(c):
                 task = f"load_{c}"
-                dma(task, "l2_to_l1", layout(c, "l2"), layout(c, "l1"), [])
+                dma(task, "l2_to_l1", c, [])
                 in_l1[c] = task
 
         group = []
@@ -228,7 +229,7 @@ def task_list(point: DesignPoint) -> TaskList:
             c = memlets[p].data
             if p in n.outputs and last_write[c] == n.id and layout(c, "l2") is not None:
                 store = f"store_{c}"
-                dma(store, "l1_to_l2", layout(c, "l1"), layout(c, "l2"), [task])
+                dma(store, "l1_to_l2", c, [task])
                 final[c] = store
 
     for c, cont in g.containers.items():

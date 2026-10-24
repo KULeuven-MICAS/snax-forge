@@ -10,7 +10,7 @@
    "wait_mode": "poll",
    "values": {
     "direction": "l2_to_l1",
-    "src": {"base": 2147483648, "bounds": [8], "strides": [64]},
+    "src": {"symbol": "A", "bounds": [8], "strides": [64]},
     "dst": {"base": 268435456, "bounds": [8], "strides": [64]}
    }
   },
@@ -24,7 +24,7 @@
    "wait_mode": "poll",
    "values": {
     "direction": "l2_to_l1",
-    "src": {"base": 2147484160, "bounds": [8], "strides": [64]},
+    "src": {"symbol": "B", "bounds": [8], "strides": [64]},
     "dst": {"base": 268435968, "bounds": [8], "strides": [64]}
    }
   },
@@ -91,7 +91,7 @@
    "values": {
     "direction": "l1_to_l2",
     "src": {"base": 268436480, "bounds": [8], "strides": [64]},
-    "dst": {"base": 2147484672, "bounds": [8], "strides": [64]}
+    "dst": {"symbol": "C", "bounds": [8], "strides": [64]}
    }
   },
   {"op": "start", "tasks": ["store_C"]},

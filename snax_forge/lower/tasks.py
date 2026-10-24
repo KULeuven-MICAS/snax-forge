@@ -34,7 +34,8 @@ component exists and has the task's type (the DMA when the platform has an
 L2, every streamer of the shell, every accelerated instance); the values
 have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
 ``temporal_strides``, ``spatial_strides``; a DMA's ``direction``, ``src`` and
-``dst``, each side ``base``, ``bounds`` and ``strides``; an accelerator's
+``dst``, its L1 side ``base``, ``bounds`` and ``strides``, its L2 side
+``symbol`` (a container in L2: its data.h array), ``bounds`` and ``strides``; an accelerator's
 runtime params, ``n`` and its named rates); a streamer's loops fit it (as
 many temporal strides as bounds, no more than its ``temporal_dims``, one
 spatial stride per spatial bound, every bound >= 1); a DMA's direction is
@@ -279,7 +280,7 @@ class TaskList:
 
 STREAMER = ("base", "temporal_bounds", "temporal_strides", "spatial_strides")
 DMA = ("direction", "src", "dst")
-DMA_SIDE = ("base", "bounds", "strides")
+DMA_SIDE = {"l1": ("base", "bounds", "strides"), "l2": ("symbol", "bounds", "strides")}
 DIRECTIONS = ("l2_to_l1", "l1_to_l2")
 
 
@@ -338,8 +339,9 @@ def _check(s: Configure, point: DesignPoint) -> None:
         _exact(v, DMA, "dma values")
         if v["direction"] not in DIRECTIONS:
             raise ValueError(f"direction must be one of {DIRECTIONS}, got {v['direction']!r}")
+        l2 = "src" if v["direction"] == "l2_to_l1" else "dst"
         for side in ("src", "dst"):
-            _exact(v[side], DMA_SIDE, side)
+            _exact(v[side], DMA_SIDE["l2" if side == l2 else "l1"], side)
             b, st = (
                 _ints(v[side]["bounds"], f"{side} bounds"),
                 _ints(v[side]["strides"], f"{side} strides"),
@@ -348,6 +350,9 @@ def _check(s: Configure, point: DesignPoint) -> None:
                 raise ValueError(f"{len(b)} bounds but {len(st)} strides")
             if any(x < 1 for x in b):
                 raise ValueError("bounds must be >= 1")
+        sym = v[l2]["symbol"]
+        if "l2" not in point.memory.layouts.get(sym, {}):
+            raise ValueError(f"{l2} symbol {sym!r} is no container in L2")
     else:
         if not isinstance(v, Mapping):
             raise TypeError(f"accel values must be an object, got {v!r}")

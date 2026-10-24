@@ -122,15 +122,15 @@
   "changes": {},
   "layouts": {
    "A": {
-    "l2": {"base": 2147483648, "shape": [64], "strides": [8]},
+    "l2": {"base": 0, "shape": [64], "strides": [8]},
     "l1": {"base": 268435456, "shape": [64], "strides": [8]}
    },
    "B": {
-    "l2": {"base": 2147484160, "shape": [64], "strides": [8]},
+    "l2": {"base": 0, "shape": [64], "strides": [8]},
     "l1": {"base": 268435968, "shape": [64], "strides": [8]}
    },
    "C": {
-    "l2": {"base": 2147484672, "shape": [64], "strides": [8]},
+    "l2": {"base": 0, "shape": [64], "strides": [8]},
     "l1": {"base": 268436480, "shape": [64], "strides": [8]}
    }
   }

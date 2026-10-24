@@ -35,10 +35,11 @@ def bases(p: MemoryPlan) -> dict[str, dict[str, int]]:
 # =============================================================================
 
 
-def test_vecadd_default_is_contiguous_in_l2_and_l1():
+def test_vecadd_default_is_contiguous_in_l1():
+    """The link places L2's arrays (D86): an L2 layout keeps base 0."""
     p = plan(ctx(), MemorySpec())
     assert p.passes == DEFAULT_PASSES and p.changes == {}
-    assert bases(p) == {c: {"l2": b, "l1": b} for c, b in (("A", 0), ("B", 512), ("C", 1024))}
+    assert bases(p) == {c: {"l2": 0, "l1": b} for c, b in (("A", 0), ("B", 512), ("C", 1024))}
     assert all(
         lay.shape == (64,) and lay.strides == (8,)
         for mems in p.layouts.values()
@@ -80,7 +81,7 @@ def test_a_transient_lives_in_l1_only():
 def test_pins_place_b_and_c():
     spec = MemorySpec().with_changes([("B.l1.base", 576), ("C.l1.base", 1152)])
     assert bases(plan(ctx(), spec)) == {
-        "A": {"l2": 0, "l1": 0}, "B": {"l2": 512, "l1": 576}, "C": {"l2": 1024, "l1": 1152}
+        "A": {"l2": 0, "l1": 0}, "B": {"l2": 0, "l1": 576}, "C": {"l2": 0, "l1": 1152}
     }  # fmt: skip
 
 

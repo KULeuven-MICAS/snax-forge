@@ -18,5 +18,8 @@ other files are the task run's). `elf_symbols.json` is what `run.json`
 records of the same ELF (`sw/forge.elf`, sha256 `b6b4b1c70d8c8986`): the
 L2 containers' symbols (`run/elf.py`), added in the round 2a fix-up. Made
 again in CLN1 R2a at snax-gvsoc `8c9a47c3`: only the source hjson's path
-changed (`design_point.json`, `snax_forge.hjson`), every other file the same. Made again the same way when snax-gvsoc's
+changed (`design_point.json`, `snax_forge.hjson`), every other file the same. Made
+again in CLN1 R2b once the plan stopped placing L2: only `design_point.json`'s L2
+bases (0) and `tasks.json`'s L2 sides (`symbol` for `base`) changed, the ELF and
+both `events.log` files the same. Made again the same way when snax-gvsoc's
 grammar (`docs/EVENTS.md`) changes.

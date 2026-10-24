@@ -145,7 +145,7 @@ def test_a_slot_name_that_is_no_identifier(tmp_path):
 
 
 def test_vecadd_w4_designs_on_snax_forge_inside_the_tcdm_without_allocating_it():
-    """The first nonzero L1 base end to end in the design step, beside a 2 GiB L2."""
+    """The first nonzero L1 base end to end in the design step."""
     tracemalloc.start()
     d = Design(Platform.load(SNAX_FORGE), bound_vecadd(4))
     assert run_checks(d) == []
@@ -156,5 +156,4 @@ def test_vecadd_w4_designs_on_snax_forge_inside_the_tcdm_without_allocating_it()
     for c, mems in d.memory.layouts.items():
         a, b = mems["l1"].span()
         assert lo <= a and b + 8 <= hi, c
-        assert mems["l2"].base >= 2**31
     assert [mems["l1"].base for mems in d.memory.layouts.values()] == [lo, lo + 512, lo + 1024]

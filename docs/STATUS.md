@@ -76,7 +76,7 @@ its tasks SG0 to SG7 and CI1 are in snax-gvsoc's `docs/plans/`, SG8 in its
 | GEN2b | B. snax-forge's ELF on snax_cluster's RTL (D123, D140): the ELF built from the bundle runs on SNAX-GVSoC and on snax_cluster's Verilator and Questa builds, and the printed `forge` lines are compared by hand; snax_cluster's `snax_forge.mk` (`SIM=vlt|vsim`) and `sw/apps/snax-forge` app, which build and run a fixture's own copy of the program for its CI only; the header check (`snax-forge-sw` fails when the bundle's `include/streamer_csr_addr_map.h` and snaxgen's differ in a `#define`). Steps in snax-gvsoc `docs/plans/GEN2b.md`: snax_cluster #660 (the streamer's params from its JSON), vecadd, the shell's rule shared by both sides (open item 84), vsum. vecmul, vsum_tree and W = 8 are deferred | LNK2b, GEN2a | `forge counter` equal and the window within 10% or explained, for vecadd and vsum (W = 4 and W = 1, default N and `N=512`) | `done` |
 | LNK3 | After M13. The composed accelerator (dot's MAC) generated to both sides and compared as SG5 does | M13, GEN2b | Deviation explained per phase | todo |
 
-After FLOW3 and RET1, a housekeeping pass and the single generator (open item 68). The pass also takes the memory plan's L2 placement and the `memory.align` and `memory.overlap` checks on L2, which work on bases no program uses since D86's amendment (`memory.fit` stays).
+After FLOW3 and RET1, a housekeeping pass and the single generator (open item 68).
 
 ## Later Milestones
 
