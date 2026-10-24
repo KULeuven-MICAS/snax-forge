@@ -300,9 +300,9 @@ bundle's files (D139; LNK2b, snax_cluster #659): clustergen and snaxgen
 resolve the cross-file `$ref`s, snaxgen turns `snax_forge_rtl` into
 `generated/snax_forge.f`, which the vsim and Verilator builds read, and the
 `snax_forge_cluster` Bender target builds the rest; snax_cluster's
-`snax-forge-ci.yml` builds a vecadd bundle it keeps as a fixture (C§18).
-Questa elaborates a bundle and Verilator builds it; running its program on
-the RTL is GEN2b.
+`snax-forge-ci.yml` builds the vecadd and vsum bundles it keeps as fixtures
+(C§18) with Verilator and runs each one's program on them; Questa elaborates
+a bundle too (D140).
 
 **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output,
 latency and II.
