@@ -22,7 +22,7 @@ from snax_forge.viz.dfg.__main__ import main
 from snax_forge.viz.dfg.api import GraphSet, entry_names, expand, graph_view, load_entry
 from snax_forge.viz.dfg.server import make_dfg_server
 
-from .helpers import REPO
+from .helpers import REPO, get
 
 FIXTURES = REPO / "tests" / "dfg" / "fixtures"
 
@@ -220,11 +220,6 @@ def serving(paths):
         srv.shutdown()
         srv.server_close()
         th.join(timeout=5)
-
-
-def get(srv, path):
-    with urlopen(srv.url.rstrip("/") + path, timeout=10) as r:
-        return r.status, r.headers.get("Content-Type"), r.read()
 
 
 def test_routes(tmp_path):

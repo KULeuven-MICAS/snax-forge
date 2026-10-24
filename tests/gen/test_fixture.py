@@ -23,7 +23,7 @@ from snax_forge.gen import generate
 from snax_forge.sandbox import __main__ as sandbox_cli
 from tests.design.helpers import REPO, SNAX_FORGE
 
-from .helpers import SUB, root
+from .helpers import SUB, files, root
 
 FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_forge.json
@@ -33,10 +33,6 @@ pytestmark = pytest.mark.skipif(
     not (SUB / "snax").is_dir(),
     reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
-
-
-def files(folder: Path) -> list[str]:
-    return sorted(f.relative_to(folder).as_posix() for f in folder.rglob("*") if f.is_file())
 
 
 def regenerate(tmp: Path, design: str) -> Path:

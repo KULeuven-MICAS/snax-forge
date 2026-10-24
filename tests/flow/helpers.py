@@ -192,3 +192,10 @@ def stubbed_flow(base: Path, design: str = "vecadd", level: str = "task", out: P
         run_flow(REPO / "recipes" / f"{design}.json", REPO / "platforms" / "snax_forge.json",
                  graph_path=PLAINS[design], out=out, trace_level=level, **kw)  # fmt: skip
     return out
+
+
+def main(*argv: Any) -> int:
+    """The flow's command line on ``argv``, each made a string."""
+    from snax_forge.flow import __main__ as cli
+
+    return cli.main([str(a) for a in argv])

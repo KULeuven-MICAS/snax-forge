@@ -148,14 +148,6 @@ BINDING_CASES = [
 ]
 
 
-@pytest.mark.parametrize(("case", "edit", "msg"), BINDING_CASES, ids=[c[0] for c in BINDING_CASES])
-def test_invalid_binding(case, edit, msg):
-    d = adder()
-    edit(d)
-    with pytest.raises(BrmError, match=msg):
-        Brm.from_dict(d)
-
-
 def test_control_and_wait_are_registered_kinds():
     from snax_forge.brm import CONTROLS, WAITS, register_wait
 
@@ -232,7 +224,9 @@ CASES = [
 ]
 
 
-@pytest.mark.parametrize(("case", "edit", "msg"), CASES, ids=[c[0] for c in CASES])
+@pytest.mark.parametrize(
+    ("case", "edit", "msg"), CASES + BINDING_CASES, ids=[c[0] for c in CASES + BINDING_CASES]
+)
 def test_invalid(case, edit, msg):
     d = adder()
     edit(d)

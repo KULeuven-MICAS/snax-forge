@@ -7,7 +7,6 @@ import copy
 import json
 from pathlib import Path
 
-import hjson
 import pytest
 from jsonschema import Draft7Validator, Draft202012Validator, ValidationError
 
@@ -15,17 +14,13 @@ from snax_forge.brm import CONTROLS, WAITS
 from snax_forge.gen import generate
 from snax_forge.gen.schemas import NAMES, schema, validate
 
-from .helpers import SOURCE, SUB, bound_vsum, point
+from .helpers import SOURCE, SUB, bound_vsum, parsed, point
 
 CLUSTER_SCHEMA = SUB / "sw" / "docs" / "schema" / "snitch_cluster.schema.json"
 needs_cluster_schema = pytest.mark.skipif(
     not CLUSTER_SCHEMA.is_file(),
     reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
-
-
-def parsed(path: Path):
-    return json.loads(json.dumps(hjson.loads(path.read_text())))
 
 
 @pytest.fixture(scope="module", params=["vecadd", "vsum"])

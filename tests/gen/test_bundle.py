@@ -21,15 +21,11 @@ from snax_forge.gen import rtl as rtl_mod
 from snax_forge.gen.bundle import Bundle, write_bundle
 from snax_forge.gen.rtl import EMITTED_JSON
 
-from .helpers import point
+from .helpers import files, point
 
 # The fake Emit's files, in emitted.json's order (not sorted, so files.f's order is its)
 SV = ["sv/snax_forge_shell_wrapper.sv", "sv/ElementwiseAlu_w64_add.sv"]
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
-
-
-def files(folder: Path) -> list[str]:
-    return sorted(f.relative_to(folder).as_posix() for f in folder.rglob("*") if f.is_file())
 
 
 @pytest.fixture

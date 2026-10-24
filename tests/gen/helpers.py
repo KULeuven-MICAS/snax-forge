@@ -13,12 +13,14 @@ checked out (only CI's gvsoc job fetches it, D128); ``snax_cfg`` imports its rea
 from __future__ import annotations
 
 import importlib.util
+import json
 import shutil
 import sys
 import types
 from collections.abc import Sequence
 from pathlib import Path
 
+import hjson
 import pytest
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
@@ -120,3 +122,13 @@ def snax_streamer() -> types.ModuleType:
                 sys.modules.pop(k, None)
             else:
                 sys.modules[k] = v
+
+
+def files(folder: Path) -> list[str]:
+    """Every file below ``folder``, as paths from it, sorted."""
+    return sorted(f.relative_to(folder).as_posix() for f in folder.rglob("*") if f.is_file())
+
+
+def parsed(path: Path):
+    """An hjson file as plain dicts and lists."""
+    return json.loads(json.dumps(hjson.loads(path.read_text())))

@@ -9,7 +9,6 @@ import re
 from dataclasses import replace
 from pathlib import Path
 
-import hjson
 import pytest
 
 from snax_forge.brm import CONTROLS, Brm, Instance, load_brm
@@ -22,15 +21,24 @@ from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.blocks import accumulator, elementwise_tiled_spatial
 from snax_forge.gen.data import array_text, arrays
 from snax_forge.lower import c as c_mod
+from tests.brm.helpers import IMPL
 from tests.design.helpers import REPO, SNAX_FORGE, chained, graph_dict
 
-from .helpers import SOURCE, SUB, bound_vecmul, bound_vsum, point, snax_cfg, snax_streamer
+from .helpers import (
+    SOURCE,
+    SUB,
+    bound_vecmul,
+    bound_vsum,
+    parsed,
+    point,
+    snax_cfg,
+    snax_streamer,
+)
 
 needs_submodule = pytest.mark.skipif(
     not (SUB / "snax" / "snax_cfg.py").exists(),
     reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
-IMPL = "chisel_tiled_spatial"
 FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"]
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
 SLOT = ("snax_alu_core_template", "snax_acc_cfg", 0)
@@ -58,11 +66,6 @@ ACCUMULATOR = {
     "op": 0, "signed": True, "control": "counted", "config": ["count", "rate"],
     "wait": "pipelined", "latency": 1, "ii": 1, "fields": ["loopCount", "len"],
 }  # fmt: skip
-
-
-def parsed(path: Path):
-    """An hjson file as plain dicts and lists."""
-    return json.loads(json.dumps(hjson.loads(path.read_text())))
 
 
 def slot(cluster: dict) -> dict:
@@ -347,24 +350,24 @@ def test_the_sources_only_slot_takes_the_accelerator_slot_whatever_its_name(tmp_
     assert s["snax_streamer_cfg"] == {"$ref": "snax_forge_x_streamer.hjson"}
 
 
-def test_a_source_with_two_slots(tmp_path):
-    text = SOURCE.read_text().replace(
-        "        snax_acc_cfg: [{\n", '        snax_acc_cfg: [{snax_acc_name: "other"}, {\n'
-    )  # fmt: skip
-    assert "['other', 'snax_alu']" in _refused(tmp_path, "gen.slot", source=text)
-
-
-def test_a_source_with_no_slot(tmp_path):
-    text = re.sub(r"snax_acc_cfg: \[\{.*?\}\],", "snax_acc_cfg: [],", SOURCE.read_text(),
-                  flags=re.DOTALL)  # fmt: skip
-    assert "has the slots []" in _refused(tmp_path, "gen.slot", source=text)
-
-
-def test_a_cluster_bender_target_without_the_clusters_name(tmp_path):
-    text = SOURCE.read_text().replace('"snax_alu_cluster", "sparse_interconnect"',
-                                      '"sparse_interconnect"')  # fmt: skip
-    msg = _refused(tmp_path, "gen.source", source=text)
-    assert "does not hold cluster.name 'snax_alu_cluster'" in msg
+@pytest.mark.parametrize(
+    ("edit", "code", "text"),
+    [
+        (lambda s: s.replace("        snax_acc_cfg: [{\n",
+                             '        snax_acc_cfg: [{snax_acc_name: "other"}, {\n'),
+         "gen.slot", "['other', 'snax_alu']"),  # two slots
+        (lambda s: re.sub(r"snax_acc_cfg: \[\{.*?\}\],", "snax_acc_cfg: [],", s, flags=re.DOTALL),
+         "gen.slot", "has the slots []"),  # no slot
+        (lambda s: s.replace('"snax_alu_cluster", "sparse_interconnect"', '"sparse_interconnect"'),
+         "gen.source", "does not hold cluster.name 'snax_alu_cluster'"),  # bender target
+        (lambda s: s.replace("        tcdm: {\n", '        tcdm: {$ref: "#/tcdm"},\n'
+                             "        old_tcdm: {\n"),
+         "gen.source", "cluster.tcdm is not an object written out"),  # nowhere to write
+    ],
+    ids=["two slots", "no slot", "bender target without the name", "tcdm not written out"],
+)  # fmt: skip
+def test_a_source_the_generator_refuses(tmp_path, edit, code, text):
+    assert text in _refused(tmp_path, code, source=edit(SOURCE.read_text()))
 
 
 @pytest.mark.parametrize(
@@ -376,14 +379,6 @@ def test_a_cluster_bender_target_without_the_clusters_name(tmp_path):
 def test_a_platform_value_the_hjson_cannot_express(tmp_path, sets, text):
     p = Platform.load(SNAX_FORGE).with_changes(sets)
     assert text in _refused(tmp_path, "gen.platform", p)
-
-
-def test_a_source_the_values_cannot_be_written_into(tmp_path):
-    text = SOURCE.read_text().replace("        tcdm: {\n", '        tcdm: {$ref: "#/tcdm"},\n'
-                                      "        old_tcdm: {\n")  # fmt: skip
-    assert "cluster.tcdm is not an object written out" in _refused(
-        tmp_path, "gen.source", source=text
-    )
 
 
 def _instance(edit=None, params=None, name="elementwise_add", impl=IMPL) -> Instance:

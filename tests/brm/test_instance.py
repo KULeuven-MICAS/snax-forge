@@ -7,9 +7,7 @@ import pytest
 from snax_forge.brm import Brm, BrmError, function_of, load_brm
 from snax_forge.brm.function import elementwise, reduce_kind
 
-from .helpers import adder, reducer
-
-IMPL = "chisel_tiled_spatial"
+from .helpers import IMPL, adder, reducer
 
 
 def _brm(d=None) -> Brm:

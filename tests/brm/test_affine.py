@@ -7,9 +7,7 @@ import pytest
 
 from snax_forge.brm import Brm, BrmError, resolve_nest, task_nest
 
-from .helpers import affine_adder, affine_reducer, vector_nest
-
-IMPL = "chisel_tiled_spatial"
+from .helpers import IMPL, affine_adder, affine_reducer, vector_nest
 
 
 def _adder(d=None):

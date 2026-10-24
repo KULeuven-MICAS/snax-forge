@@ -1,28 +1,12 @@
 """run/convert.py on snippets and on a synthetic run: names, the window, the trace, the
 profile, the invariants (D137, C§7)."""
 
-import json
-from pathlib import Path
-
 import pytest
 
-from snax_forge.lower.tasks import TaskList
-from snax_forge.run import RunError, cluster_from, parse_line
+from snax_forge.run import RunError, parse_line
 from snax_forge.run.convert import convert, direction, invariants, port_of, source_of
 
-from .helpers import BOOT, MAIN, files, line, synthetic
-
-TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"
-
-
-@pytest.fixture
-def cluster():
-    return cluster_from(*files())
-
-
-@pytest.fixture
-def tasks():
-    return TaskList.from_dict(json.loads(TASKS.read_text()))
+from .helpers import BOOT, MAIN, line, synthetic
 
 
 def parse(lines):
@@ -140,11 +124,23 @@ def test_a_barrier_over_a_poll_and_sleep_under_a_poll(cluster, tasks):
     assert [w.block for w in c.waits][-2:] == ["acc_streamer", "barrier"]
 
 
-def test_main_and_forge_check_are_needed(cluster, tasks):
-    lines = [x for x in synthetic(cluster, tasks) if "forge_check" not in x]
-    with pytest.raises(RunError, match="forge_check") as e:
-        convert(parse(lines), cluster, tasks, 226, "task")
-    assert e.value.code == "convert.window"
+@pytest.mark.parametrize(
+    ("edit", "match", "code"),
+    [
+        (lambda ls: [x for x in ls if "forge_check" not in x], "forge_check", "convert.window"),
+        (lambda ls: [x.replace("src=0x80000000", "src=0x10010000") for x in ls], "load_A",
+         "convert.tasks"),
+        (lambda ls: [x for x in ls if "done mover=writer0" not in x],
+         "acc_out: 1 starts and 0 dones", "convert.invariant"),
+        (lambda ls: [x.replace("done firings=16", "done firings=15") for x in ls],
+         "15 firings in its done events, 16 in its summary", "convert.invariant"),
+    ],
+    ids=["no forge_check", "copy against its direction", "start without done", "firings"],
+)  # fmt: skip
+def test_a_broken_run_is_named(cluster, tasks, edit, match, code):
+    with pytest.raises(RunError, match=match) as e:
+        convert(parse(edit(synthetic(cluster, tasks))), cluster, tasks, 226, "task")
+    assert e.value.code == code
 
 
 @pytest.mark.parametrize("cycles", [225, 227])
@@ -166,26 +162,6 @@ def test_the_reads_are_picked_by_their_function_spans(cluster, tasks):
     late = [x.replace(f"{BOOT + 226} mcycle", f"{MAIN + 226 + 40} mcycle") for x in lines]
     with pytest.raises(RunError, match="no mcycle read in forge_check"):
         convert(parse(late), cluster, tasks, 266, "task")
-
-
-def test_a_copy_against_its_tasks_direction(cluster, tasks):
-    lines = [x.replace("src=0x80000000", "src=0x10010000") for x in synthetic(cluster, tasks)]
-    with pytest.raises(RunError, match="load_A") as e:
-        convert(parse(lines), cluster, tasks, 226, "task")
-    assert e.value.code == "convert.tasks"
-
-
-def test_a_start_without_its_done_breaks_an_invariant(cluster, tasks):
-    lines = [x for x in synthetic(cluster, tasks) if "done mover=writer0" not in x]
-    with pytest.raises(RunError, match="acc_out: 1 starts and 0 dones") as e:
-        convert(parse(lines), cluster, tasks, 226, "task")
-    assert e.value.code == "convert.invariant"
-
-
-def test_firings_against_the_summary_break_an_invariant(cluster, tasks):
-    lines = [x.replace("done firings=16", "done firings=15") for x in synthetic(cluster, tasks)]
-    with pytest.raises(RunError, match="15 firings in its done events, 16 in its summary"):
-        convert(parse(lines), cluster, tasks, 226, "task")
 
 
 def test_off_is_the_summary_lines_alone(cluster, tasks):

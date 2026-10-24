@@ -10,6 +10,7 @@ from __future__ import annotations
 import threading
 from contextlib import contextmanager
 from pathlib import Path
+from urllib.request import urlopen
 
 from snax_forge.viz.server import make_server
 from tests.flow.helpers import stubbed_flow
@@ -260,3 +261,9 @@ def recorded_run(out: Path, level: str = "stall") -> Path:
     }))  # fmt: skip
     write_run(out / "run", profile, trace)
     return out
+
+
+def get(srv, path: str):
+    """A GET on a running viewer: status, content type and body."""
+    with urlopen(srv.url.rstrip("/") + path, timeout=10) as r:
+        return r.status, r.headers.get("Content-Type"), r.read()

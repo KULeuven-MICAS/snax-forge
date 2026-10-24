@@ -17,6 +17,8 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.brm import NOTATIONS, register_notation
 
+IMPL = "chisel_tiled_spatial"  # the implementation the tests resolve
+
 
 def _test_list(nest: Any, port: Any, brm: Any) -> None:
     if not isinstance(nest, list) or not all(type(i) is int for i in nest):

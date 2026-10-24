@@ -9,12 +9,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from .helpers import run_dir, serving
-
-
-def get(srv, path):
-    with urlopen(srv.url.rstrip("/") + path, timeout=10) as r:
-        return r.status, r.headers.get("Content-Type"), r.read()
+from .helpers import get, run_dir, serving
 
 
 def get_json(srv, path):

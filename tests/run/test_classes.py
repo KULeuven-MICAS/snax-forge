@@ -11,16 +11,11 @@ and a core's spans (run/cores.py).
    ``func`` line, the index's first function span from 0
 """
 
-import json
-from pathlib import Path
-
 import pytest
 
-from snax_forge.lower.tasks import TaskList
 from snax_forge.run import (
     RunError,
     RunOutputs,
-    cluster_from,
     core_counts,
     core_spans,
     parse_line,
@@ -30,9 +25,8 @@ from snax_forge.run.beats import class_invariants, class_runs
 from snax_forge.run.convert import convert
 from snax_forge.viz.index import RunIndex
 
-from .helpers import BOOT, MAIN, files, line, synthetic
+from .helpers import BOOT, MAIN, line, synthetic
 
-TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"
 UNIT = {"busy": 6, "stall_in": 3, "stall_out": 0, "flush": 0}
 
 
@@ -92,16 +86,6 @@ def test_a_class_line_outside_every_run_is_named():
 # =============================================================================
 # 2. The totals on done, and the class events
 # =============================================================================
-
-
-@pytest.fixture
-def cluster():
-    return cluster_from(*files())
-
-
-@pytest.fixture
-def tasks():
-    return TaskList.from_dict(json.loads(TASKS.read_text()))
 
 
 def test_done_carries_its_runs_summary_classes(cluster, tasks):

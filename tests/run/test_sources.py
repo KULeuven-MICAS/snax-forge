@@ -2,19 +2,12 @@
 
 import pytest
 
-from snax_forge.run import RunError, cluster_from
+from snax_forge.run import RunError
 from snax_forge.run.sources import gvsoc_options, parse_trace, sources_for
-
-from .helpers import files
 
 LANES = ",".join(f"snax_acc0.streamer.{m}.lane{i}" for m in ("reader0", "reader1", "writer0")
                  for i in range(4))  # fmt: skip
 XBAR = "chip/soc/cluster_0/tcdm/snax_xbar/trace_inputs="
-
-
-@pytest.fixture
-def cluster():
-    return cluster_from(*files())
 
 
 def test_a_level_and_its_sources():

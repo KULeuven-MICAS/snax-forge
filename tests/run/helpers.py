@@ -5,11 +5,13 @@ from __future__ import annotations
 
 import copy
 from collections import defaultdict
+from pathlib import Path
 from typing import Any
 
 from snax_forge.run.trace import LEVELS
 
 PATH = "/chip/soc/cluster_0"
+TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"  # the recorded run's
 
 CLUSTER: dict[str, Any] = {
     "cluster": {

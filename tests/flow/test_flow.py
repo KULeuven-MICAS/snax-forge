@@ -37,7 +37,6 @@ from snax_forge.flow import (
     run_flow,
     summary,
 )
-from snax_forge.flow import __main__ as cli
 from snax_forge.flow import run as flow_run
 from snax_forge.flow.run import with_level
 from snax_forge.gen import Manifest
@@ -48,7 +47,7 @@ from tests.design.helpers import REPO, SMALL16, SNAX_FORGE
 from tests.run.helpers import point_symbols
 
 from . import helpers
-from .helpers import COMMIT, PLAIN, PLAINS, built, golden, needs_gvsoc, stub
+from .helpers import COMMIT, PLAIN, PLAINS, built, golden, main, needs_gvsoc, stub
 
 RECIPES = REPO / "recipes"
 
@@ -186,16 +185,20 @@ def test_a_build_is_shown_live_and_logged(tmp_path, monkeypatch, capsys):
     assert "building SNAX-GVSoC" not in text and "make build" not in text
 
 
-def test_a_failed_build_names_its_log_and_tail(tmp_path, monkeypatch, capsys):
+@pytest.mark.parametrize("stage", ["build", "sw"])
+def test_a_make_failure_names_its_log_and_tail(tmp_path, monkeypatch, capsys, stage):
+    """The build's output is shown live too; sw's only in its log."""
     fake = stub(monkeypatch, tmp_path)
-    fake.rc["build"] = 2
-    fake.stderr["build"] = "c++: error: no such file\n"
+    fake.rc[stage] = 2
+    fake.stderr[stage] = "cc: error: no such file\n"
     with pytest.raises(FlowError) as e:
         flow(tmp_path)
     msg = str(e.value)
-    assert msg.startswith("build: make build failed (exit 2); its output is in ")
-    assert msg.endswith("build.log:\nmake build\nc++: error: no such file")
-    assert capsys.readouterr().out.splitlines()[1:] == ["make build", "c++: error: no such file"]
+    assert msg.startswith(f"{stage}: make {stage} failed (exit 2); its output is in ")
+    assert msg.endswith(f"{stage}.log:\nmake {stage}\ncc: error: no such file")
+    assert (tmp_path / "flow" / "flow.log").read_text().startswith(f"flow vecadd FAILED\n{stage}: ")
+    if stage == "build":
+        assert capsys.readouterr().out.splitlines()[1:] == ["make build", "cc: error: no such file"]
 
 
 def test_an_up_to_date_build_prints_nothing(tmp_path, monkeypatch, capsys):
@@ -355,18 +358,6 @@ def test_a_platform_without_a_source_stops_at_gen(tmp_path, monkeypatch):
         run_flow(RECIPES / "vecadd.json", SMALL16, graph_path=PLAIN, out=tmp_path / "flow")
     assert fake.calls == []
     assert (tmp_path / "flow" / "flow.log").read_text().startswith("flow vecadd FAILED\n")
-
-
-def test_a_make_failure_names_its_log(tmp_path, monkeypatch):
-    fake = stub(monkeypatch, tmp_path)
-    fake.rc["sw"] = 2
-    fake.stderr["sw"] = "clang: error: no such file\n"
-    with pytest.raises(FlowError) as e:
-        flow(tmp_path)
-    msg = str(e.value)
-    assert msg.startswith("sw: make sw failed (exit 2); its output is in ")
-    assert "sw.log" in msg and "clang: error: no such file" in msg
-    assert (tmp_path / "flow" / "flow.log").read_text().startswith("flow vecadd FAILED\nsw: ")
 
 
 def test_trace_sources_go_with_the_beat_levels_and_name_this_run(tmp_path, monkeypatch):
@@ -537,10 +528,6 @@ def test_the_log_is_the_summary_the_checks_and_the_stage_times(tmp_path, monkeyp
     assert all(s >= 0 for s in secs) and abs(sum(secs[:-1]) - secs[-1]) < 0.01
     assert list(f.times) == list(STAGE_NAMES)
     assert "gen" in f.times and "gvsoc" in f.times and "report" in f.times
-
-
-def main(*argv) -> int:
-    return cli.main([str(a) for a in argv])
 
 
 def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):

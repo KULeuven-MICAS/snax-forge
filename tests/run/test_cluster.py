@@ -12,12 +12,8 @@ from snax_forge.run.cluster import csrs_of
 from .helpers import files
 
 
-def vecadd() -> Cluster:
-    return cluster_from(*files())
-
-
-def test_names_and_cores():
-    c = vecadd()
+def test_names_and_cores(cluster):
+    c = cluster
     a = c.accelerator
     assert (c.design, c.nb_cores, c.dma_core, a.name, a.core, a.slot) == (
         "vecadd",
@@ -31,8 +27,8 @@ def test_names_and_cores():
     assert c.sources == ["acc", "acc_a", "acc_b", "acc_out", "dma", "core0", "core1"]
 
 
-def test_movers_readers_first_named_by_port():
-    a = vecadd().accelerator
+def test_movers_readers_first_named_by_port(cluster):
+    a = cluster.accelerator
     assert [(m.name, m.gvsoc, m.port, m.write, m.lanes, m.fifo_depth) for m in a.movers] == [
         ("acc_a", "reader0", "a", False, 4, 8),
         ("acc_b", "reader1", "b", False, 4, 8),
@@ -44,10 +40,10 @@ def test_movers_readers_first_named_by_port():
         a.mover("reader2")
 
 
-def test_csrs_as_the_generated_header_has_them():
+def test_csrs_as_the_generated_header_has_them(cluster):
     """vecadd's streamer_csr_addr_map.h and acc_csr.h: start 0x3cf, busy 0x3d0, the shell's
     loopCount 0x3d2, start 0x3d3, busy 0x3d4, counter 0x3d5."""
-    a = vecadd().accelerator
+    a = cluster.accelerator
     c = a.csrs
     assert (c.streamer_first, c.streamer_start, c.streamer_busy, c.streamer_last) == (
         0x3C0,
@@ -81,15 +77,15 @@ def test_csrs_agree_with_the_generator(fields):
     )
 
 
-def test_l1_and_banks():
-    c = vecadd()
+def test_l1_and_banks(cluster):
+    c = cluster
     assert (c.l1_base, c.l1_size, c.banks, c.bank_bytes) == (0x10000000, 128 * 1024, 32, 8)
     assert c.is_l1(0x10000000) and c.is_l1(0x1001FFFF)
     assert not c.is_l1(0x10020000) and not c.is_l1(0x80000000)
 
 
-def test_the_word_interleaved_map_and_the_dma_beat():
-    c = vecadd()
+def test_the_word_interleaved_map_and_the_dma_beat(cluster):
+    c = cluster
     assert c.dma_beat_bytes == 64
     # bank = (a / w) mod B, row = a / (w B): 8-byte words over 32 banks
     assert c.bank_row(0x10000000) == (0, 0)
@@ -99,25 +95,24 @@ def test_the_word_interleaved_map_and_the_dma_beat():
     assert c.bank_row(0x100005F8) == (31, 5)
 
 
-def test_round_trip():
-    c = vecadd()
+def test_round_trip(cluster):
+    c = cluster
     assert Cluster.from_dict(json.loads(json.dumps(c.to_dict()))) == c
 
 
-def test_two_dma_cores_are_refused():
+@pytest.mark.parametrize(
+    ("edit", "code"),
+    [
+        (lambda c, s, u, p: c["acc_core"].update(xdma=True), "cluster.cores"),  # two DMA cores
+        (lambda c, s, u, p: p["streamers"].pop("acc_b"), "cluster.movers"),  # not the point's
+    ],
+)
+def test_a_cluster_that_does_not_fit_is_refused(edit, code):
     cluster, streamer, unit, point = files()
-    cluster["acc_core"]["xdma"] = True
+    edit(cluster, streamer, unit, point)
     with pytest.raises(RunError) as e:
         cluster_from(cluster, streamer, unit, point)
-    assert e.value.code == "cluster.cores"
-
-
-def test_movers_must_match_the_design_point():
-    cluster, streamer, unit, point = files()
-    del point["streamers"]["acc_b"]
-    with pytest.raises(RunError) as e:
-        cluster_from(cluster, streamer, unit, point)
-    assert e.value.code == "cluster.movers"
+    assert e.value.code == code
 
 
 def test_load_from_files(tmp_path):
@@ -127,7 +122,7 @@ def test_load_from_files(tmp_path):
     (tmp_path / "snax_forge_acc.hjson").write_text(hjson.dumps(unit))
     (tmp_path / "design_point.json").write_text(json.dumps(point))
     c = load_cluster(tmp_path / "snax_forge.hjson", tmp_path / "design_point.json")
-    assert c.accelerator == vecadd().accelerator
+    assert c.accelerator == cluster_from(*files()).accelerator
     assert c.meta == {"cluster": "snax_forge.hjson"}
     (tmp_path / "snax_forge_acc.hjson").unlink()
     with pytest.raises(RunError) as e:
