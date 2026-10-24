@@ -211,7 +211,7 @@ The flow runs these tools in turn; each also runs on its own.
 | Step | Command | Writes |
 |---|---|---|
 | Every kernel | `pixi run kernels` | nothing; one line per kernel: directory, tier, dtype, whether its SDFG builds and `import-dfg` takes it |
-| SDFG of a kernel | `pixi run forge vecadd` | `out/sdfg/vecadd.raw.sdfg`, `.simplified.sdfg` |
+| SDFG of a kernel | `pixi run sdfg vecadd` | `out/sdfg/vecadd.raw.sdfg`, `.simplified.sdfg` |
 | Import | `pixi run import-dfg vecadd` | `out/dfg/vecadd.snaxdfg` |
 | Check a graph | `pixi run check-dfg out/dfg/vecadd.snaxdfg --kernel vecadd` | nothing; compares with the kernel's reference |
 | Recipe | `pixi run sandbox recipes/vecadd.json [--set W=8]` | `out/sandbox/vecadd/<i>_<transform>.snaxdfg` |

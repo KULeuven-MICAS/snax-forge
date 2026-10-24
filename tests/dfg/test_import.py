@@ -5,7 +5,7 @@ checked-in ``tests/dfg/fixtures/vecadd.snaxdfg``, with no transient and no
 copy left, and the import of ``dot.py`` equals ``dot.snaxdfg``: a multiply
 map, then its ``Reduce`` as a sum map folding into ``out[0]``; and
 ``vecmul.py``'s equals ``vecmul.snaxdfg``, ``vsum.py``'s ``vsum.snaxdfg``. The
-importer builds the simplified SDFG as ``pixi run forge`` does, and a stored
+importer builds the simplified SDFG as ``pixi run sdfg`` does, and a stored
 ``.sdfg`` gives the same graph. Beyond them: a transient between two maps,
 offset subsets, a Max reduction, a Reduce over one axis of two, and every
 construct the importer does not support rejected by name.
@@ -59,7 +59,7 @@ def test_the_kernel_is_int64():
 
 
 def test_a_stored_sdfg_gives_the_same_graph(vecadd_sdfg, tmp_path):
-    """What `pixi run forge vecadd` writes imports to the same graph."""
+    """What `pixi run sdfg vecadd` writes imports to the same graph."""
     path = tmp_path / "vecadd.simplified.sdfg"
     vecadd_sdfg.save(path)
     assert import_sdfg(dace.SDFG.from_file(path), "vecadd") == Graph.load(fixture("vecadd"))

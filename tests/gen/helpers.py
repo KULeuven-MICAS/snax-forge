@@ -8,6 +8,7 @@ another W and implementation), on
 for snax-forge's root: the platform's source hjson is copied into its
 ``platforms/``. The snax-gvsoc submodule (``SUB``) is read only where it is
 checked out (only CI's gvsoc job fetches it, D128); ``snax_cfg`` imports its reader.
+``fake_emit`` stands in for the bundle's ``Emit --spec`` (no JVM).
 """
 
 from __future__ import annotations
@@ -19,18 +20,24 @@ import sys
 import types
 from collections.abc import Sequence
 from pathlib import Path
+from types import SimpleNamespace
 
 import hjson
 import pytest
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
+from snax_forge.gen import bundle as bundle_mod
+from snax_forge.gen.rtl import EMITTED_JSON
 from snax_forge.sandbox import Recipe, apply_recipe
 from tests.design.helpers import FIXTURES, REPO, SNAX_FORGE, bound_vecadd
 
 SUB = REPO / "gvsoc" / "snax-gvsoc"
 # snax_forge's source hjson (platforms/snax_forge.json's hjson), snax-forge's base cluster
 SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
+# The fake Emit's files, in emitted.json's order (not sorted, so files.f's order is its)
+SV = ["sv/snax_forge_shell_wrapper.sv", "sv/ElementwiseAlu_w64_add.sv"]
+COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
 
 def root(tmp_path: Path) -> Path:
@@ -132,3 +139,23 @@ def files(folder: Path) -> list[str]:
 def parsed(path: Path):
     """An hjson file as plain dicts and lists."""
     return json.loads(json.dumps(hjson.loads(path.read_text())))
+
+
+def fake_emit(monkeypatch) -> SimpleNamespace:
+    """The bundle's ``elaborate`` writes ``SV`` and lists the returned ``.listed`` in
+    emitted.json (``SV`` unless a test changes it); the checkout is ``COMMIT``, clean."""
+    fake = SimpleNamespace(listed=list(SV))
+
+    def elaborate(rtl_json: Path, out_dir: Path) -> list[Path]:
+        tag = json.loads(rtl_json.read_text())["tag"]
+        for f in SV:
+            (out_dir / f).parent.mkdir(parents=True, exist_ok=True)
+            (out_dir / f).write_text(f"module {Path(f).stem};\nendmodule\n")
+        emitted = {"rtl": str(rtl_json), "top": f"{tag}_shell_wrapper",
+                   "modules": [Path(f).stem for f in fake.listed], "files": fake.listed}  # fmt: skip
+        (out_dir / EMITTED_JSON).write_text(json.dumps(emitted))
+        return [*(out_dir / f for f in fake.listed), out_dir / EMITTED_JSON]
+
+    monkeypatch.setattr(bundle_mod, "elaborate", elaborate)
+    monkeypatch.setattr(bundle_mod, "provenance", lambda checkout: (COMMIT, False))
+    return fake

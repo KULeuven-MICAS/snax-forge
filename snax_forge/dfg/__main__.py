@@ -4,7 +4,7 @@
     python -m snax_forge.dfg check FILE [FILE ...] --kernel KERNEL [--n N]
 
 ``import`` writes ``DIR/<kernel>.snaxdfg`` (default ``out/dfg``): it builds
-each kernel's simplified SDFG in-process, as ``pixi run forge <kernel>``
+each kernel's simplified SDFG in-process, as ``pixi run sdfg <kernel>``
 does. Exit 0 when everything was written, 1 when a construct is not
 supported (the error names it), 2 on bad arguments. pixi: ``import-dfg``.
 

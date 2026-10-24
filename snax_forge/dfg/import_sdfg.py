@@ -1,7 +1,7 @@
 """SDFG importer (D71, D77): a simplified DaCe SDFG -> a ``.snaxdfg`` graph.
 
 The importer derives and decides nothing (principle 4). It reads the
-simplified SDFG that ``pixi run forge <kernel>`` writes (or builds the same
+simplified SDFG that ``pixi run sdfg <kernel>`` writes (or builds the same
 SDFG in-process from the kernel's ``SPEC``) and maps it onto the format of
 D77:
 
@@ -520,7 +520,7 @@ def import_sdfg(sdfg: dace.SDFG, name: str) -> Graph:
 
 
 def import_kernel(kernel: str) -> Graph:
-    """Build the kernel's simplified SDFG (as ``pixi run forge`` does) and import it."""
+    """Build the kernel's simplified SDFG (as ``pixi run sdfg`` does) and import it."""
     from snax_forge.sdfg.build import build
     from snax_forge.sdfg.loader import load
 

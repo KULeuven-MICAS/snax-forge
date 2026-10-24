@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 
@@ -21,32 +20,12 @@ from snax_forge.gen import rtl as rtl_mod
 from snax_forge.gen.bundle import Bundle, write_bundle
 from snax_forge.gen.rtl import EMITTED_JSON
 
-from .helpers import files, point
-
-# The fake Emit's files, in emitted.json's order (not sorted, so files.f's order is its)
-SV = ["sv/snax_forge_shell_wrapper.sv", "sv/ElementwiseAlu_w64_add.sv"]
-COMMIT = "0123456789abcdef0123456789abcdef01234567"
+from .helpers import COMMIT, SV, fake_emit, files, point
 
 
 @pytest.fixture
 def fake(monkeypatch):
-    """``elaborate`` writes ``SV`` and lists ``fake.listed`` in emitted.json (``SV`` unless a
-    test changes it); the checkout is ``COMMIT``, clean."""
-    fake = SimpleNamespace(listed=list(SV))
-
-    def elaborate(rtl_json: Path, out_dir: Path) -> list[Path]:
-        tag = json.loads(rtl_json.read_text())["tag"]
-        for f in SV:
-            (out_dir / f).parent.mkdir(parents=True, exist_ok=True)
-            (out_dir / f).write_text(f"module {Path(f).stem};\nendmodule\n")
-        emitted = {"rtl": str(rtl_json), "top": f"{tag}_shell_wrapper",
-                   "modules": [Path(f).stem for f in fake.listed], "files": fake.listed}  # fmt: skip
-        (out_dir / EMITTED_JSON).write_text(json.dumps(emitted))
-        return [*(out_dir / f for f in fake.listed), out_dir / EMITTED_JSON]
-
-    monkeypatch.setattr(bundle_mod, "elaborate", elaborate)
-    monkeypatch.setattr(bundle_mod, "provenance", lambda checkout: (COMMIT, False))
-    return fake
+    return fake_emit(monkeypatch)
 
 
 def test_the_layout(tmp_path, fake):

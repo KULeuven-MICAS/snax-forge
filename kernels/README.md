@@ -2,7 +2,7 @@
 
 Every kernel SNAX-FORGE targets, one file each with a `KernelSpec`. The flow
 uses `vecadd`, `vecmul`, `vsum` and `dot` (`recipes/`). The kernels tagged
-`staged` are here to be read and their graphs looked at (`pixi run forge K`,
+`staged` are here to be read and their graphs looked at (`pixi run sdfg K`,
 `pixi run import-dfg K`, `pixi run view-dfg`); they are not linked to the
 flow. `pixi run kernels` prints each kernel's directory, tier, dtype, whether
 its SDFG builds and whether `import-dfg` takes it, or why not.

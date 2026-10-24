@@ -66,7 +66,7 @@ from .run import FlowError, run_bound, run_flow, summary
 BOUND = ".snaxdfg"
 
 
-def _setting(text: str) -> tuple[str, str, Any]:
+def setting(text: str) -> tuple[str, str, Any]:
     """A dotted path as the design step reads it (platform. or memory.), else a recipe
     param as the sandbox reads it."""
     path = text.partition("=")[0]
@@ -83,7 +83,7 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.flow")
     ap.add_argument("recipe", type=Path, metavar="RECIPE|GRAPH.snaxdfg")
     ap.add_argument("--platform", type=Path, required=True)
-    ap.add_argument("--set", type=_setting, action="append", default=[], metavar="NAME=VALUE")
+    ap.add_argument("--set", type=setting, action="append", default=[], metavar="NAME=VALUE")
     ap.add_argument("--memory", type=Path, help="memory working copy to start from")
     ap.add_argument("--graph", type=Path, help="start from this .snaxdfg instead of the import")
     ap.add_argument("--kernel", help="with a bound graph: its kernel (default: the graph's name)")

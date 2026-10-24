@@ -104,8 +104,8 @@ test-gen   = "pytest -q tests/gen"
 test-kernels = "pytest -q tests/kernels"
 lint       = "ruff check util kernels snax_forge tests && ruff format --check util kernels snax_forge tests"
 fmt        = "ruff check --fix util kernels snax_forge tests && ruff format util kernels snax_forge tests"
-# SDFG ingest: `pixi run forge vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
-forge      = "python -m snax_forge.sdfg"
+# SDFG ingest: `pixi run sdfg vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
+sdfg       = "python -m snax_forge.sdfg"
 # SNAX-DFG importer: `pixi run import-dfg vecadd` writes out/dfg/vecadd.snaxdfg
 import-dfg = "python -m snax_forge.dfg import"
 # Reference executor: `pixi run check-dfg out/dfg/vecadd.snaxdfg --kernel vecadd`
@@ -137,6 +137,10 @@ gen-rtl    = "python -m snax_forge.gen.rtl"
 # gen-gvsoc's files, the RTL under rtl/ (rtl.json, sv/, emitted.json; sbt) with its file list rtl/files.f, and
 # bundle.json to out/bundle/<design>/, everything made again; the flow does not call it
 bundle     = "python -m snax_forge.gen.bundle"
+# Recipe to snax_cluster (CLN1 R3): `pixi run forge recipes/vecadd.json [--platform P] [--set K=V] [--trace LEVEL]`
+# runs the flow, the bundle of its design point (out/bundle/<name>/) and the bundle's program, checked to be the
+# flow's ELF; each step's output in out/forge/<name>/forge.log, then snax_cluster's Verilator commands
+forge      = "python -m snax_forge.flow.forge"
 # Reports (D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/
 # (the flow writes them after every run)
 report     = "python -m snax_forge.report"

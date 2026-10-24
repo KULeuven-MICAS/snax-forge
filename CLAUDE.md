@@ -37,8 +37,11 @@ want to reverse, implementation details in module docstrings and tests.
   (`snax_forge/run/`, D137); `--vcd` adds gtkwave's `run/all.vcd`.
   From a bound graph instead of a recipe (no sandbox, D108): `pixi run flow
   out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json [--kernel K]`.
-  The single steps (`forge`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in
+  The single steps (`sdfg`, `import-dfg`, `check-dfg`, `sandbox`, `design`, `lower`) are in
   README.md section 2.
+- Recipe to snax_cluster: `pixi run forge recipes/vecadd.json [--set N=512]` runs the flow, the
+  bundle and the bundle's program (the flow's ELF), each step's output in
+  `out/forge/<name>/forge.log`, and prints snax_cluster's Verilator commands (docs/RUN.md section 8).
 - Generator: `pixi run gen-gvsoc out/design/<name>/design_point.json` writes a design point's
   hjson files, headers, `data.h` and `main.c` to `out/gvsoc/<name>/`. `pixi run gen-rtl
   out/design/<name>/design_point.json` writes its `rtl.json` and the accelerator's RTL (sbt) to

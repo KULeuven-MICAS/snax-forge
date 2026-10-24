@@ -2,7 +2,7 @@
 
 For each kernel, ``make_inputs`` runs at its defaults, the kernel's reference
 (``ref``, else the function itself) runs on them, and its simplified SDFG
-builds, as ``pixi run forge`` builds it. Nothing is compiled, and nothing is
+builds, as ``pixi run sdfg`` builds it. Nothing is compiled, and nothing is
 compared: the staged kernels are not linked to the flow.
 """
 

@@ -150,7 +150,7 @@ Expressions use one grammar shared with the BRM (`expr.py`: ints, names,
 `+ - * //`). Streamers are not nodes (D71).
 
 The importer (D78, `pixi run import-dfg <kernel>`) reads the simplified SDFG
-that `pixi run forge <kernel>` writes, keeps the kernel's names, decides
+that `pixi run sdfg <kernel>` writes, keeps the kernel's names, decides
 nothing, and names what it does not support. Sequential loops and branches
 come with the kernels that need them (open item 36).
 
