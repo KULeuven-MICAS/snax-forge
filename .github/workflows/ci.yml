@@ -63,7 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     # The unit cases the specs drive the blocks through and the shell cases the shell
-    # wrapper is driven through (open item 84), from the submodule.
+    # wrapper is driven through (C§17), from the submodule.
     env:
       SNAX_GVSOC_UNIT_CASES: ${{ github.workspace }}/gvsoc/snax-gvsoc/tests/snax/unit/cases
       SNAX_GVSOC_SHELL_CASES: ${{ github.workspace }}/gvsoc/snax-gvsoc/tests/snax/shell/cases

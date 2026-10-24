@@ -96,7 +96,7 @@ variable to the submodule's cases.
 
 `ShellCasesSpec` drives vecadd's `<tag>_shell_wrapper` (`CsrManager`,
 `CtrlAdapter`, `ElementwiseTiledSpatial`) through snax-gvsoc's `SnaxShell`
-cases (`tests/snax/shell/cases/`, GEN2b, open item 84), which snax-gvsoc's
+cases (`tests/snax/shell/cases/`, GEN2b, C§17), which snax-gvsoc's
 `tb.cpp` checks `snax_shell.hpp`'s rule against: every access's result (a
 write's cycle, a read's value) and, every cycle, the unit's busy, tapped from
 the wrapper (`ShellHarness(tapBusy = true)`). It reads them with
