@@ -54,13 +54,18 @@ detail) with ``available`` false and the reason.
 
 from __future__ import annotations
 
+import argparse
 import json
 import mimetypes
+import sys
+from collections.abc import Callable, Sequence
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlsplit
+
+from snax_forge.common import LoadedSet
 
 from . import api
 
@@ -112,10 +117,14 @@ def _str_arg(q: dict[str, list[str]], key: str) -> str | None:
 
 
 class Handler(BaseHTTPRequestHandler):
-    """One request. ``server.runs`` is the RunSet (see ``make_server``)."""
+    """One request. ``server.loaded`` is the RunSet (see ``make_server``); the DFG viewer's
+    handler (dfg/server.py) serves its GraphSet with its own routes. ``key`` names the set in
+    the reload's answer and ``reload_errors`` are what its reload may raise."""
 
     server: ViewerServer  # narrowed for type checkers
     protocol_version = "HTTP/1.1"
+    key = "runs"
+    reload_errors: tuple[type[Exception], ...] = READ_ERRORS
 
     # -- plumbing -------------------------------------------------------------
 
@@ -158,14 +167,14 @@ class Handler(BaseHTTPRequestHandler):
             self._error(HTTPStatus.NOT_FOUND, f"no POST route {self.path}")
             return
         try:
-            names = self.server.runs.reload()
-        except READ_ERRORS as e:  # keep the old runs, say why
+            names = self.server.loaded.reload()
+        except self.reload_errors as e:  # keep the old set, say why
             self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"reload failed: {e}")
             return
-        self._json({"runs": names})
+        self._json({self.key: names})
 
     def _api_get(self, parts: list[str], q: dict[str, list[str]]) -> None:
-        runs = self.server.runs
+        runs = self.server.loaded
         if parts == ["runs"]:
             self._json(runs.summaries())
             return
@@ -228,8 +237,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def _static(self, parts: list[str]) -> None:
         """A file below static/, index.html for /; nothing outside it is served."""
-        index = getattr(self.server, "index", "index.html")  # the DFG viewer's is dfg.html
-        path = (STATIC / "/".join(parts or [index])).resolve()
+        path = (STATIC / "/".join(parts or [self.server.index])).resolve()
         if STATIC not in path.parents or not path.is_file():
             self._error(HTTPStatus.NOT_FOUND, f"no file {self.path}")
             return
@@ -238,14 +246,15 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class ViewerServer(ThreadingHTTPServer):
-    """A ThreadingHTTPServer that carries the RunSet it serves."""
+    """A ThreadingHTTPServer on 127.0.0.1 that carries the set it serves (``loaded``: the
+    runs, or the DFG viewer's files) and the page at ``/`` (``index``)."""
 
     daemon_threads = True
 
-    def __init__(self, runs: api.RunSet, port: int, verbose: bool = False) -> None:
-        self.runs = runs
-        self.verbose = verbose
-        super().__init__((HOST, port), Handler)
+    def __init__(self, loaded: LoadedSet, port: int, verbose: bool = False,
+                 handler: type[Handler] = Handler, index: str = "index.html") -> None:  # fmt: skip
+        self.loaded, self.verbose, self.index = loaded, verbose, index
+        super().__init__((HOST, port), handler)
 
     @property
     def url(self) -> str:
@@ -257,4 +266,31 @@ def make_server(dirs: list[str | Path], port: int = DEFAULT_PORT, verbose: bool 
     return ViewerServer(api.RunSet(dirs), port, verbose)
 
 
-__all__ = ["DEFAULT_PORT", "HOST", "Handler", "ViewerServer", "make_server"]
+def main(argv: Sequence[str] | None, prog: str, doc: str, paths: tuple[str, str, str],
+         port: int, make: Callable[[list[str], int, bool], ViewerServer],
+         errors: tuple[type[Exception], ...]) -> int:  # fmt: skip
+    """A viewer's command line (``paths``: its argument's name, metavar and help): load, then
+    serve until Ctrl-C. Exit 0 when stopped, 2 when ``make`` raises one of ``errors``."""
+    p = argparse.ArgumentParser(prog=prog, description=doc.split("\n\n")[0])
+    name, metavar, help_ = paths
+    p.add_argument(name, nargs="+", metavar=metavar, help=help_)
+    p.add_argument("--port", type=int, default=port, help=f"port on 127.0.0.1 (default {port})")
+    p.add_argument("--verbose", action="store_true", help="log every request")
+    args = p.parse_args(argv)
+    try:
+        srv = make(getattr(args, name), args.port, args.verbose)
+    except errors as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 2
+    names = ", ".join(x["name"] for x in srv.loaded.summaries())
+    print(f"serving {names} at {srv.url} (Ctrl-C to stop)")
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        srv.server_close()
+    return 0
+
+
+__all__ = ["DEFAULT_PORT", "HOST", "Handler", "ViewerServer", "main", "make_server"]

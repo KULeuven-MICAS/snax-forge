@@ -58,13 +58,12 @@ of its own.
 
 from __future__ import annotations
 
-import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from snax_forge.common import unique_names
+from snax_forge.common import LoadedSet, unique_names
 from snax_forge.design import DesignPoint
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, load_cluster, read_run, regions_of
@@ -342,39 +341,22 @@ def run_detail(rv: RunView) -> dict[str, Any]:
 # =============================================================================
 
 
-class RunSet:
-    """The flow runs given on the command line, loaded once.
-
-    ``reload`` reads every run again and swaps the whole set at once, so a
-    request never sees half of a reload. If a run cannot be read, the old set
-    stays and the error is raised to the caller.
-    """
+class RunSet(LoadedSet):
+    """The flow runs given on the command line, loaded once (``LoadedSet``)."""
 
     def __init__(self, dirs: Sequence[str | Path]) -> None:
         if not dirs:
             raise ValueError("give at least one flow folder")
         self.dirs = [Path(d) for d in dirs]
-        self._lock = threading.Lock()
-        self._runs: dict[str, RunView] = {}
-        self.reload()
+        super().__init__()
 
-    def reload(self) -> list[str]:
-        """Read every run again; returns the run names."""
+    def load(self) -> dict[str, RunView]:
         names = run_names(self.dirs)
-        fresh = {n: load_run(d, n) for n, d in zip(names, self.dirs, strict=True)}
-        with self._lock:
-            self._runs = fresh
-        return names
-
-    def get(self, name: str) -> RunView | None:
-        with self._lock:
-            return self._runs.get(name)
+        return {n: load_run(d, n) for n, d in zip(names, self.dirs, strict=True)}
 
     def summaries(self) -> list[dict[str, Any]]:
         """/api/runs, in command-line order."""
-        with self._lock:
-            runs = list(self._runs.values())
-        return [run_summary(r) for r in runs]
+        return [run_summary(r) for r in self.values()]
 
 
 __all__ = [

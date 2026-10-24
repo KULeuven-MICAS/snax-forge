@@ -6,7 +6,7 @@ the run's index (index.py) that read no file; the viewer only draws their answer
 
 **Blocks** at ``t`` (the cores and the controller are the schedule's core lanes):
 
-- ``dma``: the copies open at ``t`` (issue to done, both included) with their task,
+- ``dma``: the copies open at ``t`` (issue to done, both included: ``RunIndex.span``) with their task,
   direction and bytes; from ``beat`` on, its L1 beat at ``t`` (``i`` of the copy's ``n``
   beats of that op) and its AXI bursts at ``t``, each with its region, elements and values,
   and its reads whose data comes back at ``t`` (``back``: L1 beats and L2 bursts);
@@ -40,21 +40,18 @@ from typing import Any
 from snax_forge.run.cluster import DMA
 
 from .index import Event, RunIndex
+from .schedule import window
 
 NEEDS = {"class": "beat", "grant": "beat", "back": "beat", "fire": "beat", "push": "beat",
          "beat": "beat", "burst": "beat", "access": "beat", "traffic": "beat", "stall": "stall",
          "fifo": "stall", "stalled": "stall", "conflicts": "stall"}  # fmt: skip
 
 
-def _at(index: RunIndex, t: int) -> list[Event]:
-    return index.events[bisect_left(index.times, t) : bisect_right(index.times, t)]
-
-
 def _open(index: RunIndex, src: str, t: int) -> str | None:
-    """The task of ``src`` open at ``t`` (start to done, both included), or None."""
+    """The task of ``src`` open at ``t`` (``RunIndex.span``), or None."""
     for task in index.tasks_of.get(src, []):
-        s, d = index.start[task]["t"], index.done.get(task)
-        if s <= t <= (d["t"] if d is not None else index.total_cycles):
+        a, b = index.span(index.start[task], index.done.get(task))
+        if a <= t <= b:
             return task
     return None
 
@@ -93,15 +90,15 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
     """The blocks at cycle ``t`` (module doc)."""
     c, acc = index.cluster, index.cluster.accelerator
     beat, stall = index.on("beat"), index.on("stall")
-    here = _at(index, t)
+    here = window(index, t, t + 1)
     of = {k: [e for e in here if e["k"] == k] for k in ("grant", "stall", "dma", "burst", "fire",
                                                         "push")}  # fmt: skip
     back = index.returns.get(t, []) if beat else []
 
     copies = []
-    for i, e in sorted(index.issue.items(), key=lambda x: x[1]["t"]):
-        d = index.copy_done.get(i)
-        if e["t"] <= t <= (d["t"] if d is not None else index.total_cycles):
+    for i, e in index.copies():
+        a, b = index.span(e, index.copy_done.get(i))
+        if a <= t <= b:
             cp = {"id": i, "task": e["task"], "dir": e["dir"], "bytes": e["size"] * e["reps"]}
             if beat:
                 cp["beat"] = [{**b, "n": index.dma_beats.get((i, b["op"]), 0)}

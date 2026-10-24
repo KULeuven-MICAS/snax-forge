@@ -88,7 +88,7 @@ def lanes(index: RunIndex) -> dict[str, Any]:
         {"task": e["task"], "id": i, "from": e["t"],
          "to": index.copy_done[i]["t"] if i in index.copy_done else None, "dir": e["dir"],
          "bytes": e["size"] * e["reps"]}
-        for i, e in sorted(index.issue.items(), key=lambda x: x[1]["t"])]})  # fmt: skip
+        for i, e in index.copies()]})  # fmt: skip
     acc = index.cluster.accelerator
     for name, kind in [*((m.name, "mover") for m in acc.movers), (acc.name, "accelerator")]:
         tasks = sorted(index.tasks_of.get(name, []), key=lambda t: index.start[t]["t"])
@@ -103,14 +103,9 @@ def lanes(index: RunIndex) -> dict[str, Any]:
 
 def active(index: RunIndex) -> list[tuple[int, int]]:
     """The window's active cycles as merged ``[first, end)`` stretches (module doc)."""
-    spans = []
-    for task, s in index.start.items():
-        d = index.done.get(task)
-        spans.append((s["t"], (d["t"] if d is not None else index.total_cycles - 1) + 1))
-    for i, e in index.issue.items():
-        d = index.copy_done.get(i)
-        spans.append((e["t"], (d["t"] if d is not None else index.total_cycles - 1) + 1))
-    clipped = ((max(a, 0), min(b, index.total_cycles)) for a, b in spans)
+    spans = [index.span(s, index.done.get(task)) for task, s in index.start.items()]
+    spans += [index.span(e, index.copy_done.get(i)) for i, e in index.issue.items()]
+    clipped = ((max(a, 0), min(b + 1, index.total_cycles)) for a, b in spans)
     return merge_spans((a, b) for a, b in clipped if a < b)
 
 

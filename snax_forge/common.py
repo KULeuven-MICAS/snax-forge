@@ -4,7 +4,8 @@
   platforms are found; ``cwd_relative``, a path as a command line prints it;
   ``generated_header``, the comment every generated file starts with; ``fresh`` and
   ``unique_names``, names that clash with none taken before.
-* ``CodedError``, the base of the refusals that carry a rule code.
+* ``CodedError``, the base of the refusals that carry a rule code; ``LoadedSet``, what a
+  viewer serves, reloaded whole.
 * ``plain`` and ``check_keys``: JSON-ready values, and an object's unknown keys refused (so a
   typo never silently falls back to a default) and its required ones checked.
 * ``Config``, a mixin giving a flat dataclass ``to_dict`` / ``from_dict``. Every field is
@@ -23,6 +24,7 @@ from __future__ import annotations
 
 import json
 import textwrap
+import threading
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import fields
 from pathlib import Path
@@ -129,6 +131,36 @@ class CodedError(ValueError):
     def __init__(self, code: str, message: str) -> None:
         self.code = code
         super().__init__(f"[{code}] {message}")
+
+
+class LoadedSet:
+    """What a viewer was given, loaded once: ``load()`` (each subclass's) gives the entries by
+    name, in order. ``reload`` loads them again and swaps the whole set at once, so a request
+    never sees half of a reload; when loading fails, the old set stays and the error is raised
+    to the caller."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._items: dict[str, Any] = {}
+        self.reload()
+
+    def load(self) -> dict[str, Any]:
+        raise NotImplementedError
+
+    def reload(self) -> list[str]:
+        """Load every entry again; returns their names."""
+        fresh = self.load()
+        with self._lock:
+            self._items = fresh
+        return list(fresh)
+
+    def get(self, name: str) -> Any:
+        with self._lock:
+            return self._items.get(name)
+
+    def values(self) -> list[Any]:
+        with self._lock:
+            return list(self._items.values())
 
 
 # =============================================================================

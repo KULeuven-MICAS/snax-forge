@@ -56,14 +56,13 @@ from __future__ import annotations
 
 import json
 import re
-import threading
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.common import unique_names
+from snax_forge.common import LoadedSet, unique_names
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
@@ -115,29 +114,19 @@ def load_entry(name: str, path: Path) -> Entry:
         return Entry(name, path, None, msg)
 
 
-class GraphSet:
-    """The files the viewer was given, read once and again on ``reload``."""
+class GraphSet(LoadedSet):
+    """The files the viewer was given, read once and again on ``reload`` (``LoadedSet``)."""
 
     def __init__(self, paths: Sequence[str | Path]):
         self.paths = [Path(p) for p in paths]
-        self._lock = threading.Lock()
-        self.entries: dict[str, Entry] = {}
-        self.reload()
+        super().__init__()
 
-    def reload(self) -> list[str]:
+    def load(self) -> dict[str, Entry]:
         files = expand(self.paths)
-        entries = {n: load_entry(n, f) for n, f in zip(entry_names(files), files, strict=True)}
-        with self._lock:
-            self.entries = entries
-        return list(entries)
-
-    def get(self, name: str) -> Entry | None:
-        with self._lock:
-            return self.entries.get(name)
+        return {n: load_entry(n, f) for n, f in zip(entry_names(files), files, strict=True)}
 
     def summaries(self) -> list[dict[str, Any]]:
-        with self._lock:
-            return [entry_summary(e) for e in self.entries.values()]
+        return [entry_summary(e) for e in self.values()]
 
 
 def entry_summary(e: Entry) -> dict[str, Any]:

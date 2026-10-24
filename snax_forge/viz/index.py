@@ -148,6 +148,16 @@ class RunIndex:
         """Traced at ``level`` or above."""
         return at_least(self.level, level)
 
+    def span(self, start: Event, done: Event | None) -> tuple[int, int]:
+        """A task's or a copy's cycles ``[first, last]``: its start (or issue) to its done, or
+        to the window's last cycle, ``total_cycles - 1``, when the window holds no done (the
+        window is ``[0, total_cycles)``, C§7)."""
+        return start["t"], done["t"] if done is not None else self.total_cycles - 1
+
+    def copies(self) -> list[tuple[int, Event]]:
+        """The DMA copies, ``(id, issue)``, in issue order."""
+        return sorted(self.issue.items(), key=lambda x: x[1]["t"])
+
     def needs(self, level: str) -> str:
         """Why an answer that needs ``level`` is not given: the reason shown to the user."""
         return f"needs --trace {level}; this run was traced at {self.level}"

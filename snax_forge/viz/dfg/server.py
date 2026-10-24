@@ -16,30 +16,20 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from http import HTTPStatus
-from http.server import ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlsplit
 
-from ..server import HOST, Handler
+from ..server import Handler, ViewerServer
 from . import api
 
 DEFAULT_PORT = 8766  # one more than the run viewer's, so both can run at once
 
 
 class DfgHandler(Handler):
-    def do_POST(self) -> None:
-        if urlsplit(self.path).path.rstrip("/") != "/api/reload":
-            self._error(HTTPStatus.NOT_FOUND, f"no POST route {self.path}")
-            return
-        try:
-            names = self.server.graphs.reload()
-        except OSError as e:  # a file or directory gone: keep the old entries
-            self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"reload failed: {e}")
-            return
-        self._json({"graphs": names})
+    key = "graphs"
+    reload_errors = (OSError,)  # a file or directory gone: keep the old entries
 
     def _api_get(self, parts: list[str], q: dict[str, list[str]]) -> None:
-        graphs = self.server.graphs
+        graphs = self.server.loaded
         if parts == ["graphs"]:
             self._json(graphs.summaries())
             return
@@ -53,22 +43,6 @@ class DfgHandler(Handler):
         self._error(HTTPStatus.NOT_FOUND, "unknown API route /api/" + "/".join(parts))
 
 
-class DfgServer(ThreadingHTTPServer):
-    """A ThreadingHTTPServer carrying the GraphSet it serves."""
-
-    daemon_threads = True
-    index = "dfg.html"
-
-    def __init__(self, graphs: api.GraphSet, port: int, verbose: bool = False) -> None:
-        self.graphs = graphs
-        self.verbose = verbose
-        super().__init__((HOST, port), DfgHandler)
-
-    @property
-    def url(self) -> str:
-        return f"http://{HOST}:{self.server_address[1]}/"
-
-
 def make_dfg_server(paths: Sequence[str | Path], port: int = DEFAULT_PORT, verbose: bool = False):
     """Load the files and bind the server (port 0 = any free port); does not serve yet."""
-    return DfgServer(api.GraphSet(paths), port, verbose)
+    return ViewerServer(api.GraphSet(paths), port, verbose, DfgHandler, "dfg.html")
