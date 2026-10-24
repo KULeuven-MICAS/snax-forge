@@ -16,7 +16,7 @@ from .loader import kernel_paths, load
 
 
 def main() -> int:
-    ap = argparse.ArgumentParser(prog="snax-forge")
+    ap = argparse.ArgumentParser(prog="python -m snax_forge.sdfg")
     ap.add_argument("kernels", nargs="*", help="kernel names; empty = all")
     ap.add_argument("--list", action="store_true", help="list available kernel names")
     args = ap.parse_args()

@@ -1,7 +1,7 @@
 """The design point: one bound graph on one platform, with its memory plan (D87).
 
-What SNAX-LOWER reads to make the cluster file (lower/cluster.py) and the
-task list (lower/derive.py). The design step writes it once every check
+What SNAX-LOWER reads to make the task list (lower/derive.py) and the
+generator the cluster file (gen/gvsoc.py). The design step writes it once every check
 has passed; it is not edited by hand.
 
     {

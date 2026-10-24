@@ -1,4 +1,4 @@
-// The memory tab (VIS4a, VIS4b, D95-D97): where a run's regions sit in each
+// The memory tab (D95-D97): where a run's regions sit in each
 // memory, and on a run traced at beat or above how its words move.
 //
 // Everything shown is computed by the server (viz/api.py, memory.py on index.py): per
@@ -18,9 +18,9 @@
 // Region colours are a meaning of this tab only (D96): a region keeps its
 // colour in every memory, so A in L2 and A in L1 match. The modes, the cycle
 // overlay and the picked element are described under "drawing" below. The
-// cycle bar has the play button of player.js (VIEW1); Clear also stops it.
+// cycle bar has the play button of player.js; Clear also stops it.
 //
-// The cluster view (VIS3) uses the same rows to name the element a bank
+// The cluster view uses the same rows to name the element a bank
 // holds in its tooltips: `ensureRows` loads the rows a cycle touches (a block
 // of MAX_ROWS at a time, once per run) and `elementAt` names what is there.
 
@@ -106,7 +106,7 @@ export function elementAt(detail, mem, column, row) {
 // What the grid shows depends on `show` in the hash: the layout, or one of the marks the
 // run has (the memory view's `marks_available`, each a count or a time; the server says
 // why the others are missing). The built-in ones:
-//   (none)     region colours, the layout of VIS4a
+//   (none)     region colours, the layout alone
 //   conflicts  region colours, a red badge per word with the conflicts it took part in
 //              (waited or served), and a count per bank column; rows fold by equal counts
 //   arrival    a cycle per word, coloured on one scale: its first write

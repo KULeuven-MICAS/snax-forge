@@ -1,4 +1,4 @@
-// Entry point of the viewer (VIS1-VIS3, VIS4a, D55, D57, D61, D96): loads the
+// Entry point of the viewer (D55, D57, D61, D96): loads the
 // run list and the selected run from the API, fills the header and hands the
 // page to one view: the profile report (report.js), the schedule with the
 // cluster view under it (schedule.js, cluster.js), or the memory layout
@@ -11,7 +11,7 @@
 // the page in place, anything else redraws the view. On the schedule the
 // arrow keys step to the next or previous event cycle, shift + arrow to the
 // next or previous task boundary (the server's /step); on the memory tab they
-// step one cycle. Space plays and pauses (player.js, VIEW1), stepping as the
+// step one cycle. Space plays and pauses (player.js), stepping as the
 // right arrow does.
 // A run's detail is fetched once and kept until Reload, which asks the server
 // to read the directories again (POST /api/reload) and clears the cache.
@@ -224,7 +224,7 @@ setStepper({
   busy: () => drawing !== null,
 });
 
-// The page is as wide as the window allows (VIEW1). The schedule fits its window
+// The page is as wide as the window allows. The schedule fits its window
 // to the width it is drawn at, so a change of width draws it again; the other
 // views follow the width by themselves (CSS grids).
 let drawnAtWidth = window.innerWidth;

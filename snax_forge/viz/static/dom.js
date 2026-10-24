@@ -1,4 +1,4 @@
-// Small DOM and number helpers shared by the viewer modules (VIS1).
+// Small DOM and number helpers shared by the viewer modules.
 // Everything is built with textContent, never innerHTML, so names from a
 // run directory cannot inject markup.
 

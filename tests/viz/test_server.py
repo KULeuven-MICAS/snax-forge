@@ -36,7 +36,7 @@ def test_server_serves_viewer_and_runs(tmp_path):
         ]  # fmt: skip
         detail = get_json(srv, "/api/run/vecadd")
         assert detail["profile"]["total_cycles"] == 226 and detail["cluster"]["design"] == "vecadd"
-        for gone in ("events?from=0&to=60", "fifo"):  # the old viewer's, removed in FLOW3 round 3
+        for gone in ("events?from=0&to=60", "fifo"):  # the old viewer's, removed
             assert status_of(srv, f"/api/run/vecadd/{gone}") == 404
 
 

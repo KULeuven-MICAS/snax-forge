@@ -211,7 +211,7 @@ def test_raw_vecadd_has_three_states():
 @pytest.mark.parametrize(
     ("make", "message"),
     [
-        (progs.unsupported_wcr, "write-conflict resolution .* not from a Reduce .*FE1"),
+        (progs.unsupported_wcr, "write-conflict resolution .* not from a Reduce .*contents"),
         (progs.unsupported_reduce_used_twice, "result 's' is used other than by one copy"),
         (lambda: progs.row_sum_view.to_sdfg(simplify=True), "view '__tmp0' is not imported"),
         (progs.unsupported_two_params, "over 2 parameters"),

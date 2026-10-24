@@ -3,8 +3,9 @@ and stall lines of an open range. Queries on the run's index (index.py) that rea
 the viewer only draws their answers.
 
     schedule(index, open, cycle)    -> lanes(index) and segments(index, open, cycle) together
-    lanes(index)                    -> {"lanes": [...]}
-    segments(index, open, cycle)    -> {"segments": [...], "boot": {...}}
+    lanes(index)                    -> {"level", "total_cycles", "lanes": [...]}
+    segments(index, open, cycle)    -> {"level", "total_cycles", "fold_min", "boot": {...},
+                                        "segments": [...]}
     detail(index, start, stop)      -> the beat and stall lines of [start, stop) per lane
 
 **Lanes**, top to bottom: one per core (``core<i>``), the DMA, one per mover as the streamer

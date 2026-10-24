@@ -5,7 +5,7 @@ function, dataflow, pattern) and a map of implementations (source, supports,
 timing, binding). ``Brm.resolve`` builds an instance from an implementation
 and design-param values, checked against the generator's blocks; its
 function (function.py, ``function_of``) is a registered accelerator kind the
-reference executor runs. The ``affine
+reference executor runs. The ``affine``
 dataflow notation (D70) gives nests that ``task_nest`` resolves and
 enumerates for one task; SNAX-LOWER maps them onto streamer values
 (``snax_forge.lower.streams``). The library of hand-written BRMs

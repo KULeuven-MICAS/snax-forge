@@ -25,7 +25,7 @@ Which part serves which component: interface and function give what the
 reference executor runs (function.py); the dataflow gives the streamer values
 (SNAX-LOWER); the pattern serves SNAX-SANDBOX's ``bind``; the chosen
 implementation's timing and binding serve the generators (the GVSoC
-accelerator, and the Chisel block once that generator is built).
+accelerator and the Chisel block).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
 and reach the design point and the accelerator hjson. ``runtime`` params are

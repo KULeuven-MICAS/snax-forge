@@ -9,7 +9,7 @@ import scala.jdk.CollectionConverters._
   * line per cycle) are worked by hand from `SnaxUnit`'s rule (`snax/snax_unit.hpp`); snax-gvsoc's `tb.cpp` checks the
   * rule against them, and the Chisel specs drive their blocks through the same cases. They are read from the folder
   * `SNAX_GVSOC_UNIT_CASES` names (e.g. `gvsoc/snax-gvsoc/tests/snax/unit/cases`); without it a spec cancels (the
-  * submodule not checked out). CI's chisel job sets it to the submodule's cases (GEN1).
+  * submodule not checked out). CI's chisel job sets it to the submodule's cases.
   */
 object SnaxUnitCases {
 
@@ -24,7 +24,7 @@ object SnaxUnitCases {
   case class Cycle(valids: Seq[Boolean], ready: Boolean, fire: Boolean, push: Boolean, busy: Boolean)
 
   /** An `expect run` line: the trace line at the end of a run, `expect run index=I firings=F busy=B stall_in=S
-    * stall_out=O flush=L` (snax-gvsoc's `run` line since FLOW3 round 1b), runs numbered from 0 in order.
+    * stall_out=O flush=L` (snax-gvsoc's `run` line), runs numbered from 0 in order.
     */
   case class RunLine(firings: Int, busy: Int, stallIn: Int, stallOut: Int, flush: Int)
 

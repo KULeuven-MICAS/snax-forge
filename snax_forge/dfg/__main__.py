@@ -32,10 +32,10 @@ OUT = repo_root() / "out" / "dfg"
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.dfg")
     sub = ap.add_subparsers(dest="command", required=True)
-    imp = sub.add_parser("import", help="SDFG -> .snaxdfg (IMP1)")
+    imp = sub.add_parser("import", help="SDFG -> .snaxdfg")
     imp.add_argument("kernels", nargs="+", help="kernel names under kernels/")
     imp.add_argument("--out", type=Path, default=OUT, help="output directory (default out/dfg)")
-    chk = sub.add_parser("check", help="run .snaxdfg files against the kernel reference (REF1)")
+    chk = sub.add_parser("check", help="run .snaxdfg files against the kernel reference")
     chk.add_argument("files", nargs="+", type=Path)
     chk.add_argument(
         "--kernel", required=True, help="kernel under kernels/ (its inputs, reference)"

@@ -14,12 +14,13 @@ import pytest
 
 from snax_forge.brm import CONTROLS, Brm, Instance, load_brm
 from snax_forge.common import generated_header
-from snax_forge.design import DesignError, Platform
+from snax_forge.design import DesignError, DesignPoint, Platform
 from snax_forge.dfg import Graph
 from snax_forge.gen import BLOCKS, ELEMENTWISE_OP, GenError, Manifest, generate
 from snax_forge.gen import __main__ as cli
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.blocks import accumulator, elementwise_tiled_spatial
+from snax_forge.gen.data import array_text, arrays
 from snax_forge.lower import c as c_mod
 from tests.design.helpers import REPO, SNAX_FORGE, chained, graph_dict
 
@@ -79,6 +80,17 @@ def w4(tmp_path_factory):
 # =============================================================================
 # vecadd at W = 4 on snax_forge
 # =============================================================================
+
+
+def test_a_seed_reaches_data_h_header_and_arrays(tmp_path):
+    """A seed given to generate is the one data.h's header names and its inputs are made with."""
+    out, path = tmp_path / "gvsoc" / "vecadd", point(tmp_path)
+    generate(path, out, root=tmp_path, seed=3)
+    text = (out / "data.h").read_text()
+    assert "the inputs from make_inputs (seed 3)" in text
+    p = DesignPoint.load(path)
+    assert arrays(p, 3) != arrays(p, 0)
+    assert text.endswith("\n".join(array_text(a) for a in arrays(p, 3)))
 
 
 def test_vecadd_w4_files_and_manifest(w4):

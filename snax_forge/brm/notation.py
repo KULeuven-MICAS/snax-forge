@@ -12,7 +12,7 @@ of beat t on every port is the element the function expects) is the BRM
 author's responsibility (D70).
 
 What a nest looks like is the notation's business. A notation is registered
-by name with ``register_notation(name, check, check_instance=None)``:
+by name with ``register_notation(name, check, check_instance=None, normalize=None)``:
 
 * ``check(nest, port, brm)`` raises ValueError (or TypeError) if the nest is not valid for
   that port of that BRM, before any param has a value;

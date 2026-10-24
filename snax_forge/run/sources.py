@@ -2,7 +2,7 @@
 
     parse_trace("stall:acc,acc_a")      -> ("stall", ["acc", "acc_a"])
     sources_for(cluster, level, given)  -> the sources, given or by default
-    gvsoc_options(cluster, level, sources, vcd) -> GvsocOptions
+    gvsoc_options(cluster, level, sources, vcd, given=False) -> GvsocOptions
 
 A level is which traces are on (snax-gvsoc ``docs/EVENTS.md``), cumulative: ``off`` the
 ``summary`` lines, ``task`` and the ``events`` lines, ``beat`` and the ``beats`` lines,

@@ -255,7 +255,7 @@ class _Importer:
             if views:
                 raise SdfgImportError(
                     f"{self.name}: view {views[0]!r} is not imported (a result stored through a "
-                    "view, as B[:] = np.sum(A, axis=1) is, comes with FE1)"
+                    "view, as B[:] = np.sum(A, axis=1) is, is not supported yet)"
                 )
             if isinstance(e.src, dn.AccessNode) and isinstance(e.dst, dn.AccessNode):
                 raise SdfgImportError(
@@ -265,7 +265,7 @@ class _Importer:
             if e.data.wcr is not None:
                 raise SdfgImportError(
                     f"{self.name}: write-conflict resolution on {e.data} not from a Reduce is "
-                    "not imported (a fold into the element's contents, FE1)"
+                    "not imported (a fold into the element's contents)"
                 )
             if e.data.dynamic:
                 raise SdfgImportError(f"{self.name}: dynamic memlet {e.data} is not imported")

@@ -571,7 +571,7 @@ def generate(
         names[2]: _hjson(shown, f"Slot {slot}'s datapath block: {accel}.", datapath(unit)),
         f"include/{STREAMER_HEADER}": streamer_h,
         f"include/{name}_csr.h": accelerator_header(name, layout, shown),
-        DATA_H: data_h(point, shown, data),
+        DATA_H: data_h(point, shown, data, seed=seed),
         MAIN_C: main_c(point, tasks, cluster, layout, data,
                        [DATA_H, f"{name}_csr.h", STREAMER_HEADER], shown),
     }  # fmt: skip

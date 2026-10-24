@@ -14,13 +14,13 @@
      "wait":    "lockstep",                           when the block takes a beat
      "ports":   {"a": "in", "out": "out"}}            optional: every BRM port -> the
                                                       block's port of that role (by
-                                                      default the same name; GEN1)
+                                                      default the same name)
 
 ``control`` and ``wait`` are registered kinds (D19): ``register_control``
 and ``register_wait``. ``counted`` is the only control: every block counts
 its own firings (D129). Which blocks exist is the generators' business
-(snax_forge/gen registers the GVSoC adapters; the Chisel side is not
-generated yet), so ``block`` is only a name here. Every expression is
+(snax_forge/gen registers the GVSoC adapters), so ``block`` is only a
+name here. Every expression is
 checked and stored canonical (snax_forge/expr.py). ``ports`` is written
 only when given, in the BRM's port order; whether its names are the block's
 ports is snax_forge/gen/rtl.py's check against the block catalogue. A

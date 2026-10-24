@@ -21,7 +21,7 @@ does not know either; the caller passes the names.
 Operations
 ----------
 ``check`` / ``names`` / ``is_name`` / ``constant`` / ``evaluate``
-    as used by the BRM.
+    on one expression.
 ``canonical``
     the stored form: a value without names is an int, any other string is
     written as ``ast.unparse`` writes it (``"4 * i_t + i_s"``), so a file a

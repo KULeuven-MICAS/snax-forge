@@ -36,7 +36,7 @@ class AccumulatorRateSpec extends AnyFlatSpec with ForgeTester {
 
   behavior of "Accumulator against SnaxUnit's rate cases"
 
-  /** Each fixture's Accumulator (GEN1, `RtlFixtures`): its width, accWidth and lanes. */
+  /** Each fixture's Accumulator (`RtlFixtures`): its width, accWidth and lanes. */
   private val fixtures: Seq[(String, Int, Int, Int)] =
     RtlFixtures.all.map(f => f -> f.spec.units.head).collect {
       case (f, u) if u.block == "Accumulator" =>
@@ -55,7 +55,7 @@ class AccumulatorRateSpec extends AnyFlatSpec with ForgeTester {
 
   private def runCases(params: Option[(Int, Int, Int)]): Unit = {
     val all = cases.getOrElse(cancel(s"$Env is not set (snax-gvsoc's tests/snax/unit/cases)"))
-    if (all.isEmpty) cancel(s"no pipelined fold case in ${sys.env(Env)}: the snax-gvsoc checkout predates GEN3 step 6b")
+    if (all.isEmpty) cancel(s"no pipelined fold case in ${sys.env(Env)}: the snax-gvsoc checkout predates the pipelined fold cases")
     for (c <- all) {
       require((c.latency, c.ii) == (1, 1), s"${c.name}: the Accumulator is L = 1, II 1")
       val (width, accWidth, lanes) = params.getOrElse((64, 64, c.lanes))

@@ -12,7 +12,8 @@ node is one of its temporal firing loops, ``firing_loops``). For each group:
     streamers    configure ``<node>_<instance>_<port>`` for every port, in the
                  BRM's port order, with values from the memlet through the
                  container's L1 layout (below)
-    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count
+    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, and its
+                 named rates
     start        the streamer tasks, then the accelerator task, together
     stores       for each output whose container has an L2 layout and is written
                  for the last time here: configure ``store_<C>`` (L1 -> L2)

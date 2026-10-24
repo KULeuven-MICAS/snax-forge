@@ -1,4 +1,4 @@
-"""The class part of the converter (C§7, FLOW3 round 3): class lines against their run's totals
+"""The class part of the converter (C§7): class lines against their run's totals
 on hand-written snippets with obvious answers, the totals on ``done`` from the summary lines,
 and a core's spans (run/cores.py).
 
