@@ -1,4 +1,4 @@
-"""A design point -> its accelerator's RTL spec, ``rtl.json`` (D138, C§17).
+"""A design point -> its accelerator's RTL spec, ``rtl.json`` (D130, C§17).
 
     write_rtl(design_point, out_dir, root=None) -> RtlSpec
     vectors(design_point, root=None) -> dict

@@ -1,9 +1,9 @@
-"""SDFG importer (D71, D77): a simplified DaCe SDFG -> a ``.snaxdfg`` graph.
+"""SDFG importer (D71): a simplified DaCe SDFG -> a ``.snaxdfg`` graph.
 
 The importer derives and decides nothing (principle 4). It reads the
 simplified SDFG that ``pixi run sdfg <kernel>`` writes (or builds the same
 SDFG in-process from the kernel's ``SPEC``) and maps it onto the format of
-D77:
+D71:
 
     SDFG                              .snaxdfg
     ------------------------------    ---------------------------------------
@@ -17,7 +17,7 @@ D77:
     Reduce library node               nested maps, one per input dimension,
                                       around a tasklet ``out = in1`` whose
                                       output memlet has a ``reduce`` (D102)
-    access nodes, map connectors,     not stored: derived (D77)
+    access nodes, map connectors,     not stored: derived (D71)
     outer memlets on a map
 
 What DaCe's simplify already did is kept as it is: for vecadd it folded the
@@ -43,7 +43,7 @@ what DaCe calls write-conflict resolution: the op (``add``, ``mul``, ``min``,
 none). dot becomes ``mult_map`` then ``sum_map``, with ``tmp0`` between
 them.
 
-**Names** (D75, D77). Containers keep the kernel's names (``A``, ``B``,
+**Names** (D75, D71). Containers keep the kernel's names (``A``, ``B``,
 ``C``); a transient loses its underscores (``__tmp0`` -> ``tmp0``). Maps and
 tasklets take their DaCe label without underscores, lower case
 (``_Add__map`` -> ``add_map``, ``_Add_`` -> ``add``), with ``_1``, ``_2``
@@ -326,7 +326,7 @@ class _Importer:
         if len(m.params) != 1:
             raise SdfgImportError(
                 f"{what}: a map over {len(m.params)} parameters {m.params} is not imported yet "
-                "(nested maps, one per parameter, D77)"
+                "(nested maps, one per parameter, D71)"
             )
         (param,), (rng,) = m.params, m.range.ranges
         var = _variable(depth, self.outer_names | set(rename.values()))

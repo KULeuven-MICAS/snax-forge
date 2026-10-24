@@ -17,7 +17,7 @@ output an optional ``"reduce": {"op", "identity"}`` that folds the writes of
 every iteration into the element instead of overwriting it (reduce.py).
 The graph is a tree: scopes hold ordered bodies, memlets sit on the
 connectors of the nodes that use the data, and there are no map entry/exit
-nodes, access nodes or outer memlets, which are derived (D77).
+nodes, access nodes or outer memlets, which are derived (D71).
 
 **Names.** Every name in an expression is bound by exactly one thing: a
 symbol, or the variable of an enclosing map. Container shapes use symbols

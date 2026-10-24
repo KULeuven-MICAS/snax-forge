@@ -1,4 +1,4 @@
-// DFG viewer (D76, D81): one panel per .snaxdfg file, side by side.
+// DFG viewer (D55): one panel per .snaxdfg file, side by side.
 //
 // The server works out what goes where (api.py): the rows top to bottom in
 // execution order, each top-level node's tree, and one edge per memlet from a

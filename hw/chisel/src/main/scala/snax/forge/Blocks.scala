@@ -5,7 +5,7 @@ import chisel3._
 import snax.forge.elementwise.{ElementwiseOp, ElementwiseTiledSpatial}
 import snax.forge.samples.Accumulator
 
-/** The blocks a generated accelerator can be built from: name -> signature and builder (D138).
+/** The blocks a generated accelerator can be built from: name -> signature and builder (D130).
   *
   * The signature is what `hw/chisel/blocks.json` holds and `Emit --describe` prints: the params with their types and
   * limits, the data ports with their directions, and the `csr` section (the read-write pins in CSR order with their

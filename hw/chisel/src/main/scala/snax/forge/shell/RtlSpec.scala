@@ -2,7 +2,7 @@ package snax.forge.shell
 
 import java.nio.file.{Files, Path}
 
-/** `rtl.json` as `Emit --spec` reads it (C§17, D138): concrete values only, resolved and checked by the Python side
+/** `rtl.json` as `Emit --spec` reads it (C§17, D130): concrete values only, resolved and checked by the Python side
   * (`snax_forge/gen/rtl.py`) against `hw/chisel/blocks.json`. Nothing is checked again here beyond what construction
   * needs; the blocks keep their `require`s.
   *

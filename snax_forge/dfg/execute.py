@@ -44,7 +44,7 @@ How a node runs is registered per kind (``register_executor``, principle
     per iteration. Each port's beat is gathered from its memlet (the lanes,
     row-major), and each output beat is written back the same way. A port
     with a named rate (``T``, dot's accumulator) moves one beat every T
-    firings, T from ``named_rates`` (D104): an input is read at firings 0, T,
+    firings, T from ``named_rates`` (D102): an input is read at firings 0, T,
     2T, ..., an output written at T-1, 2T-1, ... where its memlet points in
     the firing that completes it.
 
@@ -54,7 +54,7 @@ BRM's ports, each beat has the port's lanes and the port's dtype is the
 container's; a spatial map around an accelerated node is
 an error, since its lanes are in the memlet.
 
-**Named rates** (``named_rates``, D104). A rate that names a start
+**Named rates** (``named_rates``, D102). A rate that names a start
 parameter gets its value from the graph: the product of the counts of the
 innermost firing loops the port's memlet does not depend on, the loops its
 beat folds over. dot's sum port ``out[0:1]`` depends on no loop, so T is
@@ -334,7 +334,7 @@ def _accel(node: Node, what: str) -> Any:
 def named_rates(
     ports: Mapping[str, tuple[Memlet, int | str]], loops: list[tuple[str, int]], what: str
 ) -> dict[str, int]:
-    """Each named rate's value over the firing ``loops`` (var, count), outermost first (D104).
+    """Each named rate's value over the firing ``loops`` (var, count), outermost first (D102).
 
     ``ports`` maps a port to its memlet and rate. For a named rate, the
     innermost loops its memlet does not use are the ones one beat folds over;

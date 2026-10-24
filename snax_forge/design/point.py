@@ -8,7 +8,7 @@ has passed; it is not edited by hand.
      "name":       "vecadd",
      "graph_from": "out/sandbox/vecadd/2_bind.snaxdfg",
      "graph":      {...},     the bound graph as it was read: instances, code,
-                              replaced, loop.split (D77, D82)
+                              replaced, loop.split (D71, D82)
      "platform":   {...},     the platform working copy: values, base, changes
      "streamers":  {...},     the resolved shell, <instance>_<port> -> instance,
                               port, write, n_ports, spatial_bounds and options

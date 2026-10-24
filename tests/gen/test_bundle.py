@@ -1,4 +1,4 @@
-"""The bundle for snax_cluster (D111, D139, C§18): gen-gvsoc's files at the root, the RTL under
+"""The bundle for snax_cluster (D111, D130, C§18): gen-gvsoc's files at the root, the RTL under
 ``rtl/`` with its file list, and ``bundle.json``.
 
 No JVM here: ``elaborate`` is replaced by a fake that writes two files and an ``emitted.json``

@@ -6,7 +6,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, Sink, SnaxShellCases, Source}
 import snax.forge.SnaxShellCases._
 
-/** The shell cross-check (open item 84): vecadd's `<tag>_shell_wrapper` (`CsrManager` + `CtrlAdapter` +
+/** The shell cross-check (C§17): vecadd's `<tag>_shell_wrapper` (`CsrManager` + `CtrlAdapter` +
   * ElementwiseTiledSpatial, 4 lanes; CSRs from 0: loopCount, start, busy, counter) driven through snax-gvsoc's
   * `SnaxShell` cases (`SnaxShellCases`, read from `SNAX_GVSOC_SHELL_CASES`), which snax-gvsoc's `tb.cpp` checks
   * `snax_shell.hpp`'s rule against.

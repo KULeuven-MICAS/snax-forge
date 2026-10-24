@@ -188,7 +188,7 @@ object Emit {
   /** What `emitSpec` wrote: the top module, every module, and the files (those in `sv/`, then `emitted.json`). */
   case class Emitted(top: String, modules: Seq[String], files: Seq[Path])
 
-  /** `--spec <rtl.json> [--out DIR]`: the accelerator of `rtl.json` (C§17, D138), `<tag>_shell_wrapper` and what it
+  /** `--spec <rtl.json> [--out DIR]`: the accelerator of `rtl.json` (C§17, D130), `<tag>_shell_wrapper` and what it
     * holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of `rtl.json`), and
     * `DIR/emitted.json`: `top`, `modules` and `files` (paths from `DIR`). The files a previous `emitted.json` lists are
     * removed first, so `sv/` holds this spec's files only.
@@ -228,7 +228,7 @@ object Emit {
 
   private val ModuleLine = raw"module (\w+)\b.*".r
 
-  /** `--describe`: the block catalogue from the registry (`Blocks`), as `hw/chisel/blocks.json` holds it (D138). */
+  /** `--describe`: the block catalogue from the registry (`Blocks`), as `hw/chisel/blocks.json` holds it (D130). */
   def describe: String = ujson.write(Blocks.describe, indent = 1)
 
   /** `--out <dir>`, else `$SNAX_FORGE_HW_OUT`, else `out/hw` under the repo root.

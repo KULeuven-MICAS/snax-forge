@@ -3,7 +3,7 @@
 # From NPBench (github.com/spcl/npbench, f2d7f27): npbench/benchmarks/polybench/gemver/gemver_dace.py
 """PolyBench gemver: a rank-2 update of A, then x += beta A^T y + z, then w += alpha A x.
 
-Tier D (PAPER §6.1): the rank-1 updates read u and v with stride 0 (D69).
+Tier D (PAPER §6.1): the rank-1 updates read u and v with stride 0 (D70).
 Staged: not yet linked to the flow. int64 (D113).
 """
 

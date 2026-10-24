@@ -1,4 +1,4 @@
-"""Values: an int, or a small integer expression over names (D77).
+"""Values: an int, or a small integer expression over names (D71).
 
 Shared by SNAX-BRM and SNAX-DFG. A value field holds either a plain int or a
 string. Every string is an expression: a name (``"W"``, ``"N"``, ``"i_t"``)

@@ -50,7 +50,7 @@ $$y \leftarrow y + \alpha x$$
 $$C = A + B, \quad A, B, C \in \mathbb{Z}^{M \times N}$$
 
 - `vecadd` in 2-D: one map over two parameters, which the importer takes
-  once maps nest one per parameter (D77, ND1).
+  once maps nest one per parameter (D71, ND1).
 - Contiguous rows: it can flatten into `vecadd`, or keep a spatial and a
   temporal loop in the streamer.
 
@@ -185,7 +185,7 @@ x \leftarrow x + \beta A^T y + z, \quad
 w \leftarrow w + \alpha A x$$
 
 - The rank-1 updates reuse `u` along a row and `v` down a column: a streamer
-  with stride 0 (D69), or the unit's state.
+  with stride 0 (D70), or the unit's state.
 - Three phases chained through `A` and `x`, both updated in place.
 - `np.multiply.outer` and two MatMuls to expand.
 

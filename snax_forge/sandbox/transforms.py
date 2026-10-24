@@ -30,7 +30,7 @@ is; the reference check after the step is run.py's.
     ``out[0]``) folds every lane into one: its port must have one lane, its
     index becomes the range of that lane (``out[0:1]``, no ``reduce`` on
     the accelerated node), and its order is checked over the temporal maps
-    it uses, one beat per T firings, T from ``named_rates`` (D104).
+    it uses, one beat per T firings, T from ``named_rates`` (D102).
 ``unbind(node)`` and ``join_map(map)``
     the inverses (D82): the subtree an accelerated node replaced, and the
     map a temporal / spatial pair was split from (``loop.split``), so a
@@ -254,7 +254,7 @@ def bind(
         )
     var_s = smap.attrs["var"]
     memlets = tasklet.inputs | tasklet.outputs
-    # a folding output that does not use the spatial variable takes one lane (D104)
+    # a folding output that does not use the spatial variable takes one lane (D102)
     folds = {c for c, m in tasklet.outputs.items() if m.reduce is not None and var_s not in m.names}
     for c, m in memlets.items():
         if c not in folds and var_s not in m.names:
@@ -316,7 +316,7 @@ def bind(
                 nest = task_nest(inst, port, task)
             except ValueError as e:
                 raise SandboxError(f"{what}: {e}") from None
-            if c in folds:  # one lane: the last index becomes a range of one (D104)
+            if c in folds:  # one lane: the last index becomes a range of one (D102)
                 dims = [*m.subset[:-1], _one_lane(m.subset[-1], f"{what}.{side}.{c}")]
                 out[port] = Memlet(m.data, dims)
                 beats = [lp for lp in temporal if lp.attrs["var"] in m.names]
@@ -384,7 +384,7 @@ def _check_order(
     """The memlet over the temporal maps and the lanes gives the nest's order.
 
     ``smap`` None: a folding output, one lane, over the temporal maps its
-    memlet uses (one beat per T firings, D104).
+    memlet uses (one beat per T firings, D102).
     """
     env: dict[str, Any] = g.bound_symbols
     loops = [*temporal, *([smap] if smap is not None else [])]

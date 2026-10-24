@@ -1,4 +1,4 @@
-# SNAX-GVSoC from snax-forge (D128): builds snax-gvsoc, its programs, and
+# SNAX-GVSoC from snax-forge (D134): builds snax-gvsoc, its programs, and
 # runs gvrun on a target of the install.
 #
 # Run it in snax-forge's image, from the plain shell or through pixi (`pixi

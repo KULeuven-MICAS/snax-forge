@@ -1,4 +1,4 @@
-"""Node kinds of the SNAX-DFG (D19, D77): registered entries, never subclasses.
+"""Node kinds of the SNAX-DFG (D19, D71): registered entries, never subclasses.
 
 Every node has the same core fields (graph.py): ``id``, ``kind``, ``inputs``,
 ``outputs``, ``attrs`` and, for a kind that has one, ``body``. What a kind

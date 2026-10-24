@@ -9,9 +9,9 @@ reports (``snax_forge.report``, D99) instead.
   route one query's dict;
 * index.py: a run's events grouped by their ids and lookups once at load
   (``RunIndex``), and the memory tab's marks, added by registration;
-* memory.py: the memory tab's layout, folded rows and marks on them (D96);
+* memory.py: the memory tab's layout, folded rows and marks on them (D57);
 * movement.py: data movement as queries on the index: journey, residency,
-  patterns, conflicts (D97);
+  patterns, conflicts (D57);
 * schedule.py, cluster.py: the schedule's lanes, folded segments and detail
   rows, the cluster at one cycle and the stepping between cycles (D57);
 * server.py: the stdlib HTTP server around them;
@@ -20,7 +20,7 @@ reports (``snax_forge.report``, D99) instead.
   computes nothing of its own.
 
 The tabs are the profile report, the schedule with the cluster view under
-it, and the memory tab, all on the same API. The DFG viewer (D81) is the
+it, and the memory tab, all on the same API. The DFG viewer (D55) is the
 subpackage dfg/, a second mode of the same server for ``.snaxdfg`` files
 (``python -m snax_forge.viz.dfg``).
 """

@@ -3,7 +3,7 @@
     python -m snax_forge.sdfg [KERNEL ...]   ingest the named kernels (all if none)
     python -m snax_forge.sdfg --list         list the kernels in kernels/
 
-The simplified SDFG is the input of the SNAX-DFG importer (D78).
+The simplified SDFG is the input of the SNAX-DFG importer (D71).
 """
 
 import argparse

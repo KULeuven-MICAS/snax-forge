@@ -1,6 +1,6 @@
 """SNAX-GEN: generated accelerators from a design point.
 
-A design point's cluster on SNAX-GVSoC as three hjson files (D128, D134):
+A design point's cluster on SNAX-GVSoC as three hjson files (D134):
 the cluster, the streamer and the datapath block (gvsoc.py), each Chisel
 block an adapter registered by name (blocks.py), and the C headers a program
 drives it with (headers.py). The program (D135): ``main.c`` from the task

@@ -16,7 +16,7 @@ with one operator; ``attrs.op`` names the operator (``add``, ``sub``,
 ``mul``) and ``attrs.arity`` the number of inputs. Inputs map onto the
 BRM's input ports in fold order, the output onto its one output port.
 
-``reduce`` (D104): the tasklet copies its one input into its one output
+``reduce`` (D102): the tasklet copies its one input into its one output
 (``out = in1``), and the output memlet folds (``reduce``) with the op
 ``attrs.op`` names, from that op's identity for the port's dtype. That is
 what the importer makes of DaCe's ``Reduce``, and what a BRM of family ``reduce``
