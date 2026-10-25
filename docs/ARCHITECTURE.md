@@ -169,8 +169,8 @@ on `SnaxUnit` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
 the steps; the reference executor checks every step; `--set W=8` runs one
 point of a sweep. Transforms: `split_map`, `bind` (patterns `elementwise` and
 `reduce`, design params read off the graph, D73), and their inverses `unbind`
-and `join_map`. **[PLANNED]** the composed bind (M13, D112) and a tile
-transform (LOW3b).
+and `join_map`. **[PLANNED]** `bind` on a group of tasklets, `split_reduce`
+and the composite (M13 B2–B3, D112), and a tile transform (LOW3b).
 
 **The design step** (D84–D87, `design/`; C§13–C§15). It pairs a bound graph
 with a platform from `platforms/`, resolves the streamers (D12), makes the
@@ -296,15 +296,23 @@ same `forge counter` on SNAX-GVSoC and on the RTL and the window within 10%
 
 Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16
 (the baseline) and M14 (generation to both sides, closed by CLN1). The order
-from here (D116, `docs/STATUS.md` has the tasks):
+from here (D116, D141; `docs/STATUS.md` has the tasks):
 
-1. **One generator** (open item 68), planned in its own brainstorm.
-2. **M7 tier A:** 2-D plumbing, int64 mat-vecs (D113, PAPER §6.1).
-3. **M13:** the composed bind, then the composed accelerator in SNAX (LNK3).
-4. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
-5. **M15:** tiling, a DMA per tile.
-6. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.
-7. **M11** and **M12** (layers, blocks, models) and the paper draft (P2).
+1. **M13, the block library** (D141): M7's tier A, the composed bind and
+   BASE1's forge side as one milestone, in five phases.
+
+   | Phase | Content |
+   |---|---|
+   | B0 flow pieces | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
+   | B1 one description | `accelerator.json` per design point, read by Emit and SNAX-GVSoC; each block a datapath and a controller, generated as three modules |
+   | B2 blocks | one hand-written BRM per basic block (1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO), each with its Chisel block and SNAX-GVSoC model |
+   | B3 composition | units joined by wire or decoupled links as one accelerator; dot variants 2 to 6, the case study |
+   | B4 tier A | bicg, mvt, gesummv and atax from dot's recipe fragments; fork and join; dot variant 1, which needs several accelerators on one core |
+
+2. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
+3. **M15:** tiling, a DMA per tile.
+4. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.
+5. **M11** and **M12** (layers, blocks, models) and the paper draft (P2).
 
 Alongside: P1 (paper plan). When called for: M6 (contract freeze), M8
 (automated DSE), M10 (cosim).

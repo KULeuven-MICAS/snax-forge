@@ -19,7 +19,7 @@ Rules (D117):
   `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D141**.
+  number: **D142**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm`
 (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design`
@@ -27,7 +27,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 |
 | lower | D64 D75 D105 D135 |
 | gvsoc | D120–D122 D125 D134 D137 |
 | brm | D68 D70 D82 D103 D129 D133 |
@@ -278,3 +278,8 @@ backend flag: lower, gen, build when needed, sw, gvsoc, check (the program's exi
 **D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only names
 it: SNAX-GVSoC's traces go to one `events.log`, a level turns trace names on, lines are linked by
 ids; the converter renames, never recounts, and cuts the window. → `run/`, C§7.
+
+**D141** · scope — M7's tier A, the composed bind and BASE1's forge side are one milestone, M13, the
+block library: the basic blocks, their composition and the kernels that use them are designed together,
+with dot's six variants as the case study, in phases B0 (flow pieces) to B4 (tier A). → ARCHITECTURE §8,
+`docs/STATUS.md`.

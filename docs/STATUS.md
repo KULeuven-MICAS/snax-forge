@@ -42,8 +42,8 @@ order (D116):
 
 | Milestone | Content | Status |
 |---|---|---|
-| M7 | Front ends: NPBench's DaCe sources in tiers, integers first (D113) | todo |
-| M13 | Composed bind: several unit BRMs as one accelerator (D112) | todo |
+| M13 | The block library (D141): basic blocks, their composition (D112) and dot's six variants; M7's tier A; BASE1's forge side | `wip` |
+| M7 | Front ends: NPBench's DaCe sources in tiers, integers first (D113); tier A is in M13 | todo |
 | M15 | Tiling: a DMA per tile | todo |
 | M9 | `jacobi1d` | todo |
 | M11 | Layers: conv2d, softmax and attention, HDC operations (D100) | todo |
@@ -54,9 +54,9 @@ order (D116):
 | M8 | Automated DSE over recipes, when sweeps call for it | todo |
 | M10 | Cosim of one accelerator (D52) | todo |
 
-M7's tiers interleave with the rest (ARCHITECTURE §8): tier A, then M13
-with LNK3, tiers B, C and P, M15, tier D with the GeMM (M9 inside it), then
-tier E.
+M7's tiers interleave with the rest (ARCHITECTURE §8): tier A inside M13,
+then tiers B, C and P, M15, tier D with the GeMM (M9 inside it), then tier
+E.
 
 ## Later Milestones
 
@@ -64,9 +64,9 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 | Milestone | Tasks | Content |
 |---|---|---|
-| P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step (BASE1); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
-| M7 | KER0 (`done`), ND1, FE1a, FE1b, FE1c, PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 (D113). KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). ND1 first: rank-free unit dataflow, map tagging, N-D fills, the streamer as an input of its own (open items 45, 46, 48, 78). FE1a is tier A, with LOW4 in it (mvt's in-place update, open item 47; gesummv's scalars); FE1b tier B; FE1c tier C; PACK1 tier P (open items 20 and 21; the reference executor accumulates as the hardware does; requantization); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
-| M13 | CMP0–CMP4, LNK3 | dot is parked until M13: `recipes/dot.json` and `examples/dot/` are kept, out of the tests (two accelerators, `gen.instances`). One recipe step binds a connected group of tasklets to a chain of unit BRMs as one accelerator, FIFOs inside, streamers outside (D112): the BRM format, the model, the sandbox, the lowering, then composed `dot`, mat-vec and mat-mat against a chain through L1, which needs several accelerators on one core (open item 79); M13 decides its baseline. LNK3: the composed accelerator (dot's MAC) generated to both sides and compared per phase as SG5 does |
+| P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step by hand (BASE1; its forge side, one `pixi run forge` per dot variant, is in M13); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
+| M13 | B0 (`wip`), B1, B2, B3, B4 | **B0** flow pieces: CLN1's leftovers; the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min`, constant casts and maps over several parameters (open item 37); the MatMul and Transpose pass; ND1's slice: 2-D containers, a tag without a split, the streamer from the temporal loops (open items 45, 46, 48, 78); a restart every T < n (open item 81). **B1** one description: `accelerator.json` for Emit and SNAX-GVSoC; each block a datapath and a controller, in three modules; per-unit JOBS, JOB_BEATS, STATUS, COUNTER and pins (open item 83). **B2** blocks, one per round: 1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO; `bind` on a group; `split_reduce`; the fold's `init` port. **B3** composition: the composite node, wire and decoupled links on both sides, one start, the link check; dot 2–6 at N = 512, W = 4 and 8. **B4** tier A: fragments applied by output name, `augment_init`, fork and join; bicg, mvt (LOW4, open item 47), gesummv, atax; dot 1 (open item 79). `recipes/dot.json` and `examples/dot/` stay parked until B3. |
+| M7 | KER0 (`done`), FE1b, FE1c, PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK1 tier P (open items 20 and 21; the reference executor accumulates as the hardware does; requantization); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
 | M11 | LAY1–LAY3 | conv2d tiled on a MAC-array BRM; softmax and attention with several BRMs; HDC bind, bundle and similarity |
@@ -80,15 +80,17 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 M14 is done, closed by CLN1: a recipe runs to a checked SNAX-GVSoC run
 (`pixi run flow`) and to a bundle whose ELF runs on snax_cluster's RTL
-(`pixi run forge`, D123). Next is the single generator (open item 68),
-planned in a brainstorm of its own; then M7's tier A and M13, in the order
-of ARCHITECTURE §8.
+(`pixi run forge`, D123). Next is M13's B0 (D141): CLN1's leftovers, the
+cluster headers, the importer, the MatMul and Transpose pass, ND1's slice
+and the restart every T < n. It is done when vecadd, vecmul, vsum and dot
+behave as before and rowsum, axpy, relu, bicg, mvt, gesummv and atax import
+and pass the reference check.
 
 ## Open Items
 
 Questions not decided yet. Numbers are never reused; a closed item is
 removed, and where it closed is in git history. Closed in CLN1: 63 (the ALU
-left snax-gvsoc; generated accelerators follow D130). Next free number: 92.
+left snax-gvsoc; generated accelerators follow D130). Next free number: 93.
 
 1. BRM dataflow notation: `affine` (D70), frozen in M6; a rank-free notation
    for unit BRMs comes with ND1 (open item 45).
@@ -153,11 +155,11 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 92.
 68. Generation is spread out: snaxgen and Chisel in snax_cluster (the
     wrappers, `streamer_csr_addr_map.h`), clustergen and regtool outputs
     copied into snax-gvsoc's `sw/` (D126), `snax_hjson` and its timing
-    constants, `snax_forge/gen` with the bundle. One generator in
-    snax-forge, planned in its own brainstorm, which also decides whether it
-    makes `sw/generated/`: the L1's size and base reach the program only
-    through it, so a design point that changes them needs it and the ELF
-    rebuilt.
+    constants, `snax_forge/gen` with the bundle. M13's B0 takes the lean
+    part: snax-forge writes the runtime's cluster headers
+    (`snitch_cluster_cfg.h`, `snitch_cluster_addrmap.h`) per design point,
+    so a design point that changes the L1's size or base gets a matching
+    ELF. The rest waits until a design needs it.
 69. The SNAX crossbar's AXI input is wired but no program sends through it,
     on either side (snax-gvsoc `SG7.md`).
 70. On SNAX-GVSoC a store or AMO after a pending L1 load waits for the
@@ -183,7 +185,7 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 92.
 79. Several accelerators on one core: snax_cluster has `snax_acc_mux_demux`
     and CSR 1990 (`snax_multi_alu_cluster.hjson`); SNAX-GVSoC lacks CSR 1990,
     `snax_hjson` and the generator (`gen.instances`) refuse it, and the
-    headers would collide by name. Decided with M13's baseline.
+    headers would collide by name. M13's B4 adds it for dot 1.
 80. One Snitch core driving both the DMA and the accelerator: the C backend
     takes core roles from the cluster file, `snax_hjson` wants xdma on the
     last core. Never run.
@@ -194,7 +196,7 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 92.
     them itself; until then the check is the program's own (D136).
 83. Control alignment with snax_cluster: a start with a zero count, a done
     CSR (amends D130 and `SnaxShell`), where the counter lives, a Decoupled
-    `ctrl` in the blocks. Decided by M13's baseline at the latest.
+    `ctrl` in the blocks. Decided in M13's B1.
 86. A custom tag (`--set accelerator_slot=snax_forge_<x>`) is untested past
     the generator's file names, nothing checks that a tag starts with
     `snax_forge`, and several generated accelerators per cluster wait for
@@ -209,6 +211,10 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 92.
 91. vsum's window over N (64 to 4096) has no per-element gap: SNAX-GVSoC
     and the RTL differ by at most 16 cycles (2.2%), their slopes' ratio
     0.996, with `forge counter` equal. Kept as is (D123).
+92. The per-unit busy and done pins (M13 B1) into a hardware barrier in the
+    cluster, like `snitch_hw_barrier`, so a core waits on the units in the
+    barrier instead of polling their CSRs: a snax_cluster template change,
+    then SNAX-GVSoC to match.
 
 ## Sync Reminders
 
