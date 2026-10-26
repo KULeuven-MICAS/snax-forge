@@ -96,12 +96,12 @@ def _summary(design: Design) -> str:
         f"{changes} change{'' if changes == 1 else 's'}): checks passed"
     )
     lines = [head, "streamer shell:"]
-    for s in resolve(pf, design.instances).values():
+    for s in resolve(pf, design.graph, design.instances).values():
         side = "writer" if s.write else "reader"
         o = s.options
         lines.append(
             f"  {s.name:<12} {s.instance}.{s.port:<6} {side}  {s.n_ports} lanes "
-            f"{list(s.spatial_bounds)}  temporal_dims {o.temporal_dims}  "
+            f"{list(s.spatial_bounds)}  temporal_dims {s.temporal_dims}  "
             f"fifo_depth {o.fifo_depth}"
         )
     plan = design.memory

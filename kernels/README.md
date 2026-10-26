@@ -33,35 +33,36 @@ compute, what the unit does, down. The argument is PAPER §6.2's.
 
 ### axpy
 
-`blas/axpy.py` · no tier · int32
+`blas/axpy.py` · no tier · int64 (int32 in KER0; back to int32 once narrow elements are moved, open item 21)
 
 $$y \leftarrow y + \alpha x$$
 
-- `alpha` is a scalar; the importer takes arrays only, so it would live in a
-  CSR or a streamer with stride 0.
+- `alpha` is a scalar: the importer makes it a one-element container with
+  attr `sdfg.scalar`; in hardware it would live in a CSR or a streamer with
+  stride 0.
 - `y` is updated in place: read and written by the same task (open item 47).
 
 ## elementwise/
 
 ### matadd
 
-`elementwise/matadd.py` · no tier · int32
+`elementwise/matadd.py` · no tier · int64 (int32 in KER0; back to int32 once narrow elements are moved, open item 21)
 
 $$C = A + B, \quad A, B, C \in \mathbb{Z}^{M \times N}$$
 
-- `vecadd` in 2-D: one map over two parameters, which the importer takes
-  once maps nest one per parameter (D71, ND1).
+- `vecadd` in 2-D: one map over two parameters, which the importer writes
+  as two nested maps, one per parameter (D71).
 - Contiguous rows: it can flatten into `vecadd`, or keep a spatial and a
   temporal loop in the streamer.
 
 ### relu
 
-`elementwise/relu.py` · no tier · int32
+`elementwise/relu.py` · no tier · int64 (int32 in KER0; back to int32 once narrow elements are moved, open item 21)
 
 $$B = \max(A, 0)$$
 
-- `np.maximum` becomes a `max(...)` call, outside the expression grammar
-  (open item 37).
+- `np.maximum` becomes `max(in1, 0)`, in the expression grammar; at int32
+  DaCe writes the 0 as `dace.int32(0)`, a constant cast the importer folds.
 - A compare-and-select unit at II 1; `mlp`, `lenet` and `resnet` use it
   between layers.
 
@@ -73,7 +74,12 @@ $$y_i = \sum_j A_{ij}$$
 
 - A partial reduction: the reduced axis is not the output's, so the
   accumulator restarts per row (T < N).
-- The result goes through a view, which the importer does not take yet (FE1).
+- It runs: `recipes/rowsum.json` (adder tree, W = 4) and
+  `recipes/rowsum_serial.json` (accumulator, W = 1) tag the row map temporal
+  and split the column map, so T = N / W beats per sum and M sums per run
+  (the restart, open item 81).
+- The result goes through a view, which the importer folds: the Reduce writes
+  `y` directly.
 - `softmax`'s sum pass has this shape.
 
 ### vdiv
@@ -125,8 +131,9 @@ $$\mathit{out} = \sum_i A_i B_i$$
 
 $$y = A^T (A x)$$
 
-- No maps at all: a Transpose and two MatMuls, library nodes the importer
-  must expand.
+- No maps at all: a Transpose and two MatMuls, which `sdfg/expand.py`
+  expands before import into dot's shape, the Transpose folded into the
+  second product's indices (D71).
 - A chaining barrier: `A x` must be complete before the second product
   starts, so it lives in L1 or in the unit's state.
 - `A` is read twice, the second time transposed: a strided streamer, or one

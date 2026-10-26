@@ -17,27 +17,7 @@
   "params": {"lanes": "W", "lanes_out": 1, "op": "op"},
   "code": "out = a"
  },
- "dataflow": {
-  "notation": "affine",
-  "ports": {
-   "a": {
-    "shape": ["n * W"],
-    "offset": [0],
-    "loops": [
-     {"bound": "n", "strides": ["W"], "spatial": false},
-     {"bound": "W", "strides": [1], "spatial": true}
-    ]
-   },
-   "out": {
-    "shape": ["n // T"],
-    "offset": [0],
-    "loops": [
-     {"bound": "n // T", "strides": [1], "spatial": false},
-     {"bound": 1, "strides": [1], "spatial": true}
-    ]
-   }
-  }
- },
+ "dataflow": {"notation": "stream", "ports": {"a": {}, "out": {}}},
  "pattern": {"family": "reduce", "attrs": {"op": "add"}},
  "implementations": {
   "chisel_accumulator": {

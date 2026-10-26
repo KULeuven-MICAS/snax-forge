@@ -225,7 +225,7 @@ class _Program:
 
     def streamer(self, s: Configure) -> list[str]:
         m, v = self.movers[s.component], s.values
-        dims = self.point.streamers[s.component].options.temporal_dims
+        dims = self.point.streamers[s.component].temporal_dims
         bounds, strides = list(v["temporal_bounds"]), list(v["temporal_strides"])
         spatial = list(v["spatial_strides"])  # check_values checked every count against the dims
         bounds += [1] * (dims - len(bounds))

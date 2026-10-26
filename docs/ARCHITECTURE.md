@@ -59,7 +59,7 @@ holds the related work.
 3. **The user owns the accelerator, the model owns the platform** (D51). The
    platform is SNAX's, read from its hjson, and modelled to match its RTL.
 4. **Decisions are separate from derivations.** SNAX-SANDBOX and the design
-   step decide; importers and SNAX-LOWER derive; the model measures.
+   step decide; SDFG ingest, importers and SNAX-LOWER derive; the model measures.
 5. **Everything is text and diffable.** Graphs, BRMs, recipes, platforms,
    design points, task lists, programs, profiles and traces.
 6. **Extend without editing the core**, by registration and namespaced attrs
@@ -106,8 +106,8 @@ and the flow's ELF runs on its RTL (section 5.7, `pixi run forge`).
 
 | Component | Code | Fields | Consumes | Produces |
 |---|---|---|---|---|
-| SDFG ingest | `sdfg/` | | a kernel's DaCe source in `kernels/` | raw and simplified SDFG |
-| Importer | `dfg/import_sdfg.py` | C§11 | a kernel's simplified SDFG | `.snaxdfg` |
+| SDFG ingest | `sdfg/` | | a kernel's DaCe source in `kernels/` | raw, simplified and expanded SDFG |
+| Importer | `dfg/import_sdfg.py` | C§11 | a kernel's expanded SDFG | `.snaxdfg` |
 | Reference executor | `dfg/execute.py` | | `.snaxdfg`, inputs | golden output |
 | SNAX-BRM | `brm/` | C§10 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§12 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
@@ -137,8 +137,10 @@ whose output memlet carries a `reduce` (D102); an accelerated node is one
 beat of a bound BRM instance (D82). Expressions use one grammar shared with
 the BRM (`expr.py`).
 
-The importer (`dfg/import_sdfg.py`, `pixi run import-dfg <kernel>`) reads the
-simplified SDFG that `pixi run sdfg <kernel>` writes, keeps the kernel's
+Before it, `sdfg/expand.py` expands DaCe's MatMul and Transpose into dot's
+shape, a multiply map and a Reduce over the contracted axis (D71). The
+importer (`dfg/import_sdfg.py`, `pixi run import-dfg <kernel>`) reads the
+expanded SDFG that `pixi run sdfg <kernel>` writes, keeps the kernel's
 names, decides nothing, and names what it does not support (D71). Sequential
 loops and branches come with the kernels that need them (open item 36).
 
@@ -167,10 +169,10 @@ on `SnaxUnit` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
 **SNAX-SANDBOX** (D72, `sandbox/`; C§12). Registered transforms rewrite a
 `.snaxdfg`; a recipe in `recipes/` names a kernel, params, symbol values and
 the steps; the reference executor checks every step; `--set W=8` runs one
-point of a sweep. Transforms: `split_map`, `bind` (patterns `elementwise` and
-`reduce`, design params read off the graph, D73), and their inverses `unbind`
-and `join_map`. **[PLANNED]** the composed bind (M13, D112) and a tile
-transform (LOW3b).
+point of a sweep. Transforms: `split_map`, `tag_map` (a tag without a split),
+`bind` (patterns `elementwise` and `reduce`, design params read off the graph,
+D73), and their inverses `untag_map`, `unbind` and `join_map`. **[PLANNED]** `bind` on a group of tasklets, `split_reduce`
+and the composite (M13 B2–B3, D112), and a tile transform (LOW3b).
 
 **The design step** (D84–D87, `design/`; C§13–C§15). It pairs a bound graph
 with a platform from `platforms/`, resolves the streamers (D12), makes the
@@ -221,15 +223,15 @@ RTL wins (section 7).
 
 ### 5.7 SNAX link
 
-A design point gives SNAX-GVSoC its three hjson files, the CSR headers,
-`data.h` and `main.c`, and no generated code to compile (`gen/gvsoc.py`,
-D134; C§16). For snax_cluster it gives a bundle (`pixi run bundle`,
-`gen/bundle.py`, D111; C§18): the same files, and the accelerator RTL that
-`gen/rtl.py` resolves into `rtl.json`, checked against the block catalogue
-`hw/chisel/blocks.json`, and `Emit --spec` builds as `<tag>_shell_wrapper`
-with its own CSR manager (D130; C§17). The accelerator is the base
-cluster's `snax_forge` slot and its cluster `snax_forge_cluster`, so neither
-takes a name of snax_cluster's own (D131).
+A design point gives SNAX-GVSoC its three hjson files, the CSR and cluster
+headers, `data.h` and `main.c`, and no generated code to compile
+(`gen/gvsoc.py`, D134; C§16). For snax_cluster it gives a bundle (`pixi run
+bundle`, `gen/bundle.py`, D111; C§18): the same files, and the accelerator
+RTL that `gen/rtl.py` resolves into `rtl.json`, checked against the block
+catalogue `hw/chisel/blocks.json`, and `Emit --spec` builds as
+`<tag>_shell_wrapper` with its own CSR manager (D130; C§17). The accelerator
+is the base cluster's `snax_forge` slot and its cluster
+`snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131).
 
 `pixi run forge RECIPE [--set ...]` (`flow/forge.py`) runs the flow, the
 bundle and the bundle's program, checks that the program is the flow's ELF,
@@ -296,15 +298,23 @@ same `forge counter` on SNAX-GVSoC and on the RTL and the window within 10%
 
 Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16
 (the baseline) and M14 (generation to both sides, closed by CLN1). The order
-from here (D116, `docs/STATUS.md` has the tasks):
+from here (D116, D141; `docs/STATUS.md` has the tasks):
 
-1. **One generator** (open item 68), planned in its own brainstorm.
-2. **M7 tier A:** 2-D plumbing, int64 mat-vecs (D113, PAPER §6.1).
-3. **M13:** the composed bind, then the composed accelerator in SNAX (LNK3).
-4. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
-5. **M15:** tiling, a DMA per tile.
-6. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.
-7. **M11** and **M12** (layers, blocks, models) and the paper draft (P2).
+1. **M13, the block library** (D141): M7's tier A, the composed bind and
+   BASE1's forge side as one milestone, in five phases.
+
+   | Phase | Content |
+   |---|---|
+   | B0 flow pieces | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
+   | B1 one description | `accelerator.json` per design point, read by Emit and SNAX-GVSoC; each block a datapath and a controller, generated as three modules |
+   | B2 blocks | one hand-written BRM per basic block (1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO), each with its Chisel block and SNAX-GVSoC model |
+   | B3 composition | units joined by wire or decoupled links as one accelerator; dot variants 2 to 6, the case study |
+   | B4 tier A | bicg, mvt, gesummv and atax from dot's recipe fragments; fork and join; dot variant 1, which needs several accelerators on one core |
+
+2. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
+3. **M15:** tiling, a DMA per tile.
+4. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.
+5. **M11** and **M12** (layers, blocks, models) and the paper draft (P2).
 
 Alongside: P1 (paper plan). When called for: M6 (contract freeze), M8
 (automated DSE), M10 (cosim).

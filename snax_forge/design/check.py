@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.brm import BrmError, Instance
+from snax_forge.brm import BrmError, Instance, memlet_ordered
 from snax_forge.dfg import DfgError, Graph, Node
 from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import moved_bytes, round_up
@@ -47,6 +47,7 @@ from .streamers import (
     firing_loops,
     instance_nodes,
     instance_of,
+    memlet_spatial_bounds,
     nest_spatial_bounds,
     streamer_name,
 )
@@ -400,15 +401,21 @@ def _connect_lanes(design: Design) -> Iterable[Problem]:
                 "remove spatial_bounds (it follows the port), or change the lanes in the recipe",
             )  # fmt: skip
             continue
+        node = instance_nodes(design.graph)[i]
         try:
-            want = nest_spatial_bounds(inst, p)
+            if memlet_ordered(inst.brm):  # stream: the bound memlet's ranges
+                m = (node.inputs | node.outputs)[p]
+                want = memlet_spatial_bounds(m, design.graph.bound_symbols, f"node {node.id}.{p}")
+                of = f"node {node.id}'s memlet {m.data}{m.subset}"
+            else:
+                want, of = nest_spatial_bounds(inst, p), f"port {p}'s nest"
         except ValueError as e:
             yield Problem("connect.lanes", where, str(e))
             continue
         if list(sb) != want:
             yield Problem(
                 "connect.lanes", where,
-                f"{sb} are not the spatial loops of port {p}'s nest, {want} (fastest first)",
+                f"{sb} are not the spatial loops of {of}, {want} (fastest first)",
                 f"remove spatial_bounds, or {_set(f'streamers.{s}.spatial_bounds', want)}",
             )  # fmt: skip
 
@@ -445,17 +452,19 @@ def _connect_dtype(design: Design) -> Iterable[Problem]:
 
 
 def _connect_temporal(design: Design) -> Iterable[Problem]:
-    """Each port needs one streamer temporal loop per firing loop around its node."""
-    pf, g = design.platform, design.graph
+    """Every map around a node is a firing loop, and every subset is affine in them.
+
+    Each streamer gets one temporal loop per firing loop its memlet runs over
+    (streamers.py, D84): the graph says how many, not the platform.
+    """
+    g = design.graph
     for n in accelerated(g):
         try:
             loops = firing_loops(g, n)
         except LoopError as e:
             yield Problem("connect.temporal", f"node {n.id}", str(e))
             continue
-        i = n.attrs["instance"]
         for conn, m in {**n.inputs, **n.outputs}.items():
-            s = streamer_name(i, conn)
             try:
                 for dim in m.subset:
                     for part in parse_dim(dim, "subset")[:2]:
@@ -464,15 +473,6 @@ def _connect_temporal(design: Design) -> Iterable[Problem]:
                 yield Problem(
                     "connect.temporal", f"node {n.id}.{conn}",
                     f"subset {m.subset} is not affine in the firing loops: {e}",
-                )  # fmt: skip
-                continue
-            have = pf.options(s).temporal_dims
-            if len(loops) > have:
-                yield Problem(
-                    "connect.temporal", f"streamer {s}",
-                    f"node {n.id} fires over {len(loops)} temporal loops "
-                    f"({', '.join(lp.map for lp in loops)}), the streamer has {have}",
-                    _set(f"streamers.{s}.temporal_dims", len(loops)),
                 )  # fmt: skip
 
 

@@ -309,15 +309,15 @@ second line cannot be written is a threat (Q11).
 |---|---|---|
 | SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (SG0–SG5) |
 | Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (LNK1, GEN3, LNK2a, GEN2a, FLOW3, GEN1, LNK2b, GEN2b) |
-| 2-D plumbing, the kernel set | E3, E4 | M7 (ND1, FE1a–FE3, LOW4) |
-| Composed bind | E1, E4–E6 | M13 |
-| Spatial-array and SIMD unit BRMs | E1, E5, E6 | new BRM tasks |
+| 2-D plumbing, the kernel set | E3, E4 | M13 (B0: ND1's slice), M7 (FE1b–FE3) |
+| Composed bind | E1, E4–E6 | M13 (B3, B4) |
+| Spatial-array and SIMD unit BRMs | E1, E5, E6 | M13 B2 (SIMD, fold, MAC); spatial arrays in tier D |
 | The engine-alone number | C3's baseline in E4 | DSE0 (open item 49) |
 | Cost model and characterisation | E4–E7 | section 7, not placed yet |
 | Sweep runner and a sweep view | E4, E5 | DSE5 (M8); the view is new |
 | Packing and port widths (int8, float32) | E1 on the GeMM, E5, E6 | PACK1 |
 | Tiling, per-tile DMA, reductions over tiles | E1 at large sizes, E5, E6 | LOW3b (M15) |
-| `exp`, `max`, division, casts | softmax in E5 | FE1c (open item 37) |
+| `exp`, `max`, division, casts | softmax in E5 | `max`, `min` and constant casts in M13 B0; `exp` and division in FE1c (open item 37) |
 | Speed on long runs | E5, E6 | BASE2 (open item 50) |
 | HLS engine as a BRM implementation | E8 | open item 28 |
 

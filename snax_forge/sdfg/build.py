@@ -1,4 +1,11 @@
-"""KernelSpec -> SDFG on disk, plus a correctness check against NumPy."""
+"""KernelSpec -> SDFG on disk, plus a correctness check against NumPy.
+
+``run`` writes each kernel's raw, simplified and expanded SDFG
+(``<kernel>.raw.sdfg``, ``.simplified.sdfg``, ``.expanded.sdfg``: the
+simplified one after ``expand.py``, the importer's input) and compiles the
+simplified and the expanded one against the kernel's reference. A kernel
+``expand`` refuses gets the error in its report instead of an expanded SDFG.
+"""
 
 from __future__ import annotations
 
@@ -41,7 +48,8 @@ def structural_summary(sdfg: dace.SDFG) -> dict:
     }
 
 
-def verify(spec: KernelSpec, sdfg: dace.SDFG) -> bool:
+def verify(spec: KernelSpec, sdfg: dace.SDFG, **sizes: int) -> bool:
+    """Compile ``sdfg`` and compare it with the kernel's reference on ``make_inputs(**sizes)``."""
     from snax_forge.dfg.execute import against_reference
 
     csdfg = sdfg.compile()
@@ -50,7 +58,7 @@ def verify(spec: KernelSpec, sdfg: dace.SDFG) -> bool:
         csdfg(**args, **spec.bind_symbols(args))
         return args
 
-    pairs = against_reference(spec, spec.make_inputs(np.random.default_rng(0)), run)
+    pairs = against_reference(spec, spec.make_inputs(np.random.default_rng(0), **sizes), run)
     return all(np.array_equal(got, ref) for got, ref in pairs.values())
 
 
@@ -71,6 +79,27 @@ def run(spec: KernelSpec) -> dict:
         }
         if simplify:
             report[tag]["matches_numpy"] = verify(spec, sdfg)
+
+    from snax_forge.dfg.import_sdfg import SdfgImportError
+
+    from .expand import expand
+
+    t0 = time.perf_counter()
+    sdfg = build(spec, simplify=True)
+    sdfg.name = f"{spec.name}_expanded"
+    try:
+        expand(sdfg)
+    except SdfgImportError as e:
+        report["expanded"] = {"error": str(e)}
+    else:
+        path = OUT / f"{spec.name}.expanded.sdfg"
+        sdfg.save(path)
+        report["expanded"] = {
+            "path": str(path),
+            "build_s": round(time.perf_counter() - t0, 2),
+            **structural_summary(sdfg),
+            "matches_numpy": verify(spec, sdfg),
+        }
 
     (OUT / f"{spec.name}.json").write_text(to_json(report))
     return report

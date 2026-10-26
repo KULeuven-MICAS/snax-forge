@@ -5,10 +5,11 @@ function, dataflow, pattern) and a map of implementations (source, supports,
 timing, binding). ``Brm.resolve`` builds an instance from an implementation
 and design-param values, checked against the generator's blocks; its
 function (function.py, ``function_of``) is a registered accelerator kind the
-reference executor runs. The ``affine``
-dataflow notation (D70) gives nests that ``task_nest`` resolves and
-enumerates for one task; SNAX-LOWER maps them onto streamer values
-(``snax_forge.lower.streams``). The library of hand-written BRMs
+reference executor runs. Two dataflow notations (D70): ``affine`` gives
+nests that ``task_nest`` resolves and enumerates for one task, which
+SNAX-LOWER maps onto streamer values (``snax_forge.lower.streams``);
+``stream``, for unit BRMs, leaves the order to the bound memlet
+(``memlet_ordered``). The library of hand-written BRMs
 (library.py, ``load_brm``) holds ``elementwise_add``, ``elementwise_mul``
 and ``accumulate``, a reduction named by its pattern and kind. ``drain`` is
 a third timing number (D103), and port names can appear in code. An
@@ -18,7 +19,7 @@ implementation's ``binding`` (binding.py, D129) has its ``control`` and
 
 from snax_forge.expr import ExprError
 
-from . import affine  # registers the "affine" notation
+from . import affine, stream  # register the "affine" and "stream" notations
 from .affine import Nest, resolve_nest, task_nest
 from .binding import CONTROLS, WAITS, register_control, register_wait
 from .brm import (
@@ -37,6 +38,7 @@ from .function import KINDS, OPS, AccelFunction, AccelPort, function_of, registe
 from .instance import Instance, resolve
 from .library import LIBRARY, library_names, load_brm
 from .notation import NOTATIONS, register_notation
+from .stream import memlet_ordered
 
 __all__ = [
     "CONTROLS",
@@ -64,6 +66,7 @@ __all__ = [
     "function_of",
     "library_names",
     "load_brm",
+    "memlet_ordered",
     "register_control",
     "register_kind",
     "register_notation",
@@ -71,5 +74,6 @@ __all__ = [
     "register_wait",
     "resolve",
     "resolve_nest",
+    "stream",
     "task_nest",
 ]

@@ -315,7 +315,7 @@ def _check(s: Configure, point: DesignPoint) -> None:
             raise ValueError(
                 f"{len(shell.spatial_bounds)} spatial bounds but {len(ss)} spatial strides"
             )
-        _fit(len(tb), shell.options.temporal_dims, s.component)
+        _fit(len(tb), shell.temporal_dims, s.component)
         if any(b < 1 for b in tb):
             raise ValueError("temporal bounds must be >= 1")
     elif s.type == "dma":

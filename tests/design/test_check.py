@@ -7,7 +7,16 @@ import json
 
 import pytest
 
-from snax_forge.design import CHECKS, Design, DesignError, Platform, check, load, register_check
+from snax_forge.design import (
+    CHECKS,
+    Design,
+    DesignError,
+    DesignPoint,
+    Platform,
+    check,
+    load,
+    register_check,
+)
 from snax_forge.design.check import RUNTIME_MARGIN, RUNTIME_STACK
 from snax_forge.design.memory import MEMORY_PASSES, MemorySpec
 from snax_forge.design.problems import Problem
@@ -43,7 +52,7 @@ def test_vecadd_w8_passes_on_the_same_platform():
 
 def test_changes_that_still_fit_pass():
     sets = [("l1.n_banks", 32), ("streamers.acc_out.fifo_depth", 4),
-            ("streamers.acc_a.temporal_dims", 2)]  # fmt: skip
+            ("streamers.acc_a.fifo_depth", 3)]  # fmt: skip
     assert problems(design(sets=sets)) == []
 
 
@@ -510,16 +519,23 @@ def test_memory_waits_for_connect():
 # =============================================================================
 
 
-def test_each_firing_loop_needs_a_streamer_loop():
-    got = problems(design(edit_graph=two_loops))
-    assert [(p.code, p.where) for p in got] == [
-        ("connect.temporal", f"streamer {s}") for s in ("acc_a", "acc_b", "acc_out")
-    ]
-    assert "fires over 2 temporal loops (add_map_o, add_map), the streamer has 1" in got[0].message
-    assert got[0].fix == "--set platform.streamers.acc_a.temporal_dims=2"
-    assert (
-        problems(design(edit_graph=two_loops, sets=[("streamers.default.temporal_dims", 2)])) == []
-    )
+def test_each_firing_loop_gives_a_streamer_loop():
+    """temporal_dims comes from the graph (D84): two firing loops, two streamer loops, with no
+    platform change."""
+    d = design(edit_graph=two_loops)
+    assert problems(d) == []
+    point = DesignPoint.of(d, "two")
+    assert {s.name: s.temporal_dims for s in point.streamers.values()} == {
+        "acc_a": 2, "acc_b": 2, "acc_out": 2
+    }  # fmt: skip
+
+
+def test_a_platform_with_temporal_dims_is_refused():
+    """A platform file from before M13's B0: the key is named, and where it comes from now."""
+    with pytest.raises(DesignError, match="streamers.default.temporal_dims: is no longer"):
+        design(edit_platform=lambda d: d["streamers"]["default"].update(temporal_dims=1))
+    with pytest.raises(DesignError, match="acc_a.temporal_dims: comes from the graph"):
+        design(sets=[("streamers.acc_a.temporal_dims", 2)])
 
 
 def test_a_tile_map_is_not_lowered_yet():

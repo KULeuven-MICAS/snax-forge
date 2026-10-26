@@ -6,12 +6,15 @@ notation of their own, ``test_list``: a nest is a list of logical indices,
 and a port's list must hold a multiple of its lanes when they are constant.
 
 ``affine_adder`` and ``affine_reducer`` are the same BRMs with ``affine``
-nests: a vector walked W elements per beat.
+nests: a vector walked W elements per beat. ``affine_elementwise_add`` is the
+library's ``elementwise_add`` with those nests in place of its ``stream`` ones,
+as it was before M13's B0: the BRM whose nest SNAX-LOWER's order check reads.
 """
 
 from __future__ import annotations
 
 import copy
+import json
 from typing import Any
 
 from snax_forge import expr
@@ -124,3 +127,13 @@ def affine_reducer() -> dict[str, Any]:
         "ports": {"a": vector_nest("n", "W"), "out": vector_nest("n // T", "lanes_out")},
     }
     return copy.deepcopy(d)
+
+
+def affine_elementwise_add() -> Any:
+    """The library's elementwise_add with affine nests (see the module doc), as a Brm."""
+    from snax_forge.brm import LIBRARY, Brm
+
+    d = json.loads((LIBRARY / "elementwise_add.json").read_text())
+    nest = vector_nest("n", "W")
+    d["dataflow"] = {"notation": "affine", "ports": {"a": nest, "b": nest, "out": nest}}
+    return Brm.from_dict(d)

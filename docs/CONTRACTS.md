@@ -288,7 +288,7 @@ and a missing part is rejected by name.
 |---|---|---|
 | `interface` | params (`design` / `runtime`) and ports (name, direction, lanes, rate, dtype) | everything below |
 | `function` | an accelerator kind registered in `brm/function.py`, its factory params without timing, and `code`: what one lane computes (D82) | the reference executor; `bind` and the accelerated node (`code`) |
-| `dataflow` | a notation and one nest per port, in logical indices | the streamer values |
+| `dataflow` | a notation (`affine` or `stream`) and one nest per port, in logical indices | the streamer values (`affine`), or nothing beyond the interface (`stream`) |
 | `pattern` | `family` (a matcher registered in the sandbox), its `attrs` | SNAX-SANDBOX's `bind` (section 12) |
 | `implementations` | per name: `source` (`chisel` only), `supports`, `timing` (`latency`, `initiation_interval`, `drain`), `binding` (null, or `block`, `args`, `control`, `csrs`, `wait`, optionally `ports`, D129) | the GVSoC accelerator, the HW generator |
 
@@ -373,24 +373,24 @@ block's (by default the same name). Expressions are stored canonical.
   }
 ```
 
-**The affine nest** of a port: the operand's `shape`, an `offset` and
-`loops`, outermost first, each with a `bound`, one stride per operand
-dimension and a `spatial` flag; the element of a step is `offset + sum(i_l *
-strides_l)`. Temporal loops first (one step is one beat), spatial loops last
-(the lanes, the last fastest); spatial bounds use design params only and
-multiply to the port's lanes. A temporal stride of 0 repeats a beat (D70).
-Section 9 maps the nest through a layout onto a streamer's values.
+**Two notations** (D70). An **`affine`** nest of a port: the operand's
+`shape`, an `offset` and `loops`, outermost first, each with a `bound`, one
+stride per operand dimension and a `spatial` flag; the element of a step is
+`offset + sum(i_l * strides_l)`. Temporal loops first (one step is one beat),
+spatial loops last (the lanes, the last fastest); spatial bounds use design
+params only and multiply to the port's lanes. A temporal stride of 0 repeats a
+beat. Section 9 maps the nest through a layout onto a streamer's values, and
+`bind` checks that the memlets give its order.
+
+A **`stream`** nest, for unit BRMs, is empty: the port's lanes, rate and dtype
+are the interface's, and the bound memlet gives the element order, so `bind`
+checks no order, SNAX-LOWER takes the streamer's values from the memlet alone,
+and the design step takes the spatial bounds from the memlet's ranges. Any key
+is refused. The library's BRMs are all in it:
 
 <!-- snippet: snax_forge/brm/library/elementwise_add.json -->
 ```json
-   "a": {
-    "shape": ["n * W"],
-    "offset": [0],
-    "loops": [
-     {"bound": "n", "strides": ["W"], "spatial": false},
-     {"bound": "W", "strides": [1], "spatial": true}
-    ]
-   },
+ "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}},
 ```
 
 ## 11. SNAX-DFG
@@ -404,7 +404,7 @@ validated when it is made.
 |---|---|
 | `name` | the kernel |
 | `symbols` | name → int or `null`: `null` as imported, the value once a recipe binds it; expressions keep the name |
-| `containers` | name → `shape` (ints or expressions over symbols), `dtype` (a NumPy dtype name), `transient`, `attrs` (namespaced only) |
+| `containers` | name → `shape` (ints or expressions over symbols), `dtype` (a NumPy dtype name), `transient`, `attrs` (namespaced only; `sdfg.scalar: true` marks a kernel's scalar argument, shape `[1]`, read as element 0, which the reference executor also takes as a 0-d input) |
 | `body` | the nodes, in execution order |
 
 **Nodes.** Every node has `id`, `kind`, `inputs`, `outputs`, `attrs` and,
@@ -431,7 +431,7 @@ and on an accelerated node. dot as imported:
 
 | Kind | Attrs | Body | Connectors |
 |---|---|---|---|
-| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`) | yes: runs once per value of `var` | none (derived from the body) |
+| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`); `loop.tagged` (true when `tag_map` set the kind) | yes: runs once per value of `var` | none (derived from the body) |
 | `tasklet` | `code`: one `output = expression` per output connector | no | one element each: indices only |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
 
@@ -441,8 +441,10 @@ untouched. More kinds come with `register_kind`.
 
 **Names.** Every name in an expression is a symbol or an enclosing map's
 `var`; shapes use symbols only; symbols, containers and variables never
-share a name. Expressions are stored as `ast.unparse` writes them, one
-without names as an int.
+share a name. An expression is ints, names, `+ - * //`, and `max(a, b)`,
+`min(a, b)` (two arguments, no other call; `snax_forge/expr.py`).
+Expressions are stored as `ast.unparse` writes them, one without names as
+an int.
 
 vecadd after `split_map` (W = 4) and `bind`: the temporal map keeps what it
 was split from, and the accelerated node what it computes and what it
@@ -500,7 +502,9 @@ as `recipe.json`.
 | Transform | Params | Does |
 |---|---|---|
 | `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor` |
-| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; the lanes param comes from the spatial bound; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D102) |
+| `tag_map` | `map` (id), `kind` (`temporal` or `tile`) | an untagged map is tagged as it is, not split, and records it (`loop.tagged`); a tagged map is an error |
+| `untag_map` | `map` (id) | the tag `tag_map` set is removed; a map `split_map` tagged is an error (`join_map` undoes it) |
+| `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; every map around the spatial map must be `temporal` (the firing loops: an untagged one is an error naming `tag_map`, a `tile` one is not lowered yet); the lanes param comes from the spatial bound; the dimension over the spatial variable becomes the lanes' range, the others stay indices; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D102) |
 | `unbind` | `node` (accelerated id) | the accelerated node becomes the subtree it `replaced` |
 | `join_map` | `map` (id) | a temporal map with `loop.split` and its spatial map become the map they were split from |
 
@@ -573,15 +577,18 @@ unknown keys and wrong types are errors, all reported at once (section 14).
 
 **The streamer shell** (D12). One streamer per port of every accelerated
 instance, `<instance>_<port>`. The port decides `write`, `n_ports` (its
-lanes) and, unless an entry gives them, `spatial_bounds` (the nest's spatial
-loops, fastest first). `default` holds `temporal_dims` and `fifo_depth`
-(each >= 1); an entry named after a streamer overrides them and
-`spatial_bounds` for it alone.
+lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an
+`affine` nest's spatial loops, a `stream` port's bound memlet ranges). The
+graph decides `temporal_dims`: the firing loops the port's memlet runs over,
+at least 1, the most over an instance's nodes (D84); the design point records
+it per streamer. `default` holds `fifo_depth` (>= 1); an entry named after a
+streamer overrides it and `spatial_bounds` for it alone. A platform that sets
+`temporal_dims` is refused (`platform.keys`), as is `--set` of it.
 
 <!-- snippet: platforms/small16.json -->
 ```json
  "wait_mode": "poll",
- "streamers": {"default": {"temporal_dims": 1, "fifo_depth": 2}}
+ "streamers": {"default": {"fifo_depth": 2}}
 ```
 
 **Working copies.** `pixi run design GRAPH --platform P --set
@@ -594,8 +601,8 @@ platform.PATH=VALUE` sets a field by its path (`l1.n_banks`,
 **From a cluster file** (D131, `design/hjson_platform.py`). `pixi run design
 from-hjson HJSON NAME` writes an original `platforms/NAME.json`: the L1 and
 L2 from the hjson (the reader's docstring lists the keys), `streamers.default`
-from the one accelerator's streamer template, whose movers must agree, the
-rest small16's, `hjson` (under snax-forge's root, `hjson.path`) and
+(its `fifo_depth`) from the one accelerator's streamer template, whose movers
+must agree, the rest small16's, `hjson` (under snax-forge's root, `hjson.path`) and
 `accelerator_slot` `snax_forge`. `snax_forge.json` is read this way from
 `platforms/snax_forge_cluster.hjson`:
 
@@ -631,7 +638,7 @@ Stages: `platform` and `graph` independently, `connect` when both passed,
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
 | `connect.dtype` | a container whose dtype is not the L1's or not its port's, or an L1 with more than one element per word (open item 21) |
-| `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), a subset that is not affine in the firing loops, or a streamer with fewer `temporal_dims` than the node's firing loops (the fix names the count) |
+| `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), or a subset that is not affine in the firing loops |
 | `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest), on a memory the container does not live in, or on L2 (the link places it, D86); an unknown pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
 | `memory.layout` | a layout whose shape is not its container's |
@@ -695,7 +702,7 @@ file is JSON. One design point gives byte-identical files wherever written.
 | `<platform>.hjson` | the cluster: the platform's `hjson`, its comments dropped and its key order kept, with `cluster.tcdm.banks`, `.size` (KiB), `data_width`, `cluster_base_addr`, `dma_data_width` and `dram` written from the platform, `cluster.name` `snax_forge_cluster` (also in `cluster.bender_target`, in place of the source's name; a source without its own name there is `gen.source`), and the slot set; the source's template, referred to only by the slot, dropped |
 | `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds`, `temporal_dim`, `num_channel` (64-bit channels) and `fifo_depth` |
 | `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
-| `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h` (`gen/headers.py`) |
+| `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h`, and the runtime's `snitch_cluster_cfg.h` and `snitch_cluster_addrmap.h`, as snax_cluster's templates render them from the cluster file (`gen/headers.py`, D126) |
 | `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, padded to whole DMA beats as its L2 layout (D105) and aligned to the beat |
 | `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens (`forge data:`), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
 | `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |

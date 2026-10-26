@@ -25,9 +25,10 @@ Built-in kinds:
                  ``loop.kind`` (tile, temporal, spatial) says how SNAX-SANDBOX
                  mapped it (D73); absent as imported. ``loop.split`` (D82) on a
                  temporal map is the ``var`` and ``range`` it had before
-                 split_map, so join_map can undo the split. No connectors: the
-                 memlets are its body's, and the outer ones SDFG draws on a map
-                 are derived by propagation.
+                 split_map, so join_map can undo the split; ``loop.tagged``
+                 that tag_map set the kind, so untag_map can take it back. No
+                 connectors: the memlets are its body's, and the outer ones
+                 SDFG draws on a map are derived by propagation.
     tasklet      ``code``: one assignment per output connector over the input
                  connectors, in the expression grammar. One element per
                  connector: its memlets are indices, never ranges. An output

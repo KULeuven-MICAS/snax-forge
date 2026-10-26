@@ -5,11 +5,15 @@ them, and every port of its BRM in port order, one streamer:
 
     name            <instance>_<port> (D75)
     write           the port's direction is "out"
-    spatial_bounds  the platform entry's, else the port nest's spatial loops,
-                    fastest first (what snax_forge/lower/streams.py requires)
+    spatial_bounds  the platform entry's, else, fastest first, the port nest's
+                    spatial loops (``affine``, what snax_forge/lower/streams.py
+                    requires) or the bound memlet's ranges (``stream``, as
+                    SNAX-LOWER's ``memlet_values`` reads them)
     n_ports         their product: the port's lanes
-    temporal_dims, fifo_depth
-                    the platform's ``default`` with the streamer's entry on top
+    temporal_dims   from the graph: the firing loops the port's memlet runs
+                    over (``port_loops``, as SNAX-LOWER takes them), at least
+                    1; with several nodes on one instance, the most (D84)
+    fifo_depth      the platform's ``default`` with the streamer's entry on top
 
 ``instances`` reads the instances off the graph and resolves them against
 the BRM library; ``resolve`` builds the shell. Neither checks the pairing:
@@ -24,9 +28,9 @@ from math import prod
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.brm import Instance, load_brm, task_nest
-from snax_forge.dfg import Graph, Node
-from snax_forge.dfg.subset import map_range
+from snax_forge.brm import Instance, load_brm, memlet_ordered, task_nest
+from snax_forge.dfg import Graph, Memlet, Node
+from snax_forge.dfg.subset import map_range, parse_dim
 
 from .platform import Platform, StreamerOptions
 
@@ -40,6 +44,7 @@ class Streamer:
     port: str
     write: bool
     spatial_bounds: tuple[int, ...]
+    temporal_dims: int
     options: StreamerOptions
 
     @property
@@ -53,6 +58,7 @@ class Streamer:
             "write": self.write,
             "n_ports": self.n_ports,
             "spatial_bounds": list(self.spatial_bounds),
+            "temporal_dims": self.temporal_dims,
             **self.options.to_dict(),
         }
 
@@ -122,6 +128,30 @@ def firing_loops(graph: Graph, node: Node) -> list[Loop]:
     return loops
 
 
+def port_loops(inst: Instance, port: str, memlet: Memlet, loops: list[Loop]) -> list[Loop]:
+    """The firing loops a port's streamer runs over: all of them at rate 1; for a named
+    rate, which moves one beat per T firings, the loops its memlet uses (D102)."""
+    if inst.brm.port(port).rate == 1:
+        return loops
+    return [lp for lp in loops if lp.var in memlet.names]
+
+
+def memlet_spatial_bounds(m: Memlet, symbols: dict[str, int], what: str) -> list[int]:
+    """The lanes of a bound memlet: one bound per range dimension, fastest (last) first.
+
+    The same rule as SNAX-LOWER's ``memlet_values``: a range's length over its step.
+    """
+    out = []
+    for dim in m.subset:
+        parts = parse_dim(dim, what)
+        if len(parts) == 3:
+            diff = f"({parts[1]}) - ({parts[0]})"
+            loop_vars = sorted(expr.names(diff) - set(symbols))  # cancel out of a range's length
+            length = expr.evaluate(expr.linear(diff, loop_vars)[0], symbols)
+            out.append(len(range(0, length, parts[2])))
+    return out[::-1]
+
+
 def nest_spatial_bounds(inst: Instance, port: str) -> list[int]:
     """The spatial loops of ``port``'s nest, fastest first (as streams.py maps them).
 
@@ -134,12 +164,28 @@ def nest_spatial_bounds(inst: Instance, port: str) -> list[int]:
     return [b for b, _ in reversed(nest.spatial)]
 
 
-def resolve(platform: Platform, insts: dict[str, Instance]) -> dict[str, Streamer]:
-    """The shell for ``insts`` on ``platform``, by streamer name; see the module doc."""
+def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dict[str, Streamer]:
+    """The shell for ``insts`` of ``graph`` on ``platform``, by streamer name; see the module doc."""
     out: dict[str, Streamer] = {}
+    symbols = graph.bound_symbols
+    nodes = accelerated(graph)
     for name, inst in insts.items():
+        mine = [n for n in nodes if n.attrs["instance"] == name]
+        loops = {n.id: firing_loops(graph, n) for n in mine}
         for p in inst.brm.interface.ports:
             s = streamer_name(name, p.name)
-            sb = platform.spatial_bounds(s) or nest_spatial_bounds(inst, p.name)
-            out[s] = Streamer(s, name, p.name, p.direction == "out", tuple(sb), platform.options(s))
+            sb = platform.spatial_bounds(s)
+            if sb is None and memlet_ordered(inst.brm) and mine:
+                m = (mine[0].inputs | mine[0].outputs)[p.name]
+                sb = memlet_spatial_bounds(m, symbols, f"node {mine[0].id}.{p.name}")
+            if sb is None:
+                sb = nest_spatial_bounds(inst, p.name)
+            dims = [
+                len(port_loops(inst, p.name, (n.inputs | n.outputs)[p.name], loops[n.id]))
+                for n in mine
+            ]
+            out[s] = Streamer(
+                s, name, p.name, p.direction == "out", tuple(sb), max([1, *dims]),
+                platform.options(s),
+            )  # fmt: skip
     return out

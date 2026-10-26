@@ -3,6 +3,7 @@
 The dataflow part of a BRM names a notation and gives one nest per port:
 
     {"notation": "affine", "ports": {"a": nest, "b": nest, "out": nest}}
+    {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}}
 
 A nest describes only the accelerator: the order in which the port consumes
 or produces its operand's elements, in logical indices. It holds no
@@ -21,8 +22,11 @@ by name with ``register_notation(name, check, check_instance=None, normalize=Non
 * ``normalize(nest)``, optional, returns the nest with every field written
   (defaults filled in), which the BRM keeps once the nest is checked.
 
-The first notation, ``affine``, is in affine.py; a second may come when the
-contracts freeze, without changing the BRM structure (open item 1).
+Two notations are registered. ``affine`` (affine.py) gives each port's
+operand shape, offset and loops. ``stream`` (stream.py), for unit BRMs, has
+an empty nest: the port's lanes and rate are the interface's and the bound
+memlet gives the element order. Both freeze with the contracts in M6 (open
+item 1).
 """
 
 from __future__ import annotations

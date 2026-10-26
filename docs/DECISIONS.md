@@ -19,7 +19,7 @@ Rules (D117):
   `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D141**.
+  number: **D142**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm`
 (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design`
@@ -27,7 +27,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 |
 | lower | D64 D75 D105 D135 |
 | gvsoc | D120–D122 D125 D134 D137 |
 | brm | D68 D70 D82 D103 D129 D133 |
@@ -127,21 +127,21 @@ dependences only; lowering adds only the waits correctness needs, one per compon
 so reductions and elementwise blocks share one; function, dataflow, pattern) and implementations
 (source, supports, timing, binding D129), its timing the user's numbers (D51). → C§10.
 
-**D70** · brm — A port's dataflow is a nest in a registered notation. The first, `affine`, gives the
-operand's shape, an offset and loops (bound, strides, spatial flag), spatial loops last, an
-innermost stride 0 repeating a beat as SNAX's reader does; it checks the memlets' order. → C§10.
+**D70** · brm — A port's dataflow is a nest in a registered notation. `affine` gives the operand's
+shape, an offset and loops (spatial last, an innermost stride 0 repeating a beat); `stream`, for
+unit BRMs, gives only lanes and a rate, the bound memlet giving the order. → C§10.
 
-**D71** · dfg — SNAX-DFG is its own JSON format, `.snaxdfg`: SDFG's concepts without SDFG's JSON,
-one expression grammar (`expr.py`) shared with the BRM. Importers derive it, decide nothing and name
-what they do not support; streamers appear only at lowering. → C§11.
+**D71** · dfg — `.snaxdfg` is SNAX-DFG's own JSON format: SDFG's concepts, one expression grammar
+(`expr.py`) shared with the BRM, MatMul and Transpose first expanded into dot's shape (`sdfg/expand.py`).
+Importers derive, decide nothing and name what they lack; streamers appear only at lowering. → C§11.
 
 **D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms on a
 `.snaxdfg`, applied in order from a recipe (kernel, params, symbols, steps), each step checked by
 the reference executor. A sweep is one recipe with a parameter; automated search writes recipes.
 
-**D73** · sandbox — Loops are tagged `tile`, `temporal` or `spatial`, and `bind` reads a BRM's
-design params off the graph (W from the spatial bound), so each is decided once. Streamer values
-come from memlets through the containers' layouts.
+**D73** · sandbox — Loops are tagged `tile`, `temporal` or `spatial`, by `split_map` or `tag_map`,
+and `bind` reads a BRM's design params off the graph (W from the spatial bound), so each is decided
+once. Streamer values come from memlets through the containers' layouts.
 
 **D75** · lower — Names are derived, never stated: streamer `<instance>_<port>`, task
 `<node>_<component>`, DMA task `load_<container>` or `store_<container>`.
@@ -153,9 +153,9 @@ needed. → `dfg/execute.py`.
 **D82** · brm — A BRM says what one lane computes (`function.code`), and `bind` checks the tasklet
 against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
 
-**D84** · design — The platform is a file of its own in `platforms/`, paired with the recipe's bound
-graph by the design step, so either changes without the other; its cluster parameters, the streamer
-knobs among them, are design knobs, never a template (D134). → C§13.
+**D84** · design — The platform is its own file in `platforms/`, paired with the bound graph by the
+design step, so either changes alone; its cluster parameters and the streamers' FIFO depths are
+design knobs, never a template (D134), and the streamers' temporal loops come from the graph. → C§13.
 
 **D85** · design — Design checks report every problem before anything is written, each with its fix.
 → C§14.
@@ -244,8 +244,9 @@ the RTL's load-to-load cycles, the core going on until the next load or a use of
 keeps GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`, `SG7.md`.
 
 **D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software in
-`sw/`, its synced config the forge vecadd fixture's, refreshed by `make sync-snax-cluster`, whose
-diff is the check; only the RTL needs a snax_cluster checkout. → snax-gvsoc `sw/README.md`.
+`sw/`, its synced config the forge vecadd fixture's, refreshed by `make sync-snax-cluster`, whose diff
+is the check; a design point's program and runtime take the cluster headers snax-forge writes for it.
+Only the RTL needs a snax_cluster checkout. → snax-gvsoc `sw/README.md`.
 
 **D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it
 (`block`, `args`, `control`, `csrs`, `wait`, optional `ports`), each kind registered (D19), so one
@@ -256,8 +257,8 @@ snax_cluster's off): one shell contract for every block. Python checks `rtl.json
 `hw/chisel/blocks.json`, Scala only builds; snax_cluster sees only the bundle's files. → C§17, C§18.
 
 **D131** · design — The base cluster is snax-forge's own file, `platforms/snax_forge_cluster.hjson`
-(from snax_cluster's), which `design from-hjson` reads: one accelerator, its movers agreeing (D84),
-the rest small16's; `accelerator_slot` names its slot (D134). → C§13.
+(from snax_cluster's, its names snax-forge's), which `design from-hjson` reads: one accelerator, its
+movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134). → C§13.
 
 **D133** · brm — The Chisel Accumulator takes `ElementwiseTiledSpatial`'s control plus `len`, so
 both run under one shell contract (D130); it loads the next input as the result leaves (drain 0),
@@ -278,3 +279,8 @@ backend flag: lower, gen, build when needed, sw, gvsoc, check (the program's exi
 **D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only names
 it: SNAX-GVSoC's traces go to one `events.log`, a level turns trace names on, lines are linked by
 ids; the converter renames, never recounts, and cuts the window. → `run/`, C§7.
+
+**D141** · scope — M7's tier A, the composed bind and BASE1's forge side are one milestone, M13, the
+block library: the basic blocks, their composition and the kernels that use them are designed together,
+with dot's six variants as the case study, in phases B0 (flow pieces) to B4 (tier A). → ARCHITECTURE §8,
+`docs/STATUS.md`.

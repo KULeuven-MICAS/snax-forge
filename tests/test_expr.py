@@ -104,8 +104,64 @@ def test_linear(v, variables, const, coeffs):
         ("i * j", "product of variables"),
         ("N * i", "multiplied by 'N'"),
         ("i // 2", "under //"),
+        ("max(i, 0)", "max and min are not linear"),
+        ("min(N, 4) + i", "max and min are not linear"),
     ],
 )
 def test_linear_rejects(v, message):
     with pytest.raises(ExprError, match=message):
         expr.linear(v, ["i", "j"])
+
+
+# =============================================================================
+# max and min
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("v", "env", "want"),
+    [
+        ("max(a, 0)", {"a": -3}, 0),
+        ("min(a, b)", {"a": 4, "b": 9}, 4),
+        ("max(2 * a, b + 1)", {"a": 3, "b": 7}, 8),
+        ("min(max(a, 0), 5)", {"a": 9}, 5),
+    ],
+)
+def test_max_min_on_ints(v, env, want):
+    got = expr.evaluate(v, env)
+    assert got == want and type(got) is int
+
+
+def test_max_min_on_arrays():
+    """np.maximum and np.minimum: elementwise, broadcasting like the arithmetic."""
+    a = np.array([-3, 5, 0], dtype=np.int64)
+    assert expr.evaluate("max(a, 0)", {"a": a}).tolist() == [0, 5, 0]
+    assert expr.evaluate("min(a, b)", {"a": a, "b": np.int64(1)}).tolist() == [-3, 1, 0]
+    i, j = np.arange(2)[:, None], np.arange(3)[None, :]
+    assert expr.evaluate("max(i, j)", {"i": i, "j": j}).tolist() == [[0, 1, 2], [1, 1, 2]]
+
+
+def test_max_min_kept_in_stored_form():
+    assert expr.canonical("max( in1 ,0)") == "max(in1, 0)"
+    assert expr.canonical("min(2, 7)") == 2
+    assert expr.names("max(a, min(b, 1))") == {"a", "b"}
+    assert expr.substitute("max(i, N)", {"i": "4*i_t"}) == "max(4 * i_t, N)"
+    assert expr.rename_code("__out = max(__in1, 0)", {"__out": "out", "__in1": "in1"}) == (
+        "out = max(in1, 0)"
+    )
+
+
+@pytest.mark.parametrize(
+    ("v", "message"),
+    [
+        ("max(a)", "max takes exactly two arguments"),
+        ("min(a, b, c)", "min takes exactly two arguments"),
+        ("max(a=1, b=2)", "max takes exactly two arguments"),
+        ("abs(a)", "call 'abs\\(a\\)' is not allowed"),
+        ("dace.int32(0)", "is not allowed"),
+        ("max(a, 1.5)", "Constant is not allowed"),
+    ],
+)
+def test_max_min_rejected(v, message):
+    with pytest.raises(ExprError, match=message):
+        expr.check(v, "field")

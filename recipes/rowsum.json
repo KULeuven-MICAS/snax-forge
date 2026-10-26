@@ -1,0 +1,19 @@
+{
+ "name": "rowsum",
+ "kernel": "rowsum",
+ "params": {"W": 4, "M": 8, "N": 64},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "acc"
+   }
+  }
+ ]
+}

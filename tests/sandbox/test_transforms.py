@@ -5,9 +5,11 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
+from snax_forge.brm import Brm
 from snax_forge.dfg import Graph, execute
 from snax_forge.sandbox import SandboxError, bind, split_map
 from snax_forge.sandbox import transforms as tr
+from tests.brm.helpers import affine_adder
 
 from .helpers import FIXTURES, graph, graph_dict, restricted_brm
 
@@ -142,16 +144,6 @@ def _edit(fn):
         ),
         (
             lambda: _edit(
-                lambda d: [
-                    m.update(subset=["i_t + 16 * i_s"])
-                    for m in (*tasklet(d)["inputs"].values(), *tasklet(d)["outputs"].values())
-                ]
-            ),
-            {},
-            "does not give the BRM's order",
-        ),
-        (
-            lambda: _edit(
                 lambda d: tasklet(d)["inputs"]["in1"].update(subset=["4 * i_t + 3 - i_s"])
             ),
             {},
@@ -164,9 +156,26 @@ def test_bind_rejected(make, params, message):
         bind(make(), **(BIND | params))
 
 
-def test_the_order_check_is_about_the_brm_not_the_result():
-    """Lanes strided by 16 still add the right elements, but not in elementwise_add's order."""
+def _strided() -> Graph:
+    """vecadd split, its lanes strided by 16: the right elements, in another order."""
     d = split_dict()
     for m in (*tasklet(d)["inputs"].values(), *tasklet(d)["outputs"].values()):
         m["subset"] = ["i_t + 16 * i_s"]
-    assert same_output(graph("vecadd"), Graph.from_dict(d))
+    return Graph.from_dict(d)
+
+
+def test_the_order_check_is_about_the_brm_not_the_result(monkeypatch):
+    """An affine BRM's nest takes the elements in order: the strided lanes are refused,
+    though they add the right elements."""
+    assert same_output(graph("vecadd"), _strided())
+    monkeypatch.setattr(tr, "load_brm", lambda name: Brm.from_dict(affine_adder()))
+    with pytest.raises(SandboxError, match="does not give the BRM's order"):
+        bind(_strided(), **BIND)
+
+
+def test_a_stream_brm_takes_the_memlets_order():
+    """elementwise_add is in the stream notation: the memlet is the order, so the strided
+    lanes bind, and the bound graph still adds A and B."""
+    g = bind(_strided(), **BIND)
+    assert g.node("add").inputs["a"].subset == ["i_t:i_t + 64:16"]
+    assert same_output(graph("vecadd"), g)

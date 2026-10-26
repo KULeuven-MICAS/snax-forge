@@ -3,14 +3,17 @@
 Shared by SNAX-BRM and SNAX-DFG. A value field holds either a plain int or a
 string. Every string is an expression: a name (``"W"``, ``"N"``, ``"i_t"``)
 or arithmetic over names and ints with ``+``, ``-``, ``*``, ``//`` and
-parentheses (``"W*n"``, ``"(n + 1) // 2"``, ``"4 * i_t + i_s"``). There are
+parentheses (``"W*n"``, ``"(n + 1) // 2"``, ``"4 * i_t + i_s"``), and
+``max(a, b)`` and ``min(a, b)``, exactly two arguments, each any expression
+(``"max(in1, 0)"``, relu's tasklet); no other call. There are
 no string literals; in a BRM a fixed string such as an op name is a design
 param with a single allowed value.
 
 Expressions are parsed with ``ast`` and evaluated by walking the tree;
 nothing is passed to ``eval``. A bare name may stand for a value of any type;
 the arithmetic works on integers only: Python ints, NumPy integer scalars and
-NumPy integer arrays. Arrays let the reference executor evaluate a subset for
+NumPy integer arrays (``max`` and ``min`` are ``np.maximum`` and
+``np.minimum``, elementwise on arrays). Arrays let the reference executor evaluate a subset for
 a whole map nest at once (``i_t`` and ``i_s`` given as broadcasting index
 arrays).
 
@@ -32,7 +35,8 @@ Operations
 ``linear``
     split a value that is affine in some variables into its constant part
     and one int coefficient per variable, without evaluating anything
-    (``4 * i_t + i_s + N`` in ``i_t``, ``i_s`` is ``N``, ``{i_t: 4, i_s: 1}``).
+    (``4 * i_t + i_s + N`` in ``i_t``, ``i_s`` is ``N``, ``{i_t: 4, i_s: 1}``);
+    ``max`` and ``min`` are not affine and are refused.
 """
 
 from __future__ import annotations
@@ -52,6 +56,8 @@ _BINOPS = {
     ast.Mult: lambda a, b: a * b,
     ast.FloorDiv: lambda a, b: a // b,
 }
+# the grammar's calls, two arguments each, elementwise on index arrays
+CALLS = {"max": np.maximum, "min": np.minimum}
 
 
 class ExprError(ValueError):
@@ -64,12 +70,30 @@ def _parse(expr: str) -> ast.expr:
     except SyntaxError as e:
         raise ExprError(f"cannot parse {expr!r}") from e
     for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            _check_call(node, expr)
+            continue
         ok = isinstance(node, (ast.Expression, ast.Name, ast.Load, ast.BinOp, ast.UnaryOp))
         ok = ok or type(node) in _BINOPS or isinstance(node, ast.USub)
         ok = ok or (isinstance(node, ast.Constant) and type(node.value) is int)
         if not ok:
             raise ExprError(f"{expr!r}: {type(node).__name__} is not allowed")
     return tree.body
+
+
+def _check_call(node: ast.Call, expr: str) -> None:
+    """``max(a, b)`` or ``min(a, b)``; any other call is an error."""
+    fn = node.func.id if isinstance(node.func, ast.Name) else None
+    if fn not in CALLS:
+        raise ExprError(f"{expr!r}: call {ast.unparse(node)!r} is not allowed (only max and min)")
+    if len(node.args) != 2 or node.keywords:
+        raise ExprError(f"{expr!r}: {fn} takes exactly two arguments")
+
+
+def _names(tree: ast.AST) -> set[str]:
+    """The names in ``tree``, not counting a call's function (``max``)."""
+    funcs = {id(n.func) for n in ast.walk(tree) if isinstance(n, ast.Call)}
+    return {n.id for n in ast.walk(tree) if isinstance(n, ast.Name) and id(n) not in funcs}
 
 
 def check(v: Any, what: str) -> None:
@@ -88,7 +112,7 @@ def names(v: Value) -> set[str]:
     """The names ``v`` refers to (none for an int)."""
     if type(v) is int:
         return set()
-    return {n.id for n in ast.walk(_parse(v)) if isinstance(n, ast.Name)}
+    return _names(_parse(v))
 
 
 def outside(v: Any, allowed: Iterable[str], what: str) -> list[str]:
@@ -127,6 +151,10 @@ def evaluate(v: Value, env: Mapping[str, Any]) -> Any:
             return env[node.id]
         if isinstance(node, ast.UnaryOp):
             return -_int(walk(node.operand))
+        if isinstance(node, ast.Call):
+            a, b = (_int(walk(x)) for x in node.args)
+            r = CALLS[node.func.id](a, b)
+            return int(r) if type(a) is int and type(b) is int else r
         return _BINOPS[type(node.op)](_int(walk(node.left)), _int(walk(node.right)))
 
     def _int(x: Any) -> Any:
@@ -147,7 +175,7 @@ def canonical(v: Value) -> Value:
     if type(v) is int:
         return v
     tree = _parse(v)
-    if not any(isinstance(n, ast.Name) for n in ast.walk(tree)):
+    if not _names(tree):
         return evaluate(v, {})
     return ast.unparse(tree)
 
@@ -162,6 +190,10 @@ def substitute(v: Value, values: Mapping[str, Value]) -> Value:
         def visit_Name(self, node: ast.Name) -> ast.expr:
             return copy.deepcopy(trees[node.id]) if node.id in trees else node
 
+        def visit_Call(self, node: ast.Call) -> ast.expr:  # the arguments, never ``max``
+            node.args = [self.visit(a) for a in node.args]
+            return node
+
     return canonical(ast.unparse(Swap().visit(_parse(v))))
 
 
@@ -172,7 +204,7 @@ def linear(v: Value, variables: Iterable[str]) -> tuple[Value, dict[str, int]]:
     coefficient is an int, one per variable in the given order (0 if it does
     not occur). Raises ExprError if ``v`` is not affine in the variables: a
     product of two variables, a variable times a name that is not one of them,
-    or a variable under ``//``.
+    or a variable under ``//``; and on any ``max`` or ``min``.
     """
     order = list(variables)
     var = set(order)
@@ -230,7 +262,10 @@ def linear(v: Value, variables: Iterable[str]) -> tuple[Value, dict[str, int]]:
 
     if type(v) is int:
         return v, dict.fromkeys(order, 0)
-    const, co = walk(_parse(v))
+    tree = _parse(v)
+    if any(isinstance(n, ast.Call) for n in ast.walk(tree)):
+        raise ExprError(f"{v!r}: not affine, max and min are not linear")
+    const, co = walk(tree)
     coeffs = {x: co.get(x, 0) for x in order}
     return (0 if const is None else canonical(ast.unparse(_fold(const)))), coeffs
 

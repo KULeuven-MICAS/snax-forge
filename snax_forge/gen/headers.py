@@ -1,6 +1,7 @@
-"""The generated accelerator's C headers: what a program needs to drive it.
+"""The generated C headers: what a program needs to drive the accelerator,
+and the runtime's view of the cluster.
 
-``generate`` writes both to ``out/gvsoc/<design>/include/`` and lists them
+``generate`` writes them to ``out/gvsoc/<design>/include/`` and lists them
 in the manifest:
 
     streamer_csr_addr_map.h   the streamer's CSRs, with the name, defines,
@@ -19,6 +20,25 @@ in the manifest:
                               ``<INST>_RW_<FIELD>`` per field (``loopCount``
                               -> ``LOOP_COUNT``), ``<INST>_RW_START``,
                               ``<INST>_RO_BUSY``, ``<INST>_RO_PERF_COUNT``
+    snitch_cluster_cfg.h      the runtime's core count and first hart
+                              (``CFG_CLUSTER_NR_CORES``, the cores over the
+                              hives, ``$ref``s resolved, as clustergen
+                              counts them; ``CFG_CLUSTER_BASE_HARTID``)
+    snitch_cluster_addrmap.h  the runtime's address map: the L1's base and
+                              size, the cluster's size and address width,
+                              the peripherals and the zero memory after the
+                              L1, the CLINT
+
+The two cluster headers are what snax_cluster's templates
+``target/snitch_cluster/sw/runtime/common/snitch_cluster_cfg.h.tpl`` and
+``snitch_cluster_addrmap.h.tpl`` (at the pin of snax-gvsoc ``sw/README.md``)
+render from the cluster file, the generated one: below the header comment,
+text-equal but for the templates' copyright and blank lines. The runtime
+puts its stacks at the L1's end (``start.S``), so a program and its runtime
+built against them fit the design point's L1 (D126). A
+``cluster_base_offset`` that is not a power of two is a ``GenError``
+(``gen.platform``): ``CLUSTER_ADDRWIDTH`` is its log2; a missing or
+non-integer key is ``gen.source``.
 
 Only the comments differ from the Chisel header. Streamer.scala's optional
 per-mover CSRs (address remap, channel and byte enables) and its datapath
@@ -31,12 +51,19 @@ Neither header has an include guard, as the Chisel one has none.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 from snax_forge.common import generated_header
+from snax_forge.design import DesignError
+from snax_forge.design.hjson_platform import cores
 from snax_forge.lower.c import define_name
 
+from .blocks import GenError
+
 STREAMER_HEADER = "streamer_csr_addr_map.h"
+CFG_HEADER = "snitch_cluster_cfg.h"
+ADDRMAP_HEADER = "snitch_cluster_addrmap.h"
 
 
 def streamer_header(movers: list[dict[str, Any]], first: int, point_path: str) -> tuple[str, int]:
@@ -78,3 +105,55 @@ def accelerator_header(instance: str, csrs: Any, point_path: str) -> str:
         f"#define {inst}_RO_PERF_COUNT {csrs.counter}",
     ]
     return "\n".join(lines) + "\n"
+
+
+def _int(d: Mapping[str, Any], path: str) -> int:
+    """The integer at the dotted ``path`` of the cluster file ``d``; ``gen.source`` if not one."""
+    node: Any = d
+    for p in path.split("."):
+        node = node.get(p) if isinstance(node, Mapping) else None
+    if isinstance(node, bool) or not isinstance(node, int):
+        raise GenError("gen.source", f"the cluster file's {path} is {node!r}, not an integer")
+    return node
+
+
+def cluster_headers(cluster: Mapping[str, Any], point_path: str) -> dict[str, str]:
+    """The texts of snitch_cluster_cfg.h and snitch_cluster_addrmap.h by file name, for the
+    cluster file ``cluster`` as written."""
+    try:
+        nr_cores = len(cores(cluster))
+    except DesignError as e:
+        raise GenError("gen.source", str(e)) from None
+    offset = _int(cluster, "cluster.cluster_base_offset")
+    if offset <= 0 or offset & (offset - 1):
+        raise GenError(
+            "gen.platform", f"cluster.cluster_base_offset {offset} ({offset:#x}) is not a power "
+            "of two: CLUSTER_ADDRWIDTH is its log2",
+        )  # fmt: skip
+    base = _int(cluster, "cluster.cluster_base_addr")
+    tpl = "as snax_cluster's {}.tpl renders it from the cluster file."
+    cfg = [
+        generated_header(
+            point_path, f"The runtime's core count and first hart, {tpl.format(CFG_HEADER)}"
+        ),
+        f"#define CFG_CLUSTER_NR_CORES {nr_cores}",
+        f"#define CFG_CLUSTER_BASE_HARTID {_int(cluster, 'cluster.cluster_base_hartid')}",
+    ]
+    kib = {k: hex(_int(cluster, f"cluster.{k}") * 1024)
+           for k in ("tcdm.size", "cluster_periph_size", "zero_mem_size")}  # fmt: skip
+    addrmap = [
+        generated_header(point_path, f"The runtime's address map, {tpl.format(ADDRMAP_HEADER)}"),
+        f"#define CLUSTER_TCDM_BASE_ADDR {hex(base)}",
+        f"#define CLUSTER_TCDM_SIZE {kib['tcdm.size']}",
+        f"#define CLUSTER_SIZE {hex(offset)}",
+        f"#define CLUSTER_BASE_ADDR {base}",
+        f"#define CLUSTER_ADDRWIDTH {offset.bit_length() - 1}",
+        "#define CLUSTER_PERIPH_BASE_ADDR (CLUSTER_TCDM_BASE_ADDR + CLUSTER_TCDM_SIZE)",
+        (
+            "#define CLUSTER_ZERO_MEM_START_ADDR (CLUSTER_PERIPH_BASE_ADDR + "
+            f"{kib['cluster_periph_size']})"
+        ),
+        f"#define CLUSTER_ZERO_MEM_END_ADDR (CLUSTER_ZERO_MEM_START_ADDR + {kib['zero_mem_size']})",
+        f"#define CLINT_BASE_ADDR {hex(_int(cluster, 'peripherals.clint.address'))}",
+    ]
+    return {CFG_HEADER: "\n".join(cfg) + "\n", ADDRMAP_HEADER: "\n".join(addrmap) + "\n"}

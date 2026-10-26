@@ -109,6 +109,7 @@ time.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import os
 import re
@@ -276,10 +277,26 @@ def kernel_spec(kernel: str, why: str) -> Any:
 
 
 def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
-    """The kernel's ``make_inputs`` at the size the graph binds (its one bound symbol)."""
-    bound = list(graph.bound_symbols.values())
-    kw = {"n": bound[0]} if len(bound) == 1 else {}
+    """The kernel's ``make_inputs`` at every size the graph binds: each bound symbol by its
+    lower-case name (``M`` gives ``m=``, ``N`` gives ``n=``); then the arrays' shapes must give
+    the graph's values (``spec.bind_symbols``)."""
+    params = inspect.signature(spec.make_inputs).parameters
+    kw = {}
+    for sym, v in graph.bound_symbols.items():
+        if sym.lower() not in params:
+            raise FlowError(
+                f"inputs: the graph binds {sym} = {v}, but {spec.name}'s make_inputs has no "
+                f"parameter {sym.lower()!r} (it takes {list(params)})"
+            )
+        kw[sym.lower()] = v
     inputs = spec.make_inputs(np.random.default_rng(seed), **kw)
+    got = spec.bind_symbols(inputs)
+    for sym, v in graph.bound_symbols.items():
+        if got.get(sym) != v:
+            raise FlowError(
+                f"inputs: {spec.name}'s make_inputs({kw}) gives {sym} = {got.get(sym)}, "
+                f"the graph binds {v}"
+            )
     for c, arr in inputs.items():
         cont = graph.containers.get(c)
         if cont is None:

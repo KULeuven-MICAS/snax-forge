@@ -1,0 +1,19 @@
+{
+ "name": "matadd",
+ "kernel": "matadd",
+ "params": {"W": 4, "M": 8, "N": 16},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "add_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "add_map_1", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "add",
+    "brm": "elementwise_add",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

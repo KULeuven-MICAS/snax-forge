@@ -41,7 +41,7 @@ needs_submodule = pytest.mark.skipif(
 )
 FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"]
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
-SLOT = ("snax_alu_core_template", "snax_acc_cfg", 0)
+SLOT = ("snax_forge_core_template", "snax_acc_cfg", 0)
 
 # vecadd at W = 4 on snax_forge: the template the design point's streamers give
 TEMPLATE_W4 = {
@@ -100,7 +100,8 @@ def test_vecadd_w4_files_and_manifest(w4):
     out, m = w4
     assert m.design == "vecadd" and m.cluster == "snax_forge.hjson"
     assert m.files == [
-        *FILES, "include/streamer_csr_addr_map.h", "include/acc_csr.h", "data.h", "main.c",
+        *FILES, "include/streamer_csr_addr_map.h", "include/acc_csr.h",
+        "include/snitch_cluster_cfg.h", "include/snitch_cluster_addrmap.h", "data.h", "main.c",
         "manifest.json",
     ]  # fmt: skip
     assert m.program == "main.c"
@@ -131,7 +132,7 @@ def test_the_streamer_file_is_the_design_points_streamers(w4):
 def test_the_streamer_file_is_the_hjsons_template(w4):
     """Lowered per design point, vecadd at W = 4 gives the source's own template back."""
     out, _ = w4
-    hand = parsed(SOURCE)["snax_alu_streamer_template"]
+    hand = parsed(SOURCE)["snax_forge_streamer_template"]
     for group in ("data_reader_params", "data_writer_params"):
         assert parsed(out / "snax_forge_streamer.hjson")[group] == hand[group]
 
@@ -160,8 +161,8 @@ def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
     ]  # fmt: skip
     # Outside the slot and the cluster's names, the source: its template, which only the slot
     # referred to, gone
-    assert "snax_alu_streamer_template" not in cluster
-    del source["snax_alu_streamer_template"]
+    assert "snax_forge_streamer_template" not in cluster
+    del source["snax_forge_streamer_template"]
     for d in (cluster, source):
         slot(d).clear()
         del d["cluster"]["name"], d["cluster"]["bender_target"]
@@ -337,7 +338,7 @@ def test_the_sources_only_slot_takes_the_accelerator_slot_whatever_its_name(tmp_
     p = Platform.load(SNAX_FORGE).with_changes([("accelerator_slot", "snax_forge_x")])
     path = point(tmp_path, platform=p)
     src = tmp_path / "platforms" / SOURCE.name
-    src.write_text(src.read_text().replace('snax_acc_name: "snax_alu"', 'snax_acc_name: "any"'))
+    src.write_text(src.read_text().replace('snax_acc_name: "snax_forge"', 'snax_acc_name: "any"'))
     out = tmp_path / "out"
     m = generate(path, out, root=tmp_path)
     assert m.files[:3] == [
@@ -350,16 +351,31 @@ def test_the_sources_only_slot_takes_the_accelerator_slot_whatever_its_name(tmp_
     assert s["snax_streamer_cfg"] == {"$ref": "snax_forge_x_streamer.hjson"}
 
 
+def test_the_cluster_takes_snax_forges_name_whatever_the_sources(tmp_path):
+    """A source named otherwise (snax_cluster's own name): cluster.name and its entry in
+    cluster.bender_target become snax_forge_cluster, the other entries kept."""
+    path = point(tmp_path)
+    src = tmp_path / "platforms" / SOURCE.name
+    src.write_text(src.read_text().replace('"snax_forge_cluster"', '"snax_alu_cluster"'))
+    assert src.read_text().count('"snax_alu_cluster"') == 2  # the name and the bender entry
+    generate(path, tmp_path / "out", root=tmp_path)
+    cluster = parsed(tmp_path / "out" / "snax_forge.hjson")["cluster"]
+    assert cluster["name"] == "snax_forge_cluster"
+    assert cluster["bender_target"] == [
+        "snitch_cluster", "snax_forge_cluster", "sparse_interconnect"
+    ]  # fmt: skip
+
+
 @pytest.mark.parametrize(
     ("edit", "code", "text"),
     [
         (lambda s: s.replace("        snax_acc_cfg: [{\n",
                              '        snax_acc_cfg: [{snax_acc_name: "other"}, {\n'),
-         "gen.slot", "['other', 'snax_alu']"),  # two slots
+         "gen.slot", "['other', 'snax_forge']"),  # two slots
         (lambda s: re.sub(r"snax_acc_cfg: \[\{.*?\}\],", "snax_acc_cfg: [],", s, flags=re.DOTALL),
          "gen.slot", "has the slots []"),  # no slot
-        (lambda s: s.replace('"snax_alu_cluster", "sparse_interconnect"', '"sparse_interconnect"'),
-         "gen.source", "does not hold cluster.name 'snax_alu_cluster'"),  # bender target
+        (lambda s: s.replace('"snax_forge_cluster", "sparse_interconnect"', '"sparse_interconnect"'),
+         "gen.source", "does not hold cluster.name 'snax_forge_cluster'"),  # bender target
         (lambda s: s.replace("        tcdm: {\n", '        tcdm: {$ref: "#/tcdm"},\n'
                              "        old_tcdm: {\n"),
          "gen.source", "cluster.tcdm is not an object written out"),  # nowhere to write

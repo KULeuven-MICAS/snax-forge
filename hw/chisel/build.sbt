@@ -10,6 +10,9 @@ ThisBuild / scalaVersion := "2.13.14"
 ThisBuild / version      := "0.1.0"
 ThisBuild / organization := "be.kuleuven.esat.micas"
 
+// sbt's classpath copy before `runMain` hangs on NFS 4.2 server-side copies: load the jars in place.
+Global / bgCopyClasspath := false
+
 val chiselVersion     = "6.4.0"
 val chiseltestVersion = "6.0.0"
 val scalatestVersion  = "3.2.19"

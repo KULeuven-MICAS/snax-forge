@@ -586,3 +586,53 @@ def test_the_flow_on_snax_gvsoc(tmp_path, design, level):
     stdout = (tmp_path / design / "run" / "stdout.txt").read_text()
     assert f"forge cycles: {f.total_cycles}\n" in stdout
     assert flow_run.checkout().commit == f.checkout.commit
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_matadd_the_first_2d_bind_on_snax_gvsoc(tmp_path):
+    """matadd at W = 4, M = 8, N = 16: two firing loops (the rows, the column beats), so each
+    streamer has two temporal loops (D84); 32 firings, every output checked."""
+    f = run_flow(RECIPES / "matadd.json", SNAX_FORGE, out=tmp_path / "matadd")
+    assert f.passed, summary(f)
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
+    assert {t: v["beats"] for t, v in f.check["tasks"].items()} == {"add_acc": 32}
+    assert all(t["counter"] >= t["beats"] for t in f.check["tasks"].values())
+    text = (tmp_path / "matadd" / "gen" / "snax_forge_streamer.hjson").read_text()
+    streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
+    assert streamer["data_reader_params"]["temporal_dim"] == [2, 2]
+    assert streamer["data_writer_params"]["temporal_dim"] == [2]
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+@pytest.mark.parametrize("design, beats", [("rowsum", 128), ("rowsum_serial", 64)])
+def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
+    """rowsum: one sum per row, T = N / W = 16 beats each (open item 81), so the accumulator
+    restarts M times in one run; A's reader has two temporal loops, y's writer one."""
+    f = run_flow(RECIPES / f"{design}.json", SNAX_FORGE, out=tmp_path / design)
+    assert f.passed, summary(f)
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
+    assert {t: v["beats"] for t, v in f.check["tasks"].items()} == {"sum_acc": beats}
+    assert all(t["counter"] >= t["beats"] for t in f.check["tasks"].values())
+    gen = tmp_path / design / "gen"
+    text = (gen / "snax_forge_streamer.hjson").read_text()
+    streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
+    assert streamer["data_reader_params"]["temporal_dim"] == [2]
+    assert streamer["data_writer_params"]["temporal_dim"] == [1]
+    assert "csrw_ss(ACC_RW_LEN, 16);" in (gen / "main.c").read_text()
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_a_64_kib_l1_runs_on_its_own_runtime(tmp_path):
+    """vecadd at l1.rows = 256: the program and its runtime take the design point's cluster
+    headers (snax-forge D126), so the stacks sit at the end of the 64 KiB L1 the model places."""
+    f = run_flow(RECIPES / "vecadd.json", SNAX_FORGE, platform_sets=[("l1.rows", 256)],
+                 out=tmp_path / "vecadd")  # fmt: skip
+    assert f.passed, summary(f)
+    include = tmp_path / "vecadd" / "gen" / "include"
+    assert (
+        "#define CLUSTER_TCDM_SIZE 0x10000\n" in (include / "snitch_cluster_addrmap.h").read_text()
+    )
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
