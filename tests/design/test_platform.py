@@ -122,23 +122,23 @@ def test_with_changes_gives_a_working_copy():
 def test_continuing_adds_to_the_changes_and_keeps_the_base():
     w = Platform.load(SMALL16).with_changes([("l1.n_banks", 32), ("l1.rows", 128)])
     again = Platform.from_dict(json.loads(w.to_json())).with_changes(
-        [("l1.n_banks", 64), ("streamers.default.temporal_dims", 2)]
+        [("l1.n_banks", 64), ("streamers.default.fifo_depth", 4)]
     )
     assert again.base == "small16"
     assert list(again.changes.items()) == [
-        ("l1.rows", 128), ("l1.n_banks", 64), ("streamers.default.temporal_dims", 2)
+        ("l1.rows", 128), ("l1.n_banks", 64), ("streamers.default.fifo_depth", 4)
     ]  # fmt: skip
-    assert (again.l1.n_banks, again.l1.rows, again.default.temporal_dims) == (64, 128, 2)
+    assert (again.l1.n_banks, again.l1.rows, again.default.fifo_depth) == (64, 128, 4)
 
 
 def test_saved_as_renames_and_keeps_the_record():
-    w = Platform.load(SMALL16).with_changes([("streamers.default.temporal_dims", 2)])
-    s = w.saved_as("small16_t2")
-    assert (s.name, s.base, s.changes) == ("small16_t2", "small16", w.changes)
+    w = Platform.load(SMALL16).with_changes([("streamers.default.fifo_depth", 4)])
+    s = w.saved_as("small16_f4")
+    assert (s.name, s.base, s.changes) == ("small16_f4", "small16", w.changes)
     assert Platform.from_dict(s.to_dict()) == s
     # Continuing from a saved platform keeps the root base and the full difference.
     c = s.with_changes([("l1.rows", 128)])
-    assert c.base == "small16" and list(c.changes) == ["streamers.default.temporal_dims", "l1.rows"]
+    assert c.base == "small16" and list(c.changes) == ["streamers.default.fifo_depth", "l1.rows"]
     with pytest.raises(DesignError, match="not an identifier"):
         w.saved_as("small-16")
 

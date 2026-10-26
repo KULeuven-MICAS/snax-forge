@@ -34,17 +34,17 @@ def test_run_with_sets_then_continue_from_the_working_copy(tmp_path):
     out = tmp_path / "d"
     sets = ["--set", "platform.l1.n_banks=32", "--set", "platform.streamers.acc_out.fifo_depth=4"]
     assert run(BOUND, "--platform", SMALL16, "--out", out, *sets) == 0
-    more = ["--set", "platform.streamers.acc_a.temporal_dims=2"]
+    more = ["--set", "platform.streamers.acc_a.fifo_depth=3"]
     assert run(BOUND, "--platform", out / "platform.json", "--out", out, *more) == 0
     d = json.loads((out / "platform.json").read_text())
     assert d["base"] == "small16" and d["l1"]["n_banks"] == 32
     assert list(d["changes"]) == [
-        "l1.n_banks", "streamers.acc_out.fifo_depth", "streamers.acc_a.temporal_dims"
+        "l1.n_banks", "streamers.acc_out.fifo_depth", "streamers.acc_a.fifo_depth"
     ]  # fmt: skip
     assert d["streamers"] == {
-        "default": {"temporal_dims": 1, "fifo_depth": 2},
+        "default": {"fifo_depth": 2},
         "acc_out": {"fifo_depth": 4},
-        "acc_a": {"temporal_dims": 2},
+        "acc_a": {"fifo_depth": 3},
     }
 
 

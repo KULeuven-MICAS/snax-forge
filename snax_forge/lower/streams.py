@@ -87,7 +87,7 @@ def streamer_values(
             f"design-time {list(streamer.spatial_bounds)}"
         )
     temporal = list(reversed(nest.temporal))  # innermost first
-    dims = streamer.options.temporal_dims
+    dims = streamer.temporal_dims
     if len(temporal) > dims:
         raise StreamError(f"{what}: {len(temporal)} temporal loops, the streamer has {dims}")
     if not temporal:

@@ -282,7 +282,7 @@ def streamer_template(point: DesignPoint, name: str, inst: Instance) -> dict[str
             )  # fmt: skip
         mover = {
             "spatial_bounds": list(s.spatial_bounds),
-            "temporal_dim": s.options.temporal_dims,
+            "temporal_dim": s.temporal_dims,
             "num_channel": s.n_ports * bits // 64,
             "fifo_depth": s.options.fifo_depth,
         }

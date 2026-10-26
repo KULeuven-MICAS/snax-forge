@@ -14,6 +14,7 @@ from __future__ import annotations
 import copy
 import json
 from collections.abc import Callable
+from functools import cache
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +49,33 @@ def bound_vecadd(w: int) -> Graph:
 def bound_w8() -> Graph:
     """vecadd bound with W = 8 by the checked-in recipe."""
     return bound_vecadd(8)
+
+
+def bound_vsum() -> Graph:
+    """vsum bound by its checked-in recipe (W = 1, N = 64)."""
+    recipe = Recipe.load(REPO / "recipes" / "vsum.json")
+    return apply_recipe(recipe, Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
+
+
+# matadd at W = 4, M = 8, N = 16: the row map tagged temporal, the column map split (D73)
+MATADD_RECIPE = {
+    "name": "matadd", "kernel": "matadd", "params": {"W": 4, "M": 8, "N": 16},
+    "symbols": {"M": "M", "N": "N"},
+    "steps": [
+        {"transform": "tag_map", "params": {"map": "add_map", "kind": "temporal"}},
+        {"transform": "split_map", "params": {"map": "add_map_1", "factor": "W"}},
+        {"transform": "bind", "params": {"node": "add", "brm": "elementwise_add",
+                                         "implementation": "chisel_tiled_spatial", "instance": "acc"}},
+    ],
+}  # fmt: skip
+
+
+@cache
+def bound_matadd() -> Graph:
+    """matadd bound by MATADD_RECIPE: the first 2-D bind."""
+    from snax_forge.dfg.import_sdfg import import_kernel
+
+    return apply_recipe(Recipe.from_dict(MATADD_RECIPE), import_kernel("matadd"))[-1].graph
 
 
 def design(

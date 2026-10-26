@@ -11,7 +11,15 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from snax_forge.brm import LIBRARY, Brm, BrmError, function_of, library_names, load_brm, task_nest
+from snax_forge.brm import (
+    LIBRARY,
+    Brm,
+    BrmError,
+    function_of,
+    library_names,
+    load_brm,
+    memlet_ordered,
+)
 
 from .helpers import IMPL
 
@@ -91,11 +99,15 @@ def test_only_add():
         load_brm("elementwise_add").resolve(IMPL, {"op": "mul"})
 
 
-def test_ports_agree_on_element_positions():
-    """The D70 assumption, checked for this BRM: a, b and out take the same element."""
-    inst = load_brm("elementwise_add").resolve(IMPL)
-    idx = [task_nest(inst, p, {"n": 16}).indices() for p in ("a", "b", "out")]
-    assert np.array_equal(idx[0], idx[1]) and np.array_equal(idx[0], idx[2])
+@pytest.mark.parametrize("name", ["elementwise_add", "elementwise_mul", "accumulate"])
+def test_unit_brms_are_in_the_stream_notation(name):
+    """Unit blocks (D70): every port's nest is empty, the bound memlet gives the order, so a,
+    b and out take the same element as the memlets do; each loads and resolves."""
+    brm = load_brm(name)
+    assert brm.dataflow.notation == "stream" and memlet_ordered(brm)
+    assert brm.dataflow.ports == {p.name: {} for p in brm.interface.ports}
+    for impl in brm.implementations:
+        brm.resolve(impl, {"W": 1} if impl == "chisel_accumulator" else {})
 
 
 @pytest.mark.parametrize("brm", ["elementwise_add", "elementwise_mul"])
@@ -163,8 +175,8 @@ def test_accumulate_code_folded_agrees_with_its_kind(impl, w):
 
 
 def test_accumulate_ports_and_beats():
-    """a takes W elements per beat; out gives one element per T beats."""
+    """a takes W elements per beat; out gives one element per T beats (the interface's lanes
+    and rates: the stream notation adds nothing to them)."""
     inst = load_brm("accumulate").resolve("chisel_adder_tree")
-    assert task_nest(inst, "a", {"n": 16, "T": 4}).n_beats == 16
-    out = task_nest(inst, "out", {"n": 16, "T": 4})
-    assert out.n_beats == 4
+    assert (inst.lanes("a"), inst.brm.port("a").rate) == (4, 1)
+    assert (inst.lanes("out"), inst.brm.port("out").rate) == (1, "T")

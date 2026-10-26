@@ -16,7 +16,7 @@ bound graph with a platform.
      "l2":       {...} or null,     L2Config; no L2, no DMA
      "wait_mode": "poll",           how the program waits for a task
      "streamers": {
-      "default": {"temporal_dims": 1, "fifo_depth": 2},
+      "default": {"fifo_depth": 2},
       "acc_out": {"fifo_depth": 4}
      }
     }
@@ -28,9 +28,11 @@ the generator read (CONTRACTS.md section 13); each checks its own values.
 accelerator needs, so the platform does not list them: one streamer is made
 for every port of every accelerated node, named ``<instance>_<port>`` (D75).
 Its direction and lanes come from the BRM port (``write``, ``n_ports`` and,
-unless an entry gives them, ``spatial_bounds``); ``default`` gives the rest,
-and an entry named after the streamer overrides any of it for that one
-streamer only. Resolving the shell against a graph is streamers.py; an entry
+unless an entry gives them, ``spatial_bounds``), its temporal loops from the
+graph (``temporal_dims``, the firing loops of its port's memlet, D84);
+``default`` gives the rest (``fifo_depth``), and an entry named after the
+streamer overrides any of it for that one streamer only. A file that still
+sets ``temporal_dims`` is refused: it is no longer a knob. Resolving the shell against a graph is streamers.py; an entry
 that matches no port is a check (``connect.streamer_key``), not a load error,
 because only the graph knows the ports.
 
@@ -43,7 +45,7 @@ null for a platform not read from one (small16). ``--set
 accelerator_slot=NAME`` changes it as any field.
 
 **Changes and working copies.** ``with_changes`` applies ``--set`` paths
-(``l1.n_banks``, ``streamers.acc_a.temporal_dims``) and returns a working
+(``l1.n_banks``, ``streamers.acc_a.fifo_depth``) and returns a working
 copy: complete values, ``base`` the platform it all started from, and
 ``changes`` every path set since, in order. Continuing from a working copy
 adds to its changes, so ``changes`` is always the difference from ``base``.
@@ -149,15 +151,15 @@ class L2Config(Config):
 class StreamerOptions(Config):
     """The streamer knobs a platform sets; the port decides the rest (``write``, ``n_ports``)."""
 
-    temporal_dims: int = 1
     fifo_depth: int = 8
 
     def __post_init__(self) -> None:
-        if min(self.temporal_dims, self.fifo_depth) < 1:
-            raise ValueError("temporal_dims and fifo_depth must be >= 1")
+        if self.fifo_depth < 1:
+            raise ValueError("fifo_depth must be >= 1")
 
 
 OPTIONS = tuple(f.name for f in fields(StreamerOptions))
+FROM_GRAPH = "temporal_dims"  # a knob until M13's B0, now each streamer's firing loops (D84)
 ENTRY_KEYS = (*OPTIONS, "spatial_bounds")
 
 
@@ -332,6 +334,21 @@ def _entry(name: str, e: Any, default: StreamerOptions | None, out: list[Problem
             out.append(Problem("platform.streamer", where, str(err)))
 
 
+def _from_graph(name: str, e: Any, out: list[Problem]) -> Any:
+    """A streamer entry without ``temporal_dims``, which is refused: it comes from the graph."""
+    if not isinstance(e, Mapping) or FROM_GRAPH not in e:
+        return e
+    out.append(
+        Problem(
+            "platform.keys", f"streamers.{name}.{FROM_GRAPH}",
+            "is no longer a platform knob: each streamer's temporal loops now come from the "
+            "graph (the firing loops its port's memlet runs over)",
+            f"remove {FROM_GRAPH!r} from the platform file",
+        )
+    )  # fmt: skip
+    return {k: v for k, v in e.items() if k != FROM_GRAPH}
+
+
 def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
     """A platform and every problem found; the platform is None when there is one."""
     out: list[Problem] = []
@@ -384,6 +401,7 @@ def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
     if not isinstance(streamers, Mapping):
         out.append(Problem("platform.keys", "streamers", f"must be an object, got {streamers!r}"))
     else:
+        streamers = {k: _from_graph(k, e, out) for k, e in streamers.items()}
         n = len(out)
         default = _section(StreamerOptions, streamers.get("default", {}), "streamers.default", out)
         for p in out[n:]:  # a rejected default value is a shell problem
@@ -433,6 +451,13 @@ def _apply(d: dict[str, Any], path: str, value: Any) -> list[Problem]:
             return [Problem("platform.keys", where, "give streamers.<streamer>.<option>")]
         _, s, opt = parts
         allowed = OPTIONS if s == "default" else ENTRY_KEYS
+        if opt == FROM_GRAPH:
+            return [
+                Problem(
+                    "platform.keys", where,
+                    "comes from the graph (the firing loops of the port's memlet), not the platform",
+                )
+            ]  # fmt: skip
         if opt in DERIVED:
             return [
                 Problem(

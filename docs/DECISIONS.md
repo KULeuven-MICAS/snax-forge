@@ -127,23 +127,22 @@ dependences only; lowering adds only the waits correctness needs, one per compon
 so reductions and elementwise blocks share one; function, dataflow, pattern) and implementations
 (source, supports, timing, binding D129), its timing the user's numbers (D51). → C§10.
 
-**D70** · brm — A port's dataflow is a nest in a registered notation. The first, `affine`, gives the
-operand's shape, an offset and loops (bound, strides, spatial flag), spatial loops last, an
-innermost stride 0 repeating a beat as SNAX's reader does; it checks the memlets' order. → C§10.
+**D70** · brm — A port's dataflow is a nest in a registered notation. `affine` gives the operand's
+shape, an offset and loops (spatial last, an innermost stride 0 repeating a beat); `stream`, for
+unit BRMs, gives only lanes and a rate, the bound memlet giving the order. → C§10.
 
-**D71** · dfg — SNAX-DFG is its own JSON format, `.snaxdfg`: SDFG's concepts without SDFG's JSON,
-one expression grammar (`expr.py`) shared with the BRM. Library nodes are expanded into maps before
-import, in dot's shape (a MatMul into a multiply map and a Reduce, a Transpose into its readers'
-indices); importers derive it, decide nothing and name what they do not support; streamers appear
-only at lowering. → C§11.
+**D71** · dfg — SNAX-DFG is its own JSON format, `.snaxdfg`: SDFG's concepts without its JSON, one
+expression grammar (`expr.py`) shared with the BRM; MatMul and Transpose are first expanded into
+dot's shape (`sdfg/expand.py`). Importers derive it, decide nothing and name what they do not
+support; streamers appear only at lowering. → C§11.
 
 **D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms on a
 `.snaxdfg`, applied in order from a recipe (kernel, params, symbols, steps), each step checked by
 the reference executor. A sweep is one recipe with a parameter; automated search writes recipes.
 
-**D73** · sandbox — Loops are tagged `tile`, `temporal` or `spatial`, and `bind` reads a BRM's
-design params off the graph (W from the spatial bound), so each is decided once. Streamer values
-come from memlets through the containers' layouts.
+**D73** · sandbox — Loops are tagged `tile`, `temporal` or `spatial`, by `split_map` or `tag_map`,
+and `bind` reads a BRM's design params off the graph (W from the spatial bound), so each is decided
+once. Streamer values come from memlets through the containers' layouts.
 
 **D75** · lower — Names are derived, never stated: streamer `<instance>_<port>`, task
 `<node>_<component>`, DMA task `load_<container>` or `store_<container>`.
@@ -156,8 +155,9 @@ needed. → `dfg/execute.py`.
 against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
 
 **D84** · design — The platform is a file of its own in `platforms/`, paired with the recipe's bound
-graph by the design step, so either changes without the other; its cluster parameters, the streamer
-knobs among them, are design knobs, never a template (D134). → C§13.
+graph by the design step, so either changes without the other; its cluster parameters and the
+streamers' FIFO depths are design knobs, never a template (D134), and each streamer's temporal loops
+come from the graph. → C§13.
 
 **D85** · design — Design checks report every problem before anything is written, each with its fix.
 → C§14.

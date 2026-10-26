@@ -169,9 +169,9 @@ on `SnaxUnit` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
 **SNAX-SANDBOX** (D72, `sandbox/`; C§12). Registered transforms rewrite a
 `.snaxdfg`; a recipe in `recipes/` names a kernel, params, symbol values and
 the steps; the reference executor checks every step; `--set W=8` runs one
-point of a sweep. Transforms: `split_map`, `bind` (patterns `elementwise` and
-`reduce`, design params read off the graph, D73), and their inverses `unbind`
-and `join_map`. **[PLANNED]** `bind` on a group of tasklets, `split_reduce`
+point of a sweep. Transforms: `split_map`, `tag_map` (a tag without a split),
+`bind` (patterns `elementwise` and `reduce`, design params read off the graph,
+D73), and their inverses `untag_map`, `unbind` and `join_map`. **[PLANNED]** `bind` on a group of tasklets, `split_reduce`
 and the composite (M13 B2–B3, D112), and a tile transform (LOW3b).
 
 **The design step** (D84–D87, `design/`; C§13–C§15). It pairs a bound graph

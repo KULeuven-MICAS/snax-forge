@@ -69,7 +69,7 @@ class DesignPoint(JsonFile):
             design.graph_path,
             design.graph,
             design.platform,
-            resolve(design.platform, design.instances),
+            resolve(design.platform, design.graph, design.instances),
             design.memory,
         )
 
@@ -85,7 +85,7 @@ class DesignPoint(JsonFile):
         design = self.design()
         problems = run_checks(design)
         if not problems:
-            want = resolve(self.platform, design.instances)
+            want = resolve(self.platform, self.graph, design.instances)
             if want != self.streamers:
                 got = {k: s.to_dict() for k, s in self.streamers.items()}
                 problems.append(
@@ -141,13 +141,13 @@ class DesignPoint(JsonFile):
 
 def _streamer(name: str, d: Any) -> Streamer:
     what = f"streamers.{name}"
-    keys = ("instance", "port", "write", "n_ports", "spatial_bounds", *OPTIONS)
+    keys = ("instance", "port", "write", "n_ports", "spatial_bounds", "temporal_dims", *OPTIONS)
     try:
         check_keys(d, keys, what)
         opts = StreamerOptions.from_dict({k: d[k] for k in OPTIONS})
         s = Streamer(
             name, str(d["instance"]), str(d["port"]), bool(d["write"]),
-            tuple(int(x) for x in d["spatial_bounds"]), opts,
+            tuple(int(x) for x in d["spatial_bounds"]), int(d["temporal_dims"]), opts,
         )  # fmt: skip
     except (KeyError, TypeError, ValueError) as e:
         raise DesignError([Problem("point.keys", what, f"{type(e).__name__}: {e}")]) from None

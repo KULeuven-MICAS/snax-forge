@@ -7,21 +7,20 @@ import json
 import numpy as np
 import pytest
 
-from snax_forge.brm import Brm, load_brm, task_nest
+from snax_forge.brm import Brm, task_nest
 from snax_forge.design import Platform, StreamerOptions
 from snax_forge.design.platform import L1Config
 from snax_forge.design.streamers import Streamer
 from snax_forge.lower import Layout, LayoutError, StreamError, streamer_values
 from snax_forge.lower.derive import addresses
-from tests.brm.helpers import IMPL, affine_adder, vector_nest
+from tests.brm.helpers import IMPL, affine_adder, affine_elementwise_add, vector_nest
 from tests.design.helpers import SNAX_FORGE
 
 from .helpers import VECADD_TASKS, vecadd_point
 
 
 def _streamer(name, write, spatial_bounds, dims):
-    options = StreamerOptions(temporal_dims=dims, fifo_depth=2)
-    return Streamer(name, "x", "a", write, tuple(spatial_bounds), options)
+    return Streamer(name, "x", "a", write, tuple(spatial_bounds), dims, StreamerOptions(2))
 
 
 # Streamers of every shape the cases need, on a 16-bank L1 of 64 rows
@@ -46,11 +45,11 @@ def instance(nest_a=None, W=4):
 
 
 def test_vecadd_streamer_values():
-    """The library's elementwise_add: a, b and c of 64 int64 at the first three 512-byte blocks
-    of snax_forge's L1, n = 16 beats of 4, give vecadd's four task values."""
+    """elementwise_add with affine nests: a, b and c of 64 int64 at the first three 512-byte
+    blocks of snax_forge's L1, n = 16 beats of 4, give vecadd's four task values."""
     tasks = json.loads(VECADD_TASKS.read_text())["steps"]
     want = {s["task_name"]: s["values"] for s in tasks if s.get("type") in ("streamer", "accel")}
-    inst, l1 = load_brm("elementwise_add").resolve(IMPL), Platform.load(SNAX_FORGE).l1
+    inst, l1 = affine_elementwise_add().resolve(IMPL), Platform.load(SNAX_FORGE).l1
     shell = vecadd_point().streamers
     task = {"n": 16}
     assert want.pop("add_acc") == task and list(task) == inst.brm.registers

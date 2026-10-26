@@ -13,18 +13,28 @@ is; the reference check after the step is run.py's.
     ``0:factor`` tagged ``spatial``; every use of ``v`` in the body becomes
     ``b + factor * v_t + v_s`` (D73). The length must be a multiple of the
     factor for the graph's bound symbols (open item 31).
+``tag_map(map, kind)`` and ``untag_map(map)``
+    ``tag_map`` tags an untagged map ``temporal`` or ``tile`` as it is,
+    without splitting it (matadd's row map), and records that it did
+    (``loop.tagged``) so ``untag_map`` takes the tag back. A tagged map is an
+    error for ``tag_map``; for ``untag_map`` so is a map ``split_map``
+    tagged (``join_map`` undoes that) or one tagged by hand (D73).
 ``bind(node, brm, implementation, instance, params={})``
     replaces a tasklet and the spatial map around it (the map's only
     child) by an accelerated node with the tasklet's id, bound to an
     instance of a library BRM. The BRM's pattern matcher (patterns.py) says
-    which connector feeds which port. The lanes design param is read off the
+    which connector feeds which port. Every map around the spatial map
+    must be ``temporal``: they are the firing loops (an untagged one is
+    tagged with ``tag_map``; a ``tile`` one is not lowered yet, LOW3b). The
+    lanes design param is read off the
     spatial bound (D73), the other design params come from ``params`` or
     the BRM's defaults, and ``Brm.resolve`` checks them all. Each
     memlet becomes the port's lanes as a range over the spatial variable,
-    the container dtype must be the port's, and the memlets together with
-    the temporal maps around must give the elements in the order of the
-    port's nest (D70, D73). The tasklet's code, on the BRM's port names,
-    must be the BRM's ``function.code``; the accelerated node carries that
+    the container dtype must be the port's, and, for a BRM in the
+    ``affine`` notation, the memlets together with the temporal maps around
+    must give the elements in the order of the port's nest (D70, D73); in
+    the ``stream`` notation the memlet is the order. The tasklet's code, on
+    the BRM's port names, must be the BRM's ``function.code``; the accelerated node carries that
     code and the replaced subtree (D82). A folding output (``reduce``)
     whose memlet does not use the spatial variable (dot's
     ``out[0]``) folds every lane into one: its port must have one lane, its
@@ -49,7 +59,7 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.common import fresh
 from snax_forge.dfg import DfgError, Graph, Memlet, Node, named_rates, parse_dim
-from snax_forge.dfg.subset import format_dim, map_range
+from snax_forge.dfg.subset import dim_names, format_dim, map_range
 from snax_forge.expr import ExprError
 
 from .patterns import match
@@ -206,6 +216,44 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
 
 
 # =============================================================================
+# tag_map and untag_map
+# =============================================================================
+
+TAGS = ("temporal", "tile")  # what tag_map sets; spatial comes with split_map
+
+
+def tag_map(g: Graph, map: str, kind: str) -> Graph:
+    g = _copy(g)
+    body, i, _ = _locate(g, map)
+    node = body[i]
+    what = f"tag_map {map!r}"
+    if node.kind != "map":
+        raise SandboxError(f"{what}: a {node.kind!r} is not a map")
+    if "loop.kind" in node.attrs:
+        raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
+    if kind not in TAGS:
+        raise SandboxError(f"{what}: kind {kind!r} is not one of {list(TAGS)}")
+    node.attrs = {**node.attrs, "loop.kind": kind, "loop.tagged": True}  # for untag_map
+    return _result(g)
+
+
+def untag_map(g: Graph, map: str) -> Graph:
+    """The inverse of tag_map: the map without the tag tag_map set."""
+    g = _copy(g)
+    body, i, _ = _locate(g, map)
+    node = body[i]
+    what = f"untag_map {map!r}"
+    if node.kind != "map" or "loop.kind" not in node.attrs:
+        raise SandboxError(f"{what}: not a tagged map")
+    if node.attrs.get("loop.split"):
+        raise SandboxError(f"{what}: split_map tagged it; join_map undoes a split")
+    if not node.attrs.get("loop.tagged"):
+        raise SandboxError(f"{what}: tag_map did not tag it (no loop.tagged)")
+    node.attrs = {k: v for k, v in node.attrs.items() if k not in ("loop.kind", "loop.tagged")}
+    return _result(g)
+
+
+# =============================================================================
 # bind
 # =============================================================================
 
@@ -218,7 +266,7 @@ def bind(
     instance: str,
     params: Mapping[str, Any] | None = None,
 ) -> Graph:
-    from snax_forge.brm import BrmError, task_nest
+    from snax_forge.brm import BrmError, memlet_ordered, task_nest
 
     g = _copy(g)
     what = f"bind {node!r}"
@@ -227,11 +275,16 @@ def bind(
     smap = outer[-1] if outer else None
     if smap is None or smap.attrs.get("loop.kind") != "spatial" or len(smap.body or []) != 1:
         raise SandboxError(f"{what}: must be the only node of a spatial map (split the map first)")
-    temporal = []
-    for m in reversed(outer[:-1]):
-        if m.attrs.get("loop.kind") != "temporal":
-            break
-        temporal.insert(0, m)
+    temporal = list(outer[:-1])  # the firing loops, outermost first
+    for m in temporal:
+        kind = m.attrs.get("loop.kind")
+        if kind == "tile":
+            raise SandboxError(f"{what}: map {m.id!r} is a tile; tiles are not lowered yet (LOW3b)")
+        if kind != "temporal":
+            raise SandboxError(
+                f"{what}: map {m.id!r} around it is untagged; the maps around the spatial map are "
+                "its firing loops: tag it temporal with tag_map"
+            )
     try:
         b = load_brm(brm)
     except BrmError as e:
@@ -299,6 +352,7 @@ def bind(
     except DfgError as e:
         raise SandboxError(str(e)) from None
     task = {"n": n} | rates
+    by_nest = not memlet_ordered(b)  # stream: the memlet is the order, no nest to check
     new_in: dict[str, Memlet] = {}
     new_out: dict[str, Memlet] = {}
     for side, conns, out in (
@@ -312,20 +366,22 @@ def bind(
                 raise SandboxError(
                     f"{what}: port {port!r} is {want}, container {m.data!r} is {g.containers[m.data].dtype}"
                 )
-            try:
-                nest = task_nest(inst, port, task)
-            except ValueError as e:
-                raise SandboxError(f"{what}: {e}") from None
+            nest = None
+            if by_nest:
+                try:
+                    nest = task_nest(inst, port, task)
+                except ValueError as e:
+                    raise SandboxError(f"{what}: {e}") from None
             if c in folds:  # one lane: the last index becomes a range of one (D102)
                 dims = [*m.subset[:-1], _one_lane(m.subset[-1], f"{what}.{side}.{c}")]
                 out[port] = Memlet(m.data, dims)
                 beats = [lp for lp in temporal if lp.attrs["var"] in m.names]
-                _check_order(g, m, beats, None, nest.indices(), f"{what} port {port!r}")
+                if nest is not None:
+                    _check_order(g, m, beats, None, nest.indices(), f"{what} port {port!r}")
                 continue
-            out[port] = Memlet(
-                m.data, [_lanes_dim(d, var_s, end, f"{what}.{side}.{c}") for d in m.subset]
-            )
-            _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
+            out[port] = Memlet(m.data, _lanes_dims(m, var_s, end, f"{what}.{side}.{c}"))
+            if nest is not None:
+                _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
     acc = Node(
         tasklet.id,
         "accelerated",
@@ -359,6 +415,18 @@ def _one_lane(d: Any, what: str) -> Any:
     if len(parts) != 1:
         raise SandboxError(f"{what}: {d!r} is already a range")
     return format_dim((parts[0], expr.canonical(f"({parts[0]}) + 1"), 1))
+
+
+def _lanes_dims(m: Memlet, var: str, lanes: int, what: str) -> list[Any]:
+    """The memlet with the one dimension over the spatial variable as the lanes' range; the
+    other dimensions (a row index in 2-D) stay as they are."""
+    over = [k for k, d in enumerate(m.subset) if var in dim_names(d)]
+    if len(over) != 1:
+        raise SandboxError(
+            f"{what}: {m.data}{m.subset} uses the spatial variable {var!r} in {len(over)} "
+            "dimensions; the lanes run along one"
+        )
+    return [_lanes_dim(d, var, lanes, what) if k in over else d for k, d in enumerate(m.subset)]
 
 
 def _lanes_dim(d: Any, var: str, lanes: int, what: str) -> Any:
@@ -482,6 +550,8 @@ def join_map(g: Graph, map: str) -> Graph:
 
 
 register_transform("split_map", split_map, ints=("factor",))
+register_transform("tag_map", tag_map)
+register_transform("untag_map", untag_map)
 register_transform("bind", bind)
 register_transform("unbind", unbind)
 register_transform("join_map", join_map)

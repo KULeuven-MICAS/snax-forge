@@ -74,7 +74,7 @@ def test_what_is_read_and_what_is_small16s(tmp_path):
         32, 64, 512, 0x1000_0000, 512
     )  # fmt: skip
     assert (l2.base_addr, l2.size_bytes, l2.beat_bits, l2.width_bits) == (2**31, 2**31, 512, 64)
-    assert (p.default.temporal_dims, p.default.fifo_depth) == (1, 8)
+    assert p.default.fifo_depth == 8  # temporal_dim is the graph's (D84), not read
     assert p.wait_mode == platform_dict()["wait_mode"]
     assert (p.base, p.changes, p.entries) == (None, {}, {})
 

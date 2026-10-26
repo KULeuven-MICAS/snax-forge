@@ -16,12 +16,13 @@ reader takes from it:
                size_bytes    dram.length
                beat_bits     cluster.dma_data_width
                width_bits    cluster.data_width
-    streamers  default.temporal_dims, default.fifo_depth
+    streamers  default.fifo_depth
                              the one accelerator's streamer template
                              (``snax_acc_cfg`` over every core of every hive,
                              ``snax_streamer_cfg``): every mover's
-                             ``temporal_dim`` and ``fifo_depth``, which must
-                             agree
+                             ``fifo_depth``, which must agree; its
+                             ``temporal_dim`` is not read, each streamer's
+                             comes from the graph (D84)
     hjson                    the file's path from ``root`` (snax-forge's
                              root by default), ``/``-separated: the
                              platform's source, which the GVSoC generator
@@ -205,7 +206,6 @@ def platform_from_dict(d: Mapping[str, Any], name: str, source: str | None = Non
         raise _fail("hjson.value", f"{at}.snax_acc_name", f"{acc_name!r} is not an identifier")
     template = _get(acc, "snax_streamer_cfg", Mapping, at)
     at += ".snax_streamer_cfg"
-    temporal = _mover_value(template, "temporal_dim", at)
     fifo = _mover_value(template, "fifo_depth", at)
 
     base = _get(d, "cluster.cluster_base_addr")
@@ -220,7 +220,7 @@ def platform_from_dict(d: Mapping[str, Any], name: str, source: str | None = Non
             size_bytes=dram_size, base_addr=dram, beat_bits=wide, width_bits=width,
             dtype="int64", elems_per_word=1,
         )  # fmt: skip
-        default = replace(small.default, temporal_dims=temporal, fifo_depth=fifo)
+        default = replace(small.default, fifo_depth=fifo)
     except ValueError as e:
         raise _fail("hjson.value", "cluster", str(e)) from None
     return replace(small, name=name, l1=l1, l2=l2, default=default, entries={}, base=None,

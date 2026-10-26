@@ -17,35 +17,7 @@
   "params": {"lanes": "W", "n_inputs": 2, "op": "op"},
   "code": "out = a * b"
  },
- "dataflow": {
-  "notation": "affine",
-  "ports": {
-   "a": {
-    "shape": ["n * W"],
-    "offset": [0],
-    "loops": [
-     {"bound": "n", "strides": ["W"], "spatial": false},
-     {"bound": "W", "strides": [1], "spatial": true}
-    ]
-   },
-   "b": {
-    "shape": ["n * W"],
-    "offset": [0],
-    "loops": [
-     {"bound": "n", "strides": ["W"], "spatial": false},
-     {"bound": "W", "strides": [1], "spatial": true}
-    ]
-   },
-   "out": {
-    "shape": ["n * W"],
-    "offset": [0],
-    "loops": [
-     {"bound": "n", "strides": ["W"], "spatial": false},
-     {"bound": "W", "strides": [1], "spatial": true}
-    ]
-   }
-  }
- },
+ "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}},
  "pattern": {"family": "elementwise", "attrs": {"op": "mul", "arity": 2}},
  "implementations": {
   "chisel_tiled_spatial": {

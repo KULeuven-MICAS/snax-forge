@@ -221,7 +221,23 @@ CASES = [
     ("nest missing", lambda d: d["dataflow"]["ports"].pop("b"), "one nest per port"),
     ("nest invalid", lambda d: d["dataflow"]["ports"].update(out=["x"]), "list of ints"),
     ("keyword param", lambda d: _params(d).update({"in": {"stage": "design"}}), "valid name"),
+    ("stream key", lambda d: d.update(dataflow=_stream({"out": {"shape": [4]}})), "has no keys"),
+    ("stream list", lambda d: d.update(dataflow=_stream({"a": []})), "an empty object"),
 ]
+
+
+def _stream(nests: dict) -> dict:
+    """The stream notation (D70): every port's nest empty but the ones given."""
+    return {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}} | nests}
+
+
+def test_the_stream_notation_has_empty_nests():
+    """A unit BRM: lanes, rate and dtype are the interface's, the bound memlet the order."""
+    d = adder()
+    d["dataflow"] = _stream({})
+    brm = Brm.from_dict(d)
+    assert brm.to_dict()["dataflow"] == _stream({})
+    brm.resolve("chisel_tiled_spatial", {"W": 8})
 
 
 @pytest.mark.parametrize(

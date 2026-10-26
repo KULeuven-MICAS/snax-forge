@@ -90,10 +90,10 @@ and pass the reference check.
 
 Questions not decided yet. Numbers are never reused; a closed item is
 removed, and where it closed is in git history. Closed in CLN1: 63 (the ALU
-left snax-gvsoc; generated accelerators follow D130). Next free number: 93.
+left snax-gvsoc; generated accelerators follow D130). Closed in M13 B0: 45, 46, 48.
+Next free number: 93.
 
-1. BRM dataflow notation: `affine` (D70), frozen in M6; a rank-free notation
-   for unit BRMs comes with M13's B0 (open item 45).
+1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
 4. Stream as a proposer for DNN-shaped workloads, and an analytical
    estimator of our own (the engine alone, open item 49, plus bank conflicts
@@ -126,14 +126,8 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 93.
     `--set` paths: on hold.
 44. Reductions over tiles need partial sums and a final combine; until then
     no tile loop sits around a `reduce` memlet (LOW3b).
-45. A unit BRM's nest is one-dimensional, so 2-D containers and operands
-    reused across an outer loop are rejected (M13 B0).
-46. No transform tags an outer map `temporal` or `tile` without splitting
-    it, and `bind` under an untagged map fails without a named error (M13 B0).
 47. An in-place update (`y += x`) binds but does not lower: the writer waits
     for its own node's reader (LOW4).
-48. The flow sizes inputs from one bound symbol, and fills take 1-D arrays
-    only (M13 B0).
 49. The engine-alone number C3 compares against (firings × II + latency) is
     computed nowhere; it belongs in `design.md` (DSE0).
 50. SNAX-GVSoC's speed on large runs, measured in BASE2; timing-only runs
@@ -179,11 +173,9 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 93.
     its lanes, every unit described to the level above by r, ports,
     throughput, latency, state and area. A research direction (PAPER §10);
     J1 may become jacobi1d in three placements, with jacobi2d.
-78. The streamer as an input of its own (amends D84 and D134): the knobs and
-    per-streamer overrides out of the platform, a frozen streamer file as
-    input, `temporal_dim` lowered from the DFG's temporal loops. M13's B0
-    lowers `temporal_dim` and drops its knob; the rest waits for a design
-    that needs it.
+78. The streamer as an input of its own (amends D84 and D134): the remaining
+    knobs and per-streamer overrides out of the platform, a frozen streamer
+    file as input; `temporal_dim` comes from the graph since M13's B0.
 79. Several accelerators on one core: snax_cluster has `snax_acc_mux_demux`
     and CSR 1990 (`snax_multi_alu_cluster.hjson`); SNAX-GVSoC lacks CSR 1990,
     `snax_hjson` and the generator (`gen.instances`) refuse it, and the
@@ -194,7 +186,7 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 93.
 81. No kernel gives a reduction with more than one sum per run (T < n):
     snax-gvsoc's `forge-reduce` (`vsum-r16`) overrides the task list by
     hand, and retires in M13's B0 with rowsum, whose row loop is tagged
-    without a split and whose column loop is split (open item 46).
+    temporal with `tag_map` and whose column loop is split.
 82. SNAX-GVSoC dumps the output regions at exit, so the flow could compare
     them itself; until then the check is the program's own (D136).
 83. Control alignment with snax_cluster: a start with a zero count, a done

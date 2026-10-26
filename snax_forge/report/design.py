@@ -258,7 +258,7 @@ def build_design(
                        int(u.get("ii", 1)), [f"{m.port} ← {m.name}" for m in a.movers])]  # fmt: skip
     streamers = [
         StreamerRow(m.name, a.name, m.port, "write" if m.write else "read", m.lanes, m.fifo_depth,
-                    point.streamers[m.name].options.temporal_dims, containers.get(m.name))
+                    point.streamers[m.name].temporal_dims, containers.get(m.name))
         for m in a.movers
     ]  # fmt: skip
     return DesignReport(name, header, components, accels, streamers,

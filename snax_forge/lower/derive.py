@@ -38,10 +38,11 @@ or a range whose begin is affine in the ``v_k`` (``expr.linear``):
     spatial loop      one per range dimension: bound its length, stride its
                       step * strides[d] (fastest, the last range, first)
 
-The spatial bounds must be the streamer's, and the addresses the values
-visit, beat by beat, must be the ones the BRM's nest gives through the same
-layout (streams.py): the memlet and the accelerator agree on the order of
-the elements. The memlet's loop structure is the one written (one streamer
+The spatial bounds must be the streamer's. For a BRM in the ``affine``
+notation the addresses the values visit, beat by beat, must be the ones the
+BRM's nest gives through the same layout (streams.py): the memlet and the
+accelerator agree on the order of the elements. In the ``stream`` notation
+the memlet is the order (D70), so there is nothing to compare. The memlet's loop structure is the one written (one streamer
 loop per firing loop), so two temporal maps give two streamer loops even
 where the nest has one.
 """
@@ -54,11 +55,13 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.brm import memlet_ordered
 from snax_forge.design.streamers import (
     Loop,
     accelerated,
     firing_loops,
     instances,
+    port_loops,
     streamer_name,
 )
 from snax_forge.dfg import DfgError, Memlet, named_rates
@@ -192,27 +195,24 @@ def task_list(point: DesignPoint) -> TaskList:
             lay = layout(m.data, "l1")
             if lay is None:
                 raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
-            # a port with a named rate moves one beat per T firings: its streamer
-            # runs over the firing loops its memlet uses, not the ones it folds
-            if inst.brm.port(p).rate == 1:
-                port_loops = loops
-            else:
-                port_loops = [lp for lp in loops if lp.var in m.names]
-            values, sb = memlet_values(m, port_loops, lay, symbols, f"{what}.{p}")
+            values, sb = memlet_values(
+                m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}"
+            )
             if sb != list(s.spatial_bounds):
                 raise LowerError(
                     f"{what}.{p}: the memlet gives spatial bounds {sb}, streamer {s.name} has "
                     f"{list(s.spatial_bounds)}"
                 )
-            try:
-                want = streamer_values(inst, p, start, lay, s, pf.l1)
-            except StreamError as e:
-                raise LowerError(f"{what}.{p}: {e}") from None
-            if not np.array_equal(addresses(values, sb), addresses(want, sb)):
-                raise LowerError(
-                    f"{what}.{p}: the memlet gives {values}, the BRM's nest gives {want}: "
-                    "they take the elements in different orders"
-                )
+            if not memlet_ordered(inst.brm):  # affine: the nest must give the same order
+                try:
+                    want = streamer_values(inst, p, start, lay, s, pf.l1)
+                except StreamError as e:
+                    raise LowerError(f"{what}.{p}: {e}") from None
+                if not np.array_equal(addresses(values, sb), addresses(want, sb)):
+                    raise LowerError(
+                        f"{what}.{p}: the memlet gives {values}, the BRM's nest gives {want}: "
+                        "they take the elements in different orders"
+                    )
             task = f"{n.id}_{s.name}"
             c = m.data
             if p in n.inputs:

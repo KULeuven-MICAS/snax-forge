@@ -22,5 +22,5 @@
   "elems_per_word": 1
  },
  "wait_mode": "poll",
- "streamers": {"default": {"temporal_dims": 1, "fifo_depth": 8}}
+ "streamers": {"default": {"fifo_depth": 8}}
 }

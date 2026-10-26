@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.design import Design, DesignPoint, MemorySpec, Platform, run_checks
+from snax_forge.design import Design, DesignPoint, MemorySpec, Platform, run_checks, streamers
 from snax_forge.design.streamers import Loop
 from snax_forge.dfg import Memlet
 from snax_forge.lower import Layout, LowerError, TaskList, memlet_values, placed_waits, task_list
 from snax_forge.lower import __main__ as cli
 from snax_forge.lower.derive import addresses
+from tests.brm.helpers import affine_elementwise_add
 from tests.design.helpers import (
     SNAX_FORGE,
+    bound_matadd,
     bound_vecadd,
     bound_w8,
     chained,
@@ -72,12 +74,34 @@ def test_w8_gives_eight_lanes():
 
 
 def test_two_temporal_maps_give_two_streamer_loops():
-    p = point(edit_graph=two_loops, sets=[("streamers.default.temporal_dims", 2)])
+    p = point(edit_graph=two_loops)  # two streamer loops, from the graph (D84)
     tl = task_list(p)
     assert tl.configured()["add_acc_a"].values == {
         "base": 0, "temporal_bounds": [8, 2], "temporal_strides": [32, 256], "spatial_strides": [8]
     }  # fmt: skip
     assert tl.configured()["add_acc"].values == {"n": 16}
+
+
+def test_matadd_lowers_its_two_firing_loops():
+    """matadd at W = 4, M = 8, N = 16 on snax_forge (D73, D84): the column beats innermost (4,
+    32 bytes apart), the rows outer (8, 128 bytes), 4 lanes 8 bytes apart, each base the
+    plan's; n = 32 firings; the streamers' two temporal loops are the graph's."""
+    d = Design(Platform.load(SNAX_FORGE), bound_matadd())
+    assert run_checks(d) == []
+    p = DesignPoint.of(d, "matadd")
+    assert {s.name: s.temporal_dims for s in p.streamers.values()} == {
+        "acc_a": 2, "acc_b": 2, "acc_out": 2
+    }  # fmt: skip
+    c = task_list(p).configured()
+    for port, cont in (("a", "A"), ("b", "B"), ("out", "C")):
+        assert c[f"add_acc_{port}"].values == {
+            "base": p.memory.layouts[cont]["l1"].base, "temporal_bounds": [4, 8],
+            "temporal_strides": [32, 128], "spatial_strides": [8],
+        }  # fmt: skip
+    assert c["add_acc"].values == {"n": 32}
+    lay = p.memory.layouts["C"]["l1"]
+    visited = addresses(c["add_acc_out"].values, [4])  # beat i * 4 + j_t, lane
+    assert visited[1 * 4 + 1, 2] == lay.base + 176 == lay.address([1, 6])  # element (1, 6)
 
 
 def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():
@@ -125,14 +149,24 @@ def test_dot_waits_once_between_its_accelerators():
     assert waits == ["dma", "dma", "mul_out", "sum_out", "dma"]
 
 
-def test_a_memlet_the_nest_disagrees_with_is_refused():
-    """C written back to front: the addresses are right, the order is not the BRM's."""
+def _backwards(g):
+    """C written back to front: beat t at elements 60 - 4t .. 63 - 4t."""
+    g["body"][0]["body"][0]["outputs"]["out"]["subset"] = ["60 - 4 * i_t:64 - 4 * i_t"]
 
-    def backwards(g):
-        g["body"][0]["body"][0]["outputs"]["out"]["subset"] = ["60 - 4 * i_t:64 - 4 * i_t"]
 
+def test_a_memlet_the_nest_disagrees_with_is_refused(monkeypatch):
+    """An affine BRM: the addresses are right, the order is not the BRM's nest's."""
+    monkeypatch.setattr(streamers, "load_brm", lambda name: affine_elementwise_add())
     with pytest.raises(LowerError, match="different orders"):
-        task_list(point(edit_graph=backwards))
+        task_list(point(edit_graph=_backwards))
+
+
+def test_a_stream_brm_takes_the_memlets_order():
+    """The library's elementwise_add (stream, D70): the memlet is the order, so C back to front
+    lowers, its streamer starting at element 60 and stepping back a beat at a time."""
+    out = task_list(point(edit_graph=_backwards)).configured()["add_acc_out"].values
+    assert out["temporal_bounds"] == [16] and out["temporal_strides"] == [-32]
+    assert out["spatial_strides"] == [8]
 
 
 # =============================================================================
