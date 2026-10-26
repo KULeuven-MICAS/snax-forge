@@ -350,6 +350,21 @@ def test_the_sources_only_slot_takes_the_accelerator_slot_whatever_its_name(tmp_
     assert s["snax_streamer_cfg"] == {"$ref": "snax_forge_x_streamer.hjson"}
 
 
+def test_the_cluster_takes_snax_forges_name_whatever_the_sources(tmp_path):
+    """A source named otherwise (snax_cluster's own name): cluster.name and its entry in
+    cluster.bender_target become snax_forge_cluster, the other entries kept."""
+    path = point(tmp_path)
+    src = tmp_path / "platforms" / SOURCE.name
+    src.write_text(src.read_text().replace('"snax_forge_cluster"', '"snax_alu_cluster"'))
+    assert src.read_text().count('"snax_alu_cluster"') == 2  # the name and the bender entry
+    generate(path, tmp_path / "out", root=tmp_path)
+    cluster = parsed(tmp_path / "out" / "snax_forge.hjson")["cluster"]
+    assert cluster["name"] == "snax_forge_cluster"
+    assert cluster["bender_target"] == [
+        "snitch_cluster", "snax_forge_cluster", "sparse_interconnect"
+    ]  # fmt: skip
+
+
 @pytest.mark.parametrize(
     ("edit", "code", "text"),
     [
