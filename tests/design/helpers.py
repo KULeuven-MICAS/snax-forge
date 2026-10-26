@@ -58,16 +58,7 @@ def bound_vsum() -> Graph:
 
 
 # matadd at W = 4, M = 8, N = 16: the row map tagged temporal, the column map split (D73)
-MATADD_RECIPE = {
-    "name": "matadd", "kernel": "matadd", "params": {"W": 4, "M": 8, "N": 16},
-    "symbols": {"M": "M", "N": "N"},
-    "steps": [
-        {"transform": "tag_map", "params": {"map": "add_map", "kind": "temporal"}},
-        {"transform": "split_map", "params": {"map": "add_map_1", "factor": "W"}},
-        {"transform": "bind", "params": {"node": "add", "brm": "elementwise_add",
-                                         "implementation": "chisel_tiled_spatial", "instance": "acc"}},
-    ],
-}  # fmt: skip
+MATADD_RECIPE = json.loads((REPO / "recipes" / "matadd.json").read_text())
 
 
 @cache
