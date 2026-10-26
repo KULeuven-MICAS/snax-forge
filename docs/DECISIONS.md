@@ -256,8 +256,8 @@ snax_cluster's off): one shell contract for every block. Python checks `rtl.json
 `hw/chisel/blocks.json`, Scala only builds; snax_cluster sees only the bundle's files. → C§17, C§18.
 
 **D131** · design — The base cluster is snax-forge's own file, `platforms/snax_forge_cluster.hjson`
-(from snax_cluster's), which `design from-hjson` reads: one accelerator, its movers agreeing (D84),
-the rest small16's; `accelerator_slot` names its slot (D134). → C§13.
+(from snax_cluster's, its names snax-forge's), which `design from-hjson` reads: one accelerator, its
+movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134). → C§13.
 
 **D133** · brm — The Chisel Accumulator takes `ElementwiseTiledSpatial`'s control plus `len`, so
 both run under one shell contract (D130); it loads the next input as the result leaves (drain 0),

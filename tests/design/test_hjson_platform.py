@@ -54,7 +54,7 @@ def test_snax_forge_round_trips_byte_for_byte():
 
 def test_the_source_gives_the_checked_in_platform():
     """platforms/snax_forge.json is `design from-hjson platforms/snax_forge_cluster.hjson
-    snax_forge`; its accelerator_slot is snax_forge, not the source's snax_alu."""
+    snax_forge`; its accelerator_slot is snax_forge, the source's slot's name too."""
     p = platform_from_hjson(SOURCE, "snax_forge")
     assert p.to_json() == SNAX_FORGE.read_text()
     assert (p.hjson, p.accelerator_slot) == ("platforms/snax_forge_cluster.hjson", "snax_forge")

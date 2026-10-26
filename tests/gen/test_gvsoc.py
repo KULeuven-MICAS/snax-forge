@@ -41,7 +41,7 @@ needs_submodule = pytest.mark.skipif(
 )
 FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"]
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
-SLOT = ("snax_alu_core_template", "snax_acc_cfg", 0)
+SLOT = ("snax_forge_core_template", "snax_acc_cfg", 0)
 
 # vecadd at W = 4 on snax_forge: the template the design point's streamers give
 TEMPLATE_W4 = {
@@ -131,7 +131,7 @@ def test_the_streamer_file_is_the_design_points_streamers(w4):
 def test_the_streamer_file_is_the_hjsons_template(w4):
     """Lowered per design point, vecadd at W = 4 gives the source's own template back."""
     out, _ = w4
-    hand = parsed(SOURCE)["snax_alu_streamer_template"]
+    hand = parsed(SOURCE)["snax_forge_streamer_template"]
     for group in ("data_reader_params", "data_writer_params"):
         assert parsed(out / "snax_forge_streamer.hjson")[group] == hand[group]
 
@@ -160,8 +160,8 @@ def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
     ]  # fmt: skip
     # Outside the slot and the cluster's names, the source: its template, which only the slot
     # referred to, gone
-    assert "snax_alu_streamer_template" not in cluster
-    del source["snax_alu_streamer_template"]
+    assert "snax_forge_streamer_template" not in cluster
+    del source["snax_forge_streamer_template"]
     for d in (cluster, source):
         slot(d).clear()
         del d["cluster"]["name"], d["cluster"]["bender_target"]
@@ -337,7 +337,7 @@ def test_the_sources_only_slot_takes_the_accelerator_slot_whatever_its_name(tmp_
     p = Platform.load(SNAX_FORGE).with_changes([("accelerator_slot", "snax_forge_x")])
     path = point(tmp_path, platform=p)
     src = tmp_path / "platforms" / SOURCE.name
-    src.write_text(src.read_text().replace('snax_acc_name: "snax_alu"', 'snax_acc_name: "any"'))
+    src.write_text(src.read_text().replace('snax_acc_name: "snax_forge"', 'snax_acc_name: "any"'))
     out = tmp_path / "out"
     m = generate(path, out, root=tmp_path)
     assert m.files[:3] == [
@@ -355,11 +355,11 @@ def test_the_sources_only_slot_takes_the_accelerator_slot_whatever_its_name(tmp_
     [
         (lambda s: s.replace("        snax_acc_cfg: [{\n",
                              '        snax_acc_cfg: [{snax_acc_name: "other"}, {\n'),
-         "gen.slot", "['other', 'snax_alu']"),  # two slots
+         "gen.slot", "['other', 'snax_forge']"),  # two slots
         (lambda s: re.sub(r"snax_acc_cfg: \[\{.*?\}\],", "snax_acc_cfg: [],", s, flags=re.DOTALL),
          "gen.slot", "has the slots []"),  # no slot
-        (lambda s: s.replace('"snax_alu_cluster", "sparse_interconnect"', '"sparse_interconnect"'),
-         "gen.source", "does not hold cluster.name 'snax_alu_cluster'"),  # bender target
+        (lambda s: s.replace('"snax_forge_cluster", "sparse_interconnect"', '"sparse_interconnect"'),
+         "gen.source", "does not hold cluster.name 'snax_forge_cluster'"),  # bender target
         (lambda s: s.replace("        tcdm: {\n", '        tcdm: {$ref: "#/tcdm"},\n'
                              "        old_tcdm: {\n"),
          "gen.source", "cluster.tcdm is not an object written out"),  # nowhere to write

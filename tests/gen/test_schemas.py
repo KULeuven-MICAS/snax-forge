@@ -97,7 +97,7 @@ def test_the_cluster_file_validates_against_snax_clusters_schema(folder):
     source = parsed(SOURCE)
     validator.validate(_resolved(source, source, SOURCE.parent)["cluster"])
     slot = copy.deepcopy(cluster)
-    slot["snax_alu_core_template"]["snax_acc_cfg"][0]["snax_disable_csr_manager"] = "yes"
+    slot["snax_forge_core_template"]["snax_acc_cfg"][0]["snax_disable_csr_manager"] = "yes"
     with pytest.raises(ValidationError, match="'yes' is not of type 'boolean'"):
         validator.validate(_resolved(slot, slot, folder)["cluster"])
     del cluster["cluster"]["addr_width"]  # the schema does check: a required key
@@ -107,14 +107,13 @@ def test_the_cluster_file_validates_against_snax_clusters_schema(folder):
 
 @needs_cluster_schema
 def test_the_cluster_file_is_the_source_outside_the_slot_and_the_clusters_name(folder):
-    """The writer changes the slot, cluster.name and its entry in cluster.bender_target."""
+    """The writer changes the slot, cluster.name and its entry in cluster.bender_target, which
+    the source already names snax_forge_cluster."""
     cluster, source = parsed(folder / "snax_forge.hjson"), parsed(SOURCE)
     assert cluster["cluster"]["name"] == "snax_forge_cluster"
-    renamed = [t.replace("snax_alu_cluster", "snax_forge_cluster")
-               for t in source["cluster"]["bender_target"]]  # fmt: skip
-    assert cluster["cluster"]["bender_target"] == renamed
+    assert cluster["cluster"]["bender_target"] == source["cluster"]["bender_target"]
     for d in (cluster, source):
-        d["snax_alu_core_template"]["snax_acc_cfg"][0].clear()
+        d["snax_forge_core_template"]["snax_acc_cfg"][0].clear()
         del d["cluster"]["name"], d["cluster"]["bender_target"]
-    del source["snax_alu_streamer_template"]
+    del source["snax_forge_streamer_template"]
     assert cluster == source

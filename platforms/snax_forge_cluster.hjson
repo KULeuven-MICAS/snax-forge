@@ -3,11 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // snax-forge's base cluster (D131), read by `pixi run design from-hjson
-// platforms/snax_forge_cluster.hjson snax_forge`: snax_cluster's
+// platforms/snax_forge_cluster.hjson snax_forge`: from snax_cluster's
 // target/snitch_cluster/cfg/snax_alu_cluster.hjson at the pin
-// (gvsoc/snax-gvsoc/sw/README.md, b9e475b4), unchanged but for this comment. Its
-// accelerator slot is the one the generator sets for a design, and the one
-// the platform's streamer template is read from.
+// (gvsoc/snax-gvsoc/sw/README.md, ccc7688f), its values unchanged, its names
+// snax-forge's. Its accelerator slot is the one the generator sets for a
+// design, and the one the platform's streamer template is read from.
 {
     nr_s1_quadrant: 1,
     s1_quadrant: {
@@ -15,8 +15,8 @@
     },
 
     cluster: {
-        name: "snax_alu_cluster",
-        bender_target: ["snitch_cluster", "snax_alu_cluster", "sparse_interconnect"],
+        name: "snax_forge_cluster",
+        bender_target: ["snitch_cluster", "snax_forge_cluster", "sparse_interconnect"],
         boot_addr: 4096, // 0x1000
         cluster_base_addr: 268435456, // 0x1000_0000
         cluster_base_offset: 4194304,  // 4MB
@@ -85,7 +85,7 @@
                     cacheline: 256 // word size in bits
                 },
                 cores: [
-                    { $ref: "#/snax_alu_core_template" },
+                    { $ref: "#/snax_forge_core_template" },
                     { $ref: "#/dma_core_template" },
                 ]
             }
@@ -106,7 +106,7 @@
         },
     },
     // SNAX Accelerator Core Templates
-    snax_alu_core_template: {
+    snax_forge_core_template: {
         isa: "rv32ima",
         xssr: false,
         xfrep: false,
@@ -118,13 +118,13 @@
         xfdotp: false,
         xfvec: false,
         snax_acc_cfg: [{
-            snax_acc_name: "snax_alu",
-            bender_target: ["snax_alu"],
+            snax_acc_name: "snax_forge",
+            bender_target: ["snax_forge"],
             snax_tcdm_ports: 12,
             sparse_interconnect_config: [[12, 1]],
             snax_num_rw_csr: 3,
             snax_num_ro_csr: 2,
-            snax_streamer_cfg: {$ref: "#/snax_alu_streamer_template" }
+            snax_streamer_cfg: {$ref: "#/snax_forge_streamer_template" }
         }],
         snax_use_custom_ports: false,
         num_int_outstanding_loads: 1,
@@ -159,7 +159,7 @@
         num_itlb_entries: 1,
     }
     // SNAX Streamer Templates
-    snax_alu_streamer_template :{
+    snax_forge_streamer_template :{
 
         data_reader_params: {
             spatial_bounds: [[4], [4]],
@@ -175,6 +175,6 @@
             fifo_depth: [8],
         },
 
-        snax_library_name: "snax-alu",
+        snax_library_name: "snax-forge",
     }
 }

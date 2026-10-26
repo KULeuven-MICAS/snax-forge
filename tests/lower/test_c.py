@@ -173,7 +173,7 @@ def test_the_same_point_gives_the_same_text(tmp_path):
 def test_one_core_has_no_barriers(tmp_path):
     def one_core(c):  # the slot onto the DMA core: one core runs both (open item 80)
         dma = c["dma_core_template"]
-        dma["snax_acc_cfg"] = c["snax_alu_core_template"]["snax_acc_cfg"]
+        dma["snax_acc_cfg"] = c["snax_forge_core_template"]["snax_acc_cfg"]
         c["cluster"]["hives"][0]["cores"] = [{"$ref": "#/dma_core_template"}]
 
     src = text(tmp_path, edit_cluster=one_core)
@@ -205,7 +205,7 @@ def test_refused_without_one_dma_core(tmp_path):
     with pytest.raises(CError, match=r"\[c.cores\] .*xdma on cores \[\]"):
         text(tmp_path, edit_cluster=no_dma)
     p, *_ = parts(tmp_path)
-    assert cores(gen_mod.source(p.platform, tmp_path), "snax_alu").count == 2
+    assert cores(gen_mod.source(p.platform, tmp_path), "snax_forge").count == 2
 
 
 def test_refused_a_start_of_some_movers(tmp_path):
