@@ -10,6 +10,13 @@ ThisBuild / scalaVersion := "2.13.14"
 ThisBuild / version      := "0.1.0"
 ThisBuild / organization := "be.kuleuven.esat.micas"
 
+// `runMain` (Emit: `pixi run forge`'s bundle, `chisel-gen`) runs in sbt's own
+// JVM, and by default sbt first copies the classpath into target/bg-jobs. On
+// the NFS 4.2 home mount that copy becomes a server-side COPY whose completion
+// never reaches the client, so sbt waits forever (M13 B0). The jars are loaded
+// where they are instead.
+Global / bgCopyClasspath := false
+
 val chiselVersion     = "6.4.0"
 val chiseltestVersion = "6.0.0"
 val scalatestVersion  = "3.2.19"
