@@ -133,7 +133,7 @@ unit BRMs, gives only lanes and a rate, the bound memlet giving the order. → C
 
 **D71** · dfg — `.snaxdfg` is SNAX-DFG's own JSON format: SDFG's concepts, one expression grammar
 (`expr.py`) shared with the BRM, MatMul and Transpose first expanded into dot's shape (`sdfg/expand.py`).
-Importers derive it and name what they do not support; streamers appear only at lowering. → C§11.
+Importers derive, decide nothing and name what they lack; streamers appear only at lowering. → C§11.
 
 **D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms on a
 `.snaxdfg`, applied in order from a recipe (kernel, params, symbols, steps), each step checked by
