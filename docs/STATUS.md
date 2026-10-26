@@ -103,7 +103,8 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 93.
 20. Streamer ports are one bank wide; wider when a kernel needs it (PACK1).
 21. `elems_per_word > 1` has never been moved by streamers, accelerators or
     the DMA (PACK1). The Accumulator's tree zero-extends its lanes
-    (`UInt.pad`): PACK1 makes it sign-extend for int8 into int32.
+    (`UInt.pad`): PACK1 makes it sign-extend for int8 into int32. relu, axpy
+    and matadd were int32 in KER0 and run as int64 until then (M13 B0).
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel`
     until one is needed.
@@ -115,8 +116,9 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 93.
     replayed or swept, and the design checks' fixes speak of the recipe.
 36. Control flow in SNAX-DFG: a sequential `loop` kind and a `branch` kind,
     registered when a kernel needs them (M9).
-37. The expression grammar has `+ - * //` only: tail tiles need `min`,
-    branches comparisons, jacobi1d a cast.
+37. The expression grammar has `+ - * //`, `max` and `min`, and constant
+    casts to the output's type: branches need comparisons, jacobi1d a cast
+    of a value.
 38. The DMA moves a container as contiguous whole beats (D105); strided or
     2-D transfers when a kernel needs them.
 40. Switching runs in the viewer clears the selected cycle.

@@ -8,7 +8,9 @@ against it, and the goldens of a run's ``data.h`` come from it (gen/data.py).
     against_reference(spec, inputs, run) -> {output: (run's, the reference's)}
 
 **Inputs and symbols.** ``inputs`` holds one array per non-transient
-container, of its dtype. A symbol the graph binds keeps its value; one that
+container, of its dtype; for a container with attr ``sdfg.scalar`` (a
+kernel's scalar argument, shape ``[1]``) a 0-d input (``np.int64(3)``) or a
+1-element one. A symbol the graph binds keeps its value; one that
 is null is read off the input shapes (``A`` of shape ``["N"]`` gives ``N =
 len(A)``), and the two must agree. Containers start as copies of the
 inputs; transients start as zeros. Only integer containers are run (D28).
@@ -77,7 +79,7 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.expr import ExprError, Value
 
-from .graph import Graph, Memlet, Node
+from .graph import SCALAR, Graph, Memlet, Node
 from .kinds import DfgError
 from .subset import parse_dim
 
@@ -147,6 +149,8 @@ def execute(graph: Graph, inputs: Mapping[str, np.ndarray]) -> dict[str, np.ndar
             data[name] = np.zeros(shape, dtype)
             continue
         arr = np.asarray(inputs[name])
+        if c.attrs.get(SCALAR) and arr.shape == ():  # a kernel's scalar argument
+            arr = arr.reshape(1)
         if arr.shape != shape or arr.dtype != dtype:
             raise ExecutionError(
                 f"input {name!r}: {arr.dtype}{list(arr.shape)} given, "
@@ -186,6 +190,8 @@ def bind_symbols(graph: Graph, inputs: Mapping[str, np.ndarray]) -> dict[str, in
         if c.transient:
             continue
         arr_shape = np.shape(inputs[name])
+        if c.attrs.get(SCALAR) and arr_shape == ():
+            arr_shape = (1,)
         if len(arr_shape) != len(c.shape):
             raise ExecutionError(
                 f"input {name!r}: {len(arr_shape)} dimensions, the graph has {len(c.shape)}"

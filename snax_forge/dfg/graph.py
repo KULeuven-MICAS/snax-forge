@@ -74,6 +74,9 @@ def _namespaced(key: Any) -> bool:
 # Containers and memlets
 # =============================================================================
 
+# the container attr of a kernel's scalar argument: shape [1], read as element 0
+SCALAR = "sdfg.scalar"
+
 
 @dataclass
 class Container:

@@ -404,7 +404,7 @@ validated when it is made.
 |---|---|
 | `name` | the kernel |
 | `symbols` | name → int or `null`: `null` as imported, the value once a recipe binds it; expressions keep the name |
-| `containers` | name → `shape` (ints or expressions over symbols), `dtype` (a NumPy dtype name), `transient`, `attrs` (namespaced only) |
+| `containers` | name → `shape` (ints or expressions over symbols), `dtype` (a NumPy dtype name), `transient`, `attrs` (namespaced only; `sdfg.scalar: true` marks a kernel's scalar argument, shape `[1]`, read as element 0, which the reference executor also takes as a 0-d input) |
 | `body` | the nodes, in execution order |
 
 **Nodes.** Every node has `id`, `kind`, `inputs`, `outputs`, `attrs` and,
@@ -441,8 +441,10 @@ untouched. More kinds come with `register_kind`.
 
 **Names.** Every name in an expression is a symbol or an enclosing map's
 `var`; shapes use symbols only; symbols, containers and variables never
-share a name. Expressions are stored as `ast.unparse` writes them, one
-without names as an int.
+share a name. An expression is ints, names, `+ - * //`, and `max(a, b)`,
+`min(a, b)` (two arguments, no other call; `snax_forge/expr.py`).
+Expressions are stored as `ast.unparse` writes them, one without names as
+an int.
 
 vecadd after `split_map` (W = 4) and `bind`: the temporal map keeps what it
 was split from, and the accelerated node what it computes and what it

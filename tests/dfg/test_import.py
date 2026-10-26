@@ -8,7 +8,9 @@ map, then its ``Reduce`` as a sum map folding into ``out[0]``; and
 importer builds the simplified SDFG as ``pixi run sdfg`` does, and a stored
 ``.sdfg`` gives the same graph. Beyond them: a transient between two maps,
 offset subsets, a Max reduction, a Reduce over one axis of two, and every
-construct the importer does not support rejected by name.
+construct the importer does not support rejected by name. relu, axpy, matadd
+and rowsum import through the command line and match their kernel's
+reference at two sizes each (the constructs they need: test_import_constructs.py).
 """
 
 from __future__ import annotations
@@ -72,6 +74,30 @@ def test_cli_writes_the_fixture(tmp_path, capsys, kernel):
     assert main(["import", kernel, "--out", str(tmp_path)]) == 0
     assert (tmp_path / f"{kernel}.snaxdfg").read_text() == fixture(kernel).read_text()
     assert capsys.readouterr().out.strip() == str(tmp_path / f"{kernel}.snaxdfg")
+
+
+@pytest.mark.parametrize(
+    ("kernel", "sizes"),
+    [
+        ("relu", ["1024", "7"]),
+        ("axpy", ["1024", "7"]),
+        ("matadd", ["256 x 256", "256 x 8"]),  # --n sets N only: one square, one not
+        ("rowsum", ["256 x 256", "256 x 8"]),
+    ],
+)
+def test_cli_imports_and_checks_the_b0_kernels(tmp_path, capsys, kernel, sizes):
+    """Each imports, then runs in the reference executor equal to the kernel's reference."""
+    assert main(["import", kernel, "--out", str(tmp_path)]) == 0
+    path = str(tmp_path / f"{kernel}.snaxdfg")
+    capsys.readouterr()
+    for n in (None, "7" if sizes[1] == "7" else "8"):
+        assert main(["check", path, "--kernel", kernel, *(["--n", n] if n else [])]) == 0
+    out = capsys.readouterr().out
+    assert out.count("OK ") == 2
+    for size in sizes:
+        dims = size.split(" x ")
+        want = f"N = {dims[0]})" if len(dims) == 1 else f"M = {dims[0]}, N = {dims[1]})"
+        assert want in out
 
 
 def test_cli_reports_an_unsupported_kernel(tmp_path, capsys):
@@ -187,9 +213,16 @@ def test_raw_vecadd_has_three_states():
     [
         (progs.unsupported_wcr, "write-conflict resolution .* not from a Reduce .*contents"),
         (progs.unsupported_reduce_used_twice, "result 's' is used other than by one copy"),
-        (lambda: progs.row_sum_view.to_sdfg(simplify=True), "view '__tmp0' is not imported"),
-        (progs.unsupported_two_params, "over 2 parameters"),
-        (progs.unsupported_cast, "Call is not allowed .* open item 37"),
+        (progs.unsupported_view, "view 'V' is not imported"),
+        (
+            progs.unsupported_reduce_view_part,
+            "view 'V' is used other than by one copy of the whole",
+        ),
+        (progs.unsupported_dependent_params, "range of 'j' depends on 'i' of the same map"),
+        (progs.unsupported_cast, "cast 'dace.int64\\(a\\)' .* a non-constant .* open item 37"),
+        (progs.unsupported_cast_type, "cast to int32, not the output's type int64 .* open item 37"),
+        (progs.unsupported_cast_float, "cast to float64, not an integer type .* open item 37"),
+        (progs.unsupported_transient_scalar, "array 's': a transient Scalar is not imported"),
         (progs.unsupported_copy, "copy 'A' -> 'B'"),
         (progs.unsupported_strides, "strides \\[2\\] are not the default \\[1\\]"),
     ],
