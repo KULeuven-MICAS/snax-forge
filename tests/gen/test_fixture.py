@@ -2,8 +2,9 @@
 
 Each fixture is a folder of the snax-gvsoc submodule's ``forge/``, the
 generator's output for one design point, checked in untouched
-(``forge/README.md`` there): vecadd, vecmul, vsum, vsum_tree and matadd (the first
-2-D bind, two temporal loops per streamer). Its refresh commands are run
+(``forge/README.md`` there): vecadd, vecmul, vsum, vsum_tree, matadd (the first
+2-D bind, two temporal loops per streamer), rowsum and rowsum_serial (a restart
+every T = N / W beats). Its refresh commands are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson
 copied into its ``platforms/``), so the design point is
@@ -29,7 +30,7 @@ from .helpers import SUB, files, root
 
 FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_forge.json
-DESIGNS = ["vecadd", "vecmul", "vsum", "vsum_tree", "matadd"]
+DESIGNS = ["vecadd", "vecmul", "vsum", "vsum_tree", "matadd", "rowsum", "rowsum_serial"]
 
 pytestmark = pytest.mark.skipif(
     not (SUB / "snax").is_dir(),

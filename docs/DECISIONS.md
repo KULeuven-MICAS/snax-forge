@@ -131,10 +131,9 @@ so reductions and elementwise blocks share one; function, dataflow, pattern) and
 shape, an offset and loops (spatial last, an innermost stride 0 repeating a beat); `stream`, for
 unit BRMs, gives only lanes and a rate, the bound memlet giving the order. → C§10.
 
-**D71** · dfg — SNAX-DFG is its own JSON format, `.snaxdfg`: SDFG's concepts without its JSON, one
-expression grammar (`expr.py`) shared with the BRM; MatMul and Transpose are first expanded into
-dot's shape (`sdfg/expand.py`). Importers derive it, decide nothing and name what they do not
-support; streamers appear only at lowering. → C§11.
+**D71** · dfg — `.snaxdfg` is SNAX-DFG's own JSON format: SDFG's concepts, one expression grammar
+(`expr.py`) shared with the BRM, MatMul and Transpose first expanded into dot's shape (`sdfg/expand.py`).
+Importers derive it and name what they do not support; streamers appear only at lowering. → C§11.
 
 **D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms on a
 `.snaxdfg`, applied in order from a recipe (kernel, params, symbols, steps), each step checked by
@@ -154,10 +153,9 @@ needed. → `dfg/execute.py`.
 **D82** · brm — A BRM says what one lane computes (`function.code`), and `bind` checks the tasklet
 against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
 
-**D84** · design — The platform is a file of its own in `platforms/`, paired with the recipe's bound
-graph by the design step, so either changes without the other; its cluster parameters and the
-streamers' FIFO depths are design knobs, never a template (D134), and each streamer's temporal loops
-come from the graph. → C§13.
+**D84** · design — The platform is its own file in `platforms/`, paired with the bound graph by the
+design step, so either changes alone; its cluster parameters and the streamers' FIFO depths are
+design knobs, never a template (D134), and the streamers' temporal loops come from the graph. → C§13.
 
 **D85** · design — Design checks report every problem before anything is written, each with its fix.
 → C§14.

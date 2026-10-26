@@ -80,17 +80,18 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 M14 is done, closed by CLN1: a recipe runs to a checked SNAX-GVSoC run
 (`pixi run flow`) and to a bundle whose ELF runs on snax_cluster's RTL
-(`pixi run forge`, D123). Next is M13's B0 (D141): CLN1's leftovers, the
-cluster headers, the importer, the MatMul and Transpose pass, ND1's slice
-and the restart every T < n. It is done when vecadd, vecmul, vsum and dot
-behave as before and rowsum, axpy, relu, bicg, mvt, gesummv and atax import
-and pass the reference check.
+(`pixi run forge`, D123). M13's B0 rounds (D141) are done: CLN1's
+leftovers, the cluster headers, the importer, the MatMul and Transpose pass,
+ND1's slice and the restart every T < n (rowsum). vecadd, vecmul, vsum and
+dot behave as before; rowsum, axpy, relu, bicg, mvt, gesummv and atax import
+and pass the reference check. B0's PRs come next, then the streamer's own PR
+(narrow elements), then B1.
 
 ## Open Items
 
 Questions not decided yet. Numbers are never reused; a closed item is
 removed, and where it closed is in git history. Closed in CLN1: 63 (the ALU
-left snax-gvsoc; generated accelerators follow D130). Closed in M13 B0: 45, 46, 48.
+left snax-gvsoc; generated accelerators follow D130). Closed in M13 B0: 45, 46, 48, 81.
 Next free number: 93.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
@@ -183,10 +184,6 @@ Next free number: 93.
 80. One Snitch core driving both the DMA and the accelerator: the C backend
     takes core roles from the cluster file, `snax_hjson` wants xdma on the
     last core. Never run.
-81. No kernel gives a reduction with more than one sum per run (T < n):
-    snax-gvsoc's `forge-reduce` (`vsum-r16`) overrides the task list by
-    hand, and retires in M13's B0 with rowsum, whose row loop is tagged
-    temporal with `tag_map` and whose column loop is split.
 82. SNAX-GVSoC dumps the output regions at exit, so the flow could compare
     them itself; until then the check is the program's own (D136).
 83. Control alignment with snax_cluster: a start with a zero count, a done

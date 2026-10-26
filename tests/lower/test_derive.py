@@ -14,6 +14,7 @@ from tests.brm.helpers import affine_elementwise_add
 from tests.design.helpers import (
     SNAX_FORGE,
     bound_matadd,
+    bound_rowsum,
     bound_vecadd,
     bound_w8,
     chained,
@@ -102,6 +103,30 @@ def test_matadd_lowers_its_two_firing_loops():
     lay = p.memory.layouts["C"]["l1"]
     visited = addresses(c["add_acc_out"].values, [4])  # beat i * 4 + j_t, lane
     assert visited[1 * 4 + 1, 2] == lay.base + 176 == lay.address([1, 6])  # element (1, 6)
+
+
+@pytest.mark.parametrize(
+    "name, reader, writer, n",
+    [
+        ("rowsum", ([16, 8], [32, 512]), ([8], [8]), 128),
+        ("rowsum_serial", ([16, 4], [8, 128]), ([4], [8]), 64),
+    ],
+)
+def test_rowsum_restarts_every_row(name, reader, writer, n):
+    """rowsum on snax_forge (open item 81): A's reader runs the columns innermost (T = N / W
+    beats) and the rows outer, two temporal loops; y's writer has one firing loop, the rows,
+    one lane, one word per row; n = M * N / W beats and len = T = 16 (M sums)."""
+    d = Design(Platform.load(SNAX_FORGE), bound_rowsum(name))
+    assert run_checks(d) == []
+    p = DesignPoint.of(d, name)
+    assert {s.name: s.temporal_dims for s in p.streamers.values()} == {"acc_a": 2, "acc_out": 1}
+    c = task_list(p).configured()
+    for port, cont, (bounds, strides) in (("a", "A", reader), ("out", "y", writer)):
+        assert c[f"sum_acc_{port}"].values == {
+            "base": p.memory.layouts[cont]["l1"].base, "temporal_bounds": bounds,
+            "temporal_strides": strides, "spatial_strides": [8],
+        }  # fmt: skip
+    assert c["sum_acc"].values == {"n": n, "T": 16}
 
 
 def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():

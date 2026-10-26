@@ -69,6 +69,17 @@ def bound_matadd() -> Graph:
     return apply_recipe(Recipe.from_dict(MATADD_RECIPE), import_kernel("matadd"))[-1].graph
 
 
+@cache
+def bound_rowsum(name: str = "rowsum", **sizes: int) -> Graph:
+    """rowsum bound by ``recipes/<name>.json`` (``rowsum``: adder tree, W = 4, M = 8, N = 64;
+    ``rowsum_serial``: accumulator, W = 1, M = 4, N = 16), ``sizes`` overriding its params:
+    a restart every T = N / W beats (open item 81)."""
+    from snax_forge.dfg.import_sdfg import import_kernel
+
+    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params(sizes)
+    return apply_recipe(recipe, import_kernel("rowsum"))[-1].graph
+
+
 def design(
     graph: str | Graph = "vecadd_accelerated",
     edit_platform: Edit | None = None,
