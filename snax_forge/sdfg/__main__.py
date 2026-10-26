@@ -1,9 +1,11 @@
-"""SDFG ingest (pixi ``sdfg``): each kernel's raw and simplified SDFG in out/sdfg/.
+"""SDFG ingest (pixi ``sdfg``): each kernel's raw, simplified and expanded SDFG in out/sdfg/.
 
     python -m snax_forge.sdfg [KERNEL ...]   ingest the named kernels (all if none)
     python -m snax_forge.sdfg --list         list the kernels in kernels/
 
-The simplified SDFG is the input of the SNAX-DFG importer (D71).
+The expanded SDFG (the simplified one with MatMul and Transpose in dot's
+shape, ``expand.py``) is the input of the SNAX-DFG importer (D71); the
+simplified and the expanded one are each compiled and checked against NumPy.
 """
 
 import argparse

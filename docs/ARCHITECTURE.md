@@ -59,7 +59,7 @@ holds the related work.
 3. **The user owns the accelerator, the model owns the platform** (D51). The
    platform is SNAX's, read from its hjson, and modelled to match its RTL.
 4. **Decisions are separate from derivations.** SNAX-SANDBOX and the design
-   step decide; importers and SNAX-LOWER derive; the model measures.
+   step decide; SDFG ingest, importers and SNAX-LOWER derive; the model measures.
 5. **Everything is text and diffable.** Graphs, BRMs, recipes, platforms,
    design points, task lists, programs, profiles and traces.
 6. **Extend without editing the core**, by registration and namespaced attrs
@@ -106,8 +106,8 @@ and the flow's ELF runs on its RTL (section 5.7, `pixi run forge`).
 
 | Component | Code | Fields | Consumes | Produces |
 |---|---|---|---|---|
-| SDFG ingest | `sdfg/` | | a kernel's DaCe source in `kernels/` | raw and simplified SDFG |
-| Importer | `dfg/import_sdfg.py` | C§11 | a kernel's simplified SDFG | `.snaxdfg` |
+| SDFG ingest | `sdfg/` | | a kernel's DaCe source in `kernels/` | raw, simplified and expanded SDFG |
+| Importer | `dfg/import_sdfg.py` | C§11 | a kernel's expanded SDFG | `.snaxdfg` |
 | Reference executor | `dfg/execute.py` | | `.snaxdfg`, inputs | golden output |
 | SNAX-BRM | `brm/` | C§10 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§12 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
@@ -137,8 +137,10 @@ whose output memlet carries a `reduce` (D102); an accelerated node is one
 beat of a bound BRM instance (D82). Expressions use one grammar shared with
 the BRM (`expr.py`).
 
-The importer (`dfg/import_sdfg.py`, `pixi run import-dfg <kernel>`) reads the
-simplified SDFG that `pixi run sdfg <kernel>` writes, keeps the kernel's
+Before it, `sdfg/expand.py` expands DaCe's MatMul and Transpose into dot's
+shape, a multiply map and a Reduce over the contracted axis (D71). The
+importer (`dfg/import_sdfg.py`, `pixi run import-dfg <kernel>`) reads the
+expanded SDFG that `pixi run sdfg <kernel>` writes, keeps the kernel's
 names, decides nothing, and names what it does not support (D71). Sequential
 loops and branches come with the kernels that need them (open item 36).
 

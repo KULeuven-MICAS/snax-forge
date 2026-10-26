@@ -1,9 +1,10 @@
 """SDFG importer (D71): a simplified DaCe SDFG -> a ``.snaxdfg`` graph.
 
 The importer derives and decides nothing (principle 4). It reads the
-simplified SDFG that ``pixi run sdfg <kernel>`` writes (or builds the same
-SDFG in-process from the kernel's ``SPEC``) and maps it onto the format of
-D71:
+expanded SDFG that ``pixi run sdfg <kernel>`` writes: the simplified one
+after ``sdfg/expand.py`` (``import_kernel`` builds and expands it
+in-process from the kernel's ``SPEC``; ``import_sdfg`` takes any SDFG as
+given) and maps it onto the format of D71:
 
     SDFG                              .snaxdfg
     ------------------------------    ---------------------------------------
@@ -79,7 +80,8 @@ casts are folded; plain memlets; the ``Reduce`` library node at the top
 level, over unit-step ranges, its scalar copy or its view folded.
 Everything else raises ``SdfgImportError`` naming the construct and, where
 one exists, the open item or task that adds it: several states (open item
-36), other library nodes (MatMul, Transpose: M13 B0 R4), a ``wcr`` memlet
+36), other library nodes (MatMul and Transpose are expanded before import,
+``sdfg/expand.py``; a Transpose it leaves is refused here), a ``wcr`` memlet
 DaCe wrote itself (a fold into the element's contents), a map range that
 depends on another parameter of the same map, transient scalars and views
 other than a Reduce's folded ones, nested SDFGs, other casts and code
@@ -246,7 +248,7 @@ class _Importer:
             shape = [_value(s, {}, f"{what} shape") for s in d.shape]
             expected = [expr.canonical(_c_stride(shape, i)) for i in range(len(shape))]
             strides = [_value(s, {}, f"{what} strides") for s in d.strides]
-            if strides != expected:
+            if not all((_sym(a) - _sym(b)) == 0 for a, b in zip(strides, expected, strict=True)):
                 raise SdfgImportError(f"{what}: strides {strides} are not the default {expected}")
             if any(_value(o, {}, f"{what} offset") != 0 for o in d.offset):
                 raise SdfgImportError(f"{what}: a nonzero offset {list(d.offset)} is not imported")
@@ -661,9 +663,11 @@ def import_sdfg(sdfg: dace.SDFG, name: str) -> Graph:
 
 
 def import_kernel(kernel: str) -> Graph:
-    """Build the kernel's simplified SDFG (as ``pixi run sdfg`` does) and import it."""
+    """Build the kernel's simplified SDFG (as ``pixi run sdfg`` does), expand it
+    (``sdfg/expand.py``: MatMul and Transpose into dot's shape) and import it."""
     from snax_forge.sdfg.build import build
+    from snax_forge.sdfg.expand import expand
     from snax_forge.sdfg.loader import load
 
     spec = load(kernel)
-    return import_sdfg(build(spec, simplify=True), spec.name)
+    return import_sdfg(expand(build(spec, simplify=True)), spec.name)

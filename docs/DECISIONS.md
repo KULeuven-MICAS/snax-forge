@@ -132,8 +132,10 @@ operand's shape, an offset and loops (bound, strides, spatial flag), spatial loo
 innermost stride 0 repeating a beat as SNAX's reader does; it checks the memlets' order. → C§10.
 
 **D71** · dfg — SNAX-DFG is its own JSON format, `.snaxdfg`: SDFG's concepts without SDFG's JSON,
-one expression grammar (`expr.py`) shared with the BRM. Importers derive it, decide nothing and name
-what they do not support; streamers appear only at lowering. → C§11.
+one expression grammar (`expr.py`) shared with the BRM. Library nodes are expanded into maps before
+import, in dot's shape (a MatMul into a multiply map and a Reduce, a Transpose into its readers'
+indices); importers derive it, decide nothing and name what they do not support; streamers appear
+only at lowering. → C§11.
 
 **D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms on a
 `.snaxdfg`, applied in order from a recipe (kernel, params, symbols, steps), each step checked by

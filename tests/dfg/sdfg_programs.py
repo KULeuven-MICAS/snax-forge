@@ -7,7 +7,9 @@ of jacobi1d; ``amax`` is a Max reduction stored through a scalar and a copy,
 as dot's Sum is, and ``total`` a Sum over both dimensions of a matrix.
 ``row_sum`` is a Reduce over one axis of two, built by hand; NumPy's ``B[:] = np.sum(A, axis=1)``
 goes through a view, which the importer folds (``row_sum_view``). ``three_params`` is
-a map over three parameters. The ``unsupported_*`` builders make one
+a map over three parameters. ``matmat``, ``batched``, ``vecvec`` and
+``transpose_only`` are the MatMul and Transpose cases of ``expand``
+(test_expand.py). The ``unsupported_*`` builders make one
 construct each that the importer must reject by name.
 
 No ``from __future__ import annotations`` here: DaCe reads the type hints of
@@ -19,6 +21,7 @@ import dace
 import numpy as np
 
 N = dace.symbol("N")
+M, K = dace.symbol("M"), dace.symbol("K")
 
 
 @dace.program
@@ -39,6 +42,26 @@ def total(A: dace.int64[N, N], out: dace.int64[1]):
 @dace.program
 def row_sum_view(A: dace.int64[N, N], B: dace.int64[N]):
     B[:] = np.sum(A, axis=1)
+
+
+@dace.program
+def matmat(A: dace.int64[M, K], B: dace.int64[K, N], C: dace.int64[M, N]):
+    C[:] = A @ B
+
+
+@dace.program
+def batched(A: dace.int64[2, M, K], B: dace.int64[2, K, N], C: dace.int64[2, M, N]):
+    C[:] = A @ B
+
+
+@dace.program
+def vecvec(x: dace.int64[N], y: dace.int64[N], out: dace.int64[1]):
+    out[0] = x @ y
+
+
+@dace.program
+def transpose_only(A: dace.int64[M, N], B: dace.int64[N, M]):
+    B[:] = A.T
 
 
 @dace.program
@@ -199,4 +222,17 @@ def unsupported_reduce_used_twice() -> dace.SDFG:
         t = st.add_tasklet(f"copy_{out}", {"i"}, {"o"}, "o = i")
         st.add_edge(s, None, t, "i", dace.Memlet("s[0]"))
         st.add_edge(t, "o", st.add_write(out), None, dace.Memlet(f"{out}[0]"))
+    return sdfg
+
+
+def unsupported_matmul_shapes() -> dace.SDFG:
+    """A MatMul of A[4, 6] and b[5]: the contracted dimensions differ."""
+    from dace.libraries.blas import MatMul
+
+    sdfg, st = _one_state({"A": ([4, 6], {}), "b": ([5], {}), "c": ([4], {})})
+    mm = MatMul("mm")
+    st.add_node(mm)
+    st.add_edge(st.add_read("A"), None, mm, "_a", dace.Memlet("A[0:4, 0:6]"))
+    st.add_edge(st.add_read("b"), None, mm, "_b", dace.Memlet("b[0:5]"))
+    st.add_edge(mm, "_c", st.add_write("c"), None, dace.Memlet("c[0:4]"))
     return sdfg

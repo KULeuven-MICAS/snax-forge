@@ -127,8 +127,9 @@ $$\mathit{out} = \sum_i A_i B_i$$
 
 $$y = A^T (A x)$$
 
-- No maps at all: a Transpose and two MatMuls, library nodes the importer
-  must expand.
+- No maps at all: a Transpose and two MatMuls, which `sdfg/expand.py`
+  expands before import into dot's shape, the Transpose folded into the
+  second product's indices (D71).
 - A chaining barrier: `A x` must be complete before the second product
   starts, so it lives in L1 or in the unit's state.
 - `A` is read twice, the second time transposed: a strided streamer, or one

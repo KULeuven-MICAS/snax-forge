@@ -11,7 +11,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 
 | Component | Code | Tests | Data |
 |---|---|---|---|
-| SDFG ingest | `snax_forge/sdfg/` | (through `tests/dfg`) | `kernels/` |
+| SDFG ingest | `snax_forge/sdfg/` | `tests/dfg/test_expand.py` (and through `tests/dfg`) | `kernels/` |
 | SNAX-DFG, importer, reference executor | `snax_forge/dfg/`, `snax_forge/expr.py` | `tests/dfg/`, `tests/test_expr.py` | `tests/dfg/fixtures/` |
 | SNAX-BRM | `snax_forge/brm/` | `tests/brm/` | `snax_forge/brm/library/` |
 | SNAX-SANDBOX | `snax_forge/sandbox/` | `tests/sandbox/` | `recipes/` |
