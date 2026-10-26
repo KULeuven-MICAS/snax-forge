@@ -155,11 +155,9 @@ left snax-gvsoc; generated accelerators follow D130). Next free number: 93.
 68. Generation is spread out: snaxgen and Chisel in snax_cluster (the
     wrappers, `streamer_csr_addr_map.h`), clustergen and regtool outputs
     copied into snax-gvsoc's `sw/` (D126), `snax_hjson` and its timing
-    constants, `snax_forge/gen` with the bundle. M13's B0 takes the lean
-    part: snax-forge writes the runtime's cluster headers
-    (`snitch_cluster_cfg.h`, `snitch_cluster_addrmap.h`) per design point,
-    so a design point that changes the L1's size or base gets a matching
-    ELF. The rest waits until a design needs it.
+    constants, `snax_forge/gen` with the bundle, which writes the runtime's
+    cluster headers per design point since M13's B0. One generator for the
+    rest when a design needs it.
 69. The SNAX crossbar's AXI input is wired but no program sends through it,
     on either side (snax-gvsoc `SG7.md`).
 70. On SNAX-GVSoC a store or AMO after a pending L1 load waits for the

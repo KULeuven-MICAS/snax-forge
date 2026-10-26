@@ -14,7 +14,9 @@ data, and the manifest:
     <slot>_streamer.hjson    the streamer template, as the hjson has it
     <slot>_acc.hjson         the datapath block
     include/                 the C headers (headers.py): the streamer's
-                             streamer_csr_addr_map.h and <instance>_csr.h
+                             streamer_csr_addr_map.h and <instance>_csr.h,
+                             and the runtime's snitch_cluster_cfg.h and
+                             snitch_cluster_addrmap.h from the cluster file
     data.h                   the program's data (data.py): inputs,
                              outputs and goldens
     main.c                   the program (lower/c.py, D135): the
@@ -89,7 +91,8 @@ without a source hjson or a source that cannot be read or written into
 ``cluster.name``), a source with no slot or several (``gen.slot``), and a
 platform value the hjson cannot express
 (``gen.platform``: what the cluster file gives back through
-hjson_platform.py must be the platform's L1 and L2). A symbol of the bound
+hjson_platform.py must be the platform's L1 and L2; a
+``cluster_base_offset`` the address map cannot take, headers.py). A symbol of the bound
 graph still null never gets here: ``DesignPoint.load`` refuses it
 (``graph.symbols``).
 
@@ -142,7 +145,7 @@ from snax_forge.lower.tasks import Configure, TaskList
 
 from .blocks import BLOCKS, GenError, Unit, port_dtype
 from .data import DATA_H, arrays, data_h
-from .headers import STREAMER_HEADER, accelerator_header, streamer_header
+from .headers import STREAMER_HEADER, accelerator_header, cluster_headers, streamer_header
 
 ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
@@ -592,6 +595,7 @@ def generate(
         names[2]: _hjson(shown, f"Slot {slot}'s datapath block: {accel}.", datapath(unit)),
         f"include/{STREAMER_HEADER}": streamer_h,
         f"include/{name}_csr.h": accelerator_header(name, layout, shown),
+        **{f"include/{f}": text for f, text in cluster_headers(cluster, shown).items()},
         DATA_H: data_h(point, shown, data, seed=seed),
         MAIN_C: main_c(point, tasks, cluster, layout, data,
                        [DATA_H, f"{name}_csr.h", STREAMER_HEADER], shown),

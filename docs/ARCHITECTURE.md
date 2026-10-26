@@ -221,15 +221,15 @@ RTL wins (section 7).
 
 ### 5.7 SNAX link
 
-A design point gives SNAX-GVSoC its three hjson files, the CSR headers,
-`data.h` and `main.c`, and no generated code to compile (`gen/gvsoc.py`,
-D134; C§16). For snax_cluster it gives a bundle (`pixi run bundle`,
-`gen/bundle.py`, D111; C§18): the same files, and the accelerator RTL that
-`gen/rtl.py` resolves into `rtl.json`, checked against the block catalogue
-`hw/chisel/blocks.json`, and `Emit --spec` builds as `<tag>_shell_wrapper`
-with its own CSR manager (D130; C§17). The accelerator is the base
-cluster's `snax_forge` slot and its cluster `snax_forge_cluster`, so neither
-takes a name of snax_cluster's own (D131).
+A design point gives SNAX-GVSoC its three hjson files, the CSR and cluster
+headers, `data.h` and `main.c`, and no generated code to compile
+(`gen/gvsoc.py`, D134; C§16). For snax_cluster it gives a bundle (`pixi run
+bundle`, `gen/bundle.py`, D111; C§18): the same files, and the accelerator
+RTL that `gen/rtl.py` resolves into `rtl.json`, checked against the block
+catalogue `hw/chisel/blocks.json`, and `Emit --spec` builds as
+`<tag>_shell_wrapper` with its own CSR manager (D130; C§17). The accelerator
+is the base cluster's `snax_forge` slot and its cluster
+`snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131).
 
 `pixi run forge RECIPE [--set ...]` (`flow/forge.py`) runs the flow, the
 bundle and the bundle's program, checks that the program is the flow's ELF,

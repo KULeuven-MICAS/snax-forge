@@ -244,8 +244,9 @@ the RTL's load-to-load cycles, the core going on until the next load or a use of
 keeps GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`, `SG7.md`.
 
 **D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software in
-`sw/`, its synced config the forge vecadd fixture's, refreshed by `make sync-snax-cluster`, whose
-diff is the check; only the RTL needs a snax_cluster checkout. → snax-gvsoc `sw/README.md`.
+`sw/`, its synced config the forge vecadd fixture's, refreshed by `make sync-snax-cluster`, whose diff
+is the check; a design point's program and runtime take the cluster headers snax-forge writes for it.
+Only the RTL needs a snax_cluster checkout. → snax-gvsoc `sw/README.md`.
 
 **D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it
 (`block`, `args`, `control`, `csrs`, `wait`, optional `ports`), each kind registered (D19), so one

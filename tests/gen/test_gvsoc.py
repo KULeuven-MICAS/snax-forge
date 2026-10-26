@@ -100,7 +100,8 @@ def test_vecadd_w4_files_and_manifest(w4):
     out, m = w4
     assert m.design == "vecadd" and m.cluster == "snax_forge.hjson"
     assert m.files == [
-        *FILES, "include/streamer_csr_addr_map.h", "include/acc_csr.h", "data.h", "main.c",
+        *FILES, "include/streamer_csr_addr_map.h", "include/acc_csr.h",
+        "include/snitch_cluster_cfg.h", "include/snitch_cluster_addrmap.h", "data.h", "main.c",
         "manifest.json",
     ]  # fmt: skip
     assert m.program == "main.c"

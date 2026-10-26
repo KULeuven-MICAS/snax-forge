@@ -586,3 +586,18 @@ def test_the_flow_on_snax_gvsoc(tmp_path, design, level):
     stdout = (tmp_path / design / "run" / "stdout.txt").read_text()
     assert f"forge cycles: {f.total_cycles}\n" in stdout
     assert flow_run.checkout().commit == f.checkout.commit
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_a_64_kib_l1_runs_on_its_own_runtime(tmp_path):
+    """vecadd at l1.rows = 256: the program and its runtime take the design point's cluster
+    headers (snax-forge D126), so the stacks sit at the end of the 64 KiB L1 the model places."""
+    f = run_flow(RECIPES / "vecadd.json", SNAX_FORGE, platform_sets=[("l1.rows", 256)],
+                 out=tmp_path / "vecadd")  # fmt: skip
+    assert f.passed, summary(f)
+    include = tmp_path / "vecadd" / "gen" / "include"
+    assert (
+        "#define CLUSTER_TCDM_SIZE 0x10000\n" in (include / "snitch_cluster_addrmap.h").read_text()
+    )
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
