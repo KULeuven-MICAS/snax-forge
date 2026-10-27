@@ -286,9 +286,9 @@ with dot's six variants as the case study, in phases B0 (flow pieces) to B4 (tie
 `docs/STATUS.md`.
 
 **D142** · design — A bank word packs k = 64/b elements of a port's container dtype, little-endian as
-NumPy. W lanes take c = W/k channels by default (the wire slice, no converter); another c is checked
-and needs the FIFO slicer. A packed stream: word-aligned base, k | W, innermost element stride 1,
-other element strides multiples of k. The platform keeps only the word width. → C§1, C§13, C§14.
+NumPy. W lanes take c = W/k channels by default (the wire slice, no converter); another c is checked and
+needs the FIFO slicer. A packed stream: word-aligned base, k | S_0 (the fastest spatial bound), innermost
+element stride 1, the others multiples of k. The platform keeps only the word width. → C§1, C§13, C§14.
 
 **D143** · brm — Arithmetic follows NumPy: each op runs at its operands' result type, with
 signedness from each port's container, and the result is then extended or wrapped into its target. A

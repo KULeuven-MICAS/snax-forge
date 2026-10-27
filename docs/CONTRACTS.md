@@ -17,9 +17,12 @@
 **Byte addresses.** Every memory address (L1 and L2 addresses, streamer
 `base`, all strides, DMA bases) is a byte address.
 
-**The bank word is the unit of transfer** (D13). A word is the L1's
-`width_bits` wide and holds `elems_per_word` elements of `dtype`, one for
-now: the design check `connect.dtype` refuses more (open item 21).
+**The bank word is the unit of transfer** (D142). A word is the L1's
+`width_bits` wide and holds k = `width_bits` / b elements of each
+container's dtype (b its bits), little-endian as NumPy lays them out. A port
+of W lanes takes W / k streamer channels by default; `connect.pack` and
+`connect.channels` check a port against that (section 14), and lowering
+refuses a container narrower than the word until PACK0 R2.
 
 **Integers first** (D28). The default `dtype` is `int64`.
 
@@ -27,15 +30,7 @@ The L1 of `platforms/snax_forge.json` (section 13):
 
 <!-- snippet: platforms/snax_forge.json -->
 ```json
- "l1": {
-  "n_banks": 32,
-  "width_bits": 64,
-  "rows": 512,
-  "dtype": "int64",
-  "elems_per_word": 1,
-  "base_addr": 268435456,
-  "wide_bits": 512
- },
+ "l1": {"n_banks": 32, "width_bits": 64, "rows": 512, "base_addr": 268435456, "wide_bits": 512},
 ```
 
 ## 2. Cluster configuration
@@ -561,8 +556,6 @@ unknown keys and wrong types are errors, all reported at once (section 14).
 | `n_banks` | single-port banks | 32 | >= 1 |
 | `width_bits` | bits per bank word | 64 | multiple of 8 |
 | `rows` | words per bank | 512 | >= 1 |
-| `dtype` | element type, any NumPy dtype name | `int64` | fits the word |
-| `elems_per_word` | elements packed in one word (1 only, section 1) | 1 | >= 1, fits the word |
 | `base_addr` | byte address of the first L1 word | 0 | — |
 | `wide_bits` | widest port (the DMA's) | 512 | power-of-two multiple of `width_bits` |
 
@@ -573,7 +566,11 @@ unknown keys and wrong types are errors, all reported at once (section 14).
 | `size_bytes` | flat size | 1 MiB | positive multiple of the beat |
 | `base_addr` | byte address of the first word | 0 | — |
 | `beat_bits` | one DMA beat | 512 | multiple of `width_bits`; equal to the L1's `wide_bits` (`platform.l2`) |
-| `width_bits`, `dtype`, `elems_per_word` | as the L1, and must agree with it (`platform.l2`) | 64, `int64`, 1 | fits the word |
+| `width_bits` | as the L1, and must agree with it (`platform.l2`) | 64 | multiple of 8 |
+
+Neither memory has an element type: each container's dtype decides how many
+elements a word holds (D142, section 1). A platform that still sets `dtype`
+or `elems_per_word` in `l1` or `l2` is refused (`platform.keys`).
 
 **The streamer shell** (D12). One streamer per port of every accelerated
 instance, `<instance>_<port>`. The port decides `write`, `n_ports` (its
@@ -582,7 +579,9 @@ lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an
 graph decides `temporal_dims`: the firing loops the port's memlet runs over,
 at least 1, the most over an instance's nodes (D84); the design point records
 it per streamer. `default` holds `fifo_depth` (>= 1); an entry named after a
-streamer overrides it and `spatial_bounds` for it alone. A platform that sets
+streamer overrides it and `spatial_bounds` for it alone, and may give
+`channels` (>= 1, never in `default`): the streamer's TCDM channels, without
+it the wire default W / k (D142, `connect.channels`). A platform that sets
 `temporal_dims` is refused (`platform.keys`), as is `--set` of it.
 
 <!-- snippet: platforms/small16.json -->
@@ -624,10 +623,10 @@ Stages: `platform` and `graph` independently, `connect` when both passed,
 
 | Code | Fails when |
 |---|---|
-| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
+| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; `dtype` or `elems_per_word` in `l1` or `l2`, no longer a platform field (the fix removes it: each container's dtype decides the packing, D142); a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
 | `platform.values` | a value its section rejects (`n_banks` 0, a `wait_mode` that is not allowed) |
-| `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1 |
-| `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`), word width, dtype or elements per word |
+| `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1, `channels` that is not an int >= 1 |
+| `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`) or word width |
 | `platform.banks` | with an L2, `n_banks` is not a multiple of the DMA's port group (`wide_bits / width_bits`) |
 | `graph.load` | a graph file that does not load (section 11) |
 | `graph.symbols` | a symbol still null: bind it in the recipe |
@@ -637,7 +636,9 @@ Stages: `platform` and `graph` independently, `connect` when both passed,
 | `connect.streamer_key` | a streamer entry that matches no port of the graph (the fix names the closest streamer) |
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
-| `connect.dtype` | a container whose dtype is not the L1's or not its port's, or an L1 with more than one element per word (open item 21) |
+| `connect.dtype` | a node whose containers break its BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype in its `dtypes`, every output at least as wide as every input, no signed input with a `uint64` one; the fix names the output dtypes the inputs accept), or an instance whose nodes put two dtypes on one port |
+| `connect.pack` | a port whose elements do not fill whole words (D142), with k elements of its container's dtype per word: the fastest spatial bound not a multiple of k (W < k: the fix makes the container 64-bit or gives the port k lanes), the fastest spatial loop not stepping 1 element (a column), another loop's step or the start not a multiple of k (a row stride that is not: the fix pads the leading dimension). Every port passes at k = 1 |
+| `connect.channels` | a streamer entry's `channels` other than the wire default W / k: any other needs the FIFO slicer, which the flow does not place yet (D142). The message lists the values with rho = c * k / W <= 1, the divisors of W / k; the fix removes it or sets W / k |
 | `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), or a subset that is not affine in the firing loops |
 | `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest), on a memory the container does not live in, or on L2 (the link places it, D86); an unknown pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
@@ -680,7 +681,7 @@ hand:
 | `graph_from` | the `.snaxdfg` it was made from: a sandbox step, or any bound graph given to the design step or the flow (D108) |
 | `graph` | that graph as read: instances, `code`, `replaced`, `loop.split` |
 | `platform` | the platform working copy (section 13) |
-| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `fifo_depth` |
+| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype` (the port's container's), `k` (its elements per word), `channels` (the entry's, else W / k), `fifo_depth` |
 | `memory` | the memory plan: `passes`, `changes`, `layouts` (container -> memory -> layout) |
 
 It holds no recipe. Loading one runs every check again on what it holds and

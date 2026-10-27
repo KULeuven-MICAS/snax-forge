@@ -88,7 +88,10 @@ reference check. Next is PACK0, the streamer's PR (narrow elements packed in
 64-bit words; D142–D144), before B1. Its rounds: R0 docs; R1 design
 (platform, streamers, checks, BRM dtypes); R2 lowering and data; R3
 generation and the first SNAX-GVSoC runs; R4 Chisel; R5 viewer and close.
-snax-gvsoc's R1 is done (PR #32, open until R2).
+PACK0's R0 and R1 are done: the decisions, then the design (the platform
+keeps only the word, a BRM port's dtypes a rule, the streamers' dtype, k and
+channels, `connect.pack` and `connect.channels`); lowering refuses a narrow
+container until R2. snax-gvsoc's R1 is done (PR #32, open until R2).
 
 ## Open Items
 
@@ -106,8 +109,9 @@ Next free number: 93.
     states no banks; a registered map kind if snax_cluster's differs.
 20. Streamer ports are one bank wide; wider when a kernel needs it (PACK0,
     closed in its R5).
-21. `elems_per_word > 1` has never been moved by streamers, accelerators or
-    the DMA (PACK0, closed in its R5). The Accumulator's tree zero-extends
+21. More than one element per word has never been moved by streamers,
+    accelerators or the DMA (PACK0, closed in its R5; R1 checks the ports,
+    `connect.pack`). The Accumulator's tree zero-extends
     its lanes (`UInt.pad`): PACK0 makes it sign-extend for int8 into int32
     (D143). relu, axpy and matadd were int32 in KER0 and run as int64 until
     then (M13 B0).
