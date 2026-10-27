@@ -13,7 +13,10 @@ This is the form of the design point's memory plan (D86):
 snax_forge/design/memory.py makes one per container and memory, and
 SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs; the
 design checks judge a whole plan, in L1 and L2. A layout places each element
-at its dtype's itemsize, so a word holds several narrow ones (D142).
+at its dtype's itemsize, so a word holds several narrow ones (D142). A
+container a tail pads (dfg/pad.py, D144) keeps its logical shape, its strides
+row-major over the padded shape; ``over`` gives its padded block, what the
+DMA moves and what memory it takes.
 """
 
 from __future__ import annotations
@@ -90,6 +93,12 @@ class Layout(Config):
         end = start + l1.size_bytes
         if lo < start or hi > end:
             raise LayoutError(f"the operand spans bytes [{lo}, {hi}), L1 is [{start}, {end})")
+
+
+def over(lay: Layout, shape: tuple[int, ...]) -> Layout:
+    """``lay``'s base and strides over ``shape``: with a container's padded shape (dfg/pad.py,
+    D144), the block it takes in memory, its pads included."""
+    return lay if tuple(shape) == lay.shape else Layout(lay.base, tuple(shape), lay.strides)
 
 
 def round_up(x: int, a: int) -> int:

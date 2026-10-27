@@ -16,7 +16,10 @@ replace any one of them (``register_memory_pass``):
                                                          element its
                                                          dtype's itemsize
                                                          (D142: a word holds
-                                                         several narrow ones)
+                                                         several narrow ones),
+                                                         over the padded
+                                                         shape (a tail's,
+                                                         D144)
     placement   L1 base per container                    contiguous: in
                 the graph's container order, from L1's first
                 byte, no gaps; a layout the DMA moves (in L2 and L1) starts
@@ -64,8 +67,9 @@ import numpy as np
 from snax_forge import expr
 from snax_forge.common import JsonFile, plain
 from snax_forge.dfg import Graph, Node
+from snax_forge.dfg.pad import padded_shape
 from snax_forge.dfg.subset import map_range, parse_dim
-from snax_forge.lower.layout import Layout, moved_bytes, round_up
+from snax_forge.lower.layout import Layout, moved_bytes, over, round_up
 
 from .platform import Platform
 from .problems import DesignError, Problem, read_json
@@ -201,6 +205,15 @@ class MemoryContext:
         cfg = self.platform.l2 if mem == "l2" else self.platform.l1
         return cfg.width_bits // 8
 
+    def padded(self, container: str) -> tuple[int, ...]:
+        """The container's shape with a tail's padding (dfg/pad.py, D144); its shape when it
+        has none."""
+        return padded_shape(self.graph, container)
+
+    def block(self, container: str, lay: Layout) -> Layout:
+        """``lay`` over the container's padded shape: the block it takes in memory."""
+        return over(lay, self.padded(container))
+
     def elem_bytes(self, container: str) -> int:
         """An element's bytes: the container's dtype itemsize (D142; a word holds several of a
         narrower one)."""
@@ -304,7 +317,12 @@ def contiguous_layout(
     ctx: MemoryContext, residency: dict[str, list[str]]
 ) -> dict[str, dict[str, Layout]]:
     return {
-        c: {m: Layout.contiguous(0, ctx.shape(c), ctx.elem_bytes(c)) for m in mems}
+        c: {
+            m: Layout(
+                0, ctx.shape(c), Layout.contiguous(0, ctx.padded(c), ctx.elem_bytes(c)).strides
+            )
+            for m in mems
+        }
         for c, mems in residency.items()
     }
 
@@ -319,14 +337,14 @@ def contiguous_placement(
     taken: list[tuple[int, int]] = []
     for (c, m), b in pins.items():
         if m == "l1" and c in layouts and "l1" in layouts[c]:
-            lo, hi = replace(layouts[c]["l1"], base=b).extent(ctx.elem_bytes(c))
+            lo, hi = ctx.block(c, replace(layouts[c]["l1"], base=b)).extent(ctx.elem_bytes(c))
             taken.append((lo, hi))
             bases[c]["l1"] = b
     cursor = ctx.span("l1")[0]
     for c in ctx.containers:
         if "l1" not in layouts.get(c, {}) or (c, "l1") in pins:
             continue
-        lay = layouts[c]["l1"]
+        lay = ctx.block(c, layouts[c]["l1"])  # a tail's pads take memory too (D144)
         moved = "l2" in layouts[c]
         a = ctx.beat_bytes if moved else word
         elem = ctx.elem_bytes(c)

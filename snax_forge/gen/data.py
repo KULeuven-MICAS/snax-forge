@@ -15,8 +15,9 @@ container order, as one C array or two:
              inputs, as the flow checks a run, ``const``
 
 The C type is the container's dtype (``int64_t`` for every design so far).
-Each array, golden included, is padded with zeros to whole DMA beats exactly
-as the memory plan's L2 layout is (``lower/layout.py``'s ``moved_bytes``,
+Each array, golden included, is written in the container's padded shape (a
+tail's, dfg/pad.py, D144: its pads hold ``pad_value``), then padded with
+zeros to whole DMA beats exactly as the memory plan's L2 layout is (``lower/layout.py``'s ``moved_bytes``,
 D105) and aligned to the beat (``l2.beat_bits``, 64 bytes on snax_forge).
 main.c (lower/c.py) reads the arrays by name: a DMA's L2 side is the array its task names
 (``symbol``).
@@ -46,8 +47,9 @@ import numpy as np
 from snax_forge.common import generated_header
 from snax_forge.design.point import DesignPoint
 from snax_forge.dfg.execute import execute
+from snax_forge.dfg.pad import pad_value, padded_shape
 from snax_forge.flow.run import FlowError, kernel_inputs, kernel_spec
-from snax_forge.lower.layout import Layout, moved_bytes
+from snax_forge.lower.layout import Layout, moved_bytes, over
 
 from .blocks import GenError, port_dtype
 
@@ -59,7 +61,9 @@ PER_LINE = 8
 @dataclass(frozen=True)
 class Array:
     """One C array of data.h: ``role`` is ``input``, ``output`` or ``golden``; ``values`` are
-    padded to ``len(values)``, the container's own ``elements`` first."""
+    the container in its ``padded`` shape (row-major, a tail's pads holding the pad value,
+    D144), then zeros to ``len(values)``; ``elements`` counts the container's own, the
+    ``shape`` it has (the valid elements, which the self-check compares)."""
 
     name: str
     container: str
@@ -68,6 +72,8 @@ class Array:
     elements: int
     values: tuple[int, ...]
     align: int
+    shape: tuple[int, ...] = ()
+    padded: tuple[int, ...] = ()
 
     @property
     def const(self) -> bool:
@@ -115,22 +121,25 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None) -> list
         cont = graph.containers[c]
         t = ctype(cont.dtype, f"container {c}")
         size = np.dtype(cont.dtype).itemsize
-        lay = point.memory.layouts[c]["l2"]
-        if lay != Layout.contiguous(lay.base, lay.shape, size):
+        lay, shape = point.memory.layouts[c]["l2"], padded_shape(graph, c)
+        block = over(lay, shape)  # a tail's pads included (D144)
+        if block != Layout.contiguous(lay.base, shape, size):
             raise GenError(
                 "gen.layout", f"{c}'s L2 layout {lay} is not its {size}-byte elements in order"
             )
-        padded = moved_bytes(lay, size, beat) // size
+        padded = moved_bytes(block, size, beat) // size
+        pad = (shape, pad_value(graph, c))
         if c in spec.inout:
             if c in inputs and np.any(inputs[c]):
                 raise GenError(
                     "gen.inout", f"output {c} starts nonzero in {spec.name}'s make_inputs: an "
                     "in-place update (open item 47)",
                 )  # fmt: skip
-            out.append(_array(c, c, "output", t, np.zeros(lay.shape, cont.dtype), padded, beat))
-            out.append(_array(f"{c}_golden", c, "golden", t, golden[c], padded, beat))
+            out.append(_array(c, c, "output", t, np.zeros(lay.shape, cont.dtype), padded, beat,
+                              *pad))  # fmt: skip
+            out.append(_array(f"{c}_golden", c, "golden", t, golden[c], padded, beat, *pad))
         elif c in inputs:
-            out.append(_array(c, c, "input", t, inputs[c], padded, beat))
+            out.append(_array(c, c, "input", t, inputs[c], padded, beat, *pad))
         else:
             raise GenError(
                 "gen.inputs", f"{c} is moved by the DMA but is neither given by {spec.name}'s "
@@ -140,10 +149,18 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None) -> list
 
 
 def _array(
-    name: str, c: str, role: str, t: str, values: np.ndarray, padded: int, align: int
-) -> Array:
-    flat = [int(v) for v in np.asarray(values).reshape(-1)]
-    return Array(name, c, role, t, len(flat), tuple(flat + [0] * (padded - len(flat))), align)
+    name: str, c: str, role: str, t: str, values: np.ndarray, padded: int, align: int,
+    shape: tuple[int, ...] | None = None, pad: int = 0,
+) -> Array:  # fmt: skip
+    """The array of ``values``: laid out in ``shape`` (the padded one; ``values``' own when
+    None), its pads ``pad``, then zeros to ``padded`` elements (whole DMA beats)."""
+    values = np.asarray(values)
+    shape = values.shape if shape is None else tuple(shape)
+    block = np.full(shape, pad, dtype=values.dtype)
+    block[tuple(slice(0, n) for n in values.shape)] = values
+    flat = [int(v) for v in block.reshape(-1)]
+    return Array(name, c, role, t, values.size, tuple(flat + [0] * (padded - len(flat))), align,
+                 tuple(values.shape), shape)  # fmt: skip
 
 
 def literal(v: int, t: str) -> str:

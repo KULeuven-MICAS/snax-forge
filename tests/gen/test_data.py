@@ -186,3 +186,17 @@ def test_e2_int8_packs_eight_per_word_padded_to_a_beat():
     words, n = _packed(y)
     assert n == 64 and words[0] == 0xBFB6ADA49B928980
     assert words[4:] == [0, 0, 0, 0]
+
+
+def test_vecadd_n7_writes_its_pad_and_a_whole_beat(tmp_path):
+    """N = 7 at W = 4 (D144): each array 7 elements, a pad element of 0, one 64-byte beat."""
+    from snax_forge.dfg.import_sdfg import import_kernel
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from tests.design.helpers import REPO
+
+    recipe = Recipe.load(REPO / "recipes" / "vecadd.json").with_params({"W": 4, "N": 7})
+    g = apply_recipe(recipe, import_kernel("vecadd"))[-1].graph
+    p = DesignPoint.load(point(tmp_path, graph=g))
+    a = {x.name: x for x in arrays(p)}
+    assert (a["A"].elements, len(a["A"].values), a["A"].values[7]) == (7, 8, 0)
+    assert a["A"].shape == (7,) and a["A"].padded == (8,)

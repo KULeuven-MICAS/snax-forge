@@ -768,7 +768,7 @@ def _memory_align(design: Design) -> Iterable[Problem]:
         if "l2" not in mems:
             continue
         beat = ctx.beat_bytes
-        contiguous = type(lay).contiguous(lay.base, lay.shape, elem)
+        contiguous = type(lay).contiguous(lay.base, ctx.padded(c), elem)  # pads in, D144
         if lay.strides != contiguous.strides:
             yield Problem(
                 "memory.align", where,
@@ -809,7 +809,7 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
             continue
         # an L2 layout has base 0, its array's address the link's (D86): only its size counts
         start, end = ctx.span(m) if m == "l1" else (0, pf.l2.size_bytes)
-        lo, hi = _extent(lay, ctx.elem_bytes(c), moved[c])
+        lo, hi = _extent(ctx.block(c, lay), ctx.elem_bytes(c), moved[c])
         if lo < start or hi > end:
             pinned = (c, m) in design.memory.spec.pins()
             if m == "l1":
@@ -860,7 +860,7 @@ def _memory_runtime(design: Design) -> Iterable[Problem]:
     for c, m, lay in _layouts(design):
         if m != "l1":
             continue
-        lo, hi = _extent(lay, ctx.elem_bytes(c), moved[c])
+        lo, hi = _extent(ctx.block(c, lay), ctx.elem_bytes(c), moved[c])
         if hi <= limit or lo < start or hi > end:  # past the end is memory.fit's
             continue
         align = moved[c] or ctx.word_bytes(m)
@@ -884,6 +884,7 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
         items = [(c, lay) for c, mm, lay in _layouts(design) if mm == m]
         for (a, la), (b, lb) in _pairs(items):
             ea, eb = ctx.elem_bytes(a), ctx.elem_bytes(b)
+            la, lb = ctx.block(a, la), ctx.block(b, lb)  # a tail's pads take memory (D144)
             alo, ahi = _extent(la, ea, moved[a])
             blo, bhi = _extent(lb, eb, moved[b])
             if alo >= bhi or blo >= ahi:
@@ -897,7 +898,9 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
                 order = list(design.memory.changes)
                 p = max(pinned, key=lambda x: order.index(f"{x}.{m}.base"))  # the latest pin
                 end = max(
-                    _extent(lay, ctx.elem_bytes(x))[1] for x, mm, lay in _layouts(design) if mm == m
+                    _extent(ctx.block(x, lay), ctx.elem_bytes(x))[1]
+                    for x, mm, lay in _layouts(design)
+                    if mm == m
                 )
                 free = round_up(end, ctx.beat_bytes)
                 fix = (

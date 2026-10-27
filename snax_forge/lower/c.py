@@ -59,7 +59,9 @@ side is the data.h array its task names (``symbol``).
 
 **Self-check**, ``forge_check(t0)`` (``static``, ``noinline``), on the
 accelerator's core after its function: after ``forge cycles:``, every output
-against its golden (``forge data: <e> errors (<words> words)``), each
+against its golden, its valid elements only (a matrix a tail pads, D144,
+row by row over its padded rows; ``forge data: <e> errors (<words> words)``,
+the words the valid elements), each
 accelerator task's counter (``forge counter <task>: <c>``), stored in its
 slot of the global ``forge_counter[]`` right after the wait that covers the
 task, slots in the order the counters are read, and ``forge errors:
@@ -372,13 +374,7 @@ class _Program:
             "int data_errors = 0;",
         ]
         for a in outputs:
-            lines += [
-                f"for (uint32_t i = 0; i < {a.elements}; i++) {{",
-                f"{INDENT}if (((volatile {a.ctype} *){a.name})[i] != {a.name}_golden[i]) {{",
-                f"{INDENT * 2}data_errors++;",
-                f"{INDENT}}}",
-                "}",
-            ]
+            lines += _compare(a)
         lines += [
             "err += data_errors;",
             f'printf("forge data: %d errors (%u words)\\n", data_errors, {words}u);',
@@ -458,3 +454,28 @@ def main_c(point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any], layo
            arrays: Sequence[Array], includes: Sequence[str], point_path: str) -> str:  # fmt: skip
     """The text of main.c, including ``includes`` in order; see the module doc."""
     return _Program(point, tasks, cluster, layout, arrays).text(includes, point_path)
+
+
+def _compare(a: Any) -> list[str]:
+    """The loop comparing output ``a`` with its golden, its valid elements only: one loop over
+    them, or for a matrix a tail pads (D144), one loop per dimension over its own extent,
+    each element at its index in the padded rows."""
+    test = [
+        f"{INDENT}if (((volatile {a.ctype} *){a.name})[i] != {a.name}_golden[i]) {{",
+        f"{INDENT * 2}data_errors++;",
+        f"{INDENT}}}",
+    ]
+    if len(a.shape) < 2 or tuple(a.shape) == tuple(a.padded):
+        return [f"for (uint32_t i = 0; i < {a.elements}; i++) {{", *test, "}"]
+    lines, terms = [], []
+    for d, n in enumerate(a.shape):
+        stride = 1
+        for p in a.padded[d + 1 :]:
+            stride *= p
+        lines.append(f"{INDENT * d}for (uint32_t i{d} = 0; i{d} < {n}; i{d}++) {{")
+        terms.append(f"i{d}" if stride == 1 else f"i{d} * {stride}")
+    depth = len(a.shape)
+    lines.append(f"{INDENT * depth}uint32_t i = {' + '.join(terms)};")
+    lines += [INDENT * (depth - 1) + line for line in test]
+    lines += [f"{INDENT * d}}}" for d in reversed(range(depth))]
+    return lines

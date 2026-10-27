@@ -65,9 +65,10 @@ from snax_forge.design.streamers import (
     streamer_name,
 )
 from snax_forge.dfg import DfgError, Memlet, named_rates
+from snax_forge.dfg.pad import padded_shape
 from snax_forge.dfg.subset import parse_dim
 
-from .layout import Layout, dma_side
+from .layout import Layout, dma_side, over
 from .streams import StreamError, in_words, streamer_values
 from .tasks import Configure, Start, Sync, TaskList
 
@@ -155,10 +156,10 @@ def task_list(point: DesignPoint) -> TaskList:
     final: dict[str, str] = {}  # container -> task that leaves it in its last memory
 
     def dma(task: str, direction: str, c: str, after: list[str]) -> None:
-        elem = np.dtype(g.containers[c].dtype).itemsize
-        l1 = dma_side(layout(c, "l1"), elem, beat)
-        l2 = {"symbol": c} | {k: v for k, v in dma_side(layout(c, "l2"), elem, beat).items()
-                              if k != "base"}  # fmt: skip
+        elem, padded = np.dtype(g.containers[c].dtype).itemsize, padded_shape(g, c)
+        l1 = dma_side(over(layout(c, "l1"), padded), elem, beat)  # a tail's pads too (D144)
+        l2 = {"symbol": c} | {k: v for k, v in dma_side(over(layout(c, "l2"), padded), elem,
+                                                        beat).items() if k != "base"}  # fmt: skip
         src, dst = (l2, l1) if direction == "l2_to_l1" else (l1, l2)
         values = {"direction": direction, "src": src, "dst": dst}
         steps.append(Configure(task, "dma", "dma", values, after, mode))
