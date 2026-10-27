@@ -269,7 +269,7 @@ def test_design_and_lower_import_in_any_order(first):
 
 def test_int32_vecadd_lowers_in_words():
     """int32 vecadd at W = 4 (D142): each beat two words (spatial stride 8, the streamer's
-    channels W / k = 2), a beat on every 16 bytes; each 64 x 4 = 256-byte container moved as
+    num_ch W / num_slc = 2), a beat on every 16 bytes; each 64 x 4 = 256-byte container moved as
     four whole DMA beats."""
 
     def int32(g):
@@ -291,7 +291,7 @@ def test_matadd_int32_4x6_in_2x2_tiles_in_words():
     (48 bytes)."""
     m = Memlet("A", ["2 * i:2 * i + 2", "2 * j:2 * j + 2"])
     loops = [Loop("mi", "i", 0, 2, 1), Loop("mj", "j", 0, 3, 1)]
-    v, sb = memlet_values(m, loops, Layout.contiguous(0, (4, 6), 4), {}, "x", k=2)
+    v, sb = memlet_values(m, loops, Layout.contiguous(0, (4, 6), 4), {}, "x", num_slc=2)
     assert sb == [2, 2]
     assert v == {"base": 0, "temporal_bounds": [3, 2], "temporal_strides": [8, 48],
                  "spatial_strides": [8, 24]}  # fmt: skip

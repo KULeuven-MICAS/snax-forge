@@ -81,10 +81,11 @@ class LowerError(ValueError):
 
 
 def memlet_values(
-    m: Memlet, loops: list[Loop], layout: Layout, symbols: dict[str, int], what: str, k: int = 1
-) -> tuple[dict[str, Any], list[int]]:
+    m: Memlet, loops: list[Loop], layout: Layout, symbols: dict[str, int], what: str,
+    num_slc: int = 1,
+) -> tuple[dict[str, Any], list[int]]:  # fmt: skip
     """A streamer's values for memlet ``m`` over ``loops``, in words as streams.py's (the
-    fastest spatial stride a channel's, ``k`` elements on); and its spatial bounds, in
+    fastest spatial stride a channel's, ``num_slc`` elements on); and its spatial bounds, in
     elements, fastest first."""
     names = [lp.var for lp in loops]
     base = layout.base
@@ -115,14 +116,14 @@ def memlet_values(
         "base": base,
         "temporal_bounds": [b for b, _ in temporal],
         "temporal_strides": [s for _, s in temporal],
-        "spatial_strides": in_words([s for _, s in fastest], k),
+        "spatial_strides": in_words([s for _, s in fastest], num_slc),
     }
     return values, [b for b, _ in fastest]
 
 
 def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
     """The byte addresses a streamer's values visit, beat by beat: (beats, lanes). For a packed
-    port give the bounds in channels (the fastest S_0 / k): each address is then a word."""
+    port give the bounds in channels (the fastest S_0 / num_slc): each address is then a word."""
     t = list(zip(values["temporal_bounds"], values["temporal_strides"], strict=True))[::-1]
     s = list(zip(spatial_bounds, values["spatial_strides"], strict=True))[::-1]
     grid = np.full([b for b, _ in t] + [b for b, _ in s], values["base"], dtype=np.int64)
@@ -200,7 +201,7 @@ def task_list(point: DesignPoint) -> TaskList:
             if lay is None:
                 raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
             values, sb = memlet_values(
-                m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}", s.k
+                m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}", s.num_slc
             )
             if sb != list(s.spatial_bounds):
                 raise LowerError(

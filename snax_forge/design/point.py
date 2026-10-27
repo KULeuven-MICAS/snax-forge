@@ -12,7 +12,8 @@ has passed; it is not edited by hand.
      "platform":   {...},     the platform working copy: values, base, changes
      "streamers":  {...},     the resolved shell, <instance>_<port> -> instance,
                               port, write, n_ports, spatial_bounds,
-                              temporal_dims, dtype, k, channels and options
+                              temporal_dims, dtype, num_slc, num_ch and
+                              options
      "memory":     {...}      the memory plan: passes, changes (pins), layouts
     }
 
@@ -142,15 +143,15 @@ class DesignPoint(JsonFile):
 
 def _streamer(name: str, d: Any) -> Streamer:
     what = f"streamers.{name}"
-    keys = ("instance", "port", "write", "n_ports", "spatial_bounds", "temporal_dims", "dtype", "k",
-            "channels", *OPTIONS)  # fmt: skip
+    keys = ("instance", "port", "write", "n_ports", "spatial_bounds", "temporal_dims", "dtype",
+            "num_slc", "num_ch", *OPTIONS)  # fmt: skip
     try:
         check_keys(d, keys, what)
         opts = StreamerOptions.from_dict({k: d[k] for k in OPTIONS})
         s = Streamer(
             name, str(d["instance"]), str(d["port"]), bool(d["write"]),
             tuple(int(x) for x in d["spatial_bounds"]), int(d["temporal_dims"]), opts,
-            str(d["dtype"]), int(d["k"]), int(d["channels"]),
+            str(d["dtype"]), int(d["num_slc"]), int(d["num_ch"]),
         )  # fmt: skip
     except (KeyError, TypeError, ValueError) as e:
         raise DesignError([Problem("point.keys", what, f"{type(e).__name__}: {e}")]) from None

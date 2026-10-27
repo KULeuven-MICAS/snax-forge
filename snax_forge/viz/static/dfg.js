@@ -181,7 +181,7 @@ function drawEdges(canvas, svg, edges, index) {
     });
     p._marker = marker;
     paths.push(p);
-    // An accelerated port's packing (D142): dtype, k elements per word, c channels.
+    // An accelerated port's packing (D142): dtype, num_slc slices per word, num_ch channels.
     if (e.packing) {
       const t = svgEl("text", { x: (x1 + x2) / 2 + 6, y: (y1 + y2) / 2 + 4, class: "edge-packing", "data-ids": ids });
       t.textContent = e.packing;

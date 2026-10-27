@@ -111,7 +111,7 @@ def codes(d: Design) -> list[str]:
 
 def _streamer(port: str, write: bool) -> dict[str, Any]:
     return {"instance": "acc", "port": port, "write": write, "n_ports": 4, "spatial_bounds": [4],
-            "temporal_dims": 1, "dtype": "int64", "k": 1, "channels": 4,
+            "temporal_dims": 1, "dtype": "int64", "num_slc": 1, "num_ch": 4,
             "fifo_depth": 2}  # fmt: skip
 
 

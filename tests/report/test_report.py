@@ -67,7 +67,7 @@ def test_the_design_report_equals_its_sources(flows, key):
         unit["latency"],
     )
     assert a.ports == [f"{m.port} ← {m.name}" for m in cluster.accelerator.movers]
-    assert [(s.name, s.channels, s.fifo_depth) for s in r.streamers] == [
+    assert [(s.name, s.num_ch, s.fifo_depth) for s in r.streamers] == [
         (m.name, m.lanes, m.fifo_depth) for m in cluster.accelerator.movers
     ]
     l1 = next(m for m in r.memories if m.mem == "l1")
@@ -320,14 +320,14 @@ def designed_report(tmp_path, recipe):
 
 
 def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
-    """vecadd_i32: int32, two to a 64-bit word, so 4 lanes take 2 channels (num_channel)."""
+    """vecadd_i32: int32, num_slc 2 to a 64-bit word, so 4 lanes take num_ch 2 (num_channel)."""
     r = designed_report(tmp_path, "vecadd_i32")
-    assert [(s.port, s.dtype, s.k, s.channels) for s in r.streamers] == [
+    assert [(s.port, s.dtype, s.num_slc, s.num_ch) for s in r.streamers] == [
         ("a", "int32", 2, 2), ("b", "int32", 2, 2), ("out", "int32", 2, 2)
     ]  # fmt: skip
     text = render_design(r)
-    assert "| Streamer | Serves | Direction | dtype | k | Channels | FIFO depth |" in text
-    assert "2 channels, FIFO depth" in text
+    assert "| Streamer | Serves | Direction | dtype | num_slc | num_ch | FIFO depth |" in text
+    assert "num_ch 2, FIFO depth" in text
 
 
 def test_the_extents_include_the_padding(tmp_path):

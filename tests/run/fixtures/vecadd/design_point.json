@@ -93,8 +93,8 @@
    "spatial_bounds": [4],
    "temporal_dims": 1,
    "dtype": "int64",
-   "k": 1,
-   "channels": 4,
+   "num_slc": 1,
+   "num_ch": 4,
    "fifo_depth": 8
   },
   "acc_b": {
@@ -105,8 +105,8 @@
    "spatial_bounds": [4],
    "temporal_dims": 1,
    "dtype": "int64",
-   "k": 1,
-   "channels": 4,
+   "num_slc": 1,
+   "num_ch": 4,
    "fifo_depth": 8
   },
   "acc_out": {
@@ -117,8 +117,8 @@
    "spatial_bounds": [4],
    "temporal_dims": 1,
    "dtype": "int64",
-   "k": 1,
-   "channels": 4,
+   "num_slc": 1,
+   "num_ch": 4,
    "fifo_depth": 8
   }
  },

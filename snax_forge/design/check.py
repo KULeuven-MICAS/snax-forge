@@ -9,7 +9,7 @@ why it fails and the change that fixes it. Checks belong to stages:
     graph      the graph alone: symbols bound, everything bound to an
                accelerator, BRMs and implementations known, instance names
     connect    the two together: streamer entries, lanes, dtypes, packing,
-               padding, channels, temporal loops
+               padding, num_ch, temporal loops
     memory     the memory plan (D86): pins and passes, then the plan
                the passes make, its residency, shapes, alignment, fit,
                snRuntime's top of L1 and overlaps
@@ -47,12 +47,12 @@ from .problems import DesignError, Problem
 from .streamers import (
     LoopError,
     accelerated,
-    elements_per_word,
     firing_loops,
     instance_nodes,
     instance_of,
     memlet_spatial_bounds,
     nest_spatial_bounds,
+    slices_per_word,
     streamer_name,
 )
 
@@ -500,10 +500,10 @@ def _walk(design: Design, node: Node, conn: str) -> _Walk | None:
 
 
 def _connect_pack(design: Design) -> Iterable[Problem]:
-    """Each port's elements fill whole words (D142): with k elements of its container's dtype
-    per word, the fastest spatial bound S_0 is a multiple of k, the fastest spatial loop
-    steps 1 element, every other loop a multiple of k, and the start is on a word. At k = 1
-    every port passes. The base address is memory.align's. At any k, a memlet stays inside
+    """Each port's elements fill whole words (D142): with num_slc slices (elements) of its
+    container's dtype per word, the fastest spatial bound S_0 is a multiple of num_slc, the
+    fastest spatial loop steps 1 element, every other loop a multiple of num_slc, and the start
+    is on a word. At num_slc = 1 every port passes. The base address is memory.align's. At any k, a memlet stays inside
     its container's padded shape (a tail's padding, D144, as the reference executor
     requires)."""
     g, pf = design.graph, design.platform
@@ -511,12 +511,12 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
         for conn, m in (n.inputs | n.outputs).items():
             yield from _reach(design, n, conn)
             dtype = g.containers[m.data].dtype
-            k = elements_per_word(dtype, pf.l1.width_bits)
-            walk = _walk(design, n, conn) if k > 1 else None
+            num_slc = slices_per_word(dtype, pf.l1.width_bits)
+            walk = _walk(design, n, conn) if num_slc > 1 else None
             if walk is None:
                 continue
             out = conn in n.outputs
-            yield from _pack(f"node {n.id}.{conn}", m.data, dtype, k, out, walk)
+            yield from _pack(f"node {n.id}.{conn}", m.data, dtype, num_slc, out, walk)
 
 
 def _reach(design: Design, node: Node, conn: str) -> Iterator[Problem]:
@@ -550,26 +550,28 @@ def _reach(design: Design, node: Node, conn: str) -> Iterator[Problem]:
             )  # fmt: skip
 
 
-def _pack(where: str, c: str, dtype: str, k: int, out: bool, walk: _Walk) -> Iterator[Problem]:
+def _pack(
+    where: str, c: str, dtype: str, num_slc: int, out: bool, walk: _Walk
+) -> Iterator[Problem]:
     shape = list(walk.shape)
     lanes = prod(b for _, b, _ in walk.spatial)
     s0, fastest = (walk.spatial[0][1], walk.spatial[0][2]) if walk.spatial else (1, 1)
-    of = f"{dtype}, k = {k} elements per word"
-    if lanes < k:
+    of = f"{dtype}, num_slc = {num_slc} slices per word"
+    if lanes < num_slc:
         yield Problem(
             "connect.pack", where,
-            f"W = {lanes} lane{'s' if lanes > 1 else ''} < k = {k} ({of}): a beat would fill "
+            f"W = {lanes} lane{'s' if lanes > 1 else ''} < num_slc = {num_slc} ({of}): a beat would fill "
             "part of a word",
             f"make {'the output' if out else 'the'} container {c} int64 or uint64 (one element "
-            f"per word), or give the port k = {k} lanes",
+            f"per word), or give the port num_slc = {num_slc} lanes",
         )  # fmt: skip
         return
-    if s0 % k:
+    if s0 % num_slc:
         yield Problem(
             "connect.pack", where,
-            f"the fastest spatial bound S_0 = {s0} is not a multiple of k ({of}): a beat's "
+            f"the fastest spatial bound S_0 = {s0} is not a multiple of num_slc ({of}): a beat's "
             "fastest lanes must fill whole words (D142)",
-            f"make the fastest spatial bound a multiple of {k} (the split factor in the recipe)",
+            f"make the fastest spatial bound a multiple of {num_slc} (the split factor in the recipe)",
         )  # fmt: skip
         return  # a loop stepping by S_0 fails only because of it: one cause, one problem
     if fastest != 1:
@@ -583,29 +585,29 @@ def _pack(where: str, c: str, dtype: str, k: int, out: bool, walk: _Walk) -> Ite
         return
     loops = [(f"loop {v}", s) for v, count, s in walk.temporal if count > 1]
     loops += [(f"the spatial loop over dimension {d}", s) for d, b, s in walk.spatial[1:] if b > 1]
-    bad = [(name, s) for name, s in loops if s % k]
+    bad = [(name, s) for name, s in loops if s % num_slc]
     row = shape[-1] if len(shape) > 1 else None
-    if bad and row is not None and row % k:
+    if bad and row is not None and row % num_slc:
         steps = ", ".join(f"{name} steps {s}" for name, s in bad)
         yield Problem(
             "connect.pack", where,
-            f"row stride {row} of {c}{shape} is not a multiple of k ({of}): {steps} elements, "
+            f"row stride {row} of {c}{shape} is not a multiple of num_slc ({of}): {steps} elements, "
             "so its beats would start inside a word",
-            f"pad the leading dimension to {round_up(row, k)}",
+            f"pad the leading dimension to {round_up(row, num_slc)}",
         )  # fmt: skip
         return
     for name, s in bad:
         yield Problem(
             "connect.pack", where,
-            f"{name} steps {s} elements of {c}, not a multiple of k ({of}): its beats would "
+            f"{name} steps {s} elements of {c}, not a multiple of num_slc ({of}): its beats would "
             "start inside a word",
-            f"step it by a multiple of {k} elements",
+            f"step it by a multiple of {num_slc} elements",
         )  # fmt: skip
-    if walk.offset % k:
+    if walk.offset % num_slc:
         yield Problem(
             "connect.pack", where,
             f"starts at element {walk.offset} of {c}, not on a word ({of})",
-            f"start it at a multiple of {k} elements",
+            f"start it at a multiple of {num_slc} elements",
         )  # fmt: skip
 
 
@@ -654,32 +656,32 @@ def _port_spatial_bounds(design: Design, s: str, i: str, p: str) -> list[int] | 
         return None
 
 
-def _connect_channels(design: Design) -> Iterable[Problem]:
-    """A streamer entry's ``channels`` against the wire default W / k (D142): only that is
+def _connect_num_ch(design: Design) -> Iterable[Problem]:
+    """A streamer entry's ``num_ch`` against the wire default W / num_slc (D142): only that is
     placed for now, since any other needs the FIFO slicer."""
     g, pf = design.graph, design.platform
     for s, (i, p) in _streamers(design).items():
-        c = pf.channels(s)
-        sb = None if c is None else _port_spatial_bounds(design, s, i, p)
+        num_ch = pf.num_ch(s)
+        sb = None if num_ch is None else _port_spatial_bounds(design, s, i, p)
         if sb is None:
             continue
         node = instance_nodes(g)[i]
         dtype = g.containers[(node.inputs | node.outputs)[p].data].dtype
-        k = elements_per_word(dtype, pf.l1.width_bits)
+        num_slc = slices_per_word(dtype, pf.l1.width_bits)
         lanes = prod(sb)
-        if lanes % k or c == lanes // k:  # a W k does not divide is connect.pack's
+        if lanes % num_slc or num_ch == lanes // num_slc:  # num_slc not dividing W: pack's
             continue
-        wire = lanes // k
+        wire = lanes // num_slc
         allowed = [d for d in range(1, wire + 1) if wire % d == 0]
         listed = ", ".join(f"{d} (the wire default)" if d == wire else str(d) for d in allowed)
         yield Problem(
-            "connect.channels", f"platform.streamers.{s}.channels",
-            f"{c} channels for {lanes} lanes of {dtype} (k = {k}): rho = c * k / W = "
-            f"{Fraction(c * k, lanes)}. Only the wire default W / k = {wire} is placed for now: "
-            "rho != 1 needs the FIFO slicer, which the flow does not place yet (D142). With "
-            f"rho <= 1, channels may be {listed}; a value with rho > 1 never helps a unit firing "
-            "once per cycle",
-            f"remove channels, or {_set(f'streamers.{s}.channels', wire)}",
+            "connect.num_ch", f"platform.streamers.{s}.num_ch",
+            f"num_ch = {num_ch} for {lanes} lanes of {dtype} (num_slc = {num_slc}): rho = num_ch "
+            f"* num_slc / W = {Fraction(num_ch * num_slc, lanes)}. Only the wire default "
+            f"W / num_slc = {wire} is placed for now: rho != 1 needs the FIFO slicer, which the "
+            f"flow does not place yet (D142). With rho <= 1, num_ch may be {listed}; a value with "
+            "rho > 1 never helps a unit firing once per cycle",
+            f"remove num_ch, or {_set(f'streamers.{s}.num_ch', wire)}",
         )  # fmt: skip
 
 
@@ -986,7 +988,7 @@ for _code, _stage, _fn in (
     ("connect.dtype", "connect", _connect_dtype),
     ("connect.pack", "connect", _connect_pack),
     ("connect.pad", "connect", _connect_pad),
-    ("connect.channels", "connect", _connect_channels),
+    ("connect.num_ch", "connect", _connect_num_ch),
     ("connect.temporal", "connect", _connect_temporal),
     ("memory.pin", "memory", _memory_pin),
     ("memory.residency", "memory", _memory_residency),

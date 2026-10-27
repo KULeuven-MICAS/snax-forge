@@ -23,7 +23,7 @@
 // and the response (green, solid, pointing back), which only reads have.
 //
 // The page is built once per run from the run detail's cluster (the movers,
-// their channels and FIFO depths, the accelerator) and the banks of the first
+// their num_ch and FIFO depths, the accelerator) and the banks of the first
 // /cluster answer (their superbanks); a cycle change only updates it in
 // place from /api/run/<n>/cluster?t=T (update), so the FIFO slots animate.
 // Everything shown is that answer's: a field the run's level cannot give is
@@ -147,7 +147,7 @@ function build(detail, first) {
   const xbarBox = h("div", { class: "cl-xbar" },
     h("div", { class: "cl-xbar-name" }, h("b", {}, "interconnect"), h("small", {}, "crossbar")),
     h("dl", { class: "cl-xbar-desc" },
-      h("dt", {}, "requester side"), h("dd", {}, [...movers.map((m) => `${m.name} ${m.lanes} channels`), "the DMA"].join(", ")),
+      h("dt", {}, "requester side"), h("dd", {}, [...movers.map((m) => `${m.name} num_ch ${m.lanes}`), "the DMA"].join(", ")),
       h("dt", {}, "memory side"), h("dd", {}, `${int(c.banks)} banks`)),
     status);
 
@@ -180,7 +180,7 @@ function build(detail, first) {
     }
     const grid = (cells) => h("div", { class: "cl-lanes", style: { gridTemplateColumns: `repeat(${Math.max(m.lanes, 1)}, minmax(${LANE}rem, ${LANE_MAX}rem))` } }, cells);
     b.body.append(task, grid([lanes.map((x) => x.chip), lanes.map((x) => x.slotsEl), lanes.map((x) => x.count)]),
-      h("small", { class: "cl-sub" }, `${m.lanes} channel${m.lanes === 1 ? "" : "s"} (num_channel), FIFO depth ${m.fifo_depth}`));
+      h("small", { class: "cl-sub" }, `num_ch ${m.lanes} (num_channel), FIFO depth ${m.fifo_depth}`));
     const down = arrow("v");
     items.push(place(grid(ups), col, 1), place(b.el, col, 2), place(down, col, 3));
     parts.movers[m.name] = { b, task, down, write: m.write };

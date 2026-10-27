@@ -42,10 +42,11 @@ Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box. Its
 text is the subset, and for a folding write the op (``out[0] (reduce add)``).
 An edge at an accelerated node's port also has its ``packing`` (D142):
-``int32 · k 2 · c 2``, the container's dtype of b bits, k = 64 / b elements
-per bank word, and c = W / k channels, W the instance's lanes for that port
-(the wire slice, the only value ``connect.channels`` takes), rounded up so a
-fold's one-lane output is one word (``int64 · k 1 · c 1``). All of it is read
+``int32 · num_slc 2 · num_ch 2``, the container's dtype of b bits, num_slc =
+64 / b slices (elements) per bank word, and num_ch = W / num_slc channels, W
+the instance's lanes for that port (the wire slice, the only value
+``connect.num_ch`` takes), rounded up so a fold's one-lane output is one word
+(``int64 · num_slc 1 · num_ch 1``). All of it is read
 from the bound graph and the BRM library; nothing is stored in the graph.
 An edge between a container and a connector inside a top-level node is drawn
 only up to that node's outer box, above or below the connector it belongs
@@ -76,7 +77,7 @@ from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
 
-# A bank word, in bits: k = WORD_BITS / b elements of a b-bit dtype (D142)
+# A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype (D142)
 WORD_BITS = 64
 
 # =============================================================================
@@ -257,7 +258,7 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
 
 
 def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
-    """``int32 · k 2 · c 2`` for an accelerated node's port (module doc); None for any other
+    """``int32 · num_slc 2 · num_ch 2`` for an accelerated node's port (module doc); None for any other
     node, or an instance the BRM library does not resolve."""
     if n.kind != "accelerated":
         return None
@@ -266,8 +267,8 @@ def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
     except (BrmError, ExprError, KeyError):
         return None
     dtype = g.containers[data].dtype
-    k = max(1, WORD_BITS // bits(dtype))
-    return f"{dtype} · k {k} · c {-(-lanes // k)}"
+    num_slc = max(1, WORD_BITS // bits(dtype))
+    return f"{dtype} · num_slc {num_slc} · num_ch {-(-lanes // num_slc)}"
 
 
 def _layout(g: Graph) -> dict[str, Any]:

@@ -32,9 +32,9 @@ unless an entry gives them, ``spatial_bounds``), its temporal loops from the
 graph (``temporal_dims``, the firing loops of its port's memlet, D84);
 ``default`` gives the rest (``fifo_depth``), and an entry named after the
 streamer overrides any of it for that one streamer only. An entry may also
-give ``channels``, the streamer's TCDM channels (never in ``default``);
-without it they are the wire default, the lanes over the elements per word of
-the port's container (D142, ``connect.channels``).
+give ``num_ch``, the number of TCDM channels the streamer uses (never in
+``default``); without it, the wire default, the lanes over num_slc, the
+slices (elements) per word of the port's container (D142, ``connect.num_ch``).
 
 **The word.** A bank word is ``width_bits`` wide; how many elements it holds
 is each container's dtype's business, not the platform's (D142). A file
@@ -154,7 +154,7 @@ class StreamerOptions(Config):
 
 OPTIONS = tuple(f.name for f in fields(StreamerOptions))
 FROM_GRAPH = "temporal_dims"  # a knob until M13's B0, now each streamer's firing loops (D84)
-ENTRY_KEYS = (*OPTIONS, "spatial_bounds", "channels")
+ENTRY_KEYS = (*OPTIONS, "spatial_bounds", "num_ch")
 
 
 @dataclass(frozen=True)
@@ -184,9 +184,9 @@ class Platform(JsonFile):
         sb = self.entries.get(streamer, {}).get("spatial_bounds")
         return None if sb is None else list(sb)
 
-    def channels(self, streamer: str) -> int | None:
-        """The entry's channels, or None for the wire default (D142)."""
-        return self.entries.get(streamer, {}).get("channels")
+    def num_ch(self, streamer: str) -> int | None:
+        """The entry's num_ch, or None for the wire default (D142)."""
+        return self.entries.get(streamer, {}).get("num_ch")
 
     # --- changes ---
 
@@ -332,12 +332,12 @@ def _entry(name: str, e: Any, default: StreamerOptions | None, out: list[Problem
                 f"must be a non-empty list of ints >= 1, got {sb!r}",
             )
         )  # fmt: skip
-    c = e.get("channels")
-    if "channels" in e and (isinstance(c, bool) or type(c) is not int or c < 1):
+    num_ch = e.get("num_ch")
+    if "num_ch" in e and (isinstance(num_ch, bool) or type(num_ch) is not int or num_ch < 1):
         out.append(
             Problem(
-                "platform.streamer", f"{where}.channels", f"must be an int >= 1, got {c!r}",
-                "set channels to an int >= 1, or remove it",
+                "platform.streamer", f"{where}.num_ch", f"must be an int >= 1, got {num_ch!r}",
+                "set num_ch to an int >= 1, or remove it",
             )
         )  # fmt: skip
     if default is not None and not unknown:
@@ -481,7 +481,7 @@ def _apply(d: dict[str, Any], path: str, value: Any) -> list[Problem]:
             ]  # fmt: skip
         if opt not in allowed:
             return [Problem("platform.keys", where, f"unknown option (allowed: {list(allowed)})")]
-        old = {"spatial_bounds": [1], "channels": 1}.get(opt)
+        old = {"spatial_bounds": [1], "num_ch": 1}.get(opt)
         old = d["streamers"]["default"][opt] if old is None else old
         if not _kind_ok(old, value):
             return [Problem("platform.keys", where, f"must be {_type_name(old)}, got {value!r}")]

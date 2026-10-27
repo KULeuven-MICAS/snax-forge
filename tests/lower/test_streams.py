@@ -205,13 +205,14 @@ def test_layout_round_trip_and_contiguous():
 # =============================================================================
 
 
-def _packed(dtype, k, w, dims=1):
-    return Streamer("r", "x", "a", False, (w,), dims, StreamerOptions(2), dtype, k, w // k)
+def _packed(dtype, num_slc, w, dims=1):
+    return Streamer("r", "x", "a", False, (w,), dims, StreamerOptions(2), dtype, num_slc,
+                    w // num_slc)  # fmt: skip
 
 
-def _words(values, channels):
-    """The word (and bank, word mod 32) each beat reads: the values over ``channels``."""
-    words = addresses(values, channels) // 8
+def _words(values, num_ch):
+    """The word (and bank, word mod 32) each beat reads: the values over ``num_ch``."""
+    words = addresses(values, num_ch) // 8
     return words.tolist(), (words % 32).tolist()
 
 
@@ -248,12 +249,12 @@ def _words(values, channels):
     ids=["E1", "E3", "E4"],
 )  # fmt: skip
 def test_packed_values_are_in_words(case, dtype, w, nest, n, layout, values, words):
-    """PACK0 notes, topic 1: the fastest spatial loop runs W / k channels a word apart, the
+    """PACK0 notes, topic 1: the fastest spatial loop runs W / num_slc channels a word apart, the
     other strides the element stride times the itemsize, the base the offset's bytes."""
-    k = 8 // np.dtype(dtype).itemsize
+    num_slc = 8 // np.dtype(dtype).itemsize
     inst = instance(nest, W=w)
     l1 = L1Config(n_banks=32, rows=64)
-    got = streamer_values(inst, "a", {"n": n}, layout, _packed(dtype, k, w), l1)
+    got = streamer_values(inst, "a", {"n": n}, layout, _packed(dtype, num_slc, w), l1)
     assert got == values
-    got_words, banks = _words(got, [w // k])
+    got_words, banks = _words(got, [w // num_slc])
     assert got_words == words and banks == [[x % 32 for x in beat] for beat in words]

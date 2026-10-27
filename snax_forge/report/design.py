@@ -13,8 +13,9 @@ the kernel from the run's functional check.
     accelerators instance, unit, BRM and implementation, params, latency,
                  target II (the datapath file's), ports
     streamers    one per mover: instance port, direction, the container's
-                 dtype, k (its elements per 64-bit word), channels (the
-                 mover's num_channel: words per beat, D142), FIFO depth,
+                 dtype, num_slc (its slices, elements, per 64-bit word),
+                 num_ch (the channels the port uses, the mover's
+                 num_channel: words per beat, D142), FIFO depth,
                  temporal loops and the container it streams (from the
                  graph's memlets)
     memories     per memory the design point's layouts: base, end (the extent
@@ -82,8 +83,8 @@ class StreamerRow(Record):
     port: str | None
     direction: str
     dtype: str
-    k: int
-    channels: int
+    num_slc: int
+    num_ch: int
     fifo_depth: int
     temporal_dims: int
     container: str | None
@@ -189,13 +190,13 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
         for b in ss[i + 1 :]:
             la, lb = lays[a.container], lays[b.container]  # type: ignore[index]
 
-            def first_banks(lay: Layout, channels: int) -> list[int]:
-                """The banks of a mover's first beat: its first ``channels`` words (several
+            def first_banks(lay: Layout, num_ch: int) -> list[int]:
+                """The banks of a mover's first beat: its first ``num_ch`` words (several
                 narrow elements share one, D142)."""
                 w = list(dict.fromkeys(int(x) for x in _words(lay, cluster.l1_base, word)))
-                return sorted({x % banks for x in w[:channels]})
+                return sorted({x % banks for x in w[:num_ch]})
 
-            both = sorted(set(first_banks(la, a.channels)) & set(first_banks(lb, b.channels)))
+            both = sorted(set(first_banks(la, a.num_ch)) & set(first_banks(lb, b.num_ch)))
             if (
                 la.strides == lb.strides
                 and la.shape == lb.shape
@@ -268,7 +269,7 @@ def build_design(
     components = [ComponentRow(a.name, "accelerator", f"{u.get('unit', '')} on core{a.core}, "
                                f"{u.get('wait', '')}, slot {a.slot}")]  # fmt: skip
     components += [ComponentRow(m.name, "streamer", f"{'writer' if m.write else 'reader'} "
-                                f"{m.gvsoc}, {m.lanes} channels, FIFO depth {m.fifo_depth}")
+                                f"{m.gvsoc}, num_ch {m.lanes}, FIFO depth {m.fifo_depth}")
                    for m in a.movers]  # fmt: skip
     components.append(ComponentRow("dma", "dma", f"the iDMA on core{cluster.dma_core}"))
     components += [ComponentRow(c, "core", "the accelerator's" if i == a.core
@@ -282,7 +283,7 @@ def build_design(
                        int(u.get("ii", 1)), [f"{m.port} ← {m.name}" for m in a.movers])]  # fmt: skip
     streamers = [
         StreamerRow(m.name, a.name, m.port, "write" if m.write else "read",
-                    point.streamers[m.name].dtype, point.streamers[m.name].k, m.lanes,
+                    point.streamers[m.name].dtype, point.streamers[m.name].num_slc, m.lanes,
                     m.fifo_depth, point.streamers[m.name].temporal_dims, containers.get(m.name))
         for m in a.movers
     ]  # fmt: skip
@@ -353,8 +354,8 @@ def render_design(r: DesignReport) -> str:
             "Serves",
             "Direction",
             "dtype",
-            "k",
-            "Channels",
+            "num_slc",
+            "num_ch",
             "FIFO depth",
             "Temporal loops",
             "Container",
@@ -365,8 +366,8 @@ def render_design(r: DesignReport) -> str:
                 f"{s.instance}.{s.port}" if s.instance else None,
                 s.direction,
                 s.dtype,
-                s.k,
-                s.channels,
+                s.num_slc,
+                s.num_ch,
                 s.fifo_depth,
                 s.temporal_dims,
                 s.container,

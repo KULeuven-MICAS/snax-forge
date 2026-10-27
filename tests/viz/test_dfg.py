@@ -118,7 +118,10 @@ def test_vecadd_accelerated():
         "A[4 * i_t:4 * i_t + 4]",
         "B[4 * i_t:4 * i_t + 4]",
     ]
-    lanes, pack = "[4 * i_t:4 * i_t + 4]", "int64 · k 1 · c 4"  # int64: one per word, c = W
+    lanes, pack = (
+        "[4 * i_t:4 * i_t + 4]",
+        "int64 · num_slc 1 · num_ch 4",
+    )  # int64: one per word, num_ch = W
     assert v["edges"] == [
         {"from": "A@0", "to": "add.a", "data": "A", "text": f"A{lanes}", "dir": "read", "stop": "add_map", "packing": pack},
         {"from": "B@0", "to": "add.b", "data": "B", "text": f"B{lanes}", "dir": "read", "stop": "add_map", "packing": pack},
@@ -141,15 +144,15 @@ def recipe_view(tmp_path: Path, recipe: str) -> dict:
     ("recipe", "want"),
     [
         # int32, W = 4: two to a word, two channels a port
-        ("vecadd_i32", {"A": "int32 · k 2 · c 2", "B": "int32 · k 2 · c 2", "C": "int32 · k 2 · c 2"}),
+        ("vecadd_i32", {"A": "int32 · num_slc 2 · num_ch 2", "B": "int32 · num_slc 2 · num_ch 2", "C": "int32 · num_slc 2 · num_ch 2"}),
         # a fold's one-lane output shows its own type: one int64, one word
-        ("vsum_tree_i32", {"A": "int32 · k 2 · c 2", "out": "int64 · k 1 · c 1"}),
+        ("vsum_tree_i32", {"A": "int32 · num_slc 2 · num_ch 2", "out": "int64 · num_slc 1 · num_ch 1"}),
         # int32 in, the int64 product out: 4 lanes take two words in and four out
-        ("vecmul_i32_i64", {"A": "int32 · k 2 · c 2", "B": "int32 · k 2 · c 2", "C": "int64 · k 1 · c 4"}),
+        ("vecmul_i32_i64", {"A": "int32 · num_slc 2 · num_ch 2", "B": "int32 · num_slc 2 · num_ch 2", "C": "int64 · num_slc 1 · num_ch 4"}),
     ],
 )  # fmt: skip
 def test_a_port_edge_labels_its_packing(tmp_path, recipe, want):
-    """Each accelerated port's edge: dtype, k = 64 / b, c = W / k (D142)."""
+    """Each accelerated port's edge: dtype, num_slc = 64 / b, num_ch = W / num_slc (D142)."""
     v = recipe_view(tmp_path, recipe)
     assert {e["data"]: e["packing"] for e in v["edges"] if "packing" in e} == want
 

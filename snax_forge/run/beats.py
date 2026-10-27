@@ -280,7 +280,7 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
     mover_of_port = {p: m for m in acc.movers for p in m.ports}
     readers = [m for m in acc.movers if not m.write]
     writers = [m for m in acc.movers if m.write]
-    words_in = [m.lanes for m in readers]  # a mover's lanes are its channels: words per beat
+    words_in = [m.lanes for m in readers]  # a mover's lanes are its num_ch: words per beat
     starts = [sum(words_in[:i]) for i in range(len(readers) + 1)]
     funcs: dict[str, list[tuple[int, str]]] = defaultdict(list)
     for s, x in named:

@@ -10,15 +10,15 @@ import snax.forge.IntType
   *
   * Built and parked: the flow places only the wire slice (D142), and this block is not in `Blocks`' catalogue.
   *
-  * A beat is `words` * k elements (k = 64 / width), element e at bits `[w(e+1)-1 : we]` of the beat (D142). r = `words`
-  * * k / `inLanes` in-beats fill one out-beat, lane l of in-beat u element u * `inLanes` + l. The first r - 1 in-beats
-  * are held in registers with a counter of ceil(log2 r) bits; the out-beat is emitted in the cycle the last lanes
-  * arrive (`out.valid` is that in-beat's valid, the out-beat the held lanes and these), and that in-beat is taken in
-  * the cycle the out-beat leaves (`in.ready` is then `out.ready`). With the input always valid and the output always
-  * ready, it takes one in-beat a cycle.
+  * A beat is `words` * num_slc elements (num_slc = 64 / width), element e at bits `[w(e+1)-1 : we]` of the beat (D142).
+  * r = `words` * num_slc / `inLanes` in-beats fill one out-beat, lane l of in-beat u element u * `inLanes` + l. The
+  * first r - 1 in-beats are held in registers with a counter of ceil(log2 r) bits; the out-beat is emitted in the cycle
+  * the last lanes arrive (`out.valid` is that in-beat's valid, the out-beat the held lanes and these), and that in-beat
+  * is taken in the cycle the out-beat leaves (`in.ready` is then `out.ready`). With the input always valid and the
+  * output always ready, it takes one in-beat a cycle.
   *
   * @param inLanes
-  *   lanes per in-beat; divides `words` * k
+  *   lanes per in-beat; divides `words` * num_slc
   * @param laneType
   *   the elements' type, NumPy's name ("int32", "uint8")
   * @param words
@@ -28,9 +28,9 @@ class FifoPacker(val inLanes: Int, val laneType: String, val words: Int) extends
   require(words > 0, s"words must be positive, got $words")
   require(inLanes > 0, s"inLanes must be positive, got $inLanes")
 
-  private val t     = IntType(laneType)
-  private val k     = 64 / t.width
-  private val total = words * k
+  private val t      = IntType(laneType)
+  private val numSlc = 64 / t.width
+  private val total  = words * numSlc
   require(total % inLanes == 0, s"inLanes $inLanes must divide the beat's $total elements of $laneType")
 
   /** In-beats per out-beat. */

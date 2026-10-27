@@ -71,10 +71,11 @@ not (the file is written as JSON, which hjson reads).
 **The streamer**, lowered per design point (D134), as the design point's
 streamers give it (D87): readers the input ports in the BRM's port order,
 writers the output ports, each with ``spatial_bounds`` in words, fastest
-first (``[S_0 / k, S_1, ...]``: the fastest bound over the k elements of the
-port's container dtype a word holds, D142), ``temporal_dim`` (the streamer's
-``temporal_dims``), ``num_channel`` (the streamer's ``channels``, the wire
-default W / k; snax-gvsoc's streamer requires the bounds' product to be it)
+first (``[S_0 / num_slc, S_1, ...]``: the fastest bound over num_slc, the slices
+of the port's container dtype a word holds, D142), ``temporal_dim`` (the
+streamer's ``temporal_dims``), ``num_channel`` (the streamer's ``num_ch``, the
+wire default W / num_slc; snax-gvsoc's streamer requires the bounds' product to
+be it)
 and ``fifo_depth``.
 
 **The datapath block** (snax-gvsoc ``snax/snax_cfg.py``): ``unit``
@@ -287,15 +288,15 @@ def streamer_template(point: DesignPoint, name: str, inst: Instance) -> dict[str
         s = point.streamers[streamer_name(name, p.name)]
         port_dtype(dtypes[p.name], f"port {p.name}")  # intN or uintN (gen.dtype)
         s0, *rest = s.spatial_bounds
-        if s0 % s.k:
+        if s0 % s.num_slc:
             raise GenError(
                 "gen.lanes", f"streamer {s.name}: its fastest spatial bound {s0} is not whole "
-                f"words of {s.k} {dtypes[p.name]} elements",
+                f"words of num_slc = {s.num_slc} {dtypes[p.name]} slices",
             )  # fmt: skip
         mover = {
-            "spatial_bounds": [s0 // s.k, *rest],  # in words (D142)
+            "spatial_bounds": [s0 // s.num_slc, *rest],  # in words (D142)
             "temporal_dim": s.temporal_dims,
-            "num_channel": s.channels,
+            "num_channel": s.num_ch,
             "fifo_depth": s.options.fifo_depth,
         }
         groups["data_writer_params" if s.write else "data_reader_params"].append(mover)

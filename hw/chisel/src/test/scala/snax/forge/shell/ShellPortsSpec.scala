@@ -30,14 +30,14 @@ class ShellPortsSpec extends AnyFlatSpec {
 
   def template(f: RtlFixtures.Fixture): Ports = {
     val clock   = Set(("clk_i", "input", 1), ("rst_ni", "input", 1))
-    val writers = f.channels("data_writer_params").zipWithIndex.flatMap { case (n, k) =>
+    val writers = f.numCh("data_writer_params").zipWithIndex.flatMap { case (n, k) =>
       Seq(
         (s"acc2stream_${k}_data_o", "output", n * TcdmDataWidth),
         (s"acc2stream_${k}_valid_o", "output", 1),
         (s"acc2stream_${k}_ready_i", "input", 1)
       )
     }
-    val readers = f.channels("data_reader_params").zipWithIndex.flatMap { case (n, k) =>
+    val readers = f.numCh("data_reader_params").zipWithIndex.flatMap { case (n, k) =>
       Seq(
         (s"stream2acc_${k}_data_i", "input", n * TcdmDataWidth),
         (s"stream2acc_${k}_valid_i", "input", 1),
