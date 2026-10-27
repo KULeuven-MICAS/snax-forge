@@ -1,0 +1,19 @@
+{
+ "name": "vecadd_i32",
+ "kernel": "vecadd",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "dtypes": {"A": "int32", "B": "int32", "C": "int32"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "add",
+    "brm": "elementwise_add",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

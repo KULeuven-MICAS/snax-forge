@@ -279,7 +279,8 @@ def kernel_spec(kernel: str, why: str) -> Any:
 def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
     """The kernel's ``make_inputs`` at every size the graph binds: each bound symbol by its
     lower-case name (``M`` gives ``m=``, ``N`` gives ``n=``); then the arrays' shapes must give
-    the graph's values (``spec.bind_symbols``)."""
+    the graph's values (``spec.bind_symbols``). Each array is cast to its container's dtype
+    (``astype``, wrapping: a recipe's ``dtypes``, D113)."""
     params = inspect.signature(spec.make_inputs).parameters
     kw = {}
     for sym, v in graph.bound_symbols.items():
@@ -303,8 +304,8 @@ def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
             raise FlowError(
                 f"inputs: {spec.name}'s make_inputs gives {c!r}, the graph has no such container"
             )
-        if str(arr.dtype) != cont.dtype:
-            raise FlowError(f"inputs: {c} is {arr.dtype}, the container is {cont.dtype}")
+        if str(np.asarray(arr).dtype) != cont.dtype:
+            inputs[c] = np.asarray(arr).astype(cont.dtype)
     return inputs
 
 
@@ -654,7 +655,7 @@ def run_flow(
             else:
                 from snax_forge.dfg.import_sdfg import import_kernel
 
-                graph = import_kernel(recipe.kernel)
+                graph = import_kernel(recipe.kernel, recipe.dtypes)
         with _timed(times, "sandbox"):
             steps = write_steps(recipe, apply_recipe(recipe, graph, seed=seed), out / "sandbox")
         f = _from_graph(

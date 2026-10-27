@@ -8,6 +8,8 @@ A recipe is a hand-written JSON file, kept under ``recipes/``:
      "params":  {"W": 4},                 recipe params, each an int or a string
      "symbols": {"N": 64},                the graph's symbols, ints or expressions
                                           over the params
+     "dtypes":  {"A": "int32"},           optional: a container's NumPy integer
+                                          dtype in place of the kernel's
      "steps": [
       {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
       {"transform": "bind",      "params": {"node": "add", "brm": "elementwise_add", ...}}
@@ -23,8 +25,15 @@ covers a sweep: the same steps, one run per value (D72; there is no sweep
 runner yet). The recipe written next to a run's output has the values
 that run used.
 
-Every field is written; ``params`` and ``symbols`` default to empty, unknown
-keys are errors (D26). Whether a step's transform exists and takes its
+**Dtypes** (D113, D142). ``dtypes`` gives some of the kernel's containers
+another integer dtype: the import applies it to the kernel's descriptors
+before DaCe builds the SDFG (``import_kernel``), so DaCe and the importer see
+those types, and the kernel's inputs are cast to them (``astype``, wrapping;
+``flow.run.kernel_inputs``). An unknown dtype is an error here; an unknown
+container one at the import, which knows the kernel's.
+
+Every field is written (``dtypes`` only when it is not empty); ``params`` and
+``symbols`` default to empty, unknown keys are errors (D26). Whether a step's transform exists and takes its
 params is checked when the recipe runs (run.py), where the transforms are
 registered.
 """
@@ -77,6 +86,7 @@ class Recipe(JsonFile):
     params: dict[str, int | str] = field(default_factory=dict)
     symbols: dict[str, Value] = field(default_factory=dict)
     steps: list[Step] = field(default_factory=list)
+    dtypes: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for what, v in (("name", self.name), ("kernel", self.kernel)):
@@ -89,6 +99,14 @@ class Recipe(JsonFile):
                 raise SandboxError(f"{self.name}.params.{k}: must be an int or a string")
         for s, v in self.symbols.items():
             self.value(v, f"{self.name}.symbols.{s}")
+        from snax_forge.brm import INT_DTYPES
+
+        for c, dt in self.dtypes.items():
+            if dt not in INT_DTYPES:
+                raise SandboxError(
+                    f"{self.name}.dtypes.{c}: {dt!r} is not a NumPy integer dtype "
+                    f"({list(INT_DTYPES)})"
+                )
 
     def value(self, v: Any, what: str) -> int:
         """An int, or an expression over the recipe params, as an int."""
@@ -121,14 +139,15 @@ class Recipe(JsonFile):
             "kernel": self.kernel,
             "params": dict(self.params),
             "symbols": dict(self.symbols),
+            **({"dtypes": dict(self.dtypes)} if self.dtypes else {}),
             "steps": [s.to_dict() for s in self.steps],
         }
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any]) -> Recipe:
-        _keys(d, ("name", "kernel"), ("params", "symbols", "steps"), "recipe")
+        _keys(d, ("name", "kernel"), ("params", "symbols", "dtypes", "steps"), "recipe")
         name = d["name"]
-        for key in ("params", "symbols"):
+        for key in ("params", "symbols", "dtypes"):
             if not isinstance(d.get(key, {}), Mapping):
                 raise SandboxError(f"{name}.{key}: must be an object")
         steps = d.get("steps", [])
@@ -140,4 +159,5 @@ class Recipe(JsonFile):
             dict(d.get("params", {})),
             dict(d.get("symbols", {})),
             [Step.from_dict(s, f"{name}.steps[{i}]") for i, s in enumerate(steps)],
+            dict(d.get("dtypes", {})),
         )

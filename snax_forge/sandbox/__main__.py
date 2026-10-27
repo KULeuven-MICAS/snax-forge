@@ -53,7 +53,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             from snax_forge.dfg.import_sdfg import import_kernel
 
-            graph = import_kernel(recipe.kernel)
+            graph = import_kernel(recipe.kernel, recipe.dtypes)
         results = apply_recipe(recipe, graph, seed=args.seed)
     except (SandboxError, DfgError, OSError) as e:
         print(f"FAILED {args.recipe}: {e}", file=sys.stderr)

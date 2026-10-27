@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import dace
@@ -44,6 +44,24 @@ class KernelSpec:
         missing = params - set(self.descriptors)
         if missing:
             raise ValueError(f"{self.name}: no descriptor for {sorted(missing)}")
+
+    def with_dtypes(self, dtypes: dict[str, str], what: str = "dtypes") -> KernelSpec:
+        """The spec with some containers' integer dtype replaced (a recipe's ``dtypes``, D113):
+        their descriptors, so DaCe builds the SDFG at those types; ``make_inputs`` is cast
+        by its caller (``flow.run.kernel_inputs``). A name that is not a descriptor raises
+        ValueError naming it."""
+        unknown = sorted(set(dtypes) - set(self.descriptors))
+        if unknown:
+            raise ValueError(
+                f"{what}: {unknown[0]!r} is not a container of {self.name} "
+                f"({sorted(self.descriptors)})"
+            )
+        descs = dict(self.descriptors)
+        for c, dt in dtypes.items():
+            t = getattr(dace, dt)
+            desc = descs[c]
+            descs[c] = t[tuple(desc.shape)] if isinstance(desc, dace.data.Array) else t
+        return replace(self, descriptors=descs)
 
     @property
     def reference(self) -> Callable:
