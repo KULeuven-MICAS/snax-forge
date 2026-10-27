@@ -503,10 +503,13 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
     """Each port's elements fill whole words (D142): with k elements of its container's dtype
     per word, the fastest spatial bound S_0 is a multiple of k, the fastest spatial loop
     steps 1 element, every other loop a multiple of k, and the start is on a word. At k = 1
-    every port passes. The base address is memory.align's."""
+    every port passes. The base address is memory.align's. At any k, a memlet stays inside
+    its container's padded shape (a tail's padding, D144, as the reference executor
+    requires)."""
     g, pf = design.graph, design.platform
     for n in accelerated(g):
         for conn, m in (n.inputs | n.outputs).items():
+            yield from _reach(design, n, conn)
             dtype = g.containers[m.data].dtype
             k = elements_per_word(dtype, pf.l1.width_bits)
             walk = _walk(design, n, conn) if k > 1 else None
@@ -514,6 +517,37 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
                 continue
             out = conn in n.outputs
             yield from _pack(f"node {n.id}.{conn}", m.data, dtype, k, out, walk)
+
+
+def _reach(design: Design, node: Node, conn: str) -> Iterator[Problem]:
+    """Each dimension of a port's memlet takes indices below the container's padded extent."""
+    g = design.graph
+    m = (node.inputs | node.outputs)[conn]
+    try:
+        loops = firing_loops(g, node)
+    except LoopError:
+        return  # connect.temporal's
+    padded = padded_shape(g, m.data)
+    symbols = g.bound_symbols
+    for d, dim in enumerate(m.subset):
+        try:
+            parts = parse_dim(dim, f"node {node.id}.{conn}")
+            last = parts[0] if len(parts) == 1 else f"({parts[1]}) - 1"
+            const, co = expr.linear(last, [lp.var for lp in loops])
+            hi = expr.evaluate(const, symbols) + sum(
+                co[lp.var] * (lp.begin + (lp.count - 1) * lp.step if co[lp.var] > 0 else lp.begin)
+                for lp in loops
+                if lp.count
+            )
+        except (expr.ExprError, ValueError):
+            return  # connect.temporal's
+        if hi >= padded[d]:
+            yield Problem(
+                "connect.pack", f"node {node.id}.{conn}",
+                f"memlet {m.data}{m.subset} reaches index {hi} on dimension {d}, past its padded "
+                f"extent {padded[d]} (the container's {g.containers[m.data].shape[d]}, a tail's "
+                "padding included, D144)",
+            )  # fmt: skip
 
 
 def _pack(where: str, c: str, dtype: str, k: int, out: bool, walk: _Walk) -> Iterator[Problem]:

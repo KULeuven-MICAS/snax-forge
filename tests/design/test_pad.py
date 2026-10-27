@@ -41,3 +41,16 @@ def test_vmul_into_vsum_at_n7_is_refused():
         "would reach the fold (the hardware masks nothing, D144)"
     )
     assert got[0].fix == "a size that divides W, or a split factor that divides n"
+
+
+def test_a_memlet_past_the_padding_is_refused_by_the_design_check():
+    """vecadd N = 7, W = 4, A padded to 8: a hand-edited memlet reaching index 11 leaves the
+    padding (the reference executor's rule, D144, met at design time)."""
+    d = bound("vecadd", W=4, N=7).to_dict()
+    d["body"][0]["body"][0]["inputs"]["a"]["subset"] = ["4 * i_t + 4:4 * i_t + 8"]
+    got = [p for p in problems(design(Graph.from_dict(d))) if p.code == "connect.pack"]
+    assert [(p.where, p.message) for p in got] == [(
+        "node add.a",
+        "memlet A['4 * i_t + 4:4 * i_t + 8'] reaches index 11 on dimension 0, past its padded "
+        "extent 8 (the container's N, a tail's padding included, D144)",
+    )]  # fmt: skip
