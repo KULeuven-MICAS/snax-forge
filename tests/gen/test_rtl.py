@@ -183,3 +183,44 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
         "rtl.json", "snax_forge_streamer.hjson", "vectors.json"
     ]  # fmt: skip
     assert "wrote fx/rtl.json" in capsys.readouterr().out
+
+
+# =============================================================================
+# Narrow designs until PACK0 R4: the widths the blocks compute right
+# =============================================================================
+
+
+@pytest.mark.parametrize(("recipe", "width"), [("vecadd_i32", 32), ("vecadd_i8", 8)])
+def test_a_same_width_elementwise_design_is_written(tmp_path, recipe, width):
+    spec = rtl_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
+    validate("rtl", spec.to_dict())
+    (unit,) = spec.to_dict()["units"]
+    assert (unit["params"]["dataWidth"], unit["params"]["signed"]) == (width, True)
+
+
+def test_a_signed_accumulator_into_a_wider_sum_is_refused(tmp_path):
+    """vsum_tree_i32: int32 lanes into an int64 sum, which the Accumulator zero-extends."""
+    with pytest.raises(GenError) as e:
+        rtl_spec(tmp_path / designed(tmp_path, "vsum_tree_i32", "vsum_tree_i32"), tmp_path)
+    assert e.value.code == "gen.rtl_width"
+    assert str(e.value).endswith(
+        "accumulate.chisel_adder_tree: the Accumulator's lanes zero-extend (UInt.pad), so a "
+        "signed 32-bit input into a 64-bit sum lands in PACK0 R4"
+    )
+
+
+def test_an_elementwise_design_of_two_widths_is_refused(tmp_path):
+    from snax_forge.gen.blocks import elementwise_tiled_spatial
+    from snax_forge.gen.rtl import RTL_PARAMS
+
+    from .test_gvsoc import _dtypes, _instance
+
+    inst = _instance()
+    unit = elementwise_tiled_spatial(inst, _dtypes(a="int32", b="int32", out="int64"))
+    with pytest.raises(GenError) as e:
+        RTL_PARAMS["ElementwiseTiledSpatial"](inst, unit)
+    assert e.value.code == "gen.rtl_width"
+    assert str(e.value).endswith(
+        "ElementwiseTiledSpatial has one dataWidth, its ports are [32, 32] bits in and [64] out; "
+        "a block of per-port widths lands in PACK0 R4"
+    )

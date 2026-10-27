@@ -743,8 +743,8 @@ with no slot or several `gen.slot`.
 
 <!-- snippet: snax_forge/gen/schema/accelerator.schema.json -->
 ```json
- "required": ["unit", "inputs", "outputs", "lanes", "data_width", "op", "signed", "control",
-              "wait", "latency", "ii", "fields"],
+ "required": ["unit", "inputs", "outputs", "lanes", "in_widths", "in_signed", "out_widths",
+              "out_signed", "op", "control", "wait", "latency", "ii", "fields"],
 ```
 
 ## 17. Accelerator RTL spec
@@ -760,6 +760,15 @@ against the block catalogue `hw/chisel/blocks.json` and
 | `design_point` | the design point by its path from the root, as section 16's files name it |
 | `tag` | the platform's `accelerator_slot`, `snax_forge` by default; the wrapper is `<tag>_shell_wrapper` |
 | `units` | one unit (more is `gen.instances`; links come with M13): `name` (the instance), `block` (a catalogue block), `params` (every block param, typed and in its limits), `ports` (`{brm, block}` per BRM port, in the BRM's port order, which is the streamer's reader and writer order) and `csrs` |
+
+**Widths** (D142, D143). A block's widths come from its ports' containers:
+ElementwiseTiledSpatial's `dataWidth` is the one width of its ports and
+`signed` its inputs' (add, sub and mul wrap alike signed or not, min and max
+read it); the Accumulator's `width` is its input's and `accWidth` its sum's.
+What the Chisel blocks do not compute right yet is refused
+(`gen.rtl_width`, until PACK0 R4): an ElementwiseTiledSpatial whose ports
+differ in width, and an Accumulator whose signed input is narrower than its
+sum (its lanes zero-extend, `UInt.pad`).
 
 A unit's `csrs` are in CSR order from offset 0: `rw`, the configuration
 fields (`pin` and `width`), then `start`, the start CSR's pin (bit 0 written

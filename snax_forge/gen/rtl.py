@@ -18,9 +18,14 @@ lower/c.py's ``accelerator``), each with
     block    the binding's block
     params   the block's params, from the block's GVSoC unit (blocks.py:
              the same lanes, widths and op) by its resolver (``RTL_PARAMS``):
-               ElementwiseTiledSpatial  dataWidth N, lanes, loopCountWidth 32
-                                        (a CSR), supportedOps [op], signed
-               Accumulator              width N, accWidth N, lanes
+               ElementwiseTiledSpatial  dataWidth N, the one width of its
+                                        ports (the node's containers'),
+                                        lanes, loopCountWidth 32 (a CSR),
+                                        supportedOps [op], signed (the
+                                        inputs': add, sub and mul wrap alike
+                                        signed or not, min and max read it)
+               Accumulator              width the input's N, accWidth the
+                                        output's, lanes
     ports    ``{brm, block}`` per BRM port in the BRM's port order (the
              streamer's reader and writer order): the binding's ``ports``,
              by default the same name
@@ -43,6 +48,10 @@ signature of each Chisel block, equal to ``Emit --describe``), each a
     gen.csr_pins     the read-write pins are not the binding's csrs fields, or
                      a width is not 1 to 32 bits
     gen.tie          a tie's ops param holds more than one op
+    gen.rtl_width    what the Chisel blocks do not compute right yet (PACK0
+                     R4): an ElementwiseTiledSpatial whose ports differ in
+                     width (one dataWidth), an Accumulator whose signed input
+                     is narrower than its sum (its lanes zero-extend)
 
 and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or
 did not write a file its ``emitted.json`` lists.
@@ -158,12 +167,27 @@ def register_rtl_params(block: str, resolver: Resolver) -> None:
 
 
 def _elementwise_tiled_spatial(inst: Instance, u: Unit) -> dict[str, Any]:
-    return {"dataWidth": u.in_widths[0], "lanes": u.lanes, "loopCountWidth": CSR_BITS,
+    widths = sorted({*u.in_widths, *u.out_widths})
+    if len(widths) > 1:
+        raise GenError(
+            "gen.rtl_width",
+            f"{inst.brm.name}.{inst.implementation}: ElementwiseTiledSpatial has one dataWidth, "
+            f"its ports are {u.in_widths} bits in and {u.out_widths} out; a block of per-port "
+            "widths lands in PACK0 R4",
+        )
+    return {"dataWidth": widths[0], "lanes": u.lanes, "loopCountWidth": CSR_BITS,
             "supportedOps": [OP_NAME[u.op]], "signed": u.in_signed[0]}  # fmt: skip
 
 
 def _accumulator(inst: Instance, u: Unit) -> dict[str, Any]:
-    return {"width": u.in_widths[0], "accWidth": u.out_widths[0], "lanes": u.lanes}
+    (width,), (acc,) = u.in_widths, u.out_widths
+    if u.in_signed[0] and width < acc:
+        raise GenError(
+            "gen.rtl_width",
+            f"{inst.brm.name}.{inst.implementation}: the Accumulator's lanes zero-extend "
+            f"(UInt.pad), so a signed {width}-bit input into a {acc}-bit sum lands in PACK0 R4",
+        )
+    return {"width": width, "accWidth": acc, "lanes": u.lanes}
 
 
 register_rtl_params("ElementwiseTiledSpatial", _elementwise_tiled_spatial)
