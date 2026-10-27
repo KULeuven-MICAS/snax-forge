@@ -113,10 +113,11 @@ from the documented behaviour, never from the Chisel code:
 
 | Spec | Random | Model |
 |---|---|---|
-| `AccumulatorRandomSpec` | lanes, n, T, data, input gaps, output stalls | lane sums every T inputs (the docstring) |
-| `ElementwiseRandomSpec` | the three elementwise blocks: lanes, n, op, data, `a` and `b` gaps each its own, output stalls | `ElementwiseModel` |
+| `AccumulatorRandomSpec` | in and out types, lanes, n, T, data, input gaps, output stalls | lane sums every T inputs, each lane cast to the out type (the docstring) |
+| `ElementwiseRandomSpec` | the three elementwise blocks: lanes, n, op, data, `a` and `b` gaps each its own, output stalls; `ElementwiseTiledSpatial` also at narrow and mixed types, every op | `ElementwiseModel`, NumPy's rule (D143) |
 | `CsrManagerRandomSpec` | fields and widths, reads, writes and starts in and out of range, `rsp`/`ctrl` ready, `ro` | the protocol in `CsrManager`'s docstring |
-| `ShellRandomSpec` | per fixture: n, T, data, streamer gaps and stalls, polled or held starts | the two block models; the counter as `snax_shell.cpp` states it |
+| `ShellRandomSpec` | per fixture: n, T, data at its types, streamer gaps and stalls, polled or held starts | the two block models; the counter as `snax_shell.cpp` states it |
+| `FifoSlicerSpec`, `FifoPackerSpec` | types, words, lanes, data, input gaps, output stalls; the slicer into the packer | the element order of D142 (the docstrings) |
 
 The random specs run one test per seed of `Seeds` (scalatest names it
 "seed N"); `SNAX_FORGE_SEED=N pixi run -e hw chisel-test` runs only seed N.
@@ -179,10 +180,12 @@ two reductions and a barrier between each.
 - **No internal storage.** Datapaths see data in flight only; address
   generation and buffering belong to the streamer. Reduction accumulators are
   the sanctioned exception — they hold a scalar, not a tile.
-- **UInt as a bit container.** Two's-complement addition is signedness-
-  agnostic, so `UInt` here is bit-identical to the DaCe int32 reference,
-  wraparound included. Signedness starts to matter at multiply, compare and
-  shift; the typed ALU set in W6 is where it gets handled properly.
+- **Typed lanes, a `UInt` ALU.** A block's ports are lanes of NumPy's types
+  (`IntType`: `SInt` signed, `UInt` unsigned), fixed at elaboration. Each
+  operand is extended to the op type by its own signedness, the op runs on
+  `UInt` bits at that width (two's complement wraps alike; min and max
+  compare by the op type's signedness), and the result is extended or
+  wrapped into the output type (D143).
 - **Width and lane count come from the caller** (the catalogue today, a BRM's
   design params later), never from a default. The defaults in these
   constructors exist so the specs can run standalone.

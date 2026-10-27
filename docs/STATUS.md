@@ -88,18 +88,23 @@ reference check. Next is PACK0, the streamer's PR (narrow elements packed in
 64-bit words; D142–D144), before B1. Its rounds: R0 docs; R1 design
 (platform, streamers, checks, BRM dtypes); R2 lowering and data; R3
 generation and the first SNAX-GVSoC runs; R4 Chisel; R5 viewer and close.
-PACK0's R0 to R3 are done: the decisions, the design (the platform keeps
+PACK0's R0 to R4 are done: the decisions, the design (the platform keeps
 only the word, a BRM port's dtypes a rule, the streamers' dtype, k and
 channels, `connect.pack` and `connect.channels`), lowering and data (layouts
 by the container's itemsize, stream values in words), sizes that do not
 divide (a tail padded in the data, `connect.pad`), then generation (a
 recipe's `dtypes`, streamer bounds in words, each port's type in the
 accelerator file): vecadd, vecmul and matadd at int32, vsum_tree int32 into
-int64 and vecadd at int8 run on SNAX-GVSoC; the RTL refuses mixed widths
-(`gen.rtl_width`) until R4. snax-gvsoc's part of PACK0 is merged (PR #32:
-SnaxUnit's per-port widths and its fifteen forge/ fixtures, the narrow and
-padded ones included; the submodule at its squash `6347d51e`). Next is R4,
-the Chisel blocks.
+int64 and vecadd at int8 run on SNAX-GVSoC; snax-gvsoc's part is merged
+(PR #32: SnaxUnit's per-port widths and its fifteen forge/ fixtures, the
+narrow and padded ones included; the submodule at its squash `6347d51e`);
+then the Chisel blocks (R4): ElementwiseTiledSpatial and the Accumulator take
+their ports' types (`inTypes`, `opType`, `outType`; `inType`, `outType`) and
+run NumPy's rule (D143), `rtl.json` names them and `gen.rtl_width` is gone,
+so vecadd_i32, vsum_tree_i32 and vsum_tree_i8 make bundles for snax_cluster.
+The FIFO slicer and packer (`hw/chisel/.../stream/`) are built and parked:
+the flow places only the wire slice (D142); R5 adds their open item. Next
+is R5, the viewer and the close.
 
 ## Open Items
 
@@ -117,11 +122,11 @@ Next free number: 93.
     states no banks; a registered map kind if snax_cluster's differs.
 20. Streamer ports are one bank wide; wider when a kernel needs it (PACK0,
     closed in its R5).
-21. More than one element per word: narrow elements now run on SNAX-GVSoC
-    (PACK0 R3: int32 and int8, the streamers, SnaxUnit and the DMA); the
-    Chisel blocks follow in R4: the Accumulator's tree zero-extends its lanes
-    (`UInt.pad`), and R4 makes it sign-extend for int8 into int32 (D143).
-    relu, axpy and matadd are int32 again (R3). Closes in R5.
+21. More than one element per word: narrow elements run on SNAX-GVSoC
+    (PACK0 R3: int32 and int8, the streamers, SnaxUnit and the DMA) and in
+    the Chisel blocks (R4: each input extended to the op type by its own
+    signedness, a fold's lanes to the output type, D143). relu, axpy and
+    matadd are int32 again (R3). Closes in R5.
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel`
     until one is needed.

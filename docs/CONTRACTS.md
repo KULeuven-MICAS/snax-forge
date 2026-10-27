@@ -763,14 +763,32 @@ against the block catalogue `hw/chisel/blocks.json` and
 | `tag` | the platform's `accelerator_slot`, `snax_forge` by default; the wrapper is `<tag>_shell_wrapper` |
 | `units` | one unit (more is `gen.instances`; links come with M13): `name` (the instance), `block` (a catalogue block), `params` (every block param, typed and in its limits), `ports` (`{brm, block}` per BRM port, in the BRM's port order, which is the streamer's reader and writer order) and `csrs` |
 
-**Widths** (D142, D143). A block's widths come from its ports' containers:
-ElementwiseTiledSpatial's `dataWidth` is the one width of its ports and
-`signed` its inputs' (add, sub and mul wrap alike signed or not, min and max
-read it); the Accumulator's `width` is its input's and `accWidth` its sum's.
-What the Chisel blocks do not compute right yet is refused
-(`gen.rtl_width`, until PACK0 R4): an ElementwiseTiledSpatial whose ports
-differ in width, and an Accumulator whose signed input is narrower than its
-sum (its lanes zero-extend, `UInt.pad`).
+**Types** (D142, D143). A block's types come from its ports' containers,
+named as NumPy names them, and are fixed at elaboration: `Emit --spec`
+builds the block for that one choice. ElementwiseTiledSpatial's `inTypes`
+are its inputs', `opType` their NumPy result type (`brm/dtypes.py`'s
+`result_type`), the type the op runs at, and `outType` its output's; the
+Accumulator's `inType` is its input's and `outType` its sum's. Each input is
+extended to the op type (a fold's lanes to the output type) by its own
+signedness, and the result is extended or wrapped into the output type.
+Python decides every type; the blocks only construct. The catalogue's
+`dtype` and `dtypes` params take one name, or a list, of the eight:
+
+<!-- snippet: hw/chisel/blocks.json -->
+```json
+ "Accumulator": {
+  "params": {
+   "inType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "outType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "lanes": {"type": "int", "min": 1}
+  },
+```
 
 A unit's `csrs` are in CSR order from offset 0: `rw`, the configuration
 fields (`pin` and `width`), then `start`, the start CSR's pin (bit 0 written
@@ -789,11 +807,12 @@ Chisel specs:
    "name": "acc",
    "block": "ElementwiseTiledSpatial",
    "params": {
-    "dataWidth": 64,
+    "inTypes": ["int64", "int64"],
+    "opType": "int64",
+    "outType": "int64",
     "lanes": 4,
     "loopCountWidth": 32,
-    "supportedOps": ["add"],
-    "signed": true
+    "supportedOps": ["add"]
    },
    "ports": [{"brm": "a", "block": "a"}, {"brm": "b", "block": "b"}, {"brm": "out", "block": "out"}],
    "csrs": {
@@ -814,7 +833,8 @@ Chisel specs:
 (32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`; per input port k, in order,
 `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`, per output port
 `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, data `num_channel × 64`
-bits with lane i at bits `[64i+63 : 64i]`. Inside: `CsrManager`
+bits with lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit type (k =
+64 / w lanes a word, D142). Inside: `CsrManager`
 (ReqRspManager's protocol, D130), `CtrlAdapter` (an accepted start is the
 block's start with the fields on its pins; ready is not busy; the counter is
 reset by an accepted start, counts busy cycles and holds after) and the
