@@ -88,14 +88,17 @@ reference check. Next is PACK0, the streamer's PR (narrow elements packed in
 64-bit words; D142–D144), before B1. Its rounds: R0 docs; R1 design
 (platform, streamers, checks, BRM dtypes); R2 lowering and data; R3
 generation and the first SNAX-GVSoC runs; R4 Chisel; R5 viewer and close.
-PACK0's R0, R1, R2 and R2b are done: the decisions, the design (the
-platform keeps only the word, a BRM port's dtypes a rule, the streamers'
-dtype, k and channels, `connect.pack` and `connect.channels`), lowering and
-data (layouts by the container's itemsize, stream values in words), then
-sizes that do not divide (a tail padded in the data, `connect.pad`; vecadd
-N = 7, vsum N = 21 and rowsum 3 x 7 run on SNAX-GVSoC); generation refuses
-a narrow container until R3. snax-gvsoc's R1 is done (PR #32, open
-until R2).
+PACK0's R0 to R3 are done: the decisions, the design (the platform keeps
+only the word, a BRM port's dtypes a rule, the streamers' dtype, k and
+channels, `connect.pack` and `connect.channels`), lowering and data (layouts
+by the container's itemsize, stream values in words), sizes that do not
+divide (a tail padded in the data, `connect.pad`), then generation (a
+recipe's `dtypes`, streamer bounds in words, each port's type in the
+accelerator file): vecadd, vecmul and matadd at int32, vsum_tree int32 into
+int64 and vecadd at int8 run on SNAX-GVSoC; the RTL refuses mixed widths
+(`gen.rtl_width`) until R4. snax-gvsoc's R1 is done (PR #32, open until
+R2); next is snax-gvsoc's R2: its forge/ fixtures regenerated, the int32 and
+int8 ones added.
 
 ## Open Items
 
@@ -113,12 +116,11 @@ Next free number: 93.
     states no banks; a registered map kind if snax_cluster's differs.
 20. Streamer ports are one bank wide; wider when a kernel needs it (PACK0,
     closed in its R5).
-21. More than one element per word has never been moved by streamers,
-    accelerators or the DMA (PACK0, closed in its R5; R1 checks the ports,
-    `connect.pack`). The Accumulator's tree zero-extends
-    its lanes (`UInt.pad`): PACK0 makes it sign-extend for int8 into int32
-    (D143). relu, axpy and matadd were int32 in KER0 and run as int64 until
-    then (M13 B0).
+21. More than one element per word: narrow elements now run on SNAX-GVSoC
+    (PACK0 R3: int32 and int8, the streamers, SnaxUnit and the DMA); the
+    Chisel blocks follow in R4: the Accumulator's tree zero-extends its lanes
+    (`UInt.pad`), and R4 makes it sign-extend for int8 into int32 (D143).
+    relu, axpy and matadd are int32 again (R3). Closes in R5.
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel`
     until one is needed.

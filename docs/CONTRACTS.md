@@ -483,8 +483,9 @@ checked in the node's scope, never run, and its ids may repeat live ones.
 ## 12. Recipe
 
 SNAX-SANDBOX's ordered list of transforms (D72), a hand-written JSON file in
-`recipes/`. `Recipe.load(path)`; every field is written, `params`, `symbols`
-and `steps` default to empty, unknown keys are errors.
+`recipes/`. `Recipe.load(path)`; every field is written (`dtypes` only when
+given), `params`, `symbols` and `steps` default to empty, unknown keys are
+errors.
 
 | Field | Holds |
 |---|---|
@@ -492,6 +493,7 @@ and `steps` default to empty, unknown keys are errors.
 | `kernel` | the kernel whose import the recipe starts from |
 | `params` | recipe params, each an int or a string; `--set NAME=VALUE` overrides one |
 | `symbols` | a value for graph symbols: an int or an expression over the params |
+| `dtypes` | optional: container -> NumPy integer dtype name, in place of the kernel's (D113, D142): the import applies it to the kernel's descriptors before DaCe builds the SDFG, and the kernel's inputs are cast to it (`astype`, wrapping); an unknown dtype or container is an error naming it (`vecadd_i32`: A, B, C `int32`) |
 | `steps` | in order: `transform` (a registered name) and its `params` |
 
 A transform's int params take an int or an expression over the recipe params
@@ -708,8 +710,8 @@ file is JSON. One design point gives byte-identical files wherever written.
 | File | Holds |
 |---|---|
 | `<platform>.hjson` | the cluster: the platform's `hjson`, its comments dropped and its key order kept, with `cluster.tcdm.banks`, `.size` (KiB), `data_width`, `cluster_base_addr`, `dma_data_width` and `dram` written from the platform, `cluster.name` `snax_forge_cluster` (also in `cluster.bender_target`, in place of the source's name; a source without its own name there is `gen.source`), and the slot set; the source's template, referred to only by the slot, dropped |
-| `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds`, `temporal_dim`, `num_channel` (64-bit channels) and `fifo_depth` |
-| `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
+| `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds` in words, fastest first (`[S_0 / k, S_1, ...]`, k the elements of the port's container dtype a word holds, D142), `temporal_dim`, `num_channel` (the streamer's channels, the wire default W / k; the bounds' product) and `fifo_depth` |
+| `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `in_widths`, `in_signed`, `out_widths`, `out_signed` (each port's element bits and signedness, from its container, inputs and outputs in the BRM's port order; D143), `op`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
 | `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h`, and the runtime's `snitch_cluster_cfg.h` and `snitch_cluster_addrmap.h`, as snax_cluster's templates render them from the cluster file (`gen/headers.py`, D126) |
 | `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, in its padded shape (a tail's pads hold the pad value: 0, or the identity of a max or min fold that reads it, D144), then padded with zeros to whole DMA beats in its itemsize (16 int32 or 64 int8 elements per 64-byte beat) as its L2 layout (D105) and aligned to the beat. A container narrower than the word is refused (`gen.dtype`) until packed streams are generated (PACK0 R3) |
 | `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens, the valid elements only, a padded matrix row by row (`forge data:`, its words the valid elements), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
