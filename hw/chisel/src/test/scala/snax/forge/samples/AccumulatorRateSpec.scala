@@ -4,7 +4,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{Blocks, ForgeTester, SnaxUnitCases}
+import snax.forge.{Blocks, ForgeTester, LaneBits, SnaxUnitCases}
 import snax.forge.SnaxUnitCases.{RunLine, Start}
 import snax.forge.shell.RtlFixtures
 
@@ -21,9 +21,9 @@ import snax.forge.shell.RtlFixtures
   *
   * The `expect run` lines are compared too, each busy cycle classed by `SnaxUnit`'s rule (D59) from what the block
   * shows: a result waiting with no room (`out.valid && !out.ready`) is stall_out, an input taken busy, no input with
-  * inputs left stall_in, and the rest flush. Without the variable the test is canceled. It runs at 64 bits and the
-  * case's lanes, and at each `RtlFixtures` fixture's Accumulator (vsum's, vsum_tree's at W = 4 and 8): the cycles do
-  * not depend on the lanes.
+  * inputs left stall_in, and the rest flush. Without the variable the test is canceled. It runs at int64 and the case's
+  * lanes, and at each `RtlFixtures` fixture's Accumulator (vsum's, vsum_tree's at W = 4 and 8): the cycles do not
+  * depend on the lanes.
   */
 class AccumulatorRateSpec extends AnyFlatSpec with ForgeTester {
 
@@ -36,31 +36,31 @@ class AccumulatorRateSpec extends AnyFlatSpec with ForgeTester {
 
   behavior of "Accumulator against SnaxUnit's rate cases"
 
-  /** Each fixture's Accumulator (`RtlFixtures`): its width, accWidth and lanes. */
-  private val fixtures: Seq[(String, Int, Int, Int)] =
+  /** Each fixture's Accumulator (`RtlFixtures`): its inType, outType and lanes. */
+  private val fixtures: Seq[(String, String, String, Int)] =
     RtlFixtures.all.map(f => f -> f.spec.units.head).collect {
       case (f, u) if u.block == "Accumulator" =>
         val p = Blocks.Params(u.params)
-        (f.name, p.int("width"), p.int("accWidth"), p.int("lanes"))
+        (f.name, s"uint${p.int("width")}", s"uint${p.int("accWidth")}", p.int("lanes"))
     }
 
-  /** The configurations: 64 bits at the case's lanes, then each fixture's. */
-  private val configs: Seq[(String, Option[(Int, Int, Int)])] =
-    ("w64, the case's lanes", None) +: fixtures.map { case (n, w, a, l) => n -> Some((w, a, l)) }
+  /** The configurations: int64 at the case's lanes, then each fixture's. */
+  private val configs: Seq[(String, Option[(String, String, Int)])] =
+    ("int64, the case's lanes", None) +: fixtures.map { case (n, i, o, l) => n -> Some((i, o, l)) }
 
   for ((config, params) <- configs)
     it should s"fire, push, be busy and end its runs as every pipelined fold case gives ($config)" in {
       runCases(params)
     }
 
-  private def runCases(params: Option[(Int, Int, Int)]): Unit = {
+  private def runCases(params: Option[(String, String, Int)]): Unit = {
     val all = cases.getOrElse(cancel(s"$Env is not set (snax-gvsoc's tests/snax/unit/cases)"))
     if (all.isEmpty)
       cancel(s"no pipelined fold case in ${sys.env(Env)}: the snax-gvsoc checkout predates the pipelined fold cases")
     for (c <- all) {
       require((c.latency, c.ii) == (1, 1), s"${c.name}: the Accumulator is L = 1, II 1")
-      val (width, accWidth, lanes) = params.getOrElse((64, 64, c.lanes))
-      test(new Accumulator(width = width, accWidth = accWidth, lanes = lanes)) { dut =>
+      val (inType, outType, lanes) = params.getOrElse(("int64", "int64", c.lanes))
+      test(new Accumulator(inType, outType, lanes)) { dut =>
         var next    = BigInt(0)         // the index of the next input
         var count   = 0                 // the run's count
         var rate    = 1
@@ -86,7 +86,7 @@ class AccumulatorRateSpec extends AnyFlatSpec with ForgeTester {
           }
           dut.io.in.valid.poke(cyc.valids(0).B)
           val inputs = (0 until lanes).map(j => next * lanes + j + 1)
-          for ((v, j) <- inputs.zipWithIndex) dut.io.in.bits(j).poke(v.U)
+          for ((v, j) <- inputs.zipWithIndex) LaneBits.poke(dut.io.in.bits(j), v)
           dut.io.out.ready.poke(cyc.ready.B)
           val fire = high(dut.io.in.valid)  && high(dut.io.in.ready)
           val push = high(dut.io.out.valid) && cyc.ready
@@ -95,7 +95,7 @@ class AccumulatorRateSpec extends AnyFlatSpec with ForgeTester {
           assert(busy == cyc.busy, s"$clue: busy $busy, the case says ${cyc.busy}")
           if (push) {
             assert(sums.nonEmpty, s"$clue: a push with no sum given")
-            dut.io.out.bits.expect(sums.head.U, s"$clue: the sum")
+            assert(LaneBits.peek(dut.io.out.bits) == sums.head, s"$clue: the sum")
             sums = sums.tail
           }
           if (busy) {

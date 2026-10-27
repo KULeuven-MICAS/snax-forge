@@ -96,7 +96,7 @@ object Blocks {
       "done",
       Seq.empty,
       p => {
-        val m = Module(new Accumulator(width = p.int("width"), accWidth = p.int("accWidth"), lanes = p.int("lanes")))
+        val m = Module(new Accumulator(s"uint${p.int("width")}", s"uint${p.int("accWidth")}", p.int("lanes")))
         Built(m, m.io)
       }
     )

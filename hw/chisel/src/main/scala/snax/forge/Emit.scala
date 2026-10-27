@@ -80,7 +80,7 @@ object Emit {
     Target(
       "Accumulator",
       "accumulate's block (D133): one lane here, a sum per len inputs",
-      () => new Accumulator(width = DataWidth, accWidth = DataWidth)
+      () => new Accumulator(inType = "int32", outType = "int32")
     ),
     Target(
       "ElementwiseLoop-sel",

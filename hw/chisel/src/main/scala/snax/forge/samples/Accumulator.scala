@@ -3,14 +3,17 @@ package snax.forge.samples
 import chisel3._
 import chisel3.util._
 
+import snax.forge.IntType
+
 /** The `accumulate` BRM's integer accumulator -- the hardware image of the reduction in `kernels/polybench/vsum.py`.
   *
   * Sums every `len` consecutive beats of an elastic input stream and emits each sum on an elastic output stream,
-  * `loopCount` input beats per run. A beat is `lanes` elements; a combinational tree of `lanes` → 1 adders in front of
-  * the register sums them, so each beat adds its lanes' sum (D133). `lanes = 1` is the serial accumulator. A reduction
-  * collapses T input beats into 1 output beat, so it is a *chaining barrier*: a downstream consumer cannot be fed
-  * element-by-element in producer order, because no output element exists until the last input of its sum has been
-  * absorbed. Chained reductions therefore get control chaining, not data chaining.
+  * `loopCount` input beats per run. A beat is `lanes` elements of `inType`; each is cast to `outType` and a
+  * combinational tree of `lanes` → 1 adders in front of the register sums them, so each beat adds its lanes' sum (D133,
+  * D143). `lanes = 1` is the serial accumulator. A reduction collapses T input beats into 1 output beat, so it is a
+  * *chaining barrier*: a downstream consumer cannot be fed element-by-element in producer order, because no output
+  * element exists until the last input of its sum has been absorbed. Chained reductions therefore get control chaining,
+  * not data chaining.
   *
   * ==Control==
   *
@@ -25,9 +28,10 @@ import chisel3.util._
   *
   * ==The tree==
   *
-  * `lanes` → 1 adders (`reduceTree`), each `accWidth` bits and wrapping as the register does, between `in.bits` and
-  * `acc`, with no register of its own: latency stays 1 for every `lanes`. Pipeline stages in the tree would make the
-  * latency depend on `lanes`; that is the choice of the generator from the hardware binding.
+  * Each lane is cast to `outType` first (NumPy's fold: sign-extended from a signed `inType`, zero-extended from an
+  * unsigned one), then `lanes` → 1 adders (`reduceTree`), each `outType`'s width and wrapping as the register does,
+  * between `in.bits` and `acc`, with no register of its own: latency stays 1 for every `lanes`. Pipeline stages in the
+  * tree would make the latency depend on `lanes`; that is the choice of the generator from the hardware binding.
   *
   * ==One register, no drain cycle==
   *
@@ -43,24 +47,25 @@ import chisel3.util._
   * combinationally (the input is taken only when the result can leave), a path the generated shell wrapper has to keep
   * in mind when it puts the block behind the streamer.
   *
-  * @param width
-  *   bits per input element, from the BRM port's dtype
-  * @param accWidth
-  *   bits of accumulator; widening here is how you buy headroom against overflow that the NumPy reference would also
-  *   wrap on
+  * @param inType
+  *   the input's type, NumPy's name ("int32", "uint8"), from the BRM port's dtype
+  * @param outType
+  *   the output's type, from the BRM port's dtype, at least as wide as `inType`: the tree and the register run at it,
+  *   wrapping as NumPy's sum into it does
   * @param lanes
   *   elements per input beat, the BRM's W (the binding's `args`)
   */
-class Accumulator(val width: Int = 32, val accWidth: Int = 32, val lanes: Int = 1) extends Module {
-  require(width > 0, s"width must be positive, got $width")
+class Accumulator(val inType: String = "int32", val outType: String = "int32", val lanes: Int = 1) extends Module {
   require(lanes > 0, s"lanes must be positive, got $lanes")
+
+  private val inT  = IntType(inType)
+  private val outT = IntType(outType)
   require(
-    accWidth >= width,
-    s"accWidth ($accWidth) must be at least width ($width), otherwise every " +
-      "partial sum is truncated on the way in"
+    outT.width >= inT.width,
+    s"outType $outType must be at least as wide as inType $inType, otherwise every lane is truncated on the way in"
   )
 
-  override def desiredName: String = s"Accumulator_w${width}_a${accWidth}_n${lanes}"
+  override def desiredName: String = s"Accumulator_${inT.tag}_${outT.tag}_n${lanes}"
 
   val io = IO(new Bundle {
     val loopCount = Input(UInt(32.W))
@@ -69,8 +74,8 @@ class Accumulator(val width: Int = 32, val accWidth: Int = 32, val lanes: Int = 
     val busy      = Output(Bool())
     val done      = Output(Bool())
 
-    val in  = Flipped(Decoupled(Vec(lanes, UInt(width.W))))
-    val out = Decoupled(UInt(accWidth.W))
+    val in  = Flipped(Decoupled(Vec(lanes, inT.lane)))
+    val out = Decoupled(outT.lane)
   })
 
   private val busy   = RegInit(false.B)
@@ -78,17 +83,17 @@ class Accumulator(val width: Int = 32, val accWidth: Int = 32, val lanes: Int = 
   private val len    = RegInit(0.U(32.W))
   private val taken  = RegInit(0.U(32.W)) // inputs taken this run
   private val count  = RegInit(0.U(32.W)) // inputs in the sum in progress
-  private val acc    = RegInit(0.U(accWidth.W))
+  private val acc    = RegInit(0.U(outT.width.W))
   private val valid  = RegInit(false.B)
 
   private val allIn = taken === target
 
   io.in.ready  := busy && !allIn && (!valid || io.out.ready)
   io.out.valid := valid
-  io.out.bits  := acc
+  io.out.bits  := IntType.cast(acc, outT, outT)
 
-  // The tree: the beat's lanes summed, wrapping at accWidth bits.
-  private val beat = VecInit(io.in.bits.map(_.pad(accWidth))).reduceTree(_ + _)
+  // The tree: each lane cast to outType (extended by inType's signedness), then summed, wrapping at outType's width.
+  private val beat = VecInit(io.in.bits.map(IntType.cast(_, inT, outT).asUInt)).reduceTree(_ + _)
 
   private val lastIn  = io.in.fire  && (taken + 1.U) === target
   private val lastSum = io.in.fire  && ((count + 1.U) === len || lastIn)
