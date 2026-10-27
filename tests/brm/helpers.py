@@ -48,9 +48,9 @@ def adder() -> dict[str, Any]:
                     "n": {"stage": "runtime", "type": "int", "default": None, "values": None},
                 },
                 "ports": [
-                    {"name": "a", "direction": "in", "lanes": "W", "rate": 1, "dtype": "int64"},
-                    {"name": "b", "direction": "in", "lanes": "W", "rate": 1, "dtype": "int64"},
-                    {"name": "out", "direction": "out", "lanes": "W", "rate": 1, "dtype": "int64"},
+                    {"name": "a", "direction": "in", "lanes": "W", "rate": 1},
+                    {"name": "b", "direction": "in", "lanes": "W", "rate": 1},
+                    {"name": "out", "direction": "out", "lanes": "W", "rate": 1},
                 ],
             },
             "function": {

@@ -1,7 +1,9 @@
 """The blocks the GVSoC generator can build: a binding's ``block`` -> a SnaxUnit (D134).
 
 An adapter reads an instance (its BRM, implementation and design params,
-snax_forge/brm/instance.py) and gives the properties of snax-gvsoc's
+snax_forge/brm/instance.py) and its ports' dtypes (the node's containers',
+``brm.port_dtypes``; int64 on every port when only the instance is judged,
+brm/instance.py) and gives the properties of snax-gvsoc's
 ``SnaxUnit`` and the fields of its ``SnaxShell`` (``Unit``), or refuses
 with a ``GenError`` naming what does not fit. Adapters are registered by
 the block's name (``register_block``, D19). Both blocks are ``counted``
@@ -14,7 +16,7 @@ the block's name (``register_block``, D19). Both blocks are ``counted``
     op           args.supportedOps, one op name, through ElementwiseOp's
                  encoding (add 0, sub 1, mul 2, and 3, or 4, xor 5, min 6,
                  max 7); tests/gen reads the table from the Chisel source
-    data_width   N of the ports' dtype (intN signed, uintN unsigned); every
+    data_width   N of the ports' dtypes (intN signed, uintN unsigned); every
     signed       port the same dtype, N in 8, 16, 32, 64, lanes * N a
                  multiple of 64 (a streamer beat is whole 64-bit channels)
     inputs       the BRM's input and output port names, exactly 2 in and 1 out
@@ -51,7 +53,7 @@ adder tree in front of its register.
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -105,7 +107,7 @@ class Unit:
         return props
 
 
-Adapter = Callable[[Instance], Unit]
+Adapter = Callable[..., Unit]  # (inst, dtypes=None) -> Unit
 BLOCKS: dict[str, Adapter] = {}
 
 
@@ -162,12 +164,19 @@ def _ports(inst: Instance, n_in: int, n_out: int, who: str, what: str) -> tuple[
     return ins, outs
 
 
-def _dtype(inst: Instance, what: str) -> tuple[int, bool]:
-    """The one dtype of every port, as bits and signedness."""
-    dtypes = {p.dtype for p in inst.brm.interface.ports}
-    if len(dtypes) != 1:
-        raise GenError("gen.dtype", f"{what}: ports of dtypes {sorted(dtypes)}; one is needed")
-    return port_dtype(dtypes.pop(), what)
+def instance_dtypes(inst: Instance) -> dict[str, str]:
+    """The dtypes an instance alone is judged at: int64 on every port, one element per word
+    (the node's containers give the real ones, ``brm.port_dtypes``)."""
+    return {p.name: "int64" for p in inst.brm.interface.ports}
+
+
+def _dtype(inst: Instance, dtypes: Mapping[str, str] | None, what: str) -> tuple[int, bool]:
+    """The one dtype of every port (``dtypes``, port -> dtype), as bits and signedness."""
+    dtypes = instance_dtypes(inst) if dtypes is None else dtypes
+    found = {dtypes[p.name] for p in inst.brm.interface.ports}
+    if len(found) != 1:
+        raise GenError("gen.dtype", f"{what}: ports of dtypes {sorted(found)}; one is needed")
+    return port_dtype(found.pop(), what)
 
 
 def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
@@ -179,7 +188,7 @@ def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
             )
 
 
-def elementwise_tiled_spatial(inst: Instance) -> Unit:
+def elementwise_tiled_spatial(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Unit:
     """ElementwiseTiledSpatial's unit; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
@@ -196,7 +205,7 @@ def elementwise_tiled_spatial(inst: Instance) -> Unit:
             f"{what}: supportedOps {op!r} is not one of ElementwiseOp's {list(ELEMENTWISE_OP)}",
         )
     ins, outs = _ports(inst, 2, 1, "SnaxUnit", what)
-    bits, signed = _dtype(inst, what)
+    bits, signed = _dtype(inst, dtypes, what)
     if not isinstance(lanes, int) or lanes < 1 or lanes * bits % 64:
         raise GenError(
             "gen.lanes", f"{what}: {lanes} lanes of {bits} bits is not whole 64-bit channels"
@@ -212,7 +221,7 @@ def elementwise_tiled_spatial(inst: Instance) -> Unit:
 register_block("ElementwiseTiledSpatial", elementwise_tiled_spatial)
 
 
-def accumulator(inst: Instance) -> Unit:
+def accumulator(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Unit:
     """The Accumulator's unit; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
@@ -232,7 +241,7 @@ def accumulator(inst: Instance) -> Unit:
             f"{what}: rates {a.rate!r} in and {out.rate!r} out; the Accumulator takes 1 in and "
             "a named rate out (one sum per T inputs)",
         )
-    bits, signed = _dtype(inst, what)
+    bits, signed = _dtype(inst, dtypes, what)
     _lanes(inst, {a.name: lanes, out.name: 1}, what)
     if bits % 64:
         raise GenError("gen.lanes", f"{what}: 1 lane of {bits} bits is not whole 64-bit channels")

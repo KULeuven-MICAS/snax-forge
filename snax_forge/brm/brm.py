@@ -31,14 +31,17 @@ Params have a stage. ``design`` params (lanes, op) are fixed per instance
 and reach the design point and the accelerator hjson. ``runtime`` params are
 the accelerator's start parameters: exactly ``n`` and every named port rate
 (D68, CONTRACTS.md section 10). A port's streamer width comes from its lanes
-(D12); it is not written in the BRM.
+(D12); it is not written in the BRM. Nor is its dtype: ``dtypes`` lists the
+container dtypes it takes, every integer dtype unless the file narrows them,
+and a node's containers decide (dtypes.py, D143).
 
 Value fields (lanes, rate, timing, function params) hold an int or an
 expression over params (snax_forge/expr.py, shared with the SNAX-DFG). Lanes,
 timing and function params may use design params only; a rate is an int or
 the name of a runtime param.
 
-Every field is written by ``to_dict``; a missing required part is an error
+Every field is written by ``to_dict`` (a port's ``dtypes`` only when it is
+not every integer dtype); a missing required part is an error
 that names it, optional fields take their defaults, and unknown keys are
 errors (D26). A BRM is validated when it is made, whether from a file
 or in Python; ``resolve`` builds an instance, checked against the
@@ -52,13 +55,12 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-import numpy as np
-
 from snax_forge import expr
 from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.expr import Value
 
 from .binding import check_binding
+from .dtypes import INT_DTYPES
 from .notation import NOTATIONS
 
 if TYPE_CHECKING:
@@ -134,21 +136,25 @@ class Port:
     direction: str
     lanes: Value
     rate: Value = 1
-    dtype: str = "int64"
+    dtypes: list[str] = field(default_factory=lambda: list(INT_DTYPES))  # the rule: dtypes.py
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "direction": self.direction,
-            "lanes": self.lanes,
-            "rate": self.rate,
-            "dtype": self.dtype,
-        }
+        d = {"name": self.name, "direction": self.direction, "lanes": self.lanes, "rate": self.rate}
+        if list(self.dtypes) != list(INT_DTYPES):  # every integer dtype unless the file says
+            d["dtypes"] = list(self.dtypes)
+        return d
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Port:
-        _keys(d, ("name", "direction", "lanes"), ("rate", "dtype"), what)
-        return cls(d["name"], d["direction"], d["lanes"], d.get("rate", 1), d.get("dtype", "int64"))
+        if isinstance(d, Mapping) and "dtype" in d:
+            raise BrmError(
+                f"{what}.dtype: a port takes a list of dtypes now, 'dtypes' (every integer dtype "
+                "when it is missing; D143)"
+            )
+        _keys(d, ("name", "direction", "lanes"), ("rate", "dtypes"), what)
+        dtypes = d.get("dtypes", INT_DTYPES)
+        dtypes = list(dtypes) if isinstance(dtypes, (list, tuple)) else dtypes
+        return cls(d["name"], d["direction"], d["lanes"], d.get("rate", 1), dtypes)
 
 
 @dataclass
@@ -473,10 +479,16 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
                 raise BrmError(f"{w}.rate: {p.rate!r} must be an int or a runtime param name")
         elif type(p.rate) is not int or p.rate < 1:
             raise BrmError(f"{w}.rate: must be an int >= 1 or a runtime param name")
-        try:
-            np.dtype(p.dtype)
-        except TypeError:
-            raise BrmError(f"{w}.dtype: {p.dtype!r} is not a dtype") from None
+        if (
+            not isinstance(p.dtypes, list)
+            or not p.dtypes
+            or any(d not in INT_DTYPES for d in p.dtypes)
+            or len(set(p.dtypes)) != len(p.dtypes)
+        ):
+            raise BrmError(
+                f"{w}.dtypes: must be a non-empty list of distinct names of {list(INT_DTYPES)}, "
+                f"got {p.dtypes!r}"
+            )
     dirs = {p.direction for p in ports}
     if dirs != set(DIRECTIONS):
         raise BrmError(f"{what}: needs at least one input and one output port")

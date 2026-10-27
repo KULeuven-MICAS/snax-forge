@@ -411,6 +411,11 @@ def _binding(impl=IMPL, **kw):
     return lambda d: d["implementations"][impl]["binding"].update(kw)
 
 
+def _dtypes(ports=("a", "b", "out"), **kw):
+    """The node's port dtypes (its containers', brm.port_dtypes): int64 unless given."""
+    return {p: kw.get(p, "int64") for p in ports}
+
+
 def _ports(**kw):
     def edit(d):
         for p in d["interface"]["ports"]:
@@ -426,21 +431,20 @@ ADAPTER_CASES = [
      "gen.timing"),
     ("op", None, {"W": 4, "op": "nand"}, "gen.op"),
     ("args", _binding(args={"lanes": "W"}), {}, "gen.args"),
-    ("mixed dtype", _ports(b={"dtype": "int32"}), {}, "gen.dtype"),
-    ("float", _ports(a={"dtype": "float64"}, b={"dtype": "float64"}, out={"dtype": "float64"}),
-     {}, "gen.dtype"),
-    ("lanes x N", _ports(a={"dtype": "int8"}, b={"dtype": "int8"}, out={"dtype": "int8"}),
-     {}, "gen.lanes"),
+    ("mixed dtype", None, {}, "gen.dtype", _dtypes(b="int32")),
+    ("float", None, {}, "gen.dtype", _dtypes(a="float64", b="float64", out="float64")),
+    ("lanes x N", None, {}, "gen.lanes", _dtypes(a="int8", b="int8", out="int8")),
     ("lanes vs port", _binding(args={"lanes": "W * 2", "supportedOps": "op"}), {}, "gen.lanes"),
 ]  # fmt: skip
 
 
 @pytest.mark.parametrize(
-    ("case", "edit", "params", "code"), ADAPTER_CASES, ids=[c[0] for c in ADAPTER_CASES]
-)
-def test_the_adapter_refuses(case, edit, params, code):
+    ("case", "edit", "params", "code", "dtypes"),
+    [(*c, None)[:5] for c in ADAPTER_CASES], ids=[c[0] for c in ADAPTER_CASES],
+)  # fmt: skip
+def test_the_adapter_refuses(case, edit, params, code, dtypes):
     with pytest.raises(GenError) as e:
-        elementwise_tiled_spatial(_instance(edit, params or None))
+        elementwise_tiled_spatial(_instance(edit, params or None), dtypes)
     assert e.value.code == code
 
 
@@ -475,21 +479,22 @@ ACCUMULATOR_CASES = [
     ("op", None, {"W": 1, "op": "max"}, "gen.op"),
     ("two inputs", _second_input, {}, "gen.ports"),
     ("rate in", _ports(a={"rate": "T"}), {}, "gen.rate"),
-    ("mixed dtype", _ports(a={"dtype": "int32"}), {}, "gen.dtype"),
+    ("mixed dtype", None, {}, "gen.dtype", _dtypes(("a", "out"), a="int32")),
     ("lanes", _binding(ACC, args={"lanes": 1}), {"W": 2, "op": "add"}, "gen.lanes"),
     ("lanes out", _ports(out={"lanes": "W"}), {"W": 2, "op": "add"}, "gen.lanes"),
-    ("narrow", _ports(a={"dtype": "int32"}, out={"dtype": "int32"}), {}, "gen.lanes"),
+    ("narrow", None, {}, "gen.lanes", _dtypes(("a", "out"), a="int32", out="int32")),
     ("fields order", _csrs(("len", "T"), ("loopCount", "n")), {}, "gen.fields"),
     ("no len", _csrs(("loopCount", "n")), {}, "gen.fields"),
 ]  # fmt: skip
 
 
 @pytest.mark.parametrize(
-    ("case", "edit", "params", "code"), ACCUMULATOR_CASES, ids=[c[0] for c in ACCUMULATOR_CASES]
-)
-def test_the_accumulator_adapter_refuses(case, edit, params, code):
+    ("case", "edit", "params", "code", "dtypes"),
+    [(*c, None)[:5] for c in ACCUMULATOR_CASES], ids=[c[0] for c in ACCUMULATOR_CASES],
+)  # fmt: skip
+def test_the_accumulator_adapter_refuses(case, edit, params, code, dtypes):
     with pytest.raises(GenError) as e:
-        accumulator(_acc(edit, params or None))
+        accumulator(_acc(edit, params or None), dtypes)
     assert e.value.code == code
 
 
@@ -519,8 +524,8 @@ def test_a_control_other_than_counted_is_refused(monkeypatch, adapter, inst):
 
 
 def test_the_adapter_reads_unsigned_and_narrow_dtypes():
-    u16 = {"dtype": "uint16"}
-    unit = elementwise_tiled_spatial(_instance(_ports(a=u16, b=u16, out=u16)))
+    u16 = _dtypes(a="uint16", b="uint16", out="uint16")
+    unit = elementwise_tiled_spatial(_instance(), u16)
     assert (unit.data_width, unit.signed, unit.lanes) == (16, False, 4)
 
 

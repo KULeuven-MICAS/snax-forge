@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.brm import Brm, BrmError
+from snax_forge.brm import INT_DTYPES, Brm, BrmError
 
 from .helpers import adder, reducer
 
@@ -30,7 +30,8 @@ def test_sparse_file_takes_defaults_and_writes_them():
         "values": None,
     }
     assert d["interface"]["ports"][0]["rate"] == 1
-    assert d["interface"]["ports"][0]["dtype"] == "int64"
+    assert "dtypes" not in d["interface"]["ports"][0]  # every integer dtype, not written
+    assert b.interface.ports[0].dtypes == list(INT_DTYPES)
     assert d["pattern"] == {"family": "reduce", "attrs": {}}
     assert d["function"]["code"] is None  # a reduction cannot say it per lane yet (D82)
     impl = d["implementations"]["chisel_accumulator"]
@@ -197,7 +198,10 @@ CASES = [
     ("lanes zero", lambda d: _port(d, 0).update(lanes=0), "lanes: must be >= 1"),
     ("rate design", lambda d: _port(d, 2).update(rate="W"), "runtime param name"),
     ("rate expr", lambda d: _port(d, 2).update(rate="n*2"), "runtime param name"),
-    ("dtype", lambda d: _port(d, 0).update(dtype="int65"), "is not a dtype"),
+    ("dtypes", lambda d: _port(d, 0).update(dtypes=["int65"]), "distinct names of"),
+    ("dtypes empty", lambda d: _port(d, 0).update(dtypes=[]), "non-empty list"),
+    ("dtypes twice", lambda d: _port(d, 0).update(dtypes=["int8", "int8"]), "distinct"),
+    ("old dtype", lambda d: _port(d, 0).update(dtype="int64"), "takes a list of dtypes now"),
     ("keyword port", lambda d: _port(d, 0).update(name="in"), "'in' is a Python keyword"),
     ("underscore port", lambda d: _port(d, 0).update(name="_a"), "starts with an underscore"),
     ("extra runtime", lambda d: _params(d).update(T={"stage": "runtime"}), "exactly n and"),

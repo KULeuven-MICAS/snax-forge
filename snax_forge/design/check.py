@@ -32,7 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.brm import BrmError, Instance, memlet_ordered
+from snax_forge.brm import BrmError, Instance, accepted, check_dtypes, memlet_ordered, port_dtypes
 from snax_forge.dfg import DfgError, Graph, Node
 from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import moved_bytes, round_up
@@ -421,19 +421,19 @@ def _connect_lanes(design: Design) -> Iterable[Problem]:
 
 
 def _connect_dtype(design: Design) -> Iterable[Problem]:
+    """Each node's containers pass its BRM's dtype rule (brm/dtypes.py, D143): bind checked
+    it, a hand-edited graph may not."""
     g = design.graph
-    seen: set[tuple[str, str]] = set()
     for n in accelerated(g):
         inst = design.instances[n.attrs["instance"]]
-        for conn, m in {**n.inputs, **n.outputs}.items():
-            dt = g.containers[m.data].dtype
-            port = inst.brm.port(conn).dtype
-            if dt != port and (n.id, conn) not in seen:
-                seen.add((n.id, conn))
-                yield Problem(
-                    "connect.dtype", f"node {n.id}.{conn}",
-                    f"container {m.data} is {dt}, port {conn} of {inst.brm.name} takes {port}",
-                )  # fmt: skip
+        dtypes = port_dtypes(g, n)
+        refused = check_dtypes(inst.brm, dtypes)
+        if refused:
+            yield Problem(
+                "connect.dtype", f"node {n.id}", "; ".join(refused),
+                "give the output containers a dtype these inputs accept "
+                f"({accepted(inst.brm, dtypes)})",
+            )  # fmt: skip
 
 
 def _connect_temporal(design: Design) -> Iterable[Problem]:

@@ -266,7 +266,7 @@ def bind(
     instance: str,
     params: Mapping[str, Any] | None = None,
 ) -> Graph:
-    from snax_forge.brm import BrmError, memlet_ordered, task_nest
+    from snax_forge.brm import BrmError, accepted, check_dtypes, memlet_ordered, task_nest
 
     g = _copy(g)
     what = f"bind {node!r}"
@@ -289,7 +289,16 @@ def bind(
         b = load_brm(brm)
     except BrmError as e:
         raise SandboxError(f"{what}: {e}") from None
-    ports = match(tasklet, b)
+    conn_dtypes = {
+        c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
+    }
+    ports = match(tasklet, b, conn_dtypes)
+    dtypes = {ports[c]: dt for c, dt in conn_dtypes.items()}
+    if refused := check_dtypes(b, dtypes):
+        raise SandboxError(
+            f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
+            f"{accepted(b, dtypes)}"
+        )
     if b.function.code is None:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
     computes = expr.rename_code(tasklet.attrs["code"], ports)
@@ -361,11 +370,6 @@ def bind(
     ):
         for c, m in conns.items():
             port = ports[c]
-            want = b.port(port).dtype
-            if g.containers[m.data].dtype != want:
-                raise SandboxError(
-                    f"{what}: port {port!r} is {want}, container {m.data!r} is {g.containers[m.data].dtype}"
-                )
             nest = None
             if by_nest:
                 try:

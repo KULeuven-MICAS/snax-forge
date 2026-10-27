@@ -52,8 +52,8 @@ How a node runs is registered per kind (``register_executor``, principle
 
 **Checks on the way.** Every index is inside its container (NumPy would
 wrap a negative one silently); an accelerated node's connectors are its
-BRM's ports, each beat has the port's lanes and the port's dtype is the
-container's; a spatial map around an accelerated node is
+BRM's ports, each beat has the port's lanes and the containers' dtypes pass
+the BRM's rule (``brm.check_dtypes``, D143); a spatial map around an accelerated node is
 an error, since its lanes are in the memlet.
 
 **Named rates** (``named_rates``, D102). A rate that names a start
@@ -368,6 +368,8 @@ def named_rates(
 
 
 def _run_accelerated(node: Node, ctx: Context) -> None:
+    from snax_forge.brm import accepted, check_dtypes
+
     what = f"node {node.id!r}"
     if node.body:
         raise ExecutionError(f"{what}: a nested accelerated block is not run yet")
@@ -387,14 +389,15 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
             raise ExecutionError(
                 f"{what}.{side}: connectors {list(conns)}, the BRM's ports {names}"
             )
-    for p in cfg.ports:
-        m = (node.inputs | node.outputs)[p.name]
-        want = instance.brm.port(p.name).dtype
-        if ctx.graph.containers[m.data].dtype != want:
-            raise ExecutionError(
-                f"{what}: port {p.name!r} is {want}, container {m.data!r} is "
-                f"{ctx.graph.containers[m.data].dtype}"
-            )
+    dtypes = {
+        p.name: ctx.graph.containers[(node.inputs | node.outputs)[p.name].data].dtype
+        for p in cfg.ports
+    }
+    if refused := check_dtypes(instance.brm, dtypes):
+        raise ExecutionError(
+            f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
+            f"{accepted(instance.brm, dtypes)}"
+        )
     if any(loop.node.attrs.get("loop.kind") == "spatial" for loop in ctx.loops):
         raise ExecutionError(f"{what}: inside a spatial map; its lanes belong in the memlet")
     task = 0

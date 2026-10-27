@@ -280,13 +280,16 @@ def test_rejected(name, edit, message):
         execute(Graph.from_dict(d), inputs)
 
 
-def test_port_dtype_must_be_the_containers():
+def test_port_dtypes_follow_the_rule():
+    """The containers' dtypes pass the BRM's rule (D143): an int32 output under int64 inputs
+    is refused, naming the outputs it would take."""
     d = as_dict("vecadd_accelerated")
-    for c in d["containers"].values():
-        c["dtype"] = "int32"
-    inputs = {k: v.astype(np.int32) for k, v in kernel_run(64)[0].items()}
-    with pytest.raises(ExecutionError, match="port 'a' is int64, container 'A' is int32"):
+    d["containers"]["C"]["dtype"] = "int32"
+    inputs = kernel_run(64)[0]
+    inputs["C"] = inputs["C"].astype(np.int32)
+    with pytest.raises(ExecutionError, match="output out is int32, narrower than input a") as e:
         execute(Graph.from_dict(d), inputs)
+    assert str(e.value).endswith("accepted output dtypes for these inputs: out: int64, uint64")
 
 
 def test_symbols_and_inputs():
