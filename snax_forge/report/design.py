@@ -121,7 +121,8 @@ class DesignReport(Record):
 
 
 def _words(lay: Layout, base: int, word: int) -> np.ndarray:
-    """The word index from ``base`` of every element of a layout, one element per word."""
+    """The word index from ``base`` of every element of a layout (several narrow elements
+    share a word, D142)."""
     idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
     return (lay.address(idx) - base) // word
 
@@ -143,8 +144,8 @@ def _memory_tables(cluster: Cluster, regions: list[Region], point: Any) -> list[
                 continue
             name, lay = region.container, region.layout
             w = _words(lay, base, word)
-            n = int(w.size) * word
-            lo, hi = lay.extent(word)
+            n = int(w.size) * region.itemsize
+            lo, hi = lay.extent(region.itemsize)
             region_rows.append(RegionRow(name, lo, hi, n, n / size,
                                      spans(sorted({int(x) % columns for x in w})),
                                      span_text([int(w.min()) // columns, int(w.max()) // columns])))  # fmt: skip
@@ -160,6 +161,7 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     word, banks = cluster.bank_bytes, cluster.banks
     row_bytes = word * banks
     l1 = {r.container: r.layout for r in regions if r.memory == "l1"}
+    elem = {r.container: r.itemsize for r in regions if r.memory == "l1"}
     lays = {s.container: l1[s.container] for s in streamers if s.container in l1}
     ss = [s for s in streamers if s.container in lays]
     notes = []
@@ -192,7 +194,7 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     for name, lay in l1.items():
         if name not in l2:
             continue
-        size = int(np.prod(lay.shape)) * word
+        size = int(np.prod(lay.shape)) * elem[name]
         if size % beat:
             moved = round_up(size, beat)
             base = lay.base

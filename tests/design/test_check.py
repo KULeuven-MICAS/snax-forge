@@ -401,7 +401,8 @@ def test_a_moved_layout_must_start_on_a_beat():
     (p,) = problems(with_memory([("B.l1.base", 600)]))
     assert (p.code, p.where, p.fix) == ("memory.align", "B in l1", "--set memory.B.l1.base=640")
     (p,) = problems(with_memory([("B.l1.base", 604)]))
-    assert "multiples of the 8-byte word" in p.message and p.fix == "--set memory.B.l1.base=608"
+    assert "must be a multiple of the 8-byte word" in p.message
+    assert p.fix == "--set memory.B.l1.base=608"
 
 
 def test_a_moved_container_is_padded_to_whole_beats():

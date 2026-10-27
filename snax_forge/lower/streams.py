@@ -30,6 +30,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from snax_forge.brm import Instance, task_nest
 
 from .layout import Layout, LayoutError
@@ -70,7 +72,7 @@ def streamer_values(
             f"{what}: layout shape {list(layout.shape)} is not the operand's {list(nest.shape)}"
         )
     try:
-        layout.check(l1)
+        layout.check(l1, np.dtype(streamer.dtype).itemsize)
     except LayoutError as e:
         raise StreamError(f"{what}: {e}") from None
 

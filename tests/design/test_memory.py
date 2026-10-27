@@ -48,6 +48,22 @@ def test_vecadd_default_is_contiguous_in_l1():
     assert list(p.layouts["A"]) == ["l2", "l1"]
 
 
+def test_a_narrow_container_is_laid_out_by_its_itemsize():
+    """int32 vecadd (D142): 4-byte strides; each moved container 64 x 4 = 256 bytes, four whole
+    beats, placed beat after beat."""
+
+    def int32(g):
+        for c in g["containers"].values():
+            c["dtype"] = "int32"
+
+    c = ctx(edit_graph=int32)
+    assert c.elem_bytes("A") == 4 and c.word_bytes("l1") == 8
+    p = plan(c, MemorySpec())
+    assert {k: (lay["l1"].strides, lay["l1"].base) for k, lay in p.layouts.items()} == {
+        "A": ((4,), 0), "B": ((4,), 256), "C": ((4,), 512)
+    }  # fmt: skip
+
+
 def test_the_layout_follows_the_bound_symbols():
     p = plan(bound_w8_ctx(), MemorySpec())
     assert p.layouts["C"]["l1"] == Layout(1024, (64,), (8,))

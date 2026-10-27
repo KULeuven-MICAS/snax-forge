@@ -12,8 +12,11 @@ replace any one of them (``register_memory_pass``):
                 platform has an L2 (the DMA loads and stores it), else in
                 L1; a transient in L1
     layout      shape and strides per container and      contiguous:
-                memory, base 0                           row-major, one
-                                                         element per word
+                memory, base 0                           row-major, each
+                                                         element its
+                                                         dtype's itemsize
+                                                         (D142: a word holds
+                                                         several narrow ones)
     placement   L1 base per container                    contiguous: in
                 the graph's container order, from L1's first
                 byte, no gaps; a layout the DMA moves (in L2 and L1) starts
@@ -32,7 +35,8 @@ are ``changes`` of the ``MemorySpec``, kept in the working copy
 (``--memory``), as the platform's are.
 
 **What passes see** (``MemoryContext``): the graph with its symbols bound,
-the platform, each container's shape and each memory's word and range, and,
+the platform, each container's shape and element bytes (``elem_bytes``),
+each memory's word and range, and,
 for later policies, every accelerator port's element-index stream
 (``accesses``: the elements in the order the port takes them, beat by beat,
 from its memlet over the temporal maps around it; independent of any
@@ -193,8 +197,14 @@ class MemoryContext:
         return ["l2", "l1"] if self.platform.l2 is not None else ["l1"]
 
     def word_bytes(self, mem: str) -> int:
+        """A bank word's bytes: what a base aligns to."""
         cfg = self.platform.l2 if mem == "l2" else self.platform.l1
         return cfg.width_bits // 8
+
+    def elem_bytes(self, container: str) -> int:
+        """An element's bytes: the container's dtype itemsize (D142; a word holds several of a
+        narrower one)."""
+        return np.dtype(self.graph.containers[container].dtype).itemsize
 
     @property
     def beat_bytes(self) -> int:
@@ -294,7 +304,7 @@ def contiguous_layout(
     ctx: MemoryContext, residency: dict[str, list[str]]
 ) -> dict[str, dict[str, Layout]]:
     return {
-        c: {m: Layout.contiguous(0, ctx.shape(c), ctx.word_bytes(m)) for m in mems}
+        c: {m: Layout.contiguous(0, ctx.shape(c), ctx.elem_bytes(c)) for m in mems}
         for c, mems in residency.items()
     }
 
@@ -309,7 +319,7 @@ def contiguous_placement(
     taken: list[tuple[int, int]] = []
     for (c, m), b in pins.items():
         if m == "l1" and c in layouts and "l1" in layouts[c]:
-            lo, hi = replace(layouts[c]["l1"], base=b).extent(word)
+            lo, hi = replace(layouts[c]["l1"], base=b).extent(ctx.elem_bytes(c))
             taken.append((lo, hi))
             bases[c]["l1"] = b
     cursor = ctx.span("l1")[0]
@@ -319,9 +329,10 @@ def contiguous_placement(
         lay = layouts[c]["l1"]
         moved = "l2" in layouts[c]
         a = ctx.beat_bytes if moved else word
-        lo0, hi0 = lay.extent(word)  # with base 0
+        elem = ctx.elem_bytes(c)
+        lo0, hi0 = lay.extent(elem)  # with base 0
         if moved:  # the DMA moves whole beats: keep the padding free (D105)
-            hi0 = lo0 + moved_bytes(lay, word, a)
+            hi0 = lo0 + moved_bytes(lay, elem, a)
         base = round_up(cursor - lo0, a)
         clash = True
         while clash:

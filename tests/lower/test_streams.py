@@ -13,7 +13,7 @@ from snax_forge.design.platform import L1Config
 from snax_forge.design.streamers import Streamer
 from snax_forge.lower import Layout, LayoutError, StreamError, streamer_values
 from snax_forge.lower.derive import addresses
-from snax_forge.lower.layout import check_word
+from snax_forge.lower.layout import check_word, dma_side, moved_bytes
 from tests.brm.helpers import IMPL, affine_adder, affine_elementwise_add, vector_nest
 from tests.design.helpers import SNAX_FORGE
 
@@ -159,8 +159,8 @@ ERRORS = [
      {"nest": REUSE, "n": 6, "layout": Layout(0, (8,), (8,)), "s": "r4d1"},
      "2 temporal loops, the streamer has 1"),
     ("shape", {"layout": Layout(0, (32,), (8,))}, r"layout shape \[32\]"),
-    ("unaligned base", {"layout": Layout(4, (64,), (8,))}, "multiples of the 8-byte word"),
-    ("unaligned stride", {"layout": Layout(0, (64,), (12,))}, "multiples of the 8-byte word"),
+    ("unaligned base", {"layout": Layout(4, (64,), (8,))}, "base 4 must be a multiple of the 8-byte word"),
+    ("unaligned stride", {"layout": Layout(0, (64,), (12,))}, "multiples of the 8-byte element"),
     ("outside L1", {"layout": Layout(8000, (64,), (8,))}, r"L1 is \[0, 8192\)"),
     ("below L1", {"layout": Layout(0, (64,), (-8,))}, "spans bytes"),
     ("task", {"nest": REUSE, "layout": Layout(0, (8,), (8,))}, "gives 6 beats, need n / rate = 16"),
@@ -171,6 +171,24 @@ ERRORS = [
 def test_errors(case, kw, msg):
     with pytest.raises(StreamError, match=msg):
         _values(**kw)
+
+
+def test_a_layout_of_narrow_elements():
+    """int32 elements 4 bytes apart (D142): the base on a word, the strides whole elements;
+    the DMA still moves whole beats, 16 int32 or 64 int8 elements per 64-byte beat."""
+    lay = Layout.contiguous(0, (3, 6), 4)
+    assert lay.strides == (24, 4) and lay.extent(4) == (0, 72)
+    lay.check(L1, 4)
+    with pytest.raises(LayoutError, match="base 4 must be a multiple of the 8-byte word"):
+        Layout(4, (8,), (4,)).check(L1, 4)
+    with pytest.raises(LayoutError, match="strides \\[6\\] must be multiples of the 4-byte"):
+        Layout(0, (8,), (6,)).check(L1, 4)
+    assert moved_bytes(Layout.contiguous(0, (16,), 4), 4, 64) == 64
+    assert moved_bytes(Layout.contiguous(0, (17,), 4), 4, 64) == 128
+    assert moved_bytes(Layout.contiguous(0, (64,), 1), 1, 64) == 64
+    assert dma_side(Layout.contiguous(0, (8,), 4), 4, 64) == {
+        "base": 0, "bounds": [1], "strides": [64]
+    }  # fmt: skip
 
 
 def test_a_narrow_element_is_refused_until_packing_lowers():

@@ -720,21 +720,26 @@ def _memory_align(design: Design) -> Iterable[Problem]:
     for c, m, lay in _layouts(design):
         if m != "l1":  # an L2 layout's base is the link's (D86)
             continue
-        word = ctx.word_bytes(m)
+        word, elem = ctx.word_bytes(m), ctx.elem_bytes(c)
         where = f"{c} in {m}"
-        if lay.base % word or any(s % word for s in lay.strides):
+        if lay.base % word:
+            yield Problem(
+                "memory.align", where, f"base {lay.base} must be a multiple of the {word}-byte word",
+                f"--set memory.{c}.{m}.base={round_up(lay.base, word)}",
+            )  # fmt: skip
+            continue
+        if any(s % elem for s in lay.strides):
             yield Problem(
                 "memory.align", where,
-                f"base {lay.base} and strides {list(lay.strides)} must be multiples of the "
-                f"{word}-byte word",
-                f"--set memory.{c}.{m}.base={round_up(lay.base, word)}",
+                f"strides {list(lay.strides)} must be multiples of the {elem}-byte element "
+                f"({design.graph.containers[c].dtype})",
             )  # fmt: skip
             continue
         mems = design.memory.layouts.get(c, {})
         if "l2" not in mems:
             continue
         beat = ctx.beat_bytes
-        contiguous = type(lay).contiguous(lay.base, lay.shape, word)
+        contiguous = type(lay).contiguous(lay.base, lay.shape, elem)
         if lay.strides != contiguous.strides:
             yield Problem(
                 "memory.align", where,
@@ -749,10 +754,11 @@ def _memory_align(design: Design) -> Iterable[Problem]:
             )  # fmt: skip
 
 
-def _extent(lay: Any, word: int, beat: int | None = None) -> tuple[int, int]:
-    """Bytes ``[lo, hi)`` a layout covers; with ``beat``, up to the end of its last beat (D105)."""
-    lo, hi = lay.extent(word)
-    return (lo, lo + moved_bytes(lay, word, beat)) if beat is not None else (lo, hi)
+def _extent(lay: Any, elem_bytes: int, beat: int | None = None) -> tuple[int, int]:
+    """Bytes ``[lo, hi)`` a layout of ``elem_bytes`` elements covers; with ``beat``, up to the
+    end of its last beat (D105)."""
+    lo, hi = lay.extent(elem_bytes)
+    return (lo, lo + moved_bytes(lay, elem_bytes, beat)) if beat is not None else (lo, hi)
 
 
 def _moved_beats(design: Design, beat: int) -> dict[str, int | None]:
@@ -774,7 +780,7 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
             continue
         # an L2 layout has base 0, its array's address the link's (D86): only its size counts
         start, end = ctx.span(m) if m == "l1" else (0, pf.l2.size_bytes)
-        lo, hi = _extent(lay, ctx.word_bytes(m), moved[c])
+        lo, hi = _extent(lay, ctx.elem_bytes(c), moved[c])
         if lo < start or hi > end:
             pinned = (c, m) in design.memory.spec.pins()
             if m == "l1":
@@ -825,7 +831,7 @@ def _memory_runtime(design: Design) -> Iterable[Problem]:
     for c, m, lay in _layouts(design):
         if m != "l1":
             continue
-        lo, hi = _extent(lay, ctx.word_bytes(m), moved[c])
+        lo, hi = _extent(lay, ctx.elem_bytes(c), moved[c])
         if hi <= limit or lo < start or hi > end:  # past the end is memory.fit's
             continue
         align = moved[c] or ctx.word_bytes(m)
@@ -846,14 +852,14 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
     pins = design.memory.spec.pins()
     moved = _moved_beats(design, ctx.beat_bytes)
     for m in ("l1",):  # L2 holds data.h's arrays, which the link places apart (D86)
-        word = ctx.word_bytes(m)
         items = [(c, lay) for c, mm, lay in _layouts(design) if mm == m]
         for (a, la), (b, lb) in _pairs(items):
-            alo, ahi = _extent(la, word, moved[a])
-            blo, bhi = _extent(lb, word, moved[b])
+            ea, eb = ctx.elem_bytes(a), ctx.elem_bytes(b)
+            alo, ahi = _extent(la, ea, moved[a])
+            blo, bhi = _extent(lb, eb, moved[b])
             if alo >= bhi or blo >= ahi:
                 continue
-            shared = _shared(la, lb, word, moved[a], moved[b])
+            shared = _shared(la, lb, ea, eb, moved[a], moved[b])
             if not shared:
                 continue
             pinned = [x for x in (a, b) if (x, m) in pins]
@@ -861,7 +867,9 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
             if pinned:
                 order = list(design.memory.changes)
                 p = max(pinned, key=lambda x: order.index(f"{x}.{m}.base"))  # the latest pin
-                end = max(_extent(lay, word)[1] for _, mm, lay in _layouts(design) if mm == m)
+                end = max(
+                    _extent(lay, ctx.elem_bytes(x))[1] for x, mm, lay in _layouts(design) if mm == m
+                )
                 free = round_up(end, ctx.beat_bytes)
                 fix = (
                     f"move the pin past everything: --set memory.{p}.{m}.base={free}, or remove it"
@@ -881,18 +889,20 @@ def _pairs(items: list[Any]) -> Iterator[tuple[Any, Any]]:
 
 
 def _shared(
-    la: Any, lb: Any, word: int, beat_a: int | None = None, beat_b: int | None = None
-) -> int:
-    """Bytes two layouts both use (element addresses, each a word; a moved one's padding too)."""
+    la: Any, lb: Any, elem_a: int, elem_b: int, beat_a: int | None = None,
+    beat_b: int | None = None,
+) -> int:  # fmt: skip
+    """Bytes two layouts both use (each element its ``elem_*`` bytes; a moved one's padding
+    too)."""
     import numpy as np
 
-    def addrs(lay: Any, beat: int | None) -> Any:
+    def byte_addrs(lay: Any, elem: int, beat: int | None) -> Any:
         if beat is not None:  # the DMA writes the whole last beat (D105)
-            return np.arange(lay.base, lay.base + moved_bytes(lay, word, beat), word)
+            return np.arange(lay.base, lay.base + moved_bytes(lay, elem, beat))
         idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
-        return lay.address(idx)
+        return (lay.address(idx)[:, None] + np.arange(elem)).ravel()
 
-    return int(np.intersect1d(addrs(la, beat_a), addrs(lb, beat_b)).size) * word
+    return int(np.intersect1d(byte_addrs(la, elem_a, beat_a), byte_addrs(lb, elem_b, beat_b)).size)
 
 
 for _code, _stage, _fn in (

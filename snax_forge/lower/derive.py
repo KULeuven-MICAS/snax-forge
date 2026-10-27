@@ -159,8 +159,9 @@ def task_list(point: DesignPoint) -> TaskList:
     final: dict[str, str] = {}  # container -> task that leaves it in its last memory
 
     def dma(task: str, direction: str, c: str, after: list[str]) -> None:
-        l1 = dma_side(layout(c, "l1"), word, beat)
-        l2 = {"symbol": c} | {k: v for k, v in dma_side(layout(c, "l2"), word, beat).items()
+        elem = np.dtype(g.containers[c].dtype).itemsize
+        l1 = dma_side(layout(c, "l1"), elem, beat)
+        l2 = {"symbol": c} | {k: v for k, v in dma_side(layout(c, "l2"), elem, beat).items()
                               if k != "base"}  # fmt: skip
         src, dst = (l2, l1) if direction == "l2_to_l1" else (l1, l2)
         values = {"direction": direction, "src": src, "dst": dst}
