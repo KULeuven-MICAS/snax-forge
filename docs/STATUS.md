@@ -66,7 +66,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 |---|---|---|
 | P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step by hand (BASE1; its forge side, one `pixi run forge` per dot variant, is in M13); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
 | M13 | B0 (`done`), B1, B2, B3, B4 | **B0** flow pieces: CLN1's leftovers; the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min`, constant casts and maps over several parameters (open item 37); the MatMul and Transpose pass; ND1's slice: 2-D containers, a tag without a split, the streamer from the temporal loops (open items 45, 46, 48, 78); a restart every T < n (open item 81). **B1** one description: `accelerator.json` for Emit and SNAX-GVSoC; each block a datapath and a controller, in three modules; per-unit JOBS, JOB_BEATS, STATUS, COUNTER and pins (open item 83). **B2** blocks, one per round: 1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO; `bind` on a group; `split_reduce`; the fold's `init` port. **B3** composition: the composite node, wire and decoupled links on both sides, one start, the link check; dot 2–6 at N = 512, W = 4 and 8. **B4** tier A: fragments applied by output name, `augment_init`, fork and join; bicg, mvt (LOW4, open item 47), gesummv, atax; dot 1 (open item 79). `recipes/dot.json` and `examples/dot/` stay parked until B3. |
-| M7 | KER0 (`done`), FE1b, FE1c, PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK1 tier P (open items 20 and 21; the reference executor accumulates as the hardware does; requantization); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
+| M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`wip`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packs int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144; open items 20, 21 and 31); PACK1 keeps tier P: the exact products, requantization and the int8 kernels (the reference executor accumulates as the hardware does); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
 | M11 | LAY1–LAY3 | conv2d tiled on a MAC-array BRM; softmax and attention with several BRMs; HDC bind, bundle and similarity |
@@ -84,8 +84,11 @@ M14 is done, closed by CLN1: a recipe runs to a checked SNAX-GVSoC run
 cluster headers, the importer, the MatMul and Transpose pass, ND1's slice
 and the restart every T < n (rowsum). vecadd, vecmul, vsum and dot behave as
 before; rowsum, axpy, relu, bicg, mvt, gesummv and atax import and pass the
-reference check. Next is the streamer's own PR (narrow elements, open items
-20 and 21), planned first, then B1.
+reference check. Next is PACK0, the streamer's PR (narrow elements packed in
+64-bit words; D142–D144), before B1. Its rounds: R0 docs; R1 design
+(platform, streamers, checks, BRM dtypes); R2 lowering and data; R3
+generation and the first SNAX-GVSoC runs; R4 Chisel; R5 viewer and close.
+snax-gvsoc's R1 is done (PR #32, open until R2).
 
 ## Open Items
 
@@ -101,16 +104,18 @@ Next free number: 93.
    from the memory passes, D86). Parked (D23).
 18. The L1 address map is fixed and word-interleaved, so the design point
     states no banks; a registered map kind if snax_cluster's differs.
-20. Streamer ports are one bank wide; wider when a kernel needs it (PACK1).
+20. Streamer ports are one bank wide; wider when a kernel needs it (PACK0,
+    closed in its R5).
 21. `elems_per_word > 1` has never been moved by streamers, accelerators or
-    the DMA (PACK1). The Accumulator's tree zero-extends its lanes
-    (`UInt.pad`): PACK1 makes it sign-extend for int8 into int32. relu, axpy
-    and matadd were int32 in KER0 and run as int64 until then (M13 B0).
+    the DMA (PACK0, closed in its R5). The Accumulator's tree zero-extends
+    its lanes (`UInt.pad`): PACK0 makes it sign-extend for int8 into int32
+    (D143). relu, axpy and matadd were int32 in KER0 and run as int64 until
+    then (M13 B0).
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel`
     until one is needed.
 31. A loop bound that is not a multiple of the spatial bound: `split_map`
-    rejects it; a tail task or padding later.
+    rejects it; PACK0 settles it by padding (D144), closed in its R5.
 32. The DFG viewer's layout (D55), revisited if graphs outgrow it.
 33. An MLIR importer that writes `.snaxdfg` directly.
 34. A hand-edited `.snaxdfg` runs through the flow (D108) but cannot be
