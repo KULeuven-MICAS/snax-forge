@@ -277,3 +277,17 @@ def test_a_narrow_container_is_refused_until_packing_lowers():
     with pytest.raises(LowerError) as e:
         task_list(point(edit_graph=int32))
     assert str(e.value) == "A is int32: packing narrow elements into words lands in PACK0 R2"
+
+
+def test_matadd_int32_4x6_in_2x2_tiles_in_words():
+    """R1's accepted 2-D case (D142): the fastest spatial loop one word (8 bytes, a channel of
+    2 int32), the row loop 6 x 4 bytes; the tiles step 2 columns (8 bytes) and 2 rows
+    (48 bytes)."""
+    m = Memlet("A", ["2 * i:2 * i + 2", "2 * j:2 * j + 2"])
+    loops = [Loop("mi", "i", 0, 2, 1), Loop("mj", "j", 0, 3, 1)]
+    v, sb = memlet_values(m, loops, Layout.contiguous(0, (4, 6), 4), {}, "x", k=2)
+    assert sb == [2, 2]
+    assert v == {"base": 0, "temporal_bounds": [3, 2], "temporal_strides": [8, 48],
+                 "spatial_strides": [8, 24]}  # fmt: skip
+    words = (addresses(v, [1, 2]) // 8).tolist()  # 1 channel of 2 int32 by 2 rows
+    assert words[:3] == [[0, 3], [1, 4], [2, 5]]  # the first row of tiles

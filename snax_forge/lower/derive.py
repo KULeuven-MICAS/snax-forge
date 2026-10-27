@@ -68,7 +68,7 @@ from snax_forge.dfg import DfgError, Memlet, named_rates
 from snax_forge.dfg.subset import parse_dim
 
 from .layout import Layout, LayoutError, check_word, dma_side
-from .streams import StreamError, streamer_values
+from .streams import StreamError, in_words, streamer_values
 from .tasks import Configure, Start, Sync, TaskList
 
 if TYPE_CHECKING:
@@ -80,9 +80,11 @@ class LowerError(ValueError):
 
 
 def memlet_values(
-    m: Memlet, loops: list[Loop], layout: Layout, symbols: dict[str, int], what: str
+    m: Memlet, loops: list[Loop], layout: Layout, symbols: dict[str, int], what: str, k: int = 1
 ) -> tuple[dict[str, Any], list[int]]:
-    """A streamer's values for memlet ``m`` over ``loops``; and its spatial bounds, fastest first."""
+    """A streamer's values for memlet ``m`` over ``loops``, in words as streams.py's (the
+    fastest spatial stride a channel's, ``k`` elements on); and its spatial bounds, in
+    elements, fastest first."""
     names = [lp.var for lp in loops]
     base = layout.base
     tstrides = [0] * len(loops)
@@ -96,8 +98,8 @@ def memlet_values(
         stride = layout.strides[d]
         start = expr.evaluate(const, symbols) + sum(co[lp.var] * lp.begin for lp in loops)
         base += start * stride
-        for k, lp in enumerate(loops):
-            tstrides[k] += co[lp.var] * lp.step * stride
+        for i, lp in enumerate(loops):
+            tstrides[i] += co[lp.var] * lp.step * stride
         if len(parts) == 3:
             _, end_co = expr.linear(parts[1], names)
             if end_co != co:
@@ -112,13 +114,14 @@ def memlet_values(
         "base": base,
         "temporal_bounds": [b for b, _ in temporal],
         "temporal_strides": [s for _, s in temporal],
-        "spatial_strides": [s for _, s in fastest],
+        "spatial_strides": in_words([s for _, s in fastest], k),
     }
     return values, [b for b, _ in fastest]
 
 
 def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
-    """The byte addresses a streamer's values visit, beat by beat: (beats, lanes)."""
+    """The byte addresses a streamer's values visit, beat by beat: (beats, lanes). For a packed
+    port give the bounds in channels (the fastest S_0 / k): each address is then a word."""
     t = list(zip(values["temporal_bounds"], values["temporal_strides"], strict=True))[::-1]
     s = list(zip(spatial_bounds, values["spatial_strides"], strict=True))[::-1]
     grid = np.full([b for b, _ in t] + [b for b, _ in s], values["base"], dtype=np.int64)
@@ -203,7 +206,7 @@ def task_list(point: DesignPoint) -> TaskList:
             if lay is None:
                 raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
             values, sb = memlet_values(
-                m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}"
+                m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}", s.k
             )
             if sb != list(s.spatial_bounds):
                 raise LowerError(

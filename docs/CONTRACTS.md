@@ -200,9 +200,15 @@ written by hand. A task list is `name` and `steps`, each with an `op`:
 `type` says how `values` are read:
 
 ```
-streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes);
-          spatial bounds are design-time and come from the design point's
-          streamers
+streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes),
+          in words (D142): a channel moves one bank word of k elements of
+          the port's dtype. The fastest spatial loop runs S_0 / k channels,
+          its stride k times its element stride times the itemsize (8 bytes
+          for a packed port); every other stride is its element stride
+          times the itemsize, and base the layout's base plus the offset's
+          bytes. At k = 1 these are the element strides as before. Spatial
+          bounds are design-time, in elements, and come from the design
+          point's streamers
 dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with
           bounds and strides (bytes, one wide beat per step), the L1 side
           with base, the L2 side with symbol (its container's data.h array)
