@@ -9,6 +9,7 @@ import numpy as np
 import pytest
 
 from snax_forge.dfg import DfgError
+from snax_forge.dfg.execute import execute
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.flow.run import kernel_inputs, kernel_spec
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
@@ -22,6 +23,7 @@ NARROW = {
     "vecmul_i32": {"A": "int32", "B": "int32", "C": "int32"},
     "vsum_tree_i32": {"A": "int32", "out": "int64"},
     "vecadd_i8": {"A": "int8", "B": "int8", "C": "int8"},
+    "vecmul_i32_i64": {"A": "int32", "B": "int32", "C": "int64"},
 }
 
 
@@ -33,6 +35,18 @@ def test_a_narrow_recipe_imports_at_its_dtypes_and_passes_the_reference(name):
     assert {c: graph.containers[c].dtype for c in NARROW[name]} == NARROW[name]
     results = apply_recipe(recipe, graph)  # each step against the reference executor
     assert results[-1].graph.containers["A"].dtype == NARROW[name]["A"]
+
+
+def test_an_int32_product_is_sign_extended_into_an_int64_output():
+    """vecmul_i32_i64 (D143): the product runs at int32, the op type, and is sign-extended into
+    C: lane 2 wraps to -2, not 4294967294."""
+    recipe = Recipe.load(RECIPES / "vecmul_i32_i64.json")
+    graph = apply_recipe(recipe, import_kernel(recipe.kernel, recipe.dtypes))[-1].graph
+    a, b = np.zeros(64, np.int32), np.zeros(64, np.int32)
+    a[:4], b[:4] = [3, -2, 2**31 - 1, -5], [4, 7, 2, -1]
+    c = execute(graph, {"A": a, "B": b, "C": np.zeros(64, np.int64)})["C"]
+    assert c.dtype == np.int64
+    assert c[:4].tolist() == [12, -14, -2, 5]
 
 
 def test_the_kernels_inputs_are_cast_to_the_containers_dtypes():
