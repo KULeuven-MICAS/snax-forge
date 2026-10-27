@@ -536,6 +536,7 @@ def _pack(where: str, c: str, dtype: str, k: int, out: bool, walk: _Walk) -> Ite
             "fastest lanes must fill whole words (D142)",
             f"make the fastest spatial bound a multiple of {k} (the split factor in the recipe)",
         )  # fmt: skip
+        return  # a loop stepping by S_0 fails only because of it: one cause, one problem
     if fastest != 1:
         yield Problem(
             "connect.pack", where,

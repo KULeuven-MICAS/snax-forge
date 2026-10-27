@@ -114,6 +114,24 @@ def test_matadd_int32_3x5_in_2x2_tiles_pads_the_row():
     assert got[0].fix == "pad the leading dimension to 6"
 
 
+def test_s0_not_a_multiple_of_k_is_one_problem_per_port():
+    """int16 in 4 x 2 tiles: S_0 = 2 < k = 4. Loop j steps by S_0 and fails only because of
+    it, so it is not reported again."""
+    d = _grid([8, 8], [("i", "0:2"), ("j", "0:4")], ["4 * i:4 * i + 4", "2 * j:2 * j + 2"])
+    d = d.to_dict()
+    for c in d["containers"].values():
+        c["dtype"] = "int16"
+    got = _pack(Graph.from_dict(d))
+    assert [p.where for p in got] == ["node add.a", "node add.b", "node add.out"]
+    assert got[0].message == (
+        "the fastest spatial bound S_0 = 2 is not a multiple of k (int16, k = 4 elements per "
+        "word): a beat's fastest lanes must fill whole words (D142)"
+    )
+    assert got[0].fix == (
+        "make the fastest spatial bound a multiple of 4 (the split factor in the recipe)"
+    )
+
+
 def test_a_column_does_not_run_along_contiguous_elements():
     g = _grid([4, 6], [("i", "0:2"), ("j", "0:6")], ["2 * i:2 * i + 2", "j"])
     got = _pack(g)

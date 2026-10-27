@@ -106,6 +106,13 @@ def test_a_removed_memory_field_is_named_with_its_fix(key):
     assert found[0].fix == "remove it; each container's dtype decides the packing (D142)"
 
 
+def test_a_bad_channels_entry_names_its_fix():
+    d = platform_dict()
+    d["streamers"]["acc_a"] = {"channels": 0}
+    (p,) = parse(d)[1]
+    assert p.fix == "set channels to an int >= 1, or remove it"
+
+
 def test_channels_in_an_entry_round_trip_and_never_in_default():
     d = platform_dict()
     d["streamers"]["acc_a"] = {"channels": 2}

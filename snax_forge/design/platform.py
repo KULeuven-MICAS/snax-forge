@@ -335,8 +335,11 @@ def _entry(name: str, e: Any, default: StreamerOptions | None, out: list[Problem
     c = e.get("channels")
     if "channels" in e and (isinstance(c, bool) or type(c) is not int or c < 1):
         out.append(
-            Problem("platform.streamer", f"{where}.channels", f"must be an int >= 1, got {c!r}")
-        )
+            Problem(
+                "platform.streamer", f"{where}.channels", f"must be an int >= 1, got {c!r}",
+                "set channels to an int >= 1, or remove it",
+            )
+        )  # fmt: skip
     if default is not None and not unknown:
         opts = {k: v for k, v in e.items() if k in OPTIONS}
         try:
