@@ -80,14 +80,11 @@ def test_a_missing_platform_file_is_a_problem(tmp_path):
     [
         ("beat_bits", 256, "--set platform.l2.beat_bits=512"),
         ("width_bits", 32, "--set platform.l2.width_bits=64"),
-        ("dtype", "int32", '--set platform.l2.dtype="int64"'),
     ],
 )
 def test_l1_and_l2_must_agree(field, value, fix):
     def edit(d):
         d["l2"][field] = value
-        if field == "width_bits":
-            d["l2"]["dtype"] = "int32"
 
     got = [p for p in problems(design(edit_platform=edit)) if p.where == f"l2.{field}"]
     assert [(p.code, p.fix) for p in got] == [("platform.l2", fix)]
@@ -251,22 +248,6 @@ def test_spatial_bounds_must_be_the_nests():
     (p,) = problems(design(sets=[("streamers.acc_b.spatial_bounds", [2, 2])]))
     assert p.code == "connect.lanes" and "[4] (fastest first)" in p.message
     assert p.fix == "remove spatial_bounds, or --set platform.streamers.acc_b.spatial_bounds=[4]"
-
-
-def test_the_l1_must_hold_the_containers_dtype():
-    got = problems(design(sets=[("l1.dtype", "int32"), ("l2.dtype", "int32")]))
-    assert [(p.code, p.where) for p in got] == [
-        ("connect.dtype", "container A"), ("connect.dtype", "container B"),
-        ("connect.dtype", "container C"),
-    ]  # fmt: skip
-    assert got[0].fix == '--set platform.l1.dtype="int64" --set platform.l2.dtype="int64"'
-
-
-def test_one_element_per_word_only():
-    sets = [("l1.dtype", "int32"), ("l2.dtype", "int32"),
-            ("l1.elems_per_word", 2), ("l2.elems_per_word", 2)]  # fmt: skip
-    got = [p for p in problems(design(sets=sets)) if p.where == "platform.l1.elems_per_word"]
-    assert [p.code for p in got] == ["connect.dtype"] and "open item 21" in got[0].message
 
 
 # =============================================================================

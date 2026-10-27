@@ -217,7 +217,7 @@ def _platform_l2(design: Design) -> Iterable[Problem]:
             f"{l2.beat_bits}, but the L1's wide port (the DMA's) is {l1.wide_bits} bits",
             _set("l2.beat_bits", l1.wide_bits),
         )  # fmt: skip
-    for f in ("width_bits", "dtype", "elems_per_word"):
+    for f in ("width_bits",):
         a, b = getattr(l1, f), getattr(l2, f)
         if a != b:
             yield Problem(
@@ -421,16 +421,8 @@ def _connect_lanes(design: Design) -> Iterable[Problem]:
 
 
 def _connect_dtype(design: Design) -> Iterable[Problem]:
-    pf, g = design.platform, design.graph
-    l1 = pf.l1
-    if l1.elems_per_word != 1:
-        yield Problem(
-            "connect.dtype", "platform.l1.elems_per_word",
-            f"the L1 packs {l1.elems_per_word} elements per word; "
-            "only 1 is supported (open item 21)",
-            _set("l1.elems_per_word", 1),
-        )  # fmt: skip
-    seen: set[str] = set()
+    g = design.graph
+    seen: set[tuple[str, str]] = set()
     for n in accelerated(g):
         inst = design.instances[n.attrs["instance"]]
         for conn, m in {**n.inputs, **n.outputs}.items():
@@ -441,13 +433,6 @@ def _connect_dtype(design: Design) -> Iterable[Problem]:
                 yield Problem(
                     "connect.dtype", f"node {n.id}.{conn}",
                     f"container {m.data} is {dt}, port {conn} of {inst.brm.name} takes {port}",
-                )  # fmt: skip
-            if dt != l1.dtype and m.data not in seen:
-                seen.add(m.data)
-                fix = _set("l1.dtype", dt) + (f" {_set('l2.dtype', dt)}" if pf.l2 else "")
-                yield Problem(
-                    "connect.dtype", f"container {m.data}",
-                    f"is {dt}, but the L1 holds {l1.dtype}", fix,
                 )  # fmt: skip
 
 

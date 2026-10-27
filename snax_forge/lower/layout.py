@@ -75,12 +75,7 @@ class Layout(Config):
         return lo, hi + word
 
     def check(self, l1: L1Config) -> None:
-        """The layout fits ``l1``: one element per word, word-aligned, inside L1."""
-        if l1.elems_per_word != 1:
-            raise LayoutError(
-                f"L1 packs {l1.elems_per_word} elements per word; only 1 is supported "
-                "(open item 21)"
-            )
+        """The layout fits ``l1``: word-aligned, inside L1."""
         word = l1.width_bits // 8
         if self.base % word or any(s % word for s in self.strides):
             raise LayoutError(

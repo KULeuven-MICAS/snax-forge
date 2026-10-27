@@ -163,7 +163,7 @@ def layout_of(mem: str, cluster: Cluster, point: Any, regions: list[Region]) -> 
     if mem == "l1":
         lay = MemoryLayout(
             "l1", cluster.banks, cluster.l1_size // (word * cluster.banks), cluster.l1_base, word,
-            point.platform.l1.elems_per_word, cluster.l1_size, cluster.dma_beat_bytes // word,
+            1, cluster.l1_size, cluster.dma_beat_bytes // word,
             "bank", "row", mine, bank_row=cluster.bank_row,
         )  # fmt: skip
     elif mem == "l2":  # the caller lists l2 only for a run with one (api.memories)
@@ -171,7 +171,7 @@ def layout_of(mem: str, cluster: Cluster, point: Any, regions: list[Region]) -> 
         per_beat = cluster.dma_beat_bytes // word
         lay = MemoryLayout(
             "l2", per_beat, l2.size_bytes // cluster.dma_beat_bytes, l2.base_addr, word,
-            l2.elems_per_word, l2.size_bytes, per_beat, "word", "beat", mine,
+            1, l2.size_bytes, per_beat, "word", "beat", mine,
         )  # fmt: skip
     else:
         raise MemoryViewError(f"the run has no memory {mem!r}")

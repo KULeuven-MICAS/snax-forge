@@ -31,7 +31,15 @@ Its direction and lanes come from the BRM port (``write``, ``n_ports`` and,
 unless an entry gives them, ``spatial_bounds``), its temporal loops from the
 graph (``temporal_dims``, the firing loops of its port's memlet, D84);
 ``default`` gives the rest (``fifo_depth``), and an entry named after the
-streamer overrides any of it for that one streamer only. A file that still
+streamer overrides any of it for that one streamer only. An entry may also
+give ``channels``, the streamer's TCDM channels (never in ``default``);
+without it they are the wire default, the lanes over the elements per word of
+the port's container (D142, ``connect.channels``).
+
+**The word.** A bank word is ``width_bits`` wide; how many elements it holds
+is each container's dtype's business, not the platform's (D142). A file
+that still sets ``l1``'s or ``l2``'s ``dtype`` or ``elems_per_word`` is
+refused with a fix (``platform.keys``). A file that still
 sets ``temporal_dims`` is refused: it is no longer a knob. Resolving the shell against a graph is streamers.py; an entry
 that matches no port is a check (``connect.streamer_key``), not a load error,
 because only the graph knows the ports.
@@ -66,8 +74,6 @@ from dataclasses import dataclass, field, fields, replace
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-
 from snax_forge.common import Config, JsonFile, plain
 
 from .problems import DesignError, Problem, read_json
@@ -81,14 +87,8 @@ DERIVED = ("write", "n_ports")
 PROVENANCE = ("name", "base", "changes")
 # Top-level fields that are a string or null (the source hjson's)
 NULLABLE = ("hjson", "accelerator_slot")
-
-
-def _fits(dtype: str, elems_per_word: int, width_bits: int) -> None:
-    """``elems_per_word`` elements of ``dtype`` fit one word of ``width_bits``."""
-    if elems_per_word < 1:
-        raise ValueError("elems_per_word must be >= 1")
-    if np.dtype(dtype).itemsize * 8 * elems_per_word > width_bits:
-        raise ValueError(f"{elems_per_word} x {dtype} does not fit in {width_bits} bits")
+# Memory fields a platform no longer has: each container's dtype decides the packing (D142)
+REMOVED = ("dtype", "elems_per_word")
 
 
 @dataclass(frozen=True)
@@ -98,8 +98,6 @@ class L1Config(Config):
     n_banks: int = 32
     width_bits: int = 64  # bits per bank word
     rows: int = 512  # words per bank; 32 * 512 * 8 B = 128 KiB
-    dtype: str = "int64"  # element type, any NumPy dtype name
-    elems_per_word: int = 1  # 1 only (open item 21)
     base_addr: int = 0  # byte address of the first L1 word
     wide_bits: int = 512  # widest port, the DMA's: one superbank of 8 banks in SNAX
 
@@ -108,7 +106,6 @@ class L1Config(Config):
             raise ValueError("n_banks and rows must be >= 1")
         if self.width_bits % 8:
             raise ValueError("width_bits must be a multiple of 8")
-        _fits(self.dtype, self.elems_per_word, self.width_bits)
         g, rest = divmod(self.wide_bits, self.width_bits)
         if self.wide_bits < 1 or rest or g & (g - 1):
             raise ValueError(
@@ -129,8 +126,6 @@ class L2Config(Config):
     base_addr: int = 0  # byte address of the first L2 word
     beat_bits: int = 512  # one DMA beat; must equal L1Config.wide_bits
     width_bits: int = 64  # word = the L1 bank word (D142)
-    dtype: str = "int64"  # element type, as in the L1
-    elems_per_word: int = 1  # as in the L1
 
     def __post_init__(self) -> None:
         if self.width_bits % 8 or self.width_bits < 8:
@@ -139,7 +134,6 @@ class L2Config(Config):
             raise ValueError("beat_bits must be a multiple of width_bits")
         if self.size_bytes < 1 or self.size_bytes % self.beat_bytes:
             raise ValueError(f"size_bytes must be a positive multiple of {self.beat_bytes}")
-        _fits(self.dtype, self.elems_per_word, self.width_bits)
 
     @property
     def beat_bytes(self) -> int:
@@ -160,7 +154,7 @@ class StreamerOptions(Config):
 
 OPTIONS = tuple(f.name for f in fields(StreamerOptions))
 FROM_GRAPH = "temporal_dims"  # a knob until M13's B0, now each streamer's firing loops (D84)
-ENTRY_KEYS = (*OPTIONS, "spatial_bounds")
+ENTRY_KEYS = (*OPTIONS, "spatial_bounds", "channels")
 
 
 @dataclass(frozen=True)
@@ -189,6 +183,10 @@ class Platform(JsonFile):
         """The entry's spatial bounds, or None when the port's nest decides them."""
         sb = self.entries.get(streamer, {}).get("spatial_bounds")
         return None if sb is None else list(sb)
+
+    def channels(self, streamer: str) -> int | None:
+        """The entry's channels, or None for the wire default (D142)."""
+        return self.entries.get(streamer, {}).get("channels")
 
     # --- changes ---
 
@@ -277,7 +275,15 @@ def _section(cls: type, d: Any, sec: str, out: list[Problem]) -> Any:
         out.append(Problem("platform.keys", sec, f"must be an object, got {d!r}"))
         return None
     names = [f.name for f in fields(cls)]
-    unknown = sorted(set(d) - set(names))
+    removed = [k for k in REMOVED if k in d] if cls in (L1Config, L2Config) else []
+    for k in removed:
+        out.append(
+            Problem(
+                "platform.keys", f"{sec}.{k}", "is no longer a platform field",
+                "remove it; each container's dtype decides the packing (D142)",
+            )
+        )  # fmt: skip
+    unknown = sorted(set(d) - set(names) - set(removed))
     if unknown:
         out.append(Problem("platform.keys", sec, f"unknown keys {unknown} (allowed: {names})"))
     ref = cls()
@@ -287,7 +293,7 @@ def _section(cls: type, d: Any, sec: str, out: list[Problem]) -> Any:
             want = _type_name(getattr(ref, k))
             out.append(Problem("platform.keys", f"{sec}.{k}", f"must be {want}, got {d[k]!r}"))
             bad = True
-    if unknown or bad:
+    if unknown or bad or removed:
         return None
     try:
         return cls.from_dict(dict(d))
@@ -326,6 +332,11 @@ def _entry(name: str, e: Any, default: StreamerOptions | None, out: list[Problem
                 f"must be a non-empty list of ints >= 1, got {sb!r}",
             )
         )  # fmt: skip
+    c = e.get("channels")
+    if "channels" in e and (isinstance(c, bool) or type(c) is not int or c < 1):
+        out.append(
+            Problem("platform.streamer", f"{where}.channels", f"must be an int >= 1, got {c!r}")
+        )
     if default is not None and not unknown:
         opts = {k: v for k, v in e.items() if k in OPTIONS}
         try:
@@ -467,7 +478,8 @@ def _apply(d: dict[str, Any], path: str, value: Any) -> list[Problem]:
             ]  # fmt: skip
         if opt not in allowed:
             return [Problem("platform.keys", where, f"unknown option (allowed: {list(allowed)})")]
-        old = [1] if opt == "spatial_bounds" else d["streamers"]["default"][opt]
+        old = {"spatial_bounds": [1], "channels": 1}.get(opt)
+        old = d["streamers"]["default"][opt] if old is None else old
         if not _kind_ok(old, value):
             return [Problem("platform.keys", where, f"must be {_type_name(old)}, got {value!r}")]
         if not s.isidentifier():

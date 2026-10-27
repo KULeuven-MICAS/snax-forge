@@ -4,23 +4,8 @@
  "changes": {},
  "hjson": null,
  "accelerator_slot": null,
- "l1": {
-  "n_banks": 16,
-  "width_bits": 64,
-  "rows": 64,
-  "dtype": "int64",
-  "elems_per_word": 1,
-  "base_addr": 0,
-  "wide_bits": 512
- },
- "l2": {
-  "size_bytes": 32768,
-  "base_addr": 0,
-  "beat_bits": 512,
-  "width_bits": 64,
-  "dtype": "int64",
-  "elems_per_word": 1
- },
+ "l1": {"n_banks": 16, "width_bits": 64, "rows": 64, "base_addr": 0, "wide_bits": 512},
+ "l2": {"size_bytes": 32768, "base_addr": 0, "beat_bits": 512, "width_bits": 64},
  "wait_mode": "poll",
  "streamers": {"default": {"fifo_depth": 2}}
 }

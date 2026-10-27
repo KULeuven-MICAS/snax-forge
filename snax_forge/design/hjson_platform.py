@@ -34,10 +34,10 @@ reader takes from it:
                              (D131); the source must still have one
                              accelerator, its name an identifier
 
-Not in the hjson, so fixed here: both memories' ``dtype`` int64 and
-``elems_per_word`` 1. ``spatial_bounds`` and ``num_channel`` are not stored:
-the shell derives them from the accelerator's ports (D84): the GVSoC
-generator lowers the streamer per design point (D134).
+A word's elements are not the platform's: each container's dtype decides
+them (D142). ``spatial_bounds`` and ``num_channel`` are not stored: the
+shell derives them from the accelerator's ports and their containers (D84,
+D142): the GVSoC generator lowers the streamer per design point (D134).
 
 The rest of a platform (``wait_mode``) is small16's. The cores,
 the I-cache, the interconnect and the CSR counts are not read; they are the
@@ -213,12 +213,11 @@ def platform_from_dict(d: Mapping[str, Any], name: str, source: str | None = Non
     small = Platform.load(SMALL16)
     try:
         l1 = L1Config(
-            n_banks=banks, width_bits=width, rows=bits // (banks * width), dtype="int64",
-            elems_per_word=1, base_addr=base, wide_bits=wide,
+            n_banks=banks, width_bits=width, rows=bits // (banks * width), base_addr=base,
+            wide_bits=wide,
         )  # fmt: skip
         l2 = L2Config(
             size_bytes=dram_size, base_addr=dram, beat_bits=wide, width_bits=width,
-            dtype="int64", elems_per_word=1,
         )  # fmt: skip
         default = replace(small.default, fifo_depth=fifo)
     except ValueError as e:

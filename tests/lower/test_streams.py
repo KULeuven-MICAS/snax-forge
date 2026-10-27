@@ -167,11 +167,6 @@ def test_errors(case, kw, msg):
         _values(**kw)
 
 
-def test_packed_words_are_not_supported():
-    with pytest.raises(LayoutError, match="open item 21"):
-        Layout(0, (4,), (8,)).check(L1Config(dtype="int32", elems_per_word=2))
-
-
 def test_layout_round_trip_and_contiguous():
     lay = Layout.contiguous(64, (3, 5))
     assert lay.strides == (40, 8)

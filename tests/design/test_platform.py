@@ -82,6 +82,8 @@ def test_every_problem_is_reported_at_once():
         ({"fifo_depth": True}, "platform.keys", "must be an int"),
         ({"spatial_bounds": []}, "platform.streamer", "non-empty list"),
         ({"spatial_bounds": [4, 0]}, "platform.streamer", "non-empty list"),
+        ({"channels": 0}, "platform.streamer", "must be an int >= 1, got 0"),
+        ({"channels": True}, "platform.streamer", "must be an int >= 1, got True"),
         ([4], "platform.keys", "must be an object"),
     ],
 )
@@ -90,6 +92,32 @@ def test_a_bad_streamer_entry_is_named(entry, code, text):
     d["streamers"]["acc_a"] = entry
     _, found = parse(d)
     assert [p.code for p in found] == [code] and text in found[0].message
+
+
+@pytest.mark.parametrize("key", ["l1.dtype", "l1.elems_per_word", "l2.dtype", "l2.elems_per_word"])
+def test_a_removed_memory_field_is_named_with_its_fix(key):
+    """A word's elements are each container's dtype's (D142), no longer the platform's."""
+    d = platform_dict()
+    sec, field = key.split(".")
+    d[sec][field] = "int64" if field == "dtype" else 1
+    _, found = parse(d)
+    assert [(p.code, p.where) for p in found] == [("platform.keys", key)]
+    assert found[0].message == "is no longer a platform field"
+    assert found[0].fix == "remove it; each container's dtype decides the packing (D142)"
+
+
+def test_channels_in_an_entry_round_trip_and_never_in_default():
+    d = platform_dict()
+    d["streamers"]["acc_a"] = {"channels": 2}
+    p = Platform.from_dict(d)
+    assert p.to_dict()["streamers"]["acc_a"] == {"channels": 2}
+    assert (p.channels("acc_a"), p.channels("acc_b")) == (2, None)
+    assert p.options("acc_a") == p.default
+    w = Platform.load(SMALL16).with_changes([("streamers.acc_out.channels", 4)])
+    assert w.channels("acc_out") == 4
+    d["streamers"]["default"]["channels"] = 2
+    _, found = parse(d)
+    assert [(p.code, p.where) for p in found] == [("platform.keys", "streamers.default")]
 
 
 def test_write_and_n_ports_in_an_entry_load_for_the_connect_check():
@@ -155,6 +183,8 @@ def test_saved_as_renames_and_keeps_the_record():
         ("streamers.acc_a.write", True, "comes from the accelerator port"),
         ("streamers.acc_a.n_ports", 8, "comes from the accelerator port"),
         ("streamers.default.spatial_bounds", [4], "unknown option"),
+        ("streamers.default.channels", 2, "unknown option"),
+        ("streamers.acc_a.channels", [2], "must be an int"),
         ("streamers.acc_a.fifo_dpeth", 4, "unknown option"),
         ("streamers.acc_a.spatial_bounds", 4, "must be a list"),
         ("streamers.acc-a.fifo_depth", 4, "not a streamer name"),
