@@ -18,11 +18,11 @@
 `base`, all strides, DMA bases) is a byte address.
 
 **The bank word is the unit of transfer** (D142). A word is the L1's
-`width_bits` wide and holds k = `width_bits` / b elements of each
-container's dtype (b its bits), little-endian as NumPy lays them out. A port
-of W lanes takes W / k streamer channels by default; `connect.pack` and
-`connect.channels` check a port against that (section 14), and lowering
-refuses a container narrower than the word until PACK0 R2.
+`width_bits` wide and holds num_slc = `width_bits` / b slices (elements) of
+each container's dtype (b its bits), little-endian as NumPy lays them out. A
+port of W lanes uses num_ch = W / num_slc streamer channels by default;
+`connect.pack` and `connect.num_ch` check a port against that (section 14),
+and lowering lays each container out by its itemsize.
 
 **Integers first** (D28). The default `dtype` is `int64`.
 
@@ -201,12 +201,13 @@ written by hand. A task list is `name` and `steps`, each with an `op`:
 
 ```
 streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes),
-          in words (D142): a channel moves one bank word of k elements of
-          the port's dtype. The fastest spatial loop runs S_0 / k channels,
-          its stride k times its element stride times the itemsize (8 bytes
-          for a packed port); every other stride is its element stride
-          times the itemsize, and base the layout's base plus the offset's
-          bytes. At k = 1 these are the element strides as before. Spatial
+          in words (D142): a channel moves one bank word of num_slc slices
+          of the port's dtype. The fastest spatial loop runs S_0 / num_slc
+          channels, its stride num_slc times its element stride times the
+          itemsize (8 bytes for a packed port); every other stride is its
+          element stride times the itemsize, and base the layout's base
+          plus the offset's bytes. At num_slc = 1 these are the element
+          strides as before. Spatial
           bounds are design-time, in elements, and come from the design
           point's streamers
 dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with
@@ -588,8 +589,8 @@ graph decides `temporal_dims`: the firing loops the port's memlet runs over,
 at least 1, the most over an instance's nodes (D84); the design point records
 it per streamer. `default` holds `fifo_depth` (>= 1); an entry named after a
 streamer overrides it and `spatial_bounds` for it alone, and may give
-`channels` (>= 1, never in `default`): the streamer's TCDM channels, without
-it the wire default W / k (D142, `connect.channels`). A platform that sets
+`num_ch` (>= 1, never in `default`): the TCDM channels the streamer uses,
+without it the wire default W / num_slc (D142, `connect.num_ch`). A platform that sets
 `temporal_dims` is refused (`platform.keys`), as is `--set` of it.
 
 <!-- snippet: platforms/small16.json -->
@@ -633,7 +634,7 @@ Stages: `platform` and `graph` independently, `connect` when both passed,
 |---|---|
 | `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; `dtype` or `elems_per_word` in `l1` or `l2`, no longer a platform field (the fix removes it: each container's dtype decides the packing, D142); a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
 | `platform.values` | a value its section rejects (`n_banks` 0, a `wait_mode` that is not allowed) |
-| `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1, `channels` that is not an int >= 1 |
+| `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1, `num_ch` that is not an int >= 1 |
 | `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`) or word width |
 | `platform.banks` | with an L2, `n_banks` is not a multiple of the DMA's port group (`wide_bits / width_bits`) |
 | `graph.load` | a graph file that does not load (section 11) |
@@ -645,9 +646,9 @@ Stages: `platform` and `graph` independently, `connect` when both passed,
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
 | `connect.dtype` | a node whose containers break its BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype in its `dtypes`, every output at least as wide as every input, no signed input with a `uint64` one; the fix names the output dtypes the inputs accept), or an instance whose nodes put two dtypes on one port |
-| `connect.pack` | a port whose elements do not fill whole words (D142), with k elements of its container's dtype per word: the fastest spatial bound not a multiple of k (W < k: the fix makes the container 64-bit or gives the port k lanes), the fastest spatial loop not stepping 1 element (a column), another loop's step or the start not a multiple of k (a row stride that is not: the fix pads the leading dimension). Row strides are over the container's padded shape (a tail's, D144: a 3 x 7 int32 matrix split by 4 has row stride 8). Every port passes at k = 1 |
+| `connect.pack` | a port whose elements do not fill whole words (D142), with num_slc slices of its container's dtype per word: the fastest spatial bound not a multiple of num_slc (W < num_slc: the fix makes the container 64-bit or gives the port num_slc lanes), the fastest spatial loop not stepping 1 element (a column), another loop's step or the start not a multiple of num_slc (a row stride that is not: the fix pads the leading dimension). Row strides are over the container's padded shape (a tail's, D144: a 3 x 7 int32 matrix split by 4 has row stride 8). Every port passes at num_slc = 1 |
 | `connect.pad` | a container an accelerator writes and a fold reads through a tail: the producer's pad lanes would reach the fold, since the hardware masks nothing (D144; the fix: a size that divides W, or a split factor that divides n); a container whose readers need different pad values (the message names them) |
-| `connect.channels` | a streamer entry's `channels` other than the wire default W / k: any other needs the FIFO slicer, which the flow does not place yet (D142). The message lists the values with rho = c * k / W <= 1, the divisors of W / k; the fix removes it or sets W / k |
+| `connect.num_ch` | a streamer entry's `num_ch` other than the wire default W / num_slc: any other needs the FIFO slicer, which the flow does not place yet (D142). The message lists the values with rho = num_ch * num_slc / W <= 1, the divisors of W / num_slc; the fix removes it or sets W / num_slc |
 | `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), or a subset that is not affine in the firing loops |
 | `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest), on a memory the container does not live in, or on L2 (the link places it, D86); an unknown pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
@@ -690,7 +691,7 @@ hand:
 | `graph_from` | the `.snaxdfg` it was made from: a sandbox step, or any bound graph given to the design step or the flow (D108) |
 | `graph` | that graph as read: instances, `code`, `replaced`, `loop.split` |
 | `platform` | the platform working copy (section 13) |
-| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype` (the port's container's), `k` (its elements per word), `channels` (the entry's, else W / k), `fifo_depth` |
+| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype` (the port's container's), `num_slc` (its slices per word), `num_ch` (the entry's, else W / num_slc; the hjson's `num_channel`), `fifo_depth` |
 | `memory` | the memory plan: `passes`, `changes`, `layouts` (container -> memory -> layout) |
 
 It holds no recipe. Loading one runs every check again on what it holds and
@@ -719,8 +720,8 @@ file is JSON. One design point gives byte-identical files wherever written.
 
 **The slot** is the source's only one, renamed: `snax_acc_name` the
 platform's `accelerator_slot`, its `bender_target` dropped (the RTL comes
-from the bundle). `snax_tcdm_ports` is the streamer's channels; the source's
-`sparse_interconnect_config` becomes one group of that width (its
+from the bundle). `snax_tcdm_ports` is the sum of its movers' num_ch; the
+source's `sparse_interconnect_config` becomes one group of that width (its
 granularity kept), or `snax_narrow_tcdm_ports` that many and
 `snax_wide_tcdm_ports` 0; `snax_num_rw_csr` the fields and start,
 `snax_num_ro_csr` 2 (busy and the counter); then, after the source's other
@@ -833,8 +834,8 @@ Chisel specs:
 (32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`; per input port k, in order,
 `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`, per output port
 `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, data `num_channel × 64`
-bits with lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit type (k =
-64 / w lanes a word, D142). Inside: `CsrManager`
+bits with lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit type
+(num_slc = 64 / w lanes a word, D142). Inside: `CsrManager`
 (ReqRspManager's protocol, D130), `CtrlAdapter` (an accepted start is the
 block's start with the fields on its pins; ready is not busy; the counter is
 reset by an accepted start, counts busy cycles and holds after) and the

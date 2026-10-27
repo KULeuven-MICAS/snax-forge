@@ -78,8 +78,8 @@ Retired, and where each now lives:
 read alike.
 
 **D12** · design — One streamer per accelerator port, named after it (D75); its width `n_ports` is
-the port's lanes W, and the hjson's `num_channel` is its channels c (D142); the two are equal only
-at k = 1. → `design/streamers.py`, C§13.
+the port's lanes W, and the hjson's `num_channel` is its num_ch (D142); the two are equal only at
+num_slc = 1. → `design/streamers.py`, C§13.
 
 **D19** · dfg — Everything is extended by registration (node kinds, transforms, checks, passes, the
 accelerator kinds and ops of `brm/function.py`, the generator's blocks) and namespaced attrs, never
@@ -285,10 +285,10 @@ block library: the basic blocks, their composition and the kernels that use them
 with dot's six variants as the case study, in phases B0 (flow pieces) to B4 (tier A). → ARCHITECTURE §8,
 `docs/STATUS.md`.
 
-**D142** · design — A bank word packs k = 64/b elements of a port's container dtype, little-endian as
-NumPy. W lanes take c = W/k channels; another c needs the FIFO slicer (built, parked: open item 93), so
-`connect.channels` refuses it. A packed stream: word-aligned base, k | S_0 (the fastest spatial bound),
-innermost stride 1, the others multiples of k. The platform keeps only the word. → C§1, C§13, C§14.
+**D142** · design — A bank word packs num_slc = 64/b elements of a port's container dtype, little-endian
+as NumPy. W lanes use num_ch = W/num_slc channels; another needs the FIFO slicer (parked: open item 93),
+so `connect.num_ch` refuses it. A packed stream: word-aligned base, num_slc | S_0, innermost stride 1,
+the others multiples of num_slc. The platform keeps only the word. → C§1, C§13, C§14.
 
 **D143** · brm — Arithmetic follows NumPy: each op runs at its operands' result type, with
 signedness from each port's container, and the result is then extended or wrapped into its target. A

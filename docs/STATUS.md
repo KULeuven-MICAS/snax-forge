@@ -98,7 +98,7 @@ B1.
 Questions not decided yet. Numbers are never reused; a closed item is
 removed, and where it closed is in git history. Closed in CLN1: 63 (the ALU
 left snax-gvsoc; generated accelerators follow D130). Closed in M13 B0: 45, 46, 48, 81.
-Closed in PACK0: 20 (a port's width: its channels, D142), 21 (narrow elements: D142 and D143
+Closed in PACK0: 20 (a port's width: its num_ch, D142), 21 (narrow elements: D142 and D143
 on SNAX-GVSoC, in Chisel and on snax_cluster's RTL CI) and 31 (tails: padding, D144).
 Next free number: 96.
 
