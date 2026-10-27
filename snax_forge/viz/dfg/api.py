@@ -41,6 +41,12 @@ edges cross as little as possible.
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box. Its
 text is the subset, and for a folding write the op (``out[0] (reduce add)``).
+An edge at an accelerated node's port also has its ``packing`` (D142):
+``int32 · k 2 · c 2``, the container's dtype of b bits, k = 64 / b elements
+per bank word, and c = W / k channels, W the instance's lanes for that port
+(the wire slice, the only value ``connect.channels`` takes), rounded up so a
+fold's one-lane output is one word (``int64 · k 1 · c 1``). All of it is read
+from the bound graph and the BRM library; nothing is stored in the graph.
 An edge between a container and a connector inside a top-level node is drawn
 only up to that node's outer box, above or below the connector it belongs
 to (``stop``), so it never crosses the text inside; an edge between
@@ -62,10 +68,16 @@ from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
+from snax_forge.brm import BrmError
+from snax_forge.brm.dtypes import bits
 from snax_forge.common import LoadedSet, unique_names
+from snax_forge.design.streamers import instance_of
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
+
+# A bank word, in bits: k = WORD_BITS / b elements of a b-bit dtype (D142)
+WORD_BITS = 64
 
 # =============================================================================
 # Files
@@ -244,6 +256,20 @@ def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
     return out
 
 
+def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
+    """``int32 · k 2 · c 2`` for an accelerated node's port (module doc); None for any other
+    node, or an instance the BRM library does not resolve."""
+    if n.kind != "accelerated":
+        return None
+    try:
+        lanes = instance_of(n).lanes(port)
+    except (BrmError, ExprError, KeyError):
+        return None
+    dtype = g.containers[data].dtype
+    k = max(1, WORD_BITS // bits(dtype))
+    return f"{dtype} · k {k} · c {-(-lanes // k)}"
+
+
 def _layout(g: Graph) -> dict[str, Any]:
     """Rows, nodes and edges (module doc)."""
     tops = list(g.body)
@@ -300,22 +326,30 @@ def _layout(g: Graph) -> dict[str, Any]:
                 writers.setdefault(m.data, []).append(port)
                 wrote.setdefault(m.data, []).append((n, c, m))
             elif m.data in writers:  # written earlier inside this node: straight from the writer
-                edges.extend(_edge(w, port, m.data, text, "read") for w in writers[m.data])
+                edges.extend(_edge(w, port, m.data, text, "read", None, packing(g, n, c, m.data))
+                             for w in writers[m.data])  # fmt: skip
             else:
-                edges.append(_edge(above[m.data], port, m.data, text, "read", top.id))
+                edges.append(_edge(above[m.data], port, m.data, text, "read", top.id,
+                                   packing(g, n, c, m.data)))  # fmt: skip
         nxt = reads[k + 1] if k + 1 < len(tops) else []
         names = nxt + [c for c in writes[k] if c not in nxt]
         fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[k]}
         below = box_row(names, fresh, k + 1)
         for c in writes[k]:
             for n, cn, m in wrote[c]:
-                edges.append(_edge(f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", top.id))
+                edges.append(_edge(f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", top.id,
+                                   packing(g, n, cn, c)))  # fmt: skip
         above = below
     return {"rows": rows, "boxes": boxes, "edges": edges}
 
 
 def _edge(
-    src: str, dst: str, data: str, text: str, side: str, stop: str | None = None
-) -> dict[str, Any]:
-    """One memlet; ``stop`` is the top-level node whose box the drawn edge ends at."""
-    return {"from": src, "to": dst, "data": data, "text": text, "dir": side, "stop": stop}
+    src: str, dst: str, data: str, text: str, side: str, stop: str | None = None,
+    pack: str | None = None,
+) -> dict[str, Any]:  # fmt: skip
+    """One memlet; ``stop`` is the top-level node whose box the drawn edge ends at, ``pack``
+    the port's packing when it meets an accelerated node."""
+    out = {"from": src, "to": dst, "data": data, "text": text, "dir": side, "stop": stop}
+    if pack is not None:
+        out["packing"] = pack
+    return out

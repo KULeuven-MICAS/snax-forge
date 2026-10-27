@@ -430,6 +430,7 @@ path.edge { fill: none; stroke: var(--edge); stroke-width: 1.4; }
 path.arrow { fill: var(--edge); }
 path.arrow-hl { fill: var(--hl); }
 path.edge.hl { stroke: var(--hl); stroke-width: 2.4; }
+text.edge-packing { font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
 .box.hl, .op.hl, .port.hl { box-shadow: 0 0 0 2px var(--hl); }
 .scope.hl { box-shadow: 0 0 0 2px var(--hl); }
 
