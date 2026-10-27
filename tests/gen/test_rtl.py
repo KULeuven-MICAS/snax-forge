@@ -38,6 +38,11 @@ DESIGNS = {
     "vsum": ("vsum", []),
     "vsum_tree": ("vsum_tree", []),
     "vsum_tree_w8": ("vsum_tree", ["W=8"]),
+    "vecadd_i32": ("vecadd_i32", []),
+    "vecmul_i32": ("vecmul_i32", []),
+    "vecadd_i8": ("vecadd_i8", []),
+    "vsum_tree_i32": ("vsum_tree_i32", []),
+    "vsum_tree_i8": ("vsum_tree_i8", []),
 }
 
 
