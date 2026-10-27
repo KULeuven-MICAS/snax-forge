@@ -65,7 +65,6 @@ def test_split_a_range_that_does_not_start_at_zero():
     ("make", "args", "message"),
     [
         (lambda: graph("vecadd"), ("add_map", 4), "no value for 'N' .*bind the symbol"),
-        (lambda: bound("vecadd", 66), ("add_map", 4), "66 iterations are not a multiple of 4"),
         (lambda: bound("vecadd"), ("add", 4), "a 'tasklet' is not a map"),
         (lambda: bound("vecadd"), ("nope", 4), "no node 'nope'"),
         (lambda: bound("vecadd"), ("add_map", 0), "factor 0"),

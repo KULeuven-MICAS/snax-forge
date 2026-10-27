@@ -177,13 +177,18 @@ def _check_map(node: Node, scope: Scope, what: str) -> None:
     split = node.attrs.get("loop.split")
     if split is not None:
         w = f"{what}.attrs.loop.split"
-        if not isinstance(split, Mapping) or set(split) != {"var", "range"}:
-            raise DfgError(f"{w}: must be {{var, range}} of the map before split_map")
+        if not isinstance(split, Mapping) or set(split) - {"valid"} != {"var", "range"}:
+            raise DfgError(
+                f"{w}: must be {{var, range}} of the map before split_map, and its valid count "
+                "(valid) when the split left a tail"
+            )
         ident(split["var"], f"{w}.var")
         if not is_range(split["range"]):
             raise DfgError(f"{w}.range: {split['range']!r} is not a range")
         for part in parse_dim(split["range"], f"{w}.range"):
             scope.uses(part, f"{w}.range")
+        if "valid" in split:
+            scope.uses(split["valid"], f"{w}.valid")
 
 
 register_kind(
