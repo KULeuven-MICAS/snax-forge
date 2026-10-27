@@ -24,6 +24,7 @@
       "anyOf": [
        {"type": "integer"},
        {"type": "boolean"},
+       {"type": "string"},
        {"type": "array", "minItems": 1, "items": {"type": "string"}}
       ]
      }

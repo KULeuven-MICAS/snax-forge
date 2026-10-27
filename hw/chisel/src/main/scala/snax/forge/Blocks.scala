@@ -13,9 +13,10 @@ import snax.forge.samples.Accumulator
   * Python side (`snax_forge/gen/rtl.py`) resolves a design point against it into `rtl.json`, and `Emit --spec` builds
   * from that with `build`. A spec checks `describe` equal to `blocks.json`.
   *
-  * Param types: `int` (`min`, and `max` when there is one), `bool`, and `ops`, a list of op names from `values` (each
-  * name's `ElementwiseOp` encoding). A read-write pin's `width` is an int or the name of an int param. A tie's `op`
-  * names an `ops` param holding one op; the pin is tied to that op's encoding.
+  * Param types: `int` (`min`, and `max` when there is one), `bool`, `ops`, a list of op names from `values` (each
+  * name's `ElementwiseOp` encoding), `dtype`, an element type's NumPy name from `values` (`IntType`'s eight), and
+  * `dtypes`, a list of them. A read-write pin's `width` is an int or the name of an int param. A tie's `op` names an
+  * `ops` param holding one op; the pin is tied to that op's encoding.
   */
 object Blocks {
 
@@ -23,6 +24,8 @@ object Blocks {
   case class IntParam(min: Int, max: Option[Int] = None) extends ParamType
   case object BoolParam                                  extends ParamType
   case class OpsParam(values: Seq[(String, Int)])        extends ParamType
+  case object DtypeParam                                 extends ParamType
+  case object DtypesParam                                extends ParamType
 
   /** A read-write CSR pin: its width, bits or an int param's name. */
   case class RwPin(pin: String, width: Either[Int, String])
@@ -39,6 +42,16 @@ object Blocks {
     def bool(name: String): Boolean = values(name).bool
     def ops(name: String): Seq[Int] =
       values(name).arr.toSeq.map(v => ElementwiseOp.names.collectFirst { case (k, n) if n == v.str => k }.get)
+
+    /** A `dtype` param: one of `IntType.names`. */
+    def dtype(name: String): String = {
+      val t = values(name).str
+      require(IntType.names.contains(t), s"$name: $t is not one of ${IntType.names.mkString(", ")}")
+      t
+    }
+
+    /** A `dtypes` param: a list of `IntType.names`. */
+    def dtypes(name: String): Seq[String] = values(name).arr.toSeq.map(v => Params(Map(name -> v)).dtype(name))
   }
 
   case class Block(
@@ -59,11 +72,12 @@ object Blocks {
     Block(
       "ElementwiseTiledSpatial",
       Seq(
-        "dataWidth"      -> IntParam(1),
+        "inTypes"        -> DtypesParam,
+        "opType"         -> DtypeParam,
+        "outType"        -> DtypeParam,
         "lanes"          -> IntParam(1),
         "loopCountWidth" -> IntParam(1, Some(32)),
-        "supportedOps"   -> ops,
-        "signed"         -> BoolParam
+        "supportedOps"   -> ops
       ),
       Seq("a"            -> "in", "b" -> "in", "out" -> "out"),
       Seq(RwPin("loopCount", Right("loopCountWidth"))),
@@ -72,12 +86,11 @@ object Blocks {
       "done",
       Seq(Tie("opSel", ElementwiseOp.width, "supportedOps")),
       p => {
-        val t = (if (p.bool("signed")) "int" else "uint") + p.int("dataWidth")
         val m = Module(
           new ElementwiseTiledSpatial(
-            inTypes        = Seq(t, t),
-            opType         = t,
-            outType        = t,
+            inTypes        = p.dtypes("inTypes"),
+            opType         = p.dtype("opType"),
+            outType        = p.dtype("outType"),
             lanes          = p.int("lanes"),
             loopCountWidth = p.int("loopCountWidth"),
             supportedOps   = p.ops("supportedOps")
@@ -88,15 +101,15 @@ object Blocks {
     ),
     Block(
       "Accumulator",
-      Seq("width" -> IntParam(1), "accWidth" -> IntParam(1), "lanes" -> IntParam(1)),
-      Seq("in"    -> "in", "out"             -> "out"),
+      Seq("inType" -> DtypeParam, "outType" -> DtypeParam, "lanes" -> IntParam(1)),
+      Seq("in"     -> "in", "out"           -> "out"),
       Seq(RwPin("loopCount", Left(32)), RwPin("len", Left(32))),
       "start",
       "busy",
       "done",
       Seq.empty,
       p => {
-        val m = Module(new Accumulator(s"uint${p.int("width")}", s"uint${p.int("accWidth")}", p.int("lanes")))
+        val m = Module(new Accumulator(p.dtype("inType"), p.dtype("outType"), p.int("lanes")))
         Built(m, m.io)
       }
     )
@@ -133,5 +146,7 @@ object Blocks {
       case BoolParam          => ujson.Obj("type" -> "bool")
       case OpsParam(vals)     =>
         ujson.Obj("type" -> "ops", "values" -> ujson.Obj.from(vals.map { case (n, e) => n -> ujson.Num(e) }))
+      case DtypeParam         => ujson.Obj("type" -> "dtype", "values" -> ujson.Arr.from(IntType.names))
+      case DtypesParam        => ujson.Obj("type" -> "dtypes", "values" -> ujson.Arr.from(IntType.names))
     }
 }

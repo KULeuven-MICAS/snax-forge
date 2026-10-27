@@ -1,14 +1,24 @@
 {
  "ElementwiseTiledSpatial": {
   "params": {
-   "dataWidth": {"type": "int", "min": 1},
+   "inTypes": {
+    "type": "dtypes",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "opType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "outType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
    "lanes": {"type": "int", "min": 1},
    "loopCountWidth": {"type": "int", "min": 1, "max": 32},
    "supportedOps": {
     "type": "ops",
     "values": {"add": 0, "sub": 1, "mul": 2, "and": 3, "or": 4, "xor": 5, "min": 6, "max": 7}
-   },
-   "signed": {"type": "bool"}
+   }
   },
   "ports": {"a": "in", "b": "in", "out": "out"},
   "csr": {
@@ -20,8 +30,14 @@
  },
  "Accumulator": {
   "params": {
-   "width": {"type": "int", "min": 1},
-   "accWidth": {"type": "int", "min": 1},
+   "inType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "outType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
    "lanes": {"type": "int", "min": 1}
   },
   "ports": {"in": "in", "out": "out"},

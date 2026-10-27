@@ -18,14 +18,15 @@ lower/c.py's ``accelerator``), each with
     block    the binding's block
     params   the block's params, from the block's GVSoC unit (blocks.py:
              the same lanes, widths and op) by its resolver (``RTL_PARAMS``):
-               ElementwiseTiledSpatial  dataWidth N, the one width of its
-                                        ports (the node's containers'),
-                                        lanes, loopCountWidth 32 (a CSR),
-                                        supportedOps [op], signed (the
-                                        inputs': add, sub and mul wrap alike
-                                        signed or not, min and max read it)
-               Accumulator              width the input's N, accWidth the
-                                        output's, lanes
+               ElementwiseTiledSpatial  inTypes the inputs' dtypes (the
+                                        node's containers'), opType their
+                                        NumPy result type
+                                        (``brm.dtypes.result_type``, D143),
+                                        outType the output's, lanes,
+                                        loopCountWidth 32 (a CSR),
+                                        supportedOps [op]
+               Accumulator              inType the input's dtype, outType
+                                        the output's, lanes
     ports    ``{brm, block}`` per BRM port in the BRM's port order (the
              streamer's reader and writer order): the binding's ``ports``,
              by default the same name
@@ -40,18 +41,14 @@ signature of each Chisel block, equal to ``Emit --describe``), each a
 
     gen.catalogue    the block is not in the catalogue, or has no resolver
     gen.params       a param missing, or one the block does not have
-    gen.param_type   a param not of its type (int, bool, ops)
+    gen.param_type   a param not of its type (int, bool, ops, dtype, dtypes)
     gen.param_limit  an int outside min and max, ops empty, repeated or not
-                     among the catalogue's
+                     among the catalogue's, a dtype not among its names
     gen.port_map     a BRM port onto no block port, a block port left open,
                      two BRM ports on one, or a direction that differs
     gen.csr_pins     the read-write pins are not the binding's csrs fields, or
                      a width is not 1 to 32 bits
     gen.tie          a tie's ops param holds more than one op
-    gen.rtl_width    what the Chisel blocks do not compute right yet (PACK0
-                     R4): an ElementwiseTiledSpatial whose ports differ in
-                     width (one dataWidth), an Accumulator whose signed input
-                     is narrower than its sum (its lanes zero-extend)
 
 and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or
 did not write a file its ``emitted.json`` lists.
@@ -80,6 +77,7 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
+from snax_forge.brm.dtypes import result_type
 from snax_forge.common import JsonFile, check_keys, cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
 from snax_forge.lower.derive import task_list
@@ -166,28 +164,20 @@ def register_rtl_params(block: str, resolver: Resolver) -> None:
     RTL_PARAMS[block] = resolver
 
 
+def dtype(width: int, signed: bool) -> str:
+    """NumPy's name of an integer type: int32, uint8."""
+    return f"{'' if signed else 'u'}int{width}"
+
+
 def _elementwise_tiled_spatial(inst: Instance, u: Unit) -> dict[str, Any]:
-    widths = sorted({*u.in_widths, *u.out_widths})
-    if len(widths) > 1:
-        raise GenError(
-            "gen.rtl_width",
-            f"{inst.brm.name}.{inst.implementation}: ElementwiseTiledSpatial has one dataWidth, "
-            f"its ports are {u.in_widths} bits in and {u.out_widths} out; a block of per-port "
-            "widths lands in PACK0 R4",
-        )
-    return {"dataWidth": widths[0], "lanes": u.lanes, "loopCountWidth": CSR_BITS,
-            "supportedOps": [OP_NAME[u.op]], "signed": u.in_signed[0]}  # fmt: skip
+    ins = [dtype(w, s) for w, s in zip(u.in_widths, u.in_signed, strict=True)]
+    return {"inTypes": ins, "opType": result_type(ins), "outType": dtype(u.out_widths[0], u.out_signed[0]),
+            "lanes": u.lanes, "loopCountWidth": CSR_BITS, "supportedOps": [OP_NAME[u.op]]}  # fmt: skip
 
 
 def _accumulator(inst: Instance, u: Unit) -> dict[str, Any]:
-    (width,), (acc,) = u.in_widths, u.out_widths
-    if u.in_signed[0] and width < acc:
-        raise GenError(
-            "gen.rtl_width",
-            f"{inst.brm.name}.{inst.implementation}: the Accumulator's lanes zero-extend "
-            f"(UInt.pad), so a signed {width}-bit input into a {acc}-bit sum lands in PACK0 R4",
-        )
-    return {"width": width, "accWidth": acc, "lanes": u.lanes}
+    return {"inType": dtype(u.in_widths[0], u.in_signed[0]),
+            "outType": dtype(u.out_widths[0], u.out_signed[0]), "lanes": u.lanes}  # fmt: skip
 
 
 register_rtl_params("ElementwiseTiledSpatial", _elementwise_tiled_spatial)
@@ -222,6 +212,12 @@ def check_params(block: str, params: Mapping[str, Any], sig: Mapping[str, Any]) 
         elif t["type"] == "bool":
             if type(v) is not bool:
                 raise GenError("gen.param_type", f"{what}: {v!r} is not a bool")
+        elif t["type"] in ("dtype", "dtypes"):
+            vs = v if t["type"] == "dtypes" else [v]
+            if not isinstance(vs, list) or not all(isinstance(d, str) for d in vs):
+                raise GenError("gen.param_type", f"{what}: {v!r} is not a {t['type']}")
+            if not set(vs) <= set(t["values"]):
+                raise GenError("gen.param_limit", f"{what}: {v} must be among {list(t['values'])}")
         elif t["type"] == "ops":
             if not isinstance(v, list) or not all(isinstance(o, str) for o in v):
                 raise GenError("gen.param_type", f"{what}: {v!r} is not a list of op names")

@@ -57,8 +57,8 @@ def test_the_vecadd_spec(vecadd):
         "units": [{
             "name": "acc",
             "block": "ElementwiseTiledSpatial",
-            "params": {"dataWidth": 64, "lanes": 4, "loopCountWidth": 32,
-                       "supportedOps": ["add"], "signed": True},
+            "params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64",
+                       "lanes": 4, "loopCountWidth": 32, "supportedOps": ["add"]},
             "ports": [{"brm": "a", "block": "a"}, {"brm": "b", "block": "b"},
                       {"brm": "out", "block": "out"}],
             "csrs": {"rw": [{"pin": "loopCount", "width": 32}], "start": "start",
@@ -73,7 +73,10 @@ def test_the_vecadd_spec(vecadd):
 def test_the_accumulator_maps_its_port_and_has_two_fields(tmp_path):
     spec = rtl_spec(point(tmp_path, name="vsum", graph=bound_vsum()), tmp_path)
     (u,) = spec.units
-    assert (u.block, u.params) == ("Accumulator", {"width": 64, "accWidth": 64, "lanes": 1})
+    assert (u.block, u.params) == (
+        "Accumulator",
+        {"inType": "int64", "outType": "int64", "lanes": 1},
+    )
     assert u.ports == [("a", "in"), ("out", "out")]
     assert (u.rw, u.start, u.tie) == ([("loopCount", 32), ("len", 32)], "start", {})
 
@@ -101,7 +104,8 @@ REFUSALS = [
         lambda: {k: v for k, v in catalogue().items() if k != "ElementwiseTiledSpatial"},
     ),
     ("gen.params", _edit(lambda b: b["params"].update(depth={"type": "int", "min": 1}))),
-    ("gen.param_type", _edit(lambda b: b["params"].update(signed={"type": "int", "min": 0}))),
+    ("gen.param_type", _edit(lambda b: b["params"].update(opType={"type": "int", "min": 0}))),
+    ("gen.param_limit", _edit(lambda b: b["params"]["outType"].update(values=["int32"]))),
     ("gen.param_limit", _edit(lambda b: b["params"]["lanes"].update(max=2))),
     ("gen.port_map", _edit(lambda b: b.update(ports={"a": "in", "c": "in", "out": "out"}))),
     ("gen.port_map", _edit(lambda b: b["ports"].update(b="out"))),
@@ -120,8 +124,8 @@ def test_a_spec_the_catalogue_refuses(vecadd, code, cat):
 
 def test_an_ops_param_must_be_op_names():
     sig = catalogue()["ElementwiseTiledSpatial"]["params"]
-    good = {"dataWidth": 64, "lanes": 4, "loopCountWidth": 32, "supportedOps": ["add"],
-            "signed": True}  # fmt: skip
+    good = {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "lanes": 4,
+            "loopCountWidth": 32, "supportedOps": ["add"]}  # fmt: skip
     check_params("E", good, sig)
     for ops, code in (("add", "gen.param_type"), ([], "gen.param_limit"),
                       (["add", "add"], "gen.param_limit"), (["pow"], "gen.param_limit")):  # fmt: skip
@@ -185,42 +189,56 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
     assert "wrote fx/rtl.json" in capsys.readouterr().out
 
 
+def test_a_type_param_must_be_type_names():
+    sig = catalogue()["ElementwiseTiledSpatial"]["params"]
+    good = {"inTypes": ["int8", "uint8"], "opType": "int16", "outType": "int16", "lanes": 8,
+            "loopCountWidth": 32, "supportedOps": ["add"]}  # fmt: skip
+    check_params("E", good, sig)
+    for k, v, code in (("opType", 16, "gen.param_type"), ("inTypes", "int8", "gen.param_type"),
+                       ("outType", "float32", "gen.param_limit"),
+                       ("inTypes", ["int8", "int128"], "gen.param_limit")):  # fmt: skip
+        with pytest.raises(GenError) as e:
+            check_params("E", {**good, k: v}, sig)
+        assert e.value.code == code
+
+
 # =============================================================================
-# Narrow designs until PACK0 R4: the widths the blocks compute right
+# Narrow and mixed designs (PACK0 R4): each port's type, the op at the inputs' result type
 # =============================================================================
 
 
-@pytest.mark.parametrize(("recipe", "width"), [("vecadd_i32", 32), ("vecadd_i8", 8)])
-def test_a_same_width_elementwise_design_is_written(tmp_path, recipe, width):
+@pytest.mark.parametrize(("recipe", "dtype"), [("vecadd_i32", "int32"), ("vecadd_i8", "int8")])
+def test_a_narrow_elementwise_design_is_written(tmp_path, recipe, dtype):
     spec = rtl_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
     validate("rtl", spec.to_dict())
     (unit,) = spec.to_dict()["units"]
-    assert (unit["params"]["dataWidth"], unit["params"]["signed"]) == (width, True)
+    params = {k: unit["params"][k] for k in ("inTypes", "opType", "outType")}
+    assert params == {"inTypes": [dtype, dtype], "opType": dtype, "outType": dtype}
 
 
-def test_a_signed_accumulator_into_a_wider_sum_is_refused(tmp_path):
-    """vsum_tree_i32: int32 lanes into an int64 sum, which the Accumulator zero-extends."""
-    with pytest.raises(GenError) as e:
-        rtl_spec(tmp_path / designed(tmp_path, "vsum_tree_i32", "vsum_tree_i32"), tmp_path)
-    assert e.value.code == "gen.rtl_width"
-    assert str(e.value).endswith(
-        "accumulate.chisel_adder_tree: the Accumulator's lanes zero-extend (UInt.pad), so a "
-        "signed 32-bit input into a 64-bit sum lands in PACK0 R4"
-    )
+@pytest.mark.parametrize(
+    ("recipe", "dtype"), [("vsum_tree_i32", "int32"), ("vsum_tree_i8", "int8")]
+)
+def test_a_narrow_fold_into_int64_is_written(tmp_path, recipe, dtype):
+    """vsum_tree_i32 and vsum_tree_i8: the Accumulator casts each lane into its int64 sum."""
+    spec = rtl_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
+    validate("rtl", spec.to_dict())
+    (unit,) = spec.to_dict()["units"]
+    assert unit["params"] == {"inType": dtype, "outType": "int64", "lanes": unit["params"]["lanes"]}
 
 
-def test_an_elementwise_design_of_two_widths_is_refused(tmp_path):
+@pytest.mark.parametrize(
+    ("a", "b", "out", "op_type"),
+    [("int32", "int32", "int64", "int32"), ("int8", "uint8", "int16", "int16"),
+     ("uint8", "int32", "int32", "int32"), ("uint32", "int32", "int64", "int64")],
+)  # fmt: skip
+def test_the_op_runs_at_the_inputs_result_type(a, b, out, op_type):
     from snax_forge.gen.blocks import elementwise_tiled_spatial
     from snax_forge.gen.rtl import RTL_PARAMS
 
     from .test_gvsoc import _dtypes, _instance
 
-    inst = _instance()
-    unit = elementwise_tiled_spatial(inst, _dtypes(a="int32", b="int32", out="int64"))
-    with pytest.raises(GenError) as e:
-        RTL_PARAMS["ElementwiseTiledSpatial"](inst, unit)
-    assert e.value.code == "gen.rtl_width"
-    assert str(e.value).endswith(
-        "ElementwiseTiledSpatial has one dataWidth, its ports are [32, 32] bits in and [64] out; "
-        "a block of per-port widths lands in PACK0 R4"
-    )
+    inst = _instance(params={"W": 8, "op": "add"})  # 8 lanes: whole words of int8
+    unit = elementwise_tiled_spatial(inst, _dtypes(a=a, b=b, out=out))
+    params = RTL_PARAMS["ElementwiseTiledSpatial"](inst, unit)
+    assert (params["inTypes"], params["opType"], params["outType"]) == ([a, b], op_type, out)

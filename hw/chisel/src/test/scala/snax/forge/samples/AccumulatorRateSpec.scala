@@ -41,7 +41,7 @@ class AccumulatorRateSpec extends AnyFlatSpec with ForgeTester {
     RtlFixtures.all.map(f => f -> f.spec.units.head).collect {
       case (f, u) if u.block == "Accumulator" =>
         val p = Blocks.Params(u.params)
-        (f.name, s"uint${p.int("width")}", s"uint${p.int("accWidth")}", p.int("lanes"))
+        (f.name, p.dtype("inType"), p.dtype("outType"), p.int("lanes"))
     }
 
   /** The configurations: int64 at the case's lanes, then each fixture's. */

@@ -37,12 +37,11 @@ class ElementwiseTiledSpatialLockstepSpec extends AnyFlatSpec with ForgeTester {
       RtlFixtures.all.map(f => f -> f.spec.units.head).collect {
         case (f, u) if u.block == "ElementwiseTiledSpatial" =>
           val p = Blocks.Params(u.params)
-          val t = (if (p.bool("signed")) "int" else "uint") + p.int("dataWidth")
           f.name -> (() =>
             new ElementwiseTiledSpatial(
-              Seq(t, t),
-              t,
-              t,
+              p.dtypes("inTypes"),
+              p.dtype("opType"),
+              p.dtype("outType"),
               p.int("lanes"),
               p.int("loopCountWidth"),
               p.ops("supportedOps")

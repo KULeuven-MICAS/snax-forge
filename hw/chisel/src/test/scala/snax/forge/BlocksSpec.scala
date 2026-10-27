@@ -6,7 +6,7 @@ import chisel3._
 import _root_.circt.stage.ChiselStage
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.Blocks.{BoolParam, IntParam, OpsParam, Params}
+import snax.forge.Blocks.{BoolParam, DtypeParam, DtypesParam, IntParam, OpsParam, Params}
 
 /** The block catalogue: `Emit --describe` (the registry, `Blocks`) equals the checked-in `hw/chisel/blocks.json`, the
   * file the Python side checks `rtl.json` against (D130). Compared as JSON, key and list order included, so the file
@@ -22,12 +22,16 @@ class BlocksSpec extends AnyFlatSpec {
     assert(ujson.write(ujson.read(Emit.describe)) == ujson.write(want))
   }
 
-  /** The least params each type takes: an int's min, false, the first op. */
+  /** The least params each type takes: an int's min, false, the first op, the first type (two of it for a list: the
+    * elementwise block's a and b).
+    */
   private def least(b: Blocks.Block): Params =
     Params(b.params.map {
       case (n, IntParam(min, _)) => n -> ujson.Num(min)
       case (n, BoolParam)        => n -> ujson.Bool(false)
       case (n, OpsParam(vals))   => n -> ujson.Arr(ujson.Str(vals.head._1))
+      case (n, DtypeParam)       => n -> ujson.Str(IntType.names.head)
+      case (n, DtypesParam)      => n -> ujson.Arr(IntType.names.head, IntType.names.head)
     }.toMap)
 
   it should "name every pin and port of each block's IO" in {

@@ -12,12 +12,13 @@ dtypes pass ``check_dtypes`` when
   is float64, and SnaxUnit refuses it (snax-gvsoc ``snax/snax_unit.hpp``).
 
 ``output_dtypes`` lists, per output port, the dtypes it accepts for given
-input dtypes: what a refusal's fix names.
+input dtypes: what a refusal's fix names. ``result_type`` is the type an op
+runs at: NumPy's result type of its inputs (the Chisel blocks' ``opType``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
@@ -31,6 +32,16 @@ INT_DTYPES = ("int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "u
 
 def bits(dtype: str) -> int:
     return np.dtype(dtype).itemsize * 8
+
+
+def result_type(dtypes: Iterable[str]) -> str:
+    """NumPy's result type of integer ``dtypes``, the type an op on them runs at (D143);
+    ValueError when it is not an integer (a signed dtype with uint64)."""
+    dts = list(dtypes)
+    out = np.result_type(*dts).name
+    if out not in INT_DTYPES:
+        raise ValueError(f"{dts} have no integer result type (NumPy gives {out})")
+    return out
 
 
 def port_dtypes(graph: Graph, node: Node) -> dict[str, str]:

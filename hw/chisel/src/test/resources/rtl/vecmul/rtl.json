@@ -6,11 +6,12 @@
    "name": "acc",
    "block": "ElementwiseTiledSpatial",
    "params": {
-    "dataWidth": 64,
+    "inTypes": ["int64", "int64"],
+    "opType": "int64",
+    "outType": "int64",
     "lanes": 4,
     "loopCountWidth": 32,
-    "supportedOps": ["mul"],
-    "signed": true
+    "supportedOps": ["mul"]
    },
    "ports": [{"brm": "a", "block": "a"}, {"brm": "b", "block": "b"}, {"brm": "out", "block": "out"}],
    "csrs": {
