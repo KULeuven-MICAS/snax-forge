@@ -33,7 +33,7 @@ compute, what the unit does, down. The argument is PAPER §6.2's.
 
 ### axpy
 
-`blas/axpy.py` · no tier · int64 (int32 in KER0; back to int32 once narrow elements are moved, open item 21)
+`blas/axpy.py` · no tier · int32 (packed two per 64-bit word, D142; int64 from M13 B0 until PACK0 R3)
 
 $$y \leftarrow y + \alpha x$$
 
@@ -46,7 +46,7 @@ $$y \leftarrow y + \alpha x$$
 
 ### matadd
 
-`elementwise/matadd.py` · no tier · int64 (int32 in KER0; back to int32 once narrow elements are moved, open item 21)
+`elementwise/matadd.py` · no tier · int32 (packed two per 64-bit word, D142; int64 from M13 B0 until PACK0 R3)
 
 $$C = A + B, \quad A, B, C \in \mathbb{Z}^{M \times N}$$
 
@@ -57,7 +57,7 @@ $$C = A + B, \quad A, B, C \in \mathbb{Z}^{M \times N}$$
 
 ### relu
 
-`elementwise/relu.py` · no tier · int64 (int32 in KER0; back to int32 once narrow elements are moved, open item 21)
+`elementwise/relu.py` · no tier · int32 (packed two per 64-bit word, D142; int64 from M13 B0 until PACK0 R3)
 
 $$B = \max(A, 0)$$
 

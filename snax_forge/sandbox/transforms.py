@@ -11,8 +11,12 @@ is; the reference check after the step is run.py's.
     outer map ``v_t`` over ``0:(e - b) // factor`` tagged ``temporal``,
     keeping the map's id and attrs, and an inner map ``<id>_s`` over
     ``0:factor`` tagged ``spatial``; every use of ``v`` in the body becomes
-    ``b + factor * v_t + v_s`` (D73). The length must be a multiple of the
-    factor for the graph's bound symbols (open item 31).
+    ``b + factor * v_t + v_s`` (D73). A length n that is not a multiple of
+    the factor (D144) runs ``v_t`` over ceil(n / factor) and
+    records n in ``loop.split`` (``valid``): only the lanes with
+    ``factor * v_t + v_s`` below n are the kernel's, the rest pad lanes
+    (dfg/pad.py), which the reference executor neither reads nor writes and
+    the containers hold in memory as padding.
 ``tag_map(map, kind)`` and ``untag_map(map)``
     ``tag_map`` tags an untagged map ``temporal`` or ``tile`` as it is,
     without splitting it (matadd's row map), and records that it did
@@ -130,6 +134,8 @@ def _map_dims(body: list[Node], fn: Callable[[Any], Any], splits: bool = False) 
             if splits and n.attrs.get("loop.split"):
                 split = n.attrs["loop.split"]
                 n.attrs["loop.split"] = {**split, "range": fn(split["range"])}
+                if "valid" in split:
+                    n.attrs["loop.split"]["valid"] = fn(split["valid"])
         if n.kind == "accelerated" and n.attrs.get("replaced"):
             old = Node.from_dict(n.attrs["replaced"], n.id)
             _map_dims([old], fn, splits)
@@ -184,10 +190,7 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
         raise SandboxError(f"{what}: only a step of 1 is split, the range is {node.attrs['range']}")
     length = _length(node)
     n = _bound(g, length, what)
-    if n % factor:
-        raise SandboxError(
-            f"{what}: {n} iterations are not a multiple of {factor} (a tail is open item 31)"
-        )
+    tail = n % factor != 0
     var = node.attrs["var"]
     taken = (
         set(g.symbols)
@@ -204,12 +207,16 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
     )
     start = "" if begin == 0 else f"{begin} + "
     _substitute_body(inner.body, {var: f"{start}{factor} * {var_t} + {var_s}"})
+    firings = f"({length} + {factor - 1}) // {factor}" if tail else f"({length}) // {factor}"
+    split = {"var": var, "range": node.attrs["range"]}  # for join_map
+    if tail:  # the lanes past n are padding (D144)
+        split["valid"] = expr.canonical(length)
     node.attrs = {
         "var": var_t,
-        "range": format_dim((0, expr.canonical(f"({length}) // {factor}"), 1)),
+        "range": format_dim((0, expr.canonical(firings), 1)),
         **{k: v for k, v in node.attrs.items() if k not in ("var", "range")},
         "loop.kind": "temporal",
-        "loop.split": {"var": var, "range": node.attrs["range"]},  # for join_map
+        "loop.split": split,
     }
     node.body = [inner]
     return _result(g)
@@ -266,7 +273,7 @@ def bind(
     instance: str,
     params: Mapping[str, Any] | None = None,
 ) -> Graph:
-    from snax_forge.brm import BrmError, memlet_ordered, task_nest
+    from snax_forge.brm import BrmError, accepted, check_dtypes, memlet_ordered, task_nest
 
     g = _copy(g)
     what = f"bind {node!r}"
@@ -289,7 +296,16 @@ def bind(
         b = load_brm(brm)
     except BrmError as e:
         raise SandboxError(f"{what}: {e}") from None
-    ports = match(tasklet, b)
+    conn_dtypes = {
+        c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
+    }
+    ports = match(tasklet, b, conn_dtypes)
+    dtypes = {ports[c]: dt for c, dt in conn_dtypes.items()}
+    if refused := check_dtypes(b, dtypes):
+        raise SandboxError(
+            f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
+            f"{accepted(b, dtypes)}"
+        )
     if b.function.code is None:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
     computes = expr.rename_code(tasklet.attrs["code"], ports)
@@ -361,11 +377,6 @@ def bind(
     ):
         for c, m in conns.items():
             port = ports[c]
-            want = b.port(port).dtype
-            if g.containers[m.data].dtype != want:
-                raise SandboxError(
-                    f"{what}: port {port!r} is {want}, container {m.data!r} is {g.containers[m.data].dtype}"
-                )
             nest = None
             if by_nest:
                 try:

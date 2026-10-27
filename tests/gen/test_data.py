@@ -128,3 +128,71 @@ def test_refused_a_strided_layout(tmp_path):
 def test_refused_a_float_dtype():
     with pytest.raises(GenError, match=r"\[gen.dtype\] container A"):
         data_mod.ctype("float64", "container A")
+
+
+# =============================================================================
+# Narrow containers (D142): refused until R3, the data path ready for it
+# =============================================================================
+
+
+def _int32_vecadd(tmp_path) -> DesignPoint:
+    from snax_forge.dfg import Graph
+
+    from .helpers import bound_vecadd
+
+    d = bound_vecadd(4).to_dict()
+    for c in d["containers"].values():
+        c["dtype"] = "int32"
+    return DesignPoint.load(point(tmp_path, graph=Graph.from_dict(d)))
+
+
+def test_int32_vecadd_packs_its_data_two_per_word(tmp_path):
+    """No refusal since PACK0 R3: data.h's int32_t arrays, the kernel's first values packed two
+    per 64-bit word (D142)."""
+    p = _int32_vecadd(tmp_path)
+    a = {x.name: x for x in arrays(p)}
+    assert a["A"].ctype == "int32_t" and a["A"].elements == 64 and len(a["A"].values) == 64
+    first = np.array(a["A"].values[:2], dtype=np.int32).view(np.uint64)[0]
+    want = kernel_inputs(kernel_spec("vecadd", "test"), p.graph, 0)["A"][:2]
+    assert int(first) == int(want.view(np.uint64)[0])
+
+
+def _packed(values: np.ndarray) -> tuple[list[int], int]:
+    """``values`` as data.h's array helper pads them (whole 64-byte DMA beats), read back as
+    the 64-bit little-endian words the DMA moves; and the padded length."""
+    elem = values.dtype.itemsize
+    padded = moved_bytes(Layout.contiguous(0, values.shape, elem), elem, 64) // elem
+    t = data_mod.ctype(values.dtype.name, "x")
+    a = data_mod._array("x", "x", "input", t, values, padded, 64)
+    words = np.array(a.values, dtype=values.dtype).view(np.uint64)
+    return [int(w) for w in words], len(a.values)
+
+
+def test_e1_int32_packs_two_per_word_padded_to_a_beat():
+    x = np.array([-3, 5, 7, -1, 100, 2**31 - 1, -(2**31), 0], dtype=np.int32)
+    words, n = _packed(x)
+    assert n == 16  # one 64-byte DMA beat
+    assert words == [0x00000005FFFFFFFD, 0xFFFFFFFF00000007, 0x7FFFFFFF00000064,
+                     0x0000000080000000, 0, 0, 0, 0]  # fmt: skip
+
+
+def test_e2_int8_packs_eight_per_word_padded_to_a_beat():
+    e = np.arange(32)
+    y = ((9 * e - 128 + 128) % 256 - 128).astype(np.int8)  # 9e - 128, wrapped
+    words, n = _packed(y)
+    assert n == 64 and words[0] == 0xBFB6ADA49B928980
+    assert words[4:] == [0, 0, 0, 0]
+
+
+def test_vecadd_n7_writes_its_pad_and_a_whole_beat(tmp_path):
+    """N = 7 at W = 4 (D144): each array 7 elements, a pad element of 0, one 64-byte beat."""
+    from snax_forge.dfg.import_sdfg import import_kernel
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from tests.design.helpers import REPO
+
+    recipe = Recipe.load(REPO / "recipes" / "vecadd.json").with_params({"W": 4, "N": 7})
+    g = apply_recipe(recipe, import_kernel("vecadd"))[-1].graph
+    p = DesignPoint.load(point(tmp_path, graph=g))
+    a = {x.name: x for x in arrays(p)}
+    assert (a["A"].elements, len(a["A"].values), a["A"].values[7]) == (7, 8, 0)
+    assert a["A"].shape == (7,) and a["A"].padded == (8,)

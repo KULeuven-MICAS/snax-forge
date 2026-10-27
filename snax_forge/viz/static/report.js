@@ -83,8 +83,8 @@ function accelSection(detail) {
           h("div", { class: "meter" }, h("span", { class: "g-busy", style: { width: `${100 * a.utilisation}%` } })),
           h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.firings)} firings`),
         table(
-          [{ key: "port", label: "Port" }, { key: "mover", label: "Mover" }, { key: "dir", label: "Direction" }, { key: "lanes", label: "Lanes", num: true }],
-          acc.movers.map((m) => ({ port: m.port, mover: m.name, dir: m.write ? "write" : "read", lanes: m.lanes }))));
+          [{ key: "port", label: "Port" }, { key: "mover", label: "Mover" }, { key: "dir", label: "Direction" }, { key: "num_ch", label: "num_ch", num: true }],
+          acc.movers.map((m) => ({ port: m.port, mover: m.name, dir: m.write ? "write" : "read", num_ch: m.lanes }))));
     }));
 }
 

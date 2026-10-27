@@ -111,7 +111,8 @@ def codes(d: Design) -> list[str]:
 
 def _streamer(port: str, write: bool) -> dict[str, Any]:
     return {"instance": "acc", "port": port, "write": write, "n_ports": 4, "spatial_bounds": [4],
-            "temporal_dims": 1, "fifo_depth": 2}  # fmt: skip
+            "temporal_dims": 1, "dtype": "int64", "num_slc": 1, "num_ch": 4,
+            "fifo_depth": 2}  # fmt: skip
 
 
 # vecadd at W = 4 on small16: its streamers as the design point holds them, in port order

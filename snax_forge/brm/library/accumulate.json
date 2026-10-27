@@ -8,8 +8,8 @@
    "T": {"stage": "runtime", "type": "int", "default": null, "values": null}
   },
   "ports": [
-   {"name": "a", "direction": "in", "lanes": "W", "rate": 1, "dtype": "int64"},
-   {"name": "out", "direction": "out", "lanes": 1, "rate": "T", "dtype": "int64"}
+   {"name": "a", "direction": "in", "lanes": "W", "rate": 1},
+   {"name": "out", "direction": "out", "lanes": 1, "rate": "T"}
   ]
  },
  "function": {

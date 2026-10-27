@@ -17,9 +17,12 @@
 **Byte addresses.** Every memory address (L1 and L2 addresses, streamer
 `base`, all strides, DMA bases) is a byte address.
 
-**The bank word is the unit of transfer** (D13). A word is the L1's
-`width_bits` wide and holds `elems_per_word` elements of `dtype`, one for
-now: the design check `connect.dtype` refuses more (open item 21).
+**The bank word is the unit of transfer** (D142). A word is the L1's
+`width_bits` wide and holds num_slc = `width_bits` / b slices (elements) of
+each container's dtype (b its bits), little-endian as NumPy lays them out. A
+port of W lanes uses num_ch = W / num_slc streamer channels by default;
+`connect.pack` and `connect.num_ch` check a port against that (section 14),
+and lowering lays each container out by its itemsize.
 
 **Integers first** (D28). The default `dtype` is `int64`.
 
@@ -27,15 +30,7 @@ The L1 of `platforms/snax_forge.json` (section 13):
 
 <!-- snippet: platforms/snax_forge.json -->
 ```json
- "l1": {
-  "n_banks": 32,
-  "width_bits": 64,
-  "rows": 512,
-  "dtype": "int64",
-  "elems_per_word": 1,
-  "base_addr": 268435456,
-  "wide_bits": 512
- },
+ "l1": {"n_banks": 32, "width_bits": 64, "rows": 512, "base_addr": 268435456, "wide_bits": 512},
 ```
 
 ## 2. Cluster configuration
@@ -205,9 +200,16 @@ written by hand. A task list is `name` and `steps`, each with an `op`:
 `type` says how `values` are read:
 
 ```
-streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes);
-          spatial bounds are design-time and come from the design point's
-          streamers
+streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes),
+          in words (D142): a channel moves one bank word of num_slc slices
+          of the port's dtype. The fastest spatial loop runs S_0 / num_slc
+          channels, its stride num_slc times its element stride times the
+          itemsize (8 bytes for a packed port); every other stride is its
+          element stride times the itemsize, and base the layout's base
+          plus the offset's bytes. At num_slc = 1 these are the element
+          strides as before. Spatial
+          bounds are design-time, in elements, and come from the design
+          point's streamers
 dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with
           bounds and strides (bytes, one wide beat per step), the L1 side
           with base, the L2 side with symbol (its container's data.h array)
@@ -431,7 +433,7 @@ and on an accelerated node. dot as imported:
 
 | Kind | Attrs | Body | Connectors |
 |---|---|---|---|
-| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`); `loop.tagged` (true when `tag_map` set the kind) | yes: runs once per value of `var` | none (derived from the body) |
+| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`, and `valid`, the iteration count n, when n is not a multiple of the factor: the lanes past it are padding, `dfg/pad.py`, D144); `loop.tagged` (true when `tag_map` set the kind) | yes: runs once per value of `var` | none (derived from the body) |
 | `tasklet` | `code`: one `output = expression` per output connector | no | one element each: indices only |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
 
@@ -482,8 +484,9 @@ checked in the node's scope, never run, and its ids may repeat live ones.
 ## 12. Recipe
 
 SNAX-SANDBOX's ordered list of transforms (D72), a hand-written JSON file in
-`recipes/`. `Recipe.load(path)`; every field is written, `params`, `symbols`
-and `steps` default to empty, unknown keys are errors.
+`recipes/`. `Recipe.load(path)`; every field is written (`dtypes` only when
+given), `params`, `symbols` and `steps` default to empty, unknown keys are
+errors.
 
 | Field | Holds |
 |---|---|
@@ -491,6 +494,7 @@ and `steps` default to empty, unknown keys are errors.
 | `kernel` | the kernel whose import the recipe starts from |
 | `params` | recipe params, each an int or a string; `--set NAME=VALUE` overrides one |
 | `symbols` | a value for graph symbols: an int or an expression over the params |
+| `dtypes` | optional: container -> NumPy integer dtype name, in place of the kernel's (D113, D142): the import applies it to the kernel's descriptors before DaCe builds the SDFG, and the kernel's inputs are cast to it (`astype`, wrapping); an unknown dtype or container is an error naming it (`vecadd_i32`: A, B, C `int32`) |
 | `steps` | in order: `transform` (a registered name) and its `params` |
 
 A transform's int params take an int or an expression over the recipe params
@@ -501,7 +505,7 @@ as `recipe.json`.
 
 | Transform | Params | Does |
 |---|---|---|
-| `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor` |
+| `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor`; when the length n is not a multiple of the factor, over `0:(n + factor - 1) // factor`, with `loop.split.valid` n: the lanes at or past n are padding (D144), which the reference executor neither reads nor writes |
 | `tag_map` | `map` (id), `kind` (`temporal` or `tile`) | an untagged map is tagged as it is, not split, and records it (`loop.tagged`); a tagged map is an error |
 | `untag_map` | `map` (id) | the tag `tag_map` set is removed; a map `split_map` tagged is an error (`join_map` undoes it) |
 | `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; every map around the spatial map must be `temporal` (the firing loops: an untagged one is an error naming `tag_map`, a `tile` one is not lowered yet); the lanes param comes from the spatial bound; the dimension over the spatial variable becomes the lanes' range, the others stay indices; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D102) |
@@ -561,8 +565,6 @@ unknown keys and wrong types are errors, all reported at once (section 14).
 | `n_banks` | single-port banks | 32 | >= 1 |
 | `width_bits` | bits per bank word | 64 | multiple of 8 |
 | `rows` | words per bank | 512 | >= 1 |
-| `dtype` | element type, any NumPy dtype name | `int64` | fits the word |
-| `elems_per_word` | elements packed in one word (1 only, section 1) | 1 | >= 1, fits the word |
 | `base_addr` | byte address of the first L1 word | 0 | — |
 | `wide_bits` | widest port (the DMA's) | 512 | power-of-two multiple of `width_bits` |
 
@@ -573,7 +575,11 @@ unknown keys and wrong types are errors, all reported at once (section 14).
 | `size_bytes` | flat size | 1 MiB | positive multiple of the beat |
 | `base_addr` | byte address of the first word | 0 | — |
 | `beat_bits` | one DMA beat | 512 | multiple of `width_bits`; equal to the L1's `wide_bits` (`platform.l2`) |
-| `width_bits`, `dtype`, `elems_per_word` | as the L1, and must agree with it (`platform.l2`) | 64, `int64`, 1 | fits the word |
+| `width_bits` | as the L1, and must agree with it (`platform.l2`) | 64 | multiple of 8 |
+
+Neither memory has an element type: each container's dtype decides how many
+elements a word holds (D142, section 1). A platform that still sets `dtype`
+or `elems_per_word` in `l1` or `l2` is refused (`platform.keys`).
 
 **The streamer shell** (D12). One streamer per port of every accelerated
 instance, `<instance>_<port>`. The port decides `write`, `n_ports` (its
@@ -582,7 +588,9 @@ lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an
 graph decides `temporal_dims`: the firing loops the port's memlet runs over,
 at least 1, the most over an instance's nodes (D84); the design point records
 it per streamer. `default` holds `fifo_depth` (>= 1); an entry named after a
-streamer overrides it and `spatial_bounds` for it alone. A platform that sets
+streamer overrides it and `spatial_bounds` for it alone, and may give
+`num_ch` (>= 1, never in `default`): the TCDM channels the streamer uses,
+without it the wire default W / num_slc (D142, `connect.num_ch`). A platform that sets
 `temporal_dims` is refused (`platform.keys`), as is `--set` of it.
 
 <!-- snippet: platforms/small16.json -->
@@ -624,10 +632,10 @@ Stages: `platform` and `graph` independently, `connect` when both passed,
 
 | Code | Fails when |
 |---|---|
-| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
+| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; `dtype` or `elems_per_word` in `l1` or `l2`, no longer a platform field (the fix removes it: each container's dtype decides the packing, D142); a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
 | `platform.values` | a value its section rejects (`n_banks` 0, a `wait_mode` that is not allowed) |
-| `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1 |
-| `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`), word width, dtype or elements per word |
+| `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1, `num_ch` that is not an int >= 1 |
+| `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`) or word width |
 | `platform.banks` | with an L2, `n_banks` is not a multiple of the DMA's port group (`wide_bits / width_bits`) |
 | `graph.load` | a graph file that does not load (section 11) |
 | `graph.symbols` | a symbol still null: bind it in the recipe |
@@ -637,12 +645,15 @@ Stages: `platform` and `graph` independently, `connect` when both passed,
 | `connect.streamer_key` | a streamer entry that matches no port of the graph (the fix names the closest streamer) |
 | `connect.derived` | a streamer entry that sets `write` or `n_ports` |
 | `connect.lanes` | an entry's `spatial_bounds` that do not give the port's lanes or are not its nest's spatial loops |
-| `connect.dtype` | a container whose dtype is not the L1's or not its port's, or an L1 with more than one element per word (open item 21) |
+| `connect.dtype` | a node whose containers break its BRM's dtype rule (`brm/dtypes.py`, D143: each port's dtype in its `dtypes`, every output at least as wide as every input, no signed input with a `uint64` one; the fix names the output dtypes the inputs accept), or an instance whose nodes put two dtypes on one port |
+| `connect.pack` | a port whose elements do not fill whole words (D142), with num_slc slices of its container's dtype per word: the fastest spatial bound not a multiple of num_slc (W < num_slc: the fix makes the container 64-bit or gives the port num_slc lanes), the fastest spatial loop not stepping 1 element (a column), another loop's step or the start not a multiple of num_slc (a row stride that is not: the fix pads the leading dimension). Row strides are over the container's padded shape (a tail's, D144: a 3 x 7 int32 matrix split by 4 has row stride 8). Every port passes at num_slc = 1 |
+| `connect.pad` | a container an accelerator writes and a fold reads through a tail: the producer's pad lanes would reach the fold, since the hardware masks nothing (D144; the fix: a size that divides W, or a split factor that divides n); a container whose readers need different pad values (the message names them) |
+| `connect.num_ch` | a streamer entry's `num_ch` other than the wire default W / num_slc: any other needs the FIFO slicer, which the flow does not place yet (D142). The message lists the values with rho = num_ch * num_slc / W <= 1, the divisors of W / num_slc; the fix removes it or sets W / num_slc |
 | `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), or a subset that is not affine in the firing loops |
 | `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest), on a memory the container does not live in, or on L2 (the link places it, D86); an unknown pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
 | `memory.layout` | a layout whose shape is not its container's |
-| `memory.align` | an L1 base or stride that is not a multiple of the word; a container the DMA moves whose L1 layout is not contiguous, not whole wide beats (open item 38) or not on a beat |
+| `memory.align` | an L1 base that is not a multiple of the word, or a stride that is not one of the element's (its dtype's itemsize, D142); a container the DMA moves whose L1 layout is not contiguous, not whole wide beats (open item 38) or not on a beat |
 | `memory.fit` | an L1 layout that leaves L1 (the message names its bytes `[start, end)`; the fix the rows that would hold it, or the pin to L1's first byte), or an L2 layout larger than L2 |
 | `memory.runtime` | an L1 layout (with its padding, D105) reaching into the top of L1 that snRuntime keeps at start-up: a 1 KiB stack per core of the platform's `hjson` plus `RUNTIME_MARGIN` (256 B, `design/check.py`); not checked without an `hjson` under snax-forge's root. The fix pins the layout just below |
 | `memory.overlap` | two L1 layouts that share bytes, naming the pins (the fix moves the latest pin past everything) |
@@ -660,7 +671,7 @@ name (`register_memory_pass(kind, name, fn)`):
 | Pass | Decides | Default |
 |---|---|---|
 | `residency` | the memories of each container | `default`: not transient: L2 and L1 with an L2, else L1; transient: L1 |
-| `layout` | shape and strides, base 0 | `contiguous`: row-major, one element per word |
+| `layout` | shape and strides, base 0 | `contiguous`: the container's shape, its strides row-major over the padded shape (a tail pads the split dimension to a multiple of W, D144), each element its dtype's itemsize (a word holds several narrow ones, D142); the memory checks and the DMA take the padded block |
 | `placement` | the L1 base per container (an L2 layout keeps base 0: the program's link places its array, section 7's regions) | `contiguous`: graph container order from L1's first byte, no gaps; a layout in both L2 and L1 on a wide beat and padded to whole beats (D105), others on a word; around the pins |
 
 `--set memory.<container>.l1.base=N` pins an L1 base; `--set
@@ -680,7 +691,7 @@ hand:
 | `graph_from` | the `.snaxdfg` it was made from: a sandbox step, or any bound graph given to the design step or the flow (D108) |
 | `graph` | that graph as read: instances, `code`, `replaced`, `loop.split` |
 | `platform` | the platform working copy (section 13) |
-| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `fifo_depth` |
+| `streamers` | the resolved shell: `<instance>_<port>` -> `instance`, `port`, `write`, `n_ports`, `spatial_bounds`, `temporal_dims`, `dtype` (the port's container's), `num_slc` (its slices per word), `num_ch` (the entry's, else W / num_slc; the hjson's `num_channel`), `fifo_depth` |
 | `memory` | the memory plan: `passes`, `changes`, `layouts` (container -> memory -> layout) |
 
 It holds no recipe. Loading one runs every check again on what it holds and
@@ -700,17 +711,17 @@ file is JSON. One design point gives byte-identical files wherever written.
 | File | Holds |
 |---|---|
 | `<platform>.hjson` | the cluster: the platform's `hjson`, its comments dropped and its key order kept, with `cluster.tcdm.banks`, `.size` (KiB), `data_width`, `cluster_base_addr`, `dma_data_width` and `dram` written from the platform, `cluster.name` `snax_forge_cluster` (also in `cluster.bender_target`, in place of the source's name; a source without its own name there is `gen.source`), and the slot set; the source's template, referred to only by the slot, dropped |
-| `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds`, `temporal_dim`, `num_channel` (64-bit channels) and `fifo_depth` |
-| `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
+| `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds` in words, fastest first (`[S_0 / k, S_1, ...]`, k the elements of the port's container dtype a word holds, D142), `temporal_dim`, `num_channel` (the streamer's channels, the wire default W / k; the bounds' product) and `fifo_depth` |
+| `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `in_widths`, `in_signed`, `out_widths`, `out_signed` (each port's element bits and signedness, from its container, inputs and outputs in the BRM's port order; D143), `op`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
 | `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h`, and the runtime's `snitch_cluster_cfg.h` and `snitch_cluster_addrmap.h`, as snax_cluster's templates render them from the cluster file (`gen/headers.py`, D126) |
-| `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, padded to whole DMA beats as its L2 layout (D105) and aligned to the beat |
-| `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens (`forge data:`), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
+| `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, in its padded shape (a tail's pads hold the pad value: 0, or the identity of a max or min fold that reads it, D144), then padded with zeros to whole DMA beats in its itemsize (16 int32 or 64 int8 elements per 64-byte beat) as its L2 layout (D105) and aligned to the beat. A container narrower than the word is refused (`gen.dtype`) until packed streams are generated (PACK0 R3) |
+| `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens, the valid elements only, a padded matrix row by row (`forge data:`, its words the valid elements), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
 | `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
 
 **The slot** is the source's only one, renamed: `snax_acc_name` the
 platform's `accelerator_slot`, its `bender_target` dropped (the RTL comes
-from the bundle). `snax_tcdm_ports` is the streamer's channels; the source's
-`sparse_interconnect_config` becomes one group of that width (its
+from the bundle). `snax_tcdm_ports` is the sum of its movers' num_ch; the
+source's `sparse_interconnect_config` becomes one group of that width (its
 granularity kept), or `snax_narrow_tcdm_ports` that many and
 `snax_wide_tcdm_ports` 0; `snax_num_rw_csr` the fields and start,
 `snax_num_ro_csr` 2 (busy and the counter); then, after the source's other
@@ -735,8 +746,8 @@ with no slot or several `gen.slot`.
 
 <!-- snippet: snax_forge/gen/schema/accelerator.schema.json -->
 ```json
- "required": ["unit", "inputs", "outputs", "lanes", "data_width", "op", "signed", "control",
-              "wait", "latency", "ii", "fields"],
+ "required": ["unit", "inputs", "outputs", "lanes", "in_widths", "in_signed", "out_widths",
+              "out_signed", "op", "control", "wait", "latency", "ii", "fields"],
 ```
 
 ## 17. Accelerator RTL spec
@@ -752,6 +763,33 @@ against the block catalogue `hw/chisel/blocks.json` and
 | `design_point` | the design point by its path from the root, as section 16's files name it |
 | `tag` | the platform's `accelerator_slot`, `snax_forge` by default; the wrapper is `<tag>_shell_wrapper` |
 | `units` | one unit (more is `gen.instances`; links come with M13): `name` (the instance), `block` (a catalogue block), `params` (every block param, typed and in its limits), `ports` (`{brm, block}` per BRM port, in the BRM's port order, which is the streamer's reader and writer order) and `csrs` |
+
+**Types** (D142, D143). A block's types come from its ports' containers,
+named as NumPy names them, and are fixed at elaboration: `Emit --spec`
+builds the block for that one choice. ElementwiseTiledSpatial's `inTypes`
+are its inputs', `opType` their NumPy result type (`brm/dtypes.py`'s
+`result_type`), the type the op runs at, and `outType` its output's; the
+Accumulator's `inType` is its input's and `outType` its sum's. Each input is
+extended to the op type (a fold's lanes to the output type) by its own
+signedness, and the result is extended or wrapped into the output type.
+Python decides every type; the blocks only construct. The catalogue's
+`dtype` and `dtypes` params take one name, or a list, of the eight:
+
+<!-- snippet: hw/chisel/blocks.json -->
+```json
+ "Accumulator": {
+  "params": {
+   "inType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "outType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "lanes": {"type": "int", "min": 1}
+  },
+```
 
 A unit's `csrs` are in CSR order from offset 0: `rw`, the configuration
 fields (`pin` and `width`), then `start`, the start CSR's pin (bit 0 written
@@ -770,11 +808,12 @@ Chisel specs:
    "name": "acc",
    "block": "ElementwiseTiledSpatial",
    "params": {
-    "dataWidth": 64,
+    "inTypes": ["int64", "int64"],
+    "opType": "int64",
+    "outType": "int64",
     "lanes": 4,
     "loopCountWidth": 32,
-    "supportedOps": ["add"],
-    "signed": true
+    "supportedOps": ["add"]
    },
    "ports": [{"brm": "a", "block": "a"}, {"brm": "b", "block": "b"}, {"brm": "out", "block": "out"}],
    "csrs": {
@@ -795,7 +834,8 @@ Chisel specs:
 (32 bits), `csr_rsp_valid_o`, `csr_rsp_ready_i`; per input port k, in order,
 `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`, per output port
 `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, data `num_channel × 64`
-bits with lane i at bits `[64i+63 : 64i]`. Inside: `CsrManager`
+bits with lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit type
+(num_slc = 64 / w lanes a word, D142). Inside: `CsrManager`
 (ReqRspManager's protocol, D130), `CtrlAdapter` (an accepted start is the
 block's start with the fields on its pins; ready is not busy; the counter is
 reset by an accepted start, counts busy cycles and holds after) and the

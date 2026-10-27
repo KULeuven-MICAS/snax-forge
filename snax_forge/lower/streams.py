@@ -3,13 +3,24 @@
 The nest (``snax_forge.brm.affine``) says in which order the accelerator
 takes an operand's elements, in logical indices; the layout (layout.py) says
 where each element lives. Both are affine, so their composition is too, and
-it is exactly what a streamer runs (CONTRACTS.md section 9):
+it is exactly what a streamer runs (CONTRACTS.md section 9), in words
+(D142): a streamer channel moves one bank word, which holds num_slc slices
+(elements) of the port's dtype (the streamer's ``num_slc``):
 
     base              layout.base + sum_d offset[d] * layout.strides[d]
-    loop byte stride  sum_d loop.strides[d] * layout.strides[d]
+    loop byte stride  sum_d loop.strides[d] * layout.strides[d]: the loop's
+                      element stride times the itemsize, the layout's
+                      strides being in bytes
     temporal loops    the nest's temporal loops, innermost first
     spatial loops     the nest's spatial loops, fastest first; their bounds
-                      must be the streamer's design-time spatial bounds
+                      must be the streamer's design-time spatial bounds (in
+                      elements). The fastest one runs S_0 / num_slc channels,
+                      each a word on: its byte stride is num_slc times the
+                      element's, 8 bytes for a packed port (whose fastest
+                      element stride is 1, ``connect.pack``); the others as
+                      above
+
+At num_slc = 1 (int64) the fastest stride is the element's: nothing changes.
 
 The result is the ``values`` of a streamer task in the task list (D64), in
 the streamer type's own terms; only the loops the nest uses are given and
@@ -29,6 +40,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any
+
+import numpy as np
 
 from snax_forge.brm import Instance, task_nest
 
@@ -70,7 +83,7 @@ def streamer_values(
             f"{what}: layout shape {list(layout.shape)} is not the operand's {list(nest.shape)}"
         )
     try:
-        layout.check(l1)
+        layout.check(l1, np.dtype(streamer.dtype).itemsize)
     except LayoutError as e:
         raise StreamError(f"{what}: {e}") from None
 
@@ -96,5 +109,13 @@ def streamer_values(
         "base": layout.base + _dot(nest.offset, layout),
         "temporal_bounds": [b for b, _ in temporal],
         "temporal_strides": [_dot(s, layout) for _, s in temporal],
-        "spatial_strides": [_dot(s, layout) for _, s in reversed(nest.spatial)],
+        "spatial_strides": in_words(
+            [_dot(s, layout) for _, s in reversed(nest.spatial)], streamer.num_slc
+        ),
     }
+
+
+def in_words(spatial_strides: list[int], num_slc: int) -> list[int]:
+    """Spatial byte strides, fastest first, with the fastest a channel's: num_slc elements on,
+    one word for a packed port (D142)."""
+    return [spatial_strides[0] * num_slc, *spatial_strides[1:]] if spatial_strides else []

@@ -11,8 +11,6 @@ Each is checked on small numbers in the reference executor.
 
 from __future__ import annotations
 
-import dataclasses
-
 import dace
 import numpy as np
 import pytest
@@ -45,7 +43,7 @@ def axpy():
 
 def test_axpy_alpha_is_a_scalar_container(axpy):
     a = axpy.containers["alpha"]
-    assert (a.shape, a.dtype, a.transient, a.attrs) == ([1], "int64", False, {"sdfg.scalar": True})
+    assert (a.shape, a.dtype, a.transient, a.attrs) == ([1], "int32", False, {"sdfg.scalar": True})
     assert axpy.node("mult").inputs["in1"].to_dict() == {"data": "alpha", "subset": [0]}
     assert _loops(axpy) == [
         ("mult_map", "i", "0:N"),
@@ -56,13 +54,13 @@ def test_axpy_alpha_is_a_scalar_container(axpy):
 
 
 def test_executor_takes_a_numpy_scalar(axpy):
-    """alpha = 3, x = (1, 2), y = (10, 20) gives y = (13, 26), as np.int64(3) or as [3]."""
-    x, y = np.array([1, 2], dtype=np.int64), np.array([10, 20], dtype=np.int64)
-    for alpha in (np.int64(3), np.array([3], dtype=np.int64)):
+    """alpha = 3, x = (1, 2), y = (10, 20) gives y = (13, 26), as np.int32(3) or as [3]."""
+    x, y = np.array([1, 2], dtype=np.int32), np.array([10, 20], dtype=np.int32)
+    for alpha in (np.int32(3), np.array([3], dtype=np.int32)):
         out = execute(axpy, {"alpha": alpha, "x": x, "y": y})
         assert out["y"].tolist() == [13, 26]
     with pytest.raises(ExecutionError, match="input 'alpha'"):
-        execute(axpy, {"alpha": np.array([3, 4], dtype=np.int64), "x": x, "y": y})
+        execute(axpy, {"alpha": np.array([3, 4], dtype=np.int32), "x": x, "y": y})
 
 
 # =============================================================================
@@ -98,11 +96,9 @@ def test_a_view_into_a_transient_is_not_folded():
 
 
 def _relu_int32() -> dace.SDFG:
-    """relu's SPEC at int32, as it was in KER0: DaCe writes max(__in1, dace.int32(0))."""
-    spec = load("relu")
-    N = dace.symbol("N")
-    spec = dataclasses.replace(spec, descriptors={"A": dace.int32[N], "B": dace.int32[N]})
-    return build(spec, simplify=True)
+    """relu's SPEC, int32 (as in KER0, and again since PACK0 R3): DaCe writes
+    max(__in1, dace.int32(0))."""
+    return build(load("relu"), simplify=True)
 
 
 def _tasklet(sdfg: dace.SDFG) -> dace.sdfg.nodes.Tasklet:
@@ -112,7 +108,7 @@ def _tasklet(sdfg: dace.SDFG) -> dace.sdfg.nodes.Tasklet:
 
 def test_relu_at_int64_and_int32_reads_max():
     for g, dtype in (
-        (import_kernel("relu"), "int64"),
+        (import_kernel("relu", {"A": "int64", "B": "int64"}), "int64"),  # a recipe's dtypes
         (import_sdfg(_relu_int32(), "relu"), "int32"),
     ):
         assert _loops(g) == [
@@ -163,9 +159,9 @@ def test_matadd_is_two_nested_maps():
         ("add", "out = in1 + in2"),
     ]
     assert [m.subset for m in g.node("add").inputs.values()] == [["i", "j"], ["i", "j"]]
-    A = np.arange(6, dtype=np.int64).reshape(2, 3)
-    B = 10 * np.arange(6, dtype=np.int64).reshape(2, 3)
-    C = execute(g, {"A": A, "B": B, "C": np.zeros((2, 3), np.int64)})["C"]
+    A = np.arange(6, dtype=np.int32).reshape(2, 3)
+    B = 10 * np.arange(6, dtype=np.int32).reshape(2, 3)
+    C = execute(g, {"A": A, "B": B, "C": np.zeros((2, 3), np.int32)})["C"]
     assert C.tolist() == [[0, 11, 22], [33, 44, 55]]
 
 

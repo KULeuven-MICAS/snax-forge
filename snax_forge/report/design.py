@@ -12,11 +12,17 @@ the kernel from the run's functional check.
     components   the accelerator, its movers, the DMA and the cores
     accelerators instance, unit, BRM and implementation, params, latency,
                  target II (the datapath file's), ports
-    streamers    one per mover: instance port, direction, lanes, FIFO depth,
+    streamers    one per mover: instance port, direction, the container's
+                 dtype, num_slc (its slices, elements, per 64-bit word),
+                 num_ch (the channels the port uses, the mover's
+                 num_channel: words per beat, D142), FIFO depth,
                  temporal loops and the container it streams (from the
                  graph's memlets)
-    memories     per memory the design point's layouts: base, end, bytes,
-                 share, banks (L1) or words of a beat (L2), rows or beats
+    memories     per memory the design point's layouts: base, end (the extent
+                 the memory checks use, padding included: run.padding_of),
+                 bytes, share, padding (a tail's pad elements and the bytes
+                 to a whole DMA beat, D144), banks (L1) or words of a beat
+                 (L2), rows or beats
     notes        facts about addresses only: movers of the accelerator whose
                  containers start in the same banks, or lie a whole number of
                  bank rows apart, so that element i of both is in one bank;
@@ -31,7 +37,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.lower.layout import Layout, round_up
-from snax_forge.run import Cluster, Region, regions_of
+from snax_forge.run import Cluster, Region, padding_of, regions_of
 
 from .markdown import kib, kv, pct, span_text, spans, table
 from .record import Record
@@ -76,7 +82,9 @@ class StreamerRow(Record):
     instance: str | None
     port: str | None
     direction: str
-    lanes: int
+    dtype: str
+    num_slc: int
+    num_ch: int
     fifo_depth: int
     temporal_dims: int
     container: str | None
@@ -86,11 +94,21 @@ class StreamerRow(Record):
 class RegionRow(Record):
     name: str
     base: int
-    end: int
+    end: int  # the extent the memory checks use, padding included
     bytes: int
     share: float
     banks: str  # columns touched, as spans ("0–15")
     rows: str
+    data_end: int  # the padded block's end
+    pad_elements: int  # a tail's pads (D144)
+    beat_pad_bytes: int  # up to a whole DMA beat
+
+    @property
+    def padding(self) -> str:
+        parts = [f"{self.pad_elements} pad element{'s' if self.pad_elements != 1 else ''}"
+                 if self.pad_elements else "",
+                 f"{self.beat_pad_bytes} B to a whole beat" if self.beat_pad_bytes else ""]  # fmt: skip
+        return ", ".join(p for p in parts if p) or "none"
 
 
 @dataclass
@@ -121,7 +139,8 @@ class DesignReport(Record):
 
 
 def _words(lay: Layout, base: int, word: int) -> np.ndarray:
-    """The word index from ``base`` of every element of a layout, one element per word."""
+    """The word index from ``base`` of every element of a layout (several narrow elements
+    share a word, D142)."""
     idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
     return (lay.address(idx) - base) // word
 
@@ -143,11 +162,14 @@ def _memory_tables(cluster: Cluster, regions: list[Region], point: Any) -> list[
                 continue
             name, lay = region.container, region.layout
             w = _words(lay, base, word)
-            n = int(w.size) * word
-            lo, hi = lay.extent(word)
-            region_rows.append(RegionRow(name, lo, hi, n, n / size,
+            n = int(w.size) * region.itemsize
+            lo, _ = lay.extent(region.itemsize)
+            pad = padding_of(point, region, cluster.dma_beat_bytes)
+            beat_pad = pad.beat_pad[1] - pad.beat_pad[0] if pad.beat_pad else 0
+            region_rows.append(RegionRow(name, lo, pad.end, n, n / size,
                                      spans(sorted({int(x) % columns for x in w})),
-                                     span_text([int(w.min()) // columns, int(w.max()) // columns])))  # fmt: skip
+                                     span_text([int(w.min()) // columns, int(w.max()) // columns]),
+                                     pad.data_end, len(pad.pads), beat_pad))  # fmt: skip
         region_rows.sort(key=lambda r: r.base)
         out.append(MemoryTable(mem, columns, rows, word, size, sum(r.bytes for r in region_rows),
                                region_rows))  # fmt: skip
@@ -160,6 +182,7 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     word, banks = cluster.bank_bytes, cluster.banks
     row_bytes = word * banks
     l1 = {r.container: r.layout for r in regions if r.memory == "l1"}
+    elem = {r.container: r.itemsize for r in regions if r.memory == "l1"}
     lays = {s.container: l1[s.container] for s in streamers if s.container in l1}
     ss = [s for s in streamers if s.container in lays]
     notes = []
@@ -167,11 +190,13 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
         for b in ss[i + 1 :]:
             la, lb = lays[a.container], lays[b.container]  # type: ignore[index]
 
-            def first_banks(lay: Layout, lanes: int) -> list[int]:
-                w = _words(lay, cluster.l1_base, word)[:lanes]
-                return sorted({int(x) % banks for x in w})
+            def first_banks(lay: Layout, num_ch: int) -> list[int]:
+                """The banks of a mover's first beat: its first ``num_ch`` words (several
+                narrow elements share one, D142)."""
+                w = list(dict.fromkeys(int(x) for x in _words(lay, cluster.l1_base, word)))
+                return sorted({x % banks for x in w[:num_ch]})
 
-            both = sorted(set(first_banks(la, a.lanes)) & set(first_banks(lb, b.lanes)))
+            both = sorted(set(first_banks(la, a.num_ch)) & set(first_banks(lb, b.num_ch)))
             if (
                 la.strides == lb.strides
                 and la.shape == lb.shape
@@ -192,7 +217,7 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     for name, lay in l1.items():
         if name not in l2:
             continue
-        size = int(np.prod(lay.shape)) * word
+        size = int(np.prod(lay.shape)) * elem[name]
         if size % beat:
             moved = round_up(size, beat)
             base = lay.base
@@ -244,7 +269,7 @@ def build_design(
     components = [ComponentRow(a.name, "accelerator", f"{u.get('unit', '')} on core{a.core}, "
                                f"{u.get('wait', '')}, slot {a.slot}")]  # fmt: skip
     components += [ComponentRow(m.name, "streamer", f"{'writer' if m.write else 'reader'} "
-                                f"{m.gvsoc}, {m.lanes} lanes, FIFO depth {m.fifo_depth}")
+                                f"{m.gvsoc}, num_ch {m.lanes}, FIFO depth {m.fifo_depth}")
                    for m in a.movers]  # fmt: skip
     components.append(ComponentRow("dma", "dma", f"the iDMA on core{cluster.dma_core}"))
     components += [ComponentRow(c, "core", "the accelerator's" if i == a.core
@@ -257,8 +282,9 @@ def build_design(
                        dict(inst.params) if inst else {}, int(u.get("latency", 0)),
                        int(u.get("ii", 1)), [f"{m.port} ← {m.name}" for m in a.movers])]  # fmt: skip
     streamers = [
-        StreamerRow(m.name, a.name, m.port, "write" if m.write else "read", m.lanes, m.fifo_depth,
-                    point.streamers[m.name].temporal_dims, containers.get(m.name))
+        StreamerRow(m.name, a.name, m.port, "write" if m.write else "read",
+                    point.streamers[m.name].dtype, point.streamers[m.name].num_slc, m.lanes,
+                    m.fifo_depth, point.streamers[m.name].temporal_dims, containers.get(m.name))
         for m in a.movers
     ]  # fmt: skip
     return DesignReport(name, header, components, accels, streamers,
@@ -323,20 +349,32 @@ def render_design(r: DesignReport) -> str:
     )
     out += ["", "## Streamers", ""]
     out += table(
-        ["Streamer", "Serves", "Direction", "Lanes", "FIFO depth", "Temporal loops", "Container"],
+        [
+            "Streamer",
+            "Serves",
+            "Direction",
+            "dtype",
+            "num_slc",
+            "num_ch",
+            "FIFO depth",
+            "Temporal loops",
+            "Container",
+        ],
         [
             [
                 s.name,
                 f"{s.instance}.{s.port}" if s.instance else None,
                 s.direction,
-                s.lanes,
+                s.dtype,
+                s.num_slc,
+                s.num_ch,
                 s.fifo_depth,
                 s.temporal_dims,
                 s.container,
             ]
             for s in r.streamers
         ],
-        {3, 4, 5},
+        {4, 5, 6, 7},
     )
     for m in r.memories:
         if m.mem == "l1":
@@ -354,10 +392,14 @@ def render_design(r: DesignReport) -> str:
                 "End",
                 "Bytes",
                 "Share",
+                "Padding",
                 "Banks" if m.mem == "l1" else "Words",
                 "Rows" if m.mem == "l1" else "Beats",
             ],
-            [[x.name, x.base, x.end, x.bytes, pct(x.share), x.banks, x.rows] for x in m.regions],
+            [
+                [x.name, x.base, x.end, x.bytes, pct(x.share), x.padding, x.banks, x.rows]
+                for x in m.regions
+            ],
             {1, 2, 3, 4},
         )
         out += [

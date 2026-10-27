@@ -662,12 +662,19 @@ def import_sdfg(sdfg: dace.SDFG, name: str) -> Graph:
     return _Importer(sdfg, name).run()
 
 
-def import_kernel(kernel: str) -> Graph:
+def import_kernel(kernel: str, dtypes: dict[str, str] | None = None) -> Graph:
     """Build the kernel's simplified SDFG (as ``pixi run sdfg`` does), expand it
-    (``sdfg/expand.py``: MatMul and Transpose into dot's shape) and import it."""
+    (``sdfg/expand.py``: MatMul and Transpose into dot's shape) and import it; with
+    ``dtypes`` (a recipe's), those containers at those dtypes, a DfgError naming an
+    unknown container."""
     from snax_forge.sdfg.build import build
     from snax_forge.sdfg.expand import expand
     from snax_forge.sdfg.loader import load
 
     spec = load(kernel)
+    if dtypes:
+        try:
+            spec = spec.with_dtypes(dtypes, f"recipe dtypes for kernel {kernel}")
+        except ValueError as e:
+            raise DfgError(str(e)) from None
     return import_sdfg(expand(build(spec, simplify=True)), spec.name)

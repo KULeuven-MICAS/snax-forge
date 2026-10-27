@@ -33,7 +33,7 @@ from .profile import (
     StreamerProfile,
     WaitProfile,
 )
-from .regions import Region, region_at, regions_of
+from .regions import Padding, Region, padding_of, region_at, regions_of
 from .trace import KINDS, LEVELS, Trace, at_least
 
 __all__ = [
@@ -51,6 +51,7 @@ __all__ = [
     "FifoProfile",
     "Line",
     "Mover",
+    "Padding",
     "PortProfile",
     "Profile",
     "Region",
@@ -65,6 +66,7 @@ __all__ = [
     "core_spans",
     "load_cluster",
     "merge_spans",
+    "padding_of",
     "parse_line",
     "read_events",
     "read_run",

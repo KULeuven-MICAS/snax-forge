@@ -8,7 +8,8 @@ why it fails and the change that fixes it. Checks belong to stages:
     platform   the platform alone: keys, values, L1 and L2 agreeing, banks
     graph      the graph alone: symbols bound, everything bound to an
                accelerator, BRMs and implementations known, instance names
-    connect    the two together: streamer entries, lanes, dtypes, temporal loops
+    connect    the two together: streamer entries, lanes, dtypes, packing,
+               padding, num_ch, temporal loops
     memory     the memory plan (D86): pins and passes, then the plan
                the passes make, its residency, shapes, alignment, fit,
                snRuntime's top of L1 and overlaps
@@ -27,13 +28,15 @@ import difflib
 import json
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
+from fractions import Fraction
 from math import prod
 from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.brm import BrmError, Instance, memlet_ordered
+from snax_forge.brm import BrmError, Instance, accepted, check_dtypes, memlet_ordered, port_dtypes
 from snax_forge.dfg import DfgError, Graph, Node
+from snax_forge.dfg.pad import fold_op, pad_value, padded_shape, tailed_split
 from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import moved_bytes, round_up
 
@@ -49,6 +52,7 @@ from .streamers import (
     instance_of,
     memlet_spatial_bounds,
     nest_spatial_bounds,
+    slices_per_word,
     streamer_name,
 )
 
@@ -217,7 +221,7 @@ def _platform_l2(design: Design) -> Iterable[Problem]:
             f"{l2.beat_bits}, but the L1's wide port (the DMA's) is {l1.wide_bits} bits",
             _set("l2.beat_bits", l1.wide_bits),
         )  # fmt: skip
-    for f in ("width_bits", "dtype", "elems_per_word"):
+    for f in ("width_bits",):
         a, b = getattr(l1, f), getattr(l2, f)
         if a != b:
             yield Problem(
@@ -421,34 +425,264 @@ def _connect_lanes(design: Design) -> Iterable[Problem]:
 
 
 def _connect_dtype(design: Design) -> Iterable[Problem]:
-    pf, g = design.platform, design.graph
-    l1 = pf.l1
-    if l1.elems_per_word != 1:
-        yield Problem(
-            "connect.dtype", "platform.l1.elems_per_word",
-            f"the L1 packs {l1.elems_per_word} elements per word; "
-            "only 1 is supported (open item 21)",
-            _set("l1.elems_per_word", 1),
-        )  # fmt: skip
-    seen: set[str] = set()
+    """Each node's containers pass its BRM's dtype rule (brm/dtypes.py, D143): bind checked
+    it, a hand-edited graph may not. A streamer moves one dtype: every node of an instance
+    puts the same one on a port."""
+    g = design.graph
+    for i, inst in design.instances.items():
+        nodes = [n for n in accelerated(g) if n.attrs["instance"] == i]
+        for p in inst.brm.interface.ports:
+            by: dict[str, list[str]] = {}
+            for n in nodes:
+                by.setdefault(port_dtypes(g, n)[p.name], []).append(n.id)
+            if len(by) > 1:
+                seen = ", ".join(f"{dt} from {', '.join(ids)}" for dt, ids in sorted(by.items()))
+                yield Problem(
+                    "connect.dtype", f"streamer {streamer_name(i, p.name)}",
+                    f"port {p.name} of {_about(design, i)} gets {seen}: one streamer moves one "
+                    "dtype",
+                    "bind the nodes of each dtype to an instance of their own in the recipe",
+                )  # fmt: skip
     for n in accelerated(g):
         inst = design.instances[n.attrs["instance"]]
-        for conn, m in {**n.inputs, **n.outputs}.items():
-            dt = g.containers[m.data].dtype
-            port = inst.brm.port(conn).dtype
-            if dt != port and (n.id, conn) not in seen:
-                seen.add((n.id, conn))
+        dtypes = port_dtypes(g, n)
+        refused = check_dtypes(inst.brm, dtypes)
+        if refused:
+            yield Problem(
+                "connect.dtype", f"node {n.id}", "; ".join(refused),
+                "give the output containers a dtype these inputs accept "
+                f"({accepted(inst.brm, dtypes)})",
+            )  # fmt: skip
+
+
+@dataclass(frozen=True)
+class _Walk:
+    """How a port's memlet walks its container, in elements (row-major)."""
+
+    shape: tuple[int, ...]
+    temporal: list[tuple[str, int, int]]  # (loop, count, element stride), outermost first
+    spatial: list[tuple[int, int, int]]  # (dimension, bound, element stride), fastest first
+    offset: int  # the first element
+
+
+def _walk(design: Design, node: Node, conn: str) -> _Walk | None:
+    """The port's walk; None when its loops or subset are not affine (connect.temporal's)."""
+    g = design.graph
+    m = (node.inputs | node.outputs)[conn]
+    try:
+        loops = firing_loops(g, node)
+    except LoopError:
+        return None
+    names = [lp.var for lp in loops]
+    symbols = g.bound_symbols
+    shape = padded_shape(g, m.data)  # a tailed split's padding is in the rows (D144)
+    rows = [prod(shape[d + 1 :]) for d in range(len(shape))]
+    stride = dict.fromkeys(names, 0)
+    offset = 0
+    spatial = []
+    try:
+        for d, dim in enumerate(m.subset):
+            parts = parse_dim(dim, f"node {node.id}.{conn}")
+            const, co = expr.linear(parts[0], names)
+            start = expr.evaluate(const, symbols) + sum(co[lp.var] * lp.begin for lp in loops)
+            offset += start * rows[d]
+            for v in names:
+                stride[v] += co[v] * rows[d]
+            if len(parts) >= 2:  # a range: the lanes along this dimension
+                diff = f"({parts[1]}) - ({parts[0]})"
+                length = expr.evaluate(expr.linear(diff, names)[0], symbols)
+                step = expr.evaluate(parts[2], symbols) if len(parts) == 3 else 1
+                spatial.append((d, len(range(0, length, step)), step * rows[d]))
+    except (expr.ExprError, ValueError):
+        return None
+    temporal = [(lp.var, lp.count, stride[lp.var] * lp.step) for lp in loops]
+    return _Walk(tuple(shape), temporal, spatial[::-1], offset)
+
+
+def _connect_pack(design: Design) -> Iterable[Problem]:
+    """Each port's elements fill whole words (D142): with num_slc slices (elements) of its
+    container's dtype per word, the fastest spatial bound S_0 is a multiple of num_slc, the
+    fastest spatial loop steps 1 element, every other loop a multiple of num_slc, and the start
+    is on a word. At num_slc = 1 every port passes. The base address is memory.align's. At any k, a memlet stays inside
+    its container's padded shape (a tail's padding, D144, as the reference executor
+    requires)."""
+    g, pf = design.graph, design.platform
+    for n in accelerated(g):
+        for conn, m in (n.inputs | n.outputs).items():
+            yield from _reach(design, n, conn)
+            dtype = g.containers[m.data].dtype
+            num_slc = slices_per_word(dtype, pf.l1.width_bits)
+            walk = _walk(design, n, conn) if num_slc > 1 else None
+            if walk is None:
+                continue
+            out = conn in n.outputs
+            yield from _pack(f"node {n.id}.{conn}", m.data, dtype, num_slc, out, walk)
+
+
+def _reach(design: Design, node: Node, conn: str) -> Iterator[Problem]:
+    """Each dimension of a port's memlet takes indices below the container's padded extent."""
+    g = design.graph
+    m = (node.inputs | node.outputs)[conn]
+    try:
+        loops = firing_loops(g, node)
+    except LoopError:
+        return  # connect.temporal's
+    padded = padded_shape(g, m.data)
+    symbols = g.bound_symbols
+    for d, dim in enumerate(m.subset):
+        try:
+            parts = parse_dim(dim, f"node {node.id}.{conn}")
+            last = parts[0] if len(parts) == 1 else f"({parts[1]}) - 1"
+            const, co = expr.linear(last, [lp.var for lp in loops])
+            hi = expr.evaluate(const, symbols) + sum(
+                co[lp.var] * (lp.begin + (lp.count - 1) * lp.step if co[lp.var] > 0 else lp.begin)
+                for lp in loops
+                if lp.count
+            )
+        except (expr.ExprError, ValueError):
+            return  # connect.temporal's
+        if hi >= padded[d]:
+            yield Problem(
+                "connect.pack", f"node {node.id}.{conn}",
+                f"memlet {m.data}{m.subset} reaches index {hi} on dimension {d}, past its padded "
+                f"extent {padded[d]} (the container's {g.containers[m.data].shape[d]}, a tail's "
+                "padding included, D144)",
+            )  # fmt: skip
+
+
+def _pack(
+    where: str, c: str, dtype: str, num_slc: int, out: bool, walk: _Walk
+) -> Iterator[Problem]:
+    shape = list(walk.shape)
+    lanes = prod(b for _, b, _ in walk.spatial)
+    s0, fastest = (walk.spatial[0][1], walk.spatial[0][2]) if walk.spatial else (1, 1)
+    of = f"{dtype}, num_slc = {num_slc} slices per word"
+    if lanes < num_slc:
+        yield Problem(
+            "connect.pack", where,
+            f"W = {lanes} lane{'s' if lanes > 1 else ''} < num_slc = {num_slc} ({of}): a beat would fill "
+            "part of a word",
+            f"make {'the output' if out else 'the'} container {c} int64 or uint64 (one element "
+            f"per word), or give the port num_slc = {num_slc} lanes",
+        )  # fmt: skip
+        return
+    if s0 % num_slc:
+        yield Problem(
+            "connect.pack", where,
+            f"the fastest spatial bound S_0 = {s0} is not a multiple of num_slc ({of}): a beat's "
+            "fastest lanes must fill whole words (D142)",
+            f"make the fastest spatial bound a multiple of {num_slc} (the split factor in the recipe)",
+        )  # fmt: skip
+        return  # a loop stepping by S_0 fails only because of it: one cause, one problem
+    if fastest != 1:
+        yield Problem(
+            "connect.pack", where,
+            f"the lanes do not run along contiguous elements: the fastest spatial loop steps "
+            f"{fastest} elements of {c}{shape}, not 1 ({of})",
+            f"make {c} a container of 64-bit elements (int64 or uint64, one per word), or change "
+            "the loop order so the lanes run along its last dimension",
+        )  # fmt: skip
+        return
+    loops = [(f"loop {v}", s) for v, count, s in walk.temporal if count > 1]
+    loops += [(f"the spatial loop over dimension {d}", s) for d, b, s in walk.spatial[1:] if b > 1]
+    bad = [(name, s) for name, s in loops if s % num_slc]
+    row = shape[-1] if len(shape) > 1 else None
+    if bad and row is not None and row % num_slc:
+        steps = ", ".join(f"{name} steps {s}" for name, s in bad)
+        yield Problem(
+            "connect.pack", where,
+            f"row stride {row} of {c}{shape} is not a multiple of num_slc ({of}): {steps} elements, "
+            "so its beats would start inside a word",
+            f"pad the leading dimension to {round_up(row, num_slc)}",
+        )  # fmt: skip
+        return
+    for name, s in bad:
+        yield Problem(
+            "connect.pack", where,
+            f"{name} steps {s} elements of {c}, not a multiple of num_slc ({of}): its beats would "
+            "start inside a word",
+            f"step it by a multiple of {num_slc} elements",
+        )  # fmt: skip
+    if walk.offset % num_slc:
+        yield Problem(
+            "connect.pack", where,
+            f"starts at element {walk.offset} of {c}, not on a word ({of})",
+            f"start it at a multiple of {num_slc} elements",
+        )  # fmt: skip
+
+
+def _connect_pad(design: Design) -> Iterable[Problem]:
+    """A tail's padding is in the data, never masked by the hardware (D144): a container an
+    accelerator writes holds its pad lanes' values too, so a fold may not read it through a
+    tail; and every reader of a container must need the same pad."""
+    g = design.graph
+    nodes = accelerated(g)
+    outer = {n.id: o for n, o in g.walk()}
+    for c in g.containers:
+        writers = [n.id for n in nodes if any(m.data == c for m in n.outputs.values())]
+        for n in nodes:
+            tailed = {m.attrs["var"] for m in outer[n.id] if tailed_split(m)}
+            reads = [m for m in n.inputs.values() if m.data == c]
+            if not (writers and tailed and fold_op(n) and reads):
+                continue
+            if any(tailed & set(m.names) for m in reads):
                 yield Problem(
-                    "connect.dtype", f"node {n.id}.{conn}",
-                    f"container {m.data} is {dt}, port {conn} of {inst.brm.name} takes {port}",
+                    "connect.pad", f"container {c}",
+                    f"is written by {', '.join(writers)} and read through a tail by the fold "
+                    f"{n.id}: the producer's pad lanes would reach the fold (the hardware masks "
+                    "nothing, D144)",
+                    "a size that divides W, or a split factor that divides n",
                 )  # fmt: skip
-            if dt != l1.dtype and m.data not in seen:
-                seen.add(m.data)
-                fix = _set("l1.dtype", dt) + (f" {_set('l2.dtype', dt)}" if pf.l2 else "")
-                yield Problem(
-                    "connect.dtype", f"container {m.data}",
-                    f"is {dt}, but the L1 holds {l1.dtype}", fix,
-                )  # fmt: skip
+        try:
+            pad_value(g, c)
+        except DfgError as e:
+            yield Problem("connect.pad", f"container {c}", str(e).split(": ", 1)[1])
+
+
+def _port_spatial_bounds(design: Design, s: str, i: str, p: str) -> list[int] | None:
+    """A streamer's spatial bounds as the shell resolves them (streamers.py); None if they
+    cannot be read (connect.lanes reports it)."""
+    sb = design.platform.spatial_bounds(s)
+    if sb is not None:
+        return sb
+    inst = design.instances[i]
+    try:
+        if memlet_ordered(inst.brm):
+            node = instance_nodes(design.graph)[i]
+            m = (node.inputs | node.outputs)[p]
+            return memlet_spatial_bounds(m, design.graph.bound_symbols, f"node {node.id}.{p}")
+        return nest_spatial_bounds(inst, p)
+    except ValueError:
+        return None
+
+
+def _connect_num_ch(design: Design) -> Iterable[Problem]:
+    """A streamer entry's ``num_ch`` against the wire default W / num_slc (D142): only that is
+    placed for now, since any other needs the FIFO slicer."""
+    g, pf = design.graph, design.platform
+    for s, (i, p) in _streamers(design).items():
+        num_ch = pf.num_ch(s)
+        sb = None if num_ch is None else _port_spatial_bounds(design, s, i, p)
+        if sb is None:
+            continue
+        node = instance_nodes(g)[i]
+        dtype = g.containers[(node.inputs | node.outputs)[p].data].dtype
+        num_slc = slices_per_word(dtype, pf.l1.width_bits)
+        lanes = prod(sb)
+        if lanes % num_slc or num_ch == lanes // num_slc:  # num_slc not dividing W: pack's
+            continue
+        wire = lanes // num_slc
+        allowed = [d for d in range(1, wire + 1) if wire % d == 0]
+        listed = ", ".join(f"{d} (the wire default)" if d == wire else str(d) for d in allowed)
+        yield Problem(
+            "connect.num_ch", f"platform.streamers.{s}.num_ch",
+            f"num_ch = {num_ch} for {lanes} lanes of {dtype} (num_slc = {num_slc}): rho = num_ch "
+            f"* num_slc / W = {Fraction(num_ch * num_slc, lanes)}. Only the wire default "
+            f"W / num_slc = {wire} is placed for now: rho != 1 needs the FIFO slicer, which the "
+            f"flow does not place yet (D142). With rho <= 1, num_ch may be {listed}; a value with "
+            "rho > 1 never helps a unit firing once per cycle",
+            f"remove num_ch, or {_set(f'streamers.{s}.num_ch', wire)}",
+        )  # fmt: skip
 
 
 def _connect_temporal(design: Design) -> Iterable[Problem]:
@@ -551,21 +785,26 @@ def _memory_align(design: Design) -> Iterable[Problem]:
     for c, m, lay in _layouts(design):
         if m != "l1":  # an L2 layout's base is the link's (D86)
             continue
-        word = ctx.word_bytes(m)
+        word, elem = ctx.word_bytes(m), ctx.elem_bytes(c)
         where = f"{c} in {m}"
-        if lay.base % word or any(s % word for s in lay.strides):
+        if lay.base % word:
+            yield Problem(
+                "memory.align", where, f"base {lay.base} must be a multiple of the {word}-byte word",
+                f"--set memory.{c}.{m}.base={round_up(lay.base, word)}",
+            )  # fmt: skip
+            continue
+        if any(s % elem for s in lay.strides):
             yield Problem(
                 "memory.align", where,
-                f"base {lay.base} and strides {list(lay.strides)} must be multiples of the "
-                f"{word}-byte word",
-                f"--set memory.{c}.{m}.base={round_up(lay.base, word)}",
+                f"strides {list(lay.strides)} must be multiples of the {elem}-byte element "
+                f"({design.graph.containers[c].dtype})",
             )  # fmt: skip
             continue
         mems = design.memory.layouts.get(c, {})
         if "l2" not in mems:
             continue
         beat = ctx.beat_bytes
-        contiguous = type(lay).contiguous(lay.base, lay.shape, word)
+        contiguous = type(lay).contiguous(lay.base, ctx.padded(c), elem)  # pads in, D144
         if lay.strides != contiguous.strides:
             yield Problem(
                 "memory.align", where,
@@ -580,10 +819,11 @@ def _memory_align(design: Design) -> Iterable[Problem]:
             )  # fmt: skip
 
 
-def _extent(lay: Any, word: int, beat: int | None = None) -> tuple[int, int]:
-    """Bytes ``[lo, hi)`` a layout covers; with ``beat``, up to the end of its last beat (D105)."""
-    lo, hi = lay.extent(word)
-    return (lo, lo + moved_bytes(lay, word, beat)) if beat is not None else (lo, hi)
+def _extent(lay: Any, elem_bytes: int, beat: int | None = None) -> tuple[int, int]:
+    """Bytes ``[lo, hi)`` a layout of ``elem_bytes`` elements covers; with ``beat``, up to the
+    end of its last beat (D105)."""
+    lo, hi = lay.extent(elem_bytes)
+    return (lo, lo + moved_bytes(lay, elem_bytes, beat)) if beat is not None else (lo, hi)
 
 
 def _moved_beats(design: Design, beat: int) -> dict[str, int | None]:
@@ -605,7 +845,7 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
             continue
         # an L2 layout has base 0, its array's address the link's (D86): only its size counts
         start, end = ctx.span(m) if m == "l1" else (0, pf.l2.size_bytes)
-        lo, hi = _extent(lay, ctx.word_bytes(m), moved[c])
+        lo, hi = _extent(ctx.block(c, lay), ctx.elem_bytes(c), moved[c])
         if lo < start or hi > end:
             pinned = (c, m) in design.memory.spec.pins()
             if m == "l1":
@@ -656,7 +896,7 @@ def _memory_runtime(design: Design) -> Iterable[Problem]:
     for c, m, lay in _layouts(design):
         if m != "l1":
             continue
-        lo, hi = _extent(lay, ctx.word_bytes(m), moved[c])
+        lo, hi = _extent(ctx.block(c, lay), ctx.elem_bytes(c), moved[c])
         if hi <= limit or lo < start or hi > end:  # past the end is memory.fit's
             continue
         align = moved[c] or ctx.word_bytes(m)
@@ -677,14 +917,15 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
     pins = design.memory.spec.pins()
     moved = _moved_beats(design, ctx.beat_bytes)
     for m in ("l1",):  # L2 holds data.h's arrays, which the link places apart (D86)
-        word = ctx.word_bytes(m)
         items = [(c, lay) for c, mm, lay in _layouts(design) if mm == m]
         for (a, la), (b, lb) in _pairs(items):
-            alo, ahi = _extent(la, word, moved[a])
-            blo, bhi = _extent(lb, word, moved[b])
+            ea, eb = ctx.elem_bytes(a), ctx.elem_bytes(b)
+            la, lb = ctx.block(a, la), ctx.block(b, lb)  # a tail's pads take memory (D144)
+            alo, ahi = _extent(la, ea, moved[a])
+            blo, bhi = _extent(lb, eb, moved[b])
             if alo >= bhi or blo >= ahi:
                 continue
-            shared = _shared(la, lb, word, moved[a], moved[b])
+            shared = _shared(la, lb, ea, eb, moved[a], moved[b])
             if not shared:
                 continue
             pinned = [x for x in (a, b) if (x, m) in pins]
@@ -692,7 +933,11 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
             if pinned:
                 order = list(design.memory.changes)
                 p = max(pinned, key=lambda x: order.index(f"{x}.{m}.base"))  # the latest pin
-                end = max(_extent(lay, word)[1] for _, mm, lay in _layouts(design) if mm == m)
+                end = max(
+                    _extent(ctx.block(x, lay), ctx.elem_bytes(x))[1]
+                    for x, mm, lay in _layouts(design)
+                    if mm == m
+                )
                 free = round_up(end, ctx.beat_bytes)
                 fix = (
                     f"move the pin past everything: --set memory.{p}.{m}.base={free}, or remove it"
@@ -712,18 +957,20 @@ def _pairs(items: list[Any]) -> Iterator[tuple[Any, Any]]:
 
 
 def _shared(
-    la: Any, lb: Any, word: int, beat_a: int | None = None, beat_b: int | None = None
-) -> int:
-    """Bytes two layouts both use (element addresses, each a word; a moved one's padding too)."""
+    la: Any, lb: Any, elem_a: int, elem_b: int, beat_a: int | None = None,
+    beat_b: int | None = None,
+) -> int:  # fmt: skip
+    """Bytes two layouts both use (each element its ``elem_*`` bytes; a moved one's padding
+    too)."""
     import numpy as np
 
-    def addrs(lay: Any, beat: int | None) -> Any:
+    def byte_addrs(lay: Any, elem: int, beat: int | None) -> Any:
         if beat is not None:  # the DMA writes the whole last beat (D105)
-            return np.arange(lay.base, lay.base + moved_bytes(lay, word, beat), word)
+            return np.arange(lay.base, lay.base + moved_bytes(lay, elem, beat))
         idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
-        return lay.address(idx)
+        return (lay.address(idx)[:, None] + np.arange(elem)).ravel()
 
-    return int(np.intersect1d(addrs(la, beat_a), addrs(lb, beat_b)).size) * word
+    return int(np.intersect1d(byte_addrs(la, elem_a, beat_a), byte_addrs(lb, elem_b, beat_b)).size)
 
 
 for _code, _stage, _fn in (
@@ -739,6 +986,9 @@ for _code, _stage, _fn in (
     ("connect.derived", "connect", _connect_derived),
     ("connect.lanes", "connect", _connect_lanes),
     ("connect.dtype", "connect", _connect_dtype),
+    ("connect.pack", "connect", _connect_pack),
+    ("connect.pad", "connect", _connect_pad),
+    ("connect.num_ch", "connect", _connect_num_ch),
     ("connect.temporal", "connect", _connect_temporal),
     ("memory.pin", "memory", _memory_pin),
     ("memory.residency", "memory", _memory_residency),

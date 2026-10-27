@@ -95,7 +95,14 @@ class ElementwiseAlu(
     s"supportedOps must fit in ${ElementwiseOp.width} bits, got ${supportedOps.mkString(",")}"
   )
 
-  override def desiredName: String = s"ElementwiseAlu_w${dataWidth}_${ElementwiseOp.tag(supportedOps)}"
+  /** `_s` or `_u` when min or max compares: two such ALUs of one width but not one signedness are different modules.
+    * The other ops are signedness-agnostic and keep their names.
+    */
+  private def signedness: String =
+    if (supportedOps.exists(op => op == ElementwiseOp.Min || op == ElementwiseOp.Max)) if (signed) "_s" else "_u"
+    else ""
+
+  override def desiredName: String = s"ElementwiseAlu_w${dataWidth}${signedness}_${ElementwiseOp.tag(supportedOps)}"
 
   val io = IO(new Bundle {
     val opSel = Input(UInt(ElementwiseOp.width.W))

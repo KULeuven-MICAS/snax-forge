@@ -4,12 +4,15 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.ForgeTester
+import snax.forge.{ForgeTester, LaneBits}
 
 class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
 
-  private val W    = 32
+  private val W    = 64
   private val Mask = (BigInt(1) << W) - 1
+
+  /** The block at int64 in and out (sums wrap at 64 bits; values are bit patterns). */
+  private def int64(lanes: Int = 1): Accumulator = new Accumulator("int64", "int64", lanes)
 
   /** `peek().litToBoolean` rather than `peekBoolean()`: the latter moved between the testableBool and testableData
     * implicit classes across chiseltest versions, and resolving it is not worth a version argument.
@@ -44,14 +47,14 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
     (0 until cycles).map { c =>
       val offer = left.nonEmpty && inValid(c)
       dut.io.in.valid.poke(offer.B)
-      dut.io.in.bits(0).poke(left.headOption.getOrElse(BigInt(0)).U)
+      LaneBits.poke(dut.io.in.bits(0), left.headOption.getOrElse(BigInt(0)))
       dut.io.out.ready.poke(outReady(c).B)
       val busy  = isHigh(dut.io.busy)
       if (!busy) dut.io.in.ready.expect(false.B, s"cycle $c: in.ready while idle")
       if (waiting) dut.io.out.valid.expect(true.B, s"cycle $c: out.valid fell before out fired")
       val fire  = offer         && isHigh(dut.io.in.ready)
       val push  =
-        if (isHigh(dut.io.out.valid) && outReady(c)) Some(dut.io.out.bits.peek().litValue)
+        if (isHigh(dut.io.out.valid) && outReady(c)) Some(LaneBits.peek(dut.io.out.bits))
         else None
       waiting = isHigh(dut.io.out.valid) && !outReady(c)
       val done  = isHigh(dut.io.done)
@@ -67,7 +70,7 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   behavior of "Accumulator"
 
   it should "give each sum one cycle after its T-th input, with no gap between sums (T = 4, n = 8)" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       val data = (1 to 8).map(BigInt(_))
       begin(dut, n = 8, t = 4)
       val trace = run(dut, data, cycles = 11)
@@ -84,7 +87,7 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "hold its result and take no input while out is not ready" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       val data = (1 to 8).map(BigInt(_))
       begin(dut, n = 8, t = 4)
       // Out stalls in cycles 4 to 6 (the first sum waiting) and 11 (the last).
@@ -101,7 +104,7 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "make every input a sum at len = 1" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       val data = Seq[BigInt](5, 6, 7, 8)
       begin(dut, n = 4, t = 1)
       val trace = run(dut, data, cycles = 6)
@@ -113,7 +116,7 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "ignore a start with loopCount 0 or len 0" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       for ((n, t) <- Seq((0, 4), (8, 0))) {
         begin(dut, n, t)
         val trace = run(dut, Seq.fill(4)(BigInt(1)), cycles = 3)
@@ -127,7 +130,7 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "not take inputs before a start" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       val data  = Seq[BigInt](1, 2, 3, 4)
       val idle  = run(dut, data, cycles = 3)
       assert(idle.forall(c => !c.fire && !c.busy))
@@ -139,7 +142,7 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "run twice back to back, the second run's beats waiting through the first's last output" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       // Both runs' beats offered without a break: in the cycle the first run's last sum leaves, in.ready stays low,
       // so the second run's first beat is not taken (n inputs taken, not n + 1).
       val first  = Seq[BigInt](1, 2, 3, 4)
@@ -159,7 +162,7 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "end the last sum at the n-th input when n is not a multiple of len" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       begin(dut, n = 6, t = 4)
       val trace = run(dut, (1 to 8).map(BigInt(_)), cycles = 9)
       assert(trace.count(_.fire) == 6)
@@ -169,7 +172,7 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "tolerate bubbles in the input stream" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       val data = Seq[BigInt](11, 22, 33, 44, 55, 66)
       begin(dut, n = 6, t = 3)
       // A reduction has no II obligation to meet, so starving it must only slow it down, never corrupt it.
@@ -180,34 +183,34 @@ class AccumulatorSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "wrap the accumulator rather than saturate" in {
-    test(new Accumulator(width = W, accWidth = W)) { dut =>
+    test(int64()) { dut =>
       begin(dut, n = 2, t = 2)
       val trace = run(dut, Seq(Mask, BigInt(3)), cycles = 4)
       assert(trace.flatMap(_.push) == Seq((Mask + 3) & Mask))
     }
   }
 
-  it should "use the extra headroom when accWidth exceeds width" in {
-    test(new Accumulator(width = W, accWidth = 40)) { dut =>
-      // Four near-max 32-bit values overflow 32 bits but fit comfortably in 40, so the widened accumulator must NOT
+  it should "use the extra headroom when outType is wider than inType" in {
+    test(new Accumulator("uint32", "uint64")) { dut =>
+      // Four near-max 32-bit values overflow 32 bits but fit comfortably in 64, so the widened accumulator must NOT
       // wrap here.
-      val data = Seq.fill(4)(Mask)
+      val data = Seq.fill(4)((BigInt(1) << 32) - 1)
       begin(dut, n = 4, t = 4)
       val trace = run(dut, data, cycles = 6)
       assert(trace.flatMap(_.push) == Seq(data.sum))
     }
   }
 
-  it should "sum each beat's lanes through the tree, wrapping at accWidth" in {
-    test(new Accumulator(width = W, accWidth = W, lanes = 4)) { dut =>
+  it should "sum each beat's lanes through the tree, wrapping at outType's width" in {
+    test(int64(lanes = 4)) { dut =>
       val beats = Seq(Seq(Mask, BigInt(1), BigInt(2), BigInt(3)), Seq(BigInt(10), BigInt(20), BigInt(30), BigInt(40)))
       begin(dut, n = 2, t = 2)
       var got = Seq.empty[BigInt]
       for (beat <- beats ++ Seq.fill(2)(Seq.fill(4)(BigInt(0)))) {
         dut.io.in.valid.poke(true.B)
-        for ((v, j) <- beat.zipWithIndex) dut.io.in.bits(j).poke(v.U)
+        for ((v, j) <- beat.zipWithIndex) LaneBits.poke(dut.io.in.bits(j), v)
         dut.io.out.ready.poke(true.B)
-        if (isHigh(dut.io.out.valid)) got :+= dut.io.out.bits.peek().litValue
+        if (isHigh(dut.io.out.valid)) got :+= LaneBits.peek(dut.io.out.bits)
         dut.clock.step()
       }
       assert(got == Seq(beats.flatten.sum & Mask))

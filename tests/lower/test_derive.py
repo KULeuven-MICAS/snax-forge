@@ -84,9 +84,10 @@ def test_two_temporal_maps_give_two_streamer_loops():
 
 
 def test_matadd_lowers_its_two_firing_loops():
-    """matadd at W = 4, M = 8, N = 16 on snax_forge (D73, D84): the column beats innermost (4,
-    32 bytes apart), the rows outer (8, 128 bytes), 4 lanes 8 bytes apart, each base the
-    plan's; n = 32 firings; the streamers' two temporal loops are the graph's."""
+    """matadd (int32, D142) at W = 4, M = 8, N = 16 on snax_forge (D73, D84): the column beats
+    innermost (4, 16 bytes apart), the rows outer (8, 64 bytes), 4 lanes as 2 channels a word
+    (8 bytes) apart, each base the plan's; n = 32 firings; the streamers' two temporal loops
+    are the graph's."""
     d = Design(Platform.load(SNAX_FORGE), bound_matadd())
     assert run_checks(d) == []
     p = DesignPoint.of(d, "matadd")
@@ -97,12 +98,12 @@ def test_matadd_lowers_its_two_firing_loops():
     for port, cont in (("a", "A"), ("b", "B"), ("out", "C")):
         assert c[f"add_acc_{port}"].values == {
             "base": p.memory.layouts[cont]["l1"].base, "temporal_bounds": [4, 8],
-            "temporal_strides": [32, 128], "spatial_strides": [8],
+            "temporal_strides": [16, 64], "spatial_strides": [8],
         }  # fmt: skip
     assert c["add_acc"].values == {"n": 32}
     lay = p.memory.layouts["C"]["l1"]
-    visited = addresses(c["add_acc_out"].values, [4])  # beat i * 4 + j_t, lane
-    assert visited[1 * 4 + 1, 2] == lay.base + 176 == lay.address([1, 6])  # element (1, 6)
+    visited = addresses(c["add_acc_out"].values, [2])  # beat i * 4 + j_t, channel (a word)
+    assert visited[1 * 4 + 1, 1] == lay.base + 88 == lay.address([1, 6])  # elements (1, 6:8)
 
 
 @pytest.mark.parametrize(
@@ -264,3 +265,35 @@ def test_design_and_lower_import_in_any_order(first):
     code = f"import {first}; import snax_forge.design, snax_forge.lower"
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr
+
+
+def test_int32_vecadd_lowers_in_words():
+    """int32 vecadd at W = 4 (D142): each beat two words (spatial stride 8, the streamer's
+    num_ch W / num_slc = 2), a beat on every 16 bytes; each 64 x 4 = 256-byte container moved as
+    four whole DMA beats."""
+
+    def int32(g):
+        for c in g["containers"].values():
+            c["dtype"] = "int32"
+
+    steps = {
+        s.task_name: s for s in task_list(point(edit_graph=int32)).steps if hasattr(s, "task_name")
+    }
+    assert steps["add_acc_a"].values == {
+        "base": 0, "temporal_bounds": [16], "temporal_strides": [16], "spatial_strides": [8]
+    }  # fmt: skip
+    assert steps["load_A"].values["src"]["bounds"] == [4]
+
+
+def test_matadd_int32_4x6_in_2x2_tiles_in_words():
+    """R1's accepted 2-D case (D142): the fastest spatial loop one word (8 bytes, a channel of
+    2 int32), the row loop 6 x 4 bytes; the tiles step 2 columns (8 bytes) and 2 rows
+    (48 bytes)."""
+    m = Memlet("A", ["2 * i:2 * i + 2", "2 * j:2 * j + 2"])
+    loops = [Loop("mi", "i", 0, 2, 1), Loop("mj", "j", 0, 3, 1)]
+    v, sb = memlet_values(m, loops, Layout.contiguous(0, (4, 6), 4), {}, "x", num_slc=2)
+    assert sb == [2, 2]
+    assert v == {"base": 0, "temporal_bounds": [3, 2], "temporal_strides": [8, 48],
+                 "spatial_strides": [8, 24]}  # fmt: skip
+    words = (addresses(v, [1, 2]) // 8).tolist()  # 1 channel of 2 int32 by 2 rows
+    assert words[:3] == [[0, 3], [1, 4], [2, 5]]  # the first row of tiles

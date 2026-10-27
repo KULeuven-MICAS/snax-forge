@@ -3,6 +3,8 @@ package snax.forge.elementwise
 import chisel3._
 import chisel3.util._
 
+import snax.forge.IntType
+
 /** `lanes` lanes, fed `loopCount` times -- the hardware image of the `tiled_spatial` variant.
   *
   * W = tile, T = ceil(N/tile): the interior of the elementwise family, and the only member of it that is a plausible
@@ -23,9 +25,12 @@ import chisel3.util._
   * here would duplicate a calculation SNAX-LOWER already makes for the accelerator's `n`, and would do it in the one
   * place with no access to N.
   *
-  * A consequence worth stating: a final partial tile is not handled. If `lanes` does not divide N, the last pass still
-  * processes `lanes` elements and the surplus is whatever the producer supplied. Masking it is the streamer's job or a
-  * future predication port (open item 31).
+  * ==Types (D143)==
+  *
+  * Each lane runs NumPy's arithmetic: `a` and `b` are lanes of their own types, each extended to `opType` (the
+  * operands' result type, chosen by Python) by its own signedness, the op runs at `opType` (Min and Max comparing by
+  * its signedness), and the result is extended or wrapped into `outType`. `ElementwiseAlu` keeps its `UInt` interface;
+  * the casts sit at its boundary. Each type is fixed at elaboration.
   *
   * ==Handshake==
   *
@@ -33,30 +38,42 @@ import chisel3.util._
   * from `a` and `b` and gives one to `out` in the same cycle, an operand that arrives alone waits, and `valid` does not
   * depend on `ready`. The trip counter advances on each firing.
   *
-  * @param dataWidth
-  *   bits per element, from the BRM port's dtype
+  * @param inTypes
+  *   `a`'s and `b`'s types, NumPy's names ("int32", "uint8"), from the BRM ports' dtypes
+  * @param opType
+  *   the type the op runs at: NumPy's result type of `inTypes`, at least as wide as each
+  * @param outType
+  *   `out`'s type, from the BRM port's dtype
   * @param lanes
   *   elements per beat, i.e. the spatial bound of the map the BRM replaces (W)
   * @param loopCountWidth
   *   bits of trip counter; must hold the largest T the driver will program
   * @param supportedOps
   *   encodings this instance can perform; a single entry emits fixed-function hardware and leaves `opSel` unused
-  * @param signed
-  *   interpret operands as two's complement for Min and Max
   */
 class ElementwiseTiledSpatial(
-  val dataWidth:      Int      = 32,
-  val lanes:          Int      = 4,
-  val loopCountWidth: Int      = 32,
-  val supportedOps:   Seq[Int] = ElementwiseOp.all,
-  val signed:         Boolean  = false
+  val inTypes:        Seq[String] = Seq("int32", "int32"),
+  val opType:         String      = "int32",
+  val outType:        String      = "int32",
+  val lanes:          Int         = 4,
+  val loopCountWidth: Int         = 32,
+  val supportedOps:   Seq[Int]    = ElementwiseOp.all
 ) extends Module {
-  require(dataWidth > 0, s"dataWidth must be positive, got $dataWidth")
+  require(inTypes.size == 2, s"inTypes must name a and b, got ${inTypes.mkString(", ")}")
   require(lanes > 0, s"lanes must be positive, got $lanes")
   require(loopCountWidth > 0, s"loopCountWidth must be positive, got $loopCountWidth")
 
+  private val ins = inTypes.map(IntType(_))
+  private val op  = IntType(opType)
+  private val res = IntType(outType)
+  require(
+    ins.forall(_.width <= op.width),
+    s"opType $opType must be at least as wide as each input (${inTypes.mkString(", ")})"
+  )
+
   override def desiredName: String =
-    s"ElementwiseTiledSpatial_w${dataWidth}_n${lanes}_t${loopCountWidth}_${ElementwiseOp.tag(supportedOps)}"
+    s"ElementwiseTiledSpatial_${ins.map(_.tag).mkString("x")}_${op.tag}_${res.tag}" +
+      s"_n${lanes}_t${loopCountWidth}_${ElementwiseOp.tag(supportedOps)}"
 
   val io = IO(new Bundle {
     val opSel     = Input(UInt(ElementwiseOp.width.W))
@@ -65,22 +82,23 @@ class ElementwiseTiledSpatial(
     val busy      = Output(Bool())
     val done      = Output(Bool())
 
-    val a   = Flipped(Decoupled(Vec(lanes, UInt(dataWidth.W))))
-    val b   = Flipped(Decoupled(Vec(lanes, UInt(dataWidth.W))))
-    val out = Decoupled(Vec(lanes, UInt(dataWidth.W)))
+    val a   = Flipped(Decoupled(Vec(lanes, ins(0).lane)))
+    val b   = Flipped(Decoupled(Vec(lanes, ins(1).lane)))
+    val out = Decoupled(Vec(lanes, res.lane))
   })
 
   private val busy   = RegInit(false.B)
   private val count  = RegInit(0.U(loopCountWidth.W))
   private val target = RegInit(0.U(loopCountWidth.W))
 
-  private val alus = Seq.fill(lanes)(Module(new ElementwiseAlu(dataWidth, supportedOps, signed)))
+  // Per lane: each operand extended to opType by its own signedness, the op at opType, the result into outType.
+  private val alus = Seq.fill(lanes)(Module(new ElementwiseAlu(op.width, supportedOps, op.signed)))
   alus.zipWithIndex.foreach { case (alu, i) =>
-    alu.io.opSel := io.opSel
-    alu.io.a     := io.a.bits(i)
-    alu.io.b     := io.b.bits(i)
+    alu.io.opSel   := io.opSel
+    alu.io.a       := IntType.cast(io.a.bits(i), ins(0), op).asUInt
+    alu.io.b       := IntType.cast(io.b.bits(i), ins(1), op).asUInt
+    io.out.bits(i) := IntType.cast(alu.io.out, op, res)
   }
-  io.out.bits := VecInit(alus.map(_.io.out))
 
   io.a.ready   := busy && io.b.valid && io.out.ready
   io.b.ready   := busy && io.a.valid && io.out.ready

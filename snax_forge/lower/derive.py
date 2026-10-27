@@ -65,10 +65,11 @@ from snax_forge.design.streamers import (
     streamer_name,
 )
 from snax_forge.dfg import DfgError, Memlet, named_rates
+from snax_forge.dfg.pad import padded_shape
 from snax_forge.dfg.subset import parse_dim
 
-from .layout import Layout, dma_side
-from .streams import StreamError, streamer_values
+from .layout import Layout, dma_side, over
+from .streams import StreamError, in_words, streamer_values
 from .tasks import Configure, Start, Sync, TaskList
 
 if TYPE_CHECKING:
@@ -80,9 +81,12 @@ class LowerError(ValueError):
 
 
 def memlet_values(
-    m: Memlet, loops: list[Loop], layout: Layout, symbols: dict[str, int], what: str
-) -> tuple[dict[str, Any], list[int]]:
-    """A streamer's values for memlet ``m`` over ``loops``; and its spatial bounds, fastest first."""
+    m: Memlet, loops: list[Loop], layout: Layout, symbols: dict[str, int], what: str,
+    num_slc: int = 1,
+) -> tuple[dict[str, Any], list[int]]:  # fmt: skip
+    """A streamer's values for memlet ``m`` over ``loops``, in words as streams.py's (the
+    fastest spatial stride a channel's, ``num_slc`` elements on); and its spatial bounds, in
+    elements, fastest first."""
     names = [lp.var for lp in loops]
     base = layout.base
     tstrides = [0] * len(loops)
@@ -96,8 +100,8 @@ def memlet_values(
         stride = layout.strides[d]
         start = expr.evaluate(const, symbols) + sum(co[lp.var] * lp.begin for lp in loops)
         base += start * stride
-        for k, lp in enumerate(loops):
-            tstrides[k] += co[lp.var] * lp.step * stride
+        for i, lp in enumerate(loops):
+            tstrides[i] += co[lp.var] * lp.step * stride
         if len(parts) == 3:
             _, end_co = expr.linear(parts[1], names)
             if end_co != co:
@@ -112,13 +116,14 @@ def memlet_values(
         "base": base,
         "temporal_bounds": [b for b, _ in temporal],
         "temporal_strides": [s for _, s in temporal],
-        "spatial_strides": [s for _, s in fastest],
+        "spatial_strides": in_words([s for _, s in fastest], num_slc),
     }
     return values, [b for b, _ in fastest]
 
 
 def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
-    """The byte addresses a streamer's values visit, beat by beat: (beats, lanes)."""
+    """The byte addresses a streamer's values visit, beat by beat: (beats, lanes). For a packed
+    port give the bounds in channels (the fastest S_0 / num_slc): each address is then a word."""
     t = list(zip(values["temporal_bounds"], values["temporal_strides"], strict=True))[::-1]
     s = list(zip(spatial_bounds, values["spatial_strides"], strict=True))[::-1]
     grid = np.full([b for b, _ in t] + [b for b, _ in s], values["base"], dtype=np.int64)
@@ -136,7 +141,6 @@ def task_list(point: DesignPoint) -> TaskList:
     symbols = g.bound_symbols
     insts = instances(g)
     mode = pf.wait_mode
-    word = pf.l1.width_bits // 8
     beat = pf.l1.wide_bits // 8
     nodes = accelerated(g)
 
@@ -153,9 +157,10 @@ def task_list(point: DesignPoint) -> TaskList:
     final: dict[str, str] = {}  # container -> task that leaves it in its last memory
 
     def dma(task: str, direction: str, c: str, after: list[str]) -> None:
-        l1 = dma_side(layout(c, "l1"), word, beat)
-        l2 = {"symbol": c} | {k: v for k, v in dma_side(layout(c, "l2"), word, beat).items()
-                              if k != "base"}  # fmt: skip
+        elem, padded = np.dtype(g.containers[c].dtype).itemsize, padded_shape(g, c)
+        l1 = dma_side(over(layout(c, "l1"), padded), elem, beat)  # a tail's pads too (D144)
+        l2 = {"symbol": c} | {k: v for k, v in dma_side(over(layout(c, "l2"), padded), elem,
+                                                        beat).items() if k != "base"}  # fmt: skip
         src, dst = (l2, l1) if direction == "l2_to_l1" else (l1, l2)
         values = {"direction": direction, "src": src, "dst": dst}
         steps.append(Configure(task, "dma", "dma", values, after, mode))
@@ -196,7 +201,7 @@ def task_list(point: DesignPoint) -> TaskList:
             if lay is None:
                 raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
             values, sb = memlet_values(
-                m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}"
+                m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}", s.num_slc
             )
             if sb != list(s.spatial_bounds):
                 raise LowerError(

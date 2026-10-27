@@ -72,8 +72,6 @@
    "n_banks": 32,
    "width_bits": 64,
    "rows": 512,
-   "dtype": "int64",
-   "elems_per_word": 1,
    "base_addr": 268435456,
    "wide_bits": 512
   },
@@ -81,9 +79,7 @@
    "size_bytes": 2147483648,
    "base_addr": 2147483648,
    "beat_bits": 512,
-   "width_bits": 64,
-   "dtype": "int64",
-   "elems_per_word": 1
+   "width_bits": 64
   },
   "wait_mode": "poll",
   "streamers": {"default": {"fifo_depth": 8}}
@@ -96,6 +92,9 @@
    "n_ports": 4,
    "spatial_bounds": [4],
    "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 4,
    "fifo_depth": 8
   },
   "acc_b": {
@@ -105,6 +104,9 @@
    "n_ports": 4,
    "spatial_bounds": [4],
    "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 4,
    "fifo_depth": 8
   },
   "acc_out": {
@@ -114,6 +116,9 @@
    "n_ports": 4,
    "spatial_bounds": [4],
    "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 4,
    "fifo_depth": 8
   }
  },

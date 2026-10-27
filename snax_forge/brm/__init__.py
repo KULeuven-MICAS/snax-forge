@@ -14,7 +14,8 @@ SNAX-LOWER maps onto streamer values (``snax_forge.lower.streams``);
 and ``accumulate``, a reduction named by its pattern and kind. ``drain`` is
 a third timing number (D103), and port names can appear in code. An
 implementation's ``binding`` (binding.py, D129) has its ``control`` and
-``wait`` kinds registered.
+``wait`` kinds registered. A port's ``dtypes`` are a rule (dtypes.py,
+``check_dtypes``, D143): a node's containers give the dtypes.
 """
 
 from snax_forge.expr import ExprError
@@ -34,6 +35,7 @@ from .brm import (
     Port,
     Timing,
 )
+from .dtypes import INT_DTYPES, accepted, check_dtypes, output_dtypes, port_dtypes
 from .function import KINDS, OPS, AccelFunction, AccelPort, function_of, register_kind, register_op
 from .instance import Instance, resolve
 from .library import LIBRARY, library_names, load_brm
@@ -42,6 +44,7 @@ from .stream import memlet_ordered
 
 __all__ = [
     "CONTROLS",
+    "INT_DTYPES",
     "KINDS",
     "LIBRARY",
     "NOTATIONS",
@@ -62,11 +65,15 @@ __all__ = [
     "Pattern",
     "Port",
     "Timing",
+    "accepted",
     "affine",
+    "check_dtypes",
     "function_of",
     "library_names",
     "load_brm",
     "memlet_ordered",
+    "output_dtypes",
+    "port_dtypes",
     "register_control",
     "register_kind",
     "register_notation",

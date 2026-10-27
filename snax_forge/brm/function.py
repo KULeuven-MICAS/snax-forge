@@ -1,8 +1,10 @@
 """A BRM's ``function``, run firing by firing: the accelerator kinds (D19, D68).
 
 A BRM's ``function`` names a kind registered here and gives the kind's
-params as expressions over its design params; ``function_of(instance)``
-builds the kind with them resolved. The reference executor (dfg/execute.py)
+params as expressions over its design params; ``function_of(instance,
+dtypes)`` builds the kind with them resolved and the node's port dtypes
+(``dtypes``, port -> dtype, from its containers: ``brm.port_dtypes``; None
+when built without a graph), which every kind's factory takes as a keyword. The reference executor (dfg/execute.py)
 runs an accelerated node through it, so the kind says what a firing computes
 and when each port moves a beat; timing (L, II, drain) is the
 implementation's, not the kind's.
@@ -20,8 +22,12 @@ task (a reduction's partial sum); ``params`` are the task's runtime params.
 ``outs`` holds exactly the outputs due at ``k``.
 
 Kinds: ``elementwise`` (every port rate 1, N inputs folded into one output,
-lane by lane) and ``reduce`` (input ``a`` at rate 1, output ``out`` at rate
-``"T"``, the lanes folded too when ``lanes_out`` is 1), each with ``op`` a
+lane by lane, at the inputs' dtype: the executor casts the result into the
+output's when it writes it, D143) and ``reduce`` (input ``a`` at rate 1,
+output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
+each input lane cast to the output's dtype first, so its tree and its
+accumulator run at that dtype, as ``np.add.reduce(a, dtype=out)`` and
+SnaxUnit do, D143), each with ``op`` a
 registered op by name (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
 ``or``, ``xor``). New ones with ``register_kind`` and ``register_op``.
 
@@ -135,8 +141,10 @@ def elementwise(
     lanes: int = 1,
     n_inputs: int = 2,
     op: Callable[[Any, Any], Any] = np.add,
+    dtypes: Mapping[str, str] | None = None,
 ) -> AccelFunction:
-    """N inputs -> 1 output, one beat each per firing, ``op`` folding them left to right."""
+    """N inputs -> 1 output, one beat each per firing, ``op`` folding them left to right at
+    the inputs' dtype (``dtypes`` is not read: the result is cast when written, D143)."""
     names = [chr(ord("a") + i) for i in range(n_inputs)]
 
     def fn(k, ins, state, params):
@@ -150,18 +158,23 @@ def reduce_kind(
     lanes: int = 1,
     lanes_out: int | None = None,
     op: Callable[[Any, Any], Any] = np.add,
+    dtypes: Mapping[str, str] | None = None,
 ) -> AccelFunction:
     """T input beats -> 1 output beat, T the runtime param ``"T"``.
 
     ``lanes_out = lanes`` (default): each lane is folded over T beats.
     ``lanes_out = 1``: the lanes are folded too.
+    Each input lane is cast to the output port's dtype (``dtypes["out"]``) before it is
+    folded, so the tree and the accumulator run at that dtype (D143); without ``dtypes``, at
+    the input's.
     """
+    out_dtype = None if dtypes is None else dtypes.get("out")
     lanes_out = lanes if lanes_out is None else lanes_out
     if lanes_out not in (lanes, 1):
         raise ValueError("lanes_out must equal lanes or be 1")
 
     def fn(k, ins, state, params):
-        x = ins["a"]
+        x = ins["a"] if out_dtype is None else np.asarray(ins["a"]).astype(out_dtype)
         if lanes_out == 1:
             x = _fold(op, (x[j : j + 1] for j in range(x.shape[0])))
         state["acc"] = x.copy() if "acc" not in state else op(state["acc"], x)
@@ -210,7 +223,8 @@ for _name, _fn in (
 
 
 def _with_op(kind: Callable[..., AccelFunction]) -> KindFactory:
-    """The kind with ``op`` given by name instead of as a function (default: add)."""
+    """The kind with ``op`` given by name instead of as a function (default: add); ``dtypes``
+    passes through."""
 
     def factory(**params: Any) -> AccelFunction:
         name = params.get("op", "add")
@@ -225,15 +239,16 @@ register_kind("elementwise", _with_op(elementwise))
 register_kind("reduce", _with_op(reduce_kind))
 
 
-def function_of(inst: Instance) -> AccelFunction:
-    """The instance's function, its params resolved; see the module doc. Raises BrmError."""
+def function_of(inst: Instance, dtypes: Mapping[str, str] | None = None) -> AccelFunction:
+    """The instance's function, its params resolved and the node's port ``dtypes`` given; see
+    the module doc. Raises BrmError."""
     what = f"brm {inst.brm.name!r} implementation {inst.implementation!r}"
     kind = inst.brm.function.accel
     if kind not in KINDS:
         raise BrmError(f"{what}: accelerator kind {kind!r} not registered ({sorted(KINDS)})")
     params = {k: inst.value(v) for k, v in inst.brm.function.params.items()}
     try:
-        built = KINDS[kind](**params)
+        built = KINDS[kind](**params, dtypes=dtypes)
     except (TypeError, ValueError) as e:
         raise BrmError(f"{what}: kind {kind!r} rejects {params}: {e}") from None
     declared = [(p.name, p.direction, inst.lanes(p.name), p.rate) for p in inst.brm.interface.ports]

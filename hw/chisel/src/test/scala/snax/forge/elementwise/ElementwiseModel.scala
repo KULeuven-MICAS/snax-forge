@@ -1,5 +1,7 @@
 package snax.forge.elementwise
 
+import snax.forge.IntType
+
 /** Software model of one ALU lane -- the golden reference for the Chisel side.
   *
   * This is the Scala counterpart of what `build.verify` does in Python: compute the answer independently, then require
@@ -65,6 +67,39 @@ object ElementwiseModel {
       case other             => throw new IllegalArgumentException(s"unknown op encoding: $other")
     }
   }
+
+  /** NumPy's result type of two integer types: the wider of two of one signedness; with mixed signedness the signed one
+    * when it is wider, else the signed type twice the unsigned one's width (none for uint64: NumPy gives a float, which
+    * Python refuses before Chisel sees it).
+    */
+  def resultType(a: IntType, b: IntType): IntType =
+    if (a.signed == b.signed) IntType(a.width max b.width, a.signed)
+    else {
+      val (s, u) = if (a.signed) (a, b) else (b, a)
+      if (s.width > u.width) s
+      else {
+        require(u.width < 64, s"${a.name} with ${b.name} has no integer result type")
+        IntType(2 * u.width, signed = true)
+      }
+    }
+
+  /** The bit pattern `v` of type `from` as one of `to` (NumPy's `astype`): sign-extended from a signed `from`,
+    * zero-extended from an unsigned one, wrapped to `to`'s width.
+    */
+  def cast(v: BigInt, from: IntType, to: IntType): BigInt = {
+    val value = if (from.signed) asSigned(v & mask(from.width), from.width) else v & mask(from.width)
+    value & mask(to.width)
+  }
+
+  /** NumPy's elementwise op (D143): `a` of `aType` and `b` of `bType` cast to `opType`, the op at `opType`, the result
+    * cast to `outType`. Bit patterns in and out.
+    */
+  def numpy(op: Int, a: BigInt, b: BigInt, aType: IntType, bType: IntType, opType: IntType, outType: IntType): BigInt =
+    cast(
+      apply(op, cast(a, aType, opType), cast(b, bType, opType), opType.width, opType.signed),
+      opType,
+      outType
+    )
 
   private def lessThan(a: BigInt, b: BigInt, dataWidth: Int, signed: Boolean): Boolean =
     if (signed) asSigned(a, dataWidth) < asSigned(b, dataWidth) else a < b

@@ -154,6 +154,7 @@ function drawEdges(canvas, svg, edges, index) {
     defs.append(m);
   }
   const paths = [];
+  const labels = [];
   for (const e of edges) {
     const a = anchor(canvas, e.from);
     const b = anchor(canvas, e.to);
@@ -180,8 +181,14 @@ function drawEdges(canvas, svg, edges, index) {
     });
     p._marker = marker;
     paths.push(p);
+    // An accelerated port's packing (D142): dtype, num_slc slices per word, num_ch channels.
+    if (e.packing) {
+      const t = svgEl("text", { x: (x1 + x2) / 2 + 6, y: (y1 + y2) / 2 + 4, class: "edge-packing", "data-ids": ids });
+      t.textContent = e.packing;
+      labels.push(t);
+    }
   }
-  svg.replaceChildren(defs, ...paths);
+  svg.replaceChildren(defs, ...paths, ...labels);
   if (hovered) highlight(hovered);
 }
 

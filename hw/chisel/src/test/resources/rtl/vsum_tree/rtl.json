@@ -5,7 +5,7 @@
   {
    "name": "acc",
    "block": "Accumulator",
-   "params": {"width": 64, "accWidth": 64, "lanes": 4},
+   "params": {"inType": "int64", "outType": "int64", "lanes": 4},
    "ports": [{"brm": "a", "block": "in"}, {"brm": "out", "block": "out"}],
    "csrs": {
     "rw": [{"pin": "loopCount", "width": 32}, {"pin": "len", "width": 32}],

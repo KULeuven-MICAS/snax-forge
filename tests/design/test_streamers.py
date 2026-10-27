@@ -87,9 +87,23 @@ def test_temporal_dims_come_from_the_graph():
     }
 
 
+def test_a_streamer_takes_its_containers_dtype():
+    """int32 containers: two elements per word, the wire default W / num_slc channels (D142)."""
+    d = Graph.load(BOUND).to_dict()
+    for c in d["containers"].values():
+        c["dtype"] = "int32"
+    got = shell(Platform.load(SMALL16), Graph.from_dict(d))
+    assert {k: (s.dtype, s.num_slc, s.n_ports, s.num_ch) for k, s in got.items()} == {
+        "acc_a": ("int32", 2, 4, 2), "acc_b": ("int32", 2, 4, 2), "acc_out": ("int32", 2, 4, 2)
+    }  # fmt: skip
+    pd = platform_dict()
+    pd["streamers"]["acc_out"] = {"num_ch": 4}
+    assert shell(Platform.from_dict(pd), Graph.from_dict(d))["acc_out"].num_ch == 4
+
+
 def test_streamer_to_dict():
     s = shell(Platform.load(SMALL16), Graph.load(BOUND))["acc_out"]
     assert s.to_dict() == {
         "instance": "acc", "port": "out", "write": True, "n_ports": 4, "spatial_bounds": [4],
-        "temporal_dims": 1, "fifo_depth": 2,
+        "temporal_dims": 1, "dtype": "int64", "num_slc": 1, "num_ch": 4, "fifo_depth": 2,
     }  # fmt: skip

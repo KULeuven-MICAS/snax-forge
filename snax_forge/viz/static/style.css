@@ -430,6 +430,7 @@ path.edge { fill: none; stroke: var(--edge); stroke-width: 1.4; }
 path.arrow { fill: var(--edge); }
 path.arrow-hl { fill: var(--hl); }
 path.edge.hl { stroke: var(--hl); stroke-width: 2.4; }
+text.edge-packing { font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
 .box.hl, .op.hl, .port.hl { box-shadow: 0 0 0 2px var(--hl); }
 .scope.hl { box-shadow: 0 0 0 2px var(--hl); }
 
@@ -472,6 +473,8 @@ table.mem-regions td:first-child { white-space: nowrap; font-weight: 600; }
 .mem-row-label small { color: var(--muted); font-weight: 400; font-size: 0.85em; }
 .mem-cell { min-height: 2.1rem; display: flex; align-items: center; justify-content: center; border-radius: 3px; background: var(--region, var(--panel)); box-shadow: inset 0 0 0 1px var(--region-edge); font-weight: 600; white-space: nowrap; overflow: hidden; }
 .mem-cell.empty { background: transparent; box-shadow: inset 0 0 0 1px var(--rule); }
+/* padding (D144): a tail's pads and a DMA beat's padding, hatched over the region's colour */
+.mem-cell.pad { background-image: repeating-linear-gradient(135deg, transparent 0 3px, var(--bg) 3px 5px); opacity: 0.75; font-style: italic; }
 .mem-cell.multi { background: repeating-linear-gradient(135deg, var(--region) 0 6px, var(--panel) 6px 8px); }
 .mem-line { padding: 0.25rem 0.4rem; border-radius: 3px; color: var(--muted); }
 .mem-line.empty { border: 1px dashed var(--rule); text-align: center; }

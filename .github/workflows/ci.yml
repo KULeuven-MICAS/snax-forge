@@ -111,9 +111,11 @@ jobs:
         run: |
           ls -la out/hw
           test -f out/hw/SimpleAdder.sv
-          test -f out/hw/Accumulator_w32_a32_n1.sv
+          test -f out/hw/Accumulator_i32_i32_n1.sv
           test -f out/hw/ElementwiseLoop_w32_t32_sel8.sv
-          test -f out/hw/ElementwiseTiledSpatial_w32_n64_t32_add.sv
+          test -f out/hw/ElementwiseTiledSpatial_i32xi32_i32_i32_n64_t32_add.sv
+          test -f out/hw/FifoSlicer_w2_i8_n4.sv
+          test -f out/hw/FifoPacker_n4_i8_w2.sv
 
       # D130: every rtl.json fixture through `Emit --spec`, and every file its
       # emitted.json lists must exist. (BlocksSpec, in the tests above, checks

@@ -4,21 +4,22 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{ForgeTester, Rand, Seeds, Sink, Source}
+import snax.forge.{ForgeTester, IntType, LaneBits, Rand, Seeds, Sink, Source}
+import snax.forge.elementwise.ElementwiseModel
 
-/** `Accumulator` (64-bit elements and sum) under random data, configurations, input gaps and output stalls, against a
-  * model written from its docstring: a run of n inputs and T inputs per sum gives the lane sums of the inputs, every T
-  * of them summed, the last sum ending at the n-th input, all wrapping at 64 bits.
+/** `Accumulator` under random types, data, configurations, input gaps and output stalls, against a model written from
+  * its docstring: a run of n inputs and T inputs per sum gives the lane sums of the inputs, every T of them summed, the
+  * last sum ending at the n-th input, each lane cast to the output type first (NumPy's rule, D143) and every sum
+  * wrapping at the output type's width.
   *
-  * Per seed, `Instances` blocks with `lanes` drawn from {1, 2, 4, 8}, each given `Runs` runs back to back: n in 1..64,
-  * T in 1..n (dividing n in half the runs), gap and stall drawn per run. The source holds n + `Extra` beats. Checked
-  * every cycle: each output equal to the model's next, no beat taken after the n-th, busy from the cycle after the
-  * start until the cycle the last output fires and low the cycle after.
+  * Per seed, `Instances` blocks with the input type drawn from int8, int32 and int64, signed or unsigned, the output
+  * type from those at least as wide (int8 ... uint64), and `lanes` drawn from {1, 2, 4, 8}, each given `Runs` runs back
+  * to back: n in 1..64, T in 1..n (dividing n in half the runs), gap and stall drawn per run. The source holds n +
+  * `Extra` beats. Checked every cycle: each output equal to the model's next, no beat taken after the n-th, busy from
+  * the cycle after the start until the cycle the last output fires and low the cycle after.
   */
 class AccumulatorRandomSpec extends AnyFlatSpec with ForgeTester {
 
-  private val Width     = 64
-  private val Mask      = (BigInt(1) << Width) - 1
   private val Instances = 3
   private val Runs      = 5
   private val Extra     = 3
@@ -30,9 +31,22 @@ class AccumulatorRandomSpec extends AnyFlatSpec with ForgeTester {
     if (ts.isEmpty) config(r, divides) else (n, r.pick(ts))
   }
 
-  /** The model: the beats' lane sums, every T of the first n summed. */
-  private def model(beats: Seq[Seq[BigInt]], n: Int, t: Int): Seq[BigInt] =
-    beats.take(n).map(_.sum).grouped(t).map(_.sum & Mask).toSeq
+  /** The model: each lane cast from `in` to `out`, the beats' lane sums, every T of the first n summed, at `out`. */
+  private def model(beats: Seq[Seq[BigInt]], n: Int, t: Int, in: IntType, out: IntType): Seq[BigInt] =
+    beats
+      .take(n)
+      .map(_.map(ElementwiseModel.cast(_, in, out)).sum)
+      .grouped(t)
+      .map(_.sum & LaneBits.mask(out.width))
+      .toSeq
+
+  private val Inputs = Seq("int8", "int32", "int64", "uint8", "uint32", "uint64").map(IntType(_))
+
+  /** An input type, and an output type at least as wide. */
+  private def types(r: Rand): (IntType, IntType) = {
+    val in = r.pick(Inputs)
+    (in, IntType(r.pick(IntType.widths.filter(_ >= in.width)), r.pick(Seq(true, false))))
+  }
 
   behavior of "Accumulator under random data and stalls"
 
@@ -40,22 +54,23 @@ class AccumulatorRandomSpec extends AnyFlatSpec with ForgeTester {
     it should s"give the model's sums, take n beats and end busy after the last output (seed $seed)" in
       Seeds.run(seed) { r =>
         for (i <- 0 until Instances) {
-          val lanes = r.pick(Seq(1, 2, 4, 8))
-          test(new Accumulator(Width, Width, lanes)) { dut =>
+          val lanes     = r.pick(Seq(1, 2, 4, 8))
+          val (in, out) = types(r)
+          test(new Accumulator(in.name, out.name, lanes)) { dut =>
             dut.io.start.poke(false.B)
             for (run <- 0 until Runs) {
               val (n, t)  = config(r, divides = run % 2 == 0)
-              val beats   = Seq.fill(n + Extra)(Seq.fill(lanes)(r.word(Width)))
-              val packed  = beats.map(_.zipWithIndex.map { case (v, l) => v << (Width * l) }.sum)
+              val beats   = Seq.fill(n + Extra)(Seq.fill(lanes)(r.word(in.width)))
+              val packed  = beats.map(LaneBits.pack(_, in.width))
               val (g, s)  = (r.probability(), r.probability())
               val src     = Source.random(packed, g, r)
               val snk     = Sink.random(s, r)
-              val want    = model(beats, n, t)
-              val clue    = s"lanes $lanes, run $run: n $n, T $t, gap $g, stall $s"
+              val want    = model(beats, n, t, in, out)
+              val clue    = s"${in.name} -> ${out.name}, lanes $lanes, run $run: n $n, T $t, gap $g, stall $s"
               def drive() = {
                 src.cycle()
                 dut.io.in.valid.poke(src.valid.B)
-                for (l <- 0 until lanes) dut.io.in.bits(l).poke(((src.bits >> (Width * l)) & Mask).U)
+                LaneBits.pokeBeat(dut.io.in.bits, src.bits)
                 dut.io.out.ready.poke(snk.cycle().B)
               }
 
@@ -82,7 +97,7 @@ class AccumulatorRandomSpec extends AnyFlatSpec with ForgeTester {
                   val before = src.taken
                   if (src.fired(dut.io.in.ready.peek().litToBoolean))
                     assert(before < n, s"$clue, cycle $cycle: beat $before taken after the n-th")
-                  if (snk.fired(dut.io.out.valid.peek().litToBoolean, dut.io.out.bits.peek().litValue)) {
+                  if (snk.fired(dut.io.out.valid.peek().litToBoolean, LaneBits.peek(dut.io.out.bits))) {
                     val k = snk.got.size - 1
                     assert(snk.got(k) == want(k), s"$clue, cycle $cycle: output $k ${snk.got(k)}, the model ${want(k)}")
                   }

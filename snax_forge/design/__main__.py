@@ -113,10 +113,10 @@ def _summary(design: Design) -> str:
     for c, mems in plan.layouts.items():
         parts = []
         for m, lay in mems.items():
-            word = ctx.word_bytes(m)
-            lo, hi = lay.extent(word)
+            lo, hi = lay.extent(ctx.elem_bytes(c))
             where = f"{m} [{lo}, {hi})" if m == "l1" else f"{m} {hi - lo} B"
             if m == "l1":
+                word = ctx.word_bytes(m)
                 where += f" bank {(lay.base - pf.l1.base_addr) // word % pf.l1.n_banks}"
             parts.append(f"{where + (' pinned' if (c, m) in pins else ''):<30}")
         lines.append(f"  {c:<12} " + "".join(parts).rstrip())

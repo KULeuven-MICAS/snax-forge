@@ -12,7 +12,11 @@ SNAX-DSE's decision (section 5.4); SNAX-LOWER only reads it.
 This is the form of the design point's memory plan (D86):
 snax_forge/design/memory.py makes one per container and memory, and
 SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs; the
-design checks judge a whole plan, in L1 and L2.
+design checks judge a whole plan, in L1 and L2. A layout places each element
+at its dtype's itemsize, so a word holds several narrow ones (D142). A
+container a tail pads (dfg/pad.py, D144) keeps its logical shape, its strides
+row-major over the padded shape; ``over`` gives its padded block, what the
+DMA moves and what memory it takes.
 """
 
 from __future__ import annotations
@@ -69,29 +73,32 @@ class Layout(Config):
             hi += max(0, (e - 1) * s)
         return lo, hi
 
-    def extent(self, word: int) -> tuple[int, int]:
-        """The bytes ``[lo, hi)`` the operand covers, each element ``word`` bytes."""
+    def extent(self, elem_bytes: int) -> tuple[int, int]:
+        """The bytes ``[lo, hi)`` the operand covers, each element ``elem_bytes`` bytes."""
         lo, hi = self.span()
-        return lo, hi + word
+        return lo, hi + elem_bytes
 
-    def check(self, l1: L1Config) -> None:
-        """The layout fits ``l1``: one element per word, word-aligned, inside L1."""
-        if l1.elems_per_word != 1:
-            raise LayoutError(
-                f"L1 packs {l1.elems_per_word} elements per word; only 1 is supported "
-                "(open item 21)"
-            )
+    def check(self, l1: L1Config, elem_bytes: int) -> None:
+        """The layout fits ``l1``: its base on a word, its strides whole elements of
+        ``elem_bytes`` (several may share a word, D142), inside L1."""
         word = l1.width_bits // 8
-        if self.base % word or any(s % word for s in self.strides):
+        if self.base % word:
+            raise LayoutError(f"base {self.base} must be a multiple of the {word}-byte word")
+        if any(s % elem_bytes for s in self.strides):
             raise LayoutError(
-                f"base {self.base} and strides {list(self.strides)} must be multiples of the "
-                f"{word}-byte word"
+                f"strides {list(self.strides)} must be multiples of the {elem_bytes}-byte element"
             )
-        lo, hi = self.extent(word)
+        lo, hi = self.extent(elem_bytes)
         start = l1.base_addr
         end = start + l1.size_bytes
         if lo < start or hi > end:
             raise LayoutError(f"the operand spans bytes [{lo}, {hi}), L1 is [{start}, {end})")
+
+
+def over(lay: Layout, shape: tuple[int, ...]) -> Layout:
+    """``lay``'s base and strides over ``shape``: with a container's padded shape (dfg/pad.py,
+    D144), the block it takes in memory, its pads included."""
+    return lay if tuple(shape) == lay.shape else Layout(lay.base, tuple(shape), lay.strides)
 
 
 def round_up(x: int, a: int) -> int:
@@ -99,12 +106,13 @@ def round_up(x: int, a: int) -> int:
     return -(-x // a) * a
 
 
-def moved_bytes(lay: Layout, word: int, beat: int) -> int:
-    """The bytes the DMA moves for a layout: its size padded to whole beats (D105)."""
-    return round_up(int(np.prod(lay.shape)) * word, beat)
+def moved_bytes(lay: Layout, elem_bytes: int, beat: int) -> int:
+    """The bytes the DMA moves for a layout of ``elem_bytes`` elements: its size padded to
+    whole beats (D105), e.g. 16 int32 or 64 int8 elements per 64-byte beat."""
+    return round_up(int(np.prod(lay.shape)) * elem_bytes, beat)
 
 
-def dma_side(lay: Layout, word: int, beat: int) -> dict[str, int | list[int]]:
+def dma_side(lay: Layout, elem_bytes: int, beat: int) -> dict[str, int | list[int]]:
     """One side of a DMA task moving a whole layout: ``base``, ``bounds``, ``strides``.
 
     A contiguous layout starting on a wide beat is one loop of beats (open
@@ -113,6 +121,10 @@ def dma_side(lay: Layout, word: int, beat: int) -> dict[str, int | list[int]]:
     memory plan keeps free in both memories. Anything else raises
     LayoutError, which the design check ``memory.align`` reports first.
     """
-    if lay != Layout.contiguous(lay.base, lay.shape, word) or lay.base % beat:
+    if lay != Layout.contiguous(lay.base, lay.shape, elem_bytes) or lay.base % beat:
         raise LayoutError(f"layout {lay} is not contiguous from a {beat}-byte beat")
-    return {"base": lay.base, "bounds": [moved_bytes(lay, word, beat) // beat], "strides": [beat]}
+    return {
+        "base": lay.base,
+        "bounds": [moved_bytes(lay, elem_bytes, beat) // beat],
+        "strides": [beat],
+    }

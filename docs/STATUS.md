@@ -66,7 +66,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 |---|---|---|
 | P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step by hand (BASE1; its forge side, one `pixi run forge` per dot variant, is in M13); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
 | M13 | B0 (`done`), B1, B2, B3, B4 | **B0** flow pieces: CLN1's leftovers; the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min`, constant casts and maps over several parameters (open item 37); the MatMul and Transpose pass; ND1's slice: 2-D containers, a tag without a split, the streamer from the temporal loops (open items 45, 46, 48, 78); a restart every T < n (open item 81). **B1** one description: `accelerator.json` for Emit and SNAX-GVSoC; each block a datapath and a controller, in three modules; per-unit JOBS, JOB_BEATS, STATUS, COUNTER and pins (open item 83). **B2** blocks, one per round: 1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO; `bind` on a group; `split_reduce`; the fold's `init` port. **B3** composition: the composite node, wire and decoupled links on both sides, one start, the link check; dot 2–6 at N = 512, W = 4 and 8. **B4** tier A: fragments applied by output name, `augment_init`, fork and join; bicg, mvt (LOW4, open item 47), gesummv, atax; dot 1 (open item 79). `recipes/dot.json` and `examples/dot/` stay parked until B3. |
-| M7 | KER0 (`done`), FE1b, FE1c, PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK1 tier P (open items 20 and 21; the reference executor accumulates as the hardware does; requantization); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
+| M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: the exact products, requantization and the int8 kernels (the reference executor accumulates as the hardware does); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
 | M11 | LAY1–LAY3 | conv2d tiled on a MAC-array BRM; softmax and attention with several BRMs; HDC bind, bundle and similarity |
@@ -84,15 +84,23 @@ M14 is done, closed by CLN1: a recipe runs to a checked SNAX-GVSoC run
 cluster headers, the importer, the MatMul and Transpose pass, ND1's slice
 and the restart every T < n (rowsum). vecadd, vecmul, vsum and dot behave as
 before; rowsum, axpy, relu, bicg, mvt, gesummv and atax import and pass the
-reference check. Next is the streamer's own PR (narrow elements, open items
-20 and 21), planned first, then B1.
+reference check. PACK0 is done (D142–D144): int32 and int8 packed into the
+64-bit words, the elementwise op at NumPy's result type and a fold's lanes
+cast to its output's, a tail padded in the data; on SNAX-GVSoC (snax-gvsoc
+#32, #33, its sixteen forge/ fixtures), in the Chisel blocks and on
+snax_cluster's Verilator CI (#663, five fixtures, counters equal to
+SNAX-GVSoC's). The views label a port's packing and show padding apart; the
+FIFO slicer and packer are built and parked (open item 93). Next is M13's
+B1.
 
 ## Open Items
 
 Questions not decided yet. Numbers are never reused; a closed item is
 removed, and where it closed is in git history. Closed in CLN1: 63 (the ALU
 left snax-gvsoc; generated accelerators follow D130). Closed in M13 B0: 45, 46, 48, 81.
-Next free number: 93.
+Closed in PACK0: 20 (a port's width: its num_ch, D142), 21 (narrow elements: D142 and D143
+on SNAX-GVSoC, in Chisel and on snax_cluster's RTL CI) and 31 (tails: padding, D144).
+Next free number: 96.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -101,16 +109,9 @@ Next free number: 93.
    from the memory passes, D86). Parked (D23).
 18. The L1 address map is fixed and word-interleaved, so the design point
     states no banks; a registered map kind if snax_cluster's differs.
-20. Streamer ports are one bank wide; wider when a kernel needs it (PACK1).
-21. `elems_per_word > 1` has never been moved by streamers, accelerators or
-    the DMA (PACK1). The Accumulator's tree zero-extends its lanes
-    (`UInt.pad`): PACK1 makes it sign-extend for int8 into int32. relu, axpy
-    and matadd were int32 in KER0 and run as int64 until then (M13 B0).
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel`
     until one is needed.
-31. A loop bound that is not a multiple of the spatial bound: `split_map`
-    rejects it; a tail task or padding later.
 32. The DFG viewer's layout (D55), revisited if graphs outgrow it.
 33. An MLIR importer that writes `.snaxdfg` directly.
 34. A hand-edited `.snaxdfg` runs through the flow (D108) but cannot be
@@ -207,6 +208,24 @@ Next free number: 93.
     cluster, like `snitch_hw_barrier`, so a core waits on the units in the
     barrier instead of polling their CSRs: a snax_cluster template change,
     then SNAX-GVSoC to match.
+93. A port of fewer lanes than its beat's elements (rho ≠ 1, D142): the flow
+    places only the wire slice. The FIFO slicer and packer are built and
+    tested (`hw/chisel/.../stream/`, `snax.forge.stream`) and parked: placing
+    them in the flow when a design needs it.
+94. A masked last beat, the hardware alternative to padding a tail (D144): a
+    lane-valid mask from a CSR, so a tail needs no pads in the data.
+95. The cycle gap between SNAX-GVSoC and snax_cluster's Verilator on PACK0's
+    five snax_cluster fixtures, `forge counter` equal on both (D123), for
+    BASE2. Earlier tracing put one such gap in core 1's instruction fetch, not
+    the accelerator (open item 65).
+
+    | Design | Verilator | SNAX-GVSoC |
+    |---|---|---|
+    | vecadd | 213 | 226 |
+    | vsum | 247 | 255 |
+    | vecadd_i32 | 200 | 214 |
+    | vsum_tree_i8 | 174 | 199 |
+    | vecmul_i32_i64 | 212 | 224 |
 
 ## Sync Reminders
 

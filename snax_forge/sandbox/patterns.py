@@ -5,7 +5,9 @@ a matcher registered here; the attrs are its parameters. ``bind`` asks the
 matcher whether a tasklet is an instance of the pattern, and if so which
 tasklet connector feeds which BRM port:
 
-    matcher(tasklet, attrs, brm) -> {connector: port}
+    matcher(tasklet, attrs, brm, dtypes) -> {connector: port}
+
+``dtypes`` gives each connector's container dtype (the graph's, D143).
 
 or raises ``SandboxError`` saying why not. A family's matcher is code in the
 sandbox, registered like any other extension (principle 6).
@@ -18,7 +20,8 @@ BRM's input ports in fold order, the output onto its one output port.
 
 ``reduce`` (D102): the tasklet copies its one input into its one output
 (``out = in1``), and the output memlet folds (``reduce``) with the op
-``attrs.op`` names, from that op's identity for the port's dtype. That is
+``attrs.op`` names, from that op's identity for the output container's
+dtype. That is
 what the importer makes of DaCe's ``Reduce``, and what a BRM of family ``reduce``
 (``accumulate``) does: this matcher is the one place where the SNAX-DFG's
 ``reduce`` and the BRM's pattern meet, so the BRM names no IR's term.
@@ -36,7 +39,7 @@ from snax_forge.dfg import REDUCE_OPS, Node
 
 from .recipe import SandboxError
 
-Matcher = Callable[[Node, Mapping[str, Any], Any], dict[str, str]]
+Matcher = Callable[[Node, Mapping[str, Any], Any, Mapping[str, str]], dict[str, str]]
 PATTERNS: dict[str, Matcher] = {}
 
 OPS = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul"}
@@ -49,15 +52,18 @@ def register_pattern(family: str, matcher: Matcher) -> None:
     PATTERNS[family] = matcher
 
 
-def match(node: Node, brm: Any) -> dict[str, str]:
-    """``{connector: port}`` if ``node`` matches ``brm``'s pattern; else SandboxError."""
+def match(node: Node, brm: Any, dtypes: Mapping[str, str]) -> dict[str, str]:
+    """``{connector: port}`` if ``node`` matches ``brm``'s pattern; else SandboxError.
+    ``dtypes`` is each connector's container dtype."""
     family = brm.pattern.family
     if family not in PATTERNS:
         raise SandboxError(f"brm {brm.name!r}: no matcher for pattern family {family!r}")
-    return PATTERNS[family](node, brm.pattern.attrs, brm)
+    return PATTERNS[family](node, brm.pattern.attrs, brm, dtypes)
 
 
-def _elementwise(node: Node, attrs: Mapping[str, Any], brm: Any) -> dict[str, str]:
+def _elementwise(
+    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
+) -> dict[str, str]:
     what = f"node {node.id!r} as {brm.name!r}"
     if node.kind != "tasklet":
         raise SandboxError(f"{what}: a {node.kind!r} is not an elementwise tasklet")
@@ -99,7 +105,9 @@ def _elementwise(node: Node, attrs: Mapping[str, Any], brm: Any) -> dict[str, st
 register_pattern("elementwise", _elementwise)
 
 
-def _reduce(node: Node, attrs: Mapping[str, Any], brm: Any) -> dict[str, str]:
+def _reduce(
+    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
+) -> dict[str, str]:
     what = f"node {node.id!r} as {brm.name!r}"
     if node.kind != "tasklet":
         raise SandboxError(f"{what}: a {node.kind!r} is not a reduce tasklet")
@@ -122,7 +130,7 @@ def _reduce(node: Node, attrs: Mapping[str, Any], brm: Any) -> dict[str, str]:
         raise SandboxError(f"{what}: the pattern's op {op!r} is not a registered reduce op")
     if red.op != op:
         raise SandboxError(f"{what}: the tasklet folds with {red.op!r}, the pattern with {op!r}")
-    identity = REDUCE_OPS[op].identity(np.dtype(outs[0].dtype))
+    identity = REDUCE_OPS[op].identity(np.dtype(dtypes[cout]))
     if red.identity != identity:
         raise SandboxError(
             f"{what}: the fold starts from {red.identity}, the BRM from {op}'s identity {identity}"

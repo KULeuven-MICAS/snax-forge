@@ -13,6 +13,7 @@ from snax_forge.design.platform import L1Config
 from snax_forge.design.streamers import Streamer
 from snax_forge.lower import Layout, LayoutError, StreamError, streamer_values
 from snax_forge.lower.derive import addresses
+from snax_forge.lower.layout import dma_side, moved_bytes
 from tests.brm.helpers import IMPL, affine_adder, affine_elementwise_add, vector_nest
 from tests.design.helpers import SNAX_FORGE
 
@@ -20,7 +21,12 @@ from .helpers import VECADD_TASKS, vecadd_point
 
 
 def _streamer(name, write, spatial_bounds, dims):
-    return Streamer(name, "x", "a", write, tuple(spatial_bounds), dims, StreamerOptions(2))
+    lanes = 1
+    for b in spatial_bounds:
+        lanes *= b
+    return Streamer(
+        name, "x", "a", write, tuple(spatial_bounds), dims, StreamerOptions(2), "int64", 1, lanes
+    )
 
 
 # Streamers of every shape the cases need, on a 16-bank L1 of 64 rows
@@ -153,8 +159,8 @@ ERRORS = [
      {"nest": REUSE, "n": 6, "layout": Layout(0, (8,), (8,)), "s": "r4d1"},
      "2 temporal loops, the streamer has 1"),
     ("shape", {"layout": Layout(0, (32,), (8,))}, r"layout shape \[32\]"),
-    ("unaligned base", {"layout": Layout(4, (64,), (8,))}, "multiples of the 8-byte word"),
-    ("unaligned stride", {"layout": Layout(0, (64,), (12,))}, "multiples of the 8-byte word"),
+    ("unaligned base", {"layout": Layout(4, (64,), (8,))}, "base 4 must be a multiple of the 8-byte word"),
+    ("unaligned stride", {"layout": Layout(0, (64,), (12,))}, "multiples of the 8-byte element"),
     ("outside L1", {"layout": Layout(8000, (64,), (8,))}, r"L1 is \[0, 8192\)"),
     ("below L1", {"layout": Layout(0, (64,), (-8,))}, "spans bytes"),
     ("task", {"nest": REUSE, "layout": Layout(0, (8,), (8,))}, "gives 6 beats, need n / rate = 16"),
@@ -167,9 +173,22 @@ def test_errors(case, kw, msg):
         _values(**kw)
 
 
-def test_packed_words_are_not_supported():
-    with pytest.raises(LayoutError, match="open item 21"):
-        Layout(0, (4,), (8,)).check(L1Config(dtype="int32", elems_per_word=2))
+def test_a_layout_of_narrow_elements():
+    """int32 elements 4 bytes apart (D142): the base on a word, the strides whole elements;
+    the DMA still moves whole beats, 16 int32 or 64 int8 elements per 64-byte beat."""
+    lay = Layout.contiguous(0, (3, 6), 4)
+    assert lay.strides == (24, 4) and lay.extent(4) == (0, 72)
+    lay.check(L1, 4)
+    with pytest.raises(LayoutError, match="base 4 must be a multiple of the 8-byte word"):
+        Layout(4, (8,), (4,)).check(L1, 4)
+    with pytest.raises(LayoutError, match="strides \\[6\\] must be multiples of the 4-byte"):
+        Layout(0, (8,), (6,)).check(L1, 4)
+    assert moved_bytes(Layout.contiguous(0, (16,), 4), 4, 64) == 64
+    assert moved_bytes(Layout.contiguous(0, (17,), 4), 4, 64) == 128
+    assert moved_bytes(Layout.contiguous(0, (64,), 1), 1, 64) == 64
+    assert dma_side(Layout.contiguous(0, (8,), 4), 4, 64) == {
+        "base": 0, "bounds": [1], "strides": [64]
+    }  # fmt: skip
 
 
 def test_layout_round_trip_and_contiguous():
@@ -179,3 +198,63 @@ def test_layout_round_trip_and_contiguous():
     assert lay.to_dict() == {"base": 64, "shape": [3, 5], "strides": [40, 8]}
     with pytest.raises(LayoutError):
         Layout(0, (4,), (8, 8))
+
+
+# =============================================================================
+# Packed ports (D142): the values in words, and the words each beat reads
+# =============================================================================
+
+
+def _packed(dtype, num_slc, w, dims=1):
+    return Streamer("r", "x", "a", False, (w,), dims, StreamerOptions(2), dtype, num_slc,
+                    w // num_slc)  # fmt: skip
+
+
+def _words(values, num_ch):
+    """The word (and bank, word mod 32) each beat reads: the values over ``num_ch``."""
+    words = addresses(values, num_ch) // 8
+    return words.tolist(), (words % 32).tolist()
+
+
+@pytest.mark.parametrize(
+    ("case", "dtype", "w", "nest", "n", "layout", "values", "words"),
+    [
+        (
+            "E1 int32 vector N = 8, W = 4, base word 0", "int32", 4,
+            {"shape": [8], "loops": [{"bound": 2, "strides": [4]},
+                                     {"bound": "W", "strides": [1], "spatial": True}]},
+            2, Layout.contiguous(0, (8,), 4),
+            {"base": 0, "temporal_bounds": [2], "temporal_strides": [16], "spatial_strides": [8]},
+            [[0, 1], [2, 3]],
+        ),
+        (
+            "E3 int32 3 x 6 at base word 16, row 1, W = 2", "int32", 2,
+            {"shape": [3, 6], "offset": [1, 0],
+             "loops": [{"bound": 3, "strides": [0, 2]},
+                       {"bound": "W", "strides": [0, 1], "spatial": True}]},
+            3, Layout.contiguous(128, (3, 6), 4),
+            {"base": 152, "temporal_bounds": [3], "temporal_strides": [8], "spatial_strides": [8]},
+            [[19], [20], [21]],
+        ),
+        (
+            "E4 int8 4 x 16 at base word 40, row 2, W = 8", "int8", 8,
+            {"shape": [4, 16], "offset": [2, 0],
+             "loops": [{"bound": 2, "strides": [0, 8]},
+                       {"bound": "W", "strides": [0, 1], "spatial": True}]},
+            2, Layout.contiguous(320, (4, 16), 1),
+            {"base": 352, "temporal_bounds": [2], "temporal_strides": [8], "spatial_strides": [8]},
+            [[44], [45]],
+        ),
+    ],
+    ids=["E1", "E3", "E4"],
+)  # fmt: skip
+def test_packed_values_are_in_words(case, dtype, w, nest, n, layout, values, words):
+    """PACK0 notes, topic 1: the fastest spatial loop runs W / num_slc channels a word apart, the
+    other strides the element stride times the itemsize, the base the offset's bytes."""
+    num_slc = 8 // np.dtype(dtype).itemsize
+    inst = instance(nest, W=w)
+    l1 = L1Config(n_banks=32, rows=64)
+    got = streamer_values(inst, "a", {"n": n}, layout, _packed(dtype, num_slc, w), l1)
+    assert got == values
+    got_words, banks = _words(got, [w // num_slc])
+    assert got_words == words and banks == [[x % 32 for x in beat] for beat in words]

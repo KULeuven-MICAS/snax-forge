@@ -2,9 +2,9 @@
 
 Accepted when the vecadd recipe gives vecadd_accelerated.snaxdfg (a temporal
 loop of N / W, a spatial loop of W, bound to elementwise_add), W = 4 and
-W = 8 both pass the reference check, and a bound that is not a multiple of W
-and a W the BRM does not allow are rejected (tests/sandbox/test_transforms.py
-for the last one).
+W = 8 both pass the reference check, a bound that is not a multiple of W
+splits with a tail (open item 31, D144), and a W the BRM does not allow is
+rejected (tests/sandbox/test_transforms.py).
 """
 
 from __future__ import annotations
@@ -40,9 +40,13 @@ def test_every_w_that_divides_n_passes(w):
     assert results[-1].graph.node("add_map").attrs["range"] == f"0:N // {w}"
 
 
-def test_a_w_that_does_not_divide_n():
-    with pytest.raises(SandboxError, match="step 1 \\(split_map\\).*not a multiple of 5"):
-        apply_recipe(recipe().with_params({"W": 5}), graph("vecadd"))
+def test_a_w_that_does_not_divide_n_splits_with_a_tail():
+    """N = 64 by W = 5: 13 firings, the last with one valid lane, and the reference check
+    passes (D144)."""
+    results = apply_recipe(recipe().with_params({"W": 5}), graph("vecadd"))
+    m = results[-1].graph.node("add_map")
+    assert m.attrs["range"] == "0:(N + 4) // 5"
+    assert m.attrs["loop.split"] == {"var": "i", "range": "0:N", "valid": "N"}
 
 
 def test_the_reference_check_stops_a_wrong_step():
@@ -120,12 +124,12 @@ def test_cli_fails_by_name(tmp_path, capsys):
         "--graph",
         str(FIXTURES / "vecadd.snaxdfg"),
         "--set",
-        "W=5",
+        "W=0",
         "--out",
         str(tmp_path),
     ]
     assert main(args) == 1
-    assert "not a multiple of 5" in capsys.readouterr().err
+    assert "factor 0 must be a positive int" in capsys.readouterr().err
 
 
 def test_cli_starts_from_the_kernel_import(tmp_path):

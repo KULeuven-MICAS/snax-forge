@@ -50,8 +50,8 @@ object RtlFixtures {
       )
     }
 
-    /** The movers' `num_channel` of a group, `data_reader_params` or `data_writer_params`. */
-    def channels(group: String): Seq[Int] =
+    /** Each mover's num_ch (the hjson's `num_channel`) of a group, `data_reader_params` or `data_writer_params`. */
+    def numCh(group: String): Seq[Int] =
       streamer.obj.get(group).map(_("num_channel").arr.toSeq.map(_.num.toInt)).getOrElse(Seq.empty)
   }
 

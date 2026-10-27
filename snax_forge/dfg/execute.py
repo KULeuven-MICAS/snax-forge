@@ -37,7 +37,9 @@ How a node runs is registered per kind (``register_executor``, principle
     ``out[0]`` whatever ``out`` held before.
 ``accelerated``
     one firing at a time, through the BRM's function, its registered
-    kind's ``fn(k, ins, state, params)`` (``brm.function_of``). The ``temporal`` maps directly around the node are
+    kind's ``fn(k, ins, state, params)`` (``brm.function_of``, given the node's
+    containers' dtypes: a fold's lanes are cast to its output's before its tree, D143). The
+    ``temporal`` maps directly around the node are
     its firing loop, outermost first, as the BRM nest orders them;
     the node's ``code`` must be the BRM's ``function.code`` (D82), and its
     ``replaced`` subtree is history, never run;
@@ -50,10 +52,18 @@ How a node runs is registered per kind (``register_executor``, principle
     2T, ..., an output written at T-1, 2T-1, ... where its memlet points in
     the firing that completes it.
 
-**Checks on the way.** Every index is inside its container (NumPy would
-wrap a negative one silently); an accelerated node's connectors are its
-BRM's ports, each beat has the port's lanes and the port's dtype is the
-container's; a spatial map around an accelerated node is
+**A tail** (D144, dfg/pad.py). Under a map ``split_map`` split
+with a tail (``loop.split`` has ``valid``: n), a lane is the kernel's only
+when ``W * v_t + v_s`` is below n. A tasklet there reads and writes its
+valid lanes only; an accelerated node reads a pad lane as the container's
+``pad_value`` and never writes one. A pad lane's index may run past the
+container's end, but only within its padding (``padded_shape``).
+
+**Checks on the way.** Every index is inside its container, a pad lane's
+inside its padding (NumPy would wrap a negative one silently); an
+accelerated node's connectors are its
+BRM's ports, each beat has the port's lanes and the containers' dtypes pass
+the BRM's rule (``brm.check_dtypes``, D143); a spatial map around an accelerated node is
 an error, since its lanes are in the memlet.
 
 **Named rates** (``named_rates``, D102). A rate that names a start
@@ -81,6 +91,7 @@ from snax_forge.expr import ExprError, Value
 
 from .graph import SCALAR, Graph, Memlet, Node
 from .kinds import DfgError
+from .pad import pad_value, padded_shape, tailed_split, valid_count
 from .subset import parse_dim
 
 
@@ -241,31 +252,78 @@ def _check_bounds(idx: Any, size: int, m: Memlet, dim: Value, what: str) -> None
         raise ExecutionError(f"{what}: {m.data}[{dim}] leaves 0:{size}")
 
 
-def _grid_indices(m: Memlet, env: Mapping[str, Any], ctx: Context, what: str) -> tuple[Any, ...]:
-    """A tasklet's subset over the whole grid: one index array per dimension."""
+def _grid_indices(
+    m: Memlet, env: Mapping[str, Any], ctx: Context, what: str, valid: Any = None
+) -> tuple[Any, ...]:
+    """A tasklet's subset over the whole grid: one index array per dimension. With ``valid``
+    (a tail's lane mask over the grid), a pad lane's index is checked against the padding and
+    read at 0 (its value is never used)."""
     out = []
-    for dim, size in zip(m.subset, ctx.data[m.data].shape, strict=True):
+    padded = None if valid is None else padded_shape(ctx.graph, m.data)
+    for d, (dim, size) in enumerate(zip(m.subset, ctx.data[m.data].shape, strict=True)):
         try:
             idx = expr.evaluate(dim, env)
         except ExprError as e:
             raise ExecutionError(f"{what}: {e}") from None
-        _check_bounds(idx, size, m, dim, what)
+        if valid is None:
+            _check_bounds(idx, size, m, dim, what)
+        else:
+            idx = np.array(np.broadcast_to(idx, valid.shape))
+            _check_bounds(idx[valid], size, m, dim, what)
+            _check_bounds(idx[~valid], padded[d], m, dim, f"{what} (a pad lane)")
+            idx[~valid] = 0
         out.append(idx)
     return tuple(out)
 
 
-def _beat_indices(m: Memlet, env: Mapping[str, int], ctx: Context, what: str) -> tuple[Any, ...]:
-    """An accelerated node's subset for one firing: an open mesh over its ranges."""
-    axes = []
-    for dim, size in zip(m.subset, ctx.data[m.data].shape, strict=True):
+def _tasklet_lanes(ctx: Context, env: Mapping[str, Any]) -> Any:
+    """The valid lanes over a tasklet's grid: under each tailed split map, ``W * v_t + v_s``
+    below its valid count; None when no enclosing map has a tail."""
+    mask = None
+    for i, loop in enumerate(ctx.loops[:-1]):
+        inner = ctx.loops[i + 1]
+        if tailed_split(loop.node) is None or not any(n is inner.node for n in loop.node.body):
+            continue
+        n = valid_count(ctx.graph, loop.node)
+        lanes = len(inner.values) * env[loop.var] + env[inner.var] < n
+        mask = lanes if mask is None else mask & lanes
+    return None if mask is None else np.broadcast_to(mask, ctx.shape())
+
+
+def _beat_indices(
+    m: Memlet, env: Mapping[str, int], ctx: Context, what: str,
+    tails: Mapping[str, int] | None = None,
+) -> tuple[tuple[Any, ...], Any]:  # fmt: skip
+    """An accelerated node's subset for one firing: an open mesh over its ranges, and which of
+    its elements are valid lanes. ``tails`` maps each tailed firing loop's variable to its
+    valid count: along a range whose start that loop moves by W per step, lane j is valid
+    when ``W * v_t + j`` is below the count; a pad lane is checked against the padding."""
+    axes, valid = [], []
+    padded = padded_shape(ctx.graph, m.data) if tails else None
+    for d, (dim, size) in enumerate(zip(m.subset, ctx.data[m.data].shape, strict=True)):
         parts = parse_dim(dim, what)
         if len(parts) == 1:
             ax = np.array([_int(parts[0], env, what)])
         else:
             ax = np.arange(_int(parts[0], env, what), _int(parts[1], env, what), parts[2])
-        _check_bounds(ax, size, m, dim, what)
+        ok = np.ones(len(ax), bool)
+        if tails and len(parts) == 3:
+            _, co = expr.linear(parts[0], list(tails))
+            for v, n in tails.items():
+                if co[v]:
+                    ok &= (co[v] // parts[2]) * env[v] + np.arange(len(ax)) < n
+        _check_bounds(ax[ok], size, m, dim, what)
+        if padded is not None:
+            _check_bounds(ax[~ok], padded[d], m, dim, f"{what} (a pad lane)")
+        ax[~ok] = 0
         axes.append(ax)
-    return np.ix_(*axes)
+        valid.append(ok)
+    mask = np.ones([len(a) for a in axes], bool)
+    for d, ok in enumerate(valid):
+        shape = [1] * len(axes)
+        shape[d] = len(ok)
+        mask = mask & ok.reshape(shape)
+    return np.ix_(*axes), mask
 
 
 # =============================================================================
@@ -294,9 +352,10 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
     what = f"node {node.id!r}"
     env = ctx.grid()
     grid = ctx.shape()
+    valid = _tasklet_lanes(ctx, env)  # None: every lane is the kernel's
     values = {}
     for c, m in node.inputs.items():
-        values[c] = ctx.data[m.data][_grid_indices(m, env, ctx, f"{what}.inputs.{c}")]
+        values[c] = ctx.data[m.data][_grid_indices(m, env, ctx, f"{what}.inputs.{c}", valid)]
     results = {}
     for target, rhs in expr.statements(node.attrs["code"], f"{what}.attrs.code"):
         try:
@@ -305,9 +364,11 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
             raise ExecutionError(f"{what}.attrs.code: {e}") from None
     for c, m in node.outputs.items():
         arr = ctx.data[m.data]
-        idx = _grid_indices(m, env, ctx, f"{what}.outputs.{c}")
+        idx = _grid_indices(m, env, ctx, f"{what}.outputs.{c}", valid)
         full = tuple(np.broadcast_to(i, grid) for i in idx)
         value = np.broadcast_to(results[c], grid).astype(arr.dtype)
+        if valid is not None:  # the pad lanes write nothing
+            full, value = tuple(i[valid] for i in full), value[valid]
         if m.reduce is not None:  # a reduction: start from the identity, fold every write
             arr[full] = np.array(m.reduce.identity).astype(arr.dtype)
             m.reduce.ufunc.at(arr, full, value)
@@ -326,13 +387,13 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
 # =============================================================================
 
 
-def _accel(node: Node, what: str) -> Any:
-    from snax_forge.brm import BrmError, function_of, load_brm
+def _accel(node: Node, what: str, graph: Graph) -> Any:
+    from snax_forge.brm import BrmError, function_of, load_brm, port_dtypes
 
     a = node.attrs
     try:
         instance = load_brm(a["brm"]).resolve(a["implementation"], a["params"])
-        return instance, function_of(instance)
+        return instance, function_of(instance, port_dtypes(graph, node))
     except BrmError as e:
         raise ExecutionError(f"{what}: {e}") from None
 
@@ -368,10 +429,12 @@ def named_rates(
 
 
 def _run_accelerated(node: Node, ctx: Context) -> None:
+    from snax_forge.brm import accepted, check_dtypes
+
     what = f"node {node.id!r}"
     if node.body:
         raise ExecutionError(f"{what}: a nested accelerated block is not run yet")
-    instance, cfg = _accel(node, what)
+    instance, cfg = _accel(node, what, ctx.graph)
     brm_code = instance.brm.function.code
     if brm_code is not None and node.attrs["code"] != brm_code:
         raise ExecutionError(
@@ -387,14 +450,15 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
             raise ExecutionError(
                 f"{what}.{side}: connectors {list(conns)}, the BRM's ports {names}"
             )
-    for p in cfg.ports:
-        m = (node.inputs | node.outputs)[p.name]
-        want = instance.brm.port(p.name).dtype
-        if ctx.graph.containers[m.data].dtype != want:
-            raise ExecutionError(
-                f"{what}: port {p.name!r} is {want}, container {m.data!r} is "
-                f"{ctx.graph.containers[m.data].dtype}"
-            )
+    dtypes = {
+        p.name: ctx.graph.containers[(node.inputs | node.outputs)[p.name].data].dtype
+        for p in cfg.ports
+    }
+    if refused := check_dtypes(instance.brm, dtypes):
+        raise ExecutionError(
+            f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
+            f"{accepted(instance.brm, dtypes)}"
+        )
     if any(loop.node.attrs.get("loop.kind") == "spatial" for loop in ctx.loops):
         raise ExecutionError(f"{what}: inside a spatial map; its lanes belong in the memlet")
     task = 0
@@ -415,6 +479,8 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     except ValueError as e:
         raise ExecutionError(f"{what}: {e}") from None
     written = {m.data: np.zeros(ctx.data[m.data].shape, bool) for m in node.outputs.values()}
+    tails = {lp.var: valid_count(ctx.graph, lp.node) for lp in inner if tailed_split(lp.node)}
+    pads = {m.data: pad_value(ctx.graph, m.data) for m in node.inputs.values()} if tails else {}
     for point in itertools.product(*(loop.values for loop in outer)):
         state: dict[str, Any] = {}
         env0 = dict(ctx.symbols) | {lp.var: int(v) for lp, v in zip(outer, point, strict=True)}
@@ -423,24 +489,26 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
             ins = {}
             for name in cfg.due(k, rate, "in"):
                 p, m = cfg.port(name), node.inputs[name]
-                idx = _beat_indices(m, env, ctx, f"{what}.inputs.{name}")
-                ins[name] = _lanes(ctx.data[m.data][idx], p, what)
+                idx, ok = _beat_indices(m, env, ctx, f"{what}.inputs.{name}", tails)
+                beat = np.array(ctx.data[m.data][idx])
+                beat[~ok] = pads.get(m.data, 0)  # a pad lane reads the pad (D144)
+                ins[name] = _lanes(beat, p, what)
             outs = cfg.fn(k, ins, state, params)
             due = cfg.due(k, rate, "out")
             if sorted(outs) != sorted(due):
                 raise ExecutionError(f"{what}: firing {k} gave {sorted(outs)}")
             for p in map(cfg.port, due):
                 m = node.outputs[p.name]
-                idx = _beat_indices(m, env, ctx, f"{what}.outputs.{p.name}")
+                idx, ok = _beat_indices(m, env, ctx, f"{what}.outputs.{p.name}", tails)
                 arr = ctx.data[m.data]
-                region = arr[idx]
-                beat_out = _lanes(np.asarray(outs[p.name]), p, what)
-                if written[m.data][idx].any():
+                beat_out = _lanes(np.asarray(outs[p.name]), p, what).reshape(ok.shape)
+                at = tuple(i[ok] for i in np.broadcast_arrays(*idx))  # the valid lanes only
+                if written[m.data][at].any():
                     raise ExecutionError(
                         f"{what}.outputs.{p.name}: firing {k} writes an element twice"
                     )
-                written[m.data][idx] = True
-                arr[idx] = beat_out.reshape(region.shape).astype(arr.dtype)
+                written[m.data][at] = True
+                arr[at] = beat_out[ok].astype(arr.dtype)
 
 
 def _lanes(x: np.ndarray, port: Any, what: str) -> np.ndarray:

@@ -70,22 +70,28 @@ not (the file is written as JSON, which hjson reads).
 
 **The streamer**, lowered per design point (D134), as the design point's
 streamers give it (D87): readers the input ports in the BRM's port order,
-writers the output ports, each with ``spatial_bounds``, ``temporal_dim``
-(the streamer's ``temporal_dims``), ``num_channel`` (``n_ports * N / 64``
-for the port's N-bit dtype) and ``fifo_depth``.
+writers the output ports, each with ``spatial_bounds`` in words, fastest
+first (``[S_0 / num_slc, S_1, ...]``: the fastest bound over num_slc, the slices
+of the port's container dtype a word holds, D142), ``temporal_dim`` (the
+streamer's ``temporal_dims``), ``num_channel`` (the streamer's ``num_ch``, the
+wire default W / num_slc; snax-gvsoc's streamer requires the bounds' product to
+be it)
+and ``fifo_depth``.
 
 **The datapath block** (snax-gvsoc ``snax/snax_cfg.py``): ``unit``
 (``SnaxUnit``), then the block's adapter's unit (blocks.py: ``inputs``,
-``outputs``, ``lanes``, ``data_width``, ``op``, ``signed``, ``control``,
-``config`` when not the default, ``wait``, ``latency``, ``ii``), then
-``fields``, the shell's configuration CSRs.
+``outputs``, ``lanes``, ``in_widths``, ``in_signed``, ``out_widths``,
+``out_signed`` (each port's dtype, from its container, in the BRM's port
+order), ``op``, ``control``, ``config`` when not the default, ``wait``,
+``latency``, ``ii``), then ``fields``, the shell's configuration CSRs.
 
 **Refused**, each a ``GenError`` (``gen.<rule>``): a design point outside
 ``root`` (``gen.point``), more or fewer than one accelerated instance
 (``gen.instances``: the platform has one accelerator slot), a null binding
 (``gen.binding``), an unregistered block (``gen.block``), what the block's
-adapter refuses, a port whose lanes are not whole 64-bit channels
-(``gen.dtype``), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
+adapter refuses, a dtype that is not intN or uintN (``gen.dtype``), a
+streamer whose fastest spatial bound is not whole words (``gen.lanes``,
+which connect.pack refuses first), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
 without a source hjson or a source that cannot be read or written into
 (``gen.source``, also a ``cluster.bender_target`` without the source's
 ``cluster.name``), a source with no slot or several (``gen.slot``), and a
@@ -130,13 +136,13 @@ from typing import Any
 import hjson
 
 from snax_forge import expr
-from snax_forge.brm import Instance
+from snax_forge.brm import Instance, port_dtypes
 from snax_forge.common import JsonFile, generated_header, plain, repo_root, to_json
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
-from snax_forge.design.streamers import streamer_name
+from snax_forge.design.streamers import instance_nodes, streamer_name
 from snax_forge.lower import CError
 from snax_forge.lower.c import MAIN_C, main_c, mover_name
 from snax_forge.lower.c import accelerator as c_accelerator
@@ -266,24 +272,31 @@ def accelerator(point: DesignPoint) -> tuple[str, Instance, Unit]:
             f"{inst.brm.name}.{inst.implementation}: block {b['block']!r} not registered "
             f"({sorted(BLOCKS)})",
         )
-    return name, inst, BLOCKS[b["block"]](inst)
+    return name, inst, BLOCKS[b["block"]](inst, node_dtypes(point, name))
+
+
+def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
+    """Instance ``name``'s port dtypes: its first node's containers' (``brm.port_dtypes``)."""
+    return port_dtypes(point.graph, instance_nodes(point.graph)[name])
 
 
 def streamer_template(point: DesignPoint, name: str, inst: Instance) -> dict[str, Any]:
     """The streamer template, in the hjson's keys; see the module doc."""
     groups: dict[str, list[dict[str, Any]]] = {"data_reader_params": [], "data_writer_params": []}
+    dtypes = node_dtypes(point, name)
     for p in inst.brm.interface.ports:
         s = point.streamers[streamer_name(name, p.name)]
-        bits, _ = port_dtype(p.dtype, f"port {p.name}")
-        if s.n_ports * bits % 64:
+        port_dtype(dtypes[p.name], f"port {p.name}")  # intN or uintN (gen.dtype)
+        s0, *rest = s.spatial_bounds
+        if s0 % s.num_slc:
             raise GenError(
-                "gen.dtype", f"streamer {s.name}: {s.n_ports} x {bits} bits is not whole 64-bit "
-                "channels",
+                "gen.lanes", f"streamer {s.name}: its fastest spatial bound {s0} is not whole "
+                f"words of num_slc = {s.num_slc} {dtypes[p.name]} slices",
             )  # fmt: skip
         mover = {
-            "spatial_bounds": list(s.spatial_bounds),
+            "spatial_bounds": [s0 // s.num_slc, *rest],  # in words (D142)
             "temporal_dim": s.temporal_dims,
-            "num_channel": s.n_ports * bits // 64,
+            "num_channel": s.num_ch,
             "fifo_depth": s.options.fifo_depth,
         }
         groups["data_writer_params" if s.write else "data_reader_params"].append(mover)

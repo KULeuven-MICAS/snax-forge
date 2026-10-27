@@ -9,7 +9,17 @@ them, and every port of its BRM in port order, one streamer:
                     spatial loops (``affine``, what snax_forge/lower/streams.py
                     requires) or the bound memlet's ranges (``stream``, as
                     SNAX-LOWER's ``memlet_values`` reads them)
-    n_ports         their product: the port's lanes
+    n_ports         their product: the port's lanes W
+    dtype           the dtype of the container behind the port, through its
+                    memlet (``brm.port_dtypes``); every node of the instance
+                    puts the same one on it (``connect.dtype``)
+    num_slc         slices (elements) of that dtype per bank word, width_bits
+                    over its bits (D142)
+    num_ch          the TCDM channels the port uses (the streamer hjson's
+                    ``num_channel``): the entry's ``num_ch``, else the wire
+                    default W / num_slc (D142; ``connect.pack`` checks that
+                    num_slc divides the fastest spatial bound,
+                    ``connect.num_ch`` an entry's value)
     temporal_dims   from the graph: the firing loops the port's memlet runs
                     over (``port_loops``, as SNAX-LOWER takes them), at least
                     1; with several nodes on one instance, the most (D84)
@@ -26,6 +36,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from math import prod
 from typing import Any
+
+import numpy as np
 
 from snax_forge import expr
 from snax_forge.brm import Instance, load_brm, memlet_ordered, task_nest
@@ -46,6 +58,9 @@ class Streamer:
     spatial_bounds: tuple[int, ...]
     temporal_dims: int
     options: StreamerOptions
+    dtype: str
+    num_slc: int
+    num_ch: int
 
     @property
     def n_ports(self) -> int:
@@ -59,8 +74,26 @@ class Streamer:
             "n_ports": self.n_ports,
             "spatial_bounds": list(self.spatial_bounds),
             "temporal_dims": self.temporal_dims,
+            "dtype": self.dtype,
+            "num_slc": self.num_slc,
+            "num_ch": self.num_ch,
             **self.options.to_dict(),
         }
+
+
+def slices_per_word(dtype: str, width_bits: int) -> int:
+    """num_slc: slices (elements) of ``dtype`` in one bank word of ``width_bits`` (D142), at
+    least 1."""
+    return max(1, width_bits // (np.dtype(dtype).itemsize * 8))
+
+
+def port_dtype(graph: Graph, nodes: list[Node], port: str) -> str:
+    """The one dtype ``nodes`` (one instance's) put on ``port``, through their memlets; raises
+    ValueError when they differ (``connect.dtype`` reports it first)."""
+    found = {graph.containers[(n.inputs | n.outputs)[port].data].dtype for n in nodes}
+    if len(found) != 1:
+        raise ValueError(f"port {port}: its nodes put dtypes {sorted(found)} on it")
+    return found.pop()
 
 
 def accelerated(graph: Graph) -> list[Node]:
@@ -184,8 +217,18 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
                 len(port_loops(inst, p.name, (n.inputs | n.outputs)[p.name], loops[n.id]))
                 for n in mine
             ]
+            dtype = port_dtype(graph, mine, p.name)
+            num_slc = slices_per_word(dtype, platform.l1.width_bits)
+            num_ch = platform.num_ch(s)
+            if num_ch is None:
+                if prod(sb) % num_slc:
+                    raise ValueError(
+                        f"streamer {s}: {prod(sb)} lanes of {dtype} are not whole words of "
+                        f"num_slc = {num_slc} (connect.pack)"
+                    )
+                num_ch = prod(sb) // num_slc
             out[s] = Streamer(
                 s, name, p.name, p.direction == "out", tuple(sb), max([1, *dims]),
-                platform.options(s),
+                platform.options(s), dtype, num_slc, num_ch,
             )  # fmt: skip
     return out

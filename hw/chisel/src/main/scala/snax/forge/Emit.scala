@@ -9,6 +9,7 @@ import circt.stage.ChiselStage
 import snax.forge.elementwise.{ElementwiseLoop, ElementwiseOp, ElementwiseSpatial, ElementwiseTiledSpatial}
 import snax.forge.samples.{Accumulator, SimpleAdder}
 import snax.forge.shell.{RtlSpec, ShellWrapper}
+import snax.forge.stream.{FifoPacker, FifoSlicer}
 
 /** Elaboration entry point: Chisel -> CHIRRTL -> firtool -> SystemVerilog.
   *
@@ -62,6 +63,7 @@ object Emit {
   private case class Target(label: String, note: String, gen: () => RawModule)
 
   private val DataWidth = 32
+  private val Int32     = Seq("int32", "int32")
   private val LoopWidth = 32
 
   /** Everything the emitter knows how to build.
@@ -79,7 +81,7 @@ object Emit {
     Target(
       "Accumulator",
       "accumulate's block (D133): one lane here, a sum per len inputs",
-      () => new Accumulator(width = DataWidth, accWidth = DataWidth)
+      () => new Accumulator(inType = "int32", outType = "int32")
     ),
     Target(
       "ElementwiseLoop-sel",
@@ -109,14 +111,14 @@ object Emit {
     Target(
       "ElementwiseTiledSpatial-sel",
       "tiled_spatial variant, W=4, selectable",
-      () => new ElementwiseTiledSpatial(dataWidth = DataWidth, lanes = 4, loopCountWidth = LoopWidth)
+      () => new ElementwiseTiledSpatial(inTypes = Int32, lanes = 4, loopCountWidth = LoopWidth)
     ),
     Target(
       "ElementwiseTiledSpatial-add",
       "tiled_spatial variant, W=4, fixed add",
       () =>
         new ElementwiseTiledSpatial(
-          dataWidth      = DataWidth,
+          inTypes        = Int32,
           lanes          = 4,
           loopCountWidth = LoopWidth,
           supportedOps   = Seq(ElementwiseOp.Add)
@@ -130,11 +132,22 @@ object Emit {
       "W=64, int32, fixed add",
       () =>
         new ElementwiseTiledSpatial(
-          dataWidth      = DataWidth,
+          inTypes        = Int32,
           lanes          = 64,
           loopCountWidth = LoopWidth,
           supportedOps   = Seq(ElementwiseOp.Add)
         )
+    ),
+    // Built and parked (D142): not in the block catalogue, emitted on their own.
+    Target(
+      "FifoSlicer",
+      "parked: 2 words of int8 in, 4 lanes out per pop (r = 4)",
+      () => new FifoSlicer(words = 2, laneType = "int8", outLanes = 4)
+    ),
+    Target(
+      "FifoPacker",
+      "parked: 4 lanes of int8 in per push, 2 words out (r = 4)",
+      () => new FifoPacker(inLanes = 4, laneType = "int8", words = 2)
     )
   )
 

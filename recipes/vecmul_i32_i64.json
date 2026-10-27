@@ -1,0 +1,19 @@
+{
+ "name": "vecmul_i32_i64",
+ "kernel": "vecmul",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "dtypes": {"A": "int32", "B": "int32", "C": "int64"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "elementwise_mul",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}
