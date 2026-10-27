@@ -67,7 +67,7 @@ def test_the_design_report_equals_its_sources(flows, key):
         unit["latency"],
     )
     assert a.ports == [f"{m.port} ← {m.name}" for m in cluster.accelerator.movers]
-    assert [(s.name, s.lanes, s.fifo_depth) for s in r.streamers] == [
+    assert [(s.name, s.channels, s.fifo_depth) for s in r.streamers] == [
         (m.name, m.lanes, m.fifo_depth) for m in cluster.accelerator.movers
     ]
     l1 = next(m for m in r.memories if m.mem == "l1")
@@ -296,3 +296,52 @@ def test_the_command_line(flows, tmp_path, capsys):
     assert "not a flow run" in capsys.readouterr().err
     with pytest.raises(ReportError):
         reports_of(tmp_path)
+
+
+# =============================================================================
+# 5. Packing and padding (D142, D144), from design points
+# =============================================================================
+
+
+def designed_report(tmp_path, recipe):
+    """The design report of ``recipes/<recipe>.json`` designed on snax_forge (no run)."""
+    from snax_forge.gen import generate
+    from snax_forge.report.design import build_design
+    from snax_forge.sandbox import Recipe
+    from tests.gen.helpers import REPO, designed
+
+    rel = designed(tmp_path, recipe, recipe)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        generate(rel, tmp_path / "gen", root=tmp_path)
+    point = DesignPoint.load(tmp_path / rel)
+    cluster = load_cluster(tmp_path / "gen" / "snax_forge.hjson", tmp_path / rel)
+    return build_design(recipe, cluster, point, Recipe.load(REPO / "recipes" / f"{recipe}.json"))
+
+
+def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
+    """vecadd_i32: int32, two to a 64-bit word, so 4 lanes take 2 channels (num_channel)."""
+    r = designed_report(tmp_path, "vecadd_i32")
+    assert [(s.port, s.dtype, s.k, s.channels) for s in r.streamers] == [
+        ("a", "int32", 2, 2), ("b", "int32", 2, 2), ("out", "int32", 2, 2)
+    ]  # fmt: skip
+    text = render_design(r)
+    assert "| Streamer | Serves | Direction | dtype | k | Channels | FIFO depth |" in text
+    assert "2 channels, FIFO depth" in text
+
+
+def test_the_extents_include_the_padding(tmp_path):
+    """rowsum_3x7: A[3, 7] over its padded [3, 8] (three pads, 192 B, whole beats); y, three
+    int64 the DMA moves, kept free up to a whole 64-byte beat. The checks' extents (D144)."""
+    r = designed_report(tmp_path, "rowsum_3x7")
+    l1 = {x.name: x for x in next(m for m in r.memories if m.mem == "l1").regions}
+    a, y = l1["A"], l1["y"]
+    assert (a.end - a.base, a.data_end, a.pad_elements, a.beat_pad_bytes) == (192, a.end, 3, 0)
+    assert (y.data_end - y.base, y.end - y.base, y.pad_elements, y.beat_pad_bytes) == (
+        24,
+        64,
+        0,
+        40,
+    )
+    assert (a.padding, y.padding) == ("3 pad elements", "40 B to a whole beat")
+    assert "| Region | Base | End | Bytes | Share | Padding |" in render_design(r)

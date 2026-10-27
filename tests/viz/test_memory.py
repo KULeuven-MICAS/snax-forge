@@ -61,7 +61,8 @@ def mem(view, m):
 
 
 def text(line, regions):
-    """A line as a short string: ``row 4: _x8 B[0..7]``, ``fold 1-2: A+16``, ``empty 13-63``."""
+    """A line as a short string: ``row 4: _x8 B[0..7]``, ``fold 1-2: A+16``, ``empty 13-63``;
+    a region's beat padding as ``out[pad]x7`` (its words)."""
     names = [r["name"] for r in regions]
     if line["kind"] == "empty":
         return f"empty {line['from']}-{line['to']}"
@@ -77,11 +78,19 @@ def text(line, regions):
                 parts.append(["_", 0, 0, 1])
             continue
         ((ri, flat),) = cell
+        if flat == memory.BEAT_PAD:
+            pad = f"{names[ri]}[pad]"
+            if parts and parts[-1][0] == pad:
+                parts[-1][3] += 1
+            else:
+                parts.append([pad, 0, 0, 1])
+            continue
         if parts and parts[-1][0] == names[ri] and parts[-1][2] + 1 == flat:
             parts[-1][2] = flat
         else:
             parts.append([names[ri], flat, flat, 1])
-    words = [f"_x{p[3]}" if p[0] == "_" else f"{p[0]}[{p[1]}..{p[2]}]" for p in parts]
+    words = [f"{p[0]}x{p[3]}" if p[0].endswith("[pad]") else f"_x{p[3]}" if p[0] == "_"
+             else f"{p[0]}[{p[1]}..{p[2]}]" for p in parts]  # fmt: skip
     return f"row {line['row']}: " + " ".join(words)
 
 
@@ -156,7 +165,8 @@ def test_a_folded_line(runs):
     a = fold["from"] - 1
     assert fold == {"kind": "fold", "from": a + 1, "to": a + 6, "hidden": 6,
                     "step": {"0": 8}, "span": {"0": [8, 55]}}  # fmt: skip
-    assert [x for x in texts(view, "l1") if "out" in x] == ["row 2: out[0..0] _x31"]
+    # out is one word the DMA moves: seven more to a whole 64-byte beat, kept free (D144)
+    assert [x for x in texts(view, "l1") if "out" in x] == ["row 2: out[0..0] out[pad]x7 _x24"]
 
 
 # =============================================================================
@@ -208,6 +218,11 @@ def test_every_element_once_at_its_address(runs, name, m):
     for line in rows.values():
         for col, cell in enumerate(line["cells"]):
             for ri, flat in cell:
+                if flat == memory.BEAT_PAD:  # a word of the region's beat padding (D144)
+                    lo, hi = view["regions"][ri]["beat_pad"]
+                    assert lo <= line["addr"][col] + view["geometry"]["word_bytes"] - 1
+                    assert line["addr"][col] < hi
+                    continue
                 assert (ri, flat) not in seen
                 seen[ri, flat] = line["addr"][col]
     for ri, reg in enumerate(regions):
@@ -405,3 +420,51 @@ def test_a_read_back_long_after_its_grant_is_in_that_cycle_only(runs):
                                          "returns": [late]}  # fmt: skip
     assert api.memory_cycle(rv, 10)["events"] == [late]
     assert not any(api.memory_cycle(rv, t)["returns"] for t in range(300) if t != 210)
+
+
+# =============================================================================
+# 5. Packing and padding (D142, D144), from design points
+# =============================================================================
+
+
+def designed_l1(tmp_path, recipe):
+    """L1's summary for ``recipes/<recipe>.json`` designed on snax_forge (no run: no L2)."""
+    from snax_forge.design import DesignPoint
+    from snax_forge.gen import generate
+    from snax_forge.run import load_cluster, regions_of
+    from tests.gen.helpers import designed
+
+    rel = designed(tmp_path, recipe, recipe)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        generate(rel, tmp_path / "gen", root=tmp_path)
+    point = DesignPoint.load(tmp_path / rel)
+    cl = load_cluster(tmp_path / "gen" / "snax_forge.hjson", tmp_path / rel)
+    return memory.summary(memory.layout_of("l1", cl, point, regions_of(point, None)))
+
+
+def test_a_tail_and_a_beat_padded(tmp_path):
+    """rowsum_3x7: A[3, 7] laid out over its padded [3, 8], each row's pad at A[r, 7]; y, three
+    int64 the DMA moves, padded to a whole 64-byte beat. The extents are the checks'."""
+    s = designed_l1(tmp_path, "rowsum_3x7")
+    a, y = s["regions"]
+    assert (a["shape"], a["padded_shape"], a["pad_elements"]) == ([3, 7], [3, 8], 3)
+    assert (a["data_end"] - a["start"], a["end"], a["beat_pad"]) == (192, a["data_end"], None)
+    assert (y["data_end"] - y["start"], y["end"] - y["start"]) == (24, 64)
+    assert y["beat_pad"] == [y["data_end"], y["end"]]
+    pads = sorted((ri, f, x["addr"][c]) for x in s["lines"] if x["kind"] == "row"
+                  for c, cell in enumerate(x["cells"]) for ri, f in cell if f < 0)  # fmt: skip
+    a_pads = [(f, addr) for ri, f, addr in pads if ri == 0]
+    assert sorted(a_pads, key=lambda x: x[1]) == [(memory.tail_pad(p), a["start"] + 8 * p)
+                                                  for p in (7, 15, 23)]  # fmt: skip
+    assert [addr for ri, f, addr in pads if ri == 1] == list(range(y["data_end"], y["end"], 8))
+    assert {f for ri, f, _ in pads if ri == 1} == {memory.BEAT_PAD}
+
+
+def test_two_int32_to_a_word(tmp_path):
+    """vecadd_i32: each L1 word holds two int32, A[2i] and A[2i + 1]; no padding."""
+    s = designed_l1(tmp_path, "vecadd_i32")
+    assert [r["pad_elements"] for r in s["regions"]] == [0, 0, 0]
+    assert [r["beat_pad"] for r in s["regions"]] == [None] * 3
+    first = next(x for x in s["lines"] if x["kind"] == "row")
+    assert first["cells"][:2] == [[[0, 0], [0, 1]], [[0, 2], [0, 3]]]

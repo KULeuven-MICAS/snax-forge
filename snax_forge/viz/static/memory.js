@@ -87,7 +87,17 @@ function unravel(flat, shape) {
   return idx;
 }
 
-const elemText = (region, flat) => `${region.name}[${unravel(flat, region.shape).join(",")}]`;
+// Padding (D144, memory.py): flat -1 a word of the region's beat padding, -2 - p its padded
+// shape's element p, a tail's pad; anything else an element of its shape.
+const isPad = (flat) => flat < 0;
+const elemText = (region, flat) =>
+  flat === -1 ? `${region.name}: beat padding`
+    : flat < -1 ? `${region.name}[${unravel(-2 - flat, region.padded_shape).join(",")}] (pad)`
+      : `${region.name}[${unravel(flat, region.shape).join(",")}]`;
+const padText = (r) => [
+  r.pad_elements ? `${r.pad_elements} pad element${r.pad_elements === 1 ? "" : "s"}` : null,
+  r.beat_pad ? `${int(r.beat_pad[1] - r.beat_pad[0])} B to a whole beat` : null,
+].filter(Boolean).join(", ") || "none";
 
 /**
  * What the word at (column, row) of `mem` holds, as text (`A[17]`), "" for an
@@ -179,7 +189,7 @@ function scaleBar(m, colours) {
     const left = (100 * (r.start - g.base_addr)) / g.size_bytes;
     const width = (100 * (r.end - r.start)) / g.size_bytes;
     return h("div", { class: `mem-seg r${colourOf(colours, r.name)}`, style: { left: `${left}%`, width: `${width}%` },
-      title: `${r.name}: bytes ${int(r.start)} to ${int(r.end)} (${int(r.bytes)} B, ${pct(r.bytes, g.size_bytes)} of ${m.mem.toUpperCase()})` },
+      title: `${r.name}: bytes ${int(r.start)} to ${int(r.end)} (${int(r.bytes)} B, ${pct(r.bytes, g.size_bytes)} of ${m.mem.toUpperCase()}; padding: ${padText(r)})` },
     h("span", {}, r.name));
   });
   return h("div", { class: "mem-scale-wrap" },
@@ -190,15 +200,16 @@ function scaleBar(m, colours) {
 function regionTable(m, colours) {
   const col = m.mem === "l1" ? "banks" : "words";
   return h("div", { class: "scroll" }, h("table", { class: "mem-regions" },
-    h("thead", {}, h("tr", {}, ["Region", "Shape", "Base", "End", "Bytes", "Share", m.mem === "l1" ? "Banks" : "Words of a beat", m.mem === "l1" ? "Rows" : "Beats"]
+    h("thead", {}, h("tr", {}, ["Region", "Shape", "Base", "End", "Bytes", "Share", "Padding", m.mem === "l1" ? "Banks" : "Words of a beat", m.mem === "l1" ? "Rows" : "Beats"]
       .map((t, i) => h("th", { class: i >= 2 && i <= 5 ? "num" : null }, t)))),
     h("tbody", {}, m.regions.map((r) => h("tr", {},
       h("td", {}, swatch(colourOf(colours, r.name)), r.name),
-      h("td", {}, `[${r.shape.join(" × ")}], strides ${r.strides.join(", ")} B`),
+      h("td", {}, `[${r.shape.join(" × ")}]${r.padded_shape.join() === r.shape.join() ? "" : `, padded to [${r.padded_shape.join(" × ")}]`}, strides ${r.strides.join(", ")} B`),
       h("td", { class: "num" }, int(r.start)),
       h("td", { class: "num" }, int(r.end)),
       h("td", { class: "num" }, int(r.bytes)),
       h("td", { class: "num" }, pct(r.bytes, m.geometry.size_bytes)),
+      h("td", {}, padText(r)),
       h("td", {}, spans(r[col])),
       h("td", {}, r.rows[0] === r.rows[1] ? String(r.rows[0]) : `${r.rows[0]}–${r.rows[1]}`))))));
 }
@@ -256,9 +267,10 @@ function grid(ctx, m, colours, redraw) {
       }
       const [ri, flat] = cell[0];
       const r = m.regions[ri];
-      for (const [rj, fj] of cell) tip.push(`${elemText(m.regions[rj], fj)}, flat index ${fj}`);
+      for (const [rj, fj] of cell) tip.push(isPad(fj) ? `${elemText(m.regions[rj], fj)}, kept by the memory plan (D144)` : `${elemText(m.regions[rj], fj)}, flat index ${fj}`);
+      const padOnly = cell.every(([, fj]) => isPad(fj));
       let text;
-      let cls = `mem-cell r${colourOf(colours, r.name)}${cell.length > 1 ? " multi" : ""}${sb(c)}`;
+      let cls = `mem-cell r${colourOf(colours, r.name)}${cell.length > 1 ? " multi" : ""}${padOnly ? " pad" : ""}${sb(c)}`;
       const style = {};
       let badge = null;
       if (timed) {
@@ -275,7 +287,7 @@ function grid(ctx, m, colours, redraw) {
         }
       } else {
         const cont = prev && prev[0] === ri && prev[1] + 1 === flat;
-        text = labelAll || !cont ? String(flat) : "";
+        text = padOnly ? (flat === -1 ? "beat" : "pad") : labelAll || !cont ? String(flat) : "";
         if (counted && mark) {
           badge = h("span", { class: "mem-badge" }, String(mark));
           tip.push(show === "conflicts" ? `${mark} conflict${mark === 1 ? "" : "s"} over the run` : `${ctx.shows[show].label}: ${mark}`);

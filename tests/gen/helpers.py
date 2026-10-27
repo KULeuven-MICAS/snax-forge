@@ -81,6 +81,7 @@ def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str
     made by the sandbox's and the design step's commands under ``tmp`` as the root (``root``),
     as ``out/design/<name>/design_point.json``; that path, from ``tmp``."""
     from snax_forge.design import __main__ as design_cli
+    from snax_forge.sandbox import Recipe
     from snax_forge.sandbox import __main__ as sandbox_cli
 
     root(tmp)
@@ -88,7 +89,8 @@ def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str
         mp.chdir(tmp)
         args = [str(REPO / "recipes" / f"{recipe}.json"), "--out", f"out/sandbox/{name}"]
         assert sandbox_cli.main([*args, *(a for s in sets for a in ("--set", s))]) == 0
-        assert design_cli.main([f"out/sandbox/{name}/2_bind.snaxdfg", "--platform",
+        steps = len(Recipe.load(REPO / "recipes" / f"{recipe}.json").steps)  # the last: bind
+        assert design_cli.main([f"out/sandbox/{name}/{steps}_bind.snaxdfg", "--platform",
                                 str(SNAX_FORGE), "--out", f"out/design/{name}"]) == 0  # fmt: skip
     return f"out/design/{name}/design_point.json"
 

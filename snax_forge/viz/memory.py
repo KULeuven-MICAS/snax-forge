@@ -21,6 +21,12 @@ each port's packing), where ``region`` indexes
 that memory's region list and ``flat`` is the element's row-major index in
 its region's shape. An empty cell is ``[]``.
 
+Padding (D144) is shown apart, as the memory checks count it (``run.padding_of``): a tail's
+pad, element p (row-major) of the region's ``padded_shape`` outside its ``shape``, is the pair
+``[region, -2 - p]`` at its address; a word of a DMA-moved container's beat padding, past its
+padded block up to a whole DMA beat, holds ``[region, -1]``. A region's ``end`` is the extent
+the checks use, beat padding included; ``data_end`` is its padded block's end.
+
 Folding
 -------
 Two neighbouring rows are *alike* when every column holds the same regions
@@ -69,11 +75,17 @@ from typing import Any
 
 import numpy as np
 
-from snax_forge.run import Cluster, Region
+from snax_forge.run import Cluster, Padding, Region, padding_of
 
 MAX_ROWS = 256  # rows per request
 
 Cell = list[tuple[int, int]]  # (region, flat) per element of the word
+BEAT_PAD = -1  # the flat of a word of a region's beat padding (module doc)
+
+
+def tail_pad(p: int) -> int:
+    """The flat of pad ``p`` (row-major in the padded shape), and back (module doc)."""
+    return -2 - p
 
 
 class MemoryViewError(ValueError):
@@ -123,6 +135,7 @@ class MemoryLayout:
     column_label: str
     row_label: str
     regions: list[Region]
+    padding: list[Padding] = field(default_factory=list)  # per region (module doc)
     occupied: dict[int, list[Cell]] = field(default_factory=dict)  # row -> cells
     bank_row: Callable[[int], tuple[int, int]] | None = None  # L1's map (Cluster.bank_row)
 
@@ -175,6 +188,7 @@ def layout_of(mem: str, cluster: Cluster, point: Any, regions: list[Region]) -> 
         )  # fmt: skip
     else:
         raise MemoryViewError(f"the run has no memory {mem!r}")
+    lay.padding = [padding_of(point, r, cluster.dma_beat_bytes) for r in mine]
     _occupy(lay)
     return lay
 
@@ -191,6 +205,15 @@ def _occupy(lay: MemoryLayout) -> None:
                                       f"{lay.base_addr + lay.size_bytes:#x})")  # fmt: skip
             w = a - (a - lay.base_addr) % lay.word_bytes
             words.setdefault(w, []).append((a, ri, flat))
+        for p, a in lay.padding[ri].pads if ri < len(lay.padding) else ():
+            w = a - (a - lay.base_addr) % lay.word_bytes
+            words.setdefault(w, []).append((a, ri, tail_pad(p)))
+        pad = lay.padding[ri].beat_pad if ri < len(lay.padding) else None
+        if pad is not None:  # the beat padding's words that hold no element
+            first = pad[0] + (-(pad[0] - lay.base_addr)) % lay.word_bytes
+            for w in range(first, pad[1], lay.word_bytes):
+                if lay.holds(w):
+                    words.setdefault(w, []).append((w, ri, BEAT_PAD))
     for w, elems in words.items():
         col, row = lay.place(w)
         cells = lay.occupied.setdefault(row, [[] for _ in range(lay.columns)])
@@ -288,6 +311,8 @@ def _fold_line(lay: MemoryLayout, a: int, b: int, steps: dict[int, int]) -> dict
     for r in (a, b):  # with one step per region the extremes are in the end rows
         for cell in lay.occupied[r]:
             for ri, flat in cell:
+                if flat < 0:  # padding (module doc)
+                    continue
                 lo, hi = span.setdefault(ri, [flat, flat])
                 span[ri] = [min(lo, flat), max(hi, flat)]
     return {
@@ -314,13 +339,17 @@ def summary(lay: MemoryLayout, marks: RowMarks | None = None) -> dict[str, Any]:
                 touched[ri][0].add(col)
                 touched[ri][1].add(row)
     for ri, r in enumerate(lay.regions):
-        lo, hi = r.span()
+        lo, _ = r.span()
+        pad = lay.padding[ri]
         cols, rows = touched[ri]
         n = int(np.prod(r.shape))
         regions.append({
             "name": r.container, "shape": list(r.shape), "strides": list(r.strides),
-            "start": lo, "end": hi, "bytes": n * r.itemsize,
+            "start": lo, "end": pad.end, "bytes": n * r.itemsize,
             lay.column_label + "s": sorted(cols), "rows": [min(rows), max(rows)],
+            "data_end": pad.data_end, "padded_shape": list(pad.padded_shape),
+            "pad_elements": len(pad.pads),
+            "beat_pad": list(pad.beat_pad) if pad.beat_pad else None,
         })  # fmt: skip
     n_words = lay.columns * lay.rows
     geometry = {
