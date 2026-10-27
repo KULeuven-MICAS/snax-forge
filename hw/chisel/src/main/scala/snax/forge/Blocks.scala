@@ -72,13 +72,15 @@ object Blocks {
       "done",
       Seq(Tie("opSel", ElementwiseOp.width, "supportedOps")),
       p => {
+        val t = (if (p.bool("signed")) "int" else "uint") + p.int("dataWidth")
         val m = Module(
           new ElementwiseTiledSpatial(
-            dataWidth      = p.int("dataWidth"),
+            inTypes        = Seq(t, t),
+            opType         = t,
+            outType        = t,
             lanes          = p.int("lanes"),
             loopCountWidth = p.int("loopCountWidth"),
-            supportedOps   = p.ops("supportedOps"),
-            signed         = p.bool("signed")
+            supportedOps   = p.ops("supportedOps")
           )
         )
         Built(m, m.io)

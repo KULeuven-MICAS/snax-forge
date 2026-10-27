@@ -4,7 +4,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.ForgeTester
+import snax.forge.{ForgeTester, LaneBits}
 
 class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
 
@@ -16,6 +16,10 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   private val W     = 32
   private val Lanes = 4
   private val T     = 16
+
+  /** The block with every port, and the op, of type `t`. */
+  private def tiled(t: String = "uint32", ops: Seq[Int] = ElementwiseOp.all): ElementwiseTiledSpatial =
+    new ElementwiseTiledSpatial(Seq(t, t), t, t, Lanes, T, ops)
 
   private def begin(dut: ElementwiseTiledSpatial, trips: Int, op: Int = ElementwiseOp.Add): Unit = {
     dut.io.opSel.poke(op.U)
@@ -30,8 +34,8 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
 
   private def drive(dut: ElementwiseTiledSpatial, beat: Seq[(BigInt, BigInt)]): Unit =
     for (((a, b), i) <- beat.zipWithIndex) {
-      dut.io.a.bits(i).poke(a.U)
-      dut.io.b.bits(i).poke(b.U)
+      LaneBits.poke(dut.io.a.bits(i), a)
+      LaneBits.poke(dut.io.b.bits(i), b)
     }
 
   private def checkBeat(
@@ -41,21 +45,18 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
     dataWidth: Int     = W,
     signed:    Boolean = false
   ): Unit =
-    for (((a, b), i) <- beat.zipWithIndex) {
-      dut.io.out
-        .bits(i)
-        .expect(
-          ElementwiseModel(op, a, b, dataWidth, signed).U,
-          ElementwiseModel.clue(op, a, b, lane = i)
-        )
-    }
+    for (((a, b), i) <- beat.zipWithIndex)
+      assert(
+        LaneBits.peek(dut.io.out.bits(i)) == ElementwiseModel(op, a, b, dataWidth, signed),
+        ElementwiseModel.clue(op, a, b, lane = i)
+      )
 
   behavior of "ElementwiseTiledSpatial"
 
   // -- arithmetic --------------------------------------------------------
 
   it should "match the software model across a full run, for every operation" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled()) { dut =>
       val rng = new scala.util.Random(ElementwiseModel.Seed)
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -80,7 +81,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "cover the edge operand pairs on every lane" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled()) { dut =>
       val edges = ElementwiseModel.edgePairs(W)
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -101,7 +102,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "match the signed model for min and max" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T, signed = true)) { dut =>
+    test(tiled("int32")) { dut =>
       val rng = new scala.util.Random(ElementwiseModel.Seed)
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -121,7 +122,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
 
   it should "run correctly at narrow widths" in {
     val narrow = 8
-    test(new ElementwiseTiledSpatial(dataWidth = narrow, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled("uint8")) { dut =>
       val rng = new scala.util.Random(ElementwiseModel.Seed)
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -139,7 +140,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
 
   it should "produce the same results with fixed-function hardware" in {
     val op = ElementwiseOp.Xor
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T, supportedOps = Seq(op))) { dut =>
+    test(tiled(ops = Seq(op))) { dut =>
       val rng = new scala.util.Random(ElementwiseModel.Seed)
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -157,7 +158,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "carry no state between tiles" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled()) { dut =>
       // A tile boundary is not a reduction. Feeding the same operands every
       // pass must give the same result every pass -- if this drifts, an
       // accumulator has appeared where an elementwise unit was intended.
@@ -178,7 +179,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   // -- control -----------------------------------------------------------
 
   it should "stay idle and refuse operands until started" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled()) { dut =>
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
       dut.io.out.ready.poke(true.B)
@@ -190,7 +191,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "accept a different loopCount on each run" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled()) { dut =>
       val rng = new scala.util.Random(ElementwiseModel.Seed)
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -213,7 +214,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "advance the counter only when both operand transfers complete" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled()) { dut =>
       dut.io.out.ready.poke(true.B)
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
@@ -232,7 +233,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "not advance the counter while the consumer backpressures" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled()) { dut =>
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
       dut.io.out.ready.poke(true.B)
@@ -253,7 +254,7 @@ class ElementwiseTiledSpatialSpec extends AnyFlatSpec with ForgeTester {
   }
 
   it should "ignore a start pulse with loopCount zero rather than hang" in {
-    test(new ElementwiseTiledSpatial(dataWidth = W, lanes = Lanes, loopCountWidth = T)) { dut =>
+    test(tiled()) { dut =>
       dut.io.a.valid.poke(true.B)
       dut.io.b.valid.poke(true.B)
       dut.io.out.ready.poke(true.B)
