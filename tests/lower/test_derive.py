@@ -264,3 +264,16 @@ def test_design_and_lower_import_in_any_order(first):
     code = f"import {first}; import snax_forge.design, snax_forge.lower"
     r = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, check=False)
     assert r.returncode == 0, r.stderr
+
+
+def test_a_narrow_container_is_refused_until_packing_lowers():
+    """int32 vecadd passes the design checks (D142), but a layout places one element per word
+    until PACK0 R2 lowers packing: the task list refuses it rather than lower it wrongly."""
+
+    def int32(g):
+        for c in g["containers"].values():
+            c["dtype"] = "int32"
+
+    with pytest.raises(LowerError) as e:
+        task_list(point(edit_graph=int32))
+    assert str(e.value) == "A is int32: packing narrow elements into words lands in PACK0 R2"

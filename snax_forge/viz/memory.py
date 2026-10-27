@@ -16,7 +16,8 @@ words (D142), from the design point's L2 (its base and size, the cluster
 file's ``dram``). The regions are the run's (``run.regions.regions_of``: L1
 from the memory plan, L2 from the ELF's symbols). A cell is one word; it
 holds a list of ``[region, flat]`` pairs, one per element whose first byte is
-in the word (one element per word until PACK0, D142), where ``region`` indexes
+in the word (one element per word, as the layouts place them until PACK0's
+R2 lowers packing; R5 labels each port's packing, D142), where ``region`` indexes
 that memory's region list and ``flat`` is the element's row-major index in
 its region's shape. An empty cell is ``[]``.
 
@@ -117,7 +118,6 @@ class MemoryLayout:
     rows: int
     base_addr: int
     word_bytes: int
-    elems_per_word: int
     size_bytes: int
     group: int  # columns per group: a superbank in L1, one beat in L2
     column_label: str
@@ -163,7 +163,7 @@ def layout_of(mem: str, cluster: Cluster, point: Any, regions: list[Region]) -> 
     if mem == "l1":
         lay = MemoryLayout(
             "l1", cluster.banks, cluster.l1_size // (word * cluster.banks), cluster.l1_base, word,
-            1, cluster.l1_size, cluster.dma_beat_bytes // word,
+            cluster.l1_size, cluster.dma_beat_bytes // word,
             "bank", "row", mine, bank_row=cluster.bank_row,
         )  # fmt: skip
     elif mem == "l2":  # the caller lists l2 only for a run with one (api.memories)
@@ -171,7 +171,7 @@ def layout_of(mem: str, cluster: Cluster, point: Any, regions: list[Region]) -> 
         per_beat = cluster.dma_beat_bytes // word
         lay = MemoryLayout(
             "l2", per_beat, l2.size_bytes // cluster.dma_beat_bytes, l2.base_addr, word,
-            1, l2.size_bytes, per_beat, "word", "beat", mine,
+            l2.size_bytes, per_beat, "word", "beat", mine,
         )  # fmt: skip
     else:
         raise MemoryViewError(f"the run has no memory {mem!r}")
