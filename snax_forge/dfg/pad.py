@@ -99,7 +99,7 @@ def _tasklets(node: Node) -> Iterator[Node]:
         yield from _tasklets(n)
 
 
-def _fold_op(node: Node) -> str | None:
+def fold_op(node: Node) -> str | None:
     """The op a node folds its inputs with: a tasklet's ``reduce`` output, an accelerated node's
     through the subtree it replaced; None when it does not fold."""
     if node.kind == "accelerated":
@@ -120,7 +120,7 @@ def pad_value(graph: Graph, c: str) -> int:
     for node, _ in _users(graph, c):
         if not any(m.data == c for m in node.inputs.values()):
             continue
-        op = _fold_op(node)
+        op = fold_op(node)
         if op is not None:
             need.setdefault(int(REDUCE_OPS[op].identity(dtype)), []).append(f"{node.id} ({op})")
     if len(need) > 1:

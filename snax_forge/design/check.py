@@ -9,7 +9,7 @@ why it fails and the change that fixes it. Checks belong to stages:
     graph      the graph alone: symbols bound, everything bound to an
                accelerator, BRMs and implementations known, instance names
     connect    the two together: streamer entries, lanes, dtypes, packing,
-               channels, temporal loops
+               padding, channels, temporal loops
     memory     the memory plan (D86): pins and passes, then the plan
                the passes make, its residency, shapes, alignment, fit,
                snRuntime's top of L1 and overlaps
@@ -36,6 +36,7 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.brm import BrmError, Instance, accepted, check_dtypes, memlet_ordered, port_dtypes
 from snax_forge.dfg import DfgError, Graph, Node
+from snax_forge.dfg.pad import fold_op, pad_value, padded_shape, tailed_split
 from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import moved_bytes, round_up
 
@@ -474,7 +475,7 @@ def _walk(design: Design, node: Node, conn: str) -> _Walk | None:
         return None
     names = [lp.var for lp in loops]
     symbols = g.bound_symbols
-    shape = design.context().shape(m.data)
+    shape = padded_shape(g, m.data)  # a tailed split's padding is in the rows (D144)
     rows = [prod(shape[d + 1 :]) for d in range(len(shape))]
     stride = dict.fromkeys(names, 0)
     offset = 0
@@ -572,6 +573,34 @@ def _pack(where: str, c: str, dtype: str, k: int, out: bool, walk: _Walk) -> Ite
             f"starts at element {walk.offset} of {c}, not on a word ({of})",
             f"start it at a multiple of {k} elements",
         )  # fmt: skip
+
+
+def _connect_pad(design: Design) -> Iterable[Problem]:
+    """A tail's padding is in the data, never masked by the hardware (D144): a container an
+    accelerator writes holds its pad lanes' values too, so a fold may not read it through a
+    tail; and every reader of a container must need the same pad."""
+    g = design.graph
+    nodes = accelerated(g)
+    outer = {n.id: o for n, o in g.walk()}
+    for c in g.containers:
+        writers = [n.id for n in nodes if any(m.data == c for m in n.outputs.values())]
+        for n in nodes:
+            tailed = {m.attrs["var"] for m in outer[n.id] if tailed_split(m)}
+            reads = [m for m in n.inputs.values() if m.data == c]
+            if not (writers and tailed and fold_op(n) and reads):
+                continue
+            if any(tailed & set(m.names) for m in reads):
+                yield Problem(
+                    "connect.pad", f"container {c}",
+                    f"is written by {', '.join(writers)} and read through a tail by the fold "
+                    f"{n.id}: the producer's pad lanes would reach the fold (the hardware masks "
+                    "nothing, D144)",
+                    "a size that divides W, or a split factor that divides n",
+                )  # fmt: skip
+        try:
+            pad_value(g, c)
+        except DfgError as e:
+            yield Problem("connect.pad", f"container {c}", str(e).split(": ", 1)[1])
 
 
 def _port_spatial_bounds(design: Design, s: str, i: str, p: str) -> list[int] | None:
@@ -919,6 +948,7 @@ for _code, _stage, _fn in (
     ("connect.lanes", "connect", _connect_lanes),
     ("connect.dtype", "connect", _connect_dtype),
     ("connect.pack", "connect", _connect_pack),
+    ("connect.pad", "connect", _connect_pad),
     ("connect.channels", "connect", _connect_channels),
     ("connect.temporal", "connect", _connect_temporal),
     ("memory.pin", "memory", _memory_pin),
