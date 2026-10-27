@@ -146,19 +146,15 @@ def _int32_vecadd(tmp_path) -> DesignPoint:
     return DesignPoint.load(point(tmp_path, graph=Graph.from_dict(d)))
 
 
-def test_a_narrow_container_is_refused_until_packed_streams_are_generated(tmp_path):
-    """The streamer template still gives spatial bounds in elements beside num_channel in words,
-    which snax-gvsoc's streamer refuses: data.h and the template refuse it (PACK0 R3)."""
-    from snax_forge.gen.gvsoc import accelerator, streamer_template
-
+def test_int32_vecadd_packs_its_data_two_per_word(tmp_path):
+    """No refusal since PACK0 R3: data.h's int32_t arrays, the kernel's first values packed two
+    per 64-bit word (D142)."""
     p = _int32_vecadd(tmp_path)
-    why = "[gen.dtype] A is int32: generating packed streams lands in PACK0 R3"
-    with pytest.raises(GenError) as e:
-        arrays(p)
-    assert str(e.value) == why
-    with pytest.raises(GenError) as e:
-        streamer_template(p, *accelerator(p)[:2])
-    assert str(e.value) == why
+    a = {x.name: x for x in arrays(p)}
+    assert a["A"].ctype == "int32_t" and a["A"].elements == 64 and len(a["A"].values) == 64
+    first = np.array(a["A"].values[:2], dtype=np.int32).view(np.uint64)[0]
+    want = kernel_inputs(kernel_spec("vecadd", "test"), p.graph, 0)["A"][:2]
+    assert int(first) == int(want.view(np.uint64)[0])
 
 
 def _packed(values: np.ndarray) -> tuple[list[int], int]:

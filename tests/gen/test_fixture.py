@@ -12,10 +12,18 @@ copied into its ``platforms/``), so the design point is
 as the fixture's do. The generated folder must equal the fixture byte for
 byte, file list included. Skipped where the submodule is not checked out
 (only CI's gvsoc job fetches it).
+
+Until snax-gvsoc's PACK0 R2 checks in the fixtures PACK0 R3 generates, the
+checked-in ones are R2b's: each file must still be byte-identical but the
+accelerator file, which must be the old one with ``data_width`` and ``signed``
+replaced by the four type lists in their place (``in_widths``, ``in_signed``,
+``out_widths``, ``out_signed``; every port the old type); and matadd, int32
+since PACK0 R3, differs throughout, so it waits for those fixtures.
 """
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -26,11 +34,13 @@ from snax_forge.sandbox import Recipe
 from snax_forge.sandbox import __main__ as sandbox_cli
 from tests.design.helpers import REPO, SNAX_FORGE
 
-from .helpers import SUB, files, root
+from .helpers import SUB, files, parsed, root
 
 FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_forge.json
 DESIGNS = ["vecadd", "vecmul", "vsum", "vsum_tree", "matadd", "rowsum", "rowsum_serial"]
+ACC = "snax_forge_acc.hjson"
+NARROW_SINCE_R3 = {"matadd"}  # int32 again (PACK0 R3): its fixture comes with snax-gvsoc R2
 
 pytestmark = pytest.mark.skipif(
     not (SUB / "snax").is_dir(),
@@ -53,10 +63,34 @@ def regenerate(tmp: Path, design: str) -> Path:
     return out
 
 
-@pytest.mark.parametrize("design", DESIGNS)
+def with_type_lists(old: dict) -> dict:
+    """An R2b accelerator file with ``data_width`` and ``signed`` as the four type lists, in
+    the place ``data_width`` had, every port of that one type."""
+    width, signed = old["data_width"], old["signed"]
+    out = {}
+    for k, v in old.items():
+        if k == "data_width":
+            out |= {"in_widths": [width] * len(old["inputs"]),
+                    "in_signed": [signed] * len(old["inputs"]),
+                    "out_widths": [width] * len(old["outputs"]),
+                    "out_signed": [signed] * len(old["outputs"])}  # fmt: skip
+        elif k != "signed":
+            out[k] = v
+    return out
+
+
+@pytest.mark.parametrize(
+    "design",
+    [pytest.param(d, marks=pytest.mark.skip(reason="int32 since PACK0 R3; snax-gvsoc R2"))
+     if d in NARROW_SINCE_R3 else d for d in DESIGNS],
+)  # fmt: skip
 def test_the_fixture_is_reproduced(tmp_path, design):
     fixture = FORGE / design
     out = regenerate(tmp_path, design)
     assert files(out) == files(fixture)
     for f in files(fixture):
+        if f == ACC and "data_width" in parsed(fixture / f):  # an R2b fixture (module doc)
+            new = parsed(out / f)
+            assert json.dumps(new) == json.dumps(with_type_lists(parsed(fixture / f))), f
+            continue
         assert (out / f).read_bytes() == (fixture / f).read_bytes(), f

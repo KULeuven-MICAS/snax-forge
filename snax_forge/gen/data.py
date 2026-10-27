@@ -14,7 +14,9 @@ container order, as one C array or two:
              (``dfg/execute.py``) on the bound graph and those
              inputs, as the flow checks a run, ``const``
 
-The C type is the container's dtype (``int64_t`` for every design so far).
+The C type is the container's dtype (``int64_t``, ``int32_t``, ``int8_t``,
+...): the arrays hold the elements packed as NumPy lays them out, several to
+a word for a narrow dtype (D142).
 Each array, golden included, is written in the container's padded shape (a
 tail's, dfg/pad.py, D144: its pads hold ``pad_value``), then padded with
 zeros to whole DMA beats exactly as the memory plan's L2 layout is (``lower/layout.py``'s ``moved_bytes``,
@@ -26,10 +28,8 @@ The file starts with a ``//`` comment naming the design point by its path
 from the root, as the other generated files do, so one design point gives
 byte-identical text wherever it is written.
 
-**Refused**, each a ``GenError``: a dtype that is not intN or uintN, or one
-narrower than the bank word (``gen.dtype``, ``refuse_packed``: the streamer
-template still gives spatial bounds in elements next to num_channel in words,
-which snax-gvsoc's streamer refuses, until PACK0 R3), an L2 layout that is not the array's contiguous elements
+**Refused**, each a ``GenError``: a dtype that is not intN or uintN
+(``gen.dtype``), an L2 layout that is not the array's contiguous elements
 (``gen.layout``), a graph named after no kernel, an input ``make_inputs`` does
 not give or a moved container that is neither an input nor an output
 (``gen.inputs``), and an output whose
@@ -86,18 +86,6 @@ def ctype(dtype: str, where: str) -> str:
     return f"{'' if signed else 'u'}int{bits}_t"
 
 
-def refuse_packed(point: DesignPoint, containers: Sequence[str]) -> None:
-    """Refuse a container narrower than the bank word (``gen.dtype``) until packed streams are
-    generated (PACK0 R3, D142)."""
-    word = point.platform.l1.width_bits // 8
-    for c in containers:
-        dtype = point.graph.containers[c].dtype
-        if np.dtype(dtype).itemsize < word:
-            raise GenError(
-                "gen.dtype", f"{c} is {dtype}: generating packed streams lands in PACK0 R3"
-            )
-
-
 def moved(point: DesignPoint) -> list[str]:
     """The containers the DMA moves (an L2 and an L1 layout), in the graph's order."""
     lays = point.memory.layouts
@@ -108,7 +96,6 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None) -> list
     """data.h's arrays; see the module doc. ``kernel`` names the kernel when the graph's name
     does not (the flow's ``--kernel``)."""
     graph = point.graph
-    refuse_packed(point, moved(point))
     try:
         spec = kernel_spec(kernel or graph.name, "--kernel" if kernel else "the graph's name")
         inputs = kernel_inputs(spec, graph, seed)

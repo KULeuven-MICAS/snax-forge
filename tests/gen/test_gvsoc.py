@@ -54,16 +54,18 @@ TEMPLATE_W4 = {
     },
 }  # fmt: skip
 # vecadd's datapath block at W = 4: ElementwiseTiledSpatial as a SnaxUnit and its
-# SnaxShell's field; int64 gives signed True (only min and max read it)
+# SnaxShell's field; each port int64, signed (D143)
 TILED_ADD = {
-    "unit": "SnaxUnit", "inputs": ["a", "b"], "outputs": ["out"], "lanes": 4, "data_width": 64,
-    "op": 0, "signed": True, "control": "counted", "wait": "lockstep", "latency": 0, "ii": 1,
+    "unit": "SnaxUnit", "inputs": ["a", "b"], "outputs": ["out"], "lanes": 4,
+    "in_widths": [64, 64], "in_signed": [True, True], "out_widths": [64], "out_signed": [True],
+    "op": 0, "control": "counted", "wait": "lockstep", "latency": 0, "ii": 1,
     "fields": ["loopCount"],
 }  # fmt: skip
 # vsum on snax_forge: the Accumulator, a fold of one lane, one sum per T inputs
 ACCUMULATOR = {
-    "unit": "SnaxUnit", "inputs": ["a"], "outputs": ["out"], "lanes": 1, "data_width": 64,
-    "op": 0, "signed": True, "control": "counted", "config": ["count", "rate"],
+    "unit": "SnaxUnit", "inputs": ["a"], "outputs": ["out"], "lanes": 1, "in_widths": [64],
+    "in_signed": [True], "out_widths": [64], "out_signed": [True], "op": 0, "control": "counted",
+    "config": ["count", "rate"],
     "wait": "pipelined", "latency": 1, "ii": 1, "fields": ["loopCount", "len"],
 }  # fmt: skip
 
@@ -431,7 +433,6 @@ ADAPTER_CASES = [
      "gen.timing"),
     ("op", None, {"W": 4, "op": "nand"}, "gen.op"),
     ("args", _binding(args={"lanes": "W"}), {}, "gen.args"),
-    ("mixed dtype", None, {}, "gen.dtype", _dtypes(b="int32")),
     ("float", None, {}, "gen.dtype", _dtypes(a="float64", b="float64", out="float64")),
     ("lanes x N", None, {}, "gen.lanes", _dtypes(a="int8", b="int8", out="int8")),
     ("lanes vs port", _binding(args={"lanes": "W * 2", "supportedOps": "op"}), {}, "gen.lanes"),
@@ -479,7 +480,6 @@ ACCUMULATOR_CASES = [
     ("op", None, {"W": 1, "op": "max"}, "gen.op"),
     ("two inputs", _second_input, {}, "gen.ports"),
     ("rate in", _ports(a={"rate": "T"}), {}, "gen.rate"),
-    ("mixed dtype", None, {}, "gen.dtype", _dtypes(("a", "out"), a="int32")),
     ("lanes", _binding(ACC, args={"lanes": 1}), {"W": 2, "op": "add"}, "gen.lanes"),
     ("lanes out", _ports(out={"lanes": "W"}), {"W": 2, "op": "add"}, "gen.lanes"),
     ("narrow", None, {}, "gen.lanes", _dtypes(("a", "out"), a="int32", out="int32")),
@@ -526,7 +526,11 @@ def test_a_control_other_than_counted_is_refused(monkeypatch, adapter, inst):
 def test_the_adapter_reads_unsigned_and_narrow_dtypes():
     u16 = _dtypes(a="uint16", b="uint16", out="uint16")
     unit = elementwise_tiled_spatial(_instance(), u16)
-    assert (unit.data_width, unit.signed, unit.lanes) == (16, False, 4)
+    assert (unit.in_widths, unit.in_signed, unit.out_widths, unit.out_signed, unit.lanes) == (
+        [16, 16], [False, False], [16], [False], 4
+    )  # fmt: skip
+    mixed = elementwise_tiled_spatial(_instance(), _dtypes(a="int32", b="int32", out="int64"))
+    assert (mixed.in_widths, mixed.out_widths) == ([32, 32], [64])  # vmul int32 into int64
 
 
 def test_three_ports_are_refused():
@@ -610,3 +614,73 @@ def test_the_shells_counter_may_land_on_0x5fd_not_past():
     with pytest.raises(GenError) as e:
         gen_mod.csr_layout(TEMPLATE_W4, [*fields, "one_more"])
     assert e.value.code == "gen.csrs" and "the shell's last CSR 1534 is past 1533" in str(e.value)
+
+
+# =============================================================================
+# Narrow designs (D142, D143): the streamer in words, each port's type
+# =============================================================================
+
+
+def _narrow(tmp_path, recipe: str, bind_step: int = 2) -> Path:
+    """``recipes/<recipe>.json`` designed and generated under ``tmp_path``; the out folder."""
+    from snax_forge.design import __main__ as design_cli
+    from snax_forge.sandbox import __main__ as sandbox_cli
+
+    from .helpers import REPO, root
+
+    root(tmp_path)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.chdir(tmp_path)
+        assert sandbox_cli.main([str(REPO / "recipes" / f"{recipe}.json"), "--out",
+                                 f"out/sandbox/{recipe}"]) == 0  # fmt: skip
+        assert design_cli.main([f"out/sandbox/{recipe}/{bind_step}_bind.snaxdfg", "--platform",
+                                str(SNAX_FORGE), "--out", f"out/design/{recipe}"]) == 0  # fmt: skip
+        out = tmp_path / "gvsoc" / recipe
+        generate(f"out/design/{recipe}/design_point.json", out, root=tmp_path)
+    return out
+
+
+def test_vecadd_i32_two_channels_per_port(tmp_path):
+    out = _narrow(tmp_path, "vecadd_i32")
+    s = parsed(out / "snax_forge_streamer.hjson")
+    assert (s["data_reader_params"]["spatial_bounds"], s["data_reader_params"]["num_channel"]) == (
+        [[2], [2]], [2, 2]
+    )  # fmt: skip
+    assert (s["data_writer_params"]["spatial_bounds"], s["data_writer_params"]["num_channel"]) == (
+        [[2]], [2]
+    )  # fmt: skip
+    acc = parsed(out / "snax_forge_acc.hjson")
+    assert (acc["in_widths"], acc["in_signed"], acc["out_widths"], acc["out_signed"]) == (
+        [32, 32], [True, True], [32], [True]
+    )  # fmt: skip
+    assert "data_width" not in acc and "signed" not in acc
+    assert slot(parsed(out / "snax_forge.hjson"))["snax_tcdm_ports"] == 6
+
+
+def test_vsum_tree_i32_int32_in_int64_out(tmp_path):
+    out = _narrow(tmp_path, "vsum_tree_i32")
+    s = parsed(out / "snax_forge_streamer.hjson")
+    assert s["data_reader_params"]["spatial_bounds"] == [[2]]
+    assert s["data_reader_params"]["num_channel"] == [2]
+    assert (s["data_writer_params"]["spatial_bounds"], s["data_writer_params"]["num_channel"]) == (
+        [[1]], [1]
+    )  # fmt: skip
+    acc = parsed(out / "snax_forge_acc.hjson")
+    assert (acc["in_widths"], acc["in_signed"], acc["out_widths"], acc["out_signed"]) == (
+        [32], [True], [64], [True]
+    )  # fmt: skip
+
+
+def test_vecadd_i8_one_channel_per_port(tmp_path):
+    s = parsed(_narrow(tmp_path, "vecadd_i8") / "snax_forge_streamer.hjson")
+    for group in ("data_reader_params", "data_writer_params"):
+        assert all(b == [1] for b in s[group]["spatial_bounds"])
+        assert all(c == 1 for c in s[group]["num_channel"])
+
+
+def test_matadd_int32_bounds_in_words(tmp_path):
+    """matadd (int32 again, its recipe's 1 x 4 tiles of W = 4): 4 lanes of int32, 2 words."""
+    s = parsed(_narrow(tmp_path, "matadd", bind_step=3) / "snax_forge_streamer.hjson")
+    assert s["data_reader_params"]["spatial_bounds"] == [[2], [2]]
+    assert s["data_reader_params"]["num_channel"] == [2, 2]
+    assert s["data_writer_params"]["num_channel"] == [2]

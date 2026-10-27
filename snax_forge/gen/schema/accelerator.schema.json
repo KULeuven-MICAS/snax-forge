@@ -14,9 +14,20 @@
    "$ref": "#/$defs/names"
   },
   "lanes": {"type": "integer", "minimum": 1},
-  "data_width": {"description": "A lane's bits.", "enum": [8, 16, 32, 64]},
+  "in_widths": {
+   "description": "Each input's element bits, in inputs' order (D142).",
+   "$ref": "#/$defs/widths"
+  },
+  "in_signed": {
+   "description": "Whether each input's elements are signed, in inputs' order.",
+   "$ref": "#/$defs/flags"
+  },
+  "out_widths": {"description": "Each output's element bits.", "$ref": "#/$defs/widths"},
+  "out_signed": {
+   "description": "Whether each output's elements are signed.",
+   "$ref": "#/$defs/flags"
+  },
   "op": {"description": "ElementwiseOp's encoding (gen/blocks.py).", "type": "integer", "minimum": 0},
-  "signed": {"type": "boolean"},
   "control": {"description": "A registered control (D129).", "enum": ["counted"]},
   "config": {
    "description": "The role of each configuration word; [\"count\"] when left out.",
@@ -30,10 +41,12 @@
    "$ref": "#/$defs/names"
   }
  },
- "required": ["unit", "inputs", "outputs", "lanes", "data_width", "op", "signed", "control",
-              "wait", "latency", "ii", "fields"],
+ "required": ["unit", "inputs", "outputs", "lanes", "in_widths", "in_signed", "out_widths",
+              "out_signed", "op", "control", "wait", "latency", "ii", "fields"],
  "additionalProperties": false,
  "$defs": {
-  "names": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+  "names": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+  "widths": {"type": "array", "minItems": 1, "items": {"enum": [8, 16, 32, 64]}},
+  "flags": {"type": "array", "minItems": 1, "items": {"type": "boolean"}}
  }
 }

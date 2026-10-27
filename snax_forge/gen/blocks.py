@@ -2,8 +2,7 @@
 
 An adapter reads an instance (its BRM, implementation and design params,
 snax_forge/brm/instance.py) and its ports' dtypes (the node's containers',
-``brm.port_dtypes``; int64 on every port when only the instance is judged,
-brm/instance.py) and gives the properties of snax-gvsoc's
+``brm.port_dtypes``) and gives the properties of snax-gvsoc's
 ``SnaxUnit`` and the fields of its ``SnaxShell`` (``Unit``), or refuses
 with a ``GenError`` naming what does not fit. Adapters are registered by
 the block's name (``register_block``, D19). Both blocks are ``counted``
@@ -16,9 +15,12 @@ the block's name (``register_block``, D19). Both blocks are ``counted``
     op           args.supportedOps, one op name, through ElementwiseOp's
                  encoding (add 0, sub 1, mul 2, and 3, or 4, xor 5, min 6,
                  max 7); tests/gen reads the table from the Chisel source
-    data_width   N of the ports' dtypes (intN signed, uintN unsigned); every
-    signed       port the same dtype, N in 8, 16, 32, 64, lanes * N a
-                 multiple of 64 (a streamer beat is whole 64-bit channels)
+    in_widths,   each input's N and signedness (intN signed, uintN
+    in_signed    unsigned; N in 8, 16, 32, 64), in the BRM's port order;
+    out_widths,  the output's likewise. Each port's lanes * N is a multiple
+    out_signed   of 64: a streamer beat is whole 64-bit channels (D142).
+                 SnaxUnit computes at the inputs' NumPy result type and
+                 casts into the output's (snax-gvsoc snax_unit.hpp, D143)
     inputs       the BRM's input and output port names, exactly 2 in and 1 out
     outputs      (SnaxUnit's op table is binary)
     control      counted only (the block's trip counter, loopCount)
@@ -35,8 +37,9 @@ adder tree in front of its register.
     inputs       one input port of rate 1 and one output port of a named
     outputs      rate (T), the output of one lane
     lanes        args.lanes, the input port's lanes
-    data_width   the ports' dtype, as above (the output's one lane whole
-    signed       64-bit channels, so N is 64)
+    in_widths    the input's and the output's types, as above: the input's
+    ...          lanes * N whole 64-bit channels; the output's one lane is
+                 one word, whatever its N (SnaxUnit casts the lanes to it)
     op           add (0): the BRM's op param
     control      counted
     wait         pipelined, with the implementation's latency 1, II 1 and
@@ -44,10 +47,14 @@ adder tree in front of its register.
     fields       loopCount then len, their values n and the output's rate
     config       ["count", "rate"]: SnaxUnit reads the first word as the
                  run's firings and the second as firings per output
-    args         lanes only: the block's widths come from the dtype
+    args         lanes only: the block's widths come from the dtypes
 
 ``config`` is a SnaxUnit property only when it is not the default
 ``["count"]``, so an elementwise block's datapath block has none.
+
+An instance judged without a graph (brm/instance.py's check of its block)
+has no dtypes: its adapter checks everything but the widths and gives a
+unit without them, which is never written.
 """
 
 from __future__ import annotations
@@ -76,9 +83,11 @@ class Unit:
     inputs: list[str]
     outputs: list[str]
     lanes: int
-    data_width: int
+    in_widths: list[int] | None  # None: judged without a graph (module doc)
+    in_signed: list[bool] | None
+    out_widths: list[int] | None
+    out_signed: list[bool] | None
     op: int
-    signed: bool
     control: str
     wait: str
     latency: int
@@ -93,9 +102,11 @@ class Unit:
             "inputs": list(self.inputs),
             "outputs": list(self.outputs),
             "lanes": self.lanes,
-            "data_width": self.data_width,
+            "in_widths": list(self.in_widths or []),
+            "in_signed": list(self.in_signed or []),
+            "out_widths": list(self.out_widths or []),
+            "out_signed": list(self.out_signed or []),
             "op": self.op,
-            "signed": self.signed,
             "control": self.control,
             "config": list(self.config),
             "wait": self.wait,
@@ -164,19 +175,32 @@ def _ports(inst: Instance, n_in: int, n_out: int, who: str, what: str) -> tuple[
     return ins, outs
 
 
-def instance_dtypes(inst: Instance) -> dict[str, str]:
-    """The dtypes an instance alone is judged at: int64 on every port, one element per word
-    (the node's containers give the real ones, ``brm.port_dtypes``)."""
-    return {p.name: "int64" for p in inst.brm.interface.ports}
+Types = tuple[list[int], list[bool], list[int], list[bool]]
 
 
-def _dtype(inst: Instance, dtypes: Mapping[str, str] | None, what: str) -> tuple[int, bool]:
-    """The one dtype of every port (``dtypes``, port -> dtype), as bits and signedness."""
-    dtypes = instance_dtypes(inst) if dtypes is None else dtypes
-    found = {dtypes[p.name] for p in inst.brm.interface.ports}
-    if len(found) != 1:
-        raise GenError("gen.dtype", f"{what}: ports of dtypes {sorted(found)}; one is needed")
-    return port_dtype(found.pop(), what)
+def _types(
+    ins: list[Any], outs: list[Any], dtypes: Mapping[str, str] | None, lanes: dict[str, int],
+    what: str,
+) -> Types | None:  # fmt: skip
+    """The ports' widths and signedness, inputs then outputs (``dtypes``, port -> dtype), each
+    port's ``lanes`` of them whole 64-bit channels (a port missing from ``lanes`` is one word,
+    a fold's output); None without ``dtypes`` (module doc)."""
+    if dtypes is None:
+        return None
+    out: list[list[Any]] = [[], [], [], []]
+    for k, ports in ((0, ins), (2, outs)):
+        for p in ports:
+            bits, signed = port_dtype(dtypes[p.name], f"{what} port {p.name}")
+            n = lanes.get(p.name)
+            if n is not None and n * bits % 64:
+                raise GenError(
+                    "gen.lanes",
+                    f"{what}: port {p.name}'s {n} lanes of {bits} bits are not whole 64-bit "
+                    "channels",
+                )
+            out[k].append(bits)
+            out[k + 1].append(signed)
+    return out[0], out[1], out[2], out[3]
 
 
 def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
@@ -205,16 +229,14 @@ def elementwise_tiled_spatial(inst: Instance, dtypes: Mapping[str, str] | None =
             f"{what}: supportedOps {op!r} is not one of ElementwiseOp's {list(ELEMENTWISE_OP)}",
         )
     ins, outs = _ports(inst, 2, 1, "SnaxUnit", what)
-    bits, signed = _dtype(inst, dtypes, what)
-    if not isinstance(lanes, int) or lanes < 1 or lanes * bits % 64:
-        raise GenError(
-            "gen.lanes", f"{what}: {lanes} lanes of {bits} bits is not whole 64-bit channels"
-        )
+    if not isinstance(lanes, int) or lanes < 1:
+        raise GenError("gen.lanes", f"{what}: {lanes!r} lanes")
     _lanes(inst, {p.name: lanes for p in brm.interface.ports}, what)
+    types = _types(ins, outs, dtypes, {p.name: lanes for p in brm.interface.ports}, what)
     return Unit(
-        inputs=[p.name for p in ins], outputs=[p.name for p in outs], lanes=lanes,
-        data_width=bits, op=ELEMENTWISE_OP[op], signed=signed, control="counted",
-        wait="lockstep", latency=0, ii=1, fields=[c["field"] for c in b["csrs"]],
+        [p.name for p in ins], [p.name for p in outs], lanes, *(types or (None,) * 4),
+        op=ELEMENTWISE_OP[op], control="counted", wait="lockstep", latency=0, ii=1,
+        fields=[c["field"] for c in b["csrs"]],
     )  # fmt: skip
 
 
@@ -241,10 +263,8 @@ def accumulator(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Unit
             f"{what}: rates {a.rate!r} in and {out.rate!r} out; the Accumulator takes 1 in and "
             "a named rate out (one sum per T inputs)",
         )
-    bits, signed = _dtype(inst, dtypes, what)
     _lanes(inst, {a.name: lanes, out.name: 1}, what)
-    if bits % 64:
-        raise GenError("gen.lanes", f"{what}: 1 lane of {bits} bits is not whole 64-bit channels")
+    types = _types([a], [out], dtypes, {a.name: lanes}, what)  # the output: one word
     csrs = [(c["field"], c["value"]) for c in b["csrs"]]
     if csrs != [("loopCount", "n"), ("len", out.rate)]:
         raise GenError(
@@ -252,9 +272,9 @@ def accumulator(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Unit
             f"{what}: csrs {csrs}; the Accumulator's are loopCount = n, then len = {out.rate}",
         )
     return Unit(
-        inputs=[a.name], outputs=[out.name], lanes=lanes, data_width=bits, op=ELEMENTWISE_OP["add"],
-        signed=signed, control="counted", wait="pipelined", latency=1, ii=1,
-        fields=["loopCount", "len"], config=["count", "rate"],
+        [a.name], [out.name], lanes, *(types or (None,) * 4), op=ELEMENTWISE_OP["add"],
+        control="counted", wait="pipelined", latency=1, ii=1, fields=["loopCount", "len"],
+        config=["count", "rate"],
     )  # fmt: skip
 
 

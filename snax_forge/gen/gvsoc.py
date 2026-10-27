@@ -70,23 +70,27 @@ not (the file is written as JSON, which hjson reads).
 
 **The streamer**, lowered per design point (D134), as the design point's
 streamers give it (D87): readers the input ports in the BRM's port order,
-writers the output ports, each with ``spatial_bounds``, ``temporal_dim``
-(the streamer's ``temporal_dims``), ``num_channel`` (``n_ports * N / 64``
-for the N-bit dtype of the port's container, ``node_dtypes``) and
-``fifo_depth``.
+writers the output ports, each with ``spatial_bounds`` in words, fastest
+first (``[S_0 / k, S_1, ...]``: the fastest bound over the k elements of the
+port's container dtype a word holds, D142), ``temporal_dim`` (the streamer's
+``temporal_dims``), ``num_channel`` (the streamer's ``channels``, the wire
+default W / k; snax-gvsoc's streamer requires the bounds' product to be it)
+and ``fifo_depth``.
 
 **The datapath block** (snax-gvsoc ``snax/snax_cfg.py``): ``unit``
 (``SnaxUnit``), then the block's adapter's unit (blocks.py: ``inputs``,
-``outputs``, ``lanes``, ``data_width``, ``op``, ``signed``, ``control``,
-``config`` when not the default, ``wait``, ``latency``, ``ii``), then
-``fields``, the shell's configuration CSRs.
+``outputs``, ``lanes``, ``in_widths``, ``in_signed``, ``out_widths``,
+``out_signed`` (each port's dtype, from its container, in the BRM's port
+order), ``op``, ``control``, ``config`` when not the default, ``wait``,
+``latency``, ``ii``), then ``fields``, the shell's configuration CSRs.
 
 **Refused**, each a ``GenError`` (``gen.<rule>``): a design point outside
 ``root`` (``gen.point``), more or fewer than one accelerated instance
 (``gen.instances``: the platform has one accelerator slot), a null binding
 (``gen.binding``), an unregistered block (``gen.block``), what the block's
-adapter refuses, a port whose lanes are not whole 64-bit channels
-(``gen.dtype``), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
+adapter refuses, a dtype that is not intN or uintN (``gen.dtype``), a
+streamer whose fastest spatial bound is not whole words (``gen.lanes``,
+which connect.pack refuses first), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
 without a source hjson or a source that cannot be read or written into
 (``gen.source``, also a ``cluster.bender_target`` without the source's
 ``cluster.name``), a source with no slot or several (``gen.slot``), and a
@@ -145,7 +149,7 @@ from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure, TaskList
 
 from .blocks import BLOCKS, GenError, Unit, port_dtype
-from .data import DATA_H, arrays, data_h, refuse_packed
+from .data import DATA_H, arrays, data_h
 from .headers import STREAMER_HEADER, accelerator_header, cluster_headers, streamer_header
 
 ROOT = repo_root()
@@ -278,21 +282,20 @@ def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
 def streamer_template(point: DesignPoint, name: str, inst: Instance) -> dict[str, Any]:
     """The streamer template, in the hjson's keys; see the module doc."""
     groups: dict[str, list[dict[str, Any]]] = {"data_reader_params": [], "data_writer_params": []}
-    node = instance_nodes(point.graph)[name]
-    refuse_packed(point, [m.data for m in (node.inputs | node.outputs).values()])
     dtypes = node_dtypes(point, name)
     for p in inst.brm.interface.ports:
         s = point.streamers[streamer_name(name, p.name)]
-        bits, _ = port_dtype(dtypes[p.name], f"port {p.name}")
-        if s.n_ports * bits % 64:
+        port_dtype(dtypes[p.name], f"port {p.name}")  # intN or uintN (gen.dtype)
+        s0, *rest = s.spatial_bounds
+        if s0 % s.k:
             raise GenError(
-                "gen.dtype", f"streamer {s.name}: {s.n_ports} x {bits} bits is not whole 64-bit "
-                "channels",
+                "gen.lanes", f"streamer {s.name}: its fastest spatial bound {s0} is not whole "
+                f"words of {s.k} {dtypes[p.name]} elements",
             )  # fmt: skip
         mover = {
-            "spatial_bounds": list(s.spatial_bounds),
+            "spatial_bounds": [s0 // s.k, *rest],  # in words (D142)
             "temporal_dim": s.temporal_dims,
-            "num_channel": s.n_ports * bits // 64,
+            "num_channel": s.channels,
             "fifo_depth": s.options.fifo_depth,
         }
         groups["data_writer_params" if s.write else "data_reader_params"].append(mover)

@@ -158,12 +158,12 @@ def register_rtl_params(block: str, resolver: Resolver) -> None:
 
 
 def _elementwise_tiled_spatial(inst: Instance, u: Unit) -> dict[str, Any]:
-    return {"dataWidth": u.data_width, "lanes": u.lanes, "loopCountWidth": CSR_BITS,
-            "supportedOps": [OP_NAME[u.op]], "signed": u.signed}  # fmt: skip
+    return {"dataWidth": u.in_widths[0], "lanes": u.lanes, "loopCountWidth": CSR_BITS,
+            "supportedOps": [OP_NAME[u.op]], "signed": u.in_signed[0]}  # fmt: skip
 
 
 def _accumulator(inst: Instance, u: Unit) -> dict[str, Any]:
-    return {"width": u.data_width, "accWidth": u.data_width, "lanes": u.lanes}
+    return {"width": u.in_widths[0], "accWidth": u.out_widths[0], "lanes": u.lanes}
 
 
 register_rtl_params("ElementwiseTiledSpatial", _elementwise_tiled_spatial)
