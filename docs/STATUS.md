@@ -96,9 +96,10 @@ divide (a tail padded in the data, `connect.pad`), then generation (a
 recipe's `dtypes`, streamer bounds in words, each port's type in the
 accelerator file): vecadd, vecmul and matadd at int32, vsum_tree int32 into
 int64 and vecadd at int8 run on SNAX-GVSoC; the RTL refuses mixed widths
-(`gen.rtl_width`) until R4. snax-gvsoc's R1 is done (PR #32, open until
-R2); next is snax-gvsoc's R2: its forge/ fixtures regenerated, the int32 and
-int8 ones added.
+(`gen.rtl_width`) until R4. snax-gvsoc's part of PACK0 is merged (PR #32:
+SnaxUnit's per-port widths and its fifteen forge/ fixtures, the narrow and
+padded ones included; the submodule at its squash `6347d51e`). Next is R4,
+the Chisel blocks.
 
 ## Open Items
 
