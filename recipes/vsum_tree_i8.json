@@ -1,0 +1,19 @@
+{
+ "name": "vsum_tree_i8",
+ "kernel": "vsum",
+ "params": {"W": 8, "N": 64},
+ "symbols": {"N": "N"},
+ "dtypes": {"A": "int8", "out": "int64"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "acc"
+   }
+  }
+ ]
+}
