@@ -163,7 +163,7 @@ class RunIndex:
         return f"needs --trace {level}; this run was traced at {self.level}"
 
     def word_of(self, addr: int) -> int:
-        """The first byte of the bank word ``addr`` is in (L2 words are L1's, D13)."""
+        """The first byte of the bank word ``addr`` is in (L2 words are L1's, D142)."""
         w = self.cluster.bank_bytes
         return addr // w * w
 

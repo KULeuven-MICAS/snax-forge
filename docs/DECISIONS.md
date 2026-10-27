@@ -19,7 +19,7 @@ Rules (D117):
   `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D142**.
+  number: **D145**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm`
 (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design`
@@ -28,13 +28,13 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | Area | Decisions |
 |---|---|
 | scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 |
-| lower | D64 D75 D105 D135 |
+| lower | D64 D75 D105 D135 D144 |
 | gvsoc | D120–D122 D125 D134 D137 |
-| brm | D68 D70 D82 D103 D129 D133 |
+| brm | D68 D70 D82 D103 D129 D133 D143 |
 | dfg | D19 D71 D102 |
 | ref | D28 D79 |
 | sandbox | D72 D73 |
-| design | D12 D13 D84–D87 D131 |
+| design | D12 D84–D87 D131 D142 |
 | flow | D50 D108 D136 |
 | viz | D55 D57 D99 |
 | docs | D26 D46 D117 |
@@ -70,17 +70,16 @@ Retired, and where each now lives:
 | D135 | D45 |
 | D136 | D90 D94 D107 |
 | D137 | D38 D39 D59 |
+| D142 | D13 |
 
 ---
 
 **D8** · scope — The AI thinker is a commercial LLM, so every artefact is text that humans and LLMs
 read alike.
 
-**D12** · design — One streamer per accelerator port, named after it (D75), its width (`n_ports`,
-the hjson's `num_channel`) the port's lanes. → `design/streamers.py`, C§13.
-
-**D13** · design — The unit of transfer is a bank word, one element per word for now; element type
-and elements per word are in the platform so packing can come later (open item 21). → C§1, C§13.
+**D12** · design — One streamer per accelerator port, named after it (D75); its width `n_ports` is
+the port's lanes W, and the hjson's `num_channel` is its channels c (D142); the two are equal only
+at k = 1. → `design/streamers.py`, C§13.
 
 **D19** · dfg — Everything is extended by registration (node kinds, transforms, checks, passes, the
 accelerator kinds and ops of `brm/function.py`, the generator's blocks) and namespaced attrs, never
@@ -192,8 +191,8 @@ taken. Port names are not Python keywords and do not start with `_`, since they 
 in streamer names. → C§10.
 
 **D105** · lower — Accelerators chain through L1: the reader waits on the writer that put its
-container there, the only wait between them. A container the DMA moves is padded to whole beats, and
-the padding is kept free in both memories. → `lower/layout.py`.
+container there, the only wait between them. A container the DMA moves is padded (its size and
+value: D144), and the padding is kept free in both memories. → `lower/layout.py`.
 
 **D108** · flow — The flow also starts from a bound `.snaxdfg`, the suffix telling the two forms
 apart. That is how a hand-edited graph is run and checked, though it cannot be replayed or swept
@@ -207,9 +206,10 @@ SNAX-GVSoC; SNAX's own generators build the rest, so the hjson describes the clu
 tasklets to a chain of unit BRMs linked by FIFOs, with streamers on the outer ports only, so one
 register window and one shell wrapper (M13). Links between shells are parked (open item 53).
 
-**D113** · scope — The kernels keep NPBench's DaCe structure with the dtype as one parameter, at
-PolyBench's MINI and SMALL sizes. Integers first, for an exact check: `int64` through tier C, `int8`
-in and `int32` accumulate from tier P (as OpenGeMM); float later. → PAPER §6.1.
+**D113** · scope — The kernels keep NPBench's DaCe structure with a dtype per container, so one
+kernel may mix them (vsum: `int32` in, `int64` out), at PolyBench's MINI and SMALL sizes. Integers
+first, for an exact check: `int64` through tier C, `int8` in and `int32` accumulate from tier P (as
+OpenGeMM), its exact products by an explicit cast (D143); float later. → PAPER §6.1.
 
 **D116** · scope — SNAX-GVSoC replaced SNAX-MODEL: a GVSoC model of the SNAX cluster in which a
 Snitch core runs the real program, so control cost is measured, not declared, and checked against
@@ -260,9 +260,9 @@ snax_cluster's off): one shell contract for every block. Python checks `rtl.json
 (from snax_cluster's, its names snax-forge's), which `design from-hjson` reads: one accelerator, its
 movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134). → C§13.
 
-**D133** · brm — The Chisel Accumulator takes `ElementwiseTiledSpatial`'s control plus `len`, so
-both run under one shell contract (D130); it loads the next input as the result leaves (drain 0),
-and a W → 1 adder tree makes it `chisel_adder_tree` too. → `samples/Accumulator.scala`.
+**D133** · brm — The Chisel Accumulator takes `ElementwiseTiledSpatial`'s control plus `len` (one
+shell contract, D130), extends its lanes by signedness (D143), loads the next input as the result
+leaves (drain 0), and a W → 1 adder tree makes it `chisel_adder_tree` too. → `samples/Accumulator.scala`.
 
 **D134** · gvsoc — The hjson is the contract between snax-forge and SNAX-GVSoC: three files per
 design point (cluster, streamer, accelerator) read at run time by `SnaxUnit` and `SnaxShell`, so a
@@ -284,3 +284,17 @@ ids; the converter renames, never recounts, and cuts the window. → `run/`, C§
 block library: the basic blocks, their composition and the kernels that use them are designed together,
 with dot's six variants as the case study, in phases B0 (flow pieces) to B4 (tier A). → ARCHITECTURE §8,
 `docs/STATUS.md`.
+
+**D142** · design — A bank word packs k = 64/b elements of a port's container dtype, little-endian as
+NumPy. W lanes take c = W/k channels by default (the wire slice, no converter); another c is checked
+and needs the FIFO slicer. A packed stream: word-aligned base, k | W, innermost element stride 1,
+other element strides multiples of k. The platform keeps only the word width. → C§1, C§13, C§14.
+
+**D143** · brm — Arithmetic follows NumPy: each op runs at its operands' result type, with
+signedness from each port's container, and the result is then extended or wrapped into its target. A
+fold's lanes are cast to its output's type before its tree. Exact products (tier P) need an explicit
+cast in the kernel (open item 37). → C§16, snax-gvsoc `snax/snax_unit.hpp`.
+
+**D144** · lower — Padding is in the data, the hardware masks nothing: a container, or a row's innermost
+dimension, pads to lcm(W, 8k) elements (whole streamer and DMA beats) with zero or a max or min fold's
+identity; a chain into a fold at a non-dividing size is refused. → `lower/layout.py`, `gen/data.py`.

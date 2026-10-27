@@ -128,7 +128,7 @@ class L2Config(Config):
     size_bytes: int = 1 << 20
     base_addr: int = 0  # byte address of the first L2 word
     beat_bits: int = 512  # one DMA beat; must equal L1Config.wide_bits
-    width_bits: int = 64  # word = the L1 bank word (D13)
+    width_bits: int = 64  # word = the L1 bank word (D142)
     dtype: str = "int64"  # element type, as in the L1
     elems_per_word: int = 1  # as in the L1
 
