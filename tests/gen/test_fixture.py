@@ -5,7 +5,8 @@ generator's output for one design point, checked in untouched
 (``forge/README.md`` there): vecadd, vecmul, vsum, vsum_tree, matadd (int32,
 the first 2-D bind, two temporal loops per streamer), rowsum and rowsum_serial
 (a restart every T = N / W beats); the narrow ones (vecadd_i32, vecmul_i32,
-vsum_tree_i32, vecadd_i8, vsum_tree_i8: D142, D143) and the padded tails
+vsum_tree_i32, vecadd_i8, vsum_tree_i8: D142, D143; vecmul_i32_i64, the
+product at int32 sign-extended into int64) and the padded tails
 (vecadd_n7, vsum_tree_n21, rowsum_3x7: D144). Its refresh commands are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson
@@ -36,7 +37,7 @@ FORGE = SUB / "forge"
 DESIGNS = [
     "vecadd", "vecmul", "vsum", "vsum_tree", "matadd", "rowsum", "rowsum_serial",
     "vecadd_i32", "vecmul_i32", "vsum_tree_i32", "vecadd_i8", "vsum_tree_i8",
-    "vecadd_n7", "vsum_tree_n21", "rowsum_3x7",
+    "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64",
 ]  # fmt: skip
 
 pytestmark = pytest.mark.skipif(
