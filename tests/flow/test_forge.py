@@ -38,7 +38,7 @@ def forged(tmp_path, monkeypatch):
     monkeypatch.setattr(bundle_mod, "write_bundle",
                         lambda point, out: write_bundle(point, out, root(tmp_path)))  # fmt: skip
     imports = types.ModuleType("snax_forge.dfg.import_sdfg")
-    imports.import_kernel = lambda kernel: Graph.load(PLAINS[kernel])
+    imports.import_kernel = lambda kernel, dtypes=None: Graph.load(PLAINS[kernel])
     monkeypatch.setitem(sys.modules, "snax_forge.dfg.import_sdfg", imports)
     monkeypatch.setattr(flow_run, "OUT", tmp_path / "flow")
     monkeypatch.setattr(bundle_mod, "OUT", tmp_path / "bundle")

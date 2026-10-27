@@ -84,9 +84,10 @@ def test_two_temporal_maps_give_two_streamer_loops():
 
 
 def test_matadd_lowers_its_two_firing_loops():
-    """matadd at W = 4, M = 8, N = 16 on snax_forge (D73, D84): the column beats innermost (4,
-    32 bytes apart), the rows outer (8, 128 bytes), 4 lanes 8 bytes apart, each base the
-    plan's; n = 32 firings; the streamers' two temporal loops are the graph's."""
+    """matadd (int32, D142) at W = 4, M = 8, N = 16 on snax_forge (D73, D84): the column beats
+    innermost (4, 16 bytes apart), the rows outer (8, 64 bytes), 4 lanes as 2 channels a word
+    (8 bytes) apart, each base the plan's; n = 32 firings; the streamers' two temporal loops
+    are the graph's."""
     d = Design(Platform.load(SNAX_FORGE), bound_matadd())
     assert run_checks(d) == []
     p = DesignPoint.of(d, "matadd")
@@ -97,12 +98,12 @@ def test_matadd_lowers_its_two_firing_loops():
     for port, cont in (("a", "A"), ("b", "B"), ("out", "C")):
         assert c[f"add_acc_{port}"].values == {
             "base": p.memory.layouts[cont]["l1"].base, "temporal_bounds": [4, 8],
-            "temporal_strides": [32, 128], "spatial_strides": [8],
+            "temporal_strides": [16, 64], "spatial_strides": [8],
         }  # fmt: skip
     assert c["add_acc"].values == {"n": 32}
     lay = p.memory.layouts["C"]["l1"]
-    visited = addresses(c["add_acc_out"].values, [4])  # beat i * 4 + j_t, lane
-    assert visited[1 * 4 + 1, 2] == lay.base + 176 == lay.address([1, 6])  # element (1, 6)
+    visited = addresses(c["add_acc_out"].values, [2])  # beat i * 4 + j_t, channel (a word)
+    assert visited[1 * 4 + 1, 1] == lay.base + 88 == lay.address([1, 6])  # elements (1, 6:8)
 
 
 @pytest.mark.parametrize(
