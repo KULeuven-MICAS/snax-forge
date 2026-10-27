@@ -92,6 +92,9 @@
    "n_ports": 4,
    "spatial_bounds": [4],
    "temporal_dims": 1,
+   "dtype": "int64",
+   "k": 1,
+   "channels": 4,
    "fifo_depth": 8
   },
   "acc_b": {
@@ -101,6 +104,9 @@
    "n_ports": 4,
    "spatial_bounds": [4],
    "temporal_dims": 1,
+   "dtype": "int64",
+   "k": 1,
+   "channels": 4,
    "fifo_depth": 8
   },
   "acc_out": {
@@ -110,6 +116,9 @@
    "n_ports": 4,
    "spatial_bounds": [4],
    "temporal_dims": 1,
+   "dtype": "int64",
+   "k": 1,
+   "channels": 4,
    "fifo_depth": 8
   }
  },

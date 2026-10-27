@@ -422,8 +422,23 @@ def _connect_lanes(design: Design) -> Iterable[Problem]:
 
 def _connect_dtype(design: Design) -> Iterable[Problem]:
     """Each node's containers pass its BRM's dtype rule (brm/dtypes.py, D143): bind checked
-    it, a hand-edited graph may not."""
+    it, a hand-edited graph may not. A streamer moves one dtype: every node of an instance
+    puts the same one on a port."""
     g = design.graph
+    for i, inst in design.instances.items():
+        nodes = [n for n in accelerated(g) if n.attrs["instance"] == i]
+        for p in inst.brm.interface.ports:
+            by: dict[str, list[str]] = {}
+            for n in nodes:
+                by.setdefault(port_dtypes(g, n)[p.name], []).append(n.id)
+            if len(by) > 1:
+                seen = ", ".join(f"{dt} from {', '.join(ids)}" for dt, ids in sorted(by.items()))
+                yield Problem(
+                    "connect.dtype", f"streamer {streamer_name(i, p.name)}",
+                    f"port {p.name} of {_about(design, i)} gets {seen}: one streamer moves one "
+                    "dtype",
+                    "bind the nodes of each dtype to an instance of their own in the recipe",
+                )  # fmt: skip
     for n in accelerated(g):
         inst = design.instances[n.attrs["instance"]]
         dtypes = port_dtypes(g, n)

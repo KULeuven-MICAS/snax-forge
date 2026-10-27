@@ -250,6 +250,42 @@ def test_spatial_bounds_must_be_the_nests():
     assert p.fix == "remove spatial_bounds, or --set platform.streamers.acc_b.spatial_bounds=[4]"
 
 
+def _dtypes(**by):
+    """A graph edit: containers to the given dtypes."""
+    return lambda g: [g["containers"][c].update(dtype=dt) for c, dt in by.items()]
+
+
+def test_a_node_whose_containers_break_the_dtype_rule():
+    """A hand-edited graph: an int32 output under int64 inputs (D143)."""
+    (p,) = problems(design(edit_graph=_dtypes(C="int32")))
+    assert (p.code, p.where) == ("connect.dtype", "node add")
+    assert p.message.startswith("output out is int32, narrower than input a (int64)")
+    assert p.fix == "give the output containers a dtype these inputs accept (out: int64, uint64)"
+
+
+def _second_node_of_acc(g):
+    """A second node on instance acc, on int32 containers E, F -> G."""
+    second = copy.deepcopy(g["body"][0])
+    second["id"] = "add_map2"
+    n = second["body"][0]
+    n["id"] = "add2"
+    n["attrs"]["replaced"]["id"] = "add_map2_s"
+    for conn, c in (("a", "E"), ("b", "F"), ("out", "G")):
+        (n["inputs"] | n["outputs"])[conn]["data"] = c
+        g["containers"][c] = dict(g["containers"]["A"], dtype="int32")
+    g["body"].append(second)
+
+
+def test_one_instance_moves_one_dtype_per_port():
+    got = [p for p in problems(design(edit_graph=_second_node_of_acc)) if p.code == "connect.dtype"]
+    assert [p.where for p in got] == ["streamer acc_a", "streamer acc_b", "streamer acc_out"]
+    assert got[0].message == (
+        "port a of instance acc (elementwise_add, W=4, op=add) gets int32 from add2, int64 from "
+        "add: one streamer moves one dtype"
+    )
+    assert got[0].fix == "bind the nodes of each dtype to an instance of their own in the recipe"
+
+
 # =============================================================================
 # 5. Registration and the error
 # =============================================================================

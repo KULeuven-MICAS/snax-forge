@@ -20,7 +20,12 @@ from .helpers import VECADD_TASKS, vecadd_point
 
 
 def _streamer(name, write, spatial_bounds, dims):
-    return Streamer(name, "x", "a", write, tuple(spatial_bounds), dims, StreamerOptions(2))
+    lanes = 1
+    for b in spatial_bounds:
+        lanes *= b
+    return Streamer(
+        name, "x", "a", write, tuple(spatial_bounds), dims, StreamerOptions(2), "int64", 1, lanes
+    )
 
 
 # Streamers of every shape the cases need, on a 16-bank L1 of 64 rows
