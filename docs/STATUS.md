@@ -88,10 +88,12 @@ reference check. Next is PACK0, the streamer's PR (narrow elements packed in
 64-bit words; D142–D144), before B1. Its rounds: R0 docs; R1 design
 (platform, streamers, checks, BRM dtypes); R2 lowering and data; R3
 generation and the first SNAX-GVSoC runs; R4 Chisel; R5 viewer and close.
-PACK0's R0 and R1 are done: the decisions, then the design (the platform
+PACK0's R0, R1 and R2 are done: the decisions, the design (the platform
 keeps only the word, a BRM port's dtypes a rule, the streamers' dtype, k and
-channels, `connect.pack` and `connect.channels`); lowering refuses a narrow
-container until R2. snax-gvsoc's R1 is done (PR #32, open until R2).
+channels, `connect.pack` and `connect.channels`), then lowering and data
+(layouts by the container's itemsize, stream values in words); generation
+refuses a narrow container until R3. snax-gvsoc's R1 is done (PR #32, open
+until R2).
 
 ## Open Items
 

@@ -649,7 +649,7 @@ Stages: `platform` and `graph` independently, `connect` when both passed,
 | `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest), on a memory the container does not live in, or on L2 (the link places it, D86); an unknown pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
 | `memory.layout` | a layout whose shape is not its container's |
-| `memory.align` | an L1 base or stride that is not a multiple of the word; a container the DMA moves whose L1 layout is not contiguous, not whole wide beats (open item 38) or not on a beat |
+| `memory.align` | an L1 base that is not a multiple of the word, or a stride that is not one of the element's (its dtype's itemsize, D142); a container the DMA moves whose L1 layout is not contiguous, not whole wide beats (open item 38) or not on a beat |
 | `memory.fit` | an L1 layout that leaves L1 (the message names its bytes `[start, end)`; the fix the rows that would hold it, or the pin to L1's first byte), or an L2 layout larger than L2 |
 | `memory.runtime` | an L1 layout (with its padding, D105) reaching into the top of L1 that snRuntime keeps at start-up: a 1 KiB stack per core of the platform's `hjson` plus `RUNTIME_MARGIN` (256 B, `design/check.py`); not checked without an `hjson` under snax-forge's root. The fix pins the layout just below |
 | `memory.overlap` | two L1 layouts that share bytes, naming the pins (the fix moves the latest pin past everything) |
@@ -667,7 +667,7 @@ name (`register_memory_pass(kind, name, fn)`):
 | Pass | Decides | Default |
 |---|---|---|
 | `residency` | the memories of each container | `default`: not transient: L2 and L1 with an L2, else L1; transient: L1 |
-| `layout` | shape and strides, base 0 | `contiguous`: row-major, one element per word |
+| `layout` | shape and strides, base 0 | `contiguous`: row-major, each element its dtype's itemsize (a word holds several narrow ones, D142) |
 | `placement` | the L1 base per container (an L2 layout keeps base 0: the program's link places its array, section 7's regions) | `contiguous`: graph container order from L1's first byte, no gaps; a layout in both L2 and L1 on a wide beat and padded to whole beats (D105), others on a word; around the pins |
 
 `--set memory.<container>.l1.base=N` pins an L1 base; `--set
@@ -710,7 +710,7 @@ file is JSON. One design point gives byte-identical files wherever written.
 | `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds`, `temporal_dim`, `num_channel` (64-bit channels) and `fifo_depth` |
 | `<slot>_acc.hjson` | the datapath block, the whole file: `unit` (`SnaxUnit`), `inputs` and `outputs` (one per reader and writer, in order), `lanes`, `data_width`, `op`, `signed`, `control`, `config` (left out when `["count"]`), `wait`, `latency`, `ii`, `fields` (the shell's configuration CSRs; start follows) |
 | `include/` | `streamer_csr_addr_map.h` and `<instance>_csr.h`, and the runtime's `snitch_cluster_cfg.h` and `snitch_cluster_addrmap.h`, as snax_cluster's templates render them from the cluster file (`gen/headers.py`, D126) |
-| `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, padded to whole DMA beats as its L2 layout (D105) and aligned to the beat |
+| `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, padded to whole DMA beats in its itemsize (16 int32 or 64 int8 elements per 64-byte beat) as its L2 layout (D105) and aligned to the beat. A container narrower than the word is refused (`gen.dtype`) until packed streams are generated (PACK0 R3) |
 | `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens (`forge data:`), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
 | `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout), `tasks` (per accelerator task its `beats` and `csrs` values) |
 
