@@ -52,7 +52,7 @@ How a node runs is registered per kind (``register_executor``, principle
     2T, ..., an output written at T-1, 2T-1, ... where its memlet points in
     the firing that completes it.
 
-**A tail** (open item 31, D144, dfg/pad.py). Under a map ``split_map`` split
+**A tail** (D144, dfg/pad.py). Under a map ``split_map`` split
 with a tail (``loop.split`` has ``valid``: n), a lane is the kernel's only
 when ``W * v_t + v_s`` is below n. A tasklet there reads and writes its
 valid lanes only; an accelerated node reads a pad lane as the container's

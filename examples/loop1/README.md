@@ -28,11 +28,11 @@ placement put the three vectors in L1: one after the other, each 16 bank
 rows long over all 32 banks.
 
 <!-- excerpt: vecadd_N512_stall/report/design.md -->
-| Region | Base | End | Bytes | Share | Banks | Rows |
-|---|---:|---:|---:|---:|---|---|
-| A | 268435456 | 268439552 | 4096 | 3.1% | 0–31 | 0–15 |
-| B | 268439552 | 268443648 | 4096 | 3.1% | 0–31 | 16–31 |
-| C | 268443648 | 268447744 | 4096 | 3.1% | 0–31 | 32–47 |
+| Region | Base | End | Bytes | Share | Padding | Banks | Rows |
+|---|---:|---:|---:|---:|---|---|---|
+| A | 268435456 | 268439552 | 4096 | 3.1% | none | 0–31 | 0–15 |
+| B | 268439552 | 268443648 | 4096 | 3.1% | none | 0–31 | 16–31 |
+| C | 268443648 | 268447744 | 4096 | 3.1% | none | 0–31 | 32–47 |
 
 Its notes spell out what that means for the accelerator's two readers:
 

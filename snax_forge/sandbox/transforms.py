@@ -12,7 +12,7 @@ is; the reference check after the step is run.py's.
     keeping the map's id and attrs, and an inner map ``<id>_s`` over
     ``0:factor`` tagged ``spatial``; every use of ``v`` in the body becomes
     ``b + factor * v_t + v_s`` (D73). A length n that is not a multiple of
-    the factor (open item 31, D144) runs ``v_t`` over ceil(n / factor) and
+    the factor (D144) runs ``v_t`` over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
     ``factor * v_t + v_s`` below n are the kernel's, the rest pad lanes
     (dfg/pad.py), which the reference executor neither reads nor writes and

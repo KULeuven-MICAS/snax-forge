@@ -1,4 +1,4 @@
-"""A loop bound that is not a multiple of the spatial bound (open item 31, D144).
+"""A loop bound that is not a multiple of the spatial bound (D144).
 
 ``split_map`` of a map over ``n`` iterations by a factor W that does not
 divide n runs its temporal map ceil(n / W) times and records the valid count
