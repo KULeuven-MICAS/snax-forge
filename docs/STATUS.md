@@ -88,11 +88,13 @@ reference check. Next is PACK0, the streamer's PR (narrow elements packed in
 64-bit words; D142–D144), before B1. Its rounds: R0 docs; R1 design
 (platform, streamers, checks, BRM dtypes); R2 lowering and data; R3
 generation and the first SNAX-GVSoC runs; R4 Chisel; R5 viewer and close.
-PACK0's R0, R1 and R2 are done: the decisions, the design (the platform
-keeps only the word, a BRM port's dtypes a rule, the streamers' dtype, k and
-channels, `connect.pack` and `connect.channels`), then lowering and data
-(layouts by the container's itemsize, stream values in words); generation
-refuses a narrow container until R3. snax-gvsoc's R1 is done (PR #32, open
+PACK0's R0, R1, R2 and R2b are done: the decisions, the design (the
+platform keeps only the word, a BRM port's dtypes a rule, the streamers'
+dtype, k and channels, `connect.pack` and `connect.channels`), lowering and
+data (layouts by the container's itemsize, stream values in words), then
+sizes that do not divide (a tail padded in the data, `connect.pad`; vecadd
+N = 7, vsum N = 21 and rowsum 3 x 7 run on SNAX-GVSoC); generation refuses
+a narrow container until R3. snax-gvsoc's R1 is done (PR #32, open
 until R2).
 
 ## Open Items
@@ -120,8 +122,9 @@ Next free number: 93.
 27. Generating a BRM from Chisel, SystemVerilog or HLS sources. Far future.
 28. Implementations whose `source` is SystemVerilog or HLS: only `chisel`
     until one is needed.
-31. A loop bound that is not a multiple of the spatial bound: `split_map`
-    rejects it; PACK0 settles it by padding (D144), closed in its R5.
+31. A loop bound that is not a multiple of the spatial bound: settled by
+    PACK0's R2b, which pads it (D144): `split_map` records the valid count,
+    the data holds the pads, the reference masks them; closed in R5.
 32. The DFG viewer's layout (D55), revisited if graphs outgrow it.
 33. An MLIR importer that writes `.snaxdfg` directly.
 34. A hand-edited `.snaxdfg` runs through the flow (D108) but cannot be

@@ -295,6 +295,6 @@ signedness from each port's container, and the result is then extended or wrappe
 fold's lanes are cast to its output's type before its tree. Exact products (tier P) need an explicit
 cast in the kernel (open item 37). → C§16, snax-gvsoc `snax/snax_unit.hpp`.
 
-**D144** · lower — Padding is in the data, the hardware masks nothing: a container, or a row's innermost
-dimension, pads to lcm(W, 8k) elements (whole streamer and DMA beats) with zero or a max or min fold's
-identity; a chain into a fold at a non-dividing size is refused. → `lower/layout.py`, `gen/data.py`.
+**D144** · lower — Padding is in the data, the hardware masks nothing: a split dimension pads to a
+multiple of W, then the container to whole DMA beats, with zero or a max or min fold's identity; a
+chain into a fold at a non-dividing size is refused (`connect.pad`). → `dfg/pad.py`, `gen/data.py`.
