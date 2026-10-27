@@ -173,3 +173,55 @@ def test_a_fifo_above_its_depth_or_not_empty_at_the_end_is_named(run):
     broken = lines[:last] + lines[last + 1 :]
     with pytest.raises(RunError, match="acc_out lane 2: fifo counts above its depth 8 or not 0"):
         convert_lines(run, broken)
+
+
+# =============================================================================
+# Packed beats (D142): a beat's words are its mover's num_channel
+# =============================================================================
+
+
+def _packed(cluster, channels: dict[str, int], lines: list[str]):
+    """The fire and push events of ``lines`` on ``cluster`` with its movers at ``channels``
+    (a mover's lanes are its channels: words per beat)."""
+    from dataclasses import replace
+
+    from snax_forge.run.beats import Context, beat_events
+    from snax_forge.run.convert import source_of
+
+    from .helpers import line
+
+    acc = cluster.accelerator
+    movers = [replace(m, lanes=channels[m.name]) for m in acc.movers if m.name in channels]
+    c = replace(cluster, accelerator=replace(acc, movers=movers))
+    parsed = [parse_line(line("snax_acc0/unit", "beats", x, 2613)) for x in lines]
+    ctx = Context(c, [], 0, 10_000, "beat", [acc.name, *channels])
+    return [e for _, _, e in beat_events([(source_of(x, c), x) for x in parsed], ctx)
+            if e["k"] in ("fire", "push")]  # fmt: skip
+
+
+def test_vecadd_i32s_first_firing_two_words_per_port(cluster):
+    """As traced: two readers of 2 words (4 int32 lanes, two per word) and a writer of 2."""
+    fire, push = _packed(cluster, {"acc_a": 2, "acc_b": 2, "acc_out": 2}, [
+        (
+            "2613 fire n=0 b=0,0 value=0x111000002bd,0xfffffe3300000016,0xfffffd26000002ee,"
+            "0x1ba0000009d"
+        ),
+        "2613 push n=0 first=0 last=0 value=0xfffffe37000005ab,0xffffffed000000b3",
+    ])  # fmt: skip
+    assert fire["value"] == {"acc_a": [0x111000002BD, 0xFFFFFE3300000016],
+                             "acc_b": [0xFFFFFD26000002EE, 0x1BA0000009D]}  # fmt: skip
+    assert push["value"] == [0xFFFFFE37000005AB, 0xFFFFFFED000000B3]
+
+
+def test_a_fold_two_words_in_one_out(cluster):
+    """vsum_tree_i32's shape: a reader of 2 words, a writer of 1 (the fold's one word)."""
+    fire, push = _packed(cluster, {"acc_a": 2, "acc_out": 1}, [
+        "2613 fire n=0 b=0 value=0x111000002bd,0xfffffe3300000016",
+        "2613 push n=0 first=0 last=0 value=0xffffffffffffffbd",
+    ])  # fmt: skip
+    assert fire["value"] == {"acc_a": [0x111000002BD, 0xFFFFFE3300000016]}
+    assert push["value"] == [0xFFFFFFFFFFFFFFBD]
+    with pytest.raises(RunError, match="push at 2613: 2 words, the writer moves 1"):
+        _packed(cluster, {"acc_a": 2, "acc_out": 1}, [
+            "2613 push n=0 first=0 last=0 value=0x1,0x2",
+        ])  # fmt: skip

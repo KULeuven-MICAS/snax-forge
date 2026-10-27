@@ -169,9 +169,11 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
         for b in ss[i + 1 :]:
             la, lb = lays[a.container], lays[b.container]  # type: ignore[index]
 
-            def first_banks(lay: Layout, lanes: int) -> list[int]:
-                w = _words(lay, cluster.l1_base, word)[:lanes]
-                return sorted({int(x) % banks for x in w})
+            def first_banks(lay: Layout, channels: int) -> list[int]:
+                """The banks of a mover's first beat: its first ``channels`` words (several
+                narrow elements share one, D142)."""
+                w = list(dict.fromkeys(int(x) for x in _words(lay, cluster.l1_base, word)))
+                return sorted({x % banks for x in w[:channels]})
 
             both = sorted(set(first_banks(la, a.lanes)) & set(first_banks(lb, b.lanes)))
             if (

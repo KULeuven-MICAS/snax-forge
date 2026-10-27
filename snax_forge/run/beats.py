@@ -15,7 +15,10 @@ functions).
 index; ``acc_a.lane0``, ``core0``, ``axi``), a stall's ``by`` too (-1, the DMA's superbank,
 is ``dma``); a streamer line's ``mover`` its mover (``reader0`` -> ``acc_a``); a ``fire``'s
 ``b``, ``value`` and ``vals`` are dicts keyed by reader mover (the unit's inputs in port
-order are the streamer's readers in order, each beat ``lanes * data_width / 64`` words).
+order are the streamer's readers in order, each beat its mover's ``num_channel`` words: what
+SnaxUnit moves per beat, D142, several narrow elements to a word); a ``push``'s ``value`` is
+its writer's ``num_channel`` words (one for a fold). ``vals`` are the elements in those words,
+read by each region's dtype.
 Lines of a source the filter does not name are dropped (the streamer writes every mover's).
 
 **Lookups.** Every cycle and ``back`` is shifted by the boot and lines outside the window are
@@ -277,8 +280,8 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
     mover_of_port = {p: m for m in acc.movers for p in m.ports}
     readers = [m for m in acc.movers if not m.write]
     writers = [m for m in acc.movers if m.write]
-    unit = acc.unit
-    beat_words = unit.get("lanes", 1) * unit.get("data_width", 64) // 64
+    words_in = [m.lanes for m in readers]  # a mover's lanes are its channels: words per beat
+    starts = [sum(words_in[:i]) for i in range(len(readers) + 1)]
     funcs: dict[str, list[tuple[int, str]]] = defaultdict(list)
     for s, x in named:
         if x.trace == "events" and x.kind == "func":
@@ -353,18 +356,21 @@ def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[i
             if acc.name not in ctx.filter:
                 continue
             run = task_at(spans.get(acc.name, []), t)
-            if len(f["b"]) != len(readers) or len(f["value"]) != len(readers) * beat_words:
+            if len(f["b"]) != len(readers) or len(f["value"]) != starts[-1]:
                 raise RunError("convert.beats", f"fire at {t}: {len(f['b'])} beats of "
                                f"{len(f['value'])} words, the accelerator reads {len(readers)} "
-                               f"of {beat_words}")  # fmt: skip
+                               f"of {words_in} words (its readers' num_channel)")  # fmt: skip
             e.update(src=acc.name, task=run[1] if run else None, n=f["n"],
                      b={m.name: f["b"][i] for i, m in enumerate(readers)},
-                     value={m.name: f["value"][i * beat_words : (i + 1) * beat_words]
+                     value={m.name: f["value"][starts[i] : starts[i + 1]]
                             for i, m in enumerate(readers)})  # fmt: skip
             fires.append((e, run))
         elif k == "push":
             if acc.name not in ctx.filter:
                 continue
+            if writers and len(f["value"]) != writers[0].lanes:
+                raise RunError("convert.beats", f"push at {t}: {len(f['value'])} words, the "
+                               f"writer moves {writers[0].lanes} (its num_channel)")  # fmt: skip
             run = task_at(spans.get(acc.name, []), t)
             e.update(src=acc.name, task=run[1] if run else None, n=f["n"], first=f["first"],
                      last=f["last"], value=list(f["value"]))  # fmt: skip
