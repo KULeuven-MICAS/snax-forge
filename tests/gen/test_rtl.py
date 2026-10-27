@@ -43,6 +43,7 @@ DESIGNS = {
     "vecadd_i8": ("vecadd_i8", []),
     "vsum_tree_i32": ("vsum_tree_i32", []),
     "vsum_tree_i8": ("vsum_tree_i8", []),
+    "vecmul_i32_i64": ("vecmul_i32_i64", []),
 }
 
 
