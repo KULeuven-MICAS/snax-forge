@@ -13,7 +13,7 @@ from snax_forge.design.platform import L1Config
 from snax_forge.design.streamers import Streamer
 from snax_forge.lower import Layout, LayoutError, StreamError, streamer_values
 from snax_forge.lower.derive import addresses
-from snax_forge.lower.layout import check_word, dma_side, moved_bytes
+from snax_forge.lower.layout import dma_side, moved_bytes
 from tests.brm.helpers import IMPL, affine_adder, affine_elementwise_add, vector_nest
 from tests.design.helpers import SNAX_FORGE
 
@@ -189,12 +189,6 @@ def test_a_layout_of_narrow_elements():
     assert dma_side(Layout.contiguous(0, (8,), 4), 4, 64) == {
         "base": 0, "bounds": [1], "strides": [64]
     }  # fmt: skip
-
-
-def test_a_narrow_element_is_refused_until_packing_lowers():
-    check_word("A", "int64", 8)  # one element per word
-    with pytest.raises(LayoutError, match="A is int32: packing narrow elements into words lands"):
-        check_word("A", "int32", 8)
 
 
 def test_layout_round_trip_and_contiguous():

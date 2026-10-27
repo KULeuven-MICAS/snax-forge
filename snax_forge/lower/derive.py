@@ -67,7 +67,7 @@ from snax_forge.design.streamers import (
 from snax_forge.dfg import DfgError, Memlet, named_rates
 from snax_forge.dfg.subset import parse_dim
 
-from .layout import Layout, LayoutError, check_word, dma_side
+from .layout import Layout, dma_side
 from .streams import StreamError, in_words, streamer_values
 from .tasks import Configure, Start, Sync, TaskList
 
@@ -139,18 +139,11 @@ def task_list(point: DesignPoint) -> TaskList:
     symbols = g.bound_symbols
     insts = instances(g)
     mode = pf.wait_mode
-    word = pf.l1.width_bits // 8
     beat = pf.l1.wide_bits // 8
     nodes = accelerated(g)
 
     def layout(c: str, mem: str) -> Layout | None:
         return plan.layouts.get(c, {}).get(mem)
-
-    for c in plan.layouts:  # one element per word until packing lowers (D142)
-        try:
-            check_word(c, g.containers[c].dtype, word)
-        except LayoutError as e:
-            raise LowerError(str(e)) from None
 
     def moved(c: str) -> bool:
         return layout(c, "l1") is not None and layout(c, "l2") is not None

@@ -145,7 +145,7 @@ from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure, TaskList
 
 from .blocks import BLOCKS, GenError, Unit, port_dtype
-from .data import DATA_H, arrays, data_h
+from .data import DATA_H, arrays, data_h, refuse_packed
 from .headers import STREAMER_HEADER, accelerator_header, cluster_headers, streamer_header
 
 ROOT = repo_root()
@@ -278,6 +278,8 @@ def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
 def streamer_template(point: DesignPoint, name: str, inst: Instance) -> dict[str, Any]:
     """The streamer template, in the hjson's keys; see the module doc."""
     groups: dict[str, list[dict[str, Any]]] = {"data_reader_params": [], "data_writer_params": []}
+    node = instance_nodes(point.graph)[name]
+    refuse_packed(point, [m.data for m in (node.inputs | node.outputs).values()])
     dtypes = node_dtypes(point, name)
     for p in inst.brm.interface.ports:
         s = point.streamers[streamer_name(name, p.name)]

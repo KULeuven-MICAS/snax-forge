@@ -266,17 +266,22 @@ def test_design_and_lower_import_in_any_order(first):
     assert r.returncode == 0, r.stderr
 
 
-def test_a_narrow_container_is_refused_until_packing_lowers():
-    """int32 vecadd passes the design checks (D142), but a layout places one element per word
-    until PACK0 R2 lowers packing: the task list refuses it rather than lower it wrongly."""
+def test_int32_vecadd_lowers_in_words():
+    """int32 vecadd at W = 4 (D142): each beat two words (spatial stride 8, the streamer's
+    channels W / k = 2), a beat on every 16 bytes; each 64 x 4 = 256-byte container moved as
+    four whole DMA beats."""
 
     def int32(g):
         for c in g["containers"].values():
             c["dtype"] = "int32"
 
-    with pytest.raises(LowerError) as e:
-        task_list(point(edit_graph=int32))
-    assert str(e.value) == "A is int32: packing narrow elements into words lands in PACK0 R2"
+    steps = {
+        s.task_name: s for s in task_list(point(edit_graph=int32)).steps if hasattr(s, "task_name")
+    }
+    assert steps["add_acc_a"].values == {
+        "base": 0, "temporal_bounds": [16], "temporal_strides": [16], "spatial_strides": [8]
+    }  # fmt: skip
+    assert steps["load_A"].values["src"]["bounds"] == [4]
 
 
 def test_matadd_int32_4x6_in_2x2_tiles_in_words():

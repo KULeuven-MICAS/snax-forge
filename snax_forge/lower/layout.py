@@ -12,9 +12,8 @@ SNAX-DSE's decision (section 5.4); SNAX-LOWER only reads it.
 This is the form of the design point's memory plan (D86):
 snax_forge/design/memory.py makes one per container and memory, and
 SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs; the
-design checks judge a whole plan, in L1 and L2. A layout places one element
-per word: ``check_word`` refuses a container of narrower elements until
-packing lowers (PACK0 R2, D142).
+design checks judge a whole plan, in L1 and L2. A layout places each element
+at its dtype's itemsize, so a word holds several narrow ones (D142).
 """
 
 from __future__ import annotations
@@ -32,15 +31,6 @@ if TYPE_CHECKING:  # design imports lower.layout
 
 class LayoutError(ValueError):
     """A layout that does not fit the operand or the L1."""
-
-
-def check_word(container: str, dtype: str, word_bytes: int) -> None:
-    """One element of ``dtype`` per word of ``word_bytes``, as a layout places them; a
-    narrower dtype is refused until packing lowers (D142)."""
-    if np.dtype(dtype).itemsize < word_bytes:
-        raise LayoutError(
-            f"{container} is {dtype}: packing narrow elements into words lands in PACK0 R2"
-        )
 
 
 @dataclass(frozen=True)
