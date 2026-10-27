@@ -37,7 +37,9 @@ How a node runs is registered per kind (``register_executor``, principle
     ``out[0]`` whatever ``out`` held before.
 ``accelerated``
     one firing at a time, through the BRM's function, its registered
-    kind's ``fn(k, ins, state, params)`` (``brm.function_of``). The ``temporal`` maps directly around the node are
+    kind's ``fn(k, ins, state, params)`` (``brm.function_of``, given the node's
+    containers' dtypes: a fold's lanes are cast to its output's before its tree, D143). The
+    ``temporal`` maps directly around the node are
     its firing loop, outermost first, as the BRM nest orders them;
     the node's ``code`` must be the BRM's ``function.code`` (D82), and its
     ``replaced`` subtree is history, never run;
@@ -385,13 +387,13 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
 # =============================================================================
 
 
-def _accel(node: Node, what: str) -> Any:
-    from snax_forge.brm import BrmError, function_of, load_brm
+def _accel(node: Node, what: str, graph: Graph) -> Any:
+    from snax_forge.brm import BrmError, function_of, load_brm, port_dtypes
 
     a = node.attrs
     try:
         instance = load_brm(a["brm"]).resolve(a["implementation"], a["params"])
-        return instance, function_of(instance)
+        return instance, function_of(instance, port_dtypes(graph, node))
     except BrmError as e:
         raise ExecutionError(f"{what}: {e}") from None
 
@@ -432,7 +434,7 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     what = f"node {node.id!r}"
     if node.body:
         raise ExecutionError(f"{what}: a nested accelerated block is not run yet")
-    instance, cfg = _accel(node, what)
+    instance, cfg = _accel(node, what, ctx.graph)
     brm_code = instance.brm.function.code
     if brm_code is not None and node.attrs["code"] != brm_code:
         raise ExecutionError(

@@ -217,8 +217,8 @@ def test_firings_in_order_and_a_task_per_tile(monkeypatch):
     calls = []
     real = ex._accel
 
-    def spy(node, what):
-        instance, cfg = real(node, what)
+    def spy(node, what, graph):
+        instance, cfg = real(node, what, graph)
 
         def fn(k, ins, state, params):
             calls.append((k, params["n"], state.get("seen", 0), ins["a"][0]))
