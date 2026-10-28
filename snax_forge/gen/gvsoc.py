@@ -1,20 +1,21 @@
-"""A design point -> its cluster on SNAX-GVSoC: three hjson files and headers (D134).
+"""A design point -> its cluster on SNAX-GVSoC: three description files and headers (D134).
 
     generate(design_point, out_dir, root=None) -> Manifest
 
 The hjson is the contract: SNAX-GVSoC's ``snax_hjson`` target reads it at
 run time (snax-gvsoc ``snax/snax_cfg.py``), so a design point compiles
-nothing and no Python is generated (D134). ``out_dir`` gets three hjson
-files, each changing for its own reason, the C headers, the program and its
-data, and the manifest:
+nothing and no Python is generated (D134). ``out_dir`` gets three
+description files, each changing for its own reason, the C headers, the
+program and its data, and the manifest:
 
     <platform>.hjson         the cluster: the platform's source hjson with
                              the platform's values written back, the
                              cluster renamed and the accelerator slot set
     <slot>_streamer.hjson    the streamer template, as the hjson has it
-    <slot>_acc.hjson         the datapath block
+    accelerator.json         the accelerator's one description
+                             (accelerator.py, D145)
     include/                 the C headers (headers.py): the streamer's
-                             streamer_csr_addr_map.h and <instance>_csr.h,
+                             streamer_csr_addr_map.h and <name>_csr.h,
                              and the runtime's snitch_cluster_cfg.h and
                              snitch_cluster_addrmap.h from the cluster file
     data.h                   the program's data (data.py): inputs,
@@ -26,7 +27,7 @@ data, and the manifest:
 ``<platform>`` is the platform's base (its name when it has none), ``<slot>``
 its ``accelerator_slot``: for ``platforms/snax_forge.json``,
 ``snax_forge.hjson``, ``snax_forge_streamer.hjson`` and
-``snax_forge_acc.hjson``.
+``accelerator.json``.
 
 **The cluster file.** The platform's ``hjson`` (a path from ``root``),
 parsed, with the platform's values written back by the reverse of
@@ -53,15 +54,15 @@ name, is renamed and set, its keys in this order:
       snax_tcdm_ports           the streamer's channels
       sparse_interconnect_config  one group of that width (its granularity
                                 kept), when the source has it
-      snax_num_rw_csr           the shell's fields and start
-      snax_num_ro_csr           2 (busy and the counter, D130)
+      snax_num_rw_csr           the accelerator's R/W CSRs (accelerator.py)
+      snax_num_ro_csr           its R/O CSRs
     snax_disable_csr_manager    true: the wrapper carries its own manager
                                 (D130)
     snax_forge_rtl              ``rtl/files.f``, the RTL's file list from
                                 the cluster file's folder, which only a
                                 bundle has; SNAX-GVSoC ignores it
     snax_streamer_cfg           ``{"$ref": "<slot>_streamer.hjson"}``
-    snax_datapath_cfg           ``{"$ref": "<slot>_acc.hjson"}``
+    snax_datapath_cfg           ``{"$ref": "accelerator.json"}``
 
 each ``$ref`` the whole file. The source's own template, a top-level key the
 slot referred to (``{"$ref": "#/<key>"}``), goes when nothing else refers to
@@ -78,18 +79,15 @@ wire default W / num_slc; snax-gvsoc's streamer requires the bounds' product to
 be it)
 and ``fifo_depth``.
 
-**The datapath block** (snax-gvsoc ``snax/snax_cfg.py``): ``unit``
-(``SnaxUnit``), then the block's adapter's unit (blocks.py: ``inputs``,
-``outputs``, ``lanes``, ``in_widths``, ``in_signed``, ``out_widths``,
-``out_signed`` (each port's dtype, from its container, in the BRM's port
-order), ``op``, ``control``, ``config`` when not the default, ``wait``,
-``latency``, ``ii``), then ``fields``, the shell's configuration CSRs.
+**The accelerator** is accelerator.py's ``describe``, written as plain JSON
+(no header comment: its ``design_point`` names the source). Its CSRs follow
+the streamer's.
 
 **Refused**, each a ``GenError`` (``gen.<rule>``): a design point outside
-``root`` (``gen.point``), more or fewer than one accelerated instance
-(``gen.instances``: the platform has one accelerator slot), a null binding
-(``gen.binding``), an unregistered block (``gen.block``), what the block's
-adapter refuses, a dtype that is not intN or uintN (``gen.dtype``), a
+``root`` (``gen.point``), what accelerator.py's ``describe`` refuses
+(``gen.instances``: the platform has one accelerator slot; ``gen.binding``,
+``gen.datapath``, ``gen.drain``, ``gen.timing`` and the datapath's
+adapter's), a dtype that is not intN or uintN (``gen.dtype``), a
 streamer whose fastest spatial bound is not whole words (``gen.lanes``,
 which connect.pack refuses first), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
 without a source hjson or a source that cannot be read or written into
@@ -105,10 +103,12 @@ graph still null never gets here: ``DesignPoint.load`` refuses it
 **The manifest**: ``design``, ``design_point``, ``symbols`` (the bound
 graph's, e.g. ``{"N": 64}``: what a program sizes its data by),
 ``cluster`` (the cluster file, what gvrun's ``--param hjson=`` takes),
-``files``, ``program`` (``main.c``), ``trace`` (the unit's trace path), ``csrs`` (the layout) and
-``tasks``: per accelerator task of the derived task list
-(snax_forge/lower/derive.py, D64) its name, its ``beats`` (the unit's trip
-count, the task's ``n``) and its ``csrs`` values.
+``files``, ``program`` (``main.c``), ``trace`` (the unit's trace path), ``csrs`` (the
+layout: the streamer's first and last CSR, and every accelerator CSR's define -> its
+number) and ``tasks``: per accelerator task of the derived task list
+(snax_forge/lower/derive.py, D64) its name, its ``beats`` (the unit's firings, the
+task's ``n``) and its ``csrs`` values (``JOBS``, and ``JOB_BEATS`` for a fold:
+lower/c.py's ``job_values``).
 
 **Stable paths.** The design point is named once, by its path relative to
 ``root`` (snax-forge's root by default; ``named_from`` when given, the
@@ -135,7 +135,6 @@ from typing import Any
 
 import hjson
 
-from snax_forge import expr
 from snax_forge.brm import Instance, port_dtypes
 from snax_forge.common import JsonFile, generated_header, plain, repo_root, to_json
 from snax_forge.design import DesignError
@@ -144,12 +143,13 @@ from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import instance_nodes, streamer_name
 from snax_forge.lower import CError
-from snax_forge.lower.c import MAIN_C, main_c, mover_name
+from snax_forge.lower.c import MAIN_C, job_values, main_c, mover_name
 from snax_forge.lower.c import accelerator as c_accelerator
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure, TaskList
 
-from .blocks import BLOCKS, GenError, Unit, port_dtype
+from .accelerator import ACCELERATOR_JSON, Accelerator, describe
+from .blocks import GenError, port_dtype
 from .data import DATA_H, arrays, data_h
 from .headers import STREAMER_HEADER, accelerator_header, cluster_headers, streamer_header
 
@@ -168,10 +168,6 @@ SNAX_ACC_CSR_LAST = 0x5FD
 # by pulp/snitch/snitch_cluster/snitch_cluster.py; the composite
 # (snax/snax_unit_acc.py) calls it unit
 UNIT_TRACE = "snax_acc0/unit"
-# The unit kind of the datapath block (snax-gvsoc snax/snax_unit_acc.py)
-UNIT = "SnaxUnit"
-# A shell's read-only CSRs: busy and the counter (D130)
-SHELL_RO_CSRS = 2
 # The generated cluster's name (D130)
 CLUSTER = "snax_forge_cluster"
 # The RTL's file list from the cluster file's folder, written by bundle.py
@@ -180,33 +176,33 @@ RTL_FILE_LIST = "rtl/files.f"
 
 @dataclass(frozen=True)
 class CsrLayout:
-    """The accelerator's CSRs: the streamer's range, then the shell's (D130)."""
+    """The slot's CSRs: the streamer's range, then the accelerator's, each by its define
+    (accelerator.py) -> its number."""
 
     streamer_first: int
     streamer_last: int
-    fields: dict[str, int]
-    start: int
-    busy: int
-    counter: int
+    accelerator: dict[str, int]
+
+    @property
+    def first(self) -> int:
+        """The accelerator's first CSR."""
+        return self.streamer_last + 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "streamer": {"first": self.streamer_first, "last": self.streamer_last},
-            "fields": dict(self.fields),
-            "start": self.start,
-            "busy": self.busy,
-            "counter": self.counter,
+            "accelerator": dict(self.accelerator),
         }
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> CsrLayout:
-        return cls(d["streamer"]["first"], d["streamer"]["last"], dict(d["fields"]), d["start"],
-                   d["busy"], d["counter"])  # fmt: skip
+        return cls(d["streamer"]["first"], d["streamer"]["last"], dict(d["accelerator"]))
 
 
 @dataclass(frozen=True)
 class AccTask:
-    """One accelerator task: its name, the unit's trip count and the shell's field values."""
+    """One accelerator task: its name, the unit's firings and its CSR values (JOBS,
+    JOB_BEATS)."""
 
     name: str
     beats: int
@@ -261,18 +257,10 @@ class Manifest(JsonFile):
 # =============================================================================
 
 
-def accelerator(point: DesignPoint) -> tuple[str, Instance, Unit]:
-    """The one accelerated instance (lower/c.py's ``accelerator``, its rules ``gen.instances``
-    and ``gen.binding``), its name and its unit (the block's adapter)."""
-    name, inst = c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
-    b = inst.impl.binding
-    if b["block"] not in BLOCKS:
-        raise GenError(
-            "gen.block",
-            f"{inst.brm.name}.{inst.implementation}: block {b['block']!r} not registered "
-            f"({sorted(BLOCKS)})",
-        )
-    return name, inst, BLOCKS[b["block"]](inst, node_dtypes(point, name))
+def instance(point: DesignPoint) -> tuple[str, Instance]:
+    """The one accelerated instance and its name (lower/c.py's ``accelerator``, its rules
+    ``gen.instances`` and ``gen.binding``)."""
+    return c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
 
 
 def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
@@ -333,33 +321,26 @@ def channels(template: dict[str, Any]) -> int:
     return sum(m["num_channel"] for m in movers(template))
 
 
-def csr_layout(template: dict[str, Any], fields: list[str]) -> CsrLayout:
+def csr_layout(template: dict[str, Any], acc: Accelerator) -> CsrLayout:
+    """The streamer's CSRs from ``SNAX_CSR_FIRST``, then the accelerator's; ``gen.csrs`` past
+    ``SNAX_ACC_CSR_LAST``."""
     first = SNAX_CSR_FIRST + streamer_csrs(template)
-    nums = {f: first + i for i, f in enumerate(fields)}
-    start = first + len(fields)
-    layout = CsrLayout(SNAX_CSR_FIRST, first - 1, nums, start, start + 1, start + 2)
-    if layout.counter > SNAX_ACC_CSR_LAST:
+    nums = {name: first + offset for name, offset in acc.defines().items()}
+    last = max(nums.values())
+    if last > SNAX_ACC_CSR_LAST:
         raise GenError(
-            "gen.csrs", f"the shell's last CSR {layout.counter} is past {SNAX_ACC_CSR_LAST}, the "
+            "gen.csrs", f"the accelerator's last CSR {last} is past {SNAX_ACC_CSR_LAST}, the "
             "last an accelerator may use (0x5FE and 0x5FF are snax_cluster's task queues)",
         )  # fmt: skip
-    return layout
-
-
-def datapath(unit: Unit) -> dict[str, Any]:
-    """The datapath block; see the module doc."""
-    return {"unit": UNIT, **unit.properties(), "fields": list(unit.fields)}
+    return CsrLayout(SNAX_CSR_FIRST, first - 1, nums)
 
 
 def acc_tasks(tasks: TaskList, name: str, inst: Instance) -> list[AccTask]:
-    """The accelerator tasks of the derived task list (D64), with the binding's csrs values."""
-    out = []
-    for step in tasks.steps:
-        if isinstance(step, Configure) and step.type == "accel" and step.component == name:
-            env = {**inst.params, **step.values}
-            csrs = {c["field"]: expr.evaluate(c["value"], env) for c in inst.impl.binding["csrs"]}
-            out.append(AccTask(step.task_name, step.values["n"], csrs))
-    return out
+    """The accelerator tasks of the derived task list (D64), with their CSR values
+    (lower/c.py's ``job_values``)."""
+    return [AccTask(s.task_name, s.values["n"], job_values(inst, s.values))
+            for s in tasks.steps
+            if isinstance(s, Configure) and s.type == "accel" and s.component == name]  # fmt: skip
 
 
 # =============================================================================
@@ -485,7 +466,7 @@ def rename_cluster(d: dict[str, Any], where: str) -> None:
 
 
 def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], name: str,
-             template: dict[str, Any], unit: Unit, files: tuple[str, str],
+             template: dict[str, Any], acc: Accelerator, files: tuple[str, str],
              where: str) -> None:  # fmt: skip
     """The slot (``find_slot``'s, in ``d``) named ``name`` and set for the design; see the
     module doc."""
@@ -500,8 +481,8 @@ def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], name: str,
                 "group [width, granularity]",
             )  # fmt: skip
         slot["sparse_interconnect_config"] = [[ports, groups[0][1]]]
-    slot["snax_num_rw_csr"] = len(unit.fields) + 1
-    slot["snax_num_ro_csr"] = SHELL_RO_CSRS
+    slot["snax_num_rw_csr"] = acc.rw
+    slot["snax_num_ro_csr"] = acc.ro
     old = slot.get("snax_streamer_cfg")
     last = {
         "snax_disable_csr_manager": True,
@@ -536,12 +517,12 @@ def point_name(path: Path, root: Path) -> str:
 
 def load_point(
     design_point: str | Path, root: Path, named_from: str | Path | None = None
-) -> tuple[str, DesignPoint, tuple[str, Instance, Unit]]:
+) -> tuple[str, DesignPoint, Accelerator]:
     """The design point's name (``point_name`` from ``named_from``, else ``root``), the point
-    and its accelerator (``accelerator``)."""
+    and its accelerator's description (accelerator.py's ``describe``)."""
     shown = point_name(Path(design_point), root if named_from is None else Path(named_from))
     point = DesignPoint.load(design_point)
-    return shown, point, accelerator(point)
+    return shown, point, describe(point, shown)
 
 
 def cli(write: Callable[[], int]) -> int:
@@ -572,16 +553,17 @@ def generate(
     design_point: str | Path, out_dir: str | Path, root: str | Path | None = None, *,
     named_from: str | Path | None = None, kernel: str | None = None, seed: int = 0,
 ) -> Manifest:  # fmt: skip
-    """Write the three hjson files, the headers, data.h, main.c and the manifest to
+    """Write the three description files, the headers, data.h, main.c and the manifest to
     ``out_dir``; see the module doc. ``named_from`` is the folder the design point is named
     from (``root`` by default; the flow's folder for a flow, D136); ``kernel`` and ``seed``
     go to data.h's inputs (data.py's ``arrays``)."""
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
-    shown, point, (name, inst, unit) = load_point(point_path, root, named_from)
+    shown, point, acc = load_point(point_path, root, named_from)
+    name, inst = instance(point)
     platform = point.platform
     template = streamer_template(point, name, inst)
-    layout = csr_layout(template, unit.fields)
+    layout = csr_layout(template, acc)
     tasks = task_list(point)
     data = arrays(point, seed, kernel)
 
@@ -591,27 +573,28 @@ def generate(
     rename_cluster(cluster, platform.hjson)
     slot = platform.accelerator_slot
     names = (f"{platform.base or platform.name}.hjson", f"{slot}_streamer.hjson",
-             f"{slot}_acc.hjson")  # fmt: skip
-    set_slot(cluster, at, found, slot, template, unit, names[1:], platform.hjson)
+             ACCELERATOR_JSON)  # fmt: skip
+    set_slot(cluster, at, found, slot, template, acc, names[1:], platform.hjson)
 
     accel = (f"instance {name}, BRM {inst.brm.name}, implementation {inst.implementation}, "
-             f"block {inst.impl.binding['block']}")  # fmt: skip
+             f"datapath {inst.impl.binding['datapath']}")  # fmt: skip
+    header = f"{acc.name}_csr.h"
     streamer_h, streamer_last = streamer_header(movers(template), SNAX_CSR_FIRST, shown)
     assert streamer_last == layout.streamer_last, (streamer_last, layout)
     files = {
         names[0]: _hjson(shown, f"The cluster {CLUSTER}: {platform.hjson} with platform "
                          f"{platform.name}'s values and the slot {slot} set for {accel}; its "
                          f"streamer in "
-                         f"{names[1]}, its datapath in {names[2]}.", cluster),
+                         f"{names[1]}, its accelerator in {names[2]}.", cluster),
         names[1]: _hjson(shown, f"Slot {slot}'s streamer template: readers the input ports in the "
                          "BRM's port order, writers the output ports.", template),
-        names[2]: _hjson(shown, f"Slot {slot}'s datapath block: {accel}.", datapath(unit)),
+        names[2]: acc.to_json(),
         f"include/{STREAMER_HEADER}": streamer_h,
-        f"include/{name}_csr.h": accelerator_header(name, layout, shown),
+        f"include/{header}": accelerator_header(acc, layout.first, shown),
         **{f"include/{f}": text for f, text in cluster_headers(cluster, shown).items()},
         DATA_H: data_h(point, shown, data, seed=seed),
-        MAIN_C: main_c(point, tasks, cluster, layout, data,
-                       [DATA_H, f"{name}_csr.h", STREAMER_HEADER], shown),
+        MAIN_C: main_c(point, tasks, cluster, acc, data, [DATA_H, header, STREAMER_HEADER],
+                       shown),
     }  # fmt: skip
     (out / "include").mkdir(parents=True, exist_ok=True)
     for f, text in files.items():

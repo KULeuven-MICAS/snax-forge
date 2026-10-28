@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 from jsonschema import Draft7Validator, Draft202012Validator, ValidationError
 
-from snax_forge.brm import CONTROLS, WAITS
+from snax_forge.brm import CONTROLLERS, INT_DTYPES
 from snax_forge.gen import generate
 from snax_forge.gen.schemas import NAMES, schema, validate
 
@@ -39,7 +39,7 @@ def test_the_schemas_are_schemas(name):
 
 def test_the_writers_files_validate(folder):
     validate("streamer", parsed(folder / "snax_forge_streamer.hjson"))
-    validate("accelerator", parsed(folder / "snax_forge_acc.hjson"))
+    validate("accelerator", parsed(folder / "accelerator.json"))
 
 
 @pytest.mark.parametrize(
@@ -50,11 +50,17 @@ def test_the_writers_files_validate(folder):
         ("streamer", "snax_forge_streamer.hjson",
          lambda d: d["data_writer_params"].update(num_channel=[0])),
         ("streamer", "snax_forge_streamer.hjson", lambda d: d.clear()),
-        ("accelerator", "snax_forge_acc.hjson", lambda d: d.pop("fields")),
-        ("accelerator", "snax_forge_acc.hjson", lambda d: d.update(unit="SnaxAlu")),
-        ("accelerator", "snax_forge_acc.hjson", lambda d: d.update(signed=1)),
-        ("accelerator", "snax_forge_acc.hjson", lambda d: d.update(csr_base=978)),
-        ("accelerator", "snax_forge_acc.hjson", lambda d: d.update(inputs=[])),
+        ("accelerator", "accelerator.json", lambda d: d.pop("name")),
+        ("accelerator", "accelerator.json", lambda d: d.update(fields=["loopCount"])),
+        ("accelerator", "accelerator.json", lambda d: d.update(inputs=[])),
+        ("accelerator", "accelerator.json", lambda d: d.update(inputs=["a"])),
+        ("accelerator", "accelerator.json", lambda d: d["groups"][0].update(links=[{}])),
+        ("accelerator", "accelerator.json", lambda d: d["groups"][0]["csrs"][2].update(width=32)),
+        ("accelerator", "accelerator.json", lambda d: d["groups"][0]["csrs"][0].pop("width")),
+        ("accelerator", "accelerator.json",
+         lambda d: d["groups"][0]["units"][0]["ports"]["a"].update(dtype="float64")),
+        ("accelerator", "accelerator.json",
+         lambda d: d["groups"][0]["units"][0].update(wait="lockstep")),
     ],
 )  # fmt: skip
 def test_a_broken_file_does_not_validate(folder, name, file, edit):
@@ -64,11 +70,11 @@ def test_a_broken_file_does_not_validate(folder, name, file, edit):
         validate(name, d)
 
 
-def test_the_kinds_are_the_registered_ones():
-    """control and wait name what brm/binding.py registers (D129)."""
-    props = schema("accelerator")["properties"]
-    assert props["control"]["enum"] == list(CONTROLS)
-    assert props["wait"]["enum"] == list(WAITS)
+def test_the_dtypes_are_the_brms():
+    """A port's dtype and an opType are the BRM's integer dtypes (D143); counted is the only
+    controller, so the file names none (D147)."""
+    assert set(schema("accelerator")["$defs"]["dtype"]["enum"]) == set(INT_DTYPES)
+    assert list(CONTROLLERS) == ["counted"]
 
 
 def _resolved(node, top, folder: Path):

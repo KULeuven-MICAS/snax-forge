@@ -19,7 +19,7 @@ Rules (D117):
   `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
-  number: **D145**.
+  number: **D149**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm`
 (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design`
@@ -27,11 +27,11 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 |
 | lower | D64 D75 D105 D135 D144 |
 | gvsoc | D120–D122 D125 D134 D137 |
-| brm | D68 D70 D82 D103 D129 D133 D143 |
-| dfg | D19 D71 D102 |
+| brm | D68 D70 D82 D103 D129 D133 D143 D147 |
+| dfg | D19 D71 D102 D148 |
 | ref | D28 D79 |
 | sandbox | D72 D73 |
 | design | D12 D84–D87 D131 D142 |
@@ -244,29 +244,29 @@ the RTL's load-to-load cycles, the core going on until the next load or a use of
 keeps GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`, `SG7.md`.
 
 **D126** · scope — snax-gvsoc builds its programs from a pinned copy of snax_cluster's software in
-`sw/`, its synced config the forge vecadd fixture's, refreshed by `make sync-snax-cluster`, whose diff
-is the check; a design point's program and runtime take the cluster headers snax-forge writes for it.
-Only the RTL needs a snax_cluster checkout. → snax-gvsoc `sw/README.md`.
+`sw/`, refreshed by `make sync-snax-cluster`, whose diff is the check; its default config and
+`test_snax_cfg` read `forge/vecadd/`, never `sw/cfg/snax_forge/`; a design point's program takes the
+cluster headers snax-forge writes for it. Only the RTL needs snax_cluster. → snax-gvsoc `sw/README.md`.
 
-**D129** · brm — An implementation's `binding` names its Chisel block and how the BRM fills it
-(`block`, `args`, `control`, `csrs`, `wait`, optional `ports`), each kind registered (D19), so one
-description drives both generators. → C§10, `brm/binding.py`.
+**D129** · brm — An implementation's `binding` names its datapath and how the BRM fills it
+(`datapath`, `args`, `controller` `counted`, optional `ports`), each kind registered (D19), so one
+description drives both generators; the CSRs come from the group (D146). → C§10, `brm/binding.py`.
 
 **D130** · scope — A generated accelerator carries its own CSR manager (ReqRspManager's protocol,
-snax_cluster's off): one shell contract for every block. Python checks `rtl.json` against
-`hw/chisel/blocks.json`, Scala only builds; snax_cluster sees only the bundle's files. → C§17, C§18.
+snax_cluster's off), its CSRs per group (D146): one shell contract. Python checks `accelerator.json`
+against the datapath catalogue, Scala only builds; snax_cluster sees only the bundle. → C§17, C§18.
 
 **D131** · design — The base cluster is snax-forge's own file, `platforms/snax_forge_cluster.hjson`
 (from snax_cluster's, its names snax-forge's), which `design from-hjson` reads: one accelerator, its
 movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134). → C§13.
 
-**D133** · brm — The Chisel Accumulator takes `ElementwiseTiledSpatial`'s control plus `len` (one
-shell contract, D130), extends its lanes by signedness (D143), loads the next input as the result
-leaves (drain 0), and a W → 1 adder tree makes it `chisel_adder_tree` too. → `samples/Accumulator.scala`.
+**D133** · brm — The Chisel Accumulator becomes `TreeAccumulate`, a datapath under the nest
+controller (D147; L 1, pins `fire` and `first`, drain 0 as today): it extends its lanes by signedness
+(D143), and its W → 1 adder tree makes it `chisel_adder_tree` too. → C§17, `hw/chisel/`.
 
-**D134** · gvsoc — The hjson is the contract between snax-forge and SNAX-GVSoC: three files per
-design point (cluster, streamer, accelerator) read at run time by `SnaxUnit` and `SnaxShell`, so a
-sweep compiles nothing; snax-gvsoc's `forge/` fixtures need no snax-forge. → C§16.
+**D134** · gvsoc — Three files per design point are the contract between snax-forge and SNAX-GVSoC
+(the cluster and streamer hjson, `accelerator.json`, D145), read at run time (`snax_cfg.py`), so a
+sweep compiles nothing; snax-gvsoc's `forge/` fixtures need no snax-forge. → C§16, C§17.
 
 **D135** · lower — The task list becomes C on snRuntime, one accelerator per program: each step on
 the core that owns its component, D64's waits as polls with a hardware barrier where another core
@@ -298,3 +298,19 @@ cast in the kernel (open item 37). → C§16, snax-gvsoc `snax/snax_unit.hpp`.
 **D144** · lower — Padding is in the data, the hardware masks nothing: a split dimension pads to a
 multiple of W, then the container to whole DMA beats, with zero or a max or min fold's identity; a
 chain into a fold at a non-dividing size is refused (`connect.pad`). → `dfg/pad.py`, `gen/data.py`.
+
+**D145** · scope — One description per design point, `accelerator.json`: snax-forge writes it once,
+and Emit, the catalogue check and SNAX-GVSoC read it, in place of `rtl.json` and `<slot>_acc.hjson`,
+so the model and the RTL cannot be configured apart. → C§16, C§17.
+
+**D146** · scope — An accelerator is groups of linked units, each with one JOBS (a unit fires JOBS · ∏ T
+over itself and the folds downstream, SDF's balance) and its own START, STATUS, COUNTER and busy and
+done pins, so groups run apart; an empty run ends in a done, so no ERROR CSR (open item 83). → C§17.
+
+**D147** · brm — Every block is a datapath only (data and enables) under one nest controller per
+shell, SnaxUnit's rule in Chisel, so control is written once for model and RTL; the accelerator is
+`<tag>_csr`, `<tag>_ctrl` and `<tag>_datapath`. → C§17, `hw/chisel/`.
+
+**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links, each group its own
+accelerator until `encapsulate` puts several in one (`unencapsulate` undoes it), so dot 1 is one
+accelerator of groups `mul` and `sum`, a task each, on one slot (open item 79). → C§11, C§12.

@@ -86,13 +86,11 @@ def test_no_implementation_is_rejected():
         Brm.from_dict(d)
 
 
-# The binding of ElementwiseTiledSpatial
+# The binding of an elementwise BRM (D129): the datapath, its args, the nest controller
 BINDING = {
-    "block": "ElementwiseTiledSpatial",
-    "args": {"lanes": "W", "supportedOps": "op"},
-    "control": "counted",
-    "csrs": [{"field": "loopCount", "value": "n"}],
-    "wait": "lockstep",
+    "datapath": "ElementwiseLanes",
+    "args": {"lanes": "W", "op": "op"},
+    "controller": "counted",
 }
 
 
@@ -108,10 +106,9 @@ def test_binding_is_optional():
 
 def test_binding_expressions_are_stored_canonical():
     d = adder()
-    _impl(d)["binding"] = {**BINDING, "args": {"lanes": "W*1", "supportedOps": "op"},
-                           "csrs": [{"field": "loopCount", "value": "(n)"}]}  # fmt: skip
+    _impl(d)["binding"] = {**BINDING, "args": {"lanes": "W*1", "op": "(op)"}}
     got = Brm.from_dict(d).implementations["chisel_tiled_spatial"].binding
-    assert got["args"]["lanes"] == "W * 1" and got["csrs"] == [{"field": "loopCount", "value": "n"}]
+    assert got["args"] == {"lanes": "W * 1", "op": "op"}
 
 
 def test_binding_ports_are_kept_in_port_order_when_given():
@@ -129,32 +126,27 @@ def _binding(**kw):
 
 BINDING_CASES = [
     ("binding key", lambda d: _impl(d).update(binding={**BINDING, "op": 0}), "unknown keys"),
-    ("binding missing", lambda d: _impl(d).update(binding={"block": "X"}), "missing key 'args'"),
-    ("block", _binding(block=3), "block: must name a Chisel block"),
-    ("control", _binding(control="free"), "control: 'free' not registered"),
-    ("wait", _binding(wait="buffered"), "wait: 'buffered' not registered"),
+    ("binding missing", lambda d: _impl(d).update(binding={"datapath": "X"}), "missing key 'args'"),
+    ("datapath", _binding(datapath=3), "datapath: must name a datapath"),
+    ("controller", _binding(controller="free"), "controller: 'free' not registered"),
+    ("old keys", _binding(csrs=[], wait="lockstep"), "unknown keys"),
     ("args object", _binding(args=["W"]), "args: must be an object"),
     ("args runtime", _binding(args={"lanes": "n"}), "not design params"),
     ("args expr", _binding(args={"lanes": "'W'"}), "not allowed"),
-    ("csrs list", _binding(csrs={"loopCount": "n"}), "csrs: must be a list"),
-    ("csr keys", _binding(csrs=[{"field": "loopCount"}]), "must be {field, value}"),
-    ("csr name", _binding(csrs=[{"field": "T", "value": "m"}]), "uses \\['m'\\]"),
-    ("csr field", _binding(csrs=[{"field": "a b", "value": "n"}]), "not a field name"),
-    ("csr twice", _binding(csrs=[{"field": "x", "value": "n"}] * 2), "duplicate fields"),
     ("ports object", _binding(ports=["a"]), "ports: must be an object"),
     ("ports missing", _binding(ports={"a": "a", "b": "b"}), "must map every BRM port"),
     ("ports unknown", _binding(ports={"a": "a", "b": "b", "out": "o", "c": "c"}), "every BRM"),
-    ("ports name", _binding(ports={"a": "a", "b": "b", "out": "o x"}), "not a block port name"),
+    ("ports name", _binding(ports={"a": "a", "b": "b", "out": "o x"}), "not a datapath port name"),
     ("ports twice", _binding(ports={"a": "x", "b": "x", "out": "out"}), "two BRM ports"),
 ]
 
 
-def test_control_and_wait_are_registered_kinds():
-    from snax_forge.brm import CONTROLS, WAITS, register_wait
+def test_the_controller_is_a_registered_kind():
+    from snax_forge.brm import CONTROLLERS, register_controller
 
-    assert list(CONTROLS) == ["counted"] and list(WAITS) == ["lockstep", "pipelined"]
+    assert list(CONTROLLERS) == ["counted"]
     with pytest.raises(ValueError, match="already registered"):
-        register_wait("lockstep", "again")
+        register_controller("counted", "again")
 
 
 def test_unknown_keys_are_rejected():

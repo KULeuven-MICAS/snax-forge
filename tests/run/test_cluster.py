@@ -41,8 +41,8 @@ def test_movers_readers_first_named_by_port(cluster):
 
 
 def test_csrs_as_the_generated_header_has_them(cluster):
-    """vecadd's streamer_csr_addr_map.h and acc_csr.h: start 0x3cf, busy 0x3d0, the shell's
-    loopCount 0x3d2, start 0x3d3, busy 0x3d4, counter 0x3d5."""
+    """vecadd's streamer_csr_addr_map.h and acc_csr.h: start 0x3cf, busy 0x3d0, the group's
+    START 0x3d2, JOBS 0x3d3, STATUS 0x3d4 (busy, bit 0), COUNTER 0x3d5."""
     a = cluster.accelerator
     c = a.csrs
     assert (c.streamer_first, c.streamer_start, c.streamer_busy, c.streamer_last) == (
@@ -51,7 +51,7 @@ def test_csrs_as_the_generated_header_has_them(cluster):
         0x3D0,
         0x3D1,
     )
-    assert (c.fields, c.start, c.busy, c.counter) == ({"loopCount": 0x3D2}, 0x3D3, 0x3D4, 0x3D5)
+    assert (c.fields, c.start, c.busy, c.counter) == ({"ACC_RW_JOBS": 0x3D3}, 0x3D2, 0x3D4, 0x3D5)
     assert [a.block_of(x) for x in (0x3C0, 0x3D0, 0x3D2, 0x3D5, 0x3D6)] == [
         "acc_streamer",
         "acc_streamer",
@@ -61,20 +61,22 @@ def test_csrs_as_the_generated_header_has_them(cluster):
     ]
 
 
-@pytest.mark.parametrize("fields", [[], ["loopCount"], ["loopCount", "rate"]])
-def test_csrs_agree_with_the_generator(fields):
+@pytest.mark.parametrize("k", [0, 1, 3])
+def test_csrs_agree_with_the_generator(k):
+    """accelerator.json's CSRs as the generator numbers them: START, STATUS and COUNTER as
+    start, busy and counter, the other R/W ones as fields."""
+    from tests.gen.helpers import one_unit
+
     _, streamer, _, _ = files()
     streamer["data_reader_params"]["temporal_dim"] = [2, 1]
-    c = csrs_of(streamer, fields)
-    g = csr_layout(streamer, fields)
-    assert (c.streamer_first, c.streamer_last, c.fields, c.start, c.busy, c.counter) == (
-        g.streamer_first,
-        g.streamer_last,
-        g.fields,
-        g.start,
-        g.busy,
-        g.counter,
-    )
+    acc = one_unit(k)
+    c = csrs_of(streamer, acc.to_dict(), "acc")
+    g = csr_layout(streamer, acc)
+    n = g.accelerator
+    assert (c.streamer_first, c.streamer_last) == (g.streamer_first, g.streamer_last)
+    assert (c.start, c.busy, c.counter) == (n["ACC_RW_START"], n["ACC_RO_STATUS"],
+                                            n["ACC_RO_COUNTER"])  # fmt: skip
+    assert c.fields == {k: v for k, v in n.items() if "_RW_" in k and k != "ACC_RW_START"}
 
 
 def test_l1_and_banks(cluster):
@@ -119,12 +121,12 @@ def test_load_from_files(tmp_path):
     cluster, streamer, unit, point = files()
     (tmp_path / "snax_forge.hjson").write_text(hjson.dumps(cluster))
     (tmp_path / "snax_forge_streamer.hjson").write_text(hjson.dumps(streamer))
-    (tmp_path / "snax_forge_acc.hjson").write_text(hjson.dumps(unit))
+    (tmp_path / "accelerator.json").write_text(json.dumps(unit))
     (tmp_path / "design_point.json").write_text(json.dumps(point))
     c = load_cluster(tmp_path / "snax_forge.hjson", tmp_path / "design_point.json")
     assert c.accelerator == cluster_from(*files()).accelerator
     assert c.meta == {"cluster": "snax_forge.hjson"}
-    (tmp_path / "snax_forge_acc.hjson").unlink()
+    (tmp_path / "accelerator.json").unlink()
     with pytest.raises(RunError) as e:
         load_cluster(tmp_path / "snax_forge.hjson", tmp_path / "design_point.json")
     assert e.value.code == "cluster.ref"

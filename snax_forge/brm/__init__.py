@@ -13,8 +13,8 @@ SNAX-LOWER maps onto streamer values (``snax_forge.lower.streams``);
 (library.py, ``load_brm``) holds ``elementwise_add``, ``elementwise_mul``
 and ``accumulate``, a reduction named by its pattern and kind. ``drain`` is
 a third timing number (D103), and port names can appear in code. An
-implementation's ``binding`` (binding.py, D129) has its ``control`` and
-``wait`` kinds registered. A port's ``dtypes`` are a rule (dtypes.py,
+implementation's ``binding`` (binding.py, D129) has its ``controller`` kind
+registered. A port's ``dtypes`` are a rule (dtypes.py,
 ``check_dtypes``, D143): a node's containers give the dtypes.
 """
 
@@ -22,7 +22,7 @@ from snax_forge.expr import ExprError
 
 from . import affine, stream  # register the "affine" and "stream" notations
 from .affine import Nest, resolve_nest, task_nest
-from .binding import CONTROLS, WAITS, register_control, register_wait
+from .binding import CONTROLLERS, register_controller
 from .brm import (
     Brm,
     BrmError,
@@ -43,13 +43,12 @@ from .notation import NOTATIONS, register_notation
 from .stream import memlet_ordered
 
 __all__ = [
-    "CONTROLS",
+    "CONTROLLERS",
     "INT_DTYPES",
     "KINDS",
     "LIBRARY",
     "NOTATIONS",
     "OPS",
-    "WAITS",
     "AccelFunction",
     "AccelPort",
     "Brm",
@@ -74,11 +73,10 @@ __all__ = [
     "memlet_ordered",
     "output_dtypes",
     "port_dtypes",
-    "register_control",
+    "register_controller",
     "register_kind",
     "register_notation",
     "register_op",
-    "register_wait",
     "resolve",
     "resolve_nest",
     "stream",

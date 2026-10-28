@@ -19,13 +19,13 @@ Designs that differ only in timing, the param values they support or their
 RTL source are implementations of one BRM. Different ports, rates or data
 order make a different BRM. Only ``source: chisel`` is accepted for now
 (open item 28), and ``binding`` may be null until it is generated
-(binding.py, D129: the Chisel block and how the BRM fills it).
+(binding.py, D129: the datapath and how the BRM fills it).
 
 Which part serves which component: interface and function give what the
 reference executor runs (function.py); the dataflow gives the streamer values
 (SNAX-LOWER); the pattern serves SNAX-SANDBOX's ``bind``; the chosen
-implementation's timing and binding serve the generators (the GVSoC
-accelerator and the Chisel block).
+implementation's timing and binding serve the generators (the accelerator's
+description, accelerator.json, for SNAX-GVSoC and the RTL).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
 and reach the design point and the accelerator hjson. ``runtime`` params are
@@ -256,8 +256,9 @@ class Timing:
     L: cycles from a firing to its push. II: the least number of cycles
     between two firings. ``drain`` (D103): the cycles, starting with the
     cycle an output is pushed, in which no input is taken (1 for a block
-    whose ``in.ready`` is low while its result waits; the Chisel
-    Accumulator's is 0, D133). Optional, default 0; always written here.
+    whose ``in.ready`` is low while its result waits; the generator takes 0
+    only, as the nest controller has none, D133). Optional, default 0;
+    always written here.
     """
 
     latency: Value
@@ -560,9 +561,8 @@ def _check_implementations(b: Brm, design: dict[str, Param], what: str) -> None:
         if impl.binding is not None:
             try:
                 impl.binding = check_binding(
-                    impl.binding, design, b.interface.params,
-                    [p.name for p in b.interface.ports], f"{w}.binding",
-                )  # fmt: skip
+                    impl.binding, design, [p.name for p in b.interface.ports], f"{w}.binding"
+                )
             except ValueError as e:
                 raise BrmError(str(e)) from None
 

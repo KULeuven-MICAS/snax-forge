@@ -1,12 +1,14 @@
-"""The generator's own schemas: the streamer file, the accelerator file and ``rtl.json``.
+"""The generator's own schemas: the streamer file and ``accelerator.json``.
 
-    schema(name) -> dict        name: "streamer", "accelerator" or "rtl"
+    schema(name) -> dict        name: "streamer" or "accelerator"
     validate(name, value)       raises jsonschema.ValidationError
 
 JSON Schema 2020-12, in ``schema/<name>.schema.json``: what gvsoc.py writes
 into ``<slot>_streamer.hjson`` (the streamer template) and
-``<slot>_acc.hjson`` (the datapath block), each a whole file, and what rtl.py
-writes into ``rtl.json`` (C§17). The cluster
+``accelerator.json`` (the accelerator's one description, accelerator.py), each
+a whole file (gen-rtl writes the same accelerator.json). What
+``accelerator.json``'s schema cannot say (the CSR offsets contiguous in CSR
+order) ``Accelerator`` checks. The cluster
 file is snax_cluster's own and checked against snax_cluster's schema (the
 copy in snax-gvsoc ``sw/docs/schema/``), where the submodule is checked out
 (tests/gen/test_schemas.py). What a schema cannot say (the movers' lists of
@@ -23,7 +25,7 @@ from typing import Any
 from jsonschema import Draft202012Validator
 
 SCHEMAS = Path(__file__).parent / "schema"
-NAMES = ("streamer", "accelerator", "rtl")
+NAMES = ("streamer", "accelerator")
 
 
 def schema(name: str) -> dict[str, Any]:

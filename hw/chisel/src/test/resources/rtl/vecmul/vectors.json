@@ -26,10 +26,10 @@
  "tasks": [
   {
    "name": "mult_acc",
-   "csrs": {"loopCount": 16},
+   "csrs": {"JOBS": 16},
    "firings": 16,
    "counter": 16,
-   "working": "SnaxShell: the counter is reset by the accepted start and counts each busy cycle; busy rises the cycle after the start. Lockstep, inputs always valid and the output always ready: a firing every busy cycle, the 16th the run's last: 16 busy cycles"
+   "working": "The group's COUNTER is reset by the accepted start and counts each busy cycle; busy rises the cycle after the start. L 0, II 1, inputs always valid and the output always ready: a firing every busy cycle, the 16th the run's last: 16 busy cycles"
   }
  ]
 }

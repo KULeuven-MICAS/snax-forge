@@ -19,10 +19,10 @@
  "tasks": [
   {
    "name": "sum_acc",
-   "csrs": {"loopCount": 16, "len": 16},
+   "csrs": {"JOBS": 1, "JOB_BEATS": 16},
    "firings": 16,
    "counter": 17,
-   "working": "SnaxShell: the counter is reset by the accepted start and counts each busy cycle; busy rises the cycle after the start. Pipelined, L 1, II 1, drain 0, inputs always valid and the output always ready: firing k (from 0) in busy cycle 1 + 1 * k, the last (15) in 16, its result pushed 1 later, the run's last cycle (a sum before it leaves while the next input is taken): 17 busy cycles"
+   "working": "The group's COUNTER is reset by the accepted start and counts each busy cycle; busy rises the cycle after the start. L 1, II 1, inputs always valid and the output always ready: firing k (from 0) in busy cycle 1 + 1 * k, the last (15) in 16, its result pushed 1 later, the run's last cycle (a sum before it leaves while the next input is taken): 17 busy cycles"
   }
  ]
 }

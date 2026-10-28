@@ -6,9 +6,10 @@ import scala.jdk.CollectionConverters._
 
 import chisel3.RawModule
 import circt.stage.ChiselStage
-import snax.forge.elementwise.{ElementwiseLoop, ElementwiseOp, ElementwiseSpatial, ElementwiseTiledSpatial}
-import snax.forge.samples.{Accumulator, SimpleAdder}
-import snax.forge.shell.{RtlSpec, ShellWrapper}
+import snax.forge.ctrl.NestCtrl
+import snax.forge.datapath.{ElementwiseLanes, TreeAccumulate}
+import snax.forge.elementwise.ElementwiseOp
+import snax.forge.shell.{AcceleratorSpec, ShellWrapper}
 import snax.forge.stream.{FifoPacker, FifoSlicer}
 
 /** Elaboration entry point: Chisel -> CHIRRTL -> firtool -> SystemVerilog.
@@ -28,10 +29,10 @@ import snax.forge.stream.{FifoPacker, FifoSlicer}
   * {{{
   * pixi run chisel-gen                        # every target
   * pixi run chisel-gen -- --list              # names only, no elaboration
-  * pixi run chisel-gen -- ElementwiseLoop     # substring match, so both loop configs
-  * pixi run chisel-gen -- --out /tmp/rtl Tiled
-  * pixi run chisel-gen -- --describe          # the block catalogue (Blocks), as blocks.json holds it
-  * pixi run chisel-gen -- --spec out/rtl/vecadd/rtl.json   # the accelerator of an rtl.json (gen-rtl)
+  * pixi run chisel-gen -- NestCtrl            # substring match, so both controller configs
+  * pixi run chisel-gen -- --out /tmp/rtl Lanes
+  * pixi run chisel-gen -- --describe          # the datapath catalogue (Datapaths), as blocks.json holds it
+  * pixi run chisel-gen -- --spec out/rtl/vecadd/accelerator.json   # the accelerator of an accelerator.json (gen-rtl)
   * }}}
   */
 object Emit {
@@ -62,83 +63,30 @@ object Emit {
     */
   private case class Target(label: String, note: String, gen: () => RawModule)
 
-  private val DataWidth = 32
-  private val Int32     = Seq("int32", "int32")
-  private val LoopWidth = 32
+  private val Int32 = Seq("int32", "int32")
 
-  /** Everything the emitter knows how to build.
-    *
-    * The elementwise entries deliberately come in selectable/fixed pairs. Diffing the two emitted files is the clearest
-    * way to see what `supportedOps` actually does to the hardware: the operation mux and its decode vanish, leaving the
-    * bare operator. That is the generator policy made visible.
+  /** Everything the emitter knows how to build on its own, apart from `--spec`: the catalogue's datapaths (D147), the
+    * nest controller at the latencies they run at, and the parked stream blocks.
     */
   private val catalogue: Seq[Target] = Seq(
     Target(
-      "SimpleAdder",
-      "sample: combinational lanes, fixed add",
-      () => new SimpleAdder(width = DataWidth, lanes = 4)
-    ),
-    Target(
-      "Accumulator",
-      "accumulate's block (D133): one lane here, a sum per len inputs",
-      () => new Accumulator(inType = "int32", outType = "int32")
-    ),
-    Target(
-      "ElementwiseLoop-sel",
-      "loop variant, W=1, all eight operations selectable",
-      () => new ElementwiseLoop(dataWidth = DataWidth, loopCountWidth = LoopWidth)
-    ),
-    Target(
-      "ElementwiseLoop-add",
-      "loop variant, W=1, fixed add -- diff against -sel to see the mux disappear",
+      "ElementwiseLanes",
+      "datapath: 4 lanes of int32, add (L 0, no pins)",
       () =>
-        new ElementwiseLoop(
-          dataWidth      = DataWidth,
-          loopCountWidth = LoopWidth,
-          supportedOps   = Seq(ElementwiseOp.Add)
-        )
+        new ElementwiseLanes(inTypes = Int32, opType = "int32", outType = "int32", lanes = 4, op = ElementwiseOp.Add)
     ),
     Target(
-      "ElementwiseSpatial-sel",
-      "spatial variant, W=4, selectable",
-      () => new ElementwiseSpatial(dataWidth = DataWidth, lanes = 4)
+      "TreeAccumulate",
+      "datapath: 4 lanes of int32 into an int64 sum (L 1, pins fire and first)",
+      () => new TreeAccumulate(inType = "int32", outType = "int64", lanes = 4)
     ),
     Target(
-      "ElementwiseSpatial-add",
-      "spatial variant, W=4, fixed add",
-      () => new ElementwiseSpatial(dataWidth = DataWidth, lanes = 4, supportedOps = Seq(ElementwiseOp.Add))
+      "NestCtrl-l0",
+      "the nest controller of an elementwise unit: L 0, II 1, two inputs",
+      () => new NestCtrl(0, 1, 2)
     ),
-    Target(
-      "ElementwiseTiledSpatial-sel",
-      "tiled_spatial variant, W=4, selectable",
-      () => new ElementwiseTiledSpatial(inTypes = Int32, lanes = 4, loopCountWidth = LoopWidth)
-    ),
-    Target(
-      "ElementwiseTiledSpatial-add",
-      "tiled_spatial variant, W=4, fixed add",
-      () =>
-        new ElementwiseTiledSpatial(
-          inTypes        = Int32,
-          lanes          = 4,
-          loopCountWidth = LoopWidth,
-          supportedOps   = Seq(ElementwiseOp.Add)
-        )
-    ),
-    // A wide configuration: 64 lanes, int32, fixed add. Emitted at full width
-    // on purpose -- 64 lanes is a big file, and seeing how big is part of the
-    // point.
-    Target(
-      "vecadd-tiled-spatial",
-      "W=64, int32, fixed add",
-      () =>
-        new ElementwiseTiledSpatial(
-          inTypes        = Int32,
-          lanes          = 64,
-          loopCountWidth = LoopWidth,
-          supportedOps   = Seq(ElementwiseOp.Add)
-        )
-    ),
-    // Built and parked (D142): not in the block catalogue, emitted on their own.
+    Target("NestCtrl-l1", "the nest controller of a fold: L 1, II 1, one input", () => new NestCtrl(1, 1, 1)),
+    // Built and parked (D142): not in the datapath catalogue, emitted on their own.
     Target(
       "FifoSlicer",
       "parked: 2 words of int8 in, 4 lanes out per pop (r = 4)",
@@ -180,7 +128,7 @@ object Emit {
 
     // No selector means everything, which is what `pixi run chisel-gen` does
     // and what CI depends on. A selector is a case-insensitive substring, so
-    // "Tiled" picks up every tiled configuration without exact spelling.
+    // "NestCtrl" picks up every controller configuration without exact spelling.
     val chosen =
       if (selectors.isEmpty) catalogue
       else catalogue.filter(t => selectors.exists(s => t.label.toLowerCase.contains(s.toLowerCase)))
@@ -201,13 +149,13 @@ object Emit {
   /** What `emitSpec` wrote: the top module, every module, and the files (those in `sv/`, then `emitted.json`). */
   case class Emitted(top: String, modules: Seq[String], files: Seq[Path])
 
-  /** `--spec <rtl.json> [--out DIR]`: the accelerator of `rtl.json` (C§17, D130), `<tag>_shell_wrapper` and what it
-    * holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of `rtl.json`), and
-    * `DIR/emitted.json`: `top`, `modules` and `files` (paths from `DIR`). The files a previous `emitted.json` lists are
-    * removed first, so `sv/` holds this spec's files only.
+  /** `--spec <accelerator.json> [--out DIR]`: the accelerator of `accelerator.json` (C§17, D145), `<tag>_shell_wrapper`
+    * and what it holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of the file), and
+    * `DIR/emitted.json`: `rtl` (the file it was built from), `top`, `modules` and `files` (paths from `DIR`). The files
+    * a previous `emitted.json` lists are removed first, so `sv/` holds this spec's files only.
     */
   def emitSpec(specPath: Path, dir: Path): Emitted = {
-    val spec    = RtlSpec.load(specPath)
+    val spec    = AcceleratorSpec.load(specPath)
     val sv      = dir.resolve("sv")
     val listing = dir.resolve("emitted.json")
     if (Files.exists(listing))
@@ -241,8 +189,9 @@ object Emit {
 
   private val ModuleLine = raw"module (\w+)\b.*".r
 
-  /** `--describe`: the block catalogue from the registry (`Blocks`), as `hw/chisel/blocks.json` holds it (D130). */
-  def describe: String = ujson.write(Blocks.describe, indent = 1)
+  /** `--describe`: the datapath catalogue from the registry (`Datapaths`), as `hw/chisel/blocks.json` holds it (D130).
+    */
+  def describe: String = ujson.write(Datapaths.describe, indent = 1)
 
   /** `--out <dir>`, else `$SNAX_FORGE_HW_OUT`, else `out/hw` under the repo root.
     *

@@ -27,6 +27,7 @@ import pytest
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
+from snax_forge.gen import Accelerator, Csr, Group, Port, Unit
 from snax_forge.gen import bundle as bundle_mod
 from snax_forge.gen.rtl import EMITTED_JSON
 from snax_forge.sandbox import Recipe, apply_recipe
@@ -60,6 +61,19 @@ def point(
     path.parent.mkdir(parents=True, exist_ok=True)
     DesignPoint.of(design, name).save(path)
     return path
+
+
+def one_unit(k: int = 0, name: str = "acc") -> Accelerator:
+    """An accelerator of one group of one unit with ``k`` R/W CSRs of its own (``F0``, ...),
+    offsets in CSR order."""
+    rw = [Csr(n, "rw", i, 32) for i, n in enumerate(["START", "JOBS"])]
+    own = [Csr(f"F{i}", "rw", 2 + i, 32) for i in range(k)]
+    ro = [Csr(n, "ro", 2 + k + i) for i, n in enumerate(["STATUS", "COUNTER"])]
+    unit = Unit(name, "elementwise_add", "ElementwiseLanes",
+                {p: Port(p, "int64", 4) for p in ("a", "b", "out")}, {"op": "add"}, 0, 1, own,
+                "int64")  # fmt: skip
+    return Accelerator(name, "design/x/design_point.json", "snax_forge", [f"{name}.a", f"{name}.b"],
+                       [f"{name}.out"], [Group(name, [*rw, *ro], [unit])])  # fmt: skip
 
 
 def bound_vecmul(w: int = 4) -> Graph:
@@ -148,12 +162,12 @@ def fake_emit(monkeypatch) -> SimpleNamespace:
     emitted.json (``SV`` unless a test changes it); the checkout is ``COMMIT``, clean."""
     fake = SimpleNamespace(listed=list(SV))
 
-    def elaborate(rtl_json: Path, out_dir: Path) -> list[Path]:
-        tag = json.loads(rtl_json.read_text())["tag"]
+    def elaborate(spec_json: Path, out_dir: Path) -> list[Path]:
+        tag = json.loads(spec_json.read_text())["tag"]
         for f in SV:
             (out_dir / f).parent.mkdir(parents=True, exist_ok=True)
             (out_dir / f).write_text(f"module {Path(f).stem};\nendmodule\n")
-        emitted = {"rtl": str(rtl_json), "top": f"{tag}_shell_wrapper",
+        emitted = {"rtl": str(spec_json), "top": f"{tag}_shell_wrapper",
                    "modules": [Path(f).stem for f in fake.listed], "files": fake.listed}  # fmt: skip
         (out_dir / EMITTED_JSON).write_text(json.dumps(emitted))
         return [*(out_dir / f for f in fake.listed), out_dir / EMITTED_JSON]

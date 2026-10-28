@@ -6,8 +6,8 @@
       -> SNAX-DESIGN    the last graph on the platform: the checks, the
                         memory plan, the design point               design/
       -> SNAX-LOWER     the task list                               tasks.json
-      -> gen            the generator (gen/gvsoc.py): the three hjson
-                        files, the headers, data.h (the kernel's
+      -> gen            the generator (gen/gvsoc.py): the three
+                        description files, the headers, data.h (the kernel's
                         make_inputs, the reference executor's goldens)
                         and main.c                                  gen/
       -> build          SNAX-GVSoC, when needed (below)            out/snax-gvsoc/
@@ -52,7 +52,7 @@ window from main's entry to ``forge_check()``'s entry), the data errors
 over the output words and each accelerator task's counter, beside its beats
 from the manifest. ``passed`` is an exit code of 0. A missing line is a
 FlowError that names it. ``run/run.json`` records what ran: the design
-point, the three hjson files, the ELF's sha256 and the symbols of its L2 containers'
+point, the three description files (``hjson``), the ELF's sha256 and the symbols of its L2 containers'
 arrays (``elf_symbols``, ``run/elf.py``: their L2 regions), the target, the snax-gvsoc
 commit and whether its tree was dirty, the trace level, its sources and whether a VCD was
 written;
@@ -174,6 +174,14 @@ SNAX_GVSOC = GVSOC_MAKE / "snax-gvsoc"
 SUBMODULE = "gvsoc/snax-gvsoc"
 GVSOC_WORKDIR = ROOT / "out" / "snax-gvsoc"
 TARGET = "snax_hjson"
+
+
+def description_files(files: list[str]) -> list[str]:
+    """The generator's description files of a run (D134): the cluster and streamer hjson and
+    accelerator.json."""
+    return [x for x in files if x.endswith(".hjson") or x == "accelerator.json"]
+
+
 ELF = "forge.elf"
 VCD, GTKW = "all.vcd", "view.gtkw"
 
@@ -507,7 +515,7 @@ def summary(f: Flow) -> str:
     plan = f.point.memory
     n_checks = sum(len(v) for v in f.checks.values())
     m = f.manifest
-    hjson = ", ".join(x for x in m.files if x.endswith(".hjson"))
+    hjson = ", ".join(description_files(m.files))
     tasks = ", ".join(f"{t} {x['counter']} ({x['beats']} beats)" for t, x in check["tasks"].items())
     lines = [f"flow {f.name} ({what}) on {p.platform.name} -> {cwd_relative(f.out)}/"]
     lines.append(f"  sandbox   {sandbox}")
@@ -829,7 +837,7 @@ def _from_graph(
             "symbols": point.graph.bound_symbols,
             **result,
         }
-        hjson = [x for x in manifest.files if x.endswith(".hjson")]
+        hjson = description_files(manifest.files)
         record = {
             "design_point": "design/design_point.json",
             "hjson": [f"gen/{x}" for x in hjson],

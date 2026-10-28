@@ -71,7 +71,7 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
     names = {p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()}
     assert {"sandbox/recipe.json", "sandbox/2_bind.snaxdfg", "design/design_point.json",
             "tasks.json", "gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson",
-            "gen/snax_forge_acc.hjson", "gen/main.c", "gen/data.h", "gen/manifest.json",
+            "gen/accelerator.json", "gen/main.c", "gen/data.h", "gen/manifest.json",
             "gen/include/acc_csr.h", "sw/forge.elf", "run/stdout.txt", "run/stderr.txt",
             "run/run.json", "run/profile.json", "run/events.log", "flow.log"} <= names  # fmt: skip
     assert not {"run/trace.jsonl", "run/trace_meta.json"} & names  # trace off
@@ -121,7 +121,7 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
         "hjson": [
             "gen/snax_forge.hjson",
             "gen/snax_forge_streamer.hjson",
-            "gen/snax_forge_acc.hjson",
+            "gen/accelerator.json",
         ],
         "elf": "sw/forge.elf",
         "elf_sha256": f.elf_sha256,
@@ -620,7 +620,7 @@ def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
     streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
     assert streamer["data_reader_params"]["temporal_dim"] == [2]
     assert streamer["data_writer_params"]["temporal_dim"] == [1]
-    assert "csrw_ss(ACC_RW_LEN, 16);" in (gen / "main.c").read_text()
+    assert "csrw_ss(ACC_RW_JOB_BEATS, 16);" in (gen / "main.c").read_text()
 
 
 @pytest.mark.gvsoc

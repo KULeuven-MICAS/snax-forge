@@ -9,18 +9,21 @@ checked out, never copied from ``out/gvsoc/`` or ``out/rtl/``. ``rtl/`` is
 the bundle's own, so it is removed first and holds only this run's files;
 the rest of the folder is left as it is. Then, in this order:
 
-    <the root>            gvsoc.py's ``generate``: the three hjson files, the
-                          headers, data.h, main.c and manifest.json; the
+    <the root>            gvsoc.py's ``generate``: the three description files
+                          (accelerator.json among them), the headers, data.h,
+                          main.c and manifest.json; the
                           cluster file's slot names ``rtl/files.f``
                           (``snax_forge_rtl``)
-    rtl/rtl.json          rtl.py's ``write_rtl``
     rtl/sv/, rtl/emitted.json
-                          rtl.py's ``elaborate`` (``Emit --spec``, sbt)
+                          rtl.py's ``elaborate`` (``Emit --spec``, sbt) of the
+                          root's accelerator.json, checked against the
+                          datapath catalogue first (rtl.py's
+                          ``accelerator_spec``)
     rtl/files.f           the RTL's file list: one path per line, relative
                           to ``rtl/``, in ``emitted.json``'s ``files`` order,
                           ``emitted.json`` itself left out
     bundle.json           ``Bundle``: ``design_point`` (as gvsoc.py names
-                          it), ``tag`` (rtl.json's), ``snax_forge_commit``
+                          it), ``tag`` (accelerator.json's), ``snax_forge_commit``
                           (``git rev-parse HEAD`` of the checkout, null
                           outside git) and ``dirty`` (the work tree has
                           uncommitted changes, untracked files included;
@@ -30,8 +33,8 @@ snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
 builds read (D130).
 
-**Refused**, each a ``GenError``: what ``generate``, ``write_rtl`` and
-``elaborate`` refuse (``gen.*``, a listed file that is not there among them), then
+**Refused**, each a ``GenError``: what ``generate``, ``accelerator_spec`` and
+``elaborate`` refuse (``gen.*``, the catalogue's checks and a listed file that is not there among them), then
 ``bundle.empty`` (``emitted.json`` lists no file).
 The flow does not call it (D136).
 """
@@ -47,9 +50,10 @@ from pathlib import Path
 
 from snax_forge.common import Config, JsonFile, cwd_relative
 
+from .accelerator import ACCELERATOR_JSON
 from .blocks import GenError
 from .gvsoc import ROOT, RTL_FILE_LIST, cli, generate, out_dir
-from .rtl import EMITTED_JSON, RTL_JSON, elaborate, write_rtl
+from .rtl import EMITTED_JSON, accelerator_spec, elaborate
 
 OUT = ROOT / "out" / "bundle"
 BUNDLE_JSON = "bundle.json"
@@ -102,14 +106,15 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
     rtl_dir = files_f.parent
     shutil.rmtree(rtl_dir, ignore_errors=True)
     manifest = generate(design_point, out, root)
-    spec = write_rtl(design_point, rtl_dir, root)
-    files = file_list(rtl_dir, elaborate(rtl_dir / RTL_JSON, rtl_dir))
+    spec = accelerator_spec(design_point, root)
+    rtl_dir.mkdir(parents=True, exist_ok=True)
+    files = file_list(rtl_dir, elaborate(out / ACCELERATOR_JSON, rtl_dir))
     files_f.write_text("".join(f"{f}\n" for f in files))
     commit, dirty = provenance(ROOT)
     bundle = Bundle(manifest.design_point, spec.tag, commit, dirty)
     (out / BUNDLE_JSON).write_text(bundle.to_json())
     written = [
-        *(out / f for f in manifest.files), rtl_dir / RTL_JSON, *(rtl_dir / f for f in files),
+        *(out / f for f in manifest.files), *(rtl_dir / f for f in files),
         rtl_dir / EMITTED_JSON, files_f, out / BUNDLE_JSON,
     ]  # fmt: skip
     return bundle, written

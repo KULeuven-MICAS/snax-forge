@@ -110,21 +110,22 @@ jobs:
       - name: Assert catalogue RTL was produced
         run: |
           ls -la out/hw
-          test -f out/hw/SimpleAdder.sv
-          test -f out/hw/Accumulator_i32_i32_n1.sv
-          test -f out/hw/ElementwiseLoop_w32_t32_sel8.sv
-          test -f out/hw/ElementwiseTiledSpatial_i32xi32_i32_i32_n64_t32_add.sv
+          test -f out/hw/ElementwiseLanes_i32xi32_i32_i32_n4_add.sv
+          test -f out/hw/TreeAccumulate_i32_i64_n4.sv
+          test -f out/hw/NestCtrl_l0_ii1_in2.sv
+          test -f out/hw/NestCtrl_l1_ii1_in1.sv
           test -f out/hw/FifoSlicer_w2_i8_n4.sv
           test -f out/hw/FifoPacker_n4_i8_w2.sv
 
-      # D130: every rtl.json fixture through `Emit --spec`, and every file its
-      # emitted.json lists must exist. (BlocksSpec, in the tests above, checks
+      # D130, D145: every accelerator.json fixture (and the hand-written
+      # two-group dot 1) through `Emit --spec`, and every file its emitted.json
+      # lists must exist. (DatapathsSpec, in the tests above, checks
       # `Emit --describe` equal to hw/chisel/blocks.json.)
-      - name: Elaborate the rtl.json fixtures
+      - name: Elaborate the accelerator.json fixtures
         run: |
-          for d in hw/chisel/src/test/resources/rtl/*/; do
+          for d in hw/chisel/src/test/resources/rtl/*/ hw/chisel/src/test/resources/groups/*/; do
             name=$(basename "$d")
-            pixi run -e hw chisel-gen --spec "$d/rtl.json" --out "out/rtl/$name"
+            pixi run -e hw chisel-gen --spec "$d/accelerator.json" --out "out/rtl/$name"
             test -f "out/rtl/$name/emitted.json"
             python3 -c 'import json, os, sys; d = sys.argv[1]; files = json.load(open(os.path.join(d, "emitted.json")))["files"]; missing = [f for f in files if not os.path.isfile(os.path.join(d, f))]; print(d, files); sys.exit(1 if missing or not files else 0)' "out/rtl/$name"
           done

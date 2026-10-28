@@ -229,6 +229,13 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     return notes
 
 
+def unit_view(file: dict[str, Any], instance: str) -> tuple[str, str, int, int]:
+    """The kind, the control, the latency and the II of ``instance`` in the slot's
+    accelerator.json: its unit's datapath under the nest controller."""
+    u = next(u for g in file["groups"] for u in g["units"] if u["name"] == instance)
+    return u["datapath"], "nest controller", u["timing"]["latency"], u["timing"]["ii"]
+
+
 def build_design(
     name: str,
     cluster: Cluster,
@@ -265,9 +272,9 @@ def build_design(
                 containers[streamer_name(n.attrs["instance"], port)] = m.data
 
     a = cluster.accelerator
-    u = a.unit
-    components = [ComponentRow(a.name, "accelerator", f"{u.get('unit', '')} on core{a.core}, "
-                               f"{u.get('wait', '')}, slot {a.slot}")]  # fmt: skip
+    kind, control, latency, ii = unit_view(a.unit, a.name)
+    components = [ComponentRow(a.name, "accelerator",
+                               f"{kind} on core{a.core}, {control}, slot {a.slot}")]  # fmt: skip
     components += [ComponentRow(m.name, "streamer", f"{'writer' if m.write else 'reader'} "
                                 f"{m.gvsoc}, num_ch {m.lanes}, FIFO depth {m.fifo_depth}")
                    for m in a.movers]  # fmt: skip
@@ -277,10 +284,10 @@ def build_design(
                    for i, c in enumerate(cluster.cores)]  # fmt: skip
 
     inst = instances.get(a.name)
-    accels = [AccelRow(a.name, str(u.get("unit", "")), inst.brm.name if inst else None,
+    accels = [AccelRow(a.name, kind, inst.brm.name if inst else None,
                        inst.implementation if inst else None,
-                       dict(inst.params) if inst else {}, int(u.get("latency", 0)),
-                       int(u.get("ii", 1)), [f"{m.port} ← {m.name}" for m in a.movers])]  # fmt: skip
+                       dict(inst.params) if inst else {}, latency, ii,
+                       [f"{m.port} ← {m.name}" for m in a.movers])]  # fmt: skip
     streamers = [
         StreamerRow(m.name, a.name, m.port, "write" if m.write else "read",
                     point.streamers[m.name].dtype, point.streamers[m.name].num_slc, m.lanes,

@@ -1,7 +1,7 @@
 """dot end to end: a multiplier chained into an accumulator through L1.
 
 ``recipes/dot.json`` (the adder tree, W lanes) and ``recipes/dot_serial.json``
-(the Chisel Accumulator, one lane) run from the import fixture to a checked
+(the Chisel TreeAccumulate, one lane) run from the import fixture to a checked
 model run. Accepted when every run equals the kernel's reference and the
 reference executor at its pinned cycle count, the task list holds the one
 wait between the two accelerators, ``run.md`` names it as a chaining wait,

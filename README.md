@@ -216,8 +216,8 @@ section 5).
 ## Refreshing a fixture
 
 snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
-(vecadd, vecmul, vsum on `accumulate`'s Chisel Accumulator, and vsum_tree on
-its adder tree), which its `make regress` runs (D134).
+(vecadd, vecmul, vsum on `accumulate`'s Chisel `TreeAccumulate` at one lane,
+and vsum_tree on its adder tree), which its `make regress` runs (D134).
 `tests/gen/test_fixture.py` generates each again and compares it byte for
 byte with the submodule's copy; it skips when the submodule is not checked
 out. When the generator or the design point changes, refresh the folder in a

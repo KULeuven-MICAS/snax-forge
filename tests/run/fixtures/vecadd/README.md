@@ -9,8 +9,9 @@ out byte-identical to `5d23a1da`'s, FLOW3 round 3 G1, the `class` lines):
     pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --trace task
     pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --trace stall
 
-and copied from `out/flow/vecadd_task/`: `run/events.log`, the three hjson
-files of `gen/`, `tasks.json`, `design/design_point.json` (its `graph_from`
+and copied from `out/flow/vecadd_task/`: `run/events.log`, the three
+description files of `gen/` (`snax_forge.hjson`, `snax_forge_streamer.hjson`,
+`accelerator.json`), `tasks.json`, `design/design_point.json` (its `graph_from`
 made relative) and `check.json` (the profile's `total_cycles` and
 `functional_check`, what the flow's check stage gives the converter); from
 `out/flow/vecadd_stall/` its `run/events.log` as `events_stall.log` (its
@@ -21,5 +22,9 @@ again in CLN1 R2a at snax-gvsoc `8c9a47c3`: only the source hjson's path
 changed (`design_point.json`, `snax_forge.hjson`), every other file the same. Made
 again in CLN1 R2b once the plan stopped placing L2: only `design_point.json`'s L2
 bases (0) and `tasks.json`'s L2 sides (`symbol` for `base`) changed, the ELF and
-both `events.log` files the same. Made again the same way when snax-gvsoc's
-grammar (`docs/EVENTS.md`) changes.
+both `events.log` files the same. Made again in M13 B1 R1b at snax-gvsoc
+`4acde2b1` (`accelerator.json` in place of `snax_forge_acc.hjson`, the
+per-group CSRs START, JOBS, STATUS, COUNTER): the ELF is now sha256
+`3fa93c774886c3b3`, `total_cycles` 214 (was 226), the counter 19 as before,
+`elf_symbols.json` unchanged. Made again the same way when snax-gvsoc's
+grammar (`docs/EVENTS.md`) or the generated files change.

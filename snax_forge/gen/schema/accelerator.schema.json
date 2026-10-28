@@ -1,52 +1,92 @@
 {
  "$schema": "https://json-schema.org/draft/2020-12/schema",
- "title": "SNAX-FORGE accelerator file",
- "description": "<slot>_acc.hjson: a slot's datapath block, what SNAX-GVSoC's standard composite builds the slot's SnaxUnit and SnaxShell from (snax-gvsoc snax/snax_cfg.py, snax/snax_unit_acc.py; snax_forge/gen/gvsoc.py, D134).",
+ "title": "SNAX-FORGE accelerator description",
+ "description": "accelerator.json: a design point's accelerator, its groups, units and CSRs, which SNAX-GVSoC reads (snax-gvsoc snax/snax_cfg.py) and Emit from B1's R2 (snax_forge/gen/accelerator.py, D145, C§17).",
  "type": "object",
  "properties": {
-  "unit": {"description": "The unit kind.", "enum": ["SnaxUnit"]},
+  "name": {"description": "The accelerator: the header's <ACC>.", "$ref": "#/$defs/name"},
+  "design_point": {"description": "The design point by its path from the root.", "type": "string", "minLength": 1},
+  "tag": {"description": "The platform's accelerator_slot.", "$ref": "#/$defs/name"},
   "inputs": {
-   "description": "The unit's input ports in order, one per streamer reader.",
-   "$ref": "#/$defs/names"
+   "description": "The outer input ports, \"<unit>.<port>\", one per streamer reader, in order.",
+   "$ref": "#/$defs/outer"
   },
   "outputs": {
-   "description": "The unit's output ports in order, one per streamer writer.",
-   "$ref": "#/$defs/names"
+   "description": "The outer output ports, one per streamer writer, in order.",
+   "$ref": "#/$defs/outer"
   },
-  "lanes": {"type": "integer", "minimum": 1},
-  "in_widths": {
-   "description": "Each input's element bits, in inputs' order (D142).",
-   "$ref": "#/$defs/widths"
-  },
-  "in_signed": {
-   "description": "Whether each input's elements are signed, in inputs' order.",
-   "$ref": "#/$defs/flags"
-  },
-  "out_widths": {"description": "Each output's element bits.", "$ref": "#/$defs/widths"},
-  "out_signed": {
-   "description": "Whether each output's elements are signed.",
-   "$ref": "#/$defs/flags"
-  },
-  "op": {"description": "ElementwiseOp's encoding (gen/blocks.py).", "type": "integer", "minimum": 0},
-  "control": {"description": "A registered control (D129).", "enum": ["counted"]},
-  "config": {
-   "description": "The role of each configuration word; [\"count\"] when left out.",
-   "$ref": "#/$defs/names"
-  },
-  "wait": {"description": "A registered wait (D129).", "enum": ["lockstep", "pipelined"]},
-  "latency": {"type": "integer", "minimum": 0},
-  "ii": {"type": "integer", "minimum": 1},
-  "fields": {
-   "description": "The shell's configuration CSRs in order; start follows them.",
-   "$ref": "#/$defs/names"
-  }
+  "groups": {"description": "In CSR order.", "type": "array", "minItems": 1, "items": {"$ref": "#/$defs/group"}}
  },
- "required": ["unit", "inputs", "outputs", "lanes", "in_widths", "in_signed", "out_widths",
-              "out_signed", "op", "control", "wait", "latency", "ii", "fields"],
+ "required": ["name", "design_point", "tag", "inputs", "outputs", "groups"],
  "additionalProperties": false,
  "$defs": {
-  "names": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
-  "widths": {"type": "array", "minItems": 1, "items": {"enum": [8, 16, 32, 64]}},
-  "flags": {"type": "array", "minItems": 1, "items": {"type": "boolean"}}
+  "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+  "dtype": {"enum": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]},
+  "outer": {
+   "type": "array",
+   "minItems": 1,
+   "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}
+  },
+  "csr": {
+   "type": "object",
+   "properties": {
+    "name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
+    "access": {"enum": ["rw", "ro"]},
+    "offset": {"description": "From the shell's first CSR.", "type": "integer", "minimum": 0},
+    "width": {"description": "R/W only.", "type": "integer", "minimum": 1, "maximum": 32},
+    "pin": {"description": "A scalar's datapath pin.", "$ref": "#/$defs/name"}
+   },
+   "required": ["name", "access", "offset"],
+   "additionalProperties": false,
+   "if": {"properties": {"access": {"const": "rw"}}},
+   "then": {"required": ["width"]},
+   "else": {"not": {"required": ["width"]}}
+  },
+  "port": {
+   "type": "object",
+   "properties": {
+    "port": {"description": "The datapath's port.", "$ref": "#/$defs/name"},
+    "dtype": {"$ref": "#/$defs/dtype"},
+    "lanes": {"type": "integer", "minimum": 1}
+   },
+   "required": ["port", "dtype", "lanes"],
+   "additionalProperties": false
+  },
+  "unit": {
+   "type": "object",
+   "properties": {
+    "name": {"description": "The bind's instance.", "$ref": "#/$defs/name"},
+    "brm": {"$ref": "#/$defs/name"},
+    "datapath": {"description": "A catalogue datapath.", "$ref": "#/$defs/name"},
+    "ports": {
+     "description": "Per BRM port, in the BRM's order.",
+     "type": "object",
+     "minProperties": 1,
+     "additionalProperties": {"$ref": "#/$defs/port"}
+    },
+    "opType": {"description": "An elementwise unit's: NumPy's result type of its inputs (D143).", "$ref": "#/$defs/dtype"},
+    "params": {"description": "What the ports do not give (op).", "type": "object"},
+    "timing": {
+     "type": "object",
+     "properties": {"latency": {"type": "integer", "minimum": 0}, "ii": {"type": "integer", "minimum": 1}},
+     "required": ["latency", "ii"],
+     "additionalProperties": false
+    },
+    "csrs": {"description": "Its R/W CSRs.", "type": "array", "items": {"$ref": "#/$defs/csr"}}
+   },
+   "required": ["name", "brm", "datapath", "ports", "params", "timing", "csrs"],
+   "additionalProperties": false
+  },
+  "group": {
+   "type": "object",
+   "properties": {
+    "name": {"$ref": "#/$defs/name"},
+    "csrs": {"description": "START, JOBS, STATUS, COUNTER.", "type": "array", "items": {"$ref": "#/$defs/csr"}},
+    "units": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/unit"}},
+    "links": {"description": "Empty until B3.", "type": "array", "maxItems": 0}
+   },
+   "required": ["name", "csrs", "units", "links"],
+   "additionalProperties": false
+  }
  }
 }

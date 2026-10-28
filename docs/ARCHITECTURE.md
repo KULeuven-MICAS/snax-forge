@@ -113,8 +113,8 @@ and the flow's ELF runs on its RTL (section 5.7, `pixi run forge`).
 | SNAX-SANDBOX | `sandbox/` | C§12 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
 | Design step | `design/` | C§13–C§15 | bound graph, platform | design point |
 | SNAX-LOWER | `lower/` | C§9, C§16 | design point | task list, `main.c` |
-| Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§16 | design point, the platform's source hjson | three hjson files, CSR headers, `data.h`, `main.c` |
-| HW generator | `gen/rtl.py`, `hw/chisel/` | C§17 | design point, the block catalogue | `rtl.json`, the accelerator RTL |
+| Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§16 | design point, the platform's source hjson | cluster and streamer hjson, `accelerator.json`, CSR headers, `data.h`, `main.c` |
+| HW generator | `gen/rtl.py`, `hw/chisel/` | C§17 | design point, the datapath catalogue | `accelerator.json`, the accelerator RTL |
 | Bundle | `gen/bundle.py` | C§18 | design point | snax_cluster's input |
 | SNAX-GVSoC | `gvsoc/snax-gvsoc` (submodule), `gvsoc/Makefile` | | hjson, program | the program's check and window, events (D137) |
 | Run | `run/` | C§7 | SNAX-GVSoC's events, the design point, task list | profile, trace |
@@ -223,13 +223,14 @@ RTL wins (section 7).
 
 ### 5.7 SNAX link
 
-A design point gives SNAX-GVSoC its three hjson files, the CSR and cluster
-headers, `data.h` and `main.c`, and no generated code to compile
-(`gen/gvsoc.py`, D134; C§16). For snax_cluster it gives a bundle (`pixi run
-bundle`, `gen/bundle.py`, D111; C§18): the same files, and the accelerator
-RTL that `gen/rtl.py` resolves into `rtl.json`, checked against the block
-catalogue `hw/chisel/blocks.json`, and `Emit --spec` builds as
-`<tag>_shell_wrapper` with its own CSR manager (D130; C§17). The accelerator
+A design point gives SNAX-GVSoC its cluster and streamer hjson and
+`accelerator.json` (D145), the CSR and cluster headers, `data.h` and
+`main.c`, and no generated code to compile (`gen/gvsoc.py`, D134; C§16). For
+snax_cluster it gives a bundle (`pixi run bundle`, `gen/bundle.py`, D111;
+C§18): the same files, and the accelerator RTL that `Emit --spec` builds
+from `accelerator.json` (C§17), checked against the datapath catalogue
+`hw/chisel/blocks.json`, as `<tag>_shell_wrapper` with its own CSR manager
+(D130). The accelerator
 is the base cluster's `snax_forge` slot and its cluster
 `snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131).
 
@@ -306,10 +307,10 @@ from here (D116, D141; `docs/STATUS.md` has the tasks):
    | Phase | Content |
    |---|---|
    | B0 flow pieces | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
-   | B1 one description | `accelerator.json` per design point, read by Emit and SNAX-GVSoC; each block a datapath and a controller, generated as three modules |
+   | B1 one description | `accelerator.json` per design point (C§17, D145), read by Emit, the catalogue check and SNAX-GVSoC; groups with their own START, JOBS, STATUS, COUNTER and pins (D146); each block a pure datapath under one nest controller per shell, three modules (D147); groups in SNAX-DFG and `encapsulate`, so dot variant 1 is one accelerator of two groups (D148) |
    | B2 blocks | one hand-written BRM per basic block (1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO), each with its Chisel block and SNAX-GVSoC model |
    | B3 composition | units joined by wire or decoupled links as one accelerator; dot variants 2 to 6, the case study |
-   | B4 tier A | bicg, mvt, gesummv and atax from dot's recipe fragments; fork and join; dot variant 1, which needs several accelerators on one core |
+   | B4 tier A | bicg, mvt, gesummv and atax from dot's recipe fragments; fork and join |
 
 2. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
 3. **M15:** tiling, a DMA per tile.

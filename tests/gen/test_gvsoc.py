@@ -1,4 +1,4 @@
-"""The generator (D134): vecadd on snax_forge as three hjson files, vecmul,
+"""The generator (D134): vecadd on snax_forge as three description files, vecmul,
 vsum, and every refusal."""
 
 from __future__ import annotations
@@ -11,14 +11,14 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.brm import CONTROLS, Brm, Instance, load_brm
+from snax_forge.brm import CONTROLLERS, Brm, Instance, load_brm
 from snax_forge.common import generated_header
 from snax_forge.design import DesignError, DesignPoint, Platform
 from snax_forge.dfg import Graph
-from snax_forge.gen import BLOCKS, ELEMENTWISE_OP, GenError, Manifest, generate
+from snax_forge.gen import DATAPATHS, ELEMENTWISE_OP, Accelerator, GenError, Manifest, generate
 from snax_forge.gen import __main__ as cli
 from snax_forge.gen import gvsoc as gen_mod
-from snax_forge.gen.blocks import accumulator, elementwise_tiled_spatial
+from snax_forge.gen.blocks import Port, elementwise_lanes, tree_accumulate
 from snax_forge.gen.data import array_text, arrays
 from snax_forge.lower import c as c_mod
 from tests.brm.helpers import IMPL
@@ -29,6 +29,7 @@ from .helpers import (
     SUB,
     bound_vecmul,
     bound_vsum,
+    one_unit,
     parsed,
     point,
     snax_cfg,
@@ -39,7 +40,7 @@ needs_submodule = pytest.mark.skipif(
     not (SUB / "snax" / "snax_cfg.py").exists(),
     reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
-FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"]
+FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"]
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
 SLOT = ("snax_forge_core_template", "snax_acc_cfg", 0)
 
@@ -53,20 +54,38 @@ TEMPLATE_W4 = {
         "spatial_bounds": [[4]], "temporal_dim": [1], "num_channel": [4], "fifo_depth": [8],
     },
 }  # fmt: skip
-# vecadd's datapath block at W = 4: ElementwiseTiledSpatial as a SnaxUnit and its
-# SnaxShell's field; each port int64, signed (D143)
-TILED_ADD = {
-    "unit": "SnaxUnit", "inputs": ["a", "b"], "outputs": ["out"], "lanes": 4,
-    "in_widths": [64, 64], "in_signed": [True, True], "out_widths": [64], "out_signed": [True],
-    "op": 0, "control": "counted", "wait": "lockstep", "latency": 0, "ii": 1,
-    "fields": ["loopCount"],
+# vecadd's accelerator at W = 4 (C§17's example): one group of one ElementwiseLanes unit,
+# each port int64 (D143)
+GROUP_CSRS = [
+    {"name": "START", "access": "rw", "offset": 0, "width": 32},
+    {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
+    {"name": "STATUS", "access": "ro", "offset": 2},
+    {"name": "COUNTER", "access": "ro", "offset": 3},
+]  # fmt: skip
+ADD_W4 = {
+    "name": "acc", "design_point": "design/vecadd/design_point.json", "tag": "snax_forge",
+    "inputs": ["acc.a", "acc.b"], "outputs": ["acc.out"],
+    "groups": [{"name": "acc", "csrs": GROUP_CSRS, "units": [{
+        "name": "acc", "brm": "elementwise_add", "datapath": "ElementwiseLanes",
+        "ports": {p: {"port": p, "dtype": "int64", "lanes": 4} for p in ("a", "b", "out")},
+        "opType": "int64", "params": {"op": "add"}, "timing": {"latency": 0, "ii": 1},
+        "csrs": [],
+    }], "links": []}],
 }  # fmt: skip
-# vsum on snax_forge: the Accumulator, a fold of one lane, one sum per T inputs
-ACCUMULATOR = {
-    "unit": "SnaxUnit", "inputs": ["a"], "outputs": ["out"], "lanes": 1, "in_widths": [64],
-    "in_signed": [True], "out_widths": [64], "out_signed": [True], "op": 0, "control": "counted",
-    "config": ["count", "rate"],
-    "wait": "pipelined", "latency": 1, "ii": 1, "fields": ["loopCount", "len"],
+# vsum on snax_forge: TreeAccumulate, a fold of one lane, one sum per T inputs; its JOB_BEATS
+# between the group's JOBS and STATUS
+VSUM = {
+    "name": "acc", "design_point": "design/vsum/design_point.json", "tag": "snax_forge",
+    "inputs": ["acc.a"], "outputs": ["acc.out"],
+    "groups": [{"name": "acc", "csrs": [
+        *GROUP_CSRS[:2], {**GROUP_CSRS[2], "offset": 3}, {**GROUP_CSRS[3], "offset": 4},
+    ], "units": [{
+        "name": "acc", "brm": "accumulate", "datapath": "TreeAccumulate",
+        "ports": {"a": {"port": "in", "dtype": "int64", "lanes": 1},
+                  "out": {"port": "out", "dtype": "int64", "lanes": 1}},
+        "params": {}, "timing": {"latency": 1, "ii": 1},
+        "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}],
+    }], "links": []}],
 }  # fmt: skip
 
 
@@ -116,11 +135,12 @@ def test_vecadd_w4_files_and_manifest(w4):
                        "trace", "csrs", "tasks"]  # fmt: skip
     assert (out.parent.parent / m.design_point).is_file()
     assert m.csrs.to_dict() == {
-        "streamer": {"first": 960, "last": 977}, "fields": {"loopCount": 978},
-        "start": 979, "busy": 980, "counter": 981,
+        "streamer": {"first": 960, "last": 977},
+        "accelerator": {"ACC_RW_START": 978, "ACC_RW_JOBS": 979, "ACC_RO_STATUS": 980,
+                        "ACC_RO_COUNTER": 981},
     }  # fmt: skip
     assert [t.to_dict() for t in m.tasks] == [
-        {"name": "add_acc", "beats": 16, "csrs": {"loopCount": 16}}
+        {"name": "add_acc", "beats": 16, "csrs": {"JOBS": 16}}
     ]
     assert Manifest.load(out / "manifest.json") == m
     assert Manifest.from_dict(m.to_dict()) == m
@@ -139,10 +159,12 @@ def test_the_streamer_file_is_the_hjsons_template(w4):
         assert parsed(out / "snax_forge_streamer.hjson")[group] == hand[group]
 
 
-def test_the_accelerator_file_is_vecadds_datapath_block(w4):
+def test_the_accelerator_file_is_vecadds_description(w4):
+    """Plain JSON, no header comment: its design_point names the source (C§17)."""
     out, _ = w4
-    assert parsed(out / "snax_forge_acc.hjson") == TILED_ADD
-    assert "config" not in parsed(out / "snax_forge_acc.hjson")  # the default, left out
+    text = (out / "accelerator.json").read_text()
+    assert json.loads(text) == ADD_W4
+    assert Accelerator.load(out / "accelerator.json").to_json() == text
 
 
 def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
@@ -153,7 +175,7 @@ def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
         "sparse_interconnect_config": [[12, 1]], "snax_num_rw_csr": 2, "snax_num_ro_csr": 2,
         "snax_disable_csr_manager": True, "snax_forge_rtl": "rtl/files.f",
         "snax_streamer_cfg": {"$ref": "snax_forge_streamer.hjson"},
-        "snax_datapath_cfg": {"$ref": "snax_forge_acc.hjson"},
+        "snax_datapath_cfg": {"$ref": "accelerator.json"},
     }  # fmt: skip
     assert slot(cluster) == expected
     assert list(slot(cluster)) == list(expected)  # the slot's key order
@@ -174,12 +196,27 @@ def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
 
 @needs_submodule
 def test_snax_gvsocs_reader_takes_the_folder(w4):
-    """snax-gvsoc's snax_cfg.load: the whole-file refs resolve and the slot's counts agree."""
+    """snax-gvsoc's snax_cfg.load: the whole-file refs resolve, the slot's counts agree, and
+    accelerator.json reads as written (its CSRs in CSR order)."""
     out, _ = w4
     cfg = snax_cfg().load(out / "snax_forge.hjson")
     (acc,) = cfg.cores[0].accelerators
     assert (acc.name, acc.tcdm_ports, acc.streamer) == ("snax_forge", 12, TEMPLATE_W4)
-    assert acc.datapath.fields == ["loopCount"] and acc.datapath.config == ["count"]
+    assert (acc.num_rw_csr, acc.num_ro_csr) == (2, 2)
+    a = acc.accelerator
+    assert (a.name, a.inputs, a.outputs) == ("acc", ["acc.a", "acc.b"], ["acc.out"])
+    assert [(c.name, c.offset) for c in a.csrs] == [
+        ("START", 0),
+        ("JOBS", 1),
+        ("STATUS", 2),
+        ("COUNTER", 3),
+    ]
+    (unit,) = a.groups[0].units
+    assert (unit.datapath, unit.op_type, unit.params) == (
+        "ElementwiseLanes",
+        "int64",
+        {"op": "add"},
+    )
     assert (cfg.tcdm.size, cfg.tcdm.banks, cfg.tcdm.sparse_interconnect) == (131072, 32, True)
 
 
@@ -193,12 +230,13 @@ def test_streamer_csrs_are_snax_streamers(w4):
 
 
 def test_every_generated_file_starts_with_the_one_header(w4):
-    """hjson, headers, data.h and main.c: the generator, the design point, the command."""
+    """hjson, headers, data.h and main.c: the generator, the design point, the command;
+    accelerator.json is plain JSON."""
     out, m = w4
     head = generated_header("design/vecadd/design_point.json", "")
     assert "`pixi run gen-gvsoc design/vecadd/design_point.json`" in head.replace("\n// ", " ")
     for f in m.files:
-        if f == "manifest.json":
+        if f in ("manifest.json", "accelerator.json"):
             continue
         text = (out / f).read_text()
         assert text.startswith(head), f
@@ -211,19 +249,23 @@ def test_vecadd_w8_gives_eight_channels_per_mover(tmp_path):
     assert parsed(out / "snax_forge_streamer.hjson")["data_reader_params"]["num_channel"] == [8, 8]
     s = slot(parsed(out / "snax_forge.hjson"))
     assert (s["snax_tcdm_ports"], s["sparse_interconnect_config"]) == (24, [[24, 1]])
-    assert m.csrs.start == 979 and m.tasks[0].beats == 8
+    assert m.csrs.accelerator["ACC_RW_START"] == 978 and m.tasks[0].beats == 8
+    assert m.tasks[0].csrs == {"JOBS": 8}
 
 
 def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
-    """elementwise_mul's binding gives vecadd's accelerator with op 2."""
+    """elementwise_mul's binding gives vecadd's accelerator with op mul."""
     out = tmp_path / "gvsoc" / "vecmul"
     m = generate(point(tmp_path, name="vecmul", graph=bound_vecmul()), out, root=tmp_path)
-    assert parsed(out / "snax_forge_acc.hjson") == {**TILED_ADD, "op": 2}
+    want = copy.deepcopy(ADD_W4)
+    want["design_point"] = "design/vecmul/design_point.json"
+    want["groups"][0]["units"][0].update(brm="elementwise_mul", params={"op": "mul"})
+    assert json.loads((out / "accelerator.json").read_text()) == want
     assert parsed(out / "snax_forge_streamer.hjson") == TEMPLATE_W4
     assert m.symbols == {"N": 64} and m.design_point == "design/vecmul/design_point.json"
     assert m.files == w4[1].files and m.csrs == w4[1].csrs and m.trace == "snax_acc0/unit"
     assert [t.to_dict() for t in m.tasks] == [
-        {"name": "mult_acc", "beats": 16, "csrs": {"loopCount": 16}}
+        {"name": "mult_acc", "beats": 16, "csrs": {"JOBS": 16}}
     ]
     assert parsed(out / "snax_forge.hjson") == parsed(w4[0] / "snax_forge.hjson")
     for h in ("streamer_csr_addr_map.h", "acc_csr.h"):
@@ -231,12 +273,12 @@ def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
         assert mine.replace("vecmul", "vecadd") == add, h
 
 
-def test_vsum_is_the_accumulator(tmp_path):
-    """accumulate's Accumulator, one reader and one writer of one lane, the shell's fields
-    loopCount and len, one task of 64 beats summing all 64 (T = n)."""
+def test_vsum_is_the_tree_accumulate(tmp_path):
+    """accumulate's TreeAccumulate, one reader and one writer of one lane, the group's JOBS and
+    the unit's JOB_BEATS, one task of 64 beats summing all 64 (T = n: one job of 64)."""
     out = tmp_path / "gvsoc" / "vsum"
     m = generate(point(tmp_path, name="vsum", graph=bound_vsum()), out, root=tmp_path)
-    assert parsed(out / "snax_forge_acc.hjson") == ACCUMULATOR
+    assert json.loads((out / "accelerator.json").read_text()) == VSUM
     one = {"spatial_bounds": [[1]], "temporal_dim": [1], "num_channel": [1], "fifo_depth": [8]}
     assert parsed(out / "snax_forge_streamer.hjson") == {
         "data_reader_params": one, "data_writer_params": one
@@ -246,24 +288,26 @@ def test_vsum_is_the_accumulator(tmp_path):
     assert (s["snax_num_rw_csr"], s["snax_num_ro_csr"]) == (3, 2)
     assert m.symbols == {"N": 64}
     assert m.csrs.to_dict() == {
-        "streamer": {"first": 960, "last": 972}, "fields": {"loopCount": 973, "len": 974},
-        "start": 975, "busy": 976, "counter": 977,
+        "streamer": {"first": 960, "last": 972},
+        "accelerator": {"ACC_RW_START": 973, "ACC_RW_JOBS": 974, "ACC_RW_JOB_BEATS": 975,
+                        "ACC_RO_STATUS": 976, "ACC_RO_COUNTER": 977},
     }  # fmt: skip
     assert [t.to_dict() for t in m.tasks] == [
-        {"name": "sum_acc", "beats": 64, "csrs": {"loopCount": 64, "len": 64}}
+        {"name": "sum_acc", "beats": 64, "csrs": {"JOBS": 1, "JOB_BEATS": 64}}
     ]
-    assert "#define ACC_RW_LEN 974\n" in (out / "include" / "acc_csr.h").read_text()
+    assert "#define ACC_RW_JOB_BEATS 975\n" in (out / "include" / "acc_csr.h").read_text()
 
 
 def test_vsum_at_w4_is_the_adder_tree(tmp_path):
-    """accumulate's adder tree at W = 4 is the Accumulator with lanes 4, one task of 16 beats
-    of 4 lanes summing all 64 (T = n)."""
+    """accumulate's adder tree at W = 4 is TreeAccumulate with 4 input lanes, one task of 16
+    beats of 4 lanes summing all 64 (T = n)."""
     out = tmp_path / "gvsoc" / "vsum_tree"
     graph = bound_vsum(4, "chisel_adder_tree")
     m = generate(point(tmp_path, name="vsum_tree", graph=graph), out, root=tmp_path)
-    assert parsed(out / "snax_forge_acc.hjson") == {**ACCUMULATOR, "lanes": 4}
+    (unit,) = json.loads((out / "accelerator.json").read_text())["groups"][0]["units"]
+    assert unit["ports"]["a"]["lanes"] == 4 and unit["ports"]["out"]["lanes"] == 1
     assert [t.to_dict() for t in m.tasks] == [
-        {"name": "sum_acc", "beats": 16, "csrs": {"loopCount": 16, "len": 16}}
+        {"name": "sum_acc", "beats": 16, "csrs": {"JOBS": 1, "JOB_BEATS": 16}}
     ]
 
 
@@ -296,8 +340,9 @@ def test_two_out_folders_give_byte_identical_files(tmp_path, monkeypatch):
         assert text == (b / f).read_bytes(), f
         assert str(tmp_path).encode() not in text, f
     for f in ma.files[:-1]:
-        head = generated_header("design/vecadd/design_point.json", "")
-        assert (a / f).read_text().startswith(head), f
+        if f != "accelerator.json":  # plain JSON (C§17)
+            head = generated_header("design/vecadd/design_point.json", "")
+            assert (a / f).read_text().startswith(head), f
 
 
 def test_elementwise_op_is_chisels():
@@ -346,7 +391,7 @@ def test_the_sources_only_slot_takes_the_accelerator_slot_whatever_its_name(tmp_
     assert m.files[:3] == [
         "snax_forge.hjson",
         "snax_forge_x_streamer.hjson",
-        "snax_forge_x_acc.hjson",
+        "accelerator.json",
     ]
     s = slot(parsed(out / "snax_forge.hjson"))
     assert s["snax_acc_name"] == "snax_forge_x"
@@ -401,7 +446,7 @@ def test_a_platform_value_the_hjson_cannot_express(tmp_path, sets, text):
 
 def _instance(edit=None, params=None, name="elementwise_add", impl=IMPL) -> Instance:
     """An instance (elementwise_add's by default), its BRM dict edited (no resolve: the
-    adapter's checks only)."""
+    datapath adapter's checks only)."""
     d = copy.deepcopy(load_brm(name).to_dict())
     if edit:
         edit(d)
@@ -427,15 +472,11 @@ def _ports(**kw):
 
 
 ADAPTER_CASES = [
-    ("wait", _binding(wait="pipelined"), {}, "gen.wait"),
-    ("latency", lambda d: d["implementations"][IMPL]["timing"].update(latency=1), {}, "gen.timing"),
-    ("ii", lambda d: d["implementations"][IMPL]["timing"].update(initiation_interval=2), {},
-     "gen.timing"),
     ("op", None, {"W": 4, "op": "nand"}, "gen.op"),
     ("args", _binding(args={"lanes": "W"}), {}, "gen.args"),
     ("float", None, {}, "gen.dtype", _dtypes(a="float64", b="float64", out="float64")),
     ("lanes x N", None, {}, "gen.lanes", _dtypes(a="int8", b="int8", out="int8")),
-    ("lanes vs port", _binding(args={"lanes": "W * 2", "supportedOps": "op"}), {}, "gen.lanes"),
+    ("lanes vs port", _binding(args={"lanes": "W * 2", "op": "op"}), {}, "gen.lanes"),
 ]  # fmt: skip
 
 
@@ -445,7 +486,7 @@ ADAPTER_CASES = [
 )  # fmt: skip
 def test_the_adapter_refuses(case, edit, params, code, dtypes):
     with pytest.raises(GenError) as e:
-        elementwise_tiled_spatial(_instance(edit, params or None), dtypes)
+        elementwise_lanes(_instance(edit, params or None), dtypes)
     assert e.value.code == code
 
 
@@ -456,14 +497,6 @@ def _acc(edit=None, params=None) -> Instance:
     return _instance(edit, params or {"W": 1, "op": "add"}, name="accumulate", impl=ACC)
 
 
-def _timing(**kw):
-    return lambda d: d["implementations"][ACC]["timing"].update(kw)
-
-
-def _csrs(*pairs):
-    return _binding(ACC, csrs=[{"field": f, "value": v} for f, v in pairs])
-
-
 def _second_input(d):
     d["interface"]["ports"].insert(1, dict(d["interface"]["ports"][0], name="b"))
     d["dataflow"]["ports"]["b"] = d["dataflow"]["ports"]["a"]
@@ -472,9 +505,6 @@ def _second_input(d):
 
 
 ACCUMULATOR_CASES = [
-    ("wait", _binding(ACC, wait="lockstep"), {}, "gen.wait"),
-    ("latency", _timing(latency=0), {}, "gen.timing"),
-    ("drain", _timing(drain=1), {}, "gen.timing"),
     ("no args", _binding(ACC, args={}), {}, "gen.args"),
     ("args", _binding(ACC, args={"lanes": "W", "accWidth": 64}), {}, "gen.args"),
     ("op", None, {"W": 1, "op": "max"}, "gen.op"),
@@ -483,8 +513,6 @@ ACCUMULATOR_CASES = [
     ("lanes", _binding(ACC, args={"lanes": 1}), {"W": 2, "op": "add"}, "gen.lanes"),
     ("lanes out", _ports(out={"lanes": "W"}), {"W": 2, "op": "add"}, "gen.lanes"),
     ("narrow", None, {}, "gen.lanes", _dtypes(("a", "out"), a="int32", out="int32")),
-    ("fields order", _csrs(("len", "T"), ("loopCount", "n")), {}, "gen.fields"),
-    ("no len", _csrs(("loopCount", "n")), {}, "gen.fields"),
 ]  # fmt: skip
 
 
@@ -494,43 +522,34 @@ ACCUMULATOR_CASES = [
 )  # fmt: skip
 def test_the_accumulator_adapter_refuses(case, edit, params, code, dtypes):
     with pytest.raises(GenError) as e:
-        accumulator(_acc(edit, params or None), dtypes)
+        tree_accumulate(_acc(edit, params or None), dtypes)
     assert e.value.code == code
 
 
 def test_the_accumulator_adapter_gives_a_fold():
-    unit = accumulator(_acc())
-    assert (unit.inputs, unit.outputs, unit.lanes, unit.fields, unit.config) == (
-        ["a"], ["out"], 1, ["loopCount", "len"], ["count", "rate"]
-    )  # fmt: skip
-    assert BLOCKS["Accumulator"] is accumulator
+    """Its ports through the binding's map, no opType, no params; latency 1."""
+    fill = tree_accumulate(_acc())
+    assert fill.ports == {"a": Port("in", None, 1), "out": Port("out", None, 1)}
+    assert (fill.op_type, fill.params) == (None, {})
+    assert DATAPATHS["TreeAccumulate"].fill is tree_accumulate
+    assert DATAPATHS["TreeAccumulate"].latency == 1 and DATAPATHS["ElementwiseLanes"].latency == 0
 
 
-def test_the_adder_tree_is_the_accumulator_at_w_lanes():
+def test_the_adder_tree_is_tree_accumulate_at_w_lanes():
     tree = _instance(None, {"W": 4, "op": "add"}, name="accumulate", impl="chisel_adder_tree")
-    assert accumulator(tree) == replace(accumulator(_acc()), lanes=4)
-
-
-@pytest.mark.parametrize(("adapter", "inst"), [
-    (elementwise_tiled_spatial, lambda: _instance(_binding(control="other"))),
-    (accumulator, lambda: _acc(_binding(ACC, control="other"))),
-])  # fmt: skip
-def test_a_control_other_than_counted_is_refused(monkeypatch, adapter, inst):
-    """counted is the only control (D129); one registered later is not generated."""
-    monkeypatch.setitem(CONTROLS, "other", "a test's")
-    with pytest.raises(GenError) as e:
-        adapter(inst())
-    assert e.value.code == "gen.control"
+    assert tree_accumulate(tree).ports["a"].lanes == 4
+    assert tree_accumulate(tree).ports["out"] == tree_accumulate(_acc()).ports["out"]
 
 
 def test_the_adapter_reads_unsigned_and_narrow_dtypes():
-    u16 = _dtypes(a="uint16", b="uint16", out="uint16")
-    unit = elementwise_tiled_spatial(_instance(), u16)
-    assert (unit.in_widths, unit.in_signed, unit.out_widths, unit.out_signed, unit.lanes) == (
-        [16, 16], [False, False], [16], [False], 4
-    )  # fmt: skip
-    mixed = elementwise_tiled_spatial(_instance(), _dtypes(a="int32", b="int32", out="int64"))
-    assert (mixed.in_widths, mixed.out_widths) == ([32, 32], [64])  # vmul int32 into int64
+    """Each port its container's dtype, opType the inputs' NumPy result type (D143)."""
+    u16 = elementwise_lanes(_instance(), _dtypes(a="uint16", b="uint16", out="uint16"))
+    assert [p.dtype for p in u16.ports.values()] == ["uint16"] * 3 and u16.op_type == "uint16"
+    mixed = elementwise_lanes(_instance(), _dtypes(a="int32", b="int32", out="int64"))
+    assert [p.dtype for p in mixed.ports.values()] == ["int32", "int32", "int64"]
+    assert mixed.op_type == "int32"  # vmul int32 into int64: the op at int32, then extended
+    signs = elementwise_lanes(_instance(), _dtypes(a="int16", b="uint16", out="int32"))
+    assert signs.op_type == "int32"
 
 
 def test_three_ports_are_refused():
@@ -540,7 +559,7 @@ def test_three_ports_are_refused():
         d["function"]["code"] = "out = a + b + c"
 
     with pytest.raises(GenError) as e:
-        elementwise_tiled_spatial(_instance(three_inputs))
+        elementwise_lanes(_instance(three_inputs))
     assert e.value.code == "gen.ports"
 
 
@@ -563,24 +582,46 @@ def test_two_instances_are_refused(tmp_path):
     assert e.value.code == "gen.instances" and "['acc', 'acc2']" in str(e.value)
 
 
-@pytest.mark.parametrize(("binding", "code"), [(None, "gen.binding"), ("Gemm", "gen.block")])
-def test_a_null_binding_and_an_unregistered_block(tmp_path, monkeypatch, binding, code):
+def _edited(monkeypatch, binding=None, timing=None):
+    """lower/c.py's ``instances`` with the one instance's binding replaced by ``binding(b)``
+    and its timing by ``timing``'s fields (no resolve: what describe refuses)."""
     real = c_mod.instances
 
     def edited(graph):
         (name, inst), = real(graph).items()  # fmt: skip
-        b = None if binding is None else {**inst.impl.binding, "block": binding}
-        impl = replace(inst.impl, binding=b)
+        b = inst.impl.binding if binding is None else binding(inst.impl.binding)
+        t = inst.impl.timing if timing is None else replace(inst.impl.timing, **timing)
         brm = copy.copy(inst.brm)
-        brm.implementations = {IMPL: impl}
+        brm.implementations = {IMPL: replace(inst.impl, binding=b, timing=t)}
         return {name: Instance(brm, IMPL, inst.params)}
 
-    path = point(tmp_path)
     monkeypatch.setattr(c_mod, "instances", edited)
+
+
+@pytest.mark.parametrize(
+    ("binding", "timing", "code"),
+    [
+        (lambda b: None, None, "gen.binding"),
+        (lambda b: {**b, "datapath": "Gemm"}, None, "gen.datapath"),
+        (lambda b: {**b, "controller": "other"}, None, "gen.controller"),
+        (None, {"drain": 1}, "gen.drain"),
+        (None, {"latency": 1}, "gen.timing"),
+        (None, {"initiation_interval": 2}, "gen.timing"),
+    ],
+    ids=["null binding", "datapath", "controller", "drain", "latency", "ii"],
+)  # fmt: skip
+def test_what_describe_refuses(tmp_path, monkeypatch, binding, timing, code):
+    """A null binding, an unregistered datapath, a controller other than counted (D129: one
+    registered later is not generated), a drain (the nest controller has none), a latency
+    other than the datapath's, an II other than 1."""
+    monkeypatch.setitem(CONTROLLERS, "other", "a test's")
+    path = point(tmp_path)
+    _edited(monkeypatch, binding, timing)
     with pytest.raises(GenError) as e:
         generate(path, tmp_path / "out", root=tmp_path)
     assert e.value.code == code
-    assert "ElementwiseTiledSpatial" in BLOCKS
+    assert not (tmp_path / "out").exists()
+    assert "ElementwiseLanes" in DATAPATHS
 
 
 def test_the_command(tmp_path, capsys, monkeypatch):
@@ -606,14 +647,15 @@ def test_the_constants_are_snax_accs():
     assert (gen_mod.SNAX_CSR_FIRST, gen_mod.SNAX_ACC_CSR_LAST) == (0x3C0, 0x5FD)
 
 
-def test_the_shells_counter_may_land_on_0x5fd_not_past():
-    """vecadd's streamer (18 CSRs) and 553 fields: the counter on 0x5FD, the last CSR an
-    accelerator may use; one more field puts it on 0x5FE, a task queue of snax_cluster's."""
-    fields = [f"f{i}" for i in range(0x5FD - 0x3C0 - 18 - 2)]
-    assert gen_mod.csr_layout(TEMPLATE_W4, fields).counter == 0x5FD
+def test_the_accelerators_counter_may_land_on_0x5fd_not_past():
+    """vecadd's streamer (18 CSRs) and a unit of 552 R/W CSRs: the counter on 0x5FD, the last
+    CSR an accelerator may use; one more puts it on 0x5FE, a task queue of snax_cluster's."""
+    k = 0x5FD - 0x3C0 - 18 - 4 + 1
+    assert gen_mod.csr_layout(TEMPLATE_W4, one_unit(k)).accelerator["ACC_RO_COUNTER"] == 0x5FD
     with pytest.raises(GenError) as e:
-        gen_mod.csr_layout(TEMPLATE_W4, [*fields, "one_more"])
-    assert e.value.code == "gen.csrs" and "the shell's last CSR 1534 is past 1533" in str(e.value)
+        gen_mod.csr_layout(TEMPLATE_W4, one_unit(k + 1))
+    assert e.value.code == "gen.csrs"
+    assert "the accelerator's last CSR 1534 is past 1533" in str(e.value)
 
 
 # =============================================================================
@@ -649,11 +691,11 @@ def test_vecadd_i32_two_channels_per_port(tmp_path):
     assert (s["data_writer_params"]["spatial_bounds"], s["data_writer_params"]["num_channel"]) == (
         [[2]], [2]
     )  # fmt: skip
-    acc = parsed(out / "snax_forge_acc.hjson")
-    assert (acc["in_widths"], acc["in_signed"], acc["out_widths"], acc["out_signed"]) == (
-        [32, 32], [True, True], [32], [True]
-    )  # fmt: skip
-    assert "data_width" not in acc and "signed" not in acc
+    (unit,) = json.loads((out / "accelerator.json").read_text())["groups"][0]["units"]
+    assert unit["ports"] == {
+        p: {"port": p, "dtype": "int32", "lanes": 4} for p in ("a", "b", "out")
+    }
+    assert unit["opType"] == "int32"
     assert slot(parsed(out / "snax_forge.hjson"))["snax_tcdm_ports"] == 6
 
 
@@ -665,10 +707,10 @@ def test_vsum_tree_i32_int32_in_int64_out(tmp_path):
     assert (s["data_writer_params"]["spatial_bounds"], s["data_writer_params"]["num_channel"]) == (
         [[1]], [1]
     )  # fmt: skip
-    acc = parsed(out / "snax_forge_acc.hjson")
-    assert (acc["in_widths"], acc["in_signed"], acc["out_widths"], acc["out_signed"]) == (
-        [32], [True], [64], [True]
-    )  # fmt: skip
+    (unit,) = json.loads((out / "accelerator.json").read_text())["groups"][0]["units"]
+    assert unit["ports"] == {"a": {"port": "in", "dtype": "int32", "lanes": 4},
+                             "out": {"port": "out", "dtype": "int64", "lanes": 1}}  # fmt: skip
+    assert "opType" not in unit
 
 
 def test_vecadd_i8_one_channel_per_port(tmp_path):
