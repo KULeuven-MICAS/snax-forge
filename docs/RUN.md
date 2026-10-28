@@ -39,7 +39,7 @@ output shows as it comes and goes to `out/flow/vecadd/build.log`):
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
       design    20 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
-      gen       snax_forge.hjson, snax_forge_streamer.hjson, snax_forge_acc.hjson, main.c, data.h (seed 0) -> gen/
+      gen       snax_forge.hjson, snax_forge_streamer.hjson, accelerator.json, main.c, data.h (seed 0) -> gen/
       build     built: no install in out/snax-gvsoc (snax-gvsoc 95266990)
       sw        sw/forge.elf (sha256 b6b4b1c70d8c8986)
       gvsoc     snax_hjson, exit 0 -> run/
@@ -94,7 +94,7 @@ array (D86); `run/profile.json` what it measured (C§7):
 
     {
      "design_point": "design/design_point.json",
-     "hjson": ["gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson", "gen/snax_forge_acc.hjson"],
+     "hjson": ["gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson", "gen/accelerator.json"],
      "elf": "sw/forge.elf",
      "elf_sha256": "b6b4b1c70d8c8986c478ecdc4fce694a42a49bfd3f4ba3eb0440e8bd932070a5",
      "elf_symbols": {

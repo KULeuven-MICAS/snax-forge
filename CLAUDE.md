@@ -43,7 +43,8 @@ want to reverse, implementation details in module docstrings and tests.
   bundle and the bundle's program (the flow's ELF), each step's output in
   `out/forge/<name>/forge.log`, and prints snax_cluster's Verilator commands (docs/RUN.md section 8).
 - Generator: `pixi run gen-gvsoc out/design/<name>/design_point.json` writes a design point's
-  hjson files, headers, `data.h` and `main.c` to `out/gvsoc/<name>/`. `pixi run gen-rtl
+  cluster and streamer hjson, its `accelerator.json` (C§17), headers, `data.h` and `main.c` to
+  `out/gvsoc/<name>/`. `pixi run gen-rtl
   out/design/<name>/design_point.json` writes its `rtl.json` and the accelerator's RTL (sbt) to
   `out/rtl/<name>/` (GEN1). `pixi run bundle out/design/<name>/design_point.json` writes both, the
   RTL's file list and `bundle.json` to `out/bundle/<name>/`, snax_cluster's input (C§18, D130).

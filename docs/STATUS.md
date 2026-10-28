@@ -16,7 +16,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | SNAX-BRM | `snax_forge/brm/` | `tests/brm/` | `snax_forge/brm/library/` |
 | SNAX-SANDBOX | `snax_forge/sandbox/` | `tests/sandbox/` | `recipes/` |
 | Design step | `snax_forge/design/` | `tests/design/` | `platforms/` |
-| Generator (hjson, headers, `data.h`, the bundle; `main.c` from SNAX-LOWER's `lower/c.py`) | `snax_forge/gen/` | `tests/gen/` | `platforms/snax_forge_cluster.hjson` |
+| Generator (`accelerator.json`, the hjson files, headers, `data.h`, the bundle; `main.c` from SNAX-LOWER's `lower/c.py`) | `snax_forge/gen/` | `tests/gen/` | `platforms/snax_forge_cluster.hjson` |
 | SNAX-LOWER | `snax_forge/lower/` | `tests/lower/` | |
 | Flow and `pixi run forge` | `snax_forge/flow/` | `tests/flow/` | |
 | A flow run's profile and trace (the events converted, D137) | `snax_forge/run/` | `tests/run/` | `tests/run/fixtures/` |
@@ -91,7 +91,11 @@ cast to its output's, a tail padded in the data; on SNAX-GVSoC (snax-gvsoc
 snax_cluster's Verilator CI (#663, five fixtures, counters equal to
 SNAX-GVSoC's). The views label a port's packing and show padding apart; the
 FIFO slicer and packer are built and parked (open item 93). M13's B1 is
-next: its design is in the docs (D145–D148, C§17), for review before code.
+under way: R0 wrote its design into the docs (D145–D148, C§17); R1 has
+snax-forge write `accelerator.json` and the program drive the per-group
+CSRs, `rtl.json` kept through a temporary map until R2 (`gen/rtl.py`), so
+until then a bundle's program and its RTL disagree on the CSR map and
+snax-gvsoc's `forge/` fixtures (the old files) are not reproduced.
 
 ## Open Items
 
