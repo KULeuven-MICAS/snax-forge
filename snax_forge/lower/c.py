@@ -83,7 +83,10 @@ it returns to main (0 on the other cores; snRuntime sums them at exit).
 unit without a binding (``c.binding``), a cluster file without one xdma core
 or without the slot (``c.cores``), a start that does not cover every mover of
 the accelerator, the idle ones at bound 0, or that starts a unit before them
-(``c.start``), a wait in
+(``c.start``), an idle mover (every temporal bound 0) whose first temporal
+stride is 0, which would start and read anyway (snax_cluster's Reader.scala:
+stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
+times; ``c.idle``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
 pattern that is neither form (``c.dma``), a CSR the description lacks
 (``c.csrs``), a read step (``c.read``), a task list whose values do
@@ -265,6 +268,11 @@ class _Program:
 
     def streamer(self, s: Configure) -> list[str]:
         m, v = self.movers[s.component], s.values
+        tb = list(v["temporal_bounds"])
+        if tb and not any(tb) and not v["temporal_strides"][0]:
+            raise CError("c.idle", f"{s.task_name}: an idle mover (every temporal bound 0) with "
+                         "first temporal stride 0 starts anyway (Reader.scala: stride 0 on loop "
+                         "0 forces that bound to 1); give it a nonzero stride")  # fmt: skip
         dims = self.point.streamers[s.component].temporal_dims
         bounds, strides = list(v["temporal_bounds"]), list(v["temporal_strides"])
         spatial = list(v["spatial_strides"])  # check_values checked every count against the dims

@@ -558,7 +558,10 @@ W` firings:
 `recipes/dot_1.json` then puts the two groups into one accelerator (D148),
 with a task each: the `mul` group's task sets the `sum` group's movers to a
 temporal bound of 0, so they never start, and the other way round (section
-9). Without the step the two are two accelerators, which the platform's one
+9). An idle mover never starts only if its first temporal stride is nonzero:
+snax_cluster's Reader.scala takes stride 0 on loop 0 as one AGU pass, that
+bound forced to 1 and the repeater set to the bound, so a reader at stride 0
+would start and read (the C backend refuses it, `c.idle`). Without the step the two are two accelerators, which the platform's one
 slot refuses (`gen.instances`, `recipes/dot_serial.json`):
 
 <!-- snippet: recipes/dot_1.json -->

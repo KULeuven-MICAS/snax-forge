@@ -351,6 +351,19 @@ def test_refused_a_start_without_the_idle_movers(tmp_path):
         main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
 
 
+def test_refused_an_idle_mover_at_stride_0(tmp_path):
+    """An idle mover starts anyway when its first temporal stride is 0 (Reader.scala)."""
+    from tests.gen.helpers import bound_dot1
+
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    d = tasks.to_dict()
+    for s in d["steps"]:
+        if s.get("task_name") == "mult_sum_a":
+            s["values"]["temporal_strides"] = [0]
+    with pytest.raises(CError, match=r"\[c.idle\] mult_sum_a: an idle mover"):
+        main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
+
+
 def test_refused_two_instances(tmp_path):
     _, _, cluster, acc, _ = parts(tmp_path / "one")
     gd = graph_dict()
