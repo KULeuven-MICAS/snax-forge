@@ -65,7 +65,7 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 | Milestone | Tasks | Content |
 |---|---|---|
 | P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step by hand (BASE1; its forge side, one `pixi run forge` per dot variant, is in M13); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
-| M13 | B0 (`done`), B1 (`done`), B2, B3, B4 | **B0** flow pieces: CLN1's leftovers; the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min`, constant casts and maps over several parameters (open item 37); the MatMul and Transpose pass; ND1's slice: 2-D containers, a tag without a split, the streamer from the temporal loops (open items 45, 46, 48, 78); a restart every T < n (open item 81). **B1** one description (D145–D148): `accelerator.json` per design point (C§17), written once by snax-forge, read by Emit, the catalogue check and SNAX-GVSoC, in place of `rtl.json` and `<slot>_acc.hjson`; groups of linked units, each with one JOBS and its own START, JOBS, STATUS, COUNTER and busy and done pins, an empty run ending in a done; every block a pure datapath (`ElementwiseLanes`, `TreeAccumulate`) under one nest controller per shell, in three modules (`<tag>_csr`, `<tag>_ctrl`, `<tag>_datapath`), `blocks.json` the datapath catalogue and the binding `{datapath, args, controller, ports}`; accelerator ⊃ groups ⊃ units in SNAX-DFG and `encapsulate`, so dot 1 is one accelerator of groups `mul` and `sum`; snax-gvsoc's default config and `test_snax_cfg` on `forge/vecadd/`. Rounds: snax-forge R0–R4 (with R1b), snax-gvsoc R1–R3. With R1's regenerated `main.c` rowsum_serial's counter moved 67 → 65 and the forge cycle counts by −12 to +17: the start writes shifted across an I-cache line (open item 65; the accelerator is unchanged). **B2** blocks, one per round: 1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO; `bind` on a group; `split_reduce`; the fold's `init` port. **B3** composition: the composite node, wire and decoupled links on both sides, one start, the link check; a unit's ports get a direction in `accelerator.json` once links exist (snax-gvsoc takes it from `inputs`/`outputs` until then); the converter (`run/`) reads several groups' units (`snax_acc<i>/unit_<unit>`) at task level since B1's R3; beat-level conversion for several groups (refused as `convert.level` until then); the run viewer's cluster view with several units (one until then); dot 2–6 at N = 512, W = 4 and 8. **B4** tier A: fragments applied by output name, `augment_init`, fork and join; bicg, mvt (LOW4, open item 47), gesummv, atax. `recipes/dot_1.json` runs dot 1 (B1's R3); `examples/dot/` stays parked until B3. |
+| M13 | B0 (`done`), B1 (`done`), B1x, clean-up, VIEW2, SYN1, HWCOST, B2, tier A; RAM1 alongside | **B0** flow pieces: CLN1's leftovers; the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min`, constant casts and maps over several parameters (open item 37); the MatMul and Transpose pass; ND1's slice: 2-D containers, a tag without a split, the streamer from the temporal loops (open items 45, 46, 48, 78); a restart every T < n (open item 81). **B1** one description (D145–D148): `accelerator.json` per design point (C§17), written once by snax-forge, read by Emit, the catalogue check and SNAX-GVSoC, in place of `rtl.json` and `<slot>_acc.hjson`; groups of linked units, each with one JOBS and its own START, JOBS, STATUS, COUNTER and busy and done pins, an empty run ending in a done; every block a pure datapath (`ElementwiseLanes`, `TreeAccumulate`) under one nest controller per group, in three modules (`<tag>_csr`, `<tag>_ctrl`, `<tag>_datapath`), `blocks.json` the datapath catalogue and the binding `{datapath, args, controller, ports}`; accelerator ⊃ groups ⊃ units in SNAX-DFG and `encapsulate`, so dot 1 is one accelerator of groups `mul` and `sum`; snax-gvsoc's default config and `test_snax_cfg` on `forge/vecadd/`. Rounds: snax-forge R0–R4 (with R1b), snax-gvsoc R1–R3. With R1's regenerated `main.c` rowsum_serial's counter moved 67 → 65 and the forge cycle counts by −12 to +17: the start writes shifted across an I-cache line (open item 65; the accelerator is unchanged). **B1x** dot 2–6 at N = 512 and matvec 1–6 (the row form) at 16 × 512, W = 4 and 8, each one accelerator on one description (D112): links of a depth, one generated control unit per group (D147), the datapaths `Mac`, `SerialAccumulate` and `LinkBuffer` (D149), the transforms `split_reduce`, `fuse_map` and `link` with one recipe per variant (D150), a unit's ports with a `dir` in `accelerator.json` (snax-gvsoc takes it from `inputs`/`outputs` until then). Rounds: F0 the docs (C§10–C§12, C§17, C§18), F1 Python, G1 snax-gvsoc's model, F2 Chisel, F3 the flow on SNAX-GVSoC, then C1, a local vsim check on snax_cluster with no snax_cluster PR. The converter (`run/`) reads several groups' units (`snax_acc<i>/unit_<unit>`) at task level since B1's R3; beat-level conversion and the run viewer's multi-unit view are open item 96; dot 1's row form runs at 8 × 512 (open item 97). **clean-up** after B1x. **VIEW2** the viewers; its decisions, D55, D73, D23 and open items 4 and 49, are amended when VIEW2 runs. **SYN1** synthesis of the basic blocks and kernels in KULeuven-MICAS/snax-forge-experiments (PAPER §7). **HWCOST** a first-order area and energy estimate from SYN1. **B2** (shrunk): the 1-stream SIMD, axpy's CSR scalar, the lane accumulator without an op, the fold's `init` port, other group binds. **tier A** (B3 and B4 merged): B3's fork, join, broadcast, hold and fragments (applied by output name, `augment_init`), with B4's bicg, mvt (LOW4, open item 47), gesummv, atax. **RAM1** alongside. `recipes/dot_1.json` runs dot 1 (B1's R3); `examples/dot/` stays parked until B1x. |
 | M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: the exact products, requantization and the int8 kernels (the reference executor accumulates as the hardware does); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
@@ -94,8 +94,8 @@ FIFO slicer and packer are built and parked (open item 93). M13's B1 is
 done (D145–D148): `accelerator.json` as the one description, per-group
 CSRs and pins, the nest controller over pure datapaths in three modules,
 and dot 1 as one accelerator of two groups; counters equal on SNAX-GVSoC,
-Verilator and Questa (snax_cluster #664, six fixtures). Next up: M13's B2,
-the blocks, one per round (the M13 row).
+Verilator and Questa (snax_cluster #664, six fixtures). Next up: M13's B1x,
+dot 2–6 and the row form with links (the M13 row), F0 to F3 and C1.
 
 ## Open Items
 
@@ -107,7 +107,7 @@ on SNAX-GVSoC, in Chisel and on snax_cluster's RTL CI) and 31 (tails: padding, D
 Closed in M13 B1: 79 (several accelerators on one core: dot 1 is one accelerator of two
 groups, D148) and 83 (control alignment with snax_cluster: an empty run ends in a done,
 STATUS's sticky done, COUNTER per group, the nest controller's Decoupled config, D146,
-D147). Next free number: 96.
+D147). Next free number: 98.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -143,7 +143,7 @@ D147). Next free number: 96.
     and extrapolation only if it is too slow for C1.
 53. A link between two shell accelerators: amends D12 and D51 and the SNAX
     shell. Parked (D112).
-54. Which kernels take PolyBench's SMALL in a 128 KiB L1 (M13 B4); the NumPy
+54. Which kernels take PolyBench's SMALL in a 128 KiB L1 (M13 tier A); the NumPy
     tolerance for float sums waits for the float pass (D113).
 65. Instruction fetch: snax_cluster's L0 prefetches the next line and taken
     branches' targets, GVSoC's I-cache does not, so SNAX-GVSoC misses more
@@ -231,6 +231,13 @@ D147). Next free number: 96.
     | vsum_tree_i8 | 185 | – | 192 |
     | vecmul_i32_i64 | 218 | – | 214 |
     | dot_1 | 302 | 302 | 304 |
+
+96. B1x's measurements, parked to SYN1: per-unit and per-link events, the
+    converter at beat level for several units, the run viewer's multi-unit
+    view, bank and port statistics, the export CSV, the area × cycles
+    metric.
+97. dot 1's row form at 16 × 512 does not fit: tmp0 needs 132 KiB of the
+    128 KiB L1, so it runs at 8 × 512.
 
 ## Sync Reminders
 

@@ -156,7 +156,9 @@ from tables: post-synthesis area per BRM parameter (lanes, width, depth),
 fitted linearly where it is; the L1 macros and bank counts on a PDK; TCDM
 interconnect area against banks and ports; later per-access energy times the
 counts the model keeps, as Accelergy does. Each fit's error is stated. No
-place and route. **[open]** the PDK and what may be published under its NDA.
+place and route. The flows and results live in
+KULeuven-MICAS/snax-forge-experiments, on the Nangate 45 nm and 15 nm open
+cell libraries, with results committed.
 
 ## 8. Related work and positioning
 
@@ -310,10 +312,10 @@ second line cannot be written is a threat (Q11).
 | SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (SG0–SG5) |
 | Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (LNK1, GEN3, LNK2a, GEN2a, FLOW3, GEN1, LNK2b, GEN2b) |
 | 2-D plumbing, the kernel set | E3, E4 | M13 (B0: ND1's slice), M7 (FE1b–FE3) |
-| Composed bind | E1, E4–E6 | M13 (B3, B4) |
-| Spatial-array and SIMD unit BRMs | E1, E5, E6 | M13 B2 (SIMD, fold, MAC); spatial arrays in tier D |
+| Composed bind | E1, E4–E6 | M13 (B1x, tier A) |
+| Spatial-array and SIMD unit BRMs | E1, E5, E6 | M13 B1x (MAC), B2 (SIMD, fold); spatial arrays in tier D |
 | The engine-alone number | C3's baseline in E4 | DSE0 (open item 49) |
-| Cost model and characterisation | E4–E7 | section 7, not placed yet |
+| Cost model and characterisation | E4–E7 | M13 SYN1 and HWCOST (section 7) |
 | Sweep runner and a sweep view | E4, E5 | DSE5 (M8); the view is new |
 | Packing and port widths (int8, float32) | E1 on the GeMM, E5, E6 | PACK1 |
 | Tiling, per-tile DMA, reductions over tiles | E1 at large sizes, E5, E6 | LOW3b (M15) |
@@ -325,28 +327,27 @@ second line cannot be written is a threat (Q11).
 
 1. BASE1: whether the GeMM bring-up is logged as well as SNAX's ALU was in
    SG5.
-2. The PDK, the synthesis tool, and what may be published.
-3. Floating point, the second pass per kernel after the integer tiers
+2. Floating point, the second pass per kernel after the integer tiers
    (D113): Berkeley HardFloat ops inside the existing blocks' lanes is one
    option. Either way the multi-cycle rows of section 6.2 stay.
-4. The exact Transformer (model, head size, sequence lengths, precision) and
+3. The exact Transformer (model, head size, sequence lengths, precision) and
    ResNet slice for E5 and E6.
-5. The snax_cluster version to pin for SNAX-GVSoC and the bundle.
-6. The newer DIMC: when it joins, and whether as a second anchor or as the
+4. The snax_cluster version to pin for SNAX-GVSoC and the bundle.
+5. The newer DIMC: when it joins, and whether as a second anchor or as the
    heterogeneous case.
-7. E9's effort and who to involve.
-8. Limitations to state: compositions are hand-written recipes (search is
+6. E9's effort and who to involve.
+7. Limitations to state: compositions are hand-written recipes (search is
    M8); engines whose dataflow changes per kernel (Hypercorex, CGRAs) do not
    fit a fixed BRM yet; fidelity holds as far as E1 shows.
-9. The story: composition first (kernel-sized, designer-written units
+8. The story: composition first (kernel-sized, designer-written units
    stitched from the SNAX-DFG into a datapath in a shell), with the simulator
    as the evaluation engine; the flow needs a name of its own, since
    "mid-level synthesis" is XLS's term.
-10. Not settled: in a shared-L1 cluster, how should a workload be split into
-    accelerators, and each accelerator into units and loop placements, given
-    limits on any of bandwidth, area and throughput, when every level is
-    described to the one above by the same small set of numbers (open item
-    76)?
+9. Not settled: in a shared-L1 cluster, how should a workload be split into
+   accelerators, and each accelerator into units and loop placements, given
+   limits on any of bandwidth, area and throughput, when every level is
+   described to the one above by the same small set of numbers (open item
+   76)?
 
 ## 11. Questions that shape the paper
 
@@ -403,7 +404,7 @@ A guide, not a verdict: what has to be settled before the outline (section
 - **Q15. One paper or two?** Decided when the evidence exists, now that there
   is no deadline.
 - **Q16. The LLM paragraph?** One short demonstration (E10), if clean.
-- **Q17. Limitations up front?** Section 10, item 8.
+- **Q17. Limitations up front?** Section 10, item 7.
 - **Q18. Open with the experience or the question?** The question first,
   the experience as its evidence in two or three sentences.
 - **Q19. Figure 1?** The flow with the shell for a tool paper; the
