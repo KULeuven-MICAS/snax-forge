@@ -1,5 +1,5 @@
 {
- "name": "dot",
+ "name": "dot_1",
  "kernel": "dot",
  "params": {"W": 4},
  "symbols": {"N": 64},
@@ -23,6 +23,7 @@
     "implementation": "chisel_adder_tree",
     "instance": "sum"
    }
-  }
+  },
+  {"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["mul", "sum"]}}
  ]
 }

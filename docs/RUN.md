@@ -241,9 +241,13 @@ puts one accelerator in its one slot, so two kinds of design point stop at
 
     FAILED recipes/vecadd.json: gen: [gen.source] platform small16 has no source hjson: read it from one with `pixi run design from-hjson`
 
-    pixi run flow recipes/dot.json --platform platforms/snax_forge.json
+    pixi run flow recipes/dot_serial.json --platform platforms/snax_forge.json
 
-    FAILED recipes/dot.json: gen: [gen.instances] 2 accelerated instances ['mul', 'sum']; the platform has one accelerator slot and the program drives one accelerator (open item 79)
+    FAILED recipes/dot_serial.json: gen: [gen.instances] 2 accelerators ['mul', 'sum']; the platform has one accelerator slot and the program drives one accelerator: encapsulate puts groups into one (D148, open item 79)
+
+`recipes/dot_1.json` is dot with `encapsulate` as its last step: one
+accelerator `dot` of the groups `mul` and `sum`, a task each (D148), which
+runs and checks itself (`forge counter mult_mul`, `forge counter sum_sum`).
 
 ## 5. The same path by hand
 

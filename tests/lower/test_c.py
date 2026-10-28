@@ -24,11 +24,11 @@ from tests.gen.helpers import SUB, bound_vecmul, bound_vsum, point
 POINT = "out/design/vecadd/design_point.json"
 
 
-def parts(tmp_path, graph=None, name="vecadd"):
+def parts(tmp_path, graph=None, name="vecadd", acc=None):
     """What main_c reads for vecadd (or ``graph``) on snax_forge: the source, its slot named
-    as the generator names it."""
+    as the generator names it; the description ``describe``'s unless ``acc`` is given."""
     p = DesignPoint.load(point(tmp_path, name=name, graph=graph))
-    acc = describe(p, POINT)
+    acc = describe(p, POINT) if acc is None else acc
     cluster = gen_mod.source(p.platform, tmp_path)
     _, slot = gen_mod.find_slot(cluster, p.platform)
     slot["snax_acc_name"] = p.platform.accelerator_slot
@@ -295,12 +295,81 @@ def test_job_values():
     assert job_values(total, {"n": 0, "T": 0}) == {"JOBS": 0, "JOB_BEATS": 0}
 
 
+def dot1_text(tmp_path) -> str:
+    """dot 1's main.c: groups mul and sum in the accelerator dot (D148)."""
+    from tests.gen.helpers import bound_dot1
+
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    return main_c(p, tasks, cluster, acc, arrays, ["data.h", "dot_csr.h", STREAMER], POINT)
+
+
+STREAMER = "streamer_csr_addr_map.h"
+
+
+def test_dot_1_runs_each_group_with_its_own_csrs(tmp_path):
+    """Per task: every mover (the other group's at bound 0), the group's JOBS (and JOB_BEATS),
+    one streamer start, the group's START; then its STATUS, the streamer's busy, its COUNTER."""
+    core = functions(dot1_text(tmp_path))["forge_core_0"]
+    acc = [x for x in core if "DOT_" in x or "STREAMER_" in x or x.startswith("forge_counter")]
+    assert acc == [
+        "csrw_ss(DOT_RW_MUL_JOBS, 16);",
+        "csrw_ss(STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_MUL_START, 1);",
+        "csrw_ss(DOT_RW_SUM_JOBS, 1);", "csrw_ss(DOT_RW_SUM_JOB_BEATS, 16);",
+        "while (csrr_ss(DOT_RO_MUL_STATUS) & 1) {", "while (csrr_ss(STREAMER_BUSY_CSR)) {",
+        "forge_counter[0] = csrr_ss(DOT_RO_MUL_COUNTER);",
+        "csrw_ss(STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_SUM_START, 1);",
+        "while (csrr_ss(DOT_RO_SUM_STATUS) & 1) {", "while (csrr_ss(STREAMER_BUSY_CSR)) {",
+        "forge_counter[1] = csrr_ss(DOT_RO_SUM_COUNTER);",
+    ]  # fmt: skip
+    bounds = [x for x in core if x.startswith("csrw_ss(T_BOUND_")]
+    assert bounds == [
+        "csrw_ss(T_BOUND_READER_0_0, 16);", "csrw_ss(T_BOUND_READER_1_0, 16);",
+        "csrw_ss(T_BOUND_WRITER_0_0, 16);", "csrw_ss(T_BOUND_READER_2_0, 0);",
+        "csrw_ss(T_BOUND_WRITER_1_0, 0);",
+        "csrw_ss(T_BOUND_READER_0_0, 0);", "csrw_ss(T_BOUND_READER_1_0, 0);",
+        "csrw_ss(T_BOUND_WRITER_0_0, 0);", "csrw_ss(T_BOUND_READER_2_0, 16);",
+        "csrw_ss(T_BOUND_WRITER_1_0, 1);",
+    ]  # fmt: skip
+
+
+def test_dot_1_checks_both_counters(tmp_path):
+    check = functions(dot1_text(tmp_path))["forge_check"]
+    assert 'printf("forge counter mult_mul: %u\\n", forge_counter[0]);' in check
+    assert 'printf("forge counter sum_sum: %u\\n", forge_counter[1]);' in check
+
+
+def test_refused_a_start_without_the_idle_movers(tmp_path):
+    from tests.gen.helpers import bound_dot1
+
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    d = tasks.to_dict()
+    for s in d["steps"]:
+        if s["op"] == "start" and "mult_mul" in s["tasks"]:
+            s["tasks"] = [t for t in s["tasks"] if not t.startswith("mult_sum")]
+    d["steps"] = [s for s in d["steps"] if s.get("task_name", "").startswith("mult_sum") is False]
+    with pytest.raises(CError, match=r"\[c.start\] .*the other groups' idle at bound 0"):
+        main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
+
+
+def test_refused_an_idle_mover_at_stride_0(tmp_path):
+    """An idle mover starts anyway when its first temporal stride is 0 (Reader.scala)."""
+    from tests.gen.helpers import bound_dot1
+
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    d = tasks.to_dict()
+    for s in d["steps"]:
+        if s.get("task_name") == "mult_sum_a":
+            s["values"]["temporal_strides"] = [0]
+    with pytest.raises(CError, match=r"\[c.idle\] mult_sum_a: an idle mover"):
+        main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
+
+
 def test_refused_two_instances(tmp_path):
     _, _, cluster, acc, _ = parts(tmp_path / "one")
     gd = graph_dict()
     chained(gd)
     p = DesignPoint.load(point(tmp_path, graph=Graph.from_dict(gd)))
-    with pytest.raises(CError, match=r"\[c.instances\] 2 accelerated instances"):
+    with pytest.raises(CError, match=r"\[c.instances\] 2 accelerators \['acc', 'acc2'\]"):
         main_c(p, task_list(p), cluster, acc, [], INCLUDES, POINT)
 
 

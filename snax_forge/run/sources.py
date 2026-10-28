@@ -7,15 +7,15 @@
 A level is which traces are on (snax-gvsoc ``docs/EVENTS.md``), cumulative: ``off`` the
 ``summary`` lines, ``task`` and the ``events`` lines, ``beat`` and the ``beats`` lines,
 ``stall`` and the ``stalls`` lines, ``finegrained`` and the cores' ``insn`` lines. The sources
-are C§7 names (the accelerator ``acc``, its movers, ``dma``, ``core<i>``, ``axi``); they say
-whose beat, stall and instruction lines are written, never the summary's or events'. By
-default, at ``beat`` and ``stall``, the accelerator, its movers and the DMA; at
+are C§7 names (the accelerator's units, ``acc``, its movers, ``dma``, ``core<i>``, ``axi``);
+they say whose beat, stall and instruction lines are written, never the summary's or events'.
+By default, at ``beat`` and ``stall``, the units, the movers and the DMA; at
 ``finegrained`` also every core, for its ``insn`` lines only (its crossbar lines are written
 when it is named).
 
 ``gvsoc_options`` maps them onto SNAX-GVSoC: the trace names for ``gvsoc/Makefile``'s
 ``TRACES`` (one ``--trace`` regex each: ``summary`` and ``events`` whole, then per component,
-the unit's ``beats`` for ``acc``, the streamer's ``beats`` (its ``class`` lines) and ``stalls``
+a unit's ``beats`` for it (``snax_acc<i>/unit``, ``unit_<unit>`` with several groups), the streamer's ``beats`` (its ``class`` lines) and ``stalls``
 for a mover, the crossbar's
 ``beats`` and ``stalls`` for its inputs, the AXI backend's ``beats`` for ``dma``, ``pe<i>/insn``
 for a core), the crossbar's ``trace_inputs`` parameter (the named inputs by name: a mover's
@@ -67,7 +67,7 @@ def sources_for(cluster: Cluster, level: str, given: list[str] | None) -> list[s
                            f"sources are {', '.join(known)})")  # fmt: skip
         return [s for s in known if s in given]
     a = cluster.accelerator
-    out = [a.name, *(m.name for m in a.movers), DMA]
+    out = [*a.unit_names, *(m.name for m in a.movers), DMA]
     if level == "finegrained":
         out += cluster.cores
     return out
@@ -94,7 +94,7 @@ def gvsoc_options(cluster: Cluster, level: str, sources: list[str], vcd: bool,
     inputs = [f"{acc}.streamer.{m.gvsoc}.lane{lane}" for m in movers for lane in range(m.lanes)]
     inputs += xbar_cores + ([AXI] if AXI in sources else []) + ([DMA] if DMA in sources else [])
     # the traced components by their GVSoC paths: the unit, the streamer, the crossbar; the cores
-    comps = [path for path, on_ in ((f"{acc}/unit", a.name in sources),
+    comps = [path for path, on_ in (*((f"{acc}/{u.path}", u.name in sources) for u in a.units),
                                     (f"{acc}/streamer", bool(movers)),
                                     ("tcdm/snax_xbar", bool(inputs))) if on_]  # fmt: skip
     pes = [c.replace("core", "pe") for c in cores]

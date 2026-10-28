@@ -94,7 +94,7 @@ class Profile:
 | DMA | transfers, busy cycles (what `DMA_BUSY` counts), read and write beats, bytes each way |
 | port | per crossbar input, its grants, stalls and the stalls lost to the DMA's superbank; a core's or AXI's over the whole run (`whole_run`) |
 | banks | reads, writes and conflicts (cycles with two or more requests on a bank), from the streamers and the DMA only |
-| `functional_check` | `kernel`, `seed`, `symbols`; `exit_code`; `data_errors` and `words` (the `forge data:` line); `tasks` (per accelerator task its `counter`, the `forge counter` line, and its `beats`, from the manifest); `passed` (exit code 0) |
+| `functional_check` | `kernel`, `seed`, `symbols`; `exit_code`; `data_errors` and `words` (the `forge data:` line); `tasks` (per accelerator task its `counter`, the `forge counter` line, its `beats`, from the manifest, and its `group`, D148); `passed` (exit code 0) |
 
 Names, ports, `write` and the FIFO depths come from the hjson files and the
 design point.
@@ -131,9 +131,12 @@ the `beats` lines, `stall` the `stalls` lines, `finegrained` the cores'
     finegrained  insn     pc, func, text  (src = the core)
 ```
 
-`src` is `acc`, a mover (`acc_a`), `dma`, `core0`, and for a `grant` or
-`stall` the crossbar port (`acc_a.lane0`, `core0`, `axi`). `block` is the
-component whose CSR it is (`acc`, `acc_streamer`). A DMA copy's `dir`
+`src` is a unit (`acc`; with several groups each, `mul`, `sum`, D148), a
+mover (`acc_a`), `dma`, `core0`, and for a `grant` or `stall` the crossbar
+port (`acc_a.lane0`, `core0`, `axi`). `block` is the component whose CSR it
+is (`acc`, a group's unit; `acc_streamer`, `<accelerator>_streamer`). Beat
+levels of an accelerator of several groups are refused (`convert.level`)
+until M13's B3. A DMA copy's `dir`
 (`l2_to_l1`, `l1_to_l2`) comes from its addresses, and copies are matched to
 the task list's `load_<C>` and `store_<C>` tasks in issue order.
 
@@ -209,7 +212,11 @@ streamer  base, temporal_bounds, temporal_strides, spatial_strides (bytes),
           plus the offset's bytes. At num_slc = 1 these are the element
           strides as before. Spatial
           bounds are design-time, in elements, and come from the design
-          point's streamers
+          point's streamers. An idle mover (another group's, D148): every
+          temporal bound 0, so it never starts, and every temporal stride
+          a bank word, never 0 (a reader whose first loop has stride 0
+          runs that loop once whatever its bound, snax_cluster's
+          Reader.scala)
 dma       direction ("l2_to_l1" or "l1_to_l2"); src and dst, each with
           bounds and strides (bytes, one wide beat per step), the L1 side
           with base, the L2 side with symbol (its container's data.h array)
@@ -233,21 +240,26 @@ configured task not yet started; a task starts once, after its `after`
 tasks; every configured task is started. Against the design point
 (`check_values`, `c.tasks`): the component exists with the task's type, the
 values have exactly the type's keys, a streamer's loops fit it, a DMA's
-direction is valid, every bound is at least 1.
+direction is valid, every bound is at least 1 (or, an idle mover's, every
+one 0).
 
 **Waits** (`placed_waits`, `lower/waits.py`). Before a `start`, one wait per
 component, on its latest task, for every `after` task and listed component
 not yet covered, leaving out a wait another covers. A wait on a writer
-streamer also covers its accelerator and that accelerator's readers started
-with it. Where configures, starts and syncs go is the task list's.
+streamer also covers its unit and that unit's readers started with it; an
+idle mover's task needs no wait. Where configures, starts and syncs go is
+the task list's.
 
 **Derived** (`lower/derive.py`): per accelerated node in execution order,
 `load_<C>` for each input not yet in L1, a task per streamer, the
 accelerator task (`n` the firings, each named rate from `named_rates`,
 D102), one `start` of them all, `store_<C>` for each output written for the
-last time; one `sync` per non-transient output at the end. `after` holds
-data dependences only, so two accelerators chain through L1 with one wait
-(D105). vecadd's design point on `platforms/snax_forge.json` gives
+last time; one `sync` per non-transient output at the end. In an
+accelerator of several groups (D148) each task also configures the other
+groups' movers idle, in the shell's order, and its `start` launches every
+mover: dot 1's `mult_mul` starts `mul_a`, `mul_b`, `mul_out` and `sum_a`,
+`sum_out` idle. `after` holds data dependences only, so two groups chain
+through L1 with one wait (D105), on the first's writer. vecadd's design point on `platforms/snax_forge.json` gives
 `tests/run/fixtures/vecadd/tasks.json` exactly; its end:
 
 <!-- snippet: tests/run/fixtures/vecadd/tasks.json -->
@@ -435,15 +447,17 @@ and on an accelerated node. dot as imported:
 |---|---|---|---|
 | `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`, and `valid`, the iteration count n, when n is not a multiple of the factor: the lanes past it are padding, `dfg/pad.py`, D144); `loop.tagged` (true when `tag_map` set the kind) | yes: runs once per value of `var` | none (derived from the body) |
 | `tasklet` | `code`: one `output = expression` per output connector | no | one element each: indices only |
-| `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null), `accelerator` (the accelerator its group is in, D148: the group's name unless `encapsulate` set another) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
+| `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null), `accelerator` (written only when set: `encapsulate`'s name for the accelerator its group is in, D148) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
 
 **Accelerators and groups** (D146, D148). A bound graph nests accelerator ⊃
 groups ⊃ units and links: a unit is an accelerated node, a group a connected
 set of units and links (none until M13's B3), so an unlinked unit is a group
 of its own, named after its instance. By default each group is its own
-accelerator; `encapsulate` (section 12) puts several into one, which shares
-one slot, one CSR window and one wrapper (section 17), each group still a
-task of its own.
+accelerator, named after it; `encapsulate` (section 12) puts several into
+one, which shares one slot, one CSR window and one wrapper (section 17),
+each group still a task of its own, the groups in the graph's order. The
+nodes of one instance carry the same `accelerator` or none, and an
+accelerator's name is no instance's (`DfgError`).
 
 Attrs without a namespace belong to the kind and are all written;
 namespaced attrs (`loop.*`, `mem.*`, `hw.*`, `user.*`) pass through
@@ -519,7 +533,7 @@ as `recipe.json`.
 | `bind` | `node` (tasklet id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; every map around the spatial map must be `temporal` (the firing loops: an untagged one is an error naming `tag_map`, a `tile` one is not lowered yet); the lanes param comes from the spatial bound; the dimension over the spatial variable becomes the lanes' range, the others stay indices; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D102) |
 | `unbind` | `node` (accelerated id) | the accelerated node becomes the subtree it `replaced` |
 | `join_map` | `map` (id) | a temporal map with `loop.split` and its spatial map become the map they were split from |
-| `encapsulate` | `accelerator` (a name), `units` (instances) | the groups of those units become one accelerator of that name (their nodes' `accelerator`, D148), the groups kept in the order given |
+| `encapsulate` | `accelerator` (a name), `units` (instances) | the groups of those units become one accelerator of that name (their nodes' `accelerator`, D148); `units` in the order the graph runs them, which the groups keep; a unit already in an accelerator, a name an instance or an accelerator has, or a unit the graph lacks is an error |
 | `unencapsulate` | `accelerator` (a name) | each of its groups becomes its own accelerator again |
 
 `recipes/vecadd_undo.json` takes vecadd's last step back to the first. dot
@@ -527,7 +541,7 @@ binds the multiply map to `elementwise_mul` and the sum map to
 `accumulate`'s `chisel_adder_tree`, whose `out` is one lane every `T = N /
 W` firings:
 
-<!-- snippet: recipes/dot.json -->
+<!-- snippet: recipes/dot_1.json -->
 ```json
   {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
   {
@@ -538,13 +552,19 @@ W` firings:
     "implementation": "chisel_adder_tree",
     "instance": "sum"
    }
-  }
+  },
 ```
 
-dot 1 then puts the two groups into one accelerator (D148), with a task each:
-the `mul` group's task sets the `sum` group's movers to a temporal bound of 0,
-so they never start, and the other way round:
+`recipes/dot_1.json` then puts the two groups into one accelerator (D148),
+with a task each: the `mul` group's task sets the `sum` group's movers to a
+temporal bound of 0, so they never start, and the other way round (section
+9). An idle mover never starts only if its first temporal stride is nonzero:
+snax_cluster's Reader.scala takes stride 0 on loop 0 as one AGU pass, that
+bound forced to 1 and the repeater set to the bound, so a reader at stride 0
+would start and read (the C backend refuses it, `c.idle`). Without the step the two are two accelerators, which the platform's one
+slot refuses (`gen.instances`, `recipes/dot_serial.json`):
 
+<!-- snippet: recipes/dot_1.json -->
 ```json
   {"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["mul", "sum"]}}
 ```
@@ -730,12 +750,12 @@ the source. One design point gives byte-identical files wherever written.
 | File | Holds |
 |---|---|
 | `<platform>.hjson` | the cluster: the platform's `hjson`, its comments dropped and its key order kept, with `cluster.tcdm.banks`, `.size` (KiB), `data_width`, `cluster_base_addr`, `dma_data_width` and `dram` written from the platform, `cluster.name` `snax_forge_cluster` (also in `cluster.bender_target`, in place of the source's name; a source without its own name there is `gen.source`), and the slot set; the source's template, referred to only by the slot, dropped |
-| `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports in the BRM's port order) and `data_writer_params` (the output ports), per mover `spatial_bounds` in words, fastest first (`[S_0 / k, S_1, ...]`, k the elements of the port's container dtype a word holds, D142), `temporal_dim`, `num_channel` (the streamer's channels, the wire default W / k; the bounds' product) and `fifo_depth` |
+| `<slot>_streamer.hjson` | the streamer template, the whole file: `data_reader_params` (the input ports) and `data_writer_params` (the output ports), unit by unit in the groups' order, each in the BRM's port order, per mover `spatial_bounds` in words, fastest first (`[S_0 / k, S_1, ...]`, k the elements of the port's container dtype a word holds, D142), `temporal_dim`, `num_channel` (the streamer's channels, the wire default W / k; the bounds' product) and `fifo_depth` |
 | `accelerator.json` | the accelerator's one description, section 17's file |
-| `include/` | `streamer_csr_addr_map.h` and `<name>_csr.h` (`name` accelerator.json's; every CSR by section 17's name, in CSR order), and the runtime's `snitch_cluster_cfg.h` and `snitch_cluster_addrmap.h`, as snax_cluster's templates render them from the cluster file (`gen/headers.py`, D126) |
+| `include/` | `streamer_csr_addr_map.h` and `<name>_csr.h` (`name` accelerator.json's; every CSR by section 17's name, in CSR order: dot 1's `dot_csr.h` from `DOT_RW_MUL_START` to `DOT_RO_SUM_COUNTER`), and the runtime's `snitch_cluster_cfg.h` and `snitch_cluster_addrmap.h`, as snax_cluster's templates render them from the cluster file (`gen/headers.py`, D126) |
 | `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, in its padded shape (a tail's pads hold the pad value: 0, or the identity of a max or min fold that reads it, D144), then padded with zeros to whole DMA beats in its itemsize (16 int32 or 64 int8 elements per 64-byte beat) as its L2 layout (D105) and aligned to the beat |
 | `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens, the valid elements only, a padded matrix row by row (`forge data:`, its words the valid elements), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
-| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace`, `csrs` (the CSR layout: `streamer`, its `first` and `last` CSR, and `accelerator`, each CSR's header name -> its number), `tasks` (per accelerator task its `beats` and `csrs` values: from the task's values n and T (section 9), JOBS = n / T and, for a fold, JOB_BEATS = T) |
+| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace` (the unit's trace path, `snax_acc0/unit`; with several groups the accelerator's, `snax_acc0`), `csrs` (the CSR layout: `streamer`, its `first` and `last` CSR, and `accelerator`, each CSR's header name -> its number), `tasks` (per accelerator task, in order, its `beats` and its group's `csrs` values: from the task's values n and T (section 9), JOBS = n / T and, for a fold, JOB_BEATS = T; with several groups also its unit's `trace`, `snax_acc0/unit_<unit>`, as snax-gvsoc's composite names it) |
 
 **The slot** is the source's only one, renamed: `snax_acc_name` the
 platform's `accelerator_slot`, its `bender_target` dropped (the RTL comes
@@ -804,7 +824,7 @@ A unit:
 | `datapath` | a catalogue datapath |
 | `ports` | per BRM port, in the BRM's order: `port` (the datapath's), `dtype` (as NumPy names it), `lanes` |
 | `opType` | an elementwise unit only: NumPy's result type of its inputs (`brm/dtypes.py`'s `result_type`, D143), the type its op runs at |
-| `params` | only what the ports do not give (`op`) |
+| `params` | only what the ports do not give: `op` (a TreeAccumulate's `add`, the only op it runs) |
 | `timing` | `latency`, `ii` |
 | `csrs` | its R/W CSRs |
 
@@ -814,9 +834,9 @@ offsets once and stores them; a reader checks them (contiguous from 0 in CSR
 order: per group START, JOBS, the units' R/W, STATUS, COUNTER, not the file's
 nesting) and never recomputes them.
 
-**Refused**, each a `GenError`, before anything is written: more or fewer
-than one accelerated instance (`gen.instances`, dot 1 comes with
-`encapsulate`), a null binding (`gen.binding`), a datapath not registered
+**Refused**, each a `GenError`, before anything is written: other than one
+accelerator (`gen.instances`: several groups are one accelerator only
+through `encapsulate`, D148), a null binding (`gen.binding`), a datapath not registered
 (`gen.datapath`), a controller other than `counted` (`gen.controller`), a
 drain other than 0 (`gen.drain`), a latency other than the datapath's or an
 II other than 1 (`gen.timing`), and what the datapath refuses: its args
@@ -877,19 +897,20 @@ unit: vecadd's
 | vsum_tree_i32 | START 0, JOBS 1, JOB_BEATS 2, STATUS 3, COUNTER 4 | 3, 2 | JOBS 1, JOB_BEATS 16 |
 | dot 1 (groups mul, sum) | MUL: START 0, JOBS 1, STATUS 2, COUNTER 3; SUM: START 4, JOBS 5, JOB_BEATS 6, STATUS 7, COUNTER 8 | 5, 4 | task 1: MUL_JOBS 16; task 2: SUM_JOBS 1, SUM_JOB_BEATS 16 |
 
-vecadd's file, snax-gvsoc's fixture (`forge/vecadd/`):
+dot 1's file, snax-gvsoc's fixture (`forge/dot_1/`): the groups `mul` and
+`sum` in `encapsulate`'s order, each a unit of its own:
 
-<!-- snippet: gvsoc/snax-gvsoc/forge/vecadd/accelerator.json -->
+<!-- snippet: gvsoc/snax-gvsoc/forge/dot_1/accelerator.json -->
 ```json
 {
- "name": "acc",
- "design_point": "out/design/vecadd/design_point.json",
+ "name": "dot",
+ "design_point": "out/design/dot_1/design_point.json",
  "tag": "snax_forge",
- "inputs": ["acc.a", "acc.b"],
- "outputs": ["acc.out"],
+ "inputs": ["mul.a", "mul.b", "sum.a"],
+ "outputs": ["mul.out", "sum.out"],
  "groups": [
   {
-   "name": "acc",
+   "name": "mul",
    "csrs": [
     {"name": "START", "access": "rw", "offset": 0, "width": 32},
     {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
@@ -898,8 +919,8 @@ vecadd's file, snax-gvsoc's fixture (`forge/vecadd/`):
    ],
    "units": [
     {
-     "name": "acc",
-     "brm": "elementwise_add",
+     "name": "mul",
+     "brm": "elementwise_mul",
      "datapath": "ElementwiseLanes",
      "ports": {
       "a": {"port": "a", "dtype": "int64", "lanes": 4},
@@ -907,9 +928,33 @@ vecadd's file, snax-gvsoc's fixture (`forge/vecadd/`):
       "out": {"port": "out", "dtype": "int64", "lanes": 4}
      },
      "opType": "int64",
-     "params": {"op": "add"},
+     "params": {"op": "mul"},
      "timing": {"latency": 0, "ii": 1},
      "csrs": []
+    }
+   ],
+   "links": []
+  },
+  {
+   "name": "sum",
+   "csrs": [
+    {"name": "START", "access": "rw", "offset": 4, "width": 32},
+    {"name": "JOBS", "access": "rw", "offset": 5, "width": 32},
+    {"name": "STATUS", "access": "ro", "offset": 7},
+    {"name": "COUNTER", "access": "ro", "offset": 8}
+   ],
+   "units": [
+    {
+     "name": "sum",
+     "brm": "accumulate",
+     "datapath": "TreeAccumulate",
+     "ports": {
+      "a": {"port": "in", "dtype": "int64", "lanes": 4},
+      "out": {"port": "out", "dtype": "int64", "lanes": 1}
+     },
+     "params": {"op": "add"},
+     "timing": {"latency": 1, "ii": 1},
+     "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 6, "width": 32}]
     }
    ],
    "links": []
@@ -936,12 +981,18 @@ ports; no `csr`, no `tie`. A datapath is data and enables only:
     "type": "dtype",
     "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
    },
-   "lanes": {"type": "int", "min": 1}
+   "lanes": {"type": "int", "min": 1},
+   "op": {"type": "op", "values": ["add"]}
   },
   "ports": {"in": "in", "out": "out"},
   "latency": 1,
   "pins": ["fire", "first"],
-  "fill": {"inType": "inputs.dtype", "outType": "outputs.dtype", "lanes": "inputs.lanes"}
+  "fill": {
+   "inType": "inputs.dtype",
+   "outType": "outputs.dtype",
+   "lanes": "inputs.lanes",
+   "op": "unit.params.op"
+  }
  }
 ```
 

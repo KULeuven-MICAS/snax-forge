@@ -16,7 +16,8 @@ from __future__ import annotations
 import pytest
 
 pytest.skip(
-    "dot is parked until M13: two accelerators, which the generator refuses (gen.instances)",
+    "dot's walk-through is parked until M13's B3: it compares two accumulators on SNAX-MODEL, "
+    "which RET1 removed (dot 1 runs on SNAX-GVSoC: tests/flow/test_dot.py)",
     allow_module_level=True,
 )
 
@@ -33,7 +34,7 @@ from tests.design.helpers import REPO
 from .helpers import excerpts_hold
 
 README = REPO / "examples" / "dot" / "README.md"
-NAMES = ("dot", "dot_serial")
+NAMES = ("dot_1", "dot_serial")
 SANDBOX = {n: f"pixi run sandbox recipes/{n}.json" for n in NAMES}
 FLOW = {
     n: f"pixi run flow out/sandbox/{n}/4_bind.snaxdfg --platform platforms/small16.json"
@@ -118,10 +119,12 @@ def test_the_readme_gives_the_commands_and_folders():
     for n in NAMES:
         assert f"\n{SANDBOX[n]}\n" in t and f"\n{FLOW[n]}\n" in t
         assert f"`out/sandbox/{n}/`" in t and f"`out/flow/{n}/`" in t
-    assert "\npixi run view-dfg out/sandbox/dot/\n" in t
-    pair = "pixi run view-dfg out/sandbox/dot/4_bind.snaxdfg out/sandbox/dot_serial/4_bind.snaxdfg"
+    assert "\npixi run view-dfg out/sandbox/dot_1/\n" in t
+    pair = (
+        "pixi run view-dfg out/sandbox/dot_1/4_bind.snaxdfg out/sandbox/dot_serial/4_bind.snaxdfg"
+    )
     assert f"\n{pair}\n" in t
-    assert "\npixi run view out/flow/dot/run out/flow/dot_serial/run\n" in t
+    assert "\npixi run view out/flow/dot_1/run out/flow/dot_serial/run\n" in t
 
 
 def test_the_flows_are_from_the_bound_graphs_into_the_folders_the_readme_names(made):
@@ -151,7 +154,7 @@ def test_each_recipe_writes_the_five_steps_the_table_lists(made):
         assert files == STEPS
     for s in STEPS:
         assert f"| `{s}.snaxdfg` |" in text()
-    v = view(root, "dot", "0_input")
+    v = view(root, "dot_1", "0_input")
     assert v["symbols"] == {"N": 64}
     # 4_bind: every tasklet is an accelerator
     for n in NAMES:
@@ -177,14 +180,14 @@ def test_the_recipes_differ_in_two_values_of_the_last_two_steps():
 
 def test_the_viewer_names_the_steps_after_their_files(made):
     root, _ = made
-    gs = dfg.GraphSet([root / "out" / "sandbox" / "dot"])
+    gs = dfg.GraphSet([root / "out" / "sandbox" / "dot_1"])
     assert [s["name"] for s in gs.summaries()] == STEPS
     assert "http://127.0.0.1:8766/" in text()
 
 
 def test_the_input_graph_is_two_maps_with_a_transient_between(made):
     root, _ = made
-    v = view(root, "dot", "0_input")
+    v = view(root, "dot_1", "0_input")
     tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
     assert [(n["id"], n["title"], n["iterations"]) for n in tops] == [
         ("mult_map", "i in 0:N", 64),
@@ -200,7 +203,7 @@ def test_the_input_graph_is_two_maps_with_a_transient_between(made):
 
 def test_the_split_and_the_bind_of_the_multiplier(made):
     root, _ = made
-    v = view(root, "dot", "1_split_map")
+    v = view(root, "dot_1", "1_split_map")
     outer, inner = node(v, "mult_map"), node(v, "mult_map_s")
     assert (outer["title"], outer["iterations"], outer["loop_kind"]) == (
         "i_t in 0:N // 4",
@@ -208,7 +211,7 @@ def test_the_split_and_the_bind_of_the_multiplier(made):
         "temporal",
     )
     assert (inner["title"], inner["loop_kind"]) == ("i_s in 0:4", "spatial")
-    v = view(root, "dot", "2_bind")
+    v = view(root, "dot_1", "2_bind")
     mul = node(v, "mult")
     assert (mul["kind"], mul["title"]) == ("accelerated", "mul = elementwise_mul")
     assert mul["replaced"] == "mult_map_s › mult" and "`mult_map_s › mult`" in text()
@@ -220,8 +223,8 @@ def test_the_split_and_the_bind_of_the_multiplier(made):
 
 def test_the_reduce_label_leaves_the_edge_when_sum_is_bound(made):
     root, _ = made
-    assert any("(reduce add)" in e for e in edges(view(root, "dot", "3_split_map")))
-    v = view(root, "dot", "4_bind")
+    assert any("(reduce add)" in e for e in edges(view(root, "dot_1", "3_split_map")))
+    v = view(root, "dot_1", "4_bind")
     assert node(v, "sum")["title"] == "sum = accumulate"
     assert edges(v)[-1] == "out[0:1]" and not any("reduce" in e for e in edges(v))
 
@@ -318,7 +321,7 @@ def test_neither_accumulator_has_a_drain(made):
         t = task(rv[n], "sum")
         firings = rv[n].outputs.profile.to_dict()["accelerators"]["sum"]["firings"]
         assert t["done"] - t["start"] == firings + 3
-    assert drain == {"dot": 0, "dot_serial": 0}
+    assert drain == {"dot_1": 0, "dot_serial": 0}
 
 
 def test_the_multiplier_is_held_back_as_vecadd_is_in_loop1(made):

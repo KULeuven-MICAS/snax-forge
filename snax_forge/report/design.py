@@ -39,7 +39,7 @@ import numpy as np
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
 
-from .markdown import kib, kv, pct, span_text, spans, table
+from .markdown import grouped, kib, kv, pct, span_text, spans, table
 from .record import Record
 
 
@@ -74,6 +74,7 @@ class AccelRow(Record):
     latency: int
     target_ii: int
     ports: list[str]
+    group: str | None = None
 
 
 @dataclass
@@ -131,6 +132,7 @@ class DesignReport(Record):
     streamers: list[StreamerRow]
     memories: list[MemoryTable]
     notes: list[str]
+    groups: int = 1  # the accelerator's; with more than one, the accelerators' table names each's
 
 
 # =============================================================================
@@ -272,9 +274,12 @@ def build_design(
                 containers[streamer_name(n.attrs["instance"], port)] = m.data
 
     a = cluster.accelerator
-    kind, control, latency, ii = unit_view(a.unit, a.name)
-    components = [ComponentRow(a.name, "accelerator",
-                               f"{kind} on core{a.core}, {control}, slot {a.slot}")]  # fmt: skip
+    several = len(a.units) > 1
+    views = {u.name: unit_view(a.unit, u.name) for u in a.units}
+    components = [ComponentRow(u.name, "accelerator",
+                               f"{views[u.name][0]} on core{a.core}, {views[u.name][1]}, slot "
+                               f"{a.slot}" + (f", group {u.group} of {a.name}" if several else ""))
+                  for u in a.units]  # fmt: skip
     components += [ComponentRow(m.name, "streamer", f"{'writer' if m.write else 'reader'} "
                                 f"{m.gvsoc}, num_ch {m.lanes}, FIFO depth {m.fifo_depth}")
                    for m in a.movers]  # fmt: skip
@@ -283,20 +288,25 @@ def build_design(
                                 else "the DMA's" if i == cluster.dma_core else "")
                    for i, c in enumerate(cluster.cores)]  # fmt: skip
 
-    inst = instances.get(a.name)
-    accels = [AccelRow(a.name, kind, inst.brm.name if inst else None,
-                       inst.implementation if inst else None,
-                       dict(inst.params) if inst else {}, latency, ii,
-                       [f"{m.port} ← {m.name}" for m in a.movers])]  # fmt: skip
+    accels = []
+    for u in a.units:
+        inst = instances.get(u.name)
+        kind, _, latency, ii = views[u.name]
+        accels.append(AccelRow(u.name, kind, inst.brm.name if inst else None,
+                               inst.implementation if inst else None,
+                               dict(inst.params) if inst else {}, latency, ii,
+                               [f"{m.port} ← {m.name}" for m in a.movers
+                                if point.streamers[m.name].instance == u.name], u.group))  # fmt: skip
     streamers = [
-        StreamerRow(m.name, a.name, m.port, "write" if m.write else "read",
+        StreamerRow(m.name, point.streamers[m.name].instance, m.port,
+                    "write" if m.write else "read",
                     point.streamers[m.name].dtype, point.streamers[m.name].num_slc, m.lanes,
                     m.fifo_depth, point.streamers[m.name].temporal_dims, containers.get(m.name))
         for m in a.movers
     ]  # fmt: skip
     return DesignReport(name, header, components, accels, streamers,
                         _memory_tables(cluster, regions, point),
-                        _notes(cluster, regions, point, streamers))  # fmt: skip
+                        _notes(cluster, regions, point, streamers), len(a.units))  # fmt: skip
 
 
 # =============================================================================
@@ -328,7 +338,7 @@ def render_design(r: DesignReport) -> str:
         ["Component", "Kind", "Details"], [[c.name, c.kind, c.detail] for c in r.components]
     )
     out += ["", "## Accelerators", ""]
-    out += table(
+    out += grouped(r.groups, 1, table(
         [
             "Instance",
             "Kind",
@@ -353,7 +363,7 @@ def render_design(r: DesignReport) -> str:
             for a in r.accelerators
         ],
         {5, 6},
-    )
+    ), [a.group for a in r.accelerators])  # fmt: skip
     out += ["", "## Streamers", ""]
     out += table(
         [

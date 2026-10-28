@@ -12,6 +12,15 @@ node is one of its temporal firing loops, ``firing_loops``). For each group:
     streamers    configure ``<node>_<instance>_<port>`` for every port, in the
                  BRM's port order, with values from the memlet through the
                  container's L1 layout (below)
+    idle movers  in an accelerator of several groups (D148), configure
+                 ``<node>_<streamer>`` for every port of the other groups'
+                 units too, every temporal bound 0, so they never start: the
+                 streamer starts all its movers with one CSR; the task list
+                 holds them in the shell's order, unit by unit. Their
+                 temporal strides are a bank word, not 0: a reader whose
+                 first loop has stride 0 runs that loop once whatever its
+                 bound and hands each beat out bound times (snax_cluster's
+                 Reader.scala), so it would start and read
     accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, and its
                  named rates
     start        the streamer tasks, then the accelerator task, together
@@ -59,6 +68,8 @@ from snax_forge.brm import memlet_ordered
 from snax_forge.design.streamers import (
     Loop,
     accelerated,
+    accelerator_of,
+    accelerators,
     firing_loops,
     instances,
     port_loops,
@@ -143,6 +154,7 @@ def task_list(point: DesignPoint) -> TaskList:
     mode = pf.wait_mode
     beat = pf.l1.wide_bits // 8
     nodes = accelerated(g)
+    groups = accelerators(g)
 
     def layout(c: str, mem: str) -> Layout | None:
         return plan.layouts.get(c, {}).get(mem)
@@ -165,6 +177,15 @@ def task_list(point: DesignPoint) -> TaskList:
         values = {"direction": direction, "src": src, "dst": dst}
         steps.append(Configure(task, "dma", "dma", values, after, mode))
         steps.append(Start([task]))
+
+    def idle(node: str, s: Any) -> Configure:
+        """Node ``node``'s task on another group's mover ``s``: every bound 0, so it never
+        starts and moves nothing (D148); every temporal stride a word (module doc)."""
+        word = pf.l1.width_bits // 8
+        values = {"base": 0, "temporal_bounds": [0] * s.temporal_dims,
+                  "temporal_strides": [word] * s.temporal_dims,
+                  "spatial_strides": [0] * len(s.spatial_bounds)}  # fmt: skip
+        return Configure(f"{node}_{s.name}", "streamer", s.name, values, [], mode)
 
     for n in nodes:
         name = n.attrs["instance"]
@@ -194,7 +215,7 @@ def task_list(point: DesignPoint) -> TaskList:
                 dma(task, "l2_to_l1", c, [])
                 in_l1[c] = task
 
-        group = []
+        own: dict[str, Configure] = {}
         for p in ports:  # streamers
             m, s = memlets[p], point.streamers[streamer_name(name, p)]
             lay = layout(m.data, "l1")
@@ -225,11 +246,17 @@ def task_list(point: DesignPoint) -> TaskList:
                 readers.setdefault(c, []).append(task)
             else:
                 after = [*readers.pop(c, []), *([in_l1[c]] if c in in_l1 else [])]
-            steps.append(Configure(task, "streamer", s.name, values, after, mode))
-            group.append(task)
+            own[p] = Configure(task, "streamer", s.name, values, after, mode)
+        movers = []  # the accelerator's every mover, its other groups' idle (D148)
+        for unit in groups[accelerator_of(n)]:
+            for q in (q.name for q in insts[unit].brm.interface.ports):
+                c = own[q] if unit == name else idle(n.id, point.streamers[streamer_name(unit, q)])
+                steps.append(c)
+                movers.append(c.task_name)
+        group = [own[p].task_name for p in ports]
         acc_task = f"{n.id}_{name}"
         steps.append(Configure(acc_task, "accel", name, start, [], mode))
-        steps.append(Start([*group, acc_task]))
+        steps.append(Start([*movers, acc_task]))
 
         for p, task in zip(ports, group, strict=True):  # after the group: writes land in L1
             c = memlets[p].data

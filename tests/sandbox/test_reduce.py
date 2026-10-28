@@ -1,8 +1,9 @@
 """dot through SNAX-SANDBOX: a multiplier and an accumulator bound in one recipe.
 
-Accepted when ``recipes/dot.json`` gives ``dot_accelerated.snaxdfg`` (the
-multiply map bound to elementwise_mul, the sum map to accumulate, each step
-passing the reference check) and the bound graph equals ``np.dot``; the
+Accepted when ``recipes/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at its
+last bind (the multiply map bound to elementwise_mul, the sum map to
+accumulate, each step passing the reference check), then puts both groups
+into the accelerator ``dot`` (D148), and the bound graph equals ``np.dot``; the
 accumulate binding with one lane (the Chisel Accumulator) works as well, the
 reduce matcher rejects every mismatch by name, and unbind and join_map take
 dot back to the imported graph.
@@ -14,11 +15,20 @@ import numpy as np
 import pytest
 
 from snax_forge.dfg import Graph, execute
-from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, bind, join_map, split_map, unbind
+from snax_forge.sandbox import (
+    Recipe,
+    SandboxError,
+    apply_recipe,
+    bind,
+    join_map,
+    split_map,
+    unbind,
+    unencapsulate,
+)
 
 from .helpers import FIXTURES, REPO, graph, graph_dict
 
-RECIPE = REPO / "recipes" / "dot.json"
+RECIPE = REPO / "recipes" / "dot_1.json"
 MUL = {
     "node": "mult",
     "brm": "elementwise_mul",
@@ -58,8 +68,12 @@ def test_the_dot_recipe_gives_the_fixture():
         "2_bind.snaxdfg",
         "3_split_map.snaxdfg",
         "4_bind.snaxdfg",
+        "5_encapsulate.snaxdfg",
     ]
-    assert results[-1].graph.to_json() == (FIXTURES / "dot_accelerated.snaxdfg").read_text()
+    assert results[-2].graph.to_json() == (FIXTURES / "dot_accelerated.snaxdfg").read_text()
+    last = results[-1].graph
+    assert [last.node(n).attrs["accelerator"] for n in ("mult", "sum")] == ["dot", "dot"]
+    assert unencapsulate(last, "dot").to_json() == results[-2].graph.to_json()
 
 
 def test_the_bound_dot_equals_np_dot():

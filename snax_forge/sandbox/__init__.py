@@ -1,8 +1,9 @@
 """SNAX-SANDBOX: decisions made by hand on a SNAX-DFG (ARCHITECTURE.md 5.4, D72).
 
 Recipes (recipe.py), an ordered list of registered transforms with their
-params, applied to an imported graph; the transforms ``split_map`` and
-``bind`` and their inverses ``unbind`` and ``join_map`` (transforms.py);
+params, applied to an imported graph; the transforms ``split_map``,
+``bind`` and ``encapsulate`` and their inverses ``unbind``, ``join_map`` and
+``unencapsulate`` (transforms.py);
 the pattern matchers ``bind`` uses to recognise a BRM's pattern
 (patterns.py), among them ``reduce``, with which ``bind`` binds a folding
 output as one lane, its named rate from ``named_rates`` (D102); and the
@@ -15,7 +16,16 @@ graph. The command line is ``python -m snax_forge.sandbox RECIPE`` (pixi
 from .patterns import PATTERNS, match, register_pattern
 from .recipe import Recipe, SandboxError, Step
 from .run import Result, apply_recipe, bind_recipe_symbols, write_steps
-from .transforms import TRANSFORMS, bind, join_map, register_transform, split_map, unbind
+from .transforms import (
+    TRANSFORMS,
+    bind,
+    encapsulate,
+    join_map,
+    register_transform,
+    split_map,
+    unbind,
+    unencapsulate,
+)
 
 __all__ = [
     "PATTERNS",
@@ -27,11 +37,13 @@ __all__ = [
     "apply_recipe",
     "bind",
     "bind_recipe_symbols",
+    "encapsulate",
     "join_map",
     "match",
     "register_pattern",
     "register_transform",
     "split_map",
     "unbind",
+    "unencapsulate",
     "write_steps",
 ]

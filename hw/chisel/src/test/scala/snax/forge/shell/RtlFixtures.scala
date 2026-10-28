@@ -8,7 +8,8 @@ import snax.forge.RepoPaths
 
 /** The fixtures of the shell specs, `hw/chisel/src/test/resources/rtl/<design>/`, written by the Python side
   * (`snax_forge/gen/rtl.py`'s `write_fixture`, checked byte for byte by `tests/gen/test_rtl.py`): `accelerator.json`
-  * (the same bytes gen-gvsoc writes), the design's streamer hjson (`<tag>_streamer.hjson`) and `vectors.json`.
+  * (the same bytes gen-gvsoc writes), the design's streamer hjson (`<tag>_streamer.hjson`) and, for a design of one
+  * accelerator task, `vectors.json` (`driven`; dot_1's two groups have none: `TwoGroupsSpec` drives each itself).
   */
 object RtlFixtures {
 
@@ -59,4 +60,7 @@ object RtlFixtures {
     Files.list(dir).iterator.asScala.filter(Files.isDirectory(_)).toSeq.sortBy(_.toString).map { f =>
       Fixture(f.getFileName.toString, f)
     }
+
+  /** The fixtures with `vectors.json`: one group, one task. */
+  def driven: Seq[Fixture] = all.filter(f => Files.isRegularFile(f.folder.resolve("vectors.json")))
 }

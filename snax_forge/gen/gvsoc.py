@@ -70,8 +70,9 @@ it. Everything else is the source's, its key order kept; its comments are
 not (the file is written as JSON, which hjson reads).
 
 **The streamer**, lowered per design point (D134), as the design point's
-streamers give it (D87): readers the input ports in the BRM's port order,
-writers the output ports, each with ``spatial_bounds`` in words, fastest
+streamers give it (D87): readers the input ports, writers the output ports,
+unit by unit (the accelerator's groups in order, D148) in the BRM's port
+order, each with ``spatial_bounds`` in words, fastest
 first (``[S_0 / num_slc, S_1, ...]``: the fastest bound over num_slc, the slices
 of the port's container dtype a word holds, D142), ``temporal_dim`` (the
 streamer's ``temporal_dims``), ``num_channel`` (the streamer's ``num_ch``, the
@@ -85,7 +86,8 @@ the streamer's.
 
 **Refused**, each a ``GenError`` (``gen.<rule>``): a design point outside
 ``root`` (``gen.point``), what accelerator.py's ``describe`` refuses
-(``gen.instances``: the platform has one accelerator slot; ``gen.binding``,
+(``gen.instances``: the platform has one accelerator slot, so one
+accelerator, its groups put into one by ``encapsulate``; ``gen.binding``,
 ``gen.datapath``, ``gen.drain``, ``gen.timing`` and the datapath's
 adapter's), a dtype that is not intN or uintN (``gen.dtype``), a
 streamer whose fastest spatial bound is not whole words (``gen.lanes``,
@@ -103,12 +105,14 @@ graph still null never gets here: ``DesignPoint.load`` refuses it
 **The manifest**: ``design``, ``design_point``, ``symbols`` (the bound
 graph's, e.g. ``{"N": 64}``: what a program sizes its data by),
 ``cluster`` (the cluster file, what gvrun's ``--param hjson=`` takes),
-``files``, ``program`` (``main.c``), ``trace`` (the unit's trace path), ``csrs`` (the
-layout: the streamer's first and last CSR, and every accelerator CSR's define -> its
+``files``, ``program`` (``main.c``), ``trace`` (the trace path of the accelerator's one
+unit, ``snax_acc0/unit``; with several groups the accelerator's, ``snax_acc0``), ``csrs``
+(the layout: the streamer's first and last CSR, and every accelerator CSR's define -> its
 number) and ``tasks``: per accelerator task of the derived task list
-(snax_forge/lower/derive.py, D64) its name, its ``beats`` (the unit's firings, the
-task's ``n``) and its ``csrs`` values (``JOBS``, and ``JOB_BEATS`` for a fold:
-lower/c.py's ``job_values``).
+(snax_forge/lower/derive.py, D64), in order, its name, its ``beats`` (the unit's firings,
+the task's ``n``), its ``csrs`` values (its group's ``JOBS``, and ``JOB_BEATS`` for a fold:
+lower/c.py's ``job_values``) and, with several groups, its unit's ``trace`` path,
+``snax_acc0/unit_<unit>``, as snax-gvsoc's composite names the units then.
 
 **Stable paths.** The design point is named once, by its path relative to
 ``root`` (snax-forge's root by default; ``named_from`` when given, the
@@ -144,11 +148,10 @@ from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import instance_nodes, streamer_name
 from snax_forge.lower import CError
 from snax_forge.lower.c import MAIN_C, job_values, main_c, mover_name
-from snax_forge.lower.c import accelerator as c_accelerator
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure, TaskList
 
-from .accelerator import ACCELERATOR_JSON, Accelerator, describe
+from .accelerator import ACCELERATOR_JSON, Accelerator, describe, units
 from .blocks import GenError, port_dtype
 from .data import DATA_H, arrays, data_h
 from .headers import STREAMER_HEADER, accelerator_header, cluster_headers, streamer_header
@@ -164,10 +167,11 @@ OUT = ROOT / "out" / "gvsoc"
 # routes to the cluster's top-level CSR port, not to the accelerator
 SNAX_CSR_FIRST = 0x3C0
 SNAX_ACC_CSR_LAST = 0x5FD
-# The unit's trace path: the compute core's accelerator, named snax_acc<core>
-# by pulp/snitch/snitch_cluster/snitch_cluster.py; the composite
-# (snax/snax_unit_acc.py) calls it unit
-UNIT_TRACE = "snax_acc0/unit"
+# The trace paths: the compute core's accelerator, named snax_acc<core> by
+# pulp/snitch/snitch_cluster/snitch_cluster.py; the composite
+# (snax/snax_unit_acc.py) calls a unit `unit`, with several groups `unit_<unit>`
+ACC_TRACE = "snax_acc0"
+UNIT_TRACE = f"{ACC_TRACE}/unit"
 # The generated cluster's name (D130)
 CLUSTER = "snax_forge_cluster"
 # The RTL's file list from the cluster file's folder, written by bundle.py
@@ -201,19 +205,21 @@ class CsrLayout:
 
 @dataclass(frozen=True)
 class AccTask:
-    """One accelerator task: its name, the unit's firings and its CSR values (JOBS,
-    JOB_BEATS)."""
+    """One accelerator task: its name, the unit's firings, its group's CSR values (JOBS,
+    JOB_BEATS) and, with several groups, its unit's trace path (written only then)."""
 
     name: str
     beats: int
     csrs: dict[str, int]
+    trace: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "beats": self.beats, "csrs": dict(self.csrs)}
+        d = {"name": self.name, "beats": self.beats, "csrs": dict(self.csrs)}
+        return d if self.trace is None else {**d, "trace": self.trace}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> AccTask:
-        return cls(d["name"], d["beats"], dict(d["csrs"]))
+        return cls(d["name"], d["beats"], dict(d["csrs"]), d.get("trace"))
 
 
 @dataclass(frozen=True)
@@ -257,20 +263,25 @@ class Manifest(JsonFile):
 # =============================================================================
 
 
-def instance(point: DesignPoint) -> tuple[str, Instance]:
-    """The one accelerated instance and its name (lower/c.py's ``accelerator``, its rules
-    ``gen.instances`` and ``gen.binding``)."""
-    return c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
-
-
 def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
     """Instance ``name``'s port dtypes: its first node's containers' (``brm.port_dtypes``)."""
     return port_dtypes(point.graph, instance_nodes(point.graph)[name])
 
 
-def streamer_template(point: DesignPoint, name: str, inst: Instance) -> dict[str, Any]:
-    """The streamer template, in the hjson's keys; see the module doc."""
+def streamer_template(point: DesignPoint, found: Mapping[str, Instance]) -> dict[str, Any]:
+    """The streamer template of the accelerator's units ``found``, in the hjson's keys; see the
+    module doc."""
     groups: dict[str, list[dict[str, Any]]] = {"data_reader_params": [], "data_writer_params": []}
+    for name, inst in found.items():
+        _movers(point, name, inst, groups)
+    return {
+        g: {k: [m[k] for m in movers] for k in movers[0]} for g, movers in groups.items() if movers
+    }
+
+
+def _movers(point: DesignPoint, name: str, inst: Instance,
+            groups: dict[str, list[dict[str, Any]]]) -> None:  # fmt: skip
+    """Unit ``name``'s movers onto ``groups`` (readers, writers), in port order."""
     dtypes = node_dtypes(point, name)
     for p in inst.brm.interface.ports:
         s = point.streamers[streamer_name(name, p.name)]
@@ -288,9 +299,6 @@ def streamer_template(point: DesignPoint, name: str, inst: Instance) -> dict[str
             "fifo_depth": s.options.fifo_depth,
         }
         groups["data_writer_params" if s.write else "data_reader_params"].append(mover)
-    return {
-        g: {k: [m[k] for m in movers] for k in movers[0]} for g, movers in groups.items() if movers
-    }
 
 
 def movers(template: dict[str, Any]) -> list[dict[str, Any]]:
@@ -335,12 +343,26 @@ def csr_layout(template: dict[str, Any], acc: Accelerator) -> CsrLayout:
     return CsrLayout(SNAX_CSR_FIRST, first - 1, nums)
 
 
-def acc_tasks(tasks: TaskList, name: str, inst: Instance) -> list[AccTask]:
-    """The accelerator tasks of the derived task list (D64), with their CSR values
-    (lower/c.py's ``job_values``)."""
-    return [AccTask(s.task_name, s.values["n"], job_values(inst, s.values))
+def acc_tasks(tasks: TaskList, found: Mapping[str, Instance]) -> list[AccTask]:
+    """The accelerator tasks of the derived task list (D64), in order, with their group's CSR
+    values (lower/c.py's ``job_values``) and, with several groups, their unit's trace path."""
+    several = len(found) > 1
+    return [AccTask(s.task_name, s.values["n"], job_values(found[s.component], s.values),
+                    f"{ACC_TRACE}/unit_{s.component}" if several else None)
             for s in tasks.steps
-            if isinstance(s, Configure) and s.type == "accel" and s.component == name]  # fmt: skip
+            if isinstance(s, Configure) and s.type == "accel" and s.component in found]  # fmt: skip
+
+
+def described(name: str, found: Mapping[str, Instance]) -> str:
+    """The accelerator as the cluster file's header comment names it."""
+
+    def one(unit: str, inst: Instance) -> str:
+        return (f"instance {unit}, BRM {inst.brm.name}, implementation {inst.implementation}, "
+                f"datapath {inst.impl.binding['datapath']}")  # fmt: skip
+
+    if len(found) == 1:
+        return one(*next(iter(found.items())))
+    return f"accelerator {name} of " + "; ".join(f"group {one(u, i)}" for u, i in found.items())
 
 
 # =============================================================================
@@ -560,9 +582,9 @@ def generate(
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
     shown, point, acc = load_point(point_path, root, named_from)
-    name, inst = instance(point)
+    name, members = units(point)
     platform = point.platform
-    template = streamer_template(point, name, inst)
+    template = streamer_template(point, members)
     layout = csr_layout(template, acc)
     tasks = task_list(point)
     data = arrays(point, seed, kernel)
@@ -576,8 +598,7 @@ def generate(
              ACCELERATOR_JSON)  # fmt: skip
     set_slot(cluster, at, found, slot, template, acc, names[1:], platform.hjson)
 
-    accel = (f"instance {name}, BRM {inst.brm.name}, implementation {inst.implementation}, "
-             f"datapath {inst.impl.binding['datapath']}")  # fmt: skip
+    accel = described(name, members)
     header = f"{acc.name}_csr.h"
     streamer_h, streamer_last = streamer_header(movers(template), SNAX_CSR_FIRST, shown)
     assert streamer_last == layout.streamer_last, (streamer_last, layout)
@@ -606,9 +627,9 @@ def generate(
         cluster=names[0],
         files=[*files, "manifest.json"],
         program=MAIN_C,
-        trace=UNIT_TRACE,
+        trace=UNIT_TRACE if len(members) == 1 else ACC_TRACE,
         csrs=layout,
-        tasks=acc_tasks(tasks, name, inst),
+        tasks=acc_tasks(tasks, members),
     )
     (out / "manifest.json").write_text(manifest.to_json())
     return manifest

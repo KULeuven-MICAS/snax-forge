@@ -4,8 +4,10 @@ Every node has the same core fields (graph.py): ``id``, ``kind``, ``inputs``,
 ``outputs``, ``attrs`` and, for a kind that has one, ``body``. What a kind
 adds is registered here with ``register_kind``:
 
-* the attrs it owns: ``required`` names and ``defaults`` for the optional
-  ones. Kind-owned attrs have no namespace and every one is written. An attr
+* the attrs it owns: ``required`` names, ``defaults`` for the optional
+  ones with a default, and ``optional`` ones written only when set.
+  Kind-owned attrs have no namespace; every required and defaulted one is
+  written. An attr
   without a namespace that the kind does not own is an error; a namespaced
   attr (``loop.kind``, ``mem.*``, ``hw.*``, ``user.*``) is passed through
   untouched, and whoever knows the namespace checks it;
@@ -41,9 +43,13 @@ Built-in kinds:
                  one lane computes, over its connectors, as the BRM states it;
                  ``replaced`` is the subtree ``bind`` replaced, in stored form
                  and checked in this node's scope, so ``unbind`` gives it back
-                 (null for a node written by hand). A body is allowed for a
-                 nested block (D71); a leaf block has an empty one. No ``reduce``
-                 on its memlets: the BRM's function does its own folding.
+                 (null for a node written by hand). ``accelerator`` (D148,
+                 written only when set, by ``encapsulate``) names the
+                 accelerator its group is in; without it the group, named
+                 after the instance, is an accelerator of its own. A body is
+                 allowed for a nested block (D71); a leaf block has an empty
+                 one. No ``reduce`` on its memlets: the BRM's function does
+                 its own folding.
 
 ``loop`` (a sequential loop) and ``branch`` come with the kernels that need
 them (open item 36).
@@ -111,9 +117,10 @@ class Kind:
     normalize: Normalize | None = None
     check: Check | None = None
     reduce: bool = False
+    optional: tuple[str, ...] = ()
 
     def owns(self, key: str) -> bool:
-        return key in self.required or key in self.defaults
+        return key in self.required or key in self.defaults or key in self.optional
 
 
 KINDS: dict[str, Kind] = {}
@@ -129,11 +136,14 @@ def register_kind(
     normalize: Normalize | None = None,
     check: Check | None = None,
     reduce: bool = False,
+    optional: tuple[str, ...] = (),
 ) -> None:
     """Make ``"kind": name`` usable in a ``.snaxdfg`` (principle 6)."""
     if name in KINDS:
         raise ValueError(f"node kind {name!r} already registered")
-    KINDS[name] = Kind(required, dict(defaults or {}), body, binds, normalize, check, reduce)
+    KINDS[name] = Kind(
+        required, dict(defaults or {}), body, binds, normalize, check, reduce, tuple(optional)
+    )
 
 
 def kind_of(name: Any, what: str) -> Kind:
@@ -252,6 +262,8 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
     _check_code(node, what)
     if a["replaced"] is not None and not isinstance(a["replaced"], Mapping):
         raise DfgError(f"{what}.attrs.replaced: must be a node or null")
+    if "accelerator" in a:
+        ident(a["accelerator"], f"{what}.attrs.accelerator")
     # the replaced subtree itself is checked in graph.py, in this node's scope
 
 
@@ -259,6 +271,7 @@ register_kind(
     "accelerated",
     required=("instance", "brm", "implementation", "code"),
     defaults={"params": {}, "replaced": None},
+    optional=("accelerator",),
     body=True,
     normalize=_normalize_code,
     check=_check_accelerated,

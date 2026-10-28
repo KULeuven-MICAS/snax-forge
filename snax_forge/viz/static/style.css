@@ -388,6 +388,10 @@ i.key.data.transient { background: var(--panel); box-shadow: none; border: 1.5px
 .dfg-row { display: flex; gap: 1.4rem; justify-content: center; align-items: flex-start; }
 /* Under the boxes: text is drawn over an edge, and an edge ends at the box it enters. */
 svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; }
+svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; }
+svg.dfg-edges .group-box rect { stroke: var(--rule); }
+svg.dfg-edges .acc-box rect { stroke: var(--acc, var(--rule)); stroke-width: 1.5; }
+svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.72rem; fill: var(--muted, currentColor); }
 
 /* containers */
 /* data containers: their own colour, a label on top (D82) */

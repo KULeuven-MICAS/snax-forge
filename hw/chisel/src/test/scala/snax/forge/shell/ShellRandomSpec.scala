@@ -35,7 +35,7 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
   behavior of "the shell wrapper under random data and stalls"
 
   for {
-    f    <- RtlFixtures.all
+    f    <- RtlFixtures.driven
     seed <- Seeds()
   }
     it should s"give ${f.name}'s model outputs, count its busy cycles and hold a start while busy (seed $seed)" in

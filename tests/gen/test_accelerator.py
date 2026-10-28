@@ -26,7 +26,7 @@ def dot() -> Accelerator:
                {p: Port(p, "int64", 4) for p in ("a", "b", "out")}, {"op": "mul"}, 0, 1, [],
                "int64")  # fmt: skip
     total = Unit("sum", "accumulate", "TreeAccumulate",
-                 {"a": Port("in", "int64", 4), "out": Port("out", "int64", 1)}, {}, 1, 1,
+                 {"a": Port("in", "int64", 4), "out": Port("out", "int64", 1)}, {"op": "add"}, 1, 1,
                  [Csr("JOB_BEATS", "rw", 6, 32)])  # fmt: skip
     return Accelerator("dot", "design/dot/design_point.json", "snax_forge",
                        ["mul.a", "mul.b", "sum.a"], ["mul.out", "sum.out"],

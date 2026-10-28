@@ -220,11 +220,13 @@ def two_runs():
 RECORDED = REPO / "tests" / "run" / "fixtures" / "vecadd"
 
 
-def recorded_run(out: Path, level: str = "stall") -> Path:
-    """The recorded vecadd run converted at ``level`` into the flow folder ``out``, laid out
-    as the flow lays it out (``gen/``, ``design/``, ``run/``, ``tasks.json``): ``task`` from its task-level
-    events, ``beat`` and ``stall`` from its stall-level ones (at ``beat`` without the
-    ``stalls`` lines). Returns ``out``."""
+def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -> Path:
+    """The recorded vecadd run (or the run of ``fixture``, a folder of tests/run/fixtures/, at
+    task) converted at ``level`` into the flow folder ``out``, laid out as the flow lays it out
+    (``gen/``, ``design/``, ``run/``, ``tasks.json``): ``task`` from its task-level events,
+    ``beat`` and ``stall`` from its stall-level ones (at ``beat`` without the ``stalls``
+    lines). Returns ``out``."""
+    recorded = RECORDED if fixture is None else fixture
     import json
     import shutil
 
@@ -237,17 +239,19 @@ def recorded_run(out: Path, level: str = "stall") -> Path:
     (out / "gen").mkdir(parents=True)
     (out / "design").mkdir()
     for name in ("snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"):
-        shutil.copy(RECORDED / name, out / "gen" / name)
-    shutil.copy(RECORDED / "design_point.json", out / "design" / "design_point.json")
-    shutil.copy(RECORDED / "tasks.json", out / "tasks.json")
+        shutil.copy(recorded / name, out / "gen" / name)
+    shutil.copy(recorded / "design_point.json", out / "design" / "design_point.json")
+    shutil.copy(recorded / "tasks.json", out / "tasks.json")
     cluster = load_cluster(out / "gen" / "snax_forge.hjson", out / "design" / "design_point.json")
-    tasks = TaskList.from_dict(json.loads((RECORDED / "tasks.json").read_text()))
-    check = json.loads((RECORDED / "check.json").read_text())
-    syms = json.loads((RECORDED / "elf_symbols.json").read_text())
+    tasks = TaskList.from_dict(json.loads((recorded / "tasks.json").read_text()))
+    check = json.loads((recorded / "check.json").read_text())
+    syms = json.loads((recorded / "elf_symbols.json").read_text())
     sources = (
-        [] if level == "task" else ["acc", *(m.name for m in cluster.accelerator.movers), "dma"]
+        []
+        if level == "task"
+        else [*cluster.accelerator.unit_names, *(m.name for m in cluster.accelerator.movers), "dma"]
     )
-    lines = read_events(RECORDED / ("events.log" if level == "task" else "events_stall.log"))
+    lines = read_events(recorded / ("events.log" if level == "task" else "events_stall.log"))
     if level == "beat":
         lines = [x for x in lines if x.trace != "stalls"]
     regions = regions_of(DesignPoint.load(out / "design" / "design_point.json"), syms)

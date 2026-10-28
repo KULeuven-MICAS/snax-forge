@@ -117,13 +117,13 @@ jobs:
           test -f out/hw/FifoSlicer_w2_i8_n4.sv
           test -f out/hw/FifoPacker_n4_i8_w2.sv
 
-      # D130, D145: every accelerator.json fixture (and the hand-written
-      # two-group dot 1) through `Emit --spec`, and every file its emitted.json
-      # lists must exist. (DatapathsSpec, in the tests above, checks
+      # D130, D145: every accelerator.json fixture (dot 1's two groups among
+      # them) through `Emit --spec`, and every file its emitted.json lists must
+      # exist. (DatapathsSpec, in the tests above, checks
       # `Emit --describe` equal to hw/chisel/blocks.json.)
       - name: Elaborate the accelerator.json fixtures
         run: |
-          for d in hw/chisel/src/test/resources/rtl/*/ hw/chisel/src/test/resources/groups/*/; do
+          for d in hw/chisel/src/test/resources/rtl/*/; do
             name=$(basename "$d")
             pixi run -e hw chisel-gen --spec "$d/accelerator.json" --out "out/rtl/$name"
             test -f "out/rtl/$name/emitted.json"

@@ -1,0 +1,189 @@
+{
+ "name": "dot_1",
+ "steps": [
+  {
+   "op": "configure",
+   "task_name": "load_A",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"symbol": "A", "bounds": [8], "strides": [64]},
+    "dst": {"base": 268435456, "bounds": [8], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_A"]},
+  {
+   "op": "configure",
+   "task_name": "load_B",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"symbol": "B", "bounds": [8], "strides": [64]},
+    "dst": {"base": 268435968, "bounds": [8], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_B"]},
+  {
+   "op": "configure",
+   "task_name": "mult_mul_a",
+   "type": "streamer",
+   "component": "mul_a",
+   "after": ["load_A"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268435456,
+    "temporal_bounds": [16],
+    "temporal_strides": [32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mult_mul_b",
+   "type": "streamer",
+   "component": "mul_b",
+   "after": ["load_B"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268435968,
+    "temporal_bounds": [16],
+    "temporal_strides": [32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mult_mul_out",
+   "type": "streamer",
+   "component": "mul_out",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268436544,
+    "temporal_bounds": [16],
+    "temporal_strides": [32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mult_sum_a",
+   "type": "streamer",
+   "component": "sum_a",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"base": 0, "temporal_bounds": [0], "temporal_strides": [8], "spatial_strides": [0]}
+  },
+  {
+   "op": "configure",
+   "task_name": "mult_sum_out",
+   "type": "streamer",
+   "component": "sum_out",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"base": 0, "temporal_bounds": [0], "temporal_strides": [8], "spatial_strides": [0]}
+  },
+  {
+   "op": "configure",
+   "task_name": "mult_mul",
+   "type": "accel",
+   "component": "mul",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16}
+  },
+  {
+   "op": "start",
+   "tasks": ["mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_sum_a", "mult_sum_out", "mult_mul"]
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_mul_a",
+   "type": "streamer",
+   "component": "mul_a",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"base": 0, "temporal_bounds": [0], "temporal_strides": [8], "spatial_strides": [0]}
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_mul_b",
+   "type": "streamer",
+   "component": "mul_b",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"base": 0, "temporal_bounds": [0], "temporal_strides": [8], "spatial_strides": [0]}
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_mul_out",
+   "type": "streamer",
+   "component": "mul_out",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"base": 0, "temporal_bounds": [0], "temporal_strides": [8], "spatial_strides": [0]}
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_sum_a",
+   "type": "streamer",
+   "component": "sum_a",
+   "after": ["mult_mul_out"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268436544,
+    "temporal_bounds": [16],
+    "temporal_strides": [32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_sum_out",
+   "type": "streamer",
+   "component": "sum_out",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268436480,
+    "temporal_bounds": [1],
+    "temporal_strides": [0],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_sum",
+   "type": "accel",
+   "component": "sum",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"n": 16, "T": 16}
+  },
+  {
+   "op": "start",
+   "tasks": ["sum_mul_a", "sum_mul_b", "sum_mul_out", "sum_sum_a", "sum_sum_out", "sum_sum"]
+  },
+  {
+   "op": "configure",
+   "task_name": "store_out",
+   "type": "dma",
+   "component": "dma",
+   "after": ["sum_sum_out"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 268436480, "bounds": [1], "strides": [64]},
+    "dst": {"symbol": "out", "bounds": [1], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["store_out"]},
+  {"op": "sync", "task": "store_out", "mode": "poll"}
+ ]
+}

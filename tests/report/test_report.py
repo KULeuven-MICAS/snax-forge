@@ -345,3 +345,44 @@ def test_the_extents_include_the_padding(tmp_path):
     )
     assert (a.padding, y.padding) == ("3 pad elements", "40 B to a whole beat")
     assert "| Region | Base | End | Bytes | Share | Padding |" in render_design(r)
+
+
+# =============================================================================
+# Several groups (D148): dot 1's recorded run
+# =============================================================================
+
+
+@pytest.fixture(scope="module")
+def dot1(tmp_path_factory):
+    from tests.viz.helpers import recorded_run
+
+    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_1"
+    return recorded_run(tmp_path_factory.mktemp("dot1") / "dot_1_task", "task", fixture)
+
+
+def test_the_run_report_names_each_tasks_group(dot1):
+    r = reports_of(dot1)
+    groups = {t.name: t.group for t in r.run.tasks}
+    assert (groups["mult_mul"], groups["mult_mul_a"], groups["mult_sum_a"]) == ("mul",) * 3
+    assert (groups["sum_sum"], groups["sum_mul_a"], groups["sum_sum_out"]) == ("sum",) * 3
+    assert groups["load_A"] is None
+    assert [(a.name, a.group, a.firings) for a in r.run.accelerators] == [
+        ("mul", "mul", 16), ("sum", "sum", 16)]  # fmt: skip
+    text = render_run(r.run)
+    assert "| Block | Group | # | Task | Start | Done | Cycles | Direction | Bytes |" in text
+    assert "| mul | mul | 0 | mult_mul |" in text and "| sum_a | mul | 0 | mult_sum_a |" in text
+    assert "| Accelerator | Group | Firings |" in text
+
+
+def test_the_design_report_has_a_row_per_unit(dot1):
+    r = reports_of(dot1).design
+    assert [(a.instance, a.group, a.kind) for a in r.accelerators] == [
+        ("mul", "mul", "ElementwiseLanes"), ("sum", "sum", "TreeAccumulate")]  # fmt: skip
+    assert [c.name for c in r.components][:2] == ["mul", "sum"]
+    assert [(s.name, s.instance) for s in r.streamers][:3] == [
+        ("mul_a", "mul"), ("mul_b", "mul"), ("sum_a", "sum")]  # fmt: skip
+
+
+def test_one_group_has_no_group_column(flows):
+    text = render_run(reports_of(flows[("vecadd", "task")]).run)
+    assert "| Block | # | Task |" in text and "Group" not in text

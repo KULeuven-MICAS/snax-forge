@@ -15,7 +15,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
   behavior of "the shell wrapper end to end"
 
-  for (f <- RtlFixtures.all) {
+  for (f <- RtlFixtures.driven) {
     it should s"give ${f.name}'s goldens and its counter" in {
       val spec   = f.spec
       val unit   = spec.units.head

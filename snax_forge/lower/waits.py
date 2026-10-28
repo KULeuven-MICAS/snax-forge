@@ -16,10 +16,14 @@ on was started, and each uses that task's ``wait_mode``. A wait is on a
 component, so it ends on the component's latest task and covers every
 earlier one on it.
 
-A wait on a writer streamer also covers the accelerator it serves and that
-accelerator's reader streamers, for the tasks the same start launched: their
-data flows into the writer, so the writer finishes last (``upstream``, from
-the design point's streamers: their ``instance`` and ``write``).
+A wait on a writer streamer also covers the unit it serves and that unit's
+reader streamers, for the tasks the same start launched: their data flows
+into the writer, so the writer finishes last (``upstream``, from the design
+point's streamers: their ``instance`` and ``write``).
+
+An idle mover's task (every temporal bound 0: another group's mover in an
+accelerator of several, D148) never needs a wait: it never starts and moves
+nothing.
 
 Nothing here decides anything (principle 4): where configures, starts and
 syncs go, and every dependency, are the task list's; only the waits
@@ -42,8 +46,8 @@ if TYPE_CHECKING:
 def upstream(point: DesignPoint) -> dict[str, list[str]]:
     """Per component, the components a wait on it also covers (module doc).
 
-    A writer streamer -> the accelerator it serves; an accelerator -> its
-    reader streamers, in port order.
+    A writer streamer -> the unit it serves; a unit -> its reader streamers, in port
+    order.
     """
     up: dict[str, list[str]] = {}
     for s in point.streamers.values():
@@ -52,6 +56,11 @@ def upstream(point: DesignPoint) -> dict[str, list[str]]:
         else:
             up.setdefault(s.instance, []).append(s.name)
     return up
+
+
+def idle(c: Configure) -> bool:
+    """An idle mover's task: a streamer task with every temporal bound 0 (D148)."""
+    return c.type == "streamer" and not any(c.values["temporal_bounds"])
 
 
 @dataclass(frozen=True)
@@ -76,6 +85,8 @@ class _Waits:
         self.placed: list[PlacedWait] = []
 
     def is_covered(self, task: str) -> bool:
+        if idle(self.conf[task]):
+            return True  # it never started
         c = self.covered.get(self.conf[task].component)
         return c is not None and self.started_at[c] >= self.started_at[task]
 

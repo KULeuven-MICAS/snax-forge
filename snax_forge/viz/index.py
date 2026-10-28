@@ -59,7 +59,8 @@ and results' grants their streamers' tasks. It comes from the run's task list (`
 in the flow folder, lower/tasks.py's ``TaskList``), whose ``start`` step launches an
 accelerator task together with its streamer tasks; each task's component is its configure
 step's. ``streamers[acc task] = {mover: streamer task}`` and ``accel[streamer task] = acc
-task``. An accelerator task launched without a streamer task for one of its movers, or with
+task``; with several groups (D148) a start launches one unit's task with a task on every
+mover, the other groups' idle (every bound 0), which SNAX-GVSoC starts and ends at once. An accelerator task launched without a streamer task for one of its movers, or with
 two for one, or with a streamer task on no mover of it, is a RunError (``index.tasks``)
 naming the tasks: not expected, and never guessed.
 
@@ -184,7 +185,7 @@ class RunIndex:
         """None when the beat lines cover the accelerator, its movers and the DMA; else the
         sources they cover."""
         a = self.cluster.accelerator
-        whole = {a.name, *(m.name for m in a.movers), DMA}
+        whole = {*a.unit_names, *(m.name for m in a.movers), DMA}
         return None if whole <= set(self.filter) else {"sources": list(self.filter)}
 
     @classmethod
@@ -262,7 +263,7 @@ class RunIndex:
     def _schedule(self, outputs: RunOutputs) -> None:
         """The schedule's and the cluster view's keys (module doc)."""
         acc = self.cluster.accelerator
-        owners = {acc.name, *(m.name for m in acc.movers)}
+        owners = {*acc.unit_names, *(m.name for m in acc.movers)}
         classes: dict[str, list[Event]] = defaultdict(list)
         func_lines: dict[str, list[Event]] = defaultdict(list)
         waits: dict[str, list[Event]] = defaultdict(list)
@@ -331,7 +332,8 @@ def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
         if not isinstance(s, Start):
             continue
         launched = [conf[t] for t in s.tasks if t in conf]
-        mine = [c.task_name for c in launched if c.type == "accel" and c.component == acc.name]
+        mine = [c.task_name for c in launched
+                if c.type == "accel" and c.component in acc.unit_names]  # fmt: skip
         if not mine:
             continue
         what = f"{tasks.name}: start {s.tasks}"

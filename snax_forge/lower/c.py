@@ -27,26 +27,30 @@ as ``forge cycles: <n>``; the flow takes it as ``total_cycles`` (D136, C§7).
 No task marks: nothing is read inside the window but the counters, so the
 core's timing between the steps is the program's own.
 
+**The accelerator** (D148) is the design point's one: one group per unit
+(instance), in the graph's order, each with its own tasks; its movers are
+every unit's ports, readers the input ports and writers the outputs, unit by
+unit in the BRM's port order, as the streamer file.
+
 **Configure.** A streamer task is ``csrw_ss`` on streamer_csr_addr_map.h's
 names: the base (``BASE_PTR_<M>_LOW`` / ``_HIGH``), the spatial strides,
 then the temporal bounds and strides, padded to the streamer's
-``temporal_dim`` with bound 1 and stride 0 (C§9); readers are the input
-ports in the BRM's port order, writers the outputs, as the streamer file.
-An accelerator task writes its group's JOBS = n / T and, for a fold, its
-unit's JOB_BEATS = T, from the task's values (n and the rates, C§9;
-``job_values``, D146), on ``<name>_csr.h``'s names.
+``temporal_dim`` with bound 1 and stride 0 (C§9); an idle mover's bounds are
+all 0, so it never starts. An accelerator task writes its group's JOBS = n /
+T and, for a fold, its unit's JOB_BEATS = T, from the task's values (n and
+the rates, C§9; ``job_values``, D146), on ``<name>_csr.h``'s names.
 A DMA task writes nothing here: snRuntime programs and starts the DMA in one
 call, so it is ``snrt_dma_start_1d`` (one loop of whole beats) or
 ``snrt_dma_start_2d`` (a second loop) at its start.
 
-**Start.** One start step writes ``STREAMER_START_CSR`` once for all of an
-accelerator's movers, then the accelerator's start CSR, in the step's
-order, back to back (the group's ``START``, bit 0 set); a DMA task starts at
-its place in the step.
+**Start.** One start step writes ``STREAMER_START_CSR`` once for all of the
+accelerator's movers (the other groups' idle, at bound 0), then its group's
+``START`` (bit 0 set), in the step's order, back to back; a DMA task starts
+at its place in the step.
 
 **Waits.** On the SNAX components, as waits.py places them (D64,
-``placed_waits``): on the owner's core, a wait on the accelerator or one of
-its streamers polls the group's ``STATUS & 1`` (busy), then the streamer's
+``placed_waits``): on the owner's core, a wait on a unit or one of its
+streamers polls its group's ``STATUS & 1`` (busy), then the streamer's
 busy. On the
 DMA, from dependences only: the iDMA queues transfers (the hjson's
 ``dma_req_fifo_depth``; a full queue stalls the core), so a DMA task starts
@@ -74,10 +78,15 @@ task, slots in the order the counters are read, and ``forge errors:
 it returns to main (0 on the other cores; snRuntime sums them at exit).
 
 **Refused**, each a ``CError`` (``c.<rule>``): other than one accelerator
-instance, or one without a binding (``c.instances``; the generator refuses
-it first, ``gen.instances``), a cluster file without one xdma core or
-without the slot (``c.cores``), a start covering only some of an
-accelerator's movers or starting it before them (``c.start``), a wait in
+(``c.instances``: several groups are one accelerator only through
+``encapsulate``, D148; the generator refuses it first, ``gen.instances``), a
+unit without a binding (``c.binding``), a cluster file without one xdma core
+or without the slot (``c.cores``), a start that does not cover every mover of
+the accelerator, the idle ones at bound 0, or that starts a unit before them
+(``c.start``), an idle mover (every temporal bound 0) whose first temporal
+stride is 0, which would start and read anyway (snax_cluster's Reader.scala:
+stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
+times; ``c.idle``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
 pattern that is neither form (``c.dma``), a CSR the description lacks
 (``c.csrs``), a read step (``c.read``), a task list whose values do
@@ -96,7 +105,7 @@ from snax_forge.brm import Instance
 from snax_forge.common import CodedError, generated_header
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
-from snax_forge.design.streamers import instances, streamer_name
+from snax_forge.design.streamers import accelerators, instances, streamer_name
 
 from .tasks import Configure, Start, Sync, TaskList, TaskListError, check_values
 from .waits import PlacedWait, placed_waits
@@ -144,22 +153,26 @@ def mover_name(write: bool, index: int) -> str:
 
 def accelerator(
     point: DesignPoint, fail: Callable[[str, str], Exception] | None = None
-) -> tuple[str, Instance]:
-    """The one accelerated instance and its name; it must have a binding. ``fail(rule,
-    message)`` makes the error of the rule broken (``instances``, ``binding``): a
-    ``c.instances`` CError by default, the generator's own (gen/gvsoc.py)."""
+) -> tuple[str, dict[str, Instance]]:
+    """The one accelerator's name and its units, one per group in the graph's order (D148),
+    each with a binding. ``fail(rule, message)`` makes the error of the rule broken
+    (``instances``, ``binding``): a ``c.<rule>`` CError by default, the generator's own
+    (gen/gvsoc.py)."""
     if fail is None:
-        fail = lambda rule, message: CError("c.instances", message)
-    found = instances(point.graph)
+        fail = lambda rule, message: CError(f"c.{rule}", message)
+    found = accelerators(point.graph)
     if len(found) != 1:
-        raise fail("instances", f"{len(found)} accelerated instances {list(found)}; the platform "
-                   "has one accelerator slot and the program drives one accelerator (open item "
-                   "79)")  # fmt: skip
-    (name, inst), = found.items()  # fmt: skip
-    if inst.impl.binding is None:
-        raise fail("binding", f"{inst.brm.name}.{inst.implementation}: binding null, nothing to "
-                   "generate")  # fmt: skip
-    return name, inst
+        raise fail("instances", f"{len(found)} accelerators {list(found)}; the platform has one "
+                   "accelerator slot and the program drives one accelerator: encapsulate puts "
+                   "groups into one (D148, open item 79)")  # fmt: skip
+    (name, groups), = found.items()  # fmt: skip
+    insts = instances(point.graph)
+    units = {u: insts[u] for u in groups}
+    for inst in units.values():
+        if inst.impl.binding is None:
+            raise fail("binding", f"{inst.brm.name}.{inst.implementation}: binding null, nothing "
+                       "to generate")  # fmt: skip
+    return name, units
 
 
 @dataclass(frozen=True)
@@ -192,7 +205,7 @@ class _Program:
     def __init__(self, point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any],
                  acc: Accelerator, arrays: Sequence[Array]) -> None:  # fmt: skip
         self.point, self.tasks, self.acc = point, tasks, acc
-        self.name, self.inst = accelerator(point)
+        self.name, self.units = accelerator(point)
         self.cores = cores(cluster, point.platform.accelerator_slot)
         self.arrays = list(arrays)
         self.conf = tasks.configured()
@@ -208,21 +221,27 @@ class _Program:
     # -- what the design point gives -------------------------------------------------------
 
     def _movers(self) -> dict[str, str]:
-        """Streamer component -> its mover in the headers (``READER_0``, ``WRITER_0``)."""
+        """Streamer component -> its mover in the headers (``READER_0``, ``WRITER_0``): every
+        unit's ports, unit by unit in port order, readers and writers counted apart."""
         out, n = {}, {False: 0, True: 0}
-        for p in self.inst.brm.interface.ports:
-            s = self.point.streamers[streamer_name(self.name, p.name)]
-            out[s.name] = mover_name(s.write, n[s.write])
-            n[s.write] += 1
+        for unit, inst in self.units.items():
+            for p in inst.brm.interface.ports:
+                s = self.point.streamers[streamer_name(unit, p.name)]
+                out[s.name] = mover_name(s.write, n[s.write])
+                n[s.write] += 1
         return out
 
     def core_of(self, component: str) -> int:
         return self.cores.dma if component == "dma" else self.cores.slot
 
-    def csr(self, name: str, where: str) -> str:
-        """The define of the accelerator's CSR ``name`` (its group's or its unit's)."""
+    def unit_of(self, component: str) -> str:
+        """The unit a SNAX component is or serves (a streamer's instance)."""
+        return component if component in self.units else self.point.streamers[component].instance
+
+    def csr(self, name: str, component: str, where: str) -> str:
+        """The define of CSR ``name`` of ``component``'s unit (its group's or the unit's own)."""
         try:
-            return self.acc.find(self.name, name)
+            return self.acc.find(self.unit_of(component), name)
         except KeyError as e:
             raise CError("c.csrs", f"{where}: {e.args[0]}") from None
 
@@ -244,11 +263,16 @@ class _Program:
         if s.type == "streamer":
             self.emit(core, *self.streamer(s))
         elif s.type == "accel":
-            for k, v in job_values(self.inst, s.values).items():
-                self.emit(core, f"csrw_ss({self.csr(k, s.task_name)}, {v});")
+            for k, v in job_values(self.units[s.component], s.values).items():
+                self.emit(core, f"csrw_ss({self.csr(k, s.component, s.task_name)}, {v});")
 
     def streamer(self, s: Configure) -> list[str]:
         m, v = self.movers[s.component], s.values
+        tb = list(v["temporal_bounds"])
+        if tb and not any(tb) and not v["temporal_strides"][0]:
+            raise CError("c.idle", f"{s.task_name}: an idle mover (every temporal bound 0) with "
+                         "first temporal stride 0 starts anyway (Reader.scala: stride 0 on loop "
+                         "0 forces that bound to 1); give it a nonzero stride")  # fmt: skip
         dims = self.point.streamers[s.component].temporal_dims
         bounds, strides = list(v["temporal_bounds"]), list(v["temporal_strides"])
         spatial = list(v["spatial_strides"])  # check_values checked every count against the dims
@@ -271,11 +295,13 @@ class _Program:
             have = {self.conf[t].component for t in movers}
             if have != set(self.movers):
                 raise CError("c.start", f"{where}: starts {sorted(have)} of {self.name}'s movers "
-                    f"{sorted(self.movers)}; the streamer starts all of them with one CSR",
+                    f"{sorted(self.movers)}; the streamer starts all of them with one CSR, the "
+                    "other groups' idle at bound 0",
                 )  # fmt: skip
             acc = [i for i, t in enumerate(s.tasks) if types[t] == "accel"]
             if acc and acc[0] < s.tasks.index(movers[0]):
-                raise CError("c.start", f"{where}: {self.name} starts before its movers")
+                raise CError("c.start", f"{where}: {self.conf[s.tasks[acc[0]]].component} starts "
+                             "before its movers")  # fmt: skip
         for t in s.tasks:
             self.started.setdefault(self.conf[t].component, []).append(t)
             self.order.append(t)
@@ -290,7 +316,7 @@ class _Program:
                     self.emit(core, "csrw_ss(STREAMER_START_CSR, 1);")
                     streamer_started = True
             else:
-                self.emit(core, f"csrw_ss({self.csr('START', t)}, 1);")
+                self.emit(core, f"csrw_ss({self.csr('START', c.component, t)}, 1);")
 
     def dma(self, c: Configure, where: str) -> str:
         src, dst = c.values["src"], c.values["dst"]
@@ -325,7 +351,7 @@ class _Program:
             self.emit(core, "snrt_dma_wait_all();")
         else:
             self.emit(
-                core, f"while (csrr_ss({self.csr('STATUS', comp)}) & 1) {{", "}",
+                core, f"while (csrr_ss({self.csr('STATUS', comp, comp)}) & 1) {{", "}",
                 "while (csrr_ss(STREAMER_BUSY_CSR)) {", "}",
             )  # fmt: skip
         ended = [t for c, last in covers.items()
@@ -336,8 +362,9 @@ class _Program:
             if self.conf[t].type == "accel":
                 slot = len(self.counters)
                 self.counters.append(t)
-                self.emit(self.core_of(self.conf[t].component),
-                          f"forge_counter[{slot}] = csrr_ss({self.csr('COUNTER', t)});")  # fmt: skip
+                c = self.conf[t].component
+                self.emit(self.core_of(c),
+                          f"forge_counter[{slot}] = csrr_ss({self.csr('COUNTER', c, t)});")  # fmt: skip
         if consumers - {core}:
             self.barrier()
 

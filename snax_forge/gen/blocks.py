@@ -30,8 +30,9 @@ lanes summed by an adder tree in front of its register.
     ports        one input of rate 1 with args.lanes lanes, whole 64-bit
                  channels, and one output of a named rate (T) of one lane,
                  one word whatever its N (the lanes are cast to it, D143)
-    op           add: the BRM's op param
-    params       none; args are lanes only
+    op           add: the BRM's op param, the only one an adder tree runs
+                 (``gen.op`` until a datapath takes another)
+    params       ``op``: add, as ElementwiseLanes' ``op``; args are lanes only
 
 An instance judged without a graph (brm/instance.py's check of its datapath)
 has no dtypes: its adapter checks everything but the widths and gives ports
@@ -212,7 +213,7 @@ def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -> 
             "a named rate out (one sum per T inputs)",
         )
     _lanes(inst, {a.name: lanes, out.name: 1}, what)
-    return Fill(_fill_ports(inst, dtypes, {a.name}, what))
+    return Fill(_fill_ports(inst, dtypes, {a.name}, what), params={"op": op})
 
 
 register_datapath("TreeAccumulate", 1, tree_accumulate)

@@ -21,16 +21,17 @@ import snax.forge.shell.AcceleratorSpec
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's `timing.latency` and ports against it; `Emit --spec`
   * builds from the unit with `build`. A spec checks `describe` equal to `blocks.json`.
   *
-  * Param types: `int` (`min`), `op` (one op name of `values`), `dtype` (an element type's NumPy name of `values`,
-  * `IntType`'s eight) and `dtypes` (a list of them).
+  * Param types: `int` (`min`), `op` (one op name of `values`: ElementwiseLanes takes every ElementwiseOp,
+  * TreeAccumulate `add` only), `dtype` (an element type's NumPy name of `values`, `IntType`'s eight) and `dtypes` (a
+  * list of them).
   */
 object Datapaths {
 
   sealed trait ParamType
-  case class IntParam(min: Int) extends ParamType
-  case object OpParam           extends ParamType
-  case object DtypeParam        extends ParamType
-  case object DtypesParam       extends ParamType
+  case class IntParam(min: Int)           extends ParamType
+  case class OpParam(values: Seq[String]) extends ParamType
+  case object DtypeParam                  extends ParamType
+  case object DtypesParam                 extends ParamType
 
   /** A built datapath: the module and its IO, whose elements are the catalogue's ports and pins. */
   case class Built(module: Module, io: Bundle)
@@ -72,7 +73,7 @@ object Datapaths {
         ("opType", DtypeParam, "unit.opType"),
         ("outType", DtypeParam, "outputs.dtype"),
         ("lanes", IntParam(1), "inputs.lanes"),
-        ("op", OpParam, "unit.params.op")
+        ("op", OpParam(ElementwiseOp.all.map(ElementwiseOp.name)), "unit.params.op")
       ),
       Seq("a" -> "in", "b" -> "in", "out" -> "out"),
       0,
@@ -95,12 +96,14 @@ object Datapaths {
       Seq(
         ("inType", DtypeParam, "inputs.dtype"),
         ("outType", DtypeParam, "outputs.dtype"),
-        ("lanes", IntParam(1), "inputs.lanes")
+        ("lanes", IntParam(1), "inputs.lanes"),
+        ("op", OpParam(Seq("add")), "unit.params.op")
       ),
       Seq("in" -> "in", "out" -> "out"),
       1,
       Seq("fire", "first"),
       p => {
+        require(str(p, "op") == "add", s"TreeAccumulate adds, op ${str(p, "op")}")
         val m = Module(new TreeAccumulate(str(p, "inType"), str(p, "outType"), p("lanes").num.toInt))
         Built(m, m.io)
       }
@@ -126,9 +129,9 @@ object Datapaths {
 
   private def paramJson(t: ParamType): ujson.Value =
     t match {
-      case IntParam(min) => ujson.Obj("type" -> "int", "min" -> ujson.Num(min))
-      case OpParam => ujson.Obj("type" -> "op", "values" -> ujson.Arr.from(ElementwiseOp.all.map(ElementwiseOp.name)))
-      case DtypeParam  => ujson.Obj("type" -> "dtype", "values" -> ujson.Arr.from(IntType.names))
-      case DtypesParam => ujson.Obj("type" -> "dtypes", "values" -> ujson.Arr.from(IntType.names))
+      case IntParam(min)   => ujson.Obj("type" -> "int", "min" -> ujson.Num(min))
+      case OpParam(values) => ujson.Obj("type" -> "op", "values" -> ujson.Arr.from(values))
+      case DtypeParam      => ujson.Obj("type" -> "dtype", "values" -> ujson.Arr.from(IntType.names))
+      case DtypesParam     => ujson.Obj("type" -> "dtypes", "values" -> ujson.Arr.from(IntType.names))
     }
 }

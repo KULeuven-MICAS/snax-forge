@@ -7,16 +7,16 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{Emit, ForgeTester, LaneBits, RepoPaths, Sink, Source}
 
-/** Several groups in one accelerator (D146): dot 1 (C§17's table) as a hand-written `accelerator.json`
-  * (`src/test/resources/groups/dot1/`): group mul (ElementwiseLanes, mul, 4 lanes of int64; START 0, JOBS 1, STATUS 2,
-  * COUNTER 3) and group sum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS 5, JOB_BEATS 6, STATUS 7, COUNTER
-  * 8). It elaborates into `<tag>_shell_wrapper` with a controller per group and both datapaths; and each group starts,
-  * runs and reports STATUS on its own: sum is started first and starved (its input held back), mul then runs its 3 jobs
-  * to the end while sum stays busy, then sum's input flows and it ends.
+/** Several groups in one accelerator (D146, D148): dot 1 (C§17's table), the generated `accelerator.json` of
+  * `recipes/dot_1.json` (the fixture `src/test/resources/rtl/dot_1/`): group mul (ElementwiseLanes, mul, 4 lanes of
+  * int64; START 0, JOBS 1, STATUS 2, COUNTER 3) and group sum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS
+  * 5, JOB_BEATS 6, STATUS 7, COUNTER 8). It elaborates into `<tag>_shell_wrapper` with a controller per group and both
+  * datapaths; and each group starts, runs and reports STATUS on its own: sum is started first and starved (its input
+  * held back), mul then runs its 3 jobs to the end while sum stays busy, then sum's input flows and it ends.
   */
 class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
-  private val file = RepoPaths.root.resolve("hw/chisel/src/test/resources/groups/dot1/accelerator.json")
+  private val file = RepoPaths.root.resolve("hw/chisel/src/test/resources/rtl/dot_1/accelerator.json")
   private val spec = AcceleratorSpec.load(file)
 
   behavior of "a two-group accelerator (dot 1)"

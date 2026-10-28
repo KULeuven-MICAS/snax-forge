@@ -9,7 +9,7 @@ The fixtures are vecadd at three steps of the flow, kept in the form
 
 and dot as imported: a multiply map into ``tmp0``, then a sum map
 whose output memlet folds into ``out[0]`` with ``reduce`` add (``dot.snaxdfg``),
-and dot after ``recipes/dot.json``: the multiply map bound to
+and dot after ``recipes/dot_1.json``'s binds: the multiply map bound to
 elementwise_mul, the sum map to accumulate, W = 4 (``dot_accelerated.snaxdfg``),
 vecmul as imported (vecadd with ``*``: ``mult_map`` and ``mult``,
 ``vecmul.snaxdfg``), and vsum as imported (dot's sum map on its own: ``sum_map`` and ``sum`` folding ``A`` into ``out[0]``,

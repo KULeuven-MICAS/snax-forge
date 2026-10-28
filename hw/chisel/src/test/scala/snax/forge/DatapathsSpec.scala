@@ -27,7 +27,7 @@ class DatapathsSpec extends AnyFlatSpec {
   private def least(d: Datapaths.Datapath): Map[String, ujson.Value] =
     d.params.map {
       case (n, IntParam(min), _) => n -> ujson.Num(min)
-      case (n, OpParam, _)       => n -> ujson.Str("add")
+      case (n, OpParam(vs), _)   => n -> ujson.Str(vs.head)
       case (n, DtypeParam, _)    => n -> ujson.Str(IntType.names.head)
       case (n, DtypesParam, _)   => n -> ujson.Arr(IntType.names.head, IntType.names.head)
     }.toMap

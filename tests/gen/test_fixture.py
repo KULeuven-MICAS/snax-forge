@@ -7,7 +7,8 @@ the first 2-D bind, two temporal loops per streamer), rowsum and rowsum_serial
 (a restart every T = N / W beats); the narrow ones (vecadd_i32, vecmul_i32,
 vsum_tree_i32, vecadd_i8, vsum_tree_i8: D142, D143; vecmul_i32_i64, the
 product at int32 sign-extended into int64) and the padded tails
-(vecadd_n7, vsum_tree_n21, rowsum_3x7: D144). Its refresh commands are run
+(vecadd_n7, vsum_tree_n21, rowsum_3x7: D144); dot_1, one accelerator of two
+groups (D148). Its refresh commands are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson
 copied into its ``platforms/``), so the design point is
@@ -37,7 +38,7 @@ FORGE = SUB / "forge"
 DESIGNS = [
     "vecadd", "vecmul", "vsum", "vsum_tree", "matadd", "rowsum", "rowsum_serial",
     "vecadd_i32", "vecmul_i32", "vsum_tree_i32", "vecadd_i8", "vsum_tree_i8",
-    "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64",
+    "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64", "dot_1",
 ]  # fmt: skip
 
 pytestmark = pytest.mark.skipif(
@@ -52,7 +53,8 @@ def regenerate(tmp: Path, design: str) -> Path:
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp)
         recipe = REPO / "recipes" / f"{design}.json"
-        bound = f"out/sandbox/{design}/{len(Recipe.load(recipe).steps)}_bind.snaxdfg"  # last step
+        steps = Recipe.load(recipe).steps
+        bound = f"out/sandbox/{design}/{len(steps)}_{steps[-1].transform}.snaxdfg"  # last step
         assert sandbox_cli.main([str(recipe), "--out", f"out/sandbox/{design}"]) == 0
         assert design_cli.main([bound, "--platform", str(SNAX_FORGE),
                                 "--out", f"out/design/{design}"]) == 0  # fmt: skip

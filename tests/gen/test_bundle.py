@@ -131,3 +131,15 @@ def test_the_command(tmp_path, fake, monkeypatch, capsys):
     with pytest.raises(SystemExit) as e:
         bundle_mod.main([])
     assert e.value.code == 2
+
+
+def test_dot_1s_bundle_holds_both_groups(tmp_path, fake):
+    """An accelerator of two groups (D148): the bundle's accelerator.json, header and program
+    are gen-gvsoc's; the RTL is elaborated from the same file."""
+    from .helpers import bound_dot1
+
+    out = tmp_path / "bundle"
+    b, _ = write_bundle(point(tmp_path, name="dot_1", graph=bound_dot1()), out, tmp_path)
+    assert b.tag == "snax_forge" and "include/dot_csr.h" in files(out)
+    acc = json.loads((out / "accelerator.json").read_text())
+    assert [g["name"] for g in acc["groups"]] == ["mul", "sum"]
