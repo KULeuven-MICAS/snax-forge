@@ -47,7 +47,8 @@ class NestModel(val latency: Int, val ii: Int) {
       val head    = latency > 0        && slots(latency - 1)
       val frozen  = if (latency > 0) head && !ready else gives && !ready
       val first   = firings             % jobBeats == 0
-      if (frozen) s = Step(false, first, head, false, b, false)
+      // L = 0: out.valid is a firing that gives, whether or not the output is ready
+      if (frozen) s = Step(false, first, if (latency > 0) head else gives, false, b, false)
       else {
         val push = if (latency > 0) head else gives
         for (i <- latency - 1 until 0 by -1) slots(i) = slots(i - 1)

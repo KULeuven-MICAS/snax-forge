@@ -951,8 +951,9 @@ config (JOBS, JOB_BEATS; ready when idle), the join of the input valids, an
 L-deep valid register that stalls as a whole (it advances when its last
 stage is empty or `out.ready`), the II gap, busy, and a done pulse at the
 run's last push (E). To the datapath it gives `fire`, `first` (the job's
-first beat) and the register's advance. At L 0 a firing needs `out.ready`
-when it gives an output; `out.valid` is the firing then. Lockstep is L = 0,
+first beat) and the register's advance. At L 0 `out.valid` is a firing
+that gives an output, without `out.ready` (valid never depends on ready),
+and that firing happens when `out.ready` is high too. Lockstep is L = 0,
 II = 1. The group's controller around it: START is taken when the group is
 idle and held (`csr_req_ready_o` low) until E + 1 otherwise; an empty run
 (JOBS 0, or JOB_BEATS 0) ends in its start's cycle without starting the

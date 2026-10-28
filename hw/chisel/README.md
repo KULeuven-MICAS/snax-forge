@@ -124,6 +124,7 @@ from the documented behaviour, never from the Chisel code:
 
 | Spec | Random | Model |
 |---|---|---|
+| `NestValidSpec` | L ∈ {0, 1, 2}, II, J, T, input valids, output stalls; `out.ready` toggled within each cycle | `out.valid` unchanged by it (Conventions) |
 | `NestCtrlSpec` | L ∈ {0, 1, 2} (L 2 with a two-register test datapath on the advance), II ∈ {1, 2}, T ∈ {1, 3, 4}, J ∈ {0, 1, 5}, input valids, output stalls | `NestModel`, SnaxUnit's rule (C§17) |
 | `ElementwiseLanesSpec` | in, op and out types, lanes, every op, data | `ElementwiseModel`, NumPy's rule (D143) |
 | `TreeAccumulateSpec` | in and out types, lanes, data, `fire` and `first` | lane sums from each `first`, each lane cast to the out type (the docstring) |
@@ -189,11 +190,9 @@ two reductions and a barrier between each.
   residual problem, and ready/valid turns it from a correctness obligation into
   a throughput knob. A module may stall; it may never produce a wrong answer
   because it stalled.
-- **`valid` does not depend on `ready`**, but for one exception: `ready` may
-  depend on other channels' `valid` (that is how a join works), and at L = 0
-  the nest controller's `out.valid` is its firing, which waits for
-  `out.ready` when it gives an output (C§17). The downstream's ready must
-  therefore not depend on `valid`; the streamer's writer FIFO's does not.
+- **`valid` never depends on `ready`.** `ready` may depend on other channels'
+  `valid` (that is how a join works). The reverse deadlocks. `NestValidSpec`
+  tests it for the nest controller at every latency.
 - **No internal storage, no control in a datapath.** Datapaths see data in
   flight only; address generation and buffering belong to the streamer, and
   valid, ready and counting to the nest controller. Reduction accumulators

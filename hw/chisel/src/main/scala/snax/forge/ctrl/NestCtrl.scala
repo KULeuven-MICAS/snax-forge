@@ -27,10 +27,12 @@ class Handshake extends Bundle {
   *     valid never depends on a ready.
   *   - At most one firing per II cycles, counted from the last firing whatever stalls (it carries over to the next
   *     run).
-  *   - L = 0: a firing that gives a result needs the output's ready and pushes it in its own cycle (`out.valid` is
-  *     `fire && gives`); L = 0, II 1 is lockstep. L >= 1: an L-deep valid register `v`, which stalls as a whole: it
-  *     advances (`adv`) when its head `v(L-1)` is empty or the output is ready, a firing needs `adv`, and `out.valid`
-  *     is the head. A firing that gives a result enters `v(0)`; the others enter nothing.
+  *   - L = 0: a firing that gives a result pushes it in its own cycle. `out.valid` is the firing's condition without
+  *     the output's ready (busy, a job left, the II, every input's valid, `gives`), and such a firing is `out.valid &&
+  *     out.ready`; the inputs' readies wait for the output's ready too. So `out.valid` never depends on `out.ready`; L
+  *     \= 0, II 1 is lockstep. L >= 1: an L-deep valid register `v`, which stalls as a whole: it advances (`adv`) when
+  *     its head `v(L-1)` is empty or the output is ready, a firing needs `adv`, and `out.valid` is the head. A firing
+  *     that gives a result enters `v(0)`; the others enter nothing.
   *
   * To the datapath: `fire` (a beat is taken from every input), `first` (the firing is a job's first beat: a fold starts
   * its sum) and `adv` (its pipeline registers advance; L = 0: always). The datapath has no valid, ready or counter.
@@ -73,14 +75,15 @@ class NestCtrl(val latency: Int, val ii: Int, val inputs: Int) extends Module {
   private val room  =
     if (latency == 0) !gives || io.out.ready
     else !v(latency - 1) || io.out.ready
-  private val armed = busy  && fired =/= jobs && gap === 0.U && room
+  private val can   = busy  && fired =/= jobs && gap === 0.U // a firing allowed, the output aside
+  private val armed = can   && room
   private val allIn = io.in.map(_.valid).reduce(_ && _)
   private val fire  = armed && allIn
 
   for ((p, k) <- io.in.zipWithIndex)
     p.ready := armed && io.in.zipWithIndex.filter(_._2 != k).map(_._1.valid).foldLeft(true.B)(_ && _)
 
-  io.out.valid := (if (latency == 0) fire && gives else v(latency - 1))
+  io.out.valid := (if (latency == 0) can && allIn && gives else v(latency - 1))
   private val push = io.out.valid && io.out.ready
 
   io.fire  := fire
