@@ -164,7 +164,7 @@ def accelerator(
     if len(found) != 1:
         raise fail("instances", f"{len(found)} accelerators {list(found)}; the platform has one "
                    "accelerator slot and the program drives one accelerator: encapsulate puts "
-                   "groups into one (D148, open item 79)")  # fmt: skip
+                   "groups into one (D148)")  # fmt: skip
     (name, groups), = found.items()  # fmt: skip
     insts = instances(point.graph)
     units = {u: insts[u] for u in groups}

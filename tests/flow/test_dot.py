@@ -1,4 +1,4 @@
-"""dot 1 end to end (D148, open item 79): ``recipes/dot_1.json``, a multiplier into tmp0 in L1,
+"""dot 1 end to end (D148): ``recipes/dot_1.json``, a multiplier into tmp0 in L1,
 then an adder tree over it, the two groups ``mul`` and ``sum`` of one accelerator ``dot``.
 
 Up to the generator on the host: the task list waits once between the groups (on mul's

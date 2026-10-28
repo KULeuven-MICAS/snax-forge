@@ -192,7 +192,8 @@ Turns a design point into what a run needs, and decides nothing (`lower/`).
   snRuntime, one function per core, direct CSR writes on the generated
   headers' names, ending in `forge_check()`, the self-check against
   `data.h`'s goldens; main's entry and `forge_check()`'s bound the window.
-  One accelerator per program (open item 79).
+  One accelerator per program, each of its groups a task of its own
+  (D148).
 
 ### 5.6 SNAX-GVSoC
 
@@ -307,7 +308,7 @@ from here (D116, D141; `docs/STATUS.md` has the tasks):
    | Phase | Content |
    |---|---|
    | B0 flow pieces | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
-   | B1 one description | `accelerator.json` per design point (C§17, D145), read by Emit, the catalogue check and SNAX-GVSoC; groups with their own START, JOBS, STATUS, COUNTER and pins (D146); each block a pure datapath under one nest controller per shell, three modules (D147); groups in SNAX-DFG and `encapsulate`, so dot variant 1 is one accelerator of two groups (D148) |
+   | B1 one description (`done`) | `accelerator.json` per design point (C§17, D145), read by Emit, the catalogue check and SNAX-GVSoC; groups with their own START, JOBS, STATUS, COUNTER and pins (D146); each block a pure datapath under one nest controller per shell, three modules (D147); groups in SNAX-DFG and `encapsulate`, so dot variant 1 is one accelerator of two groups (D148) |
    | B2 blocks | one hand-written BRM per basic block (1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO), each with its Chisel block and SNAX-GVSoC model |
    | B3 composition | units joined by wire or decoupled links as one accelerator; dot variants 2 to 6, the case study |
    | B4 tier A | bicg, mvt, gesummv and atax from dot's recipe fragments; fork and join |

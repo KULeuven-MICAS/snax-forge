@@ -305,7 +305,7 @@ so the model and the RTL cannot be configured apart. → C§16, C§17.
 
 **D146** · scope — An accelerator is groups of linked units, each with one JOBS (a unit fires JOBS · ∏ T
 over itself and the folds downstream, SDF's balance) and its own START, STATUS, COUNTER and busy and
-done pins, so groups run apart; an empty run ends in a done, so no ERROR CSR (open item 83). → C§17.
+done pins, so groups run apart; an empty run ends in a done, so no ERROR CSR. → C§17.
 
 **D147** · brm — Every block is a datapath only (data and enables) under one nest controller per
 shell, SnaxUnit's rule in Chisel, so control is written once for model and RTL; the accelerator is
@@ -313,4 +313,4 @@ shell, SnaxUnit's rule in Chisel, so control is written once for model and RTL; 
 
 **D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links, each group its own
 accelerator until `encapsulate` puts several in one (`unencapsulate` undoes it), so dot 1 is one
-accelerator of groups `mul` and `sum`, a task each, on one slot (open item 79). → C§11, C§12.
+accelerator of groups `mul` and `sum`, a task each, on one slot. → C§11, C§12.
