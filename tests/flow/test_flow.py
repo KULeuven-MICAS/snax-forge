@@ -620,7 +620,7 @@ def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
     streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
     assert streamer["data_reader_params"]["temporal_dim"] == [2]
     assert streamer["data_writer_params"]["temporal_dim"] == [1]
-    assert "csrw_ss(ACC_RW_LEN, 16);" in (gen / "main.c").read_text()
+    assert "csrw_ss(ACC_RW_JOB_BEATS, 16);" in (gen / "main.c").read_text()
 
 
 @pytest.mark.gvsoc
