@@ -68,19 +68,8 @@
   "changes": {},
   "hjson": "platforms/snax_forge_cluster.hjson",
   "accelerator_slot": "snax_forge",
-  "l1": {
-   "n_banks": 32,
-   "width_bits": 64,
-   "rows": 512,
-   "base_addr": 268435456,
-   "wide_bits": 512
-  },
-  "l2": {
-   "size_bytes": 2147483648,
-   "base_addr": 2147483648,
-   "beat_bits": 512,
-   "width_bits": 64
-  },
+  "l1": {"n_banks": 32, "width_bits": 64, "rows": 512, "base_addr": 268435456, "wide_bits": 512},
+  "l2": {"size_bytes": 2147483648, "base_addr": 2147483648, "beat_bits": 512, "width_bits": 64},
   "wait_mode": "poll",
   "streamers": {"default": {"fifo_depth": 8}}
  },

@@ -236,7 +236,7 @@ def recorded_run(out: Path, level: str = "stall") -> Path:
 
     (out / "gen").mkdir(parents=True)
     (out / "design").mkdir()
-    for name in ("snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"):
+    for name in ("snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"):
         shutil.copy(RECORDED / name, out / "gen" / name)
     shutil.copy(RECORDED / "design_point.json", out / "design" / "design_point.json")
     shutil.copy(RECORDED / "tasks.json", out / "tasks.json")
@@ -256,7 +256,7 @@ def recorded_run(out: Path, level: str = "stall") -> Path:
     (out / "run").mkdir()
     (out / "run" / "run.json").write_text(to_json({
         "design_point": "design/design_point.json",
-        "hjson": ["gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson", "gen/snax_forge_acc.hjson"],
+        "hjson": ["gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson", "gen/accelerator.json"],
         "elf_symbols": syms, "trace_level": level, "trace_sources": sources,
     }))  # fmt: skip
     write_run(out / "run", profile, trace)

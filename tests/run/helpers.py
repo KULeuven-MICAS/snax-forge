@@ -4,6 +4,7 @@ generator writes them for vecadd on snax_forge (cut to what run/ reads), and GVS
 from __future__ import annotations
 
 import copy
+import json
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
@@ -26,7 +27,7 @@ CLUSTER: dict[str, Any] = {
         "snax_acc_cfg": [{
             "snax_acc_name": "snax_forge",
             "snax_streamer_cfg": {"$ref": "snax_forge_streamer.hjson"},
-            "snax_datapath_cfg": {"$ref": "snax_forge_acc.hjson"},
+            "snax_datapath_cfg": {"$ref": "accelerator.json"},
         }],
     },
     "dma_core": {"xdma": True},
@@ -39,11 +40,10 @@ STREAMER: dict[str, Any] = {
                            "fifo_depth": [8]},
 }  # fmt: skip
 
-UNIT: dict[str, Any] = {
-    "unit": "SnaxUnit", "inputs": ["a", "b"], "outputs": ["out"], "lanes": 4, "data_width": 64,
-    "op": 0, "signed": True, "control": "counted", "wait": "lockstep", "latency": 0, "ii": 1,
-    "fields": ["loopCount"],
-}  # fmt: skip
+# vecadd's accelerator.json (C§17), as the recorded run's
+UNIT: dict[str, Any] = json.loads(
+    (Path(__file__).parent / "fixtures" / "vecadd" / "accelerator.json").read_text()
+)
 
 POINT: dict[str, Any] = {
     "name": "vecadd",
@@ -57,7 +57,7 @@ POINT: dict[str, Any] = {
 
 
 def files() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Fresh copies of the cluster file, the streamer file, the datapath file, the point."""
+    """Fresh copies of the cluster file, the streamer file, accelerator.json, the point."""
     return tuple(copy.deepcopy(x) for x in (CLUSTER, STREAMER, UNIT, POINT))  # type: ignore[return-value]
 
 

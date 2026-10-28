@@ -1,16 +1,14 @@
 """A flow run's cluster, as the converter, the reports and the viewer name it (C§7, D137).
 
 ``load_cluster(cluster_hjson, design_point)`` reads the generator's three files (the
-cluster file, and the streamer file and ``accelerator.json`` its slot refers to, D134; a run
-from before B1 has the old datapath file there, ``<slot>_acc.hjson``) and the design
+cluster file, and the streamer file and ``accelerator.json`` its slot refers to, D134) and the design
 point, and gives what the events need to be named and read: the accelerator (the design
 point's one accelerated instance, ``acc``) on the core whose ``snax_acc_cfg`` holds the
 platform's slot; its movers, readers first as the streamer orders them, each named by its
 port as the design point names its streamers (``acc_a``, ``acc_out``), with its lanes (the
 crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial bounds and temporal loops (its CSRs); its CSRs (the streamer's, then the
 accelerator's from accelerator.json, its R/W CSRs but START as ``fields``, START, STATUS and
-COUNTER as start, busy and counter; or the old file's fields, start, busy and counter), from
-0x3C0; the cores (``core<i>``) and the DMA's; the
+COUNTER as start, busy and counter), from 0x3C0; the cores (``core<i>``) and the DMA's; the
 L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
 (``bank_row``: bank = (a / w) mod B, row = a / (w B) for the offset a, w the bank's bytes, B
 the banks); the DMA's beat (the cluster file's ``dma_data_width``). Nothing is inferred from
@@ -193,15 +191,8 @@ def csrs_of(streamer: dict[str, Any], unit: dict[str, Any], instance: str) -> Cs
     # here: gen's data.h imports the flow, which imports run
     from snax_forge.gen import Accelerator as Description
     from snax_forge.gen import GenError
-    from snax_forge.gen.gvsoc import SNAX_CSR_FIRST, csr_layout, streamer_csrs
+    from snax_forge.gen.gvsoc import csr_layout
 
-    if "groups" not in unit:  # the old datapath file of a run before B1
-        first = SNAX_CSR_FIRST + streamer_csrs(streamer)
-        fields = {f: first + i for i, f in enumerate(unit.get("fields", []))}
-        start = first + len(fields)
-        s_start = first - 3
-        return Csrs(SNAX_CSR_FIRST, s_start, s_start + 1, s_start + 2, fields, start, start + 1,
-                    start + 2)  # fmt: skip
     try:
         acc = Description.from_dict(unit)
         c = csr_layout(streamer, acc)

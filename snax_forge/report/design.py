@@ -230,12 +230,8 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
 
 
 def unit_view(file: dict[str, Any], instance: str) -> tuple[str, str, int, int]:
-    """The kind, the control, the latency and the II of ``instance`` in the slot's datapath file:
-    accelerator.json's unit (its datapath under the nest controller), or a run's from before
-    B1 (``SnaxUnit``, its wait)."""
-    if "groups" not in file:
-        return (str(file.get("unit", "")), str(file.get("wait", "")), int(file.get("latency", 0)),
-                int(file.get("ii", 1)))  # fmt: skip
+    """The kind, the control, the latency and the II of ``instance`` in the slot's
+    accelerator.json: its unit's datapath under the nest controller."""
     u = next(u for g in file["groups"] for u in g["units"] if u["name"] == instance)
     return u["datapath"], "nest controller", u["timing"]["latency"], u["timing"]["ii"]
 

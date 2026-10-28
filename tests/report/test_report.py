@@ -216,7 +216,7 @@ def test_the_recorded_vecadd_run(flows, tmp_path):
     real events render."""
     folder = tmp_path / "vecadd_task"
     shutil.copytree(flows[("vecadd", "task")], folder)
-    for f in ("snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson"):
+    for f in ("snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"):
         shutil.copy(FIXTURE / f, folder / "gen" / f)
     shutil.copy(FIXTURE / "tasks.json", folder / "tasks.json")
     check = json.loads((FIXTURE / "check.json").read_text())
