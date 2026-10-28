@@ -17,12 +17,12 @@ Every quoted table is copied line for line from the report named above it.
 ## 1. Make the graphs
 
 ```bash
-pixi run sandbox recipes/dot.json
+pixi run sandbox recipes/dot_1.json
 pixi run sandbox recipes/dot_serial.json
 ```
 
 Each command imports the kernel, applies its recipe step by step and writes
-one graph per step to `out/sandbox/dot/` and `out/sandbox/dot_serial/`:
+one graph per step to `out/sandbox/dot_1/` and `out/sandbox/dot_serial/`:
 
 | File | What the step did |
 |---|---|
@@ -31,19 +31,20 @@ one graph per step to `out/sandbox/dot/` and `out/sandbox/dot_serial/`:
 | `2_bind.snaxdfg` | `mult` bound to `elementwise_mul` as the instance `mul` |
 | `3_split_map.snaxdfg` | `sum_map` split the same way |
 | `4_bind.snaxdfg` | `sum` bound to `accumulate` as the instance `sum` |
+| `5_encapsulate.snaxdfg` | dot_1 only: both groups in the accelerator `dot` (D148) |
 
 After every step the reference executor runs the new graph and the input
 graph on the same data, and they must agree. `4_bind.snaxdfg` is the bound
 graph: every tasklet is an accelerator now.
 
-The two recipes differ in two values of the last two steps. `dot.json` splits
+The two recipes differ in two values of the last two steps. `dot_1.json` splits
 `sum_map` by `W` and binds `sum` to the implementation `chisel_adder_tree`;
 `dot_serial.json` splits it by 1 and binds `sum` to `chisel_accumulator`.
 
 ## 2. Look at the graphs
 
 ```bash
-pixi run view-dfg out/sandbox/dot/
+pixi run view-dfg out/sandbox/dot_1/
 ```
 
 Open http://127.0.0.1:8766/. The five steps stand side by side, named after
@@ -73,7 +74,7 @@ label is gone, because the accumulator does the adding now.
 To see what the two recipes disagree on, open the two bound graphs together:
 
 ```bash
-pixi run view-dfg out/sandbox/dot/4_bind.snaxdfg out/sandbox/dot_serial/4_bind.snaxdfg
+pixi run view-dfg out/sandbox/dot_1/4_bind.snaxdfg out/sandbox/dot_serial/4_bind.snaxdfg
 ```
 
 They show as `4_bind` and `4_bind-2`. The multiplier half is the same in
@@ -94,17 +95,17 @@ The flow takes a bound graph in place of a recipe (D108): a file ending in
 `.snaxdfg` goes straight to the design step.
 
 ```bash
-pixi run flow out/sandbox/dot/4_bind.snaxdfg --platform platforms/small16.json
+pixi run flow out/sandbox/dot_1/4_bind.snaxdfg --platform platforms/small16.json
 ```
 
-The folder is `out/flow/dot/`. `report/design.md` names the graph it came
+The folder is `out/flow/dot_1/`. `report/design.md` names the graph it came
 from and the two accelerators:
 
-<!-- excerpt: dot/report/design.md -->
+<!-- excerpt: dot_1/report/design.md -->
 | Kernel | dot |
-| Graph | out/sandbox/dot/4_bind.snaxdfg |
+| Graph | out/sandbox/dot_1/4_bind.snaxdfg |
 
-<!-- excerpt: dot/report/design.md -->
+<!-- excerpt: dot_1/report/design.md -->
 | Instance | Kind | BRM | Implementation | Params | Latency | Target II | Drain | Ports |
 |---|---|---|---|---|---:|---:|---:|---|
 | mul | elementwise | elementwise_mul | chisel_tiled_spatial | W=4, op=mul | 0 | 1 | 0 | a ← mul_a; b ← mul_b; out ← mul_out |
@@ -112,7 +113,7 @@ from and the two accelerators:
 
 `report/run.md`:
 
-<!-- excerpt: dot/report/run.md -->
+<!-- excerpt: dot_1/report/run.md -->
 |  |  |
 |---|---|
 | Cycles | 99 |
@@ -121,7 +122,7 @@ from and the two accelerators:
 The task table reads in the order things happen: A and B are loaded into L1,
 the multiplier runs, the accumulator runs, the result is stored.
 
-<!-- excerpt: dot/report/run.md -->
+<!-- excerpt: dot_1/report/run.md -->
 | Block | # | Task | Start | Done | Cycles | Direction |
 |---|---:|---|---:|---:|---:|---|
 | dma | 0 | load_A | 11 | 23 | 12 | L2 → L1 |
@@ -133,10 +134,10 @@ the multiplier runs, the accumulator runs, the result is stored.
 The accumulator does not start until the multiplier has written all of
 `tmp0` into L1. SNAX-MODEL's controller waits for that, and the report names it:
 
-<!-- excerpt: dot/report/run.md -->
+<!-- excerpt: dot_1/report/run.md -->
 - mul → sum: 17 cycles waiting on mul_out, which sum_a reads
 
-<!-- excerpt: dot/report/run.md -->
+<!-- excerpt: dot_1/report/run.md -->
 | Accelerator | Firings | Target II | Achieved II | Busy | Task window | Utilisation | Starved (stall_in) | Blocked (stall_out) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | mul | 16 | 1 | 1.44 | 16 | 25 | 64.0% | 8 | 0 |
@@ -210,7 +211,7 @@ firings to do.
 To flip between the two runs in the run viewer:
 
 ```bash
-pixi run view out/flow/dot/run out/flow/dot_serial/run
+pixi run view out/flow/dot_1/run out/flow/dot_serial/run
 ```
 
 ## What this does not show
@@ -224,5 +225,5 @@ cycles here. The two accelerators are chained through L1 on SNAX-MODEL; on
 SNAX-GVSoC two accelerators on one core are open item 79, and M13 makes such
 a chain one composed accelerator (D112).
 
-The bound-graph flow writes to `out/flow/dot/`, the folder a recipe flow of
-`recipes/dot.json` also uses. Give one of them `--name` to keep both.
+The bound-graph flow writes to `out/flow/dot_1/`, the folder a recipe flow of
+`recipes/dot_1.json` also uses. Give one of them `--name` to keep both.

@@ -527,7 +527,7 @@ binds the multiply map to `elementwise_mul` and the sum map to
 `accumulate`'s `chisel_adder_tree`, whose `out` is one lane every `T = N /
 W` firings:
 
-<!-- snippet: recipes/dot.json -->
+<!-- snippet: recipes/dot_1.json -->
 ```json
   {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
   {
@@ -538,13 +538,14 @@ W` firings:
     "implementation": "chisel_adder_tree",
     "instance": "sum"
    }
-  }
+  },
 ```
 
 dot 1 then puts the two groups into one accelerator (D148), with a task each:
 the `mul` group's task sets the `sum` group's movers to a temporal bound of 0,
 so they never start, and the other way round:
 
+<!-- snippet: recipes/dot_1.json -->
 ```json
   {"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["mul", "sum"]}}
 ```

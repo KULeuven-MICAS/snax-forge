@@ -1,6 +1,6 @@
 """dot end to end: a multiplier chained into an accumulator through L1.
 
-``recipes/dot.json`` (the adder tree, W lanes) and ``recipes/dot_serial.json``
+``recipes/dot_1.json`` (the adder tree, W lanes) and ``recipes/dot_serial.json``
 (the Chisel TreeAccumulate, one lane) run from the import fixture to a checked
 model run. Accepted when every run equals the kernel's reference and the
 reference executor at its pinned cycle count, the task list holds the one
@@ -31,7 +31,7 @@ from tests.design.helpers import FIXTURES, RECIPE, REPO, SMALL16
 
 from .helpers import PLAIN as VECADD
 
-DOT = REPO / "recipes" / "dot.json"
+DOT = REPO / "recipes" / "dot_1.json"
 SERIAL = REPO / "recipes" / "dot_serial.json"
 PLAIN = FIXTURES / "dot.snaxdfg"  # the import of the dot kernel
 
@@ -74,7 +74,7 @@ def test_every_run_is_right_at_its_cycles(flows, recipe, w):
 
 
 def test_dot_from_the_kernel(tmp_path):
-    """The whole path from kernels/polybench/dot.py, as `pixi run flow recipes/dot.json` runs it."""
+    """The whole path from kernels/polybench/dot.py, as `pixi run flow recipes/dot_1.json` runs it."""
     f = run_flow(DOT, SMALL16, out=tmp_path / "dot")
     assert f.passed and f.result.total_cycles == 99
 
