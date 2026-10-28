@@ -34,6 +34,10 @@ written exactly for kinds that have one. Expressions are kept canonical
 file diff cleanly. A graph is validated when it is made, from a file or in
 Python.
 
+**Accelerators** (D148). The nodes of one instance agree on its BRM,
+implementation and params, and carry the same ``accelerator`` or none; an
+accelerator's name is no instance's (``encapsulate``, sandbox/transforms.py).
+
 **Not checked here.** An accelerated node's connectors and params against
 its BRM: that is ``bind``'s job and the reference executor's,
 which load the BRM.
@@ -307,6 +311,9 @@ def _validate(g: Graph) -> None:
     ids: set[str] = set()
     instances: dict[str, tuple[Any, ...]] = {}
     _check_body(g.body, scope, ids, instances)
+    clash = sorted({key[-1] for key in instances.values()} & set(instances))
+    if clash:
+        raise DfgError(f"{g.name}: accelerator {clash[0]!r} is also an instance's name (D148)")
 
 
 def _check_container(g: Graph, name: str, c: Container) -> None:
@@ -369,9 +376,11 @@ def _check_attrs(node: Node, kind: Any, what: str) -> None:
     missing = [k for k in kind.required if k not in node.attrs]
     if missing:
         raise DfgError(f"{what}.attrs: missing {missing[0]!r}")
-    # kind-owned attrs first, in registration order, then the namespaced ones as given
+    # kind-owned attrs first, in registration order (an optional one only when set), then the
+    # namespaced ones as given
     own = [*kind.required, *kind.defaults]
     attrs = {k: node.attrs.get(k, kind.defaults.get(k)) for k in own}
+    attrs.update({k: node.attrs[k] for k in kind.optional if k in node.attrs})
     attrs.update({k: v for k, v in node.attrs.items() if k not in attrs})
     attrs = plain(attrs)
     node.attrs = kind.normalize(attrs, f"{what}.attrs") if kind.normalize else attrs
@@ -426,9 +435,14 @@ def _check_replaced(node: Node, scope: Scope, what: str) -> None:
 
 
 def _check_instance(node: Node, instances: dict[str, tuple[Any, ...]], what: str) -> None:
-    """Two accelerated nodes on one instance agree on its BRM, implementation and params."""
+    """Two accelerated nodes on one instance agree on its BRM, implementation and params, and
+    carry the same accelerator (or none, D148)."""
     a = node.attrs
-    key = (a["brm"], a["implementation"], plain(a["params"]))
+    key = (a["brm"], a["implementation"], plain(a["params"]), a.get("accelerator"))
     seen = instances.setdefault(a["instance"], key)
-    if seen != key:
-        raise DfgError(f"{what}: instance {a['instance']!r} is bound elsewhere as {seen}")
+    if seen[:3] != key[:3]:
+        raise DfgError(f"{what}: instance {a['instance']!r} is bound elsewhere as {seen[:3]}")
+    if seen[3] != key[3]:
+        raise DfgError(f"{what}: instance {a['instance']!r} is in accelerator {seen[3]!r} "
+                       f"elsewhere, here in {key[3]!r}; every node of an instance carries the "
+                       "same one")  # fmt: skip

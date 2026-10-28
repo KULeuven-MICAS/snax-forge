@@ -49,6 +49,15 @@ is; the reference check after the step is run.py's.
     the inverses (D82): the subtree an accelerated node replaced, and the
     map a temporal / spatial pair was split from (``loop.split``), so a
     graph at any step can go back to the imported one.
+``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
+    put the groups of the instances ``units`` into one accelerator of that
+    name (D148): every accelerated node of each carries ``accelerator``. A
+    group is one instance until links come (M13's B3), named after it. The
+    groups keep the graph's order, which ``units`` must give (the CSRs and
+    the tasks follow it, C§17); a unit already in an accelerator, a name an
+    instance or an accelerator has, or a unit the graph lacks is an error.
+    ``unencapsulate`` takes the attr off again: each group its own
+    accelerator.
 """
 
 from __future__ import annotations
@@ -560,9 +569,65 @@ def join_map(g: Graph, map: str) -> Graph:
     return _result(g)
 
 
+# =============================================================================
+# encapsulate and unencapsulate
+# =============================================================================
+
+
+def _accelerated(g: Graph) -> list[Node]:
+    """The live accelerated nodes, in execution order (not the ``replaced`` history)."""
+    return [n for n, _ in g.walk() if n.kind == "accelerated"]
+
+
+def encapsulate(g: Graph, accelerator: str, units: list[str]) -> Graph:
+    """The groups of ``units`` (instances) as one accelerator named ``accelerator`` (D148)."""
+    g = _copy(g)
+    what = f"encapsulate {accelerator!r}"
+    if not isinstance(accelerator, str) or not accelerator.isidentifier():
+        raise SandboxError(f"{what}: the accelerator must be a name")
+    if not isinstance(units, list) or not units or not all(isinstance(u, str) for u in units):
+        raise SandboxError(f"{what}: units must be a non-empty list of instances")
+    if len(set(units)) != len(units):
+        raise SandboxError(f"{what}: a unit is listed twice in {units}")
+    nodes = _accelerated(g)
+    order = list(dict.fromkeys(n.attrs["instance"] for n in nodes))
+    taken = {n.attrs["accelerator"] for n in nodes if "accelerator" in n.attrs}
+    if accelerator in order or accelerator in taken:
+        what_has = "an instance" if accelerator in order else "an accelerator"
+        raise SandboxError(f"{what}: {what_has} is already named {accelerator!r}")
+    for u in units:
+        if u not in order:
+            raise SandboxError(f"{what}: no instance {u!r} (instances: {order})")
+        inside = {n.attrs.get("accelerator") for n in nodes if n.attrs["instance"] == u}
+        if inside != {None}:
+            raise SandboxError(f"{what}: {u!r} is in accelerator {inside.pop()!r} already "
+                               "(unencapsulate it first)")  # fmt: skip
+    graph_order = [u for u in order if u in units]
+    if graph_order != units:
+        raise SandboxError(f"{what}: units {units} in another order than the graph runs them, "
+                           f"{graph_order}; the groups keep the graph's order (C§17)")  # fmt: skip
+    for n in nodes:
+        if n.attrs["instance"] in units:
+            n.attrs["accelerator"] = accelerator
+    return _result(g)
+
+
+def unencapsulate(g: Graph, accelerator: str) -> Graph:
+    """The inverse of encapsulate: each group of ``accelerator`` its own accelerator again."""
+    g = _copy(g)
+    mine = [n for n in _accelerated(g) if n.attrs.get("accelerator") == accelerator]
+    if not mine:
+        raise SandboxError(f"unencapsulate {accelerator!r}: no accelerator of that name")
+    for n in mine:
+        del n.attrs["accelerator"]
+    return _result(g)
+
+
 register_transform("split_map", split_map, ints=("factor",))
 register_transform("tag_map", tag_map)
 register_transform("untag_map", untag_map)
 register_transform("bind", bind)
 register_transform("unbind", unbind)
 register_transform("join_map", join_map)
+register_transform("encapsulate", encapsulate)
+register_transform("unencapsulate", unencapsulate)
