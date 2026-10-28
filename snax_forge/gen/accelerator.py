@@ -50,7 +50,6 @@ from typing import TYPE_CHECKING, Any
 from snax_forge.brm import port_dtypes
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import instance_nodes
-from snax_forge.lower.c import accelerator as c_accelerator
 from snax_forge.lower.c import fold_rate
 
 from .blocks import DATAPATHS, GenError, Port
@@ -231,7 +230,9 @@ class Accelerator(JsonFile):
 def describe(point: DesignPoint, point_path: str) -> Accelerator:
     """The design point's ``accelerator.json``, checked; see the module doc. ``point_path``
     names the design point (gvsoc.py's ``point_name``)."""
-    name, inst = c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
+    from .gvsoc import instance
+
+    name, inst = instance(point)
     what = f"{inst.brm.name}.{inst.implementation}"
     datapath = inst.impl.binding["datapath"]
     if datapath not in DATAPATHS:

@@ -153,8 +153,9 @@ GOOD_STREAM = stream("x", "acc_a")["values"]
             "bounds must be >= 1",
         ),
         (
-            [{**stream("x", "acc_a"), "values": {**GOOD_STREAM, "temporal_bounds": [0]}}, start("x")],
-            "temporal bounds must be >= 1",
+            [{**stream("x", "acc_a"), "values": {**GOOD_STREAM, "temporal_bounds": [-1]}},
+             start("x")],
+            r"temporal bounds must be >= 1, or all 0 \(an idle mover\)",
         ),
         ([bad_values({**GOOD_DMA, "src": {"symbol": "A", "bounds": [8]}}), start("x")], "missing"),
         (
@@ -183,3 +184,9 @@ GOOD_STREAM = stream("x", "acc_a")["values"]
 def test_values_that_do_not_fit_the_design_point(steps, match):
     with pytest.raises(TaskListError, match=match):
         check_values(task_list(*steps), vecadd_point())
+
+
+def test_an_idle_mover_has_every_bound_0():
+    """Another group's mover in an accelerator of several (D148): every temporal bound 0."""
+    idle = {**GOOD_STREAM, "temporal_bounds": [0], "temporal_strides": [0]}
+    check_values(task_list({**stream("x", "acc_a"), "values": idle}, start("x")), vecadd_point())

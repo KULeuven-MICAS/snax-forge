@@ -90,6 +90,12 @@ def bound_vsum(w: int = 1, impl: str = "chisel_accumulator") -> Graph:
     return apply_recipe(Recipe.from_dict(d), Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
 
 
+def bound_dot1() -> Graph:
+    """dot 1 bound by the checked-in recipe: groups mul and sum in the accelerator dot (D148)."""
+    recipe = Recipe.load(REPO / "recipes" / "dot_1.json")
+    return apply_recipe(recipe, Graph.load(FIXTURES / "dot.snaxdfg"))[-1].graph
+
+
 def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str:
     """The design point of ``recipes/<recipe>.json`` (``--set`` each of ``sets``) on snax_forge,
     made by the sandbox's and the design step's commands under ``tmp`` as the root (``root``),

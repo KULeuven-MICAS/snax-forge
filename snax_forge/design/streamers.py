@@ -26,7 +26,9 @@ them, and every port of its BRM in port order, one streamer:
     fifo_depth      the platform's ``default`` with the streamer's entry on top
 
 ``instances`` reads the instances off the graph and resolves them against
-the BRM library; ``resolve`` builds the shell. Neither checks the pairing:
+the BRM library, ``accelerators`` groups them into accelerators (D148: an
+instance's ``accelerator``, ``encapsulate``'s, else the instance's own
+group); ``resolve`` builds the shell. Neither checks the pairing:
 that is check.py, which runs first and reports every problem, so
 ``resolve`` raises on the first thing that does not fit.
 """
@@ -106,6 +108,21 @@ def instance_nodes(graph: Graph) -> dict[str, Node]:
     out: dict[str, Node] = {}
     for n in accelerated(graph):
         out.setdefault(n.attrs["instance"], n)
+    return out
+
+
+def accelerator_of(node: Node) -> str:
+    """The accelerator a node's group is in: its ``accelerator`` (``encapsulate``'s, D148), else
+    the group's own, named after the instance."""
+    return node.attrs.get("accelerator", node.attrs["instance"])
+
+
+def accelerators(graph: Graph) -> dict[str, list[str]]:
+    """Every accelerator, in the order the graph first uses it, with its groups (one instance
+    each until links come, M13's B3) in the graph's order (D148)."""
+    out: dict[str, list[str]] = {}
+    for name, n in instance_nodes(graph).items():
+        out.setdefault(accelerator_of(n), []).append(name)
     return out
 
 

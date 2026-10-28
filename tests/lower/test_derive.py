@@ -175,6 +175,56 @@ def test_dot_waits_once_between_its_accelerators():
     assert waits == ["dma", "dma", "mul_out", "sum_out", "dma"]
 
 
+# =============================================================================
+# dot 1: the two groups in one accelerator (D148), a task each
+# =============================================================================
+
+
+def dot1() -> DesignPoint:
+    from tests.gen.helpers import bound_dot1
+
+    d = Design(Platform.load(SNAX_FORGE), bound_dot1())
+    assert run_checks(d) == []
+    return DesignPoint.of(d, "dot_1")
+
+
+IDLE = {"base": 0, "temporal_bounds": [0], "temporal_strides": [0], "spatial_strides": [0]}
+
+
+def test_dot_1_configures_every_mover_per_task_the_other_groups_idle():
+    """Each group's task configures all five movers in the shell's order and starts them with
+    its unit; the other group's are idle, every bound 0 (C§12)."""
+    tl = task_list(dot1())
+    c = tl.configured()
+    starts = [s.tasks for s in tl.steps if s.op == "start" and len(s.tasks) > 1]
+    assert starts == [
+        ["mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_sum_a", "mult_sum_out", "mult_mul"],
+        ["sum_mul_a", "sum_mul_b", "sum_mul_out", "sum_sum_a", "sum_sum_out", "sum_sum"],
+    ]  # fmt: skip
+    for t in ("mult_sum_a", "mult_sum_out", "sum_mul_a", "sum_mul_b", "sum_mul_out"):
+        assert (c[t].values, c[t].after) == (IDLE, []), t
+    assert c["sum_sum_a"].after == ["mult_mul_out"]  # tmp0 from mul, through L1
+    assert c["sum_sum_a"].values["base"] == c["mult_mul_out"].values["base"]
+    assert (c["mult_mul"].values, c["sum_sum"].values) == ({"n": 16}, {"n": 16, "T": 16})
+
+
+def test_dot_1_waits_for_mul_s_writer_before_sum_and_never_on_an_idle_mover():
+    p = dot1()
+    waits = placed_waits(task_list(p), p)
+    assert [(w.component, sorted(w.covers)) for w in waits] == [
+        ("dma", ["dma"]), ("dma", ["dma"]),
+        ("mul_out", ["mul", "mul_a", "mul_b", "mul_out"]),
+        ("sum_out", ["sum", "sum_a", "sum_out"]),
+        ("dma", ["dma"]),
+    ]  # fmt: skip
+
+
+def test_dot_without_encapsulate_is_two_accelerators_with_no_idle_movers():
+    """Each group its own accelerator: its tasks configure its own movers only."""
+    names = [s.task_name for s in task_list(point("dot_accelerated")).steps if s.op == "configure"]
+    assert not any(n.startswith(("mult_sum", "sum_mul")) for n in names)
+
+
 def _backwards(g):
     """C written back to front: beat t at elements 60 - 4t .. 63 - 4t."""
     g["body"][0]["body"][0]["outputs"]["out"]["subset"] = ["60 - 4 * i_t:64 - 4 * i_t"]

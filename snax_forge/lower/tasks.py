@@ -38,7 +38,8 @@ have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
 ``symbol`` (a container in L2: its data.h array), ``bounds`` and ``strides``; an accelerator's
 runtime params, ``n`` and its named rates); a streamer's loops fit it (as
 many temporal strides as bounds, no more than its ``temporal_dims``, one
-spatial stride per spatial bound, every bound >= 1); a DMA's direction is
+spatial stride per spatial bound, every bound >= 1, or every one 0: an idle
+mover, which never starts, D148); a DMA's direction is
 ``l2_to_l1`` or ``l1_to_l2`` and its sides have one stride per bound, every
 bound >= 1.
 """
@@ -316,8 +317,8 @@ def _check(s: Configure, point: DesignPoint) -> None:
                 f"{len(shell.spatial_bounds)} spatial bounds but {len(ss)} spatial strides"
             )
         _fit(len(tb), shell.temporal_dims, s.component)
-        if any(b < 1 for b in tb):
-            raise ValueError("temporal bounds must be >= 1")
+        if any(b < 1 for b in tb) and any(tb):
+            raise ValueError("temporal bounds must be >= 1, or all 0 (an idle mover)")
     elif s.type == "dma":
         _exact(v, DMA, "dma values")
         if v["direction"] not in DIRECTIONS:

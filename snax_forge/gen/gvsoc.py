@@ -260,7 +260,11 @@ class Manifest(JsonFile):
 def instance(point: DesignPoint) -> tuple[str, Instance]:
     """The one accelerated instance and its name (lower/c.py's ``accelerator``, its rules
     ``gen.instances`` and ``gen.binding``)."""
-    return c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
+    name, units = c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
+    if len(units) != 1:
+        raise GenError("gen.instances", f"accelerator {name}: {len(units)} groups {list(units)}; "
+                       "the generator writes one so far")  # fmt: skip
+    return next(iter(units.items()))
 
 
 def node_dtypes(point: DesignPoint, name: str) -> dict[str, str]:
