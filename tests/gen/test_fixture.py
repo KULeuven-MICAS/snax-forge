@@ -7,7 +7,8 @@ the first 2-D bind, two temporal loops per streamer), rowsum and rowsum_serial
 (a restart every T = N / W beats); the narrow ones (vecadd_i32, vecmul_i32,
 vsum_tree_i32, vecadd_i8, vsum_tree_i8: D142, D143; vecmul_i32_i64, the
 product at int32 sign-extended into int64) and the padded tails
-(vecadd_n7, vsum_tree_n21, rowsum_3x7: D144). Its refresh commands are run
+(vecadd_n7, vsum_tree_n21, rowsum_3x7: D144); dot_1, one accelerator of two
+groups (D148). Its refresh commands are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson
 copied into its ``platforms/``), so the design point is
@@ -37,13 +38,8 @@ FORGE = SUB / "forge"
 DESIGNS = [
     "vecadd", "vecmul", "vsum", "vsum_tree", "matadd", "rowsum", "rowsum_serial",
     "vecadd_i32", "vecmul_i32", "vsum_tree_i32", "vecadd_i8", "vsum_tree_i8",
-    "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64",
+    "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64", "dot_1",
 ]  # fmt: skip
-# The folds' accelerator.json gains TreeAccumulate's op in snax-gvsoc's B1 R2; until the
-# submodule is at it, its forge/ has them without
-FOLDS = {"vsum", "vsum_tree", "rowsum", "rowsum_serial", "vsum_tree_i32", "vsum_tree_i8",
-         "vsum_tree_n21", "rowsum_3x7"}  # fmt: skip
-before_op = pytest.mark.xfail(reason="forge/'s folds gain op in snax-gvsoc's B1 R2", strict=True)
 
 pytestmark = pytest.mark.skipif(
     not (SUB / "snax").is_dir(),
@@ -71,9 +67,7 @@ def test_every_folder_is_a_design():
     assert sorted(p.name for p in FORGE.iterdir() if p.is_dir()) == sorted(DESIGNS)
 
 
-@pytest.mark.parametrize(
-    "design", [pytest.param(d, marks=before_op) if d in FOLDS else d for d in DESIGNS]
-)
+@pytest.mark.parametrize("design", DESIGNS)
 def test_the_fixture_is_reproduced(tmp_path, design):
     fixture = FORGE / design
     out = regenerate(tmp_path, design)

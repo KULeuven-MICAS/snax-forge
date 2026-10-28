@@ -16,7 +16,8 @@ from __future__ import annotations
 import pytest
 
 pytest.skip(
-    "dot is parked until M13: two accelerators, which the generator refuses (gen.instances)",
+    "dot's walk-through is parked until M13's B3: it compares two accumulators on SNAX-MODEL, "
+    "which RET1 removed (dot 1 runs on SNAX-GVSoC: tests/flow/test_dot.py)",
     allow_module_level=True,
 )
 

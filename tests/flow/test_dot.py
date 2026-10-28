@@ -1,188 +1,85 @@
-"""dot end to end: a multiplier chained into an accumulator through L1.
+"""dot 1 end to end (D148, open item 79): ``recipes/dot_1.json``, a multiplier into tmp0 in L1,
+then an adder tree over it, the two groups ``mul`` and ``sum`` of one accelerator ``dot``.
 
-``recipes/dot_1.json`` (the adder tree, W lanes) and ``recipes/dot_serial.json``
-(the Chisel TreeAccumulate, one lane) run from the import fixture to a checked
-model run. Accepted when every run equals the kernel's reference and the
-reference executor at its pinned cycle count, the task list holds the one
-wait between the two accelerators, ``run.md`` names it as a chaining wait,
-and on a beat trace a product's journey goes from ``mul`` through L1 into
-``sum``. The cycle counts
-are the first data of the paper's claim C3: behind a one-lane accumulator a
-wider multiplier buys little.
+Up to the generator on the host: the task list waits once between the groups (on mul's
+writer) and never on an idle mover. On SNAX-GVSoC (marker ``gvsoc``, D134: in the image), at
+trace levels off and task: the run checks itself (every output, both groups' counters), each
+group's counter is its task's (busy + its stalls, at least its beats), and the reports name
+each task's group. No cycle count is compared: the window moves with the code's layout (open
+item 65).
+
+dot's walk-through (examples/dot, tests/flow/test_dot_example.py) stays parked until M13's
+B3: it compares two accumulators on SNAX-MODEL, which RET1 removed.
 """
 
 from __future__ import annotations
 
 import pytest
 
-pytest.skip(
-    "dot is parked until M13: two accelerators, which the generator refuses (gen.instances)",
-    allow_module_level=True,
-)
-
-import json
-from pathlib import Path
-
-from snax_forge.flow import run_flow
+from snax_forge.design import DesignPoint
+from snax_forge.flow import run_flow, summary
+from snax_forge.lower import placed_waits, task_list
 from snax_forge.report import reports_of
-from snax_forge.report.run import ChainRow
-from snax_forge.viz import api
-from tests.design.helpers import FIXTURES, RECIPE, REPO, SMALL16
+from snax_forge.run import read_run
+from tests.design.helpers import REPO, SNAX_FORGE
 
-from .helpers import PLAIN as VECADD
+from .helpers import needs_gvsoc
 
-DOT = REPO / "recipes" / "dot_1.json"
-SERIAL = REPO / "recipes" / "dot_serial.json"
-PLAIN = FIXTURES / "dot.snaxdfg"  # the import of the dot kernel
-
-# (recipe, W) -> cycles on small16 at N = 64
-CYCLES = {
-    (DOT, 4): 99,
-    (DOT, 8): 87,
-    (DOT, 16): 79,
-    (DOT, 1): 219,
-    (SERIAL, 4): 147,
-    (SERIAL, 8): 143,
-    (SERIAL, 1): 219,
-}
+DOT1 = REPO / "recipes" / "dot_1.json"
 
 
-def _flow(base: Path, recipe: Path, w: int, level: str = "task"):
-    out = base / f"{recipe.stem}_W{w}"
-    return run_flow(
-        recipe, SMALL16, recipe_sets={"W": w}, graph_path=PLAIN, out=out, trace_level=level
-    )
+def test_the_task_list_waits_once_between_the_groups(tmp_path):
+    from tests.gen.helpers import bound_dot1, point
+
+    p = DesignPoint.load(point(tmp_path, name="dot_1", graph=bound_dot1()))
+    tl = task_list(p)
+    accel = [s.task_name for s in tl.steps if s.op == "configure" and s.type == "accel"]
+    assert accel == ["mult_mul", "sum_sum"]
+    assert tl.configured()["sum_sum_a"].after == ["mult_mul_out"]
+    waits = [w.component for w in placed_waits(tl, p)]
+    assert waits == ["dma", "dma", "mul_out", "sum_out", "dma"]
 
 
 @pytest.fixture(scope="module")
 def flows(tmp_path_factory):
-    base = tmp_path_factory.mktemp("dot")
-    return {(r, w): _flow(base, r, w, "beat" if (r, w) == (DOT, 4) else "task") for r, w in CYCLES}
+    base = tmp_path_factory.mktemp("dot_1")
+    return {lv: run_flow(DOT1, SNAX_FORGE, out=base / lv, trace_level=lv) for lv in ("off", "task")}
 
 
-# =============================================================================
-# The runs (the acceptance)
-# =============================================================================
+@pytest.mark.gvsoc
+@needs_gvsoc
+@pytest.mark.parametrize("level", ["off", "task"])
+def test_dot_1_runs_and_checks_itself(flows, level):
+    f = flows[level]
+    assert f.passed, summary(f)
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.check["words"] == 1
+    tasks = f.check["tasks"]
+    assert {t: (x["group"], x["beats"]) for t, x in tasks.items()} == {
+        "mult_mul": ("mul", 16), "sum_sum": ("sum", 16)}  # fmt: skip
+    assert all(x["counter"] >= x["beats"] for x in tasks.values())
+    p = read_run(f.out / "run").profile
+    assert {k: a.firings for k, a in p.accelerators.items()} == {"mul": 16, "sum": 16}
+    for t, unit in (("mult_mul", "mul"), ("sum_sum", "sum")):
+        c = p.accelerators[unit].cycles  # one run each: its counter is its classes but idle
+        assert tasks[t]["counter"] == c["busy"] + c["stall_in"] + c["stall_out"] + c["flush"]
+    stdout = (f.out / "run" / "stdout.txt").read_text()
+    assert "forge data: 0 errors (1 words)\n" in stdout and "forge errors: 0\n" in stdout
 
 
-@pytest.mark.parametrize(("recipe", "w"), list(CYCLES), ids=[f"{r.stem}_W{w}" for r, w in CYCLES])
-def test_every_run_is_right_at_its_cycles(flows, recipe, w):
-    f = flows[(recipe, w)]
-    assert f.passed
-    assert f.check["containers"]["out"]["reference"] and f.check["containers"]["out"]["ref1"]
-    assert f.result.total_cycles == CYCLES[(recipe, w)]
-
-
-def test_dot_from_the_kernel(tmp_path):
-    """The whole path from kernels/polybench/dot.py, as `pixi run flow recipes/dot_1.json` runs it."""
-    f = run_flow(DOT, SMALL16, out=tmp_path / "dot")
-    assert f.passed and f.result.total_cycles == 99
-
-
-def test_a_wider_multiplier_buys_little_behind_one_lane(flows):
-    """C3's first data: 4 -> 8 multiplier lanes save 4 cycles behind the one-lane accumulator,
-    12 when the accumulator widens with it."""
-    cycles = {k: f.result.total_cycles for k, f in flows.items()}
-    serial = cycles[(SERIAL, 4)] - cycles[(SERIAL, 8)]
-    both = cycles[(DOT, 4)] - cycles[(DOT, 8)]
-    assert (serial, both) == (4, 12)
-
-
-# =============================================================================
-# The chain: one wait between the accelerators, named in run.md
-# =============================================================================
-
-
-def test_the_task_list_waits_once_between_the_accelerators(flows):
-    f = flows[(DOT, 4)]
-    names = [s.task_name for s in f.tasks.steps if s.op == "configure"]
-    assert names == [
-        "load_A", "load_B", "mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_mul",
-        "sum_sum_a", "sum_sum_out", "sum_sum", "store_out",
-    ]  # fmt: skip
-    assert f.tasks.configured()["sum_sum_a"].after == ["mult_mul_out"]
-
-
-def test_run_md_names_the_chaining_wait(flows):
-    f = flows[(DOT, 4)]
-    run = reports_of(f.out).run
-    assert run.controller.chains == [ChainRow("mul", "sum", "mul_out", 17, ["sum_a"])]
-    waits = [(w.block, w.cycles, w.then) for w in run.controller.waits]
-    assert waits == [
-        ("dma", 1, "load_B"),
-        ("dma", 1, "mult_mul_a"),
-        ("mul_out", 17, "sum_sum_a"),
-        ("sum_out", 9, "store_out"),
-        ("dma", 5, None),
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_the_reports_name_each_tasks_group(flows):
+    f = flows["task"]
+    r = reports_of(f.out)
+    groups = {t.name: t.group for t in r.run.tasks}
+    assert (groups["mult_mul"], groups["mult_sum_a"], groups["sum_mul_out"]) == (
+        "mul",
+        "mul",
+        "sum",
+    )
+    idle = {t.name: t for t in r.run.tasks if t.name in ("mult_sum_a", "sum_mul_a")}
+    assert len(idle) == 2
+    assert [(a.instance, a.group) for a in r.design.accelerators] == [
+        ("mul", "mul"),
+        ("sum", "sum"),
     ]
-    text = (f.out / "report" / "run.md").read_text()
-    assert "- mul → sum: 17 cycles waiting on mul_out, which sum_a reads" in text
-
-
-def test_vecadd_has_no_chaining_wait(tmp_path):
-    f = run_flow(RECIPE, SMALL16, graph_path=VECADD, out=tmp_path / "vecadd")
-    run = reports_of(f.out).run
-    assert run.controller.chains == []
-    assert "Chaining waits" not in (f.out / "report" / "run.md").read_text()
-
-
-# =============================================================================
-# What the design report says: the drain, the padding
-# =============================================================================
-
-
-def test_the_serial_accumulator_declares_its_drain(flows):
-    """drain 0 (D133): not in the cluster file (written only when not 0), 0 in the design report."""
-    f = flows[(SERIAL, 4)]
-    cluster = json.loads((f.out / "cluster.json").read_text())
-    (sum_,) = [c for c in cluster["components"] if c["name"] == "sum"]
-    assert sum_["params"] == {
-        "lanes": 1,
-        "lanes_out": 1,
-        "op": "add",
-        "latency": 1,
-        "ii": 1,
-    }
-    design = reports_of(f.out).design
-    assert [(a.instance, a.implementation, a.drain) for a in design.accelerators] == [
-        ("mul", "chisel_tiled_spatial", 0),
-        ("sum", "chisel_accumulator", 0),
-    ]
-
-
-def test_out_is_moved_as_one_padded_beat(flows):
-    design = reports_of(flows[(DOT, 4)].out).design
-    assert (
-        "out: 8 B, moved by the DMA as 1 whole 64-byte beat; bytes 1032–1088 are kept free in "
-        "L1 and L2."
-    ) in design.notes
-
-
-# =============================================================================
-# Data movement on the beat trace: through L1 from one accelerator to the next
-# =============================================================================
-
-
-def test_a_product_goes_from_mul_through_l1_into_sum(flows):
-    rv = api.load_run(flows[(DOT, 4)].out / "run", "dot")
-    j = api.journey_view(rv, "tmp0", 5)
-    assert [(h["act"], h["owner"]) for h in j["hops"]] == [
-        ("write", "mul_out"),
-        ("read", "sum_a"),
-        ("data back", "sum_a"),
-    ]
-    assert [(x["acc"], x["role"], x["inputs"]) for x in j["firings"]] == [
-        ("mul", "produced", {"a": ["A[5]"], "b": ["B[5]"]}),
-        ("sum", "consumed", {"a": ["tmp0[5]"]}),  # its lane of sum's firing 1
-    ]
-    write, read = j["hops"][0]["t"], j["hops"][1]["t"]
-    assert read > write  # it waits in L1 for the chaining wait to end
-
-
-def test_the_sum_comes_from_all_sixteen_firings(flows):
-    rv = api.load_run(flows[(DOT, 4)].out / "run", "dot")
-    j = api.journey_view(rv, "out", 0)
-    firings = [x for x in j["firings"] if x["role"] == "produced"]
-    assert [x["n"] for x in firings] == list(range(16))
-    assert {x["acc"] for x in firings} == {"sum"}
-    assert [h["act"] for h in j["hops"]][-1] == "write" and j["hops"][-1]["mem"] == "l2"
