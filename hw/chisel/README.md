@@ -1,12 +1,13 @@
 # SNAX-FORGE Chisel datapaths
 
-Hardware side of SNAX-FORGE: a hand-written library of accelerator blocks,
-their chiseltest specs, and `Emit`, which elaborates a catalogue of
-configurations to SystemVerilog and a design point's accelerator from its
-`rtl.json` (GEN1). It is a project of its own: nothing here imports
-`snax_forge/`, and the Python side calls it only through `pixi run gen-rtl`.
-The blocks are the reference implementations of the BRMs (`elementwise_add`
-names `ElementwiseTiledSpatial`).
+Hardware side of SNAX-FORGE: a hand-written library of datapaths and the
+nest controller, their chiseltest specs, and `Emit`, which elaborates a
+catalogue of configurations to SystemVerilog and a design point's
+accelerator from its `accelerator.json` (C§17, GEN1). It is a project of its
+own: nothing here imports `snax_forge/`, and the Python side calls it only
+through `pixi run gen-rtl`. The datapaths are the reference implementations
+of the BRMs (`elementwise_add` names `ElementwiseLanes`, `accumulate`
+`TreeAccumulate`).
 
 ## Why these versions
 
@@ -29,44 +30,53 @@ hw/chisel/
 ├── build.sbt
 ├── project/{build.properties,plugins.sbt}
 ├── .scalafmt.conf                      # copied verbatim from snax_cluster
-├── blocks.json                         # the block catalogue (D130)
+├── blocks.json                         # the datapath catalogue (D130, D147)
 └── src/
     ├── main/scala/snax/forge/
     │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec
-    │   ├── Blocks.scala                # the block registry (blocks.json)
-    │   ├── shell/                      # rtl.json, CsrManager, CtrlAdapter, the shell wrapper
+    │   ├── Datapaths.scala             # the datapath registry (blocks.json)
+    │   ├── ctrl/                       # NestCtrl, the group controller
+    │   ├── datapath/                   # ElementwiseLanes, TreeAccumulate
+    │   ├── shell/                      # accelerator.json, <tag>_csr, _ctrl, _datapath, the wrapper
     │   ├── RepoPaths.scala             # out/hw and repository paths
-    │   ├── samples/
-    │   │   ├── SimpleAdder.scala       # elementwise archetype  (cf. vecadd)
-    │   │   └── Accumulator.scala       # reduction archetype    (cf. dot)
-    │   └── elementwise/                # ALU, loop, spatial, tiled-spatial
+    │   ├── elementwise/                # the typed ALU lane, the ops
+    │   └── stream/                     # FifoSlicer, FifoPacker (parked, D142)
     └── test/
         ├── scala/snax/forge/           # one spec per module, plus a model; shell/ for GEN1
-        └── resources/rtl/<design>/     # GEN1's fixtures
+        └── resources/
+            ├── rtl/<design>/           # GEN1's fixtures
+            └── groups/dot1/            # a hand-written two-group accelerator.json
 ```
 
 ## A design point's accelerator (GEN1, D130)
 
 The boundary with the Python side is two files. `blocks.json`, checked in,
-is the signature of each block (params with types and limits, data ports,
-the `csr` section: read-write pins, start, busy and done, tied pins); the
-registry `Blocks` holds the same and builds the blocks, and `BlocksSpec`
-checks `Emit --describe` equal to it. `rtl.json`, per design point, is
-written and checked by `snax_forge/gen/rtl.py` against `blocks.json`
-(C§17); `Emit --spec rtl.json [--out DIR]` builds `<tag>_shell_wrapper`
-(`shell/`) into `DIR/sv/`, one file per module, with `DIR/emitted.json`:
+is the datapath catalogue: per datapath its params with types and limits,
+its ports, latency, pins and the rule that fills the params from the unit's
+ports (C§17); the registry `Datapaths` holds the same and builds them, and
+`DatapathsSpec` checks `Emit --describe` equal to it. `accelerator.json`,
+per design point, is written by `snax_forge/gen/` and checked by
+`gen/rtl.py` against `blocks.json`; `Emit --spec accelerator.json [--out
+DIR]` builds `<tag>_shell_wrapper` (`shell/`) into `DIR/sv/`, one file per
+module, with `DIR/emitted.json`:
 
-- `CsrManager`: snax_cluster's ReqRspManager protocol (the fields, start
-  held while busy, busy and the counter read-only, D130), as the core
-  reaches it after `snax_csr_mux_demux` with snax_cluster's manager off;
-- `CtrlAdapter`: an accepted start to the block's start and configuration
-  pins, ready while not busy, the counter, the tied pins;
-- the unit, a `Blocks` block.
+- `<tag>_csr` (`AccCsr`): the file's CSRs by offset, snax_cluster's
+  ReqRspManager protocol (D130) as the core reaches it after
+  `snax_csr_mux_demux` with snax_cluster's manager off; a START write with
+  bit 0 set is its group's config (JOBS, JOB_BEATS), held while the group
+  is busy; STATUS and COUNTER read from the controllers;
+- `<tag>_ctrl` (`AccCtrl`): per group `<tag>_<group>_ctrl` (`GroupCtrl`),
+  the start, the empty run, STATUS's sticky done, COUNTER and the busy and
+  done pins around one `NestCtrl` (SnaxUnit's rule, D147);
+- `<tag>_datapath` (`AccDatapath`): the units' datapaths, data and the
+  controller's pins only.
 
-`pixi run gen-rtl DESIGN_POINT` does both steps (`docs/RUN.md` §6). The
-fixtures in `src/test/resources/rtl/<design>/` (`rtl.json`, the streamer
-hjson, `vectors.json`) come from the Python side, which checks them byte
-for byte (`tests/gen/test_rtl.py`); refresh one with
+The wrapper splits each outer Decoupled port: its data to the datapath,
+its valid and ready to the controller. `pixi run gen-rtl DESIGN_POINT` does
+the check and the elaboration (`docs/RUN.md` §6). The fixtures in
+`src/test/resources/rtl/<design>/` (`accelerator.json`, the streamer hjson,
+`vectors.json`) come from the Python side, which checks them byte for byte
+(`tests/gen/test_rtl.py`); refresh one with
 
     pixi run sandbox recipes/vsum_tree.json --set W=8 --out out/sandbox/vsum_tree_w8
     pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_tree_w8
@@ -74,33 +84,34 @@ for byte (`tests/gen/test_rtl.py`); refresh one with
 
 (the others from their recipe as it is, named after it). The specs on
 them: `ShellPortsSpec` (each wrapper's ports are the template's for its
-streamer hjson), `ShellCasesSpec` (vecadd's, through snax-gvsoc's shell
-cases, below) and `ShellEndToEndSpec` (the CSR writes of
-`main.c`, an always-ready streamer: the goldens and the counter of
-`vectors.json`).
+streamer hjson, plus the group pins, and Emit writes the three modules),
+`ShellCasesSpec` (vecadd's and vsum's, through snax-gvsoc's shell cases,
+below), `ShellEndToEndSpec` (the CSR writes of `main.c`, an always-ready
+streamer: the goldens and the counter of `vectors.json`) and
+`ShellRandomSpec`. `TwoGroupsSpec` elaborates `groups/dot1/` (C§17's dot 1:
+groups `mul` and `sum`) and runs each group on its own.
 
 ## The unit cases
 
-`ElementwiseTiledSpatialLockstepSpec` drives `ElementwiseTiledSpatial` through
-snax-gvsoc's lockstep `SnaxUnit` cases (GEN3), and `AccumulatorRateSpec` the
-Accumulator through its pipelined fold cases (rate, GEN3 step 6b; at the
-case's `lanes`, GEN2a round 2), run lines included; both read the cases with `SnaxUnitCases`. Set
-`SNAX_GVSOC_UNIT_CASES` to their folder, e.g.
+`UnitCasesSpec` drives a group controller with its datapath through
+snax-gvsoc's `SnaxUnit` cases (`tests/snax/unit/cases/`, C§17): the start
+line's JOBS and JOB_BEATS, every cycle's input valids and output ready, the
+run lines and every result checked. A case whose L and II no catalogue
+datapath has runs the controller alone. It reads them with `SnaxUnitCases`
+from the folder `SNAX_GVSOC_UNIT_CASES` names, e.g.
 `SNAX_GVSOC_UNIT_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/unit/cases pixi run -e hw
-chisel-test`; without it both are canceled, and the Accumulator's also when
-the folder has no fold case (a snax-gvsoc before step 6b). Both also run at
-the params of each GEN1 fixture of their block; CI's chisel job sets the
-variable to the submodule's cases.
+chisel-test`; without it the spec is canceled. CI's chisel job sets it to
+the submodule's cases.
 
 ## The shell cases
 
-`ShellCasesSpec` drives vecadd's `<tag>_shell_wrapper` (`CsrManager`,
-`CtrlAdapter`, `ElementwiseTiledSpatial`) through snax-gvsoc's `SnaxShell`
-cases (`tests/snax/shell/cases/`, GEN2b, C§17), which snax-gvsoc's
-`tb.cpp` checks `snax_shell.hpp`'s rule against: every access's result (a
-write's cycle, a read's value) and, every cycle, the unit's busy, tapped from
-the wrapper (`ShellHarness(tapBusy = true)`). It reads them with
-`SnaxShellCases` from the folder `SNAX_GVSOC_SHELL_CASES` names, e.g.
+`ShellCasesSpec` drives vecadd's and vsum's `<tag>_shell_wrapper` through
+snax-gvsoc's `SnaxShell` cases (`tests/snax/shell/cases/`, C§17), which
+snax-gvsoc's `tb.cpp` checks `snax_shell.hpp`'s rule against: every
+access's result (a write's cycle, a read's value) and, every cycle, the
+group's STATUS from the busy and done pins; a case with JOB_BEATS runs on
+the fold. It reads them with `SnaxShellCases` from the folder
+`SNAX_GVSOC_SHELL_CASES` names, e.g.
 `SNAX_GVSOC_SHELL_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/shell/cases`; without
 it the spec is canceled. CI's chisel job sets it beside the unit's.
 
@@ -113,10 +124,11 @@ from the documented behaviour, never from the Chisel code:
 
 | Spec | Random | Model |
 |---|---|---|
-| `AccumulatorRandomSpec` | in and out types, lanes, n, T, data, input gaps, output stalls | lane sums every T inputs, each lane cast to the out type (the docstring) |
-| `ElementwiseRandomSpec` | the three elementwise blocks: lanes, n, op, data, `a` and `b` gaps each its own, output stalls; `ElementwiseTiledSpatial` also at narrow and mixed types, every op | `ElementwiseModel`, NumPy's rule (D143) |
-| `CsrManagerRandomSpec` | fields and widths, reads, writes and starts in and out of range, `rsp`/`ctrl` ready, `ro` | the protocol in `CsrManager`'s docstring |
-| `ShellRandomSpec` | per fixture: n, T, data at its types, streamer gaps and stalls, polled or held starts | the two block models; the counter as `snax_shell.cpp` states it |
+| `NestCtrlSpec` | L ∈ {0, 1, 2} (L 2 with a two-register test datapath on the advance), II ∈ {1, 2}, T ∈ {1, 3, 4}, J ∈ {0, 1, 5}, input valids, output stalls | `NestModel`, SnaxUnit's rule (C§17) |
+| `ElementwiseLanesSpec` | in, op and out types, lanes, every op, data | `ElementwiseModel`, NumPy's rule (D143) |
+| `TreeAccumulateSpec` | in and out types, lanes, data, `fire` and `first` | lane sums from each `first`, each lane cast to the out type (the docstring) |
+| `AccCsrRandomSpec` | 1 to 3 groups, folds or not; reads, writes and starts in and out of range, `rsp` and each start's ready, STATUS and COUNTER | the protocol in `AccCsr`'s docstring |
+| `ShellRandomSpec` | per fixture: J, T, empty runs, data at its types, streamer gaps and stalls, polled or held starts | the datapath models; STATUS and COUNTER as C§17 states them |
 | `FifoSlicerSpec`, `FifoPackerSpec` | types, words, lanes, data, input gaps, output stalls; the slicer into the packer | the element order of D142 (the docstrings) |
 
 The random specs run one test per seed of `Seeds` (scalatest names it
@@ -139,26 +151,29 @@ Python side.
 |---|---|
 | `pixi run chisel-compile` | compile Scala only |
 | `pixi run chisel-test` | run the chiseltest specs |
-| `pixi run chisel-gen` | elaborate everything to `out/hw/*.sv`; `-- --describe` prints the catalogue, `-- --spec rtl.json` builds an accelerator |
+| `pixi run chisel-gen` | elaborate everything to `out/hw/*.sv`; `-- --describe` prints the catalogue, `-- --spec accelerator.json` builds an accelerator |
 | `pixi run chisel-fmt` | scalafmt in place |
 | `pixi run chisel-check` | fail if unformatted (CI uses this) |
 | `pixi run chisel-clean` | drop build trees, keep the Coursier cache |
 
 ## The two archetypes
 
-`SimpleAdder` and `Accumulator` are not arbitrary toys. They are the two
-distinct hardware shapes the toolchain has to cover, the shapes of
-`vecadd` and `dot` in `kernels/polybench/` among the staged kernels:
+`ElementwiseLanes` and `TreeAccumulate` are the two distinct hardware
+shapes the toolchain has to cover, the shapes of `vecadd` and `dot` in
+`kernels/polybench/` among the staged kernels; both are data and enables
+only, under the nest controller (D147):
 
-**Elementwise (`SimpleAdder`, cf. `vecadd.py`).** N beats in, N beats out,
-L = 0, II = 1. Stateless. Chains freely with a downstream consumer, because
-each output element is produced in producer order and read exactly once.
+**Elementwise (`ElementwiseLanes`, cf. `vecadd.py`).** A beat in, a beat
+out, L = 0, II = 1, no pins. Stateless. Chains freely with a downstream
+consumer, because each output element is produced in producer order and
+read exactly once.
 
-**Reduction (`Accumulator`, cf. `dot.py`).** T beats in, 1 beat out; a beat
-of `lanes` elements goes through an adder tree in front of the register. Carries
-state across beats. It is a **chaining barrier**: no output exists until the
-last input is absorbed, so a downstream consumer cannot be fed element by
-element and gets control chaining instead of data chaining.
+**Reduction (`TreeAccumulate`, cf. `dot.py`).** T beats in, 1 beat out
+(JOB_BEATS = T); a beat of `lanes` elements goes through an adder tree in
+front of the register, which `fire` and `first` load or add to; L = 1. It is
+a **chaining barrier**: no output exists until the last input is absorbed,
+so a downstream consumer cannot be fed element by element and gets control
+chaining instead of data chaining.
 
 Everything on the W11–W14 path is a composition of these two plus a typed ALU:
 dot is elementwise-multiply feeding a reduction, softmax is three passes with
@@ -174,20 +189,23 @@ two reductions and a barrier between each.
   residual problem, and ready/valid turns it from a correctness obligation into
   a throughput knob. A module may stall; it may never produce a wrong answer
   because it stalled.
-- **`valid` never depends on `ready`.** `ready` may depend on other channels'
-  `valid` (that is how a join works). The reverse deadlocks. Both specs test
-  this explicitly.
-- **No internal storage.** Datapaths see data in flight only; address
-  generation and buffering belong to the streamer. Reduction accumulators are
-  the sanctioned exception — they hold a scalar, not a tile.
+- **`valid` does not depend on `ready`**, but for one exception: `ready` may
+  depend on other channels' `valid` (that is how a join works), and at L = 0
+  the nest controller's `out.valid` is its firing, which waits for
+  `out.ready` when it gives an output (C§17). The downstream's ready must
+  therefore not depend on `valid`; the streamer's writer FIFO's does not.
+- **No internal storage, no control in a datapath.** Datapaths see data in
+  flight only; address generation and buffering belong to the streamer, and
+  valid, ready and counting to the nest controller. Reduction accumulators
+  are the sanctioned exception to storage — they hold a scalar, not a tile.
 - **Typed lanes, a `UInt` ALU.** A block's ports are lanes of NumPy's types
   (`IntType`: `SInt` signed, `UInt` unsigned), fixed at elaboration. Each
   operand is extended to the op type by its own signedness, the op runs on
   `UInt` bits at that width (two's complement wraps alike; min and max
   compare by the op type's signedness), and the result is extended or
   wrapped into the output type (D143).
-- **Width and lane count come from the caller** (the catalogue today, a BRM's
-  design params later), never from a default. The defaults in these
+- **Width and lane count come from the caller** (`accelerator.json` through
+  the catalogue's fill rule), never from a default. The defaults in these
   constructors exist so the specs can run standalone.
 
 ## Not here yet

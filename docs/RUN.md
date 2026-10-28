@@ -215,8 +215,8 @@ open `http://localhost:8765/`:
 
 ## 3. A second kernel: vsum
 
-`recipes/vsum.json` binds vsum's reduction to the one-lane Chisel
-Accumulator. GVSoC is built now, so the whole flow takes seconds:
+`recipes/vsum.json` binds vsum's reduction to the Chisel datapath
+`TreeAccumulate` at one lane. GVSoC is built now, so the whole flow takes seconds:
 
     pixi run flow recipes/vsum.json --platform platforms/snax_forge.json
 
@@ -279,24 +279,29 @@ trace.
 
 The same design point gives the accelerator's Chisel RTL (D130), which the
 bundle carries (section 7); the flow does not call it. `gen-rtl` writes
-`rtl.json` (C§17), then elaborates it through `hw/chisel/`'s `Emit --spec`
-(sbt, so the first run fetches the Chisel jars):
+`accelerator.json` (C§17, the same bytes as gen-gvsoc's), checks it against
+the datapath catalogue, then elaborates it through `hw/chisel/`'s `Emit
+--spec` (sbt, so the first run fetches the Chisel jars):
 
     pixi run gen-rtl out/design/vecadd/design_point.json
 
     ...
-    wrote out/rtl/vecadd/rtl.json: snax_forge_shell_wrapper, ElementwiseTiledSpatial
+    wrote out/rtl/vecadd/accelerator.json: snax_forge_shell_wrapper, ElementwiseLanes
     wrote out/rtl/vecadd/sv/ElementwiseAlu_w64_add.sv
-    wrote out/rtl/vecadd/sv/ElementwiseTiledSpatial_w64_n4_t32_add.sv
-    wrote out/rtl/vecadd/sv/snax_forge_csr_manager.sv
-    wrote out/rtl/vecadd/sv/snax_forge_ctrl_adapter.sv
+    wrote out/rtl/vecadd/sv/ElementwiseLanes_i64xi64_i64_i64_n4_add.sv
+    wrote out/rtl/vecadd/sv/NestCtrl_l0_ii1_in2.sv
+    wrote out/rtl/vecadd/sv/snax_forge_acc_ctrl.sv
+    wrote out/rtl/vecadd/sv/snax_forge_csr.sv
+    wrote out/rtl/vecadd/sv/snax_forge_ctrl.sv
+    wrote out/rtl/vecadd/sv/snax_forge_datapath.sv
     wrote out/rtl/vecadd/sv/snax_forge_shell_wrapper.sv
     wrote out/rtl/vecadd/emitted.json
 
 `snax_forge_shell_wrapper` has the ports snax_cluster's
-`snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager` and
-carries its own CSR manager (D130); `hw/chisel/README.md` has the specs
-that check it.
+`snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`, plus the
+group `acc`'s `acc_busy_o` and `acc_done_o`, and carries its own CSRs
+(`snax_forge_csr`, D130); `snax_forge_acc_ctrl` is the group's controller
+around its `NestCtrl`. `hw/chisel/README.md` has the specs that check it.
 
 ## 7. Bundle for snax_cluster
 

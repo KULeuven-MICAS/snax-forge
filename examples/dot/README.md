@@ -5,7 +5,7 @@ SNAX-GVSoC path.
 
 This walk-through takes the `dot` kernel on the `small16` platform from its
 dataflow graph to two checked runs: one recipe binds the sum to a 4-lane
-adder tree, the other to the one-lane Chisel Accumulator. It shows how to
+adder tree, the other to the Chisel `TreeAccumulate` at one lane. It shows how to
 look at the graph each recipe step makes, how to run a bound graph, and
 where the reports say the two runs differ. Every number below is checked by
 `tests/flow/test_dot_example.py`, so the text stays true as the code moves.
@@ -218,7 +218,7 @@ pixi run view out/flow/dot/run out/flow/dot_serial/run
 The cycle counts compare design points on SNAX-MODEL; they are not RTL
 cycles. The model anchored against the SNAX cluster is SNAX-GVSoC (D51,
 D123), which the flow runs from FLOW3 on. The adder tree is the Chisel
-Accumulator at W lanes (D133); it runs on SNAX-GVSoC as snax-gvsoc's
+`TreeAccumulate` at W lanes (D133); it runs on SNAX-GVSoC as snax-gvsoc's
 `forge/vsum_tree` (vsum at W = 4), and no RTL run stands behind the 19
 cycles here. The two accelerators are chained through L1 on SNAX-MODEL; on
 SNAX-GVSoC two accelerators on one core are open item 79, and M13 makes such

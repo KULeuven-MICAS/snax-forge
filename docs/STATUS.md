@@ -23,7 +23,7 @@ Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 | Viewers | `snax_forge/viz/` | `tests/viz/` | |
 | Reports | `snax_forge/report/` | `tests/report/` | |
 | Examples | `examples/` | `tests/flow/test_loop1.py` (on SNAX-GVSoC, marker `gvsoc`), `tests/flow/test_dot_example.py` (skipped while dot is parked) | |
-| Chisel blocks; a design point's accelerator RTL (`rtl.json`, the shell wrapper) | `hw/chisel/`, `snax_forge/gen/rtl.py` | `hw/chisel/src/test/`, `tests/gen/test_rtl.py` | `hw/chisel/blocks.json`, `hw/chisel/src/test/resources/rtl/` |
+| Chisel datapaths and controllers; a design point's accelerator RTL (from `accelerator.json`, the shell wrapper) | `hw/chisel/`, `snax_forge/gen/rtl.py` | `hw/chisel/src/test/`, `tests/gen/test_rtl.py` | `hw/chisel/blocks.json`, `hw/chisel/src/test/resources/rtl/` |
 | SNAX-GVSoC | the submodule `gvsoc/snax-gvsoc` (its own KULeuven-MICAS repository) | in that repository (`make regress`) | its `forge/` fixtures |
 | SNAX-GVSoC from snax-forge | `gvsoc/Makefile` | | |
 | Kernels (KER0) | `kernels/` | `tests/kernels/` | |
@@ -93,9 +93,12 @@ SNAX-GVSoC's). The views label a port's packing and show padding apart; the
 FIFO slicer and packer are built and parked (open item 93). M13's B1 is
 under way: R0 wrote its design into the docs (D145–D148, C§17); R1 has
 snax-forge write `accelerator.json` and the program drive the per-group
-CSRs, `rtl.json` kept through a temporary map until R2 (`gen/rtl.py`), so
-until then a bundle's program and its RTL disagree on the CSR map and
-snax-gvsoc's `forge/` fixtures (the old files) are not reproduced.
+CSRs, and snax-gvsoc read it (R1b: the submodule, its `forge/` fixtures
+regenerated); R2 has the Chisel side match it: Emit builds from
+`accelerator.json` (`<tag>_csr`, `<tag>_ctrl` with a `NestCtrl` per group,
+`<tag>_datapath` of `ElementwiseLanes` and `TreeAccumulate`, the busy and
+done pins), `rtl.json` and the monolithic blocks gone, so a bundle's program
+and its RTL agree on the CSR map again.
 
 ## Open Items
 

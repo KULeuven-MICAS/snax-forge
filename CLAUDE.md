@@ -44,10 +44,9 @@ want to reverse, implementation details in module docstrings and tests.
   `out/forge/<name>/forge.log`, and prints snax_cluster's Verilator commands (docs/RUN.md section 8).
 - Generator: `pixi run gen-gvsoc out/design/<name>/design_point.json` writes a design point's
   cluster and streamer hjson, its `accelerator.json` (C§17), headers, `data.h` and `main.c` to
-  `out/gvsoc/<name>/`. `pixi run gen-rtl
-  out/design/<name>/design_point.json` writes its `rtl.json` and the accelerator's RTL (sbt) to
-  `out/rtl/<name>/` (GEN1). `pixi run bundle out/design/<name>/design_point.json` writes both, the
-  RTL's file list and `bundle.json` to `out/bundle/<name>/`, snax_cluster's input (C§18, D130).
+  `out/gvsoc/<name>/`. `pixi run gen-rtl out/design/<name>/design_point.json` writes the same
+  `accelerator.json` and the accelerator's RTL (sbt, `Emit --spec`) to `out/rtl/<name>/` (GEN1).
+  `pixi run bundle out/design/<name>/design_point.json` writes both, the RTL's file list and `bundle.json` to `out/bundle/<name>/`, snax_cluster's input (C§18, D130).
 - SNAX-GVSoC: `gvsoc/Makefile` (`make build`, `make sw`, `make run`), from the container's plain
   shell or through pixi (`pixi run make -C gvsoc ...`); `docs/RUN.md` walks through it.
 - Kernels: `pixi run kernels` lists the staged kernels in `kernels/` (tier, dtype, whether the

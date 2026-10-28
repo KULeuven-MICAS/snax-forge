@@ -779,15 +779,13 @@ snax-forge's check against the datapath catalogue (D130); snax_cluster only
 resolves the slot's `snax_datapath_cfg` `$ref` to it. Plain JSON, concrete
 values only, no `//` header.
 
-**Until B1's R2** Emit takes `rtl.json`: `pixi run gen-rtl DESIGN_POINT
-[OUT_DIR]` (`gen/rtl.py`, default `out/rtl/<design>/`) makes it from this
-description through a temporary map (`ElementwiseLanes` ->
-`ElementwiseTiledSpatial`, `TreeAccumulate` -> `Accumulator`, the block's
-read-write pins from `hw/chisel/blocks.json`, `loopCount` = n, `len` = T),
-the file exactly as before B1; the datapaths are the ones `gen/blocks.py`
-registers. Its CSR map (the fields, start, busy, counter) is not this
-file's, so a bundle's program and its RTL disagree until R2. The catalogue,
-the control and the wrapper below are R2's.
+`pixi run gen-rtl DESIGN_POINT [OUT_DIR]` (`gen/rtl.py`, default
+`out/rtl/<design>/`) writes the same bytes, checks every unit against the
+catalogue below (`gen.catalogue`, `gen.port_map`, `gen.params`: the
+datapath, its latency and ports, the params its fill rule gives) and runs
+`Emit --spec accelerator.json --out DIR/`. The Chisel specs' fixtures
+(`hw/chisel/src/test/resources/rtl/<design>/`) are this file, the streamer
+hjson and `vectors.json` (`gen-rtl --fixture`).
 
 | Key | Holds |
 |---|---|
@@ -947,14 +945,27 @@ ports; no `csr`, no `tie`. A datapath is data and enables only:
  }
 ```
 
-**Control** (D147). Each shell runs one nest controller, SnaxUnit's rule in
-Chisel: its digits are the folds' beat counters, JOBS outermost; it holds
-the Decoupled config (ready when idle), the join of the input valids, an
-L-deep valid register that stalls as a whole, the II gap, busy, done, the
-sticky bit and COUNTER. Lockstep is L = 0, II = 1. The accelerator is three
-modules, `<tag>_csr` (the CSRs above), `<tag>_ctrl` (the controllers) and
-`<tag>_datapath` (the units' datapaths); Emit lists every file it wrote in
-`emitted.json`, beside `sv/`.
+**Control** (D147). Each group's controller, `<tag>_<group>_ctrl`, runs
+one nest controller (`NestCtrl`), SnaxUnit's rule in Chisel: a Decoupled
+config (JOBS, JOB_BEATS; ready when idle), the join of the input valids, an
+L-deep valid register that stalls as a whole (it advances when its last
+stage is empty or `out.ready`), the II gap, busy, and a done pulse at the
+run's last push (E). To the datapath it gives `fire`, `first` (the job's
+first beat) and the register's advance. At L 0 a firing needs `out.ready`
+when it gives an output; `out.valid` is the firing then. Lockstep is L = 0,
+II = 1. The group's controller around it: START is taken when the group is
+idle and held (`csr_req_ready_o` low) until E + 1 otherwise; an empty run
+(JOBS 0, or JOB_BEATS 0) ends in its start's cycle without starting the
+nest; STATUS is bit 0 busy, bit 1 done (sticky: set by the done pulse,
+cleared by a taken start, set wins); COUNTER counts the busy cycles from the
+taken start to E. The pins are registered: `<group>_busy_o`, and
+`<group>_done_o` high in E + 1 (an empty run's start cycle + 1). The
+accelerator is three modules, `<tag>_csr` (the CSRs above by offset,
+ReqRspManager's protocol, D130: a START write with bit 0 set is that
+group's config, JOBS and JOB_BEATS as written, 1 for JOB_BEATS without
+one), `<tag>_ctrl` (the groups' controllers) and `<tag>_datapath` (the
+units' datapaths, no valid, ready or counter inside); Emit lists every file
+it wrote in `emitted.json`, beside `sv/`.
 
 **The wrapper**, `<tag>_shell_wrapper`, has the ports
 `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`: `clk_i`,
@@ -965,13 +976,13 @@ modules, `<tag>_csr` (the CSRs above), `<tag>_ctrl` (the controllers) and
 `acc2stream_<k>_data_o`, `_valid_o`, `_ready_i`, data `num_channel × 64`
 bits with lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit type
 (num_slc = 64 / w lanes a word, D142); per group `<group>_busy_o` and
-`<group>_done_o`. Inside: `CsrManager` (ReqRspManager's protocol, D130) and
-the three modules.
+`<group>_done_o`. Inside, the three modules: each outer port's data goes to
+`<tag>_datapath`, its valid and ready to `<tag>_ctrl`.
 
 **One rule on both sides.** The shell's rule is snax-gvsoc's
 `SnaxShellRule` (`snax/snax_shell.hpp`), which `SnaxShell` runs; its cases
 (`tests/snax/shell/cases/`) are checked against the rule by snax-gvsoc's
-`tb.cpp` and driven through vecadd's wrapper by `ShellCasesSpec`
+`tb.cpp` and driven through vecadd's and vsum's wrappers by `ShellCasesSpec`
 (`SNAX_GVSOC_SHELL_CASES`). The nest controller's rule is `snax/snax_unit.hpp`
 with `tests/snax/unit/cases/`, which the specs drive the controller and its
 datapaths through (`SNAX_GVSOC_UNIT_CASES`); CI's chisel job sets both to the
@@ -989,7 +1000,6 @@ snax-forge checked out. `rtl/` is removed before each run; nothing else in
 | File | Holds |
 |---|---|
 | the root | section 16's files (gen-gvsoc's), the cluster file and `accelerator.json` (section 17) among them |
-| `rtl/rtl.json` | until B1's R2, what `Emit --spec` builds from: section 17's temporary map of `accelerator.json` |
 | `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 17); firtool also writes `sv/filelist.f`, which `emitted.json` does not list |
 | `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out |
 | `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git) and `dirty` (true when the work tree has uncommitted changes, untracked files included; false outside git) |
