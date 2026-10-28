@@ -11,9 +11,9 @@ param given here (runtime params are the task's, CONTRACTS.md section 10), a
 value of the wrong type, outside the param's ``values`` or outside the
 implementation's ``supports``, and a design param with neither a value nor a
 default are errors. It then checks a bound implementation against the
-generator's blocks (``gen.BLOCKS``): its ``block`` must be registered and the
-block's adapter must take the instance, so an instance that exists can be
-generated.
+generator's datapaths (``gen.DATAPATHS``): its ``datapath`` must be registered
+and the datapath's adapter must take the instance, so an instance that exists
+can be generated.
 """
 
 from __future__ import annotations
@@ -94,7 +94,7 @@ def resolve(brm: Brm, implementation: str, params: Mapping[str, Any] | None = No
     inst = Instance(brm, implementation, values)
     _check_values(inst, what)
     _check_dataflow(inst, what)
-    _check_block(inst, what)
+    _check_datapath(inst, what)
     return inst
 
 
@@ -129,18 +129,19 @@ def _check_values(inst: Instance, what: str) -> None:
     num(inst.impl.timing.drain, "drain", 0)
 
 
-def _check_block(inst: Instance, what: str) -> None:
-    """A bound implementation's block is one the generator builds and takes this instance."""
+def _check_datapath(inst: Instance, what: str) -> None:
+    """A bound implementation's datapath is one the generator builds and takes this
+    instance."""
     if inst.impl.binding is None:
         return
-    from snax_forge.gen.blocks import BLOCKS, GenError  # gen imports brm
+    from snax_forge.gen.blocks import DATAPATHS, GenError  # gen imports brm
 
-    block = inst.impl.binding["block"]
-    if block not in BLOCKS:
+    datapath = inst.impl.binding["datapath"]
+    if datapath not in DATAPATHS:
         raise BrmError(
-            f"{what}: block {block!r} is not one the generator builds ({sorted(BLOCKS)})"
+            f"{what}: datapath {datapath!r} is not one the generator builds ({sorted(DATAPATHS)})"
         )
     try:
-        BLOCKS[block](inst)
+        DATAPATHS[datapath].fill(inst)
     except GenError as e:
-        raise BrmError(f"{what}: block {block!r} refuses the instance: {e}") from None
+        raise BrmError(f"{what}: datapath {datapath!r} refuses the instance: {e}") from None

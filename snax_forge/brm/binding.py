@@ -1,30 +1,25 @@
-"""An implementation's binding: its Chisel block and how the BRM fills it (D129).
+"""An implementation's binding: its datapath and how the BRM fills it (D129).
 
-    {"block":   "ElementwiseTiledSpatial",            the Chisel block's name
-     "args":    {"lanes": "W", "supportedOps": "op"}, its parameters, each an
-                                                      expression over design params
-     "control": "counted",                            who counts the firings
-     "csrs":    [{"field": "loopCount", "value": "n"}],
-                                                      the configuration fields in
-                                                      CSR order (start follows), each
-                                                      value an expression over params;
-                                                      several for a block with more
-                                                      than a count (the Accumulator's
-                                                      loopCount then len)
-     "wait":    "lockstep",                           when the block takes a beat
-     "ports":   {"a": "in", "out": "out"}}            optional: every BRM port -> the
-                                                      block's port of that role (by
-                                                      default the same name)
+    {"datapath":   "ElementwiseLanes",          a datapath of the catalogue
+                                                (hw/chisel/blocks.json, D147)
+     "args":       {"lanes": "W", "op": "op"},  its parameters, each an
+                                                expression over design params
+     "controller": "counted",                   the nest controller that drives
+                                                it (D147)
+     "ports":      {"a": "in", "out": "out"}}   optional: every BRM port -> the
+                                                datapath's port of that role (by
+                                                default the same name)
 
-``control`` and ``wait`` are registered kinds (D19): ``register_control``
-and ``register_wait``. ``counted`` is the only control: every block counts
-its own firings (D129). Which blocks exist is the generators' business
-(snax_forge/gen registers the GVSoC adapters), so ``block`` is only a
-name here. Every expression is
-checked and stored canonical (snax_forge/expr.py). ``ports`` is written
-only when given, in the BRM's port order; whether its names are the block's
-ports is snax_forge/gen/rtl.py's check against the block catalogue. A
-binding may be null: the implementation is not generated yet.
+``controller`` is a registered kind (D19): ``register_controller``.
+``counted`` is the only one: the shell's nest controller counts the firings,
+JOBS outermost and each fold's beats inside (D146, D147). The CSRs are not
+the binding's: they follow from the unit's group (snax_forge/gen/accelerator.py).
+Which datapaths exist is the generators' business (snax_forge/gen/blocks.py
+registers them), so ``datapath`` is only a name here. Every expression is
+checked and stored canonical (snax_forge/expr.py). ``ports`` is written only
+when given, in the BRM's port order; whether its names are the datapath's
+ports is the generator's check. A binding may be null: the implementation is
+not generated yet.
 """
 
 from __future__ import annotations
@@ -40,47 +35,33 @@ class BindingError(ValueError):
     """A binding that is malformed; brm.py turns it into a BrmError."""
 
 
-KEYS = ("block", "args", "control", "csrs", "wait")
+KEYS = ("datapath", "args", "controller")
 OPTIONAL = ("ports",)
-CSR_KEYS = ("field", "value")
 
 # name -> what it means; extended by registration (D19)
-CONTROLS: dict[str, str] = {}
-WAITS: dict[str, str] = {}
+CONTROLLERS: dict[str, str] = {}
 
 
-def register_control(name: str, meaning: str) -> None:
-    """Add a ``control`` kind."""
-    if name in CONTROLS:
-        raise ValueError(f"control {name!r} already registered")
-    CONTROLS[name] = meaning
+def register_controller(name: str, meaning: str) -> None:
+    """Add a ``controller`` kind."""
+    if name in CONTROLLERS:
+        raise ValueError(f"controller {name!r} already registered")
+    CONTROLLERS[name] = meaning
 
 
-def register_wait(name: str, meaning: str) -> None:
-    """Add a ``wait`` kind."""
-    if name in WAITS:
-        raise ValueError(f"wait {name!r} already registered")
-    WAITS[name] = meaning
-
-
-register_control(
-    "counted", "the block counts its firings; the start's configuration holds the count"
-)
-register_wait(
-    "lockstep", "a firing takes a beat on every input and room on every output in one cycle"
-)
-register_wait("pipelined", "an L-stage pipeline or output register, one firing per II (D129)")
+register_controller(
+    "counted", "the shell's nest controller counts the firings: JOBS outermost, each fold's "
+    "beats inside (D147)",
+)  # fmt: skip
 
 
 def check_binding(
-    binding: Any, design: Mapping[str, Any], params: Mapping[str, Any], ports: Sequence[str],
-    what: str,
-) -> dict[str, Any]:  # fmt: skip
+    binding: Any, design: Mapping[str, Any], ports: Sequence[str], what: str
+) -> dict[str, Any]:
     """The binding with its expressions canonical; ``BindingError`` naming what is wrong.
 
-    ``design`` are the BRM's design params (``args`` may use them), ``params``
-    all of its params (``csrs`` values may use them; ``n`` is a runtime one),
-    ``ports`` the BRM's port names in order (``ports`` maps each of them).
+    ``design`` are the BRM's design params (``args`` may use them), ``ports`` the BRM's port
+    names in order (``ports`` maps each of them).
     """
     if not isinstance(binding, Mapping):
         raise BindingError(f"{what}: must be null or an object")
@@ -88,12 +69,13 @@ def check_binding(
         check_keys(binding, [*KEYS, *OPTIONAL], what, KEYS)
     except ValueError as e:
         raise BindingError(str(e)) from None
-    block = binding["block"]
-    if not isinstance(block, str) or not block.isidentifier():
-        raise BindingError(f"{what}.block: must name a Chisel block, got {block!r}")
-    for k, kinds in (("control", CONTROLS), ("wait", WAITS)):
-        if binding[k] not in kinds:
-            raise BindingError(f"{what}.{k}: {binding[k]!r} not registered ({sorted(kinds)})")
+    datapath = binding["datapath"]
+    if not isinstance(datapath, str) or not datapath.isidentifier():
+        raise BindingError(f"{what}.datapath: must name a datapath, got {datapath!r}")
+    if binding["controller"] not in CONTROLLERS:
+        raise BindingError(
+            f"{what}.controller: {binding['controller']!r} not registered ({sorted(CONTROLLERS)})"
+        )
 
     args = binding["args"]
     if not isinstance(args, Mapping):
@@ -104,39 +86,24 @@ def check_binding(
             raise BindingError(f"{what}.args: {k!r} is not a parameter name")
         out_args[k] = _value(v, design, f"{what}.args.{k}", "design params")
 
-    csrs = binding["csrs"]
-    if not isinstance(csrs, list):
-        raise BindingError(f"{what}.csrs: must be a list of {{field, value}}")
-    out_csrs = []
-    for i, c in enumerate(csrs):
-        w = f"{what}.csrs[{i}]"
-        if not isinstance(c, Mapping) or set(c) != set(CSR_KEYS):
-            raise BindingError(f"{w}: must be {{field, value}}, got {c!r}")
-        if not isinstance(c["field"], str) or not c["field"].isidentifier():
-            raise BindingError(f"{w}.field: {c['field']!r} is not a field name")
-        out_csrs.append({"field": c["field"], "value": _value(c["value"], params, w, "params")})
-    fields = [c["field"] for c in out_csrs]
-    if len(set(fields)) != len(fields):
-        raise BindingError(f"{what}.csrs: duplicate fields {fields}")
-    out = {"block": block, "args": out_args, "control": binding["control"], "csrs": out_csrs,
-           "wait": binding["wait"]}  # fmt: skip
+    out = {"datapath": datapath, "args": out_args, "controller": binding["controller"]}
     if "ports" in binding:
         out["ports"] = _ports(binding["ports"], ports, f"{what}.ports")
     return out
 
 
 def _ports(m: Any, ports: Sequence[str], what: str) -> dict[str, str]:
-    """``ports`` checked: every BRM port once, each to a distinct block port name; in the BRM's
-    port order."""
+    """``ports`` checked: every BRM port once, each to a distinct datapath port name; in the
+    BRM's port order."""
     if not isinstance(m, Mapping):
-        raise BindingError(f"{what}: must be an object, BRM port -> block port")
+        raise BindingError(f"{what}: must be an object, BRM port -> datapath port")
     if set(m) != set(ports):
         raise BindingError(f"{what}: maps {sorted(m)}; it must map every BRM port {list(ports)}")
     for k, v in m.items():
         if not isinstance(v, str) or not v.isidentifier():
-            raise BindingError(f"{what}.{k}: {v!r} is not a block port name")
+            raise BindingError(f"{what}.{k}: {v!r} is not a datapath port name")
     if len(set(m.values())) != len(m):
-        raise BindingError(f"{what}: two BRM ports on one block port ({dict(m)})")
+        raise BindingError(f"{what}: two BRM ports on one datapath port ({dict(m)})")
     return {p: m[p] for p in ports}
 
 

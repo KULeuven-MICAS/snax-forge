@@ -123,7 +123,7 @@ def test_rate_mismatch():
 
 
 # =============================================================================
-# The block a binding names
+# The datapath a binding names
 # =============================================================================
 
 
@@ -139,17 +139,17 @@ def _bound(binding_edit=None, timing=None):
     return _brm(d)
 
 
-def test_a_bound_implementation_resolves_when_its_block_takes_it():
-    assert _bound().resolve(IMPL).impl.binding["block"] == "ElementwiseTiledSpatial"
+def test_a_bound_implementation_resolves_when_its_datapath_takes_it():
+    assert _bound().resolve(IMPL).impl.binding["datapath"] == "ElementwiseLanes"
 
 
-def test_a_block_the_generator_does_not_build_is_refused():
-    brm = _bound(lambda b: b.update(block="Gemm"))
-    with pytest.raises(BrmError, match="block 'Gemm' is not one the generator builds"):
+def test_a_datapath_the_generator_does_not_build_is_refused():
+    brm = _bound(lambda b: b.update(datapath="Gemm"))
+    with pytest.raises(BrmError, match="datapath 'Gemm' is not one the generator builds"):
         brm.resolve(IMPL)
 
 
-def test_a_block_that_refuses_the_instance_is_refused():
-    brm = _bound(timing={"latency": 1, "initiation_interval": 1, "drain": 0})
-    with pytest.raises(BrmError, match=r"refuses the instance: \[gen.timing\]"):
+def test_a_datapath_that_refuses_the_instance_is_refused():
+    brm = _bound(lambda b: b.update(args={"lanes": "W * 2", "op": "op"}))
+    with pytest.raises(BrmError, match=r"refuses the instance: \[gen.lanes\]"):
         brm.resolve(IMPL)
