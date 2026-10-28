@@ -35,7 +35,7 @@ def test_the_layout(tmp_path, fake):
         "snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json",
         "include/streamer_csr_addr_map.h", "include/acc_csr.h", "include/snitch_cluster_cfg.h",
         "include/snitch_cluster_addrmap.h", "data.h", "main.c",
-        "manifest.json", "rtl/rtl.json", *(f"rtl/{f}" for f in SV), "rtl/emitted.json",
+        "manifest.json", *(f"rtl/{f}" for f in SV), "rtl/emitted.json",
         "rtl/files.f", "bundle.json",
     ])  # fmt: skip
     assert sorted(f.relative_to(out).as_posix() for f in written) == files(out)

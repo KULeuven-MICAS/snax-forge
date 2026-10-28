@@ -7,8 +7,8 @@ import scala.jdk.CollectionConverters._
 import snax.forge.RepoPaths
 
 /** The fixtures of the shell specs, `hw/chisel/src/test/resources/rtl/<design>/`, written by the Python side
-  * (`snax_forge/gen/rtl.py`'s `write_fixture`, checked byte for byte by `tests/gen/test_rtl.py`): `rtl.json`, the
-  * design's streamer hjson (`<tag>_streamer.hjson`, as gen-gvsoc writes it) and `vectors.json`.
+  * (`snax_forge/gen/rtl.py`'s `write_fixture`, checked byte for byte by `tests/gen/test_rtl.py`): `accelerator.json`
+  * (the same bytes gen-gvsoc writes), the design's streamer hjson (`<tag>_streamer.hjson`) and `vectors.json`.
   */
 object RtlFixtures {
 
@@ -18,7 +18,7 @@ object RtlFixtures {
   case class Task(name: String, csrs: Seq[(String, Long)], firings: Int, counter: Long)
 
   case class Fixture(name: String, folder: Path) {
-    lazy val spec: RtlSpec = RtlSpec.load(folder.resolve("rtl.json"))
+    lazy val spec: AcceleratorSpec = AcceleratorSpec.load(folder.resolve("accelerator.json"))
 
     /** The streamer hjson: `//` comment lines, then JSON. */
     lazy val streamer: ujson.Value = ujson.read(

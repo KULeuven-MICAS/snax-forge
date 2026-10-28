@@ -8,9 +8,11 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.Emit
 
-/** Every fixture elaborates through `Emit --spec` into `<tag>_shell_wrapper` with exactly the ports
+/** Every fixture elaborates through `Emit --spec accelerator.json` into `<tag>_shell_wrapper` with exactly the ports
   * `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager` (snax_cluster `hw/templates/`, at 05615e4), for
-  * the fixture's streamer hjson; and `emitted.json` lists files that exist, the wrapper's among them.
+  * the fixture's streamer hjson, and per group `<group>_busy_o` and `<group>_done_o` (D146), which the template leaves
+  * unconnected; and `emitted.json` lists files that exist, the wrapper's among them, and the three modules `<tag>_csr`,
+  * `<tag>_ctrl` and `<tag>_datapath`.
   *
   * The template's ports, read off its `snax_disable_csr_manager` branch: `clk_i`, `rst_ni`; per writer mover k
   * (`data_writer_params`) `acc2stream_<k>_data_o` of `num_channel[k] * tcdm_data_width` bits, `_valid_o`, `_ready_i`;
@@ -54,7 +56,8 @@ class ShellPortsSpec extends AnyFlatSpec {
       ("csr_rsp_valid_o", "output", 1),
       ("csr_rsp_ready_i", "input", 1)
     )
-    clock ++ writers ++ readers ++ csr
+    val pins = f.spec.groups.flatMap(g => Seq((s"${g.name}_busy_o", "output", 1), (s"${g.name}_done_o", "output", 1)))
+    clock ++ writers ++ readers ++ csr ++ pins
   }
 
   private val Port = raw"\s*(input|output)?\s*(?:\[(\d+):0\])?\s*(\w+),?\s*".r
@@ -81,8 +84,10 @@ class ShellPortsSpec extends AnyFlatSpec {
   for (f <- RtlFixtures.all) {
     it should s"give ${f.name} the template's ports" in {
       val out    = Files.createTempDirectory(s"emit-${f.name}")
-      val done   = Emit.emitSpec(f.folder.resolve("rtl.json"), out)
+      val done   = Emit.emitSpec(f.folder.resolve("accelerator.json"), out)
       assert(done.top == s"${f.spec.tag}_shell_wrapper")
+      val tag    = f.spec.tag
+      assert(Seq(s"${tag}_csr", s"${tag}_ctrl", s"${tag}_datapath").forall(done.modules.contains), done.modules)
       val listed = ujson.read(Files.readString(out.resolve("emitted.json")))("files").arr.map(_.str)
       assert(listed.nonEmpty && listed.forall(p => Files.isRegularFile(out.resolve(p))), s"emitted.json: $listed")
       val got  = header(out.resolve(s"sv/${done.top}.sv"), done.top)

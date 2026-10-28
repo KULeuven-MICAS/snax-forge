@@ -8,7 +8,7 @@ import chisel3.RawModule
 import circt.stage.ChiselStage
 import snax.forge.elementwise.{ElementwiseLoop, ElementwiseOp, ElementwiseSpatial, ElementwiseTiledSpatial}
 import snax.forge.samples.{Accumulator, SimpleAdder}
-import snax.forge.shell.{RtlSpec, ShellWrapper}
+import snax.forge.shell.{AcceleratorSpec, ShellWrapper}
 import snax.forge.stream.{FifoPacker, FifoSlicer}
 
 /** Elaboration entry point: Chisel -> CHIRRTL -> firtool -> SystemVerilog.
@@ -30,8 +30,8 @@ import snax.forge.stream.{FifoPacker, FifoSlicer}
   * pixi run chisel-gen -- --list              # names only, no elaboration
   * pixi run chisel-gen -- ElementwiseLoop     # substring match, so both loop configs
   * pixi run chisel-gen -- --out /tmp/rtl Tiled
-  * pixi run chisel-gen -- --describe          # the block catalogue (Blocks), as blocks.json holds it
-  * pixi run chisel-gen -- --spec out/rtl/vecadd/rtl.json   # the accelerator of an rtl.json (gen-rtl)
+  * pixi run chisel-gen -- --describe          # the datapath catalogue (Datapaths), as blocks.json holds it
+  * pixi run chisel-gen -- --spec out/rtl/vecadd/accelerator.json   # the accelerator of an accelerator.json (gen-rtl)
   * }}}
   */
 object Emit {
@@ -201,13 +201,13 @@ object Emit {
   /** What `emitSpec` wrote: the top module, every module, and the files (those in `sv/`, then `emitted.json`). */
   case class Emitted(top: String, modules: Seq[String], files: Seq[Path])
 
-  /** `--spec <rtl.json> [--out DIR]`: the accelerator of `rtl.json` (C§17, D130), `<tag>_shell_wrapper` and what it
-    * holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of `rtl.json`), and
-    * `DIR/emitted.json`: `top`, `modules` and `files` (paths from `DIR`). The files a previous `emitted.json` lists are
-    * removed first, so `sv/` holds this spec's files only.
+  /** `--spec <accelerator.json> [--out DIR]`: the accelerator of `accelerator.json` (C§17, D145), `<tag>_shell_wrapper`
+    * and what it holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of the file), and
+    * `DIR/emitted.json`: `rtl` (the file it was built from), `top`, `modules` and `files` (paths from `DIR`). The files
+    * a previous `emitted.json` lists are removed first, so `sv/` holds this spec's files only.
     */
   def emitSpec(specPath: Path, dir: Path): Emitted = {
-    val spec    = RtlSpec.load(specPath)
+    val spec    = AcceleratorSpec.load(specPath)
     val sv      = dir.resolve("sv")
     val listing = dir.resolve("emitted.json")
     if (Files.exists(listing))
@@ -241,8 +241,9 @@ object Emit {
 
   private val ModuleLine = raw"module (\w+)\b.*".r
 
-  /** `--describe`: the block catalogue from the registry (`Blocks`), as `hw/chisel/blocks.json` holds it (D130). */
-  def describe: String = ujson.write(Blocks.describe, indent = 1)
+  /** `--describe`: the datapath catalogue from the registry (`Datapaths`), as `hw/chisel/blocks.json` holds it (D130).
+    */
+  def describe: String = ujson.write(Datapaths.describe, indent = 1)
 
   /** `--out <dir>`, else `$SNAX_FORGE_HW_OUT`, else `out/hw` under the repo root.
     *

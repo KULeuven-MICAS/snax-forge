@@ -162,12 +162,12 @@ def fake_emit(monkeypatch) -> SimpleNamespace:
     emitted.json (``SV`` unless a test changes it); the checkout is ``COMMIT``, clean."""
     fake = SimpleNamespace(listed=list(SV))
 
-    def elaborate(rtl_json: Path, out_dir: Path) -> list[Path]:
-        tag = json.loads(rtl_json.read_text())["tag"]
+    def elaborate(spec_json: Path, out_dir: Path) -> list[Path]:
+        tag = json.loads(spec_json.read_text())["tag"]
         for f in SV:
             (out_dir / f).parent.mkdir(parents=True, exist_ok=True)
             (out_dir / f).write_text(f"module {Path(f).stem};\nendmodule\n")
-        emitted = {"rtl": str(rtl_json), "top": f"{tag}_shell_wrapper",
+        emitted = {"rtl": str(spec_json), "top": f"{tag}_shell_wrapper",
                    "modules": [Path(f).stem for f in fake.listed], "files": fake.listed}  # fmt: skip
         (out_dir / EMITTED_JSON).write_text(json.dumps(emitted))
         return [*(out_dir / f for f in fake.listed), out_dir / EMITTED_JSON]

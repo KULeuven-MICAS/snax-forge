@@ -1,23 +1,23 @@
 package snax.forge.shell
 
 import chisel3._
-import chisel3.util.experimental.BoringUtils
 import chiseltest._
 
 import snax.forge.{Sink, Source}
 
 /** `<tag>_shell_wrapper` under chiseltest, which drives a `Module`: the clock and an active-high reset become `clk_i`
-  * and `rst_ni`, and the wrapper's other ports are this harness's `io`, with the same names. With `tapBusy`, `busy` is
-  * the unit's busy every cycle (the busy CSR's source, tapped from the wrapper), so a spec reads it without a CSR read.
+  * and `rst_ni`, and the wrapper's other ports are this harness's `io`, with the same names, the groups' pins
+  * (`<group>_busy_o`, `<group>_done_o`) among them, so a spec reads a group's busy without a CSR read.
   */
-class ShellHarness(spec: RtlSpec, tapBusy: Boolean = false) extends Module {
+class ShellHarness(val spec: AcceleratorSpec) extends Module {
   private val wrapper = Module(new ShellWrapper(spec))
   wrapper.clk_i  := clock
   wrapper.rst_ni := !reset.asBool
   val io = IO(chiselTypeOf(wrapper.io))
   io <> wrapper.io
-  val busy: Option[Bool] = Option.when(tapBusy)(IO(Output(Bool())))
-  busy.foreach(_ := BoringUtils.bore(wrapper.unitBusy))
+
+  /** A CSR's offset by name in a group (the first group by default). */
+  def csr(name: String, group: Int = 0): Int = spec.groups(group).csr(name).get.offset
 }
 
 /** A core and a streamer around a `ShellHarness`, one call per cycle.

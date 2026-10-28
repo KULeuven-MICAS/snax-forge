@@ -3,8 +3,8 @@
     describe(point, point_path) -> Accelerator
 
 snax-forge writes it once (gvsoc.py, at the root of every gen-gvsoc folder and
-bundle) and SNAX-GVSoC reads it (snax-gvsoc ``snax/snax_cfg.py``); Emit reads
-it from B1's R2 on, ``rtl.json`` until then (rtl.py). Plain JSON, concrete
+bundle; gen-rtl the same bytes, rtl.py) and SNAX-GVSoC (snax-gvsoc
+``snax/snax_cfg.py``) and Emit (``hw/chisel/``) read it. Plain JSON, concrete
 values only, in this key order:
 
     name          the accelerator: the header's <ACC>; ``encapsulate``'s

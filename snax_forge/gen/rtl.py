@@ -1,77 +1,42 @@
-"""A design point -> its accelerator's RTL spec, ``rtl.json`` (D130, C§17).
+"""A design point -> its accelerator's RTL, from ``accelerator.json`` (D130, D145, C§17).
 
-    write_rtl(design_point, out_dir, root=None) -> RtlSpec
+    accelerator_spec(design_point, root=None) -> Accelerator
+    write_accelerator(design_point, out_dir, root=None) -> Accelerator
     vectors(design_point, root=None) -> dict
     write_fixture(design_point, out_dir, root=None) -> list[str]
     python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]    (pixi gen-rtl)
 
-``rtl.json`` is the boundary between the Python side and ``hw/chisel/``:
-concrete values only, which ``Emit --spec`` reads to build
-``<tag>_shell_wrapper``. Python resolves and checks; Scala only constructs.
+``accelerator.json`` is the boundary between the Python side and ``hw/chisel/``: the one
+description of the accelerator (accelerator.py), the same bytes gen-gvsoc writes, which
+``Emit --spec`` reads to build ``<tag>_shell_wrapper`` (its ``<tag>_csr``, ``<tag>_ctrl`` and
+``<tag>_datapath``, D147). Python resolves and checks; Scala only constructs.
 
-**Until B1's R2** Emit still takes ``rtl.json``, made from the accelerator's
-description (accelerator.py) through a temporary map, ``RTL_BLOCKS``: each
-datapath -> the Chisel block that builds it today (``ElementwiseLanes`` ->
-``ElementwiseTiledSpatial``, ``TreeAccumulate`` -> ``Accumulator``) and that
-block's read-write fields with their values (``loopCount`` = n, the
-Accumulator's ``len`` = T). The file is exactly what it was before B1: its
-CSR map (fields, start, busy, counter) is not accelerator.json's, so a
-bundle's program and its RTL disagree until R2.
+**The checks**, against the datapath catalogue ``hw/chisel/blocks.json`` (the signature of each
+Chisel datapath, equal to ``Emit --describe``), each a ``GenError``: first accelerator.py's
+(``gen.instances``, ``gen.binding``, ``gen.datapath``, ``gen.controller``, ``gen.drain``,
+``gen.timing`` and the datapath's adapter's), then per unit
 
-**What it holds** (C§17): ``design_point`` (its path from the root, as
-gvsoc.py names it), ``tag`` (the platform's ``accelerator_slot``) and
-``units``, one per accelerated instance (more than one is ``gen.instances``,
-lower/c.py's ``accelerator``), each with
+    gen.catalogue    the datapath is not in the catalogue, or the unit's timing.latency is not
+                     the catalogue's latency
+    gen.port_map     the unit's datapath ports are not the catalogue's ports, each once, or a
+                     direction differs (inputs and outputs give the unit's)
+    gen.params       a param the fill rule gives that is not of its type or not among its values
+                     (a dtype, an op, lanes below min)
 
-    name     the instance
-    block    ``RTL_BLOCKS``' block for the unit's datapath
-    params   the block's params, from the unit of accelerator.json (the
-             same lanes, dtypes, opType and op) by its resolver
-             (``RTL_PARAMS``):
-               ElementwiseTiledSpatial  inTypes the inputs' dtypes (the
-                                        node's containers'), opType their
-                                        NumPy result type
-                                        (``brm.dtypes.result_type``, D143),
-                                        outType the output's, lanes,
-                                        loopCountWidth 32 (a CSR),
-                                        supportedOps [op]
-               Accumulator              inType the input's dtype, outType
-                                        the output's, lanes
-    ports    ``{brm, block}`` per BRM port in the BRM's port order (the
-             streamer's reader and writer order): the unit's ports' ``port``
-    csrs     ``rw``: the catalogue's read-write pins with their widths, then
-             ``start``, then ``ro``: busy and the counter (D130); ``tie``: the
-             catalogue's tied pins with their values
+and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or did not write a file
+its ``emitted.json`` lists.
 
-**The checks**, against the block catalogue ``hw/chisel/blocks.json`` (the
-signature of each Chisel block, equal to ``Emit --describe``), each a
-``GenError``: first accelerator.py's (``gen.instances``, ``gen.binding``,
-``gen.datapath``, ``gen.drain``, ``gen.timing`` and the datapath's adapter's),
-then
+**The fill rule** (the catalogue's ``fill``): ``inputs.dtype`` the input ports' dtypes in order
+(a ``dtypes`` param) or the one input's (a ``dtype``), ``outputs.dtype`` the output's,
+``inputs.lanes`` the inputs' lanes, ``unit.opType`` and ``unit.params.op`` the unit's.
 
-    gen.catalogue    the datapath has no block in ``RTL_BLOCKS``, or the block
-                     is not in the catalogue, or has no resolver
-    gen.params       a param missing, or one the block does not have
-    gen.param_type   a param not of its type (int, bool, ops, dtype, dtypes)
-    gen.param_limit  an int outside min and max, ops empty, repeated or not
-                     among the catalogue's, a dtype not among its names
-    gen.port_map     a BRM port onto no block port, a block port left open,
-                     two BRM ports on one, or a direction that differs
-    gen.csr_pins     the read-write pins are not ``RTL_BLOCKS``' fields, or a
-                     width is not 1 to 32 bits
-    gen.tie          a tie's ops param holds more than one op
-
-and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or
-did not write a file its ``emitted.json`` lists.
-
-**The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/
-<design>/`` holds ``rtl.json``, the design's streamer hjson (gvsoc.py's) and
-``vectors.json``, which the Chisel specs drive the wrapper with: per BRM port
-its data.h array (an input, or the output's golden) and how many beats a
-task moves (lane i of beat t is element t * lanes + i), and per task the
-shell's field values and the counter worked from SnaxShell's rules
-(snax-gvsoc ``snax/snax_shell.cpp``) with an always-ready streamer
-(``counter``), the working in ``working``.
+**The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds
+``accelerator.json``, the design's streamer hjson (gvsoc.py's) and ``vectors.json``, which the
+Chisel specs drive the wrapper with: per BRM port its data.h array (an input, or the output's
+golden) and how many beats a task moves (lane i of beat t is element t * lanes + i), and per
+task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_values``), its firings and the counter
+worked from the nest controller's rule with an always-ready streamer (``counter``), the working
+in ``working``.
 """
 
 from __future__ import annotations
@@ -81,127 +46,24 @@ import json
 import subprocess
 import sys
 import tempfile
-from collections.abc import Callable, Mapping
-from dataclasses import dataclass, field
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from snax_forge.brm import Instance
-from snax_forge.common import JsonFile, check_keys, cwd_relative, repo_root, to_json
+from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
-from snax_forge.lower.c import fold_rate
+from snax_forge.lower.c import job_values
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure
 
-from .accelerator import Unit
+from .accelerator import ACCELERATOR_JSON, Accelerator, Unit
 from .blocks import GenError
 from .data import arrays
 from .gvsoc import ROOT, cli, generate, instance, load_point, out_dir
 
 OUT = ROOT / "out" / "rtl"
 CATALOGUE = repo_root() / "hw" / "chisel" / "blocks.json"
-RTL_JSON = "rtl.json"
 VECTORS_JSON = "vectors.json"
-# A CSR is 32 bits: the widest read-write pin, and an elementwise trip counter's width
-CSR_BITS = 32
-# The read-only CSRs after start (D130)
-RO = ["busy", "counter"]
-
-
-@dataclass(frozen=True)
-class RtlUnit:
-    """One unit of ``rtl.json``; see the module doc."""
-
-    name: str
-    block: str
-    params: dict[str, Any]
-    ports: list[tuple[str, str]]
-    rw: list[tuple[str, int]]
-    start: str
-    tie: dict[str, int] = field(default_factory=dict)
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "name": self.name,
-            "block": self.block,
-            "params": dict(self.params),
-            "ports": [{"brm": b, "block": k} for b, k in self.ports],
-            "csrs": {
-                "rw": [{"pin": p, "width": w} for p, w in self.rw],
-                "start": self.start,
-                "ro": list(RO),
-                "tie": dict(self.tie),
-            },
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> RtlUnit:
-        c = d["csrs"]
-        return cls(d["name"], d["block"], dict(d["params"]),
-                   [(p["brm"], p["block"]) for p in d["ports"]],
-                   [(r["pin"], r["width"]) for r in c["rw"]], c["start"], dict(c["tie"]))  # fmt: skip
-
-
-@dataclass(frozen=True)
-class RtlSpec(JsonFile):
-    """``rtl.json``; see the module doc."""
-
-    design_point: str
-    tag: str
-    units: list[RtlUnit]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"design_point": self.design_point, "tag": self.tag,
-                "units": [u.to_dict() for u in self.units]}  # fmt: skip
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> RtlSpec:
-        return cls(d["design_point"], d["tag"], [RtlUnit.from_dict(u) for u in d["units"]])
-
-
-# =============================================================================
-# The params of each block
-# =============================================================================
-
-Resolver = Callable[[Instance, Unit], dict[str, Any]]
-RTL_PARAMS: dict[str, Resolver] = {}
-
-# The datapath -> the Chisel block that builds it until R2 and the block's read-write
-# fields, loopCount = n and len = T (module doc)  # removed in B1 R2
-RTL_BLOCKS: dict[str, tuple[str, list[str]]] = {  # removed in B1 R2
-    "ElementwiseLanes": ("ElementwiseTiledSpatial", ["loopCount"]),
-    "TreeAccumulate": ("Accumulator", ["loopCount", "len"]),
-}
-
-
-def register_rtl_params(block: str, resolver: Resolver) -> None:
-    """Add the resolver of a block's params (``RTL_BLOCKS``' block) from its unit."""
-    if block in RTL_PARAMS:
-        raise ValueError(f"block {block!r} already has an RTL resolver")
-    RTL_PARAMS[block] = resolver
-
-
-def _sides(inst: Instance, u: Unit) -> tuple[list[Any], list[Any]]:
-    """The unit's input and output ports (accelerator.json's), in the BRM's port order."""
-    ports = inst.brm.interface.ports
-    return ([u.ports[p.name] for p in ports if p.direction == "in"],
-            [u.ports[p.name] for p in ports if p.direction == "out"])  # fmt: skip
-
-
-def _elementwise_tiled_spatial(inst: Instance, u: Unit) -> dict[str, Any]:
-    ins, (out,) = _sides(inst, u)
-    return {"inTypes": [p.dtype for p in ins], "opType": u.op_type, "outType": out.dtype,
-            "lanes": out.lanes, "loopCountWidth": CSR_BITS,
-            "supportedOps": [u.params["op"]]}  # fmt: skip
-
-
-def _accumulator(inst: Instance, u: Unit) -> dict[str, Any]:
-    (a,), (out,) = _sides(inst, u)
-    return {"inType": a.dtype, "outType": out.dtype, "lanes": a.lanes}
-
-
-register_rtl_params("ElementwiseTiledSpatial", _elementwise_tiled_spatial)
-register_rtl_params("Accumulator", _accumulator)
 
 
 # =============================================================================
@@ -210,147 +72,91 @@ register_rtl_params("Accumulator", _accumulator)
 
 
 def catalogue() -> dict[str, Any]:
-    """The block catalogue, ``hw/chisel/blocks.json``."""
+    """The datapath catalogue, ``hw/chisel/blocks.json``."""
     return json.loads(CATALOGUE.read_text())
 
 
-def check_params(block: str, params: Mapping[str, Any], sig: Mapping[str, Any]) -> None:
-    """``params`` against the block's catalogue params ``sig``; see the module doc."""
-    try:
-        check_keys(params, list(sig), f"{block} params (the catalogue's)", list(sig))
-    except ValueError as e:
-        raise GenError("gen.params", str(e)) from None
-    for k, t in sig.items():
-        v, what = params[k], f"{block}.{k}"
-        if t["type"] == "int":
-            if type(v) is not int:
-                raise GenError("gen.param_type", f"{what}: {v!r} is not an int")
-            if v < t["min"] or ("max" in t and v > t["max"]):
-                raise GenError(
-                    "gen.param_limit", f"{what}: {v} outside [{t['min']}, {t.get('max', '')}]"
-                )
-        elif t["type"] == "bool":
-            if type(v) is not bool:
-                raise GenError("gen.param_type", f"{what}: {v!r} is not a bool")
-        elif t["type"] in ("dtype", "dtypes"):
-            vs = v if t["type"] == "dtypes" else [v]
-            if not isinstance(vs, list) or not all(isinstance(d, str) for d in vs):
-                raise GenError("gen.param_type", f"{what}: {v!r} is not a {t['type']}")
-            if not set(vs) <= set(t["values"]):
-                raise GenError("gen.param_limit", f"{what}: {v} must be among {list(t['values'])}")
-        elif t["type"] == "ops":
-            if not isinstance(v, list) or not all(isinstance(o, str) for o in v):
-                raise GenError("gen.param_type", f"{what}: {v!r} is not a list of op names")
-            if not v or len(set(v)) != len(v) or not set(v) <= set(t["values"]):
-                raise GenError(
-                    "gen.param_limit", f"{what}: {v} must be distinct ops of {list(t['values'])}"
-                )
+def fill(acc: Accelerator, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
+    """The datapath's params of ``unit`` by the catalogue's fill rule (module doc)."""
+    ins = [p.split(".", 1)[1] for p in acc.inputs if p.split(".")[0] == unit.name]
+    outs = [p.split(".", 1)[1] for p in acc.outputs if p.split(".")[0] == unit.name]
+    out = {}
+    for name, rule in sig["fill"].items():
+        kind = sig["params"][name]["type"]
+        if rule == "inputs.dtype":
+            dtypes = [unit.ports[p].dtype for p in ins]
+            out[name] = dtypes if kind == "dtypes" else dtypes[0]
+        elif rule == "outputs.dtype":
+            out[name] = unit.ports[outs[0]].dtype
+        elif rule == "inputs.lanes":
+            out[name] = unit.ports[ins[0]].lanes
+        elif rule == "unit.opType":
+            out[name] = unit.op_type
+        elif rule == "unit.params.op":
+            out[name] = unit.params.get("op")
         else:
             raise GenError(
-                "gen.param_type", f"{what}: the catalogue's type {t['type']!r} is unknown"
+                "gen.catalogue", f"{unit.datapath}.{name}: the fill rule {rule!r} is unknown"
             )
+    return out
 
 
-def check_ports(block: str, ports: list[tuple[str, str]], directions: Mapping[str, str],
-                sig: Mapping[str, str]) -> None:  # fmt: skip
-    """The BRM -> block port map against the catalogue's ports ``sig``; ``directions`` the BRM
-    ports' (``in``, ``out``)."""
-    used = [k for _, k in ports]
-    for b, k in ports:
-        if k not in sig:
-            raise GenError(
-                "gen.port_map", f"{block}: BRM port {b} onto {k!r}, not one of {list(sig)}"
-            )
-        if sig[k] != directions[b]:
-            raise GenError(
-                "gen.port_map", f"{block}: BRM port {b} ({directions[b]}) onto {k} ({sig[k]})"
-            )
-    if len(set(used)) != len(used) or set(used) != set(sig):
-        raise GenError(
-            "gen.port_map", f"{block}: BRM ports onto {used}; every block port {list(sig)} once"
-        )
+def check_params(datapath: str, params: Mapping[str, Any], sig: Mapping[str, Any]) -> None:
+    """``params`` (``fill``'s) against the datapath's catalogue params ``sig``."""
+    for k, t in sig.items():
+        v, what = params[k], f"{datapath}.{k}"
+        if t["type"] == "int":
+            if type(v) is not int or v < t["min"]:
+                raise GenError("gen.params", f"{what}: {v!r} is not an int of at least {t['min']}")
+        elif t["type"] in ("dtype", "dtypes", "op"):
+            vs = v if t["type"] == "dtypes" else [v]
+            if not isinstance(vs, list) or not vs or not set(vs) <= set(t["values"]):
+                raise GenError("gen.params", f"{what}: {v!r} must be among {list(t['values'])}")
+        else:
+            raise GenError("gen.params", f"{what}: the catalogue's type {t['type']!r} is unknown")
 
 
-def resolve_csrs(
-    block: str, params: Mapping[str, Any], fields: list[str], csr: Mapping[str, Any],
-    ops: Mapping[str, Mapping[str, int]],
-) -> tuple[list[tuple[str, int]], dict[str, int]]:  # fmt: skip
-    """The read-write pins with their widths and the ties with their values, from the
-    catalogue's ``csr`` section, checked against the binding's ``fields``; ``ops`` the ops
-    params' encodings."""
-    pins = [r["pin"] for r in csr["rw"]]
-    if pins != fields:
-        raise GenError(
-            "gen.csr_pins", f"{block}: the read-write pins are {pins}, the binding's csrs {fields}"
-        )
-    rw = []
-    for r in csr["rw"]:
-        w = r["width"] if isinstance(r["width"], int) else params[r["width"]]
-        if not 1 <= w <= CSR_BITS:
-            raise GenError("gen.csr_pins", f"{block}.{r['pin']}: width {w} is not 1 to {CSR_BITS}")
-        rw.append((r["pin"], w))
-    tie = {}
-    for t in csr["tie"]:
-        held = params[t["op"]]
-        if len(held) != 1:
-            raise GenError(
-                "gen.tie", f"{block}.{t['pin']}: tied to {t['op']}'s op, which holds {held}; one "
-                "op is a fixed-function unit",
-            )  # fmt: skip
-        tie[t["pin"]] = ops[t["op"]][held[0]]
-    return rw, tie
+def check_unit(acc: Accelerator, unit: Unit, cat: Mapping[str, Any]) -> None:
+    """One unit against the catalogue; see the module doc."""
+    if unit.datapath not in cat:
+        raise GenError("gen.catalogue", f"unit {unit.name}: datapath {unit.datapath!r} is not in "
+                       f"the catalogue {sorted(cat)}")  # fmt: skip
+    sig = cat[unit.datapath]
+    if unit.latency != sig["latency"]:
+        raise GenError("gen.catalogue", f"unit {unit.name}: timing.latency {unit.latency}, "
+                       f"{unit.datapath}'s is {sig['latency']}")  # fmt: skip
+    dirs = {**{p.split(".", 1)[1]: "in" for p in acc.inputs if p.split(".")[0] == unit.name},
+            **{p.split(".", 1)[1]: "out" for p in acc.outputs if p.split(".")[0] == unit.name}}  # fmt: skip
+    used = [p.port for p in unit.ports.values()]
+    if sorted(used) != sorted(sig["ports"]):
+        raise GenError("gen.port_map", f"unit {unit.name}: ports onto {used}; {unit.datapath}'s "
+                       f"are {list(sig['ports'])}, each once")  # fmt: skip
+    for brm, p in unit.ports.items():
+        if dirs.get(brm) != sig["ports"][p.port]:
+            raise GenError("gen.port_map", f"unit {unit.name}: BRM port {brm} ({dirs.get(brm)}) onto "
+                           f"{p.port} ({sig['ports'][p.port]})")  # fmt: skip
+    check_params(unit.datapath, fill(acc, unit, sig), sig["params"])
 
 
-def rtl_fields(inst: Instance, unit: Unit, values: dict[str, int]) -> dict[str, int]:
-    """The block's read-write fields with their values for a task's ``values`` (n, the
-    rates): loopCount = n, len = T."""  # removed in B1 R2
-    rate = fold_rate(inst)
-    have = {"loopCount": values["n"], "len": None if rate is None else values[rate]}
-    return {f: have[f] for f in RTL_BLOCKS[unit.datapath][1]}
+def accelerator_spec(design_point: str | Path, root: str | Path | None = None,
+                     cat: Mapping[str, Any] | None = None) -> Accelerator:  # fmt: skip
+    """The design point's ``accelerator.json`` (accelerator.py), checked against the catalogue."""
+    _, _, acc = load_point(design_point, ROOT if root is None else Path(root))
+    cat = catalogue() if cat is None else cat
+    for g in acc.groups:
+        for u in g.units:
+            check_unit(acc, u, cat)
+    return acc
 
 
-def rtl_unit(name: str, inst: Instance, unit: Unit, cat: Mapping[str, Any]) -> RtlUnit:
-    """One unit, resolved and checked; see the module doc."""
-    block = RTL_BLOCKS.get(unit.datapath, (None,))[0]  # removed in B1 R2
-    if block not in cat or block not in RTL_PARAMS:
-        raise GenError(
-            "gen.catalogue", f"{inst.brm.name}.{inst.implementation}: datapath {unit.datapath!r}"
-            f"'s block {block!r} is not in the catalogue {sorted(cat)} with an RTL resolver "
-            f"{sorted(RTL_PARAMS)}",
-        )  # fmt: skip
-    sig = cat[block]
-    params = RTL_PARAMS[block](inst, unit)
-    check_params(block, params, sig["params"])
-    brm_ports = inst.brm.interface.ports
-    ports = [(p.name, unit.ports[p.name].port) for p in brm_ports]
-    check_ports(block, ports, {p.name: p.direction for p in brm_ports}, sig["ports"])
-    ops = {k: t["values"] for k, t in sig["params"].items() if t["type"] == "ops"}
-    rw, tie = resolve_csrs(block, params, RTL_BLOCKS[unit.datapath][1], sig["csr"], ops)
-    return RtlUnit(name, block, params, ports, rw, sig["csr"]["start"], tie)
-
-
-# =============================================================================
-# rtl.json
-# =============================================================================
-
-
-def rtl_spec(design_point: str | Path, root: str | Path | None = None,
-             cat: Mapping[str, Any] | None = None) -> RtlSpec:  # fmt: skip
-    """The design point's ``rtl.json``, checked; see the module doc."""
-    shown, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    name, inst = instance(point)
-    unit = rtl_unit(name, inst, acc.groups[0].units[0], catalogue() if cat is None else cat)
-    return RtlSpec(shown, point.platform.accelerator_slot, [unit])
-
-
-def write_rtl(design_point: str | Path, out_dir: str | Path,
-              root: str | Path | None = None) -> RtlSpec:  # fmt: skip
-    """Write ``rtl.json`` to ``out_dir``; see the module doc."""
-    spec = rtl_spec(design_point, root)
+def write_accelerator(design_point: str | Path, out_dir: str | Path,
+                      root: str | Path | None = None) -> Accelerator:  # fmt: skip
+    """Write ``accelerator.json`` to ``out_dir``, checked; the same bytes as gen-gvsoc's."""
+    acc = accelerator_spec(design_point, root)
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    (out / RTL_JSON).write_text(spec.to_json())
-    return spec
+    (out / ACCELERATOR_JSON).write_text(acc.to_json())
+    return acc
 
 
 # =============================================================================
@@ -359,22 +165,21 @@ def write_rtl(design_point: str | Path, out_dir: str | Path,
 
 
 def counter(unit: Unit, n: int) -> tuple[int, str]:
-    """The counter SnaxShell gives a task of ``n`` firings with an always-ready streamer, and
-    the working."""
-    shell = ("SnaxShell: the counter is reset by the accepted start and counts each busy cycle; "
-             "busy rises the cycle after the start")  # fmt: skip
+    """The counter a task of ``n`` firings gives with an always-ready streamer, and the working."""
+    shell = ("The group's COUNTER is reset by the accepted start and counts each busy cycle; busy "
+             "rises the cycle after the start")  # fmt: skip
     if unit.latency == 0:  # lockstep
         return n, (
-            f"{shell}. Lockstep, inputs always valid and the output always ready: a firing "
-            f"every busy cycle, the {n}th the run's last: {n} busy cycles"
+            f"{shell}. L 0, II 1, inputs always valid and the output always ready: a firing every "
+            f"busy cycle, the {n}th the run's last: {n} busy cycles"
         )
     last = (n - 1) * unit.ii + 1
     busy = last + unit.latency
     return busy, (
-        f"{shell}. Pipelined, L {unit.latency}, II {unit.ii}, drain 0, inputs always valid and "
-        f"the output always ready: firing k (from 0) in busy cycle 1 + {unit.ii} * k, the last ({n - 1}) in "
-        f"{last}, its result pushed {unit.latency} later, the run's last cycle (a sum before it "
-        f"leaves while the next input is taken): {busy} busy cycles"
+        f"{shell}. L {unit.latency}, II {unit.ii}, inputs always valid and the output always ready: "
+        f"firing k (from 0) in busy cycle 1 + {unit.ii} * k, the last ({n - 1}) in {last}, its "
+        f"result pushed {unit.latency} later, the run's last cycle (a sum before it leaves while the "
+        f"next input is taken): {busy} busy cycles"
     )
 
 
@@ -398,29 +203,28 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         rate = 1 if p.rate == 1 else task.values[p.rate]
         ports.append({"port": p.name, "array": array, "lanes": inst.lanes(p.name),
                       "beats": task.values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
-    csrs = rtl_fields(inst, unit, task.values)
     n = task.values["n"]
     value, working = counter(unit, n)
     return {
         "design_point": shown,
         "ports": ports,
-        "tasks": [{"name": task.task_name, "csrs": csrs, "firings": n, "counter": value,
-                   "working": working}],
+        "tasks": [{"name": task.task_name, "csrs": job_values(inst, task.values), "firings": n,
+                   "counter": value, "working": working}],
     }  # fmt: skip
 
 
 def write_fixture(design_point: str | Path, out_dir: str | Path,
                   root: str | Path | None = None) -> list[str]:  # fmt: skip
-    """A fixture of hw/chisel's specs: ``rtl.json``, the streamer hjson and ``vectors.json``
-    in ``out_dir``; the files written."""
+    """A fixture of hw/chisel's specs: ``accelerator.json``, the streamer hjson and
+    ``vectors.json`` in ``out_dir``; the files written."""
     out = Path(out_dir)
-    spec = write_rtl(design_point, out, root)
-    streamer = f"{spec.tag}_streamer.hjson"
+    acc = write_accelerator(design_point, out, root)
+    streamer = f"{acc.tag}_streamer.hjson"
     with tempfile.TemporaryDirectory() as gen:
         generate(design_point, gen, root)
         (out / streamer).write_text((Path(gen) / streamer).read_text())
     (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
-    return [RTL_JSON, streamer, VECTORS_JSON]
+    return [ACCELERATOR_JSON, streamer, VECTORS_JSON]
 
 
 # =============================================================================
@@ -431,16 +235,16 @@ CHISEL = ROOT / "hw" / "chisel"
 EMITTED_JSON = "emitted.json"
 
 
-def elaborate(rtl_json: Path, out_dir: Path) -> list[Path]:
-    """``Emit --spec`` on ``rtl_json`` into ``out_dir`` (``sv/`` and ``emitted.json``) through
-    sbt in ``hw/chisel/``; the files ``emitted.json`` lists, each checked to exist (firtool's
-    failures do not always reach sbt's exit status)."""
+def elaborate(spec_json: Path, out_dir: Path) -> list[Path]:
+    """``Emit --spec`` on ``spec_json`` (an ``accelerator.json``) into ``out_dir`` (``sv/`` and
+    ``emitted.json``) through sbt in ``hw/chisel/``; the files ``emitted.json`` lists, each
+    checked to exist (firtool's failures do not always reach sbt's exit status)."""
     cmd = ["sbt", "-batch",
-           f"runMain snax.forge.Emit --spec {rtl_json.resolve()} --out {out_dir.resolve()}"]  # fmt: skip
+           f"runMain snax.forge.Emit --spec {spec_json.resolve()} --out {out_dir.resolve()}"]  # fmt: skip
     done = subprocess.run(cmd, cwd=CHISEL, check=False)
     listing = out_dir / EMITTED_JSON
     if done.returncode != 0 or not listing.is_file():
-        raise GenError("gen.elaborate", f"Emit --spec {rtl_json} failed (exit {done.returncode})")
+        raise GenError("gen.elaborate", f"Emit --spec {spec_json} failed (exit {done.returncode})")
     files = [out_dir / f for f in json.loads(listing.read_text())["files"]]
     missing = [str(f) for f in files if not f.is_file()]
     if missing:
@@ -450,7 +254,7 @@ def elaborate(rtl_json: Path, out_dir: Path) -> list[Path]:
 
 def main(argv: list[str] | None = None) -> int:
     """``python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]`` (pixi
-    ``gen-rtl``): ``rtl.json`` into ``OUT_DIR`` (default ``out/rtl/<design>/``), then the
+    ``gen-rtl``): ``accelerator.json`` into ``OUT_DIR`` (default ``out/rtl/<design>/``), then the
     accelerator through ``Emit --spec`` into its ``sv/`` with ``emitted.json``; with
     ``--fixture``, a fixture of hw/chisel's specs into ``DIR`` instead (``write_fixture``, no
     elaboration). The flow does not call it (D136). Exit 0 when written, 1 when refused."""
@@ -466,11 +270,10 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"wrote {cwd_relative(args.fixture / f)}")
             return 0
         out = out_dir(args.out_dir, OUT, args.design_point)
-        spec = write_rtl(args.design_point, out)
-        print(
-            f"wrote {cwd_relative(out / RTL_JSON)}: {spec.tag}_shell_wrapper, {spec.units[0].block}"
-        )
-        for f in elaborate(out / RTL_JSON, out):
+        acc = write_accelerator(args.design_point, out)
+        datapaths = ", ".join(u.datapath for g in acc.groups for u in g.units)
+        print(f"wrote {cwd_relative(out / ACCELERATOR_JSON)}: {acc.tag}_shell_wrapper, {datapaths}")
+        for f in elaborate(out / ACCELERATOR_JSON, out):
             print(f"wrote {cwd_relative(f)}")
         return 0
 

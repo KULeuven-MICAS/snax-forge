@@ -924,12 +924,11 @@ vecadd's file, snax-gvsoc's fixture (`forge/vecadd/`):
 its params, ports, latency, pins and the rule that fills it from the unit's
 ports; no `csr`, no `tie`. A datapath is data and enables only:
 `ElementwiseLanes` (L 0) and `TreeAccumulate` (L 1, pins `fire` and
-`first`). The catalogue's entry for the Accumulator that `TreeAccumulate`
-replaces:
+`first`). The catalogue's entry for `TreeAccumulate`:
 
 <!-- snippet: hw/chisel/blocks.json -->
 ```json
- "Accumulator": {
+ "TreeAccumulate": {
   "params": {
    "inType": {
     "type": "dtype",
@@ -941,6 +940,11 @@ replaces:
    },
    "lanes": {"type": "int", "min": 1}
   },
+  "ports": {"in": "in", "out": "out"},
+  "latency": 1,
+  "pins": ["fire", "first"],
+  "fill": {"inType": "inputs.dtype", "outType": "outputs.dtype", "lanes": "inputs.lanes"}
+ }
 ```
 
 **Control** (D147). Each shell runs one nest controller, SnaxUnit's rule in
@@ -950,37 +954,7 @@ L-deep valid register that stalls as a whole, the II gap, busy, done, the
 sticky bit and COUNTER. Lockstep is L = 0, II = 1. The accelerator is three
 modules, `<tag>_csr` (the CSRs above), `<tag>_ctrl` (the controllers) and
 `<tag>_datapath` (the units' datapaths); Emit lists every file it wrote in
-`emitted.json`, beside `sv/`. vecadd's `rtl.json`, the Chisel specs' fixture
-that `accelerator.json` replaces:
-
-<!-- snippet: hw/chisel/src/test/resources/rtl/vecadd/rtl.json -->
-```json
-{
- "design_point": "out/design/vecadd/design_point.json",
- "tag": "snax_forge",
- "units": [
-  {
-   "name": "acc",
-   "block": "ElementwiseTiledSpatial",
-   "params": {
-    "inTypes": ["int64", "int64"],
-    "opType": "int64",
-    "outType": "int64",
-    "lanes": 4,
-    "loopCountWidth": 32,
-    "supportedOps": ["add"]
-   },
-   "ports": [{"brm": "a", "block": "a"}, {"brm": "b", "block": "b"}, {"brm": "out", "block": "out"}],
-   "csrs": {
-    "rw": [{"pin": "loopCount", "width": 32}],
-    "start": "start",
-    "ro": ["busy", "counter"],
-    "tie": {"opSel": 0}
-   }
-  }
- ]
-}
-```
+`emitted.json`, beside `sv/`.
 
 **The wrapper**, `<tag>_shell_wrapper`, has the ports
 `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`: `clk_i`,
