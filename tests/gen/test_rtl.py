@@ -152,10 +152,11 @@ def test_a_tie_takes_one_op():
 
 def test_the_counter_is_worked_from_the_shells_rules(tmp_path):
     from snax_forge.design.point import DesignPoint
-    from snax_forge.gen.gvsoc import accelerator
+    from snax_forge.gen import describe
 
-    _, _, add = accelerator(DesignPoint.load(point(tmp_path)))
-    _, _, acc = accelerator(DesignPoint.load(point(tmp_path, name="vsum", graph=bound_vsum())))
+    (add,) = describe(DesignPoint.load(point(tmp_path)), "p").groups[0].units
+    vsum = DesignPoint.load(point(tmp_path, name="vsum", graph=bound_vsum()))
+    (acc,) = describe(vsum, "p").groups[0].units
     assert counter(add, 16)[0] == 16
     assert counter(acc, 64)[0] == 65
 
@@ -239,12 +240,15 @@ def test_a_narrow_fold_into_int64_is_written(tmp_path, recipe, dtype):
      ("uint8", "int32", "int32", "int32"), ("uint32", "int32", "int64", "int64")],
 )  # fmt: skip
 def test_the_op_runs_at_the_inputs_result_type(a, b, out, op_type):
-    from snax_forge.gen.blocks import elementwise_tiled_spatial
+    from snax_forge.gen import Unit
+    from snax_forge.gen.blocks import elementwise_lanes
     from snax_forge.gen.rtl import RTL_PARAMS
 
     from .test_gvsoc import _dtypes, _instance
 
     inst = _instance(params={"W": 8, "op": "add"})  # 8 lanes: whole words of int8
-    unit = elementwise_tiled_spatial(inst, _dtypes(a=a, b=b, out=out))
+    fill = elementwise_lanes(inst, _dtypes(a=a, b=b, out=out))
+    unit = Unit("acc", "elementwise_add", "ElementwiseLanes", fill.ports, fill.params, 0, 1,
+                op_type=fill.op_type)  # fmt: skip
     params = RTL_PARAMS["ElementwiseTiledSpatial"](inst, unit)
     assert (params["inTypes"], params["opType"], params["outType"]) == ([a, b], op_type, out)

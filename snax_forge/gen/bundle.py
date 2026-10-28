@@ -9,11 +9,13 @@ checked out, never copied from ``out/gvsoc/`` or ``out/rtl/``. ``rtl/`` is
 the bundle's own, so it is removed first and holds only this run's files;
 the rest of the folder is left as it is. Then, in this order:
 
-    <the root>            gvsoc.py's ``generate``: the three hjson files, the
-                          headers, data.h, main.c and manifest.json; the
+    <the root>            gvsoc.py's ``generate``: the three description files
+                          (accelerator.json among them), the headers, data.h,
+                          main.c and manifest.json; the
                           cluster file's slot names ``rtl/files.f``
                           (``snax_forge_rtl``)
-    rtl/rtl.json          rtl.py's ``write_rtl``
+    rtl/rtl.json          rtl.py's ``write_rtl`` (until B1's R2: its CSR map is not
+                          accelerator.json's, so the program and the RTL disagree)
     rtl/sv/, rtl/emitted.json
                           rtl.py's ``elaborate`` (``Emit --spec``, sbt)
     rtl/files.f           the RTL's file list: one path per line, relative
