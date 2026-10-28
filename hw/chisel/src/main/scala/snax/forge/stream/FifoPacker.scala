@@ -8,7 +8,7 @@ import snax.forge.IntType
 /** `inLanes` lanes of `laneType` in per push, a beat of `words` 64-bit words out: the FIFO packer, `FifoSlicer`'s
   * mirror.
   *
-  * Built and parked: the flow places only the wire slice (D142), and this block is not in `Blocks`' catalogue.
+  * Built and parked: the flow places only the wire slice (D142), and this block is not in `Datapaths`' catalogue.
   *
   * A beat is `words` * num_slc elements (num_slc = 64 / width), element e at bits `[w(e+1)-1 : we]` of the beat (D142).
   * r = `words` * num_slc / `inLanes` in-beats fill one out-beat, lane l of in-beat u element u * `inLanes` + l. The

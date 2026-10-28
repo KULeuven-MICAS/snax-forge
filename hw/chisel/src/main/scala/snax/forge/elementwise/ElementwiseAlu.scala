@@ -50,9 +50,9 @@ object ElementwiseOp {
 /** One lane of integer ALU, as its own SystemVerilog module.
   *
   * Combinational, and therefore does not use the clock or reset that `Module` gives it. It extends `Module` rather than
-  * `RawModule` anyway, so that every unit in this package presents the same skeleton -- the two counted variants
-  * genuinely need a clock, and one convention across the package is worth more than eliminating a pair of dangling
-  * ports on this one.
+  * `RawModule` anyway, so that every unit in this package presents the same skeleton -- the datapaths around it need a
+  * clock (TreeAccumulate's register), and one convention is worth more than eliminating a pair of dangling ports on
+  * this one.
   *
   * Being a module rather than an inlined function costs nothing at the gate level (synthesis flattens the hierarchy)
   * and buys two things. Area reports break down per module, so an HLS comparison can say what the ALU costs separately

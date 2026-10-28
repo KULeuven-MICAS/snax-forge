@@ -9,14 +9,15 @@ in tests/brm/test_library.py. Generating BRMs from RTL sources is open item
 Library BRMs:
 
     elementwise_add   c = a + b over W lanes (W = 4 by default); one Chisel
-                      implementation, ElementwiseTiledSpatial (L = 0, II = 1)
-    elementwise_mul   c = a * b, the same with op mul (ElementwiseTiledSpatial
-                      supports it, bound as elementwise_add),
+                      implementation, the datapath ElementwiseLanes (L = 0,
+                      II = 1)
+    elementwise_mul   c = a * b, the same with op mul (ElementwiseLanes
+                      takes it, bound as elementwise_add),
                       dot's multiplier and vecmul's
     accumulate        the sum of every lane of T beats of ``a``, one element
                       of ``out`` per T beats (pattern family ``reduce``):
-                      the Chisel Accumulator (L = 1, II = 1, drain 0,
-                      D133) twice: chisel_accumulator at 1 lane (vsum's)
+                      the Chisel datapath TreeAccumulate (L = 1, II = 1,
+                      drain 0, D133) twice: chisel_accumulator at 1 lane (vsum's)
                       and chisel_adder_tree at W lanes, summed by its tree
                       and accumulated
 """

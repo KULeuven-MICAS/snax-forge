@@ -256,8 +256,9 @@ class Timing:
     L: cycles from a firing to its push. II: the least number of cycles
     between two firings. ``drain`` (D103): the cycles, starting with the
     cycle an output is pushed, in which no input is taken (1 for a block
-    whose ``in.ready`` is low while its result waits; the Chisel
-    Accumulator's is 0, D133). Optional, default 0; always written here.
+    whose ``in.ready`` is low while its result waits; the generator takes 0
+    only, as the nest controller has none, D133). Optional, default 0;
+    always written here.
     """
 
     latency: Value
