@@ -261,7 +261,7 @@ against the datapath catalogue, Scala only builds; snax_cluster sees only the bu
 movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134). → C§13.
 
 **D133** · brm — The Chisel Accumulator becomes `TreeAccumulate`, a datapath under the nest controller
-(D147; L 1, pins `fire` and `first`, no drain kept): it extends its lanes by signedness (D143), and its
+(D147; L 1, pins `fire` and `first`, drain 0 as today): it extends its lanes by signedness (D143), and its
 W → 1 adder tree makes it `chisel_adder_tree` too. → C§17, `hw/chisel/`.
 
 **D134** · gvsoc — Three files per design point are the contract between snax-forge and SNAX-GVSoC
