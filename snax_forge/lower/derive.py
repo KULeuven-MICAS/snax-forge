@@ -16,7 +16,11 @@ node is one of its temporal firing loops, ``firing_loops``). For each group:
                  ``<node>_<streamer>`` for every port of the other groups'
                  units too, every temporal bound 0, so they never start: the
                  streamer starts all its movers with one CSR; the task list
-                 holds them in the shell's order, unit by unit
+                 holds them in the shell's order, unit by unit. Their
+                 temporal strides are a bank word, not 0: a reader whose
+                 first loop has stride 0 runs that loop once whatever its
+                 bound and hands each beat out bound times (snax_cluster's
+                 Reader.scala), so it would start and read
     accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, and its
                  named rates
     start        the streamer tasks, then the accelerator task, together
@@ -176,9 +180,10 @@ def task_list(point: DesignPoint) -> TaskList:
 
     def idle(node: str, s: Any) -> Configure:
         """Node ``node``'s task on another group's mover ``s``: every bound 0, so it never
-        starts and moves nothing (D148)."""
+        starts and moves nothing (D148); every temporal stride a word (module doc)."""
+        word = pf.l1.width_bits // 8
         values = {"base": 0, "temporal_bounds": [0] * s.temporal_dims,
-                  "temporal_strides": [0] * s.temporal_dims,
+                  "temporal_strides": [word] * s.temporal_dims,
                   "spatial_strides": [0] * len(s.spatial_bounds)}  # fmt: skip
         return Configure(f"{node}_{s.name}", "streamer", s.name, values, [], mode)
 

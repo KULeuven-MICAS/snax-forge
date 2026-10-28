@@ -188,5 +188,5 @@ def test_values_that_do_not_fit_the_design_point(steps, match):
 
 def test_an_idle_mover_has_every_bound_0():
     """Another group's mover in an accelerator of several (D148): every temporal bound 0."""
-    idle = {**GOOD_STREAM, "temporal_bounds": [0], "temporal_strides": [0]}
+    idle = {**GOOD_STREAM, "temporal_bounds": [0], "temporal_strides": [8]}
     check_values(task_list({**stream("x", "acc_a"), "values": idle}, start("x")), vecadd_point())

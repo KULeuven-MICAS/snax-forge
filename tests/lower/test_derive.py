@@ -188,7 +188,8 @@ def dot1() -> DesignPoint:
     return DesignPoint.of(d, "dot_1")
 
 
-IDLE = {"base": 0, "temporal_bounds": [0], "temporal_strides": [0], "spatial_strides": [0]}
+# every temporal stride a word: a reader at stride 0 on its first loop would start (Reader.scala)
+IDLE = {"base": 0, "temporal_bounds": [0], "temporal_strides": [8], "spatial_strides": [0]}
 
 
 def test_dot_1_configures_every_mover_per_task_the_other_groups_idle():
