@@ -120,7 +120,10 @@ function panel(view, index) {
       : h("div", { class: "dfg-row" }, topEl(r.node))));
   const canvas = h("div", { class: "dfg-canvas" }, rows, svg);
   const el = h("section", { class: "dfg-panel" }, head, h("div", { class: "dfg-scroll" }, canvas));
-  el._draw = () => drawEdges(canvas, svg, view.edges, index);
+  el._draw = () => {
+    drawEdges(canvas, svg, view.edges, index);
+    drawAccelerators(canvas, svg, view.accelerators || []);
+  };
   new ResizeObserver(() => requestAnimationFrame(el._draw)).observe(canvas);
   return el;
 }
@@ -190,6 +193,48 @@ function drawEdges(canvas, svg, edges, index) {
   }
   svg.replaceChildren(defs, ...paths, ...labels);
   if (hovered) highlight(hovered);
+}
+
+// -- accelerators (D148): a box per group around its top-level nodes, one per accelerator --
+
+function unionRect(canvas, rects) {
+  const c = canvas.getBoundingClientRect();
+  const r = rects.filter(Boolean);
+  if (!r.length) return null;
+  return {
+    left: Math.min(...r.map((x) => x.left)) - c.left, top: Math.min(...r.map((x) => x.top)) - c.top,
+    right: Math.max(...r.map((x) => x.right)) - c.left, bottom: Math.max(...r.map((x) => x.bottom)) - c.top,
+  };
+}
+
+function boxAround(r, pad, cls, label) {
+  const g = svgEl("g", { class: cls });
+  g.append(svgEl("rect", { x: r.left - pad, y: r.top - pad - 12, width: r.right - r.left + 2 * pad,
+    height: r.bottom - r.top + 2 * pad + 12, rx: 6 }));
+  const t = svgEl("text", { x: r.left - pad + 6, y: r.top - pad - 2 });
+  t.textContent = label;
+  g.append(t);
+  return g;
+}
+
+function drawAccelerators(canvas, svg, accelerators) {
+  const out = [];
+  for (const acc of accelerators) {
+    const groups = [];
+    for (const grp of acc.groups) {
+      const tops = grp.tops.map((id) => canvas.querySelector(`[data-top="${CSS.escape(id)}"]`));
+      const r = unionRect(canvas, tops.map((t) => t && t.getBoundingClientRect()));
+      if (!r) continue;
+      groups.push(r);
+      out.push(boxAround(r, 8, "group-box", `group ${grp.name}`));
+    }
+    const all = groups.length ? {
+      left: Math.min(...groups.map((x) => x.left)), top: Math.min(...groups.map((x) => x.top)),
+      right: Math.max(...groups.map((x) => x.right)), bottom: Math.max(...groups.map((x) => x.bottom)),
+    } : null;
+    if (all) out.push(boxAround({ ...all, top: all.top - 20 }, 16, "acc-box", `accelerator ${acc.name}`));
+  }
+  svg.append(...out);
 }
 
 // -- hover ------------------------------------------------------------------------

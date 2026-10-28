@@ -174,6 +174,32 @@ def test_the_bound_dot_shows_both_accelerators():
     assert writes == [("mult.out", "tmp0[4 * i_t:4 * i_t + 4]"), ("sum.out", "out[0:1]")]
 
 
+def test_dot_1_draws_one_accelerator_of_two_groups(tmp_path):
+    """dot 1 (D148): the accelerator dot, its groups mul and sum in the graph's order, each
+    unit in its group and its group's box around its top-level map; each unit's panel names
+    its group and accelerator."""
+    from tests.gen.helpers import bound_dot1
+
+    path = tmp_path / "dot_1.snaxdfg"
+    path.write_text(bound_dot1().to_json())
+    v = view(path)
+    assert v["accelerators"] == [{"name": "dot", "groups": [
+        {"name": "mul", "tops": ["mult_map"], "units": [{"instance": "mul", "nodes": ["mult"]}]},
+        {"name": "sum", "tops": ["sum_map"], "units": [{"instance": "sum", "nodes": ["sum"]}]},
+    ]}]  # fmt: skip
+    units = [r["node"]["body"][0] for r in v["rows"] if r["kind"] == "node"]
+    assert [(u["accelerator"], u["group"], u["heading"][-1]) for u in units] == [
+        ("dot", "mul", "group mul of dot"), ("dot", "sum", "group sum of dot")]  # fmt: skip
+
+
+def test_without_encapsulate_each_group_is_its_own_accelerator():
+    v = view(FIXTURES / "dot_accelerated.snaxdfg")
+    assert [(a["name"], [g["name"] for g in a["groups"]]) for a in v["accelerators"]] == [
+        ("mul", ["mul"]), ("sum", ["sum"])]  # fmt: skip
+    units = [r["node"]["body"][0] for r in v["rows"] if r["kind"] == "node"]
+    assert not any("group" in line for u in units for line in u["heading"])
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
     assert plain["rows"][1]["node"]["iterations"] is None
