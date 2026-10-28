@@ -3,12 +3,15 @@
 ``load_cluster(cluster_hjson, design_point)`` reads the generator's three files (the
 cluster file, and the streamer file and ``accelerator.json`` its slot refers to, D134) and the design
 point, and gives what the events need to be named and read: the accelerator (the design
-point's one accelerated instance, ``acc``) on the core whose ``snax_acc_cfg`` holds the
-platform's slot; its movers, readers first as the streamer orders them, each named by its
-port as the design point names its streamers (``acc_a``, ``acc_out``), with its lanes (the
-crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial bounds and temporal loops (its CSRs); its CSRs (the streamer's, then the
-accelerator's from accelerator.json, its R/W CSRs but START as ``fields``, START, STATUS and
-COUNTER as start, busy and counter), from 0x3C0; the cores (``core<i>``) and the DMA's; the
+point's one, accelerator.json's ``name``) on the core whose ``snax_acc_cfg`` holds the
+platform's slot; its units (``Unit``, one per group, D148: the instance, ``acc``, its group,
+its SNAX-GVSoC path, ``unit`` with one group and ``unit_<unit>`` with several, and its
+group's START, STATUS and COUNTER); its movers, every unit's, readers first as the streamer
+orders them, each named by its port as the design point names its streamers (``acc_a``,
+``acc_out``), with its lanes (the crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial
+bounds and temporal loops (its CSRs); its CSRs (the streamer's, then the accelerator's from
+accelerator.json, its R/W CSRs but START as ``fields``, and the first group's START, STATUS
+and COUNTER as start, busy and counter), from 0x3C0; the cores (``core<i>``) and the DMA's; the
 L1 (the cluster's base and TCDM size: the iDMA's local area) and its banks, word-interleaved
 (``bank_row``: bank = (a / w) mod B, row = a / (w B) for the offset a, w the bank's bytes, B
 the banks); the DMA's beat (the cluster file's ``dma_data_width``). Nothing is inferred from
@@ -80,26 +83,51 @@ class Csrs:
 
 
 @dataclass(frozen=True)
+class Unit:
+    """One unit of the accelerator (D148): its instance, its group, its SNAX-GVSoC component
+    below ``snax_acc<i>`` and its group's START, STATUS and COUNTER, which bound the group's
+    CSRs (C§17)."""
+
+    name: str  # C§7: the instance, acc
+    group: str
+    path: str  # unit, or unit_<unit> with several groups
+    start: int
+    busy: int
+    counter: int
+
+
+@dataclass(frozen=True)
 class Accelerator:
-    name: str  # the instance, acc
+    name: str  # accelerator.json's: the instance with one group, encapsulate's with several
     core: int
     slot: str
     unit: dict[str, Any]  # the slot's datapath file as written (accelerator.json)
     movers: list[Mover]
     csrs: Csrs
+    units: list[Unit] = field(default_factory=list)
 
     @property
     def streamer(self) -> str:
-        """The streamer as a block (its CSRs), ``<instance>_streamer``."""
+        """The streamer as a block (its CSRs), ``<accelerator>_streamer``."""
         return f"{self.name}_streamer"
 
+    @property
+    def unit_names(self) -> list[str]:
+        return [u.name for u in self.units]
+
+    def unit_at(self, path: str) -> Unit | None:
+        """The unit of a SNAX-GVSoC component below ``snax_acc<i>``, or None."""
+        return next((u for u in self.units if u.path == path), None)
+
     def block_of(self, csr: int) -> str | None:
-        """The block a CSR number belongs to: the streamer's or the accelerator's (shell)."""
+        """The block a CSR number belongs to: the streamer's, or the unit's whose group's CSRs
+        hold it (its shell's)."""
         c = self.csrs
         if c.streamer_first <= csr <= c.streamer_last:
             return self.streamer
-        if c.streamer_last < csr <= c.counter:
-            return self.name
+        for u in self.units:
+            if u.start <= csr <= u.counter:
+                return u.name
         return None
 
     def mover(self, gvsoc: str) -> Mover:
@@ -132,7 +160,7 @@ class Cluster:
         """Every C§7 source, in the cluster's order: the accelerator, its movers, the DMA, the
         cores."""
         a = self.accelerator
-        return [a.name, *(m.name for m in a.movers), DMA, *self.cores]
+        return [*a.unit_names, *(m.name for m in a.movers), DMA, *self.cores]
 
     def is_l1(self, addr: int) -> bool:
         """In the cluster's L1, the iDMA's local area (the rule its summary counts bytes by)."""
@@ -158,6 +186,8 @@ class Cluster:
                          "streamer_busy": c.streamer_busy,
                          "streamer_counter": c.streamer_counter, "fields": dict(c.fields),
                          "start": c.start, "busy": c.busy, "counter": c.counter},
+                "units": [{"name": u.name, "group": u.group, "path": u.path, "start": u.start,
+                           "busy": u.busy, "counter": u.counter} for u in a.units],
             },
             "l1_base": self.l1_base, "l1_size": self.l1_size, "banks": self.banks,
             "bank_bytes": self.bank_bytes, "dma_beat_bytes": self.dma_beat_bytes,
@@ -170,7 +200,8 @@ class Cluster:
         acc = Accelerator(a["name"], a["core"], a["slot"], dict(a["unit"]),
                           [Mover(**{**m, "spatial_bounds": tuple(m["spatial_bounds"])})
                            for m in a["movers"]],
-                          Csrs(**{**a["csrs"], "fields": dict(a["csrs"]["fields"])}))  # fmt: skip
+                          Csrs(**{**a["csrs"], "fields": dict(a["csrs"]["fields"])}),
+                          [Unit(**u) for u in a.get("units", [])])  # fmt: skip
         return cls(d["design"], d["nb_cores"], d["dma_core"], acc, d["l1_base"], d["l1_size"],
                    d["banks"], d["bank_bytes"], d["dma_beat_bytes"],
                    dict(d.get("meta", {})))  # fmt: skip
@@ -200,10 +231,24 @@ def csrs_of(streamer: dict[str, Any], unit: dict[str, Any], instance: str) -> Cs
                                 for n in ("START", "STATUS", "COUNTER"))  # fmt: skip
     except (GenError, KeyError, ValueError) as e:
         raise RunError("cluster.csrs", f"accelerator.json: {e}") from None
-    fields = {k: v for k, v in c.accelerator.items() if "_RW_" in k and v != start}
+    starts = {c.accelerator[acc.find(u.name, "START")] for g in acc.groups for u in g.units}
+    fields = {k: v for k, v in c.accelerator.items() if "_RW_" in k and v not in starts}
     s_start = c.streamer_last - 2  # the streamer's start, busy and counter end its range
     return Csrs(c.streamer_first, s_start, s_start + 1, s_start + 2, fields, start, busy,
                 counter)  # fmt: skip
+
+
+def units_of(streamer: dict[str, Any], unit: dict[str, Any]) -> list[Unit]:
+    """The accelerator's units, one per group in order, with their group's CSRs (module
+    doc)."""
+    groups = unit.get("groups", [])
+    out = []
+    for g in groups:
+        for u in g["units"]:
+            c = csrs_of(streamer, unit, u["name"])
+            path = "unit" if len(groups) == 1 else f"unit_{u['name']}"
+            out.append(Unit(u["name"], g["name"], path, c.start, c.busy, c.counter))
+    return out
 
 
 def _cores(cluster: dict[str, Any]) -> list[dict[str, Any]]:
@@ -232,11 +277,11 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[s
                        "a flow run has one of each")  # fmt: skip
 
     streamers = _get(point, "streamers", "the design point")
-    names = {s["instance"] for s in streamers.values()}
-    if len(names) != 1:
-        raise RunError("cluster.instances", f"streamers of instances {sorted(names)}; a flow run "
-                       "has one accelerator")  # fmt: skip
-    (inst,) = names
+    names = list(dict.fromkeys(s["instance"] for s in streamers.values()))
+    units = units_of(streamer, unit)
+    if names != [u.name for u in units]:
+        raise RunError("cluster.instances", f"streamers of instances {names}, accelerator.json's "
+                       f"units {[u.name for u in units]}; a flow run has one accelerator")  # fmt: skip
     movers = []
     for write, group, kind in ((False, "data_reader_params", "reader"),
                                (True, "data_writer_params", "writer")):  # fmt: skip
@@ -251,7 +296,8 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[s
                                 params["temporal_dim"][i]))  # fmt: skip
 
     tcdm = _get(cluster, "cluster.tcdm", "the cluster file")
-    acc = Accelerator(inst, owner[0], slot, dict(unit), movers, csrs_of(streamer, unit, inst))
+    acc = Accelerator(unit["name"], owner[0], slot, dict(unit), movers,
+                      csrs_of(streamer, unit, units[0].name), units)  # fmt: skip
     return Cluster(
         design=point.get("name", ""), nb_cores=len(flat), dma_core=dma[0], accelerator=acc,
         l1_base=_get(cluster, "cluster.cluster_base_addr", "the cluster file"),

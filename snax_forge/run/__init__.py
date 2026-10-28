@@ -18,7 +18,7 @@ trace the reports and the viewer read.
 * outputs.py: a run directory written and read back.
 """
 
-from .cluster import Accelerator, Cluster, Csrs, Mover, cluster_from, load_cluster
+from .cluster import Accelerator, Cluster, Csrs, Mover, Unit, cluster_from, load_cluster
 from .cores import CORE_CLASSES, core_counts, core_spans, merge_spans, start_mode
 from .events import GRAMMAR, Line, RunError, parse_line, read_events
 from .outputs import RunOutputs, read_run, write_run
@@ -59,6 +59,7 @@ __all__ = [
     "RunOutputs",
     "StreamerProfile",
     "Trace",
+    "Unit",
     "WaitProfile",
     "at_least",
     "cluster_from",

@@ -90,7 +90,8 @@ def lanes(index: RunIndex) -> dict[str, Any]:
          "bytes": e["size"] * e["reps"]}
         for i, e in index.copies()]})  # fmt: skip
     acc = index.cluster.accelerator
-    for name, kind in [*((m.name, "mover") for m in acc.movers), (acc.name, "accelerator")]:
+    for name, kind in [*((m.name, "mover") for m in acc.movers),
+                       *((u, "accelerator") for u in acc.unit_names)]:  # fmt: skip
         tasks = sorted(index.tasks_of.get(name, []), key=lambda t: index.start[t]["t"])
         out.append({"name": name, "kind": kind, "bars": [_bar(index, t) for t in tasks]})
     return {"level": index.level, "total_cycles": index.total_cycles, "lanes": out}

@@ -64,3 +64,19 @@ def kib(n: int) -> str:
 
 
 __all__ = ["kib", "kv", "pct", "span_text", "spans", "table"]
+
+
+def grouped(groups: int, at: int, lines: list[str], values: list[str | None]) -> list[str]:
+    """A table with a ``Group`` column at ``at`` (one value per row) when the accelerator has
+    several groups (D148); with one, the table as it is."""
+    if groups < 2:
+        return lines
+    cells = ["Group", "---", *(v if v is not None else "–" for v in values)]
+
+    def put(line: str, cell: str) -> str:
+        parts = line.split("|")  # "", c0, c1, ..., ""
+        return "|".join(
+            [*parts[: at + 1], f" {cell} " if cell != "---" else cell, *parts[at + 1 :]]
+        )
+
+    return [put(line, cell) for line, cell in zip(lines, cells, strict=True)]

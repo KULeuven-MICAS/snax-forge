@@ -44,7 +44,7 @@ from typing import Any
 
 from ..viz import api, movement, schedule
 from ..viz.movement import MovementUnavailable
-from .markdown import pct, spans, table
+from .markdown import grouped, pct, spans, table
 from .record import Record
 
 DIRECTION = {"l2_to_l1": "L2 → L1", "l1_to_l2": "L1 → L2", "l1_to_l1": "L1 → L1",
@@ -70,6 +70,7 @@ class TaskRow(Record):
     cycles: int
     direction: str | None = None
     bytes: int | None = None
+    group: str | None = None  # the group whose start launched it (D148); None for the DMA's
 
 
 @dataclass
@@ -84,6 +85,7 @@ class AccelRun(Record):
     stall_in: int
     stall_out: int
     flush: int
+    group: str | None = None
 
 
 @dataclass
@@ -197,6 +199,7 @@ class RunReport(Record):
     banks: list[BankRange]
     streamers: list[StreamerRun]
     movement: MovementReport
+    groups: int = 1  # the accelerator's; with more than one, the tables name each row's
 
 
 # =============================================================================
@@ -275,6 +278,16 @@ def build_run(rv: api.RunView) -> RunReport:
     if fc:
         check = CheckRow(bool(fc["passed"]), fc.get("kernel", ""), fc["data_errors"], fc["words"],
                          {t: x["counter"] for t, x in fc.get("tasks", {}).items()})  # fmt: skip
+    acc = rv.cluster.accelerator
+    group = {u.name: u.group for u in acc.units}
+    unit_of = {t: u for u in acc.unit_names for t in rv.index.tasks_of.get(u, [])}
+
+    def group_of(block: str, task: str | None) -> str | None:
+        """A task's group: a unit's own, a mover task's the unit task it was launched with."""
+        if block in group:
+            return group[block]
+        return group.get(unit_of.get(rv.index.accel.get(task or ""), ""))
+
     task_rows = None
     if tr is not None:  # per block its tasks: the schedule's bars
         task_rows = []
@@ -283,11 +296,11 @@ def build_run(rv: api.RunView) -> RunReport:
             for k, t in enumerate(ts):
                 done = total if t["to"] is None else t["to"]  # still open at the end
                 task_rows.append(TaskRow(block, k, t["task"], t["from"], done, done - t["from"],
-                                         t.get("dir"), t.get("bytes")))  # fmt: skip
+                                         t.get("dir"), t.get("bytes"),
+                                         group_of(block, t["task"])))  # fmt: skip
         task_rows.sort(key=lambda r: (r.start, r.block))
 
     accels = []
-    acc = rv.cluster.accelerator
     for name, a in p.accelerators.items():
         busy = a.cycles["busy"]
         span = sum(r.cycles for r in task_rows or [] if r.block == name) or None
@@ -295,7 +308,7 @@ def build_run(rv: api.RunView) -> RunReport:
         accels.append(AccelRun(
             name, a.firings, int(acc.unit.get("ii", 1)), achieved_ii(dones), a.utilisation, span,
             busy / span if span else None, a.cycles["stall_in"], a.cycles["stall_out"],
-            a.cycles["flush"],
+            a.cycles["flush"], group.get(name),
         ))  # fmt: skip
 
     cores = []
@@ -322,6 +335,7 @@ def build_run(rv: api.RunView) -> RunReport:
         rv.name, total, rv.trace_level, None if tr is None else tr.boot,
         check, task_rows, accels, cores, dmas, ports,
         _bank_ranges(p.banks.conflicts if p.banks else []), streamers, build_movement(rv),
+        len(acc.units),
     )  # fmt: skip
 
 
@@ -354,15 +368,15 @@ def render_run(r: RunReport) -> str:
     if r.tasks is None:
         out.append("Needs at least a task trace (--trace task).")
     else:
-        out += table(
+        out += grouped(r.groups, 1, table(
             ["Block", "#", "Task", "Start", "Done", "Cycles", "Direction", "Bytes"],
             [[t.block, t.index, t.name, t.start, t.done, t.cycles,
               DIRECTION.get(t.direction or "", t.direction), t.bytes] for t in r.tasks],
             {1, 3, 4, 5, 7},
-        )  # fmt: skip
+        ), [t.group for t in r.tasks])  # fmt: skip
 
     out += ["", "## Accelerators", ""]
-    out += table(
+    out += grouped(r.groups, 1, table(
         ["Accelerator", "Firings", "Target II", "Achieved II", "Utilisation (window)",
          "Task span", "Utilisation (span)", "Starved (stall_in)", "Blocked (stall_out)", "Flush"],
         [[a.name, a.firings, a.target_ii, None if a.achieved_ii is None else f"{a.achieved_ii:.2f}",
@@ -370,7 +384,7 @@ def render_run(r: RunReport) -> str:
           None if a.utilisation_span is None else pct(a.utilisation_span), a.stall_in,
           a.stall_out, a.flush] for a in r.accelerators],
         {1, 2, 3, 4, 5, 6, 7, 8, 9},
-    )  # fmt: skip
+    ), [a.group for a in r.accelerators])  # fmt: skip
     out += ["", ("Achieved II is the cycles from the first firing to the last over the firings "
             "between them; utilisation is busy cycles (a firing or the II gap after it) over the "
             "window, then over the cycles its tasks ran.")]  # fmt: skip

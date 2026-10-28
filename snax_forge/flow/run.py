@@ -50,7 +50,7 @@ code is the run's (the ``Error N`` make prints for the run's recipe, 0 when
 it passed), and its lines give ``total_cycles`` (``forge cycles:``, the
 window from main's entry to ``forge_check()``'s entry), the data errors
 over the output words and each accelerator task's counter, beside its beats
-from the manifest. ``passed`` is an exit code of 0. A missing line is a
+from the manifest and its group (D148). ``passed`` is an exit code of 0. A missing line is a
 FlowError that names it. ``run/run.json`` records what ran: the design
 point, the three description files (``hjson``), the ELF's sha256 and the symbols of its L2 containers'
 arrays (``elf_symbols``, ``run/elf.py``: their L2 regions), the target, the snax-gvsoc
@@ -131,6 +131,7 @@ from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.execute import against_reference, execute
 from snax_forge.lower import CError, LowerError, TaskList, task_list
+from snax_forge.lower.tasks import Configure
 from snax_forge.run import (
     LEVELS,
     RunError,
@@ -831,6 +832,10 @@ def _from_graph(
     with _timed(times, "check"):
         cycles, result = check_output((run / "stdout.txt").read_text(), exit_code,
                                       {t.name: t.beats for t in manifest.tasks})  # fmt: skip
+        groups = {u.name: u.group for u in cluster.accelerator.units}
+        units = {s.task_name: s.component for s in tasks.steps if isinstance(s, Configure)}
+        for t, x in result["tasks"].items():  # each task's group (D148)
+            x["group"] = groups[units[t]]
         check = {
             "kernel": spec.name,
             "seed": seed,

@@ -8,10 +8,14 @@ list, ``total_cycles`` the program's window (its ``forge cycles:`` line), ``regi
 design point's (regions.py) and ``filter`` the sources whose beat lines the run wrote
 (sources.py). Nothing is recounted: the profile is the ``summary`` lines renamed, the trace
 the ``events`` lines renamed and cut, and above ``task`` the ``beats``, ``stalls`` and
-``insn`` lines too (beats.py); the beat lines only feed the trace.
+``insn`` lines too (beats.py); the beat lines only feed the trace. Above ``task`` an
+accelerator of several groups is a RunError (``convert.level``): its beat lines are read from
+M13's B3 on.
 
-**Names.** A line's component path becomes a C§7 name: ``snax_acc<i>/unit`` the accelerator
-(``acc``), ``snax_acc<i>/streamer`` with its ``mover`` the mover (``reader0`` -> ``acc_a``),
+**Names.** A line's component path becomes a C§7 name: ``snax_acc<i>/unit`` the accelerator's
+unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (D148, ``mul``, ``sum``;
+a shell has no trace of its own), ``snax_acc<i>/streamer`` with its ``mover`` the mover
+(``reader0`` -> ``acc_a``),
 ``pe<i>`` the core ``core<i>``, ``idma/fe`` and the AXI backend (``idma/axi_read``,
 ``idma/axi_write``) the DMA (``dma``), ``tcdm/snax_xbar`` the crossbar,
 whose inputs become ports (``snax_acc<i>.streamer.reader0.lane1`` -> ``acc_a.lane1``,
@@ -44,7 +48,7 @@ issue order, whose direction it must have; its fields are renamed ``from``, ``to
 ``from_stride``, ``to_stride`` (``src`` is the event's source); a ``done`` gets its copy's
 task. A count or direction that does not match is a RunError (``convert.tasks``).
 
-**Profile.** An accelerator's classes are the sums of its ``run`` lines, ``idle`` the rest of
+**Profile.** Per unit, an accelerator's classes are the sums of its ``run`` lines, ``idle`` the rest of
 ``total_cycles``, ``utilisation`` busy over ``total_cycles``; a mover's likewise from its
 ``mover`` lines, its FIFO maximum per lane the highest over its runs; a core's CSR counts are
 its ``csrs`` line; the DMA's and the ports' and banks' their lines. A core's cycles in the
@@ -101,8 +105,9 @@ def source_of(line: Line, cluster: Cluster) -> str:
     segs = line.path.split("/")
     last, parent = segs[-1], segs[-2] if len(segs) > 1 else ""
     acc = cluster.accelerator
-    if parent == f"snax_acc{acc.core}" and last == "unit":
-        return acc.name
+    unit = acc.unit_at(last) if parent == f"snax_acc{acc.core}" else None
+    if unit is not None:
+        return unit.name
     if parent == f"snax_acc{acc.core}" and last == "streamer":
         mover = line.fields.get("mover")
         if mover is None:
@@ -203,7 +208,7 @@ def run_classes(lines: Sequence[tuple[str, Line]], cluster: Cluster
     for s, x in lines:
         if x.trace != "summary":
             continue
-        if x.kind == "run" and s == acc.name:
+        if x.kind == "run" and s in acc.unit_names:
             out[(s, x.fields["index"])] = {c: x.fields[c] for c in UNIT_CLASSES}
         elif x.kind == "mover":
             out[(s, x.fields["run"])] = {c: x.fields[c] for c in (*MOVER_CLASSES, "idle")}
@@ -241,7 +246,7 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
             continue
         e: dict[str, Any] = {"t": t, "k": k, "src": src}
         if k == "start":
-            kind = "accel" if src == acc.name else "streamer"
+            kind = "accel" if src in acc.unit_names else "streamer"
             mine = started.setdefault(src, [])
             e["task"] = _need(_tasks(tasks, kind, src), len(mine), f"{src}'s tasks")
             mine.append(e["task"])
@@ -263,7 +268,7 @@ def trace_events(lines: Sequence[tuple[str, Line]], cluster: Cluster, tasks: Tas
                 raise RunError("convert.summary", f"{src} ({mine[i]}): no summary line for its run "
                                f"{run_of[mine[i]]}")  # fmt: skip
             e["cycles"] = cycles
-            if src == acc.name:
+            if src in acc.unit_names:
                 e.update(firings=f["firings"], first=f["first"] - boot, last=f["last"] - boot)
         elif k in ("csr", "poll"):
             e.update(pc=f["pc"], csr=f["csr"], block=_block(acc, f["csr"]))
@@ -350,12 +355,13 @@ def profile_of(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles
     summary = [(s, x) for s, x in lines if x.trace == "summary"]
     p = Profile(total_cycles=total_cycles, functional_check=functional_check)
 
-    runs = [x.fields for s, x in summary if s == acc.name and x.kind == "run"]
-    c = {k: sum(r[k] for r in runs) for k in UNIT_CLASSES}
-    p.accelerators[acc.name] = AccelProfile(
-        {**c, "idle": total_cycles - sum(c.values())}, sum(r["firings"] for r in runs),
-        c["busy"] / total_cycles if total_cycles else 0.0,
-    )  # fmt: skip
+    for unit in acc.unit_names:
+        runs = [x.fields for s, x in summary if s == unit and x.kind == "run"]
+        c = {k: sum(r[k] for r in runs) for k in UNIT_CLASSES}
+        p.accelerators[unit] = AccelProfile(
+            {**c, "idle": total_cycles - sum(c.values())}, sum(r["firings"] for r in runs),
+            c["busy"] / total_cycles if total_cycles else 0.0,
+        )  # fmt: skip
     for m in acc.movers:
         runs = [x.fields for s, x in summary if s == m.name and x.kind == "mover"]
         c = {k: sum(r[k] for r in runs) for k in MOVER_CLASSES}
@@ -442,11 +448,11 @@ def invariants(profile: Profile, trace: Trace, cluster: Cluster,
         if c.cycles is not None and sum(c.cycles.values()) != trace.total_cycles:
             bad.append(f"{name}: classes add up to {sum(c.cycles.values())}, the window is "
                        f"{trace.total_cycles}")  # fmt: skip
-    acc = cluster.accelerator.name
-    fired = sum(e["firings"] for e in trace.of_kind("done", acc))
-    if fired != profile.accelerators[acc].firings:
-        bad.append(f"{acc}: {fired} firings in its done events, "
-                   f"{profile.accelerators[acc].firings} in its summary")  # fmt: skip
+    for acc in cluster.accelerator.unit_names:
+        fired = sum(e["firings"] for e in trace.of_kind("done", acc))
+        if fired != profile.accelerators[acc].firings:
+            bad.append(f"{acc}: {fired} firings in its done events, "
+                       f"{profile.accelerators[acc].firings} in its summary")  # fmt: skip
     if regions is not None:
         bad += l2_copies(trace, regions, cluster)
     if ctx is not None:
@@ -473,6 +479,10 @@ def convert(
     triples = trace_events(named, cluster, tasks, boot, total_cycles)
     ctx = None
     if at_least(level, "beat"):
+        if len(cluster.accelerator.units) != 1:
+            raise RunError("convert.level", f"trace {level}: the beat lines of an accelerator of "
+                           f"{len(cluster.accelerator.units)} groups are not read yet (M13's B3); "
+                           "task and off are")  # fmt: skip
         ctx = Context(cluster, list(regions or []), boot, total_cycles, level, list(filter or []),
                       [e for _, _, e in triples], named)  # fmt: skip
         triples = sorted(triples + beat_events(named, ctx), key=lambda x: (x[0], x[1]))

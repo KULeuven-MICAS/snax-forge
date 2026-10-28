@@ -1,0 +1,26 @@
+{
+ "total_cycles": 304,
+ "functional_check": {
+  "kernel": "dot",
+  "seed": 0,
+  "symbols": {
+   "N": 64
+  },
+  "exit_code": 0,
+  "data_errors": 0,
+  "words": 1,
+  "tasks": {
+   "mult_mul": {
+    "counter": 19,
+    "beats": 16,
+    "group": "mul"
+   },
+   "sum_sum": {
+    "counter": 19,
+    "beats": 16,
+    "group": "sum"
+   }
+  },
+  "passed": true
+ }
+}

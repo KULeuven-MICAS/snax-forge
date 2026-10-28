@@ -97,7 +97,8 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
     assert run["EVENTS"] == str((out / "run" / "events.log").resolve())
     assert run["TRACES"] == "summary"
     beats = {t.name: t.beats for t in Manifest.load(out / "gen" / "manifest.json").tasks}
-    assert f.check["tasks"] == {t: {"counter": n + 3, "beats": n} for t, n in beats.items()}
+    assert f.check["tasks"] == {t: {"counter": n + 3, "beats": n, "group": "acc"}
+                             for t, n in beats.items()}  # fmt: skip
 
 
 def test_the_generated_folder_names_the_design_point_from_the_flows_folder(tmp_path, monkeypatch):
@@ -142,7 +143,8 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
                          "banks", "functional_check"}  # fmt: skip
     assert f.check == {
         "kernel": "vecadd", "seed": 0, "symbols": {"N": 64}, "exit_code": 0, "data_errors": 0,
-        "words": 64, "tasks": {"add_acc": {"counter": 19, "beats": 16}}, "passed": True,
+        "words": 64, "tasks": {"add_acc": {"counter": 19, "beats": 16, "group": "acc"}},
+        "passed": True,
     }  # fmt: skip
 
 
