@@ -30,9 +30,11 @@ never recomputes them. ``define`` names a CSR as the header does:
 ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``, the group part dropped when the
 accelerator has one group, the unit part when the group has one unit.
 
-**In this round** every accelerated instance is one group of one unit, the
-group named after it; more than one instance is ``gen.instances`` (lower/c.py's
-``accelerator``, open item 79; dot 1 comes with ``encapsulate``).
+**The groups** (D146, D148): the design point's one accelerator
+(lower/c.py's ``accelerator``), one group per instance, named after it, in
+the graph's order (``encapsulate``'s), each of one unit until links come
+(M13's B3); the offsets run on from group to group. Several accelerators
+are ``gen.instances`` (open item 79).
 
 **Refused**, each a ``GenError``: ``gen.instances`` and ``gen.binding``
 (lower/c.py's ``accelerator``), ``gen.datapath`` (a datapath not registered),
@@ -44,12 +46,14 @@ implementation whose drain is not 0: the nest controller has none) and
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from snax_forge.brm import port_dtypes
+from snax_forge.brm import Instance, port_dtypes
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import instance_nodes
+from snax_forge.lower.c import accelerator as c_accelerator
 from snax_forge.lower.c import fold_rate
 
 from .blocks import DATAPATHS, GenError, Port
@@ -227,12 +231,31 @@ class Accelerator(JsonFile):
         raise KeyError(f"unit {unit}'s group {g.name} has no CSR {name}")
 
 
+def units(point: DesignPoint) -> tuple[str, dict[str, Instance]]:
+    """The one accelerator's name and its units, one per group in order (lower/c.py's
+    ``accelerator``, its rules ``gen.instances`` and ``gen.binding``)."""
+    return c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
+
+
 def describe(point: DesignPoint, point_path: str) -> Accelerator:
     """The design point's ``accelerator.json``, checked; see the module doc. ``point_path``
     names the design point (gvsoc.py's ``point_name``)."""
-    from .gvsoc import instance
+    name, found = units(point)
+    offsets = iter(range(1 << 16))  # contiguous over the groups, in CSR order
+    groups, inputs, outputs = [], [], []
+    for unit_name, inst in found.items():
+        start, jobs = (Csr(n, "rw", next(offsets), CSR_BITS) for n in ("START", "JOBS"))
+        unit = _unit(point, unit_name, inst, offsets)
+        status, counter = (Csr(n, "ro", next(offsets)) for n in ("STATUS", "COUNTER"))
+        groups.append(Group(unit_name, [start, jobs, status, counter], [unit]))
+        ports = inst.brm.interface.ports
+        inputs += [f"{unit_name}.{p.name}" for p in ports if p.direction == "in"]
+        outputs += [f"{unit_name}.{p.name}" for p in ports if p.direction == "out"]
+    return Accelerator(name, point_path, point.platform.accelerator_slot, inputs, outputs, groups)
 
-    name, inst = instance(point)
+
+def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int]) -> Unit:
+    """Instance ``name``'s unit, checked (module doc), its R/W CSRs numbered from ``offsets``."""
     what = f"{inst.brm.name}.{inst.implementation}"
     datapath = inst.impl.binding["datapath"]
     if datapath not in DATAPATHS:
@@ -251,18 +274,7 @@ def describe(point: DesignPoint, point_path: str) -> Accelerator:
             "gen.timing", f"{what}: latency {inst.latency}, II {inst.initiation_interval}; "
             f"{datapath} is latency {dp.latency}, II 1",
         )  # fmt: skip
-
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None else []
-    offsets = iter(range(4 + len(unit_rw)))
-    start, jobs = (Csr(n, "rw", next(offsets), CSR_BITS) for n in ("START", "JOBS"))
     unit_csrs = [Csr(n, "rw", next(offsets), CSR_BITS) for n in unit_rw]
-    status, counter = (Csr(n, "ro", next(offsets)) for n in ("STATUS", "COUNTER"))
-    unit = Unit(name, inst.brm.name, datapath, fill.ports, fill.params, inst.latency,
+    return Unit(name, inst.brm.name, datapath, fill.ports, fill.params, inst.latency,
                 inst.initiation_interval, unit_csrs, fill.op_type)  # fmt: skip
-    ports = inst.brm.interface.ports
-    return Accelerator(
-        name, point_path, point.platform.accelerator_slot,
-        [f"{name}.{p.name}" for p in ports if p.direction == "in"],
-        [f"{name}.{p.name}" for p in ports if p.direction == "out"],
-        [Group(name, [start, jobs, status, counter], [unit])],
-    )  # fmt: skip

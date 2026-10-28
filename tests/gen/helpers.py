@@ -109,8 +109,9 @@ def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str
         mp.chdir(tmp)
         args = [str(REPO / "recipes" / f"{recipe}.json"), "--out", f"out/sandbox/{name}"]
         assert sandbox_cli.main([*args, *(a for s in sets for a in ("--set", s))]) == 0
-        steps = len(Recipe.load(REPO / "recipes" / f"{recipe}.json").steps)  # the last: bind
-        assert design_cli.main([f"out/sandbox/{name}/{steps}_bind.snaxdfg", "--platform",
+        steps = Recipe.load(REPO / "recipes" / f"{recipe}.json").steps  # the last: the bound graph
+        last = f"out/sandbox/{name}/{len(steps)}_{steps[-1].transform}.snaxdfg"
+        assert design_cli.main([last, "--platform",
                                 str(SNAX_FORGE), "--out", f"out/design/{name}"]) == 0  # fmt: skip
     return f"out/design/{name}/design_point.json"
 

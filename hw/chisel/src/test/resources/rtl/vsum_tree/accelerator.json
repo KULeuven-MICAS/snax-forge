@@ -22,7 +22,7 @@
       "a": {"port": "in", "dtype": "int64", "lanes": 4},
       "out": {"port": "out", "dtype": "int64", "lanes": 1}
      },
-     "params": {},
+     "params": {"op": "add"},
      "timing": {"latency": 1, "ii": 1},
      "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}]
     }

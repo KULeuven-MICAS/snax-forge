@@ -31,8 +31,9 @@ its ``emitted.json`` lists.
 ``inputs.lanes`` the inputs' lanes, ``unit.opType`` and ``unit.params.op`` the unit's.
 
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds
-``accelerator.json``, the design's streamer hjson (gvsoc.py's) and ``vectors.json``, which the
-Chisel specs drive the wrapper with: per BRM port its data.h array (an input, or the output's
+``accelerator.json``, the design's streamer hjson (gvsoc.py's) and, for a design of one
+accelerator task, ``vectors.json``, which the Chisel specs drive the wrapper with
+(dot 1's two groups, a task each, have none: its spec drives each group itself): per BRM port its data.h array (an input, or the output's
 golden) and how many beats a task moves (lane i of beat t is element t * lanes + i), and per
 task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_values``), its firings and the counter
 worked from the nest controller's rule with an always-ready streamer (``counter``), the working
@@ -56,10 +57,10 @@ from snax_forge.lower.c import job_values
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure
 
-from .accelerator import ACCELERATOR_JSON, Accelerator, Unit
+from .accelerator import ACCELERATOR_JSON, Accelerator, Unit, units
 from .blocks import GenError
 from .data import arrays
-from .gvsoc import ROOT, cli, generate, instance, load_point, out_dir
+from .gvsoc import ROOT, cli, generate, load_point, out_dir
 
 OUT = ROOT / "out" / "rtl"
 CATALOGUE = repo_root() / "hw" / "chisel" / "blocks.json"
@@ -187,15 +188,15 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     """``vectors.json``: the data and tasks the Chisel specs drive the wrapper with; see the
     module doc."""
     shown, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    name, inst = instance(point)
+    tasks = accel_tasks(point)
+    if len(tasks) != 1:
+        raise GenError("gen.instances", f"{len(tasks)} accelerator tasks; vectors.json has one")
+    (task,) = tasks
+    name = task.component
+    inst = units(point)[1][name]
     unit = acc.groups[0].units[0]
     node = instance_nodes(point.graph)[name]
     data = {a.name: a for a in arrays(point)}
-    tasks = [s for s in task_list(point).steps
-             if isinstance(s, Configure) and s.type == "accel" and s.component == name]  # fmt: skip
-    if len(tasks) != 1:
-        raise GenError("gen.instances", f"{len(tasks)} accelerator tasks; a fixture has one")
-    (task,) = tasks
     ports = []
     for p in inst.brm.interface.ports:
         c = (node.inputs if p.direction == "in" else node.outputs)[p.name].data
@@ -213,18 +214,27 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     }  # fmt: skip
 
 
+def accel_tasks(point: Any) -> list[Configure]:
+    """The accelerator tasks of the design point's task list, in order."""
+    return [s for s in task_list(point).steps if isinstance(s, Configure) and s.type == "accel"]
+
+
 def write_fixture(design_point: str | Path, out_dir: str | Path,
                   root: str | Path | None = None) -> list[str]:  # fmt: skip
-    """A fixture of hw/chisel's specs: ``accelerator.json``, the streamer hjson and
-    ``vectors.json`` in ``out_dir``; the files written."""
+    """A fixture of hw/chisel's specs: ``accelerator.json``, the streamer hjson and, for one
+    accelerator task, ``vectors.json`` in ``out_dir``; the files written."""
     out = Path(out_dir)
     acc = write_accelerator(design_point, out, root)
     streamer = f"{acc.tag}_streamer.hjson"
     with tempfile.TemporaryDirectory() as gen:
         generate(design_point, gen, root)
         (out / streamer).write_text((Path(gen) / streamer).read_text())
-    (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
-    return [ACCELERATOR_JSON, streamer, VECTORS_JSON]
+    files = [ACCELERATOR_JSON, streamer]
+    _, point, _ = load_point(design_point, ROOT if root is None else Path(root))
+    if len(accel_tasks(point)) == 1:
+        (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
+        files.append(VECTORS_JSON)
+    return files
 
 
 # =============================================================================

@@ -296,12 +296,10 @@ def test_job_values():
 
 
 def dot1_text(tmp_path) -> str:
-    """dot 1's main.c: groups mul and sum in the accelerator dot (D148), with C§17's
-    description (tests/gen/test_accelerator.py's)."""
+    """dot 1's main.c: groups mul and sum in the accelerator dot (D148)."""
     from tests.gen.helpers import bound_dot1
-    from tests.gen.test_accelerator import dot
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1", acc=dot())
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
     return main_c(p, tasks, cluster, acc, arrays, ["data.h", "dot_csr.h", STREAMER], POINT)
 
 
@@ -342,9 +340,8 @@ def test_dot_1_checks_both_counters(tmp_path):
 
 def test_refused_a_start_without_the_idle_movers(tmp_path):
     from tests.gen.helpers import bound_dot1
-    from tests.gen.test_accelerator import dot
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1", acc=dot())
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
     d = tasks.to_dict()
     for s in d["steps"]:
         if s["op"] == "start" and "mult_mul" in s["tasks"]:

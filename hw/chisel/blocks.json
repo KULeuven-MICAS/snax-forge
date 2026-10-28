@@ -37,11 +37,17 @@
     "type": "dtype",
     "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
    },
-   "lanes": {"type": "int", "min": 1}
+   "lanes": {"type": "int", "min": 1},
+   "op": {"type": "op", "values": ["add"]}
   },
   "ports": {"in": "in", "out": "out"},
   "latency": 1,
   "pins": ["fire", "first"],
-  "fill": {"inType": "inputs.dtype", "outType": "outputs.dtype", "lanes": "inputs.lanes"}
+  "fill": {
+   "inType": "inputs.dtype",
+   "outType": "outputs.dtype",
+   "lanes": "inputs.lanes",
+   "op": "unit.params.op"
+  }
  }
 }

@@ -43,6 +43,7 @@ DESIGNS = {
     "vsum_tree_i32": ("vsum_tree_i32", []),
     "vsum_tree_i8": ("vsum_tree_i8", []),
     "vecmul_i32_i64": ("vecmul_i32_i64", []),
+    "dot_1": ("dot_1", []),
 }
 
 
@@ -75,7 +76,7 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
     )
     (v,) = vsum.groups[0].units
     assert fill(vsum, v, catalogue()["TreeAccumulate"]) == {
-        "inType": "int64", "outType": "int64", "lanes": 1
+        "inType": "int64", "outType": "int64", "lanes": 1, "op": "add"
     }  # fmt: skip
 
 
@@ -213,4 +214,5 @@ def test_a_narrow_fold_into_int64_is_filled(tmp_path, recipe, dtype):
     acc = accelerator_spec(tmp_path / designed(tmp_path, recipe, recipe), tmp_path)
     (u,) = acc.groups[0].units
     params = fill(acc, u, catalogue()["TreeAccumulate"])
-    assert params == {"inType": dtype, "outType": "int64", "lanes": params["lanes"]}
+    assert params == {"inType": dtype, "outType": "int64", "lanes": params["lanes"],
+                      "op": "add"}  # fmt: skip

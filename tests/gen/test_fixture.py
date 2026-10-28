@@ -39,6 +39,11 @@ DESIGNS = [
     "vecadd_i32", "vecmul_i32", "vsum_tree_i32", "vecadd_i8", "vsum_tree_i8",
     "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64",
 ]  # fmt: skip
+# The folds' accelerator.json gains TreeAccumulate's op in snax-gvsoc's B1 R2; until the
+# submodule is at it, its forge/ has them without
+FOLDS = {"vsum", "vsum_tree", "rowsum", "rowsum_serial", "vsum_tree_i32", "vsum_tree_i8",
+         "vsum_tree_n21", "rowsum_3x7"}  # fmt: skip
+before_op = pytest.mark.xfail(reason="forge/'s folds gain op in snax-gvsoc's B1 R2", strict=True)
 
 pytestmark = pytest.mark.skipif(
     not (SUB / "snax").is_dir(),
@@ -52,7 +57,8 @@ def regenerate(tmp: Path, design: str) -> Path:
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp)
         recipe = REPO / "recipes" / f"{design}.json"
-        bound = f"out/sandbox/{design}/{len(Recipe.load(recipe).steps)}_bind.snaxdfg"  # last step
+        steps = Recipe.load(recipe).steps
+        bound = f"out/sandbox/{design}/{len(steps)}_{steps[-1].transform}.snaxdfg"  # last step
         assert sandbox_cli.main([str(recipe), "--out", f"out/sandbox/{design}"]) == 0
         assert design_cli.main([bound, "--platform", str(SNAX_FORGE),
                                 "--out", f"out/design/{design}"]) == 0  # fmt: skip
@@ -65,7 +71,9 @@ def test_every_folder_is_a_design():
     assert sorted(p.name for p in FORGE.iterdir() if p.is_dir()) == sorted(DESIGNS)
 
 
-@pytest.mark.parametrize("design", DESIGNS)
+@pytest.mark.parametrize(
+    "design", [pytest.param(d, marks=before_op) if d in FOLDS else d for d in DESIGNS]
+)
 def test_the_fixture_is_reproduced(tmp_path, design):
     fixture = FORGE / design
     out = regenerate(tmp_path, design)

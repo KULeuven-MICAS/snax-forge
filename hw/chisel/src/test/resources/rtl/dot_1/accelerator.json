@@ -1,6 +1,6 @@
 {
  "name": "dot",
- "design_point": "hand-written: dot 1 (C§17's table), groups mul and sum",
+ "design_point": "out/design/dot_1/design_point.json",
  "tag": "snax_forge",
  "inputs": ["mul.a", "mul.b", "sum.a"],
  "outputs": ["mul.out", "sum.out"],
@@ -48,7 +48,7 @@
       "a": {"port": "in", "dtype": "int64", "lanes": 4},
       "out": {"port": "out", "dtype": "int64", "lanes": 1}
      },
-     "params": {},
+     "params": {"op": "add"},
      "timing": {"latency": 1, "ii": 1},
      "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 6, "width": 32}]
     }

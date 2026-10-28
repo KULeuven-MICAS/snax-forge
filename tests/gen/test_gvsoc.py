@@ -83,7 +83,7 @@ VSUM = {
         "name": "acc", "brm": "accumulate", "datapath": "TreeAccumulate",
         "ports": {"a": {"port": "in", "dtype": "int64", "lanes": 1},
                   "out": {"port": "out", "dtype": "int64", "lanes": 1}},
-        "params": {}, "timing": {"latency": 1, "ii": 1},
+        "params": {"op": "add"}, "timing": {"latency": 1, "ii": 1},
         "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}],
     }], "links": []}],
 }  # fmt: skip
@@ -527,10 +527,10 @@ def test_the_accumulator_adapter_refuses(case, edit, params, code, dtypes):
 
 
 def test_the_accumulator_adapter_gives_a_fold():
-    """Its ports through the binding's map, no opType, no params; latency 1."""
+    """Its ports through the binding's map, no opType, params op add; latency 1."""
     fill = tree_accumulate(_acc())
     assert fill.ports == {"a": Port("in", None, 1), "out": Port("out", None, 1)}
-    assert (fill.op_type, fill.params) == (None, {})
+    assert (fill.op_type, fill.params) == (None, {"op": "add"})
     assert DATAPATHS["TreeAccumulate"].fill is tree_accumulate
     assert DATAPATHS["TreeAccumulate"].latency == 1 and DATAPATHS["ElementwiseLanes"].latency == 0
 
