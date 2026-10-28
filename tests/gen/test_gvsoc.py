@@ -41,10 +41,6 @@ needs_submodule = pytest.mark.skipif(
     reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
 )
 FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"]
-# snax-gvsoc's reader (snax/snax_cfg.py) reads <slot>_acc.hjson until snax-gvsoc's B1 R1
-old_reader = pytest.mark.xfail(
-    reason="snax-gvsoc's snax_cfg reads the old datapath file until its B1 R1", strict=True
-)
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
 SLOT = ("snax_forge_core_template", "snax_acc_cfg", 0)
 
@@ -199,13 +195,28 @@ def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
 
 
 @needs_submodule
-@old_reader
 def test_snax_gvsocs_reader_takes_the_folder(w4):
-    """snax-gvsoc's snax_cfg.load: the whole-file refs resolve and the slot's counts agree."""
+    """snax-gvsoc's snax_cfg.load: the whole-file refs resolve, the slot's counts agree, and
+    accelerator.json reads as written (its CSRs in CSR order)."""
     out, _ = w4
     cfg = snax_cfg().load(out / "snax_forge.hjson")
     (acc,) = cfg.cores[0].accelerators
     assert (acc.name, acc.tcdm_ports, acc.streamer) == ("snax_forge", 12, TEMPLATE_W4)
+    assert (acc.num_rw_csr, acc.num_ro_csr) == (2, 2)
+    a = acc.accelerator
+    assert (a.name, a.inputs, a.outputs) == ("acc", ["acc.a", "acc.b"], ["acc.out"])
+    assert [(c.name, c.offset) for c in a.csrs] == [
+        ("START", 0),
+        ("JOBS", 1),
+        ("STATUS", 2),
+        ("COUNTER", 3),
+    ]
+    (unit,) = a.groups[0].units
+    assert (unit.datapath, unit.op_type, unit.params) == (
+        "ElementwiseLanes",
+        "int64",
+        {"op": "add"},
+    )
     assert (cfg.tcdm.size, cfg.tcdm.banks, cfg.tcdm.sparse_interconnect) == (131072, 32, True)
 
 

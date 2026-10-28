@@ -72,7 +72,6 @@ def test_the_accelerator_header_numbers(include):
 
 
 @pytest.mark.skipif(not SHELL.exists(), reason="the snax-gvsoc submodule is not checked out")
-@pytest.mark.xfail(reason="snax-shell uses the old names until snax-gvsoc's B1 R1", strict=True)
 def test_snax_shell_drives_the_accelerator_header(include):
     """snax-gvsoc's snax-shell includes vecadd's acc_csr.h: every CSR name it uses is ours."""
     ours = dict(defines((include / "acc_csr.h").read_text()))
