@@ -812,8 +812,9 @@ A unit:
 
 A CSR: `name`, `access` (`rw` or `ro`), `offset` from the shell's first CSR,
 `width` (R/W only), `pin` (a scalar's datapath pin). snax-forge computes the
-offsets once and stores them; a reader checks them (contiguous from 0) and
-never recomputes them.
+offsets once and stores them; a reader checks them (contiguous from 0 in CSR
+order: per group START, JOBS, the units' R/W, STATUS, COUNTER, not the file's
+nesting) and never recomputes them.
 
 **Refused**, each a `GenError`, before anything is written: more or fewer
 than one accelerated instance (`gen.instances`, dot 1 comes with
@@ -878,8 +879,9 @@ unit: vecadd's
 | vsum_tree_i32 | START 0, JOBS 1, JOB_BEATS 2, STATUS 3, COUNTER 4 | 3, 2 | JOBS 1, JOB_BEATS 16 |
 | dot 1 (groups mul, sum) | MUL: START 0, JOBS 1, STATUS 2, COUNTER 3; SUM: START 4, JOBS 5, JOB_BEATS 6, STATUS 7, COUNTER 8 | 5, 4 | task 1: MUL_JOBS 16; task 2: SUM_JOBS 1, SUM_JOB_BEATS 16 |
 
-vecadd's file:
+vecadd's file, snax-gvsoc's fixture (`forge/vecadd/`):
 
+<!-- snippet: gvsoc/snax-gvsoc/forge/vecadd/accelerator.json -->
 ```json
 {
  "name": "acc",

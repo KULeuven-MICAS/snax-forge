@@ -2,7 +2,8 @@
 
 Every fenced block in the document that names a source is really in that
 source, a checked-in file (C§7's are the flow's ``run/profile.py`` and
-``run/trace.py``), and the document still has its sections, the retired ones
+``run/trace.py``; a file of the snax-gvsoc submodule is checked where the
+submodule is checked out, as tests/gen's fixture test), and the document still has its sections, the retired ones
 (C§2–C§6, C§8) included, so their numbers stay. A failure here means one of
 the two moved: fix whichever is wrong.
 
@@ -19,6 +20,8 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 DOC = REPO / "docs" / "CONTRACTS.md"
+# The snax-gvsoc submodule: only CI's gvsoc and chisel jobs fetch it
+SUBMODULE = "gvsoc/snax-gvsoc/"
 
 # <!-- snippet: path --> on its own line, immediately before a fenced block.
 SNIPPET = re.compile(r"<!-- snippet: ([^\n]+?) -->\n```[a-z]*\n(.*?)```", re.DOTALL)
@@ -55,6 +58,8 @@ def test_snippet_is_verbatim(i):
     """
     source, block = snippets()[i]
     path = REPO / source
+    if source.startswith(SUBMODULE) and not (REPO / SUBMODULE / "snax").is_dir():
+        pytest.skip(f"{source}: the snax-gvsoc submodule is not checked out")
     assert path.is_file(), f"{source}: no such file"
     text = path.read_text()
     if source.endswith(".jsonl"):
