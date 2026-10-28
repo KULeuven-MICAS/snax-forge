@@ -34,7 +34,7 @@ accelerator has one group, the unit part when the group has one unit.
 (lower/c.py's ``accelerator``), one group per instance, named after it, in
 the graph's order (``encapsulate``'s), each of one unit until links come
 (M13's B3); the offsets run on from group to group. Several accelerators
-are ``gen.instances`` (open item 79).
+are ``gen.instances``.
 
 **Refused**, each a ``GenError``: ``gen.instances`` and ``gen.binding``
 (lower/c.py's ``accelerator``), ``gen.datapath`` (a datapath not registered),
