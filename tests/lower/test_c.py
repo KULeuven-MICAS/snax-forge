@@ -7,15 +7,17 @@ import copy
 import re
 import shutil
 import subprocess
+from dataclasses import replace
 
 import pytest
 
 from snax_forge.design import DesignPoint
 from snax_forge.dfg import Graph
+from snax_forge.gen import describe
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.data import arrays as data_arrays
 from snax_forge.lower import CError, TaskList, main_c, task_list
-from snax_forge.lower.c import cores
+from snax_forge.lower.c import cores, job_values
 from tests.design.helpers import chained, graph_dict
 from tests.gen.helpers import SUB, bound_vecmul, bound_vsum, point
 
@@ -26,19 +28,18 @@ def parts(tmp_path, graph=None, name="vecadd"):
     """What main_c reads for vecadd (or ``graph``) on snax_forge: the source, its slot named
     as the generator names it."""
     p = DesignPoint.load(point(tmp_path, name=name, graph=graph))
-    inst_name, inst, unit = gen_mod.accelerator(p)
-    layout = gen_mod.csr_layout(gen_mod.streamer_template(p, inst_name, inst), unit.fields)
+    acc = describe(p, POINT)
     cluster = gen_mod.source(p.platform, tmp_path)
     _, slot = gen_mod.find_slot(cluster, p.platform)
     slot["snax_acc_name"] = p.platform.accelerator_slot
-    return p, task_list(p), cluster, layout, data_arrays(p)
+    return p, task_list(p), cluster, acc, data_arrays(p)
 
 
 INCLUDES = ["data.h", "acc_csr.h", "streamer_csr_addr_map.h"]
 
 
 def text(tmp_path, edit_tasks=None, edit_cluster=None, **kw) -> str:
-    p, tasks, cluster, layout, arrays = parts(tmp_path, **kw)
+    p, tasks, cluster, acc, arrays = parts(tmp_path, **kw)
     if edit_tasks:
         d = tasks.to_dict()
         edit_tasks(d["steps"])
@@ -46,7 +47,7 @@ def text(tmp_path, edit_tasks=None, edit_cluster=None, **kw) -> str:
     if edit_cluster:
         cluster = copy.deepcopy(cluster)
         edit_cluster(cluster)
-    return main_c(p, tasks, cluster, layout, arrays, INCLUDES, POINT)
+    return main_c(p, tasks, cluster, acc, arrays, INCLUDES, POINT)
 
 
 def functions(src: str) -> dict[str, list[str]]:
@@ -106,7 +107,7 @@ def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
     # the loads' wait (core 1), the writer's wait (core 0, its counter stored last), the
     # store's sync (core 1): each the owner's, then the barrier on both
     assert c1[b1[0] - 1] == "snrt_dma_wait_all();"
-    assert c0[b0[1] - 1] == "forge_counter[0] = csrr_ss(ACC_RO_PERF_COUNT);"
+    assert c0[b0[1] - 1] == "forge_counter[0] = csrr_ss(ACC_RO_COUNTER);"
     assert c1[b1[2] - 1] == "snrt_dma_wait_all();"
     assert c0[b0[0] + 1] == "csrw_ss(STREAMER_START_CSR, 1);"
     assert c1[b1[1] + 1] == "snrt_dma_start_1d(C, (void *)0x10000400, 512);"
@@ -141,7 +142,7 @@ def test_vecadd_configures_from_the_task_values(tmp_path):
     for line in [
         "csrw_ss(BASE_PTR_READER_1_LOW, 0x10000200);", "csrw_ss(T_BOUND_WRITER_0_0, 16);",
         "csrw_ss(T_STRIDE_READER_0_0, 32);", "csrw_ss(S_STRIDE_READER_0_0, 8);",
-        "csrw_ss(ACC_RW_LOOP_COUNT, 16);", "snrt_dma_start_1d((void *)0x10000000, A, 512);",
+        "csrw_ss(ACC_RW_JOBS, 16);", "snrt_dma_start_1d((void *)0x10000000, A, 512);",
         "snrt_dma_start_1d(C, (void *)0x10000400, 512);",
     ]:  # fmt: skip
         assert line in src, line
@@ -155,13 +156,16 @@ def test_vecadd_checks_itself(tmp_path):
     assert "err += forge_counter[0] < 16;" in src
     assert "static uint32_t forge_counter[1];" in src
     f = functions(src)
-    assert "forge_counter[0] = csrr_ss(ACC_RO_PERF_COUNT);" in f["forge_core_0"]
+    assert "forge_counter[0] = csrr_ss(ACC_RO_COUNTER);" in f["forge_core_0"]
+    # the wait polls STATUS bit 0 (busy), then the streamer
+    assert "while (csrr_ss(ACC_RO_STATUS) & 1) {" in f["forge_core_0"]
     assert f["forge_check"][-2:] == ['printf("forge errors: %d\\n", err);', "return err;"]
 
 
-def test_vsum_sets_len_and_reads_its_counter(tmp_path):
+def test_vsum_sets_jobs_and_job_beats_and_reads_its_counter(tmp_path):
+    """JOBS = n / T, JOB_BEATS = T (D146); the counter checked against the beats n."""
     src = text(tmp_path, graph=bound_vsum(), name="vsum")
-    assert "csrw_ss(ACC_RW_LOOP_COUNT, 64);\n    csrw_ss(ACC_RW_LEN, 64);" in src
+    assert "csrw_ss(ACC_RW_JOBS, 1);\n    csrw_ss(ACC_RW_JOB_BEATS, 64);" in src
     assert "err += forge_counter[0] < 64;" in src
     assert 'printf("forge counter sum_acc: %u\\n", forge_counter[0]);' in src
 
@@ -270,21 +274,34 @@ def test_refused_a_read_step(tmp_path):
         text(tmp_path, edit_tasks=read)
 
 
-def test_refused_a_field_without_a_csr(tmp_path):
-    p, tasks, cluster, layout, arrays = parts(tmp_path)
-    no_fields = gen_mod.CsrLayout(layout.streamer_first, layout.streamer_last, {}, layout.start,
-                                  layout.busy, layout.counter)  # fmt: skip
-    with pytest.raises(CError, match=r"\[c.csrs\] add_acc: no CSR for field 'loopCount'"):
-        main_c(p, tasks, cluster, no_fields, arrays, INCLUDES, POINT)
+def test_refused_a_csr_the_description_lacks(tmp_path):
+    p, tasks, cluster, acc, arrays = parts(tmp_path)
+    group = acc.groups[0]
+    no_jobs = replace(group, csrs=[c for c in group.csrs if c.name != "JOBS"])
+    no_jobs = replace(no_jobs, csrs=[replace(c, offset=i) for i, c in enumerate(no_jobs.csrs)])
+    with pytest.raises(CError, match=r"\[c.csrs\] add_acc: unit acc's group acc has no CSR JOBS"):
+        main_c(p, tasks, cluster, replace(acc, groups=[no_jobs]), arrays, INCLUDES, POINT)
+
+
+def test_job_values():
+    """JOBS = n / T and, for a fold, JOB_BEATS = T; T = 0 an empty run (JOBS 0)."""
+    from snax_forge.brm import load_brm
+
+    add = load_brm("elementwise_add").resolve("chisel_tiled_spatial", {"W": 4})
+    total = load_brm("accumulate").resolve("chisel_adder_tree", {"W": 4})
+    assert job_values(add, {"n": 16}) == {"JOBS": 16}
+    assert job_values(total, {"n": 16, "T": 16}) == {"JOBS": 1, "JOB_BEATS": 16}
+    assert job_values(total, {"n": 12, "T": 4}) == {"JOBS": 3, "JOB_BEATS": 4}
+    assert job_values(total, {"n": 0, "T": 0}) == {"JOBS": 0, "JOB_BEATS": 0}
 
 
 def test_refused_two_instances(tmp_path):
-    _, _, cluster, layout, _ = parts(tmp_path / "one")
+    _, _, cluster, acc, _ = parts(tmp_path / "one")
     gd = graph_dict()
     chained(gd)
     p = DesignPoint.load(point(tmp_path, graph=Graph.from_dict(gd)))
     with pytest.raises(CError, match=r"\[c.instances\] 2 accelerated instances"):
-        main_c(p, task_list(p), cluster, layout, [], INCLUDES, POINT)
+        main_c(p, task_list(p), cluster, acc, [], INCLUDES, POINT)
 
 
 # =============================================================================

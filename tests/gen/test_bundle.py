@@ -32,7 +32,7 @@ def test_the_layout(tmp_path, fake):
     out = tmp_path / "bundle"
     b, written = write_bundle(point(tmp_path), out, tmp_path)
     assert files(out) == sorted([
-        "snax_forge.hjson", "snax_forge_streamer.hjson", "snax_forge_acc.hjson",
+        "snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json",
         "include/streamer_csr_addr_map.h", "include/acc_csr.h", "include/snitch_cluster_cfg.h",
         "include/snitch_cluster_addrmap.h", "data.h", "main.c",
         "manifest.json", "rtl/rtl.json", *(f"rtl/{f}" for f in SV), "rtl/emitted.json",

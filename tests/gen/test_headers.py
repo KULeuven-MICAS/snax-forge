@@ -9,9 +9,10 @@ import pytest
 from snax_forge.common import generated_header
 from snax_forge.design import Platform
 from snax_forge.gen import GenError, generate
-from snax_forge.gen.headers import cluster_headers, define_name, streamer_header
+from snax_forge.gen.headers import accelerator_header, cluster_headers, streamer_header
 
 from .helpers import SNAX_FORGE, SOURCE, SUB, parsed, point
+from .test_accelerator import dot
 
 CHISEL = SUB / "sw" / "generated" / "snax_forge" / "streamer_csr_addr_map.h"
 SHELL = SUB / "sw" / "apps" / "snax-shell" / "src" / "snax-shell.c"
@@ -36,8 +37,8 @@ STREAMER_W4 = [
     ("STREAMER_START_CSR", 975), ("STREAMER_BUSY_CSR", 976),
     ("STREAMER_PERFORMANCE_COUNTER_CSR", 977),
 ]  # fmt: skip
-ACC_W4 = [("ACC_RW_LOOP_COUNT", 978), ("ACC_RW_START", 979), ("ACC_RO_BUSY", 980),
-          ("ACC_RO_PERF_COUNT", 981)]  # fmt: skip
+ACC_W4 = [("ACC_RW_START", 978), ("ACC_RW_JOBS", 979), ("ACC_RO_STATUS", 980),
+          ("ACC_RO_COUNTER", 981)]  # fmt: skip
 
 
 def defines(text: str) -> list[tuple[str, int]]:
@@ -71,6 +72,7 @@ def test_the_accelerator_header_numbers(include):
 
 
 @pytest.mark.skipif(not SHELL.exists(), reason="the snax-gvsoc submodule is not checked out")
+@pytest.mark.xfail(reason="snax-shell uses the old names until snax-gvsoc's B1 R1", strict=True)
 def test_snax_shell_drives_the_accelerator_header(include):
     """snax-gvsoc's snax-shell includes vecadd's acc_csr.h: every CSR name it uses is ours."""
     ours = dict(defines((include / "acc_csr.h").read_text()))
@@ -96,17 +98,15 @@ def test_more_dimensions_follow_streamer_scalas_loops():
     assert last == 972
 
 
-NAMES = [
-    ("loopCount", "LOOP_COUNT"),
-    ("opSel", "OP_SEL"),
-    ("len", "LEN"),
-    ("csr2Mode", "CSR2_MODE"),
-]
-
-
-@pytest.mark.parametrize(("field", "name"), NAMES)
-def test_define_names(field, name):
-    assert define_name(field) == name
+def test_two_groups_name_their_group():
+    """dot 1 (groups mul and sum of accelerator dot, C§17's table) from CSR 978: the group part
+    kept, the unit part dropped (one unit per group)."""
+    text = accelerator_header(dot(), 978, "p")
+    assert defines(text) == [
+        ("DOT_RW_MUL_START", 978), ("DOT_RW_MUL_JOBS", 979), ("DOT_RO_MUL_STATUS", 980),
+        ("DOT_RO_MUL_COUNTER", 981), ("DOT_RW_SUM_START", 982), ("DOT_RW_SUM_JOBS", 983),
+        ("DOT_RW_SUM_JOB_BEATS", 984), ("DOT_RO_SUM_STATUS", 985), ("DOT_RO_SUM_COUNTER", 986),
+    ]  # fmt: skip
 
 
 # =============================================================================

@@ -2,7 +2,7 @@
 
     python -m snax_forge.gen DESIGN_POINT [--out DIR]
 
-Writes the three hjson files, the headers, ``data.h``, ``main.c`` and
+Writes the three description files, the headers, ``data.h``, ``main.c`` and
 ``manifest.json`` of the design point (gvsoc.py) to ``DIR`` (default ``out/gvsoc/<design>/``) and
 prints the cluster file and what to pass gvrun.
 

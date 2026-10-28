@@ -59,12 +59,12 @@ def test_the_design_report_equals_its_sources(flows, key):
     assert (h.platform, h.passes) == ("snax_forge", dict(point.memory.passes))
     assert [c.name for c in r.components] == cluster.sources
     (a,) = r.accelerators
-    unit = cluster.accelerator.unit
+    (unit,) = cluster.accelerator.unit["groups"][0]["units"]
     assert (a.instance, a.kind, a.target_ii, a.latency) == (
         "acc",
-        "SnaxUnit",
-        unit["ii"],
-        unit["latency"],
+        unit["datapath"],
+        unit["timing"]["ii"],
+        unit["timing"]["latency"],
     )
     assert a.ports == [f"{m.port} ← {m.name}" for m in cluster.accelerator.movers]
     assert [(s.name, s.num_ch, s.fifo_depth) for s in r.streamers] == [

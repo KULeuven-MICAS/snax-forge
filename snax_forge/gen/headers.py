@@ -16,10 +16,11 @@ in the manifest:
                               and one define per index; then
                               ``STREAMER_START_CSR``, ``STREAMER_BUSY_CSR``,
                               ``STREAMER_PERFORMANCE_COUNTER_CSR``
-    <instance>_csr.h          the shell's CSRs in ``snax-alu-lib.h``'s form:
-                              ``<INST>_RW_<FIELD>`` per field (``loopCount``
-                              -> ``LOOP_COUNT``), ``<INST>_RW_START``,
-                              ``<INST>_RO_BUSY``, ``<INST>_RO_PERF_COUNT``
+    <name>_csr.h              the accelerator's CSRs (accelerator.py, D146),
+                              each by ``Accelerator.define``, in CSR order:
+                              ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``;
+                              vecadd's ``ACC_RW_START``, ``ACC_RW_JOBS``,
+                              ``ACC_RO_STATUS``, ``ACC_RO_COUNTER``
     snitch_cluster_cfg.h      the runtime's core count and first hart
                               (``CFG_CLUSTER_NR_CORES``, the cores over the
                               hives, ``$ref``s resolved, as clustergen
@@ -57,7 +58,6 @@ from typing import Any
 from snax_forge.common import generated_header
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import cores
-from snax_forge.lower.c import define_name
 
 from .blocks import GenError
 
@@ -94,16 +94,13 @@ def streamer_header(movers: list[dict[str, Any]], first: int, point_path: str) -
     return "\n".join(lines) + "\n", csr + 2
 
 
-def accelerator_header(instance: str, csrs: Any, point_path: str) -> str:
-    """The text of <instance>_csr.h for the shell's CSR layout ``csrs`` (gvsoc.CsrLayout)."""
-    inst = instance.upper()
-    lines = [generated_header(point_path, f"Instance {instance}'s CSRs, in snax-alu-lib.h's form.")]
-    lines += [f"#define {inst}_RW_{define_name(f)} {n}" for f, n in csrs.fields.items()]
-    lines += [
-        f"#define {inst}_RW_START {csrs.start}",
-        f"#define {inst}_RO_BUSY {csrs.busy}",
-        f"#define {inst}_RO_PERF_COUNT {csrs.counter}",
-    ]
+def accelerator_header(acc: Any, first: int, point_path: str) -> str:
+    """The text of <name>_csr.h for the description ``acc`` (accelerator.Accelerator), its
+    first CSR at ``first``."""
+    what = (f"Accelerator {acc.name}'s CSRs (accelerator.json, D146): per group START, JOBS, "
+            "its units' R/W, STATUS, COUNTER.")  # fmt: skip
+    lines = [generated_header(point_path, what)]
+    lines += [f"#define {name} {first + offset}" for name, offset in acc.defines().items()]
     return "\n".join(lines) + "\n"
 
 

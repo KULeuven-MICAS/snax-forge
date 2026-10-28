@@ -61,20 +61,32 @@ def test_csrs_as_the_generated_header_has_them(cluster):
     ]
 
 
-@pytest.mark.parametrize("fields", [[], ["loopCount"], ["loopCount", "rate"]])
-def test_csrs_agree_with_the_generator(fields):
+@pytest.mark.parametrize("k", [0, 1, 3])
+def test_csrs_agree_with_the_generator(k):
+    """accelerator.json's CSRs as the generator numbers them: START, STATUS and COUNTER as
+    start, busy and counter, the other R/W ones as fields."""
+    from tests.gen.helpers import one_unit
+
     _, streamer, _, _ = files()
     streamer["data_reader_params"]["temporal_dim"] = [2, 1]
-    c = csrs_of(streamer, fields)
-    g = csr_layout(streamer, fields)
-    assert (c.streamer_first, c.streamer_last, c.fields, c.start, c.busy, c.counter) == (
-        g.streamer_first,
-        g.streamer_last,
-        g.fields,
-        g.start,
-        g.busy,
-        g.counter,
-    )
+    acc = one_unit(k)
+    c = csrs_of(streamer, acc.to_dict(), "acc")
+    g = csr_layout(streamer, acc)
+    n = g.accelerator
+    assert (c.streamer_first, c.streamer_last) == (g.streamer_first, g.streamer_last)
+    assert (c.start, c.busy, c.counter) == (n["ACC_RW_START"], n["ACC_RO_STATUS"],
+                                            n["ACC_RO_COUNTER"])  # fmt: skip
+    assert c.fields == {k: v for k, v in n.items() if "_RW_" in k and k != "ACC_RW_START"}
+
+
+@pytest.mark.parametrize("fields", [[], ["loopCount"], ["loopCount", "rate"]])
+def test_a_run_from_before_b1_keeps_its_csrs(fields):
+    """The old datapath file (a recorded run's): its fields, then start, busy and counter."""
+    _, streamer, _, _ = files()
+    c = csrs_of(streamer, {"fields": fields}, "acc")
+    first = c.streamer_last + 1
+    assert c.fields == {f: first + i for i, f in enumerate(fields)}
+    assert (c.start, c.busy, c.counter) == tuple(first + len(fields) + i for i in range(3))
 
 
 def test_l1_and_banks(cluster):
