@@ -1013,13 +1013,13 @@ dot 1's file, snax-gvsoc's fixture (`forge/dot_1/`): the groups `mul` and
      "brm": "elementwise_mul",
      "datapath": "ElementwiseLanes",
      "ports": {
-      "a": {"port": "a", "dtype": "int64", "lanes": 4},
-      "b": {"port": "b", "dtype": "int64", "lanes": 4},
-      "out": {"port": "out", "dtype": "int64", "lanes": 4}
+      "a": {"port": "a", "dir": "in", "dtype": "int64", "lanes": 4},
+      "b": {"port": "b", "dir": "in", "dtype": "int64", "lanes": 4},
+      "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 4}
      },
      "opType": "int64",
      "params": {"op": "mul"},
-     "timing": {"latency": 0, "ii": 1},
+     "timing": {"latency": 0, "ii": 1, "span": 1},
      "csrs": []
     }
    ],
@@ -1039,11 +1039,11 @@ dot 1's file, snax-gvsoc's fixture (`forge/dot_1/`): the groups `mul` and
      "brm": "accumulate",
      "datapath": "TreeAccumulate",
      "ports": {
-      "a": {"port": "in", "dtype": "int64", "lanes": 4},
-      "out": {"port": "out", "dtype": "int64", "lanes": 1}
+      "a": {"port": "in", "dir": "in", "dtype": "int64", "lanes": 4},
+      "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 1}
      },
      "params": {"op": "add"},
-     "timing": {"latency": 1, "ii": 1},
+     "timing": {"latency": 1, "ii": 1, "span": 1},
      "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 6, "width": 32}]
     }
    ],
