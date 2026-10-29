@@ -27,8 +27,10 @@ GROUP = "/chip/soc/cluster_0/snax_acc0/group_dot"
 LINES = [
     f"{S}00000: {S}: [{GROUP}/events] {S} start count=2 rate=2",
     f"{S + 4}00000: {S + 4}: [{GROUP}/events] {S + 4} done firings=2 first={S + 1} last={S + 2}",
-    f"{S + 4}00000: {S + 4}: [{GROUP}/summary] {S + 4} run index=0 firings=2 busy=3 stall_in=0 "
-    "stall_out=0 flush=1",
+    (
+        f"{S + 4}00000: {S + 4}: [{GROUP}/summary] {S + 4} run index=0 firings=2 busy=3 stall_in=0 "
+        "stall_out=0 flush=1"
+    ),
 ]
 
 
@@ -61,7 +63,7 @@ def test_the_groups_lines_convert_to_its_task(dot4):
     _, cluster, tasks = dot4
     named = [(source_of(x, cluster), x) for x in (parse_line(t) for t in LINES)]
     assert {s for s, _ in named} == {"dot"}
-    events = [e for _, _, e in trace_events(named, cluster, tasks, 0, 10 ** 6)]
+    events = [e for _, _, e in trace_events(named, cluster, tasks, 0, 10**6)]
     start, done = events
     assert (start["k"], start["src"], start["task"], start["t"]) == ("start", "dot", "mult_dot", S)
     assert (done["k"], done["task"], done["t"], done["firings"], done["first"], done["last"]) == (
