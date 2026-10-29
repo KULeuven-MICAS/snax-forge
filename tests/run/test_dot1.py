@@ -59,7 +59,7 @@ def test_each_unit_converts_with_its_own_tasks(recorded):
         "mult_mul": "mul", "sum_sum": "sum"}  # fmt: skip
 
 
-def test_beat_levels_wait_for_b3(recorded):
+def test_beat_levels_are_refused(recorded):
     cluster, tasks, check, lines, regions, _ = recorded
     with pytest.raises(RunError) as e:
         convert(lines, cluster, tasks, check["total_cycles"], "beat", None, regions, [])

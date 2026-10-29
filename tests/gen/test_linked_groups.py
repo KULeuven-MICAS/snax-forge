@@ -1,4 +1,4 @@
-"""B1x's designs on the generator (D112, D147, C§17): one accelerator of linked units, streamers
+"""Linked groups on the generator (D112, D147, C§17): one accelerator of linked units, streamers
 on the outer ports only, one task per group, and the register writes of dot 6 and matvec 6."""
 
 from __future__ import annotations
