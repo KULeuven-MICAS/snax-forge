@@ -42,6 +42,21 @@ $$y \leftarrow y + \alpha x$$
   stride 0.
 - `y` is updated in place: read and written by the same task (open item 47).
 
+### matvec
+
+`blas/matvec.py` · no tier · int64 · M13 B1x's row form of dot
+
+$$q = A p, \quad A \in \mathbb{Z}^{M \times N}$$
+
+- Written as `q[:] = np.sum(A * p, axis=1)`, so the import mirrors dot's: a
+  multiply map into the transient `tmp0[M, N]`, then a sum map folding into
+  `q[i]`, each inside its own row map `i` (`mult_map` ⊃ `mult_map_1` ⊃
+  `mult`, `sum_map` ⊃ `sum_map_1` ⊃ `sum`).
+- `recipes/matvec_<k>.json` bind it as dot's variants with the row loop
+  tagged temporal, the jobs; `p` is read again for every row (stride 0).
+  matvec 1 runs at 8 × 512: at 16 × 512 its `tmp0` does not fit the L1
+  (open item 97).
+
 ## elementwise/
 
 ### matadd

@@ -1,0 +1,14 @@
+{
+ "name": "dot_4",
+ "kernel": "dot",
+ "params": {"W": 4, "N": 512},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {"transform": "split_reduce", "params": {"map": "sum_map", "factor": "W"}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "sum_map"}},
+  {"transform": "bind", "params": {"node": "mult_map_s", "brm": "mac", "implementation": "chisel_mac", "instance": "mac"}},
+  {"transform": "bind", "params": {"node": "sum_final", "brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "sum"}},
+  {"transform": "link", "params": {"container": "out_partial", "depth": 0, "group": "dot"}}
+ ]
+}

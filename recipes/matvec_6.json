@@ -1,0 +1,16 @@
+{
+ "name": "matvec_6",
+ "kernel": "matvec",
+ "params": {"W": 4, "M": 16, "N": 512},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map_1", "factor": "W"}},
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_reduce", "params": {"map": "sum_map_1", "factor": "W"}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "sum_map"}},
+  {"transform": "bind", "params": {"node": "mult_map_1_s", "brm": "mac", "implementation": "chisel_mac", "instance": "mac"}},
+  {"transform": "bind", "params": {"node": "sum_final", "brm": "accumulate", "implementation": "chisel_serial", "instance": "sum"}},
+  {"transform": "link", "params": {"container": "q_partial", "depth": 1, "group": "matvec"}}
+ ]
+}

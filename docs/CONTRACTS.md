@@ -634,7 +634,7 @@ The other variants, one recipe each (D150, F1), after the import:
 | `dot_2`, `dot_3` | split_map mult_map W; bind mult → elementwise_mul; split_map sum_map W; bind sum → accumulate chisel_adder_tree; link tmp0, depth 1 or 0, group dot |
 | `dot_4` | split_map mult_map W; split_reduce sum_map W; fuse_map mult_map sum_map; bind mult_map_s → mac; bind sum_final → accumulate chisel_adder_tree; link out_partial, depth 0, group dot |
 | `dot_5`, `dot_6` | as dot_4, sum_final → chisel_serial; link out_partial, depth 0 or 1 |
-| `matvec_1`–`matvec_6` | the same on matvec, the row loop tagged temporal first; group `matvec`, the partial `q_partial` |
+| `matvec_1`–`matvec_6` | the same on matvec (`kernels/blas/matvec.py`), the row maps tagged temporal first (`tag_map mult_map`, and `sum_map` before its split), the j maps `mult_map_1` and `sum_map_1` split or `split_reduce`d, `fuse_map mult_map sum_map`, the MAC on `mult_map_1_s`; group `matvec`, the partial `q_partial`; `matvec_1` is dot_1's two groups, `encapsulate`d as `matvec` |
 
 <!-- snippet: recipes/vecadd.json -->
 ```json
