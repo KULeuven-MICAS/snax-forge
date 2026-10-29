@@ -250,8 +250,8 @@ keeps GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`, `SG7.md`.
 cluster headers snax-forge writes for it. Only the RTL needs snax_cluster. → snax-gvsoc `sw/README.md`.
 
 **D129** · brm — A `binding` (kinds registered, D19) names its datapath and how the BRM fills it; the
-CSRs are the group's (D146). A datapath is one Chisel module, one `blocks.json` entry (`span`, a latency
-maybe an expression over params) and one SNAX-GVSoC class by name (G1), so a new block is one of each.
+CSRs are the group's (D146). A datapath is one Chisel module, one `blocks.json` entry and one SNAX-GVSoC
+class by name (G1), so a new block is one of each; its latency may be an expression. → C§10, C§17.
 
 **D130** · scope — A generated accelerator carries its own CSR manager (ReqRspManager's protocol,
 snax_cluster's off), its CSRs per group (D146): one wrapper contract. Python checks `accelerator.json`
@@ -307,13 +307,13 @@ so the model and the RTL cannot be configured apart. → C§16, C§17.
 over itself and the folds downstream, SDF's balance) and its own START, STATUS, COUNTER and busy and
 done pins, so groups run apart; an empty run ends in a done, so no ERROR CSR. → C§17.
 
-**D147** · brm — Every block is a datapath of data and enables only, under one control unit per group,
-`<tag>_<group>_ctrl`, generated from the description, never per variant. Streamers move data and own the
-address loops, the control unit runs the jobs, the datapath computes; "shell" is the wrapper. → C§17.
+**D147** · brm — Every block is a datapath of data and enables only, under one control unit per group
+(`<tag>_<group>_ctrl`) generated from the description, so control is written once for model and RTL,
+never per variant; "shell" is the wrapper. → C§17.
 
-**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links. Two bound units' groups
-merge when `link` makes their transient a link; a group is its own accelerator until `encapsulate` puts
-several in one, each undone by its inverse; dot 1 is one accelerator of groups `mul` and `sum`. → C§12.
+**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links. `link` merges two bound
+units' groups, their transient becoming a link; a group is its own accelerator until `encapsulate` puts
+several in one (both undone by inverses): dot 1 is one accelerator, groups `mul` and `sum`. → C§11, C§12.
 
 **D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut`
 for a later systolic PE; no `regIn`), not vmul into a lane accumulator. The one-lane vsum is

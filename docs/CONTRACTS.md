@@ -453,8 +453,8 @@ and on an accelerated node. dot as imported:
 |---|---|---|---|
 | `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`, and `valid`, the iteration count n, when n is not a multiple of the factor: the lanes past it are padding, `dfg/pad.py`, D144); `loop.tagged` (true when `tag_map` set the kind) | yes: runs once per value of `var` | none (derived from the body) |
 | `tasklet` | `code`: one `output = expression` per output connector | no | one element each: indices only |
-| `link` | `container` (the transient it replaced), `depth` (0 a wire, ≥ 1 a buffer), `from` and `to` (the units' instances), `group` (F1) | no | none |
-| `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null), `accelerator` (written only when set: `encapsulate`'s name for the accelerator its group is in, D148) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
+| `link` | `container` (the transient it replaced), `depth` (0 a wire, ≥ 1 a buffer), `from` and `to` (the units' instances) | no | none |
+| `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null), `accelerator` (written only when set: `encapsulate`'s name for the accelerator its group is in, D148), `group` (written only when set: `link`'s name for the group the unit is in) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
 
 **Accelerators and groups** (D146, D148). A bound graph nests accelerator ⊃
 groups ⊃ units and links: a unit is an accelerated node, a group a connected
@@ -546,12 +546,12 @@ as `recipe.json`.
 | `join_map` | `map` (id) | a temporal map with `loop.split` and its spatial map become the map they were split from |
 | `encapsulate` | `accelerator` (a name), `units` (instances) | the groups of those units become one accelerator of that name (their nodes' `accelerator`, D148); `units` in the order the graph runs them, which the groups keep; a unit already in an accelerator, a name an instance or an accelerator has, or a unit the graph lacks is an error |
 | `unencapsulate` | `accelerator` (a name) | each of its groups becomes its own accelerator again |
-| `split_reduce` | `map` (id), `factor` (int) | a reduction's lane partials and a final sum, joined by a transient `<output>_partial` (F1) |
-| `join_reduce` | `map` (id) | undoes `split_reduce` (F1) |
-| `fuse_map` | `first`, `second` (map ids) | two nests with the same ranges and tags, joined by a transient written and read at the same index, become one nest of two tasklets (F1) |
-| `unfuse_map` | `map` (id) | undoes `fuse_map` (F1) |
-| `link` | `container`, `depth` (int), `group` (a name) | a transient between two bound units becomes a link node, the units' groups merge under `group`, and the transient leaves L1 (F1) |
-| `unlink` | `container` | undoes `link` (F1) |
+| `split_reduce` | `map` (id), `factor` (int) | a reduction's map stays `<map>` (temporal) around a spatial `<map>_s` over `0:factor` that writes lane partials into a new transient `<output>_partial`; a final sum, tasklet `<tasklet>_final` in a spatial map `<map>_final` over `0:factor`, folds them into the output |
+| `join_reduce` | `map` (id) | undoes `split_reduce` |
+| `fuse_map` | `first`, `second` (map ids) | two nests with the same ranges and tags, joined by a transient written and read at the same index, become one nest of two tasklets that keeps `first`'s ids; `bind` on it takes its spatial map's id (`<first>_s`) |
+| `unfuse_map` | `map` (id) | undoes `fuse_map` |
+| `link` | `container`, `depth` (int), `group` (a name) | a transient between two bound units becomes a link node, the units' groups merge under `group` (written on every unit of both groups; a name that differs from one already set is `link.group`), and the transient leaves L1 |
+| `unlink` | `container` | undoes `link` |
 
 `recipes/vecadd_undo.json` takes vecadd's last step back to the first. dot
 binds the multiply map to `elementwise_mul` and the sum map to
@@ -591,9 +591,9 @@ The other variants, one recipe each (D150, F1), after the import:
 | Recipe | After the import |
 |---|---|
 | `dot_2`, `dot_3` | split_map mult_map W; bind mult → elementwise_mul; split_map sum_map W; bind sum → accumulate chisel_adder_tree; link tmp0, depth 1 or 0, group dot |
-| `dot_4` | split_map mult_map W; split_reduce sum_map W; fuse_map mult_map sum_map; bind mult_map_s → mac; bind final → accumulate chisel_adder_tree; link out_partial, depth 0, group dot |
-| `dot_5`, `dot_6` | as dot_4, final → chisel_serial; link out_partial, depth 0 or 1 |
-| `matvec_1`–`matvec_6` | the same on matvec, the row loop tagged temporal first |
+| `dot_4` | split_map mult_map W; split_reduce sum_map W; fuse_map mult_map sum_map; bind mult_map_s → mac; bind sum_final → accumulate chisel_adder_tree; link out_partial, depth 0, group dot |
+| `dot_5`, `dot_6` | as dot_4, sum_final → chisel_serial; link out_partial, depth 0 or 1 |
+| `matvec_1`–`matvec_6` | the same on matvec, the row loop tagged temporal first; group `matvec`, the partial `q_partial` |
 
 <!-- snippet: recipes/vecadd.json -->
 ```json
@@ -835,7 +835,7 @@ hjson and `vectors.json` (`gen-rtl --fixture`).
 
 | Key | Holds |
 |---|---|
-| `name` | the accelerator's name, the header's `<ACC>`: `encapsulate`'s `accelerator`, else its one group's name (a one-unit group is named after its instance); dot 2–6 are `dot` |
+| `name` | the accelerator's name, the header's `<ACC>`: `encapsulate`'s `accelerator`, else its one group's name (a one-unit group is named after its instance); dot 2–6 are `dot`, matvec 2–6 `matvec` |
 | `design_point` | the design point by its path from the root, as section 16's files name it |
 | `tag` | the platform's `accelerator_slot`, `snax_forge` by default; the wrapper is `<tag>_shell_wrapper` |
 | `inputs`, `outputs` | the outer ports, each `"<unit>.<port>"`, in the streamer's reader and writer order |
@@ -924,7 +924,9 @@ unit: vecadd's
 `ACC_RW_START`, `ACC_RW_JOBS`, `ACC_RO_STATUS`, `ACC_RO_COUNTER`; vsum adds
 `ACC_RW_JOB_BEATS`; dot 2–6's are `DOT_RW_START`, `DOT_RW_JOBS`,
 `DOT_RW_MAC_JOB_BEATS` (`DOT_RW_SUM_JOB_BEATS` for dot 2 and 3),
-`DOT_RO_STATUS`, `DOT_RO_COUNTER`.
+`DOT_RO_STATUS`, `DOT_RO_COUNTER`; matvec's group and accelerator are
+`matvec` (`MATVEC_RW_JOBS`, `MATVEC_RW_MAC_JOB_BEATS`,
+`MATVEC_RW_SUM_JOB_BEATS`).
 
 | | Offsets | rw, ro | Task values |
 |---|---|---|---|
@@ -932,7 +934,7 @@ unit: vecadd's
 | vsum_tree_i32 | START 0, JOBS 1, JOB_BEATS 2, STATUS 3, COUNTER 4 | 3, 2 | JOBS 1, JOB_BEATS 16 |
 | dot 1 (groups mul, sum) | MUL: START 0, JOBS 1, STATUS 2, COUNTER 3; SUM: START 4, JOBS 5, JOB_BEATS 6, STATUS 7, COUNTER 8 | 5, 4 | task 1: MUL_JOBS 16; task 2: SUM_JOBS 1, SUM_JOB_BEATS 16 |
 | dot 2–6 (one group `dot`) | START 0, JOBS 1, JOB_BEATS 2 (unit `sum` for dot 2 and 3, `mac` for dot 4–6), STATUS 3, COUNTER 4 | 3, 2 | JOBS 1, JOB_BEATS T = N / W (128 at N = 512, W = 4) |
-| matvec 2–6 (one group `dot`) | as dot 2–6 | 3, 2 | JOBS 16, JOB_BEATS T = N / W (128 at N = 512, W = 4) |
+| matvec 2–6 (one group `matvec`) | as dot 2–6 | 3, 2 | JOBS 16, JOB_BEATS T = N / W (128 at N = 512, W = 4) |
 
 dot 1's file, snax-gvsoc's fixture (`forge/dot_1/`): the groups `mul` and
 `sum` in `encapsulate`'s order, each a unit of its own:
@@ -1002,7 +1004,7 @@ dot 1's file, snax-gvsoc's fixture (`forge/dot_1/`): the groups `mul` and
 
 dot 4's file: one group `dot`, the MAC's lane partials wired into the tree.
 
-(F1 makes this a snippet)
+(F2 makes this a snippet)
 ```json
 {
  "name": "dot",
@@ -1056,13 +1058,17 @@ dot 4's file: one group `dot`, the MAC's lane partials wired into the tree.
 **The datapath catalogue** (D147), `hw/chisel/blocks.json`: per datapath
 its params, ports, latency (an int, or an expression over its params whose
 syntax is F1's), `span`, pins and the rule that fills it from the unit's
-ports; no `csr`, no `tie`. A datapath is data and enables only:
-`ElementwiseLanes` (L 0) and `TreeAccumulate` (L 1, pins `fire` and
-`first`); F2 adds:
+ports; no `csr`, no `tie`. A port is `"in"` or `"out"`, or `{"dir": ...,
+"when": {param: value, ...}}`; a pin is a name, or `{"name": ..., "when":
+{...}}`. `when` is a match: the port or pin exists only when every listed
+param has that value, decided at elaboration; one without `when` is
+unconditional. A datapath is data and enables only: `ElementwiseLanes` (L
+0) and `TreeAccumulate` (L 1, pins `fire` and `first`); F2 adds:
 
-- `Mac(inTypes, opType, outType, lanes, accumulate, regOut)`, pins `fire`
-  and `first`: with `accumulate`, per lane s ← first ? a·b : s + a·b, L 1;
-  otherwise a·b + c, L 0, or 1 with `regOut` (`regIn` is not built);
+- `Mac(inTypes, opType, outType, lanes, accumulate, regOut)`: with
+  `accumulate`, per lane s ← first ? a·b : s + a·b, L 1, pins `fire` and
+  `first`; otherwise a·b + c, `c`'s dtype and lanes those of `out`, L 0, or
+  1 with `regOut` and its pin `en` (`regIn` is not built);
 - `SerialAccumulate(inType, outType, lanes)`: acc ← (first ∧ k = 0) ? x_k :
   acc + x_k, lane k in cycle k, span = lanes, L 1;
 - `LinkBuffer(depth, lanes, dtype)`: D beats; `load` and the ring's slots
@@ -1098,8 +1104,8 @@ both ends. The catalogue's entry for `TreeAccumulate`:
  }
 ```
 
-and `Mac`'s, its latency written in `expr.py`'s grammar until F1 fixes the
-syntax:
+and `Mac`'s, its latency an `expr.py` expression over its params (a bool
+as 0 or 1):
 
 (F2 makes this a snippet)
 ```json
@@ -1121,10 +1127,14 @@ syntax:
    "accumulate": {"type": "bool"},
    "regOut": {"type": "bool"}
   },
-  "ports": {"a": "in", "b": "in", "out": "out"},
+  "ports": {"a": "in", "b": "in", "c": {"dir": "in", "when": {"accumulate": false}}, "out": "out"},
   "latency": "max(accumulate, regOut)",
   "span": 1,
-  "pins": ["fire", "first"],
+  "pins": [
+   {"name": "fire", "when": {"accumulate": true}},
+   {"name": "first", "when": {"accumulate": true}},
+   {"name": "en", "when": {"accumulate": false, "regOut": true}}
+  ],
   "fill": {
    "inTypes": "inputs.dtype",
    "opType": "unit.opType",

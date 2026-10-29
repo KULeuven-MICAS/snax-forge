@@ -223,8 +223,8 @@ D123), which the flow runs from FLOW3 on. The adder tree is the Chisel
 `forge/vsum_tree` (vsum at W = 4), and no RTL run stands behind the 19
 cycles here. The two accelerators are chained through L1 on SNAX-MODEL; on
 SNAX-GVSoC they are one accelerator of two groups since M13's B1
-(`recipes/dot_1.json`, D148), and M13's B3 makes such a chain one composed
-accelerator (D112).
+(`recipes/dot_1.json`, D148), and B1x's recipes (`recipes/dot_2.json` to
+`recipes/dot_6.json`) make such a chain one composed accelerator (D112).
 
 The bound-graph flow writes to `out/flow/dot_1/`, the folder a recipe flow of
 `recipes/dot_1.json` also uses. Give one of them `--name` to keep both.

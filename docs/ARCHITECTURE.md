@@ -304,15 +304,17 @@ Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16
 from here (D116, D141; `docs/STATUS.md` has the tasks):
 
 1. **M13, the block library** (D141): M7's tier A, the composed bind and
-   BASE1's forge side as one milestone, in nine phases, with RAM1 alongside.
+   BASE1's forge side as one milestone, in nine phases, with RAM1 alongside:
+   OpenRAM macros sized for the cluster, in snax-forge-experiments, so
+   snax_cluster and snitch_cluster synthesize on the same macros.
 
    | Phase | Content |
    |---|---|
    | B0 flow pieces (`done`) | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
    | B1 one description (`done`) | `accelerator.json` per design point (C§17, D145), read by Emit, the catalogue check and SNAX-GVSoC; groups with their own START, JOBS, STATUS, COUNTER and pins (D146); each block a pure datapath under one nest controller per group, three modules (D147); groups in SNAX-DFG and `encapsulate`, so dot variant 1 is one accelerator of two groups (D148) |
    | B1x links | dot 2–6 and matvec 1–6 on one description with links (D112); the control unit per group (D147); `Mac`, `SerialAccumulate` and `LinkBuffer` (D149); `split_reduce`, `fuse_map` and `link` (D150); on SNAX-GVSoC, and checked locally on snax_cluster |
-   | clean-up | what B1x leaves behind |
-   | VIEW2 | the viewers, amending their decisions (`docs/STATUS.md`) |
+   | clean-up | snax_cluster's CI time (agreed with the cluster's maintainers first), and whatever B1x leaves |
+   | VIEW2 | the interactive SNAX-DFG viewer: select a part of the graph, apply a transform from a side list, a step history with undo, save a recipe, a first-order profile |
    | SYN1 | synthesis of the basic blocks and kernels in KULeuven-MICAS/snax-forge-experiments |
    | HWCOST | a first-order area and energy estimate from SYN1 |
    | B2 (shrunk) | the 1-stream SIMD, axpy's CSR scalar, the lane accumulator without an op, the fold's `init` port, other group binds |
