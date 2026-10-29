@@ -436,13 +436,14 @@ def _check_replaced(node: Node, scope: Scope, what: str) -> None:
 
 def _check_instance(node: Node, instances: dict[str, tuple[Any, ...]], what: str) -> None:
     """Two accelerated nodes on one instance agree on its BRM, implementation and params, and
-    carry the same accelerator (or none, D148)."""
+    carry the same group and accelerator (or none, D148)."""
     a = node.attrs
-    key = (a["brm"], a["implementation"], plain(a["params"]), a.get("accelerator"))
+    key = (a["brm"], a["implementation"], plain(a["params"]), a.get("group"), a.get("accelerator"))
     seen = instances.setdefault(a["instance"], key)
     if seen[:3] != key[:3]:
         raise DfgError(f"{what}: instance {a['instance']!r} is bound elsewhere as {seen[:3]}")
-    if seen[3] != key[3]:
-        raise DfgError(f"{what}: instance {a['instance']!r} is in accelerator {seen[3]!r} "
-                       f"elsewhere, here in {key[3]!r}; every node of an instance carries the "
-                       "same one")  # fmt: skip
+    for k, noun in ((3, "group"), (4, "accelerator")):
+        if seen[k] != key[k]:
+            raise DfgError(f"{what}: instance {a['instance']!r} is in {noun} {seen[k]!r} "
+                           f"elsewhere, here in {key[k]!r}; every node of an instance carries "
+                           "the same one")  # fmt: skip

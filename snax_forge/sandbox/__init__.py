@@ -3,7 +3,9 @@
 Recipes (recipe.py), an ordered list of registered transforms with their
 params, applied to an imported graph; the transforms ``split_map``,
 ``bind`` and ``encapsulate`` and their inverses ``unbind``, ``join_map`` and
-``unencapsulate`` (transforms.py);
+``unencapsulate`` (transforms.py); ``split_reduce``, ``fuse_map`` and ``link``
+with their inverses ``join_reduce``, ``unfuse_map`` and ``unlink``
+(compose.py, D150);
 the pattern matchers ``bind`` uses to recognise a BRM's pattern
 (patterns.py), among them ``reduce``, with which ``bind`` binds a folding
 output as one lane, its named rate from ``named_rates`` (D102); and the
@@ -13,6 +15,7 @@ graph. The command line is ``python -m snax_forge.sandbox RECIPE`` (pixi
 ``sandbox``).
 """
 
+from .compose import fuse_map, join_reduce, link, split_reduce, unfuse_map, unlink
 from .patterns import PATTERNS, match, register_pattern
 from .recipe import Recipe, SandboxError, Step
 from .run import Result, apply_recipe, bind_recipe_symbols, write_steps
@@ -38,12 +41,18 @@ __all__ = [
     "bind",
     "bind_recipe_symbols",
     "encapsulate",
+    "fuse_map",
     "join_map",
+    "join_reduce",
+    "link",
     "match",
     "register_pattern",
     "register_transform",
     "split_map",
+    "split_reduce",
     "unbind",
     "unencapsulate",
+    "unfuse_map",
+    "unlink",
     "write_steps",
 ]

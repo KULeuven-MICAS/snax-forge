@@ -490,17 +490,21 @@ and on an accelerated node. dot as imported:
 |---|---|---|---|
 | `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`, and `valid`, the iteration count n, when n is not a multiple of the factor: the lanes past it are padding, `dfg/pad.py`, D144); `loop.tagged` (true when `tag_map` set the kind) | yes: runs once per value of `var` | none (derived from the body) |
 | `tasklet` | `code`: one `output = expression` per output connector | no | one element each: indices only |
-| `link` | `container` (the transient it replaced), `depth` (0 a wire, ≥ 1 a buffer), `from` and `to` (the units' instances) | no | none |
+| `link` | `container` (the transient it replaced, which the writer and the reader still name, so the reference executor runs the link as it), `depth` (0 a wire, ≥ 1 a buffer), `from` and `to` (the units' instances) | no | none |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null), `accelerator` (written only when set: `encapsulate`'s name for the accelerator its group is in, D148), `group` (written only when set: `link`'s name for the group the unit is in) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
 
 **Accelerators and groups** (D146, D148). A bound graph nests accelerator ⊃
 groups ⊃ units and links: a unit is an accelerated node, a group a connected
 set of units and links (`link`, section 12), so an unlinked unit is a group
-of its own, named after its instance. A link node holds the container it
-replaced, its depth and its from and to units, and is drawn in the
-accelerated node's style (`out_partial = wire`, `tmp0 = buffer`, its depth,
-what it replaced). A fused map (`fuse_map`) is one nest of two tasklets, the
-transient between them a local value, no longer in L1. By default each group is its own
+of its own, named after its instance; a linked group's units carry its
+name (`group`). A link node sits before its reader in the body the two
+share, and is drawn in the accelerated node's style (`out_partial = wire`,
+`tmp0 = buffer`, its depth, what it replaced). A fused map (`fuse_map`) is
+one nest of two tasklets, the transient between them a local value, no
+longer in L1: the container carries `loop.local` (the fused map's id), and
+the fused map records the two nests it was made of (`loop.fused`); a map
+`split_reduce` split records its partials and its final sum
+(`loop.split_reduce`). By default each group is its own
 accelerator, named after it; `encapsulate` (section 12) puts several into
 one, which shares one slot, one CSR window and one wrapper (section 17),
 each group still a task of its own, the groups in the graph's order. The
@@ -578,17 +582,17 @@ as `recipe.json`.
 | `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor`; when the length n is not a multiple of the factor, over `0:(n + factor - 1) // factor`, with `loop.split.valid` n: the lanes at or past n are padding (D144), which the reference executor neither reads nor writes |
 | `tag_map` | `map` (id), `kind` (`temporal` or `tile`) | an untagged map is tagged as it is, not split, and records it (`loop.tagged`); a tagged map is an error |
 | `untag_map` | `map` (id) | the tag `tag_map` set is removed; a map `split_map` tagged is an error (`join_map` undoes it) |
-| `bind` | `node` (a tasklet id, or a fused map's id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; every map around the spatial map must be `temporal` (the firing loops: an untagged one is an error naming `tag_map`, a `tile` one is not lowered yet); the lanes param comes from the spatial bound; the dimension over the spatial variable becomes the lanes' range, the others stay indices; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D102); a tasklet that needs a fused map or a split reduction is refused with the fix named ("fuse_map first", "split_reduce first", D150) |
+| `bind` | `node` (a tasklet id, or a fused nest's spatial map id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; every map around the spatial map must be `temporal` (the firing loops: an untagged one is an error naming `tag_map`, a `tile` one is not lowered yet); the lanes param comes from the spatial bound; the dimension over the spatial variable becomes the lanes' range, the others stay indices; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D102); a fused nest's two tasklets bind as one, the first's inputs and the second's output (`lane_fold`, section 10), and the accelerated node takes the first's id; a tasklet that needs a fused map or a split reduction is refused with the fix named ("fuse_map first", "split_reduce first", D150); a unit on a link is not unbound (unlink first) |
 | `unbind` | `node` (accelerated id) | the accelerated node becomes the subtree it `replaced` |
 | `join_map` | `map` (id) | a temporal map with `loop.split` and its spatial map become the map they were split from |
 | `encapsulate` | `accelerator` (a name), `units` (instances) | the groups of those units become one accelerator of that name (their nodes' `accelerator`, D148); `units` in the order the graph runs them, which the groups keep; a unit already in an accelerator, a name an instance or an accelerator has, or a unit the graph lacks is an error |
 | `unencapsulate` | `accelerator` (a name) | each of its groups becomes its own accelerator again |
-| `split_reduce` | `map` (id), `factor` (int) | a reduction's map stays `<map>` (temporal) around a spatial `<map>_s` over `0:factor` that writes lane partials into a new transient `<output>_partial`; a final sum, tasklet `<tasklet>_final` in a spatial map `<map>_final` over `0:factor`, folds them into the output |
+| `split_reduce` | `map` (id), `factor` (int) | an untagged map whose one tasklet folds into an element that does not move with it is split as `split_map` splits it, `<map>` (temporal) around a spatial `<map>_s`; the tasklet writes one partial per lane into a new transient `<output>_partial`, indexed by the output's dimensions that move with an enclosing map, then the spatial variable (dot's `out_partial[4]`, matvec's `q_partial[M, 4]`); a final sum, tasklet `<tasklet>_final` in a spatial map `<map>_final` over `0:factor` right after `<map>`, folds them into the output; a length that is not a multiple of the factor is refused (the partials' padding is not placed yet) |
 | `join_reduce` | `map` (id) | undoes `split_reduce` |
-| `fuse_map` | `first`, `second` (map ids) | two nests with the same ranges and tags, joined by a transient written and read at the same index, become one nest of two tasklets that keeps `first`'s ids; `bind` on it takes its spatial map's id (`<first>_s`) |
-| `unfuse_map` | `map` (id) | undoes `fuse_map` |
-| `link` | `container`, `depth` (int), `group` (a name) | a transient between two bound units becomes a link node, the units' groups merge under `group` (written on every unit of both groups; a name that differs from one already set is `link.group`), and the transient leaves L1 |
-| `unlink` | `container` | undoes `link` |
+| `fuse_map` | `first`, `second` (map ids, `second` right after `first`) | two nests with the same ranges and tags level by level down to one tasklet each, joined by a transient written and read at the same index, become one nest of two tasklets that keeps `first`'s ids and variables, the second's other nodes after the fused one at their level (matvec's final sum inside the row map); the transient becomes a local value (no other node may name it); `bind` on it takes its spatial map's id (dot's `mult_map_s`, matvec's `mult_map_1_s`) |
+| `unfuse_map` | `map` (id) | undoes `fuse_map`, when nothing changed since (unbind first) |
+| `link` | `container`, `depth` (int), `group` (a name) | a transient between two bound units becomes a link node, the units' groups merge under `group` (written on every unit of both groups), and the transient leaves L1; refused: a container that is not a transient with one writer and one reader, or a local value (`link.container`), an end that is not bound (`link.unbound`), the writer's beats not the reader's in the same order, each port's memlet over its firing loops at the recipe's symbols (`link.order`), a name that differs from one already set, another instance's or group's, or units in two accelerators (`link.group`) |
+| `unlink` | `container` | undoes `link`, the group taken off every unit left alone; two groups of several units left under one name is `unlink.group` |
 
 `recipes/vecadd_undo.json` takes vecadd's last step back to the first. dot
 binds the multiply map to `elementwise_mul` and the sum map to

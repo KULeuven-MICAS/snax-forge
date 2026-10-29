@@ -25,7 +25,10 @@ is; the reference check after the step is run.py's.
     tagged (``join_map`` undoes that) or one tagged by hand (D73).
 ``bind(node, brm, implementation, instance, params={})``
     replaces a tasklet and the spatial map around it (the map's only
-    child) by an accelerated node with the tasklet's id, bound to an
+    child), or a fused nest's spatial map and its two tasklets
+    (compose.py's ``fuse_map``; the first's inputs, the second's output,
+    patterns.py's ``fused_view``), by an accelerated node with the
+    (first) tasklet's id, bound to an
     instance of a library BRM. The BRM's pattern matcher (patterns.py) says
     which connector feeds which port. Every map around the spatial map
     must be ``temporal``: they are the firing loops (an untagged one is
@@ -52,7 +55,8 @@ is; the reference check after the step is run.py's.
 ``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
     put the groups of the instances ``units`` into one accelerator of that
     name (D148): every accelerated node of each carries ``accelerator``. A
-    group is one instance until links come (M13's B3), named after it. The
+    group is one instance, named after it, unless ``link`` merged several
+    (compose.py). The
     groups keep the graph's order, which ``units`` must give (the CSRs and
     the tasks follow it, C§17); a unit already in an accelerator, a name an
     instance or an accelerator has, or a unit the graph lacks is an error.
@@ -292,9 +296,9 @@ def bind(
         if found is None:
             raise SandboxError(f"{what}: a map binds only as a fused nest, a spatial map of two "
                                "tasklets (fuse_map)")  # fmt: skip
-        tasklet = found[2]
+        tasklet, pattern_node = found[2], smap
     else:
-        tasklet = body[i]
+        tasklet = pattern_node = body[i]
         smap = outer[-1] if outer else None
         if smap is None or smap.attrs.get("loop.kind") != "spatial" or len(smap.body or []) != 1:
             raise SandboxError(f"{what}: must be the only node of a spatial map (split the map "
@@ -317,7 +321,7 @@ def bind(
     conn_dtypes = {
         c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
     }
-    ports = match(tasklet, b, conn_dtypes)
+    ports = match(pattern_node, b, conn_dtypes)
     dtypes = {ports[c]: dt for c, dt in conn_dtypes.items()}
     if refused := check_dtypes(b, dtypes):
         raise SandboxError(
@@ -517,6 +521,13 @@ def unbind(g: Graph, node: str) -> Graph:
         raise SandboxError(f"{what}: a {acc.kind!r} is not an accelerated node")
     if acc.attrs.get("replaced") is None:
         raise SandboxError(f"{what}: it records nothing it replaced (written by hand?)")
+    inst = acc.attrs["instance"]
+    linked = [n.attrs["container"] for n, _ in g.walk()
+              if n.kind == "link" and inst in (n.attrs["from"], n.attrs["to"])]  # fmt: skip
+    if linked:
+        raise SandboxError(
+            f"{what}: its instance {inst!r} is on the link of {linked} (unlink first)"
+        )
     body[i] = Node.from_dict(acc.attrs["replaced"], what)
     return _result(g)
 

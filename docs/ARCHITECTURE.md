@@ -170,9 +170,10 @@ on `SnaxUnit` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
 `.snaxdfg`; a recipe in `recipes/` names a kernel, params, symbol values and
 the steps; the reference executor checks every step; `--set W=8` runs one
 point of a sweep. Transforms: `split_map`, `tag_map` (a tag without a split),
-`bind` (patterns `elementwise` and `reduce`, design params read off the graph,
-D73), and their inverses `untag_map`, `unbind` and `join_map`. **[PLANNED]** `split_reduce`, `fuse_map`
-and `link` with their inverses (M13 B1x, D150), and a tile transform (LOW3b).
+`bind` (patterns `elementwise`, `reduce` and `lane_fold`, design params read off the graph,
+D73), `encapsulate`, `split_reduce`, `fuse_map` and `link` (D148, D150), and their inverses
+`untag_map`, `unbind`, `join_map`, `unencapsulate`, `join_reduce`, `unfuse_map` and `unlink`.
+**[PLANNED]** a tile transform (LOW3b).
 
 **The design step** (D84–D87, `design/`; C§13–C§15). It pairs a bound graph
 with a platform from `platforms/`, resolves the streamers (D12), makes the

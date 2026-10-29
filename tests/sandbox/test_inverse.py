@@ -114,3 +114,56 @@ def test_join_rejected():
     d["body"][0]["body"][0]["body"][0]["inputs"]["in1"]["subset"] = ["i_t + 16 * i_s"]
     with pytest.raises(SandboxError, match="is not an index split_map wrote"):
         join_map(Graph.from_dict(d), "add_map")
+
+
+# =============================================================================
+# B1x's transforms (D150): each undone by its inverse, the graph as before
+# =============================================================================
+
+
+def _dot(n: int = 8) -> Graph:
+    d = graph_dict("dot")
+    d["symbols"]["N"] = n
+    return Graph.from_dict(d)
+
+
+def test_join_reduce_undoes_split_reduce():
+    g = _dot()
+    assert (
+        tr.TRANSFORMS["join_reduce"]
+        .fn(tr.TRANSFORMS["split_reduce"].fn(g, "sum_map", 4), "sum_map")
+        .to_json()
+        == g.to_json()
+    )
+
+
+def test_unfuse_map_undoes_fuse_map():
+    from snax_forge.sandbox import fuse_map, split_reduce, unfuse_map
+
+    g = split_reduce(split_map(_dot(), "mult_map", 4), "sum_map", 4)
+    assert unfuse_map(fuse_map(g, "mult_map", "sum_map"), "mult_map").to_json() == g.to_json()
+
+
+@pytest.mark.parametrize("depth", [0, 1, 2])
+def test_unlink_undoes_link(depth):
+    from snax_forge.sandbox import link, unlink
+
+    g = bind(split_map(_dot(), "mult_map", 4), "mult", "elementwise_mul", "chisel_tiled_spatial",
+             "mul")  # fmt: skip
+    g = bind(split_map(g, "sum_map", 4), "sum", "accumulate", "chisel_adder_tree", "sum")
+    assert unlink(link(g, "tmp0", depth, "dot"), "tmp0").to_json() == g.to_json()
+
+
+def test_dot4_goes_back_to_the_import():
+    """dot_4's steps undone in reverse order give the imported graph."""
+    from snax_forge.sandbox import fuse_map, join_reduce, link, split_reduce, unfuse_map, unlink
+
+    g0 = _dot()
+    g = fuse_map(split_reduce(split_map(g0, "mult_map", 4), "sum_map", 4), "mult_map", "sum_map")
+    g = bind(g, "mult_map_s", "mac", "chisel_mac", "mac")
+    g = link(
+        bind(g, "sum_final", "accumulate", "chisel_adder_tree", "sum"), "out_partial", 0, "dot"
+    )
+    back = unbind(unbind(unlink(g, "out_partial"), "sum_final"), "mult")
+    back = join_map(join_reduce(unfuse_map(back, "mult_map"), "sum_map"), "mult_map")
+    assert back.to_json() == g0.to_json()

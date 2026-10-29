@@ -51,6 +51,11 @@ How a node runs is registered per kind (``register_executor``, principle
     firings, T from ``named_rates`` (D102): an input is read at firings 0, T,
     2T, ..., an output written at T-1, 2T-1, ... where its memlet points in
     the firing that completes it.
+``link``
+    nothing: its writer and its reader still name the transient it replaced,
+    so the link runs as that container. A fused nest (``fuse_map``) is a map
+    of two tasklets, the first writing a local container the second reads
+    at the same index, so it runs as two tasklets over one grid.
 
 **A tail** (D144, dfg/pad.py). Under a map ``split_map`` split
 with a tail (``loop.split`` has ``valid``: n), a lane is the kernel's only
@@ -522,3 +527,5 @@ def _lanes(x: np.ndarray, port: Any, what: str) -> np.ndarray:
 register_executor("map", _run_map)
 register_executor("tasklet", _run_tasklet)
 register_executor("accelerated", _run_accelerated)
+# A link (D148) runs as the transient it replaced: its writer and reader still name it
+register_executor("link", lambda node, ctx: None)
