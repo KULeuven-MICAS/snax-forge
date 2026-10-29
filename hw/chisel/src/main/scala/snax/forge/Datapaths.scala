@@ -21,8 +21,9 @@ import snax.forge.shell.AcceleratorSpec
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
   * "when": {...}}`. `when` is a match: the port or pin exists only when every listed param has that value, decided at
-  * elaboration (`live`); one without `when` always does. A latency or a span is an int or an expression over the params
-  * in `snax_forge/expr.py`'s grammar (ints, names, `+ - * //`, `max` and `min` of two), a bool as 0 or 1 (`value`).
+  * elaboration (`holds`); one without `when` always does. A latency or a span is an int or an expression over the
+  * params in `snax_forge/expr.py`'s grammar, a bool as 0 or 1, which the Python side evaluates
+  * (`snax_forge/gen/rtl.py`).
   *
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.
@@ -86,66 +87,12 @@ object Datapaths {
         })
       }.toMap
 
-    /** The ports and pins whose `when` holds on `p`. */
-    def livePorts(p: Map[String, ujson.Value]): Seq[Port] = ports.filter(x => holds(x.when, p))
-    def livePins(p:  Map[String, ujson.Value]): Seq[Pin]  = pins.filter(x => holds(x.when, p))
-
-    /** Its latency and span on `p`. */
-    def latencyOf(p: Map[String, ujson.Value]): Int = value(latency, p)
-    def spanOf(p:    Map[String, ujson.Value]): Int = value(span, p)
+    /** The pins whose `when` holds on `p`. */
+    def livePins(p: Map[String, ujson.Value]): Seq[Pin] = pins.filter(x => holds(x.when, p))
   }
 
-  private def holds(when: Seq[(String, ujson.Value)], p: Map[String, ujson.Value]): Boolean =
+  def holds(when: Seq[(String, ujson.Value)], p: Map[String, ujson.Value]): Boolean =
     when.forall { case (k, v) => p.get(k).contains(v) }
-
-  /** A latency or span: an int, or an expression over the params' ints and bools (module doc). */
-  def value(v: ujson.Value, p: Map[String, ujson.Value]): Int =
-    v match {
-      case ujson.Num(n) => n.toInt
-      case ujson.Str(s) =>
-        val env = p.collect {
-          case (k, ujson.Num(n))  => k -> n.toInt
-          case (k, ujson.Bool(b)) => k -> (if (b) 1 else 0)
-        }
-        Expr.evaluate(s, env)
-      case other        => throw new IllegalArgumentException(s"a latency or span is an int or an expression: $other")
-    }
-
-  /** `snax_forge/expr.py`'s grammar, enough for a latency or span: ints, names, `+ - * //`, parentheses and `max`,
-    * `min` of two.
-    */
-  object Expr {
-    def evaluate(text: String, env: Map[String, Int]): Int = {
-      val tokens = "\\d+|[A-Za-z_][A-Za-z0-9_]*|//|[-+*(),]".r.findAllIn(text).toVector
-      var at     = 0
-      def peek   = if (at < tokens.size) tokens(at) else ""
-      def take() = { at += 1; tokens(at - 1) }
-      def expect(t: String): Unit = require(take() == t, s"expected $t in $text")
-      def atom():    Int = {
-        val t = take()
-        if (t == "(") { val v = sum(); expect(")"); v }
-        else if (t == "-") -atom()
-        else if (t.head.isDigit) t.toInt
-        else if (t == "max" || t == "min") {
-          expect("("); val a = sum(); expect(","); val b = sum(); expect(")")
-          if (t == "max") a.max(b) else a.min(b)
-        } else env.getOrElse(t, throw new IllegalArgumentException(s"$t is not a param in $text"))
-      }
-      def product(): Int = {
-        var v = atom()
-        while (peek == "*" || peek == "//") { v = if (take() == "*") v * atom() else Math.floorDiv(v, atom()) }
-        v
-      }
-      def sum():     Int = {
-        var v = product()
-        while (peek == "+" || peek == "-") { v = if (take() == "+") v + product() else v - product() }
-        v
-      }
-      val v = sum()
-      require(at == tokens.size, s"trailing tokens in $text")
-      v
-    }
-  }
 
   private def str(p:   Map[String, ujson.Value], n: String): String = p(n).str
   private def op(name: String): Int = ElementwiseOp.names.collectFirst { case (k, v) if v == name => k }.get
