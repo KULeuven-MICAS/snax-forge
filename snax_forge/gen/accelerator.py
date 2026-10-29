@@ -242,6 +242,12 @@ class Accelerator(JsonFile):
         return [(g, u, c) for g in self.groups for u, c in g.in_order()]
 
     @property
+    def fixed_folds(self) -> set[str]:
+        """The units whose T is fixed at design time (``params.T``): their JOB_BEATS is no CSR
+        (D146)."""
+        return {u.name for g in self.groups for u in g.units if "T" in u.params}
+
+    @property
     def rw(self) -> int:
         """The R/W CSRs: Σ_g (2 + Σ_u (f_u + k_u)) (C§17)."""
         return sum(c.access == "rw" for _, _, c in self.csrs())

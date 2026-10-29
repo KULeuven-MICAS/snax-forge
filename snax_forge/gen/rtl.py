@@ -309,8 +309,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         ports.append({"port": p.name, "array": array, "lanes": inst.lanes(p.name),
                       "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
     if linked:
-        fixed = {u.name for u in group.units if "T" in u.params}
-        csrs = {k: v for _, k, v in job_writes(found, task.values, fixed)}
+        csrs = {k: v for _, k, v in job_writes(found, task.values, acc.fixed_folds)}
         n = task.values[group.units[0].name]["n"]
         value, working = group_counter(group, csrs)
     else:

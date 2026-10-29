@@ -236,7 +236,7 @@ class _Program:
         # a linked group's task is the group's: its name -> its units
         self.linked = {k: v for k, v in groups(point.graph).items()
                        if len(v) > 1 and v[0] in self.units}  # fmt: skip
-        self.fixed = {u.name for g in acc.groups for u in g.units if "T" in u.params}
+        self.fixed = acc.fixed_folds
         self.cores = cores(cluster, point.platform.accelerator_slot)
         self.arrays = list(arrays)
         self.conf = tasks.configured()

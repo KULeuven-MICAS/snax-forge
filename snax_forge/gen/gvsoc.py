@@ -279,7 +279,7 @@ def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Accelerator) 
     values (lower/c.py's ``job_writes``: a CSR of a unit of a linked group named with the unit,
     ``MAC_JOB_BEATS``) and, with several groups, its group's trace path."""
     several = len(acc.groups) > 1
-    fixed = {u.name for g in acc.groups for u in g.units if "T" in u.params}
+    fixed = acc.fixed_folds
     out = []
     for s in tasks.steps:
         if not (isinstance(s, Configure) and s.type == "accel"):
