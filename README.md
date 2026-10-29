@@ -1,13 +1,6 @@
 # :hammer: :fire: SNAX-FORGE :fire: :hammer:
 
-SNAX-FORGE is a platform for exploring how domain-specific accelerators perform
-when plugged into a SNAX compute cluster, before committing to RTL. You bring a
-kernel and a model of your accelerator (a BRM); SNAX-FORGE imports the kernel
-into its own dataflow graph, maps it onto the cluster by a recipe you edit,
-runs it on a model of the cluster, and shows where the cycles go. The model
-is SNAX-GVSoC, a GVSoC model in which a Snitch core runs the real program,
-checked against snax_cluster's RTL by running one ELF on both. Humans and
-LLMs close the loop by editing the recipe or the platform and running again.
+SNAX-FORGE is a platform for exploring how domain-specific accelerators perform when plugged into a SNAX compute cluster, before committing to RTL. You bring a kernel and a model of your accelerator (a BRM); SNAX-FORGE imports the kernel into its own dataflow graph, maps it onto the cluster by a recipe you edit, runs it on a model of the cluster, and shows where the cycles go. The model is SNAX-GVSoC, a GVSoC model in which a Snitch core runs the real program, checked against snax_cluster's RTL by running one ELF on both. Humans and LLMs close the loop by editing the recipe or the platform and running again.
 
 | File | What it holds |
 |---|---|
@@ -23,12 +16,7 @@ LLMs close the loop by editing the recipe or the platform and running again.
 
 # Getting started
 
-snax-forge makes a design point, then the bundle snax_cluster builds from
-(the cluster file, the accelerator's RTL) and the program that drives it.
-snax-gvsoc, the `gvsoc/snax-gvsoc` submodule, is the model: it builds the
-program into the ELF and runs it. snax_cluster is a separate checkout beside
-snax-forge (D130): it builds the RTL from the bundle and runs the same ELF
-through its `snax_forge.mk`. snax-forge never runs RTL (D123).
+snax-forge makes a design point, then the bundle snax_cluster builds from (the cluster file, the accelerator's RTL) and the program that drives it. snax-gvsoc, the `gvsoc/snax-gvsoc` submodule, is the model: it builds the program into the ELF and runs it. snax_cluster is a separate checkout beside snax-forge (D130): it builds the RTL from the bundle and runs the same ELF through its `snax_forge.mk`. snax-forge never runs RTL (D123).
 
 ```mermaid
 flowchart LR
@@ -46,10 +34,7 @@ git clone https://github.com/KULeuven-MICAS/snax_cluster.git --recurse-submodule
 cd snax-forge && git submodule update --init gvsoc/snax-gvsoc && cd ..
 ```
 
-In snax-forge's image (Setup), from `$ROOT`, then `cd snax-forge`, one
-command runs the flow (it builds SNAX-GVSoC the first time), the bundle and
-the bundle's ELF, checked to be the flow's, and prints what snax_cluster
-runs next:
+In snax-forge's image (Setup), from `$ROOT`, then `cd snax-forge`, one command runs the flow (it builds SNAX-GVSoC the first time), the bundle and the bundle's ELF, checked to be the flow's, and prints what snax_cluster runs next:
 
 ```bash
 pixi install
@@ -73,8 +58,7 @@ pixi run forge recipes/vecadd.json
       pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B ELF=$E
     ...
 
-Then the RTL, on the host, in snax_cluster with its own pixi environment and
-the `B` and `E` forge printed:
+Then the RTL, on the host, in snax_cluster with its own pixi environment and the `B` and `E` forge printed:
 
 ```bash
 cd ../snax_cluster && pixi install
@@ -91,9 +75,7 @@ pixi run make -C target/snitch_cluster snax-forge-run SIM=vlt CFG_OVERRIDE=$B EL
     forge counter add_acc: 19
     forge errors: 0
 
-The counter is equal, the window within 10%. The flow's stages one by one,
-the trace levels and the viewer, vsum, `N=512`, Questa and the comparison
-table: `docs/RUN.md`.
+The counter is equal, the window within 10%. The flow's stages one by one, the trace levels and the viewer, vsum, `N=512`, Questa and the comparison table: `docs/RUN.md`.
 
 # Setup
 
@@ -111,10 +93,7 @@ Every command below runs through pixi, from the repository root.
 
 ## In the container
 
-SNAX-GVSoC and the programs built from snax_cluster need tools pixi does not
-carry: GVSoC's build tools, snax_cluster's RISC-V toolchain (clang 21.1.6,
-bender 0.28.2). One image holds them, with pixi 0.41.4 and zsh (D118). Build
-and push it from this repository's root:
+SNAX-GVSoC and the programs built from snax_cluster need tools pixi does not carry: GVSoC's build tools, snax_cluster's RISC-V toolchain (clang 21.1.6, bender 0.28.2). One image holds them, with pixi 0.41.4 and zsh (D118). Build and push it from this repository's root:
 
 ```bash
 docker build -t ghcr.io/kuleuven-micas/snax-forge:main container
@@ -128,18 +107,11 @@ podman run --rm -it -v "$PWD":"$PWD" -w "$PWD" ghcr.io/kuleuven-micas/snax-forge
 cd snax-forge && pixi install && pixi run check
 ```
 
-The image holds tools only. `pixi install` writes the environment to
-`.pixi/` in this repository; since the path is the same inside and outside
-the container, the same environment works from the host too. Adding
-`-v ~/.cache/rattler:/root/.cache/rattler` keeps pixi's downloads across
-containers.
+The image holds tools only. `pixi install` writes the environment to `.pixi/` in this repository; since the path is the same inside and outside the container, the same environment works from the host too. Adding `-v ~/.cache/rattler:/root/.cache/rattler` keeps pixi's downloads across containers.
 
 # The flow and its knobs
 
-`pixi run flow` takes a recipe to a checked run on SNAX-GVSoC (D136,
-`docs/RUN.md` section 2), everything in `out/flow/<name>/`. Change a design
-point with `--set`; each one is added to the name, so the runs sit side by
-side:
+`pixi run flow` takes a recipe to a checked run on SNAX-GVSoC (D136, `docs/RUN.md` section 2), everything in `out/flow/<name>/`. Change a design point with `--set`; each one is added to the name, so the runs sit side by side:
 
 ```bash
 pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set W=8                                    # out/flow/vecadd_W8: 220 cycles, counter 11
@@ -147,9 +119,7 @@ pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set pla
 pixi run flow recipes/vsum.json --platform platforms/snax_forge.json                                                # out/flow/vsum: 255 cycles
 ```
 
-A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go
-to the design step. The flow also starts from a bound graph (a file ending
-in `.snaxdfg`, D108), which skips the import and the recipe:
+A `--set` without a dot is a recipe param; `platform.` and `memory.` ones go to the design step. The flow also starts from a bound graph (a file ending in `.snaxdfg`, D108), which skips the import and the recipe:
 
 ```bash
 pixi run sandbox recipes/vecadd.json                                                 # out/sandbox/vecadd/2_bind.snaxdfg
@@ -180,8 +150,7 @@ The flow's tools also run on their own:
 
 # Chisel blocks
 
-The accelerator blocks behind the BRMs are a Chisel project of their own in
-`hw/chisel/`, with its own environment (`-e hw`):
+The accelerator blocks behind the BRMs are a Chisel project of their own in `hw/chisel/`, with its own environment (`-e hw`):
 
 ```bash
 pixi run -e hw chisel-test    # the chiseltest specs
@@ -192,11 +161,7 @@ See `hw/chisel/README.md`.
 
 # SNAX-GVSoC from snax-forge
 
-[snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
-`gvsoc/snax-gvsoc` (D134); CI fetches it in one job (`gvsoc`).
-`gvsoc/Makefile` names the image's Python, CMake and host compilers, so it
-runs the same from the container's plain shell and through pixi (`pixi run
-make -C gvsoc ...`, as the flow does):
+[snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at `gvsoc/snax-gvsoc` (D134); CI fetches it in the `python`, `chisel` and `gvsoc` jobs and builds it only in `gvsoc`. `gvsoc/Makefile` names the image's Python, CMake and host compilers, so it runs the same from the container's plain shell and through pixi (`pixi run make -C gvsoc ...`, as the flow does):
 
 ```bash
 cd gvsoc
@@ -206,22 +171,11 @@ make run TARGET=snax_hjson GVRUN_ARGS="--param hjson=$PWD/snax-gvsoc/forge/vecad
     ELF=snax-gvsoc/build/sw/apps/snax-csr/snax-csr.elf
 ```
 
-`run` prints snax-csr's four lines, `csrw/csrr: 0 errors` to `read-only: 0
-errors`; `GVRUN_ARGS` goes before gvrun's `run`. `SNAX_GVSOC=../../snax-gvsoc`
-uses a sibling checkout instead of the submodule; `build` clears
-`out/snax-gvsoc` when the checkout changes. A design point's program builds
-from `out/gvsoc/<design>/` into `out/snax-gvsoc/sw/<design>/` (`docs/RUN.md`
-section 5).
+`run` prints snax-csr's four lines, `csrw/csrr: 0 errors` to `read-only: 0 errors`; `GVRUN_ARGS` goes before gvrun's `run`. `SNAX_GVSOC=../../snax-gvsoc` uses a sibling checkout instead of the submodule; `build` clears `out/snax-gvsoc` when the checkout changes. A design point's program builds from `out/gvsoc/<design>/` into `out/snax-gvsoc/sw/<design>/` (`docs/RUN.md` section 5).
 
 ## Refreshing a fixture
 
-snax-gvsoc keeps one generated design point per folder in `forge/<design>/`
-(vecadd, vecmul, vsum on `accumulate`'s Chisel `TreeAccumulate` at one lane,
-and vsum_tree on its adder tree), which its `make regress` runs (D134).
-`tests/gen/test_fixture.py` generates each again and compares it byte for
-byte with the submodule's copy; it skips when the submodule is not checked
-out. When the generator or the design point changes, refresh the folder in a
-snax-gvsoc checkout next to this one, the folder cleared first:
+snax-gvsoc keeps one generated design point per folder in `forge/<design>/` (vecadd, vecmul, vsum on `accumulate`'s Chisel `TreeAccumulate` at one lane, and vsum_tree on its adder tree), which its `make regress` runs (D134). `tests/gen/test_fixture.py` generates each again and compares it byte for byte with the submodule's copy; it skips when the submodule is not checked out. When the generator or the design point changes, refresh the folder in a snax-gvsoc checkout next to this one, the folder cleared first:
 
 ```bash
 pixi run sandbox recipes/vecadd.json
@@ -229,9 +183,7 @@ pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forg
 pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd
 ```
 
-(the same with `vecmul`, `vsum` or `vsum_tree`), commit the folder in
-snax-gvsoc as written, then bump the submodule here so the test compares
-against it.
+(the same with `vecmul`, `vsum` or `vsum_tree`), commit the folder in snax-gvsoc as written, then bump the submodule here so the test compares against it.
 
 # Tests and lint
 

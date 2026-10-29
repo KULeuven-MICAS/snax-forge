@@ -40,7 +40,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
+      # gvsoc/snax-gvsoc at the pinned commit, shallow, for the tests that read it (its forge/
+      # fixtures, snax/ sources and snax_cluster's sw/): nothing is built.
       - uses: actions/checkout@v4
+        with:
+          submodules: true
+          fetch-depth: 1
 
       - uses: prefix-dev/setup-pixi@v0.8.8
         with:
@@ -136,8 +141,8 @@ jobs:
   # The flow on SNAX-GVSoC (D136): GVSoC built from the submodule, then
   # `pixi run flow` on vecadd and vsum, at trace off and task (D137: the events
   # converted, the reports written), and the tests marked `gvsoc`. The only
-  # job that builds the submodule (D134; the chisel job reads its unit cases);
-  # snax-gvsoc's own CI never needs snax-forge.
+  # job that builds the submodule (D134; the python and chisel jobs only read
+  # it); snax-gvsoc's own CI never needs snax-forge.
   gvsoc:
     name: Flow on SNAX-GVSoC
     # Only hosts Docker and Node; pinned as snax-gvsoc's CI is.

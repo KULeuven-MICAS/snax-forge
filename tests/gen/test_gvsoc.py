@@ -38,7 +38,7 @@ from .helpers import (
 
 needs_submodule = pytest.mark.skipif(
     not (SUB / "snax" / "snax_cfg.py").exists(),
-    reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
+    reason="the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)",
 )
 FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"]
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
