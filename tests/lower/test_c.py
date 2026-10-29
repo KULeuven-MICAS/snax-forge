@@ -400,7 +400,7 @@ def _riscv_clang() -> str | None:
     if CLANG is None or NM is None:
         return "no clang or llvm-nm on PATH (the image's, snax_cluster's toolchain)"
     if not (SW / "snRuntime").is_dir():
-        return "the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)"
+        return "the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)"
     probe = subprocess.run([CLANG, "-print-targets"], capture_output=True, text=True, check=False)
     if "riscv32" not in probe.stdout:
         return f"{CLANG} has no riscv32 target"

@@ -20,7 +20,7 @@ import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 DOC = REPO / "docs" / "CONTRACTS.md"
-# The snax-gvsoc submodule: only CI's gvsoc and chisel jobs fetch it
+# The snax-gvsoc submodule: CI's python, chisel and gvsoc jobs fetch it
 SUBMODULE = "gvsoc/snax-gvsoc/"
 
 # <!-- snippet: path --> on its own line, immediately before a fenced block.

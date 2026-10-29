@@ -16,8 +16,8 @@ copied into its ``platforms/``), so the design point is
 ``out/design/<design>/design_point.json`` and every header comment names it
 as the fixture's do. The generated folder must equal the fixture byte for
 byte, file list included, and every folder of ``forge/`` must be one of them.
-Skipped where the submodule is not checked out (only CI's gvsoc job fetches
-it).
+Skipped where the submodule is not checked out (CI's python job fetches it,
+shallow).
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ DESIGNS = [
 
 pytestmark = pytest.mark.skipif(
     not (SUB / "snax").is_dir(),
-    reason="the snax-gvsoc submodule is not checked out (only CI's gvsoc job fetches it)",
+    reason="the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)",
 )
 
 

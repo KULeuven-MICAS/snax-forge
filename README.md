@@ -193,7 +193,7 @@ See `hw/chisel/README.md`.
 # SNAX-GVSoC from snax-forge
 
 [snax-gvsoc](https://github.com/KULeuven-MICAS/snax-gvsoc) is a submodule at
-`gvsoc/snax-gvsoc` (D134); CI fetches it in one job (`gvsoc`).
+`gvsoc/snax-gvsoc` (D134); CI fetches it in the `python`, `chisel` and `gvsoc` jobs and builds it only in `gvsoc`.
 `gvsoc/Makefile` names the image's Python, CMake and host compilers, so it
 runs the same from the container's plain shell and through pixi (`pixi run
 make -C gvsoc ...`, as the flow does):
