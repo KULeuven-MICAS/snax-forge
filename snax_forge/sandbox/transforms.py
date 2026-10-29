@@ -286,10 +286,41 @@ def bind(
     instance: str,
     params: Mapping[str, Any] | None = None,
 ) -> Graph:
-    from snax_forge.brm import BrmError, accepted, check_dtypes, memlet_ordered, task_nest
-
     g = _copy(g)
     what = f"bind {node!r}"
+    site = _bind_site(g, node, what)
+    bound = _bind_check(g, site, brm, implementation, params, what)
+    return _bind_rewrite(g, site, bound, brm, implementation, instance, what)
+
+
+@dataclass(frozen=True)
+class _Site:
+    """Where ``bind`` binds: the tasklet (a fused nest's two as one, ``pattern`` the node its
+    ports are matched on), its spatial map and the firing loops around it, outermost first."""
+
+    tasklet: Node
+    pattern: Node
+    smap: Node
+    temporal: list[Node]
+
+
+@dataclass(frozen=True)
+class _Bound:
+    """What ``bind`` checked: the BRM, connector -> port, the instance, the spatial map's
+    variable and bound, the tasklet's memlets and its folding outputs."""
+
+    brm: Any
+    ports: dict[str, str]
+    inst: Any
+    var_s: str
+    end: int
+    memlets: dict[str, Memlet]
+    folds: set[str]
+
+
+def _bind_site(g: Graph, node: str, what: str) -> _Site:
+    """The match: the node is the only node of a spatial map, or a fused nest's spatial map,
+    and every map around it is tagged temporal."""
     body, i, outer = _locate(g, node)
     if body[i].kind == "map":  # a fused nest's spatial map (fuse_map): its two tasklets as one
         smap, found = body[i], fused_view(body[i])
@@ -304,7 +335,7 @@ def bind(
             raise SandboxError(f"{what}: must be the only node of a spatial map (split the map "
                                "first)")  # fmt: skip
         outer = outer[:-1]
-    temporal = list(outer)  # the firing loops, outermost first
+    temporal = list(outer)
     for m in temporal:
         kind = m.attrs.get("loop.kind")
         if kind == "tile":
@@ -314,6 +345,17 @@ def bind(
                 f"{what}: map {m.id!r} around it is untagged; the maps around the spatial map are "
                 "its firing loops: tag it temporal with tag_map"
             )
+    return _Site(tasklet, pattern_node, smap, temporal)
+
+
+def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
+                params: Mapping[str, Any] | None, what: str) -> _Bound:  # fmt: skip
+    """The check: the BRM's ports match the tasklet's, their dtypes are accepted, it computes
+    what the tasklet computes, and its lanes are the spatial bound (the design params: the
+    lanes param from that bound, the rest given or default)."""
+    from snax_forge.brm import BrmError, accepted, check_dtypes
+
+    tasklet, smap = site.tasklet, site.smap
     try:
         b = load_brm(brm)
     except BrmError as e:
@@ -321,7 +363,7 @@ def bind(
     conn_dtypes = {
         c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
     }
-    ports = match(pattern_node, b, conn_dtypes)
+    ports = match(site.pattern, b, conn_dtypes)
     dtypes = {ports[c]: dt for c, dt in conn_dtypes.items()}
     if refused := check_dtypes(b, dtypes):
         raise SandboxError(
@@ -337,7 +379,6 @@ def bind(
             f"{brm!r} computes {b.function.code!r}"
         )
 
-    # design params: the lanes param from the spatial bound, the rest given or default
     begin, end, step = parse_dim(smap.attrs["range"], what)
     if begin != 0 or step != 1 or type(end) is not int:
         raise SandboxError(
@@ -378,14 +419,24 @@ def bind(
                 f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
                 f"{inst.lanes(ports[c])} lanes"
             )
+    return _Bound(b, ports, inst, var_s, end, memlets, folds)
 
-    # memlets: the spatial variable becomes the lanes' range; dtype and order checked
+
+def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation: str,
+                  instance: str, what: str) -> Graph:  # fmt: skip
+    """The rewrite: each memlet's spatial variable becomes the lanes' range (a fold's last
+    index one lane), its order checked against the BRM's nest unless the port is a stream,
+    and the spatial map replaced by the accelerated node."""
+    from snax_forge.brm import memlet_ordered, task_nest
+
+    tasklet, smap, temporal = site.tasklet, site.smap, site.temporal
+    b, ports, inst, folds = bound.brm, bound.ports, bound.inst, bound.folds
     counts = [_bound(g, _length(m), what) for m in temporal]
     n = int(np.prod(counts, dtype=int))
     loops = [(m.attrs["var"], k) for m, k in zip(temporal, counts, strict=True)]
     try:
         rates = named_rates(
-            {ports[c]: (m, b.port(ports[c]).rate) for c, m in memlets.items()}, loops, what
+            {ports[c]: (m, b.port(ports[c]).rate) for c, m in bound.memlets.items()}, loops, what
         )
     except DfgError as e:
         raise SandboxError(str(e)) from None
@@ -412,7 +463,7 @@ def bind(
                 if nest is not None:
                     _check_order(g, m, beats, None, nest.indices(), f"{what} port {port!r}")
                 continue
-            out[port] = Memlet(m.data, _lanes_dims(m, var_s, end, f"{what}.{side}.{c}"))
+            out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
     acc = Node(
