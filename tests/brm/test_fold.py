@@ -17,7 +17,7 @@ def fold(lanes, in_dtype: str, out_dtype: str, op=np.add) -> list[int]:
 
 
 def test_int32_lanes_into_int64_do_not_wrap():
-    """PACK0 notes, topic 6: (2^31 - 1, 1, 5, -2)."""
+    """int32 lanes fold into int64 without wrapping (D142): (2^31 - 1, 1, 5, -2) gives 2^31 + 3."""
     assert fold([2**31 - 1, 1, 5, -2], "int32", "int64") == [2147483651]
     assert fold([2**31 - 1, 1, 5, -2], "int32", "int32") == [-2147483645]  # wraps at int32
 

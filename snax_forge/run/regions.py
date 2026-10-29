@@ -18,7 +18,7 @@ are no L2 regions. ``Region.elems(addr, size)`` gives the flat indexes (row-majo
 in the design point's order (its containers, each memory as its plan lists them). The
 report's memory tables and notes read the same regions (``report/design.py``).
 
-``padding_of`` says what of a region is padding (D144), as the memory checks count it
+``padding_of`` says what of a region is padding, as the memory checks count it
 (design/check.py): the plan lays a container out over its padded shape (``dfg/pad.py``'s
 ``padded_shape``, ``lower.layout.over``), so the elements of the padded shape outside the
 declared one are pads, each at its address (``pads``: its row-major index in the padded

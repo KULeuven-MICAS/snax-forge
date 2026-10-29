@@ -11,13 +11,14 @@ import pytest
 
 from snax_forge.common import generated_header
 from snax_forge.design import DesignPoint
-from snax_forge.flow.run import kernel_inputs, kernel_spec
+from snax_forge.dfg.reference import kernel_inputs, kernel_spec
 from snax_forge.gen import GenError
 from snax_forge.gen import data as data_mod
 from snax_forge.gen.data import arrays, data_h, literal
 from snax_forge.lower.layout import Layout, moved_bytes
+from tests.helpers import bound_vsum
 
-from .helpers import bound_vecmul, bound_vsum, point
+from .helpers import bound_vecmul, point
 
 GRAPHS = {"vecadd": None, "vecmul": bound_vecmul, "vsum": bound_vsum}
 
@@ -131,7 +132,7 @@ def test_refused_a_float_dtype():
 
 
 # =============================================================================
-# Narrow containers (D142): refused until R3, the data path ready for it
+# Narrow containers (D142): packed in data.h
 # =============================================================================
 
 
@@ -147,8 +148,7 @@ def _int32_vecadd(tmp_path) -> DesignPoint:
 
 
 def test_int32_vecadd_packs_its_data_two_per_word(tmp_path):
-    """No refusal since PACK0 R3: data.h's int32_t arrays, the kernel's first values packed two
-    per 64-bit word (D142)."""
+    """data.h's int32_t arrays: the kernel's first values packed two per 64-bit word."""
     p = _int32_vecadd(tmp_path)
     a = {x.name: x for x in arrays(p)}
     assert a["A"].ctype == "int32_t" and a["A"].elements == 64 and len(a["A"].values) == 64

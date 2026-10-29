@@ -36,7 +36,7 @@ def bases(p: MemoryPlan) -> dict[str, dict[str, int]]:
 
 
 def test_vecadd_default_is_contiguous_in_l1():
-    """The link places L2's arrays (D86): an L2 layout keeps base 0."""
+    """The link places L2's arrays: an L2 layout keeps base 0."""
     p = plan(ctx(), MemorySpec())
     assert p.passes == DEFAULT_PASSES and p.changes == {}
     assert bases(p) == {c: {"l2": 0, "l1": b} for c, b in (("A", 0), ("B", 512), ("C", 1024))}

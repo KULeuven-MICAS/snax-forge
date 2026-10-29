@@ -1,4 +1,4 @@
-"""A recipe to everything snax_cluster needs, in one command (CLN1 R3).
+"""A recipe to everything snax_cluster needs, in one command.
 
     python -m snax_forge.flow.forge RECIPE [--platform P] [--set NAME=VALUE ...]
                                     [--trace LEVEL[:SOURCES]]          (pixi forge)
@@ -97,15 +97,14 @@ def _step(log: IO[str], step: str, argv: list[str], main) -> None:
 
 
 def _sw(log: IO[str], name: str, bundle_dir: Path, forge_dir: Path, flow_sha: str) -> Path:
-    """The bundle's program by ``make sw`` (its output, in ``forge_dir/sw.log``, appended to
-    ``log``); its ELF, checked to be the flow's (``flow_sha``)."""
+    """The bundle's program by ``make sw`` (its output into ``log``); its ELF, checked to be the
+    flow's (``flow_sha``)."""
     sw = forge_dir / "sw"
     variables = {"APPS": "forge", "FORGE": str(bundle_dir.resolve()), "DESIGN": name,
                  "FORGE_BUILD": str(sw.resolve())}  # fmt: skip
     print(f"== sw: make -C gvsoc sw {' '.join(f'{k}={v}' for k, v in variables.items())}",
           file=log, flush=True)  # fmt: skip
-    rc = flow_run.run_gvsoc("sw", variables, forge_dir / "sw.log")
-    log.write((forge_dir / "sw.log").read_text())
+    rc = flow_run.run_gvsoc("sw", variables, log)
     elf = sw / flow_run.ELF
     if rc != 0 or not elf.is_file():
         raise StepFailed(f"sw: make sw exit {rc}" + ("" if elf.is_file() else f", no {elf}"))
@@ -127,9 +126,7 @@ def forge(recipe: Path, platform: Path, sets: list[tuple[str, tuple[str, str, An
           trace: str) -> int:  # fmt: skip
     """Run the three steps and print what they wrote; see the module doc. ``sets`` are
     ``_setting``'s."""
-    by_head: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
-    for _, (head, path, value) in sets:
-        by_head[head].append((path, value))
+    by_head = flow_run.split_sets([reading for _, reading in sets])
     recipe_sets = dict(by_head["recipe"])
     level, _ = parse_trace(trace)
     r = Recipe.load(recipe).with_params(recipe_sets)

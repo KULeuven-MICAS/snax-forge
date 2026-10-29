@@ -83,7 +83,7 @@ it returns to main (0 on the other cores; snRuntime sums them at exit).
 
 **Refused**, each a ``CError`` (``c.<rule>``): other than one accelerator
 (``c.instances``: several groups are one accelerator only through
-``encapsulate``, D148; the generator refuses it first, ``gen.instances``), a
+``encapsulate``; the generator refuses it first, ``gen.instances``), a
 unit without a binding (``c.binding``), a cluster file without one xdma core
 or without the slot (``c.cores``), a start that does not cover every mover of
 the accelerator, the idle ones at bound 0, or that starts a unit before them
@@ -93,7 +93,7 @@ stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
 times; ``c.idle``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
 pattern that is neither form (``c.dma``), a CSR the description lacks
-(``c.csrs``), a read step (``c.read``), a task list whose values do
+(``c.csrs``), a task list whose values do
 not fit the design point (``c.tasks``, ``check_values``), and an
 accelerator task no wait covers (``c.wait``: its counter is never read).
 Same design point, same text.
@@ -108,11 +108,12 @@ from typing import TYPE_CHECKING, Any
 
 from snax_forge.brm import Instance
 from snax_forge.common import CodedError, generated_header
+from snax_forge.design.hjson_platform import CoreCount, dma_and_owner
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
 from snax_forge.design.streamers import accelerators, groups, instances, streamer_name
 
-from .tasks import Configure, Start, Sync, TaskList, TaskListError, check_values
+from .tasks import Configure, Start, TaskList, TaskListError, check_values
 from .waits import PlacedWait, placed_waits
 
 if TYPE_CHECKING:  # design imports lower, gen imports lower
@@ -131,7 +132,7 @@ class CError(CodedError):
 
 def fold_rate(inst: Instance) -> str | None:
     """The runtime param an output port's rate names, a fold's T; None for a unit whose
-    outputs all have rate 1 (D146)."""
+    outputs all have rate 1."""
     for p in inst.brm.interface.ports:
         if p.direction == "out" and isinstance(p.rate, str):
             return p.rate
@@ -140,7 +141,7 @@ def fold_rate(inst: Instance) -> str | None:
 
 def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -> dict[str, int]:
     """An accelerator task's CSR values from its values (``n`` and the named rates, C§9):
-    ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T (D146), none when its T is ``fixed``
+    ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T, none when its T is ``fixed``
     (the description's ``params.T``); T is 1 for a unit without a fold, and T = 0 is an empty
     run (JOBS 0)."""
     rate = fold_rate(inst)
@@ -181,7 +182,7 @@ def mover_name(write: bool, index: int) -> str:
 def accelerator(
     point: DesignPoint, fail: Callable[[str, str], Exception] | None = None
 ) -> tuple[str, dict[str, Instance]]:
-    """The one accelerator's name and its units, one per group in the graph's order (D148),
+    """The one accelerator's name and its units, one per group in the graph's order,
     each with a binding. ``fail(rule, message)`` makes the error of the rule broken
     (``instances``, ``binding``): a ``c.<rule>`` CError by default, the generator's own
     (gen/gvsoc.py)."""
@@ -218,14 +219,13 @@ def cores(cluster: Mapping[str, Any], slot: str) -> Cores:
         flat = [core for _, core in hjson_cores(cluster)]
     except DesignError as e:
         raise CError("c.cores", f"the cluster file's hives and cores do not read: {e}") from None
-    dma = [i for i, c in enumerate(flat) if c.get("xdma")]
-    owner = [i for i, c in enumerate(flat)
-             if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
-    if len(dma) != 1 or len(owner) != 1:
-        raise CError("c.cores", f"the cluster file has xdma on cores {dma} and the slot {slot} on cores "
-            f"{owner}; the program takes one of each",
-        )  # fmt: skip
-    return Cores(len(flat), dma[0], owner[0])
+    try:
+        dma, owner = dma_and_owner(flat, slot)
+    except CoreCount as e:
+        raise CError("c.cores", f"the cluster file has xdma on cores {e.dma} and the slot {slot} on "
+            f"cores {e.owner}; the program takes one of each",
+        ) from None  # fmt: skip
+    return Cores(len(flat), dma, owner)
 
 
 class _Program:
@@ -236,7 +236,7 @@ class _Program:
         # a linked group's task is the group's: its name -> its units
         self.linked = {k: v for k, v in groups(point.graph).items()
                        if len(v) > 1 and v[0] in self.units}  # fmt: skip
-        self.fixed = {u.name for g in acc.groups for u in g.units if "T" in u.params}
+        self.fixed = acc.fixed_folds
         self.cores = cores(cluster, point.platform.accelerator_slot)
         self.arrays = list(arrays)
         self.conf = tasks.configured()
@@ -258,7 +258,7 @@ class _Program:
         for unit, inst in self.units.items():
             for p in inst.brm.interface.ports:
                 s = self.point.streamers.get(streamer_name(unit, p.name))
-                if s is None:  # a port on a link: no streamer (D112)
+                if s is None:  # a port on a link: no streamer
                     continue
                 out[s.name] = mover_name(s.write, n[s.write])
                 n[s.write] += 1
@@ -416,9 +416,6 @@ class _Program:
         return [PlacedWait(i, "dma", self.conf[last].wait_mode, {"dma": last})]
 
     def run(self) -> None:
-        for i, s in enumerate(self.tasks.steps):
-            if not isinstance(s, (Configure, Start, Sync)):
-                raise CError("c.read", f"{self.tasks.name}: step {i} ({s.op}) has no C form yet")
         waits: dict[int, list[Any]] = {}
         try:
             check_values(self.tasks, self.point)
@@ -544,7 +541,7 @@ def main_c(point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any], acc:
 
 def _compare(a: Any) -> list[str]:
     """The loop comparing output ``a`` with its golden, its valid elements only: one loop over
-    them, or for a matrix a tail pads (D144), one loop per dimension over its own extent,
+    them, or for a matrix a tail pads, one loop per dimension over its own extent,
     each element at its index in the padded rows."""
     test = [
         f"{INDENT}if (((volatile {a.ctype} *){a.name})[i] != {a.name}_golden[i]) {{",

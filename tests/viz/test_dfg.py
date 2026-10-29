@@ -21,10 +21,9 @@ from snax_forge.dfg import Graph
 from snax_forge.viz.dfg.__main__ import main
 from snax_forge.viz.dfg.api import GraphSet, entry_names, expand, graph_view, load_entry
 from snax_forge.viz.dfg.server import make_dfg_server
+from tests.helpers import FIXTURES, REPO
 
-from .helpers import REPO, get
-
-FIXTURES = REPO / "tests" / "dfg" / "fixtures"
+from .helpers import get
 
 
 def view(path: Path) -> dict:
@@ -321,7 +320,7 @@ def _link_and_group(v: dict) -> tuple[dict, list]:
 
 
 def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
-    """dot 4 (D148): the link node in the accelerated node's style, ``out_partial = wire``,
+    """dot 4: the link node in the accelerated node's style, ``out_partial = wire``,
     what it replaced; mac, the link and sum in one group box of the accelerator dot."""
     v = recipe_view(tmp_path, "dot_4")
     link, accs = _link_and_group(v)

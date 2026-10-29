@@ -17,18 +17,20 @@ from snax_forge.design import DesignError, DesignPoint, Platform
 from snax_forge.dfg import Graph
 from snax_forge.gen import DATAPATHS, ELEMENTWISE_OP, Accelerator, GenError, Manifest, generate
 from snax_forge.gen import __main__ as cli
+from snax_forge.gen import csrs as csrs_mod
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.blocks import Port, elementwise_lanes, tree_accumulate
 from snax_forge.gen.data import array_text, arrays
 from snax_forge.lower import c as c_mod
 from tests.brm.helpers import IMPL
-from tests.design.helpers import REPO, SNAX_FORGE, chained, graph_dict
+from tests.design.helpers import REPO, SNAX_FORGE, chained
+from tests.helpers import bound_vsum, graph_dict, requires_submodule
 
 from .helpers import (
     SOURCE,
     SUB,
     bound_vecmul,
-    bound_vsum,
+    designed,
     one_unit,
     parsed,
     point,
@@ -36,10 +38,6 @@ from .helpers import (
     snax_streamer,
 )
 
-needs_submodule = pytest.mark.skipif(
-    not (SUB / "snax" / "snax_cfg.py").exists(),
-    reason="the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)",
-)
 FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"]
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
 SLOT = ("snax_forge_core_template", "snax_acc_cfg", 0)
@@ -195,7 +193,7 @@ def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
     assert list(cluster) == list(source)  # the source's key order
 
 
-@needs_submodule
+@requires_submodule
 def test_snax_gvsocs_reader_takes_the_folder(w4):
     """snax-gvsoc's snax_cfg.load: the whole-file refs resolve, the slot's counts agree, and
     accelerator.json reads as written (its CSRs in CSR order)."""
@@ -221,13 +219,14 @@ def test_snax_gvsocs_reader_takes_the_folder(w4):
     assert (cfg.tcdm.size, cfg.tcdm.banks, cfg.tcdm.sparse_interconnect) == (131072, 32, True)
 
 
-@needs_submodule
+@requires_submodule
 def test_streamer_csrs_are_snax_streamers(w4):
-    """The generator's copy of snax_streamer.py's nb_csrs gives what the real one gives."""
+    """The generator's copies of snax_streamer.py's nb_csrs and snax_cfg.py's
+    streamer_channels give what the real ones give."""
     out, _ = w4
     template = parsed(out / "snax_forge_streamer.hjson")
-    assert gen_mod.streamer_csrs(template) == snax_streamer().nb_csrs(template) == 18
-    assert gen_mod.channels(template) == snax_streamer().nb_tcdm_ports(template) == 12
+    assert csrs_mod.streamer_csrs(template) == snax_streamer().nb_csrs(template) == 18
+    assert csrs_mod.channels(template) == snax_cfg().streamer_channels(template) == 12
 
 
 def test_every_generated_file_starts_with_the_one_header(w4):
@@ -543,7 +542,7 @@ def test_the_adder_tree_is_tree_accumulate_at_w_lanes():
 
 
 def test_the_adapter_reads_unsigned_and_narrow_dtypes():
-    """Each port its container's dtype, opType the inputs' NumPy result type (D143)."""
+    """Each port its container's dtype, opType the inputs' NumPy result type."""
     u16 = elementwise_lanes(_instance(), _dtypes(a="uint16", b="uint16", out="uint16"))
     assert [p.dtype for p in u16.ports.values()] == ["uint16"] * 3 and u16.op_type == "uint16"
     mixed = elementwise_lanes(_instance(), _dtypes(a="int32", b="int32", out="int64"))
@@ -639,47 +638,36 @@ def test_the_command(tmp_path, capsys, monkeypatch):
     assert "[gen.source]" in capsys.readouterr().err
 
 
-@pytest.mark.skipif(
-    not (SUB / "snax").is_dir(), reason="the snax-gvsoc submodule is not checked out"
-)
-def test_the_constants_are_snax_accs():
-    text = (SUB / "snax" / "snax_acc.py").read_text()
+@requires_submodule
+def test_the_constants_are_snax_accelerators():
+    text = (SUB / "snax" / "snax_accelerator.py").read_text()
     assert "SNAX_CSR_FIRST = 0x3C0" in text and "SNAX_ACC_CSR_LAST = 0x5FD" in text
-    assert (gen_mod.SNAX_CSR_FIRST, gen_mod.SNAX_ACC_CSR_LAST) == (0x3C0, 0x5FD)
+    assert (csrs_mod.SNAX_CSR_FIRST, csrs_mod.SNAX_ACC_CSR_LAST) == (0x3C0, 0x5FD)
 
 
 def test_the_accelerators_counter_may_land_on_0x5fd_not_past():
     """vecadd's streamer (18 CSRs) and a unit of 552 R/W CSRs: the counter on 0x5FD, the last
     CSR an accelerator may use; one more puts it on 0x5FE, a task queue of snax_cluster's."""
     k = 0x5FD - 0x3C0 - 18 - 4 + 1
-    assert gen_mod.csr_layout(TEMPLATE_W4, one_unit(k)).accelerator["ACC_RO_COUNTER"] == 0x5FD
+    assert csrs_mod.csr_layout(TEMPLATE_W4, one_unit(k)).accelerator["ACC_RO_COUNTER"] == 0x5FD
     with pytest.raises(GenError) as e:
-        gen_mod.csr_layout(TEMPLATE_W4, one_unit(k + 1))
+        csrs_mod.csr_layout(TEMPLATE_W4, one_unit(k + 1))
     assert e.value.code == "gen.csrs"
     assert "the accelerator's last CSR 1534 is past 1533" in str(e.value)
 
 
 # =============================================================================
-# Narrow designs (D142, D143): the streamer in words, each port's type
+# Narrow designs (D142): the streamer in words, each port's type
 # =============================================================================
 
 
-def _narrow(tmp_path, recipe: str, bind_step: int = 2) -> Path:
+def _narrow(tmp_path, recipe: str) -> Path:
     """``recipes/<recipe>.json`` designed and generated under ``tmp_path``; the out folder."""
-    from snax_forge.design import __main__ as design_cli
-    from snax_forge.sandbox import __main__ as sandbox_cli
-
-    from .helpers import REPO, root
-
-    root(tmp_path)
+    point = designed(tmp_path, recipe, recipe)
+    out = tmp_path / "gvsoc" / recipe
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
-        assert sandbox_cli.main([str(REPO / "recipes" / f"{recipe}.json"), "--out",
-                                 f"out/sandbox/{recipe}"]) == 0  # fmt: skip
-        assert design_cli.main([f"out/sandbox/{recipe}/{bind_step}_bind.snaxdfg", "--platform",
-                                str(SNAX_FORGE), "--out", f"out/design/{recipe}"]) == 0  # fmt: skip
-        out = tmp_path / "gvsoc" / recipe
-        generate(f"out/design/{recipe}/design_point.json", out, root=tmp_path)
+        generate(point, out, root=tmp_path)
     return out
 
 
@@ -724,7 +712,25 @@ def test_vecadd_i8_one_channel_per_port(tmp_path):
 
 def test_matadd_int32_bounds_in_words(tmp_path):
     """matadd (int32 again, its recipe's 1 x 4 tiles of W = 4): 4 lanes of int32, 2 words."""
-    s = parsed(_narrow(tmp_path, "matadd", bind_step=3) / "snax_forge_streamer.hjson")
+    s = parsed(_narrow(tmp_path, "matadd") / "snax_forge_streamer.hjson")
     assert s["data_reader_params"]["spatial_bounds"] == [[2], [2]]
     assert s["data_reader_params"]["num_channel"] == [2, 2]
     assert s["data_writer_params"]["num_channel"] == [2]
+
+
+def test_generating_again_changes_no_file(tmp_path):
+    """The same design point again: every file keeps its mtime (written only when its text
+    changes), and a file the earlier manifest listed that this generation does not write goes."""
+    out = tmp_path / "gvsoc" / "vecadd"
+    path = point(tmp_path)
+    manifest = generate(path, out, root=tmp_path)
+    stamps = {f: (out / f).stat().st_mtime_ns for f in manifest.files}
+    old = json.loads((out / "manifest.json").read_text())
+    old["files"].append("include/gone.h")
+    (out / "manifest.json").write_text(json.dumps(old))
+    (out / "include" / "gone.h").write_text("// an earlier generation's")
+    stamps["manifest.json"] = (out / "manifest.json").stat().st_mtime_ns
+    generate(path, out, root=tmp_path)
+    assert not (out / "include" / "gone.h").exists()
+    changed = [f for f in manifest.files if (out / f).stat().st_mtime_ns != stamps[f]]
+    assert changed == ["manifest.json"]  # the one file changed by hand, written back

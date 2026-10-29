@@ -42,7 +42,7 @@ def test_rowsum_int64_3x7_rows_of_8_moved_as_3_beats():
 
 
 def test_rowsum_int32_3x7_rows_of_8_moved_as_2_beats():
-    """The layout only: generation refuses int32 until PACK0 R3."""
+    """The layout only: the rows of 8 int32 move as 2 beats each."""
     d = _design("rowsum", {"A": "int32"}, W=4, M=3, N=7)
     lay = d.memory.layouts["A"]["l2"]
     assert (lay.shape, lay.strides) == ((3, 7), (32, 4))

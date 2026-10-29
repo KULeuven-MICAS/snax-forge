@@ -1,7 +1,7 @@
 """The design report, ``design.md``: what was built, before any cycle is counted.
 
 Everything here comes from the design point, its recipe and the cluster as a
-run names it (run/cluster.py: the generator's hjson files and the design
+run names it (run/cluster.py: the generator's description files and the design
 point, D137), its regions as run/regions.py gives them (L2's from the ELF's symbols in
 run.json); SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
 its header names the graph the design point was made from instead, and takes
@@ -101,7 +101,7 @@ class RegionRow(Record):
     banks: str  # columns touched, as spans ("0–15")
     rows: str
     data_end: int  # the padded block's end
-    pad_elements: int  # a tail's pads (D144)
+    pad_elements: int  # a tail's pads
     beat_pad_bytes: int  # up to a whole DMA beat
 
     @property
@@ -142,7 +142,7 @@ class DesignReport(Record):
 
 def _words(lay: Layout, base: int, word: int) -> np.ndarray:
     """The word index from ``base`` of every element of a layout (several narrow elements
-    share a word, D142)."""
+    share a word)."""
     idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
     return (lay.address(idx) - base) // word
 
@@ -194,7 +194,7 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
 
             def first_banks(lay: Layout, num_ch: int) -> list[int]:
                 """The banks of a mover's first beat: its first ``num_ch`` words (several
-                narrow elements share one, D142)."""
+                narrow elements share one)."""
                 w = list(dict.fromkeys(int(x) for x in _words(lay, cluster.l1_base, word)))
                 return sorted({x % banks for x in w[:num_ch]})
 
@@ -294,7 +294,7 @@ def build_design(
 
     a = cluster.accelerator
     several = len(a.units) > 1
-    views = {u.name: unit_view(a.unit, u.name) for u in a.units}
+    views = {u.name: unit_view(a.description, u.name) for u in a.units}
     components = [ComponentRow(u.name, "accelerator",
                                f"{views[u.name][0]} on core{a.core}, {views[u.name][1]}, slot "
                                f"{a.slot}" + (f", group {u.group} of {a.name}" if several else ""))
@@ -309,7 +309,7 @@ def build_design(
 
     accels = []
     for u in a.units:
-        for m in members(a.unit, u.name):  # a linked group: a row per unit, in chain order
+        for m in members(a.description, u.name):  # a linked group: a row per unit, in chain order
             inst = instances.get(m["name"])
             accels.append(AccelRow(m["name"], m["datapath"], inst.brm.name if inst else None,
                                    inst.implementation if inst else None,

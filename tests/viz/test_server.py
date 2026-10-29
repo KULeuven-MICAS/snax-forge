@@ -9,15 +9,28 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
+import pytest
+
 from .helpers import get, run_dir, serving
+
+
+@pytest.fixture(scope="module")
+def vecadd(tmp_path_factory):
+    """One stubbed vecadd flow at task for every test that only reads it."""
+    return run_dir(tmp_path_factory.mktemp("server") / "vecadd", "vecadd", "task")
+
+
+@pytest.fixture(scope="module")
+def vsum_off(tmp_path_factory):
+    return run_dir(tmp_path_factory.mktemp("server") / "vsum", "vsum", "off")
 
 
 def get_json(srv, path):
     return json.loads(get(srv, path)[2])
 
 
-def test_server_serves_viewer_and_runs(tmp_path):
-    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+def test_server_serves_viewer_and_runs(vecadd):
+    d = vecadd
     with serving([d]) as srv:
         assert srv.server_address[0] == "127.0.0.1"
         status, ctype, body = get(srv, "/")
@@ -31,24 +44,24 @@ def test_server_serves_viewer_and_runs(tmp_path):
         ]  # fmt: skip
         detail = get_json(srv, "/api/run/vecadd")
         assert detail["profile"]["total_cycles"] == 226 and detail["cluster"]["design"] == "vecadd"
-        for gone in ("events?from=0&to=60", "fifo"):  # the old viewer's, removed
+        for gone in ("events?from=0&to=60", "fifo"):  # no such routes
             assert status_of(srv, f"/api/run/vecadd/{gone}") == 404
 
 
-def test_every_module_the_viewer_imports_is_served(tmp_path):
+def test_every_module_the_viewer_imports_is_served(vecadd):
     """Each ``from "./x.js"`` in the static modules names a file the server gives out as JS."""
     static = Path(__file__).parents[2] / "snax_forge" / "viz" / "static"
     wanted = {
         m for f in static.glob("*.js") for m in re.findall(r'from "\./([\w-]+\.js)"', f.read_text())
     }
     assert "player.js" in wanted  # the play button
-    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+    d = vecadd
     with serving([d]) as srv:
         for m in sorted(wanted):
             assert get(srv, f"/{m}")[:2] == (200, "text/javascript"), m
 
 
-def test_every_route_the_viewer_calls_exists(tmp_path):
+def test_every_route_the_viewer_calls_exists(vecadd):
     """Each ``/api/run/${enc(name)}/<route>`` in app.js is a route of the server: a bad or
     missing query is a 400, never a 404, so no removed route stays in the viewer (the
     memory rows' route, ``memory/<mem>/rows``, is test_memory_routes_answer...'s)."""
@@ -56,7 +69,7 @@ def test_every_route_the_viewer_calls_exists(tmp_path):
     routes = set(re.findall(r"/api/run/\$\{enc\(name\)\}/(\w+(?:/\w+)*)", app))
     assert routes == {"schedule", "schedule/detail", "cluster", "step", "memory", "memory/cycle",
                       "journey", "conflicts"}  # fmt: skip
-    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+    d = vecadd
     with serving([d]) as srv:
         for r in sorted(routes):
             assert status_of(srv, f"/api/run/vecadd/{r}") in (200, 400), r
@@ -81,8 +94,8 @@ def status_of(srv, path):
         return e.code
 
 
-def test_memory_routes_answer_and_movement_says_why_not(tmp_path):
-    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+def test_memory_routes_answer_and_movement_says_why_not(vecadd):
+    d = vecadd
     with serving([d]) as srv:
         view = get_json(srv, "/api/run/vecadd/memory")
         assert [m["mem"] for m in view["memories"]] == ["l1", "l2"]
@@ -106,11 +119,9 @@ def test_memory_routes_answer_and_movement_says_why_not(tmp_path):
         assert status_of(srv, "/api/run/nope/memory") == 404
 
 
-def test_schedule_routes_answer_and_say_why_not(tmp_path):
+def test_schedule_routes_answer_and_say_why_not(vecadd, vsum_off):
     """The schedule at task (its detail needs beat), and at off neither."""
-    task = run_dir(tmp_path / "vecadd", "vecadd", "task")
-    off = run_dir(tmp_path / "vsum", "vsum", "off")
-    with serving([task, off]) as srv:
+    with serving([vecadd, vsum_off]) as srv:
         s = get_json(srv, "/api/run/vecadd/schedule")
         assert s["available"] and s["segments"][0]["from"] == 0 and s["segments"][-1]["to"] == 226
         folds = [x["from"] for x in s["segments"] if x["folded"]]
@@ -126,8 +137,8 @@ def test_schedule_routes_answer_and_say_why_not(tmp_path):
         assert s["available"] is False and "traced at off" in s["reason"]
 
 
-def test_cluster_and_step_routes_answer(tmp_path):
-    d = run_dir(tmp_path / "vecadd", "vecadd", "task")
+def test_cluster_and_step_routes_answer(vecadd):
+    d = vecadd
     with serving([d]) as srv:
         first = get_json(srv, "/api/run/vecadd/step?t=0&dir=1&by=boundary")["t"]
         assert first > 0

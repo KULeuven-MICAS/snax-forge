@@ -10,8 +10,9 @@ from snax_forge.dfg import Graph, execute
 from snax_forge.sandbox import SandboxError, bind, split_map
 from snax_forge.sandbox import transforms as tr
 from tests.brm.helpers import affine_adder
+from tests.helpers import graph_dict
 
-from .helpers import FIXTURES, graph, graph_dict, restricted_brm
+from .helpers import FIXTURES, graph, restricted_brm
 
 BIND = {
     "node": "add",

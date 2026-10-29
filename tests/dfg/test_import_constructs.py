@@ -1,4 +1,4 @@
-"""The importer's constructs for M13 B0: scalars, the view fold, constant casts, nested maps.
+"""The importer's constructs: scalars, the view fold, constant casts, nested maps.
 
 axpy's ``alpha`` (a DaCe ``Scalar``) is a one-element container with attr
 ``sdfg.scalar``, read as ``alpha[0]``, and the reference executor takes it
@@ -96,7 +96,7 @@ def test_a_view_into_a_transient_is_not_folded():
 
 
 def _relu_int32() -> dace.SDFG:
-    """relu's SPEC, int32 (as in KER0, and again since PACK0 R3): DaCe writes
+    """relu's SPEC, int32: DaCe writes
     max(__in1, dace.int32(0))."""
     return build(load("relu"), simplify=True)
 

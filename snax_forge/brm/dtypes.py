@@ -7,7 +7,7 @@ dtypes pass ``check_dtypes`` when
 
 - each port's dtype is one its ``dtypes`` lists;
 - every output is at least as wide as every input (the op runs at the
-  inputs' result type and is extended into the output, D143);
+  inputs' result type and is extended into the output);
 - no signed input meets a ``uint64`` input: NumPy's result type of the two
   is float64, and SnaxUnit refuses it (snax-gvsoc ``snax/snax_unit.hpp``).
 
@@ -35,7 +35,7 @@ def bits(dtype: str) -> int:
 
 
 def result_type(dtypes: Iterable[str]) -> str:
-    """NumPy's result type of integer ``dtypes``, the type an op on them runs at (D143);
+    """NumPy's result type of integer ``dtypes``, the type an op on them runs at;
     ValueError when it is not an integer (a signed dtype with uint64)."""
     dts = list(dtypes)
     out = np.result_type(*dts).name

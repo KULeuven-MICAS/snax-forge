@@ -28,9 +28,9 @@ implementation's timing and binding serve the generators (the accelerator's
 description, accelerator.json, for SNAX-GVSoC and the RTL).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
-and reach the design point and the accelerator hjson. ``runtime`` params are
+and reach the design point and accelerator.json. ``runtime`` params are
 the accelerator's start parameters: exactly ``n`` and every named port rate
-(D68, CONTRACTS.md section 10). A port's streamer width comes from its lanes
+(CONTRACTS.md section 10). A port's streamer width comes from its lanes
 (D12); it is not written in the BRM. Nor is its dtype: ``dtypes`` lists the
 container dtypes it takes, every integer dtype unless the file narrows them,
 and a node's containers decide (dtypes.py, D143).
@@ -130,7 +130,7 @@ class Param:
 
 @dataclass
 class Port:
-    """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings (D25)."""
+    """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings."""
 
     name: str
     direction: str
@@ -146,11 +146,6 @@ class Port:
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Port:
-        if isinstance(d, Mapping) and "dtype" in d:
-            raise BrmError(
-                f"{what}.dtype: a port takes a list of dtypes now, 'dtypes' (every integer dtype "
-                "when it is missing; D143)"
-            )
         _keys(d, ("name", "direction", "lanes"), ("rate", "dtypes"), what)
         dtypes = d.get("dtypes", INT_DTYPES)
         dtypes = list(dtypes) if isinstance(dtypes, (list, tuple)) else dtypes
@@ -184,7 +179,7 @@ class Interface:
 
 @dataclass
 class Function:
-    """A registered accelerator kind, its factory params, and what it computes (D82).
+    """A registered accelerator kind, its factory params, and what it computes.
 
     ``code`` says what the accelerator computes, symbolically: one
     ``output = expression`` per output port over the input ports, per lane
@@ -251,7 +246,7 @@ class Pattern:
 
 @dataclass
 class Timing:
-    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in the accelerator hjson), ``drain``
+    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in accelerator.json), ``drain``
     and ``span``.
 
     L: cycles from a firing to its push. II: the least number of cycles
@@ -589,5 +584,5 @@ def _check_dataflow(b: Brm, what: str) -> None:
             notation.check(d.ports[p.name], p, b)
         except (TypeError, ValueError) as e:
             raise BrmError(f"{w}.ports.{p.name}: {e}") from None
-    if notation.normalize is not None:  # every field written (D26)
+    if notation.normalize is not None:  # every field written
         d.ports = {p.name: notation.normalize(d.ports[p.name]) for p in b.interface.ports}

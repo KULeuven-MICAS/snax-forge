@@ -10,10 +10,7 @@ import numpy as np
 from snax_forge.dfg import Graph, execute
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe, join_map, split_map
-
-from .helpers import RECIPE
-
-REPO = RECIPE.parents[1]
+from tests.helpers import REPO
 
 
 def steps(name: str, **params) -> list[Graph]:

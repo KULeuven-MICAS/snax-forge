@@ -3,7 +3,9 @@
 * ``repo_root``, the directory holding ``pixi.toml``: where ``out/``, ``kernels/`` and the
   platforms are found; ``cwd_relative``, a path as a command line prints it;
   ``generated_header``, the comment every generated file starts with; ``fresh`` and
-  ``unique_names``, names that clash with none taken before.
+  ``unique_names``, names that clash with none taken before; ``git``, a git command's output
+  in a folder, or None; ``dig``, the value at a dotted path of nested objects;
+  ``write_changed``, a file written only when its text changes.
 * ``CodedError``, the base of the refusals that carry a rule code; ``LoadedSet``, what a
   viewer serves, reloaded whole.
 * ``plain`` and ``check_keys``: JSON-ready values, and an object's unknown keys refused (so a
@@ -13,7 +15,7 @@
   class default.
 * ``to_json``, the one JSON writer for every file snax-forge writes: insertion order, small
   containers on one line, final newline. It is deterministic, and ``json.loads`` gives the
-  object back (D44). ``JsonFile``, a mixin giving a class with ``to_dict`` / ``from_dict``
+  object back (D116). ``JsonFile``, a mixin giving a class with ``to_dict`` / ``from_dict``
   its ``to_json``, ``save`` and ``load``.
 
 Until the contracts freeze these are plain dataclasses and plain JSON, with versioned schemas
@@ -23,6 +25,7 @@ after (D26). This module imports nothing from the package, so every package can 
 from __future__ import annotations
 
 import json
+import subprocess
 import textwrap
 import threading
 from collections.abc import Iterable, Mapping, Sequence
@@ -60,6 +63,48 @@ def generated_header(point_path: str, what: str) -> str:
     )
     lines += textwrap.wrap(what, **wrap)
     return "".join(f"// {line}\n" for line in lines)
+
+
+class Missing(LookupError):
+    """``dig``'s: key ``at`` (an index into the dotted path) is not there; ``in_object`` False
+    when what it was looked up in is not an object. Each caller words its own error."""
+
+    def __init__(self, at: int, in_object: bool):
+        super().__init__(at, in_object)
+        self.at, self.in_object = at, in_object
+
+
+def dig(d: Any, path: str) -> Any:
+    """The value at the dotted ``path`` of ``d``: a key of ``d``, then of its value, and so on;
+    ``Missing`` at the first key that is not there."""
+    node = d
+    for i, key in enumerate(path.split(".")):
+        if not isinstance(node, Mapping):
+            raise Missing(i, False)
+        if key not in node:
+            raise Missing(i, True)
+        node = node[key]
+    return node
+
+
+def write_changed(path: Path, text: str) -> bool:
+    """Write ``text`` to ``path`` unless it holds it already: an unchanged file keeps its
+    mtime, so what make builds from it is not rebuilt. Whether it wrote."""
+    if path.is_file() and path.read_text() == text:
+        return False
+    path.write_text(text)
+    return True
+
+
+def git(path: Path, *args: str) -> str | None:
+    """git's stdout in ``path``, stripped, or None when git fails or is missing. With
+    ``safe.directory=*``: in the image, git may not own the mounted folder."""
+    try:
+        r = subprocess.run(["git", "-c", "safe.directory=*", "-C", str(path), *args],
+                           capture_output=True, text=True, check=False)  # fmt: skip
+    except OSError:
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
 
 
 def cwd_relative(p: Path) -> str:

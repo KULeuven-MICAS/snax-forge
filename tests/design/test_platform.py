@@ -94,18 +94,6 @@ def test_a_bad_streamer_entry_is_named(entry, code, text):
     assert [p.code for p in found] == [code] and text in found[0].message
 
 
-@pytest.mark.parametrize("key", ["l1.dtype", "l1.elems_per_word", "l2.dtype", "l2.elems_per_word"])
-def test_a_removed_memory_field_is_named_with_its_fix(key):
-    """A word's elements are each container's dtype's (D142), no longer the platform's."""
-    d = platform_dict()
-    sec, field = key.split(".")
-    d[sec][field] = "int64" if field == "dtype" else 1
-    _, found = parse(d)
-    assert [(p.code, p.where) for p in found] == [("platform.keys", key)]
-    assert found[0].message == "is no longer a platform field"
-    assert found[0].fix == "remove it; each container's dtype decides the packing (D142)"
-
-
 def test_a_bad_channels_entry_names_its_fix():
     d = platform_dict()
     d["streamers"]["acc_a"] = {"num_ch": 0}

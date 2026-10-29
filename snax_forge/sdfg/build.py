@@ -12,7 +12,6 @@ from __future__ import annotations
 import time
 
 import dace
-import numpy as np
 
 from snax_forge.common import repo_root, to_json
 
@@ -50,7 +49,7 @@ def structural_summary(sdfg: dace.SDFG) -> dict:
 
 def verify(spec: KernelSpec, sdfg: dace.SDFG, **sizes: int) -> bool:
     """Compile ``sdfg`` and compare it with the kernel's reference on ``make_inputs(**sizes)``."""
-    from snax_forge.dfg.execute import against_reference
+    from snax_forge.dfg.reference import make_inputs, mismatches
 
     csdfg = sdfg.compile()
 
@@ -58,8 +57,7 @@ def verify(spec: KernelSpec, sdfg: dace.SDFG, **sizes: int) -> bool:
         csdfg(**args, **spec.bind_symbols(args))
         return args
 
-    pairs = against_reference(spec, spec.make_inputs(np.random.default_rng(0), **sizes), run)
-    return all(np.array_equal(got, ref) for got, ref in pairs.values())
+    return not mismatches(spec, make_inputs(spec, **sizes), run)
 
 
 def run(spec: KernelSpec) -> dict:

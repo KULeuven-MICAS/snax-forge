@@ -43,7 +43,7 @@ Retired in RET1 (SNAX-MODEL).
 
 ## 7. Profile and trace
 
-What the reports and the viewer read of a flow run (D137). A run directory (`out/flow/<name>/run/`, `run/outputs.py`) holds `run.json` (what ran, D50), `profile.json`, and above trace level `off` `trace.jsonl` and `trace_meta.json`. SNAX-GVSoC writes its events (snax-gvsoc `docs/EVENTS.md`) into `run/events.log`, which `run/convert.py` renames into what follows; the invariants every conversion checks are its own.
+What the reports and the viewer read of a flow run (D137). A run directory (`out/flow/<name>/run/`, `run/outputs.py`) holds `run.json` (what ran, D50), `profile.json`, and above trace level `off` `trace.jsonl` and `trace_meta.json`. SNAX-GVSoC writes its events (snax-gvsoc `docs/EVENTS.md`) into `run/events.log`, which `run/convert.py` renames into what follows; the invariants every conversion checks are its own. A passing flow leaves it gzipped, `run/events.log.gz` (no timestamp), which `read_events` reads under either name; a failing one keeps the plain file.
 
 **The window.** `total_cycles` is the program's: its `mcycle` read in `forge_check()` minus its read in main, the `forge cycles:` line. The converter finds the same two reads in the accelerator's core's events, checks they are `total_cycles` apart and shifts every cycle so that t = 0 is the read in main (the shift, the boot, in `trace_meta.json`); events outside `[0, total_cycles)` are dropped. The profile, a core's classes and the trace cover this one window.
 
@@ -128,7 +128,6 @@ SNAX-LOWER's ordered list of tasks (D64): which component runs which task with w
 | `configure` | `task_name`, `type`, `component`, `after`, `wait_mode`, `values` | the component's configuration, written here |
 | `start` | `tasks` | the waits these tasks need, then their `start` writes in list order |
 | `sync` | `task`, `mode` | one wait on the task's component, always placed |
-| `read` | `reg` | a read of `block.register`; no C form yet (`c.read`) |
 
 `type` says how `values` are read:
 
@@ -471,9 +470,9 @@ The SNAX cluster around the accelerators (D84). A platform file lives in `platfo
 | `beat_bits` | one DMA beat | 512 | multiple of `width_bits`; equal to the L1's `wide_bits` (`platform.l2`) |
 | `width_bits` | as the L1, and must agree with it (`platform.l2`) | 64 | multiple of 8 |
 
-Neither memory has an element type: each container's dtype decides how many elements a word holds (D142, section 1). A platform that still sets `dtype` or `elems_per_word` in `l1` or `l2` is refused (`platform.keys`).
+Neither memory has an element type: each container's dtype decides how many elements a word holds (D142, section 1).
 
-**The streamer shell** (D12). One streamer per port of every accelerated instance, `<instance>_<port>`, but a port on a link (D112): a link's ends have none. The port decides `write`, `n_ports` (its lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an `affine` nest's spatial loops, a `stream` port's bound memlet ranges). The graph decides `temporal_dims`: the firing loops the port's memlet runs over, at least 1, the most over an instance's nodes (D84); the design point records it per streamer. `default` holds `fifo_depth` (>= 1); an entry named after a streamer overrides it and `spatial_bounds` for it alone, and may give `num_ch` (>= 1, never in `default`): the TCDM channels the streamer uses, without it the wire default W / num_slc (D142, `connect.num_ch`). A platform that sets `temporal_dims` is refused (`platform.keys`), as is `--set` of it.
+**The streamer shell** (D12). One streamer per port of every accelerated instance, `<instance>_<port>`, but a port on a link (D112): a link's ends have none. The port decides `write`, `n_ports` (its lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an `affine` nest's spatial loops, a `stream` port's bound memlet ranges). The graph decides `temporal_dims`: the firing loops the port's memlet runs over, at least 1, the most over an instance's nodes (D84); the design point records it per streamer. `default` holds `fifo_depth` (>= 1); an entry named after a streamer overrides it and `spatial_bounds` for it alone, and may give `num_ch` (>= 1, never in `default`): the TCDM channels the streamer uses, without it the wire default W / num_slc (D142, `connect.num_ch`).
 
 <!-- snippet: platforms/small16.json -->
 ```json
@@ -497,7 +496,7 @@ Before the design step writes anything it runs every registered check (`register
 
 | Code | Fails when |
 |---|---|
-| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; `dtype` or `elems_per_word` in `l1` or `l2`, no longer a platform field (the fix removes it: each container's dtype decides the packing, D142); a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
+| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
 | `platform.values` | a value its section rejects (`n_banks` 0, a `wait_mode` that is not allowed) |
 | `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1, `num_ch` that is not an int >= 1 |
 | `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`) or word width |
@@ -566,7 +565,7 @@ What `pixi run gen-gvsoc DESIGN_POINT [--out DIR]` writes per design point (D134
 
 **The slot** is the source's only one, renamed: `snax_acc_name` the platform's `accelerator_slot`, its `bender_target` dropped (the RTL comes from the bundle). `snax_tcdm_ports` is the sum of its movers' num_ch; the source's `sparse_interconnect_config` becomes one group of that width (its granularity kept), or `snax_narrow_tcdm_ports` that many and `snax_wide_tcdm_ports` 0; `snax_num_rw_csr` and `snax_num_ro_csr` the accelerator's rw and ro, counted from its CSR map (section 17); then, after the source's other keys, `snax_disable_csr_manager` `true` (D130), `snax_forge_rtl` `"rtl/files.f"` (relative to the cluster file, present only in a bundle; SNAX-GVSoC ignores it), `snax_streamer_cfg` `{$ref: "<slot>_streamer.hjson"}` and `snax_datapath_cfg` `{$ref: "accelerator.json"}`, which snax_cluster only resolves. snax_cluster's schema lists the keys the slot adds, none with a default (open item 88).
 
-**The CSRs.** The streamer's from `0x3C0`, then the accelerator's in section 17's order (`csrs` in the manifest), ending at `0x5FD` at most (`gen.csrs`): snax_cluster routes `0x5FE` and `0x5FF` to its task queues on the cluster's CSR port, and SNAX-GVSoC's `SnaxUnitAcc` refuses the same.
+**The CSRs.** The streamer's from `0x3C0`, then the accelerator's in section 17's order (`csrs` in the manifest), ending at `0x5FD` at most (`gen.csrs`): snax_cluster routes `0x5FE` and `0x5FF` to its task queues on the cluster's CSR port, and SNAX-GVSoC's `SnaxAccelerator` refuses the same.
 
 **Checks.** The streamer file and `accelerator.json` have snax-forge's schemas (`gen/schema/`, JSON Schema 2020-12); the cluster file validates against snax_cluster's (snax-gvsoc's copy, `sw/docs/schema/snitch_cluster.schema.json`). A platform value the cluster file cannot express (an L1 that is not whole KiB) is `gen.platform`, a platform without a source `gen.source`, a source with no slot or several `gen.slot`; what the description refuses is section 17's.
 
@@ -830,8 +829,8 @@ and `Mac`'s, its latency an `expr.py` expression over its params (a bool as 0 or
 
 **Control** (D147). One control unit per group, `<tag>_<group>_ctrl`, generated from the description (F2), never written per variant:
 
-- once per group: JOBS, the job counters (done is the last unit's JOBS-th result), busy, STATUS, COUNTER;
-- per unit: its beat digit d_k (mod T_k), its latency pipeline, and a lane counter when span > 1;
+- once per group: busy, STATUS, COUNTER and the start's copy of JOBS (the sink's R); done is the sink's R-th push, read off its results given and its pipeline, with no count of pushes;
+- per unit: its results given, its beat digit d_k (mod T_k), its latency pipeline, its II gap at II > 1 and a lane counter when span > 1; its T a register (the start's copy) only when a JOB_BEATS sets it, a constant when fixed; its R_k = R_s · T_s a register only when its successor's T is set at run time, else that wire (`GroupRule`'s rules);
 - per link of depth D ≥ 1: an occupancy count (a full bit at D = 1);
 - the outer ports' join, per unit, as `SnaxGroupRule` runs it:
 

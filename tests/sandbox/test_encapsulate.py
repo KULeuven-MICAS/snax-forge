@@ -16,8 +16,9 @@ import pytest
 
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.sandbox import SandboxError, encapsulate, unencapsulate
+from tests.helpers import graph_dict
 
-from .helpers import graph, graph_dict
+from .helpers import graph
 
 
 def dot() -> Graph:

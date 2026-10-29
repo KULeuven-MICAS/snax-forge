@@ -17,8 +17,18 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
   private val Classes = Seq("busy", "stall_in", "stall_out", "flush")
 
-  def desc(c: SnaxGroupCases.Case): GroupDesc =
-    GroupDesc("dot", c.units.map(u => UnitDesc(u.name, u.latency, u.ii, u.span, u.inputs, Some(u.t))), c.depths)
+  /** The case's group: a linked input after the unit's outer ones (to_input = its outer inputs, as `tb.cpp`). */
+  def desc(c: SnaxGroupCases.Case): GroupDesc = {
+    def at(name: String) = c.units.indexWhere(_.name == name)
+    GroupDesc(
+      "dot",
+      c.units.map { u =>
+        val fed = c.links.exists(_.to == u.name)
+        UnitDesc(u.name, u.latency, u.ii, u.span, u.inputs, Some(u.t), if (fed) Seq(u.inputs) else Nil)
+      },
+      c.links.map(l => Link(at(l.from), at(l.to), c.units(at(l.to)).inputs, l.depth))
+    )
+  }
 
   private def run(c: SnaxGroupCases.Case): Unit =
     test(new GroupCtrl(desc(c), "case")) { dut =>

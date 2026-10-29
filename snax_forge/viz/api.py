@@ -12,9 +12,9 @@ Loading
 A run is a flow's (D136, D137): its folder ``out/flow/<name>/`` or the
 ``run/`` directory in it. ``run/`` is read with ``run.outputs.read_run``
 (run.json, the profile and, above trace ``off``, the trace, C§7), and the
-cluster with ``run.cluster.load_cluster`` from the hjson files and the
+cluster with ``run.cluster.load_cluster`` from the description files and the
 design point ``run.json`` names, so the views use run/'s dataclasses and
-never parse the files themselves (D55). The design point gives the regions
+never parse the files themselves. The design point gives the regions
 (``run.regions.regions_of``, L2 from run.json's ``elf_symbols``) and the
 events are grouped once by their ids and lookups (index.py, ``RunIndex``),
 with the flow folder's task list (``tasks.json``) pairing each accelerator
@@ -131,7 +131,7 @@ def load_run(path: str | Path, name: str | None = None) -> RunView:
     out = read_run(run_dir)
     hjson = out.run.get("hjson") or []
     if not hjson or "design_point" not in out.run:
-        raise RunError("outputs.missing", f"{run_dir / 'run.json'}: names no hjson files or "
+        raise RunError("outputs.missing", f"{run_dir / 'run.json'}: names no description files or "
                        "design point")  # fmt: skip
     if not (folder / "tasks.json").is_file():
         raise RunError("outputs.missing", f"{folder}: no tasks.json, the run's task list")
@@ -241,25 +241,6 @@ def _answer(rv: RunView, make: Callable[[], dict[str, Any]]) -> dict[str, Any]:
                 "filtered": rv.index.filtered}  # fmt: skip
     except ScheduleUnavailable as e:
         return {"name": rv.name, "available": False, "reason": str(e)}
-
-
-def movement_view(rv: RunView) -> dict[str, Any]:
-    """Residency per region and memory, patterns per port and
-    task, and the conflict counts (``available`` false with the reason below ``stall``), or
-    ``available`` false with the reason below ``beat``."""
-    idx = rv.index
-
-    def make() -> dict[str, Any]:
-        residency, patterns = movement.residency(idx), movement.patterns(idx)
-        try:
-            c = movement.conflicts(idx)
-            counts = {"available": True, **{k: c[k] for k in ("count", "banks", "ports")}}
-        except MovementUnavailable as e:
-            counts = {"available": False, "reason": str(e)}
-        return {"level": idx.level, "filtered": idx.filtered, "residency": residency,
-                "patterns": patterns, "conflicts": counts}  # fmt: skip
-
-    return _answer(rv, make)
 
 
 def journey_view(rv: RunView, region: str, index: Sequence[int] | int) -> dict[str, Any]:
@@ -374,7 +355,6 @@ __all__ = [
     "memory_cycle",
     "memory_rows",
     "memory_view",
-    "movement_view",
     "run_detail",
     "run_dir_of",
     "run_names",

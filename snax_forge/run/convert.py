@@ -15,7 +15,7 @@ beat lines are not read yet (open item 96).
 **Names.** A line's component path becomes a C§7 name: ``snax_acc<i>/unit`` the accelerator's
 unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (D148, ``mul``, ``sum``;
 a shell has no trace of its own), ``snax_acc<i>/group_<group>`` a linked group, named after
-the group (``dot``; its tasks are the group's, D148), whose lines are at its boundary: its
+the group (``dot``; its tasks are the group's), whose lines are at its boundary: its
 ``firings`` and ``count`` the head unit's, ``rate`` the head's firings per result of the last
 unit (snax-gvsoc's docs/EVENTS.md), ``snax_acc<i>/streamer`` with its ``mover`` the mover
 (``reader0`` -> ``acc_a``),
@@ -76,7 +76,7 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-from snax_forge.lower.tasks import Configure, TaskList
+from snax_forge.lower.tasks import TaskList
 
 from .beats import Context, beat_events, beat_invariants
 from .cluster import DMA, Cluster, core_name, linked
@@ -184,13 +184,11 @@ def window(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles: in
 
 
 def _tasks(tasks: TaskList, kind: str, component: str) -> list[str]:
-    return [s.task_name for s in tasks.steps
-            if isinstance(s, Configure) and s.type == kind and s.component == component]  # fmt: skip
+    return [s.task_name for s in tasks.of_type(kind) if s.component == component]
 
 
 def _dma_tasks(tasks: TaskList) -> list[tuple[str, str]]:
-    return [(s.task_name, str(s.values.get("direction"))) for s in tasks.steps
-            if isinstance(s, Configure) and s.type == "dma"]  # fmt: skip
+    return [(s.task_name, str(s.values.get("direction"))) for s in tasks.of_type("dma")]
 
 
 def _need(names: list[str], k: int, what: str) -> str:
@@ -473,7 +471,7 @@ def convert(
 ) -> tuple[Profile, Trace | None]:
     """The profile and, above ``off``, the trace of a run (module doc)."""
     if at_least(level, "beat") and (len(cluster.accelerator.units) != 1
-                                    or linked(cluster.accelerator.unit)):  # fmt: skip
+                                    or linked(cluster.accelerator.description)):  # fmt: skip
         raise RunError("convert.level", f"trace {level}: the beat lines of an accelerator of "
                        f"{len(cluster.accelerator.units)} groups or of a linked group are not "
                        "read yet (open item 96); task and off are")  # fmt: skip

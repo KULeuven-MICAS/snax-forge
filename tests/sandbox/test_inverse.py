@@ -22,8 +22,9 @@ from snax_forge.sandbox import (
 )
 from snax_forge.sandbox import transforms as tr
 from snax_forge.sandbox.__main__ import main
+from tests.helpers import graph_dict
 
-from .helpers import FIXTURES, REPO, graph, graph_dict, restricted_brm
+from .helpers import FIXTURES, REPO, graph, restricted_brm
 
 BIND = {
     "node": "add",
@@ -117,7 +118,7 @@ def test_join_rejected():
 
 
 # =============================================================================
-# B1x's transforms (D150): each undone by its inverse, the graph as before
+# The linking transforms (D150): each undone by its inverse, the graph as it started
 # =============================================================================
 
 

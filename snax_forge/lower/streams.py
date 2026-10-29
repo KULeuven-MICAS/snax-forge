@@ -117,5 +117,5 @@ def streamer_values(
 
 def in_words(spatial_strides: list[int], num_slc: int) -> list[int]:
     """Spatial byte strides, fastest first, with the fastest a channel's: num_slc elements on,
-    one word for a packed port (D142)."""
+    one word for a packed port."""
     return [spatial_strides[0] * num_slc, *spatial_strides[1:]] if spatial_strides else []

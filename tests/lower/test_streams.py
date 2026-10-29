@@ -201,7 +201,7 @@ def test_layout_round_trip_and_contiguous():
 
 
 # =============================================================================
-# Packed ports (D142): the values in words, and the words each beat reads
+# Packed ports: the values in words, and the words each beat reads
 # =============================================================================
 
 
@@ -249,7 +249,7 @@ def _words(values, num_ch):
     ids=["E1", "E3", "E4"],
 )  # fmt: skip
 def test_packed_values_are_in_words(case, dtype, w, nest, n, layout, values, words):
-    """PACK0 notes, topic 1: the fastest spatial loop runs W / num_slc channels a word apart, the
+    """A packed port: the fastest spatial loop runs W / num_slc channels a word apart, the
     other strides the element stride times the itemsize, the base the offset's bytes."""
     num_slc = 8 // np.dtype(dtype).itemsize
     inst = instance(nest, W=w)

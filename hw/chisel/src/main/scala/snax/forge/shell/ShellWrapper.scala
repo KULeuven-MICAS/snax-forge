@@ -102,8 +102,9 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       io(s"${g.name}_done_o") := c.done
 
       // The outer ports, unit by unit in the streamer's order: data to the unit's datapath, handshake to the group's
-      // control unit (its inputs flat in unit order, its output the last unit's)
-      var at = 0
+      // control unit (its inputs flat in unit order, its output its owner's)
+      val desc = AccCtrl.desc(spec, g)
+      var at   = 0
       for ((u, k) <- g.units.zipWithIndex) {
         val d = dp.io.units(spec.units.indexOf(u))
         for ((j, brm)    <- spec.ins(u.name)) {
@@ -113,7 +114,7 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
           at += 1
         }
         for ((j, brm)    <- spec.outs(u.name)) {
-          require(k == g.units.size - 1, s"${u.name}.$brm: an outer output of a unit before its group's last")
+          require(k == desc.output, s"${u.name}.$brm: an outer output of a unit that has an out-edge")
           io(s"acc2stream_${j}_data_o")  := d(brm).asUInt
           io(s"acc2stream_${j}_valid_o") := c.out.valid
           c.out.ready                    := io.bool(s"acc2stream_${j}_ready_i")
@@ -130,9 +131,9 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
           })
       }
 
-      // The buffers' pins, from the group's control unit
+      // The buffers' pins, from the group's control unit (its buffers in link order, as GroupDesc.buffers)
       for ((l, n) <- g.links.filter(_.depth > 0).zipWithIndex) {
-        val b = dp.io.buffers(spec.groups.take(i).map(_.links.count(_.depth > 0)).sum + n)
+        val b = dp.io.buffers(dp.buffered(l.name))
         val e = c.links(n)
         for ((name, pin) <- b.elements)
           pin := (name match {

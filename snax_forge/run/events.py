@@ -21,6 +21,7 @@ here: that is convert.py's.
 
 from __future__ import annotations
 
+import gzip
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -181,7 +182,11 @@ def parse_line(text: str, where: str = "line") -> Line:
 
 
 def read_events(path: str | Path) -> list[Line]:
-    """Every line of an events.log, in the file's order (simulation order)."""
+    """Every line of an events.log, in the file's order (simulation order): the plain file, or
+    the gzip one a passing flow leaves (``events.log.gz``, also found from the plain name)."""
     p = Path(path)
-    return [parse_line(t, f"{p.name}:{i}") for i, t in enumerate(p.read_text().splitlines(), 1)
+    if not p.is_file() and p.with_name(p.name + ".gz").is_file():
+        p = p.with_name(p.name + ".gz")
+    text = gzip.decompress(p.read_bytes()).decode() if p.suffix == ".gz" else p.read_text()
+    return [parse_line(t, f"{p.name}:{i}") for i, t in enumerate(text.splitlines(), 1)
             if t.strip()]  # fmt: skip

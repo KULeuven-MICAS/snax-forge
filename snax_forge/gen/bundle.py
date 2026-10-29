@@ -33,14 +33,14 @@ the rest of the folder is left as it is. Then, in this order:
 
 **The modules** (``module_tree``, C§18), from accelerator.json, not from
 Emit's output: the wrapper's three modules, each with the submodules it holds,
-by the names F2's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
+by the names hw/chisel's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
 (``<tag>_<group>_ctrl`` per group) and ``<tag>_datapath`` (``<tag>_<unit>``
 per unit, then ``<tag>_<link>`` per link of depth >= 1, a buffer, group by
 group).
 
 snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
-builds read (D130).
+builds read.
 
 **Refused**, each a ``GenError``: what ``generate``, ``accelerator_spec`` and
 ``elaborate`` refuse (``gen.*``, the catalogue's checks and a listed file that is not there among them), then
@@ -52,12 +52,11 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from snax_forge.common import Config, JsonFile, cwd_relative
+from snax_forge.common import Config, JsonFile, cwd_relative, git
 
 from .accelerator import ACCELERATOR_JSON, Accelerator
 from .blocks import GenError
@@ -96,18 +95,10 @@ def module_tree(acc: Accelerator) -> dict[str, list[str]]:
 def provenance(checkout: Path) -> tuple[str | None, bool]:
     """The checkout's commit (``git rev-parse HEAD``) and whether its work tree has uncommitted
     changes; ``(None, False)`` outside git."""
-
-    def git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["git", "-C", str(checkout), *args], capture_output=True,
-                              text=True, check=False)  # fmt: skip
-
-    try:
-        head = git("rev-parse", "HEAD")
-    except OSError:
+    head = git(checkout, "rev-parse", "HEAD")
+    if head is None:
         return None, False
-    if head.returncode != 0:
-        return None, False
-    return head.stdout.strip(), bool(git("status", "--porcelain").stdout.strip())
+    return head, bool(git(checkout, "status", "--porcelain"))
 
 
 def file_list(rtl_dir: Path, emitted: list[Path]) -> list[str]:

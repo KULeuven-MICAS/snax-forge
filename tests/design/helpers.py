@@ -15,15 +15,13 @@ import copy
 import json
 from collections.abc import Callable
 from functools import cache
-from pathlib import Path
 from typing import Any
 
 from snax_forge.design import Design, Platform, run_checks
 from snax_forge.dfg import Graph
 from snax_forge.sandbox import Recipe, apply_recipe
+from tests.helpers import FIXTURES, REPO, graph_dict
 
-REPO = Path(__file__).resolve().parents[2]
-FIXTURES = REPO / "tests" / "dfg" / "fixtures"
 SMALL16 = REPO / "platforms" / "small16.json"
 SNAX_FORGE = REPO / "platforms" / "snax_forge.json"
 RECIPE = REPO / "recipes" / "vecadd.json"
@@ -36,10 +34,6 @@ def platform_dict() -> dict[str, Any]:
     return json.loads(SMALL16.read_text())
 
 
-def graph_dict(name: str = "vecadd_accelerated") -> dict[str, Any]:
-    return json.loads((FIXTURES / f"{name}.snaxdfg").read_text())
-
-
 def bound_vecadd(w: int) -> Graph:
     """vecadd bound with W = ``w`` by the checked-in recipe."""
     recipe = Recipe.load(RECIPE).with_params({"W": w})
@@ -49,12 +43,6 @@ def bound_vecadd(w: int) -> Graph:
 def bound_w8() -> Graph:
     """vecadd bound with W = 8 by the checked-in recipe."""
     return bound_vecadd(8)
-
-
-def bound_vsum() -> Graph:
-    """vsum bound by its checked-in recipe (W = 1, N = 64)."""
-    recipe = Recipe.load(REPO / "recipes" / "vsum.json")
-    return apply_recipe(recipe, Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
 
 
 # matadd at W = 4, M = 8, N = 16: the row map tagged temporal, the column map split (D73)

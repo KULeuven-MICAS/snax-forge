@@ -25,16 +25,18 @@ from types import SimpleNamespace
 
 import hjson
 import pytest
+from jsonschema import Draft202012Validator
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
 from snax_forge.gen import Accelerator, Csr, Group, Port, Unit
 from snax_forge.gen import bundle as bundle_mod
 from snax_forge.gen.rtl import EMITTED_JSON
+from snax_forge.gen.schemas import schema
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.design.helpers import FIXTURES, REPO, SNAX_FORGE, bound_vecadd
+from tests.design.helpers import SNAX_FORGE, bound_vecadd
+from tests.helpers import FIXTURES, REPO, SUB
 
-SUB = REPO / "gvsoc" / "snax-gvsoc"
 # snax_forge's source hjson (platforms/snax_forge.json's hjson), snax-forge's base cluster
 SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
 # The fake Emit's files, in emitted.json's order (not sorted, so files.f's order is its)
@@ -82,14 +84,6 @@ def bound_vecmul(w: int = 4) -> Graph:
     """vecmul bound with W = ``w`` by the checked-in recipe (elementwise_mul, instance acc)."""
     recipe = Recipe.load(REPO / "recipes" / "vecmul.json").with_params({"W": w})
     return apply_recipe(recipe, Graph.load(FIXTURES / "vecmul.snaxdfg"))[-1].graph
-
-
-def bound_vsum(w: int = 1, impl: str = "chisel_accumulator") -> Graph:
-    """vsum bound by the checked-in recipe (accumulate's chisel_accumulator, instance acc), or
-    with W = ``w`` to ``impl``."""
-    d = Recipe.load(REPO / "recipes" / "vsum.json").with_params({"W": w}).to_dict()
-    d["steps"][-1]["params"]["implementation"] = impl
-    return apply_recipe(Recipe.from_dict(d), Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
 
 
 def bound_dot1() -> Graph:
@@ -184,3 +178,9 @@ def fake_emit(monkeypatch) -> SimpleNamespace:
     monkeypatch.setattr(bundle_mod, "elaborate", elaborate)
     monkeypatch.setattr(bundle_mod, "provenance", lambda checkout: (COMMIT, False))
     return fake
+
+
+def validate(name: str, value: object) -> None:
+    """Raise jsonschema.ValidationError unless ``value`` is a ``name`` file's content (the
+    generator's schemas, gen/schemas.py)."""
+    Draft202012Validator(schema(name)).validate(value)

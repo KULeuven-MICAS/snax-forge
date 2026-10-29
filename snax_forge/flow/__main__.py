@@ -3,14 +3,14 @@
     python -m snax_forge.flow RECIPE --platform P [--set NAME=VALUE ...]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--graph FILE] [--name NAME] [--out DIR]
-                              [--seed S] [--trace LEVEL[:SOURCES]] [--vcd]
+                              [--seed S] [--trace LEVEL[:SOURCES]] [--vcd] [--keep-work]
     python -m snax_forge.flow GRAPH.snaxdfg --platform P [--kernel K]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--name NAME] [--out DIR] [--seed S] [--trace ...]
 
 Runs the recipe on its kernel's import (or ``--graph``), pairs the result
 with the platform, lowers the design point to its task list, generates its
-hjson files, headers, data (the kernel's ``make_inputs``, the reference
+description files, headers, data (the kernel's ``make_inputs``, the reference
 executor's goldens) and ``main.c``, builds SNAX-GVSoC when needed and the
 program, runs it on ``snax_hjson`` and takes the program's own check: its
 exit code and what it printed (run.py, D136). ``--set W=8`` sets a recipe param,
@@ -61,7 +61,7 @@ from snax_forge.run.sources import parse_trace
 from snax_forge.sandbox import SandboxError
 from snax_forge.sandbox.__main__ import setting as sandbox_setting
 
-from .run import FlowError, run_bound, run_flow, summary
+from .run import FlowError, run_bound, run_flow, split_sets, summary
 
 BOUND = ".snaxdfg"
 
@@ -95,14 +95,14 @@ def main(argv: list[str] | None = None) -> int:
                     "of the beat lines (acc,acc_a,dma,core0,...)")  # fmt: skip
     ap.add_argument("--vcd", action="store_true",
                     help="also write gtkwave's VCD of the sources into run/")  # fmt: skip
+    ap.add_argument("--keep-work", action="store_true",
+                    help="keep gvrun's run/work/ after a passing run")  # fmt: skip
     args = ap.parse_args(argv)
     try:
         level, sources = parse_trace(args.trace)
     except RunError as e:
         ap.error(f"--trace: {e}")
-    sets: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
-    for head, path, value in args.set:
-        sets[head].append((path, value))
+    sets = split_sets(args.set)
     bound = args.recipe.suffix == BOUND
     if bound and sets["recipe"]:
         ap.error(
@@ -123,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         "trace_level": level,
         "trace_sources": sources,
         "vcd": args.vcd,
+        "keep_work": args.keep_work,
     }
     try:
         if bound:

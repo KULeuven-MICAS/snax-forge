@@ -55,7 +55,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from snax_forge.common import generated_header
+from snax_forge.common import Missing, dig, generated_header
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import cores
 
@@ -106,9 +106,10 @@ def accelerator_header(acc: Any, first: int, point_path: str) -> str:
 
 def _int(d: Mapping[str, Any], path: str) -> int:
     """The integer at the dotted ``path`` of the cluster file ``d``; ``gen.source`` if not one."""
-    node: Any = d
-    for p in path.split("."):
-        node = node.get(p) if isinstance(node, Mapping) else None
+    try:
+        node = dig(d, path)
+    except Missing:
+        node = None
     if isinstance(node, bool) or not isinstance(node, int):
         raise GenError("gen.source", f"the cluster file's {path} is {node!r}, not an integer")
     return node

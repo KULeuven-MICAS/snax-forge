@@ -63,7 +63,7 @@ import json
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -72,7 +72,6 @@ from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
 from snax_forge.lower.c import job_values, job_writes
 from snax_forge.lower.derive import task_list
-from snax_forge.lower.tasks import Configure
 
 from .accelerator import ACCELERATOR_JSON, Accelerator, Group, Link, Unit, units
 from .blocks import GenError
@@ -94,24 +93,35 @@ def catalogue() -> dict[str, Any]:
     return json.loads(CATALOGUE.read_text())
 
 
+def _ports(unit: Unit, direction: str) -> list[Any]:
+    return [p for p in unit.ports.values() if p.dir == direction]
+
+
+def _input_dtypes(unit: Unit, kind: str) -> Any:
+    """The inputs' dtypes for a ``dtypes`` param, else the first input's."""
+    dtypes = [p.dtype for p in _ports(unit, "in")]
+    return dtypes if kind == "dtypes" else dtypes[0]
+
+
+# The catalogue's fill rules (module doc): rule -> its value for a unit, given the param's type;
+# ``unit.params.<key>`` is the unit's param of that name
+FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
+    "inputs.dtype": _input_dtypes,
+    "outputs.dtype": lambda u, kind: _ports(u, "out")[0].dtype,
+    "inputs.lanes": lambda u, kind: _ports(u, "in")[0].lanes,
+    "unit.opType": lambda u, kind: u.op_type,
+}
+PARAMS_RULE = "unit.params."
+
+
 def fill(acc: Accelerator, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
-    """The datapath's params of ``unit`` by the catalogue's fill rule (module doc)."""
-    ins = [k for k, p in unit.ports.items() if p.dir == "in"]
-    outs = [k for k, p in unit.ports.items() if p.dir == "out"]
+    """The datapath's params of ``unit`` by the catalogue's fill rule (``FILL_RULES``)."""
     out = {}
     for name, rule in sig["fill"].items():
-        kind = sig["params"][name]["type"]
-        if rule == "inputs.dtype":
-            dtypes = [unit.ports[p].dtype for p in ins]
-            out[name] = dtypes if kind == "dtypes" else dtypes[0]
-        elif rule == "outputs.dtype":
-            out[name] = unit.ports[outs[0]].dtype
-        elif rule == "inputs.lanes":
-            out[name] = unit.ports[ins[0]].lanes
-        elif rule == "unit.opType":
-            out[name] = unit.op_type
-        elif rule.startswith("unit.params."):
-            out[name] = unit.params.get(rule.removeprefix("unit.params."))
+        if rule in FILL_RULES:
+            out[name] = FILL_RULES[rule](unit, sig["params"][name]["type"])
+        elif rule.startswith(PARAMS_RULE):
+            out[name] = unit.params.get(rule.removeprefix(PARAMS_RULE))
         else:
             raise GenError(
                 "gen.catalogue", f"{unit.datapath}.{name}: the fill rule {rule!r} is unknown"
@@ -289,7 +299,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     """``vectors.json``: the data and tasks the Chisel specs drive the wrapper with; see the
     module doc."""
     shown, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    tasks = accel_tasks(point)
+    tasks = task_list(point).accel_steps()
     if len(tasks) != 1:
         raise GenError("gen.instances", f"{len(tasks)} accelerator tasks; vectors.json has one")
     (task,) = tasks
@@ -309,8 +319,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         ports.append({"port": p.name, "array": array, "lanes": inst.lanes(p.name),
                       "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
     if linked:
-        fixed = {u.name for u in group.units if "T" in u.params}
-        csrs = {k: v for _, k, v in job_writes(found, task.values, fixed)}
+        csrs = {k: v for _, k, v in job_writes(found, task.values, acc.fixed_folds)}
         n = task.values[group.units[0].name]["n"]
         value, working = group_counter(group, csrs)
     else:
@@ -325,11 +334,6 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     }  # fmt: skip
 
 
-def accel_tasks(point: Any) -> list[Configure]:
-    """The accelerator tasks of the design point's task list, in order."""
-    return [s for s in task_list(point).steps if isinstance(s, Configure) and s.type == "accel"]
-
-
 def write_fixture(design_point: str | Path, out_dir: str | Path,
                   root: str | Path | None = None) -> list[str]:  # fmt: skip
     """A fixture of hw/chisel's specs: ``accelerator.json``, the streamer hjson and, for one
@@ -342,7 +346,7 @@ def write_fixture(design_point: str | Path, out_dir: str | Path,
         (out / streamer).write_text((Path(gen) / streamer).read_text())
     files = [ACCELERATOR_JSON, streamer]
     _, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    if len(accel_tasks(point)) == 1:
+    if len(task_list(point).accel_steps()) == 1:
         (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
         files.append(VECTORS_JSON)
     return files

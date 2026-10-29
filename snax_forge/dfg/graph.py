@@ -17,7 +17,7 @@ output an optional ``"reduce": {"op", "identity"}`` that folds the writes of
 every iteration into the element instead of overwriting it (reduce.py).
 The graph is a tree: scopes hold ordered bodies, memlets sit on the
 connectors of the nodes that use the data, and there are no map entry/exit
-nodes, access nodes or outer memlets, which are derived (D71).
+nodes, access nodes or outer memlets, which are derived.
 
 **Names.** Every name in an expression is bound by exactly one thing: a
 symbol, or the variable of an enclosing map. Container shapes use symbols
@@ -436,7 +436,7 @@ def _check_replaced(node: Node, scope: Scope, what: str) -> None:
 
 def _check_instance(node: Node, instances: dict[str, tuple[Any, ...]], what: str) -> None:
     """Two accelerated nodes on one instance agree on its BRM, implementation and params, and
-    carry the same group and accelerator (or none, D148)."""
+    carry the same group and accelerator (or none)."""
     a = node.attrs
     key = (a["brm"], a["implementation"], plain(a["params"]), a.get("group"), a.get("accelerator"))
     seen = instances.setdefault(a["instance"], key)

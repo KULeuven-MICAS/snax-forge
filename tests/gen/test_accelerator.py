@@ -10,9 +10,9 @@ import pytest
 
 from snax_forge.gen import Accelerator, Csr, Group, Link, Port, Unit, describe
 from snax_forge.gen.blocks import GenError
-from snax_forge.gen.schemas import validate
+from tests.helpers import bound_vsum
 
-from .helpers import bound_vsum, one_unit, point
+from .helpers import one_unit, point, validate
 
 
 def dot() -> Accelerator:

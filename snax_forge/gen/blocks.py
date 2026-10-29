@@ -31,7 +31,7 @@ lanes summed by an adder tree in front of its register.
 
     ports        one input of rate 1 with args.lanes lanes, whole 64-bit
                  channels, and one output of a named rate (T) of one lane,
-                 one word whatever its N (the lanes are cast to it, D143)
+                 one word whatever its N (the lanes are cast to it)
     op           add: the BRM's op param, the only one an adder tree runs
                  (``gen.op`` until a datapath takes another)
     params       ``op``: add, as ElementwiseLanes' ``op``; args are lanes only
@@ -40,7 +40,7 @@ lanes summed by an adder tree in front of its register.
 args, its lanes added one a cycle (lane k in cycle k) into one sum; params
 none (its op is add).
 
-**Mac** (L ``max(accumulate, regOut)``, D149): args lanes, ``accumulate`` and
+**Mac** (L ``max(accumulate, regOut)``): args lanes, ``accumulate`` and
 ``regOut`` (bools). With ``accumulate``: inputs ``a`` and ``b`` of rate 1, an
 output of a named rate (T), each lane summing T products; otherwise the plain
 ``a * b + c``, ``c`` an input of rate 1 with ``out``'s dtype and lanes, every

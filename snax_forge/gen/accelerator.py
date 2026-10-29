@@ -35,7 +35,7 @@ never recomputes them. ``define`` names a CSR as the header does:
 ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``, the group part dropped when the
 accelerator has one group, the unit part when the group has one unit.
 
-**The groups** (D146, D148): the design point's one accelerator
+**The groups** (D148): the design point's one accelerator
 (lower/c.py's ``accelerator``), its groups in the graph's order
 (``encapsulate``'s; design/streamers.py's ``groups``): a unit alone, named
 after its instance, or the units ``link`` joined, named by its ``group``, in
@@ -177,7 +177,7 @@ class Link:
 
 @dataclass(frozen=True)
 class Group:
-    """A connected set of units and links with one JOBS (D146): its own CSRs (START, JOBS,
+    """A connected set of units and links with one JOBS: its own CSRs (START, JOBS,
     then STATUS, COUNTER) and its units'."""
 
     name: str
@@ -240,6 +240,12 @@ class Accelerator(JsonFile):
     def csrs(self) -> list[tuple[Group, Unit | None, Csr]]:
         """Every CSR in CSR order, with its group and its unit (None for a group's own)."""
         return [(g, u, c) for g in self.groups for u, c in g.in_order()]
+
+    @property
+    def fixed_folds(self) -> set[str]:
+        """The units whose T is fixed at design time (``params.T``): their JOB_BEATS is no CSR
+        ."""
+        return {u.name for g in self.groups for u in g.units if "T" in u.params}
 
     @property
     def rw(self) -> int:

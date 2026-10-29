@@ -48,7 +48,7 @@ class KernelSpec:
     def with_dtypes(self, dtypes: dict[str, str], what: str = "dtypes") -> KernelSpec:
         """The spec with some containers' integer dtype replaced (a recipe's ``dtypes``, D113):
         their descriptors, so DaCe builds the SDFG at those types; ``make_inputs`` is cast
-        by its caller (``flow.run.kernel_inputs``). A name that is not a descriptor raises
+        by its caller (``dfg.reference.kernel_inputs``). A name that is not a descriptor raises
         ValueError naming it."""
         unknown = sorted(set(dtypes) - set(self.descriptors))
         if unknown:

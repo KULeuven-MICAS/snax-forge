@@ -13,7 +13,6 @@ from snax_forge.design import (
     DesignError,
     DesignPoint,
     Platform,
-    check,
     load,
     register_check,
 )
@@ -43,7 +42,6 @@ from .helpers import (
 
 def test_vecadd_on_small16_passes():
     assert problems(design()) == []
-    check(design())  # does not raise
 
 
 def test_vecadd_w8_passes_on_the_same_platform():
@@ -307,11 +305,13 @@ def test_a_registered_check_runs_in_its_stage():
         register_check("graph.brm", "graph", no_acc)
 
 
-def test_check_raises_with_every_problem():
-    with pytest.raises(DesignError) as e:
-        check(design(sets=[("l1.n_banks", 12)], edit_graph=lambda g: g["symbols"].update(N=None)))
-    assert e.value.codes == ["platform.banks", "graph.symbols"]
-    text = str(e.value)
+def test_the_error_has_every_problem():
+    found = problems(
+        design(sets=[("l1.n_banks", 12)], edit_graph=lambda g: g["symbols"].update(N=None))
+    )
+    e = DesignError(found)
+    assert e.codes == ["platform.banks", "graph.symbols"]
+    text = str(e)
     assert text.startswith("design check: 2 problems\n [platform.banks] l1.n_banks: ")
     assert "\n     fix: --set platform.l1.n_banks=16" in text
 
@@ -420,7 +420,7 @@ def test_a_moved_container_is_padded_to_whole_beats():
 
 def test_dot_keeps_the_last_beat_of_out_to_itself():
     """out is one element moved as one beat: tmp0 (L1 only) starts after it, and pinned inside
-    it is an overlap (D105)."""
+    it is an overlap."""
     d = with_memory(graph="dot_accelerated")
     assert problems(d) == []
     lay = d.memory.layouts
@@ -546,14 +546,6 @@ def test_each_firing_loop_gives_a_streamer_loop():
     assert {s.name: s.temporal_dims for s in point.streamers.values()} == {
         "acc_a": 2, "acc_b": 2, "acc_out": 2
     }  # fmt: skip
-
-
-def test_a_platform_with_temporal_dims_is_refused():
-    """A platform file from before M13's B0: the key is named, and where it comes from now."""
-    with pytest.raises(DesignError, match="streamers.default.temporal_dims: is no longer"):
-        design(edit_platform=lambda d: d["streamers"]["default"].update(temporal_dims=1))
-    with pytest.raises(DesignError, match="acc_a.temporal_dims: comes from the graph"):
-        design(sets=[("streamers.acc_a.temporal_dims", 2)])
 
 
 def test_a_tile_map_is_not_lowered_yet():

@@ -162,13 +162,6 @@ def run_checks(design: Design, stages: Sequence[str] | None = None) -> list[Prob
     return out
 
 
-def check(design: Design) -> None:
-    """Raise DesignError with every problem, or return when the pairing fits."""
-    problems = run_checks(design)
-    if problems:
-        raise DesignError(problems)
-
-
 # =============================================================================
 # Helpers for messages
 # =============================================================================
@@ -508,7 +501,7 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
     container's dtype per word, the fastest spatial bound S_0 is a multiple of num_slc, the
     fastest spatial loop steps 1 element, every other loop a multiple of num_slc, and the start
     is on a word. At num_slc = 1 every port passes. The base address is memory.align's. At any k, a memlet stays inside
-    its container's padded shape (a tail's padding, D144, as the reference executor
+    its container's padded shape (a tail's padding, as the reference executor
     requires)."""
     g, pf = design.graph, design.platform
     for n in accelerated(g):
@@ -616,7 +609,7 @@ def _pack(
 
 
 def _connect_pad(design: Design) -> Iterable[Problem]:
-    """A tail's padding is in the data, never masked by the hardware (D144): a container an
+    """A tail's padding is in the data, never masked by the hardware: a container an
     accelerator writes holds its pad lanes' values too, so a fold may not read it through a
     tail; and every reader of a container must need the same pad."""
     g = design.graph
@@ -661,7 +654,7 @@ def _port_spatial_bounds(design: Design, s: str, i: str, p: str) -> list[int] | 
 
 
 def _connect_num_ch(design: Design) -> Iterable[Problem]:
-    """A streamer entry's ``num_ch`` against the wire default W / num_slc (D142): only that is
+    """A streamer entry's ``num_ch`` against the wire default W / num_slc: only that is
     placed for now, since any other needs the FIFO slicer."""
     g, pf = design.graph, design.platform
     for s, (i, p) in _streamers(design).items():
@@ -762,7 +755,7 @@ def _memory_residency(design: Design) -> Iterable[Problem]:
     linked = linked_ports(design.graph)
     for n in accelerated(design.graph):
         for conn, mlet in {**n.inputs, **n.outputs}.items():
-            if f"{n.attrs['instance']}.{conn}" in linked:  # a link: no L1, no streamer (D112)
+            if f"{n.attrs['instance']}.{conn}" in linked:  # a link: no L1, no streamer
                 continue
             if "l1" not in lays.get(mlet.data, {}):
                 yield Problem(
@@ -790,7 +783,7 @@ def _memory_align(design: Design) -> Iterable[Problem]:
         return
     ctx = design.context()
     for c, m, lay in _layouts(design):
-        if m != "l1":  # an L2 layout's base is the link's (D86)
+        if m != "l1":  # an L2 layout's base is the link's
             continue
         word, elem = ctx.word_bytes(m), ctx.elem_bytes(c)
         where = f"{c} in {m}"
@@ -850,7 +843,7 @@ def _memory_fit(design: Design) -> Iterable[Problem]:
     for c, m, lay in _layouts(design):
         if m not in ctx.memories:
             continue
-        # an L2 layout has base 0, its array's address the link's (D86): only its size counts
+        # an L2 layout has base 0, its array's address the link's: only its size counts
         start, end = ctx.span(m) if m == "l1" else (0, pf.l2.size_bytes)
         lo, hi = _extent(ctx.block(c, lay), ctx.elem_bytes(c), moved[c])
         if lo < start or hi > end:
@@ -923,11 +916,11 @@ def _memory_overlap(design: Design) -> Iterable[Problem]:
     ctx = design.context()
     pins = design.memory.spec.pins()
     moved = _moved_beats(design, ctx.beat_bytes)
-    for m in ("l1",):  # L2 holds data.h's arrays, which the link places apart (D86)
+    for m in ("l1",):  # L2 holds data.h's arrays, which the link places apart
         items = [(c, lay) for c, mm, lay in _layouts(design) if mm == m]
         for (a, la), (b, lb) in _pairs(items):
             ea, eb = ctx.elem_bytes(a), ctx.elem_bytes(b)
-            la, lb = ctx.block(a, la), ctx.block(b, lb)  # a tail's pads take memory (D144)
+            la, lb = ctx.block(a, la), ctx.block(b, lb)  # a tail's pads take memory
             alo, ahi = _extent(la, ea, moved[a])
             blo, bhi = _extent(lb, eb, moved[b])
             if alo >= bhi or blo >= ahi:
@@ -972,7 +965,7 @@ def _shared(
     import numpy as np
 
     def byte_addrs(lay: Any, elem: int, beat: int | None) -> Any:
-        if beat is not None:  # the DMA writes the whole last beat (D105)
+        if beat is not None:  # the DMA writes the whole last beat
             return np.arange(lay.base, lay.base + moved_bytes(lay, elem, beat))
         idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
         return (lay.address(idx)[:, None] + np.arange(elem)).ravel()

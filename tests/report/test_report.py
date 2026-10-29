@@ -29,7 +29,7 @@ from snax_forge.report.__main__ import main
 from snax_forge.report.run import build_run, render_movement
 from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
-from snax_forge.viz import api, schedule
+from snax_forge.viz import api, movement, schedule
 from tests.flow.helpers import stubbed_flow
 
 FIXTURE = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "vecadd"
@@ -59,7 +59,7 @@ def test_the_design_report_equals_its_sources(flows, key):
     assert (h.platform, h.passes) == ("snax_forge", dict(point.memory.passes))
     assert [c.name for c in r.components] == cluster.sources
     (a,) = r.accelerators
-    (unit,) = cluster.accelerator.unit["groups"][0]["units"]
+    (unit,) = cluster.accelerator.description["groups"][0]["units"]
     assert (a.instance, a.kind, a.target_ii, a.latency) == (
         "acc",
         unit["datapath"],
@@ -246,10 +246,10 @@ def test_the_movement_section_is_the_index(recorded, level):
     rv = api.load_run(recorded[level])
     m = build_run(rv).movement
     assert m.reason is None and m.sources is None
-    view = api.movement_view(rv)
+    residency, patterns = movement.residency(rv.index), movement.patterns(rv.index)
     assert [(r.region, r.mem, r.arrival, r.use, r.departure) for r in m.residency] == [
-        (r["region"], r["mem"], r["arrival"], r["use"], r["departure"]) for r in view["residency"]]  # fmt: skip
-    lanes = [p for p in view["patterns"] if p["port"] != "dma"]
+        (r["region"], r["mem"], r["arrival"], r["use"], r["departure"]) for r in residency]  # fmt: skip
+    lanes = [p for p in patterns if p["port"] != "dma"]
     assert [(p.port, p.task, p.base, p.nest, p.beats, p.first, p.last) for p in m.patterns] == [
         (p["port"], p["task"], p["addr"]["base"], p["addr"]["nest"], p["beats"], p["first"],
          p["last"]) for p in lanes]  # fmt: skip
@@ -332,7 +332,7 @@ def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
 
 def test_the_extents_include_the_padding(tmp_path):
     """rowsum_3x7: A[3, 7] over its padded [3, 8] (three pads, 192 B, whole beats); y, three
-    int64 the DMA moves, kept free up to a whole 64-byte beat. The checks' extents (D144)."""
+    int64 the DMA moves, kept free up to a whole 64-byte beat. The checks' extents."""
     r = designed_report(tmp_path, "rowsum_3x7")
     l1 = {x.name: x for x in next(m for m in r.memories if m.mem == "l1").regions}
     a, y = l1["A"], l1["y"]
@@ -384,7 +384,7 @@ def test_the_design_report_has_a_row_per_unit(dot1):
 
 
 # =============================================================================
-# A linked group (D148): dot 4's recorded run
+# A linked group: dot 4's recorded run
 # =============================================================================
 
 

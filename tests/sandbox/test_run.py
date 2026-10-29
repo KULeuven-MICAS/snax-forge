@@ -42,7 +42,7 @@ def test_every_w_that_divides_n_passes(w):
 
 def test_a_w_that_does_not_divide_n_splits_with_a_tail():
     """N = 64 by W = 5: 13 firings, the last with one valid lane, and the reference check
-    passes (D144)."""
+    passes."""
     results = apply_recipe(recipe().with_params({"W": 5}), graph("vecadd"))
     m = results[-1].graph.node("add_map")
     assert m.attrs["range"] == "0:(N + 4) // 5"

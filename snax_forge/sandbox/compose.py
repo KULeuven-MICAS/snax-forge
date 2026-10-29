@@ -1,6 +1,6 @@
 """The transforms that compose units into one accelerator (D148, D150), each with its inverse.
 
-The mapping is spelled step by step, one recipe per variant (D150): a
+The mapping is spelled step by step, one recipe per variant: a
 reduction split into lane partials and a final sum, two nests fused into one,
 a transient between two bound units made a link. Registered as any transform
 (transforms.py); ``ints`` as there.

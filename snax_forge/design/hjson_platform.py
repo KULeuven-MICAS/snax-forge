@@ -31,7 +31,7 @@ reader takes from it:
                              generated accelerator's name, never the
                              source's ``snax_acc_name``, so a generated
                              design takes no name of snax_cluster's own
-                             (D131); the source must still have one
+                            ; the source must still have one
                              accelerator, its name an identifier
 
 A word's elements are not the platform's: each container's dtype decides
@@ -54,14 +54,14 @@ platform can take), ``hjson.accelerators`` (not exactly one accelerator),
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import hjson
 
-from snax_forge.common import repo_root
+from snax_forge.common import Missing, dig, repo_root
 
 from .platform import L1Config, L2Config, Platform
 from .problems import DesignError, Problem
@@ -99,13 +99,12 @@ def _resolve(node: Any, top: Mapping[str, Any], path: str, seen: tuple[str, ...]
 
 def _get(d: Any, path: str, kind: type = int, at: str = "") -> Any:
     """The value at the dotted ``path`` of ``d`` (itself at ``at``), of type ``kind``."""
-    node: Any = d
-    parts = path.split(".")
     where = (at + "." if at else "") + path
-    for i, p in enumerate(parts):
-        if not isinstance(node, Mapping) or p not in node:
-            raise _fail("hjson.key", (at + "." if at else "") + ".".join(parts[: i + 1]), "missing")
-        node = node[p]
+    try:
+        node = dig(d, path)
+    except Missing as e:
+        prefix = ".".join(path.split(".")[: e.at + 1])
+        raise _fail("hjson.key", (at + "." if at else "") + prefix, "missing") from None
     if isinstance(node, bool) or not isinstance(node, kind):
         raise _fail("hjson.key", where, f"must be {kind.__name__}, got {node!r}")
     return node
@@ -141,6 +140,26 @@ def accelerators(d: Mapping[str, Any]) -> list[tuple[str, Any]]:
             raise _fail("hjson.key", f"{where}.snax_acc_cfg", "must be a list")
         out += [(f"{where}.snax_acc_cfg[{i}]", a) for i, a in enumerate(accs)]
     return out
+
+
+class CoreCount(ValueError):
+    """``dma_and_owner``'s: not exactly one xdma core and one owner of the slot; ``dma`` and
+    ``owner`` the cores found. Each caller words its own error."""
+
+    def __init__(self, dma: list[int], owner: list[int]):
+        super().__init__(dma, owner)
+        self.dma, self.owner = dma, owner
+
+
+def dma_and_owner(flat: Sequence[Mapping[str, Any]], slot: str) -> tuple[int, int]:
+    """The core with ``xdma`` and the core whose ``snax_acc_cfg`` holds the slot ``slot``, of the
+    cluster's cores in order (``cores``): a program and a flow run take one of each."""
+    dma = [i for i, c in enumerate(flat) if c.get("xdma")]
+    owner = [i for i, c in enumerate(flat)
+             if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
+    if len(dma) != 1 or len(owner) != 1:
+        raise CoreCount(dma, owner)
+    return dma[0], owner[0]
 
 
 def _load(path: str | Path) -> Any:

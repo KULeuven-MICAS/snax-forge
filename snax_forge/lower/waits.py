@@ -63,7 +63,7 @@ def upstream(point: DesignPoint) -> dict[str, list[str]]:
 
 
 def idle(c: Configure) -> bool:
-    """An idle mover's task: a streamer task with every temporal bound 0 (D148)."""
+    """An idle mover's task: a streamer task with every temporal bound 0."""
     return c.type == "streamer" and not any(c.values["temporal_bounds"])
 
 

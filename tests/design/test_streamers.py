@@ -6,16 +6,9 @@ from snax_forge.brm import Brm
 from snax_forge.design import Platform, instances, nest_spatial_bounds, resolve
 from snax_forge.dfg import Graph
 from tests.brm.helpers import affine_adder
+from tests.helpers import bound_vsum
 
-from .helpers import (
-    BOUND,
-    SMALL16,
-    VECADD_STREAMERS,
-    bound_matadd,
-    bound_vsum,
-    bound_w8,
-    platform_dict,
-)
+from .helpers import BOUND, SMALL16, VECADD_STREAMERS, bound_matadd, bound_w8, platform_dict
 
 
 def shell(platform: Platform, graph: Graph) -> dict:
@@ -72,7 +65,7 @@ def test_stream_spatial_bounds_are_the_memlets_ranges():
 
 
 def test_temporal_dims_come_from_the_graph():
-    """One streamer loop per firing loop the port's memlet runs over (D84): vecadd 1; vsum's
+    """One streamer loop per firing loop the port's memlet runs over: vecadd 1; vsum's
     out, which folds the one firing loop (rate T), 1; matadd, a row and a column loop, 2."""
     pf = Platform.load(SMALL16)
     dims = {

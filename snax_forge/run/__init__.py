@@ -4,7 +4,7 @@ trace the reports and the viewer read.
 * events.py: ``run/events.log`` read, line by line, in snax-gvsoc's grammar (its
   ``docs/EVENTS.md``);
 * cluster.py: the cluster as the run is named: the accelerator, its movers and CSRs, the
-  cores, the DMA, the L1 and its word-interleaved map, from the generator's hjson files and
+  cores, the DMA, the L1 and its word-interleaved map, from the generator's description files and
   the design point;
 * regions.py: where each container lives in each memory: L1 from the design point's layouts,
   L2 from the program's ELF (elf.py, its symbols as run.json records them);

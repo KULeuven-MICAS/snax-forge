@@ -1,4 +1,4 @@
-"""The flow's inputs at every bound size (M13 B0): kernel_inputs.
+"""The kernel's inputs at every size the graph binds: dfg.reference.kernel_inputs.
 
 Every symbol the graph binds goes to the kernel's ``make_inputs`` by its
 lower-case name, and the arrays' shapes must give the graph's values.
@@ -11,8 +11,7 @@ import dataclasses
 import pytest
 
 from snax_forge.dfg import Graph
-from snax_forge.flow import FlowError
-from snax_forge.flow.run import kernel_inputs
+from snax_forge.dfg.reference import KernelError, kernel_inputs
 from snax_forge.sdfg.loader import load
 from tests.design.helpers import FIXTURES, bound_matadd
 
@@ -33,7 +32,7 @@ def test_a_symbol_make_inputs_does_not_take_is_refused():
     spec = load("vecadd")
     other = dataclasses.replace(spec, make_inputs=lambda rng, size=8: spec.make_inputs(rng, n=size))
     with pytest.raises(
-        FlowError, match="binds N = 12, but vecadd's make_inputs has no parameter 'n'"
+        KernelError, match="binds N = 12, but vecadd's make_inputs has no parameter 'n'"
     ):
         kernel_inputs(other, _vecadd(12), 0)
 
@@ -41,5 +40,5 @@ def test_a_symbol_make_inputs_does_not_take_is_refused():
 def test_inputs_of_another_size_are_refused():
     spec = load("vecadd")
     fixed = dataclasses.replace(spec, make_inputs=lambda rng, n=8: spec.make_inputs(rng, n=4))
-    with pytest.raises(FlowError, match="gives N = 4, the graph binds 12"):
+    with pytest.raises(KernelError, match="gives N = 4, the graph binds 12"):
         kernel_inputs(fixed, _vecadd(12), 0)

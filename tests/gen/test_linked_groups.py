@@ -1,4 +1,4 @@
-"""B1x's designs on the generator (D112, D147, C§17): one accelerator of linked units, streamers
+"""Linked groups on the generator (D112, D147, C§17): one accelerator of linked units, streamers
 on the outer ports only, one task per group, and the register writes of dot 6 and matvec 6."""
 
 from __future__ import annotations
@@ -54,10 +54,12 @@ def test_dot6_writes_its_movers_jobs_and_the_macs_beats(tmp_path):
         "SerialAccumulate", {"T": 1}, {"latency": 1, "ii": 1, "span": 4}
     )  # fmt: skip
     manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["trace"] == "snax_acc0/group_dot"  # the linked group's one component
     assert manifest["tasks"] == [{"name": "mult_dot", "beats": 128,
                                   "csrs": {"JOBS": 1, "MAC_JOB_BEATS": 128}}]  # fmt: skip
 
 
+@pytest.mark.slow  # 16 x 512 through the sandbox and the generator
 def test_matvec6_rereads_p_for_every_row(tmp_path):
     """matvec 6, 16 x 512, W = 4: A's reader a second loop over the rows (4096 B), p's the
     same loop at stride 0, the writer 16 words at stride 8; JOBS 16."""

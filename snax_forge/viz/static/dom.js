@@ -66,3 +66,23 @@ export function section(id, title, note, ...body) {
     note ? h("p", { class: "note" }, note) : null,
     body);
 }
+
+/** The units of an accelerator.json (file): each with its group, in group order. */
+export function accelUnits(file) {
+  return (file?.groups ?? []).flatMap((g) => g.units.map((u) => ({ group: g.name, unit: u })));
+}
+
+/** The units a run's accelerator name stands for: a linked group's (SNAX-GVSoC's one
+ * component, named after the group), else the unit itself (report/design.py's members). */
+export function unitsOf(file, name) {
+  const linked = (file?.groups ?? []).find((g) => g.name === name && g.units.length > 1);
+  return accelUnits(file).filter((x) => (linked ? x.group === name : x.unit.name === name));
+}
+
+/** One unit's facts, from accelerator.json: its group, datapath, op, input lanes and timing. */
+export function unitFacts({ group, unit: u }) {
+  const ins = Object.values(u.ports ?? {}).filter((p) => p.dir === "in");
+  const t = u.timing ?? {};
+  return [`${group}: ${u.name} ${u.datapath}`, u.params?.op !== undefined ? `op ${u.params.op}` : null,
+    ins.length ? `${ins[0].lanes} lanes` : null, `latency ${t.latency}`, `II ${t.ii}`].filter(Boolean).join(", ");
+}

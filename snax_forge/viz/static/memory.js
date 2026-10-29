@@ -15,7 +15,7 @@
 //   fold lines   click to show the hidden rows, at most MAX_ROWS at a time;
 //                an empty run is one line
 //
-// Region colours are a meaning of this tab only (D57): a region keeps its
+// Region colours are a meaning of this tab only: a region keeps its
 // colour in every memory, so A in L2 and A in L1 match. The modes, the cycle
 // overlay and the picked element are described under "drawing" below. The
 // cycle bar has the play button of player.js; Clear also stops it.
@@ -126,7 +126,7 @@ export function elementAt(detail, mem, column, row) {
 // On a run traced at beat or above, the selected cycle (`cycle`, shared with the schedule
 // and stepped by the arrow keys) is drawn over the grid: a word requested in that cycle is
 // outlined teal, a word whose read data comes back green and a word held back red, the
-// colours of D61 and D62; a folded line says how many of its words moved.
+// colours of the run views; a folded line says how many of its words moved.
 // Clicking a word picks its element (`pick`): its words are outlined in every
 // memory and a drawer shows its journey, its firings and, in L1, its conflicts.
 

@@ -8,7 +8,7 @@ the first 2-D bind, two temporal loops per streamer), rowsum and rowsum_serial
 vsum_tree_i32, vecadd_i8, vsum_tree_i8: D142, D143; vecmul_i32_i64, the
 product at int32 sign-extended into int64) and the padded tails
 (vecadd_n7, vsum_tree_n21, rowsum_3x7: D144); dot_1, one accelerator of two
-groups (D148); B1x's dot_2 to dot_6 and matvec_2 to matvec_6, one group of
+groups (D148); dot_2 to dot_6 and matvec_2 to matvec_6, one group of
 linked units each, and matvec_1, dot_1's two groups on each row. Its refresh commands are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson
@@ -26,13 +26,10 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.design import __main__ as design_cli
 from snax_forge.gen import generate
-from snax_forge.sandbox import Recipe
-from snax_forge.sandbox import __main__ as sandbox_cli
-from tests.design.helpers import REPO, SNAX_FORGE
+from tests.helpers import requires_submodule
 
-from .helpers import SUB, files, root
+from .helpers import SUB, designed, files
 
 FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_forge.json
@@ -44,25 +41,16 @@ DESIGNS = [
     "matvec_1", "matvec_2", "matvec_3", "matvec_4", "matvec_5", "matvec_6",
 ]  # fmt: skip
 
-pytestmark = pytest.mark.skipif(
-    not (SUB / "snax").is_dir(),
-    reason="the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)",
-)
+pytestmark = requires_submodule
 
 
 def regenerate(tmp: Path, design: str) -> Path:
     """The fixture's refresh commands under ``tmp`` as the root; the generated folder."""
-    root(tmp)
+    point = designed(tmp, design, design)
+    out = tmp / "gvsoc" / design
     with pytest.MonkeyPatch.context() as mp:
-        mp.chdir(tmp)
-        recipe = REPO / "recipes" / f"{design}.json"
-        steps = Recipe.load(recipe).steps
-        bound = f"out/sandbox/{design}/{len(steps)}_{steps[-1].transform}.snaxdfg"  # last step
-        assert sandbox_cli.main([str(recipe), "--out", f"out/sandbox/{design}"]) == 0
-        assert design_cli.main([bound, "--platform", str(SNAX_FORGE),
-                                "--out", f"out/design/{design}"]) == 0  # fmt: skip
-        out = tmp / "gvsoc" / design
-        generate(f"out/design/{design}/design_point.json", out, root=tmp)
+        mp.chdir(tmp)  # the files name the design point by its path from the root
+        generate(point, out, root=tmp)
     return out
 
 

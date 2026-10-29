@@ -18,8 +18,9 @@ from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.data import arrays as data_arrays
 from snax_forge.lower import CError, TaskList, main_c, task_list
 from snax_forge.lower.c import cores, job_values
-from tests.design.helpers import chained, graph_dict
-from tests.gen.helpers import SUB, bound_vecmul, bound_vsum, point
+from tests.design.helpers import chained
+from tests.gen.helpers import SUB, bound_vecmul, point
+from tests.helpers import SUBMODULE_MISSING, bound_vsum, graph_dict
 
 POINT = "out/design/vecadd/design_point.json"
 
@@ -113,7 +114,7 @@ def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
     assert c1[b1[1] + 1] == "snrt_dma_start_1d(C, (void *)0x10000400, 512);"
     # the function ends after the last barrier; forge_check follows in main
     assert c0[b0[2] + 1] == "return 0;"
-    # load_B starts with no wait after load_A: the DMA queues (D135); one wait ends both
+    # load_B starts with no wait after load_A: the DMA queues; one wait ends both
     a = c1.index("snrt_dma_start_1d((void *)0x10000200, B, 512);")
     assert "snrt_dma_wait_all();" not in c1[:a] and c1.count("snrt_dma_wait_all();") == 2
     assert c1[a + 1] == "snrt_dma_wait_all();"
@@ -266,14 +267,6 @@ def test_refused_an_accelerator_task_no_wait_covers(tmp_path):
         text(tmp_path, edit_tasks=no_store)
 
 
-def test_refused_a_read_step(tmp_path):
-    def read(steps):
-        steps.append({"op": "read", "reg": "acc.perf"})
-
-    with pytest.raises(CError, match=r"\[c.read\] vecadd: step 12 \(read\)"):
-        text(tmp_path, edit_tasks=read)
-
-
 def test_refused_a_csr_the_description_lacks(tmp_path):
     p, tasks, cluster, acc, arrays = parts(tmp_path)
     group = acc.groups[0]
@@ -400,13 +393,14 @@ def _riscv_clang() -> str | None:
     if CLANG is None or NM is None:
         return "no clang or llvm-nm on PATH (the image's, snax_cluster's toolchain)"
     if not (SW / "snRuntime").is_dir():
-        return "the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)"
+        return SUBMODULE_MISSING
     probe = subprocess.run([CLANG, "-print-targets"], capture_output=True, text=True, check=False)
     if "riscv32" not in probe.stdout:
         return f"{CLANG} has no riscv32 target"
     return None
 
 
+@pytest.mark.gvsoc  # the image's RISC-V clang: CI's gvsoc job runs it
 @pytest.mark.skipif(_riscv_clang() is not None, reason=str(_riscv_clang()))
 @pytest.mark.parametrize("design", ["vecadd", "vecmul", "vsum"])
 def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):

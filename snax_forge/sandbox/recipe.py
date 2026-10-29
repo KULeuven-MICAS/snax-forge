@@ -29,7 +29,7 @@ that run used.
 another integer dtype: the import applies it to the kernel's descriptors
 before DaCe builds the SDFG (``import_kernel``), so DaCe and the importer see
 those types, and the kernel's inputs are cast to them (``astype``, wrapping;
-``flow.run.kernel_inputs``). An unknown dtype is an error here; an unknown
+``dfg.reference.kernel_inputs``). An unknown dtype is an error here; an unknown
 container one at the import, which knows the kernel's.
 
 Every field is written (``dtypes`` only when it is not empty); ``params`` and

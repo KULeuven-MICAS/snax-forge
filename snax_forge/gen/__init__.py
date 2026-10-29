@@ -16,7 +16,8 @@ snax_cluster.
 
 from .accelerator import ACCELERATOR_JSON, Accelerator, Csr, Group, Link, Unit, describe
 from .blocks import DATAPATHS, ELEMENTWISE_OP, Fill, GenError, Port, register_datapath
-from .gvsoc import AccTask, CsrLayout, Manifest, generate
+from .csrs import CsrLayout
+from .gvsoc import AccTask, Manifest, generate
 
 __all__ = [
     "ACCELERATOR_JSON",

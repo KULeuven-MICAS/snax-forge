@@ -9,24 +9,17 @@ limited to 4 and 8, for the "a W the BRM does not allow" case.
 from __future__ import annotations
 
 import json
-from pathlib import Path
-from typing import Any
 
 from snax_forge.brm import LIBRARY, Brm
 from snax_forge.dfg import Graph
 from snax_forge.sandbox import Recipe
+from tests.helpers import FIXTURES, REPO
 
-REPO = Path(__file__).resolve().parents[2]
-FIXTURES = REPO / "tests" / "dfg" / "fixtures"
 RECIPE = REPO / "recipes" / "vecadd.json"
 
 
 def graph(name: str) -> Graph:
     return Graph.load(FIXTURES / f"{name}.snaxdfg")
-
-
-def graph_dict(name: str) -> dict[str, Any]:
-    return json.loads((FIXTURES / f"{name}.snaxdfg").read_text())
 
 
 def recipe() -> Recipe:

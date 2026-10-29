@@ -10,6 +10,7 @@ from snax_forge.common import generated_header
 from snax_forge.design import Platform
 from snax_forge.gen import GenError, generate
 from snax_forge.gen.headers import accelerator_header, cluster_headers, streamer_header
+from tests.helpers import requires_submodule
 
 from .helpers import SNAX_FORGE, SOURCE, SUB, parsed, point
 from .test_accelerator import dot
@@ -62,7 +63,7 @@ def test_the_streamer_header_numbers(include):
     assert text.startswith(generated_header("design/vecadd/design_point.json", ""))
 
 
-@pytest.mark.skipif(not CHISEL.exists(), reason="the snax-gvsoc submodule is not checked out")
+@requires_submodule
 def test_the_streamer_header_is_the_chisel_ones(include):
     assert defines((include / "streamer_csr_addr_map.h").read_text()) == defines(CHISEL.read_text())
 
@@ -71,7 +72,7 @@ def test_the_accelerator_header_numbers(include):
     assert defines((include / "acc_csr.h").read_text()) == ACC_W4
 
 
-@pytest.mark.skipif(not SHELL.exists(), reason="the snax-gvsoc submodule is not checked out")
+@requires_submodule
 def test_snax_shell_drives_the_accelerator_header(include):
     """snax-gvsoc's snax-shell includes vecadd's acc_csr.h: every CSR name it uses is ours."""
     ours = dict(defines((include / "acc_csr.h").read_text()))
@@ -127,7 +128,7 @@ def values(text: str) -> dict[str, int]:
     return out
 
 
-@pytest.mark.skipif(not SYNCED.exists(), reason="the snax-gvsoc submodule is not checked out")
+@requires_submodule
 @pytest.mark.parametrize("name", CLUSTER_HEADERS)
 def test_the_base_clusters_headers_are_the_synced_ones(include, name):
     """snax_cluster's templates on the same cluster, as snax-gvsoc's sw/ holds them."""

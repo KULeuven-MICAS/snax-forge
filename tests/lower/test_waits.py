@@ -116,7 +116,7 @@ def test_a_wait_on_the_writer_covers_its_group():
 
 
 def test_a_needed_wait_the_writer_covers_is_left_out():
-    """acc_a and acc_b are busy too, but waiting for acc_out covers them (fmul's tiles, D64)."""
+    """acc_a and acc_b are busy too, but waiting for acc_out covers them (fmul's tiles)."""
     prog = shape(*group(0), *group(1))
     assert prog[-5:] == ["Wacc_out:poll", "Sacc_a", "Sacc_b", "Sacc_out", "Sacc"]
 

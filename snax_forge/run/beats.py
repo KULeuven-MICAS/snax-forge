@@ -69,10 +69,12 @@ failure named:
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
-from typing import Any
+from typing import Any, ClassVar
+
+from snax_forge.gen.csrs import mover_csr_count
 
 from .cluster import DMA, Cluster, Mover
 from .events import Line, RunError
@@ -188,8 +190,6 @@ def agu_nest(ptr: int, spatial_bounds: Sequence[int], spatial_strides: Sequence[
 
 def mover_csrs(cluster: Cluster) -> dict[str, int]:
     """Each mover's first CSR number (its pointer's low word), in the streamer's layout."""
-    from snax_forge.gen.gvsoc import mover_csr_count  # here, as cluster.py's csrs_of
-
     out, csr = {}, cluster.accelerator.csrs.streamer_first
     for m in cluster.accelerator.movers:
         out[m.name] = csr
@@ -272,147 +272,201 @@ def _lookup(ctx: Context, mem: str, addr: int, data: bytes) -> tuple[str | None,
 def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[int, int, dict]]:
     """The beat, stall and instruction lines as events (module doc), with each line's index
     in the file for the order of a cycle."""
-    c, acc = ctx.cluster, ctx.cluster.accelerator
-    word = c.bank_bytes
-    ports = _input_ports(named, c)
-    spans = brackets(ctx.task_events)
-    dma = copies(ctx.task_events)
-    mover_of_port = {p: m for m in acc.movers for p in m.ports}
-    readers = [m for m in acc.movers if not m.write]
-    writers = [m for m in acc.movers if m.write]
-    words_in = [m.lanes for m in readers]  # a mover's lanes are its num_ch: words per beat
-    starts = [sum(words_in[:i]) for i in range(len(readers) + 1)]
-    funcs: dict[str, list[tuple[int, str]]] = defaultdict(list)
-    for s, x in named:
-        if x.trace == "events" and x.kind == "func":
-            funcs[s].append((x.cycle - ctx.boot, x.fields["name"]))
-    for f in funcs.values():
-        f.sort(key=lambda p: p[0])
+    return _Beats(named, ctx).events()
 
-    out: list[tuple[int, int, dict]] = []
-    fires, pushes = [], []
-    for n, (src, x) in enumerate(named):
-        if x.trace not in ("beats", "stalls", "insn"):
-            continue
-        f, k = x.fields, x.kind
-        t = x.cycle - ctx.boot
-        if not 0 <= t < ctx.width:
-            continue
-        e: dict[str, Any] = {"t": t, "k": k}
-        if k in ("grant", "stall"):
-            port = ports.get(f["in"])
-            if port is None:
-                raise RunError("convert.path", f"crossbar input {f['in']}: no `input` line names "
-                               "it")  # fmt: skip
-            owner = mover_of_port.get(port)
-            source = owner.name if owner is not None else port
-            if source not in ctx.filter:
-                continue
-            run = task_at(spans.get(owner.name, []), t) if owner is not None else None
-            addr = c.l1_base + f["addr"]
-            e.update(src=port, task=run[1] if run else None)
-            if k == "grant":
-                size = f.get("size", word)
-                data = (f["value"] & WORD_MASK).to_bytes(8, "little")[:size]
-                region, elems, vals = _lookup(ctx, "l1", addr, data)
-                e.update(op=f["op"], mem="l1", addr=addr, bank=f["bank"], row=f["row"],
-                         value=f["value"], back=f["back"] - ctx.boot)  # fmt: skip
-                if "b" in f:
-                    e["b"] = f["b"]
-                if "size" in f:
-                    e["size"] = f["size"]
-                e.update(region=region, elems=elems, vals=vals)
-            else:
-                region, elems, _ = _lookup(ctx, "l1", addr, bytes(word))
-                by = "dma" if f["by"] == -1 else ports.get(f["by"], str(f["by"]))
-                e.update(addr=addr, bank=f["bank"], row=f["row"], by=by,
-                         by_addr=c.l1_base + f["by_addr"])  # fmt: skip
-                if "b" in f:
-                    e["b"] = f["b"]
-                e.update(region=region, elems=elems)
-        elif k == "dma":
-            if DMA not in ctx.filter:
-                continue
-            copy = dma.get(f["id"])
-            addr = c.l1_base + f["addr"]
-            data = _bytes(f["value"], addr, f["size"], word)
-            region, elems, vals = _lookup(ctx, "l1", addr, data)
-            e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], i=f["i"],
-                     op=f["op"], mem="l1", addr=addr, size=f["size"], bank=f["bank"],
-                     row=f["row"], value=list(f["value"]), l2=f["l2"])  # fmt: skip
-            if "back" in f:
-                e["back"] = f["back"] - ctx.boot
-            e.update(region=region, elems=elems, vals=vals)
-        elif k == "burst":
-            if DMA not in ctx.filter:
-                continue
-            copy = dma.get(f["id"])
-            r = region_at(ctx.regions, "l2", f["addr"])
-            e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], op=f["op"],
-                     mem="l2", addr=f["addr"], size=f["size"], back=f["back"] - ctx.boot,
-                     region=r.container if r else None,
-                     elems=r.elems(f["addr"], f["size"]) if r else [])  # fmt: skip
-        elif k == "fire":
-            if acc.name not in ctx.filter:
-                continue
-            run = task_at(spans.get(acc.name, []), t)
-            if len(f["b"]) != len(readers) or len(f["value"]) != starts[-1]:
-                raise RunError("convert.beats", f"fire at {t}: {len(f['b'])} beats of "
-                               f"{len(f['value'])} words, the accelerator reads {len(readers)} "
-                               f"of {words_in} words (its readers' num_channel)")  # fmt: skip
-            e.update(src=acc.name, task=run[1] if run else None, n=f["n"],
-                     b={m.name: f["b"][i] for i, m in enumerate(readers)},
-                     value={m.name: f["value"][starts[i] : starts[i + 1]]
-                            for i, m in enumerate(readers)})  # fmt: skip
-            fires.append((e, run))
-        elif k == "push":
-            if acc.name not in ctx.filter:
-                continue
-            if writers and len(f["value"]) != writers[0].lanes:
-                raise RunError("convert.beats", f"push at {t}: {len(f['value'])} words, the "
-                               f"writer moves {writers[0].lanes} (its num_channel)")  # fmt: skip
-            run = task_at(spans.get(acc.name, []), t)
-            e.update(src=acc.name, task=run[1] if run else None, n=f["n"], first=f["first"],
-                     last=f["last"], value=list(f["value"]))  # fmt: skip
-            pushes.append((e, run))
-        elif k == "fifo":
-            m = acc.mover(f["mover"])
-            if m.name not in ctx.filter:
-                continue
-            run = task_at(spans.get(m.name, []), t)
-            e.update(src=m.name, task=run[1] if run else None, lane=f["lane"], count=f["count"])
-        elif k == "class":
-            if src not in ctx.filter:
-                continue
-            run = task_at(spans.get(src, []), t)
-            e.update(src=src, task=run[1] if run else None, mode=f["mode"])
-        elif k == "insn":
-            if src not in ctx.filter:
-                continue
-            spans_f = [name for ft, name in funcs.get(src, []) if ft <= t]
-            e.update(src=src, pc=f["pc"], func=spans_f[-1] if spans_f else None, text=f["text"])
-        else:
-            raise RunError("convert.kind", f"{x.trace} {k} line: no event for it ({x})")
-        out.append((t, n, e))
-    grants = beat_grants([e for _, _, e in out if e["k"] == "grant"], acc.movers, spans)
 
-    def vals_of(mover: Mover, run: tuple[int, str] | None, b: int, words: list[int]) -> Any:
-        g = grants.get((mover.name, run[0], b)) if run else None
-        if not g or len(g) != mover.lanes:
-            return None
-        out: list[Any] = []
-        for lane in range(mover.lanes):
-            ge = g[lane]
-            data = (words[lane] & WORD_MASK).to_bytes(8, "little") if lane < len(words) else b""
-            r = region_at(ctx.regions, "l1", ge["addr"])
-            out += r.vals(ge["addr"], data) if r else []
+class _Beats:
+    """``beat_events``'s context: the run's ports, task spans and DMA copies, the
+    accelerator's readers and writers; one method per line kind (``KINDS``), each filling an
+    event or None when its source is filtered out."""
+
+    def __init__(self, named: Sequence[tuple[str, Line]], ctx: Context) -> None:
+        self.named, self.ctx = named, ctx
+        self.c, self.acc = ctx.cluster, ctx.cluster.accelerator
+        self.word = self.c.bank_bytes
+        self.ports = _input_ports(named, self.c)
+        self.spans = brackets(ctx.task_events)
+        self.dma_copies = copies(ctx.task_events)
+        self.mover_of_port = {p: m for m in self.acc.movers for p in m.ports}
+        self.readers = [m for m in self.acc.movers if not m.write]
+        self.writers = [m for m in self.acc.movers if m.write]
+        self.words_in = [m.lanes for m in self.readers]  # a mover's lanes are its num_ch
+        self.starts = [sum(self.words_in[:i]) for i in range(len(self.readers) + 1)]
+        self.funcs: dict[str, list[tuple[int, str]]] = defaultdict(list)
+        for s, x in named:
+            if x.trace == "events" and x.kind == "func":
+                self.funcs[s].append((x.cycle - ctx.boot, x.fields["name"]))
+        for f in self.funcs.values():
+            f.sort(key=lambda p: p[0])
+        self.fires: list[tuple[dict, tuple[int, str] | None]] = []
+        self.pushes: list[tuple[dict, tuple[int, str] | None]] = []
+
+    def events(self) -> list[tuple[int, int, dict]]:
+        out: list[tuple[int, int, dict]] = []
+        for n, (src, x) in enumerate(self.named):
+            if x.trace not in ("beats", "stalls", "insn"):
+                continue
+            t = x.cycle - self.ctx.boot
+            if not 0 <= t < self.ctx.width:
+                continue
+            kind = self.KINDS.get(x.kind)
+            if kind is None:
+                raise RunError("convert.kind", f"{x.trace} {x.kind} line: no event for it ({x})")
+            e = kind(self, {"t": t, "k": x.kind}, src, x.fields)
+            if e is not None:
+                out.append((t, n, e))
+        self.values(out)
         return out
 
-    for e, run in fires:
-        e["vals"] = {m.name: vals_of(m, run, e["b"][m.name], e["value"][m.name]) for m in readers}
-    for e, run in pushes:
-        e["vals"] = vals_of(writers[0], run, e["n"], e["value"]) if writers else None
-    return out
+    def task(self, src: str, t: int) -> tuple[int, str] | None:
+        return task_at(self.spans.get(src, []), t)
+
+    def xbar(self, e: dict, src: str, f: dict) -> dict | None:
+        """A crossbar grant or stall: its port and the mover owning it, the element."""
+        k, t, c = e["k"], e["t"], self.c
+        port = self.ports.get(f["in"])
+        if port is None:
+            raise RunError("convert.path", f"crossbar input {f['in']}: no `input` line names "
+                           "it")  # fmt: skip
+        owner = self.mover_of_port.get(port)
+        source = owner.name if owner is not None else port
+        if source not in self.ctx.filter:
+            return None
+        run = self.task(owner.name, t) if owner is not None else None
+        addr = c.l1_base + f["addr"]
+        e.update(src=port, task=run[1] if run else None)
+        if k == "grant":
+            size = f.get("size", self.word)
+            data = (f["value"] & WORD_MASK).to_bytes(8, "little")[:size]
+            region, elems, vals = _lookup(self.ctx, "l1", addr, data)
+            e.update(op=f["op"], mem="l1", addr=addr, bank=f["bank"], row=f["row"],
+                     value=f["value"], back=f["back"] - self.ctx.boot)  # fmt: skip
+            if "b" in f:
+                e["b"] = f["b"]
+            if "size" in f:
+                e["size"] = f["size"]
+            e.update(region=region, elems=elems, vals=vals)
+        else:
+            region, elems, _ = _lookup(self.ctx, "l1", addr, bytes(self.word))
+            by = "dma" if f["by"] == -1 else self.ports.get(f["by"], str(f["by"]))
+            e.update(addr=addr, bank=f["bank"], row=f["row"], by=by,
+                     by_addr=c.l1_base + f["by_addr"])  # fmt: skip
+            if "b" in f:
+                e["b"] = f["b"]
+            e.update(region=region, elems=elems)
+        return e
+
+    def dma(self, e: dict, src: str, f: dict) -> dict | None:
+        """A DMA beat on L1."""
+        if DMA not in self.ctx.filter:
+            return None
+        copy = self.dma_copies.get(f["id"])
+        addr = self.c.l1_base + f["addr"]
+        data = _bytes(f["value"], addr, f["size"], self.word)
+        region, elems, vals = _lookup(self.ctx, "l1", addr, data)
+        e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], i=f["i"],
+                 op=f["op"], mem="l1", addr=addr, size=f["size"], bank=f["bank"],
+                 row=f["row"], value=list(f["value"]), l2=f["l2"])  # fmt: skip
+        if "back" in f:
+            e["back"] = f["back"] - self.ctx.boot
+        e.update(region=region, elems=elems, vals=vals)
+        return e
+
+    def burst(self, e: dict, src: str, f: dict) -> dict | None:
+        """A DMA burst on L2."""
+        if DMA not in self.ctx.filter:
+            return None
+        copy = self.dma_copies.get(f["id"])
+        r = region_at(self.ctx.regions, "l2", f["addr"])
+        e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], op=f["op"],
+                 mem="l2", addr=f["addr"], size=f["size"], back=f["back"] - self.ctx.boot,
+                 region=r.container if r else None,
+                 elems=r.elems(f["addr"], f["size"]) if r else [])  # fmt: skip
+        return e
+
+    def fire(self, e: dict, src: str, f: dict) -> dict | None:
+        """A firing: each reader's beat and words; its values once the grants are known."""
+        acc, t = self.acc, e["t"]
+        if acc.name not in self.ctx.filter:
+            return None
+        run = self.task(acc.name, t)
+        if len(f["b"]) != len(self.readers) or len(f["value"]) != self.starts[-1]:
+            raise RunError("convert.beats", f"fire at {t}: {len(f['b'])} beats of "
+                           f"{len(f['value'])} words, the accelerator reads {len(self.readers)} "
+                           f"of {self.words_in} words (its readers' num_channel)")  # fmt: skip
+        e.update(src=acc.name, task=run[1] if run else None, n=f["n"],
+                 b={m.name: f["b"][i] for i, m in enumerate(self.readers)},
+                 value={m.name: f["value"][self.starts[i] : self.starts[i + 1]]
+                        for i, m in enumerate(self.readers)})  # fmt: skip
+        self.fires.append((e, run))
+        return e
+
+    def push(self, e: dict, src: str, f: dict) -> dict | None:
+        """A push: the result's words; its values once the grants are known."""
+        acc, t = self.acc, e["t"]
+        if acc.name not in self.ctx.filter:
+            return None
+        if self.writers and len(f["value"]) != self.writers[0].lanes:
+            raise RunError("convert.beats", f"push at {t}: {len(f['value'])} words, the "
+                           f"writer moves {self.writers[0].lanes} (its num_channel)")  # fmt: skip
+        run = self.task(acc.name, t)
+        e.update(src=acc.name, task=run[1] if run else None, n=f["n"], first=f["first"],
+                 last=f["last"], value=list(f["value"]))  # fmt: skip
+        self.pushes.append((e, run))
+        return e
+
+    def fifo(self, e: dict, src: str, f: dict) -> dict | None:
+        """A queue count of a mover's lane."""
+        m = self.acc.mover(f["mover"])
+        if m.name not in self.ctx.filter:
+            return None
+        run = self.task(m.name, e["t"])
+        e.update(src=m.name, task=run[1] if run else None, lane=f["lane"], count=f["count"])
+        return e
+
+    def cls(self, e: dict, src: str, f: dict) -> dict | None:
+        """A class line of the accelerator or a mover."""
+        if src not in self.ctx.filter:
+            return None
+        run = self.task(src, e["t"])
+        e.update(src=src, task=run[1] if run else None, mode=f["mode"])
+        return e
+
+    def insn(self, e: dict, src: str, f: dict) -> dict | None:
+        """An instruction of a core, in the function it was in."""
+        if src not in self.ctx.filter:
+            return None
+        spans_f = [name for ft, name in self.funcs.get(src, []) if ft <= e["t"]]
+        e.update(src=src, pc=f["pc"], func=spans_f[-1] if spans_f else None, text=f["text"])
+        return e
+
+    KINDS: ClassVar[dict[str, Callable[..., dict | None]]] = {
+        "grant": xbar, "stall": xbar, "dma": dma, "burst": burst, "fire": fire, "push": push,
+        "fifo": fifo, "class": cls, "insn": insn,
+    }  # fmt: skip
+
+    def values(self, out: list[tuple[int, int, dict]]) -> None:
+        """Each firing's and push's element values, from the grants of its beats."""
+        grants = beat_grants([e for _, _, e in out if e["k"] == "grant"], self.acc.movers,
+                             self.spans)  # fmt: skip
+
+        def vals_of(mover: Mover, run: tuple[int, str] | None, b: int, words: list[int]) -> Any:
+            g = grants.get((mover.name, run[0], b)) if run else None
+            if not g or len(g) != mover.lanes:
+                return None
+            vals: list[Any] = []
+            for lane in range(mover.lanes):
+                ge = g[lane]
+                data = (words[lane] & WORD_MASK).to_bytes(8, "little") if lane < len(words) else b""
+                r = region_at(self.ctx.regions, "l1", ge["addr"])
+                vals += r.vals(ge["addr"], data) if r else []
+            return vals
+
+        for e, run in self.fires:
+            e["vals"] = {m.name: vals_of(m, run, e["b"][m.name], e["value"][m.name])
+                         for m in self.readers}  # fmt: skip
+        for e, run in self.pushes:
+            e["vals"] = vals_of(self.writers[0], run, e["n"], e["value"]) if self.writers else None
 
 
 # =============================================================================
@@ -440,142 +494,194 @@ def beat_grants(grants: list[dict], movers: Sequence[Mover], spans: dict[str, li
     return out
 
 
+@dataclass
+class _Seen:
+    """The events ``beat_invariants`` checks: by kind, the task spans, and the movers traced
+    (``all_in`` when every mover and the DMA are)."""
+
+    ctx: Context
+    profile: Profile
+    ev: list[dict[str, Any]]
+    spans: dict[str, list[tuple[int, int, str]]]
+    of: dict[str, list[dict[str, Any]]]
+    traced: list[Mover]
+    snax_ports: set[str]
+    all_in: bool
+
+    @classmethod
+    def of_trace(cls, trace: Trace, profile: Profile, ctx: Context) -> _Seen:
+        acc = ctx.cluster.accelerator
+        ev = trace.events
+        of: dict[str, list[dict[str, Any]]] = defaultdict(list)
+        for e in ev:
+            of[e["k"]].append(e)
+        traced = [m for m in acc.movers if m.name in ctx.filter]
+        return cls(ctx, profile, ev, brackets(ev), of, traced, {p for m in traced for p in m.ports},
+                   len(traced) == len(acc.movers) and DMA in ctx.filter)  # fmt: skip
+
+
 def beat_invariants(trace: Trace, profile: Profile, ctx: Context) -> list[str]:
     """What the beat and stall events must hold (module doc); each that fails, said."""
-    c, acc = ctx.cluster, ctx.cluster.accelerator
-    bad: list[str] = []
-    ev = trace.events
-    spans = brackets(ev)
-    of = defaultdict(list)
-    for e in ev:
-        of[e["k"]].append(e)
-    traced = [m for m in acc.movers if m.name in ctx.filter]
-    snax_ports = {p for m in traced for p in m.ports}
-    all_in = len(traced) == len(acc.movers) and DMA in ctx.filter
+    s = _Seen.of_trace(trace, profile, ctx)
+    acc = ctx.cluster.accelerator
+    bad = _grant_counts(s) + _bank_counts(s)
+    if DMA in ctx.filter:
+        bad += _dma_beats(s)
+    if acc.name in ctx.filter:
+        bad += _firings(s) + _fired_beats(s)
+    bad += _bank_map(s)
+    bad += class_invariants(s.ev, s.of["class"], [x for x in (acc.name, *(m.name for m in s.traced))
+                                                   if x in ctx.filter])  # fmt: skip
+    bad += _mover_nests(s)
+    if ctx.on("stall"):
+        bad += _stall_invariants(trace, profile, ctx, s.of, s.traced, s.all_in)
+    return bad
 
-    # grants per SNAX port, and per bank with the DMA's words
-    count = defaultdict(int)
-    for e in of["grant"]:
+
+def _grant_counts(s: _Seen) -> list[str]:
+    """The grants per SNAX port against its summary."""
+    bad, count = [], defaultdict(int)
+    for e in s.of["grant"]:
         count[e["src"]] += 1
-    for p in sorted(snax_ports):
-        want = profile.ports[p].grants if p in profile.ports else 0
+    for p in sorted(s.snax_ports):
+        want = s.profile.ports[p].grants if p in s.profile.ports else 0
         if count[p] != want:
             bad.append(f"{p}: {count[p]} grant lines in the window, {want} in its summary")
-    if all_in and profile.banks is not None:
-        rw = {"r": [0] * c.banks, "w": [0] * c.banks}
-        for e in of["grant"]:
-            if e["src"] in snax_ports and e["op"] in rw:
-                rw[e["op"]][e["bank"]] += 1
-        for e in of["dma"]:
-            for j in range(len(e["value"])):
-                rw[e["op"]][(e["bank"] + j) % c.banks] += 1
-        for name, got, want in (("reads", rw["r"], profile.banks.reads),
-                                ("writes", rw["w"], profile.banks.writes)):  # fmt: skip
-            for bank, (g, w) in enumerate(zip(got, want, strict=True)):
-                if g != w:
-                    bad.append(f"bank {bank}: {g} {name} from the SNAX grants and the DMA's words, "
-                               f"{w} in its summary")  # fmt: skip
+    return bad
 
-    # the DMA's beats, per copy and over all copies
-    if DMA in ctx.filter:
-        lines = defaultdict(int)
-        for e in of["dma"]:
-            lines[(e["id"], e["op"])] += 1
-        r_all = w_all = 0
-        for cp in copies(ev).values():
-            rows = range(cp["reps"])
-            r = sum(beats(cp["from"] + i * cp["from_stride"], cp["size"], c.dma_beat_bytes)
-                    for i in rows)  # fmt: skip
-            w = sum(beats(cp["to"] + i * cp["to_stride"], cp["size"], c.dma_beat_bytes)
-                    for i in rows)  # fmt: skip
-            r_all, w_all = r_all + r, w_all + w
-            for op, want, l1 in (("w", w, c.is_l1(cp["to"])), ("r", r, c.is_l1(cp["from"]))):
-                got = lines[(cp["id"], op)]
-                if got != (want if l1 else 0):
-                    bad.append(f"DMA copy {cp['id']} ({cp['task']}): {got} `{op}` beats on L1, "
-                               f"its {'writes' if op == 'w' else 'reads'} make {want if l1 else 0}")  # fmt: skip
-        d = profile.dmas.get(DMA)
-        if d is not None and (r_all, w_all) != (d.beats_read, d.beats_written):
-            bad.append(f"the DMA's copies make {r_all} read and {w_all} written beats, its summary "
-                       f"{d.beats_read} and {d.beats_written}")  # fmt: skip
 
-    # firings and pushes per run
-    if acc.name in ctx.filter:
-        rates = [x.fields["rate"] for s, x in ctx.lines if s == acc.name and x.trace == "events"
-                 and x.kind == "start" and 0 <= x.cycle - ctx.boot < ctx.width]  # fmt: skip
-        fired = 0
-        writers = [m for m in traced if m.write]
-        for k, done in enumerate(e for e in ev if e["k"] == "done" and e["src"] == acc.name):
-            task = done["task"]
-            n_fire = sum(1 for e in of["fire"] if e["task"] == task)
-            n_push = sum(1 for e in of["push"] if e["task"] == task)
-            fired += n_fire
-            if n_fire != done["firings"]:
-                bad.append(f"{task}: {n_fire} fire lines, its done says {done['firings']} firings")
-            rate = rates[k] if k < len(rates) else 1
-            if n_push * rate != done["firings"]:
-                bad.append(f"{task}: {n_push} push lines, {done['firings']} firings at rate {rate}")
-            for m in writers:
-                wtask = spans.get(m.name, [])[k][2] if k < len(spans.get(m.name, [])) else None
-                got = sum(1 for e in of["grant"] if e["src"] in m.ports and e["task"] == wtask)
-                if got != n_push * m.lanes:
-                    bad.append(f"{m.name} ({wtask}): {got} grants, {n_push} pushes of {m.lanes} "
-                               "lanes")  # fmt: skip
-        if fired != profile.accelerators[acc.name].firings:
-            bad.append(f"{acc.name}: {fired} fire lines, {profile.accelerators[acc.name].firings} "
-                       "firings in its summary")  # fmt: skip
+def _bank_counts(s: _Seen) -> list[str]:
+    """Per bank, the SNAX grants and the DMA's words against its summary (every source
+    traced)."""
+    c, banks = s.ctx.cluster, s.profile.banks
+    if not s.all_in or banks is None:
+        return []
+    bad: list[str] = []
+    rw = {"r": [0] * c.banks, "w": [0] * c.banks}
+    for e in s.of["grant"]:
+        if e["src"] in s.snax_ports and e["op"] in rw:
+            rw[e["op"]][e["bank"]] += 1
+    for e in s.of["dma"]:
+        for j in range(len(e["value"])):
+            rw[e["op"]][(e["bank"] + j) % c.banks] += 1
+    for name, got, want in (("reads", rw["r"], banks.reads), ("writes", rw["w"], banks.writes)):
+        for bank, (g, w) in enumerate(zip(got, want, strict=True)):
+            if g != w:
+                bad.append(f"bank {bank}: {g} {name} from the SNAX grants and the DMA's words, "
+                           f"{w} in its summary")  # fmt: skip
+    return bad
 
-        # every beat a firing names, and every push, against the grants
-        by_beat = beat_grants(of["grant"], traced, spans)
 
-        def granted(m: Mover, k: int, b: int) -> list[Any]:
-            g = by_beat.get((m.name, k, b), {})
-            return [g[lane]["value"] if lane in g else None for lane in range(m.lanes)]
+def _dma_beats(s: _Seen) -> list[str]:
+    """The DMA's beats on L1 per copy, and over all copies against its summary."""
+    c, bad = s.ctx.cluster, []
+    lines: dict[tuple[int, str], int] = defaultdict(int)
+    for e in s.of["dma"]:
+        lines[(e["id"], e["op"])] += 1
+    r_all = w_all = 0
+    for cp in copies(s.ev).values():
+        rows = range(cp["reps"])
+        r = sum(beats(cp["from"] + i * cp["from_stride"], cp["size"], c.dma_beat_bytes)
+                for i in rows)  # fmt: skip
+        w = sum(beats(cp["to"] + i * cp["to_stride"], cp["size"], c.dma_beat_bytes)
+                for i in rows)  # fmt: skip
+        r_all, w_all = r_all + r, w_all + w
+        for op, want, l1 in (("w", w, c.is_l1(cp["to"])), ("r", r, c.is_l1(cp["from"]))):
+            got = lines[(cp["id"], op)]
+            if got != (want if l1 else 0):
+                bad.append(f"DMA copy {cp['id']} ({cp['task']}): {got} `{op}` beats on L1, "
+                           f"its {'writes' if op == 'w' else 'reads'} make {want if l1 else 0}")  # fmt: skip
+    d = s.profile.dmas.get(DMA)
+    if d is not None and (r_all, w_all) != (d.beats_read, d.beats_written):
+        bad.append(f"the DMA's copies make {r_all} read and {w_all} written beats, its summary "
+                   f"{d.beats_read} and {d.beats_written}")  # fmt: skip
+    return bad
 
-        for e in of["fire"]:
-            k = _run_of(spans, acc.name, e["task"])
-            for m in traced:
-                if m.write or m.name not in e["b"]:
-                    continue
-                got = granted(m, k, e["b"][m.name])
-                if got != e["value"][m.name]:
-                    bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s beat {e['b'][m.name]} "
-                               f"granted as {got}, fired as {e['value'][m.name]}")  # fmt: skip
-        for e in of["push"]:
-            k = _run_of(spans, acc.name, e["task"])
-            for m in (m for m in traced if m.write):
-                got = granted(m, k, e["n"])
-                if got != e["value"]:
-                    bad.append(f"push {e['n']} at {e['t']}: written by {m.name} as {got}, "
-                               f"pushed as {e['value']}")  # fmt: skip
 
-    # the word-interleaved map
-    for e in of["grant"] + of["stall"] + of["dma"]:
-        if (e["bank"], e["row"]) != c.bank_row(e["addr"]):
-            bad.append(f"{e['k']} at {e['t']} ({e['src']}): bank {e['bank']} row {e['row']}, "
-                       f"its address {e['addr']:#x} is bank and row {c.bank_row(e['addr'])}")  # fmt: skip
+def _firings(s: _Seen) -> list[str]:
+    """Per run of the accelerator, its fire and push lines against its done, and its writers'
+    grants against its pushes; over all runs, the firings against its summary."""
+    ctx, acc, bad = s.ctx, s.ctx.cluster.accelerator, []
+    rates = [x.fields["rate"] for src, x in ctx.lines if src == acc.name and x.trace == "events"
+             and x.kind == "start" and 0 <= x.cycle - ctx.boot < ctx.width]  # fmt: skip
+    fired = 0
+    writers = [m for m in s.traced if m.write]
+    for k, done in enumerate(e for e in s.ev if e["k"] == "done" and e["src"] == acc.name):
+        task = done["task"]
+        n_fire = sum(1 for e in s.of["fire"] if e["task"] == task)
+        n_push = sum(1 for e in s.of["push"] if e["task"] == task)
+        fired += n_fire
+        if n_fire != done["firings"]:
+            bad.append(f"{task}: {n_fire} fire lines, its done says {done['firings']} firings")
+        rate = rates[k] if k < len(rates) else 1
+        if n_push * rate != done["firings"]:
+            bad.append(f"{task}: {n_push} push lines, {done['firings']} firings at rate {rate}")
+        for m in writers:
+            runs = s.spans.get(m.name, [])
+            wtask = runs[k][2] if k < len(runs) else None
+            got = sum(1 for e in s.of["grant"] if e["src"] in m.ports and e["task"] == wtask)
+            if got != n_push * m.lanes:
+                bad.append(f"{m.name} ({wtask}): {got} grants, {n_push} pushes of {m.lanes} "
+                           "lanes")  # fmt: skip
+    if fired != s.profile.accelerators[acc.name].firings:
+        bad.append(f"{acc.name}: {fired} fire lines, {s.profile.accelerators[acc.name].firings} "
+                   "firings in its summary")  # fmt: skip
+    return bad
 
-    # the class runs per component run against its summary's classes
-    bad += class_invariants(ev, of["class"], [s for s in (acc.name, *(m.name for m in traced))
-                                               if s in ctx.filter])  # fmt: skip
 
-    # each mover's addresses, task by task, against its CSR nest
-    expected = nests(ctx)
-    for m in traced:
-        for k, (_, _, task) in enumerate(spans.get(m.name, [])):
+def _fired_beats(s: _Seen) -> list[str]:
+    """Every beat a firing names, and every push, against the grants."""
+    acc, bad = s.ctx.cluster.accelerator, []
+    by_beat = beat_grants(s.of["grant"], s.traced, s.spans)
+
+    def granted(m: Mover, k: int, b: int) -> list[Any]:
+        g = by_beat.get((m.name, k, b), {})
+        return [g[lane]["value"] if lane in g else None for lane in range(m.lanes)]
+
+    for e in s.of["fire"]:
+        k = _run_of(s.spans, acc.name, e["task"])
+        for m in s.traced:
+            if m.write or m.name not in e["b"]:
+                continue
+            got = granted(m, k, e["b"][m.name])
+            if got != e["value"][m.name]:
+                bad.append(f"fire {e['n']} at {e['t']}: {m.name}'s beat {e['b'][m.name]} "
+                           f"granted as {got}, fired as {e['value'][m.name]}")  # fmt: skip
+    for e in s.of["push"]:
+        k = _run_of(s.spans, acc.name, e["task"])
+        for m in (m for m in s.traced if m.write):
+            got = granted(m, k, e["n"])
+            if got != e["value"]:
+                bad.append(f"push {e['n']} at {e['t']}: written by {m.name} as {got}, "
+                           f"pushed as {e['value']}")  # fmt: skip
+    return bad
+
+
+def _bank_map(s: _Seen) -> list[str]:
+    """Every L1 access's bank and row, the word-interleaved map's."""
+    c = s.ctx.cluster
+    return [f"{e['k']} at {e['t']} ({e['src']}): bank {e['bank']} row {e['row']}, "
+            f"its address {e['addr']:#x} is bank and row {c.bank_row(e['addr'])}"
+            for e in s.of["grant"] + s.of["stall"] + s.of["dma"]
+            if (e["bank"], e["row"]) != c.bank_row(e["addr"])]  # fmt: skip
+
+
+def _mover_nests(s: _Seen) -> list[str]:
+    """Each mover's addresses, task by task, against its CSR nest."""
+    c, bad = s.ctx.cluster, []
+    expected = nests(s.ctx)
+    for m in s.traced:
+        for k, (_, _, task) in enumerate(s.spans.get(m.name, [])):
             want = expected.get((m.name, k))
             if want is None:
                 continue
             for lane, port in enumerate(m.ports):
-                got = [e["addr"] - c.l1_base for e in of["grant"]
+                got = [e["addr"] - c.l1_base for e in s.of["grant"]
                        if e["src"] == port and e["task"] == task]  # fmt: skip
                 if got != want[lane]:
                     bad.append(f"{port} ({task}): grant addresses {[hex(a) for a in got[:4]]}... "
                                f"({len(got)}), its CSRs' nest {[hex(a) for a in want[lane][:4]]}... "
                                f"({len(want[lane])})")  # fmt: skip
-
-    if ctx.on("stall"):
-        bad += _stall_invariants(trace, profile, ctx, of, traced, all_in)
     return bad
 
 

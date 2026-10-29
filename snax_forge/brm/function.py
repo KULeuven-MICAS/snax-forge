@@ -27,9 +27,9 @@ output's when it writes it, D143) and ``reduce`` (input ``a`` at rate 1,
 output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
 each input lane cast to the output's dtype first, so its tree and its
 accumulator run at that dtype, as ``np.add.reduce(a, dtype=out)`` and
-SnaxUnit do, D143), and ``mac`` (inputs ``a`` and ``b`` at rate 1, output
+SnaxUnit do), and ``mac`` (inputs ``a`` and ``b`` at rate 1, output
 ``out`` at rate ``"T"``, every lane its own: the product at the inputs' result
-type, cast to the output's dtype and folded per lane over T beats, D143),
+type, cast to the output's dtype and folded per lane over T beats),
 each with ``op`` a registered op by name (``mac``'s the fold's) (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
 ``or``, ``xor``). New ones with ``register_kind`` and ``register_op``.
 
@@ -146,7 +146,7 @@ def elementwise(
     dtypes: Mapping[str, str] | None = None,
 ) -> AccelFunction:
     """N inputs -> 1 output, one beat each per firing, ``op`` folding them left to right at
-    the inputs' dtype (``dtypes`` is not read: the result is cast when written, D143)."""
+    the inputs' dtype (``dtypes`` is not read: the result is cast when written)."""
     names = [chr(ord("a") + i) for i in range(n_inputs)]
 
     def fn(k, ins, state, params):
@@ -167,7 +167,7 @@ def reduce_kind(
     ``lanes_out = lanes`` (default): each lane is folded over T beats.
     ``lanes_out = 1``: the lanes are folded too.
     Each input lane is cast to the output port's dtype (``dtypes["out"]``) before it is
-    folded, so the tree and the accumulator run at that dtype (D143); without ``dtypes``, at
+    folded, so the tree and the accumulator run at that dtype; without ``dtypes``, at
     the input's.
     """
     out_dtype = None if dtypes is None else dtypes.get("out")
@@ -195,7 +195,7 @@ def mac_kind(
 ) -> AccelFunction:
     """T beats of ``a`` and ``b`` -> 1 beat of ``out``, each lane on its own: ``a * b`` at the
     inputs' result type, cast to the output's dtype (``dtypes["out"]``), folded with ``op``
-    over the T beats (D143); without ``dtypes``, at the product's."""
+    over the T beats; without ``dtypes``, at the product's."""
     out_dtype = None if dtypes is None else dtypes.get("out")
 
     def fn(k, ins, state, params):

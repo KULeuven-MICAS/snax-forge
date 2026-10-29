@@ -1,4 +1,4 @@
-"""Shared snippets for the run tests: a cluster's three hjson files and design point, as the
+"""Shared snippets for the run tests: a cluster's three description files and design point, as the
 generator writes them for vecadd on snax_forge (cut to what run/ reads), and GVSoC header lines."""
 
 from __future__ import annotations
@@ -7,12 +7,45 @@ import copy
 import json
 from collections import defaultdict
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 from snax_forge.run.trace import LEVELS
 
 PATH = "/chip/soc/cluster_0"
-TASKS = Path(__file__).parent / "fixtures" / "vecadd" / "tasks.json"  # the recorded run's
+RECORDED = Path(__file__).parent / "fixtures"  # the recorded runs, a folder each
+TASKS = RECORDED / "vecadd" / "tasks.json"  # the recorded vecadd's
+
+
+class Recorded(NamedTuple):
+    """A recorded run of tests/run/fixtures/ as the converter takes it, with its regions (L1
+    from its design point, L2 from its ELF's symbols) and those symbols."""
+
+    cluster: Any
+    tasks: Any
+    check: dict[str, Any]
+    lines: list[Any]
+    regions: Any
+    elf_symbols: dict[str, Any]
+
+
+def load_recorded(name: str | Path, events: str = "events.log") -> Recorded:
+    """The recorded run ``name`` (a folder of tests/run/fixtures/, or its path), its
+    ``events`` file read."""
+    from snax_forge.design import DesignPoint
+    from snax_forge.lower.tasks import TaskList
+    from snax_forge.run import load_cluster, read_events, regions_of
+
+    d = RECORDED / name if isinstance(name, str) else Path(name)
+    syms = json.loads((d / "elf_symbols.json").read_text())
+    return Recorded(
+        load_cluster(d / "snax_forge.hjson", d / "design_point.json"),
+        TaskList.from_dict(json.loads((d / "tasks.json").read_text())),
+        json.loads((d / "check.json").read_text()),
+        read_events(d / events),
+        regions_of(DesignPoint.load(d / "design_point.json"), syms),
+        syms,
+    )
+
 
 CLUSTER: dict[str, Any] = {
     "cluster": {

@@ -10,7 +10,7 @@ or produces its operand's elements, in logical indices. It holds no
 addresses; SNAX-LOWER maps it through the buffer layout the design point
 chooses (section 5.5). Whether the ports agree on element positions (lane j
 of beat t on every port is the element the function expects) is the BRM
-author's responsibility (D70).
+author's responsibility.
 
 What a nest looks like is the notation's business. A notation is registered
 by name with ``register_notation(name, check, check_instance=None, normalize=None)``:

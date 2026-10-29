@@ -25,7 +25,7 @@ program waits for this task when the lowering inserts a wait for it.
 The structural rules are checked here, without a cluster: task names are
 unique; ``after``, ``start`` and ``sync`` refer to tasks configured earlier;
 a component has at most one configured task that has not started yet (its
-registers are buffered, D36), so one start never launches two tasks on one
+registers are buffered, D116), so one start never launches two tasks on one
 component; a task starts once, after its ``after`` tasks have started; every
 configured task is started.
 
@@ -150,24 +150,8 @@ class Sync:
         return cls(str(d["task"]), str(d.get("mode", "poll")))
 
 
-@dataclass
-class Read:
-    """A ``csr_read`` of ``reg`` ("block.register")."""
-
-    reg: str
-    op: ClassVar[str] = "read"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"op": self.op, "reg": self.reg}
-
-    @classmethod
-    def from_dict(cls, d: Mapping[str, Any]) -> Read:
-        _need(d, ("reg",), "read")
-        return cls(str(d["reg"]))
-
-
-Step = Configure | Start | Sync | Read
-_STEPS: dict[str, type] = {c.op: c for c in (Configure, Start, Sync, Read)}
+Step = Configure | Start | Sync
+_STEPS: dict[str, type] = {c.op: c for c in (Configure, Start, Sync)}
 
 
 def step_from_dict(d: Mapping[str, Any]) -> Step:
@@ -237,9 +221,6 @@ class TaskList(JsonFile):
                     raise TaskListError(f"{where}: task {s.task!r} is not started before")
                 if s.mode not in WAIT_MODES:
                     raise TaskListError(f"{where}: mode must be one of {WAIT_MODES}")
-            elif isinstance(s, Read):
-                if "." not in s.reg:
-                    raise TaskListError(f"{where}: register {s.reg!r} is not 'block.register'")
             else:
                 raise TaskListError(f"{where}: not a step: {s!r}")
         if pending:
@@ -250,6 +231,14 @@ class TaskList(JsonFile):
     def configured(self) -> dict[str, Configure]:
         """Every task by name."""
         return {s.task_name: s for s in self.steps if isinstance(s, Configure)}
+
+    def of_type(self, kind: str) -> list[Configure]:
+        """The tasks of one type (``dma``, ``streamer``, ``accel``), in order."""
+        return [s for s in self.steps if isinstance(s, Configure) and s.type == kind]
+
+    def accel_steps(self) -> list[Configure]:
+        """The accelerator tasks, in order."""
+        return self.of_type("accel")
 
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "steps": [s.to_dict() for s in self.steps]}

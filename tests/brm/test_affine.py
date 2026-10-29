@@ -148,7 +148,7 @@ def test_task_nest_of_the_adder():
     assert (nest.n_beats, nest.shape) == (16, (64,))
     idx = nest.indices()[..., 0]
     assert np.array_equal(idx, np.arange(64).reshape(16, 4))
-    # the ports agree on element positions (D70): the same index on a, b and out
+    # the ports agree on element positions: the same index on a, b and out
     for p in ("a", "b"):
         assert np.array_equal(task_nest(inst, p, {"n": 16}).indices(), nest.indices())
 

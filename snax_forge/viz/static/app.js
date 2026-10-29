@@ -48,7 +48,7 @@ const api = {
   cluster: (name, t) => getJSON(`/api/run/${enc(name)}/cluster?t=${enc(String(t))}`),
   /** The next (dir 1) or previous (-1) cycle with an event (by "event") or a task boundary (by "boundary"). */
   step: (name, t, dir, by) => getJSON(`/api/run/${enc(name)}/step?${new URLSearchParams({ t: String(t), dir: String(dir), by })}`),
-  /** The memory view; `marks` (conflicts, arrival, use, wait) folds by those marks (D57). */
+  /** The memory view; `marks` (conflicts, arrival, use, wait) folds by those marks. */
   memory: (name, marks) => getJSON(`/api/run/${enc(name)}/memory${marks ? `?marks=${enc(marks)}` : ""}`),
   /** Rows from <= r < to of memory `mem` in full (at most 256). */
   memoryRows: (name, mem, from, to, marks) => {

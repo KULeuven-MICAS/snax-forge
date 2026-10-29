@@ -11,7 +11,7 @@ is; the reference check after the step is run.py's.
     outer map ``v_t`` over ``0:(e - b) // factor`` tagged ``temporal``,
     keeping the map's id and attrs, and an inner map ``<id>_s`` over
     ``0:factor`` tagged ``spatial``; every use of ``v`` in the body becomes
-    ``b + factor * v_t + v_s`` (D73). A length n that is not a multiple of
+    ``b + factor * v_t + v_s``. A length n that is not a multiple of
     the factor (D144) runs ``v_t`` over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
     ``factor * v_t + v_s`` below n are the kernel's, the rest pad lanes
@@ -22,7 +22,7 @@ is; the reference check after the step is run.py's.
     without splitting it (matadd's row map), and records that it did
     (``loop.tagged``) so ``untag_map`` takes the tag back. A tagged map is an
     error for ``tag_map``; for ``untag_map`` so is a map ``split_map``
-    tagged (``join_map`` undoes that) or one tagged by hand (D73).
+    tagged (``join_map`` undoes that) or one tagged by hand.
 ``bind(node, brm, implementation, instance, params={})``
     replaces a tasklet and the spatial map around it (the map's only
     child), or a fused nest's spatial map and its two tasklets
@@ -34,12 +34,12 @@ is; the reference check after the step is run.py's.
     must be ``temporal``: they are the firing loops (an untagged one is
     tagged with ``tag_map``; a ``tile`` one is not lowered yet, LOW3b). The
     lanes design param is read off the
-    spatial bound (D73), the other design params come from ``params`` or
+    spatial bound, the other design params come from ``params`` or
     the BRM's defaults, and ``Brm.resolve`` checks them all. Each
     memlet becomes the port's lanes as a range over the spatial variable,
     the container dtype must be the port's, and, for a BRM in the
     ``affine`` notation, the memlets together with the temporal maps around
-    must give the elements in the order of the port's nest (D70, D73); in
+    must give the elements in the order of the port's nest (D70); in
     the ``stream`` notation the memlet is the order. The tasklet's code, on
     the BRM's port names, must be the BRM's ``function.code``; the accelerated node carries that
     code and the replaced subtree (D82). A folding output (``reduce``)
@@ -49,7 +49,7 @@ is; the reference check after the step is run.py's.
     the accelerated node), and its order is checked over the temporal maps
     it uses, one beat per T firings, T from ``named_rates`` (D102).
 ``unbind(node)`` and ``join_map(map)``
-    the inverses (D82): the subtree an accelerated node replaced, and the
+    the inverses: the subtree an accelerated node replaced, and the
     map a temporal / spatial pair was split from (``loop.split``), so a
     graph at any step can go back to the imported one.
 ``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
@@ -222,7 +222,7 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
     _substitute_body(inner.body, {var: f"{start}{factor} * {var_t} + {var_s}"})
     firings = f"({length} + {factor - 1}) // {factor}" if tail else f"({length}) // {factor}"
     split = {"var": var, "range": node.attrs["range"]}  # for join_map
-    if tail:  # the lanes past n are padding (D144)
+    if tail:  # the lanes past n are padding
         split["valid"] = expr.canonical(length)
     node.attrs = {
         "var": var_t,
@@ -286,10 +286,41 @@ def bind(
     instance: str,
     params: Mapping[str, Any] | None = None,
 ) -> Graph:
-    from snax_forge.brm import BrmError, accepted, check_dtypes, memlet_ordered, task_nest
-
     g = _copy(g)
     what = f"bind {node!r}"
+    site = _bind_site(g, node, what)
+    bound = _bind_check(g, site, brm, implementation, params, what)
+    return _bind_rewrite(g, site, bound, brm, implementation, instance, what)
+
+
+@dataclass(frozen=True)
+class _Site:
+    """Where ``bind`` binds: the tasklet (a fused nest's two as one, ``pattern`` the node its
+    ports are matched on), its spatial map and the firing loops around it, outermost first."""
+
+    tasklet: Node
+    pattern: Node
+    smap: Node
+    temporal: list[Node]
+
+
+@dataclass(frozen=True)
+class _Bound:
+    """What ``bind`` checked: the BRM, connector -> port, the instance, the spatial map's
+    variable and bound, the tasklet's memlets and its folding outputs."""
+
+    brm: Any
+    ports: dict[str, str]
+    inst: Any
+    var_s: str
+    end: int
+    memlets: dict[str, Memlet]
+    folds: set[str]
+
+
+def _bind_site(g: Graph, node: str, what: str) -> _Site:
+    """The match: the node is the only node of a spatial map, or a fused nest's spatial map,
+    and every map around it is tagged temporal."""
     body, i, outer = _locate(g, node)
     if body[i].kind == "map":  # a fused nest's spatial map (fuse_map): its two tasklets as one
         smap, found = body[i], fused_view(body[i])
@@ -304,7 +335,7 @@ def bind(
             raise SandboxError(f"{what}: must be the only node of a spatial map (split the map "
                                "first)")  # fmt: skip
         outer = outer[:-1]
-    temporal = list(outer)  # the firing loops, outermost first
+    temporal = list(outer)
     for m in temporal:
         kind = m.attrs.get("loop.kind")
         if kind == "tile":
@@ -314,6 +345,17 @@ def bind(
                 f"{what}: map {m.id!r} around it is untagged; the maps around the spatial map are "
                 "its firing loops: tag it temporal with tag_map"
             )
+    return _Site(tasklet, pattern_node, smap, temporal)
+
+
+def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
+                params: Mapping[str, Any] | None, what: str) -> _Bound:  # fmt: skip
+    """The check: the BRM's ports match the tasklet's, their dtypes are accepted, it computes
+    what the tasklet computes, and its lanes are the spatial bound (the design params: the
+    lanes param from that bound, the rest given or default)."""
+    from snax_forge.brm import BrmError, accepted, check_dtypes
+
+    tasklet, smap = site.tasklet, site.smap
     try:
         b = load_brm(brm)
     except BrmError as e:
@@ -321,7 +363,7 @@ def bind(
     conn_dtypes = {
         c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
     }
-    ports = match(pattern_node, b, conn_dtypes)
+    ports = match(site.pattern, b, conn_dtypes)
     dtypes = {ports[c]: dt for c, dt in conn_dtypes.items()}
     if refused := check_dtypes(b, dtypes):
         raise SandboxError(
@@ -337,7 +379,6 @@ def bind(
             f"{brm!r} computes {b.function.code!r}"
         )
 
-    # design params: the lanes param from the spatial bound, the rest given or default
     begin, end, step = parse_dim(smap.attrs["range"], what)
     if begin != 0 or step != 1 or type(end) is not int:
         raise SandboxError(
@@ -345,7 +386,7 @@ def bind(
         )
     var_s = smap.attrs["var"]
     memlets = tasklet.inputs | tasklet.outputs
-    # a folding output that does not use the spatial variable takes one lane (D102)
+    # a folding output that does not use the spatial variable takes one lane
     folds = {c for c, m in tasklet.outputs.items() if m.reduce is not None and var_s not in m.names}
     for c, m in memlets.items():
         if c not in folds and var_s not in m.names:
@@ -378,14 +419,24 @@ def bind(
                 f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
                 f"{inst.lanes(ports[c])} lanes"
             )
+    return _Bound(b, ports, inst, var_s, end, memlets, folds)
 
-    # memlets: the spatial variable becomes the lanes' range; dtype and order checked
+
+def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation: str,
+                  instance: str, what: str) -> Graph:  # fmt: skip
+    """The rewrite: each memlet's spatial variable becomes the lanes' range (a fold's last
+    index one lane), its order checked against the BRM's nest unless the port is a stream,
+    and the spatial map replaced by the accelerated node."""
+    from snax_forge.brm import memlet_ordered, task_nest
+
+    tasklet, smap, temporal = site.tasklet, site.smap, site.temporal
+    b, ports, inst, folds = bound.brm, bound.ports, bound.inst, bound.folds
     counts = [_bound(g, _length(m), what) for m in temporal]
     n = int(np.prod(counts, dtype=int))
     loops = [(m.attrs["var"], k) for m, k in zip(temporal, counts, strict=True)]
     try:
         rates = named_rates(
-            {ports[c]: (m, b.port(ports[c]).rate) for c, m in memlets.items()}, loops, what
+            {ports[c]: (m, b.port(ports[c]).rate) for c, m in bound.memlets.items()}, loops, what
         )
     except DfgError as e:
         raise SandboxError(str(e)) from None
@@ -405,14 +456,14 @@ def bind(
                     nest = task_nest(inst, port, task)
                 except ValueError as e:
                     raise SandboxError(f"{what}: {e}") from None
-            if c in folds:  # one lane: the last index becomes a range of one (D102)
+            if c in folds:  # one lane: the last index becomes a range of one
                 dims = [*m.subset[:-1], _one_lane(m.subset[-1], f"{what}.{side}.{c}")]
                 out[port] = Memlet(m.data, dims)
                 beats = [lp for lp in temporal if lp.attrs["var"] in m.names]
                 if nest is not None:
                     _check_order(g, m, beats, None, nest.indices(), f"{what} port {port!r}")
                 continue
-            out[port] = Memlet(m.data, _lanes_dims(m, var_s, end, f"{what}.{side}.{c}"))
+            out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
     acc = Node(
@@ -485,7 +536,7 @@ def _check_order(
     """The memlet over the temporal maps and the lanes gives the nest's order.
 
     ``smap`` None: a folding output, one lane, over the temporal maps its
-    memlet uses (one beat per T firings, D102).
+    memlet uses (one beat per T firings).
     """
     env: dict[str, Any] = g.bound_symbols
     loops = [*temporal, *([smap] if smap is not None else [])]
@@ -600,7 +651,7 @@ def _accelerated(g: Graph) -> list[Node]:
 
 
 def encapsulate(g: Graph, accelerator: str, units: list[str]) -> Graph:
-    """The groups of ``units`` (instances) as one accelerator named ``accelerator`` (D148)."""
+    """The groups of ``units`` (instances) as one accelerator named ``accelerator``."""
     g = _copy(g)
     what = f"encapsulate {accelerator!r}"
     if not isinstance(accelerator, str) or not accelerator.isidentifier():

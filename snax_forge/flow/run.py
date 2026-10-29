@@ -21,11 +21,11 @@
       -> report         design.md and run.md (snax_forge/report/)  report/
       -> log            the summary and the design checks that ran flow.log
 
-The flow runs SNAX-GVSoC only (D136). ``build``, ``sw`` and ``gvsoc`` each call
+The flow runs SNAX-GVSoC only. ``build``, ``sw`` and ``gvsoc`` each call
 ``run_gvsoc``, ``make`` on ``gvsoc/Makefile`` through a subprocess; that
 Makefile names the image's tools, so the flow calls it from pixi. Nothing is
 decided here: each stage is the tool of that name, called as its command
-line would be (D136).
+line would be.
 
 **Build.** GVSoC is built into ``out/snax-gvsoc/`` (``gvsoc/Makefile``'s
 ``build``) when its install is missing, when the checkout it was built from
@@ -42,8 +42,8 @@ and ``flow.log`` warn.
 
 **Goldens.** data.h's goldens are the reference executor's on the design
 point's graph; before writing them, gen checks that result against the
-kernel's reference on the same inputs (``reference_check``), so a graph
-that computes something else stops there (D108).
+kernel's reference on the same inputs (``dfg.reference.reference_check``), so a graph
+that computes something else stops there.
 
 **Check** (C§7). The program checks itself (C§16's ``main.c``): its exit
 code is the run's (the ``Error N`` make prints for the run's recipe, 0 when
@@ -59,7 +59,7 @@ written;
 ``run/profile.json`` holds ``total_cycles`` and ``functional_check``, with
 what ``convert`` adds.
 
-**Trace** (D137). The run writes the SNAX components' ``summary`` traces into
+**Trace**. The run writes the SNAX components' ``summary`` traces into
 ``run/events.log`` at every level, their ``events`` traces from ``task``, and
 from ``beat``, ``stall`` and ``finegrained`` the ``beats``, ``stalls`` and the
 cores' ``insn`` lines of the trace's sources (``trace_sources``, by default the
@@ -68,7 +68,7 @@ cluster, read from gen's files, gives ``gvsoc/Makefile``'s ``TRACES`` and the
 crossbar's ``trace_inputs`` (``run/sources.py``). With ``vcd`` the run also
 writes gtkwave's VCD of the same sources: ``run/all.vcd`` and ``run/view.gtkw``,
 never read here. ``convert`` reads the log, names it after the cluster
-(``run/cluster.py``: the generator's hjson files and the design point), the
+(``run/cluster.py``: the generator's description files and the design point), the
 task list and the design point's regions, and writes the profile and, above
 ``off``, the trace (``run/convert.py``, whose invariants hold or the stage
 fails); ``trace_meta.json`` keeps the sources as its ``filter``. ``report``
@@ -79,16 +79,18 @@ run; the default name carries every ``--set``, so runs that differ only in
 the platform or the memory plan land in folders of their own, then the
 trace level when it is not ``off`` (``vecadd_task``). ``flow.log``
 is what the command line prints plus the design checks that ran; a flow
-that fails writes the failure there instead. The log, the reports, ``gen/``
-and ``run/`` of an earlier run in the same folder are removed first.
+that fails writes the failure there instead. The log, the reports and ``run/`` of an
+earlier run in the same folder are removed first; ``gen/`` is written again in place, each
+file only when it changes (gen/gvsoc.py), and any other file in it removed, so an unchanged
+design rebuilds no program.
 
-**Stage times** (D136). ``flow.log`` ends with the wall-clock seconds of each
+**Stage times**. ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``gen``, ``build``,
 ``sw``, ``gvsoc``, ``check``, ``convert``, ``report``) and their total, on this machine. They change
 from run to run, so they are in the log only. They are the raw material of
 the paper's turnaround baseline (claim C1).
 
-**From a bound graph** (D108). ``run_bound(graph, platform, ...)`` is
+**From a bound graph**. ``run_bound(graph, platform, ...)`` is
 the same path without its first stage: the graph is a bound ``.snaxdfg``
 (the last step of a sandbox run, or one edited by hand) and goes straight to
 SNAX-DESIGN, as ``steps[-1]`` does above. No recipe is read and ``sandbox/``
@@ -109,7 +111,6 @@ time.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import os
 import re
@@ -123,13 +124,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
-import numpy as np
-
-from snax_forge.common import cwd_relative, repo_root, to_json
+from snax_forge.common import cwd_relative, git, repo_root, to_json
 from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
-from snax_forge.dfg.execute import against_reference, execute
+from snax_forge.dfg.reference import KernelError, kernel_spec, reference_check
+from snax_forge.gen import GenError, generate
 from snax_forge.lower import CError, LowerError, TaskList, task_list
 from snax_forge.lower.tasks import Configure
 from snax_forge.run import (
@@ -144,10 +144,9 @@ from snax_forge.run import (
 )
 from snax_forge.run.convert import convert
 from snax_forge.run.elf import l2_symbols, read_symbols
-from snax_forge.run.outputs import EVENTS_FILE
+from snax_forge.run.outputs import EVENTS_FILE, gzip_events
 from snax_forge.run.sources import gvsoc_options, sources_for
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
-from snax_forge.sdfg.loader import load as load_kernel
 
 if TYPE_CHECKING:  # gen imports the flow's kernel helpers (gen/data.py)
     from snax_forge.gen import Manifest
@@ -189,6 +188,34 @@ VCD, GTKW = "all.vcd", "view.gtkw"
 
 class FlowError(ValueError):
     """A stage of the flow that failed; the message names the stage."""
+
+
+@dataclass(frozen=True)
+class FlowOptions:
+    """What ``run_flow`` and ``run_bound`` share, their keyword arguments: the ``--set`` platform
+    and memory paths, the memory working copy to start from, the flow's name and folder (by
+    default from the recipe or graph and every ``--set``), the seed of ``make_inputs``, and
+    the trace level, its sources and the VCD."""
+
+    platform_sets: Sequence[tuple[str, Any]] = ()
+    memory_path: str | Path | None = None
+    memory_sets: Sequence[tuple[str, Any]] = ()
+    name: str | None = None
+    out: str | Path | None = None
+    seed: int = 0
+    trace_level: str = "off"
+    trace_sources: Sequence[str] | None = None
+    vcd: bool = False
+    keep_work: bool = False  # gvrun's run/work/ after a passing run (kept with --vcd)
+
+
+def split_sets(sets: Sequence[tuple[str, str, Any]]) -> dict[str, list[tuple[str, Any]]]:
+    """``--set`` readings (``flow.__main__.setting``'s) by what they set: ``recipe``,
+    ``platform`` and ``memory``, each ``(path, value)`` in the order given."""
+    out: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
+    for head, path, value in sets:
+        out[head].append((path, value))
+    return out
 
 
 @dataclass(frozen=True)
@@ -250,7 +277,7 @@ def default_name(
     platform_sets: Sequence[tuple[str, Any]] = (),
     memory_sets: Sequence[tuple[str, Any]] = (),
 ) -> str:
-    """The recipe's name with every ``--set`` appended (D136): recipe params, then platform and
+    """The recipe's name with every ``--set`` appended: recipe params, then platform and
     memory paths without their ``platform.`` / ``memory.`` prefix, each in the order given
     (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``)."""
     sets = [*recipe_sets.items(), *platform_sets, *memory_sets]
@@ -277,61 +304,6 @@ def bound_name(
     return "_".join([base, *(_name_part(k, v) for k, v in [*platform_sets, *memory_sets])])
 
 
-def kernel_spec(kernel: str, why: str) -> Any:
-    """The kernel's spec; an unknown name is a FlowError that says where the name came from."""
-    try:
-        return load_kernel(kernel)
-    except KeyError as e:
-        raise FlowError(f"kernel ({why}): {e.args[0]}") from None
-
-
-def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
-    """The kernel's ``make_inputs`` at every size the graph binds: each bound symbol by its
-    lower-case name (``M`` gives ``m=``, ``N`` gives ``n=``); then the arrays' shapes must give
-    the graph's values (``spec.bind_symbols``). Each array is cast to its container's dtype
-    (``astype``, wrapping: a recipe's ``dtypes``, D113)."""
-    params = inspect.signature(spec.make_inputs).parameters
-    kw = {}
-    for sym, v in graph.bound_symbols.items():
-        if sym.lower() not in params:
-            raise FlowError(
-                f"inputs: the graph binds {sym} = {v}, but {spec.name}'s make_inputs has no "
-                f"parameter {sym.lower()!r} (it takes {list(params)})"
-            )
-        kw[sym.lower()] = v
-    inputs = spec.make_inputs(np.random.default_rng(seed), **kw)
-    got = spec.bind_symbols(inputs)
-    for sym, v in graph.bound_symbols.items():
-        if got.get(sym) != v:
-            raise FlowError(
-                f"inputs: {spec.name}'s make_inputs({kw}) gives {sym} = {got.get(sym)}, "
-                f"the graph binds {v}"
-            )
-    for c, arr in inputs.items():
-        cont = graph.containers.get(c)
-        if cont is None:
-            raise FlowError(
-                f"inputs: {spec.name}'s make_inputs gives {c!r}, the graph has no such container"
-            )
-        if str(np.asarray(arr).dtype) != cont.dtype:
-            inputs[c] = np.asarray(arr).astype(cont.dtype)
-    return inputs
-
-
-def reference_check(spec: Any, graph: Graph, seed: int) -> None:
-    """The reference executor on ``graph`` against the kernel's reference, on the kernel's
-    inputs: data.h's goldens are the first, so a graph that computes something else (one
-    edited by hand, D108) would pass its own check; a FlowError naming each output that
-    differs."""
-    pairs = against_reference(spec, kernel_inputs(spec, graph, seed), lambda x: execute(graph, x))
-    wrong = [f"{c} in {int(np.count_nonzero(got != ref))} of {ref.size} elements"
-             for c, (got, ref) in pairs.items() if not np.array_equal(got, ref)]  # fmt: skip
-    if wrong:
-        raise FlowError(f"gen: the graph's reference executor differs from the {spec.name} "
-                        f"reference: {', '.join(wrong)}; the goldens would not be the kernel's "
-                        "(D108)")  # fmt: skip
-
-
 def checks_that_ran() -> dict[str, list[str]]:
     """The registered design checks per stage, in the order they run. The flow only goes on
     when every stage passed, so after a flow these are exactly the checks that ran."""
@@ -343,13 +315,22 @@ def checks_that_ran() -> dict[str, list[str]]:
 # =============================================================================
 
 
-def run_gvsoc(goal: str, variables: Mapping[str, str], log: Path, err: Path | None = None,
-              live: bool = False) -> int:  # fmt: skip
-    """``make -C gvsoc <goal> NAME=VALUE ...`` (gvsoc/Makefile, D136): stdout to ``log``,
-    stderr to ``err`` (into ``log`` when None); make's exit code. ``live``: stdout and stderr,
-    merged, to ``log`` and to the terminal line by line as they come, as tee would, with
-    PYTHONUNBUFFERED=1; on KeyboardInterrupt make is terminated first."""
+def run_gvsoc(goal: str, variables: Mapping[str, str], log: Path | IO[str],
+              err: Path | None = None, live: bool = False) -> int:  # fmt: skip
+    """``make -C gvsoc <goal> NAME=VALUE ...`` (gvsoc/Makefile): stdout to ``log`` (a file
+    written anew, or an open one appended to), stderr to ``err`` (into ``log`` when None);
+    make's exit code. ``live``: stdout and stderr, merged, to ``log`` and to the terminal line
+    by line as they come, as tee would, with PYTHONUNBUFFERED=1; on KeyboardInterrupt make is
+    terminated first."""
     cmd = ["make", "-C", str(GVSOC_MAKE), goal, *(f"{k}={v}" for k, v in variables.items())]
+    if not isinstance(log, Path):  # an open file: make writes to it after what is there
+        log.flush()
+        try:
+            return subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, check=False).returncode
+        except FileNotFoundError:
+            raise FlowError(
+                f"{goal}: no make on PATH; run the flow in snax-forge's image (D118)"
+            ) from None
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
         with log.open("w") as o:
@@ -387,27 +368,16 @@ def _tee(cmd: list[str], log: IO[str]) -> int:
             raise
 
 
-def _git(path: Path, *args: str) -> str | None:
-    """git's stdout in ``path``, stripped, or None when git fails (the image's git may not own
-    the folder, hence ``safe.directory``)."""
-    try:
-        r = subprocess.run(["git", "-c", "safe.directory=*", "-C", str(path), *args],
-                           capture_output=True, text=True, check=False)  # fmt: skip
-    except FileNotFoundError:
-        return None
-    return r.stdout.strip() if r.returncode == 0 else None
-
-
 def checkout(path: Path = SNAX_GVSOC) -> Checkout:
     """The submodule's checkout (``Checkout``); a FlowError when it is not checked out."""
-    commit = _git(path, "rev-parse", "HEAD") if (path / "snax").is_dir() else None
+    commit = git(path, "rev-parse", "HEAD") if (path / "snax").is_dir() else None
     if commit is None:
         raise FlowError(
             f"build: {cwd_relative(path)} is not checked out: git submodule update --init "
             f"{SUBMODULE}"
         )
-    status = _git(path, "status", "--porcelain")
-    pin = _git(ROOT, "ls-tree", "HEAD", SUBMODULE)  # "160000 commit <sha>\t<path>"
+    status = git(path, "status", "--porcelain")
+    pin = git(ROOT, "ls-tree", "HEAD", SUBMODULE)  # "160000 commit <sha>\t<path>"
     pinned = pin.split()[2] if pin and len(pin.split()) >= 3 else None
     return Checkout(path.resolve(), commit, status is None or status != "", pinned)
 
@@ -594,8 +564,7 @@ def _clear(out: Path) -> None:
     """Remove what an earlier run left in ``out`` (module doc)."""
     for p in (out / LOG, out / REPORT / "design.md", out / REPORT / "run.md"):
         p.unlink(missing_ok=True)
-    for d in (out / "gen", out / "run"):
-        shutil.rmtree(d, ignore_errors=True)
+    shutil.rmtree(out / "run", ignore_errors=True)
 
 
 def _clear_sandbox(out: Path, graph_path: Path) -> None:
@@ -633,27 +602,21 @@ def run_flow(
     platform_path: str | Path,
     *,
     recipe_sets: Mapping[str, Any] | None = None,
-    platform_sets: Sequence[tuple[str, Any]] = (),
-    memory_path: str | Path | None = None,
-    memory_sets: Sequence[tuple[str, Any]] = (),
     graph_path: str | Path | None = None,
-    name: str | None = None,
-    out: str | Path | None = None,
-    seed: int = 0,
-    trace_level: str = "off",
-    trace_sources: Sequence[str] | None = None,
-    vcd: bool = False,
+    **options: Any,
 ) -> Flow:
-    """Run the whole path; see the module doc. Raises FlowError or DesignError."""
-    _trace(trace_level, trace_sources)
+    """Run the whole path; see the module doc. ``options`` are FlowOptions' fields. Raises
+    FlowError or DesignError."""
+    o = FlowOptions(**options)
+    _trace(o.trace_level, o.trace_sources)
     recipe_sets = dict(recipe_sets or {})
     recipe = Recipe.load(recipe_path).with_params(recipe_sets)
     # The design point, and with it the task list, is named after the recipe and its params
-    # only; the folder carries every --set (D136).
-    point_name = name or default_name(recipe, recipe_sets)
-    name = name or with_level(default_name(recipe, recipe_sets, platform_sets, memory_sets),
-                              trace_level)  # fmt: skip
-    out = _folder(name, out)
+    # only; the folder carries every --set.
+    point_name = o.name or default_name(recipe, recipe_sets)
+    name = o.name or with_level(default_name(recipe, recipe_sets, o.platform_sets, o.memory_sets),
+                                o.trace_level)  # fmt: skip
+    out = _folder(name, o.out)
     times: dict[str, float] = {}
 
     def stages() -> Flow:
@@ -666,12 +629,9 @@ def run_flow(
 
                 graph = import_kernel(recipe.kernel, recipe.dtypes)
         with _timed(times, "sandbox"):
-            steps = write_steps(recipe, apply_recipe(recipe, graph, seed=seed), out / "sandbox")
-        f = _from_graph(
-            steps[-1], recipe.kernel, f"recipe {recipe.name}", name, point_name, out,
-            platform_path, platform_sets, memory_path, memory_sets, seed, trace_level, times,
-            trace_sources, vcd,
-        )  # fmt: skip
+            steps = write_steps(recipe, apply_recipe(recipe, graph, seed=o.seed), out / "sandbox")
+        f = _from_graph(steps[-1], recipe.kernel, f"recipe {recipe.name}", name, point_name, out,
+                        platform_path, o, times)  # fmt: skip
         f.recipe, f.steps = recipe, steps
         return f
 
@@ -683,34 +643,26 @@ def run_bound(
     platform_path: str | Path,
     *,
     kernel: str | None = None,
-    platform_sets: Sequence[tuple[str, Any]] = (),
-    memory_path: str | Path | None = None,
-    memory_sets: Sequence[tuple[str, Any]] = (),
-    name: str | None = None,
-    out: str | Path | None = None,
-    seed: int = 0,
-    trace_level: str = "off",
-    trace_sources: Sequence[str] | None = None,
-    vcd: bool = False,
+    **options: Any,
 ) -> Flow:
     """The path from a bound ``.snaxdfg`` on, without the sandbox; see the
-    module doc. ``kernel`` names the kernel when the graph's ``name`` does not. Raises
-    FlowError or DesignError."""
-    _trace(trace_level, trace_sources)
+    module doc. ``kernel`` names the kernel when the graph's ``name`` does not; ``options`` are
+    FlowOptions' fields. Raises FlowError or DesignError."""
+    o = FlowOptions(**options)
+    _trace(o.trace_level, o.trace_sources)
     graph_path = Path(graph_path)
     # As in run_flow: the design point keeps the graph's name, the folder carries every --set.
-    point_name = name or bound_name(graph_path)
-    name = name or with_level(bound_name(graph_path, platform_sets, memory_sets), trace_level)
-    out = _folder(name, out)
+    point_name = o.name or bound_name(graph_path)
+    name = o.name or with_level(bound_name(graph_path, o.platform_sets, o.memory_sets),
+                                o.trace_level)  # fmt: skip
+    out = _folder(name, o.out)
     _clear_sandbox(out, graph_path)
     times: dict[str, float] = {}
 
     def stages() -> Flow:
         why = "--kernel" if kernel is not None else f"the name of {graph_path}; --kernel K names it"
-        return _from_graph(
-            graph_path, kernel, why, name, point_name, out, platform_path, platform_sets,
-            memory_path, memory_sets, seed, trace_level, times, trace_sources, vcd,
-        )  # fmt: skip
+        return _from_graph(graph_path, kernel, why, name, point_name, out, platform_path, o,
+                           times)  # fmt: skip
 
     return _finish(stages, name, out, times)
 
@@ -735,22 +687,15 @@ def _from_graph(
     point_name: str,
     out: Path,
     platform_path: str | Path,
-    platform_sets: Sequence[tuple[str, Any]],
-    memory_path: str | Path | None,
-    memory_sets: Sequence[tuple[str, Any]],
-    seed: int,
-    trace_level: str,
+    o: FlowOptions,
     times: dict[str, float],
-    trace_sources: Sequence[str] | None = None,
-    vcd: bool = False,
 ) -> Flow:
     """The stages from a bound graph to the check, shared by ``run_flow`` and ``run_bound``;
     each stage's seconds go to ``times``. ``kernel`` None means the graph's name."""
-    from snax_forge.gen import GenError, generate  # gen imports this module (gen/data.py)
 
     # SNAX-DESIGN
     with _timed(times, "design"):
-        design = load(graph_path, platform_path, platform_sets, memory_path, memory_sets)
+        design = load(graph_path, platform_path, o.platform_sets, o.memory_path, o.memory_sets)
         problems = run_checks(design)
         if problems:
             raise DesignError(problems, f"design check of {graph_path} on {platform_path}")
@@ -766,16 +711,22 @@ def _from_graph(
         tasks = task_list(point)
         tasks.save(out / "tasks.json")
 
-    # gen: the hjson files, the headers, data.h and main.c, named from the flow's folder
+    # gen: the description files, the headers, data.h and main.c, named from the flow's folder
     with _timed(times, "gen"):
-        spec = kernel_spec(kernel or point.graph.name, kernel_why)
-        reference_check(spec, point.graph, seed)
+        try:
+            spec = kernel_spec(kernel or point.graph.name, kernel_why)
+            goldens = reference_check(spec, point.graph, o.seed)
+        except KernelError as e:
+            raise FlowError(str(e)) from None
         gen = out / "gen"
         try:
             manifest = generate(ddir / "design_point.json", gen, ROOT, named_from=out,
-                                kernel=spec.name, seed=seed)  # fmt: skip
+                                kernel=spec.name, seed=o.seed, tasks=tasks, goldens=goldens)  # fmt: skip
         except (GenError, CError) as e:
             raise FlowError(f"gen: {e}") from None
+        written = {gen / f for f in manifest.files}
+        for p in [p for p in gen.rglob("*") if p.is_file() and p not in written]:
+            p.unlink()  # the flow's own folder: only what this generation wrote stays
 
     # build: SNAX-GVSoC, when needed
     with _timed(times, "build"):
@@ -811,11 +762,11 @@ def _from_graph(
     with _timed(times, "gvsoc"):
         try:
             cluster = load_cluster(gen / manifest.cluster, ddir / "design_point.json")
-            sources = sources_for(cluster, trace_level,
-                                  list(trace_sources) if trace_sources is not None else None)  # fmt: skip
+            sources = sources_for(cluster, o.trace_level,
+                                  list(o.trace_sources) if o.trace_sources is not None else None)  # fmt: skip
         except RunError as e:
             raise FlowError(f"gvsoc: {e}") from None
-        opts = gvsoc_options(cluster, trace_level, sources, vcd, trace_sources is not None)
+        opts = gvsoc_options(cluster, o.trace_level, sources, o.vcd, o.trace_sources is not None)
         args = " ".join([f"--param hjson={(gen / manifest.cluster).resolve()}",
                          *(f"'{a}'" for a in opts.args)])  # fmt: skip
         variables = {
@@ -823,9 +774,10 @@ def _from_graph(
             "WORK_DIR": str((run / "work").resolve()),
             "EVENTS": str((run / EVENTS_FILE).resolve()), "TRACES": " ".join(opts.traces),
         }  # fmt: skip
+        (run / f"{EVENTS_FILE}.gz").unlink(missing_ok=True)  # an earlier passing run's
         rc = run_gvsoc("run", variables, run / "stdout.txt", run / "stderr.txt")
         exit_code = run_exit_code(rc, (run / "stderr.txt").read_text())
-        if vcd:
+        if o.vcd:
             _keep_vcd(run)
 
     # check: the program's own
@@ -834,11 +786,11 @@ def _from_graph(
                                       {t.name: t.beats for t in manifest.tasks})  # fmt: skip
         groups = {u.name: u.group for u in cluster.accelerator.units}
         units = {s.task_name: s.component for s in tasks.steps if isinstance(s, Configure)}
-        for t, x in result["tasks"].items():  # each task's group (D148)
+        for t, x in result["tasks"].items():  # each task's group
             x["group"] = groups[units[t]]
         check = {
             "kernel": spec.name,
-            "seed": seed,
+            "seed": o.seed,
             "symbols": point.graph.bound_symbols,
             **result,
         }
@@ -851,20 +803,20 @@ def _from_graph(
             "elf_symbols": elf_symbols,
             "target": TARGET,
             "snax_gvsoc": {"commit": c.commit, "dirty": c.dirty},
-            "trace_level": trace_level,
+            "trace_level": o.trace_level,
             "trace_sources": sources,
-            "vcd": vcd,
+            "vcd": o.vcd,
         }
         (run / "run.json").write_text(to_json(record))
 
-    # convert: the events into the profile and the trace (D137)
+    # convert: the events into the profile and the trace
     with _timed(times, "convert"):
         events = run / EVENTS_FILE
         if not events.is_file():
             raise FlowError(f"convert: no {cwd_relative(events)} after the run; see "
                             f"{cwd_relative(run / 'stderr.txt')}")  # fmt: skip
         try:
-            profile, trace = convert(read_events(events), cluster, tasks, cycles, trace_level,
+            profile, trace = convert(read_events(events), cluster, tasks, cycles, o.trace_level,
                                      check, regions_of(point, elf_symbols), sources)  # fmt: skip
         except RunError as e:
             raise FlowError(f"convert: {e}") from None
@@ -878,7 +830,11 @@ def _from_graph(
             write_reports(out)
         except ReportError as e:
             raise FlowError(f"report: {e}") from None
+    if check["passed"]:  # a failing run keeps its plain events.log and work/ to look at
+        gzip_events(run)
+        if not o.keep_work and not o.vcd:  # --vcd's view reads its map files there
+            shutil.rmtree(run / "work", ignore_errors=True)  # gvrun's config files, unread
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
-        checks_that_ran(), trace_level=trace_level, trace=trace, trace_sources=sources, vcd=vcd,
+        checks_that_ran(), trace_level=o.trace_level, trace=trace, trace_sources=sources, vcd=o.vcd,
     )  # fmt: skip

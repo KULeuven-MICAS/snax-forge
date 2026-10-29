@@ -3,7 +3,7 @@ package snax.forge.shell
 import chisel3._
 import chisel3.util.MixedVec
 
-import snax.forge.ctrl.{GroupCtrl, GroupCtrlIO, GroupDesc, UnitDesc}
+import snax.forge.ctrl.{GroupCtrl, GroupCtrlIO, GroupDesc, Link, UnitDesc}
 
 /** `<tag>_ctrl`: the groups' control units (`GroupCtrl`, `<tag>_<group>_ctrl`), one per group of `accelerator.json`
   * (D146, D147), each generated from its group's description (`AccCtrl.desc`). Per group its start from `<tag>_csr`,
@@ -28,13 +28,30 @@ class AccCtrl(spec: AcceleratorSpec) extends Module {
 
 object AccCtrl {
 
-  /** A group's description (C§17): per unit, head first, its L, II and span, its outer inputs and its T when fixed
-    * (`params.T`, or 1 without a JOB_BEATS); per link its depth.
+  /** A group's description (C§17): per unit, in the file's order, its L, II and span, its outer inputs, its T when
+    * fixed (`params.T`, or 1 without a JOB_BEATS) and its inputs no outer port takes; per link its ends by unit index,
+    * the `to` port's position among its unit's inputs (C§17's port order) and its depth.
     */
-  def desc(spec: AcceleratorSpec, g: AcceleratorSpec.GroupSpec): GroupDesc =
+  def desc(spec: AcceleratorSpec, g: AcceleratorSpec.GroupSpec): GroupDesc = {
+    def at(unit: String) = g.units.indexWhere(_.name == unit)
     GroupDesc(
       g.name,
-      g.units.map(u => UnitDesc(u.name, u.latency, u.ii, u.span, spec.ins(u.name).size, u.fixedT)),
-      g.links.map(_.depth)
+      g.units.map { u =>
+        val outer = spec.ins(u.name).map(_._2)
+        UnitDesc(
+          u.name,
+          u.latency,
+          u.ii,
+          u.span,
+          outer.size,
+          u.fixedT,
+          u.inPorts.indices.filterNot(j => outer.contains(u.inPorts(j)))
+        )
+      },
+      g.links.map { l =>
+        val to = at(l.to._1)
+        Link(at(l.from._1), to, if (to < 0) -1 else g.units(to).inPorts.indexOf(l.to._2), l.depth)
+      }
     )
+  }
 }

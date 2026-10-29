@@ -218,7 +218,7 @@ def test_every_element_once_at_its_address(runs, name, m):
     for line in rows.values():
         for col, cell in enumerate(line["cells"]):
             for ri, flat in cell:
-                if flat == memory.BEAT_PAD:  # a word of the region's beat padding (D144)
+                if flat == memory.BEAT_PAD:  # a word of the region's beat padding
                     lo, hi = view["regions"][ri]["beat_pad"]
                     assert lo <= line["addr"][col] + view["geometry"]["word_bytes"] - 1
                     assert line["addr"][col] < hi
@@ -423,7 +423,7 @@ def test_a_read_back_long_after_its_grant_is_in_that_cycle_only(runs):
 
 
 # =============================================================================
-# 5. Packing and padding (D142, D144), from design points
+# 5. Packing and padding (D142), from design points
 # =============================================================================
 
 

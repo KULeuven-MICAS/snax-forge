@@ -4,7 +4,7 @@
 
 The hjson is the contract: SNAX-GVSoC's ``snax_hjson`` target reads it at
 run time (snax-gvsoc ``snax/snax_cfg.py``), so a design point compiles
-nothing and no Python is generated (D134). ``out_dir`` gets three
+nothing and no Python is generated. ``out_dir`` gets three
 description files, each changing for its own reason, the C headers, the
 program and its data, and the manifest:
 
@@ -23,6 +23,10 @@ program and its data, and the manifest:
     main.c                   the program (lower/c.py, D135): the
                              task list on snRuntime, self-checking
     manifest.json            what was written (Manifest)
+
+A file is written only when its text changes (``write_changed``), and only the files an
+earlier generation into ``out_dir`` wrote (its manifest's) and this one does not are removed,
+so generating the same design point again changes no file and rebuilds no program.
 
 ``<platform>`` is the platform's base (its name when it has none), ``<slot>``
 its ``accelerator_slot``: for ``platforms/snax_forge.json``,
@@ -57,7 +61,7 @@ name, is renamed and set, its keys in this order:
       snax_num_rw_csr           the accelerator's R/W CSRs (accelerator.py)
       snax_num_ro_csr           its R/O CSRs
     snax_disable_csr_manager    true: the wrapper carries its own manager
-                                (D130)
+
     snax_forge_rtl              ``rtl/files.f``, the RTL's file list from
                                 the cluster file's folder, which only a
                                 bundle has; SNAX-GVSoC ignores it
@@ -69,7 +73,7 @@ slot referred to (``{"$ref": "#/<key>"}``), goes when nothing else refers to
 it. Everything else is the source's, its key order kept; its comments are
 not (the file is written as JSON, which hjson reads).
 
-**The streamer**, lowered per design point (D134), as the design point's
+**The streamer**, lowered per design point, as the design point's
 streamers give it (D87): readers the input ports, writers the output ports,
 unit by unit (the accelerator's groups in order, D148) in the BRM's port
 order, each with ``spatial_bounds`` in words, fastest
@@ -135,7 +139,7 @@ template for more than one spatial dimension (every template so far has one).
 from __future__ import annotations
 
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -143,67 +147,45 @@ from typing import Any
 import hjson
 
 from snax_forge.brm import Instance, port_dtypes
-from snax_forge.common import JsonFile, generated_header, plain, repo_root, to_json
+from snax_forge.common import (
+    JsonFile,
+    Missing,
+    dig,
+    generated_header,
+    plain,
+    repo_root,
+    to_json,
+    write_changed,
+)
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import instance_nodes, streamer_name
+from snax_forge.dfg.reference import Goldens
 from snax_forge.lower import CError
-from snax_forge.lower.c import MAIN_C, job_writes, main_c, mover_name, task_beats
+from snax_forge.lower.c import MAIN_C, job_writes, main_c, task_beats
 from snax_forge.lower.derive import task_list
-from snax_forge.lower.tasks import Configure, TaskList
+from snax_forge.lower.tasks import TaskList
 
 from .accelerator import ACCELERATOR_JSON, Accelerator, describe, units
 from .blocks import GenError, port_dtype
+from .csrs import SNAX_CSR_FIRST, CsrLayout, channels, csr_layout, movers
 from .data import DATA_H, arrays, data_h
 from .headers import STREAMER_HEADER, accelerator_header, cluster_headers, streamer_header
 
 ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
 
-# snax-gvsoc snax/snax_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
-# last one an accelerator may use (SNAX_CSR_FIRST, SNAX_ACC_CSR_LAST): the core
-# sends out up to 0x5FF, but snax_cluster's hw/snitch/src/csr_snax_def.sv
-# reserves 0x5FE (CSR_SNAX_READ_TASK_READY_QUEUE) and 0x5FF
-# (CSR_SNAX_WRITE_TASK_DONE_QUEUE), which hw/snax_util/src/snax_intf_translator.sv
-# routes to the cluster's top-level CSR port, not to the accelerator
-SNAX_CSR_FIRST = 0x3C0
-SNAX_ACC_CSR_LAST = 0x5FD
 # The trace paths: the compute core's accelerator, named snax_acc<core> by
 # pulp/snitch/snitch_cluster/snitch_cluster.py; the composite
-# (snax/snax_unit_acc.py) calls a unit `unit`, with several groups `unit_<unit>`
+# (snax/snax_accelerator.py) calls a unit `unit`, with several groups `unit_<unit>`
 ACC_TRACE = "snax_acc0"
 UNIT_TRACE = f"{ACC_TRACE}/unit"
-# The generated cluster's name (D130)
+# The generated cluster's name
 CLUSTER = "snax_forge_cluster"
 # The RTL's file list from the cluster file's folder, written by bundle.py
 RTL_FILE_LIST = "rtl/files.f"
-
-
-@dataclass(frozen=True)
-class CsrLayout:
-    """The slot's CSRs: the streamer's range, then the accelerator's, each by its define
-    (accelerator.py) -> its number."""
-
-    streamer_first: int
-    streamer_last: int
-    accelerator: dict[str, int]
-
-    @property
-    def first(self) -> int:
-        """The accelerator's first CSR."""
-        return self.streamer_last + 1
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "streamer": {"first": self.streamer_first, "last": self.streamer_last},
-            "accelerator": dict(self.accelerator),
-        }
-
-    @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> CsrLayout:
-        return cls(d["streamer"]["first"], d["streamer"]["last"], dict(d["accelerator"]))
 
 
 @dataclass(frozen=True)
@@ -298,7 +280,7 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
                 f"words of num_slc = {s.num_slc} {dtypes[p.name]} slices",
             )  # fmt: skip
         mover = {
-            "spatial_bounds": [s0 // s.num_slc, *rest],  # in words (D142)
+            "spatial_bounds": [s0 // s.num_slc, *rest],  # in words
             "temporal_dim": s.temporal_dims,
             "num_channel": s.num_ch,
             "fifo_depth": s.options.fifo_depth,
@@ -306,58 +288,14 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
         groups["data_writer_params" if s.write else "data_reader_params"].append(mover)
 
 
-def movers(template: dict[str, Any]) -> list[dict[str, Any]]:
-    """The template's movers, readers first, named as the headers and the program name them
-    (lower/c.py's ``mover_name``)."""
-    out = []
-    for group, write in (("data_reader_params", False), ("data_writer_params", True)):
-        params = template.get(group, {})
-        for i in range(len(params.get("num_channel", []))):
-            out.append({"name": mover_name(write, i), **{k: v[i] for k, v in params.items()}})
-    return out
-
-
-def mover_csr_count(spatial_bounds: Sequence[int], temporal_dim: int) -> int:
-    """A mover's CSRs: the pointer (2), the spatial strides, the temporal bounds and strides."""
-    return 2 + len(spatial_bounds) + 2 * temporal_dim
-
-
-def streamer_csrs(template: dict[str, Any]) -> int:
-    """snax_streamer.nb_csrs: per mover its CSRs (``mover_csr_count``); then start; then busy
-    and the counter."""
-    rw = sum(mover_csr_count(m["spatial_bounds"], m["temporal_dim"]) for m in movers(template))
-    return rw + 1 + 2
-
-
-def channels(template: dict[str, Any]) -> int:
-    """The streamer's TCDM ports: num_channel over its movers (snax_cfg.streamer_channels)."""
-    return sum(m["num_channel"] for m in movers(template))
-
-
-def csr_layout(template: dict[str, Any], acc: Accelerator) -> CsrLayout:
-    """The streamer's CSRs from ``SNAX_CSR_FIRST``, then the accelerator's; ``gen.csrs`` past
-    ``SNAX_ACC_CSR_LAST``."""
-    first = SNAX_CSR_FIRST + streamer_csrs(template)
-    nums = {name: first + offset for name, offset in acc.defines().items()}
-    last = max(nums.values())
-    if last > SNAX_ACC_CSR_LAST:
-        raise GenError(
-            "gen.csrs", f"the accelerator's last CSR {last} is past {SNAX_ACC_CSR_LAST}, the "
-            "last an accelerator may use (0x5FE and 0x5FF are snax_cluster's task queues)",
-        )  # fmt: skip
-    return CsrLayout(SNAX_CSR_FIRST, first - 1, nums)
-
-
 def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Accelerator) -> list[AccTask]:
-    """The accelerator tasks of the derived task list (D64), in order, with their group's CSR
+    """The accelerator tasks of the derived task list, in order, with their group's CSR
     values (lower/c.py's ``job_writes``: a CSR of a unit of a linked group named with the unit,
     ``MAC_JOB_BEATS``) and, with several groups, its group's trace path."""
     several = len(acc.groups) > 1
-    fixed = {u.name for g in acc.groups for u in g.units if "T" in u.params}
+    fixed = acc.fixed_folds
     out = []
-    for s in tasks.steps:
-        if not (isinstance(s, Configure) and s.type == "accel"):
-            continue
+    for s in tasks.accel_steps():
         group = next((g for g in acc.groups if g.name == s.component and len(g.units) > 1), None)
         mine = [u.name for u in group.units] if group else [s.component]
         if not set(mine) <= set(found):
@@ -418,14 +356,21 @@ def source(platform: Platform, root: Path) -> dict[str, Any]:
 def _set(d: dict[str, Any], path: str, value: Any, where: str) -> None:
     """Set the dotted ``path`` of ``d``; every key but the last must be there, an object."""
     *head, last = path.split(".")
+
+    def refuse(n: int) -> GenError:
+        return GenError(
+            "gen.source", f"{where}: {'.'.join(head[:n])} is not an object written out in the "
+            "file, so the platform's value cannot be written into it",
+        )  # fmt: skip
+
     node: Any = d
-    for i, k in enumerate(head):
-        node = node.get(k) if isinstance(node, Mapping) else None
+    for i in range(len(head)):  # each object on the way, as it is written (no $ref)
+        try:
+            node = dig(node, head[i])
+        except Missing:
+            raise refuse(i + 1) from None
         if not isinstance(node, Mapping) or "$ref" in node:
-            raise GenError(
-                "gen.source", f"{where}: {'.'.join(head[: i + 1])} is not an object written out "
-                "in the file, so the platform's value cannot be written into it",
-            )  # fmt: skip
+            raise refuse(i + 1)
     node[last] = value
 
 
@@ -602,11 +547,14 @@ def _hjson(point_path: str, what: str, value: Any) -> str:
 def generate(
     design_point: str | Path, out_dir: str | Path, root: str | Path | None = None, *,
     named_from: str | Path | None = None, kernel: str | None = None, seed: int = 0,
+    tasks: TaskList | None = None, goldens: Goldens | None = None,
 ) -> Manifest:  # fmt: skip
     """Write the three description files, the headers, data.h, main.c and the manifest to
     ``out_dir``; see the module doc. ``named_from`` is the folder the design point is named
     from (``root`` by default; the flow's folder for a flow, D136); ``kernel`` and ``seed``
-    go to data.h's inputs (data.py's ``arrays``)."""
+    go to data.h's inputs (data.py's ``arrays``). ``tasks`` (the design point's task list) and
+    ``goldens`` (data.h's inputs and the reference executor's outputs) are what the caller has
+    made already: the flow, which needs both before."""
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
     shown, point, acc = load_point(point_path, root, named_from)
@@ -614,8 +562,8 @@ def generate(
     platform = point.platform
     template = streamer_template(point, members)
     layout = csr_layout(template, acc)
-    tasks = task_list(point)
-    data = arrays(point, seed, kernel)
+    tasks = task_list(point) if tasks is None else tasks
+    data = arrays(point, seed, kernel, goldens)
 
     cluster = source(platform, root)
     at, found = find_slot(cluster, platform)
@@ -645,9 +593,10 @@ def generate(
         MAIN_C: main_c(point, tasks, cluster, acc, data, [DATA_H, header, STREAMER_HEADER],
                        shown),
     }  # fmt: skip
+    before = _written(out)
     (out / "include").mkdir(parents=True, exist_ok=True)
     for f, text in files.items():
-        (out / f).write_text(text)
+        write_changed(out / f, text)
     manifest = Manifest(
         design=point.name,
         design_point=shown,
@@ -659,5 +608,15 @@ def generate(
         csrs=layout,
         tasks=acc_tasks(tasks, members, acc),
     )
-    (out / "manifest.json").write_text(manifest.to_json())
+    write_changed(out / "manifest.json", manifest.to_json())
+    for f in before - set(manifest.files):
+        (out / f).unlink(missing_ok=True)
     return manifest
+
+
+def _written(out: Path) -> set[str]:
+    """The files an earlier generation into ``out`` wrote, by its manifest (none without one)."""
+    try:
+        return set(Manifest.load(out / "manifest.json").files)
+    except (OSError, ValueError, KeyError, TypeError):
+        return set()

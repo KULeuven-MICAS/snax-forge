@@ -55,7 +55,7 @@ def test_no_transient_and_no_copy_left(vecadd_sdfg):
 
 
 def test_the_kernel_is_int64():
-    """Open item 30, decided for vecadd: the kernel moves to the model's int64."""
+    """vecadd imports as int64: every container's dtype."""
     g = import_kernel("vecadd")
     assert {c.dtype for c in g.containers.values()} == {"int64"}
 
