@@ -548,14 +548,6 @@ def test_each_firing_loop_gives_a_streamer_loop():
     }  # fmt: skip
 
 
-def test_a_platform_with_temporal_dims_is_refused():
-    """A platform file from before M13's B0: the key is named, and where it comes from now."""
-    with pytest.raises(DesignError, match="streamers.default.temporal_dims: is no longer"):
-        design(edit_platform=lambda d: d["streamers"]["default"].update(temporal_dims=1))
-    with pytest.raises(DesignError, match="acc_a.temporal_dims: comes from the graph"):
-        design(sets=[("streamers.acc_a.temporal_dims", 2)])
-
-
 def test_a_tile_map_is_not_lowered_yet():
     def tile(g):
         g["body"][0]["attrs"]["loop.kind"] = "tile"

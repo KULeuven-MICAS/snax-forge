@@ -4,14 +4,13 @@ the checks connect.pack and connect.num_ch, on small hand-built graphs."""
 from __future__ import annotations
 
 import copy
-import json
 
-from snax_forge.design import Platform, instances, load, resolve
+from snax_forge.design import Platform, instances, resolve
 from snax_forge.dfg import Graph
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe
 
-from .helpers import BOUND, REPO, SMALL16, accel_node, graph_dict, platform_dict, problems
+from .helpers import REPO, SMALL16, accel_node, graph_dict, problems
 from .helpers import design as paired
 
 
@@ -171,15 +170,3 @@ def test_num_ch_other_than_the_wire_default_is_refused():
         "default); a value with rho > 1 never helps a unit firing once per cycle"
     )
     assert got[0].fix == ("remove num_ch, or --set platform.streamers.acc_out.num_ch=2")
-
-
-def test_a_platform_with_l1_dtype_names_its_removal(tmp_path):
-    d = platform_dict()
-    d["l1"]["dtype"] = "int64"
-    path = tmp_path / "p.json"
-    path.write_text(json.dumps(d))
-    (p,) = problems(load(BOUND, path))
-    assert (p.code, p.where, p.message) == (
-        "platform.keys", "l1.dtype", "is no longer a platform field"
-    )  # fmt: skip
-    assert p.fix == "remove it; each container's dtype decides the packing (D142)"

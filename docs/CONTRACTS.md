@@ -470,9 +470,9 @@ The SNAX cluster around the accelerators (D84). A platform file lives in `platfo
 | `beat_bits` | one DMA beat | 512 | multiple of `width_bits`; equal to the L1's `wide_bits` (`platform.l2`) |
 | `width_bits` | as the L1, and must agree with it (`platform.l2`) | 64 | multiple of 8 |
 
-Neither memory has an element type: each container's dtype decides how many elements a word holds (D142, section 1). A platform that still sets `dtype` or `elems_per_word` in `l1` or `l2` is refused (`platform.keys`).
+Neither memory has an element type: each container's dtype decides how many elements a word holds (D142, section 1).
 
-**The streamer shell** (D12). One streamer per port of every accelerated instance, `<instance>_<port>`, but a port on a link (D112): a link's ends have none. The port decides `write`, `n_ports` (its lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an `affine` nest's spatial loops, a `stream` port's bound memlet ranges). The graph decides `temporal_dims`: the firing loops the port's memlet runs over, at least 1, the most over an instance's nodes (D84); the design point records it per streamer. `default` holds `fifo_depth` (>= 1); an entry named after a streamer overrides it and `spatial_bounds` for it alone, and may give `num_ch` (>= 1, never in `default`): the TCDM channels the streamer uses, without it the wire default W / num_slc (D142, `connect.num_ch`). A platform that sets `temporal_dims` is refused (`platform.keys`), as is `--set` of it.
+**The streamer shell** (D12). One streamer per port of every accelerated instance, `<instance>_<port>`, but a port on a link (D112): a link's ends have none. The port decides `write`, `n_ports` (its lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an `affine` nest's spatial loops, a `stream` port's bound memlet ranges). The graph decides `temporal_dims`: the firing loops the port's memlet runs over, at least 1, the most over an instance's nodes (D84); the design point records it per streamer. `default` holds `fifo_depth` (>= 1); an entry named after a streamer overrides it and `spatial_bounds` for it alone, and may give `num_ch` (>= 1, never in `default`): the TCDM channels the streamer uses, without it the wire default W / num_slc (D142, `connect.num_ch`).
 
 <!-- snippet: platforms/small16.json -->
 ```json
@@ -496,7 +496,7 @@ Before the design step writes anything it runs every registered check (`register
 
 | Code | Fails when |
 |---|---|
-| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; `dtype` or `elems_per_word` in `l1` or `l2`, no longer a platform field (the fix removes it: each container's dtype decides the packing, D142); a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
+| `platform.keys` | a platform file that does not parse; an unknown or missing key, a value of the wrong type; a `--set` path that does not exist, is written by the tools (`name`, `base`, `changes`) or is decided by the port (`write`, `n_ports`) |
 | `platform.values` | a value its section rejects (`n_banks` 0, a `wait_mode` that is not allowed) |
 | `platform.streamer` | a streamer value below 1, spatial bounds that are not a non-empty list of ints >= 1, `num_ch` that is not an int >= 1 |
 | `platform.l2` | L2 and L1 disagree on beat width (`beat_bits` vs `wide_bits`) or word width |

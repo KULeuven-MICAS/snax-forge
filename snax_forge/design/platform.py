@@ -37,12 +37,10 @@ give ``num_ch``, the number of TCDM channels the streamer uses (never in
 slices (elements) per word of the port's container (D142, ``connect.num_ch``).
 
 **The word.** A bank word is ``width_bits`` wide; how many elements it holds
-is each container's dtype's business, not the platform's (D142). A file
-that still sets ``l1``'s or ``l2``'s ``dtype`` or ``elems_per_word`` is
-refused with a fix (``platform.keys``). A file that still
-sets ``temporal_dims`` is refused: it is no longer a knob. Resolving the shell against a graph is streamers.py; an entry
-that matches no port is a check (``connect.streamer_key``), not a load error,
-because only the graph knows the ports.
+is each container's dtype's business, not the platform's (D142). Resolving
+the shell against a graph is streamers.py; an entry that matches no port is a
+check (``connect.streamer_key``), not a load error, because only the graph
+knows the ports.
 
 **The source hjson.** A platform read from snax_cluster's cluster file
 (hjson_platform.py) keeps the file it came from (``hjson``, a copy in
@@ -87,8 +85,6 @@ DERIVED = ("write", "n_ports")
 PROVENANCE = ("name", "base", "changes")
 # Top-level fields that are a string or null (the source hjson's)
 NULLABLE = ("hjson", "accelerator_slot")
-# Memory fields a platform no longer has: each container's dtype decides the packing (D142)
-REMOVED = ("dtype", "elems_per_word")
 
 
 @dataclass(frozen=True)
@@ -153,7 +149,6 @@ class StreamerOptions(Config):
 
 
 OPTIONS = tuple(f.name for f in fields(StreamerOptions))
-FROM_GRAPH = "temporal_dims"  # a knob until M13's B0, now each streamer's firing loops (D84)
 ENTRY_KEYS = (*OPTIONS, "spatial_bounds", "num_ch")
 
 
@@ -275,15 +270,7 @@ def _section(cls: type, d: Any, sec: str, out: list[Problem]) -> Any:
         out.append(Problem("platform.keys", sec, f"must be an object, got {d!r}"))
         return None
     names = [f.name for f in fields(cls)]
-    removed = [k for k in REMOVED if k in d] if cls in (L1Config, L2Config) else []
-    for k in removed:
-        out.append(
-            Problem(
-                "platform.keys", f"{sec}.{k}", "is no longer a platform field",
-                "remove it; each container's dtype decides the packing (D142)",
-            )
-        )  # fmt: skip
-    unknown = sorted(set(d) - set(names) - set(removed))
+    unknown = sorted(set(d) - set(names))
     if unknown:
         out.append(Problem("platform.keys", sec, f"unknown keys {unknown} (allowed: {names})"))
     ref = cls()
@@ -293,7 +280,7 @@ def _section(cls: type, d: Any, sec: str, out: list[Problem]) -> Any:
             want = _type_name(getattr(ref, k))
             out.append(Problem("platform.keys", f"{sec}.{k}", f"must be {want}, got {d[k]!r}"))
             bad = True
-    if unknown or bad or removed:
+    if unknown or bad:
         return None
     try:
         return cls.from_dict(dict(d))
@@ -348,21 +335,6 @@ def _entry(name: str, e: Any, default: StreamerOptions | None, out: list[Problem
             out.append(Problem("platform.streamer", where, str(err)))
 
 
-def _from_graph(name: str, e: Any, out: list[Problem]) -> Any:
-    """A streamer entry without ``temporal_dims``, which is refused: it comes from the graph."""
-    if not isinstance(e, Mapping) or FROM_GRAPH not in e:
-        return e
-    out.append(
-        Problem(
-            "platform.keys", f"streamers.{name}.{FROM_GRAPH}",
-            "is no longer a platform knob: each streamer's temporal loops now come from the "
-            "graph (the firing loops its port's memlet runs over)",
-            f"remove {FROM_GRAPH!r} from the platform file",
-        )
-    )  # fmt: skip
-    return {k: v for k, v in e.items() if k != FROM_GRAPH}
-
-
 def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
     """A platform and every problem found; the platform is None when there is one."""
     out: list[Problem] = []
@@ -415,7 +387,6 @@ def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
     if not isinstance(streamers, Mapping):
         out.append(Problem("platform.keys", "streamers", f"must be an object, got {streamers!r}"))
     else:
-        streamers = {k: _from_graph(k, e, out) for k, e in streamers.items()}
         n = len(out)
         default = _section(StreamerOptions, streamers.get("default", {}), "streamers.default", out)
         for p in out[n:]:  # a rejected default value is a shell problem
@@ -465,13 +436,6 @@ def _apply(d: dict[str, Any], path: str, value: Any) -> list[Problem]:
             return [Problem("platform.keys", where, "give streamers.<streamer>.<option>")]
         _, s, opt = parts
         allowed = OPTIONS if s == "default" else ENTRY_KEYS
-        if opt == FROM_GRAPH:
-            return [
-                Problem(
-                    "platform.keys", where,
-                    "comes from the graph (the firing loops of the port's memlet), not the platform",
-                )
-            ]  # fmt: skip
         if opt in DERIVED:
             return [
                 Problem(

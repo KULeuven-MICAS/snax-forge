@@ -146,11 +146,6 @@ class Port:
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Port:
-        if isinstance(d, Mapping) and "dtype" in d:
-            raise BrmError(
-                f"{what}.dtype: a port takes a list of dtypes now, 'dtypes' (every integer dtype "
-                "when it is missing; D143)"
-            )
         _keys(d, ("name", "direction", "lanes"), ("rate", "dtypes"), what)
         dtypes = d.get("dtypes", INT_DTYPES)
         dtypes = list(dtypes) if isinstance(dtypes, (list, tuple)) else dtypes
