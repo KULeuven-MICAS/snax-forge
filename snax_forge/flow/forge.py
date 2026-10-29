@@ -97,15 +97,14 @@ def _step(log: IO[str], step: str, argv: list[str], main) -> None:
 
 
 def _sw(log: IO[str], name: str, bundle_dir: Path, forge_dir: Path, flow_sha: str) -> Path:
-    """The bundle's program by ``make sw`` (its output, in ``forge_dir/sw.log``, appended to
-    ``log``); its ELF, checked to be the flow's (``flow_sha``)."""
+    """The bundle's program by ``make sw`` (its output into ``log``); its ELF, checked to be the
+    flow's (``flow_sha``)."""
     sw = forge_dir / "sw"
     variables = {"APPS": "forge", "FORGE": str(bundle_dir.resolve()), "DESIGN": name,
                  "FORGE_BUILD": str(sw.resolve())}  # fmt: skip
     print(f"== sw: make -C gvsoc sw {' '.join(f'{k}={v}' for k, v in variables.items())}",
           file=log, flush=True)  # fmt: skip
-    rc = flow_run.run_gvsoc("sw", variables, forge_dir / "sw.log")
-    log.write((forge_dir / "sw.log").read_text())
+    rc = flow_run.run_gvsoc("sw", variables, log)
     elf = sw / flow_run.ELF
     if rc != 0 or not elf.is_file():
         raise StepFailed(f"sw: make sw exit {rc}" + ("" if elf.is_file() else f", no {elf}"))

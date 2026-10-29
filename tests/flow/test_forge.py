@@ -55,7 +55,7 @@ def forged(tmp_path, monkeypatch):
         elf.parent.mkdir(parents=True)
         flows = tmp_path / "flow" / Path(forge_dir).name / "sw" / flow_run.ELF
         elf.write_bytes(fake.elf if fake.elf is not None else flows.read_bytes())
-        log.write_text("make sw\n")
+        log.write("make sw\n")  # forge.log, open: make writes straight into it
         return 0
 
     monkeypatch.setattr(flow_run, "run_gvsoc", make)
@@ -106,7 +106,9 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
     assert f"== bundle: {flow / 'design' / 'design_point.json'} --out {bundle}\n" in log
     assert f"bundle {bundle}: snax_forge_shell_wrapper from " in log
     assert f"wrote {bundle / 'bundle.json'}\n" in log
-    assert log.endswith("make sw\n")
+    assert (
+        log.endswith("make sw\n") and not (forge / "sw.log").exists()
+    )  # make's output in forge.log
     sw = forged.calls[-1][1]
     assert sw == {"APPS": "forge", "FORGE": str(bundle), "DESIGN": "vecadd",
                   "FORGE_BUILD": str(forge / "sw")}  # fmt: skip

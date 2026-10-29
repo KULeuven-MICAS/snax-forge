@@ -313,13 +313,22 @@ def checks_that_ran() -> dict[str, list[str]]:
 # =============================================================================
 
 
-def run_gvsoc(goal: str, variables: Mapping[str, str], log: Path, err: Path | None = None,
-              live: bool = False) -> int:  # fmt: skip
-    """``make -C gvsoc <goal> NAME=VALUE ...`` (gvsoc/Makefile, D136): stdout to ``log``,
-    stderr to ``err`` (into ``log`` when None); make's exit code. ``live``: stdout and stderr,
-    merged, to ``log`` and to the terminal line by line as they come, as tee would, with
-    PYTHONUNBUFFERED=1; on KeyboardInterrupt make is terminated first."""
+def run_gvsoc(goal: str, variables: Mapping[str, str], log: Path | IO[str],
+              err: Path | None = None, live: bool = False) -> int:  # fmt: skip
+    """``make -C gvsoc <goal> NAME=VALUE ...`` (gvsoc/Makefile, D136): stdout to ``log`` (a file
+    written anew, or an open one appended to), stderr to ``err`` (into ``log`` when None);
+    make's exit code. ``live``: stdout and stderr, merged, to ``log`` and to the terminal line
+    by line as they come, as tee would, with PYTHONUNBUFFERED=1; on KeyboardInterrupt make is
+    terminated first."""
     cmd = ["make", "-C", str(GVSOC_MAKE), goal, *(f"{k}={v}" for k, v in variables.items())]
+    if not isinstance(log, Path):  # an open file: make writes to it after what is there
+        log.flush()
+        try:
+            return subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT, check=False).returncode
+        except FileNotFoundError:
+            raise FlowError(
+                f"{goal}: no make on PATH; run the flow in snax-forge's image (D118)"
+            ) from None
     log.parent.mkdir(parents=True, exist_ok=True)
     try:
         with log.open("w") as o:
