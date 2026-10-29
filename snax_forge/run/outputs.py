@@ -9,6 +9,9 @@
                       above off
     trace_meta.json   the rest of the trace (its level, total cycles, boot shift, sources,
                       filter, what each core is in at 0)
+    events.log        SNAX-GVSoC's events (events.py), the converter's input; a passing flow
+                      leaves it as ``events.log.gz`` (``gzip_events``), which ``read_events``
+                      reads as well
 
 ``write_run`` writes the last three (``run.json`` is the flow's) and removes a trace an
 earlier run left when there is none now, so the folder matches ``run.json``; ``read_run``
@@ -17,6 +20,7 @@ reads all four back.
 
 from __future__ import annotations
 
+import gzip
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -33,6 +37,16 @@ PROFILE_FILE = "profile.json"
 TRACE_FILE = "trace.jsonl"
 TRACE_META_FILE = "trace_meta.json"
 EVENTS_FILE = "events.log"
+
+
+def gzip_events(run_dir: Path) -> Path:
+    """``events.log`` of ``run_dir`` as ``events.log.gz`` (the same bytes for the same
+    events: no timestamp), the plain file removed; the new path."""
+    plain = Path(run_dir) / EVENTS_FILE
+    packed = plain.with_name(EVENTS_FILE + ".gz")
+    packed.write_bytes(gzip.compress(plain.read_bytes(), mtime=0))
+    plain.unlink()
+    return packed
 
 
 @dataclass

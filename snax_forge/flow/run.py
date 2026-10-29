@@ -142,7 +142,7 @@ from snax_forge.run import (
 )
 from snax_forge.run.convert import convert
 from snax_forge.run.elf import l2_symbols, read_symbols
-from snax_forge.run.outputs import EVENTS_FILE
+from snax_forge.run.outputs import EVENTS_FILE, gzip_events
 from snax_forge.run.sources import gvsoc_options, sources_for
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
 
@@ -761,6 +761,7 @@ def _from_graph(
             "WORK_DIR": str((run / "work").resolve()),
             "EVENTS": str((run / EVENTS_FILE).resolve()), "TRACES": " ".join(opts.traces),
         }  # fmt: skip
+        (run / f"{EVENTS_FILE}.gz").unlink(missing_ok=True)  # an earlier passing run's
         rc = run_gvsoc("run", variables, run / "stdout.txt", run / "stderr.txt")
         exit_code = run_exit_code(rc, (run / "stderr.txt").read_text())
         if o.vcd:
@@ -816,8 +817,10 @@ def _from_graph(
             write_reports(out)
         except ReportError as e:
             raise FlowError(f"report: {e}") from None
-    if check["passed"] and not o.keep_work and not o.vcd:  # --vcd's view reads its map files there
-        shutil.rmtree(run / "work", ignore_errors=True)  # gvrun's config files, which nothing reads
+    if check["passed"]:  # a failing run keeps its plain events.log and work/ to look at
+        gzip_events(run)
+        if not o.keep_work and not o.vcd:  # --vcd's view reads its map files there
+            shutil.rmtree(run / "work", ignore_errors=True)  # gvrun's config files, unread
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
         checks_that_ran(), trace_level=o.trace_level, trace=trace, trace_sources=sources, vcd=o.vcd,

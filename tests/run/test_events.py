@@ -3,6 +3,7 @@
 import pytest
 
 from snax_forge.run import RunError, parse_line, read_events
+from snax_forge.run.outputs import gzip_events
 
 from .helpers import PATH, line
 
@@ -131,3 +132,17 @@ def test_a_file_reads_in_order_and_names_its_line(tmp_path):
     )
     with pytest.raises(RunError, match="events.log:2"):
         read_events(f)
+
+
+def test_a_passing_runs_gzip_reads_under_either_name(tmp_path):
+    """A passing flow leaves events.log.gz (gzip_events), with no timestamp, so the same events
+    give the same bytes; read_events reads it by its own name or the plain one."""
+    text = line("pe0", "events", "1 state mode=run", 1) + "\n"
+    (tmp_path / "events.log").write_text(text)
+    packed = gzip_events(tmp_path)
+    first = packed.read_bytes()
+    assert packed.name == "events.log.gz" and not (tmp_path / "events.log").exists()
+    for path in (packed, tmp_path / "events.log"):
+        assert [x.kind for x in read_events(path)] == ["state"]
+    (tmp_path / "events.log").write_text(text)
+    assert gzip_events(tmp_path).read_bytes() == first

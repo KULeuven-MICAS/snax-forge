@@ -43,7 +43,7 @@ Retired in RET1 (SNAX-MODEL).
 
 ## 7. Profile and trace
 
-What the reports and the viewer read of a flow run (D137). A run directory (`out/flow/<name>/run/`, `run/outputs.py`) holds `run.json` (what ran, D50), `profile.json`, and above trace level `off` `trace.jsonl` and `trace_meta.json`. SNAX-GVSoC writes its events (snax-gvsoc `docs/EVENTS.md`) into `run/events.log`, which `run/convert.py` renames into what follows; the invariants every conversion checks are its own.
+What the reports and the viewer read of a flow run (D137). A run directory (`out/flow/<name>/run/`, `run/outputs.py`) holds `run.json` (what ran, D50), `profile.json`, and above trace level `off` `trace.jsonl` and `trace_meta.json`. SNAX-GVSoC writes its events (snax-gvsoc `docs/EVENTS.md`) into `run/events.log`, which `run/convert.py` renames into what follows; the invariants every conversion checks are its own. A passing flow leaves it gzipped, `run/events.log.gz` (no timestamp), which `read_events` reads under either name; a failing one keeps the plain file.
 
 **The window.** `total_cycles` is the program's: its `mcycle` read in `forge_check()` minus its read in main, the `forge cycles:` line. The converter finds the same two reads in the accelerator's core's events, checks they are `total_cycles` apart and shifts every cycle so that t = 0 is the read in main (the shift, the boot, in `trace_meta.json`); events outside `[0, total_cycles)` are dropped. The profile, a core's classes and the trace cover this one window.
 

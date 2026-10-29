@@ -73,8 +73,9 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
             "tasks.json", "gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson",
             "gen/accelerator.json", "gen/main.c", "gen/data.h", "gen/manifest.json",
             "gen/include/acc_csr.h", "sw/forge.elf", "run/stdout.txt", "run/stderr.txt",
-            "run/run.json", "run/profile.json", "run/events.log", "flow.log"} <= names  # fmt: skip
+            "run/run.json", "run/profile.json", "run/events.log.gz", "flow.log"} <= names  # fmt: skip
     assert not {"run/trace.jsonl", "run/trace_meta.json"} & names  # trace off
+    assert not {"run/events.log", "sw/forge.dump"} & names and not (out / "run" / "work").exists()
     main_c = (out / "gen" / "main.c").read_text()
     assert "FORGE_MARK" not in main_c and "forge_main" not in main_c
     assert "static __attribute__((noinline)) int forge_check(uint32_t t0) {" in main_c

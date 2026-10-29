@@ -128,7 +128,7 @@ Each event carries its raw words and what they mean (the region, the elements an
 
     {"t": 121, "k": "stall", "src": "acc_b.lane0", "task": "add_acc_b", "addr": 268435968, "bank": 0, "row": 2, "by": "acc_a.lane0", "by_addr": 268435456, "b": 0, "region": "B", "elems": [0]}
 
-A passing run deletes gvrun's `run/work/` (its config files, which nothing reads) unless `--keep-work` is given or the run has `--vcd`, whose view reads its map files there.
+A passing run gzips `run/events.log` to `run/events.log.gz` and deletes gvrun's `run/work/` (its config files, which nothing reads) unless `--keep-work` is given or the run has `--vcd`, whose view reads its map files there; a failing run keeps both as they are.
 
 `--vcd` adds gtkwave's `run/all.vcd` and `run/view.gtkw` of the same sources (open the view outside the container); snax-forge never reads them:
 
