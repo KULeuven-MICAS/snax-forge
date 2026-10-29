@@ -23,26 +23,24 @@ class DatapathsSpec extends AnyFlatSpec {
     assert(ujson.write(ujson.read(Emit.describe)) == ujson.write(want))
   }
 
-  /** The least params each type takes: an int's min, the first op, `flag` for a bool, the first type (two of it for a
-    * list, three for a plain Mac's a, b and c).
+  /** The least params each type takes: an int's min (8 lanes, whole words of the first type), the first op, `flag` for
+    * a bool (and its opposite for `regOut`, so a Mac is accumulating, or plain with its output register), the first
+    * type (two of it for a list, three for a plain Mac's a, b and c).
     */
   private def least(d: Datapaths.Datapath, flag: Boolean): Map[String, ujson.Value] = {
     val plain = d.name == "Mac" && !flag
     d.params.map {
       case (n, IntParam(min), _) => n -> ujson.Num(min.max(if (n == "lanes") 8 else min))
       case (n, OpParam(vs), _)   => n -> ujson.Str(vs.head)
-      case (n, BoolParam, _)     => n -> ujson.Bool(flag)
+      case (n, BoolParam, _)     => n -> ujson.Bool(if (n == "regOut") !flag else flag)
       case (n, DtypeParam, _)    => n -> ujson.Str(IntType.names.head)
       case (n, DtypesParam, _)   => n -> ujson.Arr.from(Seq.fill(if (plain) 3 else 2)(IntType.names.head))
     }.toMap
   }
 
-  // The datapaths whose modules come in B1x F2 step 1: their signature only until then
-  private val notYet = Set("Mac", "SerialAccumulate", "LinkBuffer")
-
   it should "name every live port and pin of each datapath's IO, and nothing else" in {
     for {
-      d    <- Datapaths.all if !notYet(d.name)
+      d    <- Datapaths.all
       flag <- Seq(false, true)
     } {
       val p     = least(d, flag)

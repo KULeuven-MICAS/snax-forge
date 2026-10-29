@@ -2,7 +2,7 @@ package snax.forge
 
 import chisel3._
 
-import snax.forge.datapath.{ElementwiseLanes, TreeAccumulate}
+import snax.forge.datapath.{ElementwiseLanes, LinkBuffer, Mac, SerialAccumulate, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.AcceleratorSpec
 
@@ -221,7 +221,19 @@ object Datapaths {
         Pin("first", Seq("accumulate" -> ujson.True)),
         Pin("en", Seq("accumulate" -> ujson.False, "regOut" -> ujson.True))
       ),
-      _ => throw new NotImplementedError("Mac: B1x F2 step 1")
+      p => {
+        val m = Module(
+          new Mac(
+            p("inTypes").arr.toSeq.map(_.str),
+            str(p, "opType"),
+            str(p, "outType"),
+            p("lanes").num.toInt,
+            p("accumulate").bool,
+            p("regOut").bool
+          )
+        )
+        Built(m, m.io)
+      }
     ),
     Datapath(
       "SerialAccumulate",
@@ -234,7 +246,10 @@ object Datapaths {
       ujson.Num(1),
       ujson.Str("lanes"),
       Seq(Pin("read"), Pin("lane"), Pin("first")),
-      _ => throw new NotImplementedError("SerialAccumulate: B1x F2 step 1")
+      p => {
+        val m = Module(new SerialAccumulate(str(p, "inType"), str(p, "outType"), p("lanes").num.toInt))
+        Built(m, m.io)
+      }
     ),
     Datapath(
       "LinkBuffer",
@@ -247,7 +262,10 @@ object Datapaths {
       ujson.Num(1),
       ujson.Num(1),
       Seq(Pin("load"), Pin("wslot"), Pin("rslot")),
-      _ => throw new NotImplementedError("LinkBuffer: B1x F2 step 1")
+      p => {
+        val m = Module(new LinkBuffer(p("depth").num.toInt, p("lanes").num.toInt, str(p, "dtype")))
+        Built(m, m.io)
+      }
     )
   )
 
