@@ -15,7 +15,8 @@ import snax.forge.elementwise.ElementwiseOp
   * lanes and op; any other shape (L 1 or 2 with two inputs) the controller alone, no data.
   */
 class UnitHarness(val c: Case) extends Module {
-  private val ctrl = Module(new GroupCtrl(c.latency, c.ii, c.inputs, "unit", "case"))
+  private val ctrl =
+    Module(new GroupCtrl(GroupDesc("unit", Seq(UnitDesc("unit", c.latency, c.ii, 1, c.inputs, None)), Nil), "case"))
 
   private def t(i: Int): IntType = IntType(if (c.types.isEmpty) "int64" else c.types(i))
 

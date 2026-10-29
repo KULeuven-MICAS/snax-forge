@@ -60,10 +60,6 @@ class GroupCtrlIO(desc: GroupDesc) extends Bundle {
   */
 class GroupCtrl(val desc: GroupDesc, tag: String) extends Module {
 
-  /** A group of one unit: B1's controller, L and II, `inputs` joined, its T from the start. */
-  def this(latency: Int, ii: Int, inputs: Int, group: String, tag: String) =
-    this(GroupDesc(group, Seq(UnitDesc(group, latency, ii, 1, inputs, None)), Nil), tag)
-
   override def desiredName: String = s"${tag}_${desc.name}_ctrl"
 
   val io = IO(new GroupCtrlIO(desc))
