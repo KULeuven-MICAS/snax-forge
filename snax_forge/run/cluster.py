@@ -32,6 +32,7 @@ from typing import Any
 import hjson
 
 from snax_forge.common import Missing, dig
+from snax_forge.design.hjson_platform import CoreCount, dma_and_owner
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
 from snax_forge.gen.accelerator import Accelerator as Description
@@ -278,11 +279,11 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], description:
     """The description from the three files' contents and the design point's (module doc)."""
     slot = _get(point, "platform.accelerator_slot", "the design point")
     flat = _cores(cluster)
-    dma = [i for i, c in enumerate(flat) if c.get("xdma")]
-    owner = sorted({i for i, _ in _slots(flat, slot)})
-    if len(dma) != 1 or len(owner) != 1:
-        raise RunError("cluster.cores", f"xdma on cores {dma}, the slot {slot} on cores {owner}; "
-                       "a flow run has one of each")  # fmt: skip
+    try:
+        dma, owner = dma_and_owner(flat, slot)
+    except CoreCount as e:
+        raise RunError("cluster.cores", f"xdma on cores {e.dma}, the slot {slot} on cores "
+                       f"{e.owner}; a flow run has one of each") from None  # fmt: skip
 
     streamers = _get(point, "streamers", "the design point")
     names = list(dict.fromkeys(s["instance"] for s in streamers.values()))
@@ -305,10 +306,10 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], description:
                                 params["temporal_dim"][i]))  # fmt: skip
 
     tcdm = _get(cluster, "cluster.tcdm", "the cluster file")
-    acc = Accelerator(description["name"], owner[0], slot, dict(description), movers,
+    acc = Accelerator(description["name"], owner, slot, dict(description), movers,
                       csrs_of(streamer, description, members[0]), units)  # fmt: skip
     return Cluster(
-        design=point.get("name", ""), nb_cores=len(flat), dma_core=dma[0], accelerator=acc,
+        design=point.get("name", ""), nb_cores=len(flat), dma_core=dma, accelerator=acc,
         l1_base=_get(cluster, "cluster.cluster_base_addr", "the cluster file"),
         l1_size=tcdm["size"] * 1024, banks=tcdm["banks"],
         bank_bytes=_get(cluster, "cluster.data_width", "the cluster file") // 8,

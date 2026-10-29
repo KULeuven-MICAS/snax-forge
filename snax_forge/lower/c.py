@@ -108,6 +108,7 @@ from typing import TYPE_CHECKING, Any
 
 from snax_forge.brm import Instance
 from snax_forge.common import CodedError, generated_header
+from snax_forge.design.hjson_platform import CoreCount, dma_and_owner
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
 from snax_forge.design.streamers import accelerators, groups, instances, streamer_name
@@ -218,14 +219,13 @@ def cores(cluster: Mapping[str, Any], slot: str) -> Cores:
         flat = [core for _, core in hjson_cores(cluster)]
     except DesignError as e:
         raise CError("c.cores", f"the cluster file's hives and cores do not read: {e}") from None
-    dma = [i for i, c in enumerate(flat) if c.get("xdma")]
-    owner = [i for i, c in enumerate(flat)
-             if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
-    if len(dma) != 1 or len(owner) != 1:
-        raise CError("c.cores", f"the cluster file has xdma on cores {dma} and the slot {slot} on cores "
-            f"{owner}; the program takes one of each",
-        )  # fmt: skip
-    return Cores(len(flat), dma[0], owner[0])
+    try:
+        dma, owner = dma_and_owner(flat, slot)
+    except CoreCount as e:
+        raise CError("c.cores", f"the cluster file has xdma on cores {e.dma} and the slot {slot} on "
+            f"cores {e.owner}; the program takes one of each",
+        ) from None  # fmt: skip
+    return Cores(len(flat), dma, owner)
 
 
 class _Program:

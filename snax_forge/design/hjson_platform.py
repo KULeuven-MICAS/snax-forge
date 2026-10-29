@@ -54,7 +54,7 @@ platform can take), ``hjson.accelerators`` (not exactly one accelerator),
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -140,6 +140,26 @@ def accelerators(d: Mapping[str, Any]) -> list[tuple[str, Any]]:
             raise _fail("hjson.key", f"{where}.snax_acc_cfg", "must be a list")
         out += [(f"{where}.snax_acc_cfg[{i}]", a) for i, a in enumerate(accs)]
     return out
+
+
+class CoreCount(ValueError):
+    """``dma_and_owner``'s: not exactly one xdma core and one owner of the slot; ``dma`` and
+    ``owner`` the cores found. Each caller words its own error."""
+
+    def __init__(self, dma: list[int], owner: list[int]):
+        super().__init__(dma, owner)
+        self.dma, self.owner = dma, owner
+
+
+def dma_and_owner(flat: Sequence[Mapping[str, Any]], slot: str) -> tuple[int, int]:
+    """The core with ``xdma`` and the core whose ``snax_acc_cfg`` holds the slot ``slot``, of the
+    cluster's cores in order (``cores``): a program and a flow run take one of each."""
+    dma = [i for i, c in enumerate(flat) if c.get("xdma")]
+    owner = [i for i, c in enumerate(flat)
+             if any(a.get("snax_acc_name") == slot for a in c.get("snax_acc_cfg", []))]  # fmt: skip
+    if len(dma) != 1 or len(owner) != 1:
+        raise CoreCount(dma, owner)
+    return dma[0], owner[0]
 
 
 def _load(path: str | Path) -> Any:
