@@ -4,3 +4,5 @@ out/
 .ruff_cache/
 .dacecache/
 *.patch
+.coverage
+htmlcov/
