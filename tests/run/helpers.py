@@ -394,21 +394,17 @@ def tiny_elf(symbols: dict[str, tuple[int, int]], wide: bool = False) -> bytes:
 
 def point_symbols(point: Any) -> dict[str, tuple[int, int]]:
     """The symbols a program of ``point`` would link: each container in L2 one after another
-    from the L2's first byte in the plan's order, its bytes padded to whole beats (gen/data.py),
-    and a golden beside an output."""
-    import numpy as np
+    from the L2's first byte in the plan's order, its L2 bytes (``lower.layout.l2_bytes``, as
+    gen/data.py declares it), and a golden beside an output."""
+    from snax_forge.lower.layout import l2_bytes
 
-    from snax_forge.lower.layout import round_up
-
-    beat = point.platform.l2.beat_bits // 8
     out, at = {}, point.platform.l2.base_addr
     for name, lays in point.memory.layouts.items():
         if "l2" in lays:
-            lay = lays["l2"]
-            n = int(np.prod(lay.shape)) * np.dtype(point.graph.containers[name].dtype).itemsize
-            out[name] = (at, round_up(n, beat))
-            out[f"{name}_golden"] = (0x90000000 + at % 0x10000, round_up(n, beat))
-            at += round_up(n, beat)
+            n = l2_bytes(point, name)
+            out[name] = (at, n)
+            out[f"{name}_golden"] = (0x90000000 + at % 0x10000, n)
+            at += n
     return out
 
 
@@ -425,7 +421,8 @@ def synthetic_regions(tasks: Any) -> list[Any]:
             continue
         l1, l2 = ("dst", "src") if s.values["direction"] == "l2_to_l1" else ("src", "dst")
         side = s.values[l2]
-        name, n = side["symbol"], side["bounds"][0] * side["strides"][0] // 8
+        name, size = side["symbol"], side["bounds"][0] * side["strides"][0]
+        n = size // 8
         out += [Region(name, "l1", s.values[l1]["base"], (n,), (8,), "int64"),
-                Region(name, "l2", link[name], (n,), (8,), "int64")]  # fmt: skip
+                Region(name, "l2", link[name], (n,), (8,), "int64", size)]  # fmt: skip
     return out

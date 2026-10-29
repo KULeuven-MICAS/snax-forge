@@ -159,7 +159,7 @@ def test_a_copy_outside_its_containers_l2_array_is_named(run):
         assert e.value.code == "convert.invariant"
         assert (
             "container A: its copies touch L2 [('0x80000040', '0x80000240')], its array "
-            "(padded to 64-byte beats) is [0x80000000, 0x80000200)"
+            "(64 int64 elements, its padded shape in 64-byte beats) is [0x80000000, 0x80000200)"
         ) in str(e.value)
     # a run without L2 regions: every copy touching L2 is named
     lines = [parse_line(x) for x in synthetic(cluster, tasks, "task")]

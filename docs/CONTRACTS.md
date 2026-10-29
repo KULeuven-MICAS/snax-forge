@@ -180,12 +180,7 @@ whole. `trace_meta.json` holds `level`, `total_cycles`, `boot`, `sources`
 and its state there. `--vcd` writes a VCD and `view.gtkw`, never read here.
 `run.json` records `trace_level`, `trace_sources` and `vcd`.
 
-**Regions** (`run/regions.py`, `run/elf.py`, D86). A container's L1 region
-is the design point's layout; its L2 region has the plan's shape and dtype
-at its array's address in the linked program: `run.json`'s `elf_symbols`,
-container -> `addr` and `size` (its bytes padded to whole DMA beats; a
-missing symbol or another size stops the flow). Everything takes regions
-from `regions_of(point, elf_symbols)` only.
+**Regions** (`run/regions.py`, `run/elf.py`, D86). A container's L1 region is the design point's layout; its L2 region has the plan's shape and dtype at its array's address in the linked program: `run.json`'s `elf_symbols`, container -> `addr` and `size` (its padded shape's bytes, a tail's pads included (D144), in whole DMA beats: `lower.layout.l2_bytes`, the array data.h declares and the DMA's copies touch; a missing symbol or another size stops the flow). Everything takes regions from `regions_of(point, elf_symbols)` only.
 
 ## 8. Rules for a new block kind
 

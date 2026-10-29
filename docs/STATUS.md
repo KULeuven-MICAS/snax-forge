@@ -102,6 +102,8 @@ phase (snax_cluster's CI time, open item 98's counters and closed-form
 counter, the stale snax_cluster fixtures whose control SV changed in F2),
 then VIEW2, SYN1, HWCOST, B2, tier A (D141).
 
+A container's L2 size is one function, `lower.layout.l2_bytes` (its padded shape in whole DMA beats, D144): data.h's array, the ELF's symbol check and the DMA copies' check all read it, so a tail's padded rows agree at every size (rowsum_3x7 at M = 16).
+
 ## Open Items
 
 Questions not decided yet. Numbers are never reused; a closed item is

@@ -12,8 +12,8 @@ the arrays' symbols once the program is linked (its ``sw`` stage) into ``run.jso
 ``read_symbols`` reads the ELF's symbol table with the standard library (32- and 64-bit,
 little-endian; ``.symtab`` and its string table), every named symbol with its value and size.
 ``l2_symbols`` keeps the design point's containers in L2: each must have a symbol of its
-bytes padded to whole DMA beats, as gen/data.py pads them (D105, ``moved_bytes``; the
-platform's ``l2.beat_bits``). Other symbols (``C_golden``, the runtime's) are not regions. A
+L2 bytes, its padded shape (a tail's pads included, D144) in whole DMA beats, as gen/data.py
+declares it (D105, ``lower.layout.l2_bytes``; the platform's ``l2.beat_bits``). Other symbols (``C_golden``, the runtime's) are not regions. A
 file that is not such an ELF, a container with no symbol, or one of another size is a
 RunError (``elf.<rule>``), which the flow reports as its ``sw`` stage's.
 """
@@ -26,7 +26,8 @@ from typing import Any
 
 import numpy as np
 
-from snax_forge.lower.layout import round_up
+from snax_forge.dfg.pad import padded_shape
+from snax_forge.lower.layout import l2_bytes
 
 from .events import RunError
 
@@ -70,16 +71,15 @@ def l2_symbols(point: Any, symbols: dict[str, tuple[int, int]]) -> dict[str, dic
     for name, lays in point.memory.layouts.items():
         if "l2" not in lays:
             continue
-        lay = lays["l2"]
-        itemsize = np.dtype(point.graph.containers[name].dtype).itemsize
-        want = round_up(int(np.prod(lay.shape)) * itemsize, beat)
+        want = l2_bytes(point, name)
         if name not in symbols:
             raise RunError("elf.missing", f"container {name} lives in L2, the ELF has no symbol "
                            f"{name!r} (data.h declares it)")  # fmt: skip
         addr, size = symbols[name]
         if size != want:
+            n = int(np.prod(padded_shape(point.graph, name)))
             raise RunError("elf.size", f"container {name}: its symbol is {size} bytes, its "
-                           f"{int(np.prod(lay.shape))} {point.graph.containers[name].dtype} "
-                           f"elements padded to {beat}-byte beats are {want}")  # fmt: skip
+                           f"{n} {point.graph.containers[name].dtype} elements padded to "
+                           f"{beat}-byte beats are {want}")  # fmt: skip
         out[name] = {"addr": addr, "size": size}
     return out

@@ -64,9 +64,10 @@ events: the cores' cycles are None and there is no trace.
 (``convert.invariant``) naming each that fails: every start has a done in the window, and
 every DMA issue; a core's classes add up to the window; the accelerator's firings in its
 ``done`` events are its summary's; with the run's regions, each container's L2 bytes its
-copies touch (``load_<C>``, ``store_<C>``, every row) are its array's (the ELF's symbol,
-regions.py) padded to whole DMA beats (D105, ``Cluster.dma_beat_bytes``), and no copy touches
-L2 outside it; above ``task``, the beat part's (beats.py).
+copies touch (``load_<C>``, ``store_<C>``, every row) are its array's, from the ELF's
+symbol its region's ``size`` (regions.py): its padded shape in whole DMA beats (D105, D144,
+``lower.layout.l2_bytes``), and no copy touches L2 outside it; above ``task``, the beat
+part's (beats.py).
 """
 
 from __future__ import annotations
@@ -75,9 +76,6 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-import numpy as np
-
-from snax_forge.lower.layout import round_up
 from snax_forge.lower.tasks import Configure, TaskList
 
 from .beats import Context, beat_events, beat_invariants
@@ -427,12 +425,12 @@ def l2_copies(trace: Trace, regions: list[Region], cluster: Cluster) -> list[str
                 lo = e[s] + row * e[f"{s}_stride"]
                 touched[m[1]].append((lo, lo + e["size"]))
     for name, r in l2.items():
-        want = [(r.base, r.base + round_up(int(np.prod(r.shape)) * r.itemsize, beat))]
+        want = [(r.base, r.base + r.size)]
         got = merge_spans(touched[name])
         if got != want:
             bad.append(f"container {name}: its copies touch L2 {[(hex(a), hex(b)) for a, b in got]}, "
-                       f"its array (padded to {beat}-byte beats) is [{want[0][0]:#x}, "
-                       f"{want[0][1]:#x})")  # fmt: skip
+                       f"its array ({r.size // r.itemsize} {r.dtype} elements, its padded shape "
+                       f"in {beat}-byte beats) is [{want[0][0]:#x}, {want[0][1]:#x})")  # fmt: skip
     return bad
 
 

@@ -16,7 +16,9 @@ design checks judge a whole plan, in L1 and L2. A layout places each element
 at its dtype's itemsize, so a word holds several narrow ones (D142). A
 container a tail pads (dfg/pad.py, D144) keeps its logical shape, its strides
 row-major over the padded shape; ``over`` gives its padded block, what the
-DMA moves and what memory it takes.
+DMA moves and what memory it takes. ``l2_bytes`` is a container's array in L2,
+that block in whole DMA beats: data.h declares it so, the ELF check expects
+it and the DMA's copies touch it.
 """
 
 from __future__ import annotations
@@ -27,9 +29,11 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from snax_forge.common import Config
+from snax_forge.dfg.pad import padded_shape
 
 if TYPE_CHECKING:  # design imports lower.layout
     from snax_forge.design.platform import L1Config
+    from snax_forge.design.point import DesignPoint
 
 
 class LayoutError(ValueError):
@@ -110,6 +114,16 @@ def moved_bytes(lay: Layout, elem_bytes: int, beat: int) -> int:
     """The bytes the DMA moves for a layout of ``elem_bytes`` elements: its size padded to
     whole beats (D105), e.g. 16 int32 or 64 int8 elements per 64-byte beat."""
     return round_up(int(np.prod(lay.shape)) * elem_bytes, beat)
+
+
+def l2_bytes(point: DesignPoint, c: str) -> int:
+    """The bytes of container ``c``'s array in L2: its L2 layout over its padded shape (a
+    tail's pads included, D144) in whole DMA beats of the platform's ``l2.beat_bits`` (D105).
+    gen/data.py declares the array so, run/elf.py checks its symbol and run/convert.py its
+    copies against it."""
+    elem = np.dtype(point.graph.containers[c].dtype).itemsize
+    block = over(point.memory.layouts[c]["l2"], padded_shape(point.graph, c))
+    return moved_bytes(block, elem, point.platform.l2.beat_bits // 8)
 
 
 def dma_side(lay: Layout, elem_bytes: int, beat: int) -> dict[str, int | list[int]]:
