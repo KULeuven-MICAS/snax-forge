@@ -7,8 +7,8 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, Source}
 import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
 
 /** Each fixture's `<tag>_shell_wrapper` (built as `Emit --spec` builds it: vecadd and vecmul, accumulate at W = 1, 4
-  * and 8) under random data, configurations, streamer gaps and output stalls, through its CSR port as `main.c` drives
-  * it.
+  * and 8, and the linked groups dot 2–6 and matvec 4–6) under random data, configurations, streamer gaps and output
+  * stalls, through its CSR port as `main.c` drives it.
   *
   * Per seed, `Runs` runs back to back on one wrapper. Per run: J jobs in 1..32 (and for a fold T in 1..8 beats each; an
   * elementwise unit has T = 1), one run in eight the empty run (JOBS 0), JOBS (and JOB_BEATS) written, then START; the
@@ -22,7 +22,9 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   *
   * The outputs of all runs must equal the model at the fixture's types (its `accelerator.json` ports; each port's lanes
   * drawn and packed at its dtype's width): `ElementwiseModel.numpy` per lane for an elementwise unit, the lane sums of
-  * every T inputs for a fold, each lane cast to the output type first.
+  * every T inputs for a fold, each lane cast to the output type first; for a linked group (a dot product: a product per
+  * lane, then the sum of a job's lanes and beats, T its JOB_BEATS) the sum over each job's T beats of a · b, wrapping
+  * at the output type.
   */
 class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
 
@@ -42,9 +44,10 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
       Seeds.run(seed) { r =>
         val spec    = f.spec
         val unit    = spec.units.head
-        val fold    = unit.datapath == "TreeAccumulate"
-        val inPorts = spec.inputs.map { case (_, p) => unit.port(p) }
-        val outPort = unit.port(spec.outputs.head._2)
+        val linked  = spec.groups.head.units.size > 1
+        val fold    = linked || unit.datapath == "TreeAccumulate"
+        val inPorts = spec.inputs.map { case (u, p) => spec.unit(u).port(p) }
+        val outPort = spec.outputs.head match { case (u, p) => spec.unit(u).port(p) }
         val lanes   = inPorts.head.lanes
         val inTypes = inPorts.map(p => IntType(p.dtype))
         val outType = IntType(outPort.dtype)
@@ -57,7 +60,20 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
           val n    = jobs * t
           val ins  = inTypes.map(ty => Seq.fill(n)(Seq.fill(lanes)(r.word(ty.width))))
           val outs =
-            if (!fold)
+            if (linked)
+              (0 until n)
+                .map(k =>
+                  ins(0)(k)
+                    .zip(ins(1)(k))
+                    .map { case (a, b) =>
+                      ElementwiseModel.cast(a, inTypes(0), outType) * ElementwiseModel.cast(b, inTypes(1), outType)
+                    }
+                    .sum
+                )
+                .grouped(t max 1)
+                .map(_.sum & LaneBits.mask(outType.width))
+                .toSeq
+            else if (!fold)
               (0 until n).map { k =>
                 LaneBits.pack(
                   ins(0)(k).zip(ins(1)(k)).map { case (a, b) =>

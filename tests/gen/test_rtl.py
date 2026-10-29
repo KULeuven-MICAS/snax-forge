@@ -23,6 +23,7 @@ from snax_forge.gen.rtl import (
     check_unit,
     counter,
     fill,
+    group_counter,
     live,
     write_accelerator,
     write_fixture,
@@ -47,8 +48,14 @@ DESIGNS = {
     "vsum_tree_i8": ("vsum_tree_i8", []),
     "vecmul_i32_i64": ("vecmul_i32_i64", []),
     "dot_1": ("dot_1", []),
+    "dot_2": ("dot_2", ["N=16"]),
+    "dot_3": ("dot_3", ["N=16"]),
     "dot_4": ("dot_4", ["N=16"]),
+    "dot_5": ("dot_5", ["N=16"]),
     "dot_6": ("dot_6", ["N=16"]),
+    "matvec_4": ("matvec_4", ["M=2", "N=16"]),
+    "matvec_5": ("matvec_5", ["M=2", "N=16"]),
+    "matvec_6": ("matvec_6", ["M=2", "N=16"]),
 }
 
 
@@ -196,6 +203,24 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
         "accelerator.json", "snax_forge_streamer.hjson", "vectors.json"
     ]  # fmt: skip
     assert "wrote fx/accelerator.json" in capsys.readouterr().out
+
+
+def test_a_linked_fixtures_counter_is_c17s_cycles():
+    """A linked group's counter is C§17's Cycles for its shape: at T 4, dot's J 1 row of C§17's
+    table and matvec's J 2 (2 × 16, W 4); a shape C§17 does not state is refused."""
+    got = {d: json.loads((FIXTURES / d / "vectors.json").read_text())["tasks"][0]["counter"]
+           for d in ("dot_2", "dot_3", "dot_4", "dot_5", "dot_6", "matvec_4", "matvec_5",
+                     "matvec_6")}  # fmt: skip
+    assert got == {"dot_2": 6, "dot_3": 5, "dot_4": 6, "dot_5": 9, "dot_6": 10, "matvec_4": 10,
+                   "matvec_5": 16, "matvec_6": 14}  # fmt: skip
+    from tests.gen.test_accelerator import dot4
+
+    (group,) = dot4().groups
+    assert group_counter(group, {"JOBS": 16, "JOB_BEATS": 128})[0] == 2050
+    deep = replace(group, links=[replace(group.links[0], depth=2)])
+    with pytest.raises(GenError) as e:
+        group_counter(deep, {"JOBS": 1, "JOB_BEATS": 4})
+    assert e.value.code == "gen.cycles"
 
 
 def test_a_fixtures_tasks_give_jobs_and_job_beats():

@@ -1,0 +1,35 @@
+{
+ "design_point": "out/design/dot_4/design_point.json",
+ "ports": [
+  {
+   "port": "a",
+   "array": "A",
+   "lanes": 4,
+   "beats": 4,
+   "values": [701, 273, 22, -461, -385, -919, -850, -967, -650, 626, 298, 825, 7, 213, 941, 458]
+  },
+  {
+   "port": "b",
+   "array": "B",
+   "lanes": 4,
+   "beats": 4,
+   "values": [264, 87, 119, 870, -446, 631, 341, -995, -212, 714, 108, -933, 529, 459, 693, -649]
+  },
+  {
+   "port": "out",
+   "array": "out_golden",
+   "lanes": 1,
+   "beats": 1,
+   "values": [378063, 0, 0, 0, 0, 0, 0, 0]
+  }
+ ],
+ "tasks": [
+  {
+   "name": "mult_dot",
+   "csrs": {"JOBS": 1, "JOB_BEATS": 4},
+   "firings": 4,
+   "counter": 6,
+   "working": "The group's COUNTER counts its busy cycles. Mac -> TreeAccumulate, a link of depth 0, inputs always valid and the output always ready: C\u00a717's Cycles C4 = JT + 2 at J 1, T 4, W 1"
+  }
+ ]
+}

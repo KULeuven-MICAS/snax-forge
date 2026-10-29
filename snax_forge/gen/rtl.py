@@ -45,13 +45,15 @@ the unit's ports by their ``dir``, in the BRM's order.
 
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds
 ``accelerator.json``, the design's streamer hjson (gvsoc.py's) and, for a design of one
-accelerator task of one unit, ``vectors.json``, which the Chisel specs drive the wrapper with
-(dot 1's two groups, a task each, have none: its spec drives each group itself; nor has a
-linked group, F2's): per BRM port its data.h array (an input, or the output's
-golden) and how many beats a task moves (lane i of beat t is element t * lanes + i), and per
-task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_values``), its firings and the counter
-worked from the nest controller's rule with an always-ready streamer (``counter``), the working
-in ``working``.
+accelerator task, ``vectors.json``, which the Chisel specs drive the wrapper with (dot 1's two
+groups, a task each, have none: its spec drives each group itself): per outer port, in
+``accelerator.json``'s ``inputs`` then ``outputs`` order, its BRM port, its data.h array (an
+input, or the output's golden) and how many beats a task moves (lane i of beat t is element
+t * lanes + i, modulo the array's size: matvec's vector is read again for every row), and per
+task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_writes``), the head unit's firings
+and the counter with an always-ready streamer, the working in ``working``: one unit's worked
+from the nest controller's rule (``counter``), a linked group's C§17's Cycles for its shape
+(``group_counter``; ``gen.cycles`` for a shape C§17 does not state).
 """
 
 from __future__ import annotations
@@ -68,11 +70,11 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
-from snax_forge.lower.c import job_values
+from snax_forge.lower.c import job_values, job_writes
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure
 
-from .accelerator import ACCELERATOR_JSON, Accelerator, Link, Unit, units
+from .accelerator import ACCELERATOR_JSON, Accelerator, Group, Link, Unit, units
 from .blocks import GenError
 from .data import arrays
 from .gvsoc import ROOT, cli, generate, load_point, out_dir
@@ -254,6 +256,35 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
     )
 
 
+# C§17's Cycles of a linked group by its shape (head's datapath, last's, the link's depth):
+# J jobs of T beats (the group's one JOB_BEATS), W the last unit's span
+CYCLES = {
+    ("ElementwiseLanes", "TreeAccumulate", 1): ("C2 = JT + 2", lambda j, t, w: j * t + 2),
+    ("ElementwiseLanes", "TreeAccumulate", 0): ("C3 = JT + 1", lambda j, t, w: j * t + 1),
+    ("Mac", "TreeAccumulate", 0): ("C4 = JT + 2", lambda j, t, w: j * t + 2),
+    ("Mac", "SerialAccumulate", 0): ("C5 = J(T + W - 1) + 2", lambda j, t, w: j * (t + w - 1) + 2),
+    ("Mac", "SerialAccumulate", 1): ("C6 = (J - 1) max(T, W) + T + W + 2",
+                                     lambda j, t, w: (j - 1) * max(t, w) + t + w + 2),
+}  # fmt: skip
+
+
+def group_counter(group: Group, csrs: Mapping[str, int]) -> tuple[int, str]:
+    """The counter of a linked group's task (``csrs`` its JOBS and JOB_BEATS) with an always-ready
+    streamer, from C§17's Cycles, and the working; ``gen.cycles`` for a shape C§17 does not
+    state."""
+    head, last = group.units[0], group.units[-1]
+    shape = (head.datapath, last.datapath, *(k.depth for k in group.links))
+    if shape not in CYCLES:
+        raise GenError("gen.cycles", f"group {group.name}: C§17 states no cycles for {shape}")
+    rule, f = CYCLES[shape]
+    j, t, w = csrs["JOBS"], csrs.get("JOB_BEATS", 1), last.span
+    return f(j, t, w), (
+        f"The group's COUNTER counts its busy cycles. {head.datapath} -> {last.datapath}, a link "
+        f"of depth {shape[2]}, inputs always valid and the output always ready: C§17's Cycles "
+        f"{rule} at J {j}, T {t}, W {w}"
+    )
+
+
 def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     """``vectors.json``: the data and tasks the Chisel specs drive the wrapper with; see the
     module doc."""
@@ -262,25 +293,35 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     if len(tasks) != 1:
         raise GenError("gen.instances", f"{len(tasks)} accelerator tasks; vectors.json has one")
     (task,) = tasks
-    name = task.component
-    inst = units(point)[1][name]
-    unit = acc.groups[0].units[0]
-    node = instance_nodes(point.graph)[name]
+    found = units(point)[1]
+    (group,) = acc.groups
+    linked = len(group.units) > 1
     data = {a.name: a for a in arrays(point)}
     ports = []
-    for p in inst.brm.interface.ports:
+    for end in [*acc.inputs, *acc.outputs]:
+        name, port = end.split(".", 1)
+        inst, node = found[name], instance_nodes(point.graph)[name]
+        values = task.values[name] if linked else task.values
+        (p,) = (x for x in inst.brm.interface.ports if x.name == port)
         c = (node.inputs if p.direction == "in" else node.outputs)[p.name].data
         array = c if p.direction == "in" else f"{c}_golden"
-        rate = 1 if p.rate == 1 else task.values[p.rate]
+        rate = 1 if p.rate == 1 else values[p.rate]
         ports.append({"port": p.name, "array": array, "lanes": inst.lanes(p.name),
-                      "beats": task.values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
-    n = task.values["n"]
-    value, working = counter(unit, n)
+                      "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
+    if linked:
+        fixed = {u.name for u in group.units if "T" in u.params}
+        csrs = {k: v for _, k, v in job_writes(found, task.values, fixed)}
+        n = task.values[group.units[0].name]["n"]
+        value, working = group_counter(group, csrs)
+    else:
+        csrs = job_values(found[task.component], task.values)
+        n = task.values["n"]
+        value, working = counter(group.units[0], n)
     return {
         "design_point": shown,
         "ports": ports,
-        "tasks": [{"name": task.task_name, "csrs": job_values(inst, task.values), "firings": n,
-                   "counter": value, "working": working}],
+        "tasks": [{"name": task.task_name, "csrs": csrs, "firings": n, "counter": value,
+                   "working": working}],
     }  # fmt: skip
 
 
@@ -301,7 +342,7 @@ def write_fixture(design_point: str | Path, out_dir: str | Path,
         (out / streamer).write_text((Path(gen) / streamer).read_text())
     files = [ACCELERATOR_JSON, streamer]
     _, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    if len(accel_tasks(point)) == 1 and all(len(g.units) == 1 for g in acc.groups):
+    if len(accel_tasks(point)) == 1:
         (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
         files.append(VECTORS_JSON)
     return files

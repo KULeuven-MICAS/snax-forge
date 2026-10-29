@@ -13,7 +13,8 @@ import snax.forge.Emit
   * and `<tag>_datapath`; `<tag>_csr` nothing; `<tag>_ctrl` a `<tag>_<group>_ctrl` per group; `<tag>_datapath` a
   * `<tag>_<unit>` per unit, then a `<tag>_<link>` per buffer, group by group. Checked on every fixture, dot 4's (a
   * wire) and dot 6's (a buffer) among them, by reading each module's instances off the emitted SystemVerilog (firtool's
-  * ` <module> <instance> (` lines).
+  * ` <module> <instance> (` lines); and `emitted.json` lists a file for every module the wrapper reaches, and every
+  * file in `sv/`.
   */
 class HierarchySpec extends AnyFlatSpec {
 
@@ -46,6 +47,11 @@ class HierarchySpec extends AnyFlatSpec {
       assert(children(sv, done.top) == want.map(_._1), s"${done.top}")
       for ((m, kids) <- want) assert(children(sv, m) == kids, s"$m")
       assert(want.flatMap { case (m, k) => m +: k }.forall(done.modules.contains), s"emitted.json: ${done.modules}")
+      def reach(m: String): Seq[String] = m +: children(sv, m).distinct.flatMap(reach)
+      val listed = ujson.read(Files.readString(out.resolve("emitted.json")))("files").arr.map(_.str).toSet
+      assert(reach(done.top).distinct.forall(m => listed(s"sv/$m.sv")), s"emitted.json: $listed")
+      val svs    = Files.list(sv).iterator.asScala.map(p => s"sv/${p.getFileName}").filter(_.endsWith(".sv")).toSet
+      assert(svs == listed, s"sv/ holds ${svs -- listed} besides emitted.json's files")
     }
 
   it should "have the fixtures of a wire and a buffer" in

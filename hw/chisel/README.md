@@ -88,13 +88,16 @@ the check and the elaboration (`docs/RUN.md` §6). The fixtures in
     pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_tree_w8
     pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
 
-(the others from their recipe as it is, named after it; dot_4 and dot_6 with
-`--set N=16`). The specs on
+(the others from their recipe as it is, named after it; dot_2 to dot_6 with
+`--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`). The specs on
 them: `ShellPortsSpec` (each wrapper's ports are the template's for its
 streamer hjson, plus the group pins, and Emit writes the three modules),
 `ShellCasesSpec` (vecadd's and vsum's, through snax-gvsoc's shell cases,
 below), `ShellEndToEndSpec` (the CSR writes of `main.c`, an always-ready
-streamer: the goldens and the counter of `vectors.json`) and
+streamer: the goldens and the counter of `vectors.json`; each linked
+variant, dot 2–6 and matvec 4–6, at N 8 and 16 on random data against
+NumPy's results and the cycles of snax-gvsoc's matching group case, and
+matvec 4–6 at int32 through the wrapping product q = (−2147478991, 4)) and
 `ShellRandomSpec`. `TwoGroupsSpec` elaborates `groups/dot1/` (C§17's dot 1:
 groups `mul` and `sum`) and runs each group on its own.
 
