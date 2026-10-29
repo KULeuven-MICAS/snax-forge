@@ -14,11 +14,6 @@ import snax.forge.IntType
   */
 object ElementwiseModel {
 
-  /** Fixed seed, so a failure is reproducible. If a random case ever fails, note the operand values from the clue
-    * string rather than re-running and hoping for the same draw.
-    */
-  val Seed: Int = 0x5ecd
-
   def mask(dataWidth: Int): BigInt = (BigInt(1) << dataWidth) - 1
 
   /** Reinterpret an unsigned bit pattern as two's complement. */
@@ -45,10 +40,6 @@ object ElementwiseModel {
       (BigInt(1), BigInt(0))
     )
   }
-
-  /** `NumTests` random pairs, preceded by the edge cases. */
-  def operandPairs(dataWidth: Int, numRandom: Int, rng: scala.util.Random): Seq[(BigInt, BigInt)] =
-    edgePairs(dataWidth) ++ Seq.fill(numRandom)((BigInt(dataWidth, rng), BigInt(dataWidth, rng)))
 
   /** Expected result of `op` on two unsigned bit patterns. */
   def apply(op: Int, a: BigInt, b: BigInt, dataWidth: Int, signed: Boolean = false): BigInt = {

@@ -15,7 +15,7 @@ import snax.forge.elementwise.{ElementwiseAlu, ElementwiseOp}
   * Each lane runs NumPy's arithmetic: `a` and `b` are lanes of their own types, each extended to `opType` (the
   * operands' result type, chosen by Python) by its own signedness, the op runs at `opType` (min and max comparing by
   * its signedness), and the result is extended or wrapped into `outType`. Each lane is an `ElementwiseAlu` of the one
-  * op, so there is no `opSel`; the casts sit at its boundary. Every type is fixed at elaboration.
+  * op; the casts sit at its boundary. Every type is fixed at elaboration.
   *
   * @param inTypes
   *   `a`'s and `b`'s types, NumPy's names ("int32", "uint8"), from the unit's input ports' dtypes
@@ -55,11 +55,10 @@ class ElementwiseLanes(
     val out = Output(Vec(lanes, res.lane))
   })
 
-  private val alus = Seq.fill(lanes)(Module(new ElementwiseAlu(opT.width, Seq(op), opT.signed)))
+  private val alus = Seq.fill(lanes)(Module(new ElementwiseAlu(opT.width, op, opT.signed)))
   alus.zipWithIndex.foreach { case (alu, i) =>
-    alu.io.opSel := op.U
-    alu.io.a     := IntType.cast(io.a(i), ins(0), opT).asUInt
-    alu.io.b     := IntType.cast(io.b(i), ins(1), opT).asUInt
-    io.out(i)    := IntType.cast(alu.io.out, opT, res)
+    alu.io.a  := IntType.cast(io.a(i), ins(0), opT).asUInt
+    alu.io.b  := IntType.cast(io.b(i), ins(1), opT).asUInt
+    io.out(i) := IntType.cast(alu.io.out, opT, res)
   }
 }
