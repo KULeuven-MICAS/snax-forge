@@ -8,8 +8,8 @@ group's counter is its task's (busy + its stalls, at least its beats), and the r
 each task's group. No cycle count is compared: the window moves with the code's layout (open
 item 65).
 
-dot's walk-through (examples/dot, tests/flow/test_dot_example.py) stays parked until M13's
-B3: it compares two accumulators on SNAX-MODEL, which RET1 removed.
+dot's walk-through (examples/dot, tests/flow/test_dot_example.py) runs dot 1–6 and checks
+their counters against C§17.
 """
 
 from __future__ import annotations

@@ -260,7 +260,7 @@ latency and II.
 SNAX-GVSoC: the design point is generated, built and run, and the program
 checks itself; everything goes to `out/flow/<name>/`, with `flow.log`. The
 manual loop is flow, reports and viewer, then a changed `--set`;
-`examples/loop1/` walks it, and `examples/dot/` is parked until M13.
+`examples/loop1/` walks it, and `examples/dot/` runs dot's six recipes.
 
 **Profile and trace** (D137, `run/`; C§7): SNAX-GVSoC's events converted,
 the trace at level `task`, `beat`, `stall` or `finegrained` (none at `off`),

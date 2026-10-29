@@ -248,6 +248,8 @@ puts one accelerator in its one slot, so two kinds of design point stop at
 `recipes/dot_1.json` is dot with `encapsulate` as its last step: one
 accelerator `dot` of the groups `mul` and `sum`, a task each (D148), which
 runs and checks itself (`forge counter mult_mul`, `forge counter sum_sum`).
+`examples/dot/` runs it and dot 2 to dot 6, one group of linked units each,
+with their counters.
 
 ## 5. The same path by hand
 

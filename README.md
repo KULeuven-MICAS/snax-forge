@@ -18,7 +18,7 @@ LLMs close the loop by editing the recipe or the platform and running again.
 | `docs/PAPER.md` | the paper plan |
 | `docs/RUN.md` | a design point from recipe to SNAX-GVSoC and snax_cluster's RTL, each command with its output |
 | `kernels/README.md` | the target kernels, staged |
-| `examples/` | walk-throughs of the flow: `loop1/` on SNAX-GVSoC; `dot/` parked until M13 |
+| `examples/` | walk-throughs of the flow: `loop1/` on SNAX-GVSoC; `dot/` dot's six recipes on SNAX-GVSoC |
 | `hw/chisel/README.md` | the Chisel accelerator blocks |
 
 # Getting started
