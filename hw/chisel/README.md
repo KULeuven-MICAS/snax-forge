@@ -35,8 +35,8 @@ hw/chisel/
     ├── main/scala/snax/forge/
     │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec
     │   ├── Datapaths.scala             # the datapath registry (blocks.json)
-    │   ├── ctrl/                       # NestCtrl, the group controller
-    │   ├── datapath/                   # ElementwiseLanes, TreeAccumulate
+    │   ├── ctrl/                       # GroupCtrl and its control model GroupRule; NestCtrl, its one-unit case
+    │   ├── datapath/                   # ElementwiseLanes, TreeAccumulate, Mac, SerialAccumulate, LinkBuffer
     │   ├── shell/                      # accelerator.json, <tag>_csr, _ctrl, _datapath, the wrapper
     │   ├── RepoPaths.scala             # out/hw and repository paths
     │   ├── elementwise/                # the typed ALU lane, the ops
@@ -66,8 +66,10 @@ module, with `DIR/emitted.json`:
   bit 0 set is its group's config (JOBS, JOB_BEATS), held while the group
   is busy; STATUS and COUNTER read from the controllers;
 - `<tag>_ctrl` (`AccCtrl`): per group `<tag>_<group>_ctrl` (`GroupCtrl`),
-  the start, the empty run, STATUS's sticky done, COUNTER and the busy and
-  done pins around one `NestCtrl` (SnaxUnit's rule, D147);
+  generated from the group's units and links: the start, the empty run,
+  STATUS's sticky done, COUNTER and the busy and done pins around its control
+  model `GroupRule` (snax-gvsoc's SnaxGroupRule, D147), built inside the
+  module with each unit's signals named after the unit;
 - `<tag>_datapath` (`AccDatapath`): the units' datapaths, data and the
   controller's pins only.
 
@@ -103,6 +105,19 @@ from the folder `SNAX_GVSOC_UNIT_CASES` names, e.g.
 chisel-test`; without it the spec is canceled. CI's chisel job sets it to
 the submodule's cases.
 
+## The group cases
+
+`GroupCasesSpec` drives `GroupCtrl` alone through snax-gvsoc's group cases
+(`tests/snax/group/cases/`, dot 2–6 at the C§17 formulas, backpressure, an
+input gap, JOBS 0): every cycle's outer valids and ready, each input's
+ready, each unit's fire and give, each buffer's occupancy, busy, and the run
+lines. `DatapathVectorsSpec` runs every catalogue datapath on the NumPy
+vectors of `tests/snax/datapath/vectors.txt`, as snax-gvsoc's `tb.cpp`
+reads them. They read the folders `SNAX_GVSOC_GROUP_CASES` and
+`SNAX_GVSOC_DATAPATH_VECTORS` name (`gvsoc/snax-gvsoc/tests/snax/group/cases`,
+`gvsoc/snax-gvsoc/tests/snax/datapath`); without them they are canceled.
+CI's chisel job sets both.
+
 ## The shell cases
 
 `ShellCasesSpec` drives vecadd's and vsum's `<tag>_shell_wrapper` through
@@ -128,6 +143,10 @@ from the documented behaviour, never from the Chisel code:
 | `NestCtrlSpec` | L ∈ {0, 1, 2} (L 2 with a two-register test datapath on the advance), II ∈ {1, 2}, T ∈ {1, 3, 4}, J ∈ {0, 1, 5}, input valids, output stalls | `NestModel`, SnaxUnit's rule (C§17) |
 | `ElementwiseLanesSpec` | in, op and out types, lanes, every op, data | `ElementwiseModel`, NumPy's rule (D143) |
 | `TreeAccumulateSpec` | in and out types, lanes, data, `fire` and `first` | lane sums from each `first`, each lane cast to the out type (the docstring) |
+| `MacSpec` | the three forms (accumulating, plain, plain with `regOut`), 2, 4, 8 lanes, int64/int32 signed and unsigned, a wider out type, data and enables | per lane p = cast_out(cast_op(a)·cast_op(b)), s ← first ? p : s + p, or p + c (C§17) |
+| `SerialAccumulateSpec` | 1, 2, 4, 8 lanes, in and out types, data, `read`, `lane`, `first` | acc ← (first ∧ lane 0) ? x_lane : acc + x_lane (C§17) |
+| `LinkBufferSpec` | depth 1, 2, 4, lanes, types, data, loads and takes as a ring | slot wslot loaded, slot rslot out (C§17) |
+| `GroupCtrlSpec` | chains of 2 and 3 units, L ∈ {0, 1, 2}, II ∈ {1, 2}, span ∈ {1, 2, 4}, T ∈ {1..4} fixed or from the start, 0–2 outer inputs, depth ∈ {0, 1, 2}, J ∈ {0, 1, 3}, T 0, starts while busy, input valids, output stalls | `GroupModel`, SnaxGroupRule (`snax_group.hpp`) |
 | `AccCsrRandomSpec` | 1 to 3 groups, folds or not; reads, writes and starts in and out of range, `rsp` and each start's ready, STATUS and COUNTER | the protocol in `AccCsr`'s docstring |
 | `ShellRandomSpec` | per fixture: J, T, empty runs, data at its types, streamer gaps and stalls, polled or held starts | the datapath models; STATUS and COUNTER as C§17 states them |
 | `FifoSlicerSpec`, `FifoPackerSpec` | types, words, lanes, data, input gaps, output stalls; the slicer into the packer | the element order of D142 (the docstrings) |
