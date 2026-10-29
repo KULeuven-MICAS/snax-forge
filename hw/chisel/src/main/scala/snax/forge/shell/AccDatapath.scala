@@ -20,12 +20,12 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
 
   /** One unit's side: its BRM ports' data, by BRM port, and its pins. */
   class UnitIo(u: AcceleratorSpec.UnitSpec, b: Datapaths.Built, d: Datapaths.Datapath) extends Record {
-    private val dirs = d.ports.toMap
+    private val dirs = d.ports.map(x => x.name -> x.dir).toMap
     val elements     = scala.collection.immutable.SeqMap.from(
       u.ports.map { case (brm, p) =>
         val t = chiselTypeOf(b.io.elements(p.port))
         brm -> (if (dirs(p.port) == "in") Input(t) else Output(t))
-      } ++ d.pins.map(n => n -> Input(Bool()))
+      } ++ d.pins.map(n => n.name -> Input(Bool()))
     )
     def apply(name: String): Data = elements(name)
   }
@@ -35,11 +35,11 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
   })
 
   for (((u, d, b), k) <- built.zipWithIndex) {
-    val dirs = d.ports.toMap
+    val dirs = d.ports.map(x => x.name -> x.dir).toMap
     for ((brm, p) <- u.ports) {
       if (dirs(p.port) == "in") b.io.elements(p.port) := io.units(k)(brm)
       else io.units(k)(brm)                           := b.io.elements(p.port)
     }
-    d.pins.foreach(n => b.io.elements(n) := io.units(k)(n))
+    d.pins.foreach(n => b.io.elements(n.name) := io.units(k)(n.name))
   }
 }

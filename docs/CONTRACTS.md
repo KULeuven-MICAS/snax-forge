@@ -1224,8 +1224,16 @@ generated from the description (F2), never written per variant:
 - per unit: its beat digit d_k (mod T_k), its latency pipeline, and a lane
   counter when span > 1;
 - per link of depth D ≥ 1: an occupancy count (a full bit at D = 1);
-- the outer ports' join, one rule per port: ready_k = armed ∧ ⋀_{j≠k}
-  valid_j;
+- the outer ports' join, per unit, as `SnaxGroupRule` runs it:
+
+      ready_k = fire_{u(k)},  fire_u ⇒ ⋀_{j ∈ outer(u)} valid_j
+
+  u(k) the unit that owns outer port k: each unit moves its outer beats only
+  in the cycle it fires, and valid never depends on ready. When only the
+  head has outer inputs (dot, matvec) this is B1's one rule for every port
+  (ready_k = armed ∧ ⋀_{j≠k} valid_j); it differs for a unit after the head
+  with an outer input (a plain Mac's `c`), whose beat waits for its own
+  unit's firing, not the head's;
 - between units, unit k gives into a link when it has room or the next unit
   takes in that cycle. At depth 0 with span W, the MAC holds its result until
   the reader's last lane.
