@@ -5,7 +5,7 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, Rand, Seeds, Sink, Source}
-import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, PortSpec, UnitSpec}
+import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortSpec, UnitSpec}
 
 /** `<tag>_csr` (`AccCsr`) under random requests, against a cycle-level model of the protocol in its docstring
   * (`Model`).
@@ -14,7 +14,8 @@ import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, PortSpec, UnitSpec}
   * driven for `Cycles` cycles: a core that offers a request after a random gap and holds it until taken (reads, writes
   * and starts of a random group, in range, just past the last CSR and anywhere in 32 bits), `rsp.ready` and each
   * group's `starts` ready stalled at random, the groups' STATUS and COUNTER random every cycle. Checked every cycle:
-  * `req.ready`, `rsp.valid`, `rsp.bits` while valid, each group's `starts.valid` and its JOBS and JOB_BEATS.
+  * `req.ready`, `rsp.valid`, `rsp.bits` while valid, each group's `starts.valid` and its JOBS and each JOB_BEATS in
+  * unit order (a group of 0, 1 or 2 folds: JOBS and 1, or a JOB_BEATS per fold).
   */
 class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
 
@@ -22,26 +23,36 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
   private val Cycles  = 300
   private val Mask32  = (BigInt(1) << 32) - 1
 
-  /** A layout of `folds.size` groups, group g a fold when `folds(g)`. */
-  private def layout(folds: Seq[Boolean]): AcceleratorSpec = {
+  /** A layout of `folds.size` groups, group g of `folds(g)` folds (0: one unit without a JOB_BEATS; 1: one fold; 2: two
+    * folds linked by a wire, a JOB_BEATS each).
+    */
+  private def layout(folds: Seq[Int]): AcceleratorSpec = {
     var at     = 0
     def next() = { at += 1; at - 1 }
-    val groups = folds.zipWithIndex.map { case (fold, g) =>
+    val groups = folds.zipWithIndex.map { case (n, g) =>
       val start  = CsrSpec("START", "rw", next(), Some(32))
       val jobs   = CsrSpec("JOBS", "rw", next(), Some(32))
-      val beats  = if (fold) Seq(CsrSpec("JOB_BEATS", "rw", next(), Some(32))) else Seq.empty
+      val ports  = Seq("a" -> PortSpec("in", "in", "int64", 1), "out" -> PortSpec("out", "out", "int64", 1))
+      val units  = (0 until (n max 1)).map { k =>
+        val beats = if (n > 0) Seq(CsrSpec("JOB_BEATS", "rw", next(), Some(32))) else Seq.empty
+        UnitSpec(s"u${g}_$k", "accumulate", "TreeAccumulate", ports, None, Map.empty, 1, 1, 1, beats)
+      }
       val status = CsrSpec("STATUS", "ro", next(), None)
       val count  = CsrSpec("COUNTER", "ro", next(), None)
-      val ports  = Seq("a" -> PortSpec("in", "int64", 1), "out" -> PortSpec("out", "int64", 1))
-      val unit   = UnitSpec(s"u$g", "accumulate", "TreeAccumulate", ports, None, Map.empty, 1, 1, beats)
-      GroupSpec(s"g$g", Seq(start, jobs, status, count), Seq(unit))
+      val links  = units
+        .sliding(2)
+        .collect { case Seq(a, b) =>
+          LinkSpec(s"l$g", a.name -> "out", b.name -> "a", 0)
+        }
+        .toSeq
+      GroupSpec(s"g$g", Seq(start, jobs, status, count), units, links)
     }
     AcceleratorSpec(
       "t",
       "p",
       "t",
       groups.map(g => g.units.head.name -> "a"),
-      groups.map(g => g.units.head.name -> "out"),
+      groups.map(g => g.units.last.name -> "out"),
       groups
     )
   }
@@ -52,8 +63,10 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
     val regs = Array.fill(csrs.size)(BigInt(0))
     var kept = Option.empty[BigInt] // a read's answer not yet taken
     def at(g: Int, n: String): Option[Int] = spec.groups(g).csr(n).map(_.offset)
-    def config(g: Int): (BigInt, BigInt) =
-      (regs(at(g, "JOBS").get), at(g, "JOB_BEATS").map(regs(_)).getOrElse(BigInt(1)))
+    def config(g: Int): (BigInt, Seq[BigInt]) = {
+      val beats = spec.groups(g).jobBeats.map(c => regs(c.offset))
+      (regs(at(g, "JOBS").get), if (beats.isEmpty) Seq(BigInt(1)) else beats)
+    }
 
     /** One cycle: req.ready, the response, which group starts; then the registers and the kept answer. */
     def cycle(
@@ -105,7 +118,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
     it should s"give req.ready, the response and each group's start as the protocol's model (seed $seed)" in
       Seeds.run(seed) { r =>
         for (l <- 0 until Layouts) {
-          val spec   = layout(Seq.fill(r.between(1, 3))(r.chance(0.5)))
+          val spec   = layout(Seq.fill(r.between(1, 3))(r.between(0, 2)))
           val groups = spec.groups.size
           val model  = new Model(spec)
           val reqs   = IndexedSeq.fill(Cycles)(request(r, spec))
@@ -138,10 +151,11 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
               assert(dut.io.rsp.valid.peek().litToBoolean == answer.isDefined, s"$clue: rsp.valid, the model $answer")
               answer.foreach(a => assert(dut.io.rsp.bits.data.peek().litValue == (a & Mask32), s"$clue: rsp.bits"))
               for (g <- 0 until groups) {
-                val v = dut.io.starts(g).valid.peek().litToBoolean
+                val v     = dut.io.starts(g).valid.peek().litToBoolean
                 assert(v == started.contains(g), s"$clue: group $g's start ${v}, the model ${started.mkString}")
                 assert(dut.io.starts(g).bits.jobs.peek().litValue == (configs(g)._1 & Mask32), s"$clue: $g's JOBS")
-                assert(dut.io.starts(g).bits.jobBeats.peek().litValue == (configs(g)._2 & Mask32), s"$clue: JOB_BEATS")
+                val beats = dut.io.starts(g).bits.jobBeats +: dut.io.starts(g).bits.beats.map(_.toSeq).getOrElse(Nil)
+                assert(beats.map(_.peek().litValue) == configs(g)._2.map(_ & Mask32), s"$clue: $g's JOB_BEATS")
               }
               core.fired(ready)
               dut.clock.step()

@@ -4,8 +4,6 @@ import scala.collection.immutable.SeqMap
 
 import chisel3._
 
-import snax.forge.Datapaths
-
 /** The wrapper's ports but the clock and reset, named as `snax_acc_wrapper.sv.tpl` connects `<tag>_shell_wrapper` with
   * `snax_disable_csr_manager` (C§17): the CSR request and response after `snax_csr_mux_demux`, then per input port k
   * `stream2acc_<k>_{data_i,valid_i,ready_o}` and per output port `acc2stream_<k>_{data_o,valid_o,ready_i}`; then per
@@ -51,11 +49,13 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * `accelerator.json` (D145).
   *
   * Three modules inside (D147): `<tag>_csr` (`AccCsr`, the CSR manager over the file's CSRs), `<tag>_ctrl` (`AccCtrl`,
-  * a controller per group, each with its shell's nest controller) and `<tag>_datapath` (`AccDatapath`, the units'
-  * datapaths). Each outer port, `stream2acc_<k>` for the k-th entry of the file's `inputs` and `acc2stream_<k>` for its
-  * `outputs`, is split: its data to the datapath, its valid and ready to the controller. A port's data is its lanes
-  * side by side, lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit dtype (num_slc = 64 / w lanes a word, D142), at
-  * least one 64-bit word (a fold's one-lane output); the streamer's packing, checked on snax_cluster's RTL (D123).
+  * a control unit per group) and `<tag>_datapath` (`AccDatapath`, the units' datapaths and the links' buffers). Only
+  * the outer ports reach the wrapper (a link stays inside the datapath): each, `stream2acc_<k>` for the k-th entry of
+  * the file's `inputs` and `acc2stream_<k>` for its `outputs`, is split, its data to its unit's datapath, its valid and
+  * ready to its group's control unit. The control unit's enables go to the datapaths' pins (`en`, a plain Mac's output
+  * register, is the unit's firing) and the buffers'. A port's data is its lanes side by side, lane i at bits `[w(i+1)-1
+  * : wi]` for the port's w-bit dtype (num_slc = 64 / w lanes a word, D142), at least one 64-bit word (a fold's one-lane
+  * output); the streamer's packing, checked on snax_cluster's RTL (D123).
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
@@ -94,31 +94,53 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
     csr.io.rsp.ready      := io.bool("csr_rsp_ready_i")
 
     for ((g, i) <- spec.groups.zipWithIndex) {
-      ctrl.io.groups(i).start <> csr.io.starts(i)
-      csr.io.status(i)        := ctrl.io.groups(i).status
-      csr.io.count(i)         := ctrl.io.groups(i).counter
-      io(s"${g.name}_busy_o") := ctrl.io.groups(i).busy
-      io(s"${g.name}_done_o") := ctrl.io.groups(i).done
-    }
+      val c = ctrl.io.groups(i)
+      c.start <> csr.io.starts(i)
+      csr.io.status(i)        := c.status
+      csr.io.count(i)         := c.counter
+      io(s"${g.name}_busy_o") := c.busy
+      io(s"${g.name}_done_o") := c.done
 
-    for ((u, k) <- spec.units.zipWithIndex) {
-      val c = ctrl.io.units(k)
-      val d = dp.io.units(k)
-      for (((j, brm), i) <- spec.ins(u.name).zipWithIndex) {
-        d(brm)                         := io.uint(s"stream2acc_${j}_data_i").asTypeOf(d(brm))
-        c.in(i).valid                  := io.bool(s"stream2acc_${j}_valid_i")
-        io(s"stream2acc_${j}_ready_o") := c.in(i).ready
+      // The outer ports, unit by unit in the streamer's order: data to the unit's datapath, handshake to the group's
+      // control unit (its inputs flat in unit order, its output the last unit's)
+      var at = 0
+      for ((u, k) <- g.units.zipWithIndex) {
+        val d = dp.io.units(spec.units.indexOf(u))
+        for ((j, brm)    <- spec.ins(u.name)) {
+          d(brm)                         := io.uint(s"stream2acc_${j}_data_i").asTypeOf(d(brm))
+          c.in(at).valid                 := io.bool(s"stream2acc_${j}_valid_i")
+          io(s"stream2acc_${j}_ready_o") := c.in(at).ready
+          at += 1
+        }
+        for ((j, brm)    <- spec.outs(u.name)) {
+          require(k == g.units.size - 1, s"${u.name}.$brm: an outer output of a unit before its group's last")
+          io(s"acc2stream_${j}_data_o")  := d(brm).asUInt
+          io(s"acc2stream_${j}_valid_o") := c.out.valid
+          c.out.ready                    := io.bool(s"acc2stream_${j}_ready_i")
+        }
+        val e = c.units(k)
+        for ((name, pin) <- d.elements if !u.ports.exists(_._1 == name))
+          pin := (name match {
+            case "fire" | "en" => e.fire
+            case "first"       => e.first
+            case "read"        => e.read
+            case "lane"        => e.lane
+            case "adv"         => e.adv
+            case other         => throw new IllegalArgumentException(s"${u.datapath}: unknown pin $other")
+          })
       }
-      for ((j, brm)      <- spec.outs(u.name)) {
-        io(s"acc2stream_${j}_data_o")  := d(brm).asUInt
-        io(s"acc2stream_${j}_valid_o") := c.out.valid
-        c.out.ready                    := io.bool(s"acc2stream_${j}_ready_i")
-      }
-      Datapaths(u.datapath).pins.map(_.name).foreach {
-        case "fire"  => d("fire")  := c.fire
-        case "first" => d("first") := c.first
-        case "adv"   => d("adv")   := c.adv
-        case other   => throw new IllegalArgumentException(s"${u.datapath}: unknown pin $other")
+
+      // The buffers' pins, from the group's control unit
+      for ((l, n) <- g.links.filter(_.depth > 0).zipWithIndex) {
+        val b = dp.io.buffers(spec.groups.take(i).map(_.links.count(_.depth > 0)).sum + n)
+        val e = c.links(n)
+        for ((name, pin) <- b.elements)
+          pin := (name match {
+            case "load"  => e.load
+            case "wslot" => e.wslot
+            case "rslot" => e.rslot
+            case other   => throw new IllegalArgumentException(s"${l.name}: unknown pin $other")
+          })
       }
     }
   }

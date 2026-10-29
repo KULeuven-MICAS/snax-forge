@@ -3,6 +3,25 @@ package snax.forge.ctrl
 import chisel3._
 import chisel3.util._
 
+/** A group control unit's ports (`GroupCtrl`): its start, STATUS, COUNTER and pins; its outer handshakes; each unit's
+  * and buffer's enables; the head's `fire`, `first` and `adv` (a one-unit group's whole) and the cycle's class.
+  */
+class GroupCtrlIO(desc: GroupDesc) extends Bundle {
+  val start   = Flipped(Decoupled(new NestConfig((desc.open.size - 1) max 0)))
+  val status  = Output(UInt(32.W))
+  val counter = Output(UInt(32.W))
+  val in      = Vec(desc.units.map(_.inputs).sum, new Handshake)
+  val out     = Flipped(new Handshake)
+  val units   = MixedVec(desc.units.map(u => new UnitEnables(u.span)))
+  val links   = MixedVec(desc.buffers.map(k => new LinkEnables(desc.depths(k))))
+  val fire    = Output(Bool())
+  val first   = Output(Bool())
+  val adv     = Output(Bool())
+  val busy    = Output(Bool())
+  val done    = Output(Bool())
+  val cls     = Output(UInt(2.W))
+}
+
 /** One group's control unit (D146, D147; C§17's Control), `<tag>_<group>_ctrl`, generated from the group's description
   * (`GroupDesc`): its START, STATUS and COUNTER around its control model, `GroupRule` (snax-gvsoc's SnaxGroupRule).
   *
@@ -37,24 +56,7 @@ class GroupCtrl(val desc: GroupDesc, tag: String) extends Module {
 
   override def desiredName: String = s"${tag}_${desc.name}_ctrl"
 
-  private val open = desc.open
-  private val ins  = desc.units.map(_.inputs).sum
-
-  val io = IO(new Bundle {
-    val start   = Flipped(Decoupled(new NestConfig((open.size - 1) max 0)))
-    val status  = Output(UInt(32.W))
-    val counter = Output(UInt(32.W))
-    val in      = Vec(ins, new Handshake)
-    val out     = Flipped(new Handshake)
-    val units   = MixedVec(desc.units.map(u => new UnitEnables(u.span)))
-    val links   = MixedVec(desc.buffers.map(k => new LinkEnables(desc.depths(k))))
-    val fire    = Output(Bool())
-    val first   = Output(Bool())
-    val adv     = Output(Bool())
-    val busy    = Output(Bool())
-    val done    = Output(Bool())
-    val cls     = Output(UInt(2.W))
-  })
+  val io = IO(new GroupCtrlIO(desc))
 
   private val nest = new GroupRule(desc)
 

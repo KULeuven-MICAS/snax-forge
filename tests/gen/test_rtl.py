@@ -47,6 +47,8 @@ DESIGNS = {
     "vsum_tree_i8": ("vsum_tree_i8", []),
     "vecmul_i32_i64": ("vecmul_i32_i64", []),
     "dot_1": ("dot_1", []),
+    "dot_4": ("dot_4", ["N=16"]),
+    "dot_6": ("dot_6", ["N=16"]),
 }
 
 
