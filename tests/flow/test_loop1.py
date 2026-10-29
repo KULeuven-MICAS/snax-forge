@@ -113,7 +113,8 @@ def test_the_cycles_do_not_depend_on_the_trace_level(runs):
 def test_the_vectors_lie_16_rows_over_all_32_banks(runs):
     _, rv = runs
     d = rv[DEFAULT]
-    assert d.cluster.banks == 32 and "16 bank\nrows long over all 32 banks" in text()
+    words = " ".join(text().split())  # the README's lines joined, however they wrap
+    assert d.cluster.banks == 32 and "16 bank rows long over all 32 banks" in words
     for r in d.regions:
         if r.memory == "l1":
             assert r.shape[0] * r.itemsize == 512 * 8 == 16 * 32 * d.cluster.bank_bytes
