@@ -3,11 +3,11 @@
 import importlib.util
 import subprocess
 import sys
-from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[1]
+from tests.helpers import REPO
+
 _spec = importlib.util.spec_from_file_location("md_reflow", REPO / "util" / "md_reflow.py")
 md_reflow = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(md_reflow)

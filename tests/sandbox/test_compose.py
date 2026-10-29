@@ -19,8 +19,7 @@ from snax_forge.sandbox import (
     unlink,
 )
 from snax_forge.sandbox.compose import LinkError, beats
-
-from .helpers import graph_dict
+from tests.helpers import graph_dict
 
 MUL = ("elementwise_mul", "chisel_tiled_spatial", "mul")
 TREE = ("accumulate", "chisel_adder_tree")

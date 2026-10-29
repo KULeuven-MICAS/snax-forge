@@ -16,8 +16,9 @@ from snax_forge.gen import GenError
 from snax_forge.gen import data as data_mod
 from snax_forge.gen.data import arrays, data_h, literal
 from snax_forge.lower.layout import Layout, moved_bytes
+from tests.helpers import bound_vsum
 
-from .helpers import bound_vecmul, bound_vsum, point
+from .helpers import bound_vecmul, point
 
 GRAPHS = {"vecadd": None, "vecmul": bound_vecmul, "vsum": bound_vsum}
 

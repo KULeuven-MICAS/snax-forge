@@ -31,6 +31,7 @@ from snax_forge.gen import generate
 from snax_forge.sandbox import Recipe
 from snax_forge.sandbox import __main__ as sandbox_cli
 from tests.design.helpers import REPO, SNAX_FORGE
+from tests.helpers import requires_submodule
 
 from .helpers import SUB, files, root
 
@@ -44,10 +45,7 @@ DESIGNS = [
     "matvec_1", "matvec_2", "matvec_3", "matvec_4", "matvec_5", "matvec_6",
 ]  # fmt: skip
 
-pytestmark = pytest.mark.skipif(
-    not (SUB / "snax").is_dir(),
-    reason="the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)",
-)
+pytestmark = requires_submodule
 
 
 def regenerate(tmp: Path, design: str) -> Path:

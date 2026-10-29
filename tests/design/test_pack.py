@@ -9,8 +9,9 @@ from snax_forge.design import Platform, instances, resolve
 from snax_forge.dfg import Graph
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe
+from tests.helpers import graph_dict
 
-from .helpers import REPO, SMALL16, accel_node, graph_dict, problems
+from .helpers import REPO, SMALL16, accel_node, problems
 from .helpers import design as paired
 
 

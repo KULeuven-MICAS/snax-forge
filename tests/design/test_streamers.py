@@ -6,16 +6,9 @@ from snax_forge.brm import Brm
 from snax_forge.design import Platform, instances, nest_spatial_bounds, resolve
 from snax_forge.dfg import Graph
 from tests.brm.helpers import affine_adder
+from tests.helpers import bound_vsum
 
-from .helpers import (
-    BOUND,
-    SMALL16,
-    VECADD_STREAMERS,
-    bound_matadd,
-    bound_vsum,
-    bound_w8,
-    platform_dict,
-)
+from .helpers import BOUND, SMALL16, VECADD_STREAMERS, bound_matadd, bound_w8, platform_dict
 
 
 def shell(platform: Platform, graph: Graph) -> dict:

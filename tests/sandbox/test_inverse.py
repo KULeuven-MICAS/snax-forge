@@ -22,8 +22,9 @@ from snax_forge.sandbox import (
 )
 from snax_forge.sandbox import transforms as tr
 from snax_forge.sandbox.__main__ import main
+from tests.helpers import graph_dict
 
-from .helpers import FIXTURES, REPO, graph, graph_dict, restricted_brm
+from .helpers import FIXTURES, REPO, graph, restricted_brm
 
 BIND = {
     "node": "add",

@@ -25,8 +25,9 @@ from snax_forge.sandbox import (
     unbind,
     unencapsulate,
 )
+from tests.helpers import graph_dict
 
-from .helpers import FIXTURES, REPO, graph, graph_dict
+from .helpers import FIXTURES, REPO, graph
 
 RECIPE = REPO / "recipes" / "dot_1.json"
 MUL = {

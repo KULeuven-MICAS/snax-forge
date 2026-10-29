@@ -13,14 +13,11 @@ from jsonschema import Draft7Validator, Draft202012Validator, ValidationError
 from snax_forge.brm import CONTROLLERS, INT_DTYPES
 from snax_forge.gen import generate
 from snax_forge.gen.schemas import NAMES, schema
+from tests.helpers import bound_vsum, requires_submodule
 
-from .helpers import SOURCE, SUB, bound_vsum, parsed, point, validate
+from .helpers import SOURCE, SUB, parsed, point, validate
 
 CLUSTER_SCHEMA = SUB / "sw" / "docs" / "schema" / "snitch_cluster.schema.json"
-needs_cluster_schema = pytest.mark.skipif(
-    not CLUSTER_SCHEMA.is_file(),
-    reason="the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)",
-)
 
 
 @pytest.fixture(scope="module", params=["vecadd", "vsum"])
@@ -93,7 +90,7 @@ def _resolved(node, top, folder: Path):
     return node
 
 
-@needs_cluster_schema
+@requires_submodule
 def test_the_cluster_file_validates_against_snax_clusters_schema(folder):
     """clustergen's check (util/clustergen/cluster.py: Draft 7 on the cluster), on the file with
     its refs resolved, the snax_acc_cfg entries included."""
@@ -111,7 +108,7 @@ def test_the_cluster_file_validates_against_snax_clusters_schema(folder):
         validator.validate(_resolved(cluster, cluster, folder)["cluster"])
 
 
-@needs_cluster_schema
+@requires_submodule
 def test_the_cluster_file_is_the_source_outside_the_slot_and_the_clusters_name(folder):
     """The writer changes the slot, cluster.name and its entry in cluster.bender_target, which
     the source already names snax_forge_cluster."""

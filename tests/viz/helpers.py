@@ -14,8 +14,7 @@ from urllib.request import urlopen
 
 from snax_forge.viz.server import make_server
 from tests.flow.helpers import stubbed_flow
-
-REPO = Path(__file__).resolve().parents[2]
+from tests.helpers import REPO
 
 
 def run_dir(out: Path, name: str = "vecadd", level: str = "task", **kw) -> Path:

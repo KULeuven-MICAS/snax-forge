@@ -13,10 +13,8 @@ from snax_forge.dfg import DfgError, ExecutionError, Graph, execute
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.dfg.pad import pad_value, padded_shape
 from snax_forge.sandbox import Recipe, apply_recipe
+from tests.helpers import FIXTURES, REPO
 
-from .helpers import FIXTURES
-
-REPO = FIXTURES.parents[2]
 execute_mod = sys.modules["snax_forge.dfg.execute"]  # the package exports the function by name
 
 

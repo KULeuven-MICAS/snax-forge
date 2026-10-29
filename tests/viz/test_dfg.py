@@ -21,10 +21,9 @@ from snax_forge.dfg import Graph
 from snax_forge.viz.dfg.__main__ import main
 from snax_forge.viz.dfg.api import GraphSet, entry_names, expand, graph_view, load_entry
 from snax_forge.viz.dfg.server import make_dfg_server
+from tests.helpers import FIXTURES, REPO
 
-from .helpers import REPO, get
-
-FIXTURES = REPO / "tests" / "dfg" / "fixtures"
+from .helpers import get
 
 
 def view(path: Path) -> dict:

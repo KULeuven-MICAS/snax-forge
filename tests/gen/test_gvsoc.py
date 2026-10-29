@@ -23,24 +23,11 @@ from snax_forge.gen.blocks import Port, elementwise_lanes, tree_accumulate
 from snax_forge.gen.data import array_text, arrays
 from snax_forge.lower import c as c_mod
 from tests.brm.helpers import IMPL
-from tests.design.helpers import REPO, SNAX_FORGE, chained, graph_dict
+from tests.design.helpers import REPO, SNAX_FORGE, chained
+from tests.helpers import bound_vsum, graph_dict, requires_submodule
 
-from .helpers import (
-    SOURCE,
-    SUB,
-    bound_vecmul,
-    bound_vsum,
-    one_unit,
-    parsed,
-    point,
-    snax_cfg,
-    snax_streamer,
-)
+from .helpers import SOURCE, SUB, bound_vecmul, one_unit, parsed, point, snax_cfg, snax_streamer
 
-needs_submodule = pytest.mark.skipif(
-    not (SUB / "snax" / "snax_cfg.py").exists(),
-    reason="the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)",
-)
 FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"]
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
 SLOT = ("snax_forge_core_template", "snax_acc_cfg", 0)
@@ -196,7 +183,7 @@ def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
     assert list(cluster) == list(source)  # the source's key order
 
 
-@needs_submodule
+@requires_submodule
 def test_snax_gvsocs_reader_takes_the_folder(w4):
     """snax-gvsoc's snax_cfg.load: the whole-file refs resolve, the slot's counts agree, and
     accelerator.json reads as written (its CSRs in CSR order)."""
@@ -222,7 +209,7 @@ def test_snax_gvsocs_reader_takes_the_folder(w4):
     assert (cfg.tcdm.size, cfg.tcdm.banks, cfg.tcdm.sparse_interconnect) == (131072, 32, True)
 
 
-@needs_submodule
+@requires_submodule
 def test_streamer_csrs_are_snax_streamers(w4):
     """The generator's copies of snax_streamer.py's nb_csrs and snax_cfg.py's
     streamer_channels give what the real ones give."""
@@ -641,9 +628,7 @@ def test_the_command(tmp_path, capsys, monkeypatch):
     assert "[gen.source]" in capsys.readouterr().err
 
 
-@pytest.mark.skipif(
-    not (SUB / "snax").is_dir(), reason="the snax-gvsoc submodule is not checked out"
-)
+@requires_submodule
 def test_the_constants_are_snax_accelerators():
     text = (SUB / "snax" / "snax_accelerator.py").read_text()
     assert "SNAX_CSR_FIRST = 0x3C0" in text and "SNAX_ACC_CSR_LAST = 0x5FD" in text

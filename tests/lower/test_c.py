@@ -18,8 +18,9 @@ from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.data import arrays as data_arrays
 from snax_forge.lower import CError, TaskList, main_c, task_list
 from snax_forge.lower.c import cores, job_values
-from tests.design.helpers import chained, graph_dict
-from tests.gen.helpers import SUB, bound_vecmul, bound_vsum, point
+from tests.design.helpers import chained
+from tests.gen.helpers import SUB, bound_vecmul, point
+from tests.helpers import SUBMODULE_MISSING, bound_vsum, graph_dict
 
 POINT = "out/design/vecadd/design_point.json"
 
@@ -392,7 +393,7 @@ def _riscv_clang() -> str | None:
     if CLANG is None or NM is None:
         return "no clang or llvm-nm on PATH (the image's, snax_cluster's toolchain)"
     if not (SW / "snRuntime").is_dir():
-        return "the snax-gvsoc submodule is not checked out (git submodule update --init gvsoc/snax-gvsoc)"
+        return SUBMODULE_MISSING
     probe = subprocess.run([CLANG, "-print-targets"], capture_output=True, text=True, check=False)
     if "riscv32" not in probe.stdout:
         return f"{CLANG} has no riscv32 target"

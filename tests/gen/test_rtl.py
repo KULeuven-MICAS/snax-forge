@@ -29,10 +29,11 @@ from snax_forge.gen.rtl import (
     write_fixture,
 )
 from tests.design.helpers import REPO
+from tests.helpers import bound_vsum
 
-from .helpers import bound_vsum, designed, point, validate
+from .helpers import designed, point, validate
 
-FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
+RTL_FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
 # Each fixture: its recipe and --set
 DESIGNS = {
     "vecadd": ("vecadd", []),
@@ -177,7 +178,7 @@ def test_the_fixture_is_reproduced(tmp_path, design):
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
         files = write_fixture(path, out, tmp_path)
-    fixture = FIXTURES / design
+    fixture = RTL_FIXTURES / design
     assert sorted(files) == sorted(f.name for f in fixture.iterdir())
     for f in files:
         assert (out / f).read_bytes() == (fixture / f).read_bytes(), f
@@ -207,7 +208,7 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
 def test_a_linked_fixtures_counter_is_c17s_cycles():
     """A linked group's counter is C§17's Cycles for its shape: at T 4, dot's J 1 row of C§17's
     table and matvec's J 2 (2 × 16, W 4); a shape C§17 does not state is refused."""
-    got = {d: json.loads((FIXTURES / d / "vectors.json").read_text())["tasks"][0]["counter"]
+    got = {d: json.loads((RTL_FIXTURES / d / "vectors.json").read_text())["tasks"][0]["counter"]
            for d in ("dot_2", "dot_3", "dot_4", "dot_5", "dot_6", "matvec_4", "matvec_5",
                      "matvec_6")}  # fmt: skip
     assert got == {"dot_2": 6, "dot_3": 5, "dot_4": 6, "dot_5": 9, "dot_6": 10, "matvec_4": 10,
@@ -224,7 +225,7 @@ def test_a_linked_fixtures_counter_is_c17s_cycles():
 
 def test_a_fixtures_tasks_give_jobs_and_job_beats():
     """vectors.json's CSR values are the program's (lower/c.py's job_values)."""
-    tasks = {d: json.loads((FIXTURES / d / "vectors.json").read_text())["tasks"][0]["csrs"]
+    tasks = {d: json.loads((RTL_FIXTURES / d / "vectors.json").read_text())["tasks"][0]["csrs"]
              for d in ("vecadd", "vsum_tree_i32")}  # fmt: skip
     assert tasks == {"vecadd": {"JOBS": 16}, "vsum_tree_i32": {"JOBS": 1, "JOB_BEATS": 16}}
 

@@ -14,11 +14,11 @@ Sections:
 """
 
 import re
-from pathlib import Path
 
 import pytest
 
-REPO = Path(__file__).resolve().parents[1]
+from tests.helpers import REPO, SUBMODULE_MISSING
+
 DOC = REPO / "docs" / "CONTRACTS.md"
 # The snax-gvsoc submodule: CI's python, chisel and gvsoc jobs fetch it
 SUBMODULE = "gvsoc/snax-gvsoc/"
@@ -59,7 +59,7 @@ def test_snippet_is_verbatim(i):
     source, block = snippets()[i]
     path = REPO / source
     if source.startswith(SUBMODULE) and not (REPO / SUBMODULE / "snax").is_dir():
-        pytest.skip(f"{source}: the snax-gvsoc submodule is not checked out")
+        pytest.skip(f"{source}: {SUBMODULE_MISSING}")
     assert path.is_file(), f"{source}: no such file"
     text = path.read_text()
     if source.endswith(".jsonl"):

@@ -27,7 +27,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-FIXTURES = Path(__file__).resolve().parent / "fixtures"
+from tests.helpers import FIXTURES
+
 NAMES = ("vecadd", "vecadd_split", "vecadd_accelerated")  # the vecadd steps
 ALL = (*NAMES, "dot", "dot_accelerated", "vecmul", "vsum")
 

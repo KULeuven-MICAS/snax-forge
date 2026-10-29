@@ -9,16 +9,15 @@ the way a person or an LLM writes them.
 from __future__ import annotations
 
 from functools import cache
-from pathlib import Path
 from typing import Any
 
 from snax_forge.design import DesignPoint, run_checks
 from snax_forge.dfg import Graph
 from snax_forge.lower import Configure, Start, Sync, TaskList, placed_waits
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.design.helpers import FIXTURES, design
+from tests.design.helpers import design
+from tests.helpers import FIXTURES, REPO
 
-REPO = Path(__file__).resolve().parents[2]
 # vecadd's task list on snax_forge, as derived and checked in for tests/run (C§9)
 VECADD_TASKS = REPO / "tests" / "run" / "fixtures" / "vecadd" / "tasks.json"
 
