@@ -72,7 +72,6 @@ from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
 from snax_forge.lower.c import job_values, job_writes
 from snax_forge.lower.derive import task_list
-from snax_forge.lower.tasks import Configure
 
 from .accelerator import ACCELERATOR_JSON, Accelerator, Group, Link, Unit, units
 from .blocks import GenError
@@ -289,7 +288,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     """``vectors.json``: the data and tasks the Chisel specs drive the wrapper with; see the
     module doc."""
     shown, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    tasks = accel_tasks(point)
+    tasks = task_list(point).accel_steps()
     if len(tasks) != 1:
         raise GenError("gen.instances", f"{len(tasks)} accelerator tasks; vectors.json has one")
     (task,) = tasks
@@ -324,11 +323,6 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     }  # fmt: skip
 
 
-def accel_tasks(point: Any) -> list[Configure]:
-    """The accelerator tasks of the design point's task list, in order."""
-    return [s for s in task_list(point).steps if isinstance(s, Configure) and s.type == "accel"]
-
-
 def write_fixture(design_point: str | Path, out_dir: str | Path,
                   root: str | Path | None = None) -> list[str]:  # fmt: skip
     """A fixture of hw/chisel's specs: ``accelerator.json``, the streamer hjson and, for one
@@ -341,7 +335,7 @@ def write_fixture(design_point: str | Path, out_dir: str | Path,
         (out / streamer).write_text((Path(gen) / streamer).read_text())
     files = [ACCELERATOR_JSON, streamer]
     _, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    if len(accel_tasks(point)) == 1:
+    if len(task_list(point).accel_steps()) == 1:
         (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
         files.append(VECTORS_JSON)
     return files

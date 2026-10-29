@@ -152,7 +152,7 @@ from snax_forge.design.streamers import instance_nodes, streamer_name
 from snax_forge.lower import CError
 from snax_forge.lower.c import MAIN_C, job_writes, main_c, task_beats
 from snax_forge.lower.derive import task_list
-from snax_forge.lower.tasks import Configure, TaskList
+from snax_forge.lower.tasks import TaskList
 
 from .accelerator import ACCELERATOR_JSON, Accelerator, describe, units
 from .blocks import GenError, port_dtype
@@ -281,9 +281,7 @@ def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Accelerator) 
     several = len(acc.groups) > 1
     fixed = acc.fixed_folds
     out = []
-    for s in tasks.steps:
-        if not (isinstance(s, Configure) and s.type == "accel"):
-            continue
+    for s in tasks.accel_steps():
         group = next((g for g in acc.groups if g.name == s.component and len(g.units) > 1), None)
         mine = [u.name for u in group.units] if group else [s.component]
         if not set(mine) <= set(found):

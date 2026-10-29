@@ -251,6 +251,14 @@ class TaskList(JsonFile):
         """Every task by name."""
         return {s.task_name: s for s in self.steps if isinstance(s, Configure)}
 
+    def of_type(self, kind: str) -> list[Configure]:
+        """The tasks of one type (``dma``, ``streamer``, ``accel``), in order."""
+        return [s for s in self.steps if isinstance(s, Configure) and s.type == kind]
+
+    def accel_steps(self) -> list[Configure]:
+        """The accelerator tasks, in order."""
+        return self.of_type("accel")
+
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "steps": [s.to_dict() for s in self.steps]}
 

@@ -76,7 +76,7 @@ import re
 from collections.abc import Sequence
 from typing import Any
 
-from snax_forge.lower.tasks import Configure, TaskList
+from snax_forge.lower.tasks import TaskList
 
 from .beats import Context, beat_events, beat_invariants
 from .cluster import DMA, Cluster, core_name, linked
@@ -184,13 +184,11 @@ def window(lines: Sequence[tuple[str, Line]], cluster: Cluster, total_cycles: in
 
 
 def _tasks(tasks: TaskList, kind: str, component: str) -> list[str]:
-    return [s.task_name for s in tasks.steps
-            if isinstance(s, Configure) and s.type == kind and s.component == component]  # fmt: skip
+    return [s.task_name for s in tasks.of_type(kind) if s.component == component]
 
 
 def _dma_tasks(tasks: TaskList) -> list[tuple[str, str]]:
-    return [(s.task_name, str(s.values.get("direction"))) for s in tasks.steps
-            if isinstance(s, Configure) and s.type == "dma"]  # fmt: skip
+    return [(s.task_name, str(s.values.get("direction"))) for s in tasks.of_type("dma")]
 
 
 def _need(names: list[str], k: int, what: str) -> str:
