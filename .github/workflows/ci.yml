@@ -120,8 +120,6 @@ jobs:
           ls -la out/hw
           test -f out/hw/ElementwiseLanes_i32xi32_i32_i32_n4_add.sv
           test -f out/hw/TreeAccumulate_i32_i64_n4.sv
-          test -f out/hw/NestCtrl_l0_ii1_in2.sv
-          test -f out/hw/NestCtrl_l1_ii1_in1.sv
           test -f out/hw/FifoSlicer_w2_i8_n4.sv
           test -f out/hw/FifoPacker_n4_i8_w2.sv
 

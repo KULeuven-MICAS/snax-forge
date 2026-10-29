@@ -97,9 +97,13 @@ case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link]) {
   def buffers: Seq[Int] = links.indices.filter(links(_).depth > 0)
 }
 
-/** A start resolved: JOBS and each unit's T (a unit with a fixed T keeps its constant: its entry is read only by the
-  * empty run's check).
-  */
+/** A Decoupled port split in two: its data goes to the datapath, its valid and ready to the controller. */
+class Handshake extends Bundle {
+  val valid = Input(Bool())
+  val ready = Output(Bool())
+}
+
+/** A start resolved: JOBS and each unit's T (a unit with a fixed T keeps its constant: its entry is not read). */
 class GroupConfig(n: Int) extends Bundle {
   val jobs = UInt(32.W)
   val ts   = Vec(n, UInt(32.W))
@@ -130,15 +134,14 @@ class LinkEnables(depth: Int) extends Bundle {
 /** The control model of a group (D147; C§17's Control): the same rule as SnaxGroupRule (snax-gvsoc's
   * `snax/snax_group.hpp`), a register only for what changes at run time (the rules at the top of the class), over
   * datapaths of data and enables only. Not a module: it builds its registers and logic in the module that makes it
-  * (`GroupCtrl`, `<tag>_<group>_ctrl`; `NestCtrl`, its one-unit case, with B1's ports), which drives `io.config`, the
-  * outer valids and `io.out.ready`, and reads the rest. Its per-unit signals are named after the unit (`<unit>_fire`,
-  * `<unit>_d`, ...).
+  * (`GroupCtrl`, `<tag>_<group>_ctrl`), which drives `io.config` (a start that runs: `GroupCtrl` holds a start while
+  * busy and ends the empty run itself), the outer valids and `io.out.ready`, and reads the rest. Its per-unit signals
+  * are named after the unit (`<unit>_fire`, `<unit>_d`, ...).
   *
   * A start of JOBS and each unit's T: the sink gives R = JOBS results, and a unit k before its successor s gives R_k =
   * R_s · T_s (each firing of s takes one of k's results), one on every T_k-th firing (its beat digit d_k = T_k − 1), so
-  * it fires n_k = R_k · T_k times. JOBS 0 or any T 0 is the empty run: taken, nothing runs (`GroupCtrl` ends it without
-  * starting this). Busy from the cycle after the start to the run's last cycle E, the sink's R-th push, where `done` is
-  * high.
+  * it fires n_k = R_k · T_k times. JOBS 0 or any T 0 is the empty run, which `GroupCtrl` ends without starting this.
+  * Busy from the cycle after the start to the run's last cycle E, the sink's R-th push, where `done` is high.
   *
   * Each cycle is decided in two passes over the units in topological order, as `SnaxGroupRule::step()`: forward, what
   * each unit offers on its output whatever its room (its head, or at L 0 a firing that gives), so each knows whether
@@ -172,7 +175,7 @@ class GroupRule(val desc: GroupDesc) {
   private val owner = desc.output
 
   val io = Wire(new Bundle {
-    val config = Flipped(Decoupled(new GroupConfig(n)))
+    val config = Flipped(Valid(new GroupConfig(n)))
     val in     = MixedVec(descs.map(u => Vec(u.inputs, new Handshake)))
     val out    = Flipped(new Handshake)
     val units  = MixedVec(descs.map(u => new UnitEnables(u.span)))
@@ -303,8 +306,6 @@ class GroupRule(val desc: GroupDesc) {
   io.done := done
   io.busy := busy
 
-  io.config.ready := !busy
-
   // The registers, as step() (the backward pass the pipeline, the II and the lane; then the buffers) and start() (the
   // II gap carries over) change them
   for (k <- 0 until n) {
@@ -332,11 +333,10 @@ class GroupRule(val desc: GroupDesc) {
     occ(i) := occ(i) + push(from) - fire(to)
   }
 
-  when(io.config.fire) {
-    val c     = io.config.bits
-    val t     = (0 until n).map(k => descs(k).fixedT.map(_.U(32.W)).getOrElse(c.ts(k)))
-    val empty = c.jobs === 0.U || t.map(_ === 0.U).reduce(_ || _)
-    busy := !empty
+  when(io.config.valid) {
+    val c = io.config.bits
+    val t = (0 until n).map(k => descs(k).fixedT.map(_.U(32.W)).getOrElse(c.ts(k)))
+    busy := true.B
     for (k <- 0 until n if descs(k).fixedT.isEmpty) ts(k) := c.ts(k)
     // From the sink back, as start(): the sink's R = JOBS, R_k = R_s · T_s for k's successor s; the registers' values
     val r = Wire(Vec(n, UInt(32.W)))

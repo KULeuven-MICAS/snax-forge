@@ -1,6 +1,6 @@
 # SNAX-FORGE Chisel datapaths
 
-Hardware side of SNAX-FORGE: a hand-written library of datapaths and the nest controller, their chiseltest specs, and `Emit`, which elaborates a catalogue of configurations to SystemVerilog and a design point's accelerator from its `accelerator.json` (C§17, GEN1). It is a project of its own: nothing here imports `snax_forge/`, and the Python side calls it only through `pixi run gen-rtl`. The datapaths are the reference implementations of the BRMs (`elementwise_add` names `ElementwiseLanes`, `accumulate` `TreeAccumulate`).
+Hardware side of SNAX-FORGE: a hand-written library of datapaths and the group control unit, their chiseltest specs, and `Emit`, which elaborates a catalogue of configurations to SystemVerilog and a design point's accelerator from its `accelerator.json` (C§17, GEN1). It is a project of its own: nothing here imports `snax_forge/`, and the Python side calls it only through `pixi run gen-rtl`. The datapaths are the reference implementations of the BRMs (`elementwise_add` names `ElementwiseLanes`, `accumulate` `TreeAccumulate`).
 
 ## Why these versions
 
@@ -20,7 +20,7 @@ hw/chisel/
     ├── main/scala/snax/forge/
     │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec
     │   ├── Datapaths.scala             # the datapath registry (blocks.json)
-    │   ├── ctrl/                       # GroupCtrl and its control model GroupRule; NestCtrl, its one-unit case
+    │   ├── ctrl/                       # GroupCtrl and its control model GroupRule
     │   ├── datapath/                   # ElementwiseLanes, TreeAccumulate, Mac, SerialAccumulate, LinkBuffer
     │   ├── shell/                      # accelerator.json, <tag>_csr, _ctrl, _datapath, the wrapper
     │   ├── RepoPaths.scala             # out/hw and repository paths
@@ -67,8 +67,6 @@ Every module has a spec; the random ones drive it with seeded random data, confi
 
 | Spec | Random | Model |
 |---|---|---|
-| `NestValidSpec` | L ∈ {0, 1, 2}, II, J, T, input valids, output stalls; `out.ready` toggled within each cycle | `out.valid` unchanged by it (Conventions) |
-| `NestCtrlSpec` | L ∈ {0, 1, 2} (L 2 with a two-register test datapath on the advance), II ∈ {1, 2}, T ∈ {1, 3, 4}, J ∈ {0, 1, 5}, input valids, output stalls | `NestModel`, SnaxUnit's rule (C§17) |
 | `ElementwiseLanesSpec` | in, op and out types, lanes, every op, data | `ElementwiseModel`, NumPy's rule (D143) |
 | `TreeAccumulateSpec` | in and out types, lanes, data, `fire` and `first` | lane sums from each `first`, each lane cast to the out type (the docstring) |
 | `MacSpec` | the three forms (accumulating, plain, plain with `regOut`), 2, 4, 8 lanes, int64/int32 signed and unsigned, a wider out type, data and enables | per lane p = cast_out(cast_op(a)·cast_op(b)), s ← first ? p : s + p, or p + c (C§17) |
@@ -102,7 +100,7 @@ Elaborated SystemVerilog goes to `out/hw/` (gitignored). RTL is never committed 
 
 ## The two archetypes
 
-`ElementwiseLanes` and `TreeAccumulate` are the two distinct hardware shapes the toolchain has to cover, the shapes of `vecadd` and `dot` in `kernels/polybench/` among the staged kernels; both are data and enables only, under the nest controller (D147):
+`ElementwiseLanes` and `TreeAccumulate` are the two distinct hardware shapes the toolchain has to cover, the shapes of `vecadd` and `dot` in `kernels/polybench/` among the staged kernels; both are data and enables only, under their group's control unit (D147):
 
 **Elementwise (`ElementwiseLanes`, cf. `vecadd.py`).** A beat in, a beat out, L = 0, II = 1, no pins. Stateless. Chains freely with a downstream consumer, because each output element is produced in producer order and read exactly once.
 
@@ -114,8 +112,8 @@ Everything on the W11–W14 path is a composition of these two plus a typed ALU:
 
 - **Random tests for every module.** Each Chisel module gets a seeded random spec against a Scala model (Tests above): not necessarily comprehensive, but its function under random data and random stalls.
 - **Elastic everywhere.** Every port is `Decoupled`. Because the SDFG has already fixed allocation, schedule and binding, latency balancing is the only residual problem, and ready/valid turns it from a correctness obligation into a throughput knob. A module may stall; it may never produce a wrong answer because it stalled.
-- **`valid` never depends on `ready`.** `ready` may depend on other channels' `valid` (that is how a join works). The reverse deadlocks. `NestValidSpec` tests it for the nest controller at every latency.
-- **No internal storage, no control in a datapath.** Datapaths see data in flight only; address generation and buffering belong to the streamer, and valid, ready and counting to the nest controller. Reduction accumulators are the sanctioned exception to storage — they hold a scalar, not a tile.
+- **`valid` never depends on `ready`.** `ready` may depend on other channels' `valid` (that is how a join works). The reverse deadlocks. `GroupCtrlSpec` checks it every cycle, for every group it draws.
+- **No internal storage, no control in a datapath.** Datapaths see data in flight only; address generation and buffering belong to the streamer, and valid, ready and counting to the group's control unit. Reduction accumulators are the sanctioned exception to storage — they hold a scalar, not a tile.
 - **Typed lanes, a `UInt` ALU.** A block's ports are lanes of NumPy's types (`IntType`: `SInt` signed, `UInt` unsigned), fixed at elaboration. Each operand is extended to the op type by its own signedness, the op runs on `UInt` bits at that width (two's complement wraps alike; min and max compare by the op type's signedness), and the result is extended or wrapped into the output type (D143).
 - **Width and lane count come from the caller** (`accelerator.json` through the catalogue's fill rule), never from a default. The defaults in these constructors exist so the specs can run standalone.
 

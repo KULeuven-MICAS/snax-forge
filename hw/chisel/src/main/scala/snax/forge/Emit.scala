@@ -6,7 +6,6 @@ import scala.jdk.CollectionConverters._
 
 import chisel3.RawModule
 import circt.stage.ChiselStage
-import snax.forge.ctrl.NestCtrl
 import snax.forge.datapath.{ElementwiseLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.{AcceleratorSpec, ShellWrapper}
@@ -29,7 +28,7 @@ import snax.forge.stream.{FifoPacker, FifoSlicer}
   * {{{
   * pixi run chisel-gen                        # every target
   * pixi run chisel-gen -- --list              # names only, no elaboration
-  * pixi run chisel-gen -- NestCtrl            # substring match, so both controller configs
+  * pixi run chisel-gen -- Fifo                # substring match, so both parked stream blocks
   * pixi run chisel-gen -- --out /tmp/rtl Lanes
   * pixi run chisel-gen -- --describe          # the datapath catalogue (Datapaths), as blocks.json holds it
   * pixi run chisel-gen -- --spec out/rtl/vecadd/accelerator.json   # the accelerator of an accelerator.json (gen-rtl)
@@ -65,8 +64,8 @@ object Emit {
 
   private val Int32 = Seq("int32", "int32")
 
-  /** Everything the emitter knows how to build on its own, apart from `--spec`: the catalogue's datapaths (D147), the
-    * nest controller at the latencies they run at, and the parked stream blocks.
+  /** Everything the emitter knows how to build on its own, apart from `--spec`: the catalogue's datapaths (D147) and
+    * the parked stream blocks.
     */
   private val catalogue: Seq[Target] = Seq(
     Target(
@@ -80,12 +79,6 @@ object Emit {
       "datapath: 4 lanes of int32 into an int64 sum (L 1, pins fire and first)",
       () => new TreeAccumulate(inType = "int32", outType = "int64", lanes = 4)
     ),
-    Target(
-      "NestCtrl-l0",
-      "the nest controller of an elementwise unit: L 0, II 1, two inputs",
-      () => new NestCtrl(0, 1, 2)
-    ),
-    Target("NestCtrl-l1", "the nest controller of a fold: L 1, II 1, one input", () => new NestCtrl(1, 1, 1)),
     // Built and parked (D142): not in the datapath catalogue, emitted on their own.
     Target(
       "FifoSlicer",
@@ -128,7 +121,7 @@ object Emit {
 
     // No selector means everything, which is what `pixi run chisel-gen` does
     // and what CI depends on. A selector is a case-insensitive substring, so
-    // "NestCtrl" picks up every controller configuration without exact spelling.
+    // "Fifo" picks up both stream blocks without exact spelling.
     val chosen =
       if (selectors.isEmpty) catalogue
       else catalogue.filter(t => selectors.exists(s => t.label.toLowerCase.contains(s.toLowerCase)))

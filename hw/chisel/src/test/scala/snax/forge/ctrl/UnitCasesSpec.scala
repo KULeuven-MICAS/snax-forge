@@ -10,9 +10,9 @@ import snax.forge.SnaxUnitCases.{Case, RunLine}
 import snax.forge.datapath.{ElementwiseLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 
-/** A unit case's hardware: a group controller (`GroupCtrl`, its shell's `NestCtrl`) and the datapath of the case's
-  * shape: two inputs at L 0 `ElementwiseLanes`, one input at L 1 `TreeAccumulate`, at the case's `types` (int64 without
-  * them), lanes and op; any other shape (L 1 or 2 with two inputs) the controller alone, no data.
+/** A unit case's hardware: a one-unit group's control unit (`GroupCtrl`) and the datapath of the case's shape: two
+  * inputs at L 0 `ElementwiseLanes`, one input at L 1 `TreeAccumulate`, at the case's `types` (int64 without them),
+  * lanes and op; any other shape (L 1 or 2 with two inputs) the controller alone, no data.
   */
 class UnitHarness(val c: Case) extends Module {
   private val ctrl = Module(new GroupCtrl(c.latency, c.ii, c.inputs, "unit", "case"))

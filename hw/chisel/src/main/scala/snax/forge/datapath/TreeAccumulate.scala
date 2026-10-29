@@ -9,8 +9,8 @@ import snax.forge.IntType
   * Data and enables only: no valid, ready or counter. Each input beat is `lanes` elements of `inType`; each is cast to
   * `outType` (NumPy's fold: sign-extended from a signed `inType`, zero-extended from an unsigned one, D143) and a
   * combinational tree of `lanes` → 1 adders sums them, wrapping at `outType`. On `fire` the register `acc` takes the
-  * beat's sum when `first` (a job's first beat) and adds it otherwise; `out` is `acc`. Its nest controller
-  * (`ctrl.NestCtrl`, L 1) pushes `out` in the cycle after a job's last beat fires, and may fire the next job's first
+  * beat's sum when `first` (a job's first beat) and adds it otherwise; `out` is `acc`. Its group's control unit
+  * (`ctrl.GroupCtrl`, L 1) pushes `out` in the cycle after a job's last beat fires, and may fire the next job's first
   * beat in that same cycle, since `acc` changes only at the cycle's end: no drain cycle.
   *
   * @param inType

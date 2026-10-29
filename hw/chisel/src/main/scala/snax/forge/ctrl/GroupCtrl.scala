@@ -3,6 +3,15 @@ package snax.forge.ctrl
 import chisel3._
 import chisel3.util._
 
+/** A start as `<tag>_csr` sends it (C§17): JOBS, then each JOB_BEATS in unit order, `jobBeats` the first (1 when the
+  * group has none), `beats` the rest (`more` of them).
+  */
+class NestConfig(val more: Int = 0) extends Bundle {
+  val jobs     = UInt(32.W)
+  val jobBeats = UInt(32.W)
+  val beats    = if (more > 0) Some(Vec(more, UInt(32.W))) else None
+}
+
 /** A group control unit's ports (`GroupCtrl`): its start, STATUS, COUNTER and pins; its outer handshakes; each unit's
   * and buffer's enables; the head's `fire`, `first` and `adv` (a one-unit group's whole) and the cycle's class.
   */
