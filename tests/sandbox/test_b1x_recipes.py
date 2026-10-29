@@ -1,5 +1,7 @@
-"""B1x's recipes (D150, C§12): dot 2–6 and matvec 1–6 run step by step with the reference check,
-at W = 4 and 8, and end in the groups and links C§17's table has."""
+"""The linked recipes (D150, C§12): dot 2–6 and matvec 1–6 run step by step with the reference
+check, at W = 4 and 8, and end in the groups and links C§17's table has. At N = 32 (and M = 2
+for matvec): the groups and links do not depend on the sizes, and the reference executor runs
+at every step."""
 
 from __future__ import annotations
 
@@ -29,7 +31,8 @@ WANT = {
 @pytest.mark.parametrize("w", [4, 8])
 @pytest.mark.parametrize("name", list(WANT))
 def test_the_recipe_runs_and_ends_in_its_groups(name, w):
-    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params({"W": w})
+    small = {"N": 32, **({"M": 2} if name.startswith("matvec") else {})}
+    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params({"W": w, **small})
     last = apply_recipe(recipe, import_kernel(recipe.kernel))[-1].graph  # each step checked
     groups: dict[str, list[str]] = {}
     for n, _ in last.walk():
