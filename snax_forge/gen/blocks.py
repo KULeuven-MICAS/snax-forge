@@ -58,18 +58,20 @@ class GenError(CodedError):
 
 @dataclass(frozen=True)
 class Port:
-    """A unit's BRM port in ``accelerator.json``: the datapath's port, its dtype, its lanes."""
+    """A unit's BRM port in ``accelerator.json``: the datapath's port, its direction (``in``
+    or ``out``, the BRM port's), its dtype, its lanes."""
 
     port: str
+    dir: str
     dtype: str | None  # None: judged without a graph (module doc)
     lanes: int
 
     def to_dict(self) -> dict[str, Any]:
-        return {"port": self.port, "dtype": self.dtype, "lanes": self.lanes}
+        return {"port": self.port, "dir": self.dir, "dtype": self.dtype, "lanes": self.lanes}
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Port:
-        return cls(d["port"], d["dtype"], d["lanes"])
+        return cls(d["port"], d["dir"], d["dtype"], d["lanes"])
 
 
 @dataclass(frozen=True)
@@ -157,7 +159,7 @@ def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str
                     f"{what}: port {p.name}'s {n} lanes of {bits} bits are not whole 64-bit "
                     "channels",
                 )
-        out[p.name] = Port(mapping.get(p.name, p.name), dtype, n)
+        out[p.name] = Port(mapping.get(p.name, p.name), p.direction, dtype, n)
     return out
 
 

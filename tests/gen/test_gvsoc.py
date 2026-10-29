@@ -67,8 +67,9 @@ ADD_W4 = {
     "inputs": ["acc.a", "acc.b"], "outputs": ["acc.out"],
     "groups": [{"name": "acc", "csrs": GROUP_CSRS, "units": [{
         "name": "acc", "brm": "elementwise_add", "datapath": "ElementwiseLanes",
-        "ports": {p: {"port": p, "dtype": "int64", "lanes": 4} for p in ("a", "b", "out")},
-        "opType": "int64", "params": {"op": "add"}, "timing": {"latency": 0, "ii": 1},
+        "ports": {p: {"port": p, "dir": "out" if p == "out" else "in", "dtype": "int64", "lanes": 4}
+                  for p in ("a", "b", "out")},
+        "opType": "int64", "params": {"op": "add"}, "timing": {"latency": 0, "ii": 1, "span": 1},
         "csrs": [],
     }], "links": []}],
 }  # fmt: skip
@@ -81,9 +82,9 @@ VSUM = {
         *GROUP_CSRS[:2], {**GROUP_CSRS[2], "offset": 3}, {**GROUP_CSRS[3], "offset": 4},
     ], "units": [{
         "name": "acc", "brm": "accumulate", "datapath": "TreeAccumulate",
-        "ports": {"a": {"port": "in", "dtype": "int64", "lanes": 1},
-                  "out": {"port": "out", "dtype": "int64", "lanes": 1}},
-        "params": {"op": "add"}, "timing": {"latency": 1, "ii": 1},
+        "ports": {"a": {"port": "in", "dir": "in", "dtype": "int64", "lanes": 1},
+                  "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 1}},
+        "params": {"op": "add"}, "timing": {"latency": 1, "ii": 1, "span": 1},
         "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}],
     }], "links": []}],
 }  # fmt: skip
@@ -529,7 +530,7 @@ def test_the_accumulator_adapter_refuses(case, edit, params, code, dtypes):
 def test_the_accumulator_adapter_gives_a_fold():
     """Its ports through the binding's map, no opType, params op add; latency 1."""
     fill = tree_accumulate(_acc())
-    assert fill.ports == {"a": Port("in", None, 1), "out": Port("out", None, 1)}
+    assert fill.ports == {"a": Port("in", "in", None, 1), "out": Port("out", "out", None, 1)}
     assert (fill.op_type, fill.params) == (None, {"op": "add"})
     assert DATAPATHS["TreeAccumulate"].fill is tree_accumulate
     assert DATAPATHS["TreeAccumulate"].latency == 1 and DATAPATHS["ElementwiseLanes"].latency == 0
@@ -693,7 +694,8 @@ def test_vecadd_i32_two_channels_per_port(tmp_path):
     )  # fmt: skip
     (unit,) = json.loads((out / "accelerator.json").read_text())["groups"][0]["units"]
     assert unit["ports"] == {
-        p: {"port": p, "dtype": "int32", "lanes": 4} for p in ("a", "b", "out")
+        p: {"port": p, "dir": "out" if p == "out" else "in", "dtype": "int32", "lanes": 4}
+        for p in ("a", "b", "out")
     }
     assert unit["opType"] == "int32"
     assert slot(parsed(out / "snax_forge.hjson"))["snax_tcdm_ports"] == 6
@@ -708,8 +710,8 @@ def test_vsum_tree_i32_int32_in_int64_out(tmp_path):
         [[1]], [1]
     )  # fmt: skip
     (unit,) = json.loads((out / "accelerator.json").read_text())["groups"][0]["units"]
-    assert unit["ports"] == {"a": {"port": "in", "dtype": "int32", "lanes": 4},
-                             "out": {"port": "out", "dtype": "int64", "lanes": 1}}  # fmt: skip
+    assert unit["ports"] == {"a": {"port": "in", "dir": "in", "dtype": "int32", "lanes": 4},
+                             "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 1}}  # fmt: skip
     assert "opType" not in unit
 
 

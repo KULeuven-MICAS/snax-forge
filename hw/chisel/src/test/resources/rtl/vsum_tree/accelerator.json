@@ -19,11 +19,11 @@
      "brm": "accumulate",
      "datapath": "TreeAccumulate",
      "ports": {
-      "a": {"port": "in", "dtype": "int64", "lanes": 4},
-      "out": {"port": "out", "dtype": "int64", "lanes": 1}
+      "a": {"port": "in", "dir": "in", "dtype": "int64", "lanes": 4},
+      "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 1}
      },
      "params": {"op": "add"},
-     "timing": {"latency": 1, "ii": 1},
+     "timing": {"latency": 1, "ii": 1, "span": 1},
      "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}]
     }
    ],

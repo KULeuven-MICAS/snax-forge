@@ -19,13 +19,13 @@
      "brm": "elementwise_add",
      "datapath": "ElementwiseLanes",
      "ports": {
-      "a": {"port": "a", "dtype": "int32", "lanes": 4},
-      "b": {"port": "b", "dtype": "int32", "lanes": 4},
-      "out": {"port": "out", "dtype": "int32", "lanes": 4}
+      "a": {"port": "a", "dir": "in", "dtype": "int32", "lanes": 4},
+      "b": {"port": "b", "dir": "in", "dtype": "int32", "lanes": 4},
+      "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 4}
      },
      "opType": "int32",
      "params": {"op": "add"},
-     "timing": {"latency": 0, "ii": 1},
+     "timing": {"latency": 0, "ii": 1, "span": 1},
      "csrs": []
     }
    ],

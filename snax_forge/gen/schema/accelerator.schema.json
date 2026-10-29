@@ -22,17 +22,14 @@
  "$defs": {
   "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
   "dtype": {"enum": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]},
-  "outer": {
-   "type": "array",
-   "minItems": 1,
-   "items": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"}
-  },
+  "end": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*\\.[A-Za-z_][A-Za-z0-9_]*$"},
+  "outer": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/end"}},
   "csr": {
    "type": "object",
    "properties": {
     "name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
     "access": {"enum": ["rw", "ro"]},
-    "offset": {"description": "From the shell's first CSR.", "type": "integer", "minimum": 0},
+    "offset": {"description": "From the accelerator's first CSR.", "type": "integer", "minimum": 0},
     "width": {"description": "R/W only.", "type": "integer", "minimum": 1, "maximum": 32},
     "pin": {"description": "A scalar's datapath pin.", "$ref": "#/$defs/name"}
    },
@@ -46,10 +43,11 @@
    "type": "object",
    "properties": {
     "port": {"description": "The datapath's port.", "$ref": "#/$defs/name"},
+    "dir": {"description": "The BRM port's direction.", "enum": ["in", "out"]},
     "dtype": {"$ref": "#/$defs/dtype"},
     "lanes": {"type": "integer", "minimum": 1}
    },
-   "required": ["port", "dtype", "lanes"],
+   "required": ["port", "dir", "dtype", "lanes"],
    "additionalProperties": false
   },
   "unit": {
@@ -64,17 +62,32 @@
      "minProperties": 1,
      "additionalProperties": {"$ref": "#/$defs/port"}
     },
-    "opType": {"description": "An elementwise unit's: NumPy's result type of its inputs (D143).", "$ref": "#/$defs/dtype"},
-    "params": {"description": "What the ports do not give (op).", "type": "object"},
+    "opType": {"description": "An elementwise or Mac unit's: NumPy's result type of its inputs (D143).", "$ref": "#/$defs/dtype"},
+    "params": {"description": "What the ports do not give (op, accumulate, regOut), and T, a fold's rate fixed at design time.", "type": "object"},
     "timing": {
      "type": "object",
-     "properties": {"latency": {"type": "integer", "minimum": 0}, "ii": {"type": "integer", "minimum": 1}},
-     "required": ["latency", "ii"],
+     "properties": {
+      "latency": {"type": "integer", "minimum": 0},
+      "ii": {"type": "integer", "minimum": 1},
+      "span": {"description": "The cycles the unit reads one input beat in place.", "type": "integer", "minimum": 1}
+     },
+     "required": ["latency", "ii", "span"],
      "additionalProperties": false
     },
     "csrs": {"description": "Its R/W CSRs.", "type": "array", "items": {"$ref": "#/$defs/csr"}}
    },
    "required": ["name", "brm", "datapath", "ports", "params", "timing", "csrs"],
+   "additionalProperties": false
+  },
+  "link": {
+   "type": "object",
+   "properties": {
+    "name": {"$ref": "#/$defs/name"},
+    "from": {"description": "An out port, \"<unit>.<port>\".", "$ref": "#/$defs/end"},
+    "to": {"description": "An in port, \"<unit>.<port>\".", "$ref": "#/$defs/end"},
+    "depth": {"description": "0 a wire, >= 1 a buffer of that many beats.", "type": "integer", "minimum": 0}
+   },
+   "required": ["name", "from", "to", "depth"],
    "additionalProperties": false
   },
   "group": {
@@ -83,7 +96,7 @@
     "name": {"$ref": "#/$defs/name"},
     "csrs": {"description": "START, JOBS, STATUS, COUNTER.", "type": "array", "items": {"$ref": "#/$defs/csr"}},
     "units": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/unit"}},
-    "links": {"description": "Empty until B3.", "type": "array", "maxItems": 0}
+    "links": {"type": "array", "items": {"$ref": "#/$defs/link"}}
    },
    "required": ["name", "csrs", "units", "links"],
    "additionalProperties": false

@@ -14,7 +14,7 @@ bundle.py (pixi ``bundle``) writes both, with the RTL's file list, for
 snax_cluster.
 """
 
-from .accelerator import ACCELERATOR_JSON, Accelerator, Csr, Group, Unit, describe
+from .accelerator import ACCELERATOR_JSON, Accelerator, Csr, Group, Link, Unit, describe
 from .blocks import DATAPATHS, ELEMENTWISE_OP, Fill, GenError, Port, register_datapath
 from .gvsoc import AccTask, CsrLayout, Manifest, generate
 
@@ -29,6 +29,7 @@ __all__ = [
     "Fill",
     "GenError",
     "Group",
+    "Link",
     "Manifest",
     "Port",
     "Unit",
