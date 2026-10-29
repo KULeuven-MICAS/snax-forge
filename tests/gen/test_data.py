@@ -131,7 +131,7 @@ def test_refused_a_float_dtype():
 
 
 # =============================================================================
-# Narrow containers (D142): refused until R3, the data path ready for it
+# Narrow containers (D142): packed in data.h
 # =============================================================================
 
 
@@ -147,8 +147,7 @@ def _int32_vecadd(tmp_path) -> DesignPoint:
 
 
 def test_int32_vecadd_packs_its_data_two_per_word(tmp_path):
-    """No refusal since PACK0 R3: data.h's int32_t arrays, the kernel's first values packed two
-    per 64-bit word (D142)."""
+    """data.h's int32_t arrays: the kernel's first values packed two per 64-bit word (D142)."""
     p = _int32_vecadd(tmp_path)
     a = {x.name: x for x in arrays(p)}
     assert a["A"].ctype == "int32_t" and a["A"].elements == 64 and len(a["A"].values) == 64

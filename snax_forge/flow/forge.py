@@ -1,4 +1,4 @@
-"""A recipe to everything snax_cluster needs, in one command (CLN1 R3).
+"""A recipe to everything snax_cluster needs, in one command.
 
     python -m snax_forge.flow.forge RECIPE [--platform P] [--set NAME=VALUE ...]
                                     [--trace LEVEL[:SOURCES]]          (pixi forge)

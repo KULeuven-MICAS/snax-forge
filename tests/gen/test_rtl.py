@@ -230,7 +230,7 @@ def test_a_fixtures_tasks_give_jobs_and_job_beats():
 
 
 # =============================================================================
-# Narrow and mixed designs (PACK0 R4): each port's type, the op at the inputs' result type
+# Narrow and mixed designs: each port's type, the op at the inputs' result type
 # =============================================================================
 
 
@@ -257,7 +257,7 @@ def test_a_narrow_fold_into_int64_is_filled(tmp_path, recipe, dtype):
 
 
 # =============================================================================
-# Mac and SerialAccumulate against the catalogue (B1x): ``when`` and expression latencies
+# Mac and SerialAccumulate against the catalogue: ``when`` and expression latencies
 # =============================================================================
 
 

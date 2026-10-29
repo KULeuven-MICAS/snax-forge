@@ -33,7 +33,7 @@ the rest of the folder is left as it is. Then, in this order:
 
 **The modules** (``module_tree``, C§18), from accelerator.json, not from
 Emit's output: the wrapper's three modules, each with the submodules it holds,
-by the names F2's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
+by the names hw/chisel's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
 (``<tag>_<group>_ctrl`` per group) and ``<tag>_datapath`` (``<tag>_<unit>``
 per unit, then ``<tag>_<link>`` per link of depth >= 1, a buffer, group by
 group).
