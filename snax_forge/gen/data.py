@@ -19,7 +19,7 @@ The C type is the container's dtype (``int64_t``, ``int32_t``, ``int8_t``,
 a word for a narrow dtype (D142).
 Each array, golden included, is written in the container's padded shape (a
 tail's, dfg/pad.py, D144: its pads hold ``pad_value``), then padded with
-zeros to whole DMA beats exactly as the memory plan's L2 layout is (``lower/layout.py``'s ``moved_bytes``,
+zeros to whole DMA beats, the container's L2 bytes (``lower/layout.py``'s ``l2_bytes``,
 D105) and aligned to the beat (``l2.beat_bits``, 64 bytes on snax_forge).
 main.c (lower/c.py) reads the arrays by name: a DMA's L2 side is the array its task names
 (``symbol``).
@@ -49,7 +49,7 @@ from snax_forge.design.point import DesignPoint
 from snax_forge.dfg.execute import execute
 from snax_forge.dfg.pad import pad_value, padded_shape
 from snax_forge.flow.run import FlowError, kernel_inputs, kernel_spec
-from snax_forge.lower.layout import Layout, moved_bytes, over
+from snax_forge.lower.layout import Layout, l2_bytes, over
 
 from .blocks import GenError, port_dtype
 
@@ -114,7 +114,7 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None) -> list
             raise GenError(
                 "gen.layout", f"{c}'s L2 layout {lay} is not its {size}-byte elements in order"
             )
-        padded = moved_bytes(block, size, beat) // size
+        padded = l2_bytes(point, c) // size
         pad = (shape, pad_value(graph, c))
         if c in spec.inout:
             if c in inputs and np.any(inputs[c]):

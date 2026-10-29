@@ -9,7 +9,9 @@ A region is a container's layout in one memory: ``container``, ``memory`` (``l1`
 before the run, nothing is inferred from it (D86): in L1 the design point's memory plan gives
 the layout; in L2 the plan gives the shape and the program's link the base, the address of the
 container's array in the ELF (``run.json``'s ``elf_symbols``, elf.py), the strides the plan's
-(contiguous, as data.h declares it). Without ``elf_symbols`` there are no L2 regions. ``Region.elems(addr, size)`` gives the flat indexes (row-major over
+(contiguous, as data.h declares it), its ``size`` the array's bytes: its padded shape in
+whole DMA beats (``lower.layout.l2_bytes``, D144; None in L1). Without ``elf_symbols`` there
+are no L2 regions. ``Region.elems(addr, size)`` gives the flat indexes (row-major over
 ``shape``) of the elements whose first byte lies in ``[addr, addr + size)``, and
 ``Region.vals(addr, data)`` their values, read from the bytes ``data`` that start at
 ``addr`` by the region's dtype. ``region_at`` finds the region an address is in. Regions come
@@ -33,7 +35,7 @@ from typing import Any
 
 import numpy as np
 
-from snax_forge.lower.layout import Layout, moved_bytes, over
+from snax_forge.lower.layout import Layout, l2_bytes, moved_bytes, over
 
 
 @dataclass(frozen=True)
@@ -44,6 +46,7 @@ class Region:
     shape: tuple[int, ...]
     strides: tuple[int, ...]
     dtype: str
+    size: int | None = None  # an L2 region's array bytes (module doc)
 
     @property
     def layout(self) -> Layout:
@@ -83,12 +86,13 @@ class Region:
 
     def to_dict(self) -> dict[str, Any]:
         return {"container": self.container, "memory": self.memory, "base": self.base,
-                "shape": list(self.shape), "strides": list(self.strides), "dtype": self.dtype}  # fmt: skip
+                "shape": list(self.shape), "strides": list(self.strides), "dtype": self.dtype,
+                "size": self.size}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Region:
         return cls(d["container"], d["memory"], d["base"], tuple(d["shape"]),
-                   tuple(d["strides"]), d["dtype"])  # fmt: skip
+                   tuple(d["strides"]), d["dtype"], d.get("size"))  # fmt: skip
 
 
 def regions_of(point: Any, elf_symbols: dict[str, Any] | None) -> list[Region]:
@@ -103,11 +107,11 @@ def regions_of(point: Any, elf_symbols: dict[str, Any] | None) -> list[Region]:
                 sym = (elf_symbols or {}).get(name)
                 if sym is None:
                     continue
-                base = sym["addr"]
+                base, size = sym["addr"], l2_bytes(point, name)
             else:
-                base = lay.base
+                base, size = lay.base, None
             out.append(Region(name, mem, base, tuple(lay.shape), tuple(lay.strides),
-                              containers[name].dtype))  # fmt: skip
+                              containers[name].dtype, size))  # fmt: skip
     return out
 
 
