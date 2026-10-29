@@ -400,6 +400,7 @@ def _riscv_clang() -> str | None:
     return None
 
 
+@pytest.mark.gvsoc  # the image's RISC-V clang: CI's gvsoc job runs it
 @pytest.mark.skipif(_riscv_clang() is not None, reason=str(_riscv_clang()))
 @pytest.mark.parametrize("design", ["vecadd", "vecmul", "vsum"])
 def test_main_c_compiles_against_snax_gvsocs_sw(tmp_path, design):
