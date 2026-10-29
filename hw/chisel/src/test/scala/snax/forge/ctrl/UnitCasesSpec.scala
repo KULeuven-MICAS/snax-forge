@@ -40,7 +40,7 @@ class UnitHarness(val c: Case) extends Module {
   ctrl.io.start <> io.start
   ctrl.io.in <> io.in
   ctrl.io.out <> io.out
-  io.fire := ctrl.io.fire
+  io.fire := ctrl.io.units(0).fire
   io.busy := ctrl.io.busy
   io.res  := DontCare
 
@@ -59,8 +59,8 @@ class UnitHarness(val c: Case) extends Module {
     case Some("TreeAccumulate")   =>
       val dp = Module(new TreeAccumulate(t(0).name, t(1).name, c.lanes))
       for (l <- 0 until c.lanes) dp.io.in(l) := lane(io.data(0)(l), t(0))
-      dp.io.fire  := ctrl.io.fire
-      dp.io.first := ctrl.io.first
+      dp.io.fire  := ctrl.io.units(0).fire
+      dp.io.first := ctrl.io.units(0).first
       io.res(0)   := dp.io.out.asUInt
     case _                        =>
   }

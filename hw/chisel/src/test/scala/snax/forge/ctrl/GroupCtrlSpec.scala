@@ -110,7 +110,6 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
                   assert(int(e.occupancy) == m.occupancy, s"$clue, link $k: occupancy")
                 }
                 assert(int(dut.io.cls) == s.cls, s"$clue: class")
-                assert(high(dut.io.fire) == s.units(chain.head).fire, s"$clue: the head's fire")
                 if (s.end) {
                   ended += 1
                   assert(model.classes.sum == int(dut.io.counter) + 1, s"$clue: COUNTER")

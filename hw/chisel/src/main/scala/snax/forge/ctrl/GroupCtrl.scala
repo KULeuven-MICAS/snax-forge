@@ -13,7 +13,7 @@ class NestConfig(val more: Int = 0) extends Bundle {
 }
 
 /** A group control unit's ports (`GroupCtrl`): its start, STATUS, COUNTER and pins; its outer handshakes; each unit's
-  * and buffer's enables; the head's `fire`, `first` and `adv` (a one-unit group's whole) and the cycle's class.
+  * and buffer's enables; the cycle's class.
   */
 class GroupCtrlIO(desc: GroupDesc) extends Bundle {
   val start   = Flipped(Decoupled(new NestConfig((desc.open.size - 1) max 0)))
@@ -23,9 +23,6 @@ class GroupCtrlIO(desc: GroupDesc) extends Bundle {
   val out     = Flipped(new Handshake)
   val units   = MixedVec(desc.units.map(u => new UnitEnables(u.span)))
   val links   = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
-  val fire    = Output(Bool())
-  val first   = Output(Bool())
-  val adv     = Output(Bool())
   val busy    = Output(Bool())
   val done    = Output(Bool())
   val cls     = Output(UInt(2.W))
@@ -49,9 +46,9 @@ class GroupCtrlIO(desc: GroupDesc) extends Bundle {
   *
   * Its ports: `in`, every unit's outer inputs' handshakes, unit by unit in port order; `out`, the outer output, its
   * owner's (`GroupDesc.output`); `units`, each unit's enables to its datapath; `links`, each buffer's, in link order (a
-  * wire has none); `cls`, the cycle's class, as the run line counts it (busy 0, stall_in 1, stall_out 2, flush 3).
-  * `fire`, `first` and `adv` are the head's (`GroupDesc.head`, the first unit in topological order), a one-unit group's
-  * whole.
+  * wire has none); `cls`, the cycle's class, as the run line counts it (busy 0, stall_in 1, stall_out 2, flush 3). Test
+  * ports, which the shell leaves unread: each unit's `give` and `adv`, each buffer's `occupancy`, and `cls`; the specs
+  * compare them with snax-gvsoc's cases and `GroupModel` every cycle.
   *
   * @param desc
   *   the group: its units and links (`shell.AcceleratorSpec`'s group, `AccCtrl.desc`)
@@ -76,9 +73,6 @@ class GroupCtrl(val desc: GroupDesc, tag: String) extends Module {
   io.out.valid := nest.io.out.valid
   io.units     := nest.io.units
   io.links     := nest.io.links
-  io.fire      := nest.io.units(desc.head).fire
-  io.first     := nest.io.units(desc.head).first
-  io.adv       := (if (desc.units(desc.head).latency == 0) true.B else nest.io.units(desc.head).adv)
   io.cls       := nest.io.cls
 
   // Each unit's T: its fixed one, else the next JOB_BEATS of the start in unit order

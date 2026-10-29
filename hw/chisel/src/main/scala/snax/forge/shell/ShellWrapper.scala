@@ -126,7 +126,6 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
             case "first"       => e.first
             case "read"        => e.read
             case "lane"        => e.lane
-            case "adv"         => e.adv
             case other         => throw new IllegalArgumentException(s"${u.datapath}: unknown pin $other")
           })
       }
