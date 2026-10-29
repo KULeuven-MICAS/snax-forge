@@ -29,7 +29,7 @@ from snax_forge.report.__main__ import main
 from snax_forge.report.run import build_run, render_movement
 from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
-from snax_forge.viz import api, schedule
+from snax_forge.viz import api, movement, schedule
 from tests.flow.helpers import stubbed_flow
 
 FIXTURE = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "vecadd"
@@ -246,10 +246,10 @@ def test_the_movement_section_is_the_index(recorded, level):
     rv = api.load_run(recorded[level])
     m = build_run(rv).movement
     assert m.reason is None and m.sources is None
-    view = api.movement_view(rv)
+    residency, patterns = movement.residency(rv.index), movement.patterns(rv.index)
     assert [(r.region, r.mem, r.arrival, r.use, r.departure) for r in m.residency] == [
-        (r["region"], r["mem"], r["arrival"], r["use"], r["departure"]) for r in view["residency"]]  # fmt: skip
-    lanes = [p for p in view["patterns"] if p["port"] != "dma"]
+        (r["region"], r["mem"], r["arrival"], r["use"], r["departure"]) for r in residency]  # fmt: skip
+    lanes = [p for p in patterns if p["port"] != "dma"]
     assert [(p.port, p.task, p.base, p.nest, p.beats, p.first, p.last) for p in m.patterns] == [
         (p["port"], p["task"], p["addr"]["base"], p["addr"]["nest"], p["beats"], p["first"],
          p["last"]) for p in lanes]  # fmt: skip

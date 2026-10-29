@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import pytest
 
+from snax_forge.report.run import build_movement
 from snax_forge.viz import api, movement
 
 from .helpers import L1, Events, recorded_run, run_dir, tasks, two_runs
@@ -175,7 +176,7 @@ def test_an_index_outside_the_region_is_refused(runs):
 def test_residency_is_the_journeys(runs, level):
     """Every container in each memory it lives in; per element the times its journey shows."""
     rv = runs[level]
-    res = api.movement_view(rv)["residency"]
+    res = movement.residency(rv.index)
     assert [(r["region"], r["mem"]) for r in res] == [(r.container, r.memory) for r in rv.regions]
     for r in res:
         for x in r["per_element"]:
@@ -199,7 +200,7 @@ def test_residency_is_the_journeys(runs, level):
 
 def test_residency_of_the_recorded_run(runs):
     rv = runs["stall"]
-    got = {(r["region"], r["mem"]): r for r in api.movement_view(rv)["residency"]}
+    got = {(r["region"], r["mem"]): r for r in movement.residency(rv.index)}
     load_a = [e["t"] for e in events_of(rv, "dma", task="load_A")]
     (burst_a,) = [e["t"] for e in events_of(rv, "burst", task="load_A")]
     assert got["A", "l2"]["present_at_start"] == 64 and got["A", "l2"]["departure"] == [burst_a] * 2
@@ -229,7 +230,7 @@ def expand(base, nest):
 @pytest.mark.parametrize("level", ["beat", "stall"])
 def test_every_pattern_is_its_lanes_grants(runs, level):
     rv = runs[level]
-    pats = api.movement_view(rv)["patterns"]
+    pats = movement.patterns(rv.index)
     lanes = [p for p in pats if p["port"] != "dma"]
     assert len(lanes) == sum(m.lanes for m in rv.cluster.accelerator.movers)
     for p in lanes:
@@ -244,7 +245,7 @@ def test_every_pattern_is_its_lanes_grants(runs, level):
 
 def test_held_cycles_are_the_profiles_stalls(runs):
     rv = runs["stall"]
-    pats = [p for p in api.movement_view(rv)["patterns"] if p["port"] != "dma"]
+    pats = [p for p in movement.patterns(rv.index) if p["port"] != "dma"]
     prof = rv.outputs.profile
     for p in pats:
         assert len(p["held"]) == prof.ports[p["port"]].stalls, p["port"]
@@ -257,7 +258,7 @@ def test_held_cycles_are_the_profiles_stalls(runs):
 
 
 def test_held_cycles_need_the_stall_level(runs):
-    for p in (p for p in api.movement_view(runs["beat"])["patterns"] if p["port"] != "dma"):
+    for p in (p for p in movement.patterns(runs["beat"].index) if p["port"] != "dma"):
         assert p["held"] is None and "needs --trace stall" in p["held_reason"]
 
 
@@ -285,8 +286,7 @@ def test_the_conflicts_of_the_recorded_run(runs):
                          "element": "B[0]"}  # fmt: skip
     assert w["A[0]"]["won"] == [t]
     assert sum(len(x["held"]) for x in c["words"]) == sum(len(x["won"]) for x in c["words"]) == 4
-    assert api.movement_view(rv)["conflicts"] == {"available": True, "count": 4,
-                                                  "banks": c["banks"], "ports": c["ports"]}  # fmt: skip
+    assert build_movement(rv).conflicts == c["count"]  # the report's section counts the same
 
 
 def test_a_window_of_conflicts(runs):
@@ -303,18 +303,17 @@ def test_a_window_of_conflicts(runs):
 
 def test_a_task_level_run_gets_the_reason(runs):
     rv = runs["task"]
-    for got in (api.movement_view(rv), api.journey_view(rv, "A", 0), api.conflicts_view(rv)):
+    for got in (api.journey_view(rv, "A", 0), api.conflicts_view(rv)):
         assert got["available"] is False and "needs --trace " in got["reason"]
         assert "traced at task" in got["reason"]
+    assert "traced at task" in build_movement(rv).reason
 
 
 def test_a_beat_level_run_lacks_only_what_needs_stall(runs):
     rv = runs["beat"]
-    m = api.movement_view(rv)
-    assert m["available"] and m["residency"] and m["patterns"]
-    assert (
-        m["conflicts"]["available"] is False and "needs --trace stall" in m["conflicts"]["reason"]
-    )
+    m = build_movement(rv)
+    assert m.reason is None and m.residency and m.patterns
+    assert m.conflicts is None and "--trace stall" in m.conflicts_reason
     c = api.conflicts_view(rv)
     assert c["available"] is False and "traced at beat" in c["reason"]
     j = api.journey_view(rv, "B", 0)
@@ -323,12 +322,9 @@ def test_a_beat_level_run_lacks_only_what_needs_stall(runs):
 
 def test_a_filtered_trace_says_so(tmp_path):
     rv = api.load_run(run_dir(tmp_path / "f", "vecadd", "beat", trace_sources=["acc", "acc_a"]))
-    m = api.movement_view(rv)
-    assert m["available"] and m["filtered"] == {"sources": ["acc", "acc_a"]}
+    m = build_movement(rv)
+    assert m.reason is None and m.sources == ["acc", "acc_a"]
     j = api.journey_view(rv, "A", 0)
     assert j["filtered"] == {"sources": ["acc", "acc_a"]}
     assert [h["k"] for h in j["hops"]] == ["grant"]  # no DMA lines: the beat's arrival is missing
-    assert (
-        api.movement_view(api.load_run(run_dir(tmp_path / "w", "vecadd", "beat")))["filtered"]
-        is None
-    )
+    assert build_movement(api.load_run(run_dir(tmp_path / "w", "vecadd", "beat"))).sources is None

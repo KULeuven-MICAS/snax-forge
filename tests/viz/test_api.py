@@ -77,7 +77,7 @@ def test_the_memory_view_answers_and_movement_says_why_not(dirs):
     assert api.memories(rv) == ["l1", "l2"]
     view = api.memory_view(rv)
     assert [m["mem"] for m in view["memories"]] == ["l1", "l2"] and view["marks_available"] == {}
-    for view in (api.movement_view(rv), api.conflicts_view(rv), api.journey_view(rv, "A", 0)):
+    for view in (api.conflicts_view(rv), api.journey_view(rv, "A", 0)):
         assert view["available"] is False and view["reason"].endswith("traced at task")
 
 

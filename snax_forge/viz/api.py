@@ -243,25 +243,6 @@ def _answer(rv: RunView, make: Callable[[], dict[str, Any]]) -> dict[str, Any]:
         return {"name": rv.name, "available": False, "reason": str(e)}
 
 
-def movement_view(rv: RunView) -> dict[str, Any]:
-    """Residency per region and memory, patterns per port and
-    task, and the conflict counts (``available`` false with the reason below ``stall``), or
-    ``available`` false with the reason below ``beat``."""
-    idx = rv.index
-
-    def make() -> dict[str, Any]:
-        residency, patterns = movement.residency(idx), movement.patterns(idx)
-        try:
-            c = movement.conflicts(idx)
-            counts = {"available": True, **{k: c[k] for k in ("count", "banks", "ports")}}
-        except MovementUnavailable as e:
-            counts = {"available": False, "reason": str(e)}
-        return {"level": idx.level, "filtered": idx.filtered, "residency": residency,
-                "patterns": patterns, "conflicts": counts}  # fmt: skip
-
-    return _answer(rv, make)
-
-
 def journey_view(rv: RunView, region: str, index: Sequence[int] | int) -> dict[str, Any]:
     """/api/run/<name>/journey?region=A&index=5: every access to one element and the
     firings it fed or came from (movement.py); a ValueError for an element the run lacks."""
@@ -374,7 +355,6 @@ __all__ = [
     "memory_cycle",
     "memory_rows",
     "memory_view",
-    "movement_view",
     "run_detail",
     "run_dir_of",
     "run_names",
