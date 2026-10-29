@@ -43,6 +43,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import functools
 from collections.abc import Iterable, Mapping
 from typing import Any
 
@@ -81,6 +82,14 @@ def _parse(expr: str) -> ast.expr:
     return tree.body
 
 
+@functools.lru_cache(maxsize=8192)
+def _parsed(expr: str) -> ast.expr:
+    """``_parse``'s tree, one per string, shared: only for the callers that never change it
+    (``check``, ``names``, ``is_name``, ``evaluate``, ``canonical``); a caller that rewrites a
+    tree (``substitute``) parses its own."""
+    return _parse(expr)
+
+
 def _check_call(node: ast.Call, expr: str) -> None:
     """``max(a, b)`` or ``min(a, b)``; any other call is an error."""
     fn = node.func.id if isinstance(node.func, ast.Name) else None
@@ -103,7 +112,7 @@ def check(v: Any, what: str) -> None:
     if not isinstance(v, str):
         raise ExprError(f"{what}: must be an int or an expression string, got {v!r}")
     try:
-        _parse(v)
+        _parsed(v)
     except ExprError as e:
         raise ExprError(f"{what}: {e}") from None
 
@@ -112,7 +121,7 @@ def names(v: Value) -> set[str]:
     """The names ``v`` refers to (none for an int)."""
     if type(v) is int:
         return set()
-    return _names(_parse(v))
+    return _names(_parsed(v))
 
 
 def outside(v: Any, allowed: Iterable[str], what: str) -> list[str]:
@@ -123,7 +132,7 @@ def outside(v: Any, allowed: Iterable[str], what: str) -> list[str]:
 
 def is_name(v: Value) -> bool:
     """``v`` is a bare name."""
-    return isinstance(v, str) and isinstance(_parse(v), ast.Name)
+    return isinstance(v, str) and isinstance(_parsed(v), ast.Name)
 
 
 def constant(v: Value) -> int | None:
@@ -162,7 +171,7 @@ def evaluate(v: Value, env: Mapping[str, Any]) -> Any:
             raise ExprError(f"{v!r}: arithmetic on non-int {x!r}")
         return x
 
-    return walk(_parse(v))
+    return walk(_parsed(v))
 
 
 # =============================================================================
@@ -174,7 +183,7 @@ def canonical(v: Value) -> Value:
     """The stored form of ``v``: an int if it has no names, else ``ast.unparse``'s text."""
     if type(v) is int:
         return v
-    tree = _parse(v)
+    tree = _parsed(v)
     if not _names(tree):
         return evaluate(v, {})
     return ast.unparse(tree)

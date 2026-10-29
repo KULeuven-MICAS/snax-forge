@@ -1,5 +1,7 @@
 """Value expressions (D71): ints, names and small integer arithmetic, shared by BRM and DFG."""
 
+import ast
+
 import numpy as np
 import pytest
 
@@ -165,3 +167,13 @@ def test_max_min_kept_in_stored_form():
 def test_max_min_rejected(v, message):
     with pytest.raises(ExprError, match=message):
         expr.check(v, "field")
+
+
+def test_substitute_leaves_the_cached_parse_alone():
+    """The read-only callers share one tree per string (expr._parsed); substitute rewrites a tree
+    of its own, so the shared one, and every answer read from it, stay as they were."""
+    v = "max(a, b) + a * 2"
+    before = ast.dump(expr._parsed(v))
+    assert expr.substitute(v, {"a": "c - 1", "b": 3}) == "max(c - 1, 3) + (c - 1) * 2"
+    assert ast.dump(expr._parsed(v)) == before
+    assert expr.canonical(v) == "max(a, b) + a * 2" and expr.names(v) == {"a", "b"}
