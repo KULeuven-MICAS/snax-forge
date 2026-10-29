@@ -44,13 +44,16 @@ a transient between two bound units made a link. Registered as any transform
     executor runs the link as it (dfg/execute.py); the design step gives it
     no L1 space and no streamer. ``unlink`` removes the node and takes the
     group off every unit left alone; two groups of several units left under
-    one name is ``unlink.group``.
+    one name is ``unlink.group``. The merged group must be a chain in the
+    graph's order (each unit's output linked to the next unit's input),
+    SNAX-GVSoC's limit until tier A (fork and join): ``link.chain``, gen.chain's
+    check made early.
 """
 
 from __future__ import annotations
 
 import copy
-from itertools import product
+from itertools import pairwise, product
 
 from snax_forge import expr
 from snax_forge.common import CodedError, fresh
@@ -361,6 +364,14 @@ def link(g: Graph, container: str, depth: int, group: str) -> Graph:
     shared, wi, ri = rpath[k][0], wpath[k][1], rpath[k][1]
     if wpath[k][0] is not shared or wi >= ri:
         raise LinkError("link.order", f"{what}: {w.id} does not run before {r.id}")
+    order = list(dict.fromkeys(n.attrs["instance"] for n in nodes
+                               if n.attrs["instance"] in members))  # fmt: skip
+    hops = [(k.attrs["from"], k.attrs["to"]) for k, _ in g.walk()
+            if k.kind == "link" and k.attrs["from"] in members]  # fmt: skip
+    hops.append((w.attrs["instance"], r.attrs["instance"]))
+    if sorted(hops) != sorted(pairwise(order)):
+        raise LinkError("link.chain", f"{what}: the group's links {hops} over its units {order}: "
+                        "a group is a chain until tier A (fork and join)")  # fmt: skip
     for n in nodes:
         if n.attrs["instance"] in members:
             n.attrs["group"] = group

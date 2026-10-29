@@ -159,3 +159,25 @@ def test_a_reader_checks_the_links(edit, code):
     with pytest.raises(GenError) as e:
         _edit(**edit)
     assert e.value.code == code
+
+
+def test_a_group_is_a_chain_until_tier_a():
+    """gen.chain: dot 4's units in the other order, the link going back (SNAX-GVSoC's SnaxGroup
+    models a chain in unit order)."""
+    acc = dot4()
+    (g,) = acc.groups
+    with pytest.raises(GenError) as e:
+        replace(acc, groups=[replace(g, units=g.units[::-1])])
+    assert e.value.code == "gen.chain" and "until tier A" in str(e.value)
+
+
+def test_a_span_unit_reads_from_a_link_until_b2():
+    """gen.span: dot 5's SerialAccumulate (span 4) fed by the streamer instead of the MAC."""
+    serial = Unit("sum", "accumulate", "SerialAccumulate",
+                  {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
+                  {"T": 1}, 1, 1, [], None, 4)  # fmt: skip
+    own = [Csr("START", "rw", 0, 32), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 2),
+           Csr("COUNTER", "ro", 3)]  # fmt: skip
+    with pytest.raises(GenError) as e:
+        Accelerator("sum", "p", "snax_forge", ["sum.a"], ["sum.out"], [Group("sum", own, [serial])])
+    assert e.value.code == "gen.span" and "until B2" in str(e.value)

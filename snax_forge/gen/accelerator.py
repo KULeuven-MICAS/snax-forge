@@ -58,7 +58,11 @@ of the group's units with the same dtype and lanes, or a depth below 0),
 ``gen.link_port`` (a port on more than one link), ``gen.outer`` (``inputs``
 or ``outputs`` not exactly the unlinked ports, group by group, unit by unit
 in port order) and ``gen.group`` (a group whose units the links do not
-connect), besides the offsets and widths (a ValueError).
+connect), besides the offsets and widths (a ValueError); then SNAX-GVSoC's
+limits (snax-gvsoc's SnaxGroup), ``gen.chain`` (a group that is not a chain
+in unit order: each unit's output linked to the next unit's input, only the
+last unit's output outer; lifted in tier A, fork and join) and ``gen.span``
+(a unit of span > 1 with an outer input; lifted in B2).
 """
 
 from __future__ import annotations
@@ -66,6 +70,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import partial
+from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
 from snax_forge import expr
@@ -304,6 +309,7 @@ def _check_links(acc: Accelerator) -> None:
         if len({root(u.name) for u in g.units}) > 1:
             raise GenError("gen.group", f"accelerator {acc.name}: group {g.name}'s units "
                            f"{[u.name for u in g.units]} are not connected by its links")  # fmt: skip
+        _check_chain(acc, g, ports)
         for name, p in ports.items():
             if name not in linked:
                 outer[p.dir].append(name)
@@ -314,6 +320,29 @@ def _check_links(acc: Accelerator) -> None:
         if list(have) != want:
             raise GenError("gen.outer", f"accelerator {acc.name}: {key} {list(have)}; the "
                            f"unlinked ports are {want}, in group, unit and port order")  # fmt: skip
+
+
+def _check_chain(acc: Accelerator, g: Group, ports: dict[str, Port]) -> None:
+    """``gen.chain`` and ``gen.span``, SNAX-GVSoC's limits (module doc)."""
+    names = [u.name for u in g.units]
+    hops = [(k.from_.split(".")[0], k.to.split(".")[0]) for k in g.links]
+    chain = sorted(hops) == sorted(pairwise(names))
+    outs = {u.name: [f"{u.name}.{p}" for p, x in u.ports.items() if x.dir == "out"]
+            for u in g.units}  # fmt: skip
+    linked = {k.from_ for k in g.links}
+    for i, u in enumerate(g.units):
+        outer = [p for p in outs[u.name] if p not in linked]
+        chain = chain and bool(outer) == (i == len(g.units) - 1)
+    if not chain:
+        raise GenError("gen.chain", f"accelerator {acc.name}: group {g.name}'s links {hops} over "
+                       f"its units {names}: a group is a chain until tier A (fork and join)")  # fmt: skip
+    to = {k.to for k in g.links}
+    for u in g.units:
+        outer_in = [p for p, x in u.ports.items() if x.dir == "in" and f"{u.name}.{p}" not in to]
+        if u.span > 1 and outer_in:
+            raise GenError("gen.span", f"accelerator {acc.name}: unit {u.name} (span {u.span}) "
+                           f"reads {outer_in} from the streamer: a unit with span > 1 reads from a "
+                           "link until B2")  # fmt: skip
 
 
 def _root(parent: dict[str, str], u: str) -> str:

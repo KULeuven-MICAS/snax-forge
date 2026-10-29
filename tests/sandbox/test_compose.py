@@ -195,3 +195,41 @@ def test_unlink_takes_the_group_off_a_unit_left_alone():
     g = unlink(dot2(), "tmp0")
     assert {n.attrs.get("group") for n, _ in g.walk() if n.kind == "accelerated"} == {None}
     assert not [n for n, _ in g.walk() if n.kind == "link"]
+
+
+def _join() -> Graph:
+    """Two multiplies into one add, each bound: out = A * B + C * D at W = 4, N = 8."""
+
+    def acc(node, brm, code, ins, out, op):
+        return {"id": node, "kind": "accelerated",
+                "inputs": {p: {"data": c, "subset": ["4 * i_t:4 * i_t + 4"]} for p, c in ins.items()},
+                "outputs": {"out": {"data": out, "subset": ["4 * i_t:4 * i_t + 4"]}},
+                "attrs": {"instance": node, "brm": brm, "implementation": "chisel_tiled_spatial",
+                          "code": code, "params": {"W": 4, "op": op}, "replaced": None},
+                "body": []}  # fmt: skip
+
+    def loop(name, node):
+        return {"id": name, "kind": "map", "inputs": {}, "outputs": {},
+                "attrs": {"var": "i_t", "range": "0:N // 4", "loop.kind": "temporal"},
+                "body": [node]}  # fmt: skip
+
+    cont = {"shape": ["N"], "dtype": "int64", "transient": False, "attrs": {}}
+    d = {"name": "join", "symbols": {"N": 8},
+         "containers": {**{c: dict(cont) for c in ("A", "B", "C", "D", "out")},
+                        **{c: dict(cont, transient=True) for c in ("t1", "t2")}},
+         "body": [loop("m1", acc("mul1", "elementwise_mul", "out = a * b", {"a": "A", "b": "B"},
+                                 "t1", "mul")),
+                  loop("m2", acc("mul2", "elementwise_mul", "out = a * b", {"a": "C", "b": "D"},
+                                 "t2", "mul")),
+                  loop("m3", acc("add", "elementwise_add", "out = a + b", {"a": "t1", "b": "t2"},
+                                 "out", "add"))]}  # fmt: skip
+    return Graph.from_dict(d)
+
+
+def test_link_refuses_a_join_until_tier_a():
+    """link.chain: mul2 into the add's other input makes {mul1, mul2, add} a join, not a chain
+    (SNAX-GVSoC's limit, gen.chain's check made early)."""
+    g = link(_join(), "t1", 0, "j")
+    with pytest.raises(LinkError) as e:
+        link(g, "t2", 0, "j")
+    assert e.value.code == "link.chain" and "until tier A" in str(e.value)

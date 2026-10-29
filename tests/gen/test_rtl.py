@@ -267,15 +267,29 @@ def test_a_mac_unit_in_each_form_is_accepted(accumulate, reg_out):
     assert fill(acc, unit, catalogue()["Mac"])["inTypes"] == ["int64"] * (2 if accumulate else 3)
 
 
+def _behind_mac(unit: Unit) -> Accelerator:
+    """dot 5's group: a Mac wired into ``unit`` (``sum``), which reads from the link."""
+    from tests.gen.test_accelerator import dot4
+
+    acc = dot4()
+    (g,) = acc.groups
+    return replace(acc, groups=[replace(g, units=[g.units[0], unit])])
+
+
 def test_a_serial_accumulate_unit_spans_its_lanes():
+    """Behind a link (dot 5): span 4 is the catalogue's; span 1 is gen.timing. Fed by the
+    streamer it is gen.span, SNAX-GVSoC's limit until B2."""
     unit = Unit("sum", "accumulate", "SerialAccumulate",
                 {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
                 {"T": 1}, 1, 1, [], None, 4)  # fmt: skip
-    check_unit(_alone(unit), unit, catalogue())
+    check_unit(_behind_mac(unit), unit, catalogue())
     with pytest.raises(GenError) as e:
         bad = replace(unit, span=1)
-        check_unit(_alone(bad), bad, catalogue())
+        check_unit(_behind_mac(bad), bad, catalogue())
     assert e.value.code == "gen.timing"
+    with pytest.raises(GenError) as e:
+        _alone(unit)
+    assert e.value.code == "gen.span"
 
 
 @pytest.mark.parametrize(
@@ -283,7 +297,7 @@ def test_a_serial_accumulate_unit_spans_its_lanes():
     [
         (_mac(True, c=True), "gen.port_map"),  # the accumulate form has no c
         (_mac(False, c=False), "gen.port_map"),  # the plain form needs c
-        (_mac(True, span=2), "gen.timing"),
+        (_mac(True, span=2), "gen.span"),  # span > 1 on the streamer's inputs: SNAX-GVSoC's limit
         (_mac(True, latency=0), "gen.timing"),  # max(accumulate, regOut) = 1
         (_mac(False, True, latency=0), "gen.timing"),  # 1 with regOut
         (_mac(False, latency=1), "gen.timing"),  # 0 plain
