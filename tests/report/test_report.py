@@ -383,6 +383,42 @@ def test_the_design_report_has_a_row_per_unit(dot1):
         ("mul_a", "mul"), ("mul_b", "mul"), ("sum_a", "sum")]  # fmt: skip
 
 
+# =============================================================================
+# A linked group (D148): dot 4's recorded run
+# =============================================================================
+
+
+@pytest.fixture(scope="module")
+def dot4(tmp_path_factory):
+    from tests.viz.helpers import recorded_run
+
+    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_4"
+    return recorded_run(tmp_path_factory.mktemp("dot4") / "dot_4_task", "task", fixture)
+
+
+def test_a_linked_group_is_one_accelerator_in_the_run_report(dot4):
+    """The group is one accelerator named after it, with its run's classes; its task and its
+    movers' tasks are the group's."""
+    r = reports_of(dot4)
+    assert [(a.name, a.firings, a.stall_in, a.stall_out, a.flush) for a in r.run.accelerators] == [
+        ("dot", 128, 3, 0, 1)]  # fmt: skip
+    assert [(t.block, t.name) for t in r.run.tasks if t.block != "dma"] == [
+        ("mac_a", "mult_mac_a"), ("mac_b", "mult_mac_b"), ("sum_out", "sum_final_sum_out"),
+        ("dot", "mult_dot")]  # fmt: skip
+
+
+def test_a_linked_groups_design_report_has_a_row_per_unit(dot4):
+    """The cluster's one component for the group, its datapaths in chain order under the
+    group's control unit; an accelerator row per unit, each with its BRM and ports."""
+    r = reports_of(dot4).design
+    assert (r.components[0].name, r.components[0].detail) == (
+        "dot", "Mac → TreeAccumulate on core0, group control unit, slot snax_forge")  # fmt: skip
+    assert [(a.instance, a.kind, a.brm, a.latency, a.ports) for a in r.accelerators] == [
+        ("mac", "Mac", "mac", 1, ["a ← mac_a", "b ← mac_b"]),
+        ("sum", "TreeAccumulate", "accumulate", 1, ["out ← sum_out"]),
+    ]  # fmt: skip
+
+
 def test_one_group_has_no_group_column(flows):
     text = render_run(reports_of(flows[("vecadd", "task")]).run)
     assert "| Block | # | Task |" in text and "Group" not in text

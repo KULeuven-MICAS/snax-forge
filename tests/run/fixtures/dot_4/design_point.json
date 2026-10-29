@@ -1,0 +1,262 @@
+{
+ "name": "dot_4",
+ "graph_from": "out/flow/dot_4_task/sandbox/6_link.snaxdfg",
+ "graph": {
+  "name": "dot",
+  "symbols": {"N": 512},
+  "containers": {
+   "A": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+   "B": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
+   "out": {"shape": [1], "dtype": "int64", "transient": false, "attrs": {}},
+   "tmp0": {
+    "shape": ["N"],
+    "dtype": "int64",
+    "transient": true,
+    "attrs": {"loop.local": "mult_map"}
+   },
+   "out_partial": {"shape": [4], "dtype": "int64", "transient": true, "attrs": {}}
+  },
+  "body": [
+   {
+    "id": "mult_map",
+    "kind": "map",
+    "inputs": {},
+    "outputs": {},
+    "attrs": {
+     "var": "i_t",
+     "range": "0:N // 4",
+     "loop.kind": "temporal",
+     "loop.split": {"var": "i", "range": "0:N"},
+     "loop.fused": {
+      "first": {
+       "id": "mult_map",
+       "kind": "map",
+       "inputs": {},
+       "outputs": {},
+       "attrs": {
+        "var": "i_t",
+        "range": "0:N // 4",
+        "loop.kind": "temporal",
+        "loop.split": {"var": "i", "range": "0:N"}
+       },
+       "body": [
+        {
+         "id": "mult_map_s",
+         "kind": "map",
+         "inputs": {},
+         "outputs": {},
+         "attrs": {"var": "i_s", "range": "0:4", "loop.kind": "spatial"},
+         "body": [
+          {
+           "id": "mult",
+           "kind": "tasklet",
+           "inputs": {
+            "in1": {"data": "A", "subset": ["4 * i_t + i_s"]},
+            "in2": {"data": "B", "subset": ["4 * i_t + i_s"]}
+           },
+           "outputs": {"out": {"data": "tmp0", "subset": ["4 * i_t + i_s"]}},
+           "attrs": {"code": "out = in1 * in2"}
+          }
+         ]
+        }
+       ]
+      },
+      "second": {
+       "id": "sum_map",
+       "kind": "map",
+       "inputs": {},
+       "outputs": {},
+       "attrs": {
+        "var": "i_t_1",
+        "range": "0:N // 4",
+        "loop.kind": "temporal",
+        "loop.split": {"var": "i", "range": "0:N"},
+        "loop.split_reduce": {"partial": "out_partial", "final": "sum_map_final"}
+       },
+       "body": [
+        {
+         "id": "sum_map_s",
+         "kind": "map",
+         "inputs": {},
+         "outputs": {},
+         "attrs": {"var": "i_s_1", "range": "0:4", "loop.kind": "spatial"},
+         "body": [
+          {
+           "id": "sum",
+           "kind": "tasklet",
+           "inputs": {"in1": {"data": "tmp0", "subset": ["4 * i_t_1 + i_s_1"]}},
+           "outputs": {
+            "out": {
+             "data": "out_partial",
+             "subset": ["i_s_1"],
+             "reduce": {"op": "add", "identity": 0}
+            }
+           },
+           "attrs": {"code": "out = in1"}
+          }
+         ]
+        }
+       ]
+      },
+      "local": "tmp0"
+     }
+    },
+    "body": [
+     {
+      "id": "mult",
+      "kind": "accelerated",
+      "inputs": {
+       "a": {"data": "A", "subset": ["4 * i_t:4 * i_t + 4"]},
+       "b": {"data": "B", "subset": ["4 * i_t:4 * i_t + 4"]}
+      },
+      "outputs": {"out": {"data": "out_partial", "subset": ["0:4"]}},
+      "attrs": {
+       "instance": "mac",
+       "brm": "mac",
+       "implementation": "chisel_mac",
+       "code": "out = a * b",
+       "params": {"W": 4, "op": "add"},
+       "replaced": {
+        "id": "mult_map_s",
+        "kind": "map",
+        "inputs": {},
+        "outputs": {},
+        "attrs": {"var": "i_s", "range": "0:4", "loop.kind": "spatial"},
+        "body": [
+         {
+          "id": "mult",
+          "kind": "tasklet",
+          "inputs": {
+           "in1": {"data": "A", "subset": ["4 * i_t + i_s"]},
+           "in2": {"data": "B", "subset": ["4 * i_t + i_s"]}
+          },
+          "outputs": {"out": {"data": "tmp0", "subset": ["4 * i_t + i_s"]}},
+          "attrs": {"code": "out = in1 * in2"}
+         },
+         {
+          "id": "sum",
+          "kind": "tasklet",
+          "inputs": {"in1": {"data": "tmp0", "subset": ["4 * i_t + i_s"]}},
+          "outputs": {
+           "out": {"data": "out_partial", "subset": ["i_s"], "reduce": {"op": "add", "identity": 0}}
+          },
+          "attrs": {"code": "out = in1"}
+         }
+        ]
+       },
+       "group": "dot"
+      },
+      "body": []
+     }
+    ]
+   },
+   {
+    "id": "out_partial",
+    "kind": "link",
+    "inputs": {},
+    "outputs": {},
+    "attrs": {"container": "out_partial", "depth": 0, "from": "mac", "to": "sum"}
+   },
+   {
+    "id": "sum_final",
+    "kind": "accelerated",
+    "inputs": {"a": {"data": "out_partial", "subset": ["0:4"]}},
+    "outputs": {"out": {"data": "out", "subset": ["0:1"]}},
+    "attrs": {
+     "instance": "sum",
+     "brm": "accumulate",
+     "implementation": "chisel_adder_tree",
+     "code": "out = a",
+     "params": {"W": 4, "op": "add"},
+     "replaced": {
+      "id": "sum_map_final",
+      "kind": "map",
+      "inputs": {},
+      "outputs": {},
+      "attrs": {"var": "i_f", "range": "0:4", "loop.kind": "spatial"},
+      "body": [
+       {
+        "id": "sum_final",
+        "kind": "tasklet",
+        "inputs": {"in1": {"data": "out_partial", "subset": ["i_f"]}},
+        "outputs": {"out": {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}},
+        "attrs": {"code": "out = in1"}
+       }
+      ]
+     },
+     "group": "dot"
+    },
+    "body": []
+   }
+  ]
+ },
+ "platform": {
+  "name": "snax_forge",
+  "base": "snax_forge",
+  "changes": {},
+  "hjson": "platforms/snax_forge_cluster.hjson",
+  "accelerator_slot": "snax_forge",
+  "l1": {"n_banks": 32, "width_bits": 64, "rows": 512, "base_addr": 268435456, "wide_bits": 512},
+  "l2": {"size_bytes": 2147483648, "base_addr": 2147483648, "beat_bits": 512, "width_bits": 64},
+  "wait_mode": "poll",
+  "streamers": {"default": {"fifo_depth": 8}}
+ },
+ "streamers": {
+  "mac_a": {
+   "instance": "mac",
+   "port": "a",
+   "write": false,
+   "n_ports": 4,
+   "spatial_bounds": [4],
+   "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 4,
+   "fifo_depth": 8
+  },
+  "mac_b": {
+   "instance": "mac",
+   "port": "b",
+   "write": false,
+   "n_ports": 4,
+   "spatial_bounds": [4],
+   "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 4,
+   "fifo_depth": 8
+  },
+  "sum_out": {
+   "instance": "sum",
+   "port": "out",
+   "write": true,
+   "n_ports": 1,
+   "spatial_bounds": [1],
+   "temporal_dims": 1,
+   "dtype": "int64",
+   "num_slc": 1,
+   "num_ch": 1,
+   "fifo_depth": 8
+  }
+ },
+ "memory": {
+  "passes": {"residency": "default", "layout": "contiguous", "placement": "contiguous"},
+  "changes": {},
+  "layouts": {
+   "A": {
+    "l2": {"base": 0, "shape": [512], "strides": [8]},
+    "l1": {"base": 268435456, "shape": [512], "strides": [8]}
+   },
+   "B": {
+    "l2": {"base": 0, "shape": [512], "strides": [8]},
+    "l1": {"base": 268439552, "shape": [512], "strides": [8]}
+   },
+   "out": {
+    "l2": {"base": 0, "shape": [1], "strides": [8]},
+    "l1": {"base": 268443648, "shape": [1], "strides": [8]}
+   },
+   "tmp0": {},
+   "out_partial": {}
+  }
+ }
+}

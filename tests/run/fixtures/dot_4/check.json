@@ -1,0 +1,21 @@
+{
+ "total_cycles": 437,
+ "functional_check": {
+  "kernel": "dot",
+  "seed": 0,
+  "symbols": {
+   "N": 512
+  },
+  "exit_code": 0,
+  "data_errors": 0,
+  "words": 1,
+  "tasks": {
+   "mult_dot": {
+    "counter": 133,
+    "beats": 128,
+    "group": "dot"
+   }
+  },
+  "passed": true
+ }
+}
