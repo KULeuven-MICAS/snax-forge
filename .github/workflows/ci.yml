@@ -139,8 +139,9 @@ jobs:
           done
 
   # The flow on SNAX-GVSoC (D136): GVSoC built from the submodule, then
-  # `pixi run flow` on vecadd and vsum, at trace off and task (D137: the events
-  # converted, the reports written), and the tests marked `gvsoc`. The only
+  # `pixi run flow` on vecadd at trace stall, which no test runs, and the tests
+  # marked `gvsoc` (vecadd and vsum at trace off and task among them; D137: the
+  # events converted, the reports written). The only
   # job that builds the submodule (D134; the python and chisel jobs only read
   # it); snax-gvsoc's own CI never needs snax-forge.
   gvsoc:
@@ -190,18 +191,6 @@ jobs:
       # The image's pixi; pixi.lock as checked in.
       - name: pixi environment
         run: pixi install -e ci
-
-      - name: Flow on vecadd
-        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_forge.json
-
-      - name: Flow on vsum
-        run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_forge.json
-
-      - name: Flow on vecadd, trace task
-        run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_forge.json --trace task
-
-      - name: Flow on vsum, trace task
-        run: pixi run -e ci flow recipes/vsum.json --platform platforms/snax_forge.json --trace task
 
       - name: Flow on vecadd, trace stall
         run: pixi run -e ci flow recipes/vecadd.json --platform platforms/snax_forge.json --trace stall

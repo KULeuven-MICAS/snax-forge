@@ -102,6 +102,8 @@ test-run   = "pytest -q tests/run"
 test-report = "pytest -q tests/report"
 test-gen   = "pytest -q tests/gen"
 test-kernels = "pytest -q tests/kernels"
+test-viz   = "pytest -q tests/viz"
+test-docs  = "pytest -q tests/test_contracts.py tests/test_md_reflow.py"
 lint       = "ruff check util kernels snax_forge tests && ruff format --check util kernels snax_forge tests && python util/md_reflow.py --check"
 fmt        = "ruff check --fix util kernels snax_forge tests && ruff format util kernels snax_forge tests"
 # SDFG ingest: `pixi run sdfg vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
@@ -125,7 +127,7 @@ lower      = "python -m snax_forge.lower"
 # graph in place of the recipe (`pixi run flow out/sandbox/vecadd/2_bind.snaxdfg --platform ...`) skips the sandbox (D108)
 flow       = "python -m snax_forge.flow"
 # Generator: `pixi run gen-gvsoc out/design/vecadd/design_point.json [--out DIR]` writes
-# the cluster, streamer and accelerator hjson files, the headers, data.h, main.c and manifest.json to
+# the cluster and streamer hjson and accelerator.json, the headers, data.h, main.c and manifest.json to
 # out/gvsoc/<design>/
 gen-gvsoc  = "python -m snax_forge.gen"
 # Accelerator RTL (D130): `pixi run gen-rtl out/design/vecadd/design_point.json [OUT_DIR]` writes accelerator.json
@@ -137,7 +139,7 @@ gen-rtl    = "python -m snax_forge.gen.rtl"
 # gen-gvsoc's files, the RTL under rtl/ (sv/, emitted.json; sbt) with its file list rtl/files.f, and
 # bundle.json to out/bundle/<design>/, everything made again; the flow does not call it
 bundle     = "python -m snax_forge.gen.bundle"
-# Recipe to snax_cluster (CLN1 R3): `pixi run forge recipes/vecadd.json [--platform P] [--set K=V] [--trace LEVEL]`
+# Recipe to snax_cluster: `pixi run forge recipes/vecadd.json [--platform P] [--set K=V] [--trace LEVEL]`
 # runs the flow, the bundle of its design point (out/bundle/<name>/) and the bundle's program, checked to be the
 # flow's ELF; each step's output in out/forge/<name>/forge.log, then snax_cluster's Verilator commands
 forge      = "python -m snax_forge.flow.forge"
