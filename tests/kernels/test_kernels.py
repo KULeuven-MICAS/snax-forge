@@ -15,6 +15,7 @@ from snax_forge.sdfg.build import build
 from snax_forge.sdfg.loader import kernel_paths, load
 
 
+@pytest.mark.slow  # each SDFG builds in DaCe
 @pytest.mark.parametrize("name", sorted(kernel_paths()))
 def test_kernel_inputs_reference_sdfg(name: str) -> None:
     spec = load(name)

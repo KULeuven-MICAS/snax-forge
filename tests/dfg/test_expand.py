@@ -28,6 +28,8 @@ from snax_forge.sdfg.loader import load
 
 from . import sdfg_programs as progs
 
+pytestmark = pytest.mark.slow  # DaCe builds and compiles every SDFG here
+
 # the products each MatMul writes, named after its output
 PRODUCTS = {
     "bicg": ["__q_prod", "__s_prod"],
