@@ -31,7 +31,7 @@ reader takes from it:
                              generated accelerator's name, never the
                              source's ``snax_acc_name``, so a generated
                              design takes no name of snax_cluster's own
-                             (D131); the source must still have one
+                            ; the source must still have one
                              accelerator, its name an identifier
 
 A word's elements are not the platform's: each container's dtype decides

@@ -542,7 +542,7 @@ def test_the_adder_tree_is_tree_accumulate_at_w_lanes():
 
 
 def test_the_adapter_reads_unsigned_and_narrow_dtypes():
-    """Each port its container's dtype, opType the inputs' NumPy result type (D143)."""
+    """Each port its container's dtype, opType the inputs' NumPy result type."""
     u16 = elementwise_lanes(_instance(), _dtypes(a="uint16", b="uint16", out="uint16"))
     assert [p.dtype for p in u16.ports.values()] == ["uint16"] * 3 and u16.op_type == "uint16"
     mixed = elementwise_lanes(_instance(), _dtypes(a="int32", b="int32", out="int64"))
@@ -657,7 +657,7 @@ def test_the_accelerators_counter_may_land_on_0x5fd_not_past():
 
 
 # =============================================================================
-# Narrow designs (D142, D143): the streamer in words, each port's type
+# Narrow designs (D142): the streamer in words, each port's type
 # =============================================================================
 
 

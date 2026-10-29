@@ -420,7 +420,7 @@ def test_a_moved_container_is_padded_to_whole_beats():
 
 def test_dot_keeps_the_last_beat_of_out_to_itself():
     """out is one element moved as one beat: tmp0 (L1 only) starts after it, and pinned inside
-    it is an overlap (D105)."""
+    it is an overlap."""
     d = with_memory(graph="dot_accelerated")
     assert problems(d) == []
     lay = d.memory.layouts

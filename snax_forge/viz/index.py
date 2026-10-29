@@ -1,6 +1,6 @@
 """A run's events grouped by their ids and lookups, built once per run when the viewer loads
-it: what the memory tab's marks (D57), the movement view (D57), the schedule and the cluster
-view (D57) query.
+it: what the memory tab's marks (D57), the movement view, the schedule and the cluster
+view query.
 
     RunIndex.from_run(outputs, cluster, regions, tasks) -> RunIndex
 

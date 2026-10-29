@@ -332,7 +332,7 @@ def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
 
 def test_the_extents_include_the_padding(tmp_path):
     """rowsum_3x7: A[3, 7] over its padded [3, 8] (three pads, 192 B, whole beats); y, three
-    int64 the DMA moves, kept free up to a whole 64-byte beat. The checks' extents (D144)."""
+    int64 the DMA moves, kept free up to a whole 64-byte beat. The checks' extents."""
     r = designed_report(tmp_path, "rowsum_3x7")
     l1 = {x.name: x for x in next(m for m in r.memories if m.mem == "l1").regions}
     a, y = l1["A"], l1["y"]
@@ -384,7 +384,7 @@ def test_the_design_report_has_a_row_per_unit(dot1):
 
 
 # =============================================================================
-# A linked group (D148): dot 4's recorded run
+# A linked group: dot 4's recorded run
 # =============================================================================
 
 

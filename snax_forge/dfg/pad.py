@@ -18,7 +18,7 @@ container is padded in memory, in the data itself, never by the hardware:
 
 The reference executor reads a pad lane as ``pad_value`` and never writes
 one (execute.py); the memory plan lays a container out over its padded
-shape, and data.h fills the pads (D144).
+shape, and data.h fills the pads.
 """
 
 from __future__ import annotations

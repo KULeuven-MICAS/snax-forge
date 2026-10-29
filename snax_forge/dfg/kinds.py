@@ -34,12 +34,12 @@ Built-in kinds:
     tasklet      ``code``: one assignment per output connector over the input
                  connectors, in the expression grammar. One element per
                  connector: its memlets are indices, never ranges. An output
-                 memlet may carry a ``reduce`` (D102): the writes of every
+                 memlet may carry a ``reduce``: the writes of every
                  iteration fold into the element (a reduction).
     accelerated  a bound BRM instance (``instance``, ``brm``, ``implementation``,
                  design ``params``) doing one beat: its connectors are the BRM's
                  ports, its memlets give each port's lanes as a range. It sits
-                 inside the temporal maps it runs over. ``code`` (D82) is what
+                 inside the temporal maps it runs over. ``code`` is what
                  one lane computes, over its connectors, as the BRM states it;
                  ``replaced`` is the subtree ``bind`` replaced, in stored form
                  and checked in this node's scope, so ``unbind`` gives it back
@@ -50,7 +50,7 @@ Built-in kinds:
                  (written only when set, by ``link``) names the group the unit
                  is in; without it the unit is a group of its own, named
                  after the instance. A body is
-                 allowed for a nested block (D71); a leaf block has an empty
+                 allowed for a nested block; a leaf block has an empty
                  one. No ``reduce`` on its memlets: the BRM's function does
                  its own folding.
 
@@ -81,7 +81,7 @@ from .subset import canonical_dim, is_range, parse_dim
 if TYPE_CHECKING:
     from .graph import Container, Node
 
-LOOP_KINDS = ("tile", "temporal", "spatial")  # values of loop.kind (D73)
+LOOP_KINDS = ("tile", "temporal", "spatial")  # values of loop.kind
 
 
 class DfgError(ValueError):

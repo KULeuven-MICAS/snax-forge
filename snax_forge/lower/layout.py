@@ -9,7 +9,7 @@ extent per dimension, ``strides`` the bytes per step of each dimension. One
 form covers storage order (row- or column-major) and padding. Choosing it is
 SNAX-DSE's decision (section 5.4); SNAX-LOWER only reads it.
 
-This is the form of the design point's memory plan (D86):
+This is the form of the design point's memory plan:
 snax_forge/design/memory.py makes one per container and memory, and
 SNAX-LOWER reads them. ``check`` holds the L1 rules streams.py needs; the
 design checks judge a whole plan, in L1 and L2. A layout places each element
@@ -84,7 +84,7 @@ class Layout(Config):
 
     def check(self, l1: L1Config, elem_bytes: int) -> None:
         """The layout fits ``l1``: its base on a word, its strides whole elements of
-        ``elem_bytes`` (several may share a word, D142), inside L1."""
+        ``elem_bytes`` (several may share a word), inside L1."""
         word = l1.width_bits // 8
         if self.base % word:
             raise LayoutError(f"base {self.base} must be a multiple of the {word}-byte word")
@@ -118,7 +118,7 @@ def moved_bytes(lay: Layout, elem_bytes: int, beat: int) -> int:
 
 def l2_bytes(point: DesignPoint, c: str) -> int:
     """The bytes of container ``c``'s array in L2: its L2 layout over its padded shape (a
-    tail's pads included, D144) in whole DMA beats of the platform's ``l2.beat_bits`` (D105).
+    tail's pads included) in whole DMA beats of the platform's ``l2.beat_bits``.
     gen/data.py declares the array so, run/elf.py checks its symbol and run/convert.py its
     copies against it."""
     elem = np.dtype(point.graph.containers[c].dtype).itemsize
@@ -130,7 +130,7 @@ def dma_side(lay: Layout, elem_bytes: int, beat: int) -> dict[str, int | list[in
     """One side of a DMA task moving a whole layout: ``base``, ``bounds``, ``strides``.
 
     A contiguous layout starting on a wide beat is one loop of beats (open
-    item 38). A size that is not whole beats is padded (D105): the last beat
+    item 38). A size that is not whole beats is padded: the last beat
     also moves the bytes after the layout, up to the beat's end, which the
     memory plan keeps free in both memories. Anything else raises
     LayoutError, which the design check ``memory.align`` reports first.

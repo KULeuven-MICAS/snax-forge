@@ -65,7 +65,7 @@ def test_stream_spatial_bounds_are_the_memlets_ranges():
 
 
 def test_temporal_dims_come_from_the_graph():
-    """One streamer loop per firing loop the port's memlet runs over (D84): vecadd 1; vsum's
+    """One streamer loop per firing loop the port's memlet runs over: vecadd 1; vsum's
     out, which folds the one firing loop (rate T), 1; matadd, a row and a column loop, 2."""
     pf = Platform.load(SMALL16)
     dims = {

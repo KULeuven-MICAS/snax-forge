@@ -29,7 +29,7 @@ accelerator needs, so the platform does not list them: one streamer is made
 for every port of every accelerated node, named ``<instance>_<port>`` (D75).
 Its direction and lanes come from the BRM port (``write``, ``n_ports`` and,
 unless an entry gives them, ``spatial_bounds``), its temporal loops from the
-graph (``temporal_dims``, the firing loops of its port's memlet, D84);
+graph (``temporal_dims``, the firing loops of its port's memlet);
 ``default`` gives the rest (``fifo_depth``), and an entry named after the
 streamer overrides any of it for that one streamer only. An entry may also
 give ``num_ch``, the number of TCDM channels the streamer uses (never in
@@ -37,7 +37,7 @@ give ``num_ch``, the number of TCDM channels the streamer uses (never in
 slices (elements) per word of the port's container (D142, ``connect.num_ch``).
 
 **The word.** A bank word is ``width_bits`` wide; how many elements it holds
-is each container's dtype's business, not the platform's (D142). Resolving
+is each container's dtype's business, not the platform's. Resolving
 the shell against a graph is streamers.py; an entry that matches no port is a
 check (``connect.streamer_key``), not a load error, because only the graph
 knows the ports.
@@ -121,7 +121,7 @@ class L2Config(Config):
     size_bytes: int = 1 << 20
     base_addr: int = 0  # byte address of the first L2 word
     beat_bits: int = 512  # one DMA beat; must equal L1Config.wide_bits
-    width_bits: int = 64  # word = the L1 bank word (D142)
+    width_bits: int = 64  # word = the L1 bank word
 
     def __post_init__(self) -> None:
         if self.width_bits % 8 or self.width_bits < 8:
@@ -180,7 +180,7 @@ class Platform(JsonFile):
         return None if sb is None else list(sb)
 
     def num_ch(self, streamer: str) -> int | None:
-        """The entry's num_ch, or None for the wire default (D142)."""
+        """The entry's num_ch, or None for the wire default."""
         return self.entries.get(streamer, {}).get("num_ch")
 
     # --- changes ---

@@ -84,7 +84,7 @@ def test_two_temporal_maps_give_two_streamer_loops():
 
 
 def test_matadd_lowers_its_two_firing_loops():
-    """matadd (int32, D142) at W = 4, M = 8, N = 16 on snax_forge (D73, D84): the column beats
+    """matadd (int32, D142) at W = 4, M = 8, N = 16 on snax_forge (D73): the column beats
     innermost (4, 16 bytes apart), the rows outer (8, 64 bytes), 4 lanes as 2 channels a word
     (8 bytes) apart, each base the plan's; n = 32 firings; the streamers' two temporal loops
     are the graph's."""
@@ -319,7 +319,7 @@ def test_design_and_lower_import_in_any_order(first):
 
 
 def test_int32_vecadd_lowers_in_words():
-    """int32 vecadd at W = 4 (D142): each beat two words (spatial stride 8, the streamer's
+    """int32 vecadd at W = 4: each beat two words (spatial stride 8, the streamer's
     num_ch W / num_slc = 2), a beat on every 16 bytes; each 64 x 4 = 256-byte container moved as
     four whole DMA beats."""
 
@@ -337,7 +337,7 @@ def test_int32_vecadd_lowers_in_words():
 
 
 def test_matadd_int32_4x6_in_2x2_tiles_in_words():
-    """R1's accepted 2-D case (D142): the fastest spatial loop one word (8 bytes, a channel of
+    """The accepted 2-D case: the fastest spatial loop one word (8 bytes, a channel of
     2 int32), the row loop 6 x 4 bytes; the tiles step 2 columns (8 bytes) and 2 rows
     (48 bytes)."""
     m = Memlet("A", ["2 * i:2 * i + 2", "2 * j:2 * j + 2"])

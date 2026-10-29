@@ -320,7 +320,7 @@ def _link_and_group(v: dict) -> tuple[dict, list]:
 
 
 def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
-    """dot 4 (D148): the link node in the accelerated node's style, ``out_partial = wire``,
+    """dot 4: the link node in the accelerated node's style, ``out_partial = wire``,
     what it replaced; mac, the link and sum in one group box of the accelerator dot."""
     v = recipe_view(tmp_path, "dot_4")
     link, accs = _link_and_group(v)

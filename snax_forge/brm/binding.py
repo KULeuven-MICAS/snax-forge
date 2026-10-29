@@ -7,14 +7,14 @@
                                                 or a bool (a design-time variant:
                                                 Mac's accumulate)
      "controller": "counted",                   the nest controller that drives
-                                                it (D147)
+                                                it
      "ports":      {"a": "in", "out": "out"}}   optional: every BRM port -> the
                                                 datapath's port of that role (by
                                                 default the same name)
 
 ``controller`` is a registered kind (D19): ``register_controller``.
 ``counted`` is the only one: the shell's nest controller counts the firings,
-JOBS outermost and each fold's beats inside (D146, D147). The CSRs are not
+JOBS outermost and each fold's beats inside (D146). The CSRs are not
 the binding's: they follow from the unit's group (snax_forge/gen/accelerator.py).
 Which datapaths exist is the generators' business (snax_forge/gen/blocks.py
 registers them), so ``datapath`` is only a name here. Every expression is
@@ -40,7 +40,7 @@ class BindingError(ValueError):
 KEYS = ("datapath", "args", "controller")
 OPTIONAL = ("ports",)
 
-# name -> what it means; extended by registration (D19)
+# name -> what it means; extended by registration
 CONTROLLERS: dict[str, str] = {}
 
 

@@ -16,7 +16,7 @@ words (D142), from the design point's L2 (its base and size, the cluster
 file's ``dram``). The regions are the run's (``run.regions.regions_of``: L1
 from the memory plan, L2 from the ELF's symbols). A cell is one word; it
 holds a list of ``[region, flat]`` pairs, one per element whose first byte is
-in the word (several, for a narrow dtype the layouts pack, D142; each port's
+in the word (several, for a narrow dtype the layouts pack; each port's
 packing labelled), where ``region`` indexes
 that memory's region list and ``flat`` is the element's row-major index in
 its region's shape. An empty cell is ``[]``.

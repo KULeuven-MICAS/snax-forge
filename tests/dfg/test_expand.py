@@ -5,8 +5,8 @@ after ``expand``, their expanded SDFGs compile in DaCe and match NumPy, and
 they import (``import_kernel``) and pass the reference check, at two sizes
 each. Also: a mat-mat and a batched ``A @ B`` expand, compile and match; a
 rank-1 ``a`` and mismatched shapes are refused by name; a Transpose with a
-reader that is not a MatMul is left for the importer to refuse; and every
-kernel without one imports exactly as before R4.
+reader that is not a MatMul is left for the importer to refuse; and a kernel
+without one imports as it is, untouched by ``expand``.
 """
 
 from __future__ import annotations

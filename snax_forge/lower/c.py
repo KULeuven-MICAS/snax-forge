@@ -83,7 +83,7 @@ it returns to main (0 on the other cores; snRuntime sums them at exit).
 
 **Refused**, each a ``CError`` (``c.<rule>``): other than one accelerator
 (``c.instances``: several groups are one accelerator only through
-``encapsulate``, D148; the generator refuses it first, ``gen.instances``), a
+``encapsulate``; the generator refuses it first, ``gen.instances``), a
 unit without a binding (``c.binding``), a cluster file without one xdma core
 or without the slot (``c.cores``), a start that does not cover every mover of
 the accelerator, the idle ones at bound 0, or that starts a unit before them
@@ -132,7 +132,7 @@ class CError(CodedError):
 
 def fold_rate(inst: Instance) -> str | None:
     """The runtime param an output port's rate names, a fold's T; None for a unit whose
-    outputs all have rate 1 (D146)."""
+    outputs all have rate 1."""
     for p in inst.brm.interface.ports:
         if p.direction == "out" and isinstance(p.rate, str):
             return p.rate
@@ -141,7 +141,7 @@ def fold_rate(inst: Instance) -> str | None:
 
 def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -> dict[str, int]:
     """An accelerator task's CSR values from its values (``n`` and the named rates, C§9):
-    ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T (D146), none when its T is ``fixed``
+    ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T, none when its T is ``fixed``
     (the description's ``params.T``); T is 1 for a unit without a fold, and T = 0 is an empty
     run (JOBS 0)."""
     rate = fold_rate(inst)
@@ -182,7 +182,7 @@ def mover_name(write: bool, index: int) -> str:
 def accelerator(
     point: DesignPoint, fail: Callable[[str, str], Exception] | None = None
 ) -> tuple[str, dict[str, Instance]]:
-    """The one accelerator's name and its units, one per group in the graph's order (D148),
+    """The one accelerator's name and its units, one per group in the graph's order,
     each with a binding. ``fail(rule, message)`` makes the error of the rule broken
     (``instances``, ``binding``): a ``c.<rule>`` CError by default, the generator's own
     (gen/gvsoc.py)."""
@@ -258,7 +258,7 @@ class _Program:
         for unit, inst in self.units.items():
             for p in inst.brm.interface.ports:
                 s = self.point.streamers.get(streamer_name(unit, p.name))
-                if s is None:  # a port on a link: no streamer (D112)
+                if s is None:  # a port on a link: no streamer
                     continue
                 out[s.name] = mover_name(s.write, n[s.write])
                 n[s.write] += 1
@@ -541,7 +541,7 @@ def main_c(point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any], acc:
 
 def _compare(a: Any) -> list[str]:
     """The loop comparing output ``a`` with its golden, its valid elements only: one loop over
-    them, or for a matrix a tail pads (D144), one loop per dimension over its own extent,
+    them, or for a matrix a tail pads, one loop per dimension over its own extent,
     each element at its index in the padded rows."""
     test = [
         f"{INDENT}if (((volatile {a.ctype} *){a.name})[i] != {a.name}_golden[i]) {{",

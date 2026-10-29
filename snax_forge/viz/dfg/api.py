@@ -1,7 +1,7 @@
 """What the DFG viewer asks for, as plain Python functions (D55).
 
 The server (server.py) only turns these results into JSON; the tests call
-them directly, and the drawing is checked by eye (D55).
+them directly, and the drawing is checked by eye.
 
 Loading
 -------
@@ -69,7 +69,7 @@ so dot 1's ``mul`` and ``sum`` sit in the accelerator ``dot``, and dot 4's
 ``mac``, its link and ``sum`` in one group box; an accelerated node's panel
 names its group and accelerator.
 
-**Links** (D148). A link node is drawn in the accelerated node's style: its
+**Links**. A link node is drawn in the accelerated node's style: its
 title ``<container> = wire`` (depth 0) or ``<container> = buffer``, its
 heading the depth (a buffer's) and its units, ``from → to``, and what it
 replaced, the transient (``replaces out_partial``). The container still
@@ -94,7 +94,7 @@ from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
 
-# A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype (D142)
+# A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype
 WORD_BITS = 64
 
 # =============================================================================

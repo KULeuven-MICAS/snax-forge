@@ -29,7 +29,7 @@ replace any one of them (``register_memory_pass``):
                 word
 
 An L2 layout keeps base 0: the program's link places its array (data.h's,
-named after the container), not the plan (D86).
+named after the container), not the plan.
 
 **Pins.** ``--set memory.<container>.l1.base=N`` fixes an L1 base; the
 placement puts everything else around the pinned layouts, never over them.
@@ -207,7 +207,7 @@ class MemoryContext:
         return cfg.width_bits // 8
 
     def padded(self, container: str) -> tuple[int, ...]:
-        """The container's shape with a tail's padding (dfg/pad.py, D144); its shape when it
+        """The container's shape with a tail's padding (dfg/pad.py); its shape when it
         has none."""
         return padded_shape(self.graph, container)
 
@@ -348,12 +348,12 @@ def contiguous_placement(
     for c in ctx.containers:
         if "l1" not in layouts.get(c, {}) or (c, "l1") in pins:
             continue
-        lay = ctx.block(c, layouts[c]["l1"])  # a tail's pads take memory too (D144)
+        lay = ctx.block(c, layouts[c]["l1"])  # a tail's pads take memory too
         moved = "l2" in layouts[c]
         a = ctx.beat_bytes if moved else word
         elem = ctx.elem_bytes(c)
         lo0, hi0 = lay.extent(elem)  # with base 0
-        if moved:  # the DMA moves whole beats: keep the padding free (D105)
+        if moved:  # the DMA moves whole beats: keep the padding free
             hi0 = lo0 + moved_bytes(lay, elem, a)
         base = round_up(cursor - lo0, a)
         clash = True

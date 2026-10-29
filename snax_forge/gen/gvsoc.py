@@ -4,7 +4,7 @@
 
 The hjson is the contract: SNAX-GVSoC's ``snax_hjson`` target reads it at
 run time (snax-gvsoc ``snax/snax_cfg.py``), so a design point compiles
-nothing and no Python is generated (D134). ``out_dir`` gets three
+nothing and no Python is generated. ``out_dir`` gets three
 description files, each changing for its own reason, the C headers, the
 program and its data, and the manifest:
 
@@ -61,7 +61,7 @@ name, is renamed and set, its keys in this order:
       snax_num_rw_csr           the accelerator's R/W CSRs (accelerator.py)
       snax_num_ro_csr           its R/O CSRs
     snax_disable_csr_manager    true: the wrapper carries its own manager
-                                (D130)
+
     snax_forge_rtl              ``rtl/files.f``, the RTL's file list from
                                 the cluster file's folder, which only a
                                 bundle has; SNAX-GVSoC ignores it
@@ -73,7 +73,7 @@ slot referred to (``{"$ref": "#/<key>"}``), goes when nothing else refers to
 it. Everything else is the source's, its key order kept; its comments are
 not (the file is written as JSON, which hjson reads).
 
-**The streamer**, lowered per design point (D134), as the design point's
+**The streamer**, lowered per design point, as the design point's
 streamers give it (D87): readers the input ports, writers the output ports,
 unit by unit (the accelerator's groups in order, D148) in the BRM's port
 order, each with ``spatial_bounds`` in words, fastest
@@ -182,7 +182,7 @@ OUT = ROOT / "out" / "gvsoc"
 # (snax/snax_accelerator.py) calls a unit `unit`, with several groups `unit_<unit>`
 ACC_TRACE = "snax_acc0"
 UNIT_TRACE = f"{ACC_TRACE}/unit"
-# The generated cluster's name (D130)
+# The generated cluster's name
 CLUSTER = "snax_forge_cluster"
 # The RTL's file list from the cluster file's folder, written by bundle.py
 RTL_FILE_LIST = "rtl/files.f"
@@ -280,7 +280,7 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
                 f"words of num_slc = {s.num_slc} {dtypes[p.name]} slices",
             )  # fmt: skip
         mover = {
-            "spatial_bounds": [s0 // s.num_slc, *rest],  # in words (D142)
+            "spatial_bounds": [s0 // s.num_slc, *rest],  # in words
             "temporal_dim": s.temporal_dims,
             "num_channel": s.num_ch,
             "fifo_depth": s.options.fifo_depth,
@@ -289,7 +289,7 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
 
 
 def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Accelerator) -> list[AccTask]:
-    """The accelerator tasks of the derived task list (D64), in order, with their group's CSR
+    """The accelerator tasks of the derived task list, in order, with their group's CSR
     values (lower/c.py's ``job_writes``: a CSR of a unit of a linked group named with the unit,
     ``MAC_JOB_BEATS``) and, with several groups, its group's trace path."""
     several = len(acc.groups) > 1

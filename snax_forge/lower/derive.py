@@ -14,7 +14,7 @@ ports on a link with no streamer (D112) and no load or store. For each group:
     streamers    configure ``<node>_<instance>_<port>`` for every port, in the
                  BRM's port order, with values from the memlet through the
                  container's L1 layout (below)
-    idle movers  in an accelerator of several groups (D148), configure
+    idle movers  in an accelerator of several groups, configure
                  ``<node>_<streamer>`` for every port of the other groups'
                  units too, every temporal bound 0, so they never start: the
                  streamer starts all its movers with one CSR; the task list
@@ -39,7 +39,7 @@ writer for the tasks that read or wrote its container since; the waits a
 busy component needs are placed later (waits.py). Every configure uses the platform's
 ``wait_mode``; so does every sync.
 
-**Streamer values from a memlet** (D73). With the firing loops ``v_k``
+**Streamer values from a memlet**. With the firing loops ``v_k``
 (begin ``b_k``, ``count_k`` iterations, step ``s_k``) and the container's L1
 layout (``base``, byte ``strides``), each subset dimension ``d`` is an index
 or a range whose begin is affine in the ``v_k`` (``expr.linear``):
@@ -221,7 +221,7 @@ class _Derivation:
         return self.layout(c, "l1") is not None and self.layout(c, "l2") is not None
 
     def outer(self, un: Any) -> list[str]:
-        """The node's ports with a streamer: every port not on a link (D112)."""
+        """The node's ports with a streamer: every port not on a link."""
         u = un.attrs["instance"]
         return [p.name for p in self.insts[u].brm.interface.ports
                 if f"{u}.{p.name}" not in self.linked_ports]  # fmt: skip
@@ -240,7 +240,7 @@ class _Derivation:
 
     def idle(self, node: str, s: Any) -> Configure:
         """Node ``node``'s task on another group's mover ``s``: every bound 0, so it never
-        starts and moves nothing (D148); every temporal stride a word (module doc)."""
+        starts and moves nothing; every temporal stride a word (module doc)."""
         word = self.pf.l1.width_bits // 8
         values = {"base": 0, "temporal_bounds": [0] * s.temporal_dims,
                   "temporal_strides": [word] * s.temporal_dims,
@@ -331,7 +331,7 @@ class _Derivation:
 
     def accelerator(self, n: Any, group: str, members: list[str] | None,
                     starts: dict[str, dict[str, Any]], own: dict[str, Configure]) -> None:  # fmt: skip
-        """The accelerator's every mover (its other groups' idle, D148), then the group's task,
+        """The accelerator's every mover (its other groups' idle), then the group's task,
         all started together."""
         name = n.attrs["instance"]
         movers = []

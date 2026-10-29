@@ -46,7 +46,7 @@ export function eventText(e) {
   }
 }
 
-// -- a journey's hops and firings (/api/run/<n>/journey, D57) ----------------------
+// -- a journey's hops and firings (/api/run/<n>/journey) ----------------------
 
 /** One hop of an element: "L1 read by acc_a.lane1 (bank 5, row 0) = 7; bank served ...". */
 export function hopText(x) {

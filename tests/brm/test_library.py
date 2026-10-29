@@ -146,7 +146,7 @@ def test_the_adder_tree_folds_four_lanes_into_one():
 
 
 def test_the_chisel_accumulator_declares_its_drain():
-    """One lane, drain 0 (D133)."""
+    """One lane, drain 0."""
     brm = load_brm("accumulate")
     inst = brm.resolve("chisel_accumulator", {"W": 1})
     assert (inst.latency, inst.initiation_interval, inst.drain) == (1, 1, 0)

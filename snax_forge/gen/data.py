@@ -114,7 +114,7 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
         t = ctype(cont.dtype, f"container {c}")
         size = np.dtype(cont.dtype).itemsize
         lay, shape = point.memory.layouts[c]["l2"], padded_shape(graph, c)
-        block = over(lay, shape)  # a tail's pads included (D144)
+        block = over(lay, shape)  # a tail's pads included
         if block != Layout.contiguous(lay.base, shape, size):
             raise GenError(
                 "gen.layout", f"{c}'s L2 layout {lay} is not its {size}-byte elements in order"

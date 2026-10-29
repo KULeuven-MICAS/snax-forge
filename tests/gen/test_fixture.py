@@ -8,7 +8,7 @@ the first 2-D bind, two temporal loops per streamer), rowsum and rowsum_serial
 vsum_tree_i32, vecadd_i8, vsum_tree_i8: D142, D143; vecmul_i32_i64, the
 product at int32 sign-extended into int64) and the padded tails
 (vecadd_n7, vsum_tree_n21, rowsum_3x7: D144); dot_1, one accelerator of two
-groups (D148); B1x's dot_2 to dot_6 and matvec_2 to matvec_6, one group of
+groups (D148); dot_2 to dot_6 and matvec_2 to matvec_6, one group of
 linked units each, and matvec_1, dot_1's two groups on each row. Its refresh commands are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson

@@ -7,8 +7,8 @@ and a port's list must hold a multiple of its lanes when they are constant.
 
 ``affine_adder`` and ``affine_reducer`` are the same BRMs with ``affine``
 nests: a vector walked W elements per beat. ``affine_elementwise_add`` is the
-library's ``elementwise_add`` with those nests in place of its ``stream`` ones,
-as it was before M13's B0: the BRM whose nest SNAX-LOWER's order check reads.
+library's ``elementwise_add`` with those nests in place of its ``stream`` ones:
+the BRM whose nest SNAX-LOWER's order check reads.
 """
 
 from __future__ import annotations

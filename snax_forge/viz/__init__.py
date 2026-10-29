@@ -11,16 +11,16 @@ reports (``snax_forge.report``, D99) instead.
   (``RunIndex``), and the memory tab's marks, added by registration;
 * memory.py: the memory tab's layout, folded rows and marks on them (D57);
 * movement.py: data movement as queries on the index: journey, residency,
-  patterns, conflicts (D57);
+  patterns, conflicts;
 * schedule.py, cluster.py: the schedule's lanes, folded segments and detail
-  rows, the cluster at one cycle and the stepping between cycles (D57);
+  rows, the cluster at one cycle and the stepping between cycles;
 * server.py: the stdlib HTTP server around them;
 * static/: the viewer (index.html, plain JS modules, CSS; no build step and
   no external file, so it works offline). It draws the API's answers and
   computes nothing of its own.
 
 The tabs are the profile report, the schedule with the cluster view under
-it, and the memory tab, all on the same API. The DFG viewer (D55) is the
+it, and the memory tab, all on the same API. The DFG viewer is the
 subpackage dfg/, a second mode of the same server for ``.snaxdfg`` files
 (``python -m snax_forge.viz.dfg``).
 """

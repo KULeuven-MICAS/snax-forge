@@ -22,7 +22,7 @@ them, and every port of its BRM in port order, one streamer:
                     ``connect.num_ch`` an entry's value)
     temporal_dims   from the graph: the firing loops the port's memlet runs
                     over (``port_loops``, as SNAX-LOWER takes them), at least
-                    1; with several nodes on one instance, the most (D84)
+                    1; with several nodes on one instance, the most
     fifo_depth      the platform's ``default`` with the streamer's entry on top
 
 A port on a link (``link``, D148) has no streamer: streamers sit on the
@@ -88,7 +88,7 @@ class Streamer:
 
 
 def slices_per_word(dtype: str, width_bits: int) -> int:
-    """num_slc: slices (elements) of ``dtype`` in one bank word of ``width_bits`` (D142), at
+    """num_slc: slices (elements) of ``dtype`` in one bank word of ``width_bits``, at
     least 1."""
     return max(1, width_bits // (np.dtype(dtype).itemsize * 8))
 
@@ -122,14 +122,14 @@ def group_of(node: Node) -> str:
 
 
 def accelerator_of(node: Node) -> str:
-    """The accelerator a node's group is in: its ``accelerator`` (``encapsulate``'s, D148), else
+    """The accelerator a node's group is in: its ``accelerator`` (``encapsulate``'s), else
     the group's own, named after it."""
     return node.attrs.get("accelerator", group_of(node))
 
 
 def accelerators(graph: Graph) -> dict[str, list[str]]:
     """Every accelerator, in the order the graph first uses it, with its units (instances) in
-    the graph's order (D148); ``groups`` puts them into groups."""
+    the graph's order; ``groups`` puts them into groups."""
     out: dict[str, list[str]] = {}
     for name, n in instance_nodes(graph).items():
         out.setdefault(accelerator_of(n), []).append(name)
@@ -161,7 +161,7 @@ def link_ends(graph: Graph, link: Node) -> tuple[str, str]:
 
 
 def linked_ports(graph: Graph) -> set[str]:
-    """Every port on a link, ``"<instance>.<port>"``: it has no streamer (D112)."""
+    """Every port on a link, ``"<instance>.<port>"``: it has no streamer."""
     return {end for k in links(graph) for end in link_ends(graph, k)}
 
 

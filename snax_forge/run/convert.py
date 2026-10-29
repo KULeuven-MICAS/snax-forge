@@ -15,7 +15,7 @@ beat lines are not read yet (open item 96).
 **Names.** A line's component path becomes a C§7 name: ``snax_acc<i>/unit`` the accelerator's
 unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (D148, ``mul``, ``sum``;
 a shell has no trace of its own), ``snax_acc<i>/group_<group>`` a linked group, named after
-the group (``dot``; its tasks are the group's, D148), whose lines are at its boundary: its
+the group (``dot``; its tasks are the group's), whose lines are at its boundary: its
 ``firings`` and ``count`` the head unit's, ``rate`` the head's firings per result of the last
 unit (snax-gvsoc's docs/EVENTS.md), ``snax_acc<i>/streamer`` with its ``mover`` the mover
 (``reader0`` -> ``acc_a``),

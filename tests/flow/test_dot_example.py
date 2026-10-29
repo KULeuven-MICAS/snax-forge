@@ -33,7 +33,7 @@ ROW = re.compile(
 
 
 def c17(name: str, n: int, w: int = W, j: int = 1) -> tuple[int, ...]:
-    """C§17's cycles of each group at N = n: dot 1's two by B1's rule (mul JT, sum JT + 1), the
+    """C§17's cycles of each group at N = n: dot 1's two by the nest controller's rule (mul JT, sum JT + 1), the
     linked groups' by their formula."""
     t = n // w
     return {

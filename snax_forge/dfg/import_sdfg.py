@@ -22,7 +22,7 @@ given) and maps it onto the format of D71:
     Reduce library node               nested maps, one per input dimension,
                                       around a tasklet ``out = in1`` whose
                                       output memlet has a ``reduce`` (D102)
-    access nodes, map connectors,     not stored: derived (D71)
+    access nodes, map connectors,     not stored: derived
     outer memlets on a map
 
 What DaCe's simplify already did is kept as it is: for vecadd it folded the
@@ -30,7 +30,7 @@ transient-plus-copy of ``C[:] = A + B`` into a direct write into ``C``, so
 there is nothing left to fold. A copy between containers that simplify left
 is an error here.
 
-**Reductions** (D102). DaCe writes ``np.sum(A * B)`` as a map into a
+**Reductions**. DaCe writes ``np.sum(A * B)`` as a map into a
 transient, a ``Reduce`` library node, and, for a result stored with
 ``out[0] = ...``, a scalar transient copied into ``out`` by a tasklet
 ``__out = __inp``; simplify leaves that copy. The importer folds it, as
@@ -54,7 +54,7 @@ what DaCe calls write-conflict resolution: the op (``add``, ``mul``, ``min``,
 none). dot becomes ``mult_map`` then ``sum_map``, with ``tmp0`` between
 them.
 
-**Names** (D75, D71). Containers keep the kernel's names (``A``, ``B``,
+**Names** (D75). Containers keep the kernel's names (``A``, ``B``,
 ``C``); a transient loses its underscores (``__tmp0`` -> ``tmp0``). Maps and
 tasklets take their DaCe label without underscores, lower case
 (``_Add__map`` -> ``add_map``, ``_Add_`` -> ``add``), with ``_1``, ``_2``

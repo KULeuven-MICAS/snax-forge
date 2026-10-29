@@ -90,7 +90,7 @@ class Csrs:
 
 @dataclass(frozen=True)
 class Unit:
-    """One unit of the accelerator (D148): its instance, its group, its SNAX-GVSoC component
+    """One unit of the accelerator: its instance, its group, its SNAX-GVSoC component
     below ``snax_acc<i>`` and its group's START, STATUS and COUNTER, which bound the group's
     CSRs (C§17)."""
 

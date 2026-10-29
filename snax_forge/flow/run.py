@@ -21,11 +21,11 @@
       -> report         design.md and run.md (snax_forge/report/)  report/
       -> log            the summary and the design checks that ran flow.log
 
-The flow runs SNAX-GVSoC only (D136). ``build``, ``sw`` and ``gvsoc`` each call
+The flow runs SNAX-GVSoC only. ``build``, ``sw`` and ``gvsoc`` each call
 ``run_gvsoc``, ``make`` on ``gvsoc/Makefile`` through a subprocess; that
 Makefile names the image's tools, so the flow calls it from pixi. Nothing is
 decided here: each stage is the tool of that name, called as its command
-line would be (D136).
+line would be.
 
 **Build.** GVSoC is built into ``out/snax-gvsoc/`` (``gvsoc/Makefile``'s
 ``build``) when its install is missing, when the checkout it was built from
@@ -43,7 +43,7 @@ and ``flow.log`` warn.
 **Goldens.** data.h's goldens are the reference executor's on the design
 point's graph; before writing them, gen checks that result against the
 kernel's reference on the same inputs (``dfg.reference.reference_check``), so a graph
-that computes something else stops there (D108).
+that computes something else stops there.
 
 **Check** (C§7). The program checks itself (C§16's ``main.c``): its exit
 code is the run's (the ``Error N`` make prints for the run's recipe, 0 when
@@ -59,7 +59,7 @@ written;
 ``run/profile.json`` holds ``total_cycles`` and ``functional_check``, with
 what ``convert`` adds.
 
-**Trace** (D137). The run writes the SNAX components' ``summary`` traces into
+**Trace**. The run writes the SNAX components' ``summary`` traces into
 ``run/events.log`` at every level, their ``events`` traces from ``task``, and
 from ``beat``, ``stall`` and ``finegrained`` the ``beats``, ``stalls`` and the
 cores' ``insn`` lines of the trace's sources (``trace_sources``, by default the
@@ -84,13 +84,13 @@ earlier run in the same folder are removed first; ``gen/`` is written again in p
 file only when it changes (gen/gvsoc.py), and any other file in it removed, so an unchanged
 design rebuilds no program.
 
-**Stage times** (D136). ``flow.log`` ends with the wall-clock seconds of each
+**Stage times**. ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``gen``, ``build``,
 ``sw``, ``gvsoc``, ``check``, ``convert``, ``report``) and their total, on this machine. They change
 from run to run, so they are in the log only. They are the raw material of
 the paper's turnaround baseline (claim C1).
 
-**From a bound graph** (D108). ``run_bound(graph, platform, ...)`` is
+**From a bound graph**. ``run_bound(graph, platform, ...)`` is
 the same path without its first stage: the graph is a bound ``.snaxdfg``
 (the last step of a sandbox run, or one edited by hand) and goes straight to
 SNAX-DESIGN, as ``steps[-1]`` does above. No recipe is read and ``sandbox/``
@@ -277,7 +277,7 @@ def default_name(
     platform_sets: Sequence[tuple[str, Any]] = (),
     memory_sets: Sequence[tuple[str, Any]] = (),
 ) -> str:
-    """The recipe's name with every ``--set`` appended (D136): recipe params, then platform and
+    """The recipe's name with every ``--set`` appended: recipe params, then platform and
     memory paths without their ``platform.`` / ``memory.`` prefix, each in the order given
     (``vecadd_W8``, ``vecadd_l1.n_banks32``, ``vecadd_B.l1.base576``)."""
     sets = [*recipe_sets.items(), *platform_sets, *memory_sets]
@@ -317,7 +317,7 @@ def checks_that_ran() -> dict[str, list[str]]:
 
 def run_gvsoc(goal: str, variables: Mapping[str, str], log: Path | IO[str],
               err: Path | None = None, live: bool = False) -> int:  # fmt: skip
-    """``make -C gvsoc <goal> NAME=VALUE ...`` (gvsoc/Makefile, D136): stdout to ``log`` (a file
+    """``make -C gvsoc <goal> NAME=VALUE ...`` (gvsoc/Makefile): stdout to ``log`` (a file
     written anew, or an open one appended to), stderr to ``err`` (into ``log`` when None);
     make's exit code. ``live``: stdout and stderr, merged, to ``log`` and to the terminal line
     by line as they come, as tee would, with PYTHONUNBUFFERED=1; on KeyboardInterrupt make is
@@ -612,7 +612,7 @@ def run_flow(
     recipe_sets = dict(recipe_sets or {})
     recipe = Recipe.load(recipe_path).with_params(recipe_sets)
     # The design point, and with it the task list, is named after the recipe and its params
-    # only; the folder carries every --set (D136).
+    # only; the folder carries every --set.
     point_name = o.name or default_name(recipe, recipe_sets)
     name = o.name or with_level(default_name(recipe, recipe_sets, o.platform_sets, o.memory_sets),
                                 o.trace_level)  # fmt: skip
@@ -786,7 +786,7 @@ def _from_graph(
                                       {t.name: t.beats for t in manifest.tasks})  # fmt: skip
         groups = {u.name: u.group for u in cluster.accelerator.units}
         units = {s.task_name: s.component for s in tasks.steps if isinstance(s, Configure)}
-        for t, x in result["tasks"].items():  # each task's group (D148)
+        for t, x in result["tasks"].items():  # each task's group
             x["group"] = groups[units[t]]
         check = {
             "kernel": spec.name,
@@ -809,7 +809,7 @@ def _from_graph(
         }
         (run / "run.json").write_text(to_json(record))
 
-    # convert: the events into the profile and the trace (D137)
+    # convert: the events into the profile and the trace
     with _timed(times, "convert"):
         events = run / EVENTS_FILE
         if not events.is_file():

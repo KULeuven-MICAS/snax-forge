@@ -114,7 +114,7 @@ def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
     assert c1[b1[1] + 1] == "snrt_dma_start_1d(C, (void *)0x10000400, 512);"
     # the function ends after the last barrier; forge_check follows in main
     assert c0[b0[2] + 1] == "return 0;"
-    # load_B starts with no wait after load_A: the DMA queues (D135); one wait ends both
+    # load_B starts with no wait after load_A: the DMA queues; one wait ends both
     a = c1.index("snrt_dma_start_1d((void *)0x10000200, B, 512);")
     assert "snrt_dma_wait_all();" not in c1[:a] and c1.count("snrt_dma_wait_all();") == 2
     assert c1[a + 1] == "snrt_dma_wait_all();"

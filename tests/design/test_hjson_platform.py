@@ -13,7 +13,7 @@ from snax_forge.design.hjson_platform import platform_from_hjson
 
 from .helpers import REPO, SNAX_FORGE, bound_vecadd, platform_dict
 
-# snax_forge's source: snax-forge's base cluster (D131)
+# snax_forge's source: snax-forge's base cluster
 SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
 
 # A cluster file with what the reader needs, in the hjson's own form.

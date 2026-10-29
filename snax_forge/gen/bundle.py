@@ -40,7 +40,7 @@ group).
 
 snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
-builds read (D130).
+builds read.
 
 **Refused**, each a ``GenError``: what ``generate``, ``accelerator_spec`` and
 ``elaborate`` refuse (``gen.*``, the catalogue's checks and a listed file that is not there among them), then

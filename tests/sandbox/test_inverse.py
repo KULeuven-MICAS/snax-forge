@@ -118,7 +118,7 @@ def test_join_rejected():
 
 
 # =============================================================================
-# B1x's transforms (D150): each undone by its inverse, the graph as before
+# The linking transforms (D150): each undone by its inverse, the graph as it started
 # =============================================================================
 
 

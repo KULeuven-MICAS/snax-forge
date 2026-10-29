@@ -101,7 +101,7 @@ class RegionRow(Record):
     banks: str  # columns touched, as spans ("0–15")
     rows: str
     data_end: int  # the padded block's end
-    pad_elements: int  # a tail's pads (D144)
+    pad_elements: int  # a tail's pads
     beat_pad_bytes: int  # up to a whole DMA beat
 
     @property
@@ -142,7 +142,7 @@ class DesignReport(Record):
 
 def _words(lay: Layout, base: int, word: int) -> np.ndarray:
     """The word index from ``base`` of every element of a layout (several narrow elements
-    share a word, D142)."""
+    share a word)."""
     idx = np.indices(lay.shape).reshape(len(lay.shape), -1).T
     return (lay.address(idx) - base) // word
 
@@ -194,7 +194,7 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
 
             def first_banks(lay: Layout, num_ch: int) -> list[int]:
                 """The banks of a mover's first beat: its first ``num_ch`` words (several
-                narrow elements share one, D142)."""
+                narrow elements share one)."""
                 w = list(dict.fromkeys(int(x) for x in _words(lay, cluster.l1_base, word)))
                 return sorted({x % banks for x in w[:num_ch]})
 

@@ -14,7 +14,7 @@ A run is a flow's (D136, D137): its folder ``out/flow/<name>/`` or the
 (run.json, the profile and, above trace ``off``, the trace, C§7), and the
 cluster with ``run.cluster.load_cluster`` from the description files and the
 design point ``run.json`` names, so the views use run/'s dataclasses and
-never parse the files themselves (D55). The design point gives the regions
+never parse the files themselves. The design point gives the regions
 (``run.regions.regions_of``, L2 from run.json's ``elf_symbols``) and the
 events are grouped once by their ids and lookups (index.py, ``RunIndex``),
 with the flow folder's task list (``tasks.json``) pairing each accelerator

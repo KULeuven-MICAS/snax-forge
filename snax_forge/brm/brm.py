@@ -30,7 +30,7 @@ description, accelerator.json, for SNAX-GVSoC and the RTL).
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
 and reach the design point and accelerator.json. ``runtime`` params are
 the accelerator's start parameters: exactly ``n`` and every named port rate
-(D68, CONTRACTS.md section 10). A port's streamer width comes from its lanes
+(CONTRACTS.md section 10). A port's streamer width comes from its lanes
 (D12); it is not written in the BRM. Nor is its dtype: ``dtypes`` lists the
 container dtypes it takes, every integer dtype unless the file narrows them,
 and a node's containers decide (dtypes.py, D143).
@@ -130,7 +130,7 @@ class Param:
 
 @dataclass
 class Port:
-    """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings (D68)."""
+    """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings."""
 
     name: str
     direction: str
@@ -179,7 +179,7 @@ class Interface:
 
 @dataclass
 class Function:
-    """A registered accelerator kind, its factory params, and what it computes (D82).
+    """A registered accelerator kind, its factory params, and what it computes.
 
     ``code`` says what the accelerator computes, symbolically: one
     ``output = expression`` per output port over the input ports, per lane
@@ -584,5 +584,5 @@ def _check_dataflow(b: Brm, what: str) -> None:
             notation.check(d.ports[p.name], p, b)
         except (TypeError, ValueError) as e:
             raise BrmError(f"{w}.ports.{p.name}: {e}") from None
-    if notation.normalize is not None:  # every field written (D26)
+    if notation.normalize is not None:  # every field written
         d.ports = {p.name: notation.normalize(d.ports[p.name]) for p in b.interface.ports}
