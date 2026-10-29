@@ -31,12 +31,14 @@ configured task is started.
 
 What needs the design point is ``check_values(tasks, point)``: the
 component exists and has the task's type (the DMA when the platform has an
-L2, every streamer of the shell, every accelerated instance); the values
+L2, every streamer of the shell, every accelerated instance on its own, every
+linked group); the values
 have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
 ``temporal_strides``, ``spatial_strides``; a DMA's ``direction``, ``src`` and
 ``dst``, its L1 side ``base``, ``bounds`` and ``strides``, its L2 side
 ``symbol`` (a container in L2: its data.h array), ``bounds`` and ``strides``; an accelerator's
-runtime params, ``n`` and its named rates); a streamer's loops fit it (as
+runtime params, ``n`` and its named rates; a linked group's, each unit's by
+unit, in the group's order); a streamer's loops fit it (as
 many temporal strides as bounds, no more than its ``temporal_dims``, one
 spatial stride per spatial bound, every bound >= 1, or every one 0: an idle
 mover, which never starts, D148); a DMA's direction is
@@ -52,7 +54,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.design.platform import WAIT_MODES
-from snax_forge.design.streamers import instances, streamer_name
+from snax_forge.design.streamers import groups, instances, streamer_name
 
 if TYPE_CHECKING:
     from snax_forge.design.point import DesignPoint
@@ -291,12 +293,19 @@ def _fit(n: int, dims: int, what: str) -> None:
 
 def components(point: DesignPoint) -> dict[str, str]:
     """The design point's components and their types: the DMA (with an L2), then per instance
-    its streamers in port order and the instance."""
+    its streamers in port order (a port on a link has none, D112) and the instance, or after a
+    linked group's last unit the group."""
     out = {"dma": "dma"} if point.platform.l2 is not None else {}
-    for name, inst in instances(point.graph).items():
-        for p in inst.brm.interface.ports:
-            out[streamer_name(name, p.name)] = "streamer"
-        out[name] = "accel"
+    found = instances(point.graph)
+    for group, units in groups(point.graph).items():
+        for name in units:
+            for p in found[name].brm.interface.ports:
+                if streamer_name(name, p.name) in point.streamers:
+                    out[streamer_name(name, p.name)] = "streamer"
+            if len(units) == 1:
+                out[name] = "accel"
+        if len(units) > 1:
+            out[group] = "accel"
     return out
 
 
@@ -340,7 +349,16 @@ def _check(s: Configure, point: DesignPoint) -> None:
     else:
         if not isinstance(v, Mapping):
             raise TypeError(f"accel values must be an object, got {v!r}")
-        names = instances(point.graph)[s.component].brm.registers
+        found, units = instances(point.graph), groups(point.graph).get(s.component)
+        if units is not None and len(units) > 1:  # a linked group: each unit's, by unit
+            if list(v) != units:
+                raise ValueError(f"{s.component}: values for {list(v)}, its units are {units}")
+            for u in units:
+                if set(v[u]) != set(found[u].brm.registers):
+                    raise ValueError(f"{s.component}.{u}: parameters {sorted(v[u])}, registers "
+                                     f"{found[u].brm.registers}")  # fmt: skip
+            return
+        names = found[s.component].brm.registers
         if set(v) != set(names):
             raise ValueError(f"{s.component}: parameters {sorted(v)}, registers {names}")
 

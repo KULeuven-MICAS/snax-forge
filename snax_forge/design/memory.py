@@ -10,7 +10,8 @@ replace any one of them (``register_memory_pass``):
     residency   which memories a container lives in      default: a
                 container that is not transient in L2 and L1 when the
                 platform has an L2 (the DMA loads and stores it), else in
-                L1; a transient in L1
+                L1; a transient in L1, but a link's container and a
+                fused nest's local value in none (D112, D150)
     layout      shape and strides per container and      contiguous:
                 memory, base 0                           row-major, each
                                                          element its
@@ -307,9 +308,12 @@ def register_memory_pass(kind: str, name: str, fn: MemoryPass) -> None:
 
 
 def default_residency(ctx: MemoryContext) -> dict[str, list[str]]:
+    from .streamers import unplaced
+
+    none = unplaced(ctx.graph)  # a link's and a fused nest's local value: in no memory
     out = {}
     for name, c in ctx.graph.containers.items():
-        out[name] = ["l1"] if c.transient else ctx.memories
+        out[name] = [] if name in none else ["l1"] if c.transient else ctx.memories
     return out
 
 

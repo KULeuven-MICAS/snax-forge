@@ -16,8 +16,8 @@ on was started, and each uses that task's ``wait_mode``. A wait is on a
 component, so it ends on the component's latest task and covers every
 earlier one on it.
 
-A wait on a writer streamer also covers the unit it serves and that unit's
-reader streamers, for the tasks the same start launched: their data flows
+A wait on a writer streamer also covers the unit it serves (a linked
+group's: the group) and its reader streamers, for the tasks the same start launched: their data flows
 into the writer, so the writer finishes last (``upstream``, from the design
 point's streamers: their ``instance`` and ``write``).
 
@@ -46,15 +46,19 @@ if TYPE_CHECKING:
 def upstream(point: DesignPoint) -> dict[str, list[str]]:
     """Per component, the components a wait on it also covers (module doc).
 
-    A writer streamer -> the unit it serves; a unit -> its reader streamers, in port
-    order.
+    A writer streamer -> the unit it serves (a linked group's: the group); a unit or group ->
+    its reader streamers, in port order.
     """
+    from snax_forge.design.streamers import groups
+
+    owner = {u: g for g, units in groups(point.graph).items() if len(units) > 1 for u in units}
     up: dict[str, list[str]] = {}
     for s in point.streamers.values():
+        comp = owner.get(s.instance, s.instance)
         if s.write:
-            up.setdefault(s.name, []).append(s.instance)
+            up.setdefault(s.name, []).append(comp)
         else:
-            up.setdefault(s.instance, []).append(s.name)
+            up.setdefault(comp, []).append(s.name)
     return up
 
 

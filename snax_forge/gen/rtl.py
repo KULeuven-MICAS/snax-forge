@@ -45,8 +45,9 @@ the unit's ports by their ``dir``, in the BRM's order.
 
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds
 ``accelerator.json``, the design's streamer hjson (gvsoc.py's) and, for a design of one
-accelerator task, ``vectors.json``, which the Chisel specs drive the wrapper with
-(dot 1's two groups, a task each, have none: its spec drives each group itself): per BRM port its data.h array (an input, or the output's
+accelerator task of one unit, ``vectors.json``, which the Chisel specs drive the wrapper with
+(dot 1's two groups, a task each, have none: its spec drives each group itself; nor has a
+linked group, F2's): per BRM port its data.h array (an input, or the output's
 golden) and how many beats a task moves (lane i of beat t is element t * lanes + i), and per
 task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_values``), its firings and the counter
 worked from the nest controller's rule with an always-ready streamer (``counter``), the working
@@ -299,8 +300,8 @@ def write_fixture(design_point: str | Path, out_dir: str | Path,
         generate(design_point, gen, root)
         (out / streamer).write_text((Path(gen) / streamer).read_text())
     files = [ACCELERATOR_JSON, streamer]
-    _, point, _ = load_point(design_point, ROOT if root is None else Path(root))
-    if len(accel_tasks(point)) == 1:
+    _, point, acc = load_point(design_point, ROOT if root is None else Path(root))
+    if len(accel_tasks(point)) == 1 and all(len(g.units) == 1 for g in acc.groups):
         (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
         files.append(VECTORS_JSON)
     return files

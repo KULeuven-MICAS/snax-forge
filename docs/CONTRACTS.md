@@ -258,7 +258,14 @@ last time; one `sync` per non-transient output at the end. In an
 accelerator of several groups (D148) each task also configures the other
 groups' movers idle, in the accelerator's order, and its `start` launches every
 mover: dot 1's `mult_mul` starts `mul_a`, `mul_b`, `mul_out` and `sum_a`,
-`sum_out` idle. `after` holds data dependences only, so two groups chain
+`sum_out` idle. A linked group (D148) is one such task at its first unit's
+node, `<node>_<group>`, on the group as its component: its units' streamers
+on the ports on no link only (no load or store for a link's container), and
+one accelerator task whose `values` are each unit's (`n` and its named
+rates) by unit, in the group's order (dot 6's `mult_dot`: `{"mac": {"n":
+128, "T": 128}, "sum": {"n": 1, "T": 1}}`); its program writes the group's
+JOBS = n_u / ∏ T_v over its first unit u and its folds v, then each fold's
+JOB_BEATS but a fixed one's (section 17). `after` holds data dependences only, so two groups chain
 through L1 with one wait (D105), on the first's writer. vecadd's design point on `platforms/snax_forge.json` gives
 `tests/run/fixtures/vecadd/tasks.json` exactly; its end:
 
@@ -687,7 +694,8 @@ elements a word holds (D142, section 1). A platform that still sets `dtype`
 or `elems_per_word` in `l1` or `l2` is refused (`platform.keys`).
 
 **The streamer shell** (D12). One streamer per port of every accelerated
-instance, `<instance>_<port>`. The port decides `write`, `n_ports` (its
+instance, `<instance>_<port>`, but a port on a link (D112): a link's ends
+have none. The port decides `write`, `n_ports` (its
 lanes) and, unless an entry gives them, `spatial_bounds` (fastest first: an
 `affine` nest's spatial loops, a `stream` port's bound memlet ranges). The
 graph decides `temporal_dims`: the firing loops the port's memlet runs over,
@@ -775,7 +783,7 @@ name (`register_memory_pass(kind, name, fn)`):
 
 | Pass | Decides | Default |
 |---|---|---|
-| `residency` | the memories of each container | `default`: not transient: L2 and L1 with an L2, else L1; transient: L1 |
+| `residency` | the memories of each container | `default`: not transient: L2 and L1 with an L2, else L1; transient: L1, but a link's container and a fused nest's local value (`loop.local`): none (D112, D150) |
 | `layout` | shape and strides, base 0 | `contiguous`: the container's shape, its strides row-major over the padded shape (a tail pads the split dimension to a multiple of W, D144), each element its dtype's itemsize (a word holds several narrow ones, D142); the memory checks and the DMA take the padded block |
 | `placement` | the L1 base per container (an L2 layout keeps base 0: the program's link places its array, section 7's regions) | `contiguous`: graph container order from L1's first byte, no gaps; a layout in both L2 and L1 on a wide beat and padded to whole beats (D105), others on a word; around the pins |
 
@@ -822,7 +830,7 @@ the source. One design point gives byte-identical files wherever written.
 | `include/` | `streamer_csr_addr_map.h` and `<name>_csr.h` (`name` accelerator.json's; every CSR by section 17's name, in CSR order: dot 1's `dot_csr.h` from `DOT_RW_MUL_START` to `DOT_RO_SUM_COUNTER`), and the runtime's `snitch_cluster_cfg.h` and `snitch_cluster_addrmap.h`, as snax_cluster's templates render them from the cluster file (`gen/headers.py`, D126) |
 | `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, in its padded shape (a tail's pads hold the pad value: 0, or the identity of a max or min fold that reads it, D144), then padded with zeros to whole DMA beats in its itemsize (16 int32 or 64 int8 elements per 64-byte beat) as its L2 layout (D105) and aligned to the beat |
 | `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens, the valid elements only, a padded matrix row by row (`forge data:`, its words the valid elements), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
-| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace` (the unit's trace path, `snax_acc0/unit`; with several groups the accelerator's, `snax_acc0`), `csrs` (the CSR layout: `streamer`, its `first` and `last` CSR, and `accelerator`, each CSR's header name -> its number), `tasks` (per accelerator task, in order, its `beats` and its group's `csrs` values: from the task's values n and T (section 9), JOBS = n / T and, for a fold, JOB_BEATS = T; with several groups also its unit's `trace`, `snax_acc0/unit_<unit>`, as snax-gvsoc's composite names it) |
+| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace` (the unit's trace path, `snax_acc0/unit`; with several groups the accelerator's, `snax_acc0`), `csrs` (the CSR layout: `streamer`, its `first` and `last` CSR, and `accelerator`, each CSR's header name -> its number), `tasks` (per accelerator task, in order, its `beats` (a linked group's: its most firing unit's n) and its group's `csrs` values: from the task's values n and T (section 9), JOBS = n / T and, for a fold without `params.T`, JOB_BEATS = T, in a linked group named with its unit, `MAC_JOB_BEATS`; with several groups also a one-unit group's `trace`, `snax_acc0/unit_<unit>`, as snax-gvsoc's composite names it; a linked group's trace is G1's) |
 
 **The slot** is the source's only one, renamed: `snax_acc_name` the
 platform's `accelerator_slot`, its `bender_target` dropped (the RTL comes

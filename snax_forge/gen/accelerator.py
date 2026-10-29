@@ -36,9 +36,14 @@ never recomputes them. ``define`` names a CSR as the header does:
 accelerator has one group, the unit part when the group has one unit.
 
 **The groups** (D146, D148): the design point's one accelerator
-(lower/c.py's ``accelerator``), one group per instance, named after it, in
-the graph's order (``encapsulate``'s); the offsets run on from group to group.
-Several accelerators are ``gen.instances``.
+(lower/c.py's ``accelerator``), its groups in the graph's order
+(``encapsulate``'s; design/streamers.py's ``groups``): a unit alone, named
+after its instance, or the units ``link`` joined, named by its ``group``, in
+the graph's order, with their links (each named after its container, from
+the writer's port to the reader's, its depth). ``inputs`` and ``outputs``
+are the ports on no link, group by group, unit by unit in port order. The
+offsets run on from group to group. Several accelerators are
+``gen.instances``.
 
 **Refused**, each a ``GenError``: ``gen.instances`` and ``gen.binding``
 (lower/c.py's ``accelerator``), ``gen.datapath`` (a datapath not registered),
@@ -66,7 +71,8 @@ from typing import TYPE_CHECKING, Any
 from snax_forge import expr
 from snax_forge.brm import Instance, port_dtypes
 from snax_forge.common import JsonFile
-from snax_forge.design.streamers import instance_nodes
+from snax_forge.design.streamers import groups as graph_groups
+from snax_forge.design.streamers import instance_nodes, link_ends, linked_ports, links
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerator as c_accelerator
@@ -351,16 +357,26 @@ def describe(point: DesignPoint, point_path: str) -> Accelerator:
     """The design point's ``accelerator.json``, checked; see the module doc. ``point_path``
     names the design point (gvsoc.py's ``point_name``)."""
     name, found = units(point)
+    g = point.graph
+    linked = linked_ports(g)
     offsets = iter(range(1 << 16))  # contiguous over the groups, in CSR order
     groups, inputs, outputs = [], [], []
-    for unit_name, inst in found.items():
+    for group_name, members in graph_groups(g).items():
+        if members[0] not in found:
+            continue
         start, jobs = (Csr(n, "rw", next(offsets), CSR_BITS) for n in ("START", "JOBS"))
-        unit = _unit(point, unit_name, inst, offsets)
+        group_units = [_unit(point, u, found[u], offsets) for u in members]
         status, counter = (Csr(n, "ro", next(offsets)) for n in ("STATUS", "COUNTER"))
-        groups.append(Group(unit_name, [start, jobs, status, counter], [unit]))
-        ports = inst.brm.interface.ports
-        inputs += [f"{unit_name}.{p.name}" for p in ports if p.direction == "in"]
-        outputs += [f"{unit_name}.{p.name}" for p in ports if p.direction == "out"]
+        group_links = []
+        for k in links(g):
+            if k.attrs["from"] in members:
+                end_from, end_to = link_ends(g, k)
+                group_links.append(Link(k.attrs["container"], end_from, end_to, k.attrs["depth"]))
+        groups.append(Group(group_name, [start, jobs, status, counter], group_units, group_links))
+        for u in members:
+            ports = [p for p in found[u].brm.interface.ports if f"{u}.{p.name}" not in linked]
+            inputs += [f"{u}.{p.name}" for p in ports if p.direction == "in"]
+            outputs += [f"{u}.{p.name}" for p in ports if p.direction == "out"]
     return Accelerator(name, point_path, point.platform.accelerator_slot, inputs, outputs, groups)
 
 
