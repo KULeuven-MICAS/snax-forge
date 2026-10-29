@@ -1,4 +1,4 @@
-"""run/cluster.py: the cluster as a run is named, from the hjson files and the design point."""
+"""run/cluster.py: the cluster as a run is named, from the description files and the design point."""
 
 import json
 

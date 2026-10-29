@@ -1,6 +1,6 @@
 /* SNAX-FORGE viewer (VIS1-VIS3). System fonts only: the page loads nothing
    from the internet. One set of colours for every view, so a colour means the
-   same in the report, the schedule and the cluster view (D61, D62): a memory
+   same in the report, the schedule and the cluster view (D57): a memory
    request teal (dashed where it is an arrow); busy, read data coming back and
    a firing green; idle grey; memory stalls (stall_xbar, stall_l1, a stalled
    port, a contested bank) red; flow stalls violet; FIFO contents lilac;
@@ -172,7 +172,7 @@ pre { background: var(--panel); border: 1px solid var(--rule); padding: 0.7rem; 
 .sched-controls input[type="number"] { width: 6.5rem; font: inherit; color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 4px; padding: 0.2rem 0.4rem; }
 .zoom-read { color: var(--muted); font-size: 0.88em; }
 div.sched { display: flex; border: 1px solid var(--rule); background: var(--panel); }
-/* One scroll box for labels and chart, labels pinned left; capped so the cluster view fits under it (D61). */
+/* One scroll box for labels and chart, labels pinned left; capped so the cluster view fits under it. */
 .sched-scroll { overflow: auto; max-height: 52vh; }
 .sched-labels { flex: none; position: sticky; left: 0; z-index: 1; background: var(--panel); border-right: 1px solid var(--rule); font-size: 0.85em; }
 .sched-labels .ruler-label { display: flex; align-items: flex-end; padding: 0 0.5rem 4px; color: var(--muted); border-bottom: 1px solid var(--rule); }
@@ -233,7 +233,7 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 .cycle-table td:nth-child(2) { width: 10rem; }
 .cycle-table td div { white-space: nowrap; }
 
-/* -- cluster view (VIS3, D61, D62) -------------------------------------------------- */
+/* -- cluster view ---------------------------------------------------------------- */
 .cl-note:empty { display: none; }
 .cl-frame { min-width: 44rem; } /* cluster.js raises it to what the columns need */
 .muted { color: var(--muted); }
@@ -342,7 +342,7 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 
 /* -- DFG viewer (VIS5, D55) ---------------------------------------------------------
    Loop kinds get colours of their own: green, red and violet already mean busy,
-   memory stall and flow stall in the run views (D61). */
+   memory stall and flow stall in the run views. */
 :root {
   --loop-none: #8b939c;
   --loop-tile: #9a6b1f;
@@ -492,7 +492,7 @@ table.mem-regions td:first-child { white-space: nowrap; font-weight: 600; }
 .mem-line.fold.open .mem-fold { color: var(--muted); border-style: solid; }
 
 /* -- memory tab: modes, cycle overlay, picked element (VIS4b, D57) --------------
-   The overlay uses the meanings of D61/D62 as outlines, so the region colours
+   The overlay uses the run views' meanings as outlines, so the region colours
    stay visible: request teal, read data back green, held back red. The picked
    element is outlined in ink. Time marks use one warm scale, only in this tab. */
 :root { --time-lo: #f6eee2; --time-hi: #a4471a; }

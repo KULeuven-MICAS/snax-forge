@@ -1,6 +1,6 @@
 """A flow run's directory, written and read back (C§7): what the reports and the viewer open.
 
-    run.json          what ran (flow/run.py writes it: the design point, the hjson files, the
+    run.json          what ran (flow/run.py writes it: the design point, the description files, the
                       ELF and its L2 containers' symbols, ``elf_symbols``, container ->
                       ``addr``, ``size``; the target, the snax-gvsoc commit, the trace level,
                       its sources, whether a VCD was written)

@@ -126,7 +126,7 @@ export function elementAt(detail, mem, column, row) {
 // On a run traced at beat or above, the selected cycle (`cycle`, shared with the schedule
 // and stepped by the arrow keys) is drawn over the grid: a word requested in that cycle is
 // outlined teal, a word whose read data comes back green and a word held back red, the
-// colours of D61 and D62; a folded line says how many of its words moved.
+// colours of the run views (D57); a folded line says how many of its words moved.
 // Clicking a word picks its element (`pick`): its words are outlined in every
 // memory and a drawer shows its journey, its firings and, in L1, its conflicts.
 

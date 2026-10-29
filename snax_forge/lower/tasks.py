@@ -25,7 +25,7 @@ program waits for this task when the lowering inserts a wait for it.
 The structural rules are checked here, without a cluster: task names are
 unique; ``after``, ``start`` and ``sync`` refer to tasks configured earlier;
 a component has at most one configured task that has not started yet (its
-registers are buffered, D36), so one start never launches two tasks on one
+registers are buffered, D116), so one start never launches two tasks on one
 component; a task starts once, after its ``after`` tasks have started; every
 configured task is started.
 

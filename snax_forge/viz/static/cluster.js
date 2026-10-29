@@ -1,4 +1,4 @@
-// The cluster at one cycle (D57, D61, D62), drawn under the schedule and
+// The cluster at one cycle (D57), drawn under the schedule and
 // following its selected cycle: the data side only, no core or controller
 // box (the cores are the schedule's lanes). Plain HTML and CSS: every arrow
 // is straight and sits in the grid column of the bank or block it points at,
@@ -18,8 +18,8 @@
 //                 push
 //   accelerator   its class, task, firing and push
 //
-// Every memory hop has two lanes, because both can happen in one cycle
-// (D62): the request (teal, dashed, pointing to memory; red when refused)
+// Every memory hop has two lanes, because both can happen in one cycle:
+// the request (teal, dashed, pointing to memory; red when refused)
 // and the response (green, solid, pointing back), which only reads have.
 //
 // The page is built once per run from the run detail's cluster (the movers,

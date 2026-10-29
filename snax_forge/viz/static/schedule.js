@@ -433,7 +433,7 @@ export async function stepSchedule(d, by) {
   return r.t === from ? null : r.t;
 }
 
-// -- wheel zoom (D58) --------------------------------------------------------------
+// -- wheel zoom --------------------------------------------------------------------
 //
 // Wheel events come in bursts; they are gathered for a short moment and
 // applied as one zoom change, which keeps the cycle under the pointer where

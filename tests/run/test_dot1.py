@@ -4,7 +4,7 @@
 The cluster has the accelerator dot with its units mul and sum, each with its group, its
 SNAX-GVSoC path (``unit_mul``, ``unit_sum``) and its group's CSRs; the converter names each
 unit's lines after it, gives each a profile, matches each group's task and the movers' tasks
-(the other group's idle) in order; beat levels are refused for several groups until B3.
+(the other group's idle) in order; beat levels are refused for several groups (open item 96).
 """
 
 import json

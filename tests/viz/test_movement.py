@@ -11,12 +11,7 @@ on the run index.
 5. what a run below a level, or a filtered one, gets
 
 Most cases run on the recorded vecadd run (tests/run/fixtures/vecadd, converted by
-helpers.recorded_run), the rest on hand-written events (helpers.Events). Not ported from the
-SNAX-MODEL tests (git ``cad6619``): ``test_fit_nest`` and ``test_fmul_fits_its_two_loops``
-(the nest is the configured one, nothing is fitted; no fmul run), ``vecadd_conflict`` and
-``vecadd_tiled`` (SNAX-MODEL scenarios), ``test_the_b_pinned_run_has_no_conflicts`` (the
-synthetic events stall on a reader's own bank, so a stall-level B-pinned run does not convert;
-the B-pinned journey is checked at beat), the memory tab's marks (test_memory.py now).
+helpers.recorded_run), the rest on hand-written events (helpers.Events).
 """
 
 from __future__ import annotations

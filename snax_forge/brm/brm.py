@@ -28,7 +28,7 @@ implementation's timing and binding serve the generators (the accelerator's
 description, accelerator.json, for SNAX-GVSoC and the RTL).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
-and reach the design point and the accelerator hjson. ``runtime`` params are
+and reach the design point and accelerator.json. ``runtime`` params are
 the accelerator's start parameters: exactly ``n`` and every named port rate
 (D68, CONTRACTS.md section 10). A port's streamer width comes from its lanes
 (D12); it is not written in the BRM. Nor is its dtype: ``dtypes`` lists the
@@ -130,7 +130,7 @@ class Param:
 
 @dataclass
 class Port:
-    """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings (D25)."""
+    """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings (D68)."""
 
     name: str
     direction: str
@@ -246,7 +246,7 @@ class Pattern:
 
 @dataclass
 class Timing:
-    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in the accelerator hjson), ``drain``
+    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in accelerator.json), ``drain``
     and ``span``.
 
     L: cycles from a firing to its push. II: the least number of cycles

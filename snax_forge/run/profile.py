@@ -3,7 +3,7 @@
 The totals of one SNAX-GVSoC run, read off the counters its components print at the end of
 each run or of the simulation (snax-gvsoc's ``summary`` lines, its ``docs/EVENTS.md``); the
 converter renames them and never recounts (D137). The static fields (names, ports, FIFO
-depths) come from the hjson files and the design point, never from the events.
+depths) come from the description files and the design point, never from the events.
 
 Maps are keyed by C§7 names (``acc``, ``acc_a``, ``dma``, ``core0``, ...), in the cluster's
 order.

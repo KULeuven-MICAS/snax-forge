@@ -1,4 +1,4 @@
-"""Shared snippets for the run tests: a cluster's three hjson files and design point, as the
+"""Shared snippets for the run tests: a cluster's three description files and design point, as the
 generator writes them for vecadd on snax_forge (cut to what run/ reads), and GVSoC header lines."""
 
 from __future__ import annotations

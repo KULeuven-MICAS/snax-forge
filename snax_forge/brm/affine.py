@@ -35,7 +35,7 @@ Temporal bounds, strides, shape and offset may use runtime params.
 Checked by ``Brm.resolve``: the spatial bounds are ints >= 1 whose product
 is the port's lanes. Checked by ``task_nest`` once the task's start
 parameters are known: ``n`` is a multiple of the port's rate, the temporal
-bounds give n / rate beats (D25), and every index lies inside the shape.
+bounds give n / rate beats (D68), and every index lies inside the shape.
 
 A stride may be 0 (the same element again; on a reader's innermost
 temporal loop the streamer repeats the beat, D70) or negative. Whether the

@@ -10,7 +10,7 @@
 
 Runs the recipe on its kernel's import (or ``--graph``), pairs the result
 with the platform, lowers the design point to its task list, generates its
-hjson files, headers, data (the kernel's ``make_inputs``, the reference
+description files, headers, data (the kernel's ``make_inputs``, the reference
 executor's goldens) and ``main.c``, builds SNAX-GVSoC when needed and the
 program, runs it on ``snax_hjson`` and takes the program's own check: its
 exit code and what it printed (run.py, D136). ``--set W=8`` sets a recipe param,

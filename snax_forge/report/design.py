@@ -1,7 +1,7 @@
 """The design report, ``design.md``: what was built, before any cycle is counted.
 
 Everything here comes from the design point, its recipe and the cluster as a
-run names it (run/cluster.py: the generator's hjson files and the design
+run names it (run/cluster.py: the generator's description files and the design
 point, D137), its regions as run/regions.py gives them (L2's from the ELF's symbols in
 run.json); SNAX-GVSoC is not run. A flow from a bound graph has no recipe:
 its header names the graph the design point was made from instead, and takes

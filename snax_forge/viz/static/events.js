@@ -3,7 +3,7 @@
 // drawer put one event in words. Formatting only: every field is the
 // server's, nothing is looked up or counted here.
 
-/** A DMA copy's direction as text (D58). */
+/** A DMA copy's direction as text. */
 export const DIRECTION_TEXT = { l2_to_l1: "L2 → L1", l1_to_l2: "L1 → L2" };
 
 const hex = (n) => `0x${Number(n).toString(16)}`;

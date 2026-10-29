@@ -68,7 +68,7 @@ cluster, read from gen's files, gives ``gvsoc/Makefile``'s ``TRACES`` and the
 crossbar's ``trace_inputs`` (``run/sources.py``). With ``vcd`` the run also
 writes gtkwave's VCD of the same sources: ``run/all.vcd`` and ``run/view.gtkw``,
 never read here. ``convert`` reads the log, names it after the cluster
-(``run/cluster.py``: the generator's hjson files and the design point), the
+(``run/cluster.py``: the generator's description files and the design point), the
 task list and the design point's regions, and writes the profile and, above
 ``off``, the trace (``run/convert.py``, whose invariants hold or the stage
 fails); ``trace_meta.json`` keeps the sources as its ``filter``. ``report``
@@ -711,7 +711,7 @@ def _from_graph(
         tasks = task_list(point)
         tasks.save(out / "tasks.json")
 
-    # gen: the hjson files, the headers, data.h and main.c, named from the flow's folder
+    # gen: the description files, the headers, data.h and main.c, named from the flow's folder
     with _timed(times, "gen"):
         try:
             spec = kernel_spec(kernel or point.graph.name, kernel_why)
