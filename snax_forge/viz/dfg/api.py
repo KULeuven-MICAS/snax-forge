@@ -60,12 +60,20 @@ and the edges an SVG layer the viewer draws over them (static/dfg.js).
 
 **Accelerators** (D148). A bound graph nests accelerator ⊃ groups ⊃ units:
 ``accelerators`` lists each accelerator in the order the graph first uses
-it, its groups in the graph's order (one instance each until links come,
-M13's B3), each with its units (the instance and its accelerated nodes) and
-``tops``, the top-level nodes that hold them. The viewer draws a box around
-each group's top-level nodes and one around each accelerator's groups, so
-dot 1's ``mul`` and ``sum`` sit in the accelerator ``dot``; an accelerated
-node's panel names its group and accelerator.
+it, its groups in the graph's order (a unit alone, or the units ``link``
+joined, by their ``group``), each with its units (the instance and its
+accelerated nodes), its links (each link node's id) and ``tops``, the
+top-level nodes that hold them and their link nodes. The viewer draws a box
+around each group's top-level nodes and one around each accelerator's groups,
+so dot 1's ``mul`` and ``sum`` sit in the accelerator ``dot``, and dot 4's
+``mac``, its link and ``sum`` in one group box; an accelerated node's panel
+names its group and accelerator.
+
+**Links** (D148). A link node is drawn in the accelerated node's style: its
+title ``<container> = wire`` (depth 0) or ``<container> = buffer``, its
+heading the depth (a buffer's) and its units, ``from → to``, and what it
+replaced, the transient (``replaces out_partial``). The container still
+shows between the writer and the reader: they name it.
 """
 
 from __future__ import annotations
@@ -81,7 +89,7 @@ from snax_forge import expr
 from snax_forge.brm import BrmError
 from snax_forge.brm.dtypes import bits
 from snax_forge.common import LoadedSet, unique_names
-from snax_forge.design.streamers import accelerator_of, instance_of
+from snax_forge.design.streamers import accelerator_of, group_of, instance_of
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
@@ -184,20 +192,32 @@ def graph_view(e: Entry) -> dict[str, Any]:
 def accelerators(g: Graph) -> list[dict[str, Any]]:
     """Accelerator ⊃ groups ⊃ units (module doc)."""
     out: dict[str, dict[str, dict[str, Any]]] = {}
+    where: dict[str, dict[str, Any]] = {}  # instance -> its group's entry
+    found_links: list[tuple[Node, str]] = []
     for top in g.body:
         stack = [top]
         while stack:
             n = stack.pop(0)
             if n.kind == "accelerated":
                 groups = out.setdefault(accelerator_of(n), {})
-                inst = n.attrs["instance"]  # a group is its one instance until B3
-                grp = groups.setdefault(inst, {"name": inst, "units": {}, "tops": []})
+                inst, name = n.attrs["instance"], group_of(n)
+                grp = groups.setdefault(name, {"name": name, "units": {}, "links": [], "tops": []})
                 grp["units"].setdefault(inst, []).append(n.id)
+                where[inst] = grp
                 if top.id not in grp["tops"]:
                     grp["tops"].append(top.id)
+            elif n.kind == "link":
+                found_links.append((n, top.id))
             stack += list(n.body or [])
+    order = [t.id for t in g.body]
+    for n, top in found_links:
+        grp = where.get(n.attrs["from"])
+        if grp is not None:
+            grp["links"].append(n.id)
+            if top not in grp["tops"]:
+                grp["tops"] = sorted([*grp["tops"], top], key=order.index)
     return [{"name": acc, "groups": [
-        {"name": grp["name"], "tops": grp["tops"],
+        {"name": grp["name"], "tops": grp["tops"], "links": grp["links"],
          "units": [{"instance": u, "nodes": ids} for u, ids in grp["units"].items()]}
         for grp in groups.values()]} for acc, groups in out.items()]  # fmt: skip
 
@@ -253,11 +273,18 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
         params = ", ".join(f"{k} = {v}" for k, v in a["params"].items())
         d["title"] = f"{a['instance']} = {a['brm']}"
         d["heading"] = [f"impl = {a['implementation']}"] + ([params] if params else [])
-        d["accelerator"], d["group"] = accelerator_of(n), a["instance"]
-        if d["accelerator"] != d["group"]:
-            d["heading"].append(f"group {d['group']} of {d['accelerator']}")
+        d["accelerator"], d["group"] = accelerator_of(n), group_of(n)
+        if d["accelerator"] != d["group"] or d["group"] != a["instance"]:
+            of = f" of {d['accelerator']}" if d["accelerator"] != d["group"] else ""
+            d["heading"].append(f"group {d['group']}{of}")
         d["lines"] = a["code"].split("\n")
         d["replaced"] = _replaced_text(a.get("replaced"))
+    elif n.kind == "link":
+        depth = a["depth"]
+        d["title"] = f"{a['container']} = {'wire' if depth == 0 else 'buffer'}"
+        d["heading"] = ([f"depth {depth}"] if depth else []) + [f"{a['from']} → {a['to']}"]
+        d["lines"] = []
+        d["replaced"] = a["container"]
     else:
         d["title"] = n.kind
         d["lines"] = [f"{k} = {v}" for k, v in a.items() if "." not in k]

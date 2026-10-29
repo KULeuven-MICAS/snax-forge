@@ -184,8 +184,10 @@ def test_dot_1_draws_one_accelerator_of_two_groups(tmp_path):
     path.write_text(bound_dot1().to_json())
     v = view(path)
     assert v["accelerators"] == [{"name": "dot", "groups": [
-        {"name": "mul", "tops": ["mult_map"], "units": [{"instance": "mul", "nodes": ["mult"]}]},
-        {"name": "sum", "tops": ["sum_map"], "units": [{"instance": "sum", "nodes": ["sum"]}]},
+        {"name": "mul", "tops": ["mult_map"], "links": [],
+         "units": [{"instance": "mul", "nodes": ["mult"]}]},
+        {"name": "sum", "tops": ["sum_map"], "links": [],
+         "units": [{"instance": "sum", "nodes": ["sum"]}]},
     ]}]  # fmt: skip
     units = [r["node"]["body"][0] for r in v["rows"] if r["kind"] == "node"]
     assert [(u["accelerator"], u["group"], u["heading"][-1]) for u in units] == [
@@ -310,3 +312,33 @@ def test_the_run_viewer_still_serves_its_own_page(tmp_path):
 def test_cli_rejects_a_missing_path(tmp_path, capsys):
     assert main([str(tmp_path / "nope.snaxdfg"), "--port", "0"]) == 2
     assert "no such file" in capsys.readouterr().err
+
+
+def _link_and_group(v: dict) -> tuple[dict, list]:
+    """The view's one link node and its accelerators."""
+    (link,) = [r["node"] for r in v["rows"] if r["kind"] == "node" and r["node"]["kind"] == "link"]
+    return link, v["accelerators"]
+
+
+def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
+    """dot 4 (D148): the link node in the accelerated node's style, ``out_partial = wire``,
+    what it replaced; mac, the link and sum in one group box of the accelerator dot."""
+    v = recipe_view(tmp_path, "dot_4")
+    link, accs = _link_and_group(v)
+    assert (link["title"], link["heading"], link["replaced"]) == (
+        "out_partial = wire", ["mac → sum"], "out_partial"
+    )  # fmt: skip
+    (acc,) = accs
+    (grp,) = acc["groups"]
+    assert (acc["name"], grp["name"], grp["links"]) == ("dot", "dot", [link["id"]])
+    assert [u["instance"] for u in grp["units"]] == ["mac", "sum"]
+    assert grp["tops"] == ["mult_map", link["id"], "sum_final"]
+    mac = next(t for t in v["rows"] if t["kind"] == "node" and t["node"]["id"] == "mult_map")
+    assert mac["node"]["body"][0]["heading"][-1] == "group dot"
+
+
+def test_dot6_draws_a_buffer_with_its_depth(tmp_path):
+    v = recipe_view(tmp_path, "dot_6")
+    link, accs = _link_and_group(v)
+    assert (link["title"], link["heading"]) == ("out_partial = buffer", ["depth 1", "mac → sum"])
+    assert [g["name"] for g in accs[0]["groups"]] == ["dot"]
