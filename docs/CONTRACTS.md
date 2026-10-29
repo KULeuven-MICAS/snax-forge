@@ -131,12 +131,18 @@ the `beats` lines, `stall` the `stalls` lines, `finegrained` the cores'
     finegrained  insn     pc, func, text  (src = the core)
 ```
 
-`src` is a unit (`acc`; with several groups each, `mul`, `sum`, D148), a
-mover (`acc_a`), `dma`, `core0`, and for a `grant` or `stall` the crossbar
-port (`acc_a.lane0`, `core0`, `axi`). `block` is the component whose CSR it
-is (`acc`, a group's unit; `acc_streamer`, `<accelerator>_streamer`). Beat
-levels of an accelerator of several groups are refused (`convert.level`;
-open item 96). A DMA copy's `dir`
+`src` is a unit (`acc`; with several groups each, `mul`, `sum`, D148) or a
+linked group (`dot`: SNAX-GVSoC's one component for its units,
+`snax_acc<i>/group_<group>`, the manifest's trace path), a mover (`acc_a`),
+`dma`, `core0`, and for a `grant` or `stall` the crossbar port
+(`acc_a.lane0`, `core0`, `axi`). A linked group's lines are its boundary's
+(snax-gvsoc `docs/EVENTS.md`): a run's `count` and `firings` are the head
+unit's, `rate` the head's firings per result of the last unit, and a `push`
+line's `first` and `last` the head's firings it folds. `block` is the
+component whose CSR it is (`acc`, a group's unit or a linked group;
+`acc_streamer`, `<accelerator>_streamer`). Beat levels of an accelerator of
+several groups or of a linked group are refused (`convert.level`; open item
+96). A DMA copy's `dir`
 (`l2_to_l1`, `l1_to_l2`) comes from its addresses, and copies are matched to
 the task list's `load_<C>` and `store_<C>` tasks in issue order.
 
@@ -830,7 +836,7 @@ the source. One design point gives byte-identical files wherever written.
 | `include/` | `streamer_csr_addr_map.h` and `<name>_csr.h` (`name` accelerator.json's; every CSR by section 17's name, in CSR order: dot 1's `dot_csr.h` from `DOT_RW_MUL_START` to `DOT_RO_SUM_COUNTER`), and the runtime's `snitch_cluster_cfg.h` and `snitch_cluster_addrmap.h`, as snax_cluster's templates render them from the cluster file (`gen/headers.py`, D126) |
 | `data.h` | the program's data (`gen/data.py`): per container the DMA moves, an input from the kernel's `make_inputs` (seed 0), or an output zeroed and its `<name>_golden` from the reference executor; each array the container's dtype, in its padded shape (a tail's pads hold the pad value: 0, or the identity of a max or min fold that reads it, D144), then padded with zeros to whole DMA beats in its itemsize (16 int32 or 64 int8 elements per 64-byte beat) as its L2 layout (D105) and aligned to the beat |
 | `main.c` | the program (`lower/c.py`, D135): `main` reads `mcycle` first, then runs its core's function, one per core with each step on its component's core and each accelerator task's counter stored after its wait (`forge_counter[]`); no task marks. On the accelerator's core `main` then calls `forge_check()`, which reads `mcycle` first and prints `forge cycles: <n>` (the window from main's entry), then the self-check: the outputs against their goldens, the valid elements only, a padded matrix row by row (`forge data:`, its words the valid elements), each accelerator task's counter against its beats (`forge counter <task>:`), `forge errors:`; main returns the error count |
-| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace` (the unit's trace path, `snax_acc0/unit`; with several groups the accelerator's, `snax_acc0`), `csrs` (the CSR layout: `streamer`, its `first` and `last` CSR, and `accelerator`, each CSR's header name -> its number), `tasks` (per accelerator task, in order, its `beats` (a linked group's: its most firing unit's n) and its group's `csrs` values: from the task's values n and T (section 9), JOBS = n / T and, for a fold without `params.T`, JOB_BEATS = T, in a linked group named with its unit, `MAC_JOB_BEATS`; with several groups also a one-unit group's `trace`, `snax_acc0/unit_<unit>`, as snax-gvsoc's composite names it; a linked group's trace is G1's) |
+| `manifest.json` | `design`, `design_point`, `symbols`, `cluster` (the cluster file), `files`, `program` (`main.c`), `trace` (the unit's trace path, `snax_acc0/unit`; a linked group's, `snax_acc0/group_<group>`; with several groups the accelerator's, `snax_acc0`), `csrs` (the CSR layout: `streamer`, its `first` and `last` CSR, and `accelerator`, each CSR's header name -> its number), `tasks` (per accelerator task, in order, its `beats` (a linked group's: its most firing unit's n) and its group's `csrs` values: from the task's values n and T (section 9), JOBS = n / T and, for a fold without `params.T`, JOB_BEATS = T, in a linked group named with its unit, `MAC_JOB_BEATS`; with several groups also its group's `trace`, `snax_acc0/unit_<unit>` or a linked group's `snax_acc0/group_<group>`, as snax-gvsoc's composite names them) |
 
 **The slot** is the source's only one, renamed: `snax_acc_name` the
 platform's `accelerator_slot`, its `bender_target` dropped (the RTL comes

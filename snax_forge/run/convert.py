@@ -9,12 +9,15 @@ design point's (regions.py) and ``filter`` the sources whose beat lines the run 
 (sources.py). Nothing is recounted: the profile is the ``summary`` lines renamed, the trace
 the ``events`` lines renamed and cut, and above ``task`` the ``beats``, ``stalls`` and
 ``insn`` lines too (beats.py); the beat lines only feed the trace. Above ``task`` an
-accelerator of several groups is a RunError (``convert.level``): its beat lines are read from
-M13's B3 on.
+accelerator of several groups, or of a linked group, is a RunError (``convert.level``): their
+beat lines are not read yet (open item 96).
 
 **Names.** A line's component path becomes a C§7 name: ``snax_acc<i>/unit`` the accelerator's
 unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (D148, ``mul``, ``sum``;
-a shell has no trace of its own), ``snax_acc<i>/streamer`` with its ``mover`` the mover
+a shell has no trace of its own), ``snax_acc<i>/group_<group>`` a linked group, named after
+the group (``dot``; its tasks are the group's, D148), whose lines are at its boundary: its
+``firings`` and ``count`` the head unit's, ``rate`` the head's firings per result of the last
+unit (snax-gvsoc's docs/EVENTS.md), ``snax_acc<i>/streamer`` with its ``mover`` the mover
 (``reader0`` -> ``acc_a``),
 ``pe<i>`` the core ``core<i>``, ``idma/fe`` and the AXI backend (``idma/axi_read``,
 ``idma/axi_write``) the DMA (``dma``), ``tcdm/snax_xbar`` the crossbar,
@@ -78,7 +81,7 @@ from snax_forge.lower.layout import round_up
 from snax_forge.lower.tasks import Configure, TaskList
 
 from .beats import Context, beat_events, beat_invariants
-from .cluster import DMA, Cluster, core_name
+from .cluster import DMA, Cluster, core_name, linked
 from .cores import core_counts, core_spans, merge_spans, start_mode
 from .events import Line, RunError
 from .profile import (
@@ -471,6 +474,11 @@ def convert(
     filter: list[str] | None = None,
 ) -> tuple[Profile, Trace | None]:
     """The profile and, above ``off``, the trace of a run (module doc)."""
+    if at_least(level, "beat") and (len(cluster.accelerator.units) != 1
+                                    or linked(cluster.accelerator.unit)):  # fmt: skip
+        raise RunError("convert.level", f"trace {level}: the beat lines of an accelerator of "
+                       f"{len(cluster.accelerator.units)} groups or of a linked group are not "
+                       "read yet (open item 96); task and off are")  # fmt: skip
     named = [(source_of(x, cluster), x) for x in lines]
     profile = profile_of(named, cluster, total_cycles, functional_check)
     if level == "off":
@@ -479,10 +487,6 @@ def convert(
     triples = trace_events(named, cluster, tasks, boot, total_cycles)
     ctx = None
     if at_least(level, "beat"):
-        if len(cluster.accelerator.units) != 1:
-            raise RunError("convert.level", f"trace {level}: the beat lines of an accelerator of "
-                           f"{len(cluster.accelerator.units)} groups are not read yet (M13's B3); "
-                           "task and off are")  # fmt: skip
         ctx = Context(cluster, list(regions or []), boot, total_cycles, level, list(filter or []),
                       [e for _, _, e in triples], named)  # fmt: skip
         triples = sorted(triples + beat_events(named, ctx), key=lambda x: (x[0], x[1]))

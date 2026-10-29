@@ -4,9 +4,10 @@
 cluster file, and the streamer file and ``accelerator.json`` its slot refers to, D134) and the design
 point, and gives what the events need to be named and read: the accelerator (the design
 point's one, accelerator.json's ``name``) on the core whose ``snax_acc_cfg`` holds the
-platform's slot; its units (``Unit``, one per group, D148: the instance, ``acc``, its group,
-its SNAX-GVSoC path, ``unit`` with one group and ``unit_<unit>`` with several, and its
-group's START, STATUS and COUNTER); its movers, every unit's, readers first as the streamer
+platform's slot; its units (``Unit``, one per group, D148: for a group of one unit the
+instance, ``acc``, its group, its SNAX-GVSoC path, ``unit`` with one group and
+``unit_<unit>`` with several; for a linked group, SNAX-GVSoC's one component for its units,
+the group's name, ``group_<group>``; and its group's START, STATUS and COUNTER); its movers, every unit's, readers first as the streamer
 orders them, each named by its port as the design point names its streamers (``acc_a``,
 ``acc_out``), with its lanes (the crossbar ports ``acc_a.lane<l>``), FIFO depth, spatial
 bounds and temporal loops (its CSRs); its CSRs (the streamer's, then the accelerator's from
@@ -239,16 +240,26 @@ def csrs_of(streamer: dict[str, Any], unit: dict[str, Any], instance: str) -> Cs
 
 
 def units_of(streamer: dict[str, Any], unit: dict[str, Any]) -> list[Unit]:
-    """The accelerator's units, one per group in order, with their group's CSRs (module
-    doc)."""
+    """The accelerator's units, one per group in order, with their group's CSRs: a group of one
+    unit by its instance, a linked group by its name at ``group_<group>`` (module doc)."""
     groups = unit.get("groups", [])
     out = []
     for g in groups:
-        for u in g["units"]:
-            c = csrs_of(streamer, unit, u["name"])
-            path = "unit" if len(groups) == 1 else f"unit_{u['name']}"
-            out.append(Unit(u["name"], g["name"], path, c.start, c.busy, c.counter))
+        members = g["units"]
+        c = csrs_of(streamer, unit, members[0]["name"])
+        if len(members) > 1:
+            out.append(Unit(g["name"], g["name"], f"group_{g['name']}", c.start, c.busy,
+                            c.counter))  # fmt: skip
+            continue
+        u = members[0]
+        path = "unit" if len(groups) == 1 else f"unit_{u['name']}"
+        out.append(Unit(u["name"], g["name"], path, c.start, c.busy, c.counter))
     return out
+
+
+def linked(unit: dict[str, Any]) -> bool:
+    """The accelerator has a linked group (several units in one group)."""
+    return any(len(g["units"]) > 1 for g in unit.get("groups", []))
 
 
 def _cores(cluster: dict[str, Any]) -> list[dict[str, Any]]:
@@ -279,9 +290,10 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[s
     streamers = _get(point, "streamers", "the design point")
     names = list(dict.fromkeys(s["instance"] for s in streamers.values()))
     units = units_of(streamer, unit)
-    if names != [u.name for u in units]:
+    members = [u["name"] for g in unit.get("groups", []) for u in g["units"]]
+    if names != [m for m in members if m in names] or not set(names) <= set(members):
         raise RunError("cluster.instances", f"streamers of instances {names}, accelerator.json's "
-                       f"units {[u.name for u in units]}; a flow run has one accelerator")  # fmt: skip
+                       f"units {members}; a flow run has one accelerator")  # fmt: skip
     movers = []
     for write, group, kind in ((False, "data_reader_params", "reader"),
                                (True, "data_writer_params", "writer")):  # fmt: skip
@@ -297,7 +309,7 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], unit: dict[s
 
     tcdm = _get(cluster, "cluster.tcdm", "the cluster file")
     acc = Accelerator(unit["name"], owner[0], slot, dict(unit), movers,
-                      csrs_of(streamer, unit, units[0].name), units)  # fmt: skip
+                      csrs_of(streamer, unit, members[0]), units)  # fmt: skip
     return Cluster(
         design=point.get("name", ""), nb_cores=len(flat), dma_core=dma[0], accelerator=acc,
         l1_base=_get(cluster, "cluster.cluster_base_addr", "the cluster file"),
