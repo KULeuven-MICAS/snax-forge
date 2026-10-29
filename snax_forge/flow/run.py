@@ -204,6 +204,7 @@ class FlowOptions:
     trace_level: str = "off"
     trace_sources: Sequence[str] | None = None
     vcd: bool = False
+    keep_work: bool = False  # gvrun's run/work/ after a passing run (kept with --vcd)
 
 
 def split_sets(sets: Sequence[tuple[str, str, Any]]) -> dict[str, list[tuple[str, Any]]]:
@@ -815,6 +816,8 @@ def _from_graph(
             write_reports(out)
         except ReportError as e:
             raise FlowError(f"report: {e}") from None
+    if check["passed"] and not o.keep_work and not o.vcd:  # --vcd's view reads its map files there
+        shutil.rmtree(run / "work", ignore_errors=True)  # gvrun's config files, which nothing reads
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
         checks_that_ran(), trace_level=o.trace_level, trace=trace, trace_sources=sources, vcd=o.vcd,

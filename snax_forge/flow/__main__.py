@@ -3,7 +3,7 @@
     python -m snax_forge.flow RECIPE --platform P [--set NAME=VALUE ...]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--graph FILE] [--name NAME] [--out DIR]
-                              [--seed S] [--trace LEVEL[:SOURCES]] [--vcd]
+                              [--seed S] [--trace LEVEL[:SOURCES]] [--vcd] [--keep-work]
     python -m snax_forge.flow GRAPH.snaxdfg --platform P [--kernel K]
                               [--set platform.PATH=VALUE ...] [--set memory.PATH=VALUE ...]
                               [--memory M] [--name NAME] [--out DIR] [--seed S] [--trace ...]
@@ -95,6 +95,8 @@ def main(argv: list[str] | None = None) -> int:
                     "of the beat lines (acc,acc_a,dma,core0,...)")  # fmt: skip
     ap.add_argument("--vcd", action="store_true",
                     help="also write gtkwave's VCD of the sources into run/")  # fmt: skip
+    ap.add_argument("--keep-work", action="store_true",
+                    help="keep gvrun's run/work/ after a passing run")  # fmt: skip
     args = ap.parse_args(argv)
     try:
         level, sources = parse_trace(args.trace)
@@ -121,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
         "trace_level": level,
         "trace_sources": sources,
         "vcd": args.vcd,
+        "keep_work": args.keep_work,
     }
     try:
         if bound:

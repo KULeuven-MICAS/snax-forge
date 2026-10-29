@@ -128,6 +128,8 @@ Each event carries its raw words and what they mean (the region, the elements an
 
     {"t": 121, "k": "stall", "src": "acc_b.lane0", "task": "add_acc_b", "addr": 268435968, "bank": 0, "row": 2, "by": "acc_a.lane0", "by_addr": 268435456, "b": 0, "region": "B", "elems": [0]}
 
+A passing run deletes gvrun's `run/work/` (its config files, which nothing reads) unless `--keep-work` is given or the run has `--vcd`, whose view reads its map files there.
+
 `--vcd` adds gtkwave's `run/all.vcd` and `run/view.gtkw` of the same sources (open the view outside the container); snax-forge never reads them:
 
     pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --trace stall --vcd --name vecadd_stall_vcd
