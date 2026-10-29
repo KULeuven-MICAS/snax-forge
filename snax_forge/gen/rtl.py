@@ -63,7 +63,7 @@ import json
 import subprocess
 import sys
 import tempfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
 
@@ -93,24 +93,35 @@ def catalogue() -> dict[str, Any]:
     return json.loads(CATALOGUE.read_text())
 
 
+def _ports(unit: Unit, direction: str) -> list[Any]:
+    return [p for p in unit.ports.values() if p.dir == direction]
+
+
+def _input_dtypes(unit: Unit, kind: str) -> Any:
+    """The inputs' dtypes for a ``dtypes`` param, else the first input's."""
+    dtypes = [p.dtype for p in _ports(unit, "in")]
+    return dtypes if kind == "dtypes" else dtypes[0]
+
+
+# The catalogue's fill rules (module doc): rule -> its value for a unit, given the param's type;
+# ``unit.params.<key>`` is the unit's param of that name
+FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
+    "inputs.dtype": _input_dtypes,
+    "outputs.dtype": lambda u, kind: _ports(u, "out")[0].dtype,
+    "inputs.lanes": lambda u, kind: _ports(u, "in")[0].lanes,
+    "unit.opType": lambda u, kind: u.op_type,
+}
+PARAMS_RULE = "unit.params."
+
+
 def fill(acc: Accelerator, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
-    """The datapath's params of ``unit`` by the catalogue's fill rule (module doc)."""
-    ins = [k for k, p in unit.ports.items() if p.dir == "in"]
-    outs = [k for k, p in unit.ports.items() if p.dir == "out"]
+    """The datapath's params of ``unit`` by the catalogue's fill rule (``FILL_RULES``)."""
     out = {}
     for name, rule in sig["fill"].items():
-        kind = sig["params"][name]["type"]
-        if rule == "inputs.dtype":
-            dtypes = [unit.ports[p].dtype for p in ins]
-            out[name] = dtypes if kind == "dtypes" else dtypes[0]
-        elif rule == "outputs.dtype":
-            out[name] = unit.ports[outs[0]].dtype
-        elif rule == "inputs.lanes":
-            out[name] = unit.ports[ins[0]].lanes
-        elif rule == "unit.opType":
-            out[name] = unit.op_type
-        elif rule.startswith("unit.params."):
-            out[name] = unit.params.get(rule.removeprefix("unit.params."))
+        if rule in FILL_RULES:
+            out[name] = FILL_RULES[rule](unit, sig["params"][name]["type"])
+        elif rule.startswith(PARAMS_RULE):
+            out[name] = unit.params.get(rule.removeprefix(PARAMS_RULE))
         else:
             raise GenError(
                 "gen.catalogue", f"{unit.datapath}.{name}: the fill rule {rule!r} is unknown"
