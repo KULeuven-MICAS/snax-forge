@@ -19,7 +19,11 @@ Library BRMs:
                       the Chisel datapath TreeAccumulate (L = 1, II = 1,
                       drain 0, D133) twice: chisel_accumulator at 1 lane (vsum's)
                       and chisel_adder_tree at W lanes, summed by its tree
-                      and accumulated
+                      and accumulated; chisel_serial, the Chisel datapath
+                      SerialAccumulate (L = 1, span W: lane k in cycle k)
+    mac               out = a * b folded per lane over T beats (pattern family
+                      ``lane_fold``, a fused nest; D149): the Chisel datapath
+                      Mac with accumulate (L = 1, II = 1, span 1)
 """
 
 from __future__ import annotations

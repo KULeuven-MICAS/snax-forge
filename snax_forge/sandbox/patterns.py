@@ -25,6 +25,16 @@ dtype. That is
 what the importer makes of DaCe's ``Reduce``, and what a BRM of family ``reduce``
 (``accumulate``) does: this matcher is the one place where the SNAX-DFG's
 ``reduce`` and the BRM's pattern meet, so the BRM names no IR's term.
+
+``lane_fold`` (D149, ``mac``): a fused nest (``fuse_map``), the spatial map
+``bind`` is given with its two tasklets: the first ``elementwise`` with
+``attrs.op`` over two inputs, writing a local value the second reads at the
+same index; the second a ``reduce`` copy of it with ``attrs.fold``, its
+output indexed by the spatial variable (one partial per lane, from
+``split_reduce``). The connectors are the nest's own (``fused_view``): the
+first tasklet's inputs onto the BRM's inputs in fold order, the second's
+output onto its output. A tasklet is refused with "fuse_map first", a fold
+into one element with "split_reduce first" (D150).
 """
 
 from __future__ import annotations
@@ -35,7 +45,7 @@ from typing import Any
 
 import numpy as np
 
-from snax_forge.dfg import REDUCE_OPS, Node
+from snax_forge.dfg import REDUCE_OPS, Memlet, Node
 
 from .recipe import SandboxError
 
@@ -139,3 +149,69 @@ def _reduce(
 
 
 register_pattern("reduce", _reduce)
+
+
+def fused_view(smap: Node) -> tuple[Node, Node, Node] | None:
+    """A fused nest's two tasklets and the one tasklet they stand for to ``bind``: the first's
+    inputs, the second's outputs, the first's code onto the second's output connector. None
+    when ``smap`` is not a spatial map of two tasklets, the first's one output read by the
+    second at the same index."""
+    if smap.kind != "map" or smap.attrs.get("loop.kind") != "spatial":
+        return None
+    kids = smap.body or []
+    if len(kids) != 2 or any(k.kind != "tasklet" for k in kids):
+        return None
+    first, second = kids
+    if len(first.outputs) != 1 or len(second.inputs) != 1 or len(second.outputs) != 1:
+        return None
+    (m1,), (m2,) = first.outputs.values(), second.inputs.values()
+    if (m1.data, m1.subset) != (m2.data, m2.subset) or m1.reduce is not None:
+        return None
+    (c2,) = second.outputs
+    if set(first.inputs) & {c2}:
+        return None
+    stmts = ast.parse(first.attrs["code"]).body
+    if len(stmts) != 1 or not isinstance(stmts[0], ast.Assign):
+        return None
+    code = f"{c2} = {ast.unparse(stmts[0].value)}"
+    view = Node(first.id, "tasklet", inputs=dict(first.inputs),
+                outputs={c2: Memlet.from_dict(second.outputs[c2].to_dict(), first.id)},
+                attrs={"code": code})  # fmt: skip
+    return first, second, view
+
+
+def _lane_fold(
+    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
+) -> dict[str, str]:
+    what = f"node {node.id!r} as {brm.name!r}"
+    if node.kind == "tasklet":
+        if any(m.reduce is not None for m in node.outputs.values()):
+            raise SandboxError(f"{what}: a {brm.name} folds one partial per lane, this tasklet "
+                               "folds into the output: split_reduce first (D150)")  # fmt: skip
+        raise SandboxError(f"{what}: a {brm.name} binds a multiply and the fold of its products "
+                           "as one nest: fuse_map first (D150)")  # fmt: skip
+    found = fused_view(node)
+    if found is None:
+        raise SandboxError(f"{what}: not a fused nest of a multiply and its fold (fuse_map first)")
+    first, second, _ = found
+    ports = _elementwise(first, {"op": attrs.get("op"), "arity": 2}, brm, dtypes)
+    (cin,), (cout,) = second.inputs, second.outputs
+    if second.attrs["code"] != f"{cout} = {cin}":
+        raise SandboxError(f"{what}: {second.id}'s {second.attrs['code']!r} is not a copy of its "
+                           f"input ({cout} = {cin})")  # fmt: skip
+    red = second.outputs[cout].reduce
+    fold = attrs.get("fold")
+    if red is None or red.op != fold:
+        raise SandboxError(f"{what}: {second.id} does not fold with {fold!r}")
+    identity = REDUCE_OPS[fold].identity(np.dtype(dtypes[cout]))
+    if red.identity != identity:
+        raise SandboxError(f"{what}: {second.id}'s fold starts from {red.identity}, the BRM "
+                           f"from {fold}'s identity {identity}")  # fmt: skip
+    if node.attrs["var"] not in second.outputs[cout].names:
+        raise SandboxError(f"{what}: {second.id} folds every lane into one element; a "
+                           f"{brm.name} keeps one partial per lane: split_reduce first (D150)")  # fmt: skip
+    out = next(p for c, p in ports.items() if c in first.outputs)
+    return {c: p for c, p in ports.items() if c in first.inputs} | {cout: out}
+
+
+register_pattern("lane_fold", _lane_fold)

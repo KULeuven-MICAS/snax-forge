@@ -6,9 +6,11 @@ snax_forge/brm/instance.py) and its ports' dtypes (the node's containers',
 beyond its name, BRM, timing and CSRs (accelerator.py): per BRM port its
 datapath port, dtype and lanes, ``opType`` for an elementwise unit, and
 ``params``; or it refuses with a ``GenError`` naming what does not fit.
-Adapters are registered by the datapath's name with its latency L
-(``register_datapath``, D19); the implementation's timing must be L, II 1 and
-drain 0 (accelerator.py). Every datapath is driven by the shell's nest
+Adapters are registered by the datapath's name with its latency L and span
+(``register_datapath``, D19), each an int or an ``expr.py`` expression over the
+params the adapter gives and ``lanes`` (its first input's; a bool as 0 or 1,
+``timing``); the implementation's timing must be L, II 1, that span and drain
+0 (accelerator.py). Every datapath is driven by the shell's nest
 controller (``counted``, D129): data and enables only.
 
 **ElementwiseLanes** (L 0): one op over every lane.
@@ -33,6 +35,17 @@ lanes summed by an adder tree in front of its register.
     op           add: the BRM's op param, the only one an adder tree runs
                  (``gen.op`` until a datapath takes another)
     params       ``op``: add, as ElementwiseLanes' ``op``; args are lanes only
+
+**SerialAccumulate** (L 1, span lanes, D149): TreeAccumulate's ports, op and
+args, its lanes added one a cycle (lane k in cycle k) into one sum; params
+none (its op is add).
+
+**Mac** (L ``max(accumulate, regOut)``, D149): args lanes, ``accumulate`` and
+``regOut`` (bools). With ``accumulate``: inputs ``a`` and ``b`` of rate 1, an
+output of a named rate (T), each lane summing T products; otherwise the plain
+``a * b + c``, ``c`` an input of rate 1 with ``out``'s dtype and lanes, every
+rate 1. Every port args.lanes lanes of whole 64-bit channels; ``opType`` the
+result type of ``a`` and ``b``; params ``accumulate`` and ``regOut``.
 
 An instance judged without a graph (brm/instance.py's check of its datapath)
 has no dtypes: its adapter checks everything but the widths and gives ports
@@ -89,20 +102,30 @@ Adapter = Callable[..., Fill]  # (inst, dtypes=None) -> Fill
 
 @dataclass(frozen=True)
 class Datapath:
-    """A registered datapath: its latency L and its adapter."""
+    """A registered datapath: its latency L, its adapter and its span (module doc)."""
 
-    latency: int
+    latency: int | str
     fill: Adapter
+    span: int | str = 1
+
+    def timing(self, filled: Fill) -> tuple[int, int]:
+        """``(L, span)`` for the unit ``filled`` gives (module doc)."""
+        env = {k: int(v) for k, v in filled.params.items() if isinstance(v, (bool, int))}
+        first = next((p for p in filled.ports.values() if p.dir == "in"), None)
+        env["lanes"] = 1 if first is None else first.lanes
+        return tuple(v if isinstance(v, int) else expr.evaluate(v, env)
+                     for v in (self.latency, self.span))  # type: ignore[return-value]  # fmt: skip
 
 
 DATAPATHS: dict[str, Datapath] = {}
 
 
-def register_datapath(name: str, latency: int, adapter: Adapter) -> None:
-    """Add the datapath ``name`` (a binding's ``datapath``) of latency ``latency``."""
+def register_datapath(name: str, latency: int | str, adapter: Adapter, span: int | str = 1) -> None:
+    """Add the datapath ``name`` (a binding's ``datapath``) of latency ``latency`` and span
+    ``span`` (module doc)."""
     if name in DATAPATHS:
         raise ValueError(f"datapath {name!r} already registered")
-    DATAPATHS[name] = Datapath(latency, adapter)
+    DATAPATHS[name] = Datapath(latency, adapter, span)
 
 
 # ElementwiseOp in ElementwiseAlu.scala
@@ -195,27 +218,65 @@ def elementwise_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -
 register_datapath("ElementwiseLanes", 0, elementwise_lanes)
 
 
-def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
-    """TreeAccumulate's fill; see the module doc."""
+def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
+                    who: str = "TreeAccumulate") -> Fill:  # fmt: skip
+    """TreeAccumulate's fill (SerialAccumulate's as ``who``); see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
     if set(b["args"]) != {"lanes"}:
-        raise GenError(
-            "gen.args", f"{what}: args {sorted(b['args'])}; TreeAccumulate takes lanes only"
-        )
+        raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; {who} takes lanes only")
     lanes = _lanes_arg(inst, what)
     op = inst.params.get("op")
     if op != "add":
-        raise GenError("gen.op", f"{what}: op {op!r}; TreeAccumulate adds")
-    (a,), (out,) = _ports(inst, 1, 1, "TreeAccumulate", what)
+        raise GenError("gen.op", f"{what}: op {op!r}; {who} adds")
+    (a,), (out,) = _ports(inst, 1, 1, who, what)
     if a.rate != 1 or not isinstance(out.rate, str):
         raise GenError(
             "gen.rate",
-            f"{what}: rates {a.rate!r} in and {out.rate!r} out; TreeAccumulate takes 1 in and "
+            f"{what}: rates {a.rate!r} in and {out.rate!r} out; {who} takes 1 in and "
             "a named rate out (one sum per T inputs)",
         )
     _lanes(inst, {a.name: lanes, out.name: 1}, what)
-    return Fill(_fill_ports(inst, dtypes, {a.name}, what), params={"op": op})
+    params = {"op": op} if who == "TreeAccumulate" else {}
+    return Fill(_fill_ports(inst, dtypes, {a.name}, what), params=params)
 
 
 register_datapath("TreeAccumulate", 1, tree_accumulate)
+
+
+def serial_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+    """SerialAccumulate's fill; see the module doc."""
+    return tree_accumulate(inst, dtypes, "SerialAccumulate")
+
+
+register_datapath("SerialAccumulate", 1, serial_accumulate, span="lanes")
+
+
+def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+    """Mac's fill; see the module doc."""
+    brm, b = inst.brm, inst.impl.binding
+    what = f"{brm.name}.{inst.implementation}"
+    if set(b["args"]) != {"lanes", "accumulate", "regOut"}:
+        raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; Mac takes lanes, "
+                       "accumulate and regOut")  # fmt: skip
+    accumulate, reg_out = b["args"]["accumulate"], b["args"]["regOut"]
+    if type(accumulate) is not bool or type(reg_out) is not bool:
+        raise GenError("gen.args", f"{what}: accumulate {accumulate!r}, regOut {reg_out!r}; "
+                       "each is true or false")  # fmt: skip
+    lanes = _lanes_arg(inst, what)
+    ins, (out,) = _ports(inst, 2 if accumulate else 3, 1, "Mac", what)
+    if any(p.rate != 1 for p in ins) or isinstance(out.rate, str) != accumulate:
+        raise GenError("gen.rate", f"{what}: rates {[p.rate for p in ins]} in and {out.rate!r} "
+                       "out; Mac takes 1 in and, accumulating, a named rate out (one sum per T "
+                       "products), else 1")  # fmt: skip
+    names = [p.name for p in brm.interface.ports]
+    _lanes(inst, {p: lanes for p in names}, what)
+    ports = _fill_ports(inst, dtypes, set(names), what)
+    if not accumulate and dtypes is not None and dtypes[ins[2].name] != dtypes[out.name]:
+        raise GenError("gen.dtype", f"{what}: c is {dtypes[ins[2].name]}, out "
+                       f"{dtypes[out.name]}; the plain form's c is out's dtype")  # fmt: skip
+    op_type = None if dtypes is None else result_type([dtypes[p.name] for p in ins[:2]])
+    return Fill(ports, op_type, {"accumulate": accumulate, "regOut": reg_out})
+
+
+register_datapath("Mac", "max(accumulate, regOut)", mac)

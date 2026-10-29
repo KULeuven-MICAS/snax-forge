@@ -3,7 +3,9 @@
     {"datapath":   "ElementwiseLanes",          a datapath of the catalogue
                                                 (hw/chisel/blocks.json, D147)
      "args":       {"lanes": "W", "op": "op"},  its parameters, each an
-                                                expression over design params
+                                                expression over design params,
+                                                or a bool (a design-time variant:
+                                                Mac's accumulate)
      "controller": "counted",                   the nest controller that drives
                                                 it (D147)
      "ports":      {"a": "in", "out": "out"}}   optional: every BRM port -> the
@@ -108,6 +110,8 @@ def _ports(m: Any, ports: Sequence[str], what: str) -> dict[str, str]:
 
 
 def _value(v: Any, allowed: Mapping[str, Any], what: str, noun: str) -> expr.Value:
+    if isinstance(v, bool):  # a design-time variant, kept as it is
+        return v
     unknown = expr.outside(v, allowed, what)
     if unknown:
         raise BindingError(f"{what}: {v!r} uses {unknown}, not {noun} ({sorted(allowed)})")

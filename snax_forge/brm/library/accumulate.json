@@ -23,7 +23,7 @@
   "chisel_accumulator": {
    "source": "chisel",
    "supports": {"W": [1]},
-   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0, "span": 1},
    "binding": {
     "datapath": "TreeAccumulate",
     "args": {"lanes": "W"},
@@ -34,9 +34,20 @@
   "chisel_adder_tree": {
    "source": "chisel",
    "supports": {},
-   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0, "span": 1},
    "binding": {
     "datapath": "TreeAccumulate",
+    "args": {"lanes": "W"},
+    "controller": "counted",
+    "ports": {"a": "in", "out": "out"}
+   }
+  },
+  "chisel_serial": {
+   "source": "chisel",
+   "supports": {},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0, "span": "W"},
+   "binding": {
+    "datapath": "SerialAccumulate",
     "args": {"lanes": "W"},
     "controller": "counted",
     "ports": {"a": "in", "out": "out"}

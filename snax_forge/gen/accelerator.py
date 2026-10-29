@@ -45,7 +45,7 @@ Several accelerators are ``gen.instances``.
 ``gen.controller`` (a controller other than ``counted``, the only one generated),
 what the datapath's adapter refuses (blocks.py), ``gen.drain`` (an
 implementation whose drain is not 0: the nest controller has none) and
-``gen.timing`` (a latency other than the datapath's, or an II other than 1).
+``gen.timing`` (a latency or span other than the datapath's, or an II other than 1).
 
 **A reader's checks** (``from_dict`` and every construction), each a
 ``GenError``: ``gen.link`` (a link not from an ``out`` port to an ``in`` port
@@ -379,14 +379,15 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
     if inst.drain != 0:
         raise GenError("gen.drain", f"{what}: drain {inst.drain}; the nest controller has none, "
                        "so a bound implementation's drain is 0 (D133)")  # fmt: skip
-    if (inst.latency, inst.initiation_interval) != (dp.latency, 1):
+    latency, span = dp.timing(fill)
+    if (inst.latency, inst.initiation_interval, inst.span) != (latency, 1, span):
         raise GenError(
-            "gen.timing", f"{what}: latency {inst.latency}, II {inst.initiation_interval}; "
-            f"{datapath} is latency {dp.latency}, II 1",
+            "gen.timing", f"{what}: latency {inst.latency}, II {inst.initiation_interval}, span "
+            f"{inst.span}; {datapath} here is latency {latency}, II 1, span {span}",
         )  # fmt: skip
     fixed = fixed_fold(point.graph, instance_nodes(point.graph)[name], inst)
     params = dict(fill.params) | ({} if fixed is None else {"T": fixed})
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None and fixed is None else []
     unit_csrs = [Csr(n, "rw", next(offsets), CSR_BITS) for n in unit_rw]
     return Unit(name, inst.brm.name, datapath, fill.ports, params, inst.latency,
-                inst.initiation_interval, unit_csrs, fill.op_type)  # fmt: skip
+                inst.initiation_interval, unit_csrs, fill.op_type, inst.span)  # fmt: skip

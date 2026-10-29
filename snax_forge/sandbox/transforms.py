@@ -75,7 +75,7 @@ from snax_forge.dfg import DfgError, Graph, Memlet, Node, named_rates, parse_dim
 from snax_forge.dfg.subset import dim_names, format_dim, map_range
 from snax_forge.expr import ExprError
 
-from .patterns import match
+from .patterns import fused_view, match
 from .recipe import SandboxError
 
 Transform = Callable[..., Graph]
@@ -287,11 +287,20 @@ def bind(
     g = _copy(g)
     what = f"bind {node!r}"
     body, i, outer = _locate(g, node)
-    tasklet = body[i]
-    smap = outer[-1] if outer else None
-    if smap is None or smap.attrs.get("loop.kind") != "spatial" or len(smap.body or []) != 1:
-        raise SandboxError(f"{what}: must be the only node of a spatial map (split the map first)")
-    temporal = list(outer[:-1])  # the firing loops, outermost first
+    if body[i].kind == "map":  # a fused nest's spatial map (fuse_map): its two tasklets as one
+        smap, found = body[i], fused_view(body[i])
+        if found is None:
+            raise SandboxError(f"{what}: a map binds only as a fused nest, a spatial map of two "
+                               "tasklets (fuse_map)")  # fmt: skip
+        tasklet = found[2]
+    else:
+        tasklet = body[i]
+        smap = outer[-1] if outer else None
+        if smap is None or smap.attrs.get("loop.kind") != "spatial" or len(smap.body or []) != 1:
+            raise SandboxError(f"{what}: must be the only node of a spatial map (split the map "
+                               "first)")  # fmt: skip
+        outer = outer[:-1]
+    temporal = list(outer)  # the firing loops, outermost first
     for m in temporal:
         kind = m.attrs.get("loop.kind")
         if kind == "tile":

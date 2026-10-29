@@ -318,9 +318,9 @@ rate 1 and output rate `T`.
 
 **Timing**, each an int or an expression over design params: `latency` (L,
 a firing to its push), `initiation_interval` (II, the least cycles between
-firings) and `drain` (the cycles, starting with a push, in which no input is
+firings), `drain` (the cycles, starting with a push, in which no input is
 taken; 0 by default) and `span` (the cycles a unit reads one input beat in
-place, section 17). Only L delays a result.
+place, section 17; 1 by default). Only L delays a result.
 
 **Params.** A `design` param is fixed per instance (lanes, the op) and
 reaches the design point and the accelerator hjson; its `default` is used
@@ -331,8 +331,8 @@ order: the accelerator task's `values` (section 9); `n` must be a multiple
 of every resolved rate. A value field holds an int or an expression over
 params; a fixed string is a design param with one allowed value.
 
-**The function** names a registered kind (`elementwise`, `reduce`, with an
-op by name) and its params over the design params; the reference executor
+**The function** names a registered kind (`elementwise`, `reduce`, `mac`,
+with an op by name) and its params over the design params; the reference executor
 runs an accelerated node through it (D79). `code` is one `output =
 expression` per output port over the input ports, per lane of one firing; a
 reduction says what one element contributes (`accumulate`'s `out = a`), its
@@ -364,7 +364,7 @@ fold's rate, 1 for an elementwise unit). Expressions are stored canonical.
   "chisel_accumulator": {
    "source": "chisel",
    "supports": {"W": [1]},
-   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0, "span": 1},
    "binding": {
     "datapath": "TreeAccumulate",
     "args": {"lanes": "W"},
@@ -379,7 +379,7 @@ fold's rate, 1 for an elementwise unit). Expressions are stored canonical.
   "chisel_tiled_spatial": {
    "source": "chisel",
    "supports": {},
-   "timing": {"latency": 0, "initiation_interval": 1, "drain": 0},
+   "timing": {"latency": 0, "initiation_interval": 1, "drain": 0, "span": 1},
    "binding": {
     "datapath": "ElementwiseLanes",
     "args": {"lanes": "W", "op": "op"},
@@ -388,10 +388,47 @@ fold's rate, 1 for an elementwise unit). Expressions are stored canonical.
   }
 ```
 
-B1x adds (F1, no snippets yet) the BRM `mac`, its implementation
-`chisel_mac` binding the datapath `Mac`, its pattern a lane fold: a multiply
-and a reduce joined by a local value, the fold indexed by the spatial
-variable; and `accumulate`'s `chisel_serial`, binding `SerialAccumulate`.
+The BRM `mac` (D149) says what one lane computes, `out = a * b`, its output
+folded per lane over T beats by its kind `mac` (the product at the inputs'
+result type, cast to the output's, D143); its implementation `chisel_mac`
+binds the datapath `Mac` with `accumulate` true and `regOut` false (a bool
+arg is a design-time variant, kept as it is). Its pattern, `lane_fold`, is a
+fused nest (section 12): a multiply and a reduce joined by a local value, the
+fold indexed by the spatial variable:
+
+<!-- snippet: snax_forge/brm/library/mac.json -->
+```json
+ "function": {"accel": "mac", "params": {"lanes": "W", "op": "op"}, "code": "out = a * b"},
+ "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}},
+ "pattern": {"family": "lane_fold", "attrs": {"op": "mul", "fold": "add"}},
+```
+
+<!-- snippet: snax_forge/brm/library/mac.json -->
+```json
+   "binding": {
+    "datapath": "Mac",
+    "args": {"lanes": "W", "accumulate": true, "regOut": false},
+    "controller": "counted"
+   }
+```
+
+`accumulate`'s `chisel_serial` binds `SerialAccumulate`, one lane a cycle, so
+its span is its lanes:
+
+<!-- snippet: snax_forge/brm/library/accumulate.json -->
+```json
+  "chisel_serial": {
+   "source": "chisel",
+   "supports": {},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0, "span": "W"},
+   "binding": {
+    "datapath": "SerialAccumulate",
+    "args": {"lanes": "W"},
+    "controller": "counted",
+    "ports": {"a": "in", "out": "out"}
+   }
+  }
+```
 
 **Two notations** (D70). An **`affine`** nest of a port: the operand's
 `shape`, an `offset` and `loops`, outermost first, each with a `bound`, one

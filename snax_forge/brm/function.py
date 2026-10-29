@@ -27,8 +27,10 @@ output's when it writes it, D143) and ``reduce`` (input ``a`` at rate 1,
 output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
 each input lane cast to the output's dtype first, so its tree and its
 accumulator run at that dtype, as ``np.add.reduce(a, dtype=out)`` and
-SnaxUnit do, D143), each with ``op`` a
-registered op by name (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
+SnaxUnit do, D143), and ``mac`` (inputs ``a`` and ``b`` at rate 1, output
+``out`` at rate ``"T"``, every lane its own: the product at the inputs' result
+type, cast to the output's dtype and folded per lane over T beats, D143),
+each with ``op`` a registered op by name (``mac``'s the fold's) (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
 ``or``, ``xor``). New ones with ``register_kind`` and ``register_op``.
 
 ``function_of`` refuses, as a BrmError, a kind that is not registered, params
@@ -186,6 +188,29 @@ def reduce_kind(
     return AccelFunction(ports, fn, "reduce")
 
 
+def mac_kind(
+    lanes: int = 1,
+    op: Callable[[Any, Any], Any] = np.add,
+    dtypes: Mapping[str, str] | None = None,
+) -> AccelFunction:
+    """T beats of ``a`` and ``b`` -> 1 beat of ``out``, each lane on its own: ``a * b`` at the
+    inputs' result type, cast to the output's dtype (``dtypes["out"]``), folded with ``op``
+    over the T beats (D143); without ``dtypes``, at the product's."""
+    out_dtype = None if dtypes is None else dtypes.get("out")
+
+    def fn(k, ins, state, params):
+        x = np.multiply(ins["a"], ins["b"])
+        x = x if out_dtype is None else np.asarray(x).astype(out_dtype)
+        state["acc"] = x.copy() if "acc" not in state else op(state["acc"], x)
+        if (k + 1) % params["T"] == 0:
+            return {"out": state.pop("acc")}
+        return {}
+
+    ports = (AccelPort("a", "in", lanes, 1), AccelPort("b", "in", lanes, 1),
+             AccelPort("out", "out", lanes, "T"))  # fmt: skip
+    return AccelFunction(ports, fn, "mac")
+
+
 # =============================================================================
 # Registries: ops and kinds
 # =============================================================================
@@ -237,6 +262,7 @@ def _with_op(kind: Callable[..., AccelFunction]) -> KindFactory:
 
 register_kind("elementwise", _with_op(elementwise))
 register_kind("reduce", _with_op(reduce_kind))
+register_kind("mac", _with_op(mac_kind))
 
 
 def function_of(inst: Instance, dtypes: Mapping[str, str] | None = None) -> AccelFunction:

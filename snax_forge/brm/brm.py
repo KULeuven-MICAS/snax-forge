@@ -251,31 +251,37 @@ class Pattern:
 
 @dataclass
 class Timing:
-    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in the accelerator hjson) and ``drain``.
+    """``latency`` (L), ``initiation_interval`` (II, ``ii`` in the accelerator hjson), ``drain``
+    and ``span``.
 
     L: cycles from a firing to its push. II: the least number of cycles
     between two firings. ``drain`` (D103): the cycles, starting with the
     cycle an output is pushed, in which no input is taken (1 for a block
     whose ``in.ready`` is low while its result waits; the generator takes 0
     only, as the nest controller has none, D133). Optional, default 0;
-    always written here.
+    always written here. ``span`` (C§17): the cycles the unit reads one input
+    beat in place, taking it in the last, so its throughput is one beat per
+    max(II, span) (``SerialAccumulate``'s lanes). Optional, default 1; always
+    written here.
     """
 
     latency: Value
     initiation_interval: Value
     drain: Value = 0
+    span: Value = 1
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "latency": self.latency,
             "initiation_interval": self.initiation_interval,
             "drain": self.drain,
+            "span": self.span,
         }
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Timing:
-        _keys(d, ("latency", "initiation_interval"), ("drain",), what)
-        return cls(d["latency"], d["initiation_interval"], d.get("drain", 0))
+        _keys(d, ("latency", "initiation_interval"), ("drain", "span"), what)
+        return cls(d["latency"], d["initiation_interval"], d.get("drain", 0), d.get("span", 1))
 
 
 @dataclass
@@ -552,6 +558,9 @@ def _check_implementations(b: Brm, design: dict[str, Param], what: str) -> None:
         _uses(t.latency, design, f"{w}.timing.latency")
         _uses(t.initiation_interval, design, f"{w}.timing.initiation_interval")
         _uses(t.drain, design, f"{w}.timing.drain")
+        _uses(t.span, design, f"{w}.timing.span")
+        if (c := expr.constant(t.span)) is not None and c < 1:
+            raise BrmError(f"{w}.timing.span: must be >= 1, got {c}")
         if (c := expr.constant(t.drain)) is not None and c < 0:
             raise BrmError(f"{w}.timing.drain: must be >= 0, got {c}")
         if (c := expr.constant(t.latency)) is not None and c < 0:
