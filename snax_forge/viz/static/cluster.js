@@ -29,7 +29,7 @@
 // Everything shown is that answer's: a field the run's level cannot give is
 // absent from it and drawn as nothing, with the answer's `needs` in the note.
 
-import { CLASS_GROUP, h, int } from "./dom.js";
+import { CLASS_GROUP, accelUnits, h, int, unitFacts } from "./dom.js";
 import { DIRECTION_TEXT, elemsText, eventText } from "./events.js";
 
 const MAX_SLOTS = 8; // deeper FIFOs are drawn as a bar
@@ -200,12 +200,11 @@ function build(detail, first) {
   const l2Pair = pair("h");
   items.push(place(l2Pair.el, dcol + 1, 2), place(l2.el, dcol + 2, 2));
 
-  const u = acc.unit || {};
-  const facts = [u.op !== undefined ? `op ${u.op}` : null, u.lanes !== undefined ? `${u.lanes} lanes` : null,
-    u.latency !== undefined ? `latency ${u.latency}` : null, u.ii !== undefined ? `II ${u.ii}` : null].filter(Boolean);
+  // One line per unit of accelerator.json, with its group
+  const facts = accelUnits(acc.unit).map((x) => h("div", { class: "cl-line muted" }, unitFacts(x)));
   const unit = block(acc.name, "accelerator");
-  const unitLines = { facts: h("div", { class: "cl-line muted" }, facts.join(", ")), task: h("div", { class: "cl-line" }), fire: h("div", { class: "cl-line" }), push: h("div", { class: "cl-line" }) };
-  unit.body.append(unitLines.facts, unitLines.task, unitLines.fire, unitLines.push);
+  const unitLines = { task: h("div", { class: "cl-line" }), fire: h("div", { class: "cl-line" }), push: h("div", { class: "cl-line" }) };
+  unit.body.append(...facts, unitLines.task, unitLines.fire, unitLines.push);
   items.push(place(unit.el, 1, 4, Math.max(movers.length, 1)));
 
   const req = h("div", { class: "cl-req", style: { gridTemplateColumns: cols.map(track).join(" ") } }, items);

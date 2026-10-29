@@ -7,7 +7,7 @@
 // arranges numbers. Components appear in the cluster's order: the
 // accelerator, its movers, the DMA, the cores.
 
-import { CLASS_GROUP as GROUP, h, int, pct, section, table } from "./dom.js";
+import { CLASS_GROUP as GROUP, h, int, pct, section, table, unitFacts, unitsOf } from "./dom.js";
 
 // Cycle classes per component kind, in CONTRACTS.md section 7 order.
 const CLASS_ORDER = {
@@ -71,14 +71,13 @@ function accelSection(detail) {
   const names = Object.keys(profile.accelerators);
   if (!names.length) return null;
   const acc = cluster.accelerator;
-  const unit = acc.unit;
-  const params = ["wait", "latency", "ii", "lanes", "data_width"].filter((k) => k in unit).map((k) => `${k} ${unit[k]}`).join(", ");
   return section("accelerators", "Accelerator",
     "Utilisation is busy cycles over the program's window: a firing and the II gap after it (D59).",
     names.map((n) => {
       const a = profile.accelerators[n];
       return h("div", { class: "block" },
-        h("h3", {}, n, h("span", { class: "kind" }, `${unit.unit || ""} on core${acc.core} (${params})`)),
+        h("h3", {}, n, h("span", { class: "kind" }, `on core${acc.core}`)),
+        unitsOf(acc.unit, n).map((x) => h("p", { class: "note" }, unitFacts(x))),
         h("div", { class: "util" },
           h("div", { class: "meter" }, h("span", { class: "g-busy", style: { width: `${100 * a.utilisation}%` } })),
           h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.firings)} firings`),
