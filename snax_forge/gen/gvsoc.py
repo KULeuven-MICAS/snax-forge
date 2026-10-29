@@ -24,6 +24,10 @@ program and its data, and the manifest:
                              task list on snRuntime, self-checking
     manifest.json            what was written (Manifest)
 
+A file is written only when its text changes (``write_changed``), and only the files an
+earlier generation into ``out_dir`` wrote (its manifest's) and this one does not are removed,
+so generating the same design point again changes no file and rebuilds no program.
+
 ``<platform>`` is the platform's base (its name when it has none), ``<slot>``
 its ``accelerator_slot``: for ``platforms/snax_forge.json``,
 ``snax_forge.hjson``, ``snax_forge_streamer.hjson`` and
@@ -143,7 +147,16 @@ from typing import Any
 import hjson
 
 from snax_forge.brm import Instance, port_dtypes
-from snax_forge.common import JsonFile, Missing, dig, generated_header, plain, repo_root, to_json
+from snax_forge.common import (
+    JsonFile,
+    Missing,
+    dig,
+    generated_header,
+    plain,
+    repo_root,
+    to_json,
+    write_changed,
+)
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
@@ -576,9 +589,10 @@ def generate(
         MAIN_C: main_c(point, tasks, cluster, acc, data, [DATA_H, header, STREAMER_HEADER],
                        shown),
     }  # fmt: skip
+    before = _written(out)
     (out / "include").mkdir(parents=True, exist_ok=True)
     for f, text in files.items():
-        (out / f).write_text(text)
+        write_changed(out / f, text)
     manifest = Manifest(
         design=point.name,
         design_point=shown,
@@ -590,5 +604,15 @@ def generate(
         csrs=layout,
         tasks=acc_tasks(tasks, members, acc),
     )
-    (out / "manifest.json").write_text(manifest.to_json())
+    write_changed(out / "manifest.json", manifest.to_json())
+    for f in before - set(manifest.files):
+        (out / f).unlink(missing_ok=True)
     return manifest
+
+
+def _written(out: Path) -> set[str]:
+    """The files an earlier generation into ``out`` wrote, by its manifest (none without one)."""
+    try:
+        return set(Manifest.load(out / "manifest.json").files)
+    except (OSError, ValueError, KeyError, TypeError):
+        return set()

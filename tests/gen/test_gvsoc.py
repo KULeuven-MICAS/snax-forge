@@ -716,3 +716,21 @@ def test_matadd_int32_bounds_in_words(tmp_path):
     assert s["data_reader_params"]["spatial_bounds"] == [[2], [2]]
     assert s["data_reader_params"]["num_channel"] == [2, 2]
     assert s["data_writer_params"]["num_channel"] == [2]
+
+
+def test_generating_again_changes_no_file(tmp_path):
+    """The same design point again: every file keeps its mtime (written only when its text
+    changes), and a file the earlier manifest listed that this generation does not write goes."""
+    out = tmp_path / "gvsoc" / "vecadd"
+    path = point(tmp_path)
+    manifest = generate(path, out, root=tmp_path)
+    stamps = {f: (out / f).stat().st_mtime_ns for f in manifest.files}
+    old = json.loads((out / "manifest.json").read_text())
+    old["files"].append("include/gone.h")
+    (out / "manifest.json").write_text(json.dumps(old))
+    (out / "include" / "gone.h").write_text("// an earlier generation's")
+    stamps["manifest.json"] = (out / "manifest.json").stat().st_mtime_ns
+    generate(path, out, root=tmp_path)
+    assert not (out / "include" / "gone.h").exists()
+    changed = [f for f in manifest.files if (out / f).stat().st_mtime_ns != stamps[f]]
+    assert changed == ["manifest.json"]  # the one file changed by hand, written back

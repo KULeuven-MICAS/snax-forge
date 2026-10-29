@@ -79,8 +79,10 @@ run; the default name carries every ``--set``, so runs that differ only in
 the platform or the memory plan land in folders of their own, then the
 trace level when it is not ``off`` (``vecadd_task``). ``flow.log``
 is what the command line prints plus the design checks that ran; a flow
-that fails writes the failure there instead. The log, the reports, ``gen/``
-and ``run/`` of an earlier run in the same folder are removed first.
+that fails writes the failure there instead. The log, the reports and ``run/`` of an
+earlier run in the same folder are removed first; ``gen/`` is written again in place, each
+file only when it changes (gen/gvsoc.py), and any other file in it removed, so an unchanged
+design rebuilds no program.
 
 **Stage times** (D136). ``flow.log`` ends with the wall-clock seconds of each
 stage (``import``, ``sandbox``, ``design``, ``lower``, ``gen``, ``build``,
@@ -562,8 +564,7 @@ def _clear(out: Path) -> None:
     """Remove what an earlier run left in ``out`` (module doc)."""
     for p in (out / LOG, out / REPORT / "design.md", out / REPORT / "run.md"):
         p.unlink(missing_ok=True)
-    for d in (out / "gen", out / "run"):
-        shutil.rmtree(d, ignore_errors=True)
+    shutil.rmtree(out / "run", ignore_errors=True)
 
 
 def _clear_sandbox(out: Path, graph_path: Path) -> None:
@@ -723,6 +724,9 @@ def _from_graph(
                                 kernel=spec.name, seed=o.seed)  # fmt: skip
         except (GenError, CError) as e:
             raise FlowError(f"gen: {e}") from None
+        written = {gen / f for f in manifest.files}
+        for p in [p for p in gen.rglob("*") if p.is_file() and p not in written]:
+            p.unlink()  # the flow's own folder: only what this generation wrote stays
 
     # build: SNAX-GVSoC, when needed
     with _timed(times, "build"):

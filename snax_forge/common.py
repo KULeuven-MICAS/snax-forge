@@ -4,7 +4,8 @@
   platforms are found; ``cwd_relative``, a path as a command line prints it;
   ``generated_header``, the comment every generated file starts with; ``fresh`` and
   ``unique_names``, names that clash with none taken before; ``git``, a git command's output
-  in a folder, or None; ``dig``, the value at a dotted path of nested objects.
+  in a folder, or None; ``dig``, the value at a dotted path of nested objects;
+  ``write_changed``, a file written only when its text changes.
 * ``CodedError``, the base of the refusals that carry a rule code; ``LoadedSet``, what a
   viewer serves, reloaded whole.
 * ``plain`` and ``check_keys``: JSON-ready values, and an object's unknown keys refused (so a
@@ -84,6 +85,15 @@ def dig(d: Any, path: str) -> Any:
             raise Missing(i, True)
         node = node[key]
     return node
+
+
+def write_changed(path: Path, text: str) -> bool:
+    """Write ``text`` to ``path`` unless it holds it already: an unchanged file keeps its
+    mtime, so what make builds from it is not rebuilt. Whether it wrote."""
+    if path.is_file() and path.read_text() == text:
+        return False
+    path.write_text(text)
+    return True
 
 
 def git(path: Path, *args: str) -> str | None:
