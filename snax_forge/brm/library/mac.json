@@ -1,0 +1,31 @@
+{
+ "name": "mac",
+ "interface": {
+  "params": {
+   "W": {"stage": "design", "type": "int", "default": 4, "values": null},
+   "op": {"stage": "design", "type": "str", "default": "add", "values": ["add"]},
+   "n": {"stage": "runtime", "type": "int", "default": null, "values": null},
+   "T": {"stage": "runtime", "type": "int", "default": null, "values": null}
+  },
+  "ports": [
+   {"name": "a", "direction": "in", "lanes": "W", "rate": 1},
+   {"name": "b", "direction": "in", "lanes": "W", "rate": 1},
+   {"name": "out", "direction": "out", "lanes": "W", "rate": "T"}
+  ]
+ },
+ "function": {"accel": "mac", "params": {"lanes": "W", "op": "op"}, "code": "out = a * b"},
+ "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}},
+ "pattern": {"family": "lane_fold", "attrs": {"op": "mul", "fold": "add"}},
+ "implementations": {
+  "chisel_mac": {
+   "source": "chisel",
+   "supports": {},
+   "timing": {"latency": 1, "initiation_interval": 1, "drain": 0, "span": 1},
+   "binding": {
+    "datapath": "Mac",
+    "args": {"lanes": "W", "accumulate": true, "regOut": false},
+    "controller": "counted"
+   }
+  }
+ }
+}

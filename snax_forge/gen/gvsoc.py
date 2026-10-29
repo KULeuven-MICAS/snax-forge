@@ -105,14 +105,17 @@ graph still null never gets here: ``DesignPoint.load`` refuses it
 **The manifest**: ``design``, ``design_point``, ``symbols`` (the bound
 graph's, e.g. ``{"N": 64}``: what a program sizes its data by),
 ``cluster`` (the cluster file, what gvrun's ``--param hjson=`` takes),
-``files``, ``program`` (``main.c``), ``trace`` (the trace path of the accelerator's one
-unit, ``snax_acc0/unit``; with several groups the accelerator's, ``snax_acc0``), ``csrs``
+``files``, ``program`` (``main.c``), ``trace`` (``trace_path``: the trace path of the
+accelerator's one unit, ``snax_acc0/unit``; of its one linked group,
+``snax_acc0/group_<group>``; with several groups the accelerator's, ``snax_acc0``), ``csrs``
 (the layout: the streamer's first and last CSR, and every accelerator CSR's define -> its
 number) and ``tasks``: per accelerator task of the derived task list
 (snax_forge/lower/derive.py, D64), in order, its name, its ``beats`` (the unit's firings,
-the task's ``n``), its ``csrs`` values (its group's ``JOBS``, and ``JOB_BEATS`` for a fold:
-lower/c.py's ``job_values``) and, with several groups, its unit's ``trace`` path,
-``snax_acc0/unit_<unit>``, as snax-gvsoc's composite names the units then.
+the task's ``n``; a linked group's most firing unit's), its ``csrs`` values (its group's
+``JOBS``, and ``JOB_BEATS`` for a fold without ``params.T``, named with its unit in a linked
+group, ``MAC_JOB_BEATS``: lower/c.py's ``job_writes``) and, with several groups, its
+group's ``trace`` path, ``snax_acc0/unit_<unit>`` or a linked group's
+``snax_acc0/group_<group>``, as snax-gvsoc's composite names them then.
 
 **Stable paths.** The design point is named once, by its path relative to
 ``root`` (snax-forge's root by default; ``named_from`` when given, the
@@ -147,7 +150,7 @@ from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import instance_nodes, streamer_name
 from snax_forge.lower import CError
-from snax_forge.lower.c import MAIN_C, job_values, main_c, mover_name
+from snax_forge.lower.c import MAIN_C, job_writes, main_c, mover_name, task_beats
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure, TaskList
 
@@ -284,7 +287,9 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
     """Unit ``name``'s movers onto ``groups`` (readers, writers), in port order."""
     dtypes = node_dtypes(point, name)
     for p in inst.brm.interface.ports:
-        s = point.streamers[streamer_name(name, p.name)]
+        s = point.streamers.get(streamer_name(name, p.name))
+        if s is None:  # a port on a link: no streamer (D112)
+            continue
         port_dtype(dtypes[p.name], f"port {p.name}")  # intN or uintN (gen.dtype)
         s0, *rest = s.spatial_bounds
         if s0 % s.num_slc:
@@ -343,14 +348,37 @@ def csr_layout(template: dict[str, Any], acc: Accelerator) -> CsrLayout:
     return CsrLayout(SNAX_CSR_FIRST, first - 1, nums)
 
 
-def acc_tasks(tasks: TaskList, found: Mapping[str, Instance]) -> list[AccTask]:
+def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Accelerator) -> list[AccTask]:
     """The accelerator tasks of the derived task list (D64), in order, with their group's CSR
-    values (lower/c.py's ``job_values``) and, with several groups, their unit's trace path."""
-    several = len(found) > 1
-    return [AccTask(s.task_name, s.values["n"], job_values(found[s.component], s.values),
-                    f"{ACC_TRACE}/unit_{s.component}" if several else None)
-            for s in tasks.steps
-            if isinstance(s, Configure) and s.type == "accel" and s.component in found]  # fmt: skip
+    values (lower/c.py's ``job_writes``: a CSR of a unit of a linked group named with the unit,
+    ``MAC_JOB_BEATS``) and, with several groups, its group's trace path."""
+    several = len(acc.groups) > 1
+    fixed = {u.name for g in acc.groups for u in g.units if "T" in u.params}
+    out = []
+    for s in tasks.steps:
+        if not (isinstance(s, Configure) and s.type == "accel"):
+            continue
+        group = next((g for g in acc.groups if g.name == s.component and len(g.units) > 1), None)
+        mine = [u.name for u in group.units] if group else [s.component]
+        if not set(mine) <= set(found):
+            continue
+        writes = job_writes({u: found[u] for u in mine}, s.values, fixed)
+        csrs = {(k if group is None or k == "JOBS" else f"{u.upper()}_{k}"): v
+                for u, k, v in writes}  # fmt: skip
+        trace = None if not several else (f"{ACC_TRACE}/unit_{s.component}" if group is None
+                                          else f"{ACC_TRACE}/group_{group.name}")  # fmt: skip
+        out.append(AccTask(s.task_name, task_beats(s.values), csrs, trace))
+    return out
+
+
+def trace_path(acc: Accelerator) -> str:
+    """The manifest's trace path: one group of one unit ``snax_acc0/unit``; one linked group
+    ``snax_acc0/group_<group>``, SNAX-GVSoC's one component for its units; several groups the
+    accelerator's, ``snax_acc0``, each task with its own."""
+    if len(acc.groups) > 1:
+        return ACC_TRACE
+    (g,) = acc.groups
+    return UNIT_TRACE if len(g.units) == 1 else f"{ACC_TRACE}/group_{g.name}"
 
 
 def described(name: str, found: Mapping[str, Instance]) -> str:
@@ -627,9 +655,9 @@ def generate(
         cluster=names[0],
         files=[*files, "manifest.json"],
         program=MAIN_C,
-        trace=UNIT_TRACE if len(members) == 1 else ACC_TRACE,
+        trace=trace_path(acc),
         csrs=layout,
-        tasks=acc_tasks(tasks, members),
+        tasks=acc_tasks(tasks, members, acc),
     )
     (out / "manifest.json").write_text(manifest.to_json())
     return manifest

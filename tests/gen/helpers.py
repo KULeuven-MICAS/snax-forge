@@ -70,7 +70,8 @@ def one_unit(k: int = 0, name: str = "acc") -> Accelerator:
     own = [Csr(f"F{i}", "rw", 2 + i, 32) for i in range(k)]
     ro = [Csr(n, "ro", 2 + k + i) for i, n in enumerate(["STATUS", "COUNTER"])]
     unit = Unit(name, "elementwise_add", "ElementwiseLanes",
-                {p: Port(p, "int64", 4) for p in ("a", "b", "out")}, {"op": "add"}, 0, 1, own,
+                {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
+                {"op": "add"}, 0, 1, own,
                 "int64")  # fmt: skip
     return Accelerator(name, "design/x/design_point.json", "snax_forge", [f"{name}.a", f"{name}.b"],
                        [f"{name}.out"], [Group(name, [*rw, *ro], [unit])])  # fmt: skip

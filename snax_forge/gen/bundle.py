@@ -23,11 +23,20 @@ the rest of the folder is left as it is. Then, in this order:
                           to ``rtl/``, in ``emitted.json``'s ``files`` order,
                           ``emitted.json`` itself left out
     bundle.json           ``Bundle``: ``design_point`` (as gvsoc.py names
-                          it), ``tag`` (accelerator.json's), ``snax_forge_commit``
+                          it), ``tag`` (accelerator.json's), ``top`` (the
+                          wrapper, ``<tag>_shell_wrapper``), ``modules``
+                          (``module_tree``), ``snax_forge_commit``
                           (``git rev-parse HEAD`` of the checkout, null
                           outside git) and ``dirty`` (the work tree has
                           uncommitted changes, untracked files included;
                           false outside git)
+
+**The modules** (``module_tree``, C§18), from accelerator.json, not from
+Emit's output: the wrapper's three modules, each with the submodules it holds,
+by the names F2's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
+(``<tag>_<group>_ctrl`` per group) and ``<tag>_datapath`` (``<tag>_<unit>``
+per unit, then ``<tag>_<link>`` per link of depth >= 1, a buffer, group by
+group).
 
 snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
@@ -50,7 +59,7 @@ from pathlib import Path
 
 from snax_forge.common import Config, JsonFile, cwd_relative
 
-from .accelerator import ACCELERATOR_JSON
+from .accelerator import ACCELERATOR_JSON, Accelerator
 from .blocks import GenError
 from .gvsoc import ROOT, RTL_FILE_LIST, cli, generate, out_dir
 from .rtl import EMITTED_JSON, accelerator_spec, elaborate
@@ -65,8 +74,23 @@ class Bundle(Config, JsonFile):
 
     design_point: str
     tag: str
+    top: str
+    modules: dict[str, list[str]]
     snax_forge_commit: str | None
     dirty: bool
+
+
+def module_tree(acc: Accelerator) -> dict[str, list[str]]:
+    """The wrapper's modules and the submodules each holds; see the module doc."""
+    t = acc.tag
+    return {
+        f"{t}_csr": [],
+        f"{t}_ctrl": [f"{t}_{g.name}_ctrl" for g in acc.groups],
+        f"{t}_datapath": [
+            *(name for g in acc.groups for name in
+              [*(f"{t}_{u.name}" for u in g.units), *(f"{t}_{k.name}" for k in g.links if k.depth)])
+        ],
+    }  # fmt: skip
 
 
 def provenance(checkout: Path) -> tuple[str | None, bool]:
@@ -111,7 +135,8 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
     files = file_list(rtl_dir, elaborate(out / ACCELERATOR_JSON, rtl_dir))
     files_f.write_text("".join(f"{f}\n" for f in files))
     commit, dirty = provenance(ROOT)
-    bundle = Bundle(manifest.design_point, spec.tag, commit, dirty)
+    bundle = Bundle(manifest.design_point, spec.tag, f"{spec.tag}_shell_wrapper",
+                    module_tree(spec), commit, dirty)  # fmt: skip
     (out / BUNDLE_JSON).write_text(bundle.to_json())
     written = [
         *(out / f for f in manifest.files), *(rtl_dir / f for f in files),

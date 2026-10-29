@@ -59,6 +59,10 @@ class Instance:
     def drain(self) -> int:
         return self.value(self.impl.timing.drain)
 
+    @property
+    def span(self) -> int:
+        return self.value(self.impl.timing.span)
+
     def lanes(self, port: str) -> int:
         return self.value(self.brm.port(port).lanes)
 
@@ -127,6 +131,7 @@ def _check_values(inst: Instance, what: str) -> None:
     num(inst.impl.timing.latency, "latency", 0)
     num(inst.impl.timing.initiation_interval, "initiation_interval", 1)
     num(inst.impl.timing.drain, "drain", 0)
+    num(inst.impl.timing.span, "span", 1)
 
 
 def _check_datapath(inst: Instance, what: str) -> None:

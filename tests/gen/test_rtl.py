@@ -11,16 +11,19 @@ from __future__ import annotations
 
 import copy
 import json
+from dataclasses import replace
 
 import pytest
 
-from snax_forge.gen import ELEMENTWISE_OP, GenError
+from snax_forge.gen import ELEMENTWISE_OP, Accelerator, Csr, GenError, Group, Port, Unit
 from snax_forge.gen.rtl import (
     accelerator_spec,
     catalogue,
     check_params,
+    check_unit,
     counter,
     fill,
+    live,
     write_accelerator,
     write_fixture,
 )
@@ -86,11 +89,19 @@ def test_the_catalogues_ops_are_elementwise_ops():
     assert ops == list(ELEMENTWISE_OP)
 
 
-def test_the_catalogue_has_the_datapaths_latency_and_pins():
+def test_the_catalogue_has_the_datapaths_latency_span_and_pins():
     cat = catalogue()
-    assert {k: (v["latency"], v["pins"]) for k, v in cat.items()} == {
-        "ElementwiseLanes": (0, []), "TreeAccumulate": (1, ["fire", "first"])
+    assert {k: (v["latency"], v["span"]) for k, v in cat.items()} == {
+        "ElementwiseLanes": (0, 1), "TreeAccumulate": (1, 1), "Mac": ("max(accumulate, regOut)", 1),
+        "SerialAccumulate": (1, "lanes"), "LinkBuffer": (1, 1),
     }  # fmt: skip
+    pins = {k: live(v["pins"], {"accumulate": True, "regOut": False}) for k, v in cat.items()}
+    assert {k: list(v) for k, v in pins.items()} == {
+        "ElementwiseLanes": [], "TreeAccumulate": ["fire", "first"], "Mac": ["fire", "first"],
+        "SerialAccumulate": ["read", "lane", "first"], "LinkBuffer": ["load", "wslot", "rslot"],
+    }  # fmt: skip
+    assert list(live(cat["Mac"]["pins"], {"accumulate": False, "regOut": True})) == ["en"]
+    assert live(cat["Mac"]["pins"], {"accumulate": False, "regOut": False}) == {}
     for v in cat.values():
         assert set(v["fill"]) == set(v["params"])
 
@@ -108,7 +119,8 @@ def _edit(f):
 
 REFUSALS = [
     ("gen.catalogue", lambda: {k: v for k, v in catalogue().items() if k != "ElementwiseLanes"}),
-    ("gen.catalogue", _edit(lambda d: d.update(latency=1))),
+    ("gen.timing", _edit(lambda d: d.update(latency=1))),
+    ("gen.timing", _edit(lambda d: d.update(span=2))),
     ("gen.catalogue", _edit(lambda d: d["fill"].update(lanes="unit.width"))),
     ("gen.params", _edit(lambda d: d["params"]["outType"].update(values=["int32"]))),
     ("gen.params", _edit(lambda d: d["params"]["lanes"].update(min=8))),
@@ -216,3 +228,84 @@ def test_a_narrow_fold_into_int64_is_filled(tmp_path, recipe, dtype):
     params = fill(acc, u, catalogue()["TreeAccumulate"])
     assert params == {"inType": dtype, "outType": "int64", "lanes": params["lanes"],
                       "op": "add"}  # fmt: skip
+
+
+# =============================================================================
+# Mac and SerialAccumulate against the catalogue (B1x): ``when`` and expression latencies
+# =============================================================================
+
+
+def _alone(unit: Unit) -> Accelerator:
+    """``unit`` as an accelerator of its own (one group, no link)."""
+    ins = [f"{unit.name}.{k}" for k, p in unit.ports.items() if p.dir == "in"]
+    outs = [f"{unit.name}.{k}" for k, p in unit.ports.items() if p.dir == "out"]
+    n = len(unit.csrs)
+    own = [Csr("START", "rw", 0, 32), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 2 + n),
+           Csr("COUNTER", "ro", 3 + n)]  # fmt: skip
+    return Accelerator(unit.name, "p", "snax_forge", ins, outs, [Group(unit.name, own, [unit])])
+
+
+def _mac(accumulate: bool, reg_out: bool = False, c: bool | None = None, latency: int | None = None,
+         span: int = 1) -> Unit:  # fmt: skip
+    """A Mac unit of 4 int64 lanes: ``c`` (by default the plain form's) and the latency
+    ``max(accumulate, regOut)`` unless given."""
+    ports = {k: Port(k, "in", "int64", 4) for k in ("a", "b")}
+    if (not accumulate) if c is None else c:
+        ports["c"] = Port("c", "in", "int64", 4)
+    ports["out"] = Port("out", "out", "int64", 4)
+    lat = max(accumulate, reg_out) if latency is None else latency
+    csrs = [Csr("JOB_BEATS", "rw", 2, 32)] if accumulate else []
+    return Unit("mac", "mac", "Mac", ports, {"accumulate": accumulate, "regOut": reg_out}, lat, 1,
+                csrs, "int64", span)  # fmt: skip
+
+
+@pytest.mark.parametrize(("accumulate", "reg_out"), [(True, False), (False, False), (False, True)])
+def test_a_mac_unit_in_each_form_is_accepted(accumulate, reg_out):
+    unit = _mac(accumulate, reg_out)
+    acc = _alone(unit)
+    check_unit(acc, unit, catalogue())
+    assert fill(acc, unit, catalogue()["Mac"])["inTypes"] == ["int64"] * (2 if accumulate else 3)
+
+
+def _behind_mac(unit: Unit) -> Accelerator:
+    """dot 5's group: a Mac wired into ``unit`` (``sum``), which reads from the link."""
+    from tests.gen.test_accelerator import dot4
+
+    acc = dot4()
+    (g,) = acc.groups
+    return replace(acc, groups=[replace(g, units=[g.units[0], unit])])
+
+
+def test_a_serial_accumulate_unit_spans_its_lanes():
+    """Behind a link (dot 5): span 4 is the catalogue's; span 1 is gen.timing. Fed by the
+    streamer it is gen.span, SNAX-GVSoC's limit until B2."""
+    unit = Unit("sum", "accumulate", "SerialAccumulate",
+                {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
+                {"T": 1}, 1, 1, [], None, 4)  # fmt: skip
+    check_unit(_behind_mac(unit), unit, catalogue())
+    with pytest.raises(GenError) as e:
+        bad = replace(unit, span=1)
+        check_unit(_behind_mac(bad), bad, catalogue())
+    assert e.value.code == "gen.timing"
+    with pytest.raises(GenError) as e:
+        _alone(unit)
+    assert e.value.code == "gen.span"
+
+
+@pytest.mark.parametrize(
+    ("unit", "code"),
+    [
+        (_mac(True, c=True), "gen.port_map"),  # the accumulate form has no c
+        (_mac(False, c=False), "gen.port_map"),  # the plain form needs c
+        (_mac(True, span=2), "gen.span"),  # span > 1 on the streamer's inputs: SNAX-GVSoC's limit
+        (_mac(True, latency=0), "gen.timing"),  # max(accumulate, regOut) = 1
+        (_mac(False, True, latency=0), "gen.timing"),  # 1 with regOut
+        (_mac(False, latency=1), "gen.timing"),  # 0 plain
+    ],
+    ids=["accumulate-c", "plain-no-c", "span", "latency-accumulate", "latency-regout",
+         "latency-plain"],
+)  # fmt: skip
+def test_a_mac_unit_the_catalogue_refuses(unit, code):
+    with pytest.raises(GenError) as e:
+        check_unit(_alone(unit), unit, catalogue())
+    assert e.value.code == code

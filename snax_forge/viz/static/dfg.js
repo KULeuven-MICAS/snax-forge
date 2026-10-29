@@ -41,6 +41,7 @@ function legend() {
     h("li", {}, h("i", { class: "key data transient" }), "transient data container"),
     ...LOOP_KINDS.map(([k, label]) => h("li", {}, h("i", { class: `key loop-${k}` }), label)),
     h("li", {}, h("i", { class: "key op-accelerated" }), "accelerated node"),
+    h("li", {}, h("i", { class: "key op-link" }), "link (wire or buffer)"),
   );
 }
 

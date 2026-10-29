@@ -27,18 +27,22 @@ as ``forge cycles: <n>``; the flow takes it as ``total_cycles`` (D136, C§7).
 No task marks: nothing is read inside the window but the counters, so the
 core's timing between the steps is the program's own.
 
-**The accelerator** (D148) is the design point's one: one group per unit
-(instance), in the graph's order, each with its own tasks; its movers are
-every unit's ports, readers the input ports and writers the outputs, unit by
-unit in the BRM's port order, as the streamer file.
+**The accelerator** (D148) is the design point's one: its groups in the
+graph's order, each with its own tasks (a unit alone, or the units ``link``
+joined, one task for the group); its movers are every port on no link
+(D112), readers the input ports and writers the outputs, unit by unit in the
+BRM's port order, as the streamer file.
 
 **Configure.** A streamer task is ``csrw_ss`` on streamer_csr_addr_map.h's
 names: the base (``BASE_PTR_<M>_LOW`` / ``_HIGH``), the spatial strides,
 then the temporal bounds and strides, padded to the streamer's
 ``temporal_dim`` with bound 1 and stride 0 (C§9); an idle mover's bounds are
 all 0, so it never starts. An accelerator task writes its group's JOBS = n /
-T and, for a fold, its unit's JOB_BEATS = T, from the task's values (n and
-the rates, C§9; ``job_values``, D146), on ``<name>_csr.h``'s names.
+T and, for a fold whose T is not the description's ``params.T``, its unit's
+JOB_BEATS = T, from the task's values (n and the rates, C§9; ``job_values``,
+D146), on ``<name>_csr.h``'s names. A linked group's task holds each unit's
+values by unit: JOBS = n_u / ∏ T_v over its first unit u and the group's folds
+v, then each fold's JOB_BEATS in unit order (``job_writes``).
 A DMA task writes nothing here: snRuntime programs and starts the DMA in one
 call, so it is ``snrt_dma_start_1d`` (one loop of whole beats) or
 ``snrt_dma_start_2d`` (a second loop) at its start.
@@ -99,13 +103,14 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
+from math import prod
 from typing import TYPE_CHECKING, Any
 
 from snax_forge.brm import Instance
 from snax_forge.common import CodedError, generated_header
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
-from snax_forge.design.streamers import accelerators, instances, streamer_name
+from snax_forge.design.streamers import accelerators, groups, instances, streamer_name
 
 from .tasks import Configure, Start, Sync, TaskList, TaskListError, check_values
 from .waits import PlacedWait, placed_waits
@@ -133,16 +138,38 @@ def fold_rate(inst: Instance) -> str | None:
     return None
 
 
-def job_values(inst: Instance, values: Mapping[str, int]) -> dict[str, int]:
+def job_values(inst: Instance, values: Mapping[str, int], fixed: bool = False) -> dict[str, int]:
     """An accelerator task's CSR values from its values (``n`` and the named rates, C§9):
-    ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T (D146); T is 1 for a unit without a
-    fold, and T = 0 is an empty run (JOBS 0)."""
+    ``JOBS`` = n / T and, for a fold, ``JOB_BEATS`` = T (D146), none when its T is ``fixed``
+    (the description's ``params.T``); T is 1 for a unit without a fold, and T = 0 is an empty
+    run (JOBS 0)."""
     rate = fold_rate(inst)
     t = 1 if rate is None else values[rate]
     out = {"JOBS": values["n"] // t if t else 0}
-    if rate is not None:
+    if rate is not None and not fixed:
         out["JOB_BEATS"] = t
     return out
+
+
+def job_writes(units: Mapping[str, Instance], values: Mapping[str, Any],
+               fixed: set[str]) -> list[tuple[str, str, int]]:  # fmt: skip
+    """An accelerator task's CSR writes, ``(unit, CSR, value)`` in order: a unit's task
+    (``units`` one, ``values`` its n and rates) as ``job_values``; a linked group's (``values``
+    by unit, the group's units in order) JOBS = n_u / ∏ T_v over its first unit u and the
+    group's folds v, then each fold's JOB_BEATS but those in ``fixed`` (module doc)."""
+    if "n" in values:
+        ((unit, inst),) = units.items()
+        return [(unit, k, v) for k, v in job_values(inst, values, unit in fixed).items()]
+    first = next(iter(values))
+    folds = {u: values[u][r] for u in values if (r := fold_rate(units[u])) is not None}
+    t = prod(folds.values())
+    out = [(first, "JOBS", values[first]["n"] // t if t else 0)]
+    return out + [(u, "JOB_BEATS", v) for u, v in folds.items() if u not in fixed]
+
+
+def task_beats(values: Mapping[str, Any]) -> int:
+    """An accelerator task's beats: its ``n``, a linked group's most firing unit's."""
+    return values["n"] if "n" in values else max(v["n"] for v in values.values())
 
 
 def mover_name(write: bool, index: int) -> str:
@@ -206,6 +233,10 @@ class _Program:
                  acc: Accelerator, arrays: Sequence[Array]) -> None:  # fmt: skip
         self.point, self.tasks, self.acc = point, tasks, acc
         self.name, self.units = accelerator(point)
+        # a linked group's task is the group's: its name -> its units
+        self.linked = {k: v for k, v in groups(point.graph).items()
+                       if len(v) > 1 and v[0] in self.units}  # fmt: skip
+        self.fixed = {u.name for g in acc.groups for u in g.units if "T" in u.params}
         self.cores = cores(cluster, point.platform.accelerator_slot)
         self.arrays = list(arrays)
         self.conf = tasks.configured()
@@ -226,7 +257,9 @@ class _Program:
         out, n = {}, {False: 0, True: 0}
         for unit, inst in self.units.items():
             for p in inst.brm.interface.ports:
-                s = self.point.streamers[streamer_name(unit, p.name)]
+                s = self.point.streamers.get(streamer_name(unit, p.name))
+                if s is None:  # a port on a link: no streamer (D112)
+                    continue
                 out[s.name] = mover_name(s.write, n[s.write])
                 n[s.write] += 1
         return out
@@ -235,7 +268,10 @@ class _Program:
         return self.cores.dma if component == "dma" else self.cores.slot
 
     def unit_of(self, component: str) -> str:
-        """The unit a SNAX component is or serves (a streamer's instance)."""
+        """The unit a SNAX component is or serves (a streamer's instance; a linked group's
+        first unit)."""
+        if component in self.linked:
+            return self.linked[component][0]
         return component if component in self.units else self.point.streamers[component].instance
 
     def csr(self, name: str, component: str, where: str) -> str:
@@ -263,8 +299,9 @@ class _Program:
         if s.type == "streamer":
             self.emit(core, *self.streamer(s))
         elif s.type == "accel":
-            for k, v in job_values(self.units[s.component], s.values).items():
-                self.emit(core, f"csrw_ss({self.csr(k, s.component, s.task_name)}, {v});")
+            mine = self.linked.get(s.component, [s.component])
+            for unit, k, v in job_writes({u: self.units[u] for u in mine}, s.values, self.fixed):
+                self.emit(core, f"csrw_ss({self.csr(k, unit, s.task_name)}, {v});")
 
     def streamer(self, s: Configure) -> list[str]:
         m, v = self.movers[s.component], s.values
@@ -431,7 +468,7 @@ class _Program:
         for slot, t in enumerate(self.counters):
             lines += [
                 f'printf("forge counter {t}: %u\\n", forge_counter[{slot}]);',
-                f"err += forge_counter[{slot}] < {self.conf[t].values['n']};",
+                f"err += forge_counter[{slot}] < {task_beats(self.conf[t].values)};",
             ]
         lines += ['printf("forge errors: %d\\n", err);', "return err;"]
         return lines

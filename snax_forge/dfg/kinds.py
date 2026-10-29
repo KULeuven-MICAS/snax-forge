@@ -46,10 +46,21 @@ Built-in kinds:
                  (null for a node written by hand). ``accelerator`` (D148,
                  written only when set, by ``encapsulate``) names the
                  accelerator its group is in; without it the group, named
-                 after the instance, is an accelerator of its own. A body is
+                 after the instance, is an accelerator of its own. ``group``
+                 (written only when set, by ``link``) names the group the unit
+                 is in; without it the unit is a group of its own, named
+                 after the instance. A body is
                  allowed for a nested block (D71); a leaf block has an empty
                  one. No ``reduce`` on its memlets: the BRM's function does
                  its own folding.
+
+    link         a transient between two bound units made a link (``link``,
+                 D148): ``container`` (the transient it replaced, which the
+                 writer and the reader still name, so the reference executor
+                 runs it as that transient), ``depth`` (0 a wire, >= 1 a
+                 buffer of that many beats), ``from`` and ``to`` (the writer's
+                 and the reader's instances). No connectors, no body; it sits
+                 before the reader in the body they share.
 
 ``loop`` (a sequential loop) and ``branch`` come with the kernels that need
 them (open item 36).
@@ -262,8 +273,9 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
     _check_code(node, what)
     if a["replaced"] is not None and not isinstance(a["replaced"], Mapping):
         raise DfgError(f"{what}.attrs.replaced: must be a node or null")
-    if "accelerator" in a:
-        ident(a["accelerator"], f"{what}.attrs.accelerator")
+    for key in ("accelerator", "group"):
+        if key in a:
+            ident(a[key], f"{what}.attrs.{key}")
     # the replaced subtree itself is checked in graph.py, in this node's scope
 
 
@@ -271,8 +283,28 @@ register_kind(
     "accelerated",
     required=("instance", "brm", "implementation", "code"),
     defaults={"params": {}, "replaced": None},
-    optional=("accelerator",),
+    optional=("accelerator", "group"),
     body=True,
     normalize=_normalize_code,
     check=_check_accelerated,
 )
+
+
+# =============================================================================
+# link
+# =============================================================================
+
+
+def _check_link(node: Node, scope: Scope, what: str) -> None:
+    a = node.attrs
+    if node.inputs or node.outputs:
+        raise DfgError(f"{what}: a link has no connectors; its units' memlets name the container")
+    if a["container"] not in scope.containers or not scope.containers[a["container"]].transient:
+        raise DfgError(f"{what}.attrs.container: {a['container']!r} is not a transient container")
+    if type(a["depth"]) is not int or a["depth"] < 0:
+        raise DfgError(f"{what}.attrs.depth: {a['depth']!r}; 0 is a wire, >= 1 a buffer")
+    for key in ("from", "to"):
+        ident(a[key], f"{what}.attrs.{key}")
+
+
+register_kind("link", required=("container", "depth", "from", "to"), check=_check_link)

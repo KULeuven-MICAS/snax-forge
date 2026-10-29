@@ -64,7 +64,7 @@ def adder() -> dict[str, Any]:
                 "chisel_tiled_spatial": {
                     "source": "chisel",
                     "supports": {"W": [1, 2, 4, 8]},
-                    "timing": {"latency": 0, "initiation_interval": 1, "drain": 0},
+                    "timing": {"latency": 0, "initiation_interval": 1, "drain": 0, "span": 1},
                     "binding": None,
                 }
             },

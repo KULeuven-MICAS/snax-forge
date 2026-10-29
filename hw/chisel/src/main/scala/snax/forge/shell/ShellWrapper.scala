@@ -114,7 +114,7 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
         io(s"acc2stream_${j}_valid_o") := c.out.valid
         c.out.ready                    := io.bool(s"acc2stream_${j}_ready_i")
       }
-      Datapaths(u.datapath).pins.foreach {
+      Datapaths(u.datapath).pins.map(_.name).foreach {
         case "fire"  => d("fire")  := c.fire
         case "first" => d("first") := c.first
         case "adv"   => d("adv")   := c.adv

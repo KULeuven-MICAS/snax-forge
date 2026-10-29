@@ -3,7 +3,9 @@
 The task list (tasks.py, CONTRACTS.md section 9) is derived from a design
 point and decides nothing. The accelerated nodes run in the graph's
 execution order, one group of tasks each (a single tile: every map around a
-node is one of its temporal firing loops, ``firing_loops``). For each group:
+node is one of its temporal firing loops, ``firing_loops``); a linked group's
+units (D148, one node each) are one group of tasks at its first node, its
+ports on a link with no streamer (D112) and no load or store. For each group:
 
     loads        for each input in port order whose container has an L2 and an
                  L1 layout and is not in L1 yet: configure ``load_<C>`` (DMA,
@@ -22,7 +24,8 @@ node is one of its temporal firing loops, ``firing_loops``). For each group:
                  bound and hands each beat out bound times (snax_cluster's
                  Reader.scala), so it would start and read
     accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, and its
-                 named rates
+                 named rates; a linked group's ``<node>_<group>`` with each unit's,
+                 by unit
     start        the streamer tasks, then the accelerator task, together
     stores       for each output whose container has an L2 layout and is written
                  for the last time here: configure ``store_<C>`` (L1 -> L2)
@@ -72,9 +75,11 @@ from snax_forge.design.streamers import (
     accelerators,
     firing_loops,
     instances,
+    linked_ports,
     port_loops,
     streamer_name,
 )
+from snax_forge.design.streamers import groups as unit_groups
 from snax_forge.dfg import DfgError, Memlet, named_rates
 from snax_forge.dfg.pad import padded_shape
 from snax_forge.dfg.subset import parse_dim
@@ -155,6 +160,16 @@ def task_list(point: DesignPoint) -> TaskList:
     beat = pf.l1.wide_bits // 8
     nodes = accelerated(g)
     groups = accelerators(g)
+    group_of = {u: k for k, units in unit_groups(g).items() for u in units}
+    linked = {k: units for k, units in unit_groups(g).items() if len(units) > 1}
+    linked_ports_ = linked_ports(g)
+
+    def unit_node(u: str) -> Any:
+        """A linked unit's one node."""
+        mine = [m for m in nodes if m.attrs["instance"] == u]
+        if len(mine) != 1:
+            raise LowerError(f"unit {u}: {len(mine)} nodes; a linked unit runs as one node")
+        return mine[0]
 
     def layout(c: str, mem: str) -> Layout | None:
         return plan.layouts.get(c, {}).get(mem)
@@ -187,88 +202,123 @@ def task_list(point: DesignPoint) -> TaskList:
                   "spatial_strides": [0] * len(s.spatial_bounds)}  # fmt: skip
         return Configure(f"{node}_{s.name}", "streamer", s.name, values, [], mode)
 
+    done: set[str] = set()
     for n in nodes:
         name = n.attrs["instance"]
-        inst = insts[name]
-        what = f"node {n.id}"
-        try:
-            loops = firing_loops(g, n)
-        except ValueError as e:
-            raise LowerError(f"{what}: {e}") from None
-        n_fire = prod(lp.count for lp in loops)
-        ports = [p.name for p in inst.brm.interface.ports]
-        memlets = {**n.inputs, **n.outputs}
-        try:  # named rates from the loops a memlet does not use (D102), as REF and bind do
-            rates = named_rates(
-                {p: (memlets[p], inst.brm.port(p).rate) for p in ports},
-                [(lp.var, lp.count) for lp in loops],
-                what,
-            )
-        except DfgError as e:
-            raise LowerError(str(e)) from None
-        start = {"n": n_fire} | rates  # the accelerator task's values
+        group = group_of[name]
+        if group in done:  # a linked group's units are one task, at its first node
+            continue
+        members = linked.get(group)
+        if members is None:
+            unit_nodes = [n]
+        else:
+            done.add(group)
+            unit_nodes = [unit_node(u) for u in members]
+        starts: dict[str, dict[str, Any]] = {}  # each unit's accelerator values
+        unit_loops: dict[str, list[Loop]] = {}
+        for un in unit_nodes:
+            u, what = un.attrs["instance"], f"node {un.id}"
+            try:
+                loops = firing_loops(g, un)
+            except ValueError as e:
+                raise LowerError(f"{what}: {e}") from None
+            memlets = {**un.inputs, **un.outputs}
+            try:  # named rates from the loops a memlet does not use (D102), as REF and bind do
+                rates = named_rates(
+                    {p.name: (memlets[p.name], p.rate) for p in insts[u].brm.interface.ports},
+                    [(lp.var, lp.count) for lp in loops],
+                    what,
+                )
+            except DfgError as e:
+                raise LowerError(str(e)) from None
+            starts[u] = {"n": prod(lp.count for lp in loops)} | rates
+            unit_loops[u] = loops
 
-        for p in ports:  # loads
-            c = memlets[p].data
-            if p in n.inputs and c not in in_l1 and moved(c):
-                task = f"load_{c}"
-                dma(task, "l2_to_l1", c, [])
-                in_l1[c] = task
+        def outer(un: Any) -> list[str]:
+            """The node's ports with a streamer: every port not on a link (D112)."""
+            u = un.attrs["instance"]
+            return [
+                p.name for p in insts[u].brm.interface.ports if f"{u}.{p.name}" not in linked_ports_
+            ]
+
+        for un in unit_nodes:  # loads
+            for p in outer(un):
+                c = un.inputs[p].data if p in un.inputs else None
+                if c is not None and c not in in_l1 and moved(c):
+                    task = f"load_{c}"
+                    dma(task, "l2_to_l1", c, [])
+                    in_l1[c] = task
 
         own: dict[str, Configure] = {}
-        for p in ports:  # streamers
-            m, s = memlets[p], point.streamers[streamer_name(name, p)]
-            lay = layout(m.data, "l1")
-            if lay is None:
-                raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
-            values, sb = memlet_values(
-                m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}", s.num_slc
-            )
-            if sb != list(s.spatial_bounds):
-                raise LowerError(
-                    f"{what}.{p}: the memlet gives spatial bounds {sb}, streamer {s.name} has "
-                    f"{list(s.spatial_bounds)}"
+        for un in unit_nodes:  # streamers
+            u, what = un.attrs["instance"], f"node {un.id}"
+            inst, loops = insts[u], unit_loops[u]
+            memlets = {**un.inputs, **un.outputs}
+            for p in outer(un):
+                m, s = memlets[p], point.streamers[streamer_name(u, p)]
+                lay = layout(m.data, "l1")
+                if lay is None:
+                    raise LowerError(f"{what}.{p}: container {m.data} has no L1 layout")
+                values, sb = memlet_values(
+                    m, port_loops(inst, p, m, loops), lay, symbols, f"{what}.{p}", s.num_slc
                 )
-            if not memlet_ordered(inst.brm):  # affine: the nest must give the same order
-                try:
-                    want = streamer_values(inst, p, start, lay, s, pf.l1)
-                except StreamError as e:
-                    raise LowerError(f"{what}.{p}: {e}") from None
-                if not np.array_equal(addresses(values, sb), addresses(want, sb)):
+                if sb != list(s.spatial_bounds):
                     raise LowerError(
-                        f"{what}.{p}: the memlet gives {values}, the BRM's nest gives {want}: "
-                        "they take the elements in different orders"
+                        f"{what}.{p}: the memlet gives spatial bounds {sb}, streamer {s.name} has "
+                        f"{list(s.spatial_bounds)}"
                     )
-            task = f"{n.id}_{s.name}"
-            c = m.data
-            if p in n.inputs:
-                after = [in_l1[c]] if c in in_l1 else []
-                readers.setdefault(c, []).append(task)
-            else:
-                after = [*readers.pop(c, []), *([in_l1[c]] if c in in_l1 else [])]
-            own[p] = Configure(task, "streamer", s.name, values, after, mode)
+                if not memlet_ordered(inst.brm):  # affine: the nest must give the same order
+                    try:
+                        want = streamer_values(inst, p, starts[u], lay, s, pf.l1)
+                    except StreamError as e:
+                        raise LowerError(f"{what}.{p}: {e}") from None
+                    if not np.array_equal(addresses(values, sb), addresses(want, sb)):
+                        raise LowerError(
+                            f"{what}.{p}: the memlet gives {values}, the BRM's nest gives {want}: "
+                            "they take the elements in different orders"
+                        )
+                task = f"{un.id}_{s.name}"
+                c = m.data
+                if p in un.inputs:
+                    after = [in_l1[c]] if c in in_l1 else []
+                    readers.setdefault(c, []).append(task)
+                else:
+                    after = [*readers.pop(c, []), *([in_l1[c]] if c in in_l1 else [])]
+                own[s.name] = Configure(task, "streamer", s.name, values, after, mode)
         movers = []  # the accelerator's every mover, its other groups' idle (D148)
         for unit in groups[accelerator_of(n)]:
             for q in (q.name for q in insts[unit].brm.interface.ports):
-                c = own[q] if unit == name else idle(n.id, point.streamers[streamer_name(unit, q)])
+                s = point.streamers.get(streamer_name(unit, q))
+                if s is None:  # a port on a link
+                    continue
+                c = own[s.name] if s.name in own else idle(n.id, s)
                 steps.append(c)
                 movers.append(c.task_name)
-        group = [own[p].task_name for p in ports]
-        acc_task = f"{n.id}_{name}"
-        steps.append(Configure(acc_task, "accel", name, start, [], mode))
+        component = name if members is None else group
+        acc_task = f"{n.id}_{component}"
+        start = starts[name] if members is None else starts
+        steps.append(Configure(acc_task, "accel", component, start, [], mode))
         steps.append(Start([*movers, acc_task]))
 
-        for p, task in zip(ports, group, strict=True):  # after the group: writes land in L1
-            c = memlets[p].data
-            if p in n.outputs:
-                in_l1[c] = task
-                final[c] = task
-        for p, task in zip(ports, group, strict=True):  # stores
-            c = memlets[p].data
-            if p in n.outputs and last_write[c] == n.id and layout(c, "l2") is not None:
-                store = f"store_{c}"
-                dma(store, "l1_to_l2", c, [task])
-                final[c] = store
+        for un in unit_nodes:  # after the group: writes land in L1
+            for p in outer(un):
+                if p in un.outputs:
+                    c = un.outputs[p].data
+                    task = own[streamer_name(un.attrs["instance"], p)].task_name
+                    in_l1[c] = task
+                    final[c] = task
+        for un in unit_nodes:  # stores
+            for p in outer(un):
+                c = un.outputs[p].data if p in un.outputs else None
+                if c is not None and last_write[c] == un.id and layout(c, "l2") is not None:
+                    store = f"store_{c}"
+                    dma(
+                        store,
+                        "l1_to_l2",
+                        c,
+                        [own[streamer_name(un.attrs["instance"], p)].task_name],
+                    )
+                    final[c] = store
 
     for c, cont in g.containers.items():
         if c in final and not cont.transient:

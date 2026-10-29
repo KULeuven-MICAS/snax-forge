@@ -160,7 +160,7 @@ the user's numbers. The library holds `elementwise_add`, `elementwise_mul`
 and `accumulate`.
 
 Each implementation's binding (D129) has two outputs: the GVSoC accelerator
-on `SnaxUnit` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
+on `SnaxGroup` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
 (D130). The pair is accepted when one ELF gives the same counters on both
 (D123).
 
@@ -170,9 +170,10 @@ on `SnaxUnit` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
 `.snaxdfg`; a recipe in `recipes/` names a kernel, params, symbol values and
 the steps; the reference executor checks every step; `--set W=8` runs one
 point of a sweep. Transforms: `split_map`, `tag_map` (a tag without a split),
-`bind` (patterns `elementwise` and `reduce`, design params read off the graph,
-D73), and their inverses `untag_map`, `unbind` and `join_map`. **[PLANNED]** `bind` on a group of tasklets, `split_reduce`
-and the composite (M13 B2–B3, D112), and a tile transform (LOW3b).
+`bind` (patterns `elementwise`, `reduce` and `lane_fold`, design params read off the graph,
+D73), `encapsulate`, `split_reduce`, `fuse_map` and `link` (D148, D150), and their inverses
+`untag_map`, `unbind`, `join_map`, `unencapsulate`, `join_reduce`, `unfuse_map` and `unlink`.
+**[PLANNED]** a tile transform (LOW3b).
 
 **The design step** (D84–D87, `design/`; C§13–C§15). It pairs a bound graph
 with a platform from `platforms/`, resolves the streamers (D12), makes the
@@ -211,10 +212,15 @@ vecadd fixture's. It holds:
 - the **DMA**, GVSoC's iDMA fitted to the RTL by measurement (D121); the
   **streamer**, from the hjson's streamer template; the **crossbar**, with
   the sparse interconnect's arbiter and the DMA on whole superbanks (D122);
-- the generic **`SnaxUnit`** and **`SnaxShell`**, built from a slot's
-  datapath block; the shell's rule is one C++ class (`snax/snax_shell.hpp`)
-  whose cases (`tests/snax/shell/cases/`) snax-forge's Chisel shell is
-  checked against too (C§17);
+- the generic **`SnaxGroup`**, one component per group of
+  `accelerator.json`, and its **`SnaxShell`** (the group's CSRs): the group's
+  control model is one C++ class (`SnaxGroupRule`, `snax/snax_group.hpp`,
+  the `<tag>_<group>_ctrl` of C§17) over a registry of datapath classes, one
+  per catalogue datapath (`snax/snax_datapath.hpp`), so a new basic block is
+  one class and one registry line there (D129); its group cases
+  (`tests/snax/group/cases/`), and the shell's (`tests/snax/shell/cases/`),
+  are what snax-forge's Chisel control unit and wrapper are checked against
+  too (C§17);
 - **events**: `summary`, `events`, `beats` and `stalls` traces per SNAX
   component in its own grammar (snax-gvsoc `docs/EVENTS.md`), which `run/`
   renames, never recounts (D137).
@@ -303,15 +309,21 @@ Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16
 from here (D116, D141; `docs/STATUS.md` has the tasks):
 
 1. **M13, the block library** (D141): M7's tier A, the composed bind and
-   BASE1's forge side as one milestone, in five phases.
+   BASE1's forge side as one milestone, in nine phases, with RAM1 alongside:
+   OpenRAM macros sized for the cluster, in snax-forge-experiments, so
+   snax_cluster and snitch_cluster synthesize on the same macros.
 
    | Phase | Content |
    |---|---|
-   | B0 flow pieces | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
-   | B1 one description (`done`) | `accelerator.json` per design point (C§17, D145), read by Emit, the catalogue check and SNAX-GVSoC; groups with their own START, JOBS, STATUS, COUNTER and pins (D146); each block a pure datapath under one nest controller per shell, three modules (D147); groups in SNAX-DFG and `encapsulate`, so dot variant 1 is one accelerator of two groups (D148) |
-   | B2 blocks | one hand-written BRM per basic block (1- and 2-stream SIMD, vsum, lane accumulator, MAC, FIFO), each with its Chisel block and SNAX-GVSoC model |
-   | B3 composition | units joined by wire or decoupled links as one accelerator; dot variants 2 to 6, the case study |
-   | B4 tier A | bicg, mvt, gesummv and atax from dot's recipe fragments; fork and join |
+   | B0 flow pieces (`done`) | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
+   | B1 one description (`done`) | `accelerator.json` per design point (C§17, D145), read by Emit, the catalogue check and SNAX-GVSoC; groups with their own START, JOBS, STATUS, COUNTER and pins (D146); each block a pure datapath under one nest controller per group, three modules (D147); groups in SNAX-DFG and `encapsulate`, so dot variant 1 is one accelerator of two groups (D148) |
+   | B1x links | dot 2–6 and matvec 1–6 on one description with links (D112); the control unit per group (D147); `Mac`, `SerialAccumulate` and `LinkBuffer` (D149); `split_reduce`, `fuse_map` and `link` (D150); on SNAX-GVSoC, and checked locally on snax_cluster |
+   | clean-up | snax_cluster's CI time (agreed with the cluster's maintainers first), and whatever B1x leaves |
+   | VIEW2 | the interactive SNAX-DFG viewer: select a part of the graph, apply a transform from a side list, a step history with undo, save a recipe, a first-order profile |
+   | SYN1 | synthesis of the basic blocks and kernels in KULeuven-MICAS/snax-forge-experiments |
+   | HWCOST | a first-order area and energy estimate from SYN1 |
+   | B2 (shrunk) | the 1-stream SIMD, axpy's CSR scalar, the lane accumulator without an op, the fold's `init` port, other group binds |
+   | tier A | B3's fork, join, broadcast, hold and fragments, with B4's bicg, mvt, gesummv and atax |
 
 2. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
 3. **M15:** tiling, a DMA per tile.

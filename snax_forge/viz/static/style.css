@@ -371,6 +371,7 @@ i.key.loop-tile { background: var(--loop-tile); }
 i.key.loop-temporal { background: var(--loop-temporal); }
 i.key.loop-spatial { background: var(--loop-spatial); }
 i.key.op-accelerated { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
+i.key.op-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
 i.key.data { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 3px; }
 i.key.data.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
 
@@ -416,6 +417,8 @@ svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.72rem;
 /* tasklets and accelerated nodes */
 .op { min-width: 12rem; border: 1.5px solid var(--ink); border-radius: 5px; background: var(--panel); }
 .op-accelerated { border: 2px solid var(--busy); background: var(--busy-bg); }
+.op-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
+.op-link .op-head .tag { --loop: var(--busy); }
 .op-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.6rem; padding: 0.35rem 0.6rem 0.1rem; font-size: 0.88em; }
 .op-head .tag { --loop: var(--muted); }
 .op-accelerated .op-head .tag { --loop: var(--busy); }

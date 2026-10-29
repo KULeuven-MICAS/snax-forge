@@ -50,6 +50,7 @@ from .streamers import (
     firing_loops,
     instance_nodes,
     instance_of,
+    linked_ports,
     memlet_spatial_bounds,
     nest_spatial_bounds,
     slices_per_word,
@@ -193,11 +194,14 @@ def _subtree(node: Node) -> Iterator[Node]:
 
 
 def _streamers(design: Design) -> dict[str, tuple[str, str]]:
-    """Every streamer the graph needs: name -> (instance, port)."""
+    """Every streamer the graph needs, one per port not on a link (D112): name -> (instance,
+    port)."""
+    linked = linked_ports(design.graph)
     return {
         streamer_name(i, p.name): (i, p.name)
         for i, inst in design.instances.items()
         for p in inst.brm.interface.ports
+        if f"{i}.{p.name}" not in linked
     }
 
 
@@ -755,8 +759,11 @@ def _memory_residency(design: Design) -> Iterable[Problem]:
     for c, cont in design.graph.containers.items():
         if not cont.transient and not lays.get(c):
             yield Problem("memory.residency", f"container {c}", "lives in no memory")
+    linked = linked_ports(design.graph)
     for n in accelerated(design.graph):
         for conn, mlet in {**n.inputs, **n.outputs}.items():
+            if f"{n.attrs['instance']}.{conn}" in linked:  # a link: no L1, no streamer (D112)
+                continue
             if "l1" not in lays.get(mlet.data, {}):
                 yield Problem(
                     "memory.residency", f"container {mlet.data}",

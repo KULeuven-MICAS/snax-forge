@@ -9,6 +9,7 @@ chisel job (``gen-rtl``) and by hand (``pixi run bundle``, docs/RUN.md).
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -83,6 +84,9 @@ def test_bundle_json(tmp_path, fake):
     b, _ = write_bundle(point(tmp_path), out, tmp_path)
     d = json.loads((out / "bundle.json").read_text())
     assert d == {"design_point": "design/vecadd/design_point.json", "tag": "snax_forge",
+                 "top": "snax_forge_shell_wrapper",
+                 "modules": {"snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_acc_ctrl"],
+                             "snax_forge_datapath": ["snax_forge_acc"]},
                  "snax_forge_commit": COMMIT, "dirty": False}  # fmt: skip
     assert Bundle.load(out / "bundle.json") == b == Bundle.from_dict(b.to_dict())
     assert d["design_point"] == json.loads((out / "manifest.json").read_text())["design_point"]
@@ -143,3 +147,25 @@ def test_dot_1s_bundle_holds_both_groups(tmp_path, fake):
     assert b.tag == "snax_forge" and "include/dot_csr.h" in files(out)
     acc = json.loads((out / "accelerator.json").read_text())
     assert [g["name"] for g in acc["groups"]] == ["mul", "sum"]
+
+
+def test_the_module_tree_names_every_group_unit_and_buffer():
+    """From the description, not Emit (C§18): dot 1's two groups and units; a linked group's
+    units and its buffer (a wire is no module)."""
+    from tests.gen.test_accelerator import dot, dot4
+
+    assert bundle_mod.module_tree(dot()) == {
+        "snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_mul_ctrl", "snax_forge_sum_ctrl"],
+        "snax_forge_datapath": ["snax_forge_mul", "snax_forge_sum"],
+    }  # fmt: skip
+    wire = dot4()
+    assert bundle_mod.module_tree(wire)["snax_forge_datapath"] == [
+        "snax_forge_mac",
+        "snax_forge_sum",
+    ]
+    g = wire.groups[0]
+    buffer = replace(wire, groups=[replace(g, links=[replace(g.links[0], depth=1)])])
+    assert bundle_mod.module_tree(buffer) == {
+        "snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_dot_ctrl"],
+        "snax_forge_datapath": ["snax_forge_mac", "snax_forge_sum", "snax_forge_out_partial"],
+    }  # fmt: skip

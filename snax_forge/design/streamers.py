@@ -25,10 +25,14 @@ them, and every port of its BRM in port order, one streamer:
                     1; with several nodes on one instance, the most (D84)
     fifo_depth      the platform's ``default`` with the streamer's entry on top
 
-``instances`` reads the instances off the graph and resolves them against
-the BRM library, ``accelerators`` groups them into accelerators (D148: an
-instance's ``accelerator``, ``encapsulate``'s, else the instance's own
-group); ``resolve`` builds the shell. Neither checks the pairing:
+A port on a link (``link``, D148) has no streamer: streamers sit on the
+outer ports only (D112). ``instances`` reads the instances off the graph and
+resolves them against the BRM library, ``groups`` puts them into groups (an
+instance's ``group``, ``link``'s, else its own), ``accelerators`` into
+accelerators (D148: an instance's ``accelerator``, ``encapsulate``'s, else its
+group's own); ``links``, ``linked_ports`` and ``unplaced`` read the links
+and the containers that get no L1 space (a link's, a fused nest's local
+value); ``resolve`` builds the shell. Neither checks the pairing:
 that is check.py, which runs first and reports every problem, so
 ``resolve`` raises on the first thing that does not fit.
 """
@@ -111,19 +115,62 @@ def instance_nodes(graph: Graph) -> dict[str, Node]:
     return out
 
 
+def group_of(node: Node) -> str:
+    """The group a node's unit is in: its ``group`` (``link``'s), else its own, named after the
+    instance."""
+    return node.attrs.get("group", node.attrs["instance"])
+
+
 def accelerator_of(node: Node) -> str:
     """The accelerator a node's group is in: its ``accelerator`` (``encapsulate``'s, D148), else
-    the group's own, named after the instance."""
-    return node.attrs.get("accelerator", node.attrs["instance"])
+    the group's own, named after it."""
+    return node.attrs.get("accelerator", group_of(node))
 
 
 def accelerators(graph: Graph) -> dict[str, list[str]]:
-    """Every accelerator, in the order the graph first uses it, with its groups (one instance
-    each until links come, M13's B3) in the graph's order (D148)."""
+    """Every accelerator, in the order the graph first uses it, with its units (instances) in
+    the graph's order (D148); ``groups`` puts them into groups."""
     out: dict[str, list[str]] = {}
     for name, n in instance_nodes(graph).items():
         out.setdefault(accelerator_of(n), []).append(name)
     return out
+
+
+def groups(graph: Graph) -> dict[str, list[str]]:
+    """Every group, in the order the graph first uses it, with its units in the graph's order."""
+    out: dict[str, list[str]] = {}
+    for name, n in instance_nodes(graph).items():
+        out.setdefault(group_of(n), []).append(name)
+    return out
+
+
+def links(graph: Graph) -> list[Node]:
+    """The link nodes, in execution order."""
+    return [n for n, _ in graph.walk() if n.kind == "link"]
+
+
+def link_ends(graph: Graph, link: Node) -> tuple[str, str]:
+    """A link's ``from`` and ``to`` as ``"<instance>.<port>"``: the writer's port and the
+    reader's whose memlets name its container."""
+    a, ends = link.attrs, []
+    for inst, side in ((a["from"], "outputs"), (a["to"], "inputs")):
+        node = instance_nodes(graph)[inst]
+        (port,) = [p for p, m in getattr(node, side).items() if m.data == a["container"]]
+        ends.append(f"{inst}.{port}")
+    return ends[0], ends[1]
+
+
+def linked_ports(graph: Graph) -> set[str]:
+    """Every port on a link, ``"<instance>.<port>"``: it has no streamer (D112)."""
+    return {end for k in links(graph) for end in link_ends(graph, k)}
+
+
+def unplaced(graph: Graph) -> set[str]:
+    """The containers that get no memory: a link's and a fused nest's local value
+    (``loop.local``)."""
+    return {k.attrs["container"] for k in links(graph)} | {
+        c for c, cont in graph.containers.items() if "loop.local" in cont.attrs
+    }
 
 
 def instance_of(node: Node) -> Instance:
@@ -219,10 +266,13 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
     out: dict[str, Streamer] = {}
     symbols = graph.bound_symbols
     nodes = accelerated(graph)
+    linked = linked_ports(graph)
     for name, inst in insts.items():
         mine = [n for n in nodes if n.attrs["instance"] == name]
         loops = {n.id: firing_loops(graph, n) for n in mine}
         for p in inst.brm.interface.ports:
+            if f"{name}.{p.name}" in linked:
+                continue
             s = streamer_name(name, p.name)
             sb = platform.spatial_bounds(s)
             if sb is None and memlet_ordered(inst.brm) and mine:
