@@ -15,7 +15,10 @@ def test_the_mac_folds_each_lanes_products_over_t_beats():
     assert [(p.name, p.lanes, p.rate) for p in fn.ports] == [("a", 2, 1), ("b", 2, 1),
                                                              ("out", 2, "T")]  # fmt: skip
     state: dict = {}
-    a, b = np.array([[1, 2], [3, 4], [5, 6]], np.int32), np.array([[7, 8], [9, 10], [11, 12]], np.int32)
+    a, b = (
+        np.array([[1, 2], [3, 4], [5, 6]], np.int32),
+        np.array([[7, 8], [9, 10], [11, 12]], np.int32),
+    )
     outs = [fn.fn(k, {"a": a[k], "b": b[k]}, state, {"n": 3, "T": 3}) for k in range(3)]
     assert outs[:2] == [{}, {}]
     assert outs[2]["out"].tolist() == [1 * 7 + 3 * 9 + 5 * 11, 2 * 8 + 4 * 10 + 6 * 12]
