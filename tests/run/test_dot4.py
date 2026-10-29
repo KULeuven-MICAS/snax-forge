@@ -13,7 +13,6 @@ The last convert the recorded run of B1x's F3 (fixtures/dot_4/README.md: dot 4 a
 W = 4), without GVSoC.
 """
 
-import json
 from pathlib import Path
 
 import pytest
@@ -21,11 +20,12 @@ import pytest
 from snax_forge.design import DesignPoint
 from snax_forge.gen import generate
 from snax_forge.lower.derive import task_list
-from snax_forge.lower.tasks import TaskList
-from snax_forge.run import RunError, Unit, load_cluster, read_events, regions_of
+from snax_forge.run import RunError, Unit, load_cluster
 from snax_forge.run.convert import convert, invariants, source_of, trace_events
 from snax_forge.run.events import parse_line
 from tests.gen.helpers import designed
+
+from .helpers import load_recorded
 
 S = 100  # the start's cycle
 GROUP = "/chip/soc/cluster_0/snax_acc0/group_dot"
@@ -93,19 +93,14 @@ HERE = Path(__file__).parent / "fixtures" / "dot_4"
 
 @pytest.fixture(scope="module")
 def recorded():
-    cluster = load_cluster(HERE / "snax_forge.hjson", HERE / "design_point.json")
-    tasks = TaskList.from_dict(json.loads((HERE / "tasks.json").read_text()))
-    check = json.loads((HERE / "check.json").read_text())
-    point = DesignPoint.load(HERE / "design_point.json")
-    regions = regions_of(point, json.loads((HERE / "elf_symbols.json").read_text()))
-    return cluster, tasks, check, read_events(HERE / "events.log"), regions
+    return load_recorded("dot_4")
 
 
 def test_the_recorded_run_converts_the_group_as_one_unit(recorded):
     """The group is one accelerator, dot, with its run's classes: 128 firings a cycle apart
     from the first (no gap), COUNTER 133 = C§17's C4 (JT + 2 = 130) + the streamers' fill 3,
     every busy cycle in one class; its task and its movers' each start once."""
-    cluster, tasks, check, lines, regions = recorded
+    cluster, tasks, check, lines, regions, _ = recorded
     assert cluster.accelerator.units == [Unit("dot", "dot", "group_dot", *_csrs(cluster))]
     profile, trace = convert(lines, cluster, tasks, check["total_cycles"], "task",
                              check["functional_check"], regions)  # fmt: skip
@@ -124,7 +119,7 @@ def test_the_recorded_run_converts_the_group_as_one_unit(recorded):
 
 
 def test_the_recorded_run_refuses_beat_levels(recorded):
-    cluster, tasks, check, lines, regions = recorded
+    cluster, tasks, check, lines, regions, _ = recorded
     with pytest.raises(RunError) as e:
         convert(lines, cluster, tasks, check["total_cycles"], "beat", None, regions, [])
     assert e.value.code == "convert.level"

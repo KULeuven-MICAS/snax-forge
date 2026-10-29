@@ -15,6 +15,7 @@ from urllib.request import urlopen
 from snax_forge.viz.server import make_server
 from tests.flow.helpers import stubbed_flow
 from tests.helpers import REPO
+from tests.run.helpers import load_recorded
 
 
 def run_dir(out: Path, name: str = "vecadd", level: str = "task", **kw) -> Path:
@@ -226,13 +227,10 @@ def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -
     ``beat`` and ``stall`` from its stall-level ones (at ``beat`` without the ``stalls``
     lines). Returns ``out``."""
     recorded = RECORDED if fixture is None else fixture
-    import json
     import shutil
 
     from snax_forge.common import to_json
-    from snax_forge.design import DesignPoint
-    from snax_forge.lower.tasks import TaskList
-    from snax_forge.run import load_cluster, read_events, regions_of, write_run
+    from snax_forge.run import write_run
     from snax_forge.run.convert import convert
 
     (out / "gen").mkdir(parents=True)
@@ -241,19 +239,16 @@ def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -
         shutil.copy(recorded / name, out / "gen" / name)
     shutil.copy(recorded / "design_point.json", out / "design" / "design_point.json")
     shutil.copy(recorded / "tasks.json", out / "tasks.json")
-    cluster = load_cluster(out / "gen" / "snax_forge.hjson", out / "design" / "design_point.json")
-    tasks = TaskList.from_dict(json.loads((recorded / "tasks.json").read_text()))
-    check = json.loads((recorded / "check.json").read_text())
-    syms = json.loads((recorded / "elf_symbols.json").read_text())
+    cluster, tasks, check, lines, regions, syms = load_recorded(
+        recorded, "events.log" if level == "task" else "events_stall.log"
+    )
     sources = (
         []
         if level == "task"
         else [*cluster.accelerator.unit_names, *(m.name for m in cluster.accelerator.movers), "dma"]
     )
-    lines = read_events(recorded / ("events.log" if level == "task" else "events_stall.log"))
     if level == "beat":
         lines = [x for x in lines if x.trace != "stalls"]
-    regions = regions_of(DesignPoint.load(out / "design" / "design_point.json"), syms)
     profile, trace = convert(lines, cluster, tasks, check["total_cycles"], level,
                              check["functional_check"], regions, sources)  # fmt: skip
     (out / "run").mkdir()

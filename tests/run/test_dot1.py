@@ -12,25 +12,17 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.design import DesignPoint
-from snax_forge.lower.tasks import TaskList
-from snax_forge.run import RunError, Unit, load_cluster, read_events, regions_of
+from snax_forge.run import RunError, Unit
 from snax_forge.run.convert import convert, invariants
+
+from .helpers import load_recorded
 
 HERE = Path(__file__).parent / "fixtures" / "dot_1"
 
 
 @pytest.fixture(scope="module")
 def recorded():
-    cluster = load_cluster(HERE / "snax_forge.hjson", HERE / "design_point.json")
-    tasks = TaskList.from_dict(json.loads((HERE / "tasks.json").read_text()))
-    check = json.loads((HERE / "check.json").read_text())
-    return cluster, tasks, check, read_events(HERE / "events.log")
-
-
-def regions():
-    point = DesignPoint.load(HERE / "design_point.json")
-    return regions_of(point, json.loads((HERE / "elf_symbols.json").read_text()))
+    return load_recorded("dot_1")
 
 
 def test_the_cluster_has_a_unit_per_group(recorded):
@@ -50,10 +42,10 @@ def test_the_cluster_has_a_unit_per_group(recorded):
 
 
 def test_each_unit_converts_with_its_own_tasks(recorded):
-    cluster, tasks, check, lines = recorded
+    cluster, tasks, check, lines, regions, _ = recorded
     profile, trace = convert(lines, cluster, tasks, check["total_cycles"], "task",
-                             check["functional_check"], regions())  # fmt: skip
-    assert invariants(profile, trace, cluster, None, regions()) == []
+                             check["functional_check"], regions)  # fmt: skip
+    assert invariants(profile, trace, cluster, None, regions) == []
     assert {k: a.firings for k, a in profile.accelerators.items()} == {"mul": 16, "sum": 16}
     starts = {e["src"]: [] for e in trace.of_kind("start")}
     for e in trace.of_kind("start"):
@@ -71,9 +63,9 @@ def test_each_unit_converts_with_its_own_tasks(recorded):
 
 
 def test_beat_levels_wait_for_b3(recorded):
-    cluster, tasks, check, lines = recorded
+    cluster, tasks, check, lines, regions, _ = recorded
     with pytest.raises(RunError) as e:
-        convert(lines, cluster, tasks, check["total_cycles"], "beat", None, regions(), [])
+        convert(lines, cluster, tasks, check["total_cycles"], "beat", None, regions, [])
     assert e.value.code == "convert.level"
 
 
