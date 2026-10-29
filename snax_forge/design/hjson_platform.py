@@ -61,7 +61,7 @@ from typing import Any
 
 import hjson
 
-from snax_forge.common import repo_root
+from snax_forge.common import Missing, dig, repo_root
 
 from .platform import L1Config, L2Config, Platform
 from .problems import DesignError, Problem
@@ -99,13 +99,12 @@ def _resolve(node: Any, top: Mapping[str, Any], path: str, seen: tuple[str, ...]
 
 def _get(d: Any, path: str, kind: type = int, at: str = "") -> Any:
     """The value at the dotted ``path`` of ``d`` (itself at ``at``), of type ``kind``."""
-    node: Any = d
-    parts = path.split(".")
     where = (at + "." if at else "") + path
-    for i, p in enumerate(parts):
-        if not isinstance(node, Mapping) or p not in node:
-            raise _fail("hjson.key", (at + "." if at else "") + ".".join(parts[: i + 1]), "missing")
-        node = node[p]
+    try:
+        node = dig(d, path)
+    except Missing as e:
+        prefix = ".".join(path.split(".")[: e.at + 1])
+        raise _fail("hjson.key", (at + "." if at else "") + prefix, "missing") from None
     if isinstance(node, bool) or not isinstance(node, kind):
         raise _fail("hjson.key", where, f"must be {kind.__name__}, got {node!r}")
     return node

@@ -31,6 +31,7 @@ from typing import Any
 
 import hjson
 
+from snax_forge.common import Missing, dig
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
 from snax_forge.gen.accelerator import Accelerator as Description
@@ -212,12 +213,10 @@ class Cluster:
 
 
 def _get(d: Any, path: str, what: str) -> Any:
-    node = d
-    for key in path.split("."):
-        if not isinstance(node, dict) or key not in node:
-            raise RunError("cluster.key", f"{what}: no {path}")
-        node = node[key]
-    return node
+    try:
+        return dig(d, path)
+    except Missing:
+        raise RunError("cluster.key", f"{what}: no {path}") from None
 
 
 def csrs_of(streamer: dict[str, Any], description: dict[str, Any], instance: str) -> Csrs:

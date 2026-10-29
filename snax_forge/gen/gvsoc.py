@@ -143,7 +143,7 @@ from typing import Any
 import hjson
 
 from snax_forge.brm import Instance, port_dtypes
-from snax_forge.common import JsonFile, generated_header, plain, repo_root, to_json
+from snax_forge.common import JsonFile, Missing, dig, generated_header, plain, repo_root, to_json
 from snax_forge.design import DesignError
 from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
@@ -344,14 +344,21 @@ def source(platform: Platform, root: Path) -> dict[str, Any]:
 def _set(d: dict[str, Any], path: str, value: Any, where: str) -> None:
     """Set the dotted ``path`` of ``d``; every key but the last must be there, an object."""
     *head, last = path.split(".")
+
+    def refuse(n: int) -> GenError:
+        return GenError(
+            "gen.source", f"{where}: {'.'.join(head[:n])} is not an object written out in the "
+            "file, so the platform's value cannot be written into it",
+        )  # fmt: skip
+
     node: Any = d
-    for i, k in enumerate(head):
-        node = node.get(k) if isinstance(node, Mapping) else None
+    for i in range(len(head)):  # each object on the way, as it is written (no $ref)
+        try:
+            node = dig(node, head[i])
+        except Missing:
+            raise refuse(i + 1) from None
         if not isinstance(node, Mapping) or "$ref" in node:
-            raise GenError(
-                "gen.source", f"{where}: {'.'.join(head[: i + 1])} is not an object written out "
-                "in the file, so the platform's value cannot be written into it",
-            )  # fmt: skip
+            raise refuse(i + 1)
     node[last] = value
 
 

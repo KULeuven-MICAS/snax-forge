@@ -4,7 +4,7 @@
   platforms are found; ``cwd_relative``, a path as a command line prints it;
   ``generated_header``, the comment every generated file starts with; ``fresh`` and
   ``unique_names``, names that clash with none taken before; ``git``, a git command's output
-  in a folder, or None.
+  in a folder, or None; ``dig``, the value at a dotted path of nested objects.
 * ``CodedError``, the base of the refusals that carry a rule code; ``LoadedSet``, what a
   viewer serves, reloaded whole.
 * ``plain`` and ``check_keys``: JSON-ready values, and an object's unknown keys refused (so a
@@ -62,6 +62,28 @@ def generated_header(point_path: str, what: str) -> str:
     )
     lines += textwrap.wrap(what, **wrap)
     return "".join(f"// {line}\n" for line in lines)
+
+
+class Missing(LookupError):
+    """``dig``'s: key ``at`` (an index into the dotted path) is not there; ``in_object`` False
+    when what it was looked up in is not an object. Each caller words its own error."""
+
+    def __init__(self, at: int, in_object: bool):
+        super().__init__(at, in_object)
+        self.at, self.in_object = at, in_object
+
+
+def dig(d: Any, path: str) -> Any:
+    """The value at the dotted ``path`` of ``d``: a key of ``d``, then of its value, and so on;
+    ``Missing`` at the first key that is not there."""
+    node = d
+    for i, key in enumerate(path.split(".")):
+        if not isinstance(node, Mapping):
+            raise Missing(i, False)
+        if key not in node:
+            raise Missing(i, True)
+        node = node[key]
+    return node
 
 
 def git(path: Path, *args: str) -> str | None:
