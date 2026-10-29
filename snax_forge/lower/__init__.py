@@ -19,7 +19,6 @@ from .layout import Layout, LayoutError, dma_side
 from .streams import StreamError, streamer_values
 from .tasks import (
     Configure,
-    Read,
     Start,
     Sync,
     TaskList,
@@ -37,7 +36,6 @@ __all__ = [
     "LayoutError",
     "LowerError",
     "PlacedWait",
-    "Read",
     "Start",
     "StreamError",
     "Sync",

@@ -266,14 +266,6 @@ def test_refused_an_accelerator_task_no_wait_covers(tmp_path):
         text(tmp_path, edit_tasks=no_store)
 
 
-def test_refused_a_read_step(tmp_path):
-    def read(steps):
-        steps.append({"op": "read", "reg": "acc.perf"})
-
-    with pytest.raises(CError, match=r"\[c.read\] vecadd: step 12 \(read\)"):
-        text(tmp_path, edit_tasks=read)
-
-
 def test_refused_a_csr_the_description_lacks(tmp_path):
     p, tasks, cluster, acc, arrays = parts(tmp_path)
     group = acc.groups[0]

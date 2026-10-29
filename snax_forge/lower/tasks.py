@@ -150,24 +150,8 @@ class Sync:
         return cls(str(d["task"]), str(d.get("mode", "poll")))
 
 
-@dataclass
-class Read:
-    """A ``csr_read`` of ``reg`` ("block.register")."""
-
-    reg: str
-    op: ClassVar[str] = "read"
-
-    def to_dict(self) -> dict[str, Any]:
-        return {"op": self.op, "reg": self.reg}
-
-    @classmethod
-    def from_dict(cls, d: Mapping[str, Any]) -> Read:
-        _need(d, ("reg",), "read")
-        return cls(str(d["reg"]))
-
-
-Step = Configure | Start | Sync | Read
-_STEPS: dict[str, type] = {c.op: c for c in (Configure, Start, Sync, Read)}
+Step = Configure | Start | Sync
+_STEPS: dict[str, type] = {c.op: c for c in (Configure, Start, Sync)}
 
 
 def step_from_dict(d: Mapping[str, Any]) -> Step:
@@ -237,9 +221,6 @@ class TaskList(JsonFile):
                     raise TaskListError(f"{where}: task {s.task!r} is not started before")
                 if s.mode not in WAIT_MODES:
                     raise TaskListError(f"{where}: mode must be one of {WAIT_MODES}")
-            elif isinstance(s, Read):
-                if "." not in s.reg:
-                    raise TaskListError(f"{where}: register {s.reg!r} is not 'block.register'")
             else:
                 raise TaskListError(f"{where}: not a step: {s!r}")
         if pending:

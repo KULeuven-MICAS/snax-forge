@@ -128,7 +128,6 @@ SNAX-LOWER's ordered list of tasks (D64): which component runs which task with w
 | `configure` | `task_name`, `type`, `component`, `after`, `wait_mode`, `values` | the component's configuration, written here |
 | `start` | `tasks` | the waits these tasks need, then their `start` writes in list order |
 | `sync` | `task`, `mode` | one wait on the task's component, always placed |
-| `read` | `reg` | a read of `block.register`; no C form yet (`c.read`) |
 
 `type` says how `values` are read:
 

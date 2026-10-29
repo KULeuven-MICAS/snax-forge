@@ -93,7 +93,7 @@ stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
 times; ``c.idle``), a wait in
 ``signal`` mode (``c.signal``: nothing to signal with on SNAX), a DMA
 pattern that is neither form (``c.dma``), a CSR the description lacks
-(``c.csrs``), a read step (``c.read``), a task list whose values do
+(``c.csrs``), a task list whose values do
 not fit the design point (``c.tasks``, ``check_values``), and an
 accelerator task no wait covers (``c.wait``: its counter is never read).
 Same design point, same text.
@@ -113,7 +113,7 @@ from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
 from snax_forge.design.streamers import accelerators, groups, instances, streamer_name
 
-from .tasks import Configure, Start, Sync, TaskList, TaskListError, check_values
+from .tasks import Configure, Start, TaskList, TaskListError, check_values
 from .waits import PlacedWait, placed_waits
 
 if TYPE_CHECKING:  # design imports lower, gen imports lower
@@ -416,9 +416,6 @@ class _Program:
         return [PlacedWait(i, "dma", self.conf[last].wait_mode, {"dma": last})]
 
     def run(self) -> None:
-        for i, s in enumerate(self.tasks.steps):
-            if not isinstance(s, (Configure, Start, Sync)):
-                raise CError("c.read", f"{self.tasks.name}: step {i} ({s.op}) has no C form yet")
         waits: dict[int, list[Any]] = {}
         try:
             check_values(self.tasks, self.point)

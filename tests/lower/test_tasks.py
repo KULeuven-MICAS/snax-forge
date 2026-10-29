@@ -80,7 +80,6 @@ def test_missing_optional_keys_take_defaults():
         ([dma("a"), start("a"), sync("a", "spin")], "mode must be one of"),
         ([dma("a", wait_mode="spin"), start("a")], "wait_mode must be one of"),
         ([dma("a")], "configured but never started"),
-        ([dma("a"), start("a"), {"op": "read", "reg": "busy"}], "not 'block.register'"),
         ([{"op": "start", "tasks": []}], "no tasks"),
     ],
 )
