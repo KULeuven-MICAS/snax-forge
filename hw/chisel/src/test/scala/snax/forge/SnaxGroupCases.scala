@@ -28,15 +28,20 @@ object SnaxGroupCases {
 
   case class RunLine(firings: Int, busy: Int, stallIn: Int, stallOut: Int, flush: Int)
 
+  /** A link line: its producer's and its consumer's names, its depth. */
+  case class LinkLine(from: String, to: String, depth: Int)
+
   case class Case(
     name:   String,
     units:  Seq[UnitLine],
-    depths: Seq[Int],
+    links:  Seq[LinkLine],
     jobs:   Int,
     start:  (Int, String),
     runs:   Seq[RunLine],
     cycles: Seq[Cycle]
-  )
+  ) {
+    def depths: Seq[Int] = links.map(_.depth)
+  }
 
   private val RunKeys = List("index", "firings", "busy", "stall_in", "stall_out", "flush")
 
@@ -44,23 +49,23 @@ object SnaxGroupCases {
     val lines = Files.readAllLines(path).asScala.toSeq.map(_.takeWhile(_ != '#').trim).filter(_.nonEmpty)
     val at    = lines.indexOf("cycles")
     require(at >= 0, s"$path: no `cycles` line")
-    var units  = Vector.empty[UnitLine]
-    var depths = Vector.empty[Int]
-    var jobs   = 1
-    var start  = (-1, "")
-    var runs   = Vector.empty[RunLine]
+    var units = Vector.empty[UnitLine]
+    var links = Vector.empty[LinkLine]
+    var jobs  = 1
+    var start = (-1, "")
+    var runs  = Vector.empty[RunLine]
     for (line <- lines.take(at)) line.split("\\s+").toList match {
       case "unit" :: n :: d :: "latency" :: l :: "ii" :: ii :: "span" :: s :: "t" :: t :: "inputs" :: i :: Nil =>
         units :+= UnitLine(n, d, l.toInt, ii.toInt, s.toInt, t.toInt, i.toInt)
-      case "link" :: _ :: _ :: "depth" :: d :: Nil                                     => depths :+= d.toInt
-      case "jobs" :: j :: Nil                                                          => jobs  = j.toInt
-      case "start" :: c :: a :: Nil                                                    => start = (c.toInt, a)
+      case "link" :: f :: t :: "depth" :: d :: Nil => links :+= LinkLine(f, t, d.toInt)
+      case "jobs" :: j :: Nil                      => jobs  = j.toInt
+      case "start" :: c :: a :: Nil                => start = (c.toInt, a)
       case "expect" :: "run" :: fields if fields.map(_.takeWhile(_ != '=')) == RunKeys =>
         val v = fields.map(_.dropWhile(_ != '=').drop(1).toInt)
         runs :+= RunLine(v(1), v(2), v(3), v(4), v(5))
       case _ => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
     }
-    val buffers = depths.count(_ > 0)
+    val buffers = links.count(_.depth > 0)
     val ins    = units.map(_.inputs).sum
     val cycles = lines.drop(at + 1).map { line =>
       val cols = line.split("\\|").map(_.trim.split("\\s+").filter(_.nonEmpty).map(_.toInt).toSeq).toSeq
@@ -76,7 +81,7 @@ object SnaxGroupCases {
         cols.last.head == 1
       )
     }
-    Case(path.getFileName.toString.stripSuffix(".txt"), units, depths, jobs, start, runs, cycles)
+    Case(path.getFileName.toString.stripSuffix(".txt"), units, links, jobs, start, runs, cycles)
   }
 
   /** Every case of the folder `Env` names, sorted by file name; None when it is not set. */

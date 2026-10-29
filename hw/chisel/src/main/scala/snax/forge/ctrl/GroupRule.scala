@@ -4,31 +4,97 @@ import chisel3._
 import chisel3.util._
 
 /** One unit of a group's description (C§17, `accelerator.json`): its name, its timing (L, II, span), its outer inputs
-  * (the streamer's ports it reads) and its T when fixed at design time (`params.T`; 1 for a unit without a fold), else
-  * None: a JOB_BEATS from the start.
+  * (the streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else
+  * None: a JOB_BEATS from the start; and `linked`, the positions among its inputs (C§17's port order) that no outer
+  * port takes, each fed by one link (snax_group.cpp's inputs left "").
   */
-case class UnitDesc(name: String, latency: Int, ii: Int, span: Int, inputs: Int, fixedT: Option[Int]) {
+case class UnitDesc(
+  name:    String,
+  latency: Int,
+  ii:      Int,
+  span:    Int,
+  inputs:  Int,
+  fixedT:  Option[Int],
+  linked:  Seq[Int] = Nil
+) {
   require(latency >= 0, s"$name: latency must be 0 or more, got $latency")
   require(ii      >= 1, s"$name: ii must be 1 or more, got $ii")
   require(span    >= 1, s"$name: span must be 1 or more, got $span")
   require(inputs  >= 0, s"$name: inputs must be 0 or more, got $inputs")
 }
 
-/** A group's description: its units, head first, a chain (gen.chain), and each link's depth (one fewer than the units;
-  * 0 a wire, >= 1 a buffer of that many beats). A unit after the head takes its link on one input besides its outer
-  * ones; the last unit's output is the group's outer output.
+/** A link of a group, by unit index (SnaxGroupRule's Link): unit `from`'s output into input `toInput` of unit `to` (its
+  * position among that unit's inputs; the datapaths use it, the rule does not); `depth` 0 a wire, >= 1 a buffer of that
+  * many beats (`LinkBuffer`).
   */
-case class GroupDesc(name: String, units: Seq[UnitDesc], depths: Seq[Int]) {
+case class Link(from: Int, to: Int, toInput: Int, depth: Int)
+
+/** A group's description: its units and the links between them, a graph (SnaxGroupRule's `configure()`). Until tier A
+  * one chain: a unit with two out-edges (a fork) or two in-edges (a join), a cycle and units no link joins are refused,
+  * with SnaxGroupRule's reasons. From it: each unit's in-edges and out-edges, the units in topological order (Kahn's,
+  * the lowest index first among the units ready; the head first) and the unit owning the group's outer output, the one
+  * whose output no link takes (the sink).
+  */
+case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link]) {
   require(units.nonEmpty, s"group $name: no unit")
-  require(depths.size == units.size - 1, s"group $name: ${depths.size} links for ${units.size} units, a chain")
-  require(depths.forall(_ >= 0), s"group $name: a depth below 0")
-  require(units.head.inputs >= 1, s"group $name: the head ${units.head.name} has no outer input")
+  for ((e, i) <- links.zipWithIndex) {
+    require(
+      Seq(e.from, e.to).forall(units.indices.contains) && e.depth >= 0,
+      s"group $name: link $i: no such unit, or a depth below 0"
+    )
+    require(
+      units(e.to).linked.contains(e.toInput) && !links.take(i).exists(x => x.to == e.to && x.toInput == e.toInput),
+      s"group $name: link $i: ${units(e.to).name}'s input ${e.toInput} is not an input left to a link, or another " +
+        "link feeds it"
+    )
+  }
+  for {
+    (u, k)    <- units.zipWithIndex
+    j         <- u.linked
+  }
+    require(links.exists(e => e.to == k && e.toInput == j), s"group $name: ${u.name}'s input $j: no link feeds it")
+
+  /** Per unit its in-edges and its out-edges, by link index. */
+  val ins:  Seq[Seq[Int]] = units.indices.map(k => links.indices.filter(links(_).to == k))
+  val outs: Seq[Seq[Int]] = units.indices.map(k => links.indices.filter(links(_).from == k))
+  for (k <- units.indices) {
+    val fork = outs(k).size > 1
+    require(
+      outs(k).size <= 1 && ins(k).size <= 1,
+      s"group $name: unit $k has ${if (fork) s"${outs(k).size} out-edges (a fork)"
+        else s"${ins(k).size} in-edges (a join)"}" +
+        ": until tier A a group is a chain"
+    )
+  }
+
+  /** The units in topological order, the head first. */
+  val order: Seq[Int] = {
+    val need  = Array.tabulate(units.size)(ins(_).size)
+    val ready = scala.collection.mutable.ArrayBuffer.from(units.indices.filter(need(_) == 0))
+    var r     = 0
+    while (r < ready.size) {
+      for (i <- outs(ready(r))) {
+        need(links(i).to) -= 1
+        if (need(links(i).to) == 0) ready += links(i).to
+      }
+      r += 1
+    }
+    ready.toSeq
+  }
+  require(order.size == units.size, s"group $name: the links form a cycle")
+  private val sinks = units.indices.filter(outs(_).isEmpty)
+  require(sinks.size == 1, s"group $name: ${sinks.size} units have no out-edge: until tier A a group is one chain")
+
+  /** The head, the first unit in topological order; the unit owning the outer output. */
+  val head:   Int = order.head
+  val output: Int = sinks.head
+  require(units(head).inputs >= 1, s"group $name: the head ${units(head).name} has no outer input")
 
   /** The units whose T comes from the start (JOB_BEATS), in unit order. */
   def open: Seq[UnitDesc] = units.filter(_.fixedT.isEmpty)
 
   /** The links that are buffers (depth >= 1), by link index: the ones with enables (a wire has none). */
-  def buffers: Seq[Int] = depths.indices.filter(depths(_) > 0)
+  def buffers: Seq[Int] = links.indices.filter(links(_).depth > 0)
 }
 
 /** A start resolved: JOBS and each unit's T. */
@@ -65,41 +131,46 @@ class LinkEnables(depth: Int) extends Bundle {
   * `io.config`, the outer valids and `io.out.ready`, and reads the rest. Its per-unit signals are named after the unit
   * (`<unit>_fire`, `<unit>_d`, ...).
   *
-  * A start of JOBS and each unit's T: unit k fires n_k = JOBS · ∏ T_v over itself and the units after it, so it gives
-  * R_k = JOBS · ∏ T_v over the units after it results, one on every T_k-th firing (its beat digit d_k = T_k − 1). JOBS
-  * 0 or any T 0 is the empty run: taken, nothing runs (`GroupCtrl` ends it without starting this). Busy from the cycle
-  * after the start to the run's last cycle E, the last unit's R-th push, where `done` is high.
+  * A start of JOBS and each unit's T: the sink gives R = JOBS results, and a unit k before its successor s gives R_k =
+  * R_s · T_s (each firing of s takes one of k's results), one on every T_k-th firing (its beat digit d_k = T_k − 1), so
+  * it fires n_k = R_k · T_k times. JOBS 0 or any T 0 is the empty run: taken, nothing runs (`GroupCtrl` ends it without
+  * starting this). Busy from the cycle after the start to the run's last cycle E, the sink's R-th push, where `done` is
+  * high.
   *
-  * Each cycle is decided in two passes, as `SnaxGroupRule::step`: forward, what each unit offers on its output whatever
-  * its room (its head, or at L 0 a firing that gives), so each knows whether its input has a beat; backward from the
-  * last unit, whether each is frozen (its head, or at L 0 a giving firing, has no room), fires and reads, and so
-  * whether it takes, which is its producer's room (a wire: the take; a buffer: occupancy < D or the take). The outer
-  * ports' join is per unit (C§17): input j's ready is its unit's firing, which needs every one of that unit's outer
-  * valids. The outer output's valid is the last unit's offer, never its ready's. `cls` is the cycle's class, as the run
-  * line counts it: busy 0, stall_in 1, stall_out 2, flush 3.
+  * Each cycle is decided in two passes over the units in topological order, as `SnaxGroupRule::step()`: forward, what
+  * each unit offers on its output whatever its room (its head, or at L 0 a firing that gives), so each knows whether
+  * its input has a beat (its outer valids and every in-edge's offer: a wire its producer's offer, a buffer occupancy >
+  * 0); backward, in reverse order, its room (its outer output's ready if it owns it, and every out-edge's take: a wire
+  * its consumer's firing, a buffer occupancy < D or that firing), whether it is frozen (its head, or at L 0 a giving
+  * firing, has no room), fires and reads. The outer ports' join is per unit (C§17): input j's ready is its unit's
+  * firing, which needs every one of that unit's outer valids. The outer output's valid is its owner's offer, never its
+  * ready's. `cls` is the cycle's class, judged at the owner, as the run line counts it: busy 0, stall_in 1, stall_out
+  * 2, flush 3.
   */
 class GroupRule(val desc: GroupDesc) {
   private val n     = desc.units.size
   private val descs = desc.units
+  private val links = desc.links
+  private val owner = desc.output
 
   val io = Wire(new Bundle {
     val config = Flipped(Decoupled(new GroupConfig(n)))
     val in     = MixedVec(descs.map(u => Vec(u.inputs, new Handshake)))
     val out    = Flipped(new Handshake)
     val units  = MixedVec(descs.map(u => new UnitEnables(u.span)))
-    val links  = MixedVec(desc.buffers.map(k => new LinkEnables(desc.depths(k))))
+    val links  = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
     val busy   = Output(Bool())
     val done   = Output(Bool())
     val cls    = Output(UInt(2.W))
   })
 
-  // The group's state: busy, each unit's T and result count R_k (snax_group.hpp:361-367, start() 189-225); the C++
-  // counts firings up to n_k = R_k · T_k, this counts results up to R_k and the beat digit d (firings = g · T + d)
+  // The group's state: busy, each unit's T and result count R_k (SnaxGroupRule's t and firings_per_run, set by start());
+  // the C++ counts firings up to n_k = R_k · T_k, this counts results up to R_k and the beat digit d (firings = g · T + d)
   private val busy = RegInit(false.B)
   private val ts   = descs.map(u => RegInit(1.U(32.W)).suggestName(s"${u.name}_t"))
   private val rs   = descs.map(u => RegInit(0.U(32.W)).suggestName(s"${u.name}_r"))
 
-  // Per unit (snax_group.hpp:370-377, UnitState): its beat digit d (⌈log₂ T⌉ bits for a fixed T, none at T 1), results
+  // Per unit (SnaxGroupRule's UnitState): its beat digit d (⌈log₂ T⌉ bits for a fixed T, none at T 1), results
   // given g, the II gap (has_fired and last_fire), the pipeline (slots, v(L-1) the head), the lane
   private class Stage(val u: UnitDesc) {
     val d    = u.fixedT match {
@@ -114,99 +185,99 @@ class GroupRule(val desc: GroupDesc) {
   }
   private val st = descs.map(new Stage(_))
 
-  // Per buffer (snax_group.hpp:379-384, LinkState): occupancy and the ring's write and read pointers
-  // named after the link's ends, `<from>_<to>_...` (a wire's are unused)
-  private def link(k: Int, what: String) = s"${descs(k).name}_${descs(k + 1).name}_$what"
-  private val occ  = desc.depths.zipWithIndex.map { case (d, k) =>
-    RegInit(0.U(log2Ceil(d + 1).W)).suggestName(link(k, "occupancy"))
+  // Per buffer (SnaxGroupRule's LinkState): occupancy and the ring's write and read pointers, named after the link's
+  // ends, `<from>_<to>_...` (a wire's are unused)
+  private def link(i: Int, what: String) = s"${descs(links(i).from).name}_${descs(links(i).to).name}_$what"
+  private val occ  = links.zipWithIndex.map { case (e, i) =>
+    RegInit(0.U(log2Ceil(e.depth + 1).W)).suggestName(link(i, "occupancy"))
   }
-  private val wptr = desc.depths.zipWithIndex.map { case (d, k) =>
-    RegInit(0.U(log2Ceil(d max 2).W)).suggestName(link(k, "wslot"))
+  private val wptr = links.zipWithIndex.map { case (e, i) =>
+    RegInit(0.U(log2Ceil(e.depth max 2).W)).suggestName(link(i, "wslot"))
   }
-  private val rptr = desc.depths.zipWithIndex.map { case (d, k) =>
-    RegInit(0.U(log2Ceil(d max 2).W)).suggestName(link(k, "rslot"))
+  private val rptr = links.zipWithIndex.map { case (e, i) =>
+    RegInit(0.U(log2Ceil(e.depth max 2).W)).suggestName(link(i, "rslot"))
   }
 
-  // Forward (snax_group.hpp:238-254): what each unit offers whatever its room
+  // step()'s forward pass, in topological order: what each unit offers whatever its room
   private val inputs, avail, wants, wouldFire, gives, head, offer = Array.fill(n)(WireDefault(false.B))
-  for (k <- 0 until n) {
+  for (k <- desc.order) {
     val u = descs(k)
     val s = st(k)
-    inputs(k) := io.in(k).map(_.valid).foldLeft(true.B)(_ && _)
-    val linked = // :242-246
-      if (k == 0) true.B
-      else if (desc.depths(k - 1) == 0) offer(k - 1)
-      else occ(k - 1) =/= 0.U
-    avail(k)     := inputs(k) && linked // :247
-    wants(k)     := busy      && s.g =/= rs(k) && s.gap === 0.U                                            // :248-249
-    wouldFire(k) := wants(k)  && avail(k)      && (if (u.span == 1) true.B else s.lane === (u.span - 1).U) // :250
-    gives(k) := wouldFire(k) && s.d === ts(k) - 1.U // :251
-    head(k)  := (if (u.latency > 0) s.v(u.latency - 1) else false.B) // :252
-    offer(k) := (if (u.latency > 0) head(k) else gives(k)) // :253
+    inputs(k)    := io.in(k).map(_.valid).foldLeft(true.B)(_ && _)
+    avail(k)     := desc.ins(k).foldLeft(inputs(k)) { (a, i) =>
+      a && (if (links(i).depth == 0) offer(links(i).from) else occ(i) =/= 0.U)
+    }
+    wants(k)     := busy         && s.g =/= rs(k) && s.gap === 0.U
+    wouldFire(k) := wants(k)     && avail(k)      && (if (u.span == 1) true.B else s.lane === (u.span - 1).U)
+    gives(k)     := wouldFire(k) && s.d === ts(k) - 1.U
+    head(k)      := (if (u.latency > 0) s.v(u.latency - 1) else false.B)
+    offer(k)     := (if (u.latency > 0) head(k) else gives(k))
     Seq(avail(k) -> "avail", wants(k) -> "wants", gives(k) -> "gives", offer(k) -> "offer").foreach { case (b, w) =>
       b.suggestName(s"${u.name}_$w")
     }
   }
 
-  // Backward (snax_group.hpp:257-303): frozen, fire, read, push; each unit's take is its producer's room
+  // step()'s backward pass, in reverse order: room, frozen, fire, read, push; an out-edge takes on its consumer's firing
   private val room, frozen, fire, read, push = Array.fill(n)(WireDefault(false.B))
-  room(n - 1) := io.out.ready // :257
-  for (k <- n - 1 to 0 by -1) {
-    val u = descs(k)
-    frozen(k) := (if (u.latency > 0) head(k) else gives(k)) && !room(k)   // :264
-    fire(k)   := wouldFire(k)                               && !frozen(k) // :266-268
-    push(k)   := (if (u.latency > 0) head(k) else gives(k)) && !frozen(k) // :270
-    read(k)   := (if (u.span > 1) wants(k) && avail(k) && !frozen(k) else false.B) // :271
-    if (k > 0) // :296-302
-      room(k - 1) := (if (desc.depths(k - 1) == 0) fire(k)
-                      else occ(k - 1) < desc.depths(k - 1).U || fire(k))
+  for (k <- desc.order.reverse) {
+    val u    = descs(k)
+    val take = desc.outs(k).map { i =>
+      val e = links(i)
+      if (e.depth == 0) fire(e.to) else occ(i) < e.depth.U || fire(e.to)
+    }
+    room(k) := take.foldLeft(if (k == owner) io.out.ready else true.B)(_ && _)
+    frozen(k) := (if (u.latency > 0) head(k) else gives(k)) && !room(k)
+    fire(k)   := wouldFire(k)                               && !frozen(k)
+    push(k)   := (if (u.latency > 0) head(k) else gives(k)) && !frozen(k)
+    read(k)   := (if (u.span > 1) wants(k) && avail(k) && !frozen(k) else false.B)
     Seq(frozen(k) -> "frozen", fire(k) -> "fire", push(k) -> "give", read(k) -> "read").foreach { case (b, w) =>
       b.suggestName(s"${u.name}_$w")
     }
   }
 
-  // The outer ports: input j's ready is its unit's firing; the output's valid the last unit's offer
+  // The outer ports: input j's ready is its unit's firing; the output's valid its owner's offer
   for {
     k <- 0 until n
     p <- io.in(k)
   } p.ready    := fire(k)
-  io.out.valid := offer(n - 1)
+  io.out.valid := offer(owner)
 
   // The datapaths' enables and the buffers'
   for (k      <- 0 until n) {
     val e = io.units(k)
     e.fire  := fire(k)
-    e.first := st(k).d === 0.U // :265
+    e.first := st(k).d === 0.U
     e.read  := read(k)
     e.lane  := st(k).lane
     e.adv   := !frozen(k)
     e.give  := push(k)
   }
-  for ((k, i) <- desc.buffers.zipWithIndex) {
-    val e = io.links(i)
-    e.load      := push(k)
-    e.wslot     := (if (desc.depths(k) > 1) wptr(k) else 0.U)
-    e.rslot     := (if (desc.depths(k) > 1) rptr(k) else 0.U)
-    e.occupancy := occ(k) + push(k) - fire(k + 1)
+  for ((i, b) <- desc.buffers.zipWithIndex) {
+    val e = io.links(b)
+    val l = links(i)
+    e.load      := push(l.from)
+    e.wslot     := (if (l.depth > 1) wptr(i) else 0.U)
+    e.rslot     := (if (l.depth > 1) rptr(i) else 0.U)
+    e.occupancy := occ(i) + push(l.from) - fire(l.to)
   }
 
-  // The class (snax_group.hpp:281-283, 331)
+  // The class, judged at the owner (step()'s busy and waits, then its cls)
   private val isBusy = (0 until n).map(k => !frozen(k) && (fire(k) || read(k) || st(k).gap =/= 0.U)).reduce(_ || _)
   private val waits  = (0 until n).map(k => !frozen(k) && wants(k) && !inputs(k)).reduce(_ || _)
-  io.cls := Mux(frozen(n - 1), 2.U, Mux(isBusy, 0.U, Mux(waits, 1.U, 3.U)))
+  io.cls := Mux(frozen(owner), 2.U, Mux(isBusy, 0.U, Mux(waits, 1.U, 3.U)))
 
-  // The last unit's R-th push ends the run: then every unit has fired its n, nothing is in flight and every buffer is
-  // empty, finished() (snax_group.hpp:387-410)
-  private val pushedLast = RegInit(0.U(32.W)).suggestName(s"${descs.last.name}_pushed")
-  private val done       = busy && push(n - 1) && pushedLast === rs(n - 1) - 1.U
+  // The sink's R-th push ends the run: then every unit has fired its n, nothing is in flight and every buffer is empty,
+  // SnaxGroupRule's finished()
+  private val pushedLast = RegInit(0.U(32.W)).suggestName(s"${descs(owner).name}_pushed")
+  private val done       = busy && push(owner) && pushedLast === rs(owner) - 1.U
   io.done := done
   io.busy := busy
 
   io.config.ready := !busy
 
-  // The registers, as step() (snax_group.hpp:273-280 the pipeline, 285-295 the II and the lane, 306-329 the buffers)
-  // and start() (189-225; the II gap carries over) change them
-  for (k      <- 0 until n) {
+  // The registers, as step() (the backward pass the pipeline, the II and the lane; then the buffers) and start() (the
+  // II gap carries over) change them
+  for (k <- 0 until n) {
     val u = descs(k)
     val s = st(k)
     when(fire(k)) {
@@ -224,21 +295,25 @@ class GroupRule(val desc: GroupDesc) {
       s.lane := s.lane + 1.U
     }
   }
-  for ((d, k) <- desc.depths.zipWithIndex if d > 0) {
-    when(push(k)) { wptr(k) := (if (d > 1) Mux(wptr(k) === (d - 1).U, 0.U, wptr(k) + 1.U) else 0.U) }
-    when(fire(k + 1)) { rptr(k) := (if (d > 1) Mux(rptr(k) === (d - 1).U, 0.U, rptr(k) + 1.U) else 0.U) }
-    occ(k) := occ(k) + push(k) - fire(k + 1)
+  for (i <- desc.buffers) {
+    val Link(from, to, _, d) = links(i)
+    when(push(from)) { wptr(i) := (if (d > 1) Mux(wptr(i) === (d - 1).U, 0.U, wptr(i) + 1.U) else 0.U) }
+    when(fire(to)) { rptr(i) := (if (d > 1) Mux(rptr(i) === (d - 1).U, 0.U, rptr(i) + 1.U) else 0.U) }
+    occ(i) := occ(i) + push(from) - fire(to)
   }
 
   when(io.config.fire) {
     val c     = io.config.bits
     val empty = c.jobs === 0.U || c.ts.map(_ === 0.U).reduce(_ || _)
-    busy     := !empty
+    busy := !empty
     ts.zip(c.ts).foreach { case (t, x) => t := x }
-    // R_{n-1} = JOBS, R_k = R_{k+1} · T_{k+1}
+    // From the sink back, as start(): the sink's R = JOBS, R_k = R_s · T_s for k's successor s
     val r = Wire(Vec(n, UInt(32.W)))
-    r(n - 1) := c.jobs
-    for (k <- n - 2 to 0 by -1) r(k) := (r(k + 1) * c.ts(k + 1))(31, 0)
+    for (k <- desc.order.reverse)
+      r(k)     := (desc.outs(k).map(i => links(i).to) match {
+        case Seq(s) => (r(s) * c.ts(s))(31, 0)
+        case _      => c.jobs
+      })
     rs.zip(r).foreach { case (x, y) => x := y }
     for (s <- st) {
       if (s.u.fixedT != Some(1)) s.d := 0.U
@@ -251,7 +326,7 @@ class GroupRule(val desc: GroupDesc) {
       if (descs(k).fixedT != Some(1)) st(k).d := Mux(gives(k), 0.U, st(k).d + 1.U)
       when(gives(k)) { st(k).g := st(k).g + 1.U }
     }
-    when(push(n - 1)) { pushedLast := pushedLast + 1.U }
+    when(push(owner)) { pushedLast := pushedLast + 1.U }
     when(done) { busy := false.B }
   }
 }

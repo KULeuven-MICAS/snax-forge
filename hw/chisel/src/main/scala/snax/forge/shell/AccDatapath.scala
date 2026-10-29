@@ -83,8 +83,10 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
     d.livePins(p).foreach(n => b.io.elements(n.name) := io.units(k)(n.name))
   }
 
+  /** Each buffer's index in `io.buffers`, by its link's name (a wire has none). */
+  val buffered: Map[String, Int] = bufs.map(_._1.name).zip(bufs.indices).toMap
+
   // The links: a wire, or a buffer between the ends
-  private val buffered = bufs.map(_._1.name).zip(bufs.indices).toMap
   for {
     g <- spec.groups
     l <- g.links

@@ -15,8 +15,8 @@ object AcceleratorSpec {
   /** A unit's BRM port: the datapath's port, its direction (`in` or `out`), its dtype (NumPy's name), its lanes. */
   case class PortSpec(port: String, dir: String, dtype: String, lanes: Int)
 
-  /** A link: from a unit's output BRM port to the next unit's input, `(unit, port)` each; depth 0 a wire, >= 1 a buffer
-    * of that many beats (`LinkBuffer`, `<tag>_<name>`).
+  /** A link: from a unit's output BRM port to another unit's input, `(unit, port)` each; depth 0 a wire, >= 1 a buffer
+    * of that many beats (`LinkBuffer`, `<tag>_<name>`). The group's graph is checked by `ctrl.GroupDesc`.
     */
   case class LinkSpec(name: String, from: (String, String), to: (String, String), depth: Int)
 
@@ -57,14 +57,6 @@ object AcceleratorSpec {
 
     /** Each JOB_BEATS in unit order: the start carries them after JOBS (C§17). */
     def jobBeats: Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "JOB_BEATS"))
-
-    // A chain (gen.chain): unit k's output linked to unit k + 1's input, head first
-    require(
-      links.size == units.size - 1 && links.zipWithIndex.forall { case (l, k) =>
-        l.from._1 == units(k).name && l.to._1 == units(k + 1).name
-      },
-      s"group $name: its links ${links.map(l => s"${l.from} -> ${l.to}")} are not a chain of its units"
-    )
   }
 
   def parse(text: String): AcceleratorSpec = {
