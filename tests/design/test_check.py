@@ -13,7 +13,6 @@ from snax_forge.design import (
     DesignError,
     DesignPoint,
     Platform,
-    check,
     load,
     register_check,
 )
@@ -43,7 +42,6 @@ from .helpers import (
 
 def test_vecadd_on_small16_passes():
     assert problems(design()) == []
-    check(design())  # does not raise
 
 
 def test_vecadd_w8_passes_on_the_same_platform():
@@ -307,11 +305,13 @@ def test_a_registered_check_runs_in_its_stage():
         register_check("graph.brm", "graph", no_acc)
 
 
-def test_check_raises_with_every_problem():
-    with pytest.raises(DesignError) as e:
-        check(design(sets=[("l1.n_banks", 12)], edit_graph=lambda g: g["symbols"].update(N=None)))
-    assert e.value.codes == ["platform.banks", "graph.symbols"]
-    text = str(e.value)
+def test_the_error_has_every_problem():
+    found = problems(
+        design(sets=[("l1.n_banks", 12)], edit_graph=lambda g: g["symbols"].update(N=None))
+    )
+    e = DesignError(found)
+    assert e.codes == ["platform.banks", "graph.symbols"]
+    text = str(e)
     assert text.startswith("design check: 2 problems\n [platform.banks] l1.n_banks: ")
     assert "\n     fix: --set platform.l1.n_banks=16" in text
 

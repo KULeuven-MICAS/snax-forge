@@ -162,13 +162,6 @@ def run_checks(design: Design, stages: Sequence[str] | None = None) -> list[Prob
     return out
 
 
-def check(design: Design) -> None:
-    """Raise DesignError with every problem, or return when the pairing fits."""
-    problems = run_checks(design)
-    if problems:
-        raise DesignError(problems)
-
-
 # =============================================================================
 # Helpers for messages
 # =============================================================================

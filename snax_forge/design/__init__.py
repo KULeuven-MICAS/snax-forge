@@ -12,7 +12,7 @@ default, pins, and the context later policies read) and the design point
 ``python -m snax_forge.design`` (pixi ``design``).
 """
 
-from .check import CHECKS, STAGES, Design, check, load, register_check, run_checks
+from .check import CHECKS, STAGES, Design, load, register_check, run_checks
 from .memory import (
     MEMORY_PASSES,
     MemoryContext,
@@ -40,7 +40,6 @@ __all__ = [
     "Problem",
     "Streamer",
     "StreamerOptions",
-    "check",
     "design_name",
     "instances",
     "load",
