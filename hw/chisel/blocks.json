@@ -18,6 +18,7 @@
   },
   "ports": {"a": "in", "b": "in", "out": "out"},
   "latency": 0,
+  "span": 1,
   "pins": [],
   "fill": {
    "inTypes": "inputs.dtype",
@@ -42,6 +43,7 @@
   },
   "ports": {"in": "in", "out": "out"},
   "latency": 1,
+  "span": 1,
   "pins": ["fire", "first"],
   "fill": {
    "inType": "inputs.dtype",
@@ -49,5 +51,73 @@
    "lanes": "inputs.lanes",
    "op": "unit.params.op"
   }
+ },
+ "Mac": {
+  "params": {
+   "inTypes": {
+    "type": "dtypes",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "opType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "outType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "lanes": {"type": "int", "min": 1},
+   "accumulate": {"type": "bool"},
+   "regOut": {"type": "bool"}
+  },
+  "ports": {"a": "in", "b": "in", "c": {"dir": "in", "when": {"accumulate": false}}, "out": "out"},
+  "latency": "max(accumulate, regOut)",
+  "span": 1,
+  "pins": [
+   {"name": "fire", "when": {"accumulate": true}},
+   {"name": "first", "when": {"accumulate": true}},
+   {"name": "en", "when": {"accumulate": false, "regOut": true}}
+  ],
+  "fill": {
+   "inTypes": "inputs.dtype",
+   "opType": "unit.opType",
+   "outType": "outputs.dtype",
+   "lanes": "inputs.lanes",
+   "accumulate": "unit.params.accumulate",
+   "regOut": "unit.params.regOut"
+  }
+ },
+ "SerialAccumulate": {
+  "params": {
+   "inType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "outType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "lanes": {"type": "int", "min": 1}
+  },
+  "ports": {"in": "in", "out": "out"},
+  "latency": 1,
+  "span": "lanes",
+  "pins": ["read", "lane", "first"],
+  "fill": {"inType": "inputs.dtype", "outType": "outputs.dtype", "lanes": "inputs.lanes"}
+ },
+ "LinkBuffer": {
+  "params": {
+   "depth": {"type": "int", "min": 1},
+   "lanes": {"type": "int", "min": 1},
+   "dtype": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   }
+  },
+  "ports": {"in": "in", "out": "out"},
+  "latency": 1,
+  "span": 1,
+  "pins": ["load", "wslot", "rslot"],
+  "fill": {"depth": "link.depth", "lanes": "link.lanes", "dtype": "link.dtype"}
  }
 }

@@ -14,21 +14,34 @@ description of the accelerator (accelerator.py), the same bytes gen-gvsoc writes
 **The checks**, against the datapath catalogue ``hw/chisel/blocks.json`` (the signature of each
 Chisel datapath, equal to ``Emit --describe``), each a ``GenError``: first accelerator.py's
 (``gen.instances``, ``gen.binding``, ``gen.datapath``, ``gen.controller``, ``gen.drain``,
-``gen.timing`` and the datapath's adapter's), then per unit
+``gen.timing``, the datapath's adapter's and a reader's link checks), then per unit, in this
+order: the params by the fill rule, the ports and pins whose ``when`` holds, the ports, the
+timing
 
-    gen.catalogue    the datapath is not in the catalogue, or the unit's timing.latency is not
-                     the catalogue's latency
-    gen.port_map     the unit's datapath ports are not the catalogue's ports, each once, or a
-                     direction differs (inputs and outputs give the unit's)
+    gen.catalogue    the datapath is not in the catalogue, or a fill rule is unknown
     gen.params       a param the fill rule gives that is not of its type or not among its values
-                     (a dtype, an op, lanes below min)
+                     (a dtype, an op, a bool, lanes below min)
+    gen.port_map     the unit's datapath ports are not the catalogue's live ports, each once, or
+                     a direction differs (each port's ``dir``)
+    gen.timing       the unit's latency is not the catalogue's (an int, or an ``expr.py``
+                     expression over the params, a bool as 0 or 1), its span not the
+                     catalogue's, or its ii not 1
+
+and per link of depth >= 1 its ``LinkBuffer``'s params (``link.depth``, and the ends'
+``link.lanes`` and ``link.dtype``), ``gen.params``.
+
+**Ports and pins** (C§17): a port is ``"in"`` / ``"out"`` or ``{"dir": ..., "when": {param:
+value, ...}}``, a pin a name or ``{"name": ..., "when": {...}}``; one exists only when every
+param its ``when`` lists has that value (``live``), one without ``when`` always.
 
 and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or did not write a file
 its ``emitted.json`` lists.
 
 **The fill rule** (the catalogue's ``fill``): ``inputs.dtype`` the input ports' dtypes in order
-(a ``dtypes`` param) or the one input's (a ``dtype``), ``outputs.dtype`` the output's,
-``inputs.lanes`` the inputs' lanes, ``unit.opType`` and ``unit.params.op`` the unit's.
+(a ``dtypes`` param) or the first input's (a ``dtype``), ``outputs.dtype`` the output's,
+``inputs.lanes`` the first input's lanes, ``unit.opType`` and ``unit.params.<name>`` the
+unit's; a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
+the unit's ports by their ``dir``, in the BRM's order.
 
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds
 ``accelerator.json``, the design's streamer hjson (gvsoc.py's) and, for a design of one
@@ -51,13 +64,14 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
+from snax_forge import expr
 from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
 from snax_forge.lower.c import job_values
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import Configure
 
-from .accelerator import ACCELERATOR_JSON, Accelerator, Unit, units
+from .accelerator import ACCELERATOR_JSON, Accelerator, Link, Unit, units
 from .blocks import GenError
 from .data import arrays
 from .gvsoc import ROOT, cli, generate, load_point, out_dir
@@ -79,8 +93,8 @@ def catalogue() -> dict[str, Any]:
 
 def fill(acc: Accelerator, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
     """The datapath's params of ``unit`` by the catalogue's fill rule (module doc)."""
-    ins = [p.split(".", 1)[1] for p in acc.inputs if p.split(".")[0] == unit.name]
-    outs = [p.split(".", 1)[1] for p in acc.outputs if p.split(".")[0] == unit.name]
+    ins = [k for k, p in unit.ports.items() if p.dir == "in"]
+    outs = [k for k, p in unit.ports.items() if p.dir == "out"]
     out = {}
     for name, rule in sig["fill"].items():
         kind = sig["params"][name]["type"]
@@ -93,13 +107,51 @@ def fill(acc: Accelerator, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]
             out[name] = unit.ports[ins[0]].lanes
         elif rule == "unit.opType":
             out[name] = unit.op_type
-        elif rule == "unit.params.op":
-            out[name] = unit.params.get("op")
+        elif rule.startswith("unit.params."):
+            out[name] = unit.params.get(rule.removeprefix("unit.params."))
         else:
             raise GenError(
                 "gen.catalogue", f"{unit.datapath}.{name}: the fill rule {rule!r} is unknown"
             )
     return out
+
+
+def link_params(acc: Accelerator, link: Link, sig: Mapping[str, Any]) -> dict[str, Any]:
+    """A buffer's params by the catalogue's fill rule: its depth, and its ends' lanes and dtype
+    (equal at both ends, a reader's check)."""
+    unit, port = link.from_.split(".", 1)
+    end = next(u for g in acc.groups for u in g.units if u.name == unit).ports[port]
+    have = {"link.depth": link.depth, "link.lanes": end.lanes, "link.dtype": end.dtype}
+    out = {}
+    for name, rule in sig["fill"].items():
+        if rule not in have:
+            raise GenError("gen.catalogue", f"LinkBuffer.{name}: the fill rule {rule!r} is unknown")
+        out[name] = have[rule]
+    return out
+
+
+def live(entries: Any, params: Mapping[str, Any]) -> dict[str, Any]:
+    """The catalogue's ``ports`` (name -> dir) or ``pins`` (a list) whose ``when`` holds on
+    ``params``: ports as name -> ``in`` / ``out``, pins as name -> None (module doc)."""
+    items = entries.items() if isinstance(entries, Mapping) else ((p, p) for p in entries)
+    out = {}
+    for key, e in items:
+        when = e.get("when", {}) if isinstance(e, Mapping) else {}
+        if all(k in params and params[k] == v for k, v in when.items()):
+            if isinstance(entries, Mapping):
+                out[key] = e["dir"] if isinstance(e, Mapping) else e
+            else:
+                out[e["name"] if isinstance(e, Mapping) else e] = None
+    return out
+
+
+def value(v: int | str, params: Mapping[str, Any]) -> int:
+    """A catalogue latency or span: an int, or an ``expr.py`` expression over the params (a bool
+    as 0 or 1)."""
+    if isinstance(v, int):
+        return v
+    env = {k: int(x) for k, x in params.items() if isinstance(x, (bool, int))}
+    return expr.evaluate(v, env)
 
 
 def check_params(datapath: str, params: Mapping[str, Any], sig: Mapping[str, Any]) -> None:
@@ -109,6 +161,9 @@ def check_params(datapath: str, params: Mapping[str, Any], sig: Mapping[str, Any
         if t["type"] == "int":
             if type(v) is not int or v < t["min"]:
                 raise GenError("gen.params", f"{what}: {v!r} is not an int of at least {t['min']}")
+        elif t["type"] == "bool":
+            if type(v) is not bool:
+                raise GenError("gen.params", f"{what}: {v!r} is not a bool")
         elif t["type"] in ("dtype", "dtypes", "op"):
             vs = v if t["type"] == "dtypes" else [v]
             if not isinstance(vs, list) or not vs or not set(vs) <= set(t["values"]):
@@ -123,20 +178,32 @@ def check_unit(acc: Accelerator, unit: Unit, cat: Mapping[str, Any]) -> None:
         raise GenError("gen.catalogue", f"unit {unit.name}: datapath {unit.datapath!r} is not in "
                        f"the catalogue {sorted(cat)}")  # fmt: skip
     sig = cat[unit.datapath]
-    if unit.latency != sig["latency"]:
-        raise GenError("gen.catalogue", f"unit {unit.name}: timing.latency {unit.latency}, "
-                       f"{unit.datapath}'s is {sig['latency']}")  # fmt: skip
-    dirs = {**{p.split(".", 1)[1]: "in" for p in acc.inputs if p.split(".")[0] == unit.name},
-            **{p.split(".", 1)[1]: "out" for p in acc.outputs if p.split(".")[0] == unit.name}}  # fmt: skip
+    params = fill(acc, unit, sig)
+    check_params(unit.datapath, params, sig["params"])
+    ports = live(sig["ports"], params)
     used = [p.port for p in unit.ports.values()]
-    if sorted(used) != sorted(sig["ports"]):
+    if sorted(used) != sorted(ports):
         raise GenError("gen.port_map", f"unit {unit.name}: ports onto {used}; {unit.datapath}'s "
-                       f"are {list(sig['ports'])}, each once")  # fmt: skip
+                       f"are {list(ports)} here, each once")  # fmt: skip
     for brm, p in unit.ports.items():
-        if dirs.get(brm) != sig["ports"][p.port]:
-            raise GenError("gen.port_map", f"unit {unit.name}: BRM port {brm} ({dirs.get(brm)}) onto "
-                           f"{p.port} ({sig['ports'][p.port]})")  # fmt: skip
-    check_params(unit.datapath, fill(acc, unit, sig), sig["params"])
+        if p.dir != ports[p.port]:
+            raise GenError("gen.port_map", f"unit {unit.name}: BRM port {brm} ({p.dir}) onto "
+                           f"{p.port} ({ports[p.port]})")  # fmt: skip
+    latency, span = value(sig["latency"], params), value(sig["span"], params)
+    if (unit.latency, unit.ii, unit.span) != (latency, 1, span):
+        raise GenError("gen.timing", f"unit {unit.name}: latency {unit.latency}, ii {unit.ii}, "
+                       f"span {unit.span}; {unit.datapath} here is latency {latency}, ii 1, "
+                       f"span {span}")  # fmt: skip
+
+
+def check_link(acc: Accelerator, link: Link, cat: Mapping[str, Any]) -> None:
+    """A link of depth >= 1 against the catalogue's ``LinkBuffer``; a wire is no datapath."""
+    if link.depth == 0:
+        return
+    if "LinkBuffer" not in cat:
+        raise GenError("gen.catalogue", f"link {link.name}: no LinkBuffer in the catalogue")
+    sig = cat["LinkBuffer"]
+    check_params("LinkBuffer", link_params(acc, link, sig), sig["params"])
 
 
 def accelerator_spec(design_point: str | Path, root: str | Path | None = None,
@@ -147,6 +214,8 @@ def accelerator_spec(design_point: str | Path, root: str | Path | None = None,
     for g in acc.groups:
         for u in g.units:
             check_unit(acc, u, cat)
+        for k in g.links:
+            check_link(acc, k, cat)
     return acc
 
 

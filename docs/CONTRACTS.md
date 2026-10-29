@@ -827,8 +827,10 @@ values only, no `//` header.
 
 `pixi run gen-rtl DESIGN_POINT [OUT_DIR]` (`gen/rtl.py`, default
 `out/rtl/<design>/`) writes the same bytes, checks every unit against the
-catalogue below (`gen.catalogue`, `gen.port_map`, `gen.params`: the
-datapath, its latency and ports, the params its fill rule gives) and runs
+catalogue below (`gen.catalogue`, `gen.params`, `gen.port_map`,
+`gen.timing`: the datapath, the params its fill rule gives, the ports whose
+`when` holds on them, its latency and span) and every link of depth ≥ 1
+against `LinkBuffer`, and runs
 `Emit --spec accelerator.json --out DIR/`. The Chisel specs' fixtures
 (`hw/chisel/src/test/resources/rtl/<design>/`) are this file, the streamer
 hjson and `vectors.json` (`gen-rtl --fixture`).
@@ -1070,9 +1072,12 @@ unconditional. A datapath is data and enables only: `ElementwiseLanes` (L
   `first`; otherwise a·b + c, `c`'s dtype and lanes those of `out`, L 0, or
   1 with `regOut` and its pin `en` (`regIn` is not built);
 - `SerialAccumulate(inType, outType, lanes)`: acc ← (first ∧ k = 0) ? x_k :
-  acc + x_k, lane k in cycle k, span = lanes, L 1;
-- `LinkBuffer(depth, lanes, dtype)`: D beats; `load` and the ring's slots
-  come from the control unit.
+  acc + x_k, lane k in cycle k, span = lanes, L 1, pins `read`, `lane` and
+  `first`;
+- `LinkBuffer(depth, lanes, dtype)`, depth ≥ 1: D beats, L 1; `load` and the
+  ring's write and read slots (`wslot`, `rslot`, 0 bits wide at D = 1) come
+  from the control unit. A link of depth ≥ 1 is checked against it (its ends'
+  lanes and dtype, `link.lanes` and `link.dtype` in its fill rule).
 
 A wire is no datapath: plain connections with the same dtype and lanes at
 both ends. The catalogue's entry for `TreeAccumulate`:
@@ -1094,6 +1099,7 @@ both ends. The catalogue's entry for `TreeAccumulate`:
   },
   "ports": {"in": "in", "out": "out"},
   "latency": 1,
+  "span": 1,
   "pins": ["fire", "first"],
   "fill": {
    "inType": "inputs.dtype",
@@ -1101,13 +1107,13 @@ both ends. The catalogue's entry for `TreeAccumulate`:
    "lanes": "inputs.lanes",
    "op": "unit.params.op"
   }
- }
+ },
 ```
 
 and `Mac`'s, its latency an `expr.py` expression over its params (a bool
 as 0 or 1):
 
-(F2 makes this a snippet)
+<!-- snippet: hw/chisel/blocks.json -->
 ```json
  "Mac": {
   "params": {
@@ -1143,7 +1149,7 @@ as 0 or 1):
    "accumulate": "unit.params.accumulate",
    "regOut": "unit.params.regOut"
   }
- }
+ },
 ```
 
 **Control** (D147). One control unit per group, `<tag>_<group>_ctrl`,
