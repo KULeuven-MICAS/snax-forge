@@ -26,7 +26,17 @@ from tests.brm.helpers import IMPL
 from tests.design.helpers import REPO, SNAX_FORGE, chained
 from tests.helpers import bound_vsum, graph_dict, requires_submodule
 
-from .helpers import SOURCE, SUB, bound_vecmul, one_unit, parsed, point, snax_cfg, snax_streamer
+from .helpers import (
+    SOURCE,
+    SUB,
+    bound_vecmul,
+    designed,
+    one_unit,
+    parsed,
+    point,
+    snax_cfg,
+    snax_streamer,
+)
 
 FILES = ["snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"]
 # The slot of snax_forge's source, its only one, which the cluster file renames and sets
@@ -651,22 +661,13 @@ def test_the_accelerators_counter_may_land_on_0x5fd_not_past():
 # =============================================================================
 
 
-def _narrow(tmp_path, recipe: str, bind_step: int = 2) -> Path:
+def _narrow(tmp_path, recipe: str) -> Path:
     """``recipes/<recipe>.json`` designed and generated under ``tmp_path``; the out folder."""
-    from snax_forge.design import __main__ as design_cli
-    from snax_forge.sandbox import __main__ as sandbox_cli
-
-    from .helpers import REPO, root
-
-    root(tmp_path)
+    point = designed(tmp_path, recipe, recipe)
+    out = tmp_path / "gvsoc" / recipe
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
-        assert sandbox_cli.main([str(REPO / "recipes" / f"{recipe}.json"), "--out",
-                                 f"out/sandbox/{recipe}"]) == 0  # fmt: skip
-        assert design_cli.main([f"out/sandbox/{recipe}/{bind_step}_bind.snaxdfg", "--platform",
-                                str(SNAX_FORGE), "--out", f"out/design/{recipe}"]) == 0  # fmt: skip
-        out = tmp_path / "gvsoc" / recipe
-        generate(f"out/design/{recipe}/design_point.json", out, root=tmp_path)
+        generate(point, out, root=tmp_path)
     return out
 
 
@@ -711,7 +712,7 @@ def test_vecadd_i8_one_channel_per_port(tmp_path):
 
 def test_matadd_int32_bounds_in_words(tmp_path):
     """matadd (int32 again, its recipe's 1 x 4 tiles of W = 4): 4 lanes of int32, 2 words."""
-    s = parsed(_narrow(tmp_path, "matadd", bind_step=3) / "snax_forge_streamer.hjson")
+    s = parsed(_narrow(tmp_path, "matadd") / "snax_forge_streamer.hjson")
     assert s["data_reader_params"]["spatial_bounds"] == [[2], [2]]
     assert s["data_reader_params"]["num_channel"] == [2, 2]
     assert s["data_writer_params"]["num_channel"] == [2]

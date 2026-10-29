@@ -26,14 +26,10 @@ from pathlib import Path
 
 import pytest
 
-from snax_forge.design import __main__ as design_cli
 from snax_forge.gen import generate
-from snax_forge.sandbox import Recipe
-from snax_forge.sandbox import __main__ as sandbox_cli
-from tests.design.helpers import REPO, SNAX_FORGE
 from tests.helpers import requires_submodule
 
-from .helpers import SUB, files, root
+from .helpers import SUB, designed, files
 
 FORGE = SUB / "forge"
 # Each fixture's design: its recipe, on platforms/snax_forge.json
@@ -50,17 +46,11 @@ pytestmark = requires_submodule
 
 def regenerate(tmp: Path, design: str) -> Path:
     """The fixture's refresh commands under ``tmp`` as the root; the generated folder."""
-    root(tmp)
+    point = designed(tmp, design, design)
+    out = tmp / "gvsoc" / design
     with pytest.MonkeyPatch.context() as mp:
-        mp.chdir(tmp)
-        recipe = REPO / "recipes" / f"{design}.json"
-        steps = Recipe.load(recipe).steps
-        bound = f"out/sandbox/{design}/{len(steps)}_{steps[-1].transform}.snaxdfg"  # last step
-        assert sandbox_cli.main([str(recipe), "--out", f"out/sandbox/{design}"]) == 0
-        assert design_cli.main([bound, "--platform", str(SNAX_FORGE),
-                                "--out", f"out/design/{design}"]) == 0  # fmt: skip
-        out = tmp / "gvsoc" / design
-        generate(f"out/design/{design}/design_point.json", out, root=tmp)
+        mp.chdir(tmp)  # the files name the design point by its path from the root
+        generate(point, out, root=tmp)
     return out
 
 
