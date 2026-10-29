@@ -4,7 +4,7 @@
     make_inputs(spec, seed=0, **sizes) -> {container: array}
     kernel_inputs(spec, graph, seed) -> {container: array}
     mismatches(spec, inputs, run) -> {output: (elements that differ, elements)}
-    reference_check(spec, graph, seed)
+    reference_check(spec, graph, seed) -> Goldens
 
 ``kernel_inputs`` calls the kernel's ``make_inputs`` at every size the graph binds, each array
 cast to its container's dtype; data.h's inputs and the flow's check use it. ``mismatches`` is
@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import inspect
 from collections.abc import Callable, Mapping
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 
@@ -88,21 +88,36 @@ def mismatches(
 ) -> dict[str, tuple[int, int]]:
     """``run`` against the kernel's reference on ``inputs``: each output container (the spec's
     ``inout``, in its order) that differs, with how many of its elements do and its size."""
+    return _differing(against_reference(spec, inputs, run))
+
+
+def _differing(pairs: Mapping[str, tuple[Any, Any]]) -> dict[str, tuple[int, int]]:
     return {
         c: (int(np.count_nonzero(got != ref)), int(np.asarray(ref).size))
-        for c, (got, ref) in against_reference(spec, inputs, run).items()
+        for c, (got, ref) in pairs.items()
         if not np.array_equal(got, ref)
     }
 
 
-def reference_check(spec: Any, graph: Graph, seed: int) -> None:
+class Goldens(NamedTuple):
+    """The kernel's inputs at the graph's sizes and the reference executor's outputs on them
+    (the kernel's ``inout``): data.h's inputs and goldens."""
+
+    inputs: dict[str, Any]
+    outputs: dict[str, Any]
+
+
+def reference_check(spec: Any, graph: Graph, seed: int) -> Goldens:
     """The reference executor on ``graph`` against the kernel's reference, on the kernel's
     inputs: data.h's goldens are the first, so a graph that computes something else (one
     edited by hand, D108) would pass its own check; a KernelError naming each output that
-    differs."""
-    wrong = mismatches(spec, kernel_inputs(spec, graph, seed), lambda x: execute(graph, x))
+    differs. The inputs and the executor's outputs, which data.h takes as they are."""
+    inputs = kernel_inputs(spec, graph, seed)
+    pairs = against_reference(spec, inputs, lambda x: execute(graph, x))
+    wrong = _differing(pairs)
     if wrong:
         text = ", ".join(f"{c} in {n} of {size} elements" for c, (n, size) in wrong.items())
         raise KernelError(f"gen: the graph's reference executor differs from the {spec.name} "
                           f"reference: {text}; the goldens would not be the kernel's "
                           "(D108)")  # fmt: skip
+    return Goldens(inputs, {c: got for c, (got, _) in pairs.items()})

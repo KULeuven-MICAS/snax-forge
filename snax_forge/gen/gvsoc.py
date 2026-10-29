@@ -162,6 +162,7 @@ from snax_forge.design.hjson_platform import accelerators, platform_from_dict
 from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import instance_nodes, streamer_name
+from snax_forge.dfg.reference import Goldens
 from snax_forge.lower import CError
 from snax_forge.lower.c import MAIN_C, job_writes, main_c, task_beats
 from snax_forge.lower.derive import task_list
@@ -546,11 +547,14 @@ def _hjson(point_path: str, what: str, value: Any) -> str:
 def generate(
     design_point: str | Path, out_dir: str | Path, root: str | Path | None = None, *,
     named_from: str | Path | None = None, kernel: str | None = None, seed: int = 0,
+    tasks: TaskList | None = None, goldens: Goldens | None = None,
 ) -> Manifest:  # fmt: skip
     """Write the three description files, the headers, data.h, main.c and the manifest to
     ``out_dir``; see the module doc. ``named_from`` is the folder the design point is named
     from (``root`` by default; the flow's folder for a flow, D136); ``kernel`` and ``seed``
-    go to data.h's inputs (data.py's ``arrays``)."""
+    go to data.h's inputs (data.py's ``arrays``). ``tasks`` (the design point's task list) and
+    ``goldens`` (data.h's inputs and the reference executor's outputs) are what the caller has
+    made already: the flow, which needs both before."""
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
     shown, point, acc = load_point(point_path, root, named_from)
@@ -558,8 +562,8 @@ def generate(
     platform = point.platform
     template = streamer_template(point, members)
     layout = csr_layout(template, acc)
-    tasks = task_list(point)
-    data = arrays(point, seed, kernel)
+    tasks = task_list(point) if tasks is None else tasks
+    data = arrays(point, seed, kernel, goldens)
 
     cluster = source(platform, root)
     at, found = find_slot(cluster, platform)

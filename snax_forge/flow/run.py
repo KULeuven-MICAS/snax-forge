@@ -715,13 +715,13 @@ def _from_graph(
     with _timed(times, "gen"):
         try:
             spec = kernel_spec(kernel or point.graph.name, kernel_why)
-            reference_check(spec, point.graph, o.seed)
+            goldens = reference_check(spec, point.graph, o.seed)
         except KernelError as e:
             raise FlowError(str(e)) from None
         gen = out / "gen"
         try:
             manifest = generate(ddir / "design_point.json", gen, ROOT, named_from=out,
-                                kernel=spec.name, seed=o.seed)  # fmt: skip
+                                kernel=spec.name, seed=o.seed, tasks=tasks, goldens=goldens)  # fmt: skip
         except (GenError, CError) as e:
             raise FlowError(f"gen: {e}") from None
         written = {gen / f for f in manifest.files}

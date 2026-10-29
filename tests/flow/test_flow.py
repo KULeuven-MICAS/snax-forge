@@ -149,6 +149,33 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
     }  # fmt: skip
 
 
+def test_the_executor_and_the_task_list_run_once(tmp_path, monkeypatch):
+    """The reference check's inputs and goldens go to data.h, and the lower stage's task list to
+    the generator: each is made once per flow."""
+    from snax_forge.dfg import reference
+    from snax_forge.flow import run as flow_run
+    from snax_forge.gen import data, gvsoc
+
+    stub(monkeypatch, tmp_path)
+    calls = {"execute": 0, "task_list": 0}
+
+    def counted(mod, name):
+        real = getattr(mod, name)
+
+        def wrapper(*a, **k):
+            calls[name] += 1
+            return real(*a, **k)
+
+        monkeypatch.setattr(mod, name, wrapper)
+
+    for mod in (reference, data):
+        counted(mod, "execute")
+    for mod in (flow_run, gvsoc):
+        counted(mod, "task_list")
+    assert flow(tmp_path).passed
+    assert calls == {"execute": 1, "task_list": 1}
+
+
 def test_an_earlier_runs_files_go_first(tmp_path, monkeypatch):
     stub(monkeypatch, tmp_path)
     out = tmp_path / "flow"
