@@ -127,9 +127,7 @@ def forge(recipe: Path, platform: Path, sets: list[tuple[str, tuple[str, str, An
           trace: str) -> int:  # fmt: skip
     """Run the three steps and print what they wrote; see the module doc. ``sets`` are
     ``_setting``'s."""
-    by_head: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
-    for _, (head, path, value) in sets:
-        by_head[head].append((path, value))
+    by_head = flow_run.split_sets([reading for _, reading in sets])
     recipe_sets = dict(by_head["recipe"])
     level, _ = parse_trace(trace)
     r = Recipe.load(recipe).with_params(recipe_sets)

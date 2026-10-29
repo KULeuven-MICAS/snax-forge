@@ -189,6 +189,33 @@ class FlowError(ValueError):
 
 
 @dataclass(frozen=True)
+class FlowOptions:
+    """What ``run_flow`` and ``run_bound`` share, their keyword arguments: the ``--set`` platform
+    and memory paths, the memory working copy to start from, the flow's name and folder (by
+    default from the recipe or graph and every ``--set``), the seed of ``make_inputs``, and
+    the trace level, its sources and the VCD."""
+
+    platform_sets: Sequence[tuple[str, Any]] = ()
+    memory_path: str | Path | None = None
+    memory_sets: Sequence[tuple[str, Any]] = ()
+    name: str | None = None
+    out: str | Path | None = None
+    seed: int = 0
+    trace_level: str = "off"
+    trace_sources: Sequence[str] | None = None
+    vcd: bool = False
+
+
+def split_sets(sets: Sequence[tuple[str, str, Any]]) -> dict[str, list[tuple[str, Any]]]:
+    """``--set`` readings (``flow.__main__.setting``'s) by what they set: ``recipe``,
+    ``platform`` and ``memory``, each ``(path, value)`` in the order given."""
+    out: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
+    for head, path, value in sets:
+        out[head].append((path, value))
+    return out
+
+
+@dataclass(frozen=True)
 class Checkout:
     """The snax-gvsoc checkout the flow builds and runs: its path, HEAD, whether its tree is
     dirty, and the commit snax-forge's tree pins (None when git cannot say)."""
@@ -564,27 +591,21 @@ def run_flow(
     platform_path: str | Path,
     *,
     recipe_sets: Mapping[str, Any] | None = None,
-    platform_sets: Sequence[tuple[str, Any]] = (),
-    memory_path: str | Path | None = None,
-    memory_sets: Sequence[tuple[str, Any]] = (),
     graph_path: str | Path | None = None,
-    name: str | None = None,
-    out: str | Path | None = None,
-    seed: int = 0,
-    trace_level: str = "off",
-    trace_sources: Sequence[str] | None = None,
-    vcd: bool = False,
+    **options: Any,
 ) -> Flow:
-    """Run the whole path; see the module doc. Raises FlowError or DesignError."""
-    _trace(trace_level, trace_sources)
+    """Run the whole path; see the module doc. ``options`` are FlowOptions' fields. Raises
+    FlowError or DesignError."""
+    o = FlowOptions(**options)
+    _trace(o.trace_level, o.trace_sources)
     recipe_sets = dict(recipe_sets or {})
     recipe = Recipe.load(recipe_path).with_params(recipe_sets)
     # The design point, and with it the task list, is named after the recipe and its params
     # only; the folder carries every --set (D136).
-    point_name = name or default_name(recipe, recipe_sets)
-    name = name or with_level(default_name(recipe, recipe_sets, platform_sets, memory_sets),
-                              trace_level)  # fmt: skip
-    out = _folder(name, out)
+    point_name = o.name or default_name(recipe, recipe_sets)
+    name = o.name or with_level(default_name(recipe, recipe_sets, o.platform_sets, o.memory_sets),
+                                o.trace_level)  # fmt: skip
+    out = _folder(name, o.out)
     times: dict[str, float] = {}
 
     def stages() -> Flow:
@@ -597,12 +618,9 @@ def run_flow(
 
                 graph = import_kernel(recipe.kernel, recipe.dtypes)
         with _timed(times, "sandbox"):
-            steps = write_steps(recipe, apply_recipe(recipe, graph, seed=seed), out / "sandbox")
-        f = _from_graph(
-            steps[-1], recipe.kernel, f"recipe {recipe.name}", name, point_name, out,
-            platform_path, platform_sets, memory_path, memory_sets, seed, trace_level, times,
-            trace_sources, vcd,
-        )  # fmt: skip
+            steps = write_steps(recipe, apply_recipe(recipe, graph, seed=o.seed), out / "sandbox")
+        f = _from_graph(steps[-1], recipe.kernel, f"recipe {recipe.name}", name, point_name, out,
+                        platform_path, o, times)  # fmt: skip
         f.recipe, f.steps = recipe, steps
         return f
 
@@ -614,34 +632,26 @@ def run_bound(
     platform_path: str | Path,
     *,
     kernel: str | None = None,
-    platform_sets: Sequence[tuple[str, Any]] = (),
-    memory_path: str | Path | None = None,
-    memory_sets: Sequence[tuple[str, Any]] = (),
-    name: str | None = None,
-    out: str | Path | None = None,
-    seed: int = 0,
-    trace_level: str = "off",
-    trace_sources: Sequence[str] | None = None,
-    vcd: bool = False,
+    **options: Any,
 ) -> Flow:
     """The path from a bound ``.snaxdfg`` on, without the sandbox; see the
-    module doc. ``kernel`` names the kernel when the graph's ``name`` does not. Raises
-    FlowError or DesignError."""
-    _trace(trace_level, trace_sources)
+    module doc. ``kernel`` names the kernel when the graph's ``name`` does not; ``options`` are
+    FlowOptions' fields. Raises FlowError or DesignError."""
+    o = FlowOptions(**options)
+    _trace(o.trace_level, o.trace_sources)
     graph_path = Path(graph_path)
     # As in run_flow: the design point keeps the graph's name, the folder carries every --set.
-    point_name = name or bound_name(graph_path)
-    name = name or with_level(bound_name(graph_path, platform_sets, memory_sets), trace_level)
-    out = _folder(name, out)
+    point_name = o.name or bound_name(graph_path)
+    name = o.name or with_level(bound_name(graph_path, o.platform_sets, o.memory_sets),
+                                o.trace_level)  # fmt: skip
+    out = _folder(name, o.out)
     _clear_sandbox(out, graph_path)
     times: dict[str, float] = {}
 
     def stages() -> Flow:
         why = "--kernel" if kernel is not None else f"the name of {graph_path}; --kernel K names it"
-        return _from_graph(
-            graph_path, kernel, why, name, point_name, out, platform_path, platform_sets,
-            memory_path, memory_sets, seed, trace_level, times, trace_sources, vcd,
-        )  # fmt: skip
+        return _from_graph(graph_path, kernel, why, name, point_name, out, platform_path, o,
+                           times)  # fmt: skip
 
     return _finish(stages, name, out, times)
 
@@ -666,21 +676,15 @@ def _from_graph(
     point_name: str,
     out: Path,
     platform_path: str | Path,
-    platform_sets: Sequence[tuple[str, Any]],
-    memory_path: str | Path | None,
-    memory_sets: Sequence[tuple[str, Any]],
-    seed: int,
-    trace_level: str,
+    o: FlowOptions,
     times: dict[str, float],
-    trace_sources: Sequence[str] | None = None,
-    vcd: bool = False,
 ) -> Flow:
     """The stages from a bound graph to the check, shared by ``run_flow`` and ``run_bound``;
     each stage's seconds go to ``times``. ``kernel`` None means the graph's name."""
 
     # SNAX-DESIGN
     with _timed(times, "design"):
-        design = load(graph_path, platform_path, platform_sets, memory_path, memory_sets)
+        design = load(graph_path, platform_path, o.platform_sets, o.memory_path, o.memory_sets)
         problems = run_checks(design)
         if problems:
             raise DesignError(problems, f"design check of {graph_path} on {platform_path}")
@@ -700,13 +704,13 @@ def _from_graph(
     with _timed(times, "gen"):
         try:
             spec = kernel_spec(kernel or point.graph.name, kernel_why)
-            reference_check(spec, point.graph, seed)
+            reference_check(spec, point.graph, o.seed)
         except KernelError as e:
             raise FlowError(str(e)) from None
         gen = out / "gen"
         try:
             manifest = generate(ddir / "design_point.json", gen, ROOT, named_from=out,
-                                kernel=spec.name, seed=seed)  # fmt: skip
+                                kernel=spec.name, seed=o.seed)  # fmt: skip
         except (GenError, CError) as e:
             raise FlowError(f"gen: {e}") from None
 
@@ -744,11 +748,11 @@ def _from_graph(
     with _timed(times, "gvsoc"):
         try:
             cluster = load_cluster(gen / manifest.cluster, ddir / "design_point.json")
-            sources = sources_for(cluster, trace_level,
-                                  list(trace_sources) if trace_sources is not None else None)  # fmt: skip
+            sources = sources_for(cluster, o.trace_level,
+                                  list(o.trace_sources) if o.trace_sources is not None else None)  # fmt: skip
         except RunError as e:
             raise FlowError(f"gvsoc: {e}") from None
-        opts = gvsoc_options(cluster, trace_level, sources, vcd, trace_sources is not None)
+        opts = gvsoc_options(cluster, o.trace_level, sources, o.vcd, o.trace_sources is not None)
         args = " ".join([f"--param hjson={(gen / manifest.cluster).resolve()}",
                          *(f"'{a}'" for a in opts.args)])  # fmt: skip
         variables = {
@@ -758,7 +762,7 @@ def _from_graph(
         }  # fmt: skip
         rc = run_gvsoc("run", variables, run / "stdout.txt", run / "stderr.txt")
         exit_code = run_exit_code(rc, (run / "stderr.txt").read_text())
-        if vcd:
+        if o.vcd:
             _keep_vcd(run)
 
     # check: the program's own
@@ -771,7 +775,7 @@ def _from_graph(
             x["group"] = groups[units[t]]
         check = {
             "kernel": spec.name,
-            "seed": seed,
+            "seed": o.seed,
             "symbols": point.graph.bound_symbols,
             **result,
         }
@@ -784,9 +788,9 @@ def _from_graph(
             "elf_symbols": elf_symbols,
             "target": TARGET,
             "snax_gvsoc": {"commit": c.commit, "dirty": c.dirty},
-            "trace_level": trace_level,
+            "trace_level": o.trace_level,
             "trace_sources": sources,
-            "vcd": vcd,
+            "vcd": o.vcd,
         }
         (run / "run.json").write_text(to_json(record))
 
@@ -797,7 +801,7 @@ def _from_graph(
             raise FlowError(f"convert: no {cwd_relative(events)} after the run; see "
                             f"{cwd_relative(run / 'stderr.txt')}")  # fmt: skip
         try:
-            profile, trace = convert(read_events(events), cluster, tasks, cycles, trace_level,
+            profile, trace = convert(read_events(events), cluster, tasks, cycles, o.trace_level,
                                      check, regions_of(point, elf_symbols), sources)  # fmt: skip
         except RunError as e:
             raise FlowError(f"convert: {e}") from None
@@ -813,5 +817,5 @@ def _from_graph(
             raise FlowError(f"report: {e}") from None
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
-        checks_that_ran(), trace_level=trace_level, trace=trace, trace_sources=sources, vcd=vcd,
+        checks_that_ran(), trace_level=o.trace_level, trace=trace, trace_sources=sources, vcd=o.vcd,
     )  # fmt: skip

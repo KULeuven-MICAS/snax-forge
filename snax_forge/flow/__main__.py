@@ -61,7 +61,7 @@ from snax_forge.run.sources import parse_trace
 from snax_forge.sandbox import SandboxError
 from snax_forge.sandbox.__main__ import setting as sandbox_setting
 
-from .run import FlowError, run_bound, run_flow, summary
+from .run import FlowError, run_bound, run_flow, split_sets, summary
 
 BOUND = ".snaxdfg"
 
@@ -100,9 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         level, sources = parse_trace(args.trace)
     except RunError as e:
         ap.error(f"--trace: {e}")
-    sets: dict[str, list[tuple[str, Any]]] = {"recipe": [], "platform": [], "memory": []}
-    for head, path, value in args.set:
-        sets[head].append((path, value))
+    sets = split_sets(args.set)
     bound = args.recipe.suffix == BOUND
     if bound and sets["recipe"]:
         ap.error(
