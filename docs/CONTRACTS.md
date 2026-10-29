@@ -829,8 +829,8 @@ and `Mac`'s, its latency an `expr.py` expression over its params (a bool as 0 or
 
 **Control** (D147). One control unit per group, `<tag>_<group>_ctrl`, generated from the description (F2), never written per variant:
 
-- once per group: JOBS, the job counters (done is the last unit's JOBS-th result), busy, STATUS, COUNTER;
-- per unit: its beat digit d_k (mod T_k), its latency pipeline, and a lane counter when span > 1;
+- once per group: busy, STATUS, COUNTER and the start's copy of JOBS (the sink's R); done is the sink's R-th push, read off its results given and its pipeline, with no count of pushes;
+- per unit: its results given, its beat digit d_k (mod T_k), its latency pipeline, its II gap at II > 1 and a lane counter when span > 1; its T a register (the start's copy) only when a JOB_BEATS sets it, a constant when fixed; its R_k = R_s · T_s a register only when its successor's T is set at run time, else that wire (`GroupRule`'s rules);
 - per link of depth D ≥ 1: an occupancy count (a full bit at D = 1);
 - the outer ports' join, per unit, as `SnaxGroupRule` runs it:
 

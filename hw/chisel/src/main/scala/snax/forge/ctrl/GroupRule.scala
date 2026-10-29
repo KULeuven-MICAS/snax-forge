@@ -97,7 +97,9 @@ case class GroupDesc(name: String, units: Seq[UnitDesc], links: Seq[Link]) {
   def buffers: Seq[Int] = links.indices.filter(links(_).depth > 0)
 }
 
-/** A start resolved: JOBS and each unit's T. */
+/** A start resolved: JOBS and each unit's T (a unit with a fixed T keeps its constant: its entry is read only by the
+  * empty run's check).
+  */
 class GroupConfig(n: Int) extends Bundle {
   val jobs = UInt(32.W)
   val ts   = Vec(n, UInt(32.W))
@@ -125,11 +127,12 @@ class LinkEnables(depth: Int) extends Bundle {
   val occupancy = Output(UInt(log2Ceil(depth + 1).W))
 }
 
-/** The control model of a group (D147; C§17's Control): snax-gvsoc's `SnaxGroupRule` (`snax/snax_group.hpp`) in Chisel,
-  * line by line, over datapaths of data and enables only. Not a module: it builds its registers and logic in the module
-  * that makes it (`GroupCtrl`, `<tag>_<group>_ctrl`; `NestCtrl`, its one-unit case, with B1's ports), which drives
-  * `io.config`, the outer valids and `io.out.ready`, and reads the rest. Its per-unit signals are named after the unit
-  * (`<unit>_fire`, `<unit>_d`, ...).
+/** The control model of a group (D147; C§17's Control): the same rule as SnaxGroupRule (snax-gvsoc's
+  * `snax/snax_group.hpp`), a register only for what changes at run time (the rules at the top of the class), over
+  * datapaths of data and enables only. Not a module: it builds its registers and logic in the module that makes it
+  * (`GroupCtrl`, `<tag>_<group>_ctrl`; `NestCtrl`, its one-unit case, with B1's ports), which drives `io.config`, the
+  * outer valids and `io.out.ready`, and reads the rest. Its per-unit signals are named after the unit (`<unit>_fire`,
+  * `<unit>_d`, ...).
   *
   * A start of JOBS and each unit's T: the sink gives R = JOBS results, and a unit k before its successor s gives R_k =
   * R_s · T_s (each firing of s takes one of k's results), one on every T_k-th firing (its beat digit d_k = T_k − 1), so
@@ -148,6 +151,21 @@ class LinkEnables(depth: Int) extends Bundle {
   * 2, flush 3.
   */
 class GroupRule(val desc: GroupDesc) {
+  // The C++ stays the spec (it has no area); here a register exists only where the description says the value changes
+  // at run time, decided per unit from the description (open item 98):
+  //   - T: a register (`<unit>_t`) only when a JOB_BEATS sets it; a fixed T (`params.T`, `UnitDesc.fixedT`) is a
+  //     constant.
+  //   - R: the sink's R = JOBS is a register (`<sink>_r`). A unit k with successor s gives R_k = R_s · T_s: a register
+  //     (`<k>_r`) only when T_s is set at run time; otherwise the wire c · R_s for s's fixed T c, R_s itself at c = 1
+  //     and a shift when c is a power of two.
+  //   - No count of the sink's pushes: with L its latency, g its results given and v its pipeline's valid bits,
+  //       done = push ∧ (g + [L = 0 ∧ gives] = R) ∧ ¬(v(i) for some i < L − 1)
+  //     At L = 0 the push is the give, in the cycle g counts it; at L ≥ 1 g already counts the pushed result, and the
+  //     pipeline below the head must be empty.
+  //   - The II gap: a register only at II > 1 (at II 1 it never leaves 0).
+  // Kept: each unit's results given and beat digit, the pipeline, the lane, the buffers' occupancy and slots, and the
+  // start's copies of JOBS (`<sink>_r`) and each JOB_BEATS (`<unit>_t`): `<tag>_csr` accepts writes to those CSRs while
+  // the group runs (only START is held), so the CSRs themselves may change under a run.
   private val n     = desc.units.size
   private val descs = desc.units
   private val links = desc.links
@@ -167,11 +185,20 @@ class GroupRule(val desc: GroupDesc) {
   // The group's state: busy, each unit's T and result count R_k (SnaxGroupRule's t and firings_per_run, set by start());
   // the C++ counts firings up to n_k = R_k · T_k, this counts results up to R_k and the beat digit d (firings = g · T + d)
   private val busy = RegInit(false.B)
-  private val ts   = descs.map(u => RegInit(1.U(32.W)).suggestName(s"${u.name}_t"))
-  private val rs   = descs.map(u => RegInit(0.U(32.W)).suggestName(s"${u.name}_r"))
+  private val ts: Seq[UInt] =
+    descs.map(u => u.fixedT.map(_.U(32.W)).getOrElse(RegInit(1.U(32.W)).suggestName(s"${u.name}_t")))
+  private def succ(k:   Int): Option[Int] = desc.outs(k).headOption.map(links(_).to)
+  private def rIsReg(k: Int): Boolean     = succ(k).forall(descs(_).fixedT.isEmpty)
+  private def times(r: UInt, c: Int): UInt = // c · r in 32 bits, for a fixed c
+    if (c == 1) r else if (isPow2(c)) (r << log2Ceil(c))(31, 0) else (r * c.U)(31, 0)
+  private val rs = new Array[UInt](n)
+  for (k <- desc.order.reverse)
+    rs(k) =
+      if (rIsReg(k)) RegInit(0.U(32.W)).suggestName(s"${descs(k).name}_r")
+      else times(rs(succ(k).get), descs(succ(k).get).fixedT.get)
 
   // Per unit (SnaxGroupRule's UnitState): its beat digit d (⌈log₂ T⌉ bits for a fixed T, none at T 1), results
-  // given g, the II gap (has_fired and last_fire), the pipeline (slots, v(L-1) the head), the lane
+  // given g, the II gap (has_fired and last_fire; none at II 1), the pipeline (slots, v(L-1) the head), the lane
   private class Stage(val u: UnitDesc) {
     val d    = u.fixedT match {
       case Some(1) => WireDefault(0.U(1.W)).suggestName(s"${u.name}_d")
@@ -179,7 +206,7 @@ class GroupRule(val desc: GroupDesc) {
       case None    => RegInit(0.U(32.W)).suggestName(s"${u.name}_d")
     }
     val g    = RegInit(0.U(32.W)).suggestName(s"${u.name}_given")
-    val gap  = RegInit(0.U(log2Ceil(u.ii + 1).W)).suggestName(s"${u.name}_gap")
+    val gap  = if (u.ii == 1) 0.U(1.W) else RegInit(0.U(log2Ceil(u.ii + 1).W)).suggestName(s"${u.name}_gap")
     val v    = RegInit(VecInit(Seq.fill(u.latency max 1)(false.B))).suggestName(s"${u.name}_v")
     val lane = RegInit(0.U(log2Ceil(u.span).W)).suggestName(s"${u.name}_lane")
   }
@@ -266,10 +293,13 @@ class GroupRule(val desc: GroupDesc) {
   private val waits  = (0 until n).map(k => !frozen(k) && wants(k) && !inputs(k)).reduce(_ || _)
   io.cls := Mux(frozen(owner), 2.U, Mux(isBusy, 0.U, Mux(waits, 1.U, 3.U)))
 
-  // The sink's R-th push ends the run: then every unit has fired its n, nothing is in flight and every buffer is empty,
-  // SnaxGroupRule's finished()
-  private val pushedLast = RegInit(0.U(32.W)).suggestName(s"${descs(owner).name}_pushed")
-  private val done       = busy && push(owner) && pushedLast === rs(owner) - 1.U
+  // The sink's R-th push ends the run (the done formula above): then every unit has fired its n, nothing is in flight
+  // and every buffer is empty, SnaxGroupRule's finished()
+  private val sinkL = descs(owner).latency
+  private val done  = busy && push(owner) &&
+    st(owner).g + (if (sinkL == 0) gives(owner).asUInt else 0.U) === rs(owner) &&
+    !(if (sinkL > 1) st(owner).v.take(sinkL - 1).reduce(_ || _) else false.B)
+
   io.done := done
   io.busy := busy
 
@@ -280,7 +310,7 @@ class GroupRule(val desc: GroupDesc) {
   for (k <- 0 until n) {
     val u = descs(k)
     val s = st(k)
-    when(fire(k)) {
+    if (u.ii > 1) when(fire(k)) {
       s.gap := (u.ii - 1).U
     }.elsewhen(s.gap =/= 0.U) {
       s.gap := s.gap - 1.U
@@ -304,29 +334,24 @@ class GroupRule(val desc: GroupDesc) {
 
   when(io.config.fire) {
     val c     = io.config.bits
-    val empty = c.jobs === 0.U || c.ts.map(_ === 0.U).reduce(_ || _)
+    val t     = (0 until n).map(k => descs(k).fixedT.map(_.U(32.W)).getOrElse(c.ts(k)))
+    val empty = c.jobs === 0.U || t.map(_ === 0.U).reduce(_ || _)
     busy := !empty
-    ts.zip(c.ts).foreach { case (t, x) => t := x }
-    // From the sink back, as start(): the sink's R = JOBS, R_k = R_s · T_s for k's successor s
+    for (k <- 0 until n if descs(k).fixedT.isEmpty) ts(k) := c.ts(k)
+    // From the sink back, as start(): the sink's R = JOBS, R_k = R_s · T_s for k's successor s; the registers' values
     val r = Wire(Vec(n, UInt(32.W)))
-    for (k <- desc.order.reverse)
-      r(k)     := (desc.outs(k).map(i => links(i).to) match {
-        case Seq(s) => (r(s) * c.ts(s))(31, 0)
-        case _      => c.jobs
-      })
-    rs.zip(r).foreach { case (x, y) => x := y }
+    for (k <- desc.order.reverse) r(k)      := succ(k).map(s => (r(s) * t(s))(31, 0)).getOrElse(c.jobs)
+    for (k <- 0 until n if rIsReg(k)) rs(k) := r(k)
     for (s <- st) {
       if (s.u.fixedT != Some(1)) s.d := 0.U
       s.g                            := 0.U
       s.lane                         := 0.U
     }
-    pushedLast := 0.U
   }.otherwise {
     for (k <- 0 until n) when(fire(k)) {
       if (descs(k).fixedT != Some(1)) st(k).d := Mux(gives(k), 0.U, st(k).d + 1.U)
       when(gives(k)) { st(k).g := st(k).g + 1.U }
     }
-    when(push(owner)) { pushedLast := pushedLast + 1.U }
     when(done) { busy := false.B }
   }
 }
