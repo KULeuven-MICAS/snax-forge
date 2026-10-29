@@ -69,10 +69,10 @@ failure named:
 from __future__ import annotations
 
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from itertools import pairwise
-from typing import Any
+from typing import Any, ClassVar
 
 from snax_forge.gen.csrs import mover_csr_count
 
@@ -272,147 +272,201 @@ def _lookup(ctx: Context, mem: str, addr: int, data: bytes) -> tuple[str | None,
 def beat_events(named: Sequence[tuple[str, Line]], ctx: Context) -> list[tuple[int, int, dict]]:
     """The beat, stall and instruction lines as events (module doc), with each line's index
     in the file for the order of a cycle."""
-    c, acc = ctx.cluster, ctx.cluster.accelerator
-    word = c.bank_bytes
-    ports = _input_ports(named, c)
-    spans = brackets(ctx.task_events)
-    dma = copies(ctx.task_events)
-    mover_of_port = {p: m for m in acc.movers for p in m.ports}
-    readers = [m for m in acc.movers if not m.write]
-    writers = [m for m in acc.movers if m.write]
-    words_in = [m.lanes for m in readers]  # a mover's lanes are its num_ch: words per beat
-    starts = [sum(words_in[:i]) for i in range(len(readers) + 1)]
-    funcs: dict[str, list[tuple[int, str]]] = defaultdict(list)
-    for s, x in named:
-        if x.trace == "events" and x.kind == "func":
-            funcs[s].append((x.cycle - ctx.boot, x.fields["name"]))
-    for f in funcs.values():
-        f.sort(key=lambda p: p[0])
+    return _Beats(named, ctx).events()
 
-    out: list[tuple[int, int, dict]] = []
-    fires, pushes = [], []
-    for n, (src, x) in enumerate(named):
-        if x.trace not in ("beats", "stalls", "insn"):
-            continue
-        f, k = x.fields, x.kind
-        t = x.cycle - ctx.boot
-        if not 0 <= t < ctx.width:
-            continue
-        e: dict[str, Any] = {"t": t, "k": k}
-        if k in ("grant", "stall"):
-            port = ports.get(f["in"])
-            if port is None:
-                raise RunError("convert.path", f"crossbar input {f['in']}: no `input` line names "
-                               "it")  # fmt: skip
-            owner = mover_of_port.get(port)
-            source = owner.name if owner is not None else port
-            if source not in ctx.filter:
-                continue
-            run = task_at(spans.get(owner.name, []), t) if owner is not None else None
-            addr = c.l1_base + f["addr"]
-            e.update(src=port, task=run[1] if run else None)
-            if k == "grant":
-                size = f.get("size", word)
-                data = (f["value"] & WORD_MASK).to_bytes(8, "little")[:size]
-                region, elems, vals = _lookup(ctx, "l1", addr, data)
-                e.update(op=f["op"], mem="l1", addr=addr, bank=f["bank"], row=f["row"],
-                         value=f["value"], back=f["back"] - ctx.boot)  # fmt: skip
-                if "b" in f:
-                    e["b"] = f["b"]
-                if "size" in f:
-                    e["size"] = f["size"]
-                e.update(region=region, elems=elems, vals=vals)
-            else:
-                region, elems, _ = _lookup(ctx, "l1", addr, bytes(word))
-                by = "dma" if f["by"] == -1 else ports.get(f["by"], str(f["by"]))
-                e.update(addr=addr, bank=f["bank"], row=f["row"], by=by,
-                         by_addr=c.l1_base + f["by_addr"])  # fmt: skip
-                if "b" in f:
-                    e["b"] = f["b"]
-                e.update(region=region, elems=elems)
-        elif k == "dma":
-            if DMA not in ctx.filter:
-                continue
-            copy = dma.get(f["id"])
-            addr = c.l1_base + f["addr"]
-            data = _bytes(f["value"], addr, f["size"], word)
-            region, elems, vals = _lookup(ctx, "l1", addr, data)
-            e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], i=f["i"],
-                     op=f["op"], mem="l1", addr=addr, size=f["size"], bank=f["bank"],
-                     row=f["row"], value=list(f["value"]), l2=f["l2"])  # fmt: skip
-            if "back" in f:
-                e["back"] = f["back"] - ctx.boot
-            e.update(region=region, elems=elems, vals=vals)
-        elif k == "burst":
-            if DMA not in ctx.filter:
-                continue
-            copy = dma.get(f["id"])
-            r = region_at(ctx.regions, "l2", f["addr"])
-            e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], op=f["op"],
-                     mem="l2", addr=f["addr"], size=f["size"], back=f["back"] - ctx.boot,
-                     region=r.container if r else None,
-                     elems=r.elems(f["addr"], f["size"]) if r else [])  # fmt: skip
-        elif k == "fire":
-            if acc.name not in ctx.filter:
-                continue
-            run = task_at(spans.get(acc.name, []), t)
-            if len(f["b"]) != len(readers) or len(f["value"]) != starts[-1]:
-                raise RunError("convert.beats", f"fire at {t}: {len(f['b'])} beats of "
-                               f"{len(f['value'])} words, the accelerator reads {len(readers)} "
-                               f"of {words_in} words (its readers' num_channel)")  # fmt: skip
-            e.update(src=acc.name, task=run[1] if run else None, n=f["n"],
-                     b={m.name: f["b"][i] for i, m in enumerate(readers)},
-                     value={m.name: f["value"][starts[i] : starts[i + 1]]
-                            for i, m in enumerate(readers)})  # fmt: skip
-            fires.append((e, run))
-        elif k == "push":
-            if acc.name not in ctx.filter:
-                continue
-            if writers and len(f["value"]) != writers[0].lanes:
-                raise RunError("convert.beats", f"push at {t}: {len(f['value'])} words, the "
-                               f"writer moves {writers[0].lanes} (its num_channel)")  # fmt: skip
-            run = task_at(spans.get(acc.name, []), t)
-            e.update(src=acc.name, task=run[1] if run else None, n=f["n"], first=f["first"],
-                     last=f["last"], value=list(f["value"]))  # fmt: skip
-            pushes.append((e, run))
-        elif k == "fifo":
-            m = acc.mover(f["mover"])
-            if m.name not in ctx.filter:
-                continue
-            run = task_at(spans.get(m.name, []), t)
-            e.update(src=m.name, task=run[1] if run else None, lane=f["lane"], count=f["count"])
-        elif k == "class":
-            if src not in ctx.filter:
-                continue
-            run = task_at(spans.get(src, []), t)
-            e.update(src=src, task=run[1] if run else None, mode=f["mode"])
-        elif k == "insn":
-            if src not in ctx.filter:
-                continue
-            spans_f = [name for ft, name in funcs.get(src, []) if ft <= t]
-            e.update(src=src, pc=f["pc"], func=spans_f[-1] if spans_f else None, text=f["text"])
-        else:
-            raise RunError("convert.kind", f"{x.trace} {k} line: no event for it ({x})")
-        out.append((t, n, e))
-    grants = beat_grants([e for _, _, e in out if e["k"] == "grant"], acc.movers, spans)
 
-    def vals_of(mover: Mover, run: tuple[int, str] | None, b: int, words: list[int]) -> Any:
-        g = grants.get((mover.name, run[0], b)) if run else None
-        if not g or len(g) != mover.lanes:
-            return None
-        out: list[Any] = []
-        for lane in range(mover.lanes):
-            ge = g[lane]
-            data = (words[lane] & WORD_MASK).to_bytes(8, "little") if lane < len(words) else b""
-            r = region_at(ctx.regions, "l1", ge["addr"])
-            out += r.vals(ge["addr"], data) if r else []
+class _Beats:
+    """``beat_events``'s context: the run's ports, task spans and DMA copies, the
+    accelerator's readers and writers; one method per line kind (``KINDS``), each filling an
+    event or None when its source is filtered out."""
+
+    def __init__(self, named: Sequence[tuple[str, Line]], ctx: Context) -> None:
+        self.named, self.ctx = named, ctx
+        self.c, self.acc = ctx.cluster, ctx.cluster.accelerator
+        self.word = self.c.bank_bytes
+        self.ports = _input_ports(named, self.c)
+        self.spans = brackets(ctx.task_events)
+        self.dma_copies = copies(ctx.task_events)
+        self.mover_of_port = {p: m for m in self.acc.movers for p in m.ports}
+        self.readers = [m for m in self.acc.movers if not m.write]
+        self.writers = [m for m in self.acc.movers if m.write]
+        self.words_in = [m.lanes for m in self.readers]  # a mover's lanes are its num_ch
+        self.starts = [sum(self.words_in[:i]) for i in range(len(self.readers) + 1)]
+        self.funcs: dict[str, list[tuple[int, str]]] = defaultdict(list)
+        for s, x in named:
+            if x.trace == "events" and x.kind == "func":
+                self.funcs[s].append((x.cycle - ctx.boot, x.fields["name"]))
+        for f in self.funcs.values():
+            f.sort(key=lambda p: p[0])
+        self.fires: list[tuple[dict, tuple[int, str] | None]] = []
+        self.pushes: list[tuple[dict, tuple[int, str] | None]] = []
+
+    def events(self) -> list[tuple[int, int, dict]]:
+        out: list[tuple[int, int, dict]] = []
+        for n, (src, x) in enumerate(self.named):
+            if x.trace not in ("beats", "stalls", "insn"):
+                continue
+            t = x.cycle - self.ctx.boot
+            if not 0 <= t < self.ctx.width:
+                continue
+            kind = self.KINDS.get(x.kind)
+            if kind is None:
+                raise RunError("convert.kind", f"{x.trace} {x.kind} line: no event for it ({x})")
+            e = kind(self, {"t": t, "k": x.kind}, src, x.fields)
+            if e is not None:
+                out.append((t, n, e))
+        self.values(out)
         return out
 
-    for e, run in fires:
-        e["vals"] = {m.name: vals_of(m, run, e["b"][m.name], e["value"][m.name]) for m in readers}
-    for e, run in pushes:
-        e["vals"] = vals_of(writers[0], run, e["n"], e["value"]) if writers else None
-    return out
+    def task(self, src: str, t: int) -> tuple[int, str] | None:
+        return task_at(self.spans.get(src, []), t)
+
+    def xbar(self, e: dict, src: str, f: dict) -> dict | None:
+        """A crossbar grant or stall: its port and the mover owning it, the element."""
+        k, t, c = e["k"], e["t"], self.c
+        port = self.ports.get(f["in"])
+        if port is None:
+            raise RunError("convert.path", f"crossbar input {f['in']}: no `input` line names "
+                           "it")  # fmt: skip
+        owner = self.mover_of_port.get(port)
+        source = owner.name if owner is not None else port
+        if source not in self.ctx.filter:
+            return None
+        run = self.task(owner.name, t) if owner is not None else None
+        addr = c.l1_base + f["addr"]
+        e.update(src=port, task=run[1] if run else None)
+        if k == "grant":
+            size = f.get("size", self.word)
+            data = (f["value"] & WORD_MASK).to_bytes(8, "little")[:size]
+            region, elems, vals = _lookup(self.ctx, "l1", addr, data)
+            e.update(op=f["op"], mem="l1", addr=addr, bank=f["bank"], row=f["row"],
+                     value=f["value"], back=f["back"] - self.ctx.boot)  # fmt: skip
+            if "b" in f:
+                e["b"] = f["b"]
+            if "size" in f:
+                e["size"] = f["size"]
+            e.update(region=region, elems=elems, vals=vals)
+        else:
+            region, elems, _ = _lookup(self.ctx, "l1", addr, bytes(self.word))
+            by = "dma" if f["by"] == -1 else self.ports.get(f["by"], str(f["by"]))
+            e.update(addr=addr, bank=f["bank"], row=f["row"], by=by,
+                     by_addr=c.l1_base + f["by_addr"])  # fmt: skip
+            if "b" in f:
+                e["b"] = f["b"]
+            e.update(region=region, elems=elems)
+        return e
+
+    def dma(self, e: dict, src: str, f: dict) -> dict | None:
+        """A DMA beat on L1."""
+        if DMA not in self.ctx.filter:
+            return None
+        copy = self.dma_copies.get(f["id"])
+        addr = self.c.l1_base + f["addr"]
+        data = _bytes(f["value"], addr, f["size"], self.word)
+        region, elems, vals = _lookup(self.ctx, "l1", addr, data)
+        e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], i=f["i"],
+                 op=f["op"], mem="l1", addr=addr, size=f["size"], bank=f["bank"],
+                 row=f["row"], value=list(f["value"]), l2=f["l2"])  # fmt: skip
+        if "back" in f:
+            e["back"] = f["back"] - self.ctx.boot
+        e.update(region=region, elems=elems, vals=vals)
+        return e
+
+    def burst(self, e: dict, src: str, f: dict) -> dict | None:
+        """A DMA burst on L2."""
+        if DMA not in self.ctx.filter:
+            return None
+        copy = self.dma_copies.get(f["id"])
+        r = region_at(self.ctx.regions, "l2", f["addr"])
+        e.update(src=DMA, task=copy["task"] if copy else None, id=f["id"], op=f["op"],
+                 mem="l2", addr=f["addr"], size=f["size"], back=f["back"] - self.ctx.boot,
+                 region=r.container if r else None,
+                 elems=r.elems(f["addr"], f["size"]) if r else [])  # fmt: skip
+        return e
+
+    def fire(self, e: dict, src: str, f: dict) -> dict | None:
+        """A firing: each reader's beat and words; its values once the grants are known."""
+        acc, t = self.acc, e["t"]
+        if acc.name not in self.ctx.filter:
+            return None
+        run = self.task(acc.name, t)
+        if len(f["b"]) != len(self.readers) or len(f["value"]) != self.starts[-1]:
+            raise RunError("convert.beats", f"fire at {t}: {len(f['b'])} beats of "
+                           f"{len(f['value'])} words, the accelerator reads {len(self.readers)} "
+                           f"of {self.words_in} words (its readers' num_channel)")  # fmt: skip
+        e.update(src=acc.name, task=run[1] if run else None, n=f["n"],
+                 b={m.name: f["b"][i] for i, m in enumerate(self.readers)},
+                 value={m.name: f["value"][self.starts[i] : self.starts[i + 1]]
+                        for i, m in enumerate(self.readers)})  # fmt: skip
+        self.fires.append((e, run))
+        return e
+
+    def push(self, e: dict, src: str, f: dict) -> dict | None:
+        """A push: the result's words; its values once the grants are known."""
+        acc, t = self.acc, e["t"]
+        if acc.name not in self.ctx.filter:
+            return None
+        if self.writers and len(f["value"]) != self.writers[0].lanes:
+            raise RunError("convert.beats", f"push at {t}: {len(f['value'])} words, the "
+                           f"writer moves {self.writers[0].lanes} (its num_channel)")  # fmt: skip
+        run = self.task(acc.name, t)
+        e.update(src=acc.name, task=run[1] if run else None, n=f["n"], first=f["first"],
+                 last=f["last"], value=list(f["value"]))  # fmt: skip
+        self.pushes.append((e, run))
+        return e
+
+    def fifo(self, e: dict, src: str, f: dict) -> dict | None:
+        """A queue count of a mover's lane."""
+        m = self.acc.mover(f["mover"])
+        if m.name not in self.ctx.filter:
+            return None
+        run = self.task(m.name, e["t"])
+        e.update(src=m.name, task=run[1] if run else None, lane=f["lane"], count=f["count"])
+        return e
+
+    def cls(self, e: dict, src: str, f: dict) -> dict | None:
+        """A class line of the accelerator or a mover."""
+        if src not in self.ctx.filter:
+            return None
+        run = self.task(src, e["t"])
+        e.update(src=src, task=run[1] if run else None, mode=f["mode"])
+        return e
+
+    def insn(self, e: dict, src: str, f: dict) -> dict | None:
+        """An instruction of a core, in the function it was in."""
+        if src not in self.ctx.filter:
+            return None
+        spans_f = [name for ft, name in self.funcs.get(src, []) if ft <= e["t"]]
+        e.update(src=src, pc=f["pc"], func=spans_f[-1] if spans_f else None, text=f["text"])
+        return e
+
+    KINDS: ClassVar[dict[str, Callable[..., dict | None]]] = {
+        "grant": xbar, "stall": xbar, "dma": dma, "burst": burst, "fire": fire, "push": push,
+        "fifo": fifo, "class": cls, "insn": insn,
+    }  # fmt: skip
+
+    def values(self, out: list[tuple[int, int, dict]]) -> None:
+        """Each firing's and push's element values, from the grants of its beats."""
+        grants = beat_grants([e for _, _, e in out if e["k"] == "grant"], self.acc.movers,
+                             self.spans)  # fmt: skip
+
+        def vals_of(mover: Mover, run: tuple[int, str] | None, b: int, words: list[int]) -> Any:
+            g = grants.get((mover.name, run[0], b)) if run else None
+            if not g or len(g) != mover.lanes:
+                return None
+            vals: list[Any] = []
+            for lane in range(mover.lanes):
+                ge = g[lane]
+                data = (words[lane] & WORD_MASK).to_bytes(8, "little") if lane < len(words) else b""
+                r = region_at(self.ctx.regions, "l1", ge["addr"])
+                vals += r.vals(ge["addr"], data) if r else []
+            return vals
+
+        for e, run in self.fires:
+            e["vals"] = {m.name: vals_of(m, run, e["b"][m.name], e["value"][m.name])
+                         for m in self.readers}  # fmt: skip
+        for e, run in self.pushes:
+            e["vals"] = vals_of(self.writers[0], run, e["n"], e["value"]) if self.writers else None
 
 
 # =============================================================================
