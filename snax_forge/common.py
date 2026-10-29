@@ -3,7 +3,8 @@
 * ``repo_root``, the directory holding ``pixi.toml``: where ``out/``, ``kernels/`` and the
   platforms are found; ``cwd_relative``, a path as a command line prints it;
   ``generated_header``, the comment every generated file starts with; ``fresh`` and
-  ``unique_names``, names that clash with none taken before.
+  ``unique_names``, names that clash with none taken before; ``git``, a git command's output
+  in a folder, or None.
 * ``CodedError``, the base of the refusals that carry a rule code; ``LoadedSet``, what a
   viewer serves, reloaded whole.
 * ``plain`` and ``check_keys``: JSON-ready values, and an object's unknown keys refused (so a
@@ -23,6 +24,7 @@ after (D26). This module imports nothing from the package, so every package can 
 from __future__ import annotations
 
 import json
+import subprocess
 import textwrap
 import threading
 from collections.abc import Iterable, Mapping, Sequence
@@ -60,6 +62,17 @@ def generated_header(point_path: str, what: str) -> str:
     )
     lines += textwrap.wrap(what, **wrap)
     return "".join(f"// {line}\n" for line in lines)
+
+
+def git(path: Path, *args: str) -> str | None:
+    """git's stdout in ``path``, stripped, or None when git fails or is missing. With
+    ``safe.directory=*``: in the image, git may not own the mounted folder."""
+    try:
+        r = subprocess.run(["git", "-c", "safe.directory=*", "-C", str(path), *args],
+                           capture_output=True, text=True, check=False)  # fmt: skip
+    except OSError:
+        return None
+    return r.stdout.strip() if r.returncode == 0 else None
 
 
 def cwd_relative(p: Path) -> str:

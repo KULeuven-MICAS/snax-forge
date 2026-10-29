@@ -122,7 +122,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
-from snax_forge.common import cwd_relative, repo_root, to_json
+from snax_forge.common import cwd_relative, git, repo_root, to_json
 from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
@@ -329,27 +329,16 @@ def _tee(cmd: list[str], log: IO[str]) -> int:
             raise
 
 
-def _git(path: Path, *args: str) -> str | None:
-    """git's stdout in ``path``, stripped, or None when git fails (the image's git may not own
-    the folder, hence ``safe.directory``)."""
-    try:
-        r = subprocess.run(["git", "-c", "safe.directory=*", "-C", str(path), *args],
-                           capture_output=True, text=True, check=False)  # fmt: skip
-    except FileNotFoundError:
-        return None
-    return r.stdout.strip() if r.returncode == 0 else None
-
-
 def checkout(path: Path = SNAX_GVSOC) -> Checkout:
     """The submodule's checkout (``Checkout``); a FlowError when it is not checked out."""
-    commit = _git(path, "rev-parse", "HEAD") if (path / "snax").is_dir() else None
+    commit = git(path, "rev-parse", "HEAD") if (path / "snax").is_dir() else None
     if commit is None:
         raise FlowError(
             f"build: {cwd_relative(path)} is not checked out: git submodule update --init "
             f"{SUBMODULE}"
         )
-    status = _git(path, "status", "--porcelain")
-    pin = _git(ROOT, "ls-tree", "HEAD", SUBMODULE)  # "160000 commit <sha>\t<path>"
+    status = git(path, "status", "--porcelain")
+    pin = git(ROOT, "ls-tree", "HEAD", SUBMODULE)  # "160000 commit <sha>\t<path>"
     pinned = pin.split()[2] if pin and len(pin.split()) >= 3 else None
     return Checkout(path.resolve(), commit, status is None or status != "", pinned)
 

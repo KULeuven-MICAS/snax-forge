@@ -52,12 +52,11 @@ from __future__ import annotations
 
 import argparse
 import shutil
-import subprocess
 import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from snax_forge.common import Config, JsonFile, cwd_relative
+from snax_forge.common import Config, JsonFile, cwd_relative, git
 
 from .accelerator import ACCELERATOR_JSON, Accelerator
 from .blocks import GenError
@@ -96,18 +95,10 @@ def module_tree(acc: Accelerator) -> dict[str, list[str]]:
 def provenance(checkout: Path) -> tuple[str | None, bool]:
     """The checkout's commit (``git rev-parse HEAD``) and whether its work tree has uncommitted
     changes; ``(None, False)`` outside git."""
-
-    def git(*args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(["git", "-C", str(checkout), *args], capture_output=True,
-                              text=True, check=False)  # fmt: skip
-
-    try:
-        head = git("rev-parse", "HEAD")
-    except OSError:
+    head = git(checkout, "rev-parse", "HEAD")
+    if head is None:
         return None, False
-    if head.returncode != 0:
-        return None, False
-    return head.stdout.strip(), bool(git("status", "--porcelain").stdout.strip())
+    return head, bool(git(checkout, "status", "--porcelain"))
 
 
 def file_list(rtl_dir: Path, emitted: list[Path]) -> list[str]:
