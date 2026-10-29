@@ -162,7 +162,7 @@ from .headers import STREAMER_HEADER, accelerator_header, cluster_headers, strea
 ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
 
-# snax-gvsoc snax/snax_acc.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
+# snax-gvsoc snax/snax_accelerator.py: the first SNAX CSR (CSR_SNAX_BEGIN) and the
 # last one an accelerator may use (SNAX_CSR_FIRST, SNAX_ACC_CSR_LAST): the core
 # sends out up to 0x5FF, but snax_cluster's hw/snitch/src/csr_snax_def.sv
 # reserves 0x5FE (CSR_SNAX_READ_TASK_READY_QUEUE) and 0x5FF
@@ -172,7 +172,7 @@ SNAX_CSR_FIRST = 0x3C0
 SNAX_ACC_CSR_LAST = 0x5FD
 # The trace paths: the compute core's accelerator, named snax_acc<core> by
 # pulp/snitch/snitch_cluster/snitch_cluster.py; the composite
-# (snax/snax_unit_acc.py) calls a unit `unit`, with several groups `unit_<unit>`
+# (snax/snax_accelerator.py) calls a unit `unit`, with several groups `unit_<unit>`
 ACC_TRACE = "snax_acc0"
 UNIT_TRACE = f"{ACC_TRACE}/unit"
 # The generated cluster's name (D130)

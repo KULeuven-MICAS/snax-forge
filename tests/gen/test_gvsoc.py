@@ -223,11 +223,12 @@ def test_snax_gvsocs_reader_takes_the_folder(w4):
 
 @needs_submodule
 def test_streamer_csrs_are_snax_streamers(w4):
-    """The generator's copy of snax_streamer.py's nb_csrs gives what the real one gives."""
+    """The generator's copies of snax_streamer.py's nb_csrs and snax_cfg.py's
+    streamer_channels give what the real ones give."""
     out, _ = w4
     template = parsed(out / "snax_forge_streamer.hjson")
     assert gen_mod.streamer_csrs(template) == snax_streamer().nb_csrs(template) == 18
-    assert gen_mod.channels(template) == snax_streamer().nb_tcdm_ports(template) == 12
+    assert gen_mod.channels(template) == snax_cfg().streamer_channels(template) == 12
 
 
 def test_every_generated_file_starts_with_the_one_header(w4):
@@ -642,8 +643,8 @@ def test_the_command(tmp_path, capsys, monkeypatch):
 @pytest.mark.skipif(
     not (SUB / "snax").is_dir(), reason="the snax-gvsoc submodule is not checked out"
 )
-def test_the_constants_are_snax_accs():
-    text = (SUB / "snax" / "snax_acc.py").read_text()
+def test_the_constants_are_snax_accelerators():
+    text = (SUB / "snax" / "snax_accelerator.py").read_text()
     assert "SNAX_CSR_FIRST = 0x3C0" in text and "SNAX_ACC_CSR_LAST = 0x5FD" in text
     assert (gen_mod.SNAX_CSR_FIRST, gen_mod.SNAX_ACC_CSR_LAST) == (0x3C0, 0x5FD)
 
