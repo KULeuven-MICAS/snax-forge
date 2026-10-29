@@ -91,7 +91,7 @@ OMP_NUM_THREADS = "1"
 
 [tasks]
 check      = "python util/env_check.py"
-test       = "pytest -q"
+test       = "pytest -q -n auto"
 test-lower = "pytest -q tests/lower"
 test-brm   = "pytest -q tests/brm tests/test_expr.py"
 test-dfg   = "pytest -q tests/dfg tests/test_expr.py"
