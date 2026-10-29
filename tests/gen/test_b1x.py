@@ -54,6 +54,7 @@ def test_dot6_writes_its_movers_jobs_and_the_macs_beats(tmp_path):
         "SerialAccumulate", {"T": 1}, {"latency": 1, "ii": 1, "span": 4}
     )  # fmt: skip
     manifest = json.loads((out / "manifest.json").read_text())
+    assert manifest["trace"] == "snax_acc0/group_dot"  # the linked group's one component
     assert manifest["tasks"] == [{"name": "mult_dot", "beats": 128,
                                   "csrs": {"JOBS": 1, "MAC_JOB_BEATS": 128}}]  # fmt: skip
 

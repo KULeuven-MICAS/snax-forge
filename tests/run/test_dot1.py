@@ -8,7 +8,6 @@ unit's lines after it, gives each a profile, matches each group's task and the m
 """
 
 import json
-from pathlib import Path
 
 import pytest
 
@@ -16,8 +15,6 @@ from snax_forge.run import RunError, Unit
 from snax_forge.run.convert import convert, invariants
 
 from .helpers import load_recorded
-
-HERE = Path(__file__).parent / "fixtures" / "dot_1"
 
 
 @pytest.fixture(scope="module")
