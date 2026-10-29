@@ -12,9 +12,9 @@ from jsonschema import Draft7Validator, Draft202012Validator, ValidationError
 
 from snax_forge.brm import CONTROLLERS, INT_DTYPES
 from snax_forge.gen import generate
-from snax_forge.gen.schemas import NAMES, schema, validate
+from snax_forge.gen.schemas import NAMES, schema
 
-from .helpers import SOURCE, SUB, bound_vsum, parsed, point
+from .helpers import SOURCE, SUB, bound_vsum, parsed, point, validate
 
 CLUSTER_SCHEMA = SUB / "sw" / "docs" / "schema" / "snitch_cluster.schema.json"
 needs_cluster_schema = pytest.mark.skipif(

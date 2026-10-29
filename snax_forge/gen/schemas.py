@@ -1,7 +1,6 @@
 """The generator's own schemas: the streamer file and ``accelerator.json``.
 
     schema(name) -> dict        name: "streamer" or "accelerator"
-    validate(name, value)       raises jsonschema.ValidationError
 
 JSON Schema 2020-12, in ``schema/<name>.schema.json``: what gvsoc.py writes
 into ``<slot>_streamer.hjson`` (the streamer template) and
@@ -22,8 +21,6 @@ import json
 from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator
-
 SCHEMAS = Path(__file__).parent / "schema"
 NAMES = ("streamer", "accelerator")
 
@@ -33,8 +30,3 @@ def schema(name: str) -> dict[str, Any]:
     if name not in NAMES:
         raise ValueError(f"no schema {name!r} (have {list(NAMES)})")
     return json.loads((SCHEMAS / f"{name}.schema.json").read_text())
-
-
-def validate(name: str, value: Any) -> None:
-    """Raise jsonschema.ValidationError unless ``value`` is a ``name`` file's content."""
-    Draft202012Validator(schema(name)).validate(value)

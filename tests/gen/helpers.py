@@ -25,12 +25,14 @@ from types import SimpleNamespace
 
 import hjson
 import pytest
+from jsonschema import Draft202012Validator
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
 from snax_forge.gen import Accelerator, Csr, Group, Port, Unit
 from snax_forge.gen import bundle as bundle_mod
 from snax_forge.gen.rtl import EMITTED_JSON
+from snax_forge.gen.schemas import schema
 from snax_forge.sandbox import Recipe, apply_recipe
 from tests.design.helpers import FIXTURES, REPO, SNAX_FORGE, bound_vecadd
 
@@ -184,3 +186,9 @@ def fake_emit(monkeypatch) -> SimpleNamespace:
     monkeypatch.setattr(bundle_mod, "elaborate", elaborate)
     monkeypatch.setattr(bundle_mod, "provenance", lambda checkout: (COMMIT, False))
     return fake
+
+
+def validate(name: str, value: object) -> None:
+    """Raise jsonschema.ValidationError unless ``value`` is a ``name`` file's content (the
+    generator's schemas, gen/schemas.py)."""
+    Draft202012Validator(schema(name)).validate(value)

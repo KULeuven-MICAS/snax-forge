@@ -28,10 +28,9 @@ from snax_forge.gen.rtl import (
     write_accelerator,
     write_fixture,
 )
-from snax_forge.gen.schemas import validate
 from tests.design.helpers import REPO
 
-from .helpers import bound_vsum, designed, point
+from .helpers import bound_vsum, designed, point, validate
 
 FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
 # Each fixture: its recipe and --set
