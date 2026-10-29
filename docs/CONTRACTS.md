@@ -1297,7 +1297,7 @@ snax-forge checked out. `rtl/` is removed before each run; nothing else in
 | the root | section 16's files (gen-gvsoc's), the cluster file and `accelerator.json` (section 17) among them |
 | `rtl/sv/`, `rtl/emitted.json` | what `Emit --spec` wrote (section 17); firtool also writes `sv/filelist.f`, which `emitted.json` does not list |
 | `rtl/files.f` | the RTL's file list: one path per line, relative to `rtl/`, in `emitted.json`'s `files` order, `emitted.json` itself left out |
-| `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git), `dirty` (true when the work tree has uncommitted changes, untracked files included; false outside git), `top` (`<tag>_shell_wrapper`) and `modules` (`<tag>_csr`, `<tag>_ctrl`, `<tag>_datapath`, and per unit and buffer its submodule; F2) |
+| `bundle.json` | `design_point` (as section 16 names it), `tag` (section 17), `snax_forge_commit` (`git rev-parse HEAD`, or null outside git), `dirty` (true when the work tree has uncommitted changes, untracked files included; false outside git), `top` (`<tag>_shell_wrapper`) and `modules`, each of the wrapper's modules with the submodules it holds, from `accelerator.json`, not from Emit's output, by the names F2's Emit gives them: `<tag>_csr` (none), `<tag>_ctrl` (`<tag>_<group>_ctrl` per group), `<tag>_datapath` (`<tag>_<unit>` per unit, then `<tag>_<link>` per buffer, a link of depth ≥ 1, group by group); vecadd's `{"snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_acc_ctrl"], "snax_forge_datapath": ["snax_forge_acc"]}` |
 
 **Refused**: what sections 16 and 17 refuse (`gen.elaborate` among them),
 then `bundle.empty` (`emitted.json` lists no file).
