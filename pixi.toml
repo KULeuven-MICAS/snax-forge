@@ -102,7 +102,7 @@ test-run   = "pytest -q tests/run"
 test-report = "pytest -q tests/report"
 test-gen   = "pytest -q tests/gen"
 test-kernels = "pytest -q tests/kernels"
-lint       = "ruff check util kernels snax_forge tests && ruff format --check util kernels snax_forge tests"
+lint       = "ruff check util kernels snax_forge tests && ruff format --check util kernels snax_forge tests && python util/md_reflow.py --check"
 fmt        = "ruff check --fix util kernels snax_forge tests && ruff format util kernels snax_forge tests"
 # SDFG ingest: `pixi run sdfg vecadd` writes out/sdfg/vecadd.raw.sdfg and .simplified.sdfg
 sdfg       = "python -m snax_forge.sdfg"
