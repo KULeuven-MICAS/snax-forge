@@ -293,7 +293,7 @@ the others multiples of num_slc. The platform keeps only the word. → C§1, C§
 **D143** · brm — Arithmetic follows NumPy: each op runs at its operands' result type, with
 signedness from each port's container, and the result is then extended or wrapped into its target. A
 fold's lanes are cast to its output's type before its tree. Exact products (tier P) need an explicit
-cast in the kernel (open item 37). → C§16, snax-gvsoc `snax/snax_unit.hpp`.
+cast in the kernel (open item 37). → C§16, snax-gvsoc `snax/snax_types.hpp`.
 
 **D144** · lower — Padding is in the data, the hardware masks nothing: a split dimension pads to a
 multiple of W, then the container to whole DMA beats, with zero or a max or min fold's identity; a

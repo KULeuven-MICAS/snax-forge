@@ -160,7 +160,7 @@ the user's numbers. The library holds `elementwise_add`, `elementwise_mul`
 and `accumulate`.
 
 Each implementation's binding (D129) has two outputs: the GVSoC accelerator
-on `SnaxUnit` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
+on `SnaxGroup` and `SnaxShell` (D134), and the Chisel RTL in its shell wrapper
 (D130). The pair is accepted when one ELF gives the same counters on both
 (D123).
 
@@ -212,11 +212,15 @@ vecadd fixture's. It holds:
 - the **DMA**, GVSoC's iDMA fitted to the RTL by measurement (D121); the
   **streamer**, from the hjson's streamer template; the **crossbar**, with
   the sparse interconnect's arbiter and the DMA on whole superbanks (D122);
-- the generic **`SnaxUnit`** and **`SnaxShell`**, built from a slot's
-  datapath block; a group's control rule is one C++ class (`SnaxShellRule`,
-  `snax/snax_shell.hpp`; one control model per group from G1, C§17) whose
-  cases (`tests/snax/shell/cases/`) snax-forge's Chisel control unit and
-  wrapper are checked against too (C§17);
+- the generic **`SnaxGroup`**, one component per group of
+  `accelerator.json`, and its **`SnaxShell`** (the group's CSRs): the group's
+  control model is one C++ class (`SnaxGroupRule`, `snax/snax_group.hpp`,
+  the `<tag>_<group>_ctrl` of C§17) over a registry of datapath classes, one
+  per catalogue datapath (`snax/snax_datapath.hpp`), so a new basic block is
+  one class and one registry line there (D129); its group cases
+  (`tests/snax/group/cases/`), and the shell's (`tests/snax/shell/cases/`),
+  are what snax-forge's Chisel control unit and wrapper are checked against
+  too (C§17);
 - **events**: `summary`, `events`, `beats` and `stalls` traces per SNAX
   component in its own grammar (snax-gvsoc `docs/EVENTS.md`), which `run/`
   renames, never recounts (D137).

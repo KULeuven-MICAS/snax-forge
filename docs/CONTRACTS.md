@@ -926,10 +926,15 @@ expression evaluated on the unit's params), an ii other than 1 or a span other
 than the catalogue's (`gen.timing`), and what the datapath refuses: its args
 (`gen.args`), op (`gen.op`), ports (`gen.ports`), rates (`gen.rate`), lanes,
 a port not whole 64-bit channels among them (`gen.lanes`) and a dtype that is
-not intN or uintN (`gen.dtype`). The links and groups (F1 implements these): a
-link not from an `out` to an `in` of the same dtype and lanes (`gen.link`), a
-port on more than one link (`gen.link_port`), `inputs` or `outputs` not exactly
-the unlinked ports (`gen.outer`), and a group not connected (`gen.group`).
+not intN or uintN (`gen.dtype`). The links and groups: a link not from an
+`out` to an `in` of the same dtype and lanes (`gen.link`), a port on more than
+one link (`gen.link_port`), `inputs` or `outputs` not exactly the unlinked
+ports (`gen.outer`), and a group not connected (`gen.group`). SNAX-GVSoC's
+limits, each until the phase that lifts it: a group that is not a chain in
+unit order, each unit's output linked to the next unit's input and only the
+last unit's output outer (`gen.chain`, until tier A: fork and join; the
+sandbox's `link` refuses it first as `link.chain`), and a unit of span > 1 on
+an outer input (`gen.span`, until B2).
 
 **Derived, never stored**: each port's num_slc = 64 / b and num_ch = W · b /
 64 (D142), each link's kind and what the control unit needs, every unit's
@@ -960,11 +965,15 @@ scalar CSRs, rw = Σ_g (2 + Σ_u (f_u + k_u)) and ro = 2G. Per group:
 - A write to an R/W CSR other than START, or to START with bit 0 clear, is
   taken at once. START with bit 0 set is accepted when the group is idle,
   else held until E+1 (E the cycle its run ends).
+- An accepted start: `<tag>_csr` gives the group's control unit JOBS, then
+  each JOB_BEATS CSR in unit order (JOBS and 1 when the group has none, B1's
+  two words); a unit's fixed T comes from its `params.T`. The empty run is
+  JOBS 0 or any JOB_BEATS 0.
 - STATUS: bit 0 busy, bit 1 done (sticky: set by the done pulse, it reads 1
   from the next cycle and is cleared by an accepted start; a set wins over a
   clear in the same cycle), bit 2 kept free. The program polls bit 0.
 - COUNTER: the busy cycles after the accepted start, held after the run.
-- An empty run (JOBS = 0 or any T = 0) ends in the cycle a it starts, E = a:
+- An empty run (JOBS 0 or any JOB_BEATS 0) ends in the cycle a it starts, E = a:
   busy never rises, done pulses in a, STATUS reads done from a+1, COUNTER
   is 0. Every accepted start ends in a done; there is no ERROR CSR.
 - Pins: `<group>_busy_o` (STATUS bit 0) and `<group>_done_o` (the done pulse
@@ -1221,13 +1230,24 @@ generated from the description (F2), never written per variant:
   takes in that cycle. At depth 0 with span W, the MAC holds its result until
   the reader's last lane.
 
+Stated rules, as snax-gvsoc's `SnaxGroupRule` runs them:
+
+- a unit not enabled (frozen: its head, or at L 0 a firing that gives, has
+  no room) reads no lanes;
+- busy counts a span unit's lane reads;
+- stall_in means a unit with outer inputs wants to fire and one of them has
+  no beat;
+- a plain Mac's `en` is its firing;
+- LinkBuffer's write and read slots are 0 bits wide at depth 1.
+
 A wire chain is B1's nest with L = Σ L_k and T_job = ∏ T_k, plus one enable
 per stage:
 
     fire_{k+1}(c) = fire_k(c − L_k) ∧ gives_k(c − L_k),  first_k = [d_k = 0],  gives_k = [d_k = T_k − 1]
 
 A one-unit group is B1's nest controller (`NestCtrl`) unchanged, so every
-existing fixture's counter stays: SnaxUnit's rule in Chisel, a Decoupled
+existing fixture's counter stays: SnaxUnitRule's rule in Chisel (the one-unit
+case of `SnaxGroupRule`), a Decoupled
 config (JOBS, JOB_BEATS; ready when idle), the join of the input valids, an
 L-deep valid register that stalls as a whole (it advances when its last
 stage is empty or `out.ready`), the II gap, busy, and a done pulse at the
@@ -1237,15 +1257,14 @@ that gives an output, without `out.ready` (valid never depends on ready),
 and that firing happens when `out.ready` is high too. Lockstep is L = 0,
 II = 1. Every group's control unit: START is taken when the group is
 idle and held (`csr_req_ready_o` low) until E + 1 otherwise; an empty run
-(JOBS 0, or JOB_BEATS 0) ends in its start's cycle without starting the
+(JOBS 0, or any JOB_BEATS 0) ends in its start's cycle without starting the
 nest; STATUS is bit 0 busy, bit 1 done (sticky: set by the done pulse,
 cleared by a taken start, set wins); COUNTER counts the busy cycles from the
 taken start to E. The pins are registered: `<group>_busy_o`, and
 `<group>_done_o` high in E + 1 (an empty run's start cycle + 1). The
 accelerator is three modules, `<tag>_csr` (the CSRs above by offset,
 ReqRspManager's protocol, D130: a START write with bit 0 set is that
-group's config, JOBS and JOB_BEATS as written, 1 for JOB_BEATS without
-one), `<tag>_ctrl` (the groups' control units) and `<tag>_datapath` (one
+group's config, the words of an accepted start above), `<tag>_ctrl` (the groups' control units) and `<tag>_datapath` (one
 submodule per unit and per buffer, no valid, ready or counter inside); Emit
 lists every file it wrote in `emitted.json`, beside `sv/`.
 
@@ -1279,15 +1298,17 @@ bits with lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit type
 `<tag>_datapath`, its valid and ready to `<tag>_ctrl`.
 
 **One rule on both sides.** A group's control model is snax-gvsoc's
-`SnaxShellRule` (`snax/snax_shell.hpp`) today, which `SnaxShell` runs; G1
-generalizes it into one control model per group, with the datapath classes
-in `snax/snax_datapath.hpp`. Its cases
+`SnaxGroupRule` (`snax/snax_group.hpp`), which its component `SnaxGroup` runs
+over the datapath classes of `snax/snax_datapath.hpp`, one per catalogue
+datapath; its shared cases are `tests/snax/group/cases/`, which F2's specs
+read from `SNAX_GVSOC_GROUP_CASES`. `SnaxUnitRule` is its one-unit case,
+checked on `tests/snax/unit/cases/`, which the specs drive the controller and
+its datapaths through (`SNAX_GVSOC_UNIT_CASES`). The shell's rule is
+`SnaxShellRule` (`snax/snax_shell.hpp`), which `SnaxShell` runs; its cases
 (`tests/snax/shell/cases/`) are checked against the rule by snax-gvsoc's
 `tb.cpp` and driven through vecadd's and vsum's wrappers by `ShellCasesSpec`
-(`SNAX_GVSOC_SHELL_CASES`). The nest controller's rule is `snax/snax_unit.hpp`
-with `tests/snax/unit/cases/`, which the specs drive the controller and its
-datapaths through (`SNAX_GVSOC_UNIT_CASES`); CI's chisel job sets both to the
-submodule's folders. Where a case shows the two sides disagree, the Chisel behaviour
+(`SNAX_GVSOC_SHELL_CASES`). CI's chisel job sets each to the submodule's
+folder. Where a case shows the two sides disagree, the Chisel behaviour
 stands unless it breaks this section or D130, and SNAX-GVSoC follows it.
 
 ## 18. Bundle
