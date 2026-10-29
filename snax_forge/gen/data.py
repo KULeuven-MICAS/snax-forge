@@ -7,7 +7,7 @@ Every container the DMA moves (it lives in L2 and L1), in the graph's
 container order, as one C array or two:
 
     input    the kernel's ``make_inputs`` at the size the graph binds,
-             seeded (the flow's own path, ``flow.run.kernel_inputs``),
+             seeded (the flow's own path, ``dfg.reference.kernel_inputs``),
              ``const``
     output   zeroed (the kernel's ``inout``), the array the DMA stores into,
              then ``<name>_golden``: the reference executor
@@ -48,7 +48,7 @@ from snax_forge.common import generated_header
 from snax_forge.design.point import DesignPoint
 from snax_forge.dfg.execute import execute
 from snax_forge.dfg.pad import pad_value, padded_shape
-from snax_forge.flow.run import FlowError, kernel_inputs, kernel_spec
+from snax_forge.dfg.reference import KernelError, kernel_inputs, kernel_spec
 from snax_forge.lower.layout import Layout, l2_bytes, over
 
 from .blocks import GenError, port_dtype
@@ -99,7 +99,7 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None) -> list
     try:
         spec = kernel_spec(kernel or graph.name, "--kernel" if kernel else "the graph's name")
         inputs = kernel_inputs(spec, graph, seed)
-    except FlowError as e:
+    except KernelError as e:
         raise GenError("gen.inputs", str(e)) from None
     golden = execute(graph, {k: np.copy(v) for k, v in inputs.items()})
     beat = point.platform.l2.beat_bits // 8

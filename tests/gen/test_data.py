@@ -11,7 +11,7 @@ import pytest
 
 from snax_forge.common import generated_header
 from snax_forge.design import DesignPoint
-from snax_forge.flow.run import kernel_inputs, kernel_spec
+from snax_forge.dfg.reference import kernel_inputs, kernel_spec
 from snax_forge.gen import GenError
 from snax_forge.gen import data as data_mod
 from snax_forge.gen.data import arrays, data_h, literal

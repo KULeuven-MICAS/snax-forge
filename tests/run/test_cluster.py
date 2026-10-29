@@ -5,7 +5,7 @@ import json
 import hjson
 import pytest
 
-from snax_forge.gen.gvsoc import csr_layout
+from snax_forge.gen.csrs import csr_layout
 from snax_forge.run import Cluster, RunError, cluster_from, load_cluster
 from snax_forge.run.cluster import csrs_of
 

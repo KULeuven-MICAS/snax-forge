@@ -74,6 +74,8 @@ from dataclasses import dataclass, field
 from itertools import pairwise
 from typing import Any
 
+from snax_forge.gen.csrs import mover_csr_count
+
 from .cluster import DMA, Cluster, Mover
 from .events import Line, RunError
 from .profile import Profile
@@ -188,8 +190,6 @@ def agu_nest(ptr: int, spatial_bounds: Sequence[int], spatial_strides: Sequence[
 
 def mover_csrs(cluster: Cluster) -> dict[str, int]:
     """Each mover's first CSR number (its pointer's low word), in the streamer's layout."""
-    from snax_forge.gen.gvsoc import mover_csr_count  # here, as cluster.py's csrs_of
-
     out, csr = {}, cluster.accelerator.csrs.streamer_first
     for m in cluster.accelerator.movers:
         out[m.name] = csr

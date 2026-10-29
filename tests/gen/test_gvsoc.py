@@ -17,6 +17,7 @@ from snax_forge.design import DesignError, DesignPoint, Platform
 from snax_forge.dfg import Graph
 from snax_forge.gen import DATAPATHS, ELEMENTWISE_OP, Accelerator, GenError, Manifest, generate
 from snax_forge.gen import __main__ as cli
+from snax_forge.gen import csrs as csrs_mod
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.blocks import Port, elementwise_lanes, tree_accumulate
 from snax_forge.gen.data import array_text, arrays
@@ -227,8 +228,8 @@ def test_streamer_csrs_are_snax_streamers(w4):
     streamer_channels give what the real ones give."""
     out, _ = w4
     template = parsed(out / "snax_forge_streamer.hjson")
-    assert gen_mod.streamer_csrs(template) == snax_streamer().nb_csrs(template) == 18
-    assert gen_mod.channels(template) == snax_cfg().streamer_channels(template) == 12
+    assert csrs_mod.streamer_csrs(template) == snax_streamer().nb_csrs(template) == 18
+    assert csrs_mod.channels(template) == snax_cfg().streamer_channels(template) == 12
 
 
 def test_every_generated_file_starts_with_the_one_header(w4):
@@ -646,16 +647,16 @@ def test_the_command(tmp_path, capsys, monkeypatch):
 def test_the_constants_are_snax_accelerators():
     text = (SUB / "snax" / "snax_accelerator.py").read_text()
     assert "SNAX_CSR_FIRST = 0x3C0" in text and "SNAX_ACC_CSR_LAST = 0x5FD" in text
-    assert (gen_mod.SNAX_CSR_FIRST, gen_mod.SNAX_ACC_CSR_LAST) == (0x3C0, 0x5FD)
+    assert (csrs_mod.SNAX_CSR_FIRST, csrs_mod.SNAX_ACC_CSR_LAST) == (0x3C0, 0x5FD)
 
 
 def test_the_accelerators_counter_may_land_on_0x5fd_not_past():
     """vecadd's streamer (18 CSRs) and a unit of 552 R/W CSRs: the counter on 0x5FD, the last
     CSR an accelerator may use; one more puts it on 0x5FE, a task queue of snax_cluster's."""
     k = 0x5FD - 0x3C0 - 18 - 4 + 1
-    assert gen_mod.csr_layout(TEMPLATE_W4, one_unit(k)).accelerator["ACC_RO_COUNTER"] == 0x5FD
+    assert csrs_mod.csr_layout(TEMPLATE_W4, one_unit(k)).accelerator["ACC_RO_COUNTER"] == 0x5FD
     with pytest.raises(GenError) as e:
-        gen_mod.csr_layout(TEMPLATE_W4, one_unit(k + 1))
+        csrs_mod.csr_layout(TEMPLATE_W4, one_unit(k + 1))
     assert e.value.code == "gen.csrs"
     assert "the accelerator's last CSR 1534 is past 1533" in str(e.value)
 

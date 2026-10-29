@@ -11,7 +11,7 @@ import pytest
 from snax_forge.dfg import DfgError
 from snax_forge.dfg.execute import execute
 from snax_forge.dfg.import_sdfg import import_kernel
-from snax_forge.flow.run import kernel_inputs, kernel_spec
+from snax_forge.dfg.reference import kernel_inputs, kernel_spec
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
 
 from .helpers import RECIPE

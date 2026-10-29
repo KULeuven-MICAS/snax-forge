@@ -42,7 +42,7 @@ and ``flow.log`` warn.
 
 **Goldens.** data.h's goldens are the reference executor's on the design
 point's graph; before writing them, gen checks that result against the
-kernel's reference on the same inputs (``reference_check``), so a graph
+kernel's reference on the same inputs (``dfg.reference.reference_check``), so a graph
 that computes something else stops there (D108).
 
 **Check** (C§7). The program checks itself (C§16's ``main.c``): its exit
@@ -109,7 +109,6 @@ time.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 import os
 import re
@@ -123,13 +122,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
-import numpy as np
-
 from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
-from snax_forge.dfg.execute import against_reference, execute
+from snax_forge.dfg.reference import KernelError, kernel_spec, reference_check
+from snax_forge.gen import GenError, generate
 from snax_forge.lower import CError, LowerError, TaskList, task_list
 from snax_forge.lower.tasks import Configure
 from snax_forge.run import (
@@ -147,7 +145,6 @@ from snax_forge.run.elf import l2_symbols, read_symbols
 from snax_forge.run.outputs import EVENTS_FILE
 from snax_forge.run.sources import gvsoc_options, sources_for
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, write_steps
-from snax_forge.sdfg.loader import load as load_kernel
 
 if TYPE_CHECKING:  # gen imports the flow's kernel helpers (gen/data.py)
     from snax_forge.gen import Manifest
@@ -275,61 +272,6 @@ def bound_name(
     if p.parent.name == "sandbox" and base != p.stem:  # a step in a flow's own sandbox/
         base = p.parent.parent.name
     return "_".join([base, *(_name_part(k, v) for k, v in [*platform_sets, *memory_sets])])
-
-
-def kernel_spec(kernel: str, why: str) -> Any:
-    """The kernel's spec; an unknown name is a FlowError that says where the name came from."""
-    try:
-        return load_kernel(kernel)
-    except KeyError as e:
-        raise FlowError(f"kernel ({why}): {e.args[0]}") from None
-
-
-def kernel_inputs(spec: Any, graph: Graph, seed: int) -> dict[str, np.ndarray]:
-    """The kernel's ``make_inputs`` at every size the graph binds: each bound symbol by its
-    lower-case name (``M`` gives ``m=``, ``N`` gives ``n=``); then the arrays' shapes must give
-    the graph's values (``spec.bind_symbols``). Each array is cast to its container's dtype
-    (``astype``, wrapping: a recipe's ``dtypes``, D113)."""
-    params = inspect.signature(spec.make_inputs).parameters
-    kw = {}
-    for sym, v in graph.bound_symbols.items():
-        if sym.lower() not in params:
-            raise FlowError(
-                f"inputs: the graph binds {sym} = {v}, but {spec.name}'s make_inputs has no "
-                f"parameter {sym.lower()!r} (it takes {list(params)})"
-            )
-        kw[sym.lower()] = v
-    inputs = spec.make_inputs(np.random.default_rng(seed), **kw)
-    got = spec.bind_symbols(inputs)
-    for sym, v in graph.bound_symbols.items():
-        if got.get(sym) != v:
-            raise FlowError(
-                f"inputs: {spec.name}'s make_inputs({kw}) gives {sym} = {got.get(sym)}, "
-                f"the graph binds {v}"
-            )
-    for c, arr in inputs.items():
-        cont = graph.containers.get(c)
-        if cont is None:
-            raise FlowError(
-                f"inputs: {spec.name}'s make_inputs gives {c!r}, the graph has no such container"
-            )
-        if str(np.asarray(arr).dtype) != cont.dtype:
-            inputs[c] = np.asarray(arr).astype(cont.dtype)
-    return inputs
-
-
-def reference_check(spec: Any, graph: Graph, seed: int) -> None:
-    """The reference executor on ``graph`` against the kernel's reference, on the kernel's
-    inputs: data.h's goldens are the first, so a graph that computes something else (one
-    edited by hand, D108) would pass its own check; a FlowError naming each output that
-    differs."""
-    pairs = against_reference(spec, kernel_inputs(spec, graph, seed), lambda x: execute(graph, x))
-    wrong = [f"{c} in {int(np.count_nonzero(got != ref))} of {ref.size} elements"
-             for c, (got, ref) in pairs.items() if not np.array_equal(got, ref)]  # fmt: skip
-    if wrong:
-        raise FlowError(f"gen: the graph's reference executor differs from the {spec.name} "
-                        f"reference: {', '.join(wrong)}; the goldens would not be the kernel's "
-                        "(D108)")  # fmt: skip
 
 
 def checks_that_ran() -> dict[str, list[str]]:
@@ -746,7 +688,6 @@ def _from_graph(
 ) -> Flow:
     """The stages from a bound graph to the check, shared by ``run_flow`` and ``run_bound``;
     each stage's seconds go to ``times``. ``kernel`` None means the graph's name."""
-    from snax_forge.gen import GenError, generate  # gen imports this module (gen/data.py)
 
     # SNAX-DESIGN
     with _timed(times, "design"):
@@ -768,8 +709,11 @@ def _from_graph(
 
     # gen: the hjson files, the headers, data.h and main.c, named from the flow's folder
     with _timed(times, "gen"):
-        spec = kernel_spec(kernel or point.graph.name, kernel_why)
-        reference_check(spec, point.graph, seed)
+        try:
+            spec = kernel_spec(kernel or point.graph.name, kernel_why)
+            reference_check(spec, point.graph, seed)
+        except KernelError as e:
+            raise FlowError(str(e)) from None
         gen = out / "gen"
         try:
             manifest = generate(ddir / "design_point.json", gen, ROOT, named_from=out,

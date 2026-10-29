@@ -33,6 +33,9 @@ import hjson
 
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
+from snax_forge.gen.accelerator import Accelerator as Description
+from snax_forge.gen.blocks import GenError
+from snax_forge.gen.csrs import csr_layout
 
 from .events import RunError
 
@@ -220,11 +223,6 @@ def _get(d: Any, path: str, what: str) -> Any:
 def csrs_of(streamer: dict[str, Any], description: dict[str, Any], instance: str) -> Csrs:
     """The CSR numbers of a streamer template and the slot's accelerator.json, ``instance``'s
     group's (module doc)."""
-    # here: gen's data.h imports the flow, which imports run
-    from snax_forge.gen import Accelerator as Description
-    from snax_forge.gen import GenError
-    from snax_forge.gen.gvsoc import csr_layout
-
     try:
         acc = Description.from_dict(description)
         c = csr_layout(streamer, acc)
