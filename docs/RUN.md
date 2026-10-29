@@ -248,6 +248,8 @@ puts one accelerator in its one slot, so two kinds of design point stop at
 `recipes/dot_1.json` is dot with `encapsulate` as its last step: one
 accelerator `dot` of the groups `mul` and `sum`, a task each (D148), which
 runs and checks itself (`forge counter mult_mul`, `forge counter sum_sum`).
+`examples/dot/` runs it and dot 2 to dot 6, one group of linked units each,
+with their counters.
 
 ## 5. The same path by hand
 
@@ -293,6 +295,7 @@ the datapath catalogue, then elaborates it through `hw/chisel/`'s `Emit
     wrote out/rtl/vecadd/accelerator.json: snax_forge_shell_wrapper, ElementwiseLanes
     wrote out/rtl/vecadd/sv/ElementwiseAlu_w64_add.sv
     wrote out/rtl/vecadd/sv/ElementwiseLanes_i64xi64_i64_i64_n4_add.sv
+    wrote out/rtl/vecadd/sv/snax_forge_acc.sv
     wrote out/rtl/vecadd/sv/snax_forge_acc_ctrl.sv
     wrote out/rtl/vecadd/sv/snax_forge_csr.sv
     wrote out/rtl/vecadd/sv/snax_forge_ctrl.sv
@@ -304,7 +307,8 @@ the datapath catalogue, then elaborates it through `hw/chisel/`'s `Emit
 `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager`, plus the
 group `acc`'s `acc_busy_o` and `acc_done_o`, and carries its own CSRs
 (`snax_forge_csr`, D130); `snax_forge_acc_ctrl` is the group's control
-unit (`GroupCtrl`). `hw/chisel/README.md` has the specs that check it.
+unit (`GroupCtrl`) and `snax_forge_acc` the unit's datapath, inside
+`snax_forge_datapath`. `hw/chisel/README.md` has the specs that check it.
 
 ## 7. Bundle for snax_cluster
 

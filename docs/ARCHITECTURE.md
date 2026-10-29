@@ -260,7 +260,7 @@ latency and II.
 SNAX-GVSoC: the design point is generated, built and run, and the program
 checks itself; everything goes to `out/flow/<name>/`, with `flow.log`. The
 manual loop is flow, reports and viewer, then a changed `--set`;
-`examples/loop1/` walks it, and `examples/dot/` is parked until M13.
+`examples/loop1/` walks it, and `examples/dot/` runs dot's six recipes.
 
 **Profile and trace** (D137, `run/`; C§7): SNAX-GVSoC's events converted,
 the trace at level `task`, `beat`, `stall` or `finegrained` (none at `off`),
@@ -317,7 +317,7 @@ from here (D116, D141; `docs/STATUS.md` has the tasks):
    |---|---|
    | B0 flow pieces (`done`) | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
    | B1 one description (`done`) | `accelerator.json` per design point (C§17, D145), read by Emit, the catalogue check and SNAX-GVSoC; groups with their own START, JOBS, STATUS, COUNTER and pins (D146); each block a pure datapath under one nest controller per group, three modules (D147); groups in SNAX-DFG and `encapsulate`, so dot variant 1 is one accelerator of two groups (D148) |
-   | B1x links | dot 2–6 and matvec 1–6 on one description with links (D112); the control unit per group (D147); `Mac`, `SerialAccumulate` and `LinkBuffer` (D149); `split_reduce`, `fuse_map` and `link` (D150); on SNAX-GVSoC, and checked locally on snax_cluster |
+   | B1x links (`done`) | dot 2–6 and matvec 1–6 on one description with links (D112); the control unit per group (D147); `Mac`, `SerialAccumulate` and `LinkBuffer` (D149); `split_reduce`, `fuse_map` and `link` (D150); on SNAX-GVSoC, and checked locally on snax_cluster |
    | clean-up | snax_cluster's CI time (agreed with the cluster's maintainers first), and whatever B1x leaves |
    | VIEW2 | the interactive SNAX-DFG viewer: select a part of the graph, apply a transform from a side list, a step history with undo, save a recipe, a first-order profile |
    | SYN1 | synthesis of the basic blocks and kernels in KULeuven-MICAS/snax-forge-experiments |

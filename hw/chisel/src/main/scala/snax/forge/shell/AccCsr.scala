@@ -22,9 +22,10 @@ class CsrRsp extends Bundle {
   * from the groups' controllers (`ro`).
   *
   *   - A write to a read-write CSR is taken when the request fires and reads back as written (32 bits).
-  *   - A write to a group's START with bit 0 set fires that group's `starts(g)` with its JOBS and JOB_BEATS as they
-  *     stand (before the write, which is to START alone; JOB_BEATS 1 for a group without one), and the request is ready
-  *     only when `starts(g)` is: a start while the group is busy is held, `req.ready` low, until it is idle.
+  *   - A write to a group's START with bit 0 set fires that group's `starts(g)` with its JOBS and each JOB_BEATS in
+  *     unit order as they stand (C§17: before the write, which is to START alone; JOBS and 1 for a group without a
+  *     JOB_BEATS), and the request is ready only when `starts(g)` is: a start while the group is busy is held,
+  *     `req.ready` low, until it is idle.
   *   - A read is answered in the cycle it fires, from the registers or the read-only inputs in that cycle; when `rsp`
   *     is not ready the answer is kept and `req.ready` stays low until it leaves.
   *   - Writes get no response. A read past the last CSR answers 0 and a write to a read-only CSR or past the last is
@@ -39,7 +40,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   val io = IO(new Bundle {
     val req    = Flipped(Decoupled(new CsrReq))
     val rsp    = Decoupled(new CsrRsp)
-    val starts = Vec(groups.size, Decoupled(new NestConfig))
+    val starts = MixedVec(groups.map(g => Decoupled(new NestConfig((g.jobBeats.size - 1) max 0))))
     val status = Input(Vec(groups.size, UInt(32.W)))
     val count  = Input(Vec(groups.size, UInt(32.W)))
   })
@@ -60,7 +61,8 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
     val hit = io.req.valid && io.req.bits.write && io.req.bits.addr === at.U && io.req.bits.data(0)
     io.starts(i).valid         := writeReg && hit
     io.starts(i).bits.jobs     := regs(g.csr("JOBS").get.offset)
-    io.starts(i).bits.jobBeats := g.csr("JOB_BEATS").map(c => regs(c.offset)).getOrElse(1.U)
+    io.starts(i).bits.jobBeats := g.jobBeats.headOption.map(c => regs(c.offset)).getOrElse(1.U)
+    io.starts(i).bits.beats.foreach(_.zip(g.jobBeats.drop(1)).foreach { case (b, c) => b := regs(c.offset) })
     hit                        -> io.starts(i).ready
   }
 

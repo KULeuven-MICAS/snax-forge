@@ -1,0 +1,35 @@
+{
+ "design_point": "out/design/matvec_5/design_point.json",
+ "ports": [
+  {
+   "port": "a",
+   "array": "A",
+   "lanes": 4,
+   "beats": 8,
+   "values": [701, 273, 22, -461, -385, -919, -850, -967, -650, 626, 298, 825, 7, 213, 941, 458, 264, 87, 119, 870, -446, 631, 341, -995, -212, 714, 108, -933, 529, 459, 693, -649]
+  },
+  {
+   "port": "b",
+   "array": "p",
+   "lanes": 4,
+   "beats": 8,
+   "values": [-822, 726, -956, 82, -840, -401, -38, -155, -194, -944, -990, -752, -984, 341, 51, 294]
+  },
+  {
+   "port": "out",
+   "array": "q_golden",
+   "lanes": 1,
+   "beats": 2,
+   "values": [-694630, -491066, 0, 0, 0, 0, 0, 0]
+  }
+ ],
+ "tasks": [
+  {
+   "name": "mult_matvec",
+   "csrs": {"JOBS": 2, "JOB_BEATS": 4},
+   "firings": 8,
+   "counter": 16,
+   "working": "The group's COUNTER counts its busy cycles. Mac -> SerialAccumulate, a link of depth 0, inputs always valid and the output always ready: C\u00a717's Cycles C5 = J(T + W - 1) + 2 at J 2, T 4, W 4"
+  }
+ ]
+}

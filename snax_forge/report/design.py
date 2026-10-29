@@ -231,11 +231,30 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     return notes
 
 
+def members(file: dict[str, Any], name: str) -> list[dict[str, Any]]:
+    """The slot's accelerator.json units the run's unit ``name`` stands for: a linked group's
+    units (SNAX-GVSoC's one component, named after the group), else the unit itself."""
+    for g in file["groups"]:
+        if g["name"] == name and len(g["units"]) > 1:
+            return list(g["units"])
+    return [next(u for g in file["groups"] for u in g["units"] if u["name"] == name)]
+
+
 def unit_view(file: dict[str, Any], instance: str) -> tuple[str, str, int, int]:
     """The kind, the control, the latency and the II of ``instance`` in the slot's
-    accelerator.json: its unit's datapath under the nest controller."""
-    u = next(u for g in file["groups"] for u in g["units"] if u["name"] == instance)
-    return u["datapath"], "nest controller", u["timing"]["latency"], u["timing"]["ii"]
+    accelerator.json: its unit's datapath under the nest controller, or a linked group's
+    datapaths in chain order, each link a wire or a buffer of its depth, under the group's
+    control unit (the latency the chain's)."""
+    units = members(file, instance)
+    if len(units) == 1:
+        (u,) = units
+        return u["datapath"], "nest controller", u["timing"]["latency"], u["timing"]["ii"]
+    (g,) = (g for g in file["groups"] if g["name"] == instance)
+    kind = units[0]["datapath"]
+    for link, u in zip(g["links"], units[1:], strict=True):
+        kind += f" → {u['datapath']}" if not link["depth"] else (
+            f" →[{link['depth']}] {u['datapath']}")  # fmt: skip
+    return kind, "group control unit", sum(u["timing"]["latency"] for u in units), 1
 
 
 def build_design(
@@ -290,13 +309,15 @@ def build_design(
 
     accels = []
     for u in a.units:
-        inst = instances.get(u.name)
-        kind, _, latency, ii = views[u.name]
-        accels.append(AccelRow(u.name, kind, inst.brm.name if inst else None,
-                               inst.implementation if inst else None,
-                               dict(inst.params) if inst else {}, latency, ii,
-                               [f"{m.port} ← {m.name}" for m in a.movers
-                                if point.streamers[m.name].instance == u.name], u.group))  # fmt: skip
+        for m in members(a.unit, u.name):  # a linked group: a row per unit, in chain order
+            inst = instances.get(m["name"])
+            accels.append(AccelRow(m["name"], m["datapath"], inst.brm.name if inst else None,
+                                   inst.implementation if inst else None,
+                                   dict(inst.params) if inst else {}, m["timing"]["latency"],
+                                   m["timing"]["ii"],
+                                   [f"{x.port} ← {x.name}" for x in a.movers
+                                    if point.streamers[x.name].instance == m["name"]],
+                                   u.group))  # fmt: skip
     streamers = [
         StreamerRow(m.name, point.streamers[m.name].instance, m.port,
                     "write" if m.write else "read",

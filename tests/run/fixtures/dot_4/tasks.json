@@ -1,0 +1,100 @@
+{
+ "name": "dot_4",
+ "steps": [
+  {
+   "op": "configure",
+   "task_name": "load_A",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"symbol": "A", "bounds": [64], "strides": [64]},
+    "dst": {"base": 268435456, "bounds": [64], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_A"]},
+  {
+   "op": "configure",
+   "task_name": "load_B",
+   "type": "dma",
+   "component": "dma",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l2_to_l1",
+    "src": {"symbol": "B", "bounds": [64], "strides": [64]},
+    "dst": {"base": 268439552, "bounds": [64], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["load_B"]},
+  {
+   "op": "configure",
+   "task_name": "mult_mac_a",
+   "type": "streamer",
+   "component": "mac_a",
+   "after": ["load_A"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268435456,
+    "temporal_bounds": [128],
+    "temporal_strides": [32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mult_mac_b",
+   "type": "streamer",
+   "component": "mac_b",
+   "after": ["load_B"],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268439552,
+    "temporal_bounds": [128],
+    "temporal_strides": [32],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "sum_final_sum_out",
+   "type": "streamer",
+   "component": "sum_out",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {
+    "base": 268443648,
+    "temporal_bounds": [1],
+    "temporal_strides": [0],
+    "spatial_strides": [8]
+   }
+  },
+  {
+   "op": "configure",
+   "task_name": "mult_dot",
+   "type": "accel",
+   "component": "dot",
+   "after": [],
+   "wait_mode": "poll",
+   "values": {"mac": {"n": 128, "T": 128}, "sum": {"n": 1, "T": 1}}
+  },
+  {"op": "start", "tasks": ["mult_mac_a", "mult_mac_b", "sum_final_sum_out", "mult_dot"]},
+  {
+   "op": "configure",
+   "task_name": "store_out",
+   "type": "dma",
+   "component": "dma",
+   "after": ["sum_final_sum_out"],
+   "wait_mode": "poll",
+   "values": {
+    "direction": "l1_to_l2",
+    "src": {"base": 268443648, "bounds": [1], "strides": [64]},
+    "dst": {"symbol": "out", "bounds": [1], "strides": [64]}
+   }
+  },
+  {"op": "start", "tasks": ["store_out"]},
+  {"op": "sync", "task": "store_out", "mode": "poll"}
+ ]
+}

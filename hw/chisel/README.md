@@ -63,18 +63,22 @@ module, with `DIR/emitted.json`:
 - `<tag>_csr` (`AccCsr`): the file's CSRs by offset, snax_cluster's
   ReqRspManager protocol (D130) as the core reaches it after
   `snax_csr_mux_demux` with snax_cluster's manager off; a START write with
-  bit 0 set is its group's config (JOBS, JOB_BEATS), held while the group
-  is busy; STATUS and COUNTER read from the controllers;
+  bit 0 set is its group's start (JOBS, then each JOB_BEATS in unit order,
+  or JOBS and 1), held while the group is busy; STATUS and COUNTER read from the controllers;
 - `<tag>_ctrl` (`AccCtrl`): per group `<tag>_<group>_ctrl` (`GroupCtrl`),
   generated from the group's units and links: the start, the empty run,
   STATUS's sticky done, COUNTER and the busy and done pins around its control
   model `GroupRule` (snax-gvsoc's SnaxGroupRule, D147), built inside the
   module with each unit's signals named after the unit;
-- `<tag>_datapath` (`AccDatapath`): the units' datapaths, data and the
-  controller's pins only.
+- `<tag>_datapath` (`AccDatapath`): per unit its datapath in a module
+  `<tag>_<unit>`, per buffer a `LinkBuffer` in a module `<tag>_<link>`,
+  wired by the links (a wire, or through the buffer); data and the control
+  units' pins only.
 
-The wrapper splits each outer Decoupled port: its data to the datapath,
-its valid and ready to the controller. `pixi run gen-rtl DESIGN_POINT` does
+Only the outer ports reach the wrapper, which splits each Decoupled port:
+its data to its unit's datapath, its valid and ready to its group's control
+unit. `HierarchySpec` checks the emitted hierarchy against `bundle.json`'s
+`modules` (C§18) on every fixture. `pixi run gen-rtl DESIGN_POINT` does
 the check and the elaboration (`docs/RUN.md` §6). The fixtures in
 `src/test/resources/rtl/<design>/` (`accelerator.json`, the streamer hjson,
 `vectors.json`) come from the Python side, which checks them byte for byte
@@ -84,12 +88,16 @@ the check and the elaboration (`docs/RUN.md` §6). The fixtures in
     pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_tree_w8
     pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
 
-(the others from their recipe as it is, named after it). The specs on
+(the others from their recipe as it is, named after it; dot_2 to dot_6 with
+`--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`). The specs on
 them: `ShellPortsSpec` (each wrapper's ports are the template's for its
 streamer hjson, plus the group pins, and Emit writes the three modules),
 `ShellCasesSpec` (vecadd's and vsum's, through snax-gvsoc's shell cases,
 below), `ShellEndToEndSpec` (the CSR writes of `main.c`, an always-ready
-streamer: the goldens and the counter of `vectors.json`) and
+streamer: the goldens and the counter of `vectors.json`; each linked
+variant, dot 2–6 and matvec 4–6, at N 8 and 16 on random data against
+NumPy's results and the cycles of snax-gvsoc's matching group case, and
+matvec 4–6 at int32 through the wrapping product q = (−2147478991, 4)) and
 `ShellRandomSpec`. `TwoGroupsSpec` elaborates `groups/dot1/` (C§17's dot 1:
 groups `mul` and `sum`) and runs each group on its own.
 
@@ -147,7 +155,7 @@ from the documented behaviour, never from the Chisel code:
 | `SerialAccumulateSpec` | 1, 2, 4, 8 lanes, in and out types, data, `read`, `lane`, `first` | acc ← (first ∧ lane 0) ? x_lane : acc + x_lane (C§17) |
 | `LinkBufferSpec` | depth 1, 2, 4, lanes, types, data, loads and takes as a ring | slot wslot loaded, slot rslot out (C§17) |
 | `GroupCtrlSpec` | chains of 2 and 3 units, L ∈ {0, 1, 2}, II ∈ {1, 2}, span ∈ {1, 2, 4}, T ∈ {1..4} fixed or from the start, 0–2 outer inputs, depth ∈ {0, 1, 2}, J ∈ {0, 1, 3}, T 0, starts while busy, input valids, output stalls | `GroupModel`, SnaxGroupRule (`snax_group.hpp`) |
-| `AccCsrRandomSpec` | 1 to 3 groups, folds or not; reads, writes and starts in and out of range, `rsp` and each start's ready, STATUS and COUNTER | the protocol in `AccCsr`'s docstring |
+| `AccCsrRandomSpec` | 1 to 3 groups of 0, 1 or 2 folds (a JOB_BEATS each); reads, writes and starts in and out of range, `rsp` and each start's ready, STATUS and COUNTER | the protocol in `AccCsr`'s docstring |
 | `ShellRandomSpec` | per fixture: J, T, empty runs, data at its types, streamer gaps and stalls, polled or held starts | the datapath models; STATUS and COUNTER as C§17 states them |
 | `FifoSlicerSpec`, `FifoPackerSpec` | types, words, lanes, data, input gaps, output stalls; the slicer into the packer | the element order of D142 (the docstrings) |
 
