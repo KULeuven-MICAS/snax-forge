@@ -201,7 +201,7 @@ function build(detail, first) {
   items.push(place(l2Pair.el, dcol + 1, 2), place(l2.el, dcol + 2, 2));
 
   // One line per unit of accelerator.json, with its group
-  const facts = accelUnits(acc.unit).map((x) => h("div", { class: "cl-line muted" }, unitFacts(x)));
+  const facts = accelUnits(acc.description).map((x) => h("div", { class: "cl-line muted" }, unitFacts(x)));
   const unit = block(acc.name, "accelerator");
   const unitLines = { task: h("div", { class: "cl-line" }), fire: h("div", { class: "cl-line" }), push: h("div", { class: "cl-line" }) };
   unit.body.append(...facts, unitLines.task, unitLines.fire, unitLines.push);

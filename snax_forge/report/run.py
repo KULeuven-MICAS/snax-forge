@@ -307,7 +307,7 @@ def build_run(rv: api.RunView) -> RunReport:
         span = sum(r.cycles for r in task_rows or [] if r.block == name) or None
         dones = tr.of_kind("done", name) if tr is not None else []
         accels.append(AccelRun(
-            name, a.firings, unit_view(acc.unit, name)[3], achieved_ii(dones), a.utilisation, span,
+            name, a.firings, unit_view(acc.description, name)[3], achieved_ii(dones), a.utilisation, span,
             busy / span if span else None, a.cycles["stall_in"], a.cycles["stall_out"],
             a.cycles["flush"], group.get(name),
         ))  # fmt: skip

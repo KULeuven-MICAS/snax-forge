@@ -294,7 +294,7 @@ def build_design(
 
     a = cluster.accelerator
     several = len(a.units) > 1
-    views = {u.name: unit_view(a.unit, u.name) for u in a.units}
+    views = {u.name: unit_view(a.description, u.name) for u in a.units}
     components = [ComponentRow(u.name, "accelerator",
                                f"{views[u.name][0]} on core{a.core}, {views[u.name][1]}, slot "
                                f"{a.slot}" + (f", group {u.group} of {a.name}" if several else ""))
@@ -309,7 +309,7 @@ def build_design(
 
     accels = []
     for u in a.units:
-        for m in members(a.unit, u.name):  # a linked group: a row per unit, in chain order
+        for m in members(a.description, u.name):  # a linked group: a row per unit, in chain order
             inst = instances.get(m["name"])
             accels.append(AccelRow(m["name"], m["datapath"], inst.brm.name if inst else None,
                                    inst.implementation if inst else None,

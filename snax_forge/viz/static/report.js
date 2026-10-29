@@ -77,7 +77,7 @@ function accelSection(detail) {
       const a = profile.accelerators[n];
       return h("div", { class: "block" },
         h("h3", {}, n, h("span", { class: "kind" }, `on core${acc.core}`)),
-        unitsOf(acc.unit, n).map((x) => h("p", { class: "note" }, unitFacts(x))),
+        unitsOf(acc.description, n).map((x) => h("p", { class: "note" }, unitFacts(x))),
         h("div", { class: "util" },
           h("div", { class: "meter" }, h("span", { class: "g-busy", style: { width: `${100 * a.utilisation}%` } })),
           h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.firings)} firings`),

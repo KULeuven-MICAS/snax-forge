@@ -473,7 +473,7 @@ def convert(
 ) -> tuple[Profile, Trace | None]:
     """The profile and, above ``off``, the trace of a run (module doc)."""
     if at_least(level, "beat") and (len(cluster.accelerator.units) != 1
-                                    or linked(cluster.accelerator.unit)):  # fmt: skip
+                                    or linked(cluster.accelerator.description)):  # fmt: skip
         raise RunError("convert.level", f"trace {level}: the beat lines of an accelerator of "
                        f"{len(cluster.accelerator.units)} groups or of a linked group are not "
                        "read yet (open item 96); task and off are")  # fmt: skip
