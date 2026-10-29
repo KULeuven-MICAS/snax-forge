@@ -18,6 +18,7 @@ Rules (D117):
   text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at
   `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
+- Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
 - A new decision gets the next number at the end of this file, with its area tag. Next free
   number: **D151**.
 
@@ -216,9 +217,7 @@ OpenGeMM), its exact products by an explicit cast (D143); float later. → PAPER
 Snitch core runs the real program, so control cost is measured, not declared, and checked against
 snax_cluster's RTL (D123). M14 tried the model side first, then snax_cluster's.
 
-**D117** · docs — The documents stay short: one fact in one place, a decision only for a choice
-someone may want to reverse, each entry in its current form in at most three lines, and the done
-tasks out of STATUS at every milestone close. The rules are at the top of this file.
+**D117** · docs — The documents stay short: one fact in one place, a decision only for a choice someone may want to reverse, each entry at most three lines, done tasks out of STATUS at each milestone close, and prose one line per paragraph so a diff shows only what changed. Rules at the top of this file.
 
 **D118** · scope — One development image, `ghcr.io/kuleuven-micas/snax-forge:main` from
 `container/`, for snax-forge, snax-gvsoc and the programs built from snax_cluster: the image holds

@@ -75,3 +75,4 @@ want to reverse, implementation details in module docstrings and tests.
   behaviour (random data and Decoupled stalls; `hw/chisel/README.md`, Tests).
 - Walk-throughs live in `examples/<name>/README.md`; a test checks every number one states, and
   their outputs are not checked in.
+- Markdown prose is one line per paragraph, list item and table row, never hard-wrapped (D117; `util/md_reflow.py`, checked by `pixi run lint`); headings, code blocks, tables, display maths and HTML stay as they are, and code comments and docstrings keep the formatter's line length. Code that writes Markdown prose (the reports, generated READMEs) follows the same rule.
