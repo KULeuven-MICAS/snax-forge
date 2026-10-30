@@ -442,7 +442,7 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
             users[m.data]["readers"].append(n.id)
         for m in n.outputs.values():
             users[m.data]["writers"].append(n.id)
-        out[f"node:{n.id}"] = _node_details(n, est)
+        out[f"node:{n.id}"] = _node_details(n)
     for c, cont in g.containers.items():
         placed = est.containers.get(c) if est is not None else None
         try:
@@ -493,7 +493,7 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
     return out
 
 
-def _node_details(n: Node, est: Any) -> dict[str, Any]:
+def _node_details(n: Node) -> dict[str, Any]:
     a = n.attrs
     if n.kind == "map":
         keys = ("loop.kind", "loop.split", "loop.fused", "loop.split_reduce")

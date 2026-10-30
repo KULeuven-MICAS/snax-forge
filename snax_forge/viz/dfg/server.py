@@ -45,8 +45,8 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
     POST /api/export                ``{k}``: Session.export, the file's ``path``
 
 Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
-``step 3  tag_map add_map_s kind=spatial  ok · 34 ms · changed add_map_s · C 64 → 16``, C the
-accelerator cycles before and after). A refusal is a 400 with ``{code, message}`` (and
+``step 2  tag_map add_map_s kind=spatial  ok · 5 ms · changed add_map_s · C 0 → 0 · not mapped
+64 → 16``, C the accelerator cycles before and after, the not-mapped count where it changes). A refusal is a 400 with ``{code, message}`` (and
 ``problems`` for a save, ``question`` for ``session.drop``); a route before a session is open is
 a 400 ``session.none``; an unknown route or step is a 404, as in view mode. ``GET /api/mode``
 gives the default ``platform`` too, in edit mode.
@@ -83,7 +83,7 @@ def _label(name: str) -> str:
 
 class EditState:
     """Edit mode's state: the session (None until one is opened), the roots and the default
-    platform. ``reload`` and ``summaries`` make it stand where the view mode's GraphSet does."""
+    platform; it stands where view mode's GraphSet does (``server.loaded``)."""
 
     def __init__(self, roots: Any = None, platform: str | None = None) -> None:
         from snax_forge.sandbox.session import PLATFORM, Roots
@@ -93,12 +93,6 @@ class EditState:
         self.session: Any = None
         self.lock = threading.Lock()  # opening a session; the session has its own
         self._kernels: list[dict[str, Any]] | None = None
-
-    def summaries(self) -> list[dict[str, Any]]:
-        return [] if self.session is None else [{"name": self.session.name}]
-
-    def reload(self) -> list[str]:
-        return [x["name"] for x in self.summaries()]
 
     def kernels(self) -> list[dict[str, Any]]:
         """Every staged kernel and its symbols (the names in its descriptors' shapes), once."""
@@ -341,8 +335,6 @@ class DfgHandler(Handler):
     def _edit_post(self, state: EditState, parts: list[Any], body: dict[str, Any]) -> Any:
         if parts == ["session"]:
             return session_summary(state.open(body))
-        if parts == ["reload"]:
-            return {"graphs": state.reload()}
         if len(parts) != 1 or parts[0] not in ("apply", "cursor", "params", "save", "export"):
             return None
         s = state.need()

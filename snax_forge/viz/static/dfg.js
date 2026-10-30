@@ -426,7 +426,7 @@ async function draw() {
   status("Loading…");
   try {
     const shown = await view(state.k);
-    if (state.sel && !["node", "container", "group", "accelerator", "edge"].some((kind) => shown.details && shown.details[`${kind}:${state.sel}`])) {
+    if (state.sel && !KINDS.some((kind) => shown.details && shown.details[`${kind}:${state.sel}`])) {
       state.sel = null; // kept across steps only where it exists
       state.t = null;
       writeHash();

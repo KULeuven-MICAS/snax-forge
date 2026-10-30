@@ -16,7 +16,7 @@
   <script type="module" src="dfg.js"></script>
 </head>
 <body class="dfg">
-  <header id="top" class="dfg-top">
+  <header class="dfg-top">
     <h1 id="title">SNAX-FORGE DFG viewer</h1>
     <span id="session-name" class="dfg-session" data-edit hidden></span>
     <span id="params" class="dfg-params" data-edit hidden></span>
@@ -82,7 +82,7 @@
       <label>Name <input id="save-name" required pattern="[A-Za-z_][A-Za-z0-9_]*" autocomplete="off"></label>
       <div id="save-answer"></div>
       <div class="dfg-dialog-buttons">
-        <button id="save-go" type="submit" value="save">Save</button>
+        <button type="submit" value="save">Save</button>
         <button id="save-force" type="button" hidden>Save anyway</button>
         <button id="save-close" type="button">Close</button>
       </div>

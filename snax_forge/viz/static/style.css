@@ -103,7 +103,6 @@ i.key { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px
 .rows { display: grid; gap: 0.55rem; }
 /* the bar takes the width the counts leave (VIEW1): the counts column stops at 34rem */
 .row { display: grid; grid-template-columns: 9rem minmax(12rem, 1fr) minmax(16rem, 34rem); gap: 0.4rem 1rem; align-items: center; }
-.row.single { grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 34rem); margin-top: 0.4rem; }
 .who b { display: block; }
 .who .kind { margin: 0; }
 .stack { display: flex; height: 1.4rem; border-radius: 3px; overflow: hidden; background: var(--rule); }
@@ -113,12 +112,8 @@ i.key { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px
 .counts b { color: var(--ink); font-weight: 600; }
 .counts .zero { opacity: 0.55; }
 @media (max-width: 760px) {
-  .row, .row.single { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr; }
 }
-
-/* column key under a section heading */
-.col-key { list-style: none; margin: 0 0 0.9rem; padding: 0; color: var(--muted); font-size: 0.9em; }
-.col-key b { color: var(--ink); font-weight: 600; }
 
 /* accelerators */
 .util { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
@@ -134,12 +129,6 @@ tr.hot td, td.hot, th.hot { background: var(--hot-bg); }
 tr.hot td:first-child { box-shadow: inset 3px 0 var(--mem); }
 td.zero { color: var(--muted); opacity: 0.6; }
 table.banks tbody th { font-weight: 400; color: var(--muted); }
-
-/* FIFO histogram */
-.hist { display: flex; align-items: flex-end; gap: 3px; height: 2.4rem; }
-.hist span { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: 1.2rem; height: 100%; }
-.hist i { display: block; width: 100%; min-height: 1px; background: var(--flow); border-radius: 1px 1px 0 0; }
-.hist small { font-size: 0.7em; color: var(--muted); line-height: 1; margin-top: 2px; }
 
 /* bank strip: height = grants; marked banks had conflicts or stalls */
 .strip { display: flex; gap: 3px; align-items: flex-end; padding-bottom: 0.3rem; margin-bottom: 0.6rem; }
@@ -192,7 +181,6 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .s-req { fill: var(--req); }
 .s-resp { fill: var(--busy); }
 .s-mem { fill: var(--mem); }
-.s-mem.wider { fill: var(--mem); fill-opacity: 0.55; }
 .s-flow { fill: var(--flow); }
 .s-command { fill: var(--command); }
 .s-wait { fill: var(--wait); }
@@ -321,7 +309,6 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 .cl-sub { color: var(--muted); font-size: 0.8em; }
 
 /* port chips: teal = request accepted, red = stalled, green underline = read data back */
-.cl-ports { display: flex; flex-wrap: wrap; gap: 3px; }
 .cl-port { padding: 0 0.3rem; border: 1px solid var(--rule); border-radius: 3px; color: var(--muted); font-size: 0.82em; text-align: center; transition: background-color 0.12s, border-color 0.12s; }
 .cl-port.req { background: var(--req); border-color: var(--req); color: #fff; }
 .cl-port.bad { background: var(--mem); border-color: var(--mem); color: #fff; }
@@ -336,9 +323,9 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 .cl-lanes .slots.bar { border: 1px solid var(--rule); border-radius: 2px; background: var(--bg); }
 .cl-lanes .fill { display: block; background: var(--fifo); transition: height 0.12s; }
 .cl-lanes .count { text-align: center; font-size: 0.75em; color: var(--muted); line-height: 1.1; }
-.cl-lanes .slots.unknown .slot, .cl-lanes .slots.untraced .slot { border-style: dashed; }
+.cl-lanes .slots.untraced .slot { border-style: dashed; }
 
-.cluster.task-only .cl-banks, .cluster.task-only .cl-ports, .cluster.task-only .cl-lanes { opacity: 0.45; }
+.cluster.task-only .cl-banks, .cluster.task-only .cl-lanes { opacity: 0.45; }
 
 /* -- DFG viewer (VIS5, D55; compact drawing VIEW2) ------------------------------------
    Loop kinds get colours of their own: green, red and violet already mean busy,
@@ -368,7 +355,7 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
 /* layout: a top bar; [edit mode's sidebar] the graph [Details and Estimate]; [edit mode's log] */
-body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px, 2 px larger (R5c) */ display: flex; flex-direction: column; overflow: hidden; }
+body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px, 2 px larger */ display: flex; flex-direction: column; overflow: hidden; }
 .dfg-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; max-width: none; margin: 0; padding: 0.55rem var(--gap); border-bottom: 2px solid var(--ink); background: var(--panel); }
 .dfg-top h1 { font-size: 1.325rem; margin-right: auto; }
 .dfg-top .status { flex-basis: 100%; margin: 0; min-height: 0; }
@@ -464,7 +451,7 @@ svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 .c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
 .c-map.sel { box-shadow: 0 0 0 2px var(--hl); }
 
-/* -- edit mode (VIEW2 R5b): the sidebar, the top bar's session parts, the log, the dialogs -- */
+/* -- edit mode: the sidebar, the top bar's session parts, the log, the dialogs -- */
 .dfg-session { font-weight: 600; }
 .dfg-params { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .dfg-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.05rem 0.2rem 0.05rem 0.5rem; border: 1px solid var(--rule); border-radius: 1rem; font-size: 0.85em; color: var(--muted); }
