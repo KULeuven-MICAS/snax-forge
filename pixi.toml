@@ -143,6 +143,9 @@ bundle     = "python -m snax_forge.gen.bundle"
 # runs the flow, the bundle of its design point (out/bundle/<name>/) and the bundle's program, checked to be the
 # flow's ELF; each step's output in out/forge/<name>/forge.log, then snax_cluster's Verilator commands
 forge      = "python -m snax_forge.flow.forge"
+# A set of bundles for the local RTL check: `pixi run forge-set quick|full [--sim vsim|vlt] [-j N]` runs forge on
+# each recipe of the set and writes out/forge-set/<set>.md, with the one line that checks them all in snax_cluster
+forge-set  = "python -m snax_forge.flow.forge_set"
 # Reports (D99): `pixi run report out/flow/vecadd` writes report/design.md and report/run.md beside run/
 # (the flow writes them after every run)
 report     = "python -m snax_forge.report"
