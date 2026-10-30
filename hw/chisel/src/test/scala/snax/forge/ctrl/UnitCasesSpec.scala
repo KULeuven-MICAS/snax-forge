@@ -28,7 +28,7 @@ class UnitHarness(val c: Case) extends Module {
   private val outLanes = if (c.inputs == 1) 1 else c.lanes
 
   val io = IO(new Bundle {
-    val start = Flipped(Decoupled(new NestConfig))
+    val start = Flipped(Decoupled(new GroupStart(1)))
     val in    = Vec(c.inputs, new Handshake)
     val out   = Flipped(new Handshake)
     val data  = Input(Vec(c.inputs, Vec(c.lanes, UInt(64.W))))
@@ -95,7 +95,7 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
           case Some(s) =>
             dut.io.start.valid.poke(true.B)
             dut.io.start.bits.jobs.poke(s.jobs.U)
-            dut.io.start.bits.jobBeats.poke(s.jobBeats.U)
+            dut.io.start.bits.beats(0).poke(s.jobBeats.U)
             val got =
               if (!high(dut.io.start.ready)) "refused" else if (s.jobs == 0 || s.jobBeats == 0) "ignored" else "taken"
             assert(got == s.answer, s"$clue: start ${s.jobs} x ${s.jobBeats} $got, the case ${s.answer}")

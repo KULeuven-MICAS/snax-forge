@@ -3,20 +3,19 @@ package snax.forge.ctrl
 import chisel3._
 import chisel3.util._
 
-/** A start as `<tag>_csr` sends it (C§17): JOBS, then each JOB_BEATS in unit order, `jobBeats` the first (1 when the
-  * group has none), `beats` the rest (`more` of them).
+/** A group's start as `<tag>_csr` sends it (C§17): JOBS, then each of its `open` units' JOB_BEATS in unit order
+  * (`beats`; one word, 1, when the group has none).
   */
-class NestConfig(val more: Int = 0) extends Bundle {
-  val jobs     = UInt(32.W)
-  val jobBeats = UInt(32.W)
-  val beats    = if (more > 0) Some(Vec(more, UInt(32.W))) else None
+class GroupStart(val open: Int) extends Bundle {
+  val jobs  = UInt(32.W)
+  val beats = Vec(open max 1, UInt(32.W))
 }
 
 /** A group control unit's ports (`GroupCtrl`): its start, STATUS, COUNTER and pins; its outer handshakes; each unit's
   * and buffer's enables; the cycle's class.
   */
 class GroupCtrlIO(desc: GroupDesc) extends Bundle {
-  val start   = Flipped(Decoupled(new NestConfig((desc.open.size - 1) max 0)))
+  val start   = Flipped(Decoupled(new GroupStart(desc.open.size)))
   val status  = Output(UInt(32.W))
   val counter = Output(UInt(32.W))
   val in      = Vec(desc.units.map(_.inputs).sum, new Handshake)
@@ -76,7 +75,7 @@ class GroupCtrl(val desc: GroupDesc, tag: String) extends Module {
   io.cls       := nest.io.cls
 
   // Each unit's T: its fixed one, else the next JOB_BEATS of the start in unit order
-  private val words = io.start.bits.jobBeats +: io.start.bits.beats.map(_.toSeq).getOrElse(Seq.empty)
+  private val words = io.start.bits.beats
   private val ts    = {
     var next = 0
     desc.units.map { u =>

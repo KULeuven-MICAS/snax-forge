@@ -3,7 +3,7 @@ package snax.forge.shell
 import chisel3._
 import chisel3.util._
 
-import snax.forge.ctrl.NestConfig
+import snax.forge.ctrl.GroupStart
 
 /** A CSR request after `snax_csr_mux_demux`: the offset from the accelerator's first CSR, the data, write or read. */
 class CsrReq extends Bundle {
@@ -40,7 +40,7 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   val io = IO(new Bundle {
     val req    = Flipped(Decoupled(new CsrReq))
     val rsp    = Decoupled(new CsrRsp)
-    val starts = MixedVec(groups.map(g => Decoupled(new NestConfig((g.jobBeats.size - 1) max 0))))
+    val starts = MixedVec(groups.map(g => Decoupled(new GroupStart(g.jobBeats.size))))
     val status = Input(Vec(groups.size, UInt(32.W)))
     val count  = Input(Vec(groups.size, UInt(32.W)))
   })
@@ -59,11 +59,10 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   private val startReq = groups.zipWithIndex.map { case (g, i) =>
     val at  = g.csr("START").get.offset
     val hit = io.req.valid && io.req.bits.write && io.req.bits.addr === at.U && io.req.bits.data(0)
-    io.starts(i).valid         := writeReg && hit
-    io.starts(i).bits.jobs     := regs(g.csr("JOBS").get.offset)
-    io.starts(i).bits.jobBeats := g.jobBeats.headOption.map(c => regs(c.offset)).getOrElse(1.U)
-    io.starts(i).bits.beats.foreach(_.zip(g.jobBeats.drop(1)).foreach { case (b, c) => b := regs(c.offset) })
-    hit                        -> io.starts(i).ready
+    io.starts(i).valid      := writeReg && hit
+    io.starts(i).bits.jobs  := regs(g.csr("JOBS").get.offset)
+    io.starts(i).bits.beats := VecInit(if (g.jobBeats.isEmpty) Seq(1.U(32.W)) else g.jobBeats.map(c => regs(c.offset)))
+    hit                     -> io.starts(i).ready
   }
 
   // A read's answer, kept while rsp is not ready

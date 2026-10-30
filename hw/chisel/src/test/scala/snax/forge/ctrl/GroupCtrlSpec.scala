@@ -62,8 +62,7 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
             val opent  = open.map(_ => if (r.chance(0.05)) 0 else r.between(1, 4))
             dut.io.start.valid.poke(offer.B)
             dut.io.start.bits.jobs.poke(jobs.U)
-            dut.io.start.bits.jobBeats.poke((opent.headOption.getOrElse(1)).U)
-            dut.io.start.bits.beats.foreach(v => v.zip(opent.drop(1)).foreach { case (p, t) => p.poke(t.U) })
+            dut.io.start.bits.beats.zip(if (opent.isEmpty) Seq(1) else opent).foreach { case (p, t) => p.poke(t.U) }
             assert(high(dut.io.start.ready) == model.idle, s"$clue: start.ready")
             if (offer) {
               var next = 0

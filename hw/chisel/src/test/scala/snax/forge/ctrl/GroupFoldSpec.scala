@@ -64,8 +64,7 @@ class GroupFoldSpec extends AnyFlatSpec with ForgeTester {
             val offer  = model.idle && r.chance(0.3)
             dut.io.start.valid.poke(offer.B)
             dut.io.start.bits.jobs.poke(jobs.U)
-            dut.io.start.bits.jobBeats.poke(opent.headOption.getOrElse(1).U)
-            dut.io.start.bits.beats.foreach(v => v.zip(opent.drop(1)).foreach { case (p, t) => p.poke(t.U) })
+            dut.io.start.bits.beats.zip(if (opent.isEmpty) Seq(1) else opent).foreach { case (p, t) => p.poke(t.U) }
             if (offer) assert(model.start(jobs, ts) == "taken", s"$clue: the model's start")
             val valids = units.map(u => Seq.fill(u.inputs)(!r.chance(pv)))
             valids.flatten.zipWithIndex.foreach { case (v, k) => dut.io.in(k).valid.poke(v.B) }

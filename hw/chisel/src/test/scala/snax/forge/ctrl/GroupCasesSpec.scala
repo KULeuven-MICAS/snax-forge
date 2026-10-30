@@ -36,7 +36,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
         val offer = i == c.start._1
         dut.io.start.valid.poke(offer.B)
         dut.io.start.bits.jobs.poke(c.jobs.U)
-        dut.io.start.bits.jobBeats.poke(1.U)
+        dut.io.start.bits.beats(0).poke(1.U)
         if (offer) {
           val got = if (!high(dut.io.start.ready)) "refused" else if (c.jobs == 0) "ignored" else "taken"
           assert(got == c.start._2, s"$clue: start $got")

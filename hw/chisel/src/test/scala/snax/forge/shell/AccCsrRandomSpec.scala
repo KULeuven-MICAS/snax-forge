@@ -158,7 +158,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
                   dut.io.starts(g).bits.jobs.peek().litValue == (configs(g)._1 & LaneBits.mask(32)),
                   s"$clue: $g's JOBS"
                 )
-                val beats = dut.io.starts(g).bits.jobBeats +: dut.io.starts(g).bits.beats.map(_.toSeq).getOrElse(Nil)
+                val beats = dut.io.starts(g).bits.beats.toSeq
                 assert(
                   beats.map(_.peek().litValue) == configs(g)._2.map(_ & LaneBits.mask(32)),
                   s"$clue: $g's JOB_BEATS"
