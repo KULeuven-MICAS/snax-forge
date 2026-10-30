@@ -52,7 +52,7 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
         val inTypes = inPorts.map(p => IntType(p.dtype))
         val outType = IntType(outPort.dtype)
         val opType  = unit.opType.map(IntType(_)).getOrElse(outType)
-        val op      = ElementwiseOp.names.collectFirst { case (k, n) if unit.params.get("op").exists(_.str == n) => k }
+        val op      = unit.params.get("op").map(v => ElementwiseOp.byName(v.str))
 
         val runs = Seq.tabulate(Runs) { i =>
           val jobs = if (i > 0 && r.chance(0.125)) 0 else r.between(1, 32)

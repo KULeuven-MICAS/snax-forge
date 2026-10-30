@@ -4,7 +4,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{ForgeTester, Rand, Seeds, Sink, Source}
+import snax.forge.{ForgeTester, LaneBits, Rand, Seeds, Sink, Source}
 import snax.forge.shell.AcceleratorSpec.{CsrSpec, GroupSpec, LinkSpec, PortSpec, UnitSpec}
 
 /** `<tag>_csr` (`AccCsr`) under random requests, against a cycle-level model of the protocol in its docstring
@@ -21,7 +21,6 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
 
   private val Layouts = 3
   private val Cycles  = 300
-  private val Mask32  = (BigInt(1) << 32) - 1
 
   /** A layout of `folds.size` groups, group g of `folds(g)` folds (0: one unit without a JOB_BEATS; 1: one fold; 2: two
     * folds linked by a wire, a JOB_BEATS each).
@@ -149,13 +148,21 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
               val (ready, answer, started) = model.cycle(req, rsp.isReady, readies, status, count)
               assert(dut.io.req.ready.peek().litToBoolean == ready, s"$clue: req.ready, the model $ready (req $req)")
               assert(dut.io.rsp.valid.peek().litToBoolean == answer.isDefined, s"$clue: rsp.valid, the model $answer")
-              answer.foreach(a => assert(dut.io.rsp.bits.data.peek().litValue == (a & Mask32), s"$clue: rsp.bits"))
+              answer.foreach(a =>
+                assert(dut.io.rsp.bits.data.peek().litValue == (a & LaneBits.mask(32)), s"$clue: rsp.bits")
+              )
               for (g <- 0 until groups) {
                 val v     = dut.io.starts(g).valid.peek().litToBoolean
                 assert(v == started.contains(g), s"$clue: group $g's start ${v}, the model ${started.mkString}")
-                assert(dut.io.starts(g).bits.jobs.peek().litValue == (configs(g)._1 & Mask32), s"$clue: $g's JOBS")
+                assert(
+                  dut.io.starts(g).bits.jobs.peek().litValue == (configs(g)._1 & LaneBits.mask(32)),
+                  s"$clue: $g's JOBS"
+                )
                 val beats = dut.io.starts(g).bits.jobBeats +: dut.io.starts(g).bits.beats.map(_.toSeq).getOrElse(Nil)
-                assert(beats.map(_.peek().litValue) == configs(g)._2.map(_ & Mask32), s"$clue: $g's JOB_BEATS")
+                assert(
+                  beats.map(_.peek().litValue) == configs(g)._2.map(_ & LaneBits.mask(32)),
+                  s"$clue: $g's JOB_BEATS"
+                )
               }
               core.fired(ready)
               dut.clock.step()

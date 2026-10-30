@@ -91,9 +91,8 @@ object Datapaths {
   def holds(when: Seq[(String, ujson.Value)], p: Map[String, ujson.Value]): Boolean =
     when.forall { case (k, v) => p.get(k).contains(v) }
 
-  private def str(p:   Map[String, ujson.Value], n: String): String = p(n).str
-  private def int(p:   Map[String, ujson.Value], n: String): Int    = p(n).num.toInt
-  private def op(name: String): Int = ElementwiseOp.names.collectFirst { case (k, v) if v == name => k }.get
+  private def str(p: Map[String, ujson.Value], n: String): String = p(n).str
+  private def int(p: Map[String, ujson.Value], n: String): Int    = p(n).num.toInt
 
   /** Every dtype a type param takes. */
   private val dtypes = IntType.names
@@ -119,7 +118,7 @@ object Datapaths {
             str(p, "opType"),
             str(p, "outType"),
             int(p, "lanes"),
-            op(str(p, "op"))
+            ElementwiseOp.byName(str(p, "op"))
           )
         )
         m.io

@@ -1,6 +1,6 @@
 package snax.forge.elementwise
 
-import snax.forge.IntType
+import snax.forge.{IntType, LaneBits}
 
 /** Software model of one ALU lane -- the golden reference for the Chisel side.
   *
@@ -14,21 +14,13 @@ import snax.forge.IntType
   */
 object ElementwiseModel {
 
-  def mask(dataWidth: Int): BigInt = (BigInt(1) << dataWidth) - 1
-
-  /** Reinterpret an unsigned bit pattern as two's complement. */
-  def asSigned(x: BigInt, dataWidth: Int): BigInt = {
-    val half = BigInt(1) << (dataWidth - 1)
-    if (x >= half) x - (BigInt(1) << dataWidth) else x
-  }
-
   /** Operand pairs worth trying regardless of the random draw.
     *
     * Uniform random over `dataWidth` bits essentially never produces 0, 1, or the all-ones pattern, yet those are where
     * wrapping and signed comparison actually change behaviour. Random draws cover the bulk; these cover the corners.
     */
   def edgePairs(dataWidth: Int): Seq[(BigInt, BigInt)] = {
-    val m    = mask(dataWidth)
+    val m    = LaneBits.mask(dataWidth)
     val sign = BigInt(1) << (dataWidth - 1)
     Seq(
       (BigInt(0), BigInt(0)),
@@ -43,7 +35,7 @@ object ElementwiseModel {
 
   /** Expected result of `op` on two unsigned bit patterns. */
   def apply(op: Int, a: BigInt, b: BigInt, dataWidth: Int, signed: Boolean = false): BigInt = {
-    val m = mask(dataWidth)
+    val m = LaneBits.mask(dataWidth)
     op match {
       case ElementwiseOp.Add => (a + b) & m
       case ElementwiseOp.Sub => (a - b) & m
@@ -78,8 +70,8 @@ object ElementwiseModel {
     * zero-extended from an unsigned one, wrapped to `to`'s width.
     */
   def cast(v: BigInt, from: IntType, to: IntType): BigInt = {
-    val value = if (from.signed) asSigned(v & mask(from.width), from.width) else v & mask(from.width)
-    value & mask(to.width)
+    val value = if (from.signed) LaneBits.signed(v, from.width) else v & LaneBits.mask(from.width)
+    value & LaneBits.mask(to.width)
   }
 
   /** NumPy's elementwise op (D143): `a` of `aType` and `b` of `bType` cast to `opType`, the op at `opType`, the result
@@ -93,7 +85,7 @@ object ElementwiseModel {
     )
 
   private def lessThan(a: BigInt, b: BigInt, dataWidth: Int, signed: Boolean): Boolean =
-    if (signed) asSigned(a, dataWidth) < asSigned(b, dataWidth) else a < b
+    if (signed) LaneBits.signed(a, dataWidth) < LaneBits.signed(b, dataWidth) else a < b
 
   /** Clue string attached to every expect, so a failure names the case that produced it. */
   def clue(op: Int, a: BigInt, b: BigInt, lane: Int = -1): String = {

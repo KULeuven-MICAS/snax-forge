@@ -48,7 +48,7 @@ class UnitHarness(val c: Case) extends Module {
 
   datapath match {
     case Some("ElementwiseLanes") =>
-      val op     = ElementwiseOp.names.collectFirst { case (k, n) if n == c.op => k }.get
+      val op     = ElementwiseOp.byName(c.op)
       val opType = snax.forge.elementwise.ElementwiseModel.resultType(t(0), t(1))
       val dp     = Module(new ElementwiseLanes(Seq(t(0).name, t(1).name), opType.name, t(2).name, c.lanes, op))
       for (l <- 0 until c.lanes) {
@@ -79,8 +79,6 @@ class UnitHarness(val c: Case) extends Module {
   * one busy, no input with firings left stall_in, the rest flush. Without the variable the test is canceled.
   */
 class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
-
-  private def high(b: Bool): Boolean = b.peek().litToBoolean
 
   behavior of "a group controller with its datapath against SnaxUnit's cases"
 

@@ -54,8 +54,6 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
         val model = new GroupModel(units, links)
         val pv    = r.probability(); val pr = r.probability()
         test(new GroupCtrl(desc, "t")) { dut =>
-          def high(b: Bool) = b.peek().litToBoolean
-          def int(u:  UInt) = u.peek().litValue.toInt
           val open = desc.open
           for (c <- 0 until Cycles) {
             val clue   = s"$clue0, cycle $c"

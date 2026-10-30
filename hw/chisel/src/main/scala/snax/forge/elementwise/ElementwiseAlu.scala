@@ -29,6 +29,10 @@ object ElementwiseOp {
   )
 
   def name(op: Int): String = names.getOrElse(op, s"op$op")
+
+  /** The encoding of the op named `name` (`params.op`). */
+  def byName(name: String): Int =
+    names.collectFirst { case (k, n) if n == name => k }.getOrElse(throw new IllegalArgumentException(s"no op $name"))
 }
 
 /** One lane of integer ALU, as its own SystemVerilog module.

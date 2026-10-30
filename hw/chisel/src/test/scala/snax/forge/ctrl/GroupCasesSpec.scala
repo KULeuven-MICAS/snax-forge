@@ -32,7 +32,6 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
   private def run(c: SnaxGroupCases.Case): Unit =
     test(new GroupCtrl(desc(c), "case")) { dut =>
-      def high(b: Bool) = b.peek().litToBoolean
       var counts  = Map.empty[String, Int].withDefaultValue(0)
       var heads   = 0
       var runs    = Vector.empty[RunLine]

@@ -48,7 +48,6 @@ class GroupFoldSpec extends AnyFlatSpec with ForgeTester {
         val model = new GroupModel(units, links)
         val pv    = r.probability(); val pr = r.probability()
         test(new GroupCtrl(desc, "t")) { dut =>
-          def high(b: Bool) = b.peek().litToBoolean
           var lastEnd = false
           for (c <- 0 until Cycles) {
             val clue   = s"$clue0, cycle $c"
