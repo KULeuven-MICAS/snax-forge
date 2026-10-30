@@ -87,7 +87,7 @@ def test_bundle_json(tmp_path, fake):
                  "top": "snax_forge_shell_wrapper",
                  "modules": {"snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_acc_ctrl"],
                              "snax_forge_datapath": ["snax_forge_acc"]},
-                 "snax_forge_commit": COMMIT, "dirty": False}  # fmt: skip
+                 "snax_forge_commit": COMMIT, "dirty": False, "expected": None}  # fmt: skip
     assert Bundle.load(out / "bundle.json") == b == Bundle.from_dict(b.to_dict())
     assert d["design_point"] == json.loads((out / "manifest.json").read_text())["design_point"]
 
@@ -128,7 +128,9 @@ def test_the_command(tmp_path, fake, monkeypatch, capsys):
         f"design/vecadd/design_point.json, snax-forge {COMMIT}\n"
     )
     assert "wrote out/bundle/vecadd/rtl/files.f\n" in text
-    assert text.endswith("wrote out/bundle/vecadd/bundle.json\n")
+    assert text.endswith("wrote out/bundle/vecadd/bundle.json\nno forge_expected.txt: a bundle alone "
+                         "has no SNAX-GVSoC run (pixi run forge writes it)\n")  # fmt: skip
+    assert not (tmp_path / "out" / "bundle" / "vecadd" / "forge_expected.txt").exists()
     fake.listed = []
     assert bundle_mod.main([str(path), "--out", "elsewhere"]) == 1
     assert "[bundle.empty]" in capsys.readouterr().err
@@ -169,3 +171,26 @@ def test_the_module_tree_names_every_group_unit_and_buffer():
         "snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_dot_ctrl"],
         "snax_forge_datapath": ["snax_forge_mac", "snax_forge_sum", "snax_forge_out_partial"],
     }  # fmt: skip
+
+
+def test_the_expected_lines_and_their_refusal(tmp_path, fake):
+    """write_expected keeps the run's counter lines in order, then its data line, and names the
+    file in bundle.json; a run without a counter or with data errors is ``bundle.expected``."""
+    out = tmp_path / "bundle"
+    write_bundle(point(tmp_path), out, tmp_path)
+    run = ("forge cycles: 304\nforge data: 0 errors (1 words)\nforge counter mult_mul: 19\n"
+           "forge counter sum_sum: 19\nforge errors: 0\n")  # fmt: skip
+    path = bundle_mod.write_expected(out, run)
+    assert path.read_text() == (
+        "forge counter mult_mul: 19\nforge counter sum_sum: 19\nforge data: 0 errors (1 words)\n"
+    )
+    assert Bundle.load(out / "bundle.json").expected == "forge_expected.txt"
+    for bad in (
+        "forge data: 0 errors (1 words)\n",
+        "forge counter a: 3\nforge data: 2 errors (8 words)\n",
+    ):
+        with pytest.raises(GenError) as e:
+            bundle_mod.write_expected(out, bad)
+        assert e.value.code == "bundle.expected"
+    write_bundle(point(tmp_path), out, tmp_path)  # a bundle alone: the earlier run's file goes
+    assert not path.exists() and Bundle.load(out / "bundle.json").expected is None
