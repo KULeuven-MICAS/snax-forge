@@ -1,10 +1,11 @@
 <!doctype html>
 <!--
-  SNAX-FORGE DFG viewer (D55, VIEW2). Served by snax_forge/viz/dfg/server.py;
-  talks only to its /api routes and loads no external file, so it works
-  offline. dfg.js draws one step of a recipe at a time (two with Compare):
-  boxes are HTML laid out by CSS, the edges one SVG layer per panel; Details
-  and the Estimate on the right come from the API as they are.
+  SNAX-FORGE DFG viewer and editor (D55, VIEW2). Served by snax_forge/viz/dfg/server.py in
+  view mode (pixi run view-dfg) or edit mode (pixi run edit-dfg); talks only to its /api
+  routes and loads no external file, so it works offline. dfg.js draws one step at a time
+  (two with Compare): boxes are HTML laid out by CSS, the edges one SVG layer per panel;
+  Details, the Estimate, the transforms' forms and every message come from the API as they
+  are. The edit-mode parts (data-edit) stay hidden in view mode.
 -->
 <html lang="en">
 <head>
@@ -17,12 +18,18 @@
 <body class="dfg">
   <header id="top" class="dfg-top">
     <h1 id="title">SNAX-FORGE DFG viewer</h1>
+    <span id="session-name" class="dfg-session" data-edit hidden></span>
+    <span id="params" class="dfg-params" data-edit hidden></span>
     <div class="dfg-steps">
+      <button id="undo" type="button" title="Undo: the step before" data-edit hidden>Undo</button>
       <button id="prev" type="button" title="The step before (←)" aria-label="previous step">◀</button>
       <select id="step" aria-label="step"></select>
       <button id="next" type="button" title="The step after (→)" aria-label="next step">▶</button>
+      <button id="redo" type="button" title="Redo: the step after" data-edit hidden>Redo</button>
     </div>
     <label class="dfg-toggle" title="Two steps side by side"><input id="compare" type="checkbox"> Compare</label>
+    <button id="export" type="button" title="Write this step's graph to a file" data-edit hidden>Export step</button>
+    <button id="save" type="button" title="Save steps 1 to this one as a recipe" data-edit hidden>Save recipe</button>
     <button id="reload" type="button" title="Read the files from disk again">Reload</button>
     <p id="status" class="status" role="status"></p>
   </header>
@@ -41,6 +48,43 @@
       <ul id="legend" class="legend dfg-legend"></ul>
     </aside>
   </div>
-  <footer id="log" class="dfg-log" hidden></footer>
+  <footer id="log" class="dfg-log" data-edit hidden>
+    <div class="dfg-log-bar">
+      <button id="log-toggle" type="button" aria-expanded="true">Log</button>
+      <button id="recipe-toggle" type="button" aria-expanded="false">Working recipe</button>
+    </div>
+    <ol id="log-lines" class="dfg-log-lines"></ol>
+    <div id="recipe" class="dfg-recipe" hidden></div>
+  </footer>
+
+  <dialog id="start" class="dfg-dialog">
+    <h2>Start a session</h2>
+    <p id="start-status" class="status"></p>
+    <section class="dfg-start-part">
+      <h3>From a kernel</h3>
+      <div id="start-kernel"></div>
+    </section>
+    <section class="dfg-start-part">
+      <h3>From a recipe</h3>
+      <div id="start-recipe"></div>
+    </section>
+    <section class="dfg-start-part">
+      <h3>Resume</h3>
+      <div id="start-session"></div>
+    </section>
+  </dialog>
+
+  <dialog id="save-dialog" class="dfg-dialog">
+    <h2>Save recipe</h2>
+    <form id="save-form" method="dialog">
+      <label>Name <input id="save-name" required pattern="[A-Za-z_][A-Za-z0-9_]*" autocomplete="off"></label>
+      <div id="save-answer"></div>
+      <div class="dfg-dialog-buttons">
+        <button id="save-go" type="submit" value="save">Save</button>
+        <button id="save-force" type="button" hidden>Save anyway</button>
+        <button id="save-close" type="button">Close</button>
+      </div>
+    </form>
+  </dialog>
 </body>
 </html>

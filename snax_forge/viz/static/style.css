@@ -459,6 +459,65 @@ svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 .c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
 .c-map.sel { box-shadow: 0 0 0 2px var(--hl); }
 
+/* -- edit mode (VIEW2 R5b): the sidebar, the top bar's session parts, the log, the dialogs -- */
+.dfg-session { font-weight: 600; }
+.dfg-params { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.dfg-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.05rem 0.2rem 0.05rem 0.5rem; border: 1px solid var(--rule); border-radius: 1rem; font-size: 0.85em; color: var(--muted); }
+.dfg-chip input { font: inherit; color: var(--ink); background: var(--bg); border: none; border-radius: 0.8rem; padding: 0.05rem 0.35rem; }
+#step option.past { color: var(--muted); }
+.dfg-sidebar { padding: 0.6rem 0.7rem; font-size: 0.88em; }
+.dfg-sidebar h2 { font-size: 0.85rem; margin: 0.2rem 0 0.5rem; color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }
+.dfg-sidebar h2 b { color: var(--ink); }
+.dfg-sidebar.strip { width: 1.6rem; padding: 0.6rem 0.2rem; overflow: hidden; }
+.dfg-strip-note { writing-mode: vertical-rl; color: var(--muted); margin: 0; }
+.dfg-transform { border-top: 1px solid var(--rule); }
+.dfg-transform-name { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.2rem; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.dfg-transform-name:hover, .dfg-transform.open .dfg-transform-name { color: var(--hl); }
+.dfg-form { display: flex; flex-direction: column; gap: 0.35rem; padding: 0 0.2rem 0.6rem; }
+.dfg-field { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); align-items: center; gap: 0.4rem; }
+.dfg-field > span { color: var(--muted); }
+.dfg-field input, .dfg-field select { font: inherit; min-width: 0; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.3rem; }
+.dfg-field.readonly input { color: var(--muted); }
+.dfg-field:has(.dfg-choices) { grid-template-columns: 1fr; }
+.dfg-choices { display: flex; flex-direction: column; gap: 0.15rem; }
+.dfg-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.35rem; align-items: baseline; }
+.dfg-choice small { grid-column: 2; color: var(--muted); }
+.dfg-choice.refused span { color: var(--muted); text-decoration: line-through; }
+button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.dfg-not-here { margin-top: 0.8rem; color: var(--muted); }
+.dfg-not-here ul { padding-left: 1rem; margin: 0.3rem 0; }
+.dfg-not-here li { margin-bottom: 0.25rem; overflow-wrap: anywhere; }
+.dfg-not-here b { color: var(--ink); font-weight: 600; }
+/* marks (a transform applies here) and the step's diff (added or changed) */
+.c-node.marked::after, .c-pill.marked::after, .c-map.marked > .c-bar::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 0.35rem; border-radius: 50%; background: var(--hl); vertical-align: middle; }
+.c-node.marked { position: relative; }
+.c-node.marked::after { position: absolute; top: 3px; right: 3px; margin: 0; }
+.c-node.diffed, .c-pill.diffed { background: color-mix(in srgb, var(--wait) 35%, var(--panel)); }
+.c-map.diffed > .c-bar { background: color-mix(in srgb, var(--wait) 45%, var(--panel)); }
+/* the log */
+.dfg-log { padding: 0.2rem var(--gap) 0.4rem; font-size: 0.82em; }
+.dfg-log-bar { display: flex; gap: 0.5rem; }
+.dfg-log-bar button { padding: 0.05rem 0.5rem; font-size: 0.95em; }
+.dfg-log-lines { margin: 0.25rem 0 0; padding-left: 1.6rem; max-height: 6rem; overflow: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; }
+.dfg-log-lines li.error { color: var(--mem); }
+.dfg-log.collapsed .dfg-log-lines, .dfg-log.collapsed .dfg-recipe { display: none; }
+.dfg-recipe pre { max-height: 12rem; margin: 0.3rem 0 0; }
+/* the dialogs */
+.dfg-dialog { max-width: min(48rem, 92vw); border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--ink); padding: 1rem 1.2rem; }
+.dfg-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.dfg-dialog h2 { margin: 0 0 0.4rem; font-size: 1.2rem; }
+.dfg-dialog h3 { margin: 0.6rem 0 0.3rem; font-size: 0.95rem; }
+.dfg-dialog .status:empty { display: none; }
+.dfg-dialog input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.35rem; }
+.dfg-start-part + .dfg-start-part { border-top: 1px solid var(--rule); }
+.dfg-start-part { padding: 0.2rem 0 0.5rem; border-bottom: none; }
+.dfg-pick { list-style: none; padding: 0; margin: 0; max-height: 10rem; overflow: auto; }
+.dfg-pick li { margin: 0.15rem 0; }
+.dfg-pick small { color: var(--muted); }
+.dfg-params-table td { padding: 0.1rem 0.4rem 0.1rem 0; }
+.dfg-dialog-buttons { display: flex; gap: 0.5rem; margin-top: 0.7rem; }
+.dfg-dialog .error { color: var(--mem); }
+
 /* the legend's keys */
 i.key.loop-none { background: var(--loop-none); }
 i.key.loop-tile { background: var(--loop-tile); }

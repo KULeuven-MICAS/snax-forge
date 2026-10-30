@@ -8,11 +8,13 @@
 // size; nothing is computed but where to draw (D57). Text is never in the SVG
 // but a group's name.
 //
-// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>.
-// A selection is a name: everything of that name is outlined (a link node and
-// its container share one) and Details shows each.
+// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>
+// (t, edit mode: that transform's form open for the selection). A selection is a name:
+// everything of that name is outlined (a link node and its container share one) and Details
+// shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
 
 import { h } from "./dom.js";
+import * as edit from "./edit.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -33,14 +35,14 @@ function status(msg, err = false) {
 
 // -- state ----------------------------------------------------------------------
 
-const state = { steps: [], k: 0, cmp: null, sel: null };
+const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, t: null, session: null, platform: null };
 const views = new Map(); // step -> its view, until Reload
 const compares = new Map(); // "j/k" -> the compare answer
 
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
   const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
-  return { k: num(q.get("step")), sel: q.get("sel") || null, cmp: num(q.get("cmp")) };
+  return { k: num(q.get("step")), sel: q.get("sel") || null, cmp: num(q.get("cmp")), t: q.get("t") || null };
 }
 
 function writeHash() {
@@ -48,6 +50,7 @@ function writeHash() {
   q.set("step", String(state.k));
   if (state.sel) q.set("sel", state.sel);
   if (state.cmp !== null) q.set("cmp", String(state.cmp));
+  if (state.t && state.sel) q.set("t", state.t);
   history.replaceState(null, "", `#${q}`);
 }
 
@@ -116,7 +119,7 @@ function pill(v, key) {
 
 function stepSelect(current, onChange) {
   return h("select", { "aria-label": "step", onchange: (ev) => onChange(Number(ev.target.value)) },
-    state.steps.map((s, i) => h("option", { value: i, selected: i === current }, s.label)));
+    state.steps.map((s, i) => h("option", { value: i, selected: i === current, class: s.past ? "past" : null }, s.label)));
 }
 
 /** One panel: a step's drawing; with ``pick``, its own step dropdown (Compare). */
@@ -139,6 +142,7 @@ function panel(v, k, pick) {
     outline();
   };
   new ResizeObserver(() => requestAnimationFrame(el._draw)).observe(canvas);
+  if (state.mode === "edit") edit.decorate(v, el);
   return el;
 }
 
@@ -259,10 +263,21 @@ function outline() {
 }
 
 function select(name) {
+  if (name !== state.sel) state.t = null;
   state.sel = name;
   writeHash();
   outline();
   details();
+  if (state.mode === "edit") edit.sidebar();
+}
+
+/** Step k shown: in edit mode the cursor moves there (the session's history). */
+function goto(k) {
+  if (state.mode === "edit") edit.move(k);
+  else {
+    state.k = k;
+    draw();
+  }
 }
 
 const KINDS = ["node", "container", "group", "accelerator", "edge"];
@@ -361,19 +376,25 @@ async function draw() {
   $("next").disabled = state.k >= state.steps.length - 1;
   status("Loading…");
   try {
+    const shown = await view(state.k);
+    if (state.sel && !["node", "container", "group", "accelerator", "edge"].some((kind) => shown.details && shown.details[`${kind}:${state.sel}`])) {
+      state.sel = null; // kept across steps only where it exists
+      state.t = null;
+      writeHash();
+    }
     let panels;
     if (state.cmp === null) {
-      panels = [panel(await view(state.k), state.k, null)];
+      panels = [panel(shown, state.k, null)];
     } else {
       panels = [
         panel(await view(state.cmp), state.cmp, (j) => { state.cmp = j; draw(); }),
-        panel(await view(state.k), state.k, (k) => { state.k = k; draw(); }),
+        panel(shown, state.k, goto),
       ];
     }
     $("graphs").replaceChildren(...panels);
     $("graphs").classList.toggle("two", panels.length === 2);
     requestAnimationFrame(() => panels.forEach((p) => p._draw && p._draw()));
-    await Promise.all([details(), estimate()]);
+    await Promise.all([details(), estimate(), state.mode === "edit" ? edit.sidebar() : null]);
     const broken = state.steps.filter((s) => s.error).length;
     status(broken ? `${broken} of ${state.steps.length} files did not load` : "", broken > 0);
   } catch (e) {
@@ -381,27 +402,69 @@ async function draw() {
   }
 }
 
+function stepOptions() {
+  $("step").replaceChildren(...state.steps.map((s, i) => h("option", { value: i, class: s.past ? "past" : null }, s.label)));
+}
+
+/** Edit mode: the session as the server has it (its steps, its cursor shown), or the start
+dialog before one is open. */
+async function show() {
+  const s = state.session;
+  if (!s) {
+    edit.start();
+    return;
+  }
+  state.steps = s.labels.map((label, i) => ({ label, past: i > s.cursor }));
+  state.k = s.cursor;
+  if (state.cmp !== null) state.cmp = clampStep(state.cmp);
+  stepOptions();
+  edit.top(s);
+  $("title").textContent = "SNAX-FORGE DFG editor";
+  await draw();
+}
+
 async function load() {
   status("Loading…");
+  const want = readHash();
   try {
+    const mode = await getJSON("/api/mode");
+    state.mode = mode.mode;
+    state.platform = mode.platform || null;
+    if (state.mode === "edit") {
+      edit.init({ state, status, clear, show, view, writeHash });
+      state.session = await edit.session();
+      state.sel = want.sel;
+      state.t = want.t;
+      state.cmp = want.cmp;
+      if (state.session && want.k !== null && want.k !== state.session.cursor && want.k <= state.session.n) {
+        await edit.move(want.k); // a link to another step: the cursor goes there
+        return;
+      }
+      await show();
+      return;
+    }
     state.steps = await getJSON("/api/steps");
   } catch (e) {
     status(String(e.message || e), true);
     return;
   }
-  $("step").replaceChildren(...state.steps.map((s, i) => h("option", { value: i }, s.label)));
-  const want = readHash();
+  stepOptions();
   state.k = clampStep(want.k === null ? 0 : want.k);
   state.cmp = want.cmp === null ? null : clampStep(want.cmp);
   state.sel = want.sel;
   draw();
 }
 
+function clear() {
+  views.clear();
+  compares.clear();
+}
+
 // -- controls ----------------------------------------------------------------------
 
-$("step").addEventListener("change", (ev) => { state.k = Number(ev.target.value); draw(); });
-$("prev").addEventListener("click", () => { state.k = clampStep(state.k - 1); draw(); });
-$("next").addEventListener("click", () => { state.k = clampStep(state.k + 1); draw(); });
+$("step").addEventListener("change", (ev) => goto(Number(ev.target.value)));
+$("prev").addEventListener("click", () => goto(clampStep(state.k - 1)));
+$("next").addEventListener("click", () => goto(clampStep(state.k + 1)));
 $("compare").addEventListener("change", (ev) => {
   state.cmp = ev.target.checked ? clampStep(state.k - 1) : null;
   draw();
@@ -415,16 +478,17 @@ $("graphs").addEventListener("click", (ev) => {
 document.addEventListener("keydown", (ev) => {
   if (ev.target.closest("select, input")) return;
   if (ev.key === "Escape") select(null);
-  else if (ev.key === "ArrowLeft" && state.k > 0) { state.k -= 1; draw(); }
-  else if (ev.key === "ArrowRight" && state.k < state.steps.length - 1) { state.k += 1; draw(); }
+  else if (ev.key === "ArrowLeft" && state.k > 0) goto(state.k - 1);
+  else if (ev.key === "ArrowRight" && state.k < state.steps.length - 1) goto(state.k + 1);
 });
 window.addEventListener("hashchange", () => {
   const want = readHash();
-  if (want.k === state.k && want.sel === state.sel && want.cmp === state.cmp) return;
-  state.k = clampStep(want.k === null ? 0 : want.k);
+  if (want.k === state.k && want.sel === state.sel && want.cmp === state.cmp && want.t === state.t) return;
   state.cmp = want.cmp === null ? null : clampStep(want.cmp);
   state.sel = want.sel;
-  draw();
+  state.t = want.t;
+  if (want.k !== null && want.k !== state.k) goto(clampStep(want.k));
+  else draw();
 });
 $("reload").addEventListener("click", async () => {
   try {
@@ -433,8 +497,7 @@ $("reload").addEventListener("click", async () => {
     status(String(e.message || e), true);
     return;
   }
-  views.clear();
-  compares.clear();
+  clear();
   load();
 });
 
