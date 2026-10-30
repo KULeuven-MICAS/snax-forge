@@ -5,6 +5,7 @@ import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{Datapaths, ForgeTester, LaneBits, SnaxDatapathVectors}
+import snax.forge.shell.Block
 
 /** Every catalogue datapath on snax-gvsoc's NumPy vectors (`SnaxDatapathVectors`): each test's datapath built from the
   * registry (`Datapaths`) by its params, then per step its enables and inputs poked, its output peeked before the clock
@@ -13,15 +14,8 @@ import snax.forge.{Datapaths, ForgeTester, LaneBits, SnaxDatapathVectors}
   */
 class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
 
-  /** The datapath, its IO as its own. */
-  class Harness(t: SnaxDatapathVectors.Test) extends Module {
-    private val built = Datapaths(t.datapath).build(t.params)
-    val io            = IO(chiselTypeOf(built))
-    io <> built
-  }
-
   private def run(t: SnaxDatapathVectors.Test): Unit =
-    test(new Harness(t)) { dut =>
+    test(new Block(s"vectors_${t.datapath}", Datapaths(t.datapath), t.params)) { dut =>
       val io = dut.io.elements
       def bool(n: String, v: Boolean) = io.get(n).foreach(_.asInstanceOf[Bool].poke(v.B))
       def slot(n: String, v: Int)     = io.get(n).foreach(x => x.asInstanceOf[UInt].poke(v.U))

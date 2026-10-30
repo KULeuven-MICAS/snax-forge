@@ -74,7 +74,7 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
   private def matvec(a: Seq[BigInt], p: Seq[BigInt], rows: Int, t: IntType): Seq[BigInt] =
     (0 until rows).map { i =>
       val n = p.size
-      LaneBits.signed((0 until n).map(j => a(i * n + j) * p(j)).sum & LaneBits.mask(t.width), t.width)
+      LaneBits.signed(LaneBits.dot(a.slice(i * n, (i + 1) * n), p, t.width), t.width)
     }
 
   /** The busy cycles of the group case `name`: its run line's classes added up. */

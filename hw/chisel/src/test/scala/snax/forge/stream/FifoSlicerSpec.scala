@@ -33,10 +33,10 @@ class FifoSlicerSpec extends AnyFlatSpec with ForgeTester {
     var lastOut = -1
     while (snk.got.size < want) {
       assert(cycle < 100 * want + 100, s"no end after $cycle cycles (${snk.got.size} pops)")
-      src.cycle()
+      src.cycle(cycle)
       dut.io.in.valid.poke(src.valid.B)
       LaneBits.pokeBeat(dut.io.in.bits, src.bits)
-      dut.io.out.ready.poke(snk.cycle().B)
+      dut.io.out.ready.poke(snk.cycle(cycle).B)
       if (src.fired(dut.io.in.ready.peek().litToBoolean) && first < 0) first = cycle
       if (snk.fired(dut.io.out.valid.peek().litToBoolean, LaneBits.peekBeat(dut.io.out.bits))) lastOut = cycle
       dut.clock.step()

@@ -61,11 +61,11 @@ class ShellDriver(
   def tick(req: Option[(Int, BigInt, Boolean)] = None): (Boolean, Option[BigInt]) = {
     assert(cycle < ShellDriver.MaxCycles, s"no end after $cycle cycles")
     for ((src, k) <- sources.zipWithIndex) {
-      src.cycle()
+      src.cycle(cycle)
       b(s"stream2acc_${k}_valid_i").poke(src.valid.B)
       u(s"stream2acc_${k}_data_i").poke(src.bits.U)
     }
-    for ((snk, k) <- sinks.zipWithIndex) b(s"acc2stream_${k}_ready_i").poke(snk.cycle().B)
+    for ((snk, k) <- sinks.zipWithIndex) b(s"acc2stream_${k}_ready_i").poke(snk.cycle(cycle).B)
     val rspTaken = rspReady(cycle)
     b("csr_rsp_ready_i").poke(rspTaken.B)
     req match {
@@ -122,10 +122,7 @@ object ShellDriver {
     valid: Int => Boolean = _ => true,
     ready: Int => Boolean = _ => true
   ): ShellDriver = {
-    var d: ShellDriver = null
-    val sources = beats.zipWithIndex.map { case (n, k) => new Source(n, data(k, _), () => valid(d.cycle)) }
-    val sinks   = dut.io.writers.map(_ => new Sink(() => ready(d.cycle)))
-    d = new ShellDriver(dut, sources, sinks)
-    d
+    val sources = beats.zipWithIndex.map { case (n, k) => new Source(n, data(k, _), valid) }
+    new ShellDriver(dut, sources, dut.io.writers.map(_ => new Sink(ready)))
   }
 }

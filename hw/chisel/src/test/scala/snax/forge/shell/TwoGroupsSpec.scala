@@ -21,15 +21,14 @@ class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
   it should "start, run and report STATUS per group" in {
     test(new ShellHarness(spec)) { dut =>
-      val beat = (k: Int, t: Int) => LaneBits.pack(Seq.tabulate(4)(l => BigInt(10 * k + t + l + 1)), 64)
-      var d: ShellDriver = null
-      var release = false // sum's input held back until then
-      val sources = Seq(
-        new Source(3, beat(0, _), () => true),
-        new Source(3, beat(1, _), () => true),
-        new Source(2, beat(2, _), () => release)
+      val beat       = (k: Int, t: Int) => LaneBits.pack(Seq.tabulate(4)(l => BigInt(10 * k + t + l + 1)), 64)
+      var release    = false // sum's input held back until then
+      val sources    = Seq(
+        new Source(3, beat(0, _), _ => true),
+        new Source(3, beat(1, _), _ => true),
+        new Source(2, beat(2, _), _ => release)
       )
-      d = new ShellDriver(dut, sources, Seq(new Sink(() => true), new Sink(() => true)))
+      val d          = new ShellDriver(dut, sources, Seq(new Sink(_ => true), new Sink(_ => true)))
       val (mul, sum) = (0, 1)
 
       // sum: one job of two beats, started first, starved

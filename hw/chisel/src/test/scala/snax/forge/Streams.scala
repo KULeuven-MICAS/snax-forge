@@ -2,11 +2,11 @@ package snax.forge
 
 /** A Decoupled producer of `count` beats (`beat(t)`), in plain Scala: a spec pokes `valid` and `bits` and reports what
   * fired. Once `valid` is raised it stays up with the same bits until it fires (the Decoupled rule); while it is down,
-  * `raise()` decides each cycle whether to raise it, as long as beats are left.
+  * `raise(c)` decides in each cycle c whether to raise it, as long as beats are left.
   *
-  * Per cycle: `cycle()` first, then poke `valid` and `bits`, then `fired(ready)` with the DUT's ready.
+  * Per cycle c: `cycle(c)` first, then poke `valid` and `bits`, then `fired(ready)` with the DUT's ready.
   */
-class Source(val count: Int, beat: Int => BigInt, raise: () => Boolean) {
+class Source(val count: Int, beat: Int => BigInt, raise: Int => Boolean) {
 
   /** Beats taken so far. */
   var taken: Int = 0
@@ -17,7 +17,7 @@ class Source(val count: Int, beat: Int => BigInt, raise: () => Boolean) {
 
   def bits: BigInt = if (up) beat(taken) else BigInt(0)
 
-  def cycle(): Unit = if (!up && taken < count) up = raise()
+  def cycle(c: Int): Unit = if (!up && taken < count) up = raise(c)
 
   /** Whether the beat fired this cycle. */
   def fired(ready: Boolean): Boolean = {
@@ -32,15 +32,15 @@ object Source {
   /** Valid raised with probability `1 - gap` each cycle it is down. */
   def random(beats: Seq[BigInt], gap: Double, rand: Rand): Source = {
     val v = beats.toIndexedSeq
-    new Source(v.size, v, () => !rand.chance(gap))
+    new Source(v.size, v, _ => !rand.chance(gap))
   }
 }
 
-/** A Decoupled consumer, in plain Scala: `ready()` decides each cycle's ready, the beats that fire are kept in `got`.
+/** A Decoupled consumer, in plain Scala: `ready(c)` decides cycle c's ready, the beats that fire are kept in `got`.
   *
-  * Per cycle: `cycle()` first, then poke `ready`, then `fired(valid, bits)` with the DUT's valid and bits.
+  * Per cycle c: `cycle(c)` first, then poke `ready`, then `fired(valid, bits)` with the DUT's valid and bits.
   */
-class Sink(ready: () => Boolean) {
+class Sink(ready: Int => Boolean) {
 
   var got: Vector[BigInt] = Vector.empty
 
@@ -48,7 +48,7 @@ class Sink(ready: () => Boolean) {
 
   def isReady: Boolean = r
 
-  def cycle(): Boolean = { r = ready(); r }
+  def cycle(c: Int): Boolean = { r = ready(c); r }
 
   def fired(valid: Boolean, bits: => BigInt): Boolean = {
     val f = valid && r
@@ -60,5 +60,5 @@ class Sink(ready: () => Boolean) {
 object Sink {
 
   /** Ready low with probability `stall` each cycle. */
-  def random(stall: Double, rand: Rand): Sink = new Sink(() => !rand.chance(stall))
+  def random(stall: Double, rand: Rand): Sink = new Sink(_ => !rand.chance(stall))
 }

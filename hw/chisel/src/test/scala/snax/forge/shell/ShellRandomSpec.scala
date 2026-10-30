@@ -61,18 +61,10 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
           val ins  = inTypes.map(ty => Seq.fill(n)(Seq.fill(lanes)(r.word(ty.width))))
           val outs =
             if (linked)
-              (0 until n)
-                .map(k =>
-                  ins(0)(k)
-                    .zip(ins(1)(k))
-                    .map { case (a, b) =>
-                      ElementwiseModel.cast(a, inTypes(0), outType) * ElementwiseModel.cast(b, inTypes(1), outType)
-                    }
-                    .sum
-                )
-                .grouped(t max 1)
-                .map(_.sum & LaneBits.mask(outType.width))
-                .toSeq
+              (0 until n).grouped(t max 1).toSeq.map { job =>
+                def at(i: Int) = job.flatMap(k => ins(i)(k).map(ElementwiseModel.cast(_, inTypes(i), outType)))
+                LaneBits.dot(at(0), at(1), outType.width)
+              }
             else if (!fold)
               (0 until n).map { k =>
                 LaneBits.pack(
@@ -95,10 +87,10 @@ class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
         var stall   = 0.0
         val sources = inTypes.indices.map { k =>
           val beats = runs.flatMap(_.ins(k)).map(LaneBits.pack(_, inTypes(k).width)).toIndexedSeq
-          new Source(beats.size, beats, () => !r.chance(gap))
+          new Source(beats.size, beats, _ => !r.chance(gap))
         }
         test(new ShellHarness(spec)) { dut =>
-          val d                 = new ShellDriver(dut, sources, Seq(new Sink(() => !r.chance(stall))))
+          val d                 = new ShellDriver(dut, sources, Seq(new Sink(_ => !r.chance(stall))))
           val (status, counter) = (dut.csr("STATUS"), dut.csr("COUNTER"))
           def config(run: Run): Unit = {
             d.write(dut.csr("JOBS"), run.jobs)

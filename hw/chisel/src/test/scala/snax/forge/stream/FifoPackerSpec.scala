@@ -51,10 +51,10 @@ class FifoPackerSpec extends AnyFlatSpec with ForgeTester {
     var lastOut = -1
     while (snk.got.size < want) {
       assert(cycle < 100 * ins.size + 100, s"no end after $cycle cycles (${snk.got.size} out-beats)")
-      src.cycle()
+      src.cycle(cycle)
       in.valid.poke(src.valid.B)
       LaneBits.pokeBeat(in.bits, src.bits)
-      out.ready.poke(snk.cycle().B)
+      out.ready.poke(snk.cycle(cycle).B)
       if (src.fired(in.ready.peek().litToBoolean) && first < 0) first = cycle
       if (snk.fired(out.valid.peek().litToBoolean, LaneBits.peekBeat(out.bits))) lastOut = cycle
       clock.step()
