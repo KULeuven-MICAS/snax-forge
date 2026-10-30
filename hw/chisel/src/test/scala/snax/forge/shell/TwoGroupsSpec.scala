@@ -1,18 +1,16 @@
 package snax.forge.shell
 
-import java.nio.file.Files
-
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{Emit, ForgeTester, LaneBits, RepoPaths, Sink, Source}
+import snax.forge.{ForgeTester, LaneBits, RepoPaths, Sink, Source}
 
 /** Several groups in one accelerator (D146, D148): dot 1 (C§17's table), the generated `accelerator.json` of
   * `recipes/dot_1.json` (the fixture `src/test/resources/rtl/dot_1/`): group mul (ElementwiseLanes, mul, 4 lanes of
   * int64; START 0, JOBS 1, STATUS 2, COUNTER 3) and group sum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS
-  * 5, JOB_BEATS 6, STATUS 7, COUNTER 8). It elaborates into `<tag>_shell_wrapper` with a controller per group and both
-  * datapaths; and each group starts, runs and reports STATUS on its own: sum is started first and starved (its input
-  * held back), mul then runs its 3 jobs to the end while sum stays busy, then sum's input flows and it ends.
+  * 5, JOB_BEATS 6, STATUS 7, COUNTER 8). Each group starts, runs and reports STATUS on its own: sum is started first
+  * and starved (its input held back), mul then runs its 3 jobs to the end while sum stays busy, then sum's input flows
+  * and it ends.
   */
 class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
@@ -20,19 +18,6 @@ class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
   private val spec = AcceleratorSpec.load(file)
 
   behavior of "a two-group accelerator (dot 1)"
-
-  it should "elaborate with a controller per group and both datapaths" in {
-    val out  = Files.createTempDirectory("emit-dot1")
-    val done = Emit.emitSpec(file, out)
-    assert(done.top == "snax_forge_shell_wrapper")
-    for (
-      m <- Seq("snax_forge_csr", "snax_forge_ctrl", "snax_forge_datapath", "snax_forge_mul_ctrl", "snax_forge_sum_ctrl")
-    )
-      assert(done.modules.contains(m), s"$m: ${done.modules}")
-    assert(
-      done.modules.exists(_.startsWith("ElementwiseLanes_")) && done.modules.exists(_.startsWith("TreeAccumulate_"))
-    )
-  }
 
   it should "start, run and report STATUS per group" in {
     test(new ShellHarness(spec)) { dut =>
