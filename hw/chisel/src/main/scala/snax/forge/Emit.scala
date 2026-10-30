@@ -30,6 +30,7 @@ import snax.forge.stream.{FifoPacker, FifoSlicer}
   * pixi run chisel-gen -- --out /tmp/rtl Lanes
   * pixi run chisel-gen -- --describe          # the datapath catalogue (Datapaths), as blocks.json holds it
   * pixi run chisel-gen -- --spec out/rtl/vecadd/accelerator.json   # the accelerator of an accelerator.json (gen-rtl)
+  * pixi run chisel-gen -- --spec A.json --out DIR_A --spec B.json --out DIR_B   # several, in one call
   * }}}
   */
 object Emit {
@@ -80,19 +81,28 @@ object Emit {
       )
     )
 
-  /** The command line, read once: its flags, `--out DIR`, `--spec FILE` and the selectors (every other word). */
-  private case class Args(flags: Set[String], out: Option[Path], spec: Option[Path], selectors: Seq[String])
+  /** The command line, read once: its flags, the catalogue's `--out DIR`, each `--spec FILE` with the `--out DIR` that
+    * follows it (none: the file's folder), and the selectors (every other word).
+    */
+  private case class Args(
+    flags:     Set[String],
+    out:       Option[Path],
+    specs:     Vector[(Path, Option[Path])],
+    selectors: Vector[String]
+  )
 
   private def parse(args: Seq[String]): Args = {
-    var a    = Args(Set.empty, None, None, Vector.empty)
+    var a    = Args(Set.empty, None, Vector.empty, Vector.empty)
     var rest = args.toList
     while (rest.nonEmpty) {
       rest = rest match {
-        case "--out" :: d :: t            => a = a.copy(out = Some(RepoPaths.resolve(d))); t
-        case "--spec" :: f :: t           => a = a.copy(spec = Some(RepoPaths.resolve(f))); t
-        case f :: t if f.startsWith("--") => a = a.copy(flags = a.flags + f); t
-        case x :: t                       => a = a.copy(selectors = a.selectors :+ x); t
-        case Nil                          => Nil
+        case "--spec" :: f :: "--out" :: d :: t =>
+          a = a.copy(specs = a.specs :+ (RepoPaths.resolve(f) -> Some(RepoPaths.resolve(d)))); t
+        case "--spec" :: f :: t                 => a = a.copy(specs = a.specs :+ (RepoPaths.resolve(f) -> None)); t
+        case "--out" :: d :: t                  => a = a.copy(out = Some(RepoPaths.resolve(d))); t
+        case f :: t if f.startsWith("--")       => a = a.copy(flags = a.flags + f); t
+        case x :: t                             => a = a.copy(selectors = a.selectors :+ x); t
+        case Nil                                => Nil
       }
     }
     a
@@ -106,10 +116,12 @@ object Emit {
       return
     }
 
-    args.spec.foreach { spec =>
-      val done = emitSpec(spec, args.out.getOrElse(spec.toAbsolutePath.getParent))
-      done.files.foreach(f => println(s"[snax-forge] wrote ${RepoPaths.display(f)}"))
-      println(s"[snax-forge] ${done.top} from ${RepoPaths.display(spec)}: ${done.modules.size} module(s)")
+    if (args.specs.nonEmpty) {
+      for ((spec, out) <- args.specs) {
+        val done = emitSpec(spec, out.getOrElse(spec.toAbsolutePath.getParent))
+        done.files.foreach(f => println(s"[snax-forge] wrote ${RepoPaths.display(f)}"))
+        println(s"[snax-forge] ${done.top} from ${RepoPaths.display(spec)}: ${done.modules.size} module(s)")
+      }
       return
     }
 

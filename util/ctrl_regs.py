@@ -3,8 +3,7 @@
     pixi run -e hw python util/ctrl_regs.py [--sv DIR] [--out FILE] [FIXTURE ...]
 
 For each fixture under ``hw/chisel/src/test/resources/rtl/`` (all, or those named), its
-``accelerator.json`` is elaborated through ``Emit --spec`` (one sbt run for all, as the chisel
-job's Emit does) into ``DIR/<fixture>/`` (default ``out/ctrl_regs``); then every module of the
+``accelerator.json`` is elaborated through ``Emit --spec`` (one call for all) into ``DIR/<fixture>/`` (default ``out/ctrl_regs``); then every module of the
 emitted SV whose name ends in ``_ctrl`` is read for firtool's ``reg`` declarations, each a
 register of its width (an unpacked array counts each element). Printed, and written to FILE:
 per module one line per register with its name and width, the module's registers and bits;
@@ -29,10 +28,11 @@ _REG = re.compile(
 
 
 def emit(fixtures: list[str], sv: Path) -> None:
-    """``Emit --spec`` on each fixture into ``sv/<fixture>``, in one sbt run."""
-    runs = [f"runMain snax.forge.Emit --spec {FIXTURES / f / 'accelerator.json'} --out {sv / f}"
-            for f in fixtures]  # fmt: skip
-    done = subprocess.run(["sbt", "-batch", *runs], cwd=REPO / "hw/chisel", check=False)
+    """``Emit --spec`` on each fixture into ``sv/<fixture>``, in one call."""
+    pairs = " ".join(f"--spec {FIXTURES / f / 'accelerator.json'} --out {sv / f}" for f in fixtures)
+    done = subprocess.run(
+        ["sbt", "-batch", f"runMain snax.forge.Emit {pairs}"], cwd=REPO / "hw/chisel", check=False
+    )
     if done.returncode:
         sys.exit(f"ctrl_regs: Emit failed (exit {done.returncode})")
 
