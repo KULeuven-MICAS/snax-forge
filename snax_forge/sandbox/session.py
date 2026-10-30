@@ -23,8 +23,8 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
     apply(transform, params, drop=False)   the transform on step k, then the reference check;
                                            int params may be expressions over the session's
                                            params (Recipe.value) and are kept as given. With
-                                           k < n and no ``drop``: ``session.drop`` (the page
-                                           asks whether to drop steps k+1..n). On success the
+                                           k < n and no ``drop``: ``session.drop``, the server's
+                                           guard (the page asks ``drop_question`` first). On success the
                                            steps past k go, the new one is step k + 1 and the
                                            cursor; returns its index, transform, params, the
                                            milliseconds it took and its ``diff``
@@ -118,6 +118,12 @@ class Roots:
 
 def _refused(code: str, message: str, **more: Any) -> dict[str, Any]:
     return {"ok": False, "code": code, "message": message, **more}
+
+
+def drop_question(k: int, n: int) -> str | None:
+    """What the page asks before an apply at step k of n drops the steps after it; None at
+    the last step."""
+    return f"Drop steps {k + 1}..{n}?" if k < n else None
 
 
 def _code(e: Exception) -> str:
@@ -266,7 +272,7 @@ class Session:
             k, n = self.cursor, self.n
             if k < n and not drop:
                 return _refused("session.drop", f"steps {k + 1}..{n} come after step {k}: drop "
-                                "them to apply here", question=f"Drop steps {k + 1}..{n}?")  # fmt: skip
+                                "them to apply here", question=drop_question(k, n))  # fmt: skip
             step = Step(transform, dict(params))
             trial = replace(self.recipe, steps=[*self.recipe.steps[:k], step])
             start = time.perf_counter()

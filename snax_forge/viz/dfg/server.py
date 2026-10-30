@@ -32,8 +32,10 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
                                     sessions); answers as GET
     GET  /api/session               its name, kernel, params, symbols, steps, cursor, n, the
                                     steps' ``labels``, the ``undo`` and ``redo`` steps (null
-                                    at either end), platform, the working ``recipe`` and the
-                                    ``command`` that replays it (``pixi run sandbox``)
+                                    at either end), ``drop``, the question an apply at the
+                                    cursor asks first (null at the last step), platform, the
+                                    working ``recipe`` and the ``command`` that replays it
+                                    (``pixi run sandbox``)
     GET  /api/step/<k>              step k's view, with its diff against step k − 1
     GET  /api/step/<k>/site/<id>    Session.sites on node or container ``id``, bind's with the
                                     bind list, each accepted transform with its ``form``
@@ -179,7 +181,7 @@ class EditState:
 
 def session_summary(s: Any) -> dict[str, Any]:
     """GET /api/session: the session as the page shows it (module doc)."""
-    from snax_forge.sandbox.session import RECIPE_JSON, _shown
+    from snax_forge.sandbox.session import RECIPE_JSON, _shown, drop_question
 
     r = s.recipe
     return {"name": s.name, "kernel": r.kernel, "params": dict(r.params),
@@ -188,6 +190,7 @@ def session_summary(s: Any) -> dict[str, Any]:
             "labels": [_label(s.step_name(k)) for k in range(s.n + 1)],
             "undo": s.cursor - 1 if s.cursor > 0 else None,
             "redo": s.cursor + 1 if s.cursor < s.n else None,
+            "drop": drop_question(s.cursor, s.n),
             "platform": s.platform_path, "recipe": r.to_dict(),
             "command": f"pixi run sandbox {_shown(s.folder / RECIPE_JSON)}"}  # fmt: skip
 

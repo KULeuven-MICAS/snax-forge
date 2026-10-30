@@ -274,15 +274,14 @@ function params(form, el) {
   return out;
 }
 
-async function apply(transform, form, el, drop = false) {
-  const body = { transform, params: params(form, el), drop };
+/** Apply at the cursor; below the last step, the server's question first (``drop``), then the
+steps after the cursor dropped. */
+async function apply(transform, form, el) {
+  const question = ctx.state.session.drop;
+  if (question && !window.confirm(question)) return;
+  const body = { transform, params: params(form, el), drop: !!question };
   ctx.status(`applying ${transform}…`);
   const r = await post("/api/apply", body);
-  if (!r.ok && r.body.code === "session.drop" && !drop) {
-    ctx.status("");
-    if (window.confirm(r.body.question)) await apply(transform, form, el, true);
-    return;
-  }
   log(r.body.log, !r.ok);
   ctx.status(r.ok ? "" : `${r.body.code}: ${r.body.message}`, !r.ok);
   if (r.ok) {

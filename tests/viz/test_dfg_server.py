@@ -146,6 +146,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             and got["code"] == "session.drop"
             and got["question"] == "Drop steps 3..4?"
         )
+        assert get_json(srv, "/api/session")[1]["drop"] == "Drop steps 3..4?"  # the page asks first
         assert get_json(srv, "/api/session")[1]["labels"][1:] == [
             "1 split",
             "2 tag_map",
