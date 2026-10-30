@@ -15,8 +15,8 @@ tasklet no unit runs moves one element per memlet per iteration of every map aro
 ceil(iterations · b / 64) words (b the dtype's bits). A link's and a local value's traffic is
 not L1 traffic: none is counted.
 
-**Splits**: per map whose split left a tail (``loop.split.valid`` n), its W (the inner map's
-length, or once bound the lanes, dfg/pad.py's ``split_factor``) and lane use
+**Splits**: per map whose split left a tail (``loop.split.valid`` n), its W (dfg/pad.py's
+``split_factor``: the inner map's length, or once bound the lanes) and lane use
 n / (ceil(n / W) · W).
 """
 
@@ -170,10 +170,6 @@ def splits(graph: Graph) -> dict[str, SplitData]:
         split = tailed_split(n)
         if split is None:
             continue
-        kids = n.body or []
-        if len(kids) == 1 and kids[0].kind == "map":
-            w = len(map_range(kids[0].attrs["range"], graph.bound_symbols, kids[0].id))
-        else:
-            w = split_factor(n)
-        out[n.id] = SplitData(int(expr.evaluate(split["valid"], graph.bound_symbols)), w)
+        out[n.id] = SplitData(int(expr.evaluate(split["valid"], graph.bound_symbols)),
+                              split_factor(n))  # fmt: skip
     return out

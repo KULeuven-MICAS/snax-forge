@@ -62,3 +62,20 @@ def test_the_estimate_round_trips(name):
     e = estimated(name)
     assert Estimate.from_dict(e.to_dict()).to_dict() == e.to_dict()
     assert Estimate.from_dict(e.to_dict()) == e
+
+
+def test_an_untagged_tail_split_pads_and_checks():
+    """vecadd at N = 60 split by 8 with ``split`` alone (both maps untagged): W comes from the
+    inner map (dfg/pad.py's split_factor), so the reference check passes and 60 of 64 lanes
+    are used."""
+    from snax_forge.dfg import Graph
+    from snax_forge.sandbox import Recipe, Step, apply_recipe
+    from tests.helpers import FIXTURES
+
+    r = Recipe(
+        "vecadd_60", "vecadd", {}, {"N": 60}, [Step("split", {"map": "add_map", "factor": 8})]
+    )
+    last = apply_recipe(r, Graph.load(FIXTURES / "vecadd.snaxdfg"))[-1].graph  # checked
+    s = estimate(last).splits["add_map"]
+    assert (s.n, s.w, s.lane_use) == (60, 8, 60 / 64)
+    assert estimate(last).containers["A"].bytes == 64 * 8

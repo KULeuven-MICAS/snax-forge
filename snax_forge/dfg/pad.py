@@ -56,11 +56,14 @@ def _users(graph: Graph, c: str) -> Iterator[tuple[Node, tuple[Node, ...]]]:
 
 
 def split_factor(node: Node) -> int:
-    """W of a tailed split map: its spatial map's length, or once bound, the lanes its
-    accelerated node's ranges move per step of the map's variable."""
+    """W of a tailed split map: its only child map's length whatever its tag (``split`` leaves
+    it untagged), else its spatial map's, or once bound, the lanes its accelerated node's
+    ranges move per step of the map's variable."""
     var = node.attrs["var"]
-    for kid in node.body or []:
-        if kid.kind == "map" and kid.attrs.get("loop.kind") == "spatial":
+    kids = node.body or []
+    only = len(kids) == 1 and kids[0].kind == "map" and node.attrs.get("loop.split")
+    for kid in kids:
+        if kid.kind == "map" and (only or kid.attrs.get("loop.kind") == "spatial"):
             begin, end, _ = parse_dim(kid.attrs["range"], kid.id)
             return int(end) - int(begin)
         for m in (*kid.inputs.values(), *kid.outputs.values()):
