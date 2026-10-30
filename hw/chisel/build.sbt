@@ -37,7 +37,20 @@ lazy val root = (project in file("."))
     addCompilerPlugin(
       "org.chipsalliance" % "chisel-plugin" % chiselVersion cross CrossVersion.full
     ),
-    // The specs poke and peek shared DUT handles; running them concurrently
-    // inside one JVM produces flaky, uninterpretable failures.
-    Test / parallelExecution := false
+    // The specs poke and peek shared DUT handles, so suites never share a JVM:
+    // each runs in a forked JVM of its own, several at a time (below).
+    Test / fork              := true,
+    Test / parallelExecution := true,
+    Test / testGrouping      := (Test / definedTests).value.map { t =>
+      Tests.Group(t.name, Seq(t), Tests.SubProcess(ForkOptions()))
+    }
   )
+
+// sbt's defaults, but a forked test group per CPU, at most 8, in place of one
+// (chisel-test: about 120 s in one JVM, 55-65 s with 8 forks on 32 CPUs)
+val cpus = java.lang.Runtime.getRuntime.availableProcessors
+Global / concurrentRestrictions := Seq(
+  Tags.limitAll(cpus),
+  Tags.limit(Tags.ForkedTestGroup, cpus min 8),
+  Tags.exclusiveGroup(Tags.Clean)
+)

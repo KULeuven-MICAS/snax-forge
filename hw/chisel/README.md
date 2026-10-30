@@ -79,7 +79,7 @@ Every module has a spec; the random ones drive it with seeded random data, confi
 | `ShellRandomSpec` | per fixture: J, T, empty runs, data at its types, streamer gaps and stalls, polled or held starts | the datapath models; STATUS and COUNTER as C§17 states them |
 | `FifoSlicerSpec`, `FifoPackerSpec` | types, words, lanes, data, input gaps, output stalls; the slicer into the packer | the element order of D142 (the docstrings) |
 
-The random specs run one test per seed of `Seeds` (scalatest names it "seed N"); `SNAX_FORGE_SEED=N pixi run -e hw chisel-test` runs only seed N.
+The random specs run one test per seed of `Seeds` (scalatest names it "seed N"); `SNAX_FORGE_SEED=N pixi run -e hw chisel-test` runs only seed N. Each suite runs in a forked JVM of its own, a fork per CPU and at most 8 at a time (`build.sbt`), so the slowest suite (ShellRandomSpec) bounds the run.
 
 Waveforms: `SNAX_FORGE_VCD=1 pixi run -e hw chisel-test` writes each test's to `hw/chisel/test_run_dir/<test name>/<module>.vcd`, e.g. vecadd's end to end at `test_run_dir/the_shell_wrapper_end_to_end_should_give_vecadds_goldens_and_its_counter/ShellHarness.vcd`.
 
