@@ -5,7 +5,7 @@ import scala.collection.immutable.SeqMap
 import chisel3._
 
 /** The wrapper's ports but the clock and reset, named as `snax_acc_wrapper.sv.tpl` connects `<tag>_shell_wrapper` with
-  * `snax_disable_csr_manager` (C§17): the CSR request and response after `snax_csr_mux_demux`, then per input port k
+  * `snax_disable_csr_manager`: the CSR request and response after `snax_csr_mux_demux`, then per input port k
   * `stream2acc_<k>_{data_i,valid_i,ready_o}` and per output port `acc2stream_<k>_{data_o,valid_o,ready_i}`; then per
   * group `<group>_busy_o` and `<group>_done_o` (D146), which snax_cluster leaves unconnected (open item 92).
   *
@@ -45,8 +45,7 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   def uint(name:  String): UInt = elements(name).asInstanceOf[UInt]
 }
 
-/** `<tag>_shell_wrapper`: one generated accelerator as snax_cluster instantiates it (D130, C§17), from
-  * `accelerator.json` (D145).
+/** `<tag>_shell_wrapper`: one generated accelerator as snax_cluster instantiates it (C§17), from `accelerator.json`.
   *
   * Three modules inside (D147): `<tag>_csr` (`AccCsr`, the CSR manager over the file's CSRs), `<tag>_ctrl` (`AccCtrl`,
   * a control unit per group) and `<tag>_datapath` (`AccDatapath`, the units' datapaths and the links' buffers). Only

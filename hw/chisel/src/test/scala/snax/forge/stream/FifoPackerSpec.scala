@@ -75,7 +75,7 @@ class FifoPackerSpec extends AnyFlatSpec with ForgeTester {
     }
   }
 
-  it should "pack E1's lanes -3, then 5 (int32) into word 0x00000005fffffffd" in {
+  it should "pack the int32 lanes -3, then 5 into the word 0x00000005fffffffd" in {
     test(new FifoPacker(1, "int32", 1)) { dut =>
       val chunks   = Seq(BigInt(-3), BigInt(5)).map(_ & LaneBits.mask(32))
       val (got, _) = drive(dut.clock, dut.io.in, dut.io.out, chunks, 1, 0.0, 0.0, new Rand(1))

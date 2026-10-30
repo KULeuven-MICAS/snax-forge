@@ -4,7 +4,7 @@ import chisel3._
 
 import snax.forge.IntType
 
-/** The datapath of a fold (D133, D147): the `accumulate` BRM's sum, latency 1, pins `fire` and `first`.
+/** The datapath of a fold (D133): the `accumulate` BRM's sum, latency 1, pins `fire` and `first`.
   *
   * Data and enables only: no valid, ready or counter. Each input beat is `lanes` elements of `inType`; each is cast to
   * `outType` (NumPy's fold: sign-extended from a signed `inType`, zero-extended from an unsigned one, D143) and a

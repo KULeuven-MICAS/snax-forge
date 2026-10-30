@@ -4,7 +4,7 @@ import chisel3._
 
 import snax.forge.IntType
 
-/** The MAC (D149; C§17's catalogue entry `Mac`): one block with design-time variants, data and enables only (D147).
+/** The MAC (C§17's catalogue entry `Mac`): one block with design-time variants, data and enables only.
   *
   * Per lane the product p = cast_out(cast_op(a) · cast_op(b)): `a` and `b` each extended to `opType` by its own
   * signedness, multiplied wrapping at `opType`, then extended or wrapped into `outType` (D143).

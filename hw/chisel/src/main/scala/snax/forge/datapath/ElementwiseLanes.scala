@@ -5,7 +5,7 @@ import chisel3._
 import snax.forge.IntType
 import snax.forge.elementwise.{ElementwiseAlu, ElementwiseOp}
 
-/** `lanes` lanes of one op: the datapath of an elementwise unit (D147), latency 0, no pins.
+/** `lanes` lanes of one op: the datapath of an elementwise unit, latency 0, no pins.
   *
   * Data only: no valid, ready or counter. Its group's control unit (`ctrl.GroupCtrl`) decides when a beat is taken and
   * the result pushed; in that cycle `out` is the op on `a` and `b`, lane by lane.

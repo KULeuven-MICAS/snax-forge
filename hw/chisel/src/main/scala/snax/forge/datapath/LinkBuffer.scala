@@ -5,7 +5,7 @@ import chisel3.util.log2Ceil
 
 import snax.forge.IntType
 
-/** A link's buffer of `depth` beats (D149; C§17's catalogue entry `LinkBuffer`): data and enables only (D147).
+/** A link's buffer of `depth` beats (C§17's catalogue entry `LinkBuffer`): data and enables only.
   *
   * On `load` slot `wslot` takes the input beat; `out` is slot `rslot`. The occupancy and the ring's slots are its
   * group's control unit's (`ctrl.GroupCtrl`), so a beat written in one cycle is read from the next (latency 1). The

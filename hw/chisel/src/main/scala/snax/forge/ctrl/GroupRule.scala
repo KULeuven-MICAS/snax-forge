@@ -3,10 +3,10 @@ package snax.forge.ctrl
 import chisel3._
 import chisel3.util._
 
-/** One unit of a group's description (C§17, `accelerator.json`): its name, its timing (L, II, span), its outer inputs
-  * (the streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else
-  * None: a JOB_BEATS from the start; and `linked`, the positions among its inputs (C§17's port order) that no outer
-  * port takes, each fed by one link (snax_group.cpp's inputs left "").
+/** One unit of a group's description (`accelerator.json`): its name, its timing (L, II, span), its outer inputs (the
+  * streamer's ports it reads), its T when fixed at design time (`params.T`; 1 for a unit without a fold), else None: a
+  * JOB_BEATS from the start; and `linked`, the positions among its inputs (in port order) that no outer port takes,
+  * each fed by one link (snax_group.cpp's inputs left "").
   */
 case class UnitDesc(
   name:    String,
@@ -148,10 +148,10 @@ class LinkEnables(depth: Int) extends Bundle {
   * its input has a beat (its outer valids and every in-edge's offer: a wire its producer's offer, a buffer occupancy >
   * 0); backward, in reverse order, its room (its outer output's ready if it owns it, and every out-edge's take: a wire
   * its consumer's firing, a buffer occupancy < D or that firing), whether it is frozen (its head, or at L 0 a giving
-  * firing, has no room), fires and reads. The outer ports' join is per unit (C§17): input j's ready is its unit's
-  * firing, which needs every one of that unit's outer valids. The outer output's valid is its owner's offer, never its
-  * ready's. `cls` is the cycle's class, judged at the owner, as the run line counts it: busy 0, stall_in 1, stall_out
-  * 2, flush 3.
+  * firing, has no room), fires and reads. The outer ports' join is per unit: input j's ready is its unit's firing,
+  * which needs every one of that unit's outer valids. The outer output's valid is its owner's offer, never its ready's.
+  * `cls` is the cycle's class, judged at the owner, as the run line counts it: busy 0, stall_in 1, stall_out 2, flush
+  * 3.
   */
 class GroupRule(val desc: GroupDesc) {
   // The C++ stays the spec (it has no area); here a register exists only where the description says the value changes

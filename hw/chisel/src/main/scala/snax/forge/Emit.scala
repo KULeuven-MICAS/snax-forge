@@ -16,10 +16,9 @@ import snax.forge.stream.{FifoPacker, FifoSlicer}
   *
   * ==Why emission lives here and not in each module==
   *
-  * A `main` inside every module would work, and would spare this file a catalogue. One catalogue keeps the mapping from
-  * a configuration to a module and its constructor arguments in one place, which is where a later generator (from a
-  * BRM's hardware binding) plugs in. It also keeps one copy of the firtool flags rather than one per module, and one
-  * `runMain` target rather than N.
+  * A `main` inside every module would work, and would spare this file a catalogue. One entry point keeps one copy of
+  * the firtool flags rather than one per module, one `runMain` target rather than N, and builds both the catalogue
+  * (from the `Datapaths` registry) and a design point's accelerator (`--spec`) through the same flags.
   *
   * ==Usage==
   *
@@ -37,8 +36,8 @@ object Emit {
 
   /** firtool flags shared by every SNAX-FORGE emission.
     *
-    * Not private: a later generator (from a BRM's hardware binding) elaborates through the same flags. Two entry points
-    * with two copies of the flag list would eventually produce RTL that differs depending on which one built it.
+    * One list for the catalogue and `--spec`: two copies would eventually produce RTL that differs depending on which
+    * one built it.
     *
     *   - `-disable-all-randomization` removes the `RANDOMIZE_*` ifdef soup, so one .sv file is consumable by Verilator
     *     and by a synthesis flow without a per-tool define set.
@@ -160,8 +159,8 @@ object Emit {
   /** What `emitSpec` wrote: the top module, every module, and the files (those in `sv/`, then `emitted.json`). */
   case class Emitted(top: String, modules: Seq[String], files: Seq[Path])
 
-  /** `--spec <accelerator.json> [--out DIR]`: the accelerator of `accelerator.json` (C§17, D145), `<tag>_shell_wrapper`
-    * and what it holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of the file), and
+  /** `--spec <accelerator.json> [--out DIR]`: the accelerator of `accelerator.json` (C§17), `<tag>_shell_wrapper` and
+    * what it holds, one SystemVerilog file per module in `DIR/sv/` (default `DIR` the folder of the file), and
     * `DIR/emitted.json`: `rtl` (the file it was built from), `top`, `modules` and `files` (paths from `DIR`). The files
     * a previous `emitted.json` lists are removed first, so `sv/` holds this spec's files only.
     */
@@ -191,7 +190,7 @@ object Emit {
 
   private val ModuleLine = raw"module (\w+)\b.*".r
 
-  /** `--describe`: the datapath catalogue from the registry (`Datapaths`), as `hw/chisel/blocks.json` holds it (D130).
+  /** `--describe`: the datapath catalogue from the registry (`Datapaths`), as `hw/chisel/blocks.json` holds it.
     */
   def describe: String = ujson.write(Datapaths.describe, indent = 1)
 

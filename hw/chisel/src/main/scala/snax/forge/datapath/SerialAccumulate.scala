@@ -5,7 +5,7 @@ import chisel3.util.log2Ceil
 
 import snax.forge.IntType
 
-/** The one-lane sum (D149; C§17's catalogue entry `SerialAccumulate`): data and enables only (D147), span = `lanes`.
+/** The one-lane sum (C§17's catalogue entry `SerialAccumulate`): data and enables only, span = `lanes`.
   *
   * It reads its input beat in place, one lane a cycle: on `read`, acc ← (`first` ∧ `lane` = 0) ? cast_out(x_lane) : acc
   * + cast_out(x_lane), each lane cast to `outType` by `inType`'s signedness (D143); `out` is acc. Its control unit

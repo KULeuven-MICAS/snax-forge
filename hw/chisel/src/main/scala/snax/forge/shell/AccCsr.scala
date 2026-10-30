@@ -23,7 +23,7 @@ class CsrRsp extends Bundle {
   *
   *   - A write to a read-write CSR is taken when the request fires and reads back as written (32 bits).
   *   - A write to a group's START with bit 0 set fires that group's `starts(g)` with its JOBS and each JOB_BEATS in
-  *     unit order as they stand (C§17: before the write, which is to START alone; JOBS and 1 for a group without a
+  *     unit order as they stand (before the write, which is to START alone; JOBS and 1 for a group without a
   *     JOB_BEATS), and the request is ready only when `starts(g)` is: a start while the group is busy is held,
   *     `req.ready` low, until it is idle.
   *   - A read is answered in the cycle it fires, from the registers or the read-only inputs in that cycle; when `rsp`

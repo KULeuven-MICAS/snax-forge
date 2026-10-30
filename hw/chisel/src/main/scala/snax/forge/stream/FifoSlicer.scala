@@ -7,11 +7,11 @@ import snax.forge.IntType
 
 /** A beat of `words` 64-bit words in, `outLanes` lanes of `laneType` out per pop: the FIFO slicer (D142).
   *
-  * Built and parked: the flow places only the wire slice (D142, a port of W lanes takes W / num_slc whole words), and
-  * this block is not in `Datapaths`' catalogue. It is here for a block whose lanes are fewer than a beat's elements.
+  * Built and parked: the flow places only the wire slice (a port of W lanes takes W / num_slc whole words), and this
+  * block is not in `Datapaths`' catalogue. It is here for a block whose lanes are fewer than a beat's elements.
   *
-  * A word holds num_slc = 64 / width slices (elements), element j of word i at bits `[w(j+1)-1 : wj]` (D142), so a beat
-  * is `words` * num_slc elements, element e at bits `[w(e+1)-1 : we]` of the beat. Each in-beat is popped r = `words` *
+  * A word holds num_slc = 64 / width slices (elements), element j of word i at bits `[w(j+1)-1 : wj]`, so a beat is
+  * `words` * num_slc elements, element e at bits `[w(e+1)-1 : we]` of the beat. Each in-beat is popped r = `words` *
   * num_slc / `outLanes` times, lane l of pop u element u * `outLanes` + l.
   *
   * State: the in-beat's words and a counter of ceil(log2 r) bits (none for r = 1), with a bit for whether a beat is

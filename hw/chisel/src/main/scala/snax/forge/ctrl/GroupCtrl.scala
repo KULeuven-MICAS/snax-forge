@@ -3,8 +3,8 @@ package snax.forge.ctrl
 import chisel3._
 import chisel3.util._
 
-/** A group's start as `<tag>_csr` sends it (C§17): JOBS, then each of its `open` units' JOB_BEATS in unit order
-  * (`beats`; one word, 1, when the group has none).
+/** A group's start as `<tag>_csr` sends it: JOBS, then each of its `open` units' JOB_BEATS in unit order (`beats`; one
+  * word, 1, when the group has none).
   */
 class GroupStart(val open: Int) extends Bundle {
   val jobs  = UInt(32.W)
