@@ -63,7 +63,7 @@ $$B = \max(A, 0)$$
 $$y_i = \sum_j A_{ij}$$
 
 - A partial reduction: the reduced axis is not the output's, so the accumulator restarts per row (T < N).
-- It runs: `recipes/rowsum.json` (adder tree, W = 4) and `recipes/rowsum_serial.json` (accumulator, W = 1) tag the row map temporal and split the column map, so T = N / W beats per sum and M sums per run (the restart, open item 81).
+- It runs: `recipes/rowsum.json` (adder tree, W = 4) and `recipes/rowsum_serial.json` (accumulator, W = 1) tag the row map temporal and split the column map, so T = N / W beats per sum and M sums per run (the restart, M13 B0).
 - The result goes through a view, which the importer folds: the Reduce writes `y` directly.
 - `softmax`'s sum pass has this shape.
 
