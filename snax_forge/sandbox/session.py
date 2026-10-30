@@ -396,25 +396,38 @@ class Session:
         return self._estimates[k]
 
     def _diff(self, k: int) -> dict[str, Any]:
-        empty: dict[str, Any] = {"nodes": {"added": [], "removed": [], "changed": []},
-                                 "containers": {"added": [], "removed": [], "changed": []}}  # fmt: skip
         if k == 0:
             self._step(0)
-            return empty
-        new, old = self._step(k), self._step(k - 1)
-        a, b = _nodes(old), _nodes(new)
-        empty["nodes"] = {"added": [i for i in b if i not in a],
-                          "removed": [i for i in a if i not in b],
-                          "changed": [i for i in b if i in a and a[i] != b[i]]}  # fmt: skip
-        pa, pb = self._estimate(k - 1).containers, self._estimate(k).containers
-        ca, cb = old.containers, new.containers
-        empty["containers"] = {
-            "added": [c for c in cb if c not in ca],
-            "removed": [c for c in ca if c not in cb],
-            "changed": [c for c in cb if c in ca and (ca[c].attrs != cb[c].attrs or (
-                pa[c].placement, pa[c].depth) != (pb[c].placement, pb[c].depth))],
-        }  # fmt: skip
-        return empty
+            return graph_diff(None, self.graphs[0])
+        return graph_diff(self._step(k - 1), self._step(k), self._estimate(k - 1).containers,
+                          self._estimate(k).containers)  # fmt: skip
+
+
+def graph_diff(old: Graph | None, new: Graph, placed_old: Any = None,
+               placed_new: Any = None) -> dict[str, Any]:  # fmt: skip
+    """``new`` against ``old`` (module doc's ``diff``), placements from the two estimates'
+    containers when given; empty without ``old``. The view mode's compare uses it too."""
+    out: dict[str, Any] = {"nodes": {"added": [], "removed": [], "changed": []},
+                           "containers": {"added": [], "removed": [], "changed": []}}  # fmt: skip
+    if old is None:
+        return out
+    a, b = _nodes(old), _nodes(new)
+    out["nodes"] = {"added": [i for i in b if i not in a],
+                    "removed": [i for i in a if i not in b],
+                    "changed": [i for i in b if i in a and a[i] != b[i]]}  # fmt: skip
+    pa, pb = placed_old or {}, placed_new or {}
+
+    def placed(p: Any, c: str) -> Any:
+        return (p[c].placement, p[c].depth) if c in p else None
+
+    ca, cb = old.containers, new.containers
+    out["containers"] = {
+        "added": [c for c in cb if c not in ca],
+        "removed": [c for c in ca if c not in cb],
+        "changed": [c for c in cb if c in ca and (ca[c].attrs != cb[c].attrs
+                                                   or placed(pa, c) != placed(pb, c))],
+    }  # fmt: skip
+    return out
 
 
 def _accepted(g: Graph, selected: str) -> bool:

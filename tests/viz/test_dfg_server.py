@@ -49,13 +49,26 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "i_t · 128 · temporal"} <= set(texts)
         assert v["containers"]["A"]["badge"] == "L1 · 4 KiB"
         (edge,) = [e for e in v["edges"] if e["data"] == "tmp0" and e["to"].startswith("sum.")]
-        d = v["details"][edge["id"]]
+        d = v["details"][f"edge:{edge['id']}"]
         assert (d["subset"], d["packing"], d["loops"], d["beats"], d["streamer"]) == (
             ["4 * i_t_1:4 * i_t_1 + 4"], "int64 · num_slc 1 · num_ch 4", [["i_t_1", 128]], 128,
             False)  # fmt: skip
         assert [g["cycles"] for g in v["estimate"]["groups"]] == [130]
         assert "tmp0" in v["marks"]["containers"] and "diff" not in v
-        assert get_json(srv, "/api/graphs")[0] == 200  # the old page's routes stay
+        s = v["summary"]
+        assert (s["accelerator_cycles"], s["not_mapped"], s["groups"][0]["formula"], s["groups"][0]["counter"]) == (
+            130, 0, "130 = 128 + 2", 133)  # fmt: skip
+        assert (s["l1"]["footprint_text"], s["l1"]["size_text"], s["reads"], s["writes"]) == (
+            "8200 B", "128 KiB", 1024, 1)  # fmt: skip
+        # Compare: the link step against the one before, the session's diff and the fields
+        status, c = get_json(srv, "/api/compare/4/5")
+        assert status == 200 and (c["a"], c["b"]) == (4, 5)
+        assert c["diff"]["nodes"]["added"] == ["tmp0"] and c["diff"]["containers"]["changed"] == [
+            "tmp0"
+        ]
+        assert "placement" in c["changed"]["container:tmp0"] and "node:tmp0" in c["changed"]
+        assert get_json(srv, "/api/compare/4/9")[0] == 404
+        assert get_json(srv, "/api/graphs")[0] == 404  # the old page's routes are gone
         assert get_json(srv, "/api/step/6")[0] == 404
 
 

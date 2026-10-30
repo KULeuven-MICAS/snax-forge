@@ -13,9 +13,10 @@ its files in natural order). The estimate is on ``--platform`` when given, else 
     GET  /api/step/<k>        step k's view (api.step_view: the drawing, its compact texts and
                               Details, the marks and the estimate); a file that does not load
                               is its entry with the error, not an HTTP error
+    GET  /api/compare/<j>/<k> step j against step k (api.compare_view: the session's diff of the
+                              two graphs and the Details fields that changed), for the page's
+                              Compare
     POST /api/reload          read every file again
-    GET  /api/graphs          the old page's routes (dfg.js), until R5a: name, path, graph name
-    GET  /api/graph/<name>    and load error per file, and the view of one file
 
 **Edit mode** (``make_edit_server``, ``pixi run edit-dfg``): one session (sandbox/session.py)
 behind routes; the page opens or starts one, then edits it. Sessions, saved recipes and step
@@ -224,20 +225,15 @@ class DfgHandler(Handler):
         self._json(found)
 
     def _view_get(self, parts: list[str]) -> Any:
-        graphs = self.server.loaded
-        if parts == ["graphs"]:
-            return graphs.summaries()
-        if len(parts) == 2 and parts[0] == "graph":
-            entry = graphs.get(parts[1])
-            if entry is None:
-                raise LookupError(f"no graph named {parts[1]!r}")
-            return api.graph_view(entry, self.server.platform)
-        entries = list(graphs.values())
+        entries = list(self.server.loaded.values())
         if parts == ["steps"]:
             return [{"name": e.name, "label": _label(e.name), "error": e.error} for e in entries]
         if len(parts) == 2 and parts[0] == "step":
             k = _index(parts[1], len(entries) - 1)
             return api.step_view(entries[k], _label(entries[k].name), self.server.platform)
+        if len(parts) == 3 and parts[0] == "compare":
+            j, k = (_index(x, len(entries) - 1) for x in parts[1:])
+            return {"a": j, "b": k} | api.compare_view(entries[j], entries[k], self.server.platform)
         return None
 
     def _edit_get(self, parts: list[str]) -> Any:
