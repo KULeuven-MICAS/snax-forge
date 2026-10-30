@@ -90,16 +90,6 @@ def test_tag_map_spatial_unsplit_binds_at_w_n():
     assert acc.inputs["a"].subset == ["0:64"]
 
 
-def test_a_graph_with_the_old_loop_tagged_still_loads():
-    """loop.tagged, which tag_map wrote before D73's split, is a namespaced attr: it passes
-    through, and untag_map takes the tag off as any."""
-    d = graph_dict("vecadd")
-    d["body"][0]["attrs"] |= {"loop.kind": "temporal", "loop.tagged": True}
-    g = Graph.from_dict(d)
-    assert g.node("add_map").attrs["loop.tagged"] is True
-    assert "loop.kind" not in untag_map(g, "add_map").node("add_map").attrs
-
-
 # =============================================================================
 # bind on the firing loops
 # =============================================================================

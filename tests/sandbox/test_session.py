@@ -5,28 +5,16 @@ slow; the roots are in ``tmp_path``."""
 
 from __future__ import annotations
 
-import functools
-
 import pytest
 
 from snax_forge.design import Platform
-from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe, session
 from snax_forge.sandbox.session import Roots, Session
+from tests.helpers import imported
 
 from .helpers import RECIPES, REPO, recipe_graphs
 
 pytestmark = pytest.mark.slow
-
-
-@functools.cache
-def _imported(kernel: str, dtypes: tuple[tuple[str, str], ...]):
-    return import_kernel(kernel, dict(dtypes) or None)
-
-
-def imported(kernel: str, dtypes: dict[str, str] | None = None):
-    """A kernel's import, once per kernel and dtypes (the session never changes it)."""
-    return _imported(kernel, tuple(sorted((dtypes or {}).items())))
 
 
 @pytest.fixture(autouse=True)

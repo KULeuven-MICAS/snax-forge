@@ -8,8 +8,9 @@ from snax_forge.estimate import Estimate, estimate
 from snax_forge.estimate.cycles import not_mapped
 from snax_forge.sandbox import split, split_map, split_reduce
 from snax_forge.sandbox.transforms import tag_map
+from tests.helpers import imported, steps
 
-from .helpers import estimated, imported, steps
+from .helpers import estimated
 
 
 @pytest.mark.slow

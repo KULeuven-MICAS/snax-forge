@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import threading
-from contextlib import contextmanager
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -23,7 +21,7 @@ from snax_forge.viz.dfg.api import GraphSet, entry_names, expand, graph_view, lo
 from snax_forge.viz.dfg.server import make_dfg_server
 from tests.helpers import FIXTURES, REPO
 
-from .helpers import get
+from .helpers import get, served
 
 
 def view(path: Path) -> dict:
@@ -292,24 +290,11 @@ def test_unused_containers_are_in_the_first_row(tmp_path):
 # =============================================================================
 
 
-@contextmanager
-def serving(paths):
-    srv = make_dfg_server(list(paths), port=0)
-    th = threading.Thread(target=srv.serve_forever, daemon=True)
-    th.start()
-    try:
-        yield srv
-    finally:
-        srv.shutdown()
-        srv.server_close()
-        th.join(timeout=5)
-
-
 def test_routes(tmp_path):
     """View mode: the steps, a step, a reload; the old page's routes are gone."""
     path = tmp_path / "vecadd.snaxdfg"
     shutil.copy(FIXTURES / "vecadd.snaxdfg", path)
-    with serving([path]) as srv:
+    with served(make_dfg_server([path], port=0)) as srv:
         status, ctype, body = get(srv, "/")
         assert status == 200 and ctype == "text/html" and b"dfg.js" in body
         assert get(srv, "/dfg.js")[1] == "text/javascript"

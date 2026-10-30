@@ -4,7 +4,6 @@ mode over a recipe's step files, edit mode over a session (sandbox/session.py) w
 
 from __future__ import annotations
 
-import functools
 import re
 from pathlib import Path
 
@@ -14,7 +13,7 @@ from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe, session, write_steps
 from snax_forge.sandbox.session import Roots
 from snax_forge.viz.dfg.server import make_dfg_server, make_edit_server
-from tests.helpers import REPO
+from tests.helpers import REPO, imported
 
 from .helpers import get, get_json, post, run_dir, served, serving
 
@@ -85,16 +84,9 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
 # =============================================================================
 
 
-@functools.cache
-def _imported(kernel, dtypes):
-    return import_kernel(kernel, dict(dtypes) or None)
-
-
 @pytest.mark.slow
 def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
-    monkeypatch.setattr(
-        session, "_import", lambda k, d: _imported(k, tuple(sorted((d or {}).items())))
-    )
+    monkeypatch.setattr(session, "_import", imported)
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
     with served(make_edit_server(0, roots=roots)) as srv:
         assert get_json(srv, "/api/mode")[1]["mode"] == "edit"
