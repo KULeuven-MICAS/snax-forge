@@ -7,7 +7,8 @@ named it (D137).
 
     summary       the program's window (total cycles), passed, data errors over
                   the output words, each task's counter as the program printed
-                  it, the trace level and the boot's length (the cycles before
+                  it next to the COUNTER the ideal estimate expects (D151:
+                  its group's cycles plus the streamers' fill), the trace level and the boot's length (the cycles before
                   the window, which the profile, the cores and the trace share)
     tasks         per block each task's start, done and length, named from the
                   task list; a DMA copy with its direction and bytes
@@ -59,6 +60,7 @@ class CheckRow(Record):
     data_errors: int
     words: int
     counters: dict[str, int]  # per accelerator task, as the program printed it
+    expected: dict[str, int] = field(default_factory=dict)  # per task, the estimate's COUNTER
 
 
 @dataclass
@@ -269,6 +271,19 @@ def _next_task(rows: list[TaskRow] | None, after: int) -> TaskRow | None:
     return min(later, key=lambda r: (r.start, r.block)) if later else None
 
 
+def expected_counters(point: Any) -> dict[str, int]:
+    """Per accelerator task, the COUNTER the ideal estimate expects (D151): its group's (a task's
+    component is its group), for a group that runs one task."""
+    from snax_forge.estimate import estimate
+    from snax_forge.lower.derive import task_list
+
+    by_group = {g.name: g.counter for g in estimate(point.graph, point.platform).groups}
+    tasks = task_list(point).accel_steps()
+    runs = [t.component for t in tasks]
+    return {t.task_name: by_group[t.component] for t in tasks
+            if t.component in by_group and runs.count(t.component) == 1}  # fmt: skip
+
+
 def build_run(rv: api.RunView) -> RunReport:
     """The run report of one loaded flow run."""
     p = rv.outputs.profile
@@ -278,7 +293,8 @@ def build_run(rv: api.RunView) -> RunReport:
     check = None
     if fc:
         check = CheckRow(bool(fc["passed"]), fc.get("kernel", ""), fc["data_errors"], fc["words"],
-                         {t: x["counter"] for t, x in fc.get("tasks", {}).items()})  # fmt: skip
+                         {t: x["counter"] for t, x in fc.get("tasks", {}).items()},
+                         expected_counters(rv.point))  # fmt: skip
     acc = rv.cluster.accelerator
     group = {u.name: u.group for u in acc.units}
     unit_of = {t: u for u in acc.unit_names for t in rv.index.tasks_of.get(u, [])}
@@ -353,7 +369,13 @@ def render_run(r: RunReport) -> str:
     else:
         check = "passed" if r.check.passed else "FAILED"
         data = f"{r.check.data_errors} errors over {r.check.words} words"
-        counters = ", ".join(f"{t} {n}" for t, n in r.check.counters.items()) or "none"
+        counters = (
+            ", ".join(
+                f"{t} {n}" + (f" (expected {r.check.expected[t]})" if t in r.check.expected else "")
+                for t, n in r.check.counters.items()
+            )
+            or "none"
+        )
     trace = r.trace_level
     if r.boot is not None:
         trace += f"; boot {r.boot} cycles (to the mcycle read in main)"
