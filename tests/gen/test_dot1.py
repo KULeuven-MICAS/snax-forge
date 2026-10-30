@@ -5,7 +5,8 @@ The description is C§17's (tests/gen/test_accelerator.py's ``dot``): MUL at off
 at 4-8 (rw 5, ro 4); the header names every CSR with its group; the streamer holds every
 unit's movers, readers mul.a, mul.b, sum.a and writers mul.out, sum.out; the manifest lists
 both tasks with their group's values and their unit's trace path. Without encapsulate the
-two groups are two accelerators, which the platform's one slot refuses (gen.instances).
+two groups are two accelerators, which the design checks refuse on the platform's one slot
+(gen.instances, tests/design/test_check.py).
 """
 
 from __future__ import annotations
@@ -17,9 +18,8 @@ import hjson
 import pytest
 
 from snax_forge.design import DesignPoint
-from snax_forge.gen import GenError, describe, generate
+from snax_forge.gen import describe, generate
 from snax_forge.gen.rtl import write_fixture
-from tests.design.helpers import FIXTURES
 
 from .helpers import bound_dot1, point
 from .test_accelerator import dot
@@ -92,12 +92,3 @@ def test_the_rtl_fixture_has_no_vectors(made, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp)
     assert write_fixture(path, tmp_path / "fx", tmp) == []
     assert not (tmp_path / "fx").exists()
-
-
-def test_without_encapsulate_the_groups_are_two_accelerators(tmp_path):
-    from snax_forge.dfg import Graph
-
-    g = Graph.load(FIXTURES / "dot_accelerated.snaxdfg")
-    with pytest.raises(GenError) as e:
-        generate(point(tmp_path, name="dot", graph=g), tmp_path / "out", root=tmp_path)
-    assert e.value.code == "gen.instances" and "2 accelerators ['mul', 'sum']" in str(e.value)

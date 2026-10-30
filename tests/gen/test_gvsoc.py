@@ -14,7 +14,6 @@ import pytest
 from snax_forge.brm import CONTROLLERS, Brm, Instance, load_brm
 from snax_forge.common import generated_header
 from snax_forge.design import DesignError, DesignPoint, Platform
-from snax_forge.dfg import Graph
 from snax_forge.gen import DATAPATHS, ELEMENTWISE_OP, Accelerator, GenError, Manifest, generate
 from snax_forge.gen import __main__ as cli
 from snax_forge.gen import csrs as csrs_mod
@@ -23,8 +22,8 @@ from snax_forge.gen.blocks import Port, elementwise_lanes, tree_accumulate
 from snax_forge.gen.data import array_text, arrays
 from snax_forge.lower import c as c_mod
 from tests.brm.helpers import IMPL
-from tests.design.helpers import REPO, SNAX_FORGE, chained
-from tests.helpers import bound_vsum, graph_dict, requires_submodule
+from tests.design.helpers import REPO, SNAX_FORGE
+from tests.helpers import bound_vsum, requires_submodule
 
 from .helpers import (
     SOURCE,
@@ -572,14 +571,6 @@ def test_a_null_symbol_stops_at_the_load(tmp_path):
     with pytest.raises(DesignError, match=r"graph\.symbols"):
         generate(path, tmp_path / "out", root=tmp_path)
     assert not (tmp_path / "out").exists()
-
-
-def test_two_instances_are_refused(tmp_path):
-    gd = graph_dict()
-    chained(gd)
-    with pytest.raises(GenError) as e:
-        generate(point(tmp_path, graph=Graph.from_dict(gd)), tmp_path / "out", root=tmp_path)
-    assert e.value.code == "gen.instances" and "['acc', 'acc2']" in str(e.value)
 
 
 def _edited(monkeypatch, binding=None, timing=None):

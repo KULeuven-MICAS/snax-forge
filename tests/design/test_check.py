@@ -19,7 +19,9 @@ from snax_forge.design import (
 from snax_forge.design.check import RUNTIME_MARGIN, RUNTIME_STACK
 from snax_forge.design.memory import MEMORY_PASSES, MemorySpec
 from snax_forge.design.problems import Problem
+from snax_forge.dfg import Graph
 from snax_forge.lower.layout import Layout, LayoutError, dma_side
+from tests.helpers import FIXTURES, graph_dict
 
 from .helpers import (
     BOUND,
@@ -28,6 +30,7 @@ from .helpers import (
     accel_node,
     bound_vecadd,
     bound_w8,
+    chained,
     codes,
     design,
     platform_dict,
@@ -282,6 +285,28 @@ def test_one_instance_moves_one_dtype_per_port():
         "add: one streamer moves one dtype"
     )
     assert got[0].fix == "bind the nodes of each dtype to an instance of their own in the recipe"
+
+
+def _on_snax_forge(graph: Graph) -> Design:
+    return Design(Platform.load(SNAX_FORGE), graph)
+
+
+def test_two_accelerators_on_one_slot_are_refused():
+    """gen.instances (stage connect): dot's two groups unencapsulated, and two chained vecadds,
+    are two accelerators for snax_forge's one slot; small16 has no slot and takes them."""
+    dot = Graph.load(FIXTURES / "dot_accelerated.snaxdfg")
+    (p,) = [p for p in problems(_on_snax_forge(dot)) if p.code == "gen.instances"]
+    assert p.message == ("2 accelerators ['mul', 'sum']; the platform has one accelerator slot "
+                         "(snax_forge) and the program drives one accelerator")  # fmt: skip
+    assert (
+        p.fix
+        == "encapsulate them into one: a recipe step encapsulate with units ['mul', 'sum'] (D148)"
+    )
+    gd = graph_dict()
+    chained(gd)
+    assert "gen.instances" in codes(_on_snax_forge(Graph.from_dict(gd)))
+    assert "gen.instances" not in codes(design(dot))
+    assert "gen.instances" not in codes(_on_snax_forge(bound_vecadd(4)))
 
 
 # =============================================================================

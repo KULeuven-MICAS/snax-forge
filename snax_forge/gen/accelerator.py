@@ -42,10 +42,10 @@ after its instance, or the units ``link`` joined, named by its ``group``, in
 the graph's order, with their links (each named after its container, from
 the writer's port to the reader's, its depth). ``inputs`` and ``outputs``
 are the ports on no link, group by group, unit by unit in port order. The
-offsets run on from group to group. Several accelerators are
-``gen.instances``.
+offsets run on from group to group. A design point holds one accelerator: the
+design checks refuse several (``gen.instances``, C§14).
 
-**Refused**, each a ``GenError``: ``gen.instances`` and ``gen.binding``
+**Refused**, each a ``GenError``: ``gen.binding``
 (lower/c.py's ``accelerator``), ``gen.datapath`` (a datapath not registered),
 ``gen.controller`` (a controller other than ``counted``, the only one generated),
 what the datapath's adapter refuses (blocks.py), ``gen.drain`` (an
@@ -384,7 +384,7 @@ def fixed_fold(graph: Graph, node: Node, inst: Instance) -> int | None:
 
 def units(point: DesignPoint) -> tuple[str, dict[str, Instance]]:
     """The one accelerator's name and its units, one per group in order (lower/c.py's
-    ``accelerator``, its rules ``gen.instances`` and ``gen.binding``)."""
+    ``accelerator``, its rule ``gen.binding``)."""
     return c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
 
 
