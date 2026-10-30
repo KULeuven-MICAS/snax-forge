@@ -97,12 +97,26 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
     )
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
     with served(make_edit_server(0, roots=roots)) as srv:
-        assert get_json(srv, "/api/mode")[1] == {"mode": "edit"}
+        assert get_json(srv, "/api/mode")[1]["mode"] == "edit"
         assert get_json(srv, "/api/session") == (400, {"code": "session.none", "message":
                                                        "no session is open: POST /api/session first"})  # fmt: skip
+        assert get_json(srv, "/api/mode")[1]["platform"] == session.PLATFORM
         status, s = post(srv, "/api/session", {"kernel": "vecadd", "params": {"N": 64, "W": 4}})
         assert status == 200 and (s["name"], s["cursor"], s["steps"]) == ("vecadd", 0, [])
-        assert get_json(srv, "/api/step/0/site/add_map")[1]["split"]["ok"]
+        assert (s["labels"], s["undo"], s["redo"], s["recipe"]["kernel"]) == (
+            ["0 input"],
+            None,
+            None,
+            "vecadd",
+        )
+        assert s["command"].startswith("pixi run sandbox ") and s["command"].endswith(
+            "vecadd/recipe.json"
+        )
+        split = get_json(srv, "/api/step/0/site/add_map")[1]["split"]
+        assert split["ok"] and [(f["name"], f["value"]) for f in split["form"]] == [
+            ("map", "add_map"),
+            ("factor", "W"),
+        ]
         bind = get_json(srv, "/api/step/0/site/add")[1]["bind"]
         assert not bind["ok"] and "split the map first" in bind["message"]
         for transform, params in (
@@ -114,6 +128,9 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         ):  # fmt: skip
             status, got = post(srv, "/api/apply", {"transform": transform, "params": params})
             assert status == 200 and got["transform"] == transform, got
+            assert got["log"].startswith(f"step {got['index']}  {transform} ")
+        # the log line of the bind: what changed and the cycles before and after
+        assert got["log"].endswith("· C 0 → 16") and "changed add" in got["log"]
         status, v = get_json(srv, "/api/step/4")
         # the tasklet add became the unit add, its spatial map gone
         assert (v["diff"]["nodes"]["removed"], "add" in v["diff"]["nodes"]["changed"]) == (
@@ -121,10 +138,26 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             True,
         )
         assert v["estimate"]["groups"][0]["cycles"] == 16
-        assert post(srv, "/api/cursor", {"k": 2})[1] == {"ok": True, "cursor": 2}
+        assert post(srv, "/api/cursor", {"k": 2})[1] == {
+            "ok": True,
+            "cursor": 2,
+            "log": "cursor → step 2",
+        }
         status, got = post(srv, "/api/apply", {"transform": "tag_map",
                                                "params": {"map": "add_map", "kind": "tile"}})  # fmt: skip
-        assert status == 400 and got["code"] == "session.drop"
+        assert (
+            status == 400
+            and got["code"] == "session.drop"
+            and got["question"] == "Drop steps 3..4?"
+        )
+        assert get_json(srv, "/api/session")[1]["labels"][1:] == [
+            "1 split",
+            "2 tag_map",
+            "3 tag_map",
+            "4 bind",
+        ]
+        assert get_json(srv, "/api/session")[1]["undo"] == 1
+        assert get_json(srv, "/api/compare/2/4")[1]["diff"]["nodes"]["removed"] == ["add_map_s"]
         assert post(srv, "/api/cursor", {"k": 4})[0] == 200
         assert post(srv, "/api/cursor", {"k": 9})[0] == 400
         assert post(srv, "/api/params", {"params": {"W": 8}})[0] == 200

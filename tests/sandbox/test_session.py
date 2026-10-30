@@ -195,7 +195,7 @@ def test_a_saved_recipe_gives_the_sessions_graphs(roots):
 def test_the_sites_at_vecadds_import(roots):
     s = Session.from_kernel("vecadd", {"N": 64}, roots=roots)
     at_map, at_add = s.sites(0, "add_map"), s.sites(0, "add")
-    assert at_map["split"] == {"ok": True, "params": {"map": "add_map"}}
+    assert (at_map["split"]["ok"], at_map["split"]["params"]) == (True, {"map": "add_map"})
     assert not at_add["bind"]["ok"] and "split the map first" in at_add["bind"]["message"]
     assert s.sites(0, "add") is at_add  # cached
     marks = s.marks(0)
@@ -258,3 +258,68 @@ def test_the_estimate_of_every_step_of_every_recipe(name, roots):
         s.estimate(k)
     assert s.estimate(0) is s.estimate(0)
     assert s.platform == Platform.load(REPO / session.PLATFORM)
+
+
+# =============================================================================
+# The forms
+# =============================================================================
+
+
+def _form(answer):
+    return {f["name"]: f for f in answer["form"]}
+
+
+def test_the_forms_of_vecadds_import(roots):
+    """split's: the map, not editable, and a sweepable factor defaulting to the param W;
+    tag_map's kind a choice of TAGS; a refused transform has no form."""
+    s = Session.from_kernel("vecadd", {"N": 64, "W": 4}, roots=roots)
+    sites = s.sites(0, "add_map")
+    split = _form(sites["split"])
+    assert list(split) == ["map", "factor"]
+    assert (split["map"]["value"], split["map"]["readonly"], split["map"]["type"]) == (
+        "add_map",
+        True,
+        "str",
+    )
+    assert (split["factor"]["type"], split["factor"]["sweepable"], split["factor"]["value"]) == (
+        "int",
+        True,
+        "W",
+    )
+    kind = _form(sites["tag_map"])["kind"]
+    assert (kind["type"], kind["value"], [c["value"] for c in kind["choices"]]) == (
+        "choice", "temporal", ["temporal", "tile", "spatial"])  # fmt: skip
+    assert "form" not in sites["bind"]
+
+
+def test_the_bind_form_lists_the_library_with_timing(roots):
+    s = Session.from_kernel("dot", {"N": 512, "W": 4}, roots=roots)
+    ok(s.apply("split_map", {"map": "mult_map", "factor": "W"}))
+    f = _form(s.sites(1, "mult")["bind"])
+    assert list(f) == ["node", "binding", "instance"] and f["node"]["readonly"]
+    assert f["binding"]["value"] == {
+        "brm": "elementwise_mul",
+        "implementation": "chisel_tiled_spatial",
+    }
+    (good,) = [c for c in f["binding"]["choices"] if c["ok"]]
+    assert (good["label"], good["timing"]) == ("elementwise_mul / chisel_tiled_spatial",
+                                               {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
+    assert all(c["message"] for c in f["binding"]["choices"] if not c["ok"])
+    assert f["instance"]["value"] == "mult"
+
+
+def test_the_encapsulate_and_link_forms(roots):
+    """dot 1 before encapsulate: the units unencapsulated in graph order, the selected one
+    ticked, and a free accelerator name; dot 2 before its link: depth 1 by default, the group
+    from the site."""
+    one = opened("dot_1", roots)
+    ok(one.move(one.n - 1))
+    f = _form(one.sites(one.cursor, "mult")["encapsulate"])
+    assert (f["units"]["type"], f["units"]["value"], [c["value"] for c in f["units"]["choices"]]) == (
+        "checklist", ["mul"], ["mul", "sum"])  # fmt: skip
+    assert f["accelerator"]["value"] == "dot" and not f["units"]["readonly"]
+    two = opened("dot_2", roots)
+    ok(two.move(two.n - 1))
+    f = _form(two.sites(two.cursor, "tmp0")["link"])
+    assert (f["container"]["readonly"], f["depth"]["value"], f["depth"]["sweepable"], f["group"]["value"]) == (
+        True, 1, True, "dot")  # fmt: skip

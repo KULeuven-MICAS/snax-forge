@@ -58,6 +58,8 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
                          instances and accelerators, each ok (with the params that bind it) or
                          refused (with the message), with its timing (latency, II, span) at that
                          W where the implementation resolves there
+                         Each accepted transform also has its ``form`` (``form``): the fields the
+                         editor shows, their types, defaults and choices
     marks(k)             the node ids and container names some site accepts
     diff(k)              step k against step k − 1: nodes added, removed and changed (attrs,
                          inputs or outputs, the body by its ids), containers added, removed and
@@ -264,7 +266,7 @@ class Session:
             k, n = self.cursor, self.n
             if k < n and not drop:
                 return _refused("session.drop", f"steps {k + 1}..{n} come after step {k}: drop "
-                                "them to apply here")  # fmt: skip
+                                "them to apply here", question=f"Drop steps {k + 1}..{n}?")  # fmt: skip
             step = Step(transform, dict(params))
             trial = replace(self.recipe, steps=[*self.recipe.steps[:k], step])
             start = time.perf_counter()
@@ -387,6 +389,9 @@ class Session:
                 out[name] = _refused(_code(e), str(e))
         if out.get("bind", {}).get("ok"):
             out["bind"]["list"] = bind_list(g, selected)
+        for name, answer in out.items():
+            if answer["ok"]:
+                answer["form"] = form(name, g, answer, self.recipe.params)
         self._sites[key] = out
         return out
 
@@ -502,6 +507,72 @@ def bind_list(g: Graph, selected: str) -> list[dict[str, Any]]:
                     entry["timing"] = None
             out.append(entry)
     return out
+
+
+# The defaults of the params a site does not fill (the user's choices)
+DEFAULT_INT = {"factor": 4, "depth": 1}
+DEFAULT_KIND = "temporal"
+
+
+def form(
+    name: str, g: Graph, answer: dict[str, Any], params: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """The fields the editor shows to apply transform ``name`` where its site accepted
+    (``answer``, with the bind list for ``bind``), in the transform's param order: each
+    ``name``, ``type`` (``int``, ``str``, ``choice``, ``checklist``), ``sweepable`` (one of the
+    transform's ``ints``, so a number or an expression over the session's ``params``),
+    ``value`` (the site's, else a default: a factor is ``W`` when the session has that param),
+    ``readonly`` (the selection's own field) and ``choices`` where they apply: ``tag_map``'s
+    kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
+    message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
+    units (the instances in no accelerator, in the graph's order)."""
+    import inspect
+
+    from snax_forge.common import fresh
+
+    from .transforms import TAGS
+
+    spec = TRANSFORMS[name]
+    filled = answer["params"]
+    selection = next(iter(filled), None)
+    fields: list[dict[str, Any]] = []
+    for p in list(inspect.signature(spec.fn).parameters)[1:]:
+        field: dict[str, Any] = {"name": p, "type": "str", "sweepable": p in spec.ints,
+                                 "value": filled.get(p), "readonly": p == selection}  # fmt: skip
+        if p in spec.ints:
+            field["type"] = "int"
+            if field["value"] is None:
+                field["value"] = "W" if p == "factor" and "W" in params else DEFAULT_INT.get(p, 1)
+        elif name == "tag_map" and p == "kind":
+            field |= {"type": "choice", "value": DEFAULT_KIND,
+                      "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
+        elif name == "bind" and p in ("brm", "implementation", "params"):
+            if p != "brm":
+                continue  # one field for the pair; design params come off the graph
+            entries = answer.get("list", [])
+            ok = [e for e in entries if e["ok"]]
+            field |= {"name": "binding", "type": "choice", "readonly": False,
+                      "value": {"brm": ok[0]["brm"], "implementation": ok[0]["implementation"]} if ok else None,
+                      "choices": [{"value": {"brm": e["brm"], "implementation": e["implementation"]},
+                                   "label": f"{e['brm']} / {e['implementation']}", "ok": e["ok"],
+                                   "timing": e["timing"], "message": e.get("message")}
+                                  for e in entries]}  # fmt: skip
+        elif name == "bind" and p == "instance":  # the bind list's default, made unique
+            ok = [e for e in answer.get("list", []) if e["ok"]]
+            field["value"] = ok[0]["params"]["instance"] if ok else filled.get("node")
+        elif name == "encapsulate" and p == "units":
+            nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]
+            free = list(
+                dict.fromkeys(n.attrs["instance"] for n in nodes if "accelerator" not in n.attrs)
+            )
+            field |= {"type": "checklist", "readonly": False,
+                      "choices": [{"value": u, "label": u} for u in free]}  # fmt: skip
+        elif name == "encapsulate" and p == "accelerator":
+            taken = {n.attrs[k] for n, _ in g.walk() if n.kind == "accelerated"
+                     for k in ("instance", "accelerator", "group") if k in n.attrs}  # fmt: skip
+            field["value"] = fresh(g.name, taken)
+        fields.append(field)
+    return fields
 
 
 def _timing(inst: Any) -> dict[str, int]:

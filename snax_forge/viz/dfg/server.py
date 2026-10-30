@@ -25,23 +25,31 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
     GET  /api/kernels               the staged kernels (kernels/) and their symbols, each with
                                     its load error if it has one
     GET  /api/recipes               the recipes (name, kernel, params, steps)
-    GET  /api/sessions              the sessions (name, kernel, steps, cursor, platform)
+    GET  /api/sessions              the sessions (name, kernel, steps, cursor, platform, date)
     POST /api/session               start or open the session: ``{kernel, params, symbols?,
                                     dtypes?, platform?}``, ``{recipe}`` (a path, or a name in
                                     the recipes) or ``{session}`` (a folder, or a name in the
                                     sessions); answers as GET
-    GET  /api/session               its name, kernel, params, symbols, steps, cursor, platform
+    GET  /api/session               its name, kernel, params, symbols, steps, cursor, n, the
+                                    steps' ``labels``, the ``undo`` and ``redo`` steps (null
+                                    at either end), platform, the working ``recipe`` and the
+                                    ``command`` that replays it (``pixi run sandbox``)
     GET  /api/step/<k>              step k's view, with its diff against step k − 1
     GET  /api/step/<k>/site/<id>    Session.sites on node or container ``id``, bind's with the
-                                    bind list
+                                    bind list, each accepted transform with its ``form``
+    GET  /api/compare/<j>/<k>       as in view mode, over the session's steps
     POST /api/apply                 ``{transform, params, drop?}``: Session.apply
     POST /api/cursor                ``{k}``: Session.move
     POST /api/params                ``{params}``: Session.set_params
     POST /api/save                  ``{name, force?}``: Session.save
     POST /api/export                ``{k}``: Session.export, the file's ``path``
 
-A refusal is a 400 with ``{code, message}`` (and ``problems`` for a save); a route before a
-session is open is a 400 ``session.none``; an unknown route or step is a 404, as in view mode.
+Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
+``step 3  tag_map add_map_s kind=spatial  ok · 34 ms · changed add_map_s · C 64 → 16``, C the
+accelerator cycles before and after). A refusal is a 400 with ``{code, message}`` (and
+``problems`` for a save, ``question`` for ``session.drop``); a route before a session is open is
+a 400 ``session.none``; an unknown route or step is a 404, as in view mode. ``GET /api/mode``
+gives the default ``platform`` too, in edit mode.
 """
 
 from __future__ import annotations
@@ -125,6 +133,7 @@ class EditState:
 
     def sessions(self) -> list[dict[str, Any]]:
         import json
+        from datetime import UTC, datetime
 
         from snax_forge.sandbox import Recipe
         from snax_forge.sandbox.session import RECIPE_JSON, SESSION_JSON
@@ -134,8 +143,10 @@ class EditState:
             try:
                 r = Recipe.load(d / RECIPE_JSON)
                 state = json.loads((d / SESSION_JSON).read_text())
+                when = datetime.fromtimestamp((d / SESSION_JSON).stat().st_mtime, UTC).astimezone()
                 out.append({"name": d.name, "kernel": r.kernel, "steps": len(r.steps),
                             "cursor": state["cursor"], "platform": state["platform"],
+                            "date": when.isoformat(sep=" ", timespec="minutes"),
                             "error": None})  # fmt: skip
             except (OSError, ValueError, KeyError, TypeError) as e:
                 out.append({"name": d.name, "error": str(e)})
@@ -173,12 +184,49 @@ class EditState:
 
 
 def session_summary(s: Any) -> dict[str, Any]:
-    """GET /api/session."""
+    """GET /api/session: the session as the page shows it (module doc)."""
+    from snax_forge.sandbox.session import RECIPE_JSON, _shown
+
     r = s.recipe
     return {"name": s.name, "kernel": r.kernel, "params": dict(r.params),
             "symbols": dict(r.symbols), "dtypes": dict(r.dtypes),
-            "steps": [x.to_dict() for x in r.steps], "cursor": s.cursor,
-            "platform": s.platform_path}  # fmt: skip
+            "steps": [x.to_dict() for x in r.steps], "cursor": s.cursor, "n": s.n,
+            "labels": [_label(s.step_name(k)) for k in range(s.n + 1)],
+            "undo": s.cursor - 1 if s.cursor > 0 else None,
+            "redo": s.cursor + 1 if s.cursor < s.n else None,
+            "platform": s.platform_path, "recipe": r.to_dict(),
+            "command": f"pixi run sandbox {_shown(s.folder / RECIPE_JSON)}"}  # fmt: skip
+
+
+def _cycles(s: Any, k: int) -> int | None:
+    """Step k's accelerator cycles, None where the estimate cannot judge it."""
+    from snax_forge.dfg import DfgError
+
+    try:
+        return s.estimate(k).accelerator_cycles
+    except (ValueError, KeyError, TypeError, DfgError):
+        return None
+
+
+def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any]) -> str:
+    """The log line of an apply: ``step 3  tag_map add_map_s kind=spatial  ok · 34 ms ·
+    changed add_map_s · C 64 → 16``, or its refusal's code and message."""
+    values = list(params.items())
+    head = " ".join([transform, *(str(v) for _, v in values[:1]),
+                     *(f"{k}={v}" for k, v in values[1:])])  # fmt: skip
+    if not out.get("ok"):
+        return f"step {s.cursor + 1}  {head}  {out['code']}: {out['message']}"
+    d = out["diff"]
+    changed = [*d["nodes"]["added"], *d["nodes"]["changed"], *d["containers"]["changed"]]
+    parts = [f"step {out['index']}  {head}  ok", f"{out['ms']:.0f} ms"]
+    if changed:
+        parts.append(f"changed {', '.join(dict.fromkeys(changed))}")
+    if d["nodes"]["removed"]:
+        parts.append(f"removed {', '.join(d['nodes']['removed'])}")
+    before, after = _cycles(s, out["index"] - 1), _cycles(s, out["index"])
+    if before is not None and after is not None:
+        parts.append(f"C {before} → {after}")
+    return " · ".join(parts)
 
 
 def edit_step(s: Any, k: int) -> dict[str, Any]:
@@ -209,7 +257,10 @@ class DfgHandler(Handler):
 
     def _api_get(self, parts: list[str], q: dict[str, list[str]]) -> None:
         if parts == ["mode"]:
-            self._json({"mode": "edit" if self._edit else "view"})
+            mode = {"mode": "edit" if self._edit else "view"}
+            if self._edit:
+                mode["platform"] = self.server.loaded.platform
+            self._json(mode)
             return
         try:
             found = self._edit_get(parts) if self._edit else self._view_get(parts)
@@ -253,6 +304,11 @@ class DfgHandler(Handler):
                 return edit_step(s, k)
             if parts[2] == "site":
                 return s.sites(k, parts[3])
+        if len(parts) == 3 and parts[0] == "compare":
+            s = state.need()
+            j, k = (_index(x, s.n) for x in parts[1:])
+            a, b = (api.Entry(s.step_name(x), s.folder, s.graphs[x], None) for x in (j, k))
+            return {"a": j, "b": k} | api.compare_view(a, b, s.platform)
         return None
 
     def _api_post(self, parts: list[Any], body: dict[str, Any]) -> None:
@@ -273,6 +329,7 @@ class DfgHandler(Handler):
             self._error(HTTPStatus.NOT_FOUND, f"no POST route {self.path}")
             return
         if isinstance(out, dict) and out.get("ok") is False:
+            out.setdefault("log", f"{parts[0]}  {out['code']}: {out['message']}")
             self._json({k: v for k, v in out.items() if k != "ok"}, HTTPStatus.BAD_REQUEST)
             return
         self._json(out)
@@ -288,22 +345,33 @@ class DfgHandler(Handler):
         route = parts[0]
         if route == "apply":
             _needs(body, "transform")
-            return s.apply(
-                body["transform"], dict(body.get("params") or {}), bool(body.get("drop"))
-            )
+            params = dict(body.get("params") or {})
+            out = s.apply(body["transform"], params, bool(body.get("drop")))
+            return out | {"log": apply_log(s, body["transform"], params, out)}
         if route == "cursor":
             _needs(body, "k")
-            return s.move(body["k"])
+            out = s.move(body["k"])
+            return out | ({"log": f"cursor → step {out['cursor']}"} if out["ok"] else {})
         if route == "params":
             _needs(body, "params")
-            return s.set_params(dict(body["params"]))
+            out = s.set_params(dict(body["params"]))
+            given = ", ".join(f"{k}={v}" for k, v in body["params"].items())
+            if out["ok"]:
+                return out | {"log": f"params {given}  ok · {s.n} steps replayed"}
+            return out | {
+                "log": f"params {given}  step {out['index']} {out['code']}: {out['message']}"
+            }
         if route == "save":
             _needs(body, "name")
-            return s.save(body["name"], bool(body.get("force")))
+            out = s.save(body["name"], bool(body.get("force")))
+            if out["ok"]:
+                return out | {"log": f"saved {out['recipe']}"}
+            return out | {"log": f"save {body['name']}  {out['code']}: {out['message']}"}
         _needs(body, "k")
         if type(body["k"]) is not int or not 0 <= body["k"] <= s.n:
             raise _Refused("session.move", f"no step {body['k']!r}: the steps are 0..{s.n}")
-        return {"path": str(s.export(body["k"]))}
+        path = str(s.export(body["k"]))
+        return {"path": path, "log": f"exported step {body['k']} to {path}"}
 
 
 def _needs(body: dict[str, Any], key: str) -> None:
