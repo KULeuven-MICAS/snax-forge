@@ -4,6 +4,8 @@
     write_accelerator(design_point, out_dir, root=None) -> Accelerator
     vectors(design_point, root=None) -> dict
     write_fixture(design_point, out_dir, root=None) -> list[str]
+    elaborate(spec_json, out_dir) -> list[Path]
+    elaborate_all([(spec_json, out_dir), ...]) -> list[list[Path]]
     python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]    (pixi gen-rtl)
 
 ``accelerator.json`` is the boundary between the Python side and ``hw/chisel/``: the one
@@ -36,6 +38,13 @@ param its ``when`` lists has that value (``live``), one without ``when`` always.
 
 and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or did not write a file
 its ``emitted.json`` lists.
+
+**Elaboration** runs ``snax.forge.Emit`` with ``java`` on hw/chisel's runtime classpath, which
+sbt exports once (``compile``, ``export Runtime/fullClasspath``) into
+``hw/chisel/target/emit-classpath.txt`` and again only when a file under
+``hw/chisel/src/main/`` or ``build.sbt`` is newer than it, or when java fails on it (a cleared
+jar cache): sbt's start and project load are paid only after a change. One java call takes
+every ``--spec FILE --out DIR`` pair (``elaborate_all``).
 
 **The fill rule** (the catalogue's ``fill``): ``inputs.dtype`` the input ports' dtypes in order
 (a ``dtypes`` param) or the first input's (a ``dtype``), ``outputs.dtype`` the output's,
@@ -360,21 +369,69 @@ CHISEL = ROOT / "hw" / "chisel"
 EMITTED_JSON = "emitted.json"
 
 
+CLASSPATH = CHISEL / "target" / "emit-classpath.txt"
+
+
+def _newest_source() -> float:
+    """The newest mtime of ``build.sbt`` and the files under ``hw/chisel/src/main/``."""
+    files = [
+        CHISEL / "build.sbt",
+        *(f for f in (CHISEL / "src" / "main").rglob("*") if f.is_file()),
+    ]
+    return max(f.stat().st_mtime for f in files)
+
+
+def emit_classpath(refresh: bool = False) -> str:
+    """hw/chisel's runtime classpath, from ``CLASSPATH`` unless ``refresh``, the file is missing or
+    a source is newer than it; else compiled and exported by sbt and written there (the module
+    doc). sbt's output is shown only when it fails."""
+    if not refresh and CLASSPATH.is_file() and CLASSPATH.stat().st_mtime >= _newest_source():
+        return CLASSPATH.read_text().strip()
+    cmd = ["sbt", "-batch", "compile", "export Runtime/fullClasspath"]
+    done = subprocess.run(cmd, cwd=CHISEL, capture_output=True, text=True, check=False)
+    found = [x.strip() for x in done.stdout.splitlines() if ".jar" in x and not x.startswith("[")]
+    if done.returncode != 0 or not found:
+        sys.stderr.write(done.stdout[-4000:] + done.stderr[-4000:])
+        raise GenError("gen.elaborate", f"sbt compile in {CHISEL} failed (exit {done.returncode})")
+    CLASSPATH.parent.mkdir(parents=True, exist_ok=True)
+    CLASSPATH.write_text(found[-1] + "\n")
+    return found[-1]
+
+
+def elaborate_all(pairs: list[tuple[Path, Path]]) -> list[list[Path]]:
+    """``Emit --spec`` on each ``(spec_json, out_dir)`` (an ``accelerator.json`` into ``sv/`` and
+    ``emitted.json``), in one java call on the cached classpath; per pair the files
+    ``emitted.json`` lists, each checked to exist (firtool's failures do not always reach the
+    exit status), and the listing."""
+    args = [
+        a
+        for spec, out in pairs
+        for a in ("--spec", str(spec.resolve()), "--out", str(out.resolve()))
+    ]
+    fresh = not CLASSPATH.is_file()
+    for attempt in (0, 1):
+        cmd = ["java", "-cp", emit_classpath(refresh=attempt == 1), "snax.forge.Emit", *args]
+        done = subprocess.run(cmd, cwd=CHISEL, check=False)
+        if done.returncode == 0 or fresh:
+            break
+    listed = []
+    for spec, out in pairs:
+        listing = out / EMITTED_JSON
+        if done.returncode != 0 or not listing.is_file():
+            raise GenError("gen.elaborate", f"Emit --spec {spec} failed (exit {done.returncode})")
+        files = [out / f for f in json.loads(listing.read_text())["files"]]
+        missing = [str(f) for f in files if not f.is_file()]
+        if missing:
+            raise GenError(
+                "gen.elaborate", f"{listing} lists files that were not written: {missing}"
+            )
+        listed.append([*files, listing])
+    return listed
+
+
 def elaborate(spec_json: Path, out_dir: Path) -> list[Path]:
-    """``Emit --spec`` on ``spec_json`` (an ``accelerator.json``) into ``out_dir`` (``sv/`` and
-    ``emitted.json``) through sbt in ``hw/chisel/``; the files ``emitted.json`` lists, each
-    checked to exist (firtool's failures do not always reach sbt's exit status)."""
-    cmd = ["sbt", "-batch",
-           f"runMain snax.forge.Emit --spec {spec_json.resolve()} --out {out_dir.resolve()}"]  # fmt: skip
-    done = subprocess.run(cmd, cwd=CHISEL, check=False)
-    listing = out_dir / EMITTED_JSON
-    if done.returncode != 0 or not listing.is_file():
-        raise GenError("gen.elaborate", f"Emit --spec {spec_json} failed (exit {done.returncode})")
-    files = [out_dir / f for f in json.loads(listing.read_text())["files"]]
-    missing = [str(f) for f in files if not f.is_file()]
-    if missing:
-        raise GenError("gen.elaborate", f"{listing} lists files that were not written: {missing}")
-    return [*files, listing]
+    """``elaborate_all`` on one ``accelerator.json``."""
+    return elaborate_all([(spec_json, out_dir)])[0]
 
 
 def main(argv: list[str] | None = None) -> int:

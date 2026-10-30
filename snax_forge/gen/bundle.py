@@ -15,7 +15,7 @@ the rest of the folder is left as it is. Then, in this order:
                           cluster file's slot names ``rtl/files.f``
                           (``snax_forge_rtl``)
     rtl/sv/, rtl/emitted.json
-                          rtl.py's ``elaborate`` (``Emit --spec``, sbt) of the
+                          rtl.py's ``elaborate`` (``Emit --spec``) of the
                           root's accelerator.json, checked against the
                           datapath catalogue first (rtl.py's
                           ``accelerator_spec``)

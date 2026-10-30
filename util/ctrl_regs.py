@@ -1,6 +1,6 @@
 """The flip-flops of every group control unit (``<tag>_<group>_ctrl``) of the RTL fixtures.
 
-    pixi run -e hw python util/ctrl_regs.py [--sv DIR] [--out FILE] [FIXTURE ...]
+    pixi run python util/ctrl_regs.py [--sv DIR] [--out FILE] [FIXTURE ...]
 
 For each fixture under ``hw/chisel/src/test/resources/rtl/`` (all, or those named), its
 ``accelerator.json`` is elaborated through ``Emit --spec`` (one call for all) into ``DIR/<fixture>/`` (default ``out/ctrl_regs``); then every module of the
@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 from pathlib import Path
 
@@ -28,13 +27,12 @@ _REG = re.compile(
 
 
 def emit(fixtures: list[str], sv: Path) -> None:
-    """``Emit --spec`` on each fixture into ``sv/<fixture>``, in one call."""
-    pairs = " ".join(f"--spec {FIXTURES / f / 'accelerator.json'} --out {sv / f}" for f in fixtures)
-    done = subprocess.run(
-        ["sbt", "-batch", f"runMain snax.forge.Emit {pairs}"], cwd=REPO / "hw/chisel", check=False
-    )
-    if done.returncode:
-        sys.exit(f"ctrl_regs: Emit failed (exit {done.returncode})")
+    """``Emit --spec`` on each fixture into ``sv/<fixture>``, in one call (gen/rtl.py's
+    ``elaborate_all``)."""
+    sys.path.insert(0, str(REPO))
+    from snax_forge.gen.rtl import elaborate_all
+
+    elaborate_all([(FIXTURES / f / "accelerator.json", sv / f) for f in fixtures])
 
 
 def registers(text: str) -> dict[str, list[tuple[str, int]]]:
