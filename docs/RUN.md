@@ -112,15 +112,20 @@ Its `run/stderr.txt` holds gvrun's warning that the installed platform tree does
 
 ## 6. What the flow refuses
 
-Two kinds of design point stop at `gen`, before anything is built, and exit 1:
+A platform without a source hjson stops at `gen`, before anything is built, and exits 1:
 
     pixi run flow recipes/vecadd.json --platform platforms/small16.json
 
     FAILED recipes/vecadd.json: gen: [gen.source] platform small16 has no source hjson: read it from one with `pixi run design from-hjson`
 
-    pixi run flow recipes/dot_serial.json --platform platforms/snax_forge.json
+Two accelerators for the platform's one slot stop earlier, at the design checks (`gen.instances`, C§14), in the flow as in the design step alone:
 
-    FAILED recipes/dot_serial.json: gen: [gen.instances] 2 accelerators ['mul', 'sum']; the platform has one accelerator slot and the program drives one accelerator: encapsulate puts groups into one (D148)
+    pixi run sandbox recipes/dot_serial.json
+    pixi run design out/sandbox/dot_serial/4_bind.snaxdfg --platform platforms/snax_forge.json
+
+    design check of out/sandbox/dot_serial/4_bind.snaxdfg on platforms/snax_forge.json: 1 problem
+     [gen.instances] graph: 2 accelerators ['mul', 'sum']; the platform has one accelerator slot (snax_forge) and the program drives one accelerator
+         fix: encapsulate them into one: a recipe step encapsulate with units ['mul', 'sum'] (D148)
 
 ## 7. By hand: the stages, the RTL and the bundle
 

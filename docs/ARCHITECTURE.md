@@ -78,7 +78,7 @@ flowchart LR
 | SNAX-BRM | `brm/` | C§10 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§12 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
 | Design step | `design/` | C§13–C§15 | bound graph, platform | design point |
-| Estimate **[PLANNED]** (VIEW2) | `estimate/` | C§19 | bound graph, platform (optional) | the ideal estimate (D151), read by the viewers and `design.md` |
+| Estimate | `estimate/` | C§19 | bound graph, platform (optional) | the ideal estimate (D151), read by the viewers and `design.md` |
 | SNAX-LOWER | `lower/` | C§9, C§16 | design point | task list, `main.c` |
 | Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§16 | design point, the platform's source hjson | cluster and streamer hjson, `accelerator.json`, CSR headers, `data.h`, `main.c` |
 | HW generator | `gen/rtl.py`, `hw/chisel/` | C§17 | design point, the datapath catalogue | `accelerator.json`, the accelerator RTL |
