@@ -105,6 +105,8 @@ def _split_reduce_site(g: Graph, map: str) -> dict[str, Any]:
     what = f"split_reduce {map!r}"
     body, i, _ = _locate(g, map)
     node = body[i]
+    if node.kind == "map" and "loop.kind" in node.attrs:
+        raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
     kids = node.body or []
     if node.kind != "map" or len(kids) != 1 or kids[0].kind != "tasklet":
         raise SandboxError(f"{what}: must be a map around one tasklet")
@@ -113,8 +115,6 @@ def _split_reduce_site(g: Graph, map: str) -> dict[str, Any]:
     if len(t.outputs) != 1 or len(folds) != 1 or node.attrs["var"] in folds[0][1].names:
         raise SandboxError(f"{what}: its tasklet must fold its one output into an element that "
                            f"does not move with {node.attrs['var']!r} (a reduction, D102)")  # fmt: skip
-    if "loop.kind" in node.attrs:  # split_map's refusal, which split_reduce raised before
-        raise SandboxError(f"split_map {map!r}: already {node.attrs['loop.kind']}")
     return {"map": map}
 
 

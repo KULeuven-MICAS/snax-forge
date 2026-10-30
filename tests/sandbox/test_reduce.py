@@ -22,9 +22,11 @@ from snax_forge.sandbox import (
     bind,
     join_map,
     split_map,
+    split_reduce,
     unbind,
     unencapsulate,
 )
+from snax_forge.sandbox.transforms import tag_map
 from tests.helpers import graph_dict
 
 from .helpers import FIXTURES, REPO, graph
@@ -157,3 +159,10 @@ REJECTED = [
 def test_bind_rejected(make, params, message):
     with pytest.raises(SandboxError, match=message):
         bind(make(), **params)
+
+
+def test_split_reduce_refuses_a_tagged_map_by_its_own_name():
+    """Its site tests the tag first and names split_reduce, not the split_map it runs."""
+    g = tag_map(graph("dot"), "sum_map", "temporal")
+    with pytest.raises(SandboxError, match=r"^split_reduce 'sum_map': already temporal$"):
+        split_reduce(g, "sum_map", 4)
