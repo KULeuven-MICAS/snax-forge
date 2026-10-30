@@ -20,6 +20,7 @@ hw/chisel/
     ├── main/scala/snax/forge/
     │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec
     │   ├── Datapaths.scala             # the datapath registry (blocks.json)
+    │   ├── IntType.scala               # NumPy's integer types as Chisel lanes (D143)
     │   ├── ctrl/                       # GroupCtrl and its control model GroupRule
     │   ├── datapath/                   # ElementwiseLanes, TreeAccumulate, Mac, SerialAccumulate, LinkBuffer
     │   ├── shell/                      # accelerator.json, <tag>_csr, _ctrl, _datapath, the wrapper
@@ -37,10 +38,10 @@ hw/chisel/
 The boundary with the Python side is two files. `blocks.json`, checked in, is the datapath catalogue: per datapath its params with types and limits, its ports, latency, pins and the rule that fills the params from the unit's ports (C§17); the registry `Datapaths` holds the same and builds them, and `DatapathsSpec` checks `Emit --describe` equal to it. `accelerator.json`, per design point, is written by `snax_forge/gen/` and checked by `gen/rtl.py` against `blocks.json`; `Emit --spec accelerator.json [--out DIR]` builds `<tag>_shell_wrapper` (`shell/`) into `DIR/sv/`, one file per module, with `DIR/emitted.json`:
 
 - `<tag>_csr` (`AccCsr`): the file's CSRs by offset, snax_cluster's ReqRspManager protocol (D130) as the core reaches it after `snax_csr_mux_demux` with snax_cluster's manager off; a START write with bit 0 set is its group's start (JOBS, then each JOB_BEATS in unit order, or JOBS and 1), held while the group is busy; STATUS and COUNTER read from the controllers;
-- `<tag>_ctrl` (`AccCtrl`): per group `<tag>_<group>_ctrl` (`GroupCtrl`), generated from the group's units and links: the start, the empty run, STATUS's sticky done, COUNTER and the busy and done pins around its control model `GroupRule` (the same rule as snax-gvsoc's SnaxGroupRule, D147, a register only for what changes at run time), built inside the module with each unit's signals named after the unit;
+- `<tag>_ctrl` (`AccCtrl`): per group `<tag>_<group>_ctrl` (`GroupCtrl`), generated from the group's units and links: the start, the empty run, STATUS's sticky done, COUNTER and the busy and done pins around its control model `GroupRule`, built inside the module with each unit's signals named after the unit. `GroupRule` is snax-gvsoc's SnaxGroupRule (D147, C§17) over the group's edges, each link `{from, to, to_input, depth}`, the units in topological order (a fork, a join, a cycle or two chains refused until tier A), with the counters folded: a register only for what changes at run time (a T set by JOB_BEATS, an R_k whose successor's T is), no count of the sink's pushes;
 - `<tag>_datapath` (`AccDatapath`): per unit its datapath in a module `<tag>_<unit>`, per buffer a `LinkBuffer` in a module `<tag>_<link>`, wired by the links (a wire, or through the buffer); data and the control units' pins only.
 
-Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. `ShellEmitSpec` checks the emitted hierarchy against `bundle.json`'s `modules` (C§18) on every fixture. `pixi run gen-rtl DESIGN_POINT` does the check and the elaboration (`docs/RUN.md` §6). The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjson are read from snax-gvsoc's `forge/<design>/` (the submodule; a spec that needs one cancels without it), but for vsum_tree_w8, which `forge/` does not hold and which keeps the two beside its vectors. The Python side writes and checks them byte for byte (`tests/gen/test_rtl.py`); refresh one with
+Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. `ShellEmitSpec` checks the emitted hierarchy against `bundle.json`'s `modules` (C§18) on every fixture. `pixi run gen-rtl DESIGN_POINT` does the check and the elaboration (`docs/RUN.md` section 7), running `Emit` with java on hw/chisel's runtime classpath, which sbt exports into `target/emit-classpath.txt` on the first run and again only after a change under `src/main/` or to `build.sbt`. The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjson are read from snax-gvsoc's `forge/<design>/` (the submodule; a spec that needs one cancels without it), but for vsum_tree_w8, which `forge/` does not hold and which keeps the two beside its vectors. The Python side writes and checks them byte for byte (`tests/gen/test_rtl.py`); refresh one with
 
     pixi run sandbox recipes/vsum_tree.json --set W=8 --out out/sandbox/vsum_tree_w8
     pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_tree_w8
@@ -48,17 +49,20 @@ Only the outer ports reach the wrapper, which splits each Decoupled port: its da
 
 (the others from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`). The specs on them: `ShellEmitSpec` (one emit each: the wrapper's ports are the template's for its streamer hjson, plus the group pins; the hierarchy is `bundle.json`'s; `emitted.json` lists every file), `ShellCasesSpec` (vecadd's and vsum's, through snax-gvsoc's shell cases, below), `ShellEndToEndSpec` (the CSR writes of `main.c`, an always-ready streamer: the goldens and the counter of `vectors.json`; each linked variant, dot 2–6 and matvec 4–6, at N 8 and 16 on random data against NumPy's results and the cycles of snax-gvsoc's matching group case, and matvec 4–6 at int32 through the wrapping product q = (−2147478991, 4)) and `ShellRandomSpec`. `TwoGroupsSpec` runs each of dot 1's groups (`mul` and `sum`, `forge/dot_1/`) on its own.
 
-## The unit cases
+## The shared cases
 
-`UnitCasesSpec` drives a group controller with its datapath through snax-gvsoc's `SnaxUnit` cases (`tests/snax/unit/cases/`, C§17): the start line's JOBS and JOB_BEATS, every cycle's input valids and output ready, the run lines and every result checked. A case whose L and II no catalogue datapath has runs the controller alone. It reads them with `SnaxUnitCases` from the folder `SNAX_GVSOC_UNIT_CASES` names, e.g. `SNAX_GVSOC_UNIT_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/unit/cases pixi run -e hw chisel-test`; without it the spec is canceled. CI's chisel job sets it to the submodule's cases.
+The specs read snax-gvsoc's cases from the folders four variables name; without one, its spec is canceled. CI's chisel job sets all four to the submodule's folders, and a local run does the same:
 
-## The group cases
+    SNAX_GVSOC_UNIT_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/unit/cases \
+    SNAX_GVSOC_GROUP_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/group/cases \
+    SNAX_GVSOC_DATAPATH_VECTORS=$PWD/gvsoc/snax-gvsoc/tests/snax/datapath \
+    SNAX_GVSOC_SHELL_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/shell/cases \
+    pixi run -e hw chisel-test
 
-`GroupCasesSpec` drives `GroupCtrl` alone through snax-gvsoc's group cases (`tests/snax/group/cases/`, dot 2–6 at the C§17 formulas, backpressure, an input gap, JOBS 0): every cycle's outer valids and ready, each input's ready, each unit's fire and give, each buffer's occupancy, busy, and the run lines. `DatapathVectorsSpec` runs every catalogue datapath on the NumPy vectors of `tests/snax/datapath/vectors.txt`, as snax-gvsoc's `tb.cpp` reads them. They read the folders `SNAX_GVSOC_GROUP_CASES` and `SNAX_GVSOC_DATAPATH_VECTORS` name (`gvsoc/snax-gvsoc/tests/snax/group/cases`, `gvsoc/snax-gvsoc/tests/snax/datapath`); without them they are canceled. CI's chisel job sets both.
-
-## The shell cases
-
-`ShellCasesSpec` drives vecadd's and vsum's `<tag>_shell_wrapper` through snax-gvsoc's `SnaxShell` cases (`tests/snax/shell/cases/`, C§17), which snax-gvsoc's `tb.cpp` checks `snax_shell.hpp`'s rule against: every access's result (a write's cycle, a read's value) and, every cycle, the group's STATUS from the busy and done pins; a case with JOB_BEATS runs on the fold. It reads them with `SnaxShellCases` from the folder `SNAX_GVSOC_SHELL_CASES` names, e.g. `SNAX_GVSOC_SHELL_CASES=$PWD/gvsoc/snax-gvsoc/tests/snax/shell/cases`; without it the spec is canceled. CI's chisel job sets it beside the unit's.
+- `UnitCasesSpec` (`SnaxUnitCases`): a group controller with its datapath through the one-unit cases: the start line's JOBS and JOB_BEATS, every cycle's input valids and output ready, the run lines and every result; a case whose L and II no catalogue datapath has runs the controller alone.
+- `GroupCasesSpec` (`SnaxGroupCases`): `GroupCtrl` alone through the group cases (dot 2–6 at C§17's formulas, backpressure, an input gap, JOBS 0): every cycle's outer valids and ready, each input's ready, each unit's fire and give, each buffer's occupancy, busy, and the run lines.
+- `DatapathVectorsSpec` (`SnaxDatapathVectors`): every catalogue datapath on the NumPy vectors of `vectors.txt`, as snax-gvsoc's `tb.cpp` reads them.
+- `ShellCasesSpec` (`SnaxShellCases`): vecadd's and vsum's `<tag>_shell_wrapper` through the `SnaxShell` cases, which snax-gvsoc's `tb.cpp` checks `snax_shell.hpp`'s rule against: every access's result (a write's cycle, a read's value) and, every cycle, the group's STATUS from the busy and done pins; a case with JOB_BEATS runs on the fold.
 
 ## Tests
 
@@ -90,12 +94,12 @@ Elaborated SystemVerilog goes to `out/hw/` (gitignored). RTL is never committed 
 
 | Command | Does |
 |---|---|
-| `pixi run chisel-compile` | compile Scala only |
-| `pixi run chisel-test` | run the chiseltest specs |
-| `pixi run chisel-gen` | elaborate everything to `out/hw/*.sv`; `-- --describe` prints the catalogue, `-- --spec accelerator.json` builds an accelerator |
-| `pixi run chisel-fmt` | scalafmt in place |
-| `pixi run chisel-check` | fail if unformatted (CI uses this) |
-| `pixi run chisel-clean` | drop build trees, keep the Coursier cache |
+| `pixi run -e hw chisel-compile` | compile Scala only |
+| `pixi run -e hw chisel-test` | run the chiseltest specs (with the case folders above) |
+| `pixi run -e hw chisel-gen` | elaborate everything to `out/hw/*.sv`; `-- --describe` prints the catalogue, `-- --spec accelerator.json` builds an accelerator |
+| `pixi run -e hw chisel-fmt` | scalafmt in place |
+| `pixi run -e hw chisel-check` | fail if unformatted (CI uses this) |
+| `pixi run -e hw chisel-clean` | drop build trees, keep the Coursier cache |
 
 ## The datapaths
 
