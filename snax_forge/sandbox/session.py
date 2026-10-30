@@ -68,7 +68,7 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
 
 ``sites``, ``marks`` and ``estimate`` are cached per step (``sites`` per step and selection) and
 the caches past a changed step dropped. Every public method holds the session's one lock, so
-the server's threads (R4) see one change at a time.
+the server's threads see one change at a time.
 """
 
 from __future__ import annotations

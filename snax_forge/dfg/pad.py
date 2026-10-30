@@ -1,7 +1,7 @@
 """A loop bound that is not a multiple of the spatial bound (D144).
 
-``split_map`` of a map over ``n`` iterations by a factor W that does not
-divide n runs its temporal map ceil(n / W) times and records the valid count
+``split`` (or ``split_map``) of a map over ``n`` iterations by a factor W that does not
+divide n runs its outer map ceil(n / W) times and records the valid count
 in ``loop.split`` (``"valid": n``): only the lanes whose combined index
 ``W * v_t + v_s`` is below n are the kernel's. The rest are pad lanes. The
 container is padded in memory, in the data itself, never by the hardware:
@@ -37,7 +37,7 @@ from .subset import parse_dim
 
 
 def tailed_split(node: Node) -> dict[str, Any] | None:
-    """A map's ``loop.split`` when split_map left a tail (it has ``valid``), else None."""
+    """A map's ``loop.split`` when its split left a tail (it has ``valid``), else None."""
     split = node.attrs.get("loop.split") if node.kind == "map" else None
     return split if split is not None and "valid" in split else None
 
