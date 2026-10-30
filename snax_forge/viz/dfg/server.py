@@ -198,19 +198,21 @@ def session_summary(s: Any) -> dict[str, Any]:
             "command": f"pixi run sandbox {_shown(s.folder / RECIPE_JSON)}"}  # fmt: skip
 
 
-def _cycles(s: Any, k: int) -> int | None:
-    """Step k's accelerator cycles, None where the estimate cannot judge it."""
+def _cycles(s: Any, k: int) -> tuple[int, int] | None:
+    """Step k's accelerator cycles and not-mapped count, None where the estimate cannot judge it."""
     from snax_forge.dfg import DfgError
 
     try:
-        return s.estimate(k).accelerator_cycles
+        est = s.estimate(k)
     except (ValueError, KeyError, TypeError, DfgError):
         return None
+    return est.accelerator_cycles, est.not_mapped
 
 
 def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any]) -> str:
-    """The log line of an apply: ``step 3  tag_map add_map_s kind=spatial  ok · 34 ms ·
-    changed add_map_s · C 64 → 16``, or its refusal's code and message."""
+    """The log line of an apply: ``step 2  tag_map add_map_s kind=spatial  ok · 5 ms ·
+    changed add_map_s · C 0 → 0 · not mapped 64 → 16`` (the not-mapped part only when it
+    changes), or its refusal's code and message."""
     values = list(params.items())
     head = " ".join([transform, *(str(v) for _, v in values[:1]),
                      *(f"{k}={v}" for k, v in values[1:])])  # fmt: skip
@@ -225,7 +227,9 @@ def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any
         parts.append(f"removed {', '.join(d['nodes']['removed'])}")
     before, after = _cycles(s, out["index"] - 1), _cycles(s, out["index"])
     if before is not None and after is not None:
-        parts.append(f"C {before} → {after}")
+        parts.append(f"C {before[0]} → {after[0]}")
+        if before[1] != after[1]:
+            parts.append(f"not mapped {before[1]} → {after[1]}")
     return " · ".join(parts)
 
 

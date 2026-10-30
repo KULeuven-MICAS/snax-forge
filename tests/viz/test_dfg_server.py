@@ -119,6 +119,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         ]
         bind = get_json(srv, "/api/step/0/site/add")[1]["bind"]
         assert not bind["ok"] and "split the map first" in bind["message"]
+        logs = []
         for transform, params in (
             ("split", {"map": "add_map", "factor": "W"}),
             ("tag_map", {"map": "add_map_s", "kind": "spatial"}),
@@ -129,8 +130,11 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             status, got = post(srv, "/api/apply", {"transform": transform, "params": params})
             assert status == 200 and got["transform"] == transform, got
             assert got["log"].startswith(f"step {got['index']}  {transform} ")
-        # the log line of the bind: what changed and the cycles before and after
-        assert got["log"].endswith("· C 0 → 16") and "changed add" in got["log"]
+            logs.append(got["log"])
+        # the cycles before and after; the not-mapped count only where it changes
+        assert [line.split(" · C ")[1] for line in logs] == [
+            "0 → 0", "0 → 0 · not mapped 64 → 16", "0 → 0", "0 → 16 · not mapped 16 → 0"]  # fmt: skip
+        assert "changed add" in logs[-1]
         status, v = get_json(srv, "/api/step/4")
         # the tasklet add became the unit add, its spatial map gone
         assert (v["diff"]["nodes"]["removed"], "add" in v["diff"]["nodes"]["changed"]) == (
