@@ -379,10 +379,14 @@ body.dfg { padding: 0; height: 100vh; display: flex; flex-direction: column; ove
 .dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) var(--side); grid-template-areas: "side centre right"; }
 .dfg-sidebar { grid-area: side; width: 240px; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
 .dfg-sidebar[hidden] { display: none; }
-.dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; }
-.dfg-centre.two > .c-panel { flex: 1 1 0; min-width: 0; }
+.dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; justify-content: safe center; }
+/* Compare: the two graphs side by side, one thin line between them; the column scrolls */
+.dfg-centre.two { align-items: stretch; gap: 0; }
+.dfg-centre.two > .c-panel { flex: 0 0 auto; }
+.dfg-centre.two > .c-panel + .c-panel { border-left: 1px solid var(--rule); }
 .dfg-right { grid-area: right; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
 .dfg-side-panel h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.4rem 0 0.3rem; }
+.dfg-side-panel { padding: 0; border-bottom: none; }
 .dfg-side-panel + .dfg-side-panel { border-top: 1px solid var(--rule); margin-top: 0.6rem; padding-top: 0.3rem; }
 .dfg-log { max-height: 8rem; overflow: auto; border-top: 1px solid var(--rule); background: var(--panel); }
 .dfg-log[hidden] { display: none; }
@@ -402,12 +406,11 @@ body.dfg { padding: 0; height: 100vh; display: flex; flex-direction: column; ove
 .c-bar-track { height: 0.5rem; border-radius: 3px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
 .c-bar-track i { display: block; height: 100%; background: var(--data); }
 
-/* a panel: one step's drawing */
-.c-panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 0.5rem 0.7rem 0.7rem; min-width: 14rem; }
-.c-panel.broken { border-color: var(--mem); }
-.c-panel-head { margin-bottom: 0.4rem; font-size: 0.9em; }
+/* a panel: one step's drawing, on the page's background, no frame; its title plain text */
+.c-panel { padding: 0 0.6rem; min-width: 14rem; border-bottom: none; }
+.c-panel-head { margin-bottom: 0.2rem; font-size: 0.9em; }
 .load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
-.c-scroll { overflow: auto; }
+.c-scroll { overflow: visible; }
 .c-canvas { position: relative; width: max-content; min-width: 100%; padding: 3.4rem 2rem 1.2rem; }
 .c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
 .c-row { display: flex; gap: 1rem; justify-content: center; align-items: flex-start; }

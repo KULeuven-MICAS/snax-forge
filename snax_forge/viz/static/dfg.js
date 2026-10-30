@@ -406,9 +406,11 @@ $("compare").addEventListener("change", (ev) => {
   state.cmp = ev.target.checked ? clampStep(state.k - 1) : null;
   draw();
 });
+// A click on an item selects it; on empty space it clears the selection, as Esc does.
 $("graphs").addEventListener("click", (ev) => {
+  if (ev.target.closest("select")) return;
   const t = ev.target.closest("[data-sel]");
-  if (t) select(t.getAttribute("data-sel"));
+  select(t ? t.getAttribute("data-sel") : null);
 });
 document.addEventListener("keydown", (ev) => {
   if (ev.target.closest("select, input")) return;
