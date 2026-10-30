@@ -1,28 +1,37 @@
 """Sandbox transforms (D72, D73): each takes a graph and returns a new one.
 
-A transform is registered with ``register_transform(name, fn, ints=...)``;
-``fn(graph, **params) -> graph`` never changes its input. ``ints`` names the
-params that are ints, which a recipe may give as expressions over its own
-params (recipe.py). The result is a new ``Graph``, validated as any graph
-is; the reference check after the step is run.py's.
+A transform is registered with ``register_transform(name, fn, ints=...,
+site=...)``; ``fn(graph, **params) -> graph`` never changes its input.
+``ints`` names the params that are ints, which a recipe may give as
+expressions over its own params (recipe.py). The result is a new ``Graph``,
+validated as any graph is; the reference check after the step is run.py's.
 
-``split_map(map, factor)``
-    splits a map ``v`` over ``b:e`` (step 1, no ``loop.kind`` yet) into an
-    outer map ``v_t`` over ``0:(e - b) // factor`` tagged ``temporal``,
-    keeping the map's id and attrs, and an inner map ``<id>_s`` over
-    ``0:factor`` tagged ``spatial``; every use of ``v`` in the body becomes
-    ``b + factor * v_t + v_s``. A length n that is not a multiple of
-    the factor (D144) runs ``v_t`` over ceil(n / factor) and
+**Sites** (D72). ``site(graph, selected)`` is the graph-shape test of where a
+transform applies, for a node id or a container name: it returns the params
+the selection fills (the selection itself and what follows from it) or
+raises the error the transform raises there, since the transform calls it
+first, so each check lives in one place. A site decides from the graph
+alone; the checks on the user's params (a factor, a kind, a BRM, a depth, a
+name) stay in the transform.
+
+``split(map, factor)`` and ``split_map(map, factor)``
+    ``split`` splits a map ``v`` over ``b:e`` (step 1, no ``loop.kind``) into
+    an outer map ``v_t`` over ``0:(e - b) // factor``, keeping the map's id
+    and attrs and recording the split (``loop.split``), around an inner map
+    ``<id>_s`` over ``0:factor``, both untagged (D73); every use of ``v`` in
+    the body becomes ``b + factor * v_t + v_s``. A length n that is not a
+    multiple of the factor (D144) runs ``v_t`` over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
     ``factor * v_t + v_s`` below n are the kernel's, the rest pad lanes
     (dfg/pad.py), which the reference executor neither reads nor writes and
-    the containers hold in memory as padding.
+    the containers hold in memory as padding. ``split_map`` is ``split``,
+    then ``tag_map`` ``temporal`` on the outer map and ``spatial`` on the
+    inner, in one step.
 ``tag_map(map, kind)`` and ``untag_map(map)``
-    ``tag_map`` tags an untagged map ``temporal`` or ``tile`` as it is,
-    without splitting it (matadd's row map), and records that it did
-    (``loop.tagged``) so ``untag_map`` takes the tag back. A tagged map is an
-    error for ``tag_map``; for ``untag_map`` so is a map ``split_map``
-    tagged (``join_map`` undoes that) or one tagged by hand.
+    ``tag_map`` tags an untagged map ``temporal``, ``tile`` or ``spatial`` as
+    it is, without splitting it (matadd's row map); a tagged map is an
+    error. ``untag_map`` removes the tag, whatever set it, but not from a map
+    a bound unit is inside (unbind first).
 ``bind(node, brm, implementation, instance, params={})``
     replaces a tasklet and the spatial map around it (the map's only
     child), or a fused nest's spatial map and its two tasklets
@@ -50,8 +59,8 @@ is; the reference check after the step is run.py's.
     it uses, one beat per T firings, T from ``named_rates`` (D102).
 ``unbind(node)`` and ``join_map(map)``
     the inverses: the subtree an accelerated node replaced, and the
-    map a temporal / spatial pair was split from (``loop.split``), so a
-    graph at any step can go back to the imported one.
+    map a split pair was split from (``loop.split``), whatever their tags,
+    so a graph at any step can go back to the imported one.
 ``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
     put the groups of the instances ``units`` into one accelerator of that
     name (D148): every accelerated node of each carries ``accelerator``. A
@@ -61,7 +70,9 @@ is; the reference check after the step is run.py's.
     the tasks follow it, C§17); a unit already in an accelerator, a name an
     instance or an accelerator has, or a unit the graph lacks is an error.
     ``unencapsulate`` takes the attr off again: each group its own
-    accelerator.
+    accelerator. Their sites take a unit (a node id or an instance) and
+    fill ``units`` with its instance, or ``accelerator`` with its
+    accelerator (``unencapsulate``'s also takes an accelerator's name).
 """
 
 from __future__ import annotations
@@ -83,22 +94,26 @@ from .patterns import fused_view, match
 from .recipe import SandboxError
 
 Transform = Callable[..., Graph]
+Site = Callable[[Graph, str], dict[str, Any]]
 
 
 @dataclass(frozen=True)
 class TransformSpec:
     fn: Transform
     ints: tuple[str, ...] = ()
+    site: Site | None = None
 
 
 TRANSFORMS: dict[str, TransformSpec] = {}
 
 
-def register_transform(name: str, fn: Transform, ints: tuple[str, ...] = ()) -> None:
-    """Make ``{"transform": name}`` usable in a recipe (principle 6)."""
+def register_transform(
+    name: str, fn: Transform, ints: tuple[str, ...] = (), site: Site | None = None
+) -> None:
+    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72)."""
     if name in TRANSFORMS:
         raise ValueError(f"transform {name!r} already registered")
-    TRANSFORMS[name] = TransformSpec(fn, tuple(ints))
+    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site)
 
 
 def load_brm(name: str) -> Any:
@@ -182,25 +197,46 @@ def _result(g: Graph) -> Graph:
         raise SandboxError(f"the result is not a valid graph: {e}") from None
 
 
+def _map_node(g: Graph, map: str, what: str) -> Node:
+    body, i, _ = _locate(g, map)
+    if body[i].kind != "map":
+        raise SandboxError(f"{what}: a {body[i].kind!r} is not a map")
+    return body[i]
+
+
 # =============================================================================
-# split_map
+# split and split_map
 # =============================================================================
+
+
+def _split_site(g: Graph, map: str, what: str) -> dict[str, Any]:
+    """An untagged map with a step of 1."""
+    node = _map_node(g, map, what)
+    if "loop.kind" in node.attrs:
+        raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
+    if parse_dim(node.attrs["range"], what)[2] != 1:
+        raise SandboxError(f"{what}: only a step of 1 is split, the range is {node.attrs['range']}")
+    return {"map": map}
+
+
+def split(g: Graph, map: str, factor: int) -> Graph:
+    return _split(g, map, factor, f"split {map!r}")[0]
 
 
 def split_map(g: Graph, map: str, factor: int) -> Graph:
+    g, inner = _split(g, map, factor, f"split_map {map!r}")
+    return tag_map(tag_map(g, map, "temporal"), inner, "spatial")
+
+
+def _split(g: Graph, map: str, factor: int, what: str) -> tuple[Graph, str]:
+    """``split``: the graph and the inner map's id."""
+    _split_site(g, map, what)
+    if type(factor) is not int or factor < 1:
+        raise SandboxError(f"{what}: factor {factor!r} must be a positive int")
     g = _copy(g)
     body, i, _ = _locate(g, map)
     node = body[i]
-    what = f"split_map {map!r}"
-    if node.kind != "map":
-        raise SandboxError(f"{what}: a {node.kind!r} is not a map")
-    if "loop.kind" in node.attrs:
-        raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
-    if type(factor) is not int or factor < 1:
-        raise SandboxError(f"{what}: factor {factor!r} must be a positive int")
-    begin, _, step = parse_dim(node.attrs["range"], what)
-    if step != 1:
-        raise SandboxError(f"{what}: only a step of 1 is split, the range is {node.attrs['range']}")
+    begin = parse_dim(node.attrs["range"], what)[0]
     length = _length(node)
     n = _bound(g, length, what)
     tail = n % factor != 0
@@ -215,7 +251,7 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
     inner = Node(
         fresh(f"{map}_s", ids),
         "map",
-        attrs={"var": var_s, "range": f"0:{factor}", "loop.kind": "spatial"},
+        attrs={"var": var_s, "range": f"0:{factor}"},
         body=node.body,
     )
     start = "" if begin == 0 else f"{begin} + "
@@ -228,48 +264,62 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
         "var": var_t,
         "range": format_dim((0, expr.canonical(firings), 1)),
         **{k: v for k, v in node.attrs.items() if k not in ("var", "range")},
-        "loop.kind": "temporal",
         "loop.split": split,
     }
     node.body = [inner]
-    return _result(g)
+    return _result(g), inner.id
 
 
 # =============================================================================
 # tag_map and untag_map
 # =============================================================================
 
-TAGS = ("temporal", "tile")  # what tag_map sets; spatial comes with split_map
+TAGS = ("temporal", "tile", "spatial")
+
+
+def _tag_site(g: Graph, map: str, what: str) -> dict[str, Any]:
+    """An untagged map."""
+    node = _map_node(g, map, what)
+    if "loop.kind" in node.attrs:
+        raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
+    return {"map": map}
 
 
 def tag_map(g: Graph, map: str, kind: str) -> Graph:
-    g = _copy(g)
-    body, i, _ = _locate(g, map)
-    node = body[i]
     what = f"tag_map {map!r}"
-    if node.kind != "map":
-        raise SandboxError(f"{what}: a {node.kind!r} is not a map")
-    if "loop.kind" in node.attrs:
-        raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
+    _tag_site(g, map, what)
     if kind not in TAGS:
         raise SandboxError(f"{what}: kind {kind!r} is not one of {list(TAGS)}")
-    node.attrs = {**node.attrs, "loop.kind": kind, "loop.tagged": True}  # for untag_map
+    g = _copy(g)
+    node = g.node(map)
+    attrs: dict[str, Any] = {}
+    for k, v in node.attrs.items():  # the kind before loop.split, as split_map writes them
+        if k == "loop.split":
+            attrs["loop.kind"] = kind
+        attrs[k] = v
+    node.attrs = {**attrs, "loop.kind": kind}
     return _result(g)
 
 
-def untag_map(g: Graph, map: str) -> Graph:
-    """The inverse of tag_map: the map without the tag tag_map set."""
-    g = _copy(g)
+def _untag_site(g: Graph, map: str, what: str) -> dict[str, Any]:
+    """A tagged map no bound unit is inside."""
     body, i, _ = _locate(g, map)
     node = body[i]
-    what = f"untag_map {map!r}"
     if node.kind != "map" or "loop.kind" not in node.attrs:
         raise SandboxError(f"{what}: not a tagged map")
-    if node.attrs.get("loop.split"):
-        raise SandboxError(f"{what}: split_map tagged it; join_map undoes a split")
-    if not node.attrs.get("loop.tagged"):
-        raise SandboxError(f"{what}: tag_map did not tag it (no loop.tagged)")
-    node.attrs = {k: v for k, v in node.attrs.items() if k not in ("loop.kind", "loop.tagged")}
+    inside = [n.id for n, outer in g.walk()
+              if n.kind == "accelerated" and any(o is node for o in outer)]  # fmt: skip
+    if inside:
+        raise SandboxError(f"{what}: the bound unit {inside[0]!r} is inside it (unbind first)")
+    return {"map": map}
+
+
+def untag_map(g: Graph, map: str) -> Graph:
+    """The inverse of tag_map: the map without its tag."""
+    _untag_site(g, map, f"untag_map {map!r}")
+    g = _copy(g)
+    node = g.node(map)
+    node.attrs = {k: v for k, v in node.attrs.items() if k != "loop.kind"}
     return _result(g)
 
 
@@ -302,6 +352,12 @@ class _Site:
     pattern: Node
     smap: Node
     temporal: list[Node]
+
+
+def _bind_params(g: Graph, node: str) -> dict[str, Any]:
+    """bind's site: ``_bind_site``."""
+    _bind_site(g, node, f"bind {node!r}")
+    return {"node": node}
 
 
 @dataclass(frozen=True)
@@ -380,10 +436,11 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
         )
 
     begin, end, step = parse_dim(smap.attrs["range"], what)
-    if begin != 0 or step != 1 or type(end) is not int:
+    if begin != 0 or step != 1:
         raise SandboxError(
-            f"{what}: the spatial map must run over 0:<int>, not {smap.attrs['range']}"
+            f"{what}: the spatial map must run over 0:<end>, not {smap.attrs['range']}"
         )
+    end = _bound(g, end, what)  # a symbol (tag_map spatial on an unsplit map) at its value
     var_s = smap.attrs["var"]
     memlets = tasklet.inputs | tasklet.outputs
     # a folding output that does not use the spatial variable takes one lane
@@ -562,12 +619,10 @@ def _check_order(
 # =============================================================================
 
 
-def unbind(g: Graph, node: str) -> Graph:
-    """The accelerated node ``node`` replaced by the subtree ``bind`` replaced."""
-    g = _copy(g)
+def _unbind_site(g: Graph, node: str, what: str) -> dict[str, Any]:
+    """An accelerated node that records what it replaced, on no link."""
     body, i, _ = _locate(g, node)
     acc = body[i]
-    what = f"unbind {node!r}"
     if acc.kind != "accelerated":
         raise SandboxError(f"{what}: a {acc.kind!r} is not an accelerated node")
     if acc.attrs.get("replaced") is None:
@@ -579,35 +634,53 @@ def unbind(g: Graph, node: str) -> Graph:
         raise SandboxError(
             f"{what}: its instance {inst!r} is on the link of {linked} (unlink first)"
         )
-    body[i] = Node.from_dict(acc.attrs["replaced"], what)
+    return {"node": node}
+
+
+def unbind(g: Graph, node: str) -> Graph:
+    """The accelerated node ``node`` replaced by the subtree ``bind`` replaced."""
+    what = f"unbind {node!r}"
+    _unbind_site(g, node, what)
+    g = _copy(g)
+    body, i, _ = _locate(g, node)
+    body[i] = Node.from_dict(body[i].attrs["replaced"], what)
     return _result(g)
 
 
+def _join_site(g: Graph, map: str, what: str) -> dict[str, Any]:
+    """A map with ``loop.split`` whose only child is a map."""
+    body, i, _ = _locate(g, map)
+    outer = body[i]
+    if outer.kind != "map" or outer.attrs.get("loop.split") is None:
+        raise SandboxError(f"{what}: not a map split by split or split_map (no loop.split)")
+    kids = outer.body or []
+    if len(kids) != 1 or kids[0].kind != "map":
+        raise SandboxError(f"{what}: its only child must be the inner map (unbind first)")
+    return {"map": map}
+
+
 def join_map(g: Graph, map: str) -> Graph:
-    """The inverse of split_map: a temporal map and its spatial map become the map they were.
+    """The inverse of split: a split map and its inner map become the map they were.
 
     Needs ``loop.split`` (the var and range before the split) and the
-    spatial map as the temporal map's only child. Every index under it is
+    inner map as the outer map's only child, whatever their tags; the
+    joined map has none. Every index under it is
     written back over the old variable: an index ``k + c * (b + f * v_t + v_s)``
-    that split_map wrote becomes ``k + c * v``; an index in another form is
-    an error, since it is not what split_map wrote.
+    that split wrote becomes ``k + c * v``; an index in another form is
+    an error, since it is not what split wrote.
     """
+    what = f"join_map {map!r}"
+    _join_site(g, map, what)
     g = _copy(g)
     body, i, _ = _locate(g, map)
     outer = body[i]
-    what = f"join_map {map!r}"
-    split = outer.attrs.get("loop.split") if outer.kind == "map" else None
-    if split is None:
-        raise SandboxError(f"{what}: not a map split by split_map (no loop.split)")
-    kids = outer.body or []
-    if len(kids) != 1 or kids[0].kind != "map" or kids[0].attrs.get("loop.kind") != "spatial":
-        raise SandboxError(f"{what}: its only child must be the spatial map (unbind first)")
-    inner = kids[0]
+    split = outer.attrs["loop.split"]
+    (inner,) = outer.body
     v_t, v_s, var = outer.attrs["var"], inner.attrs["var"], split["var"]
     begin, _, _ = parse_dim(split["range"], what)
     b0, factor, step = parse_dim(inner.attrs["range"], what)
     if b0 != 0 or step != 1 or type(factor) is not int:
-        raise SandboxError(f"{what}: the spatial map must run over 0:<int>")
+        raise SandboxError(f"{what}: the inner map must run over 0:<int>")
 
     def back(part: Any) -> Any:
         try:
@@ -650,8 +723,33 @@ def _accelerated(g: Graph) -> list[Node]:
     return [n for n, _ in g.walk() if n.kind == "accelerated"]
 
 
+def _unit(g: Graph, selected: str) -> list[Node]:
+    """The nodes of the unit ``selected`` names: an accelerated node's id or an instance."""
+    nodes = _accelerated(g)
+    by_id = [n for n in nodes if n.id == selected]
+    inst = by_id[0].attrs["instance"] if by_id else selected
+    return [n for n in nodes if n.attrs["instance"] == inst]
+
+
+def _encapsulate_site(g: Graph, selected: str) -> dict[str, Any]:
+    """A unit in no accelerator."""
+    unit = _unit(g, selected)
+    if not unit:
+        order = list(dict.fromkeys(n.attrs["instance"] for n in _accelerated(g)))
+        raise SandboxError(f"encapsulate: no instance {selected!r} (instances: {order})")
+    inst = unit[0].attrs["instance"]
+    inside = sorted({n.attrs["accelerator"] for n in unit if "accelerator" in n.attrs})
+    if inside:
+        raise SandboxError(f"encapsulate: {inst!r} is in accelerator {inside[0]!r} already "
+                           "(unencapsulate it first)")  # fmt: skip
+    return {"units": [inst]}
+
+
 def encapsulate(g: Graph, accelerator: str, units: list[str]) -> Graph:
     """The groups of ``units`` (instances) as one accelerator named ``accelerator``."""
+    for u in units if isinstance(units, list) else []:
+        if isinstance(u, str):
+            _encapsulate_site(g, u)
     g = _copy(g)
     what = f"encapsulate {accelerator!r}"
     if not isinstance(accelerator, str) or not accelerator.isidentifier():
@@ -667,12 +765,8 @@ def encapsulate(g: Graph, accelerator: str, units: list[str]) -> Graph:
         what_has = "an instance" if accelerator in order else "an accelerator"
         raise SandboxError(f"{what}: {what_has} is already named {accelerator!r}")
     for u in units:
-        if u not in order:
+        if u not in order:  # a unit's node id: the site took it, units name instances
             raise SandboxError(f"{what}: no instance {u!r} (instances: {order})")
-        inside = {n.attrs.get("accelerator") for n in nodes if n.attrs["instance"] == u}
-        if inside != {None}:
-            raise SandboxError(f"{what}: {u!r} is in accelerator {inside.pop()!r} already "
-                               "(unencapsulate it first)")  # fmt: skip
     graph_order = [u for u in order if u in units]
     if graph_order != units:
         raise SandboxError(f"{what}: units {units} in another order than the graph runs them, "
@@ -683,22 +777,39 @@ def encapsulate(g: Graph, accelerator: str, units: list[str]) -> Graph:
     return _result(g)
 
 
+def _unencapsulate_site(g: Graph, selected: str) -> dict[str, Any]:
+    """A unit in an accelerator, or the accelerator's name."""
+    what = f"unencapsulate {selected!r}"
+    if any(n.attrs.get("accelerator") == selected for n in _accelerated(g)):
+        return {"accelerator": selected}
+    unit = _unit(g, selected)
+    if not unit:
+        raise SandboxError(f"{what}: no accelerator of that name")
+    if "accelerator" not in unit[0].attrs:  # a unit's nodes share it (DfgError otherwise)
+        raise SandboxError(f"{what}: the unit {unit[0].attrs['instance']!r} is in no accelerator")
+    return {"accelerator": unit[0].attrs["accelerator"]}
+
+
 def unencapsulate(g: Graph, accelerator: str) -> Graph:
     """The inverse of encapsulate: each group of ``accelerator`` its own accelerator again."""
-    g = _copy(g)
-    mine = [n for n in _accelerated(g) if n.attrs.get("accelerator") == accelerator]
-    if not mine:
+    if _unencapsulate_site(g, accelerator)["accelerator"] != accelerator:  # a unit's name
         raise SandboxError(f"unencapsulate {accelerator!r}: no accelerator of that name")
-    for n in mine:
-        del n.attrs["accelerator"]
+    g = _copy(g)
+    for n in _accelerated(g):
+        if n.attrs.get("accelerator") == accelerator:
+            del n.attrs["accelerator"]
     return _result(g)
 
 
-register_transform("split_map", split_map, ints=("factor",))
-register_transform("tag_map", tag_map)
-register_transform("untag_map", untag_map)
-register_transform("bind", bind)
-register_transform("unbind", unbind)
-register_transform("join_map", join_map)
-register_transform("encapsulate", encapsulate)
-register_transform("unencapsulate", unencapsulate)
+register_transform(
+    "split", split, ints=("factor",), site=lambda g, s: _split_site(g, s, f"split {s!r}")
+)
+register_transform("split_map", split_map, ints=("factor",),
+                   site=lambda g, s: _split_site(g, s, f"split_map {s!r}"))  # fmt: skip
+register_transform("tag_map", tag_map, site=lambda g, s: _tag_site(g, s, f"tag_map {s!r}"))
+register_transform("untag_map", untag_map, site=lambda g, s: _untag_site(g, s, f"untag_map {s!r}"))
+register_transform("bind", bind, site=_bind_params)
+register_transform("unbind", unbind, site=lambda g, s: _unbind_site(g, s, f"unbind {s!r}"))
+register_transform("join_map", join_map, site=lambda g, s: _join_site(g, s, f"join_map {s!r}"))
+register_transform("encapsulate", encapsulate, site=_encapsulate_site)
+register_transform("unencapsulate", unencapsulate, site=_unencapsulate_site)
