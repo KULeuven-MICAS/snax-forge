@@ -1,9 +1,10 @@
 <!doctype html>
 <!--
-  SNAX-FORGE DFG viewer (D55). Served by snax_forge/viz/dfg/server.py;
+  SNAX-FORGE DFG viewer (D55, VIEW2). Served by snax_forge/viz/dfg/server.py;
   talks only to its /api routes and loads no external file, so it works
-  offline. dfg.js draws one panel per .snaxdfg: boxes are HTML laid out by
-  CSS, the edges one SVG layer per panel.
+  offline. dfg.js draws one step of a recipe at a time (two with Compare):
+  boxes are HTML laid out by CSS, the edges one SVG layer per panel; Details
+  and the Estimate on the right come from the API as they are.
 -->
 <html lang="en">
 <head>
@@ -14,16 +15,32 @@
   <script type="module" src="dfg.js"></script>
 </head>
 <body class="dfg">
-  <header id="top">
-    <div class="bar">
-      <h1 id="title">SNAX-FORGE DFG viewer</h1>
-      <div class="controls">
-        <button id="reload" type="button" title="Read the files from disk again">Reload</button>
-      </div>
+  <header id="top" class="dfg-top">
+    <h1 id="title">SNAX-FORGE DFG viewer</h1>
+    <div class="dfg-steps">
+      <button id="prev" type="button" title="The step before (←)" aria-label="previous step">◀</button>
+      <select id="step" aria-label="step"></select>
+      <button id="next" type="button" title="The step after (→)" aria-label="next step">▶</button>
     </div>
-    <ul id="legend" class="legend dfg-legend"></ul>
+    <label class="dfg-toggle" title="Two steps side by side"><input id="compare" type="checkbox"> Compare</label>
+    <button id="reload" type="button" title="Read the files from disk again">Reload</button>
     <p id="status" class="status" role="status"></p>
   </header>
-  <main id="graphs" class="graphs"></main>
+  <div class="dfg-layout">
+    <aside id="sidebar" class="dfg-sidebar" hidden></aside>
+    <main id="graphs" class="dfg-centre"></main>
+    <aside class="dfg-right">
+      <section class="dfg-side-panel">
+        <h2>Details</h2>
+        <div id="details"></div>
+      </section>
+      <section class="dfg-side-panel">
+        <h2>Estimate</h2>
+        <div id="estimate"></div>
+      </section>
+      <ul id="legend" class="legend dfg-legend"></ul>
+    </aside>
+  </div>
+  <footer id="log" class="dfg-log" hidden></footer>
 </body>
 </html>

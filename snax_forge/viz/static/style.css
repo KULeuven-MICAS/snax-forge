@@ -340,9 +340,10 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 
 .cluster.task-only .cl-banks, .cluster.task-only .cl-ports, .cluster.task-only .cl-lanes { opacity: 0.45; }
 
-/* -- DFG viewer (VIS5, D55) ---------------------------------------------------------
+/* -- DFG viewer (VIS5, D55; compact drawing VIEW2) ------------------------------------
    Loop kinds get colours of their own: green, red and violet already mean busy,
-   memory stall and flow stall in the run views. */
+   memory stall and flow stall in the run views. A unit and a link take the busy
+   colours, a container its own (--data); the selection is --hl. */
 :root {
   --loop-none: #8b939c;
   --loop-tile: #9a6b1f;
@@ -351,6 +352,7 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
   --edge: #6b747e;
   --hl: #d4386a;
   --data: #1f7a8c;
+  --side: 280px; /* the right panel */
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -363,83 +365,107 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
     --data: #52b5c7;
   }
 }
-body.dfg header, body.dfg main { max-width: none; }
-.mono, .port, .op-lines { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-.dfg-legend { margin: 0.8rem 0 0; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+/* layout: a top bar; [edit mode's sidebar] the graph [Details and Estimate]; [edit mode's log] */
+body.dfg { padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+.dfg-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; max-width: none; margin: 0; padding: 0.55rem var(--gap); border-bottom: 2px solid var(--ink); background: var(--panel); }
+.dfg-top h1 { font-size: 1.2rem; margin-right: auto; }
+.dfg-top .status { flex-basis: 100%; margin: 0; min-height: 0; }
+.dfg-top .status:empty { display: none; }
+.dfg-steps { display: flex; align-items: center; gap: 0.25rem; }
+.dfg-steps select { min-width: 12rem; }
+.dfg-toggle { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+.dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) var(--side); grid-template-areas: "side centre right"; }
+.dfg-sidebar { grid-area: side; width: 240px; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
+.dfg-sidebar[hidden] { display: none; }
+.dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; }
+.dfg-centre.two > .c-panel { flex: 1 1 0; min-width: 0; }
+.dfg-right { grid-area: right; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
+.dfg-side-panel h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.4rem 0 0.3rem; }
+.dfg-side-panel + .dfg-side-panel { border-top: 1px solid var(--rule); margin-top: 0.6rem; padding-top: 0.3rem; }
+.dfg-log { max-height: 8rem; overflow: auto; border-top: 1px solid var(--rule); background: var(--panel); }
+.dfg-log[hidden] { display: none; }
+.dfg-legend { margin: 0.9rem 0 0; font-size: 0.85em; gap: 0.2rem 0.8rem; }
+
+/* Details and Estimate */
+.c-details h3 { font-size: 0.9rem; margin: 0.3rem 0 0.2rem; overflow-wrap: anywhere; }
+.c-details dl.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.1rem 0.6rem; margin: 0 0 0.5rem; }
+.c-details dt { color: var(--muted); }
+.c-details dd { margin: 0; overflow-wrap: anywhere; font-size: 0.92em; }
+.c-details .changed { color: var(--hl); font-weight: 600; }
+.c-est-head { margin: 0.2rem 0 0.4rem; font-size: 1.05em; }
+.c-est-group { padding: 0.2rem 0.3rem; border-radius: 3px; cursor: default; }
+.c-est-group:hover { background: var(--bg); }
+.c-est-group small { display: block; color: var(--muted); }
+.c-est-line { margin: 0.35rem 0 0.15rem; }
+.c-bar-track { height: 0.5rem; border-radius: 3px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
+.c-bar-track i { display: block; height: 100%; background: var(--data); }
+
+/* a panel: one step's drawing */
+.c-panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 0.5rem 0.7rem 0.7rem; min-width: 14rem; }
+.c-panel.broken { border-color: var(--mem); }
+.c-panel-head { margin-bottom: 0.4rem; font-size: 0.9em; }
+.load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.c-scroll { overflow: auto; }
+.c-canvas { position: relative; width: max-content; min-width: 100%; padding: 3.4rem 2rem 1.2rem; }
+.c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
+.c-row { display: flex; gap: 1rem; justify-content: center; align-items: flex-start; }
+svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; }
+
+/* maps: a slim bar in the tag's colour, the body indented below */
+.c-map { --loop: var(--loop-none); border-left: 3px solid var(--loop); border-radius: 3px; background: color-mix(in srgb, var(--loop) 5%, transparent); cursor: pointer; }
+.c-map.loop-tile { --loop: var(--loop-tile); }
+.c-map.loop-temporal { --loop: var(--loop-temporal); }
+.c-map.loop-spatial { --loop: var(--loop-spatial); }
+.c-bar { padding: 0.1rem 0.6rem; background: color-mix(in srgb, var(--loop) 22%, var(--panel)); color: var(--ink); font-size: 0.8em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; border-radius: 0 3px 3px 0; }
+.c-body { display: flex; flex-direction: column; align-items: center; gap: 1.6rem; padding: 1.4rem 0.6rem 0.6rem 1rem; }
+.c-node > .c-body { padding: 0.6rem; }
+
+/* tasklets, units and links: small boxes with their text */
+.c-node { display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
+.c-node.c-unit { border: 2px solid var(--busy); background: var(--busy-bg); }
+.c-node.c-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
+.c-text { padding: 0.15rem 0.6rem; font-size: 0.82em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; text-align: center; }
+.c-ports { display: flex; justify-content: space-evenly; height: 0; }
+.c-port { display: block; width: 7px; height: 7px; margin-top: -4px; border-radius: 50%; background: var(--edge); }
+.c-ports.out .c-port { margin-top: -3px; }
+
+/* containers: a pill with its name and badge */
+.c-pill { display: flex; align-items: baseline; gap: 0.4rem; padding: 0.12rem 0.7rem; border: 1.5px solid var(--data); border-radius: 1rem; background: color-mix(in srgb, var(--data) 10%, var(--panel)); font-size: 0.85em; cursor: pointer; white-space: nowrap; }
+.c-pill.transient { border-style: dashed; }
+.c-pill.again { opacity: 0.75; }
+.c-badge { font-size: 0.8em; color: var(--muted); }
+
+/* edges: no text, a wide transparent stroke under each to click */
+path.edge { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+path.edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+path.arrow { fill: var(--edge); }
+path.arrow-sel { fill: var(--hl); }
+path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
+
+/* groups and accelerators: a thin dashed outline, the name on top */
+svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; pointer-events: stroke; cursor: pointer; }
+svg.dfg-edges .group-box rect { stroke: var(--muted); stroke-width: 1; }
+svg.dfg-edges .acc-box rect { stroke: var(--rule); stroke-width: 1.5; }
+svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.72rem; fill: var(--muted); pointer-events: visiblePainted; cursor: pointer; }
+svg.dfg-edges .hover rect { stroke: var(--busy); stroke-width: 2.5; stroke-dasharray: none; }
+svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
+
+/* the selection */
+.c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
+.c-map.sel { box-shadow: 0 0 0 2px var(--hl); }
+
+/* the legend's keys */
 i.key.loop-none { background: var(--loop-none); }
 i.key.loop-tile { background: var(--loop-tile); }
 i.key.loop-temporal { background: var(--loop-temporal); }
 i.key.loop-spatial { background: var(--loop-spatial); }
-i.key.op-accelerated { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
-i.key.op-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
-i.key.data { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 3px; }
-i.key.data.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
-
-.graphs { display: flex; flex-wrap: wrap; gap: 1.2rem; padding: 1.2rem 0 2rem; align-items: flex-start; }
-/* A panel is as wide as its graph; panels wrap when they do not fit side by side. */
-.dfg-panel { flex: 0 1 auto; max-width: 100%; min-width: 18rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem 1rem 1rem; }
-.dfg-panel.broken { border-color: var(--mem); }
-.panel-head h2 { font-size: 1.1rem; margin: 0; }
-.panel-head .note { margin: 0.1rem 0 0; }
-.panel-head .path { margin: 0 0 0.6rem; font-size: 0.8em; color: var(--muted); overflow-wrap: anywhere; }
-.load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
-.dfg-scroll { overflow: auto; }
-.dfg-canvas { position: relative; width: max-content; min-width: 100%; padding: 0.4rem 0.6rem 0.8rem; }
-.dfg-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.8rem; }
-.dfg-row { display: flex; gap: 1.4rem; justify-content: center; align-items: flex-start; }
-/* Under the boxes: text is drawn over an edge, and an edge ends at the box it enters. */
-svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; }
-svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; }
-svg.dfg-edges .group-box rect { stroke: var(--rule); }
-svg.dfg-edges .acc-box rect { stroke: var(--acc, var(--rule)); stroke-width: 1.5; }
-svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.72rem; fill: var(--muted, currentColor); }
-
-/* containers */
-/* data containers: their own colour, a label on top (D82) */
-.box { display: flex; flex-direction: column; align-items: center; min-width: 6.5rem; padding: 0.25rem 0.9rem 0.3rem; border: 1.5px solid var(--data); border-radius: 1rem; background: color-mix(in srgb, var(--data) 10%, var(--panel)); line-height: 1.25; }
-.box .box-kind { font-size: 0.66em; letter-spacing: 0.04em; text-transform: uppercase; color: var(--data); font-weight: 600; }
-.box.transient { border-style: dashed; }
-.box small.ver { font-family: inherit; font-size: 0.72em; }
-.box small { color: var(--muted); font-size: 0.78em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-
-/* map scopes */
-.scope { --loop: var(--loop-none); border: 2px solid var(--loop); border-radius: 7px; background: color-mix(in srgb, var(--loop) 6%, transparent); padding: 0 0.8rem 0.9rem; }
-.scope.loop-tile { --loop: var(--loop-tile); }
-.scope.loop-temporal { --loop: var(--loop-temporal); }
-.scope.loop-spatial { --loop: var(--loop-spatial); }
-.scope-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; padding: 0.35rem 0 0; font-size: 0.85em; color: var(--muted); }
-.scope-head b { color: var(--ink); }
-.scope-head .count { color: var(--ink); }
-.scope-head .tag, .op-head .tag { margin-left: auto; padding: 0 0.45rem; border-radius: 3px; background: var(--loop, var(--muted)); color: var(--panel); font-size: 0.85em; font-weight: 600; }
-.scope-body { display: flex; flex-direction: column; align-items: center; gap: 2.4rem; padding-top: 2.2rem; }
-.op .scope-body { padding: 0.8rem; }
-
-/* tasklets and accelerated nodes */
-.op { min-width: 12rem; border: 1.5px solid var(--ink); border-radius: 5px; background: var(--panel); }
-.op-accelerated { border: 2px solid var(--busy); background: var(--busy-bg); }
-.op-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
-.op-link .op-head .tag { --loop: var(--busy); }
-.op-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.6rem; padding: 0.35rem 0.6rem 0.1rem; font-size: 0.88em; }
-.op-head .tag { --loop: var(--muted); }
-.op-accelerated .op-head .tag { --loop: var(--busy); }
-.op-title { flex-basis: 100%; }
-.op-lines { padding: 0.1rem 0.6rem 0.4rem; font-size: 0.85em; }
-.op-replaced { padding: 0 0.6rem 0.4rem; font-size: 0.78em; color: var(--muted); }
-.ports { display: flex; flex-wrap: nowrap; justify-content: center; gap: 0.4rem; padding: 0.35rem 0.45rem; }
-.ports.in { border-bottom: 1px solid var(--rule); }
-.ports.out { border-top: 1px solid var(--rule); }
-.port { font-size: 0.76em; border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.4rem; background: var(--bg); white-space: nowrap; }
-.port b { color: var(--ink); }
-.port span { color: var(--muted); }
-
-/* edges and hover */
-path.edge { fill: none; stroke: var(--edge); stroke-width: 1.4; }
-path.arrow { fill: var(--edge); }
-path.arrow-hl { fill: var(--hl); }
-path.edge.hl { stroke: var(--hl); stroke-width: 2.4; }
-text.edge-packing { font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
-.box.hl, .op.hl, .port.hl { box-shadow: 0 0 0 2px var(--hl); }
-.scope.hl { box-shadow: 0 0 0 2px var(--hl); }
+i.key.c-tasklet { background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--ink); }
+i.key.c-unit { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
+i.key.c-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
+i.key.c-pill { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 6px; }
+i.key.c-pill.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
 
 /* -- memory tab (VIS4a) -------------------------------------------------------
    Region colours are a meaning of this tab only: a region keeps its colour in
