@@ -632,7 +632,7 @@ The ideal estimate of a bound graph (D151, `estimate/`), with or without a platf
 
 | Field | Holds |
 |---|---|
-| `groups` | per group (one unit, or linked units, D146): `name`, `units`, `cycles` (snax-gvsoc's group rule, `snax_group_rule.py` through `gen/submodule.py`, stepped as `gen/rtl.py`'s `group_counter` steps it), `bottleneck` (the max over its units of n · max(II, span), n the unit's firings), `fill` (the sum over its units of L + span − 1, plus its links' latencies), `stall` (`cycles` − `bottleneck` − `fill`), `channels` (the sum of num_ch over its outer ports, D142) and `words_per_cycle` (the 64-bit words its outer ports move per cycle) |
+| `groups` | per group (one unit, or linked units, D146): `name`, `units`, `cycles` (snax-gvsoc's group rule, `snax_group_rule.py` through `gen/submodule.py`, stepped as `gen/rtl.py`'s `group_counter` steps it), `bottleneck` (the max over its units of n · max(II, span), n the unit's firings), `ramp` (the cycles to start and finish the pipeline: the sum over its units of L + span − 1, plus its links' latencies), `stall` (`cycles` − `bottleneck` − `ramp`), `channels` (the sum of num_ch over its outer ports, D142) and `words_per_cycle` (the 64-bit words its outer ports move per cycle) |
 | `accelerator_cycles` | the sum of the groups' `cycles`: groups add up through L1 (D105) |
 | `not_mapped` | the iterations of the tasklets no unit runs, counting only the temporal maps around them; never added to cycles |
 | `containers` | per container: `placement` (`l1`, `local` or `link` with its `depth`), `bytes` (padded, D144), `reads` and `writes` in 64-bit words |
