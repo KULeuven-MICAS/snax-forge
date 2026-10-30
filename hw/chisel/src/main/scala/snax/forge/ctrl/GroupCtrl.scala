@@ -60,19 +60,19 @@ class GroupCtrl(val desc: GroupDesc, tag: String) extends Module {
 
   val io = IO(new GroupCtrlIO(desc))
 
-  private val nest = new GroupRule(desc)
+  private val rule = new GroupRule(desc)
 
   // The outer inputs, flat in unit order, onto each unit's
-  private val flat: Seq[Handshake] = desc.units.indices.flatMap(k => nest.io.in(k).toSeq)
+  private val flat: Seq[Handshake] = desc.units.indices.flatMap(k => rule.io.in(k).toSeq)
   for ((r, p) <- flat.zip(io.in)) {
     r.valid := p.valid
     p.ready := r.ready
   }
-  nest.io.out.ready := io.out.ready
-  io.out.valid := nest.io.out.valid
-  io.units     := nest.io.units
-  io.links     := nest.io.links
-  io.cls       := nest.io.cls
+  rule.io.out.ready := io.out.ready
+  io.out.valid := rule.io.out.valid
+  io.units     := rule.io.units
+  io.links     := rule.io.links
+  io.cls       := rule.io.cls
 
   // Each unit's T: its fixed one, else the next JOB_BEATS of the start in unit order
   private val words = io.start.bits.beats
@@ -83,16 +83,16 @@ class GroupCtrl(val desc: GroupDesc, tag: String) extends Module {
     }
   }
 
-  private val busy     = nest.io.busy
+  private val busy     = rule.io.busy
   private val accepted = io.start.fire
   private val empty    = io.start.bits.jobs === 0.U || ts.map(_ === 0.U).reduce(_ || _)
 
   io.start.ready           := !busy
-  nest.io.config.valid     := accepted && !empty
-  nest.io.config.bits.jobs := io.start.bits.jobs
-  nest.io.config.bits.ts   := VecInit(ts)
+  rule.io.config.valid     := accepted && !empty
+  rule.io.config.bits.jobs := io.start.bits.jobs
+  rule.io.config.bits.ts   := VecInit(ts)
 
-  private val pulse   = nest.io.done || (accepted && empty)
+  private val pulse   = rule.io.done || (accepted && empty)
   private val done    = RegInit(false.B)
   private val counter = RegInit(0.U(32.W))
   when(pulse) {
