@@ -81,7 +81,8 @@ def test_reload_picks_up_a_changed_directory(tmp_path):
         assert get_json(srv, "/api/runs")[0]["trace_level"] == "off"
         run_dir(d, "vecadd", "task")  # the folder made again
         assert get_json(srv, "/api/runs")[0]["trace_level"] == "off"  # read once, not watched
-        req = Request(srv.url + "api/reload", method="POST")
+        req = Request(srv.url + "api/reload", data=b"{}", method="POST",
+                      headers={"Content-Type": "application/json"})  # fmt: skip
         with urlopen(req, timeout=10) as r:
             assert json.loads(r.read()) == {"runs": ["run"]}
         assert get_json(srv, "/api/run/run")["trace"]["level"] == "task"

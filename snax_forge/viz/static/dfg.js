@@ -16,6 +16,9 @@ import { h } from "./dom.js";
 const $ = (id) => document.getElementById(id);
 const enc = encodeURIComponent;
 
+// Every POST is JSON: the server refuses another Content-Type (415, D55)
+const POST_JSON = { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" };
+
 async function getJSON(url, opts) {
   const r = await fetch(url, opts);
   const body = await r.json();
@@ -283,7 +286,7 @@ async function load() {
 
 $("reload").addEventListener("click", async () => {
   try {
-    await getJSON("/api/reload", { method: "POST" });
+    await getJSON("/api/reload", POST_JSON);
   } catch (e) {
     status(String(e.message || e), true);
     return;

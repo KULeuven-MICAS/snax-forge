@@ -44,6 +44,10 @@ Routes (every answer is JSON except the static files):
                                             task boundary (B boundary)
     POST /api/reload                        read every run directory again
 
+Every POST, on this viewer and the DFG viewer, needs ``Content-Type: application/json``
+(D55): another type is a 415, so a page of another origin cannot post a form to it. Its body,
+when it has one, is a JSON object; another body is a 400.
+
 All the work is in api.py; this module only parses paths and queries and
 turns results and errors into responses: 404 for an unknown run, memory or
 file, 400 for a bad query (a mark the run lacks included, with the reason), 500 with the message when a reload fails (the old runs stay
@@ -238,9 +242,32 @@ class Handler(BaseHTTPRequestHandler):
     do_HEAD = do_GET
 
     def do_POST(self) -> None:
-        if urlsplit(self.path).path.rstrip("/") != "/api/reload":
+        """A POST with a JSON body (module doc), then ``_api_post`` on its route."""
+        ctype = self.headers.get("Content-Type", "").split(";")[0].strip().lower()
+        length = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(length) if length else b""
+        if ctype != "application/json":
+            self._error(HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                        f"a POST needs Content-Type: application/json, not {ctype or 'none'!r}")  # fmt: skip
+            return
+        try:
+            body = json.loads(raw) if raw.strip() else {}
+        except json.JSONDecodeError as e:
+            self._error(HTTPStatus.BAD_REQUEST, f"the body is not JSON: {e}")
+            return
+        if not isinstance(body, dict):
+            self._error(HTTPStatus.BAD_REQUEST, "the body must be a JSON object")
+            return
+        parts = [unquote(p) for p in urlsplit(self.path).path.split("/") if p]
+        self._api_post(parts[1:] if parts[:1] == ["api"] else [None, *parts], body)
+
+    def _api_post(self, parts: list[Any], body: dict[str, Any]) -> None:
+        if parts != ["reload"]:
             self._error(HTTPStatus.NOT_FOUND, f"no POST route {self.path}")
             return
+        self._reload()
+
+    def _reload(self) -> None:
         try:
             names = self.server.loaded.reload()
         except self.reload_errors as e:  # keep the old set, say why
@@ -317,8 +344,12 @@ def main(argv: Sequence[str] | None, prog: str, doc: str, paths: tuple[str, str,
     except errors as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
-    names = ", ".join(x["name"] for x in srv.loaded.summaries())
-    print(f"serving {names} at {srv.url} (Ctrl-C to stop)")
+    return serve(srv, ", ".join(x["name"] for x in srv.loaded.summaries()))
+
+
+def serve(srv: ViewerServer, what: str) -> int:
+    """Serve until Ctrl-C, saying ``what`` is served where; 0."""
+    print(f"serving {what} at {srv.url} (Ctrl-C to stop)")
     try:
         srv.serve_forever()
     except KeyboardInterrupt:
@@ -328,4 +359,4 @@ def main(argv: Sequence[str] | None, prog: str, doc: str, paths: tuple[str, str,
     return 0
 
 
-__all__ = ["DEFAULT_PORT", "HOST", "Handler", "ViewerServer", "main", "make_server"]
+__all__ = ["DEFAULT_PORT", "HOST", "Handler", "ViewerServer", "main", "make_server", "serve"]
