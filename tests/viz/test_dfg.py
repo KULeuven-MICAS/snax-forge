@@ -127,9 +127,8 @@ def test_vecadd_accelerated():
                                            "loop.kind": "temporal",
                                            "loop.split": {"var": "i", "range": "0:N"}}  # fmt: skip
     assert v["details"]["container:A"]["sizes"] == [64]
-    assert [(e["id"], e["dir"], e["stop"]) for e in v["edges"]] == [
-        ("A@0->add.a", "read", "add_map"), ("B@0->add.b", "read", "add_map"),
-        ("add.out->C@1", "write", "add_map")]  # fmt: skip
+    assert [(e["id"], e["dir"]) for e in v["edges"]] == [
+        ("A@0->add.a", "read"), ("B@0->add.b", "read"), ("add.out->C@1", "write")]  # fmt: skip
     assert "text" not in v["edges"][0] and "packing" not in v["edges"][0]
     e = v["details"]["edge:A@0->add.a"]
     assert (e["memlet"], e["packing"], e["loops"], e["beats"], e["streamer"]) == (
@@ -273,9 +272,9 @@ def test_inside_one_node_an_edge_goes_straight_from_the_writer(tmp_path):
                tasklet("t2", {"in1": "tmp0"}, {"out": "B"}, "out = in1"))],
     )  # fmt: skip
     v = view(path)
-    assert [(e["from"], e["to"], e["data"], e["stop"]) for e in v["edges"]] == [
-        ("A@0", "t1.in1", "A", "m"), ("t1.out", "t2.in1", "tmp0", None),
-        ("t1.out", "tmp0@1", "tmp0", "m"), ("t2.out", "B@1", "B", "m"),
+    assert [(e["from"], e["to"], e["data"]) for e in v["edges"]] == [
+        ("A@0", "t1.in1", "A"), ("t1.out", "t2.in1", "tmp0"),
+        ("t1.out", "tmp0@1", "tmp0"), ("t2.out", "B@1", "B"),
     ]  # fmt: skip
     assert v["rows"][-1]["boxes"] == ["tmp0@1", "B@1"]
 

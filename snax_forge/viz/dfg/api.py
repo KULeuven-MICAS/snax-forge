@@ -48,10 +48,8 @@ the instance's lanes for that port (the wire slice, the only value
 ``connect.num_ch`` takes), rounded up so a fold's one-lane output is one word
 (``int64 · num_slc 1 · num_ch 1``). All of it is read
 from the bound graph and the BRM library; nothing is stored in the graph.
-An edge between a container and a connector inside a top-level node is drawn
-only up to that node's outer box, above or below the connector it belongs
-to (``stop``), so it never crosses the text inside; an edge between
-two connectors inside one node is drawn in full. The
+An edge to or from a connector inside a top-level node runs to that connector,
+under the boxes it passes (a map's bar hides it, its body shows it). The
 nodes are the graph's own tree, each with its compact text, a map's tag and its connectors.
 Positions are the browser's business: the boxes are HTML laid out by CSS,
 and the edges an SVG layer the viewer draws over them (static/dfg.js).
@@ -617,7 +615,6 @@ def _layout(g: Graph) -> dict[str, Any]:
     tops = list(g.body)
     # A link's container gets no box: its writer's edge goes into the link, the link's out of it
     linked = {n.attrs["container"]: n.id for n, _ in g.walk() if n.kind == "link"}
-    top_of = {n.id: top.id for top in tops for n in _walk(top)}
     reads, writes = [], []
     for top in tops:
         r: list[str] = []
@@ -672,43 +669,45 @@ def _layout(g: Graph) -> dict[str, Any]:
             port, text = f"{n.id}.{c}", memlet_text(m)
             if m.data in linked:  # straight into or out of the link node
                 link = linked[m.data]
-                apart = top_of[link] != top.id
                 if side == "write":
-                    edges.append(_edge(port, f"{link}.in", m.data, text, "write",
-                                       top.id if apart else None, packing(g, n, c, m.data)))  # fmt: skip
+                    edges.append(
+                        _edge(port, f"{link}.in", m.data, text, "write", packing(g, n, c, m.data))
+                    )
                 else:
-                    edges.append(_edge(f"{link}.out", port, m.data, text, "read",
-                                       top.id if apart else None, packing(g, n, c, m.data)))  # fmt: skip
+                    edges.append(
+                        _edge(f"{link}.out", port, m.data, text, "read", packing(g, n, c, m.data))
+                    )
                 continue
             if side == "write":
                 writers.setdefault(m.data, []).append(port)
                 wrote.setdefault(m.data, []).append((n, c, m))
             elif m.data in writers:  # written earlier inside this node: straight from the writer
-                edges.extend(_edge(w, port, m.data, text, "read", None, packing(g, n, c, m.data))
+                edges.extend(_edge(w, port, m.data, text, "read", packing(g, n, c, m.data))
                              for w in writers[m.data])  # fmt: skip
             else:
-                edges.append(_edge(above[m.data], port, m.data, text, "read", top.id,
-                                   packing(g, n, c, m.data)))  # fmt: skip
+                edges.append(
+                    _edge(above[m.data], port, m.data, text, "read", packing(g, n, c, m.data))
+                )
         nxt = reads[k + 1] if k + 1 < len(tops) else []
         names = nxt + [c for c in writes[k] if c not in nxt]
         fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[k]}
         below = box_row(names, fresh, k + 1)
         for c in writes[k]:
             for n, cn, m in wrote[c]:
-                edges.append(_edge(f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", top.id,
-                                   packing(g, n, cn, c)))  # fmt: skip
+                edges.append(
+                    _edge(
+                        f"{n.id}.{cn}", below[c], c, memlet_text(m), "write", packing(g, n, cn, c)
+                    )
+                )
         above = below
     return {"rows": rows, "boxes": boxes, "edges": edges}
 
 
 def _edge(
-    src: str, dst: str, data: str, text: str, side: str, stop: str | None = None,
-    pack: str | None = None,
-) -> dict[str, Any]:  # fmt: skip
-    """One memlet; ``stop`` is the top-level node whose box the drawn edge ends at, ``pack``
-    the port's packing when it meets an accelerated node."""
-    out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text,
-           "dir": side, "stop": stop}  # fmt: skip
+    src: str, dst: str, data: str, text: str, side: str, pack: str | None = None
+) -> dict[str, Any]:
+    """One memlet; ``pack`` the port's packing when it meets an accelerated node."""
+    out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack
     return out
