@@ -5,7 +5,7 @@ import chisel3.util.Decoupled
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{ForgeTester, IntType, LaneBits, RunLine, SnaxUnitCases}
+import snax.forge.{ForgeTester, IntType, LaneBits, RunLines, SnaxUnitCases}
 import snax.forge.SnaxUnitCases.Case
 import snax.forge.datapath.{ElementwiseLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
@@ -35,6 +35,7 @@ class UnitHarness(val c: Case) extends Module {
     val res   = Output(Vec(outLanes, UInt(64.W)))
     val fire  = Output(Bool())
     val busy  = Output(Bool())
+    val cls   = Output(UInt(2.W))
   })
 
   ctrl.io.start <> io.start
@@ -42,6 +43,7 @@ class UnitHarness(val c: Case) extends Module {
   ctrl.io.out <> io.out
   io.fire := ctrl.io.units(0).fire
   io.busy := ctrl.io.busy
+  io.cls  := ctrl.io.cls
   io.res  := DontCare
 
   private def lane(x: UInt, ty: IntType): Bits = x(ty.width - 1, 0).asTypeOf(ty.lane)
@@ -74,9 +76,8 @@ class UnitHarness(val c: Case) extends Module {
   * `refused` is the controller not ready (busy), `ignored` a start it takes as the empty run (JOBS or JOB_BEATS 0),
   * which the group ends without its shell (busy stays 0), `taken` the rest. With `types`, the N-th firing's input is
   * the case's `beat N` and the N-th push must be its `result N` (each lane at its type's width). The `expect run` lines
-  * too: each busy cycle classed by `SnaxUnit`'s rule (D59) from what the hardware shows: a result waiting with no room
-  * (`out.valid && !out.ready` at L >= 1; at L = 0 a firing that would give one) stall_out, a firing or the II gap after
-  * one busy, no input with firings left stall_in, the rest flush. Without the variable the test is canceled.
+  * too, from the controller's class (`cls`) in each busy cycle, as `GroupCasesSpec` counts them (`RunLines`). Without
+  * the variable the test is canceled.
   */
 class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
 
@@ -84,22 +85,12 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
 
   private def run(c: Case): Unit =
     test(new UnitHarness(c)) { dut =>
-      var runs     = Vector.empty[RunLine]
-      var count    = 0L                // the run's firings
-      var t        = 1L
-      var firings  = 0L                // the run's firings so far
-      var hasFired = false
-      var lastFire = 0
-      var classes  = Array(0, 0, 0, 0) // busy, stall_in, stall_out, flush
-      var fired    = 0                 // the case's firings, for `beat N`
-      var pushed   = 0                 // the case's pushes, for `result N`
-      var wasBusy  = false
-      def endRun(): Unit = runs :+= RunLine(firings.toInt, classes(0), classes(1), classes(2), classes(3))
+      val runs   = new RunLines
+      var fired  = 0 // the case's firings, for `beat N`
+      var pushed = 0 // the case's pushes, for `result N`
       for ((cyc, i) <- c.cycles.zipWithIndex) {
         val clue = s"${c.name}, cycle $i"
         val busy = high(dut.io.busy)
-        if (wasBusy && !busy) endRun()
-        wasBusy = busy
         c.starts.get(i) match {
           case Some(s) =>
             dut.io.start.valid.poke(true.B)
@@ -108,9 +99,6 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
             val got =
               if (!high(dut.io.start.ready)) "refused" else if (s.jobs == 0 || s.jobBeats == 0) "ignored" else "taken"
             assert(got == s.answer, s"$clue: start ${s.jobs} x ${s.jobBeats} $got, the case ${s.answer}")
-            if (got == "taken") {
-              count = s.jobs.toLong * s.jobBeats; t = s.jobBeats; firings = 0; classes = Array(0, 0, 0, 0)
-            }
           case None    => dut.io.start.valid.poke(false.B)
         }
         cyc.valids.zipWithIndex.foreach { case (v, k) => dut.io.in(k).valid.poke(v.B) }
@@ -129,19 +117,7 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
           (fire, push, busy) == (cyc.fire, cyc.push, cyc.busy),
           s"$clue: fire $fire push $push busy $busy, the case ${cyc.fire} ${cyc.push} ${cyc.busy}"
         )
-        if (busy) {
-          val allIn    = cyc.valids.forall(identity)
-          val iiOk     = !hasFired || i >= lastFire + c.ii
-          val gives    = (firings + 1)   % t == 0
-          val stallOut =
-            if (c.latency > 0) outValid && !cyc.ready else firings < count && iiOk && allIn && gives && !cyc.ready
-          val k        =
-            if (stallOut) 2
-            else if (fire || (hasFired && i < lastFire + c.ii)) 0
-            else if (firings < count && iiOk && !allIn) 1
-            else 3
-          classes(k) += 1
-        }
+        runs.cycle(busy, int(dut.io.cls), fire)
         if (push && c.types.nonEmpty) {
           val out  = IntType(c.types.last)
           val want = c.results.getOrElse(pushed, fail(s"$clue: push $pushed has no `result` line"))
@@ -151,11 +127,11 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
           }
         }
         if (push) pushed += 1
-        if (fire) { firings += 1; fired += 1; hasFired = true; lastFire = i }
+        if (fire) fired += 1
         dut.clock.step()
       }
-      if (wasBusy) endRun()
-      assert(runs == c.runs, s"${c.name}: the runs ${runs.mkString(", ")}, the case ${c.runs.mkString(", ")}")
+      val lines = runs.done
+      assert(lines == c.runs, s"${c.name}: the runs ${lines.mkString(", ")}, the case ${c.runs.mkString(", ")}")
       if (c.types.nonEmpty) assert(pushed == c.results.size, s"${c.name}: $pushed pushes, ${c.results.size} results")
     }
 

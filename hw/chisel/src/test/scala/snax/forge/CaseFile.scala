@@ -48,3 +48,34 @@ object RunLine {
       }
   }
 }
+
+/** The run lines a run of cycles gives: per busy cycle its class (a control unit's `cls`: busy 0, stall_in 1, stall_out
+  * 2, flush 3) and whether the head fired; a line each time busy falls, and for a run still busy at the end.
+  */
+class RunLines {
+  private val classes = Array(0, 0, 0, 0)
+  private var firings = 0
+  private var wasBusy = false
+  private var lines   = Vector.empty[RunLine]
+
+  def cycle(busy: Boolean, cls: => Int, fired: => Boolean): Unit = {
+    if (wasBusy && !busy) close()
+    wasBusy = busy
+    if (busy) {
+      classes(cls) += 1
+      if (fired) firings += 1
+    }
+  }
+
+  private def close(): Unit = {
+    lines :+= RunLine(firings, classes(0), classes(1), classes(2), classes(3))
+    java.util.Arrays.fill(classes, 0)
+    firings = 0
+  }
+
+  /** Every run's line. */
+  def done: Vector[RunLine] = {
+    if (wasBusy) { close(); wasBusy = false }
+    lines
+  }
+}
