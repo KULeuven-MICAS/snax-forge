@@ -18,7 +18,7 @@ The user describes the accelerator; the platform around it is the model's (D51).
 
 SNAX-FORGE complements analytical DSE tools such as ZigZag and Stream (D23):
 
-- **Cycle-level cluster microarchitecture.** Bank arbitration, affine streamers, FIFO back-pressure, DMA and the control the core does, rather than analytical cost terms.
+- **Cycle-level cluster microarchitecture.** Bank arbitration, affine streamers, FIFO back-pressure, DMA and the control the core does, rather than analytical cost terms; the ideal estimate (D151) is a first look before a run, and the numbers still come from the cycle-level run.
 - **Arbitrary dataflow graphs**, not only DNN layers: PolyBench kernels, stencils, reductions, and later HDC workloads (D113).
 - **Composition.** Unit BRMs bound on the graph and stitched into accelerators (D112).
 - **One description, two outputs.** A BRM gives the model's accelerator and its Chisel RTL; the hjson describes the cluster to both (D111, D116).
@@ -78,6 +78,7 @@ flowchart LR
 | SNAX-BRM | `brm/` | C§10 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§12 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
 | Design step | `design/` | C§13–C§15 | bound graph, platform | design point |
+| Estimate **[PLANNED]** (VIEW2) | `estimate/` | C§19 | bound graph, platform (optional) | the ideal estimate (D151), read by the viewers and `design.md` |
 | SNAX-LOWER | `lower/` | C§9, C§16 | design point | task list, `main.c` |
 | Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§16 | design point, the platform's source hjson | cluster and streamer hjson, `accelerator.json`, CSR headers, `data.h`, `main.c` |
 | HW generator | `gen/rtl.py`, `hw/chisel/` | C§17 | design point, the datapath catalogue | `accelerator.json`, the accelerator RTL |
@@ -108,7 +109,7 @@ Each implementation's binding (D129) has two outputs: the GVSoC accelerator on `
 
 ### 5.4 SNAX-SANDBOX and the design step
 
-**SNAX-SANDBOX** (D72, `sandbox/`; C§12). Registered transforms rewrite a `.snaxdfg`; a recipe in `recipes/` names a kernel, params, symbol values and the steps; the reference executor checks every step; `--set W=8` runs one point of a sweep. Transforms: `split_map`, `tag_map` (a tag without a split), `bind` (patterns `elementwise`, `reduce` and `lane_fold`, design params read off the graph, D73), `encapsulate`, `split_reduce`, `fuse_map` and `link` (D148, D150), and their inverses `untag_map`, `unbind`, `join_map`, `unencapsulate`, `join_reduce`, `unfuse_map` and `unlink`. **[PLANNED]** a tile transform (LOW3b).
+**SNAX-SANDBOX** (D72, `sandbox/`; C§12). Registered transforms rewrite a `.snaxdfg`; a recipe in `recipes/` names a kernel, params, symbol values and the steps; the reference executor checks every step; `--set W=8` runs one point of a sweep. Transforms: `split_map` (`split`, then both tags), `tag_map` (a tag without a split), `bind` (patterns `elementwise`, `reduce` and `lane_fold`, design params read off the graph, D73), `encapsulate`, `split_reduce`, `fuse_map` and `link` (D148, D150), and their inverses `untag_map`, `unbind`, `join_map`, `unencapsulate`, `join_reduce`, `unfuse_map` and `unlink`. **[PLANNED]** a tile transform (LOW3b). **[PLANNED]** (VIEW2) `split` alone, a split without tags (D73); a transform's `site(g, selected)`, where it applies (D72); and the editor's session (`sandbox/session.py`, C§12), a recipe the server replays, with a cursor for undo.
 
 **The design step** (D84–D87, `design/`; C§13–C§15). It pairs a bound graph with a platform from `platforms/`, resolves the streamers (D12), makes the memory plan from registered passes, runs every design check, and writes `design_point.json`, SNAX-LOWER's and the generator's only input. The platform `platforms/snax_forge.json` is read from snax-forge's base cluster, `platforms/snax_forge_cluster.hjson` (`design from-hjson`, D131).
 
@@ -144,7 +145,7 @@ A design point gives SNAX-GVSoC its cluster and streamer hjson and `accelerator.
 
 **Profile and trace** (D137, `run/`; C§7): SNAX-GVSoC's events converted, the trace at level `task`, `beat`, `stall` or `finegrained` (none at `off`), and `--vcd` a gtkwave dump.
 
-**Viewers** (D55, D57, `viz/`; `pixi run view DIR ...`, `pixi run view-dfg FILE ...`): a local server and a static page. A run view goes through four layers, one job each: `run/`'s dataclasses; `viz/index.py`, the run's events grouped by their ids once at load; the queries (`viz/memory.py`, `viz/movement.py`, `viz/schedule.py`, `viz/cluster.py`), which read no file; and `viz/api.py`, whose routes return one query's dict for `static/` to draw.
+**Viewers** (D55, D57, `viz/`; `pixi run view DIR ...`, `pixi run view-dfg FILE|DIR ...`): a local server and a static page. A run view goes through four layers, one job each: `run/`'s dataclasses; `viz/index.py`, the run's events grouped by their ids once at load; the queries (`viz/memory.py`, `viz/movement.py`, `viz/schedule.py`, `viz/cluster.py`), which read no file; and `viz/api.py`, whose routes return one query's dict for `static/` to draw. The graph page (`viz/dfg/`, `static/dfg.js`) shows the given `.snaxdfg` files side by side, with Reload. **[PLANNED]** (VIEW2) one page in two modes: `view-dfg` shows the given files one step at a time, a dropdown over the history; `edit-dfg` holds a session on the server (C§12): select a node, apply a transform from the side list, which marks those whose `site` matches (D72), undo along the step history, and save a recipe once the sequence looks right. Both draw each node as a compact box (its name, loops and operations), the rest in a Details side panel, with the estimate (D151, C§19) of the step shown and an optional compare of two steps.
 
 **Reports** (D99, `report/`; `pixi run report DIR`): `design.md` (what was built) and `run.md` (where the cycles went).
 

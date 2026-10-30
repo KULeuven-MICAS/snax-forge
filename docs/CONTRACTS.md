@@ -245,7 +245,7 @@ The workload as one `.snaxdfg` JSON file (D71), written by an importer and rewri
 
 | Kind | Attrs | Body | Connectors |
 |---|---|---|---|
-| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`; `loop.split` (the `var` and `range` before `split_map`, and `valid`, the iteration count n, when n is not a multiple of the factor: the lanes past it are padding, `dfg/pad.py`, D144); `loop.tagged` (true when `tag_map` set the kind) | yes: runs once per value of `var` | none (derived from the body) |
+| `map` | `var`, `range`; `loop.kind` absent, `tile`, `temporal` or `spatial`, set by `tag_map` (any of the three) or `split_map`; `loop.split` (the `var` and `range` before `split` or `split_map`, and `valid`, the iteration count n, when n is not a multiple of the factor: the lanes past it are padding, `dfg/pad.py`, D144) | yes: runs once per value of `var` | none (derived from the body) |
 | `tasklet` | `code`: one `output = expression` per output connector | no | one element each: indices only |
 | `link` | `container` (the transient it replaced, which the writer and the reader still name, so the reference executor runs the link as it), `depth` (0 a wire, ≥ 1 a buffer), `from` and `to` (the units' instances) | no | none |
 | `accelerated` | `instance`, `brm`, `implementation`, `code` (what one lane computes, the BRM's `function.code`), `params` (design params), `replaced` (the subtree `bind` replaced, or null), `accelerator` (written only when set: `encapsulate`'s name for the accelerator its group is in, D148), `group` (written only when set: `link`'s name for the group the unit is in) | yes: empty for a leaf block, a nested block otherwise | the BRM's ports, each port's lanes as a range; one beat |
@@ -291,14 +291,17 @@ SNAX-SANDBOX's ordered list of transforms (D72), a hand-written JSON file in `re
 
 A transform's int params take an int or an expression over the recipe params (`"factor": "W"`). Running a recipe binds the symbols (step 0), applies the steps and checks every step against the reference executor on the same seeded inputs; each is written as `<i>_<transform>.snaxdfg`, with the recipe as `recipe.json`.
 
+**The editor's files** (D55). `edit-dfg` keeps a session in `out/sessions/<name>/`: `recipe.json`, a recipe holding every step applied so far, and `session.json`, its `cursor` (how many of those steps are in force; undo moves it back) and its `platform`. The graphs are not stored: the server rebuilds them by replaying the recipe. Save writes `recipes/<name>.json`, a name no recipe has (it never overwrites), and its steps to `out/sandbox/<name>/` as `pixi run sandbox` writes them.
+
 | Transform | Params | Does |
 |---|---|---|
-| `split_map` | `map` (id), `factor` (int) | a map over `b:e` becomes a `temporal` map over `0:(e - b) // factor` (same id) around a `spatial` map `<id>_s` over `0:factor`; when the length n is not a multiple of the factor, over `0:(n + factor - 1) // factor`, with `loop.split.valid` n: the lanes at or past n are padding (D144), which the reference executor neither reads nor writes |
-| `tag_map` | `map` (id), `kind` (`temporal` or `tile`) | an untagged map is tagged as it is, not split, and records it (`loop.tagged`); a tagged map is an error |
-| `untag_map` | `map` (id) | the tag `tag_map` set is removed; a map `split_map` tagged is an error (`join_map` undoes it) |
+| `split` | `map` (id), `factor` (int) | a map over `b:e` becomes an untagged map over `0:(e - b) // factor` (same id), with `loop.split`, around an untagged map `<id>_s` over `0:factor`; when the length n is not a multiple of the factor, over `0:(n + factor - 1) // factor`, with `loop.split.valid` n: the lanes at or past n are padding (D144), which the reference executor neither reads nor writes |
+| `split_map` | `map` (id), `factor` (int) | `split`, then `tag_map` `temporal` on the outer map and `spatial` on the inner (D73): one step, as old recipes have it |
+| `tag_map` | `map` (id), `kind` (`temporal`, `tile` or `spatial`) | an untagged map is tagged as it is, not split; a tagged map is an error |
+| `untag_map` | `map` (id) | the map's tag is removed, whatever set it; a map around a bound unit is an error (`unbind` first) |
 | `bind` | `node` (a tasklet id, or a fused nest's spatial map id), `brm`, `implementation`, `instance`, `params` (optional design params) | the tasklet and its spatial map become an accelerated node; every map around the spatial map must be `temporal` (the firing loops: an untagged one is an error naming `tag_map`, a `tile` one is not lowered yet); the lanes param comes from the spatial bound; the dimension over the spatial variable becomes the lanes' range, the others stay indices; the tasklet's code on the port names must be the BRM's `function.code`; a folding output that does not use the spatial variable becomes one lane, `c:c + 1` (D102); a fused nest's two tasklets bind as one, the first's inputs and the second's output (`lane_fold`, section 10), and the accelerated node takes the first's id; a tasklet that needs a fused map or a split reduction is refused with the fix named ("fuse_map first", "split_reduce first", D150); a unit on a link is not unbound (unlink first) |
 | `unbind` | `node` (accelerated id) | the accelerated node becomes the subtree it `replaced` |
-| `join_map` | `map` (id) | a temporal map with `loop.split` and its spatial map become the map they were split from |
+| `join_map` | `map` (id) | a map with `loop.split` and its inner map, whatever their tags, become the map they were split from |
 | `encapsulate` | `accelerator` (a name), `units` (instances) | the groups of those units become one accelerator of that name (their nodes' `accelerator`, D148); `units` in the order the graph runs them, which the groups keep; a unit already in an accelerator, a name an instance or an accelerator has, or a unit the graph lacks is an error |
 | `unencapsulate` | `accelerator` (a name) | each of its groups becomes its own accelerator again |
 | `split_reduce` | `map` (id), `factor` (int) | an untagged map whose one tasklet folds into an element that does not move with it is split as `split_map` splits it, `<map>` (temporal) around a spatial `<map>_s`; the tasklet writes one partial per lane into a new transient `<output>_partial`, indexed by the output's dimensions that move with an enclosing map, then the spatial variable (dot's `out_partial[4]`, matvec's `q_partial[M, 4]`); a final sum, tasklet `<tasklet>_final` in a spatial map `<map>_final` over `0:factor` right after `<map>`, folds them into the output; a length that is not a multiple of the factor is refused (the partials' padding is not placed yet) |
@@ -393,6 +396,7 @@ Before the design step writes anything it runs every registered check (`register
 | `connect.pack` | a port whose elements do not fill whole words (D142), with num_slc slices of its container's dtype per word: the fastest spatial bound not a multiple of num_slc (W < num_slc: the fix makes the container 64-bit or gives the port num_slc lanes), the fastest spatial loop not stepping 1 element (a column), another loop's step or the start not a multiple of num_slc (a row stride that is not: the fix pads the leading dimension). Row strides are over the container's padded shape (a tail's, D144: a 3 x 7 int32 matrix split by 4 has row stride 8). Every port passes at num_slc = 1 |
 | `connect.pad` | a container an accelerator writes and a fold reads through a tail: the producer's pad lanes would reach the fold, since the hardware masks nothing (D144; the fix: a size that divides W, or a split factor that divides n); a container whose readers need different pad values (the message names them) |
 | `connect.num_ch` | a streamer entry's `num_ch` other than the wire default W / num_slc: any other needs the FIFO slicer, which the flow does not place yet (D142). The message lists the values with rho = num_ch * num_slc / W <= 1, the divisors of W / num_slc; the fix removes it or sets W / num_slc |
+| `gen.instances` (stage `connect`) | more accelerators than the platform has slots; the fix: encapsulate them into one (D148) |
 | `connect.temporal` | a map around an accelerated node that is not `temporal` (tiles are not lowered yet), or a subset that is not affine in the firing loops |
 | `memory.pin` | a memory working copy that does not load; a `--set memory.` path that is not `<container>.<memory>.base` or `passes.<pass>`; a pin on an unknown container (the fix names the closest), on a memory the container does not live in, or on L2 (the link places it, D86); an unknown pass |
 | `memory.residency` | a layout in a memory the platform lacks or for a container the graph lacks; a non-transient container that lives nowhere; an accelerator operand without an L1 layout |
@@ -621,3 +625,19 @@ What `pixi run bundle DESIGN_POINT [--out DIR]` writes per design point (D111, D
 - `target/snitch_cluster/snax_forge.mk` runs a program on the RTL: `CFG_OVERRIDE` the bundle's cluster file, `FORGE` the program's folder, `ELF` an ELF to run (default the one built from `FORGE`), `SIM` `vlt` (default) or `vsim`; `snax-forge-sim` builds the simulator, `snax-forge-run` runs the ELF into `logs/snax-forge-$(SIM).txt` and fails on a nonzero exit code.
 
 **The local check** (D123), in place of a CI job in snax_cluster: `pixi run forge-set quick|full` makes a set's bundles with their `forge_expected.txt`, and the line it prints, `make snax-forge-check BUNDLES=... SIM=vsim SNAX_CLUSTER_IMAGE=...` in snax_cluster's `target/snitch_cluster`, runs each bundle's ELF (snax-forge's, `out/forge/<name>/sw/forge.elf`) on its RTL and compares its `forge counter` and `forge data` lines with `forge_expected.txt`: `PASS` or `FAIL` per bundle, in `logs/snax-forge-check.txt` with each run's `forge cycles`. `docs/RUN.md` §8 runs it; CLAUDE.md says when each set is due.
+
+## 19. Estimate
+
+The ideal estimate of a bound graph (D151, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. It assumes ideal streams: no bank conflicts, no streamer fill, no DMA and no core control. An `Estimate` is a dataclass with `to_dict` / `from_dict`:
+
+| Field | Holds |
+|---|---|
+| `groups` | per group (one unit, or linked units, D146): `name`, `units`, `cycles` (snax-gvsoc's group rule, `snax_group_rule.py` through `gen/submodule.py`, stepped as `gen/rtl.py`'s `group_counter` steps it), `bottleneck` (the max over its units of n · max(II, span), n the unit's firings), `fill` (the sum over its units of L + span − 1, plus its links' latencies), `stall` (`cycles` − `bottleneck` − `fill`), `channels` (the sum of num_ch over its outer ports, D142) and `words_per_cycle` (the 64-bit words its outer ports move per cycle) |
+| `accelerator_cycles` | the sum of the groups' `cycles`: groups add up through L1 (D105) |
+| `not_mapped` | the iterations of the tasklets no unit runs, counting only the temporal maps around them; never added to cycles |
+| `containers` | per container: `placement` (`l1`, `local` or `link` with its `depth`), `bytes` (padded, D144), `reads` and `writes` in 64-bit words |
+| `l1_footprint`, `l1_size` | the bytes placed in L1, and the platform's L1 size (null without a platform) |
+| `ports` | per outer port: its streamer's loops, beats and num_ch |
+| `splits` | per split map with a tail (`loop.split.valid` n, W lanes): its lane use n / (ceil(n / W) · W) |
+
+**The check.** Each group's `cycles` plus the streamers' fill, 3 (2 for a one-input unit), is its COUNTER on SNAX-GVSoC (section 17, Cycles).

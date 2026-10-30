@@ -10,9 +10,9 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D151**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D152**.
 
-Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `viz`, `docs`.
+Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
 | Area | Decisions |
 |---|---|
@@ -25,6 +25,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | sandbox | D72 D73 |
 | design | D12 D84–D87 D131 D142 |
 | flow | D50 D108 D136 |
+| estimate | D151 |
 | viz | D55 D57 D99 |
 | docs | D26 D46 D117 |
 
@@ -69,7 +70,7 @@ Retired, and where each now lives:
 
 **D19** · dfg — Everything is extended by registration (node kinds, transforms, checks, passes, the accelerator kinds and ops of `brm/function.py`, the generator's blocks) and namespaced attrs, never by editing core classes.
 
-**D23** · scope — SNAX-FORGE complements ZigZag and Stream: cycle-level and RTL-backed rather than analytical. Parked: Stream as a proposer for DNN-shaped workloads, and an analytical estimator of our own for the kernels Stream cannot describe (open item 4).
+**D23** · scope — SNAX-FORGE complements ZigZag and Stream: cycle-level and RTL-backed rather than analytical. Parked: Stream as a proposer for DNN-shaped workloads, and bank conflicts in an estimate of our own (open item 4); the ideal, engine-alone estimate is D151.
 
 **D26** · docs — Contracts are Python dataclasses with `to_dict` / `from_dict` and plain JSON until the contract freeze (M6), versioned schemas after. → C§1.
 
@@ -83,11 +84,11 @@ Retired, and where each now lives:
 
 **D52** · scope — Cosim (M10) swaps one accelerator for its RTL and checks its output, latency and II; the whole cluster is checked by running the same program on SNAX-GVSoC and on snax_cluster RTL (D123). Neither blocks the inner loop.
 
-**D55** · viz — The viewers (runs, and graphs as a second mode) are a local server bound to 127.0.0.1 plus a static page: stdlib only, no build step, no library, offline, for humans; LLMs read the reports (D99). Views read the dataclasses, not raw JSON. → `viz/`.
+**D55** · viz — The viewers (runs, and graphs in two modes: `view-dfg` shows given `.snaxdfg` files, `edit-dfg` a session the server holds, saved as a new recipe, never overwriting, C§12) are a local server on 127.0.0.1 plus a static page: stdlib only, no build step or library, offline, every POST `application/json`, for humans; LLMs read the reports (D99). Views read the dataclasses. → `viz/`.
 
 **D57** · viz — The run views (a schedule over the program's window, the cluster at the selected cycle, the memory tab, data movement off the beat trace) live in the URL hash; Python answers every fold, lookup and step and `static/` only draws, so a view never disagrees with a report.
 
-**D64** · lower — The task list is derived from a design point: per accelerated node `configure`, `start`, `sync` and `read` steps, loads and stores from the memory plan, `after` for data dependences only; lowering adds only the waits correctness needs, one per component. → C§9.
+**D64** · lower — The task list is derived from a design point: per accelerated node `configure`, `start` and `sync` steps, loads and stores from the memory plan, `after` for data dependences only; lowering adds only the waits correctness needs, one per component. → C§9.
 
 **D68** · brm — A BRM is a hand-written JSON file: a shared part (an interface with a rate per port, so reductions and elementwise blocks share one; function, dataflow, pattern) and implementations (source, supports, timing, binding D129), its timing the user's numbers (D51). → C§10.
 
@@ -95,9 +96,9 @@ Retired, and where each now lives:
 
 **D71** · dfg — `.snaxdfg` is SNAX-DFG's own JSON format: SDFG's concepts, one expression grammar (`expr.py`) shared with the BRM, MatMul and Transpose first expanded into dot's shape (`sdfg/expand.py`). Importers derive, decide nothing and name what they lack; streamers appear only at lowering. → C§11.
 
-**D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms on a `.snaxdfg`, applied in order from a recipe (kernel, params, symbols, steps), each step checked by the reference executor. A sweep is one recipe with a parameter; automated search writes recipes.
+**D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms applied in order from a recipe, each step checked by the reference executor; a sweep is one recipe with a parameter, automated search writes recipes. A transform may give `site(g, selected)`, the graph-shape test of where it applies, which it calls first and the editor marks and lists from; Apply runs it, then the check.
 
-**D73** · sandbox — Loops are tagged `tile`, `temporal` or `spatial`, by `split_map` or `tag_map`, and `bind` reads a BRM's design params off the graph (W from the spatial bound), so each is decided once. Streamer values come from memlets through the containers' layouts.
+**D73** · sandbox — A split and its tags are separate steps: `split` only splits, `tag_map` tags `tile`, `temporal` or `spatial` (`split_map` does both, so old recipes run); `untag_map` removes any tag but around a bound unit, `join_map` a split whatever its tags. `bind` reads design params off the graph (W from the spatial bound), streamers theirs off memlets and layouts, so each is decided once. → C§12.
 
 **D75** · lower — Names are derived, never stated: streamer `<instance>_<port>`, task `<node>_<component>`, DMA task `load_<container>` or `store_<container>`.
 
@@ -188,3 +189,5 @@ Retired, and where each now lives:
 **D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE; no `regIn`), not vmul into a lane accumulator. The one-lane vsum is `SerialAccumulate` (`span` = lanes), not a serializer link; a buffer is `LinkBuffer`, not a FIFO. → C§17.
 
 **D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
+
+**D151** · estimate — An ideal estimate of a bound graph (no bank conflicts, streamer fill, DMA or core control): per group the exact cycles of snax-gvsoc's group rule, as `gen/rtl.py`'s `group_counter` calls it, groups adding through L1; unbound work a not-mapped count, never cycles. A mapping's gain shows before any run, exact on ideal streams: a COUNTER is this plus the fill. → ARCHITECTURE §5, C§19.

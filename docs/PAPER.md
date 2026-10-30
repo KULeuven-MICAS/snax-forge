@@ -195,7 +195,7 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 | 2-D plumbing, the kernel set | E3, E4 | M13 (B0: ND1's slice), M7 (FE1b–FE3) |
 | Composed bind | E1, E4–E6 | M13 (B1x, tier A) |
 | Spatial-array and SIMD unit BRMs | E1, E5, E6 | M13 B1x (MAC), B2 (SIMD, fold); spatial arrays in tier D |
-| The engine-alone number | C3's baseline in E4 | DSE0 (open item 49) |
+| The engine-alone number | C3's baseline in E4 | M13 VIEW2 (R2, D151; open item 49) |
 | Cost model and characterisation | E4–E7 | M13 SYN1 and HWCOST (section 7) |
 | Sweep runner and a sweep view | E4, E5 | DSE5 (M8); the view is new |
 | Packing and port widths (int8, float32) | E1 on the GeMM, E5, E6 | PACK1 |
