@@ -2,7 +2,7 @@ package snax.forge
 
 import chisel3._
 
-import snax.forge.datapath.{ElementwiseLanes, LinkBuffer, Mac, SerialAccumulate, TreeAccumulate}
+import snax.forge.datapath.{DatapathModule, ElementwiseLanes, LinkBuffer, Mac, SerialAccumulate, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.AcceleratorSpec
 
@@ -49,13 +49,20 @@ object Datapaths {
 
   case class Datapath(
     name:    String,
-    params:  Seq[(String, ParamType, String)],  // name, type, fill
+    params:  Seq[(String, ParamType, String)], // name, type, fill
     ports:   Seq[Port],
     latency: ujson.Value,
     span:    ujson.Value,
     pins:    Seq[Pin],
-    build:   Map[String, ujson.Value] => Bundle // the module's IO, whose elements are its live ports and pins
+    make:    Map[String, ujson.Value] => DatapathModule,
+    example: Map[String, ujson.Value]          // the params of Emit's catalogue target
   ) {
+
+    /** Its module on `p`, instantiated: its IO, whose elements are its live ports and pins. */
+    def build(p: Map[String, ujson.Value]): Bundle = {
+      val m = Module(make(p))
+      DatapathModule.io(m)
+    }
 
     /** The params of `unit` by the fill rule, from its input and output BRM ports in port order. */
     def fill(unit: AcceleratorSpec.UnitSpec): Map[String, ujson.Value] =
@@ -112,17 +119,21 @@ object Datapaths {
       ujson.Num(1),
       Seq.empty,
       p => {
-        val m = Module(
-          new ElementwiseLanes(
-            p("inTypes").arr.toSeq.map(_.str),
-            str(p, "opType"),
-            str(p, "outType"),
-            int(p, "lanes"),
-            ElementwiseOp.byName(str(p, "op"))
-          )
+        new ElementwiseLanes(
+          p("inTypes").arr.toSeq.map(_.str),
+          str(p, "opType"),
+          str(p, "outType"),
+          int(p, "lanes"),
+          ElementwiseOp.byName(str(p, "op"))
         )
-        m.io
-      }
+      },
+      Map(
+        "inTypes" -> ujson.Arr("int32", "int32"),
+        "opType"  -> ujson.Str("int32"),
+        "outType" -> ujson.Str("int32"),
+        "lanes"   -> ujson.Num(4),
+        "op"      -> ujson.Str("add")
+      )
     ),
     Datapath(
       "TreeAccumulate",
@@ -138,9 +149,14 @@ object Datapaths {
       Seq(Pin("fire"), Pin("first")),
       p => {
         require(str(p, "op") == "add", s"TreeAccumulate adds, op ${str(p, "op")}")
-        val m = Module(new TreeAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes")))
-        m.io
-      }
+        new TreeAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
+      },
+      Map(
+        "inType"  -> ujson.Str("int32"),
+        "outType" -> ujson.Str("int64"),
+        "lanes"   -> ujson.Num(4),
+        "op"      -> ujson.Str("add")
+      )
     ),
     Datapath(
       "Mac",
@@ -166,18 +182,23 @@ object Datapaths {
         Pin("en", Seq("accumulate" -> ujson.False, "regOut" -> ujson.True))
       ),
       p => {
-        val m = Module(
-          new Mac(
-            p("inTypes").arr.toSeq.map(_.str),
-            str(p, "opType"),
-            str(p, "outType"),
-            int(p, "lanes"),
-            p("accumulate").bool,
-            p("regOut").bool
-          )
+        new Mac(
+          p("inTypes").arr.toSeq.map(_.str),
+          str(p, "opType"),
+          str(p, "outType"),
+          int(p, "lanes"),
+          p("accumulate").bool,
+          p("regOut").bool
         )
-        m.io
-      }
+      },
+      Map(
+        "inTypes"    -> ujson.Arr("int64", "int64"),
+        "opType"     -> ujson.Str("int64"),
+        "outType"    -> ujson.Str("int64"),
+        "lanes"      -> ujson.Num(4),
+        "accumulate" -> ujson.True,
+        "regOut"     -> ujson.False
+      )
     ),
     Datapath(
       "SerialAccumulate",
@@ -191,9 +212,9 @@ object Datapaths {
       ujson.Str("lanes"),
       Seq(Pin("read"), Pin("lane"), Pin("first")),
       p => {
-        val m = Module(new SerialAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes")))
-        m.io
-      }
+        new SerialAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
+      },
+      Map("inType" -> ujson.Str("int64"), "outType" -> ujson.Str("int64"), "lanes" -> ujson.Num(4))
     ),
     Datapath(
       "LinkBuffer",
@@ -207,9 +228,9 @@ object Datapaths {
       ujson.Num(1),
       Seq(Pin("load"), Pin("wslot"), Pin("rslot")),
       p => {
-        val m = Module(new LinkBuffer(int(p, "depth"), int(p, "lanes"), str(p, "dtype")))
-        m.io
-      }
+        new LinkBuffer(int(p, "depth"), int(p, "lanes"), str(p, "dtype"))
+      },
+      Map("depth" -> ujson.Num(2), "lanes" -> ujson.Num(4), "dtype" -> ujson.Str("int64"))
     )
   )
 

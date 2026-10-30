@@ -120,6 +120,9 @@ jobs:
           ls -la out/hw
           test -f out/hw/ElementwiseLanes_i32xi32_i32_i32_n4_add.sv
           test -f out/hw/TreeAccumulate_i32_i64_n4.sv
+          test -f out/hw/Mac_i64xi64_i64_i64_n4_acc.sv
+          test -f out/hw/SerialAccumulate_i64_i64_n4.sv
+          test -f out/hw/LinkBuffer_i64_n4_d2.sv
           test -f out/hw/FifoSlicer_w2_i8_n4.sv
           test -f out/hw/FifoPacker_n4_i8_w2.sv
 

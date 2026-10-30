@@ -19,7 +19,7 @@ import snax.forge.IntType
   * @param dtype
   *   the elements' type, the link's ends'
   */
-class LinkBuffer(val depth: Int = 1, val lanes: Int = 4, val dtype: String = "int64") extends Module {
+class LinkBuffer(val depth: Int = 1, val lanes: Int = 4, val dtype: String = "int64") extends DatapathModule {
   require(depth > 0, s"depth must be at least 1, got $depth")
   require(lanes > 0, s"lanes must be positive, got $lanes")
 

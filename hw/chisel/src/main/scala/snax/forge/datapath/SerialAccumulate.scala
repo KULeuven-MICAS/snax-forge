@@ -19,7 +19,8 @@ import snax.forge.IntType
   * @param lanes
   *   elements per input beat: its span
   */
-class SerialAccumulate(val inType: String = "int64", val outType: String = "int64", val lanes: Int = 4) extends Module {
+class SerialAccumulate(val inType: String = "int64", val outType: String = "int64", val lanes: Int = 4)
+    extends DatapathModule {
   require(lanes > 0, s"lanes must be positive, got $lanes")
 
   private val inT  = IntType(inType)

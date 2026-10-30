@@ -37,7 +37,7 @@ class Mac(
   val lanes:      Int         = 4,
   val accumulate: Boolean     = true,
   val regOut:     Boolean     = false
-) extends Module {
+) extends DatapathModule {
   require(lanes > 0, s"lanes must be positive, got $lanes")
   require(
     !(accumulate && regOut),

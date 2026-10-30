@@ -21,7 +21,8 @@ import snax.forge.IntType
   * @param lanes
   *   elements per input beat, the unit's input port's lanes
   */
-class TreeAccumulate(val inType: String = "int32", val outType: String = "int32", val lanes: Int = 1) extends Module {
+class TreeAccumulate(val inType: String = "int32", val outType: String = "int32", val lanes: Int = 1)
+    extends DatapathModule {
   require(lanes > 0, s"lanes must be positive, got $lanes")
 
   private val inT  = IntType(inType)

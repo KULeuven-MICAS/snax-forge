@@ -6,8 +6,6 @@ import scala.jdk.CollectionConverters._
 
 import chisel3.RawModule
 import circt.stage.ChiselStage
-import snax.forge.datapath.{ElementwiseLanes, TreeAccumulate}
-import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.{AcceleratorSpec, ShellWrapper}
 import snax.forge.stream.{FifoPacker, FifoSlicer}
 
@@ -62,78 +60,86 @@ object Emit {
     */
   private case class Target(label: String, note: String, gen: () => RawModule)
 
-  private val Int32 = Seq("int32", "int32")
-
-  /** Everything the emitter knows how to build on its own, apart from `--spec`: the catalogue's datapaths (D147) and
-    * the parked stream blocks.
+  /** Everything the emitter knows how to build on its own, apart from `--spec`: each catalogue datapath
+    * (`Datapaths.all`, D147) at its `example` params, and the parked stream blocks.
     */
-  private val catalogue: Seq[Target] = Seq(
-    Target(
-      "ElementwiseLanes",
-      "datapath: 4 lanes of int32, add (L 0, no pins)",
-      () =>
-        new ElementwiseLanes(inTypes = Int32, opType = "int32", outType = "int32", lanes = 4, op = ElementwiseOp.Add)
-    ),
-    Target(
-      "TreeAccumulate",
-      "datapath: 4 lanes of int32 into an int64 sum (L 1, pins fire and first)",
-      () => new TreeAccumulate(inType = "int32", outType = "int64", lanes = 4)
-    ),
-    // Built and parked (D142): not in the datapath catalogue, emitted on their own.
-    Target(
-      "FifoSlicer",
-      "parked: 2 words of int8 in, 4 lanes out per pop (r = 4)",
-      () => new FifoSlicer(words = 2, laneType = "int8", outLanes = 4)
-    ),
-    Target(
-      "FifoPacker",
-      "parked: 4 lanes of int8 in per push, 2 words out (r = 4)",
-      () => new FifoPacker(inLanes = 4, laneType = "int8", words = 2)
+  private val catalogue: Seq[Target] =
+    Datapaths.all.map { d =>
+      Target(d.name, s"datapath: ${ujson.write(ujson.Obj.from(d.example))}", () => d.make(d.example))
+    } ++ Seq(
+      // Built and parked (D142): not in the datapath catalogue, emitted on their own.
+      Target(
+        "FifoSlicer",
+        "parked: 2 words of int8 in, 4 lanes out per pop (r = 4)",
+        () => new FifoSlicer(words = 2, laneType = "int8", outLanes = 4)
+      ),
+      Target(
+        "FifoPacker",
+        "parked: 4 lanes of int8 in per push, 2 words out (r = 4)",
+        () => new FifoPacker(inLanes = 4, laneType = "int8", words = 2)
+      )
     )
-  )
 
-  def main(args: Array[String]): Unit = {
-    val (flags, selectors) = args.toSeq.partition(_.startsWith("--"))
+  /** The command line, read once: its flags, `--out DIR`, `--spec FILE` and the selectors (every other word). */
+  private case class Args(flags: Set[String], out: Option[Path], spec: Option[Path], selectors: Seq[String])
 
-    if (flags.contains("--describe")) {
+  private def parse(args: Seq[String]): Args = {
+    var a    = Args(Set.empty, None, None, Vector.empty)
+    var rest = args.toList
+    while (rest.nonEmpty) {
+      rest = rest match {
+        case "--out" :: d :: t            => a = a.copy(out = Some(RepoPaths.resolve(d))); t
+        case "--spec" :: f :: t           => a = a.copy(spec = Some(RepoPaths.resolve(f))); t
+        case f :: t if f.startsWith("--") => a = a.copy(flags = a.flags + f); t
+        case x :: t                       => a = a.copy(selectors = a.selectors :+ x); t
+        case Nil                          => Nil
+      }
+    }
+    a
+  }
+
+  def main(argv: Array[String]): Unit = {
+    val args = parse(argv.toSeq)
+
+    if (args.flags("--describe")) {
       println(describe)
       return
     }
 
-    args.sliding(2).collectFirst { case Array("--spec", path) => path } match {
-      case Some(path) =>
-        val spec = RepoPaths.resolve(path)
-        val dir  = args.sliding(2).collectFirst { case Array("--out", d) => RepoPaths.resolve(d) }
-        val done = emitSpec(spec, dir.getOrElse(spec.toAbsolutePath.getParent))
-        done.files.foreach(f => println(s"[snax-forge] wrote ${RepoPaths.display(f)}"))
-        println(s"[snax-forge] ${done.top} from ${RepoPaths.display(spec)}: ${done.modules.size} module(s)")
-        return
-      case None       =>
+    args.spec.foreach { spec =>
+      val done = emitSpec(spec, args.out.getOrElse(spec.toAbsolutePath.getParent))
+      done.files.foreach(f => println(s"[snax-forge] wrote ${RepoPaths.display(f)}"))
+      println(s"[snax-forge] ${done.top} from ${RepoPaths.display(spec)}: ${done.modules.size} module(s)")
+      return
     }
 
-    if (flags.contains("--list")) {
+    if (args.flags("--list")) {
       println("[snax-forge] emittable targets:")
       catalogue.foreach(t => println(f"  ${t.label}%-30s ${t.note}"))
       return
     }
 
-    val outDir = outDirFrom(args)
+    // `--out`, else `$SNAX_FORGE_HW_OUT`, else `out/hw` under the repo root, each resolved from the repo root (not from
+    // hw/chisel, where sbt starts), so `--out out/scratch` means what it looks like.
+    val outDir = args.out
+      .orElse(sys.env.get("SNAX_FORGE_HW_OUT").map(RepoPaths.resolve))
+      .getOrElse(RepoPaths.out.resolve("hw"))
 
     // No selector means everything, which is what `pixi run chisel-gen` does
     // and what CI depends on. A selector is a case-insensitive substring, so
     // "Fifo" picks up both stream blocks without exact spelling.
     val chosen =
-      if (selectors.isEmpty) catalogue
-      else catalogue.filter(t => selectors.exists(s => t.label.toLowerCase.contains(s.toLowerCase)))
+      if (args.selectors.isEmpty) catalogue
+      else catalogue.filter(t => args.selectors.exists(s => t.label.toLowerCase.contains(s.toLowerCase)))
 
     if (chosen.isEmpty) {
-      Console.err.println(s"[snax-forge] no target matches ${selectors.mkString(", ")}")
+      Console.err.println(s"[snax-forge] no target matches ${args.selectors.mkString(", ")}")
       Console.err.println("[snax-forge] run with --list to see the available targets")
       sys.exit(1)
     }
 
     chosen.foreach { target =>
-      val module = emit(target.gen(), outDir)
+      val module = elaborate(target.gen(), outDir, split = false)
       println(f"[snax-forge] ${target.label}%-30s -> $module%s.sv")
     }
     println(s"[snax-forge] emitted ${chosen.size} module(s) to $outDir")
@@ -153,16 +159,7 @@ object Emit {
     val listing = dir.resolve("emitted.json")
     if (Files.exists(listing))
       ujson.read(Files.readString(listing))("files").arr.foreach(f => Files.deleteIfExists(dir.resolve(f.str)))
-    var top     = "<unknown>"
-    ChiselStage.emitSystemVerilogFile(
-      {
-        val m = new ShellWrapper(spec)
-        top = m.name
-        m
-      },
-      args = Array("--target-dir", sv.toString, "--split-verilog"),
-      firtoolOpts = firtoolOpts
-    )
+    val top     = elaborate(new ShellWrapper(spec), sv, split = true)
     val files   = Files.list(sv).iterator.asScala.filter(_.toString.endsWith(".sv")).toSeq.sortBy(_.toString)
     val modules = files.flatMap(f => Files.readAllLines(f).asScala.collect { case ModuleLine(m) => m })
     Files.writeString(
@@ -186,26 +183,12 @@ object Emit {
     */
   def describe: String = ujson.write(Datapaths.describe, indent = 1)
 
-  /** `--out <dir>`, else `$SNAX_FORGE_HW_OUT`, else `out/hw` under the repo root.
-    *
-    * Anchored rather than written as ../../out/hw, which only happened to be right because sbt starts in hw/chisel. A
-    * --out passed by the user is resolved the same way, so `--out out/scratch` means what it looks like.
-    */
-  def outDirFrom(args: Array[String]): String = {
-    val flagged = args.sliding(2).collectFirst { case Array("--out", dir) => dir }
-    flagged
-      .orElse(sys.env.get("SNAX_FORGE_HW_OUT"))
-      .map(RepoPaths.resolve)
-      .getOrElse(RepoPaths.out.resolve("hw"))
-      .toString
-  }
-
-  /** Elaborate one module and return the emitted top-level name.
+  /** Elaborate one module into `dir`, one file per module with `split` (else `<name>.sv` with everything): its name.
     *
     * `gen` is by-name for the same reason `Target.gen` is a thunk: construction has to happen inside the elaboration
     * context. The returned name is the module's `desiredName`, which is also the .sv filename ChiselStage writes.
     */
-  def emit(gen: => RawModule, outDir: String): String = {
+  def elaborate(gen: => RawModule, dir: Path, split: Boolean): String = {
     var name = "<unknown>"
     ChiselStage.emitSystemVerilogFile(
       {
@@ -213,7 +196,7 @@ object Emit {
         name = m.name
         m
       },
-      args = Array("--target-dir", outDir),
+      args = Array("--target-dir", dir.toString) ++ (if (split) Seq("--split-verilog") else Nil),
       firtoolOpts = firtoolOpts
     )
     name

@@ -34,7 +34,7 @@ class ElementwiseLanes(
   val outType: String      = "int32",
   val lanes:   Int         = 4,
   val op:      Int         = ElementwiseOp.Add
-) extends Module {
+) extends DatapathModule {
   require(inTypes.size == 2, s"inTypes must name a and b, got ${inTypes.mkString(", ")}")
   require(lanes > 0, s"lanes must be positive, got $lanes")
 
