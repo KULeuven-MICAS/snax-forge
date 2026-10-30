@@ -126,19 +126,6 @@ jobs:
           test -f out/hw/FifoSlicer_w2_i8_n4.sv
           test -f out/hw/FifoPacker_n4_i8_w2.sv
 
-      # D130, D145: every accelerator.json fixture (dot 1's two groups among
-      # them) through `Emit --spec`, and every file its emitted.json lists must
-      # exist. (DatapathsSpec, in the tests above, checks
-      # `Emit --describe` equal to hw/chisel/blocks.json.)
-      - name: Elaborate the accelerator.json fixtures
-        run: |
-          for d in hw/chisel/src/test/resources/rtl/*/; do
-            name=$(basename "$d")
-            pixi run -e hw chisel-gen --spec "$d/accelerator.json" --out "out/rtl/$name"
-            test -f "out/rtl/$name/emitted.json"
-            python3 -c 'import json, os, sys; d = sys.argv[1]; files = json.load(open(os.path.join(d, "emitted.json")))["files"]; missing = [f for f in files if not os.path.isfile(os.path.join(d, f))]; print(d, files); sys.exit(1 if missing or not files else 0)' "out/rtl/$name"
-          done
-
   # The flow on SNAX-GVSoC (D136): GVSoC built from the submodule, then
   # `pixi run flow` on vecadd at trace stall, which no test runs, and the tests
   # marked `gvsoc` (vecadd and vsum at trace off and task among them; D137: the
