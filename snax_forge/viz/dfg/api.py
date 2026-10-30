@@ -69,6 +69,34 @@ so dot 1's ``mul`` and ``sum`` sit in the accelerator ``dot``, and dot 4's
 ``mac``, its link and ``sum`` in one group box; an accelerated node's panel
 names its group and accelerator.
 
+**The compact texts and Details** (VIEW2). Every node, container, group and accelerator also
+carries ``text``, what the compact drawing shows, and the view a ``details`` map, keyed by item
+id, of everything else, all worked out here:
+
+    map          ``<var> · <iterations> · <kind or untagged>``      (``i_t · 128 · temporal``)
+    tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
+                 ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``)
+    unit         ``<instance> · <what one lane computes> · W <lanes>``, a fold's as a
+                 tasklet's                                          (``mul · a * b · W 4``)
+    link         ``<container> · wire`` or ``<container> · FIFO <depth>``
+    container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
+                 ``local``, ``wire``, ``FIFO 1``)
+    group, accelerator   their name
+
+Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
+tasklet's code and memlets; a unit's BRM, implementation, params, timing, what it replaced, its
+group and accelerator; a link's container, depth and units; a container's shape, dtype, padded
+bytes, writers and readers; a group's units, links and estimated cycles; an accelerator's
+groups; an edge's (keyed ``<from>-><to>``, its ``id``) subset, packing and, at a unit's port,
+the firing loops its memlet runs over and its beats (design/streamers.py's ``port_loops``, as the
+estimate counts them, D151) and whether it has a streamer (a linked port has none). The estimate is the
+step's on the viewer's platform, or none; a graph it cannot judge keeps its message in
+``estimate_error`` and has no badges.
+
+**A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
+containers some transform's site accepts), its ``estimate`` (``to_dict``) and, in edit mode,
+its ``diff`` against the step before (sandbox/session.py).
+
 **Links**. A link node is drawn in the accelerated node's style: its
 title ``<container> = wire`` (depth 0) or ``<container> = buffer``, its
 heading the depth (a buffer's) and its units, ``from → to``, and what it
@@ -82,6 +110,7 @@ import json
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
+from math import prod
 from pathlib import Path
 from typing import Any
 
@@ -89,7 +118,13 @@ from snax_forge import expr
 from snax_forge.brm import BrmError
 from snax_forge.brm.dtypes import bits
 from snax_forge.common import LoadedSet, unique_names
-from snax_forge.design.streamers import accelerator_of, group_of, instance_of
+from snax_forge.design.streamers import (
+    accelerator_of,
+    firing_loops,
+    group_of,
+    instance_of,
+    port_loops,
+)
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
 from snax_forge.expr import ExprError
@@ -174,19 +209,119 @@ def entry_summary(e: Entry) -> dict[str, Any]:
 # =============================================================================
 
 
-def graph_view(e: Entry) -> dict[str, Any]:
-    """/api/graph/<name>: the rows, nodes and edges a panel draws (module doc)."""
+def graph_view(e: Entry, platform: Any = None, est: Any = None) -> dict[str, Any]:
+    """/api/graph/<name>: the rows, nodes and edges a panel draws, with their compact texts and
+    Details (module doc); ``est`` the graph's estimate, else made on ``platform``."""
     out: dict[str, Any] = entry_summary(e)
     if e.graph is None:
         return out
     g = e.graph
+    if est is None:
+        est, out["estimate_error"] = _estimated(g, platform)
+    placed = est.containers if est is not None else {}
     out.update(
         symbols=dict(g.symbols),
-        containers={k: _container(g, k) for k in g.containers},
+        containers={k: _container(g, k, placed.get(k)) for k in g.containers},
     )
     out.update(_layout(g))
     out["accelerators"] = accelerators(g)
+    for acc in out["accelerators"]:
+        acc["text"] = acc["name"]
+        for grp in acc["groups"]:
+            grp["text"] = grp["name"]
+    out["details"] = details(g, out, est)
     return out
+
+
+def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[str]] | None = None,
+              diff: dict[str, Any] | None = None, est: Any = None) -> dict[str, Any]:  # fmt: skip
+    """One step (module doc): the graph's view, its label, marks, estimate and diff."""
+    out = graph_view(e, platform, est)
+    out["label"] = label
+    if e.graph is None:
+        return out
+    if est is None and not out.get("estimate_error"):
+        est = _estimated(e.graph, platform)[0]
+    out["estimate"] = est.to_dict() if est is not None else None
+    if marks is None:
+        from snax_forge.sandbox.session import marks_of
+
+        marks = marks_of(e.graph)
+    out["marks"] = marks
+    if diff is not None:
+        out["diff"] = diff
+    return out
+
+
+def _estimated(g: Graph, platform: Any) -> tuple[Any, str | None]:
+    """The graph's estimate on ``platform``, or None and why not."""
+    from snax_forge.estimate import estimate
+
+    try:
+        return estimate(g, platform), None
+    except (ValueError, KeyError, TypeError) as e:  # DfgError, LowerError, BrmError, ...
+        return None, str(e)
+
+
+# A fold's op as the compact text writes it
+FOLD = {"add": "+", "mul": "*", "min": "min", "max": "max"}
+
+
+def _rhs(code: str) -> str:
+    """The right-hand sides of ``code``'s assignments, ``; `` between them."""
+    return "; ".join(line.split("=", 1)[1].strip() for line in code.split("\n") if "=" in line)
+
+
+def _operation(n: Node, code: str, ins: Sequence[str]) -> str:
+    """What a tasklet or a unit computes: ``fold <op>`` for a copy of one input into a fold,
+    else its code's right-hand side."""
+    from snax_forge.dfg.pad import fold_op
+
+    op = fold_op(n)
+    if op is not None and _rhs(code) in ins:
+        return f"fold {FOLD.get(op, op)}"
+    return _rhs(code)
+
+
+def compact_text(g: Graph, n: Node) -> str:
+    """A node's text in the compact drawing (module doc)."""
+    a = n.attrs
+    if n.kind == "map":
+        its = _iterations(g, a["range"])
+        return f"{a['var']} · {'?' if its is None else its} · {a.get('loop.kind') or 'untagged'}"
+    if n.kind == "tasklet":
+        return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}"
+    if n.kind == "accelerated":
+        text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}"
+        try:
+            inst = instance_of(n)
+            first = next(p.name for p in inst.brm.interface.ports if p.direction == "in")
+            return f"{text} · W {inst.lanes(first)}"
+        except (BrmError, ExprError, KeyError, StopIteration):
+            return text
+    if n.kind == "link":
+        depth = a["depth"]
+        return f"{a['container']} · {'wire' if depth == 0 else f'FIFO {depth}'}"
+    return n.id
+
+
+def badge(placed: Any) -> str | None:
+    """A container's badge from its estimate (module doc)."""
+    if placed is None:
+        return None
+    if placed.placement == "l1":
+        return f"L1 · {size_text(placed.bytes)}"
+    if placed.placement == "link":
+        return "wire" if placed.depth == 0 else f"FIFO {placed.depth}"
+    return placed.placement
+
+
+def size_text(n: int) -> str:
+    """Bytes as ``8 B``, ``4 KiB``, ``1.5 KiB`` or ``2 MiB``."""
+    for unit, size in (("MiB", 1 << 20), ("KiB", 1 << 10)):
+        if n >= size:
+            return f"{n / size:g} {unit}"
+    return f"{n} B"
 
 
 def accelerators(g: Graph) -> list[dict[str, Any]]:
@@ -222,7 +357,98 @@ def accelerators(g: Graph) -> list[dict[str, Any]]:
         for grp in groups.values()]} for acc, groups in out.items()]  # fmt: skip
 
 
-def _container(g: Graph, name: str) -> dict[str, Any]:
+def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any]]:
+    """Every item's Details, keyed by its id (module doc)."""
+    out: dict[str, dict[str, Any]] = {}
+    users: dict[str, dict[str, list[str]]] = {
+        c: {"writers": [], "readers": []} for c in g.containers
+    }
+    nodes: dict[str, Node] = {}
+    for n, _ in g.walk():
+        nodes[n.id] = n
+        for m in n.inputs.values():
+            users[m.data]["readers"].append(n.id)
+        for m in n.outputs.values():
+            users[m.data]["writers"].append(n.id)
+        out[n.id] = _node_details(n, est)
+    for c, cont in g.containers.items():
+        placed = est.containers.get(c) if est is not None else None
+        out[c] = {"kind": "container", "shape": list(cont.shape), "dtype": cont.dtype,
+                  "transient": cont.transient, "attrs": dict(cont.attrs),
+                  "bytes": placed.bytes if placed else None,
+                  "placement": placed.placement if placed else None, **users[c]}  # fmt: skip
+    groups = {x.name: x for x in est.groups} if est is not None else {}
+    for acc in view["accelerators"]:
+        out[f"accelerator:{acc['name']}"] = {"kind": "accelerator",
+                                             "groups": [x["name"] for x in acc["groups"]]}  # fmt: skip
+        for grp in acc["groups"]:
+            e = groups.get(grp["name"])
+            out[f"group:{grp['name']}"] = {
+                "kind": "group", "accelerator": acc["name"],
+                "units": [u["instance"] for u in grp["units"]], "links": list(grp["links"]),
+                "estimate": e.to_dict() if e is not None else None,
+            }  # fmt: skip
+    ports = est.ports if est is not None else {}
+    loops_of: dict[str, Any] = {}
+    for edge in view["edges"]:
+        d: dict[str, Any] = {"kind": "edge", "data": edge["data"], "memlet": edge["text"],
+                             "packing": edge.get("packing")}  # fmt: skip
+        for end in (edge["from"], edge["to"]):
+            node, _, port = end.partition(".")
+            n = nodes.get(node)
+            if n is not None and n.kind == "accelerated":
+                m = (n.inputs | n.outputs)[port]
+                d["subset"] = list(m.subset)
+                d["port"] = f"{n.attrs['instance']}.{port}"
+                d["streamer"] = d["port"] in ports  # an outer port; a linked one has none
+                try:
+                    inst = instance_of(n)
+                    if n.id not in loops_of:
+                        loops_of[n.id] = firing_loops(g, n)
+                    mine = port_loops(inst, port, m, loops_of[n.id])
+                except (BrmError, ExprError, KeyError, ValueError):
+                    continue
+                d["loops"] = [[lp.var, lp.count] for lp in mine]
+                d["beats"] = prod(lp.count for lp in mine)
+            elif n is not None:
+                d["subset"] = list((n.inputs | n.outputs)[port].subset)
+        out[edge["id"]] = d
+    return out
+
+
+def _node_details(n: Node, est: Any) -> dict[str, Any]:
+    a = n.attrs
+    if n.kind == "map":
+        keys = ("loop.kind", "loop.split", "loop.fused", "loop.split_reduce")
+        return {
+            "kind": "map",
+            "var": a["var"],
+            "range": a["range"],
+            **{k: a[k] for k in keys if k in a},
+        }
+    io = {"inputs": {c: memlet_text(m) for c, m in n.inputs.items()},
+          "outputs": {c: memlet_text(m) for c, m in n.outputs.items()}}  # fmt: skip
+    if n.kind == "tasklet":
+        return {"kind": "tasklet", "code": a["code"], **io}
+    if n.kind == "accelerated":
+        d = {"kind": "unit", "instance": a["instance"], "brm": a["brm"],
+             "implementation": a["implementation"], "params": dict(a["params"]),
+             "code": a["code"], "replaced": _replaced_text(a.get("replaced")),
+             "group": group_of(n), "accelerator": accelerator_of(n), **io}  # fmt: skip
+        try:
+            inst = instance_of(n)
+            d["timing"] = {"latency": inst.latency, "ii": inst.initiation_interval,
+                           "span": inst.span}  # fmt: skip
+        except (BrmError, ExprError, KeyError):
+            d["timing"] = None
+        return d
+    if n.kind == "link":
+        return {"kind": "link", "container": a["container"], "depth": a["depth"],
+                "from": a["from"], "to": a["to"]}  # fmt: skip
+    return {"kind": n.kind, "attrs": dict(a), **io}
+
+
+def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
     c = g.containers[name]
     env = g.bound_symbols
     try:
@@ -236,6 +462,8 @@ def _container(g: Graph, name: str) -> dict[str, Any]:
         "sizes": sizes,
         "transient": c.transient,
         "attrs": dict(c.attrs),
+        "text": name,
+        "badge": badge(placed),
     }
 
 
@@ -257,6 +485,7 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
     d: dict[str, Any] = {
         "id": n.id,
         "kind": n.kind,
+        "text": compact_text(g, n),
         "attrs": dict(a),
         "inputs": [_conn(c, m) for c, m in n.inputs.items()],
         "outputs": [_conn(c, m) for c, m in n.outputs.items()],
@@ -411,7 +640,8 @@ def _edge(
 ) -> dict[str, Any]:  # fmt: skip
     """One memlet; ``stop`` is the top-level node whose box the drawn edge ends at, ``pack``
     the port's packing when it meets an accelerated node."""
-    out = {"from": src, "to": dst, "data": data, "text": text, "dir": side, "stop": stop}
+    out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text,
+           "dir": side, "stop": stop}  # fmt: skip
     if pack is not None:
         out["packing"] = pack
     return out

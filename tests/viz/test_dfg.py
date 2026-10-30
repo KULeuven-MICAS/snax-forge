@@ -121,6 +121,7 @@ def test_vecadd_accelerated():
         "[4 * i_t:4 * i_t + 4]",
         "int64 · num_slc 1 · num_ch 4",
     )  # int64: one per word, num_ch = W
+    assert [e.pop("id") for e in v["edges"]] == ["A@0->add.a", "B@0->add.b", "add.out->C@1"]
     assert v["edges"] == [
         {"from": "A@0", "to": "add.a", "data": "A", "text": f"A{lanes}", "dir": "read", "stop": "add_map", "packing": pack},
         {"from": "B@0", "to": "add.b", "data": "B", "text": f"B{lanes}", "dir": "read", "stop": "add_map", "packing": pack},
@@ -182,10 +183,10 @@ def test_dot_1_draws_one_accelerator_of_two_groups(tmp_path):
     path = tmp_path / "dot_1.snaxdfg"
     path.write_text(bound_dot1().to_json())
     v = view(path)
-    assert v["accelerators"] == [{"name": "dot", "groups": [
-        {"name": "mul", "tops": ["mult_map"], "links": [],
+    assert v["accelerators"] == [{"name": "dot", "text": "dot", "groups": [
+        {"name": "mul", "text": "mul", "tops": ["mult_map"], "links": [],
          "units": [{"instance": "mul", "nodes": ["mult"]}]},
-        {"name": "sum", "tops": ["sum_map"], "links": [],
+        {"name": "sum", "text": "sum", "tops": ["sum_map"], "links": [],
          "units": [{"instance": "sum", "nodes": ["sum"]}]},
     ]}]  # fmt: skip
     units = [r["node"]["body"][0] for r in v["rows"] if r["kind"] == "node"]
@@ -295,7 +296,9 @@ def test_routes(tmp_path):
             get(srv, "/api/graph/nope")
         assert e.value.code == 404
         path.write_text(path.read_text().replace('"N": null', '"N": 8'))
-        with urlopen(Request(srv.url + "api/reload", method="POST"), timeout=10) as r:
+        req = Request(srv.url + "api/reload", data=b"{}", method="POST",
+                      headers={"Content-Type": "application/json"})  # fmt: skip
+        with urlopen(req, timeout=10) as r:
             assert json.loads(r.read()) == {"graphs": ["vecadd"]}
         assert json.loads(get(srv, "/api/graph/vecadd")[2])["symbols"] == {"N": 8}
 

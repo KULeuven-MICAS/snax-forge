@@ -252,6 +252,10 @@ class Session:
         """Step ``k``'s transform, ``input`` for step 0 (run.py's file names)."""
         return "input" if k == 0 else self.recipe.steps[k - 1].transform
 
+    def step_name(self, k: int) -> str:
+        """Step ``k``'s name as its file has it: ``<k>_<transform>``."""
+        return f"{k}_{self._transform(k)}"
+
     # -- changing it ----------------------------------------------------------------------
 
     def apply(self, transform: str, params: dict[str, Any], drop: bool = False) -> dict[str, Any]:
@@ -339,7 +343,7 @@ class Session:
         """Step ``k``'s graph as a file of its own."""
         with self._lock:
             g = self._step(k)
-            out = self.folder / EXPORT / f"{k}_{self._transform(k)}.snaxdfg"
+            out = self.folder / EXPORT / f"{self.step_name(k)}.snaxdfg"
             out.parent.mkdir(parents=True, exist_ok=True)
             g.save(out)
             return out
@@ -353,10 +357,7 @@ class Session:
         """The nodes and containers of step ``k`` some site accepts."""
         with self._lock:
             if k not in self._marks:
-                g = self._step(k)
-                nodes = [n.id for n, _ in g.walk() if self._accepted(g, n.id)]
-                containers = [c for c in g.containers if self._accepted(g, c)]
-                self._marks[k] = {"nodes": nodes, "containers": containers}
+                self._marks[k] = marks_of(self._step(k))
             return self._marks[k]
 
     def diff(self, k: int) -> dict[str, Any]:
@@ -370,18 +371,6 @@ class Session:
             return self._estimate(k)
 
     # -- the answers, under the lock --------------------------------------------------------
-
-    @staticmethod
-    def _accepted(g: Graph, selected: str) -> bool:
-        for spec in TRANSFORMS.values():
-            if spec.site is None:
-                continue
-            try:
-                spec.site(g, selected)
-                return True
-            except (SandboxError, DfgError):
-                continue
-        return False
 
     def _sites_of(self, k: int, selected: str) -> dict[str, dict[str, Any]]:
         key = (k, selected)
@@ -426,6 +415,25 @@ class Session:
                 pa[c].placement, pa[c].depth) != (pb[c].placement, pb[c].depth))],
         }  # fmt: skip
         return empty
+
+
+def _accepted(g: Graph, selected: str) -> bool:
+    """Whether some transform's site accepts ``selected``."""
+    for spec in TRANSFORMS.values():
+        if spec.site is None:
+            continue
+        try:
+            spec.site(g, selected)
+            return True
+        except (SandboxError, DfgError):
+            continue
+    return False
+
+
+def marks_of(g: Graph) -> dict[str, list[str]]:
+    """The node ids and container names of ``g`` some site accepts (the view mode's marks)."""
+    return {"nodes": [n.id for n, _ in g.walk() if _accepted(g, n.id)],
+            "containers": [c for c in g.containers if _accepted(g, c)]}  # fmt: skip
 
 
 def _stage(code: str) -> str:
