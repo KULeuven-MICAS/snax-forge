@@ -3,7 +3,7 @@
     pixi run python util/ctrl_regs.py [--sv DIR] [--out FILE] [FIXTURE ...]
 
 For each fixture under ``hw/chisel/src/test/resources/rtl/`` (all, or those named), its
-``accelerator.json`` is elaborated through ``Emit --spec`` (one call for all) into ``DIR/<fixture>/`` (default ``out/ctrl_regs``); then every module of the
+``accelerator.json`` (snax-gvsoc's ``forge/<design>/``, or its own) is elaborated through ``Emit --spec`` (one call for all) into ``DIR/<fixture>/`` (default ``out/ctrl_regs``); then every module of the
 emitted SV whose name ends in ``_ctrl`` is read for firtool's ``reg`` declarations, each a
 register of its width (an unpacked array counts each element). Printed, and written to FILE:
 per module one line per register with its name and width, the module's registers and bits;
@@ -19,6 +19,7 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 FIXTURES = REPO / "hw/chisel/src/test/resources/rtl"
+FORGE = REPO / "gvsoc/snax-gvsoc/forge"
 
 _MODULE = re.compile(r"^module\s+(\w+)\s*[(;#].*?^endmodule", re.DOTALL | re.MULTILINE)
 _REG = re.compile(
@@ -32,7 +33,11 @@ def emit(fixtures: list[str], sv: Path) -> None:
     sys.path.insert(0, str(REPO))
     from snax_forge.gen.rtl import elaborate_all
 
-    elaborate_all([(FIXTURES / f / "accelerator.json", sv / f) for f in fixtures])
+    def spec(f: str) -> Path:  # the fixture's own, else its forge/ twin's (RtlFixtures.file)
+        own = FIXTURES / f / "accelerator.json"
+        return own if own.is_file() else FORGE / f / "accelerator.json"
+
+    elaborate_all([(spec(f), sv / f) for f in fixtures])
 
 
 def registers(text: str) -> dict[str, list[tuple[str, int]]]:

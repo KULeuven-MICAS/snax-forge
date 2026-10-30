@@ -132,8 +132,8 @@ flow       = "python -m snax_forge.flow"
 gen-gvsoc  = "python -m snax_forge.gen"
 # Accelerator RTL (D130): `pixi run gen-rtl out/design/vecadd/design_point.json [OUT_DIR]` writes accelerator.json
 # to out/rtl/<design>/, checks it against hw/chisel/blocks.json, then elaborates it through hw/chisel's `Emit --spec`
-# into sv/ with emitted.json (sbt; the flow does not call it); `--fixture DIR` writes a fixture of the Chisel specs
-# instead (accelerator.json, the streamer hjson, vectors.json)
+# into sv/ with emitted.json (java on a classpath sbt caches; the flow does not call it); `--fixture DIR` writes a
+# fixture of the Chisel specs instead (its vectors.json; accelerator.json and the hjson are forge/'s)
 gen-rtl    = "python -m snax_forge.gen.rtl"
 # Bundle for snax_cluster (D130): `pixi run bundle out/design/vecadd/design_point.json [--out DIR]` writes
 # gen-gvsoc's files, the RTL under rtl/ (sv/, emitted.json; sbt) with its file list rtl/files.f, and

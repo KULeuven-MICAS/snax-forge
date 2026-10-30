@@ -3,8 +3,8 @@ catalogue for hw/chisel's ``Emit --spec``, and the fixtures hw/chisel's specs re
 
 Each refusal of the catalogue's checks has a test; accelerator.py's refusals, which rtl.py runs
 first, are test_gvsoc.py's. The fixtures in ``hw/chisel/src/test/resources/rtl/<design>/``
-(``accelerator.json``, the streamer hjson and ``vectors.json``) are regenerated from their
-recipes and must be equal byte for byte.
+(``vectors.json``; ``accelerator.json`` and the streamer hjson too for a design that snax-gvsoc's
+``forge/`` does not hold) are regenerated from their recipes and must be equal byte for byte.
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from dataclasses import replace
 import pytest
 
 from snax_forge.gen import ELEMENTWISE_OP, Accelerator, Csr, GenError, Group, Port, Unit
+from snax_forge.gen.accelerator import ACCELERATOR_JSON
+from snax_forge.gen.gvsoc import generate
 from snax_forge.gen.rtl import (
     accelerator_spec,
     catalogue,
@@ -29,11 +31,12 @@ from snax_forge.gen.rtl import (
     write_fixture,
 )
 from tests.design.helpers import REPO
-from tests.helpers import bound_vsum
+from tests.helpers import SUB, bound_vsum, requires_submodule
 
 from .helpers import designed, point, validate
 
 RTL_FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
+FORGE = SUB / "forge"
 # Each fixture: its recipe and --set
 DESIGNS = {
     "vecadd": ("vecadd", []),
@@ -170,25 +173,36 @@ def test_the_counter_is_worked_from_the_controllers_rule(tmp_path):
     assert counter(acc, 64)[0] == 65
 
 
+@requires_submodule
 @pytest.mark.parametrize("design", DESIGNS)
 def test_the_fixture_is_reproduced(tmp_path, design):
+    """write_fixture's vectors.json is the fixture's. Its accelerator.json and streamer hjson are
+    snax-gvsoc's forge/<design>/ (test_fixture.py reproduces those); a fixture with no such folder
+    keeps the two beside its vectors.json, and they are reproduced here."""
     recipe, sets = DESIGNS[design]
     path = designed(tmp_path, recipe, design, sets)
     out = tmp_path / "fixture"
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
         files = write_fixture(path, out, tmp_path)
+        twin = FORGE / design
+        if not twin.is_dir():
+            acc = write_accelerator(path, out, tmp_path)
+            generate(path, tmp_path / "gen", tmp_path)
+            streamer = f"{acc.tag}_streamer.hjson"
+            (out / streamer).write_bytes((tmp_path / "gen" / streamer).read_bytes())
+            files += [ACCELERATOR_JSON, streamer]
     fixture = RTL_FIXTURES / design
-    assert sorted(files) == sorted(f.name for f in fixture.iterdir())
+    assert sorted(files) == sorted(f.name for f in fixture.glob("*") if f.suffix != ".md")
     for f in files:
         assert (out / f).read_bytes() == (fixture / f).read_bytes(), f
-    validate("accelerator", json.loads((fixture / "accelerator.json").read_text()))
+    spec = fixture / ACCELERATOR_JSON if not twin.is_dir() else twin / ACCELERATOR_JSON
+    validate("accelerator", json.loads(spec.read_text()))
 
 
 def test_gen_rtl_writes_a_fixture(vecadd, capsys):
-    """``gen-rtl --fixture`` writes write_fixture's files, the design point named from the root
-    (the elaboration needs sbt, which the chisel job runs); a design point outside the root is
-    refused."""
+    """``gen-rtl --fixture`` writes write_fixture's vectors.json, the design point named from the
+    root (no elaboration); a design point outside the root is refused."""
     from snax_forge.gen import gvsoc, rtl
 
     path, root = vecadd
@@ -199,10 +213,8 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
         mp.setattr(gvsoc, "ROOT", root)
         mp.chdir(root)
         assert rtl.main([str(path), "--fixture", "fx"]) == 0
-    assert sorted(f.name for f in (root / "fx").iterdir()) == [
-        "accelerator.json", "snax_forge_streamer.hjson", "vectors.json"
-    ]  # fmt: skip
-    assert "wrote fx/accelerator.json" in capsys.readouterr().out
+    assert sorted(f.name for f in (root / "fx").iterdir()) == ["vectors.json"]
+    assert "wrote fx/vectors.json" in capsys.readouterr().out
 
 
 def test_a_linked_fixtures_counter_is_c17s_cycles():

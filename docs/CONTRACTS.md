@@ -698,7 +698,7 @@ dot 1's file, snax-gvsoc's fixture (`forge/dot_1/`): the groups `mul` and `sum` 
 
 dot 4's file: one group `dot`, the MAC's lane partials wired into the tree.
 
-<!-- snippet: hw/chisel/src/test/resources/rtl/dot_4/accelerator.json -->
+<!-- snippet: gvsoc/snax-gvsoc/forge/dot_4/accelerator.json -->
 ```json
 {
  "name": "dot",

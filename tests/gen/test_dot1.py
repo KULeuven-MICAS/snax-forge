@@ -86,12 +86,12 @@ def test_main_c_includes_dots_header(made):
 
 
 def test_the_rtl_fixture_has_no_vectors(made, tmp_path, monkeypatch):
-    """vectors.json is a one-task fixture's; dot 1's spec drives each group itself."""
+    """vectors.json is a one-task fixture's; dot 1's spec drives each group itself: nothing is
+    written."""
     tmp, path, _ = made
     monkeypatch.chdir(tmp)
-    files = write_fixture(path, tmp_path / "fx", tmp)
-    assert files == ["accelerator.json", "snax_forge_streamer.hjson"]
-    assert sorted(f.name for f in (tmp_path / "fx").iterdir()) == sorted(files)
+    assert write_fixture(path, tmp_path / "fx", tmp) == []
+    assert not (tmp_path / "fx").exists()
 
 
 def test_without_encapsulate_the_groups_are_two_accelerators(tmp_path):

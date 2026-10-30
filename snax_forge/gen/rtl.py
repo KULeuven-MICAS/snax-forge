@@ -52,10 +52,12 @@ every ``--spec FILE --out DIR`` pair (``elaborate_all``).
 unit's; a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
 the unit's ports by their ``dir``, in the BRM's order.
 
-**The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds
-``accelerator.json``, the design's streamer hjson (gvsoc.py's) and, for a design of one
-accelerator task, ``vectors.json``, which the Chisel specs drive the wrapper with (dot 1's two
-groups, a task each, have none: its spec drives each group itself): per outer port, in
+**The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds, for
+a design of one accelerator task, ``vectors.json``, which the Chisel specs drive the wrapper
+with (dot 1's two groups, a task each, have none: its spec drives each group itself); its
+``accelerator.json`` and streamer hjson are snax-gvsoc's ``forge/<design>/`` (the same bytes,
+gvsoc.py's), but for a design with no such folder, whose two files stay beside it. Per outer
+port, in
 ``accelerator.json``'s ``inputs`` then ``outputs`` order, its BRM port, its data.h array (an
 input, or the output's golden) and how many beats a task moves (lane i of beat t is element
 t * lanes + i, modulo the array's size: matvec's vector is read again for every row), and per
@@ -71,7 +73,6 @@ import argparse
 import json
 import subprocess
 import sys
-import tempfile
 from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any
@@ -85,7 +86,7 @@ from snax_forge.lower.derive import task_list
 from .accelerator import ACCELERATOR_JSON, Accelerator, Group, Link, Unit, units
 from .blocks import GenError
 from .data import arrays
-from .gvsoc import ROOT, cli, generate, load_point, out_dir
+from .gvsoc import ROOT, cli, load_point, out_dir
 
 OUT = ROOT / "out" / "rtl"
 CATALOGUE = repo_root() / "hw" / "chisel" / "blocks.json"
@@ -345,20 +346,15 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
 
 def write_fixture(design_point: str | Path, out_dir: str | Path,
                   root: str | Path | None = None) -> list[str]:  # fmt: skip
-    """A fixture of hw/chisel's specs: ``accelerator.json``, the streamer hjson and, for one
-    accelerator task, ``vectors.json`` in ``out_dir``; the files written."""
+    """A fixture of hw/chisel's specs in ``out_dir``: ``vectors.json`` for a design of one
+    accelerator task, nothing for several (the module doc); the files written."""
     out = Path(out_dir)
-    acc = write_accelerator(design_point, out, root)
-    streamer = f"{acc.tag}_streamer.hjson"
-    with tempfile.TemporaryDirectory() as gen:
-        generate(design_point, gen, root)
-        (out / streamer).write_text((Path(gen) / streamer).read_text())
-    files = [ACCELERATOR_JSON, streamer]
-    _, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    if len(task_list(point).accel_steps()) == 1:
-        (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
-        files.append(VECTORS_JSON)
-    return files
+    _, point, _ = load_point(design_point, ROOT if root is None else Path(root))
+    if len(task_list(point).accel_steps()) != 1:
+        return []
+    out.mkdir(parents=True, exist_ok=True)
+    (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
+    return [VECTORS_JSON]
 
 
 # =============================================================================
@@ -438,8 +434,8 @@ def main(argv: list[str] | None = None) -> int:
     """``python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]`` (pixi
     ``gen-rtl``): ``accelerator.json`` into ``OUT_DIR`` (default ``out/rtl/<design>/``), then the
     accelerator through ``Emit --spec`` into its ``sv/`` with ``emitted.json``; with
-    ``--fixture``, a fixture of hw/chisel's specs into ``DIR`` instead (``write_fixture``, no
-    elaboration). The flow does not call it (D136). Exit 0 when written, 1 when refused."""
+    ``--fixture``, a fixture of hw/chisel's specs (its ``vectors.json``) into ``DIR`` instead
+    (``write_fixture``, no elaboration). The flow does not call it (D136). Exit 0 when written, 1 when refused."""
     ap = argparse.ArgumentParser(prog="python -m snax_forge.gen.rtl")
     ap.add_argument("design_point", type=Path, help="a design_point.json (the design step's)")
     ap.add_argument("out_dir", type=Path, nargs="?", help="output directory (out/rtl/<design>)")

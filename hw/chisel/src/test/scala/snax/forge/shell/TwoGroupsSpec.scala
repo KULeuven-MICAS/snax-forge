@@ -3,10 +3,10 @@ package snax.forge.shell
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{ForgeTester, LaneBits, RepoPaths, Sink, Source}
+import snax.forge.{ForgeTester, LaneBits, Sink, Source}
 
 /** Several groups in one accelerator (D146, D148): dot 1 (C§17's table), the generated `accelerator.json` of
-  * `recipes/dot_1.json` (the fixture `src/test/resources/rtl/dot_1/`): group mul (ElementwiseLanes, mul, 4 lanes of
+  * `recipes/dot_1.json` (the fixture dot_1, snax-gvsoc's `forge/dot_1/`): group mul (ElementwiseLanes, mul, 4 lanes of
   * int64; START 0, JOBS 1, STATUS 2, COUNTER 3) and group sum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS
   * 5, JOB_BEATS 6, STATUS 7, COUNTER 8). Each group starts, runs and reports STATUS on its own: sum is started first
   * and starved (its input held back), mul then runs its 3 jobs to the end while sum stays busy, then sum's input flows
@@ -14,8 +14,7 @@ import snax.forge.{ForgeTester, LaneBits, RepoPaths, Sink, Source}
   */
 class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
-  private val file = RepoPaths.root.resolve("hw/chisel/src/test/resources/rtl/dot_1/accelerator.json")
-  private val spec = AcceleratorSpec.load(file)
+  private lazy val spec = RtlFixtures.all.find(_.name == "dot_1").get.spec
 
   behavior of "a two-group accelerator (dot 1)"
 

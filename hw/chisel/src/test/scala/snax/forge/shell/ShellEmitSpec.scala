@@ -109,7 +109,7 @@ class ShellEmitSpec extends AnyFlatSpec {
   for (f <- RtlFixtures.all)
     it should s"give ${f.name} the template's ports, bundle.json's hierarchy and its file list" in {
       val out  = Files.createTempDirectory(s"emit-${f.name}")
-      val done = Emit.emitSpec(f.folder.resolve("accelerator.json"), out)
+      val done = Emit.emitSpec(f.file("accelerator.json"), out)
       val sv   = out.resolve("sv")
       assert(done.top == s"${f.spec.tag}_shell_wrapper")
 
