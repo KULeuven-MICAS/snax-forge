@@ -142,7 +142,7 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
               val readies = starts.map(_.cycle(c))
               readies.zipWithIndex.foreach { case (v, g) => dut.io.starts(g).ready.poke(v.B) }
               status.zipWithIndex.foreach { case (v, g) => dut.io.status(g).poke(v.U) }
-              count.zipWithIndex.foreach { case (v, g) => dut.io.count(g).poke(v.U) }
+              count.zipWithIndex.foreach { case (v, g) => dut.io.counter(g).poke(v.U) }
 
               val configs                  = (0 until groups).map(model.config)
               val (ready, answer, started) = model.cycle(req, rsp.isReady, readies, status, count)

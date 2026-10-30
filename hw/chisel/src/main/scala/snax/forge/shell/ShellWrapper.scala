@@ -97,7 +97,7 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       val c = ctrl.io.groups(i)
       c.start <> csr.io.starts(i)
       csr.io.status(i)        := c.status
-      csr.io.count(i)         := c.counter
+      csr.io.counter(i)       := c.counter
       io(s"${g.name}_busy_o") := c.busy
       io(s"${g.name}_done_o") := c.done
 

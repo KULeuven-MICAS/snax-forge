@@ -38,20 +38,20 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   private val groups = spec.groups
 
   val io = IO(new Bundle {
-    val req    = Flipped(Decoupled(new CsrReq))
-    val rsp    = Decoupled(new CsrRsp)
-    val starts = MixedVec(groups.map(g => Decoupled(new GroupStart(g.jobBeats.size))))
-    val status = Input(Vec(groups.size, UInt(32.W)))
-    val count  = Input(Vec(groups.size, UInt(32.W)))
+    val req     = Flipped(Decoupled(new CsrReq))
+    val rsp     = Decoupled(new CsrRsp)
+    val starts  = MixedVec(groups.map(g => Decoupled(new GroupStart(g.jobBeats.size))))
+    val status  = Input(Vec(groups.size, UInt(32.W)))
+    val counter = Input(Vec(groups.size, UInt(32.W)))
   })
 
   private val regs = RegInit(VecInit(Seq.fill(csrs.size)(0.U(32.W))))
 
-  private val readReg  = io.req.fire && !io.req.bits.write
-  private val writeReg = io.req.fire && io.req.bits.write
+  private val reading = io.req.fire && !io.req.bits.write
+  private val writing = io.req.fire && io.req.bits.write
 
   for (c <- csrs if c.access == "rw")
-    when(writeReg && io.req.bits.addr === c.offset.U) {
+    when(writing && io.req.bits.addr === c.offset.U) {
       regs(c.offset) := io.req.bits.data
     }
 
@@ -59,37 +59,37 @@ class AccCsr(spec: AcceleratorSpec) extends Module {
   private val startReq = groups.zipWithIndex.map { case (g, i) =>
     val at  = g.csr("START").get.offset
     val hit = io.req.valid && io.req.bits.write && io.req.bits.addr === at.U && io.req.bits.data(0)
-    io.starts(i).valid      := writeReg && hit
+    io.starts(i).valid      := writing && hit
     io.starts(i).bits.jobs  := regs(g.csr("JOBS").get.offset)
     io.starts(i).bits.beats := VecInit(if (g.jobBeats.isEmpty) Seq(1.U(32.W)) else g.jobBeats.map(c => regs(c.offset)))
     hit                     -> io.starts(i).ready
   }
 
   // A read's answer, kept while rsp is not ready
-  private val readRegBusy   = RegNext(io.rsp.valid && !io.rsp.ready, false.B)
-  private val readRegBuffer = RegNext(io.rsp.bits.data, 0.U)
+  private val answerKept = RegNext(io.rsp.valid && !io.rsp.ready, false.B)
+  private val answer     = RegNext(io.rsp.bits.data, 0.U)
 
   private val value = csrs.map { c =>
     val g = groups.indexWhere(_.window.contains(c))
     c.offset.U -> (c.name match {
       case "STATUS" if c.access == "ro"  => io.status(g)
-      case "COUNTER" if c.access == "ro" => io.count(g)
+      case "COUNTER" if c.access == "ro" => io.counter(g)
       case _                             => regs(c.offset)
     })
   }
   private val read  = MuxLookup(io.req.bits.addr, 0.U)(value)
 
-  when(readReg) {
+  when(reading) {
     io.rsp.valid     := true.B
     io.rsp.bits.data := read
-  }.elsewhen(readRegBusy) {
+  }.elsewhen(answerKept) {
     io.rsp.valid     := true.B
-    io.rsp.bits.data := readRegBuffer
+    io.rsp.bits.data := answer
   }.otherwise {
     io.rsp.valid     := false.B
     io.rsp.bits.data := 0.U
   }
 
   private val held = startReq.foldLeft(false.B) { case (acc, (hit, ready)) => acc || (hit && !ready) }
-  io.req.ready := !readRegBusy && !held
+  io.req.ready := !answerKept && !held
 }
