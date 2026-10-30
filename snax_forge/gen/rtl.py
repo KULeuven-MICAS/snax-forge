@@ -15,7 +15,7 @@ description of the accelerator (accelerator.py), the same bytes gen-gvsoc writes
 
 **The checks**, against the datapath catalogue ``hw/chisel/blocks.json`` (the signature of each
 Chisel datapath, equal to ``Emit --describe``), each a ``GenError``: first accelerator.py's
-(``gen.instances``, ``gen.binding``, ``gen.datapath``, ``gen.controller``, ``gen.drain``,
+(``gen.binding``, ``gen.datapath``, ``gen.controller``, ``gen.drain``,
 ``gen.timing``, the datapath's adapter's and a reader's link checks), then per unit, in this
 order: the params by the fill rule, the ports and pins whose ``when`` holds, the ports, the
 timing
@@ -65,7 +65,8 @@ task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_writes``), the head uni
 and the counter with an always-ready streamer, the working in ``working``: one unit's worked
 from the control unit's rule (``counter``), a linked group's from snax-gvsoc's group rule
 (``group_counter``: ``snax_group_rule.py`` stepped with an always-ready streamer, any shape the
-rule accepts; ``gen.submodule`` without the submodule). C§17's Cycles state the same for dot's
+rule accepts, by estimate/cycles.py's ``group_cycles``; ``estimate.submodule`` without the
+submodule). C§17's Cycles state the same for dot's
 and matvec's shapes.
 """
 
@@ -83,6 +84,7 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.common import cwd_relative, repo_root, to_json
 from snax_forge.design.streamers import instance_nodes
+from snax_forge.estimate.cycles import group_cycles
 from snax_forge.lower.c import job_values, job_writes
 from snax_forge.lower.derive import task_list
 
@@ -90,7 +92,6 @@ from .accelerator import ACCELERATOR_JSON, Accelerator, Group, Link, Unit, units
 from .blocks import GenError
 from .data import arrays
 from .gvsoc import ROOT, cli, load_point, out_dir
-from .submodule import snax_group_rule
 
 OUT = ROOT / "out" / "rtl"
 CATALOGUE = repo_root() / "hw" / "chisel" / "blocks.json"
@@ -307,23 +308,17 @@ def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]]
 
 def group_counter(group: Group, jobs: int, beats: Mapping[str, int]) -> tuple[int, str]:
     """The counter of a linked group's task with an always-ready streamer, from the group rule
-    (snax-gvsoc's snax_group_rule.py, ``submodule.snax_group_rule``) stepped with every input
+    (snax-gvsoc's snax_group_rule.py, estimate/cycles.py's ``group_cycles``) stepped with every input
     valid and the output ready, and the working: JOBS ``jobs``, each unit's T its JOB_BEATS
     (``beats``, by unit) or its fixed T (``params.T``, else 1). COUNTER counts the busy cycles,
     E - s: the rule starts the run in cycle 0. A run that does not end is ``gen.counter``."""
-    model = snax_group_rule()
     units, links, owner = rule_graph(group)
-    rule = model.GroupRule(units, links, owner)
     ts = [beats.get(u.name, u.params.get("T", 1)) for u in group.units]
     if jobs == 0 or 0 in ts:
         return 0, "The group's COUNTER counts its busy cycles: JOBS or a T 0 is the empty run, none"
-    n = rule.firings_per_run(jobs, ts)
-    cycles = sum(n) * max(u["ii"] * u["span"] for u in units) + sum(u["L"] for u in units) + 16
-    _, end = rule.run(jobs, ts, lambda c: [True], lambda c: True, cycles)
+    end = group_cycles(units, links, owner, jobs, ts)
     if end is None:
-        raise GenError(
-            "gen.counter", f"group {group.name}: the rule does not end in {cycles} cycles"
-        )
+        raise GenError("gen.counter", f"group {group.name}: the rule does not end")
     t = ", ".join(f"{u.name} {x}" for u, x in zip(group.units, ts, strict=True))
     return end, (
         f"The group's COUNTER counts its busy cycles. The group rule (snax-gvsoc's "
@@ -338,7 +333,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     shown, point, acc = load_point(design_point, ROOT if root is None else Path(root))
     tasks = task_list(point).accel_steps()
     if len(tasks) != 1:
-        raise GenError("gen.instances", f"{len(tasks)} accelerator tasks; vectors.json has one")
+        raise GenError("gen.tasks", f"{len(tasks)} accelerator tasks; vectors.json has one")
     (task,) = tasks
     found = units(point)[1]
     (group,) = acc.groups

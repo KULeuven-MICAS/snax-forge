@@ -1,11 +1,12 @@
 """SNAX-SANDBOX: decisions made by hand on a SNAX-DFG (ARCHITECTURE.md 5.4, D72).
 
 Recipes (recipe.py), an ordered list of registered transforms with their
-params, applied to an imported graph; the transforms ``split_map``,
-``bind`` and ``encapsulate`` and their inverses ``unbind``, ``join_map`` and
-``unencapsulate`` (transforms.py); ``split_reduce``, ``fuse_map`` and ``link``
-with their inverses ``join_reduce``, ``unfuse_map`` and ``unlink``
-(compose.py, D150);
+params, applied to an imported graph; the transforms ``split``,
+``split_map``, ``tag_map``, ``bind`` and ``encapsulate`` and their inverses
+``join_map``, ``untag_map``, ``unbind`` and ``unencapsulate``
+(transforms.py); ``split_reduce``, ``fuse_map`` and ``link`` with their
+inverses ``join_reduce``, ``unfuse_map`` and ``unlink`` (compose.py, D150);
+each with its site, the graph-shape test of where it applies (D72);
 the pattern matchers ``bind`` uses to recognise a BRM's pattern
 (patterns.py), among them ``reduce``, with which ``bind`` binds a folding
 output as one lane, its named rate from ``named_rates`` (D102); and the
@@ -25,6 +26,7 @@ from .transforms import (
     encapsulate,
     join_map,
     register_transform,
+    split,
     split_map,
     unbind,
     unencapsulate,
@@ -48,6 +50,7 @@ __all__ = [
     "match",
     "register_pattern",
     "register_transform",
+    "split",
     "split_map",
     "split_reduce",
     "unbind",

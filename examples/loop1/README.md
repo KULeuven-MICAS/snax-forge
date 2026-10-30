@@ -39,7 +39,7 @@ This is a fact about addresses only. Whether it costs cycles depends on when the
 |---|---|
 | Window (main to forge_check, the program's mcycle) | 489 |
 | Functional check | passed |
-| Counters | add_acc 131 |
+| Counters | add_acc 131 (expected 131) |
 
 <!-- excerpt: vecadd_N512_stall/report/run.md -->
 | Accelerator | Firings | Target II | Achieved II | Utilisation (window) | Task span | Utilisation (span) | Starved (stall_in) | Blocked (stall_out) | Flush |
@@ -112,7 +112,7 @@ The change: a wider accelerator, `--set W=8`. Each firing then takes 8 elements,
 Prediction, written here before the rerun, on what the accelerator and the DMA do, which the program's code layout does not move:
 
 - firings 64 (N/W, was 128);
-- the accelerator's counter (its busy cycles, `Counters` in `run.md`) 64 lower than W=4's 131: 67, half the firings and the same 3 starved cycles;
+- the accelerator's counter (its busy cycles, `Counters` in `run.md`, the value in brackets the estimate plus the streamers' fill, D151, C§19) 64 lower than W=4's 131: 67, half the firings and the same 3 starved cycles;
 - each copy takes the cycles it took at W=4, since it moves the same bytes: load_A 77, load_B 126, store_C 71, the DMA busy 212 cycles.
 
 ## 6. Rerun at W=8
@@ -128,7 +128,7 @@ The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one. `report/r
 |---|---|
 | Window (main to forge_check, the program's mcycle) | 424 |
 | Functional check | passed |
-| Counters | add_acc 67 |
+| Counters | add_acc 67 (expected 67) |
 
 <!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
 | Accelerator | Firings | Target II | Achieved II | Utilisation (window) | Task span | Utilisation (span) | Starved (stall_in) | Blocked (stall_out) | Flush |

@@ -1,7 +1,7 @@
 """A loop bound that is not a multiple of the spatial bound (D144).
 
-``split_map`` of a map over ``n`` iterations by a factor W that does not
-divide n runs its temporal map ceil(n / W) times and records the valid count
+``split`` (or ``split_map``) of a map over ``n`` iterations by a factor W that does not
+divide n runs its outer map ceil(n / W) times and records the valid count
 in ``loop.split`` (``"valid": n``): only the lanes whose combined index
 ``W * v_t + v_s`` is below n are the kernel's. The rest are pad lanes. The
 container is padded in memory, in the data itself, never by the hardware:
@@ -37,7 +37,7 @@ from .subset import parse_dim
 
 
 def tailed_split(node: Node) -> dict[str, Any] | None:
-    """A map's ``loop.split`` when split_map left a tail (it has ``valid``), else None."""
+    """A map's ``loop.split`` when its split left a tail (it has ``valid``), else None."""
     split = node.attrs.get("loop.split") if node.kind == "map" else None
     return split if split is not None and "valid" in split else None
 
@@ -56,11 +56,14 @@ def _users(graph: Graph, c: str) -> Iterator[tuple[Node, tuple[Node, ...]]]:
 
 
 def split_factor(node: Node) -> int:
-    """W of a tailed split map: its spatial map's length, or once bound, the lanes its
-    accelerated node's ranges move per step of the map's variable."""
+    """W of a tailed split map: its only child map's length whatever its tag (``split`` leaves
+    it untagged), else its spatial map's, or once bound, the lanes its accelerated node's
+    ranges move per step of the map's variable."""
     var = node.attrs["var"]
-    for kid in node.body or []:
-        if kid.kind == "map" and kid.attrs.get("loop.kind") == "spatial":
+    kids = node.body or []
+    only = len(kids) == 1 and kids[0].kind == "map" and node.attrs.get("loop.split")
+    for kid in kids:
+        if kid.kind == "map" and (only or kid.attrs.get("loop.kind") == "spatial"):
             begin, end, _ = parse_dim(kid.attrs["range"], kid.id)
             return int(end) - int(begin)
         for m in (*kid.inputs.values(), *kid.outputs.values()):

@@ -9,8 +9,6 @@ from __future__ import annotations
 
 import json
 import shutil
-import threading
-from contextlib import contextmanager
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -23,7 +21,7 @@ from snax_forge.viz.dfg.api import GraphSet, entry_names, expand, graph_view, lo
 from snax_forge.viz.dfg.server import make_dfg_server
 from tests.helpers import FIXTURES, REPO
 
-from .helpers import get
+from .helpers import get, served
 
 
 def view(path: Path) -> dict:
@@ -96,6 +94,8 @@ def test_a_broken_file_keeps_its_error(tmp_path):
 
 
 def test_vecadd_accelerated():
+    """The compact texts, and everything else in Details: the unit's BRM, params, timing and
+    what it replaced; each edge's memlet and packing (int64: one per word, num_ch = W)."""
     v = view(FIXTURES / "vecadd_accelerated.snaxdfg")
     assert v["graph"] == "vecadd" and v["symbols"] == {"N": 64}
     assert [r["kind"] for r in v["rows"]] == ["containers", "node", "containers"]
@@ -103,29 +103,34 @@ def test_vecadd_accelerated():
     assert v["boxes"]["C@1"] == {
         "key": "C@1", "container": "C", "version": 1, "written_by": ["add"], "again": False
     }  # fmt: skip
-    assert v["containers"]["A"]["sizes"] == [64]
+    assert v["containers"]["A"] == {
+        "name": "A",
+        "text": "A",
+        "badge": "L1 · 512 B",
+        "transient": False,
+    }
     top = v["rows"][1]["node"]
-    assert (top["id"], top["loop_kind"], top["iterations"], top["title"]) == (
-        "add_map", "temporal", 16, "i_t in 0:N // 4"
-    )  # fmt: skip
+    assert (top["id"], top["loop_kind"], top["text"]) == (
+        "add_map",
+        "temporal",
+        "i_t · 16 · temporal",
+    )
     acc = top["body"][0]
-    assert acc["title"] == "acc = elementwise_add"
-    assert acc["heading"] == ["impl = chisel_tiled_spatial", "W = 4, op = add"]
-    assert acc["lines"] == ["out = a + b"]
-    assert acc["replaced"] == "add_map_s › add"
-    assert [p["text"] for p in acc["inputs"]] == [
-        "A[4 * i_t:4 * i_t + 4]",
-        "B[4 * i_t:4 * i_t + 4]",
-    ]
-    lanes, pack = (
-        "[4 * i_t:4 * i_t + 4]",
-        "int64 · num_slc 1 · num_ch 4",
-    )  # int64: one per word, num_ch = W
-    assert v["edges"] == [
-        {"from": "A@0", "to": "add.a", "data": "A", "text": f"A{lanes}", "dir": "read", "stop": "add_map", "packing": pack},
-        {"from": "B@0", "to": "add.b", "data": "B", "text": f"B{lanes}", "dir": "read", "stop": "add_map", "packing": pack},
-        {"from": "add.out", "to": "C@1", "data": "C", "text": f"C{lanes}", "dir": "write", "stop": "add_map", "packing": pack},
-    ]  # fmt: skip
+    assert (acc["text"], acc["inputs"][0]) == ("acc · a + b · W 4", {"connector": "a", "data": "A"})
+    d = v["details"]["node:add"]
+    assert (d["brm"], d["implementation"], d["params"], d["replaced"], d["timing"]) == (
+        "elementwise_add", "chisel_tiled_spatial", {"W": 4, "op": "add"}, "add_map_s › add",
+        {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
+    assert v["details"]["node:add_map"] == {"kind": "map", "var": "i_t", "range": "0:N // 4",
+                                           "loop.kind": "temporal",
+                                           "loop.split": {"var": "i", "range": "0:N"}}  # fmt: skip
+    assert v["details"]["container:A"]["sizes"] == [64]
+    assert [(e["id"], e["dir"]) for e in v["edges"]] == [
+        ("A@0->add.a", "read"), ("B@0->add.b", "read"), ("add.out->C@1", "write")]  # fmt: skip
+    assert "text" not in v["edges"][0] and "packing" not in v["edges"][0]
+    e = v["details"]["edge:A@0->add.a"]
+    assert (e["memlet"], e["packing"], e["loops"], e["beats"], e["streamer"]) == (
+        "A[4 * i_t:4 * i_t + 4]", "int64 · num_slc 1 · num_ch 4", [["i_t", 16]], 16, True)  # fmt: skip
 
 
 def recipe_view(tmp_path: Path, recipe: str) -> dict:
@@ -153,23 +158,35 @@ def recipe_view(tmp_path: Path, recipe: str) -> dict:
 def test_a_port_edge_labels_its_packing(tmp_path, recipe, want):
     """Each accelerated port's edge: dtype, num_slc = 64 / b, num_ch = W / num_slc (D142)."""
     v = recipe_view(tmp_path, recipe)
-    assert {e["data"]: e["packing"] for e in v["edges"] if "packing" in e} == want
+    edges = [v["details"][f"edge:{e['id']}"] for e in v["edges"]]
+    assert {e["data"]: e["packing"] for e in edges if e["packing"]} == want
 
 
 def test_a_folding_write_names_its_op():
-    """dot's sum map writes out[0] with reduce add, and the edge says so."""
+    """dot's sum map writes out[0] with reduce add: the edge's memlet says so, and the tasklet's
+    text is the fold."""
     v = view(FIXTURES / "dot.snaxdfg")
-    writes = [(e["from"], e["text"]) for e in v["edges"] if e["dir"] == "write"]
+    writes = [
+        (e["from"], v["details"][f"edge:{e['id']}"]["memlet"])
+        for e in v["edges"]
+        if e["dir"] == "write"
+    ]
     assert writes == [("mult.out", "tmp0[i]"), ("sum.out", "out[0] (reduce add)")]
+    tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
+    assert [t["body"][0]["text"] for t in tops] == ["mult · in1 * in2", "sum · fold +"]
 
 
 def test_the_bound_dot_shows_both_accelerators():
     """dot after its recipe: mul and sum, each over N // 4 beats; tmp0 between them."""
     v = view(FIXTURES / "dot_accelerated.snaxdfg")
     tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
-    assert [(t["id"], t["iterations"]) for t in tops] == [("mult_map", 16), ("sum_map", 16)]
-    assert [t["body"][0]["title"] for t in tops] == ["mul = elementwise_mul", "sum = accumulate"]
-    writes = [(e["from"], e["text"]) for e in v["edges"] if e["dir"] == "write"]
+    assert [t["text"] for t in tops] == ["i_t · 16 · temporal", "i_t_1 · 16 · temporal"]
+    assert [t["body"][0]["text"] for t in tops] == ["mul · a * b · W 4", "sum · fold + · W 4"]
+    writes = [
+        (e["from"], v["details"][f"edge:{e['id']}"]["memlet"])
+        for e in v["edges"]
+        if e["dir"] == "write"
+    ]
     assert writes == [("mult.out", "tmp0[4 * i_t:4 * i_t + 4]"), ("sum.out", "out[0:1]")]
 
 
@@ -182,32 +199,38 @@ def test_dot_1_draws_one_accelerator_of_two_groups(tmp_path):
     path = tmp_path / "dot_1.snaxdfg"
     path.write_text(bound_dot1().to_json())
     v = view(path)
-    assert v["accelerators"] == [{"name": "dot", "groups": [
-        {"name": "mul", "tops": ["mult_map"], "links": [],
+    assert v["accelerators"] == [{"name": "dot", "text": "dot", "groups": [
+        {"name": "mul", "text": "mul", "tops": ["mult_map"], "links": [],
          "units": [{"instance": "mul", "nodes": ["mult"]}]},
-        {"name": "sum", "tops": ["sum_map"], "links": [],
+        {"name": "sum", "text": "sum", "tops": ["sum_map"], "links": [],
          "units": [{"instance": "sum", "nodes": ["sum"]}]},
     ]}]  # fmt: skip
-    units = [r["node"]["body"][0] for r in v["rows"] if r["kind"] == "node"]
-    assert [(u["accelerator"], u["group"], u["heading"][-1]) for u in units] == [
-        ("dot", "mul", "group mul of dot"), ("dot", "sum", "group sum of dot")]  # fmt: skip
+    units = [v["details"][f"node:{n}"] for n in ("mult", "sum")]
+    assert [(u["accelerator"], u["group"]) for u in units] == [("dot", "mul"), ("dot", "sum")]
+    assert v["details"]["group:mul"]["accelerator"] == "dot"
+    assert v["details"]["accelerator:dot"]["groups"] == ["mul", "sum"]
 
 
 def test_without_encapsulate_each_group_is_its_own_accelerator():
     v = view(FIXTURES / "dot_accelerated.snaxdfg")
     assert [(a["name"], [g["name"] for g in a["groups"]]) for a in v["accelerators"]] == [
         ("mul", ["mul"]), ("sum", ["sum"])]  # fmt: skip
-    units = [r["node"]["body"][0] for r in v["rows"] if r["kind"] == "node"]
-    assert not any("group" in line for u in units for line in u["heading"])
+    units = [v["details"][f"node:{n}"] for n in ("mult", "sum")]
+    assert [(u["accelerator"], u["group"]) for u in units] == [("mul", "mul"), ("sum", "sum")]
 
 
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
-    assert plain["rows"][1]["node"]["iterations"] is None
-    assert plain["containers"]["A"]["sizes"] is None
+    assert plain["rows"][1]["node"]["text"] == "i · ? · untagged"
+    assert plain["details"]["container:A"]["sizes"] is None
+    assert plain["containers"]["A"]["badge"] is None and plain["estimate_error"]
     split = view(FIXTURES / "vecadd_split.snaxdfg")
     inner = split["rows"][1]["node"]["body"][0]
-    assert (inner["id"], inner["loop_kind"], inner["iterations"]) == ("add_map_s", "spatial", 4)
+    assert (inner["id"], inner["loop_kind"], inner["text"]) == (
+        "add_map_s",
+        "spatial",
+        "i_s · 4 · spatial",
+    )
 
 
 def test_a_transient_between_two_maps_and_a_container_shown_again(tmp_path):
@@ -247,9 +270,9 @@ def test_inside_one_node_an_edge_goes_straight_from_the_writer(tmp_path):
                tasklet("t2", {"in1": "tmp0"}, {"out": "B"}, "out = in1"))],
     )  # fmt: skip
     v = view(path)
-    assert [(e["from"], e["to"], e["data"], e["stop"]) for e in v["edges"]] == [
-        ("A@0", "t1.in1", "A", "m"), ("t1.out", "t2.in1", "tmp0", None),
-        ("t1.out", "tmp0@1", "tmp0", "m"), ("t2.out", "B@1", "B", "m"),
+    assert [(e["from"], e["to"], e["data"]) for e in v["edges"]] == [
+        ("A@0", "t1.in1", "A"), ("t1.out", "t2.in1", "tmp0"),
+        ("t1.out", "tmp0@1", "tmp0"), ("t2.out", "B@1", "B"),
     ]  # fmt: skip
     assert v["rows"][-1]["boxes"] == ["tmp0@1", "B@1"]
 
@@ -267,37 +290,28 @@ def test_unused_containers_are_in_the_first_row(tmp_path):
 # =============================================================================
 
 
-@contextmanager
-def serving(paths):
-    srv = make_dfg_server(list(paths), port=0)
-    th = threading.Thread(target=srv.serve_forever, daemon=True)
-    th.start()
-    try:
-        yield srv
-    finally:
-        srv.shutdown()
-        srv.server_close()
-        th.join(timeout=5)
-
-
 def test_routes(tmp_path):
+    """View mode: the steps, a step, a reload; the old page's routes are gone."""
     path = tmp_path / "vecadd.snaxdfg"
     shutil.copy(FIXTURES / "vecadd.snaxdfg", path)
-    with serving([path]) as srv:
+    with served(make_dfg_server([path], port=0)) as srv:
         status, ctype, body = get(srv, "/")
         assert status == 200 and ctype == "text/html" and b"dfg.js" in body
         assert get(srv, "/dfg.js")[1] == "text/javascript"
-        assert json.loads(get(srv, "/api/graphs")[2]) == [
-            {"name": "vecadd", "path": str(path), "graph": "vecadd", "error": None}
+        assert json.loads(get(srv, "/api/steps")[2]) == [
+            {"name": "vecadd", "label": "vecadd", "error": None}
         ]
-        assert json.loads(get(srv, "/api/graph/vecadd")[2])["rows"][0]["boxes"] == ["A@0", "B@0"]
-        with pytest.raises(HTTPError) as e:
-            get(srv, "/api/graph/nope")
-        assert e.value.code == 404
+        assert json.loads(get(srv, "/api/step/0")[2])["rows"][0]["boxes"] == ["A@0", "B@0"]
+        for gone in ("/api/graphs", "/api/graph/vecadd", "/api/step/1"):
+            with pytest.raises(HTTPError) as e:
+                get(srv, gone)
+            assert e.value.code == 404, gone
         path.write_text(path.read_text().replace('"N": null', '"N": 8'))
-        with urlopen(Request(srv.url + "api/reload", method="POST"), timeout=10) as r:
+        req = Request(srv.url + "api/reload", data=b"{}", method="POST",
+                      headers={"Content-Type": "application/json"})  # fmt: skip
+        with urlopen(req, timeout=10) as r:
             assert json.loads(r.read()) == {"graphs": ["vecadd"]}
-        assert json.loads(get(srv, "/api/graph/vecadd")[2])["symbols"] == {"N": 8}
+        assert json.loads(get(srv, "/api/step/0")[2])["symbols"] == {"N": 8}
 
 
 def test_the_run_viewer_still_serves_its_own_page(tmp_path):
@@ -324,20 +338,29 @@ def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
     what it replaced; mac, the link and sum in one group box of the accelerator dot."""
     v = recipe_view(tmp_path, "dot_4")
     link, accs = _link_and_group(v)
-    assert (link["title"], link["heading"], link["replaced"]) == (
-        "out_partial = wire", ["mac → sum"], "out_partial"
-    )  # fmt: skip
+    assert link["text"] == "out_partial · wire"
+    assert v["details"][f"node:{link['id']}"] == {"kind": "link", "container": "out_partial",
+                                                  "depth": 0, "from": "mac", "to": "sum"}  # fmt: skip
+    assert v["containers"]["out_partial"]["badge"] == "wire"
+    # out_partial gets no box: the edges run through the link, straight between the connectors
+    boxes = [b for r in v["rows"] if r["kind"] == "containers" for b in r["boxes"]]
+    assert boxes == ["A@0", "B@0", "tmp0@0", "out@1"]  # tmp0, the fused nest's local value, stays
+    assert [(e["from"], e["to"]) for e in v["edges"] if e["data"] == "out_partial"] == [
+        ("mult.out", f"{link['id']}.in"), (f"{link['id']}.out", "sum_final.a")]  # fmt: skip
+    assert v["details"]["container:out_partial"]["placement"] == "link"
     (acc,) = accs
     (grp,) = acc["groups"]
     assert (acc["name"], grp["name"], grp["links"]) == ("dot", "dot", [link["id"]])
     assert [u["instance"] for u in grp["units"]] == ["mac", "sum"]
     assert grp["tops"] == ["mult_map", link["id"], "sum_final"]
-    mac = next(t for t in v["rows"] if t["kind"] == "node" and t["node"]["id"] == "mult_map")
-    assert mac["node"]["body"][0]["heading"][-1] == "group dot"
+    assert v["details"]["node:mult"]["group"] == "dot"
 
 
 def test_dot6_draws_a_buffer_with_its_depth(tmp_path):
     v = recipe_view(tmp_path, "dot_6")
     link, accs = _link_and_group(v)
-    assert (link["title"], link["heading"]) == ("out_partial = buffer", ["depth 1", "mac → sum"])
+    assert (link["text"], v["details"][f"node:{link['id']}"]["depth"]) == (
+        "out_partial · FIFO 1",
+        1,
+    )
     assert [g["name"] for g in accs[0]["groups"]] == ["dot"]

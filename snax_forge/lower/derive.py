@@ -67,7 +67,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 
 from snax_forge import expr
-from snax_forge.brm import memlet_ordered
+from snax_forge.brm import Instance, memlet_ordered
 from snax_forge.design.streamers import (
     Loop,
     accelerated,
@@ -80,7 +80,7 @@ from snax_forge.design.streamers import (
     streamer_name,
 )
 from snax_forge.design.streamers import groups as unit_groups
-from snax_forge.dfg import DfgError, Memlet, named_rates
+from snax_forge.dfg import DfgError, Graph, Memlet, Node, named_rates
 from snax_forge.dfg.pad import padded_shape
 from snax_forge.dfg.subset import parse_dim
 
@@ -154,6 +154,26 @@ def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
 def task_list(point: DesignPoint) -> TaskList:
     """The task list of a design point; see the module doc. Raises LowerError."""
     return _Derivation(point).run()
+
+
+def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], list[Loop]]:
+    """An accelerated node's accelerator values, its firings n and its named rates (C§9), and
+    its firing loops; the estimate reads the same (D151). Raises LowerError."""
+    what = f"node {node.id}"
+    try:
+        loops = firing_loops(g, node)
+    except ValueError as e:
+        raise LowerError(f"{what}: {e}") from None
+    memlets = {**node.inputs, **node.outputs}
+    try:  # named rates from the loops a memlet does not use (D102), as REF and bind do
+        rates = named_rates(
+            {p.name: (memlets[p.name], p.rate) for p in inst.brm.interface.ports},
+            [(lp.var, lp.count) for lp in loops],
+            what,
+        )
+    except DfgError as e:
+        raise LowerError(str(e)) from None
+    return {"n": prod(lp.count for lp in loops)} | rates, loops
 
 
 class _Derivation:
@@ -257,22 +277,8 @@ class _Derivation:
         starts: dict[str, dict[str, Any]] = {}
         unit_loops: dict[str, list[Loop]] = {}
         for un in unit_nodes:
-            u, what = un.attrs["instance"], f"node {un.id}"
-            try:
-                loops = firing_loops(self.g, un)
-            except ValueError as e:
-                raise LowerError(f"{what}: {e}") from None
-            memlets = {**un.inputs, **un.outputs}
-            try:  # named rates from the loops a memlet does not use (D102), as REF and bind do
-                rates = named_rates(
-                    {p.name: (memlets[p.name], p.rate) for p in self.insts[u].brm.interface.ports},
-                    [(lp.var, lp.count) for lp in loops],
-                    what,
-                )
-            except DfgError as e:
-                raise LowerError(str(e)) from None
-            starts[u] = {"n": prod(lp.count for lp in loops)} | rates
-            unit_loops[u] = loops
+            u = un.attrs["instance"]
+            starts[u], unit_loops[u] = unit_firings(self.g, un, self.insts[u])
         return starts, unit_loops
 
     def loads(self, unit_nodes: list[Any]) -> None:

@@ -23,6 +23,10 @@ the kernel from the run's functional check.
                  bytes, share, padding (a tail's pad elements and the bytes
                  to a whole DMA beat, D144), banks (L1) or words of a beat
                  (L2), rows or beats
+    estimate     the ideal estimate (D151, C§19): per group its cycles, bottleneck,
+                 ramp, stall and the COUNTER a run gives (the cycles plus the
+                 streamers' fill), then the accelerator's cycles, the work no unit
+                 runs and the L1 footprint against the L1
     notes        facts about addresses only: movers of the accelerator whose
                  containers start in the same banks, or lie a whole number of
                  bank rows apart, so that element i of both is in one bank;
@@ -124,6 +128,25 @@ class MemoryTable(Record):
 
 
 @dataclass
+class EstimateRow(Record):
+    group: str
+    cycles: int
+    bottleneck: int
+    ramp: int
+    stall: int
+    counter: int
+
+
+@dataclass
+class EstimateTable(Record):
+    groups: list[EstimateRow]
+    accelerator_cycles: int
+    not_mapped: int
+    l1_footprint: int
+    l1_size: int | None
+
+
+@dataclass
 class DesignReport(Record):
     name: str
     header: Header | None
@@ -133,6 +156,7 @@ class DesignReport(Record):
     memories: list[MemoryTable]
     notes: list[str]
     groups: int = 1  # the accelerator's; with more than one, the accelerators' table names each's
+    estimate: EstimateTable | None = None
 
 
 # =============================================================================
@@ -327,7 +351,18 @@ def build_design(
     ]  # fmt: skip
     return DesignReport(name, header, components, accels, streamers,
                         _memory_tables(cluster, regions, point),
-                        _notes(cluster, regions, point, streamers), len(a.units))  # fmt: skip
+                        _notes(cluster, regions, point, streamers), len(a.units),
+                        estimate_table(point))  # fmt: skip
+
+
+def estimate_table(point: Any) -> EstimateTable:
+    """The design point's ideal estimate (D151) as the report shows it."""
+    from snax_forge.estimate import estimate
+
+    e = estimate(point.graph, point.platform)
+    rows = [EstimateRow(g.name, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter)
+            for g in e.groups]  # fmt: skip
+    return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size)
 
 
 # =============================================================================
@@ -444,6 +479,26 @@ def render_design(r: DesignReport) -> str:
             "",
             f"Used: {m.used_bytes} of {m.size_bytes} bytes ({pct(m.used_bytes / m.size_bytes)}).",
         ]
+    if r.estimate is not None:
+        out += ["", "## Estimate", ""]
+        out += render_estimate(r.estimate)
     out += ["", "## Notes", ""]
     out += [f"- {n}" for n in r.notes] or ["- None."]
     return "\n".join(out) + "\n"
+
+
+def render_estimate(e: EstimateTable) -> list[str]:
+    """The estimate section: per group its cycles, then the accelerator's (D151)."""
+    out = [("The ideal estimate (D151): the group rule on ideal streams, with no bank conflicts, "
+            "streamer fill, DMA or core control. A run's COUNTER is the cycles plus the "
+            "streamers' fill (3, or 2 for a group with one outer input); its window is longer."),
+           ""]  # fmt: skip
+    out += table(["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected COUNTER"],
+                 [[g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter]
+                  for g in e.groups], {1, 2, 3, 4, 5})  # fmt: skip
+    l1 = f"{e.l1_footprint} bytes"
+    if e.l1_size is not None:
+        l1 += f" of {e.l1_size} ({pct(e.l1_footprint / e.l1_size)})"
+    out += ["", (f"Accelerator cycles: {e.accelerator_cycles}. Not mapped: {e.not_mapped} "
+                 f"iterations no unit runs. L1 footprint: {l1}.")]  # fmt: skip
+    return out

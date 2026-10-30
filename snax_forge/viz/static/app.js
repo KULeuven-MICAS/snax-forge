@@ -24,6 +24,9 @@ import { renderSchedule, selectCycle, stepSchedule } from "./schedule.js";
 
 const $ = (id) => document.getElementById(id);
 
+// Every POST is JSON: the server refuses another Content-Type (415, D55)
+const POST_JSON = { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" };
+
 async function getJSON(url, opts) {
   const r = await fetch(url, opts);
   const body = await r.json();
@@ -60,7 +63,7 @@ const api = {
   memoryCycle: (name, t) => getJSON(`/api/run/${enc(name)}/memory/cycle?t=${enc(String(t))}`),
   journey: (name, region, index) => getJSON(`/api/run/${enc(name)}/journey?${new URLSearchParams({ region, index: String(index) })}`),
   conflicts: (name, from, to) => getJSON(`/api/run/${enc(name)}/conflicts?${new URLSearchParams({ from: String(from), to: String(to) })}`),
-  reload: () => getJSON("/api/reload", { method: "POST" }),
+  reload: () => getJSON("/api/reload", POST_JSON),
 };
 
 // -- view state in the hash -----------------------------------------------------

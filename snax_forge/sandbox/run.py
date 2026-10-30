@@ -92,27 +92,48 @@ def random_inputs(g: Graph, seed: int) -> dict[str, np.ndarray]:
     return out
 
 
-def apply_recipe(recipe: Recipe, graph: Graph, seed: int = 0) -> list[Result]:
-    """Every step's graph, from the input with its symbols bound; each one checked."""
-    g = bind_recipe_symbols(recipe, graph)
+class StepError(SandboxError):
+    """A step that failed: its transform refused (``cause`` the refusal, its ``code`` if it has
+    one) or the reference check failed (``cause`` None)."""
+
+    def __init__(self, message: str, cause: Exception | None = None) -> None:
+        super().__init__(message)
+        self.cause = cause
+
+
+def reference(g: Graph, seed: int, what: str) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    """The seeded inputs of a graph with its symbols bound, and what it computes on them."""
     try:
         inputs = random_inputs(g, seed)
         bind_symbols(g, inputs)
-        want = execute(g, inputs)
+        return inputs, execute(g, inputs)
     except (DfgError, KeyError) as e:
-        raise SandboxError(f"{recipe.name}: the input graph does not run: {e}") from None
+        raise SandboxError(f"{what}: the input graph does not run: {e}") from None
+
+
+def checked_step(g: Graph, name: str, params: dict[str, Any], inputs: dict[str, np.ndarray],
+                 want: dict[str, Any], what: str) -> Graph:  # fmt: skip
+    """Transform ``name`` on ``g``, then the reference check: every non-transient container
+    equal to ``want`` on ``inputs``; a StepError named ``what`` otherwise."""
+    try:
+        g = TRANSFORMS[name].fn(g, **params)
+        got = execute(g, inputs)
+    except (SandboxError, DfgError) as e:
+        raise StepError(f"{what}: {e}", e) from None
+    for k, c in g.containers.items():
+        if not c.transient and not np.array_equal(got[k], want[k]):
+            raise StepError(f"{what}: the reference check fails, {k!r} differs")
+    return g
+
+
+def apply_recipe(recipe: Recipe, graph: Graph, seed: int = 0) -> list[Result]:
+    """Every step's graph, from the input with its symbols bound; each one checked."""
+    g = bind_recipe_symbols(recipe, graph)
+    inputs, want = reference(g, seed, recipe.name)
     results = [Result(0, "input", g)]
     for i in range(len(recipe.steps)):
         name, params = step_params(recipe, i)
-        what = f"{recipe.name} step {i + 1} ({name})"
-        try:
-            g = TRANSFORMS[name].fn(g, **params)
-            got = execute(g, inputs)
-        except (SandboxError, DfgError) as e:
-            raise SandboxError(f"{what}: {e}") from None
-        for k, c in g.containers.items():
-            if not c.transient and not np.array_equal(got[k], want[k]):
-                raise SandboxError(f"{what}: the reference check fails, {k!r} differs")
+        g = checked_step(g, name, params, inputs, want, f"{recipe.name} step {i + 1} ({name})")
         results.append(Result(i + 1, name, g))
     return results
 

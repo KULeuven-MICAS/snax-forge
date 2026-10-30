@@ -2,15 +2,19 @@
 
 Runs are flow folders made the way the flow makes them, SNAX-GVSoC stubbed
 (tests/flow/helpers.py: ``stubbed_flow``, its synthetic events), so the
-viewer reads exactly what the flow writes.
+viewer reads exactly what the flow writes. ``served`` serves any viewer server in a thread;
+``get`` and ``post`` talk to one (a POST is JSON unless ``ctype`` says otherwise).
 """
 
 from __future__ import annotations
 
+import json
 import threading
 from contextlib import contextmanager
 from pathlib import Path
-from urllib.request import urlopen
+from typing import Any
+from urllib.error import HTTPError
+from urllib.request import Request, urlopen
 
 from snax_forge.viz.server import make_server
 from tests.flow.helpers import stubbed_flow
@@ -27,7 +31,13 @@ def run_dir(out: Path, name: str = "vecadd", level: str = "task", **kw) -> Path:
 @contextmanager
 def serving(dirs):
     """A viewer server on a free port, serving in a thread; yields it."""
-    srv = make_server(list(dirs), port=0)
+    with served(make_server(list(dirs), port=0)) as srv:
+        yield srv
+
+
+@contextmanager
+def served(srv):
+    """``srv`` (bound, not serving yet) serving in a thread; yields it, then shuts it down."""
     th = threading.Thread(target=srv.serve_forever, daemon=True)
     th.start()
     try:
@@ -265,3 +275,27 @@ def get(srv, path: str):
     """A GET on a running viewer: status, content type and body."""
     with urlopen(srv.url.rstrip("/") + path, timeout=10) as r:
         return r.status, r.headers.get("Content-Type"), r.read()
+
+
+def post(
+    srv, path: str, body: Any = None, ctype: str | None = "application/json"
+) -> tuple[int, Any]:
+    """A POST on a running viewer: its status and JSON answer, an HTTP error's too."""
+    data = json.dumps({} if body is None else body).encode()
+    req = Request(srv.url.rstrip("/") + path, data=data, method="POST")
+    if ctype is not None:
+        req.add_header("Content-Type", ctype)
+    try:
+        with urlopen(req, timeout=60) as r:
+            return r.status, json.loads(r.read())
+    except HTTPError as e:
+        return e.code, json.loads(e.read())
+
+
+def get_json(srv, path: str) -> tuple[int, Any]:
+    """A GET's status and JSON answer, an HTTP error's too."""
+    try:
+        with urlopen(srv.url.rstrip("/") + path, timeout=60) as r:
+            return r.status, json.loads(r.read())
+    except HTTPError as e:
+        return e.code, json.loads(e.read())

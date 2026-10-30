@@ -422,3 +422,19 @@ def test_a_linked_groups_design_report_has_a_row_per_unit(dot4):
 def test_one_group_has_no_group_column(flows):
     text = render_run(reports_of(flows[("vecadd", "task")]).run)
     assert "| Block | # | Task |" in text and "Group" not in text
+
+
+def test_the_estimate_beside_the_counters(dot1, dot4):
+    """design.md's Estimate section (D151) per group, and run.md's expected COUNTER beside each
+    measured one: equal on the recorded runs, the cycles plus the streamers' fill."""
+    r = reports_of(dot1)
+    e = r.design.estimate
+    assert [(g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter) for g in e.groups] == [
+        ("mul", 16, 16, 0, 0, 19), ("sum", 17, 16, 1, 0, 19)]  # fmt: skip
+    assert (e.accelerator_cycles, e.not_mapped, e.l1_size) == (33, 0, 128 * 1024)
+    text = render_design(r.design)
+    assert "## Estimate" in text and "| mul | 16 | 16 | 0 | 0 | 19 |" in text
+    assert r.run.check.expected == r.run.check.counters == {"mult_mul": 19, "sum_sum": 19}
+    assert "mult_mul 19 (expected 19), sum_sum 19 (expected 19)" in render_run(r.run)
+    four = reports_of(dot4)
+    assert four.run.check.expected == four.run.check.counters == {"mult_dot": 133}

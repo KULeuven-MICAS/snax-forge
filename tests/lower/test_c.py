@@ -11,14 +11,14 @@ from dataclasses import replace
 
 import pytest
 
-from snax_forge.design import DesignPoint
+from snax_forge.design import DesignPoint, run_checks
 from snax_forge.dfg import Graph
 from snax_forge.gen import describe
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.data import arrays as data_arrays
 from snax_forge.lower import CError, TaskList, main_c, task_list
 from snax_forge.lower.c import cores, job_values
-from tests.design.helpers import chained
+from tests.design.helpers import chained, design
 from tests.gen.helpers import SUB, bound_vecmul, point
 from tests.helpers import SUBMODULE_MISSING, bound_vsum, graph_dict
 
@@ -358,10 +358,14 @@ def test_refused_an_idle_mover_at_stride_0(tmp_path):
 
 
 def test_refused_two_instances(tmp_path):
+    """Lowering's own guard: on snax_forge the design checks refuse two accelerators first
+    (gen.instances, tests/design), on small16, which has no slot, the C backend does."""
     _, _, cluster, acc, _ = parts(tmp_path / "one")
     gd = graph_dict()
     chained(gd)
-    p = DesignPoint.load(point(tmp_path, graph=Graph.from_dict(gd)))
+    d = design(Graph.from_dict(gd))
+    assert run_checks(d) == []
+    p = DesignPoint.of(d, "chained")
     with pytest.raises(CError, match=r"\[c.instances\] 2 accelerators \['acc', 'acc2'\]"):
         main_c(p, task_list(p), cluster, acc, [], INCLUDES, POINT)
 

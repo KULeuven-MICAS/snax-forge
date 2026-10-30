@@ -9,7 +9,8 @@ why it fails and the change that fixes it. Checks belong to stages:
     graph      the graph alone: symbols bound, everything bound to an
                accelerator, BRMs and implementations known, instance names
     connect    the two together: streamer entries, lanes, dtypes, packing,
-               padding, num_ch, temporal loops
+               padding, num_ch, the accelerators against the slots
+               (``gen.instances``), temporal loops
     memory     the memory plan (D86): pins and passes, then the plan
                the passes make, its residency, shapes, alignment, fit,
                snRuntime's top of L1 and overlaps
@@ -47,6 +48,7 @@ from .problems import DesignError, Problem
 from .streamers import (
     LoopError,
     accelerated,
+    accelerators,
     firing_loops,
     instance_nodes,
     instance_of,
@@ -682,6 +684,22 @@ def _connect_num_ch(design: Design) -> Iterable[Problem]:
         )  # fmt: skip
 
 
+def _gen_instances(design: Design) -> Iterable[Problem]:
+    """No more accelerators than the platform has slots: one where it names an
+    ``accelerator_slot`` (the generated accelerator's, D131); a platform without one (small16)
+    is never generated and takes any number. Several groups share a slot only as one
+    accelerator (``encapsulate``, D148)."""
+    found = accelerators(design.graph)
+    if design.platform.accelerator_slot is not None and len(found) > 1:
+        yield Problem(
+            "gen.instances", "graph",
+            f"{len(found)} accelerators {list(found)}; the platform has one accelerator slot "
+            f"({design.platform.accelerator_slot}) and the program drives one accelerator",
+            f"encapsulate them into one: a recipe step encapsulate with units "
+            f"{[u for units in found.values() for u in units]} (D148)",
+        )  # fmt: skip
+
+
 def _connect_temporal(design: Design) -> Iterable[Problem]:
     """Every map around a node is a firing loop, and every subset is affine in them.
 
@@ -989,6 +1007,7 @@ for _code, _stage, _fn in (
     ("connect.pack", "connect", _connect_pack),
     ("connect.pad", "connect", _connect_pad),
     ("connect.num_ch", "connect", _connect_num_ch),
+    ("gen.instances", "connect", _gen_instances),
     ("connect.temporal", "connect", _connect_temporal),
     ("memory.pin", "memory", _memory_pin),
     ("memory.residency", "memory", _memory_residency),

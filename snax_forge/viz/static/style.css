@@ -103,7 +103,6 @@ i.key { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px
 .rows { display: grid; gap: 0.55rem; }
 /* the bar takes the width the counts leave (VIEW1): the counts column stops at 34rem */
 .row { display: grid; grid-template-columns: 9rem minmax(12rem, 1fr) minmax(16rem, 34rem); gap: 0.4rem 1rem; align-items: center; }
-.row.single { grid-template-columns: minmax(12rem, 1fr) minmax(16rem, 34rem); margin-top: 0.4rem; }
 .who b { display: block; }
 .who .kind { margin: 0; }
 .stack { display: flex; height: 1.4rem; border-radius: 3px; overflow: hidden; background: var(--rule); }
@@ -113,12 +112,8 @@ i.key { display: inline-block; width: 0.75em; height: 0.75em; border-radius: 2px
 .counts b { color: var(--ink); font-weight: 600; }
 .counts .zero { opacity: 0.55; }
 @media (max-width: 760px) {
-  .row, .row.single { grid-template-columns: 1fr; }
+  .row { grid-template-columns: 1fr; }
 }
-
-/* column key under a section heading */
-.col-key { list-style: none; margin: 0 0 0.9rem; padding: 0; color: var(--muted); font-size: 0.9em; }
-.col-key b { color: var(--ink); font-weight: 600; }
 
 /* accelerators */
 .util { display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.5rem; }
@@ -134,12 +129,6 @@ tr.hot td, td.hot, th.hot { background: var(--hot-bg); }
 tr.hot td:first-child { box-shadow: inset 3px 0 var(--mem); }
 td.zero { color: var(--muted); opacity: 0.6; }
 table.banks tbody th { font-weight: 400; color: var(--muted); }
-
-/* FIFO histogram */
-.hist { display: flex; align-items: flex-end; gap: 3px; height: 2.4rem; }
-.hist span { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; width: 1.2rem; height: 100%; }
-.hist i { display: block; width: 100%; min-height: 1px; background: var(--flow); border-radius: 1px 1px 0 0; }
-.hist small { font-size: 0.7em; color: var(--muted); line-height: 1; margin-top: 2px; }
 
 /* bank strip: height = grants; marked banks had conflicts or stalls */
 .strip { display: flex; gap: 3px; align-items: flex-end; padding-bottom: 0.3rem; margin-bottom: 0.6rem; }
@@ -192,7 +181,6 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .s-req { fill: var(--req); }
 .s-resp { fill: var(--busy); }
 .s-mem { fill: var(--mem); }
-.s-mem.wider { fill: var(--mem); fill-opacity: 0.55; }
 .s-flow { fill: var(--flow); }
 .s-command { fill: var(--command); }
 .s-wait { fill: var(--wait); }
@@ -321,7 +309,6 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 .cl-sub { color: var(--muted); font-size: 0.8em; }
 
 /* port chips: teal = request accepted, red = stalled, green underline = read data back */
-.cl-ports { display: flex; flex-wrap: wrap; gap: 3px; }
 .cl-port { padding: 0 0.3rem; border: 1px solid var(--rule); border-radius: 3px; color: var(--muted); font-size: 0.82em; text-align: center; transition: background-color 0.12s, border-color 0.12s; }
 .cl-port.req { background: var(--req); border-color: var(--req); color: #fff; }
 .cl-port.bad { background: var(--mem); border-color: var(--mem); color: #fff; }
@@ -336,13 +323,14 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 .cl-lanes .slots.bar { border: 1px solid var(--rule); border-radius: 2px; background: var(--bg); }
 .cl-lanes .fill { display: block; background: var(--fifo); transition: height 0.12s; }
 .cl-lanes .count { text-align: center; font-size: 0.75em; color: var(--muted); line-height: 1.1; }
-.cl-lanes .slots.unknown .slot, .cl-lanes .slots.untraced .slot { border-style: dashed; }
+.cl-lanes .slots.untraced .slot { border-style: dashed; }
 
-.cluster.task-only .cl-banks, .cluster.task-only .cl-ports, .cluster.task-only .cl-lanes { opacity: 0.45; }
+.cluster.task-only .cl-banks, .cluster.task-only .cl-lanes { opacity: 0.45; }
 
-/* -- DFG viewer (VIS5, D55) ---------------------------------------------------------
+/* -- DFG viewer (VIS5, D55; compact drawing VIEW2) ------------------------------------
    Loop kinds get colours of their own: green, red and violet already mean busy,
-   memory stall and flow stall in the run views. */
+   memory stall and flow stall in the run views. A unit and a link take the busy
+   colours, a container its own (--data); the selection is --hl. */
 :root {
   --loop-none: #8b939c;
   --loop-tile: #9a6b1f;
@@ -351,6 +339,7 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
   --edge: #6b747e;
   --hl: #d4386a;
   --data: #1f7a8c;
+  --side: 300px; /* the right panel */
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -363,83 +352,178 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
     --data: #52b5c7;
   }
 }
-body.dfg header, body.dfg main { max-width: none; }
-.mono, .port, .op-lines { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-.dfg-legend { margin: 0.8rem 0 0; }
+.mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+
+/* layout: a top bar; [edit mode's sidebar] the graph [Details and Estimate]; [edit mode's log] */
+body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px, 2 px larger */ display: flex; flex-direction: column; overflow: hidden; }
+.dfg-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; max-width: none; margin: 0; padding: 0.55rem var(--gap); border-bottom: 2px solid var(--ink); background: var(--panel); }
+.dfg-top h1 { font-size: 1.325rem; margin-right: auto; }
+.dfg-top .status { flex-basis: 100%; margin: 0; min-height: 0; }
+.dfg-top .status:empty { display: none; }
+.dfg-steps { display: flex; align-items: center; gap: 0.25rem; }
+.dfg-steps select { min-width: 12rem; }
+.dfg-toggle { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+.dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) var(--side); grid-template-areas: "side centre right"; }
+.dfg-sidebar { grid-area: side; width: 260px; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
+.dfg-sidebar[hidden] { display: none; }
+.dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; justify-content: safe center; }
+/* Compare: the two graphs side by side, one thin line between them; the column scrolls */
+.dfg-centre.two { align-items: stretch; gap: 0; }
+.dfg-centre.two > .c-panel { flex: 0 0 auto; }
+.dfg-centre.two > .c-panel + .c-panel { border-left: 1px solid var(--rule); }
+.dfg-right { grid-area: right; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
+.dfg-side-panel h2 { font-size: 0.925rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.4rem 0 0.3rem; }
+.dfg-side-panel { padding: 0; border-bottom: none; }
+.dfg-side-panel + .dfg-side-panel { border-top: 1px solid var(--rule); margin-top: 0.6rem; padding-top: 0.3rem; }
+/* the log: its height dragged on the handle (edit.js), from three lines to 70% of the window */
+.dfg-log { flex: none; display: flex; flex-direction: column; padding: 0.2rem var(--gap) 0.4rem; font-size: 0.82em; height: 9rem; min-height: calc(6px + 1.9em + 3 * 1.45em + 0.6rem); max-height: 70vh; border-top: 1px solid var(--rule); background: var(--panel); }
+.dfg-log.collapsed { height: auto !important; min-height: 0; }
+.dfg-log-handle { flex: none; height: 6px; margin: -0.2rem calc(-1 * var(--gap)) 0.15rem; cursor: row-resize; touch-action: none; }
+.dfg-log-handle:hover, .dfg-log-handle.dragging { background: var(--rule); }
+.dfg-log[hidden] { display: none; }
+.dfg-legend { margin: 0.9rem 0 0; font-size: 0.85em; gap: 0.2rem 0.8rem; }
+
+/* Details and Estimate */
+.c-details h3 { font-size: 1.025rem; margin: 0.3rem 0 0.2rem; overflow-wrap: anywhere; }
+.c-details dl.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.1rem 0.6rem; margin: 0 0 0.5rem; }
+.c-details dt { color: var(--muted); }
+.c-details dd { margin: 0; overflow-wrap: anywhere; font-size: 0.92em; }
+.c-details .changed { color: var(--hl); font-weight: 600; }
+.c-est-head { margin: 0.2rem 0 0.4rem; font-size: 1.05em; }
+.c-est-group { padding: 0.2rem 0.3rem; border-radius: 3px; cursor: default; }
+.c-est-group:hover { background: var(--bg); }
+.c-est-group small { display: block; color: var(--muted); }
+.c-est-line { margin: 0.35rem 0 0.15rem; }
+.c-bar-track { height: 0.5rem; border-radius: 3px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
+.c-bar-track i { display: block; height: 100%; background: var(--data); }
+
+/* a panel: one step's drawing, on the page's background, no frame; its title plain text */
+.c-panel { padding: 0 0.6rem; min-width: 14rem; border-bottom: none; }
+.c-panel-head { margin-bottom: 0.2rem; font-size: 0.9em; }
+.load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+.c-scroll { overflow: visible; }
+.c-canvas { position: relative; width: max-content; min-width: 100%; padding: 3.8rem 2rem 1.2rem; }
+.c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
+.c-row { display: flex; gap: 1rem; justify-content: center; align-items: flex-start; }
+svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; transition: opacity 0.15s; }
+.c-panel.settling svg.dfg-edges { opacity: 0; } /* while the boxes glide (dfg.js) */
+
+/* maps: a slim bar in the tag's colour, the body indented below */
+.c-map { --loop: var(--loop-none); border-left: 3px solid var(--loop); border-radius: 3px; background: color-mix(in srgb, var(--loop) 5%, transparent); cursor: pointer; }
+.c-map.loop-tile { --loop: var(--loop-tile); }
+.c-map.loop-temporal { --loop: var(--loop-temporal); }
+.c-map.loop-spatial { --loop: var(--loop-spatial); }
+.c-bar { padding: 0.1rem 0.6rem; background: color-mix(in srgb, var(--loop) 22%, var(--panel)); color: var(--ink); font-size: 0.8em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; border-radius: 0 3px 3px 0; }
+.c-body { display: flex; flex-direction: column; align-items: center; gap: 1.6rem; padding: 1.4rem 0.6rem 0.6rem 1rem; }
+.c-node > .c-body { padding: 0.6rem; }
+
+/* tasklets, units and links: small boxes with their text */
+.c-node { display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
+.c-node.c-unit { border: 2px solid var(--busy); background: var(--busy-bg); }
+.c-node.c-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
+.c-text { padding: 0.15rem 0.6rem; font-size: 0.82em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; text-align: center; }
+.c-ports { display: flex; justify-content: space-evenly; height: 0; }
+.c-port { display: block; width: 7px; height: 7px; margin-top: -4px; border-radius: 50%; background: var(--edge); }
+.c-ports.out .c-port { margin-top: -3px; }
+
+/* containers: a pill with its name and badge */
+.c-pill { display: flex; align-items: baseline; gap: 0.4rem; padding: 0.12rem 0.7rem; border: 1.5px solid var(--data); border-radius: 1rem; background: color-mix(in srgb, var(--data) 10%, var(--panel)); font-size: 0.85em; cursor: pointer; white-space: nowrap; }
+.c-pill.transient { border-style: dashed; }
+.c-pill.again { opacity: 0.75; }
+.c-badge { font-size: 0.8em; color: var(--muted); }
+
+/* edges: no text, a wide transparent stroke under each to click */
+path.edge { fill: none; stroke: var(--edge); stroke-width: 1.3; }
+path.edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: pointer; }
+path.arrow { fill: var(--edge); }
+path.arrow-sel { fill: var(--hl); }
+path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
+
+/* groups and accelerators: a thin dashed outline, the name on top */
+svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; pointer-events: stroke; cursor: pointer; }
+svg.dfg-edges .group-box rect { stroke: var(--muted); stroke-width: 1; }
+svg.dfg-edges .acc-box rect { stroke: var(--rule); stroke-width: 1.5; }
+svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.85rem; fill: var(--muted); pointer-events: visiblePainted; cursor: pointer; }
+svg.dfg-edges .hover rect { stroke: var(--busy); stroke-width: 2.5; stroke-dasharray: none; }
+svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
+
+/* the selection */
+.c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
+.c-map.sel { box-shadow: 0 0 0 2px var(--hl); }
+
+/* -- edit mode: the sidebar, the top bar's session parts, the log, the dialogs -- */
+.dfg-session { font-weight: 600; }
+.dfg-params { display: flex; flex-wrap: wrap; gap: 0.3rem; }
+.dfg-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.05rem 0.2rem 0.05rem 0.5rem; border: 1px solid var(--rule); border-radius: 1rem; font-size: 0.85em; color: var(--muted); }
+.dfg-chip input { font: inherit; color: var(--ink); background: var(--bg); border: none; border-radius: 0.8rem; padding: 0.05rem 0.35rem; }
+#step option.past { color: var(--muted); }
+.dfg-sidebar { padding: 0.6rem 0.7rem; font-size: 0.88em; }
+.dfg-sidebar h2 { font-size: 0.975rem; margin: 0.2rem 0 0.5rem; color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }
+.dfg-sidebar h2 b { color: var(--ink); }
+.dfg-sidebar.strip { width: 1.6rem; padding: 0.6rem 0.2rem; overflow: hidden; }
+.dfg-strip-note { writing-mode: vertical-rl; color: var(--muted); margin: 0; }
+.dfg-transform { border-top: 1px solid var(--rule); }
+.dfg-transform-name { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.2rem; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
+.dfg-transform-name:hover, .dfg-transform.open .dfg-transform-name { color: var(--hl); }
+.dfg-form { display: flex; flex-direction: column; gap: 0.35rem; padding: 0 0.2rem 0.6rem; }
+.dfg-field { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); align-items: center; gap: 0.4rem; }
+.dfg-field > span { color: var(--muted); }
+.dfg-field input, .dfg-field select { font: inherit; min-width: 0; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.3rem; }
+.dfg-field.readonly input { color: var(--muted); }
+.dfg-field:has(.dfg-choices) { grid-template-columns: 1fr; }
+.dfg-choices { display: flex; flex-direction: column; gap: 0.15rem; }
+.dfg-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.35rem; align-items: baseline; }
+.dfg-choice small { grid-column: 2; color: var(--muted); }
+.dfg-choice.refused span { color: var(--muted); text-decoration: line-through; }
+button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.dfg-not-here { margin-top: 0.8rem; color: var(--muted); }
+.dfg-not-here ul { padding-left: 1rem; margin: 0.3rem 0; }
+.dfg-not-here li { margin-bottom: 0.25rem; overflow-wrap: anywhere; }
+.dfg-not-here b { color: var(--ink); font-weight: 600; }
+/* marks (a transform applies here) and the step's diff (added or changed) */
+.c-node.marked::after, .c-pill.marked::after, .c-map.marked > .c-bar::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 0.35rem; border-radius: 50%; background: var(--hl); vertical-align: middle; }
+.c-node.marked { position: relative; }
+.c-node.marked::after { position: absolute; top: 3px; right: 3px; margin: 0; }
+.c-node.diffed, .c-pill.diffed { background: color-mix(in srgb, var(--wait) 35%, var(--panel)); }
+.c-map.diffed > .c-bar { background: color-mix(in srgb, var(--wait) 45%, var(--panel)); }
+/* a step just shown: its added and changed boxes arrive from a stronger highlight */
+.c-node.diffed.arrive, .c-pill.diffed.arrive, .c-map.diffed.arrive > .c-bar { animation: dfg-arrive 1.4s ease-out; }
+@keyframes dfg-arrive { from { background-color: color-mix(in srgb, var(--wait) 85%, var(--panel)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--wait) 70%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .arrive, .arrive > .c-bar { animation: none !important; } }
+/* the log */
+.dfg-log-bar { display: flex; gap: 0.5rem; }
+.dfg-log-bar button { padding: 0.05rem 0.5rem; font-size: 0.95em; }
+.dfg-log-lines { flex: 1 1 auto; min-height: 0; margin: 0.25rem 0 0; padding-left: 1.6rem; overflow: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; }
+.dfg-log-lines li.error { color: var(--mem); }
+.dfg-log.collapsed .dfg-log-lines, .dfg-log.collapsed .dfg-recipe { display: none; }
+.dfg-recipe { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.dfg-recipe pre { margin: 0.3rem 0 0; }
+/* the dialogs */
+.dfg-dialog { max-width: min(48rem, 92vw); border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--ink); padding: 1rem 1.2rem; }
+.dfg-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
+.dfg-dialog h2 { margin: 0 0 0.4rem; font-size: 1.325rem; }
+.dfg-dialog h3 { margin: 0.6rem 0 0.3rem; font-size: 1.075rem; }
+.dfg-dialog .status:empty { display: none; }
+.dfg-dialog input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.35rem; }
+.dfg-start-part + .dfg-start-part { border-top: 1px solid var(--rule); }
+.dfg-start-part { padding: 0.2rem 0 0.5rem; border-bottom: none; }
+.dfg-pick { list-style: none; padding: 0; margin: 0; max-height: 10rem; overflow: auto; }
+.dfg-pick li { margin: 0.15rem 0; }
+.dfg-pick small { color: var(--muted); }
+.dfg-params-table td { padding: 0.1rem 0.4rem 0.1rem 0; }
+.dfg-dialog-buttons { display: flex; gap: 0.5rem; margin-top: 0.7rem; }
+.dfg-dialog .error { color: var(--mem); }
+
+/* the legend's keys */
 i.key.loop-none { background: var(--loop-none); }
 i.key.loop-tile { background: var(--loop-tile); }
 i.key.loop-temporal { background: var(--loop-temporal); }
 i.key.loop-spatial { background: var(--loop-spatial); }
-i.key.op-accelerated { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
-i.key.op-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
-i.key.data { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 3px; }
-i.key.data.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
-
-.graphs { display: flex; flex-wrap: wrap; gap: 1.2rem; padding: 1.2rem 0 2rem; align-items: flex-start; }
-/* A panel is as wide as its graph; panels wrap when they do not fit side by side. */
-.dfg-panel { flex: 0 1 auto; max-width: 100%; min-width: 18rem; background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 0.8rem 1rem 1rem; }
-.dfg-panel.broken { border-color: var(--mem); }
-.panel-head h2 { font-size: 1.1rem; margin: 0; }
-.panel-head .note { margin: 0.1rem 0 0; }
-.panel-head .path { margin: 0 0 0.6rem; font-size: 0.8em; color: var(--muted); overflow-wrap: anywhere; }
-.load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
-.dfg-scroll { overflow: auto; }
-.dfg-canvas { position: relative; width: max-content; min-width: 100%; padding: 0.4rem 0.6rem 0.8rem; }
-.dfg-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.8rem; }
-.dfg-row { display: flex; gap: 1.4rem; justify-content: center; align-items: flex-start; }
-/* Under the boxes: text is drawn over an edge, and an edge ends at the box it enters. */
-svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; }
-svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; }
-svg.dfg-edges .group-box rect { stroke: var(--rule); }
-svg.dfg-edges .acc-box rect { stroke: var(--acc, var(--rule)); stroke-width: 1.5; }
-svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.72rem; fill: var(--muted, currentColor); }
-
-/* containers */
-/* data containers: their own colour, a label on top (D82) */
-.box { display: flex; flex-direction: column; align-items: center; min-width: 6.5rem; padding: 0.25rem 0.9rem 0.3rem; border: 1.5px solid var(--data); border-radius: 1rem; background: color-mix(in srgb, var(--data) 10%, var(--panel)); line-height: 1.25; }
-.box .box-kind { font-size: 0.66em; letter-spacing: 0.04em; text-transform: uppercase; color: var(--data); font-weight: 600; }
-.box.transient { border-style: dashed; }
-.box small.ver { font-family: inherit; font-size: 0.72em; }
-.box small { color: var(--muted); font-size: 0.78em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
-
-/* map scopes */
-.scope { --loop: var(--loop-none); border: 2px solid var(--loop); border-radius: 7px; background: color-mix(in srgb, var(--loop) 6%, transparent); padding: 0 0.8rem 0.9rem; }
-.scope.loop-tile { --loop: var(--loop-tile); }
-.scope.loop-temporal { --loop: var(--loop-temporal); }
-.scope.loop-spatial { --loop: var(--loop-spatial); }
-.scope-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.2rem 0.6rem; padding: 0.35rem 0 0; font-size: 0.85em; color: var(--muted); }
-.scope-head b { color: var(--ink); }
-.scope-head .count { color: var(--ink); }
-.scope-head .tag, .op-head .tag { margin-left: auto; padding: 0 0.45rem; border-radius: 3px; background: var(--loop, var(--muted)); color: var(--panel); font-size: 0.85em; font-weight: 600; }
-.scope-body { display: flex; flex-direction: column; align-items: center; gap: 2.4rem; padding-top: 2.2rem; }
-.op .scope-body { padding: 0.8rem; }
-
-/* tasklets and accelerated nodes */
-.op { min-width: 12rem; border: 1.5px solid var(--ink); border-radius: 5px; background: var(--panel); }
-.op-accelerated { border: 2px solid var(--busy); background: var(--busy-bg); }
-.op-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
-.op-link .op-head .tag { --loop: var(--busy); }
-.op-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.6rem; padding: 0.35rem 0.6rem 0.1rem; font-size: 0.88em; }
-.op-head .tag { --loop: var(--muted); }
-.op-accelerated .op-head .tag { --loop: var(--busy); }
-.op-title { flex-basis: 100%; }
-.op-lines { padding: 0.1rem 0.6rem 0.4rem; font-size: 0.85em; }
-.op-replaced { padding: 0 0.6rem 0.4rem; font-size: 0.78em; color: var(--muted); }
-.ports { display: flex; flex-wrap: nowrap; justify-content: center; gap: 0.4rem; padding: 0.35rem 0.45rem; }
-.ports.in { border-bottom: 1px solid var(--rule); }
-.ports.out { border-top: 1px solid var(--rule); }
-.port { font-size: 0.76em; border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.4rem; background: var(--bg); white-space: nowrap; }
-.port b { color: var(--ink); }
-.port span { color: var(--muted); }
-
-/* edges and hover */
-path.edge { fill: none; stroke: var(--edge); stroke-width: 1.4; }
-path.arrow { fill: var(--edge); }
-path.arrow-hl { fill: var(--hl); }
-path.edge.hl { stroke: var(--hl); stroke-width: 2.4; }
-text.edge-packing { font-size: 11px; fill: var(--muted); paint-order: stroke; stroke: var(--bg); stroke-width: 3px; }
-.box.hl, .op.hl, .port.hl { box-shadow: 0 0 0 2px var(--hl); }
-.scope.hl { box-shadow: 0 0 0 2px var(--hl); }
+i.key.c-tasklet { background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--ink); }
+i.key.c-unit { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
+i.key.c-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
+i.key.c-pill { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 6px; }
+i.key.c-pill.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }
 
 /* -- memory tab (VIS4a) -------------------------------------------------------
    Region colours are a meaning of this tab only: a region keeps its colour in

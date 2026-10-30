@@ -3,7 +3,12 @@
 The mapping is spelled step by step, one recipe per variant: a
 reduction split into lane partials and a final sum, two nests fused into one,
 a transient between two bound units made a link. Registered as any transform
-(transforms.py); ``ints`` as there.
+(transforms.py); ``ints`` and the sites as there: ``split_reduce``'s an
+untagged map around one folding tasklet, ``join_reduce``'s and
+``unfuse_map``'s a map that records what made it, ``fuse_map``'s a map whose
+next sibling it fuses with (filling ``second``), ``link``'s a transient
+between two bound units (filling ``group`` with an end's, else the graph's
+name), ``unlink``'s a link node or its container.
 
 ``split_reduce(map, factor)`` and ``join_reduce(map)``
     an untagged map ``v`` over ``b:e`` whose one tasklet folds (``reduce``)
@@ -54,6 +59,7 @@ from __future__ import annotations
 
 import copy
 from itertools import pairwise, product
+from typing import Any
 
 from snax_forge import expr
 from snax_forge.common import CodedError, fresh
@@ -94,10 +100,13 @@ def _taken(g: Graph) -> set[str]:
 # =============================================================================
 
 
-def split_reduce(g: Graph, map: str, factor: int) -> Graph:
+def _split_reduce_site(g: Graph, map: str) -> dict[str, Any]:
+    """An untagged map around one tasklet that folds into an element not moving with it."""
     what = f"split_reduce {map!r}"
-    body, i, outer = _locate(g, map)
+    body, i, _ = _locate(g, map)
     node = body[i]
+    if node.kind == "map" and "loop.kind" in node.attrs:
+        raise SandboxError(f"{what}: already {node.attrs['loop.kind']}")
     kids = node.body or []
     if node.kind != "map" or len(kids) != 1 or kids[0].kind != "tasklet":
         raise SandboxError(f"{what}: must be a map around one tasklet")
@@ -106,6 +115,14 @@ def split_reduce(g: Graph, map: str, factor: int) -> Graph:
     if len(t.outputs) != 1 or len(folds) != 1 or node.attrs["var"] in folds[0][1].names:
         raise SandboxError(f"{what}: its tasklet must fold its one output into an element that "
                            f"does not move with {node.attrs['var']!r} (a reduction, D102)")  # fmt: skip
+    return {"map": map}
+
+
+def split_reduce(g: Graph, map: str, factor: int) -> Graph:
+    what = f"split_reduce {map!r}"
+    _split_reduce_site(g, map)
+    body, i, outer = _locate(g, map)
+    node = body[i]
     if type(factor) is int and factor > 0 and _bound(g, _length(node), what) % factor:
         raise SandboxError(f"{what}: the length is not a multiple of {factor}; the partials' "
                            "padding is not placed yet (D144)")  # fmt: skip
@@ -134,15 +151,25 @@ def split_reduce(g: Graph, map: str, factor: int) -> Graph:
     return _result(g)
 
 
+def _join_reduce_site(g: Graph, map: str) -> dict[str, Any]:
+    """A map with ``loop.split_reduce``."""
+    body, i, _ = _locate(g, map)
+    node = body[i]
+    if node.kind != "map" or node.attrs.get("loop.split_reduce") is None:
+        raise SandboxError(
+            f"join_reduce {map!r}: not a map split by split_reduce (no loop.split_reduce)"
+        )
+    return {"map": map}
+
+
 def join_reduce(g: Graph, map: str) -> Graph:
     """The inverse of split_reduce: the partials and the final sum gone, the map joined."""
+    _join_reduce_site(g, map)
     g = _copy(g)
     what = f"join_reduce {map!r}"
     body, i, _ = _locate(g, map)
     node = body[i]
-    rec = node.attrs.get("loop.split_reduce") if node.kind == "map" else None
-    if rec is None:
-        raise SandboxError(f"{what}: not a map split by split_reduce (no loop.split_reduce)")
+    rec = node.attrs["loop.split_reduce"]
     try:
         fbody, j, _ = _locate(g, rec["final"])
     except SandboxError:
@@ -226,15 +253,26 @@ def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str]:
     return inner[0], local
 
 
-def fuse_map(g: Graph, first: str, second: str) -> Graph:
-    g = _copy(g)
-    what = f"fuse_map {first!r} {second!r}"
+def _fuse_site(g: Graph, first: str) -> dict[str, Any]:
+    """A map whose next sibling is a map it fuses with (``_fuse``); ``second`` is that map."""
     body, i, _ = _locate(g, first)
-    if i + 1 >= len(body) or body[i + 1].id != second:
-        raise SandboxError(f"{what}: {second!r} must come right after {first!r} in one body")
+    if i + 1 >= len(body):
+        raise SandboxError(f"fuse_map {first!r}: nothing comes right after it in one body")
     f, s = body[i], body[i + 1]
+    what = f"fuse_map {first!r} {s.id!r}"
     if f.kind != "map" or s.kind != "map":
         raise SandboxError(f"{what}: both must be maps")
+    _fuse(g, f, s, what)
+    return {"first": first, "second": s.id}
+
+
+def fuse_map(g: Graph, first: str, second: str) -> Graph:
+    what = f"fuse_map {first!r} {second!r}"
+    if _fuse_site(g, first)["second"] != second:
+        raise SandboxError(f"{what}: {second!r} must come right after {first!r} in one body")
+    g = _copy(g)
+    body, i, _ = _locate(g, first)
+    f, s = body[i], body[i + 1]
     fused, local = _fuse(g, f, s, what)
     fused.attrs["loop.fused"] = {"first": f.to_dict(), "second": s.to_dict(), "local": local}
     body[i : i + 2] = [fused]
@@ -242,15 +280,22 @@ def fuse_map(g: Graph, first: str, second: str) -> Graph:
     return _result(g)
 
 
+def _unfuse_site(g: Graph, map: str) -> dict[str, Any]:
+    """A map with ``loop.fused``."""
+    body, i, _ = _locate(g, map)
+    if body[i].kind != "map" or body[i].attrs.get("loop.fused") is None:
+        raise SandboxError(f"unfuse_map {map!r}: not a nest fuse_map made (no loop.fused)")
+    return {"map": map}
+
+
 def unfuse_map(g: Graph, map: str) -> Graph:
     """The inverse of fuse_map: the two nests it fused, when nothing changed since."""
+    _unfuse_site(g, map)
     g = _copy(g)
     what = f"unfuse_map {map!r}"
     body, i, _ = _locate(g, map)
     node = body[i]
-    rec = node.attrs.get("loop.fused") if node.kind == "map" else None
-    if rec is None:
-        raise SandboxError(f"{what}: not a nest fuse_map made (no loop.fused)")
+    rec = node.attrs["loop.fused"]
     f, s = Node.from_dict(rec["first"], what), Node.from_dict(rec["second"], what)
     again, _ = _fuse(g, f, s, what)
     again.attrs["loop.fused"] = rec
@@ -306,8 +351,8 @@ def _group(n: Node) -> str:
     return n.attrs.get("group", n.attrs["instance"])
 
 
-def link(g: Graph, container: str, depth: int, group: str) -> Graph:
-    g = _copy(g)
+def _ends(g: Graph, container: str) -> tuple[Node, Node]:
+    """The writer and the reader of a transient two bound units share: link's site."""
     what = f"link {container!r}"
     c = g.containers.get(container)
     if c is None or not c.transient or "loop.local" in c.attrs:
@@ -324,6 +369,19 @@ def link(g: Graph, container: str, depth: int, group: str) -> Graph:
     if w.kind != "accelerated" or r.kind != "accelerated":
         raise LinkError("link.unbound", f"{what}: {w.id} ({w.kind}) to {r.id} ({r.kind}); both "
                         "ends of a link are bound units (bind them first)")  # fmt: skip
+    return w, r
+
+
+def _link_site(g: Graph, container: str) -> dict[str, Any]:
+    """``container`` and a ``group``: an end's group name, else the graph's."""
+    w, r = _ends(g, container)
+    return {"container": container, "group": w.attrs.get("group", r.attrs.get("group", g.name))}
+
+
+def link(g: Graph, container: str, depth: int, group: str) -> Graph:
+    g = _copy(g)
+    w, r = _ends(g, container)  # the site
+    what = f"link {container!r}"
     if type(depth) is not int or depth < 0:
         raise LinkError("link.container", f"{what}: depth {depth!r}; 0 is a wire, >= 1 a buffer")
     (wp,) = [p for p, m in w.outputs.items() if m.data == container]
@@ -382,13 +440,21 @@ def link(g: Graph, container: str, depth: int, group: str) -> Graph:
     return _result(g)
 
 
+def _unlink_site(g: Graph, selected: str) -> dict[str, Any]:
+    """A link node, or its container."""
+    for n, _ in g.walk():
+        if n.kind == "link" and selected in (n.id, n.attrs["container"]):
+            return {"container": n.attrs["container"]}
+    raise SandboxError(f"unlink {selected!r}: no link of that container")
+
+
 def unlink(g: Graph, container: str) -> Graph:
     """The inverse of link: the link node gone, the group taken off every unit left alone."""
+    if _unlink_site(g, container)["container"] != container:  # a link node's id
+        raise SandboxError(f"unlink {container!r}: no link of that container")
     g = _copy(g)
     what = f"unlink {container!r}"
     found = [n for n, _ in g.walk() if n.kind == "link" and n.attrs["container"] == container]
-    if not found:
-        raise SandboxError(f"{what}: no link of that container")
     body, i, _ = _locate(g, found[0].id)
     gone = body.pop(i)
     nodes = _accelerated(g)
@@ -417,9 +483,9 @@ def unlink(g: Graph, container: str) -> Graph:
     return _result(g)
 
 
-register_transform("split_reduce", split_reduce, ints=("factor",))
-register_transform("join_reduce", join_reduce)
-register_transform("fuse_map", fuse_map)
-register_transform("unfuse_map", unfuse_map)
-register_transform("link", link, ints=("depth",))
-register_transform("unlink", unlink)
+register_transform("split_reduce", split_reduce, ints=("factor",), site=_split_reduce_site)
+register_transform("join_reduce", join_reduce, site=_join_reduce_site)
+register_transform("fuse_map", fuse_map, site=_fuse_site)
+register_transform("unfuse_map", unfuse_map, site=_unfuse_site)
+register_transform("link", link, ints=("depth",), site=_link_site)
+register_transform("unlink", unlink, site=_unlink_site)

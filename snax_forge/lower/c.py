@@ -83,7 +83,7 @@ it returns to main (0 on the other cores; snRuntime sums them at exit).
 
 **Refused**, each a ``CError`` (``c.<rule>``): other than one accelerator
 (``c.instances``: several groups are one accelerator only through
-``encapsulate``; the generator refuses it first, ``gen.instances``), a
+``encapsulate``; the design checks refuse it first, ``gen.instances``), a
 unit without a binding (``c.binding``), a cluster file without one xdma core
 or without the slot (``c.cores``), a start that does not cover every mover of
 the accelerator, the idle ones at bound 0, or that starts a unit before them
@@ -183,16 +183,17 @@ def accelerator(
     point: DesignPoint, fail: Callable[[str, str], Exception] | None = None
 ) -> tuple[str, dict[str, Instance]]:
     """The one accelerator's name and its units, one per group in the graph's order,
-    each with a binding. ``fail(rule, message)`` makes the error of the rule broken
-    (``instances``, ``binding``): a ``c.<rule>`` CError by default, the generator's own
-    (gen/gvsoc.py)."""
+    each with a binding. Several accelerators are ``c.instances`` (the design checks refuse
+    them first on a platform with a slot, ``gen.instances``); ``fail(rule, message)`` makes the
+    error of a unit without one (``binding``): a ``c.binding`` CError by default, the
+    generator's own (gen/gvsoc.py)."""
     if fail is None:
         fail = lambda rule, message: CError(f"c.{rule}", message)
     found = accelerators(point.graph)
     if len(found) != 1:
-        raise fail("instances", f"{len(found)} accelerators {list(found)}; the platform has one "
-                   "accelerator slot and the program drives one accelerator: encapsulate puts "
-                   "groups into one (D148)")  # fmt: skip
+        raise CError("c.instances", f"{len(found)} accelerators {list(found)}; the platform has "
+                     "one accelerator slot and the program drives one accelerator: encapsulate "
+                     "puts groups into one (D148)")  # fmt: skip
     (name, groups), = found.items()  # fmt: skip
     insts = instances(point.graph)
     units = {u: insts[u] for u in groups}

@@ -90,9 +90,7 @@ the streamer's.
 
 **Refused**, each a ``GenError`` (``gen.<rule>``): a design point outside
 ``root`` (``gen.point``), what accelerator.py's ``describe`` refuses
-(``gen.instances``: the platform has one accelerator slot, so one
-accelerator, its groups put into one by ``encapsulate``; ``gen.binding``,
-``gen.datapath``, ``gen.drain``, ``gen.timing`` and the datapath's
+(``gen.binding``, ``gen.datapath``, ``gen.drain``, ``gen.timing`` and the datapath's
 adapter's), a dtype that is not intN or uintN (``gen.dtype``), a
 streamer whose fastest spatial bound is not whole words (``gen.lanes``,
 which connect.pack refuses first), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
@@ -163,6 +161,7 @@ from snax_forge.design.platform import Platform
 from snax_forge.design.point import DesignPoint
 from snax_forge.design.streamers import instance_nodes, streamer_name
 from snax_forge.dfg.reference import Goldens
+from snax_forge.estimate.cycles import EstimateError
 from snax_forge.lower import CError
 from snax_forge.lower.c import MAIN_C, job_writes, main_c, task_beats
 from snax_forge.lower.derive import task_list
@@ -524,7 +523,7 @@ def cli(write: Callable[[], int]) -> int:
     """A generator command: ``write()``, or 1 with the refusal on stderr (its rule named)."""
     try:
         return write()
-    except (GenError, CError, DesignError) as e:
+    except (GenError, CError, DesignError, EstimateError) as e:
         print(e, file=sys.stderr)
         return 1
 

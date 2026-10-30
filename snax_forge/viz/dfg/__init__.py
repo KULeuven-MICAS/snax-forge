@@ -1,12 +1,15 @@
-"""The DFG viewer (D55): ``.snaxdfg`` files in the browser.
+"""The DFG viewer and editor (D55, VIEW2): ``.snaxdfg`` graphs in the browser.
 
-A second mode of the visualiser's server: ``python -m snax_forge.viz.dfg
-FILE|DIR ...`` (pixi ``view-dfg``) shows graphs side by side, drawn top to
-bottom in execution order, with Reload for the edit-reload-look loop.
+The visualiser's server in two modes: view mode, ``python -m snax_forge.viz.dfg
+FILE|DIR ...`` (pixi ``view-dfg``), the files as a read-only history of steps, with Reload;
+edit mode, ``python -m snax_forge.viz.dfg.edit`` (pixi ``edit-dfg``), a sandbox session
+(sandbox/session.py) edited step by step.
 
-* api.py: loading files and the view of one graph (rows, nodes, edges);
-* server.py: the routes, on the viewer's Handler and static files;
-* static/dfg.html and static/dfg.js: the page; boxes are HTML laid out by
+* api.py: loading files, the view of one step (rows, nodes, edges, Details, the Estimate)
+  and two steps compared;
+* server.py: the routes of both modes, on the viewer's Handler and static files;
+* __main__.py and edit.py: the two command lines;
+* static/dfg.html, static/dfg.js and static/edit.js: the page; boxes are HTML laid out by
   CSS, the edges one SVG layer per panel.
 """
 

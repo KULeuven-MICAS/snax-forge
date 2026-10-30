@@ -8,15 +8,8 @@ import json
 import numpy as np
 
 from snax_forge.dfg import Graph, execute
-from snax_forge.dfg.import_sdfg import import_kernel
-from snax_forge.sandbox import Recipe, apply_recipe, join_map, split_map
-from tests.helpers import REPO
-
-
-def steps(name: str, **params) -> list[Graph]:
-    """``recipes/<name>.json`` at ``params``, every step's graph (the import first)."""
-    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params(params)
-    return [s.graph for s in apply_recipe(recipe, import_kernel(recipe.kernel))]
+from snax_forge.sandbox import join_map, split_map
+from tests.helpers import steps
 
 
 def _map(g: Graph, map_id: str):
