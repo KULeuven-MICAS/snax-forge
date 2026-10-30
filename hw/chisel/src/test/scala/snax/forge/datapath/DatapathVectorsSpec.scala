@@ -16,8 +16,8 @@ class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
   /** The datapath, its IO as its own. */
   class Harness(t: SnaxDatapathVectors.Test) extends Module {
     private val built = Datapaths(t.datapath).build(t.params)
-    val io            = IO(chiselTypeOf(built.io))
-    io <> built.io
+    val io            = IO(chiselTypeOf(built))
+    io <> built
   }
 
   private def run(t: SnaxDatapathVectors.Test): Unit =

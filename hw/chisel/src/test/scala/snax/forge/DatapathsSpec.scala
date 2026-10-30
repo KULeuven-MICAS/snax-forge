@@ -47,8 +47,8 @@ class DatapathsSpec extends AnyFlatSpec {
       var names = Set.empty[String]
       ChiselStage.emitCHIRRTL(new Module {
         val built = d.build(p)
-        names = built.io.elements.keySet.toSet
-        built.io := DontCare
+        names = built.elements.keySet.toSet
+        built := DontCare
       })
       val want  = (d.ports.filter(x => Datapaths.holds(x.when, p)).map(_.name) ++ d.livePins(p).map(_.name)).toSet
       assert(want == names, s"${d.name}: catalogue $want, IO ${names.toSeq.sorted}")

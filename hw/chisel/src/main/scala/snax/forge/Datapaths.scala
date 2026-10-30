@@ -47,27 +47,24 @@ object Datapaths {
   /** A pin: its name and the params it exists for (empty: always). */
   case class Pin(name: String, when: Seq[(String, ujson.Value)] = Seq.empty)
 
-  /** A built datapath: the module and its IO, whose elements are the catalogue's live ports and pins. */
-  case class Built(module: Module, io: Bundle)
-
   case class Datapath(
     name:    String,
-    params:  Seq[(String, ParamType, String)], // name, type, fill
+    params:  Seq[(String, ParamType, String)],  // name, type, fill
     ports:   Seq[Port],
     latency: ujson.Value,
     span:    ujson.Value,
     pins:    Seq[Pin],
-    build:   Map[String, ujson.Value] => Built
+    build:   Map[String, ujson.Value] => Bundle // the module's IO, whose elements are its live ports and pins
   ) {
 
-    /** The params of `unit` by the fill rule; `ins` and `outs` its input and output BRM ports in order. */
-    def fill(unit: AcceleratorSpec.UnitSpec, ins: Seq[String], outs: Seq[String]): Map[String, ujson.Value] =
+    /** The params of `unit` by the fill rule, from its input and output BRM ports in port order. */
+    def fill(unit: AcceleratorSpec.UnitSpec): Map[String, ujson.Value] =
       params.map { case (n, t, rule) =>
-        val inPorts = ins.map(unit.port)
+        val inPorts = unit.inPorts.map(unit.port)
         val value: ujson.Value = rule match {
           case "inputs.dtype" if t == DtypesParam => ujson.Arr.from(inPorts.map(_.dtype))
           case "inputs.dtype"                     => ujson.Str(inPorts.head.dtype)
-          case "outputs.dtype"                    => ujson.Str(unit.port(outs.head).dtype)
+          case "outputs.dtype"                    => ujson.Str(unit.port(unit.outPorts.head).dtype)
           case "inputs.lanes"                     => ujson.Num(inPorts.head.lanes)
           case "unit.opType"                      => ujson.Str(unit.opType.get)
           case r if r.startsWith("unit.params.")  => unit.params(r.stripPrefix("unit.params."))
@@ -95,6 +92,7 @@ object Datapaths {
     when.forall { case (k, v) => p.get(k).contains(v) }
 
   private def str(p:   Map[String, ujson.Value], n: String): String = p(n).str
+  private def int(p:   Map[String, ujson.Value], n: String): Int    = p(n).num.toInt
   private def op(name: String): Int = ElementwiseOp.names.collectFirst { case (k, v) if v == name => k }.get
 
   /** Every dtype a type param takes. */
@@ -120,11 +118,11 @@ object Datapaths {
             p("inTypes").arr.toSeq.map(_.str),
             str(p, "opType"),
             str(p, "outType"),
-            p("lanes").num.toInt,
+            int(p, "lanes"),
             op(str(p, "op"))
           )
         )
-        Built(m, m.io)
+        m.io
       }
     ),
     Datapath(
@@ -141,8 +139,8 @@ object Datapaths {
       Seq(Pin("fire"), Pin("first")),
       p => {
         require(str(p, "op") == "add", s"TreeAccumulate adds, op ${str(p, "op")}")
-        val m = Module(new TreeAccumulate(str(p, "inType"), str(p, "outType"), p("lanes").num.toInt))
-        Built(m, m.io)
+        val m = Module(new TreeAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes")))
+        m.io
       }
     ),
     Datapath(
@@ -174,12 +172,12 @@ object Datapaths {
             p("inTypes").arr.toSeq.map(_.str),
             str(p, "opType"),
             str(p, "outType"),
-            p("lanes").num.toInt,
+            int(p, "lanes"),
             p("accumulate").bool,
             p("regOut").bool
           )
         )
-        Built(m, m.io)
+        m.io
       }
     ),
     Datapath(
@@ -194,8 +192,8 @@ object Datapaths {
       ujson.Str("lanes"),
       Seq(Pin("read"), Pin("lane"), Pin("first")),
       p => {
-        val m = Module(new SerialAccumulate(str(p, "inType"), str(p, "outType"), p("lanes").num.toInt))
-        Built(m, m.io)
+        val m = Module(new SerialAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes")))
+        m.io
       }
     ),
     Datapath(
@@ -210,8 +208,8 @@ object Datapaths {
       ujson.Num(1),
       Seq(Pin("load"), Pin("wslot"), Pin("rslot")),
       p => {
-        val m = Module(new LinkBuffer(p("depth").num.toInt, p("lanes").num.toInt, str(p, "dtype")))
-        Built(m, m.io)
+        val m = Module(new LinkBuffer(int(p, "depth"), int(p, "lanes"), str(p, "dtype")))
+        m.io
       }
     )
   )
