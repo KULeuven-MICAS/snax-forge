@@ -63,8 +63,10 @@ input, or the output's golden) and how many beats a task moves (lane i of beat t
 t * lanes + i, modulo the array's size: matvec's vector is read again for every row), and per
 task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_writes``), the head unit's firings
 and the counter with an always-ready streamer, the working in ``working``: one unit's worked
-from the nest controller's rule (``counter``), a linked group's C§17's Cycles for its shape
-(``group_counter``; ``gen.cycles`` for a shape C§17 does not state).
+from the control unit's rule (``counter``), a linked group's from snax-gvsoc's group rule
+(``group_counter``: ``snax_group_rule.py`` stepped with an always-ready streamer, any shape the
+rule accepts; ``gen.submodule`` without the submodule). C§17's Cycles state the same for dot's
+and matvec's shapes.
 """
 
 from __future__ import annotations
@@ -87,6 +89,7 @@ from .accelerator import ACCELERATOR_JSON, Accelerator, Group, Link, Unit, units
 from .blocks import GenError
 from .data import arrays
 from .gvsoc import ROOT, cli, load_point, out_dir
+from .submodule import snax_group_rule
 
 OUT = ROOT / "out" / "rtl"
 CATALOGUE = repo_root() / "hw" / "chisel" / "blocks.json"
@@ -276,32 +279,55 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
     )
 
 
-# C§17's Cycles of a linked group by its shape (head's datapath, last's, the link's depth):
-# J jobs of T beats (the group's one JOB_BEATS), W the last unit's span
-CYCLES = {
-    ("ElementwiseLanes", "TreeAccumulate", 1): ("C2 = JT + 2", lambda j, t, w: j * t + 2),
-    ("ElementwiseLanes", "TreeAccumulate", 0): ("C3 = JT + 1", lambda j, t, w: j * t + 1),
-    ("Mac", "TreeAccumulate", 0): ("C4 = JT + 2", lambda j, t, w: j * t + 2),
-    ("Mac", "SerialAccumulate", 0): ("C5 = J(T + W - 1) + 2", lambda j, t, w: j * (t + w - 1) + 2),
-    ("Mac", "SerialAccumulate", 1): ("C6 = (J - 1) max(T, W) + T + W + 2",
-                                     lambda j, t, w: (j - 1) * max(t, w) + t + w + 2),
-}  # fmt: skip
+def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
+    """``group`` as snax_group_rule's GroupRule takes it: per unit its name, L, II, span and
+    outer inputs (its ``in`` ports no link feeds); per link ``{from, to, to_input, depth}``,
+    ``to_input`` the fed port's place among its unit's ``in`` ports (C§17's port order); and
+    the unit owning the outer output (the one with an ``out`` port no link takes)."""
+    fed = {link.to for link in group.links}
+    taken = {link.from_ for link in group.links}
+
+    def ins(u: Unit) -> list[str]:
+        return [name for name, p in u.ports.items() if p.dir == "in"]
+
+    units = [{"name": u.name, "L": u.latency, "ii": u.ii, "span": u.span,
+              "inputs": sum(f"{u.name}.{p}" not in fed for p in ins(u))} for u in group.units]  # fmt: skip
+    by_name = {u.name: u for u in group.units}
+    links = []
+    for link in group.links:
+        src = link.from_.split(".", 1)[0]
+        dst, port = link.to.split(".", 1)
+        links.append({"from": src, "to": dst, "to_input": ins(by_name[dst]).index(port),
+                      "depth": link.depth})  # fmt: skip
+    (owner,) = (u.name for u in group.units
+                for name, p in u.ports.items() if p.dir == "out" and f"{u.name}.{name}" not in taken)  # fmt: skip
+    return units, links, owner
 
 
-def group_counter(group: Group, csrs: Mapping[str, int]) -> tuple[int, str]:
-    """The counter of a linked group's task (``csrs`` its JOBS and JOB_BEATS) with an always-ready
-    streamer, from C§17's Cycles, and the working; ``gen.cycles`` for a shape C§17 does not
-    state."""
-    head, last = group.units[0], group.units[-1]
-    shape = (head.datapath, last.datapath, *(k.depth for k in group.links))
-    if shape not in CYCLES:
-        raise GenError("gen.cycles", f"group {group.name}: C§17 states no cycles for {shape}")
-    rule, f = CYCLES[shape]
-    j, t, w = csrs["JOBS"], csrs.get("JOB_BEATS", 1), last.span
-    return f(j, t, w), (
-        f"The group's COUNTER counts its busy cycles. {head.datapath} -> {last.datapath}, a link "
-        f"of depth {shape[2]}, inputs always valid and the output always ready: C§17's Cycles "
-        f"{rule} at J {j}, T {t}, W {w}"
+def group_counter(group: Group, jobs: int, beats: Mapping[str, int]) -> tuple[int, str]:
+    """The counter of a linked group's task with an always-ready streamer, from the group rule
+    (snax-gvsoc's snax_group_rule.py, ``submodule.snax_group_rule``) stepped with every input
+    valid and the output ready, and the working: JOBS ``jobs``, each unit's T its JOB_BEATS
+    (``beats``, by unit) or its fixed T (``params.T``, else 1). COUNTER counts the busy cycles,
+    E - s: the rule starts the run in cycle 0. A run that does not end is ``gen.counter``."""
+    model = snax_group_rule()
+    units, links, owner = rule_graph(group)
+    rule = model.GroupRule(units, links, owner)
+    ts = [beats.get(u.name, u.params.get("T", 1)) for u in group.units]
+    if jobs == 0 or 0 in ts:
+        return 0, "The group's COUNTER counts its busy cycles: JOBS or a T 0 is the empty run, none"
+    n = rule.firings_per_run(jobs, ts)
+    cycles = sum(n) * max(u["ii"] * u["span"] for u in units) + sum(u["L"] for u in units) + 16
+    _, end = rule.run(jobs, ts, lambda c: [True], lambda c: True, cycles)
+    if end is None:
+        raise GenError(
+            "gen.counter", f"group {group.name}: the rule does not end in {cycles} cycles"
+        )
+    t = ", ".join(f"{u.name} {x}" for u, x in zip(group.units, ts, strict=True))
+    return end, (
+        f"The group's COUNTER counts its busy cycles. The group rule (snax-gvsoc's "
+        f"snax_group_rule.py) stepped with inputs always valid and the output always ready, "
+        f"JOBS {jobs}, T {t}: E - s = {end}"
     )
 
 
@@ -329,9 +355,11 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         ports.append({"port": p.name, "array": array, "lanes": inst.lanes(p.name),
                       "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
     if linked:
-        csrs = {k: v for _, k, v in job_writes(found, task.values, acc.fixed_folds)}
+        writes = job_writes(found, task.values, acc.fixed_folds)
+        csrs = {k: v for _, k, v in writes}
         n = task.values[group.units[0].name]["n"]
-        value, working = group_counter(group, csrs)
+        beats = {u: v for u, k, v in writes if k == "JOB_BEATS"}
+        value, working = group_counter(group, csrs["JOBS"], beats)
     else:
         csrs = job_values(found[task.component], task.values)
         n = task.values["n"]
