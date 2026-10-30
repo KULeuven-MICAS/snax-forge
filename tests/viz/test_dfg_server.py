@@ -48,6 +48,14 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         texts = [t for row in v["rows"] if row["kind"] == "node" for t in _texts(row["node"])]
         assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "i_t · 128 · temporal"} <= set(texts)
         assert v["containers"]["A"]["badge"] == "L1 · 4 KiB"
+        # tmp0 is the link's: no box, the edges from mult into the link and out of it into sum
+        boxes = [b for row in v["rows"] if row["kind"] == "containers" for b in row["boxes"]]
+        assert boxes == ["A@0", "B@0", "out@1"]
+        assert [(e["from"], e["to"]) for e in v["edges"] if e["data"] == "tmp0"] == [
+            ("mult.out", "tmp0.in"), ("tmp0.out", "sum.a")]  # fmt: skip
+        four = get_json(srv, "/api/step/4")[1]  # before the link, tmp0 in L1 keeps its box
+        assert [b for row in four["rows"] if row["kind"] == "containers" for b in row["boxes"]] == [
+            "A@0", "B@0", "tmp0@1", "out@1"]  # fmt: skip
         (edge,) = [e for e in v["edges"] if e["data"] == "tmp0" and e["to"].startswith("sum.")]
         d = v["details"][f"edge:{edge['id']}"]
         assert (d["subset"], d["packing"], d["loops"], d["beats"], d["streamer"]) == (

@@ -101,8 +101,10 @@ containers some transform's site accepts), its ``estimate`` (``to_dict``) with i
 
 **Links**. A link node is drawn in the accelerated node's style, its text
 ``<container> · wire`` or ``<container> · FIFO <depth>``, its units and the transient it
-replaced in its Details. The container still shows between the writer and the reader: they
-name it, with the link's badge.
+replaced in its Details. The container it replaced gets no box: the writer's edge runs from
+its output connector into the link (connector ``in``) and the link's out of it (``out``) into
+the reader's input connector; the container stays in Details. A transient in L1 (dot 1's
+``tmp0``), a local value and the kernel's inputs and outputs keep their boxes.
 """
 
 from __future__ import annotations
@@ -487,7 +489,7 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
                     continue
                 d["loops"] = [[lp.var, lp.count] for lp in mine]
                 d["beats"] = prod(lp.count for lp in mine)
-            elif n is not None:
+            elif n is not None and port in (n.inputs | n.outputs):
                 d["subset"] = list((n.inputs | n.outputs)[port].subset)
         out[f"edge:{edge['id']}"] = d
     return out
@@ -555,6 +557,12 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
     }
     if n.kind == "map":
         d["loop_kind"] = n.attrs.get("loop.kind")
+    if n.kind == "link":  # its container's edges meet it here (module doc)
+        c = n.attrs["container"]
+        d["inputs"], d["outputs"] = (
+            [{"connector": "in", "data": c}],
+            [{"connector": "out", "data": c}],
+        )
     if n.body is not None:
         d["body"] = [_node(g, c) for c in n.body]
     return d
@@ -573,6 +581,11 @@ def _replaced_text(r: dict[str, Any] | None) -> str | None:
 
 def _conn(c: str, m: Memlet) -> dict[str, Any]:
     return {"connector": c, "data": m.data}
+
+
+def _walk(n: Node) -> list[Node]:
+    """``n`` and every node under it."""
+    return [n, *(x for child in n.body or [] for x in _walk(child))]
 
 
 def _uses(n: Node) -> list[tuple[str, Node, str, Memlet]]:
@@ -602,11 +615,16 @@ def packing(g: Graph, n: Node, port: str, data: str) -> str | None:
 def _layout(g: Graph) -> dict[str, Any]:
     """Rows, nodes and edges (module doc)."""
     tops = list(g.body)
+    # A link's container gets no box: its writer's edge goes into the link, the link's out of it
+    linked = {n.attrs["container"]: n.id for n, _ in g.walk() if n.kind == "link"}
+    top_of = {n.id: top.id for top in tops for n in _walk(top)}
     reads, writes = [], []
     for top in tops:
         r: list[str] = []
         w: list[str] = []
         for side, _, _, m in _uses(top):
+            if m.data in linked:
+                continue
             if side == "read" and m.data not in w and m.data not in r:
                 r.append(m.data)
             if side == "write" and m.data not in w:
@@ -643,7 +661,8 @@ def _layout(g: Graph) -> dict[str, Any]:
             rows.append({"kind": "containers", "boxes": list(keys.values())})
         return keys
 
-    before = reads[0] + [c for c in g.containers if c not in used] if tops else list(g.containers)
+    unused = [c for c in g.containers if c not in used and c not in linked]
+    before = reads[0] + unused if tops else list(g.containers)
     above = box_row(before, {}, 0)
     for k, top in enumerate(tops):
         rows.append({"kind": "node", "node": _node(g, top)})
@@ -651,6 +670,16 @@ def _layout(g: Graph) -> dict[str, Any]:
         wrote: dict[str, list[tuple[Node, str, Memlet]]] = {}  # container -> its writes here
         for side, n, c, m in _uses(top):
             port, text = f"{n.id}.{c}", memlet_text(m)
+            if m.data in linked:  # straight into or out of the link node
+                link = linked[m.data]
+                apart = top_of[link] != top.id
+                if side == "write":
+                    edges.append(_edge(port, f"{link}.in", m.data, text, "write",
+                                       top.id if apart else None, packing(g, n, c, m.data)))  # fmt: skip
+                else:
+                    edges.append(_edge(f"{link}.out", port, m.data, text, "read",
+                                       top.id if apart else None, packing(g, n, c, m.data)))  # fmt: skip
+                continue
             if side == "write":
                 writers.setdefault(m.data, []).append(port)
                 wrote.setdefault(m.data, []).append((n, c, m))
