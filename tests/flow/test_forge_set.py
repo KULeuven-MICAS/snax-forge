@@ -58,9 +58,13 @@ def test_the_quick_set_writes_its_table_and_the_check_line(tmp_path, stubbed, ca
             in text
         )
         assert f"### {d}\n\n```\nsnax_cluster on Verilator" in text
-    line = f'make snax-forge-check BUNDLES="{" ".join(map(str, dirs))}" SIM=vsim'
+    line = (
+        f'make snax-forge-check BUNDLES="{" ".join(map(str, dirs))}" SIM=vsim '
+        "SNAX_CLUSTER_IMAGE=<image>"
+    )
     assert f"```\n{line}\n```" in text
-    assert capsys.readouterr().out.endswith(f"  {line}\n")
+    assert fs.IMAGE_HINT in text
+    assert capsys.readouterr().out.endswith(f"  {line}\n  {fs.IMAGE_HINT}\n")
     assert md_reflow.reflow(text.splitlines())[1] == []  # one line per paragraph already
 
 

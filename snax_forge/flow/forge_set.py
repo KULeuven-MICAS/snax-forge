@@ -9,8 +9,8 @@ at a time (default the CPU count), each in its own folders (``out/flow/<name>/``
 classpath and firtool), so the bundles do not all start sbt or extract firtool at once. Then it writes ``out/forge-set/<set>.md``: per design its bundle folder and
 the lines its RTL run must print (``forge_expected.txt``, from its SNAX-GVSoC run); the one
 line that checks them all from snax_cluster's ``target/snitch_cluster`` (``make
-snax-forge-check BUNDLES=... SIM=...``); and per design the commands forge printed, for
-running one by hand.
+snax-forge-check BUNDLES=... SIM=... SNAX_CLUSTER_IMAGE=<image>``, the image named in
+``IMAGE_HINT``); and per design the commands forge printed, for running one by hand.
 
 A forge that fails (a SNAX-GVSoC run that fails its own check among them) stops the set: exit
 1, each failed design and its output named, no ``<set>.md``. Exit 2 on bad arguments.
@@ -60,6 +60,19 @@ def bundle_dir(output: str) -> Path:
     return (ROOT / line.split()[1].rstrip("/:")).resolve()
 
 
+# The image snax-forge-check runs both simulators' steps in: a placeholder, with where to find it
+IMAGE_HINT = (
+    "`<image>` is snax_cluster's development image (podman), which both simulators need; on the "
+    "MICAS servers the one docs/RUN.md section 8 names."
+)
+
+
+def check_line(dirs: list[Path], sim: str) -> str:
+    """The one ``make snax-forge-check`` line for ``dirs``."""
+    every = " ".join(str(d) for d in dirs)
+    return f'make snax-forge-check BUNDLES="{every}" SIM={sim} SNAX_CLUSTER_IMAGE=<image>'
+
+
 def by_hand(output: str) -> str:
     """The commands forge printed for snax_cluster: its lines from ``snax_cluster on``."""
     lines = output.splitlines()
@@ -87,17 +100,16 @@ def table(name: str, designs: list[str], outputs: dict[str, str], sim: str) -> s
     for d in designs:
         expected = (dirs[d] / bundle.EXPECTED).read_text().splitlines()
         lines.append(f"| {d} | `{dirs[d]}` | {'<br>'.join(f'`{x}`' for x in expected)} |")
-    every = " ".join(str(dirs[d]) for d in designs)
     lines += [
         "",
         (
             "Check them all from snax_cluster's `target/snitch_cluster` (`snax-forge-check`, "
             "snax_cluster's): each run's `forge counter` and `forge data` lines must equal its "
-            f"bundle's `{bundle.EXPECTED}`."
+            f"bundle's `{bundle.EXPECTED}`. {IMAGE_HINT}"
         ),
         "",
         "```",
-        f'make snax-forge-check BUNDLES="{every}" SIM={sim}',
+        check_line([dirs[d] for d in designs], sim),
         "```",
         "",
         "## One design by hand",
@@ -132,9 +144,9 @@ def forge_set(name: str, sim: str, jobs: int) -> int:
     outputs = {d: (logs / f"{d}.txt").read_text() for d in designs}
     path = OUT / f"{name}.md"
     path.write_text(table(name, designs, outputs, sim))
-    every = " ".join(str(bundle_dir(outputs[d])) for d in designs)
     print(f"wrote {cwd_relative(path)}; from snax_cluster's target/snitch_cluster:")
-    print(f'  make snax-forge-check BUNDLES="{every}" SIM={sim}')
+    print(f"  {check_line([bundle_dir(outputs[d]) for d in designs], sim)}")
+    print(f"  {IMAGE_HINT}")
     return 0
 
 

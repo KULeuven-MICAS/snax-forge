@@ -88,7 +88,7 @@ flowchart LR
 | Viewers | `viz/` | | run directories, `.snaxdfg` files | local HTML views |
 | Reports | `report/` | | a flow folder or run directory | `design.md`, `run.md` |
 
-Packages are under `snax_forge/` except `hw/chisel/`. SNAX-GVSoC is its own KULeuven-MICAS repository (D116), a submodule at `gvsoc/snax-gvsoc` that `gvsoc/Makefile` builds and runs in snax-forge's development image from `container/` (D118).
+Packages are under `snax_forge/` except `hw/chisel/`. SNAX-GVSoC is its own KULeuven-MICAS repository (D116), a submodule at `gvsoc/snax-gvsoc` that `gvsoc/Makefile` builds and runs in snax-forge's development image from `container/` (D118). Each package's tests are in `tests/<package>/` (the Chisel specs in `hw/chisel/src/test/`, the examples' in `tests/flow/`), their fixtures beside them (`tests/dfg/fixtures/`, `tests/run/fixtures/`, `hw/chisel/src/test/resources/rtl/`); the inputs are in `kernels/` (with `tests/kernels/`), `recipes/`, `platforms/` (with snax-forge's base cluster), `snax_forge/brm/library/` and `hw/chisel/blocks.json`; `util/` holds the clean, environment-check, kernel-list and Markdown tools.
 
 ### 5.1 SNAX-DFG and the importer
 
@@ -134,7 +134,7 @@ What it models is what snax_cluster's RTL does; where the two differ, the RTL wi
 
 A design point gives SNAX-GVSoC its cluster and streamer hjson and `accelerator.json` (D145), the CSR and cluster headers, `data.h` and `main.c`, and no generated code to compile (`gen/gvsoc.py`, D134; C§16). For snax_cluster it gives a bundle (`pixi run bundle`, `gen/bundle.py`, D111; C§18): the same files, and the accelerator RTL that `Emit --spec` builds from `accelerator.json` (C§17), checked against the datapath catalogue `hw/chisel/blocks.json`, as `<tag>_shell_wrapper` with its own CSR manager (D130). The accelerator is the base cluster's `snax_forge` slot and its cluster `snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131).
 
-`pixi run forge RECIPE [--set ...]` (`flow/forge.py`) runs the flow, the bundle and the bundle's program, checks that the program is the flow's ELF, writes each step's output to `out/forge/<name>/forge.log`, and prints the commands that run that ELF on snax_cluster's Verilator build. snax_cluster and snax-forge stay separate checkouts, joined only by the bundle's files (D130): snax_cluster's `snax_forge.mk` builds and runs a bundle, and its `snax-forge-ci.yml` does so for the vecadd and vsum fixtures it keeps (D123; `docs/RUN.md` section 8).
+`pixi run forge RECIPE [--set ...]` (`flow/forge.py`) runs the flow, the bundle and the bundle's program, checks that the program is the flow's ELF, writes each step's output to `out/forge/<name>/forge.log`, writes the bundle's `forge_expected.txt` (the run's counter and data lines), and prints the commands that run that ELF on snax_cluster's RTL. snax_cluster and snax-forge stay separate checkouts, joined only by the bundle's files (D130): snax_cluster's `snax_forge.mk` builds and runs a bundle. The check is local (D123): `pixi run forge-set quick|full` makes a set's bundles and prints the one `make snax-forge-check` line that runs them in snax_cluster and compares each with its `forge_expected.txt` (`docs/RUN.md` section 8; CLAUDE.md says when each set is due).
 
 **Cosim** (M10, D52) swaps one accelerator for its RTL and checks its output, latency and II.
 
@@ -160,26 +160,13 @@ Reductions are exact: integers first; a float reduction follows its BRM's accumu
 
 ## 7. The baseline (M16)
 
-SNAX-GVSoC is checked against snax_cluster's RTL by one ELF on both, the counters free of the core's timing compared by hand (D123). snax-gvsoc's `make regress` runs its cluster tests on the forge fixtures' cluster, snax-forge's base cluster (D131), and checks that every program finishes and the fixtures' counters equal their beats. A generated design is accepted when snax-forge's ELF from its bundle gives the same `forge counter` on SNAX-GVSoC and on the RTL and the window within 10% (GEN2b, `docs/RUN.md` section 8).
+SNAX-GVSoC is checked against snax_cluster's RTL by one ELF on both (D123). snax-gvsoc's `make regress` runs its cluster tests on the forge fixtures' cluster, snax-forge's base cluster (D131), and checks that every program finishes and each fixture's counters agree with its units' run lines. A generated design is accepted when snax-forge's ELF from its bundle prints the same `forge counter` and `forge data` lines on SNAX-GVSoC and on the RTL (`snax-forge-check`, `docs/RUN.md` section 8) and the window is within 10%; the full set's numbers are open item 95's.
 
 ## 8. Build Order
 
-Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16 (the baseline) and M14 (generation to both sides, closed by CLN1). The order from here (D116, D141; `docs/STATUS.md` has the tasks):
+Done: M1, M4a, M3, M4b, M5 and X1 (git history at tag `pre-gvsoc`), M16 (the baseline) and M14 (generation to both sides, closed by CLN1). The order from here (D116, D141), each milestone's phases and tasks in `docs/STATUS.md`'s Milestones:
 
-1. **M13, the block library** (D141): M7's tier A, the composed bind and BASE1's forge side as one milestone, in nine phases, with RAM1 alongside: OpenRAM macros sized for the cluster, in snax-forge-experiments, so snax_cluster and snitch_cluster synthesize on the same macros.
-
-   | Phase | Content |
-   |---|---|
-   | B0 flow pieces (`done`) | the runtime's cluster headers per design point (open item 68); the importer's scalars, views, `max`, `min` and casts; the MatMul and Transpose pass; ND1's slice; a restart every T < n |
-   | B1 one description (`done`) | `accelerator.json` per design point (C§17, D145), read by Emit, the catalogue check and SNAX-GVSoC; groups with their own START, JOBS, STATUS, COUNTER and pins (D146); each block a pure datapath under one nest controller per group, three modules (D147); groups in SNAX-DFG and `encapsulate`, so dot variant 1 is one accelerator of two groups (D148) |
-   | B1x links (`done`) | dot 2–6 and matvec 1–6 on one description with links (D112); the control unit per group (D147); `Mac`, `SerialAccumulate` and `LinkBuffer` (D149); `split_reduce`, `fuse_map` and `link` (D150); on SNAX-GVSoC, and checked locally on snax_cluster |
-   | clean-up | snax_cluster's CI time (agreed with the cluster's maintainers first), and whatever B1x leaves |
-   | VIEW2 | the interactive SNAX-DFG viewer: select a part of the graph, apply a transform from a side list, a step history with undo, save a recipe, a first-order profile |
-   | SYN1 | synthesis of the basic blocks and kernels in KULeuven-MICAS/snax-forge-experiments |
-   | HWCOST | a first-order area and energy estimate from SYN1 |
-   | B2 (shrunk) | the 1-stream SIMD, axpy's CSR scalar, the lane accumulator without an op, the fold's `init` port, other group binds |
-   | tier A | B3's fork, join, broadcast, hold and fragments, with B4's bicg, mvt, gesummv and atax |
-
+1. **M13, the block library** (D141): M7's tier A, the composed bind and BASE1's forge side as one milestone (B0, B1, B1x and CLN2 done; VIEW2, SYN1, HWCOST, B2, tier A; RAM1 alongside).
 2. **M7 tiers B, C and P:** multi-cycle, multi-phase, then int8 packing.
 3. **M15:** tiling, a DMA per tile.
 4. **M7 tier D** with the GeMM (M9 inside it), then **tier E**.

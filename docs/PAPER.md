@@ -85,7 +85,7 @@ Down the table, the unit stops being one firing per cycle, and the question move
 
 ## 7. Cost model
 
-Area first, energy if characterisation allows; characterised once, then read from tables: post-synthesis area per BRM parameter (lanes, width, depth), fitted linearly where it is; the L1 macros and bank counts on a PDK; TCDM interconnect area against banks and ports; later per-access energy times the counts the model keeps, as Accelergy does. Each fit's error is stated. No place and route. The flows and results live in KULeuven-MICAS/snax-forge-experiments, on the Nangate 45 nm and 15 nm open cell libraries, with results committed.
+Area first, energy if characterisation allows; characterised once, then read from tables: post-synthesis area per BRM parameter (lanes, width, depth), fitted linearly where it is; the L1 macros and bank counts on a PDK; TCDM interconnect area against banks and ports; later per-access energy times the counts the model keeps, as Accelergy does. Each fit's error is stated. No place and route. The PDK question is answered: FreePDK45 and an open 15 nm library, synthesis in KULeuven-MICAS/snax-forge-experiments, with results committed.
 
 ## 8. Related work and positioning
 
@@ -190,7 +190,7 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 
 | Feature | Needed by | Where |
 |---|---|---|
-| SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (SG0–SG5) |
+| SNAX-GVSoC matching snax_cluster RTL | E1, every cycle count | M16 (done); the local RTL check, open item 95 |
 | Generated RTL, GVSoC accelerator, hjson and program | C5, E1 on the same design | M14 (LNK1, GEN3, LNK2a, GEN2a, FLOW3, GEN1, LNK2b, GEN2b) |
 | 2-D plumbing, the kernel set | E3, E4 | M13 (B0: ND1's slice), M7 (FE1b–FE3) |
 | Composed bind | E1, E4–E6 | M13 (B1x, tier A) |
@@ -206,7 +206,7 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 
 ## 10. Open questions
 
-1. BASE1: whether the GeMM bring-up is logged as well as SNAX's ALU was in SG5.
+1. BASE1: whether the GeMM bring-up is logged as well as SNAX's ALU was in M16 (snax-gvsoc's `docs/notes/NOTES.md`).
 2. Floating point, the second pass per kernel after the integer tiers (D113): Berkeley HardFloat ops inside the existing blocks' lanes is one option. Either way the multi-cycle rows of section 6.2 stay.
 3. The exact Transformer (model, head size, sequence lengths, precision) and ResNet slice for E5 and E6.
 4. The snax_cluster version to pin for SNAX-GVSoC and the bundle.
