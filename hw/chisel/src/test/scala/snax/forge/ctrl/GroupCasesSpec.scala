@@ -4,7 +4,7 @@ import chisel3._
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{ForgeTester, SnaxGroupCases}
+import snax.forge.{ForgeTester, RunLine, SnaxGroupCases}
 
 /** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 23 group cases
   * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, backpressure, an input gap, JOBS 0), cycle for cycle: per cycle
@@ -35,7 +35,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       def high(b: Bool) = b.peek().litToBoolean
       var counts  = Map.empty[String, Int].withDefaultValue(0)
       var heads   = 0
-      var runs    = Vector.empty[SnaxGroupCases.RunLine]
+      var runs    = Vector.empty[RunLine]
       var wasBusy = false
       for ((cyc, i) <- c.cycles.zipWithIndex) {
         val clue  = s"${c.name}: cycle $i"
@@ -52,7 +52,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
         val busy  = high(dut.io.busy)
         assert(busy == cyc.busy, s"$clue: busy $busy")
         if (wasBusy && !busy) {
-          runs :+= SnaxGroupCases.RunLine(
+          runs :+= RunLine(
             heads,
             counts("busy"),
             counts("stall_in"),

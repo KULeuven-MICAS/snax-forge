@@ -5,8 +5,8 @@ import chisel3.util.Decoupled
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{ForgeTester, IntType, LaneBits, SnaxUnitCases}
-import snax.forge.SnaxUnitCases.{Case, RunLine}
+import snax.forge.{ForgeTester, IntType, LaneBits, RunLine, SnaxUnitCases}
+import snax.forge.SnaxUnitCases.Case
 import snax.forge.datapath.{ElementwiseLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 
