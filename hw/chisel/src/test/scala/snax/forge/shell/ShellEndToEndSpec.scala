@@ -12,9 +12,10 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, SnaxGroupCases}
   * must equal the goldens (NumPy's, `vectors.json`) and the counter the fixture's value, worked from the nest
   * controller's rule or, for a linked group, C§17's Cycles (`vectors.json`'s `working`).
   *
-  * Then each linked variant (dot 2–6, matvec 4–6) at N 8 and 16, W 4, on random int64 data: dot J = 1, matvec J = 2
-  * rows (q_i = Σ_j A_ij · p_j, p read again for each row), the results NumPy's (int64, wrapping), the counter the busy
-  * cycles of snax-gvsoc's matching group case (`dot<k>_n<N>_j<J>`: its run line's classes added up; cancelled without
+  * Then each linked variant (dot 2–6, matvec 4–6) at N 8 and 16, W 4, on random int64 data of one seed per N (the
+  * cycles do not depend on the data, which ShellRandomSpec varies): dot J = 1, matvec J = 2 rows (q_i = Σ_j A_ij · p_j,
+  * p read again for each row), the results NumPy's (int64, wrapping), the counter the busy cycles of snax-gvsoc's
+  * matching group case (`dot<k>_n<N>_j<J>`: its run line's classes added up; cancelled without
   * `SNAX_GVSOC_GROUP_CASES`). And matvec 4–6 at int32 (every port and the product retyped), N 8, J 2, on the rows
   * (46341, 3, 3, 3, 3, 3, 3, 6) and (0, 1, 1, 1, 1, 0, 0, 0) against p = (46341, 1, ..., 1): 46341² wraps at int32, q =
   * (-2147478991, 4), the tb's MAC vector `mac_int32_wrap_w2_t8` through the whole accelerator.
@@ -90,9 +91,9 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
     assert(variants.map(_.name) == Seq("dot_2", "dot_3", "dot_4", "dot_5", "dot_6", "matvec_4", "matvec_5", "matvec_6"))
 
   for {
-    f    <- variants
-    n    <- Seq(8, 16)
-    seed <- Seeds()
+    f      <- variants
+    (n, k) <- Seq(8, 16).zipWithIndex
+    seed = Seeds()(k % Seeds().size)
   }
     it should s"give ${f.name}'s NumPy results and its group case's cycles at N $n (seed $seed)" in Seeds.run(seed) {
       r =>
