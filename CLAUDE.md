@@ -31,7 +31,7 @@ Keep the documents short (D117): one fact in one place, a decision only for a ch
 - Viewers: `pixi run view DIR ...` (flow runs, port 8765), `pixi run view-dfg FILE|DIR ...` (graphs, port 8766).
 - Reports: the flow writes `report/design.md` and `report/run.md`; `pixi run report DIR` writes them again for a flow folder.
 - Chisel: `pixi run -e hw chisel-test` (with the four `SNAX_GVSOC_*` case folders set, `hw/chisel/README.md`), `chisel-gen`, `chisel-check` after any Scala edit; `hw/chisel/` is a project of its own.
-- Clean slate: `pixi run clean` (`--dry-run` lists first; it keeps the GVSoC build in `out/snax-gvsoc/`, `--all` removes it too).
+- Clean slate: `pixi run clean` (`--dry-run` lists first; it keeps the GVSoC build in `out/snax-gvsoc/` and the editor's sessions in `out/sessions/`, `--all` removes them too).
 
 ## Conventions
 - The local RTL check: a change to the emitted RTL or to the program (`main.c`) needs the quick set checked on vsim before its PR merges (`pixi run forge-set quick`, then the line it prints, in snax_cluster's `target/snitch_cluster`), and a phase's close needs the full set (`pixi run forge-set full`); the numbers go into open item 95's table.
