@@ -155,6 +155,8 @@ report     = "python -m snax_forge.report"
 kernels    = "python util/kernels.py"
 # DFG viewer: `pixi run view-dfg FILE|DIR ...` on http://127.0.0.1:8766/
 view-dfg   = "python -m snax_forge.viz.dfg"
+# DFG editor (D55, VIEW2): `pixi run edit-dfg [--kernel K --set N=64 | --recipe R | --session DIR]` on http://127.0.0.1:8767/
+edit-dfg   = "python -m snax_forge.viz.dfg.edit"
 # Viewer (D55): `pixi run view out/vecadd [out/other ...]`, then open http://127.0.0.1:8765/
 view       = "python -m snax_forge.viz"
 # Remove out/ (but the GVSoC build, out/snax-gvsoc/, unless --all), Python and test caches and
