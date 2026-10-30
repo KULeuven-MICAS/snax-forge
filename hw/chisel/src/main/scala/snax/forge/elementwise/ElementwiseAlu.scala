@@ -1,16 +1,9 @@
 package snax.forge.elementwise
 
 import chisel3._
-import chisel3.util._
 
-/** Operation encoding shared by every elementwise datapath.
-  *
-  * Four bits, so sixteen encodings are available and eight are used. The width is fixed rather than derived from
-  * `supportedOps.size` on purpose: a fixed-function unit and a fully selectable one then present the same port list,
-  * and swapping one for the other is a generator decision that does not ripple into whatever instantiates it.
-  *
-  * A BRM names the operation (`op: "add"`) and a generator from its hardware binding will resolve it here, so these
-  * values must not be renumbered casually.
+/** The elementwise ops: an encoding per op, the key a datapath is built with. A BRM names the op (`op: "add"`), and
+  * `accelerator.json`'s unit carries that name (`params.op`), which `Datapaths` resolves here.
   */
 object ElementwiseOp {
   val Add: Int = 0
@@ -21,9 +14,6 @@ object ElementwiseOp {
   val Xor: Int = 5
   val Min: Int = 6
   val Max: Int = 7
-
-  /** Width of every `opSel` port. */
-  val width: Int = 4
 
   val all: Seq[Int] = Seq(Add, Sub, Mul, And, Or, Xor, Min, Max)
 
@@ -40,11 +30,9 @@ object ElementwiseOp {
 
   def name(op: Int): String = names.getOrElse(op, s"op$op")
 
-  /** Suffix used in every module name, so that a fixed-function instance is distinguishable from a selectable one in
-    * the elaborated SystemVerilog without reading its ports.
-    */
-  def tag(supportedOps: Seq[Int]): String =
-    if (supportedOps.size == 1) name(supportedOps.head) else s"sel${supportedOps.size}"
+  /** The encoding of the op named `name` (`params.op`). */
+  def byName(name: String): Int =
+    names.collectFirst { case (k, n) if n == name => k }.getOrElse(throw new IllegalArgumentException(s"no op $name"))
 }
 
 /** One lane of integer ALU, as its own SystemVerilog module.
@@ -62,10 +50,7 @@ object ElementwiseOp {
   * of its own. A lane has no capacity to fill and nothing to stall on, so a handshake here would be ceremony -- the
   * elastic interface exists where beats are counted, which is one level up.
   *
-  * Fixed-function is the degenerate case of selectable, not a separate code path. `supportedOps` of length one emits
-  * the bare operator with no mux and no decode; longer lists emit a MuxLookup over exactly those encodings. That is
-  * what makes "fixed or selectable" a generator policy: the same construction produces either, depending on a list it
-  * is handed.
+  * One op, fixed at elaboration: the bare operator, no select port and no decode.
   *
   * Signedness applies to `Min` and `Max` only. Add, Sub and the bitwise operators are signedness-agnostic in two's
   * complement, and so is the truncated low half of a multiply -- which is why `Mul` needs no signed variant here, even
@@ -74,52 +59,31 @@ object ElementwiseOp {
   *
   * @param dataWidth
   *   bits per element, from the BRM port's dtype
-  * @param supportedOps
-  *   encodings this instance can perform; one entry means fixed-function
+  * @param op
+  *   the op, `ElementwiseOp`'s encoding
   * @param signed
   *   interpret operands as two's complement for Min and Max
   */
-class ElementwiseAlu(
-  val dataWidth:    Int      = 32,
-  val supportedOps: Seq[Int] = ElementwiseOp.all,
-  val signed:       Boolean  = false
-) extends Module {
+class ElementwiseAlu(val dataWidth: Int, val op: Int, val signed: Boolean = false) extends Module {
   require(dataWidth > 0, s"dataWidth must be positive, got $dataWidth")
-  require(supportedOps.nonEmpty, "supportedOps must not be empty: a datapath with no operation is not a datapath")
-  require(
-    supportedOps.distinct.size == supportedOps.size,
-    s"supportedOps contains duplicates: ${supportedOps.mkString(",")}"
-  )
-  require(
-    supportedOps.forall(o => o >= 0 && o < (1 << ElementwiseOp.width)),
-    s"supportedOps must fit in ${ElementwiseOp.width} bits, got ${supportedOps.mkString(",")}"
-  )
+  require(ElementwiseOp.all.contains(op), s"unknown elementwise op encoding: $op")
 
   /** `_s` or `_u` when min or max compares: two such ALUs of one width but not one signedness are different modules.
     * The other ops are signedness-agnostic and keep their names.
     */
   private def signedness: String =
-    if (supportedOps.exists(op => op == ElementwiseOp.Min || op == ElementwiseOp.Max)) if (signed) "_s" else "_u"
+    if (op == ElementwiseOp.Min || op == ElementwiseOp.Max) if (signed) "_s" else "_u"
     else ""
 
-  override def desiredName: String = s"ElementwiseAlu_w${dataWidth}${signedness}_${ElementwiseOp.tag(supportedOps)}"
+  override def desiredName: String = s"ElementwiseAlu_w${dataWidth}${signedness}_${ElementwiseOp.name(op)}"
 
   val io = IO(new Bundle {
-    val opSel = Input(UInt(ElementwiseOp.width.W))
-    val a     = Input(UInt(dataWidth.W))
-    val b     = Input(UInt(dataWidth.W))
-    val out   = Output(UInt(dataWidth.W))
+    val a   = Input(UInt(dataWidth.W))
+    val b   = Input(UInt(dataWidth.W))
+    val out = Output(UInt(dataWidth.W))
   })
 
-  private val results = supportedOps.map(op => op -> compute(op, io.a, io.b))
-
-  // One supported op: no decode logic at all. firtool would constant-fold a
-  // single-entry MuxLookup anyway, but emitting the bare operator keeps the
-  // generated SystemVerilog readable, which matters when it is the artifact
-  // being reviewed against its BRM.
-  io.out :=
-    (if (results.size == 1) results.head._2
-     else MuxLookup(io.opSel, results.head._2)(results.map { case (op, r) => op.U(ElementwiseOp.width.W) -> r }))
+  io.out := compute(op, io.a, io.b)
 
   private def compute(op: Int, a: UInt, b: UInt): UInt =
     op match {

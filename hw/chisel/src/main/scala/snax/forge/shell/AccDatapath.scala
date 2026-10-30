@@ -13,9 +13,9 @@ import snax.forge.Datapaths
 class Block(name: String, d: Datapaths.Datapath, p: Map[String, ujson.Value]) extends Module {
   override def desiredName: String = name
 
-  private val built = d.build(p)
-  val io            = IO(chiselTypeOf(built.io))
-  io <> built.io
+  private val built = chisel3.experimental.noPrefix(d.build(p)) // the datapath's instance stays `m`
+  val io            = IO(chiselTypeOf(built))
+  io <> built
 }
 
 /** `<tag>_datapath`: every unit's datapath (D147), a catalogue datapath built from the unit's ports by its fill rule,
@@ -30,7 +30,7 @@ class AccDatapath(spec: AcceleratorSpec) extends Module {
 
   private val blocks = spec.units.map { u =>
     val d = Datapaths(u.datapath)
-    val p = d.fill(u, u.inPorts, u.outPorts)
+    val p = d.fill(u)
     (u, d, p, Module(new Block(s"${spec.tag}_${u.name}", d, p)))
   }
 

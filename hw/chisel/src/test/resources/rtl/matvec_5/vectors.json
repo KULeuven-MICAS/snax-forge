@@ -29,7 +29,7 @@
    "csrs": {"JOBS": 2, "JOB_BEATS": 4},
    "firings": 8,
    "counter": 16,
-   "working": "The group's COUNTER counts its busy cycles. Mac -> SerialAccumulate, a link of depth 0, inputs always valid and the output always ready: C\u00a717's Cycles C5 = J(T + W - 1) + 2 at J 2, T 4, W 4"
+   "working": "The group's COUNTER counts its busy cycles. The group rule (snax-gvsoc's snax_group_rule.py) stepped with inputs always valid and the output always ready, JOBS 2, T mac 4, sum 1: E - s = 16"
   }
  ]
 }

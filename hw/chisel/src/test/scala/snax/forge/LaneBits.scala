@@ -38,6 +38,9 @@ object LaneBits {
       case other => Seq(other)
     }
 
+  /** Σ a_i · b_i wrapped at `width` bits, as a bit pattern: a Mac's or a fold's result, NumPy's at that width. */
+  def dot(a: Seq[BigInt], b: Seq[BigInt], width: Int): BigInt = a.zip(b).map { case (x, y) => x * y }.sum & mask(width)
+
   /** `values` packed at `width` bits each, the first at the low end. */
   def pack(values: Seq[BigInt], width: Int): BigInt =
     values.zipWithIndex.map { case (v, l) => (v & mask(width)) << (width * l) }.sum

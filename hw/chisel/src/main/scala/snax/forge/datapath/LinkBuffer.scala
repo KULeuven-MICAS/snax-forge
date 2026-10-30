@@ -5,7 +5,7 @@ import chisel3.util.log2Ceil
 
 import snax.forge.IntType
 
-/** A link's buffer of `depth` beats (D149; C§17's catalogue entry `LinkBuffer`): data and enables only (D147).
+/** A link's buffer of `depth` beats (C§17's catalogue entry `LinkBuffer`): data and enables only.
   *
   * On `load` slot `wslot` takes the input beat; `out` is slot `rslot`. The occupancy and the ring's slots are its
   * group's control unit's (`ctrl.GroupCtrl`), so a beat written in one cycle is read from the next (latency 1). The
@@ -19,7 +19,7 @@ import snax.forge.IntType
   * @param dtype
   *   the elements' type, the link's ends'
   */
-class LinkBuffer(val depth: Int = 1, val lanes: Int = 4, val dtype: String = "int64") extends Module {
+class LinkBuffer(val depth: Int = 1, val lanes: Int = 4, val dtype: String = "int64") extends DatapathModule {
   require(depth > 0, s"depth must be at least 1, got $depth")
   require(lanes > 0, s"lanes must be positive, got $lanes")
 

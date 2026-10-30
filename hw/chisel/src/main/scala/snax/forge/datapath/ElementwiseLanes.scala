@@ -5,17 +5,17 @@ import chisel3._
 import snax.forge.IntType
 import snax.forge.elementwise.{ElementwiseAlu, ElementwiseOp}
 
-/** `lanes` lanes of one op: the datapath of an elementwise unit (D147), latency 0, no pins.
+/** `lanes` lanes of one op: the datapath of an elementwise unit, latency 0, no pins.
   *
-  * Data only: no valid, ready or counter. Its nest controller (`ctrl.NestCtrl`) decides when a beat is taken and the
-  * result pushed; in that cycle `out` is the op on `a` and `b`, lane by lane.
+  * Data only: no valid, ready or counter. Its group's control unit (`ctrl.GroupCtrl`) decides when a beat is taken and
+  * the result pushed; in that cycle `out` is the op on `a` and `b`, lane by lane.
   *
   * ==Types (D143)==
   *
   * Each lane runs NumPy's arithmetic: `a` and `b` are lanes of their own types, each extended to `opType` (the
   * operands' result type, chosen by Python) by its own signedness, the op runs at `opType` (min and max comparing by
   * its signedness), and the result is extended or wrapped into `outType`. Each lane is an `ElementwiseAlu` of the one
-  * op, so there is no `opSel`; the casts sit at its boundary. Every type is fixed at elaboration.
+  * op; the casts sit at its boundary. Every type is fixed at elaboration.
   *
   * @param inTypes
   *   `a`'s and `b`'s types, NumPy's names ("int32", "uint8"), from the unit's input ports' dtypes
@@ -34,7 +34,7 @@ class ElementwiseLanes(
   val outType: String      = "int32",
   val lanes:   Int         = 4,
   val op:      Int         = ElementwiseOp.Add
-) extends Module {
+) extends DatapathModule {
   require(inTypes.size == 2, s"inTypes must name a and b, got ${inTypes.mkString(", ")}")
   require(lanes > 0, s"lanes must be positive, got $lanes")
 
@@ -55,11 +55,10 @@ class ElementwiseLanes(
     val out = Output(Vec(lanes, res.lane))
   })
 
-  private val alus = Seq.fill(lanes)(Module(new ElementwiseAlu(opT.width, Seq(op), opT.signed)))
+  private val alus = Seq.fill(lanes)(Module(new ElementwiseAlu(opT.width, op, opT.signed)))
   alus.zipWithIndex.foreach { case (alu, i) =>
-    alu.io.opSel := op.U
-    alu.io.a     := IntType.cast(io.a(i), ins(0), opT).asUInt
-    alu.io.b     := IntType.cast(io.b(i), ins(1), opT).asUInt
-    io.out(i)    := IntType.cast(alu.io.out, opT, res)
+    alu.io.a  := IntType.cast(io.a(i), ins(0), opT).asUInt
+    alu.io.b  := IntType.cast(io.b(i), ins(1), opT).asUInt
+    io.out(i) := IntType.cast(alu.io.out, opT, res)
   }
 }

@@ -1,6 +1,7 @@
 """A design point -> its bundle for snax_cluster (D111, D130, C§18).
 
     write_bundle(design_point, out_dir, root=None) -> (Bundle, written)
+    write_expected(out_dir, stdout) -> Path
     python -m snax_forge.gen.bundle DESIGN_POINT [--out DIR]    (pixi bundle)
 
 A bundle is one folder per design point holding what snax_cluster builds the
@@ -15,7 +16,7 @@ the rest of the folder is left as it is. Then, in this order:
                           cluster file's slot names ``rtl/files.f``
                           (``snax_forge_rtl``)
     rtl/sv/, rtl/emitted.json
-                          rtl.py's ``elaborate`` (``Emit --spec``, sbt) of the
+                          rtl.py's ``elaborate`` (``Emit --spec``) of the
                           root's accelerator.json, checked against the
                           datapath catalogue first (rtl.py's
                           ``accelerator_spec``)
@@ -29,7 +30,15 @@ the rest of the folder is left as it is. Then, in this order:
                           (``git rev-parse HEAD`` of the checkout, null
                           outside git) and ``dirty`` (the work tree has
                           uncommitted changes, untracked files included;
-                          false outside git)
+                          false outside git), ``expected`` (null here:
+                          see below)
+
+**The expected lines** (``write_expected``, which ``pixi run forge`` calls
+after its SNAX-GVSoC run passed): ``forge_expected.txt`` beside the bundle,
+the run's ``forge counter`` lines in order and then its ``forge data: 0
+errors`` line, as the program prints them, which a run of the same ELF on
+snax_cluster's RTL must print too; ``bundle.json``'s ``expected`` names it. A
+bundle alone has no run, so ``write_bundle`` removes an earlier one.
 
 **The modules** (``module_tree``, C§18), from accelerator.json, not from
 Emit's output: the wrapper's three modules, each with the submodules it holds,
@@ -44,7 +53,9 @@ builds read.
 
 **Refused**, each a ``GenError``: what ``generate``, ``accelerator_spec`` and
 ``elaborate`` refuse (``gen.*``, the catalogue's checks and a listed file that is not there among them), then
-``bundle.empty`` (``emitted.json`` lists no file).
+``bundle.empty`` (``emitted.json`` lists no file); and ``write_expected``'s
+``bundle.expected``: the run's lines hold no ``forge counter`` line or no
+``forge data: 0 errors`` line.
 The flow does not call it (D136).
 """
 
@@ -53,7 +64,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from snax_forge.common import Config, JsonFile, cwd_relative, git
@@ -65,6 +76,7 @@ from .rtl import EMITTED_JSON, accelerator_spec, elaborate
 
 OUT = ROOT / "out" / "bundle"
 BUNDLE_JSON = "bundle.json"
+EXPECTED = "forge_expected.txt"
 
 
 @dataclass(frozen=True)
@@ -77,6 +89,7 @@ class Bundle(Config, JsonFile):
     modules: dict[str, list[str]]
     snax_forge_commit: str | None
     dirty: bool
+    expected: str | None = None
 
 
 def module_tree(acc: Accelerator) -> dict[str, list[str]]:
@@ -120,6 +133,7 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
     files_f = out / RTL_FILE_LIST
     rtl_dir = files_f.parent
     shutil.rmtree(rtl_dir, ignore_errors=True)
+    (out / EXPECTED).unlink(missing_ok=True)
     manifest = generate(design_point, out, root)
     spec = accelerator_spec(design_point, root)
     rtl_dir.mkdir(parents=True, exist_ok=True)
@@ -134,6 +148,29 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
         rtl_dir / EMITTED_JSON, files_f, out / BUNDLE_JSON,
     ]  # fmt: skip
     return bundle, written
+
+
+def expected_lines(stdout: str) -> list[str]:
+    """A SNAX-GVSoC run's ``forge counter`` lines in order, then its ``forge data:`` line (the
+    module doc); ``bundle.expected`` without a counter line or a clean data line."""
+    lines = stdout.splitlines()
+    counters = [x for x in lines if x.startswith("forge counter ")]
+    data = [x for x in lines if x.startswith("forge data: ")]
+    if not counters or len(data) != 1 or not data[0].startswith("forge data: 0 errors"):
+        raise GenError("bundle.expected", f"the run printed counters {counters} and data {data}: "
+                       "no counter, or not one line of 0 errors")  # fmt: skip
+    return [*counters, *data]
+
+
+def write_expected(out_dir: str | Path, stdout: str) -> Path:
+    """``forge_expected.txt`` in the bundle ``out_dir`` from its SNAX-GVSoC run's ``stdout``, and
+    ``bundle.json``'s ``expected`` naming it; the file's path."""
+    out = Path(out_dir)
+    path = out / EXPECTED
+    path.write_text("".join(f"{x}\n" for x in expected_lines(stdout)))
+    made = Bundle.load(out / BUNDLE_JSON)
+    (out / BUNDLE_JSON).write_text(replace(made, expected=EXPECTED).to_json())
+    return path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -153,6 +190,7 @@ def main(argv: list[str] | None = None) -> int:
               f"snax-forge {commit}{', dirty' if bundle.dirty else ''}")  # fmt: skip
         for f in written:
             print(f"wrote {cwd_relative(f)}")
+        print(f"no {EXPECTED}: a bundle alone has no SNAX-GVSoC run (pixi run forge writes it)")
         return 0
 
     return cli(write)

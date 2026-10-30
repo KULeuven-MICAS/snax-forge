@@ -7,17 +7,18 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, Seeds}
 
 /** `GroupCtrl` against `GroupModel` (SnaxGroupRule, written from snax-gvsoc's `snax/snax_group.hpp`) on random groups:
-  * chains of 2 and 3 units, each of L 0-2, II 1-2, span 1, 2 or 4, T 1-4 (fixed by `params.T` or carried by the start)
-  * and 0-2 outer inputs (the head at least 1); links of depth 0, 1 or 2, half the chains in a shuffled unit order (the
-  * head, the sink and the topological order other than the units' indices), the link on the input after a unit's outer
-  * ones; starts of J 0, 1 or 3 (and T 0 now and then) offered at random times, while busy too; random input valid and
-  * output ready gaps. Every cycle: the start's answer; busy and done; every input's ready (its unit's firing, C§17's
-  * per-unit join); out.valid, poked with out.ready low and high (it never depends on it); per unit fire, first, read,
-  * lane, adv, give; per buffer load, its slots and its occupancy; the class. At each run's end the run line's totals.
+  * chains of 1, 2 and 3 units, a third each (one unit: a vecadd or vsum accelerator's whole group), each of L 0-2, II
+  * 1-2, span 1, 2 or 4, T 1-4 (fixed by `params.T` or carried by the start) and 0-2 outer inputs (the head at least 1);
+  * links of depth 0, 1 or 2, half the chains in a shuffled unit order (the head, the sink and the topological order
+  * other than the units' indices), the link on the input after a unit's outer ones; starts of J 0, 1 or 3 (and T 0 now
+  * and then) offered at random times, while busy too; random input valid and output ready gaps. Every cycle: the
+  * start's answer; busy and done; every input's ready (its unit's firing, C§17's per-unit join); out.valid, poked with
+  * out.ready low and high (it never depends on it); per unit fire, first, read, lane, adv, give; per buffer load, its
+  * slots and its occupancy; the class. At each run's end the run line's totals.
   */
 class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
 
-  private val Groups = 20
+  private val Groups = 27
   private val Cycles = 400
   private var ended  = 0 // runs that reached their last cycle, every seed
 
@@ -26,7 +27,7 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
   for (seed <- Seeds())
     it should s"give the model's cycles on random groups (seed $seed)" in Seeds.run(seed) { r =>
       for (g <- 0 until Groups) {
-        val n     = if (g % 2 == 0) 2 else 3
+        val n     = 1 + g % 3
         val chain = { // the units in chain order, head first
           val a = (0 until n).toArray
           if (r.chance(0.5)) for (i <- n - 1 to 1 by -1) {
@@ -53,8 +54,6 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
         val model = new GroupModel(units, links)
         val pv    = r.probability(); val pr = r.probability()
         test(new GroupCtrl(desc, "t")) { dut =>
-          def high(b: Bool) = b.peek().litToBoolean
-          def int(u:  UInt) = u.peek().litValue.toInt
           val open = desc.open
           for (c <- 0 until Cycles) {
             val clue   = s"$clue0, cycle $c"
@@ -63,8 +62,7 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
             val opent  = open.map(_ => if (r.chance(0.05)) 0 else r.between(1, 4))
             dut.io.start.valid.poke(offer.B)
             dut.io.start.bits.jobs.poke(jobs.U)
-            dut.io.start.bits.jobBeats.poke((opent.headOption.getOrElse(1)).U)
-            dut.io.start.bits.beats.foreach(v => v.zip(opent.drop(1)).foreach { case (p, t) => p.poke(t.U) })
+            dut.io.start.bits.beats.zip(if (opent.isEmpty) Seq(1) else opent).foreach { case (p, t) => p.poke(t.U) }
             assert(high(dut.io.start.ready) == model.idle, s"$clue: start.ready")
             if (offer) {
               var next = 0
@@ -109,7 +107,6 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
                   assert(int(e.occupancy) == m.occupancy, s"$clue, link $k: occupancy")
                 }
                 assert(int(dut.io.cls) == s.cls, s"$clue: class")
-                assert(high(dut.io.fire) == s.units(chain.head).fire, s"$clue: the head's fire")
                 if (s.end) {
                   ended += 1
                   assert(model.classes.sum == int(dut.io.counter) + 1, s"$clue: COUNTER")

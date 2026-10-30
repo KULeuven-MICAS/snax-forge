@@ -215,7 +215,7 @@ The flow's stages are tools of their own: the design point, the generator into `
 
 ## 6. The accelerator's RTL
 
-The same design point gives the accelerator's Chisel RTL (D130), which the bundle carries (section 7); the flow does not call it. `gen-rtl` writes `accelerator.json` (C§17, the same bytes as gen-gvsoc's), checks it against the datapath catalogue, then elaborates it through `hw/chisel/`'s `Emit --spec` (sbt, so the first run fetches the Chisel jars):
+The same design point gives the accelerator's Chisel RTL (D130), which the bundle carries (section 7); the flow does not call it. `gen-rtl` writes `accelerator.json` (C§17, the same bytes as gen-gvsoc's), checks it against the datapath catalogue, then elaborates it through `hw/chisel/`'s `Emit --spec`: java on hw/chisel's classpath, which sbt compiles and exports into `hw/chisel/target/emit-classpath.txt` on the first run (fetching the Chisel jars) and again only after a change under `hw/chisel/src/main/` or to `build.sbt`:
 
     pixi run gen-rtl out/design/vecadd/design_point.json
 
@@ -235,7 +235,7 @@ The same design point gives the accelerator's Chisel RTL (D130), which the bundl
 
 ## 7. Bundle for snax_cluster
 
-The bundle (C§18) is what snax_cluster builds the design's cluster from: gen-gvsoc's files at the root, the accelerator's RTL under `rtl/` with its file list, and `bundle.json`, all made again (sbt, as section 6):
+The bundle (C§18) is what snax_cluster builds the design's cluster from: gen-gvsoc's files at the root, the accelerator's RTL under `rtl/` with its file list, and `bundle.json`, all made again (Emit, as section 6):
 
     pixi run bundle out/design/vecadd/design_point.json
 

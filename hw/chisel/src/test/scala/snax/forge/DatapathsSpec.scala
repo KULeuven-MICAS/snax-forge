@@ -47,19 +47,11 @@ class DatapathsSpec extends AnyFlatSpec {
       var names = Set.empty[String]
       ChiselStage.emitCHIRRTL(new Module {
         val built = d.build(p)
-        names = built.io.elements.keySet.toSet
-        built.io := DontCare
+        names = built.elements.keySet.toSet
+        built := DontCare
       })
-      val want  = (d.livePorts(p).map(_.name) ++ d.livePins(p).map(_.name)).toSet
+      val want  = (d.ports.filter(x => Datapaths.holds(x.when, p)).map(_.name) ++ d.livePins(p).map(_.name)).toSet
       assert(want == names, s"${d.name}: catalogue $want, IO ${names.toSeq.sorted}")
     }
-  }
-
-  it should "evaluate a latency or span on the params, a bool as 0 or 1" in {
-    val mac = Datapaths("Mac")
-    for ((acc, reg, l) <- Seq((true, false, 1), (false, false, 0), (false, true, 1)))
-      assert(mac.latencyOf(Map("accumulate" -> ujson.Bool(acc), "regOut" -> ujson.Bool(reg))) == l)
-    assert(Datapaths("SerialAccumulate").spanOf(Map("lanes" -> ujson.Num(4))) == 4)
-    assert(Datapaths.Expr.evaluate("2 * (a + 1) // 3 - min(a, 7)", Map("a" -> 5)) == -1)
   }
 }

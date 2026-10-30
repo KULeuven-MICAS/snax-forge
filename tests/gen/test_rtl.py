@@ -3,8 +3,8 @@ catalogue for hw/chisel's ``Emit --spec``, and the fixtures hw/chisel's specs re
 
 Each refusal of the catalogue's checks has a test; accelerator.py's refusals, which rtl.py runs
 first, are test_gvsoc.py's. The fixtures in ``hw/chisel/src/test/resources/rtl/<design>/``
-(``accelerator.json``, the streamer hjson and ``vectors.json``) are regenerated from their
-recipes and must be equal byte for byte.
+(``vectors.json``; ``accelerator.json`` and the streamer hjson too for a design that snax-gvsoc's
+``forge/`` does not hold) are regenerated from their recipes and must be equal byte for byte.
 """
 
 from __future__ import annotations
@@ -16,6 +16,8 @@ from dataclasses import replace
 import pytest
 
 from snax_forge.gen import ELEMENTWISE_OP, Accelerator, Csr, GenError, Group, Port, Unit
+from snax_forge.gen.accelerator import ACCELERATOR_JSON, Link
+from snax_forge.gen.gvsoc import generate
 from snax_forge.gen.rtl import (
     accelerator_spec,
     catalogue,
@@ -29,11 +31,12 @@ from snax_forge.gen.rtl import (
     write_fixture,
 )
 from tests.design.helpers import REPO
-from tests.helpers import bound_vsum
+from tests.helpers import SUB, bound_vsum, requires_submodule
 
 from .helpers import designed, point, validate
 
 RTL_FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
+FORGE = SUB / "forge"
 # Each fixture: its recipe and --set
 DESIGNS = {
     "vecadd": ("vecadd", []),
@@ -170,25 +173,36 @@ def test_the_counter_is_worked_from_the_controllers_rule(tmp_path):
     assert counter(acc, 64)[0] == 65
 
 
+@requires_submodule
 @pytest.mark.parametrize("design", DESIGNS)
 def test_the_fixture_is_reproduced(tmp_path, design):
+    """write_fixture's vectors.json is the fixture's. Its accelerator.json and streamer hjson are
+    snax-gvsoc's forge/<design>/ (test_fixture.py reproduces those); a fixture with no such folder
+    keeps the two beside its vectors.json, and they are reproduced here."""
     recipe, sets = DESIGNS[design]
     path = designed(tmp_path, recipe, design, sets)
     out = tmp_path / "fixture"
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
         files = write_fixture(path, out, tmp_path)
+        twin = FORGE / design
+        if not twin.is_dir():
+            acc = write_accelerator(path, out, tmp_path)
+            generate(path, tmp_path / "gen", tmp_path)
+            streamer = f"{acc.tag}_streamer.hjson"
+            (out / streamer).write_bytes((tmp_path / "gen" / streamer).read_bytes())
+            files += [ACCELERATOR_JSON, streamer]
     fixture = RTL_FIXTURES / design
-    assert sorted(files) == sorted(f.name for f in fixture.iterdir())
+    assert sorted(files) == sorted(f.name for f in fixture.glob("*") if f.suffix != ".md")
     for f in files:
         assert (out / f).read_bytes() == (fixture / f).read_bytes(), f
-    validate("accelerator", json.loads((fixture / "accelerator.json").read_text()))
+    spec = fixture / ACCELERATOR_JSON if not twin.is_dir() else twin / ACCELERATOR_JSON
+    validate("accelerator", json.loads(spec.read_text()))
 
 
 def test_gen_rtl_writes_a_fixture(vecadd, capsys):
-    """``gen-rtl --fixture`` writes write_fixture's files, the design point named from the root
-    (the elaboration needs sbt, which the chisel job runs); a design point outside the root is
-    refused."""
+    """``gen-rtl --fixture`` writes write_fixture's vectors.json, the design point named from the
+    root (no elaboration); a design point outside the root is refused."""
     from snax_forge.gen import gvsoc, rtl
 
     path, root = vecadd
@@ -199,15 +213,16 @@ def test_gen_rtl_writes_a_fixture(vecadd, capsys):
         mp.setattr(gvsoc, "ROOT", root)
         mp.chdir(root)
         assert rtl.main([str(path), "--fixture", "fx"]) == 0
-    assert sorted(f.name for f in (root / "fx").iterdir()) == [
-        "accelerator.json", "snax_forge_streamer.hjson", "vectors.json"
-    ]  # fmt: skip
-    assert "wrote fx/accelerator.json" in capsys.readouterr().out
+    assert sorted(f.name for f in (root / "fx").iterdir()) == ["vectors.json"]
+    assert "wrote fx/vectors.json" in capsys.readouterr().out
 
 
-def test_a_linked_fixtures_counter_is_c17s_cycles():
-    """A linked group's counter is C§17's Cycles for its shape: at T 4, dot's J 1 row of C§17's
-    table and matvec's J 2 (2 × 16, W 4); a shape C§17 does not state is refused."""
+@requires_submodule
+def test_a_linked_fixtures_counter_is_the_group_rules():
+    """A linked group's counter is snax-gvsoc's group rule stepped with an always-ready streamer:
+    at T 4 dot's J 1 row of C§17's table and matvec's J 2 (2 × 16, W 4), which C§17's Cycles
+    state too; dot 4 at J 16 and T 128 is C4 = JT + 2; with a buffer of depth 2 for its wire,
+    which no formula states, a cycle more: JT + 3."""
     got = {d: json.loads((RTL_FIXTURES / d / "vectors.json").read_text())["tasks"][0]["counter"]
            for d in ("dot_2", "dot_3", "dot_4", "dot_5", "dot_6", "matvec_4", "matvec_5",
                      "matvec_6")}  # fmt: skip
@@ -216,11 +231,33 @@ def test_a_linked_fixtures_counter_is_c17s_cycles():
     from tests.gen.test_accelerator import dot4
 
     (group,) = dot4().groups
-    assert group_counter(group, {"JOBS": 16, "JOB_BEATS": 128})[0] == 2050
+    assert group_counter(group, 16, {"mac": 128})[0] == 2050
     deep = replace(group, links=[replace(group.links[0], depth=2)])
-    with pytest.raises(GenError) as e:
-        group_counter(deep, {"JOBS": 1, "JOB_BEATS": 4})
-    assert e.value.code == "gen.cycles"
+    assert group_counter(deep, 1, {"mac": 4})[0] == 7
+
+
+@requires_submodule
+def test_a_three_unit_chain_gets_its_counter():
+    """A shape C§17's table never had: mul (elementwise, L 0) -> a buffer of depth 1 -> acc (a
+    fold, L 1, T 4 from JOB_BEATS) -> a wire -> sum (a fold, L 1, fixed T 2), J 1. mul fires in
+    busy cycles 1-8, acc a cycle after each (2-9) and gives on its 4th and 8th (5, 9, pushed in
+    6 and 10), sum fires on each push and gives on its 2nd, pushed in 11: E - s = 11."""
+
+    def unit(name, datapath, ins, latency, params, csrs=()):
+        ports = {p: Port(p, "in", "int64", 4) for p in ins} | {
+            "out": Port("out", "out", "int64", 4)
+        }
+        return Unit(name, name, datapath, ports, params, latency, 1, list(csrs))
+
+    mul = unit("mul", "ElementwiseLanes", ("a", "b"), 0, {"op": "mul"})
+    acc = unit("acc", "TreeAccumulate", ("a",), 1, {"op": "add"}, [Csr("JOB_BEATS", "rw", 2, 32)])
+    total = unit("sum", "TreeAccumulate", ("a",), 1, {"op": "add", "T": 2})
+    links = [Link("q", "mul.out", "acc.a", 1), Link("r", "acc.out", "sum.a", 0)]
+    group = Group("chain", [], [mul, acc, total], links)
+    value, working = group_counter(group, 1, {"acc": 4})
+    assert value == 11
+    assert "snax_group_rule.py" in working and "T mul 1, acc 4, sum 2: E - s = 11" in working
+    assert group_counter(group, 0, {"acc": 4})[0] == 0  # the empty run
 
 
 def test_a_fixtures_tasks_give_jobs_and_job_beats():

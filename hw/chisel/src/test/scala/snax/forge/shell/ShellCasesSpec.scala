@@ -37,12 +37,11 @@ class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
   private def run(c: Case): Unit = {
     val f = fixture(c)
     test(new ShellHarness(f.spec)) { dut =>
-      val g = f.spec.groups.head
+      val g       = f.spec.groups.head
       assert(g.window.map(_.name).take(c.csrs.size) == c.csrs, s"${c.name}: ${f.name}'s CSRs")
-      var d: ShellDriver = null
-      val sources = (0 until c.inputs).map(k => new Source(1 << 20, _ => BigInt(0), () => c.cycles(d.cycle).valids(k)))
-      val sinks   = dut.io.writers.map(_ => new Sink(() => c.cycles(d.cycle).ready))
-      d = new ShellDriver(dut, sources, sinks)
+      val sources = (0 until c.inputs).map(k => new Source(1 << 20, _ => BigInt(0), t => c.cycles(t).valids(k)))
+      val sinks   = dut.io.writers.map(_ => new Sink(t => c.cycles(t).ready))
+      val d       = new ShellDriver(dut, sources, sinks)
 
       var lastDone   = -1 // the last cycle the done pin was high
       var lastAccept = -1 // the last cycle a start was accepted

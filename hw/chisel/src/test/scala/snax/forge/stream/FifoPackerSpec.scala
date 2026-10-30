@@ -51,10 +51,10 @@ class FifoPackerSpec extends AnyFlatSpec with ForgeTester {
     var lastOut = -1
     while (snk.got.size < want) {
       assert(cycle < 100 * ins.size + 100, s"no end after $cycle cycles (${snk.got.size} out-beats)")
-      src.cycle()
+      src.cycle(cycle)
       in.valid.poke(src.valid.B)
       LaneBits.pokeBeat(in.bits, src.bits)
-      out.ready.poke(snk.cycle().B)
+      out.ready.poke(snk.cycle(cycle).B)
       if (src.fired(in.ready.peek().litToBoolean) && first < 0) first = cycle
       if (snk.fired(out.valid.peek().litToBoolean, LaneBits.peekBeat(out.bits))) lastOut = cycle
       clock.step()
@@ -75,7 +75,7 @@ class FifoPackerSpec extends AnyFlatSpec with ForgeTester {
     }
   }
 
-  it should "pack E1's lanes -3, then 5 (int32) into word 0x00000005fffffffd" in {
+  it should "pack the int32 lanes -3, then 5 into the word 0x00000005fffffffd" in {
     test(new FifoPacker(1, "int32", 1)) { dut =>
       val chunks   = Seq(BigInt(-3), BigInt(5)).map(_ & LaneBits.mask(32))
       val (got, _) = drive(dut.clock, dut.io.in, dut.io.out, chunks, 1, 0.0, 0.0, new Rand(1))

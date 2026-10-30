@@ -1,6 +1,6 @@
 # SNAX-FORGE Chisel datapaths
 
-Hardware side of SNAX-FORGE: a hand-written library of datapaths and the nest controller, their chiseltest specs, and `Emit`, which elaborates a catalogue of configurations to SystemVerilog and a design point's accelerator from its `accelerator.json` (C§17, GEN1). It is a project of its own: nothing here imports `snax_forge/`, and the Python side calls it only through `pixi run gen-rtl`. The datapaths are the reference implementations of the BRMs (`elementwise_add` names `ElementwiseLanes`, `accumulate` `TreeAccumulate`).
+Hardware side of SNAX-FORGE: a hand-written library of datapaths and the group control unit, their chiseltest specs, and `Emit`, which elaborates a catalogue of configurations to SystemVerilog and a design point's accelerator from its `accelerator.json` (C§17). It is a project of its own: nothing here imports `snax_forge/`, and the Python side calls it only through `pixi run gen-rtl`. The datapaths are the reference implementations of the BRMs (`elementwise_add` names `ElementwiseLanes`, `accumulate` `TreeAccumulate`).
 
 ## Why these versions
 
@@ -20,20 +20,19 @@ hw/chisel/
     ├── main/scala/snax/forge/
     │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec
     │   ├── Datapaths.scala             # the datapath registry (blocks.json)
-    │   ├── ctrl/                       # GroupCtrl and its control model GroupRule; NestCtrl, its one-unit case
+    │   ├── ctrl/                       # GroupCtrl and its control model GroupRule
     │   ├── datapath/                   # ElementwiseLanes, TreeAccumulate, Mac, SerialAccumulate, LinkBuffer
     │   ├── shell/                      # accelerator.json, <tag>_csr, _ctrl, _datapath, the wrapper
     │   ├── RepoPaths.scala             # out/hw and repository paths
     │   ├── elementwise/                # the typed ALU lane, the ops
     │   └── stream/                     # FifoSlicer, FifoPacker (parked, D142)
     └── test/
-        ├── scala/snax/forge/           # one spec per module, plus a model; shell/ for GEN1
+        ├── scala/snax/forge/           # one spec per module, plus a model; shell/ for the accelerator
         └── resources/
-            ├── rtl/<design>/           # GEN1's fixtures
-            └── groups/dot1/            # a hand-written two-group accelerator.json
+            └── rtl/<design>/           # the fixtures' vectors.json (accelerator.json from forge/)
 ```
 
-## A design point's accelerator (GEN1, D130)
+## A design point's accelerator (D130)
 
 The boundary with the Python side is two files. `blocks.json`, checked in, is the datapath catalogue: per datapath its params with types and limits, its ports, latency, pins and the rule that fills the params from the unit's ports (C§17); the registry `Datapaths` holds the same and builds them, and `DatapathsSpec` checks `Emit --describe` equal to it. `accelerator.json`, per design point, is written by `snax_forge/gen/` and checked by `gen/rtl.py` against `blocks.json`; `Emit --spec accelerator.json [--out DIR]` builds `<tag>_shell_wrapper` (`shell/`) into `DIR/sv/`, one file per module, with `DIR/emitted.json`:
 
@@ -41,13 +40,13 @@ The boundary with the Python side is two files. `blocks.json`, checked in, is th
 - `<tag>_ctrl` (`AccCtrl`): per group `<tag>_<group>_ctrl` (`GroupCtrl`), generated from the group's units and links: the start, the empty run, STATUS's sticky done, COUNTER and the busy and done pins around its control model `GroupRule` (the same rule as snax-gvsoc's SnaxGroupRule, D147, a register only for what changes at run time), built inside the module with each unit's signals named after the unit;
 - `<tag>_datapath` (`AccDatapath`): per unit its datapath in a module `<tag>_<unit>`, per buffer a `LinkBuffer` in a module `<tag>_<link>`, wired by the links (a wire, or through the buffer); data and the control units' pins only.
 
-Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. `HierarchySpec` checks the emitted hierarchy against `bundle.json`'s `modules` (C§18) on every fixture. `pixi run gen-rtl DESIGN_POINT` does the check and the elaboration (`docs/RUN.md` §6). The fixtures in `src/test/resources/rtl/<design>/` (`accelerator.json`, the streamer hjson, `vectors.json`) come from the Python side, which checks them byte for byte (`tests/gen/test_rtl.py`); refresh one with
+Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. `ShellEmitSpec` checks the emitted hierarchy against `bundle.json`'s `modules` (C§18) on every fixture. `pixi run gen-rtl DESIGN_POINT` does the check and the elaboration (`docs/RUN.md` §6). The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjson are read from snax-gvsoc's `forge/<design>/` (the submodule; a spec that needs one cancels without it), but for vsum_tree_w8, which `forge/` does not hold and which keeps the two beside its vectors. The Python side writes and checks them byte for byte (`tests/gen/test_rtl.py`); refresh one with
 
     pixi run sandbox recipes/vsum_tree.json --set W=8 --out out/sandbox/vsum_tree_w8
     pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_tree_w8
     pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
 
-(the others from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`). The specs on them: `ShellPortsSpec` (each wrapper's ports are the template's for its streamer hjson, plus the group pins, and Emit writes the three modules), `ShellCasesSpec` (vecadd's and vsum's, through snax-gvsoc's shell cases, below), `ShellEndToEndSpec` (the CSR writes of `main.c`, an always-ready streamer: the goldens and the counter of `vectors.json`; each linked variant, dot 2–6 and matvec 4–6, at N 8 and 16 on random data against NumPy's results and the cycles of snax-gvsoc's matching group case, and matvec 4–6 at int32 through the wrapping product q = (−2147478991, 4)) and `ShellRandomSpec`. `TwoGroupsSpec` elaborates `groups/dot1/` (C§17's dot 1: groups `mul` and `sum`) and runs each group on its own.
+(the others from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`). The specs on them: `ShellEmitSpec` (one emit each: the wrapper's ports are the template's for its streamer hjson, plus the group pins; the hierarchy is `bundle.json`'s; `emitted.json` lists every file), `ShellCasesSpec` (vecadd's and vsum's, through snax-gvsoc's shell cases, below), `ShellEndToEndSpec` (the CSR writes of `main.c`, an always-ready streamer: the goldens and the counter of `vectors.json`; each linked variant, dot 2–6 and matvec 4–6, at N 8 and 16 on random data against NumPy's results and the cycles of snax-gvsoc's matching group case, and matvec 4–6 at int32 through the wrapping product q = (−2147478991, 4)) and `ShellRandomSpec`. `TwoGroupsSpec` runs each of dot 1's groups (`mul` and `sum`, `forge/dot_1/`) on its own.
 
 ## The unit cases
 
@@ -67,21 +66,19 @@ Every module has a spec; the random ones drive it with seeded random data, confi
 
 | Spec | Random | Model |
 |---|---|---|
-| `NestValidSpec` | L ∈ {0, 1, 2}, II, J, T, input valids, output stalls; `out.ready` toggled within each cycle | `out.valid` unchanged by it (Conventions) |
-| `NestCtrlSpec` | L ∈ {0, 1, 2} (L 2 with a two-register test datapath on the advance), II ∈ {1, 2}, T ∈ {1, 3, 4}, J ∈ {0, 1, 5}, input valids, output stalls | `NestModel`, SnaxUnit's rule (C§17) |
 | `ElementwiseLanesSpec` | in, op and out types, lanes, every op, data | `ElementwiseModel`, NumPy's rule (D143) |
 | `TreeAccumulateSpec` | in and out types, lanes, data, `fire` and `first` | lane sums from each `first`, each lane cast to the out type (the docstring) |
 | `MacSpec` | the three forms (accumulating, plain, plain with `regOut`), 2, 4, 8 lanes, int64/int32 signed and unsigned, a wider out type, data and enables | per lane p = cast_out(cast_op(a)·cast_op(b)), s ← first ? p : s + p, or p + c (C§17) |
 | `SerialAccumulateSpec` | 1, 2, 4, 8 lanes, in and out types, data, `read`, `lane`, `first` | acc ← (first ∧ lane 0) ? x_lane : acc + x_lane (C§17) |
 | `LinkBufferSpec` | depth 1, 2, 4, lanes, types, data, loads and takes as a ring | slot wslot loaded, slot rslot out (C§17) |
-| `GroupCtrlSpec` | chains of 2 and 3 units, half in a shuffled unit order, L ∈ {0, 1, 2}, II ∈ {1, 2}, span ∈ {1, 2, 4}, T ∈ {1..4} fixed or from the start, 0–2 outer inputs, depth ∈ {0, 1, 2}, J ∈ {0, 1, 3}, T 0, starts while busy, input valids, output stalls | `GroupModel`, SnaxGroupRule (`snax_group.hpp`) |
+| `GroupCtrlSpec` | chains of 1, 2 and 3 units, half in a shuffled unit order, L ∈ {0, 1, 2}, II ∈ {1, 2}, span ∈ {1, 2, 4}, T ∈ {1..4} fixed or from the start, 0–2 outer inputs, depth ∈ {0, 1, 2}, J ∈ {0, 1, 3}, T 0, starts while busy, input valids, output stalls | `GroupModel`, SnaxGroupRule (`snax_group.hpp`) |
 | `GroupFoldSpec` | chains of 1–3 units, half in a shuffled unit order, L ∈ {0, 1, 2}, T ∈ {1, 2, 3, 4, 8} fixed or from the start, depth ∈ {0, 1, 2}, back-to-back runs of random JOBS, input valids, output stalls | `GroupModel`'s done cycle, pushes and class: the folded counters (`GroupRule`'s rules) |
 | `GroupDescSpec` | a chain listed out of order; a fork, a join, a cycle, two chains, a link to no unit, on an outer input or on a fed one, an unfed input | the order, head and owner, and SnaxGroupRule's reasons (`configure()`) |
 | `AccCsrRandomSpec` | 1 to 3 groups of 0, 1 or 2 folds (a JOB_BEATS each); reads, writes and starts in and out of range, `rsp` and each start's ready, STATUS and COUNTER | the protocol in `AccCsr`'s docstring |
 | `ShellRandomSpec` | per fixture: J, T, empty runs, data at its types, streamer gaps and stalls, polled or held starts | the datapath models; STATUS and COUNTER as C§17 states them |
 | `FifoSlicerSpec`, `FifoPackerSpec` | types, words, lanes, data, input gaps, output stalls; the slicer into the packer | the element order of D142 (the docstrings) |
 
-The random specs run one test per seed of `Seeds` (scalatest names it "seed N"); `SNAX_FORGE_SEED=N pixi run -e hw chisel-test` runs only seed N.
+The random specs run one test per seed of `Seeds` (scalatest names it "seed N"); `SNAX_FORGE_SEED=N pixi run -e hw chisel-test` runs only seed N. Each suite runs in a forked JVM of its own, a fork per CPU and at most 8 at a time (`build.sbt`), so the slowest suite (ShellRandomSpec) bounds the run.
 
 Waveforms: `SNAX_FORGE_VCD=1 pixi run -e hw chisel-test` writes each test's to `hw/chisel/test_run_dir/<test name>/<module>.vcd`, e.g. vecadd's end to end at `test_run_dir/the_shell_wrapper_end_to_end_should_give_vecadds_goldens_and_its_counter/ShellHarness.vcd`.
 
@@ -100,25 +97,25 @@ Elaborated SystemVerilog goes to `out/hw/` (gitignored). RTL is never committed 
 | `pixi run chisel-check` | fail if unformatted (CI uses this) |
 | `pixi run chisel-clean` | drop build trees, keep the Coursier cache |
 
-## The two archetypes
+## The datapaths
 
-`ElementwiseLanes` and `TreeAccumulate` are the two distinct hardware shapes the toolchain has to cover, the shapes of `vecadd` and `dot` in `kernels/polybench/` among the staged kernels; both are data and enables only, under the nest controller (D147):
+All are data and enables only, under their group's control unit (D147); `blocks.json` gives each one's ports, timing and pins.
 
-**Elementwise (`ElementwiseLanes`, cf. `vecadd.py`).** A beat in, a beat out, L = 0, II = 1, no pins. Stateless. Chains freely with a downstream consumer, because each output element is produced in producer order and read exactly once.
+- **Elementwise (`ElementwiseLanes`, vecadd's).** A beat in, a beat out, L = 0, II = 1, no pins; a typed ALU per lane.
+- **Folds (`TreeAccumulate`, `SerialAccumulate`, an accumulating `Mac`).** T beats in, one result out (JOB_BEATS = T), L = 1: `TreeAccumulate` sums a beat's lanes in a tree, `SerialAccumulate` reads them one per cycle in place (span = lanes), `Mac` keeps a lane-wise product sum. A fold is a chaining barrier: no output exists until its last input is in.
+- **`LinkBuffer`.** A link of depth D ≥ 1 between two units of a group: a ring of D beats, loaded by the producer and read by the consumer.
 
-**Reduction (`TreeAccumulate`, cf. `dot.py`).** T beats in, 1 beat out (JOB_BEATS = T); a beat of `lanes` elements goes through an adder tree in front of the register, which `fire` and `first` load or add to; L = 1. It is a **chaining barrier**: no output exists until the last input is absorbed, so a downstream consumer cannot be fed element by element and gets control chaining instead of data chaining.
+dot and matvec are compositions of these, one group of linked units each (dot 2–6, matvec 4–6).
 
-Everything on the W11–W14 path is a composition of these two plus a typed ALU: dot is elementwise-multiply feeding a reduction, softmax is three passes with two reductions and a barrier between each.
-
-## Conventions the generated code will have to follow
+## Conventions
 
 - **Random tests for every module.** Each Chisel module gets a seeded random spec against a Scala model (Tests above): not necessarily comprehensive, but its function under random data and random stalls.
-- **Elastic everywhere.** Every port is `Decoupled`. Because the SDFG has already fixed allocation, schedule and binding, latency balancing is the only residual problem, and ready/valid turns it from a correctness obligation into a throughput knob. A module may stall; it may never produce a wrong answer because it stalled.
-- **`valid` never depends on `ready`.** `ready` may depend on other channels' `valid` (that is how a join works). The reverse deadlocks. `NestValidSpec` tests it for the nest controller at every latency.
-- **No internal storage, no control in a datapath.** Datapaths see data in flight only; address generation and buffering belong to the streamer, and valid, ready and counting to the nest controller. Reduction accumulators are the sanctioned exception to storage — they hold a scalar, not a tile.
+- **Elastic at the wrapper.** Every outer port of `<tag>_shell_wrapper` is a valid/ready handshake, which the group's control unit answers; the datapaths take enables, not handshakes. Because the SDFG has already fixed allocation, schedule and binding, latency balancing is the only residual problem, and ready/valid turns it from a correctness obligation into a throughput knob. A group may stall; it may never produce a wrong answer because it stalled.
+- **`valid` never depends on `ready`.** `ready` may depend on other channels' `valid` (that is how a join works). The reverse deadlocks. `GroupCtrlSpec` checks it every cycle, for every group it draws.
+- **No internal storage, no control in a datapath.** Datapaths see data in flight only; address generation and buffering belong to the streamer, and valid, ready and counting to the group's control unit. Reduction accumulators are the sanctioned exception to storage — they hold a scalar, not a tile.
 - **Typed lanes, a `UInt` ALU.** A block's ports are lanes of NumPy's types (`IntType`: `SInt` signed, `UInt` unsigned), fixed at elaboration. Each operand is extended to the op type by its own signedness, the op runs on `UInt` bits at that width (two's complement wraps alike; min and max compare by the op type's signedness), and the result is extended or wrapped into the output type (D143).
 - **Width and lane count come from the caller** (`accelerator.json` through the catalogue's fill rule), never from a default. The defaults in these constructors exist so the specs can run standalone.
 
 ## Not here yet
 
-Elastic wrapper, skid buffer, typed integer ALU set and lane replication. The bundle snax_cluster builds from (`Bender.yml`, the hjson) is LNK2b.
+A skid buffer and lane replication.

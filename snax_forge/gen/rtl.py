@@ -4,6 +4,8 @@
     write_accelerator(design_point, out_dir, root=None) -> Accelerator
     vectors(design_point, root=None) -> dict
     write_fixture(design_point, out_dir, root=None) -> list[str]
+    elaborate(spec_json, out_dir) -> list[Path]
+    elaborate_all([(spec_json, out_dir), ...]) -> list[list[Path]]
     python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]    (pixi gen-rtl)
 
 ``accelerator.json`` is the boundary between the Python side and ``hw/chisel/``: the one
@@ -37,23 +39,34 @@ param its ``when`` lists has that value (``live``), one without ``when`` always.
 and, from the command line, ``gen.elaborate``: ``Emit --spec`` failed or did not write a file
 its ``emitted.json`` lists.
 
+**Elaboration** runs ``snax.forge.Emit`` with ``java`` on hw/chisel's runtime classpath, which
+sbt exports once (``compile``, ``export Runtime/fullClasspath``) into
+``hw/chisel/target/emit-classpath.txt`` and again only when a file under
+``hw/chisel/src/main/`` or ``build.sbt`` is newer than it, or when an entry of it is gone (a
+cleared jar cache): sbt's start and project load are paid only after a change. One java call takes
+every ``--spec FILE --out DIR`` pair (``elaborate_all``).
+
 **The fill rule** (the catalogue's ``fill``): ``inputs.dtype`` the input ports' dtypes in order
 (a ``dtypes`` param) or the first input's (a ``dtype``), ``outputs.dtype`` the output's,
 ``inputs.lanes`` the first input's lanes, ``unit.opType`` and ``unit.params.<name>`` the
 unit's; a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
 the unit's ports by their ``dir``, in the BRM's order.
 
-**The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds
-``accelerator.json``, the design's streamer hjson (gvsoc.py's) and, for a design of one
-accelerator task, ``vectors.json``, which the Chisel specs drive the wrapper with (dot 1's two
-groups, a task each, have none: its spec drives each group itself): per outer port, in
+**The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds, for
+a design of one accelerator task, ``vectors.json``, which the Chisel specs drive the wrapper
+with (dot 1's two groups, a task each, have none: its spec drives each group itself); its
+``accelerator.json`` and streamer hjson are snax-gvsoc's ``forge/<design>/`` (the same bytes,
+gvsoc.py's), but for a design with no such folder, whose two files stay beside it. Per outer
+port, in
 ``accelerator.json``'s ``inputs`` then ``outputs`` order, its BRM port, its data.h array (an
 input, or the output's golden) and how many beats a task moves (lane i of beat t is element
 t * lanes + i, modulo the array's size: matvec's vector is read again for every row), and per
 task its CSR values (JOBS, JOB_BEATS: lower/c.py's ``job_writes``), the head unit's firings
 and the counter with an always-ready streamer, the working in ``working``: one unit's worked
-from the nest controller's rule (``counter``), a linked group's C§17's Cycles for its shape
-(``group_counter``; ``gen.cycles`` for a shape C§17 does not state).
+from the control unit's rule (``counter``), a linked group's from snax-gvsoc's group rule
+(``group_counter``: ``snax_group_rule.py`` stepped with an always-ready streamer, any shape the
+rule accepts; ``gen.submodule`` without the submodule). C§17's Cycles state the same for dot's
+and matvec's shapes.
 """
 
 from __future__ import annotations
@@ -76,7 +89,8 @@ from snax_forge.lower.derive import task_list
 from .accelerator import ACCELERATOR_JSON, Accelerator, Group, Link, Unit, units
 from .blocks import GenError
 from .data import arrays
-from .gvsoc import ROOT, cli, generate, load_point, out_dir
+from .gvsoc import ROOT, cli, load_point, out_dir
+from .submodule import snax_group_rule
 
 OUT = ROOT / "out" / "rtl"
 CATALOGUE = repo_root() / "hw" / "chisel" / "blocks.json"
@@ -266,32 +280,55 @@ def counter(unit: Unit, n: int) -> tuple[int, str]:
     )
 
 
-# C§17's Cycles of a linked group by its shape (head's datapath, last's, the link's depth):
-# J jobs of T beats (the group's one JOB_BEATS), W the last unit's span
-CYCLES = {
-    ("ElementwiseLanes", "TreeAccumulate", 1): ("C2 = JT + 2", lambda j, t, w: j * t + 2),
-    ("ElementwiseLanes", "TreeAccumulate", 0): ("C3 = JT + 1", lambda j, t, w: j * t + 1),
-    ("Mac", "TreeAccumulate", 0): ("C4 = JT + 2", lambda j, t, w: j * t + 2),
-    ("Mac", "SerialAccumulate", 0): ("C5 = J(T + W - 1) + 2", lambda j, t, w: j * (t + w - 1) + 2),
-    ("Mac", "SerialAccumulate", 1): ("C6 = (J - 1) max(T, W) + T + W + 2",
-                                     lambda j, t, w: (j - 1) * max(t, w) + t + w + 2),
-}  # fmt: skip
+def rule_graph(group: Group) -> tuple[list[dict[str, Any]], list[dict[str, Any]], str]:
+    """``group`` as snax_group_rule's GroupRule takes it: per unit its name, L, II, span and
+    outer inputs (its ``in`` ports no link feeds); per link ``{from, to, to_input, depth}``,
+    ``to_input`` the fed port's place among its unit's ``in`` ports (C§17's port order); and
+    the unit owning the outer output (the one with an ``out`` port no link takes)."""
+    fed = {link.to for link in group.links}
+    taken = {link.from_ for link in group.links}
+
+    def ins(u: Unit) -> list[str]:
+        return [name for name, p in u.ports.items() if p.dir == "in"]
+
+    units = [{"name": u.name, "L": u.latency, "ii": u.ii, "span": u.span,
+              "inputs": sum(f"{u.name}.{p}" not in fed for p in ins(u))} for u in group.units]  # fmt: skip
+    by_name = {u.name: u for u in group.units}
+    links = []
+    for link in group.links:
+        src = link.from_.split(".", 1)[0]
+        dst, port = link.to.split(".", 1)
+        links.append({"from": src, "to": dst, "to_input": ins(by_name[dst]).index(port),
+                      "depth": link.depth})  # fmt: skip
+    (owner,) = (u.name for u in group.units
+                for name, p in u.ports.items() if p.dir == "out" and f"{u.name}.{name}" not in taken)  # fmt: skip
+    return units, links, owner
 
 
-def group_counter(group: Group, csrs: Mapping[str, int]) -> tuple[int, str]:
-    """The counter of a linked group's task (``csrs`` its JOBS and JOB_BEATS) with an always-ready
-    streamer, from C§17's Cycles, and the working; ``gen.cycles`` for a shape C§17 does not
-    state."""
-    head, last = group.units[0], group.units[-1]
-    shape = (head.datapath, last.datapath, *(k.depth for k in group.links))
-    if shape not in CYCLES:
-        raise GenError("gen.cycles", f"group {group.name}: C§17 states no cycles for {shape}")
-    rule, f = CYCLES[shape]
-    j, t, w = csrs["JOBS"], csrs.get("JOB_BEATS", 1), last.span
-    return f(j, t, w), (
-        f"The group's COUNTER counts its busy cycles. {head.datapath} -> {last.datapath}, a link "
-        f"of depth {shape[2]}, inputs always valid and the output always ready: C§17's Cycles "
-        f"{rule} at J {j}, T {t}, W {w}"
+def group_counter(group: Group, jobs: int, beats: Mapping[str, int]) -> tuple[int, str]:
+    """The counter of a linked group's task with an always-ready streamer, from the group rule
+    (snax-gvsoc's snax_group_rule.py, ``submodule.snax_group_rule``) stepped with every input
+    valid and the output ready, and the working: JOBS ``jobs``, each unit's T its JOB_BEATS
+    (``beats``, by unit) or its fixed T (``params.T``, else 1). COUNTER counts the busy cycles,
+    E - s: the rule starts the run in cycle 0. A run that does not end is ``gen.counter``."""
+    model = snax_group_rule()
+    units, links, owner = rule_graph(group)
+    rule = model.GroupRule(units, links, owner)
+    ts = [beats.get(u.name, u.params.get("T", 1)) for u in group.units]
+    if jobs == 0 or 0 in ts:
+        return 0, "The group's COUNTER counts its busy cycles: JOBS or a T 0 is the empty run, none"
+    n = rule.firings_per_run(jobs, ts)
+    cycles = sum(n) * max(u["ii"] * u["span"] for u in units) + sum(u["L"] for u in units) + 16
+    _, end = rule.run(jobs, ts, lambda c: [True], lambda c: True, cycles)
+    if end is None:
+        raise GenError(
+            "gen.counter", f"group {group.name}: the rule does not end in {cycles} cycles"
+        )
+    t = ", ".join(f"{u.name} {x}" for u, x in zip(group.units, ts, strict=True))
+    return end, (
+        f"The group's COUNTER counts its busy cycles. The group rule (snax-gvsoc's "
+        f"snax_group_rule.py) stepped with inputs always valid and the output always ready, "
+        f"JOBS {jobs}, T {t}: E - s = {end}"
     )
 
 
@@ -319,9 +356,11 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         ports.append({"port": p.name, "array": array, "lanes": inst.lanes(p.name),
                       "beats": values["n"] // rate, "values": list(data[array].values)})  # fmt: skip
     if linked:
-        csrs = {k: v for _, k, v in job_writes(found, task.values, acc.fixed_folds)}
+        writes = job_writes(found, task.values, acc.fixed_folds)
+        csrs = {k: v for _, k, v in writes}
         n = task.values[group.units[0].name]["n"]
-        value, working = group_counter(group, csrs)
+        beats = {u: v for u, k, v in writes if k == "JOB_BEATS"}
+        value, working = group_counter(group, csrs["JOBS"], beats)
     else:
         csrs = job_values(found[task.component], task.values)
         n = task.values["n"]
@@ -336,20 +375,15 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
 
 def write_fixture(design_point: str | Path, out_dir: str | Path,
                   root: str | Path | None = None) -> list[str]:  # fmt: skip
-    """A fixture of hw/chisel's specs: ``accelerator.json``, the streamer hjson and, for one
-    accelerator task, ``vectors.json`` in ``out_dir``; the files written."""
+    """A fixture of hw/chisel's specs in ``out_dir``: ``vectors.json`` for a design of one
+    accelerator task, nothing for several (the module doc); the files written."""
     out = Path(out_dir)
-    acc = write_accelerator(design_point, out, root)
-    streamer = f"{acc.tag}_streamer.hjson"
-    with tempfile.TemporaryDirectory() as gen:
-        generate(design_point, gen, root)
-        (out / streamer).write_text((Path(gen) / streamer).read_text())
-    files = [ACCELERATOR_JSON, streamer]
-    _, point, acc = load_point(design_point, ROOT if root is None else Path(root))
-    if len(task_list(point).accel_steps()) == 1:
-        (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
-        files.append(VECTORS_JSON)
-    return files
+    _, point, _ = load_point(design_point, ROOT if root is None else Path(root))
+    if len(task_list(point).accel_steps()) != 1:
+        return []
+    out.mkdir(parents=True, exist_ok=True)
+    (out / VECTORS_JSON).write_text(to_json(vectors(design_point, root)))
+    return [VECTORS_JSON]
 
 
 # =============================================================================
@@ -360,29 +394,85 @@ CHISEL = ROOT / "hw" / "chisel"
 EMITTED_JSON = "emitted.json"
 
 
-def elaborate(spec_json: Path, out_dir: Path) -> list[Path]:
-    """``Emit --spec`` on ``spec_json`` (an ``accelerator.json``) into ``out_dir`` (``sv/`` and
-    ``emitted.json``) through sbt in ``hw/chisel/``; the files ``emitted.json`` lists, each
-    checked to exist (firtool's failures do not always reach sbt's exit status)."""
-    cmd = ["sbt", "-batch",
-           f"runMain snax.forge.Emit --spec {spec_json.resolve()} --out {out_dir.resolve()}"]  # fmt: skip
+CLASSPATH = CHISEL / "target" / "emit-classpath.txt"
+
+
+def _newest_source() -> float:
+    """The newest mtime of ``build.sbt`` and the files under ``hw/chisel/src/main/``."""
+    files = [
+        CHISEL / "build.sbt",
+        *(f for f in (CHISEL / "src" / "main").rglob("*") if f.is_file()),
+    ]
+    return max(f.stat().st_mtime for f in files)
+
+
+def emit_classpath(refresh: bool = False) -> str:
+    """hw/chisel's runtime classpath, from ``CLASSPATH`` unless ``refresh``, the file is missing or
+    a source is newer than it; else compiled and exported by sbt and written there (the module
+    doc). sbt's output is shown only when it fails."""
+    if not refresh and CLASSPATH.is_file() and CLASSPATH.stat().st_mtime >= _newest_source():
+        cp = CLASSPATH.read_text().strip()
+        if all(Path(p).exists() for p in cp.split(":")):  # a cleared jar cache: refresh
+            return cp
+    cmd = ["sbt", "-batch", "compile", "export Runtime/fullClasspath"]
+    done = subprocess.run(cmd, cwd=CHISEL, capture_output=True, text=True, check=False)
+    found = [x.strip() for x in done.stdout.splitlines() if ".jar" in x and not x.startswith("[")]
+    if done.returncode != 0 or not found:
+        sys.stderr.write(done.stdout[-4000:] + done.stderr[-4000:])
+        raise GenError("gen.elaborate", f"sbt compile in {CHISEL} failed (exit {done.returncode})")
+    CLASSPATH.parent.mkdir(parents=True, exist_ok=True)
+    CLASSPATH.write_text(found[-1] + "\n")
+    return found[-1]
+
+
+def elaborate_all(pairs: list[tuple[Path, Path]]) -> list[list[Path]]:
+    """``Emit --spec`` on each ``(spec_json, out_dir)`` (an ``accelerator.json`` into ``sv/`` and
+    ``emitted.json``), in one java call on the cached classpath; per pair the files
+    ``emitted.json`` lists, each checked to exist (firtool's failures do not always reach the
+    exit status), and the listing."""
+    args = [
+        a
+        for spec, out in pairs
+        for a in ("--spec", str(spec.resolve()), "--out", str(out.resolve()))
+    ]
+    cmd = ["java", "-cp", emit_classpath(), "snax.forge.Emit", *args]
     done = subprocess.run(cmd, cwd=CHISEL, check=False)
-    listing = out_dir / EMITTED_JSON
-    if done.returncode != 0 or not listing.is_file():
-        raise GenError("gen.elaborate", f"Emit --spec {spec_json} failed (exit {done.returncode})")
-    files = [out_dir / f for f in json.loads(listing.read_text())["files"]]
-    missing = [str(f) for f in files if not f.is_file()]
-    if missing:
-        raise GenError("gen.elaborate", f"{listing} lists files that were not written: {missing}")
-    return [*files, listing]
+    listed = []
+    for spec, out in pairs:
+        listing = out / EMITTED_JSON
+        if done.returncode != 0 or not listing.is_file():
+            raise GenError("gen.elaborate", f"Emit --spec {spec} failed (exit {done.returncode})")
+        files = [out / f for f in json.loads(listing.read_text())["files"]]
+        missing = [str(f) for f in files if not f.is_file()]
+        if missing:
+            raise GenError(
+                "gen.elaborate", f"{listing} lists files that were not written: {missing}"
+            )
+        listed.append([*files, listing])
+    return listed
+
+
+def warm_emit() -> None:
+    """Emit ready for parallel calls: its classpath (``emit_classpath``), and firtool, which
+    Chisel extracts into a shared cache on its first use and which two first uses at once fail
+    on: one small elaboration (a parked catalogue block) into a scratch folder."""
+    cp = emit_classpath()
+    with tempfile.TemporaryDirectory() as scratch:
+        cmd = ["java", "-cp", cp, "snax.forge.Emit", "--out", scratch, "FifoSlicer"]
+        subprocess.run(cmd, cwd=CHISEL, check=False, capture_output=True)
+
+
+def elaborate(spec_json: Path, out_dir: Path) -> list[Path]:
+    """``elaborate_all`` on one ``accelerator.json``."""
+    return elaborate_all([(spec_json, out_dir)])[0]
 
 
 def main(argv: list[str] | None = None) -> int:
     """``python -m snax_forge.gen.rtl DESIGN_POINT [OUT_DIR] [--fixture DIR]`` (pixi
     ``gen-rtl``): ``accelerator.json`` into ``OUT_DIR`` (default ``out/rtl/<design>/``), then the
     accelerator through ``Emit --spec`` into its ``sv/`` with ``emitted.json``; with
-    ``--fixture``, a fixture of hw/chisel's specs into ``DIR`` instead (``write_fixture``, no
-    elaboration). The flow does not call it (D136). Exit 0 when written, 1 when refused."""
+    ``--fixture``, a fixture of hw/chisel's specs (its ``vectors.json``) into ``DIR`` instead
+    (``write_fixture``, no elaboration). The flow does not call it (D136). Exit 0 when written, 1 when refused."""
     ap = argparse.ArgumentParser(prog="python -m snax_forge.gen.rtl")
     ap.add_argument("design_point", type=Path, help="a design_point.json (the design step's)")
     ap.add_argument("out_dir", type=Path, nargs="?", help="output directory (out/rtl/<design>)")

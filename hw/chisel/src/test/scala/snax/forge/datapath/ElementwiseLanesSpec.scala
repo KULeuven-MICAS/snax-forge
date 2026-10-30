@@ -8,7 +8,9 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
 
 /** `ElementwiseLanes`: its types on fixed vectors (D143: each input extended to the op type by its own signedness, the
   * op at the op type, the result extended or wrapped into the output type; each expected value NumPy's, and
-  * `ElementwiseModel.numpy`'s too), then random data against `ElementwiseModel.numpy` at random types, ops and lanes.
+  * `ElementwiseModel.numpy`'s too); every op on the edge operands (`ElementwiseModel.edgePairs`: 0, 1, all ones, the
+  * sign bit, ...) at int32, uint32, int8 and uint8, where min and max compare by the type's signedness and int8 wraps
+  * far more often than int32; then random data against `ElementwiseModel.numpy` at random types, ops and lanes.
   */
 class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
 
@@ -118,6 +120,26 @@ class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
       circt.stage.ChiselStage.emitCHIRRTL(new ElementwiseLanes(Seq("int32", "int32"), "int16", "int32", 1))
     }
     assert(e.getMessage.contains("opType int16 must be at least as wide as each input"), e.getMessage)
+  }
+
+  it should "give the model's lanes on the edge operands, every op, at int32, uint32, int8 and uint8" in {
+    for {
+      t  <- Seq("int32", "uint32", "int8", "uint8").map(IntType(_))
+      op <- ElementwiseOp.all
+    } {
+      val pairs = ElementwiseModel.edgePairs(t.width)
+      test(new ElementwiseLanes(Seq(t.name, t.name), t.name, t.name, pairs.size, op)) { dut =>
+        for (((a, b), l) <- pairs.zipWithIndex) {
+          LaneBits.poke(dut.io.a(l), a)
+          LaneBits.poke(dut.io.b(l), b)
+        }
+        for (((a, b), l) <- pairs.zipWithIndex) {
+          val want = ElementwiseModel.numpy(op, a, b, t, t, t, t)
+          val got  = LaneBits.peek(dut.io.out(l))
+          assert(got == want, s"${t.name}, ${ElementwiseModel.clue(op, a, b, l)}: $got, the model $want")
+        }
+      }
+    }
   }
 
   behavior of "ElementwiseLanes under random data"

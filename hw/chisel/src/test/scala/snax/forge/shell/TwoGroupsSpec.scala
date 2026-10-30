@@ -1,50 +1,33 @@
 package snax.forge.shell
 
-import java.nio.file.Files
-
 import chiseltest._
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.{Emit, ForgeTester, LaneBits, RepoPaths, Sink, Source}
+import snax.forge.{ForgeTester, LaneBits, Sink, Source}
 
 /** Several groups in one accelerator (D146, D148): dot 1 (C§17's table), the generated `accelerator.json` of
-  * `recipes/dot_1.json` (the fixture `src/test/resources/rtl/dot_1/`): group mul (ElementwiseLanes, mul, 4 lanes of
+  * `recipes/dot_1.json` (the fixture dot_1, snax-gvsoc's `forge/dot_1/`): group mul (ElementwiseLanes, mul, 4 lanes of
   * int64; START 0, JOBS 1, STATUS 2, COUNTER 3) and group sum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS
-  * 5, JOB_BEATS 6, STATUS 7, COUNTER 8). It elaborates into `<tag>_shell_wrapper` with a controller per group and both
-  * datapaths; and each group starts, runs and reports STATUS on its own: sum is started first and starved (its input
-  * held back), mul then runs its 3 jobs to the end while sum stays busy, then sum's input flows and it ends.
+  * 5, JOB_BEATS 6, STATUS 7, COUNTER 8). Each group starts, runs and reports STATUS on its own: sum is started first
+  * and starved (its input held back), mul then runs its 3 jobs to the end while sum stays busy, then sum's input flows
+  * and it ends.
   */
 class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
-  private val file = RepoPaths.root.resolve("hw/chisel/src/test/resources/rtl/dot_1/accelerator.json")
-  private val spec = AcceleratorSpec.load(file)
+  private lazy val spec = RtlFixtures.all.find(_.name == "dot_1").get.spec
 
   behavior of "a two-group accelerator (dot 1)"
 
-  it should "elaborate with a controller per group and both datapaths" in {
-    val out  = Files.createTempDirectory("emit-dot1")
-    val done = Emit.emitSpec(file, out)
-    assert(done.top == "snax_forge_shell_wrapper")
-    for (
-      m <- Seq("snax_forge_csr", "snax_forge_ctrl", "snax_forge_datapath", "snax_forge_mul_ctrl", "snax_forge_sum_ctrl")
-    )
-      assert(done.modules.contains(m), s"$m: ${done.modules}")
-    assert(
-      done.modules.exists(_.startsWith("ElementwiseLanes_")) && done.modules.exists(_.startsWith("TreeAccumulate_"))
-    )
-  }
-
   it should "start, run and report STATUS per group" in {
     test(new ShellHarness(spec)) { dut =>
-      val beat = (k: Int, t: Int) => LaneBits.pack(Seq.tabulate(4)(l => BigInt(10 * k + t + l + 1)), 64)
-      var d: ShellDriver = null
-      var release = false // sum's input held back until then
-      val sources = Seq(
-        new Source(3, beat(0, _), () => true),
-        new Source(3, beat(1, _), () => true),
-        new Source(2, beat(2, _), () => release)
+      val beat       = (k: Int, t: Int) => LaneBits.pack(Seq.tabulate(4)(l => BigInt(10 * k + t + l + 1)), 64)
+      var release    = false // sum's input held back until then
+      val sources    = Seq(
+        new Source(3, beat(0, _), _ => true),
+        new Source(3, beat(1, _), _ => true),
+        new Source(2, beat(2, _), _ => release)
       )
-      d = new ShellDriver(dut, sources, Seq(new Sink(() => true), new Sink(() => true)))
+      val d          = new ShellDriver(dut, sources, Seq(new Sink(_ => true), new Sink(_ => true)))
       val (mul, sum) = (0, 1)
 
       // sum: one job of two beats, started first, starved

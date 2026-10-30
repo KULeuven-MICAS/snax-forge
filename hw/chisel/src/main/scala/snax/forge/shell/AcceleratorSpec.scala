@@ -55,7 +55,7 @@ object AcceleratorSpec {
 
     def csr(n: String): Option[CsrSpec] = window.find(_.name == n)
 
-    /** Each JOB_BEATS in unit order: the start carries them after JOBS (C§17). */
+    /** Each JOB_BEATS in unit order: the start carries them after JOBS. */
     def jobBeats: Seq[CsrSpec] = units.flatMap(_.csrs.filter(_.name == "JOB_BEATS"))
   }
 

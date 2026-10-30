@@ -30,7 +30,7 @@ object AccCtrl {
 
   /** A group's description (C§17): per unit, in the file's order, its L, II and span, its outer inputs, its T when
     * fixed (`params.T`, or 1 without a JOB_BEATS) and its inputs no outer port takes; per link its ends by unit index,
-    * the `to` port's position among its unit's inputs (C§17's port order) and its depth.
+    * the `to` port's position among its unit's inputs (in port order) and its depth.
     */
   def desc(spec: AcceleratorSpec, g: AcceleratorSpec.GroupSpec): GroupDesc = {
     def at(unit: String) = g.units.indexWhere(_.name == unit)

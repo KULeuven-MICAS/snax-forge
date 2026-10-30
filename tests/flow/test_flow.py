@@ -666,3 +666,20 @@ def test_a_64_kib_l1_runs_on_its_own_runtime(tmp_path):
         "#define CLUSTER_TCDM_SIZE 0x10000\n" in (include / "snitch_cluster_addrmap.h").read_text()
     )
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
+
+
+def test_a_second_build_waits_for_the_first(tmp_path, capsys):
+    """The build stage's lock (``build_lock``): while another holds it, the stage says so and
+    waits; it goes on once the other lets go."""
+    import fcntl
+    import threading
+
+    tmp_path.mkdir(exist_ok=True)
+    with (tmp_path / ".build.lock").open("w") as held:
+        fcntl.flock(held, fcntl.LOCK_EX)
+        release = threading.Timer(0.3, lambda: fcntl.flock(held, fcntl.LOCK_UN))
+        release.start()
+        with flow_run.build_lock(tmp_path):
+            assert not release.is_alive()  # entered only after the release
+        release.join()
+    assert "waiting for another process's build in" in capsys.readouterr().out

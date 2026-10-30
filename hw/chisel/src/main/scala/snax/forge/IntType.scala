@@ -5,8 +5,8 @@ import chisel3._
 /** An integer element type as NumPy names it, "int8" ... "uint64": a width and a signedness (D142, D143).
   *
   * A block's types are design-time parameters: Python chooses them (`snax_forge/brm/dtypes.py`, an op's type included)
-  * and `rtl.json` names them; a block only constructs from them (C§17). A signed type's lanes are `SInt`, an unsigned
-  * one's `UInt`, so the shell wrapper's `asTypeOf` gives typed lanes.
+  * and `accelerator.json` names them; a block only constructs from them (C§17). A signed type's lanes are `SInt`, an
+  * unsigned one's `UInt`, so the shell wrapper's `asTypeOf` gives typed lanes.
   */
 case class IntType(width: Int, signed: Boolean) {
 

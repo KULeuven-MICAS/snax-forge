@@ -3,20 +3,25 @@ package snax.forge.ctrl
 import chisel3._
 import chisel3.util._
 
+/** A group's start as `<tag>_csr` sends it: JOBS, then each of its `open` units' JOB_BEATS in unit order (`beats`; one
+  * word, 1, when the group has none).
+  */
+class GroupStart(val open: Int) extends Bundle {
+  val jobs  = UInt(32.W)
+  val beats = Vec(open max 1, UInt(32.W))
+}
+
 /** A group control unit's ports (`GroupCtrl`): its start, STATUS, COUNTER and pins; its outer handshakes; each unit's
-  * and buffer's enables; the head's `fire`, `first` and `adv` (a one-unit group's whole) and the cycle's class.
+  * and buffer's enables; the cycle's class.
   */
 class GroupCtrlIO(desc: GroupDesc) extends Bundle {
-  val start   = Flipped(Decoupled(new NestConfig((desc.open.size - 1) max 0)))
+  val start   = Flipped(Decoupled(new GroupStart(desc.open.size)))
   val status  = Output(UInt(32.W))
   val counter = Output(UInt(32.W))
   val in      = Vec(desc.units.map(_.inputs).sum, new Handshake)
   val out     = Flipped(new Handshake)
   val units   = MixedVec(desc.units.map(u => new UnitEnables(u.span)))
   val links   = MixedVec(desc.buffers.map(i => new LinkEnables(desc.links(i).depth)))
-  val fire    = Output(Bool())
-  val first   = Output(Bool())
-  val adv     = Output(Bool())
   val busy    = Output(Bool())
   val done    = Output(Bool())
   val cls     = Output(UInt(2.W))
@@ -40,9 +45,9 @@ class GroupCtrlIO(desc: GroupDesc) extends Bundle {
   *
   * Its ports: `in`, every unit's outer inputs' handshakes, unit by unit in port order; `out`, the outer output, its
   * owner's (`GroupDesc.output`); `units`, each unit's enables to its datapath; `links`, each buffer's, in link order (a
-  * wire has none); `cls`, the cycle's class, as the run line counts it (busy 0, stall_in 1, stall_out 2, flush 3).
-  * `fire`, `first` and `adv` are the head's (`GroupDesc.head`, the first unit in topological order), a one-unit group's
-  * whole.
+  * wire has none); `cls`, the cycle's class, as the run line counts it (busy 0, stall_in 1, stall_out 2, flush 3). Test
+  * ports, which the shell leaves unread: each unit's `give` and `adv`, each buffer's `occupancy`, and `cls`; the specs
+  * compare them with snax-gvsoc's cases and `GroupModel` every cycle.
   *
   * @param desc
   *   the group: its units and links (`shell.AcceleratorSpec`'s group, `AccCtrl.desc`)
@@ -51,33 +56,26 @@ class GroupCtrlIO(desc: GroupDesc) extends Bundle {
   */
 class GroupCtrl(val desc: GroupDesc, tag: String) extends Module {
 
-  /** A group of one unit: B1's controller, L and II, `inputs` joined, its T from the start. */
-  def this(latency: Int, ii: Int, inputs: Int, group: String, tag: String) =
-    this(GroupDesc(group, Seq(UnitDesc(group, latency, ii, 1, inputs, None)), Nil), tag)
-
   override def desiredName: String = s"${tag}_${desc.name}_ctrl"
 
   val io = IO(new GroupCtrlIO(desc))
 
-  private val nest = new GroupRule(desc)
+  private val rule = new GroupRule(desc)
 
   // The outer inputs, flat in unit order, onto each unit's
-  private val flat: Seq[Handshake] = desc.units.indices.flatMap(k => nest.io.in(k).toSeq)
+  private val flat: Seq[Handshake] = desc.units.indices.flatMap(k => rule.io.in(k).toSeq)
   for ((r, p) <- flat.zip(io.in)) {
     r.valid := p.valid
     p.ready := r.ready
   }
-  nest.io.out.ready := io.out.ready
-  io.out.valid := nest.io.out.valid
-  io.units     := nest.io.units
-  io.links     := nest.io.links
-  io.fire      := nest.io.units(desc.head).fire
-  io.first     := nest.io.units(desc.head).first
-  io.adv       := (if (desc.units(desc.head).latency == 0) true.B else nest.io.units(desc.head).adv)
-  io.cls       := nest.io.cls
+  rule.io.out.ready := io.out.ready
+  io.out.valid := rule.io.out.valid
+  io.units     := rule.io.units
+  io.links     := rule.io.links
+  io.cls       := rule.io.cls
 
   // Each unit's T: its fixed one, else the next JOB_BEATS of the start in unit order
-  private val words = io.start.bits.jobBeats +: io.start.bits.beats.map(_.toSeq).getOrElse(Seq.empty)
+  private val words = io.start.bits.beats
   private val ts    = {
     var next = 0
     desc.units.map { u =>
@@ -85,16 +83,16 @@ class GroupCtrl(val desc: GroupDesc, tag: String) extends Module {
     }
   }
 
-  private val busy     = nest.io.busy
+  private val busy     = rule.io.busy
   private val accepted = io.start.fire
   private val empty    = io.start.bits.jobs === 0.U || ts.map(_ === 0.U).reduce(_ || _)
 
   io.start.ready           := !busy
-  nest.io.config.valid     := accepted && !empty
-  nest.io.config.bits.jobs := io.start.bits.jobs
-  nest.io.config.bits.ts   := VecInit(ts)
+  rule.io.config.valid     := accepted && !empty
+  rule.io.config.bits.jobs := io.start.bits.jobs
+  rule.io.config.bits.ts   := VecInit(ts)
 
-  private val pulse   = nest.io.done || (accepted && empty)
+  private val pulse   = rule.io.done || (accepted && empty)
   private val done    = RegInit(false.B)
   private val counter = RegInit(0.U(32.W))
   when(pulse) {

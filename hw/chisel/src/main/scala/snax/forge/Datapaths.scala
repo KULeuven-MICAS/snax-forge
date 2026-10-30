@@ -2,7 +2,7 @@ package snax.forge
 
 import chisel3._
 
-import snax.forge.datapath.{ElementwiseLanes, LinkBuffer, Mac, SerialAccumulate, TreeAccumulate}
+import snax.forge.datapath.{DatapathModule, ElementwiseLanes, LinkBuffer, Mac, SerialAccumulate, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.AcceleratorSpec
 
@@ -21,8 +21,9 @@ import snax.forge.shell.AcceleratorSpec
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
   * "when": {...}}`. `when` is a match: the port or pin exists only when every listed param has that value, decided at
-  * elaboration (`live`); one without `when` always does. A latency or a span is an int or an expression over the params
-  * in `snax_forge/expr.py`'s grammar (ints, names, `+ - * //`, `max` and `min` of two), a bool as 0 or 1 (`value`).
+  * elaboration (`holds`); one without `when` always does. A latency or a span is an int or an expression over the
+  * params in `snax_forge/expr.py`'s grammar, a bool as 0 or 1, which the Python side evaluates
+  * (`snax_forge/gen/rtl.py`).
   *
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.
@@ -46,9 +47,6 @@ object Datapaths {
   /** A pin: its name and the params it exists for (empty: always). */
   case class Pin(name: String, when: Seq[(String, ujson.Value)] = Seq.empty)
 
-  /** A built datapath: the module and its IO, whose elements are the catalogue's live ports and pins. */
-  case class Built(module: Module, io: Bundle)
-
   case class Datapath(
     name:    String,
     params:  Seq[(String, ParamType, String)], // name, type, fill
@@ -56,17 +54,24 @@ object Datapaths {
     latency: ujson.Value,
     span:    ujson.Value,
     pins:    Seq[Pin],
-    build:   Map[String, ujson.Value] => Built
+    make:    Map[String, ujson.Value] => DatapathModule,
+    example: Map[String, ujson.Value]          // the params of Emit's catalogue target
   ) {
 
-    /** The params of `unit` by the fill rule; `ins` and `outs` its input and output BRM ports in order. */
-    def fill(unit: AcceleratorSpec.UnitSpec, ins: Seq[String], outs: Seq[String]): Map[String, ujson.Value] =
+    /** Its module on `p`, instantiated: its IO, whose elements are its live ports and pins. */
+    def build(p: Map[String, ujson.Value]): Bundle = {
+      val m = Module(make(p))
+      DatapathModule.io(m)
+    }
+
+    /** The params of `unit` by the fill rule, from its input and output BRM ports in port order. */
+    def fill(unit: AcceleratorSpec.UnitSpec): Map[String, ujson.Value] =
       params.map { case (n, t, rule) =>
-        val inPorts = ins.map(unit.port)
+        val inPorts = unit.inPorts.map(unit.port)
         val value: ujson.Value = rule match {
           case "inputs.dtype" if t == DtypesParam => ujson.Arr.from(inPorts.map(_.dtype))
           case "inputs.dtype"                     => ujson.Str(inPorts.head.dtype)
-          case "outputs.dtype"                    => ujson.Str(unit.port(outs.head).dtype)
+          case "outputs.dtype"                    => ujson.Str(unit.port(unit.outPorts.head).dtype)
           case "inputs.lanes"                     => ujson.Num(inPorts.head.lanes)
           case "unit.opType"                      => ujson.Str(unit.opType.get)
           case r if r.startsWith("unit.params.")  => unit.params(r.stripPrefix("unit.params."))
@@ -86,69 +91,15 @@ object Datapaths {
         })
       }.toMap
 
-    /** The ports and pins whose `when` holds on `p`. */
-    def livePorts(p: Map[String, ujson.Value]): Seq[Port] = ports.filter(x => holds(x.when, p))
-    def livePins(p:  Map[String, ujson.Value]): Seq[Pin]  = pins.filter(x => holds(x.when, p))
-
-    /** Its latency and span on `p`. */
-    def latencyOf(p: Map[String, ujson.Value]): Int = value(latency, p)
-    def spanOf(p:    Map[String, ujson.Value]): Int = value(span, p)
+    /** The pins whose `when` holds on `p`. */
+    def livePins(p: Map[String, ujson.Value]): Seq[Pin] = pins.filter(x => holds(x.when, p))
   }
 
-  private def holds(when: Seq[(String, ujson.Value)], p: Map[String, ujson.Value]): Boolean =
+  def holds(when: Seq[(String, ujson.Value)], p: Map[String, ujson.Value]): Boolean =
     when.forall { case (k, v) => p.get(k).contains(v) }
 
-  /** A latency or span: an int, or an expression over the params' ints and bools (module doc). */
-  def value(v: ujson.Value, p: Map[String, ujson.Value]): Int =
-    v match {
-      case ujson.Num(n) => n.toInt
-      case ujson.Str(s) =>
-        val env = p.collect {
-          case (k, ujson.Num(n))  => k -> n.toInt
-          case (k, ujson.Bool(b)) => k -> (if (b) 1 else 0)
-        }
-        Expr.evaluate(s, env)
-      case other        => throw new IllegalArgumentException(s"a latency or span is an int or an expression: $other")
-    }
-
-  /** `snax_forge/expr.py`'s grammar, enough for a latency or span: ints, names, `+ - * //`, parentheses and `max`,
-    * `min` of two.
-    */
-  object Expr {
-    def evaluate(text: String, env: Map[String, Int]): Int = {
-      val tokens = "\\d+|[A-Za-z_][A-Za-z0-9_]*|//|[-+*(),]".r.findAllIn(text).toVector
-      var at     = 0
-      def peek   = if (at < tokens.size) tokens(at) else ""
-      def take() = { at += 1; tokens(at - 1) }
-      def expect(t: String): Unit = require(take() == t, s"expected $t in $text")
-      def atom():    Int = {
-        val t = take()
-        if (t == "(") { val v = sum(); expect(")"); v }
-        else if (t == "-") -atom()
-        else if (t.head.isDigit) t.toInt
-        else if (t == "max" || t == "min") {
-          expect("("); val a = sum(); expect(","); val b = sum(); expect(")")
-          if (t == "max") a.max(b) else a.min(b)
-        } else env.getOrElse(t, throw new IllegalArgumentException(s"$t is not a param in $text"))
-      }
-      def product(): Int = {
-        var v = atom()
-        while (peek == "*" || peek == "//") { v = if (take() == "*") v * atom() else Math.floorDiv(v, atom()) }
-        v
-      }
-      def sum():     Int = {
-        var v = product()
-        while (peek == "+" || peek == "-") { v = if (take() == "+") v + product() else v - product() }
-        v
-      }
-      val v = sum()
-      require(at == tokens.size, s"trailing tokens in $text")
-      v
-    }
-  }
-
-  private def str(p:   Map[String, ujson.Value], n: String): String = p(n).str
-  private def op(name: String): Int = ElementwiseOp.names.collectFirst { case (k, v) if v == name => k }.get
+  private def str(p: Map[String, ujson.Value], n: String): String = p(n).str
+  private def int(p: Map[String, ujson.Value], n: String): Int    = p(n).num.toInt
 
   /** Every dtype a type param takes. */
   private val dtypes = IntType.names
@@ -168,17 +119,21 @@ object Datapaths {
       ujson.Num(1),
       Seq.empty,
       p => {
-        val m = Module(
-          new ElementwiseLanes(
-            p("inTypes").arr.toSeq.map(_.str),
-            str(p, "opType"),
-            str(p, "outType"),
-            p("lanes").num.toInt,
-            op(str(p, "op"))
-          )
+        new ElementwiseLanes(
+          p("inTypes").arr.toSeq.map(_.str),
+          str(p, "opType"),
+          str(p, "outType"),
+          int(p, "lanes"),
+          ElementwiseOp.byName(str(p, "op"))
         )
-        Built(m, m.io)
-      }
+      },
+      Map(
+        "inTypes" -> ujson.Arr("int32", "int32"),
+        "opType"  -> ujson.Str("int32"),
+        "outType" -> ujson.Str("int32"),
+        "lanes"   -> ujson.Num(4),
+        "op"      -> ujson.Str("add")
+      )
     ),
     Datapath(
       "TreeAccumulate",
@@ -194,9 +149,14 @@ object Datapaths {
       Seq(Pin("fire"), Pin("first")),
       p => {
         require(str(p, "op") == "add", s"TreeAccumulate adds, op ${str(p, "op")}")
-        val m = Module(new TreeAccumulate(str(p, "inType"), str(p, "outType"), p("lanes").num.toInt))
-        Built(m, m.io)
-      }
+        new TreeAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
+      },
+      Map(
+        "inType"  -> ujson.Str("int32"),
+        "outType" -> ujson.Str("int64"),
+        "lanes"   -> ujson.Num(4),
+        "op"      -> ujson.Str("add")
+      )
     ),
     Datapath(
       "Mac",
@@ -222,18 +182,23 @@ object Datapaths {
         Pin("en", Seq("accumulate" -> ujson.False, "regOut" -> ujson.True))
       ),
       p => {
-        val m = Module(
-          new Mac(
-            p("inTypes").arr.toSeq.map(_.str),
-            str(p, "opType"),
-            str(p, "outType"),
-            p("lanes").num.toInt,
-            p("accumulate").bool,
-            p("regOut").bool
-          )
+        new Mac(
+          p("inTypes").arr.toSeq.map(_.str),
+          str(p, "opType"),
+          str(p, "outType"),
+          int(p, "lanes"),
+          p("accumulate").bool,
+          p("regOut").bool
         )
-        Built(m, m.io)
-      }
+      },
+      Map(
+        "inTypes"    -> ujson.Arr("int64", "int64"),
+        "opType"     -> ujson.Str("int64"),
+        "outType"    -> ujson.Str("int64"),
+        "lanes"      -> ujson.Num(4),
+        "accumulate" -> ujson.True,
+        "regOut"     -> ujson.False
+      )
     ),
     Datapath(
       "SerialAccumulate",
@@ -247,9 +212,9 @@ object Datapaths {
       ujson.Str("lanes"),
       Seq(Pin("read"), Pin("lane"), Pin("first")),
       p => {
-        val m = Module(new SerialAccumulate(str(p, "inType"), str(p, "outType"), p("lanes").num.toInt))
-        Built(m, m.io)
-      }
+        new SerialAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
+      },
+      Map("inType" -> ujson.Str("int64"), "outType" -> ujson.Str("int64"), "lanes" -> ujson.Num(4))
     ),
     Datapath(
       "LinkBuffer",
@@ -263,9 +228,9 @@ object Datapaths {
       ujson.Num(1),
       Seq(Pin("load"), Pin("wslot"), Pin("rslot")),
       p => {
-        val m = Module(new LinkBuffer(p("depth").num.toInt, p("lanes").num.toInt, str(p, "dtype")))
-        Built(m, m.io)
-      }
+        new LinkBuffer(int(p, "depth"), int(p, "lanes"), str(p, "dtype"))
+      },
+      Map("depth" -> ujson.Num(2), "lanes" -> ujson.Num(4), "dtype" -> ujson.Str("int64"))
     )
   )
 

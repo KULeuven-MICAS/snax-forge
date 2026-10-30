@@ -8,7 +8,9 @@ Three steps, each the tool of that name called as its command line would be
 
     flow     ``python -m snax_forge.flow RECIPE --platform P [--set ...] [--trace ...]``:
              the design point and the run on SNAX-GVSoC      out/flow/<name>/
-    bundle   ``python -m snax_forge.gen.bundle`` on the flow's design point
+    bundle   ``python -m snax_forge.gen.bundle`` on the flow's design point, then the
+             flow's expected lines beside it (``bundle.write_expected``: its
+             ``forge counter`` lines and ``forge data: 0 errors``)
                                                              out/bundle/<name>/
     sw       the bundle's program, by snax-gvsoc's generic app (``make sw``), and its
              sha256 checked against the flow's ``elf_sha256`` (docs/RUN.md section 8)
@@ -41,7 +43,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from snax_forge.common import cwd_relative
-from snax_forge.gen import bundle
+from snax_forge.gen import GenError, bundle
 from snax_forge.run import RunError
 from snax_forge.run.sources import parse_trace
 from snax_forge.sandbox import Recipe, SandboxError
@@ -155,6 +157,17 @@ def forge(recipe: Path, platform: Path, sets: list[tuple[str, tuple[str, str, An
             commit = (made.snax_forge_commit or "outside git")[:12]
             print(f"  bundle    {cwd_relative(bundle_dir)}/: {made.tag}_shell_wrapper, snax-forge "
                   f"{commit}{', dirty' if made.dirty else ''}", flush=True)  # fmt: skip
+            try:
+                expected = bundle.write_expected(
+                    bundle_dir, (flow_dir / "run" / "stdout.txt").read_text()
+                )
+            except GenError as e:
+                print(f"== expected: {e}", file=log, flush=True)
+                raise StepFailed(f"expected: {e}") from None
+            print(
+                f"  expected  {cwd_relative(expected)}: the run's counter and data lines",
+                flush=True,
+            )
             sha = json.loads((flow_dir / "run" / "run.json").read_text())["elf_sha256"]
             elf = _sw(log, name, bundle_dir, forge_dir, sha)
             print(
