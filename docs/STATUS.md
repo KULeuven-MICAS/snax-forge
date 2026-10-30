@@ -1,37 +1,12 @@
 # SNAX-FORGE Status
 
-Open work: milestones, tasks and open items. What is built: `docs/ARCHITECTURE.md`; why: `docs/DECISIONS.md`; the artefacts: `docs/CONTRACTS.md`. Done tasks are removed when their milestone closes (D117); their tables are in git history.
+Open work: milestones, tasks and open items. What is built, and where its code lives: `docs/ARCHITECTURE.md`; why: `docs/DECISIONS.md`; the artefacts: `docs/CONTRACTS.md`. Done tasks are removed when their milestone closes (D117); their tables are in git history.
 
 Status values: `todo`, `brief` (brief written), `wip`, `done`, `deferred`.
 
-## Where the Code Lives
-
-| Component | Code | Tests | Data |
-|---|---|---|---|
-| SDFG ingest | `snax_forge/sdfg/` | `tests/dfg/test_expand.py` (and through `tests/dfg`) | `kernels/` |
-| SNAX-DFG, importer, reference executor | `snax_forge/dfg/`, `snax_forge/expr.py` | `tests/dfg/`, `tests/test_expr.py` | `tests/dfg/fixtures/` |
-| SNAX-BRM | `snax_forge/brm/` | `tests/brm/` | `snax_forge/brm/library/` |
-| SNAX-SANDBOX | `snax_forge/sandbox/` | `tests/sandbox/` | `recipes/` |
-| Design step | `snax_forge/design/` | `tests/design/` | `platforms/` |
-| Generator (`accelerator.json`, the hjson files, headers, `data.h`, the bundle; `main.c` from SNAX-LOWER's `lower/c.py`) | `snax_forge/gen/` | `tests/gen/` | `platforms/snax_forge_cluster.hjson` |
-| SNAX-LOWER | `snax_forge/lower/` | `tests/lower/` | |
-| Flow and `pixi run forge` | `snax_forge/flow/` | `tests/flow/` | |
-| A flow run's profile and trace (the events converted, D137) | `snax_forge/run/` | `tests/run/` | `tests/run/fixtures/` |
-| Viewers | `snax_forge/viz/` | `tests/viz/` | |
-| Reports | `snax_forge/report/` | `tests/report/` | |
-| Examples | `examples/` | `tests/flow/test_loop1.py` (on SNAX-GVSoC, marker `gvsoc`), `tests/flow/test_dot_example.py` (dot 1–6 on SNAX-GVSoC, marker `gvsoc`) | |
-| Chisel datapaths and controllers; a design point's accelerator RTL (from `accelerator.json`, the shell wrapper) | `hw/chisel/`, `snax_forge/gen/rtl.py` | `hw/chisel/src/test/`, `tests/gen/test_rtl.py` | `hw/chisel/blocks.json`, `hw/chisel/src/test/resources/rtl/` |
-| SNAX-GVSoC | the submodule `gvsoc/snax-gvsoc` (its own KULeuven-MICAS repository) | in that repository (`make regress`) | its `forge/` fixtures |
-| SNAX-GVSoC from snax-forge | `gvsoc/Makefile` | | |
-| Kernels (KER0) | `kernels/` | `tests/kernels/` | |
-| Utilities (clean, environment check, kernel list) | `util/` | | |
-| Development image (D118) | `container/` | | `container/toolchain/` |
-
-Generated files (`.snaxdfg`, design points, runs) go under `out/`. GVSoC was learnt in `KULeuven-MICAS/snax-gvsoc-experiment` (X1), which stays a playground.
-
 ## Milestones
 
-Done: M1, M4a, M3, M4b, M5, X1, M16 (SNAX-GVSoC checked against snax_cluster's RTL, D123; what it measured in snax-gvsoc's `docs/notes/NOTES.md`), M14 (generation to SNAX-GVSoC and snax_cluster, D111; closed by CLN1). Open, in order (D116):
+Done: M1, M4a, M3, M4b, M5, X1 (GVSoC learnt in `KULeuven-MICAS/snax-gvsoc-experiment`, which stays a playground), M16 (SNAX-GVSoC checked against snax_cluster's RTL, D123; what it measured in snax-gvsoc's `docs/notes/NOTES.md`), M14 (generation to SNAX-GVSoC and snax_cluster, D111; closed by CLN1). Open, in order (D116):
 
 | Milestone | Content | Status |
 |---|---|---|
