@@ -93,7 +93,14 @@ TRACES ?= summary
 
 .PHONY: build sw run
 
+# One build at a time: `build` takes an exclusive flock on $(GVSOC_WORKDIR)/.build.lock
+# and builds under it, unless GVSOC_BUILD_LOCKED is set (the flow, which holds that lock
+# around its decision to build and the build).
 build:
+ifeq ($(GVSOC_BUILD_LOCKED),)
+	@mkdir -p $(GVSOC_WORKDIR)
+	flock $(GVSOC_WORKDIR)/.build.lock $(MAKE) --no-print-directory build GVSOC_BUILD_LOCKED=1
+else
 	@if [ -d $(GVSOC_WORKDIR)/build ] && [ "$$(head -n 1 $(BUILT_FROM) 2>/dev/null)" != "$(SNAX_GVSOC_ABS)" ]; then \
 		echo "$(GVSOC_WORKDIR) was built from another checkout: clearing it"; \
 		rm -rf $(GVSOC_WORKDIR)/build $(GVSOC_WORKDIR)/install; \
@@ -102,6 +109,7 @@ build:
 	echo "$(SNAX_GVSOC_ABS)" > $(BUILT_FROM)
 	$(MAKE) -C $(SNAX_GVSOC_ABS) build GVSOC_WORKDIR=$(GVSOC_WORKDIR) TARGETS="$(TARGETS)"
 	git -c safe.directory='*' -C $(SNAX_GVSOC_ABS) rev-parse HEAD >> $(BUILT_FROM)
+endif
 
 # sw/ and each app of APPS; with FORGE, the generic app's ELF only (no dump)
 sw:

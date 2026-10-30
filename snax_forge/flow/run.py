@@ -110,6 +110,7 @@ time.
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -397,6 +398,26 @@ def build_reason(c: Checkout, workdir: Path) -> str | None:
     if c.dirty:
         return f"{SUBMODULE} has uncommitted changes"
     return None
+
+
+@contextmanager
+def build_lock(workdir: Path) -> Iterator[None]:
+    """An exclusive lock on ``workdir/.build.lock`` (``fcntl.flock``) for the build stage: the
+    decision to build and the build, one process at a time; another waits, then finds it built.
+    ``gvsoc/Makefile``'s ``build`` takes the same lock when called on its own
+    (``GVSOC_BUILD_LOCKED`` unset)."""
+    workdir.mkdir(parents=True, exist_ok=True)
+    with (workdir / ".build.lock").open("w") as f:
+        try:
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f"  build     waiting for another process's build in {cwd_relative(workdir)}",
+                  flush=True)  # fmt: skip
+            fcntl.flock(f, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(f, fcntl.LOCK_UN)
 
 
 def _make(stage: str, goal: str, variables: Mapping[str, str], log: Path,
@@ -729,13 +750,13 @@ def _from_graph(
             p.unlink()  # the flow's own folder: only what this generation wrote stays
 
     # build: SNAX-GVSoC, when needed
-    with _timed(times, "build"):
+    with _timed(times, "build"), build_lock(GVSOC_WORKDIR):
         c = checkout()
         why = build_reason(c, GVSOC_WORKDIR)
         if why is not None:
             print(f"  build     building SNAX-GVSoC: {why}; log in "
                   f"{cwd_relative(out / 'build.log')}", flush=True)  # fmt: skip
-            _make("build", "build", {}, out / "build.log", live=True)
+            _make("build", "build", {"GVSOC_BUILD_LOCKED": "1"}, out / "build.log", live=True)
             if not (GVSOC_WORKDIR / "install" / "bin" / "gvrun").is_file():
                 raise FlowError(f"build: no GVSoC install in {cwd_relative(GVSOC_WORKDIR)} after "
                                 f"the build; see {cwd_relative(out / 'build.log')}")  # fmt: skip
