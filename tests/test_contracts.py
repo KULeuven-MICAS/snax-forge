@@ -96,6 +96,7 @@ def test_snippet_is_verbatim(i):
         "## 16. Generated hjson files",
         "## 17. Accelerator RTL spec",
         "## 18. Bundle",
+        "## 19. Estimate",
     ],
 )
 def test_section_exists(heading):
