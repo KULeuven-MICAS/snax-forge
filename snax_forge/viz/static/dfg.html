@@ -21,11 +21,11 @@
     <span id="session-name" class="dfg-session" data-edit hidden></span>
     <span id="params" class="dfg-params" data-edit hidden></span>
     <div class="dfg-steps">
-      <button id="undo" type="button" title="Undo: the step before" data-edit hidden>Undo</button>
+      <button id="undo" type="button" title="Undo: the step before (Ctrl+Z, ⌘Z on macOS)" data-edit hidden>Undo</button>
       <button id="prev" type="button" title="The step before (←)" aria-label="previous step">◀</button>
       <select id="step" aria-label="step"></select>
       <button id="next" type="button" title="The step after (→)" aria-label="next step">▶</button>
-      <button id="redo" type="button" title="Redo: the step after" data-edit hidden>Redo</button>
+      <button id="redo" type="button" title="Redo: the step after (Ctrl+Shift+Z)" data-edit hidden>Redo</button>
     </div>
     <label class="dfg-toggle" title="Two steps side by side"><input id="compare" type="checkbox"> Compare</label>
     <button id="export" type="button" title="Write this step's graph to a file" data-edit hidden>Export step</button>
@@ -49,6 +49,8 @@
     </aside>
   </div>
   <footer id="log" class="dfg-log" data-edit hidden>
+    <div id="log-handle" class="dfg-log-handle" role="separator" aria-orientation="horizontal" aria-label="log height"
+      title="Drag to resize the log; double-click to collapse or reopen it"></div>
     <div class="dfg-log-bar">
       <button id="log-toggle" type="button" aria-expanded="true">Log</button>
       <button id="recipe-toggle" type="button" aria-expanded="false">Working recipe</button>

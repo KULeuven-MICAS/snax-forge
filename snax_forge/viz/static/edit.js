@@ -35,6 +35,65 @@ export function log(line, error = false) {
   list.scrollTop = list.scrollHeight;
 }
 
+// The pane's height: dragged on its handle between three lines and 70% of the window (the
+// CSS's min-height and max-height), kept in localStorage; a double-click collapses or reopens it.
+const LOG_KEY = "snax-forge.dfg.log-height";
+
+function logHeight() {
+  try {
+    return Number(localStorage.getItem(LOG_KEY)) || null;
+  } catch {
+    return null;
+  }
+}
+
+function keepLogHeight(px) {
+  try {
+    localStorage.setItem(LOG_KEY, String(px));
+  } catch {
+    // no storage (private window, blocked): the default height next time
+  }
+}
+
+function collapse(on) {
+  const pane = $("log");
+  pane.classList.toggle("collapsed", on);
+  $("log-toggle").setAttribute("aria-expanded", on ? "false" : "true");
+}
+
+function logPane() {
+  const pane = $("log");
+  const handle = $("log-handle");
+  const kept = logHeight();
+  if (kept) pane.style.height = `${kept}px`;
+  handle.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    const y0 = ev.clientY;
+    const h0 = pane.getBoundingClientRect().height;
+    let dragging = false;
+    handle.setPointerCapture(ev.pointerId);
+    const to = (e) => {
+      if (!dragging && Math.abs(e.clientY - y0) < 3) return; // a click, maybe half a double-click
+      dragging = true;
+      handle.classList.add("dragging");
+      collapse(false);
+      const css = getComputedStyle(pane);
+      const px = Math.min(parseFloat(css.maxHeight), Math.max(parseFloat(css.minHeight), h0 + y0 - e.clientY));
+      pane.style.height = `${px}px`;
+    };
+    const done = () => {
+      handle.removeEventListener("pointermove", to);
+      handle.classList.remove("dragging");
+      if (dragging) keepLogHeight(Math.round(pane.getBoundingClientRect().height));
+    };
+    handle.addEventListener("pointermove", to);
+    handle.addEventListener("pointerup", done, { once: true });
+    handle.addEventListener("pointercancel", done, { once: true });
+  });
+  handle.addEventListener("dblclick", () => collapse(!pane.classList.contains("collapsed")));
+  $("log-toggle").addEventListener("click", () => collapse(!pane.classList.contains("collapsed")));
+}
+
 function recipePanel() {
   const s = ctx.state.session;
   $("recipe").replaceChildren(
@@ -78,6 +137,14 @@ async function setParam(name, input) {
   ctx.status(r.ok ? "" : r.body.message, !r.ok);
   if (!r.ok) input.value = String(ctx.state.session.params[name]); // the old value stays
   await changed();
+}
+
+export function undo() {
+  if (ctx.state.session && ctx.state.session.undo !== null) move(ctx.state.session.undo);
+}
+
+export function redo() {
+  if (ctx.state.session && ctx.state.session.redo !== null) move(ctx.state.session.redo);
 }
 
 export async function move(k) {
@@ -224,6 +291,13 @@ async function apply(transform, form, el, drop = false) {
   }
 }
 
+/** The open form closed (Esc). */
+export function closeForm() {
+  ctx.state.t = null;
+  ctx.writeHash();
+  sidebar();
+}
+
 /** The sidebar for the selection at step k; a strip while Compare is on. */
 export async function sidebar() {
   const st = ctx.state;
@@ -250,7 +324,12 @@ export async function sidebar() {
       h("button", { type: "submit", class: "primary" }, "Apply")) : null;
     return h("div", { class: `dfg-transform${isOpen ? " open" : ""}` },
       h("button", { type: "button", class: "dfg-transform-name", "aria-expanded": isOpen ? "true" : "false",
-        onclick: () => { st.t = isOpen ? null : name; ctx.writeHash(); sidebar(); } }, name),
+        onclick: () => {
+          if (isOpen) return closeForm();
+          st.t = name;
+          ctx.writeHash();
+          return sidebar();
+        } }, name),
       formEl);
   });
   bar.replaceChildren(
@@ -302,8 +381,8 @@ export function init(c) {
   for (const el of document.querySelectorAll("[data-edit]")) el.hidden = false;
   $("sidebar").hidden = false;
   $("reload").hidden = true;
-  $("undo").addEventListener("click", () => ctx.state.session.undo !== null && move(ctx.state.session.undo));
-  $("redo").addEventListener("click", () => ctx.state.session.redo !== null && move(ctx.state.session.redo));
+  $("undo").addEventListener("click", undo);
+  $("redo").addEventListener("click", redo);
   $("export").addEventListener("click", async () => {
     const r = await post("/api/export", { k: ctx.state.k });
     log(r.body.log, !r.ok);
@@ -316,10 +395,7 @@ export function init(c) {
   $("save-form").addEventListener("submit", (ev) => { ev.preventDefault(); save(false); });
   $("save-force").addEventListener("click", () => save(true));
   $("save-close").addEventListener("click", () => $("save-dialog").close());
-  $("log-toggle").addEventListener("click", (ev) => {
-    const open = $("log").classList.toggle("collapsed");
-    ev.target.setAttribute("aria-expanded", open ? "false" : "true");
-  });
+  logPane();
   $("recipe-toggle").addEventListener("click", (ev) => {
     $("recipe").hidden = !$("recipe").hidden;
     ev.target.setAttribute("aria-expanded", $("recipe").hidden ? "false" : "true");

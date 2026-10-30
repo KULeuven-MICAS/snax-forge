@@ -6,7 +6,9 @@
 // Here the boxes are plain HTML laid out by CSS and the edges one SVG layer
 // per panel, measured from the placed boxes and redrawn when a panel changes
 // size; nothing is computed but where to draw (D57). Text is never in the SVG
-// but a group's name.
+// but a group's name. The old step stays on screen until the new one's view
+// arrives; then its boxes glide from where they were (glide), unless the
+// browser asks for reduced motion.
 //
 // The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>
 // (t, edit mode: that transform's form open for the selection). A selection is a name:
@@ -136,7 +138,9 @@ function panel(v, k, pick) {
       : h("div", { class: "c-row" }, topEl(r.node))));
   const canvas = h("div", { class: "c-canvas" }, rows, svg);
   const el = h("section", { class: "c-panel" }, head, h("div", { class: "c-scroll" }, canvas));
+  el._view = v;
   el._draw = () => {
+    if (el.classList.contains("settling")) return; // the boxes are gliding: drawn once they settle
     drawEdges(canvas, svg, v.edges, k);
     drawAccelerators(canvas, svg, v.accelerators || []);
     outline();
@@ -180,17 +184,12 @@ function drawEdges(canvas, svg, edges, k) {
     if (!a || !b) continue;
     const ra = a.getBoundingClientRect();
     const rb = b.getBoundingClientRect();
+    // From the bottom of one end to the top of the other, a connector inside a node included
+    // (the boxes it passes are drawn over it)
     const x1 = ra.left + ra.width / 2 - c.left;
     const x2 = rb.left + rb.width / 2 - c.left;
-    let y1 = ra.bottom - c.top;
-    let y2 = rb.top - c.top;
-    // An edge to or from a connector inside a top-level node stops at that node's box.
-    const top = e.stop ? canvas.querySelector(`[data-top="${CSS.escape(e.stop)}"]`) : null;
-    if (top) {
-      const rt = top.getBoundingClientRect();
-      if (e.dir === "read") y2 = rt.top - c.top;
-      else y1 = rt.bottom - c.top;
-    }
+    const y1 = ra.bottom - c.top;
+    const y2 = rb.top - c.top;
     const bend = Math.max(18, Math.abs(y2 - y1) * 0.45);
     const d = `M${x1},${y1} C${x1},${y1 + bend} ${x2},${y2 - bend} ${x2},${y2 - 2}`;
     out.push(svgEl("path", { d, class: "edge-hit", "data-sel": e.id }));
@@ -213,13 +212,15 @@ function unionRect(canvas, rects) {
   };
 }
 
+const LABEL = 17; // px above an outline's content for its name (style.css: 0.85rem)
+
 /** An outline with its name on top: a group's at the left, an accelerator's at the right. */
 function outlineBox(r, pad, cls, name) {
   const g = svgEl("g", { class: cls, "data-sel": name, ...(cls === "group-box" ? { "data-group": name } : {}) });
-  g.append(svgEl("rect", { x: r.left - pad, y: r.top - pad - 14, width: r.right - r.left + 2 * pad,
-    height: r.bottom - r.top + 2 * pad + 14, rx: 6 }));
+  g.append(svgEl("rect", { x: r.left - pad, y: r.top - pad - LABEL, width: r.right - r.left + 2 * pad,
+    height: r.bottom - r.top + 2 * pad + LABEL, rx: 6 }));
   const right = cls === "acc-box";
-  const t = svgEl("text", { x: right ? r.right + pad - 6 : r.left - pad + 6, y: r.top - pad - 3,
+  const t = svgEl("text", { x: right ? r.right + pad - 6 : r.left - pad + 6, y: r.top - pad - 4,
     "text-anchor": right ? "end" : "start" });
   t.textContent = name;
   g.append(t);
@@ -240,12 +241,60 @@ function drawAccelerators(canvas, svg, accelerators) {
     // An accelerator that is one group of its name (dot 2 to 6) is drawn once, as the group.
     if (!rects.length || (acc.groups.length === 1 && acc.groups[0].name === acc.name)) continue;
     const all = {
-      left: Math.min(...rects.map((x) => x.left)), top: Math.min(...rects.map((x) => x.top)) - 18,
+      left: Math.min(...rects.map((x) => x.left)), top: Math.min(...rects.map((x) => x.top)) - LABEL - 4,
       right: Math.max(...rects.map((x) => x.right)), bottom: Math.max(...rects.map((x) => x.bottom)),
     };
     out.push(outlineBox(all, 16, "acc-box", acc.text));
   }
   svg.append(...out);
+}
+
+// -- the move between steps: the boxes glide from their old places --------------------------
+
+const HTML = "http://www.w3.org/1999/xhtml";
+const GLIDE_MS = 250;
+let drawn = null; // the views last drawn, one per panel
+
+const still = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const boxes = (root) => [...root.querySelectorAll(".c-canvas [data-sel]")].filter((el) => el.namespaceURI === HTML);
+const boxKey = (el) => (el.dataset.box ? `box:${el.dataset.box}` : `node:${el.dataset.sel}`);
+
+/** Where every box is on screen, per panel: its key -> its rect. */
+function places() {
+  return [...$("graphs").children].map((p) => new Map(boxes(p).map((el) => [boxKey(el), el.getBoundingClientRect()])));
+}
+
+/** A new step's panel: each box that was on screen moves from there to its place, a box inside
+another by what is left of its own move; a new one fades in; the step's added and changed
+boxes (decorate's ``diffed``) arrive from a highlight; the edges are drawn when all settle. */
+function glide(panel, old) {
+  const moved = new Map(); // box -> its whole move, which the boxes inside it share
+  const runs = [];
+  for (const el of boxes(panel)) {
+    const up = el.parentElement.closest(".c-canvas [data-sel]");
+    const carried = (up && moved.get(up)) || [0, 0];
+    const was = old.get(boxKey(el));
+    if (el.classList.contains("diffed")) el.classList.add("arrive");
+    if (!was) {
+      moved.set(el, carried);
+      runs.push(el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: GLIDE_MS * 1.5, easing: "ease-out" }));
+      continue;
+    }
+    const now = el.getBoundingClientRect();
+    const whole = [was.left - now.left, was.top - now.top];
+    moved.set(el, whole);
+    const dx = whole[0] - carried[0];
+    const dy = whole[1] - carried[1];
+    if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) continue;
+    runs.push(el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: "none" }],
+      { duration: GLIDE_MS, easing: "ease-out" }));
+  }
+  if (!runs.length) return;
+  panel.classList.add("settling");
+  Promise.all(runs.map((a) => a.finished.catch(() => null))).then(() => {
+    panel.classList.remove("settling");
+    panel._draw();
+  });
 }
 
 // -- selection --------------------------------------------------------------------
@@ -391,8 +440,14 @@ async function draw() {
         panel(shown, state.k, goto),
       ];
     }
+    const old = places();
     $("graphs").replaceChildren(...panels);
     $("graphs").classList.toggle("two", panels.length === 2);
+    const now = panels.map((p) => p._view);
+    if (!still() && drawn && old.length === panels.length) {
+      panels.forEach((p, i) => p._view !== drawn[i] && glide(p, old[i]));
+    }
+    drawn = now;
     requestAnimationFrame(() => panels.forEach((p) => p._draw && p._draw()));
     await Promise.all([details(), estimate(), state.mode === "edit" ? edit.sidebar() : null]);
     const broken = state.steps.filter((s) => s.error).length;
@@ -475,10 +530,29 @@ $("graphs").addEventListener("click", (ev) => {
   const t = ev.target.closest("[data-sel]");
   select(t ? t.getAttribute("data-sel") : null);
 });
+// Keys: ← → the steps; Esc closes an open form, then clears the selection; edit mode: Enter
+// applies the form that has the focus, Ctrl+Z (⌘Z) undoes, Ctrl+Shift+Z redoes. In a text field
+// only Enter and Esc in a form count; a dialog keeps its own keys.
+const MAC = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 document.addEventListener("keydown", (ev) => {
-  if (ev.target.closest("select, input")) return;
-  if (ev.key === "Escape") select(null);
-  else if (ev.key === "ArrowLeft" && state.k > 0) goto(state.k - 1);
+  if (document.querySelector("dialog[open]")) return;
+  const typing = ev.target.closest("input, select, textarea, [contenteditable]");
+  const form = ev.target.closest(".dfg-form");
+  if (ev.key === "Escape" && (!typing || form)) {
+    if (state.mode === "edit" && state.t) edit.closeForm();
+    else select(null);
+  } else if (ev.key === "Enter" && form && !ev.target.closest("button")) {
+    ev.preventDefault();
+    form.requestSubmit();
+  } else if (typing) {
+    return;
+  } else if (state.mode === "edit" && (MAC ? ev.metaKey : ev.ctrlKey) && ev.key.toLowerCase() === "z") {
+    ev.preventDefault();
+    if (ev.shiftKey) edit.redo();
+    else edit.undo();
+  } else if (ev.altKey || ev.ctrlKey || ev.metaKey) {
+    return;
+  } else if (ev.key === "ArrowLeft" && state.k > 0) goto(state.k - 1);
   else if (ev.key === "ArrowRight" && state.k < state.steps.length - 1) goto(state.k + 1);
 });
 window.addEventListener("hashchange", () => {

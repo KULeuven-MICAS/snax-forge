@@ -352,7 +352,7 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
   --edge: #6b747e;
   --hl: #d4386a;
   --data: #1f7a8c;
-  --side: 280px; /* the right panel */
+  --side: 300px; /* the right panel */
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -368,16 +368,16 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
 .mono { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 
 /* layout: a top bar; [edit mode's sidebar] the graph [Details and Estimate]; [edit mode's log] */
-body.dfg { padding: 0; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px, 2 px larger (R5c) */ display: flex; flex-direction: column; overflow: hidden; }
 .dfg-top { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1rem; max-width: none; margin: 0; padding: 0.55rem var(--gap); border-bottom: 2px solid var(--ink); background: var(--panel); }
-.dfg-top h1 { font-size: 1.2rem; margin-right: auto; }
+.dfg-top h1 { font-size: 1.325rem; margin-right: auto; }
 .dfg-top .status { flex-basis: 100%; margin: 0; min-height: 0; }
 .dfg-top .status:empty { display: none; }
 .dfg-steps { display: flex; align-items: center; gap: 0.25rem; }
 .dfg-steps select { min-width: 12rem; }
 .dfg-toggle { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
 .dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) var(--side); grid-template-areas: "side centre right"; }
-.dfg-sidebar { grid-area: side; width: 240px; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
+.dfg-sidebar { grid-area: side; width: 260px; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
 .dfg-sidebar[hidden] { display: none; }
 .dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; justify-content: safe center; }
 /* Compare: the two graphs side by side, one thin line between them; the column scrolls */
@@ -385,15 +385,19 @@ body.dfg { padding: 0; height: 100vh; display: flex; flex-direction: column; ove
 .dfg-centre.two > .c-panel { flex: 0 0 auto; }
 .dfg-centre.two > .c-panel + .c-panel { border-left: 1px solid var(--rule); }
 .dfg-right { grid-area: right; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
-.dfg-side-panel h2 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.4rem 0 0.3rem; }
+.dfg-side-panel h2 { font-size: 0.925rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.4rem 0 0.3rem; }
 .dfg-side-panel { padding: 0; border-bottom: none; }
 .dfg-side-panel + .dfg-side-panel { border-top: 1px solid var(--rule); margin-top: 0.6rem; padding-top: 0.3rem; }
-.dfg-log { max-height: 8rem; overflow: auto; border-top: 1px solid var(--rule); background: var(--panel); }
+/* the log: its height dragged on the handle (edit.js), from three lines to 70% of the window */
+.dfg-log { flex: none; display: flex; flex-direction: column; padding: 0.2rem var(--gap) 0.4rem; font-size: 0.82em; height: 9rem; min-height: calc(6px + 1.9em + 3 * 1.45em + 0.6rem); max-height: 70vh; border-top: 1px solid var(--rule); background: var(--panel); }
+.dfg-log.collapsed { height: auto !important; min-height: 0; }
+.dfg-log-handle { flex: none; height: 6px; margin: -0.2rem calc(-1 * var(--gap)) 0.15rem; cursor: row-resize; touch-action: none; }
+.dfg-log-handle:hover, .dfg-log-handle.dragging { background: var(--rule); }
 .dfg-log[hidden] { display: none; }
 .dfg-legend { margin: 0.9rem 0 0; font-size: 0.85em; gap: 0.2rem 0.8rem; }
 
 /* Details and Estimate */
-.c-details h3 { font-size: 0.9rem; margin: 0.3rem 0 0.2rem; overflow-wrap: anywhere; }
+.c-details h3 { font-size: 1.025rem; margin: 0.3rem 0 0.2rem; overflow-wrap: anywhere; }
 .c-details dl.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.1rem 0.6rem; margin: 0 0 0.5rem; }
 .c-details dt { color: var(--muted); }
 .c-details dd { margin: 0; overflow-wrap: anywhere; font-size: 0.92em; }
@@ -411,10 +415,11 @@ body.dfg { padding: 0; height: 100vh; display: flex; flex-direction: column; ove
 .c-panel-head { margin-bottom: 0.2rem; font-size: 0.9em; }
 .load-error { color: var(--mem); font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
 .c-scroll { overflow: visible; }
-.c-canvas { position: relative; width: max-content; min-width: 100%; padding: 3.4rem 2rem 1.2rem; }
+.c-canvas { position: relative; width: max-content; min-width: 100%; padding: 3.8rem 2rem 1.2rem; }
 .c-rows { position: relative; z-index: 1; display: flex; flex-direction: column; align-items: center; gap: 2.2rem; }
 .c-row { display: flex; gap: 1rem; justify-content: center; align-items: flex-start; }
-svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; }
+svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events: none; overflow: visible; transition: opacity 0.15s; }
+.c-panel.settling svg.dfg-edges { opacity: 0; } /* while the boxes glide (dfg.js) */
 
 /* maps: a slim bar in the tag's colour, the body indented below */
 .c-map { --loop: var(--loop-none); border-left: 3px solid var(--loop); border-radius: 3px; background: color-mix(in srgb, var(--loop) 5%, transparent); cursor: pointer; }
@@ -451,7 +456,7 @@ path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
 svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; pointer-events: stroke; cursor: pointer; }
 svg.dfg-edges .group-box rect { stroke: var(--muted); stroke-width: 1; }
 svg.dfg-edges .acc-box rect { stroke: var(--rule); stroke-width: 1.5; }
-svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.72rem; fill: var(--muted); pointer-events: visiblePainted; cursor: pointer; }
+svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.85rem; fill: var(--muted); pointer-events: visiblePainted; cursor: pointer; }
 svg.dfg-edges .hover rect { stroke: var(--busy); stroke-width: 2.5; stroke-dasharray: none; }
 svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 
@@ -466,7 +471,7 @@ svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 .dfg-chip input { font: inherit; color: var(--ink); background: var(--bg); border: none; border-radius: 0.8rem; padding: 0.05rem 0.35rem; }
 #step option.past { color: var(--muted); }
 .dfg-sidebar { padding: 0.6rem 0.7rem; font-size: 0.88em; }
-.dfg-sidebar h2 { font-size: 0.85rem; margin: 0.2rem 0 0.5rem; color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }
+.dfg-sidebar h2 { font-size: 0.975rem; margin: 0.2rem 0 0.5rem; color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }
 .dfg-sidebar h2 b { color: var(--ink); }
 .dfg-sidebar.strip { width: 1.6rem; padding: 0.6rem 0.2rem; overflow: hidden; }
 .dfg-strip-note { writing-mode: vertical-rl; color: var(--muted); margin: 0; }
@@ -494,19 +499,23 @@ button.primary { background: var(--ink); color: var(--bg); border-color: var(--i
 .c-node.marked::after { position: absolute; top: 3px; right: 3px; margin: 0; }
 .c-node.diffed, .c-pill.diffed { background: color-mix(in srgb, var(--wait) 35%, var(--panel)); }
 .c-map.diffed > .c-bar { background: color-mix(in srgb, var(--wait) 45%, var(--panel)); }
+/* a step just shown: its added and changed boxes arrive from a stronger highlight */
+.c-node.diffed.arrive, .c-pill.diffed.arrive, .c-map.diffed.arrive > .c-bar { animation: dfg-arrive 1.4s ease-out; }
+@keyframes dfg-arrive { from { background-color: color-mix(in srgb, var(--wait) 85%, var(--panel)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--wait) 70%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .arrive, .arrive > .c-bar { animation: none !important; } }
 /* the log */
-.dfg-log { padding: 0.2rem var(--gap) 0.4rem; font-size: 0.82em; }
 .dfg-log-bar { display: flex; gap: 0.5rem; }
 .dfg-log-bar button { padding: 0.05rem 0.5rem; font-size: 0.95em; }
-.dfg-log-lines { margin: 0.25rem 0 0; padding-left: 1.6rem; max-height: 6rem; overflow: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; }
+.dfg-log-lines { flex: 1 1 auto; min-height: 0; margin: 0.25rem 0 0; padding-left: 1.6rem; overflow: auto; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: pre-wrap; }
 .dfg-log-lines li.error { color: var(--mem); }
 .dfg-log.collapsed .dfg-log-lines, .dfg-log.collapsed .dfg-recipe { display: none; }
-.dfg-recipe pre { max-height: 12rem; margin: 0.3rem 0 0; }
+.dfg-recipe { flex: 1 1 auto; min-height: 0; overflow: auto; }
+.dfg-recipe pre { margin: 0.3rem 0 0; }
 /* the dialogs */
 .dfg-dialog { max-width: min(48rem, 92vw); border: 1px solid var(--rule); border-radius: 6px; background: var(--panel); color: var(--ink); padding: 1rem 1.2rem; }
 .dfg-dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
-.dfg-dialog h2 { margin: 0 0 0.4rem; font-size: 1.2rem; }
-.dfg-dialog h3 { margin: 0.6rem 0 0.3rem; font-size: 0.95rem; }
+.dfg-dialog h2 { margin: 0 0 0.4rem; font-size: 1.325rem; }
+.dfg-dialog h3 { margin: 0.6rem 0 0.3rem; font-size: 1.075rem; }
 .dfg-dialog .status:empty { display: none; }
 .dfg-dialog input { font: inherit; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.35rem; }
 .dfg-start-part + .dfg-start-part { border-top: 1px solid var(--rule); }
