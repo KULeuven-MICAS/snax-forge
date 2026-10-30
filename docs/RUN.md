@@ -213,3 +213,21 @@ One design by hand, Questa: in the image, from the folder that holds both checko
     # ** Info: [SUCCESS] Program finished successfully
 
 Questa exits 0 whatever the program returns, so `snax-forge-run` reads the exit code from that last line; the output is also in `logs/snax-forge-vsim.txt`. `N` reaches the hardware only as CSR values, so a design's `N=512` bundle's `rtl/` is the default's, byte for byte, and one RTL build runs both ELFs.
+
+## 9. A recipe in the editor
+
+The editor builds a recipe one transform at a time on the drawn graph (D55, C§12). A session on vecadd's import:
+
+    pixi run edit-dfg --kernel vecadd --set N=64 --set W=4
+
+    serving vecadd at http://127.0.0.1:8767/ (Ctrl-C to stop)
+
+Open it as section 4 does the viewer, on port 8767. Click `add_map`: the sidebar lists the transforms whose site accepts it, each with its form. Apply `split` with factor `W`, `tag_map` `temporal` on `add_map` and `spatial` on `add_map_s`, then select `add` and `bind` it to `elementwise_add / chisel_tiled_spatial`. Each Apply is a step checked against the reference, with a log line (the bind's ends `C 0 → 16 · not mapped 16 → 0`). The Estimate (D151, C§19) shows 64 iterations not mapped as imported, 16 once `add_map_s` is spatial, and after the bind the group `add` at `16 = 16 + 0` cycles with COUNTER 19, the counter section 2's run measures (`add_acc 19`). Undo, redo and the step list move the cursor; Apply below the last step asks to drop the steps after it.
+
+Save recipe, here as `vecadd_mine` (a name no recipe has), runs the design checks, writes `recipes/vecadd_mine.json` and its steps to `out/sandbox/vecadd_mine/`, and prints what comes next:
+
+    pixi run sandbox recipes/vecadd_mine.json
+    pixi run flow recipes/vecadd_mine.json --platform platforms/snax_forge.json
+    pixi run forge recipes/vecadd_mine.json
+
+The session stays in `out/sessions/vecadd/`: `--session out/sessions/vecadd` resumes it, `--recipe recipes/vecadd.json` starts one from a recipe, and Export step writes one step's graph to its `export/`. `pixi run view-dfg out/sandbox/vecadd_mine/ --platform platforms/snax_forge.json` shows the saved steps read-only.
