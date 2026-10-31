@@ -107,7 +107,7 @@ class GroupModel(val units: Seq[UnitDesc], val links: Seq[Link]) {
           fire   = wouldFire(k),
           result = gives(k),
           push   = if (c.latency > 0) head(k) else gives(k),
-          read   = c.span > 1 && wants(k) && avail(k),
+          read   = wants(k) && avail(k),
           lane   = us.lane
         )
         for (i <- c.latency - 1 until 0 by -1) us.slots(i) = us.slots(i - 1)

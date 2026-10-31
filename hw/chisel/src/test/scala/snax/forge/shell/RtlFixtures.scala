@@ -12,8 +12,8 @@ import snax.forge.RepoPaths
   * one accelerator task, `vectors.json` (`driven`; dot_1's two groups have none: `TwoGroupsSpec` drives each itself),
   * written by the Python side (`snax_forge/gen/rtl.py`'s `write_fixture`, checked byte for byte by
   * `tests/gen/test_rtl.py`). Its `accelerator.json` and streamer hjson (`<tag>_streamer.hjson`) are snax-gvsoc's
-  * `forge/<design>/` (gen-gvsoc's bytes), read from the submodule; a design that `forge/` does not hold (vsum_tree_w8)
-  * keeps the two in its folder. A spec that needs a `forge/` file the submodule does not have is cancelled.
+  * `forge/<design>/` (gen-gvsoc's bytes), read from the submodule; a design that `forge/` does not hold (vsum_tree_w8,
+  * dot_5_w1) keeps the two in its folder. A spec that needs a `forge/` file the submodule does not have is cancelled.
   */
 object RtlFixtures {
 

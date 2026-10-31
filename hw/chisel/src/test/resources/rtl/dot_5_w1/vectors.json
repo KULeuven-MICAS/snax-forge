@@ -1,0 +1,35 @@
+{
+ "design_point": "out/design/dot_5_w1/design_point.json",
+ "ports": [
+  {
+   "port": "a",
+   "array": "A",
+   "lanes": 1,
+   "beats": 16,
+   "values": [701, 273, 22, -461, -385, -919, -850, -967, -650, 626, 298, 825, 7, 213, 941, 458]
+  },
+  {
+   "port": "b",
+   "array": "B",
+   "lanes": 1,
+   "beats": 16,
+   "values": [264, 87, 119, 870, -446, 631, 341, -995, -212, 714, 108, -933, 529, 459, 693, -649]
+  },
+  {
+   "port": "out",
+   "array": "out_golden",
+   "lanes": 1,
+   "beats": 1,
+   "values": [378063, 0, 0, 0, 0, 0, 0, 0]
+  }
+ ],
+ "tasks": [
+  {
+   "name": "mult_dot",
+   "csrs": {"JOBS": 1, "JOB_BEATS": 16},
+   "firings": 16,
+   "counter": 18,
+   "working": "The group's COUNTER counts its busy cycles. The group rule (snax-gvsoc's snax_group_rule.py) stepped with inputs always valid and the output always ready, JOBS 1, T mac 16, sum 1: E - s = 18"
+  }
+ ]
+}

@@ -7,8 +7,8 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, Sink, Source}
 import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
 
 /** Each fixture's `<tag>_shell_wrapper` (built as `Emit --spec` builds it: vecadd and vecmul, accumulate at W = 1, 4
-  * and 8, and the linked groups dot 2–6 and matvec 4–6) under random data, configurations, streamer gaps and output
-  * stalls, through its CSR port as `main.c` drives it.
+  * and 8, and the linked groups dot 2–6, dot 5 at W = 1 (SerialAccumulate at lanes 1) and matvec 4–6) under random
+  * data, configurations, streamer gaps and output stalls, through its CSR port as `main.c` drives it.
   *
   * Per seed, `Runs` runs back to back on one wrapper. Per run: J jobs in 1..32 (and for a fold T in 1..8 beats each; an
   * elementwise unit has T = 1), one run in eight the empty run (JOBS 0), JOBS (and JOB_BEATS) written, then START; the

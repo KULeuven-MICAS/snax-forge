@@ -6,8 +6,9 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, RunLines, SnaxGroupCases}
 
-/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 23 group cases
-  * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, backpressure, an input gap, JOBS 0), cycle for cycle: per cycle
+/** `GroupCtrl` alone (no datapath, as UnitCasesSpec drives shapes it has none for) through snax-gvsoc's 25 group cases
+  * (`SnaxGroupCases`: dot 2-6 at T 2 and 4, J 1 and 2, dot 5 and 6 at W 1, backpressure, an input gap, JOBS 0; their
+  * data is checked by `tb.cpp`, and dot5_w1_j2's through the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle
   * the outer valids and the output's ready poked; each input's ready (its unit's firing, C§17's per-unit join), each
   * unit's fire and give, each buffer's occupancy after the cycle and busy compared; at the run's end its line from
   * `cls` per busy cycle and the head's firings. Each unit's T is fixed (`params.T`), so the start carries JOBS. Without
@@ -76,7 +77,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       it should "give every group case's cycles and runs" in
         cancel(s"${SnaxGroupCases.Env} is not set (snax-gvsoc's tests/snax/group/cases)")
     case Some(all) =>
-      it should "find the 23 group cases" in assert(all.size == 23, s"${all.size} cases")
+      it should "find the 25 group cases" in assert(all.size == 25, s"${all.size} cases")
       for (c <- all) it should s"give ${c.name}'s cycles and runs" in run(c)
   }
 }
