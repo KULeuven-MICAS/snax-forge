@@ -111,8 +111,9 @@ class GroupConfig(n: Int) extends Bundle {
 
 /** A unit's enables to its datapath (`ctrl` -> `<tag>_datapath`, the catalogue's pins), and what it gives: `fire` (a
   * beat taken from every input; at span > 1 the last lane's read; a plain Mac's `en` too), `first` (the beat fired or
-  * read is its job's first, d = 0), `read` and `lane` (span > 1: lane `lane` read in place), `adv` (its pipeline
-  * advances: not frozen) and `give` (a result pushed into its link or the outer output).
+  * read is its job's first, d = 0), `read` and `lane` (lane `lane` read in place, at every span: at span 1 the read is
+  * the firing), `adv` (its pipeline advances: not frozen) and `give` (a result pushed into its link or the outer
+  * output).
   */
 class UnitEnables(span: Int) extends Bundle {
   val fire  = Output(Bool())
@@ -259,7 +260,7 @@ class GroupRule(val desc: GroupDesc) {
     frozen(k) := (if (u.latency > 0) head(k) else gives(k)) && !room(k)
     fire(k)   := wouldFire(k)                               && !frozen(k)
     give(k)   := (if (u.latency > 0) head(k) else gives(k)) && !frozen(k)
-    read(k)   := (if (u.span > 1) wants(k) && avail(k) && !frozen(k) else false.B)
+    read(k)   := wants(k)                                   && avail(k) && !frozen(k)
     Seq(frozen(k) -> "frozen", fire(k) -> "fire", give(k) -> "give", read(k) -> "read").foreach { case (b, w) =>
       b.suggestName(s"${u.name}_$w")
     }

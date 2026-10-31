@@ -21,6 +21,13 @@ only when ``connect`` passed. ``memory.pin`` makes the plan (memory.py)
 when its pins and passes name what exists, unless the Design already holds
 one (a design point, judged as stored). A new check is registered with
 ``register_check(code, stage, fn)``; ``fn(design)`` yields Problems.
+
+A note is not a refusal: a design that passes every check but has no reason
+to exist as it is (``design.serial_one_lane``: SerialAccumulate at lanes 1,
+the work of TreeAccumulate at lanes 1). ``run_notes`` runs every note
+registered with ``register_note(code, fn)`` once the checks passed (they
+resolved the instances); a note is a Problem, its ``fix`` the change that
+removes it, and ``note_text`` prints it.
 """
 
 from __future__ import annotations
@@ -146,6 +153,28 @@ def load(
     except DesignError as e:
         problems += e.problems
     return Design(platform, graph, problems, str(graph_path), memory_spec=spec)
+
+
+NOTES: dict[str, Check] = {}
+
+
+def register_note(code: str, fn: Check) -> None:
+    """Add a note; it runs after every check passed, in registration order."""
+    if code in NOTES:
+        raise ValueError(f"note {code!r} already registered")
+    NOTES[code] = fn
+
+
+def run_notes(design: Design) -> list[Problem]:
+    """Every note on a design whose checks passed (``run_checks`` resolved its instances)."""
+    return [p for fn in NOTES.values() for p in fn(design)]
+
+
+def note_text(note: Problem) -> str:
+    """``note [code] where: message``, and its fix indented below."""
+    return f"note [{note.code}] {note.where}: {note.message}" + (
+        f"\n    fix: {note.fix}" if note.fix else ""
+    )
 
 
 def run_checks(design: Design, stages: Sequence[str] | None = None) -> list[Problem]:
@@ -1018,3 +1047,25 @@ for _code, _stage, _fn in (
     ("memory.overlap", "memory", _memory_overlap),
 ):
     register_check(_code, _stage, _fn)
+
+
+# =============================================================================
+# Notes
+# =============================================================================
+
+
+def _design_serial_one_lane(design: Design) -> Iterable[Problem]:
+    """A unit bound to SerialAccumulate at lanes 1: it reads its one lane per beat, the work of
+    TreeAccumulate at lanes 1 (dot 4's shape), so valid but with no reason to exist."""
+    for name, inst in design.instances.items():
+        b = inst.impl.binding or {}
+        if b.get("datapath") != "SerialAccumulate" or inst.value(b["args"]["lanes"]) != 1:
+            continue
+        tree = "chisel_adder_tree"  # accumulate's TreeAccumulate at W lanes
+        yield Problem("design.serial_one_lane", name,
+                      "SerialAccumulate at lanes 1 reads one lane per beat, the same work as "
+                      "TreeAccumulate at lanes 1",
+                      f"bind {tree}" if tree in inst.brm.implementations else None)  # fmt: skip
+
+
+register_note("design.serial_one_lane", _design_serial_one_lane)

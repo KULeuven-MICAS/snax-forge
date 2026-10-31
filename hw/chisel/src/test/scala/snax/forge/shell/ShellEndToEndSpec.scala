@@ -18,7 +18,9 @@ import snax.forge.{ForgeTester, IntType, LaneBits, Seeds, SnaxGroupCases}
   * matching group case (`dot<k>_n<N>_j<J>`: its run line's classes added up; cancelled without
   * `SNAX_GVSOC_GROUP_CASES`). And matvec 4–6 at int32 (every port and the product retyped), N 8, J 2, on the rows
   * (46341, 3, 3, 3, 3, 3, 3, 6) and (0, 1, 1, 1, 1, 0, 0, 0) against p = (46341, 1, ..., 1): 46341² wraps at int32, q =
-  * (-2147478991, 4), the tb's MAC vector `mac_int32_wrap_w2_t8` through the whole accelerator.
+  * (-2147478991, 4), the tb's MAC vector `mac_int32_wrap_w2_t8` through the whole accelerator. And dot 5 at W 1
+  * (SerialAccumulate at lanes 1) on its group case `dot5_w1_j2`'s own data: J = 2 jobs of T = 4 beats, the results the
+  * case's sums (NumPy's) and the counter its busy cycles.
   */
 class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
 
@@ -67,8 +69,12 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
       }
     }
 
-  /** The linked variants' fixtures: dot 2–6, matvec 4–6. */
-  private val variants = RtlFixtures.all.filter(f => f.spec.groups.exists(_.links.nonEmpty))
+  /** The linked fixtures at `lanes` lanes (W): at 4 the variants dot 2–6 and matvec 4–6, at 1 dot 5. */
+  private def linked(lanes: Int) =
+    RtlFixtures.all.filter { f =>
+      f.spec.groups.exists(_.links.nonEmpty) && f.spec.units.head.port("a").lanes == lanes
+    }
+  private val variants           = linked(4)
 
   /** NumPy's q = A p at `t`, A `rows` × n row-major, wrapping. */
   private def matvec(a: Seq[BigInt], p: Seq[BigInt], rows: Int, t: IntType): Seq[BigInt] =
@@ -111,6 +117,27 @@ class ShellEndToEndSpec extends AnyFlatSpec with ForgeTester {
             Seq(matvec(a, p, jobs, IntType("int64")))
           )
         drive(f.spec, run, Some(cyc), s"${f.name}, N $n, J $jobs")
+    }
+
+  for (f <- linked(1))
+    it should s"give ${f.name}'s group case data: its NumPy sums and its cycles" in {
+      val name  = s"dot${f.name.split("_")(1)}_w1_j2"
+      val all   = SnaxGroupCases.all.getOrElse(cancel(s"${SnaxGroupCases.Env} is not set"))
+      val c     = all.find(_.name == name).getOrElse(fail(s"no group case $name"))
+      val data  = c.data.getOrElse(fail(s"$name has no data"))
+      val beats = c.jobs * c.units.head.t
+      assert(data.lanes == 1 && data.a.size == beats, s"$name: ${data.a.size} beats of lanes ${data.lanes}")
+      drive(
+        f.spec,
+        Run(
+          Seq("JOBS" -> c.jobs.toLong, "JOB_BEATS" -> c.units.head.t.toLong),
+          Seq(data.a, data.b),
+          Seq(beats, beats),
+          Seq(data.sums)
+        ),
+        caseCycles(name),
+        s"${f.name} on $name"
+      )
     }
 
   /** `spec` with every port, and the product, at `dtype`. */

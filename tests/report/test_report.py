@@ -303,14 +303,15 @@ def test_the_command_line(flows, tmp_path, capsys):
 # =============================================================================
 
 
-def designed_report(tmp_path, recipe):
-    """The design report of ``recipes/<recipe>.json`` designed on snax_forge (no run)."""
+def designed_report(tmp_path, recipe, sets=()):
+    """The design report of ``recipes/<recipe>.json`` (``--set`` each of ``sets``) designed on
+    snax_forge (no run)."""
     from snax_forge.gen import generate
     from snax_forge.report.design import build_design
     from snax_forge.sandbox import Recipe
     from tests.gen.helpers import REPO, designed
 
-    rel = designed(tmp_path, recipe, recipe)
+    rel = designed(tmp_path, recipe, recipe, sets)
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
         generate(rel, tmp_path / "gen", root=tmp_path)
@@ -328,6 +329,18 @@ def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):
     text = render_design(r)
     assert "| Streamer | Serves | Direction | dtype | num_slc | num_ch | FIFO depth |" in text
     assert "num_ch 2, FIFO depth" in text
+
+
+@pytest.mark.parametrize("w", [1, 4])
+def test_design_md_lists_the_design_notes(tmp_path, w):
+    """dot_5 at W = 1 binds SerialAccumulate at lanes 1: design.md's Notes start with the note
+    design.serial_one_lane and its fix; at W = 4 there is none."""
+    r = designed_report(tmp_path, "dot_5", ["N=16", f"W={w}"])
+    note = ("note [design.serial_one_lane] sum: SerialAccumulate at lanes 1 reads one lane per "
+            "beat, the same work as TreeAccumulate at lanes 1 Fix: bind chisel_adder_tree")  # fmt: skip
+    assert (r.notes[:1] == [note]) == (w == 1)
+    assert (f"- {note}" in render_design(r)) == (w == 1)
+    assert not any("design.serial_one_lane" in n for n in r.notes[w == 1 :])
 
 
 def test_the_extents_include_the_padding(tmp_path):

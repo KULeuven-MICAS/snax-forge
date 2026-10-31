@@ -27,7 +27,9 @@ the kernel from the run's functional check.
                  ramp, stall and the COUNTER a run gives (the cycles plus the
                  streamers' fill), then the accelerator's cycles, the work no unit
                  runs and the L1 footprint against the L1
-    notes        facts about addresses only: movers of the accelerator whose
+    notes        the design notes first (check.py's ``run_notes``: a design that
+                 passes but is worth a second look, with its fix); then
+                 facts about addresses: movers of the accelerator whose
                  containers start in the same banks, or lie a whole number of
                  bank rows apart, so that element i of both is in one bank;
                  and containers the DMA moves as padded beats
@@ -291,13 +293,14 @@ def build_design(
 ) -> DesignReport:
     """The design report of a flow (``point`` its DesignPoint, ``recipe`` its recipe, or for a
     flow from a bound graph its ``kernel``; ``elf_symbols`` its run.json's)."""
-    from snax_forge.design import run_checks
+    from snax_forge.design import note_text, run_checks, run_notes
     from snax_forge.design.streamers import accelerated, streamer_name
 
     regions = regions_of(point, elf_symbols)
     design = point.design()
     run_checks(design)  # resolves the instances (BRM, implementation, params)
     instances = dict(design.instances)
+    design_notes = [note_text(n).replace("\n    fix: ", " Fix: ") for n in run_notes(design)]
     header = Header(
         kernel=recipe.kernel if recipe is not None else kernel or point.graph.name,
         recipe=recipe.name if recipe is not None else point.name,
@@ -351,7 +354,7 @@ def build_design(
     ]  # fmt: skip
     return DesignReport(name, header, components, accels, streamers,
                         _memory_tables(cluster, regions, point),
-                        _notes(cluster, regions, point, streamers), len(a.units),
+                        design_notes + _notes(cluster, regions, point, streamers), len(a.units),
                         estimate_table(point))  # fmt: skip
 
 
