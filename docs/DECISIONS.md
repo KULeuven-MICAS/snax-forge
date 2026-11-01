@@ -170,7 +170,7 @@ Retired, and where each now lives:
 
 **D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only names it: SNAX-GVSoC's traces go to one `events.log`, a level turns trace names on, lines are linked by ids; the converter renames, never recounts, and cuts the window. → `run/`, C§7.
 
-**D141** · scope — M13, the block library, joins M7's tier A, the composed bind and BASE1's forge side: blocks, composition and kernels designed together, dot's variants the case study. Phases B0, B1, B1x, clean-up, VIEW2, SYN1, HWCOST, B2, tier A (B3 and B4), with RAM1 alongside. → ARCHITECTURE §8.
+**D141** · scope — M13, the block library, joins M7's tier A, the composed bind and BASE1's forge side: blocks, composition and kernels designed together, dot's variants the case study. Phases B0, B1, B1x, clean-up, VIEW2, SYN1, CHAR1, HWCOST, B2, tier A (B3 and B4), with RAM1 alongside: CHAR1 characterizes each basic block alone (area and dynamic energy against dtype and design-time params) into `snax_forge/char/<tech>.json`, shown per bound unit in the DFG viewer; HWCOST sums blocks into a composite estimate, checked against dot 2–6 synthesized whole. → ARCHITECTURE §8.
 
 **D142** · design — A bank word packs num_slc = 64/b elements of a port's container dtype, little-endian as NumPy. W lanes use num_ch = W/num_slc channels; another needs the FIFO slicer (parked: open item 93), so `connect.num_ch` refuses it. A packed stream: word-aligned base, num_slc | S_0, innermost stride 1, the others multiples of num_slc. The platform keeps only the word. → C§1, C§13, C§14.
 
