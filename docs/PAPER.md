@@ -52,7 +52,7 @@ Not contributions: the simulation technique (GVSoC's) and the LLM. The tool work
 | E4 | Composition sweep | PolyBench chains (mat-vec, mat-mat) at MINI and SMALL, on SNAX's bank count | Cycles against area per composition, the per-engine choice marked |
 | E5 | Headline case: prefill against decode | One attention block of a small Transformer, 2–3 sequence lengths | The best shell per phase and the best single shell for both, at equal area |
 | E6 | Familiar case | A TinyML ResNet slice: conv as GeMM, SIMD requant, maxpool | Where the cycles go per layer; one composition change and its effect |
-| E7 | Engine quality | One unit (mat-vec or 8x8x8 GeMM) in Chisel, Vitis HLS or Bambu, and XLS, at equal II and clock | Post-synthesis area and timing |
+| E7 | Engine quality | One unit (mat-vec or 8x8x8 GeMM) in Chisel, Vitis HLS or Bambu, and XLS, at equal II and clock; SYN1 gives forge's accelerators beside Vitis HLS's tier done at n2048, ctrl and csr apart | Post-synthesis area and timing; dynamic energy per task (gate-level, PrimePower) |
 | E8 | Engine-agnostic shell | E7's HLS engine as a BRM implementation | Cluster-level cycles against the Chisel engine |
 | E9 | Against Stream (exploratory) | The DNN layers of E5 and E6 | Stream's allocation and its rank in SNAX-FORGE; where and why they disagree |
 | E10 | LLM demo | One E4 composition found by an agent reading the reports | A short trace of the agent's steps |
@@ -85,7 +85,7 @@ Down the table, the unit stops being one firing per cycle, and the question move
 
 ## 7. Cost model
 
-Area first, energy if characterisation allows; characterised once, then read from tables: post-synthesis area per BRM parameter (lanes, width, depth), fitted linearly where it is; the L1 macros and bank counts on a PDK; TCDM interconnect area against banks and ports; later per-access energy times the counts the model keeps, as Accelergy does. Each fit's error is stated. No place and route. The PDK question is answered: FreePDK45 and an open 15 nm library, synthesis in KULeuven-MICAS/snax-forge-experiments, with results committed.
+Area first, energy if characterisation allows; characterised once, then read from tables: post-synthesis area per BRM parameter (lanes, width, depth), fitted linearly where it is; the L1 macros and bank counts on a PDK; TCDM interconnect area against banks and ports; later per-access energy times the counts the model keeps, as Accelergy does. Each fit's error is stated. No place and route. The PDK question is answered: the Nangate 45 nm and 15 nm Open Cell Libraries, synthesis and gate-level power in KULeuven-MICAS/snax-forge-experiments, with results committed. SYN1 gives forge's area and dynamic energy beside the HLS points at one task of N = 2048, with ctrl and csr apart (`results/forge_vs_hls.md`); CHAR1 characterizes each basic block alone and HWCOST sums them, checked against dot 2–6 synthesized whole.
 
 ## 8. Related work and positioning
 
@@ -196,7 +196,7 @@ The draft's line, then the author's after reading, which wins. A row whose secon
 | Composed bind | E1, E4–E6 | M13 (B1x, tier A) |
 | Spatial-array and SIMD unit BRMs | E1, E5, E6 | M13 B1x (MAC), B2 (SIMD, fold); spatial arrays in tier D |
 | The engine-alone number | C3's baseline in E4 | M13 VIEW2, the ideal estimate (D151, C§19) |
-| Cost model and characterisation | E4–E7 | M13 SYN1 and HWCOST (section 7) |
+| Cost model and characterisation | E4–E7 | M13 SYN1, CHAR1 and HWCOST (section 7) |
 | Sweep runner and a sweep view | E4, E5 | DSE5 (M8); the view is new |
 | Packing and port widths (int8, float32) | E1 on the GeMM, E5, E6 | PACK1 |
 | Tiling, per-tile DMA, reductions over tiles | E1 at large sizes, E5, E6 | LOW3b (M15) |
