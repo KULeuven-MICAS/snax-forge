@@ -57,6 +57,22 @@ def test_problems_exit_1_write_nothing_and_name_the_fix(tmp_path, capsys):
     assert "1 problem\n [platform.banks]" in err and "fix: --set platform.l1.n_banks=16" in err
 
 
+@pytest.mark.parametrize("w", [1, 4])
+def test_serial_accumulate_at_one_lane_is_a_note_not_a_refusal(tmp_path, capsys, w):
+    """dot_5 at W = 1 binds SerialAccumulate at lanes 1, the work of TreeAccumulate at lanes 1:
+    the design step passes (exit 0, design_point.json written) and prints the note with its fix;
+    at W = 4 it prints none."""
+    from tests.gen.helpers import designed
+
+    rel = designed(tmp_path, "dot_5", f"dot_5_w{w}", ["N=16", f"W={w}"])  # asserts exit 0
+    out = capsys.readouterr().out
+    note = ("note [design.serial_one_lane] sum: SerialAccumulate at lanes 1 reads one lane per "
+            "beat, the same work as TreeAccumulate at lanes 1\n    fix: bind chisel_adder_tree")  # fmt: skip
+    assert (tmp_path / rel).is_file()
+    assert (note in out) == (w == 1)
+    assert out.count("note [") == (w == 1)
+
+
 def test_check_writes_nothing(tmp_path, capsys, monkeypatch):
     monkeypatch.setattr(cli, "OUT", tmp_path / "out")
     assert run("check", BOUND, "--platform", SMALL16) == 0

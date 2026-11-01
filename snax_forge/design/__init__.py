@@ -12,7 +12,18 @@ default, pins, and the context later policies read) and the design point
 ``python -m snax_forge.design`` (pixi ``design``).
 """
 
-from .check import CHECKS, STAGES, Design, load, register_check, run_checks
+from .check import (
+    CHECKS,
+    NOTES,
+    STAGES,
+    Design,
+    load,
+    note_text,
+    register_check,
+    register_note,
+    run_checks,
+    run_notes,
+)
 from .memory import (
     MEMORY_PASSES,
     MemoryContext,
@@ -29,6 +40,7 @@ from .streamers import Streamer, instances, nest_spatial_bounds, resolve
 __all__ = [
     "CHECKS",
     "MEMORY_PASSES",
+    "NOTES",
     "STAGES",
     "Design",
     "DesignError",
@@ -44,11 +56,14 @@ __all__ = [
     "instances",
     "load",
     "nest_spatial_bounds",
+    "note_text",
     "parse_value",
     "plan",
     "register_check",
     "register_memory_pass",
+    "register_note",
     "report",
     "resolve",
     "run_checks",
+    "run_notes",
 ]

@@ -16,7 +16,9 @@ they pass, writes to ``DIR`` (default ``out/design/<name>/``):
     memory.json         the memory working copy (passes, changes, layouts)
     design_point.json   graph, platform, streamers and memory (point.py)
 
-and prints the streamer shell and the memory plan. The name is the sandbox
+and prints the streamer shell, the memory plan and any note (a design that
+passes but is worth a second look, check.py: ``note [code] where: message``
+and its fix; it does not change the exit code). The name is the sandbox
 folder of the graph (``out/sandbox/vecadd_w8/2_bind.snaxdfg`` ->
 ``vecadd_w8``), else the file's stem. Each run overwrites that folder.
 Passing a working copy (``--platform DIR/platform.json``, ``--memory
@@ -46,7 +48,7 @@ from typing import Any
 
 from snax_forge.common import cwd_relative, repo_root
 
-from .check import Design, load, run_checks
+from .check import Design, load, note_text, run_checks, run_notes
 from .hjson_platform import platform_from_hjson
 from .platform import Platform, parse_value
 from .point import DesignPoint, design_name
@@ -123,6 +125,12 @@ def _summary(design: Design) -> str:
     return "\n".join(lines)
 
 
+def _print_notes(design: Design) -> None:
+    """Each note on the design (check.py's ``run_notes``)."""
+    for n in run_notes(design):
+        print(note_text(n))
+
+
 def _run(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="python -m snax_forge.design")
     _inputs(ap)
@@ -139,6 +147,7 @@ def _run(argv: list[str]) -> int:
     design.memory.save(out / "memory.json")
     point.save(out / "design_point.json")
     print(_summary(design))
+    _print_notes(design)
     for f in ("platform.json", "memory.json", "design_point.json"):
         print(f"wrote {cwd_relative(out / f)}")
     return 0
@@ -152,6 +161,7 @@ def _check(argv: list[str]) -> int:
     if design is None:
         return 1
     print(_summary(design))
+    _print_notes(design)
     return 0
 
 

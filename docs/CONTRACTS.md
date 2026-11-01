@@ -408,6 +408,12 @@ Before the design step writes anything it runs every registered check (`register
 | `point.keys` | a design point with unknown or missing keys or a malformed streamer entry |
 | `point.streamers` | a design point whose `streamers` are not the platform's shell for its graph |
 
+**Notes**, beside the refusals: a design that passes every check but is worth a second look. Each is registered (`register_note(code, fn)`) and run once the checks passed (`run_notes`); the design step prints it as `note [code] where: why` with its `fix:` line and still exits 0, and `design.md` lists it first under Notes.
+
+| Code | Noted when |
+|---|---|
+| `design.serial_one_lane` | a unit bound to `SerialAccumulate` at lanes 1: it reads one lane per beat, the same work as `TreeAccumulate` at lanes 1 (dot 4's shape at W = 1), so valid but with no reason to exist; the fix binds `chisel_adder_tree` |
+
 ## 15. Memory plan and design point
 
 **Memory plan** (D86, `design/memory.py`). A layout per container and memory it lives in: `base` (byte address of index 0), `shape` and one byte stride per dimension (`lower/layout.py`). Banks follow from addresses (word `i` in bank `i % n_banks`, open item 18). Three passes make it, each registered by name (`register_memory_pass(kind, name, fn)`):
@@ -582,7 +588,7 @@ A wire is no datapath: plain connections with the same dtype and lanes at both e
 - a fork, a join, a cycle or two chains are refused, until tier A;
 - the outer ports' join is per unit: ready_k = fire_{u(k)}, a unit firing only with every one of its outer valids, so valid never depends on ready;
 - the class of each busy cycle is judged at the unit owning the outer output: stall_out (it is frozen) > busy (a unit fires, reads or is in its II gap) > stall_in (a unit with outer inputs wants to fire and one has no beat) > flush;
-- a frozen unit reads no lanes, busy counts a span unit's lane reads, a plain Mac's `en` is its firing.
+- a unit reads its input in every cycle it wants to, has a beat and is not frozen, at every span: at span S lane l in place, taking the beat (firing) on lane S − 1; at span 1 the read is its firing, so SerialAccumulate at lanes 1 sums one lane per beat; a frozen unit reads nothing, busy counts every read (a span unit's lane reads, at span 1 its firings), a plain Mac's `en` is its firing.
 
 The Chisel control unit keeps a register only for what changes at run time: a unit's T only when a JOB_BEATS sets it (a fixed T is a constant), R_k = R_s · T_s a register only when T_s is set at run time (else the wire c · R_s), no count of the sink's pushes (done is its R-th push, read off its results given and its pipeline), the II gap only at II > 1; it keeps the start's copies of JOBS and the JOB_BEATS, which `<tag>_csr` lets the program rewrite during a run. The accelerator is three modules: `<tag>_csr` (the CSRs above by offset, ReqRspManager's protocol, D130), `<tag>_ctrl` (the groups' control units) and `<tag>_datapath` (one submodule per unit and per buffer, no valid, ready or counter inside).
 

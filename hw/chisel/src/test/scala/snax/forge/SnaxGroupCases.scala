@@ -28,6 +28,11 @@ object SnaxGroupCases {
   /** A link line: its producer's and its consumer's names, its depth. */
   case class LinkLine(from: String, to: String, depth: Int)
 
+  /** A case's own data (`lanes`, `data a`, `data b`, `sums`): the head's inputs, element i · lanes + l lane l of the
+    * beat it fires i-th, and each job's expected result; `tb.cpp` checks them through the datapaths.
+    */
+  case class Data(lanes: Int, a: Seq[BigInt], b: Seq[BigInt], sums: Seq[BigInt])
+
   case class Case(
     name:   String,
     units:  Seq[UnitLine],
@@ -35,7 +40,8 @@ object SnaxGroupCases {
     jobs:   Int,
     start:  (Int, String),
     runs:   Seq[RunLine],
-    cycles: Seq[Cycle]
+    cycles: Seq[Cycle],
+    data:   Option[Data]
   ) {
     def depths: Seq[Int] = links.map(_.depth)
   }
@@ -47,6 +53,8 @@ object SnaxGroupCases {
     var jobs           = 1
     var start          = (-1, "")
     var runs           = Vector.empty[RunLine]
+    var lanes          = 0
+    var data           = Map.empty[String, Seq[BigInt]]
     for (line <- header) line.split("\\s+").toList match {
       case "unit" :: n :: d :: "latency" :: l :: "ii" :: ii :: "span" :: s :: "t" :: t :: "inputs" :: i :: Nil =>
         units :+= UnitLine(n, d, l.toInt, ii.toInt, s.toInt, t.toInt, i.toInt)
@@ -54,6 +62,9 @@ object SnaxGroupCases {
       case "jobs" :: j :: Nil                          => jobs  = j.toInt
       case "start" :: c :: a :: Nil                    => start = (c.toInt, a)
       case "expect" :: "run" :: RunLine.Fields(_, run) => runs :+= run
+      case "lanes" :: l :: Nil                         => lanes = l.toInt
+      case "data" :: x :: vs if Set("a", "b")(x)       => data += x -> vs.map(CaseFile.number)
+      case "sums" :: vs                                => data += "sums" -> vs.map(CaseFile.number)
       case _ => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
     }
     val buffers = links.count(_.depth > 0)
@@ -72,7 +83,8 @@ object SnaxGroupCases {
         cols.last.head == 1
       )
     }
-    Case(CaseFile.name(path), units, links, jobs, start, runs, cycles)
+    val own    = Option.when(lanes > 0)(Data(lanes, data("a"), data("b"), data("sums")))
+    Case(CaseFile.name(path), units, links, jobs, start, runs, cycles, own)
   }
 
   /** Every case of the folder `Env` names (`CaseFile.all`). */
