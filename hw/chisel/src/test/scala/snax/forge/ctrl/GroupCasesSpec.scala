@@ -11,33 +11,40 @@ import snax.forge.{ForgeTester, RunLines, SnaxGroupCases}
   * data is checked by `tb.cpp`, and dot5_w1_j2's through the wrapper by ShellEndToEndSpec), cycle for cycle: per cycle
   * the outer valids and the output's ready poked; each input's ready (its unit's firing, C§17's per-unit join), each
   * unit's fire and give, each buffer's occupancy after the cycle and busy compared; at the run's end its line from
-  * `cls` per busy cycle and the head's firings. Each unit's T is fixed (`params.T`), so the start carries JOBS. Without
-  * `SNAX_GVSOC_GROUP_CASES` the spec cancels.
+  * `cls` per busy cycle and the head's firings. Each case runs twice (the rule does not tell the two apart, the control
+  * unit's counters do, D153): with every unit's T fixed (`params.T`), the start carrying JOBS; and with every unit of T
+  * != 1 open, its T a JOB_BEATS of the start, so dot 2's and dot 3's mul counts against or borrows from a sum whose T
+  * is a latch. Without `SNAX_GVSOC_GROUP_CASES` the spec cancels.
   */
 class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
 
-  /** The case's group: a linked input after the unit's outer ones (to_input = its outer inputs, as `tb.cpp`). */
-  def desc(c: SnaxGroupCases.Case): GroupDesc = {
+  /** The case's group: a linked input after the unit's outer ones (to_input = its outer inputs, as `tb.cpp`); with
+    * `open`, every unit of T != 1 takes its T from the start.
+    */
+  def desc(c: SnaxGroupCases.Case, open: Boolean = false): GroupDesc = {
     def at(name: String) = c.units.indexWhere(_.name == name)
     GroupDesc(
       "dot",
       c.units.map { u =>
         val fed = c.links.exists(_.to == u.name)
-        UnitDesc(u.name, u.latency, u.ii, u.span, u.inputs, Some(u.t), if (fed) Seq(u.inputs) else Nil)
+        val t   = if (open && u.t != 1) None else Some(u.t)
+        UnitDesc(u.name, u.latency, u.ii, u.span, u.inputs, t, if (fed) Seq(u.inputs) else Nil)
       },
       c.links.map(l => Link(at(l.from), at(l.to), c.units(at(l.to)).inputs, l.depth))
     )
   }
 
-  private def run(c: SnaxGroupCases.Case): Unit =
-    test(new GroupCtrl(desc(c), "case")) { dut =>
+  private def run(c: SnaxGroupCases.Case, open: Boolean): Unit = {
+    val d     = desc(c, open)
+    val beats = d.units.zip(c.units).collect { case (u, cu) if u.fixedT.isEmpty => cu.t }
+    test(new GroupCtrl(d, "case")) { dut =>
       val runs = new RunLines
       for ((cyc, i) <- c.cycles.zipWithIndex) {
-        val clue  = s"${c.name}: cycle $i"
+        val clue  = s"${c.name}${if (open) " (T from the start)" else ""}: cycle $i"
         val offer = i == c.start._1
         dut.io.start.valid.poke(offer.B)
         dut.io.start.bits.jobs.poke(c.jobs.U)
-        dut.io.start.bits.beats(0).poke(1.U)
+        dut.io.start.bits.beats.zip(if (beats.isEmpty) Seq(1) else beats).foreach { case (p, t) => p.poke(t.U) }
         if (offer) {
           val got = if (!high(dut.io.start.ready)) "refused" else if (c.jobs == 0) "ignored" else "taken"
           assert(got == c.start._2, s"$clue: start $got")
@@ -69,6 +76,7 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
       val lines = runs.done
       assert(lines == c.runs, s"${c.name}: runs $lines, the case ${c.runs}")
     }
+  }
 
   behavior of "GroupCtrl on snax-gvsoc's group cases"
 
@@ -78,6 +86,9 @@ class GroupCasesSpec extends AnyFlatSpec with ForgeTester {
         cancel(s"${SnaxGroupCases.Env} is not set (snax-gvsoc's tests/snax/group/cases)")
     case Some(all) =>
       it should "find the 25 group cases" in assert(all.size == 25, s"${all.size} cases")
-      for (c <- all) it should s"give ${c.name}'s cycles and runs" in run(c)
+      for (c <- all) {
+        it should s"give ${c.name}'s cycles and runs" in run(c, open = false)
+        it should s"give ${c.name}'s cycles and runs with its T from the start" in run(c, open = true)
+      }
   }
 }

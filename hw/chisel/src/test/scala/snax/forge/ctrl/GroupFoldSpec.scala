@@ -6,12 +6,13 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, Seeds}
 
-/** `GroupCtrl`'s folded counters (GroupRule's rules: a T register only from a JOB_BEATS, R_k = c · R_s a wire after a
-  * fixed T c, no count of the sink's pushes) against `GroupModel`, which counts every firing as SnaxGroupRule does, on
-  * random groups: chains of 1 to 3 units, half in a shuffled unit order, each of L 0-2 and T fixed (`params.T`) or from
-  * the start, each T from {1, 2, 3, 4, 8} (1, powers of two and not); links of depth 0-2; back-to-back runs of random
-  * JOBS (every run's head firings at most 96) at job_width 4 or 32 (D152), random input gaps and output stalls. Every
-  * cycle: busy, the done pin (high in E + 1, E the model's last cycle), each unit's fire and give, and the class.
+/** `GroupCtrl`'s nested counters (GroupRule's rules, D153: a T latch only from a JOB_BEATS, a unit at L 0 on a wire
+  * borrowing its consumer's test, any other counting its results in mixed radix over the Ts after it, no product and no
+  * count of the sink's pushes) against `GroupModel`, which counts every firing as SnaxGroupRule does, on random groups:
+  * chains of 1 to 3 units, half in a shuffled unit order, each of L 0-2 and T fixed (`params.T`) or from the start,
+  * each T from {1, 2, 3, 4, 8} (1, powers of two and not); links of depth 0-2; back-to-back runs of random JOBS (every
+  * run's head firings at most 96) at job_width 4 or 32 (D152), random input gaps and output stalls. Every cycle: busy,
+  * the done pin (high in E + 1, E the model's last cycle), each unit's fire and give, and the class.
   */
 class GroupFoldSpec extends AnyFlatSpec with ForgeTester {
 
@@ -21,7 +22,7 @@ class GroupFoldSpec extends AnyFlatSpec with ForgeTester {
   private val Ts     = Seq(1, 2, 3, 4, 8)
   private var ended  = 0  // runs that reached their last cycle, every seed
 
-  behavior of "GroupCtrl's folded counters against SnaxGroupRule's model"
+  behavior of "GroupCtrl's nested counters against SnaxGroupRule's model"
 
   for (seed <- Seeds())
     it should s"end every run in the model's cycle, with its pushes and classes (seed $seed)" in Seeds.run(seed) { r =>
