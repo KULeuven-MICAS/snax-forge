@@ -38,7 +38,10 @@ have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
 ``dst``, its L1 side ``base``, ``bounds`` and ``strides``, its L2 side
 ``symbol`` (a container in L2: its data.h array), ``bounds`` and ``strides``; an accelerator's
 runtime params, ``n`` and its named rates; a linked group's, each unit's by
-unit, in the group's order); a streamer's loops fit it (as
+unit, in the group's order); an accelerator task's CSR writes fit them (D152:
+JOBS and every JOB_BEATS the program writes, c.py's ``job_writes``, at most
+2^job_width - 1, the platform's ``acc_csr.job_width``, and its head firings,
+JOBS times every T of the group, below 2^32, SNAX-GVSoC's limit); a streamer's loops fit it (as
 many temporal strides as bounds, no more than its ``temporal_dims``, one
 spatial stride per spatial bound, every bound >= 1, or every one 0: an idle
 mover, which never starts, D148); a DMA's direction is
@@ -54,7 +57,7 @@ from typing import TYPE_CHECKING, Any, ClassVar
 
 from snax_forge.common import JsonFile, check_keys, plain
 from snax_forge.design.platform import WAIT_MODES
-from snax_forge.design.streamers import groups, instances, streamer_name
+from snax_forge.design.streamers import groups, instance_nodes, instances, streamer_name
 
 if TYPE_CHECKING:
     from snax_forge.design.point import DesignPoint
@@ -346,10 +349,42 @@ def _check(s: Configure, point: DesignPoint) -> None:
                 if set(v[u]) != set(found[u].brm.registers):
                     raise ValueError(f"{s.component}.{u}: parameters {sorted(v[u])}, registers "
                                      f"{found[u].brm.registers}")  # fmt: skip
+            _check_widths(s, point, units)
             return
         names = found[s.component].brm.registers
         if set(v) != set(names):
             raise ValueError(f"{s.component}: parameters {sorted(v)}, registers {names}")
+        _check_widths(s, point, [s.component])
+
+
+# The head's firings in a run stay below this (SNAX-GVSoC's SnaxGroup counts them in 32 bits)
+HEAD_FIRINGS = 1 << 32
+
+
+def _check_widths(s: Configure, point: DesignPoint, units: list[str]) -> None:
+    """An accelerator task's CSR writes against the platform's ``acc_csr.job_width`` and its
+    head firings against ``HEAD_FIRINGS`` (module doc)."""
+    # gen and c import this module: theirs are imported here, not at the top
+    from snax_forge.gen.accelerator import fixed_fold
+
+    from .c import fold_rate, job_writes
+
+    found, nodes = instances(point.graph), instance_nodes(point.graph)
+    fixed = {u for u in units if fixed_fold(point.graph, nodes[u], found[u]) is not None}
+    writes = job_writes({u: found[u] for u in units}, s.values, fixed)
+    width = point.platform.acc_csr.job_width
+    for unit, csr, value in writes:
+        if value > (1 << width) - 1:
+            raise ValueError(f"{s.component}: {csr} {value} (unit {unit}) is past "
+                             f"acc_csr.job_width = {width} bits, at most {(1 << width) - 1}")  # fmt: skip
+    by_unit = s.values if len(units) > 1 else {units[0]: s.values}
+    firings = writes[0][2]
+    for u in units:
+        rate = fold_rate(found[u])
+        firings *= 1 if rate is None else by_unit[u][rate]
+    if firings >= HEAD_FIRINGS:
+        raise ValueError(f"{s.component}: the head fires JOBS · ∏T = {firings} times, 2^32 or "
+                         "more (SNAX-GVSoC counts a run's firings in 32 bits)")  # fmt: skip
 
 
 def check_values(tasks: TaskList, point: DesignPoint) -> None:

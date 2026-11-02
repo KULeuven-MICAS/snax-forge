@@ -20,8 +20,8 @@ def dot() -> Accelerator:
     sum (a TreeAccumulate unit with JOB_BEATS), in that order."""
 
     def own(base: int, rw_units: int) -> list[Csr]:
-        return [Csr("START", "rw", base, 32), Csr("JOBS", "rw", base + 1, 32),
-                Csr("STATUS", "ro", base + 2 + rw_units), Csr("COUNTER", "ro", base + 3 + rw_units)]  # fmt: skip
+        return [Csr("START", "rw", base, 1), Csr("JOBS", "rw", base + 1, 32),
+                Csr("STATUS", "ro", base + 2 + rw_units, 2), Csr("COUNTER", "ro", base + 3 + rw_units, 32)]  # fmt: skip
 
     mul = Unit("mul", "elementwise_mul", "ElementwiseLanes",
                {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
@@ -44,8 +44,8 @@ def dot4() -> Accelerator:
     total = Unit("sum", "accumulate", "TreeAccumulate",
                  {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
                  {"op": "add", "T": 1}, 1, 1)  # fmt: skip
-    own = [Csr("START", "rw", 0, 32), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 3),
-           Csr("COUNTER", "ro", 4)]  # fmt: skip
+    own = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 3, 2),
+           Csr("COUNTER", "ro", 4, 32)]  # fmt: skip
     return Accelerator("dot", "out/design/dot_4/design_point.json", "snax_forge",
                        ["mac.a", "mac.b"], ["sum.out"],
                        [Group("dot", own, [mac, total], [Link("out_partial", "mac.out", "sum.a", 0)])])  # fmt: skip
@@ -86,17 +86,47 @@ def test_one_helper_names_every_csr():
 
 @pytest.mark.parametrize(
     ("start", "text"),
-    [({"offset": 1}, "not contiguous"), ({"width": None}, "has a width")],
-    ids=["offsets", "width"],
-)
+    [({"offset": 1}, "not contiguous"), ({"width": None}, "has a width"),
+     ({"width": 33}, "1 to 32 bits"), ({"width": 32}, "START has width 32, not 1")],
+    ids=["offsets", "width", "wide", "start"],
+)  # fmt: skip
 def test_a_reader_checks_the_offsets_and_widths(start, text):
     """Offsets are stored, never recomputed: a reader checks them contiguous from 0 in CSR
-    order; an rw CSR has a width, an ro one none (START edited by ``start``)."""
+    order; every CSR has a width of 1 to 32 bits, START's 1 (START edited by ``start``)."""
     acc = one_unit()
     g = acc.groups[0]
     edited = replace(g, csrs=[replace(g.csrs[0], **start), *g.csrs[1:]])
     with pytest.raises(ValueError, match=text):
         replace(acc, groups=[edited])
+
+
+def test_the_widths_come_from_the_platform(tmp_path):
+    """D152: START 1, STATUS 2, JOBS and JOB_BEATS acc_csr.job_width, COUNTER its counter_width
+    (job_width when null); JOBS and every JOB_BEATS share one width, every COUNTER one."""
+    from snax_forge.design import DesignPoint, Platform
+
+    from .helpers import SNAX_FORGE
+
+    def widths(*sets: tuple[str, int | None]) -> dict[str, int]:
+        plat = Platform.load(SNAX_FORGE).with_changes(list(sets))
+        path = point(tmp_path, name="vsum", graph=bound_vsum(), platform=plat)
+        acc = describe(DesignPoint.load(path), "p")
+        assert acc.job_width == plat.acc_csr.job_width
+        return {c.name: c.width for _, _, c in acc.csrs()}
+
+    assert widths() == {"START": 1, "JOBS": 32, "JOB_BEATS": 32, "STATUS": 2, "COUNTER": 32}
+    assert widths(("acc_csr.job_width", 16)) == {
+        "START": 1, "JOBS": 16, "JOB_BEATS": 16, "STATUS": 2, "COUNTER": 16}  # fmt: skip
+    assert widths(("acc_csr.job_width", 16), ("acc_csr.counter_width", 8))["COUNTER"] == 8
+    acc = one_unit(1)
+    g = acc.groups[0]
+    with pytest.raises(ValueError, match="STATUS has width 32, not 2"):
+        replace(
+            acc, groups=[replace(g, csrs=[*g.csrs[:2], replace(g.csrs[2], width=32), g.csrs[3]])]
+        )
+    unit = replace(g.units[0], csrs=[Csr("JOB_BEATS", "rw", 2, 16)])
+    with pytest.raises(ValueError, match=r"JOBS and JOB_BEATS have the widths \[16, 32\]"):
+        replace(acc, groups=[replace(g, units=[unit])])
 
 
 def test_vsums_unit_has_job_beats(tmp_path):
@@ -176,8 +206,8 @@ def test_a_span_unit_reads_from_a_link_until_b2():
     serial = Unit("sum", "accumulate", "SerialAccumulate",
                   {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)},
                   {"T": 1}, 1, 1, [], None, 4)  # fmt: skip
-    own = [Csr("START", "rw", 0, 32), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 2),
-           Csr("COUNTER", "ro", 3)]  # fmt: skip
+    own = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 2, 2),
+           Csr("COUNTER", "ro", 3, 32)]  # fmt: skip
     with pytest.raises(GenError) as e:
         Accelerator("sum", "p", "snax_forge", ["sum.a"], ["sum.out"], [Group("sum", own, [serial])])
     assert e.value.code == "gen.span" and "until B2" in str(e.value)

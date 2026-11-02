@@ -30,14 +30,15 @@
     "name": {"type": "string", "pattern": "^[A-Z][A-Z0-9_]*$"},
     "access": {"enum": ["rw", "ro"]},
     "offset": {"description": "From the accelerator's first CSR.", "type": "integer", "minimum": 0},
-    "width": {"description": "R/W only.", "type": "integer", "minimum": 1, "maximum": 32},
+    "width": {"description": "Its bits: START 1, JOBS and JOB_BEATS the platform's job_width, STATUS 2, COUNTER its counter_width (D152).", "type": "integer", "minimum": 1, "maximum": 32},
     "pin": {"description": "A scalar's datapath pin.", "$ref": "#/$defs/name"}
    },
-   "required": ["name", "access", "offset"],
+   "required": ["name", "access", "offset", "width"],
    "additionalProperties": false,
-   "if": {"properties": {"access": {"const": "rw"}}},
-   "then": {"required": ["width"]},
-   "else": {"not": {"required": ["width"]}}
+   "allOf": [
+    {"if": {"properties": {"name": {"const": "START"}}}, "then": {"properties": {"width": {"const": 1}}}},
+    {"if": {"properties": {"name": {"const": "STATUS"}}}, "then": {"properties": {"width": {"const": 2}}}}
+   ]
   },
   "port": {
    "type": "object",

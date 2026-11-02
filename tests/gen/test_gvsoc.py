@@ -54,10 +54,10 @@ TEMPLATE_W4 = {
 # vecadd's accelerator at W = 4 (C§17's example): one group of one ElementwiseLanes unit,
 # each port int64 (D143)
 GROUP_CSRS = [
-    {"name": "START", "access": "rw", "offset": 0, "width": 32},
+    {"name": "START", "access": "rw", "offset": 0, "width": 1},
     {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
-    {"name": "STATUS", "access": "ro", "offset": 2},
-    {"name": "COUNTER", "access": "ro", "offset": 3},
+    {"name": "STATUS", "access": "ro", "offset": 2, "width": 2},
+    {"name": "COUNTER", "access": "ro", "offset": 3, "width": 32},
 ]  # fmt: skip
 ADD_W4 = {
     "name": "acc", "design_point": "design/vecadd/design_point.json", "tag": "snax_forge",

@@ -336,6 +336,7 @@ The SNAX cluster around the accelerators (D84). A platform file lives in `platfo
 | `changes` | what differs from `base`: `--set` path -> value, in the order set |
 | `hjson` | the source cluster file, a path from snax-forge's root, or null (small16): what the generator writes the cluster file from (section 16) |
 | `accelerator_slot` | the generated accelerator's name, `snax_forge` from `design from-hjson` (D131), or null; `--set accelerator_slot=NAME` picks another |
+| `acc_csr` | `AccCsrConfig` (below): the widths of the generated accelerator's CSRs (D152) |
 | `l1`, `l2` | `L1Config`, `L2Config` (below); `l2` null for an L1-only cluster |
 | `wait_mode` | `poll` or `signal`: how the program waits for a task (the C backend refuses `signal`, `c.signal`) |
 | `streamers` | the streamer shell: `default`, then an entry per streamer it changes |
@@ -358,6 +359,13 @@ The SNAX cluster around the accelerators (D84). A platform file lives in `platfo
 | `base_addr` | byte address of the first word | 0 | — |
 | `beat_bits` | one DMA beat | 512 | multiple of `width_bits`; equal to the L1's `wide_bits` (`platform.l2`) |
 | `width_bits` | as the L1, and must agree with it (`platform.l2`) | 64 | multiple of 8 |
+
+`AccCsrConfig` (D152), written into `accelerator.json` as the CSRs' widths (section 17):
+
+| Field | Meaning | Default | Checked |
+|---|---|---|---|
+| `job_width` | bits of JOBS and every JOB_BEATS, and of the control units' copies and counters | 32 | 1 to 32 |
+| `counter_width` | bits of COUNTER, which saturates at 2^w − 1; null follows `job_width` | null | 1 to 32, or null |
 
 Neither memory has an element type: each container's dtype decides how many elements a word holds (D142, section 1).
 
@@ -491,7 +499,7 @@ A unit:
 | `timing` | `latency`, `ii`, `span`: the cycles a unit reads its input in place, taking it in the last, so its throughput is one beat per max(ii, span) |
 | `csrs` | its R/W CSRs |
 
-A CSR: `name`, `access` (`rw` or `ro`), `offset` from the accelerator's first CSR, `width` (R/W only), `pin` (a scalar's datapath pin). snax-forge computes the offsets once and stores them; a reader checks them (contiguous from 0 in CSR order) and never recomputes them.
+A CSR: `name`, `access` (`rw` or `ro`), `offset` from the accelerator's first CSR, `width` (every CSR, 1 to 32: START 1, JOBS and every JOB_BEATS the platform's `acc_csr.job_width`, STATUS 2, COUNTER its `counter_width`; D152), `pin` (a scalar's datapath pin). snax-forge computes the offsets and widths once and stores them; a reader checks them (contiguous from 0 in CSR order; JOBS and every JOB_BEATS one width, every COUNTER one) and never recomputes them.
 
 dot 4's file, one group `dot`, the MAC's lane partials wired into the tree:
 
@@ -507,10 +515,10 @@ dot 4's file, one group `dot`, the MAC's lane partials wired into the tree:
   {
    "name": "dot",
    "csrs": [
-    {"name": "START", "access": "rw", "offset": 0, "width": 32},
+    {"name": "START", "access": "rw", "offset": 0, "width": 1},
     {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
-    {"name": "STATUS", "access": "ro", "offset": 3},
-    {"name": "COUNTER", "access": "ro", "offset": 4}
+    {"name": "STATUS", "access": "ro", "offset": 3, "width": 2},
+    {"name": "COUNTER", "access": "ro", "offset": 4, "width": 32}
    ],
    "units": [
     {
@@ -554,12 +562,12 @@ dot 4's file, one group `dot`, the MAC's lane partials wired into the tree:
 
 **Groups and firings** (D146). A group is a connected set of units and links, an unlinked unit a group of its own, and has one JOBS: the sink gives R = JOBS results, a unit k before its successor s gives R_k = R_s · T_s, one on every T_k-th firing, so it fires n_k = R_k · T_k times, every T counted in beats (the one-lane vsum's `SerialAccumulate` has T = 1 and span W).
 
-**The CSRs** (D146), from offset 0, per group in order: START (R/W), JOBS (R/W), each unit's R/W CSRs (JOB_BEATS for a fold without `params.T`, then its scalars, a 64-bit one as two CSRs, low word first), STATUS (R/O), COUNTER (R/O). With f_u = 1 for a fold without `params.T` (else 0) and k_u a unit's scalar CSRs, rw = Σ_g (2 + Σ_u (f_u + k_u)) and ro = 2G. Per group:
+**The CSRs** (D146), from offset 0, per group in order: START (R/W), JOBS (R/W), each unit's R/W CSRs (JOB_BEATS for a fold without `params.T`, then its scalars, a 64-bit one as two CSRs, low word first), STATUS (R/O), COUNTER (R/O). With f_u = 1 for a fold without `params.T` (else 0) and k_u a unit's scalar CSRs, rw = Σ_g (2 + Σ_u (f_u + k_u)) and ro = 2G. They are the accelerator's interface, all in `<tag>_csr` (D152); each has its width, and a read gives its bits with the upper ones 0. Per group:
 
-- A write to an R/W CSR other than START, or to START with bit 0 clear, is taken at once. START with bit 0 set is accepted when the group is idle, else held (`csr_req_ready_o` low) until E + 1, E the cycle its run ends.
+- START is a strobe: no register, it reads 0. A write to another R/W CSR is taken at once and keeps the written value's low bits (JOBS and JOB_BEATS at job_width; the program's values fit, `lower/tasks.py`'s `check_values`); one to START with bit 0 clear is taken at once and does nothing. START with bit 0 set is accepted when the group is idle, else held (`csr_req_ready_o` low) until E + 1, E the cycle its run ends.
 - An accepted start gives the group's control unit JOBS, then each JOB_BEATS in unit order (JOBS and 1 when the group has none); a unit's fixed T comes from its `params.T`.
 - An empty run, JOBS 0 or any JOB_BEATS 0, ends in the cycle a it starts (E = a): busy never rises, COUNTER is 0, and it ends in a done like any other.
-- STATUS: bit 0 busy, bit 1 done (sticky: set by the done pulse, it reads 1 from the next cycle and is cleared by an accepted start; a set wins over a clear in the same cycle). The program polls bit 0. COUNTER: the busy cycles after the accepted start, held after the run.
+- STATUS: bit 0 busy, bit 1 done (sticky: set by the done pulse in E, it reads 1 from the next cycle and is cleared by an accepted start; a set wins over a clear in the same cycle). The program polls bit 0. COUNTER: the busy cycles after the accepted start, held after the run, saturating at 2^counter_width − 1. `<tag>_csr` keeps both from the group's control unit's busy and its done pulse in E.
 - Pins: `<group>_busy_o` (STATUS bit 0) and `<group>_done_o` (the done pulse registered: high in E + 1). snax_cluster leaves them unconnected (open item 92). No per-unit CSRs: per-unit timing comes from SNAX-GVSoC's events (open item 96).
 
 The header names a CSR `<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>` (one helper, `Accelerator.define`, for the header and the program), the group part dropped when the accelerator has one group and the unit part (on a unit's own CSRs only) when the group has one unit: vecadd's `ACC_RW_START`, dot 4's `DOT_RW_MAC_JOB_BEATS`, dot 1's `DOT_RW_SUM_JOB_BEATS`.
@@ -590,7 +598,7 @@ A wire is no datapath: plain connections with the same dtype and lanes at both e
 - the class of each busy cycle is judged at the unit owning the outer output: stall_out (it is frozen) > busy (a unit fires, reads or is in its II gap) > stall_in (a unit with outer inputs wants to fire and one has no beat) > flush;
 - a unit reads its input in every cycle it wants to, has a beat and is not frozen, at every span: at span S lane l in place, taking the beat (firing) on lane S − 1; at span 1 the read is its firing, so SerialAccumulate at lanes 1 sums one lane per beat; a frozen unit reads nothing, busy counts every read (a span unit's lane reads, at span 1 its firings), a plain Mac's `en` is its firing.
 
-The Chisel control unit keeps a register only for what changes at run time: a unit's T only when a JOB_BEATS sets it (a fixed T is a constant), R_k = R_s · T_s a register only when T_s is set at run time (else the wire c · R_s), no count of the sink's pushes (done is its R-th push, read off its results given and its pipeline), the II gap only at II > 1; it keeps the start's copies of JOBS and the JOB_BEATS, which `<tag>_csr` lets the program rewrite during a run. The accelerator is three modules: `<tag>_csr` (the CSRs above by offset, ReqRspManager's protocol, D130), `<tag>_ctrl` (the groups' control units) and `<tag>_datapath` (one submodule per unit and per buffer, no valid, ready or counter inside).
+The Chisel control unit keeps a register only for what changes at run time and counts with no product (D153): a unit's T is a latch (`<unit>_job_beats`) only when a JOB_BEATS sets it (a fixed T is a constant), JOBS a latch (`<sink>_jobs`), and a unit of T ≠ 1 keeps its beat counter (`<unit>_job_beats_counter`). Per segment: a unit at L 0 whose out-link is a wire keeps no count of its results and borrows its consumer s's test (its giving firing is s's firing, so g_k = T_s · g_s + d_s and g_k ≠ R_k exactly when g_s ≠ R_s; a wire chain ends at the segment's last unit); any other unit (the sink, one feeding a buffer, one at L ≥ 1) counts its giving firings in mixed radix, a digit per unit after it with T ≠ 1 (`<unit>_<downstream>_job_beats_counter`, against that unit's latch or constant) and then a jobs digit (`<unit>_jobs_counter`, against JOBS), and has finished when the jobs digit equals JOBS. No count of the sink's pushes (done is its JOBS-th push, read off its jobs digit and its pipeline), the II gap only at II > 1; every latch and counter is job_width bits (a digit of a fixed T ⌈log₂ T⌉), and the start's copies of JOBS and the JOB_BEATS are kept because `<tag>_csr` lets the program rewrite them during a run. The accelerator is three modules: `<tag>_csr` (the CSRs above by offset, ReqRspManager's protocol, D130, with STATUS's done bit and COUNTER: the interface, D152), `<tag>_ctrl` (the groups' control units: per group busy, the done pulse and the pins) and `<tag>_datapath` (one submodule per unit and per buffer, no valid, ready or counter inside).
 
 **Cycles.** The closed cycles of dot's variants, the accelerator alone on ideal streams (latencies vmul 0, Mac 1, tree 1, SerialAccumulate 1, buffer 1), J jobs of T beats at W lanes, which snax-gvsoc's `tests/snax/group/gen.py` checks `snax_group_rule.py` against:
 

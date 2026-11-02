@@ -5,6 +5,7 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, Sink, SnaxShellCases, Source}
 import snax.forge.SnaxShellCases._
+import snax.forge.shell.AcceleratorSpec.CsrSpec
 
 /** The shell cross-check (C§17): a group's CSRs in `<tag>_shell_wrapper` (`<tag>_csr`, the group's `<tag>_<group>_ctrl`
   * and its datapath) driven through snax-gvsoc's `SnaxShell` cases (`SnaxShellCases`, read from
@@ -12,7 +13,8 @@ import snax.forge.SnaxShellCases._
   *
   * A case's `csrs` line and unit pick the wrapper: `START JOBS` with an ElementwiseLanes unit (L 0, two inputs) is
   * vecadd's (START 0, JOBS 1, STATUS 2, COUNTER 3); `START JOBS JOB_BEATS` with a fold (L 1, one input) is vsum's
-  * (TreeAccumulate, one lane: START 0, JOBS 1, JOB_BEATS 2, STATUS 3, COUNTER 4).
+  * (TreeAccumulate, one lane: START 0, JOBS 1, JOB_BEATS 2, STATUS 3, COUNTER 4). Its `job_width` and `counter_width`
+  * lines set the widths of JOBS and JOB_BEATS and of COUNTER in the wrapper's description (D152).
   *
   * Each case drives the wrapper cycle by cycle: each input offers a beat from the cycles its valid column is 1 (a
   * Decoupled valid stays up until its beat is taken, so a case may not drop it before), the output is ready as the case
@@ -32,12 +34,26 @@ class ShellCasesSpec extends AnyFlatSpec with ForgeTester {
     RtlFixtures.all.find(_.name == name).get
   }
 
+  /** The fixture's description at the case's widths. */
+  private def widths(spec: AcceleratorSpec, c: Case): AcceleratorSpec = {
+    def w(x: CsrSpec) =
+      x.name match {
+        case "JOBS" | "JOB_BEATS" => x.copy(width = c.jobWidth)
+        case "COUNTER"            => x.copy(width = c.counterWidth)
+        case _                    => x
+      }
+    spec.copy(groups =
+      spec.groups.map(g => g.copy(csrs = g.csrs.map(w), units = g.units.map(u => u.copy(csrs = u.csrs.map(w)))))
+    )
+  }
+
   behavior of "a group's CSRs in the shell wrapper against SnaxShell's cases"
 
   private def run(c: Case): Unit = {
-    val f = fixture(c)
-    test(new ShellHarness(f.spec)) { dut =>
-      val g       = f.spec.groups.head
+    val f    = fixture(c)
+    val spec = widths(f.spec, c)
+    test(new ShellHarness(spec)) { dut =>
+      val g       = spec.groups.head
       assert(g.window.map(_.name).take(c.csrs.size) == c.csrs, s"${c.name}: ${f.name}'s CSRs")
       val sources = (0 until c.inputs).map(k => new Source(1 << 20, _ => BigInt(0), t => c.cycles(t).valids(k)))
       val sinks   = dut.io.writers.map(_ => new Sink(t => c.cycles(t).ready))

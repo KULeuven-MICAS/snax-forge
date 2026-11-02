@@ -30,8 +30,19 @@ object SnaxShellCases {
     */
   case class Cycle(valids: Seq[Boolean], ready: Boolean, access: Access, result: Option[BigInt], status: Int)
 
-  /** A case: the group's read-write CSRs (`csrs`: START, JOBS, the units'; STATUS and COUNTER follow) and its unit. */
-  case class Case(name: String, csrs: Seq[String], latency: Int, ii: Int, inputs: Int, cycles: Seq[Cycle]) {
+  /** A case: the group's read-write CSRs (`csrs`: START, JOBS, the units'; STATUS and COUNTER follow), its unit and the
+    * widths (`job_width` for JOBS and JOB_BEATS, `counter_width` for COUNTER; 32 by default, D152).
+    */
+  case class Case(
+    name:         String,
+    csrs:         Seq[String],
+    latency:      Int,
+    ii:           Int,
+    inputs:       Int,
+    cycles:       Seq[Cycle],
+    jobWidth:     Int = 32,
+    counterWidth: Int = 32
+  ) {
     def status:  Int = csrs.size
     def counter: Int = csrs.size + 1
   }
@@ -49,11 +60,15 @@ object SnaxShellCases {
     var latency        = 0
     var ii             = 1
     var inputs         = 2
+    var jobWidth       = 32
+    var counterWidth   = 32
     for (line <- header) line.split("\\s+").toList match {
-      case "csrs" :: "START" :: "JOBS" :: rest => csrs    = Seq("START", "JOBS") ++ rest
-      case "latency" :: n :: Nil               => latency = n.toInt
-      case "ii" :: n :: Nil                    => ii      = n.toInt
-      case "inputs" :: n :: Nil                => inputs  = n.toInt
+      case "csrs" :: "START" :: "JOBS" :: rest => csrs         = Seq("START", "JOBS") ++ rest
+      case "latency" :: n :: Nil               => latency      = n.toInt
+      case "ii" :: n :: Nil                    => ii           = n.toInt
+      case "inputs" :: n :: Nil                => inputs       = n.toInt
+      case "job_width" :: n :: Nil             => jobWidth     = n.toInt
+      case "counter_width" :: n :: Nil         => counterWidth = n.toInt
       case _ => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
     }
     val cycles = rows.map { line =>
@@ -81,7 +96,7 @@ object SnaxShellCases {
       }
       Cycle(valids, ready, access, result, status)
     }
-    Case(CaseFile.name(path), csrs, latency, ii, inputs, cycles)
+    Case(CaseFile.name(path), csrs, latency, ii, inputs, cycles, jobWidth, counterWidth)
   }
 
   /** Every case of the folder `Env` names (`CaseFile.all`). */

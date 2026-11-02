@@ -11,10 +11,12 @@ import snax.forge.{ForgeTester, Seeds}
   * 1-2, span 1, 2 or 4, T 1-4 (fixed by `params.T` or carried by the start) and 0-2 outer inputs (the head at least 1);
   * links of depth 0, 1 or 2, half the chains in a shuffled unit order (the head, the sink and the topological order
   * other than the units' indices), the link on the input after a unit's outer ones; starts of J 0, 1 or 3 (and T 0 now
-  * and then) offered at random times, while busy too; random input valid and output ready gaps. Every cycle: the
-  * start's answer; busy and done; every input's ready (its unit's firing, C§17's per-unit join); out.valid, poked with
-  * out.ready low and high (it never depends on it); per unit fire, first, read, lane, adv, give; per buffer load, its
-  * slots and its occupancy; the class. At each run's end the run line's totals.
+  * and then) offered at random times, while busy too, at job_width 3 or 32 (D152); random input valid and output ready
+  * gaps. Every cycle: the start's answer; busy and done; every input's ready (its unit's firing, C§17's per-unit join);
+  * out.valid, poked with out.ready low and high (it never depends on it); per unit fire, first, read, lane, adv, give;
+  * per buffer load, its slots and its occupancy; the class; the done pulse (high in a run's last cycle E, and in the
+  * cycle an empty run's start is accepted). At each run's end the head's firings. COUNTER, which `<tag>_csr` keeps from
+  * busy (D152), is AccCsrRandomSpec's and the shell specs'.
   */
 class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
 
@@ -53,10 +55,11 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
         val clue0 = s"seed $seed, group $g: ${units.mkString(", ")}, links ${links.mkString(",")}"
         val model = new GroupModel(units, links)
         val pv    = r.probability(); val pr = r.probability()
-        test(new GroupCtrl(desc, "t")) { dut =>
+        val jw    = r.pick(Seq(3, 32)) // job_width: J <= 3 and T <= 4 fit 3 bits
+        test(new GroupCtrl(desc, "t", jw)) { dut =>
           val open = desc.open
           for (c <- 0 until Cycles) {
-            val clue   = s"$clue0, cycle $c"
+            val clue   = s"$clue0, job_width $jw, cycle $c"
             val offer  = r.chance(0.1)
             val jobs   = r.pick(Seq(0, 1, 3, 3, 3))
             val opent  = open.map(_ => if (r.chance(0.05)) 0 else r.between(1, 4))
@@ -64,11 +67,11 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
             dut.io.start.bits.jobs.poke(jobs.U)
             dut.io.start.bits.beats.zip(if (opent.isEmpty) Seq(1) else opent).foreach { case (p, t) => p.poke(t.U) }
             assert(high(dut.io.start.ready) == model.idle, s"$clue: start.ready")
-            if (offer) {
+            val answer = if (offer) {
               var next = 0
               val ts   = units.map(_.fixedT.map(_.toLong).getOrElse { next += 1; opent(next - 1).toLong })
               model.start(jobs, ts)
-            }
+            } else "none"
             val valids = units.map(u => Seq.fill(u.inputs)(!r.chance(pv)))
             valids.flatten.zipWithIndex.foreach { case (v, k) => dut.io.in(k).valid.poke(v.B) }
             dut.io.out.ready.poke(false.B)
@@ -80,7 +83,10 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
             val busy   = model.busy
             assert(high(dut.io.busy) == busy, s"$clue: busy")
             val heads  = model.headFirings
-            model.step(valids.map(_.forall(identity)), ready) match {
+            val step   = model.step(valids.map(_.forall(identity)), ready)
+            val pulse  = answer == "ignored" || step.exists(_.end)
+            assert(high(dut.io.pulse) == pulse, s"$clue: the done pulse, the model $pulse")
+            step match {
               case None    =>
                 for (k <- 0 until valids.flatten.size) assert(!high(dut.io.in(k).ready), s"$clue: input $k ready, idle")
                 assert(!high(dut.io.out.valid), s"$clue: out.valid while idle")
@@ -109,7 +115,6 @@ class GroupCtrlSpec extends AnyFlatSpec with ForgeTester {
                 assert(int(dut.io.cls) == s.cls, s"$clue: class")
                 if (s.end) {
                   ended += 1
-                  assert(model.classes.sum == int(dut.io.counter) + 1, s"$clue: COUNTER")
                   assert(heads + (if (s.units(chain.head).fire) 1 else 0) == model.headFirings, s"$clue: firings")
                 }
             }

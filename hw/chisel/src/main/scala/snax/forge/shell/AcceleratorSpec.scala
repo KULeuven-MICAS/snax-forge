@@ -9,8 +9,12 @@ import java.nio.file.{Files, Path}
   */
 object AcceleratorSpec {
 
-  /** A CSR: its offset from the accelerator's first CSR; `width` for a read-write one. */
-  case class CsrSpec(name: String, access: String, offset: Int, width: Option[Int])
+  /** A CSR: its offset from the accelerator's first CSR and its width, 1 to 32 bits (D152: START 1, JOBS and JOB_BEATS
+    * job_width, STATUS 2, COUNTER counter_width); a read gives its bits, the upper ones 0.
+    */
+  case class CsrSpec(name: String, access: String, offset: Int, width: Int) {
+    require(1 <= width && width <= 32, s"CSR $name: width $width, must be 1 to 32")
+  }
 
   /** A unit's BRM port: the datapath's port, its direction (`in` or `out`), its dtype (NumPy's name), its lanes. */
   case class PortSpec(port: String, dir: String, dtype: String, lanes: Int)
@@ -60,15 +64,14 @@ object AcceleratorSpec {
   }
 
   def parse(text: String): AcceleratorSpec = {
-    val d                   = ujson.read(text)
-    def csr(c: ujson.Value) =
-      CsrSpec(c("name").str, c("access").str, c("offset").num.toInt, c.obj.get("width").map(_.num.toInt))
-    def end(e: String)      = {
+    val d = ujson.read(text)
+    def csr(c: ujson.Value) = CsrSpec(c("name").str, c("access").str, c("offset").num.toInt, c("width").num.toInt)
+    def end(e: String) = {
       val Array(u, p) = e.split("\\.", 2)
       u -> p
     }
     def outer(key: String) = d(key).arr.toSeq.map(e => end(e.str))
-    val spec                = AcceleratorSpec(
+    val spec           = AcceleratorSpec(
       d("name").str,
       d("design_point").str,
       d("tag").str,
@@ -100,8 +103,10 @@ object AcceleratorSpec {
         )
       }
     )
-    val offsets             = spec.csrs.map(_.offset)
+    val offsets        = spec.csrs.map(_.offset)
     require(offsets == offsets.indices, s"CSR offsets $offsets in CSR order are not contiguous from 0")
+    spec.jobWidth
+    spec.counterWidth
     spec
   }
 
@@ -119,6 +124,21 @@ case class AcceleratorSpec(
 
   /** Every CSR in CSR order. */
   def csrs: Seq[AcceleratorSpec.CsrSpec] = groups.flatMap(_.window)
+
+  private def width(names: String*): Int = {
+    val ws = csrs.filter(c => names.contains(c.name)).map(_.width).distinct
+    require(ws.size == 1, s"${names.mkString(" and ")}: widths $ws, one width for all (D152)")
+    ws.head
+  }
+
+  /** job_width (D152): the width of JOBS and every JOB_BEATS, one for all, and of the control units' copies. */
+  lazy val jobWidth: Int = width("JOBS", "JOB_BEATS")
+
+  /** counter_width: every COUNTER's width. */
+  lazy val counterWidth: Int = width("COUNTER")
+
+  /** The widest CSR a read can give: the width of `<tag>_csr`'s kept answer. */
+  def readWidth: Int = csrs.map(_.width).max
 
   def units: Seq[AcceleratorSpec.UnitSpec] = groups.flatMap(_.units)
 

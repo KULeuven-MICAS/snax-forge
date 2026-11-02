@@ -8,10 +8,10 @@
   {
    "name": "acc",
    "csrs": [
-    {"name": "START", "access": "rw", "offset": 0, "width": 32},
+    {"name": "START", "access": "rw", "offset": 0, "width": 1},
     {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
-    {"name": "STATUS", "access": "ro", "offset": 2},
-    {"name": "COUNTER", "access": "ro", "offset": 3}
+    {"name": "STATUS", "access": "ro", "offset": 2, "width": 2},
+    {"name": "COUNTER", "access": "ro", "offset": 3, "width": 32}
    ],
    "units": [
     {

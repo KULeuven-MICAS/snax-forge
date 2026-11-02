@@ -69,9 +69,9 @@ def point(
 def one_unit(k: int = 0, name: str = "acc") -> Accelerator:
     """An accelerator of one group of one unit with ``k`` R/W CSRs of its own (``F0``, ...),
     offsets in CSR order."""
-    rw = [Csr(n, "rw", i, 32) for i, n in enumerate(["START", "JOBS"])]
+    rw = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32)]
     own = [Csr(f"F{i}", "rw", 2 + i, 32) for i in range(k)]
-    ro = [Csr(n, "ro", 2 + k + i) for i, n in enumerate(["STATUS", "COUNTER"])]
+    ro = [Csr("STATUS", "ro", 2 + k, 2), Csr("COUNTER", "ro", 3 + k, 32)]
     unit = Unit(name, "elementwise_add", "ElementwiseLanes",
                 {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
                 {"op": "add"}, 0, 1, own,
