@@ -33,9 +33,10 @@ def test_missing_keys_take_defaults_and_every_field_is_written():
     p = Platform.from_dict({"name": "bare"})
     assert p.l2 is None and p.default == StreamerOptions() and p.wait_mode == "poll"
     d = p.to_dict()
-    assert list(d) == ["name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2",
-                       "wait_mode", "streamers"]  # fmt: skip
+    assert list(d) == ["name", "base", "changes", "hjson", "accelerator_slot", "acc_csr", "l1",
+                       "l2", "wait_mode", "streamers"]  # fmt: skip
     assert (d["hjson"], d["accelerator_slot"]) == (None, None)
+    assert d["acc_csr"] == {"job_width": 32, "counter_width": None} and p.acc_csr.counter == 32
     assert d["l2"] is None and d["streamers"] == {"default": StreamerOptions().to_dict()}
 
 
@@ -222,6 +223,35 @@ def test_a_set_the_config_rejects_is_a_value_problem():
     with pytest.raises(DesignError) as e:
         Platform.load(SMALL16).with_changes([("l1.n_banks", 0)])
     assert e.value.codes == ["platform.values"]
+
+
+def test_the_csr_widths_are_set_and_counter_width_follows_job_width_when_null():
+    """acc_csr (D152): job_width 1-32; counter_width 1-32, or null to follow job_width."""
+    w = Platform.load(SMALL16).with_changes([("acc_csr.job_width", 16)])
+    assert (w.acc_csr.job_width, w.acc_csr.counter) == (16, 16)
+    w = w.with_changes([("acc_csr.counter_width", 8)])
+    assert (w.acc_csr.job_width, w.acc_csr.counter) == (16, 8)
+    assert w.with_changes([("acc_csr.counter_width", None)]).acc_csr.counter == 16
+    assert Platform.from_dict(json.loads(w.to_json())) == w
+
+
+@pytest.mark.parametrize(
+    "path, value, code, text",
+    [
+        ("acc_csr.job_width", 0, "platform.values", "job_width must be 1 to 32 bits, got 0"),
+        ("acc_csr.counter_width", 33, "platform.values", "counter_width must be 1 to 32 bits"),
+        ("acc_csr.job_width", None, "platform.keys", "must be an int, got None"),
+        ("acc_csr.counter_width", True, "platform.keys", "must be an int or null, got True"),
+        ("acc_csr.counter_width", "8", "platform.keys", "must be an int or null, got '8'"),
+    ],
+)
+def test_a_bad_csr_width_is_refused_by_set_and_by_load(path, value, code, text):
+    with pytest.raises(DesignError, match=text):
+        Platform.load(SMALL16).with_changes([(path, value)])
+    d = platform_dict()
+    d["acc_csr"] = {path.split(".")[1]: value}
+    _, found = parse(d)
+    assert [p.code for p in found] == [code] and text in found[0].message
 
 
 def test_parse_value_takes_json_or_text():

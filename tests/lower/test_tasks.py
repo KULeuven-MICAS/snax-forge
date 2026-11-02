@@ -4,14 +4,16 @@ Sections:
   1. round trips (the checked-in fixture, derived task lists)
   2. structural errors
   3. format errors
-  4. values against the design point (check_values)
+  4. values against the design point (check_values), the CSR writes against job_width
 """
 
 import json
+from dataclasses import replace
 
 import pytest
 
 from snax_forge.common import to_json
+from snax_forge.design import DesignPoint
 from snax_forge.lower import TaskList, TaskListError, check_values, components
 from snax_forge.lower import task_list as derive
 
@@ -183,6 +185,36 @@ GOOD_STREAM = stream("x", "acc_a")["values"]
 def test_values_that_do_not_fit_the_design_point(steps, match):
     with pytest.raises(TaskListError, match=match):
         check_values(task_list(*steps), vecadd_point())
+
+
+def _narrow(point: DesignPoint, job_width: int) -> DesignPoint:
+    return replace(point, platform=point.platform.with_changes([("acc_csr.job_width", job_width)]))
+
+
+def test_an_accelerator_tasks_csr_writes_fit_job_width():
+    """D152: JOBS (vecadd: n / 1) and JOB_BEATS (vsum: T) at most 2^job_width - 1."""
+    check_values(task_list(add("x", nb=15), start("x")), _narrow(vecadd_point(), 4))
+    with pytest.raises(
+        TaskListError, match=r"JOBS 16 \(unit acc\) is past acc_csr.job_width = 4 bits, at most 15"
+    ):
+        check_values(task_list(add("x", nb=16), start("x")), _narrow(vecadd_point(), 4))
+    vsum = derive(vsum_point())  # JOBS 1, JOB_BEATS 64
+    check_values(vsum, _narrow(vsum_point(), 7))
+    with pytest.raises(
+        TaskListError, match=r"JOB_BEATS 64 \(unit acc\) is past acc_csr.job_width = 6 bits"
+    ):
+        check_values(vsum, _narrow(vsum_point(), 6))
+
+
+def test_an_accelerator_tasks_head_firings_stay_below_2_to_the_32():
+    """JOBS · ∏T reaches 2^32: SNAX-GVSoC counts a run's firings in 32 bits."""
+
+    def vsum(n: int, t: int) -> TaskList:
+        return task_list({**add("x"), "values": {"n": n, "T": t}}, start("x"))
+
+    check_values(vsum((1 << 32) - 4, 4), vsum_point())  # JOBS 2^30 - 1, 2^32 - 4 firings
+    with pytest.raises(TaskListError, match=r"the head fires JOBS · ∏T = 4294967296 times"):
+        check_values(vsum(1 << 32, 4), vsum_point())
 
 
 def test_an_idle_mover_has_every_bound_0():

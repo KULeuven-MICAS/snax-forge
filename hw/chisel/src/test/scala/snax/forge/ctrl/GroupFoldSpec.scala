@@ -10,8 +10,8 @@ import snax.forge.{ForgeTester, Seeds}
   * fixed T c, no count of the sink's pushes) against `GroupModel`, which counts every firing as SnaxGroupRule does, on
   * random groups: chains of 1 to 3 units, half in a shuffled unit order, each of L 0-2 and T fixed (`params.T`) or from
   * the start, each T from {1, 2, 3, 4, 8} (1, powers of two and not); links of depth 0-2; back-to-back runs of random
-  * JOBS (every run's head firings at most 96), random input gaps and output stalls. Every cycle: busy, the done pin
-  * (high in E + 1, E the model's last cycle), each unit's fire and give, and the class.
+  * JOBS (every run's head firings at most 96) at job_width 4 or 32 (D152), random input gaps and output stalls. Every
+  * cycle: busy, the done pin (high in E + 1, E the model's last cycle), each unit's fire and give, and the class.
   */
 class GroupFoldSpec extends AnyFlatSpec with ForgeTester {
 
@@ -47,10 +47,11 @@ class GroupFoldSpec extends AnyFlatSpec with ForgeTester {
         val clue0 = s"seed $seed, group $g: ${units.mkString(", ")}, links ${links.mkString(",")}"
         val model = new GroupModel(units, links)
         val pv    = r.probability(); val pr = r.probability()
-        test(new GroupCtrl(desc, "t")) { dut =>
+        val jw    = r.pick(Seq(4, 32)) // job_width: JOBS <= 7 and T <= 8 fit 4 bits
+        test(new GroupCtrl(desc, "t", jw)) { dut =>
           var lastEnd = false
           for (c <- 0 until Cycles) {
-            val clue   = s"$clue0, cycle $c"
+            val clue   = s"$clue0, job_width $jw, cycle $c"
             // a start of random JOBS and T, offered now and then while idle, at most Most head firings
             var jobs   = 0
             var opent  = Seq.empty[Int]

@@ -27,11 +27,14 @@ CSRs: ``JOB_BEATS`` for a fold without ``params.T``). A link is ``name``,
 ``depth`` (0 a wire, >= 1 a buffer of that many beats).
 
 **The CSRs** (D146), offsets from the accelerator's first CSR, per group in order:
-``START`` and ``JOBS`` (R/W, 32 bits), each unit's R/W CSRs, ``STATUS`` and
+``START`` and ``JOBS`` (R/W), each unit's R/W CSRs, ``STATUS`` and
 ``COUNTER`` (R/O). A CSR is ``name``, ``access`` (``rw``, ``ro``),
-``offset``, ``width`` (R/W only) and ``pin`` (a scalar's datapath pin, none
-yet). ``from_dict`` checks the offsets contiguous from 0 in that order and
-never recomputes them. ``define`` names a CSR as the header does:
+``offset``, ``width`` and ``pin`` (a scalar's datapath pin, none yet). The
+widths (D152): START 1 (a strobe, it reads 0), JOBS and every JOB_BEATS the
+platform's ``acc_csr.job_width``, STATUS 2, COUNTER its ``counter_width``.
+``from_dict`` checks the offsets contiguous from 0 in that order and never
+recomputes them, and every width 1 to 32, START's 1, STATUS's 2, JOBS and
+every JOB_BEATS one width and every COUNTER one width. ``define`` names a CSR as the header does:
 ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``, the group part dropped when the
 accelerator has one group, the unit part when the group has one unit.
 
@@ -89,9 +92,9 @@ if TYPE_CHECKING:
     from snax_forge.design.point import DesignPoint
 
 ACCELERATOR_JSON = "accelerator.json"
-# A CSR is 32 bits wide
-CSR_BITS = 32
 ACCESS = ("rw", "ro")
+# The CSRs whose width C§17 fixes: START a strobe (bit 0), STATUS {done, busy}
+FIXED_WIDTH = {"START": 1, "STATUS": 2}
 
 
 @dataclass(frozen=True)
@@ -222,9 +225,20 @@ class Accelerator(JsonFile):
             raise ValueError(f"accelerator {self.name}: CSR offsets {offsets} in CSR order are "
                              "not contiguous from 0")  # fmt: skip
         for _, _, c in self.csrs():
-            if c.access not in ACCESS or (c.width is None) != (c.access == "ro"):
-                raise ValueError(f"accelerator {self.name}: CSR {c.name} is {c.access} with "
-                                 f"width {c.width}; an rw CSR has a width, an ro one none")  # fmt: skip
+            if c.access not in ACCESS:
+                raise ValueError(f"accelerator {self.name}: CSR {c.name} is {c.access!r}, not "
+                                 f"one of {ACCESS}")  # fmt: skip
+            if type(c.width) is not int or not 1 <= c.width <= 32:
+                raise ValueError(f"accelerator {self.name}: CSR {c.name} has width {c.width!r}; "
+                                 "every CSR has a width of 1 to 32 bits")  # fmt: skip
+            if c.width != FIXED_WIDTH.get(c.name, c.width):
+                raise ValueError(f"accelerator {self.name}: CSR {c.name} has width {c.width}, "
+                                 f"not {FIXED_WIDTH[c.name]}")  # fmt: skip
+        for names in (("JOBS", "JOB_BEATS"), ("COUNTER",)):
+            widths = {c.width for _, _, c in self.csrs() if c.name in names}
+            if len(widths) > 1:
+                raise ValueError(f"accelerator {self.name}: {' and '.join(names)} have the "
+                                 f"widths {sorted(widths)}; they share one")  # fmt: skip
         _check_links(self)
 
     def to_dict(self) -> dict[str, Any]:
@@ -246,6 +260,11 @@ class Accelerator(JsonFile):
         """The units whose T is fixed at design time (``params.T``): their JOB_BEATS is no CSR
         ."""
         return {u.name for g in self.groups for u in g.units if "T" in u.params}
+
+    @property
+    def job_width(self) -> int:
+        """JOBS's and every JOB_BEATS's width (the platform's ``acc_csr.job_width``)."""
+        return next(c.width for _, _, c in self.csrs() if c.name == "JOBS")
 
     @property
     def rw(self) -> int:
@@ -395,13 +414,16 @@ def describe(point: DesignPoint, point_path: str) -> Accelerator:
     g = point.graph
     linked = linked_ports(g)
     offsets = iter(range(1 << 16))  # contiguous over the groups, in CSR order
+    widths = point.platform.acc_csr
     groups, inputs, outputs = [], [], []
     for group_name, members in graph_groups(g).items():
         if members[0] not in found:
             continue
-        start, jobs = (Csr(n, "rw", next(offsets), CSR_BITS) for n in ("START", "JOBS"))
+        start = Csr("START", "rw", next(offsets), FIXED_WIDTH["START"])
+        jobs = Csr("JOBS", "rw", next(offsets), widths.job_width)
         group_units = [_unit(point, u, found[u], offsets) for u in members]
-        status, counter = (Csr(n, "ro", next(offsets)) for n in ("STATUS", "COUNTER"))
+        status = Csr("STATUS", "ro", next(offsets), FIXED_WIDTH["STATUS"])
+        counter = Csr("COUNTER", "ro", next(offsets), widths.counter)
         group_links = []
         for k in links(g):
             if k.attrs["from"] in members:
@@ -439,6 +461,6 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
     fixed = fixed_fold(point.graph, instance_nodes(point.graph)[name], inst)
     params = dict(fill.params) | ({} if fixed is None else {"T": fixed})
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None and fixed is None else []
-    unit_csrs = [Csr(n, "rw", next(offsets), CSR_BITS) for n in unit_rw]
+    unit_csrs = [Csr(n, "rw", next(offsets), point.platform.acc_csr.job_width) for n in unit_rw]
     return Unit(name, inst.brm.name, datapath, fill.ports, params, inst.latency,
                 inst.initiation_interval, unit_csrs, fill.op_type, inst.span)  # fmt: skip

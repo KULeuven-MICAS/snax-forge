@@ -12,6 +12,7 @@ bound graph with a platform.
      "hjson":    null,              the source cluster file, a path from
                                     snax-forge's root (``design from-hjson``)
      "accelerator_slot": null,      the generated accelerator's name
+     "acc_csr":  {...},             AccCsrConfig: its CSRs' widths
      "l1":       {...},             L1Config
      "l2":       {...} or null,     L2Config; no L2, no DMA
      "wait_mode": "poll",           how the program waits for a task
@@ -50,6 +51,12 @@ that source, its only slot renamed to it and set (snax_forge/gen). Both are
 null for a platform not read from one (small16). ``--set
 accelerator_slot=NAME`` changes it as any field.
 
+**The accelerator's CSRs** (``acc_csr``, D152): ``job_width`` (default 32)
+is the bits of JOBS and every JOB_BEATS, and of the control unit's copies
+and counters; ``counter_width`` those of COUNTER, null to follow
+``job_width``. Each is 1 to 32; the generator writes them as the CSRs'
+widths in ``accelerator.json`` (gen/accelerator.py, C§17).
+
 **Changes and working copies.** ``with_changes`` applies ``--set`` paths
 (``l1.n_banks``, ``streamers.acc_a.fifo_depth``) and returns a working
 copy: complete values, ``base`` the platform it all started from, and
@@ -76,8 +83,8 @@ from snax_forge.common import Config, JsonFile, plain
 
 from .problems import DesignError, Problem, read_json
 
-KEYS = ("name", "base", "changes", "hjson", "accelerator_slot", "l1", "l2", "wait_mode",
-        "streamers")  # fmt: skip
+KEYS = ("name", "base", "changes", "hjson", "accelerator_slot", "acc_csr", "l1", "l2",
+        "wait_mode", "streamers")  # fmt: skip
 WAIT_MODES = ("poll", "signal")
 # Streamer fields the port decides; an entry may not set them (connect.derived).
 DERIVED = ("write", "n_ports")
@@ -85,6 +92,8 @@ DERIVED = ("write", "n_ports")
 PROVENANCE = ("name", "base", "changes")
 # Top-level fields that are a string or null (the source hjson's)
 NULLABLE = ("hjson", "accelerator_slot")
+# Section fields that are an int or null (null: follow another field)
+INT_OR_NULL = {"acc_csr": ("counter_width",)}
 
 
 @dataclass(frozen=True)
@@ -138,6 +147,24 @@ class L2Config(Config):
 
 
 @dataclass(frozen=True)
+class AccCsrConfig(Config):
+    """The widths of the generated accelerator's CSRs (CONTRACTS.md 13, D152)."""
+
+    job_width: int = 32  # JOBS and every JOB_BEATS, and the control unit's copies and counters
+    counter_width: int | None = None  # COUNTER; None follows job_width
+
+    def __post_init__(self) -> None:
+        for name, w in (("job_width", self.job_width), ("counter_width", self.counter_width)):
+            if w is not None and not 1 <= w <= 32:
+                raise ValueError(f"{name} must be 1 to 32 bits, got {w}")
+
+    @property
+    def counter(self) -> int:
+        """COUNTER's width: ``counter_width``, or ``job_width`` when it is null."""
+        return self.job_width if self.counter_width is None else self.counter_width
+
+
+@dataclass(frozen=True)
 class StreamerOptions(Config):
     """The streamer knobs a platform sets; the port decides the rest (``write``, ``n_ports``)."""
 
@@ -166,6 +193,7 @@ class Platform(JsonFile):
     changes: dict[str, Any] = field(default_factory=dict)
     hjson: str | None = None  # the source cluster file, from snax-forge's root
     accelerator_slot: str | None = None  # the generated accelerator's name
+    acc_csr: AccCsrConfig = field(default_factory=AccCsrConfig)
 
     # --- the streamer shell ---
 
@@ -212,6 +240,7 @@ class Platform(JsonFile):
             "changes": plain(self.changes),
             "hjson": self.hjson,
             "accelerator_slot": self.accelerator_slot,
+            "acc_csr": self.acc_csr.to_dict(),
             "l1": self.l1.to_dict(),
             "l2": None if self.l2 is None else self.l2.to_dict(),
             "wait_mode": self.wait_mode,
@@ -253,6 +282,10 @@ def _kind_ok(old: Any, new: Any) -> bool:
     return type(old) is type(new)
 
 
+def _int_or_null(v: Any) -> bool:
+    return v is None or (not isinstance(v, bool) and type(v) is int)
+
+
 def _type_name(v: Any) -> str:
     if isinstance(v, bool):
         return "a bool"
@@ -276,7 +309,13 @@ def _section(cls: type, d: Any, sec: str, out: list[Problem]) -> Any:
     ref = cls()
     bad = False
     for k in names:
-        if k in d and not _kind_ok(getattr(ref, k), d[k]):
+        if k in INT_OR_NULL.get(sec, ()):
+            if k in d and not _int_or_null(d[k]):
+                out.append(
+                    Problem("platform.keys", f"{sec}.{k}", f"must be an int or null, got {d[k]!r}")
+                )
+                bad = True
+        elif k in d and not _kind_ok(getattr(ref, k), d[k]):
             want = _type_name(getattr(ref, k))
             out.append(Problem("platform.keys", f"{sec}.{k}", f"must be {want}, got {d[k]!r}"))
             bad = True
@@ -370,6 +409,7 @@ def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
             )
         )
 
+    acc_csr = _section(AccCsrConfig, d.get("acc_csr", {}), "acc_csr", out)
     l1 = _section(L1Config, d.get("l1", {}), "l1", out)
     l2 = None if d.get("l2") is None else _section(L2Config, d["l2"], "l2", out)
     wait_mode = d.get("wait_mode", "poll")
@@ -401,7 +441,7 @@ def parse(d: Any) -> tuple[Platform | None, list[Problem]]:
         return None, out
     return Platform(
         name=name, l1=l1, l2=l2, wait_mode=wait_mode, default=default, entries=entries, base=base, changes=dict(changes), hjson=source,
-        accelerator_slot=slot,
+        accelerator_slot=slot, acc_csr=acc_csr,
     ), []  # fmt: skip
 
 
@@ -477,7 +517,10 @@ def _apply(d: dict[str, Any], path: str, value: Any) -> list[Problem]:
         close = difflib.get_close_matches(last, keys, n=1)
         fix = f"did you mean {'.'.join([*parts[:-1], close[0]])}?" if close else None
         return [Problem("platform.keys", where, f"no such field (fields here: {keys})", fix)]
-    if not _kind_ok(node[last], value):
+    if len(parts) == 2 and last in INT_OR_NULL.get(parts[0], ()):
+        if not _int_or_null(value):
+            return [Problem("platform.keys", where, f"must be an int or null, got {value!r}")]
+    elif not _kind_ok(node[last], value):
         return [Problem("platform.keys", where, f"must be {_type_name(node[last])}, got {value!r}")]
     node[last] = value
     return []

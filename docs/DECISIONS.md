@@ -10,13 +10,13 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D152**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D153**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 D152 |
 | lower | D64 D75 D105 D135 D144 |
 | gvsoc | D120–D122 D125 D134 D137 |
 | brm | D68 D70 D82 D103 D129 D133 D143 D147 D149 |
@@ -191,3 +191,5 @@ Retired, and where each now lives:
 **D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
 
 **D151** · estimate — An ideal estimate of a bound graph (no bank conflicts, streamer fill, DMA or core control): per group the exact cycles of snax-gvsoc's group rule, as `gen/rtl.py`'s `group_counter` calls it, groups adding through L1; unbound work a not-mapped count, never cycles. A mapping's gain shows before any run, exact on ideal streams: a COUNTER is this plus the fill. → ARCHITECTURE §5, C§19.
+
+**D152** · scope — `<tag>_csr` is the accelerator's interface, what an HLS block leaves to its driver, so `<tag>_ctrl` and `<tag>_datapath` compare with the whole HLS block: START a strobe that reads 0, STATUS's done bit and COUNTER kept there from ctrl's busy and done pulse, and every CSR at its width, the platform's `acc_csr` (JOBS and JOB_BEATS job_width, a saturating COUNTER counter_width). → C§13, C§17.
