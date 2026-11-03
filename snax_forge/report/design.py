@@ -27,7 +27,8 @@ the kernel from the run's functional check.
                  ramp, stall and the COUNTER a run gives (the cycles plus the
                  streamers' fill), a bank-bound note per group whose bank_bound
                  exceeds its cycles and, on the estimate's technology, its area and
-                 energy; then the accelerator's cycles, the work no unit runs and the
+                 energy; then the accelerator's cycles, the work no unit runs as
+                 cycles (one per iteration, an assumption, D155), their total and the
                  L1 footprint against the L1; then the cost (C§20): per unit, buffer
                  link and control unit how it is costed, the accelerator's area and
                  energy, the technology and its table's source, and the blocks the
@@ -181,6 +182,8 @@ class EstimateTable(Record):
     missing: list[str] = field(default_factory=list)
     cost: list[CostRow] = field(default_factory=list)
     bank_notes: list[str] = field(default_factory=list)  # a group's bank bound over its cycles
+    unmapped_cycles: int = 0  # not_mapped at UNMAPPED_CYCLES_PER_ITERATION (D155)
+    total_cycles: int = 0  # accelerator_cycles + unmapped_cycles
 
 
 @dataclass
@@ -417,7 +420,7 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
     notes = [g.bank_bound_note for g in e.groups if g.bank_bound_note]
     return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size,
                          e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost,
-                         notes)  # fmt: skip
+                         notes, e.unmapped_cycles, e.total_cycles)  # fmt: skip
 
 
 # =============================================================================
@@ -542,6 +545,19 @@ def render_design(r: DesignReport) -> str:
     return "\n".join(out) + "\n"
 
 
+def cycles_line(e: EstimateTable) -> str:
+    """The Estimate's cycles (D155): the accelerator's, the unmapped work's at one cycle per
+    iteration (an assumption; left out at 0), the total."""
+    from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION as PER
+
+    unmapped = ""
+    if e.unmapped_cycles:
+        each = f"{PER} cycle{'' if PER == 1 else 's'} each"
+        unmapped = (f" Unmapped: {e.unmapped_cycles} cycles ({e.not_mapped} iterations at "
+                    f"{each}, an assumption).")  # fmt: skip
+    return f"Accelerator cycles: {e.accelerator_cycles}.{unmapped} Total: {e.total_cycles}."
+
+
 def render_estimate(e: EstimateTable) -> list[str]:
     """The estimate section: per group its cycles, then the accelerator's (D155)."""
     out = [("The ideal estimate (D155): the group rule on ideal streams, with no bank conflicts, "
@@ -557,8 +573,7 @@ def render_estimate(e: EstimateTable) -> list[str]:
     l1 = f"{e.l1_footprint} bytes"
     if e.l1_size is not None:
         l1 += f" of {e.l1_size} ({pct(e.l1_footprint / e.l1_size)})"
-    out += ["", (f"Accelerator cycles: {e.accelerator_cycles}. Not mapped: {e.not_mapped} "
-                 f"iterations no unit runs. L1 footprint: {l1}.")]  # fmt: skip
+    out += ["", f"{cycles_line(e)} L1 footprint: {l1}."]
     if e.bank_notes:  # the bank bound over the ideal cycles (D155), a line per group
         out += ["", ("Bank bound: L1's single-port banks serve one word each per cycle, so these "
                      "groups take longer than the ideal cycles:"), ""]  # fmt: skip

@@ -360,6 +360,18 @@ def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
                                 else "mult_acc 194 (expected 131)")  # fmt: skip
 
 
+def test_design_md_counts_unmapped_work_as_cycles():
+    """D155's line: the unmapped part with its assumption when there is unmapped work, left out
+    when there is none."""
+    from snax_forge.report.design import EstimateTable, cycles_line
+
+    some = EstimateTable([], 0, 256, 0, None, unmapped_cycles=256, total_cycles=256)
+    assert cycles_line(some) == ("Accelerator cycles: 0. Unmapped: 256 cycles (256 iterations at "
+                                 "1 cycle each, an assumption). Total: 256.")  # fmt: skip
+    none = EstimateTable([], 256, 0, 0, None, unmapped_cycles=0, total_cycles=256)
+    assert cycles_line(none) == "Accelerator cycles: 256. Total: 256."
+
+
 def test_the_extents_include_the_padding(tmp_path):
     """rowsum_3x7: A[3, 7] over its padded [3, 8] (three pads, 192 B, whole beats); y, three
     int64 the DMA moves, kept free up to a whole 64-byte beat. The checks' extents."""
