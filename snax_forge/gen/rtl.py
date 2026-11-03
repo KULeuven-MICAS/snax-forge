@@ -432,19 +432,21 @@ def elaborate_all(pairs: list[tuple[Path, Path]]) -> list[list[Path]]:
     ]
     cmd = ["java", "-cp", emit_classpath(), "snax.forge.Emit", *args]
     done = subprocess.run(cmd, cwd=CHISEL, check=False)
-    listed = []
-    for spec, out in pairs:
-        listing = out / EMITTED_JSON
-        if done.returncode != 0 or not listing.is_file():
-            raise GenError("gen.elaborate", f"Emit --spec {spec} failed (exit {done.returncode})")
-        files = [out / f for f in json.loads(listing.read_text())["files"]]
-        missing = [str(f) for f in files if not f.is_file()]
-        if missing:
-            raise GenError(
-                "gen.elaborate", f"{listing} lists files that were not written: {missing}"
-            )
-        listed.append([*files, listing])
-    return listed
+    return [listed(out, f"Emit --spec {spec}", done.returncode) for spec, out in pairs]
+
+
+def listed(out: Path, what: str, code: int) -> list[Path]:
+    """The files ``out/emitted.json`` lists, each checked to exist (firtool's failures do not
+    always reach the exit status), and the listing; ``gen.elaborate`` naming ``what`` when the
+    call (exit ``code``) failed or a file is missing."""
+    listing = out / EMITTED_JSON
+    if code != 0 or not listing.is_file():
+        raise GenError("gen.elaborate", f"{what} failed (exit {code})")
+    files = [out / f for f in json.loads(listing.read_text())["files"]]
+    missing = [str(f) for f in files if not f.is_file()]
+    if missing:
+        raise GenError("gen.elaborate", f"{listing} lists files that were not written: {missing}")
+    return [*files, listing]
 
 
 def warm_emit() -> None:
