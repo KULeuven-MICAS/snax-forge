@@ -220,17 +220,18 @@ function field(f) {
   }
   const input = h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value),
     title: f.sweepable ? "a number, or an expression over the params (W, W * 2); a new name gets its value beside it" : "" });
-  return f.sweepable && !f.readonly ? sweepable(input) : input;
+  return f.sweepable && !f.readonly ? sweepable(input, f.new_value) : input;
 }
 
 // A name in an int field: a param, or one of the grammar's functions (expr.py)
 const NAMES = /[A-Za-z_][A-Za-z0-9_]*/g;
 const FUNCTIONS = new Set(["max", "min"]);
 
-/** A sweepable int field (a split's factor): beside it a value input per name it uses that the
-session does not have yet (default 4), which the apply sends as ``new_params`` (C§12), so each
-split can have its own param; the values typed stay while the field changes. */
-function sweepable(input) {
+/** A sweepable int field (a split's factor, a link's depth): its default a param name of its
+own (``W``, ``D``), and beside it a value input per name it uses that the session does not have
+yet (its ``new_value``, 4 or 1), which the apply sends as ``new_params`` (C§12); a number typed
+instead becomes a param server-side. The values typed stay while the field changes. */
+function sweepable(input, start = 4) {
   const extra = h("span", { class: "dfg-new-params" });
   const typed = {};
   const refresh = () => {
@@ -239,7 +240,7 @@ function sweepable(input) {
     const names = [...new Set(input.value.match(NAMES) || [])]
       .filter((n) => !FUNCTIONS.has(n) && !Object.prototype.hasOwnProperty.call(known, n));
     extra.replaceChildren(...names.map((n) => h("label", { class: "dfg-new-param", title: `${n} is not a param yet: its value, added to the session's params` },
-      `new param ${n} = `, h("input", { "data-new-param": n, value: typed[n] ?? "4", size: 4, inputmode: "numeric" }))));
+      `new param ${n} = `, h("input", { "data-new-param": n, value: typed[n] ?? String(start), size: 4, inputmode: "numeric" }))));
   };
   input.addEventListener("input", refresh);
   refresh();

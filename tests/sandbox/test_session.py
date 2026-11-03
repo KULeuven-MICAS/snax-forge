@@ -87,6 +87,39 @@ def test_a_taken_name_gets_a_suffix(roots):
     assert names == ["vecadd", "vecadd_2", "vecadd_3"]
 
 
+def test_a_number_given_for_a_factor_becomes_a_param(roots, tmp_path):
+    """C§12: every factor the editor writes names a param. vecmul's split given 8 stores W with
+    W = 8 in the params, so after the bind its Bindings entry has W editable and W = 4 replays
+    to 512 cycles; a second split gets W_2; a link's depth given as a number becomes D; the
+    saved recipe sweeps with --set W=…; a recipe opened from a file keeps its numbers."""
+    from snax_forge.viz.dfg.api import bindings_section
+
+    s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
+    got = ok(s.apply("split", {"map": "mult_map", "factor": 8}))
+    assert got["params"] == {"map": "mult_map", "factor": "W"} and got["new_params"] == {"W": 8}
+    assert s.recipe.steps[0].params["factor"] == "W" and s.recipe.params == {"N": 2048, "W": 8}
+    ok(s.apply("tag_map", {"map": "mult_map", "kind": "temporal"}))
+    ok(s.apply("tag_map", {"map": "mult_map_inner", "kind": "spatial"}))
+    bind_default(s, "mult")
+    (unit,) = bindings_section(s.graphs[4], s.recipe, editable=True)["entries"]
+    assert unit["params"] == [{"name": "W", "value": 8, "editable": True, "shared_with": []}]
+    ok(s.set_params({"W": 4}))
+    assert s.estimate(4).accelerator_cycles == 512
+    ok(s.save("vecmul_w"))
+    assert sandbox_cli.main([str(roots.recipes / "vecmul_w.json"), "--set", "W=2", "--out",
+                             str(tmp_path / "w2")]) == 0  # fmt: skip
+    dot = Session.from_kernel("dot", {"N": 512}, roots=roots)
+    ok(dot.apply("split", {"map": "mult_map", "factor": 8}))
+    ok(dot.apply("split", {"map": "sum_map", "factor": 4}))
+    assert [x.params["factor"] for x in dot.recipe.steps] == ["W", "W_2"]
+    assert dot.recipe.params == {"N": 512, "W": 8, "W_2": 4}
+    two = opened("dot_2", roots)
+    assert two.recipe.steps[-1].params["depth"] == 1  # the file's number stays
+    ok(two.move(two.n - 1))
+    got = ok(two.apply("link", {"container": "tmp0", "depth": 1, "group": "dot"}, drop=True))
+    assert got["params"]["depth"] == "D" and two.recipe.params["D"] == 1
+
+
 def test_a_kernel_session_needs_every_symbol_and_no_w(roots):
     """The kernel's symbols only, each a param of its name; one without a value is refused
     with one line naming it."""
@@ -358,8 +391,9 @@ def _form(answer):
 
 
 def test_the_forms_of_vecadds_import(roots):
-    """split's: the map, not editable, and a sweepable factor defaulting to the param W;
-    tag_map's kind a choice of TAGS; a refused transform has no form."""
+    """split's: the map, not editable, and a sweepable factor defaulting to a param of its own,
+    W_2 here since the session has W (its value 4 beside it); tag_map's kind a choice of TAGS; a
+    refused transform has no form."""
     s = Session.from_kernel("vecadd", {"N": 64, "W": 4}, roots=roots)
     sites = s.sites(0, "add_map")
     split = _form(sites["split"])
@@ -372,8 +406,9 @@ def test_the_forms_of_vecadds_import(roots):
     assert (split["factor"]["type"], split["factor"]["sweepable"], split["factor"]["value"]) == (
         "int",
         True,
-        "W",
+        "W_2",
     )
+    assert split["factor"]["new_value"] == 4
     kind = _form(sites["tag_map"])["kind"]
     assert (kind["type"], kind["value"], [c["value"] for c in kind["choices"]]) == (
         "choice", "temporal", ["temporal", "tile", "spatial"])  # fmt: skip
@@ -398,8 +433,8 @@ def test_the_bind_form_lists_the_library_with_timing(roots):
 
 def test_the_encapsulate_and_link_forms(roots):
     """dot 1 before encapsulate: the units unencapsulated in graph order, the selected one
-    ticked, and a free accelerator name; dot 2 before its link: depth 1 by default, the group
-    from the site."""
+    ticked, and a free accelerator name; dot 2 before its link: the depth a param of its own, D,
+    at 1 by default, the group from the site."""
     one = opened("dot_1", roots)
     ok(one.move(one.n - 1))
     f = _form(one.sites(one.cursor, "mult")["encapsulate"])
@@ -410,4 +445,5 @@ def test_the_encapsulate_and_link_forms(roots):
     ok(two.move(two.n - 1))
     f = _form(two.sites(two.cursor, "tmp0")["link"])
     assert (f["container"]["readonly"], f["depth"]["value"], f["depth"]["sweepable"], f["group"]["value"]) == (
-        True, 1, True, "dot")  # fmt: skip
+        True, "D", True, "dot")  # fmt: skip
+    assert f["depth"]["new_value"] == 1

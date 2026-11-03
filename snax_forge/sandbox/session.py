@@ -34,7 +34,13 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            session lacks is ``session.param`` (``split: factor
                                            'W' is not a param; give its value``, with the
                                            ``param``'s name, for the page to ask). A param
-                                           stays when the step that added it is undone. With
+                                           stays when the step that added it is undone. An
+                                           int param given as a number (a split's factor, a
+                                           link's depth) becomes a param of its own, the next
+                                           free ``W``, ``W_2``, ... or ``D``, ... at that value,
+                                           and the step stores its name (``fresh_param``), so
+                                           it can change after the bind; a recipe opened from
+                                           a file keeps its numbers. With
                                            k < n and no ``drop``: ``session.drop``, the server's
                                            guard (the page asks ``drop_question`` first). On success the
                                            steps past k go, the new one is step k + 1 and the
@@ -321,6 +327,12 @@ class Session:
                 return _refused("session.drop", f"steps {k + 1}..{n} come after step {k}: drop "
                                 "them to apply here", question=drop_question(k, n))  # fmt: skip
             added = {x: v for x, v in (new_params or {}).items() if x not in self.recipe.params}
+            params = dict(params)
+            spec = TRANSFORMS.get(transform)
+            for p in spec.ints if spec else ():  # a number becomes a param of its own (C§12)
+                if type(params.get(p)) is int:
+                    name = fresh_param(p, {**self.recipe.params, **added})
+                    added[name], params[p] = params[p], name
             unknown = _unknown_param(transform, params, {**self.recipe.params, **added})
             if unknown:
                 return _refused("session.param", unknown[1], param=unknown[0])
@@ -593,8 +605,24 @@ def _taken(g: Graph) -> set[str]:
 # bind's default instance (C§12)
 DEFAULT_INSTANCE = "acc"
 
-# The defaults of the params a site does not fill (the user's choices)
+# The defaults of the params a site does not fill (the user's choices): an int param's value,
+# and the name the editor gives it, a param of its own (C§12): every factor and depth the editor
+# writes names a param, W, W_2, ... and D, D_2, ..., so it can change after the bind
 DEFAULT_INT = {"factor": 4, "depth": 1}
+PARAM_BASE = {"factor": "W", "depth": "D"}
+
+
+def fresh_param(field: str, taken: Any) -> str:
+    """The next free param name for int field ``field``: its base (``W`` for a factor, ``D``
+    for a depth), then ``_2``, ``_3``, ... while ``taken`` has it."""
+    base = PARAM_BASE.get(field, field.upper())
+    name, k = base, 1
+    while name in taken:
+        k += 1
+        name = f"{base}_{k}"
+    return name
+
+
 DEFAULT_KIND = "temporal"
 
 
@@ -605,7 +633,9 @@ def form(
     (``answer``, with the bind list for ``bind``), in the transform's param order: each
     ``name``, ``type`` (``int``, ``str``, ``choice``, ``checklist``), ``sweepable`` (one of the
     transform's ``ints``, so a number or an expression over the session's ``params``),
-    ``value`` (the site's, else a default: a factor is ``W`` when the session has that param),
+    ``value`` (the site's, else a default: an int field a param name of its own, ``W``, ``W_2``,
+    ... for a factor, ``D``, ... for a depth, ``fresh_param``, with ``new_value`` the value a new
+    name starts at, 4 and 1),
     ``readonly`` (the selection's own field) and ``choices`` where they apply: ``tag_map``'s
     kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
@@ -625,8 +655,9 @@ def form(
                                  "value": filled.get(p), "readonly": p == selection}  # fmt: skip
         if p in spec.ints:
             field["type"] = "int"
-            if field["value"] is None:
-                field["value"] = "W" if p == "factor" and "W" in params else DEFAULT_INT.get(p, 1)
+            if field["value"] is None:  # a param of its own, its value beside it (C§12)
+                field["value"] = fresh_param(p, params)
+            field["new_value"] = DEFAULT_INT.get(p, 1)
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip

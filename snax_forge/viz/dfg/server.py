@@ -389,7 +389,7 @@ class DfgHandler(Handler):
             if not isinstance(new, dict):
                 raise _Refused("request.body", "new_params must be an object")
             out = s.apply(body["transform"], params, bool(body.get("drop")), dict(new))
-            return out | {"log": apply_log(s, body["transform"], params, out)}
+            return out | {"log": apply_log(s, body["transform"], out.get("params", params), out)}
         if route == "cursor":
             _needs(body, "k")
             out = s.move(body["k"])
