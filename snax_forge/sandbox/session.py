@@ -53,11 +53,12 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
                          or a container name, transforms.py): ``{ok, params}`` or
                          ``{ok: false, code, message}``. ``bind``'s, when its site accepts, has
                          the bind list: every (BRM, implementation) of the library tried as
-                         ``bind`` on the step, W read off the spatial bound and the instance the
-                         tasklet's id (a fused nest's first tasklet's) made unique against the
-                         instances and accelerators, each ok (with the params that bind it) or
-                         refused (with the message), with its timing (latency, II, span) at that
-                         W where the implementation resolves there
+                         ``bind`` on the step, W read off the spatial bound and the instance
+                         ``acc``, then ``acc_2``, ``acc_3``, ... when the graph has it as an
+                         instance, accelerator or group (``default_instance``), each ok (with
+                         the params that bind it) or refused (with the message), with its
+                         timing (latency, II, span) at that W where the implementation
+                         resolves there
                          Each accepted transform also has its ``form`` (``form``): the fields the
                          editor shows, their types, defaults and choices
     marks(k)             the node ids and container names some site accepts
@@ -488,14 +489,10 @@ def bind_list(g: Graph, selected: str) -> list[dict[str, Any]]:
     """Every (BRM, implementation) of the library tried as ``bind`` on ``selected`` (module
     doc)."""
     from snax_forge.brm import BrmError, library_names, load_brm
-    from snax_forge.common import fresh
 
     site = _bind_site(g, selected, f"bind {selected!r}")
     w = _bound(g, parse_dim(site.smap.attrs["range"], site.smap.id)[1], f"bind {selected!r}")
-    taken = {n.attrs["instance"] for n, _ in g.walk() if n.kind == "accelerated"}
-    taken |= {n.attrs[k] for n, _ in g.walk() if n.kind == "accelerated"
-              for k in ("accelerator", "group") if k in n.attrs}  # fmt: skip
-    instance = fresh(site.tasklet.id, taken)
+    instance = default_instance(_taken(g))
     out = []
     for b in library_names():
         brm = load_brm(b)
@@ -517,6 +514,25 @@ def bind_list(g: Graph, selected: str) -> list[dict[str, Any]]:
             out.append(entry)
     return out
 
+
+def default_instance(taken: set[str]) -> str:
+    """``bind``'s default instance: ``acc``, then ``acc_2``, ``acc_3``, ... whichever is not
+    ``taken`` (the graph's instances, accelerators and groups)."""
+    name, k = DEFAULT_INSTANCE, 1
+    while name in taken:
+        k += 1
+        name = f"{DEFAULT_INSTANCE}_{k}"
+    return name
+
+
+def _taken(g: Graph) -> set[str]:
+    """The graph's instances, accelerators and groups."""
+    return {n.attrs[k] for n, _ in g.walk() if n.kind == "accelerated"
+            for k in ("instance", "accelerator", "group") if k in n.attrs}  # fmt: skip
+
+
+# bind's default instance (C§12)
+DEFAULT_INSTANCE = "acc"
 
 # The defaults of the params a site does not fill (the user's choices)
 DEFAULT_INT = {"factor": 4, "depth": 1}
@@ -568,7 +584,7 @@ def form(
                                   for e in entries]}  # fmt: skip
         elif name == "bind" and p == "instance":  # the bind list's default, made unique
             ok = [e for e in answer.get("list", []) if e["ok"]]
-            field["value"] = ok[0]["params"]["instance"] if ok else filled.get("node")
+            field["value"] = ok[0]["params"]["instance"] if ok else default_instance(_taken(g))
         elif name == "encapsulate" and p == "units":
             nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]
             free = list(

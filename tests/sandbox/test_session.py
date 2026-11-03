@@ -200,7 +200,7 @@ def test_the_bind_list_of_a_split_multiply(roots):
     entries = s.sites(1, "mult")["bind"]["list"]
     assert _ok(entries) == [("elementwise_mul", "chisel_tiled_spatial")]
     (mul,) = [e for e in entries if e["ok"]]
-    assert mul["params"]["instance"] == "mult" and mul["timing"] == {
+    assert mul["params"]["instance"] == "acc" and mul["timing"] == {
         "latency": 0,
         "ii": 1,
         "span": 1,
@@ -293,7 +293,7 @@ def test_the_bind_form_lists_the_library_with_timing(roots):
     assert (good["label"], good["timing"]) == ("elementwise_mul / chisel_tiled_spatial",
                                                {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
     assert all(c["message"] for c in f["binding"]["choices"] if not c["ok"])
-    assert f["instance"]["value"] == "mult"
+    assert f["instance"]["value"] == "acc"
 
 
 def test_the_encapsulate_and_link_forms(roots):
