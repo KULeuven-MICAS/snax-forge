@@ -95,6 +95,12 @@ Above `task` (C§7, snax-gvsoc `docs/EVENTS.md`): `beat` adds every grant, DMA b
 
 From `task` on, the Schedule tab draws the window as lanes (each core, the DMA, each mover, the accelerator), quiet stretches of 16 cycles or more folded; a click on a cycle shows the cluster view under it, and the arrows step by event (shift: by task boundary). From `beat` on, the memory tab shows where each container lies in L1 and L2 and how its words move. The address bar holds the whole view, so a link shows the same.
 
+The graph viewer shows `.snaxdfg` steps on port 8766, a recipe's folder as its steps in order. To compare two designs, give both folders:
+
+    pixi run view-dfg out/sandbox/try/dot4_w8/ out/sandbox/try/dot5_w8/ --platform platforms/snax_forge.json
+
+Each step is then named after its folder and stem (`dot4_w8/6_link`), the step dropdown groups the steps by folder, and Compare with one design's step in each panel lays Details and the Estimate out as two columns headed `dot4_w8 · 6 link` and `dot5_w8 · 6 link` (C§12).
+
 On the MICAS server, start the image with `--network host` so its port 8765 is the server's, and forward it from your machine, then open `http://localhost:8765/`:
 
     ssh -N -L 8765:127.0.0.1:8765 <user>@<server>
