@@ -409,6 +409,16 @@ table.c-cols tr.differs td, table.c-cols tr.differs th { background: var(--req-b
 .c-est-group:hover { background: var(--bg); }
 .c-est-group small { display: block; color: var(--muted); }
 .c-est-line { margin: 0.35rem 0 0.15rem; }
+/* the cost table (dfg.js's costTable): one per accelerator, the total last */
+table.c-cost-table { width: 100%; border-collapse: collapse; margin: 0.35rem 0 0.5rem; font-size: 0.9em; }
+table.c-cost-table caption { text-align: left; font-weight: 600; padding-bottom: 0.15rem; }
+table.c-cost-table th, table.c-cost-table td { padding: 0.08rem 0.3rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+table.c-cost-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.c-cost-table thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--rule); }
+table.c-cost-table tbody th { font-weight: 400; }
+table.c-cost-table tr.total th, table.c-cost-table tr.total td { border-top: 1px solid var(--rule); font-weight: 600; }
+table.c-cost-table tr.missing td { color: var(--mem); }
+table.c-cost-table tr.differs td, table.c-cost-table tr.differs th { background: var(--req-bg); }
 .c-bar-track { height: 0.5rem; border-radius: 3px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
 .c-bar-track i { display: block; height: 100%; background: var(--data); }
 

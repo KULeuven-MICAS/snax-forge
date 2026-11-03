@@ -310,7 +310,7 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     if e.graph is None:
         return out
     out["estimate"] = est.to_dict() if est is not None else None
-    out["summary"] = estimate_summary(est) if est is not None else None
+    out["summary"] = estimate_summary(est, e.graph) if est is not None else None
     out["containers_section"] = containers_section(e.graph, est)
     if marks is None:
         from snax_forge.sandbox.session import marks_of
@@ -388,13 +388,15 @@ def compare_view(a: Entry, b: Entry, platform: Any = None, tech: str = DEFAULT_T
     diff = graph_diff(
         a.graph, b.graph, ea.containers if ea else None, eb.containers if eb else None
     )
-    sa, sb = (estimate_summary(e) if e is not None else None for e in (ea, eb))
+    sa, sb = (estimate_summary(e, x.graph) if e is not None else None
+              for e, x in ((ea, a), (eb, b)))  # fmt: skip
     columns = {
         "labels": list(labels or (a.name, b.name)),
         "details": {key: {"where": "added" if key not in da else "removed" if key not in db else "",
                           "rows": detail_rows(da.get(key), db.get(key))}
                     for key in dict.fromkeys([*da, *db])},
         "estimate": estimate_rows(sa, sb),
+        "cost_tables": compare_cost_tables(sa, sb),
         "caveat": ((sb or {}).get("cost") or (sa or {}).get("cost") or {}).get("caveat"),
     }  # fmt: skip
     return {"diff": diff, "changed": changed, "columns": columns}
@@ -493,7 +495,7 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
     return rows
 
 
-def estimate_summary(est: Any) -> dict[str, Any]:
+def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
     """The Estimate panel's figures, every sum and share worked out here (D57): the headline,
     per group ``cycles = bottleneck + ramp [+ stall]`` and its expected COUNTER, the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
@@ -531,17 +533,97 @@ def estimate_summary(est: Any) -> dict[str, Any]:
         "reads": sum(c.reads for c in est.containers.values()),
         "writes": sum(c.writes for c in est.containers.values()),
         "splits": splits,
-        "cost": cost_summary(est),
+        "cost": cost_summary(est, graph),
     }
 
 
-def cost_summary(est: Any) -> dict[str, Any] | None:
-    """The Estimate panel's ``cost`` (module doc): None with no technology or no group."""
+def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
+    """The Estimate panel's ``cost`` (module doc): None with no technology or no group; with
+    ``tables``, the cost table per accelerator (``cost_tables``)."""
     if est.tech is None or not est.groups:
         return None
     return {"tech": est.tech, "heading": heading(est.tech), "caveat": CAVEAT,
             "area_text": _um2(est.area), "energy_text": _nj(est.energy),
-            "missing": list(est.missing)}  # fmt: skip
+            "missing": list(est.missing), "tables": cost_tables(est, g)}  # fmt: skip
+
+
+def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
+    """The cost as tables (C§12), one per accelerator of ``g`` (its groups, in order; without
+    ``g`` one of every group, named ``accelerator``): a row per unit, buffer link and control
+    unit, each its ``block`` (the instance, the link's container, ``<group> ctrl``), ``kind``,
+    ``datapath`` (``· not characterized`` where the table has no point), area (µm², 3
+    significant figures) and energy (nJ, 3 decimals) with their texts, and ``share`` of the
+    accelerator's energy; then the ``total``."""
+    by_name = {x.name: x for x in est.groups if x.cost is not None}
+    accs = [(a["name"], [grp["name"] for grp in a["groups"]]) for a in accelerators(g)] if g else []
+    if not accs:
+        accs = [("accelerator", list(by_name))]
+    out = []
+    for name, groups in accs:
+        raw = []
+        for gname in groups:
+            c = by_name.get(gname)
+            if c is None:
+                continue
+            c = c.cost
+            for kind, blocks in (("unit", c.units), ("link", c.links)):
+                for k, b in blocks.items():
+                    dp = b.datapath or "–"
+                    raw.append((k, kind, dp if b.found else f"{dp} · not characterized",
+                                b.found is not None, b.total_um2, b.task_nj))  # fmt: skip
+            raw.append((f"{gname} ctrl", "ctrl", "control unit", True, c.ctrl_um2, c.ctrl_nj))
+        if not raw:
+            continue
+        area, energy = sum(r[4] for r in raw), sum(r[5] for r in raw)
+        out.append({"accelerator": name, "rows": [_cost_row(*r, energy) for r in raw],
+                    "total": _cost_row("total", "total", "", True, area, energy, energy)})  # fmt: skip
+    return out
+
+
+def _cost_row(block: str, kind: str, dp: str, found: bool, a: float, e: float,
+              whole: float) -> dict[str, Any]:  # fmt: skip
+    """A cost table's row, its share of ``whole``, the accelerator's energy."""
+    share = e / whole if whole else None
+    return {"block": block, "kind": kind, "datapath": dp, "found": found, "area": a, "energy": e,
+            "share": share, "area_text": sig3(a), "energy_text": dec3(e),
+            "share_text": "–" if share is None else f"{100 * share:.1f}%"}  # fmt: skip
+
+
+COST_COLUMNS = (("block", "block"), ("datapath", "datapath"), ("area_text", "area (µm²)"),
+                ("energy_text", "energy (nJ)"), ("share_text", "share"))  # fmt: skip
+
+
+def compare_cost_tables(
+    sa: dict[str, Any] | None, sb: dict[str, Any] | None
+) -> list[dict[str, Any]]:
+    """Compare's cost tables: every accelerator and block of either side, each cell ``before →
+    after`` where the two differ, as it is where they do not, "–" on a side without it; each
+    row's ``differs``."""
+
+    def tables(s: dict[str, Any] | None) -> dict[str, Any]:
+        cost = (s or {}).get("cost") or {}
+        return {t["accelerator"]: t for t in cost.get("tables") or []}
+
+    ta, tb = tables(sa), tables(sb)
+    out = []
+    for name in dict.fromkeys([*ta, *tb]):
+        a, b = ta.get(name, {}), tb.get(name, {})
+        ra = {r["block"]: r for r in a.get("rows", [])}
+        rb = {r["block"]: r for r in b.get("rows", [])}
+
+        def cells(x: dict[str, Any] | None, y: dict[str, Any] | None) -> dict[str, Any]:
+            row: dict[str, Any] = {"differs": False}
+            for key, _ in COST_COLUMNS:
+                u = "–" if x is None else (x.get(key) or "–")
+                w = "–" if y is None else (y.get(key) or "–")
+                row[key] = u if u == w else f"{u} → {w}"
+                row["differs"] |= u != w
+            return row
+
+        out.append({"accelerator": name,
+                    "rows": [cells(ra.get(k), rb.get(k)) for k in dict.fromkeys([*ra, *rb])],
+                    "total": cells(a.get("total"), b.get("total"))})  # fmt: skip
+    return out
 
 
 def _um2(x: float) -> str:

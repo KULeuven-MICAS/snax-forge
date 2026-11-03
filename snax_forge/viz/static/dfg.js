@@ -501,6 +501,21 @@ function hoverGroup(name, on) {
   for (const el of document.querySelectorAll(`#graphs [data-group="${CSS.escape(name)}"]`)) el.classList.toggle("hover", on);
 }
 
+const COST_COLUMNS = [["block", "block"], ["datapath", "datapath"], ["area_text", "area (µm²)"],
+  ["energy_text", "energy (nJ)"], ["share_text", "share"]];
+
+/** One accelerator's cost table (api.py's cost_tables, or compare_cost_tables' before → after
+cells): a row per unit, buffer link and control unit, then the total. */
+function costTable(t) {
+  const num = (key) => key !== "block" && key !== "datapath";
+  const tr = (r, cls) => h("tr", { class: [cls, r.differs ? "differs" : null, r.found === false ? "missing" : null].filter(Boolean).join(" ") || null },
+    COST_COLUMNS.map(([key]) => h(key === "block" ? "th" : "td", { class: num(key) ? "num" : null, scope: key === "block" ? "row" : null }, r[key])));
+  return h("table", { class: "c-cost-table" },
+    h("caption", {}, t.accelerator),
+    h("thead", {}, h("tr", {}, COST_COLUMNS.map(([key, label]) => h("th", { scope: "col", class: num(key) ? "num" : null }, label)))),
+    h("tbody", {}, t.rows.map((r) => tr(r, null)), tr(t.total, "total")));
+}
+
 async function estimate() {
   const box = $("estimate");
   if (state.cmp !== null) { // Compare: the server's two columns, the left step first
@@ -509,8 +524,11 @@ async function estimate() {
       box.replaceChildren(h("p", { class: "load-error" }, cmp.error || "no estimate"));
       return;
     }
+    const tables = cmp.columns.cost_tables || [];
     box.replaceChildren(...[columnsTable(cmp.columns.labels, cmp.columns.estimate),
-      cmp.columns.caveat ? h("p", { class: "c-est-line muted" }, cmp.columns.caveat) : null].filter(Boolean));
+      cmp.columns.caveat ? h("p", { class: "c-est-line muted" }, cmp.columns.caveat) : null,
+      tables.length ? h("p", { class: "c-est-line muted" }, `cost per block, ${cmp.columns.labels[0]} → ${cmp.columns.labels[1]}`) : null,
+      ...tables.map(costTable)].filter(Boolean));
     return;
   }
   const b = await view(state.k);
@@ -528,8 +546,9 @@ async function estimate() {
   const c = s.cost;
   const cost = c ? [
     h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", {}, c.area_text), " · ", h("b", {}, c.energy_text), " per run"),
-    h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
     h("p", { class: "c-est-line muted" }, c.caveat),
+    ...(c.tables || []).map(costTable),
+    h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
   ] : [];
   const l1 = s.l1;
   const l1Text = l1.size ? `${l1.footprint_text} of ${l1.size_text} (${l1.share_text})` : l1.footprint_text;

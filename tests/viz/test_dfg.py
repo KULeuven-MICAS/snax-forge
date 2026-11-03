@@ -315,6 +315,48 @@ def test_the_containers_section_of_vecmul_and_matvec():
     assert containers_section(g)[0]["placement"] is None  # no estimate, no placement
 
 
+def _cost_rows(t):
+    return [(r["block"], r["datapath"], r["area_text"], r["energy_text"], r["share_text"])
+            for r in [*t["rows"], t["total"]]]  # fmt: skip
+
+
+@pytest.mark.slow
+def test_the_cost_tables_of_vecmul_and_dot_1():
+    """C§12's cost table, a row per unit, buffer link and control unit, then the total, one table
+    per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm², 23.137 nJ, 99.4 % and its
+    control unit 351 µm², 0.128 nJ; dot 1 at W = 8 one table for its two groups; Compare's cells
+    before → after."""
+    from snax_forge.design import Platform
+    from snax_forge.estimate import estimate
+    from snax_forge.viz.dfg.api import Entry, compare_view, cost_tables, step_view
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import steps
+
+    platform = Platform.load(SNAX_FORGE)
+    g = steps("vecmul", N=2048, W=8)[-1]
+    (t,) = cost_tables(estimate(g, platform), g)
+    assert t["accelerator"] == "acc" and _cost_rows(t) == [
+        ("acc", "ElementwiseLanes", "55 300", "23.137", "99.4%"),
+        ("acc ctrl", "control unit", "351", "0.128", "0.6%"),
+        ("total", "", "55 700", "23.265", "100.0%")]  # fmt: skip
+    d = steps("dot_1", N=2048, W=8)[-1]
+    (t,) = cost_tables(estimate(d, platform), d)
+    assert t["accelerator"] == "dot" and _cost_rows(t) == [
+        ("mul", "ElementwiseLanes", "55 300", "23.137", "92.1%"),
+        ("mul ctrl", "control unit", "351", "0.257", "1.0%"),
+        ("sum", "TreeAccumulate", "2 710", "1.231", "4.9%"),
+        ("sum ctrl", "control unit", "697", "0.509", "2.0%"),
+        ("total", "", "59 100", "25.133", "100.0%")]  # fmt: skip
+    v = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
+    assert v["summary"]["cost"]["tables"][0]["rows"][0]["area_text"] == "55 300"
+    w16 = steps("vecmul", N=2048, W=16)[-1]
+    c = compare_view(Entry("w8", Path("w8"), g, None), Entry("w16", Path("w16"), w16, None),
+                     platform)["columns"]["cost_tables"]  # fmt: skip
+    (unit, ctrl, total) = [*c[0]["rows"], c[0]["total"]]
+    assert unit["block"] == "acc" and unit["area_text"].startswith("55 300 → ") and unit["differs"]
+    assert ctrl["datapath"] == "control unit" and total["block"] == "total"
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
     assert plain["rows"][1]["node"]["text"] == "add_map · i · ? · untagged"
