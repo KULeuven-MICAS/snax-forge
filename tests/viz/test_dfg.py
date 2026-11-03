@@ -364,3 +364,50 @@ def test_dot6_draws_a_buffer_with_its_depth(tmp_path):
         1,
     )
     assert [g["name"] for g in accs[0]["groups"]] == ["dot"]
+
+
+# =============================================================================
+# The cost in Compare and Details (C§12, C§20)
+# =============================================================================
+
+
+def _dot5_steps():
+    from snax_forge.design import Platform
+    from snax_forge.viz.dfg.api import Entry
+    from tests.helpers import steps
+
+    gs = steps("dot_5", W=8, N=2048)
+    return [Entry(str(k), REPO, g, None) for k, g in enumerate(gs)], Platform.load(
+        REPO / "platforms" / "snax_forge.json")  # fmt: skip
+
+
+@pytest.mark.slow
+def test_compare_shows_the_accelerators_cost_when_the_groups_differ():
+    """dot 5's second bind (mac and sum, two groups) against its link (one group, dot): no group
+    is in both, the accelerator's area and energy are before → after all the same; from the
+    unbound import, "–" before."""
+    from snax_forge.viz.dfg.api import compare_view, step_view
+
+    e, platform = _dot5_steps()
+    five, six = (step_view(e[k], str(k), platform)["summary"] for k in (5, 6))
+    assert [g["name"] for g in five["groups"]] == ["mac", "sum"]
+    assert [g["name"] for g in six["groups"]] == ["dot"]
+    assert compare_view(e[5], e[6], platform)["cost"] == {
+        "heading": "Cost estimate (first-order) on nangate45", "area": "63 400 µm² → 63 200 µm²",
+        "energy": "26.4 nJ → 26.3 nJ", "missing": None}  # fmt: skip
+    first = compare_view(e[0], e[6], platform)["cost"]
+    assert (first["area"], first["energy"]) == ("– → 63 200 µm²", "– → 26.3 nJ")
+    assert step_view(e[0], "0", platform)["summary"]["cost"] is None  # nothing bound
+    assert compare_view(e[0], e[1], platform)["cost"] is None
+
+
+def test_a_block_with_no_flops_holds_dash():
+    """vecmul's ElementwiseLanes has no register: its Details' holding reads "–"."""
+    from snax_forge.design import Platform
+    from snax_forge.viz.dfg.api import Entry, step_view
+    from tests.helpers import steps
+
+    v = step_view(Entry("v", REPO, steps("vecmul", W=8)[-1], None), "v",
+                  Platform.load(REPO / "platforms" / "snax_forge.json"))  # fmt: skip
+    cost = v["details"]["node:mult"]["cost"]
+    assert cost["holding"] == "–" and cost["per task"].endswith("(8 fires, 0 bits)")

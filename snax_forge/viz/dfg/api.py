@@ -97,7 +97,9 @@ a unit's and a buffer link's Details gain ``cost`` after ``timing`` (``found``, 
 comb and flops, its energy per fire, holding per cycle and per task, or "not characterized"), a
 group's its area, energy and control unit; the Estimate panel's ``summary`` per group
 ``area_text`` and ``energy_text``, and ``cost`` (the heading, ``CAVEAT``, the accelerator's
-area and energy, the blocks not characterized).
+area and energy, the blocks not characterized; None when nothing is bound or there is no
+technology). ``compare_view`` gives the accelerator's ``cost`` before → after whether or not the
+groups match (``cost_compare``), "–" on a side with none; a block with no flops holds "–".
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
@@ -279,7 +281,8 @@ def compare_view(a: Entry, b: Entry, platform: Any = None,
                  tech: str = DEFAULT_TECH) -> dict[str, Any]:  # fmt: skip
     """Two steps compared (``a`` before, ``b`` after): the session's diff of their graphs
     (sandbox/session.py's ``graph_diff``) and, per Details key in either, the fields that
-    differ (every field of an item in one only)."""
+    differ (every field of an item in one only), and the accelerator's ``cost`` before → after
+    (``cost_compare``)."""
     from snax_forge.sandbox.session import graph_diff
 
     if a.graph is None or b.graph is None:
@@ -296,7 +299,25 @@ def compare_view(a: Entry, b: Entry, platform: Any = None,
     diff = graph_diff(
         a.graph, b.graph, ea.containers if ea else None, eb.containers if eb else None
     )
-    return {"diff": diff, "changed": changed}
+    return {"diff": diff, "changed": changed, "cost": cost_compare(ea, eb)}
+
+
+def cost_compare(ea: Any, eb: Any) -> dict[str, Any] | None:
+    """The accelerator's cost before (``ea``) → after (``eb``), whatever their groups: its
+    ``heading`` (the after side's, else the before side's), ``area`` and ``energy`` as
+    ``<before> → <after>`` ("–" for a side with no cost) and ``missing``, the blocks not
+    characterized as before → after when they differ, else None; None when neither side has a
+    cost."""
+    sa, sb = (cost_summary(e) if e is not None else None for e in (ea, eb))
+    if sa is None and sb is None:
+        return None
+
+    def arrow(field: str) -> str:
+        return f"{(sa or {}).get(field) or '–'} → {(sb or {}).get(field) or '–'}"
+
+    ma, mb = (", ".join(x["missing"]) or "none" if x else "–" for x in (sa, sb))
+    return {"heading": (sb or sa)["heading"], "area": arrow("area_text"),
+            "energy": arrow("energy_text"), "missing": f"{ma} → {mb}" if ma != mb else None}  # fmt: skip
 
 
 def estimate_summary(est: Any) -> dict[str, Any]:
@@ -335,11 +356,17 @@ def estimate_summary(est: Any) -> dict[str, Any]:
         "reads": sum(c.reads for c in est.containers.values()),
         "writes": sum(c.writes for c in est.containers.values()),
         "splits": splits,
-        "cost": None if est.tech is None else {
-            "tech": est.tech, "heading": heading(est.tech), "caveat": CAVEAT,
+        "cost": cost_summary(est),
+    }
+
+
+def cost_summary(est: Any) -> dict[str, Any] | None:
+    """The Estimate panel's ``cost`` (module doc): None with no technology or no group."""
+    if est.tech is None or not est.groups:
+        return None
+    return {"tech": est.tech, "heading": heading(est.tech), "caveat": CAVEAT,
             "area_text": _um2(est.area), "energy_text": _nj(est.energy),
-            "missing": list(est.missing)},
-    }  # fmt: skip
+            "missing": list(est.missing)}  # fmt: skip
 
 
 def _um2(x: float) -> str:
@@ -356,7 +383,7 @@ def cost_details(c: Any, bits: int, tech: str) -> dict[str, str]:
         "found": f"{c.found} on {tech}" if c.found else f"not characterized on {tech}",
         "area": f"{_um2(c.total_um2)} (comb {sig3(c.comb_um2)}, flops {sig3(c.flops_um2)})",
         "per fire": f"{sig3(c.e_fire_pj)} pJ",
-        "holding": f"{sig3(c.e_hold_pj)} pJ per cycle",
+        "holding": f"{sig3(c.e_hold_pj)} pJ per cycle" if c.e_hold_pj else "–",  # no flops
         "per task": f"{_nj(c.task_nj)} ({c.fires} fires, {bits} bits)",
     }
 

@@ -423,6 +423,7 @@ async function estimate() {
     const g = p.groups.find((x) => x.name === name);
     return g ? g[field] : "–";
   };
+  const gone = p ? p.groups.filter((x) => !s.groups.some((y) => y.name === x.name)) : [];
   const rows = s.groups.map((g) => h("div", {
     class: "c-est-group", onmouseenter: () => hoverGroup(g.name, true), onmouseleave: () => hoverGroup(g.name, false),
   },
@@ -430,16 +431,29 @@ async function estimate() {
   h("span", { class: "mono" }, pair(groupWas(g.name, "formula"), g.formula)),
   h("small", {}, ` COUNTER ${pair(groupWas(g.name, "counter"), g.counter)} · channels ${pair(groupWas(g.name, "channels"), g.channels)}`
     + (g.area_text ? ` · ${pair(groupWas(g.name, "area_text"), g.area_text)} · ${pair(groupWas(g.name, "energy_text"), g.energy_text)}` : ""))));
+  // a group of the step before only: its figures → –
+  rows.push(...gone.map((g) => h("div", { class: "c-est-group" }, h("b", {}, g.name), " ",
+    h("span", { class: "mono" }, `${g.formula} → –`),
+    h("small", {}, ` COUNTER ${g.counter} → – · channels ${g.channels} → –` + (g.area_text ? ` · ${g.area_text} → – · ${g.energy_text} → –` : "")))));
+  // The accelerator's cost: one step's, or with Compare the server's before → after (api.py's
+  // cost_compare), whether or not the groups match
   const c = s.cost;
-  const pc = p && p.cost ? p.cost : null;
+  const cc = a ? (await compare(state.cmp, state.k)).cost : null;
   const listed = (m) => (m && m.length ? m.join(", ") : "none");
-  const cost = c ? [
-    h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ",
-      h("b", {}, pair(pc ? pc.area_text : null, c.area_text)), " · ",
-      h("b", {}, pair(pc ? pc.energy_text : null, c.energy_text)), " per run"),
-    h("p", { class: "c-est-line" }, "not characterized: ", pair(pc ? listed(pc.missing) : null, listed(c.missing))),
-    h("p", { class: "c-est-line muted" }, c.caveat),
-  ] : [];
+  const caveat = (c || (a && a.summary && a.summary.cost) || {}).caveat;
+  let cost = [];
+  if (cc) {
+    cost = [
+      h("p", { class: "c-est-head" }, h("b", {}, cc.heading), ": ", h("b", {}, cc.area), " · ", h("b", {}, cc.energy), " per run"),
+      h("p", { class: "c-est-line" }, "not characterized: ", cc.missing || listed(c ? c.missing : [])),
+    ];
+  } else if (c && !a) {
+    cost = [
+      h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", {}, c.area_text), " · ", h("b", {}, c.energy_text), " per run"),
+      h("p", { class: "c-est-line" }, "not characterized: ", listed(c.missing)),
+    ];
+  }
+  if (cost.length && caveat) cost.push(h("p", { class: "c-est-line muted" }, caveat));
   const l1 = s.l1;
   const l1Text = l1.size
     ? `${pair(was((x) => x.l1.footprint_text), l1.footprint_text)} of ${l1.size_text} (${pair(was((x) => x.l1.share_text), l1.share_text)})`
