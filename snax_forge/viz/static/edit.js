@@ -222,8 +222,42 @@ function field(f) {
     return h("div", { class: "dfg-choices", ...attrs }, f.choices.map((c) => h("label", { class: "dfg-choice" },
       h("input", { type: "checkbox", value: c.value, checked: ticked.has(c.value) }), h("span", {}, c.label))));
   }
-  return h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value),
-    title: f.sweepable ? "a number, or an expression over the params (W, W * 2)" : "" });
+  const input = h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value),
+    title: f.sweepable ? "a number, or an expression over the params (W, W * 2); a new name gets its value beside it" : "" });
+  return f.sweepable && !f.readonly ? sweepable(input) : input;
+}
+
+// A name in an int field: a param, or one of the grammar's functions (expr.py)
+const NAMES = /[A-Za-z_][A-Za-z0-9_]*/g;
+const FUNCTIONS = new Set(["max", "min"]);
+
+/** A sweepable int field (a split's factor): beside it a value input per name it uses that the
+session does not have yet (default 4), which the apply sends as ``new_params`` (C§12), so each
+split can have its own param; the values typed stay while the field changes. */
+function sweepable(input) {
+  const extra = h("span", { class: "dfg-new-params" });
+  const typed = {};
+  const refresh = () => {
+    const known = (ctx.state.session && ctx.state.session.params) || {};
+    for (const el of extra.querySelectorAll("[data-new-param]")) typed[el.dataset.newParam] = el.value;
+    const names = [...new Set(input.value.match(NAMES) || [])]
+      .filter((n) => !FUNCTIONS.has(n) && !Object.prototype.hasOwnProperty.call(known, n));
+    extra.replaceChildren(...names.map((n) => h("label", { class: "dfg-new-param", title: `${n} is not a param yet: its value, added to the session's params` },
+      `new param ${n} = `, h("input", { "data-new-param": n, value: typed[n] ?? "4", size: 4, inputmode: "numeric" }))));
+  };
+  input.addEventListener("input", refresh);
+  refresh();
+  return h("span", { class: "dfg-sweep" }, input, extra);
+}
+
+/** The new params a form's fields give (``sweepable``): name -> its value, an int. */
+function newParams(el) {
+  const out = {};
+  for (const x of el.querySelectorAll("[data-new-param]")) {
+    const raw = x.value.trim();
+    if (/^-?\d+$/.test(raw)) out[x.dataset.newParam] = Number(raw); // else the server names it
+  }
+  return out;
 }
 
 /** The params a form gives, as the user left its fields. */
@@ -247,20 +281,14 @@ function params(form, el) {
 }
 
 /** Apply at the cursor; below the last step, the server's question first (``drop``), then the
-steps after the cursor dropped. A factor naming a param the session lacks (``session.param``):
-its value asked once, then the apply again with it as ``new_params`` (C§12). */
+steps after the cursor dropped. A factor's new param goes as ``new_params`` (``sweepable``). */
 async function apply(transform, form, el) {
   const question = ctx.state.session.drop;
   if (question && !window.confirm(question)) return;
-  const body = { transform, params: params(form, el), drop: !!question };
+  const fresh = newParams(el);
+  const body = { transform, params: params(form, el), drop: !!question, ...(Object.keys(fresh).length ? { new_params: fresh } : {}) };
   ctx.status(`applying ${transform}…`);
-  let r = await post("/api/apply", body);
-  if (!r.ok && r.body.code === "session.param" && r.body.param) {
-    const raw = window.prompt(`${r.body.param} is not a param yet: its value`, "4");
-    if (raw !== null && /^\d+$/.test(raw.trim())) {
-      r = await post("/api/apply", { ...body, new_params: { [r.body.param]: Number(raw.trim()) } });
-    }
-  }
+  const r = await post("/api/apply", body);
   log(r.body.log, !r.ok);
   ctx.status(r.ok ? "" : `${r.body.code}: ${r.body.message}`, !r.ok);
   if (r.ok) {
