@@ -162,7 +162,7 @@ def test_vecadd_accelerated():
     assert (top["id"], top["loop_kind"], top["text"]) == (
         "add_map",
         "temporal",
-        "i_t · 16 · temporal",
+        "add_map · i_t · 16 · temporal",
     )
     acc = top["body"][0]
     assert (acc["text"], acc["inputs"][0]) == ("acc · a + b · W 4", {"connector": "a", "data": "A"})
@@ -229,7 +229,10 @@ def test_the_bound_dot_shows_both_accelerators():
     """dot after its recipe: mul and sum, each over N // 4 beats; tmp0 between them."""
     v = view(FIXTURES / "dot_accelerated.snaxdfg")
     tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
-    assert [t["text"] for t in tops] == ["i_t · 16 · temporal", "i_t_1 · 16 · temporal"]
+    assert [t["text"] for t in tops] == [
+        "mult_map · i_t · 16 · temporal",
+        "sum_map · i_t_1 · 16 · temporal",
+    ]
     assert [t["body"][0]["text"] for t in tops] == ["mul · a * b · W 4", "sum · fold + · W 4"]
     writes = [
         (e["from"], v["details"][f"edge:{e['id']}"]["memlet"])
@@ -268,9 +271,20 @@ def test_without_encapsulate_each_group_is_its_own_accelerator():
     assert [(u["accelerator"], u["group"]) for u in units] == [("mul", "mul"), ("sum", "sum")]
 
 
+@pytest.mark.slow
+def test_a_maps_bar_starts_with_its_id():
+    """C§12: vecmul as imported at N = 2048, its map's bar ``mult_map · i · 2048 · untagged``."""
+    from snax_forge.viz.dfg.api import Entry
+    from tests.helpers import steps
+
+    g = steps("vecmul", N=2048)[0]
+    v = graph_view(Entry("0_input", Path("0_input.snaxdfg"), g, None))
+    assert v["rows"][1]["node"]["text"] == "mult_map · i · 2048 · untagged"
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
-    assert plain["rows"][1]["node"]["text"] == "i · ? · untagged"
+    assert plain["rows"][1]["node"]["text"] == "add_map · i · ? · untagged"
     assert plain["details"]["container:A"]["sizes"] is None
     assert plain["containers"]["A"]["badge"] is None and plain["estimate_error"]
     split = view(FIXTURES / "vecadd_split.snaxdfg")
@@ -278,7 +292,7 @@ def test_iterations_need_bound_symbols():
     assert (inner["id"], inner["loop_kind"], inner["text"]) == (
         "add_map_s",
         "spatial",
-        "i_s · 4 · spatial",
+        "add_map_s · i_s · 4 · spatial",
     )
 
 

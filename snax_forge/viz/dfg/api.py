@@ -75,7 +75,8 @@ else, keyed ``<kind>:<id>`` (``node:``, ``container:``, ``group:``, ``accelerato
 a link node and its container share a name, so the page selects by name and shows both), all
 worked out here:
 
-    map          ``<var> · <iterations> · <kind or untagged>``      (``i_t · 128 · temporal``)
+    map          ``<id> · <var> · <iterations> · <kind or untagged>``
+                                                       (``mult_map · i · 2048 · untagged``)
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
                  ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``)
     unit         ``<instance> · <what one lane computes> · W <lanes>``, a fold's as a
@@ -556,7 +557,10 @@ def compact_text(g: Graph, n: Node) -> str:
     a = n.attrs
     if n.kind == "map":
         its = _iterations(g, a["range"])
-        return f"{a['var']} · {'?' if its is None else its} · {a.get('loop.kind') or 'untagged'}"
+        return (
+            f"{n.id} · {a['var']} · {'?' if its is None else its} · "
+            f"{a.get('loop.kind') or 'untagged'}"
+        )
     if n.kind == "tasklet":
         return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}"
     if n.kind == "accelerated":

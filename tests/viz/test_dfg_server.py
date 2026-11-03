@@ -48,7 +48,9 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
             "0 input", "1 split_map", "2 bind", "3 split_map", "4 bind", "5 link"]  # fmt: skip
         status, v = get_json(srv, "/api/step/5")
         texts = [t for row in v["rows"] if row["kind"] == "node" for t in _texts(row["node"])]
-        assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "i_t · 128 · temporal"} <= set(texts)
+        assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "mult_map · i_t · 128 · temporal"} <= set(
+            texts
+        )
         assert v["containers"]["A"]["badge"] == "L1 · 4 KiB"
         # tmp0 is the link's: no box, the edges from mult into the link and out of it into sum
         boxes = [b for row in v["rows"] if row["kind"] == "containers" for b in row["boxes"]]
