@@ -78,7 +78,8 @@ flowchart LR
 | SNAX-BRM | `brm/` | C§10 | hand-written BRMs | instances |
 | SNAX-SANDBOX | `sandbox/` | C§12 | `.snaxdfg`, BRMs, recipe | a `.snaxdfg` per step |
 | Design step | `design/` | C§13–C§15 | bound graph, platform | design point |
-| Estimate | `estimate/` | C§19 | bound graph, platform (optional) | the ideal estimate (D151), read by the viewers and `design.md` |
+| Estimate | `estimate/` | C§19, C§20 | bound graph, platform (optional), technology (optional) | the ideal estimate (D151) and its cost (D154), read by the viewers and `design.md` |
+| Cost table | `char/` | C§20 | snax-forge-experiments' `char.json` per technology | the blocks' comb area and energy per fire and the flop's and ctrl's constants, looked up per block (D154) |
 | SNAX-LOWER | `lower/` | C§9, C§16 | design point | task list, `main.c` |
 | Generator | `gen/gvsoc.py`, `gen/headers.py`, `gen/data.py` | C§16 | design point, the platform's source hjson | cluster and streamer hjson, `accelerator.json`, CSR headers, `data.h`, `main.c` |
 | HW generator | `gen/rtl.py`, `hw/chisel/` | C§17 | design point, the datapath catalogue | `accelerator.json`, the accelerator RTL |
@@ -89,7 +90,7 @@ flowchart LR
 | Viewers | `viz/` | | run directories, `.snaxdfg` files | local HTML views |
 | Reports | `report/` | | a flow folder or run directory | `design.md`, `run.md` |
 
-Packages are under `snax_forge/` except `hw/chisel/`. SNAX-GVSoC is its own KULeuven-MICAS repository (D116), a submodule at `gvsoc/snax-gvsoc` that `gvsoc/Makefile` builds and runs in snax-forge's development image from `container/` (D118). Each package's tests are in `tests/<package>/` (the Chisel specs in `hw/chisel/src/test/`, the examples' in `tests/flow/`), their fixtures beside them (`tests/dfg/fixtures/`, `tests/run/fixtures/`, `hw/chisel/src/test/resources/rtl/`); the inputs are in `kernels/` (with `tests/kernels/`), `recipes/`, `platforms/` (with snax-forge's base cluster), `snax_forge/brm/library/` and `hw/chisel/blocks.json`; `util/` holds the clean, environment-check, kernel-list and Markdown tools.
+Packages are under `snax_forge/` except `hw/chisel/`. SNAX-GVSoC is its own KULeuven-MICAS repository (D116), a submodule at `gvsoc/snax-gvsoc` that `gvsoc/Makefile` builds and runs in snax-forge's development image from `container/` (D118). Each package's tests are in `tests/<package>/` (the Chisel specs in `hw/chisel/src/test/`, the examples' in `tests/flow/`), their fixtures beside them (`tests/dfg/fixtures/`, `tests/run/fixtures/`, `hw/chisel/src/test/resources/rtl/`); the inputs are in `kernels/` (with `tests/kernels/`), `recipes/`, `platforms/` (with snax-forge's base cluster), `snax_forge/brm/library/` and `hw/chisel/blocks.json`; `util/` holds the clean, environment-check, kernel-list and Markdown tools, and those that copy snax-forge-experiments' results into test fixtures (`syn2_flops.py`, `char_model.py`, `ctrl_regs.py`).
 
 ### 5.1 SNAX-DFG and the importer
 

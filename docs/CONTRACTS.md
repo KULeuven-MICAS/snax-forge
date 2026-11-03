@@ -421,6 +421,7 @@ Before the design step writes anything it runs every registered check (`register
 | Code | Noted when |
 |---|---|
 | `design.serial_one_lane` | a unit bound to `SerialAccumulate` at lanes 1: it reads one lane per beat, the same work as `TreeAccumulate` at lanes 1 (dot 4's shape at W = 1), so valid but with no reason to exist; the fix binds `chisel_adder_tree` |
+| `char.missing` | a bound unit or a buffer link the estimate's technology (`nangate45`) does not characterize, its lookup None (section 20): "not characterized: <datapath> at lanes L (depth D) on <tech>"; the cost counts its comb part as 0 |
 
 ## 15. Memory plan and design point
 
@@ -644,16 +645,55 @@ What `pixi run bundle DESIGN_POINT [--out DIR]` writes per design point (D111, D
 
 ## 19. Estimate
 
-The ideal estimate of a bound graph (D151, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`. It assumes ideal streams: no bank conflicts, no streamer fill, no DMA and no core control. An `Estimate` is a dataclass with `to_dict` / `from_dict`:
+The ideal estimate of a bound graph (D151, `estimate/`), with or without a platform: what a mapping buys before any run, for the viewers and `design.md`; `estimate(graph, platform, tech)` costs it on a technology too (section 20; default `nangate45`, None leaves the cost out). It assumes ideal streams: no bank conflicts, no streamer fill, no DMA and no core control. An `Estimate` is a dataclass with `to_dict` / `from_dict`:
 
 | Field | Holds |
 |---|---|
-| `groups` | per group (one unit, or linked units, D146), in the graph's order: `name`, `units`, `links` (their containers), `cycles` (snax-gvsoc's group rule, `snax_group_rule.py`, stepped by `estimate/cycles.py`'s `group_cycles` with every input valid and the output ready, JOBS and each unit's T as the program writes them; `gen/rtl.py`'s `group_counter` calls the same), `bottleneck` (the max over its units of n · max(II, span), n the unit's firings), `ramp` (the cycles to start and finish the pipeline: the sum over its units of L + span − 1, plus 1 per buffer link and 0 per wire), `stall` (`cycles` − `bottleneck` − `ramp`), `fill` (the streamers' fill a run adds: 3, or 2 for a group whose units have one outer input between them), `counter` (`cycles` + `fill`), `channels` (the sum of num_ch over its outer ports, D142), `words_per_cycle` (the 64-bit words its outer ports move per cycle), `bits` (per unit and per link, by its container, its datapath's register bits: the catalogue's `flops` on its params, section 17; a wire 0; a unit the generator does not fill is not listed) and `ctrl_bits` (the register bits of its control unit from the group description, every register `GroupRule.scala` and `GroupCtrl.scala` declare, at the platform's `acc_csr.job_width`, `estimate/bits.py`): CHAR1's cost model's counts, D154 |
+| `groups` | per group (one unit, or linked units, D146), in the graph's order: `name`, `units`, `links` (their containers), `cycles` (snax-gvsoc's group rule, `snax_group_rule.py`, stepped by `estimate/cycles.py`'s `group_cycles` with every input valid and the output ready, JOBS and each unit's T as the program writes them; `gen/rtl.py`'s `group_counter` calls the same), `bottleneck` (the max over its units of n · max(II, span), n the unit's firings), `ramp` (the cycles to start and finish the pipeline: the sum over its units of L + span − 1, plus 1 per buffer link and 0 per wire), `stall` (`cycles` − `bottleneck` − `ramp`), `fill` (the streamers' fill a run adds: 3, or 2 for a group whose units have one outer input between them), `counter` (`cycles` + `fill`), `channels` (the sum of num_ch over its outer ports, D142), `words_per_cycle` (the 64-bit words its outer ports move per cycle), `bits` (per unit and per link, by its container, its datapath's register bits: the catalogue's `flops` on its params, section 17; a wire 0; a unit the generator does not fill is not listed), `ctrl_bits` (the register bits of its control unit from the group description that firtool keeps, every register `GroupRule.scala` and `GroupCtrl.scala` declare but a `v` at L 0 and the slots of a wire or of a depth-1 buffer, which are never written, at the platform's `acc_csr.job_width`, `estimate/bits.py`): CHAR1's cost model's counts, D154; and `cost`, on a technology its units', buffer links' and control unit's area and energy and the group's totals (section 20) |
 | `accelerator_cycles` | the sum of the groups' `cycles`: groups add up through L1 (D105) |
 | `not_mapped` | the iterations of each nest no unit runs, counted once per innermost map that holds tasklets (a fused nest of two tasklets counts once), over every map around it except spatial ones; never added to cycles (dot at N = 512: 1024 as imported, 640 once `mult_map` is split and tagged, 257 after `split_reduce` on `sum_map`) |
 | `containers` | per container: `placement` (`l1`, `local` or `link` with its `depth`), `bytes` (the padded shape, D144, times the itemsize), `reads` and `writes` in 64-bit words: a bound outer port moves beats · num_ch per task, a tasklet no unit runs ceil(iterations · b / 64) per memlet over every map around it; a link's and a local value's traffic is not L1's |
 | `l1_footprint`, `l1_size` | the bytes placed in L1, and the platform's L1 size (null without a platform) |
 | `ports` | per outer port, `<instance>.<port>`: its `container`, its streamer's `loops` (var, count), `beats` and `num_ch` (ceil(lanes / num_slc), num_slc the elements of its dtype in a 64-bit word) |
 | `splits` | per split map with a tail: `n` (`loop.split.valid`), `w` (its inner map's length, or once bound its lanes) and `lane_use` n / (ceil(n / W) · W) |
+| `cost` | on a technology (section 20): `tech`, `source` (its table's commits), the accelerator's `area` and `energy` and `missing`; null without one |
 
-**The check.** Each group's `counter`, its `cycles` plus the streamers' fill, is its COUNTER on SNAX-GVSoC (section 17, Cycles): every `forge counter` of STATUS open item 95 (`tests/estimate/`). Against SYN2's 48 points (vecadd, vecmul, vsum_tree, dot 2 to 6 at W = 1 to 32; `tests/estimate/fixtures/syn2_flops.json`, from snax-forge-experiments' DC results), every datapath's `bits` equal the flops DC kept, and `ctrl_bits` is 0 to 3 above DC's: the registers the description declares but never writes (a `v` at L 0, the slots of a wire or of a depth-1 buffer), which firtool drops. `design.md` shows the groups, `run.md` each task's expected COUNTER beside the measured one.
+**The check.** Each group's `counter`, its `cycles` plus the streamers' fill, is its COUNTER on SNAX-GVSoC (section 17, Cycles): every `forge counter` of STATUS open item 95 (`tests/estimate/`). Against SYN2's 48 points (vecadd, vecmul, vsum_tree, dot 2 to 6 at W = 1 to 32; `tests/estimate/fixtures/syn2_flops.json`, from snax-forge-experiments' DC results), every datapath's `bits` equal the flops DC kept, and so does every `ctrl_bits`. The cost is checked in section 20. `design.md` shows the groups, `run.md` each task's expected COUNTER beside the measured one.
+
+## 20. Cost model
+
+CHAR1's first-order cost model (D154) on a technology's table: what a design costs in area and energy before any synthesis, beside D151's cycles, for `design.md` and the viewers. It aims at the large costs and at showing a designer how a design is costed, not at accuracy.
+
+**The table** is `snax_forge/char/<tech>.json` (`nangate45`, `nangate15`), a byte copy of snax-forge-experiments' `results/char/<tech>/char.json` (its X37), which names its own source commits. `snax_forge/char/`'s `load(tech)` reads it; `tests/char/` checks every entry against the catalogue: its datapath in `hw/chisel/blocks.json`, its params with each point's lanes (and depth) a valid and complete param set there, its `lanes_rule` known, its points unique.
+
+| Key | Holds |
+|---|---|
+| `tech`, `clock_ns`, `units`, `source` | the technology, the clock it was measured at, the units (µm², pJ, the flop's fJ per cycle), the snax-forge and snax-forge-experiments commits and the stimulus |
+| `flop` | `area_um2` (A_flop), `e_load_fj` (a flop that loads, per cycle) and `e_hold_fj` (one that holds) |
+| `ctrl` | `counter_factor` (f_ctrl) |
+| `blocks` | per catalogue datapath, entries of `params` (the catalogue's but `lanes` and `depth`), `lanes_rule` (`copy` or `interpolate`) and `points` (`lanes`, LinkBuffer's `depth`, `comb_um2` A_comb and `e_comb_pj` e_comb, a fire's comb energy) |
+
+**The lookup**, `lookup(table, datapath, params, lanes, depth=None)`, takes the entry whose params equal the block's as the generator fills them (lanes and depth aside), then: a point at these lanes (and depth) as is (`measured`); else under `copy` lanes × the lanes-1 point, a LinkBuffer's at the same depth (`copy`); under `interpolate` linear between the two measured lanes around it (`interpolate`); a LinkBuffer depth no point has is linear between the two measured depths around it at lanes 1, then copied (`interpolate`). Anything else gives None: no entry with these params (a dtype other than int64), or lanes or a depth outside the measured range (TreeAccumulate at lanes 64, SerialAccumulate at lanes 1, a LinkBuffer deeper than 16). None never refuses a design: the block's comb part counts 0 and the design note `char.missing` names it (section 14).
+
+**The model**, per unit and per buffer link over one run of the accelerator: n_fire its fires (a unit's firings times its span, as SerialAccumulate reads span beats per firing; a buffer's loads, one per beat of its producer, so its producer's firings), n_bits its `bits` (section 19) and C_acc the `accelerator_cycles` (with no clock gating every flop holds through every group's cycles); per group n_bits^ctrl its `ctrl_bits`:
+
+$$E_{\mathit{unit}} = n_{\mathit{fire}}\thinspace\big(e_{\mathit{comb}} + n_{\mathit{bits}}\thinspace(e_{\mathit{load}} - e_{\mathit{hold}})\big) + C_{\mathit{acc}}\thinspace n_{\mathit{bits}}\thinspace e_{\mathit{hold}}, \qquad E_{\mathit{ctrl}} = f_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}\thinspace e_{\mathit{hold}}$$
+
+$$A_{\mathit{unit}} = A_{\mathit{comb}} + n_{\mathit{bits}}\thinspace A_{\mathit{flop}}, \qquad A_{\mathit{ctrl}} = n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
+
+ctrl's comb area and the csr are left out (the csr is the boundary of the HLS comparison, D152).
+
+**The fields** (`estimate/cost.py`; null throughout without a technology):
+
+| Field | Holds |
+|---|---|
+| a group's `cost.units`, `cost.links` | per unit, and per buffer link by its container: `datapath`, `fires` (n_fire), `found` (`measured`, `copy`, `interpolate`, or null when not characterized), `area` (`comb`, `flops` n_bits A_flop and `total`, µm²) and `energy` (`fire` e_comb + n_bits (e_load − e_hold), pJ per fire; `hold` n_bits e_hold, pJ per cycle; `task` E_unit, nJ) |
+| a group's `cost.ctrl` | `bits` (its `ctrl_bits`), `area` (µm²) and `energy` (E_ctrl, nJ) |
+| a group's `cost.area`, `cost.energy` | its units', buffer links' and control unit's added up (µm², nJ) |
+| the estimate's `cost` | `tech`, `source` (the table's), the accelerator's `area` and `energy` (its groups' added up) and `missing` (the units and links not characterized) |
+
+`design.md` shows each group's area and energy beside its cycles, then per unit, buffer link and control unit how it is costed, the accelerator's totals and what is not characterized.
+
+**The check** (`tests/estimate/test_cost.py`): vecmul, vsum_tree, dot 4 and dot 5 at W = 8 and 32 with N = 2048 on `platforms/snax_forge.json`, on both technologies: the estimate's kernel energy (units, links and ctrl) is snax-forge-experiments' model of the same designs (`results/char/char_table.md`, Model, copied into `tests/estimate/fixtures/char_model.json` by `util/char_model.py`) within 0.5 %, with the same C_acc (SYN2's window) and ctrl bits (DC's). There the model's kernel is within 4 % of SYN2's.
+
+**Known limits.** Memory and the streamers are not modelled. An accumulator's isolated fire costs 25–30 % more than a back-to-back one (its adders settle twice), which the busy and idle windows do not model. Deep LinkBuffers come out about 1.4–1.8× high on nangate45 (PT's stream slope there is 0.56–0.71 of one held slot per depth, snax-forge-experiments X35). Comb energy is counted per fire only, so a unit fed by another unit is undercounted when its inputs change more often than it fires: dot 4's TreeAccumulate sum fires once but sees 256 new Mac outputs and comes out at 0.06–0.19 of SYN2, the kernel staying within 4 % because such sums are small.
