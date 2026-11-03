@@ -1,0 +1,847 @@
+{
+ "source": {
+  "snax_forge_experiments": "e8c4e9132ecf53db6a8776040ebc0abb0694d716",
+  "files": [
+   "results/forge/nangate45/synth_dc.csv",
+   "results/forge/nangate45/synth_dc_modules.csv"
+  ],
+  "snax_forge": "f9764d5c2f434183f1bed3678a5aa260a4c1d9c1",
+  "flop_um2": 5.32
+ },
+ "points": [
+  {
+   "point": "done/dot/forge2_w1",
+   "recipe": "dot_2",
+   "W": 1,
+   "ctrl": 196,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n1_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n1",
+     "flops": 64
+    },
+    "tmp0": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n1_d1",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge2_w2",
+   "recipe": "dot_2",
+   "W": 2,
+   "ctrl": 196,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n2_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n2",
+     "flops": 64
+    },
+    "tmp0": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n2_d1",
+     "flops": 128
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge2_w4",
+   "recipe": "dot_2",
+   "W": 4,
+   "ctrl": 196,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n4_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n4",
+     "flops": 64
+    },
+    "tmp0": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n4_d1",
+     "flops": 256
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge2_w8",
+   "recipe": "dot_2",
+   "W": 8,
+   "ctrl": 196,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n8_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n8",
+     "flops": 64
+    },
+    "tmp0": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n8_d1",
+     "flops": 512
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge2_w16",
+   "recipe": "dot_2",
+   "W": 16,
+   "ctrl": 196,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n16_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n16",
+     "flops": 64
+    },
+    "tmp0": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n16_d1",
+     "flops": 1024
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge2_w32",
+   "recipe": "dot_2",
+   "W": 32,
+   "ctrl": 196,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n32_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n32",
+     "flops": 64
+    },
+    "tmp0": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n32_d1",
+     "flops": 2048
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge3_w1",
+   "recipe": "dot_3",
+   "W": 1,
+   "ctrl": 131,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n1_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n1",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge3_w2",
+   "recipe": "dot_3",
+   "W": 2,
+   "ctrl": 131,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n2_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n2",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge3_w4",
+   "recipe": "dot_3",
+   "W": 4,
+   "ctrl": 131,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n4_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n4",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge3_w8",
+   "recipe": "dot_3",
+   "W": 8,
+   "ctrl": 131,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n8_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n8",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge3_w16",
+   "recipe": "dot_3",
+   "W": 16,
+   "ctrl": 131,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n16_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n16",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge3_w32",
+   "recipe": "dot_3",
+   "W": 32,
+   "ctrl": 131,
+   "instances": {
+    "mul": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n32_mul",
+     "flops": 0
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n32",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge4_w1",
+   "recipe": "dot_4",
+   "W": 1,
+   "ctrl": 164,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n1_acc",
+     "flops": 64
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n1",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge4_w2",
+   "recipe": "dot_4",
+   "W": 2,
+   "ctrl": 164,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n2_acc",
+     "flops": 128
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n2",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge4_w4",
+   "recipe": "dot_4",
+   "W": 4,
+   "ctrl": 164,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n4_acc",
+     "flops": 256
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n4",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge4_w8",
+   "recipe": "dot_4",
+   "W": 8,
+   "ctrl": 164,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n8_acc",
+     "flops": 512
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n8",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge4_w16",
+   "recipe": "dot_4",
+   "W": 16,
+   "ctrl": 164,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n16_acc",
+     "flops": 1024
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n16",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge4_w32",
+   "recipe": "dot_4",
+   "W": 32,
+   "ctrl": 164,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n32_acc",
+     "flops": 2048
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n32",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge5_w1",
+   "recipe": "dot_5",
+   "W": 1,
+   "ctrl": 164,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n1_acc",
+     "flops": 64
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n1",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge5_w2",
+   "recipe": "dot_5",
+   "W": 2,
+   "ctrl": 165,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n2_acc",
+     "flops": 128
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n2",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge5_w4",
+   "recipe": "dot_5",
+   "W": 4,
+   "ctrl": 166,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n4_acc",
+     "flops": 256
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n4",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge5_w8",
+   "recipe": "dot_5",
+   "W": 8,
+   "ctrl": 167,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n8_acc",
+     "flops": 512
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n8",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge5_w16",
+   "recipe": "dot_5",
+   "W": 16,
+   "ctrl": 168,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n16_acc",
+     "flops": 1024
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n16",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge5_w32",
+   "recipe": "dot_5",
+   "W": 32,
+   "ctrl": 169,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n32_acc",
+     "flops": 2048
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n32",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge6_w1",
+   "recipe": "dot_6",
+   "W": 1,
+   "ctrl": 165,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n1_acc",
+     "flops": 64
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n1",
+     "flops": 64
+    },
+    "out_partial": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n1_d1",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge6_w2",
+   "recipe": "dot_6",
+   "W": 2,
+   "ctrl": 166,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n2_acc",
+     "flops": 128
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n2",
+     "flops": 64
+    },
+    "out_partial": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n2_d1",
+     "flops": 128
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge6_w4",
+   "recipe": "dot_6",
+   "W": 4,
+   "ctrl": 167,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n4_acc",
+     "flops": 256
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n4",
+     "flops": 64
+    },
+    "out_partial": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n4_d1",
+     "flops": 256
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge6_w8",
+   "recipe": "dot_6",
+   "W": 8,
+   "ctrl": 168,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n8_acc",
+     "flops": 512
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n8",
+     "flops": 64
+    },
+    "out_partial": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n8_d1",
+     "flops": 512
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge6_w16",
+   "recipe": "dot_6",
+   "W": 16,
+   "ctrl": 169,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n16_acc",
+     "flops": 1024
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n16",
+     "flops": 64
+    },
+    "out_partial": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n16_d1",
+     "flops": 1024
+    }
+   }
+  },
+  {
+   "point": "done/dot/forge6_w32",
+   "recipe": "dot_6",
+   "W": 32,
+   "ctrl": 170,
+   "instances": {
+    "mac": {
+     "kind": "unit",
+     "module": "Mac_i64xi64_i64_i64_n32_acc",
+     "flops": 2048
+    },
+    "sum": {
+     "kind": "unit",
+     "module": "SerialAccumulate_i64_i64_n32",
+     "flops": 64
+    },
+    "out_partial": {
+     "kind": "link",
+     "module": "LinkBuffer_i64_n32_d1",
+     "flops": 2048
+    }
+   }
+  },
+  {
+   "point": "done/vecadd/forge_w1",
+   "recipe": "vecadd",
+   "W": 1,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n1_add",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecadd/forge_w2",
+   "recipe": "vecadd",
+   "W": 2,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n2_add",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecadd/forge_w4",
+   "recipe": "vecadd",
+   "W": 4,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n4_add",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecadd/forge_w8",
+   "recipe": "vecadd",
+   "W": 8,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n8_add",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecadd/forge_w16",
+   "recipe": "vecadd",
+   "W": 16,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n16_add",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecadd/forge_w32",
+   "recipe": "vecadd",
+   "W": 32,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n32_add",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecmul/forge_w1",
+   "recipe": "vecmul",
+   "W": 1,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n1_mul",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecmul/forge_w2",
+   "recipe": "vecmul",
+   "W": 2,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n2_mul",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecmul/forge_w4",
+   "recipe": "vecmul",
+   "W": 4,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n4_mul",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecmul/forge_w8",
+   "recipe": "vecmul",
+   "W": 8,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n8_mul",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecmul/forge_w16",
+   "recipe": "vecmul",
+   "W": 16,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n16_mul",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vecmul/forge_w32",
+   "recipe": "vecmul",
+   "W": 32,
+   "ctrl": 66,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "ElementwiseLanes_i64xi64_i64_i64_n32_mul",
+     "flops": 0
+    }
+   }
+  },
+  {
+   "point": "done/vsum/forge_w1",
+   "recipe": "vsum_tree",
+   "W": 1,
+   "ctrl": 131,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n1",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/vsum/forge_w2",
+   "recipe": "vsum_tree",
+   "W": 2,
+   "ctrl": 131,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n2",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/vsum/forge_w4",
+   "recipe": "vsum_tree",
+   "W": 4,
+   "ctrl": 131,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n4",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/vsum/forge_w8",
+   "recipe": "vsum_tree",
+   "W": 8,
+   "ctrl": 131,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n8",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/vsum/forge_w16",
+   "recipe": "vsum_tree",
+   "W": 16,
+   "ctrl": 131,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n16",
+     "flops": 64
+    }
+   }
+  },
+  {
+   "point": "done/vsum/forge_w32",
+   "recipe": "vsum_tree",
+   "W": 32,
+   "ctrl": 131,
+   "instances": {
+    "acc": {
+     "kind": "unit",
+     "module": "TreeAccumulate_i64_i64_n32",
+     "flops": 64
+    }
+   }
+  }
+ ]
+}
