@@ -142,7 +142,7 @@ A design point gives SNAX-GVSoC its cluster and streamer hjson and `accelerator.
 
 ### 5.8 Feedback and the flow
 
-**The flow** (D136, D108, `flow/`; C§7): `pixi run flow RECIPE --platform P [--set ...]`, or from a bound `.snaxdfg`, runs the inner loop once on SNAX-GVSoC: the design point is generated, built and run, and the program checks itself; everything goes to `out/flow/<name>/`, with `flow.log`. The manual loop is flow, reports and viewer, then a changed `--set`; `examples/loop1/` walks it, and `examples/dot/` runs dot's six recipes, each with a test of its numbers; `examples/dryrun/` **[PLANNED]** (DRY1) holds the dry runs, dated snapshots that name the commits they ran on, with no test (D98).
+**The flow** (D136, D108, `flow/`; C§7): `pixi run flow RECIPE --platform P [--set ...]`, or from a bound `.snaxdfg`, runs the inner loop once on SNAX-GVSoC: the design point is generated, built and run, and the program checks itself; everything goes to `out/flow/<name>/`, with `flow.log`. The manual loop is flow, reports and viewer, then a changed `--set`; `examples/loop1/` walks it, and `examples/dot/` runs dot's six recipes, each with a test of its numbers; `examples/dryrun/` holds the dry runs, dated snapshots that name the commits they ran on, with no test (D98): `1_vecmul.md`, vecmul from the kernel through the editor to SNAX-GVSoC and its RTL.
 
 **Profile and trace** (D137, `run/`; C§7): SNAX-GVSoC's events converted, the trace at level `task`, `beat`, `stall` or `finegrained` (none at `off`), and `--vcd` a gtkwave dump.
 
