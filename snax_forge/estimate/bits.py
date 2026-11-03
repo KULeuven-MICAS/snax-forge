@@ -32,8 +32,9 @@ declared but never written, so firtool removes them and DC never sees them:
     done                          1          GroupCtrl.scala:100, the done pulse registered
 
 ``ctrl_registers`` lists what firtool keeps (``declared=True`` every declared one), and
-``ctrl_bits`` sums it: DC keeps what firtool emits, so it equals SYN2's ctrl flops at all 48
-points (``util/ctrl_regs.py`` on the fixtures, ``tests/estimate/test_bits.py``).
+``ctrl_bits`` sums it: DC keeps what firtool emits, so it matched SYN2's ctrl flops at all 48
+points when it was built (``util/ctrl_regs.py`` on the fixtures; ``tests/estimate/test_bits.py``
+holds it within 10 %).
 """
 
 from __future__ import annotations
