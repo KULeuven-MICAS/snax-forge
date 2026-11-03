@@ -98,7 +98,7 @@ Retired, and where each now lives:
 
 **D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms applied in order from a recipe, each step checked by the reference executor; a sweep is one recipe with a parameter, automated search writes recipes. A transform may give `site(g, selected)`, the graph-shape test of where it applies, which it calls first and the editor marks and lists from; Apply runs it, then the check.
 
-**D73** · sandbox — A split and its tags are separate steps: `split` only splits, `tag_map` tags `tile`, `temporal` or `spatial` (`split_map` does both, so old recipes run); `untag_map` removes any tag but around a bound unit, `join_map` a split whatever its tags. `bind` reads design params off the graph (W from the spatial bound), streamers theirs off memlets and layouts, so each is decided once. → C§12.
+**D73** · sandbox — A split and its tags are separate steps: `split` only splits, with neutral names that suggest no tag (the outer map keeps its id, variable `<var>_1`; the inner is `<id>_inner`, `<var>_2`), `tag_map` tags `tile`, `temporal` or `spatial` (`split_map` does both, so old recipes run; it and `split_reduce` keep `<var>_t`, `<var>_s` and `<id>_s`, since they tag in the same step and dot 4–6 and matvec 4–6 bind `mult_map_s`, `mult_map_1_s`); `untag_map` removes any tag but around a bound unit, `join_map` a split whatever its tags. `bind` reads design params off the graph (W from the spatial bound), streamers theirs off memlets and layouts, so each is decided once. → C§12.
 
 **D75** · lower — Names are derived, never stated: streamer `<instance>_<port>`, task `<node>_<component>`, DMA task `load_<container>` or `store_<container>`.
 
@@ -108,7 +108,7 @@ Retired, and where each now lives:
 
 **D84** · design — The platform is its own file in `platforms/`, paired with the bound graph by the design step, so either changes alone; its cluster parameters and the streamers' FIFO depths are design knobs, never a template (D134), and the streamers' temporal loops come from the graph. → C§13.
 
-**D85** · design — Design checks report every problem before anything is written, each with its fix. → C§14.
+**D85** · design — Design checks report every problem before anything is written, each with its fix. A limit of the model's cluster is a platform field a check holds the design to, so a design is refused before the run would assert: the TCDM crossbar's inputs (`l1.max_xbar_inputs`, SNAX-GVSoC's 64). → C§13, C§14.
 
 **D86** · design — The memory plan comes from registered residency, layout and placement passes, contiguous by default, with pins, seeing each port's element-index stream to avoid bank conflicts without a run; the L2 base is the program's link (its ELF's symbols, D50). → C§15.
 
@@ -116,7 +116,7 @@ Retired, and where each now lives:
 
 **D91** · scope — The old SDFG → descriptor → RTL path is gone; the Chisel blocks and `Emit` are a project of their own in `hw/chisel/`.
 
-**D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their reports, until sweeps need one. Walk-throughs live in `examples/`, with a test checking every number they state.
+**D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their reports, until sweeps need one. Walk-throughs live in `examples/`: those under `examples/dryrun/` are dated snapshots that name the commits they ran on and have no test; the others keep a test checking every number they state.
 
 **D99** · viz — Design and run reports in the layout of HLS reports, Markdown from dataclasses, for humans and LLMs alike. Every number comes from the design point, profile or trace, nothing grows with cycles, and a wait is named by what it was for. → `report/`.
 
@@ -190,7 +190,7 @@ Retired, and where each now lives:
 
 **D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
 
-**D151** · estimate — An ideal estimate of a bound graph (no bank conflicts, streamer fill, DMA or core control): per group the exact cycles of snax-gvsoc's group rule, as `gen/rtl.py`'s `group_counter` calls it, groups adding through L1; unbound work a not-mapped count, never cycles. A mapping's gain shows before any run, exact on ideal streams: a COUNTER is this plus the fill. → ARCHITECTURE §5, C§19.
+**D151** · estimate — An ideal estimate of a bound graph (no bank conflicts, streamer fill, DMA or core control): per group the exact cycles of snax-gvsoc's group rule, as `gen/rtl.py`'s `group_counter` calls it, groups adding through L1; unbound work a not-mapped count, never cycles. A mapping's gain shows before any run, exact on ideal streams: a COUNTER is this plus the fill (where that fails: open item 104). `cycles` stay ideal; beside them a group's `bank_bound`, the fewest cycles L1's banks allow its outer ports, is a note when it exceeds them (vecmul at W = 16: 192 against 128, COUNTER 194), a bound, not a model of arbitration (open item 4). → ARCHITECTURE §5, C§19.
 
 **D152** · scope — `<tag>_csr` is the accelerator's interface, what an HLS block leaves to its driver, so `<tag>_ctrl` and `<tag>_datapath` compare with the whole HLS block: START a strobe that reads 0, STATUS's done bit and COUNTER kept there from ctrl's busy and done pulse, and every CSR at its width, the platform's `acc_csr` (JOBS and JOB_BEATS job_width, a saturating COUNTER counter_width). → C§13, C§17.
 
