@@ -92,7 +92,7 @@ group and accelerator; a link's container, depth and units; a container's shape,
 bytes, writers and readers; a group's units, links, estimated cycles and its cost; an accelerator's
 groups; an edge's (keyed ``<from>-><to>``, its ``id``) subset, packing and, at a unit's port,
 the firing loops its memlet runs over and its beats (design/streamers.py's ``port_loops``, as the
-estimate counts them, D151) and whether it has a streamer (a linked port has none). The estimate is the
+estimate counts them, D155) and whether it has a streamer (a linked port has none). The estimate is the
 step's on the viewer's platform, or none; a graph it cannot judge keeps its message in
 ``estimate_error`` and has no badges.
 
@@ -477,7 +477,7 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
                                       ("channels", "channels"), ("area", "area_text"),
                                       ("energy", "energy_text"))]  # fmt: skip
         notes = both(lambda s: group(s, "bank_note"))
-        if any(notes):  # L1's banks allow fewer cycles than the ideal on a side (D151)
+        if any(notes):  # L1's banks allow fewer cycles than the ideal on a side (D155)
             rows.append(_row("bank bound", *notes, under))
     rows += [_row("L1", *both(l1), "memory"),
              _row("reads", *both(lambda s: f"{s['reads']} words"), "memory"),
@@ -504,7 +504,7 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
     per group ``cycles = bottleneck + ramp [+ stall]`` and its expected COUNTER, the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
     lane use of each tailed split; per group its ``bank_bound`` and, where it exceeds the
-    cycles, its ``bank_note`` (D151; R2 shows them); with a technology per group its area and
+    cycles, its ``bank_note`` (D155; R2 shows them); with a technology per group its area and
     energy and the accelerator's ``cost`` (module doc)."""
     groups = []
     for g in est.groups:

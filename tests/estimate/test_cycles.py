@@ -1,4 +1,4 @@
-"""The estimate's cycles (D151, C§19): C§17's closed cycles of dot's and matvec's variants, and
+"""The estimate's cycles (D155, C§19): C§17's closed cycles of dot's and matvec's variants, and
 every ``forge counter`` of open item 95 as a group's cycles plus the streamers' fill. Every
 recipe is imported (DaCe), hence slow."""
 

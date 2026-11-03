@@ -359,7 +359,7 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
 
 @pytest.mark.slow
 def test_the_bank_note_under_its_group():
-    """vecmul at N = 2048 (D151): at W = 16 the group's summary has its bank note and Compare
+    """vecmul at N = 2048 (D155): at W = 16 the group's summary has its bank note and Compare
     against W = 8 a ``bank bound`` row under the group, "–" on the side with none."""
     from snax_forge.design import Platform
     from snax_forge.viz.dfg.api import Entry, compare_view, step_view

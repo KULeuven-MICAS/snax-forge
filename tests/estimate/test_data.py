@@ -1,4 +1,4 @@
-"""The estimate's data side and its work not mapped (D151, C§19), and the round trip."""
+"""The estimate's data side and its work not mapped (D155, C§19), and the round trip."""
 
 from __future__ import annotations
 
@@ -67,7 +67,7 @@ def test_the_estimate_round_trips(name):
 
 @pytest.mark.slow
 def test_the_bank_bound_of_vecmul():
-    """vecmul at N = 2048 (D151): three ports of W words a beat over 32 banks. At W = 16, 6144
+    """vecmul at N = 2048 (D155): three ports of W words a beat over 32 banks. At W = 16, 6144
     words take at least 192 cycles against the ideal 128 (the run's COUNTER is 194), a note; at
     W = 8 the same 192 is below the ideal 256, no note. Without a platform, no bound."""
     (sixteen,) = estimated("vecmul", N=2048, W=16).groups

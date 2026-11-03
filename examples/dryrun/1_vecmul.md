@@ -44,7 +44,7 @@ After the bind the Estimate shows one group, `acc`:
 |---:|---:|---:|---:|---:|---:|---:|
 | 256 | 256 | 0 | 0 | 259 | 55 700 µm² | 23.265 nJ |
 
-Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the unit has latency 0. The expected COUNTER adds the streamers' fill of 3 (D151, C§19). Below it, the cost table on nangate45:
+Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the unit has latency 0. The expected COUNTER adds the streamers' fill of 3 (D155, C§19). Below it, the cost table on nangate45:
 
 | Block | Datapath | Area (µm²) | Energy (nJ) | Share |
 |---|---|---:|---:|---:|

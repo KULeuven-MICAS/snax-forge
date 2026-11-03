@@ -1,4 +1,4 @@
-"""The ideal cycles of a bound graph's groups, and the work no unit runs (D151, C§19).
+"""The ideal cycles of a bound graph's groups, and the work no unit runs (D155, C§19).
 
     group_rule() -> module                    snax-gvsoc's snax/snax_group_rule.py (GroupRule)
     group_cycles(units, links, owner, jobs, ts) -> int | None
@@ -107,7 +107,7 @@ def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]], owner
 class GroupEstimate:
     """One group: its units and links, its cycles and register bits (module doc) and, from
     data.py, the channels of its outer ports and the words they move per cycle; on a platform
-    its ``bank_bound``, the fewest cycles L1's banks allow those words (D151)."""
+    its ``bank_bound``, the fewest cycles L1's banks allow those words (D155)."""
 
     name: str
     units: list[str]

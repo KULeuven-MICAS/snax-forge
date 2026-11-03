@@ -7,7 +7,7 @@ named it (D137).
 
     summary       the program's window (total cycles), passed, data errors over
                   the output words, each task's counter as the program printed
-                  it next to the COUNTER the ideal estimate expects (D151:
+                  it next to the COUNTER the ideal estimate expects (D155:
                   its group's cycles plus the streamers' fill; with its group's
                   bank-bound note where L1's banks allow fewer cycles than the
                   ideal ones), the trace level and the boot's length (the cycles before
@@ -275,14 +275,14 @@ def _next_task(rows: list[TaskRow] | None, after: int) -> TaskRow | None:
 
 
 def expected_counters(point: Any) -> dict[str, int]:
-    """Per accelerator task, the COUNTER the ideal estimate expects (D151): its group's (a task's
+    """Per accelerator task, the COUNTER the ideal estimate expects (D155): its group's (a task's
     component is its group), for a group that runs one task."""
     return {t: g.counter for t, g in _task_groups(point).items()}
 
 
 def bank_notes(point: Any) -> dict[str, str]:
     """Per accelerator task (as ``expected_counters``), its group's bank-bound note where L1's
-    banks allow fewer cycles than the ideal ones (D151)."""
+    banks allow fewer cycles than the ideal ones (D155)."""
     return {t: g.bank_bound_note for t, g in _task_groups(point).items() if g.bank_bound_note}
 
 
@@ -377,7 +377,7 @@ def build_run(rv: api.RunView) -> RunReport:
 
 def counters_text(c: CheckRow) -> str:
     """The summary's Counters cell: each task's counter, the estimate's expected COUNTER beside
-    it, and its group's bank-bound note there (D151)."""
+    it, and its group's bank-bound note there (D155)."""
 
     def one(t: str, n: int) -> str:
         if t not in c.expected:

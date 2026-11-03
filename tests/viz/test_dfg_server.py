@@ -207,7 +207,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             True,
         )
         assert v["estimate"]["groups"][0]["cycles"] == 16
-        # 3 ports x 16 beats x 4 channels over 32 banks: 6 cycles, under 16, no note (D151)
+        # 3 ports x 16 beats x 4 channels over 32 banks: 6 cycles, under 16, no note (D155)
         assert v["estimate"]["groups"][0]["bank_bound"] == 6
         assert (v["summary"]["groups"][0]["bank_bound"], v["summary"]["groups"][0]["bank_note"]) == (
             6, None)  # fmt: skip

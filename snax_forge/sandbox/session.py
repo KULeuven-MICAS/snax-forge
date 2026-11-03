@@ -79,7 +79,7 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
     diff(k)              step k against step k − 1: nodes added, removed and changed (attrs,
                          inputs or outputs, the body by its ids), containers added, removed and
                          changed (attrs, or the estimate's placement); empty at step 0
-    estimate(k, tech)    the ideal estimate (estimate/, D151) on the session's platform, costed
+    estimate(k, tech)    the ideal estimate (estimate/, D155) on the session's platform, costed
                          on ``tech`` (default nangate45, C§20)
 
 ``sites``, ``marks`` and ``estimate`` are cached per step (``sites`` per step and selection,

@@ -1,4 +1,4 @@
-"""The data side of the ideal estimate (D151, C§19): where each container lives, what it
+"""The data side of the ideal estimate (D155, C§19): where each container lives, what it
 occupies and what moves, per container, per outer port and per tailed split.
 
     containers(graph) -> dict[str, ContainerData]

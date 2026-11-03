@@ -1,4 +1,4 @@
-"""SNAX-ESTIMATE: the ideal, engine-alone estimate of a bound graph (D151, C§19).
+"""SNAX-ESTIMATE: the ideal, engine-alone estimate of a bound graph (D155, C§19).
 
     estimate(graph, platform=None, tech="nangate45") -> Estimate
 
@@ -118,7 +118,7 @@ def estimate(graph: Graph, platform: Platform | None = None,
         words[unit_group[n.attrs["instance"]].name] += port.beats * port.num_ch
     for g in found:
         g.words_per_cycle = words[g.name] / g.cycles if g.cycles else 0.0
-        if platform is not None:  # the fewest cycles L1's banks allow (D151)
+        if platform is not None:  # the fewest cycles L1's banks allow (D155)
             g.n_banks = platform.l1.n_banks
             g.bank_bound = -(-words[g.name] // g.n_banks)
     for k, port in ports(graph).items():

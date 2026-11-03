@@ -82,7 +82,7 @@ The flow's tools also run on their own (`docs/RUN.md` section 7):
 | GVSoC files | `pixi run gen-gvsoc out/design/vecadd/design_point.json` | `out/gvsoc/vecadd/` (C§16) |
 | Accelerator RTL | `pixi run gen-rtl out/design/vecadd/design_point.json` | `out/rtl/vecadd/` (C§17) |
 | Bundle | `pixi run bundle out/design/vecadd/design_point.json` | `out/bundle/vecadd/` (C§18) |
-| Graphs | `pixi run view-dfg out/sandbox/vecadd/ [--platform platforms/snax_forge.json] [--tech nangate45]` | nothing; serves http://127.0.0.1:8766/: the steps one at a time, Compare for two, each item's Details and the Estimate on `--platform` (D151) with its first-order cost estimate (C§20) |
+| Graphs | `pixi run view-dfg out/sandbox/vecadd/ [--platform platforms/snax_forge.json] [--tech nangate45]` | nothing; serves http://127.0.0.1:8766/: the steps one at a time, Compare for two, each item's Details and the Estimate on `--platform` (D155) with its first-order cost estimate (C§20) |
 | Editor | `pixi run edit-dfg [--kernel vecadd --set N=64 \| --recipe R \| --session DIR]` | the session in `out/sessions/<name>/`; Save writes `recipes/<name>.json` and its steps, Export one step; serves http://127.0.0.1:8767/ (`docs/RUN.md` section 9) |
 | Runs | `pixi run view out/flow/vecadd_task` | nothing; serves http://127.0.0.1:8765/ (`docs/RUN.md` section 4) |
 | Reports | `pixi run report out/flow/vecadd_task` | the folder's `report/` again |
