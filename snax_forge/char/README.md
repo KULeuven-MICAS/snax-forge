@@ -1,15 +1,10 @@
 # The cost table: CHAR1's first-order model
 
-`snax_forge/char/<tech>.json` holds, per technology, what snax-forge needs to put an area and an energy beside a design's cycles before any synthesis: the comb area and comb energy per fire of each catalogue block, and a handful of constants for registers and control (D154, C§20).
-The estimate (`snax_forge/estimate/cost.py`) combines them with counts it already has from the description: each unit's fires, its register bits and the accelerator's cycles.
-`design.md`, the DFG viewer and the editor show the result as a first-order estimate, every number to 3 significant figures.
+`snax_forge/char/<tech>.json` holds, per technology, what snax-forge needs to put an area and an energy beside a design's cycles before any synthesis: the comb area and comb energy per fire of each catalogue block, and a handful of constants for registers and control (D154, C§20). The estimate (`snax_forge/estimate/cost.py`) combines them with counts it already has from the description: each unit's fires, its register bits and the accelerator's cycles. `design.md`, the DFG viewer and the editor show the result as a first-order estimate, every number to 3 significant figures.
 
 ## What it is and is not
 
-It is a first-order model: registers are bits, a block is its comb energy per fire, control is its bits held every cycle times a factor.
-It aims at the large costs and at showing a designer how a design is costed, not at accuracy: about 20 % of synthesis on the large costs is the intent, and a small block can be much further off.
-The evidence so far: on CHAR1's checked designs (vecmul, vsum, dot 4 and dot 5 at W = 8 and 32, N = 2048, on Nangate 45 and 15 nm) the model's kernel energy (datapath and control) lands at 0.99 to 1.04 of the synthesized and simulated accelerator (snax-forge-experiments `results/char/char_table.md`, Model, "Against SYN2"); per unit the Mac is at 1.03 to 1.04, while dot 4's TreeAccumulate sum is at 0.06 to 0.19 and dot 5's SerialAccumulate sum at 0.41 to 0.78.
-That is evidence on eight designs per technology, not a promise for others.
+It is a first-order model: registers are bits, a block is its comb energy per fire, control is its bits held every cycle times a factor. It aims at the large costs and at showing a designer how a design is costed, not at accuracy: about 20 % of synthesis on the large costs is the intent, and a small block can be much further off. The evidence so far: on CHAR1's checked designs (vecmul, vsum, dot 4 and dot 5 at W = 8 and 32, N = 2048, on Nangate 45 and 15 nm) the model's kernel energy (datapath and control) lands at 0.99 to 1.04 of the synthesized and simulated accelerator (snax-forge-experiments `results/char/char_table.md`, Model, "Against SYN2"); per unit the Mac is at 1.03 to 1.04, while dot 4's TreeAccumulate sum is at 0.06 to 0.19 and dot 5's SerialAccumulate sum at 0.41 to 0.78. That is evidence on eight designs per technology, not a promise for others.
 
 The known limits (C§20):
 
@@ -64,8 +59,7 @@ and per group its control unit:
 
 $$E_{\mathit{ctrl}} = f_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}\thinspace e_{\mathit{hold}}, \qquad A_{\mathit{ctrl}} = n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
 
-A flop that loads costs $e_{\mathit{load}}$ in that cycle and one that holds $e_{\mathit{hold}}$; there is no clock gating, so every flop holds in every cycle it does not load, and $n_{\mathit{fire}}\thinspace e_{\mathit{load}} + (C_{\mathit{acc}} - n_{\mathit{fire}})\thinspace e_{\mathit{hold}}$ per bit is the form above regrouped.
-A group's cost is its units', buffer links' and control unit's added up, the accelerator's its groups'.
+A flop that loads costs $e_{\mathit{load}}$ in that cycle and one that holds $e_{\mathit{hold}}$; there is no clock gating, so every flop holds in every cycle it does not load, and $n_{\mathit{fire}}\thinspace e_{\mathit{load}} + (C_{\mathit{acc}} - n_{\mathit{fire}})\thinspace e_{\mathit{hold}}$ per bit is the form above regrouped. A group's cost is its units', buffer links' and control unit's added up, the accelerator's its groups'.
 
 Where the estimate gets each count:
 
