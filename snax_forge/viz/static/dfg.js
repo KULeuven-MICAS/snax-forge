@@ -444,7 +444,7 @@ function costRows(cost) {
 // -- the Containers (the left column, C§12) ----------------------------------------------
 
 /** Every container that a symbol's shape uses, highlighted in the Containers and the graph
-(focus or hover on the symbol's input, its chip or its text). */
+(focus or hover on the symbol in the Symbols). */
 function hlSymbol(name, on) {
   const v = views.get(state.k);
   const users = new Set(((v && v.containers_section) || []).filter((c) => c.symbols.includes(name)).map((c) => c.name));
