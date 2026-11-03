@@ -5,7 +5,9 @@ string. Every string is an expression: a name (``"W"``, ``"N"``, ``"i_t"``)
 or arithmetic over names and ints with ``+``, ``-``, ``*``, ``//`` and
 parentheses (``"W*n"``, ``"(n + 1) // 2"``, ``"4 * i_t + i_s"``), and
 ``max(a, b)`` and ``min(a, b)``, exactly two arguments, each any expression
-(``"max(in1, 0)"``, relu's tasklet); no other call. There are
+(``"max(in1, 0)"``, relu's tasklet), and ``width(t)``, one argument, a name bound
+to a dtype as NumPy names it, its bits (``"lanes * width(outType)"``, the datapath
+catalogue's ``flops``); no other call. There are
 no string literals; in a BRM a fixed string such as an op name is a design
 param with a single allowed value.
 
@@ -59,6 +61,8 @@ _BINOPS = {
 }
 # the grammar's calls, two arguments each, elementwise on index arrays
 CALLS = {"max": np.maximum, "min": np.minimum}
+# and its one-argument call on a dtype's name: its bits
+DTYPE_CALLS = {"width"}
 
 
 class ExprError(ValueError):
@@ -91,10 +95,15 @@ def _parsed(expr: str) -> ast.expr:
 
 
 def _check_call(node: ast.Call, expr: str) -> None:
-    """``max(a, b)`` or ``min(a, b)``; any other call is an error."""
+    """``max(a, b)``, ``min(a, b)`` or ``width(name)``; any other call is an error."""
     fn = node.func.id if isinstance(node.func, ast.Name) else None
+    if fn in DTYPE_CALLS:
+        if len(node.args) != 1 or node.keywords or not isinstance(node.args[0], ast.Name):
+            raise ExprError(f"{expr!r}: {fn} takes exactly one argument, a name")
+        return
     if fn not in CALLS:
-        raise ExprError(f"{expr!r}: call {ast.unparse(node)!r} is not allowed (only max and min)")
+        raise ExprError(f"{expr!r}: call {ast.unparse(node)!r} is not allowed (only max, min "
+                        "and width)")  # fmt: skip
     if len(node.args) != 2 or node.keywords:
         raise ExprError(f"{expr!r}: {fn} takes exactly two arguments")
 
@@ -146,8 +155,19 @@ def _is_int(x: Any) -> bool:
     return isinstance(x, np.ndarray) and x.dtype.kind in "iu"
 
 
+def _width(x: Any, v: Value) -> int:
+    """``width(t)``: the bits of dtype ``t``, a NumPy name (``"int64"``: 64)."""
+    if isinstance(x, str):
+        try:
+            return np.dtype(x).itemsize * 8
+        except TypeError:
+            pass
+    raise ExprError(f"{v!r}: width of {x!r}, which is not a dtype's name")
+
+
 def evaluate(v: Value, env: Mapping[str, Any]) -> Any:
-    """``v`` with its names taken from ``env`` (ints or NumPy integer arrays)."""
+    """``v`` with its names taken from ``env`` (ints or NumPy integer arrays; a dtype's name for
+    ``width``'s argument)."""
     if type(v) is int:
         return v
 
@@ -160,6 +180,8 @@ def evaluate(v: Value, env: Mapping[str, Any]) -> Any:
             return env[node.id]
         if isinstance(node, ast.UnaryOp):
             return -_int(walk(node.operand))
+        if isinstance(node, ast.Call) and node.func.id in DTYPE_CALLS:
+            return _width(walk(node.args[0]), v)
         if isinstance(node, ast.Call):
             a, b = (_int(walk(x)) for x in node.args)
             r = CALLS[node.func.id](a, b)

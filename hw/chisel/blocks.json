@@ -19,6 +19,7 @@
   "ports": {"a": "in", "b": "in", "out": "out"},
   "latency": 0,
   "span": 1,
+  "flops": 0,
   "pins": [],
   "fill": {
    "inTypes": "inputs.dtype",
@@ -44,6 +45,7 @@
   "ports": {"in": "in", "out": "out"},
   "latency": 1,
   "span": 1,
+  "flops": "width(outType)",
   "pins": ["fire", "first"],
   "fill": {
    "inType": "inputs.dtype",
@@ -73,6 +75,7 @@
   "ports": {"a": "in", "b": "in", "c": {"dir": "in", "when": {"accumulate": false}}, "out": "out"},
   "latency": "max(accumulate, regOut)",
   "span": 1,
+  "flops": "lanes * width(outType) * max(accumulate, regOut)",
   "pins": [
    {"name": "fire", "when": {"accumulate": true}},
    {"name": "first", "when": {"accumulate": true}},
@@ -102,6 +105,7 @@
   "ports": {"in": "in", "out": "out"},
   "latency": 1,
   "span": "lanes",
+  "flops": "width(outType)",
   "pins": ["read", "lane", "first"],
   "fill": {"inType": "inputs.dtype", "outType": "outputs.dtype", "lanes": "inputs.lanes"}
  },
@@ -117,6 +121,7 @@
   "ports": {"in": "in", "out": "out"},
   "latency": 1,
   "span": 1,
+  "flops": "depth * lanes * width(dtype)",
   "pins": ["load", "wslot", "rslot"],
   "fill": {"depth": "link.depth", "lanes": "link.lanes", "dtype": "link.dtype"}
  }
