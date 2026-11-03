@@ -45,7 +45,7 @@ def test_not_mapped_counts_the_iterations_no_unit_runs():
     assert [not_mapped(g) for g in (dot, a, b)] == [1024, 640, 257]
     vecadd = _bound(imported("vecadd"))
     s = split(vecadd, "add_map", 4)
-    t = tag_map(s, "add_map_s", "spatial")
+    t = tag_map(s, "add_map_inner", "spatial")
     assert [not_mapped(g) for g in (vecadd, s, t)] == [64, 64, 16]
 
 

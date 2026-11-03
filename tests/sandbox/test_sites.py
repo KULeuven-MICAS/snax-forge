@@ -3,7 +3,7 @@
 Every recipe's steps are accepted by their transform's site on the graph before the step, with
 the params the site fills equal to the step's; wherever a site refuses, the transform refuses
 with the same error; and ``split_map`` is ``split`` then two ``tag_map`` steps, file for file
-(D73). Every recipe is imported (DaCe), hence slow.
+once ``split``'s neutral names are mapped to ``split_map``'s (D73). Every recipe is imported (DaCe), hence slow.
 """
 
 from __future__ import annotations
@@ -14,7 +14,16 @@ from snax_forge.sandbox import TRANSFORMS, SandboxError, split, split_map
 from snax_forge.sandbox.run import step_params
 from snax_forge.sandbox.transforms import tag_map
 
-from .helpers import RECIPES, SELECTED, default_calls, graph, recipe_graphs, selections
+from .helpers import (
+    RECIPES,
+    SELECTED,
+    default_calls,
+    graph,
+    recipe_graphs,
+    renamed,
+    selections,
+    tagged_names,
+)
 
 pytestmark = pytest.mark.slow
 
@@ -87,5 +96,8 @@ def test_split_map_is_split_then_two_tags(name):
             continue
         g = split(graphs[i], params["map"], params["factor"])
         (inner,) = g.node(params["map"]).body
+        assert inner.id.endswith("_inner") and "loop.kind" not in inner.attrs
         g = tag_map(tag_map(g, params["map"], "temporal"), inner.id, "spatial")
-        assert g.to_json() == split_map(graphs[i], **params).to_json() == graphs[i + 1].to_json()
+        names = tagged_names(graphs[i], params["map"], params["factor"])
+        assert renamed(g, names) == split_map(graphs[i], **params).to_json()
+        assert split_map(graphs[i], **params).to_json() == graphs[i + 1].to_json()

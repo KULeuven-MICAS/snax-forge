@@ -54,15 +54,15 @@ def split_and_tag(s: Session, map: str, factor: str) -> None:
 
 @pytest.mark.parametrize("name", ["vecadd", "dot_2", "dot_4"])
 def test_built_by_hand_it_ends_in_the_recipes_graph(name, roots):
-    """Each split_map of the recipe done as split and two tags; the last graph is the
-    recipe's, file for file."""
+    """Each step of the recipe applied in the session, one by one; the last graph is the
+    recipe's, file for file. ``split_map`` stays ``split_map`` here: the later steps name its
+    ``<id>_s``, and a second split (dot 4's ``split_reduce``) names its variables after the
+    first's, so a ``split`` and two tags would differ in more than the three names
+    (test_sites.py checks ``split_map`` against them, a step at a time)."""
     r = recipe(name)
     s = Session.from_kernel(r.kernel, r.params, r.symbols, roots=roots)
     for step in r.steps:
-        if step.transform == "split_map":
-            split_and_tag(s, step.params["map"], step.params["factor"])
-        else:
-            ok(s.apply(step.transform, step.params))
+        ok(s.apply(step.transform, step.params))
     want = apply_recipe(r, imported(r.kernel))[-1].graph
     assert s.graphs[-1].to_json() == want.to_json()
     assert s.name == r.kernel and (roots.sessions / r.kernel / "recipe.json").is_file()
@@ -226,7 +226,7 @@ def test_the_diff_of_a_split_and_of_a_link(roots):
     d = ok(s.apply("split", {"map": "add_map", "factor": "W"}))["diff"]
     # the map is split, its new inner map added, the tasklet's memlets rewritten over both
     assert (d["nodes"]["changed"], d["nodes"]["added"], d["nodes"]["removed"]) == (
-        ["add_map", "add"], ["add_map_s"], [])  # fmt: skip
+        ["add_map", "add"], ["add_map_inner"], [])  # fmt: skip
     assert s.diff(0) == {"nodes": {"added": [], "removed": [], "changed": []},
                          "containers": {"added": [], "removed": [], "changed": []}}  # fmt: skip
     two = opened("dot_2", roots)

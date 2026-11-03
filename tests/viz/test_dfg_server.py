@@ -174,7 +174,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         logs = []
         for transform, params in (
             ("split", {"map": "add_map", "factor": "W"}),
-            ("tag_map", {"map": "add_map_s", "kind": "spatial"}),
+            ("tag_map", {"map": "add_map_inner", "kind": "spatial"}),
             ("tag_map", {"map": "add_map", "kind": "temporal"}),
             ("bind", {"node": "add", "brm": "elementwise_add",
                       "implementation": "chisel_tiled_spatial", "instance": "acc"}),
@@ -190,7 +190,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         status, v = get_json(srv, "/api/step/4")
         # the tasklet add became the unit add, its spatial map gone
         assert (v["diff"]["nodes"]["removed"], "add" in v["diff"]["nodes"]["changed"]) == (
-            ["add_map_s"],
+            ["add_map_inner"],
             True,
         )
         assert v["estimate"]["groups"][0]["cycles"] == 16
@@ -221,7 +221,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             "4 bind",
         ]
         assert get_json(srv, "/api/session")[1]["undo"] == 1
-        assert get_json(srv, "/api/compare/2/4")[1]["diff"]["nodes"]["removed"] == ["add_map_s"]
+        assert get_json(srv, "/api/compare/2/4")[1]["diff"]["nodes"]["removed"] == ["add_map_inner"]
         assert post(srv, "/api/cursor", {"k": 4})[0] == 200
         assert post(srv, "/api/cursor", {"k": 9})[0] == 400
         assert post(srv, "/api/params", {"params": {"W": 8}})[0] == 200
