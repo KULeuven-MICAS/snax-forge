@@ -1,0 +1,139 @@
+"""The cost of a bound graph's groups: CHAR1's first-order model on a technology's table (D154,
+C§20).
+
+    Block(datapath, params, fires)                 a unit or a buffer link to cost
+    block_cost(table, block, bits, c_acc) -> BlockCost
+    group_cost(table, blocks, bits, ctrl_bits, c_acc) -> GroupCost
+
+**The model**, per unit and per buffer link over one run of the accelerator, with n_fire its
+fires, n_bits its register bits (the estimate's ``bits``), C_acc the accelerator's cycles
+(``accelerator_cycles``: no clock gating, so every flop holds through every group's cycles) and
+e_comb, A_comb its comb energy per fire and area from the table (snax_forge/char/):
+
+    e_fire = e_comb + n_bits (e_load − e_hold)          pJ per fire
+    hold   = n_bits e_hold                              pJ per cycle
+    task   = n_fire e_fire + C_acc hold                 (nJ)
+    area   = A_comb + n_bits A_flop                     µm²
+
+and per group its control unit, n_bits^ctrl its ``ctrl_bits`` and f_ctrl the table's counter
+factor: energy f_ctrl n_bits^ctrl C_acc e_hold, area n_bits^ctrl A_flop (its comb area and the
+csr are left out, D152). n_fire is a unit's firings times its span (SerialAccumulate reads span
+beats per firing); a buffer link loads once per beat of its producer, its producer's firings. A
+block the table does not hold (``lookup`` None) or the generator does not fill has ``found``
+None and its comb part counted as 0; its flops are still counted, the description gives them.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+from snax_forge.char import Table, lookup
+
+
+@dataclass(frozen=True)
+class Block:
+    """A unit or buffer link to cost: its catalogue datapath (None when the generator does not
+    fill it), its params as the generator fills them (lanes and depth included), its fires."""
+
+    datapath: str | None
+    params: Mapping[str, Any]
+    fires: int
+
+
+@dataclass
+class BlockCost:
+    """One unit's or buffer link's cost (module doc); areas µm², energies pJ, ``task_nj`` nJ."""
+
+    datapath: str | None
+    fires: int
+    found: str | None
+    comb_um2: float
+    flops_um2: float
+    e_fire_pj: float
+    e_hold_pj: float
+    task_nj: float
+
+    @property
+    def total_um2(self) -> float:
+        return self.comb_um2 + self.flops_um2
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"datapath": self.datapath, "fires": self.fires, "found": self.found,
+                "area": {"comb": self.comb_um2, "flops": self.flops_um2, "total": self.total_um2},
+                "energy": {"fire": self.e_fire_pj, "hold": self.e_hold_pj,
+                           "task": self.task_nj}}  # fmt: skip
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> BlockCost:
+        a, e = d["area"], d["energy"]
+        return cls(d["datapath"], d["fires"], d["found"], a["comb"], a["flops"], e["fire"],
+                   e["hold"], e["task"])  # fmt: skip
+
+
+@dataclass
+class GroupCost:
+    """One group's cost: its units' and buffer links' (by container), its control unit's, and
+    the totals of all three."""
+
+    units: dict[str, BlockCost] = field(default_factory=dict)
+    links: dict[str, BlockCost] = field(default_factory=dict)
+    ctrl_bits: int = 0
+    ctrl_um2: float = 0.0
+    ctrl_nj: float = 0.0
+
+    @property
+    def area(self) -> float:
+        """µm²: units, buffer links and the control unit's flops."""
+        return sum(b.total_um2 for b in (*self.units.values(), *self.links.values())) + (
+            self.ctrl_um2)  # fmt: skip
+
+    @property
+    def energy(self) -> float:
+        """nJ per run of the accelerator: units, buffer links and the control unit."""
+        return sum(b.task_nj for b in (*self.units.values(), *self.links.values())) + (
+            self.ctrl_nj)  # fmt: skip
+
+    @property
+    def missing(self) -> list[str]:
+        """The units and links not characterized (``found`` None)."""
+        return [k for k, b in (*self.units.items(), *self.links.items()) if b.found is None]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"units": {k: b.to_dict() for k, b in self.units.items()},
+                "links": {k: b.to_dict() for k, b in self.links.items()},
+                "ctrl": {"bits": self.ctrl_bits, "area": self.ctrl_um2, "energy": self.ctrl_nj},
+                "area": self.area, "energy": self.energy}  # fmt: skip
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> GroupCost:
+        c = d["ctrl"]
+        return cls({k: BlockCost.from_dict(b) for k, b in d["units"].items()},
+                   {k: BlockCost.from_dict(b) for k, b in d["links"].items()}, c["bits"],
+                   c["area"], c["energy"])  # fmt: skip
+
+
+def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:
+    """One block's cost on ``table`` (module doc)."""
+    p = block.params
+    got = None
+    if block.datapath is not None:
+        got = lookup(table, block.datapath, p, p.get("lanes", 1), p.get("depth"))
+    comb, e_comb = (got.comb_um2, got.e_comb_pj) if got is not None else (0.0, 0.0)
+    e_fire = e_comb + bits * (table.e_load_pj - table.e_hold_pj)
+    hold = bits * table.e_hold_pj
+    return BlockCost(block.datapath, block.fires, got.found if got is not None else None, comb,
+                     bits * table.flop_um2, e_fire, hold,
+                     (block.fires * e_fire + c_acc * hold) / 1000)  # fmt: skip
+
+
+def group_cost(table: Table, units: Mapping[str, Block], links: Mapping[str, Block],
+               bits: Mapping[str, int], ctrl_bits: int | None, c_acc: int) -> GroupCost:  # fmt: skip
+    """A group's cost on ``table``: ``units`` by name and buffer ``links`` by container, their
+    ``bits`` the estimate's, ``ctrl_bits`` its control unit's (module doc)."""
+    n = ctrl_bits or 0
+    return GroupCost({k: block_cost(table, b, bits.get(k, 0), c_acc) for k, b in units.items()},
+                     {k: block_cost(table, b, bits.get(k, 0), c_acc) for k, b in links.items()},
+                     n, n * table.flop_um2,
+                     table.counter_factor * n * c_acc * table.e_hold_pj / 1000)  # fmt: skip

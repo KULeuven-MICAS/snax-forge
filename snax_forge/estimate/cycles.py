@@ -3,6 +3,8 @@
     group_rule() -> module                    snax-gvsoc's snax/snax_group_rule.py (GroupRule)
     group_cycles(units, links, owner, jobs, ts) -> int | None
     groups(graph) -> list[GroupEstimate]
+    group_blocks(graph) -> list[(GroupEstimate, units, buffer links)]   the blocks to cost
+    datapath_blocks(graph) -> dict[str, Block]                          the same, no cycles
     not_mapped(graph) -> int
 
 **The rule.** A group's cycles are snax-gvsoc's group rule stepped with every outer input
@@ -30,8 +32,12 @@ one task per node; a linked unit has one node. Then:
                  the catalogue's ``flops`` on its params (gen/rtl.py's ``unit_flops`` and
                  ``link_flops``, D154): a wire none; a unit whose implementation the generator
                  does not fill (no binding, a datapath not registered) has none listed
-    ctrl_bits    the register bits of its control unit (bits.py), its T fixed or from the start
-                 as accelerator.py decides it, at the platform's ``acc_csr.job_width``
+    ctrl_bits    the register bits of its control unit firtool keeps (bits.py), its T fixed or
+                 from the start as accelerator.py decides it, at the platform's
+                 ``acc_csr.job_width``
+    cost         on a technology, CHAR1's model (cost.py, C§20): per unit and buffer link its
+                 area, energy and how its table entry was found, its control unit's, the totals;
+                 set by ``estimate`` once the accelerator's cycles are known
 
 **Not mapped**: the iterations of the nests no unit runs, counted once per innermost map that
 holds tasklets (a fused nest's two count once), over every map around it but the spatial ones,
@@ -56,6 +62,7 @@ from snax_forge.lower.c import fold_rate, job_writes
 from snax_forge.lower.derive import unit_firings
 
 from .bits import ctrl_bits
+from .cost import Block, GroupCost
 
 SUBMODULE = repo_root() / "gvsoc" / "snax-gvsoc"
 # The streamers' fill a run adds to a group's cycles (C§17): 3, or 2 with one outer input
@@ -113,6 +120,7 @@ class GroupEstimate:
     words_per_cycle: float = 0.0
     bits: dict[str, int] = field(default_factory=dict)
     ctrl_bits: int | None = None
+    cost: GroupCost | None = None
 
     @property
     def counter(self) -> int:
@@ -124,47 +132,62 @@ class GroupEstimate:
                 "cycles": self.cycles, "bottleneck": self.bottleneck, "ramp": self.ramp,
                 "stall": self.stall, "fill": self.fill, "counter": self.counter,
                 "channels": self.channels, "words_per_cycle": self.words_per_cycle,
-                "bits": dict(self.bits), "ctrl_bits": self.ctrl_bits}  # fmt: skip
+                "bits": dict(self.bits), "ctrl_bits": self.ctrl_bits,
+                "cost": None if self.cost is None else self.cost.to_dict()}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> GroupEstimate:
         return cls(d["name"], list(d["units"]), d["cycles"], d["bottleneck"], d["ramp"],
                    d["stall"], d["fill"], list(d["links"]), d["channels"],
-                   d["words_per_cycle"], dict(d.get("bits", {})), d.get("ctrl_bits"))  # fmt: skip
+                   d["words_per_cycle"], dict(d.get("bits", {})), d.get("ctrl_bits"),
+                   GroupCost.from_dict(d["cost"]) if d.get("cost") else None)  # fmt: skip
 
 
 def _ins(inst: Any) -> list[str]:
     return [p.name for p in inst.brm.interface.ports if p.direction == "in"]
 
 
-def _datapath_bits(graph: Graph, insts: dict[str, Any], members: list[str],
-                   ends: list[tuple[Node, str, str]]) -> dict[str, int]:  # fmt: skip
-    """Per unit and link (by container) its datapath's register bits (module doc). The
-    generator is imported here: gen/rtl.py imports this package."""
+def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
+                     ends: list[tuple[Node, str, str]], firings: dict[str, int],
+                     ) -> tuple[dict[str, Block], dict[str, Block], dict[str, int]]:  # fmt: skip
+    """Per unit and per buffer link (by container) the datapath to cost, its params as the
+    generator fills them and its fires (cost.py: a unit's ``firings`` times its span, a
+    buffer's its producer's firings, a load per beat), and per unit and link its register bits
+    (module doc): a wire 0 and no block; a unit the generator does not fill a block with no
+    params and no bits. The generator is imported here: gen/rtl.py imports this package."""
     from snax_forge.brm import port_dtypes
     from snax_forge.gen.accelerator import Unit
     from snax_forge.gen.blocks import DATAPATHS, GenError
-    from snax_forge.gen.rtl import catalogue, link_flops, unit_flops
+    from snax_forge.gen.rtl import buffer_params, catalogue, fill, flops
 
-    cat, nodes, units = catalogue(), instance_nodes(graph), {}
+    cat, nodes, filled, units, links = catalogue(), instance_nodes(graph), {}, {}, {}
     for u in members:
         inst = insts[u]
         dp = (inst.impl.binding or {}).get("datapath")
+        units[u] = Block(dp, {}, firings[u] * inst.span)
         if dp not in DATAPATHS or dp not in cat:
             continue
         try:
             f = DATAPATHS[dp].fill(inst, port_dtypes(graph, nodes[u]))
         except GenError:
             continue
-        units[u] = Unit(u, inst.brm.name, dp, f.ports, dict(f.params), inst.latency,
-                        inst.initiation_interval, [], f.op_type, inst.span)  # fmt: skip
-    out = {u: unit_flops(None, x, cat) for u, x in units.items()}
+        filled[u] = Unit(u, inst.brm.name, dp, f.ports, dict(f.params), inst.latency,
+                         inst.initiation_interval, [], f.op_type, inst.span)  # fmt: skip
+        units[u] = Block(dp, fill(None, filled[u], cat[dp]), firings[u] * inst.span)
+    bits = {u: flops(b.datapath, b.params, cat) for u, b in units.items() if u in filled}
     for k, frm, _ in ends:
         unit, port = frm.split(".", 1)
-        if unit in units:
-            end = units[unit].ports[port]
-            out[k.attrs["container"]] = link_flops(k.attrs["depth"], end.lanes, end.dtype, cat)
-    return out
+        if unit not in filled:
+            continue
+        name, depth = k.attrs["container"], k.attrs["depth"]
+        if depth == 0:
+            bits[name] = 0
+            continue
+        end = filled[unit].ports[port]
+        links[name] = Block("LinkBuffer", buffer_params(depth, end.lanes, end.dtype,
+                                                        cat["LinkBuffer"]), firings[unit])  # fmt: skip
+        bits[name] = flops("LinkBuffer", links[name].params, cat)
+    return units, links, bits
 
 
 def _fixed_ts(graph: Graph, insts: dict[str, Any], members: list[str]) -> dict[str, int | None]:
@@ -181,9 +204,29 @@ def _fixed_ts(graph: Graph, insts: dict[str, Any], members: list[str]) -> dict[s
     return out
 
 
+def datapath_blocks(graph: Graph) -> dict[str, Block]:
+    """Every unit (by name) and buffer link (by container) of a bound graph with the datapath
+    its cost looks up and its params, without stepping the group rule (fires 0): what the
+    design note ``char.missing`` reads."""
+    insts, out = instances(graph), {}
+    for members in graph_groups(graph).values():
+        ends = [(k, *link_ends(graph, k)) for k in links(graph) if k.attrs["from"] in members]
+        units, bufs, _ = _datapath_blocks(graph, insts, members, ends, dict.fromkeys(members, 0))
+        out |= units | bufs
+    return out
+
+
 def groups(graph: Graph, job_width: int = 32) -> list[GroupEstimate]:
     """Every group of a bound graph, in the graph's order (module doc); ``job_width`` the
     platform's ``acc_csr.job_width``."""
+    return [g for g, _, _ in group_blocks(graph, job_width)]
+
+
+def group_blocks(graph: Graph, job_width: int = 32,
+                 ) -> list[tuple[GroupEstimate, dict[str, Block], dict[str, Block]]]:  # fmt: skip
+    """``groups``, each with its units and buffer links to cost (by name and by container,
+    cost.py's ``Block``): per unit its firings over the group's tasks times its span, per
+    buffer link its producer's firings."""
     insts = instances(graph)
     nodes: dict[str, list[Node]] = {}
     for n, _ in graph.walk():
@@ -209,6 +252,7 @@ def groups(graph: Graph, job_width: int = 32) -> list[GroupEstimate]:
             else [{members[0]: n} for n in nodes[members[0]]]
         )
         cycles = bottleneck = 0
+        firings = dict.fromkeys(members, 0)
         for task in tasks:
             values = {u: unit_firings(graph, n, insts[u])[0] for u, n in task.items()}
             writes = job_writes({u: insts[u] for u in task}, values if len(task) > 1 else
@@ -220,18 +264,20 @@ def groups(graph: Graph, job_width: int = 32) -> list[GroupEstimate]:
                 raise EstimateError("estimate.counter", f"group {name}: the group rule does not "
                                     "end")  # fmt: skip
             cycles += end
+            for u in task:
+                firings[u] += values[u]["n"]
             bottleneck = max(bottleneck, *(values[u]["n"] * max(insts[u].initiation_interval,
                                            insts[u].span) for u in members))  # fmt: skip
         ramp = sum(insts[u].latency + insts[u].span - 1 for u in members)
         ramp += sum(k.attrs["depth"] >= 1 for k, _, _ in ends)
         inputs = sum(u["inputs"] for u in rule_units)
-        out.append(GroupEstimate(name, list(members), cycles, bottleneck, ramp,
-                               cycles - bottleneck - ramp, FILL_ONE_INPUT if inputs == 1 else FILL,
-                               [k.attrs["container"] for k, _, _ in ends],
-                               bits=_datapath_bits(graph, insts, members, ends),
-                               ctrl_bits=ctrl_bits(rule_units, rule_links, owner,
-                                                   _fixed_ts(graph, insts, members),
-                                                   job_width)))  # fmt: skip
+        units, bufs, bits = _datapath_blocks(graph, insts, members, ends, firings)
+        g = GroupEstimate(name, list(members), cycles, bottleneck, ramp,
+                          cycles - bottleneck - ramp, FILL_ONE_INPUT if inputs == 1 else FILL,
+                          [k.attrs["container"] for k, _, _ in ends], bits=bits,
+                          ctrl_bits=ctrl_bits(rule_units, rule_links, owner,
+                                              _fixed_ts(graph, insts, members), job_width))  # fmt: skip
+        out.append((g, units, bufs))
     return out
 
 
