@@ -110,8 +110,11 @@ with no flops holds "–".
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
 (the Estimate panel's figures, every sum and share made here, D57), its ``containers_section``
-(the left column's Containers, C§12: each container's shape, sizes, dtype, bytes, placement and
-symbols) and, in edit mode, its
+(the left column's Containers, C§12: each container's shape, sizes, dtype, bytes, placement,
+symbols and its one ``line``), its ``symbols_section`` (each kernel symbol, its value and its
+param) and ``bindings_section`` (each param with the unit, split or link it configures; the
+params come from the session's recipe in edit mode, a sandbox folder's ``recipe.json`` in view
+mode, ``folder_recipe``) and, in edit mode, its
 ``diff`` against the step before (sandbox/session.py). ``compare_view`` gives two steps' diff
 (the session's ``graph_diff``), per Details key the fields that changed, and ``columns``, what
 Compare lays out as two columns (the left step, ``a``, and the right, ``b``): their
@@ -316,6 +319,7 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["summary"] = estimate_summary(est, e.graph) if est is not None else None
     out["containers_section"] = containers_section(e.graph, est)
     out["symbols_section"] = symbols_section(e.graph, recipe, editable)
+    out["bindings_section"] = bindings_section(e.graph, recipe, editable)
     if marks is None:
         from snax_forge.sandbox.session import marks_of
 
@@ -369,6 +373,109 @@ def symbols_section(g: Graph, recipe: Any = None, editable: bool = False) -> lis
         out.append({"name": name, "value": value, "param": param,
                     "editable": bool(editable and param), "containers": users.get(name, [])})  # fmt: skip
     return out
+
+
+# The transforms that split a map by a factor, and the inner maps each makes, by suffix
+SPLITS = {"split": ("_inner",), "split_map": ("_s",), "split_reduce": ("_s", "_final")}
+
+
+def _map_ids(d: Any) -> set[str]:
+    """Every map id in a ``replaced`` subtree (a node's dict)."""
+    out: set[str] = set()
+    if isinstance(d, dict):
+        if d.get("kind") == "map" and d.get("id"):
+            out.add(d["id"])
+        for v in d.values():
+            out |= _map_ids(v)
+    elif isinstance(d, list):
+        for v in d:
+            out |= _map_ids(v)
+    return out
+
+
+def _param_names(v: Any, params: dict[str, Any]) -> list[str]:
+    """The recipe params an int step param names (a factor ``W``, ``W * 2``)."""
+    if not isinstance(v, str):
+        return []
+    try:
+        return [x for x in sorted(expr.names(v)) if x in params]
+    except ExprError:
+        return []
+
+
+def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> dict[str, Any]:
+    """The left column's Bindings (C§12): each param shown with what it configures. The param
+    stays the split's (D68, D73: ``bind`` reads W off the spatial map); a split step on map M
+    configures the unit whose replaced subtree holds the map it made (``M_inner``, ``M_s``,
+    ``split_reduce``'s ``M_final``). ``entries``, in the graph's order:
+
+        unit    per bound instance: its BRM, the lanes its design params give (``W = 8``) and
+                the params of the splits that set them (``acc · elementwise_mul · W = 8``)
+        split   a split whose map is not bound yet: its factor's params (``not bound``)
+        link    a link whose depth a step gives as a param
+
+    Each param ``{name, value, editable, shared_with}``: an input in edit mode
+    (``POST /api/params``), ``shared_with`` the other entries naming it (dot 2–6's ``W``, the
+    multiply's and the sum's). ``unused``: the session's params neither a symbol nor in an
+    entry. Without a recipe (view mode on bare files) the units come from the graph alone,
+    their design params read only."""
+    params = dict(recipe.params) if recipe is not None else {}
+    steps = list(recipe.steps) if recipe is not None else []
+    splits = []  # (map, transform, factor params, inner ids)
+    links = {}  # container -> depth params
+    for st in steps:
+        p = st.params
+        if st.transform in SPLITS:
+            m = p.get("map")
+            inner = re.compile(rf"^{re.escape(str(m))}({'|'.join(SPLITS[st.transform])})(_\d+)?$")
+            splits.append((m, st.transform, _param_names(p.get("factor"), params), inner))
+        elif st.transform == "link":
+            names = _param_names(p.get("depth"), params)
+            if names:
+                links[p.get("container")] = names
+    entries: list[dict[str, Any]] = []
+    used: set[int] = set()
+    seen: set[str] = set()
+    for n, _ in g.walk():
+        if n.kind == "accelerated" and n.attrs["instance"] not in seen:
+            a = n.attrs
+            seen.add(a["instance"])
+            ids = _map_ids(a.get("replaced"))
+            names: list[str] = []
+            for i, (_, _, ps, inner) in enumerate(splits):
+                if any(inner.match(x) for x in ids):
+                    used.add(i)
+                    names += [x for x in ps if x not in names]
+            design = dict(a.get("params") or {})
+            lanes = {k: v for k, v in design.items() if isinstance(v, int)}
+            entries.append({"kind": "unit", "id": a["instance"], "label": f"{a['instance']} · {a['brm']}",
+                            "names": names, "lanes": lanes, "note": None})  # fmt: skip
+        elif n.kind == "link" and n.attrs["container"] in links:
+            c = n.attrs["container"]
+            entries.append({"kind": "link", "id": c, "label": f"link {c} · depth",
+                            "names": links[c], "lanes": {}, "note": None})  # fmt: skip
+    for i, (m, transform, ps, _) in enumerate(splits):
+        node = next((x for x, _ in g.walk() if x.id == m and x.kind == "map"), None)
+        if i in used or node is None or "loop.split" not in node.attrs:
+            continue
+        entries.append({"kind": "split", "id": m, "label": f"{m} {transform}", "names": ps,
+                        "lanes": {}, "note": "not bound"})  # fmt: skip
+    by_name: dict[str, list[str]] = {}
+    for e in entries:
+        for x in e["names"]:
+            by_name.setdefault(x, []).append(e["label"])
+    for e in entries:
+        names = e.pop("names")
+        e["params"] = [{"name": x, "value": params.get(x), "editable": bool(editable and x in params),
+                        "shared_with": [lbl for lbl in by_name[x] if lbl != e["label"]]}
+                       for x in names]  # fmt: skip
+        if not e["params"] and e["lanes"]:  # no recipe param: the design params, read only
+            e["params"] = [{"name": k, "value": v, "editable": False, "shared_with": []}
+                           for k, v in e["lanes"].items()]  # fmt: skip
+    symbol_params = {x["param"] for x in symbols_section(g, recipe) if x["param"]}
+    unused = [{"name": k, "value": v, "editable": editable} for k, v in params.items()
+              if k not in symbol_params and k not in by_name]  # fmt: skip
+    return {"entries": entries, "unused": unused}
 
 
 def _placed_text(placed: Any) -> str | None:

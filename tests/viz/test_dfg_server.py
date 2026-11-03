@@ -209,6 +209,17 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert v["estimate"]["groups"][0]["cycles"] == 16
         # 3 ports x 16 beats x 4 channels over 32 banks: 6 cycles, under 16, no note (D155)
         assert v["estimate"]["groups"][0]["bank_bound"] == 6
+        # the left column's Bindings: the unit with the split's W, an input in edit mode
+        (unit,) = v["bindings_section"]["entries"]
+        assert (unit["label"], unit["params"]) == ("acc · elementwise_add", [
+            {"name": "W", "value": 4, "editable": True, "shared_with": []}])  # fmt: skip
+        assert v["symbols_section"][0] | {"containers": None} == {
+            "name": "N",
+            "value": 64,
+            "param": "N",
+            "editable": True,
+            "containers": None,
+        }
         assert (v["summary"]["groups"][0]["bank_bound"], v["summary"]["groups"][0]["bank_note"]) == (
             6, None)  # fmt: skip
         assert (

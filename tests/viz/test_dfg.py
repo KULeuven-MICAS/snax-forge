@@ -434,6 +434,90 @@ def test_the_symbols_section():
     assert (got["N"]["value"], got["N"]["containers"]) == (512, ["A", "p", "tmp0"])
 
 
+def _editor_vecmul():
+    """vecmul at N = 2048 as the editor builds it: split by a param W = 8, two tags, the bind."""
+    from snax_forge.sandbox import Recipe
+    from snax_forge.sandbox.recipe import Step
+
+    return Recipe("vecmul_e", "vecmul", {"N": 2048, "W": 8}, {"N": "N"}, [
+        Step("split", {"map": "mult_map", "factor": "W"}),
+        Step("tag_map", {"map": "mult_map", "kind": "temporal"}),
+        Step("tag_map", {"map": "mult_map_inner", "kind": "spatial"}),
+        Step("bind", {"node": "mult", "brm": "elementwise_mul",
+                      "implementation": "chisel_tiled_spatial", "instance": "acc"})])  # fmt: skip
+
+
+def _entries(b):
+    return [(e["kind"], e["label"], [(p["name"], p["value"], p["editable"], p["shared_with"])
+                                     for p in e["params"]], e["note"]) for e in b["entries"]]  # fmt: skip
+
+
+@pytest.mark.slow
+def test_the_bindings_of_vecmul_dot_1_and_dot_4():
+    """C§12's Bindings: vecmul's split before its bind (``mult_map split · W = 8 · not bound``),
+    then the unit (``acc · elementwise_mul · W = 8``); dot 1 with W_mul and W_sum, two entries,
+    nothing shared; dot 4 at W = 4, one W shared by mac and sum; a param in none is unused."""
+    from dataclasses import replace
+
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from snax_forge.sandbox.recipe import Step
+    from snax_forge.viz.dfg.api import bindings_section
+    from tests.helpers import REPO, imported, steps
+
+    r = _editor_vecmul()
+    gs = [x.graph for x in apply_recipe(r, imported("vecmul"))]
+    one = bindings_section(gs[1], replace(r, steps=r.steps[:1]), editable=True)
+    assert _entries(one) == [("split", "mult_map split", [("W", 8, True, [])], "not bound")]
+    four = bindings_section(gs[4], r, editable=True)
+    assert _entries(four) == [("unit", "acc · elementwise_mul", [("W", 8, True, [])], None)]
+    assert (
+        four["unused"] == []
+        and not bindings_section(gs[4], r)["entries"][0]["params"][0]["editable"]
+    )
+    d = Recipe.load(REPO / "recipes" / "dot_1.json")
+    factor = {"mult_map": "W_mul", "sum_map": "W_sum"}
+    d = Recipe(d.name, d.kernel, {"N": 2048, "W_mul": 8, "W_sum": 4}, d.symbols,
+               [Step(x.transform, {**x.params, "factor": factor[x.params["map"]]})
+                if "factor" in x.params else x for x in d.steps])  # fmt: skip
+    dot1 = bindings_section(apply_recipe(d, imported("dot"))[-1].graph, d, editable=True)
+    assert _entries(dot1) == [("unit", "mul · elementwise_mul", [("W_mul", 8, True, [])], None),
+                              ("unit", "sum · accumulate", [("W_sum", 4, True, [])], None)]  # fmt: skip
+    d4 = Recipe.load(REPO / "recipes" / "dot_4.json")
+    dot4 = bindings_section(steps("dot_4")[-1], d4, editable=True)
+    assert _entries(dot4) == [("unit", "mac · mac", [("W", 4, True, ["sum · accumulate"])], None),
+                              ("unit", "sum · accumulate", [("W", 4, True, ["mac · mac"])], None)]  # fmt: skip
+    spare = replace(d4, params={**d4.params, "K": 3})
+    assert bindings_section(steps("dot_4")[-1], spare, editable=True)["unused"] == [
+        {"name": "K", "value": 3, "editable": True}]  # fmt: skip
+    bare = bindings_section(steps("dot_4")[-1])  # no recipe: the design params, read only
+    assert [(e["label"], e["params"][0]["name"], e["params"][0]["editable"]) for e in bare["entries"]] == [
+        ("mac · mac", "W", False), ("sum · accumulate", "W", False)]  # fmt: skip
+
+
+@pytest.mark.slow
+def test_view_mode_reads_the_folders_recipe(tmp_path):
+    """A sandbox folder's recipe.json names the params in view mode, read only, up to the step
+    shown; the step views carry the left column's three sections."""
+    from snax_forge.design import Platform
+    from snax_forge.sandbox import apply_recipe, write_steps
+    from snax_forge.viz.dfg.api import folder_recipe, step_view
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import imported
+
+    r = _editor_vecmul()
+    write_steps(r, apply_recipe(r, imported("vecmul")), tmp_path)
+    one, four = (
+        load_entry(p.stem, p) for p in (tmp_path / "1_split.snaxdfg", tmp_path / "4_bind.snaxdfg")
+    )
+    assert len(folder_recipe(one).steps) == 1 and len(folder_recipe(four).steps) == 4
+    v = step_view(four, "4 bind", Platform.load(SNAX_FORGE), recipe=folder_recipe(four))
+    (unit,) = v["bindings_section"]["entries"]
+    assert (unit["label"], unit["params"][0]["name"], unit["params"][0]["editable"]) == (
+        "acc · elementwise_mul", "W", False)  # fmt: skip
+    assert v["symbols_section"][0]["param"] == "N" and not v["symbols_section"][0]["editable"]
+    assert v["containers_section"][0]["line"] == "N · L1 · 16 KiB"
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
     assert plain["rows"][1]["node"]["text"] == "add_map · i · ? · untagged"

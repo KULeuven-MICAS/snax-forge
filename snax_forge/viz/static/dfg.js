@@ -363,6 +363,7 @@ function select(name) {
   outline();
   details();
   containers();
+  bindings();
   if (state.mode === "edit") edit.sidebar();
 }
 
@@ -496,6 +497,47 @@ async function containers() {
   ].filter(Boolean));
 }
 
+// -- the Bindings (the left column, C§12): each param with what it configures -----------------
+
+/** Every entry naming param ``name`` highlighted (hover or focus on one of its inputs). */
+function hlParam(name, on) {
+  for (const el of document.querySelectorAll("#bindings [data-param]")) {
+    el.classList.toggle("param-hl", on && el.dataset.param === name);
+  }
+}
+
+/** One param of an entry: ``W = 8``, an input in edit mode (``POST /api/params``, every entry
+naming it changes with it), what it is shared with. */
+function paramEl(p) {
+  const value = p.value === null || p.value === undefined ? "?" : String(p.value);
+  const shared = p.shared_with && p.shared_with.length ? `shared with ${p.shared_with.join(", ")}` : "";
+  return h("span", { class: "dfg-param", "data-param": p.name, title: shared || `param ${p.name}`,
+    onmouseenter: () => hlParam(p.name, true), onmouseleave: () => hlParam(p.name, false),
+    onfocusin: () => hlParam(p.name, true), onfocusout: () => hlParam(p.name, false) },
+  h("span", { class: "mono" }, `${p.name} = `),
+  p.editable
+    ? h("input", { value, size: Math.max(3, value.length), "aria-label": `param ${p.name}`, onchange: (ev) => edit.setParam(p.name, ev.target) })
+    : h("b", { class: "mono" }, value),
+  shared ? h("small", {}, ` · ${shared}`) : null);
+}
+
+async function bindings() {
+  const box = $("bindings");
+  const v = await view(state.k);
+  const b = v.bindings_section;
+  if (!b) {
+    box.replaceChildren();
+    return;
+  }
+  const rows = b.entries.map((e) => h("div", { class: `dfg-binding ${e.kind}${state.sel === e.id ? " sel" : ""}` },
+    h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(e.id) }, e.label),
+    e.params.map((p) => [" · ", paramEl(p)]),
+    e.note ? h("small", { class: "muted" }, ` · ${e.note}`) : null));
+  const unused = b.unused.length ? h("div", { class: "dfg-binding unused" }, h("span", { class: "muted" }, "unused: "),
+    b.unused.map((p, i) => [i ? ", " : "", paramEl({ ...p, shared_with: [] })])) : null;
+  box.replaceChildren(...(rows.length || unused ? [...rows, unused].filter(Boolean) : [h("p", { class: "muted" }, "Nothing split or bound yet.")]));
+}
+
 // -- the Estimate ------------------------------------------------------------------
 
 function hoverGroup(name, on) {
@@ -601,7 +643,7 @@ async function draw() {
     }
     drawn = now;
     requestAnimationFrame(() => panels.forEach((p) => p._draw && p._draw()));
-    await Promise.all([details(), estimate(), containers(), state.mode === "edit" ? edit.sidebar() : null]);
+    await Promise.all([details(), estimate(), containers(), bindings(), state.mode === "edit" ? edit.sidebar() : null]);
     const broken = state.steps.filter((s) => s.error).length;
     status(broken ? `${broken} of ${state.steps.length} files did not load` : "", broken > 0);
   } catch (e) {

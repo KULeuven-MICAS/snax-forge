@@ -502,6 +502,18 @@ svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 .dfg-sym input { font: inherit; width: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 0.25rem; }
 .dfg-sym.sym-on { box-shadow: 0 0 0 2px var(--data); }
 .c-pill.sym-hl { box-shadow: 0 0 0 2px var(--data); }
+/* the Bindings: a line per bound unit, unbound split and parametrized link; a param's entries
+   highlighted together on hover (dfg.js) */
+.dfg-containers + .dfg-bindings { border-top: 1px solid var(--rule); margin-top: 0.6rem; padding-top: 0.2rem; }
+.dfg-bindings h2 { font-size: 0.975rem; margin: 0.4rem 0 0.4rem; color: var(--muted); font-weight: 600; }
+.dfg-binding { padding: 0.2rem 0.3rem; border-radius: 3px; overflow-wrap: anywhere; font-size: 0.95em; }
+.dfg-binding + .dfg-binding { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
+.dfg-binding.sel { box-shadow: inset 2px 0 0 var(--hl); }
+.dfg-binding.split .dfg-cont-name { font-style: italic; }
+.dfg-param { display: inline-flex; align-items: baseline; gap: 0.15rem; padding: 0 0.2rem; border-radius: 3px; flex-wrap: wrap; }
+.dfg-param input { font: inherit; width: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 0.25rem; }
+.dfg-param small { color: var(--muted); }
+.dfg-param.param-hl { box-shadow: 0 0 0 2px var(--busy); }
 .dfg-transform { border-top: 1px solid var(--rule); }
 .dfg-transform-name { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.2rem; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .dfg-transform-name:hover, .dfg-transform.open .dfg-transform-name { color: var(--hl); }

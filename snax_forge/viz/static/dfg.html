@@ -6,7 +6,8 @@
   (two with Compare): boxes are HTML laid out by CSS, the edges one SVG layer per panel;
   Details, the Estimate, the transforms' forms and every message come from the API as they
   are. The edit-mode parts (data-edit) stay hidden in view mode. The left column (the
-  transforms in edit mode, then the Containers) scrolls on its own.
+  transforms in edit mode, then the Containers with the Symbols, then the Bindings) scrolls on
+  its own.
 -->
 <html lang="en">
 <head>
@@ -40,6 +41,10 @@
       <section id="containers-panel" class="dfg-containers">
         <h2>Containers</h2>
         <div id="containers"></div>
+      </section>
+      <section id="bindings-panel" class="dfg-bindings">
+        <h2>Bindings</h2>
+        <div id="bindings"></div>
       </section>
     </aside>
     <div id="left-handle" class="dfg-col-handle left" role="separator" aria-orientation="vertical" aria-label="left panel width"
