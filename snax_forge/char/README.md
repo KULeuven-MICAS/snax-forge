@@ -1,6 +1,6 @@
 # The cost table: CHAR1's first-order model
 
-`snax_forge/char/<tech>.json` holds, per technology, what snax-forge needs to put an area and an energy beside a design's cycles before any synthesis: the comb area and comb energy per fire of each catalogue block, and a handful of constants for registers and control (D154, C§20). The estimate (`snax_forge/estimate/cost.py`) combines them with counts it already has from the description: each unit's fires, its register bits and the accelerator's cycles. `design.md`, the DFG viewer and the editor show the result as a first-order estimate, every number to 3 significant figures.
+`snax_forge/char/<tech>.json` holds, per technology, what snax-forge needs to put an area and an energy beside a design's cycles before any synthesis: the comb area and comb energy per fire of each catalogue block, and a handful of constants for registers and control (D154, C§20). The estimate (`snax_forge/estimate/cost.py`) combines them with counts it already has from the description: each unit's fires, its register bits and the accelerator's cycles. `design.md`, the DFG viewer and the editor show the result as a first-order estimate, an area to 3 significant figures and an energy to 3 decimals in its unit; the decimals tell two close designs apart and are display precision, not accuracy.
 
 ## What it is and is not
 
@@ -99,7 +99,7 @@ The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.16
 - per task: 1.06 × 167 × 265 × 7.1476 fJ = 335 296 fJ, 0.335 nJ;
 - area: 167 × 5.32 = 888 µm².
 
-**The total**: 25.868 + 0.135 + 0.335 = 26.339 nJ per run, about 26.3 nJ; 61 049 + 1 249 + 888 = 63 186 µm², about 63 200 µm².
+**The total**: 25.868 + 0.135 + 0.335 = 26.339 nJ per run, shown as 26.339 nJ; 61 049 + 1 249 + 888 = 63 186 µm², shown as 63 200 µm². dot 4 at W = 8 is shown as 26.285 nJ.
 
 **Against SYN2** (snax-forge-experiments `results/forge/nangate45/`, the same design synthesized whole and simulated for one task, `char_table.md`'s Model): the kernel is 25.540 nJ, so the model is at 1.031; per part the Mac is 24.912 nJ (1.038), the sum 0.297 nJ (0.456: its inputs change on each of the Mac's 256 fires, which the model does not count) and the control unit 0.331 nJ (1.012). In area DC gives the Mac 61 051 µm² (1.000), the sum 1 282 µm² (0.974) and the control unit 1 750 µm², of which the model's 888 µm² is the flops only (its comb area is left out); the csr's 1 103 µm² is outside the model.
 
