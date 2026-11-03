@@ -158,6 +158,14 @@ The flow's stages are tools of their own. The design point, the generator into `
     wrote out/bundle/vecadd/bundle.json
     no forge_expected.txt: a bundle alone has no SNAX-GVSoC run (pixi run forge writes it)
 
+One catalogue block alone, as an accelerator holds it (CHAR1, C§17), for snax-forge-experiments to synthesize and simulate on its own: `gen-block` takes a JSON list of `{"datapath", "params", "out"}`, checks each against `hw/chisel/blocks.json` and runs `Emit --block` on the same classpath, all in one call:
+
+    echo '[{"datapath": "TreeAccumulate", "params": {"inType": "int64", "outType": "int64", "lanes": 8, "op": "add"}, "out": "out/block/tree"}]' > blocks.json
+    pixi run gen-block blocks.json
+
+    ...
+    wrote out/block/tree: TreeAccumulate_i64_i64_n8, 1 file(s) in sv/
+
 ## 8. The local RTL check
 
 One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL, and the RTL run must print the SNAX-GVSoC run's `forge counter` and `forge data` lines (D123). snax-forge never runs RTL; snax_cluster's `snax-forge-check` does (C§18).

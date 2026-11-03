@@ -18,7 +18,7 @@ hw/chisel/
 ├── blocks.json                         # the datapath catalogue (D130, D147)
 └── src/
     ├── main/scala/snax/forge/
-    │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec
+    │   ├── Emit.scala                  # elaboration entry point and catalogue; --describe, --spec, --block
     │   ├── Datapaths.scala             # the datapath registry (blocks.json)
     │   ├── IntType.scala               # NumPy's integer types as Chisel lanes (D143)
     │   ├── ctrl/                       # GroupCtrl and its control model GroupRule
@@ -48,6 +48,8 @@ Only the outer ports reach the wrapper, which splits each Decoupled port: its da
     pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
 
 (the others from their recipe as it is, named after it; dot_2 to dot_6 with `--set N=16`, matvec_4 to matvec_6 with `--set M=2 --set N=16`). The specs on them: `ShellEmitSpec` (one emit each: the wrapper's ports are the template's for its streamer hjson, plus the group pins; the hierarchy is `bundle.json`'s; `emitted.json` lists every file), `ShellCasesSpec` (vecadd's and vsum's, through snax-gvsoc's shell cases, below), `ShellEndToEndSpec` (the CSR writes of `main.c`, an always-ready streamer: the goldens and the counter of `vectors.json`; each linked variant, dot 2–6 and matvec 4–6, at N 8 and 16 on random data against NumPy's results and the cycles of snax-gvsoc's matching group case, and matvec 4–6 at int32 through the wrapping product q = (−2147478991, 4)) and `ShellRandomSpec`. `TwoGroupsSpec` runs each of dot 1's groups (`mul` and `sum`, `forge/dot_1/`) on its own.
+
+One catalogue block alone (CHAR1, C§17): `Emit --block NAME --params JSON --out DIR` checks the params (`Datapath.check`) and builds `make(params)` as the top module with an asynchronous reset, as inside the wrapper, into `DIR/sv/` with `DIR/emitted.json`; `pixi run gen-block LIST.json` runs a list of them in one java call. The reset comes from `Module.ResetType`: `DatapathModule` takes its `resetType` from `DatapathModule.asyncTop`, which `emitBlock` sets around the construction, so no block, no builder and no wrapper changes, and every other construction keeps Chisel's default. `BlockEmitSpec` emits a block of every datapath (Mac in its three forms, SerialAccumulate at lanes 1 and 8, LinkBuffer at depth 1 and 2) and checks its ports against `blocks.json`'s live ports and pins (a pin of no bits is absent: LinkBuffer's slots at depth 1, SerialAccumulate's `lane` at lanes 1) and every flop on `posedge clock or posedge reset`; `BlockInShellSpec` checks the block alone byte for byte equal to the module inside the accelerator, vsum_tree_w8's TreeAccumulate and dot_5_w1's Mac, and reports dot_5_w1's SerialAccumulate, whose constant `first` firtool folds into the module inside.
 
 ## The shared cases
 
@@ -96,7 +98,7 @@ Elaborated SystemVerilog goes to `out/hw/` (gitignored). RTL is never committed 
 |---|---|
 | `pixi run -e hw chisel-compile` | compile Scala only |
 | `pixi run -e hw chisel-test` | run the chiseltest specs (with the case folders above) |
-| `pixi run -e hw chisel-gen` | elaborate everything to `out/hw/*.sv`; `-- --describe` prints the catalogue, `-- --spec accelerator.json` builds an accelerator |
+| `pixi run -e hw chisel-gen` | elaborate everything to `out/hw/*.sv`; `-- --describe` prints the catalogue, `-- --spec accelerator.json` builds an accelerator, `-- --block NAME --params JSON --out DIR` one catalogue block alone |
 | `pixi run -e hw chisel-fmt` | scalafmt in place |
 | `pixi run -e hw chisel-check` | fail if unformatted (CI uses this) |
 | `pixi run -e hw chisel-clean` | drop build trees, keep the Coursier cache |
