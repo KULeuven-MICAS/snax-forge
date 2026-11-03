@@ -84,12 +84,20 @@ worked out here:
 Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
 tasklet's code and memlets; a unit's BRM, implementation, params, timing, what it replaced, its
 group and accelerator; a link's container, depth and units; a container's shape, dtype, padded
-bytes, writers and readers; a group's units, links and estimated cycles; an accelerator's
+bytes, writers and readers; a group's units, links, estimated cycles and its cost; an accelerator's
 groups; an edge's (keyed ``<from>-><to>``, its ``id``) subset, packing and, at a unit's port,
 the firing loops its memlet runs over and its beats (design/streamers.py's ``port_loops``, as the
 estimate counts them, D151) and whether it has a streamer (a linked port has none). The estimate is the
 step's on the viewer's platform, or none; a graph it cannot judge keeps its message in
 ``estimate_error`` and has no badges.
+
+**The cost** (C§20) is the estimate's on the technology asked for (``tech``, default nangate45),
+worked out here as text, every number to 3 significant figures (estimate/cost.py's ``sig3``):
+a unit's and a buffer link's Details gain ``cost`` after ``timing`` (``found``, its area total,
+comb and flops, its energy per fire, holding per cycle and per task, or "not characterized"), a
+group's its area, energy and control unit; the Estimate panel's ``summary`` per group
+``area_text`` and ``energy_text``, and ``cost`` (the heading, ``CAVEAT``, the accelerator's
+area and energy, the blocks not characterized).
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
@@ -118,6 +126,7 @@ from typing import Any
 from snax_forge import expr
 from snax_forge.brm import BrmError
 from snax_forge.brm.dtypes import bits
+from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import LoadedSet, unique_names
 from snax_forge.design.streamers import (
     accelerator_of,
@@ -128,6 +137,7 @@ from snax_forge.design.streamers import (
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
+from snax_forge.estimate.cost import CAVEAT, heading, sig3
 from snax_forge.expr import ExprError
 
 # A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype
@@ -211,16 +221,16 @@ def entry_summary(e: Entry) -> dict[str, Any]:
 
 
 def graph_view(e: Entry, platform: Any = None, est: Any = None,
-               error: str | None = None) -> dict[str, Any]:  # fmt: skip
+               error: str | None = None, tech: str = DEFAULT_TECH) -> dict[str, Any]:  # fmt: skip
     """The rows, nodes and edges a panel draws, with their compact texts and Details (module
     doc); ``est`` the graph's estimate (or ``error`` why there is none), else made on
-    ``platform``."""
+    ``platform`` and costed on ``tech``."""
     out: dict[str, Any] = entry_summary(e)
     if e.graph is None:
         return out
     g = e.graph
     if est is None and error is None:
-        est, error = _estimated(g, platform)
+        est, error = _estimated(g, platform, tech)
     out["estimate_error"] = error
     placed = est.containers if est is not None else {}
     out.update(
@@ -241,14 +251,16 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
 
 
 def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[str]] | None = None,
-              diff: dict[str, Any] | None = None, est: Any = None) -> dict[str, Any]:  # fmt: skip
+              diff: dict[str, Any] | None = None, est: Any = None,
+              tech: str = DEFAULT_TECH) -> dict[str, Any]:  # fmt: skip
     """One step (module doc): the graph's view, its label, marks, estimate and its summary,
-    and diff."""
+    and diff; the cost on ``tech``."""
     error = None
     if e.graph is not None and est is None:
-        est, error = _estimated(e.graph, platform)
-    out = graph_view(e, platform, est, error)
+        est, error = _estimated(e.graph, platform, tech)
+    out = graph_view(e, platform, est, error, tech)
     out["label"] = label
+    out["tech"] = tech
     if e.graph is None:
         return out
     out["estimate"] = est.to_dict() if est is not None else None
@@ -263,7 +275,8 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     return out
 
 
-def compare_view(a: Entry, b: Entry, platform: Any = None) -> dict[str, Any]:
+def compare_view(a: Entry, b: Entry, platform: Any = None,
+                 tech: str = DEFAULT_TECH) -> dict[str, Any]:  # fmt: skip
     """Two steps compared (``a`` before, ``b`` after): the session's diff of their graphs
     (sandbox/session.py's ``graph_diff``) and, per Details key in either, the fields that
     differ (every field of an item in one only)."""
@@ -271,9 +284,9 @@ def compare_view(a: Entry, b: Entry, platform: Any = None) -> dict[str, Any]:
 
     if a.graph is None or b.graph is None:
         return {"diff": None, "changed": {}, "error": a.error or b.error}
-    (ea, _), (eb, _) = _estimated(a.graph, platform), _estimated(b.graph, platform)
-    da = graph_view(a, platform, ea, None if ea else "")["details"]
-    db = graph_view(b, platform, eb, None if eb else "")["details"]
+    (ea, _), (eb, _) = _estimated(a.graph, platform, tech), _estimated(b.graph, platform, tech)
+    da = graph_view(a, platform, ea, None if ea else "", tech)["details"]
+    db = graph_view(b, platform, eb, None if eb else "", tech)["details"]
     changed = {}
     for key in dict.fromkeys([*da, *db]):
         x, y = da.get(key, {}), db.get(key, {})
@@ -290,13 +303,16 @@ def estimate_summary(est: Any) -> dict[str, Any]:
     """The Estimate panel's figures, every sum and share worked out here (D57): the headline,
     per group ``cycles = bottleneck + ramp [+ stall]`` and its expected COUNTER, the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
-    lane use of each tailed split."""
+    lane use of each tailed split; with a technology per group its area and energy and the
+    accelerator's ``cost`` (module doc)."""
     groups = []
     for g in est.groups:
         terms = f"{g.bottleneck} + {g.ramp}" + (f" + {g.stall}" if g.stall else "")
         groups.append({"name": g.name, "cycles": g.cycles, "bottleneck": g.bottleneck,
                        "ramp": g.ramp, "stall": g.stall, "counter": g.counter,
-                       "channels": g.channels, "formula": f"{g.cycles} = {terms}"})  # fmt: skip
+                       "channels": g.channels, "formula": f"{g.cycles} = {terms}",
+                       "area_text": _um2(g.cost.area) if g.cost else None,
+                       "energy_text": _nj(g.cost.energy) if g.cost else None})  # fmt: skip
     share = est.l1_footprint / est.l1_size if est.l1_size else None
     l1 = {
         "footprint": est.l1_footprint,
@@ -319,15 +335,44 @@ def estimate_summary(est: Any) -> dict[str, Any]:
         "reads": sum(c.reads for c in est.containers.values()),
         "writes": sum(c.writes for c in est.containers.values()),
         "splits": splits,
+        "cost": None if est.tech is None else {
+            "tech": est.tech, "heading": heading(est.tech), "caveat": CAVEAT,
+            "area_text": _um2(est.area), "energy_text": _nj(est.energy),
+            "missing": list(est.missing)},
+    }  # fmt: skip
+
+
+def _um2(x: float) -> str:
+    return f"{sig3(x)} µm²"
+
+
+def _nj(x: float) -> str:
+    return f"{sig3(x)} nJ"
+
+
+def cost_details(c: Any, bits: int, tech: str) -> dict[str, str]:
+    """A unit's or buffer link's Details ``cost`` (module doc), from its ``BlockCost``."""
+    return {
+        "found": f"{c.found} on {tech}" if c.found else f"not characterized on {tech}",
+        "area": f"{_um2(c.total_um2)} (comb {sig3(c.comb_um2)}, flops {sig3(c.flops_um2)})",
+        "per fire": f"{sig3(c.e_fire_pj)} pJ",
+        "holding": f"{sig3(c.e_hold_pj)} pJ per cycle",
+        "per task": f"{_nj(c.task_nj)} ({c.fires} fires, {bits} bits)",
     }
 
 
-def _estimated(g: Graph, platform: Any) -> tuple[Any, str | None]:
-    """The graph's estimate on ``platform``, or None and why not."""
+def group_cost_details(c: Any) -> dict[str, str]:
+    """A group's Details ``cost``: its area and energy and its control unit's."""
+    return {"area": _um2(c.area), "energy": _nj(c.energy),
+            "ctrl": f"{c.ctrl_bits} bits, {_um2(c.ctrl_um2)}, {_nj(c.ctrl_nj)}"}  # fmt: skip
+
+
+def _estimated(g: Graph, platform: Any, tech: str | None = DEFAULT_TECH) -> tuple[Any, str | None]:
+    """The graph's estimate on ``platform``, costed on ``tech``, or None and why not."""
     from snax_forge.estimate import estimate
 
     try:
-        return estimate(g, platform), None
+        return estimate(g, platform, tech), None
     except (ValueError, KeyError, TypeError) as e:  # DfgError, LowerError, BrmError, ...
         return None, str(e)
 
@@ -460,11 +505,24 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
                                              "groups": [x["name"] for x in acc["groups"]]}  # fmt: skip
         for grp in acc["groups"]:
             e = groups.get(grp["name"])
+            shown = {k: v for k, v in e.to_dict().items() if k != "cost"} if e is not None else None
             out[f"group:{grp['name']}"] = {
                 "kind": "group", "accelerator": acc["name"],
                 "units": [u["instance"] for u in grp["units"]], "links": list(grp["links"]),
-                "estimate": e.to_dict() if e is not None else None,
+                "estimate": shown,
+                "cost": group_cost_details(e.cost) if e is not None and e.cost else None,
             }  # fmt: skip
+    for x in groups.values():  # a unit's and a buffer link's cost, after its timing
+        if x.cost is None:
+            continue
+        for n in nodes.values():
+            d = out[f"node:{n.id}"]
+            if n.kind == "accelerated" and n.attrs["instance"] in x.cost.units:
+                d["cost"] = cost_details(x.cost.units[n.attrs["instance"]],
+                                         x.bits.get(n.attrs["instance"], 0), est.tech)  # fmt: skip
+            elif n.kind == "link" and n.attrs["container"] in x.cost.links:
+                c = n.attrs["container"]
+                d["cost"] = cost_details(x.cost.links[c], x.bits.get(c, 0), est.tech)
     ports = est.ports if est is not None else {}
     loops_of: dict[str, Any] = {}
     for edge in view["edges"]:

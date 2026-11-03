@@ -39,7 +39,8 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
     r = Recipe.load(REPO / "recipes" / "dot_2.json")
     write_steps(r, apply_recipe(r, import_kernel(r.kernel)), tmp_path / "sandbox" / "dot_2")
     with served(make_dfg_server([tmp_path / "sandbox" / "dot_2"], 0, platform=PLATFORM)) as srv:
-        assert get_json(srv, "/api/mode") == (200, {"mode": "view"})
+        assert get_json(srv, "/api/mode") == (200, {"mode": "view", "techs": ["nangate45", "nangate15"],
+                                                    "tech": "nangate45"})  # fmt: skip
         status, steps = get_json(srv, "/api/steps")
         assert status == 200 and [s["label"] for s in steps] == [
             "0 input", "1 split_map", "2 bind", "3 split_map", "4 bind", "5 link"]  # fmt: skip
@@ -74,6 +75,32 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
             "tmp0"
         ]
         assert "placement" in c["changed"]["container:tmp0"] and "node:tmp0" in c["changed"]
+        # the cost (C§20): a unit's, a buffer link's and a group's Details, the panel's figures,
+        # every number to 3 significant figures; ?tech= picks the technology, an unknown one 400
+        assert v["details"]["node:sum"]["cost"] == {
+            "found": "measured on nangate45", "area": "1 640 µm² (comb 1 300, flops 340)",
+            "per fire": "2.50 pJ", "holding": "0.457 pJ per cycle",
+            "per task": "0.379 nJ (128 fires, 64 bits)"}  # fmt: skip
+        assert list(v["details"]["node:sum"])[-2:] == ["timing", "cost"]
+        assert v["details"]["node:tmp0"]["cost"]["found"] == "copy on nangate45"
+        assert v["details"]["group:dot"]["cost"] == {
+            "area": "32 200 µm²", "energy": "6.94 nJ", "ctrl": "196 bits, 1 040 µm², 0.193 nJ"}  # fmt: skip
+        assert "cost" not in v["details"]["group:dot"]["estimate"]
+        assert (s["groups"][0]["area_text"], s["groups"][0]["energy_text"]) == (
+            "32 200 µm²",
+            "6.94 nJ",
+        )
+        assert (s["cost"]["heading"], s["cost"]["missing"]) == (
+            "Cost estimate (first-order) on nangate45", [])  # fmt: skip
+        assert "about 20 %" in s["cost"]["caveat"] and v["tech"] == "nangate45"
+        status, v15 = get_json(srv, "/api/step/5?tech=nangate15")
+        assert status == 200 and v15["tech"] == "nangate15"
+        assert v15["summary"]["cost"]["heading"].endswith("nangate15")
+        assert v15["details"]["node:sum"]["cost"]["found"] == "measured on nangate15"
+        assert v15["summary"]["groups"][0]["cycles"] == 130  # the cycles do not change
+        assert get_json(srv, "/api/compare/4/5?tech=nangate15")[0] == 200
+        status, bad = get_json(srv, "/api/step/5?tech=tsmc7")
+        assert status == 400 and bad["code"] == "char.tech"
         assert get_json(srv, "/api/compare/4/9")[0] == 404
         assert get_json(srv, "/api/graphs")[0] == 404  # the old page's routes are gone
         assert get_json(srv, "/api/step/6")[0] == 404
@@ -93,6 +120,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert get_json(srv, "/api/session") == (400, {"code": "session.none", "message":
                                                        "no session is open: POST /api/session first"})  # fmt: skip
         assert get_json(srv, "/api/mode")[1]["platform"] == session.PLATFORM
+        assert get_json(srv, "/api/mode")[1]["tech"] == "nangate45"
         status, s = post(srv, "/api/session", {"kernel": "vecadd", "params": {"N": 64, "W": 4}})
         assert status == 200 and (s["name"], s["cursor"], s["steps"]) == ("vecadd", 0, [])
         assert (s["labels"], s["undo"], s["redo"], s["recipe"]["kernel"]) == (
@@ -134,6 +162,13 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             True,
         )
         assert v["estimate"]["groups"][0]["cycles"] == 16
+        assert (
+            v["summary"]["cost"]["heading"].endswith("nangate45")
+            and "cost" in v["details"]["node:add"]
+        )
+        v15 = get_json(srv, "/api/step/4?tech=nangate15")[1]  # the session caches per technology
+        assert v15["summary"]["cost"]["heading"].endswith("nangate15")
+        assert v15["summary"]["cost"]["area_text"] != v["summary"]["cost"]["area_text"]
         assert post(srv, "/api/cursor", {"k": 2})[1] == {
             "ok": True,
             "cursor": 2,

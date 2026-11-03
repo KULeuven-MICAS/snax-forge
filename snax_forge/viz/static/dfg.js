@@ -10,8 +10,9 @@
 // arrives; then its boxes glide from where they were (glide), unless the
 // browser asks for reduced motion.
 //
-// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>
-// (t, edit mode: that transform's form open for the selection). A selection is a name:
+// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>
+// (t, edit mode: that transform's form open for the selection; tech, the technology the cost
+// estimate is on, one of /api/mode's techs, passed to every step and compare request). A selection is a name:
 // everything of that name is outlined (a link node and its container share one) and Details
 // shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
 
@@ -37,14 +38,14 @@ function status(msg, err = false) {
 
 // -- state ----------------------------------------------------------------------
 
-const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, t: null, session: null, platform: null };
+const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, t: null, session: null, platform: null, tech: null, techs: [] };
 const views = new Map(); // step -> its view, until Reload
 const compares = new Map(); // "j/k" -> the compare answer
 
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
   const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
-  return { k: num(q.get("step")), sel: q.get("sel") || null, cmp: num(q.get("cmp")), t: q.get("t") || null };
+  return { k: num(q.get("step")), sel: q.get("sel") || null, cmp: num(q.get("cmp")), t: q.get("t") || null, tech: q.get("tech") || null };
 }
 
 function writeHash() {
@@ -53,21 +54,33 @@ function writeHash() {
   if (state.sel) q.set("sel", state.sel);
   if (state.cmp !== null) q.set("cmp", String(state.cmp));
   if (state.t && state.sel) q.set("t", state.t);
+  if (state.tech) q.set("tech", state.tech);
   history.replaceState(null, "", `#${q}`);
 }
 
 const clampStep = (k) => Math.min(Math.max(k, 0), state.steps.length - 1);
 
+const techQuery = () => (state.tech ? `?tech=${encodeURIComponent(state.tech)}` : "");
+
 async function view(k) {
-  if (!views.has(k)) views.set(k, await getJSON(`/api/step/${k}`));
+  if (!views.has(k)) views.set(k, await getJSON(`/api/step/${k}${techQuery()}`));
   return views.get(k);
 }
 
 async function compare(j, k) {
   const key = `${j}/${k}`;
-  if (!compares.has(key)) compares.set(key, await getJSON(`/api/compare/${j}/${k}`));
+  if (!compares.has(key)) compares.set(key, await getJSON(`/api/compare/${j}/${k}${techQuery()}`));
   return compares.get(key);
 }
+
+/** The technology dropdown: the server's technologies, the shown one selected. */
+function techOptions() {
+  $("tech").replaceChildren(...state.techs.map((t) => h("option", { value: t }, t)));
+  $("tech").value = state.tech || "";
+}
+
+/** A technology from the hash or the dropdown: one of the server's, else the server's own. */
+const pickTech = (t, fallback) => (state.techs.includes(t) ? t : fallback);
 
 // -- legend ---------------------------------------------------------------------
 
@@ -357,6 +370,7 @@ async function details() {
     const fields = [...new Set([...Object.keys(before || {}), ...Object.keys(after || {})])].filter((f) => f !== "kind");
     const moved = new Set(changed[key] || []);
     const rows = fields.map((f) => {
+      if (f === "cost") return costRows(before, after, a !== null, moved.has(f));
       const one = valueText((after || before)[f]);
       const text = a && moved.has(f)
         ? `${valueText(before ? before[f] : undefined)} → ${valueText(after ? after[f] : undefined)}`
@@ -367,6 +381,22 @@ async function details() {
     out.push(h("div", { class: "c-details" }, h("h3", {}, `${kind} ${state.sel}${where}`), h("dl", { class: "facts" }, rows)));
   }
   box.replaceChildren(...(out.length ? out : [h("p", { class: "muted" }, `${state.sel}: not in this step`)]));
+}
+
+/** Details' cost (api.py's cost_details): a nested list of its texts, each before → after
+where it changed. */
+function costRows(before, after, comparing, moved) {
+  const x = (before && before.cost) || {};
+  const y = (after && after.cost) || {};
+  const shown = (after || before).cost;
+  if (!shown) return [h("dt", {}, "cost"), h("dd", { class: "mono" }, "–")];
+  const keys = [...new Set([...Object.keys(x), ...Object.keys(y)])];
+  const inner = keys.map((k) => {
+    const differs = comparing && moved && x[k] !== y[k];
+    return [h("dt", { class: differs ? "changed" : null }, k),
+      h("dd", { class: differs ? "changed mono" : "mono" }, differs ? `${x[k] ?? "–"} → ${y[k] ?? "–"}` : (y[k] ?? x[k]))];
+  });
+  return [h("dt", { class: moved && comparing ? "changed" : null }, "cost"), h("dd", {}, h("dl", { class: "facts c-cost" }, inner))];
 }
 
 // -- the Estimate ------------------------------------------------------------------
@@ -398,7 +428,18 @@ async function estimate() {
   },
   h("b", {}, g.name), " ",
   h("span", { class: "mono" }, pair(groupWas(g.name, "formula"), g.formula)),
-  h("small", {}, ` COUNTER ${pair(groupWas(g.name, "counter"), g.counter)} · channels ${pair(groupWas(g.name, "channels"), g.channels)}`)));
+  h("small", {}, ` COUNTER ${pair(groupWas(g.name, "counter"), g.counter)} · channels ${pair(groupWas(g.name, "channels"), g.channels)}`
+    + (g.area_text ? ` · ${pair(groupWas(g.name, "area_text"), g.area_text)} · ${pair(groupWas(g.name, "energy_text"), g.energy_text)}` : ""))));
+  const c = s.cost;
+  const pc = p && p.cost ? p.cost : null;
+  const listed = (m) => (m && m.length ? m.join(", ") : "none");
+  const cost = c ? [
+    h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ",
+      h("b", {}, pair(pc ? pc.area_text : null, c.area_text)), " · ",
+      h("b", {}, pair(pc ? pc.energy_text : null, c.energy_text)), " per run"),
+    h("p", { class: "c-est-line" }, "not characterized: ", pair(pc ? listed(pc.missing) : null, listed(c.missing))),
+    h("p", { class: "c-est-line muted" }, c.caveat),
+  ] : [];
   const l1 = s.l1;
   const l1Text = l1.size
     ? `${pair(was((x) => x.l1.footprint_text), l1.footprint_text)} of ${l1.size_text} (${pair(was((x) => x.l1.share_text), l1.share_text)})`
@@ -412,6 +453,7 @@ async function estimate() {
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
     h("p", { class: "c-est-line" }, `reads ${pair(was((x) => x.reads), s.reads)} · writes ${pair(was((x) => x.writes), s.writes)} words`),
     s.splits.length ? h("p", { class: "c-est-line" }, "lanes ", s.splits.map((x) => `${x.map} ${x.text}`).join("; ")) : null,
+    ...cost,
   ].filter(Boolean));
 }
 
@@ -485,6 +527,9 @@ async function load() {
     const mode = await getJSON("/api/mode");
     state.mode = mode.mode;
     state.platform = mode.platform || null;
+    state.techs = mode.techs || [];
+    state.tech = pickTech(want.tech, mode.tech || null);
+    techOptions();
     if (state.mode === "edit") {
       edit.init({ state, status, clear, show, view, writeHash });
       state.session = await edit.session();
@@ -520,6 +565,11 @@ function clear() {
 $("step").addEventListener("change", (ev) => goto(Number(ev.target.value)));
 $("prev").addEventListener("click", () => goto(clampStep(state.k - 1)));
 $("next").addEventListener("click", () => goto(clampStep(state.k + 1)));
+$("tech").addEventListener("change", (ev) => {
+  state.tech = pickTech(ev.target.value, state.tech);
+  clear(); // every view and comparison was on the old technology
+  draw();
+});
 $("compare").addEventListener("change", (ev) => {
   state.cmp = ev.target.checked ? clampStep(state.k - 1) : null;
   draw();
@@ -557,7 +607,12 @@ document.addEventListener("keydown", (ev) => {
 });
 window.addEventListener("hashchange", () => {
   const want = readHash();
-  if (want.k === state.k && want.sel === state.sel && want.cmp === state.cmp && want.t === state.t) return;
+  const tech = pickTech(want.tech, state.tech);
+  if (tech !== state.tech) {
+    state.tech = tech;
+    techOptions();
+    clear();
+  } else if (want.k === state.k && want.sel === state.sel && want.cmp === state.cmp && want.t === state.t) return;
   state.cmp = want.cmp === null ? null : clampStep(want.cmp);
   state.sel = want.sel;
   state.t = want.t;

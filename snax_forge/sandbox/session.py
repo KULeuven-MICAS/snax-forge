@@ -64,9 +64,11 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
     diff(k)              step k against step k − 1: nodes added, removed and changed (attrs,
                          inputs or outputs, the body by its ids), containers added, removed and
                          changed (attrs, or the estimate's placement); empty at step 0
-    estimate(k)          the ideal estimate (estimate/, D151) on the session's platform
+    estimate(k, tech)    the ideal estimate (estimate/, D151) on the session's platform, costed
+                         on ``tech`` (default nangate45, C§20)
 
-``sites``, ``marks`` and ``estimate`` are cached per step (``sites`` per step and selection) and
+``sites``, ``marks`` and ``estimate`` are cached per step (``sites`` per step and selection,
+``estimate`` per step and technology) and
 the caches past a changed step dropped. Every public method holds the session's one lock, so
 the server's threads see one change at a time.
 """
@@ -81,6 +83,7 @@ from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
+from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import repo_root
 from snax_forge.design import Design, Platform, run_checks
 from snax_forge.design.check import CHECKS
@@ -160,7 +163,7 @@ class Session:
             raise SandboxError(f"session {name}: cursor {self.cursor} outside 0..{self.n}")
         self._sites: dict[tuple[int, str], dict[str, Any]] = {}
         self._marks: dict[int, dict[str, list[str]]] = {}
-        self._estimates: dict[int, Estimate] = {}
+        self._estimates: dict[tuple[int, str | None], Estimate] = {}
         self._write()
 
     # -- making one -----------------------------------------------------------------------
@@ -249,7 +252,7 @@ class Session:
         """The cached answers of the steps past ``after``."""
         self._sites = {k: v for k, v in self._sites.items() if k[0] <= after}
         self._marks = {k: v for k, v in self._marks.items() if k <= after}
-        self._estimates = {k: v for k, v in self._estimates.items() if k <= after}
+        self._estimates = {k: v for k, v in self._estimates.items() if k[0] <= after}
 
     def _step(self, k: int) -> Graph:
         if not 0 <= k <= self.n:
@@ -373,10 +376,10 @@ class Session:
         with self._lock:
             return self._diff(k)
 
-    def estimate(self, k: int) -> Estimate:
-        """Step ``k``'s ideal estimate on the session's platform."""
+    def estimate(self, k: int, tech: str | None = DEFAULT_TECH) -> Estimate:
+        """Step ``k``'s ideal estimate on the session's platform, costed on ``tech``."""
         with self._lock:
-            return self._estimate(k)
+            return self._estimate(k, tech)
 
     # -- the answers, under the lock --------------------------------------------------------
 
@@ -401,10 +404,10 @@ class Session:
         self._sites[key] = out
         return out
 
-    def _estimate(self, k: int) -> Estimate:
-        if k not in self._estimates:
-            self._estimates[k] = estimate(self._step(k), self.platform)
-        return self._estimates[k]
+    def _estimate(self, k: int, tech: str | None = DEFAULT_TECH) -> Estimate:
+        if (k, tech) not in self._estimates:
+            self._estimates[k, tech] = estimate(self._step(k), self.platform, tech)
+        return self._estimates[k, tech]
 
     def _diff(self, k: int) -> dict[str, Any]:
         if k == 0:
