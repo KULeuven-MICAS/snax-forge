@@ -352,6 +352,8 @@ def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
     note = ("acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the "
             "ideal 128")  # fmt: skip
     assert r.estimate.bank_notes == ([note] if w == 16 else [])
+    cycles = 2048 // w  # bound, so no unmapped part (D155)
+    assert f"Accelerator cycles: {cycles}. Total: {cycles}. L1 footprint:" in render_design(r)
     assert (f"- {note}." in render_design(r)) == (w == 16)
     point = DesignPoint.load(next(tmp_path.rglob("design_point.json")))
     assert bank_notes(point) == ({"mult_acc": note} if w == 16 else {})
@@ -365,9 +367,11 @@ def test_design_md_counts_unmapped_work_as_cycles():
     when there is none."""
     from snax_forge.report.design import EstimateTable, cycles_line
 
-    some = EstimateTable([], 0, 256, 0, None, unmapped_cycles=256, total_cycles=256)
-    assert cycles_line(some) == ("Accelerator cycles: 0. Unmapped: 256 cycles (256 iterations at "
-                                 "1 cycle each, an assumption). Total: 256.")  # fmt: skip
+    some = EstimateTable(
+        [], 0, 256, 0, None, unmapped_cycles=2048, total_cycles=2048, unmapped_iterations=2048
+    )  # vecmul split by 8 and tagged: 256 not mapped
+    assert cycles_line(some) == ("Accelerator cycles: 0. Unmapped: 2048 cycles (2048 iterations "
+                                 "at 1 cycle each, an assumption). Total: 2048.")  # fmt: skip
     none = EstimateTable([], 256, 0, 0, None, unmapped_cycles=0, total_cycles=256)
     assert cycles_line(none) == "Accelerator cycles: 256. Total: 256."
 

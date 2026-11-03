@@ -392,8 +392,14 @@ def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
     from tests.helpers import steps
 
     platform = Platform.load(SNAX_FORGE)
-    g0, *_, g2 = steps("vecmul", N=2048, W=8)
+    g0, g1, g2 = steps("vecmul", N=2048, W=8)
     a, b = Entry("0_input", Path("0"), g0, None), Entry("2_bind", Path("2"), g2, None)
+    tagged = step_view(Entry("1_split_map", Path("1"), g1, None), "1 split_map", platform)
+    assert [c["value"] for c in tagged["summary"]["cycles"]] == [
+        0,
+        2048,
+        2048,
+    ]  # a tag runs nothing
     s0 = step_view(a, "0 input", platform)["summary"]
     assert [(c["label"], c["value"]) for c in s0["cycles"]] == [
         ("accelerator", 0), ("unmapped", 2048), ("total", 2048)]  # fmt: skip

@@ -55,10 +55,12 @@ def _totals(*graphs):
 
 
 def test_unmapped_work_counts_as_cycles():
-    """D155: an iteration no unit runs counts UNMAPPED_CYCLES_PER_ITERATION (1) cycle, so step 0
-    and the last step compare as cycles. vecmul at N = 2048: 2048 as imported, 256 once split
-    by 8 and tagged (all unmapped), 256 after the bind (all the accelerator's); dot at N = 512:
-    C§19's 1024, 640 and 257 not mapped are its totals."""
+    """D155: an iteration no unit runs counts UNMAPPED_CYCLES_PER_ITERATION (1) cycle over every
+    map, spatial ones included, since a tag alone runs nothing; not_mapped skips the spatial
+    maps as before. vecmul at N = 2048: 2048 as imported, after the split, and after both tags
+    (not mapped 2048, 2048, 256), 256 after the bind, all the accelerator's. dot at N = 512 at
+    C§19's steps: not mapped 1024, 640, 257 as before, totals 1024, 1024 and 1028 (the split
+    moves nothing; split_reduce adds the final sum's 4 lanes)."""
     from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION
     from snax_forge.sandbox import bind
 
@@ -67,14 +69,16 @@ def test_unmapped_work_counts_as_cycles():
     split8 = split(vecmul, "mult_map", 8)
     tagged = tag_map(tag_map(split8, "mult_map", "temporal"), "mult_map_inner", "spatial")
     bound = bind(tagged, "mult", "elementwise_mul", "chisel_tiled_spatial", "acc")
-    assert _totals(vecmul, tagged, bound) == [(0, 2048, 2048, 2048), (0, 256, 256, 256),
-                                              (256, 0, 0, 256)]  # fmt: skip
+    assert _totals(vecmul, split8, tagged, bound) == [
+        (0, 2048, 2048, 2048), (0, 2048, 2048, 2048), (0, 256, 2048, 2048), (256, 0, 0, 256)]  # fmt: skip
     dot = _bound(imported("dot"))
     a = split_map(dot, "mult_map", 4)
     b = split_reduce(a, "sum_map", 4)
-    assert [t[3] for t in _totals(dot, a, b)] == [1024, 640, 257]
+    got = _totals(dot, a, b)
+    assert [t[1] for t in got] == [1024, 640, 257]  # C§19's not_mapped, unchanged
+    assert [t[3] for t in got] == [1024, 1024, 1028]
     d = estimate(b).to_dict()
-    assert (d["unmapped_cycles"], d["total_cycles"]) == (257, 257)
+    assert (d["unmapped_iterations"], d["unmapped_cycles"], d["total_cycles"]) == (1028, 1028, 1028)
 
 
 @pytest.mark.slow

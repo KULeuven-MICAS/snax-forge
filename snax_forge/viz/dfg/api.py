@@ -703,8 +703,8 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
     ]  # fmt: skip
     from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION as PER
 
-    assumption = (f"{est.not_mapped} iterations no unit runs, at {PER} cycle each: an assumption "
-                  "(a core takes several), D155")  # fmt: skip
+    assumption = (f"{est.unmapped_iterations} iterations no unit runs, at {PER} cycle each: an "
+                  "assumption (a core takes several), D155")  # fmt: skip
     return {
         "accelerator_cycles": est.accelerator_cycles,
         "not_mapped": est.not_mapped,
@@ -723,7 +723,7 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
                 "title": "the accelerator's cycles plus the unmapped ones",
             },
         ],
-        "unmapped_note": assumption if est.not_mapped else None,
+        "unmapped_note": assumption if est.unmapped_iterations else None,
         "groups": groups,
         "l1": l1,
         "reads": sum(c.reads for c in est.containers.values()),

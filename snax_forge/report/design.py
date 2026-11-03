@@ -182,7 +182,8 @@ class EstimateTable(Record):
     missing: list[str] = field(default_factory=list)
     cost: list[CostRow] = field(default_factory=list)
     bank_notes: list[str] = field(default_factory=list)  # a group's bank bound over its cycles
-    unmapped_cycles: int = 0  # not_mapped at UNMAPPED_CYCLES_PER_ITERATION (D155)
+    unmapped_cycles: int = 0  # unmapped_iterations at UNMAPPED_CYCLES_PER_ITERATION (D155)
+    unmapped_iterations: int = 0  # over every map, spatial ones included
     total_cycles: int = 0  # accelerator_cycles + unmapped_cycles
 
 
@@ -420,7 +421,9 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
     notes = [g.bank_bound_note for g in e.groups if g.bank_bound_note]
     return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size,
                          e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost,
-                         notes, e.unmapped_cycles, e.total_cycles)  # fmt: skip
+                         notes, unmapped_cycles=e.unmapped_cycles,
+                         unmapped_iterations=e.unmapped_iterations,
+                         total_cycles=e.total_cycles)  # fmt: skip
 
 
 # =============================================================================
@@ -553,7 +556,7 @@ def cycles_line(e: EstimateTable) -> str:
     unmapped = ""
     if e.unmapped_cycles:
         each = f"{PER} cycle{'' if PER == 1 else 's'} each"
-        unmapped = (f" Unmapped: {e.unmapped_cycles} cycles ({e.not_mapped} iterations at "
+        unmapped = (f" Unmapped: {e.unmapped_cycles} cycles ({e.unmapped_iterations} iterations at "
                     f"{each}, an assumption).")  # fmt: skip
     return f"Accelerator cycles: {e.accelerator_cycles}.{unmapped} Total: {e.total_cycles}."
 

@@ -296,8 +296,10 @@ def group_blocks(graph: Graph, job_width: int = 32,
     return out
 
 
-def not_mapped(graph: Graph) -> int:
-    """The iterations no unit runs (module doc)."""
+def not_mapped(graph: Graph, spatial: bool = False) -> int:
+    """The iterations no unit runs (module doc), over every map around them but the spatial
+    ones; with ``spatial``, over every map, spatial ones included: the unmapped work as
+    iterations, since a tag alone runs nothing (lanes only exist once a unit runs them, D155)."""
     symbols = graph.bound_symbols
     total = 0
     for n, outer in graph.walk():
@@ -305,5 +307,5 @@ def not_mapped(graph: Graph) -> int:
         if holds or (n.kind == "tasklet" and not outer):
             loops = [m for m in (*outer, n) if m.kind == "map"] if holds else []
             total += prod(len(map_range(m.attrs["range"], symbols, m.id)) for m in loops
-                          if m.attrs.get("loop.kind") != "spatial")  # fmt: skip
+                          if spatial or m.attrs.get("loop.kind") != "spatial")  # fmt: skip
     return total
