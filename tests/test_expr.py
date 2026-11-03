@@ -159,12 +159,64 @@ def test_max_min_kept_in_stored_form():
         ("max(a)", "max takes exactly two arguments"),
         ("min(a, b, c)", "min takes exactly two arguments"),
         ("max(a=1, b=2)", "max takes exactly two arguments"),
-        ("abs(a)", "call 'abs\\(a\\)' is not allowed"),
+        ("abs(a)", "call 'abs\\(a\\)' is not allowed \\(only max, min and width\\)"),
         ("dace.int32(0)", "is not allowed"),
         ("max(a, 1.5)", "Constant is not allowed"),
     ],
 )
 def test_max_min_rejected(v, message):
+    with pytest.raises(ExprError, match=message):
+        expr.check(v, "field")
+
+
+# =============================================================================
+# width
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("v", "env", "want"),
+    [
+        ("width(t)", {"t": "int64"}, 64),
+        ("width(t)", {"t": "uint8"}, 8),
+        ("lanes * width(outType) * max(accumulate, regOut)",
+         {"lanes": 8, "outType": "int32", "accumulate": 1, "regOut": 0}, 256),
+        ("depth * lanes * width(dtype)", {"depth": 3, "lanes": 4, "dtype": "int16"}, 192),
+    ],
+)  # fmt: skip
+def test_width_is_a_dtypes_bits(v, env, want):
+    got = expr.evaluate(v, env)
+    assert got == want and type(got) is int
+
+
+def test_width_kept_in_stored_form():
+    assert expr.canonical("lanes*width( outType )") == "lanes * width(outType)"
+    assert expr.names("depth * width(dtype)") == {"depth", "dtype"}
+    assert expr.substitute("width(t) * n", {"n": "W"}) == "width(t) * W"
+
+
+@pytest.mark.parametrize(
+    ("v", "env", "message"),
+    [
+        ("width(t)", {"t": 3}, "width of 3, which is not a dtype's name"),
+        ("width(t)", {"t": "int128"}, "which is not a dtype's name"),
+        ("width(t)", {}, "no value for 't'"),
+    ],
+)
+def test_width_of_a_non_dtype_is_refused(v, env, message):
+    with pytest.raises(ExprError, match=message):
+        expr.evaluate(v, env)
+
+
+@pytest.mark.parametrize(
+    ("v", "message"),
+    [
+        ("width(a, b)", "width takes exactly one argument, a name"),
+        ("width(8)", "width takes exactly one argument, a name"),
+        ("width(t=1)", "width takes exactly one argument, a name"),
+    ],
+)
+def test_width_rejected(v, message):
     with pytest.raises(ExprError, match=message):
         expr.check(v, "field")
 

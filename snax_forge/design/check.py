@@ -24,7 +24,8 @@ one (a design point, judged as stored). A new check is registered with
 
 A note is not a refusal: a design that passes every check but has no reason
 to exist as it is (``design.serial_one_lane``: SerialAccumulate at lanes 1,
-the work of TreeAccumulate at lanes 1). ``run_notes`` runs every note
+the work of TreeAccumulate at lanes 1), or that the estimate cannot cost in full
+(``char.missing``: a block the technology's table does not hold). ``run_notes`` runs every note
 registered with ``register_note(code, fn)`` once the checks passed (they
 resolved the instances); a note is a Problem, its ``fix`` the change that
 removes it, and ``note_text`` prints it.
@@ -1068,4 +1069,21 @@ def _design_serial_one_lane(design: Design) -> Iterable[Problem]:
                       f"bind {tree}" if tree in inst.brm.implementations else None)  # fmt: skip
 
 
+def _char_missing(design: Design) -> Iterable[Problem]:
+    """A bound unit or a buffer link the estimate's technology does not characterize
+    (snax_forge/char/'s ``lookup`` None, C§20): its cost counts its comb part as 0."""
+    from snax_forge.char import DEFAULT_TECH, load, lookup
+    from snax_forge.estimate.cycles import datapath_blocks
+
+    table = load(DEFAULT_TECH)
+    for name, b in datapath_blocks(design.graph).items():
+        p = b.params
+        if b.datapath is None or (p and lookup(table, b.datapath, p, p["lanes"], p.get("depth"))):
+            continue
+        at = f" at lanes {p['lanes']}" if "lanes" in p else ""
+        at += f" (depth {p['depth']})" if "depth" in p else ""
+        yield Problem("char.missing", name, f"not characterized: {b.datapath}{at} on {table.tech}")
+
+
 register_note("design.serial_one_lane", _design_serial_one_lane)
+register_note("char.missing", _char_missing)

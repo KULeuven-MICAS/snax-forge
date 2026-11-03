@@ -25,8 +25,11 @@ from snax_forge.gen.rtl import (
     check_unit,
     counter,
     fill,
+    flops,
     group_counter,
+    link_flops,
     live,
+    unit_flops,
     write_accelerator,
     write_fixture,
 )
@@ -374,3 +377,48 @@ def test_a_mac_unit_the_catalogue_refuses(unit, code):
     with pytest.raises(GenError) as e:
         check_unit(_alone(unit), unit, catalogue())
     assert e.value.code == code
+
+
+# =============================================================================
+# flops: the register bits of a unit's and a link's datapath (D154)
+# =============================================================================
+
+
+def test_the_catalogue_has_each_datapaths_flops():
+    assert {k: v["flops"] for k, v in catalogue().items()} == {
+        "ElementwiseLanes": 0, "TreeAccumulate": "width(outType)",
+        "Mac": "lanes * width(outType) * max(accumulate, regOut)",
+        "SerialAccumulate": "width(outType)", "LinkBuffer": "depth * lanes * width(dtype)",
+    }  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    ("datapath", "params", "bits"),
+    [
+        ("ElementwiseLanes", {"lanes": 8, "outType": "int64"}, 0),
+        ("TreeAccumulate", {"inType": "int8", "outType": "int32", "lanes": 8}, 32),
+        ("SerialAccumulate", {"inType": "int64", "outType": "int64", "lanes": 16}, 64),
+        ("Mac", {"outType": "int64", "lanes": 8, "accumulate": True, "regOut": False}, 512),
+        ("Mac", {"outType": "int16", "lanes": 4, "accumulate": False, "regOut": True}, 64),
+        ("Mac", {"outType": "int64", "lanes": 8, "accumulate": False, "regOut": False}, 0),
+        ("LinkBuffer", {"depth": 3, "lanes": 4, "dtype": "uint8"}, 96),
+    ],
+)
+def test_flops_is_the_expression_on_the_params(datapath, params, bits):
+    assert flops(datapath, params, catalogue()) == bits
+
+
+@pytest.mark.parametrize(("accumulate", "reg_out", "bits"), [(True, False, 256), (False, False, 0),
+                                                             (False, True, 256)])  # fmt: skip
+def test_a_units_flops_come_from_its_params_by_the_fill_rule(accumulate, reg_out, bits):
+    """A Mac of 4 int64 lanes: its accumulator or its output register, none plain."""
+    unit = _mac(accumulate, reg_out)
+    assert unit_flops(_alone(unit), unit, catalogue()) == bits
+
+
+def test_a_links_flops_are_its_buffers():
+    """A wire holds nothing; a buffer its depth's beats of its ends' lanes and dtype."""
+    cat = catalogue()
+    assert link_flops(0, 8, "int64", cat) == 0
+    assert [link_flops(d, 8, "int64", cat) for d in (1, 2, 4)] == [512, 1024, 2048]
+    assert link_flops(2, 4, "int8", cat) == 64

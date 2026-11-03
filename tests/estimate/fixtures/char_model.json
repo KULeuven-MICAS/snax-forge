@@ -1,0 +1,137 @@
+{
+ "source": {
+  "snax_forge_experiments": "e8c4e9132ecf53db6a8776040ebc0abb0694d716",
+  "file": "results/char/char_table.md",
+  "table": "Model, Against SYN2: kernel model"
+ },
+ "rows": [
+  {
+   "tech": "nangate45",
+   "recipe": "vecmul",
+   "W": 8,
+   "c_acc": 256,
+   "ctrl_bits": 66,
+   "kernel_nj": 23.265
+  },
+  {
+   "tech": "nangate45",
+   "recipe": "vecmul",
+   "W": 32,
+   "c_acc": 64,
+   "ctrl_bits": 66,
+   "kernel_nj": 23.215
+  },
+  {
+   "tech": "nangate45",
+   "recipe": "vsum_tree",
+   "W": 8,
+   "c_acc": 257,
+   "ctrl_bits": 131,
+   "kernel_nj": 1.369
+  },
+  {
+   "tech": "nangate45",
+   "recipe": "vsum_tree",
+   "W": 32,
+   "c_acc": 65,
+   "ctrl_bits": 131,
+   "kernel_nj": 0.887
+  },
+  {
+   "tech": "nangate45",
+   "recipe": "dot_4",
+   "W": 8,
+   "c_acc": 258,
+   "ctrl_bits": 164,
+   "kernel_nj": 26.285
+  },
+  {
+   "tech": "nangate45",
+   "recipe": "dot_4",
+   "W": 32,
+   "c_acc": 66,
+   "ctrl_bits": 164,
+   "kernel_nj": 25.992
+  },
+  {
+   "tech": "nangate45",
+   "recipe": "dot_5",
+   "W": 8,
+   "c_acc": 265,
+   "ctrl_bits": 167,
+   "kernel_nj": 26.339
+  },
+  {
+   "tech": "nangate45",
+   "recipe": "dot_5",
+   "W": 32,
+   "c_acc": 97,
+   "ctrl_bits": 169,
+   "kernel_nj": 26.555
+  },
+  {
+   "tech": "nangate15",
+   "recipe": "vecmul",
+   "W": 8,
+   "c_acc": 256,
+   "ctrl_bits": 66,
+   "kernel_nj": 7.769
+  },
+  {
+   "tech": "nangate15",
+   "recipe": "vecmul",
+   "W": 32,
+   "c_acc": 64,
+   "ctrl_bits": 66,
+   "kernel_nj": 7.773
+  },
+  {
+   "tech": "nangate15",
+   "recipe": "vsum_tree",
+   "W": 8,
+   "c_acc": 257,
+   "ctrl_bits": 131,
+   "kernel_nj": 0.371
+  },
+  {
+   "tech": "nangate15",
+   "recipe": "vsum_tree",
+   "W": 32,
+   "c_acc": 65,
+   "ctrl_bits": 131,
+   "kernel_nj": 0.214
+  },
+  {
+   "tech": "nangate15",
+   "recipe": "dot_4",
+   "W": 8,
+   "c_acc": 258,
+   "ctrl_bits": 164,
+   "kernel_nj": 8.766
+  },
+  {
+   "tech": "nangate15",
+   "recipe": "dot_4",
+   "W": 32,
+   "c_acc": 66,
+   "ctrl_bits": 164,
+   "kernel_nj": 8.719
+  },
+  {
+   "tech": "nangate15",
+   "recipe": "dot_5",
+   "W": 8,
+   "c_acc": 265,
+   "ctrl_bits": 167,
+   "kernel_nj": 8.782
+  },
+  {
+   "tech": "nangate15",
+   "recipe": "dot_5",
+   "W": 32,
+   "c_acc": 97,
+   "ctrl_bits": 169,
+   "kernel_nj": 8.875
+  }
+ ]
+}

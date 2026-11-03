@@ -25,8 +25,12 @@ the kernel from the run's functional check.
                  (L2), rows or beats
     estimate     the ideal estimate (D151, C§19): per group its cycles, bottleneck,
                  ramp, stall and the COUNTER a run gives (the cycles plus the
-                 streamers' fill), then the accelerator's cycles, the work no unit
-                 runs and the L1 footprint against the L1
+                 streamers' fill) and, on the estimate's technology, its area and
+                 energy; then the accelerator's cycles, the work no unit runs and the
+                 L1 footprint against the L1; then the cost (C§20): per unit, buffer
+                 link and control unit how it is costed, the accelerator's area and
+                 energy, the technology and its table's source, and the blocks the
+                 table does not characterize
     notes        the design notes first (check.py's ``run_notes``: a design that
                  passes but is worth a second look, with its fix); then
                  facts about addresses: movers of the accelerator whose
@@ -42,6 +46,8 @@ from typing import Any
 
 import numpy as np
 
+from snax_forge.char import DEFAULT_TECH
+from snax_forge.estimate.cost import CAVEAT, dec3, heading, sig3
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
 
@@ -137,6 +143,27 @@ class EstimateRow(Record):
     ramp: int
     stall: int
     counter: int
+    area_um2: float | None = None
+    energy_nj: float | None = None
+
+
+@dataclass
+class CostRow(Record):
+    """One unit, buffer link or control unit of the cost (C§20); ``found`` None for a block
+    the table does not hold; ``comb_um2``, ``e_fire_pj`` and ``e_hold_pj`` None for a control
+    unit (its comb part is left out), ``e_hold_pj`` None for a block with no flops."""
+
+    group: str
+    block: str
+    datapath: str | None
+    found: str | None
+    fires: int | None
+    bits: int
+    comb_um2: float | None
+    flops_um2: float
+    e_fire_pj: float | None
+    e_hold_pj: float | None
+    energy_nj: float
 
 
 @dataclass
@@ -146,6 +173,12 @@ class EstimateTable(Record):
     not_mapped: int
     l1_footprint: int
     l1_size: int | None
+    tech: str | None = None
+    char_source: dict[str, str] = field(default_factory=dict)
+    area_um2: float | None = None
+    energy_nj: float | None = None
+    missing: list[str] = field(default_factory=list)
+    cost: list[CostRow] = field(default_factory=list)
 
 
 @dataclass
@@ -290,9 +323,11 @@ def build_design(
     recipe: Any = None,
     kernel: str = "",
     elf_symbols: dict[str, Any] | None = None,
+    tech: str | None = DEFAULT_TECH,
 ) -> DesignReport:
     """The design report of a flow (``point`` its DesignPoint, ``recipe`` its recipe, or for a
-    flow from a bound graph its ``kernel``; ``elf_symbols`` its run.json's)."""
+    flow from a bound graph its ``kernel``; ``elf_symbols`` its run.json's; ``tech`` the
+    estimate's technology, None for no cost)."""
     from snax_forge.design import note_text, run_checks, run_notes
     from snax_forge.design.streamers import accelerated, streamer_name
 
@@ -355,17 +390,30 @@ def build_design(
     return DesignReport(name, header, components, accels, streamers,
                         _memory_tables(cluster, regions, point),
                         design_notes + _notes(cluster, regions, point, streamers), len(a.units),
-                        estimate_table(point))  # fmt: skip
+                        estimate_table(point, tech))  # fmt: skip
 
 
-def estimate_table(point: Any) -> EstimateTable:
-    """The design point's ideal estimate (D151) as the report shows it."""
+def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable:
+    """The design point's ideal estimate (D151) as the report shows it, costed on ``tech``."""
     from snax_forge.estimate import estimate
 
-    e = estimate(point.graph, point.platform)
-    rows = [EstimateRow(g.name, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter)
+    e = estimate(point.graph, point.platform, tech)
+    rows = [EstimateRow(g.name, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter,
+                        g.cost.area if g.cost else None, g.cost.energy if g.cost else None)
             for g in e.groups]  # fmt: skip
-    return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size)
+    cost = []
+    for g in e.groups:
+        if g.cost is None:
+            continue
+        for k, b in (*g.cost.units.items(), *g.cost.links.items()):
+            cost.append(CostRow(g.name, k, b.datapath, b.found, b.fires, g.bits.get(k, 0),
+                                b.comb_um2, b.flops_um2, b.e_fire_pj, b.e_hold_pj or None,
+                                b.task_nj))  # fmt: skip
+        c = g.cost
+        cost.append(CostRow(g.name, "ctrl", "group control unit", None, None, c.ctrl_bits, None,
+                            c.ctrl_um2, None, None, c.ctrl_nj))  # fmt: skip
+    return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size,
+                         e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost)  # fmt: skip
 
 
 # =============================================================================
@@ -496,12 +544,54 @@ def render_estimate(e: EstimateTable) -> list[str]:
             "streamer fill, DMA or core control. A run's COUNTER is the cycles plus the "
             "streamers' fill (3, or 2 for a group with one outer input); its window is longer."),
            ""]  # fmt: skip
-    out += table(["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected COUNTER"],
-                 [[g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter]
-                  for g in e.groups], {1, 2, 3, 4, 5})  # fmt: skip
+    costed = e.tech is not None
+    cols = ["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected COUNTER"]
+    cols += ["Area (µm²)", "Energy (nJ)"] if costed else []
+    out += table(cols, [[g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter]
+                        + ([_shown(g.area_um2), _energy(g.energy_nj)] if costed else [])
+                        for g in e.groups], set(range(1, len(cols))))  # fmt: skip
     l1 = f"{e.l1_footprint} bytes"
     if e.l1_size is not None:
         l1 += f" of {e.l1_size} ({pct(e.l1_footprint / e.l1_size)})"
     out += ["", (f"Accelerator cycles: {e.accelerator_cycles}. Not mapped: {e.not_mapped} "
                  f"iterations no unit runs. L1 footprint: {l1}.")]  # fmt: skip
+    if costed:
+        out += ["", *render_cost(e)]
+    return out
+
+
+def _shown(x: float | None, unit: str = "") -> str | None:
+    """An area as shown (C§20): 3 significant figures."""
+    v = sig3(x)
+    return None if v is None else f"{v}{unit}"
+
+
+def _energy(x: float | None, unit: str = "") -> str | None:
+    """An energy as shown (C§20): 3 decimal places in its unit."""
+    v = dec3(x)
+    return None if v is None else f"{v}{unit}"
+
+
+def render_cost(e: EstimateTable) -> list[str]:
+    """The cost subsection (C§20): how each block is costed, then the accelerator's totals,
+    an area to 3 significant figures, an energy to 3 decimals."""
+    src = e.char_source.get("snax_forge_experiments", "")[:7]
+    out = [f"### {heading(e.tech)}", "", CAVEAT, "",
+           (f"CHAR1's model (D154, C§20) on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
+            f"{src}), per run of the accelerator: a unit or buffer link pays its comb energy per "
+            "fire, from the table as measured, copied (lanes × the lanes-1 point) or "
+            "interpolated, its register bits at e_load in the cycles it fires and e_hold in every "
+            "other cycle; a control unit its bits × e_hold × the counter factor every cycle."), ""]  # fmt: skip
+    out += table(["Group", "Block", "Datapath", "Found", "Fires", "Bits", "Comb (µm²)",
+                  "Flops (µm²)", "e_fire (pJ)", "Hold (pJ/cycle)", "Energy (nJ)"],
+                 [[c.group, c.block, c.datapath,
+                   c.found or ("not characterized" if c.block != "ctrl" else None), c.fires,
+                   c.bits, _shown(c.comb_um2), _shown(c.flops_um2), _energy(c.e_fire_pj),
+                   _energy(c.e_hold_pj), _energy(c.energy_nj)] for c in e.cost],
+                 {4, 5, 6, 7, 8, 9, 10})  # fmt: skip
+    out += ["", (f"Accelerator on {e.tech}: about {_shown(e.area_um2, ' µm²')} and "
+                 f"{_energy(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
+    if e.missing:
+        out += ["", (f"Not characterized on {e.tech} (comb counted as 0, flops counted): "
+                     f"{', '.join(e.missing)}; see the notes.")]  # fmt: skip
     return out

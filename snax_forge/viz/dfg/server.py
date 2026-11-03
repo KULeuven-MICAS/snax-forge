@@ -8,14 +8,22 @@ for them (server.py), with the page ``dfg.html`` at ``/``. One handler serves bo
 **View mode** (``make_dfg_server``, ``pixi run view-dfg``): the given ``.snaxdfg`` files, read
 once and on Reload, as a read-only history, each file a step in the order given (a directory as
 its files in natural order). The estimate is on ``--platform`` when given, else on none.
+Every route that gives a step or a comparison takes ``?tech=<technology>`` (one of
+snax_forge/char/'s, a 400 ``char.tech`` otherwise), the technology its cost is on; without it
+the server's ``--tech`` (default nangate45).
 
-    GET  /api/steps           per step its name, label (``1 split_map``) and load error
+    GET  /api/steps           per step its name, folder, label (``1 split_map``) and load error;
+                              from more than one folder a name is ``<folder>/<stem>`` and the
+                              folder its parent directory's name (api.py), else None
+    GET  /api/find?step=<ref> ``{"k": k}``, the step the URL hash names (api.find_step: its
+                              name, a bare stem one step has, or a number), null for none
     GET  /api/step/<k>        step k's view (api.step_view: the drawing, its compact texts and
                               Details, the marks and the estimate); a file that does not load
                               is its entry with the error, not an HTTP error
     GET  /api/compare/<j>/<k> step j against step k (api.compare_view: the session's diff of the
-                              two graphs and the Details fields that changed), for the page's
-                              Compare
+                              two graphs, the Details fields that changed and the two columns
+                              Compare lays out, step j on the left, each headed by its label,
+                              after its folder when it has one: ``dot4_w8 · 6 link``)
     POST /api/reload          read every file again
 
 **Edit mode** (``make_edit_server``, ``pixi run edit-dfg``): one session (sandbox/session.py)
@@ -51,7 +59,8 @@ Every POST answer, a refusal's too, carries ``log``, the page's log line for it 
 64 → 16``, C the accelerator cycles before and after, the not-mapped count where it changes). A refusal is a 400 with ``{code, message}`` (and
 ``problems`` for a save, ``question`` for ``session.drop``); a route before a session is open is
 a 400 ``session.none``; an unknown route or step is a 404, as in view mode. ``GET /api/mode``
-gives the default ``platform`` too, in edit mode.
+gives the default ``platform`` too, in edit mode, and in both modes ``techs`` (the
+technologies) and ``tech`` (the server's).
 """
 
 from __future__ import annotations
@@ -61,6 +70,8 @@ from collections.abc import Sequence
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
+
+from snax_forge.char import DEFAULT_TECH, TECHS
 
 from ..server import Handler, ViewerServer
 from . import api
@@ -78,9 +89,15 @@ class _Refused(Exception):
 
 
 def _label(name: str) -> str:
-    """A step's label: ``1_split_map`` -> ``1 split_map``."""
-    head, _, tail = name.partition("_")
-    return f"{head} {tail}" if head.isdigit() and tail else name
+    """A step's label, without its folder: ``1_split_map`` and ``dot4_w8/1_split_map`` ->
+    ``1 split_map``."""
+    head, _, tail = name.rpartition("/")[2].partition("_")
+    return f"{head} {tail}" if head.isdigit() and tail else name.rpartition("/")[2]
+
+
+def _heading(e: api.Entry) -> str:
+    """A step's heading in Compare: its label, after its folder when it has one."""
+    return f"{e.folder} · {_label(e.name)}" if e.folder else _label(e.name)
 
 
 class EditState:
@@ -230,7 +247,7 @@ def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any
     return " · ".join(parts)
 
 
-def edit_step(s: Any, k: int) -> dict[str, Any]:
+def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
     """GET /api/step/<k> in edit mode: the step's view with its diff."""
     from snax_forge.dfg import DfgError
 
@@ -239,10 +256,10 @@ def edit_step(s: Any, k: int) -> dict[str, Any]:
     name = s.step_name(k)
     entry = api.Entry(name, s.folder / "export" / f"{name}.snaxdfg", s.graphs[k], None)
     try:
-        est = s.estimate(k)
+        est = s.estimate(k, tech)
     except (ValueError, KeyError, TypeError, DfgError):
         est = None
-    return api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est)
+    return api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est, tech)
 
 
 class DfgHandler(Handler):
@@ -258,13 +275,20 @@ class DfgHandler(Handler):
 
     def _api_get(self, parts: list[str], q: dict[str, list[str]]) -> None:
         if parts == ["mode"]:
-            mode = {"mode": "edit" if self._edit else "view"}
+            mode = {"mode": "edit" if self._edit else "view", "techs": list(TECHS),
+                    "tech": self.server.tech}  # fmt: skip
             if self._edit:
                 mode["platform"] = self.server.loaded.platform
             self._json(mode)
             return
         try:
-            found = self._edit_get(parts) if self._edit else self._view_get(parts)
+            tech = q.get("tech", [self.server.tech])[0]
+            if tech not in TECHS:
+                raise _Refused(
+                    "char.tech", f"no table for technology {tech!r}: one of {list(TECHS)}"
+                )
+            found = (self._edit_get(parts, tech) if self._edit
+                     else self._view_get(parts, tech, q))  # fmt: skip
         except _Refused as e:
             self._refuse(e)
             return
@@ -276,19 +300,27 @@ class DfgHandler(Handler):
             return
         self._json(found)
 
-    def _view_get(self, parts: list[str]) -> Any:
+    def _view_get(self, parts: list[str], tech: str, q: dict[str, list[str]]) -> Any:
         entries = list(self.server.loaded.values())
         if parts == ["steps"]:
-            return [{"name": e.name, "label": _label(e.name), "error": e.error} for e in entries]
+            return [{"name": e.name, "folder": e.folder, "label": _label(e.name), "error": e.error}
+                    for e in entries]  # fmt: skip
+        if parts == ["find"]:
+            if "step" not in q:
+                raise _Refused("request.query", "the query needs 'step'")
+            return {"k": api.find_step([e.name for e in entries], q["step"][0])}
         if len(parts) == 2 and parts[0] == "step":
             k = _index(parts[1], len(entries) - 1)
-            return api.step_view(entries[k], _label(entries[k].name), self.server.platform)
+            return api.step_view(entries[k], _label(entries[k].name), self.server.platform,
+                                 tech=tech)  # fmt: skip
         if len(parts) == 3 and parts[0] == "compare":
             j, k = (_index(x, len(entries) - 1) for x in parts[1:])
-            return {"a": j, "b": k} | api.compare_view(entries[j], entries[k], self.server.platform)
+            labels = (_heading(entries[j]), _heading(entries[k]))
+            return {"a": j, "b": k} | api.compare_view(entries[j], entries[k], self.server.platform,
+                                                       tech, labels)  # fmt: skip
         return None
 
-    def _edit_get(self, parts: list[str]) -> Any:
+    def _edit_get(self, parts: list[str], tech: str) -> Any:
         state = self.server.loaded
         if parts == ["kernels"]:
             return state.kernels()
@@ -302,14 +334,15 @@ class DfgHandler(Handler):
             s = state.need()
             k = _index(parts[1], s.n)
             if len(parts) == 2:
-                return edit_step(s, k)
+                return edit_step(s, k, tech)
             if parts[2] == "site":
                 return s.sites(k, parts[3])
         if len(parts) == 3 and parts[0] == "compare":
             s = state.need()
             j, k = (_index(x, s.n) for x in parts[1:])
             a, b = (api.Entry(s.step_name(x), s.folder, s.graphs[x], None) for x in (j, k))
-            return {"a": j, "b": k} | api.compare_view(a, b, s.platform)
+            labels = (_label(s.step_name(j)), _label(s.step_name(k)))
+            return {"a": j, "b": k} | api.compare_view(a, b, s.platform, tech, labels)
         return None
 
     def _api_post(self, parts: list[Any], body: dict[str, Any]) -> None:
@@ -386,21 +419,31 @@ def _index(text: str, last: int) -> int:
 
 
 def make_dfg_server(paths: Sequence[str | Path], port: int = DEFAULT_PORT, verbose: bool = False,
-                    platform: str | Path | None = None) -> ViewerServer:  # fmt: skip
+                    platform: str | Path | None = None,
+                    tech: str = DEFAULT_TECH) -> ViewerServer:  # fmt: skip
     """View mode: load the files and bind the server (port 0 = any free port); does not serve
-    yet. ``platform`` is the estimate's."""
+    yet. ``platform`` is the estimate's, ``tech`` its cost's unless a request names one."""
     srv = ViewerServer(api.GraphSet(paths), port, verbose, DfgHandler, "dfg.html")
     srv.platform = _platform(platform)  # type: ignore[attr-defined]
+    srv.tech = _tech(tech)  # type: ignore[attr-defined]
     return srv
 
 
 def make_edit_server(port: int = EDIT_PORT, verbose: bool = False, platform: str | None = None,
-                     roots: Any = None) -> ViewerServer:  # fmt: skip
+                     roots: Any = None, tech: str = DEFAULT_TECH) -> ViewerServer:  # fmt: skip
     """Edit mode with no session yet (``EditState.open`` starts one); does not serve yet."""
     state = EditState(roots, platform)
     srv = ViewerServer(state, port, verbose, DfgHandler, "dfg.html")  # type: ignore[arg-type]
     srv.platform = _platform(state.platform)  # type: ignore[attr-defined]
+    srv.tech = _tech(tech)  # type: ignore[attr-defined]
     return srv
+
+
+def _tech(tech: str) -> str:
+    """The server's technology, one of snax_forge/char/'s (CharError otherwise)."""
+    from snax_forge.char import load
+
+    return load(tech).tech
 
 
 def _platform(path: str | Path | None) -> Any:

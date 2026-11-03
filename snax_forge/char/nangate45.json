@@ -1,0 +1,79 @@
+{
+ "tech": "nangate45",
+ "clock_ns": 10.0,
+ "units": {
+  "area": "um2",
+  "energy": "pJ",
+  "flop_energy": "fJ per flop per cycle"
+ },
+ "source": {
+  "snax_forge": "e8611d51d5653e4c6e246184831136ec363727f5",
+  "snax_forge_experiments": "6c727da448a1f0b9a18d10e875c9f3fe8c6b5faa",
+  "stimulus": "rand64 seed 0"
+ },
+ "flop": {
+  "area_um2": 5.32,
+  "e_load_fj": 17.1692,
+  "e_hold_fj": 7.1476
+ },
+ "ctrl": {
+  "counter_factor": 1.06
+ },
+ "blocks": {
+  "ElementwiseLanes": [
+   {"params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "op": "add"}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 269.724002, "e_comb_pj": 0.7551538},
+     {"lanes": 8, "comb_um2": 2157.79202, "e_comb_pj": 6.206086},
+     {"lanes": 32, "comb_um2": 8631.168079, "e_comb_pj": 24.76947}
+    ]},
+   {"params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "op": "mul"}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 6912.542033, "e_comb_pj": 11.22932},
+     {"lanes": 8, "comb_um2": 55300.336266, "e_comb_pj": 90.37737},
+     {"lanes": 32, "comb_um2": 221201.345064, "e_comb_pj": 362.2329}
+    ]}
+  ],
+  "Mac": [
+   {"params": {"inTypes": ["int64", "int64"], "opType": "int64", "outType": "int64", "accumulate": true, "regOut": false}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "comb_um2": 7288.134036, "e_comb_pj": 11.45581},
+     {"lanes": 8, "comb_um2": 58325.022285, "e_comb_pj": 92.12816},
+     {"lanes": 32, "comb_um2": 233336.265138, "e_comb_pj": 368.564}
+    ]}
+  ],
+  "TreeAccumulate": [
+   {"params": {"inType": "int64", "outType": "int64", "op": "add"}, "lanes_rule": "interpolate",
+    "points": [
+     {"lanes": 1, "comb_um2": 500.878, "e_comb_pj": 0.744451},
+     {"lanes": 2, "comb_um2": 766.612003, "e_comb_pj": 1.154407},
+     {"lanes": 4, "comb_um2": 1302.602008, "e_comb_pj": 1.85409},
+     {"lanes": 8, "comb_um2": 2371.390018, "e_comb_pj": 3.251319},
+     {"lanes": 16, "comb_um2": 4508.700038, "e_comb_pj": 6.102588},
+     {"lanes": 32, "comb_um2": 8780.660078, "e_comb_pj": 11.74681}
+    ]}
+  ],
+  "SerialAccumulate": [
+   {"params": {"inType": "int64", "outType": "int64"}, "lanes_rule": "interpolate",
+    "points": [
+     {"lanes": 2, "comb_um2": 580.146002, "e_comb_pj": 0.9065919},
+     {"lanes": 4, "comb_um2": 691.600006, "e_comb_pj": 1.049303},
+     {"lanes": 8, "comb_um2": 908.390016, "e_comb_pj": 1.121647},
+     {"lanes": 16, "comb_um2": 1425.228029, "e_comb_pj": 1.313299},
+     {"lanes": 32, "comb_um2": 2354.898052, "e_comb_pj": 1.377349}
+    ]}
+  ],
+  "LinkBuffer": [
+   {"params": {"dtype": "int64"}, "lanes_rule": "copy",
+    "points": [
+     {"lanes": 1, "depth": 1, "comb_um2": 121.295999, "e_comb_pj": 0.112034},
+     {"lanes": 8, "depth": 1, "comb_um2": 966.643994, "e_comb_pj": 0.9135476},
+     {"lanes": 32, "depth": 1, "comb_um2": 3867.639975, "e_comb_pj": 3.668982},
+     {"lanes": 1, "depth": 2, "comb_um2": 364.951998, "e_comb_pj": 0.9609106},
+     {"lanes": 1, "depth": 4, "comb_um2": 590.786015, "e_comb_pj": 1.286661},
+     {"lanes": 1, "depth": 8, "comb_um2": 1168.006035, "e_comb_pj": 1.305778},
+     {"lanes": 1, "depth": 16, "comb_um2": 2411.290068, "e_comb_pj": 1.536342}
+    ]}
+  ]
+ }
+}

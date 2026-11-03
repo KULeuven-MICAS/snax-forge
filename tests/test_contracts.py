@@ -97,6 +97,7 @@ def test_snippet_is_verbatim(i):
         "## 17. Accelerator RTL spec",
         "## 18. Bundle",
         "## 19. Estimate",
+        "## 20. Cost model",
     ],
 )
 def test_section_exists(heading):

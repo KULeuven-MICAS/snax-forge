@@ -129,7 +129,7 @@ FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
 PARAMS_RULE = "unit.params."
 
 
-def fill(acc: Accelerator, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
+def fill(acc: Accelerator | None, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
     """The datapath's params of ``unit`` by the catalogue's fill rule (``FILL_RULES``)."""
     out = {}
     for name, rule in sig["fill"].items():
@@ -149,7 +149,13 @@ def link_params(acc: Accelerator, link: Link, sig: Mapping[str, Any]) -> dict[st
     (equal at both ends, a reader's check)."""
     unit, port = link.from_.split(".", 1)
     end = next(u for g in acc.groups for u in g.units if u.name == unit).ports[port]
-    have = {"link.depth": link.depth, "link.lanes": end.lanes, "link.dtype": end.dtype}
+    return buffer_params(link.depth, end.lanes, end.dtype, sig)
+
+
+def buffer_params(depth: int, lanes: int, dtype: str, sig: Mapping[str, Any]) -> dict[str, Any]:
+    """A ``LinkBuffer``'s params by its fill rule from a link's depth and its ends' lanes and
+    dtype."""
+    have = {"link.depth": depth, "link.lanes": lanes, "link.dtype": dtype}
     out = {}
     for name, rule in sig["fill"].items():
         if rule not in have:
@@ -174,12 +180,32 @@ def live(entries: Any, params: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def value(v: int | str, params: Mapping[str, Any]) -> int:
-    """A catalogue latency or span: an int, or an ``expr.py`` expression over the params (a bool
-    as 0 or 1)."""
+    """A catalogue latency, span or ``flops``: an int, or an ``expr.py`` expression over the
+    params (a bool as 0 or 1, a dtype param by its name for ``width``)."""
     if isinstance(v, int):
         return v
-    env = {k: int(x) for k, x in params.items() if isinstance(x, (bool, int))}
+    env = {k: int(x) if isinstance(x, (bool, int)) else x for k, x in params.items()
+           if isinstance(x, (bool, int, str))}  # fmt: skip
     return expr.evaluate(v, env)
+
+
+def flops(datapath: str, params: Mapping[str, Any], cat: Mapping[str, Any]) -> int:
+    """A catalogue datapath's register bits on its params: its ``flops`` (CHAR1's cost model
+    prices a register as its bits, D154)."""
+    return value(cat[datapath]["flops"], params)
+
+
+def unit_flops(acc: Accelerator | None, unit: Unit, cat: Mapping[str, Any]) -> int:
+    """The register bits of ``unit``'s datapath, its params by the fill rule."""
+    return flops(unit.datapath, fill(acc, unit, cat[unit.datapath]), cat)
+
+
+def link_flops(depth: int, lanes: int, dtype: str, cat: Mapping[str, Any]) -> int:
+    """A link's register bits: a wire none, a buffer its ``LinkBuffer``'s on the link's depth
+    and its ends' lanes and dtype."""
+    if depth == 0:
+        return 0
+    return flops("LinkBuffer", buffer_params(depth, lanes, dtype, cat["LinkBuffer"]), cat)
 
 
 def check_params(datapath: str, params: Mapping[str, Any], sig: Mapping[str, Any]) -> None:

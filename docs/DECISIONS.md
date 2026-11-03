@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D154**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D155**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -25,7 +25,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | sandbox | D72 D73 |
 | design | D12 D84–D87 D131 D142 |
 | flow | D50 D108 D136 |
-| estimate | D151 |
+| estimate | D151 D154 |
 | viz | D55 D57 D99 |
 | docs | D26 D46 D117 |
 
@@ -195,3 +195,5 @@ Retired, and where each now lives:
 **D152** · scope — `<tag>_csr` is the accelerator's interface, what an HLS block leaves to its driver, so `<tag>_ctrl` and `<tag>_datapath` compare with the whole HLS block: START a strobe that reads 0, STATUS's done bit and COUNTER kept there from ctrl's busy and done pulse, and every CSR at its width, the platform's `acc_csr` (JOBS and JOB_BEATS job_width, a saturating COUNTER counter_width). → C§13, C§17.
 
 **D153** · brm — A group's control unit counts per segment with no product: a unit at L 0 on a wire borrows its consumer's test, any other counts its results in mixed radix over the Ts after it and JOBS, all at job_width; so dot 2 and 3 lose the 32 × 32 multiplier and dot 3 a count per unit. SnaxGroupRule's flat count of firings stays the spec. → C§17, `GroupRule.scala`.
+
+**D154** · estimate — CHAR1's first-order cost model, from the description before any synthesis: registers are bits (e_load when loading, e_hold every cycle), a block its comb energy per fire, ctrl its bits × e_hold × a factor; the table `snax_forge/char/<tech>.json`. An early estimate (about 20 % on the large costs), shown so. → C§20.

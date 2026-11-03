@@ -10,8 +10,10 @@
 // arrives; then its boxes glide from where they were (glide), unless the
 // browser asks for reduced motion.
 //
-// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>
-// (t, edit mode: that transform's form open for the selection). A selection is a name:
+// The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>
+// (step and cmp, view mode: the steps' names, dot4_w8/6_link from several folders, and an old
+// hash's bare stem or number still opens its step, /api/find; edit mode: numbers; t, edit mode: that transform's form open for the selection; tech, the technology the cost
+// estimate is on, one of /api/mode's techs, passed to every step and compare request). A selection is a name:
 // everything of that name is outlined (a link node and its container share one) and Details
 // shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
 
@@ -37,37 +39,65 @@ function status(msg, err = false) {
 
 // -- state ----------------------------------------------------------------------
 
-const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, t: null, session: null, platform: null };
+const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, t: null, session: null, platform: null, tech: null, techs: [] };
 const views = new Map(); // step -> its view, until Reload
 const compares = new Map(); // "j/k" -> the compare answer
 
+const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
+
+/** The hash as written; ``k`` and ``cmp`` are still its text until ``resolve``. */
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
-  const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
-  return { k: num(q.get("step")), sel: q.get("sel") || null, cmp: num(q.get("cmp")), t: q.get("t") || null };
+  return { k: q.get("step") || null, sel: q.get("sel") || null, cmp: q.get("cmp") || null, t: q.get("t") || null, tech: q.get("tech") || null };
 }
+
+/** The hash's steps as numbers: edit mode's are; view mode's are names, an old hash's a bare
+stem or a number, which the server reads (api.py's find_step); none is null. */
+async function resolve(want) {
+  const find = async (ref) => {
+    if (ref === null || state.mode === "edit") return num(ref);
+    const i = state.steps.findIndex((s) => s.name === ref);
+    return i >= 0 ? i : (await getJSON(`/api/find?step=${encodeURIComponent(ref)}`)).k;
+  };
+  return { ...want, k: await find(want.k), cmp: await find(want.cmp) };
+}
+
+/** A step as the hash holds it: view mode its name, edit mode its number. */
+const ref = (k) => (state.mode === "view" && state.steps[k] ? state.steps[k].name : String(k));
 
 function writeHash() {
   const q = new URLSearchParams();
-  q.set("step", String(state.k));
+  q.set("step", ref(state.k));
   if (state.sel) q.set("sel", state.sel);
-  if (state.cmp !== null) q.set("cmp", String(state.cmp));
+  if (state.cmp !== null) q.set("cmp", ref(state.cmp));
   if (state.t && state.sel) q.set("t", state.t);
+  if (state.tech) q.set("tech", state.tech);
   history.replaceState(null, "", `#${q}`);
 }
 
 const clampStep = (k) => Math.min(Math.max(k, 0), state.steps.length - 1);
 
+const techQuery = () => (state.tech ? `?tech=${encodeURIComponent(state.tech)}` : "");
+
 async function view(k) {
-  if (!views.has(k)) views.set(k, await getJSON(`/api/step/${k}`));
+  if (!views.has(k)) views.set(k, await getJSON(`/api/step/${k}${techQuery()}`));
   return views.get(k);
 }
 
 async function compare(j, k) {
   const key = `${j}/${k}`;
-  if (!compares.has(key)) compares.set(key, await getJSON(`/api/compare/${j}/${k}`));
+  if (!compares.has(key)) compares.set(key, await getJSON(`/api/compare/${j}/${k}${techQuery()}`));
   return compares.get(key);
 }
+
+/** The technology dropdown: the server's technologies, the shown one selected. */
+function techOptions() {
+  $("tech").replaceChildren(...state.techs.map((t) => h("option", { value: t }, t)));
+  $("tech").value = state.tech || "";
+}
+
+/** A technology from the hash or the dropdown: one of the server's, else the server's own. */
+const pickTech = (t, fallback) => (state.techs.includes(t) ? t : fallback);
 
 // -- legend ---------------------------------------------------------------------
 
@@ -119,14 +149,29 @@ function pill(v, key) {
     h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null);
 }
 
+/** The steps as a dropdown's options; from several folders, an optgroup per folder (the
+steps from one folder in a row), in the order given. */
+function stepOptionNodes(current) {
+  const opt = (s, i) => h("option", { value: i, selected: i === current, class: s.past ? "past" : null }, s.label);
+  if (!state.steps.some((s) => s.folder)) return state.steps.map(opt);
+  const groups = [];
+  state.steps.forEach((s, i) => {
+    const last = groups[groups.length - 1];
+    if (last && last.folder === s.folder) last.options.push(opt(s, i));
+    else groups.push({ folder: s.folder, options: [opt(s, i)] });
+  });
+  return groups.map((g) => h("optgroup", { label: g.folder || "" }, g.options));
+}
+
 function stepSelect(current, onChange) {
   return h("select", { "aria-label": "step", onchange: (ev) => onChange(Number(ev.target.value)) },
-    state.steps.map((s, i) => h("option", { value: i, selected: i === current, class: s.past ? "past" : null }, s.label)));
+    stepOptionNodes(current));
 }
 
 /** One panel: a step's drawing; with ``pick``, its own step dropdown (Compare). */
 function panel(v, k, pick) {
   const head = h("div", { class: "c-panel-head" },
+    v.folder ? h("span", { class: "muted" }, `${v.folder} · `) : null,
     pick ? stepSelect(k, pick) : h("b", {}, v.label),
     h("span", { class: "muted" }, v.graph ? ` ${v.graph}` : ""));
   if (v.error) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error));
@@ -338,40 +383,63 @@ function valueText(v) {
   return String(v);
 }
 
-/** Details: every item of the selected name, a labelled list; with Compare, before → after. */
+/** Compare's two columns (api.py's compare_view ``columns``): a label column and the two
+steps' texts, the left step first, rows that differ marked; a row's ``under`` opens a section. */
+function columnsTable(labels, rows) {
+  const body = [];
+  let under = null;
+  for (const r of rows) {
+    if (r.under && r.under !== under) body.push(h("tr", { class: "c-cols-section" }, h("th", { colspan: 3 }, r.under)));
+    under = r.under;
+    body.push(h("tr", { class: r.differs ? "differs" : null },
+      h("th", { scope: "row", class: r.under ? "sub" : null }, r.label),
+      h("td", { class: "mono" }, r.a), h("td", { class: "mono" }, r.b)));
+  }
+  return h("table", { class: "c-cols" },
+    h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", { scope: "col" }, labels[0]), h("th", { scope: "col" }, labels[1]))),
+    h("tbody", {}, body));
+}
+
+/** Details: every item of the selected name, a labelled list; with Compare, two columns. */
 async function details() {
   const box = $("details");
   if (!state.sel) {
     box.replaceChildren(h("p", { class: "muted" }, "Click a box, a container, an edge or a group outline; Esc clears."));
     return;
   }
-  const b = await view(state.k);
-  const a = state.cmp !== null ? await view(state.cmp) : null;
-  const changed = a ? (await compare(state.cmp, state.k)).changed : {};
   const out = [];
+  if (state.cmp !== null) {
+    const c = (await compare(state.cmp, state.k)).columns;
+    for (const kind of KINDS) {
+      const d = c ? c.details[`${kind}:${state.sel}`] : undefined;
+      if (!d) continue;
+      out.push(h("div", { class: "c-details" }, h("h3", {}, `${kind} ${state.sel}${d.where ? ` (${d.where})` : ""}`),
+        columnsTable(c.labels, d.rows)));
+    }
+    box.replaceChildren(...(out.length ? out : [h("p", { class: "muted" }, `${state.sel}: in neither step`)]));
+    return;
+  }
+  const b = await view(state.k);
   for (const kind of KINDS) {
     const key = `${kind}:${state.sel}`;
-    const before = a && a.details ? a.details[key] : undefined;
-    const after = b.details ? b.details[key] : undefined;
-    if (before === undefined && after === undefined) continue;
-    const fields = [...new Set([...Object.keys(before || {}), ...Object.keys(after || {})])].filter((f) => f !== "kind");
-    const moved = new Set(changed[key] || []);
-    const rows = fields.map((f) => {
-      const one = valueText((after || before)[f]);
-      const text = a && moved.has(f)
-        ? `${valueText(before ? before[f] : undefined)} → ${valueText(after ? after[f] : undefined)}`
-        : one;
-      return [h("dt", { class: moved.has(f) ? "changed" : null }, f), h("dd", { class: moved.has(f) ? "changed mono" : "mono" }, text)];
-    });
-    const where = a ? (before === undefined ? " (added)" : after === undefined ? " (removed)" : "") : "";
-    out.push(h("div", { class: "c-details" }, h("h3", {}, `${kind} ${state.sel}${where}`), h("dl", { class: "facts" }, rows)));
+    const item = b.details ? b.details[key] : undefined;
+    if (item === undefined) continue;
+    const rows = Object.keys(item).filter((f) => f !== "kind").map((f) => (f === "cost"
+      ? costRows(item.cost)
+      : [h("dt", {}, f), h("dd", { class: "mono" }, valueText(item[f]))]));
+    out.push(h("div", { class: "c-details" }, h("h3", {}, `${kind} ${state.sel}`), h("dl", { class: "facts" }, rows)));
   }
   box.replaceChildren(...(out.length ? out : [h("p", { class: "muted" }, `${state.sel}: not in this step`)]));
 }
 
-// -- the Estimate ------------------------------------------------------------------
+/** Details' cost (api.py's cost_details): a nested list of its texts. */
+function costRows(cost) {
+  if (!cost) return [h("dt", {}, "cost"), h("dd", { class: "mono" }, "–")];
+  const inner = Object.entries(cost).map(([k, v]) => [h("dt", {}, k), h("dd", { class: "mono" }, v)]);
+  return [h("dt", {}, "cost"), h("dd", {}, h("dl", { class: "facts c-cost" }, inner))];
+}
 
-const pair = (a, b) => (a === null ? String(b) : String(a) === String(b) ? String(b) : `${a} → ${b}`);
+// -- the Estimate ------------------------------------------------------------------
 
 function hoverGroup(name, on) {
   for (const el of document.querySelectorAll(`#graphs [data-group="${CSS.escape(name)}"]`)) el.classList.toggle("hover", on);
@@ -379,39 +447,44 @@ function hoverGroup(name, on) {
 
 async function estimate() {
   const box = $("estimate");
+  if (state.cmp !== null) { // Compare: the server's two columns, the left step first
+    const cmp = await compare(state.cmp, state.k);
+    if (!cmp.columns) {
+      box.replaceChildren(h("p", { class: "load-error" }, cmp.error || "no estimate"));
+      return;
+    }
+    box.replaceChildren(...[columnsTable(cmp.columns.labels, cmp.columns.estimate),
+      cmp.columns.caveat ? h("p", { class: "c-est-line muted" }, cmp.columns.caveat) : null].filter(Boolean));
+    return;
+  }
   const b = await view(state.k);
-  const a = state.cmp !== null ? await view(state.cmp) : null;
   if (b.estimate_error || !b.summary) {
     box.replaceChildren(h("p", { class: "load-error" }, b.estimate_error || b.error || "no estimate"));
     return;
   }
   const s = b.summary;
-  const p = a && a.summary ? a.summary : null;
-  const was = (f) => (p ? f(p) : null);
-  const groupWas = (name, field) => {
-    if (!p) return null;
-    const g = p.groups.find((x) => x.name === name);
-    return g ? g[field] : "–";
-  };
   const rows = s.groups.map((g) => h("div", {
     class: "c-est-group", onmouseenter: () => hoverGroup(g.name, true), onmouseleave: () => hoverGroup(g.name, false),
   },
   h("b", {}, g.name), " ",
-  h("span", { class: "mono" }, pair(groupWas(g.name, "formula"), g.formula)),
-  h("small", {}, ` COUNTER ${pair(groupWas(g.name, "counter"), g.counter)} · channels ${pair(groupWas(g.name, "channels"), g.channels)}`)));
+  h("span", { class: "mono" }, g.formula),
+  h("small", {}, ` COUNTER ${g.counter} · channels ${g.channels}` + (g.area_text ? ` · ${g.area_text} · ${g.energy_text}` : ""))));
+  const c = s.cost;
+  const cost = c ? [
+    h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", {}, c.area_text), " · ", h("b", {}, c.energy_text), " per run"),
+    h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
+    h("p", { class: "c-est-line muted" }, c.caveat),
+  ] : [];
   const l1 = s.l1;
-  const l1Text = l1.size
-    ? `${pair(was((x) => x.l1.footprint_text), l1.footprint_text)} of ${l1.size_text} (${pair(was((x) => x.l1.share_text), l1.share_text)})`
-    : pair(was((x) => x.l1.footprint_text), l1.footprint_text);
+  const l1Text = l1.size ? `${l1.footprint_text} of ${l1.size_text} (${l1.share_text})` : l1.footprint_text;
   box.replaceChildren(...[
-    h("p", { class: "c-est-head" },
-      h("b", {}, pair(was((x) => x.accelerator_cycles), s.accelerator_cycles)), " cycles · ",
-      h("b", {}, pair(was((x) => x.not_mapped), s.not_mapped)), " not mapped"),
+    h("p", { class: "c-est-head" }, h("b", {}, s.accelerator_cycles), " cycles · ", h("b", {}, s.not_mapped), " not mapped"),
     ...rows,
     h("p", { class: "c-est-line" }, "L1 ", l1Text),
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
-    h("p", { class: "c-est-line" }, `reads ${pair(was((x) => x.reads), s.reads)} · writes ${pair(was((x) => x.writes), s.writes)} words`),
+    h("p", { class: "c-est-line" }, `reads ${s.reads} · writes ${s.writes} words`),
     s.splits.length ? h("p", { class: "c-est-line" }, "lanes ", s.splits.map((x) => `${x.map} ${x.text}`).join("; ")) : null,
+    ...cost,
   ].filter(Boolean));
 }
 
@@ -458,7 +531,7 @@ async function draw() {
 }
 
 function stepOptions() {
-  $("step").replaceChildren(...state.steps.map((s, i) => h("option", { value: i, class: s.past ? "past" : null }, s.label)));
+  $("step").replaceChildren(...stepOptionNodes(null));
 }
 
 /** Edit mode: the session as the server has it (its steps, its cursor shown), or the start
@@ -480,12 +553,16 @@ async function show() {
 
 async function load() {
   status("Loading…");
-  const want = readHash();
+  let want = readHash();
   try {
     const mode = await getJSON("/api/mode");
     state.mode = mode.mode;
     state.platform = mode.platform || null;
+    state.techs = mode.techs || [];
+    state.tech = pickTech(want.tech, mode.tech || null);
+    techOptions();
     if (state.mode === "edit") {
+      want = await resolve(want);
       edit.init({ state, status, clear, show, view, writeHash });
       state.session = await edit.session();
       state.sel = want.sel;
@@ -499,6 +576,7 @@ async function load() {
       return;
     }
     state.steps = await getJSON("/api/steps");
+    want = await resolve(want);
   } catch (e) {
     status(String(e.message || e), true);
     return;
@@ -520,6 +598,11 @@ function clear() {
 $("step").addEventListener("change", (ev) => goto(Number(ev.target.value)));
 $("prev").addEventListener("click", () => goto(clampStep(state.k - 1)));
 $("next").addEventListener("click", () => goto(clampStep(state.k + 1)));
+$("tech").addEventListener("change", (ev) => {
+  state.tech = pickTech(ev.target.value, state.tech);
+  clear(); // every view and comparison was on the old technology
+  draw();
+});
 $("compare").addEventListener("change", (ev) => {
   state.cmp = ev.target.checked ? clampStep(state.k - 1) : null;
   draw();
@@ -555,9 +638,20 @@ document.addEventListener("keydown", (ev) => {
   } else if (ev.key === "ArrowLeft" && state.k > 0) goto(state.k - 1);
   else if (ev.key === "ArrowRight" && state.k < state.steps.length - 1) goto(state.k + 1);
 });
-window.addEventListener("hashchange", () => {
-  const want = readHash();
-  if (want.k === state.k && want.sel === state.sel && want.cmp === state.cmp && want.t === state.t) return;
+window.addEventListener("hashchange", async () => {
+  let want;
+  try {
+    want = await resolve(readHash());
+  } catch (e) {
+    status(String(e.message || e), true);
+    return;
+  }
+  const tech = pickTech(want.tech, state.tech);
+  if (tech !== state.tech) {
+    state.tech = tech;
+    techOptions();
+    clear();
+  } else if (want.k === state.k && want.sel === state.sel && want.cmp === state.cmp && want.t === state.t) return;
   state.cmp = want.cmp === null ? null : clampStep(want.cmp);
   state.sel = want.sel;
   state.t = want.t;

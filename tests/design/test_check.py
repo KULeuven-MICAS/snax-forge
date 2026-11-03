@@ -580,3 +580,43 @@ def test_a_tile_map_is_not_lowered_yet():
     (p,) = problems(design(edit_graph=tile))
     assert (p.code, p.where) == ("connect.temporal", "node add")
     assert "map add_map around add is tile" in p.message
+
+
+# =============================================================================
+# The note char.missing (C§14, C§20)
+# =============================================================================
+
+
+def _missing(graph):
+    from snax_forge.design.check import NOTES, Design
+
+    return [str(p) for p in NOTES["char.missing"](Design(None, graph))]
+
+
+def test_a_block_the_table_does_not_hold_is_noted():
+    """vecadd_i32: an int32 ElementwiseLanes, which nangate45's table (int64) does not hold."""
+    from tests.helpers import steps
+
+    assert _missing(steps("vecadd_i32")[-1]) == [
+        "[char.missing] acc: not characterized: ElementwiseLanes at lanes 4 on nangate45"]  # fmt: skip
+
+
+def test_only_the_block_outside_the_measured_lanes_is_noted():
+    """dot_2 at W = 64: the sum's TreeAccumulate interpolates up to 32 lanes only; the
+    elementwise mul and the depth-1 buffer are copied, so not noted. At W = 8 nothing is."""
+    from tests.helpers import steps
+
+    assert _missing(steps("dot_2", W=64)[-1]) == [
+        "[char.missing] sum: not characterized: TreeAccumulate at lanes 64 on nangate45"]  # fmt: skip
+    assert _missing(steps("dot_2", W=8)[-1]) == []
+
+
+def test_a_buffer_link_is_noted_with_its_depth(monkeypatch):
+    """A LinkBuffer deeper than the measured 16: its lanes and depth in the note."""
+    from snax_forge.estimate import cycles
+    from snax_forge.estimate.cost import Block
+
+    deep = Block("LinkBuffer", {"depth": 32, "lanes": 8, "dtype": "int64"}, 0)
+    monkeypatch.setattr(cycles, "datapath_blocks", lambda g: {"tmp0": deep})
+    assert _missing(None) == [
+        "[char.missing] tmp0: not characterized: LinkBuffer at lanes 8 (depth 32) on nangate45"]  # fmt: skip

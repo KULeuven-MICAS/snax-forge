@@ -17,7 +17,15 @@ import pytest
 
 from snax_forge.dfg import Graph
 from snax_forge.viz.dfg.__main__ import main
-from snax_forge.viz.dfg.api import GraphSet, entry_names, expand, graph_view, load_entry
+from snax_forge.viz.dfg.api import (
+    GraphSet,
+    entry_folders,
+    entry_names,
+    expand,
+    find_step,
+    graph_view,  # fmt: skip
+    load_entry,
+)
 from snax_forge.viz.dfg.server import make_dfg_server
 from tests.helpers import FIXTURES, REPO
 
@@ -63,14 +71,55 @@ def test_files_and_directories(tmp_path):
     assert [f.name for f in files] == [
         "0_input.snaxdfg", "2_bind.snaxdfg", "10_last.snaxdfg", "vecadd.snaxdfg"
     ]  # fmt: skip
-    assert entry_names([Path("a/x.snaxdfg"), Path("b/x.snaxdfg"), Path("x.snaxdfg")]) == [
-        "x", "x-2", "x-3"
-    ]  # fmt: skip
+    assert entry_names(files[:3]) == ["0_input", "2_bind", "10_last"]  # one folder: the stems
     with pytest.raises(FileNotFoundError, match="no such file"):
         expand([tmp_path / "nope"])
     (tmp_path / "empty").mkdir()
     with pytest.raises(FileNotFoundError, match="no .snaxdfg file"):
         expand([tmp_path / "empty"])
+
+
+def test_two_folders_with_the_same_stems_name_their_steps_by_folder(tmp_path):
+    """Two designs' recipe folders with the same stems: each step is ``<folder>/<stem>`` and
+    keeps its folder, in the order the folders were given; one folder keeps the bare stems."""
+    for d in ("dot4_w8", "dot5_w8"):
+        (tmp_path / d).mkdir()
+        shutil.copy(FIXTURES / "vecadd.snaxdfg", tmp_path / d / "0_input.snaxdfg")
+        shutil.copy(FIXTURES / "vecadd_accelerated.snaxdfg", tmp_path / d / "1_bind.snaxdfg")
+    gs = GraphSet([tmp_path / "dot5_w8", tmp_path / "dot4_w8"])
+    assert [(e["name"], e["folder"]) for e in gs.summaries()] == [
+        ("dot5_w8/0_input", "dot5_w8"), ("dot5_w8/1_bind", "dot5_w8"),
+        ("dot4_w8/0_input", "dot4_w8"), ("dot4_w8/1_bind", "dot4_w8")]  # fmt: skip
+    assert gs.get("dot4_w8/1_bind").graph is not None
+    one = GraphSet([tmp_path / "dot4_w8"])
+    assert [(e["name"], e["folder"]) for e in one.summaries()] == [
+        ("0_input", None), ("1_bind", None)]  # fmt: skip
+
+
+def test_files_given_from_two_folders():
+    """Files given one by one: from two folders, named by folder (two folders of one name
+    still made unique); from one, the bare stems."""
+    two = [Path("out/a/x.snaxdfg"), Path("out/b/y.snaxdfg")]
+    assert (entry_names(two), entry_folders(two)) == (["a/x", "b/y"], ["a", "b"])
+    same = [Path("p/a/x.snaxdfg"), Path("q/a/x.snaxdfg"), Path("q/a/z.snaxdfg")]
+    assert entry_names(same) == ["a/x", "a/x-2", "a/z"]
+    one = [Path("out/a/x.snaxdfg"), Path("out/a/./y.snaxdfg")]
+    assert (entry_names(one), entry_folders(one)) == (["x", "y"], [None, None])
+
+
+def test_an_old_hash_finds_its_step():
+    """The URL hash's step: a full name; a bare stem when exactly one step has it (a hash from
+    before the folders); a number (a hash from before the names); else none."""
+    names = ["dot4_w8/0_input", "dot4_w8/6_link", "dot5_w8/0_input", "dot5_w8/7_bind"]
+    assert find_step(names, "dot5_w8/0_input") == 2
+    assert (find_step(names, "6_link"), find_step(names, "7_bind")) == (1, 3)
+    assert find_step(names, "0_input") is None  # in both folders
+    assert (find_step(names, "2"), find_step(names, "4"), find_step(names, "nope")) == (
+        2,
+        None,
+        None,
+    )
+    assert find_step(["0_input", "6_link"], "6_link") == 1  # one folder: the name is the stem
 
 
 def test_a_broken_file_keeps_its_error(tmp_path):
@@ -299,7 +348,7 @@ def test_routes(tmp_path):
         assert status == 200 and ctype == "text/html" and b"dfg.js" in body
         assert get(srv, "/dfg.js")[1] == "text/javascript"
         assert json.loads(get(srv, "/api/steps")[2]) == [
-            {"name": "vecadd", "label": "vecadd", "error": None}
+            {"name": "vecadd", "folder": None, "label": "vecadd", "error": None}
         ]
         assert json.loads(get(srv, "/api/step/0")[2])["rows"][0]["boxes"] == ["A@0", "B@0"]
         for gone in ("/api/graphs", "/api/graph/vecadd", "/api/step/1"):
@@ -364,3 +413,100 @@ def test_dot6_draws_a_buffer_with_its_depth(tmp_path):
         1,
     )
     assert [g["name"] for g in accs[0]["groups"]] == ["dot"]
+
+
+# =============================================================================
+# The cost in Compare and Details (C§12, C§20)
+# =============================================================================
+
+
+def _dot5_steps():
+    from snax_forge.design import Platform
+    from snax_forge.viz.dfg.api import Entry
+    from tests.helpers import steps
+
+    gs = steps("dot_5", W=8, N=2048)
+    return [Entry(str(k), REPO, g, None) for k, g in enumerate(gs)], Platform.load(
+        REPO / "platforms" / "snax_forge.json")  # fmt: skip
+
+
+def _rows(rows, under):
+    return {r["label"]: (r["a"], r["b"], r["differs"]) for r in rows if r["under"] == under}
+
+
+@pytest.mark.slow
+def test_compare_gives_two_columns_when_the_groups_differ():
+    """dot 5's second bind (mac and sum, two groups) against its link (one group, dot): the
+    Estimate in two columns, each side's texts, a group on one side only "–" on the other, the
+    accelerator's cost on both; the Details of mult on both sides, its cost a row per text."""
+    from snax_forge.viz.dfg.api import compare_view, step_view
+
+    e, platform = _dot5_steps()
+    five, six = (step_view(e[k], str(k), platform)["summary"] for k in (5, 6))
+    assert [g["name"] for g in five["groups"]] == ["mac", "sum"]
+    assert [g["name"] for g in six["groups"]] == ["dot"]
+    c = compare_view(e[5], e[6], platform, labels=("5 bind", "6 link"))["columns"]
+    assert c["labels"] == ["5 bind", "6 link"] and "about 20 %" in c["caveat"]
+    rows = c["estimate"]
+    assert not any("→" in r["a"] + r["b"] for r in rows)
+    assert _rows(rows, "accelerator") == {"cycles": ("266", "265", True),
+                                          "not mapped": ("0", "0", False)}  # fmt: skip
+    assert _rows(rows, "group mac")["energy"] == ("26.136 nJ", "–", True)
+    assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
+    assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
+        "area": ("63 400 µm²", "63 200 µm²", True), "energy per run": ("26.413 nJ", "26.339 nJ", True),
+        "not characterized": ("none", "none", False)}  # fmt: skip
+    mult = c["details"]["node:mult"]
+    assert mult["where"] == "" and _rows(mult["rows"], None)["group"] == ("mac", "dot", True)
+    assert _rows(mult["rows"], "cost")["per fire"] == ("97.259 pJ", "97.259 pJ", False)
+    assert _rows(mult["rows"], "cost")["per task"] == (
+        "25.872 nJ (256 fires, 512 bits)", "25.868 nJ (256 fires, 512 bits)", True)  # fmt: skip
+    assert c["details"]["group:mac"]["where"] == "removed"
+    assert c["details"]["group:dot"]["where"] == "added"
+    assert {r["a"] for r in c["details"]["group:dot"]["rows"]} == {"–"}
+    # from the unbound import: no cost on the left
+    first = compare_view(e[0], e[6], platform)["columns"]["estimate"]
+    assert _rows(first, "Cost estimate (first-order) on nangate45")["area"] == (
+        "–",
+        "63 200 µm²",
+        True,
+    )
+    assert step_view(e[0], "0", platform)["summary"]["cost"] is None  # nothing bound
+    assert not any(r["under"] and r["under"].startswith("Cost")
+                   for r in compare_view(e[0], e[1], platform)["columns"]["estimate"])  # fmt: skip
+
+
+@pytest.mark.slow
+def test_compare_gives_two_columns_for_the_same_group():
+    """dot 5 at W = 8 against W = 4: one group, dot, on both sides; its rows side by side, the
+    equal ones unmarked."""
+    from snax_forge.viz.dfg.api import Entry, compare_view
+    from tests.helpers import steps
+
+    e, platform = _dot5_steps()
+    w4 = Entry("w4", REPO, steps("dot_5", W=4, N=2048)[-1], None)
+    rows = compare_view(e[6], w4, platform)["columns"]["estimate"]
+    assert _rows(rows, "group dot") == {
+        "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "COUNTER": ("268", "520", True),
+        "channels": ("17", "9", True), "area": ("63 200 µm²", "32 400 µm²", True),
+        "energy": ("26.339 nJ", "26.615 nJ", True)}  # fmt: skip
+    assert _rows(rows, "memory")["reads"] == ("4096 words", "4096 words", False)
+
+
+def test_value_text_is_the_pages():
+    from snax_forge.viz.dfg.api import value_text
+
+    assert [value_text(v) for v in (None, True, 3, [], ["a", 1], {"W": 8, "op": "add"})] == [
+        "–", "true", "3", "–", "a, 1", '{"W":8,"op":"add"}']  # fmt: skip
+
+
+def test_a_block_with_no_flops_holds_dash():
+    """vecmul's ElementwiseLanes has no register: its Details' holding reads "–"."""
+    from snax_forge.design import Platform
+    from snax_forge.viz.dfg.api import Entry, step_view
+    from tests.helpers import steps
+
+    v = step_view(Entry("v", REPO, steps("vecmul", W=8)[-1], None), "v",
+                  Platform.load(REPO / "platforms" / "snax_forge.json"))  # fmt: skip
+    cost = v["details"]["node:mult"]["cost"]
+    assert cost["holding"] == "–" and cost["per task"].endswith("(8 fires, 0 bits)")

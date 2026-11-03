@@ -9,9 +9,9 @@ import snax.forge.shell.AcceleratorSpec
 /** The datapath catalogue: name -> signature and builder (D129, D130, D147, D149; C§17's datapath catalogue).
   *
   * The signature is what `hw/chisel/blocks.json` holds and `Emit --describe` prints: the params with their types and
-  * limits, the data ports with their directions, the latency L and the span its control unit runs it at, its pins (the
-  * enables it takes from the control unit: `fire`, `first`, `read`, `lane`, `en`, `load`, the slots) and `fill`, how
-  * each param comes from the unit (or, for a `LinkBuffer`, the link) of `accelerator.json`:
+  * limits, the data ports with their directions, the latency L and the span its control unit runs it at, its register
+  * bits (`flops`), its pins (the enables it takes from the control unit: `fire`, `first`, `read`, `lane`, `en`, `load`,
+  * the slots) and `fill`, how each param comes from the unit (or, for a `LinkBuffer`, the link) of `accelerator.json`:
   *
   *   - `inputs.dtype`: the unit's input ports' dtypes, in order (a `dtypes` param), or the first input's (a `dtype`);
   *   - `outputs.dtype`: the output port's dtype;
@@ -21,9 +21,10 @@ import snax.forge.shell.AcceleratorSpec
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
   * "when": {...}}`. `when` is a match: the port or pin exists only when every listed param has that value, decided at
-  * elaboration (`holds`); one without `when` always does. A latency or a span is an int or an expression over the
-  * params in `snax_forge/expr.py`'s grammar, a bool as 0 or 1, which the Python side evaluates
-  * (`snax_forge/gen/rtl.py`).
+  * elaboration (`holds`); one without `when` always does. A latency, a span or `flops` is an int or an expression over
+  * the params in `snax_forge/expr.py`'s grammar, a bool as 0 or 1 and `width(t)` a dtype param's bits, which the Python
+  * side evaluates (`snax_forge/gen/rtl.py`). `flops` is the block's register bits on its params, every flop it
+  * declares: CHAR1's cost model prices a register as its bits (D154); `BlockFlopsSpec` counts them in the emitted SV.
   *
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.
@@ -53,6 +54,7 @@ object Datapaths {
     ports:   Seq[Port],
     latency: ujson.Value,
     span:    ujson.Value,
+    flops:   ujson.Value,
     pins:    Seq[Pin],
     make:    Map[String, ujson.Value] => DatapathModule,
     example: Map[String, ujson.Value]          // the params of Emit's catalogue target
@@ -143,6 +145,7 @@ object Datapaths {
       Seq(Port("a", "in"), Port("b", "in"), Port("out", "out")),
       ujson.Num(0),
       ujson.Num(1),
+      ujson.Num(0),
       Seq.empty,
       p => {
         new ElementwiseLanes(
@@ -172,6 +175,7 @@ object Datapaths {
       Seq(Port("in", "in"), Port("out", "out")),
       ujson.Num(1),
       ujson.Num(1),
+      ujson.Str("width(outType)"),
       Seq(Pin("fire"), Pin("first")),
       p => {
         require(str(p, "op") == "add", s"TreeAccumulate adds, op ${str(p, "op")}")
@@ -202,6 +206,7 @@ object Datapaths {
       ),
       ujson.Str("max(accumulate, regOut)"),
       ujson.Num(1),
+      ujson.Str("lanes * width(outType) * max(accumulate, regOut)"),
       Seq(
         Pin("fire", Seq("accumulate" -> ujson.True)),
         Pin("first", Seq("accumulate" -> ujson.True)),
@@ -236,6 +241,7 @@ object Datapaths {
       Seq(Port("in", "in"), Port("out", "out")),
       ujson.Num(1),
       ujson.Str("lanes"),
+      ujson.Str("width(outType)"),
       Seq(Pin("read"), Pin("lane"), Pin("first")),
       p => {
         new SerialAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
@@ -252,6 +258,7 @@ object Datapaths {
       Seq(Port("in", "in"), Port("out", "out")),
       ujson.Num(1),
       ujson.Num(1),
+      ujson.Str("depth * lanes * width(dtype)"),
       Seq(Pin("load"), Pin("wslot"), Pin("rslot")),
       p => {
         new LinkBuffer(int(p, "depth"), int(p, "lanes"), str(p, "dtype"))
@@ -276,6 +283,7 @@ object Datapaths {
         }),
         "latency" -> d.latency,
         "span"    -> d.span,
+        "flops"   -> d.flops,
         "pins"    -> ujson.Arr.from(d.pins.map { x =>
           if (x.when.isEmpty) ujson.Str(x.name) else ujson.Obj("name" -> x.name, "when" -> ujson.Obj.from(x.when))
         }),

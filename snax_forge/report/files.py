@@ -13,6 +13,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from snax_forge.char import DEFAULT_TECH
 from snax_forge.run import RunError
 
 from ..viz import api
@@ -34,8 +35,10 @@ class Reports:
     out: Path
 
 
-def reports_of(folder: str | Path, out: str | Path | None = None) -> Reports:
-    """Both reports of a flow folder (module doc), not yet written."""
+def reports_of(folder: str | Path, out: str | Path | None = None,
+               tech: str | None = DEFAULT_TECH) -> Reports:  # fmt: skip
+    """Both reports of a flow folder (module doc), not yet written; ``design.md``'s cost on
+    ``tech`` (None: none)."""
     try:
         rv = api.load_run(folder)
     except RunError as e:
@@ -49,13 +52,14 @@ def reports_of(folder: str | Path, out: str | Path | None = None) -> Reports:
         recipe = Recipe.load(flow / "sandbox" / "recipe.json")
     check = rv.outputs.profile.functional_check or {}
     design = build_design(rv.name, rv.cluster, point, recipe, check.get("kernel", ""),
-                          rv.outputs.elf_symbols)  # fmt: skip
+                          rv.outputs.elf_symbols, tech)  # fmt: skip
     return Reports(design, build_run(rv), Path(out) if out is not None else flow / "report")
 
 
-def write_reports(folder: str | Path, out: str | Path | None = None) -> Reports:
+def write_reports(folder: str | Path, out: str | Path | None = None,
+                  tech: str | None = DEFAULT_TECH) -> Reports:  # fmt: skip
     """Build and write ``design.md`` and ``run.md``; returns what was written."""
-    r = reports_of(folder, out)
+    r = reports_of(folder, out, tech)
     r.out.mkdir(parents=True, exist_ok=True)
     (r.out / DESIGN_MD).write_text(render_design(r.design))
     (r.out / RUN_MD).write_text(render_run(r.run))
