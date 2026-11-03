@@ -32,6 +32,7 @@ import functools
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
+from itertools import pairwise
 from pathlib import Path
 from typing import Any
 
@@ -86,7 +87,7 @@ def load(tech: str) -> Table:
 def _between(x: int, pts: list[tuple[int, Lookup]]) -> Lookup | None:
     """Linear in ``x`` between the two points around it (``pts`` by key); None outside."""
     pts = sorted(pts, key=lambda p: p[0])
-    for (a, pa), (b, pb) in zip(pts, pts[1:]):
+    for (a, pa), (b, pb) in pairwise(pts):
         if a < x < b:
             t = (x - a) / (b - a)
             return Lookup(pa.comb_um2 + t * (pb.comb_um2 - pa.comb_um2),

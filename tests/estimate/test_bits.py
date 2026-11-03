@@ -125,5 +125,6 @@ def test_ctrl_bits_equal_syn2s(syn2, capsys):
                      f"{g.ctrl_bits - r['ctrl']:+d} |")  # fmt: skip
     with capsys.disabled():
         print("\nctrl bits, counted (estimate/bits.py) against SYN2's (DC):\n" + "\n".join(lines))
-    assert all(g.ctrl_bits == r["ctrl"] for r, g in syn2), [r["point"] for r, g in syn2
-                                                             if g.ctrl_bits != r["ctrl"]]
+    assert all(g.ctrl_bits == r["ctrl"] for r, g in syn2), [
+        r["point"] for r, g in syn2 if g.ctrl_bits != r["ctrl"]
+    ]
