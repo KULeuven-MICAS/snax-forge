@@ -3,7 +3,8 @@
     estimate(graph, platform=None) -> Estimate
 
 What a mapping buys before any run: per group the exact cycles of snax-gvsoc's group rule on
-ideal streams, split into bottleneck, ramp and stall (cycles.py), and the data side, per
+ideal streams, split into bottleneck, ramp and stall, and the register bits of its datapaths
+and of its control unit, CHAR1's cost model's counts (cycles.py, bits.py, D154), and the data side, per
 container its placement, bytes and L1 traffic, per outer port its streamer's loops, beats and
 channels, per tailed split its lane use (data.py). No bank conflicts, no streamer fill, no DMA,
 no core control: a run's COUNTER is a group's cycles plus the streamers' fill (C§17), and its
@@ -18,6 +19,7 @@ from typing import TYPE_CHECKING, Any
 
 from snax_forge.common import JsonFile
 
+from .bits import ctrl_bits, ctrl_registers
 from .cycles import EstimateError, GroupEstimate, group_cycles, groups, not_mapped
 from .data import ContainerData, PortData, SplitData, containers, outer_ports, ports, splits
 
@@ -73,7 +75,7 @@ class Estimate(JsonFile):
 
 def estimate(graph: Graph, platform: Platform | None = None) -> Estimate:
     """The ideal estimate of a bound graph (its symbols bound), on ``platform``'s L1 if given."""
-    found = groups(graph)
+    found = groups(graph, platform.acc_csr.job_width if platform is not None else 32)
     unit_group = {u: g for g in found for u in g.units}
     words = dict.fromkeys((g.name for g in found), 0)
     for n, _, port in outer_ports(graph):
@@ -94,6 +96,8 @@ __all__ = [
     "GroupEstimate",
     "PortData",
     "SplitData",
+    "ctrl_bits",
+    "ctrl_registers",
     "estimate",
     "group_cycles",
 ]
