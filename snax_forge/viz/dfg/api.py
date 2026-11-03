@@ -108,7 +108,9 @@ technology); a block with no flops holds "–".
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
-(the Estimate panel's figures, every sum and share made here, D57) and, in edit mode, its
+(the Estimate panel's figures, every sum and share made here, D57), its ``containers_section``
+(the left column's Containers, C§12: each container's shape, sizes, dtype, bytes, placement and
+symbols) and, in edit mode, its
 ``diff`` against the step before (sandbox/session.py). ``compare_view`` gives two steps' diff
 (the session's ``graph_diff``), per Details key the fields that changed, and ``columns``, what
 Compare lays out as two columns (the left step, ``a``, and the right, ``b``): their
@@ -309,6 +311,7 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
         return out
     out["estimate"] = est.to_dict() if est is not None else None
     out["summary"] = estimate_summary(est) if est is not None else None
+    out["containers_section"] = containers_section(e.graph, est)
     if marks is None:
         from snax_forge.sandbox.session import marks_of
 
@@ -316,6 +319,50 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["marks"] = marks
     if diff is not None:
         out["diff"] = diff
+    return out
+
+
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+
+
+def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
+    """The left column's Containers (C§12), per container in the graph's order: its ``name``,
+    ``shape`` as written (``shape_text``, its dims by " × ", and ``dims``, each dim's ``parts``,
+    ``{text, symbol}`` with ``symbol`` the graph symbol a part names or None, so the page puts
+    an input on each), ``sizes`` at the graph's symbols (None while one is unbound), ``dtype``,
+    padded ``bytes`` and ``placement`` as the estimate has them (None without one), and the
+    ``symbols`` its shape uses, in order."""
+    out = []
+    for name, c in g.containers.items():
+        placed = est.containers.get(name) if est is not None else None
+        try:
+            sizes = [expr.evaluate(x, g.bound_symbols) for x in c.shape]
+        except ExprError:
+            sizes = None
+        dims, used = [], []
+        for d in c.shape:
+            text, parts, at = str(d), [], 0
+            for m in NAME.finditer(text):
+                if m[0] not in g.symbols:
+                    continue
+                if m.start() > at:
+                    parts.append({"text": text[at : m.start()], "symbol": None})
+                parts.append({"text": m[0], "symbol": m[0]})
+                used.append(m[0])
+                at = m.end()
+            if at < len(text) or not parts:
+                parts.append({"text": text[at:], "symbol": None})
+            dims.append({"parts": parts})
+        out.append({
+            "name": name, "shape": list(c.shape),
+            "shape_text": " × ".join(str(d) for d in c.shape) or "scalar", "dims": dims,
+            "sizes": sizes, "sizes_text": " × ".join(map(str, sizes)) if sizes else None,
+            "dtype": c.dtype, "transient": c.transient,
+            "bytes": placed.bytes if placed else None,
+            "bytes_text": size_text(placed.bytes) if placed else None,
+            "placement": placed.placement if placed else None,
+            "symbols": list(dict.fromkeys(used)),
+        })  # fmt: skip
     return out
 
 

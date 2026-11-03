@@ -282,6 +282,39 @@ def test_a_maps_bar_starts_with_its_id():
     assert v["rows"][1]["node"]["text"] == "mult_map · i · 2048 · untagged"
 
 
+@pytest.mark.slow
+def test_the_containers_section_of_vecmul_and_matvec():
+    """C§12's Containers, in the graph's order: vecmul's A, B, C each ``N``, 2048 int64, 16 KiB
+    in L1 over N; matvec's matrix over M and N, its vectors over one each; a step view has it."""
+    from snax_forge.design import Platform
+    from snax_forge.estimate import estimate
+    from snax_forge.viz.dfg.api import Entry, containers_section, step_view
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import steps
+
+    platform = Platform.load(SNAX_FORGE)
+    g = steps("vecmul", N=2048, W=8)[-1]
+    got = containers_section(g, estimate(g, platform))
+    keys = ("name", "shape_text", "sizes", "dtype", "bytes", "bytes_text", "placement", "symbols")
+    assert [tuple(c[k] for k in keys) for c in got] == [
+        (x, "N", [2048], "int64", 16384, "16 KiB", "l1", ["N"]) for x in "ABC"]  # fmt: skip
+    assert got[0]["dims"] == [{"parts": [{"text": "N", "symbol": "N"}]}]
+    m = steps("matvec_1")[-1]
+    mv = {c["name"]: c for c in containers_section(m, estimate(m, platform))}
+    assert (mv["A"]["shape_text"], mv["A"]["sizes"], mv["A"]["symbols"]) == (
+        "M × N",
+        [8, 512],
+        ["M", "N"],
+    )
+    assert [(mv[x]["shape_text"], mv[x]["symbols"]) for x in ("p", "q")] == [
+        ("N", ["N"]),
+        ("M", ["M"]),
+    ]
+    view = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
+    assert view["containers_section"] == got
+    assert containers_section(g)[0]["placement"] is None  # no estimate, no placement
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
     assert plain["rows"][1]["node"]["text"] == "add_map · i · ? · untagged"

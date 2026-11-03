@@ -120,7 +120,7 @@ async function changed() {
 export function top(s) {
   $("session-name").textContent = s.name;
   $("params").replaceChildren(...Object.entries(s.params).map(([name, value]) =>
-    h("label", { class: "dfg-chip", title: `param ${name}: a change replays every step` }, name,
+    h("label", { class: "dfg-chip", title: `param ${name}: a change replays every step`, "data-symbol": name, ...ctx.hover(name) }, name,
       h("input", { value: String(value), size: Math.max(2, String(value).length), "data-param": name,
         onchange: (ev) => setParam(name, ev.target) }))));
   $("undo").disabled = s.undo === null;
@@ -128,7 +128,9 @@ export function top(s) {
   $("recipe").hidden || recipePanel();
 }
 
-async function setParam(name, input) {
+/** A param set from its chip or a symbol's input in the Containers: every step replayed; a
+refusal keeps the old value. */
+export async function setParam(name, input) {
   const raw = input.value.trim();
   const value = /^-?\d+$/.test(raw) ? Number(raw) : raw;
   ctx.status("replaying…");
@@ -304,13 +306,13 @@ export function closeForm() {
   sidebar();
 }
 
-/** The sidebar for the selection at step k; a strip while Compare is on. */
+/** The transforms for the selection at step k (the left column's top); with Compare on, a note
+(a transform applies to one step). */
 export async function sidebar() {
   const st = ctx.state;
-  const bar = $("sidebar");
-  bar.classList.toggle("strip", st.cmp !== null);
+  const bar = $("transforms");
   if (st.cmp !== null) {
-    bar.replaceChildren(h("p", { class: "dfg-strip-note", title: "Compare is on" }, "Compare"));
+    bar.replaceChildren(h("h2", {}, "Transforms"), h("p", { class: "muted" }, "Compare is on: turn it off to apply a transform to the step shown."));
     return;
   }
   if (!st.sel) {
@@ -387,7 +389,6 @@ async function save(force) {
 export function init(c) {
   ctx = c;
   for (const el of document.querySelectorAll("[data-edit]")) el.hidden = false;
-  $("sidebar").hidden = false;
   $("reload").hidden = true;
   $("undo").addEventListener("click", undo);
   $("redo").addEventListener("click", redo);

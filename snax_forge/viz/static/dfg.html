@@ -5,7 +5,8 @@
   routes and loads no external file, so it works offline. dfg.js draws one step at a time
   (two with Compare): boxes are HTML laid out by CSS, the edges one SVG layer per panel;
   Details, the Estimate, the transforms' forms and every message come from the API as they
-  are. The edit-mode parts (data-edit) stay hidden in view mode.
+  are. The edit-mode parts (data-edit) stay hidden in view mode. The left column (the
+  transforms in edit mode, then the Containers) scrolls on its own.
 -->
 <html lang="en">
 <head>
@@ -35,7 +36,13 @@
     <p id="status" class="status" role="status"></p>
   </header>
   <div class="dfg-layout">
-    <aside id="sidebar" class="dfg-sidebar" hidden></aside>
+    <aside id="sidebar" class="dfg-sidebar">
+      <div id="transforms" data-edit hidden></div>
+      <section id="containers-panel" class="dfg-containers">
+        <h2>Containers</h2>
+        <div id="containers"></div>
+      </section>
+    </aside>
     <main id="graphs" class="dfg-centre"></main>
     <aside class="dfg-right">
       <section class="dfg-side-panel">

@@ -365,7 +365,6 @@ body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px
 .dfg-toggle { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
 .dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) var(--side); grid-template-areas: "side centre right"; }
 .dfg-sidebar { grid-area: side; width: 260px; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
-.dfg-sidebar[hidden] { display: none; }
 .dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; justify-content: safe center; }
 /* Compare: the two graphs side by side, one thin line between them; the column scrolls */
 .dfg-centre.two { align-items: stretch; gap: 0; }
@@ -470,8 +469,24 @@ svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 .dfg-sidebar { padding: 0.6rem 0.7rem; font-size: 0.88em; }
 .dfg-sidebar h2 { font-size: 0.975rem; margin: 0.2rem 0 0.5rem; color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }
 .dfg-sidebar h2 b { color: var(--ink); }
-.dfg-sidebar.strip { width: 1.6rem; padding: 0.6rem 0.2rem; overflow: hidden; }
-.dfg-strip-note { writing-mode: vertical-rl; color: var(--muted); margin: 0; }
+/* the Containers, below the transforms (both modes): a symbol's input or name highlights the
+   containers whose shape uses it, here and in the graph (dfg.js) */
+#transforms + .dfg-containers { border-top: 1px solid var(--rule); margin-top: 0.8rem; padding-top: 0.2rem; }
+.dfg-containers h2 { font-size: 0.975rem; margin: 0.4rem 0 0.4rem; color: var(--muted); font-weight: 600; }
+.dfg-cont { padding: 0.2rem 0.3rem; border-radius: 3px; }
+.dfg-cont + .dfg-cont { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
+.dfg-cont.sel { box-shadow: inset 2px 0 0 var(--hl); }
+.dfg-cont.sym-hl { background: color-mix(in srgb, var(--data) 14%, var(--panel)); }
+.dfg-cont-head { display: flex; align-items: baseline; gap: 0.4rem; flex-wrap: wrap; }
+.dfg-cont-head small { color: var(--muted); }
+.dfg-cont-name { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; }
+.dfg-cont-name:hover { color: var(--hl); }
+.dfg-cont-shape { font-size: 0.92em; overflow-wrap: anywhere; }
+.dfg-sym { display: inline-block; border-radius: 3px; }
+span.dfg-sym { padding: 0 0.15rem; border-bottom: 1px dotted var(--muted); cursor: default; }
+.dfg-sym input { font: inherit; width: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 0.25rem; }
+.dfg-sym.sym-on, .dfg-chip.sym-on { box-shadow: 0 0 0 2px var(--data); }
+.c-pill.sym-hl { box-shadow: 0 0 0 2px var(--data); }
 .dfg-transform { border-top: 1px solid var(--rule); }
 .dfg-transform-name { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.2rem; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .dfg-transform-name:hover, .dfg-transform.open .dfg-transform-name { color: var(--hl); }

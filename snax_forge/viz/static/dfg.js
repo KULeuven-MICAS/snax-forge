@@ -362,6 +362,7 @@ function select(name) {
   writeHash();
   outline();
   details();
+  containers();
   if (state.mode === "edit") edit.sidebar();
 }
 
@@ -437,6 +438,61 @@ function costRows(cost) {
   if (!cost) return [h("dt", {}, "cost"), h("dd", { class: "mono" }, "–")];
   const inner = Object.entries(cost).map(([k, v]) => [h("dt", {}, k), h("dd", { class: "mono" }, v)]);
   return [h("dt", {}, "cost"), h("dd", {}, h("dl", { class: "facts c-cost" }, inner))];
+}
+
+// -- the Containers (the left column, C§12) ----------------------------------------------
+
+/** Every container that a symbol's shape uses, highlighted in the Containers and the graph
+(focus or hover on the symbol's input, its chip or its text). */
+function hlSymbol(name, on) {
+  const v = views.get(state.k);
+  const users = new Set(((v && v.containers_section) || []).filter((c) => c.symbols.includes(name)).map((c) => c.name));
+  for (const el of document.querySelectorAll("#containers [data-cont]")) {
+    el.classList.toggle("sym-hl", on && users.has(el.dataset.cont));
+  }
+  for (const el of document.querySelectorAll("#graphs .c-pill[data-sel]")) {
+    el.classList.toggle("sym-hl", on && users.has(el.dataset.sel));
+  }
+  for (const el of document.querySelectorAll("[data-symbol]")) {
+    el.classList.toggle("sym-on", on && el.dataset.symbol === name);
+  }
+}
+
+const hover = (name) => ({
+  onmouseenter: () => hlSymbol(name, true), onmouseleave: () => hlSymbol(name, false),
+  onfocusin: () => hlSymbol(name, true), onfocusout: () => hlSymbol(name, false),
+});
+
+/** One symbol of a shape: in edit mode an input on its param (the same as its chip, the same
+replay), else its name. */
+function symbolEl(name) {
+  const params = state.mode === "edit" && state.session ? state.session.params : null;
+  if (params && Object.prototype.hasOwnProperty.call(params, name)) {
+    const value = String(params[name]);
+    return h("label", { class: "dfg-sym", "data-symbol": name, title: `param ${name}: a change replays every step`, ...hover(name) },
+      h("input", { value, size: Math.max(2, value.length), "aria-label": `param ${name}`,
+        onchange: (ev) => edit.setParam(name, ev.target) }));
+  }
+  return h("span", { class: "dfg-sym", "data-symbol": name, tabindex: 0, ...hover(name) }, name);
+}
+
+/** The Containers section: per container its name (a click selects it), dtype (read only,
+D113), placement and bytes, its shape with each symbol and the sizes at the step's symbols. */
+async function containers() {
+  const box = $("containers");
+  const v = await view(state.k);
+  const list = v.containers_section;
+  if (!list) {
+    box.replaceChildren(h("p", { class: "muted" }, v.error || "no graph"));
+    return;
+  }
+  box.replaceChildren(...list.map((c) => h("div", { class: `dfg-cont${state.sel === c.name ? " sel" : ""}`, "data-cont": c.name },
+    h("div", { class: "dfg-cont-head" },
+      h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(c.name) }, c.name),
+      h("small", {}, [c.dtype, c.placement, c.bytes_text].filter(Boolean).join(" · "))),
+    h("div", { class: "dfg-cont-shape mono" },
+      c.dims.length ? c.dims.map((d, i) => [i ? " × " : "", d.parts.map((p) => (p.symbol ? symbolEl(p.symbol) : p.text))]) : "scalar",
+      c.sizes_text && c.sizes_text !== c.shape_text ? h("span", { class: "muted" }, ` = ${c.sizes_text}`) : null))));
 }
 
 // -- the Estimate ------------------------------------------------------------------
@@ -522,7 +578,7 @@ async function draw() {
     }
     drawn = now;
     requestAnimationFrame(() => panels.forEach((p) => p._draw && p._draw()));
-    await Promise.all([details(), estimate(), state.mode === "edit" ? edit.sidebar() : null]);
+    await Promise.all([details(), estimate(), containers(), state.mode === "edit" ? edit.sidebar() : null]);
     const broken = state.steps.filter((s) => s.error).length;
     status(broken ? `${broken} of ${state.steps.length} files did not load` : "", broken > 0);
   } catch (e) {
@@ -563,7 +619,7 @@ async function load() {
     techOptions();
     if (state.mode === "edit") {
       want = await resolve(want);
-      edit.init({ state, status, clear, show, view, writeHash });
+      edit.init({ state, status, clear, show, view, writeHash, hover });
       state.session = await edit.session();
       state.sel = want.sel;
       state.t = want.t;
