@@ -466,6 +466,10 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         "| sum | sum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.50 | 0.457 | 0.0550 |"
         in text
     )
+    # a block with no flops (the ElementwiseLanes mul) holds "–"
+    (mul,) = [x for x in text.splitlines()
+              if x.startswith("| mul | mul | ElementwiseLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
+    assert mul.split(" | ")[9] == "–", mul
     assert "Not characterized" not in text
     assert DesignReport.from_dict(r.to_dict()).to_dict() == r.to_dict()
 

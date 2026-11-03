@@ -151,7 +151,7 @@ class EstimateRow(Record):
 class CostRow(Record):
     """One unit, buffer link or control unit of the cost (C§20); ``found`` None for a block
     the table does not hold; ``comb_um2``, ``e_fire_pj`` and ``e_hold_pj`` None for a control
-    unit (its comb part is left out)."""
+    unit (its comb part is left out), ``e_hold_pj`` None for a block with no flops."""
 
     group: str
     block: str
@@ -407,7 +407,8 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
             continue
         for k, b in (*g.cost.units.items(), *g.cost.links.items()):
             cost.append(CostRow(g.name, k, b.datapath, b.found, b.fires, g.bits.get(k, 0),
-                                b.comb_um2, b.flops_um2, b.e_fire_pj, b.e_hold_pj, b.task_nj))  # fmt: skip
+                                b.comb_um2, b.flops_um2, b.e_fire_pj, b.e_hold_pj or None,
+                                b.task_nj))  # fmt: skip
         c = g.cost
         cost.append(CostRow(g.name, "ctrl", "group control unit", None, None, c.ctrl_bits, None,
                             c.ctrl_um2, None, None, c.ctrl_nj))  # fmt: skip
