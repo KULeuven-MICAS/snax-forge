@@ -1,6 +1,6 @@
 # Dry run 1: vecmul, from the kernel to SNAX-GVSoC
 
-A snapshot of 3 Nov 2026 (snax-forge `ry/dry1` at `dry1-r2`, `5711764`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
+A snapshot of 3 Nov 2026 (snax-forge `ry/dry1` at `dry1-r2b`, `c7339d2`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
 
 vecmul is $C_i = A_i \cdot B_i$ over N int64 elements (`kernels/polybench/vecmul.py`). It is the first half of dot, so it is the baseline the dot variants are read against. The designer's question: how many lanes W, given what a lane costs in area and what it buys in time?
 
@@ -19,9 +19,9 @@ A session starts from the kernel's symbols, here only N:
 
     serving vecmul at http://127.0.0.1:8767/ (Ctrl-C to stop)
 
-Without `--set N` it stops at `vecmul: give N, e.g. --set N=2048`. There is no W yet: W is a property of the split you make later, not of the kernel. N can change at any time in its chip in the top bar or in the Containers section; the session replays its steps at the new value.
+Without `--set N` it stops at `vecmul: give N, e.g. --set N=2048`. There is no W yet: W is a property of the split you make later, not of the kernel. N can change at any time in the Symbols block at the top of the Containers section; the session replays its steps at the new value.
 
-Step 0 is the import: one map, `mult_map · i · 2048 · untagged`, holding the tasklet `mult · in1 * in2`. The Containers section on the left lists A, B and C, each of shape `N`, 2048 × int64, 16 KiB in L1; hovering N there lights up all three, since they share the symbol. The Estimate says 2048 iterations not mapped and an L1 footprint of 48 KiB of 128 KiB. Nothing runs on an accelerator yet, so there are no cycles and no cost.
+Step 0 is the import: one map, `mult_map · i · 2048 · untagged`, holding the tasklet `mult · in1 * in2`. The left column has three parts. Symbols: `N [2048]`. Containers: `A: N · L1 · 16 KiB`, and the same for B and C; hovering N lights up all three, since they share the symbol. Bindings: nothing split or bound yet. The Estimate reads `accelerator 0 + unmapped 2048 = total 2048`: no unit runs anything yet, so every iteration counts as one cycle. That is an assumption, and a generous one for the starting point, since a core takes several cycles per element (D155; hover `unmapped` for the note). The L1 footprint is 48 KiB of 128 KiB.
 
 ## 2. Four steps
 
@@ -29,12 +29,12 @@ Click `mult_map`. The sidebar lists what applies there (`split`, `split_map`, `t
 
 | Step | Select | Apply | What changes |
 |---|---|---|---|
-| 1 | `mult_map` | `split`, factor `W`, new param W = 8 | `mult_map` now runs `i_1` over 256, around a new map `mult_map_inner` running `i_2` over 8; the tasklet reads `A[8 * i_1 + i_2]` |
+| 1 | `mult_map` | `split`, factor `W`, new param W = 8 | `mult_map` now runs `i_1` over 256, around a new map `mult_map_inner` running `i_2` over 8; the tasklet reads `A[8 * i_1 + i_2]`; Bindings shows `mult_map split · W = 8 · not bound` |
 | 2 | `mult_map` | `tag_map`, `temporal` | the outer loop becomes the streamers' loop |
-| 3 | `mult_map_inner` | `tag_map`, `spatial` | the inner loop becomes lanes; not mapped drops from 2048 to 256 |
-| 4 | `mult` | `bind`, `elementwise_mul / chisel_tiled_spatial`, instance `acc` | the tasklet becomes unit `acc` at 8 lanes; not mapped 0 |
+| 3 | `mult_map_inner` | `tag_map`, `spatial` | the inner loop becomes lanes; the unmapped cycles drop from 2048 to 256 |
+| 4 | `mult` | `bind`, `elementwise_mul / chisel_tiled_spatial`, instance `acc` | the tasklet becomes unit `acc` at 8 lanes; Bindings shows `acc · elementwise_mul · W = 8`; accelerator 256 + unmapped 0 = total 256 |
 
-In step 1, typing `W` into the factor field shows "new param W = 4" beside it; set it to 8 and Apply. W then appears as a chip in the top bar, so the saved recipe sweeps with `--set W=…`. Each split can name its own param (dot 1 will use `W_mul` and `W_sum`). The split's names (`i_1`, `i_2`, `mult_map_inner`) say nothing about which loop becomes what; the tags in steps 2 and 3 decide that. `split_map` does all three in one step, with the names `i_t`, `i_s` and `mult_map_s`.
+In step 1, typing `W` into the factor field shows "new param W = 4" beside it; set it to 8 and Apply. W then appears in Bindings with the split that made it, editable there, and the saved recipe sweeps with `--set W=…`. Each split can name its own param (dot 1 will use `W_mul` and `W_sum`). The split's names (`i_1`, `i_2`, `mult_map_inner`) say nothing about which loop becomes what; the tags in steps 2 and 3 decide that. `split_map` does all three in one step, with the names `i_t`, `i_s` and `mult_map_s`.
 
 At step 4 the bind list shows every BRM with its timing and, for those that don't fit, the reason: `elementwise_add` (the tasklet is mul, the pattern add), `accumulate` (no reduction), `mac` (needs `fuse_map` first, D150). Only `elementwise_mul` fits, with latency 0, II 1, span 1. The instance defaults to `acc`.
 
@@ -44,7 +44,7 @@ After the bind the Estimate shows one group, `acc`:
 |---:|---:|---:|---:|---:|---:|---:|
 | 256 | 256 | 0 | 0 | 259 | 55 700 µm² | 23.265 nJ |
 
-Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the unit has latency 0. The expected COUNTER adds the streamers' fill of 3 (D155, C§19). Below it, the cost table on nangate45:
+Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the unit has latency 0. The expected COUNTER adds the streamers' fill of 3 (D155, C§19). With Compare on, step 0 against step 4 shows the gain as cycles: total 2048 → 256. Below the groups, the cost table on nangate45:
 
 | Block | Datapath | Area (µm²) | Energy (nJ) | Share |
 |---|---|---:|---:|---:|
@@ -82,7 +82,7 @@ The steps also go to `out/sandbox/vecmul_dry/` as `0_input.snaxdfg` to `4_bind.s
 
 ## 4. Sweep W in the editor
 
-Change W in its chip; the session replays its four steps and the Estimate follows. The tech dropdown switches between nangate45 and nangate15.
+Change W in its Bindings entry (`acc · elementwise_mul · W = 8`); the session replays its four steps and the Estimate follows. The tech dropdown switches between nangate45 and nangate15.
 
 | W | Cycles | COUNTER (expected) | Channels | Area 45 nm (µm²) | Energy 45 nm (nJ) | ctrl share | Area 15 nm (µm²) | Energy 15 nm (nJ) |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
