@@ -48,10 +48,12 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
     GET  /api/step/<k>/site/<id>    Session.sites on node or container ``id``, bind's with the
                                     bind list, each accepted transform with its ``form``
     GET  /api/compare/<j>/<k>       as in view mode, over the session's steps
-    POST /api/apply                 ``{transform, params, drop?}``: Session.apply
+    POST /api/apply                 ``{transform, params, drop?, new_params?}``: Session.apply
+                                    (``new_params``, ``{"W_mul": 8}``: the params it adds)
     POST /api/cursor                ``{k}``: Session.move
     POST /api/params                ``{params}``: Session.set_params
-    POST /api/save                  ``{name, force?}``: Session.save
+    POST /api/save                  ``{name, force?}``: Session.save; its log line names the
+                                    recipe from the repository (``saved recipes/<name>.json``)
     POST /api/export                ``{k}``: Session.export, the file's ``path``
 
 Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
@@ -378,7 +380,10 @@ class DfgHandler(Handler):
         if route == "apply":
             _needs(body, "transform")
             params = dict(body.get("params") or {})
-            out = s.apply(body["transform"], params, bool(body.get("drop")))
+            new = body.get("new_params") or {}
+            if not isinstance(new, dict):
+                raise _Refused("request.body", "new_params must be an object")
+            out = s.apply(body["transform"], params, bool(body.get("drop")), dict(new))
             return out | {"log": apply_log(s, body["transform"], params, out)}
         if route == "cursor":
             _needs(body, "k")

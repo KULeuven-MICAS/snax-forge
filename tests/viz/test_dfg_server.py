@@ -153,7 +153,9 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
                                                        "no session is open: POST /api/session first"})  # fmt: skip
         assert get_json(srv, "/api/mode")[1]["platform"] == session.PLATFORM
         assert get_json(srv, "/api/mode")[1]["tech"] == "nangate45"
-        status, s = post(srv, "/api/session", {"kernel": "vecadd", "params": {"N": 64, "W": 4}})
+        status, bad = post(srv, "/api/session", {"kernel": "vecadd", "params": {}})
+        assert status == 400 and bad["message"] == "vecadd: give N, e.g. --set N=2048"
+        status, s = post(srv, "/api/session", {"kernel": "vecadd", "params": {"N": 64}})
         assert status == 200 and (s["name"], s["cursor"], s["steps"]) == ("vecadd", 0, [])
         assert (s["labels"], s["undo"], s["redo"], s["recipe"]["kernel"]) == (
             ["0 input"],
@@ -167,10 +169,17 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         split = get_json(srv, "/api/step/0/site/add_map")[1]["split"]
         assert split["ok"] and [(f["name"], f["value"]) for f in split["form"]] == [
             ("map", "add_map"),
-            ("factor", "W"),
+            ("factor", 4),
         ]
         bind = get_json(srv, "/api/step/0/site/add")[1]["bind"]
         assert not bind["ok"] and "split the map first" in bind["message"]
+        status, got = post(srv, "/api/apply", {"transform": "split",
+                                               "params": {"map": "add_map", "factor": "W"}})  # fmt: skip
+        assert (
+            status == 400
+            and got["message"] == "split: factor 'W' is not a param; give its value"
+            and got["param"] == "W"
+        )
         logs = []
         for transform, params in (
             ("split", {"map": "add_map", "factor": "W"}),
@@ -179,7 +188,9 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             ("bind", {"node": "add", "brm": "elementwise_add",
                       "implementation": "chisel_tiled_spatial", "instance": "acc"}),
         ):  # fmt: skip
-            status, got = post(srv, "/api/apply", {"transform": transform, "params": params})
+            new = {"W": 4} if transform == "split" else None
+            status, got = post(srv, "/api/apply", {"transform": transform, "params": params,
+                                                   "new_params": new})  # fmt: skip
             assert status == 200 and got["transform"] == transform, got
             assert got["log"].startswith(f"step {got['index']}  {transform} ")
             logs.append(got["log"])

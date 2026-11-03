@@ -275,13 +275,20 @@ function params(form, el) {
 }
 
 /** Apply at the cursor; below the last step, the server's question first (``drop``), then the
-steps after the cursor dropped. */
+steps after the cursor dropped. A factor naming a param the session lacks (``session.param``):
+its value asked once, then the apply again with it as ``new_params`` (C§12). */
 async function apply(transform, form, el) {
   const question = ctx.state.session.drop;
   if (question && !window.confirm(question)) return;
   const body = { transform, params: params(form, el), drop: !!question };
   ctx.status(`applying ${transform}…`);
-  const r = await post("/api/apply", body);
+  let r = await post("/api/apply", body);
+  if (!r.ok && r.body.code === "session.param" && r.body.param) {
+    const raw = window.prompt(`${r.body.param} is not a param yet: its value`, "4");
+    if (raw !== null && /^\d+$/.test(raw.trim())) {
+      r = await post("/api/apply", { ...body, new_params: { [r.body.param]: Number(raw.trim()) } });
+    }
+  }
   log(r.body.log, !r.ok);
   ctx.status(r.ok ? "" : `${r.body.code}: ${r.body.message}`, !r.ok);
   if (r.ok) {

@@ -1,18 +1,21 @@
 """The editor's session (D55, C§12, sandbox/session.py), without HTTP: built step by step it ends
-in the hand-written recipes' graphs; the cursor, the params, Save, the sites with the bind list,
-the marks, the diff and the estimate. Every kernel is imported (DaCe, once per kernel), hence
+in the hand-written recipes' graphs; the start from a kernel's symbols, the cursor, the params (a
+new one per split), Save, the sites with the bind list and its default instance, the marks, the
+diff and the estimate. Every kernel is imported (DaCe, once per kernel), hence
 slow; the roots are in ``tmp_path``."""
 
 from __future__ import annotations
 
 import pytest
 
-from snax_forge.design import Platform
-from snax_forge.sandbox import Recipe, apply_recipe, session
+from snax_forge.design import Design, DesignPoint, Platform, run_checks
+from snax_forge.lower import task_list
+from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, session
+from snax_forge.sandbox import __main__ as sandbox_cli
 from snax_forge.sandbox.session import Roots, Session
 from tests.helpers import imported
 
-from .helpers import RECIPES, REPO, recipe_graphs
+from .helpers import RECIPES, REPO, recipe_graphs, renamed, tagged_names
 
 pytestmark = pytest.mark.slow
 
@@ -40,11 +43,22 @@ def ok(result: dict) -> dict:
     return result
 
 
-def split_and_tag(s: Session, map: str, factor: str) -> None:
-    """``split`` then the inner map spatial and the outer temporal, as the editor does them."""
-    (inner,) = ok(s.apply("split", {"map": map, "factor": factor}))["diff"]["nodes"]["added"]
+def split_and_tag(s: Session, map: str, factor: str | int, new: dict | None = None) -> str:
+    """``split`` then the inner map spatial and the outer temporal, as the editor does them; the
+    inner map's id."""
+    got = ok(s.apply("split", {"map": map, "factor": factor}, new_params=new))
+    (inner,) = got["diff"]["nodes"]["added"]
     ok(s.apply("tag_map", {"map": inner, "kind": "spatial"}))
     ok(s.apply("tag_map", {"map": map, "kind": "temporal"}))
+    return inner
+
+
+def bind_default(s: Session, node: str) -> dict:
+    """``bind`` on ``node`` with the bind form's defaults: the first binding that is ok and the
+    default instance."""
+    f = {x["name"]: x for x in s.sites(s.cursor, node)["bind"]["form"]}
+    return ok(s.apply("bind", {"node": node, **f["binding"]["value"],
+                               "instance": f["instance"]["value"]}))  # fmt: skip
 
 
 # =============================================================================
@@ -71,6 +85,74 @@ def test_built_by_hand_it_ends_in_the_recipes_graph(name, roots):
 def test_a_taken_name_gets_a_suffix(roots):
     names = [Session.from_kernel("vecadd", {"N": 64}, roots=roots).name for _ in range(3)]
     assert names == ["vecadd", "vecadd_2", "vecadd_3"]
+
+
+def test_a_kernel_session_needs_every_symbol_and_no_w(roots):
+    """The kernel's symbols only, each a param of its name; one without a value is refused
+    with one line naming it."""
+    s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
+    assert (s.recipe.params, s.recipe.symbols) == ({"N": 2048}, {"N": "N"})
+    with pytest.raises(SandboxError, match=r"^vecmul: give N, e\.g\. --set N=2048$"):
+        Session.from_kernel("vecmul", {}, roots=roots)
+    with pytest.raises(
+        SandboxError, match=r"^matvec: give M, N, e\.g\. --set M=2048 --set N=2048$"
+    ):
+        Session.from_kernel("matvec", {"W": 4}, roots=roots)
+    assert Session.from_kernel("vecmul", {}, {"N": 64}, roots=roots).recipe.params == {}
+
+
+def test_vecmul_from_its_kernel_with_a_new_param_is_the_recipes_graph(roots):
+    """vecmul at N = 2048 alone, ``split`` by a new param W = 8, the tags, ``bind`` at the form's
+    defaults: ``recipes/vecmul.json``'s last graph at N = 2048, W = 8 up to the split's names;
+    the default instance ``acc`` gives the task ``mult_acc`` and the streamers ``acc_a``,
+    ``acc_b`` and ``acc_out``."""
+    s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
+    refused = s.apply("split", {"map": "mult_map", "factor": "W"})
+    assert refused["param"] == "W"
+    assert (refused["code"], refused["message"]) == (
+        "session.param",
+        "split: factor 'W' is not a param; give its value",
+    )
+    assert (s.n, s.recipe.params) == (0, {"N": 2048})
+    assert split_and_tag(s, "mult_map", "W", {"W": 8}) == "mult_map_inner"
+    assert s.recipe.params == {"N": 2048, "W": 8}
+    got = bind_default(s, "mult")
+    assert got["params"]["instance"] == "acc"
+    r = recipe("vecmul").with_params({"N": 2048, "W": 8})
+    want = apply_recipe(r, imported("vecmul"))[-1].graph
+    names = tagged_names(s.graphs[0], "mult_map", 8)
+    assert names == {"i_1": "i_t", "i_2": "i_s", "mult_map_inner": "mult_map_s"}
+    assert renamed(s.graphs[-1], names) == want.to_json()
+    d = Design(s.platform, s.graphs[-1])
+    assert run_checks(d) == []
+    point = DesignPoint.of(d, "vecmul")
+    assert sorted(point.streamers) == ["acc_a", "acc_b", "acc_out"]
+    accel = [x.task_name for x in task_list(point).steps if getattr(x, "type", None) == "accel"]
+    assert accel == ["mult_acc"]
+
+
+def test_dot_1_in_the_editor_has_a_param_per_split(roots, tmp_path):
+    """dot 1 with ``W_mul`` 8 and ``W_sum`` 4, each added by its split: the binds default to
+    ``acc`` and ``acc_2``, Save writes params ``{N: 2048, W_mul: 8, W_sum: 4}``, and the saved
+    recipe passes ``pixi run sandbox``. Undoing the step that added a param keeps it."""
+    s = Session.from_kernel("dot", {"N": 2048}, roots=roots)
+    split_and_tag(s, "mult_map", "W_mul", {"W_mul": 8})
+    assert bind_default(s, "mult")["params"]["instance"] == "acc"
+    split_and_tag(s, "sum_map", "W_sum", {"W_sum": 4})
+    assert bind_default(s, "sum")["params"]["instance"] == "acc_2"
+    f = {x["name"]: x for x in s.sites(s.cursor, "mult")["encapsulate"]["form"]}
+    ok(s.apply("encapsulate", {"accelerator": f["accelerator"]["value"],
+                               "units": ["acc", "acc_2"]}))  # fmt: skip
+    got = ok(s.save("dot_mine"))
+    saved = Recipe.load(roots.recipes / "dot_mine.json")
+    assert saved.params == {"N": 2048, "W_mul": 8, "W_sum": 4}
+    assert [x.params.get("factor") for x in saved.steps if x.transform == "split"] == [
+        "W_mul", "W_sum"]  # fmt: skip
+    assert got["problems"] == []
+    assert sandbox_cli.main([str(roots.recipes / "dot_mine.json"), "--out",
+                             str(tmp_path / "steps")]) == 0  # fmt: skip
+    ok(s.move(1))
+    assert s.recipe.params == {"N": 2048, "W_mul": 8, "W_sum": 4}  # undo keeps the params
 
 
 # =============================================================================

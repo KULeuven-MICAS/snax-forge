@@ -5,6 +5,11 @@ a cursor for undo and redo, and Save writing a recipe.
     Session.from_recipe(path, platform=...)
     Session.resume(dir)
 
+**Starting one.** ``from_kernel`` takes the kernel's symbols only, each the param of its name
+unless ``symbols`` says otherwise, and no other param unless given (no W): a symbol without a
+value is refused with one line naming it (``vecmul: give N, e.g. --set N=2048``). A recipe's
+params come with it.
+
 **The state.** A session is a working recipe (the kernel, its params, symbols and dtypes, and
 every step applied, n of them), the graphs of steps 0..n in memory (step 0 the import with its
 symbols bound), a cursor k in 0..n (the step shown, the one the next transform applies to) and
@@ -20,9 +25,16 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
 **Changing it**, each a dict with ``ok``; a refusal changes nothing and gives its ``code`` and
 ``message``:
 
-    apply(transform, params, drop=False)   the transform on step k, then the reference check;
-                                           int params may be expressions over the session's
-                                           params (Recipe.value) and are kept as given. With
+    apply(transform, params, drop=False,   the transform on step k, then the reference check;
+          new_params=None)                 int params may be expressions over the session's
+                                           params (Recipe.value) and are kept as given;
+                                           ``new_params`` (``{"W_mul": 8}``) adds each name
+                                           not a param yet to the params first, so each split
+                                           can have its own; an int param naming a param the
+                                           session lacks is ``session.param`` (``split: factor
+                                           'W' is not a param; give its value``, with the
+                                           ``param``'s name, for the page to ask). A param
+                                           stays when the step that added it is undone. With
                                            k < n and no ``drop``: ``session.drop``, the server's
                                            guard (the page asks ``drop_question`` first). On success the
                                            steps past k go, the new one is step k + 1 and the
@@ -110,6 +122,9 @@ PLATFORM = "platforms/snax_forge.json"
 RECIPE_JSON, SESSION_JSON, EXPORT = "recipe.json", "session.json", "export"
 SEED = 0
 
+# The size a kernel session's refusal suggests for a symbol without a value
+EXAMPLE_SIZE = 2048
+
 
 @dataclass(frozen=True)
 class Roots:
@@ -146,6 +161,25 @@ def _import(kernel: str, dtypes: dict[str, str]) -> Graph:
     return import_kernel(kernel, dtypes or None)
 
 
+def _unknown_param(transform: str, params: dict[str, Any],
+                   known: dict[str, Any]) -> tuple[str, str] | None:  # fmt: skip
+    """The first param name an int param uses that the session lacks, with the refusal's
+    message; or None."""
+    spec = TRANSFORMS.get(transform)
+    for p, v in params.items():
+        if spec is None or p not in spec.ints or not isinstance(v, str):
+            continue
+        try:
+            names = expr.names(v)
+        except expr.ExprError:
+            continue  # the step's own check names it
+        for x in sorted(names):
+            if x not in known:
+                shown = repr(v) if expr.is_name(v) else f"{v!r} names {x!r}, which"
+                return x, f"{transform}: {p} {shown} is not a param; give its value"
+    return None
+
+
 class Session:
     """An editing session; see the module doc. Made by ``from_kernel``, ``from_recipe`` or
     ``resume``."""
@@ -179,6 +213,12 @@ class Session:
         imported = _import(kernel, dtypes or {})
         if symbols is None:
             symbols = {s: s for s in imported.symbols}
+        missing = [x for s in imported.symbols if s in symbols
+                   for x in sorted(expr.names(symbols[s])) if x not in params]  # fmt: skip
+        if missing:
+            missing = list(dict.fromkeys(missing))
+            sets = " ".join(f"--set {x}={EXAMPLE_SIZE}" for x in missing)
+            raise SandboxError(f"{kernel}: give {', '.join(missing)}, e.g. {sets}")
         recipe = Recipe(kernel, kernel, dict(params), dict(symbols), [], dict(dtypes or {}))
         return cls(cls._free(roots, name or kernel), recipe, imported, platform, roots, 0)
 
@@ -270,15 +310,24 @@ class Session:
 
     # -- changing it ----------------------------------------------------------------------
 
-    def apply(self, transform: str, params: dict[str, Any], drop: bool = False) -> dict[str, Any]:
+    def apply(self, transform: str, params: dict[str, Any], drop: bool = False,
+              new_params: dict[str, Any] | None = None) -> dict[str, Any]:  # fmt: skip
         """The transform at the cursor (module doc)."""
         with self._lock:
             k, n = self.cursor, self.n
             if k < n and not drop:
                 return _refused("session.drop", f"steps {k + 1}..{n} come after step {k}: drop "
                                 "them to apply here", question=drop_question(k, n))  # fmt: skip
+            added = {x: v for x, v in (new_params or {}).items() if x not in self.recipe.params}
+            unknown = _unknown_param(transform, params, {**self.recipe.params, **added})
+            if unknown:
+                return _refused("session.param", unknown[1], param=unknown[0])
             step = Step(transform, dict(params))
-            trial = replace(self.recipe, steps=[*self.recipe.steps[:k], step])
+            try:
+                base = replace(self.recipe, params={**self.recipe.params, **added})
+            except SandboxError as e:
+                return _refused("session.param", str(e))
+            trial = replace(base, steps=[*self.recipe.steps[:k], step])
             start = time.perf_counter()
             try:
                 name, values = step_params(trial, k)
@@ -292,7 +341,7 @@ class Session:
             self._forget(k)
             self._write()
             return {"ok": True, "index": k + 1, "transform": transform, "params": dict(params),
-                    "ms": ms, "diff": self._diff(k + 1)}  # fmt: skip
+                    "new_params": added, "ms": ms, "diff": self._diff(k + 1)}  # fmt: skip
 
     def move(self, k: int) -> dict[str, Any]:
         """The cursor to step ``k``, the steps kept."""
