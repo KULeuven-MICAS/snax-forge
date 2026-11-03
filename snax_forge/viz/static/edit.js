@@ -334,12 +334,12 @@ export async function sidebar() {
         } }, name),
       formEl);
   });
-  bar.replaceChildren(
+  bar.replaceChildren(...[
     h("h2", {}, kinds.join(" · ") || "item", " ", h("b", {}, st.sel)),
     ...(rows.length ? rows : [h("p", { class: "muted" }, "No transform applies here.")]),
     no.length ? h("details", { class: "dfg-not-here" }, h("summary", {}, `Not here (${no.length})`),
       h("ul", {}, no.map(([name, a]) => h("li", {}, h("b", {}, name), " ", h("small", {}, a.message))))) : null,
-  );
+  ].filter(Boolean)); // replaceChildren would write a null as "null"
 }
 
 // -- the graph's marks and diff ---------------------------------------------------------------
