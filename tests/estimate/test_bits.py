@@ -35,21 +35,24 @@ def test_a_fold_alone_counts_its_t_from_the_start():
 
 
 def test_a_unit_without_a_fold_has_no_t_and_a_v_at_l_0():
-    """vecmul: ElementwiseLanes, L 0, T 1: its jobs digit, and v as one bit (max(L, 1))."""
+    """vecmul: ElementwiseLanes, L 0, T 1: its jobs digit; v is declared as one bit (max(L, 1))
+    but never written, so firtool drops it."""
     regs = ctrl_registers([_unit("acc", 0)], [], "acc", {"acc": 1}, JW)
-    assert regs == [("busy", 1), ("acc_jobs", 32), ("acc_jobs_counter", 32), ("acc_v", 1),
-                    ("done", 1)]  # fmt: skip
+    assert regs == [("busy", 1), ("acc_jobs", 32), ("acc_jobs_counter", 32), ("done", 1)]
+    declared = ctrl_registers([_unit("acc", 0)], [], "acc", {"acc": 1}, JW, declared=True)
+    assert declared == [*regs[:3], ("acc_v", 1), ("done", 1)]
 
 
 def test_dot_5_counts_the_lane_and_a_wires_slots():
     """dot 5 at W = 8: the MAC's T from the start, the serial sum's fixed T 1 (no digit for
-    it), its lane of 3 bits, and the wire's two 1-bit slots (declared for every link)."""
+    it), its lane of 3 bits; the wire's two 1-bit slots are declared but dropped."""
     units, links = [_unit("mac", 1), _unit("sum", 1, span=8)], [_link("mac", "sum", 0)]
     regs = ctrl_registers(units, links, "sum", {"mac": None, "sum": 1}, JW)
     assert regs == [("busy", 1), ("sum_jobs", 32), ("mac_job_beats", 32),
                     ("mac_job_beats_counter", 32), ("mac_jobs_counter", 32), ("mac_v", 1),
-                    ("sum_jobs_counter", 32), ("sum_v", 1), ("sum_lane", 3),
-                    ("mac_sum_wslot", 1), ("mac_sum_rslot", 1), ("done", 1)]  # fmt: skip
+                    ("sum_jobs_counter", 32), ("sum_v", 1), ("sum_lane", 3), ("done", 1)]  # fmt: skip
+    declared = dict(ctrl_registers(units, links, "sum", {"mac": None, "sum": 1}, JW, True))
+    assert (declared["mac_sum_wslot"], declared["mac_sum_rslot"]) == (1, 1)
 
 
 def test_a_unit_at_l_0_on_a_wire_borrows_and_one_on_a_buffer_counts():
@@ -61,7 +64,7 @@ def test_a_unit_at_l_0_on_a_wire_borrows_and_one_on_a_buffer_counts():
     buf = dict(ctrl_registers(units, [_link("mul", "sum", 1)], "sum", fixed, JW))
     assert "mul_jobs_counter" not in wire and "mul_sum_job_beats_counter" not in wire
     assert (buf["mul_jobs_counter"], buf["mul_sum_job_beats_counter"]) == (32, 32)
-    assert (buf["mul_sum_occupancy"], buf["mul_sum_wslot"], buf["mul_sum_rslot"]) == (1, 1, 1)
+    assert buf["mul_sum_occupancy"] == 1 and "mul_sum_wslot" not in buf  # one slot: dropped
 
 
 def test_a_fixed_t_counts_in_its_own_bits_and_the_ii_gap_and_job_width():
@@ -76,7 +79,7 @@ def test_a_fixed_t_counts_in_its_own_bits_and_the_ii_gap_and_job_width():
 
 
 # =============================================================================
-# Against SYN2: every datapath exactly, ctrl reported
+# Against SYN2: every datapath and every control unit exactly
 # =============================================================================
 
 
@@ -110,10 +113,9 @@ def test_every_datapath_has_the_flops_dc_kept(syn2):
 
 
 @pytest.mark.slow
-def test_ctrl_bits_against_syn2_are_reported(syn2, capsys):
-    """The control unit's counted bits against DC's, per point; a difference is reported, not
-    judged (DC keeps no flop that never changes: a v at L 0, a wire's or depth-1 buffer's slots,
-    a constant counter)."""
+def test_ctrl_bits_equal_syn2s(syn2, capsys):
+    """The control unit's counted bits equal DC's at every point (firtool drops a v at L 0 and
+    a wire's or depth-1 buffer's slots, and ctrl_bits leaves them out); the table is printed."""
     lines = [
         "| point | recipe | W | counted | synthesized | difference |",
         "|---|---|---|---|---|---|",
@@ -123,4 +125,5 @@ def test_ctrl_bits_against_syn2_are_reported(syn2, capsys):
                      f"{g.ctrl_bits - r['ctrl']:+d} |")  # fmt: skip
     with capsys.disabled():
         print("\nctrl bits, counted (estimate/bits.py) against SYN2's (DC):\n" + "\n".join(lines))
-    assert all(g.ctrl_bits is not None for _, g in syn2)
+    assert all(g.ctrl_bits == r["ctrl"] for r, g in syn2), [r["point"] for r, g in syn2
+                                                             if g.ctrl_bits != r["ctrl"]]

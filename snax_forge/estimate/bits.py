@@ -1,6 +1,6 @@
 """The register bits of a group's control unit, from its description alone (D154, C§19).
 
-    ctrl_registers(units, links, owner, fixed, job_width) -> list[tuple[str, int]]
+    ctrl_registers(units, links, owner, fixed, job_width, declared=False) -> list[(str, int)]
     ctrl_bits(units, links, owner, fixed, job_width) -> int
 
 The group description is the one ``cycles.py``'s ``group_cycles`` steps: ``units`` with
@@ -11,7 +11,8 @@ JOB_BEATS CSR); ``job_width`` is the platform's ``acc_csr.job_width`` (D152). A 
 ⌈log₂ T⌉ bits for a fixed T and ``job_width`` for one from the start, is Chisel's ``log2Ceil``.
 
 **The registers** of ``<tag>_<group>_ctrl``, every one ``GroupRule.scala`` and
-``GroupCtrl.scala`` declare (D153), by their ``suggestName``:
+``GroupCtrl.scala`` declare (D153), by their ``suggestName``; those marked *dropped* are
+declared but never written, so firtool removes them and DC never sees them:
 
     busy                          1          GroupRule.scala:200
     <owner>_jobs                  job_width  GroupRule.scala:201, the start's JOBS
@@ -22,17 +23,17 @@ JOB_BEATS CSR); ``job_width`` is the platform's ``acc_csr.job_width`` (D152). A 
                                   is not a fixed 1, unless k borrows (L 0 with a wire out)  (:225)
       <u>_jobs_counter            job_width  :231, unless k borrows
       <u>_gap                     ⌈log₂(II + 1)⌉ at II > 1  :232
-      <u>_v                       max(L, 1)  :233, the pipeline's valid bits
+      <u>_v                       max(L, 1)  :233, the pipeline's valid bits; dropped at L 0
       <u>_lane                    ⌈log₂ span⌉  :234, none at span 1
     per link, wires included:
       <from>_<to>_occupancy       ⌈log₂(depth + 1)⌉  :245
-      <from>_<to>_wslot, _rslot   ⌈log₂ max(depth, 2)⌉ each  :248, :251
+      <from>_<to>_wslot, _rslot   ⌈log₂ max(depth, 2)⌉ each  :248, :251; dropped for a wire
+                                  and for a buffer of depth 1 (one slot)
     done                          1          GroupCtrl.scala:100, the done pulse registered
 
-These are the bits the description declares. The RTL holds fewer where a register is never
-written: firtool already drops a ``_v`` at L 0 and the slots of a wire and of a buffer of depth
-1, and DC keeps what firtool emits (``util/ctrl_regs.py`` on the fixtures). SYN2's 48 points
-are 0 to 3 bits below the count for that reason (``tests/estimate/test_bits.py``).
+``ctrl_registers`` lists what firtool keeps (``declared=True`` every declared one), and
+``ctrl_bits`` sums it: DC keeps what firtool emits, so it equals SYN2's ctrl flops at all 48
+points (``util/ctrl_regs.py`` on the fixtures, ``tests/estimate/test_bits.py``).
 """
 
 from __future__ import annotations
@@ -48,8 +49,9 @@ def _log2_ceil(x: int) -> int:
 
 def ctrl_registers(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]],
                    owner: str, fixed: Mapping[str, int | None],
-                   job_width: int) -> list[tuple[str, int]]:  # fmt: skip
-    """Every register of the group's control unit with its bits, in the module doc's order."""
+                   job_width: int, declared: bool = False) -> list[tuple[str, int]]:  # fmt: skip
+    """The registers of the group's control unit firtool keeps with their bits, in the module
+    doc's order; ``declared`` every one the description declares, the dropped ones too."""
     succ = {e["from"]: e["to"] for e in links}
 
     def after(k: str) -> list[str]:
@@ -77,18 +79,21 @@ def ctrl_registers(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[s
             regs.append((f"{k}_jobs_counter", job_width))
         if u["ii"] > 1:
             regs.append((f"{k}_gap", _log2_ceil(u["ii"] + 1)))
-        regs.append((f"{k}_v", max(u["L"], 1)))
+        if u["L"] or declared:
+            regs.append((f"{k}_v", max(u["L"], 1)))
         if u["span"] > 1:
             regs.append((f"{k}_lane", _log2_ceil(u["span"])))
     for e in links:
         name = f"{by_name[e['from']]['name']}_{by_name[e['to']]['name']}"
         regs.append((f"{name}_occupancy", _log2_ceil(e["depth"] + 1)))
-        regs += [(f"{name}_{s}", _log2_ceil(max(e["depth"], 2))) for s in ("wslot", "rslot")]
+        if e["depth"] > 1 or declared:
+            regs += [(f"{name}_{s}", _log2_ceil(max(e["depth"], 2))) for s in ("wslot", "rslot")]
     regs.append(("done", 1))
     return [(n, b) for n, b in regs if b]
 
 
 def ctrl_bits(units: Sequence[Mapping[str, Any]], links: Sequence[Mapping[str, Any]], owner: str,
               fixed: Mapping[str, int | None], job_width: int) -> int:  # fmt: skip
-    """The register bits of the group's control unit (``ctrl_registers`` summed)."""
+    """The register bits of the group's control unit firtool keeps (``ctrl_registers``
+    summed)."""
     return sum(b for _, b in ctrl_registers(units, links, owner, fixed, job_width))
