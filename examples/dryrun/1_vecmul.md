@@ -1,6 +1,6 @@
 # Dry run 1: vecmul, from the kernel to SNAX-GVSoC
 
-A snapshot of 3 Nov 2026 (snax-forge `ry/dry1` at `dry1-r2b`, `c7339d2`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
+A snapshot of 3 Nov 2026 (snax-forge `ry/dry1` at `dry1-r3`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
 
 vecmul is $C_i = A_i \cdot B_i$ over N int64 elements (`kernels/polybench/vecmul.py`). It is the first half of dot, so it is the baseline the dot variants are read against. The designer's question: how many lanes W, given what a lane costs in area and what it buys in time?
 
@@ -29,12 +29,12 @@ Click `mult_map`. The sidebar lists what applies there (`split`, `split_map`, `t
 
 | Step | Select | Apply | What changes |
 |---|---|---|---|
-| 1 | `mult_map` | `split`, factor `W`, new param W = 8 | `mult_map` now runs `i_1` over 256, around a new map `mult_map_inner` running `i_2` over 8; the tasklet reads `A[8 * i_1 + i_2]`; Bindings shows `mult_map split · W = 8 · not bound` |
+| 1 | `mult_map` | `split`, factor `W` with its value box set to 8 | `mult_map` now runs `i_1` over 256, around a new map `mult_map_inner` running `i_2` over 8; the tasklet reads `A[8 * i_1 + i_2]`; Bindings shows `mult_map split · W = 8 · not bound` |
 | 2 | `mult_map` | `tag_map`, `temporal` | the outer loop becomes the streamers' loop |
-| 3 | `mult_map_inner` | `tag_map`, `spatial` | the inner loop becomes lanes; the unmapped cycles drop from 2048 to 256 |
-| 4 | `mult` | `bind`, `elementwise_mul / chisel_tiled_spatial`, instance `acc` | the tasklet becomes unit `acc` at 8 lanes; Bindings shows `acc · elementwise_mul · W = 8`; accelerator 256 + unmapped 0 = total 256 |
+| 3 | `mult_map_inner` | `tag_map`, `spatial` | the inner loop will become lanes; the unmapped cycles stay at 2048, since a tag alone runs nothing |
+| 4 | `mult` | `bind`, `elementwise_mul / chisel_tiled_spatial`, instance `acc` | the tasklet becomes unit `acc` at 8 lanes; Bindings shows `acc · elementwise_mul · W = 8`; the total drops from 2048 to 256 (accelerator 256 + unmapped 0) |
 
-In step 1, typing `W` into the factor field shows "new param W = 4" beside it; set it to 8 and Apply. W then appears in Bindings with the split that made it, editable there, and the saved recipe sweeps with `--set W=…`. Each split can name its own param (dot 1 will use `W_mul` and `W_sum`). The split's names (`i_1`, `i_2`, `mult_map_inner`) say nothing about which loop becomes what; the tags in steps 2 and 3 decide that. `split_map` does all three in one step, with the names `i_t`, `i_s` and `mult_map_s`.
+In step 1 the factor field already reads `W`, a param of its own, with its value box beside it ("new param W = 4"); set it to 8 and Apply. Typing the number 8 into the field does the same: every factor the editor writes names a param (`W`, then `W_2` for a second split), so W appears in Bindings with the split that made it, stays editable there after the bind, and the saved recipe sweeps with `--set W=…`. Each split can name its own param (dot 1 will use `W_mul` and `W_sum`). The split's names (`i_1`, `i_2`, `mult_map_inner`) say nothing about which loop becomes what; the tags in steps 2 and 3 decide that. `split_map` does all three in one step, with the names `i_t`, `i_s` and `mult_map_s`.
 
 At step 4 the bind list shows every BRM with its timing and, for those that don't fit, the reason: `elementwise_add` (the tasklet is mul, the pattern add), `accumulate` (no reduction), `mac` (needs `fuse_map` first, D150). Only `elementwise_mul` fits, with latency 0, II 1, span 1. The instance defaults to `acc`.
 
@@ -65,7 +65,15 @@ Save recipe, as `vecmul_dry`, runs the design checks and writes `recipes/vecmul_
   {"transform": "split", "params": {"map": "mult_map", "factor": "W"}},
   {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
   {"transform": "tag_map", "params": {"map": "mult_map_inner", "kind": "spatial"}},
-  {"transform": "bind", "params": {"node": "mult", "brm": "elementwise_mul", "implementation": "chisel_tiled_spatial", "instance": "acc"}}
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "elementwise_mul",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
  ]
 }
 ```
