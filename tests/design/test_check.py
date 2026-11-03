@@ -309,6 +309,40 @@ def test_two_accelerators_on_one_slot_are_refused():
     assert "gen.instances" not in codes(_on_snax_forge(bound_vecadd(4)))
 
 
+def _vecmul(w: int) -> Graph:
+    """``recipes/vecmul.json`` at N = 2048 and W = ``w``."""
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from tests.helpers import REPO, imported
+
+    r = Recipe.load(REPO / "recipes" / "vecmul.json").with_params({"N": 2048, "W": w})
+    return apply_recipe(r, imported("vecmul"))[-1].graph
+
+
+@pytest.mark.slow
+def test_more_crossbar_inputs_than_the_platform_takes_are_refused():
+    """connect.xbar_inputs (D85): vecmul at W = 32 has 96 streamer channels, with snax_forge's
+    two cores and AXI 99 crossbar inputs, over the 64 SNAX-GVSoC's crossbar takes; W = 16 has
+    51 and passes; a platform taking 128 lets W = 32 through."""
+    from snax_forge.design.check import xbar_inputs
+
+    wide = _on_snax_forge(_vecmul(32))
+    (p,) = [p for p in problems(wide) if p.code == "connect.xbar_inputs"]
+    assert (p.where, p.message) == ("acc", (
+        "99 TCDM crossbar inputs, the platform takes at most 64 (96 streamer channels, 3 for "
+        "the cores and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)"))  # fmt: skip
+    assert p.fix == ("fewer lanes, or a platform with more inputs (--set "
+                     "platform.l1.max_xbar_inputs=99 on a model that takes them, open item 105)")  # fmt: skip
+    half = _on_snax_forge(_vecmul(16))
+    assert problems(half) == [] and xbar_inputs(half) == (48, 3)
+    roomy = Platform.load(SNAX_FORGE).with_changes([("l1.max_xbar_inputs", 128)])
+    assert problems(Design(roomy, _vecmul(32))) == []
+    assert (
+        Platform.load(SNAX_FORGE).l1.max_xbar_inputs
+        == Platform.load(SMALL16).l1.max_xbar_inputs
+        == 64
+    )
+
+
 # =============================================================================
 # 5. Registration and the error
 # =============================================================================

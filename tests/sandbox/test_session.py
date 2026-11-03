@@ -239,6 +239,20 @@ def test_save_refuses_two_accelerators_unless_forced(roots):
     assert ok(s.save("dot_two", force=True))["recipe"] == str(roots.recipes / "dot_two.json")
 
 
+def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
+    """vecmul at N = 2048, W = 32 from the editor: Save names connect.xbar_inputs (99 inputs
+    over 64) as a design problem and saves when forced (C§12)."""
+    s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
+    split_and_tag(s, "mult_map", "W", {"W": 32})
+    bind_default(s, "mult")
+    got = s.save("vecmul_w32")
+    assert got["code"] == "save.design" and not (roots.recipes / "vecmul_w32.json").exists()
+    (p,) = got["problems"]
+    assert p.startswith("[connect.xbar_inputs] acc: 99 TCDM crossbar inputs, the platform takes "
+                        "at most 64")  # fmt: skip
+    assert ok(s.save("vecmul_w32", force=True))["problems"] == got["problems"]
+
+
 def test_a_saved_recipe_gives_the_sessions_graphs(roots):
     """dot 2 saved at its last step (one accelerator, its two units linked) replays to the
     session's graphs; a name taken or not a name is refused."""

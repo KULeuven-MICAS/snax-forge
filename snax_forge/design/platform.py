@@ -105,10 +105,15 @@ class L1Config(Config):
     rows: int = 512  # words per bank; 32 * 512 * 8 B = 128 KiB
     base_addr: int = 0  # byte address of the first L1 word
     wide_bits: int = 512  # widest port, the DMA's: one superbank of 8 banks in SNAX
+    # the TCDM crossbar's most inputs: snax-gvsoc's snax_tcdm_xbar.cpp asserts nb_inputs in
+    # (0, 64] (D85, the check connect.xbar_inputs)
+    max_xbar_inputs: int = 64
 
     def __post_init__(self) -> None:
         if self.n_banks < 1 or self.rows < 1:
             raise ValueError("n_banks and rows must be >= 1")
+        if self.max_xbar_inputs < 1:
+            raise ValueError("max_xbar_inputs must be >= 1")
         if self.width_bits % 8:
             raise ValueError("width_bits must be a multiple of 8")
         g, rest = divmod(self.wide_bits, self.width_bits)

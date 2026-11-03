@@ -5,7 +5,14 @@
  "hjson": null,
  "accelerator_slot": null,
  "acc_csr": {"job_width": 32, "counter_width": null},
- "l1": {"n_banks": 16, "width_bits": 64, "rows": 64, "base_addr": 0, "wide_bits": 512},
+ "l1": {
+  "n_banks": 16,
+  "width_bits": 64,
+  "rows": 64,
+  "base_addr": 0,
+  "wide_bits": 512,
+  "max_xbar_inputs": 64
+ },
  "l2": {"size_bytes": 32768, "base_addr": 0, "beat_bits": 512, "width_bits": 64},
  "wait_mode": "poll",
  "streamers": {"default": {"fifo_depth": 2}}

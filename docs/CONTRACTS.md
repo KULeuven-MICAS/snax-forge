@@ -18,7 +18,14 @@ The L1 of `platforms/snax_forge.json` (section 13):
 
 <!-- snippet: platforms/snax_forge.json -->
 ```json
- "l1": {"n_banks": 32, "width_bits": 64, "rows": 512, "base_addr": 268435456, "wide_bits": 512},
+ "l1": {
+  "n_banks": 32,
+  "width_bits": 64,
+  "rows": 512,
+  "base_addr": 268435456,
+  "wide_bits": 512,
+  "max_xbar_inputs": 64
+ },
 ```
 
 ## 2. Cluster configuration
