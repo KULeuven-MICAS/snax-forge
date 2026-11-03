@@ -6,7 +6,7 @@ import scala.jdk.CollectionConverters._
 
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.Emit
+import snax.forge.{Emit, SvHeader}
 
 /** Every fixture through `Emit --spec accelerator.json` once, and three checks on what it wrote.
   *
@@ -18,9 +18,7 @@ import snax.forge.Emit
   * `stream2acc_<k>_data_i`, `_valid_i`, `_ready_o`; then `csr_req_addr_i`, `csr_req_data_i` (`RegAddrWidth`,
   * `RegDataWidth`: 32), `csr_req_write_i`, `csr_req_valid_i`, `csr_req_ready_o`, `csr_rsp_data_o` (32),
   * `csr_rsp_valid_o`, `csr_rsp_ready_i`. `tcdm_data_width` is the cluster's `data_width`, 64 on snax_forge. No fixture
-  * has reader-writer movers. The wrapper's ports are read from the emitted SystemVerilog's module header (firtool's:
-  * `input` or `output`, an optional `[n:0]`, a name; a line with a name only has the previous line's direction and
-  * width).
+  * has reader-writer movers. The wrapper's ports are read from the emitted SystemVerilog's module header (`SvHeader`).
   *
   * The hierarchy is `bundle.json`'s `modules` (C§18; snax-forge's `snax_forge/gen/bundle.py`, `module_tree`, which
   * writes it from `accelerator.json` without elaborating): `<tag>_shell_wrapper` holds `<tag>_csr`, `<tag>_ctrl` and
@@ -35,7 +33,7 @@ class ShellEmitSpec extends AnyFlatSpec {
 
   private val TcdmDataWidth = 64
 
-  type Ports = Set[(String, String, Int)]
+  type Ports = SvHeader.Ports
 
   def template(f: RtlFixtures.Fixture): Ports = {
     val clock   = Set(("clk_i", "input", 1), ("rst_ni", "input", 1))
@@ -67,24 +65,8 @@ class ShellEmitSpec extends AnyFlatSpec {
     clock ++ writers ++ readers ++ csr ++ pins
   }
 
-  private val Port = raw"\s*(input|output)?\s*(?:\[(\d+):0\])?\s*(\w+),?\s*".r
-
   /** The ports of `module`'s header in `file`. */
-  def header(file: Path, module: String): Ports = {
-    val lines = Files.readAllLines(file).asScala.dropWhile(!_.startsWith(s"module $module(")).drop(1)
-    var dir   = ""
-    var width = 1
-    lines
-      .takeWhile(!_.trim.startsWith(");"))
-      .map {
-        case Port(d, w, name) =>
-          if (d != null) { dir = d; width = 1 }
-          if (w != null) width = w.toInt + 1
-          (name, dir, width)
-        case line             => fail(s"$file: `$line` is not a port line")
-      }
-      .toSet
-  }
+  def header(file: Path, module: String): Ports = SvHeader.ports(file, module)
 
   private val Instance = raw"  (\w+) \w+ \(".r
 

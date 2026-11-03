@@ -93,6 +93,32 @@ object Datapaths {
 
     /** The pins whose `when` holds on `p`. */
     def livePins(p: Map[String, ujson.Value]): Seq[Pin] = pins.filter(x => holds(x.when, p))
+
+    /** `p` as a full set of its params (`Emit --block`): each param once and nothing else, each value of its type (an
+      * int of at least `min`, a bool, one of an op's `values`, a dtype, a non-empty list of dtypes), as the Python side
+      * checks a unit's (`snax_forge/gen/rtl.py`'s `check_params`); an `IllegalArgumentException` otherwise. What only
+      * the constructor knows (an opType narrower than an input, a Mac's form and its types) is its own `require`.
+      */
+    def check(p: Map[String, ujson.Value]): Unit = {
+      val names            = params.map(_._1)
+      val (missing, extra) = (names.filterNot(p.contains), p.keys.filterNot(names.contains).toSeq.sorted)
+      if (missing.nonEmpty || extra.nonEmpty)
+        throw new IllegalArgumentException(
+          s"$name: params ${names.mkString(", ")}; missing [${missing.mkString(", ")}], extra [${extra.mkString(", ")}]"
+        )
+      for ((n, t, _) <- params) {
+        val ok = (t, p(n)) match {
+          case (IntParam(min), ujson.Num(x)) => x.isWhole   && x >= min && x <= Int.MaxValue
+          case (BoolParam, _: ujson.Bool)    => true
+          case (OpParam(vs), ujson.Str(s))   => vs.contains(s)
+          case (DtypeParam, ujson.Str(s))    => dtypes.contains(s)
+          case (DtypesParam, ujson.Arr(xs))  => xs.nonEmpty && xs.forall(x => x.strOpt.exists(dtypes.contains))
+          case _                             => false
+        }
+        if (!ok)
+          throw new IllegalArgumentException(s"$name.$n: ${ujson.write(p(n))} is not ${ujson.write(paramJson(t))}")
+      }
+    }
   }
 
   def holds(when: Seq[(String, ujson.Value)], p: Map[String, ujson.Value]): Boolean =
