@@ -47,7 +47,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.char import DEFAULT_TECH
-from snax_forge.estimate.cost import CAVEAT, heading, sig3
+from snax_forge.estimate.cost import CAVEAT, dec3, heading, sig3
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
 
@@ -548,7 +548,7 @@ def render_estimate(e: EstimateTable) -> list[str]:
     cols = ["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected COUNTER"]
     cols += ["Area (µm²)", "Energy (nJ)"] if costed else []
     out += table(cols, [[g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter]
-                        + ([_shown(g.area_um2), _shown(g.energy_nj)] if costed else [])
+                        + ([_shown(g.area_um2), _energy(g.energy_nj)] if costed else [])
                         for g in e.groups], set(range(1, len(cols))))  # fmt: skip
     l1 = f"{e.l1_footprint} bytes"
     if e.l1_size is not None:
@@ -561,14 +561,20 @@ def render_estimate(e: EstimateTable) -> list[str]:
 
 
 def _shown(x: float | None, unit: str = "") -> str | None:
-    """A cost as shown (C§20): 3 significant figures."""
+    """An area as shown (C§20): 3 significant figures."""
     v = sig3(x)
+    return None if v is None else f"{v}{unit}"
+
+
+def _energy(x: float | None, unit: str = "") -> str | None:
+    """An energy as shown (C§20): 3 decimal places in its unit."""
+    v = dec3(x)
     return None if v is None else f"{v}{unit}"
 
 
 def render_cost(e: EstimateTable) -> list[str]:
     """The cost subsection (C§20): how each block is costed, then the accelerator's totals,
-    every number to 3 significant figures."""
+    an area to 3 significant figures, an energy to 3 decimals."""
     src = e.char_source.get("snax_forge_experiments", "")[:7]
     out = [f"### {heading(e.tech)}", "", CAVEAT, "",
            (f"CHAR1's model (D154, C§20) on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
@@ -580,11 +586,11 @@ def render_cost(e: EstimateTable) -> list[str]:
                   "Flops (µm²)", "e_fire (pJ)", "Hold (pJ/cycle)", "Energy (nJ)"],
                  [[c.group, c.block, c.datapath,
                    c.found or ("not characterized" if c.block != "ctrl" else None), c.fires,
-                   c.bits, _shown(c.comb_um2), _shown(c.flops_um2), _shown(c.e_fire_pj),
-                   _shown(c.e_hold_pj), _shown(c.energy_nj)] for c in e.cost],
+                   c.bits, _shown(c.comb_um2), _shown(c.flops_um2), _energy(c.e_fire_pj),
+                   _energy(c.e_hold_pj), _energy(c.energy_nj)] for c in e.cost],
                  {4, 5, 6, 7, 8, 9, 10})  # fmt: skip
     out += ["", (f"Accelerator on {e.tech}: about {_shown(e.area_um2, ' µm²')} and "
-                 f"{_shown(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
+                 f"{_energy(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
     if e.missing:
         out += ["", (f"Not characterized on {e.tech} (comb counted as 0, flops counted): "
                      f"{', '.join(e.missing)}; see the notes.")]  # fmt: skip

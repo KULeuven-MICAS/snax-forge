@@ -4,7 +4,8 @@ C§20).
     Block(datapath, params, fires)                 a unit or a buffer link to cost
     block_cost(table, block, bits, c_acc) -> BlockCost
     group_cost(table, blocks, bits, ctrl_bits, c_acc) -> GroupCost
-    sig3(x) -> str                                 a cost as shown: 3 significant figures
+    sig3(x) -> str                                 an area as shown: 3 significant figures
+    dec3(x) -> str                                 an energy as shown: 3 decimal places
     heading(tech), CAVEAT                          what every shown cost is headed with
 
 **The model**, per unit and per buffer link over one run of the accelerator, with n_fire its
@@ -25,8 +26,10 @@ block the table does not hold (``lookup`` None) or the generator does not fill h
 None and its comb part counted as 0; its flops are still counted, the description gives them.
 
 **Shown, not stored.** The fields keep full precision; everything a reader sees (``design.md``,
-the viewer and the editor) is rounded by ``sig3`` and headed by ``heading`` with ``CAVEAT``: the
-model is first-order, aimed at about 20 % of synthesis on the large costs (C§20).
+the viewer and the editor) is rounded for display only, an area by ``sig3`` (3 significant figures) and an energy by
+``dec3`` (3 decimal places in its unit, so two close designs can be told apart), and headed by
+``heading`` with ``CAVEAT``: the model is first-order, aimed at about 20 % of synthesis on the
+large costs (C§20).
 """
 
 from __future__ import annotations
@@ -57,6 +60,15 @@ def sig3(x: float | None) -> str | None:
         return "0"
     decimals = max(0, 2 - floor(log10(abs(r))))
     return f"{r:,.{decimals}f}".replace(",", " ")
+
+
+def dec3(x: float | None) -> str | None:
+    """An energy as shown: 3 decimal places in its unit, thousands split by a space (26.285,
+    97.259, 0.135, 1 234.500); None stays None. Display precision only: the model is
+    first-order (``CAVEAT``)."""
+    if x is None:
+        return None
+    return f"{x:,.3f}".replace(",", " ")
 
 
 @dataclass(frozen=True)

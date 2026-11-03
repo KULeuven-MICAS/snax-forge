@@ -459,11 +459,11 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         "### Cost estimate (first-order) on nangate45\n\nFirst-order: aimed at the large costs"
         in text
     )
-    assert (f"Accelerator on nangate45: about {sig3(e.area_um2)} µm² and {sig3(e.energy_nj)} nJ "
+    assert (f"Accelerator on nangate45: about {sig3(e.area_um2)} µm² and {e.energy_nj:.3f} nJ "
             "per run.") in text  # fmt: skip
-    # every cost shown to 3 significant figures
+    # an area shown to 3 significant figures, an energy to 3 decimals
     assert (
-        "| sum | sum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.50 | 0.457 | 0.0550 |"
+        "| sum | sum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.495 | 0.457 | 0.055 |"
         in text
     )
     # a block with no flops (the ElementwiseLanes mul) holds "–"

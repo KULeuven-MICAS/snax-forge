@@ -11,7 +11,7 @@ import pytest
 
 from snax_forge.char import Table, load
 from snax_forge.estimate import Estimate, estimate
-from snax_forge.estimate.cost import CAVEAT, Block, block_cost, group_cost, heading, sig3
+from snax_forge.estimate.cost import CAVEAT, Block, block_cost, dec3, group_cost, heading, sig3
 from tests.helpers import steps
 
 from .helpers import SNAX_FORGE, estimated
@@ -90,10 +90,24 @@ def test_an_older_estimate_without_cost_still_reads():
 
 
 def test_a_cost_is_shown_to_3_significant_figures():
-    """What a reader sees (design.md, the viewer): 3 significant figures, thousands split."""
+    """An area as a reader sees it (design.md, the viewer): 3 significant figures, thousands
+    split."""
     assert [sig3(x) for x in (26.33877, 63186.17, 97.2592, 0.1353, 999.6, 0.0, 2723.84)] == [
         "26.3", "63 200", "97.3", "0.135", "1 000", "0", "2 720"]  # fmt: skip
     assert sig3(None) is None
+
+
+def test_an_energy_is_shown_to_3_decimals():
+    """Display precision only, so two close designs can be told apart (dot 4 and dot 5 at W =
+    8: 26.285 and 26.339 nJ); the caveat beside it is unchanged."""
+    assert [dec3(x) for x in (26.28497, 26.33877, 97.2592, 3.6596, 0.1353, 0.0, 1234.5)] == [
+        "26.285", "26.339", "97.259", "3.660", "0.135", "0.000", "1 234.500"]  # fmt: skip
+    assert dec3(None) is None
+
+
+def test_dot_4_and_dot_5_read_apart():
+    four, five = (estimated(r, W=8, N=2048).energy for r in ("dot_4", "dot_5"))
+    assert (dec3(four), dec3(five)) == ("26.285", "26.339") and sig3(four) == sig3(five)
     assert heading("nangate15") == "Cost estimate (first-order) on nangate15"
     assert "about 20 %" in CAVEAT and "csr" in CAVEAT
 
