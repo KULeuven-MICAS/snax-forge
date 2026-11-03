@@ -449,14 +449,16 @@ def estimate_summary(est: Any) -> dict[str, Any]:
     """The Estimate panel's figures, every sum and share worked out here (D57): the headline,
     per group ``cycles = bottleneck + ramp [+ stall]`` and its expected COUNTER, the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
-    lane use of each tailed split; with a technology per group its area and energy and the
-    accelerator's ``cost`` (module doc)."""
+    lane use of each tailed split; per group its ``bank_bound`` and, where it exceeds the
+    cycles, its ``bank_note`` (D151; R2 shows them); with a technology per group its area and
+    energy and the accelerator's ``cost`` (module doc)."""
     groups = []
     for g in est.groups:
         terms = f"{g.bottleneck} + {g.ramp}" + (f" + {g.stall}" if g.stall else "")
         groups.append({"name": g.name, "cycles": g.cycles, "bottleneck": g.bottleneck,
                        "ramp": g.ramp, "stall": g.stall, "counter": g.counter,
                        "channels": g.channels, "formula": f"{g.cycles} = {terms}",
+                       "bank_bound": g.bank_bound, "bank_note": g.bank_bound_note,
                        "area_text": _um2(g.cost.area) if g.cost else None,
                        "energy_text": _nj(g.cost.energy) if g.cost else None})  # fmt: skip
     share = est.l1_footprint / est.l1_size if est.l1_size else None

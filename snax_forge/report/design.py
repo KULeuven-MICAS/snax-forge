@@ -25,7 +25,8 @@ the kernel from the run's functional check.
                  (L2), rows or beats
     estimate     the ideal estimate (D151, C§19): per group its cycles, bottleneck,
                  ramp, stall and the COUNTER a run gives (the cycles plus the
-                 streamers' fill) and, on the estimate's technology, its area and
+                 streamers' fill), a bank-bound note per group whose bank_bound
+                 exceeds its cycles and, on the estimate's technology, its area and
                  energy; then the accelerator's cycles, the work no unit runs and the
                  L1 footprint against the L1; then the cost (C§20): per unit, buffer
                  link and control unit how it is costed, the accelerator's area and
@@ -179,6 +180,7 @@ class EstimateTable(Record):
     energy_nj: float | None = None
     missing: list[str] = field(default_factory=list)
     cost: list[CostRow] = field(default_factory=list)
+    bank_notes: list[str] = field(default_factory=list)  # a group's bank bound over its cycles
 
 
 @dataclass
@@ -412,8 +414,10 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
         c = g.cost
         cost.append(CostRow(g.name, "ctrl", "group control unit", None, None, c.ctrl_bits, None,
                             c.ctrl_um2, None, None, c.ctrl_nj))  # fmt: skip
+    notes = [g.bank_bound_note for g in e.groups if g.bank_bound_note]
     return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size,
-                         e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost)  # fmt: skip
+                         e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost,
+                         notes)  # fmt: skip
 
 
 # =============================================================================
@@ -555,6 +559,10 @@ def render_estimate(e: EstimateTable) -> list[str]:
         l1 += f" of {e.l1_size} ({pct(e.l1_footprint / e.l1_size)})"
     out += ["", (f"Accelerator cycles: {e.accelerator_cycles}. Not mapped: {e.not_mapped} "
                  f"iterations no unit runs. L1 footprint: {l1}.")]  # fmt: skip
+    if e.bank_notes:  # the bank bound over the ideal cycles (D151), a line per group
+        out += ["", ("Bank bound: L1's single-port banks serve one word each per cycle, so these "
+                     "groups take longer than the ideal cycles:"), ""]  # fmt: skip
+        out += [f"- {n}." for n in e.bank_notes]
     if costed:
         out += ["", *render_cost(e)]
     return out

@@ -106,7 +106,8 @@ def group_cycles(units: list[dict[str, Any]], links: list[dict[str, Any]], owner
 @dataclass
 class GroupEstimate:
     """One group: its units and links, its cycles and register bits (module doc) and, from
-    data.py, the channels of its outer ports and the words they move per cycle."""
+    data.py, the channels of its outer ports and the words they move per cycle; on a platform
+    its ``bank_bound``, the fewest cycles L1's banks allow those words (D151)."""
 
     name: str
     units: list[str]
@@ -121,11 +122,23 @@ class GroupEstimate:
     bits: dict[str, int] = field(default_factory=dict)
     ctrl_bits: int | None = None
     cost: GroupCost | None = None
+    bank_bound: int | None = None  # ceil(words / l1.n_banks); None without a platform
+    n_banks: int | None = None  # the platform's, which bank_bound divides by
 
     @property
     def counter(self) -> int:
         """The COUNTER a run on SNAX-GVSoC gives: the cycles plus the streamers' fill."""
         return self.cycles + self.fill
+
+    @property
+    def bank_bound_note(self) -> str | None:
+        """One line when L1's banks allow fewer words per cycle than the ideal cycles move
+        (``bank_bound`` > ``cycles``), else None (design.md, run.md, the page)."""
+        if self.bank_bound is None or self.bank_bound <= self.cycles:
+            return None
+        words = round(self.words_per_cycle * self.cycles)
+        return (f"{self.name}: the outer ports move {words} words over {self.n_banks} banks, at "
+                f"least {self.bank_bound} cycles against the ideal {self.cycles}")  # fmt: skip
 
     def to_dict(self) -> dict[str, Any]:
         return {"name": self.name, "units": list(self.units), "links": list(self.links),
@@ -133,14 +146,16 @@ class GroupEstimate:
                 "stall": self.stall, "fill": self.fill, "counter": self.counter,
                 "channels": self.channels, "words_per_cycle": self.words_per_cycle,
                 "bits": dict(self.bits), "ctrl_bits": self.ctrl_bits,
-                "cost": None if self.cost is None else self.cost.to_dict()}  # fmt: skip
+                "cost": None if self.cost is None else self.cost.to_dict(),
+                "bank_bound": self.bank_bound, "n_banks": self.n_banks}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> GroupEstimate:
         return cls(d["name"], list(d["units"]), d["cycles"], d["bottleneck"], d["ramp"],
                    d["stall"], d["fill"], list(d["links"]), d["channels"],
                    d["words_per_cycle"], dict(d.get("bits", {})), d.get("ctrl_bits"),
-                   GroupCost.from_dict(d["cost"]) if d.get("cost") else None)  # fmt: skip
+                   GroupCost.from_dict(d["cost"]) if d.get("cost") else None,
+                   d.get("bank_bound"), d.get("n_banks"))  # fmt: skip
 
 
 def _ins(inst: Any) -> list[str]:

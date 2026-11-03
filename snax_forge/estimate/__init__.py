@@ -10,7 +10,9 @@ unit, group and accelerator its area and energy (cost.py, C§20); and the data s
 container its placement, bytes and L1 traffic, per outer port its streamer's loops, beats and
 channels, per tailed split its lane use (data.py). No bank conflicts, no streamer fill, no DMA,
 no core control: a run's COUNTER is a group's cycles plus the streamers' fill (C§17), and its
-window is longer. Work no unit runs is a not-mapped count, never cycles. The viewers and
+window is longer. Beside the ideal cycles, on a platform, each group's ``bank_bound``:
+ceil(words its outer ports move / l1.n_banks), the fewest cycles L1's single-port banks allow,
+a note where it exceeds the cycles (vecmul at W = 16: 192 against 128, COUNTER 194). Work no unit runs is a not-mapped count, never cycles. The viewers and
 ``design.md`` read it (report/design.py).
 """
 
@@ -116,6 +118,9 @@ def estimate(graph: Graph, platform: Platform | None = None,
         words[unit_group[n.attrs["instance"]].name] += port.beats * port.num_ch
     for g in found:
         g.words_per_cycle = words[g.name] / g.cycles if g.cycles else 0.0
+        if platform is not None:  # the fewest cycles L1's banks allow (D151)
+            g.n_banks = platform.l1.n_banks
+            g.bank_bound = -(-words[g.name] // g.n_banks)
     for k, port in ports(graph).items():
         unit_group[k.split(".")[0]].channels += port.num_ch
     l1 = platform.l1 if platform is not None else None

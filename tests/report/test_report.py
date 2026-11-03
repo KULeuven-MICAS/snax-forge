@@ -27,7 +27,7 @@ from snax_forge.report import (
     reports_of,
 )
 from snax_forge.report.__main__ import main
-from snax_forge.report.run import build_run, render_movement
+from snax_forge.report.run import CheckRow, bank_notes, build_run, counters_text, render_movement
 from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
 from snax_forge.viz import api, movement, schedule
@@ -342,6 +342,22 @@ def test_design_md_lists_the_design_notes(tmp_path, w):
     assert (r.notes[:1] == [note]) == (w == 1)
     assert (f"- {note}" in render_design(r)) == (w == 1)
     assert not any("design.serial_one_lane" in n for n in r.notes[w == 1 :])
+
+
+@pytest.mark.parametrize("w", [8, 16])
+def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
+    """vecmul at N = 2048 (D151): at W = 16 design.md's Estimate has the group's bank-bound note
+    and run.md puts it beside the task's expected COUNTER; at W = 8 neither has one."""
+    r = designed_report(tmp_path, "vecmul", ["N=2048", f"W={w}"])
+    note = ("acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the "
+            "ideal 128")  # fmt: skip
+    assert r.estimate.bank_notes == ([note] if w == 16 else [])
+    assert (f"- {note}." in render_design(r)) == (w == 16)
+    point = DesignPoint.load(next(tmp_path.rglob("design_point.json")))
+    assert bank_notes(point) == ({"mult_acc": note} if w == 16 else {})
+    c = CheckRow(True, "vecmul", 0, 2048, {"mult_acc": 194}, {"mult_acc": 131}, bank_notes(point))
+    assert counters_text(c) == (f"mult_acc 194 (expected 131; {note})" if w == 16
+                                else "mult_acc 194 (expected 131)")  # fmt: skip
 
 
 def test_the_extents_include_the_padding(tmp_path):

@@ -8,7 +8,9 @@ named it (D137).
     summary       the program's window (total cycles), passed, data errors over
                   the output words, each task's counter as the program printed
                   it next to the COUNTER the ideal estimate expects (D151:
-                  its group's cycles plus the streamers' fill), the trace level and the boot's length (the cycles before
+                  its group's cycles plus the streamers' fill; with its group's
+                  bank-bound note where L1's banks allow fewer cycles than the
+                  ideal ones), the trace level and the boot's length (the cycles before
                   the window, which the profile, the cores and the trace share)
     tasks         per block each task's start, done and length, named from the
                   task list; a DMA copy with its direction and bytes
@@ -61,6 +63,7 @@ class CheckRow(Record):
     words: int
     counters: dict[str, int]  # per accelerator task, as the program printed it
     expected: dict[str, int] = field(default_factory=dict)  # per task, the estimate's COUNTER
+    notes: dict[str, str] = field(default_factory=dict)  # per task, its group's bank-bound note
 
 
 @dataclass
@@ -274,10 +277,21 @@ def _next_task(rows: list[TaskRow] | None, after: int) -> TaskRow | None:
 def expected_counters(point: Any) -> dict[str, int]:
     """Per accelerator task, the COUNTER the ideal estimate expects (D151): its group's (a task's
     component is its group), for a group that runs one task."""
+    return {t: g.counter for t, g in _task_groups(point).items()}
+
+
+def bank_notes(point: Any) -> dict[str, str]:
+    """Per accelerator task (as ``expected_counters``), its group's bank-bound note where L1's
+    banks allow fewer cycles than the ideal ones (D151)."""
+    return {t: g.bank_bound_note for t, g in _task_groups(point).items() if g.bank_bound_note}
+
+
+def _task_groups(point: Any) -> dict[str, Any]:
+    """Per accelerator task its group's estimate, for a group that runs one task."""
     from snax_forge.estimate import estimate
     from snax_forge.lower.derive import task_list
 
-    by_group = {g.name: g.counter for g in estimate(point.graph, point.platform, None).groups}
+    by_group = {g.name: g for g in estimate(point.graph, point.platform, None).groups}
     tasks = task_list(point).accel_steps()
     runs = [t.component for t in tasks]
     return {t.task_name: by_group[t.component] for t in tasks
@@ -294,7 +308,7 @@ def build_run(rv: api.RunView) -> RunReport:
     if fc:
         check = CheckRow(bool(fc["passed"]), fc.get("kernel", ""), fc["data_errors"], fc["words"],
                          {t: x["counter"] for t, x in fc.get("tasks", {}).items()},
-                         expected_counters(rv.point))  # fmt: skip
+                         expected_counters(rv.point), bank_notes(rv.point))  # fmt: skip
     acc = rv.cluster.accelerator
     group = {u.name: u.group for u in acc.units}
     unit_of = {t: u for u in acc.unit_names for t in rv.index.tasks_of.get(u, [])}
@@ -361,6 +375,19 @@ def build_run(rv: api.RunView) -> RunReport:
 # =============================================================================
 
 
+def counters_text(c: CheckRow) -> str:
+    """The summary's Counters cell: each task's counter, the estimate's expected COUNTER beside
+    it, and its group's bank-bound note there (D151)."""
+
+    def one(t: str, n: int) -> str:
+        if t not in c.expected:
+            return f"{t} {n}"
+        note = f"; {c.notes[t]}" if t in c.notes else ""
+        return f"{t} {n} (expected {c.expected[t]}{note})"
+
+    return ", ".join(one(t, n) for t, n in c.counters.items()) or "none"
+
+
 def render_run(r: RunReport) -> str:
     """``run.md``: the report as Markdown, one section per part."""
     out = [f"# Run report: {r.name}", ""]
@@ -369,13 +396,7 @@ def render_run(r: RunReport) -> str:
     else:
         check = "passed" if r.check.passed else "FAILED"
         data = f"{r.check.data_errors} errors over {r.check.words} words"
-        counters = (
-            ", ".join(
-                f"{t} {n}" + (f" (expected {r.check.expected[t]})" if t in r.check.expected else "")
-                for t, n in r.check.counters.items()
-            )
-            or "none"
-        )
+        counters = counters_text(r.check)
     trace = r.trace_level
     if r.boot is not None:
         trace += f"; boot {r.boot} cycles (to the mcycle read in main)"
