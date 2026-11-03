@@ -310,6 +310,8 @@ def test_the_containers_section_of_vecmul_and_matvec():
         ("N", ["N"]),
         ("M", ["M"]),
     ]
+    assert [c["line"] for c in got] == ["N · L1 · 16 KiB"] * 3
+    assert mv["A"]["line"] == "M × N · L1 · 32 KiB"
     view = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
     assert view["containers_section"] == got
     assert containers_section(g)[0]["placement"] is None  # no estimate, no placement
@@ -408,6 +410,28 @@ def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
     got = {r["label"]: (r["a"], r["b"]) for r in rows if r["under"] == "accelerator"}
     assert got == {"cycles": ("0", "256"), "unmapped cycles": ("2048", "0"),
                    "total cycles": ("2048", "256"), "not mapped": ("2048", "0")}  # fmt: skip
+
+
+@pytest.mark.slow
+def test_the_symbols_section():
+    """C§12's Symbols: each kernel symbol with its value and the containers using it; an input
+    on the param of its name with a session's recipe in edit mode, read only otherwise."""
+    from snax_forge.sandbox import Recipe
+    from snax_forge.viz.dfg.api import symbols_section
+    from tests.helpers import REPO, steps
+
+    g = steps("vecmul", N=2048, W=8)[-1]
+    r = Recipe.load(REPO / "recipes" / "vecmul.json").with_params({"N": 2048, "W": 8})
+    assert symbols_section(g, r, editable=True) == [
+        {"name": "N", "value": 2048, "param": "N", "editable": True, "containers": ["A", "B", "C"]}
+    ]
+    (ro,) = symbols_section(g)
+    assert (ro["param"], ro["editable"]) == (None, False)
+    assert not symbols_section(g, r)[0]["editable"]  # view mode: the folder's recipe, read only
+    m = steps("matvec_1")[-1]
+    got = {x["name"]: x for x in symbols_section(m)}
+    assert (got["M"]["value"], got["M"]["containers"]) == (8, ["A", "q", "tmp0"])
+    assert (got["N"]["value"], got["N"]["containers"]) == (512, ["A", "p", "tmp0"])
 
 
 def test_iterations_need_bound_symbols():

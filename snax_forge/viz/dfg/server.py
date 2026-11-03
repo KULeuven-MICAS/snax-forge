@@ -261,7 +261,11 @@ def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
         est = s.estimate(k, tech)
     except (ValueError, KeyError, TypeError, DfgError):
         est = None
-    return api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est, tech)
+    from dataclasses import replace
+
+    upto = replace(s.recipe, steps=s.recipe.steps[:k])  # the steps that made step k
+    return api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est, tech,
+                         upto, editable=True)  # fmt: skip
 
 
 class DfgHandler(Handler):
@@ -313,8 +317,9 @@ class DfgHandler(Handler):
             return {"k": api.find_step([e.name for e in entries], q["step"][0])}
         if len(parts) == 2 and parts[0] == "step":
             k = _index(parts[1], len(entries) - 1)
-            return api.step_view(entries[k], _label(entries[k].name), self.server.platform,
-                                 tech=tech)  # fmt: skip
+            e = entries[k]
+            return api.step_view(e, _label(e.name), self.server.platform, tech=tech,
+                                 recipe=api.folder_recipe(e))  # fmt: skip
         if len(parts) == 3 and parts[0] == "compare":
             j, k = (_index(x, len(entries) - 1) for x in parts[1:])
             labels = (_heading(entries[j]), _heading(entries[k]))

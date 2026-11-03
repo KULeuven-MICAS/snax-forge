@@ -463,21 +463,22 @@ const hover = (name) => ({
   onfocusin: () => hlSymbol(name, true), onfocusout: () => hlSymbol(name, false),
 });
 
-/** One symbol of a shape: in edit mode an input on its param (the same as its chip, the same
-replay), else its name. */
-function symbolEl(name) {
-  const params = state.mode === "edit" && state.session ? state.session.params : null;
-  if (params && Object.prototype.hasOwnProperty.call(params, name)) {
-    const value = String(params[name]);
-    return h("label", { class: "dfg-sym", "data-symbol": name, title: `param ${name}: a change replays every step`, ...hover(name) },
-      h("input", { value, size: Math.max(2, value.length), "aria-label": `param ${name}`,
-        onchange: (ev) => edit.setParam(name, ev.target) }));
-  }
-  return h("span", { class: "dfg-sym", "data-symbol": name, tabindex: 0, ...hover(name) }, name);
+/** One symbol of the Symbols block: in edit mode an input on its param (``POST /api/params``,
+the session's replay and refusal), else its value; focus or hover highlights its containers. */
+function symbolEl(x) {
+  const value = x.value === null || x.value === undefined ? "?" : String(x.value);
+  const input = x.editable
+    ? h("input", { value, size: Math.max(3, value.length), "aria-label": `param ${x.param}`,
+      onchange: (ev) => edit.setParam(x.param, ev.target) })
+    : h("b", { class: "mono" }, value);
+  const used = x.containers.length ? `used by ${x.containers.join(", ")}` : "no container uses it";
+  return h("label", { class: "dfg-sym", "data-symbol": x.name, tabindex: x.editable ? null : 0,
+    title: `${x.name}: ${used}${x.editable ? "; a change replays every step" : ""}`, ...hover(x.name) },
+  h("span", { class: "mono" }, x.name), input);
 }
 
-/** The Containers section: per container its name (a click selects it), dtype (read only,
-D113), placement and bytes, its shape with each symbol and the sizes at the step's symbols. */
+/** The Containers section: the Symbols first (each kernel symbol and its value), then a line per
+container, ``A: N · L1 · 16 KiB`` (its name selects it; its sizes and dtype are in Details). */
 async function containers() {
   const box = $("containers");
   const v = await view(state.k);
@@ -486,13 +487,13 @@ async function containers() {
     box.replaceChildren(h("p", { class: "muted" }, v.error || "no graph"));
     return;
   }
-  box.replaceChildren(...list.map((c) => h("div", { class: `dfg-cont${state.sel === c.name ? " sel" : ""}`, "data-cont": c.name },
-    h("div", { class: "dfg-cont-head" },
+  const symbols = v.symbols_section || [];
+  box.replaceChildren(...[
+    symbols.length ? h("div", { class: "dfg-symbols" }, h("h3", {}, "Symbols"), symbols.map(symbolEl)) : null,
+    ...list.map((c) => h("div", { class: `dfg-cont${state.sel === c.name ? " sel" : ""}`, "data-cont": c.name },
       h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(c.name) }, c.name),
-      h("small", {}, [c.dtype, c.placement, c.bytes_text].filter(Boolean).join(" · "))),
-    h("div", { class: "dfg-cont-shape mono" },
-      c.dims.length ? c.dims.map((d, i) => [i ? " × " : "", d.parts.map((p) => (p.symbol ? symbolEl(p.symbol) : p.text))]) : "scalar",
-      c.sizes_text && c.sizes_text !== c.shape_text ? h("span", { class: "muted" }, ` = ${c.sizes_text}`) : null))));
+      h("span", { class: "mono" }, `: ${c.line}`))),
+  ].filter(Boolean));
 }
 
 // -- the Estimate ------------------------------------------------------------------

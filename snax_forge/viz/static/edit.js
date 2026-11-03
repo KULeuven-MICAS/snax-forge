@@ -1,8 +1,8 @@
 // Edit mode of the DFG page (D55, VIEW2): a session (sandbox/session.py) behind the edit
 // routes of viz/dfg/server.py.
 //
-// The start dialog opens or starts a session; the top bar holds its name, its params as
-// chips, the history, undo and redo, Export and Save; the left sidebar lists the transforms
+// The start dialog opens or starts a session; the top bar holds its name, the history, undo and
+// redo, Export and Save (the params are in the left column, with what they configure); the left sidebar lists the transforms
 // whose site accepts the selection, each with the form the API gives (its fields, types,
 // defaults and choices), and Apply; the log at the bottom has a line per action, written by
 // the server, and the working recipe. Nothing is computed here (D57): every value, choice
@@ -89,17 +89,13 @@ async function changed() {
 /** The top bar's edit parts from the session. */
 export function top(s) {
   $("session-name").textContent = s.name;
-  $("params").replaceChildren(...Object.entries(s.params).map(([name, value]) =>
-    h("label", { class: "dfg-chip", title: `param ${name}: a change replays every step`, "data-symbol": name, ...ctx.hover(name) }, name,
-      h("input", { value: String(value), size: Math.max(2, String(value).length), "data-param": name,
-        onchange: (ev) => setParam(name, ev.target) }))));
   $("undo").disabled = s.undo === null;
   $("redo").disabled = s.redo === null;
   $("recipe").hidden || recipePanel();
 }
 
-/** A param set from its chip or a symbol's input in the Containers: every step replayed; a
-refusal keeps the old value. */
+/** A param set from its input in the left column (a symbol or a binding): every step replayed;
+a refusal keeps the old value. */
 export async function setParam(name, input) {
   const raw = input.value.trim();
   const value = /^-?\d+$/.test(raw) ? Number(raw) : raw;

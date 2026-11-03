@@ -298,10 +298,12 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
 
 
 def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[str]] | None = None,
-              diff: dict[str, Any] | None = None, est: Any = None,
-              tech: str = DEFAULT_TECH) -> dict[str, Any]:  # fmt: skip
+              diff: dict[str, Any] | None = None, est: Any = None, tech: str = DEFAULT_TECH,
+              recipe: Any = None, editable: bool = False) -> dict[str, Any]:  # fmt: skip
     """One step (module doc): the graph's view, its label, marks, estimate and its summary,
-    and diff; the cost on ``tech``."""
+    and diff; the cost on ``tech``; ``recipe`` the steps up to this one (a session's, or a
+    sandbox folder's ``recipe.json``), whose params the left column's sections name, inputs
+    where ``editable`` (edit mode)."""
     error = None
     if e.graph is not None and est is None:
         est, error = _estimated(e.graph, platform, tech)
@@ -313,6 +315,7 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["estimate"] = est.to_dict() if est is not None else None
     out["summary"] = estimate_summary(est, e.graph) if est is not None else None
     out["containers_section"] = containers_section(e.graph, est)
+    out["symbols_section"] = symbols_section(e.graph, recipe, editable)
     if marks is None:
         from snax_forge.sandbox.session import marks_of
 
@@ -324,6 +327,59 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
 
 
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+STEP = re.compile(r"^(\d+)_")
+
+
+def folder_recipe(e: Entry) -> Any:
+    """View mode: the ``recipe.json`` beside a step's file (a sandbox folder's), its steps up to
+    that step (the stem's number), or None when there is none, it does not load, or the stem
+    has no number."""
+    from snax_forge.sandbox import Recipe, SandboxError
+
+    m = STEP.match(Path(e.path).stem)
+    path = Path(e.path).parent / "recipe.json"
+    if m is None or not path.is_file():
+        return None
+    try:
+        r = Recipe.load(path)
+    except (SandboxError, OSError, ValueError):
+        return None
+    from dataclasses import replace
+
+    return replace(r, steps=r.steps[: int(m[1])])
+
+
+def symbols_section(g: Graph, recipe: Any = None, editable: bool = False) -> list[dict[str, Any]]:
+    """The left column's Symbols (C§12): each graph symbol, its ``value`` (None while unbound),
+    the recipe ``param`` its value is (the recipe's symbol bound to a param's name, ``N`` ->
+    ``N``; None for a number or an expression), ``editable`` (edit mode and a param: an input,
+    ``POST /api/params``) and the ``containers`` whose shape uses it."""
+    users: dict[str, list[str]] = {s: [] for s in g.symbols}
+    for c in containers_section(g):
+        for x in c["symbols"]:
+            users.setdefault(x, []).append(c["name"])
+    out = []
+    for name, value in g.symbols.items():
+        given = recipe.symbols.get(name) if recipe is not None else None
+        param = (
+            given
+            if isinstance(given, str) and expr.is_name(given) and given in recipe.params
+            else None
+        )
+        out.append({"name": name, "value": value, "param": param,
+                    "editable": bool(editable and param), "containers": users.get(name, [])})  # fmt: skip
+    return out
+
+
+def _placed_text(placed: Any) -> str | None:
+    """A container's placement as its line shows it: ``L1``, ``local``, ``wire``, ``FIFO 1``."""
+    if placed is None:
+        return None
+    if placed.placement == "l1":
+        return "L1"
+    if placed.placement == "link":
+        return "wire" if placed.depth == 0 else f"FIFO {placed.depth}"
+    return placed.placement
 
 
 def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
@@ -332,7 +388,8 @@ def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
     ``{text, symbol}`` with ``symbol`` the graph symbol a part names or None, so the page puts
     an input on each), ``sizes`` at the graph's symbols (None while one is unbound), ``dtype``,
     padded ``bytes`` and ``placement`` as the estimate has them (None without one), and the
-    ``symbols`` its shape uses, in order."""
+    ``symbols`` its shape uses, in order; ``line``, what the page shows after its name: the shape,
+    the placement and the padded bytes (``N · L1 · 16 KiB``)."""
     out = []
     for name, c in g.containers.items():
         placed = est.containers.get(name) if est is not None else None
@@ -363,6 +420,9 @@ def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
             "bytes_text": size_text(placed.bytes) if placed else None,
             "placement": placed.placement if placed else None,
             "symbols": list(dict.fromkeys(used)),
+            "line": " · ".join(x for x in (" × ".join(str(d) for d in c.shape) or "scalar",
+                                           _placed_text(placed),
+                                           size_text(placed.bytes) if placed else None) if x),
         })  # fmt: skip
     return out
 
