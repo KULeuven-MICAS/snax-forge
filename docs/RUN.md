@@ -23,10 +23,10 @@ Everything else runs in snax-forge's image (D118), started from the folder that 
 
     flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> out/flow/vecadd/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-      design    23 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
+      design    25 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_forge.hjson, snax_forge_streamer.hjson, accelerator.json, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc e27acce0)
+      build     up to date (snax-gvsoc c061e32b)
       sw        sw/forge.elf (sha256 3fa93c774886c3b3)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 214 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
