@@ -17,7 +17,7 @@
 // everything of that name is outlined (a link node and its container share one) and Details
 // shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
 
-import { h } from "./dom.js";
+import { dragHandle, h, keep, stored } from "./dom.js";
 import * as edit from "./edit.js";
 
 const $ = (id) => document.getElementById(id);
@@ -649,6 +649,35 @@ function clear() {
   compares.clear();
 }
 
+// -- the side panels' widths ---------------------------------------------------------------
+
+// Dragged on their inner edge as the log is (dom.js's dragHandle), from MIN_SIDE px to 45% of
+// the window, kept in localStorage; a double-click gives back the CSS default (--left, --side).
+const MIN_SIDE = { left: 170, right: 230 };
+
+function sidePanels() {
+  const layout = document.querySelector(".dfg-layout");
+  for (const side of ["left", "right"]) {
+    const prop = side === "left" ? "--left" : "--side";
+    const key = `snax-forge.dfg.${side}-width`;
+    const panel = side === "left" ? $("sidebar") : $("right");
+    const set = (px) => layout.style.setProperty(prop, `${Math.round(Math.min(0.45 * innerWidth, Math.max(MIN_SIDE[side], px)))}px`);
+    const kept = stored(key);
+    if (kept) set(kept);
+    const handle = $(`${side}-handle`);
+    dragHandle(handle, {
+      delta: (dx) => (side === "left" ? dx : -dx), // the left panel grows rightwards, the right leftwards
+      measure: () => panel.getBoundingClientRect().width,
+      place: set,
+      done: () => keep(key, Math.round(panel.getBoundingClientRect().width)),
+    });
+    handle.addEventListener("dblclick", () => {
+      layout.style.removeProperty(prop);
+      keep(key, 0);
+    });
+  }
+}
+
 // -- controls ----------------------------------------------------------------------
 
 $("step").addEventListener("change", (ev) => goto(Number(ev.target.value)));
@@ -726,4 +755,5 @@ $("reload").addEventListener("click", async () => {
 });
 
 legend();
+sidePanels();
 load();

@@ -8,7 +8,7 @@
 // the server, and the working recipe. Nothing is computed here (D57): every value, choice
 // and message comes from the API, and after a change the page asks for the session again.
 
-import { h } from "./dom.js";
+import { dragHandle, h, keep, stored } from "./dom.js";
 
 const $ = (id) => document.getElementById(id);
 const enc = encodeURIComponent;
@@ -39,22 +39,6 @@ export function log(line, error = false) {
 // CSS's min-height and max-height), kept in localStorage; a double-click collapses or reopens it.
 const LOG_KEY = "snax-forge.dfg.log-height";
 
-function logHeight() {
-  try {
-    return Number(localStorage.getItem(LOG_KEY)) || null;
-  } catch {
-    return null;
-  }
-}
-
-function keepLogHeight(px) {
-  try {
-    localStorage.setItem(LOG_KEY, String(px));
-  } catch {
-    // no storage (private window, blocked): the default height next time
-  }
-}
-
 function collapse(on) {
   const pane = $("log");
   pane.classList.toggle("collapsed", on);
@@ -64,31 +48,17 @@ function collapse(on) {
 function logPane() {
   const pane = $("log");
   const handle = $("log-handle");
-  const kept = logHeight();
+  const kept = stored(LOG_KEY);
   if (kept) pane.style.height = `${kept}px`;
-  handle.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
-    const y0 = ev.clientY;
-    const h0 = pane.getBoundingClientRect().height;
-    let dragging = false;
-    handle.setPointerCapture(ev.pointerId);
-    const to = (e) => {
-      if (!dragging && Math.abs(e.clientY - y0) < 3) return; // a click, maybe half a double-click
-      dragging = true;
-      handle.classList.add("dragging");
+  dragHandle(handle, {
+    delta: (dx, dy) => -dy, // up is taller
+    measure: () => pane.getBoundingClientRect().height,
+    place: (px) => {
       collapse(false);
       const css = getComputedStyle(pane);
-      const px = Math.min(parseFloat(css.maxHeight), Math.max(parseFloat(css.minHeight), h0 + y0 - e.clientY));
-      pane.style.height = `${px}px`;
-    };
-    const done = () => {
-      handle.removeEventListener("pointermove", to);
-      handle.classList.remove("dragging");
-      if (dragging) keepLogHeight(Math.round(pane.getBoundingClientRect().height));
-    };
-    handle.addEventListener("pointermove", to);
-    handle.addEventListener("pointerup", done, { once: true });
-    handle.addEventListener("pointercancel", done, { once: true });
+      pane.style.height = `${Math.min(parseFloat(css.maxHeight), Math.max(parseFloat(css.minHeight), px))}px`;
+    },
+    done: () => keep(LOG_KEY, Math.round(pane.getBoundingClientRect().height)),
   });
   handle.addEventListener("dblclick", () => collapse(!pane.classList.contains("collapsed")));
   $("log-toggle").addEventListener("click", () => collapse(!pane.classList.contains("collapsed")));

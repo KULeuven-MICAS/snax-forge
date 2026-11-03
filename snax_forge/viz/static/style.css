@@ -339,7 +339,8 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
   --edge: #6b747e;
   --hl: #d4386a;
   --data: #1f7a8c;
-  --side: 300px; /* the right panel */
+  --side: 300px; /* the right panel, dragged on its edge (dfg.js) */
+  --left: 260px; /* the left panel, the same */
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -363,14 +364,19 @@ body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px
 .dfg-steps { display: flex; align-items: center; gap: 0.25rem; }
 .dfg-steps select { min-width: 12rem; }
 .dfg-toggle { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
-.dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) var(--side); grid-template-areas: "side centre right"; }
-.dfg-sidebar { grid-area: side; width: 260px; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
+.dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--left) 6px minmax(0, 1fr) 6px var(--side); grid-template-areas: "side lh centre rh right"; }
+.dfg-sidebar { grid-area: side; min-width: 0; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
+/* the side panels' handles: the log's look (a thin rule on hover or while dragged) */
+.dfg-col-handle { cursor: col-resize; touch-action: none; }
+.dfg-col-handle.left { grid-area: lh; }
+.dfg-col-handle.right { grid-area: rh; }
+.dfg-col-handle:hover, .dfg-col-handle.dragging { background: var(--rule); }
 .dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; justify-content: safe center; }
 /* Compare: the two graphs side by side, one thin line between them; the column scrolls */
 .dfg-centre.two { align-items: stretch; gap: 0; }
 .dfg-centre.two > .c-panel { flex: 0 0 auto; }
 .dfg-centre.two > .c-panel + .c-panel { border-left: 1px solid var(--rule); }
-.dfg-right { grid-area: right; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
+.dfg-right { grid-area: right; min-width: 0; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
 .dfg-side-panel h2 { font-size: 0.925rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.4rem 0 0.3rem; }
 .dfg-side-panel { padding: 0; border-bottom: none; }
 .dfg-side-panel + .dfg-side-panel { border-top: 1px solid var(--rule); margin-top: 0.6rem; padding-top: 0.3rem; }
