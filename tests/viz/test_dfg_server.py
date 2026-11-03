@@ -240,6 +240,8 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert get_json(srv, "/api/step/4")[1]["estimate"]["groups"][0]["cycles"] == 8
         status, saved = post(srv, "/api/save", {"name": "vecadd_mine"})
         assert status == 200 and (roots.recipes / "vecadd_mine.json").is_file(), saved
+        assert saved["log"] == f"saved {saved['shown']}" and saved["commands"][2]["command"] == (
+            f"pixi run forge {saved['shown']}")  # fmt: skip
         assert post(srv, "/api/save", {"name": "vecadd_mine"})[1]["code"] == "save.name"
         status, out = post(srv, "/api/export", {"k": 1})
         assert status == 200 and Path(out["path"]).name == "1_split.snaxdfg"

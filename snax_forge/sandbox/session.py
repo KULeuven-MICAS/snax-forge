@@ -54,6 +54,8 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            (any other problem, unless ``force``: dot 1 without
                                            ``encapsulate`` is ``gen.instances``); returns the
                                            ``pixi run sandbox``, ``flow`` and ``forge`` lines
+                                           as ``commands``, each ``{command, what}``, ``what``
+                                           one line on what it does (``COMMANDS``)
 
 A transform's own refusal keeps its code (``link.*``), a plain SandboxError is ``sandbox``, a
 DfgError ``dfg``, a failed reference check ``sandbox.check``.
@@ -392,11 +394,11 @@ class Session:
             ]
             write_steps(recipe, results, self.roots.sandbox / name)
             shown = _shown(path)
-            return {"ok": True, "recipe": str(path), "problems": listed, "commands": [
-                f"pixi run sandbox {shown}",
-                f"pixi run flow {shown} --platform {self.platform_path}",
-                f"pixi run forge {shown}",
-            ]}  # fmt: skip
+            lines = (f"pixi run sandbox {shown}",
+                     f"pixi run flow {shown} --platform {self.platform_path}",
+                     f"pixi run forge {shown}")  # fmt: skip
+            return {"ok": True, "recipe": str(path), "shown": shown, "problems": listed,
+                    "commands": [{"command": c, "what": w} for c, w in zip(lines, COMMANDS)]}  # fmt: skip
 
     # -- asking it ------------------------------------------------------------------------
 
@@ -524,6 +526,14 @@ def _nodes(g: Graph) -> dict[str, Any]:
                    {c: m.to_dict() for c, m in n.inputs.items()},
                    {c: m.to_dict() for c, m in n.outputs.items()},
                    [k.id for k in n.body or []]) for n, _ in g.walk()}  # fmt: skip
+
+
+# What each of Save's commands does (C§12), in the order Save lists them
+COMMANDS = (
+    "writes the steps and checks each against the reference",
+    "runs the recipe on SNAX-GVSoC and writes the reports",
+    "the flow plus the bundle for snax_cluster's RTL",
+)
 
 
 def _shown(p: Path) -> str:

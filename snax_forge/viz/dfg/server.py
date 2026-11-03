@@ -402,7 +402,7 @@ class DfgHandler(Handler):
             _needs(body, "name")
             out = s.save(body["name"], bool(body.get("force")))
             if out["ok"]:
-                return out | {"log": f"saved {out['recipe']}"}
+                return out | {"log": f"saved {out['shown']}"}
             return out | {"log": f"save {body['name']}  {out['code']}: {out['message']}"}
         _needs(body, "k")
         if type(body["k"]) is not int or not 0 <= body["k"] <= s.n:

@@ -244,8 +244,12 @@ def test_a_saved_recipe_gives_the_sessions_graphs(roots):
     session's graphs; a name taken or not a name is refused."""
     s = opened("dot_2", roots)
     got = ok(s.save("dot_mine"))
-    assert got["commands"][0] == f"pixi run sandbox {roots.recipes / 'dot_mine.json'}"
-    assert got["commands"][1].endswith("--platform platforms/snax_forge.json")
+    assert got["commands"][0] == {"command": f"pixi run sandbox {roots.recipes / 'dot_mine.json'}",
+                                  "what": "writes the steps and checks each against the reference"}  # fmt: skip
+    assert got["commands"][1]["command"].endswith("--platform platforms/snax_forge.json")
+    assert [c["what"] for c in got["commands"][1:]] == [
+        "runs the recipe on SNAX-GVSoC and writes the reports",
+        "the flow plus the bundle for snax_cluster's RTL"]  # fmt: skip
     assert s.save("dot_mine")["code"] == "save.name"
     assert s.save("2dot")["code"] == "save.name"
     saved = Recipe.load(roots.recipes / "dot_mine.json")

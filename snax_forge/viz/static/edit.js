@@ -366,7 +366,8 @@ export function decorate(v, root) {
 function saveAnswer(body, ok) {
   const out = [];
   if (ok) {
-    out.push(h("p", {}, `saved ${body.recipe}`), h("pre", { class: "mono" }, body.commands.join("\n")));
+    out.push(h("p", {}, `saved ${body.shown}`), h("pre", { class: "mono" },
+      body.commands.map((c) => `${c.command}\n    ${c.what}`).join("\n")));
   } else {
     out.push(h("p", { class: "error" }, `${body.code}: ${body.message}`));
     if (body.problems) out.push(h("pre", { class: "mono" }, body.problems.join("\n")));
@@ -379,6 +380,7 @@ async function save(force) {
   const name = $("save-name").value.trim();
   const r = await post("/api/save", { name, force });
   log(r.body.log, !r.ok);
+  if (r.ok) for (const c of r.body.commands) log(`  ${c.command}  · ${c.what}`);
   saveAnswer(r.body, r.ok);
 }
 
