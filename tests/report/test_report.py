@@ -15,6 +15,7 @@ from pathlib import Path
 import pytest
 
 from snax_forge.design import DesignPoint
+from snax_forge.estimate.cost import sig3
 from snax_forge.lower.tasks import TaskList
 from snax_forge.report import (
     DesignReport,
@@ -453,15 +454,33 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     assert e.area_um2 == pytest.approx(sum(g.area_um2 for g in e.groups))
     assert e.energy_nj == pytest.approx(sum(c.energy_nj for c in e.cost))
     text = render_design(r)
+    assert "| Expected COUNTER | Area (µm²) | Energy (nJ) |" in text
     assert (
-        "| Expected COUNTER | Area (µm²) | Energy (nJ) |" in text
-        and "### Cost on nangate45" in text
+        "### Cost estimate (first-order) on nangate45\n\nFirst-order: aimed at the large costs"
+        in text
     )
+    assert (f"Accelerator on nangate45: about {sig3(e.area_um2)} µm² and {sig3(e.energy_nj)} nJ "
+            "per run.") in text  # fmt: skip
+    # every cost shown to 3 significant figures
     assert (
-        f"Accelerator on nangate45: area {e.area_um2:.1f} µm², energy {e.energy_nj:.3f} nJ" in text
+        "| sum | sum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.50 | 0.457 | 0.0550 |"
+        in text
     )
     assert "Not characterized" not in text
     assert DesignReport.from_dict(r.to_dict()).to_dict() == r.to_dict()
+
+
+def test_design_md_on_another_technology_or_none(dot1):
+    """The report's technology (``--tech``): nangate15's heading and table; None, no cost."""
+    from snax_forge.report.files import reports_of as of
+
+    r15 = of(dot1, tech="nangate15").design
+    assert r15.estimate.tech == "nangate15"
+    assert "### Cost estimate (first-order) on nangate15" in render_design(r15)
+    plain = of(dot1, tech=None).design
+    assert plain.estimate.tech is None and plain.estimate.cost == []
+    text = render_design(plain)
+    assert "Cost estimate" not in text and "Area (µm²)" not in text
 
 
 def test_design_md_names_what_the_table_does_not_hold(tmp_path):

@@ -11,7 +11,7 @@ import pytest
 
 from snax_forge.char import Table, load
 from snax_forge.estimate import Estimate, estimate
-from snax_forge.estimate.cost import Block, block_cost, group_cost
+from snax_forge.estimate.cost import CAVEAT, Block, block_cost, group_cost, heading, sig3
 from tests.helpers import steps
 
 from .helpers import SNAX_FORGE, estimated
@@ -89,11 +89,21 @@ def test_an_older_estimate_without_cost_still_reads():
     assert e.tech is None and e.groups[0].cost is None and e.groups[0].bits == {}
 
 
+def test_a_cost_is_shown_to_3_significant_figures():
+    """What a reader sees (design.md, the viewer): 3 significant figures, thousands split."""
+    assert [sig3(x) for x in (26.33877, 63186.17, 97.2592, 0.1353, 999.6, 0.0, 2723.84)] == [
+        "26.3", "63 200", "97.3", "0.135", "1 000", "0", "2 720"]  # fmt: skip
+    assert sig3(None) is None
+    assert heading("nangate15") == "Cost estimate (first-order) on nangate15"
+    assert "about 20 %" in CAVEAT and "csr" in CAVEAT
+
+
 @pytest.mark.slow
-def test_the_kernel_energy_is_chars_model_of_syn2(capsys):
-    """vecmul, vsum_tree, dot 4 and dot 5 at W = 8 and 32, N = 2048, on both technologies: the
-    estimate's kernel energy (units, links and ctrl) against snax-forge-experiments' model, the
-    same formula on the same inputs (its C_acc SYN2's window, its ctrl bits DC's); within 0.5 %."""
+def test_the_kernel_energy_is_the_experiments_formula(capsys):
+    """A consistency check, not one of accuracy: vecmul, vsum_tree, dot 4 and dot 5 at W = 8
+    and 32, N = 2048, on both technologies, the estimate's kernel energy (units, links and
+    ctrl) against snax-forge-experiments' model, the same formula on the same inputs (its C_acc
+    SYN2's window, its ctrl bits DC's); within 0.5 %, the table's rounding."""
     rows = json.loads(MODEL.read_text())["rows"]
     lines = ["| tech | recipe | W | C_acc | ctrl bits | estimate nJ | model nJ | ratio |",
              "|---|---|---|---|---|---|---|---|"]  # fmt: skip
@@ -108,7 +118,10 @@ def test_the_kernel_energy_is_chars_model_of_syn2(capsys):
         if abs(ratio - 1) > TOL:
             bad.append((r["tech"], r["recipe"], r["W"], ratio))
     with capsys.disabled():
-        print("\nkernel energy, the estimate against CHAR1's model:\n" + "\n".join(lines))
+        print(
+            "\nkernel energy, the estimate against the experiments' formula (consistency):\n"
+            + "\n".join(lines)
+        )
     assert len(rows) == 16 and not bad, bad
 
 

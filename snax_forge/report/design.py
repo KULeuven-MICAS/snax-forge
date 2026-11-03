@@ -46,6 +46,8 @@ from typing import Any
 
 import numpy as np
 
+from snax_forge.char import DEFAULT_TECH
+from snax_forge.estimate.cost import CAVEAT, heading, sig3
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
 
@@ -321,9 +323,11 @@ def build_design(
     recipe: Any = None,
     kernel: str = "",
     elf_symbols: dict[str, Any] | None = None,
+    tech: str | None = DEFAULT_TECH,
 ) -> DesignReport:
     """The design report of a flow (``point`` its DesignPoint, ``recipe`` its recipe, or for a
-    flow from a bound graph its ``kernel``; ``elf_symbols`` its run.json's)."""
+    flow from a bound graph its ``kernel``; ``elf_symbols`` its run.json's; ``tech`` the
+    estimate's technology, None for no cost)."""
     from snax_forge.design import note_text, run_checks, run_notes
     from snax_forge.design.streamers import accelerated, streamer_name
 
@@ -386,14 +390,14 @@ def build_design(
     return DesignReport(name, header, components, accels, streamers,
                         _memory_tables(cluster, regions, point),
                         design_notes + _notes(cluster, regions, point, streamers), len(a.units),
-                        estimate_table(point))  # fmt: skip
+                        estimate_table(point, tech))  # fmt: skip
 
 
-def estimate_table(point: Any) -> EstimateTable:
-    """The design point's ideal estimate (D151) as the report shows it."""
+def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable:
+    """The design point's ideal estimate (D151) as the report shows it, costed on ``tech``."""
     from snax_forge.estimate import estimate
 
-    e = estimate(point.graph, point.platform)
+    e = estimate(point.graph, point.platform, tech)
     rows = [EstimateRow(g.name, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter,
                         g.cost.area if g.cost else None, g.cost.energy if g.cost else None)
             for g in e.groups]  # fmt: skip
@@ -543,7 +547,7 @@ def render_estimate(e: EstimateTable) -> list[str]:
     cols = ["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected COUNTER"]
     cols += ["Area (µm²)", "Energy (nJ)"] if costed else []
     out += table(cols, [[g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter]
-                        + ([_um2(g.area_um2), _nj(g.energy_nj)] if costed else [])
+                        + ([_shown(g.area_um2), _shown(g.energy_nj)] if costed else [])
                         for g in e.groups], set(range(1, len(cols))))  # fmt: skip
     l1 = f"{e.l1_footprint} bytes"
     if e.l1_size is not None:
@@ -555,38 +559,31 @@ def render_estimate(e: EstimateTable) -> list[str]:
     return out
 
 
-def _um2(x: float | None) -> str | None:
-    return None if x is None else f"{x:.1f}"
-
-
-def _nj(x: float | None) -> str | None:
-    return None if x is None else f"{x:.3f}"
-
-
-def _pj(x: float | None) -> str | None:
-    return None if x is None else f"{x:.4f}"
+def _shown(x: float | None, unit: str = "") -> str | None:
+    """A cost as shown (C§20): 3 significant figures."""
+    v = sig3(x)
+    return None if v is None else f"{v}{unit}"
 
 
 def render_cost(e: EstimateTable) -> list[str]:
-    """The cost subsection (C§20): how each block is costed, then the accelerator's totals."""
+    """The cost subsection (C§20): how each block is costed, then the accelerator's totals,
+    every number to 3 significant figures."""
     src = e.char_source.get("snax_forge_experiments", "")[:7]
-    out = [f"### Cost on {e.tech}", "",
-           (f"CHAR1's first-order model (D154, C§20) on `snax_forge/char/{e.tech}.json` "
-            f"(snax-forge-experiments {src}), per run of the accelerator: a unit or buffer link "
-            "pays its comb energy per fire, from the table as measured, copied (lanes × the "
-            "lanes-1 point) or interpolated, its register bits at e_load in the cycles it fires "
-            "and e_hold in every other cycle the accelerator runs; a control unit its bits × "
-            "e_hold × the counter factor every cycle. Memory, the streamers and the csr are "
-            "left out."), ""]  # fmt: skip
+    out = [f"### {heading(e.tech)}", "", CAVEAT, "",
+           (f"CHAR1's model (D154, C§20) on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
+            f"{src}), per run of the accelerator: a unit or buffer link pays its comb energy per "
+            "fire, from the table as measured, copied (lanes × the lanes-1 point) or "
+            "interpolated, its register bits at e_load in the cycles it fires and e_hold in every "
+            "other cycle; a control unit its bits × e_hold × the counter factor every cycle."), ""]  # fmt: skip
     out += table(["Group", "Block", "Datapath", "Found", "Fires", "Bits", "Comb (µm²)",
                   "Flops (µm²)", "e_fire (pJ)", "Hold (pJ/cycle)", "Energy (nJ)"],
                  [[c.group, c.block, c.datapath,
                    c.found or ("not characterized" if c.block != "ctrl" else None), c.fires,
-                   c.bits, _um2(c.comb_um2), _um2(c.flops_um2), _pj(c.e_fire_pj),
-                   _pj(c.e_hold_pj), _nj(c.energy_nj)] for c in e.cost],
+                   c.bits, _shown(c.comb_um2), _shown(c.flops_um2), _shown(c.e_fire_pj),
+                   _shown(c.e_hold_pj), _shown(c.energy_nj)] for c in e.cost],
                  {4, 5, 6, 7, 8, 9, 10})  # fmt: skip
-    out += ["", (f"Accelerator on {e.tech}: area {_um2(e.area_um2)} µm², energy "
-                 f"{_nj(e.energy_nj)} nJ per run.")]  # fmt: skip
+    out += ["", (f"Accelerator on {e.tech}: about {_shown(e.area_um2, ' µm²')} and "
+                 f"{_shown(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
     if e.missing:
         out += ["", (f"Not characterized on {e.tech} (comb counted as 0, flops counted): "
                      f"{', '.join(e.missing)}; see the notes.")]  # fmt: skip

@@ -4,6 +4,8 @@ C§20).
     Block(datapath, params, fires)                 a unit or a buffer link to cost
     block_cost(table, block, bits, c_acc) -> BlockCost
     group_cost(table, blocks, bits, ctrl_bits, c_acc) -> GroupCost
+    sig3(x) -> str                                 a cost as shown: 3 significant figures
+    heading(tech), CAVEAT                          what every shown cost is headed with
 
 **The model**, per unit and per buffer link over one run of the accelerator, with n_fire its
 fires, n_bits its register bits (the estimate's ``bits``), C_acc the accelerator's cycles
@@ -21,15 +23,40 @@ csr are left out, D152). n_fire is a unit's firings times its span (SerialAccumu
 beats per firing); a buffer link loads once per beat of its producer, its producer's firings. A
 block the table does not hold (``lookup`` None) or the generator does not fill has ``found``
 None and its comb part counted as 0; its flops are still counted, the description gives them.
+
+**Shown, not stored.** The fields keep full precision; everything a reader sees (``design.md``,
+the viewer and the editor) is rounded by ``sig3`` and headed by ``heading`` with ``CAVEAT``: the
+model is first-order, aimed at about 20 % of synthesis on the large costs (C§20).
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from math import floor, log10
 from typing import Any
 
 from snax_forge.char import Table, lookup
+
+CAVEAT = ("First-order: aimed at the large costs (about 20 % of synthesis there; small blocks "
+          "can be much further off); memory, the streamers and the csr are left out.")  # fmt: skip
+
+
+def heading(tech: str) -> str:
+    """What a shown cost is headed with."""
+    return f"Cost estimate (first-order) on {tech}"
+
+
+def sig3(x: float | None) -> str | None:
+    """``x`` to 3 significant figures, thousands split by a space: 26.3, 63 200, 0.135; None
+    stays None."""
+    if x is None:
+        return None
+    r = float(f"{x:.3g}")
+    if r == 0:
+        return "0"
+    decimals = max(0, 2 - floor(log10(abs(r))))
+    return f"{r:,.{decimals}f}".replace(",", " ")
 
 
 @dataclass(frozen=True)

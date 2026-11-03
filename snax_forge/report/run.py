@@ -277,7 +277,7 @@ def expected_counters(point: Any) -> dict[str, int]:
     from snax_forge.estimate import estimate
     from snax_forge.lower.derive import task_list
 
-    by_group = {g.name: g.counter for g in estimate(point.graph, point.platform).groups}
+    by_group = {g.name: g.counter for g in estimate(point.graph, point.platform, None).groups}
     tasks = task_list(point).accel_steps()
     runs = [t.component for t in tasks]
     return {t.task_name: by_group[t.component] for t in tasks
