@@ -103,8 +103,9 @@ a unit's and a buffer link's Details gain ``cost`` after ``timing`` (``found``, 
 comb and flops, its energy per fire, holding per cycle and per task, or "not characterized"), a
 group's its area, energy and control unit; the Estimate panel's ``summary`` per group
 ``area_text`` and ``energy_text``, and ``cost`` (the heading, ``CAVEAT``, the accelerator's
-area and energy, the blocks not characterized; None when nothing is bound or there is no
-technology); a block with no flops holds "–".
+area and energy, the blocks not characterized, and ``tables``, the cost as a table per
+accelerator, ``cost_tables``; None when nothing is bound or there is no technology); a block
+with no flops holds "–".
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
