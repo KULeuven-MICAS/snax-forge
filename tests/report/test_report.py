@@ -437,6 +437,45 @@ def test_one_group_has_no_group_column(flows):
     assert "| Block | # | Task |" in text and "Group" not in text
 
 
+def test_design_md_costs_each_group_beside_its_cycles(dot1):
+    """dot 1's two groups on nangate45 (C§20): each its area and energy beside its cycles, the
+    cost table a row per unit and per control unit, the accelerator's totals their sums, every
+    unit held by the table; the report round-trips."""
+    from snax_forge.report.design import DesignReport
+
+    r = reports_of(dot1).design
+    e = r.estimate
+    assert e.tech == "nangate45" and e.char_source["snax_forge_experiments"] and not e.missing
+    assert [(c.group, c.block, c.datapath) for c in e.cost] == [
+        ("mul", "mul", "ElementwiseLanes"), ("mul", "ctrl", "group control unit"),
+        ("sum", "sum", "TreeAccumulate"), ("sum", "ctrl", "group control unit")]  # fmt: skip
+    assert all(c.found for c in e.cost if c.block != "ctrl")
+    assert e.area_um2 == pytest.approx(sum(g.area_um2 for g in e.groups))
+    assert e.energy_nj == pytest.approx(sum(c.energy_nj for c in e.cost))
+    text = render_design(r)
+    assert (
+        "| Expected COUNTER | Area (µm²) | Energy (nJ) |" in text
+        and "### Cost on nangate45" in text
+    )
+    assert (
+        f"Accelerator on nangate45: area {e.area_um2:.1f} µm², energy {e.energy_nj:.3f} nJ" in text
+    )
+    assert "Not characterized" not in text
+    assert DesignReport.from_dict(r.to_dict()).to_dict() == r.to_dict()
+
+
+def test_design_md_names_what_the_table_does_not_hold(tmp_path):
+    """vecadd_i32: an int32 ElementwiseLanes, not in nangate45's int64 table; its comb counted
+    as 0, listed under the cost and noted (char.missing)."""
+    r = designed_report(tmp_path, "vecadd_i32")
+    assert r.estimate.missing == ["acc"]
+    text = render_design(r)
+    assert "| acc | acc | ElementwiseLanes | not characterized |" in text
+    assert "Not characterized on nangate45 (comb counted as 0, flops counted): acc" in text
+    assert ("- note [char.missing] acc: not characterized: ElementwiseLanes at lanes 4 on "
+            "nangate45") in text  # fmt: skip
+
+
 def test_the_estimate_beside_the_counters(dot1, dot4):
     """design.md's Estimate section (D151) per group, and run.md's expected COUNTER beside each
     measured one: equal on the recorded runs, the cycles plus the streamers' fill."""
