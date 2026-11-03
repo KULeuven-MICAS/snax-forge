@@ -38,7 +38,7 @@ from snax_forge.flow import (
     summary,
 )
 from snax_forge.flow import run as flow_run
-from snax_forge.flow.run import with_level
+from snax_forge.flow.run import check_toolchain, first_error, with_level
 from snax_forge.gen import Manifest
 from snax_forge.run import read_run
 from snax_forge.sandbox import Recipe
@@ -357,6 +357,63 @@ def test_the_runs_exit_code_from_make():
     assert run_exit_code(2, "Warning: ...\nmake: *** [Makefile:110: run] Error 1\n") == 1
     with pytest.raises(FlowError, match=r"gvsoc: make run failed \(exit 2\) before running gvrun"):
         run_exit_code(2, "make: *** No rule to make target 'run'.  Stop.\n")
+
+
+FATAL = (
+    "[\x1b[31m/sys/board/chip/soc/cluster/tcdm_xbar\x1b[0m] nb_inputs must be in (0, 64], got 99"
+)
+
+
+def test_the_simulators_first_error_line():
+    """GVSoC's fatal line (its path in red, dropped) or an ASSERT FAILED one, stdout first."""
+    assert first_error(f"boot\n{FATAL}\n", "ASSERT FAILED: later\n") == (
+        "nb_inputs must be in (0, 64], got 99")  # fmt: skip
+    assert first_error("boot\n", "\x1b[31mASSERT FAILED: x > 0\x1b[0m\n") == "x > 0"
+    assert first_error("forge cycles: 3\n", "make: *** [Makefile:110: run] Error 1\n") is None
+
+
+def test_a_run_that_asserts_names_the_simulators_error(tmp_path, monkeypatch):
+    """No ``forge cycles:`` line: the check's FlowError adds the assert, in flow.log too."""
+    fake = stub(monkeypatch, tmp_path)
+    fake.rc["run"] = 2
+    fake.stderr["run"] = "make: *** [Makefile:110: run] Error 134\n"
+    fake.stdout = f"{FATAL}\n"
+    says = ("check: no `forge cycles:` line in the program's output; SNAX-GVSoC: nb_inputs must "
+            "be in (0, 64], got 99")  # fmt: skip
+    with pytest.raises(FlowError) as e:
+        flow(tmp_path)
+    assert str(e.value) == says
+    assert (tmp_path / "flow" / "flow.log").read_text().splitlines()[1] == says
+
+
+def test_a_program_that_exits_nonzero_names_the_simulators_error(tmp_path, monkeypatch):
+    """Its lines all there but the run's exit non-zero: the summary's FAILED check line adds
+    the error line from stderr; a passing run has none."""
+    fake = stub(monkeypatch, tmp_path)
+    fake.rc["run"] = 2
+    fake.stderr["run"] = f"{FATAL}\nmake: *** [Makefile:110: run] Error 134\n"
+    fake.stdout = PASS
+    f = flow(tmp_path)
+    assert not f.passed and f.sim_error == "nb_inputs must be in (0, 64], got 99"
+    (line,) = [x for x in summary(f).splitlines() if x.startswith("  check ")]
+    assert line.startswith("  check     FAILED:") and line.endswith(
+        "; SNAX-GVSoC: nb_inputs must be in (0, 64], got 99")  # fmt: skip
+
+
+def test_no_toolchain_stops_before_sw(tmp_path, monkeypatch):
+    """Without ld.lld on PATH (outside snax-forge's image) the flow stops before make sw,
+    with one line naming the image."""
+    fake = stub(monkeypatch, tmp_path)
+    monkeypatch.setattr(flow_run, "check_toolchain",
+                        lambda: check_toolchain(lambda t: None if t == "ld.lld" else t))  # fmt: skip
+    with pytest.raises(FlowError) as e:
+        flow(tmp_path)
+    assert str(e.value) == ("sw: no ld.lld on PATH: the program builds in snax-forge's image, "
+                            "ghcr.io/kuleuven-micas/snax-forge:main (docs/RUN.md §1)")  # fmt: skip
+    assert "sw" not in [goal for goal, _ in fake.calls]
+    with pytest.raises(FlowError, match=r"^sw: no clang or ld\.lld on PATH"):
+        check_toolchain(lambda t: None)
+    check_toolchain(lambda t: f"/usr/bin/{t}")
 
 
 def test_a_failing_program_fails_the_flow_not_the_stage(tmp_path, monkeypatch):

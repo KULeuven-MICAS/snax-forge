@@ -51,7 +51,14 @@ it passed), and its lines give ``total_cycles`` (``forge cycles:``, the
 window from main's entry to ``forge_check()``'s entry), the data errors
 over the output words and each accelerator task's counter, beside its beats
 from the manifest and its group (D148). ``passed`` is an exit code of 0. A missing line is a
-FlowError that names it. ``run/run.json`` records what ran: the design
+FlowError that names it. When the run exits non-zero or prints no ``forge cycles:`` line, the
+failure (the FlowError, or the summary's FAILED check line) adds the simulator's first error
+line (``first_error``: an assert, from ``run/stdout.txt`` then ``run/stderr.txt``, its colour
+codes stripped), e.g. ``SNAX-GVSoC: nb_inputs must be in (0, 64], got 99`` (C§7).
+
+**Toolchain.** Before ``sw``, ``clang`` and ``ld.lld`` must be on PATH (``TOOLCHAIN``): without
+them the flow stops with one line naming snax-forge's image (docs/RUN.md §1), in place of
+make's ``invalid linker name in argument '-fuse-ld=lld'``. ``run/run.json`` records what ran: the design
 point, the three description files (``hjson``), the ELF's sha256 and the symbols of its L2 containers'
 arrays (``elf_symbols``, ``run/elf.py``: their L2 regions), the target, the snax-gvsoc
 commit and whether its tree was dirty, the trace level, its sources and whether a VCD was
@@ -252,6 +259,7 @@ class Flow:
     trace: Trace | None = None  # convert's, above off
     trace_sources: list[str] = field(default_factory=list)
     vcd: bool = False
+    sim_error: str | None = None  # first_error's, when the run failed
 
     @property
     def passed(self) -> bool:
@@ -433,6 +441,40 @@ def _make(stage: str, goal: str, variables: Mapping[str, str], log: Path,
 
 MAKE_ERROR = re.compile(r"^make: \*\*\* \[[^\]]*\] Error (\d+)$", re.MULTILINE)
 
+# The program's toolchain (snax-gvsoc's sw/toolchain.mk: clang, and lld through -fuse-ld=lld)
+TOOLCHAIN = ("clang", "ld.lld")
+IMAGE = "ghcr.io/kuleuven-micas/snax-forge:main"
+
+ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# GVSoC's fatal line, its component path in red (vp::Trace::dump_fatal_header), and the
+# assert of a component without a trace
+FATAL = re.compile(r"\[\x1b\[31m[^\x1b]*\x1b\[0m\]\s*(.*)$")
+ASSERT = re.compile(r"ASSERT FAILED:\s*(.*)$|Assertion .* failed")
+
+
+def check_toolchain(which: Callable[[str], str | None] = shutil.which) -> None:
+    """A FlowError naming snax-forge's image when ``clang`` or ``ld.lld`` is not on PATH."""
+    missing = [t for t in TOOLCHAIN if which(t) is None]
+    if missing:
+        raise FlowError(f"sw: no {' or '.join(missing)} on PATH: the program builds in "
+                        f"snax-forge's image, {IMAGE} (docs/RUN.md §1)")  # fmt: skip
+
+
+def first_error(stdout: str, stderr: str) -> str | None:
+    """The simulator's first error line, from ``stdout`` then ``stderr``: GVSoC's fatal line
+    (an assert, its component's path dropped) or an ``ASSERT FAILED`` one, its colour codes
+    stripped; None when neither has one."""
+    for text in (stdout, stderr):
+        for line in text.splitlines():
+            m = FATAL.search(line)
+            if m:
+                return ANSI.sub("", m[1]).strip()
+            plain = ANSI.sub("", line)
+            m = ASSERT.search(plain)
+            if m:
+                return (m[1] if m[1] is not None else m[0]).strip()
+    return None
+
 
 def run_exit_code(rc: int, stderr: str) -> int:
     """The program's exit code from ``make run``: 0 when make passed, else the ``Error N`` make
@@ -526,6 +568,7 @@ def summary(f: Flow) -> str:
     lines.append(
         f"  check     {verdict}: {f.total_cycles} cycles (main to forge_check); data "
         f"{check['data_errors']} errors ({check['words']} words); counters {tasks}"
+        + (f"; SNAX-GVSoC: {f.sim_error}" if not f.passed and f.sim_error else "")
     )
     if f.trace is None:
         conv = "run/events.log -> profile.json (the summary lines; trace off)"
@@ -765,6 +808,7 @@ def _from_graph(
     # sw: the program, by snax-gvsoc's generic app
     sw = out / "sw"
     with _timed(times, "sw"):
+        check_toolchain()
         variables = {"APPS": "forge", "FORGE": str(gen.resolve()), "DESIGN": name,
                      "FORGE_BUILD": str(sw.resolve())}  # fmt: skip
         _make("sw", "sw", variables, out / "sw.log")
@@ -797,14 +841,20 @@ def _from_graph(
         }  # fmt: skip
         (run / f"{EVENTS_FILE}.gz").unlink(missing_ok=True)  # an earlier passing run's
         rc = run_gvsoc("run", variables, run / "stdout.txt", run / "stderr.txt")
-        exit_code = run_exit_code(rc, (run / "stderr.txt").read_text())
+        stdout, stderr = (run / "stdout.txt").read_text(), (run / "stderr.txt").read_text()
+        exit_code = run_exit_code(rc, stderr)
+        failed = exit_code != 0 or CYCLES.search(stdout) is None
+        sim_error = first_error(stdout, stderr) if failed else None
         if o.vcd:
             _keep_vcd(run)
 
     # check: the program's own
     with _timed(times, "check"):
-        cycles, result = check_output((run / "stdout.txt").read_text(), exit_code,
-                                      {t.name: t.beats for t in manifest.tasks})  # fmt: skip
+        try:
+            cycles, result = check_output(stdout, exit_code,
+                                          {t.name: t.beats for t in manifest.tasks})  # fmt: skip
+        except FlowError as e:
+            raise FlowError(f"{e}; SNAX-GVSoC: {sim_error}" if sim_error else str(e)) from None
         groups = {u.name: u.group for u in cluster.accelerator.units}
         units = {s.task_name: s.component for s in tasks.steps if isinstance(s, Configure)}
         for t, x in result["tasks"].items():  # each task's group
@@ -858,4 +908,5 @@ def _from_graph(
     return Flow(
         name, out, None, [], point, tasks, manifest, c, build, sha, cycles, check,
         checks_that_ran(), trace_level=o.trace_level, trace=trace, trace_sources=sources, vcd=o.vcd,
+        sim_error=sim_error,
     )  # fmt: skip
