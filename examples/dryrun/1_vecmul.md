@@ -201,7 +201,7 @@ The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the clust
 
     pixi run gen-rtl out/flow/vecmul_dry/design/design_point.json
 
-It writes `out/rtl/vecmul_dry/accelerator.json` and runs `hw/chisel/`'s `Emit --spec` into `sv/`. The top is `snax_forge_shell_wrapper`, which snax_cluster connects to the streamers; inside it three parts:
+It writes `out/rtl/vecmul_dry/accelerator.json`, runs `hw/chisel/`'s `Emit --spec` into `sv/` and lists what it emitted in `emitted.json`. The top is `snax_forge_shell_wrapper`, which snax_cluster connects to the streamers; inside it three parts:
 
 ```mermaid
 flowchart LR
@@ -214,7 +214,81 @@ flowchart LR
   sa -- "a[0..7]" --> dp["snax_forge_datapath<br/>ElementwiseLanes mul, 8 lanes"]
   sb -- "b[0..7]" --> dp
   dp -- "out[0..7]" --> so
-  ctrl -- "enable" --> dp
+```
+
+The datapath is combinational and gets no enable: it multiplies whatever the streamers present, every cycle, and the control decides which cycle counts by raising the inputs' ready and the output's valid together. `out/rtl/vecmul_dry/sv/` holds one module per file, in the order of `filelist.f`, the list snax_cluster compiles:
+
+| File | Module |
+|---|---|
+| `snax_forge_csr.sv` | the CSR block: START, JOBS, STATUS, COUNTER |
+| `snax_forge_acc_ctrl.sv` | the group `acc`'s control unit (`GroupCtrl`) |
+| `snax_forge_ctrl.sv` | the control units of every group, here one |
+| `ElementwiseAlu_w64_mul.sv` | one 64-bit lane's multiply |
+| `ElementwiseLanes_i64xi64_i64_i64_n8_mul.sv` | the 8 lanes, the datapath block of `acc` |
+| `snax_forge_acc.sv` | the unit `acc`, around its block |
+| `snax_forge_datapath.sv` | the datapaths of every unit, here one |
+| `snax_forge_shell_wrapper.sv` | the top, the CSR block, the control and the datapath wired to the streamers |
+| `filelist.f` | the files above, in compile order |
+
+The lanes and the multiply, from `ElementwiseLanes_i64xi64_i64_i64_n8_mul.sv` and the lane it instantiates eight times, `ElementwiseAlu_w64_mul.sv`:
+
+```systemverilog
+module ElementwiseLanes_i64xi64_i64_i64_n8_mul(
+  input  [63:0] io_a_0,
+  ...
+  output [63:0] io_out_0,
+  ...
+);
+
+  ElementwiseAlu_w64_mul alus_0 (
+    .io_a   (io_a_0),
+    .io_b   (io_b_0),
+    .io_out (io_out_0)
+  );
+  ...
+// ElementwiseAlu_w64_mul.sv
+  assign io_out = io_a * io_b;
+```
+
+The control unit's header and its registers, from `snax_forge_acc_ctrl.sv`:
+
+```systemverilog
+module snax_forge_acc_ctrl(
+  ...
+  input  [31:0] io_start_bits_jobs,
+  input         io_in_0_valid,
+  output        io_in_0_ready,
+  ...
+);
+
+  reg         busy;
+  reg  [31:0] acc_jobs;
+  reg  [31:0] acc_jobs_counter;
+  wire        acc_offer =
+    busy & acc_jobs_counter != acc_jobs & io_in_0_valid & io_in_1_valid;
+  wire        acc_frozen = acc_offer & ~io_out_ready;
+  ...
+  reg         io_done_REG;
+```
+
+The CSR block's registers and its read mux, from `snax_forge_csr.sv`:
+
+```systemverilog
+  reg  [31:0] acc_jobs;
+  ...
+  reg         acc_done;
+  reg  [31:0] acc_counter;
+  reg         answerKept;
+  reg  [31:0] answer;
+  wire [31:0] read =
+    io_req_bits_addr == 32'h3
+      ? acc_counter
+      : io_req_bits_addr == 32'h2
+          ? {30'h0, acc_done, io_busy_0}
+          : io_req_bits_addr == 32'h1 ? acc_jobs : 32'h0;
+  ...
+      else if (io_busy_0 & acc_counter != 32'hFFFFFFFF)
+        acc_counter <= acc_counter + 32'h1;
 ```
 
 **The CSRs.** `accelerator.json` lists them per group (D152):
@@ -224,13 +298,13 @@ flowchart LR
 | START | R/W | 0 | 1 | a write with bit 0 set starts the group; it reads 0 |
 | JOBS | R/W | 1 | 32 | how many jobs; here one job per beat, 256 |
 | STATUS | R/O | 2 | 2 | bit 0 busy, bit 1 done (sticky, cleared by the next start) |
-| COUNTER | R/O | 3 | 32 | the busy cycles of the last run |
+| COUNTER | R/O | 3 | 32 | the busy cycles of the last run, saturating at 2³² − 1 |
 
 The program (`gen/main.c`) sets the three streamers (base address, strides, 256 temporal beats each), writes `ACC_RW_JOBS` 256, starts the streamers and then `ACC_RW_START`, polls `ACC_RO_STATUS` until busy drops, and reads `ACC_RO_COUNTER`.
 
-**The control.** `GroupCtrl` (`hw/chisel/.../ctrl/GroupCtrl.scala`) is generated from the group's description, not written per kernel: it takes the start with JOBS, runs the group rule (the same rule SNAX-GVSoC steps, `snax_group_rule.py`), and drives the handshakes. A beat is taken only when both input streams are valid and the output is ready; it then enables the datapath for that cycle. It raises `busy` from the start to the last push and a done pulse at the end, which the CSR block turns into STATUS and COUNTER. Its 66 flops are what the cost model counts: `busy` (1), `acc_jobs` (32, JOBS as the start gave it), `acc_jobs_counter` (32) and `done` (1), as `estimate/bits.py` lists them.
+**The control.** `GroupCtrl` (`hw/chisel/.../ctrl/GroupCtrl.scala`) is generated from the group's description, not written per kernel: it takes the start with JOBS, runs the group rule (the same rule SNAX-GVSoC steps, `snax_group_rule.py`), and drives the handshakes. A beat is taken only when both input streams are valid and the output is ready (`acc_offer` and not `acc_frozen`); in that cycle it raises both inputs' ready and the output's valid, so the datapath's result of that cycle is the one pushed. It raises `busy` from the start to the last push and a done pulse at the end, which the CSR block turns into STATUS and COUNTER. Its 66 flops are what the cost model counts: `busy` (1), `acc_jobs` (32, JOBS as the start gave it), `acc_jobs_counter` (32) and `io_done_REG` (1, the done pulse a cycle later), as `estimate/bits.py` lists them.
 
-**The datapath.** `ElementwiseLanes` (`hw/chisel/.../datapath/ElementwiseLanes.scala`) is data only: W copies of `ElementwiseAlu` with the casts at its edges, no valid, ready or registers. In the cycle the control enables, `out(i)` is `a(i) * b(i)` at the op type, for each lane. That it has no registers is why its area is W times one lane and its energy is the same at every W.
+**The datapath.** `ElementwiseLanes` (`hw/chisel/.../datapath/ElementwiseLanes.scala`) is data only: W copies of `ElementwiseAlu` with the casts at its edges, no valid, ready or registers. Every cycle `out(i)` is `a(i) * b(i)` at the op type, for each lane; the control's handshake says which cycle's result is pushed. That it has no registers is why its area is W times one lane and its energy is the same at every W.
 
 ## 9. What this gives the designer
 
