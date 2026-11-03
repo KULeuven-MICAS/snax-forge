@@ -12,13 +12,18 @@ Every route that gives a step or a comparison takes ``?tech=<technology>`` (one 
 snax_forge/char/'s, a 400 ``char.tech`` otherwise), the technology its cost is on; without it
 the server's ``--tech`` (default nangate45).
 
-    GET  /api/steps           per step its name, label (``1 split_map``) and load error
+    GET  /api/steps           per step its name, folder, label (``1 split_map``) and load error;
+                              from more than one folder a name is ``<folder>/<stem>`` and the
+                              folder its parent directory's name (api.py), else None
+    GET  /api/find?step=<ref> ``{"k": k}``, the step the URL hash names (api.find_step: its
+                              name, a bare stem one step has, or a number), null for none
     GET  /api/step/<k>        step k's view (api.step_view: the drawing, its compact texts and
                               Details, the marks and the estimate); a file that does not load
                               is its entry with the error, not an HTTP error
     GET  /api/compare/<j>/<k> step j against step k (api.compare_view: the session's diff of the
                               two graphs, the Details fields that changed and the two columns
-                              Compare lays out, step j on the left)
+                              Compare lays out, step j on the left, each headed by its label,
+                              after its folder when it has one: ``dot4_w8 · 6 link``)
     POST /api/reload          read every file again
 
 **Edit mode** (``make_edit_server``, ``pixi run edit-dfg``): one session (sandbox/session.py)
@@ -84,9 +89,15 @@ class _Refused(Exception):
 
 
 def _label(name: str) -> str:
-    """A step's label: ``1_split_map`` -> ``1 split_map``."""
-    head, _, tail = name.partition("_")
-    return f"{head} {tail}" if head.isdigit() and tail else name
+    """A step's label, without its folder: ``1_split_map`` and ``dot4_w8/1_split_map`` ->
+    ``1 split_map``."""
+    head, _, tail = name.rpartition("/")[2].partition("_")
+    return f"{head} {tail}" if head.isdigit() and tail else name.rpartition("/")[2]
+
+
+def _heading(e: api.Entry) -> str:
+    """A step's heading in Compare: its label, after its folder when it has one."""
+    return f"{e.folder} · {_label(e.name)}" if e.folder else _label(e.name)
 
 
 class EditState:
@@ -276,7 +287,8 @@ class DfgHandler(Handler):
                 raise _Refused(
                     "char.tech", f"no table for technology {tech!r}: one of {list(TECHS)}"
                 )
-            found = self._edit_get(parts, tech) if self._edit else self._view_get(parts, tech)
+            found = (self._edit_get(parts, tech) if self._edit
+                     else self._view_get(parts, tech, q))  # fmt: skip
         except _Refused as e:
             self._refuse(e)
             return
@@ -288,17 +300,22 @@ class DfgHandler(Handler):
             return
         self._json(found)
 
-    def _view_get(self, parts: list[str], tech: str) -> Any:
+    def _view_get(self, parts: list[str], tech: str, q: dict[str, list[str]]) -> Any:
         entries = list(self.server.loaded.values())
         if parts == ["steps"]:
-            return [{"name": e.name, "label": _label(e.name), "error": e.error} for e in entries]
+            return [{"name": e.name, "folder": e.folder, "label": _label(e.name), "error": e.error}
+                    for e in entries]  # fmt: skip
+        if parts == ["find"]:
+            if "step" not in q:
+                raise _Refused("request.query", "the query needs 'step'")
+            return {"k": api.find_step([e.name for e in entries], q["step"][0])}
         if len(parts) == 2 and parts[0] == "step":
             k = _index(parts[1], len(entries) - 1)
             return api.step_view(entries[k], _label(entries[k].name), self.server.platform,
                                  tech=tech)  # fmt: skip
         if len(parts) == 3 and parts[0] == "compare":
             j, k = (_index(x, len(entries) - 1) for x in parts[1:])
-            labels = (_label(entries[j].name), _label(entries[k].name))
+            labels = (_heading(entries[j]), _heading(entries[k]))
             return {"a": j, "b": k} | api.compare_view(entries[j], entries[k], self.server.platform,
                                                        tech, labels)  # fmt: skip
         return None

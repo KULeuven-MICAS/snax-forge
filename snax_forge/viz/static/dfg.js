@@ -11,7 +11,8 @@
 // browser asks for reduced motion.
 //
 // The URL hash holds the state, as in the run viewer: #step=<k>&sel=<id>&cmp=<j>&t=<transform>&tech=<tech>
-// (t, edit mode: that transform's form open for the selection; tech, the technology the cost
+// (step and cmp, view mode: the steps' names, dot4_w8/6_link from several folders, and an old
+// hash's bare stem or number still opens its step, /api/find; edit mode: numbers; t, edit mode: that transform's form open for the selection; tech, the technology the cost
 // estimate is on, one of /api/mode's techs, passed to every step and compare request). A selection is a name:
 // everything of that name is outlined (a link node and its container share one) and Details
 // shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
@@ -42,17 +43,33 @@ const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, t: null, se
 const views = new Map(); // step -> its view, until Reload
 const compares = new Map(); // "j/k" -> the compare answer
 
+const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
+
+/** The hash as written; ``k`` and ``cmp`` are still its text until ``resolve``. */
 function readHash() {
   const q = new URLSearchParams(location.hash.slice(1));
-  const num = (v) => (v === null || v === "" || Number.isNaN(Number(v)) ? null : Number(v));
-  return { k: num(q.get("step")), sel: q.get("sel") || null, cmp: num(q.get("cmp")), t: q.get("t") || null, tech: q.get("tech") || null };
+  return { k: q.get("step") || null, sel: q.get("sel") || null, cmp: q.get("cmp") || null, t: q.get("t") || null, tech: q.get("tech") || null };
 }
+
+/** The hash's steps as numbers: edit mode's are; view mode's are names, an old hash's a bare
+stem or a number, which the server reads (api.py's find_step); none is null. */
+async function resolve(want) {
+  const find = async (ref) => {
+    if (ref === null || state.mode === "edit") return num(ref);
+    const i = state.steps.findIndex((s) => s.name === ref);
+    return i >= 0 ? i : (await getJSON(`/api/find?step=${encodeURIComponent(ref)}`)).k;
+  };
+  return { ...want, k: await find(want.k), cmp: await find(want.cmp) };
+}
+
+/** A step as the hash holds it: view mode its name, edit mode its number. */
+const ref = (k) => (state.mode === "view" && state.steps[k] ? state.steps[k].name : String(k));
 
 function writeHash() {
   const q = new URLSearchParams();
-  q.set("step", String(state.k));
+  q.set("step", ref(state.k));
   if (state.sel) q.set("sel", state.sel);
-  if (state.cmp !== null) q.set("cmp", String(state.cmp));
+  if (state.cmp !== null) q.set("cmp", ref(state.cmp));
   if (state.t && state.sel) q.set("t", state.t);
   if (state.tech) q.set("tech", state.tech);
   history.replaceState(null, "", `#${q}`);
@@ -132,14 +149,29 @@ function pill(v, key) {
     h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null);
 }
 
+/** The steps as a dropdown's options; from several folders, an optgroup per folder (the
+steps from one folder in a row), in the order given. */
+function stepOptionNodes(current) {
+  const opt = (s, i) => h("option", { value: i, selected: i === current, class: s.past ? "past" : null }, s.label);
+  if (!state.steps.some((s) => s.folder)) return state.steps.map(opt);
+  const groups = [];
+  state.steps.forEach((s, i) => {
+    const last = groups[groups.length - 1];
+    if (last && last.folder === s.folder) last.options.push(opt(s, i));
+    else groups.push({ folder: s.folder, options: [opt(s, i)] });
+  });
+  return groups.map((g) => h("optgroup", { label: g.folder || "" }, g.options));
+}
+
 function stepSelect(current, onChange) {
   return h("select", { "aria-label": "step", onchange: (ev) => onChange(Number(ev.target.value)) },
-    state.steps.map((s, i) => h("option", { value: i, selected: i === current, class: s.past ? "past" : null }, s.label)));
+    stepOptionNodes(current));
 }
 
 /** One panel: a step's drawing; with ``pick``, its own step dropdown (Compare). */
 function panel(v, k, pick) {
   const head = h("div", { class: "c-panel-head" },
+    v.folder ? h("span", { class: "muted" }, `${v.folder} · `) : null,
     pick ? stepSelect(k, pick) : h("b", {}, v.label),
     h("span", { class: "muted" }, v.graph ? ` ${v.graph}` : ""));
   if (v.error) return h("section", { class: "c-panel broken" }, head, h("p", { class: "load-error" }, v.error));
@@ -499,7 +531,7 @@ async function draw() {
 }
 
 function stepOptions() {
-  $("step").replaceChildren(...state.steps.map((s, i) => h("option", { value: i, class: s.past ? "past" : null }, s.label)));
+  $("step").replaceChildren(...stepOptionNodes(null));
 }
 
 /** Edit mode: the session as the server has it (its steps, its cursor shown), or the start
@@ -521,7 +553,7 @@ async function show() {
 
 async function load() {
   status("Loading…");
-  const want = readHash();
+  let want = readHash();
   try {
     const mode = await getJSON("/api/mode");
     state.mode = mode.mode;
@@ -530,6 +562,7 @@ async function load() {
     state.tech = pickTech(want.tech, mode.tech || null);
     techOptions();
     if (state.mode === "edit") {
+      want = await resolve(want);
       edit.init({ state, status, clear, show, view, writeHash });
       state.session = await edit.session();
       state.sel = want.sel;
@@ -543,6 +576,7 @@ async function load() {
       return;
     }
     state.steps = await getJSON("/api/steps");
+    want = await resolve(want);
   } catch (e) {
     status(String(e.message || e), true);
     return;
@@ -604,8 +638,14 @@ document.addEventListener("keydown", (ev) => {
   } else if (ev.key === "ArrowLeft" && state.k > 0) goto(state.k - 1);
   else if (ev.key === "ArrowRight" && state.k < state.steps.length - 1) goto(state.k + 1);
 });
-window.addEventListener("hashchange", () => {
-  const want = readHash();
+window.addEventListener("hashchange", async () => {
+  let want;
+  try {
+    want = await resolve(readHash());
+  } catch (e) {
+    status(String(e.message || e), true);
+    return;
+  }
   const tech = pickTech(want.tech, state.tech);
   if (tech !== state.tech) {
     state.tech = tech;

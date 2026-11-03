@@ -8,8 +8,12 @@ Loading
 The viewer is given ``.snaxdfg`` files and directories. A directory stands
 for every ``.snaxdfg`` in it, in natural order (``0_input``,
 ``1_split_map``, ``2_bind``, ... ``10_x``), so a recipe's output directory
-shows every step of the recipe. Each file is one entry named after its stem,
-made unique with ``-2``, ``-3``, ... in the order given. A file that does
+shows every step of the recipe. Each file is one entry named after its stem;
+when the files come from more than one folder (two designs to compare), after
+``<folder>/<stem>``, the folder its parent directory's name (``dot4_w8/6_link``),
+and its entry keeps the folder. Names are made unique with ``-2``, ``-3``, ...
+in the order given. ``find_step`` reads a step back from the URL hash: its
+name, a bare stem one step has, or a number. A file that does
 not load (bad JSON, a ``DfgError``) is kept as an entry with its error, so
 one broken hand edit shows its message in its own panel and the others
 still draw. Everything is read once, at start-up or on Reload.
@@ -124,6 +128,7 @@ the reader's input connector; the container stays in Details. A transient in L1 
 from __future__ import annotations
 
 import json
+import os
 import re
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -176,9 +181,35 @@ def expand(paths: Sequence[str | Path]) -> list[Path]:
     return out
 
 
+def entry_folders(files: Sequence[Path]) -> list[str | None]:
+    """Each file's folder, its parent directory's name, when the files come from more than one
+    folder; else None for every file."""
+    parents = [Path(os.path.abspath(f)).parent for f in files]
+    if len(set(parents)) < 2:
+        return [None] * len(files)
+    return [d.name for d in parents]
+
+
 def entry_names(files: Sequence[Path]) -> list[str]:
-    """File stems, made unique with -2, -3, ... in the order given."""
-    return unique_names(f.stem for f in files)
+    """File stems, ``<folder>/<stem>`` when the files come from more than one folder
+    (``entry_folders``), made unique with -2, -3, ... in the order given."""
+    folders = entry_folders(files)
+    return unique_names(f.stem if d is None else f"{d}/{f.stem}"
+                        for f, d in zip(files, folders, strict=True))  # fmt: skip
+
+
+def find_step(names: Sequence[str], ref: str) -> int | None:
+    """The step a URL hash names (``step=``, ``cmp=``): a step's full name; else a bare stem
+    exactly one step has (a hash from before the names had folders); else a number below
+    ``len(names)`` (a hash from before it held names); else None."""
+    if ref in names:
+        return list(names).index(ref)
+    by_stem = [i for i, n in enumerate(names) if n.rpartition("/")[2] == ref]
+    if len(by_stem) == 1:
+        return by_stem[0]
+    if ref.isdigit() and int(ref) < len(names):
+        return int(ref)
+    return None
 
 
 @dataclass
@@ -187,15 +218,16 @@ class Entry:
     path: Path
     graph: Graph | None
     error: str | None
+    folder: str | None = None  # its folder when the files come from more than one
 
 
-def load_entry(name: str, path: Path) -> Entry:
+def load_entry(name: str, path: Path, folder: str | None = None) -> Entry:
     """One file; a file that does not load keeps its error instead of a graph."""
     try:
-        return Entry(name, path, Graph.load(path), None)
+        return Entry(name, path, Graph.load(path), None, folder)
     except (OSError, ValueError, KeyError, TypeError) as e:
         msg = f"invalid JSON: {e}" if isinstance(e, json.JSONDecodeError) else str(e)
-        return Entry(name, path, None, msg)
+        return Entry(name, path, None, msg, folder)
 
 
 class GraphSet(LoadedSet):
@@ -207,16 +239,19 @@ class GraphSet(LoadedSet):
 
     def load(self) -> dict[str, Entry]:
         files = expand(self.paths)
-        return {n: load_entry(n, f) for n, f in zip(entry_names(files), files, strict=True)}
+        return {n: load_entry(n, f, d)
+                for n, f, d in zip(entry_names(files), files, entry_folders(files), strict=True)}  # fmt: skip
 
     def summaries(self) -> list[dict[str, Any]]:
         return [entry_summary(e) for e in self.values()]
 
 
 def entry_summary(e: Entry) -> dict[str, Any]:
-    """A step's entry: its name, path, graph name and load error."""
+    """A step's entry: its name, folder (None from one folder), path, graph name and load
+    error."""
     return {
         "name": e.name,
+        "folder": e.folder,
         "path": str(e.path),
         "graph": e.graph.name if e.graph else None,
         "error": e.error,

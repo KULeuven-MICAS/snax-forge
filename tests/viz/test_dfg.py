@@ -17,7 +17,15 @@ import pytest
 
 from snax_forge.dfg import Graph
 from snax_forge.viz.dfg.__main__ import main
-from snax_forge.viz.dfg.api import GraphSet, entry_names, expand, graph_view, load_entry
+from snax_forge.viz.dfg.api import (
+    GraphSet,
+    entry_folders,
+    entry_names,
+    expand,
+    find_step,
+    graph_view,  # fmt: skip
+    load_entry,
+)
 from snax_forge.viz.dfg.server import make_dfg_server
 from tests.helpers import FIXTURES, REPO
 
@@ -63,14 +71,55 @@ def test_files_and_directories(tmp_path):
     assert [f.name for f in files] == [
         "0_input.snaxdfg", "2_bind.snaxdfg", "10_last.snaxdfg", "vecadd.snaxdfg"
     ]  # fmt: skip
-    assert entry_names([Path("a/x.snaxdfg"), Path("b/x.snaxdfg"), Path("x.snaxdfg")]) == [
-        "x", "x-2", "x-3"
-    ]  # fmt: skip
+    assert entry_names(files[:3]) == ["0_input", "2_bind", "10_last"]  # one folder: the stems
     with pytest.raises(FileNotFoundError, match="no such file"):
         expand([tmp_path / "nope"])
     (tmp_path / "empty").mkdir()
     with pytest.raises(FileNotFoundError, match="no .snaxdfg file"):
         expand([tmp_path / "empty"])
+
+
+def test_two_folders_with_the_same_stems_name_their_steps_by_folder(tmp_path):
+    """Two designs' recipe folders with the same stems: each step is ``<folder>/<stem>`` and
+    keeps its folder, in the order the folders were given; one folder keeps the bare stems."""
+    for d in ("dot4_w8", "dot5_w8"):
+        (tmp_path / d).mkdir()
+        shutil.copy(FIXTURES / "vecadd.snaxdfg", tmp_path / d / "0_input.snaxdfg")
+        shutil.copy(FIXTURES / "vecadd_accelerated.snaxdfg", tmp_path / d / "1_bind.snaxdfg")
+    gs = GraphSet([tmp_path / "dot5_w8", tmp_path / "dot4_w8"])
+    assert [(e["name"], e["folder"]) for e in gs.summaries()] == [
+        ("dot5_w8/0_input", "dot5_w8"), ("dot5_w8/1_bind", "dot5_w8"),
+        ("dot4_w8/0_input", "dot4_w8"), ("dot4_w8/1_bind", "dot4_w8")]  # fmt: skip
+    assert gs.get("dot4_w8/1_bind").graph is not None
+    one = GraphSet([tmp_path / "dot4_w8"])
+    assert [(e["name"], e["folder"]) for e in one.summaries()] == [
+        ("0_input", None), ("1_bind", None)]  # fmt: skip
+
+
+def test_files_given_from_two_folders():
+    """Files given one by one: from two folders, named by folder (two folders of one name
+    still made unique); from one, the bare stems."""
+    two = [Path("out/a/x.snaxdfg"), Path("out/b/y.snaxdfg")]
+    assert (entry_names(two), entry_folders(two)) == (["a/x", "b/y"], ["a", "b"])
+    same = [Path("p/a/x.snaxdfg"), Path("q/a/x.snaxdfg"), Path("q/a/z.snaxdfg")]
+    assert entry_names(same) == ["a/x", "a/x-2", "a/z"]
+    one = [Path("out/a/x.snaxdfg"), Path("out/a/./y.snaxdfg")]
+    assert (entry_names(one), entry_folders(one)) == (["x", "y"], [None, None])
+
+
+def test_an_old_hash_finds_its_step():
+    """The URL hash's step: a full name; a bare stem when exactly one step has it (a hash from
+    before the folders); a number (a hash from before the names); else none."""
+    names = ["dot4_w8/0_input", "dot4_w8/6_link", "dot5_w8/0_input", "dot5_w8/7_bind"]
+    assert find_step(names, "dot5_w8/0_input") == 2
+    assert (find_step(names, "6_link"), find_step(names, "7_bind")) == (1, 3)
+    assert find_step(names, "0_input") is None  # in both folders
+    assert (find_step(names, "2"), find_step(names, "4"), find_step(names, "nope")) == (
+        2,
+        None,
+        None,
+    )
+    assert find_step(["0_input", "6_link"], "6_link") == 1  # one folder: the name is the stem
 
 
 def test_a_broken_file_keeps_its_error(tmp_path):
@@ -299,7 +348,7 @@ def test_routes(tmp_path):
         assert status == 200 and ctype == "text/html" and b"dfg.js" in body
         assert get(srv, "/dfg.js")[1] == "text/javascript"
         assert json.loads(get(srv, "/api/steps")[2]) == [
-            {"name": "vecadd", "label": "vecadd", "error": None}
+            {"name": "vecadd", "folder": None, "label": "vecadd", "error": None}
         ]
         assert json.loads(get(srv, "/api/step/0")[2])["rows"][0]["boxes"] == ["A@0", "B@0"]
         for gone in ("/api/graphs", "/api/graph/vecadd", "/api/step/1"):

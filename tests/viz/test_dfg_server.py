@@ -5,7 +5,9 @@ mode over a recipe's step files, edit mode over a session (sandbox/session.py) w
 from __future__ import annotations
 
 import re
+import shutil
 from pathlib import Path
+from urllib.parse import quote
 
 import pytest
 
@@ -105,6 +107,35 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         assert get_json(srv, "/api/compare/4/9")[0] == 404
         assert get_json(srv, "/api/graphs")[0] == 404  # the old page's routes are gone
         assert get_json(srv, "/api/step/6")[0] == 404
+
+
+def test_view_mode_over_two_designs(tmp_path):
+    """Two recipe folders with the same stems: the steps route names each by folder, with its
+    label and folder; Compare between them heads each column with folder and label; /api/find
+    reads the hash's name, a unique bare stem or a number."""
+    fixtures = REPO / "tests" / "dfg" / "fixtures"
+    for d in ("dot4_w8", "dot5_w8"):
+        (tmp_path / d).mkdir()
+        shutil.copy(fixtures / "vecadd.snaxdfg", tmp_path / d / "0_input.snaxdfg")
+        shutil.copy(fixtures / "vecadd_accelerated.snaxdfg", tmp_path / d / "1_bind.snaxdfg")
+    shutil.copy(fixtures / "vecadd_accelerated.snaxdfg", tmp_path / "dot5_w8" / "2_link.snaxdfg")
+    with served(make_dfg_server([tmp_path / "dot4_w8", tmp_path / "dot5_w8"], 0)) as srv:
+        status, steps = get_json(srv, "/api/steps")
+        assert status == 200 and [(s["name"], s["folder"], s["label"]) for s in steps] == [
+            ("dot4_w8/0_input", "dot4_w8", "0 input"), ("dot4_w8/1_bind", "dot4_w8", "1 bind"),
+            ("dot5_w8/0_input", "dot5_w8", "0 input"), ("dot5_w8/1_bind", "dot5_w8", "1 bind"),
+            ("dot5_w8/2_link", "dot5_w8", "2 link")]  # fmt: skip
+        status, v = get_json(srv, "/api/step/3")
+        assert status == 200 and (v["name"], v["folder"], v["label"]) == (
+            "dot5_w8/1_bind", "dot5_w8", "1 bind")  # fmt: skip
+        status, c = get_json(srv, "/api/compare/1/3")
+        assert status == 200 and c["columns"]["labels"] == ["dot4_w8 · 1 bind", "dot5_w8 · 1 bind"]
+        assert c["diff"] is not None and c["columns"]["details"]
+        find = {ref: get_json(srv, f"/api/find?step={quote(ref, safe='')}")[1]["k"]
+                for ref in ("dot5_w8/1_bind", "2_link", "1_bind", "4", "9")}  # fmt: skip
+        assert find == {"dot5_w8/1_bind": 3, "2_link": 4, "1_bind": None, "4": 4, "9": None}
+        status, bad = get_json(srv, "/api/find")
+        assert status == 400 and bad["code"] == "request.query"
 
 
 # =============================================================================

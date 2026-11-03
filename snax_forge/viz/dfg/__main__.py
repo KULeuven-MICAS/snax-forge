@@ -6,7 +6,10 @@
 Shows the ``.snaxdfg`` files given, a directory as every ``.snaxdfg`` in it (a recipe's
 ``out/sandbox/<name>/``), as a read-only history on 127.0.0.1 until Ctrl-C, each step's
 estimate on ``--platform`` when given (server.py), its cost on ``--tech`` until the page's
-technology dropdown picks another (default nangate45, C§20). The page's Reload button reads the files
+technology dropdown picks another (default nangate45, C§20). Files from more than one folder
+(two designs, ``view-dfg out/sandbox/try/dot4_w8/ out/sandbox/try/dot5_w8/``) are named
+``<folder>/<stem>`` and grouped by folder in the step dropdowns, so Compare can put one design's
+step beside the other's (C§12). The page's Reload button reads the files
 again; nothing watches them. A file that does not load shows its error in its own panel. pixi:
 ``view-dfg``. Edit mode is ``python -m snax_forge.viz.dfg.edit`` (edit.py).
 
