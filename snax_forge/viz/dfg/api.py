@@ -442,8 +442,8 @@ def detail_rows(x: dict[str, Any] | None, y: dict[str, Any] | None) -> list[dict
 def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[dict[str, Any]]:
     """The Estimate panel in two columns (module doc), from each side's summary (None: no
     estimate): under ``accelerator`` its cycles and not-mapped count; under ``group <name>``,
-    every group of either side, its cycles, COUNTER, channels, area and energy; under
-    ``memory`` L1, the words read and written, the lanes; under the cost heading the
+    every group of either side, its cycles, COUNTER, channels, area and energy, and its bank
+    note where a side has one; under ``memory`` L1, the words read and written, the lanes; under the cost heading the
     accelerator's area, energy and the blocks not characterized. "–" where a side has none."""
 
     def both(fn: Any) -> tuple[Any, Any]:
@@ -475,6 +475,9 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
                  for label, field in (("cycles", "formula"), ("COUNTER", "counter"),
                                       ("channels", "channels"), ("area", "area_text"),
                                       ("energy", "energy_text"))]  # fmt: skip
+        notes = both(lambda s: group(s, "bank_note"))
+        if any(notes):  # L1's banks allow fewer cycles than the ideal on a side (D151)
+            rows.append(_row("bank bound", *notes, under))
     rows += [_row("L1", *both(l1), "memory"),
              _row("reads", *both(lambda s: f"{s['reads']} words"), "memory"),
              _row("writes", *both(lambda s: f"{s['writes']} words"), "memory")]  # fmt: skip

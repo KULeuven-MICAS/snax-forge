@@ -357,6 +357,29 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     assert ctrl["datapath"] == "control unit" and total["block"] == "total"
 
 
+@pytest.mark.slow
+def test_the_bank_note_under_its_group():
+    """vecmul at N = 2048 (D151): at W = 16 the group's summary has its bank note and Compare
+    against W = 8 a ``bank bound`` row under the group, "–" on the side with none."""
+    from snax_forge.design import Platform
+    from snax_forge.viz.dfg.api import Entry, compare_view, step_view
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import steps
+
+    platform = Platform.load(SNAX_FORGE)
+    w8, w16 = (
+        Entry(f"w{w}", Path(f"w{w}"), steps("vecmul", N=2048, W=w)[-1], None) for w in (8, 16)
+    )
+    note = ("acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the "
+            "ideal 128")  # fmt: skip
+    (g16,) = step_view(w16, "w16", platform)["summary"]["groups"]
+    (g8,) = step_view(w8, "w8", platform)["summary"]["groups"]
+    assert (g16["bank_note"], g8["bank_note"]) == (note, None)
+    rows = compare_view(w8, w16, platform)["columns"]["estimate"]
+    (row,) = [r for r in rows if r["label"] == "bank bound"]
+    assert (row["under"], row["a"], row["b"], row["differs"]) == ("group acc", "–", note, True)
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
     assert plain["rows"][1]["node"]["text"] == "add_map · i · ? · untagged"
