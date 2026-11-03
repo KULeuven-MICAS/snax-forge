@@ -12,7 +12,11 @@ channels, per tailed split its lane use (data.py). No bank conflicts, no streame
 no core control: a run's COUNTER is a group's cycles plus the streamers' fill (C§17), and its
 window is longer. Beside the ideal cycles, on a platform, each group's ``bank_bound``:
 ceil(words its outer ports move / l1.n_banks), the fewest cycles L1's single-port banks allow,
-a note where it exceeds the cycles (vecmul at W = 16: 192 against 128, COUNTER 194). Work no unit runs is a not-mapped count, never cycles. The viewers and
+a note where it exceeds the cycles (vecmul at W = 16: 192 against 128, COUNTER 194). Work no unit runs is a not-mapped count of iterations and, at
+``UNMAPPED_CYCLES_PER_ITERATION`` (1) cycle each, ``unmapped_cycles``: an assumption (a core
+takes several), held in this one constant so a measured value can replace it (D155); the
+``total_cycles`` are the accelerator's plus the unmapped ones. A group's COUNTER never holds
+them. The viewers and
 ``design.md`` read it (report/design.py).
 """
 
@@ -32,6 +36,11 @@ from .data import ContainerData, PortData, SplitData, containers, outer_ports, p
 if TYPE_CHECKING:
     from snax_forge.design.platform import Platform
     from snax_forge.dfg import Graph
+
+
+# The cycles an iteration no unit runs is counted at (D155): an assumption, not a measurement (a
+# core takes several cycles per iteration); one constant, so a measured value can replace it.
+UNMAPPED_CYCLES_PER_ITERATION = 1
 
 
 @dataclass
@@ -68,6 +77,17 @@ class Estimate(JsonFile):
         return sum(g.cycles for g in self.groups)
 
     @property
+    def unmapped_cycles(self) -> int:
+        """The work no unit runs, as cycles: ``not_mapped`` at ``UNMAPPED_CYCLES_PER_ITERATION``
+        (D155, an assumption)."""
+        return self.not_mapped * UNMAPPED_CYCLES_PER_ITERATION
+
+    @property
+    def total_cycles(self) -> int:
+        """The accelerator's cycles plus the unmapped ones (D155)."""
+        return self.accelerator_cycles + self.unmapped_cycles
+
+    @property
     def l1_footprint(self) -> int:
         """The bytes of the containers placed in L1."""
         return sum(c.bytes for c in self.containers.values() if c.placement == "l1")
@@ -77,6 +97,8 @@ class Estimate(JsonFile):
             "groups": [g.to_dict() for g in self.groups],
             "accelerator_cycles": self.accelerator_cycles,
             "not_mapped": self.not_mapped,
+            "unmapped_cycles": self.unmapped_cycles,
+            "total_cycles": self.total_cycles,
             "containers": {k: c.to_dict() for k, c in self.containers.items()},
             "l1_footprint": self.l1_footprint,
             "l1_size": self.l1_size,
@@ -130,6 +152,7 @@ def estimate(graph: Graph, platform: Platform | None = None,
 
 
 __all__ = [
+    "UNMAPPED_CYCLES_PER_ITERATION",
     "BlockCost",
     "ContainerData",
     "Estimate",

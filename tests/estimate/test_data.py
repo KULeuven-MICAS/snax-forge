@@ -28,9 +28,9 @@ def test_a_link_takes_tmp0_out_of_l1():
     assert [(g.channels, g.words_per_cycle) for g in two.groups] == [(9, 1025 / 130)]
 
 
-def _bound(g):
+def _bound(g, N=None):
     d = g.to_dict()
-    d["symbols"] = {"N": 512} if g.name == "dot" else {"N": 64}
+    d["symbols"] = {"N": N or (512 if g.name == "dot" else 64)}
     return type(g).from_dict(d)
 
 
@@ -47,6 +47,47 @@ def test_not_mapped_counts_the_iterations_no_unit_runs():
     s = split(vecadd, "add_map", 4)
     t = tag_map(s, "add_map_inner", "spatial")
     assert [not_mapped(g) for g in (vecadd, s, t)] == [64, 64, 16]
+
+
+def _totals(*graphs):
+    return [(e.accelerator_cycles, e.not_mapped, e.unmapped_cycles, e.total_cycles)
+            for e in (estimate(g) for g in graphs)]  # fmt: skip
+
+
+def test_unmapped_work_counts_as_cycles():
+    """D155: an iteration no unit runs counts UNMAPPED_CYCLES_PER_ITERATION (1) cycle, so step 0
+    and the last step compare as cycles. vecmul at N = 2048: 2048 as imported, 256 once split
+    by 8 and tagged (all unmapped), 256 after the bind (all the accelerator's); dot at N = 512:
+    C§19's 1024, 640 and 257 not mapped are its totals."""
+    from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION
+    from snax_forge.sandbox import bind
+
+    assert UNMAPPED_CYCLES_PER_ITERATION == 1
+    vecmul = _bound(imported("vecmul"), N=2048)
+    split8 = split(vecmul, "mult_map", 8)
+    tagged = tag_map(tag_map(split8, "mult_map", "temporal"), "mult_map_inner", "spatial")
+    bound = bind(tagged, "mult", "elementwise_mul", "chisel_tiled_spatial", "acc")
+    assert _totals(vecmul, tagged, bound) == [(0, 2048, 2048, 2048), (0, 256, 256, 256),
+                                              (256, 0, 0, 256)]  # fmt: skip
+    dot = _bound(imported("dot"))
+    a = split_map(dot, "mult_map", 4)
+    b = split_reduce(a, "sum_map", 4)
+    assert [t[3] for t in _totals(dot, a, b)] == [1024, 640, 257]
+    d = estimate(b).to_dict()
+    assert (d["unmapped_cycles"], d["total_cycles"]) == (257, 257)
+
+
+@pytest.mark.slow
+def test_the_totals_round_trip_and_stay_out_of_the_counter():
+    """The two new fields round-trip, and a group's expected COUNTER is its cycles plus the
+    fill alone: dot 4 at N = 512 binds everything, dot 1 one group of two runs."""
+    for name in ("dot_1", "dot_4"):
+        e = estimated(name)
+        back = Estimate.from_dict(e.to_dict())
+        assert (back.unmapped_cycles, back.total_cycles) == (e.unmapped_cycles, e.total_cycles)
+        assert back.to_dict() == e.to_dict()
+        assert all(g.counter == g.cycles + g.fill for g in e.groups)
+        assert e.total_cycles == e.accelerator_cycles + e.unmapped_cycles
 
 
 @pytest.mark.slow
