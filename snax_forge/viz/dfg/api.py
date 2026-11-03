@@ -442,7 +442,8 @@ def detail_rows(x: dict[str, Any] | None, y: dict[str, Any] | None) -> list[dict
 
 def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[dict[str, Any]]:
     """The Estimate panel in two columns (module doc), from each side's summary (None: no
-    estimate): under ``accelerator`` its cycles and not-mapped count; under ``group <name>``,
+    estimate): under ``accelerator`` its cycles, the unmapped cycles, the total (D155) and the
+    not-mapped count; under ``group <name>``,
     every group of either side, its cycles, COUNTER, channels, area and energy, and its bank
     note where a side has one; under ``memory`` L1, the words read and written, the lanes; under the cost heading the
     accelerator's area, energy and the blocks not characterized. "–" where a side has none."""
@@ -464,6 +465,8 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
             x["footprint_text"])  # fmt: skip
 
     rows = [_row("cycles", *both(lambda s: s["accelerator_cycles"]), "accelerator"),
+            _row("unmapped cycles", *both(lambda s: s["unmapped_cycles"]), "accelerator"),
+            _row("total cycles", *both(lambda s: s["total_cycles"]), "accelerator"),
             _row("not mapped", *both(lambda s: s["not_mapped"]), "accelerator")]  # fmt: skip
     names = dict.fromkeys(g["name"] for s in (sa, sb) if s for g in s["groups"])
     for name in names:
@@ -501,6 +504,8 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
 
 def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
     """The Estimate panel's figures, every sum and share worked out here (D57): the headline,
+    ``cycles`` (the accelerator's, the unmapped work's at one cycle per iteration with that
+    assumption as its ``title``, and the total, D155),
     per group ``cycles = bottleneck + ramp [+ stall]`` and its expected COUNTER, the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
     lane use of each tailed split; per group its ``bank_bound`` and, where it exceeds the
@@ -529,9 +534,29 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
          "text": f"{x.n} of {-(-x.n // x.w) * x.w} lanes ({100 * x.lane_use:.1f}%)"}
         for k, x in est.splits.items()
     ]  # fmt: skip
+    from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION as PER
+
+    assumption = (f"{est.not_mapped} iterations no unit runs, at {PER} cycle each: an assumption "
+                  "(a core takes several), D155")  # fmt: skip
     return {
         "accelerator_cycles": est.accelerator_cycles,
         "not_mapped": est.not_mapped,
+        "unmapped_cycles": est.unmapped_cycles,
+        "total_cycles": est.total_cycles,
+        "cycles": [
+            {
+                "label": "accelerator",
+                "value": est.accelerator_cycles,
+                "title": "the groups' cycles, adding through L1",
+            },
+            {"label": "unmapped", "value": est.unmapped_cycles, "title": assumption},
+            {
+                "label": "total",
+                "value": est.total_cycles,
+                "title": "the accelerator's cycles plus the unmapped ones",
+            },
+        ],
+        "unmapped_note": assumption if est.not_mapped else None,
         "groups": groups,
         "l1": l1,
         "reads": sum(c.reads for c in est.containers.values()),

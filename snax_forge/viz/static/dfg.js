@@ -554,7 +554,9 @@ async function estimate() {
   const l1 = s.l1;
   const l1Text = l1.size ? `${l1.footprint_text} of ${l1.size_text} (${l1.share_text})` : l1.footprint_text;
   box.replaceChildren(...[
-    h("p", { class: "c-est-head" }, h("b", {}, s.accelerator_cycles), " cycles · ", h("b", {}, s.not_mapped), " not mapped"),
+    h("p", { class: "c-est-head" }, "cycles: ", (s.cycles || []).map((c, i) => [i ? (i === s.cycles.length - 1 ? " = " : " + ") : "",
+      h("span", { class: "c-est-cycles", title: c.title }, `${c.label} `, h("b", {}, c.value))])),
+    s.unmapped_note ? h("p", { class: "c-est-line muted" }, s.unmapped_note) : null,
     ...rows,
     h("p", { class: "c-est-line" }, "L1 ", l1Text),
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,

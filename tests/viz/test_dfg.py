@@ -380,6 +380,36 @@ def test_the_bank_note_under_its_group():
     assert (row["under"], row["a"], row["b"], row["differs"]) == ("group acc", "–", note, True)
 
 
+@pytest.mark.slow
+def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
+    """D155 in the page: vecmul at N = 2048 as imported, all 2048 cycles unmapped (the assumption
+    in its title and the note), the bound step 256 on the accelerator; Compare's rows 2048 → 256."""
+    from snax_forge.design import Platform
+    from snax_forge.viz.dfg.api import Entry, compare_view, step_view
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import steps
+
+    platform = Platform.load(SNAX_FORGE)
+    g0, *_, g2 = steps("vecmul", N=2048, W=8)
+    a, b = Entry("0_input", Path("0"), g0, None), Entry("2_bind", Path("2"), g2, None)
+    s0 = step_view(a, "0 input", platform)["summary"]
+    assert [(c["label"], c["value"]) for c in s0["cycles"]] == [
+        ("accelerator", 0), ("unmapped", 2048), ("total", 2048)]  # fmt: skip
+    assert (
+        s0["unmapped_note"]
+        == s0["cycles"][1]["title"]
+        == (
+            "2048 iterations no unit runs, at 1 cycle each: an assumption (a core takes several), D155"
+        )
+    )
+    s2 = step_view(b, "2 bind", platform)["summary"]
+    assert [c["value"] for c in s2["cycles"]] == [256, 0, 256] and s2["unmapped_note"] is None
+    rows = compare_view(a, b, platform)["columns"]["estimate"]
+    got = {r["label"]: (r["a"], r["b"]) for r in rows if r["under"] == "accelerator"}
+    assert got == {"cycles": ("0", "256"), "unmapped cycles": ("2048", "0"),
+                   "total cycles": ("2048", "256"), "not mapped": ("2048", "0")}  # fmt: skip
+
+
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
     assert plain["rows"][1]["node"]["text"] == "add_map · i · ? · untagged"
@@ -562,6 +592,8 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     rows = c["estimate"]
     assert not any("→" in r["a"] + r["b"] for r in rows)
     assert _rows(rows, "accelerator") == {"cycles": ("266", "265", True),
+                                          "unmapped cycles": ("0", "0", False),
+                                          "total cycles": ("266", "265", True),
                                           "not mapped": ("0", "0", False)}  # fmt: skip
     assert _rows(rows, "group mac")["energy"] == ("26.136 nJ", "–", True)
     assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
