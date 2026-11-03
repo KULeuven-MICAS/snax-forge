@@ -351,57 +351,63 @@ function valueText(v) {
   return String(v);
 }
 
-/** Details: every item of the selected name, a labelled list; with Compare, before → after. */
+/** Compare's two columns (api.py's compare_view ``columns``): a label column and the two
+steps' texts, the left step first, rows that differ marked; a row's ``under`` opens a section. */
+function columnsTable(labels, rows) {
+  const body = [];
+  let under = null;
+  for (const r of rows) {
+    if (r.under && r.under !== under) body.push(h("tr", { class: "c-cols-section" }, h("th", { colspan: 3 }, r.under)));
+    under = r.under;
+    body.push(h("tr", { class: r.differs ? "differs" : null },
+      h("th", { scope: "row", class: r.under ? "sub" : null }, r.label),
+      h("td", { class: "mono" }, r.a), h("td", { class: "mono" }, r.b)));
+  }
+  return h("table", { class: "c-cols" },
+    h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", { scope: "col" }, labels[0]), h("th", { scope: "col" }, labels[1]))),
+    h("tbody", {}, body));
+}
+
+/** Details: every item of the selected name, a labelled list; with Compare, two columns. */
 async function details() {
   const box = $("details");
   if (!state.sel) {
     box.replaceChildren(h("p", { class: "muted" }, "Click a box, a container, an edge or a group outline; Esc clears."));
     return;
   }
-  const b = await view(state.k);
-  const a = state.cmp !== null ? await view(state.cmp) : null;
-  const changed = a ? (await compare(state.cmp, state.k)).changed : {};
   const out = [];
+  if (state.cmp !== null) {
+    const c = (await compare(state.cmp, state.k)).columns;
+    for (const kind of KINDS) {
+      const d = c ? c.details[`${kind}:${state.sel}`] : undefined;
+      if (!d) continue;
+      out.push(h("div", { class: "c-details" }, h("h3", {}, `${kind} ${state.sel}${d.where ? ` (${d.where})` : ""}`),
+        columnsTable(c.labels, d.rows)));
+    }
+    box.replaceChildren(...(out.length ? out : [h("p", { class: "muted" }, `${state.sel}: in neither step`)]));
+    return;
+  }
+  const b = await view(state.k);
   for (const kind of KINDS) {
     const key = `${kind}:${state.sel}`;
-    const before = a && a.details ? a.details[key] : undefined;
-    const after = b.details ? b.details[key] : undefined;
-    if (before === undefined && after === undefined) continue;
-    const fields = [...new Set([...Object.keys(before || {}), ...Object.keys(after || {})])].filter((f) => f !== "kind");
-    const moved = new Set(changed[key] || []);
-    const rows = fields.map((f) => {
-      if (f === "cost") return costRows(before, after, a !== null, moved.has(f));
-      const one = valueText((after || before)[f]);
-      const text = a && moved.has(f)
-        ? `${valueText(before ? before[f] : undefined)} → ${valueText(after ? after[f] : undefined)}`
-        : one;
-      return [h("dt", { class: moved.has(f) ? "changed" : null }, f), h("dd", { class: moved.has(f) ? "changed mono" : "mono" }, text)];
-    });
-    const where = a ? (before === undefined ? " (added)" : after === undefined ? " (removed)" : "") : "";
-    out.push(h("div", { class: "c-details" }, h("h3", {}, `${kind} ${state.sel}${where}`), h("dl", { class: "facts" }, rows)));
+    const item = b.details ? b.details[key] : undefined;
+    if (item === undefined) continue;
+    const rows = Object.keys(item).filter((f) => f !== "kind").map((f) => (f === "cost"
+      ? costRows(item.cost)
+      : [h("dt", {}, f), h("dd", { class: "mono" }, valueText(item[f]))]));
+    out.push(h("div", { class: "c-details" }, h("h3", {}, `${kind} ${state.sel}`), h("dl", { class: "facts" }, rows)));
   }
   box.replaceChildren(...(out.length ? out : [h("p", { class: "muted" }, `${state.sel}: not in this step`)]));
 }
 
-/** Details' cost (api.py's cost_details): a nested list of its texts, each before → after
-where it changed. */
-function costRows(before, after, comparing, moved) {
-  const x = (before && before.cost) || {};
-  const y = (after && after.cost) || {};
-  const shown = (after || before).cost;
-  if (!shown) return [h("dt", {}, "cost"), h("dd", { class: "mono" }, "–")];
-  const keys = [...new Set([...Object.keys(x), ...Object.keys(y)])];
-  const inner = keys.map((k) => {
-    const differs = comparing && moved && x[k] !== y[k];
-    return [h("dt", { class: differs ? "changed" : null }, k),
-      h("dd", { class: differs ? "changed mono" : "mono" }, differs ? `${x[k] ?? "–"} → ${y[k] ?? "–"}` : (y[k] ?? x[k]))];
-  });
-  return [h("dt", { class: moved && comparing ? "changed" : null }, "cost"), h("dd", {}, h("dl", { class: "facts c-cost" }, inner))];
+/** Details' cost (api.py's cost_details): a nested list of its texts. */
+function costRows(cost) {
+  if (!cost) return [h("dt", {}, "cost"), h("dd", { class: "mono" }, "–")];
+  const inner = Object.entries(cost).map(([k, v]) => [h("dt", {}, k), h("dd", { class: "mono" }, v)]);
+  return [h("dt", {}, "cost"), h("dd", {}, h("dl", { class: "facts c-cost" }, inner))];
 }
 
 // -- the Estimate ------------------------------------------------------------------
-
-const pair = (a, b) => (a === null ? String(b) : String(a) === String(b) ? String(b) : `${a} → ${b}`);
 
 function hoverGroup(name, on) {
   for (const el of document.querySelectorAll(`#graphs [data-group="${CSS.escape(name)}"]`)) el.classList.toggle("hover", on);
@@ -409,63 +415,42 @@ function hoverGroup(name, on) {
 
 async function estimate() {
   const box = $("estimate");
+  if (state.cmp !== null) { // Compare: the server's two columns, the left step first
+    const cmp = await compare(state.cmp, state.k);
+    if (!cmp.columns) {
+      box.replaceChildren(h("p", { class: "load-error" }, cmp.error || "no estimate"));
+      return;
+    }
+    box.replaceChildren(...[columnsTable(cmp.columns.labels, cmp.columns.estimate),
+      cmp.columns.caveat ? h("p", { class: "c-est-line muted" }, cmp.columns.caveat) : null].filter(Boolean));
+    return;
+  }
   const b = await view(state.k);
-  const a = state.cmp !== null ? await view(state.cmp) : null;
   if (b.estimate_error || !b.summary) {
     box.replaceChildren(h("p", { class: "load-error" }, b.estimate_error || b.error || "no estimate"));
     return;
   }
   const s = b.summary;
-  const p = a && a.summary ? a.summary : null;
-  const was = (f) => (p ? f(p) : null);
-  const groupWas = (name, field) => {
-    if (!p) return null;
-    const g = p.groups.find((x) => x.name === name);
-    return g ? g[field] : "–";
-  };
-  const gone = p ? p.groups.filter((x) => !s.groups.some((y) => y.name === x.name)) : [];
   const rows = s.groups.map((g) => h("div", {
     class: "c-est-group", onmouseenter: () => hoverGroup(g.name, true), onmouseleave: () => hoverGroup(g.name, false),
   },
   h("b", {}, g.name), " ",
-  h("span", { class: "mono" }, pair(groupWas(g.name, "formula"), g.formula)),
-  h("small", {}, ` COUNTER ${pair(groupWas(g.name, "counter"), g.counter)} · channels ${pair(groupWas(g.name, "channels"), g.channels)}`
-    + (g.area_text ? ` · ${pair(groupWas(g.name, "area_text"), g.area_text)} · ${pair(groupWas(g.name, "energy_text"), g.energy_text)}` : ""))));
-  // a group of the step before only: its figures → –
-  rows.push(...gone.map((g) => h("div", { class: "c-est-group" }, h("b", {}, g.name), " ",
-    h("span", { class: "mono" }, `${g.formula} → –`),
-    h("small", {}, ` COUNTER ${g.counter} → – · channels ${g.channels} → –` + (g.area_text ? ` · ${g.area_text} → – · ${g.energy_text} → –` : "")))));
-  // The accelerator's cost: one step's, or with Compare the server's before → after (api.py's
-  // cost_compare), whether or not the groups match
+  h("span", { class: "mono" }, g.formula),
+  h("small", {}, ` COUNTER ${g.counter} · channels ${g.channels}` + (g.area_text ? ` · ${g.area_text} · ${g.energy_text}` : ""))));
   const c = s.cost;
-  const cc = a ? (await compare(state.cmp, state.k)).cost : null;
-  const listed = (m) => (m && m.length ? m.join(", ") : "none");
-  const caveat = (c || (a && a.summary && a.summary.cost) || {}).caveat;
-  let cost = [];
-  if (cc) {
-    cost = [
-      h("p", { class: "c-est-head" }, h("b", {}, cc.heading), ": ", h("b", {}, cc.area), " · ", h("b", {}, cc.energy), " per run"),
-      h("p", { class: "c-est-line" }, "not characterized: ", cc.missing || listed(c ? c.missing : [])),
-    ];
-  } else if (c && !a) {
-    cost = [
-      h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", {}, c.area_text), " · ", h("b", {}, c.energy_text), " per run"),
-      h("p", { class: "c-est-line" }, "not characterized: ", listed(c.missing)),
-    ];
-  }
-  if (cost.length && caveat) cost.push(h("p", { class: "c-est-line muted" }, caveat));
+  const cost = c ? [
+    h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", {}, c.area_text), " · ", h("b", {}, c.energy_text), " per run"),
+    h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
+    h("p", { class: "c-est-line muted" }, c.caveat),
+  ] : [];
   const l1 = s.l1;
-  const l1Text = l1.size
-    ? `${pair(was((x) => x.l1.footprint_text), l1.footprint_text)} of ${l1.size_text} (${pair(was((x) => x.l1.share_text), l1.share_text)})`
-    : pair(was((x) => x.l1.footprint_text), l1.footprint_text);
+  const l1Text = l1.size ? `${l1.footprint_text} of ${l1.size_text} (${l1.share_text})` : l1.footprint_text;
   box.replaceChildren(...[
-    h("p", { class: "c-est-head" },
-      h("b", {}, pair(was((x) => x.accelerator_cycles), s.accelerator_cycles)), " cycles · ",
-      h("b", {}, pair(was((x) => x.not_mapped), s.not_mapped)), " not mapped"),
+    h("p", { class: "c-est-head" }, h("b", {}, s.accelerator_cycles), " cycles · ", h("b", {}, s.not_mapped), " not mapped"),
     ...rows,
     h("p", { class: "c-est-line" }, "L1 ", l1Text),
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
-    h("p", { class: "c-est-line" }, `reads ${pair(was((x) => x.reads), s.reads)} · writes ${pair(was((x) => x.writes), s.writes)} words`),
+    h("p", { class: "c-est-line" }, `reads ${s.reads} · writes ${s.writes} words`),
     s.splits.length ? h("p", { class: "c-est-line" }, "lanes ", s.splits.map((x) => `${x.map} ${x.text}`).join("; ")) : null,
     ...cost,
   ].filter(Boolean));

@@ -381,24 +381,74 @@ def _dot5_steps():
         REPO / "platforms" / "snax_forge.json")  # fmt: skip
 
 
+def _rows(rows, under):
+    return {r["label"]: (r["a"], r["b"], r["differs"]) for r in rows if r["under"] == under}
+
+
 @pytest.mark.slow
-def test_compare_shows_the_accelerators_cost_when_the_groups_differ():
-    """dot 5's second bind (mac and sum, two groups) against its link (one group, dot): no group
-    is in both, the accelerator's area and energy are before → after all the same; from the
-    unbound import, "–" before."""
+def test_compare_gives_two_columns_when_the_groups_differ():
+    """dot 5's second bind (mac and sum, two groups) against its link (one group, dot): the
+    Estimate in two columns, each side's texts, a group on one side only "–" on the other, the
+    accelerator's cost on both; the Details of mult on both sides, its cost a row per text."""
     from snax_forge.viz.dfg.api import compare_view, step_view
 
     e, platform = _dot5_steps()
     five, six = (step_view(e[k], str(k), platform)["summary"] for k in (5, 6))
     assert [g["name"] for g in five["groups"]] == ["mac", "sum"]
     assert [g["name"] for g in six["groups"]] == ["dot"]
-    assert compare_view(e[5], e[6], platform)["cost"] == {
-        "heading": "Cost estimate (first-order) on nangate45", "area": "63 400 µm² → 63 200 µm²",
-        "energy": "26.4 nJ → 26.3 nJ", "missing": None}  # fmt: skip
-    first = compare_view(e[0], e[6], platform)["cost"]
-    assert (first["area"], first["energy"]) == ("– → 63 200 µm²", "– → 26.3 nJ")
+    c = compare_view(e[5], e[6], platform, labels=("5 bind", "6 link"))["columns"]
+    assert c["labels"] == ["5 bind", "6 link"] and "about 20 %" in c["caveat"]
+    rows = c["estimate"]
+    assert not any("→" in r["a"] + r["b"] for r in rows)
+    assert _rows(rows, "accelerator") == {"cycles": ("266", "265", True),
+                                          "not mapped": ("0", "0", False)}  # fmt: skip
+    assert _rows(rows, "group mac")["energy"] == ("26.136 nJ", "–", True)
+    assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
+    assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
+        "area": ("63 400 µm²", "63 200 µm²", True), "energy per run": ("26.413 nJ", "26.339 nJ", True),
+        "not characterized": ("none", "none", False)}  # fmt: skip
+    mult = c["details"]["node:mult"]
+    assert mult["where"] == "" and _rows(mult["rows"], None)["group"] == ("mac", "dot", True)
+    assert _rows(mult["rows"], "cost")["per fire"] == ("97.259 pJ", "97.259 pJ", False)
+    assert _rows(mult["rows"], "cost")["per task"] == (
+        "25.872 nJ (256 fires, 512 bits)", "25.868 nJ (256 fires, 512 bits)", True)  # fmt: skip
+    assert c["details"]["group:mac"]["where"] == "removed"
+    assert c["details"]["group:dot"]["where"] == "added"
+    assert {r["a"] for r in c["details"]["group:dot"]["rows"]} == {"–"}
+    # from the unbound import: no cost on the left
+    first = compare_view(e[0], e[6], platform)["columns"]["estimate"]
+    assert _rows(first, "Cost estimate (first-order) on nangate45")["area"] == (
+        "–",
+        "63 200 µm²",
+        True,
+    )
     assert step_view(e[0], "0", platform)["summary"]["cost"] is None  # nothing bound
-    assert compare_view(e[0], e[1], platform)["cost"] is None
+    assert not any(r["under"] and r["under"].startswith("Cost")
+                   for r in compare_view(e[0], e[1], platform)["columns"]["estimate"])  # fmt: skip
+
+
+@pytest.mark.slow
+def test_compare_gives_two_columns_for_the_same_group():
+    """dot 5 at W = 8 against W = 4: one group, dot, on both sides; its rows side by side, the
+    equal ones unmarked."""
+    from snax_forge.viz.dfg.api import Entry, compare_view
+    from tests.helpers import steps
+
+    e, platform = _dot5_steps()
+    w4 = Entry("w4", REPO, steps("dot_5", W=4, N=2048)[-1], None)
+    rows = compare_view(e[6], w4, platform)["columns"]["estimate"]
+    assert _rows(rows, "group dot") == {
+        "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "COUNTER": ("268", "520", True),
+        "channels": ("17", "9", True), "area": ("63 200 µm²", "32 400 µm²", True),
+        "energy": ("26.339 nJ", "26.615 nJ", True)}  # fmt: skip
+    assert _rows(rows, "memory")["reads"] == ("4096 words", "4096 words", False)
+
+
+def test_value_text_is_the_pages():
+    from snax_forge.viz.dfg.api import value_text
+
+    assert [value_text(v) for v in (None, True, 3, [], ["a", 1], {"W": 8, "op": "add"})] == [
+        "–", "true", "3", "–", "a, 1", '{"W":8,"op":"add"}']  # fmt: skip
 
 
 def test_a_block_with_no_flops_holds_dash():

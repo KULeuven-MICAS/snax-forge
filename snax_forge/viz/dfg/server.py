@@ -17,8 +17,8 @@ the server's ``--tech`` (default nangate45).
                               Details, the marks and the estimate); a file that does not load
                               is its entry with the error, not an HTTP error
     GET  /api/compare/<j>/<k> step j against step k (api.compare_view: the session's diff of the
-                              two graphs and the Details fields that changed), for the page's
-                              Compare
+                              two graphs, the Details fields that changed and the two columns
+                              Compare lays out, step j on the left)
     POST /api/reload          read every file again
 
 **Edit mode** (``make_edit_server``, ``pixi run edit-dfg``): one session (sandbox/session.py)
@@ -298,8 +298,9 @@ class DfgHandler(Handler):
                                  tech=tech)  # fmt: skip
         if len(parts) == 3 and parts[0] == "compare":
             j, k = (_index(x, len(entries) - 1) for x in parts[1:])
+            labels = (_label(entries[j].name), _label(entries[k].name))
             return {"a": j, "b": k} | api.compare_view(entries[j], entries[k], self.server.platform,
-                                                       tech)  # fmt: skip
+                                                       tech, labels)  # fmt: skip
         return None
 
     def _edit_get(self, parts: list[str], tech: str) -> Any:
@@ -323,7 +324,8 @@ class DfgHandler(Handler):
             s = state.need()
             j, k = (_index(x, s.n) for x in parts[1:])
             a, b = (api.Entry(s.step_name(x), s.folder, s.graphs[x], None) for x in (j, k))
-            return {"a": j, "b": k} | api.compare_view(a, b, s.platform, tech)
+            labels = (_label(s.step_name(j)), _label(s.step_name(k)))
+            return {"a": j, "b": k} | api.compare_view(a, b, s.platform, tech, labels)
         return None
 
     def _api_post(self, parts: list[Any], body: dict[str, Any]) -> None:

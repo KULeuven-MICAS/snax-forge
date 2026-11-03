@@ -76,19 +76,20 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         ]
         assert "placement" in c["changed"]["container:tmp0"] and "node:tmp0" in c["changed"]
         # the cost (C§20): a unit's, a buffer link's and a group's Details, the panel's figures,
-        # every number to 3 significant figures; ?tech= picks the technology, an unknown one 400
+        # an area to 3 significant figures, an energy to 3 decimals; ?tech= picks the
+        # technology, an unknown one 400
         assert v["details"]["node:sum"]["cost"] == {
             "found": "measured on nangate45", "area": "1 640 µm² (comb 1 300, flops 340)",
-            "per fire": "2.50 pJ", "holding": "0.457 pJ per cycle",
+            "per fire": "2.495 pJ", "holding": "0.457 pJ per cycle",
             "per task": "0.379 nJ (128 fires, 64 bits)"}  # fmt: skip
         assert list(v["details"]["node:sum"])[-2:] == ["timing", "cost"]
         assert v["details"]["node:tmp0"]["cost"]["found"] == "copy on nangate45"
         assert v["details"]["group:dot"]["cost"] == {
-            "area": "32 200 µm²", "energy": "6.94 nJ", "ctrl": "196 bits, 1 040 µm², 0.193 nJ"}  # fmt: skip
+            "area": "32 200 µm²", "energy": "6.945 nJ", "ctrl": "196 bits, 1 040 µm², 0.193 nJ"}  # fmt: skip
         assert "cost" not in v["details"]["group:dot"]["estimate"]
         assert (s["groups"][0]["area_text"], s["groups"][0]["energy_text"]) == (
             "32 200 µm²",
-            "6.94 nJ",
+            "6.945 nJ",
         )
         assert (s["cost"]["heading"], s["cost"]["missing"]) == (
             "Cost estimate (first-order) on nangate45", [])  # fmt: skip

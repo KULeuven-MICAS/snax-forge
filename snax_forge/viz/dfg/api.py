@@ -92,20 +92,26 @@ step's on the viewer's platform, or none; a graph it cannot judge keeps its mess
 ``estimate_error`` and has no badges.
 
 **The cost** (C§20) is the estimate's on the technology asked for (``tech``, default nangate45),
-worked out here as text, every number to 3 significant figures (estimate/cost.py's ``sig3``):
+worked out here as text, an area to 3 significant figures and an energy to 3 decimals
+(estimate/cost.py's ``sig3`` and ``dec3``):
 a unit's and a buffer link's Details gain ``cost`` after ``timing`` (``found``, its area total,
 comb and flops, its energy per fire, holding per cycle and per task, or "not characterized"), a
 group's its area, energy and control unit; the Estimate panel's ``summary`` per group
 ``area_text`` and ``energy_text``, and ``cost`` (the heading, ``CAVEAT``, the accelerator's
 area and energy, the blocks not characterized; None when nothing is bound or there is no
-technology). ``compare_view`` gives the accelerator's ``cost`` before → after whether or not the
-groups match (``cost_compare``), "–" on a side with none; a block with no flops holds "–".
+technology); a block with no flops holds "–".
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
 (the Estimate panel's figures, every sum and share made here, D57) and, in edit mode, its
 ``diff`` against the step before (sandbox/session.py). ``compare_view`` gives two steps' diff
-(the session's ``graph_diff``) and, per Details key, the fields that changed.
+(the session's ``graph_diff``), per Details key the fields that changed, and ``columns``, what
+Compare lays out as two columns (the left step, ``a``, and the right, ``b``): their
+``labels``; per Details key its ``rows`` and ``where`` (``added`` or ``removed`` for an item on
+one side only); the Estimate's ``rows`` and the ``caveat``. A row is ``{label, under, a, b,
+differs}``: ``under`` the section it sits in (``cost``, ``group <name>``, the cost heading) or
+None, ``a`` and ``b`` each side's text as a single step shows it ("–" where a side has none),
+``differs`` whether they differ. Every text is made here; the page only lays them out.
 
 **Links**. A link node is drawn in the accelerated node's style, its text
 ``<container> · wire`` or ``<container> · FIFO <depth>``, its units and the transient it
@@ -139,7 +145,7 @@ from snax_forge.design.streamers import (
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
-from snax_forge.estimate.cost import CAVEAT, heading, sig3
+from snax_forge.estimate.cost import CAVEAT, dec3, heading, sig3
 from snax_forge.expr import ExprError
 
 # A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype
@@ -277,12 +283,12 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     return out
 
 
-def compare_view(a: Entry, b: Entry, platform: Any = None,
-                 tech: str = DEFAULT_TECH) -> dict[str, Any]:  # fmt: skip
-    """Two steps compared (``a`` before, ``b`` after): the session's diff of their graphs
-    (sandbox/session.py's ``graph_diff``) and, per Details key in either, the fields that
-    differ (every field of an item in one only), and the accelerator's ``cost`` before → after
-    (``cost_compare``)."""
+def compare_view(a: Entry, b: Entry, platform: Any = None, tech: str = DEFAULT_TECH,
+                 labels: tuple[str, str] | None = None) -> dict[str, Any]:  # fmt: skip
+    """Two steps compared (``a`` on the left, ``b`` on the right, ``labels`` their headings,
+    else their names): the session's diff of their graphs (sandbox/session.py's
+    ``graph_diff``), per Details key in either the fields that differ (every field of an item
+    in one only), and the two ``columns`` (module doc)."""
     from snax_forge.sandbox.session import graph_diff
 
     if a.graph is None or b.graph is None:
@@ -299,25 +305,109 @@ def compare_view(a: Entry, b: Entry, platform: Any = None,
     diff = graph_diff(
         a.graph, b.graph, ea.containers if ea else None, eb.containers if eb else None
     )
-    return {"diff": diff, "changed": changed, "cost": cost_compare(ea, eb)}
+    sa, sb = (estimate_summary(e) if e is not None else None for e in (ea, eb))
+    columns = {
+        "labels": list(labels or (a.name, b.name)),
+        "details": {key: {"where": "added" if key not in da else "removed" if key not in db else "",
+                          "rows": detail_rows(da.get(key), db.get(key))}
+                    for key in dict.fromkeys([*da, *db])},
+        "estimate": estimate_rows(sa, sb),
+        "caveat": ((sb or {}).get("cost") or (sa or {}).get("cost") or {}).get("caveat"),
+    }  # fmt: skip
+    return {"diff": diff, "changed": changed, "columns": columns}
 
 
-def cost_compare(ea: Any, eb: Any) -> dict[str, Any] | None:
-    """The accelerator's cost before (``ea``) → after (``eb``), whatever their groups: its
-    ``heading`` (the after side's, else the before side's), ``area`` and ``energy`` as
-    ``<before> → <after>`` ("–" for a side with no cost) and ``missing``, the blocks not
-    characterized as before → after when they differ, else None; None when neither side has a
-    cost."""
-    sa, sb = (cost_summary(e) if e is not None else None for e in (ea, eb))
-    if sa is None and sb is None:
-        return None
+def value_text(v: Any) -> str:
+    """A Details value as the page shows one (dfg.js's ``valueText``): None "–", a list its
+    items by ", ", an object its JSON."""
+    if v is None:
+        return "–"
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, list):
+        return ", ".join(json.dumps(x, separators=(",", ":"), ensure_ascii=False)
+                         if isinstance(x, (dict, list)) else value_text(x) for x in v) or "–"  # fmt: skip
+    if isinstance(v, dict):
+        return json.dumps(v, separators=(",", ":"), ensure_ascii=False)
+    return str(v)
 
-    def arrow(field: str) -> str:
-        return f"{(sa or {}).get(field) or '–'} → {(sb or {}).get(field) or '–'}"
 
-    ma, mb = (", ".join(x["missing"]) or "none" if x else "–" for x in (sa, sb))
-    return {"heading": (sb or sa)["heading"], "area": arrow("area_text"),
-            "energy": arrow("energy_text"), "missing": f"{ma} → {mb}" if ma != mb else None}  # fmt: skip
+def _row(label: str, a: Any, b: Any, under: str | None = None) -> dict[str, Any]:
+    x, y = value_text(a), value_text(b)
+    return {"label": label, "under": under, "a": x, "b": y, "differs": x != y}
+
+
+def detail_rows(x: dict[str, Any] | None, y: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """One item's Details in two columns (module doc): a row per field, its ``cost`` a row per
+    text under ``cost``; "–" on a side without the field or the item."""
+    x, y = x or {}, y or {}
+    rows = []
+    for f in dict.fromkeys([*x, *y]):
+        if f == "kind":
+            continue
+        u, w = x.get(f), y.get(f)
+        if f == "cost" and (isinstance(u, dict) or isinstance(w, dict)):
+            cu, cw = u or {}, w or {}
+            rows += [_row(k, cu.get(k), cw.get(k), "cost") for k in dict.fromkeys([*cu, *cw])]
+        else:
+            rows.append(_row(f, u, w))
+    return rows
+
+
+def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[dict[str, Any]]:
+    """The Estimate panel in two columns (module doc), from each side's summary (None: no
+    estimate): under ``accelerator`` its cycles and not-mapped count; under ``group <name>``,
+    every group of either side, its cycles, COUNTER, channels, area and energy; under
+    ``memory`` L1, the words read and written, the lanes; under the cost heading the
+    accelerator's area, energy and the blocks not characterized. "–" where a side has none."""
+
+    def both(fn: Any) -> tuple[Any, Any]:
+        def one(s: dict[str, Any] | None) -> Any:
+            if s is None:
+                return None
+            try:
+                return fn(s)
+            except (KeyError, TypeError, StopIteration):
+                return None
+
+        return one(sa), one(sb)
+
+    def l1(s: dict[str, Any]) -> str:
+        x = s["l1"]
+        return f"{x['footprint_text']} of {x['size_text']} ({x['share_text']})" if x["size"] else (
+            x["footprint_text"])  # fmt: skip
+
+    rows = [_row("cycles", *both(lambda s: s["accelerator_cycles"]), "accelerator"),
+            _row("not mapped", *both(lambda s: s["not_mapped"]), "accelerator")]  # fmt: skip
+    names = dict.fromkeys(g["name"] for s in (sa, sb) if s for g in s["groups"])
+    for name in names:
+
+        def group(s: dict[str, Any], field: str, name: str = name) -> Any:
+            return next(g for g in s["groups"] if g["name"] == name)[field]
+
+        under = f"group {name}"
+        rows += [_row(label, *both(lambda s, f=field: group(s, f)), under)
+                 for label, field in (("cycles", "formula"), ("COUNTER", "counter"),
+                                      ("channels", "channels"), ("area", "area_text"),
+                                      ("energy", "energy_text"))]  # fmt: skip
+    rows += [_row("L1", *both(l1), "memory"),
+             _row("reads", *both(lambda s: f"{s['reads']} words"), "memory"),
+             _row("writes", *both(lambda s: f"{s['writes']} words"), "memory")]  # fmt: skip
+    if any(s and s["splits"] for s in (sa, sb)):
+        rows.append(_row("lanes", *both(lambda s: "; ".join(f"{x['map']} {x['text']}"
+                                                            for x in s["splits"]) or None),
+                         "memory"))  # fmt: skip
+    costs = [s["cost"] for s in (sb, sa) if s and s["cost"]]
+    if costs:
+        under = costs[0]["heading"]
+
+        def missing(s: dict[str, Any]) -> str:
+            return ", ".join(s["cost"]["missing"]) or "none"
+
+        rows += [_row("area", *both(lambda s: s["cost"]["area_text"]), under),
+                 _row("energy per run", *both(lambda s: s["cost"]["energy_text"]), under),
+                 _row("not characterized", *both(missing), under)]  # fmt: skip
+    return rows
 
 
 def estimate_summary(est: Any) -> dict[str, Any]:
@@ -374,7 +464,7 @@ def _um2(x: float) -> str:
 
 
 def _nj(x: float) -> str:
-    return f"{sig3(x)} nJ"
+    return f"{dec3(x)} nJ"
 
 
 def cost_details(c: Any, bits: int, tech: str) -> dict[str, str]:
@@ -382,8 +472,8 @@ def cost_details(c: Any, bits: int, tech: str) -> dict[str, str]:
     return {
         "found": f"{c.found} on {tech}" if c.found else f"not characterized on {tech}",
         "area": f"{_um2(c.total_um2)} (comb {sig3(c.comb_um2)}, flops {sig3(c.flops_um2)})",
-        "per fire": f"{sig3(c.e_fire_pj)} pJ",
-        "holding": f"{sig3(c.e_hold_pj)} pJ per cycle" if c.e_hold_pj else "–",  # no flops
+        "per fire": f"{dec3(c.e_fire_pj)} pJ",
+        "holding": f"{dec3(c.e_hold_pj)} pJ per cycle" if c.e_hold_pj else "–",  # no flops
         "per task": f"{_nj(c.task_nj)} ({c.fires} fires, {bits} bits)",
     }
 
