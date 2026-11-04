@@ -119,7 +119,7 @@ Each implementation's binding (D129) has two outputs: the GVSoC accelerator on `
 Turns a design point into what a run needs, and decides nothing (`lower/`).
 
 - **Task list** (D64, `lower/derive.py`, `lower/waits.py`; C§9): one group of tasks per accelerated node, loads before and stores after, so two accelerators chain through L1 with one wait (D105).
-- **C program** (D135, `lower/c.py`; C§16): the task list as `main.c` on snRuntime, one function per core, direct CSR writes on the generated headers' names, ending in `forge_check()`, the self-check against `data.h`'s goldens; main's entry and `forge_check()`'s bound the window. One accelerator per program, each of its groups a task of its own (D148).
+- **C program** (D135, `lower/c.py`; C§16): the task list as `main.c` on snRuntime, one function per core, direct CSR writes on the generated headers' names, ending in `forge_check()`, the self-check against `data.h`'s goldens; main's entry and `forge_check()`'s bound the window. One entry per program, each accelerator a streamer set, in series for now (D158).
 
 ### 5.6 SNAX-GVSoC
 
@@ -134,7 +134,7 @@ What it models is what snax_cluster's RTL does; where the two differ, the RTL wi
 
 ### 5.7 SNAX link
 
-A design point gives SNAX-GVSoC its cluster and streamer hjson and `accelerator.json` (D145), the CSR and cluster headers, `data.h` and `main.c`, and no generated code to compile (`gen/gvsoc.py`, D134; C§16). For snax_cluster it gives a bundle (`pixi run bundle`, `gen/bundle.py`, D111; C§18): the same files, and the accelerator RTL that `Emit --spec` builds from `accelerator.json` (C§17), checked against the datapath catalogue `hw/chisel/blocks.json`, as `<tag>_shell_wrapper` with its own CSR manager (D130). The accelerator is the base cluster's `snax_forge` slot and its cluster `snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131).
+A design point gives SNAX-GVSoC its cluster and streamer hjson and `accelerator.json` (D145), the CSR and cluster headers, `data.h` and `main.c`, and no generated code to compile (`gen/gvsoc.py`, D134; C§16). For snax_cluster it gives a bundle (`pixi run bundle`, `gen/bundle.py`, D111; C§18): the same files, and the accelerator RTL that `Emit --spec` builds from `accelerator.json` (C§17), checked against the datapath catalogue `hw/chisel/blocks.json`, as `<tag>_shell_wrapper` with its own CSR manager (D130). The design's accelerators are the base cluster's one entry, named `snax_forge_<design>` (`accelerator_slot` its prefix), each a streamer set in it (D157), and its cluster `snax_forge_cluster`, so neither takes a name of snax_cluster's own (D131).
 
 `pixi run forge RECIPE [--set ...]` (`flow/forge.py`) runs the flow, the bundle and the bundle's program, checks that the program is the flow's ELF, writes each step's output to `out/forge/<name>/forge.log`, writes the bundle's `forge_expected.txt` (the run's counter and data lines), and prints the commands that run that ELF on snax_cluster's RTL. snax_cluster and snax-forge stay separate checkouts, joined only by the bundle's files (D130): snax_cluster's `snax_forge.mk` builds and runs a bundle. The check is local (D123): `pixi run forge-set quick|full` makes a set's bundles and prints the one `make snax-forge-check` line that runs them in snax_cluster and compares each with its `forge_expected.txt` (`docs/RUN.md` section 8; CLAUDE.md says when each set is due).
 
