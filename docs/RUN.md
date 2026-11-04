@@ -189,7 +189,7 @@ One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL, and the RTL
       sw        out/forge/vecadd/sw/forge.elf from the bundle (sha256 3fa93c774886c3b3, the flow's)
     ...
 
-then the snax_cluster commands for one design (Verilator, and Questa as below). `pixi run forge-set quick|full [--sim vsim|vlt] [-j N]` runs forge on a set's recipes at once (quick: vecadd_i32, vsum_tree_i8, dot_1, dot_4; full: those and vecadd, vsum, vecmul_i32_i64, dot_2, dot_3, dot_5, dot_6, matvec_5, matvec_6), writes `out/forge-set/<set>.md` (each bundle's expected lines and the commands per design) and prints one line:
+then the snax_cluster commands for one design (Verilator, and Questa as below). `pixi run forge-set quick|full [--sim vsim|vlt] [-j N]` runs forge on a set's recipes at once (quick: vecadd_i32, vsum_tree_i8, dot_1, dot_1_enc, dot_4; full: those and vecadd, vsum, vecmul_i32_i64, dot_2, dot_3, dot_5, dot_6, matvec_5, matvec_6), writes `out/forge-set/<set>.md` (each bundle's expected lines and the commands per design) and prints one line:
 
     pixi run forge-set quick
 

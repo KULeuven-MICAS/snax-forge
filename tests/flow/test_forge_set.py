@@ -79,4 +79,4 @@ def test_a_failing_forge_stops_the_set(tmp_path, stubbed, capsys):
 
 
 def test_the_full_set_holds_the_quick_one():
-    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 13
+    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 14
