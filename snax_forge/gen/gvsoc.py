@@ -1,22 +1,25 @@
-"""A design point -> its cluster on SNAX-GVSoC: three description files and headers (D134).
+"""A design point -> its cluster on SNAX-GVSoC: its description files and headers (D134).
 
     generate(design_point, out_dir, root=None) -> Manifest
 
 The hjson is the contract: SNAX-GVSoC's ``snax_hjson`` target reads it at
 run time (snax-gvsoc ``snax/snax_cfg.py``), so a design point compiles
-nothing and no Python is generated. ``out_dir`` gets three
+nothing and no Python is generated. ``out_dir`` gets the
 description files, each changing for its own reason, the C headers, the
 program and its data, and the manifest:
 
     <platform>.hjson         the cluster: the platform's source hjson with
                              the platform's values written back, the
                              cluster renamed and the accelerator slot set
-    <slot>_streamer.hjson    the streamer template, as the hjson has it
-    accelerator.json         the accelerator's one description
+    <tag>_streamer_<set>.hjson
+                             per streamer set (one per accelerator, D157),
+                             its streamer template, as the hjson has it
+    accelerator.json         the accelerators' one description
                              (accelerator.py, D145)
-    include/                 the C headers (headers.py): the streamer's
-                             streamer_csr_addr_map.h and <name>_csr.h,
-                             and the runtime's snitch_cluster_cfg.h and
+    include/                 the C headers (headers.py): per set
+                             streamer_<set>_csr_addr_map.h and per
+                             accelerator <acc>_csr.h, and the runtime's
+                             snitch_cluster_cfg.h and
                              snitch_cluster_addrmap.h from the cluster file
     data.h                   the program's data (data.py): inputs,
                              outputs and goldens
@@ -28,10 +31,10 @@ A file is written only when its text changes (``write_changed``), and only the f
 earlier generation into ``out_dir`` wrote (its manifest's) and this one does not are removed,
 so generating the same design point again changes no file and rebuilds no program.
 
-``<platform>`` is the platform's base (its name when it has none), ``<slot>``
-its ``accelerator_slot``: for ``platforms/snax_forge.json``,
-``snax_forge.hjson``, ``snax_forge_streamer.hjson`` and
-``accelerator.json``.
+``<platform>`` is the platform's base (its name when it has none), ``<tag>``
+the generated entry's name, ``<accelerator_slot>_<design>`` (accelerator.py's
+``tag``): for dot 1 on ``platforms/snax_forge.json``, ``snax_forge.hjson``,
+``snax_forge_dot_1_streamer_dot.hjson`` and ``accelerator.json``.
 
 **The cluster file.** The platform's ``hjson`` (a path from ``root``),
 parsed, with the platform's values written back by the reverse of
@@ -48,24 +51,29 @@ parsed, with the platform's values written back by the reverse of
 ``cluster.bender_target`` the entry equal to the source's ``cluster.name``
 becomes it too, so the generated cluster takes no name of snax_cluster's own
 (D130). The slot, the source's one ``snax_acc_cfg`` entry whatever its
-name, is renamed and set, its keys in this order:
+name, is renamed and set, always in the sets form, also for one set (D157),
+its keys in this order:
 
-    snax_acc_name               the platform's accelerator_slot
+    snax_acc_name               the tag
     the source's other keys     in their order, ``bender_target`` dropped
                                 (the RTL comes from the bundle, bundle.py),
-                                with these set (a key the source lacks
+                                and ``snax_streamer_cfg``, ``snax_num_rw_csr``
+                                and ``snax_num_ro_csr`` (each set has its
+                                own), with these set (a key the source lacks
                                 after the others):
-      snax_tcdm_ports           the streamer's channels
-      sparse_interconnect_config  one group of that width (its granularity
-                                kept), when the source has it
-      snax_num_rw_csr           the accelerator's R/W CSRs (accelerator.py)
-      snax_num_ro_csr           its R/O CSRs
+      snax_tcdm_ports           the sum over the sets of their channels
+      sparse_interconnect_config  one group per set, of its width (the
+                                source's granularity kept), when the source
+                                has it
     snax_disable_csr_manager    true: the wrapper carries its own manager
-
     snax_forge_rtl              ``rtl/files.f``, the RTL's file list from
                                 the cluster file's folder, which only a
                                 bundle has; SNAX-GVSoC ignores it
-    snax_streamer_cfg           ``{"$ref": "<slot>_streamer.hjson"}``
+    snax_streamer_sets          per accelerator in CSR order ``{name,
+                                snax_streamer_cfg: {"$ref":
+                                "<tag>_streamer_<set>.hjson"},
+                                snax_num_rw_csr, snax_num_ro_csr}``, its R/W
+                                and R/O CSRs (accelerator.py)
     snax_datapath_cfg           ``{"$ref": "accelerator.json"}``
 
 each ``$ref`` the whole file. The source's own template, a top-level key the
@@ -73,10 +81,10 @@ slot referred to (``{"$ref": "#/<key>"}``), goes when nothing else refers to
 it. Everything else is the source's, its key order kept; its comments are
 not (the file is written as JSON, which hjson reads).
 
-**The streamer**, lowered per design point, as the design point's
-streamers give it (D87): readers the input ports, writers the output ports,
-unit by unit (the accelerator's groups in order, D148) in the BRM's port
-order, each with ``spatial_bounds`` in words, fastest
+**The streamers**, one per set, lowered per design point, as the design
+point's streamers give them (D87): readers the set's input ports, writers its
+output ports, unit by unit (the accelerator's groups in order, D148) in the
+BRM's port order, each with ``spatial_bounds`` in words, fastest
 first (``[S_0 / num_slc, S_1, ...]``: the fastest bound over num_slc, the slices
 of the port's container dtype a word holds, D142), ``temporal_dim`` (the
 streamer's ``temporal_dims``), ``num_channel`` (the streamer's ``num_ch``, the
@@ -84,16 +92,17 @@ wire default W / num_slc; snax-gvsoc's streamer requires the bounds' product to
 be it)
 and ``fifo_depth``.
 
-**The accelerator** is accelerator.py's ``describe``, written as plain JSON
-(no header comment: its ``design_point`` names the source). Its CSRs follow
-the streamer's.
+**The accelerators** are accelerator.py's ``describe``, written as plain JSON
+(no header comment: its ``design_point`` names the source). Each set's own
+CSRs follow its streamer's (csrs.py).
 
 **Refused**, each a ``GenError`` (``gen.<rule>``): a design point outside
 ``root`` (``gen.point``), what accelerator.py's ``describe`` refuses
-(``gen.binding``, ``gen.datapath``, ``gen.drain``, ``gen.timing`` and the datapath's
+(``gen.tag``, ``gen.binding``, ``gen.datapath``, ``gen.drain``, ``gen.timing`` and the datapath's
 adapter's), a dtype that is not intN or uintN (``gen.dtype``), a
 streamer whose fastest spatial bound is not whole words (``gen.lanes``,
-which connect.pack refuses first), CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``), a platform
+which connect.pack refuses first), the entry's CSRs past ``SNAX_ACC_CSR_LAST`` (``gen.csrs``,
+csrs.py), a platform
 without a source hjson or a source that cannot be read or written into
 (``gen.source``, also a ``cluster.bender_target`` without the source's
 ``cluster.name``), a source with no slot or several (``gen.slot``), and a
@@ -110,8 +119,9 @@ graph's, e.g. ``{"N": 64}``: what a program sizes its data by),
 ``files``, ``program`` (``main.c``), ``trace`` (``trace_path``: the trace path of the
 accelerator's one unit, ``snax_acc0/unit``; of its one linked group,
 ``snax_acc0/group_<group>``; with several groups the accelerator's, ``snax_acc0``), ``csrs``
-(the layout: the streamer's first and last CSR, and every accelerator CSR's define -> its
-number) and ``tasks``: per accelerator task of the derived task list
+(the layout, csrs.py: ``streamers``, per set ``{name, first, last, trace}``, its streamer's
+first and last CSR and its trace ``snax_acc0/streamer_<set>``, and ``accelerator``, every
+accelerator CSR's define -> its number) and ``tasks``: per accelerator task of the derived task list
 (snax_forge/lower/derive.py, D64), in order, its name, its ``beats`` (the unit's firings,
 the task's ``n``; a linked group's most firing unit's), its ``csrs`` values (its group's
 ``JOBS``, and ``JOB_BEATS`` for a fold without ``params.T``, named with its unit in a linked
@@ -167,19 +177,23 @@ from snax_forge.lower.c import MAIN_C, job_writes, main_c, task_beats
 from snax_forge.lower.derive import task_list
 from snax_forge.lower.tasks import TaskList
 
-from .accelerator import ACCELERATOR_JSON, Accelerator, describe, units
+from .accelerator import ACCELERATOR_JSON, Description, describe, units
 from .blocks import GenError, port_dtype
-from .csrs import SNAX_CSR_FIRST, CsrLayout, channels, csr_layout, movers
+from .csrs import ACC_TRACE, CsrLayout, channels, csr_layout, movers
 from .data import DATA_H, arrays, data_h
-from .headers import STREAMER_HEADER, accelerator_header, cluster_headers, streamer_header
+from .headers import (
+    accelerator_header,
+    accelerator_header_name,
+    cluster_headers,
+    streamer_header,
+    streamer_header_name,
+)
 
 ROOT = repo_root()
 OUT = ROOT / "out" / "gvsoc"
 
-# The trace paths: the compute core's accelerator, named snax_acc<core> by
-# pulp/snitch/snitch_cluster/snitch_cluster.py; the composite
+# The trace paths (csrs.py's ACC_TRACE the compute core's accelerator): the composite
 # (snax/snax_accelerator.py) calls a unit `unit`, with several groups `unit_<unit>`
-ACC_TRACE = "snax_acc0"
 UNIT_TRACE = f"{ACC_TRACE}/unit"
 # The generated cluster's name
 CLUSTER = "snax_forge_cluster"
@@ -287,7 +301,7 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
         groups["data_writer_params" if s.write else "data_reader_params"].append(mover)
 
 
-def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Accelerator) -> list[AccTask]:
+def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Description) -> list[AccTask]:
     """The accelerator tasks of the derived task list, in order, with their group's CSR
     values (lower/c.py's ``job_writes``: a CSR of a unit of a linked group named with the unit,
     ``MAC_JOB_BEATS``) and, with several groups, its group's trace path."""
@@ -308,26 +322,29 @@ def acc_tasks(tasks: TaskList, found: Mapping[str, Instance], acc: Accelerator) 
     return out
 
 
-def trace_path(acc: Accelerator) -> str:
+def trace_path(acc: Description) -> str:
     """The manifest's trace path: one group of one unit ``snax_acc0/unit``; one linked group
     ``snax_acc0/group_<group>``, SNAX-GVSoC's one component for its units; several groups the
-    accelerator's, ``snax_acc0``, each task with its own."""
+    accelerator's, ``snax_acc0``, each task with its own (over the whole design)."""
     if len(acc.groups) > 1:
         return ACC_TRACE
     (g,) = acc.groups
     return UNIT_TRACE if len(g.units) == 1 else f"{ACC_TRACE}/group_{g.name}"
 
 
-def described(name: str, found: Mapping[str, Instance]) -> str:
-    """The accelerator as the cluster file's header comment names it."""
+def described(found: Mapping[str, Mapping[str, Instance]]) -> str:
+    """The accelerators as the cluster file's header comment names them, set by set."""
 
     def one(unit: str, inst: Instance) -> str:
         return (f"instance {unit}, BRM {inst.brm.name}, implementation {inst.implementation}, "
                 f"datapath {inst.impl.binding['datapath']}")  # fmt: skip
 
-    if len(found) == 1:
-        return one(*next(iter(found.items())))
-    return f"accelerator {name} of " + "; ".join(f"group {one(u, i)}" for u, i in found.items())
+    def acc(name: str, units: Mapping[str, Instance]) -> str:
+        if len(units) == 1:
+            return f"accelerator {name}: " + one(*next(iter(units.items())))
+        return f"accelerator {name} of " + "; ".join(f"group {one(u, i)}" for u, i in units.items())
+
+    return "; ".join(acc(n, u) for n, u in found.items())
 
 
 # =============================================================================
@@ -460,12 +477,13 @@ def rename_cluster(d: dict[str, Any], where: str) -> None:
 
 
 def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], name: str,
-             template: dict[str, Any], acc: Accelerator, files: tuple[str, str],
+             templates: Mapping[str, dict[str, Any]], acc: Description, files: Mapping[str, str],
              where: str) -> None:  # fmt: skip
-    """The slot (``find_slot``'s, in ``d``) named ``name`` and set for the design; see the
-    module doc."""
-    ports = channels(template)
-    slot["snax_tcdm_ports"] = ports
+    """The slot (``find_slot``'s, in ``d``) named ``name`` (the tag) and set for the design,
+    ``files`` each set's streamer file by its name and ``accelerator.json``'s; see the module
+    doc."""
+    widths = [channels(templates[a.name]) for a in acc.accelerators]
+    slot["snax_tcdm_ports"] = sum(widths)
     if "sparse_interconnect_config" in slot:
         groups = slot["sparse_interconnect_config"]
         if not (isinstance(groups, list) and len(groups) == 1 and isinstance(groups[0], list)
@@ -474,17 +492,19 @@ def set_slot(d: dict[str, Any], at: str, slot: dict[str, Any], name: str,
                 "gen.source", f"{where}: {at}.sparse_interconnect_config {groups!r} is not one "
                 "group [width, granularity]",
             )  # fmt: skip
-        slot["sparse_interconnect_config"] = [[ports, groups[0][1]]]
-    slot["snax_num_rw_csr"] = acc.rw
-    slot["snax_num_ro_csr"] = acc.ro
+        slot["sparse_interconnect_config"] = [[w, groups[0][1]] for w in widths]
     old = slot.get("snax_streamer_cfg")
+    sets = [{"name": a.name, "snax_streamer_cfg": {"$ref": files[a.name]},
+             "snax_num_rw_csr": a.rw, "snax_num_ro_csr": a.ro} for a in acc.accelerators]  # fmt: skip
     last = {
         "snax_disable_csr_manager": True,
         "snax_forge_rtl": RTL_FILE_LIST,
-        "snax_streamer_cfg": {"$ref": files[0]},
-        "snax_datapath_cfg": {"$ref": files[1]},
+        "snax_streamer_sets": sets,
+        "snax_datapath_cfg": {"$ref": files[ACCELERATOR_JSON]},
     }
-    rest = {k: v for k, v in slot.items() if k not in ("snax_acc_name", "bender_target", *last)}
+    dropped = ("snax_acc_name", "bender_target", "snax_streamer_cfg", "snax_num_rw_csr",
+               "snax_num_ro_csr", *last)  # fmt: skip
+    rest = {k: v for k, v in slot.items() if k not in dropped}
     slot.clear()
     slot.update({"snax_acc_name": name, **rest, **last})
     for key in _local_refs(old):
@@ -511,9 +531,9 @@ def point_name(path: Path, root: Path) -> str:
 
 def load_point(
     design_point: str | Path, root: Path, named_from: str | Path | None = None
-) -> tuple[str, DesignPoint, Accelerator]:
+) -> tuple[str, DesignPoint, Description]:
     """The design point's name (``point_name`` from ``named_from``, else ``root``), the point
-    and its accelerator's description (accelerator.py's ``describe``)."""
+    and its accelerators' description (accelerator.py's ``describe``)."""
     shown = point_name(Path(design_point), root if named_from is None else Path(named_from))
     point = DesignPoint.load(design_point)
     return shown, point, describe(point, shown)
@@ -557,41 +577,48 @@ def generate(
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
     shown, point, acc = load_point(point_path, root, named_from)
-    name, members = units(point)
+    found = units(point)
+    members = {u: inst for mine in found.values() for u, inst in mine.items()}
     platform = point.platform
-    template = streamer_template(point, members)
-    layout = csr_layout(template, acc)
+    templates = {a: streamer_template(point, mine) for a, mine in found.items()}
+    layout = csr_layout(templates, acc)
     tasks = task_list(point) if tasks is None else tasks
     data = arrays(point, seed, kernel, goldens)
 
     cluster = source(platform, root)
-    at, found = find_slot(cluster, platform)
+    at, slot = find_slot(cluster, platform)
     write_back(cluster, platform)
     rename_cluster(cluster, platform.hjson)
-    slot = platform.accelerator_slot
-    names = (f"{platform.base or platform.name}.hjson", f"{slot}_streamer.hjson",
-             ACCELERATOR_JSON)  # fmt: skip
-    set_slot(cluster, at, found, slot, template, acc, names[1:], platform.hjson)
+    cluster_file = f"{platform.base or platform.name}.hjson"
+    streamer_files = {a: f"{acc.tag}_streamer_{a}.hjson" for a in found}
+    set_slot(cluster, at, slot, acc.tag, templates, acc,
+             {**streamer_files, ACCELERATOR_JSON: ACCELERATOR_JSON}, platform.hjson)  # fmt: skip
 
-    accel = described(name, members)
-    header = f"{acc.name}_csr.h"
-    streamer_h, streamer_last = streamer_header(movers(template), SNAX_CSR_FIRST, shown)
-    assert streamer_last == layout.streamer_last, (streamer_last, layout)
     files = {
-        names[0]: _hjson(shown, f"The cluster {CLUSTER}: {platform.hjson} with platform "
-                         f"{platform.name}'s values and the slot {slot} set for {accel}; its "
-                         f"streamer in "
-                         f"{names[1]}, its accelerator in {names[2]}.", cluster),
-        names[1]: _hjson(shown, f"Slot {slot}'s streamer template: readers the input ports in the "
-                         "BRM's port order, writers the output ports.", template),
-        names[2]: acc.to_json(),
-        f"include/{STREAMER_HEADER}": streamer_h,
-        f"include/{header}": accelerator_header(acc, layout.first, shown),
-        **{f"include/{f}": text for f, text in cluster_headers(cluster, shown).items()},
-        DATA_H: data_h(point, shown, data, seed=seed),
-        MAIN_C: main_c(point, tasks, cluster, acc, data, [DATA_H, header, STREAMER_HEADER],
-                       shown),
+        cluster_file: _hjson(shown, f"The cluster {CLUSTER}: {platform.hjson} with platform "
+                             f"{platform.name}'s values and its slot the entry {acc.tag}, one "
+                             f"streamer set per accelerator: {described(found)}; each set's "
+                             f"streamer in {acc.tag}_streamer_<set>.hjson, the accelerators in "
+                             f"{ACCELERATOR_JSON}.", cluster),
+        **{f: _hjson(shown, f"Streamer set {a}'s streamer template: readers its input ports in "
+                     "the BRM's port order, writers its output ports.", templates[a])
+           for a, f in streamer_files.items()},
+        ACCELERATOR_JSON: acc.to_json(),
     }  # fmt: skip
+    includes = [DATA_H]
+    for a in acc.accelerators:
+        r = layout.streamer(a.name)
+        text, last = streamer_header(movers(templates[a.name]), r.first, f"{a.name.upper()}_",
+                                     shown)  # fmt: skip
+        assert last == r.last, (last, r)
+        files[f"include/{streamer_header_name(a.name)}"] = text
+        files[f"include/{accelerator_header_name(a.name)}"] = accelerator_header(
+            a, layout.accelerator, shown
+        )
+        includes += [accelerator_header_name(a.name), streamer_header_name(a.name)]
+    files |= {f"include/{f}": text for f, text in cluster_headers(cluster, shown).items()}
+    files[DATA_H] = data_h(point, shown, data, seed=seed)
+    files[MAIN_C] = main_c(point, tasks, cluster, acc, data, includes, shown)
     before = _written(out)
     (out / "include").mkdir(parents=True, exist_ok=True)
     for f, text in files.items():
@@ -600,7 +627,7 @@ def generate(
         design=point.name,
         design_point=shown,
         symbols=dict(point.graph.symbols),
-        cluster=names[0],
+        cluster=cluster_file,
         files=[*files, "manifest.json"],
         program=MAIN_C,
         trace=trace_path(acc),
