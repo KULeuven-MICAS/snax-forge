@@ -419,7 +419,7 @@ def test_the_run_report_names_each_tasks_group(dot1):
     assert (
         "| mul | mul | 0 | mult_mul |" in text and "| sum_a | mul | 0 | mult_sum_a (idle) |" in text
     )
-    assert "| Accelerator | Group | Firings |" in text
+    assert "| Unit | Group | Firings |" in text
     # the other group's movers, started only for the shared start, tagged idle (C§7)
     idle = sorted(t.name for t in r.run.tasks if t.idle)
     assert idle == ["mult_sum_a", "mult_sum_out", "sum_mul_a", "sum_mul_b", "sum_mul_out"]

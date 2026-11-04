@@ -17,7 +17,8 @@ named it (D137).
                   group's, started only for the shared start, D148) tagged idle;
                   a DMA copy with its direction and bytes
                                                          (needs a task trace)
-    accelerators  firings, target II (the datapath file's), achieved II,
+    accelerators  per unit (its first column ``Unit``; a linked group's under its
+                  name): firings, target II (the datapath file's), achieved II,
                   utilisation over the window and over its tasks' span,
                   stall_in, stall_out, flush; then per group a collapsible
                   ``<details>`` of its movers (mul ▸ mul_a, mul_b, mul_out):
@@ -461,7 +462,7 @@ def render_run(r: RunReport) -> str:
 
     out += ["", "## Accelerators", ""]
     out += grouped(r.groups, 1, table(
-        ["Accelerator", "Firings", "Target II", "Achieved II", "Utilisation (window)",
+        ["Unit", "Firings", "Target II", "Achieved II", "Utilisation (window)",
          "Task span", "Utilisation (span)", "Starved (stall_in)", "Blocked (stall_out)", "Flush"],
         [[a.name, a.firings, a.target_ii, None if a.achieved_ii is None else f"{a.achieved_ii:.2f}",
           pct(a.utilisation), a.span,

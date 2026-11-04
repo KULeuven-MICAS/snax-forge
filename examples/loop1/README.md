@@ -42,7 +42,7 @@ This is a fact about addresses only. Whether it costs cycles depends on when the
 | Counters | add_acc 131 (expected 131, a guide) |
 
 <!-- excerpt: vecadd_N512_stall/report/run.md -->
-| Accelerator | Firings | Target II | Achieved II | Utilisation (window) | Task span | Utilisation (span) | Starved (stall_in) | Blocked (stall_out) | Flush |
+| Unit | Firings | Target II | Achieved II | Utilisation (window) | Task span | Utilisation (span) | Starved (stall_in) | Blocked (stall_out) | Flush |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | acc | 128 | 1 | 1.00 | 26.2% | 132 | 97.0% | 3 | 0 | 0 |
 
@@ -131,7 +131,7 @@ The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one. `report/r
 | Counters | add_acc 67 (expected 67, a guide) |
 
 <!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
-| Accelerator | Firings | Target II | Achieved II | Utilisation (window) | Task span | Utilisation (span) | Starved (stall_in) | Blocked (stall_out) | Flush |
+| Unit | Firings | Target II | Achieved II | Utilisation (window) | Task span | Utilisation (span) | Starved (stall_in) | Blocked (stall_out) | Flush |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | acc | 64 | 1 | 1.00 | 15.1% | 68 | 94.1% | 3 | 0 | 0 |
 
