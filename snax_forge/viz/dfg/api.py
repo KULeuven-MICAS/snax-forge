@@ -104,8 +104,8 @@ comb and flops, its energy per fire, holding per cycle and per task, or "not cha
 group's its area, energy and control unit; the Estimate panel's ``summary`` per group
 ``area_text`` and ``energy_text``, and ``cost`` (the heading, ``CAVEAT``, the accelerator's
 area and energy, the blocks not characterized, and ``tables``, the cost as a table per
-accelerator, ``cost_tables``; None when nothing is bound or there is no technology); a block
-with no flops holds "–".
+accelerator, ``cost_tables``, with its L1 accesses' row, a placeholder (D154); None when nothing
+is bound or there is no technology); a block with no flops holds "–".
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
@@ -157,7 +157,7 @@ from snax_forge.design.streamers import (
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range
-from snax_forge.estimate.cost import CAVEAT, dec3, heading, sig3
+from snax_forge.estimate.cost import CAVEAT, L1_LABEL, L1Cost, dec3, heading, sig3
 from snax_forge.expr import ExprError
 
 # A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype
@@ -613,7 +613,8 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
     not-mapped count; under ``group <name>``,
     every group of either side, its cycles, COUNTER, channels, area and energy, and its bank
     note where a side has one; under ``memory`` L1, the words read and written, the lanes; under the cost heading the
-    accelerator's area, energy and the blocks not characterized. "–" where a side has none."""
+    accelerator's area, energy, L1 accesses (D154) and the blocks not characterized. "–" where a
+    side has none."""
 
     def both(fn: Any) -> tuple[Any, Any]:
         def one(s: dict[str, Any] | None) -> Any:
@@ -665,6 +666,7 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
 
         rows += [_row("area", *both(lambda s: s["cost"]["area_text"]), under),
                  _row("energy per run", *both(lambda s: s["cost"]["energy_text"]), under),
+                 _row("L1 accesses", *both(lambda s: s["cost"]["l1_text"]), under),
                  _row("not characterized", *both(missing), under)]  # fmt: skip
     return rows
 
@@ -738,9 +740,11 @@ def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
     ``tables``, the cost table per accelerator (``cost_tables``)."""
     if est.tech is None or not est.groups:
         return None
+    l1 = "; ".join(f"{a}: {x.words} words, {_nj(x.energy_nj)}" for a, x in est.l1.items())
     return {"tech": est.tech, "heading": heading(est.tech), "caveat": CAVEAT,
             "area_text": _um2(est.area), "energy_text": _nj(est.energy),
-            "missing": list(est.missing), "tables": cost_tables(est, g)}  # fmt: skip
+            "l1_text": l1 or None, "missing": list(est.missing),
+            "tables": cost_tables(est, g)}  # fmt: skip
 
 
 def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
@@ -749,11 +753,15 @@ def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
     unit, each its ``block`` (the instance, the link's container, ``<group> ctrl``), ``kind``,
     ``datapath`` (``· not characterized`` where the table has no point), area (µm², 3
     significant figures) and energy (nJ, 3 decimals) with their texts, and ``share`` of the
-    accelerator's energy; then the ``total``."""
+    accelerator's energy; then one row of its L1 accesses (``L1_LABEL``, kind ``l1``, its
+    ``words`` and ``bits`` in ``datapath``, no area; a placeholder, D154); then the ``total``."""
     by_name = {x.name: x for x in est.groups if x.cost is not None}
     accs = [(a["name"], [grp["name"] for grp in a["groups"]]) for a in accelerators(g)] if g else []
+    l1 = est.l1
     if not accs:
         accs = [("accelerator", list(by_name))]
+        l1 = {"accelerator": L1Cost(sum(x.words for x in l1.values()),
+                                    sum(x.energy_nj for x in l1.values()))} if l1 else {}  # fmt: skip
     out = []
     for name, groups in accs:
         raw = []
@@ -770,18 +778,23 @@ def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
             raw.append((f"{gname} ctrl", "ctrl", "control unit", True, c.ctrl_um2, c.ctrl_nj))
         if not raw:
             continue
-        area, energy = sum(r[4] for r in raw), sum(r[5] for r in raw)
+        if name in l1:  # its streamers' words in L1, a placeholder (D154)
+            x = l1[name]
+            raw.append((L1_LABEL, "l1", f"{x.words} words, {_thousands(x.bits)} bits", True, None,
+                        x.energy_nj))  # fmt: skip
+        area, energy = sum(r[4] or 0.0 for r in raw), sum(r[5] for r in raw)
         out.append({"accelerator": name, "rows": [_cost_row(*r, energy) for r in raw],
                     "total": _cost_row("total", "total", "", True, area, energy, energy)})  # fmt: skip
     return out
 
 
-def _cost_row(block: str, kind: str, dp: str, found: bool, a: float, e: float,
+def _cost_row(block: str, kind: str, dp: str, found: bool, a: float | None, e: float,
               whole: float) -> dict[str, Any]:  # fmt: skip
-    """A cost table's row, its share of ``whole``, the accelerator's energy."""
+    """A cost table's row, its share of ``whole``, the accelerator's energy; ``a`` None for a
+    row with no area (the L1 accesses)."""
     share = e / whole if whole else None
     return {"block": block, "kind": kind, "datapath": dp, "found": found, "area": a, "energy": e,
-            "share": share, "area_text": sig3(a), "energy_text": dec3(e),
+            "share": share, "area_text": "–" if a is None else sig3(a), "energy_text": dec3(e),
             "share_text": "–" if share is None else f"{100 * share:.1f}%"}  # fmt: skip
 
 
@@ -822,6 +835,11 @@ def compare_cost_tables(
     return out
 
 
+def _thousands(n: int) -> str:
+    """An exact count, thousands split by a space: 393 216."""
+    return f"{n:,}".replace(",", " ")
+
+
 def _um2(x: float) -> str:
     return f"{sig3(x)} µm²"
 
@@ -844,7 +862,8 @@ def cost_details(c: Any, bits: int, tech: str) -> dict[str, str]:
 def group_cost_details(c: Any) -> dict[str, str]:
     """A group's Details ``cost``: its area and energy and its control unit's."""
     return {"area": _um2(c.area), "energy": _nj(c.energy),
-            "ctrl": f"{c.ctrl_bits} bits, {_um2(c.ctrl_um2)}, {_nj(c.ctrl_nj)}"}  # fmt: skip
+            "ctrl": (f"{c.ctrl_bits} bits, {_um2(c.ctrl_um2)} (flops {sig3(c.ctrl_flops_um2)}, "
+                     f"comb {sig3(c.ctrl_comb_um2)}), {_nj(c.ctrl_nj)}")}  # fmt: skip
 
 
 def _estimated(g: Graph, platform: Any, tech: str | None = DEFAULT_TECH) -> tuple[Any, str | None]:

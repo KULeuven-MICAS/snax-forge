@@ -8,7 +8,7 @@ It is a first-order model: registers are bits, a block is its comb energy per fi
 
 The known limits (C§20):
 
-- Memory, the streamers and the csr are not modelled; neither is the control unit's comb area.
+- Two placeholders until the streamers and OpenRAM's memories are characterized (D154; HWCOST, RAM1): an accelerator's L1 accesses, each 64-bit word its streamers read or write in L1 at 4 × e_load per bit (`L1_ACCESS_LOADS` in `snax_forge/char/__init__.py`; a link's container is not in L1, the DMA's traffic not counted), and the control unit's comb area, equal to its flops' (`CTRL_COMB_PER_FLOP`), its comb energy taken as negligible. The streamers' own logic and the csr are not modelled.
 - An accumulator's isolated fire costs 25 to 30 % more than a back-to-back one (its inputs change at one edge and its accumulator at the next, so its adders settle twice); the model has back-to-back fires only (X34).
 - Deep LinkBuffers come out about 1.4 to 1.8 times high on nangate45: there the stream slope PrimePower gives is 0.56 to 0.71 of one held slot per depth (X35); nangate15's is 0.96 to 1.14.
 - Comb energy is counted per fire only, so a unit fed by another unit is undercounted when its inputs change more often than it fires: dot 4's sum fires once but sees 256 new Mac outputs. The kernel stays within 4 % because such sums are small.
@@ -57,9 +57,13 @@ $$A_{\mathit{unit}} = A_{\mathit{comb}} + n_{\mathit{bits}}\thinspace A_{\mathit
 
 and per group its control unit:
 
-$$E_{\mathit{ctrl}} = f_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}\thinspace e_{\mathit{hold}}, \qquad A_{\mathit{ctrl}} = n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
+$$E_{\mathit{ctrl}} = f_{\mathit{ctrl}}\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace C_{\mathit{acc}}\thinspace e_{\mathit{hold}}, \qquad A_{\mathit{ctrl}} = 2\thinspace n_{\mathit{bits}}^{\mathit{ctrl}}\thinspace A_{\mathit{flop}}$$
 
-A flop that loads costs $e_{\mathit{load}}$ in that cycle and one that holds $e_{\mathit{hold}}$; there is no clock gating, so every flop holds in every cycle it does not load, and $n_{\mathit{fire}}\thinspace e_{\mathit{load}} + (C_{\mathit{acc}} - n_{\mathit{fire}})\thinspace e_{\mathit{hold}}$ per bit is the form above regrouped. A group's cost is its units', buffer links' and control unit's added up, the accelerator's its groups'.
+and per accelerator its L1 accesses, $n_{\mathit{words}}$ the 64-bit words its streamers read and write in L1:
+
+$$E_{\mathit{L1}} = 4\thinspace e_{\mathit{load}} \cdot 64\thinspace n_{\mathit{words}}$$
+
+A flop that loads costs $e_{\mathit{load}}$ in that cycle and one that holds $e_{\mathit{hold}}$; there is no clock gating, so every flop holds in every cycle it does not load, and $n_{\mathit{fire}}\thinspace e_{\mathit{load}} + (C_{\mathit{acc}} - n_{\mathit{fire}})\thinspace e_{\mathit{hold}}$ per bit is the form above regrouped. A group's cost is its units', buffer links' and control unit's added up; the accelerator's area is its groups', its energy its groups' (the kernel's) plus its L1 accesses'.
 
 Where the estimate gets each count:
 
@@ -97,11 +101,13 @@ The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.16
 **The control unit.** `ctrl_bits` is 167: `busy` 1, `sum_jobs` 32, the Mac's `mac_job_beats`, `mac_job_beats_counter` and `mac_jobs_counter` 32 each and `mac_v` 1, the sum's `sum_jobs_counter` 32, `sum_v` 1 and `sum_lane` 3, and `done` 1 (`estimate/bits.py`).
 
 - per task: 1.06 × 167 × 265 × 7.1476 fJ = 335 296 fJ, 0.335 nJ;
-- area: 167 × 5.32 = 888 µm².
+- area: 167 × 5.32 = 888 µm² of flops and as much comb (the placeholder), 1 777 µm².
 
-**The total**: 25.868 + 0.135 + 0.335 = 26.339 nJ per run, shown as 26.339 nJ; 61 049 + 1 249 + 888 = 63 186 µm², shown as 63 200 µm². dot 4 at W = 8 is shown as 26.285 nJ.
+**The L1 accesses.** A and B are read, 2048 words each, and `out` written, 1 word: 4097 words, 262 208 bits; 4 × 17.1692 fJ × 262 208 = 18 007 566 fJ, 18.008 nJ (4.40 pJ a word).
 
-**Against SYN2** (snax-forge-experiments `results/forge/nangate45/`, the same design synthesized whole and simulated for one task, `char_table.md`'s Model): the kernel is 25.540 nJ, so the model is at 1.031; per part the Mac is 24.912 nJ (1.038), the sum 0.297 nJ (0.456: its inputs change on each of the Mac's 256 fires, which the model does not count) and the control unit 0.331 nJ (1.012). In area DC gives the Mac 61 051 µm² (1.000), the sum 1 282 µm² (0.974) and the control unit 1 750 µm², of which the model's 888 µm² is the flops only (its comb area is left out); the csr's 1 103 µm² is outside the model.
+**The total**: the kernel 25.868 + 0.135 + 0.335 = 26.339 nJ per run, then 26.339 + 18.008 = 44.346 nJ with the L1 accesses; 61 049 + 1 249 + 1 777 = 64 075 µm², shown as 64 100 µm². dot 4 at W = 8 is shown as 44.293 nJ, its kernel 26.285 nJ.
+
+**Against SYN2** (snax-forge-experiments `results/forge/nangate45/`, the same design synthesized whole and simulated for one task, `char_table.md`'s Model): the kernel is 25.540 nJ, so the model is at 1.031; per part the Mac is 24.912 nJ (1.038), the sum 0.297 nJ (0.456: its inputs change on each of the Mac's 256 fires, which the model does not count) and the control unit 0.331 nJ (1.012). In area DC gives the Mac 61 051 µm² (1.000), the sum 1 282 µm² (0.974) and the control unit 1 750 µm², against the model's 1 777 µm² (1.015), its 888 µm² of flops and the placeholder's equal comb area; the csr's 1 103 µm² is outside the model. SYN2 has no L1, so the L1 accesses have no point to compare with.
 
 ## Adding a block, a dtype or a technology
 

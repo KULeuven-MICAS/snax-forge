@@ -16,6 +16,7 @@ from urllib.request import Request, urlopen
 import pytest
 
 from snax_forge.dfg import Graph
+from snax_forge.estimate.cost import L1_LABEL
 from snax_forge.viz.dfg.__main__ import main
 from snax_forge.viz.dfg.api import (
     GraphSet,
@@ -324,10 +325,11 @@ def _cost_rows(t):
 
 @pytest.mark.slow
 def test_the_cost_tables_of_vecmul_and_dot_1():
-    """C§12's cost table, a row per unit, buffer link and control unit, then the total, one table
-    per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm², 23.137 nJ, 99.4 % and its
-    control unit 351 µm², 0.128 nJ; dot 1 at W = 8 one table for its two groups; Compare's cells
-    before → after."""
+    """C§12's cost table, a row per unit, buffer link and control unit, the L1 accesses (D154),
+    then the total, one table per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm²,
+    23.137 nJ, 46.0 %, its control unit 702 µm² (flops and an equal comb), 0.128 nJ, its L1
+    accesses 6144 words, 27.005 nJ, 53.7 %; dot 1 at W = 8 one table for its two groups, tmp0's
+    round trip in its L1 accesses; Compare's cells before → after."""
     from snax_forge.design import Platform
     from snax_forge.estimate import estimate
     from snax_forge.viz.dfg.api import Entry, compare_view, cost_tables, step_view
@@ -338,25 +340,28 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     g = steps("vecmul", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(g, platform), g)
     assert t["accelerator"] == "acc" and _cost_rows(t) == [
-        ("acc", "ElementwiseLanes", "55 300", "23.137", "99.4%"),
-        ("acc ctrl", "control unit", "351", "0.128", "0.6%"),
-        ("total", "", "55 700", "23.265", "100.0%")]  # fmt: skip
+        ("acc", "ElementwiseLanes", "55 300", "23.137", "46.0%"),
+        ("acc ctrl", "control unit", "702", "0.128", "0.3%"),
+        (L1_LABEL, "6144 words, 393 216 bits", "–", "27.005", "53.7%"),
+        ("total", "", "56 000", "50.269", "100.0%")]  # fmt: skip
     d = steps("dot_1", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(d, platform), d)
     assert t["accelerator"] == "dot" and _cost_rows(t) == [
-        ("mul", "ElementwiseLanes", "55 300", "23.137", "92.1%"),
-        ("mul ctrl", "control unit", "351", "0.257", "1.0%"),
-        ("sum", "TreeAccumulate", "2 710", "1.231", "4.9%"),
-        ("sum ctrl", "control unit", "697", "0.509", "2.0%"),
-        ("total", "", "59 100", "25.133", "100.0%")]  # fmt: skip
+        ("mul", "ElementwiseLanes", "55 300", "23.137", "37.8%"),
+        ("mul ctrl", "control unit", "702", "0.257", "0.4%"),
+        ("sum", "TreeAccumulate", "2 710", "1.231", "2.0%"),
+        ("sum ctrl", "control unit", "1 390", "0.509", "0.8%"),
+        (L1_LABEL, "8193 words, 524 352 bits", "–", "36.011", "58.9%"),
+        ("total", "", "60 100", "61.144", "100.0%")]  # fmt: skip
     v = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
     assert v["summary"]["cost"]["tables"][0]["rows"][0]["area_text"] == "55 300"
     w16 = steps("vecmul", N=2048, W=16)[-1]
     c = compare_view(Entry("w8", Path("w8"), g, None), Entry("w16", Path("w16"), w16, None),
                      platform)["columns"]["cost_tables"]  # fmt: skip
-    (unit, ctrl, total) = [*c[0]["rows"], c[0]["total"]]
+    (unit, ctrl, l1, total) = [*c[0]["rows"], c[0]["total"]]
     assert unit["block"] == "acc" and unit["area_text"].startswith("55 300 → ") and unit["differs"]
     assert ctrl["datapath"] == "control unit" and total["block"] == "total"
+    assert l1["block"] == L1_LABEL and "→" not in l1["datapath"] + l1["energy_text"]  # same words
 
 
 @pytest.mark.slow
@@ -712,7 +717,9 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     assert _rows(rows, "group mac")["energy"] == ("26.136 nJ", "–", True)
     assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {
-        "area": ("63 400 µm²", "63 200 µm²", True), "energy per run": ("26.413 nJ", "26.339 nJ", True),
+        "area": ("64 400 µm²", "64 100 µm²", True), "energy per run": ("44.491 nJ", "44.346 nJ", True),
+        "L1 accesses": ("mac: 4104 words, 18.038 nJ; sum: 9 words, 0.040 nJ",
+                        "dot: 4097 words, 18.008 nJ", True),
         "not characterized": ("none", "none", False)}  # fmt: skip
     mult = c["details"]["node:mult"]
     assert mult["where"] == "" and _rows(mult["rows"], None)["group"] == ("mac", "dot", True)
@@ -726,7 +733,7 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     first = compare_view(e[0], e[6], platform)["columns"]["estimate"]
     assert _rows(first, "Cost estimate (first-order) on nangate45")["area"] == (
         "–",
-        "63 200 µm²",
+        "64 100 µm²",
         True,
     )
     assert step_view(e[0], "0", platform)["summary"]["cost"] is None  # nothing bound
@@ -746,7 +753,7 @@ def test_compare_gives_two_columns_for_the_same_group():
     rows = compare_view(e[6], w4, platform)["columns"]["estimate"]
     assert _rows(rows, "group dot") == {
         "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "COUNTER": ("268", "520", True),
-        "channels": ("17", "9", True), "area": ("63 200 µm²", "32 400 µm²", True),
+        "channels": ("17", "9", True), "area": ("64 100 µm²", "33 300 µm²", True),
         "energy": ("26.339 nJ", "26.615 nJ", True)}  # fmt: skip
     assert _rows(rows, "memory")["reads"] == ("4096 words", "4096 words", False)
 

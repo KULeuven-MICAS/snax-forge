@@ -472,8 +472,9 @@ def test_one_group_has_no_group_column(flows):
 
 def test_design_md_costs_each_group_beside_its_cycles(dot1):
     """dot 1's two groups on nangate45 (C§20): each its area and energy beside its cycles, the
-    cost table a row per unit and per control unit, the accelerator's totals their sums, every
-    unit held by the table; the report round-trips."""
+    cost table a row per unit and per control unit (its comb area equal to its flops', D154), the
+    L1 accesses' table, the accelerator's totals their sums, every unit held by the table; the
+    report round-trips."""
     from snax_forge.report.design import DesignReport
 
     r = reports_of(dot1).design
@@ -484,7 +485,11 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         ("sum", "sum", "TreeAccumulate"), ("sum", "ctrl", "group control unit")]  # fmt: skip
     assert all(c.found for c in e.cost if c.block != "ctrl")
     assert e.area_um2 == pytest.approx(sum(g.area_um2 for g in e.groups))
-    assert e.energy_nj == pytest.approx(sum(c.energy_nj for c in e.cost))
+    assert e.energy_nj == pytest.approx(sum(c.energy_nj for c in e.cost)
+                                        + sum(x.energy_nj for x in e.l1))  # fmt: skip
+    (l1,) = e.l1
+    assert (l1.accelerator, l1.bits) == ("dot", 64 * l1.words) and l1.words > 0
+    assert all(c.comb_um2 == c.flops_um2 for c in e.cost if c.block == "ctrl")
     text = render_design(r)
     assert "| Expected COUNTER | Area (µm²) | Energy (nJ) |" in text
     assert (
@@ -502,6 +507,8 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     (mul,) = [x for x in text.splitlines()
               if x.startswith("| mul | mul | ElementwiseLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
     assert mul.split(" | ")[9] == "–", mul
+    assert (f"| dot | L1 accesses (placeholder, 4 × e_load per bit) | {l1.words} | {l1.bits} | "
+            f"{l1.energy_nj:.3f} |") in text  # fmt: skip
     assert "Not characterized" not in text
     assert DesignReport.from_dict(r.to_dict()).to_dict() == r.to_dict()
 

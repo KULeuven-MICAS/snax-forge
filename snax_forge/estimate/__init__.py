@@ -6,13 +6,18 @@ What a mapping buys before any run: per group the exact cycles of snax-gvsoc's g
 ideal streams, split into bottleneck, ramp and stall, and the register bits of its datapaths
 and of its control unit, CHAR1's cost model's counts (cycles.py, bits.py, D154); on a
 technology (``tech``, snax_forge/char/; None skips it) the cost, per unit, buffer link, control
-unit, group and accelerator its area and energy (cost.py, C§20); and the data side, per
+unit, group and accelerator its area and energy, and per accelerator its L1 accesses, the words
+its streamers read and write in L1 at 4 × e_load per bit, a placeholder added to its energy
+(``l1``, cost.py, C§20, D154); and the data side, per
 container its placement, bytes and L1 traffic, per outer port its streamer's loops, beats and
 channels, per tailed split its lane use (data.py). No bank conflicts, no streamer fill, no DMA,
-no core control: a run's COUNTER is a group's cycles plus the streamers' fill (C§17), and its
-window is longer. Beside the ideal cycles, on a platform, each group's ``bank_bound``:
-ceil(words its outer ports move / l1.n_banks), the fewest cycles L1's single-port banks allow,
-a note where it exceeds the cycles (vecmul at W = 16: 192 against 128, COUNTER 194). Work no unit runs is a not-mapped count of iterations (spatial maps
+no core control. A group's expected COUNTER, its cycles plus the streamers' fill (C§17), is a
+guide, not a check: a run's COUNTER counts from the group's START until busy drops, so it holds
+bank conflicts and is shortened by the streamers' head start (D155). Beside the ideal cycles, on
+a platform, each group's ``bank_bound``: ceil(words its streams move / l1.n_banks), the fewest
+cycles of L1 time its streams take, a bound on the streams and not on the COUNTER, a note where
+it exceeds the cycles (dot 1 at W_mul = 16: mul's 192 against 128). Work no unit runs is a
+not-mapped count of iterations (spatial maps
 skipped, C§19's ``not_mapped``) and, over every map, spatial ones included, since a tag alone
 runs nothing (``unmapped_iterations``), at ``UNMAPPED_CYCLES_PER_ITERATION`` (1) cycle each,
 ``unmapped_cycles``: an assumption (a core
@@ -29,9 +34,10 @@ from typing import TYPE_CHECKING, Any
 
 from snax_forge.char import DEFAULT_TECH, load
 from snax_forge.common import JsonFile
+from snax_forge.design.streamers import accelerator_of
 
 from .bits import ctrl_bits, ctrl_registers
-from .cost import BlockCost, GroupCost, group_cost
+from .cost import BlockCost, GroupCost, L1Cost, group_cost, l1_cost
 from .cycles import EstimateError, GroupEstimate, group_blocks, group_cycles, not_mapped
 from .data import ContainerData, PortData, SplitData, containers, outer_ports, ports, splits
 
@@ -58,6 +64,7 @@ class Estimate(JsonFile):
     tech: str | None = None
     char_source: dict[str, str] | None = None
     unmapped_iterations: int = 0  # not_mapped over every map, spatial ones included (D155)
+    l1_words: dict[str, int] = field(default_factory=dict)  # per accelerator, its L1 accesses
 
     @property
     def area(self) -> float | None:
@@ -65,9 +72,26 @@ class Estimate(JsonFile):
         return None if self.tech is None else sum(g.cost.area for g in self.groups if g.cost)
 
     @property
-    def energy(self) -> float | None:
-        """nJ per run: the groups' energies added up; None with no technology."""
+    def l1(self) -> dict[str, L1Cost]:
+        """Per accelerator its L1 accesses on the technology (a placeholder, D154); empty with
+        none."""
+        if self.tech is None:
+            return {}
+        table = load(self.tech)
+        return {a: l1_cost(table, w) for a, w in self.l1_words.items()}
+
+    @property
+    def kernel_energy(self) -> float | None:
+        """nJ per run: the groups' energies (units, buffer links, control units) added up, the
+        experiments' kernel energy; None with no technology."""
         return None if self.tech is None else sum(g.cost.energy for g in self.groups if g.cost)
+
+    @property
+    def energy(self) -> float | None:
+        """nJ per run: the kernel's energy plus the L1 accesses'; None with no technology."""
+        if self.tech is None:
+            return None
+        return self.kernel_energy + sum(x.energy_nj for x in self.l1.values())
 
     @property
     def missing(self) -> list[str]:
@@ -110,7 +134,8 @@ class Estimate(JsonFile):
             "splits": {k: s.to_dict() for k, s in self.splits.items()},
             "cost": None if self.tech is None else {
                 "tech": self.tech, "source": dict(self.char_source or {}), "area": self.area,
-                "energy": self.energy, "missing": self.missing},
+                "energy": self.energy, "kernel_energy": self.kernel_energy,
+                "l1": {a: x.to_dict() for a, x in self.l1.items()}, "missing": self.missing},
         }  # fmt: skip
 
     @classmethod
@@ -125,6 +150,7 @@ class Estimate(JsonFile):
             (d.get("cost") or {}).get("tech"),
             (d.get("cost") or {}).get("source"),
             d["unmapped_iterations"],
+            {a: x["words"] for a, x in ((d.get("cost") or {}).get("l1") or {}).items()},
         )
 
 
@@ -141,8 +167,13 @@ def estimate(graph: Graph, platform: Platform | None = None,
             g.cost = group_cost(table, units, bufs, g.bits, g.ctrl_bits, c_acc)
     unit_group = {u: g for g in found for u in g.units}
     words = dict.fromkeys((g.name for g in found), 0)
+    data = containers(graph)
+    l1_words: dict[str, int] = {}
     for n, _, port in outer_ports(graph):
         words[unit_group[n.attrs["instance"]].name] += port.beats * port.num_ch
+        acc = l1_words.setdefault(accelerator_of(n), 0)
+        if data[port.container].placement == "l1":  # a link's is not in L1 (D154)
+            l1_words[accelerator_of(n)] = acc + port.beats * port.num_ch
     for g in found:
         g.words_per_cycle = words[g.name] / g.cycles if g.cycles else 0.0
         if platform is not None:  # the fewest cycles L1's banks allow (D155)
@@ -152,9 +183,9 @@ def estimate(graph: Graph, platform: Platform | None = None,
         unit_group[k.split(".")[0]].channels += port.num_ch
     l1 = platform.l1 if platform is not None else None
     size = None if l1 is None else l1.n_banks * l1.rows * l1.width_bits // 8
-    return Estimate(found, not_mapped(graph), containers(graph), size, ports(graph), splits(graph),
+    return Estimate(found, not_mapped(graph), data, size, ports(graph), splits(graph),
                     tech, None if table is None else dict(table.source),
-                    not_mapped(graph, spatial=True))  # fmt: skip
+                    not_mapped(graph, spatial=True), l1_words)  # fmt: skip
 
 
 __all__ = [
@@ -165,6 +196,7 @@ __all__ = [
     "EstimateError",
     "GroupCost",
     "GroupEstimate",
+    "L1Cost",
     "PortData",
     "SplitData",
     "ctrl_bits",
