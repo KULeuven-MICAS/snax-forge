@@ -1,20 +1,23 @@
-"""A design point -> its accelerator's one description, ``accelerator.json`` (D145, C§17).
+"""A design point -> the one description of its accelerators, ``accelerator.json`` (D145, C§17).
 
-    describe(point, point_path) -> Accelerator
+    describe(point, point_path) -> Description
 
 snax-forge writes it once (gvsoc.py, at the root of every gen-gvsoc folder and
 bundle; gen-rtl the same bytes, rtl.py) and SNAX-GVSoC (snax-gvsoc
 ``snax/snax_cfg.py``) and Emit (``hw/chisel/``) read it. Plain JSON, concrete
-values only, in this key order:
+values only, nested as the graph is (D148), in this key order:
 
-    name          the accelerator: the header's <ACC>; ``encapsulate``'s
+    design_point  the design point by its path from the root (gvsoc.py)
+    tag           the generated entry's name, ``<accelerator_slot>_<design>``
+                  (D131, D157), the design point's name after the slot: an
+                  identifier, else ``gen.tag``
+    accelerators  in CSR order, each one streamer set of the entry (D157):
+      name        the header's <ACC> and the set's name: ``encapsulate``'s
                   accelerator, else its one group's name (a one-unit group's
                   is its instance)
-    design_point  the design point by its path from the root (gvsoc.py)
-    tag           the platform's accelerator_slot
-    inputs        the outer ports, "<unit>.<port>", in the streamer's reader
-    outputs       and writer order (the BRM's port order)
-    groups        in CSR order; each name, csrs, units, links
+      inputs      its outer ports, "<unit>.<port>", in its streamer's reader
+      outputs     and writer order (the BRM's port order)
+      groups      in CSR order; each name, csrs, units, links
 
 A unit: ``name`` (the instance), ``brm``, ``datapath`` (the binding's),
 ``ports`` (per BRM port in its order: ``port``, ``dir``, ``dtype``, ``lanes``,
@@ -26,30 +29,33 @@ CSRs: ``JOB_BEATS`` for a fold without ``params.T``). A link is ``name``,
 ``from`` (``"<unit>.<port>"`` of an ``out`` port), ``to`` (of an ``in``) and
 ``depth`` (0 a wire, >= 1 a buffer of that many beats).
 
-**The CSRs** (D146), offsets from the accelerator's first CSR, per group in order:
-``START`` and ``JOBS`` (R/W), each unit's R/W CSRs, ``STATUS`` and
-``COUNTER`` (R/O). A CSR is ``name``, ``access`` (``rw``, ``ro``),
-``offset``, ``width`` and ``pin`` (a scalar's datapath pin, none yet). The
-widths (D152): START 1 (a strobe, it reads 0), JOBS and every JOB_BEATS the
-platform's ``acc_csr.job_width``, STATUS 2, COUNTER its ``counter_width``.
-``from_dict`` checks the offsets contiguous from 0 in that order and never
-recomputes them, and every width 1 to 32, START's 1, STATUS's 2, JOBS and
-every JOB_BEATS one width and every COUNTER one width. ``define`` names a CSR as the header does:
-``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``, the group part dropped when the
-accelerator has one group, the unit part when the group has one unit.
+**The CSRs** (D146), offsets from the shell's first CSR, contiguous over the
+accelerators in order and per group in order: ``START`` and ``JOBS`` (R/W),
+each unit's R/W CSRs, ``STATUS`` and ``COUNTER`` (R/O). A CSR is ``name``,
+``access`` (``rw``, ``ro``), ``offset``, ``width`` and ``pin`` (a scalar's
+datapath pin, none yet). The widths (D152): START 1 (a strobe, it reads 0),
+JOBS and every JOB_BEATS the platform's ``acc_csr.job_width``, STATUS 2,
+COUNTER its ``counter_width``. ``from_dict`` checks the offsets contiguous
+from 0 in that order and never recomputes them, and every width 1 to 32,
+START's 1, STATUS's 2, JOBS and every JOB_BEATS one width and every COUNTER
+one width, over the whole design. ``Accelerator.define`` names a CSR as the
+header does: ``<ACC>_<RW|RO>_[<GROUP>_][<UNIT>_]<NAME>``, the group part
+dropped when the accelerator has one group, the unit part when the group has
+one unit; ``Description.define`` asks the accelerator that holds the group.
 
-**The groups** (D148): the design point's one accelerator
-(lower/c.py's ``accelerator``), its groups in the graph's order
-(``encapsulate``'s; design/streamers.py's ``groups``): a unit alone, named
-after its instance, or the units ``link`` joined, named by its ``group``, in
-the graph's order, with their links (each named after its container, from
-the writer's port to the reader's, its depth). ``inputs`` and ``outputs``
-are the ports on no link, group by group, unit by unit in port order. The
-offsets run on from group to group. A design point holds one accelerator: the
-design checks refuse several (``gen.instances``, C§14).
+**The accelerators and groups** (D148): the graph's accelerators in the
+order it first uses them (design/streamers.py's ``accelerators``), each its
+groups in the graph's order (``groups``): a unit alone, named after its
+instance, or the units ``link`` joined, named by its ``group``, in the
+graph's order, with their links (each named after its container, from the
+writer's port to the reader's, its depth). An accelerator's ``inputs`` and
+``outputs`` are its ports on no link, group by group, unit by unit in port
+order. Group names are unique over the design (they name the control units,
+``<tag>_<group>_ctrl``) and so are the accelerators' (the streamer sets).
 
-**Refused**, each a ``GenError``: ``gen.binding``
-(lower/c.py's ``accelerator``), ``gen.datapath`` (a datapath not registered),
+**Refused**, each a ``GenError``: ``gen.tag`` (a tag that is not an identifier, or
+a platform without an ``accelerator_slot``), ``gen.binding`` (lower/c.py's
+``accelerators``), ``gen.datapath`` (a datapath not registered),
 ``gen.controller`` (a controller other than ``counted``, the only one generated),
 what the datapath's adapter refuses (blocks.py), ``gen.drain`` (an
 implementation whose drain is not 0: the nest controller has none) and
@@ -59,8 +65,8 @@ implementation whose drain is not 0: the nest controller has none) and
 ``GenError``: ``gen.link`` (a link not from an ``out`` port to an ``in`` port
 of the group's units with the same dtype and lanes, or a depth below 0),
 ``gen.link_port`` (a port on more than one link), ``gen.outer`` (``inputs``
-or ``outputs`` not exactly the unlinked ports, group by group, unit by unit
-in port order) and ``gen.group`` (a group whose units the links do not
+or ``outputs`` not exactly an accelerator's unlinked ports, group by group, unit by
+unit in port order) and ``gen.group`` (a group whose units the links do not
 connect), besides the offsets and widths (a ValueError); then SNAX-GVSoC's
 limits (snax-gvsoc's SnaxGroup), ``gen.chain`` (a group that is not a chain
 in unit order: each unit's output linked to the next unit's input, only the
@@ -70,6 +76,7 @@ last unit's output outer; lifted in tier A, fork and join) and ``gen.span``
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from functools import partial
@@ -83,7 +90,7 @@ from snax_forge.design.streamers import groups as graph_groups
 from snax_forge.design.streamers import instance_nodes, link_ends, linked_ports, links
 from snax_forge.dfg import Graph, Node
 from snax_forge.dfg.subset import map_range, parse_dim
-from snax_forge.lower.c import accelerator as c_accelerator
+from snax_forge.lower.c import accelerators as c_accelerators
 from snax_forge.lower.c import fold_rate
 
 from .blocks import DATAPATHS, GenError, Port
@@ -93,6 +100,8 @@ if TYPE_CHECKING:
 
 ACCELERATOR_JSON = "accelerator.json"
 ACCESS = ("rw", "ro")
+# The tag's form: it names modules, files and the cluster file's entry
+IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 # The CSRs whose width C§17 fixes: START a strobe (bit 0), STATUS {done, busy}
 FIXED_WIDTH = {"START": 1, "STATUS": 2}
 
@@ -209,79 +218,41 @@ class Group:
 
 
 @dataclass(frozen=True)
-class Accelerator(JsonFile):
-    """``accelerator.json``; see the module doc."""
+class Accelerator:
+    """One accelerator of the design: one streamer set (D157), its groups sharing its streamer
+    and, encapsulated, its start (D148)."""
 
     name: str
-    design_point: str
-    tag: str
     inputs: list[str]
     outputs: list[str]
     groups: list[Group]
 
-    def __post_init__(self) -> None:
-        offsets = [c.offset for _, _, c in self.csrs()]
-        if offsets != list(range(len(offsets))):
-            raise ValueError(f"accelerator {self.name}: CSR offsets {offsets} in CSR order are "
-                             "not contiguous from 0")  # fmt: skip
-        for _, _, c in self.csrs():
-            if c.access not in ACCESS:
-                raise ValueError(f"accelerator {self.name}: CSR {c.name} is {c.access!r}, not "
-                                 f"one of {ACCESS}")  # fmt: skip
-            if type(c.width) is not int or not 1 <= c.width <= 32:
-                raise ValueError(f"accelerator {self.name}: CSR {c.name} has width {c.width!r}; "
-                                 "every CSR has a width of 1 to 32 bits")  # fmt: skip
-            if c.width != FIXED_WIDTH.get(c.name, c.width):
-                raise ValueError(f"accelerator {self.name}: CSR {c.name} has width {c.width}, "
-                                 f"not {FIXED_WIDTH[c.name]}")  # fmt: skip
-        for names in (("JOBS", "JOB_BEATS"), ("COUNTER",)):
-            widths = {c.width for _, _, c in self.csrs() if c.name in names}
-            if len(widths) > 1:
-                raise ValueError(f"accelerator {self.name}: {' and '.join(names)} have the "
-                                 f"widths {sorted(widths)}; they share one")  # fmt: skip
-        _check_links(self)
-
     def to_dict(self) -> dict[str, Any]:
-        return {"name": self.name, "design_point": self.design_point, "tag": self.tag,
-                "inputs": list(self.inputs), "outputs": list(self.outputs),
+        return {"name": self.name, "inputs": list(self.inputs), "outputs": list(self.outputs),
                 "groups": [g.to_dict() for g in self.groups]}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> Accelerator:
-        return cls(d["name"], d["design_point"], d["tag"], list(d["inputs"]), list(d["outputs"]),
+        return cls(d["name"], list(d["inputs"]), list(d["outputs"]),
                    [Group.from_dict(g) for g in d["groups"]])  # fmt: skip
 
     def csrs(self) -> list[tuple[Group, Unit | None, Csr]]:
-        """Every CSR in CSR order, with its group and its unit (None for a group's own)."""
+        """Its CSRs in CSR order, with their group and unit (None for a group's own)."""
         return [(g, u, c) for g in self.groups for u, c in g.in_order()]
 
     @property
-    def fixed_folds(self) -> set[str]:
-        """The units whose T is fixed at design time (``params.T``): their JOB_BEATS is no CSR
-        ."""
-        return {u.name for g in self.groups for u in g.units if "T" in u.params}
-
-    @property
-    def job_width(self) -> int:
-        """JOBS's and every JOB_BEATS's width (the platform's ``acc_csr.job_width``)."""
-        return next(c.width for _, _, c in self.csrs() if c.name == "JOBS")
-
-    @property
     def rw(self) -> int:
-        """The R/W CSRs: Σ_g (2 + Σ_u (f_u + k_u)) (C§17)."""
+        """Its R/W CSRs: Σ_g (2 + Σ_u (f_u + k_u)) (C§17), the set's ``snax_num_rw_csr``."""
         return sum(c.access == "rw" for _, _, c in self.csrs())
 
     @property
     def ro(self) -> int:
-        """The R/O CSRs: 2G."""
+        """Its R/O CSRs: 2G, the set's ``snax_num_ro_csr``."""
         return sum(c.access == "ro" for _, _, c in self.csrs())
 
-    def group(self, unit: str) -> Group:
-        """The group that holds the unit ``unit``."""
-        for g in self.groups:
-            if any(u.name == unit for u in g.units):
-                return g
-        raise KeyError(f"accelerator {self.name} has no unit {unit!r}")
+    @property
+    def units(self) -> list[Unit]:
+        return [u for g in self.groups for u in g.units]
 
     def define(self, group: Group, unit: Unit | None, csr: Csr) -> str:
         """A CSR's name in the header and the program; see the module doc."""
@@ -293,16 +264,118 @@ class Accelerator(JsonFile):
         return "_".join([*parts, csr.name])
 
     def defines(self) -> dict[str, int]:
-        """Every CSR's ``define`` -> its offset, in CSR order."""
+        """Its CSRs' ``define`` -> their offset from the shell's first CSR, in CSR order."""
         return {self.define(g, u, c): c.offset for g, u, c in self.csrs()}
+
+
+@dataclass(frozen=True)
+class Description(JsonFile):
+    """``accelerator.json``; see the module doc."""
+
+    design_point: str
+    tag: str
+    accelerators: list[Accelerator]
+
+    def __post_init__(self) -> None:
+        offsets = [c.offset for _, _, c in self.csrs()]
+        if offsets != list(range(len(offsets))):
+            raise ValueError(f"{self.tag}: CSR offsets {offsets} in CSR order are not contiguous "
+                             "from 0")  # fmt: skip
+        for _, _, c in self.csrs():
+            if c.access not in ACCESS:
+                raise ValueError(f"{self.tag}: CSR {c.name} is {c.access!r}, not one of {ACCESS}")
+            if type(c.width) is not int or not 1 <= c.width <= 32:
+                raise ValueError(f"{self.tag}: CSR {c.name} has width {c.width!r}; every CSR has a "
+                                 "width of 1 to 32 bits")  # fmt: skip
+            if c.width != FIXED_WIDTH.get(c.name, c.width):
+                raise ValueError(f"{self.tag}: CSR {c.name} has width {c.width}, not "
+                                 f"{FIXED_WIDTH[c.name]}")  # fmt: skip
+        for names in (("JOBS", "JOB_BEATS"), ("COUNTER",)):
+            widths = {c.width for _, _, c in self.csrs() if c.name in names}
+            if len(widths) > 1:
+                raise ValueError(f"{self.tag}: {' and '.join(names)} have the widths "
+                                 f"{sorted(widths)}; they share one")  # fmt: skip
+        for what, names in (("accelerator", [a.name for a in self.accelerators]),
+                            ("group", [g.name for g in self.groups])):  # fmt: skip
+            twice = sorted({n for n in names if names.count(n) > 1})
+            if twice:
+                raise ValueError(f"{self.tag}: the {what} names {twice} are used twice")
+        for a in self.accelerators:
+            _check_links(a)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"design_point": self.design_point, "tag": self.tag,
+                "accelerators": [a.to_dict() for a in self.accelerators]}  # fmt: skip
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> Description:
+        return cls(d["design_point"], d["tag"],
+                   [Accelerator.from_dict(a) for a in d["accelerators"]])  # fmt: skip
+
+    @property
+    def groups(self) -> list[Group]:
+        """Every group, in CSR order over the accelerators."""
+        return [g for a in self.accelerators for g in a.groups]
+
+    @property
+    def units(self) -> list[Unit]:
+        return [u for g in self.groups for u in g.units]
+
+    @property
+    def inputs(self) -> list[str]:
+        """Every outer input port, set after set: the wrapper's ``stream2acc_<k>`` order (C§17)."""
+        return [p for a in self.accelerators for p in a.inputs]
+
+    @property
+    def outputs(self) -> list[str]:
+        """Every outer output port, set after set: the wrapper's ``acc2stream_<k>`` order."""
+        return [p for a in self.accelerators for p in a.outputs]
+
+    def csrs(self) -> list[tuple[Group, Unit | None, Csr]]:
+        """Every CSR in CSR order, with its group and its unit (None for a group's own)."""
+        return [x for a in self.accelerators for x in a.csrs()]
+
+    @property
+    def fixed_folds(self) -> set[str]:
+        """The units whose T is fixed at design time (``params.T``): their JOB_BEATS is no CSR
+        ."""
+        return {u.name for u in self.units if "T" in u.params}
+
+    @property
+    def job_width(self) -> int:
+        """JOBS's and every JOB_BEATS's width (the platform's ``acc_csr.job_width``)."""
+        return next(c.width for _, _, c in self.csrs() if c.name == "JOBS")
+
+    def accelerator(self, unit: str) -> Accelerator:
+        """The accelerator that holds the unit ``unit``."""
+        for a in self.accelerators:
+            if any(u.name == unit for u in a.units):
+                return a
+        raise KeyError(f"{self.tag} has no unit {unit!r}")
+
+    def group(self, unit: str) -> Group:
+        """The group that holds the unit ``unit``."""
+        for g in self.groups:
+            if any(u.name == unit for u in g.units):
+                return g
+        raise KeyError(f"{self.tag} has no unit {unit!r}")
+
+    def define(self, group: Group, unit: Unit | None, csr: Csr) -> str:
+        """A CSR's name in the header and the program: its accelerator's ``define``."""
+        (a,) = (a for a in self.accelerators if any(g is group for g in a.groups))
+        return a.define(group, unit, csr)
+
+    def defines(self) -> dict[str, int]:
+        """Every CSR's ``define`` -> its offset from the shell's first CSR, in CSR order."""
+        return {k: v for a in self.accelerators for k, v in a.defines().items()}
 
     def find(self, unit: str, name: str) -> str:
         """The ``define`` of CSR ``name`` (``START``, ``JOBS``, ``JOB_BEATS``, ...) of unit
         ``unit``'s group, the group's own or the unit's; ``KeyError`` when it has none."""
-        g = self.group(unit)
+        a, g = self.accelerator(unit), self.group(unit)
         for u, c in g.in_order():
             if c.name == name and (u is None or u.name == unit):
-                return self.define(g, u, c)
+                return a.define(g, u, c)
         raise KeyError(f"unit {unit}'s group {g.name} has no CSR {name}")
 
 
@@ -401,40 +474,64 @@ def fixed_fold(graph: Graph, node: Node, inst: Instance) -> int | None:
     return t
 
 
-def units(point: DesignPoint) -> tuple[str, dict[str, Instance]]:
-    """The one accelerator's name and its units, one per group in order (lower/c.py's
-    ``accelerator``, its rule ``gen.binding``)."""
-    return c_accelerator(point, lambda rule, message: GenError(f"gen.{rule}", message))
+def units(point: DesignPoint) -> dict[str, dict[str, Instance]]:
+    """The accelerators in CSR order, each its units in its groups' order (lower/c.py's
+    ``accelerators``, its rule ``gen.binding``)."""
+    return c_accelerators(point, lambda rule, message: GenError(f"gen.{rule}", message))
 
 
-def describe(point: DesignPoint, point_path: str) -> Accelerator:
+def tag(point: DesignPoint) -> str:
+    """The generated entry's name, ``<accelerator_slot>_<design>`` (D131, D157); ``gen.tag``
+    when it is not an identifier (it names modules, files and the cluster file's entry)."""
+    slot = point.platform.accelerator_slot
+    if slot is None:
+        raise GenError("gen.tag", f"platform {point.platform.name} has no accelerator_slot: the "
+                       "generated entry is named <accelerator_slot>_<design>")  # fmt: skip
+    name = f"{slot}_{point.name}"
+    if not IDENTIFIER.fullmatch(name):
+        raise GenError(
+            "gen.tag", f"the generated entry's name {name!r} (<accelerator_slot>_<design>, the "
+            f"design point {point.name!r}) is not an identifier: it names the RTL's modules, the "
+            "streamer files and the cluster's entry; name the design with letters, digits and "
+            "_ only, not starting with a digit",
+        )  # fmt: skip
+    return name
+
+
+def describe(point: DesignPoint, point_path: str) -> Description:
     """The design point's ``accelerator.json``, checked; see the module doc. ``point_path``
     names the design point (gvsoc.py's ``point_name``)."""
-    name, found = units(point)
+    entry = tag(point)
+    found = units(point)
     g = point.graph
     linked = linked_ports(g)
-    offsets = iter(range(1 << 16))  # contiguous over the groups, in CSR order
+    offsets = iter(range(1 << 16))  # contiguous over the accelerators and groups, in CSR order
     widths = point.platform.acc_csr
-    groups, inputs, outputs = [], [], []
-    for group_name, members in graph_groups(g).items():
-        if members[0] not in found:
-            continue
-        start = Csr("START", "rw", next(offsets), FIXED_WIDTH["START"])
-        jobs = Csr("JOBS", "rw", next(offsets), widths.job_width)
-        group_units = [_unit(point, u, found[u], offsets) for u in members]
-        status = Csr("STATUS", "ro", next(offsets), FIXED_WIDTH["STATUS"])
-        counter = Csr("COUNTER", "ro", next(offsets), widths.counter)
-        group_links = []
-        for k in links(g):
-            if k.attrs["from"] in members:
-                end_from, end_to = link_ends(g, k)
-                group_links.append(Link(k.attrs["container"], end_from, end_to, k.attrs["depth"]))
-        groups.append(Group(group_name, [start, jobs, status, counter], group_units, group_links))
-        for u in members:
-            ports = [p for p in found[u].brm.interface.ports if f"{u}.{p.name}" not in linked]
-            inputs += [f"{u}.{p.name}" for p in ports if p.direction == "in"]
-            outputs += [f"{u}.{p.name}" for p in ports if p.direction == "out"]
-    return Accelerator(name, point_path, point.platform.accelerator_slot, inputs, outputs, groups)
+    accs = []
+    for acc_name, mine in found.items():
+        groups, inputs, outputs = [], [], []
+        for group_name, members in graph_groups(g).items():
+            if members[0] not in mine:
+                continue
+            start = Csr("START", "rw", next(offsets), FIXED_WIDTH["START"])
+            jobs = Csr("JOBS", "rw", next(offsets), widths.job_width)
+            group_units = [_unit(point, u, mine[u], offsets) for u in members]
+            status = Csr("STATUS", "ro", next(offsets), FIXED_WIDTH["STATUS"])
+            counter = Csr("COUNTER", "ro", next(offsets), widths.counter)
+            group_links = []
+            for k in links(g):
+                if k.attrs["from"] in members:
+                    end_from, end_to = link_ends(g, k)
+                    group_links.append(Link(k.attrs["container"], end_from, end_to,
+                                            k.attrs["depth"]))  # fmt: skip
+            groups.append(Group(group_name, [start, jobs, status, counter], group_units,
+                                group_links))  # fmt: skip
+            for u in members:
+                ports = [p for p in mine[u].brm.interface.ports if f"{u}.{p.name}" not in linked]
+                inputs += [f"{u}.{p.name}" for p in ports if p.direction == "in"]
+                outputs += [f"{u}.{p.name}" for p in ports if p.direction == "out"]
+        accs.append(Accelerator(acc_name, inputs, outputs, groups))
+    return Description(point_path, entry, accs)
 
 
 def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int]) -> Unit:

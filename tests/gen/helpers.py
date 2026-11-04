@@ -20,6 +20,7 @@ import shutil
 import sys
 import types
 from collections.abc import Sequence
+from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -29,7 +30,7 @@ from jsonschema import Draft202012Validator
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
 from snax_forge.dfg import Graph
-from snax_forge.gen import Accelerator, Csr, Group, Port, Unit
+from snax_forge.gen import Accelerator, Csr, Description, Group, Port, Unit
 from snax_forge.gen import bundle as bundle_mod
 from snax_forge.gen.rtl import EMITTED_JSON
 from snax_forge.gen.schemas import schema
@@ -40,7 +41,7 @@ from tests.helpers import FIXTURES, REPO, SUB
 # snax_forge's source hjson (platforms/snax_forge.json's hjson), snax-forge's base cluster
 SOURCE = REPO / "platforms" / "snax_forge_cluster.hjson"
 # The fake Emit's files, in emitted.json's order (not sorted, so files.f's order is its)
-SV = ["sv/snax_forge_shell_wrapper.sv", "sv/ElementwiseAlu_w64_add.sv"]
+SV = ["sv/snax_forge_vecadd_shell_wrapper.sv", "sv/ElementwiseAlu_w64_add.sv"]
 COMMIT = "0123456789abcdef0123456789abcdef01234567"
 
 
@@ -66,9 +67,9 @@ def point(
     return path
 
 
-def one_unit(k: int = 0, name: str = "acc") -> Accelerator:
-    """An accelerator of one group of one unit with ``k`` R/W CSRs of its own (``F0``, ...),
-    offsets in CSR order."""
+def one_unit(k: int = 0, name: str = "acc") -> Description:
+    """A description of one accelerator of one group of one unit with ``k`` R/W CSRs of its own
+    (``F0``, ...), offsets in CSR order."""
     rw = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32)]
     own = [Csr(f"F{i}", "rw", 2 + i, 32) for i in range(k)]
     ro = [Csr("STATUS", "ro", 2 + k, 2), Csr("COUNTER", "ro", 3 + k, 32)]
@@ -76,8 +77,16 @@ def one_unit(k: int = 0, name: str = "acc") -> Accelerator:
                 {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
                 {"op": "add"}, 0, 1, own,
                 "int64")  # fmt: skip
-    return Accelerator(name, "design/x/design_point.json", "snax_forge", [f"{name}.a", f"{name}.b"],
-                       [f"{name}.out"], [Group(name, [*rw, *ro], [unit])])  # fmt: skip
+    acc = Accelerator(name, [f"{name}.a", f"{name}.b"], [f"{name}.out"],
+                      [Group(name, [*rw, *ro], [unit])])  # fmt: skip
+    return Description("design/x/design_point.json", "snax_forge_x", [acc])
+
+
+def with_groups(desc: Description, groups: list[Group], k: int = 0) -> Description:
+    """``desc`` with its ``k``-th accelerator's groups replaced (checked again)."""
+    accs = list(desc.accelerators)
+    accs[k] = replace(accs[k], groups=groups)
+    return replace(desc, accelerators=accs)
 
 
 def bound_vecmul(w: int = 4) -> Graph:
@@ -90,6 +99,13 @@ def bound_dot1() -> Graph:
     """dot 1 bound by the checked-in recipe: groups mul and sum in the accelerator dot (D148)."""
     recipe = Recipe.load(REPO / "recipes" / "dot_1.json")
     return apply_recipe(recipe, Graph.load(FIXTURES / "dot.snaxdfg"))[-1].graph
+
+
+def bound_recipe(recipe: str, kernel: str) -> Graph:
+    """``recipes/<recipe>.json`` applied to the kernel fixture ``<kernel>.snaxdfg``: its bound
+    graph."""
+    r = Recipe.load(REPO / "recipes" / f"{recipe}.json")
+    return apply_recipe(r, Graph.load(FIXTURES / f"{kernel}.snaxdfg"))[-1].graph
 
 
 def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str:

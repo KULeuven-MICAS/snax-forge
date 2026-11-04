@@ -35,7 +35,7 @@ from snax_forge.common import Missing, dig
 from snax_forge.design.hjson_platform import CoreCount, dma_and_owner
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
-from snax_forge.gen.accelerator import Accelerator as Description
+from snax_forge.gen.accelerator import Description
 from snax_forge.gen.blocks import GenError
 from snax_forge.gen.csrs import csr_layout
 
