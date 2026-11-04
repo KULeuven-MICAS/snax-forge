@@ -50,10 +50,10 @@ busy component needs are placed later (waits.py). Every configure uses the platf
 encapsulated set) follow each other through their data dependences, as
 before; between two accelerators the next one's start waits for the previous
 accelerator's task, so its streamers and CSRs are set up while the previous
-one runs and it starts when that one is done. dot_serial: ``sum_sum``'s
-configures, ``sync mult_mul``, then the start of ``sum_sum``'s tasks; dot 1
-(one accelerator, ``dot``) has no serial sync. Overlap of independent
-accelerators is open item 109.
+one runs and it starts when that one is done. dot 1: ``sum_vsum``'s
+configures, ``sync mult_vmul``, then the start of ``sum_vsum``'s tasks;
+dot_1_enc (one accelerator, ``dot``) has no serial sync. Overlap of
+independent accelerators is open item 109.
 
 **Streamer values from a memlet**. With the firing loops ``v_k``
 (begin ``b_k``, ``count_k`` iterations, step ``s_k``) and the container's L1

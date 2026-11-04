@@ -32,9 +32,10 @@ earlier generation into ``out_dir`` wrote (its manifest's) and this one does not
 so generating the same design point again changes no file and rebuilds no program.
 
 ``<platform>`` is the platform's base (its name when it has none), ``<tag>``
-the generated entry's name, ``<accelerator_slot>_<name>``, the design's name (accelerator.py's
-``tag``): for dot 1 on ``platforms/snax_forge.json``, ``snax_forge.hjson``,
-``snax_forge_dot_1_streamer_dot.hjson`` and ``accelerator.json``.
+the generated entry's name, ``<accelerator_slot>_<name>``, the design's name
+(accelerator.py's ``tag``): for dot 1 on ``platforms/snax_forge.json``,
+``snax_forge.hjson``, ``snax_forge_dot_1_streamer_vmul.hjson``,
+``snax_forge_dot_1_streamer_vsum.hjson`` and ``accelerator.json``.
 
 **The cluster file.** The platform's ``hjson`` (a path from ``root``),
 parsed, with the platform's values written back by the reverse of
