@@ -535,6 +535,25 @@ def test_every_step_lists_saves_design_checks(roots):
     assert "open item 106" in p["message"] and p["fix"]
 
 
+def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
+    """D156: before the bind graph.unbound is a note ("before Save: bind it …"), not a problem,
+    and Save still refuses it; vecadd_i32's int32 adder, not in nangate45's table, keeps its
+    char.missing note beside a problem (W = 32: too many crossbar inputs)."""
+    s = Session.from_kernel("vecadd", {"N": 64}, roots=roots)
+    split_and_tag(s, "add_map", 4)
+    c = s.checks(3)
+    assert c["problems"] == [] and [n["code"] for n in c["notes"]] == ["graph.unbound"]
+    assert c["notes"][0]["message"].startswith("before Save: bind it (")
+    assert s.save("vecadd_unbound")["code"] == "save.graph"
+    i32 = Session.from_kernel("vecadd", {"N": 2048}, dtypes={"A": "int32", "B": "int32", "C": "int32"},
+                              roots=Roots(roots.sessions / "i32", roots.recipes, roots.sandbox))  # fmt: skip
+    split_and_tag(i32, "add_map", 64)
+    bind_default(i32, "add")
+    c = i32.checks(4)
+    assert [p["code"] for p in c["problems"]] == ["connect.xbar_inputs"]
+    assert [n["code"] for n in c["notes"]] == ["char.missing"]
+
+
 def test_a_param_change_replays_up_to_the_cursor(roots):
     """D156: dot 1 at step 9, a link as step 10, back to 9, W_acc_2 = 4: accepted, step 10 a
     redo step; moving onto it replays it, and the link refuses (its writer's beats are not its

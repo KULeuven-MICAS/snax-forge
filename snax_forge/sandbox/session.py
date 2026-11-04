@@ -102,10 +102,11 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
     estimate(k, tech)    the ideal estimate (estimate/, D155) on the session's platform, costed
                          on ``tech`` (default nangate45, C§20)
     checks(k)            Save's design checks on step k and the platform (D156): ``problems``,
-                         each ``{code, where, message, fix}``, and ``notes``: ``gen.instances``
-                         before ``encapsulate`` as a note (``before Save: encapsulate …``), not
-                         a problem, and the design notes (check.py's ``run_notes``) when nothing
-                         else is wrong
+                         each ``{code, where, message, fix}``, and ``notes``: ``graph.unbound``
+                         while building (``before Save: bind it …``) and ``gen.instances``
+                         before ``encapsulate`` (``before Save: encapsulate …``) as notes, not
+                         problems, which Save still refuses, and the design notes (check.py's
+                         ``NOTES``, ``char.missing``) always, also beside problems
 
 ``sites``, ``marks``, ``estimate`` and ``checks`` are cached per step (``sites`` per step and selection,
 ``estimate`` per step and technology) and
@@ -127,7 +128,7 @@ from snax_forge import expr
 from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import repo_root
 from snax_forge.design import Design, Platform, run_checks
-from snax_forge.design.check import CHECKS, run_notes
+from snax_forge.design.check import CHECKS
 from snax_forge.design.streamers import accelerators as accelerators_of
 from snax_forge.design.streamers import instance_of
 from snax_forge.dfg import DfgError, Graph
@@ -781,9 +782,18 @@ def _renamed(v: Any, renamed: dict[str, str]) -> Any:
     return expr.canonical(re.sub(r"[A-Za-z_]\w*", lambda m: renamed.get(m[0], m[0]), v))
 
 
+# The problems that only say a graph is still being built (D156): notes "before Save", which
+# Save still refuses (save.graph, save.design)
+BEFORE_SAVE = ("graph.unbound", "gen.instances")
+
+
 def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]]]:
     """Save's design checks on ``g`` (``Session.checks``): ``problems`` and ``notes``, each
-    ``{code, where, message, fix}``; ``gen.instances`` a "before Save" note (D156)."""
+    ``{code, where, message, fix}``. ``graph.unbound`` and ``gen.instances`` are "before Save"
+    notes, not problems, and the design notes (check.py's ``NOTES``, ``char.missing``) are
+    listed whatever else is wrong, each one that cannot read the graph left out (D156)."""
+    from snax_forge.design.check import NOTES
+
     design = Design(platform, g)
     found = run_checks(design)
     problems, notes = [], []
@@ -794,11 +804,17 @@ def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]
             d["message"] = (f"before Save: encapsulate {', '.join(units)} into one accelerator "
                             f"({p.message})")  # fmt: skip
             notes.append(d)
+        elif p.code == "graph.unbound":
+            d["message"] = f"before Save: bind it ({p.message})"
+            notes.append(d)
         else:
             problems.append(d)
-    if not found:
-        notes += [{"code": p.code, "where": p.where, "message": p.message, "fix": p.fix}
-                  for p in run_notes(design)]  # fmt: skip
+    for fn in NOTES.values():
+        try:
+            notes += [{"code": p.code, "where": p.where, "message": p.message, "fix": p.fix}
+                      for p in fn(design)]  # fmt: skip
+        except (ValueError, KeyError, TypeError, AttributeError):  # a graph a note cannot read
+            continue
     return {"problems": problems, "notes": notes}
 
 

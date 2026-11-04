@@ -198,14 +198,17 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             assert got["log"].startswith(f"step {got['index']}  {transform} ")
             logs.append(got["log"])
         # the cycles before and after; the unmapped cycles only where they change (D155, D156:
-        # no not-mapped count), the bind's renamed W, the design checks' problems: graph.unbound
-        # until the bind
+        # no not-mapped count), the bind's renamed W, the design checks' problems and notes:
+        # graph.unbound until the bind, a note before Save (D156)
         assert [line.split(" · C ")[1] for line in logs] == [
-            "0 → 0 · 1 problem", "0 → 0 · 1 problem", "0 → 0 · 1 problem",
+            "0 → 0 · 1 note", "0 → 0 · 1 note", "0 → 0 · 1 note",
             "0 → 16 · unmapped 64 → 0 · renamed W → W_acc"]  # fmt: skip
         assert "changed add" in logs[-1]
-        (p,) = get_json(srv, "/api/step/3")[1]["problems"]
-        assert p["code"] == "graph.unbound" and set(p) == {"code", "where", "message", "fix"}
+        three = get_json(srv, "/api/step/3")[1]
+        (p,) = three["notes"]
+        assert three["problems"] == [] and p["code"] == "graph.unbound"
+        assert p["message"].startswith("before Save: bind it (is not bound to an accelerator")
+        assert set(p) == {"code", "where", "message", "fix"}
         status, v = get_json(srv, "/api/step/4")
         assert (v["problems"], v["notes"]) == ([], [])
         # the tasklet add became the unit add, its spatial map gone
