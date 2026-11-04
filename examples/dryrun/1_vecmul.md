@@ -130,6 +130,16 @@ The flow takes the saved recipe through the design checks, lowering and the gene
 
 `mult_acc 259` is the group's COUNTER for the task `mult_acc`, equal to the editor's expected 259. `1200 cycles` is the program's window, from main to its check. `report/design.md` repeats the Estimate and the cost per block; `report/run.md` holds the counters, the DMA and the per-port grants and stalls.
 
+Three cycle numbers appear from here on:
+
+| Number | What it counts | Where it comes from |
+|---|---|---|
+| Expected COUNTER | the group's ideal cycles plus the streamers' fill of 3 | the estimate (D155), before any run |
+| COUNTER | the cycles the group is busy, from the cycle after its start is accepted to its last output push | the group's COUNTER CSR, read by the program |
+| Window | the program from `main` to `forge_check()` (D135): setup, the DMA loads, the accelerator, polling, the DMA store | the core's `mcycle` |
+
+Section 6's task table shows how the 1200 cycles of the window at W = 8 split up.
+
 The other points, each into its own folder (`out/flow/vecmul_dry_W4/` and so on):
 
     pixi run flow recipes/vecmul_dry.json --platform platforms/snax_forge.json --set W=4
