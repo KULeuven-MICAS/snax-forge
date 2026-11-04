@@ -322,3 +322,18 @@ def test_a_platform_without_a_slot_has_no_tag(tmp_path):
     with pytest.raises(GenError) as e:
         describe(p, "p")
     assert e.value.code == "gen.tag" and "no accelerator_slot" in str(e.value)
+
+
+def test_the_tag_is_the_designs_name_whatever_the_folder(tmp_path):
+    """The tag is <accelerator_slot>_<name>, <name> the design's: the recipe's ``name`` the
+    sandbox kept beside the graph (design/point.py's ``design_of``), not the folder a ``--set``
+    named, even one a flow names with a ``-`` (``W_acc_1-10``, C§7); the folder stays."""
+    from snax_forge.design import DesignPoint
+
+    from .helpers import designed
+
+    path = designed(tmp_path, "dot_1", "dot_1_W_acc_1-10", ["W=8"])
+    assert path == "out/design/dot_1_W_acc_1-10/design_point.json"
+    p = DesignPoint.load(tmp_path / path)
+    assert p.name == "dot_1"
+    assert describe(p, path).tag == "snax_forge_dot_1"

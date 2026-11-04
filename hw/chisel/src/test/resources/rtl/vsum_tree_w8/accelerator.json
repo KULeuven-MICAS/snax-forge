@@ -1,6 +1,6 @@
 {
  "design_point": "out/design/vsum_tree_w8/design_point.json",
- "tag": "snax_forge_vsum_tree_w8",
+ "tag": "snax_forge_vsum_tree",
  "accelerators": [
   {
    "name": "acc",

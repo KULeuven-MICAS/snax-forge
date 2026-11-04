@@ -1,6 +1,6 @@
 {
  "design_point": "out/design/dot_5_w1/design_point.json",
- "tag": "snax_forge_dot_5_w1",
+ "tag": "snax_forge_dot_5",
  "accelerators": [
   {
    "name": "dot",

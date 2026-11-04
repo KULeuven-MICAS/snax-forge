@@ -70,7 +70,7 @@ def test_up_to_gen_then_the_stubbed_run(tmp_path, monkeypatch, design):
     assert f.passed and f.total_cycles == 226 and f.check["exit_code"] == 0
     names = {p.relative_to(out).as_posix() for p in out.rglob("*") if p.is_file()}
     assert {"sandbox/recipe.json", "sandbox/2_bind.snaxdfg", "design/design_point.json",
-            "tasks.json", "gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson",
+            "tasks.json", "gen/snax_forge.hjson", f"gen/snax_forge_{design}_streamer_acc.hjson",
             "gen/accelerator.json", "gen/main.c", "gen/data.h", "gen/manifest.json",
             "gen/include/acc_csr.h", "sw/forge.elf", "run/stdout.txt", "run/stderr.txt",
             "run/run.json", "run/profile.json", "run/events.log.gz", "flow.log"} <= names  # fmt: skip
@@ -122,7 +122,7 @@ def test_run_json_records_what_ran(tmp_path, monkeypatch):
         "design_point": "design/design_point.json",
         "hjson": [
             "gen/snax_forge.hjson",
-            "gen/snax_forge_streamer.hjson",
+            "gen/snax_forge_vecadd_streamer_acc.hjson",
             "gen/accelerator.json",
         ],
         "elf": "sw/forge.elf",
@@ -635,7 +635,8 @@ def test_cli_runs_and_says_what_it_did(tmp_path, monkeypatch, capsys):
     assert "flow vecadd_W8_streamers.default.fifo_depth4 (vecadd: W=8, N=64; N=64)" in out
     pf = json.loads((tmp_path / "g" / "design" / "platform.json").read_text())
     assert pf["changes"] == {"streamers.default.fifo_depth": 4}
-    assert DesignPoint.load(tmp_path / "g" / "design" / "design_point.json").name == "vecadd_W8"
+    # the design point is the design's, the recipe's name: the folder alone carries the sets
+    assert DesignPoint.load(tmp_path / "g" / "design" / "design_point.json").name == "vecadd"
 
 
 def test_cli_reports_a_failing_stage_and_a_failing_program(tmp_path, monkeypatch, capsys):
@@ -688,7 +689,7 @@ def test_matadd_the_first_2d_bind_on_snax_gvsoc(tmp_path):
     assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.total_cycles > 0
     assert {t: v["beats"] for t, v in f.check["tasks"].items()} == {"add_acc": 32}
     assert all(t["counter"] >= t["beats"] for t in f.check["tasks"].values())
-    text = (tmp_path / "matadd" / "gen" / "snax_forge_streamer.hjson").read_text()
+    text = (tmp_path / "matadd" / "gen" / "snax_forge_matadd_streamer_acc.hjson").read_text()
     streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
     assert streamer["data_reader_params"]["temporal_dim"] == [2, 2]
     assert streamer["data_writer_params"]["temporal_dim"] == [2]
@@ -706,7 +707,7 @@ def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
     assert {t: v["beats"] for t, v in f.check["tasks"].items()} == {"sum_acc": beats}
     assert all(t["counter"] >= t["beats"] for t in f.check["tasks"].values())
     gen = tmp_path / design / "gen"
-    text = (gen / "snax_forge_streamer.hjson").read_text()
+    text = (gen / f"snax_forge_{design}_streamer_acc.hjson").read_text()
     streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
     assert streamer["data_reader_params"]["temporal_dim"] == [2]
     assert streamer["data_writer_params"]["temporal_dim"] == [1]

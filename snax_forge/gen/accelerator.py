@@ -8,8 +8,10 @@ bundle; gen-rtl the same bytes, rtl.py) and SNAX-GVSoC (snax-gvsoc
 values only, nested as the graph is (D148), in this key order:
 
     design_point  the design point by its path from the root (gvsoc.py)
-    tag           the generated entry's name, ``<accelerator_slot>_<design>``
-                  (D131, D157), the design point's name after the slot: an
+    tag           the generated entry's name, ``<accelerator_slot>_<name>``
+                  (D131, D157), ``<name>`` the design's name (the design
+                  point's, the recipe's or Save's ``name``, never a flow's
+                  ``--set`` suffix, design/point.py's ``design_of``): an
                   identifier, else ``gen.tag``
     accelerators  in CSR order, each one streamer set of the entry (D157):
       name        the header's <ACC> and the set's name: ``encapsulate``'s
@@ -481,17 +483,18 @@ def units(point: DesignPoint) -> dict[str, dict[str, Instance]]:
 
 
 def tag(point: DesignPoint) -> str:
-    """The generated entry's name, ``<accelerator_slot>_<design>`` (D131, D157); ``gen.tag``
-    when it is not an identifier (it names modules, files and the cluster file's entry)."""
+    """The generated entry's name, ``<accelerator_slot>_<name>``, the design's name the design
+    point holds (D131, D157); ``gen.tag`` when it is not an identifier (it names modules, files
+    and the cluster file's entry)."""
     slot = point.platform.accelerator_slot
     if slot is None:
         raise GenError("gen.tag", f"platform {point.platform.name} has no accelerator_slot: the "
-                       "generated entry is named <accelerator_slot>_<design>")  # fmt: skip
+                       "generated entry is named <accelerator_slot>_<name>")  # fmt: skip
     name = f"{slot}_{point.name}"
     if not IDENTIFIER.fullmatch(name):
         raise GenError(
-            "gen.tag", f"the generated entry's name {name!r} (<accelerator_slot>_<design>, the "
-            f"design point {point.name!r}) is not an identifier: it names the RTL's modules, the "
+            "gen.tag", f"the generated entry's name {name!r} (<accelerator_slot>_<name>, the "
+            f"design {point.name!r}) is not an identifier: it names the RTL's modules, the "
             "streamer files and the cluster's entry; name the design with letters, digits and "
             "_ only, not starting with a digit",
         )  # fmt: skip

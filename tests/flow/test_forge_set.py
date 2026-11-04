@@ -37,7 +37,7 @@ def stubbed(tmp_path, monkeypatch):
         )
         output.write_text(
             f"forge {recipe}: recipes/{recipe}.json on platforms/snax_forge.json\n"
-            f"  bundle    out/bundle/{recipe}/: snax_forge_shell_wrapper, snax-forge 0123456789ab\n"
+            f"  bundle    out/bundle/{recipe}/: snax_forge_{recipe}_shell_wrapper, snax-forge 0123456789ab\n"
             "snax_cluster on Verilator, from snax_cluster in its pixi environment:\n"
             f"  B={b}/snax_forge.hjson\n"
             "  pixi run make -C target/snitch_cluster rtl-gen CFG_OVERRIDE=$B\n"

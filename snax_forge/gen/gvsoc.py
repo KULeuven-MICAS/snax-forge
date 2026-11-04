@@ -32,7 +32,7 @@ earlier generation into ``out_dir`` wrote (its manifest's) and this one does not
 so generating the same design point again changes no file and rebuilds no program.
 
 ``<platform>`` is the platform's base (its name when it has none), ``<tag>``
-the generated entry's name, ``<accelerator_slot>_<design>`` (accelerator.py's
+the generated entry's name, ``<accelerator_slot>_<name>``, the design's name (accelerator.py's
 ``tag``): for dot 1 on ``platforms/snax_forge.json``, ``snax_forge.hjson``,
 ``snax_forge_dot_1_streamer_dot.hjson`` and ``accelerator.json``.
 
@@ -549,8 +549,9 @@ def cli(write: Callable[[], int]) -> int:
 
 
 def out_dir(given: Path | None, under: Path, design_point: Path) -> Path:
-    """``given``, else ``under/<design>``, the design point's name."""
-    return given or under / DesignPoint.load(design_point).name
+    """``given``, else ``under/<folder>``, the design point's folder (the design step's
+    ``out/design/<folder>/``, which keeps a flow's or a sandbox's ``--set`` suffix)."""
+    return given or under / Path(design_point).resolve().parent.name
 
 
 def _hjson(point_path: str, what: str, value: Any) -> str:
@@ -576,16 +577,18 @@ def generate(
     made already: the flow, which needs both before."""
     point_path, out = Path(design_point), Path(out_dir)
     root = ROOT if root is None else Path(root)
-    shown, point, acc = load_point(point_path, root, named_from)
+    shown = point_name(point_path, root if named_from is None else Path(named_from))
+    point = DesignPoint.load(point_path)
+    platform = point.platform
+    cluster = source(platform, root)  # first: a platform without one is gen.source (RUN.md §6)
+    acc = describe(point, shown)
     found = units(point)
     members = {u: inst for mine in found.values() for u, inst in mine.items()}
-    platform = point.platform
     templates = {a: streamer_template(point, mine) for a, mine in found.items()}
     layout = csr_layout(templates, acc)
     tasks = task_list(point) if tasks is None else tasks
     data = arrays(point, seed, kernel, goldens)
 
-    cluster = source(platform, root)
     at, slot = find_slot(cluster, platform)
     write_back(cluster, platform)
     rename_cluster(cluster, platform.hjson)

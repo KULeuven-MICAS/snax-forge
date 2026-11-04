@@ -51,7 +51,7 @@ from snax_forge.common import cwd_relative, repo_root
 from .check import Design, load, note_text, run_checks, run_notes
 from .hjson_platform import platform_from_hjson
 from .platform import Platform, parse_value
-from .point import DesignPoint, design_name
+from .point import DesignPoint, design_name, design_of
 from .problems import DesignError, report
 from .streamers import resolve
 
@@ -139,9 +139,8 @@ def _run(argv: list[str]) -> int:
     design = _checked(args)
     if design is None:
         return 1
-    name = design_name(args.graph)
-    out = args.out or OUT / name
-    point = DesignPoint.of(design, name)
+    out = args.out or OUT / design_name(args.graph)
+    point = DesignPoint.of(design, design_of(args.graph))
     out.mkdir(parents=True, exist_ok=True)
     design.platform.save(out / "platform.json")
     design.memory.save(out / "memory.json")

@@ -46,7 +46,7 @@ by the names hw/chisel's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
 (``<tag>_<group>_ctrl`` per group of every accelerator, in CSR order) and
 ``<tag>_datapath`` (``<tag>_<unit>`` per unit, then ``<tag>_<link>`` per link
 of depth >= 1, a buffer, group by group), ``<tag>`` the entry's
-``<accelerator_slot>_<design>`` (``snax_forge_dot_1``).
+``<accelerator_slot>_<name>``, the design's name (``snax_forge_dot_1``).
 
 snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its

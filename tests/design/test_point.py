@@ -92,3 +92,20 @@ def test_an_edited_platform_is_checked_with_the_rest():
 )
 def test_a_malformed_point_is_named(edit, code):
     assert _loaded(edit).codes == [code]
+
+
+def test_the_design_is_named_after_its_recipe(tmp_path):
+    """design_of: the name of the recipe beside a step's graph (the sandbox's or Save's, with no
+    --set suffix), else the folder or the stem as design_name gives them."""
+    import json as _json
+
+    from snax_forge.design import design_name, design_of
+
+    step = tmp_path / "vecmul_W32" / "2_bind.snaxdfg"
+    step.parent.mkdir()
+    step.write_text("{}")
+    assert (design_name(step), design_of(step)) == ("vecmul_W32", "vecmul_W32")
+    (step.parent / "recipe.json").write_text(_json.dumps({"name": "vecmul"}))
+    assert (design_name(step), design_of(step)) == ("vecmul_W32", "vecmul")
+    loose = tmp_path / "vecadd_accelerated.snaxdfg"
+    assert design_of(loose) == "vecadd_accelerated"

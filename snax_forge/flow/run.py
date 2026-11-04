@@ -84,7 +84,9 @@ then writes ``report/design.md`` and ``report/run.md`` from them (D99).
 Everything goes to one folder, ``out/flow/<name>/``, overwritten on every
 run; the default name carries every ``--set``, so runs that differ only in
 the platform or the memory plan land in folders of their own, then the
-trace level when it is not ``off`` (``vecadd_task``). ``flow.log``
+trace level when it is not ``off`` (``vecadd_task``). The design point (its task list and the
+generated entry's tag) is named after the design, the recipe's ``name``, whatever ``--set``
+or ``--name`` name the folder. ``flow.log``
 is what the command line prints plus the design checks that ran; a flow
 that fails writes the failure there instead. The log, the reports and ``run/`` of an
 earlier run in the same folder are removed first; ``gen/`` is written again in place, each
@@ -108,7 +110,9 @@ for ``make_inputs`` and its reference only, is the graph's ``name`` unless
 one is given. The
 default name is the design step's (``design_name``: the sandbox folder of a
 step's graph, else the file's stem; a flow's own ``sandbox/`` gives its flow
-folder) with the platform and memory ``--set`` appended as above. The recipe
+folder) with the platform and memory ``--set`` appended as above; the design point
+is named after the design (``design_of``: the recipe kept beside a step's graph, else the
+default name). The recipe
 and step graphs an earlier flow left in the folder's ``sandbox/`` are
 removed, unless the graph is one of them, so the folder never shows a recipe
 its run did not come from. ``flow.log`` has no ``import`` or ``sandbox``
@@ -133,7 +137,7 @@ from pathlib import Path
 from typing import IO, TYPE_CHECKING, Any
 
 from snax_forge.common import cwd_relative, git, repo_root, to_json
-from snax_forge.design import DesignError, DesignPoint, design_name, load, run_checks
+from snax_forge.design import DesignError, DesignPoint, design_name, design_of, load, run_checks
 from snax_forge.design.check import CHECKS, STAGES
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.reference import KernelError, kernel_spec, reference_check
@@ -678,9 +682,9 @@ def run_flow(
     _trace(o.trace_level, o.trace_sources)
     recipe_sets = dict(recipe_sets or {})
     recipe = Recipe.load(recipe_path).with_params(recipe_sets)
-    # The design point, and with it the task list, is named after the recipe and its params
-    # only; the folder carries every --set.
-    point_name = o.name or default_name(recipe, recipe_sets)
+    # The design point, and with it the task list and the generated entry's tag, is named after
+    # the design, the recipe's name (D131); the folder carries every --set.
+    point_name = recipe.name
     name = o.name or with_level(default_name(recipe, recipe_sets, o.platform_sets, o.memory_sets),
                                 o.trace_level)  # fmt: skip
     out = _folder(name, o.out)
@@ -718,8 +722,8 @@ def run_bound(
     o = FlowOptions(**options)
     _trace(o.trace_level, o.trace_sources)
     graph_path = Path(graph_path)
-    # As in run_flow: the design point keeps the graph's name, the folder carries every --set.
-    point_name = o.name or bound_name(graph_path)
+    # As in run_flow: the design point keeps the design's name, the folder carries every --set.
+    point_name = design_of(graph_path)
     name = o.name or with_level(bound_name(graph_path, o.platform_sets, o.memory_sets),
                                 o.trace_level)  # fmt: skip
     out = _folder(name, o.out)
