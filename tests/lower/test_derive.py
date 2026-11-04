@@ -172,8 +172,8 @@ def test_dot_gives_its_task_list():
 def test_dot_runs_its_accelerators_in_series():
     """mul and sum unencapsulated are two accelerators, two streamer sets (D157): no idle mover
     (each task holds its own set's movers only), and D158's sync on mul's task after sum's
-    configures, right before sum's start; its data wait on mul's writer follows (waits.py: a
-    wait on a unit does not cover its writer)."""
+    configures, right before sum's start, the one wait between them: a wait on mul's task
+    covers its writer too, so no data wait on mul_out follows (waits.py)."""
     p = point("dot_accelerated")
     tl = task_list(p)
     ops = [(s.op, getattr(s, "task_name", None) or getattr(s, "task", None) or s.tasks)
@@ -187,7 +187,7 @@ def test_dot_runs_its_accelerators_in_series():
     assert starts == [["mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_mul"],
                       ["sum_sum_a", "sum_sum_out", "sum_sum"]]  # fmt: skip
     waits = [w.component for w in placed_waits(tl, p)]
-    assert waits == ["dma", "dma", "mul", "mul_out", "sum_out", "dma"]
+    assert waits == ["dma", "dma", "mul", "sum_out", "dma"]
 
 
 def test_the_serial_sync_is_left_out_when_after_holds_the_previous_task():
@@ -208,16 +208,16 @@ def test_the_serial_sync_is_left_out_when_after_holds_the_previous_task():
 
 
 # =============================================================================
-# dot 1: the two groups in one accelerator (D148), a task each
+# dot_1_enc: dot 1's two groups in one accelerator (D148), a task each
 # =============================================================================
 
 
 def dot1() -> DesignPoint:
-    from tests.gen.helpers import bound_dot1
+    from tests.gen.helpers import bound_dot1_enc
 
-    d = Design(Platform.load(SNAX_FORGE), bound_dot1())
+    d = Design(Platform.load(SNAX_FORGE), bound_dot1_enc())
     assert run_checks(d) == []
-    return DesignPoint.of(d, "dot_1")
+    return DesignPoint.of(d, "dot_1_enc")
 
 
 # every temporal stride a word: a reader at stride 0 on its first loop would start (Reader.scala)
@@ -231,14 +231,14 @@ def test_dot_1_configures_every_mover_per_task_the_other_groups_idle():
     c = tl.configured()
     starts = [s.tasks for s in tl.steps if s.op == "start" and len(s.tasks) > 1]
     assert starts == [
-        ["mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_sum_a", "mult_sum_out", "mult_mul"],
-        ["sum_mul_a", "sum_mul_b", "sum_mul_out", "sum_sum_a", "sum_sum_out", "sum_sum"],
+        ["mult_vmul_a", "mult_vmul_b", "mult_vmul_out", "mult_vsum_a", "mult_vsum_out", "mult_vmul"],
+        ["sum_vmul_a", "sum_vmul_b", "sum_vmul_out", "sum_vsum_a", "sum_vsum_out", "sum_vsum"],
     ]  # fmt: skip
-    for t in ("mult_sum_a", "mult_sum_out", "sum_mul_a", "sum_mul_b", "sum_mul_out"):
+    for t in ("mult_vsum_a", "mult_vsum_out", "sum_vmul_a", "sum_vmul_b", "sum_vmul_out"):
         assert (c[t].values, c[t].after) == (IDLE, []), t
-    assert c["sum_sum_a"].after == ["mult_mul_out"]  # tmp0 from mul, through L1
-    assert c["sum_sum_a"].values["base"] == c["mult_mul_out"].values["base"]
-    assert (c["mult_mul"].values, c["sum_sum"].values) == ({"n": 16}, {"n": 16, "T": 16})
+    assert c["sum_vsum_a"].after == ["mult_vmul_out"]  # tmp0 from mul, through L1
+    assert c["sum_vsum_a"].values["base"] == c["mult_vmul_out"].values["base"]
+    assert (c["mult_vmul"].values, c["sum_vsum"].values) == ({"n": 16}, {"n": 16, "T": 16})
     # one accelerator, dot: its groups follow through their data, no serial sync (D158)
     assert [s.task for s in tl.steps if s.op == "sync"] == ["store_out"]
 
@@ -248,10 +248,24 @@ def test_dot_1_waits_for_mul_s_writer_before_sum_and_never_on_an_idle_mover():
     waits = placed_waits(task_list(p), p)
     assert [(w.component, sorted(w.covers)) for w in waits] == [
         ("dma", ["dma"]), ("dma", ["dma"]),
-        ("mul_out", ["mul", "mul_a", "mul_b", "mul_out"]),
-        ("sum_out", ["sum", "sum_a", "sum_out"]),
+        ("vmul_out", ["vmul", "vmul_a", "vmul_b", "vmul_out"]),
+        ("vsum_out", ["vsum", "vsum_a", "vsum_out"]),
         ("dma", ["dma"]),
     ]  # fmt: skip
+
+
+def test_dot_1_is_two_accelerators_in_series():
+    """recipes/dot_1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
+    serial sync on vmul's task before vsum starts, the one wait between them (D158)."""
+    from tests.gen.helpers import bound_dot1
+
+    d = Design(Platform.load(SNAX_FORGE), bound_dot1())
+    assert run_checks(d) == []
+    p = DesignPoint.of(d, "dot_1")
+    tl = task_list(p)
+    assert not [t for t in tl.of_type("streamer") if not any(t.values["temporal_bounds"])]
+    assert [s.task for s in tl.steps if s.op == "sync"] == ["mult_vmul", "store_out"]
+    assert [w.component for w in placed_waits(tl, p)] == ["dma", "dma", "vmul", "vsum_out", "dma"]
 
 
 def test_dot_without_encapsulate_is_two_accelerators_with_no_idle_movers():

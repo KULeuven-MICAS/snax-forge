@@ -186,16 +186,16 @@ def test_more_dimensions_follow_streamer_scalas_loops():
 
 
 def test_two_groups_name_their_group():
-    """dot 1 (groups mul and sum of accelerator dot, C§17's table) from CSR 978: the group part
-    kept, the unit part dropped (one unit per group)."""
+    """dot_1_enc (groups vmul and vsum of accelerator dot, C§17's table) from CSR 978: the group
+    part kept, the unit part dropped (one unit per group)."""
     desc = dot()
     text = accelerator_header(
         desc.accelerators[0], {k: 978 + v for k, v in desc.defines().items()}, "p"
     )
     assert defines(text) == [
-        ("DOT_RW_MUL_START", 978), ("DOT_RW_MUL_JOBS", 979), ("DOT_RO_MUL_STATUS", 980),
-        ("DOT_RO_MUL_COUNTER", 981), ("DOT_RW_SUM_START", 982), ("DOT_RW_SUM_JOBS", 983),
-        ("DOT_RW_SUM_JOB_BEATS", 984), ("DOT_RO_SUM_STATUS", 985), ("DOT_RO_SUM_COUNTER", 986),
+        ("DOT_RW_VMUL_START", 978), ("DOT_RW_VMUL_JOBS", 979), ("DOT_RO_VMUL_STATUS", 980),
+        ("DOT_RO_VMUL_COUNTER", 981), ("DOT_RW_VSUM_START", 982), ("DOT_RW_VSUM_JOBS", 983),
+        ("DOT_RW_VSUM_JOB_BEATS", 984), ("DOT_RO_VSUM_STATUS", 985), ("DOT_RO_VSUM_COUNTER", 986),
     ]  # fmt: skip
 
 

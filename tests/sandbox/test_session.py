@@ -270,11 +270,10 @@ def test_save_refuses_unbound_work(roots):
 
 
 def test_save_takes_two_accelerators(roots):
-    """D157: dot 1 before its encapsulate is two accelerators, two streamer sets of the one
-    entry: Save takes it as it is (gen.instances retired)."""
+    """D157: dot 1, no encapsulate, is two accelerators, two streamer sets of the one entry: Save
+    takes it as it is (gen.instances retired)."""
     s = opened("dot_1", roots)
-    assert s.recipe.steps[-1].transform == "encapsulate"
-    ok(s.move(s.n - 1))
+    assert "encapsulate" not in [x.transform for x in s.recipe.steps]
     assert ok(s.save("dot_two"))["recipe"] == str(roots.recipes / "dot_two.json")
 
 
@@ -438,18 +437,17 @@ def test_the_bind_form_lists_the_library_with_timing(roots):
 
 
 def test_the_encapsulate_and_link_forms(roots):
-    """dot 1 before encapsulate: the units unencapsulated in graph order, the selection's ticked
+    """dot 1 (no encapsulate): the units unencapsulated in graph order, the selection's ticked
     (one unit's box: that unit; both group outlines: both), and a free accelerator name; dot 2
     before its link: the depth a param of its own, D, at 1 by default, the group from the site."""
     one = opened("dot_1", roots)
-    ok(one.move(one.n - 1))
     f = _form(one.sites(one.cursor, "mult")["encapsulate"])
     assert (f["units"]["type"], f["units"]["value"], [c["value"] for c in f["units"]["choices"]]) == (
-        "checklist", ["mul"], ["mul", "sum"])  # fmt: skip
+        "checklist", ["vmul"], ["vmul", "vsum"])  # fmt: skip
     assert f["accelerator"]["value"] == "dot" and not f["units"]["readonly"]
-    assert _form(one.sites(one.cursor, ["mul", "sum"])["encapsulate"])["units"]["value"] == [
-        "mul",
-        "sum",
+    assert _form(one.sites(one.cursor, ["vmul", "vsum"])["encapsulate"])["units"]["value"] == [
+        "vmul",
+        "vsum",
     ]
     two = opened("dot_2", roots)
     ok(two.move(two.n - 1))

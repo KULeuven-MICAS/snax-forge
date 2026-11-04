@@ -103,7 +103,7 @@ def test_each_counter_is_c17_plus_the_fill(flows, name):
 def test_the_second_readers_one_stall_is_the_fills(flows, name):
     streamers = read_run(flows[name].out / "run").profile.streamers
     held = {k: s.cycles["stall_xbar"] for k, s in streamers.items() if not s.write}
-    second = "mul_b" if name in ("dot_1", "dot_2", "dot_3") else "mac_b"
+    second = {"dot_1": "vmul_b", "dot_2": "mul_b", "dot_3": "mul_b"}.get(name, "mac_b")
     assert held[second] == 1 and sum(held.values()) == 1, held
 
 
@@ -113,13 +113,16 @@ def test_the_second_readers_one_stall_is_the_fills(flows, name):
 def test_each_row_is_its_runs_description(flows, name):
     acc = json.loads((flows[name].out / "gen" / "accelerator.json").read_text())
     groups, units, link, *_ = table()[name]
+    every = [g for a in acc["accelerators"] for g in a["groups"]]
     if name == "dot_1":
-        assert [g["name"] for g in acc["groups"]] == ["mul", "sum"]
-        assert groups == "`mul`, `sum`, a task each" and link == "none: `tmp0` in L1"
-        assert units == "; ".join(f"`{u['name']}` {u['datapath']}" for g in acc["groups"]
+        assert [a["name"] for a in acc["accelerators"]] == [g["name"] for g in every]
+        assert [g["name"] for g in every] == ["vmul", "vsum"]
+        assert groups == "`vmul`, `vsum`, an accelerator and a task each"
+        assert link == "none: `tmp0` in L1"
+        assert units == "; ".join(f"`{u['name']}` {u['datapath']}" for g in every
                                   for u in g["units"])  # fmt: skip
         return
-    (g,) = acc["groups"]
+    (g,) = every
     ((k,),) = [g["links"]]
     assert groups == f"`{g['name']}`" == "`dot`"
     assert units == " → ".join(f"`{u['name']}` {u['datapath']}" for u in g["units"])

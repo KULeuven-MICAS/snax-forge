@@ -243,25 +243,28 @@ def test_the_bound_dot_shows_both_accelerators():
     assert writes == [("mult.out", "tmp0[4 * i_t:4 * i_t + 4]"), ("sum.out", "out[0:1]")]
 
 
-def test_dot_1_draws_one_accelerator_of_two_groups(tmp_path):
-    """dot 1 (D148): the accelerator dot, its groups mul and sum in the graph's order, each
-    unit in its group and its group's box around its top-level map; each unit's panel names
-    its group and accelerator."""
-    from tests.gen.helpers import bound_dot1
+def test_dot_1_enc_draws_one_accelerator_of_two_groups(tmp_path):
+    """dot_1_enc (D148): the accelerator dot, its groups vmul and vsum in the graph's order,
+    each unit in its group and its group's box around its top-level map; each unit's panel names
+    its group and accelerator. dot 1 draws the two as two accelerators."""
+    from tests.gen.helpers import bound_dot1, bound_dot1_enc
 
-    path = tmp_path / "dot_1.snaxdfg"
-    path.write_text(bound_dot1().to_json())
+    path = tmp_path / "dot_1_enc.snaxdfg"
+    path.write_text(bound_dot1_enc().to_json())
     v = view(path)
     assert v["accelerators"] == [{"name": "dot", "text": "dot", "groups": [
-        {"name": "mul", "text": "mul", "tops": ["mult_map"], "links": [],
-         "units": [{"instance": "mul", "nodes": ["mult"]}]},
-        {"name": "sum", "text": "sum", "tops": ["sum_map"], "links": [],
-         "units": [{"instance": "sum", "nodes": ["sum"]}]},
+        {"name": "vmul", "text": "vmul", "tops": ["mult_map"], "links": [],
+         "units": [{"instance": "vmul", "nodes": ["mult"]}]},
+        {"name": "vsum", "text": "vsum", "tops": ["sum_map"], "links": [],
+         "units": [{"instance": "vsum", "nodes": ["sum"]}]},
     ]}]  # fmt: skip
     units = [v["details"][f"node:{n}"] for n in ("mult", "sum")]
-    assert [(u["accelerator"], u["group"]) for u in units] == [("dot", "mul"), ("dot", "sum")]
-    assert v["details"]["group:mul"]["accelerator"] == "dot"
-    assert v["details"]["accelerator:dot"]["groups"] == ["mul", "sum"]
+    assert [(u["accelerator"], u["group"]) for u in units] == [("dot", "vmul"), ("dot", "vsum")]
+    assert v["details"]["group:vmul"]["accelerator"] == "dot"
+    assert v["details"]["accelerator:dot"]["groups"] == ["vmul", "vsum"]
+    plain = tmp_path / "dot_1.snaxdfg"
+    plain.write_text(bound_dot1().to_json())
+    assert [a["name"] for a in view(plain)["accelerators"]] == ["vmul", "vsum"]
 
 
 def test_without_encapsulate_each_group_is_its_own_accelerator():
@@ -328,8 +331,8 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     """C§12's cost table, a row per unit, buffer link and control unit, the L1 accesses (D154),
     then the total, one table per accelerator: vecmul at W = 8 (N = 2048) its unit 55 300 µm²,
     23.137 nJ, 46.0 %, its control unit 702 µm² (flops and an equal comb), 0.128 nJ, its L1
-    accesses 6144 words, 27.005 nJ, 53.7 %; dot 1 at W = 8 one table for its two groups, tmp0's
-    round trip in its L1 accesses; Compare's cells before → after."""
+    accesses 6144 words, 27.005 nJ, 53.7 %; dot_1_enc at W = 8 one table for its two groups,
+    tmp0's round trip in its L1 accesses; Compare's cells before → after."""
     from snax_forge.design import Platform
     from snax_forge.estimate import estimate
     from snax_forge.viz.dfg.api import Entry, compare_view, cost_tables, step_view
@@ -344,13 +347,13 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
         ("acc ctrl", "control unit", "702", "0.128", "0.3%"),
         (L1_LABEL, "6144 words, 393 216 bits", "–", "27.005", "53.7%"),
         ("total", "", "56 000", "50.269", "100.0%")]  # fmt: skip
-    d = steps("dot_1", N=2048, W=8)[-1]
+    d = steps("dot_1_enc", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(d, platform), d)
     assert t["accelerator"] == "dot" and _cost_rows(t) == [
-        ("mul", "ElementwiseLanes", "55 300", "23.137", "37.8%"),
-        ("mul ctrl", "control unit", "702", "0.257", "0.4%"),
-        ("sum", "TreeAccumulate", "2 710", "1.231", "2.0%"),
-        ("sum ctrl", "control unit", "1 390", "0.509", "0.8%"),
+        ("vmul", "ElementwiseLanes", "55 300", "23.137", "37.8%"),
+        ("vmul ctrl", "control unit", "702", "0.257", "0.4%"),
+        ("vsum", "TreeAccumulate", "2 710", "1.231", "2.0%"),
+        ("vsum ctrl", "control unit", "1 390", "0.509", "0.8%"),
         (L1_LABEL, "8193 words, 524 352 bits", "–", "36.011", "58.9%"),
         ("total", "", "60 100", "61.144", "100.0%")]  # fmt: skip
     v = step_view(Entry("2_bind", Path("2_bind.snaxdfg"), g, None), "2 bind", platform)
@@ -494,8 +497,8 @@ def test_the_bindings_of_vecmul_dot_1_and_dot_4():
                [Step(x.transform, {**x.params, "factor": factor[x.params["map"]]})
                 if "factor" in x.params else x for x in d.steps])  # fmt: skip
     dot1 = bindings_section(apply_recipe(d, imported("dot"))[-1].graph, d, editable=True)
-    assert _entries(dot1) == [("unit", "mul · elementwise_mul", [("W_mul", 8, True, [])], None),
-                              ("unit", "sum · accumulate", [("W_sum", 4, True, [])], None)]  # fmt: skip
+    assert _entries(dot1) == [("unit", "vmul · elementwise_mul", [("W_mul", 8, True, [])], None),
+                              ("unit", "vsum · accumulate", [("W_sum", 4, True, [])], None)]  # fmt: skip
     d4 = Recipe.load(REPO / "recipes" / "dot_4.json")
     dot4 = bindings_section(steps("dot_4")[-1], d4, editable=True)
     assert _entries(dot4) == [("unit", "mac · mac", [("W", 4, True, ["sum · accumulate"])], None),
@@ -800,17 +803,20 @@ def test_the_bindings_tree():
         b = bindings_section(steps(name)[k], replace(r, steps=r.steps[:k]))
         return b["tree"], [e["label"] for e in b["entries"]]
 
-    assert tree("dot_1") == ([{"kind": "accelerator", "name": "dot", "children": [
-        {"kind": "group", "name": "mul", "children": [{"kind": "entry", "index": 0}]},
-        {"kind": "group", "name": "sum", "children": [{"kind": "entry", "index": 1}]}]}],
-        ["mul · elementwise_mul", "sum · accumulate"])  # fmt: skip
+    assert tree("dot_1_enc") == ([{"kind": "accelerator", "name": "dot", "children": [
+        {"kind": "group", "name": "vmul", "children": [{"kind": "entry", "index": 0}]},
+        {"kind": "group", "name": "vsum", "children": [{"kind": "entry", "index": 1}]}]}],
+        ["vmul · elementwise_mul", "vsum · accumulate"])  # fmt: skip
+    # dot 1, two accelerators of one group of one unit each: both at the top
+    assert tree("dot_1") == ([{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}],
+                             ["vmul · elementwise_mul", "vsum · accumulate"])  # fmt: skip
     assert tree("dot_2")[0] == [{"kind": "group", "name": "dot", "children": [
         {"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]}]  # fmt: skip
     assert tree("vecmul")[0] == [{"kind": "entry", "index": 0}]
-    # dot 1 at its step 3: mul bound, sum_map split, nothing encapsulated: both at the top
+    # dot 1 at its step 3: vmul bound, sum_map split, nothing encapsulated: both at the top
     t, labels = tree("dot_1", 3)
     assert t == [{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]
-    assert labels == ["mul · elementwise_mul", "sum_map split_map"]
+    assert labels == ["vmul · elementwise_mul", "sum_map split_map"]
 
 
 def test_the_recipes_param_names_in_the_boxes_and_details():
@@ -825,17 +831,17 @@ def test_the_recipes_param_names_in_the_boxes_and_details():
 
     r = dot1_split(8, 8)
     g = apply_recipe(r, imported("dot"))[-1].graph
-    assert unit_params(g, r) == {"mul": ["W_mul"], "sum": ["W_sum"]}
+    assert unit_params(g, r) == {"vmul": ["W_mul"], "vsum": ["W_sum"]}
     assert map_ranges(g, r) == {"mult_map": "0:N // W_mul = 256", "sum_map": "0:N // W_sum = 256"}
     v = step_view(Entry("5", Path("5"), g, None), "5", Platform.load(SNAX_FORGE), recipe=r)
     texts = json.dumps(v["rows"], ensure_ascii=False)
-    assert "mul · a * b · W_mul 8" in texts and "sum · fold + · W_sum 8" in texts
+    assert "vmul · a * b · W_mul 8" in texts and "vsum · fold + · W_sum 8" in texts
     assert v["details"]["node:mult_map"]["range"] == "0:N // W_mul = 256"
     tail = dot1_split(10, 10)
     gt = apply_recipe(tail, imported("dot"))[-1].graph
     assert map_ranges(gt, tail)["mult_map"] == "0:(N + W_mul - 1) // W_mul = 205"
     plain = step_view(Entry("5", Path("5"), g, None), "5", Platform.load(SNAX_FORGE))
-    assert "mul · a * b · W 8" in json.dumps(plain["rows"], ensure_ascii=False)
+    assert "vmul · a * b · W 8" in json.dumps(plain["rows"], ensure_ascii=False)
     two = Recipe.load(REPO / "recipes" / "dot_2.json").with_params({"N": 2048, "W": 8})
     g2 = apply_recipe(two, imported("dot"))[-1].graph
     assert unit_params(g2, two) == {"mul": ["W"], "sum": ["W"]}

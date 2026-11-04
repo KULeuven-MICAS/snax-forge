@@ -96,9 +96,14 @@ def bound_vecmul(w: int = 4) -> Graph:
 
 
 def bound_dot1() -> Graph:
-    """dot 1 bound by the checked-in recipe: groups mul and sum in the accelerator dot (D148)."""
-    recipe = Recipe.load(REPO / "recipes" / "dot_1.json")
-    return apply_recipe(recipe, Graph.load(FIXTURES / "dot.snaxdfg"))[-1].graph
+    """dot 1 bound by the checked-in recipe: two accelerators, vmul and vsum (D157)."""
+    return bound_recipe("dot_1", "dot")
+
+
+def bound_dot1_enc() -> Graph:
+    """dot 1 encapsulated (``recipes/dot_1_enc.json``): groups vmul and vsum in the accelerator
+    dot, one streamer set (D148)."""
+    return bound_recipe("dot_1_enc", "dot")
 
 
 def bound_recipe(recipe: str, kernel: str) -> Graph:

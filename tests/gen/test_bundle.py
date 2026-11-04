@@ -140,29 +140,41 @@ def test_the_command(tmp_path, fake, monkeypatch, capsys):
     assert e.value.code == 2
 
 
-def test_dot_1s_bundle_holds_both_groups(tmp_path, fake):
-    """An accelerator of two groups (D148): the bundle's accelerator.json, header and program
-    are gen-gvsoc's; the RTL is elaborated from the same file."""
+def test_dot_1_encs_bundle_holds_both_groups(tmp_path, fake):
+    """An accelerator of two groups (D148, dot_1_enc): the bundle's accelerator.json, header and
+    program are gen-gvsoc's; the RTL is elaborated from the same file."""
+    from .helpers import bound_dot1_enc
+
+    out = tmp_path / "bundle"
+    b, _ = write_bundle(point(tmp_path, name="dot_1_enc", graph=bound_dot1_enc()), out, tmp_path)
+    assert b.tag == "snax_forge_dot_1_enc" and "include/dot_csr.h" in files(out)
+    acc = json.loads((out / "accelerator.json").read_text())
+    assert [g["name"] for a in acc["accelerators"] for g in a["groups"]] == ["vmul", "vsum"]
+    assert b.top == "snax_forge_dot_1_enc_shell_wrapper"
+
+
+def test_dot_1s_bundle_holds_both_accelerators(tmp_path, fake):
+    """dot 1, two accelerators (D157): one shell, a header pair per set."""
     from .helpers import bound_dot1
 
     out = tmp_path / "bundle"
     b, _ = write_bundle(point(tmp_path, name="dot_1", graph=bound_dot1()), out, tmp_path)
-    assert b.tag == "snax_forge_dot_1" and "include/dot_csr.h" in files(out)
-    acc = json.loads((out / "accelerator.json").read_text())
-    assert [g["name"] for a in acc["accelerators"] for g in a["groups"]] == ["mul", "sum"]
     assert b.top == "snax_forge_dot_1_shell_wrapper"
+    assert {"include/vmul_csr.h", "include/vsum_csr.h"} <= set(files(out))
+    assert b.modules["snax_forge_dot_1_ctrl"] == ["snax_forge_dot_1_vmul_ctrl",
+                                                  "snax_forge_dot_1_vsum_ctrl"]  # fmt: skip
 
 
 def test_the_module_tree_names_every_group_unit_and_buffer():
-    """From the description, not Emit (C§18), under the tag: dot 1's two groups and units, and
-    dot_serial's the same over its two accelerators (one shell, D157); a linked group's units
+    """From the description, not Emit (C§18), under the tag: dot_1_enc's two groups and units,
+    and dot_serial's the same over its two accelerators (one shell, D157); a linked group's units
     and its buffer (a wire is no module)."""
     from tests.gen.test_accelerator import dot, dot4, dot_serial
 
-    t = "snax_forge_dot_1"
+    t = "snax_forge_dot_1_enc"
     assert bundle_mod.module_tree(dot()) == {
-        f"{t}_csr": [], f"{t}_ctrl": [f"{t}_mul_ctrl", f"{t}_sum_ctrl"],
-        f"{t}_datapath": [f"{t}_mul", f"{t}_sum"],
+        f"{t}_csr": [], f"{t}_ctrl": [f"{t}_vmul_ctrl", f"{t}_vsum_ctrl"],
+        f"{t}_datapath": [f"{t}_vmul", f"{t}_vsum"],
     }  # fmt: skip
     t = "snax_forge_dot_serial"
     assert bundle_mod.module_tree(dot_serial()) == {

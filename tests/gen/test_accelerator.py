@@ -13,7 +13,15 @@ from snax_forge.gen import Accelerator, Csr, Description, Group, Link, Port, Uni
 from snax_forge.gen.blocks import GenError
 from tests.helpers import bound_vsum
 
-from .helpers import bound_dot1, bound_recipe, one_unit, point, validate, with_groups
+from .helpers import (
+    bound_dot1,
+    bound_dot1_enc,
+    bound_recipe,
+    one_unit,
+    point,
+    validate,
+    with_groups,
+)
 
 
 def own(base: int, rw_units: int) -> list[Csr]:
@@ -22,26 +30,36 @@ def own(base: int, rw_units: int) -> list[Csr]:
             Csr("STATUS", "ro", base + 2 + rw_units, 2), Csr("COUNTER", "ro", base + 3 + rw_units, 32)]  # fmt: skip
 
 
-def mul_sum() -> tuple[Unit, Unit]:
-    """dot 1's units: mul (an ElementwiseLanes unit) and sum (a TreeAccumulate unit with
-    JOB_BEATS at offset 6)."""
-    mul = Unit("mul", "elementwise_mul", "ElementwiseLanes",
+def mul_sum(v: str = "") -> tuple[Unit, Unit]:
+    """dot's units: ``<v>mul`` (an ElementwiseLanes unit) and ``<v>sum`` (a TreeAccumulate unit
+    with JOB_BEATS at offset 6); dot 1's are vmul and vsum, dot_serial's mul and sum."""
+    mul = Unit(f"{v}mul", "elementwise_mul", "ElementwiseLanes",
                {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
                {"op": "mul"}, 0, 1, [],
                "int64")  # fmt: skip
-    total = Unit("sum", "accumulate", "TreeAccumulate",
+    total = Unit(f"{v}sum", "accumulate", "TreeAccumulate",
                  {"a": Port("in", "in", "int64", 4), "out": Port("out", "out", "int64", 1)}, {"op": "add"}, 1, 1,
                  [Csr("JOB_BEATS", "rw", 6, 32)])  # fmt: skip
     return mul, total
 
 
 def dot() -> Description:
-    """dot 1 as C§17's table has it: one accelerator dot (encapsulated, D148), groups mul and
-    sum, in that order."""
-    mul, total = mul_sum()
-    acc = Accelerator("dot", ["mul.a", "mul.b", "sum.a"], ["mul.out", "sum.out"],
-                      [Group("mul", own(0, 0), [mul]), Group("sum", own(4, 1), [total])])  # fmt: skip
-    return Description("out/design/dot_1/design_point.json", "snax_forge_dot_1", [acc])
+    """dot_1_enc as C§17's table has it: one accelerator dot (encapsulated, D148), groups vmul
+    and vsum, in that order."""
+    mul, total = mul_sum("v")
+    acc = Accelerator("dot", ["vmul.a", "vmul.b", "vsum.a"], ["vmul.out", "vsum.out"],
+                      [Group("vmul", own(0, 0), [mul]), Group("vsum", own(4, 1), [total])])  # fmt: skip
+    return Description("out/design/dot_1_enc/design_point.json", "snax_forge_dot_1_enc", [acc])
+
+
+def dot1() -> Description:
+    """dot 1 as C§16's and C§17's tables have it: two accelerators, vmul and vsum, each its
+    streamer set (D157), their CSRs contiguous over the two from offset 0."""
+    mul, total = mul_sum("v")
+    return Description("out/design/dot_1/design_point.json", "snax_forge_dot_1", [
+        Accelerator("vmul", ["vmul.a", "vmul.b"], ["vmul.out"], [Group("vmul", own(0, 0), [mul])]),
+        Accelerator("vsum", ["vsum.a"], ["vsum.out"], [Group("vsum", own(4, 1), [total])]),
+    ])  # fmt: skip
 
 
 def dot_serial() -> Description:
@@ -71,7 +89,7 @@ def dot4() -> Description:
 
 
 def test_the_description_round_trips_and_meets_its_schema():
-    for acc in (one_unit(), one_unit(3), dot(), dot4(), dot_serial()):
+    for acc in (one_unit(), one_unit(3), dot(), dot1(), dot4(), dot_serial()):
         assert Description.from_dict(json.loads(acc.to_json())) == acc
         validate("accelerator", acc.to_dict())
     assert list(dot().to_dict()) == ["design_point", "tag", "accelerators"]
@@ -80,20 +98,21 @@ def test_the_description_round_trips_and_meets_its_schema():
 
 def test_csr_order_and_counts():
     """Per group START, JOBS, the units' R/W, STATUS, COUNTER; rw = Σ_g (2 + Σ_u (f_u + k_u)),
-    ro = 2G (C§17's table: dot 1 is 5, 4)."""
+    ro = 2G (C§17's table: dot_1_enc is 5, 4; dot 1's accelerators 2, 2 and 3, 2)."""
     acc = dot()
     order = [
-        ("mul", "START", 0), ("mul", "JOBS", 1), ("mul", "STATUS", 2), ("mul", "COUNTER", 3),
-        ("sum", "START", 4), ("sum", "JOBS", 5), ("sum", "JOB_BEATS", 6), ("sum", "STATUS", 7),
-        ("sum", "COUNTER", 8),
+        ("vmul", "START", 0), ("vmul", "JOBS", 1), ("vmul", "STATUS", 2), ("vmul", "COUNTER", 3),
+        ("vsum", "START", 4), ("vsum", "JOBS", 5), ("vsum", "JOB_BEATS", 6), ("vsum", "STATUS", 7),
+        ("vsum", "COUNTER", 8),
     ]  # fmt: skip
     assert [(g.name, c.name, c.offset) for g, _, c in acc.csrs()] == order
     (a,) = acc.accelerators
     assert (a.rw, a.ro) == (5, 4)
     # two accelerators: the same offsets, contiguous over both; each its own counts
-    serial = dot_serial()
-    assert [(g.name, c.name, c.offset) for g, _, c in serial.csrs()] == order
-    assert [(a.rw, a.ro) for a in serial.accelerators] == [(2, 2), (3, 2)]
+    for serial in (dot1(), dot_serial()):
+        assert [(g.name.removeprefix("v"), c.name, c.offset) for g, _, c in serial.csrs()] == [
+            (g.removeprefix("v"), n, o) for g, n, o in order]  # fmt: skip
+        assert [(a.rw, a.ro) for a in serial.accelerators] == [(2, 2), (3, 2)]
     (u,) = one_unit().accelerators
     (u1,) = one_unit(1).accelerators
     assert ((u.rw, u.ro), (u1.rw, u1.ro)) == ((2, 2), (3, 2))
@@ -105,11 +124,12 @@ def test_one_helper_names_every_csr():
     assert one_unit(1).defines() == {"ACC_RW_START": 0, "ACC_RW_JOBS": 1, "ACC_RW_F0": 2,
                                      "ACC_RO_STATUS": 3, "ACC_RO_COUNTER": 4}  # fmt: skip
     acc = dot()
-    assert acc.find("mul", "START") == "DOT_RW_MUL_START"
-    assert acc.find("sum", "JOB_BEATS") == "DOT_RW_SUM_JOB_BEATS"
-    assert acc.find("sum", "COUNTER") == "DOT_RO_SUM_COUNTER"
+    assert acc.find("vmul", "START") == "DOT_RW_VMUL_START"
+    assert acc.find("vsum", "JOB_BEATS") == "DOT_RW_VSUM_JOB_BEATS"
+    assert acc.find("vsum", "COUNTER") == "DOT_RO_VSUM_COUNTER"
     with pytest.raises(KeyError):
-        acc.find("mul", "JOB_BEATS")  # the fold's CSR is the sum group's
+        acc.find("vmul", "JOB_BEATS")  # the fold's CSR is the sum group's
+    assert dot1().find("vsum", "JOB_BEATS") == "VSUM_RW_JOB_BEATS"  # C§17's dot 1
     # a one-group accelerator has no group part: each its own name (D157)
     assert dot_serial().defines() == {
         "MUL_RW_START": 0, "MUL_RW_JOBS": 1, "MUL_RO_STATUS": 2, "MUL_RO_COUNTER": 3,
@@ -265,20 +285,32 @@ def test_a_span_unit_reads_from_a_link_until_b2():
     assert e.value.code == "gen.span" and "until B2" in str(e.value)
 
 
-def test_dot_1_is_one_accelerator_of_two_groups(tmp_path):
-    """dot 1 (encapsulate, D148): one accelerator dot, its two groups mul and sum, one streamer
-    set: its inputs and outputs every unlinked port, group by group; offsets 0 to 8; the tag the
-    entry's name (D131, D157)."""
+def test_dot_1_enc_is_one_accelerator_of_two_groups(tmp_path):
+    """dot_1_enc (encapsulate, D148): one accelerator dot, its two groups vmul and vsum, one
+    streamer set: its inputs and outputs every unlinked port, group by group; offsets 0 to 8;
+    the tag the entry's name (D131, D157)."""
+    from snax_forge.design import DesignPoint
+
+    graph = bound_dot1_enc()
+    desc = describe(DesignPoint.load(point(tmp_path, name="dot_1_enc", graph=graph)), "p")
+    assert desc.tag == "snax_forge_dot_1_enc"
+    (acc,) = desc.accelerators
+    assert (acc.name, acc.inputs, acc.outputs) == ("dot", ["vmul.a", "vmul.b", "vsum.a"],
+                                                   ["vmul.out", "vsum.out"])  # fmt: skip
+    assert [g.name for g in acc.groups] == ["vmul", "vsum"]
+    assert [c.offset for _, _, c in desc.csrs()] == list(range(9))
+    assert desc.find("vsum", "JOB_BEATS") == "DOT_RW_VSUM_JOB_BEATS"
+    assert replace(desc, design_point=dot().design_point) == dot()
+    validate("accelerator", desc.to_dict())
+
+
+def test_dot_1_is_two_accelerators(tmp_path):
+    """dot 1 (no encapsulate, F2b): two accelerators vmul and vsum, each one group and one
+    streamer set, C§16's and C§17's tables (offsets 0 to 8 over the two)."""
     from snax_forge.design import DesignPoint
 
     desc = describe(DesignPoint.load(point(tmp_path, name="dot_1", graph=bound_dot1())), "p")
-    assert desc.tag == "snax_forge_dot_1"
-    (acc,) = desc.accelerators
-    assert (acc.name, acc.inputs, acc.outputs) == ("dot", ["mul.a", "mul.b", "sum.a"],
-                                                   ["mul.out", "sum.out"])  # fmt: skip
-    assert [g.name for g in acc.groups] == ["mul", "sum"]
-    assert [c.offset for _, _, c in desc.csrs()] == list(range(9))
-    assert desc.find("sum", "JOB_BEATS") == "DOT_RW_SUM_JOB_BEATS"
+    assert replace(desc, design_point=dot1().design_point) == dot1()
     validate("accelerator", desc.to_dict())
 
 

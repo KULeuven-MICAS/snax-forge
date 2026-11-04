@@ -293,10 +293,10 @@ def test_job_values():
 
 
 def dot1_text(tmp_path) -> str:
-    """dot 1's main.c: groups mul and sum in the accelerator dot (D148)."""
-    from tests.gen.helpers import bound_dot1
+    """dot_1_enc's main.c: groups vmul and vsum in the accelerator dot (D148)."""
+    from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
     return main_c(p, tasks, cluster, acc, arrays, ["data.h", "dot_csr.h", STREAMER], POINT)
 
 
@@ -311,14 +311,14 @@ def test_dot_1_runs_each_group_with_its_own_csrs(tmp_path):
     acc = [x for x in core if "_RW_" in x or "_RO_" in x or "STREAMER_" in x
            or x.startswith("forge_counter")]  # fmt: skip
     assert acc == [
-        "csrw_ss(DOT_RW_MUL_JOBS, 16);",
-        "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_MUL_START, 1);",
-        "csrw_ss(DOT_RW_SUM_JOBS, 1);", "csrw_ss(DOT_RW_SUM_JOB_BEATS, 16);",
-        "while (csrr_ss(DOT_RO_MUL_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
-        "forge_counter[0] = csrr_ss(DOT_RO_MUL_COUNTER);",
-        "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_SUM_START, 1);",
-        "while (csrr_ss(DOT_RO_SUM_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
-        "forge_counter[1] = csrr_ss(DOT_RO_SUM_COUNTER);",
+        "csrw_ss(DOT_RW_VMUL_JOBS, 16);",
+        "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_VMUL_START, 1);",
+        "csrw_ss(DOT_RW_VSUM_JOBS, 1);", "csrw_ss(DOT_RW_VSUM_JOB_BEATS, 16);",
+        "while (csrr_ss(DOT_RO_VMUL_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
+        "forge_counter[0] = csrr_ss(DOT_RO_VMUL_COUNTER);",
+        "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_VSUM_START, 1);",
+        "while (csrr_ss(DOT_RO_VSUM_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
+        "forge_counter[1] = csrr_ss(DOT_RO_VSUM_COUNTER);",
     ]  # fmt: skip
     bounds = [x for x in core if x.startswith("csrw_ss(DOT_T_BOUND_")]
     assert bounds == [
@@ -333,38 +333,38 @@ def test_dot_1_runs_each_group_with_its_own_csrs(tmp_path):
 
 def test_dot_1_checks_both_counters(tmp_path):
     check = functions(dot1_text(tmp_path))["forge_check"]
-    assert 'printf("forge counter mult_mul: %u\\n", forge_counter[0]);' in check
-    assert 'printf("forge counter sum_sum: %u\\n", forge_counter[1]);' in check
+    assert 'printf("forge counter mult_vmul: %u\\n", forge_counter[0]);' in check
+    assert 'printf("forge counter sum_vsum: %u\\n", forge_counter[1]);' in check
 
 
 def test_refused_a_start_without_the_idle_movers(tmp_path):
-    from tests.gen.helpers import bound_dot1
+    from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
     d = tasks.to_dict()
     for s in d["steps"]:
-        if s["op"] == "start" and "mult_mul" in s["tasks"]:
-            s["tasks"] = [t for t in s["tasks"] if not t.startswith("mult_sum")]
-    d["steps"] = [s for s in d["steps"] if s.get("task_name", "").startswith("mult_sum") is False]
+        if s["op"] == "start" and "mult_vmul" in s["tasks"]:
+            s["tasks"] = [t for t in s["tasks"] if not t.startswith("mult_vsum")]
+    d["steps"] = [s for s in d["steps"] if s.get("task_name", "").startswith("mult_vsum") is False]
     with pytest.raises(CError, match=r"\[c.start\] .*the other groups' idle at bound 0"):
         main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
 
 
 def test_refused_an_idle_mover_at_stride_0(tmp_path):
     """An idle mover starts anyway when its first temporal stride is 0 (Reader.scala)."""
-    from tests.gen.helpers import bound_dot1
+    from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
     d = tasks.to_dict()
     for s in d["steps"]:
-        if s.get("task_name") == "mult_sum_a":
+        if s.get("task_name") == "mult_vsum_a":
             s["values"]["temporal_strides"] = [0]
-    with pytest.raises(CError, match=r"\[c.idle\] mult_sum_a: an idle mover"):
+    with pytest.raises(CError, match=r"\[c.idle\] mult_vsum_a: an idle mover"):
         main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
 
 
 def test_an_idle_mover_outside_an_encapsulated_set_is_refused(tmp_path):
-    """c.idle's stride check is an encapsulated set's (dot 1, above); in a set of one group an
+    """c.idle's stride check is an encapsulated set's (dot_1_enc, above); in a set of one group an
     idle mover is no other group's, so the start is refused (c.start), whatever its stride."""
     from tests.gen.helpers import bound_recipe
 
@@ -392,13 +392,12 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
     acc_lines = [x for x in core if "START" in x or "STATUS" in x or "BUSY" in x
                  or x.startswith("forge_counter") or x == BARRIER]  # fmt: skip
     # mul: its set's streamers, its CSRs, its streamer start, START; sum the same once the
-    # serial sync (D158) has waited for mul, its counter read there; then the data wait on
-    # mul's writer, mul's set again
+    # serial sync (D158), the one wait between them, has waited for mul (its writer too, waits.py)
+    # and read its counter
     assert acc_lines == [
         BARRIER, "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
         "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
         "forge_counter[0] = csrr_ss(MUL_RO_COUNTER);", BARRIER,
-        "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
         "csrw_ss(SUM_STREAMER_START_CSR, 1);", "csrw_ss(SUM_RW_START, 1);",
         "while (csrr_ss(SUM_RO_STATUS) & 1) {", "while (csrr_ss(SUM_STREAMER_BUSY_CSR)) {",
         "forge_counter[1] = csrr_ss(SUM_RO_COUNTER);", BARRIER, BARRIER,

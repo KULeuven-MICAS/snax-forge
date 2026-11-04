@@ -87,8 +87,9 @@ def test_l1_accesses_cost_4_e_load_per_bit_per_accelerator():
     assert f"{1000 * fifteen.energy_nj / fifteen.words:.2f}" == "1.41"
     assert estimated("vecadd_i32").l1_words == {"acc": 96}
     assert estimated("vsum_tree_i8").l1_words == {"acc": 9}
-    one, two = (estimated(r, W=8, N=2048).l1_words for r in ("dot_1", "dot_2"))
-    assert (one, two) == ({"dot": 8193}, {"dot": 4097})
+    one, enc, two = (estimated(r, W=8, N=2048).l1_words for r in ("dot_1", "dot_1_enc", "dot_2"))
+    # per accelerator: dot 1's two, dot_1_enc's one (the same words), dot 2's link keeps tmp0 out
+    assert (one, enc, two) == ({"vmul": 6144, "vsum": 2049}, {"dot": 8193}, {"dot": 4097})
 
 
 def test_the_estimate_lists_what_is_not_characterized():

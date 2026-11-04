@@ -1,9 +1,10 @@
 """dot through SNAX-SANDBOX: a multiplier and an accumulator bound in one recipe.
 
 Accepted when ``recipes/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at its
-last bind (the multiply map bound to elementwise_mul, the sum map to
-accumulate, each step passing the reference check), then puts both groups
-into the accelerator ``dot`` (D148), and the bound graph equals ``np.dot``; the
+last bind, the fixture's instances ``mul`` and ``sum`` named ``vmul`` and ``vsum``
+(the multiply map bound to elementwise_mul, the sum map to accumulate, each step
+passing the reference check), ``recipes/dot_1_enc.json`` the same and then both
+groups in the accelerator ``dot`` (D148), and the bound graph equals ``np.dot``; the
 accumulate binding with one lane (the Chisel Accumulator) works as well, the
 reduce matcher rejects every mismatch by name, and unbind and join_map take
 dot back to the imported graph.
@@ -32,6 +33,7 @@ from tests.helpers import graph_dict
 from .helpers import FIXTURES, REPO, graph
 
 RECIPE = REPO / "recipes" / "dot_1.json"
+ENC = REPO / "recipes" / "dot_1_enc.json"
 MUL = {
     "node": "mult",
     "brm": "elementwise_mul",
@@ -64,6 +66,8 @@ def split_sum(w: int = 4) -> Graph:
 
 
 def test_the_dot_recipe_gives_the_fixture():
+    """dot 1 ends at its second bind, two accelerators vmul and vsum: the fixture, its instances
+    renamed."""
     results = apply_recipe(Recipe.load(RECIPE), graph("dot"))
     assert [r.file_name for r in results] == [
         "0_input.snaxdfg",
@@ -71,12 +75,25 @@ def test_the_dot_recipe_gives_the_fixture():
         "2_bind.snaxdfg",
         "3_split_map.snaxdfg",
         "4_bind.snaxdfg",
-        "5_encapsulate.snaxdfg",
     ]
-    assert results[-2].graph.to_json() == (FIXTURES / "dot_accelerated.snaxdfg").read_text()
+    fixture = (FIXTURES / "dot_accelerated.snaxdfg").read_text()
+    renamed = fixture.replace('"instance": "mul"', '"instance": "vmul"').replace(
+        '"instance": "sum"', '"instance": "vsum"'
+    )
+    assert renamed != fixture and results[-1].graph.to_json() == renamed
+
+
+def test_the_dot_1_enc_recipe_encapsulates_dot_1():
+    """dot_1_enc: dot 1's steps, then both groups in the accelerator dot; unencapsulate takes it
+    back to dot 1's last graph."""
+    plain = apply_recipe(Recipe.load(RECIPE), graph("dot"))
+    results = apply_recipe(Recipe.load(ENC), graph("dot"))
+    assert [r.file_name for r in results] == [*(r.file_name for r in plain),
+                                              "5_encapsulate.snaxdfg"]  # fmt: skip
+    assert results[-2].graph.to_json() == plain[-1].graph.to_json()
     last = results[-1].graph
     assert [last.node(n).attrs["accelerator"] for n in ("mult", "sum")] == ["dot", "dot"]
-    assert unencapsulate(last, "dot").to_json() == results[-2].graph.to_json()
+    assert unencapsulate(last, "dot").to_json() == plain[-1].graph.to_json()
 
 
 def test_the_bound_dot_equals_np_dot():
