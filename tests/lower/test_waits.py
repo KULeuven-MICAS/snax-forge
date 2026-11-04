@@ -133,8 +133,9 @@ def test_the_writer_covers_only_tasks_started_with_it():
 
 
 def test_upstream_follows_the_streamers_instance_and_write_flag():
-    assert upstream(vecadd_point()) == {"acc": ["acc_a", "acc_b"], "acc_out": ["acc"]}
-    assert upstream(vsum_point()) == {"acc": ["acc_a"], "acc_out": ["acc"]}
+    """A writer covers its unit; a unit its readers, then its writers (its set's busy, F2b)."""
+    assert upstream(vecadd_point()) == {"acc": ["acc_a", "acc_b", "acc_out"], "acc_out": ["acc"]}
+    assert upstream(vsum_point()) == {"acc": ["acc_a", "acc_out"], "acc_out": ["acc"]}
 
 
 # =============================================================================
