@@ -83,7 +83,14 @@ h3 { margin: 1.1rem 0 0.4rem; font-size: 1rem; }
 .note { margin: 0.15rem 0 0.8rem; color: var(--muted); }
 p.note { max-width: 110ch; }
 .block + .block { margin-top: 1.2rem; }
-.scroll { overflow-x: auto; }
+.scroll { overflow-x: auto; max-width: 100%; }
+/* the cluster view scrolls sideways in its own box, never the page (#18) */
+.cluster, .cluster .scroll { min-width: 0; max-width: 100%; }
+/* an accelerator's movers per group (C§7): a collapsible in the report */
+details.group-movers { margin: 0.6rem 0 0; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); }
+details.group-movers > summary { cursor: pointer; padding: 0.3rem 0.6rem; font-weight: 600; }
+details.group-movers[open] > summary { border-bottom: 1px solid var(--rule); }
+details.group-movers > .scroll { margin: 0.4rem 0.6rem 0.6rem; max-width: calc(100% - 1.2rem); }
 
 /* colour groups of the cycle classes */
 .g-busy { background: var(--busy); }
@@ -207,6 +214,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .refold rect { fill: var(--panel); stroke: var(--rule); }
 .refold:hover rect { stroke: var(--command); }
 i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--rule); }
+i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--ink) 45%, transparent); } /* the dashed idle bar */
 .cursor { fill: var(--command); fill-opacity: 0.18; stroke: var(--command); stroke-width: 1; pointer-events: none; }
 
 .cycle-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
@@ -425,8 +433,13 @@ table.c-cols tr.differs td, table.c-cols tr.differs th { background: var(--req-b
 /* the cost table (dfg.js's costTable): one per accelerator, the total last */
 table.c-cost-table { width: 100%; border-collapse: collapse; margin: 0.35rem 0 0.5rem; font-size: 0.9em; }
 table.c-cost-table caption { text-align: left; font-weight: 600; padding-bottom: 0.15rem; }
-table.c-cost-table th, table.c-cost-table td { padding: 0.08rem 0.3rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-table.c-cost-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.c-cost-table th, table.c-cost-table td { padding: 0.08rem 0.3rem; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+table.c-cost-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.c-cost-table tr.differs .num { white-space: normal; } /* Compare's before → after wraps at the arrow */
+.c-cost-wrap { max-width: 100%; overflow-x: auto; } /* the fallback: the table scrolls inside the panel */
+table.c-cost-table tr.placeholder th, table.c-cost-table tr.placeholder td { color: var(--muted); font-style: italic; }
+.c-cost-dp { font-size: 0.86em; color: var(--muted); }
+.c-cost-tag { font-size: 0.82em; font-style: normal; padding: 0 0.25rem; border: 1px solid var(--rule); border-radius: 3px; }
 table.c-cost-table thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--rule); }
 table.c-cost-table tbody th { font-weight: 400; }
 table.c-cost-table tr.total th, table.c-cost-table tr.total td { border-top: 1px solid var(--rule); font-weight: 600; }

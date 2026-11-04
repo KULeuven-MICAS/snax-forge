@@ -551,19 +551,30 @@ function hoverGroup(name, on) {
   for (const el of document.querySelectorAll(`#graphs [data-group="${CSS.escape(name)}"]`)) el.classList.toggle("hover", on);
 }
 
-const COST_COLUMNS = [["block", "block"], ["datapath", "datapath"], ["area_text", "area (µm²)"],
-  ["energy_text", "energy (nJ)"], ["share_text", "share"]];
+// short labels, so the table fits the right panel at 1280 px (R3): the datapath under the block
+// in one cell, the numbers right-aligned; the units in each heading's title
+const COST_COLUMNS = [["block", "block · datapath", "the unit, buffer link, control unit or L1 accesses, its datapath under it"],
+  ["area_text", "µm²", "area, µm² (3 significant figures)"],
+  ["energy_text", "nJ", "energy per run, nJ (3 decimals)"], ["share_text", "share", "share of the accelerator's energy"]];
 
 /** One accelerator's cost table (api.py's cost_tables, or compare_cost_tables' before → after
-cells): a row per unit, buffer link and control unit, then the total. */
+cells): a row per unit, buffer link and control unit, the L1 accesses, then the total. */
 function costTable(t) {
-  const num = (key) => key !== "block" && key !== "datapath";
-  const tr = (r, cls) => h("tr", { class: [cls, r.differs ? "differs" : null, r.found === false ? "missing" : null].filter(Boolean).join(" ") || null },
-    COST_COLUMNS.map(([key]) => h(key === "block" ? "th" : "td", { class: num(key) ? "num" : null, scope: key === "block" ? "row" : null }, r[key])));
-  return h("table", { class: "c-cost-table" },
+  const num = (key) => key !== "block";
+  // the L1 accesses' row is a placeholder (D154): muted, a short label, the full one as its title
+  const l1 = (r) => r.kind === "l1" || String(r.block).startsWith("L1 accesses");
+  const cell = (r, key) => {
+    if (key !== "block") return r[key];
+    const name = l1(r) ? [h("span", {}, "L1 accesses"), " ", h("span", { class: "c-cost-tag" }, "placeholder")] : r.block;
+    return [h("div", {}, name), r.datapath ? h("div", { class: "c-cost-dp" }, r.datapath) : null];
+  };
+  const tr = (r, cls) => h("tr", { class: [cls, r.differs ? "differs" : null, r.found === false ? "missing" : null, l1(r) ? "placeholder" : null].filter(Boolean).join(" ") || null,
+    title: l1(r) ? String(r.block) : null },
+  COST_COLUMNS.map(([key]) => h(key === "block" ? "th" : "td", { class: num(key) ? "num" : null, scope: key === "block" ? "row" : null }, cell(r, key))));
+  return h("div", { class: "c-cost-wrap" }, h("table", { class: "c-cost-table" },
     h("caption", {}, t.accelerator),
-    h("thead", {}, h("tr", {}, COST_COLUMNS.map(([key, label]) => h("th", { scope: "col", class: num(key) ? "num" : null }, label)))),
-    h("tbody", {}, t.rows.map((r) => tr(r, null)), tr(t.total, "total")));
+    h("thead", {}, h("tr", {}, COST_COLUMNS.map(([key, label, title]) => h("th", { scope: "col", class: num(key) ? "num" : null, title }, label)))),
+    h("tbody", {}, t.rows.map((r) => tr(r, null)), tr(t.total, "total"))));
 }
 
 async function estimate() {

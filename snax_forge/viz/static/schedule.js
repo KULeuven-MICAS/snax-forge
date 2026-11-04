@@ -558,7 +558,9 @@ export async function renderSchedule(root, detail, ctx) {
   const legend = h("ul", { class: "legend" },
     [["busy", "Busy, run, fire, push, read data back (strip)"], ["req", "Request (accepted), DMA copy"], ["mem", "Memory stall, refused"], ["flow", "Flow stall"], ["command", "Barrier"], ["wait", "Poll"], ["fifo", "FIFO count"]]
       .map(([g, label]) => h("li", {}, h("i", { class: `key g-${g}` }), label)),
-    h("li", {}, h("i", { class: "key fold-key" }), "Folded (fixed width)"));
+    h("li", {}, h("i", { class: "key fold-key" }), "Folded (fixed width)"),
+    h("li", { title: "a mover's task with every temporal bound 0, started with another group's task (D148): it moves nothing" },
+      h("i", { class: "key idle-key" }), "idle (shared start)"));
   const controls = h("div", { class: "sched-controls" },
     h("button", { type: "button", onclick: () => zoom(1 / 1.5), "aria-label": "Zoom out" }, "−"),
     h("button", { type: "button", onclick: () => zoom(1.5), "aria-label": "Zoom in" }, "+"),
