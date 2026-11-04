@@ -85,9 +85,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from snax_forge.lower.tasks import Configure, Start, TaskList
+from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, core_counts, core_spans
-from snax_forge.run.beats import class_runs, run_end
+from snax_forge.run.beats import class_runs, pairing, run_end
 from snax_forge.run.cluster import DMA
 from snax_forge.run.trace import LEVELS, at_least
 
@@ -319,42 +319,6 @@ def _line(e: Event) -> str:
     """A trace line as a refusal names it."""
     ids = {k: e[k] for k in ("task", "n", "b", "id", "i", "first", "last") if k in e}
     return f"(t {e['t']} {e['k']} {e['src']} {ids})"
-
-
-def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
-    """Per accelerator task, the streamer task of each of its movers, from the start step
-    that launches them together (module doc)."""
-    acc = cluster.accelerator
-    movers = [m.name for m in acc.movers]
-    conf = {s.task_name: s for s in tasks.steps if isinstance(s, Configure)}
-    out: dict[str, dict[str, str]] = {}
-    for s in tasks.steps:
-        if not isinstance(s, Start):
-            continue
-        launched = [conf[t] for t in s.tasks if t in conf]
-        mine = [c.task_name for c in launched
-                if c.type == "accel" and c.component in acc.unit_names]  # fmt: skip
-        if not mine:
-            continue
-        what = f"{tasks.name}: start {s.tasks}"
-        if len(mine) > 1:
-            raise RunError("index.tasks", f"{what} launches {len(mine)} tasks of {acc.name} "
-                           f"({mine})")  # fmt: skip
-        by: dict[str, list[str]] = {}
-        for c in launched:
-            if c.type != "streamer":
-                continue
-            if c.component not in movers:
-                raise RunError("index.tasks", f"{what}: streamer task {c.task_name!r} is on "
-                               f"{c.component}, no mover of {acc.name} ({movers})")  # fmt: skip
-            by.setdefault(c.component, []).append(c.task_name)
-        for m in movers:
-            if len(by.get(m, [])) != 1:
-                have = by.get(m, [])
-                raise RunError("index.tasks", f"{what}: accelerator task {mine[0]!r} has "
-                               f"{len(have)} streamer tasks for {m} ({have}), one expected")  # fmt: skip
-        out[mine[0]] = {m: by[m][0] for m in movers}
-    return out
 
 
 # =============================================================================

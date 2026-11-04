@@ -9,8 +9,10 @@ design point's (regions.py) and ``filter`` the sources whose beat lines the run 
 (sources.py). Nothing is recounted: the profile is the ``summary`` lines renamed, the trace
 the ``events`` lines renamed and cut, and above ``task`` the ``beats``, ``stalls`` and
 ``insn`` lines too (beats.py); the beat lines only feed the trace. Above ``task`` an
-accelerator of several groups, or of a linked group, is a RunError (``convert.level``): their
-beat lines are not read yet (open item 96).
+accelerator of several groups each of one unit (dot 1's ``mul`` and ``sum``) is read unit by
+unit, each beat line under its unit and each streamer line under the task launched with its
+unit's (beats.py's ``pairing``); a group of several linked units is a RunError
+(``convert.level``): its beat lines are not read yet (open item 96).
 
 **Names.** A line's component path becomes a C§7 name: ``snax_acc<i>/unit`` the accelerator's
 unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (D148, ``mul``, ``sum``;
@@ -78,7 +80,7 @@ from typing import Any
 
 from snax_forge.lower.tasks import TaskList
 
-from .beats import Context, beat_events, beat_invariants
+from .beats import Context, beat_events, beat_invariants, pairing
 from .cluster import DMA, Cluster, core_name, linked
 from .cores import core_counts, core_spans, merge_spans, start_mode
 from .events import Line, RunError
@@ -470,11 +472,9 @@ def convert(
     filter: list[str] | None = None,
 ) -> tuple[Profile, Trace | None]:
     """The profile and, above ``off``, the trace of a run (module doc)."""
-    if at_least(level, "beat") and (len(cluster.accelerator.units) != 1
-                                    or linked(cluster.accelerator.description)):  # fmt: skip
-        raise RunError("convert.level", f"trace {level}: the beat lines of an accelerator of "
-                       f"{len(cluster.accelerator.units)} groups or of a linked group are not "
-                       "read yet (open item 96); task and off are")  # fmt: skip
+    if at_least(level, "beat") and linked(cluster.accelerator.description):
+        raise RunError("convert.level", f"trace {level}: the beat lines of a group of several "
+                       "linked units are not read yet (open item 96); task and off are")  # fmt: skip
     named = [(source_of(x, cluster), x) for x in lines]
     profile = profile_of(named, cluster, total_cycles, functional_check)
     if level == "off":
@@ -484,7 +484,7 @@ def convert(
     ctx = None
     if at_least(level, "beat"):
         ctx = Context(cluster, list(regions or []), boot, total_cycles, level, list(filter or []),
-                      [e for _, _, e in triples], named)  # fmt: skip
+                      [e for _, _, e in triples], named, pairing(tasks, cluster))  # fmt: skip
         triples = sorted(triples + beat_events(named, ctx), key=lambda x: (x[0], x[1]))
     events = [e for _, _, e in triples]
     for core in cluster.cores:
