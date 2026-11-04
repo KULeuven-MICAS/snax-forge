@@ -1,6 +1,6 @@
 # Dry run 2: dot 1, two accelerators through L1
 
-A snapshot of 4 Nov 2026 (snax-forge `ry/dry1-2` at `dry1-2-r4`, every command run on its code at `0575835`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
+A snapshot of 4 Nov 2026 (snax-forge `ry/dry1-2` at `dry1-2-r5`: sections 1 and 2 rerun through the editor's API on its code at `0192369`, the other commands on `0575835`, R4's, whose numbers R5 does not change; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
 
 dot is $\mathit{out} = \sum_i A_i \cdot B_i$ over N int64 elements (`kernels/polybench/dot.py`). dot 1 is its plainest hardware: a multiplier writes the N products to a transient `tmp0` in L1, then an adder tree reads them back and sums them. These are two groups, that is two stand-alone accelerators, each with its own START, JOBS, STATUS, COUNTER and control unit, put behind one shell because the platform has one accelerator slot (D148). The core drives them one after the other; the sum could run without the multiply. dot 2 to 6 instead join the two units in one group with a link.
 
@@ -31,14 +31,14 @@ Under the Estimate, the design checks (Save's, run on every step) list two notes
 | 5 | `sum_map` | `split`, factor `W`, 8 | `sum_map` runs `i_3` over 256 around `sum_map_inner` running `i_4` over 8 |
 | 6 | `sum_map` | `tag_map`, `temporal` | |
 | 7 | `sum_map_inner` | `tag_map`, `spatial` | |
-| 8 | `sum` | `bind`, `accumulate / chisel_adder_tree`, instance `acc_2` | `C 256 → 513 · unmapped 2048 → 0 · renamed W → W_acc_2`; one note: `before Save: encapsulate acc_1, acc_2 into one accelerator` (`gen.instances`) |
-| 9 | `acc_1` | `encapsulate`, accelerator `dot`, units `acc_1` and `acc_2` (both ticked) | 0 problems, 0 notes |
+| 8 | `sum` | `bind`, `accumulate / chisel_adder_tree`, instance `acc_2` | `C 256 → 513 · unmapped 2048 → 0 · renamed W → W_acc_2`; one note: `before Save: shift-click the outlines of acc_1 and acc_2 and apply encapsulate` (`gen.instances`) |
+| 9 | the dashed outlines of `acc_1` and `acc_2`, the second with shift-click (the sidebar reads `2 selected: group acc_1, group acc_2`) | `encapsulate`, accelerator `dot`, units `acc_1` and `acc_2` (both ticked); one unit's box selects only that unit, and only it is ticked | 0 problems, 0 notes |
 
 Each split gets a param of its own. The factor field reads `W` both times, since the first `W` was renamed on its bind: a param the editor named and only one unit uses takes that unit's instance name, `W_acc_1` and `W_acc_2`, and instances are numbered by bind order (D156). The second split takes the next free pair of loop names, `i_3` and `i_4` (D73). The unit boxes read `acc_1 · a * b · W_acc_1 8` and `acc_2 · fold + · W_acc_2 8`, and Details give `mult_map`'s range as `0:N // W_acc_1 = 256`.
 
 At step 8 the bind list offers two implementations: `chisel_adder_tree` (latency 1, II 1, span 1: the 8 lanes summed in one beat) and `chisel_serial` (span 8: one lane a cycle). `chisel_accumulator` is refused at W = 8 (it takes one lane), `mac` needs `split_reduce` first (D150), and both element-wise patterns are refused (`'out = in1' is not one operator over distinct inputs`).
 
-Step 9 is needed because the platform has one slot: two bound units are two accelerators, and Save at step 8 refuses with `gen.instances` unless they are put behind one shell. Bindings then reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · elementwise_mul · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`, each param editable in place.
+Step 9 is needed because the platform has one slot: two bound units are two accelerators, and Save at step 8 refuses with `gen.instances` unless they are put behind one shell. Each group is drawn with a dashed outline; a click on one selects it, shift-click adds or removes an item, Esc clears the selection, and the sidebar lists what the selection as a whole offers: the two outlines offer only `encapsulate`, and every one-item transform is under "Not here" with `takes one selection, not 2`. After step 9 a click on the accelerator's outline, `dot`, offers `unencapsulate`, which puts each group behind its own shell again. Bindings then reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · elementwise_mul · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`, each param editable in place.
 
 The Estimate after step 9:
 
