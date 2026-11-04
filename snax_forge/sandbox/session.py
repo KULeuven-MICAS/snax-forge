@@ -789,8 +789,8 @@ BEFORE_SAVE = ("graph.unbound", "gen.instances")
 
 def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]]]:
     """Save's design checks on ``g`` (``Session.checks``): ``problems`` and ``notes``, each
-    ``{code, where, message, fix}``. ``graph.unbound`` and ``gen.instances`` are "before Save"
-    notes, not problems, and the design notes (check.py's ``NOTES``, ``char.missing``) are
+    ``{code, where, message, fix, before_save}``. ``graph.unbound`` and ``gen.instances`` are
+    "before Save" notes (``before_save`` true), not problems, and the design notes (check.py's ``NOTES``, ``char.missing``) are
     listed whatever else is wrong, each one that cannot read the graph left out (D156)."""
     from snax_forge.design.check import NOTES
 
@@ -798,7 +798,8 @@ def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]
     found = run_checks(design)
     problems, notes = [], []
     for p in found:
-        d = {"code": p.code, "where": p.where, "message": p.message, "fix": p.fix}
+        d = {"code": p.code, "where": p.where, "message": p.message, "fix": p.fix,
+             "before_save": p.code in BEFORE_SAVE}  # fmt: skip
         if p.code == "gen.instances":
             units = [u for us in accelerators_of(g).values() for u in us]
             d["message"] = (f"before Save: encapsulate {', '.join(units)} into one accelerator "
@@ -811,8 +812,8 @@ def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]
             problems.append(d)
     for fn in NOTES.values():
         try:
-            notes += [{"code": p.code, "where": p.where, "message": p.message, "fix": p.fix}
-                      for p in fn(design)]  # fmt: skip
+            notes += [{"code": p.code, "where": p.where, "message": p.message, "fix": p.fix,
+                       "before_save": False} for p in fn(design)]  # fmt: skip
         except (ValueError, KeyError, TypeError, AttributeError):  # a graph a note cannot read
             continue
     return {"problems": problems, "notes": notes}

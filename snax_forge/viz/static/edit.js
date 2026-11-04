@@ -31,8 +31,27 @@ async function get(url) {
 export function log(line, error = false) {
   if (!line) return;
   const list = $("log-lines");
-  list.append(h("li", { class: error ? "error" : null }, line));
+  list.append(h("li", { class: error ? "error" : null }, linked(line)));
   list.scrollTop = list.scrollHeight;
+}
+
+/** A log line with its design checks' counts (``1 problem``, ``2 notes``, D156) as links to
+ * the list under the Estimate. */
+function linked(line) {
+  const parts = [];
+  let at = 0;
+  for (const m of line.matchAll(/\b(\d+) (problems?|notes?)\b/g)) {
+    parts.push(line.slice(at, m.index));
+    const target = m[2].startsWith("problem") ? "checks-problems" : "checks-notes";
+    parts.push(h("a", { href: `#${target}`, class: "log-check", onclick: (ev) => {
+      ev.preventDefault();
+      const el = $(target) || $("checks");
+      if (el) el.scrollIntoView({ block: "nearest" });
+    } }, m[0]));
+    at = m.index + m[0].length;
+  }
+  parts.push(line.slice(at));
+  return parts;
 }
 
 // The pane's height: dragged on its handle between three lines and 70% of the window (the

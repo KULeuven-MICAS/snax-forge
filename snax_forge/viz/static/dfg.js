@@ -601,10 +601,19 @@ async function estimate() {
     ...(c.tables || []).map(costTable),
     h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
   ] : [];
-  // edit mode: Save's design checks on this step (D156), plainly; R3 styles them
-  const checks = [...(b.problems || []).map((p) => ["problem", p]), ...(b.notes || []).map((p) => ["note", p])]
-    .map(([kind, p]) => h("p", { class: `c-est-line c-check-${kind}`, title: p.fix || "" },
-      `${kind} [${p.code}] ${p.where}: ${p.message}`));
+  // edit mode: Save's design checks on this step (D156): the problems first, then the notes,
+  // a "before Save" one tagged so (its message's own prefix dropped); the log's counts link here
+  const check = (kind, p) => h("li", { class: `c-check ${kind}${p.before_save ? " before-save" : ""}` },
+    h("div", { class: "c-check-head" },
+      p.before_save ? h("span", { class: "c-check-tag" }, "before Save") : null,
+      h("b", { class: "mono" }, `[${p.code}]`), " ", h("span", { class: "mono" }, p.where)),
+    h("div", {}, p.before_save ? p.message.replace(/^before Save: /, "") : p.message),
+    p.fix ? h("div", { class: "c-check-fix" }, h("span", { class: "muted" }, "fix: "), h("span", { class: "mono" }, p.fix)) : null);
+  const problems = b.problems || [], notes = b.notes || [];
+  const checks = state.mode === "edit" && b.problems !== undefined ? [h("div", { id: "checks", class: "c-checks" },
+    h("p", { class: "c-est-head" }, h("b", {}, "Design checks"), ` (Save's): ${problems.length} problem${problems.length === 1 ? "" : "s"}, ${notes.length} note${notes.length === 1 ? "" : "s"}`),
+    problems.length ? h("ul", { id: "checks-problems", class: "c-check-list" }, problems.map((p) => check("problem", p))) : null,
+    notes.length ? h("ul", { id: "checks-notes", class: "c-check-list" }, notes.map((p) => check("note", p))) : null)] : [];
   const l1 = s.l1;
   const l1Text = l1.size ? `${l1.footprint_text} of ${l1.size_text} (${l1.share_text})` : l1.footprint_text;
   box.replaceChildren(...[

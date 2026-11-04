@@ -208,7 +208,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         (p,) = three["notes"]
         assert three["problems"] == [] and p["code"] == "graph.unbound"
         assert p["message"].startswith("before Save: bind it (is not bound to an accelerator")
-        assert set(p) == {"code", "where", "message", "fix"}
+        assert set(p) == {"code", "where", "message", "fix", "before_save"} and p["before_save"]
         status, v = get_json(srv, "/api/step/4")
         assert (v["problems"], v["notes"]) == ([], [])
         # the tasklet add became the unit add, its spatial map gone

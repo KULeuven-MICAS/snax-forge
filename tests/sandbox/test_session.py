@@ -545,6 +545,7 @@ def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
     c = s.checks(3)
     assert c["problems"] == [] and [n["code"] for n in c["notes"]] == ["graph.unbound"]
     assert c["notes"][0]["message"].startswith("before Save: bind it (")
+    assert c["notes"][0]["before_save"] is True
     assert s.save("vecadd_unbound")["code"] == "save.graph"
     i32 = Session.from_kernel("vecadd", {"N": 2048}, dtypes={"A": "int32", "B": "int32", "C": "int32"},
                               roots=Roots(roots.sessions / "i32", roots.recipes, roots.sandbox))  # fmt: skip
@@ -552,7 +553,8 @@ def test_while_building_unbound_is_a_note_and_notes_show_beside_problems(roots):
     bind_default(i32, "add")
     c = i32.checks(4)
     assert [p["code"] for p in c["problems"]] == ["connect.xbar_inputs"]
-    assert [n["code"] for n in c["notes"]] == ["char.missing"]
+    assert [(n["code"], n["before_save"]) for n in c["notes"]] == [("char.missing", False)]
+    assert not c["problems"][0]["before_save"]
 
 
 def test_a_param_change_replays_up_to_the_cursor(roots):

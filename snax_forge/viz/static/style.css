@@ -412,6 +412,16 @@ table.c-cols tr.differs td, table.c-cols tr.differs th { background: var(--req-b
 .c-est-group small { display: block; color: var(--muted); }
 .c-bank-note { margin: 0.15rem 0 0; padding-left: 0.5rem; border-left: 2px solid var(--wait); font-size: 0.92em; }
 .c-est-line { margin: 0.35rem 0 0.15rem; }
+/* the design checks under the Estimate (D156): problems first, then notes */
+.c-checks { margin-top: 0.5rem; border-top: 1px solid var(--rule); padding-top: 0.3rem; }
+.c-check-list { list-style: none; margin: 0.2rem 0; padding: 0; }
+.c-check { margin: 0.25rem 0; padding: 0.25rem 0.4rem; border-left: 3px solid var(--rule); overflow-wrap: anywhere; }
+.c-check.problem { border-left-color: var(--mem); background: var(--hot-bg); }
+.c-check.note { border-left-color: var(--muted); }
+.c-check-head { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: baseline; }
+.c-check-tag { font-size: 0.8em; padding: 0 0.3rem; border-radius: 3px; border: 1px solid var(--rule); color: var(--muted); }
+.c-check-fix { font-size: 0.92em; }
+.log-check { color: inherit; text-decoration: underline dotted; }
 /* the cost table (dfg.js's costTable): one per accelerator, the total last */
 table.c-cost-table { width: 100%; border-collapse: collapse; margin: 0.35rem 0 0.5rem; font-size: 0.9em; }
 table.c-cost-table caption { text-align: left; font-weight: 600; padding-bottom: 0.15rem; }
