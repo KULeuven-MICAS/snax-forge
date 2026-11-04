@@ -43,9 +43,10 @@ bundle alone has no run, so ``write_bundle`` removes an earlier one.
 **The modules** (``module_tree``, C§18), from accelerator.json, not from
 Emit's output: the wrapper's three modules, each with the submodules it holds,
 by the names hw/chisel's Emit gives them: ``<tag>_csr`` (none), ``<tag>_ctrl``
-(``<tag>_<group>_ctrl`` per group) and ``<tag>_datapath`` (``<tag>_<unit>``
-per unit, then ``<tag>_<link>`` per link of depth >= 1, a buffer, group by
-group).
+(``<tag>_<group>_ctrl`` per group of every accelerator, in CSR order) and
+``<tag>_datapath`` (``<tag>_<unit>`` per unit, then ``<tag>_<link>`` per link
+of depth >= 1, a buffer, group by group), ``<tag>`` the entry's
+``<accelerator_slot>_<design>`` (``snax_forge_dot_1``).
 
 snax_cluster takes it through the cluster file alone: snaxgen reads the
 slot's ``snax_forge_rtl`` and writes ``generated/snax_forge.f``, which its
@@ -69,7 +70,7 @@ from pathlib import Path
 
 from snax_forge.common import Config, JsonFile, cwd_relative, git
 
-from .accelerator import ACCELERATOR_JSON, Accelerator
+from .accelerator import ACCELERATOR_JSON, Description
 from .blocks import GenError
 from .gvsoc import ROOT, RTL_FILE_LIST, cli, generate, out_dir
 from .rtl import EMITTED_JSON, accelerator_spec, elaborate
@@ -92,7 +93,7 @@ class Bundle(Config, JsonFile):
     expected: str | None = None
 
 
-def module_tree(acc: Accelerator) -> dict[str, list[str]]:
+def module_tree(acc: Description) -> dict[str, list[str]]:
     """The wrapper's modules and the submodules each holds; see the module doc."""
     t = acc.tag
     return {

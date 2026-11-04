@@ -3,8 +3,9 @@ catalogue for hw/chisel's ``Emit --spec``, and the fixtures hw/chisel's specs re
 
 Each refusal of the catalogue's checks has a test; accelerator.py's refusals, which rtl.py runs
 first, are test_gvsoc.py's. The fixtures in ``hw/chisel/src/test/resources/rtl/<design>/``
-(``vectors.json``; ``accelerator.json`` and the streamer hjson too for a design that snax-gvsoc's
-``forge/`` does not hold) are regenerated from their recipes and must be equal byte for byte.
+(``vectors.json``; ``accelerator.json`` and the streamer hjsons, one per set, too for a design
+that snax-gvsoc's ``forge/`` does not hold) are regenerated from their recipes and must be equal
+byte for byte.
 """
 
 from __future__ import annotations
@@ -15,7 +16,16 @@ from dataclasses import replace
 
 import pytest
 
-from snax_forge.gen import ELEMENTWISE_OP, Accelerator, Csr, GenError, Group, Port, Unit
+from snax_forge.gen import (
+    ELEMENTWISE_OP,
+    Accelerator,
+    Csr,
+    Description,
+    GenError,
+    Group,
+    Port,
+    Unit,
+)
 from snax_forge.gen.accelerator import ACCELERATOR_JSON, Link
 from snax_forge.gen.gvsoc import generate
 from snax_forge.gen.rtl import (
@@ -36,7 +46,7 @@ from snax_forge.gen.rtl import (
 from tests.design.helpers import REPO
 from tests.helpers import SUB, bound_vsum, requires_submodule
 
-from .helpers import designed, point, validate
+from .helpers import designed, point, validate, with_groups
 
 RTL_FIXTURES = REPO / "hw" / "chisel" / "src" / "test" / "resources" / "rtl"
 FORGE = SUB / "forge"
@@ -180,28 +190,30 @@ def test_the_counter_is_worked_from_the_controllers_rule(tmp_path):
 @requires_submodule
 @pytest.mark.parametrize("design", DESIGNS)
 def test_the_fixture_is_reproduced(tmp_path, design):
-    """write_fixture's vectors.json is the fixture's. Its accelerator.json and streamer hjson are
+    """write_fixture's vectors.json is the fixture's. Its accelerator.json and streamer hjsons are
     snax-gvsoc's forge/<design>/ (test_fixture.py reproduces those); a fixture with no such folder
-    keeps the two beside its vectors.json, and they are reproduced here."""
+    keeps them beside its vectors.json, and they are reproduced here. The description meets its
+    schema either way (the one written here, so not the submodule's copy)."""
     recipe, sets = DESIGNS[design]
     path = designed(tmp_path, recipe, design, sets)
     out = tmp_path / "fixture"
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp_path)
         files = write_fixture(path, out, tmp_path)
+        acc = write_accelerator(path, tmp_path / "spec", tmp_path)
         twin = FORGE / design
         if not twin.is_dir():
-            acc = write_accelerator(path, out, tmp_path)
+            write_accelerator(path, out, tmp_path)
             generate(path, tmp_path / "gen", tmp_path)
-            streamer = f"{acc.tag}_streamer.hjson"
-            (out / streamer).write_bytes((tmp_path / "gen" / streamer).read_bytes())
-            files += [ACCELERATOR_JSON, streamer]
+            streamers = [f"{acc.tag}_streamer_{a.name}.hjson" for a in acc.accelerators]
+            for f in streamers:
+                (out / f).write_bytes((tmp_path / "gen" / f).read_bytes())
+            files += [ACCELERATOR_JSON, *streamers]
     fixture = RTL_FIXTURES / design
     assert sorted(files) == sorted(f.name for f in fixture.glob("*") if f.suffix != ".md")
     for f in files:
         assert (out / f).read_bytes() == (fixture / f).read_bytes(), f
-    spec = fixture / ACCELERATOR_JSON if not twin.is_dir() else twin / ACCELERATOR_JSON
-    validate("accelerator", json.loads(spec.read_text()))
+    validate("accelerator", acc.to_dict())
 
 
 def test_gen_rtl_writes_a_fixture(vecadd, capsys):
@@ -303,14 +315,15 @@ def test_a_narrow_fold_into_int64_is_filled(tmp_path, recipe, dtype):
 # =============================================================================
 
 
-def _alone(unit: Unit) -> Accelerator:
-    """``unit`` as an accelerator of its own (one group, no link)."""
+def _alone(unit: Unit) -> Description:
+    """``unit`` as an accelerator of its own (one group, no link), the design's one."""
     ins = [f"{unit.name}.{k}" for k, p in unit.ports.items() if p.dir == "in"]
     outs = [f"{unit.name}.{k}" for k, p in unit.ports.items() if p.dir == "out"]
     n = len(unit.csrs)
     own = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32), Csr("STATUS", "ro", 2 + n, 2),
            Csr("COUNTER", "ro", 3 + n, 32)]  # fmt: skip
-    return Accelerator(unit.name, "p", "snax_forge", ins, outs, [Group(unit.name, own, [unit])])
+    acc = Accelerator(unit.name, ins, outs, [Group(unit.name, own, [unit])])
+    return Description("p", "snax_forge_p", [acc])
 
 
 def _mac(accumulate: bool, reg_out: bool = False, c: bool | None = None, latency: int | None = None,
@@ -335,13 +348,13 @@ def test_a_mac_unit_in_each_form_is_accepted(accumulate, reg_out):
     assert fill(acc, unit, catalogue()["Mac"])["inTypes"] == ["int64"] * (2 if accumulate else 3)
 
 
-def _behind_mac(unit: Unit) -> Accelerator:
+def _behind_mac(unit: Unit) -> Description:
     """dot 5's group: a Mac wired into ``unit`` (``sum``), which reads from the link."""
     from tests.gen.test_accelerator import dot4
 
     acc = dot4()
     (g,) = acc.groups
-    return replace(acc, groups=[replace(g, units=[g.units[0], unit])])
+    return with_groups(acc, [replace(g, units=[g.units[0], unit])])
 
 
 def test_a_serial_accumulate_unit_spans_its_lanes():

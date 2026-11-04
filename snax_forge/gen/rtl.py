@@ -1,7 +1,7 @@
 """A design point -> its accelerator's RTL, from ``accelerator.json`` (D130, D145, C§17).
 
-    accelerator_spec(design_point, root=None) -> Accelerator
-    write_accelerator(design_point, out_dir, root=None) -> Accelerator
+    accelerator_spec(design_point, root=None) -> Description
+    write_accelerator(design_point, out_dir, root=None) -> Description
     vectors(design_point, root=None) -> dict
     write_fixture(design_point, out_dir, root=None) -> list[str]
     elaborate(spec_json, out_dir) -> list[Path]
@@ -15,7 +15,7 @@ description of the accelerator (accelerator.py), the same bytes gen-gvsoc writes
 
 **The checks**, against the datapath catalogue ``hw/chisel/blocks.json`` (the signature of each
 Chisel datapath, equal to ``Emit --describe``), each a ``GenError``: first accelerator.py's
-(``gen.binding``, ``gen.datapath``, ``gen.controller``, ``gen.drain``,
+(``gen.tag``, ``gen.binding``, ``gen.datapath``, ``gen.controller``, ``gen.drain``,
 ``gen.timing``, the datapath's adapter's and a reader's link checks), then per unit, in this
 order: the params by the fill rule, the ports and pins whose ``when`` holds, the ports, the
 timing
@@ -93,7 +93,7 @@ from snax_forge.estimate.cycles import group_cycles
 from snax_forge.lower.c import job_values, job_writes
 from snax_forge.lower.derive import task_list
 
-from .accelerator import ACCELERATOR_JSON, Accelerator, Group, Link, Unit, units
+from .accelerator import ACCELERATOR_JSON, Description, Group, Link, Unit, units
 from .blocks import GenError
 from .data import arrays
 from .gvsoc import ROOT, cli, load_point, out_dir
@@ -134,7 +134,7 @@ FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
 PARAMS_RULE = "unit.params."
 
 
-def fill(acc: Accelerator | None, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
+def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
     """The datapath's params of ``unit`` by the catalogue's fill rule (``FILL_RULES``)."""
     out = {}
     for name, rule in sig["fill"].items():
@@ -149,7 +149,7 @@ def fill(acc: Accelerator | None, unit: Unit, sig: Mapping[str, Any]) -> dict[st
     return out
 
 
-def link_params(acc: Accelerator, link: Link, sig: Mapping[str, Any]) -> dict[str, Any]:
+def link_params(acc: Description, link: Link, sig: Mapping[str, Any]) -> dict[str, Any]:
     """A buffer's params by the catalogue's fill rule: its depth, and its ends' lanes and dtype
     (equal at both ends, a reader's check)."""
     unit, port = link.from_.split(".", 1)
@@ -200,7 +200,7 @@ def flops(datapath: str, params: Mapping[str, Any], cat: Mapping[str, Any]) -> i
     return value(cat[datapath]["flops"], params)
 
 
-def unit_flops(acc: Accelerator | None, unit: Unit, cat: Mapping[str, Any]) -> int:
+def unit_flops(acc: Description | None, unit: Unit, cat: Mapping[str, Any]) -> int:
     """The register bits of ``unit``'s datapath, its params by the fill rule."""
     return flops(unit.datapath, fill(acc, unit, cat[unit.datapath]), cat)
 
@@ -231,7 +231,7 @@ def check_params(datapath: str, params: Mapping[str, Any], sig: Mapping[str, Any
             raise GenError("gen.params", f"{what}: the catalogue's type {t['type']!r} is unknown")
 
 
-def check_unit(acc: Accelerator, unit: Unit, cat: Mapping[str, Any]) -> None:
+def check_unit(acc: Description, unit: Unit, cat: Mapping[str, Any]) -> None:
     """One unit against the catalogue; see the module doc."""
     if unit.datapath not in cat:
         raise GenError("gen.catalogue", f"unit {unit.name}: datapath {unit.datapath!r} is not in "
@@ -255,7 +255,7 @@ def check_unit(acc: Accelerator, unit: Unit, cat: Mapping[str, Any]) -> None:
                        f"span {span}")  # fmt: skip
 
 
-def check_link(acc: Accelerator, link: Link, cat: Mapping[str, Any]) -> None:
+def check_link(acc: Description, link: Link, cat: Mapping[str, Any]) -> None:
     """A link of depth >= 1 against the catalogue's ``LinkBuffer``; a wire is no datapath."""
     if link.depth == 0:
         return
@@ -266,7 +266,7 @@ def check_link(acc: Accelerator, link: Link, cat: Mapping[str, Any]) -> None:
 
 
 def accelerator_spec(design_point: str | Path, root: str | Path | None = None,
-                     cat: Mapping[str, Any] | None = None) -> Accelerator:  # fmt: skip
+                     cat: Mapping[str, Any] | None = None) -> Description:  # fmt: skip
     """The design point's ``accelerator.json`` (accelerator.py), checked against the catalogue."""
     _, _, acc = load_point(design_point, ROOT if root is None else Path(root))
     cat = catalogue() if cat is None else cat
@@ -279,7 +279,7 @@ def accelerator_spec(design_point: str | Path, root: str | Path | None = None,
 
 
 def write_accelerator(design_point: str | Path, out_dir: str | Path,
-                      root: str | Path | None = None) -> Accelerator:  # fmt: skip
+                      root: str | Path | None = None) -> Description:  # fmt: skip
     """Write ``accelerator.json`` to ``out_dir``, checked; the same bytes as gen-gvsoc's."""
     acc = accelerator_spec(design_point, root)
     out = Path(out_dir)
@@ -366,7 +366,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
     if len(tasks) != 1:
         raise GenError("gen.tasks", f"{len(tasks)} accelerator tasks; vectors.json has one")
     (task,) = tasks
-    found = units(point)[1]
+    found = {u: inst for mine in units(point).values() for u, inst in mine.items()}
     (group,) = acc.groups
     linked = len(group.units) > 1
     data = {a.name: a for a in arrays(point)}
