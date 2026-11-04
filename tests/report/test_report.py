@@ -431,6 +431,16 @@ def test_the_run_report_names_each_tasks_group(dot1):
     assert text.index("## Accelerators") < text.index("<summary>mul ▸") < text.index("## Cores")
 
 
+def test_the_bank_notes_compare_the_streamers_of_one_group(dot1):
+    """C§14: dot 1's mul_a and mul_b keep their note (A and B a whole number of bank rows
+    apart); nothing pairs a mul streamer with a sum one (the groups run one after the other):
+    no note on mul_a and sum_out, none on tmp0 against itself through mul_out and sum_a."""
+    notes = reports_of(dot1).design.notes
+    assert any(n.startswith("mul_a and mul_b: A and B lie ") for n in notes), notes
+    assert not any("sum_" in n and "mul_" in n for n in notes), notes
+    assert not any("tmp0 and tmp0" in n for n in notes), notes
+
+
 def test_the_design_report_has_a_row_per_unit(dot1):
     r = reports_of(dot1).design
     assert [(a.instance, a.group, a.kind) for a in r.accelerators] == [

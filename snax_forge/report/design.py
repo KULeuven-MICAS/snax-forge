@@ -37,9 +37,10 @@ the kernel from the run's functional check.
                  does not characterize
     notes        the design notes first (check.py's ``run_notes``: a design that
                  passes but is worth a second look, with its fix); then
-                 facts about addresses: movers of the accelerator whose
+                 facts about addresses: movers of one group whose
                  containers start in the same banks, or lie a whole number of
-                 bank rows apart, so that element i of both is in one bank;
+                 bank rows apart, so that element i of both is in one bank
+                 (two groups run one after the other, C§14);
                  and containers the DMA moves as padded beats
 """
 
@@ -259,8 +260,10 @@ def _memory_tables(cluster: Cluster, regions: list[Region], point: Any) -> list[
 
 def _notes(cluster: Cluster, regions: list[Region], point: Any,
            streamers: list[StreamerRow]) -> list[str]:  # fmt: skip
-    """Address facts about the movers of the accelerator (module doc)."""
+    """Address facts about the movers of the accelerator (module doc), the bank notes over the
+    streamers of one group only: an accelerator's groups run one after the other (D148, C§14)."""
     word, banks = cluster.bank_bytes, cluster.banks
+    group_of = cluster.accelerator.unit_of_mover
     row_bytes = word * banks
     l1 = {r.container: r.layout for r in regions if r.memory == "l1"}
     elem = {r.container: r.itemsize for r in regions if r.memory == "l1"}
@@ -269,6 +272,8 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     notes = []
     for i, a in enumerate(ss):
         for b in ss[i + 1 :]:
+            if group_of(a.name) != group_of(b.name):
+                continue  # two groups never stream at once
             la, lb = lays[a.container], lays[b.container]  # type: ignore[index]
 
             def first_banks(lay: Layout, num_ch: int) -> list[int]:
@@ -292,7 +297,9 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
                 notes.append(f"{a.name} ({a.container}) and {b.name} ({b.container}) start in "
                              f"the same banks, {spans(both)}.")  # fmt: skip
     if not notes and ss:
-        notes.append("No two streamers of the accelerator start in the same banks.")
+        several = len(cluster.accelerator.units) > 1
+        notes.append(f"No two streamers of {'one group' if several else 'the accelerator'} start "
+                     "in the same banks.")  # fmt: skip
     beat = point.platform.l2.beat_bits // 8
     l2 = {r.container for r in regions if r.memory == "l2"}
     for name, lay in l1.items():
