@@ -6,6 +6,8 @@ slow; the roots are in ``tmp_path``."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 
 from snax_forge.design import Design, DesignPoint, Platform, run_checks
@@ -574,3 +576,24 @@ def test_a_param_change_replays_up_to_the_cursor(roots):
     assert (s.cursor, s.replayed, s.n) == (9, 9, 10)
     ok(s.set_params({"W_acc_2": 8}))
     assert ok(s.move(10))["replayed"] == [10] and s.cursor == 10
+
+
+def test_save_keeps_only_the_params_its_steps_use(roots):
+    """D156: dot 1 saved at step 9 after a link was tried at step 10 and stepped back from keeps
+    N, W_acc_1 and W_acc_2, not the link's D; a recipe opened from a file keeps its own params
+    (dot_1's N and W) whatever its saved steps use."""
+    s, _ = dot1_by_hand(roots)
+    ok(s.apply("link", {"container": "tmp0", "depth": 1, "group": "dot"}))
+    assert "D" in s.recipe.params
+    ok(s.move(9))
+    ok(s.save("dot_1_kept"))
+    saved = Recipe.load(roots.recipes / "dot_1_kept.json")
+    assert saved.params == {"N": 2048, "W_acc_1": 8, "W_acc_2": 8}
+    extra = roots.recipes / "vecmul_extra.json"
+    roots.recipes.mkdir(parents=True, exist_ok=True)
+    replace(recipe("vecmul"), name="vecmul_extra", params={**recipe("vecmul").params, "K": 3}).save(
+        extra
+    )
+    one = Session.from_recipe(extra, roots=roots)
+    ok(one.save("vecmul_kept"))
+    assert Recipe.load(roots.recipes / "vecmul_kept.json").params["K"] == 3  # its own, kept

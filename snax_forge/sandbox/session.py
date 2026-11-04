@@ -63,7 +63,9 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            after k left as redo steps (D156); a step that
                                            refuses keeps the old params and graphs and is named
                                            by its ``index``; returns the cursor's ``checks``
-    save(name, force=False)                steps 1..k as ``<recipes>/<name>.json``, and the step
+    save(name, force=False)                steps 1..k as ``<recipes>/<name>.json``, with the
+                                           params those steps or the symbols use and the
+                                           session's own (``used_params``), and the step
                                            files with ``recipe.json`` in ``<sandbox>/<name>/``
                                            (run.py's ``write_steps``), after the design checks on
                                            step k's graph and the platform: ``save.name`` (not
@@ -467,7 +469,10 @@ class Session:
             if problems and not force:
                 return _refused("save.design", f"the design checks on {self.platform.name} "
                                 f"report {len(problems)} problem(s)", problems=listed)  # fmt: skip
-            recipe = replace(self.recipe, name=name, steps=self.recipe.steps[: self.cursor])
+            steps = self.recipe.steps[: self.cursor]
+            keep = used_params(self.recipe.params, steps, self.recipe.symbols, self.own_params)
+            recipe = replace(self.recipe, name=name, steps=steps,
+                             params={k: v for k, v in self.recipe.params.items() if k in keep})  # fmt: skip
             path.parent.mkdir(parents=True, exist_ok=True)
             recipe.save(path)
             results = [
@@ -704,6 +709,35 @@ def _map_ids(d: Any) -> set[str]:
         for v in d:
             out |= _map_ids(v)
     return out
+
+
+def used_params(params: dict[str, Any], steps: list[Step], symbols: dict[str, Any],
+                own: list[str]) -> set[str]:  # fmt: skip
+    """The params a saved recipe keeps (D156): those its steps' or its symbols' expressions
+    name, a kept string param's own names with them, and the session's own (a recipe opened
+    from a file keeps its params); a link's ``D`` tried and stepped back from goes."""
+    names: set[str] = set(own) & set(params)
+    for st in steps:
+        names |= _step_names(st)
+    for v in symbols.values():
+        if isinstance(v, str):
+            try:
+                names |= expr.names(v)
+            except expr.ExprError:
+                continue
+    keep, todo = set(), [n for n in names if n in params]
+    while todo:
+        n = todo.pop()
+        if n in keep:
+            continue
+        keep.add(n)
+        v = params[n]
+        if isinstance(v, str):
+            try:
+                todo += [x for x in expr.names(v) if x in params]
+            except expr.ExprError:
+                pass
+    return keep
 
 
 def _step_names(step: Step) -> set[str]:
