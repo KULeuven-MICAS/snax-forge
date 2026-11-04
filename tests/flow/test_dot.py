@@ -22,6 +22,7 @@ from snax_forge.lower import placed_waits, task_list
 from snax_forge.report import reports_of
 from snax_forge.run import read_run
 from tests.design.helpers import REPO, SNAX_FORGE
+from tests.helpers import dot1_split
 
 from .helpers import needs_gvsoc
 
@@ -83,3 +84,19 @@ def test_the_reports_name_each_tasks_group(flows):
         ("mul", "mul"),
         ("sum", "sum"),
     ]
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_dot_1_reads_the_muls_pads_through_a_tail(tmp_path):
+    """The dot 1 dry run at N = 2048, W_mul = W_sum = 10 (D144, DRY1-2): the mul writes tmp0's
+    two pad words from A's and B's pads, 0 × 0 = 0, add's identity, so the sum folds them and
+    the run's own check finds every output right."""
+    import json
+    from dataclasses import replace
+
+    recipe = tmp_path / "dot_1_w10.json"
+    recipe.write_text(json.dumps(replace(dot1_split(10, 10), name="dot_1_w10").to_dict()))
+    f = run_flow(recipe, SNAX_FORGE, out=tmp_path / "flow")
+    assert f.passed, summary(f)
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.check["words"] == 1
