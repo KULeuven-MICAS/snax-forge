@@ -403,6 +403,22 @@ def _param_names(v: Any, params: dict[str, Any]) -> list[str]:
         return []
 
 
+def _splits(recipe: Any) -> list[tuple[Any, str, list[str], re.Pattern[str], Any]]:
+    """The recipe's split steps: map, transform, the params its factor names, the pattern of
+    the inner maps it made (``M_inner``, ``M_s``, ``M_final``) and the factor as written."""
+    if recipe is None:
+        return []
+    params, out = dict(recipe.params), []
+    for st in recipe.steps:
+        p = st.params
+        if st.transform in SPLITS:
+            m = p.get("map")
+            inner = re.compile(rf"^{re.escape(str(m))}({'|'.join(SPLITS[st.transform])})(_\d+)?$")
+            out.append((m, st.transform, _param_names(p.get("factor"), params), inner,
+                        p.get("factor")))  # fmt: skip
+    return out
+
+
 def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> dict[str, Any]:
     """The left column's Bindings (C§12): each param shown with what it configures. The param
     stays the split's (D68, D73: ``bind`` reads W off the spatial map); a split step on map M
@@ -420,16 +436,11 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
     entry. Without a recipe (view mode on bare files) the units come from the graph alone,
     their design params read only."""
     params = dict(recipe.params) if recipe is not None else {}
-    steps = list(recipe.steps) if recipe is not None else []
-    splits = []  # (map, transform, factor params, inner ids)
+    splits = _splits(recipe)  # (map, transform, factor params, inner ids)
     links = {}  # container -> depth params
-    for st in steps:
+    for st in list(recipe.steps) if recipe is not None else []:
         p = st.params
-        if st.transform in SPLITS:
-            m = p.get("map")
-            inner = re.compile(rf"^{re.escape(str(m))}({'|'.join(SPLITS[st.transform])})(_\d+)?$")
-            splits.append((m, st.transform, _param_names(p.get("factor"), params), inner))
-        elif st.transform == "link":
+        if st.transform == "link":
             names = _param_names(p.get("depth"), params)
             if names:
                 links[p.get("container")] = names
@@ -442,7 +453,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
             seen.add(a["instance"])
             ids = _map_ids(a.get("replaced"))
             names: list[str] = []
-            for i, (_, _, ps, inner) in enumerate(splits):
+            for i, (_, _, ps, inner, _) in enumerate(splits):
                 if any(inner.match(x) for x in ids):
                     used.add(i)
                     names += [x for x in ps if x not in names]
@@ -454,7 +465,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
             c = n.attrs["container"]
             entries.append({"kind": "link", "id": c, "label": f"link {c} · depth",
                             "names": links[c], "lanes": {}, "note": None})  # fmt: skip
-    for i, (m, transform, ps, _) in enumerate(splits):
+    for i, (m, transform, ps, _, _) in enumerate(splits):
         node = next((x for x, _ in g.walk() if x.id == m and x.kind == "map"), None)
         if i in used or node is None or "loop.split" not in node.attrs:
             continue
@@ -475,7 +486,50 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
     symbol_params = {x["param"] for x in symbols_section(g, recipe) if x["param"]}
     unused = [{"name": k, "value": v, "editable": editable} for k, v in params.items()
               if k not in symbol_params and k not in by_name]  # fmt: skip
-    return {"entries": entries, "unused": unused}
+    return {"entries": entries, "unused": unused, "tree": bindings_tree(g, entries)}
+
+
+def bindings_tree(g: Graph, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The Bindings as a tree (D156, C§12), in the entries' order: an encapsulated accelerator
+    ``{kind: accelerator, name, children}`` holds its groups ``{kind: group, name, children}``,
+    each its units' and links' entries ``{kind: entry, index}`` (``index`` into ``entries``); a
+    linked group not in an accelerator is a group at the top; a unit alone, a split not bound
+    yet and a link of no group are entries at the top."""
+    where: dict[tuple[str, str], tuple[str | None, str | None]] = {}  # entry -> (acc, group)
+    for acc in accelerators(g):
+        units = [u["instance"] for grp in acc["groups"] for u in grp["units"]]
+        encapsulated = any("accelerator" in n.attrs for n, _ in g.walk()
+                           if n.kind == "accelerated" and n.attrs["instance"] in units)  # fmt: skip
+        for grp in acc["groups"]:
+            several = len(grp["units"]) > 1
+            group = grp["name"] if encapsulated or several else None
+            for u in grp["units"]:
+                where[("unit", u["instance"])] = (acc["name"] if encapsulated else None, group)
+            for link in grp["links"]:
+                node = next((n for n, _ in g.walk() if n.id == link), None)
+                if node is not None:
+                    where[("link", node.attrs["container"])] = (
+                        acc["name"] if encapsulated else None,
+                        grp["name"],
+                    )
+    top: list[dict[str, Any]] = []
+    index: dict[tuple[str, ...], dict[str, Any]] = {}
+
+    def node(path: tuple[str, ...], kind: str, name: str, into: list[dict[str, Any]]) -> list:
+        if path not in index:
+            index[path] = {"kind": kind, "name": name, "children": []}
+            into.append(index[path])
+        return index[path]["children"]
+
+    for i, e in enumerate(entries):
+        acc, group = where.get((e["kind"], e["id"]), (None, None))
+        into = top
+        if acc is not None:
+            into = node(("acc", acc), "accelerator", acc, into)
+        if group is not None:
+            into = node(("acc", acc or "", "group", group), "group", group, into)
+        into.append({"kind": "entry", "index": i})
+    return top
 
 
 def _placed_text(placed: Any) -> str | None:

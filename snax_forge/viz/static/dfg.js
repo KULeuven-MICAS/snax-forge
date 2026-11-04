@@ -529,10 +529,17 @@ async function bindings() {
     box.replaceChildren();
     return;
   }
-  const rows = b.entries.map((e) => h("div", { class: `dfg-binding ${e.kind}${state.sel === e.id ? " sel" : ""}` },
+  const entry = (e) => h("div", { class: `dfg-binding ${e.kind}${state.sel === e.id ? " sel" : ""}` },
     h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(e.id) }, e.label),
     e.params.map((p) => [" · ", paramEl(p)]),
-    e.note ? h("small", { class: "muted" }, ` · ${e.note}`) : null));
+    e.note ? h("small", { class: "muted" }, ` · ${e.note}`) : null);
+  // the tree (D156): accelerator ▸ group ▸ entries, each level a drop-down, open by default;
+  // a unit alone, a split not bound yet at the top
+  const branch = (n) => (n.kind === "entry" ? entry(b.entries[n.index])
+    : h("details", { class: `dfg-bind-${n.kind}`, open: true },
+      h("summary", {}, h("span", { class: "kind" }, n.kind), " ", h("b", {}, n.name)),
+      h("div", { class: "dfg-bind-kids" }, n.children.map(branch))));
+  const rows = b.tree ? b.tree.map(branch) : b.entries.map(entry);
   const unused = b.unused.length ? h("div", { class: "dfg-binding unused" }, h("span", { class: "muted" }, "unused: "),
     b.unused.map((p, i) => [i ? ", " : "", paramEl({ ...p, shared_with: [] })])) : null;
   box.replaceChildren(...(rows.length || unused ? [...rows, unused].filter(Boolean) : [h("p", { class: "muted" }, "Nothing split or bound yet.")]));

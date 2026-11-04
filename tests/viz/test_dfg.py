@@ -777,3 +777,37 @@ def test_a_block_with_no_flops_holds_dash():
                   Platform.load(REPO / "platforms" / "snax_forge.json"))  # fmt: skip
     cost = v["details"]["node:mult"]["cost"]
     assert cost["holding"] == "–" and cost["per task"].endswith("(8 fires, 0 bits)")
+
+
+# =============================================================================
+# DRY1-2 R3: the Bindings tree, the params' names in the boxes and Details
+# =============================================================================
+
+
+def test_the_bindings_tree():
+    """D156: dot 1 accelerator ▸ group ▸ unit (dot ▸ mul ▸ mul's entry); dot 2's linked group
+    not encapsulated at the top; vecmul's unit alone at the top; a split not bound yet at the
+    top beside a bound unit."""
+    from dataclasses import replace
+
+    from snax_forge.sandbox import Recipe
+    from snax_forge.viz.dfg.api import bindings_section
+    from tests.helpers import steps
+
+    def tree(name, k=None):
+        r = Recipe.load(REPO / "recipes" / f"{name}.json")
+        k = len(r.steps) if k is None else k  # graph k is made by steps 1..k
+        b = bindings_section(steps(name)[k], replace(r, steps=r.steps[:k]))
+        return b["tree"], [e["label"] for e in b["entries"]]
+
+    assert tree("dot_1") == ([{"kind": "accelerator", "name": "dot", "children": [
+        {"kind": "group", "name": "mul", "children": [{"kind": "entry", "index": 0}]},
+        {"kind": "group", "name": "sum", "children": [{"kind": "entry", "index": 1}]}]}],
+        ["mul · elementwise_mul", "sum · accumulate"])  # fmt: skip
+    assert tree("dot_2")[0] == [{"kind": "group", "name": "dot", "children": [
+        {"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]}]  # fmt: skip
+    assert tree("vecmul")[0] == [{"kind": "entry", "index": 0}]
+    # dot 1 at its step 3: mul bound, sum_map split, nothing encapsulated: both at the top
+    t, labels = tree("dot_1", 3)
+    assert t == [{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]
+    assert labels == ["mul · elementwise_mul", "sum_map split_map"]
