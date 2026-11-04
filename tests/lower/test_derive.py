@@ -141,7 +141,8 @@ def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():
     c = tl.configured()
     assert c["add2_acc2_a"].after == ["add_acc_out"]  # C comes from the first node, in L1
     assert c["add2_acc2_b"].after == ["load_B"] and c["store_D"].after == ["add2_acc2_out"]
-    assert [s.task for s in tl.steps if s.op == "sync"] == ["store_C", "store_D"]
+    # two accelerators in series (D158): acc's task before acc2 starts, then the stores' syncs
+    assert [s.task for s in tl.steps if s.op == "sync"] == ["add_acc", "store_C", "store_D"]
 
 
 # =============================================================================
@@ -165,14 +166,45 @@ def test_dot_gives_its_task_list():
         "base": 1024, "temporal_bounds": [1], "temporal_strides": [0], "spatial_strides": [8]
     }  # fmt: skip
     assert c["store_out"].values["src"] == {"base": 1024, "bounds": [1], "strides": [64]}
-    assert [s.task for s in tl.steps if s.op == "sync"] == ["store_out"]
+    assert [s.task for s in tl.steps if s.op == "sync"] == ["mult_mul", "store_out"]
 
 
-def test_dot_waits_once_between_its_accelerators():
-    """Of the placed waits, one is on an accelerator's writer: mul_out, before sum starts."""
+def test_dot_runs_its_accelerators_in_series():
+    """mul and sum unencapsulated are two accelerators, two streamer sets (D157): no idle mover
+    (each task holds its own set's movers only), and D158's sync on mul's task after sum's
+    configures, right before sum's start; its data wait on mul's writer follows (waits.py: a
+    wait on a unit does not cover its writer)."""
     p = point("dot_accelerated")
-    waits = [w.component for w in placed_waits(task_list(p), p)]
-    assert waits == ["dma", "dma", "mul_out", "sum_out", "dma"]
+    tl = task_list(p)
+    ops = [(s.op, getattr(s, "task_name", None) or getattr(s, "task", None) or s.tasks)
+           for s in tl.steps]  # fmt: skip
+    i = ops.index(("sync", "mult_mul"))
+    assert ops[i - 3 : i] == [("configure", "sum_sum_a"), ("configure", "sum_sum_out"),
+                              ("configure", "sum_sum")]  # fmt: skip
+    assert ops[i + 1] == ("start", ["sum_sum_a", "sum_sum_out", "sum_sum"])
+    assert not [t for t in tl.of_type("streamer") if not any(t.values["temporal_bounds"])]
+    starts = [s.tasks for s in tl.steps if s.op == "start" and len(s.tasks) > 1]
+    assert starts == [["mult_mul_a", "mult_mul_b", "mult_mul_out", "mult_mul"],
+                      ["sum_sum_a", "sum_sum_out", "sum_sum"]]  # fmt: skip
+    waits = [w.component for w in placed_waits(tl, p)]
+    assert waits == ["dma", "dma", "mul", "mul_out", "sum_out", "dma"]
+
+
+def test_the_serial_sync_is_left_out_when_after_holds_the_previous_task():
+    """D158: the sync is left out when an ``after`` of the next accelerator's start already holds
+    the previous accelerator's task, and the pass adds none twice."""
+    from snax_forge.lower.derive import serial_syncs
+
+    p = point("dot_accelerated")
+    d = task_list(p).to_dict()
+    d["steps"] = [s for s in d["steps"] if s != {"op": "sync", "task": "mult_mul", "mode": "poll"}]
+    assert serial_syncs(TaskList.from_dict(d), p) == task_list(p)  # added back, once
+    for s in d["steps"]:
+        if s.get("task_name") == "sum_sum_a":
+            s["after"] = ["mult_mul_out", "mult_mul"]
+    edited = serial_syncs(TaskList.from_dict(d), p)
+    assert [s.task for s in edited.steps if s.op == "sync"] == ["store_out"]
+    assert serial_syncs(task_list(p), p) == task_list(p)
 
 
 # =============================================================================
@@ -207,6 +239,8 @@ def test_dot_1_configures_every_mover_per_task_the_other_groups_idle():
     assert c["sum_sum_a"].after == ["mult_mul_out"]  # tmp0 from mul, through L1
     assert c["sum_sum_a"].values["base"] == c["mult_mul_out"].values["base"]
     assert (c["mult_mul"].values, c["sum_sum"].values) == ({"n": 16}, {"n": 16, "T": 16})
+    # one accelerator, dot: its groups follow through their data, no serial sync (D158)
+    assert [s.task for s in tl.steps if s.op == "sync"] == ["store_out"]
 
 
 def test_dot_1_waits_for_mul_s_writer_before_sum_and_never_on_an_idle_mover():
