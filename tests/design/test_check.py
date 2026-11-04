@@ -291,22 +291,16 @@ def _on_snax_forge(graph: Graph) -> Design:
     return Design(Platform.load(SNAX_FORGE), graph)
 
 
-def test_two_accelerators_on_one_slot_are_refused():
-    """gen.instances (stage connect): dot's two groups unencapsulated, and two chained vecadds,
-    are two accelerators for snax_forge's one slot; small16 has no slot and takes them."""
+def test_several_accelerators_share_the_one_slot():
+    """D157: dot's two groups unencapsulated, and two chained vecadds, are two accelerators, two
+    streamer sets of the one entry on snax_forge's slot: no design check refuses them
+    (gen.instances retired), on snax_forge as on small16."""
     dot = Graph.load(FIXTURES / "dot_accelerated.snaxdfg")
-    (p,) = [p for p in problems(_on_snax_forge(dot)) if p.code == "gen.instances"]
-    assert p.message == ("2 accelerators ['mul', 'sum']; the platform has one accelerator slot "
-                         "(snax_forge) and the program drives one accelerator")  # fmt: skip
-    assert (
-        p.fix
-        == "encapsulate them into one: a recipe step encapsulate with units ['mul', 'sum'] (D148)"
-    )
     gd = graph_dict()
     chained(gd)
-    assert "gen.instances" in codes(_on_snax_forge(Graph.from_dict(gd)))
-    assert "gen.instances" not in codes(design(dot))
-    assert "gen.instances" not in codes(_on_snax_forge(bound_vecadd(4)))
+    for g in (dot, Graph.from_dict(gd)):
+        assert problems(_on_snax_forge(g)) == []
+        assert problems(design(g)) == []
 
 
 def _vecmul(w: int) -> Graph:

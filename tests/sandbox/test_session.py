@@ -269,13 +269,13 @@ def test_save_refuses_unbound_work(roots):
     assert not (roots.recipes / "vecadd_mine.json").exists()
 
 
-def test_save_refuses_two_accelerators_unless_forced(roots):
+def test_save_takes_two_accelerators(roots):
+    """D157: dot 1 before its encapsulate is two accelerators, two streamer sets of the one
+    entry: Save takes it as it is (gen.instances retired)."""
     s = opened("dot_1", roots)
     assert s.recipe.steps[-1].transform == "encapsulate"
     ok(s.move(s.n - 1))
-    got = s.save("dot_two")
-    assert got["code"] == "save.design" and any("[gen.instances]" in p for p in got["problems"])
-    assert ok(s.save("dot_two", force=True))["recipe"] == str(roots.recipes / "dot_two.json")
+    assert ok(s.save("dot_two"))["recipe"] == str(roots.recipes / "dot_two.json")
 
 
 def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
@@ -520,19 +520,16 @@ def test_a_bind_keeps_a_shared_or_a_recipes_own_param(roots):
 
 
 def test_every_step_lists_saves_design_checks(roots):
-    """D156: dot 1 at W = 8 and 8 before encapsulate has no problem and one note, gen.instances
-    before Save; after it neither; at W = 10 and 10 none either (D144), at 8 and 10 connect.pad,
-    naming open item 106. Save still refuses at step 8 unless forced."""
+    """D156: dot 1 at W = 8 and 8 has no problem and no note before encapsulate (two
+    accelerators, D157) or after it; at W = 10 and 10 none either (D144), at 8 and 10
+    connect.pad, naming open item 106. Save takes step 8."""
     s, out = dot1_by_hand(roots)
     eight = s.checks(8)
-    assert eight["problems"] == [] and [n["code"] for n in eight["notes"]] == ["gen.instances"]
-    assert eight["notes"][0]["message"].startswith(
-        "before Save: shift-click the outlines of acc_1 and acc_2 and apply encapsulate (2 accelerators"
-    )
+    assert eight == {"problems": [], "notes": []}
     assert out[7]["checks"] == eight  # the bind's answer carries them
     assert s.checks(9) == {"problems": [], "notes": []} == out[8]["checks"]
     ok(s.move(8))
-    assert s.save("dot_early")["code"] == "save.design"
+    assert ok(s.save("dot_early"))["recipe"] == str(roots.recipes / "dot_early.json")
     ten = dot1_by_hand(Roots(roots.sessions / "b", roots.recipes, roots.sandbox), 10, 10)[0]
     assert ten.checks(9) == {"problems": [], "notes": []}
     bad = dot1_by_hand(Roots(roots.sessions / "c", roots.recipes, roots.sandbox), 8, 10)[0]
