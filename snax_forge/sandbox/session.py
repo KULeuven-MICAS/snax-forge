@@ -13,9 +13,13 @@ params come with it.
 **The state.** A session is a working recipe (the kernel, its params, symbols and dtypes, and
 every step applied, n of them), the graphs of steps 0..n in memory (step 0 the import with its
 symbols bound), a cursor k in 0..n (the step shown, the one the next transform applies to) and
-a platform. Only the recipe and the cursor go to disk, in ``<sessions>/<name>/``:
-``recipe.json``, a recipe holding every step (named after the session), and ``session.json``,
-``{"cursor": k, "platform": path}``; ``resume`` replays the recipe. The graphs are rebuilt
+a platform. The graphs are replayed up to ``replayed`` (≥ k): after a param change the steps
+past the cursor stay as redo steps, replayed and checked when the cursor reaches them (D156).
+Only the recipe and the cursor go to disk, in ``<sessions>/<name>/``: ``recipe.json``, a recipe
+holding every step (named after the session), and ``session.json``, ``{"cursor": k,
+"platform": path, "own_params": [...]}`` (the params the session started with, the recipe's
+or the kernel's, which are never renamed); ``resume`` replays the recipe, a step past the
+cursor that refuses (and the ones after it) left as redo steps. The graphs are rebuilt
 from the kernel's import, never stored. The seeded inputs (seed 0) and what step 0 computes on
 them are drawn once and every step is checked against them (run.py's ``checked_step``). The
 roots are injectable (``Roots``): sessions default to ``out/sessions/``, recipes to
@@ -40,16 +44,25 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            free ``W``, ``W_2``, ... or ``D``, ... at that value,
                                            and the step stores its name (``fresh_param``), so
                                            it can change after the bind; a recipe opened from
-                                           a file keeps its numbers. With
+                                           a file keeps its numbers. A ``bind`` renames a
+                                           factor param the editor named (``W``, ``W_2``, not
+                                           one of ``own_params``) that only this unit's splits
+                                           use to ``W_<instance>`` through every step and the
+                                           params (``rename_split_params``; dot 1's ``W`` to
+                                           ``W_acc_1``), given back as ``renamed``. With
                                            k < n and no ``drop``: ``session.drop``, the server's
                                            guard (the page asks ``drop_question`` first). On success the
                                            steps past k go, the new one is step k + 1 and the
                                            cursor; returns its index, transform, params, the
-                                           milliseconds it took and its ``diff``
-    move(k)                                the cursor to any step 0..n (``session.move``)
-    set_params(values)                     every step replayed with the new values; a step that
+                                           milliseconds it took, its ``diff`` and its ``checks``
+    move(k)                                the cursor to any step 0..n (``session.move``); a
+                                           redo step not replayed since a param change is
+                                           replayed and checked on the way, and its refusal
+                                           (with its ``index``) leaves the cursor where it was
+    set_params(values)                     steps 1..k replayed with the new values, the steps
+                                           after k left as redo steps (D156); a step that
                                            refuses keeps the old params and graphs and is named
-                                           by its ``index``
+                                           by its ``index``; returns the cursor's ``checks``
     save(name, force=False)                steps 1..k as ``<recipes>/<name>.json``, and the step
                                            files with ``recipe.json`` in ``<sandbox>/<name>/``
                                            (run.py's ``write_steps``), after the design checks on
@@ -74,8 +87,9 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
                          ``{ok: false, code, message}``. ``bind``'s, when its site accepts, has
                          the bind list: every (BRM, implementation) of the library tried as
                          ``bind`` on the step, W read off the spatial bound and the instance
-                         ``acc``, then ``acc_2``, ``acc_3``, ... when the graph has it as an
-                         instance, accelerator or group (``default_instance``), each ok (with
+                         ``acc_N``, N the bind's order in the session (the binds before step k,
+                         plus one), the next N while the graph has it as an instance,
+                         accelerator or group (``default_instance``, D156), each ok (with
                          the params that bind it) or refused (with the message), with its
                          timing (latency, II, span) at that W where the implementation
                          resolves there
@@ -87,8 +101,13 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
                          changed (attrs, or the estimate's placement); empty at step 0
     estimate(k, tech)    the ideal estimate (estimate/, D155) on the session's platform, costed
                          on ``tech`` (default nangate45, C§20)
+    checks(k)            Save's design checks on step k and the platform (D156): ``problems``,
+                         each ``{code, where, message, fix}``, and ``notes``: ``gen.instances``
+                         before ``encapsulate`` as a note (``before Save: encapsulate …``), not
+                         a problem, and the design notes (check.py's ``run_notes``) when nothing
+                         else is wrong
 
-``sites``, ``marks`` and ``estimate`` are cached per step (``sites`` per step and selection,
+``sites``, ``marks``, ``estimate`` and ``checks`` are cached per step (``sites`` per step and selection,
 ``estimate`` per step and technology) and
 the caches past a changed step dropped. Every public method holds the session's one lock, so
 the server's threads see one change at a time.
@@ -97,6 +116,7 @@ the server's threads see one change at a time.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from dataclasses import dataclass, field, replace
@@ -107,7 +127,8 @@ from snax_forge import expr
 from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import repo_root
 from snax_forge.design import Design, Platform, run_checks
-from snax_forge.design.check import CHECKS
+from snax_forge.design.check import CHECKS, run_notes
+from snax_forge.design.streamers import accelerators as accelerators_of
 from snax_forge.design.streamers import instance_of
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.subset import parse_dim
@@ -193,20 +214,29 @@ class Session:
     ``resume``."""
 
     def __init__(self, name: str, recipe: Recipe, imported: Graph, platform: str,
-                 roots: Roots, cursor: int | None = None) -> None:  # fmt: skip
-        """``recipe``'s steps replayed on ``imported`` (a SandboxError when one fails)."""
+                 roots: Roots, cursor: int | None = None,
+                 own_params: list[str] | None = None) -> None:  # fmt: skip
+        """``recipe``'s steps replayed on ``imported``: up to ``cursor`` (all without one) a
+        SandboxError when one fails, past it a step that fails left a redo step with those
+        after it; ``own_params`` the params never renamed (default: all of ``recipe``'s)."""
         self._lock = threading.Lock()
         self.name, self.roots, self.imported = name, roots, imported
         self.platform_path = platform
         self.platform = Platform.load(self._path(platform))
         self.recipe = replace(recipe, name=name)
-        self.graphs, self.inputs, self.want = self._replay(self.recipe)
+        if cursor is not None and not 0 <= cursor <= len(recipe.steps):
+            raise SandboxError(f"session {name}: cursor {cursor} outside 0..{self.n}")
+        self.graphs, self.inputs, self.want = self._replay(self.recipe, cursor)
+        try:  # the steps past the cursor too; one that refuses stays a redo step (D156)
+            self._extend(self.recipe, self.graphs, self.inputs, self.want, len(recipe.steps))
+        except StepError:
+            pass
         self.cursor = len(self.graphs) - 1 if cursor is None else cursor
-        if not 0 <= self.cursor < len(self.graphs):
-            raise SandboxError(f"session {name}: cursor {self.cursor} outside 0..{self.n}")
+        self.own_params = list(recipe.params) if own_params is None else list(own_params)
         self._sites: dict[tuple[int, str], dict[str, Any]] = {}
         self._marks: dict[int, dict[str, list[str]]] = {}
         self._estimates: dict[tuple[int, str | None], Estimate] = {}
+        self._checks: dict[int, dict[str, list[dict[str, Any]]]] = {}
         self._write()
 
     # -- making one -----------------------------------------------------------------------
@@ -247,7 +277,8 @@ class Session:
         recipe = Recipe.load(folder / RECIPE_JSON)
         state = json.loads((folder / SESSION_JSON).read_text())
         imported = _import(recipe.kernel, recipe.dtypes)
-        return cls(folder.name, recipe, imported, state["platform"], roots, state["cursor"])
+        return cls(folder.name, recipe, imported, state["platform"], roots, state["cursor"],
+                   state.get("own_params"))  # fmt: skip
 
     @staticmethod
     def _free(roots: Roots, base: str) -> str:
@@ -266,6 +297,11 @@ class Session:
         return len(self.recipe.steps)
 
     @property
+    def replayed(self) -> int:
+        """The last step replayed with the current params; the steps past it are redo steps."""
+        return len(self.graphs) - 1
+
+    @property
     def folder(self) -> Path:
         return self.roots.sessions / self.name
 
@@ -273,12 +309,22 @@ class Session:
         p = Path(p)
         return p if p.is_absolute() else ROOT / p
 
-    def _replay(self, recipe: Recipe) -> tuple[list[Graph], dict[str, Any], dict[str, Any]]:
-        """Step 0 and every step of ``recipe``, checked; a StepError naming the step fails."""
+    def _replay(self, recipe: Recipe, upto: int | None = None,
+                ) -> tuple[list[Graph], dict[str, Any], dict[str, Any]]:  # fmt: skip
+        """Step 0 and the steps of ``recipe`` up to ``upto`` (all without it), checked; a
+        StepError naming the step fails."""
         g = bind_recipe_symbols(recipe, self.imported)
         inputs, want = reference(g, SEED, recipe.name)
         graphs = [g]
-        for i in range(len(recipe.steps)):
+        self._extend(recipe, graphs, inputs, want, len(recipe.steps) if upto is None else upto)
+        return graphs, inputs, want
+
+    @staticmethod
+    def _extend(recipe: Recipe, graphs: list[Graph], inputs: dict[str, Any],
+                want: dict[str, Any], upto: int) -> None:  # fmt: skip
+        """``graphs`` extended in place with the steps after its last up to ``upto``, each
+        checked; a StepError naming the step stops it, the steps before kept."""
+        for i in range(len(graphs) - 1, upto):
             name, params = step_params(recipe, i)
             try:
                 graphs.append(checked_step(graphs[-1], name, params, inputs, want,
@@ -286,7 +332,6 @@ class Session:
             except StepError as e:
                 e.index = i + 1  # type: ignore[attr-defined]
                 raise
-        return graphs, inputs, want
 
     def _write(self) -> None:
         self.folder.mkdir(parents=True, exist_ok=True)
@@ -294,7 +339,8 @@ class Session:
         self._write_cursor()
 
     def _write_cursor(self) -> None:
-        state = {"cursor": self.cursor, "platform": self.platform_path}
+        state = {"cursor": self.cursor, "platform": self.platform_path,
+                 "own_params": self.own_params}  # fmt: skip
         (self.folder / SESSION_JSON).write_text(json.dumps(state, indent=1) + "\n")
 
     def _forget(self, after: int) -> None:
@@ -302,10 +348,14 @@ class Session:
         self._sites = {k: v for k, v in self._sites.items() if k[0] <= after}
         self._marks = {k: v for k, v in self._marks.items() if k <= after}
         self._estimates = {k: v for k, v in self._estimates.items() if k[0] <= after}
+        self._checks = {k: v for k, v in self._checks.items() if k <= after}
 
     def _step(self, k: int) -> Graph:
         if not 0 <= k <= self.n:
             raise SandboxError(f"session {self.name}: no step {k} (0..{self.n})")
+        if k > self.replayed:
+            raise SandboxError(f"session {self.name}: step {k} is a redo step, not replayed "
+                               "since the params changed: move the cursor to it")  # fmt: skip
         return self.graphs[k]
 
     def _transform(self, k: int) -> str:
@@ -350,28 +400,44 @@ class Session:
             except (SandboxError, DfgError) as e:
                 return _refused(_code(e), str(e))
             ms = (time.perf_counter() - start) * 1000
+            renamed: dict[str, str] = {}
+            if transform == "bind":  # W -> W_<instance> (D156)
+                trial, renamed = rename_split_params(trial, g, step.params.get("instance"),
+                                                     self.own_params)  # fmt: skip
+                params = dict(trial.steps[k].params)
+                added = {renamed.get(x, x): v for x, v in added.items()}
             self.recipe, self.graphs = trial, [*self.graphs[: k + 1], g]
             self.cursor = k + 1
             self._forget(k)
             self._write()
             return {"ok": True, "index": k + 1, "transform": transform, "params": dict(params),
-                    "new_params": added, "ms": ms, "diff": self._diff(k + 1)}  # fmt: skip
+                    "new_params": added, "renamed": renamed, "ms": ms,
+                    "diff": self._diff(k + 1), "checks": self._checks_of(k + 1)}  # fmt: skip
 
     def move(self, k: int) -> dict[str, Any]:
         """The cursor to step ``k``, the steps kept."""
         with self._lock:
             if type(k) is not int or not 0 <= k <= self.n:
                 return _refused("session.move", f"no step {k!r}: the steps are 0..{self.n}")
+            replayed = []
+            if k > self.replayed:  # redo steps since a param change: replayed and checked now
+                first = self.replayed + 1
+                try:
+                    self._extend(self.recipe, self.graphs, self.inputs, self.want, k)
+                except StepError as e:
+                    return _refused(_code(e), str(e), index=e.index,  # type: ignore[attr-defined]
+                                    cursor=self.cursor)  # fmt: skip
+                replayed = list(range(first, k + 1))
             self.cursor = k
             self._write_cursor()
-            return {"ok": True, "cursor": k}
+            return {"ok": True, "cursor": k, "replayed": replayed}
 
     def set_params(self, values: dict[str, int | str]) -> dict[str, Any]:
         """Every step replayed with the params ``values`` sets."""
         with self._lock:
             try:
                 recipe = self.recipe.with_params(values)
-                graphs, inputs, want = self._replay(recipe)
+                graphs, inputs, want = self._replay(recipe, self.cursor)
             except StepError as e:
                 return _refused(_code(e), str(e), index=e.index)  # type: ignore[attr-defined]
             except (SandboxError, DfgError) as e:
@@ -379,7 +445,9 @@ class Session:
             self.recipe, self.graphs, self.inputs, self.want = recipe, graphs, inputs, want
             self._forget(-1)
             self._write()
-            return {"ok": True, "params": dict(recipe.params)}
+            return {"ok": True, "params": dict(recipe.params), "replayed": self.cursor,
+                    "redo": list(range(self.cursor + 1, self.n + 1)),
+                    "checks": self._checks_of(self.cursor)}  # fmt: skip
 
     def save(self, name: str, force: bool = False) -> dict[str, Any]:
         """Steps 1..cursor as a recipe of its own (module doc)."""
@@ -445,6 +513,11 @@ class Session:
         with self._lock:
             return self._estimate(k, tech)
 
+    def checks(self, k: int) -> dict[str, list[dict[str, Any]]]:
+        """Save's design checks on step ``k`` (module doc)."""
+        with self._lock:
+            return self._checks_of(k)
+
     # -- the answers, under the lock --------------------------------------------------------
 
     def _sites_of(self, k: int, selected: str) -> dict[str, dict[str, Any]]:
@@ -460,13 +533,19 @@ class Session:
                 out[name] = {"ok": True, "params": spec.site(g, selected)}
             except (SandboxError, DfgError) as e:
                 out[name] = _refused(_code(e), str(e))
+        order = 1 + sum(st.transform == "bind" for st in self.recipe.steps[:k])
         if out.get("bind", {}).get("ok"):
-            out["bind"]["list"] = bind_list(g, selected)
+            out["bind"]["list"] = bind_list(g, selected, order)
         for name, answer in out.items():
             if answer["ok"]:
-                answer["form"] = form(name, g, answer, self.recipe.params)
+                answer["form"] = form(name, g, answer, self.recipe.params, order)
         self._sites[key] = out
         return out
+
+    def _checks_of(self, k: int) -> dict[str, list[dict[str, Any]]]:
+        if k not in self._checks:
+            self._checks[k] = design_checks(self.platform, self._step(k))
+        return self._checks[k]
 
     def _estimate(self, k: int, tech: str | None = DEFAULT_TECH) -> Estimate:
         if (k, tech) not in self._estimates:
@@ -556,14 +635,14 @@ def _shown(p: Path) -> str:
         return str(p)
 
 
-def bind_list(g: Graph, selected: str) -> list[dict[str, Any]]:
-    """Every (BRM, implementation) of the library tried as ``bind`` on ``selected`` (module
-    doc)."""
+def bind_list(g: Graph, selected: str, order: int = 1) -> list[dict[str, Any]]:
+    """Every (BRM, implementation) of the library tried as ``bind`` on ``selected``, the
+    instance the ``order``-th bind's default (module doc)."""
     from snax_forge.brm import BrmError, library_names, load_brm
 
     site = _bind_site(g, selected, f"bind {selected!r}")
     w = _bound(g, parse_dim(site.smap.attrs["range"], site.smap.id)[1], f"bind {selected!r}")
-    instance = default_instance(_taken(g))
+    instance = default_instance(_taken(g), order)
     out = []
     for b in library_names():
         brm = load_brm(b)
@@ -586,14 +665,14 @@ def bind_list(g: Graph, selected: str) -> list[dict[str, Any]]:
     return out
 
 
-def default_instance(taken: set[str]) -> str:
-    """``bind``'s default instance: ``acc``, then ``acc_2``, ``acc_3``, ... whichever is not
-    ``taken`` (the graph's instances, accelerators and groups)."""
-    name, k = DEFAULT_INSTANCE, 1
-    while name in taken:
+def default_instance(taken: set[str], order: int = 1) -> str:
+    """``bind``'s default instance (D156): ``acc_<order>``, ``order`` the bind's in the session
+    (``acc_1``, ``acc_2``), the next number while ``taken`` (the graph's instances,
+    accelerators and groups) has it."""
+    k = order
+    while f"{DEFAULT_INSTANCE}_{k}" in taken:
         k += 1
-        name = f"{DEFAULT_INSTANCE}_{k}"
-    return name
+    return f"{DEFAULT_INSTANCE}_{k}"
 
 
 def _taken(g: Graph) -> set[str]:
@@ -602,8 +681,126 @@ def _taken(g: Graph) -> set[str]:
             for k in ("instance", "accelerator", "group") if k in n.attrs}  # fmt: skip
 
 
-# bind's default instance (C§12)
+# bind's default instance's base, acc_1, acc_2, ... (C§12, D156)
 DEFAULT_INSTANCE = "acc"
+
+# The splits whose inner map a unit's replaced subtree holds (C§12's Bindings): per transform the
+# suffixes of the maps it makes under the map it splits
+SPLIT_SUFFIXES = {"split": ("_inner",), "split_map": ("_s",), "split_reduce": ("_s", "_final")}
+# A factor param the editor names (fresh_param's W, W_2, ...), which a bind may rename (D156)
+EDITOR_FACTOR = re.compile(r"^W(_\d+)?$")
+
+
+def _map_ids(d: Any) -> set[str]:
+    """Every map id in a ``replaced`` subtree (a node's dict)."""
+    out: set[str] = set()
+    if isinstance(d, dict):
+        if d.get("kind") == "map" and d.get("id"):
+            out.add(d["id"])
+        for v in d.values():
+            out |= _map_ids(v)
+    elif isinstance(d, list):
+        for v in d:
+            out |= _map_ids(v)
+    return out
+
+
+def _step_names(step: Step) -> set[str]:
+    """The names a step's string params use (an int param's expression over the params)."""
+    out: set[str] = set()
+    for v in step.params.values():
+        if isinstance(v, str):
+            try:
+                out |= expr.names(v)
+            except expr.ExprError:
+                continue
+    return out
+
+
+def rename_split_params(recipe: Recipe, g: Graph, instance: str | None,
+                        own: list[str]) -> tuple[Recipe, dict[str, str]]:  # fmt: skip
+    """After a bind of ``instance`` (``g`` the bound graph), each factor param the editor named
+    (``W``, ``W_2``: not in ``own``) that only the splits of this unit name, renamed to
+    ``W_<instance>`` (the next free ``_2``, ... if taken) in every step and in the params; the
+    recipe and ``{old: new}`` (D156). A param a symbol, another step or another unit's split
+    names is shared and stays."""
+    if instance is None:
+        return recipe, {}
+    ids: set[str] = set()
+    for n, _ in g.walk():
+        if n.kind == "accelerated" and n.attrs.get("instance") == instance:
+            ids |= _map_ids(n.attrs.get("replaced"))
+    mine = []  # the split steps that configure this unit
+    for i, st in enumerate(recipe.steps):
+        m = st.params.get("map")
+        if st.transform in SPLIT_SUFFIXES and isinstance(m, str):
+            suffix = "|".join(SPLIT_SUFFIXES[st.transform])
+            inner = re.compile(rf"^{re.escape(m)}({suffix})(_\d+)?$")
+            if any(inner.match(x) for x in ids):
+                mine.append(i)
+    symbols: set[str] = set()
+    for v in recipe.symbols.values():
+        symbols |= expr.names(v) if isinstance(v, str) else set()
+    renamed: dict[str, str] = {}
+    taken = set(recipe.params) | symbols
+    for i in mine:
+        x = recipe.steps[i].params.get("factor")
+        if not (isinstance(x, str) and EDITOR_FACTOR.match(x) and x in recipe.params):
+            continue
+        if x in own or x in symbols or x in renamed:
+            continue
+        users = {j for j, st in enumerate(recipe.steps) if x in _step_names(st)}
+        if not users <= set(mine):
+            continue  # shared with another unit or step
+        base, k, new = f"W_{instance}", 1, f"W_{instance}"
+        while new in taken:
+            k += 1
+            new = f"{base}_{k}"
+        taken.add(new)
+        renamed[x] = new
+    if not renamed:
+        return recipe, {}
+    steps = [Step(st.transform, {p: _renamed(v, renamed) for p, v in st.params.items()})
+             for st in recipe.steps]  # fmt: skip
+    params = {renamed.get(p, p): v for p, v in recipe.params.items()}
+    return replace(recipe, params=params, steps=steps), renamed
+
+
+def _renamed(v: Any, renamed: dict[str, str]) -> Any:
+    """A step param with the renamed params in place (a bare name; an expression rewritten)."""
+    if not isinstance(v, str):
+        return v
+    if v in renamed:
+        return renamed[v]
+    try:
+        names = expr.names(v)
+    except expr.ExprError:
+        return v
+    if not names & set(renamed):
+        return v
+    return expr.canonical(re.sub(r"[A-Za-z_]\w*", lambda m: renamed.get(m[0], m[0]), v))
+
+
+def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]]]:
+    """Save's design checks on ``g`` (``Session.checks``): ``problems`` and ``notes``, each
+    ``{code, where, message, fix}``; ``gen.instances`` a "before Save" note (D156)."""
+    design = Design(platform, g)
+    found = run_checks(design)
+    problems, notes = [], []
+    for p in found:
+        d = {"code": p.code, "where": p.where, "message": p.message, "fix": p.fix}
+        if p.code == "gen.instances":
+            units = [u for us in accelerators_of(g).values() for u in us]
+            d["message"] = (f"before Save: encapsulate {', '.join(units)} into one accelerator "
+                            f"({p.message})")  # fmt: skip
+            notes.append(d)
+        else:
+            problems.append(d)
+    if not found:
+        notes += [{"code": p.code, "where": p.where, "message": p.message, "fix": p.fix}
+                  for p in run_notes(design)]  # fmt: skip
+    return {"problems": problems, "notes": notes}
+
 
 # The defaults of the params a site does not fill (the user's choices): an int param's value,
 # and the name the editor gives it, a param of its own (C§12): every factor and depth the editor
@@ -627,7 +824,7 @@ DEFAULT_KIND = "temporal"
 
 
 def form(
-    name: str, g: Graph, answer: dict[str, Any], params: dict[str, Any]
+    name: str, g: Graph, answer: dict[str, Any], params: dict[str, Any], order: int = 1
 ) -> list[dict[str, Any]]:
     """The fields the editor shows to apply transform ``name`` where its site accepted
     (``answer``, with the bind list for ``bind``), in the transform's param order: each
@@ -674,7 +871,8 @@ def form(
                                   for e in entries]}  # fmt: skip
         elif name == "bind" and p == "instance":  # the bind list's default, made unique
             ok = [e for e in answer.get("list", []) if e["ok"]]
-            field["value"] = ok[0]["params"]["instance"] if ok else default_instance(_taken(g))
+            field["value"] = (ok[0]["params"]["instance"] if ok
+                              else default_instance(_taken(g), order))  # fmt: skip
         elif name == "encapsulate" and p == "units":
             nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]
             free = list(

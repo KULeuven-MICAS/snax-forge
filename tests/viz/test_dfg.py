@@ -419,8 +419,11 @@ def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
     assert [c["value"] for c in s2["cycles"]] == [256, 0, 256] and s2["unmapped_note"] is None
     rows = compare_view(a, b, platform)["columns"]["estimate"]
     got = {r["label"]: (r["a"], r["b"]) for r in rows if r["under"] == "accelerator"}
-    assert got == {"cycles": ("0", "256"), "unmapped cycles": ("2048", "0"),
-                   "total cycles": ("2048", "256"), "not mapped": ("2048", "0")}  # fmt: skip
+    assert got == {
+        "cycles": ("0", "256"),
+        "unmapped cycles": ("2048", "0"),
+        "total cycles": ("2048", "256"),
+    }  # fmt: skip (one unmapped count, D156)
 
 
 @pytest.mark.slow
@@ -712,8 +715,7 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     assert not any("→" in r["a"] + r["b"] for r in rows)
     assert _rows(rows, "accelerator") == {"cycles": ("266", "265", True),
                                           "unmapped cycles": ("0", "0", False),
-                                          "total cycles": ("266", "265", True),
-                                          "not mapped": ("0", "0", False)}  # fmt: skip
+                                          "total cycles": ("266", "265", True)}  # fmt: skip
     assert _rows(rows, "group mac")["energy"] == ("26.136 nJ", "–", True)
     assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {

@@ -19,7 +19,8 @@ name) stay in the transform.
     an outer map ``v_1`` over ``0:(e - b) // factor``, keeping the map's id
     and attrs and recording the split (``loop.split``), around an inner map
     ``<id>_inner`` with ``v_2`` over ``0:factor``, both untagged, neutral
-    names that suggest no tag (D73), fresh when taken; every use of ``v`` in
+    names that suggest no tag (D73); a later split takes the next free pair,
+    ``v_3`` and ``v_4``, then ``v_5`` and ``v_6``; every use of ``v`` in
     the body becomes ``b + factor * v_1 + v_2``. A length n that is not a
     multiple of the factor (D144) runs ``v_1`` over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
@@ -257,7 +258,13 @@ def _split(g: Graph, map: str, factor: int, what: str,
         | set(g.containers)
         | {nd.attrs["var"] for nd, _ in g.walk() if nd.kind == "map"}
     )
-    var_t, var_s = fresh(f"{var}{names[0]}", taken), fresh(f"{var}{names[1]}", taken)
+    if names == SPLIT_NEUTRAL:  # the next free pair: v_1 and v_2, then v_3 and v_4, ... (D73)
+        k = 1
+        while f"{var}_{k}" in taken or f"{var}_{k + 1}" in taken:
+            k += 2
+        var_t, var_s = f"{var}_{k}", f"{var}_{k + 1}"
+    else:
+        var_t, var_s = fresh(f"{var}{names[0]}", taken), fresh(f"{var}{names[1]}", taken)
     ids = {nd.id for nd, _ in g.walk()}
     inner = Node(
         fresh(f"{map}{names[2]}", ids),

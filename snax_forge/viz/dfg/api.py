@@ -609,8 +609,8 @@ def detail_rows(x: dict[str, Any] | None, y: dict[str, Any] | None) -> list[dict
 
 def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[dict[str, Any]]:
     """The Estimate panel in two columns (module doc), from each side's summary (None: no
-    estimate): under ``accelerator`` its cycles, the unmapped cycles, the total (D155) and the
-    not-mapped count; under ``group <name>``,
+    estimate): under ``accelerator`` its cycles, the unmapped cycles and the total (D155; the
+    one unmapped count, D156, ``not_mapped`` staying in the estimate); under ``group <name>``,
     every group of either side, its cycles, expected COUNTER (a guide, D155), channels, area and
     energy, and its bank
     note where a side has one; under ``memory`` L1, the words read and written, the lanes; under the cost heading the
@@ -635,8 +635,7 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
 
     rows = [_row("cycles", *both(lambda s: s["accelerator_cycles"]), "accelerator"),
             _row("unmapped cycles", *both(lambda s: s["unmapped_cycles"]), "accelerator"),
-            _row("total cycles", *both(lambda s: s["total_cycles"]), "accelerator"),
-            _row("not mapped", *both(lambda s: s["not_mapped"]), "accelerator")]  # fmt: skip
+            _row("total cycles", *both(lambda s: s["total_cycles"]), "accelerator")]  # fmt: skip
     names = dict.fromkeys(g["name"] for s in (sa, sb) if s for g in s["groups"])
     for name in names:
 

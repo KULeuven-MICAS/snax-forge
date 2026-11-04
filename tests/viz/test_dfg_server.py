@@ -197,11 +197,17 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             assert status == 200 and got["transform"] == transform, got
             assert got["log"].startswith(f"step {got['index']}  {transform} ")
             logs.append(got["log"])
-        # the cycles before and after; the not-mapped count only where it changes
+        # the cycles before and after; the unmapped cycles only where they change (D155, D156:
+        # no not-mapped count), the bind's renamed W, the design checks' problems: graph.unbound
+        # until the bind
         assert [line.split(" · C ")[1] for line in logs] == [
-            "0 → 0", "0 → 0 · not mapped 64 → 16", "0 → 0", "0 → 16 · not mapped 16 → 0"]  # fmt: skip
+            "0 → 0 · 1 problem", "0 → 0 · 1 problem", "0 → 0 · 1 problem",
+            "0 → 16 · unmapped 64 → 0 · renamed W → W_acc"]  # fmt: skip
         assert "changed add" in logs[-1]
+        (p,) = get_json(srv, "/api/step/3")[1]["problems"]
+        assert p["code"] == "graph.unbound" and set(p) == {"code", "where", "message", "fix"}
         status, v = get_json(srv, "/api/step/4")
+        assert (v["problems"], v["notes"]) == ([], [])
         # the tasklet add became the unit add, its spatial map gone
         assert (v["diff"]["nodes"]["removed"], "add" in v["diff"]["nodes"]["changed"]) == (
             ["add_map_inner"],
@@ -213,7 +219,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         # the left column's Bindings: the unit with the split's W, an input in edit mode
         (unit,) = v["bindings_section"]["entries"]
         assert (unit["label"], unit["params"]) == ("acc · elementwise_add", [
-            {"name": "W", "value": 4, "editable": True, "shared_with": []}])  # fmt: skip
+            {"name": "W_acc", "value": 4, "editable": True, "shared_with": []}])  # fmt: skip
         assert v["symbols_section"][0] | {"containers": None} == {
             "name": "N",
             "value": 64,
@@ -233,6 +239,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert post(srv, "/api/cursor", {"k": 2})[1] == {
             "ok": True,
             "cursor": 2,
+            "replayed": [],
             "log": "cursor → step 2",
         }
         status, got = post(srv, "/api/apply", {"transform": "tag_map",
@@ -253,8 +260,8 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert get_json(srv, "/api/compare/2/4")[1]["diff"]["nodes"]["removed"] == ["add_map_inner"]
         assert post(srv, "/api/cursor", {"k": 4})[0] == 200
         assert post(srv, "/api/cursor", {"k": 9})[0] == 400
-        assert post(srv, "/api/params", {"params": {"W": 8}})[0] == 200
-        assert get_json(srv, "/api/session")[1]["params"] == {"N": 64, "W": 8}
+        assert post(srv, "/api/params", {"params": {"W_acc": 8}})[0] == 200
+        assert get_json(srv, "/api/session")[1]["params"] == {"N": 64, "W_acc": 8}
         assert get_json(srv, "/api/step/4")[1]["estimate"]["groups"][0]["cycles"] == 8
         status, saved = post(srv, "/api/save", {"name": "vecadd_mine"})
         assert status == 200 and (roots.recipes / "vecadd_mine.json").is_file(), saved

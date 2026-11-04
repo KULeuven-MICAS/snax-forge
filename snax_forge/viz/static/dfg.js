@@ -594,6 +594,10 @@ async function estimate() {
     ...(c.tables || []).map(costTable),
     h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
   ] : [];
+  // edit mode: Save's design checks on this step (D156), plainly; R3 styles them
+  const checks = [...(b.problems || []).map((p) => ["problem", p]), ...(b.notes || []).map((p) => ["note", p])]
+    .map(([kind, p]) => h("p", { class: `c-est-line c-check-${kind}`, title: p.fix || "" },
+      `${kind} [${p.code}] ${p.where}: ${p.message}`));
   const l1 = s.l1;
   const l1Text = l1.size ? `${l1.footprint_text} of ${l1.size_text} (${l1.share_text})` : l1.footprint_text;
   box.replaceChildren(...[
@@ -605,6 +609,7 @@ async function estimate() {
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
     h("p", { class: "c-est-line" }, `reads ${s.reads} · writes ${s.writes} words`),
     s.splits.length ? h("p", { class: "c-est-line" }, "lanes ", s.splits.map((x) => `${x.map} ${x.text}`).join("; ")) : null,
+    ...checks,
     ...cost,
   ].filter(Boolean));
 }
