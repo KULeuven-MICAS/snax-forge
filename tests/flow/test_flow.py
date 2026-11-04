@@ -507,6 +507,9 @@ def test_default_name():
     assert both == "vecadd_W8_l1.n_banks32_B.l1.base576"
     # a value that is not a plain word keeps one plain directory name
     assert default_name(r, {}, [("x.y", [2, 2]), ("z", "a/b c")]) == "vecadd_x.y2,2_zabc"
+    # a name ending in a digit gets a '-' before its value (DRY1-2 R4), the others none
+    assert default_name(r, {"W_acc_1": 10, "W_acc_2": 4}) == "vecadd_W_acc_1-10_W_acc_2-4"
+    assert default_name(r, {"W": 4, "W_acc_1": 8}) == "vecadd_W4_W_acc_1-8"
 
 
 def test_the_summary_names_every_stage(tmp_path, monkeypatch):

@@ -275,9 +275,12 @@ class Flow:
 
 def _name_part(path: str, value: Any) -> str:
     """One ``--set`` as part of a name: the path, then the value (compact JSON unless text),
-    keeping only letters, digits and ``._,+-`` so the name stays one plain directory."""
+    keeping only letters, digits and ``._,+-`` so the name stays one plain directory; a ``-``
+    between them when the path ends in a digit, so the two do not run together
+    (``W_acc_1-10``, not ``W_acc_110``; ``W4`` as before)."""
     text = value if isinstance(value, str) else json.dumps(value, separators=(",", ":"))
-    return re.sub(r"[^\w.,+-]", "", f"{path}{text}")
+    sep = "-" if path[-1:].isdigit() else ""
+    return re.sub(r"[^\w.,+-]", "", f"{path}{sep}{text}")
 
 
 def default_name(
