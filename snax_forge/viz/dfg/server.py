@@ -257,11 +257,18 @@ def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any
             parts.append(f"unmapped {before[1]} → {after[1]}")
     for old, new in (out.get("renamed") or {}).items():
         parts.append(f"renamed {old} → {new}")
-    checks = out.get("checks") or {}
-    for key, word in (("problems", "problem"), ("notes", "note")):
-        if n := len(checks.get(key) or []):
-            parts.append(f"{n} {word}{'s' if n > 1 else ''}")
+    parts += checks_parts(out.get("checks"))
     return " · ".join(parts)
+
+
+def checks_parts(checks: dict[str, Any] | None) -> list[str]:
+    """A log line's design-check counts, ``1 problem``, ``2 notes`` (none where there are none),
+    as an apply's and a param change's lines give them (D156)."""
+    out = []
+    for key, word in (("problems", "problem"), ("notes", "note")):
+        if n := len((checks or {}).get(key) or []):
+            out.append(f"{n} {word}{'s' if n > 1 else ''}")
+    return out
 
 
 def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
@@ -429,7 +436,9 @@ class DfgHandler(Handler):
                 redo = (
                     f" · steps {out['redo'][0]}..{s.n} replayed when reached" if out["redo"] else ""
                 )
-                return out | {"log": f"params {given}  ok · {out['replayed']} steps replayed{redo}"}
+                counts = "".join(f" · {x}" for x in checks_parts(out.get("checks")))
+                return out | {"log": f"params {given}  ok · {out['replayed']} steps replayed{redo}"
+                              f"{counts}"}  # fmt: skip
             return out | {
                 "log": f"params {given}  step {out['index']} {out['code']}: {out['message']}"
             }

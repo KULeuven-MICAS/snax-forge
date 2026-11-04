@@ -279,6 +279,58 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
 
 
 @pytest.mark.slow
+def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
+    """D156: a param change's log line gives the step's problem and note counts as an apply's:
+    dot 1 at 8/8, then W_acc_2 = 10, one connect.pad problem (the pads never written)."""
+    monkeypatch.setattr(session, "_import", imported)
+    roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
+    with served(make_edit_server(0, roots=roots)) as srv:
+        post(srv, "/api/session", {"kernel": "dot", "params": {"N": 2048}})
+        for m, node, impl in (("mult_map", "mult", ("elementwise_mul", "chisel_tiled_spatial")),
+                              ("sum_map", "sum", ("accumulate", "chisel_adder_tree"))):  # fmt: skip
+            _, got = post(
+                srv, "/api/apply", {"transform": "split", "params": {"map": m, "factor": 8}}
+            )
+            (inner,) = got["diff"]["nodes"]["added"]
+            post(
+                srv,
+                "/api/apply",
+                {"transform": "tag_map", "params": {"map": inner, "kind": "spatial"}},
+            )
+            post(
+                srv,
+                "/api/apply",
+                {"transform": "tag_map", "params": {"map": m, "kind": "temporal"}},
+            )
+            k = get_json(srv, "/api/session")[1]["cursor"]
+            f = {
+                x["name"]: x for x in get_json(srv, f"/api/step/{k}/site/{node}")[1]["bind"]["form"]
+            }
+            status, _ = post(
+                srv,
+                "/api/apply",
+                {
+                    "transform": "bind",
+                    "params": {
+                        "node": node,
+                        "brm": impl[0],
+                        "implementation": impl[1],
+                        "instance": f["instance"]["value"],
+                    },
+                },
+            )
+            assert status == 200
+        post(srv, "/api/apply", {"transform": "encapsulate",
+                                 "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}})  # fmt: skip
+        status, got = post(srv, "/api/params", {"params": {"W_acc_2": 10}})
+        assert (
+            status == 200 and got["log"] == "params W_acc_2=10  ok · 9 steps replayed · 1 problem"
+        )
+        status, got = post(srv, "/api/params", {"params": {"W_acc_2": 8}})
+        assert got["log"] == "params W_acc_2=8  ok · 9 steps replayed"
+
+
+@pytest.mark.slow
 def test_a_factor_given_as_a_number_is_a_param_on_the_page(tmp_path, monkeypatch):
     """POST /api/apply with factor 8: the step stores W (the log line says so) and the step's
     Bindings list the split with W = 8 as an input, changeable after the bind (C§12)."""
