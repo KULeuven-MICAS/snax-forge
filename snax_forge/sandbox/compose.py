@@ -266,6 +266,21 @@ def _fuse_site(g: Graph, first: str) -> dict[str, Any]:
     return {"first": first, "second": s.id}
 
 
+def _fuse_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
+    """One map, ``_fuse_site``'s; or two, ``first`` and ``second`` in the order selected, the
+    second right after the first in one body."""
+    if len(selected) == 1:
+        return _fuse_site(g, selected[0])
+    if len(selected) != 2:
+        raise SandboxError(f"fuse_map: takes one map or two, not {len(selected)}")
+    first, second = selected
+    got = _fuse_site(g, first)
+    if got["second"] != second:
+        raise SandboxError(f"fuse_map {first!r} {second!r}: {second!r} must come right after "
+                           f"{first!r} in one body (after it comes {got['second']!r})")  # fmt: skip
+    return got
+
+
 def fuse_map(g: Graph, first: str, second: str) -> Graph:
     what = f"fuse_map {first!r} {second!r}"
     if _fuse_site(g, first)["second"] != second:
@@ -485,7 +500,7 @@ def unlink(g: Graph, container: str) -> Graph:
 
 register_transform("split_reduce", split_reduce, ints=("factor",), site=_split_reduce_site)
 register_transform("join_reduce", join_reduce, site=_join_reduce_site)
-register_transform("fuse_map", fuse_map, site=_fuse_site)
+register_transform("fuse_map", fuse_map, site=_fuse_site, multi=_fuse_multi)
 register_transform("unfuse_map", unfuse_map, site=_unfuse_site)
 register_transform("link", link, ints=("depth",), site=_link_site)
 register_transform("unlink", unlink, site=_unlink_site)

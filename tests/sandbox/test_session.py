@@ -438,16 +438,19 @@ def test_the_bind_form_lists_the_library_with_timing(roots):
 
 
 def test_the_encapsulate_and_link_forms(roots):
-    """dot 1 before encapsulate: the units unencapsulated in graph order, every one ticked
-    (D156), not only the selected one, and a free accelerator name; dot 2 before its link: the depth a param of its own, D,
-    at 1 by default, the group from the site."""
+    """dot 1 before encapsulate: the units unencapsulated in graph order, the selection's ticked
+    (one unit's box: that unit; both group outlines: both), and a free accelerator name; dot 2
+    before its link: the depth a param of its own, D, at 1 by default, the group from the site."""
     one = opened("dot_1", roots)
     ok(one.move(one.n - 1))
     f = _form(one.sites(one.cursor, "mult")["encapsulate"])
     assert (f["units"]["type"], f["units"]["value"], [c["value"] for c in f["units"]["choices"]]) == (
-        "checklist", ["mul", "sum"], ["mul", "sum"])  # fmt: skip
+        "checklist", ["mul"], ["mul", "sum"])  # fmt: skip
     assert f["accelerator"]["value"] == "dot" and not f["units"]["readonly"]
-    assert _form(one.sites(one.cursor, "sum")["encapsulate"])["units"]["value"] == ["mul", "sum"]
+    assert _form(one.sites(one.cursor, ["mul", "sum"])["encapsulate"])["units"]["value"] == [
+        "mul",
+        "sum",
+    ]
     two = opened("dot_2", roots)
     ok(two.move(two.n - 1))
     f = _form(two.sites(two.cursor, "tmp0")["link"])
@@ -597,3 +600,36 @@ def test_save_keeps_only_the_params_its_steps_use(roots):
     one = Session.from_recipe(extra, roots=roots)
     ok(one.save("vecmul_kept"))
     assert Recipe.load(roots.recipes / "vecmul_kept.json").params["K"] == 3  # its own, kept
+
+
+def test_sites_over_a_selection_on_dot_1(roots):
+    """D72: dot 1 by hand at step 8: the two group outlines (acc_1, acc_2) offer encapsulate with
+    both units ticked, one unit's box (mult) only that unit; split over two items is refused,
+    "takes one selection"; at step 9 the accelerator's outline (dot) offers unencapsulate; at the
+    import mult_map and sum_map together offer fuse_map, first and second in the order
+    selected, and the other order is refused."""
+    s, _ = dot1_by_hand(roots)
+    both = s.sites(8, ["acc_1", "acc_2"])
+    assert both["encapsulate"]["ok"] and both["encapsulate"]["params"] == {
+        "units": ["acc_1", "acc_2"]
+    }
+    assert _form(both["encapsulate"])["units"]["value"] == ["acc_1", "acc_2"]
+    assert _form(both["encapsulate"])["accelerator"]["value"] == "dot"
+    assert (both["split"]["ok"], both["split"]["code"]) == (False, "site.one")
+    assert both["split"]["message"] == "split: takes one selection, not 2"
+    one = s.sites(8, "mult")
+    assert _form(one["encapsulate"])["units"]["value"] == ["acc_1"]
+    assert s.sites(8, ["acc_2"])["encapsulate"]["params"] == {"units": ["acc_2"]}
+    dot = s.sites(9, "dot")
+    assert dot["unencapsulate"]["ok"] and dot["unencapsulate"]["params"] == {"accelerator": "dot"}
+    assert not dot["encapsulate"]["ok"]
+    assert s.sites(9, ["acc_1", "acc_2"])["unencapsulate"]["code"] == "site.one"
+    maps = s.sites(0, ["mult_map", "sum_map"])
+    assert maps["fuse_map"]["ok"] and maps["fuse_map"]["params"] == {"first": "mult_map",
+                                                                     "second": "sum_map"}  # fmt: skip
+    assert maps["split"]["code"] == "site.one"
+    back = s.sites(0, ["sum_map", "mult_map"])["fuse_map"]
+    assert (
+        not back["ok"]
+        and back["message"] == "fuse_map 'sum_map': nothing comes right after it in one body"
+    )

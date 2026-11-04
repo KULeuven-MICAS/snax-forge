@@ -84,8 +84,11 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
 **Asking it**, about step k:
 
     export(k)            the graph as ``<sessions>/<name>/export/<k>_<transform>.snaxdfg``
-    sites(k, selected)   per registered transform its site's answer on the selection (a node id
-                         or a container name, transforms.py): ``{ok, params}`` or
+    sites(k, selected)   per registered transform its site's answer on the selection, one item
+                         or a list (a node id, a container name, a group's or an accelerator's
+                         name; transforms.py's ``site_of``: a group stands for its units, an
+                         accelerator for its groups, and a transform that takes one item
+                         refuses several, ``site.one``): ``{ok, params}`` or
                          ``{ok: false, code, message}``. ``bind``'s, when its site accepts, has
                          the bind list: every (BRM, implementation) of the library tried as
                          ``bind`` on the step, W read off the spatial bound and the instance
@@ -147,7 +150,7 @@ from .run import (
     step_params,
     write_steps,
 )
-from .transforms import TRANSFORMS, _bind_site, _bound, bind
+from .transforms import TRANSFORMS, _bind_site, _bound, bind, site_of
 
 ROOT = repo_root()
 PLATFORM = "platforms/snax_forge.json"
@@ -497,8 +500,9 @@ class Session:
             g.save(out)
             return out
 
-    def sites(self, k: int, selected: str) -> dict[str, dict[str, Any]]:
-        """Every transform's site on ``selected`` at step ``k``, bind's with the bind list."""
+    def sites(self, k: int, selected: str | list[str]) -> dict[str, dict[str, Any]]:
+        """Every transform's site on ``selected`` at step ``k``, one item or several (module
+        doc), bind's with the bind list."""
         with self._lock:
             return self._sites_of(k, selected)
 
@@ -526,22 +530,23 @@ class Session:
 
     # -- the answers, under the lock --------------------------------------------------------
 
-    def _sites_of(self, k: int, selected: str) -> dict[str, dict[str, Any]]:
-        key = (k, selected)
+    def _sites_of(self, k: int, selected: str | list[str]) -> dict[str, dict[str, Any]]:
+        items = [selected] if isinstance(selected, str) else list(dict.fromkeys(selected))
+        key = (k, tuple(items))
         if key in self._sites:
             return self._sites[key]
         g = self._step(k)
         out: dict[str, dict[str, Any]] = {}
         for name, spec in TRANSFORMS.items():
-            if spec.site is None:
+            if spec.site is None and spec.multi is None:
                 continue
             try:
-                out[name] = {"ok": True, "params": spec.site(g, selected)}
+                out[name] = {"ok": True, "params": site_of(name, g, items)}
             except (SandboxError, DfgError) as e:
                 out[name] = _refused(_code(e), str(e))
         order = 1 + sum(st.transform == "bind" for st in self.recipe.steps[:k])
         if out.get("bind", {}).get("ok"):
-            out["bind"]["list"] = bind_list(g, selected, order)
+            out["bind"]["list"] = bind_list(g, items[0], order)
         for name, answer in out.items():
             if answer["ok"]:
                 answer["form"] = form(name, g, answer, self.recipe.params, order)
@@ -887,7 +892,7 @@ def form(
     ``readonly`` (the selection's own field) and ``choices`` where they apply: ``tag_map``'s
     kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
-    units (the instances in no accelerator, in the graph's order, every one ticked)."""
+    units (the instances in no accelerator, in the graph's order, the selection's ticked)."""
     import inspect
 
     from snax_forge.common import fresh
@@ -929,8 +934,8 @@ def form(
             free = list(
                 dict.fromkeys(n.attrs["instance"] for n in nodes if "accelerator" not in n.attrs)
             )
-            # every bound unit not in an accelerator ticked, not only the selected one (D156)
-            field |= {"type": "checklist", "readonly": False, "value": free,
+            # the selection's units ticked (one unit's box: that unit; two group outlines: both)
+            field |= {"type": "checklist", "readonly": False,
                       "choices": [{"value": u, "label": u} for u in free]}  # fmt: skip
         elif name == "encapsulate" and p == "accelerator":
             taken = {n.attrs[k] for n, _ in g.walk() if n.kind == "accelerated"
