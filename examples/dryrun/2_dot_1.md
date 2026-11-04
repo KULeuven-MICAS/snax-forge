@@ -282,28 +282,132 @@ The multiply has no fold, so every beat is a job; the tree folds 256 beats into 
     }
 ```
 
-The RTL comes from `gen-rtl` on the design point:
+The RTL comes from `gen-rtl` on the same design point (the flow does not make RTL, D136):
 
     pixi run gen-rtl out/flow/dot_1_dry/design/design_point.json
+
+It writes `out/rtl/dot_1_dry/accelerator.json`, runs `hw/chisel/`'s `Emit --spec` into `sv/` and lists what it emitted in `emitted.json`. The top is `snax_forge_shell_wrapper`, which snax_cluster connects to the five streamers; inside it one CSR block, one control unit per group and one datapath per unit:
 
 ```mermaid
 flowchart LR
   core["core0<br/>CSR writes"] --> csr["snax_forge_csr<br/>acc_1: START, JOBS, STATUS, COUNTER<br/>acc_2: START, JOBS, JOB_BEATS, STATUS, COUNTER"]
-  csr -- "start (JOBS)" --> c1["acc_1's control unit"]
-  csr -- "start (JOBS, JOB_BEATS)" --> c2["acc_2's control unit"]
-  c1 -- "busy, done" --> csr
-  c2 -- "busy, done" --> csr
-  s1a["acc_1_a, acc_1_b<br/>8 lanes each"] --> d1["acc_1: ElementwiseLanes mul, 8 lanes"]
-  d1 --> s1o["acc_1_out<br/>tmp0 in L1"]
-  s2a["acc_2_a<br/>tmp0 from L1"] --> d2["acc_2: TreeAccumulate add, 8 lanes"]
-  d2 --> s2o["acc_2_out<br/>out"]
-  c1 -.->|valid / ready| d1
-  c2 -.->|valid / ready| d2
+  subgraph ctrl["snax_forge_ctrl"]
+    c1["snax_forge_acc_1_ctrl"]
+    c2["snax_forge_acc_2_ctrl"]
+  end
+  subgraph dp["snax_forge_datapath"]
+    d1["snax_forge_acc_1<br/>ElementwiseLanes mul, 8 lanes"]
+    d2["snax_forge_acc_2<br/>TreeAccumulate add, 8 lanes"]
+  end
+  csr -- "start (JOBS)" --> c1
+  csr -- "start (JOBS, JOB_BEATS)" --> c2
+  c1 -- "busy, done pulse" --> csr
+  c2 -- "busy, done pulse" --> csr
+  s1["acc_1_a, acc_1_b<br/>8 lanes each"] -- "a, b" --> d1
+  d1 -- "out" --> s1o["acc_1_out<br/>tmp0 in L1"]
+  s2["acc_2_a<br/>tmp0 from L1"] -- "a" --> d2
+  d2 -- "out" --> s2o["acc_2_out<br/>out"]
+  s1 -. "valid / ready" .-> c1
+  c1 -. "valid / ready" .-> s1o
+  s2 -. "valid / ready" .-> c2
+  c2 -. "valid / ready" .-> s2o
+  c2 -- "fire, first" --> d2
 ```
 
-<!-- R4: fill from out/rtl/dot_1_dry/emitted.json and sv/: the file table (one module per file, in filelist.f order) and short excerpts of the two control units' registers and the CSR block's read mux, as in 1_vecmul.md section 8. The sandbox that wrote this page cannot emit RTL (Maven is blocked there). -->
+The two groups share nothing but the CSR block and the shell's ports: each has its own control unit and its own busy and done pins (`acc_1_busy_o`, `acc_1_done_o`, `acc_2_busy_o`, `acc_2_done_o`). The multiplier is combinational and gets no enable, as in `1_vecmul.md`; the adder tree holds its running sum in a register, so its control unit tells it when a beat counts (`fire`) and which beat starts a job (`first`). `out/rtl/dot_1_dry/sv/` holds one module per file, in the order of `filelist.f`, the list snax_cluster compiles:
 
-The two control units are the same `GroupCtrl`, generated from each group's description. Their registers are what the cost model counts (`estimate/bits.py`): `acc_1`'s 66 bits are `busy` (1), `acc_1_jobs` (32), `acc_1_jobs_counter` (32) and `done` (1); `acc_2`'s 131 add `acc_2_job_beats` (32, JOB_BEATS as the start gave it), `acc_2_job_beats_counter` (32) and `acc_2_v` (1, the tree's one cycle of latency) to the same four.
+| File | Module |
+|---|---|
+| `snax_forge_csr.sv` | the CSR block: both groups' START, JOBS, STATUS and COUNTER and acc_2's JOB_BEATS, offsets 0 to 8 |
+| `snax_forge_acc_1_ctrl.sv` | the group `acc_1`'s control unit |
+| `snax_forge_acc_2_ctrl.sv` | the group `acc_2`'s control unit |
+| `snax_forge_ctrl.sv` | the control units of every group, here two |
+| `ElementwiseAlu_w64_mul.sv` | one 64-bit lane's multiply |
+| `ElementwiseLanes_i64xi64_i64_i64_n8_mul.sv` | the 8 lanes, the datapath block of `acc_1` |
+| `snax_forge_acc_1.sv` | the unit `acc_1`, around its block |
+| `TreeAccumulate_i64_i64_n8.sv` | the 8-lane adder tree and its 64-bit running sum, the datapath block of `acc_2` |
+| `snax_forge_acc_2.sv` | the unit `acc_2`, around its block |
+| `snax_forge_datapath.sv` | the datapaths of every unit, here two |
+| `snax_forge_shell_wrapper.sv` | the top, the CSR block, the control and the datapath wired to the streamers |
+| `filelist.f` | the files above, in compile order |
+
+The two control units' registers, from `snax_forge_acc_1_ctrl.sv` and `snax_forge_acc_2_ctrl.sv`:
+
+```systemverilog
+// snax_forge_acc_1_ctrl.sv
+  reg         busy;
+  reg  [31:0] acc_1_jobs;
+  reg  [31:0] acc_1_jobs_counter;
+  wire        acc_1_offer =
+    busy & acc_1_jobs_counter != acc_1_jobs & io_in_0_valid & io_in_1_valid;
+  wire        acc_1_frozen = acc_1_offer & ~io_out_ready;
+  ...
+  reg         io_done_REG;
+
+// snax_forge_acc_2_ctrl.sv
+  input  [31:0] io_start_bits_jobs,
+                io_start_bits_beats_0,
+  ...
+  reg         busy;
+  reg  [31:0] acc_2_jobs;
+  reg  [31:0] acc_2_job_beats;
+  reg  [31:0] acc_2_job_beats_counter;
+  reg  [31:0] acc_2_jobs_counter;
+  reg         acc_2_v_0;
+  wire        _GEN = busy & acc_2_jobs_counter != acc_2_jobs & io_in_0_valid;
+  wire        acc_2_frozen = acc_2_v_0 & ~io_out_ready;
+  ...
+  reg         io_done_REG;
+```
+
+The adder tree, from `TreeAccumulate_i64_i64_n8.sv`:
+
+```systemverilog
+  reg [63:0] acc;
+  ...
+    else if (io_fire) begin
+      automatic logic [63:0] _beat_T_12;
+      _beat_T_12 =
+        io_in_0 + io_in_1 + io_in_2 + io_in_3 + io_in_4 + io_in_5 + io_in_6 + io_in_7;
+      if (io_first)
+        acc <= _beat_T_12;
+      else
+        acc <= acc + _beat_T_12;
+    end
+  ...
+  assign io_out = acc;
+```
+
+The CSR block's read mux over the nine offsets and the two saturating counters, from `snax_forge_csr.sv`:
+
+```systemverilog
+  wire [31:0] read =
+    io_req_bits_addr == 32'h8
+      ? acc_2_counter
+      : io_req_bits_addr == 32'h7
+          ? {30'h0, acc_2_done, io_busy_1}
+          : io_req_bits_addr == 32'h6
+              ? acc_2_acc_2_job_beats
+              : io_req_bits_addr == 32'h5
+                  ? acc_2_jobs
+                  : io_req_bits_addr == 32'h4
+                      ? 32'h0
+                      : io_req_bits_addr == 32'h3
+                          ? acc_1_counter
+                          : io_req_bits_addr == 32'h2
+                              ? {30'h0, acc_1_done, io_busy_0}
+                              : io_req_bits_addr == 32'h1 ? acc_1_jobs : 32'h0;
+  ...
+      else if (io_busy_0 & acc_1_counter != 32'hFFFFFFFF)
+        acc_1_counter <= acc_1_counter + 32'h1;
+      ...
+      else if (io_busy_1 & acc_2_counter != 32'hFFFFFFFF)
+        acc_2_counter <= acc_2_counter + 32'h1;
+```
+
+Both START offsets (0 and 4) read 0: a start is a strobe (D152). Each COUNTER counts while its own group's busy is high, so the two never mix.
+
+**The control.** The two control units come from each group's description in `accelerator.json`, not written per kernel. `acc_1`'s takes a beat when both inputs are valid and the output is ready (`acc_1_offer` and not `acc_1_frozen`); `acc_2`'s when its one input is valid, and it holds the beat's result for one cycle in `acc_2_v_0`, the tree's latency of 1, until the output is ready. Their registers are what the cost model counts (`estimate/bits.py`): `acc_1`'s 66 bits are `busy` (1), `acc_1_jobs` (32), `acc_1_jobs_counter` (32) and `io_done_REG` (1, the done pulse a cycle later); `acc_2`'s 131 add `acc_2_job_beats` (32, JOB_BEATS as the start gave it), `acc_2_job_beats_counter` (32) and `acc_2_v_0` (1) to the same four (`acc_2_jobs`, `acc_2_jobs_counter`).
 
 ## 9. What this gives the designer
 
