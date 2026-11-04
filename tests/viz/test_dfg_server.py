@@ -331,6 +331,36 @@ def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
 
 
 @pytest.mark.slow
+def test_the_site_route_takes_a_selection(tmp_path, monkeypatch):
+    """D72: GET /api/step/<k>/site?sel=…&sel=… on dot 1 (its recipe at its step 4, before
+    encapsulate): the two group outlines offer encapsulate with both units ticked, one unit's box
+    only that unit (the one-item route as before), split over two is "Not here"; at step 5 the
+    accelerator's outline (dot) offers unencapsulate; no sel is a 400."""
+    monkeypatch.setattr(session, "_import", imported)
+    roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
+    with served(make_edit_server(0, roots=roots)) as srv:
+        post(srv, "/api/session", {"recipe": str(REPO / "recipes" / "dot_1.json")})
+        status, both = get_json(srv, "/api/step/4/site?sel=mul&sel=sum")
+        assert status == 200 and both["encapsulate"]["ok"]
+        units = next(f for f in both["encapsulate"]["form"] if f["name"] == "units")
+        assert units["value"] == ["mul", "sum"]
+        assert (both["split"]["code"], both["split"]["message"]) == (
+            "site.one",
+            "split: takes one selection, not 2",
+        )
+        one = get_json(srv, "/api/step/4/site/mult")[1]
+        assert next(f for f in one["encapsulate"]["form"] if f["name"] == "units")["value"] == [
+            "mul"
+        ]
+        assert get_json(srv, "/api/step/4/site?sel=mult")[1] == one
+        dot = get_json(srv, "/api/step/5/site?sel=dot")[1]
+        assert dot["unencapsulate"]["ok"] and dot["unencapsulate"]["params"] == {
+            "accelerator": "dot"
+        }
+        assert get_json(srv, "/api/step/4/site")[0] == 400
+
+
+@pytest.mark.slow
 def test_a_factor_given_as_a_number_is_a_param_on_the_page(tmp_path, monkeypatch):
     """POST /api/apply with factor 8: the step stores W (the log line says so) and the step's
     Bindings list the split with W = 8 as an input, changeable after the bind (C§12)."""

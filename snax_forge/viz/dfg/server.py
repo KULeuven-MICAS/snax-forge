@@ -48,8 +48,13 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
                                     design checks on it (``problems`` and ``notes``, D156;
                                     Session.checks); a redo step not replayed since a param
                                     change is a 400 ``session.redo``
-    GET  /api/step/<k>/site/<id>    Session.sites on node or container ``id``, bind's with the
-                                    bind list, each accepted transform with its ``form``
+    GET  /api/step/<k>/site?sel=<id>&sel=<id>
+                                    Session.sites on a selection, one item or several in the
+                                    order selected (a node's id, a container's, a group's or an
+                                    accelerator's name; D72), bind's with the bind list, each
+                                    accepted transform with its ``form``; a transform that takes
+                                    one item refuses several, ``site.one``
+    GET  /api/step/<k>/site/<id>    the same on a one-item selection
     GET  /api/compare/<j>/<k>       as in view mode, over the session's steps
     POST /api/apply                 ``{transform, params, drop?, new_params?}``: Session.apply
                                     (``new_params``, ``{"W_mul": 8}``: the params it adds)
@@ -319,7 +324,7 @@ class DfgHandler(Handler):
                 raise _Refused(
                     "char.tech", f"no table for technology {tech!r}: one of {list(TECHS)}"
                 )
-            found = (self._edit_get(parts, tech) if self._edit
+            found = (self._edit_get(parts, tech, q) if self._edit
                      else self._view_get(parts, tech, q))  # fmt: skip
         except _Refused as e:
             self._refuse(e)
@@ -353,7 +358,7 @@ class DfgHandler(Handler):
                                                        tech, labels)  # fmt: skip
         return None
 
-    def _edit_get(self, parts: list[str], tech: str) -> Any:
+    def _edit_get(self, parts: list[str], tech: str, q: dict[str, list[str]] | None = None) -> Any:
         state = self.server.loaded
         if parts == ["kernels"]:
             return state.kernels()
@@ -363,13 +368,18 @@ class DfgHandler(Handler):
             return state.sessions()
         if parts == ["session"]:
             return session_summary(state.need())
-        if len(parts) in (2, 4) and parts[0] == "step":
+        if len(parts) in (2, 3, 4) and parts[0] == "step":
             s = state.need()
             k = _index(parts[1], s.n)
             if len(parts) == 2:
                 return edit_step(s, k, tech)
-            if parts[2] == "site":
+            if parts[2] == "site" and len(parts) == 4:  # one item, as before
                 return s.sites(k, parts[3])
+            if parts[2] == "site":  # a selection: ?sel=<id>&sel=<id> (D72)
+                sel = [x for x in (q or {}).get("sel", []) if x]
+                if not sel:
+                    raise _Refused("request.query", "the query needs at least one 'sel'")
+                return s.sites(k, sel)
         if len(parts) == 3 and parts[0] == "compare":
             s = state.need()
             j, k = (_index(x, s.n) for x in parts[1:])
