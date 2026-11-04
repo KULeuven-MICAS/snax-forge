@@ -23,10 +23,10 @@ Everything else runs in snax-forge's image (D118), started from the folder that 
 
     flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> out/flow/vecadd/
       sandbox   2 steps, each equal to the input graph on the reference check -> sandbox/
-      design    23 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
+      design    25 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
       gen       snax_forge.hjson, snax_forge_streamer.hjson, accelerator.json, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc e27acce0)
+      build     up to date (snax-gvsoc c061e32b)
       sw        sw/forge.elf (sha256 3fa93c774886c3b3)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 214 cycles (main to forge_check); data 0 errors (64 words); counters add_acc 19 (16 beats)
@@ -99,7 +99,7 @@ The graph viewer shows `.snaxdfg` steps on port 8766, a recipe's folder as its s
 
     pixi run view-dfg out/sandbox/try/dot4_w8/ out/sandbox/try/dot5_w8/ --platform platforms/snax_forge.json
 
-Each step is then named after its folder and stem (`dot4_w8/6_link`), the step dropdown groups the steps by folder, and Compare with one design's step in each panel lays Details and the Estimate out as two columns headed `dot4_w8 · 6 link` and `dot5_w8 · 6 link` (C§12).
+Each step is then named after its folder and stem (`dot4_w8/6_link`), the step dropdown groups the steps by folder, and Compare with one design's step in each panel lays Details and the Estimate out as two columns headed `dot4_w8 · 6 link` and `dot5_w8 · 6 link`, the cost tables' cells `before → after` (C§12). The left column lists the step's Symbols and Containers (`A: N · L1 · 16 KiB`; hover a symbol to see which containers use it) and its Bindings, each param with what it configures (dot 4's `W` is `shared with` its `mac` and `sum`); the Estimate gives the accelerator's cycles, the unmapped work's (one cycle per iteration, an assumption, D155) and their total, the cost as a table per accelerator and a group's bank note where L1's banks bound it; both side panels resize on their inner edge.
 
 On the MICAS server, start the image with `--network host` so its port 8765 is the server's, and forward it from your machine, then open `http://localhost:8765/`:
 
@@ -232,16 +232,21 @@ Questa exits 0 whatever the program returns, so `snax-forge-run` reads the exit 
 
 The editor builds a recipe one transform at a time on the drawn graph (D55, C§12). A session on vecadd's import:
 
-    pixi run edit-dfg --kernel vecadd --set N=64 --set W=4
+    pixi run edit-dfg --kernel vecadd --set N=64
 
     serving vecadd at http://127.0.0.1:8767/ (Ctrl-C to stop)
 
-Open it as section 4 does the viewer, on port 8767. Click `add_map`: the sidebar lists the transforms whose site accepts it, each with its form. Apply `split` with factor `W`, `tag_map` `temporal` on `add_map` and `spatial` on `add_map_s`, then select `add` and `bind` it to `elementwise_add / chisel_tiled_spatial`. Each Apply is a step checked against the reference, with a log line (the bind's ends `C 0 → 16 · not mapped 16 → 0`). The Estimate (D151, C§19) shows 64 iterations not mapped as imported, 16 once `add_map_s` is spatial, and after the bind the group `add` at `16 = 16 + 0` cycles with COUNTER 19, the counter section 2's run measures (`add_acc 19`). Undo, redo and the step list move the cursor; Apply below the last step asks to drop the steps after it.
+The session starts from the kernel's symbols only, each a param of its name, so N needs its value (without it: `vecadd: give N, e.g. --set N=2048`) and there is no W yet. Open it as section 4 does the viewer, on port 8767. Click `add_map`: the sidebar lists the transforms whose site accepts it, each with its form. Apply `split` with factor `W`: W is not a param yet, so the form shows `new param W = 4` beside it; keep 4, and W = 4 joins the session's params, each split free to have its own (C§12). `split` names its maps neutrally (D73): `add_map` keeps its id over `i_1`, around `add_map_inner` over `i_2`. The Bindings list `add_map split · W = 4 · not bound`. Tag them, `tag_map` `temporal` on `add_map` and `spatial` on `add_map_inner`, then select `add` and `bind` it to `elementwise_add / chisel_tiled_spatial`, whose instance the form fills as `acc` (`acc_2`, `acc_3`, … once taken); the entry becomes `acc · elementwise_add · W = 4`, its W an input as the Symbols' N is (the top bar has no params). Each Apply is a step checked against the reference, with a log line (the bind's ends `C 0 → 16 · not mapped 16 → 0`). The Estimate (D155, C§19) shows 64 cycles as imported, all unmapped (64 iterations at one cycle each, an assumption), 16 once `add_map_inner` is spatial, and after the bind the same total 16 on the accelerator, the group `acc` at `16 = 16 + 0` cycles with COUNTER 19, the counter section 2's run measures (`add_acc 19`). Undo, redo and the step list move the cursor; Apply below the last step asks to drop the steps after it.
 
-Save recipe, here as `vecadd_mine` (a name no recipe has), runs the design checks, writes `recipes/vecadd_mine.json` and its steps to `out/sandbox/vecadd_mine/`, and prints what comes next:
+Save recipe, here as `vecadd_mine` (a name no recipe has), runs the design checks, writes `recipes/vecadd_mine.json` (params N = 64 and W = 4) and its steps to `out/sandbox/vecadd_mine/`, logs `saved recipes/vecadd_mine.json` and lists what comes next, each command with what it does:
 
     pixi run sandbox recipes/vecadd_mine.json
+        writes the steps and checks each against the reference
     pixi run flow recipes/vecadd_mine.json --platform platforms/snax_forge.json
+        runs the recipe on SNAX-GVSoC and writes the reports
     pixi run forge recipes/vecadd_mine.json
+        the flow plus the bundle for snax_cluster's RTL
+
+A design problem stops Save until it is forced: vecmul at W = 32 lists `[connect.xbar_inputs] acc: 99 TCDM crossbar inputs, the platform takes at most 64` (C§14), which SNAX-GVSoC's crossbar would assert on.
 
 The session stays in `out/sessions/vecadd/`: `--session out/sessions/vecadd` resumes it, `--recipe recipes/vecadd.json` starts one from a recipe, and Export step writes one step's graph to its `export/`. `pixi run view-dfg out/sandbox/vecadd_mine/ --platform platforms/snax_forge.json` shows the saved steps read-only.

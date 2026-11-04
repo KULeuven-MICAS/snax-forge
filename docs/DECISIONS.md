@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D155**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D156**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -25,7 +25,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | sandbox | D72 D73 |
 | design | D12 D84–D87 D131 D142 |
 | flow | D50 D108 D136 |
-| estimate | D151 D154 |
+| estimate | D154 D155 |
 | viz | D55 D57 D99 |
 | docs | D26 D46 D117 |
 
@@ -61,6 +61,7 @@ Retired, and where each now lives:
 | D136 | D90 D94 D107 |
 | D137 | D38 D39 D59 |
 | D142 | D13 |
+| D155 | D151 |
 
 ---
 
@@ -70,7 +71,7 @@ Retired, and where each now lives:
 
 **D19** · dfg — Everything is extended by registration (node kinds, transforms, checks, passes, the accelerator kinds and ops of `brm/function.py`, the generator's blocks) and namespaced attrs, never by editing core classes.
 
-**D23** · scope — SNAX-FORGE complements ZigZag and Stream: cycle-level and RTL-backed rather than analytical. Parked: Stream as a proposer for DNN-shaped workloads, and bank conflicts in an estimate of our own (open item 4); the ideal, engine-alone estimate is D151.
+**D23** · scope — SNAX-FORGE complements ZigZag and Stream: cycle-level and RTL-backed rather than analytical. Parked: Stream as a proposer for DNN-shaped workloads, and bank conflicts in an estimate of our own (open item 4); the ideal, engine-alone estimate is D155.
 
 **D26** · docs — Contracts are Python dataclasses with `to_dict` / `from_dict` and plain JSON until the contract freeze (M6), versioned schemas after. → C§1.
 
@@ -98,7 +99,7 @@ Retired, and where each now lives:
 
 **D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms applied in order from a recipe, each step checked by the reference executor; a sweep is one recipe with a parameter, automated search writes recipes. A transform may give `site(g, selected)`, the graph-shape test of where it applies, which it calls first and the editor marks and lists from; Apply runs it, then the check.
 
-**D73** · sandbox — A split and its tags are separate steps: `split` only splits, `tag_map` tags `tile`, `temporal` or `spatial` (`split_map` does both, so old recipes run); `untag_map` removes any tag but around a bound unit, `join_map` a split whatever its tags. `bind` reads design params off the graph (W from the spatial bound), streamers theirs off memlets and layouts, so each is decided once. → C§12.
+**D73** · sandbox — A split and its tags are separate steps: `split` only splits, with neutral names that suggest no tag (the outer map keeps its id, variable `<var>_1`; the inner is `<id>_inner`, `<var>_2`), `tag_map` tags `tile`, `temporal` or `spatial` (`split_map` does both, so old recipes run; it and `split_reduce` keep `<var>_t`, `<var>_s` and `<id>_s`, since they tag in the same step and dot 4–6 and matvec 4–6 bind `mult_map_s`, `mult_map_1_s`); `untag_map` removes any tag but around a bound unit, `join_map` a split whatever its tags. `bind` reads design params off the graph (W from the spatial bound), streamers theirs off memlets and layouts, so each is decided once. → C§12.
 
 **D75** · lower — Names are derived, never stated: streamer `<instance>_<port>`, task `<node>_<component>`, DMA task `load_<container>` or `store_<container>`.
 
@@ -108,7 +109,7 @@ Retired, and where each now lives:
 
 **D84** · design — The platform is its own file in `platforms/`, paired with the bound graph by the design step, so either changes alone; its cluster parameters and the streamers' FIFO depths are design knobs, never a template (D134), and the streamers' temporal loops come from the graph. → C§13.
 
-**D85** · design — Design checks report every problem before anything is written, each with its fix. → C§14.
+**D85** · design — Design checks report every problem before anything is written, each with its fix. A limit of the model's cluster is a platform field a check holds the design to, so a design is refused before the run would assert: the TCDM crossbar's inputs (`l1.max_xbar_inputs`, SNAX-GVSoC's 64). → C§13, C§14.
 
 **D86** · design — The memory plan comes from registered residency, layout and placement passes, contiguous by default, with pins, seeing each port's element-index stream to avoid bank conflicts without a run; the L2 base is the program's link (its ELF's symbols, D50). → C§15.
 
@@ -116,7 +117,7 @@ Retired, and where each now lives:
 
 **D91** · scope — The old SDFG → descriptor → RTL path is gone; the Chisel blocks and `Emit` are a project of their own in `hw/chisel/`.
 
-**D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their reports, until sweeps need one. Walk-throughs live in `examples/`, with a test checking every number they state.
+**D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their reports, until sweeps need one. Walk-throughs live in `examples/`: those under `examples/dryrun/` are dated snapshots that name the commits they ran on and have no test; the others keep a test checking every number they state.
 
 **D99** · viz — Design and run reports in the layout of HLS reports, Markdown from dataclasses, for humans and LLMs alike. Every number comes from the design point, profile or trace, nothing grows with cycles, and a wait is named by what it was for. → `report/`.
 
@@ -190,10 +191,10 @@ Retired, and where each now lives:
 
 **D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
 
-**D151** · estimate — An ideal estimate of a bound graph (no bank conflicts, streamer fill, DMA or core control): per group the exact cycles of snax-gvsoc's group rule, as `gen/rtl.py`'s `group_counter` calls it, groups adding through L1; unbound work a not-mapped count, never cycles. A mapping's gain shows before any run, exact on ideal streams: a COUNTER is this plus the fill. → ARCHITECTURE §5, C§19.
-
 **D152** · scope — `<tag>_csr` is the accelerator's interface, what an HLS block leaves to its driver, so `<tag>_ctrl` and `<tag>_datapath` compare with the whole HLS block: START a strobe that reads 0, STATUS's done bit and COUNTER kept there from ctrl's busy and done pulse, and every CSR at its width, the platform's `acc_csr` (JOBS and JOB_BEATS job_width, a saturating COUNTER counter_width). → C§13, C§17.
 
 **D153** · brm — A group's control unit counts per segment with no product: a unit at L 0 on a wire borrows its consumer's test, any other counts its results in mixed radix over the Ts after it and JOBS, all at job_width; so dot 2 and 3 lose the 32 × 32 multiplier and dot 3 a count per unit. SnaxGroupRule's flat count of firings stays the spec. → C§17, `GroupRule.scala`.
 
 **D154** · estimate — CHAR1's first-order cost model, from the description before any synthesis: registers are bits (e_load when loading, e_hold every cycle), a block its comb energy per fire, ctrl its bits × e_hold × a factor; the table `snax_forge/char/<tech>.json`. An early estimate (about 20 % on the large costs), shown so. → C§20.
+
+**D155** · estimate — An ideal estimate: per group snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work one cycle per iteration, a labelled assumption (a core takes several) in one constant; the total adds both; `bank_bound` a note; a COUNTER is cycles plus fill where that holds (open item 104). → ARCHITECTURE §5, C§19.

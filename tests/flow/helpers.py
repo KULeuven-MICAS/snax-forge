@@ -135,6 +135,7 @@ def stub(monkeypatch, tmp_path: Path, pinned: str = COMMIT, dirty: bool = False)
     """SNAX-GVSoC stubbed for one test (module doc); the fake make, to read or set up."""
     fake = FakeMake(tmp_path / "snax-gvsoc")
     monkeypatch.setattr(flow_run, "run_gvsoc", fake)
+    monkeypatch.setattr(flow_run, "check_toolchain", lambda: None)  # the fake sw needs none
     monkeypatch.setattr(flow_run, "GVSOC_WORKDIR", fake.workdir)
     monkeypatch.setattr(
         flow_run, "checkout", lambda: Checkout(flow_run.SNAX_GVSOC, COMMIT, dirty, pinned)

@@ -23,6 +23,8 @@ from snax_forge.sdfg.loader import load
 from tests.design.helpers import MATADD_RECIPE, bound_matadd
 from tests.helpers import graph_dict
 
+from .helpers import renamed, tagged_names
+
 BIND = MATADD_RECIPE["steps"][-1]["params"]
 
 
@@ -62,10 +64,10 @@ def test_tag_map_refuses_a_tagged_map(matadd):
 def test_untag_map_takes_any_tag_but_around_a_bound_unit(matadd):
     """A split map's tags come off as any; around a bound unit they are its firing loops."""
     g = split_map(matadd, "add_map_1", 4)
-    assert (
-        untag_map(untag_map(g, "add_map_1"), "add_map_1_s").to_json()
-        == split(matadd, "add_map_1", 4).to_json()
-    )
+    untagged = untag_map(untag_map(g, "add_map_1"), "add_map_1_s")
+    names = tagged_names(matadd, "add_map_1", 4)
+    assert names == {"j_1": "j_t", "j_2": "j_s", "add_map_1_inner": "add_map_1_s"}
+    assert renamed(split(matadd, "add_map_1", 4), names) == untagged.to_json()
     with pytest.raises(SandboxError, match="untag_map 'add_map': the bound unit 'add' is inside "
                        r"it \(unbind first\)"):  # fmt: skip
         untag_map(bound_matadd(), "add_map")

@@ -1,4 +1,4 @@
-"""The estimate's data side and its work not mapped (D151, C§19), and the round trip."""
+"""The estimate's data side and its work not mapped (D155, C§19), and the round trip."""
 
 from __future__ import annotations
 
@@ -28,9 +28,9 @@ def test_a_link_takes_tmp0_out_of_l1():
     assert [(g.channels, g.words_per_cycle) for g in two.groups] == [(9, 1025 / 130)]
 
 
-def _bound(g):
+def _bound(g, N=None):
     d = g.to_dict()
-    d["symbols"] = {"N": 512} if g.name == "dot" else {"N": 64}
+    d["symbols"] = {"N": N or (512 if g.name == "dot" else 64)}
     return type(g).from_dict(d)
 
 
@@ -45,8 +45,53 @@ def test_not_mapped_counts_the_iterations_no_unit_runs():
     assert [not_mapped(g) for g in (dot, a, b)] == [1024, 640, 257]
     vecadd = _bound(imported("vecadd"))
     s = split(vecadd, "add_map", 4)
-    t = tag_map(s, "add_map_s", "spatial")
+    t = tag_map(s, "add_map_inner", "spatial")
     assert [not_mapped(g) for g in (vecadd, s, t)] == [64, 64, 16]
+
+
+def _totals(*graphs):
+    return [(e.accelerator_cycles, e.not_mapped, e.unmapped_cycles, e.total_cycles)
+            for e in (estimate(g) for g in graphs)]  # fmt: skip
+
+
+def test_unmapped_work_counts_as_cycles():
+    """D155: an iteration no unit runs counts UNMAPPED_CYCLES_PER_ITERATION (1) cycle over every
+    map, spatial ones included, since a tag alone runs nothing; not_mapped skips the spatial
+    maps as before. vecmul at N = 2048: 2048 as imported, after the split, and after both tags
+    (not mapped 2048, 2048, 256), 256 after the bind, all the accelerator's. dot at N = 512 at
+    C§19's steps: not mapped 1024, 640, 257 as before, totals 1024, 1024 and 1028 (the split
+    moves nothing; split_reduce adds the final sum's 4 lanes)."""
+    from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION
+    from snax_forge.sandbox import bind
+
+    assert UNMAPPED_CYCLES_PER_ITERATION == 1
+    vecmul = _bound(imported("vecmul"), N=2048)
+    split8 = split(vecmul, "mult_map", 8)
+    tagged = tag_map(tag_map(split8, "mult_map", "temporal"), "mult_map_inner", "spatial")
+    bound = bind(tagged, "mult", "elementwise_mul", "chisel_tiled_spatial", "acc")
+    assert _totals(vecmul, split8, tagged, bound) == [
+        (0, 2048, 2048, 2048), (0, 2048, 2048, 2048), (0, 256, 2048, 2048), (256, 0, 0, 256)]  # fmt: skip
+    dot = _bound(imported("dot"))
+    a = split_map(dot, "mult_map", 4)
+    b = split_reduce(a, "sum_map", 4)
+    got = _totals(dot, a, b)
+    assert [t[1] for t in got] == [1024, 640, 257]  # C§19's not_mapped, unchanged
+    assert [t[3] for t in got] == [1024, 1024, 1028]
+    d = estimate(b).to_dict()
+    assert (d["unmapped_iterations"], d["unmapped_cycles"], d["total_cycles"]) == (1028, 1028, 1028)
+
+
+@pytest.mark.slow
+def test_the_totals_round_trip_and_stay_out_of_the_counter():
+    """The two new fields round-trip, and a group's expected COUNTER is its cycles plus the
+    fill alone: dot 4 at N = 512 binds everything, dot 1 one group of two runs."""
+    for name in ("dot_1", "dot_4"):
+        e = estimated(name)
+        back = Estimate.from_dict(e.to_dict())
+        assert (back.unmapped_cycles, back.total_cycles) == (e.unmapped_cycles, e.total_cycles)
+        assert back.to_dict() == e.to_dict()
+        assert all(g.counter == g.cycles + g.fill for g in e.groups)
+        assert e.total_cycles == e.accelerator_cycles + e.unmapped_cycles
 
 
 @pytest.mark.slow
@@ -63,6 +108,31 @@ def test_the_estimate_round_trips(name):
     e = estimated(name)
     assert Estimate.from_dict(e.to_dict()).to_dict() == e.to_dict()
     assert Estimate.from_dict(e.to_dict()) == e
+
+
+@pytest.mark.slow
+def test_the_bank_bound_of_vecmul():
+    """vecmul at N = 2048 (D155): three ports of W words a beat over 32 banks. At W = 16, 6144
+    words take at least 192 cycles against the ideal 128 (the run's COUNTER is 194), a note; at
+    W = 8 the same 192 is below the ideal 256, no note. Without a platform, no bound."""
+    (sixteen,) = estimated("vecmul", N=2048, W=16).groups
+    assert (sixteen.cycles, sixteen.bank_bound, sixteen.counter) == (128, 192, 131)
+    assert sixteen.bank_bound_note == ("acc: the outer ports move 6144 words over 32 banks, at "
+                                       "least 192 cycles against the ideal 128")  # fmt: skip
+    (eight,) = estimated("vecmul", N=2048, W=8).groups
+    assert (eight.cycles, eight.bank_bound, eight.bank_bound_note) == (256, 192, None)
+    (alone,) = estimate(steps("vecmul", N=2048, W=16)[-1]).groups
+    assert (alone.bank_bound, alone.bank_bound_note) == (None, None)
+
+
+@pytest.mark.slow
+def test_the_bank_bound_of_dot_1_per_group():
+    """dot 1 at N = 2048, W = 8: the mul's 3 ports of 256 beats x 8 channels, 6144 words, 192
+    banked cycles under its 256; the sum's in (256 x 8) and out (1 word), 2049 words, 65."""
+    mul, total = estimated("dot_1", N=2048, W=8).groups
+    assert [(g.name, g.cycles, g.bank_bound) for g in (mul, total)] == [
+        ("mul", 256, 192), ("sum", 257, 65)]  # fmt: skip
+    assert mul.bank_bound_note is None and total.bank_bound_note is None
 
 
 def test_an_untagged_tail_split_pads_and_checks():

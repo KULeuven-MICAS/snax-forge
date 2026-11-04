@@ -75,7 +75,8 @@ else, keyed ``<kind>:<id>`` (``node:``, ``container:``, ``group:``, ``accelerato
 a link node and its container share a name, so the page selects by name and shows both), all
 worked out here:
 
-    map          ``<var> · <iterations> · <kind or untagged>``      (``i_t · 128 · temporal``)
+    map          ``<id> · <var> · <iterations> · <kind or untagged>``
+                                                       (``mult_map · i · 2048 · untagged``)
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
                  ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``)
     unit         ``<instance> · <what one lane computes> · W <lanes>``, a fold's as a
@@ -91,7 +92,7 @@ group and accelerator; a link's container, depth and units; a container's shape,
 bytes, writers and readers; a group's units, links, estimated cycles and its cost; an accelerator's
 groups; an edge's (keyed ``<from>-><to>``, its ``id``) subset, packing and, at a unit's port,
 the firing loops its memlet runs over and its beats (design/streamers.py's ``port_loops``, as the
-estimate counts them, D151) and whether it has a streamer (a linked port has none). The estimate is the
+estimate counts them, D155) and whether it has a streamer (a linked port has none). The estimate is the
 step's on the viewer's platform, or none; a graph it cannot judge keeps its message in
 ``estimate_error`` and has no badges.
 
@@ -102,12 +103,18 @@ a unit's and a buffer link's Details gain ``cost`` after ``timing`` (``found``, 
 comb and flops, its energy per fire, holding per cycle and per task, or "not characterized"), a
 group's its area, energy and control unit; the Estimate panel's ``summary`` per group
 ``area_text`` and ``energy_text``, and ``cost`` (the heading, ``CAVEAT``, the accelerator's
-area and energy, the blocks not characterized; None when nothing is bound or there is no
-technology); a block with no flops holds "–".
+area and energy, the blocks not characterized, and ``tables``, the cost as a table per
+accelerator, ``cost_tables``; None when nothing is bound or there is no technology); a block
+with no flops holds "–".
 
 **A step** (``step_view``) is a graph's view with its ``label``, its ``marks`` (the nodes and
 containers some transform's site accepts), its ``estimate`` (``to_dict``) with its ``summary``
-(the Estimate panel's figures, every sum and share made here, D57) and, in edit mode, its
+(the Estimate panel's figures, every sum and share made here, D57), its ``containers_section``
+(the left column's Containers, C§12: each container's shape, sizes, dtype, bytes, placement,
+symbols and its one ``line``), its ``symbols_section`` (each kernel symbol, its value and its
+param) and ``bindings_section`` (each param with the unit, split or link it configures; the
+params come from the session's recipe in edit mode, a sandbox folder's ``recipe.json`` in view
+mode, ``folder_recipe``) and, in edit mode, its
 ``diff`` against the step before (sandbox/session.py). ``compare_view`` gives two steps' diff
 (the session's ``graph_diff``), per Details key the fields that changed, and ``columns``, what
 Compare lays out as two columns (the left step, ``a``, and the right, ``b``): their
@@ -294,10 +301,12 @@ def graph_view(e: Entry, platform: Any = None, est: Any = None,
 
 
 def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[str]] | None = None,
-              diff: dict[str, Any] | None = None, est: Any = None,
-              tech: str = DEFAULT_TECH) -> dict[str, Any]:  # fmt: skip
+              diff: dict[str, Any] | None = None, est: Any = None, tech: str = DEFAULT_TECH,
+              recipe: Any = None, editable: bool = False) -> dict[str, Any]:  # fmt: skip
     """One step (module doc): the graph's view, its label, marks, estimate and its summary,
-    and diff; the cost on ``tech``."""
+    and diff; the cost on ``tech``; ``recipe`` the steps up to this one (a session's, or a
+    sandbox folder's ``recipe.json``), whose params the left column's sections name, inputs
+    where ``editable`` (edit mode)."""
     error = None
     if e.graph is not None and est is None:
         est, error = _estimated(e.graph, platform, tech)
@@ -307,7 +316,10 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     if e.graph is None:
         return out
     out["estimate"] = est.to_dict() if est is not None else None
-    out["summary"] = estimate_summary(est) if est is not None else None
+    out["summary"] = estimate_summary(est, e.graph) if est is not None else None
+    out["containers_section"] = containers_section(e.graph, est)
+    out["symbols_section"] = symbols_section(e.graph, recipe, editable)
+    out["bindings_section"] = bindings_section(e.graph, recipe, editable)
     if marks is None:
         from snax_forge.sandbox.session import marks_of
 
@@ -315,6 +327,210 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["marks"] = marks
     if diff is not None:
         out["diff"] = diff
+    return out
+
+
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+STEP = re.compile(r"^(\d+)_")
+
+
+def folder_recipe(e: Entry) -> Any:
+    """View mode: the ``recipe.json`` beside a step's file (a sandbox folder's), its steps up to
+    that step (the stem's number), or None when there is none, it does not load, or the stem
+    has no number."""
+    from snax_forge.sandbox import Recipe, SandboxError
+
+    m = STEP.match(Path(e.path).stem)
+    path = Path(e.path).parent / "recipe.json"
+    if m is None or not path.is_file():
+        return None
+    try:
+        r = Recipe.load(path)
+    except (SandboxError, OSError, ValueError):
+        return None
+    from dataclasses import replace
+
+    return replace(r, steps=r.steps[: int(m[1])])
+
+
+def symbols_section(g: Graph, recipe: Any = None, editable: bool = False) -> list[dict[str, Any]]:
+    """The left column's Symbols (C§12): each graph symbol, its ``value`` (None while unbound),
+    the recipe ``param`` its value is (the recipe's symbol bound to a param's name, ``N`` ->
+    ``N``; None for a number or an expression), ``editable`` (edit mode and a param: an input,
+    ``POST /api/params``) and the ``containers`` whose shape uses it."""
+    users: dict[str, list[str]] = {s: [] for s in g.symbols}
+    for c in containers_section(g):
+        for x in c["symbols"]:
+            users.setdefault(x, []).append(c["name"])
+    out = []
+    for name, value in g.symbols.items():
+        given = recipe.symbols.get(name) if recipe is not None else None
+        param = (
+            given
+            if isinstance(given, str) and expr.is_name(given) and given in recipe.params
+            else None
+        )
+        out.append({"name": name, "value": value, "param": param,
+                    "editable": bool(editable and param), "containers": users.get(name, [])})  # fmt: skip
+    return out
+
+
+# The transforms that split a map by a factor, and the inner maps each makes, by suffix
+SPLITS = {"split": ("_inner",), "split_map": ("_s",), "split_reduce": ("_s", "_final")}
+
+
+def _map_ids(d: Any) -> set[str]:
+    """Every map id in a ``replaced`` subtree (a node's dict)."""
+    out: set[str] = set()
+    if isinstance(d, dict):
+        if d.get("kind") == "map" and d.get("id"):
+            out.add(d["id"])
+        for v in d.values():
+            out |= _map_ids(v)
+    elif isinstance(d, list):
+        for v in d:
+            out |= _map_ids(v)
+    return out
+
+
+def _param_names(v: Any, params: dict[str, Any]) -> list[str]:
+    """The recipe params an int step param names (a factor ``W``, ``W * 2``)."""
+    if not isinstance(v, str):
+        return []
+    try:
+        return [x for x in sorted(expr.names(v)) if x in params]
+    except ExprError:
+        return []
+
+
+def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> dict[str, Any]:
+    """The left column's Bindings (C§12): each param shown with what it configures. The param
+    stays the split's (D68, D73: ``bind`` reads W off the spatial map); a split step on map M
+    configures the unit whose replaced subtree holds the map it made (``M_inner``, ``M_s``,
+    ``split_reduce``'s ``M_final``). ``entries``, in the graph's order:
+
+        unit    per bound instance: its BRM, the lanes its design params give (``W = 8``) and
+                the params of the splits that set them (``acc · elementwise_mul · W = 8``)
+        split   a split whose map is not bound yet: its factor's params (``not bound``)
+        link    a link whose depth a step gives as a param
+
+    Each param ``{name, value, editable, shared_with}``: an input in edit mode
+    (``POST /api/params``), ``shared_with`` the other entries naming it (dot 2–6's ``W``, the
+    multiply's and the sum's). ``unused``: the session's params neither a symbol nor in an
+    entry. Without a recipe (view mode on bare files) the units come from the graph alone,
+    their design params read only."""
+    params = dict(recipe.params) if recipe is not None else {}
+    steps = list(recipe.steps) if recipe is not None else []
+    splits = []  # (map, transform, factor params, inner ids)
+    links = {}  # container -> depth params
+    for st in steps:
+        p = st.params
+        if st.transform in SPLITS:
+            m = p.get("map")
+            inner = re.compile(rf"^{re.escape(str(m))}({'|'.join(SPLITS[st.transform])})(_\d+)?$")
+            splits.append((m, st.transform, _param_names(p.get("factor"), params), inner))
+        elif st.transform == "link":
+            names = _param_names(p.get("depth"), params)
+            if names:
+                links[p.get("container")] = names
+    entries: list[dict[str, Any]] = []
+    used: set[int] = set()
+    seen: set[str] = set()
+    for n, _ in g.walk():
+        if n.kind == "accelerated" and n.attrs["instance"] not in seen:
+            a = n.attrs
+            seen.add(a["instance"])
+            ids = _map_ids(a.get("replaced"))
+            names: list[str] = []
+            for i, (_, _, ps, inner) in enumerate(splits):
+                if any(inner.match(x) for x in ids):
+                    used.add(i)
+                    names += [x for x in ps if x not in names]
+            design = dict(a.get("params") or {})
+            lanes = {k: v for k, v in design.items() if isinstance(v, int)}
+            entries.append({"kind": "unit", "id": a["instance"], "label": f"{a['instance']} · {a['brm']}",
+                            "names": names, "lanes": lanes, "note": None})  # fmt: skip
+        elif n.kind == "link" and n.attrs["container"] in links:
+            c = n.attrs["container"]
+            entries.append({"kind": "link", "id": c, "label": f"link {c} · depth",
+                            "names": links[c], "lanes": {}, "note": None})  # fmt: skip
+    for i, (m, transform, ps, _) in enumerate(splits):
+        node = next((x for x, _ in g.walk() if x.id == m and x.kind == "map"), None)
+        if i in used or node is None or "loop.split" not in node.attrs:
+            continue
+        entries.append({"kind": "split", "id": m, "label": f"{m} {transform}", "names": ps,
+                        "lanes": {}, "note": "not bound"})  # fmt: skip
+    by_name: dict[str, list[str]] = {}
+    for e in entries:
+        for x in e["names"]:
+            by_name.setdefault(x, []).append(e["label"])
+    for e in entries:
+        names = e.pop("names")
+        e["params"] = [{"name": x, "value": params.get(x), "editable": bool(editable and x in params),
+                        "shared_with": [lbl for lbl in by_name[x] if lbl != e["label"]]}
+                       for x in names]  # fmt: skip
+        if not e["params"] and e["lanes"]:  # no recipe param: the design params, read only
+            e["params"] = [{"name": k, "value": v, "editable": False, "shared_with": []}
+                           for k, v in e["lanes"].items()]  # fmt: skip
+    symbol_params = {x["param"] for x in symbols_section(g, recipe) if x["param"]}
+    unused = [{"name": k, "value": v, "editable": editable} for k, v in params.items()
+              if k not in symbol_params and k not in by_name]  # fmt: skip
+    return {"entries": entries, "unused": unused}
+
+
+def _placed_text(placed: Any) -> str | None:
+    """A container's placement as its line shows it: ``L1``, ``local``, ``wire``, ``FIFO 1``."""
+    if placed is None:
+        return None
+    if placed.placement == "l1":
+        return "L1"
+    if placed.placement == "link":
+        return "wire" if placed.depth == 0 else f"FIFO {placed.depth}"
+    return placed.placement
+
+
+def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
+    """The left column's Containers (C§12), per container in the graph's order: its ``name``,
+    ``shape`` as written (``shape_text``, its dims by " × ", and ``dims``, each dim's ``parts``,
+    ``{text, symbol}`` with ``symbol`` the graph symbol a part names or None, so the page puts
+    an input on each), ``sizes`` at the graph's symbols (None while one is unbound), ``dtype``,
+    padded ``bytes`` and ``placement`` as the estimate has them (None without one), and the
+    ``symbols`` its shape uses, in order; ``line``, what the page shows after its name: the shape,
+    the placement and the padded bytes (``N · L1 · 16 KiB``)."""
+    out = []
+    for name, c in g.containers.items():
+        placed = est.containers.get(name) if est is not None else None
+        try:
+            sizes = [expr.evaluate(x, g.bound_symbols) for x in c.shape]
+        except ExprError:
+            sizes = None
+        dims, used = [], []
+        for d in c.shape:
+            text, parts, at = str(d), [], 0
+            for m in NAME.finditer(text):
+                if m[0] not in g.symbols:
+                    continue
+                if m.start() > at:
+                    parts.append({"text": text[at : m.start()], "symbol": None})
+                parts.append({"text": m[0], "symbol": m[0]})
+                used.append(m[0])
+                at = m.end()
+            if at < len(text) or not parts:
+                parts.append({"text": text[at:], "symbol": None})
+            dims.append({"parts": parts})
+        out.append({
+            "name": name, "shape": list(c.shape),
+            "shape_text": " × ".join(str(d) for d in c.shape) or "scalar", "dims": dims,
+            "sizes": sizes, "sizes_text": " × ".join(map(str, sizes)) if sizes else None,
+            "dtype": c.dtype, "transient": c.transient,
+            "bytes": placed.bytes if placed else None,
+            "bytes_text": size_text(placed.bytes) if placed else None,
+            "placement": placed.placement if placed else None,
+            "symbols": list(dict.fromkeys(used)),
+            "line": " · ".join(x for x in (" × ".join(str(d) for d in c.shape) or "scalar",
+                                           _placed_text(placed),
+                                           size_text(placed.bytes) if placed else None) if x),
+        })  # fmt: skip
     return out
 
 
@@ -340,13 +556,15 @@ def compare_view(a: Entry, b: Entry, platform: Any = None, tech: str = DEFAULT_T
     diff = graph_diff(
         a.graph, b.graph, ea.containers if ea else None, eb.containers if eb else None
     )
-    sa, sb = (estimate_summary(e) if e is not None else None for e in (ea, eb))
+    sa, sb = (estimate_summary(e, x.graph) if e is not None else None
+              for e, x in ((ea, a), (eb, b)))  # fmt: skip
     columns = {
         "labels": list(labels or (a.name, b.name)),
         "details": {key: {"where": "added" if key not in da else "removed" if key not in db else "",
                           "rows": detail_rows(da.get(key), db.get(key))}
                     for key in dict.fromkeys([*da, *db])},
         "estimate": estimate_rows(sa, sb),
+        "cost_tables": compare_cost_tables(sa, sb),
         "caveat": ((sb or {}).get("cost") or (sa or {}).get("cost") or {}).get("caveat"),
     }  # fmt: skip
     return {"diff": diff, "changed": changed, "columns": columns}
@@ -391,9 +609,10 @@ def detail_rows(x: dict[str, Any] | None, y: dict[str, Any] | None) -> list[dict
 
 def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[dict[str, Any]]:
     """The Estimate panel in two columns (module doc), from each side's summary (None: no
-    estimate): under ``accelerator`` its cycles and not-mapped count; under ``group <name>``,
-    every group of either side, its cycles, COUNTER, channels, area and energy; under
-    ``memory`` L1, the words read and written, the lanes; under the cost heading the
+    estimate): under ``accelerator`` its cycles, the unmapped cycles, the total (D155) and the
+    not-mapped count; under ``group <name>``,
+    every group of either side, its cycles, COUNTER, channels, area and energy, and its bank
+    note where a side has one; under ``memory`` L1, the words read and written, the lanes; under the cost heading the
     accelerator's area, energy and the blocks not characterized. "–" where a side has none."""
 
     def both(fn: Any) -> tuple[Any, Any]:
@@ -413,6 +632,8 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
             x["footprint_text"])  # fmt: skip
 
     rows = [_row("cycles", *both(lambda s: s["accelerator_cycles"]), "accelerator"),
+            _row("unmapped cycles", *both(lambda s: s["unmapped_cycles"]), "accelerator"),
+            _row("total cycles", *both(lambda s: s["total_cycles"]), "accelerator"),
             _row("not mapped", *both(lambda s: s["not_mapped"]), "accelerator")]  # fmt: skip
     names = dict.fromkeys(g["name"] for s in (sa, sb) if s for g in s["groups"])
     for name in names:
@@ -425,6 +646,9 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
                  for label, field in (("cycles", "formula"), ("COUNTER", "counter"),
                                       ("channels", "channels"), ("area", "area_text"),
                                       ("energy", "energy_text"))]  # fmt: skip
+        notes = both(lambda s: group(s, "bank_note"))
+        if any(notes):  # L1's banks allow fewer cycles than the ideal on a side (D155)
+            rows.append(_row("bank bound", *notes, under))
     rows += [_row("L1", *both(l1), "memory"),
              _row("reads", *both(lambda s: f"{s['reads']} words"), "memory"),
              _row("writes", *both(lambda s: f"{s['writes']} words"), "memory")]  # fmt: skip
@@ -445,18 +669,22 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
     return rows
 
 
-def estimate_summary(est: Any) -> dict[str, Any]:
+def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
     """The Estimate panel's figures, every sum and share worked out here (D57): the headline,
+    ``cycles`` (the accelerator's, the unmapped work's at one cycle per iteration with that
+    assumption as its ``title``, and the total, D155),
     per group ``cycles = bottleneck + ramp [+ stall]`` and its expected COUNTER, the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
-    lane use of each tailed split; with a technology per group its area and energy and the
-    accelerator's ``cost`` (module doc)."""
+    lane use of each tailed split; per group its ``bank_bound`` and, where it exceeds the
+    cycles, its ``bank_note`` (D155; R2 shows them); with a technology per group its area and
+    energy and the accelerator's ``cost`` (module doc)."""
     groups = []
     for g in est.groups:
         terms = f"{g.bottleneck} + {g.ramp}" + (f" + {g.stall}" if g.stall else "")
         groups.append({"name": g.name, "cycles": g.cycles, "bottleneck": g.bottleneck,
                        "ramp": g.ramp, "stall": g.stall, "counter": g.counter,
                        "channels": g.channels, "formula": f"{g.cycles} = {terms}",
+                       "bank_bound": g.bank_bound, "bank_note": g.bank_bound_note,
                        "area_text": _um2(g.cost.area) if g.cost else None,
                        "energy_text": _nj(g.cost.energy) if g.cost else None})  # fmt: skip
     share = est.l1_footprint / est.l1_size if est.l1_size else None
@@ -473,25 +701,125 @@ def estimate_summary(est: Any) -> dict[str, Any]:
          "text": f"{x.n} of {-(-x.n // x.w) * x.w} lanes ({100 * x.lane_use:.1f}%)"}
         for k, x in est.splits.items()
     ]  # fmt: skip
+    from snax_forge.estimate import UNMAPPED_CYCLES_PER_ITERATION as PER
+
+    assumption = (f"{est.unmapped_iterations} iterations no unit runs, at {PER} cycle each: an "
+                  "assumption (a core takes several), D155")  # fmt: skip
     return {
         "accelerator_cycles": est.accelerator_cycles,
         "not_mapped": est.not_mapped,
+        "unmapped_cycles": est.unmapped_cycles,
+        "total_cycles": est.total_cycles,
+        "cycles": [
+            {
+                "label": "accelerator",
+                "value": est.accelerator_cycles,
+                "title": "the groups' cycles, adding through L1",
+            },
+            {"label": "unmapped", "value": est.unmapped_cycles, "title": assumption},
+            {
+                "label": "total",
+                "value": est.total_cycles,
+                "title": "the accelerator's cycles plus the unmapped ones",
+            },
+        ],
+        "unmapped_note": assumption if est.unmapped_iterations else None,
         "groups": groups,
         "l1": l1,
         "reads": sum(c.reads for c in est.containers.values()),
         "writes": sum(c.writes for c in est.containers.values()),
         "splits": splits,
-        "cost": cost_summary(est),
+        "cost": cost_summary(est, graph),
     }
 
 
-def cost_summary(est: Any) -> dict[str, Any] | None:
-    """The Estimate panel's ``cost`` (module doc): None with no technology or no group."""
+def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
+    """The Estimate panel's ``cost`` (module doc): None with no technology or no group; with
+    ``tables``, the cost table per accelerator (``cost_tables``)."""
     if est.tech is None or not est.groups:
         return None
     return {"tech": est.tech, "heading": heading(est.tech), "caveat": CAVEAT,
             "area_text": _um2(est.area), "energy_text": _nj(est.energy),
-            "missing": list(est.missing)}  # fmt: skip
+            "missing": list(est.missing), "tables": cost_tables(est, g)}  # fmt: skip
+
+
+def cost_tables(est: Any, g: Graph | None = None) -> list[dict[str, Any]]:
+    """The cost as tables (C§12), one per accelerator of ``g`` (its groups, in order; without
+    ``g`` one of every group, named ``accelerator``): a row per unit, buffer link and control
+    unit, each its ``block`` (the instance, the link's container, ``<group> ctrl``), ``kind``,
+    ``datapath`` (``· not characterized`` where the table has no point), area (µm², 3
+    significant figures) and energy (nJ, 3 decimals) with their texts, and ``share`` of the
+    accelerator's energy; then the ``total``."""
+    by_name = {x.name: x for x in est.groups if x.cost is not None}
+    accs = [(a["name"], [grp["name"] for grp in a["groups"]]) for a in accelerators(g)] if g else []
+    if not accs:
+        accs = [("accelerator", list(by_name))]
+    out = []
+    for name, groups in accs:
+        raw = []
+        for gname in groups:
+            c = by_name.get(gname)
+            if c is None:
+                continue
+            c = c.cost
+            for kind, blocks in (("unit", c.units), ("link", c.links)):
+                for k, b in blocks.items():
+                    dp = b.datapath or "–"
+                    raw.append((k, kind, dp if b.found else f"{dp} · not characterized",
+                                b.found is not None, b.total_um2, b.task_nj))  # fmt: skip
+            raw.append((f"{gname} ctrl", "ctrl", "control unit", True, c.ctrl_um2, c.ctrl_nj))
+        if not raw:
+            continue
+        area, energy = sum(r[4] for r in raw), sum(r[5] for r in raw)
+        out.append({"accelerator": name, "rows": [_cost_row(*r, energy) for r in raw],
+                    "total": _cost_row("total", "total", "", True, area, energy, energy)})  # fmt: skip
+    return out
+
+
+def _cost_row(block: str, kind: str, dp: str, found: bool, a: float, e: float,
+              whole: float) -> dict[str, Any]:  # fmt: skip
+    """A cost table's row, its share of ``whole``, the accelerator's energy."""
+    share = e / whole if whole else None
+    return {"block": block, "kind": kind, "datapath": dp, "found": found, "area": a, "energy": e,
+            "share": share, "area_text": sig3(a), "energy_text": dec3(e),
+            "share_text": "–" if share is None else f"{100 * share:.1f}%"}  # fmt: skip
+
+
+COST_COLUMNS = (("block", "block"), ("datapath", "datapath"), ("area_text", "area (µm²)"),
+                ("energy_text", "energy (nJ)"), ("share_text", "share"))  # fmt: skip
+
+
+def compare_cost_tables(
+    sa: dict[str, Any] | None, sb: dict[str, Any] | None
+) -> list[dict[str, Any]]:
+    """Compare's cost tables: every accelerator and block of either side, each cell ``before →
+    after`` where the two differ, as it is where they do not, "–" on a side without it; each
+    row's ``differs``."""
+
+    def tables(s: dict[str, Any] | None) -> dict[str, Any]:
+        cost = (s or {}).get("cost") or {}
+        return {t["accelerator"]: t for t in cost.get("tables") or []}
+
+    ta, tb = tables(sa), tables(sb)
+    out = []
+    for name in dict.fromkeys([*ta, *tb]):
+        a, b = ta.get(name, {}), tb.get(name, {})
+        ra = {r["block"]: r for r in a.get("rows", [])}
+        rb = {r["block"]: r for r in b.get("rows", [])}
+
+        def cells(x: dict[str, Any] | None, y: dict[str, Any] | None) -> dict[str, Any]:
+            row: dict[str, Any] = {"differs": False}
+            for key, _ in COST_COLUMNS:
+                u = "–" if x is None else (x.get(key) or "–")
+                w = "–" if y is None else (y.get(key) or "–")
+                row[key] = u if u == w else f"{u} → {w}"
+                row["differs"] |= u != w
+            return row
+
+        out.append({"accelerator": name,
+                    "rows": [cells(ra.get(k), rb.get(k)) for k in dict.fromkeys([*ra, *rb])],
+                    "total": cells(a.get("total"), b.get("total"))})  # fmt: skip
+    return out
 
 
 def _um2(x: float) -> str:
@@ -554,7 +882,10 @@ def compact_text(g: Graph, n: Node) -> str:
     a = n.attrs
     if n.kind == "map":
         its = _iterations(g, a["range"])
-        return f"{a['var']} · {'?' if its is None else its} · {a.get('loop.kind') or 'untagged'}"
+        return (
+            f"{n.id} · {a['var']} · {'?' if its is None else its} · "
+            f"{a.get('loop.kind') or 'untagged'}"
+        )
     if n.kind == "tasklet":
         return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}"
     if n.kind == "accelerated":

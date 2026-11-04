@@ -5,7 +5,9 @@
   routes and loads no external file, so it works offline. dfg.js draws one step at a time
   (two with Compare): boxes are HTML laid out by CSS, the edges one SVG layer per panel;
   Details, the Estimate, the transforms' forms and every message come from the API as they
-  are. The edit-mode parts (data-edit) stay hidden in view mode.
+  are. The edit-mode parts (data-edit) stay hidden in view mode. The left column (the
+  transforms in edit mode, then the Containers with the Symbols, then the Bindings) scrolls on
+  its own.
 -->
 <html lang="en">
 <head>
@@ -19,7 +21,6 @@
   <header class="dfg-top">
     <h1 id="title">SNAX-FORGE DFG viewer</h1>
     <span id="session-name" class="dfg-session" data-edit hidden></span>
-    <span id="params" class="dfg-params" data-edit hidden></span>
     <div class="dfg-steps">
       <button id="undo" type="button" title="Undo: the step before (Ctrl+Z, ⌘Z on macOS)" data-edit hidden>Undo</button>
       <button id="prev" type="button" title="The step before (←)" aria-label="previous step">◀</button>
@@ -35,9 +36,23 @@
     <p id="status" class="status" role="status"></p>
   </header>
   <div class="dfg-layout">
-    <aside id="sidebar" class="dfg-sidebar" hidden></aside>
+    <aside id="sidebar" class="dfg-sidebar">
+      <div id="transforms" data-edit hidden></div>
+      <section id="containers-panel" class="dfg-containers">
+        <h2>Containers</h2>
+        <div id="containers"></div>
+      </section>
+      <section id="bindings-panel" class="dfg-bindings">
+        <h2>Bindings</h2>
+        <div id="bindings"></div>
+      </section>
+    </aside>
+    <div id="left-handle" class="dfg-col-handle left" role="separator" aria-orientation="vertical" aria-label="left panel width"
+      title="Drag to resize the left panel; double-click for its default width"></div>
     <main id="graphs" class="dfg-centre"></main>
-    <aside class="dfg-right">
+    <div id="right-handle" class="dfg-col-handle right" role="separator" aria-orientation="vertical" aria-label="right panel width"
+      title="Drag to resize the right panel; double-click for its default width"></div>
+    <aside id="right" class="dfg-right">
       <section class="dfg-side-panel">
         <h2>Details</h2>
         <div id="details"></div>

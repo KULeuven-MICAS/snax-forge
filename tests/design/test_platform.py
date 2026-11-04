@@ -7,7 +7,7 @@ import json
 import pytest
 
 from snax_forge.design import DesignError, Platform, StreamerOptions, parse_value
-from snax_forge.design.platform import parse
+from snax_forge.design.platform import L1Config, parse
 
 from .helpers import SMALL16, SNAX_FORGE, platform_dict
 
@@ -233,6 +233,17 @@ def test_the_csr_widths_are_set_and_counter_width_follows_job_width_when_null():
     assert (w.acc_csr.job_width, w.acc_csr.counter) == (16, 8)
     assert w.with_changes([("acc_csr.counter_width", None)]).acc_csr.counter == 16
     assert Platform.from_dict(json.loads(w.to_json())) == w
+
+
+def test_the_crossbar_limit_is_a_platform_value():
+    """l1.max_xbar_inputs (D85): 64 by default and in both platform files, at least 1."""
+    assert L1Config().max_xbar_inputs == 64
+    assert (
+        Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 128)]).l1.max_xbar_inputs == 128
+    )
+    with pytest.raises(DesignError, match="max_xbar_inputs must be >= 1") as e:
+        Platform.load(SMALL16).with_changes([("l1.max_xbar_inputs", 0)])
+    assert e.value.codes == ["platform.values"]
 
 
 @pytest.mark.parametrize(

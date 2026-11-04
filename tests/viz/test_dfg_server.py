@@ -48,7 +48,9 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
             "0 input", "1 split_map", "2 bind", "3 split_map", "4 bind", "5 link"]  # fmt: skip
         status, v = get_json(srv, "/api/step/5")
         texts = [t for row in v["rows"] if row["kind"] == "node" for t in _texts(row["node"])]
-        assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "i_t · 128 · temporal"} <= set(texts)
+        assert {"tmp0 · FIFO 1", "mul · a * b · W 4", "mult_map · i_t · 128 · temporal"} <= set(
+            texts
+        )
         assert v["containers"]["A"]["badge"] == "L1 · 4 KiB"
         # tmp0 is the link's: no box, the edges from mult into the link and out of it into sum
         boxes = [b for row in v["rows"] if row["kind"] == "containers" for b in row["boxes"]]
@@ -153,7 +155,9 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
                                                        "no session is open: POST /api/session first"})  # fmt: skip
         assert get_json(srv, "/api/mode")[1]["platform"] == session.PLATFORM
         assert get_json(srv, "/api/mode")[1]["tech"] == "nangate45"
-        status, s = post(srv, "/api/session", {"kernel": "vecadd", "params": {"N": 64, "W": 4}})
+        status, bad = post(srv, "/api/session", {"kernel": "vecadd", "params": {}})
+        assert status == 400 and bad["message"] == "vecadd: give N, e.g. --set N=2048"
+        status, s = post(srv, "/api/session", {"kernel": "vecadd", "params": {"N": 64}})
         assert status == 200 and (s["name"], s["cursor"], s["steps"]) == ("vecadd", 0, [])
         assert (s["labels"], s["undo"], s["redo"], s["recipe"]["kernel"]) == (
             ["0 input"],
@@ -171,15 +175,24 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         ]
         bind = get_json(srv, "/api/step/0/site/add")[1]["bind"]
         assert not bind["ok"] and "split the map first" in bind["message"]
+        status, got = post(srv, "/api/apply", {"transform": "split",
+                                               "params": {"map": "add_map", "factor": "W"}})  # fmt: skip
+        assert (
+            status == 400
+            and got["message"] == "split: factor 'W' is not a param; give its value"
+            and got["param"] == "W"
+        )
         logs = []
         for transform, params in (
             ("split", {"map": "add_map", "factor": "W"}),
-            ("tag_map", {"map": "add_map_s", "kind": "spatial"}),
+            ("tag_map", {"map": "add_map_inner", "kind": "spatial"}),
             ("tag_map", {"map": "add_map", "kind": "temporal"}),
             ("bind", {"node": "add", "brm": "elementwise_add",
                       "implementation": "chisel_tiled_spatial", "instance": "acc"}),
         ):  # fmt: skip
-            status, got = post(srv, "/api/apply", {"transform": transform, "params": params})
+            new = {"W": 4} if transform == "split" else None
+            status, got = post(srv, "/api/apply", {"transform": transform, "params": params,
+                                                   "new_params": new})  # fmt: skip
             assert status == 200 and got["transform"] == transform, got
             assert got["log"].startswith(f"step {got['index']}  {transform} ")
             logs.append(got["log"])
@@ -190,10 +203,25 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         status, v = get_json(srv, "/api/step/4")
         # the tasklet add became the unit add, its spatial map gone
         assert (v["diff"]["nodes"]["removed"], "add" in v["diff"]["nodes"]["changed"]) == (
-            ["add_map_s"],
+            ["add_map_inner"],
             True,
         )
         assert v["estimate"]["groups"][0]["cycles"] == 16
+        # 3 ports x 16 beats x 4 channels over 32 banks: 6 cycles, under 16, no note (D155)
+        assert v["estimate"]["groups"][0]["bank_bound"] == 6
+        # the left column's Bindings: the unit with the split's W, an input in edit mode
+        (unit,) = v["bindings_section"]["entries"]
+        assert (unit["label"], unit["params"]) == ("acc · elementwise_add", [
+            {"name": "W", "value": 4, "editable": True, "shared_with": []}])  # fmt: skip
+        assert v["symbols_section"][0] | {"containers": None} == {
+            "name": "N",
+            "value": 64,
+            "param": "N",
+            "editable": True,
+            "containers": None,
+        }
+        assert (v["summary"]["groups"][0]["bank_bound"], v["summary"]["groups"][0]["bank_note"]) == (
+            6, None)  # fmt: skip
         assert (
             v["summary"]["cost"]["heading"].endswith("nangate45")
             and "cost" in v["details"]["node:add"]
@@ -221,7 +249,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             "4 bind",
         ]
         assert get_json(srv, "/api/session")[1]["undo"] == 1
-        assert get_json(srv, "/api/compare/2/4")[1]["diff"]["nodes"]["removed"] == ["add_map_s"]
+        assert get_json(srv, "/api/compare/2/4")[1]["diff"]["nodes"]["removed"] == ["add_map_inner"]
         assert post(srv, "/api/cursor", {"k": 4})[0] == 200
         assert post(srv, "/api/cursor", {"k": 9})[0] == 400
         assert post(srv, "/api/params", {"params": {"W": 8}})[0] == 200
@@ -229,12 +257,31 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert get_json(srv, "/api/step/4")[1]["estimate"]["groups"][0]["cycles"] == 8
         status, saved = post(srv, "/api/save", {"name": "vecadd_mine"})
         assert status == 200 and (roots.recipes / "vecadd_mine.json").is_file(), saved
+        assert saved["log"] == f"saved {saved['shown']}" and saved["commands"][2]["command"] == (
+            f"pixi run forge {saved['shown']}")  # fmt: skip
         assert post(srv, "/api/save", {"name": "vecadd_mine"})[1]["code"] == "save.name"
         status, out = post(srv, "/api/export", {"k": 1})
         assert status == 200 and Path(out["path"]).name == "1_split.snaxdfg"
         assert [x["name"] for x in get_json(srv, "/api/recipes")[1]] == ["vecadd_mine"]
         assert get_json(srv, "/api/sessions")[1][0]["cursor"] == 4
         assert get_json(srv, "/api/nope")[0] == 404 and post(srv, "/api/nope")[0] == 404
+
+
+@pytest.mark.slow
+def test_a_factor_given_as_a_number_is_a_param_on_the_page(tmp_path, monkeypatch):
+    """POST /api/apply with factor 8: the step stores W (the log line says so) and the step's
+    Bindings list the split with W = 8 as an input, changeable after the bind (C§12)."""
+    monkeypatch.setattr(session, "_import", imported)
+    roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
+    with served(make_edit_server(0, roots=roots)) as srv:
+        post(srv, "/api/session", {"kernel": "vecadd", "params": {"N": 64}})
+        status, got = post(srv, "/api/apply", {"transform": "split",
+                                               "params": {"map": "add_map", "factor": 8}})  # fmt: skip
+        assert status == 200 and got["params"]["factor"] == "W" and " factor=W " in got["log"]
+        (entry,) = get_json(srv, "/api/step/1")[1]["bindings_section"]["entries"]
+        assert (entry["label"], entry["params"]) == ("add_map split", [
+            {"name": "W", "value": 8, "editable": True, "shared_with": []}])  # fmt: skip
+        assert get_json(srv, "/api/session")[1]["params"] == {"N": 64, "W": 8}
 
 
 # =============================================================================

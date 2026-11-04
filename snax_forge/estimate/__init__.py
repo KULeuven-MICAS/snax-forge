@@ -1,4 +1,4 @@
-"""SNAX-ESTIMATE: the ideal, engine-alone estimate of a bound graph (D151, C§19).
+"""SNAX-ESTIMATE: the ideal, engine-alone estimate of a bound graph (D155, C§19).
 
     estimate(graph, platform=None, tech="nangate45") -> Estimate
 
@@ -10,7 +10,15 @@ unit, group and accelerator its area and energy (cost.py, C§20); and the data s
 container its placement, bytes and L1 traffic, per outer port its streamer's loops, beats and
 channels, per tailed split its lane use (data.py). No bank conflicts, no streamer fill, no DMA,
 no core control: a run's COUNTER is a group's cycles plus the streamers' fill (C§17), and its
-window is longer. Work no unit runs is a not-mapped count, never cycles. The viewers and
+window is longer. Beside the ideal cycles, on a platform, each group's ``bank_bound``:
+ceil(words its outer ports move / l1.n_banks), the fewest cycles L1's single-port banks allow,
+a note where it exceeds the cycles (vecmul at W = 16: 192 against 128, COUNTER 194). Work no unit runs is a not-mapped count of iterations (spatial maps
+skipped, C§19's ``not_mapped``) and, over every map, spatial ones included, since a tag alone
+runs nothing (``unmapped_iterations``), at ``UNMAPPED_CYCLES_PER_ITERATION`` (1) cycle each,
+``unmapped_cycles``: an assumption (a core
+takes several), held in this one constant so a measured value can replace it (D155); the
+``total_cycles`` are the accelerator's plus the unmapped ones. A group's COUNTER never holds
+them. The viewers and
 ``design.md`` read it (report/design.py).
 """
 
@@ -32,6 +40,11 @@ if TYPE_CHECKING:
     from snax_forge.dfg import Graph
 
 
+# The cycles an iteration no unit runs is counted at (D155): an assumption, not a measurement (a
+# core takes several cycles per iteration); one constant, so a measured value can replace it.
+UNMAPPED_CYCLES_PER_ITERATION = 1
+
+
 @dataclass
 class Estimate(JsonFile):
     """C§19's artefact; see the module doc."""
@@ -44,6 +57,7 @@ class Estimate(JsonFile):
     splits: dict[str, SplitData] = field(default_factory=dict)
     tech: str | None = None
     char_source: dict[str, str] | None = None
+    unmapped_iterations: int = 0  # not_mapped over every map, spatial ones included (D155)
 
     @property
     def area(self) -> float | None:
@@ -66,6 +80,17 @@ class Estimate(JsonFile):
         return sum(g.cycles for g in self.groups)
 
     @property
+    def unmapped_cycles(self) -> int:
+        """The work no unit runs, as cycles: ``unmapped_iterations`` (over every map, a tag alone
+        runs nothing) at ``UNMAPPED_CYCLES_PER_ITERATION`` (D155, an assumption)."""
+        return self.unmapped_iterations * UNMAPPED_CYCLES_PER_ITERATION
+
+    @property
+    def total_cycles(self) -> int:
+        """The accelerator's cycles plus the unmapped ones (D155)."""
+        return self.accelerator_cycles + self.unmapped_cycles
+
+    @property
     def l1_footprint(self) -> int:
         """The bytes of the containers placed in L1."""
         return sum(c.bytes for c in self.containers.values() if c.placement == "l1")
@@ -75,6 +100,9 @@ class Estimate(JsonFile):
             "groups": [g.to_dict() for g in self.groups],
             "accelerator_cycles": self.accelerator_cycles,
             "not_mapped": self.not_mapped,
+            "unmapped_iterations": self.unmapped_iterations,
+            "unmapped_cycles": self.unmapped_cycles,
+            "total_cycles": self.total_cycles,
             "containers": {k: c.to_dict() for k, c in self.containers.items()},
             "l1_footprint": self.l1_footprint,
             "l1_size": self.l1_size,
@@ -96,6 +124,7 @@ class Estimate(JsonFile):
             {k: SplitData.from_dict(s) for k, s in d["splits"].items()},
             (d.get("cost") or {}).get("tech"),
             (d.get("cost") or {}).get("source"),
+            d["unmapped_iterations"],
         )
 
 
@@ -116,15 +145,20 @@ def estimate(graph: Graph, platform: Platform | None = None,
         words[unit_group[n.attrs["instance"]].name] += port.beats * port.num_ch
     for g in found:
         g.words_per_cycle = words[g.name] / g.cycles if g.cycles else 0.0
+        if platform is not None:  # the fewest cycles L1's banks allow (D155)
+            g.n_banks = platform.l1.n_banks
+            g.bank_bound = -(-words[g.name] // g.n_banks)
     for k, port in ports(graph).items():
         unit_group[k.split(".")[0]].channels += port.num_ch
     l1 = platform.l1 if platform is not None else None
     size = None if l1 is None else l1.n_banks * l1.rows * l1.width_bits // 8
     return Estimate(found, not_mapped(graph), containers(graph), size, ports(graph), splits(graph),
-                    tech, None if table is None else dict(table.source))  # fmt: skip
+                    tech, None if table is None else dict(table.source),
+                    not_mapped(graph, spatial=True))  # fmt: skip
 
 
 __all__ = [
+    "UNMAPPED_CYCLES_PER_ITERATION",
     "BlockCost",
     "ContainerData",
     "Estimate",

@@ -63,6 +63,7 @@ from .streamers import (
     linked_ports,
     memlet_spatial_bounds,
     nest_spatial_bounds,
+    resolve,
     slices_per_word,
     streamer_name,
 )
@@ -714,6 +715,42 @@ def _connect_num_ch(design: Design) -> Iterable[Problem]:
         )  # fmt: skip
 
 
+def xbar_inputs(design: Design) -> tuple[int, int] | None:
+    """The TCDM crossbar's inputs as the generator's cluster file gives them to SNAX-GVSoC
+    (snitch_cluster.py): the accelerator's ports, its streamers' channels (``snax_tcdm_ports``,
+    gen/csrs.py's ``channels``: num_ch summed, D142), then a port per core of the platform's
+    hjson and one for AXI; as (channels, others). None when the streamers do not resolve
+    (another connect check names why) or there are none."""
+    try:
+        found = resolve(design.platform, design.graph, design.instances)
+        cores = runtime_cores(design.platform)
+    except (ValueError, DesignError):
+        return None
+    channels = sum(s.num_ch for s in found.values())
+    if channels == 0:
+        return None
+    return channels, (cores or 0) + 1
+
+
+def _connect_xbar_inputs(design: Design) -> Iterable[Problem]:
+    """No more crossbar inputs than the platform's ``l1.max_xbar_inputs``, where SNAX-GVSoC
+    asserts (D85)."""
+    counted = xbar_inputs(design)
+    limit = design.platform.l1.max_xbar_inputs
+    if counted is None or sum(counted) <= limit:
+        return
+    channels, others = counted
+    where = ", ".join(accelerators(design.graph)) or "graph"
+    yield Problem(
+        "connect.xbar_inputs", where,
+        f"{channels + others} TCDM crossbar inputs, the platform takes at most {limit} "
+        f"({channels} streamer channels, {others} for the cores and AXI; l1.max_xbar_inputs, "
+        "the limit SNAX-GVSoC's crossbar asserts)",
+        f"fewer lanes, or a platform with more inputs ({_set('l1.max_xbar_inputs', channels + others)} "
+        "on a model that takes them, open item 105)",
+    )  # fmt: skip
+
+
 def _gen_instances(design: Design) -> Iterable[Problem]:
     """No more accelerators than the platform has slots: one where it names an
     ``accelerator_slot`` (the generated accelerator's, D131); a platform without one (small16)
@@ -1037,6 +1074,7 @@ for _code, _stage, _fn in (
     ("connect.pack", "connect", _connect_pack),
     ("connect.pad", "connect", _connect_pad),
     ("connect.num_ch", "connect", _connect_num_ch),
+    ("connect.xbar_inputs", "connect", _connect_xbar_inputs),
     ("gen.instances", "connect", _gen_instances),
     ("connect.temporal", "connect", _connect_temporal),
     ("memory.pin", "memory", _memory_pin),

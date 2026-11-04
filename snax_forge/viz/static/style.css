@@ -339,7 +339,8 @@ i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px,
   --edge: #6b747e;
   --hl: #d4386a;
   --data: #1f7a8c;
-  --side: 300px; /* the right panel */
+  --side: 300px; /* the right panel, dragged on its edge (dfg.js) */
+  --left: 260px; /* the left panel, the same */
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -363,15 +364,19 @@ body.dfg { padding: 0; height: 100vh; font-size: 17px; /* the run viewer's 15 px
 .dfg-steps { display: flex; align-items: center; gap: 0.25rem; }
 .dfg-steps select { min-width: 12rem; }
 .dfg-toggle { display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
-.dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: auto minmax(0, 1fr) var(--side); grid-template-areas: "side centre right"; }
-.dfg-sidebar { grid-area: side; width: 260px; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
-.dfg-sidebar[hidden] { display: none; }
+.dfg-layout { flex: 1; min-height: 0; display: grid; grid-template-columns: var(--left) 6px minmax(0, 1fr) 6px var(--side); grid-template-areas: "side lh centre rh right"; }
+.dfg-sidebar { grid-area: side; min-width: 0; overflow: auto; border-right: 1px solid var(--rule); background: var(--panel); }
+/* the side panels' handles: the log's look (a thin rule on hover or while dragged) */
+.dfg-col-handle { cursor: col-resize; touch-action: none; }
+.dfg-col-handle.left { grid-area: lh; }
+.dfg-col-handle.right { grid-area: rh; }
+.dfg-col-handle:hover, .dfg-col-handle.dragging { background: var(--rule); }
 .dfg-centre { grid-area: centre; max-width: none; margin: 0; min-width: 0; overflow: auto; padding: 0.8rem; display: flex; gap: 0.8rem; align-items: flex-start; justify-content: safe center; }
 /* Compare: the two graphs side by side, one thin line between them; the column scrolls */
 .dfg-centre.two { align-items: stretch; gap: 0; }
 .dfg-centre.two > .c-panel { flex: 0 0 auto; }
 .dfg-centre.two > .c-panel + .c-panel { border-left: 1px solid var(--rule); }
-.dfg-right { grid-area: right; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
+.dfg-right { grid-area: right; min-width: 0; overflow: auto; border-left: 1px solid var(--rule); background: var(--panel); padding: 0.6rem 0.8rem; font-size: 0.88em; }
 .dfg-side-panel h2 { font-size: 0.925rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin: 0.4rem 0 0.3rem; }
 .dfg-side-panel { padding: 0; border-bottom: none; }
 .dfg-side-panel + .dfg-side-panel { border-top: 1px solid var(--rule); margin-top: 0.6rem; padding-top: 0.3rem; }
@@ -400,10 +405,22 @@ table.c-cols tr.differs td, table.c-cols tr.differs th { background: var(--req-b
 .c-details dd { margin: 0; overflow-wrap: anywhere; font-size: 0.92em; }
 .c-details .changed { color: var(--hl); font-weight: 600; }
 .c-est-head { margin: 0.2rem 0 0.4rem; font-size: 1.05em; }
+.c-est-cycles { cursor: help; border-bottom: 1px dotted var(--rule); }
 .c-est-group { padding: 0.2rem 0.3rem; border-radius: 3px; cursor: default; }
 .c-est-group:hover { background: var(--bg); }
 .c-est-group small { display: block; color: var(--muted); }
+.c-bank-note { margin: 0.15rem 0 0; padding-left: 0.5rem; border-left: 2px solid var(--wait); font-size: 0.92em; }
 .c-est-line { margin: 0.35rem 0 0.15rem; }
+/* the cost table (dfg.js's costTable): one per accelerator, the total last */
+table.c-cost-table { width: 100%; border-collapse: collapse; margin: 0.35rem 0 0.5rem; font-size: 0.9em; }
+table.c-cost-table caption { text-align: left; font-weight: 600; padding-bottom: 0.15rem; }
+table.c-cost-table th, table.c-cost-table td { padding: 0.08rem 0.3rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+table.c-cost-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.c-cost-table thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--rule); }
+table.c-cost-table tbody th { font-weight: 400; }
+table.c-cost-table tr.total th, table.c-cost-table tr.total td { border-top: 1px solid var(--rule); font-weight: 600; }
+table.c-cost-table tr.missing td { color: var(--mem); }
+table.c-cost-table tr.differs td, table.c-cost-table tr.differs th { background: var(--req-bg); }
 .c-bar-track { height: 0.5rem; border-radius: 3px; background: var(--bg); box-shadow: inset 0 0 0 1px var(--rule); overflow: hidden; }
 .c-bar-track i { display: block; height: 100%; background: var(--data); }
 
@@ -463,15 +480,40 @@ svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 
 /* -- edit mode: the sidebar, the top bar's session parts, the log, the dialogs -- */
 .dfg-session { font-weight: 600; }
-.dfg-params { display: flex; flex-wrap: wrap; gap: 0.3rem; }
-.dfg-chip { display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.05rem 0.2rem 0.05rem 0.5rem; border: 1px solid var(--rule); border-radius: 1rem; font-size: 0.85em; color: var(--muted); }
-.dfg-chip input { font: inherit; color: var(--ink); background: var(--bg); border: none; border-radius: 0.8rem; padding: 0.05rem 0.35rem; }
 #step option.past { color: var(--muted); }
 .dfg-sidebar { padding: 0.6rem 0.7rem; font-size: 0.88em; }
 .dfg-sidebar h2 { font-size: 0.975rem; margin: 0.2rem 0 0.5rem; color: var(--muted); font-weight: 600; overflow-wrap: anywhere; }
 .dfg-sidebar h2 b { color: var(--ink); }
-.dfg-sidebar.strip { width: 1.6rem; padding: 0.6rem 0.2rem; overflow: hidden; }
-.dfg-strip-note { writing-mode: vertical-rl; color: var(--muted); margin: 0; }
+/* the Containers, below the transforms (both modes): a symbol's input or name highlights the
+   containers whose shape uses it, here and in the graph (dfg.js) */
+#transforms + .dfg-containers { border-top: 1px solid var(--rule); margin-top: 0.8rem; padding-top: 0.2rem; }
+.dfg-containers h2 { font-size: 0.975rem; margin: 0.4rem 0 0.4rem; color: var(--muted); font-weight: 600; }
+.dfg-cont { padding: 0.2rem 0.3rem; border-radius: 3px; }
+.dfg-cont + .dfg-cont { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
+.dfg-cont.sel { box-shadow: inset 2px 0 0 var(--hl); }
+.dfg-cont.sym-hl { background: color-mix(in srgb, var(--data) 14%, var(--panel)); }
+.dfg-cont-name { border: none; background: none; padding: 0; font: inherit; font-weight: 600; color: var(--ink); cursor: pointer; }
+.dfg-cont-name:hover { color: var(--hl); }
+.dfg-cont { overflow-wrap: anywhere; font-size: 0.95em; }
+.dfg-cont .mono { font-size: 0.92em; }
+.dfg-symbols { display: flex; flex-wrap: wrap; gap: 0.3rem 0.8rem; align-items: center; margin-bottom: 0.4rem; }
+.dfg-symbols h3, .dfg-bindings h3 { flex-basis: 100%; margin: 0.1rem 0 0; font-size: 0.85em; font-weight: 600; color: var(--muted); }
+.dfg-sym { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.05rem 0.25rem; border-radius: 3px; }
+.dfg-sym input { font: inherit; width: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 0.25rem; }
+.dfg-sym.sym-on { box-shadow: 0 0 0 2px var(--data); }
+.c-pill.sym-hl { box-shadow: 0 0 0 2px var(--data); }
+/* the Bindings: a line per bound unit, unbound split and parametrized link; a param's entries
+   highlighted together on hover (dfg.js) */
+.dfg-containers + .dfg-bindings { border-top: 1px solid var(--rule); margin-top: 0.6rem; padding-top: 0.2rem; }
+.dfg-bindings h2 { font-size: 0.975rem; margin: 0.4rem 0 0.4rem; color: var(--muted); font-weight: 600; }
+.dfg-binding { padding: 0.2rem 0.3rem; border-radius: 3px; overflow-wrap: anywhere; font-size: 0.95em; }
+.dfg-binding + .dfg-binding { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
+.dfg-binding.sel { box-shadow: inset 2px 0 0 var(--hl); }
+.dfg-binding.split .dfg-cont-name { font-style: italic; }
+.dfg-param { display: inline-flex; align-items: baseline; gap: 0.15rem; padding: 0 0.2rem; border-radius: 3px; flex-wrap: wrap; }
+.dfg-param input { font: inherit; width: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 0.25rem; }
+.dfg-param small { color: var(--muted); }
+.dfg-param.param-hl { box-shadow: 0 0 0 2px var(--busy); }
 .dfg-transform { border-top: 1px solid var(--rule); }
 .dfg-transform-name { display: block; width: 100%; text-align: left; border: none; background: none; padding: 0.35rem 0.2rem; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; }
 .dfg-transform-name:hover, .dfg-transform.open .dfg-transform-name { color: var(--hl); }
@@ -480,6 +522,12 @@ svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 .dfg-field > span { color: var(--muted); }
 .dfg-field input, .dfg-field select { font: inherit; min-width: 0; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0.1rem 0.3rem; }
 .dfg-field.readonly input { color: var(--muted); }
+/* a sweepable field and, per new name it uses, that param's value (edit.js's sweepable) */
+.dfg-sweep { display: flex; flex-direction: column; gap: 0.2rem; min-width: 0; }
+.dfg-new-params { display: flex; flex-direction: column; gap: 0.15rem; }
+.dfg-new-params:empty { display: none; }
+.dfg-new-param { color: var(--muted); font-size: 0.92em; }
+.dfg-new-param input { width: 4rem; }
 .dfg-field:has(.dfg-choices) { grid-template-columns: 1fr; }
 .dfg-choices { display: flex; flex-direction: column; gap: 0.15rem; }
 .dfg-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.35rem; align-items: baseline; }

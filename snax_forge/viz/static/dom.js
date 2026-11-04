@@ -86,3 +86,50 @@ export function unitFacts({ group, unit: u }) {
   return [`${group}: ${u.name} ${u.datapath}`, u.params?.op !== undefined ? `op ${u.params.op}` : null,
     ins.length ? `${ins[0].lanes} lanes` : null, `latency ${t.latency}`, `II ${t.ii}`].filter(Boolean).join(", ");
 }
+
+/** A size kept in localStorage under ``key``, or null (no storage: a private window, blocked). */
+export function stored(key) {
+  try {
+    return Number(localStorage.getItem(key)) || null;
+  } catch {
+    return null;
+  }
+}
+
+/** Keep a size under ``key``; without storage the default comes back next time. */
+export function keep(key, px) {
+  try {
+    localStorage.setItem(key, String(px));
+  } catch {
+    // no storage: nothing kept
+  }
+}
+
+/** A drag handle (the DFG page's log and side panels): on a press, ``measure()`` gives the size,
+then each move ``place(size + delta(dx, dy))`` once the pointer has moved 3 px (less is a click,
+maybe half a double-click), and ``done()`` after a drag. The caller clamps in ``place``. */
+export function dragHandle(handle, { delta, measure, place, done }) {
+  handle.addEventListener("pointerdown", (ev) => {
+    if (ev.button !== 0) return;
+    const x0 = ev.clientX;
+    const y0 = ev.clientY;
+    const s0 = measure();
+    let dragging = false;
+    handle.setPointerCapture(ev.pointerId);
+    const to = (e) => {
+      const d = delta(e.clientX - x0, e.clientY - y0);
+      if (!dragging && Math.abs(d) < 3) return;
+      dragging = true;
+      handle.classList.add("dragging");
+      place(s0 + d);
+    };
+    const end = () => {
+      handle.removeEventListener("pointermove", to);
+      handle.classList.remove("dragging");
+      if (dragging && done) done();
+    };
+    handle.addEventListener("pointermove", to);
+    handle.addEventListener("pointerup", end, { once: true });
+    handle.addEventListener("pointercancel", end, { once: true });
+  });
+}

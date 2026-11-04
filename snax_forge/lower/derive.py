@@ -158,7 +158,7 @@ def task_list(point: DesignPoint) -> TaskList:
 
 def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], list[Loop]]:
     """An accelerated node's accelerator values, its firings n and its named rates (C§9), and
-    its firing loops; the estimate reads the same (D151). Raises LowerError."""
+    its firing loops; the estimate reads the same (D155). Raises LowerError."""
     what = f"node {node.id}"
     try:
         loops = firing_loops(g, node)

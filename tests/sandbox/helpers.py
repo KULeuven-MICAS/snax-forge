@@ -9,18 +9,22 @@ For the sites (D72): ``recipe_graphs(name)``, every recipe's graphs from its
 input to its last step (``vecadd_undo`` from vecadd's last, as README.md runs
 it), ``SELECTED``, the param each transform's site fills from the selection,
 and ``default_calls``, a transform's params with the user's ones at defaults.
+
+``split`` and ``split_map`` name a split differently (D73): ``tagged_names`` gives the map from
+the first's names to the second's on the same graph, and ``renamed`` a graph's text under it.
 """
 
 from __future__ import annotations
 
 import inspect
 import json
+import re
 from functools import cache
 from typing import Any
 
 from snax_forge.brm import LIBRARY, Brm, library_names, load_brm
 from snax_forge.dfg import Graph
-from snax_forge.sandbox import TRANSFORMS, Recipe, SandboxError, apply_recipe
+from snax_forge.sandbox import TRANSFORMS, Recipe, SandboxError, apply_recipe, split, split_map
 from snax_forge.sandbox.transforms import _locate
 from tests.helpers import FIXTURES, REPO
 
@@ -90,3 +94,18 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
         return [params]
     return [params | {"brm": b, "implementation": i, "instance": "u"}
             for b in library_names() for i in load_brm(b).implementations]  # fmt: skip
+
+
+def tagged_names(g: Graph, map: str, factor: int) -> dict[str, str]:
+    """``split``'s names of ``map``'s split on ``g`` (outer variable, inner variable, inner id)
+    -> ``split_map``'s."""
+    a, b = split(g, map, factor), split_map(g, map, factor)
+    (ia,), (ib,) = a.node(map).body, b.node(map).body
+    return {a.node(map).attrs["var"]: b.node(map).attrs["var"], ia.attrs["var"]: ib.attrs["var"],
+            ia.id: ib.id}  # fmt: skip
+
+
+def renamed(g: Graph, names: dict[str, str]) -> str:
+    """``g``'s JSON with every whole name in ``names`` replaced."""
+    rx = re.compile(r"\b(" + "|".join(map(re.escape, names)) + r")\b")
+    return rx.sub(lambda m: names[m[1]], g.to_json())

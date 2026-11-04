@@ -112,7 +112,7 @@ The change: a wider accelerator, `--set W=8`. Each firing then takes 8 elements,
 Prediction, written here before the rerun, on what the accelerator and the DMA do, which the program's code layout does not move:
 
 - firings 64 (N/W, was 128);
-- the accelerator's counter (its busy cycles, `Counters` in `run.md`, the value in brackets the estimate plus the streamers' fill, D151, C§19) 64 lower than W=4's 131: 67, half the firings and the same 3 starved cycles;
+- the accelerator's counter (its busy cycles, `Counters` in `run.md`, the value in brackets the estimate plus the streamers' fill, D155, C§19) 64 lower than W=4's 131: 67, half the firings and the same 3 starved cycles;
 - each copy takes the cycles it took at W=4, since it moves the same bytes: load_A 77, load_B 126, store_C 71, the DMA busy 212 cycles.
 
 ## 6. Rerun at W=8

@@ -5,6 +5,11 @@ a cursor for undo and redo, and Save writing a recipe.
     Session.from_recipe(path, platform=...)
     Session.resume(dir)
 
+**Starting one.** ``from_kernel`` takes the kernel's symbols only, each the param of its name
+unless ``symbols`` says otherwise, and no other param unless given (no W): a symbol without a
+value is refused with one line naming it (``vecmul: give N, e.g. --set N=2048``). A recipe's
+params come with it.
+
 **The state.** A session is a working recipe (the kernel, its params, symbols and dtypes, and
 every step applied, n of them), the graphs of steps 0..n in memory (step 0 the import with its
 symbols bound), a cursor k in 0..n (the step shown, the one the next transform applies to) and
@@ -20,9 +25,22 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
 **Changing it**, each a dict with ``ok``; a refusal changes nothing and gives its ``code`` and
 ``message``:
 
-    apply(transform, params, drop=False)   the transform on step k, then the reference check;
-                                           int params may be expressions over the session's
-                                           params (Recipe.value) and are kept as given. With
+    apply(transform, params, drop=False,   the transform on step k, then the reference check;
+          new_params=None)                 int params may be expressions over the session's
+                                           params (Recipe.value) and are kept as given;
+                                           ``new_params`` (``{"W_mul": 8}``) adds each name
+                                           not a param yet to the params first, so each split
+                                           can have its own; an int param naming a param the
+                                           session lacks is ``session.param`` (``split: factor
+                                           'W' is not a param; give its value``, with the
+                                           ``param``'s name, for the page to ask). A param
+                                           stays when the step that added it is undone. An
+                                           int param given as a number (a split's factor, a
+                                           link's depth) becomes a param of its own, the next
+                                           free ``W``, ``W_2``, ... or ``D``, ... at that value,
+                                           and the step stores its name (``fresh_param``), so
+                                           it can change after the bind; a recipe opened from
+                                           a file keeps its numbers. With
                                            k < n and no ``drop``: ``session.drop``, the server's
                                            guard (the page asks ``drop_question`` first). On success the
                                            steps past k go, the new one is step k + 1 and the
@@ -42,6 +60,8 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            (any other problem, unless ``force``: dot 1 without
                                            ``encapsulate`` is ``gen.instances``); returns the
                                            ``pixi run sandbox``, ``flow`` and ``forge`` lines
+                                           as ``commands``, each ``{command, what}``, ``what``
+                                           one line on what it does (``COMMANDS``)
 
 A transform's own refusal keeps its code (``link.*``), a plain SandboxError is ``sandbox``, a
 DfgError ``dfg``, a failed reference check ``sandbox.check``.
@@ -53,18 +73,19 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
                          or a container name, transforms.py): ``{ok, params}`` or
                          ``{ok: false, code, message}``. ``bind``'s, when its site accepts, has
                          the bind list: every (BRM, implementation) of the library tried as
-                         ``bind`` on the step, W read off the spatial bound and the instance the
-                         tasklet's id (a fused nest's first tasklet's) made unique against the
-                         instances and accelerators, each ok (with the params that bind it) or
-                         refused (with the message), with its timing (latency, II, span) at that
-                         W where the implementation resolves there
+                         ``bind`` on the step, W read off the spatial bound and the instance
+                         ``acc``, then ``acc_2``, ``acc_3``, ... when the graph has it as an
+                         instance, accelerator or group (``default_instance``), each ok (with
+                         the params that bind it) or refused (with the message), with its
+                         timing (latency, II, span) at that W where the implementation
+                         resolves there
                          Each accepted transform also has its ``form`` (``form``): the fields the
                          editor shows, their types, defaults and choices
     marks(k)             the node ids and container names some site accepts
     diff(k)              step k against step k − 1: nodes added, removed and changed (attrs,
                          inputs or outputs, the body by its ids), containers added, removed and
                          changed (attrs, or the estimate's placement); empty at step 0
-    estimate(k, tech)    the ideal estimate (estimate/, D151) on the session's platform, costed
+    estimate(k, tech)    the ideal estimate (estimate/, D155) on the session's platform, costed
                          on ``tech`` (default nangate45, C§20)
 
 ``sites``, ``marks`` and ``estimate`` are cached per step (``sites`` per step and selection,
@@ -109,6 +130,9 @@ PLATFORM = "platforms/snax_forge.json"
 RECIPE_JSON, SESSION_JSON, EXPORT = "recipe.json", "session.json", "export"
 SEED = 0
 
+# The size a kernel session's refusal suggests for a symbol without a value
+EXAMPLE_SIZE = 2048
+
 
 @dataclass(frozen=True)
 class Roots:
@@ -145,6 +169,25 @@ def _import(kernel: str, dtypes: dict[str, str]) -> Graph:
     return import_kernel(kernel, dtypes or None)
 
 
+def _unknown_param(transform: str, params: dict[str, Any],
+                   known: dict[str, Any]) -> tuple[str, str] | None:  # fmt: skip
+    """The first param name an int param uses that the session lacks, with the refusal's
+    message; or None."""
+    spec = TRANSFORMS.get(transform)
+    for p, v in params.items():
+        if spec is None or p not in spec.ints or not isinstance(v, str):
+            continue
+        try:
+            names = expr.names(v)
+        except expr.ExprError:
+            continue  # the step's own check names it
+        for x in sorted(names):
+            if x not in known:
+                shown = repr(v) if expr.is_name(v) else f"{v!r} names {x!r}, which"
+                return x, f"{transform}: {p} {shown} is not a param; give its value"
+    return None
+
+
 class Session:
     """An editing session; see the module doc. Made by ``from_kernel``, ``from_recipe`` or
     ``resume``."""
@@ -178,6 +221,12 @@ class Session:
         imported = _import(kernel, dtypes or {})
         if symbols is None:
             symbols = {s: s for s in imported.symbols}
+        missing = [x for s in imported.symbols if s in symbols
+                   for x in sorted(expr.names(symbols[s])) if x not in params]  # fmt: skip
+        if missing:
+            missing = list(dict.fromkeys(missing))
+            sets = " ".join(f"--set {x}={EXAMPLE_SIZE}" for x in missing)
+            raise SandboxError(f"{kernel}: give {', '.join(missing)}, e.g. {sets}")
         recipe = Recipe(kernel, kernel, dict(params), dict(symbols), [], dict(dtypes or {}))
         return cls(cls._free(roots, name or kernel), recipe, imported, platform, roots, 0)
 
@@ -269,15 +318,30 @@ class Session:
 
     # -- changing it ----------------------------------------------------------------------
 
-    def apply(self, transform: str, params: dict[str, Any], drop: bool = False) -> dict[str, Any]:
+    def apply(self, transform: str, params: dict[str, Any], drop: bool = False,
+              new_params: dict[str, Any] | None = None) -> dict[str, Any]:  # fmt: skip
         """The transform at the cursor (module doc)."""
         with self._lock:
             k, n = self.cursor, self.n
             if k < n and not drop:
                 return _refused("session.drop", f"steps {k + 1}..{n} come after step {k}: drop "
                                 "them to apply here", question=drop_question(k, n))  # fmt: skip
+            added = {x: v for x, v in (new_params or {}).items() if x not in self.recipe.params}
+            params = dict(params)
+            spec = TRANSFORMS.get(transform)
+            for p in spec.ints if spec else ():  # a number becomes a param of its own (C§12)
+                if type(params.get(p)) is int:
+                    name = fresh_param(p, {**self.recipe.params, **added})
+                    added[name], params[p] = params[p], name
+            unknown = _unknown_param(transform, params, {**self.recipe.params, **added})
+            if unknown:
+                return _refused("session.param", unknown[1], param=unknown[0])
             step = Step(transform, dict(params))
-            trial = replace(self.recipe, steps=[*self.recipe.steps[:k], step])
+            try:
+                base = replace(self.recipe, params={**self.recipe.params, **added})
+            except SandboxError as e:
+                return _refused("session.param", str(e))
+            trial = replace(base, steps=[*self.recipe.steps[:k], step])
             start = time.perf_counter()
             try:
                 name, values = step_params(trial, k)
@@ -291,7 +355,7 @@ class Session:
             self._forget(k)
             self._write()
             return {"ok": True, "index": k + 1, "transform": transform, "params": dict(params),
-                    "ms": ms, "diff": self._diff(k + 1)}  # fmt: skip
+                    "new_params": added, "ms": ms, "diff": self._diff(k + 1)}  # fmt: skip
 
     def move(self, k: int) -> dict[str, Any]:
         """The cursor to step ``k``, the steps kept."""
@@ -342,11 +406,11 @@ class Session:
             ]
             write_steps(recipe, results, self.roots.sandbox / name)
             shown = _shown(path)
-            return {"ok": True, "recipe": str(path), "problems": listed, "commands": [
-                f"pixi run sandbox {shown}",
-                f"pixi run flow {shown} --platform {self.platform_path}",
-                f"pixi run forge {shown}",
-            ]}  # fmt: skip
+            lines = (f"pixi run sandbox {shown}",
+                     f"pixi run flow {shown} --platform {self.platform_path}",
+                     f"pixi run forge {shown}")  # fmt: skip
+            return {"ok": True, "recipe": str(path), "shown": shown, "problems": listed,
+                    "commands": [{"command": c, "what": w} for c, w in zip(lines, COMMANDS)]}  # fmt: skip
 
     # -- asking it ------------------------------------------------------------------------
 
@@ -476,6 +540,14 @@ def _nodes(g: Graph) -> dict[str, Any]:
                    [k.id for k in n.body or []]) for n, _ in g.walk()}  # fmt: skip
 
 
+# What each of Save's commands does (C§12), in the order Save lists them
+COMMANDS = (
+    "writes the steps and checks each against the reference",
+    "runs the recipe on SNAX-GVSoC and writes the reports",
+    "the flow plus the bundle for snax_cluster's RTL",
+)
+
+
 def _shown(p: Path) -> str:
     """A path as a command line in the repository writes it."""
     try:
@@ -488,14 +560,10 @@ def bind_list(g: Graph, selected: str) -> list[dict[str, Any]]:
     """Every (BRM, implementation) of the library tried as ``bind`` on ``selected`` (module
     doc)."""
     from snax_forge.brm import BrmError, library_names, load_brm
-    from snax_forge.common import fresh
 
     site = _bind_site(g, selected, f"bind {selected!r}")
     w = _bound(g, parse_dim(site.smap.attrs["range"], site.smap.id)[1], f"bind {selected!r}")
-    taken = {n.attrs["instance"] for n, _ in g.walk() if n.kind == "accelerated"}
-    taken |= {n.attrs[k] for n, _ in g.walk() if n.kind == "accelerated"
-              for k in ("accelerator", "group") if k in n.attrs}  # fmt: skip
-    instance = fresh(site.tasklet.id, taken)
+    instance = default_instance(_taken(g))
     out = []
     for b in library_names():
         brm = load_brm(b)
@@ -518,8 +586,43 @@ def bind_list(g: Graph, selected: str) -> list[dict[str, Any]]:
     return out
 
 
-# The defaults of the params a site does not fill (the user's choices)
+def default_instance(taken: set[str]) -> str:
+    """``bind``'s default instance: ``acc``, then ``acc_2``, ``acc_3``, ... whichever is not
+    ``taken`` (the graph's instances, accelerators and groups)."""
+    name, k = DEFAULT_INSTANCE, 1
+    while name in taken:
+        k += 1
+        name = f"{DEFAULT_INSTANCE}_{k}"
+    return name
+
+
+def _taken(g: Graph) -> set[str]:
+    """The graph's instances, accelerators and groups."""
+    return {n.attrs[k] for n, _ in g.walk() if n.kind == "accelerated"
+            for k in ("instance", "accelerator", "group") if k in n.attrs}  # fmt: skip
+
+
+# bind's default instance (C§12)
+DEFAULT_INSTANCE = "acc"
+
+# The defaults of the params a site does not fill (the user's choices): an int param's value,
+# and the name the editor gives it, a param of its own (C§12): every factor and depth the editor
+# writes names a param, W, W_2, ... and D, D_2, ..., so it can change after the bind
 DEFAULT_INT = {"factor": 4, "depth": 1}
+PARAM_BASE = {"factor": "W", "depth": "D"}
+
+
+def fresh_param(field: str, taken: Any) -> str:
+    """The next free param name for int field ``field``: its base (``W`` for a factor, ``D``
+    for a depth), then ``_2``, ``_3``, ... while ``taken`` has it."""
+    base = PARAM_BASE.get(field, field.upper())
+    name, k = base, 1
+    while name in taken:
+        k += 1
+        name = f"{base}_{k}"
+    return name
+
+
 DEFAULT_KIND = "temporal"
 
 
@@ -530,7 +633,9 @@ def form(
     (``answer``, with the bind list for ``bind``), in the transform's param order: each
     ``name``, ``type`` (``int``, ``str``, ``choice``, ``checklist``), ``sweepable`` (one of the
     transform's ``ints``, so a number or an expression over the session's ``params``),
-    ``value`` (the site's, else a default: a factor is ``W`` when the session has that param),
+    ``value`` (the site's, else a default: an int field a param name of its own, ``W``, ``W_2``,
+    ... for a factor, ``D``, ... for a depth, ``fresh_param``, with ``new_value`` the value a new
+    name starts at, 4 and 1),
     ``readonly`` (the selection's own field) and ``choices`` where they apply: ``tag_map``'s
     kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
@@ -550,8 +655,9 @@ def form(
                                  "value": filled.get(p), "readonly": p == selection}  # fmt: skip
         if p in spec.ints:
             field["type"] = "int"
-            if field["value"] is None:
-                field["value"] = "W" if p == "factor" and "W" in params else DEFAULT_INT.get(p, 1)
+            if field["value"] is None:  # a param of its own, its value beside it (C§12)
+                field["value"] = fresh_param(p, params)
+            field["new_value"] = DEFAULT_INT.get(p, 1)
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
@@ -568,7 +674,7 @@ def form(
                                   for e in entries]}  # fmt: skip
         elif name == "bind" and p == "instance":  # the bind list's default, made unique
             ok = [e for e in answer.get("list", []) if e["ok"]]
-            field["value"] = ok[0]["params"]["instance"] if ok else filled.get("node")
+            field["value"] = ok[0]["params"]["instance"] if ok else default_instance(_taken(g))
         elif name == "encapsulate" and p == "units":
             nodes = [n for n, _ in g.walk() if n.kind == "accelerated"]
             free = list(

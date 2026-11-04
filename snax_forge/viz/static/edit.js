@@ -1,14 +1,14 @@
 // Edit mode of the DFG page (D55, VIEW2): a session (sandbox/session.py) behind the edit
 // routes of viz/dfg/server.py.
 //
-// The start dialog opens or starts a session; the top bar holds its name, its params as
-// chips, the history, undo and redo, Export and Save; the left sidebar lists the transforms
+// The start dialog opens or starts a session; the top bar holds its name, the history, undo and
+// redo, Export and Save (the params are in the left column, with what they configure); the left sidebar lists the transforms
 // whose site accepts the selection, each with the form the API gives (its fields, types,
 // defaults and choices), and Apply; the log at the bottom has a line per action, written by
 // the server, and the working recipe. Nothing is computed here (D57): every value, choice
 // and message comes from the API, and after a change the page asks for the session again.
 
-import { h } from "./dom.js";
+import { dragHandle, h, keep, stored } from "./dom.js";
 
 const $ = (id) => document.getElementById(id);
 const enc = encodeURIComponent;
@@ -39,22 +39,6 @@ export function log(line, error = false) {
 // CSS's min-height and max-height), kept in localStorage; a double-click collapses or reopens it.
 const LOG_KEY = "snax-forge.dfg.log-height";
 
-function logHeight() {
-  try {
-    return Number(localStorage.getItem(LOG_KEY)) || null;
-  } catch {
-    return null;
-  }
-}
-
-function keepLogHeight(px) {
-  try {
-    localStorage.setItem(LOG_KEY, String(px));
-  } catch {
-    // no storage (private window, blocked): the default height next time
-  }
-}
-
 function collapse(on) {
   const pane = $("log");
   pane.classList.toggle("collapsed", on);
@@ -64,31 +48,17 @@ function collapse(on) {
 function logPane() {
   const pane = $("log");
   const handle = $("log-handle");
-  const kept = logHeight();
+  const kept = stored(LOG_KEY);
   if (kept) pane.style.height = `${kept}px`;
-  handle.addEventListener("pointerdown", (ev) => {
-    if (ev.button !== 0) return;
-    const y0 = ev.clientY;
-    const h0 = pane.getBoundingClientRect().height;
-    let dragging = false;
-    handle.setPointerCapture(ev.pointerId);
-    const to = (e) => {
-      if (!dragging && Math.abs(e.clientY - y0) < 3) return; // a click, maybe half a double-click
-      dragging = true;
-      handle.classList.add("dragging");
+  dragHandle(handle, {
+    delta: (dx, dy) => -dy, // up is taller
+    measure: () => pane.getBoundingClientRect().height,
+    place: (px) => {
       collapse(false);
       const css = getComputedStyle(pane);
-      const px = Math.min(parseFloat(css.maxHeight), Math.max(parseFloat(css.minHeight), h0 + y0 - e.clientY));
-      pane.style.height = `${px}px`;
-    };
-    const done = () => {
-      handle.removeEventListener("pointermove", to);
-      handle.classList.remove("dragging");
-      if (dragging) keepLogHeight(Math.round(pane.getBoundingClientRect().height));
-    };
-    handle.addEventListener("pointermove", to);
-    handle.addEventListener("pointerup", done, { once: true });
-    handle.addEventListener("pointercancel", done, { once: true });
+      pane.style.height = `${Math.min(parseFloat(css.maxHeight), Math.max(parseFloat(css.minHeight), px))}px`;
+    },
+    done: () => keep(LOG_KEY, Math.round(pane.getBoundingClientRect().height)),
   });
   handle.addEventListener("dblclick", () => collapse(!pane.classList.contains("collapsed")));
   $("log-toggle").addEventListener("click", () => collapse(!pane.classList.contains("collapsed")));
@@ -119,16 +89,14 @@ async function changed() {
 /** The top bar's edit parts from the session. */
 export function top(s) {
   $("session-name").textContent = s.name;
-  $("params").replaceChildren(...Object.entries(s.params).map(([name, value]) =>
-    h("label", { class: "dfg-chip", title: `param ${name}: a change replays every step` }, name,
-      h("input", { value: String(value), size: Math.max(2, String(value).length), "data-param": name,
-        onchange: (ev) => setParam(name, ev.target) }))));
   $("undo").disabled = s.undo === null;
   $("redo").disabled = s.redo === null;
   $("recipe").hidden || recipePanel();
 }
 
-async function setParam(name, input) {
+/** A param set from its input in the left column (a symbol or a binding): every step replayed;
+a refusal keeps the old value. */
+export async function setParam(name, input) {
   const raw = input.value.trim();
   const value = /^-?\d+$/.test(raw) ? Number(raw) : raw;
   ctx.status("replaying…");
@@ -250,8 +218,43 @@ function field(f) {
     return h("div", { class: "dfg-choices", ...attrs }, f.choices.map((c) => h("label", { class: "dfg-choice" },
       h("input", { type: "checkbox", value: c.value, checked: ticked.has(c.value) }), h("span", {}, c.label))));
   }
-  return h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value),
-    title: f.sweepable ? "a number, or an expression over the params (W, W * 2)" : "" });
+  const input = h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value),
+    title: f.sweepable ? "a number, or an expression over the params (W, W * 2); a new name gets its value beside it" : "" });
+  return f.sweepable && !f.readonly ? sweepable(input, f.new_value) : input;
+}
+
+// A name in an int field: a param, or one of the grammar's functions (expr.py)
+const NAMES = /[A-Za-z_][A-Za-z0-9_]*/g;
+const FUNCTIONS = new Set(["max", "min"]);
+
+/** A sweepable int field (a split's factor, a link's depth): its default a param name of its
+own (``W``, ``D``), and beside it a value input per name it uses that the session does not have
+yet (its ``new_value``, 4 or 1), which the apply sends as ``new_params`` (C§12); a number typed
+instead becomes a param server-side. The values typed stay while the field changes. */
+function sweepable(input, start = 4) {
+  const extra = h("span", { class: "dfg-new-params" });
+  const typed = {};
+  const refresh = () => {
+    const known = (ctx.state.session && ctx.state.session.params) || {};
+    for (const el of extra.querySelectorAll("[data-new-param]")) typed[el.dataset.newParam] = el.value;
+    const names = [...new Set(input.value.match(NAMES) || [])]
+      .filter((n) => !FUNCTIONS.has(n) && !Object.prototype.hasOwnProperty.call(known, n));
+    extra.replaceChildren(...names.map((n) => h("label", { class: "dfg-new-param", title: `${n} is not a param yet: its value, added to the session's params` },
+      `new param ${n} = `, h("input", { "data-new-param": n, value: typed[n] ?? String(start), size: 4, inputmode: "numeric" }))));
+  };
+  input.addEventListener("input", refresh);
+  refresh();
+  return h("span", { class: "dfg-sweep" }, input, extra);
+}
+
+/** The new params a form's fields give (``sweepable``): name -> its value, an int. */
+function newParams(el) {
+  const out = {};
+  for (const x of el.querySelectorAll("[data-new-param]")) {
+    const raw = x.value.trim();
+    if (/^-?\d+$/.test(raw)) out[x.dataset.newParam] = Number(raw); // else the server names it
+  }
+  return out;
 }
 
 /** The params a form gives, as the user left its fields. */
@@ -275,11 +278,12 @@ function params(form, el) {
 }
 
 /** Apply at the cursor; below the last step, the server's question first (``drop``), then the
-steps after the cursor dropped. */
+steps after the cursor dropped. A factor's new param goes as ``new_params`` (``sweepable``). */
 async function apply(transform, form, el) {
   const question = ctx.state.session.drop;
   if (question && !window.confirm(question)) return;
-  const body = { transform, params: params(form, el), drop: !!question };
+  const fresh = newParams(el);
+  const body = { transform, params: params(form, el), drop: !!question, ...(Object.keys(fresh).length ? { new_params: fresh } : {}) };
   ctx.status(`applying ${transform}…`);
   const r = await post("/api/apply", body);
   log(r.body.log, !r.ok);
@@ -297,13 +301,13 @@ export function closeForm() {
   sidebar();
 }
 
-/** The sidebar for the selection at step k; a strip while Compare is on. */
+/** The transforms for the selection at step k (the left column's top); with Compare on, a note
+(a transform applies to one step). */
 export async function sidebar() {
   const st = ctx.state;
-  const bar = $("sidebar");
-  bar.classList.toggle("strip", st.cmp !== null);
+  const bar = $("transforms");
   if (st.cmp !== null) {
-    bar.replaceChildren(h("p", { class: "dfg-strip-note", title: "Compare is on" }, "Compare"));
+    bar.replaceChildren(h("h2", {}, "Transforms"), h("p", { class: "muted" }, "Compare is on: turn it off to apply a transform to the step shown."));
     return;
   }
   if (!st.sel) {
@@ -331,12 +335,12 @@ export async function sidebar() {
         } }, name),
       formEl);
   });
-  bar.replaceChildren(
+  bar.replaceChildren(...[
     h("h2", {}, kinds.join(" · ") || "item", " ", h("b", {}, st.sel)),
     ...(rows.length ? rows : [h("p", { class: "muted" }, "No transform applies here.")]),
     no.length ? h("details", { class: "dfg-not-here" }, h("summary", {}, `Not here (${no.length})`),
       h("ul", {}, no.map(([name, a]) => h("li", {}, h("b", {}, name), " ", h("small", {}, a.message))))) : null,
-  );
+  ].filter(Boolean)); // replaceChildren would write a null as "null"
 }
 
 // -- the graph's marks and diff ---------------------------------------------------------------
@@ -359,7 +363,8 @@ export function decorate(v, root) {
 function saveAnswer(body, ok) {
   const out = [];
   if (ok) {
-    out.push(h("p", {}, `saved ${body.recipe}`), h("pre", { class: "mono" }, body.commands.join("\n")));
+    out.push(h("p", {}, `saved ${body.shown}`), h("pre", { class: "mono" },
+      body.commands.map((c) => `${c.command}\n    ${c.what}`).join("\n")));
   } else {
     out.push(h("p", { class: "error" }, `${body.code}: ${body.message}`));
     if (body.problems) out.push(h("pre", { class: "mono" }, body.problems.join("\n")));
@@ -372,13 +377,13 @@ async function save(force) {
   const name = $("save-name").value.trim();
   const r = await post("/api/save", { name, force });
   log(r.body.log, !r.ok);
+  if (r.ok) for (const c of r.body.commands) log(`  ${c.command}  · ${c.what}`);
   saveAnswer(r.body, r.ok);
 }
 
 export function init(c) {
   ctx = c;
   for (const el of document.querySelectorAll("[data-edit]")) el.hidden = false;
-  $("sidebar").hidden = false;
   $("reload").hidden = true;
   $("undo").addEventListener("click", undo);
   $("redo").addEventListener("click", redo);

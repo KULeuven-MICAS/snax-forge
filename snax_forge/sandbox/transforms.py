@@ -16,17 +16,20 @@ name) stay in the transform.
 
 ``split(map, factor)`` and ``split_map(map, factor)``
     ``split`` splits a map ``v`` over ``b:e`` (step 1, no ``loop.kind``) into
-    an outer map ``v_t`` over ``0:(e - b) // factor``, keeping the map's id
+    an outer map ``v_1`` over ``0:(e - b) // factor``, keeping the map's id
     and attrs and recording the split (``loop.split``), around an inner map
-    ``<id>_s`` over ``0:factor``, both untagged (D73); every use of ``v`` in
-    the body becomes ``b + factor * v_t + v_s``. A length n that is not a
-    multiple of the factor (D144) runs ``v_t`` over ceil(n / factor) and
+    ``<id>_inner`` with ``v_2`` over ``0:factor``, both untagged, neutral
+    names that suggest no tag (D73), fresh when taken; every use of ``v`` in
+    the body becomes ``b + factor * v_1 + v_2``. A length n that is not a
+    multiple of the factor (D144) runs ``v_1`` over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
-    ``factor * v_t + v_s`` below n are the kernel's, the rest pad lanes
+    ``factor * v_1 + v_2`` below n are the kernel's, the rest pad lanes
     (dfg/pad.py), which the reference executor neither reads nor writes and
     the containers hold in memory as padding. ``split_map`` is ``split``,
     then ``tag_map`` ``temporal`` on the outer map and ``spatial`` on the
-    inner, in one step.
+    inner, in one step, with the names of the tags it gives: ``v_t``,
+    ``v_s`` and ``<id>_s`` (``SPLIT_TAGGED``), which the recipes bind and
+    compose.py's ``split_reduce`` uses too.
 ``tag_map(map, kind)`` and ``untag_map(map)``
     ``tag_map`` tags an untagged map ``temporal``, ``tile`` or ``spatial`` as
     it is, without splitting it (matadd's row map); a tagged map is an
@@ -219,17 +222,25 @@ def _split_site(g: Graph, map: str, what: str) -> dict[str, Any]:
     return {"map": map}
 
 
+# The suffixes of a split's outer variable, inner variable and inner map id: ``split``'s
+# neutral ones and ``split_map``'s (and ``split_reduce``'s), which tag in the same step (D73).
+SPLIT_NEUTRAL = ("_1", "_2", "_inner")
+SPLIT_TAGGED = ("_t", "_s", "_s")
+
+
 def split(g: Graph, map: str, factor: int) -> Graph:
-    return _split(g, map, factor, f"split {map!r}")[0]
+    return _split(g, map, factor, f"split {map!r}", SPLIT_NEUTRAL)[0]
 
 
 def split_map(g: Graph, map: str, factor: int) -> Graph:
-    g, inner = _split(g, map, factor, f"split_map {map!r}")
+    g, inner = _split(g, map, factor, f"split_map {map!r}", SPLIT_TAGGED)
     return tag_map(tag_map(g, map, "temporal"), inner, "spatial")
 
 
-def _split(g: Graph, map: str, factor: int, what: str) -> tuple[Graph, str]:
-    """``split``: the graph and the inner map's id."""
+def _split(g: Graph, map: str, factor: int, what: str,
+           names: tuple[str, str, str]) -> tuple[Graph, str]:  # fmt: skip
+    """``split`` with ``names`` (outer var, inner var, inner id suffixes): the graph and the
+    inner map's id."""
     _split_site(g, map, what)
     if type(factor) is not int or factor < 1:
         raise SandboxError(f"{what}: factor {factor!r} must be a positive int")
@@ -246,10 +257,10 @@ def _split(g: Graph, map: str, factor: int, what: str) -> tuple[Graph, str]:
         | set(g.containers)
         | {nd.attrs["var"] for nd, _ in g.walk() if nd.kind == "map"}
     )
-    var_t, var_s = fresh(f"{var}_t", taken), fresh(f"{var}_s", taken)
+    var_t, var_s = fresh(f"{var}{names[0]}", taken), fresh(f"{var}{names[1]}", taken)
     ids = {nd.id for nd, _ in g.walk()}
     inner = Node(
-        fresh(f"{map}_s", ids),
+        fresh(f"{map}{names[2]}", ids),
         "map",
         attrs={"var": var_s, "range": f"0:{factor}"},
         body=node.body,

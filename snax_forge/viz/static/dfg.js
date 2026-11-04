@@ -17,7 +17,7 @@
 // everything of that name is outlined (a link node and its container share one) and Details
 // shows each. In edit mode (edit.js) the steps are the session's, the shown one its cursor.
 
-import { h } from "./dom.js";
+import { dragHandle, h, keep, stored } from "./dom.js";
 import * as edit from "./edit.js";
 
 const $ = (id) => document.getElementById(id);
@@ -362,6 +362,8 @@ function select(name) {
   writeHash();
   outline();
   details();
+  containers();
+  bindings();
   if (state.mode === "edit") edit.sidebar();
 }
 
@@ -439,10 +441,122 @@ function costRows(cost) {
   return [h("dt", {}, "cost"), h("dd", {}, h("dl", { class: "facts c-cost" }, inner))];
 }
 
+// -- the Containers (the left column, C§12) ----------------------------------------------
+
+/** Every container that a symbol's shape uses, highlighted in the Containers and the graph
+(focus or hover on the symbol in the Symbols). */
+function hlSymbol(name, on) {
+  const v = views.get(state.k);
+  const users = new Set(((v && v.containers_section) || []).filter((c) => c.symbols.includes(name)).map((c) => c.name));
+  for (const el of document.querySelectorAll("#containers [data-cont]")) {
+    el.classList.toggle("sym-hl", on && users.has(el.dataset.cont));
+  }
+  for (const el of document.querySelectorAll("#graphs .c-pill[data-sel]")) {
+    el.classList.toggle("sym-hl", on && users.has(el.dataset.sel));
+  }
+  for (const el of document.querySelectorAll("[data-symbol]")) {
+    el.classList.toggle("sym-on", on && el.dataset.symbol === name);
+  }
+}
+
+const hover = (name) => ({
+  onmouseenter: () => hlSymbol(name, true), onmouseleave: () => hlSymbol(name, false),
+  onfocusin: () => hlSymbol(name, true), onfocusout: () => hlSymbol(name, false),
+});
+
+/** One symbol of the Symbols block: in edit mode an input on its param (``POST /api/params``,
+the session's replay and refusal), else its value; focus or hover highlights its containers. */
+function symbolEl(x) {
+  const value = x.value === null || x.value === undefined ? "?" : String(x.value);
+  const input = x.editable
+    ? h("input", { value, size: Math.max(3, value.length), "aria-label": `param ${x.param}`,
+      onchange: (ev) => edit.setParam(x.param, ev.target) })
+    : h("b", { class: "mono" }, value);
+  const used = x.containers.length ? `used by ${x.containers.join(", ")}` : "no container uses it";
+  return h("label", { class: "dfg-sym", "data-symbol": x.name, tabindex: x.editable ? null : 0,
+    title: `${x.name}: ${used}${x.editable ? "; a change replays every step" : ""}`, ...hover(x.name) },
+  h("span", { class: "mono" }, x.name), input);
+}
+
+/** The Containers section: the Symbols first (each kernel symbol and its value), then a line per
+container, ``A: N · L1 · 16 KiB`` (its name selects it; its sizes and dtype are in Details). */
+async function containers() {
+  const box = $("containers");
+  const v = await view(state.k);
+  const list = v.containers_section;
+  if (!list) {
+    box.replaceChildren(h("p", { class: "muted" }, v.error || "no graph"));
+    return;
+  }
+  const symbols = v.symbols_section || [];
+  box.replaceChildren(...[
+    symbols.length ? h("div", { class: "dfg-symbols" }, h("h3", {}, "Symbols"), symbols.map(symbolEl)) : null,
+    ...list.map((c) => h("div", { class: `dfg-cont${state.sel === c.name ? " sel" : ""}`, "data-cont": c.name },
+      h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(c.name) }, c.name),
+      h("span", { class: "mono" }, `: ${c.line}`))),
+  ].filter(Boolean));
+}
+
+// -- the Bindings (the left column, C§12): each param with what it configures -----------------
+
+/** Every entry naming param ``name`` highlighted (hover or focus on one of its inputs). */
+function hlParam(name, on) {
+  for (const el of document.querySelectorAll("#bindings [data-param]")) {
+    el.classList.toggle("param-hl", on && el.dataset.param === name);
+  }
+}
+
+/** One param of an entry: ``W = 8``, an input in edit mode (``POST /api/params``, every entry
+naming it changes with it), what it is shared with. */
+function paramEl(p) {
+  const value = p.value === null || p.value === undefined ? "?" : String(p.value);
+  const shared = p.shared_with && p.shared_with.length ? `shared with ${p.shared_with.join(", ")}` : "";
+  return h("span", { class: "dfg-param", "data-param": p.name, title: shared || `param ${p.name}`,
+    onmouseenter: () => hlParam(p.name, true), onmouseleave: () => hlParam(p.name, false),
+    onfocusin: () => hlParam(p.name, true), onfocusout: () => hlParam(p.name, false) },
+  h("span", { class: "mono" }, `${p.name} = `),
+  p.editable
+    ? h("input", { value, size: Math.max(3, value.length), "aria-label": `param ${p.name}`, onchange: (ev) => edit.setParam(p.name, ev.target) })
+    : h("b", { class: "mono" }, value),
+  shared ? h("small", {}, ` · ${shared}`) : null);
+}
+
+async function bindings() {
+  const box = $("bindings");
+  const v = await view(state.k);
+  const b = v.bindings_section;
+  if (!b) {
+    box.replaceChildren();
+    return;
+  }
+  const rows = b.entries.map((e) => h("div", { class: `dfg-binding ${e.kind}${state.sel === e.id ? " sel" : ""}` },
+    h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(e.id) }, e.label),
+    e.params.map((p) => [" · ", paramEl(p)]),
+    e.note ? h("small", { class: "muted" }, ` · ${e.note}`) : null));
+  const unused = b.unused.length ? h("div", { class: "dfg-binding unused" }, h("span", { class: "muted" }, "unused: "),
+    b.unused.map((p, i) => [i ? ", " : "", paramEl({ ...p, shared_with: [] })])) : null;
+  box.replaceChildren(...(rows.length || unused ? [...rows, unused].filter(Boolean) : [h("p", { class: "muted" }, "Nothing split or bound yet.")]));
+}
+
 // -- the Estimate ------------------------------------------------------------------
 
 function hoverGroup(name, on) {
   for (const el of document.querySelectorAll(`#graphs [data-group="${CSS.escape(name)}"]`)) el.classList.toggle("hover", on);
+}
+
+const COST_COLUMNS = [["block", "block"], ["datapath", "datapath"], ["area_text", "area (µm²)"],
+  ["energy_text", "energy (nJ)"], ["share_text", "share"]];
+
+/** One accelerator's cost table (api.py's cost_tables, or compare_cost_tables' before → after
+cells): a row per unit, buffer link and control unit, then the total. */
+function costTable(t) {
+  const num = (key) => key !== "block" && key !== "datapath";
+  const tr = (r, cls) => h("tr", { class: [cls, r.differs ? "differs" : null, r.found === false ? "missing" : null].filter(Boolean).join(" ") || null },
+    COST_COLUMNS.map(([key]) => h(key === "block" ? "th" : "td", { class: num(key) ? "num" : null, scope: key === "block" ? "row" : null }, r[key])));
+  return h("table", { class: "c-cost-table" },
+    h("caption", {}, t.accelerator),
+    h("thead", {}, h("tr", {}, COST_COLUMNS.map(([key, label]) => h("th", { scope: "col", class: num(key) ? "num" : null }, label)))),
+    h("tbody", {}, t.rows.map((r) => tr(r, null)), tr(t.total, "total")));
 }
 
 async function estimate() {
@@ -453,8 +567,11 @@ async function estimate() {
       box.replaceChildren(h("p", { class: "load-error" }, cmp.error || "no estimate"));
       return;
     }
+    const tables = cmp.columns.cost_tables || [];
     box.replaceChildren(...[columnsTable(cmp.columns.labels, cmp.columns.estimate),
-      cmp.columns.caveat ? h("p", { class: "c-est-line muted" }, cmp.columns.caveat) : null].filter(Boolean));
+      cmp.columns.caveat ? h("p", { class: "c-est-line muted" }, cmp.columns.caveat) : null,
+      tables.length ? h("p", { class: "c-est-line muted" }, `cost per block, ${cmp.columns.labels[0]} → ${cmp.columns.labels[1]}`) : null,
+      ...tables.map(costTable)].filter(Boolean));
     return;
   }
   const b = await view(state.k);
@@ -468,17 +585,21 @@ async function estimate() {
   },
   h("b", {}, g.name), " ",
   h("span", { class: "mono" }, g.formula),
-  h("small", {}, ` COUNTER ${g.counter} · channels ${g.channels}` + (g.area_text ? ` · ${g.area_text} · ${g.energy_text}` : ""))));
+  h("small", {}, ` COUNTER ${g.counter} · channels ${g.channels}` + (g.area_text ? ` · ${g.area_text} · ${g.energy_text}` : "")),
+  g.bank_note ? h("p", { class: "c-bank-note", title: "L1's single-port banks serve one word each per cycle (D155)" }, `bank bound: ${g.bank_note}`) : null));
   const c = s.cost;
   const cost = c ? [
     h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", {}, c.area_text), " · ", h("b", {}, c.energy_text), " per run"),
-    h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
     h("p", { class: "c-est-line muted" }, c.caveat),
+    ...(c.tables || []).map(costTable),
+    h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
   ] : [];
   const l1 = s.l1;
   const l1Text = l1.size ? `${l1.footprint_text} of ${l1.size_text} (${l1.share_text})` : l1.footprint_text;
   box.replaceChildren(...[
-    h("p", { class: "c-est-head" }, h("b", {}, s.accelerator_cycles), " cycles · ", h("b", {}, s.not_mapped), " not mapped"),
+    h("p", { class: "c-est-head" }, "cycles: ", (s.cycles || []).map((c, i) => [i ? (i === s.cycles.length - 1 ? " = " : " + ") : "",
+      h("span", { class: "c-est-cycles", title: c.title }, `${c.label} `, h("b", {}, c.value))])),
+    s.unmapped_note ? h("p", { class: "c-est-line muted" }, s.unmapped_note) : null,
     ...rows,
     h("p", { class: "c-est-line" }, "L1 ", l1Text),
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
@@ -522,7 +643,7 @@ async function draw() {
     }
     drawn = now;
     requestAnimationFrame(() => panels.forEach((p) => p._draw && p._draw()));
-    await Promise.all([details(), estimate(), state.mode === "edit" ? edit.sidebar() : null]);
+    await Promise.all([details(), estimate(), containers(), bindings(), state.mode === "edit" ? edit.sidebar() : null]);
     const broken = state.steps.filter((s) => s.error).length;
     status(broken ? `${broken} of ${state.steps.length} files did not load` : "", broken > 0);
   } catch (e) {
@@ -563,7 +684,7 @@ async function load() {
     techOptions();
     if (state.mode === "edit") {
       want = await resolve(want);
-      edit.init({ state, status, clear, show, view, writeHash });
+      edit.init({ state, status, clear, show, view, writeHash, hover });
       state.session = await edit.session();
       state.sel = want.sel;
       state.t = want.t;
@@ -591,6 +712,35 @@ async function load() {
 function clear() {
   views.clear();
   compares.clear();
+}
+
+// -- the side panels' widths ---------------------------------------------------------------
+
+// Dragged on their inner edge as the log is (dom.js's dragHandle), from MIN_SIDE px to 45% of
+// the window, kept in localStorage; a double-click gives back the CSS default (--left, --side).
+const MIN_SIDE = { left: 170, right: 230 };
+
+function sidePanels() {
+  const layout = document.querySelector(".dfg-layout");
+  for (const side of ["left", "right"]) {
+    const prop = side === "left" ? "--left" : "--side";
+    const key = `snax-forge.dfg.${side}-width`;
+    const panel = side === "left" ? $("sidebar") : $("right");
+    const set = (px) => layout.style.setProperty(prop, `${Math.round(Math.min(0.45 * innerWidth, Math.max(MIN_SIDE[side], px)))}px`);
+    const kept = stored(key);
+    if (kept) set(kept);
+    const handle = $(`${side}-handle`);
+    dragHandle(handle, {
+      delta: (dx) => (side === "left" ? dx : -dx), // the left panel grows rightwards, the right leftwards
+      measure: () => panel.getBoundingClientRect().width,
+      place: set,
+      done: () => keep(key, Math.round(panel.getBoundingClientRect().width)),
+    });
+    handle.addEventListener("dblclick", () => {
+      layout.style.removeProperty(prop);
+      keep(key, 0);
+    });
+  }
 }
 
 // -- controls ----------------------------------------------------------------------
@@ -670,4 +820,5 @@ $("reload").addEventListener("click", async () => {
 });
 
 legend();
+sidePanels();
 load();

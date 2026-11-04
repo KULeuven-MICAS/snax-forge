@@ -48,10 +48,12 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
     GET  /api/step/<k>/site/<id>    Session.sites on node or container ``id``, bind's with the
                                     bind list, each accepted transform with its ``form``
     GET  /api/compare/<j>/<k>       as in view mode, over the session's steps
-    POST /api/apply                 ``{transform, params, drop?}``: Session.apply
+    POST /api/apply                 ``{transform, params, drop?, new_params?}``: Session.apply
+                                    (``new_params``, ``{"W_mul": 8}``: the params it adds)
     POST /api/cursor                ``{k}``: Session.move
     POST /api/params                ``{params}``: Session.set_params
-    POST /api/save                  ``{name, force?}``: Session.save
+    POST /api/save                  ``{name, force?}``: Session.save; its log line names the
+                                    recipe from the repository (``saved recipes/<name>.json``)
     POST /api/export                ``{k}``: Session.export, the file's ``path``
 
 Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
@@ -259,7 +261,11 @@ def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
         est = s.estimate(k, tech)
     except (ValueError, KeyError, TypeError, DfgError):
         est = None
-    return api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est, tech)
+    from dataclasses import replace
+
+    upto = replace(s.recipe, steps=s.recipe.steps[:k])  # the steps that made step k
+    return api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est, tech,
+                         upto, editable=True)  # fmt: skip
 
 
 class DfgHandler(Handler):
@@ -311,8 +317,9 @@ class DfgHandler(Handler):
             return {"k": api.find_step([e.name for e in entries], q["step"][0])}
         if len(parts) == 2 and parts[0] == "step":
             k = _index(parts[1], len(entries) - 1)
-            return api.step_view(entries[k], _label(entries[k].name), self.server.platform,
-                                 tech=tech)  # fmt: skip
+            e = entries[k]
+            return api.step_view(e, _label(e.name), self.server.platform, tech=tech,
+                                 recipe=api.folder_recipe(e))  # fmt: skip
         if len(parts) == 3 and parts[0] == "compare":
             j, k = (_index(x, len(entries) - 1) for x in parts[1:])
             labels = (_heading(entries[j]), _heading(entries[k]))
@@ -378,8 +385,11 @@ class DfgHandler(Handler):
         if route == "apply":
             _needs(body, "transform")
             params = dict(body.get("params") or {})
-            out = s.apply(body["transform"], params, bool(body.get("drop")))
-            return out | {"log": apply_log(s, body["transform"], params, out)}
+            new = body.get("new_params") or {}
+            if not isinstance(new, dict):
+                raise _Refused("request.body", "new_params must be an object")
+            out = s.apply(body["transform"], params, bool(body.get("drop")), dict(new))
+            return out | {"log": apply_log(s, body["transform"], out.get("params", params), out)}
         if route == "cursor":
             _needs(body, "k")
             out = s.move(body["k"])
@@ -397,7 +407,7 @@ class DfgHandler(Handler):
             _needs(body, "name")
             out = s.save(body["name"], bool(body.get("force")))
             if out["ok"]:
-                return out | {"log": f"saved {out['recipe']}"}
+                return out | {"log": f"saved {out['shown']}"}
             return out | {"log": f"save {body['name']}  {out['code']}: {out['message']}"}
         _needs(body, "k")
         if type(body["k"]) is not int or not 0 <= body["k"] <= s.n:

@@ -27,7 +27,7 @@ from snax_forge.report import (
     reports_of,
 )
 from snax_forge.report.__main__ import main
-from snax_forge.report.run import build_run, render_movement
+from snax_forge.report.run import CheckRow, bank_notes, build_run, counters_text, render_movement
 from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
 from snax_forge.viz import api, movement, schedule
@@ -344,6 +344,38 @@ def test_design_md_lists_the_design_notes(tmp_path, w):
     assert not any("design.serial_one_lane" in n for n in r.notes[w == 1 :])
 
 
+@pytest.mark.parametrize("w", [8, 16])
+def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
+    """vecmul at N = 2048 (D155): at W = 16 design.md's Estimate has the group's bank-bound note
+    and run.md puts it beside the task's expected COUNTER; at W = 8 neither has one."""
+    r = designed_report(tmp_path, "vecmul", ["N=2048", f"W={w}"])
+    note = ("acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the "
+            "ideal 128")  # fmt: skip
+    assert r.estimate.bank_notes == ([note] if w == 16 else [])
+    cycles = 2048 // w  # bound, so no unmapped part (D155)
+    assert f"Accelerator cycles: {cycles}. Total: {cycles}. L1 footprint:" in render_design(r)
+    assert (f"- {note}." in render_design(r)) == (w == 16)
+    point = DesignPoint.load(next(tmp_path.rglob("design_point.json")))
+    assert bank_notes(point) == ({"mult_acc": note} if w == 16 else {})
+    c = CheckRow(True, "vecmul", 0, 2048, {"mult_acc": 194}, {"mult_acc": 131}, bank_notes(point))
+    assert counters_text(c) == (f"mult_acc 194 (expected 131; {note})" if w == 16
+                                else "mult_acc 194 (expected 131)")  # fmt: skip
+
+
+def test_design_md_counts_unmapped_work_as_cycles():
+    """D155's line: the unmapped part with its assumption when there is unmapped work, left out
+    when there is none."""
+    from snax_forge.report.design import EstimateTable, cycles_line
+
+    some = EstimateTable(
+        [], 0, 256, 0, None, unmapped_cycles=2048, total_cycles=2048, unmapped_iterations=2048
+    )  # vecmul split by 8 and tagged: 256 not mapped
+    assert cycles_line(some) == ("Accelerator cycles: 0. Unmapped: 2048 cycles (2048 iterations "
+                                 "at 1 cycle each, an assumption). Total: 2048.")  # fmt: skip
+    none = EstimateTable([], 256, 0, 0, None, unmapped_cycles=0, total_cycles=256)
+    assert cycles_line(none) == "Accelerator cycles: 256. Total: 256."
+
+
 def test_the_extents_include_the_padding(tmp_path):
     """rowsum_3x7: A[3, 7] over its padded [3, 8] (three pads, 192 B, whole beats); y, three
     int64 the DMA moves, kept free up to a whole 64-byte beat. The checks' extents."""
@@ -500,7 +532,7 @@ def test_design_md_names_what_the_table_does_not_hold(tmp_path):
 
 
 def test_the_estimate_beside_the_counters(dot1, dot4):
-    """design.md's Estimate section (D151) per group, and run.md's expected COUNTER beside each
+    """design.md's Estimate section (D155) per group, and run.md's expected COUNTER beside each
     measured one: equal on the recorded runs, the cycles plus the streamers' fill."""
     r = reports_of(dot1)
     e = r.design.estimate
