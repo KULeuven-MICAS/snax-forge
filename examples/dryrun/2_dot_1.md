@@ -1,6 +1,6 @@
 # Dry run 2: dot 1, two accelerators through L1
 
-A snapshot of 4 Nov 2026 (snax-forge `ry/dry1-2` at `dry1-2-r3`, `c48dcb9`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
+A snapshot of 4 Nov 2026 (snax-forge `ry/dry1-2` at `dry1-2-r4`, every command run on its code at `0575835`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
 
 dot is $\mathit{out} = \sum_i A_i \cdot B_i$ over N int64 elements (`kernels/polybench/dot.py`). dot 1 is its plainest hardware: a multiplier writes the N products to a transient `tmp0` in L1, then an adder tree reads them back and sums them. These are two groups, that is two stand-alone accelerators, each with its own START, JOBS, STATUS, COUNTER and control unit, put behind one shell because the platform has one accelerator slot (D148). The core drives them one after the other; the sum could run without the multiply. dot 2 to 6 instead join the two units in one group with a link.
 
@@ -27,7 +27,7 @@ Under the Estimate, the design checks (Save's, run on every step) list two notes
 | 1 | `mult_map` | `split`, factor `W` with its value box set to 8 | `mult_map` runs `i_1` over 256 around `mult_map_inner` running `i_2` over 8; Bindings shows `mult_map split · W = 8 · not bound` |
 | 2 | `mult_map` | `tag_map`, `temporal` | the streamers' loop |
 | 3 | `mult_map_inner` | `tag_map`, `spatial` | the lanes; the total stays at 4096, since a tag alone runs nothing |
-| 4 | `mult` | `bind`, `elementwise_mul / chisel_tiled_spatial`, instance `acc_1` | the log ends `C 0 → 256 · unmapped 4096 → 2048 · renamed W → W_acc_1`; total 2304 |
+| 4 | `mult` | `bind`, `elementwise_mul / chisel_tiled_spatial`, instance `acc_1` | the log ends `C 0 → 256 · unmapped 4096 → 2048 · renamed W → W_acc_1 · 1 note` (`sum` is still unbound); total 2304 |
 | 5 | `sum_map` | `split`, factor `W`, 8 | `sum_map` runs `i_3` over 256 around `sum_map_inner` running `i_4` over 8 |
 | 6 | `sum_map` | `tag_map`, `temporal` | |
 | 7 | `sum_map_inner` | `tag_map`, `spatial` | |
@@ -36,7 +36,7 @@ Under the Estimate, the design checks (Save's, run on every step) list two notes
 
 Each split gets a param of its own. The factor field reads `W` both times, since the first `W` was renamed on its bind: a param the editor named and only one unit uses takes that unit's instance name, `W_acc_1` and `W_acc_2`, and instances are numbered by bind order (D156). The second split takes the next free pair of loop names, `i_3` and `i_4` (D73). The unit boxes read `acc_1 · a * b · W_acc_1 8` and `acc_2 · fold + · W_acc_2 8`, and Details give `mult_map`'s range as `0:N // W_acc_1 = 256`.
 
-At step 8 the bind list offers two implementations: `chisel_adder_tree` (latency 1, II 1, span 1: the 8 lanes summed in one beat) and `chisel_serial` (span 8: one lane a cycle). `chisel_accumulator` is refused at W = 8 (it takes one lane), `mac` needs `split_reduce` first (D150), and both element-wise patterns are refused (`out = in1` is not one operator over two inputs).
+At step 8 the bind list offers two implementations: `chisel_adder_tree` (latency 1, II 1, span 1: the 8 lanes summed in one beat) and `chisel_serial` (span 8: one lane a cycle). `chisel_accumulator` is refused at W = 8 (it takes one lane), `mac` needs `split_reduce` first (D150), and both element-wise patterns are refused (`'out = in1' is not one operator over distinct inputs`).
 
 Step 9 is needed because the platform has one slot: two bound units are two accelerators, and Save at step 8 refuses with `gen.instances` unless they are put behind one shell. Bindings then reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · elementwise_mul · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`, each param editable in place.
 
@@ -61,7 +61,7 @@ The cost table on nangate45:
 | acc_1 ctrl | control unit | 702 | 0.257 | 0.4 % |
 | acc_2 | TreeAccumulate | 2 710 | 1.231 | 2.0 % |
 | acc_2 ctrl | control unit | 1 390 | 0.509 | 0.8 % |
-| L1 accesses (placeholder, 4 × e_load per bit) | 8193 words | – | 36.011 | 58.9 % |
+| L1 accesses (placeholder, 4 × e_load per bit) | 8193 words, 524 352 bits | – | 36.011 | 58.9 % |
 | total | | 60 100 | 61.144 | 100 % |
 
 How to read it:
@@ -86,25 +86,35 @@ Save recipe, as `dot_1_dry`, runs the design checks and writes `recipes/dot_1_dr
   {"transform": "tag_map", "params": {"map": "mult_map_inner", "kind": "spatial"}},
   {
    "transform": "bind",
-   "params": {"node": "mult", "brm": "elementwise_mul", "implementation": "chisel_tiled_spatial", "instance": "acc_1"}
+   "params": {
+    "node": "mult",
+    "brm": "elementwise_mul",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc_1"
+   }
   },
   {"transform": "split", "params": {"map": "sum_map", "factor": "W_acc_2"}},
   {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
   {"transform": "tag_map", "params": {"map": "sum_map_inner", "kind": "spatial"}},
   {
    "transform": "bind",
-   "params": {"node": "sum", "brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "acc_2"}
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "acc_2"
+   }
   },
   {"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}}
  ]
 }
 ```
 
-The log lists `pixi run sandbox`, `pixi run flow` and `pixi run forge` on it, each with what it does, as in `1_vecmul.md` section 3. `recipes/dot_1.json` builds the same hardware by hand with `split_map` and one shared `W`.
+It keeps only the params its steps and symbols use (D156), so a param tried in a step that was later undone does not come with it. The log lists `pixi run sandbox`, `pixi run flow` and `pixi run forge` on it, each with what it does, as in `1_vecmul.md` section 3. `recipes/dot_1.json` builds the same hardware by hand with `split_map` and one shared `W`.
 
 ## 4. Sweep the two widths in Bindings
 
-Change `W_acc_1` or `W_acc_2` in its Bindings entry; the session replays its steps up to the cursor and runs the checks again. On both technologies:
+Change `W_acc_1` or `W_acc_2` in its Bindings entry; the session replays its steps up to the cursor and runs the checks again, and the log line gives the step's problems and notes as an Apply's does (`params W_acc_1=8, W_acc_2=10  ok · 9 steps replayed · 1 problem`). On both technologies:
 
 | W_acc_1 | W_acc_2 | Cycles | Expected COUNTER | Channels | Area 45 nm (µm²) | Energy 45 nm (nJ) | of which L1 | Area 15 nm (µm²) | Energy 15 nm (nJ) |
 |---:|---:|---:|---|---|---:|---:|---:|---:|---:|
@@ -121,7 +131,7 @@ Change `W_acc_1` or `W_acc_2` in its Bindings entry; the session replays its ste
 How to read it:
 
 - **The sum's lanes are nearly free.** The tree is 2 710 µm² at 8 lanes against the multiplier's 55 300, so 8/4 saves 1 100 µm² (1.8 %) and costs 256 cycles. Since the two groups add, the cheap way to save cycles is to give the sum at least as many lanes as the multiply. Its control unit stays at 1 390 µm² whatever W is, already about the tree's own size at 4 lanes.
-- **Energy hardly moves.** From 8/4 to 10/10 it goes from 61.9 to 60.8 nJ: the 2048 multiplies cost the same at every W, the L1 accesses are the same 8193 words, and only the control units' holding shrinks with the cycles. W = 1 is the exception, 69.8 nJ, from holding 4097 cycles.
+- **Energy hardly moves.** From 8/4 to 10/10 it goes from 61.9 to 60.8 nJ: the 2048 multiplies cost the same at every W, the L1 accesses are the same 8193 words (a few more with a tail, below), and only the control units' holding shrinks with the cycles. W = 1 is the exception, 69.8 nJ, from holding 4097 cycles.
 - **A tail needs the right pad.** At W_acc_1 = 10, 2048 pads to 205 beats of 10, and the pad words count too: A's and B's pad reads and tmp0's pad write make 8199 words at 10/4 and 10/8, and tmp0's pad read 8201 at 10/10. At 10/10 the multiplier's pad lanes compute $0 \cdot 0 = 0$ from A's and B's zero pads, which is the add's identity, so the sum may read them (D144). At 8/10 the multiplier never writes those words, and the Estimate lists `[connect.pad] container tmp0: ... they are never written, so the program would have to write the fold's identity there before the fold's task, open item 106`.
 - **Banks and the crossbar.** From W_acc_1 = 16 the multiply's streams need 48 words a cycle from 32 banks, and the Estimate adds `acc_1: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time against the ideal 128`. At 16/16 the 65 streamer channels, the two cores and AXI make 68 crossbar inputs, and the checks list `[connect.xbar_inputs] dot: 68 TCDM crossbar inputs, the platform takes at most 64`.
 
@@ -151,9 +161,11 @@ Two COUNTERs now, one per group, read by the program after each group's task. Th
 | COUNTER | every cycle from the group's START until its busy drops: bank conflicts included, shortened when the streamers started ahead | the group's COUNTER CSR, read by the program |
 | Window | the program from `main` to `forge_check()` (D135): setup, the DMA loads, both groups, the core's handover, the DMA store | the core's `mcycle` |
 
-The other points, each in its own folder:
+The other points, each in its own folder, named after its `--set`s (a `-` between a param's name and its value when the name ends in a digit):
 
     pixi run flow recipes/dot_1_dry.json --platform platforms/snax_forge.json --set W_acc_1=8 --set W_acc_2=4
+
+    flow dot_1_dry_W_acc_1-8_W_acc_2-4 (dot_1_dry: N=2048, W_acc_1=8, W_acc_2=4; N=2048) on snax_forge -> out/flow/dot_1_dry_W_acc_1-8_W_acc_2-4/
 
 | W_acc_1 | W_acc_2 | Expected COUNTER | COUNTER | Window | DMA busy |
 |---:|---:|---|---|---:|---:|
@@ -173,7 +185,7 @@ The other points, each in its own folder:
 
 **At W_acc_1 = 16 the COUNTER is under the bank note.** The note bounds the streams' L1 time, not the COUNTER: at 16/8 the multiply's streamers run from 609 to 820, 211 cycles, above the 192 of the note, but its START lands at 627, 18 cycles later, so its COUNTER is 185.
 
-**The window.** At 8/8 the 1230 cycles are the DMA's two loads (77 to 604), the multiply (618 to 875), the core's handover (875 to 894: it polls `acc_1`'s STATUS and the streamers' busy, reads the COUNTER, then starts the streamers and `acc_2`), the sum (895 to 1155) and the store of the one word (1169 to 1177). vecmul's window at W = 8 was 1200: dot 1 adds the sum's 260 cycles and the handover, but stores 8 B in place of 16 KiB. The DMA's 535 busy cycles are the same at every point, so past W = 8 the window gains little: 10/10 is 88 cycles under 8/8 for 14 400 µm² more.
+**The window.** At 8/8 the 1230 cycles are the DMA's two loads (77 to 604), the multiply (618 to 875), the core's handover (875 to 894: it polls `acc_1`'s STATUS and the streamers' busy, reads the COUNTER, then starts the streamers and `acc_2`), the sum (895 to 1155) and the store of the one word (1169 to 1177). vecmul's window at W = 8 was 1200: dot 1 adds the sum's 260 cycles and the handover, but stores 8 B in place of 16 KiB. The DMA's 535 to 538 busy cycles are about the same at every point, so past W = 8 the window gains little: 10/10 is 88 cycles under 8/8 for 14 400 µm² more.
 
 ## 6. The run in the cluster viewer
 
@@ -210,8 +222,8 @@ The five streamers share one start, so each group's task also starts the other g
 What to look at:
 
 - **Schedule.** The DMA's loads, then `mult_acc_1` and its three streamers, a short gap, then `sum_acc_2` and its two; the idle streamer tasks are drawn dashed. Nothing overlaps: the second accelerator waits for the first, through the core.
-- **The cluster view.** At cycle 700, `acc_1` fires its 81st beat (`acc_1_a` 81, `acc_1_b` 81): `acc_1_a` reads A[712..719] on banks 8–15, 8 beats ahead of the fire, its FIFO full; `acc_1_b` reads B[704..711] on banks 0–7; `acc_1_out` writes tmp0[624..631] on banks 24–31. At cycle 1000, `acc_2` fires beat 102 while `acc_2_a` reads tmp0[832..839] on banks 8–15, and `acc_1`'s movers are idle.
-- **Memory.** tmp0's round trip in one row of the Data movement table: written in L1 from cycle 622 to 877, read back from 896 to 1151, never touching L2. Those 4096 accesses are the cost section 4's placeholder prices and dot 2 removes.
+- **The cluster view.** At cycle 700, `acc_1` fires its 81st beat (`acc_1_a` 81, `acc_1_b` 81): `acc_1_a` reads A[712..719] on banks 8–15, 8 beats ahead of the fire, as many as its FIFO of depth 8 holds; `acc_1_b` reads B[704..711] on banks 0–7; `acc_1_out` writes tmp0[624..631] on banks 24–31. At cycle 1000, `acc_2` fires beat 102 while `acc_2_a` reads tmp0[832..839] on banks 8–15, and `acc_1`'s movers are idle.
+- **Memory.** tmp0's round trip in one row of the Data movement table: written in L1 from cycle 622 to 877, read back from 896 to 1151, never touching L2. Those 4096 accesses are the cost section 4's placeholder prices and dot 2 removes. The port table under it lists the ten working tasks' lanes and leaves the five idle tasks out, saying so.
 
 The design report keeps one bank note, within `acc_1`: A and B lie a whole number of bank rows apart, so A[i] and B[i] share a bank and `acc_1_b` is held 2 cycles per lane at the start (the Memory table's stalls). Notes between streamers of different groups are not given, since those never run at once.
 
@@ -243,7 +255,7 @@ The link halves the cycles, since both units now run at once, and drops tmp0's 4
 
 The cycles do not move: both units take one beat a cycle, so a deeper buffer has no gap to absorb. Each extra slot is W × 64 bits more LinkBuffer and a few more control bits, so the area and the holding energy grow, and at D = 8 the linked design costs more energy than dot 1 (63.395 against 61.144 nJ). Depth pays only where the consumer is slower than the producer, as in dot 6, whose serial sum takes W cycles per beat; the editor's default of 1 is the right one here.
 
-Moving back to step 9 keeps step 10 as a redo step; saving there keeps dot 1 and only the params its steps use.
+Moving back to step 9 keeps step 10 as a redo step; saving there keeps dot 1 and only the params its steps use, `{"N": 2048, "W_acc_1": 8, "W_acc_2": 8}`, not the link's `D`.
 
 ## 8. What was generated
 
