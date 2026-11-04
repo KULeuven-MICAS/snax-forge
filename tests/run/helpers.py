@@ -1,5 +1,6 @@
-"""Shared snippets for the run tests: a cluster's three description files and design point, as the
-generator writes them for vecadd on snax_forge (cut to what run/ reads), and GVSoC header lines."""
+"""Shared snippets for the run tests: a cluster's description files (the cluster file, its one
+streamer set's file, accelerator.json) and design point, as the generator writes them for vecadd
+on snax_forge (cut to what run/ reads), and GVSoC header lines."""
 
 from __future__ import annotations
 
@@ -47,6 +48,9 @@ def load_recorded(name: str | Path, events: str = "events.log") -> Recorded:
     )
 
 
+# vecadd's one streamer set, acc, and its file (D157)
+STREAMER_FILE = "snax_forge_vecadd_streamer_acc.hjson"
+
 CLUSTER: dict[str, Any] = {
     "cluster": {
         "cluster_base_addr": 0x10000000,
@@ -58,8 +62,10 @@ CLUSTER: dict[str, Any] = {
     "acc_core": {
         "xdma": False,
         "snax_acc_cfg": [{
-            "snax_acc_name": "snax_forge",
-            "snax_streamer_cfg": {"$ref": "snax_forge_streamer.hjson"},
+            "snax_acc_name": "snax_forge_vecadd",
+            "snax_streamer_sets": [{"name": "acc",
+                                    "snax_streamer_cfg": {"$ref": STREAMER_FILE},
+                                    "snax_num_rw_csr": 2, "snax_num_ro_csr": 2}],
             "snax_datapath_cfg": {"$ref": "accelerator.json"},
         }],
     },
@@ -90,8 +96,10 @@ POINT: dict[str, Any] = {
 
 
 def files() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Fresh copies of the cluster file, the streamer file, accelerator.json, the point."""
-    return tuple(copy.deepcopy(x) for x in (CLUSTER, STREAMER, UNIT, POINT))  # type: ignore[return-value]
+    """Fresh copies of the cluster file, the streamer files by set (vecadd's one, ``acc``),
+    accelerator.json, the point: ``cluster_from``'s arguments."""
+    cluster, streamer, unit, point = (copy.deepcopy(x) for x in (CLUSTER, STREAMER, UNIT, POINT))
+    return cluster, {"acc": streamer}, unit, point
 
 
 def line(path: str, trace: str, text: str, cycle: int = 0) -> str:

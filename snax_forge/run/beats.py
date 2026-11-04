@@ -191,11 +191,14 @@ def agu_nest(ptr: int, spatial_bounds: Sequence[int], spatial_strides: Sequence[
 
 
 def mover_csrs(cluster: Cluster) -> dict[str, int]:
-    """Each mover's first CSR number (its pointer's low word), in the streamer's layout."""
-    out, csr = {}, cluster.accelerator.csrs.streamer_first
-    for m in cluster.accelerator.movers:
-        out[m.name] = csr
-        csr += mover_csr_count(m.spatial_bounds, m.temporal_dim)
+    """Each mover's first CSR number (its pointer's low word), in its set's streamer layout
+    (each set's from its own first CSR, D157)."""
+    acc = cluster.accelerator
+    out, csr = {}, {s.name: s.first for s in acc.csrs.sets}
+    for m in acc.movers:
+        key = m.set or acc.csrs.sets[0].name
+        out[m.name] = csr[key]
+        csr[key] += mover_csr_count(m.spatial_bounds, m.temporal_dim)
     return out
 
 

@@ -245,7 +245,12 @@ def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -
 
     (out / "gen").mkdir(parents=True)
     (out / "design").mkdir()
-    for name in ("snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"):
+    described = [
+        "snax_forge.hjson",
+        *sorted(p.name for p in recorded.glob("*_streamer_*.hjson")),
+        "accelerator.json",
+    ]  # the cluster file, a streamer file per set (D157)
+    for name in described:
         shutil.copy(recorded / name, out / "gen" / name)
     shutil.copy(recorded / "design_point.json", out / "design" / "design_point.json")
     shutil.copy(recorded / "tasks.json", out / "tasks.json")
@@ -264,7 +269,7 @@ def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -
     (out / "run").mkdir()
     (out / "run" / "run.json").write_text(to_json({
         "design_point": "design/design_point.json",
-        "hjson": ["gen/snax_forge.hjson", "gen/snax_forge_streamer.hjson", "gen/accelerator.json"],
+        "hjson": [f"gen/{name}" for name in described],
         "elf_symbols": syms, "trace_level": level, "trace_sources": sources,
     }))  # fmt: skip
     write_run(out / "run", profile, trace)
