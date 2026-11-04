@@ -349,8 +349,8 @@ def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
     """vecmul at N = 2048 (D155): at W = 16 design.md's Estimate has the group's bank-bound note
     and run.md puts it beside the task's expected COUNTER; at W = 8 neither has one."""
     r = designed_report(tmp_path, "vecmul", ["N=2048", f"W={w}"])
-    note = ("acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the "
-            "ideal 128")  # fmt: skip
+    note = ("acc: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time "
+            "against the ideal 128")  # fmt: skip
     assert r.estimate.bank_notes == ([note] if w == 16 else [])
     cycles = 2048 // w  # bound, so no unmapped part (D155)
     assert f"Accelerator cycles: {cycles}. Total: {cycles}. L1 footprint:" in render_design(r)

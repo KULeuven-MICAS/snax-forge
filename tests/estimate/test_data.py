@@ -113,12 +113,13 @@ def test_the_estimate_round_trips(name):
 @pytest.mark.slow
 def test_the_bank_bound_of_vecmul():
     """vecmul at N = 2048 (D155): three ports of W words a beat over 32 banks. At W = 16, 6144
-    words take at least 192 cycles against the ideal 128 (the run's COUNTER is 194), a note; at
+    words take at least 192 cycles of L1 time against the ideal 128, a bound on the streams, not
+    on the COUNTER (the run's is 194), a note; at
     W = 8 the same 192 is below the ideal 256, no note. Without a platform, no bound."""
     (sixteen,) = estimated("vecmul", N=2048, W=16).groups
     assert (sixteen.cycles, sixteen.bank_bound, sixteen.counter) == (128, 192, 131)
-    assert sixteen.bank_bound_note == ("acc: the outer ports move 6144 words over 32 banks, at "
-                                       "least 192 cycles against the ideal 128")  # fmt: skip
+    assert sixteen.bank_bound_note == ("acc: the streams move 6144 words over 32 banks, at "
+                                       "least 192 cycles of L1 time against the ideal 128")  # fmt: skip
     (eight,) = estimated("vecmul", N=2048, W=8).groups
     assert (eight.cycles, eight.bank_bound, eight.bank_bound_note) == (256, 192, None)
     (alone,) = estimate(steps("vecmul", N=2048, W=16)[-1]).groups
@@ -133,6 +134,11 @@ def test_the_bank_bound_of_dot_1_per_group():
     assert [(g.name, g.cycles, g.bank_bound) for g in (mul, total)] == [
         ("mul", 256, 192), ("sum", 257, 65)]  # fmt: skip
     assert mul.bank_bound_note is None and total.bank_bound_note is None
+    # at W = 16 the mul's streams, its own only (D155, C§14), need L1 time over its 128 cycles
+    mul, total = estimated("dot_1", N=2048, W=16).groups
+    assert mul.bank_bound_note == ("mul: the streams move 6144 words over 32 banks, at least 192 "
+                                   "cycles of L1 time against the ideal 128")  # fmt: skip
+    assert (total.bank_bound, total.bank_bound_note) == (65, None)
 
 
 def test_an_untagged_tail_split_pads_and_checks():

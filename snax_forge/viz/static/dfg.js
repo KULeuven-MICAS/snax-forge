@@ -585,8 +585,8 @@ async function estimate() {
   },
   h("b", {}, g.name), " ",
   h("span", { class: "mono" }, g.formula),
-  h("small", {}, ` COUNTER ${g.counter} · channels ${g.channels}` + (g.area_text ? ` · ${g.area_text} · ${g.energy_text}` : "")),
-  g.bank_note ? h("p", { class: "c-bank-note", title: "L1's single-port banks serve one word each per cycle (D155)" }, `bank bound: ${g.bank_note}`) : null));
+  h("small", { title: "the expected COUNTER, cycles + fill: a guide, not a check (D155)" }, ` expected COUNTER ${g.counter} · channels ${g.channels}` + (g.area_text ? ` · ${g.area_text} · ${g.energy_text}` : "")),
+  g.bank_note ? h("p", { class: "c-bank-note", title: "L1's single-port banks serve one word each per cycle: a bound on the streams' L1 time, not on the COUNTER (D155)" }, `bank bound: ${g.bank_note}`) : null));
   const c = s.cost;
   const cost = c ? [
     h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", {}, c.area_text), " · ", h("b", {}, c.energy_text), " per run"),

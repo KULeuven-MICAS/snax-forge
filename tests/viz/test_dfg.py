@@ -377,8 +377,8 @@ def test_the_bank_note_under_its_group():
     w8, w16 = (
         Entry(f"w{w}", Path(f"w{w}"), steps("vecmul", N=2048, W=w)[-1], None) for w in (8, 16)
     )
-    note = ("acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the "
-            "ideal 128")  # fmt: skip
+    note = ("acc: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time "
+            "against the ideal 128")  # fmt: skip
     (g16,) = step_view(w16, "w16", platform)["summary"]["groups"]
     (g8,) = step_view(w8, "w8", platform)["summary"]["groups"]
     assert (g16["bank_note"], g8["bank_note"]) == (note, None)
@@ -752,7 +752,7 @@ def test_compare_gives_two_columns_for_the_same_group():
     w4 = Entry("w4", REPO, steps("dot_5", W=4, N=2048)[-1], None)
     rows = compare_view(e[6], w4, platform)["columns"]["estimate"]
     assert _rows(rows, "group dot") == {
-        "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "COUNTER": ("268", "520", True),
+        "cycles": ("265 = 256 + 9", "517 = 512 + 5", True), "expected COUNTER": ("268", "520", True),
         "channels": ("17", "9", True), "area": ("64 100 µm²", "33 300 µm²", True),
         "energy": ("26.339 nJ", "26.615 nJ", True)}  # fmt: skip
     assert _rows(rows, "memory")["reads"] == ("4096 words", "4096 words", False)

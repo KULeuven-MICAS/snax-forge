@@ -611,7 +611,8 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
     """The Estimate panel in two columns (module doc), from each side's summary (None: no
     estimate): under ``accelerator`` its cycles, the unmapped cycles, the total (D155) and the
     not-mapped count; under ``group <name>``,
-    every group of either side, its cycles, COUNTER, channels, area and energy, and its bank
+    every group of either side, its cycles, expected COUNTER (a guide, D155), channels, area and
+    energy, and its bank
     note where a side has one; under ``memory`` L1, the words read and written, the lanes; under the cost heading the
     accelerator's area, energy, L1 accesses (D154) and the blocks not characterized. "–" where a
     side has none."""
@@ -644,7 +645,7 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
 
         under = f"group {name}"
         rows += [_row(label, *both(lambda s, f=field: group(s, f)), under)
-                 for label, field in (("cycles", "formula"), ("COUNTER", "counter"),
+                 for label, field in (("cycles", "formula"), ("expected COUNTER", "counter"),
                                       ("channels", "channels"), ("area", "area_text"),
                                       ("energy", "energy_text"))]  # fmt: skip
         notes = both(lambda s: group(s, "bank_note"))
@@ -675,7 +676,8 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
     """The Estimate panel's figures, every sum and share worked out here (D57): the headline,
     ``cycles`` (the accelerator's, the unmapped work's at one cycle per iteration with that
     assumption as its ``title``, and the total, D155),
-    per group ``cycles = bottleneck + ramp [+ stall]`` and its expected COUNTER, the L1
+    per group ``cycles = bottleneck + ramp [+ stall]`` and its expected COUNTER (a guide, not a
+    check, D155), the L1
     footprint against the L1 (its share as a CSS width), the words read and written, and the
     lane use of each tailed split; per group its ``bank_bound`` and, where it exceeds the
     cycles, its ``bank_note`` (D155; R2 shows them); with a technology per group its area and
