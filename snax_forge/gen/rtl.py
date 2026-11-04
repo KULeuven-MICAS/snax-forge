@@ -41,9 +41,11 @@ its ``emitted.json`` lists.
 
 **Elaboration** runs ``snax.forge.Emit`` with ``java`` on hw/chisel's runtime classpath, which
 sbt exports once (``compile``, ``export Runtime/fullClasspath``) into
-``hw/chisel/target/emit-classpath.txt`` and again only when a file under
-``hw/chisel/src/main/`` or ``build.sbt`` is newer than it, or when an entry of it is gone (a
-cleared jar cache): sbt's start and project load are paid only after a change. One java call takes
+``hw/chisel/target/emit-classpath-<hash>.txt``, one file per environment (the hash of its
+Coursier cache directory and its ``java``, ``classpath_file``: snax-forge's image and the host
+keep one each), and again only when a file under ``hw/chisel/src/main/`` or ``build.sbt`` is
+newer than it, or when an entry of it is gone or cannot be checked (a cleared jar cache): sbt's
+start and project load are paid only after a change. One java call takes
 every ``--spec FILE --out DIR`` pair (``elaborate_all``).
 
 **The fill rule** (the catalogue's ``fill``): ``inputs.dtype`` the input ports' dtypes in order
@@ -73,7 +75,10 @@ and matvec's shapes.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -415,7 +420,32 @@ CHISEL = ROOT / "hw" / "chisel"
 EMITTED_JSON = "emitted.json"
 
 
-CLASSPATH = CHISEL / "target" / "emit-classpath.txt"
+def classpath_env() -> str:
+    """What decides the classpath's jar paths in this environment: the Coursier cache directory
+    (``COURSIER_CACHE``, else ``$XDG_CACHE_HOME/coursier``, else ``~/.cache/coursier``) and the
+    ``java`` that runs Emit, its real path; snax-forge's image and the host differ in both."""
+    coursier = os.environ.get("COURSIER_CACHE") or str(
+        Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "coursier"
+    )
+    java = shutil.which("java")
+    return f"coursier={coursier}\njava={os.path.realpath(java) if java else 'java'}\n"
+
+
+def classpath_file(env: str | None = None) -> Path:
+    """This environment's cached classpath, ``hw/chisel/target/emit-classpath-<hash>.txt``, the
+    hash 8 hex digits of ``classpath_env()``, so the image's and the host's never overwrite each
+    other (an old ``emit-classpath.txt`` is ignored)."""
+    h = hashlib.sha256((classpath_env() if env is None else env).encode()).hexdigest()[:8]
+    return CHISEL / "target" / f"emit-classpath-{h}.txt"
+
+
+def _there(entry: str) -> bool:
+    """A classpath entry exists and can be checked; one that cannot (another environment's
+    ``/root/...``: a PermissionError, not readable, not there) counts as gone."""
+    try:
+        return Path(entry).exists()
+    except OSError:
+        return False
 
 
 def _newest_source() -> float:
@@ -428,12 +458,14 @@ def _newest_source() -> float:
 
 
 def emit_classpath(refresh: bool = False) -> str:
-    """hw/chisel's runtime classpath, from ``CLASSPATH`` unless ``refresh``, the file is missing or
-    a source is newer than it; else compiled and exported by sbt and written there (the module
-    doc). sbt's output is shown only when it fails."""
-    if not refresh and CLASSPATH.is_file() and CLASSPATH.stat().st_mtime >= _newest_source():
-        cp = CLASSPATH.read_text().strip()
-        if all(Path(p).exists() for p in cp.split(":")):  # a cleared jar cache: refresh
+    """hw/chisel's runtime classpath, from this environment's ``classpath_file()`` unless
+    ``refresh``, the file is missing, a source is newer than it or an entry is gone (``_there``);
+    else compiled and exported by sbt and written there (the module doc). sbt's output is shown
+    only when it fails."""
+    cached = classpath_file()
+    if not refresh and cached.is_file() and cached.stat().st_mtime >= _newest_source():
+        cp = cached.read_text().strip()
+        if cp and all(_there(p) for p in cp.split(":")):  # a cleared jar cache: refresh
             return cp
     cmd = ["sbt", "-batch", "compile", "export Runtime/fullClasspath"]
     done = subprocess.run(cmd, cwd=CHISEL, capture_output=True, text=True, check=False)
@@ -441,8 +473,8 @@ def emit_classpath(refresh: bool = False) -> str:
     if done.returncode != 0 or not found:
         sys.stderr.write(done.stdout[-4000:] + done.stderr[-4000:])
         raise GenError("gen.elaborate", f"sbt compile in {CHISEL} failed (exit {done.returncode})")
-    CLASSPATH.parent.mkdir(parents=True, exist_ok=True)
-    CLASSPATH.write_text(found[-1] + "\n")
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    cached.write_text(found[-1] + "\n")
     return found[-1]
 
 
