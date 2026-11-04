@@ -436,15 +436,16 @@ def test_the_bind_form_lists_the_library_with_timing(roots):
 
 
 def test_the_encapsulate_and_link_forms(roots):
-    """dot 1 before encapsulate: the units unencapsulated in graph order, the selected one
-    ticked, and a free accelerator name; dot 2 before its link: the depth a param of its own, D,
+    """dot 1 before encapsulate: the units unencapsulated in graph order, every one ticked
+    (D156), not only the selected one, and a free accelerator name; dot 2 before its link: the depth a param of its own, D,
     at 1 by default, the group from the site."""
     one = opened("dot_1", roots)
     ok(one.move(one.n - 1))
     f = _form(one.sites(one.cursor, "mult")["encapsulate"])
     assert (f["units"]["type"], f["units"]["value"], [c["value"] for c in f["units"]["choices"]]) == (
-        "checklist", ["mul"], ["mul", "sum"])  # fmt: skip
+        "checklist", ["mul", "sum"], ["mul", "sum"])  # fmt: skip
     assert f["accelerator"]["value"] == "dot" and not f["units"]["readonly"]
+    assert _form(one.sites(one.cursor, "sum")["encapsulate"])["units"]["value"] == ["mul", "sum"]
     two = opened("dot_2", roots)
     ok(two.move(two.n - 1))
     f = _form(two.sites(two.cursor, "tmp0")["link"])

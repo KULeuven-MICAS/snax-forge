@@ -852,7 +852,7 @@ def form(
     ``readonly`` (the selection's own field) and ``choices`` where they apply: ``tag_map``'s
     kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
-    units (the instances in no accelerator, in the graph's order)."""
+    units (the instances in no accelerator, in the graph's order, every one ticked)."""
     import inspect
 
     from snax_forge.common import fresh
@@ -894,7 +894,8 @@ def form(
             free = list(
                 dict.fromkeys(n.attrs["instance"] for n in nodes if "accelerator" not in n.attrs)
             )
-            field |= {"type": "checklist", "readonly": False,
+            # every bound unit not in an accelerator ticked, not only the selected one (D156)
+            field |= {"type": "checklist", "readonly": False, "value": free,
                       "choices": [{"value": u, "label": u} for u in free]}  # fmt: skip
         elif name == "encapsulate" and p == "accelerator":
             taken = {n.attrs[k] for n, _ in g.walk() if n.kind == "accelerated"
