@@ -145,7 +145,7 @@ The flow's stages are tools of their own. The design point, the generator into `
         GVRUN_ARGS="--param hjson=$PWD/out/gvsoc/vecadd/snax_forge.hjson" \
         ELF=../out/snax-gvsoc/sw/vecadd/forge.elf
 
-`GVRUN_ARGS` takes gvrun's own options too, such as `--trace=snax_acc0/unit`. The flow does not make RTL; `gen-rtl` writes `accelerator.json` (C§17, gen-gvsoc's bytes), checks it against the datapath catalogue and runs `hw/chisel/`'s `Emit --spec` on a classpath sbt exports into `hw/chisel/target/emit-classpath.txt` (the first run, and again after a change under `hw/chisel/src/main/` or to `build.sbt`):
+`GVRUN_ARGS` takes gvrun's own options too, such as `--trace=snax_acc0/unit`. The flow does not make RTL; `gen-rtl` writes `accelerator.json` (C§17, gen-gvsoc's bytes), checks it against the datapath catalogue and runs `hw/chisel/`'s `Emit --spec` on a classpath sbt exports into `hw/chisel/target/emit-classpath-<hash>.txt`, one file per environment so a checkout used from the image and from the host keeps one of each (the first run, and again after a change under `hw/chisel/src/main/` or to `build.sbt`, or when a jar it lists is gone or cannot be read):
 
     pixi run gen-rtl out/design/vecadd/design_point.json
 
