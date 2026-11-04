@@ -156,7 +156,7 @@ from snax_forge.design.streamers import (
     port_loops,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
-from snax_forge.dfg.subset import map_range
+from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.estimate.cost import CAVEAT, L1_LABEL, L1Cost, dec3, heading, sig3
 from snax_forge.expr import ExprError
 
@@ -320,6 +320,8 @@ def step_view(e: Entry, label: str, platform: Any = None, marks: dict[str, list[
     out["containers_section"] = containers_section(e.graph, est)
     out["symbols_section"] = symbols_section(e.graph, recipe, editable)
     out["bindings_section"] = bindings_section(e.graph, recipe, editable)
+    if recipe is not None:  # the recipe's param names in the boxes and Details (D156)
+        _name_params(out, e.graph, recipe)
     if marks is None:
         from snax_forge.sandbox.session import marks_of
 
@@ -417,6 +419,72 @@ def _splits(recipe: Any) -> list[tuple[Any, str, list[str], re.Pattern[str], Any
             out.append((m, st.transform, _param_names(p.get("factor"), params), inner,
                         p.get("factor")))  # fmt: skip
     return out
+
+
+def unit_params(g: Graph, recipe: Any) -> dict[str, list[str]]:
+    """Per bound instance, the recipe params of the splits whose inner map it replaced (C§12's
+    Bindings rule: ``bind`` reads W off the spatial map, D73)."""
+    splits, out = _splits(recipe), {}
+    for n, _ in g.walk():
+        if n.kind == "accelerated" and n.attrs["instance"] not in out:
+            ids = _map_ids(n.attrs.get("replaced"))
+            names: list[str] = []
+            for _, _, ps, inner, _ in splits:
+                if any(inner.match(x) for x in ids):
+                    names += [x for x in ps if x not in names]
+            out[n.attrs["instance"]] = names
+    return out
+
+
+def map_ranges(g: Graph, recipe: Any) -> dict[str, str]:
+    """Per map a split made, its range with the factor's param name and its iterations beside
+    it (``0:N // W_acc_1 = 256``, the inner ``0:W_acc_1 = 8``; D156); a factor given as a
+    number keeps the range as the graph has it."""
+    out: dict[str, str] = {}
+    maps = {n.id: n for n, _ in g.walk() if n.kind == "map"}
+    for m, _, _, inner, factor in _splits(recipe):
+        if not isinstance(factor, str) or m not in maps or "loop.split" not in maps[m].attrs:
+            continue
+        f = factor if expr.is_name(factor) else f"({factor})"
+        node = maps[m]
+        split = node.attrs["loop.split"]
+        begin, end, _ = parse_dim(split["range"], m)
+        length = expr.canonical(f"({end}) - ({begin})") if str(begin) != "0" else str(end)
+        rng = f"0:({length} + {f} - 1) // {f}" if "valid" in split else f"0:{length} // {f}"
+        its = _iterations(g, node.attrs["range"])
+        out[m] = f"{rng} = {'?' if its is None else its}"
+        for kid in node.body or []:
+            if kid.kind == "map" and inner.match(kid.id):
+                its = _iterations(g, kid.attrs["range"])
+                out[kid.id] = f"0:{factor} = {'?' if its is None else its}"
+    return out
+
+
+def _name_params(view: dict[str, Any], g: Graph, recipe: Any) -> None:
+    """The step view's unit boxes and map Details with the recipe's param names (D156): a
+    unit's lanes under its split's param (``acc_1 · in1 * in2 · W_acc_1 8``), a split map's
+    ``range`` (``0:N // W_acc_1 = 256``, the graph's ``0:N // 8`` named)."""
+    names = unit_params(g, recipe)
+    nodes = {n.id: n for n, _ in g.walk()}
+
+    def walk(x: Any) -> None:
+        if isinstance(x, dict):
+            n = nodes.get(x.get("id")) if x.get("kind") == "accelerated" else None
+            if n is not None and "text" in x:
+                ps = names.get(n.attrs["instance"]) or []
+                x["text"] = compact_text(g, n, ps[0] if ps else None)
+            for v in x.values():
+                walk(v)
+        elif isinstance(x, list):
+            for v in x:
+                walk(v)
+
+    walk(view.get("rows"))
+    walk(view.get("nodes"))
+    for m, text in map_ranges(g, recipe).items():
+        d = view.get("details", {}).get(f"node:{m}")
+        if d is not None:
+            d["range"] = text
 
 
 def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> dict[str, Any]:
@@ -951,8 +1019,9 @@ def _operation(n: Node, code: str, ins: Sequence[str]) -> str:
     return _rhs(code)
 
 
-def compact_text(g: Graph, n: Node) -> str:
-    """A node's text in the compact drawing (module doc)."""
+def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
+    """A node's text in the compact drawing (module doc); a unit's lanes under ``param``, the
+    recipe param its split names (``W_acc_1 8``, D156), else ``W``."""
     a = n.attrs
     if n.kind == "map":
         its = _iterations(g, a["range"])
@@ -967,7 +1036,7 @@ def compact_text(g: Graph, n: Node) -> str:
         try:
             inst = instance_of(n)
             first = next(p.name for p in inst.brm.interface.ports if p.direction == "in")
-            return f"{text} · W {inst.lanes(first)}"
+            return f"{text} · {param or 'W'} {inst.lanes(first)}"
         except (BrmError, ExprError, KeyError, StopIteration):
             return text
     if n.kind == "link":

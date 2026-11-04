@@ -811,3 +811,31 @@ def test_the_bindings_tree():
     t, labels = tree("dot_1", 3)
     assert t == [{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]
     assert labels == ["mul · elementwise_mul", "sum_map split_map"]
+
+
+def test_the_recipes_param_names_in_the_boxes_and_details():
+    """D156: with the recipe, a unit's box gives its split's param (``W_mul 8``, not ``W 8``)
+    and a split map's Details its range with the param and its iterations (``0:N // W_mul =
+    256``); dot 2's shared W in both boxes; without a recipe the boxes keep ``W``."""
+    from snax_forge.design import Platform
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from snax_forge.viz.dfg.api import Entry, map_ranges, step_view, unit_params
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import dot1_split, imported
+
+    r = dot1_split(8, 8)
+    g = apply_recipe(r, imported("dot"))[-1].graph
+    assert unit_params(g, r) == {"mul": ["W_mul"], "sum": ["W_sum"]}
+    assert map_ranges(g, r) == {"mult_map": "0:N // W_mul = 256", "sum_map": "0:N // W_sum = 256"}
+    v = step_view(Entry("5", Path("5"), g, None), "5", Platform.load(SNAX_FORGE), recipe=r)
+    texts = json.dumps(v["rows"], ensure_ascii=False)
+    assert "mul · a * b · W_mul 8" in texts and "sum · fold + · W_sum 8" in texts
+    assert v["details"]["node:mult_map"]["range"] == "0:N // W_mul = 256"
+    tail = dot1_split(10, 10)
+    gt = apply_recipe(tail, imported("dot"))[-1].graph
+    assert map_ranges(gt, tail)["mult_map"] == "0:(N + W_mul - 1) // W_mul = 205"
+    plain = step_view(Entry("5", Path("5"), g, None), "5", Platform.load(SNAX_FORGE))
+    assert "mul · a * b · W 8" in json.dumps(plain["rows"], ensure_ascii=False)
+    two = Recipe.load(REPO / "recipes" / "dot_2.json").with_params({"N": 2048, "W": 8})
+    g2 = apply_recipe(two, imported("dot"))[-1].graph
+    assert unit_params(g2, two) == {"mul": ["W"], "sum": ["W"]}
