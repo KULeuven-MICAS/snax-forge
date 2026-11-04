@@ -4,17 +4,17 @@
 
 SNAX-LOWER's backend of the task list (derive.py, C§9). It reads the
 cluster file the generator writes (gen/gvsoc.py: its cores), the
-accelerator's description (gen/accelerator.py's ``Accelerator``: its CSRs,
-named by its ``define`` as ``include/<name>_csr.h`` names them), data.h's
+accelerators' description (gen/accelerator.py's ``Description``: their CSRs,
+named by its ``define`` as each ``include/<acc>_csr.h`` names them), data.h's
 arrays (gen/data.py) and the files to include, in order; the generator
 writes ``main.c`` beside them.
 
 **Cores.** Each step runs on the core that owns its component, from the
-cluster file: the DMA's core is the one with ``xdma``, the accelerator's
-the one whose ``snax_acc_cfg`` holds the slot. Each core with a task gets a
-function of its own, ``forge_core_<n>`` (``static``, ``noinline``): its steps
-in task-list order, a straight line with the barriers at the same points as
-every other core's; a core with none runs ``forge_core_idle``, the barriers
+cluster file: the DMA's core is the one with ``xdma``, the accelerators'
+the one whose ``snax_acc_cfg`` holds the generated entry (the description's
+``tag``). Each core with a task gets a function of its own, ``forge_core_<n>``
+(``static``, ``noinline``): its steps in task-list order, a straight line
+with the barriers at the same points as every other core's; a core with none runs ``forge_core_idle``, the barriers
 only. ``main`` reads ``mcycle`` first (``t0``), reads
 ``snrt_cluster_core_idx()`` once (not ``snrt_is_compute_core()``: with one
 core snRuntime counts zero compute cores, open item 80) and calls its core's
@@ -27,35 +27,38 @@ as ``forge cycles: <n>``; the flow takes it as ``total_cycles`` (D136, C§7).
 No task marks: nothing is read inside the window but the counters, so the
 core's timing between the steps is the program's own.
 
-**The accelerator** (D148) is the design point's one: its groups in the
-graph's order, each with its own tasks (a unit alone, or the units ``link``
-joined, one task for the group); its movers are every port on no link
-(D112), readers the input ports and writers the outputs, unit by unit in the
-BRM's port order, as the streamer file.
+**The accelerators** (D148, D157) are the design point's, in the graph's
+order, each one streamer set: its groups in the graph's order, each with its
+own tasks (a unit alone, or the units ``link`` joined, one task for the
+group); its movers are every port on no link (D112), readers the input ports
+and writers the outputs, unit by unit in the BRM's port order, as its
+streamer file, named in its set's header ``streamer_<set>_csr_addr_map.h``
+with the set's prefix (dot_serial's ``MUL_BASE_PTR_READER_0_LOW``).
 
-**Configure.** A streamer task is ``csrw_ss`` on streamer_csr_addr_map.h's
-names: the base (``BASE_PTR_<M>_LOW`` / ``_HIGH``), the spatial strides,
+**Configure.** A streamer task is ``csrw_ss`` on its set's header's names
+(``<SET>_`` and the name Streamer.scala gives): the base
+(``<SET>_BASE_PTR_<M>_LOW`` / ``_HIGH``), the spatial strides,
 then the temporal bounds and strides, padded to the streamer's
 ``temporal_dim`` with bound 1 and stride 0 (C§9); an idle mover's bounds are
 all 0, so it never starts. An accelerator task writes its group's JOBS = n /
 T and, for a fold whose T is not the description's ``params.T``, its unit's
 JOB_BEATS = T, from the task's values (n and the rates, C§9; ``job_values``,
-D146), on ``<name>_csr.h``'s names. A linked group's task holds each unit's
-values by unit: JOBS = n_u / ∏ T_v over its first unit u and the group's folds
+D146), on its accelerator's ``<acc>_csr.h``'s names. A linked group's task
+holds each unit's values by unit: JOBS = n_u / ∏ T_v over its first unit u and the group's folds
 v, then each fold's JOB_BEATS in unit order (``job_writes``).
 A DMA task writes nothing here: snRuntime programs and starts the DMA in one
 call, so it is ``snrt_dma_start_1d`` (one loop of whole beats) or
 ``snrt_dma_start_2d`` (a second loop) at its start.
 
-**Start.** One start step writes ``STREAMER_START_CSR`` once for all of the
-accelerator's movers (the other groups' idle, at bound 0), then its group's
-``START`` (bit 0 set), in the step's order, back to back; a DMA task starts
-at its place in the step.
+**Start.** One start step writes its set's ``<SET>_STREAMER_START_CSR``
+once for all of the accelerator's movers (the other groups' idle, at bound
+0), then its group's ``START`` (bit 0 set), in the step's order, back to
+back; a DMA task starts at its place in the step.
 
 **Waits.** On the SNAX components, as waits.py places them (D64,
 ``placed_waits``): on the owner's core, a wait on a unit or one of its
-streamers polls its group's ``STATUS & 1`` (busy), then the streamer's
-busy. On the
+streamers polls its group's ``STATUS & 1`` (busy), then its set's
+``<SET>_STREAMER_BUSY_CSR``. On the
 DMA, from dependences only: the iDMA queues transfers (the hjson's
 ``dma_req_fifo_depth``; a full queue stalls the core), so a DMA task starts
 without waiting for the one before it, and ``snrt_dma_wait_all()`` comes
@@ -81,12 +84,11 @@ task, slots in the order the counters are read, and ``forge errors:
 <err>``, the data errors plus one per counter below its task's beats, which
 it returns to main (0 on the other cores; snRuntime sums them at exit).
 
-**Refused**, each a ``CError`` (``c.<rule>``): other than one accelerator
-(``c.instances``: several groups are one accelerator only through
-``encapsulate``; the design checks refuse it first, ``gen.instances``), a
-unit without a binding (``c.binding``), a cluster file without one xdma core
-or without the slot (``c.cores``), a start that does not cover every mover of
-the accelerator, the idle ones at bound 0, or that starts a unit before them
+**Refused**, each a ``CError`` (``c.<rule>``): a unit without a binding
+(``c.binding``), a cluster file without one xdma core or without the entry
+the description's ``tag`` names (``c.cores``), a start that does not cover
+every mover of each accelerator it starts movers of, the idle ones at bound 0,
+or that starts a unit before them
 (``c.start``), an idle mover (every temporal bound 0) whose first temporal
 stride is 0, which would start and read anyway (snax_cluster's Reader.scala:
 stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
@@ -111,14 +113,15 @@ from snax_forge.common import CodedError, generated_header
 from snax_forge.design.hjson_platform import CoreCount, dma_and_owner
 from snax_forge.design.hjson_platform import cores as hjson_cores
 from snax_forge.design.problems import DesignError
-from snax_forge.design.streamers import accelerators, groups, instances, streamer_name
+from snax_forge.design.streamers import accelerators as graph_accelerators
+from snax_forge.design.streamers import groups, instances, streamer_name
 
 from .tasks import Configure, Start, TaskList, TaskListError, check_values
 from .waits import PlacedWait, placed_waits
 
 if TYPE_CHECKING:  # design imports lower, gen imports lower
     from snax_forge.design.point import DesignPoint
-    from snax_forge.gen.accelerator import Accelerator
+    from snax_forge.gen.accelerator import Description
     from snax_forge.gen.data import Array
 
 MAIN_C = "main.c"
@@ -179,29 +182,26 @@ def mover_name(write: bool, index: int) -> str:
     return f"{'WRITER' if write else 'READER'}_{index}"
 
 
-def accelerator(
+def accelerators(
     point: DesignPoint, fail: Callable[[str, str], Exception] | None = None
-) -> tuple[str, dict[str, Instance]]:
-    """The one accelerator's name and its units, one per group in the graph's order,
-    each with a binding. Several accelerators are ``c.instances`` (the design checks refuse
-    them first on a platform with a slot, ``gen.instances``); ``fail(rule, message)`` makes the
-    error of a unit without one (``binding``): a ``c.binding`` CError by default, the
-    generator's own (gen/gvsoc.py)."""
+) -> dict[str, dict[str, Instance]]:
+    """The accelerators in the order the graph first uses them (CSR order, D157), each its
+    units in the graph's order, every one with a binding; ``fail(rule, message)`` makes the error
+    of a unit without one (``binding``): a ``c.binding`` CError by default, the generator's own
+    (gen/accelerator.py)."""
     if fail is None:
         fail = lambda rule, message: CError(f"c.{rule}", message)
-    found = accelerators(point.graph)
-    if len(found) != 1:
-        raise CError("c.instances", f"{len(found)} accelerators {list(found)}; the platform has "
-                     "one accelerator slot and the program drives one accelerator: encapsulate "
-                     "puts groups into one (D148)")  # fmt: skip
-    (name, groups), = found.items()  # fmt: skip
     insts = instances(point.graph)
-    units = {u: insts[u] for u in groups}
-    for inst in units.values():
-        if inst.impl.binding is None:
-            raise fail("binding", f"{inst.brm.name}.{inst.implementation}: binding null, nothing "
-                       "to generate")  # fmt: skip
-    return name, units
+    out = {
+        name: {u: insts[u] for u in units}
+        for name, units in graph_accelerators(point.graph).items()
+    }
+    for units in out.values():
+        for inst in units.values():
+            if inst.impl.binding is None:
+                raise fail("binding", f"{inst.brm.name}.{inst.implementation}: binding null, "
+                           "nothing to generate")  # fmt: skip
+    return out
 
 
 @dataclass(frozen=True)
@@ -231,14 +231,16 @@ def cores(cluster: Mapping[str, Any], slot: str) -> Cores:
 
 class _Program:
     def __init__(self, point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any],
-                 acc: Accelerator, arrays: Sequence[Array]) -> None:  # fmt: skip
+                 acc: Description, arrays: Sequence[Array]) -> None:  # fmt: skip
         self.point, self.tasks, self.acc = point, tasks, acc
-        self.name, self.units = accelerator(point)
+        self.accs = accelerators(point)
+        self.units = {u: inst for units in self.accs.values() for u, inst in units.items()}
+        self.acc_of = {u: a for a, units in self.accs.items() for u in units}
         # a linked group's task is the group's: its name -> its units
         self.linked = {k: v for k, v in groups(point.graph).items()
                        if len(v) > 1 and v[0] in self.units}  # fmt: skip
         self.fixed = acc.fixed_folds
-        self.cores = cores(cluster, point.platform.accelerator_slot)
+        self.cores = cores(cluster, acc.tag)
         self.arrays = list(arrays)
         self.conf = tasks.configured()
         self.beat = point.platform.l2.beat_bits // 8
@@ -252,18 +254,38 @@ class _Program:
 
     # -- what the design point gives -------------------------------------------------------
 
-    def _movers(self) -> dict[str, str]:
-        """Streamer component -> its mover in the headers (``READER_0``, ``WRITER_0``): every
-        unit's ports, unit by unit in port order, readers and writers counted apart."""
-        out, n = {}, {False: 0, True: 0}
-        for unit, inst in self.units.items():
-            for p in inst.brm.interface.ports:
-                s = self.point.streamers.get(streamer_name(unit, p.name))
-                if s is None:  # a port on a link: no streamer
-                    continue
-                out[s.name] = mover_name(s.write, n[s.write])
-                n[s.write] += 1
+    def _movers(self) -> dict[str, tuple[str, str]]:
+        """Streamer component -> its accelerator (its streamer set) and its mover in the set's
+        header (``READER_0``, ``WRITER_0``): per accelerator every unit's ports, unit by unit in
+        port order, readers and writers counted apart."""
+        out = {}
+        for acc, units in self.accs.items():
+            n = {False: 0, True: 0}
+            for unit, inst in units.items():
+                for p in inst.brm.interface.ports:
+                    s = self.point.streamers.get(streamer_name(unit, p.name))
+                    if s is None:  # a port on a link: no streamer
+                        continue
+                    out[s.name] = (acc, mover_name(s.write, n[s.write]))
+                    n[s.write] += 1
         return out
+
+    def set_of(self, component: str) -> str:
+        """The streamer set (accelerator) a SNAX component is in."""
+        return self.acc_of[self.unit_of(component)]
+
+    def prefix(self, acc: str) -> str:
+        """The set's macro prefix in its streamer header (``VMUL_``, D157)."""
+        return f"{acc.upper()}_"
+
+    @property
+    def named(self) -> str:
+        """The accelerators as the comments name them: ``the accelerator dot``, ``the
+        accelerators mul and sum``."""
+        names = list(self.accs)
+        if len(names) == 1:
+            return f"the accelerator {names[0]}"
+        return f"the accelerators {', '.join(names[:-1])} and {names[-1]}"
 
     def core_of(self, component: str) -> int:
         return self.cores.dma if component == "dma" else self.cores.slot
@@ -305,7 +327,12 @@ class _Program:
                 self.emit(core, f"csrw_ss({self.csr(k, unit, s.task_name)}, {v});")
 
     def streamer(self, s: Configure) -> list[str]:
-        m, v = self.movers[s.component], s.values
+        acc, mover = self.movers[s.component]
+        v = s.values
+
+        def m(kind: str) -> str:  # the set's macro: <SET>_<KIND>_<MOVER> (VMUL_BASE_PTR_READER_0)
+            return f"{self.prefix(acc)}{kind}_{mover}"
+
         tb = list(v["temporal_bounds"])
         if tb and not any(tb) and not v["temporal_strides"][0]:
             raise CError("c.idle", f"{s.task_name}: an idle mover (every temporal bound 0) with "
@@ -318,24 +345,27 @@ class _Program:
         strides += [0] * (dims - len(strides))
         base = v["base"]
         lines = [
-            f"csrw_ss(BASE_PTR_{m}_LOW, {_hex(base & 0xFFFFFFFF)});",
-            f"csrw_ss(BASE_PTR_{m}_HIGH, {base >> 32});",
+            f"csrw_ss({m('BASE_PTR')}_LOW, {_hex(base & 0xFFFFFFFF)});",
+            f"csrw_ss({m('BASE_PTR')}_HIGH, {base >> 32});",
         ]
-        lines += [f"csrw_ss(S_STRIDE_{m}_{i}, {x});" for i, x in enumerate(spatial)]
-        lines += [f"csrw_ss(T_BOUND_{m}_{i}, {x});" for i, x in enumerate(bounds)]
-        lines += [f"csrw_ss(T_STRIDE_{m}_{i}, {x});" for i, x in enumerate(strides)]
+        lines += [f"csrw_ss({m('S_STRIDE')}_{i}, {x});" for i, x in enumerate(spatial)]
+        lines += [f"csrw_ss({m('T_BOUND')}_{i}, {x});" for i, x in enumerate(bounds)]
+        lines += [f"csrw_ss({m('T_STRIDE')}_{i}, {x});" for i, x in enumerate(strides)]
         return lines
 
     def start(self, s: Start, where: str) -> None:
         types = {t: self.conf[t].type for t in s.tasks}
         movers = [t for t in s.tasks if types[t] == "streamer"]
-        if movers:
-            have = {self.conf[t].component for t in movers}
-            if have != set(self.movers):
-                raise CError("c.start", f"{where}: starts {sorted(have)} of {self.name}'s movers "
-                    f"{sorted(self.movers)}; the streamer starts all of them with one CSR, the "
+        for acc in dict.fromkeys(self.movers[self.conf[t].component][0] for t in movers):
+            have = {self.conf[t].component for t in movers
+                    if self.movers[self.conf[t].component][0] == acc}  # fmt: skip
+            want = {c for c, (a, _) in self.movers.items() if a == acc}
+            if have != want:
+                raise CError("c.start", f"{where}: starts {sorted(have)} of {acc}'s movers "
+                    f"{sorted(want)}; its streamer starts all of them with one CSR, the "
                     "other groups' idle at bound 0",
                 )  # fmt: skip
+        if movers:
             acc = [i for i, t in enumerate(s.tasks) if types[t] == "accel"]
             if acc and acc[0] < s.tasks.index(movers[0]):
                 raise CError("c.start", f"{where}: {self.conf[s.tasks[acc[0]]].component} starts "
@@ -343,16 +373,17 @@ class _Program:
         for t in s.tasks:
             self.started.setdefault(self.conf[t].component, []).append(t)
             self.order.append(t)
-        streamer_started = False
+        streamers_started: set[str] = set()
         for t in s.tasks:
             c = self.conf[t]
             core = self.core_of(c.component)
             if c.type == "dma":
                 self.emit(core, self.dma(c, where))
             elif c.type == "streamer":
-                if not streamer_started:
-                    self.emit(core, "csrw_ss(STREAMER_START_CSR, 1);")
-                    streamer_started = True
+                acc = self.movers[c.component][0]
+                if acc not in streamers_started:
+                    self.emit(core, f"csrw_ss({self.prefix(acc)}STREAMER_START_CSR, 1);")
+                    streamers_started.add(acc)
             else:
                 self.emit(core, f"csrw_ss({self.csr('START', c.component, t)}, 1);")
 
@@ -390,7 +421,7 @@ class _Program:
         else:
             self.emit(
                 core, f"while (csrr_ss({self.csr('STATUS', comp, comp)}) & 1) {{", "}",
-                "while (csrr_ss(STREAMER_BUSY_CSR)) {", "}",
+                f"while (csrr_ss({self.prefix(self.set_of(comp))}STREAMER_BUSY_CSR)) {{", "}",
             )  # fmt: skip
         ended = [t for c, last in covers.items()
                  for t in self.started[c][: self.started[c].index(last) + 1]
@@ -482,7 +513,7 @@ class _Program:
                    if k == self.cores.slot or any(x != "snrt_cluster_hw_barrier();" for x in v)}  # fmt: skip
         what = (
             f"The task list {self.tasks.name} on snRuntime: core {self.cores.dma} runs the DMA, "
-            f"core {self.cores.slot} the accelerator {self.name}; the SNAX waits as the lowering "
+            f"core {self.cores.slot} {self.named}; the SNAX waits as the lowering "
             "places them (D64), the DMA's on dependences only (D135), a barrier where another "
             "core goes on. One function per core, a straight line; the window from main's entry "
             "to forge_check()'s."
@@ -500,7 +531,7 @@ class _Program:
         ]
         out = list(head)
         for k, lines in working.items():
-            roles = [r for r, c in (("the DMA", self.cores.dma), (f"the accelerator {self.name}",
+            roles = [r for r, c in (("the DMA", self.cores.dma), (self.named,
                                     self.cores.slot)) if c == k]  # fmt: skip
             out += self.function(f"forge_core_{k}", f"Core {k}: {' and '.join(roles)}",
                                  [*lines, "return 0;"])  # fmt: skip
@@ -534,7 +565,7 @@ def _hex(v: int) -> str:
     return f"0x{v:08x}"
 
 
-def main_c(point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any], acc: Accelerator,
+def main_c(point: DesignPoint, tasks: TaskList, cluster: Mapping[str, Any], acc: Description,
            arrays: Sequence[Array], includes: Sequence[str], point_path: str) -> str:  # fmt: skip
     """The text of main.c, including ``includes`` in order; see the module doc."""
     return _Program(point, tasks, cluster, acc, arrays).text(includes, point_path)
