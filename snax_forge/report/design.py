@@ -24,20 +24,23 @@ the kernel from the run's functional check.
                  to a whole DMA beat, D144), banks (L1) or words of a beat
                  (L2), rows or beats
     estimate     the ideal estimate (D155, C§19): per group its cycles, bottleneck,
-                 ramp, stall and the COUNTER a run gives (the cycles plus the
-                 streamers' fill), a bank-bound note per group whose bank_bound
-                 exceeds its cycles and, on the estimate's technology, its area and
+                 ramp, stall and its expected COUNTER (the cycles plus the streamers'
+                 fill), a guide and not a check, a bank-bound note per group whose
+                 bank_bound (its streams' L1 time) exceeds its cycles and, on the
+                 estimate's technology, its area and
                  energy; then the accelerator's cycles, the work no unit runs as
                  cycles (one per iteration, an assumption, D155), their total and the
                  L1 footprint against the L1; then the cost (C§20): per unit, buffer
-                 link and control unit how it is costed, the accelerator's area and
-                 energy, the technology and its table's source, and the blocks the
-                 table does not characterize
+                 link and control unit how it is costed, per accelerator its L1
+                 accesses (a placeholder, D154), the accelerator's area and energy,
+                 the technology and its table's source, and the blocks the table
+                 does not characterize
     notes        the design notes first (check.py's ``run_notes``: a design that
                  passes but is worth a second look, with its fix); then
-                 facts about addresses: movers of the accelerator whose
+                 facts about addresses: movers of one group whose
                  containers start in the same banks, or lie a whole number of
-                 bank rows apart, so that element i of both is in one bank;
+                 bank rows apart, so that element i of both is in one bank
+                 (two groups run one after the other, C§14);
                  and containers the DMA moves as padded beats
 """
 
@@ -49,7 +52,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.char import DEFAULT_TECH
-from snax_forge.estimate.cost import CAVEAT, dec3, heading, sig3
+from snax_forge.estimate.cost import CAVEAT, L1_LABEL, dec3, heading, sig3
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
 
@@ -152,8 +155,9 @@ class EstimateRow(Record):
 @dataclass
 class CostRow(Record):
     """One unit, buffer link or control unit of the cost (C§20); ``found`` None for a block
-    the table does not hold; ``comb_um2``, ``e_fire_pj`` and ``e_hold_pj`` None for a control
-    unit (its comb part is left out), ``e_hold_pj`` None for a block with no flops."""
+    the table does not hold; ``e_fire_pj`` and ``e_hold_pj`` None for a control unit (its comb
+    area equal to its flops', its comb energy negligible: a placeholder, D154), ``e_hold_pj``
+    None for a block with no flops."""
 
     group: str
     block: str
@@ -165,6 +169,16 @@ class CostRow(Record):
     flops_um2: float
     e_fire_pj: float | None
     e_hold_pj: float | None
+    energy_nj: float
+
+
+@dataclass
+class L1Row(Record):
+    """One accelerator's L1 accesses (C§20, a placeholder, D154)."""
+
+    accelerator: str
+    words: int
+    bits: int
     energy_nj: float
 
 
@@ -185,6 +199,7 @@ class EstimateTable(Record):
     unmapped_cycles: int = 0  # unmapped_iterations at UNMAPPED_CYCLES_PER_ITERATION (D155)
     unmapped_iterations: int = 0  # over every map, spatial ones included
     total_cycles: int = 0  # accelerator_cycles + unmapped_cycles
+    l1: list[L1Row] = field(default_factory=list)  # per accelerator, its L1 accesses
 
 
 @dataclass
@@ -245,8 +260,10 @@ def _memory_tables(cluster: Cluster, regions: list[Region], point: Any) -> list[
 
 def _notes(cluster: Cluster, regions: list[Region], point: Any,
            streamers: list[StreamerRow]) -> list[str]:  # fmt: skip
-    """Address facts about the movers of the accelerator (module doc)."""
+    """Address facts about the movers of the accelerator (module doc), the bank notes over the
+    streamers of one group only: an accelerator's groups run one after the other (D148, C§14)."""
     word, banks = cluster.bank_bytes, cluster.banks
+    group_of = cluster.accelerator.unit_of_mover
     row_bytes = word * banks
     l1 = {r.container: r.layout for r in regions if r.memory == "l1"}
     elem = {r.container: r.itemsize for r in regions if r.memory == "l1"}
@@ -255,6 +272,8 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     notes = []
     for i, a in enumerate(ss):
         for b in ss[i + 1 :]:
+            if group_of(a.name) != group_of(b.name):
+                continue  # two groups never stream at once
             la, lb = lays[a.container], lays[b.container]  # type: ignore[index]
 
             def first_banks(lay: Layout, num_ch: int) -> list[int]:
@@ -278,7 +297,9 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
                 notes.append(f"{a.name} ({a.container}) and {b.name} ({b.container}) start in "
                              f"the same banks, {spans(both)}.")  # fmt: skip
     if not notes and ss:
-        notes.append("No two streamers of the accelerator start in the same banks.")
+        several = len(cluster.accelerator.units) > 1
+        notes.append(f"No two streamers of {'one group' if several else 'the accelerator'} start "
+                     "in the same banks.")  # fmt: skip
     beat = point.platform.l2.beat_bits // 8
     l2 = {r.container for r in regions if r.memory == "l2"}
     for name, lay in l1.items():
@@ -416,14 +437,15 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
                                 b.comb_um2, b.flops_um2, b.e_fire_pj, b.e_hold_pj or None,
                                 b.task_nj))  # fmt: skip
         c = g.cost
-        cost.append(CostRow(g.name, "ctrl", "group control unit", None, None, c.ctrl_bits, None,
-                            c.ctrl_um2, None, None, c.ctrl_nj))  # fmt: skip
+        cost.append(CostRow(g.name, "ctrl", "group control unit", None, None, c.ctrl_bits,
+                            c.ctrl_comb_um2, c.ctrl_flops_um2, None, None, c.ctrl_nj))  # fmt: skip
     notes = [g.bank_bound_note for g in e.groups if g.bank_bound_note]
     return EstimateTable(rows, e.accelerator_cycles, e.not_mapped, e.l1_footprint, e.l1_size,
                          e.tech, dict(e.char_source or {}), e.area, e.energy, e.missing, cost,
                          notes, unmapped_cycles=e.unmapped_cycles,
                          unmapped_iterations=e.unmapped_iterations,
-                         total_cycles=e.total_cycles)  # fmt: skip
+                         total_cycles=e.total_cycles,
+                         l1=[L1Row(a, x.words, x.bits, x.energy_nj) for a, x in e.l1.items()])  # fmt: skip
 
 
 # =============================================================================
@@ -564,8 +586,10 @@ def cycles_line(e: EstimateTable) -> str:
 def render_estimate(e: EstimateTable) -> list[str]:
     """The estimate section: per group its cycles, then the accelerator's (D155)."""
     out = [("The ideal estimate (D155): the group rule on ideal streams, with no bank conflicts, "
-            "streamer fill, DMA or core control. A run's COUNTER is the cycles plus the "
-            "streamers' fill (3, or 2 for a group with one outer input); its window is longer."),
+            "streamer fill, DMA or core control. The expected COUNTER, the cycles plus the "
+            "streamers' fill (3, or 2 for a group with one outer input), is a guide, not a check: "
+            "a run's COUNTER counts from its group's START until busy drops, so it includes bank "
+            "conflicts and is shortened by the streamers' head start; its window is longer."),
            ""]  # fmt: skip
     costed = e.tech is not None
     cols = ["Group", "Cycles", "Bottleneck", "Ramp", "Stall", "Expected COUNTER"]
@@ -579,7 +603,8 @@ def render_estimate(e: EstimateTable) -> list[str]:
     out += ["", f"{cycles_line(e)} L1 footprint: {l1}."]
     if e.bank_notes:  # the bank bound over the ideal cycles (D155), a line per group
         out += ["", ("Bank bound: L1's single-port banks serve one word each per cycle, so these "
-                     "groups take longer than the ideal cycles:"), ""]  # fmt: skip
+                     "groups' streams take more cycles of L1 time than the ideal cycles (a bound "
+                     "on the streams, not on the COUNTER):"), ""]  # fmt: skip
         out += [f"- {n}." for n in e.bank_notes]
     if costed:
         out += ["", *render_cost(e)]
@@ -607,7 +632,11 @@ def render_cost(e: EstimateTable) -> list[str]:
             f"{src}), per run of the accelerator: a unit or buffer link pays its comb energy per "
             "fire, from the table as measured, copied (lanes × the lanes-1 point) or "
             "interpolated, its register bits at e_load in the cycles it fires and e_hold in every "
-            "other cycle; a control unit its bits × e_hold × the counter factor every cycle."), ""]  # fmt: skip
+            "other cycle; a control unit its bits × e_hold × the counter factor every cycle, its "
+            "area its flops' and an equal comb area (a placeholder); an accelerator's L1 "
+            "accesses, the 64-bit words its streamers read and write in L1, 4 × e_load per bit "
+            "(a placeholder; a link's container is not in L1, the DMA's traffic not counted)."),
+           ""]  # fmt: skip
     out += table(["Group", "Block", "Datapath", "Found", "Fires", "Bits", "Comb (µm²)",
                   "Flops (µm²)", "e_fire (pJ)", "Hold (pJ/cycle)", "Energy (nJ)"],
                  [[c.group, c.block, c.datapath,
@@ -615,6 +644,10 @@ def render_cost(e: EstimateTable) -> list[str]:
                    c.bits, _shown(c.comb_um2), _shown(c.flops_um2), _energy(c.e_fire_pj),
                    _energy(c.e_hold_pj), _energy(c.energy_nj)] for c in e.cost],
                  {4, 5, 6, 7, 8, 9, 10})  # fmt: skip
+    if e.l1:
+        out += ["", *table(["Accelerator", "Block", "Words", "Bits", "Energy (nJ)"],
+                           [[x.accelerator, L1_LABEL, x.words, x.bits, _energy(x.energy_nj)]
+                            for x in e.l1], {2, 3, 4})]  # fmt: skip
     out += ["", (f"Accelerator on {e.tech}: about {_shown(e.area_um2, ' µm²')} and "
                  f"{_energy(e.energy_nj, ' nJ')} per run.")]  # fmt: skip
     if e.missing:

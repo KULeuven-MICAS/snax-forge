@@ -14,8 +14,11 @@ the run's index (index.py) that read no file; the viewer only draws their answer
   mover's class at ``t`` (the class run holding it), its grant at ``t`` and the read data
   coming back at ``t`` (the index's ``returns``); from ``stall`` its stall at ``t`` and its
   FIFO count (the last ``fifo`` line at or before ``t``, 0 before the first);
-- ``acc``: whether its task is open; from ``beat`` its class at ``t``, its firing at ``t``
-  with its operands' values and its push with the result;
+- ``acc``: the unit whose task is open at ``t`` (the first unit when none is), its ``name``
+  and ``group``, whether its task is open, from ``beat`` its class at ``t``, its firing at
+  ``t`` with its operands' values and its push with the result; ``accelerator`` the
+  accelerator's name and ``units`` every unit so (an accelerator of several groups, D148, has
+  one per group, ``mul`` and ``sum`` in dot 1);
 - ``banks``, every bank, grouped by superbank (a DMA beat's banks): the access at ``t``
   (port, op, row, region, elements and their values, the word: a grant's, or a DMA beat's
   word on it), the read
@@ -121,11 +124,16 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
                 x["fifo"] = fifo_at(index, m.name, lane, t)
             movers[port] = x
 
-    unit: dict[str, Any] = {"name": acc.name, "task": _open(index, acc.name, t)}
-    if beat:
-        unit["class"] = class_at(index, acc.name, t)
-        unit["fire"] = next(iter(of["fire"]), None)
-        unit["push"] = next(iter(of["push"]), None)
+    units = []
+    for u in acc.units:
+        x = {"name": u.name, "group": u.group, "task": _open(index, u.name, t)}
+        if beat:
+            x["class"] = class_at(index, u.name, t)
+            x["fire"] = next((e for e in of["fire"] if e["src"] == u.name), None)
+            x["push"] = next((e for e in of["push"] if e["src"] == u.name), None)
+        units.append(x)
+    active = next((x for x in units if x["task"] is not None), units[0] if units else {})
+    unit: dict[str, Any] = {**active, "accelerator": acc.name, "units": units}
 
     per_sb = max(c.dma_beat_bytes // c.bank_bytes, 1)
     banks = []

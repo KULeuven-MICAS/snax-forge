@@ -42,10 +42,13 @@ from math import prod
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from snax_forge import expr
 from snax_forge.brm import BrmError, Instance, accepted, check_dtypes, memlet_ordered, port_dtypes
 from snax_forge.dfg import DfgError, Graph, Node
-from snax_forge.dfg.pad import fold_op, pad_value, padded_shape, tailed_split
+from snax_forge.dfg.pad import code_on_pads, fold_op, pad_value, padded_shape, tailed_split
+from snax_forge.dfg.reduce import REDUCE_OPS
 from snax_forge.dfg.subset import parse_dim
 from snax_forge.lower.layout import moved_bytes, round_up
 
@@ -549,28 +552,39 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
             yield from _pack(f"node {n.id}.{conn}", m.data, dtype, num_slc, out, walk)
 
 
-def _reach(design: Design, node: Node, conn: str) -> Iterator[Problem]:
-    """Each dimension of a port's memlet takes indices below the container's padded extent."""
-    g = design.graph
+def _highest(g: Graph, node: Node, conn: str) -> list[int] | None:
+    """Per dimension of a port's memlet the highest index it takes over the node's firing loops,
+    or None when it cannot be read (connect.temporal's)."""
     m = (node.inputs | node.outputs)[conn]
     try:
         loops = firing_loops(g, node)
     except LoopError:
-        return  # connect.temporal's
-    padded = padded_shape(g, m.data)
-    symbols = g.bound_symbols
-    for d, dim in enumerate(m.subset):
+        return None
+    symbols, out = g.bound_symbols, []
+    for dim in m.subset:
         try:
             parts = parse_dim(dim, f"node {node.id}.{conn}")
             last = parts[0] if len(parts) == 1 else f"({parts[1]}) - 1"
             const, co = expr.linear(last, [lp.var for lp in loops])
-            hi = expr.evaluate(const, symbols) + sum(
+            out.append(expr.evaluate(const, symbols) + sum(
                 co[lp.var] * (lp.begin + (lp.count - 1) * lp.step if co[lp.var] > 0 else lp.begin)
                 for lp in loops
                 if lp.count
-            )
+            ))  # fmt: skip
         except (expr.ExprError, ValueError):
-            return  # connect.temporal's
+            return None
+    return out
+
+
+def _reach(design: Design, node: Node, conn: str) -> Iterator[Problem]:
+    """Each dimension of a port's memlet takes indices below the container's padded extent."""
+    g = design.graph
+    m = (node.inputs | node.outputs)[conn]
+    highest = _highest(g, node, conn)
+    if highest is None:
+        return  # connect.temporal's
+    padded = padded_shape(g, m.data)
+    for d, hi in enumerate(highest):
         if hi >= padded[d]:
             yield Problem(
                 "connect.pack", f"node {node.id}.{conn}",
@@ -641,10 +655,43 @@ def _pack(
         )  # fmt: skip
 
 
+def pad_content(g: Graph, c: str, seen: frozenset[str] = frozenset()) -> int | None | str:
+    """What ``c``'s pad words hold in L1 when a fold reads them (D144): ``pad_value`` for a
+    container no accelerator writes (data.h fills its pads, the DMA moves them); for one that
+    units write, the value every writer gives there, its code evaluated on its inputs' pad
+    contents (dfg/pad.py's ``code_on_pads``), when each writes its whole padded extent and is
+    not a fold; ``"unwritten"`` when a writer stops short of the padded extent, so the pad words
+    are never written (open item 106); None when it cannot say."""
+    writers = [n for n in accelerated(g) if any(m.data == c for m in n.outputs.values())]
+    if not writers:
+        return pad_value(g, c)
+    if c in seen:
+        return None
+    padded, got = padded_shape(g, c), set()
+    for w in writers:
+        conn = next(k for k, m in w.outputs.items() if m.data == c)
+        highest = _highest(g, w, conn)
+        if highest is None or fold_op(w) is not None:
+            return None
+        if any(hi + 1 < p for hi, p in zip(highest, padded, strict=True)):
+            return "unwritten"
+        pads = {}
+        for k, m in w.inputs.items():
+            v = pad_content(g, m.data, seen | {c})
+            if not isinstance(v, int):
+                return None
+            pads[k] = v
+        got.add(code_on_pads(g, w, pads))
+    return got.pop() if len(got) == 1 and None not in got else None
+
+
 def _connect_pad(design: Design) -> Iterable[Problem]:
     """A tail's padding is in the data, never masked by the hardware: a container an
-    accelerator writes holds its pad lanes' values too, so a fold may not read it through a
-    tail; and every reader of a container must need the same pad."""
+    accelerator writes holds its pad lanes' values too, so a fold may read it through a tail
+    only when those are the fold's identity (``pad_content``: dot 1 at W_mul = W_sum = 10, 0 ×
+    0 = 0, add's); a producer that never writes the pad words is refused until the program
+    writes the identity there (open item 106); and every reader of a container must need the
+    same pad."""
     g = design.graph
     nodes = accelerated(g)
     outer = {n.id: o for n, o in g.walk()}
@@ -655,14 +702,21 @@ def _connect_pad(design: Design) -> Iterable[Problem]:
             reads = [m for m in n.inputs.values() if m.data == c]
             if not (writers and tailed and fold_op(n) and reads):
                 continue
-            if any(tailed & set(m.names) for m in reads):
-                yield Problem(
-                    "connect.pad", f"container {c}",
-                    f"is written by {', '.join(writers)} and read through a tail by the fold "
-                    f"{n.id}: the producer's pad lanes would reach the fold (the hardware masks "
-                    "nothing, D144)",
-                    "a size that divides W, or a split factor that divides n",
-                )  # fmt: skip
+            if not any(tailed & set(m.names) for m in reads):
+                continue
+            held = pad_content(g, c)
+            identity = int(REDUCE_OPS[fold_op(n)].identity(np.dtype(g.containers[c].dtype)))
+            if held == identity:
+                continue
+            item = ("; they are never written, so the program would have to write the fold's "
+                    "identity there before the fold's task, open item 106") if held == "unwritten" else ""  # fmt: skip
+            yield Problem(
+                "connect.pad", f"container {c}",
+                f"is written by {', '.join(writers)} and read through a tail by the fold "
+                f"{n.id}: the producer's pad lanes would reach the fold (the hardware masks "
+                f"nothing, D144{item})",
+                "a size that divides W, or a split factor that divides n",
+            )  # fmt: skip
         try:
             pad_value(g, c)
         except DfgError as e:

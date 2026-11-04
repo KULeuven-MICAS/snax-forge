@@ -7,7 +7,10 @@ expressions over its own params (recipe.py). The result is a new ``Graph``,
 validated as any graph is; the reference check after the step is run.py's.
 
 **Sites** (D72). ``site(graph, selected)`` is the graph-shape test of where a
-transform applies, for a node id or a container name: it returns the params
+transform applies, for a node id, a container name, a group's or an accelerator's name
+(``site_of`` takes the editor's selection, one item or several: a transform that takes
+several, ``encapsulate`` and ``fuse_map``, registers a ``multi`` site over the list, any
+other refuses several with ``takes one selection``): it returns the params
 the selection fills (the selection itself and what follows from it) or
 raises the error the transform raises there, since the transform calls it
 first, so each check lives in one place. A site decides from the graph
@@ -19,7 +22,8 @@ name) stay in the transform.
     an outer map ``v_1`` over ``0:(e - b) // factor``, keeping the map's id
     and attrs and recording the split (``loop.split``), around an inner map
     ``<id>_inner`` with ``v_2`` over ``0:factor``, both untagged, neutral
-    names that suggest no tag (D73), fresh when taken; every use of ``v`` in
+    names that suggest no tag (D73); a later split takes the next free pair,
+    ``v_3`` and ``v_4``, then ``v_5`` and ``v_6``; every use of ``v`` in
     the body becomes ``b + factor * v_1 + v_2``. A length n that is not a
     multiple of the factor (D144) runs ``v_1`` over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
@@ -98,6 +102,7 @@ from .recipe import SandboxError
 
 Transform = Callable[..., Graph]
 Site = Callable[[Graph, str], dict[str, Any]]
+MultiSite = Callable[[Graph, list[str]], dict[str, Any]]
 
 
 @dataclass(frozen=True)
@@ -105,18 +110,44 @@ class TransformSpec:
     fn: Transform
     ints: tuple[str, ...] = ()
     site: Site | None = None
+    multi: MultiSite | None = None  # its site over a selection of several items (D72)
 
 
 TRANSFORMS: dict[str, TransformSpec] = {}
 
 
 def register_transform(
-    name: str, fn: Transform, ints: tuple[str, ...] = (), site: Site | None = None
+    name: str,
+    fn: Transform,
+    ints: tuple[str, ...] = (),
+    site: Site | None = None,
+    multi: MultiSite | None = None,
 ) -> None:
-    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72)."""
+    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72) and,
+    for a transform that takes several items, its site over a selection (``multi``)."""
     if name in TRANSFORMS:
         raise ValueError(f"transform {name!r} already registered")
-    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site)
+    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi)
+
+
+def site_of(name: str, g: Graph, selected: str | list[str]) -> dict[str, Any]:
+    """Transform ``name``'s site on a selection, one item or several (D72): one item goes to its
+    ``site`` as before (or its ``multi`` when it has one, which must agree); several to its
+    ``multi``, and a transform without one refuses them (``site.one``, "takes one
+    selection")."""
+    spec = TRANSFORMS[name]
+    items = [selected] if isinstance(selected, str) else list(selected)
+    if len(items) == 1 and spec.site is not None and spec.multi is None:
+        return spec.site(g, items[0])
+    if spec.multi is not None:
+        return spec.multi(g, items)
+    raise SiteError(f"{name}: takes one selection, not {len(items)}")
+
+
+class SiteError(SandboxError):
+    """A selection a transform's site cannot take: several items for a one-item site."""
+
+    code = "site.one"
 
 
 def load_brm(name: str) -> Any:
@@ -257,7 +288,13 @@ def _split(g: Graph, map: str, factor: int, what: str,
         | set(g.containers)
         | {nd.attrs["var"] for nd, _ in g.walk() if nd.kind == "map"}
     )
-    var_t, var_s = fresh(f"{var}{names[0]}", taken), fresh(f"{var}{names[1]}", taken)
+    if names == SPLIT_NEUTRAL:  # the next free pair: v_1 and v_2, then v_3 and v_4, ... (D73)
+        k = 1
+        while f"{var}_{k}" in taken or f"{var}_{k + 1}" in taken:
+            k += 2
+        var_t, var_s = f"{var}_{k}", f"{var}_{k + 1}"
+    else:
+        var_t, var_s = fresh(f"{var}{names[0]}", taken), fresh(f"{var}{names[1]}", taken)
     ids = {nd.id for nd, _ in g.walk()}
     inner = Node(
         fresh(f"{map}{names[2]}", ids),
@@ -756,6 +793,32 @@ def _encapsulate_site(g: Graph, selected: str) -> dict[str, Any]:
     return {"units": [inst]}
 
 
+def selected_units(g: Graph, selected: list[str]) -> list[str]:
+    """The instances a selection stands for, in the graph's order: a unit's node id or instance
+    itself, a group's name its units, an accelerator's name its groups' units (D148); an item
+    that names none of these is a SandboxError."""
+    nodes = _accelerated(g)
+    order = list(dict.fromkeys(n.attrs["instance"] for n in nodes))
+    picked: set[str] = set()
+    for s in selected:
+        mine = {n.attrs["instance"] for n in nodes
+                if s in (n.id, n.attrs["instance"], n.attrs.get("group"), n.attrs.get("accelerator"))}  # fmt: skip
+        if not mine:
+            raise SandboxError(f"encapsulate: {s!r} is no unit, group or accelerator "
+                               f"(instances: {order})")  # fmt: skip
+        picked |= mine
+    return [u for u in order if u in picked]
+
+
+def _encapsulate_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
+    """Units and groups (outlines or boxes), all in no accelerator: their units, in the graph's
+    order."""
+    units = selected_units(g, selected)
+    for u in units:
+        _encapsulate_site(g, u)
+    return {"units": units}
+
+
 def encapsulate(g: Graph, accelerator: str, units: list[str]) -> Graph:
     """The groups of ``units`` (instances) as one accelerator named ``accelerator``."""
     for u in units if isinstance(units, list) else []:
@@ -822,5 +885,5 @@ register_transform("untag_map", untag_map, site=lambda g, s: _untag_site(g, s, f
 register_transform("bind", bind, site=_bind_params)
 register_transform("unbind", unbind, site=lambda g, s: _unbind_site(g, s, f"unbind {s!r}"))
 register_transform("join_map", join_map, site=lambda g, s: _join_site(g, s, f"join_map {s!r}"))
-register_transform("encapsulate", encapsulate, site=_encapsulate_site)
+register_transform("encapsulate", encapsulate, site=_encapsulate_site, multi=_encapsulate_multi)
 register_transform("unencapsulate", unencapsulate, site=_unencapsulate_site)

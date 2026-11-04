@@ -349,8 +349,8 @@ def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
     """vecmul at N = 2048 (D155): at W = 16 design.md's Estimate has the group's bank-bound note
     and run.md puts it beside the task's expected COUNTER; at W = 8 neither has one."""
     r = designed_report(tmp_path, "vecmul", ["N=2048", f"W={w}"])
-    note = ("acc: the outer ports move 6144 words over 32 banks, at least 192 cycles against the "
-            "ideal 128")  # fmt: skip
+    note = ("acc: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time "
+            "against the ideal 128")  # fmt: skip
     assert r.estimate.bank_notes == ([note] if w == 16 else [])
     cycles = 2048 // w  # bound, so no unmapped part (D155)
     assert f"Accelerator cycles: {cycles}. Total: {cycles}. L1 footprint:" in render_design(r)
@@ -358,8 +358,8 @@ def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
     point = DesignPoint.load(next(tmp_path.rglob("design_point.json")))
     assert bank_notes(point) == ({"mult_acc": note} if w == 16 else {})
     c = CheckRow(True, "vecmul", 0, 2048, {"mult_acc": 194}, {"mult_acc": 131}, bank_notes(point))
-    assert counters_text(c) == (f"mult_acc 194 (expected 131; {note})" if w == 16
-                                else "mult_acc 194 (expected 131)")  # fmt: skip
+    assert counters_text(c) == (f"mult_acc 194 (expected 131, a guide; {note})" if w == 16
+                                else "mult_acc 194 (expected 131, a guide)")  # fmt: skip
 
 
 def test_design_md_counts_unmapped_work_as_cycles():
@@ -416,8 +416,43 @@ def test_the_run_report_names_each_tasks_group(dot1):
         ("mul", "mul", 16), ("sum", "sum", 16)]  # fmt: skip
     text = render_run(r.run)
     assert "| Block | Group | # | Task | Start | Done | Cycles | Direction | Bytes |" in text
-    assert "| mul | mul | 0 | mult_mul |" in text and "| sum_a | mul | 0 | mult_sum_a |" in text
-    assert "| Accelerator | Group | Firings |" in text
+    assert (
+        "| mul | mul | 0 | mult_mul |" in text and "| sum_a | mul | 0 | mult_sum_a (idle) |" in text
+    )
+    assert "| Unit | Group | Firings |" in text
+    # the other group's movers, started only for the shared start, tagged idle (C§7)
+    idle = sorted(t.name for t in r.run.tasks if t.idle)
+    assert idle == ["mult_sum_a", "mult_sum_out", "sum_mul_a", "sum_mul_b", "sum_mul_out"]
+    # each group's movers in a collapsible under Accelerators
+    assert [(g.group, [m.name for m in g.movers]) for g in r.run.group_movers] == [
+        ("mul", ["mul_a", "mul_b", "mul_out"]), ("sum", ["sum_a", "sum_out"])]  # fmt: skip
+    assert "<details>\n<summary>mul ▸ mul_a, mul_b, mul_out</summary>" in text
+    assert "<summary>sum ▸ sum_a, sum_out</summary>" in text
+    assert text.index("## Accelerators") < text.index("<summary>mul ▸") < text.index("## Cores")
+
+
+def test_the_port_table_leaves_out_the_idle_tasks(tmp_path):
+    """C§7: dot 1 at stall (fixtures/dot_1): the Data movement port table has no lane of the five
+    idle streamer tasks, and one line under it says they are left out."""
+    from tests.run.helpers import RECORDED
+    from tests.viz.helpers import recorded_run
+
+    r = reports_of(recorded_run(tmp_path / "dot_1_stall", "stall", RECORDED / "dot_1")).run
+    tasks = {p.task for p in r.movement.patterns}
+    assert tasks == {"mult_mul_a", "mult_mul_b", "mult_mul_out", "sum_sum_a", "sum_sum_out"}
+    assert r.movement.idle_left_out == 5
+    assert ("The 5 idle streamer tasks (every temporal bound 0, started only for the shared start; "
+            "tagged idle under Tasks) are left out.") in render_run(r)  # fmt: skip
+
+
+def test_the_bank_notes_compare_the_streamers_of_one_group(dot1):
+    """C§14: dot 1's mul_a and mul_b keep their note (A and B a whole number of bank rows
+    apart); nothing pairs a mul streamer with a sum one (the groups run one after the other):
+    no note on mul_a and sum_out, none on tmp0 against itself through mul_out and sum_a."""
+    notes = reports_of(dot1).design.notes
+    assert any(n.startswith("mul_a and mul_b: A and B lie ") for n in notes), notes
+    assert not any("sum_" in n and "mul_" in n for n in notes), notes
+    assert not any("tmp0 and tmp0" in n for n in notes), notes
 
 
 def test_the_design_report_has_a_row_per_unit(dot1):
@@ -472,8 +507,9 @@ def test_one_group_has_no_group_column(flows):
 
 def test_design_md_costs_each_group_beside_its_cycles(dot1):
     """dot 1's two groups on nangate45 (C§20): each its area and energy beside its cycles, the
-    cost table a row per unit and per control unit, the accelerator's totals their sums, every
-    unit held by the table; the report round-trips."""
+    cost table a row per unit and per control unit (its comb area equal to its flops', D154), the
+    L1 accesses' table, the accelerator's totals their sums, every unit held by the table; the
+    report round-trips."""
     from snax_forge.report.design import DesignReport
 
     r = reports_of(dot1).design
@@ -484,7 +520,11 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
         ("sum", "sum", "TreeAccumulate"), ("sum", "ctrl", "group control unit")]  # fmt: skip
     assert all(c.found for c in e.cost if c.block != "ctrl")
     assert e.area_um2 == pytest.approx(sum(g.area_um2 for g in e.groups))
-    assert e.energy_nj == pytest.approx(sum(c.energy_nj for c in e.cost))
+    assert e.energy_nj == pytest.approx(sum(c.energy_nj for c in e.cost)
+                                        + sum(x.energy_nj for x in e.l1))  # fmt: skip
+    (l1,) = e.l1
+    assert (l1.accelerator, l1.bits) == ("dot", 64 * l1.words) and l1.words > 0
+    assert all(c.comb_um2 == c.flops_um2 for c in e.cost if c.block == "ctrl")
     text = render_design(r)
     assert "| Expected COUNTER | Area (µm²) | Energy (nJ) |" in text
     assert (
@@ -502,6 +542,8 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     (mul,) = [x for x in text.splitlines()
               if x.startswith("| mul | mul | ElementwiseLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
     assert mul.split(" | ")[9] == "–", mul
+    assert (f"| dot | L1 accesses (placeholder, 4 × e_load per bit) | {l1.words} | {l1.bits} | "
+            f"{l1.energy_nj:.3f} |") in text  # fmt: skip
     assert "Not characterized" not in text
     assert DesignReport.from_dict(r.to_dict()).to_dict() == r.to_dict()
 
@@ -542,6 +584,8 @@ def test_the_estimate_beside_the_counters(dot1, dot4):
     text = render_design(r.design)
     assert "## Estimate" in text and "| mul | 16 | 16 | 0 | 0 | 19 |" in text
     assert r.run.check.expected == r.run.check.counters == {"mult_mul": 19, "sum_sum": 19}
-    assert "mult_mul 19 (expected 19), sum_sum 19 (expected 19)" in render_run(r.run)
+    assert "mult_mul 19 (expected 19, a guide), sum_sum 19 (expected 19, a guide)" in render_run(
+        r.run
+    )
     four = reports_of(dot4)
     assert four.run.check.expected == four.run.check.counters == {"mult_dot": 133}

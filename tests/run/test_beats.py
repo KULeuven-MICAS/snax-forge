@@ -221,7 +221,7 @@ def test_a_fold_two_words_in_one_out(cluster):
     ])  # fmt: skip
     assert fire["value"] == {"acc_a": [0x111000002BD, 0xFFFFFE3300000016]}
     assert push["value"] == [0xFFFFFFFFFFFFFFBD]
-    with pytest.raises(RunError, match="push at 2613: 2 words, the writer moves 1"):
+    with pytest.raises(RunError, match="push at 2613: 2 words, acc.s writer moves 1"):
         _packed(cluster, {"acc_a": 2, "acc_out": 1}, [
             "2613 push n=0 first=0 last=0 value=0x1,0x2",
         ])  # fmt: skip

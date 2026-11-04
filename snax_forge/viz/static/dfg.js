@@ -39,7 +39,16 @@ function status(msg, err = false) {
 
 // -- state ----------------------------------------------------------------------
 
-const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, t: null, session: null, platform: null, tech: null, techs: [] };
+const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [] };
+
+// The selection (D72): ``sels`` every selected item in the order selected (shift-click adds or
+// removes one), ``sel`` the last, which Details, the Bindings and the hash's ``t`` follow; the
+// hash's ``sel`` holds them all, comma-separated.
+const selText = () => (state.sels.length ? state.sels.join(",") : null);
+function setSels(text) {
+  state.sels = text ? String(text).split(",").filter(Boolean) : [];
+  state.sel = state.sels.length ? state.sels[state.sels.length - 1] : null;
+}
 const views = new Map(); // step -> its view, until Reload
 const compares = new Map(); // "j/k" -> the compare answer
 
@@ -68,7 +77,7 @@ const ref = (k) => (state.mode === "view" && state.steps[k] ? state.steps[k].nam
 function writeHash() {
   const q = new URLSearchParams();
   q.set("step", ref(state.k));
-  if (state.sel) q.set("sel", state.sel);
+  if (state.sel) q.set("sel", selText());
   if (state.cmp !== null) q.set("cmp", ref(state.cmp));
   if (state.t && state.sel) q.set("t", state.t);
   if (state.tech) q.set("tech", state.tech);
@@ -262,8 +271,10 @@ const LABEL = 17; // px above an outline's content for its name (style.css: 0.85
 /** An outline with its name on top: a group's at the left, an accelerator's at the right. */
 function outlineBox(r, pad, cls, name) {
   const g = svgEl("g", { class: cls, "data-sel": name, ...(cls === "group-box" ? { "data-group": name } : {}) });
-  g.append(svgEl("rect", { x: r.left - pad, y: r.top - pad - LABEL, width: r.right - r.left + 2 * pad,
-    height: r.bottom - r.top + 2 * pad + LABEL, rx: 6 }));
+  const box = { x: r.left - pad, y: r.top - pad - LABEL, width: r.right - r.left + 2 * pad,
+    height: r.bottom - r.top + 2 * pad + LABEL, rx: 6 };
+  g.append(svgEl("rect", { ...box, class: "outline-hit" })); // a wide band to click, as an edge's
+  g.append(svgEl("rect", box));
   const right = cls === "acc-box";
   const t = svgEl("text", { x: right ? r.right + pad - 6 : r.left - pad + 6, y: r.top - pad - 4,
     "text-anchor": right ? "end" : "start" });
@@ -349,16 +360,22 @@ function outline() {
     el.classList.remove("sel");
     if (el._marker) el.setAttribute("marker-end", `url(#${el._marker})`);
   }
-  if (!state.sel) return;
-  for (const el of document.querySelectorAll(`#graphs [data-sel="${CSS.escape(state.sel)}"]`)) {
-    el.classList.add("sel");
-    if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
+  for (const name of state.sels) { // every selected item highlighted
+    for (const el of document.querySelectorAll(`#graphs [data-sel="${CSS.escape(name)}"]`)) {
+      el.classList.add("sel");
+      if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
+    }
   }
 }
 
-function select(name) {
-  if (name !== state.sel) state.t = null;
-  state.sel = name;
+/** Select ``name`` (null clears); with ``add`` (shift-click) add it to the selection, or remove
+it when it is in it already. */
+function select(name, add = false) {
+  const before = selText();
+  if (add && name) {
+    setSels((state.sels.includes(name) ? state.sels.filter((x) => x !== name) : [...state.sels, name]).join(","));
+  } else setSels(name);
+  if (selText() !== before) state.t = null;
   writeHash();
   outline();
   details();
@@ -529,10 +546,17 @@ async function bindings() {
     box.replaceChildren();
     return;
   }
-  const rows = b.entries.map((e) => h("div", { class: `dfg-binding ${e.kind}${state.sel === e.id ? " sel" : ""}` },
+  const entry = (e) => h("div", { class: `dfg-binding ${e.kind}${state.sel === e.id ? " sel" : ""}` },
     h("button", { type: "button", class: "dfg-cont-name", onclick: () => select(e.id) }, e.label),
     e.params.map((p) => [" · ", paramEl(p)]),
-    e.note ? h("small", { class: "muted" }, ` · ${e.note}`) : null));
+    e.note ? h("small", { class: "muted" }, ` · ${e.note}`) : null);
+  // the tree (D156): accelerator ▸ group ▸ entries, each level a drop-down, open by default;
+  // a unit alone, a split not bound yet at the top
+  const branch = (n) => (n.kind === "entry" ? entry(b.entries[n.index])
+    : h("details", { class: `dfg-bind-${n.kind}`, open: true },
+      h("summary", {}, h("span", { class: "kind" }, n.kind), " ", h("b", {}, n.name)),
+      h("div", { class: "dfg-bind-kids" }, n.children.map(branch))));
+  const rows = b.tree ? b.tree.map(branch) : b.entries.map(entry);
   const unused = b.unused.length ? h("div", { class: "dfg-binding unused" }, h("span", { class: "muted" }, "unused: "),
     b.unused.map((p, i) => [i ? ", " : "", paramEl({ ...p, shared_with: [] })])) : null;
   box.replaceChildren(...(rows.length || unused ? [...rows, unused].filter(Boolean) : [h("p", { class: "muted" }, "Nothing split or bound yet.")]));
@@ -544,19 +568,30 @@ function hoverGroup(name, on) {
   for (const el of document.querySelectorAll(`#graphs [data-group="${CSS.escape(name)}"]`)) el.classList.toggle("hover", on);
 }
 
-const COST_COLUMNS = [["block", "block"], ["datapath", "datapath"], ["area_text", "area (µm²)"],
-  ["energy_text", "energy (nJ)"], ["share_text", "share"]];
+// short labels, so the table fits the right panel at 1280 px (R3): the datapath under the block
+// in one cell, the numbers right-aligned; the units in each heading's title
+const COST_COLUMNS = [["block", "block · datapath", "the unit, buffer link, control unit or L1 accesses, its datapath under it"],
+  ["area_text", "µm²", "area, µm² (3 significant figures)"],
+  ["energy_text", "nJ", "energy per run, nJ (3 decimals)"], ["share_text", "share", "share of the accelerator's energy"]];
 
 /** One accelerator's cost table (api.py's cost_tables, or compare_cost_tables' before → after
-cells): a row per unit, buffer link and control unit, then the total. */
+cells): a row per unit, buffer link and control unit, the L1 accesses, then the total. */
 function costTable(t) {
-  const num = (key) => key !== "block" && key !== "datapath";
-  const tr = (r, cls) => h("tr", { class: [cls, r.differs ? "differs" : null, r.found === false ? "missing" : null].filter(Boolean).join(" ") || null },
-    COST_COLUMNS.map(([key]) => h(key === "block" ? "th" : "td", { class: num(key) ? "num" : null, scope: key === "block" ? "row" : null }, r[key])));
-  return h("table", { class: "c-cost-table" },
+  const num = (key) => key !== "block";
+  // the L1 accesses' row is a placeholder (D154): muted, a short label, the full one as its title
+  const l1 = (r) => r.kind === "l1" || String(r.block).startsWith("L1 accesses");
+  const cell = (r, key) => {
+    if (key !== "block") return r[key];
+    const name = l1(r) ? [h("span", {}, "L1 accesses"), " ", h("span", { class: "c-cost-tag" }, "placeholder")] : r.block;
+    return [h("div", {}, name), r.datapath ? h("div", { class: "c-cost-dp" }, r.datapath) : null];
+  };
+  const tr = (r, cls) => h("tr", { class: [cls, r.differs ? "differs" : null, r.found === false ? "missing" : null, l1(r) ? "placeholder" : null].filter(Boolean).join(" ") || null,
+    title: l1(r) ? String(r.block) : null },
+  COST_COLUMNS.map(([key]) => h(key === "block" ? "th" : "td", { class: num(key) ? "num" : null, scope: key === "block" ? "row" : null }, cell(r, key))));
+  return h("div", { class: "c-cost-wrap" }, h("table", { class: "c-cost-table" },
     h("caption", {}, t.accelerator),
-    h("thead", {}, h("tr", {}, COST_COLUMNS.map(([key, label]) => h("th", { scope: "col", class: num(key) ? "num" : null }, label)))),
-    h("tbody", {}, t.rows.map((r) => tr(r, null)), tr(t.total, "total")));
+    h("thead", {}, h("tr", {}, COST_COLUMNS.map(([key, label, title]) => h("th", { scope: "col", class: num(key) ? "num" : null, title }, label)))),
+    h("tbody", {}, t.rows.map((r) => tr(r, null)), tr(t.total, "total"))));
 }
 
 async function estimate() {
@@ -585,15 +620,31 @@ async function estimate() {
   },
   h("b", {}, g.name), " ",
   h("span", { class: "mono" }, g.formula),
-  h("small", {}, ` COUNTER ${g.counter} · channels ${g.channels}` + (g.area_text ? ` · ${g.area_text} · ${g.energy_text}` : "")),
-  g.bank_note ? h("p", { class: "c-bank-note", title: "L1's single-port banks serve one word each per cycle (D155)" }, `bank bound: ${g.bank_note}`) : null));
+  // each figure with its unit on one line (``56 000 µm²`` never breaks); the API's text as is
+  h("small", { title: "the expected COUNTER, cycles + fill: a guide, not a check (D155)" }, " ",
+    [`expected COUNTER ${g.counter}`, `channels ${g.channels}`, ...(g.area_text ? [g.area_text, g.energy_text] : [])]
+      .map((x, i) => [i ? " · " : "", h("span", { class: "nb" }, x)])),
+  g.bank_note ? h("p", { class: "c-bank-note", title: "L1's single-port banks serve one word each per cycle: a bound on the streams' L1 time, not on the COUNTER (D155)" }, `bank bound: ${g.bank_note}`) : null));
   const c = s.cost;
   const cost = c ? [
-    h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", {}, c.area_text), " · ", h("b", {}, c.energy_text), " per run"),
+    h("p", { class: "c-est-head" }, h("b", {}, c.heading), ": ", h("b", { class: "nb" }, c.area_text), " · ", h("b", { class: "nb" }, c.energy_text), " per run"),
     h("p", { class: "c-est-line muted" }, c.caveat),
     ...(c.tables || []).map(costTable),
     h("p", { class: "c-est-line" }, "not characterized: ", c.missing.length ? c.missing.join(", ") : "none"),
   ] : [];
+  // edit mode: Save's design checks on this step (D156): the problems first, then the notes,
+  // a "before Save" one tagged so (its message's own prefix dropped); the log's counts link here
+  const check = (kind, p) => h("li", { class: `c-check ${kind}${p.before_save ? " before-save" : ""}` },
+    h("div", { class: "c-check-head" },
+      p.before_save ? h("span", { class: "c-check-tag" }, "before Save") : null,
+      h("b", { class: "mono" }, `[${p.code}]`), " ", h("span", { class: "mono" }, p.where)),
+    h("div", {}, p.before_save ? p.message.replace(/^before Save: /, "") : p.message),
+    p.fix ? h("div", { class: "c-check-fix" }, h("span", { class: "muted" }, "fix: "), h("span", { class: "mono" }, p.fix)) : null);
+  const problems = b.problems || [], notes = b.notes || [];
+  const checks = state.mode === "edit" && b.problems !== undefined ? [h("div", { id: "checks", class: "c-checks" },
+    h("p", { class: "c-est-head" }, h("b", {}, "Design checks"), ` (Save's): ${problems.length} problem${problems.length === 1 ? "" : "s"}, ${notes.length} note${notes.length === 1 ? "" : "s"}`),
+    problems.length ? h("ul", { id: "checks-problems", class: "c-check-list" }, problems.map((p) => check("problem", p))) : null,
+    notes.length ? h("ul", { id: "checks-notes", class: "c-check-list" }, notes.map((p) => check("note", p))) : null)] : [];
   const l1 = s.l1;
   const l1Text = l1.size ? `${l1.footprint_text} of ${l1.size_text} (${l1.share_text})` : l1.footprint_text;
   box.replaceChildren(...[
@@ -605,6 +656,7 @@ async function estimate() {
     l1.size ? h("div", { class: "c-bar-track" }, h("i", { style: { width: l1.share_css } })) : null,
     h("p", { class: "c-est-line" }, `reads ${s.reads} · writes ${s.writes} words`),
     s.splits.length ? h("p", { class: "c-est-line" }, "lanes ", s.splits.map((x) => `${x.map} ${x.text}`).join("; ")) : null,
+    ...checks,
     ...cost,
   ].filter(Boolean));
 }
@@ -620,8 +672,9 @@ async function draw() {
   status("Loading…");
   try {
     const shown = await view(state.k);
-    if (state.sel && !KINDS.some((kind) => shown.details && shown.details[`${kind}:${state.sel}`])) {
-      state.sel = null; // kept across steps only where it exists
+    const there = state.sels.filter((x) => KINDS.some((kind) => shown.details && shown.details[`${kind}:${x}`]));
+    if (there.length !== state.sels.length) {
+      setSels(there.join(",")); // kept across steps only where it exists
       state.t = null;
       writeHash();
     }
@@ -686,7 +739,7 @@ async function load() {
       want = await resolve(want);
       edit.init({ state, status, clear, show, view, writeHash, hover });
       state.session = await edit.session();
-      state.sel = want.sel;
+      setSels(want.sel);
       state.t = want.t;
       state.cmp = want.cmp;
       if (state.session && want.k !== null && want.k !== state.session.cursor && want.k <= state.session.n) {
@@ -705,7 +758,7 @@ async function load() {
   stepOptions();
   state.k = clampStep(want.k === null ? 0 : want.k);
   state.cmp = want.cmp === null ? null : clampStep(want.cmp);
-  state.sel = want.sel;
+  setSels(want.sel);
   draw();
 }
 
@@ -761,7 +814,8 @@ $("compare").addEventListener("change", (ev) => {
 $("graphs").addEventListener("click", (ev) => {
   if (ev.target.closest("select")) return;
   const t = ev.target.closest("[data-sel]");
-  select(t ? t.getAttribute("data-sel") : null);
+  if (ev.shiftKey && !t) return; // a shift-click on empty space keeps the selection
+  select(t ? t.getAttribute("data-sel") : null, ev.shiftKey);
 });
 // Keys: ← → the steps; Esc closes an open form, then clears the selection; edit mode: Enter
 // applies the form that has the focus, Ctrl+Z (⌘Z) undoes, Ctrl+Shift+Z redoes. In a text field
@@ -801,9 +855,9 @@ window.addEventListener("hashchange", async () => {
     state.tech = tech;
     techOptions();
     clear();
-  } else if (want.k === state.k && want.sel === state.sel && want.cmp === state.cmp && want.t === state.t) return;
+  } else if (want.k === state.k && (want.sel || null) === selText() && want.cmp === state.cmp && want.t === state.t) return;
   state.cmp = want.cmp === null ? null : clampStep(want.cmp);
-  state.sel = want.sel;
+  setSels(want.sel);
   state.t = want.t;
   if (want.k !== null && want.k !== state.k) goto(clampStep(want.k));
   else draw();

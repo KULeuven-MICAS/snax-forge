@@ -13,7 +13,9 @@ orders them, the accelerator. A core's lane has its spans classed barrier > poll
 (``run/cores.py``, the profile's rule), its function spans and its CSR accesses (``csr`` and
 ``poll`` events); the DMA's one bar per copy, issue to done; a mover's and the accelerator's
 one bar per task, start to done, with the run's class totals (its ``done``'s ``cycles``) and,
-from ``beat`` on, its class runs (index.py). Class names only: colours are the viewer's.
+from ``beat`` on, its class runs (index.py); a mover's task with every temporal bound 0, started
+only because the movers share one start (another group's, D148), is marked ``idle``
+(``RunIndex.idle``). Class names only: colours are the viewer's.
 
 **Segments** cover ``[0, T)``, ``T`` the window, with no gap and no overlap. A cycle is
 active when an accelerator or mover task is open on it (from its start to its done, both
@@ -27,7 +29,8 @@ opens.
 
 **Detail** is the beat and stall lines of one range, as the converter wrote them, grouped per
 lane: each crossbar port's grants and stalls, the DMA's beats and bursts, the accelerator's
-fires and pushes, each lane's FIFO counts (``<mover>.lane<l>``).
+fires and pushes (``acc``, and per unit ``units``: with several groups each unit's lane its
+own, D148), each lane's FIFO counts (``<mover>.lane<l>``).
 
 Below ``task`` (trace ``off``) there is no schedule, below ``beat`` no detail: a
 ``ScheduleUnavailable`` with the reason.
@@ -65,7 +68,8 @@ def _bar(index: RunIndex, task: str) -> dict[str, Any]:
     """An accelerator or mover task's bar: start to done, its class totals and runs."""
     start, done = index.start[task], index.done.get(task)
     bar: dict[str, Any] = {"task": task, "from": start["t"], "to": None if done is None else done["t"],
-                           "cycles": None if done is None else done.get("cycles")}  # fmt: skip
+                           "cycles": None if done is None else done.get("cycles"),
+                           "idle": task in index.idle}  # fmt: skip
     if done is not None and "firings" in done:
         bar["firings"] = done["firings"]
     if index.on("beat"):
@@ -207,6 +211,7 @@ def detail(index: RunIndex, start: int, stop: int) -> dict[str, Any]:
     fifo: dict[str, list[Event]] = {}
     dma: list[Event] = []
     acc: list[Event] = []
+    units: dict[str, list[Event]] = {u: [] for u in index.cluster.accelerator.unit_names}
     for e in window(index, start, stop):
         k = e["k"]
         if k in ("grant", "stall"):
@@ -215,10 +220,11 @@ def detail(index: RunIndex, start: int, stop: int) -> dict[str, Any]:
             dma.append(e)
         elif k in ("fire", "push"):
             acc.append(e)
+            units.setdefault(e["src"], []).append(e)
         elif k == "fifo":
             fifo.setdefault(f"{e['src']}.lane{e['lane']}", []).append(e)
     return {"from": start, "to": stop, "level": index.level, "filtered": index.filtered,
-            "ports": ports, "dma": dma, "acc": acc, "fifo": fifo}  # fmt: skip
+            "ports": ports, "dma": dma, "acc": acc, "units": units, "fifo": fifo}  # fmt: skip
 
 
 __all__ = [

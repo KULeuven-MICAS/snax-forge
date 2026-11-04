@@ -22,6 +22,7 @@ from snax_forge.lower import placed_waits, task_list
 from snax_forge.report import reports_of
 from snax_forge.run import read_run
 from tests.design.helpers import REPO, SNAX_FORGE
+from tests.helpers import dot1_split
 
 from .helpers import needs_gvsoc
 
@@ -83,3 +84,52 @@ def test_the_reports_name_each_tasks_group(flows):
         ("mul", "mul"),
         ("sum", "sum"),
     ]
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_dot_1_reads_the_muls_pads_through_a_tail(tmp_path):
+    """The dot 1 dry run at N = 2048, W_mul = W_sum = 10 (D144, DRY1-2): the mul writes tmp0's
+    two pad words from A's and B's pads, 0 × 0 = 0, add's identity, so the sum folds them and
+    the run's own check finds every output right."""
+    import json
+    from dataclasses import replace
+
+    recipe = tmp_path / "dot_1_w10.json"
+    recipe.write_text(json.dumps(replace(dot1_split(10, 10), name="dot_1_w10").to_dict()))
+    f = run_flow(recipe, SNAX_FORGE, out=tmp_path / "flow")
+    assert f.passed, summary(f)
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0 and f.check["words"] == 1
+
+
+@pytest.fixture(scope="module")
+def beat_flows(tmp_path_factory):
+    """dot 1 at N = 2048, W = 8 untraced and at --trace beat (the DRY1-2 dry run's 8/8)."""
+    base = tmp_path_factory.mktemp("dot_1_2048")
+    sets = {"N": 2048, "W": 8}
+    return {lv: run_flow(DOT1, SNAX_FORGE, recipe_sets=sets, out=base / lv, trace_level=lv)
+            for lv in ("off", "beat")}  # fmt: skip
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_dot_1_converts_at_beat_level(beat_flows):
+    """An accelerator of two groups of one unit each at beat level (DRY1-2 R2, open item 96):
+    each unit's 256 fires under its own task, tmp0's words written by mul_out and read by
+    sum_a, and the counters and the window those of the untraced run."""
+    off, beat = beat_flows["off"], beat_flows["beat"]
+    assert off.passed and beat.passed, summary(beat)
+    trace = read_run(beat.out / "run").trace
+    fires = {u: sum(1 for e in trace.of_kind("fire") if e["src"] == u) for u in ("mul", "sum")}
+    assert fires == {"mul": 256, "sum": 256}
+    tmp0 = [e for e in trace.of_kind("grant") if e["region"] == "tmp0"]
+    assert {e["src"].split(".")[0] for e in tmp0 if e["op"] == "w"} == {"mul_out"}
+    assert {e["src"].split(".")[0] for e in tmp0 if e["op"] == "r"} == {"sum_a"}
+    assert len({e["addr"] for e in tmp0 if e["op"] == "w"}) == 2048
+    counters = {t: x["counter"] for t, x in beat.check["tasks"].items()}
+    assert counters == {t: x["counter"] for t, x in off.check["tasks"].items()}
+    assert counters == {"mult_mul": 256, "sum_sum": 259}
+    assert (
+        read_run(beat.out / "run").profile.total_cycles
+        == read_run(off.out / "run").profile.total_cycles
+    )

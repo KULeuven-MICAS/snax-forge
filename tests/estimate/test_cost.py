@@ -42,10 +42,18 @@ def test_a_block_not_characterized_counts_its_comb_as_0_and_its_flops():
 
 
 def test_a_groups_ctrl_is_its_bits_held_times_the_counter_factor():
+    """Its energy f_ctrl n_bits e_hold per cycle; its area its flops' plus an equal comb area (a
+    placeholder, D154)."""
     g = group_cost(TABLE, {"acc": Block("TreeAccumulate", TREE, 10)}, {}, {"acc": 64}, 131, 100)
-    assert (g.ctrl_bits, g.ctrl_um2) == (131, 262.0)
+    assert (g.ctrl_bits, g.ctrl_flops_um2, g.ctrl_comb_um2, g.ctrl_um2) == (
+        131,
+        262.0,
+        262.0,
+        524.0,
+    )
+    assert g.to_dict()["ctrl"]["area"] == {"flops": 262.0, "comb": 262.0, "total": 524.0}
     assert g.ctrl_nj == pytest.approx(1.5 * 131 * 100 * 0.001 / 1000)
-    assert g.area == pytest.approx(228.0 + 262.0)
+    assert g.area == pytest.approx(228.0 + 524.0)
     assert g.energy == pytest.approx(g.units["acc"].task_nj + g.ctrl_nj) and g.missing == []
 
 
@@ -61,6 +69,28 @@ def test_a_unit_fires_its_firings_times_its_span_a_buffer_its_producers_firings(
     )
 
 
+def test_l1_accesses_cost_4_e_load_per_bit_per_accelerator():
+    """D154's placeholder: the 64-bit words an accelerator's streamers read and write in L1, at 4
+    × e_load per bit, added to its energy (not to a group's): vecmul at W = 8 and N = 2048 6144
+    words, 27.005 nJ on nangate45 (4.40 pJ a word), 1.41 pJ a word on nangate15; a packed dtype
+    counts words, not elements (vecadd_i32: 3 × 32 words for 64 int32; vsum_tree_i8: 8 + 1 for 64
+    int8); a link's container is not in L1 (dot 2: tmp0's 2 × 2048 words gone from dot 1's)."""
+    e = estimated("vecmul", W=8, N=2048)
+    (x,) = e.l1.values()
+    assert (list(e.l1), x.words, x.bits, dec3(x.energy_nj)) == (["acc"], 6144, 393216, "27.005")
+    assert f"{1000 * x.energy_nj / x.words:.2f}" == "4.40"
+    assert e.energy == pytest.approx(e.kernel_energy + x.energy_nj)
+    assert e.kernel_energy == pytest.approx(sum(g.cost.energy for g in e.groups))
+    assert e.to_dict()["cost"]["l1"] == {"acc": {"words": 6144, "bits": 393216,
+                                                 "energy": x.energy_nj}}  # fmt: skip
+    fifteen = estimate(steps("vecmul", W=8, N=2048)[-1], None, "nangate15").l1["acc"]
+    assert f"{1000 * fifteen.energy_nj / fifteen.words:.2f}" == "1.41"
+    assert estimated("vecadd_i32").l1_words == {"acc": 96}
+    assert estimated("vsum_tree_i8").l1_words == {"acc": 9}
+    one, two = (estimated(r, W=8, N=2048).l1_words for r in ("dot_1", "dot_2"))
+    assert (one, two) == ({"dot": 8193}, {"dot": 4097})
+
+
 def test_the_estimate_lists_what_is_not_characterized():
     e = estimated("vecadd_i32")
     assert e.missing == ["acc"] and e.groups[0].cost.units["acc"].found is None
@@ -71,7 +101,7 @@ def test_no_technology_skips_the_cost_and_both_round_trip():
     g = steps("dot_5", W=8, N=64)[-1]
     plain = estimate(g, None, None)
     assert plain.to_dict()["cost"] is None and plain.groups[0].cost is None
-    assert plain.area is None and plain.energy is None
+    assert plain.area is None and plain.energy is None and plain.l1 == {}
     costed = estimate(g, None, "nangate15")
     assert costed.to_dict()["cost"]["tech"] == "nangate15"
     assert costed.char_source == load("nangate15").source
@@ -106,10 +136,10 @@ def test_an_energy_is_shown_to_3_decimals():
 
 
 def test_dot_4_and_dot_5_read_apart():
-    four, five = (estimated(r, W=8, N=2048).energy for r in ("dot_4", "dot_5"))
+    four, five = (estimated(r, W=8, N=2048).kernel_energy for r in ("dot_4", "dot_5"))
     assert (dec3(four), dec3(five)) == ("26.285", "26.339") and sig3(four) == sig3(five)
     assert heading("nangate15") == "Cost estimate (first-order) on nangate15"
-    assert "about 20 %" in CAVEAT and "csr" in CAVEAT
+    assert "about 20 %" in CAVEAT and "csr" in CAVEAT and "4 × e_load per bit" in CAVEAT
 
 
 @pytest.mark.slow
@@ -125,9 +155,9 @@ def test_the_kernel_energy_is_the_experiments_formula(capsys):
     for r in rows:
         e = estimate(steps(r["recipe"], W=r["W"], N=2048)[-1], _platform(), r["tech"])
         (g,) = e.groups
-        ratio = e.energy / r["kernel_nj"]
+        ratio = e.kernel_energy / r["kernel_nj"]  # the L1 accesses are not the kernel's
         lines.append(f"| {r['tech']} | {r['recipe']} | {r['W']} | {e.accelerator_cycles} | "
-                     f"{g.ctrl_bits} | {e.energy:.3f} | {r['kernel_nj']:.3f} | {ratio:.4f} |")  # fmt: skip
+                     f"{g.ctrl_bits} | {e.kernel_energy:.3f} | {r['kernel_nj']:.3f} | {ratio:.4f} |")  # fmt: skip
         assert (e.accelerator_cycles, g.ctrl_bits) == (r["c_acc"], r["ctrl_bits"]), r
         if abs(ratio - 1) > TOL:
             bad.append((r["tech"], r["recipe"], r["W"], ratio))

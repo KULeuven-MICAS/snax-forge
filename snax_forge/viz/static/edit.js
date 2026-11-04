@@ -31,8 +31,27 @@ async function get(url) {
 export function log(line, error = false) {
   if (!line) return;
   const list = $("log-lines");
-  list.append(h("li", { class: error ? "error" : null }, line));
+  list.append(h("li", { class: error ? "error" : null }, linked(line)));
   list.scrollTop = list.scrollHeight;
+}
+
+/** A log line with its design checks' counts (``1 problem``, ``2 notes``, D156) as links to
+ * the list under the Estimate. */
+function linked(line) {
+  const parts = [];
+  let at = 0;
+  for (const m of line.matchAll(/\b(\d+) (problems?|notes?)\b/g)) {
+    parts.push(line.slice(at, m.index));
+    const target = m[2].startsWith("problem") ? "checks-problems" : "checks-notes";
+    parts.push(h("a", { href: `#${target}`, class: "log-check", onclick: (ev) => {
+      ev.preventDefault();
+      const el = $(target) || $("checks");
+      if (el) el.scrollIntoView({ block: "nearest" });
+    } }, m[0]));
+    at = m.index + m[0].length;
+  }
+  parts.push(line.slice(at));
+  return parts;
 }
 
 // The pane's height: dragged on its handle between three lines and 70% of the window (the
@@ -310,13 +329,16 @@ export async function sidebar() {
     bar.replaceChildren(h("h2", {}, "Transforms"), h("p", { class: "muted" }, "Compare is on: turn it off to apply a transform to the step shown."));
     return;
   }
-  if (!st.sel) {
-    bar.replaceChildren(h("h2", {}, "Transforms"), h("p", { class: "muted" }, "Select a node or a container: the transforms that apply there are listed here. A dot marks where one applies."));
+  const sels = st.sels && st.sels.length ? st.sels : st.sel ? [st.sel] : [];
+  if (!sels.length) {
+    bar.replaceChildren(h("h2", {}, "Transforms"), h("p", { class: "muted" }, "Select a node, a container or a dashed group or accelerator outline: the transforms that apply there are listed here; shift-click adds to the selection. A dot marks where one applies."));
     return;
   }
   const v = await ctx.view(st.k);
-  const kinds = ["node", "container", "group", "accelerator", "edge"].filter((kind) => v.details && v.details[`${kind}:${st.sel}`]);
-  const r = await get(`/api/step/${st.k}/site/${enc(st.sel)}`);
+  const kindsOf = (id) => ["node", "container", "group", "accelerator", "edge"].filter((kind) => v.details && v.details[`${kind}:${id}`]);
+  const kinds = kindsOf(sels[0]);
+  // the selection's sites (D72): one route for one item or several, in the order selected
+  const r = await get(`/api/step/${st.k}/site?${sels.map((x) => `sel=${enc(x)}`).join("&")}`);
   const answers = r.ok ? r.body : {};
   const ok = Object.entries(answers).filter(([, a]) => a.ok);
   const no = Object.entries(answers).filter(([, a]) => !a.ok);
@@ -336,7 +358,9 @@ export async function sidebar() {
       formEl);
   });
   bar.replaceChildren(...[
-    h("h2", {}, kinds.join(" · ") || "item", " ", h("b", {}, st.sel)),
+    sels.length === 1
+      ? h("h2", {}, kinds.join(" · ") || "item", " ", h("b", {}, sels[0]))
+      : h("h2", {}, `${sels.length} selected: `, sels.map((x, i) => [i ? ", " : "", `${kindsOf(x)[0] || "item"} `, h("b", {}, x)])),
     ...(rows.length ? rows : [h("p", { class: "muted" }, "No transform applies here.")]),
     no.length ? h("details", { class: "dfg-not-here" }, h("summary", {}, `Not here (${no.length})`),
       h("ul", {}, no.map(([name, a]) => h("li", {}, h("b", {}, name), " ", h("small", {}, a.message))))) : null,

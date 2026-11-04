@@ -58,6 +58,7 @@ class Mover:
     fifo_depth: int
     spatial_bounds: tuple[int, ...]
     temporal_dim: int
+    instance: str = ""  # the unit whose port it is (the design point's streamer's instance)
 
     @property
     def ports(self) -> list[str]:
@@ -136,6 +137,29 @@ class Accelerator:
                 return u.name
         return None
 
+    def members(self, unit: str) -> list[str]:
+        """The instances of a unit's group: the unit itself, or a linked group's units."""
+        for g in self.description.get("groups", []):
+            names = [u["name"] for u in g["units"]]
+            if unit == g["name"] or unit in names:
+                return names if len(names) > 1 else [unit]
+        return [unit]
+
+    def movers_of(self, unit: str) -> list[Mover]:
+        """A unit's movers, readers first as the streamer orders them: those of its group's
+        instances (with one unit and no instance recorded, every mover)."""
+        if len(self.units) == 1 and not any(m.instance for m in self.movers):
+            return list(self.movers)
+        mine = set(self.members(unit))
+        return [m for m in self.movers if m.instance in mine]
+
+    def unit_of_mover(self, mover: str) -> str | None:
+        """The unit (its C§7 name) a mover belongs to."""
+        for u in self.units:
+            if any(m.name == mover for m in self.movers_of(u.name)):
+                return u.name
+        return None
+
     def mover(self, gvsoc: str) -> Mover:
         for m in self.movers:
             if m.gvsoc == gvsoc:
@@ -187,7 +211,8 @@ class Cluster:
                 "movers": [{"name": m.name, "gvsoc": m.gvsoc, "port": m.port, "write": m.write,
                             "lanes": m.lanes, "fifo_depth": m.fifo_depth,
                             "spatial_bounds": list(m.spatial_bounds),
-                            "temporal_dim": m.temporal_dim} for m in a.movers],
+                            "temporal_dim": m.temporal_dim, "instance": m.instance}
+                           for m in a.movers],
                 "csrs": {"streamer_first": c.streamer_first, "streamer_start": c.streamer_start,
                          "streamer_busy": c.streamer_busy,
                          "streamer_counter": c.streamer_counter, "fields": dict(c.fields),
@@ -303,7 +328,7 @@ def cluster_from(cluster: dict[str, Any], streamer: dict[str, Any], description:
         for i, (n, s) in enumerate(mine):
             movers.append(Mover(n, f"{kind}{i}", s["port"], write, params["num_channel"][i],
                                 params["fifo_depth"][i], tuple(params["spatial_bounds"][i]),
-                                params["temporal_dim"][i]))  # fmt: skip
+                                params["temporal_dim"][i], s["instance"]))  # fmt: skip
 
     tcdm = _get(cluster, "cluster.tcdm", "the cluster file")
     acc = Accelerator(description["name"], owner, slot, dict(description), movers,

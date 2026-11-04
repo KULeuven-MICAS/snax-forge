@@ -44,21 +44,32 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
                                     cursor asks first (null at the last step), platform, the
                                     working ``recipe`` and the ``command`` that replays it
                                     (``pixi run sandbox``)
-    GET  /api/step/<k>              step k's view, with its diff against step k − 1
-    GET  /api/step/<k>/site/<id>    Session.sites on node or container ``id``, bind's with the
-                                    bind list, each accepted transform with its ``form``
+    GET  /api/step/<k>              step k's view, with its diff against step k − 1 and Save's
+                                    design checks on it (``problems`` and ``notes``, D156;
+                                    Session.checks); a redo step not replayed since a param
+                                    change is a 400 ``session.redo``
+    GET  /api/step/<k>/site?sel=<id>&sel=<id>
+                                    Session.sites on a selection, one item or several in the
+                                    order selected (a node's id, a container's, a group's or an
+                                    accelerator's name; D72), bind's with the bind list, each
+                                    accepted transform with its ``form``; a transform that takes
+                                    one item refuses several, ``site.one``
+    GET  /api/step/<k>/site/<id>    the same on a one-item selection
     GET  /api/compare/<j>/<k>       as in view mode, over the session's steps
     POST /api/apply                 ``{transform, params, drop?, new_params?}``: Session.apply
                                     (``new_params``, ``{"W_mul": 8}``: the params it adds)
-    POST /api/cursor                ``{k}``: Session.move
-    POST /api/params                ``{params}``: Session.set_params
+    POST /api/cursor                ``{k}``: Session.move, which replays and checks the redo
+                                    steps it reaches
+    POST /api/params                ``{params}``: Session.set_params, up to the cursor
     POST /api/save                  ``{name, force?}``: Session.save; its log line names the
                                     recipe from the repository (``saved recipes/<name>.json``)
     POST /api/export                ``{k}``: Session.export, the file's ``path``
 
 Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
-``step 2  tag_map add_map_s kind=spatial  ok · 5 ms · changed add_map_s · C 0 → 0 · not mapped
-64 → 16``, C the accelerator cycles before and after, the not-mapped count where it changes). A refusal is a 400 with ``{code, message}`` (and
+``step 2  bind add elementwise_add …  ok · 5 ms · changed add · C 0 → 16 · unmapped 64 → 0 ·
+renamed W → W_acc_1 · 1 note``, C the accelerator cycles before and after, the unmapped cycles
+where they change (D155), the params a bind renamed and the design checks' problems and notes
+on the new step). A refusal is a 400 with ``{code, message}`` (and
 ``problems`` for a save, ``question`` for ``session.drop``); a route before a session is open is
 a 400 ``session.none``; an unknown route or step is a 404, as in view mode. ``GET /api/mode``
 gives the default ``platform`` too, in edit mode, and in both modes ``techs`` (the
@@ -210,25 +221,28 @@ def session_summary(s: Any) -> dict[str, Any]:
             "undo": s.cursor - 1 if s.cursor > 0 else None,
             "redo": s.cursor + 1 if s.cursor < s.n else None,
             "drop": drop_question(s.cursor, s.n),
+            "replayed": s.replayed,  # the steps past it are redo steps since a param change
             "platform": s.platform_path, "recipe": r.to_dict(),
             "command": f"pixi run sandbox {_shown(s.folder / RECIPE_JSON)}"}  # fmt: skip
 
 
 def _cycles(s: Any, k: int) -> tuple[int, int] | None:
-    """Step k's accelerator cycles and not-mapped count, None where the estimate cannot judge it."""
+    """Step k's accelerator cycles and unmapped cycles (D155), None where the estimate cannot
+    judge it."""
     from snax_forge.dfg import DfgError
 
     try:
         est = s.estimate(k)
     except (ValueError, KeyError, TypeError, DfgError):
         return None
-    return est.accelerator_cycles, est.not_mapped
+    return est.accelerator_cycles, est.unmapped_cycles
 
 
 def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any]) -> str:
-    """The log line of an apply: ``step 2  tag_map add_map_s kind=spatial  ok · 5 ms ·
-    changed add_map_s · C 0 → 0 · not mapped 64 → 16`` (the not-mapped part only when it
-    changes), or its refusal's code and message."""
+    """The log line of an apply: ``step 4  bind add …  ok · 5 ms · changed add · C 0 → 16 ·
+    unmapped 64 → 0 · renamed W → W_acc_1 · 1 note`` (the unmapped part only when it changes,
+    the problems and notes of the step's design checks when it has some), or its refusal's code
+    and message."""
     values = list(params.items())
     head = " ".join([transform, *(str(v) for _, v in values[:1]),
                      *(f"{k}={v}" for k, v in values[1:])])  # fmt: skip
@@ -245,8 +259,21 @@ def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any
     if before is not None and after is not None:
         parts.append(f"C {before[0]} → {after[0]}")
         if before[1] != after[1]:
-            parts.append(f"not mapped {before[1]} → {after[1]}")
+            parts.append(f"unmapped {before[1]} → {after[1]}")
+    for old, new in (out.get("renamed") or {}).items():
+        parts.append(f"renamed {old} → {new}")
+    parts += checks_parts(out.get("checks"))
     return " · ".join(parts)
+
+
+def checks_parts(checks: dict[str, Any] | None) -> list[str]:
+    """A log line's design-check counts, ``1 problem``, ``2 notes`` (none where there are none),
+    as an apply's and a param change's lines give them (D156)."""
+    out = []
+    for key, word in (("problems", "problem"), ("notes", "note")):
+        if n := len((checks or {}).get(key) or []):
+            out.append(f"{n} {word}{'s' if n > 1 else ''}")
+    return out
 
 
 def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
@@ -255,6 +282,9 @@ def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
 
     if not 0 <= k <= s.n:
         raise LookupError(f"no step {k}: the steps are 0..{s.n}")
+    if k > s.replayed:
+        raise _Refused("session.redo", f"step {k} is a redo step, not replayed since the params "
+                       "changed: move the cursor to it")  # fmt: skip
     name = s.step_name(k)
     entry = api.Entry(name, s.folder / "export" / f"{name}.snaxdfg", s.graphs[k], None)
     try:
@@ -264,8 +294,9 @@ def edit_step(s: Any, k: int, tech: str = DEFAULT_TECH) -> dict[str, Any]:
     from dataclasses import replace
 
     upto = replace(s.recipe, steps=s.recipe.steps[:k])  # the steps that made step k
-    return api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est, tech,
+    view = api.step_view(entry, _label(name), s.platform, s.marks(k), s.diff(k), est, tech,
                          upto, editable=True)  # fmt: skip
+    return view | s.checks(k)
 
 
 class DfgHandler(Handler):
@@ -293,7 +324,7 @@ class DfgHandler(Handler):
                 raise _Refused(
                     "char.tech", f"no table for technology {tech!r}: one of {list(TECHS)}"
                 )
-            found = (self._edit_get(parts, tech) if self._edit
+            found = (self._edit_get(parts, tech, q) if self._edit
                      else self._view_get(parts, tech, q))  # fmt: skip
         except _Refused as e:
             self._refuse(e)
@@ -327,7 +358,7 @@ class DfgHandler(Handler):
                                                        tech, labels)  # fmt: skip
         return None
 
-    def _edit_get(self, parts: list[str], tech: str) -> Any:
+    def _edit_get(self, parts: list[str], tech: str, q: dict[str, list[str]] | None = None) -> Any:
         state = self.server.loaded
         if parts == ["kernels"]:
             return state.kernels()
@@ -337,16 +368,24 @@ class DfgHandler(Handler):
             return state.sessions()
         if parts == ["session"]:
             return session_summary(state.need())
-        if len(parts) in (2, 4) and parts[0] == "step":
+        if len(parts) in (2, 3, 4) and parts[0] == "step":
             s = state.need()
             k = _index(parts[1], s.n)
             if len(parts) == 2:
                 return edit_step(s, k, tech)
-            if parts[2] == "site":
+            if parts[2] == "site" and len(parts) == 4:  # one item, as before
                 return s.sites(k, parts[3])
+            if parts[2] == "site":  # a selection: ?sel=<id>&sel=<id> (D72)
+                sel = [x for x in (q or {}).get("sel", []) if x]
+                if not sel:
+                    raise _Refused("request.query", "the query needs at least one 'sel'")
+                return s.sites(k, sel)
         if len(parts) == 3 and parts[0] == "compare":
             s = state.need()
             j, k = (_index(x, s.n) for x in parts[1:])
+            if max(j, k) > s.replayed:
+                raise _Refused("session.redo", f"step {max(j, k)} is a redo step, not replayed "
+                               "since the params changed: move the cursor to it")  # fmt: skip
             a, b = (api.Entry(s.step_name(x), s.folder, s.graphs[x], None) for x in (j, k))
             labels = (_label(s.step_name(j)), _label(s.step_name(k)))
             return {"a": j, "b": k} | api.compare_view(a, b, s.platform, tech, labels)
@@ -393,13 +432,23 @@ class DfgHandler(Handler):
         if route == "cursor":
             _needs(body, "k")
             out = s.move(body["k"])
-            return out | ({"log": f"cursor → step {out['cursor']}"} if out["ok"] else {})
+            if not out["ok"]:
+                where = f"step {out['index']} " if "index" in out else ""
+                return out | {"log": f"cursor → step {body['k']}  {where}{out['code']}: "
+                              f"{out['message']}"}  # fmt: skip
+            again = f" · replayed {', '.join(map(str, out['replayed']))}" if out["replayed"] else ""
+            return out | {"log": f"cursor → step {out['cursor']}{again}"}
         if route == "params":
             _needs(body, "params")
             out = s.set_params(dict(body["params"]))
             given = ", ".join(f"{k}={v}" for k, v in body["params"].items())
             if out["ok"]:
-                return out | {"log": f"params {given}  ok · {s.n} steps replayed"}
+                redo = (
+                    f" · steps {out['redo'][0]}..{s.n} replayed when reached" if out["redo"] else ""
+                )
+                counts = "".join(f" · {x}" for x in checks_parts(out.get("checks")))
+                return out | {"log": f"params {given}  ok · {out['replayed']} steps replayed{redo}"
+                              f"{counts}"}  # fmt: skip
             return out | {
                 "log": f"params {given}  step {out['index']} {out['code']}: {out['message']}"
             }

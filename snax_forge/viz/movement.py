@@ -24,7 +24,8 @@ by order here, every link is an id the events carry (snax-gvsoc
               configured (``run/beats.mover_nest``, which the converter checked
               equal to the grants), the pace (first and last grant against one
               beat per cycle) and every cycle it was held, with the port its
-              bank served and that port's address; per DMA copy its sides, as
+              bank served and that port's address, ``idle`` for a task with every
+              temporal bound 0 (index.py's ``idle``); per DMA copy its sides, as
               issued, and its L1 beats' pace
   conflicts   every L1 stall placed on the memory layout: the word the held
               request wanted and the word its bank served in that cycle; per
@@ -326,7 +327,7 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
                 grants = [g for g in idx.grants_port.get(port, []) if g["task"] == s["task"]]
                 p: dict[str, Any] = {
                     "port": port, "owner": m.name, "task": s["task"], "mem": "l1",
-                    "write": m.write, "beats": len(grants),
+                    "write": m.write, "beats": len(grants), "idle": s["task"] in idx.idle,
                     "addr": {"base": c.l1_base + lanes[lane][0] if lanes[lane] else None,
                              "nest": [[b, st] for b, st in zip(bounds, ts, strict=True)],
                              "addresses": len(lanes[lane])},

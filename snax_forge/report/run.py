@@ -7,17 +7,23 @@ named it (D137).
 
     summary       the program's window (total cycles), passed, data errors over
                   the output words, each task's counter as the program printed
-                  it next to the COUNTER the ideal estimate expects (D155:
-                  its group's cycles plus the streamers' fill; with its group's
-                  bank-bound note where L1's banks allow fewer cycles than the
-                  ideal ones), the trace level and the boot's length (the cycles before
+                  it next to the COUNTER the ideal estimate expects, a guide
+                  and not a check (D155: its group's cycles plus the streamers'
+                  fill; with its group's bank-bound note where its streams need
+                  more L1 time than the ideal cycles), the trace level and the boot's length (the cycles before
                   the window, which the profile, the cores and the trace share)
     tasks         per block each task's start, done and length, named from the
-                  task list; a DMA copy with its direction and bytes
+                  task list, a mover's task with every temporal bound 0 (another
+                  group's, started only for the shared start, D148) tagged idle;
+                  a DMA copy with its direction and bytes
                                                          (needs a task trace)
-    accelerators  firings, target II (the datapath file's), achieved II,
+    accelerators  per unit (its first column ``Unit``; a linked group's under its
+                  name): firings, target II (the datapath file's), achieved II,
                   utilisation over the window and over its tasks' span,
-                  stall_in, stall_out, flush
+                  stall_in, stall_out, flush; then per group a collapsible
+                  ``<details>`` of its movers (mul ▸ mul_a, mul_b, mul_out):
+                  port, direction, num_ch, busy, held by the crossbar,
+                  waiting on its FIFO, FIFO highest against depth
     cores         cycles per class in the window, SNAX CSR writes and
                   reads, and each wait: block, first, last, cycles and the
                   task that starts next                  (classes and waits
@@ -31,7 +37,8 @@ named it (D137).
     movement      from the run index (viz/movement.py), at beat and above: per
                   region and memory its arrival, use and departure spans; per
                   streamer lane and task its configured nest and pace against
-                  one beat per cycle; at stall, the L1 stalls per bank and per
+                  one beat per cycle, the idle tasks' lanes left out with a line
+                  saying so; at stall, the L1 stalls per bank and per
                   port (and the held cycles per lane). At off and task one line
                   says why there is none
 
@@ -77,6 +84,7 @@ class TaskRow(Record):
     direction: str | None = None
     bytes: int | None = None
     group: str | None = None  # the group whose start launched it (D148); None for the DMA's
+    idle: bool = False  # a mover's task with every temporal bound 0, started for the shared start
 
 
 @dataclass
@@ -92,6 +100,28 @@ class AccelRun(Record):
     stall_out: int
     flush: int
     group: str | None = None
+
+
+@dataclass
+class MoverRow(Record):
+    name: str
+    port: str
+    write: bool
+    num_ch: int
+    busy: int
+    stall_xbar: int
+    stall_fifo: int
+    fifo_max: int
+    fifo_depth: int
+
+
+@dataclass
+class GroupMovers(Record):
+    """One group's movers, the report's collapsible under Accelerators (C§7)."""
+
+    group: str
+    unit: str  # the accelerator profile's name: the unit, or a linked group's
+    movers: list[MoverRow] = field(default_factory=list)
 
 
 @dataclass
@@ -188,6 +218,7 @@ class MovementReport(Record):
     banks: list[StallCount] = field(default_factory=list)
     ports: list[StallCount] = field(default_factory=list)
     conflicts_reason: str | None = None
+    idle_left_out: int = 0  # idle streamer tasks whose lanes the port table leaves out
 
 
 @dataclass
@@ -206,6 +237,7 @@ class RunReport(Record):
     streamers: list[StreamerRun]
     movement: MovementReport
     groups: int = 1  # the accelerator's; with more than one, the tables name each row's
+    group_movers: list[GroupMovers] = field(default_factory=list)
 
 
 # =============================================================================
@@ -255,7 +287,9 @@ def build_movement(rv: api.RunView) -> MovementReport:
                                   r["arrival"], r["use"], r["departure"]) for r in res]  # fmt: skip
     out.patterns = [PatternRow(p["port"], p["task"], p["addr"]["base"], p["addr"]["nest"],
                                p["beats"], p["first"], p["last"], p["ideal_last"],
-                               p.get("held_cycles")) for p in pats if p["port"] != "dma"]  # fmt: skip
+                               p.get("held_cycles")) for p in pats
+                    if p["port"] != "dma" and not p.get("idle")]  # fmt: skip
+    out.idle_left_out = len({p["task"] for p in pats if p.get("idle")})
     try:
         c = movement.conflicts(idx)
     except MovementUnavailable:
@@ -328,7 +362,7 @@ def build_run(rv: api.RunView) -> RunReport:
                 done = total if t["to"] is None else t["to"]  # still open at the end
                 task_rows.append(TaskRow(block, k, t["task"], t["from"], done, done - t["from"],
                                          t.get("dir"), t.get("bytes"),
-                                         group_of(block, t["task"])))  # fmt: skip
+                                         group_of(block, t["task"]), bool(t.get("idle"))))  # fmt: skip
         task_rows.sort(key=lambda r: (r.start, r.block))
 
     accels = []
@@ -362,11 +396,22 @@ def build_run(rv: api.RunView) -> RunReport:
                     max(s.fifo.max, default=0))
         for n, s in p.streamers.items()
     ]  # fmt: skip
+    group_movers = []
+    for u in acc.units:
+        rows = []
+        for m in acc.movers_of(u.name):
+            s = p.streamers.get(m.name)
+            if s is None:
+                continue
+            rows.append(MoverRow(m.name, m.port, m.write, m.lanes, s.cycles["busy"],
+                                 s.cycles["stall_xbar"], s.cycles["stall_fifo"],
+                                 max(s.fifo.max, default=0), s.fifo.depth))  # fmt: skip
+        group_movers.append(GroupMovers(u.group, u.name, rows))
     return RunReport(
         rv.name, total, rv.trace_level, None if tr is None else tr.boot,
         check, task_rows, accels, cores, dmas, ports,
         _bank_ranges(p.banks.conflicts if p.banks else []), streamers, build_movement(rv),
-        len(acc.units),
+        len(acc.units), group_movers,
     )  # fmt: skip
 
 
@@ -377,13 +422,13 @@ def build_run(rv: api.RunView) -> RunReport:
 
 def counters_text(c: CheckRow) -> str:
     """The summary's Counters cell: each task's counter, the estimate's expected COUNTER beside
-    it, and its group's bank-bound note there (D155)."""
+    it, a guide and not a check, and its group's bank-bound note there (D155)."""
 
     def one(t: str, n: int) -> str:
         if t not in c.expected:
             return f"{t} {n}"
         note = f"; {c.notes[t]}" if t in c.notes else ""
-        return f"{t} {n} (expected {c.expected[t]}{note})"
+        return f"{t} {n} (expected {c.expected[t]}, a guide{note})"
 
     return ", ".join(one(t, n) for t, n in c.counters.items()) or "none"
 
@@ -414,14 +459,14 @@ def render_run(r: RunReport) -> str:
     else:
         out += grouped(r.groups, 1, table(
             ["Block", "#", "Task", "Start", "Done", "Cycles", "Direction", "Bytes"],
-            [[t.block, t.index, t.name, t.start, t.done, t.cycles,
-              DIRECTION.get(t.direction or "", t.direction), t.bytes] for t in r.tasks],
+            [[t.block, t.index, f"{t.name} (idle)" if t.idle else t.name, t.start, t.done,
+              t.cycles, DIRECTION.get(t.direction or "", t.direction), t.bytes] for t in r.tasks],
             {1, 3, 4, 5, 7},
         ), [t.group for t in r.tasks])  # fmt: skip
 
     out += ["", "## Accelerators", ""]
     out += grouped(r.groups, 1, table(
-        ["Accelerator", "Firings", "Target II", "Achieved II", "Utilisation (window)",
+        ["Unit", "Firings", "Target II", "Achieved II", "Utilisation (window)",
          "Task span", "Utilisation (span)", "Starved (stall_in)", "Blocked (stall_out)", "Flush"],
         [[a.name, a.firings, a.target_ii, None if a.achieved_ii is None else f"{a.achieved_ii:.2f}",
           pct(a.utilisation), a.span,
@@ -432,6 +477,11 @@ def render_run(r: RunReport) -> str:
     out += ["", ("Achieved II is the cycles from the first firing to the last over the firings "
             "between them; utilisation is busy cycles (a firing or the II gap after it) over the "
             "window, then over the cycles its tasks ran.")]  # fmt: skip
+    out += render_group_movers(r.group_movers)
+    if any(t.idle for t in r.tasks or []):
+        out += ["", ("A task tagged idle has every temporal bound 0: another group's mover, started "
+                     "only because the accelerator's movers share one start (D148); it moves "
+                     "nothing.")]  # fmt: skip
 
     out += ["", "## Cores", ""]
     out += table(
@@ -487,6 +537,26 @@ def render_run(r: RunReport) -> str:
     return "\n".join(out) + "\n"
 
 
+def render_group_movers(groups: list[GroupMovers]) -> list[str]:
+    """Per group its movers in a collapsible (C§7): ``<details>`` with ``group ▸ movers`` as its
+    summary and the movers' table inside."""
+    out: list[str] = []
+    for g in groups:
+        if not g.movers:
+            continue
+        out += ["", "<details>", f"<summary>{g.group} ▸ {', '.join(m.name for m in g.movers)}</summary>",
+                ""]  # fmt: skip
+        out += table(
+            ["Mover", "Port", "Direction", "num_ch", "Busy", "Held by the crossbar",
+             "Waiting on its FIFO", "FIFO highest / depth"],
+            [[m.name, m.port, "write" if m.write else "read", m.num_ch, m.busy, m.stall_xbar,
+              m.stall_fifo, f"{m.fifo_max} / {m.fifo_depth}"] for m in g.movers],
+            {3, 4, 5, 6},
+        )  # fmt: skip
+        out += ["", "</details>"]
+    return out
+
+
 def _span(w: list[int] | None) -> str | None:
     return None if w is None else str(w[0]) if w[0] == w[1] else f"{w[0]}–{w[1]}"
 
@@ -518,6 +588,9 @@ def render_movement(m: MovementReport) -> list[str]:
     )  # fmt: skip
     out += ["", ("The nest is the one each task's CSR writes configured (the converter checked it "
                  "against the grants).")]  # fmt: skip
+    if m.idle_left_out:
+        out += ["", (f"The {m.idle_left_out} idle streamer tasks (every temporal bound 0, started "
+                     "only for the shared start; tagged idle under Tasks) are left out.")]  # fmt: skip
     out.append("")
     if m.conflicts is None:
         out.append(f"L1 stalls: {m.conflicts_reason}")

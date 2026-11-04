@@ -81,9 +81,13 @@ function accelSection(detail) {
         h("div", { class: "util" },
           h("div", { class: "meter" }, h("span", { class: "g-busy", style: { width: `${100 * a.utilisation}%` } })),
           h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.firings)} firings`),
-        table(
-          [{ key: "port", label: "Port" }, { key: "mover", label: "Mover" }, { key: "dir", label: "Direction" }, { key: "num_ch", label: "num_ch", num: true }],
-          acc.movers.map((m) => ({ port: m.port, mover: m.name, dir: m.write ? "write" : "read", num_ch: m.lanes }))));
+        // its group's movers in a collapsible (C§7: mul ▸ mul_a, mul_b, mul_out); R3 styles it
+        ((movers) => h("details", { class: "group-movers" },
+          h("summary", {}, `${n} ▸ ${movers.map((m) => m.name).join(", ")}`),
+          table(
+            [{ key: "port", label: "Port" }, { key: "mover", label: "Mover" }, { key: "dir", label: "Direction" }, { key: "num_ch", label: "num_ch", num: true }],
+            movers.map((m) => ({ port: m.port, mover: m.name, dir: m.write ? "write" : "read", num_ch: m.lanes })))))(
+          acc.movers.filter((m) => !m.instance || unitsOf(acc.description, n).some((x) => x.unit.name === m.instance))));
     }));
 }
 

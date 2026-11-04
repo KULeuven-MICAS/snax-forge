@@ -290,10 +290,12 @@ function build(detail, first) {
         q.slotsEl.title = n === null ? `${q.port}: FIFO counts need --trace stall` : `${q.port}: ${n} of ${q.depth}`;
       }
       p.b.el.classList.toggle("bad", bad);
-      const fire = on ? a.acc.fire : null;
-      const push = on ? a.acc.push : null;
-      if (p.write) setArrow(p.down, push ? "up" : null, false, push ? `${acc.name} pushes result ${push.n} into ${m.name}` : "");
-      else setArrow(p.down, fire ? "down" : null, false, fire ? `${acc.name} fires ${fire.n}: pops beat ${fire.b?.[m.name]} of ${m.name}` : "");
+      // the unit whose mover it is (several groups: each unit its own, D148)
+      const mine = on ? (a.acc.units ?? [a.acc]).find((u) => !m.instance || u.name === m.instance) ?? a.acc : {};
+      const fire = on && mine.fire && (m.write || m.name in (mine.fire.b ?? {})) ? mine.fire : null;
+      const push = on ? mine.push : null;
+      if (p.write) setArrow(p.down, push ? "up" : null, false, push ? `${mine.name} pushes result ${push.n} into ${m.name}` : "");
+      else setArrow(p.down, fire ? "down" : null, false, fire ? `${mine.name} fires ${fire.n}: pops beat ${fire.b?.[m.name]} of ${m.name}` : "");
     }
 
     const copies = on ? a.dma.copies : [];
@@ -316,7 +318,7 @@ function build(detail, first) {
 
     const un = on ? a.acc : {};
     setClass(unit, un.class ?? null);
-    setText(unitLines.task, un.task ? `task ${un.task}` : on ? "no task" : "");
+    setText(unitLines.task, un.task ? `${(a.acc.units ?? []).length > 1 ? `${un.name}: ` : ""}task ${un.task}` : on ? "no task" : "");
     const vals = (v) => Object.entries(v ?? {}).map(([k, xs]) => `${k} ${(xs ?? []).join(", ")}`).join("; ");
     setText(unitLines.fire, un.fire ? `fire ${un.fire.n}: ${vals(un.fire.vals)}` : "", "resp");
     setText(unitLines.push, un.push ? `push ${un.push.n}: ${(un.push.vals ?? []).join(", ")}` : "", "resp");

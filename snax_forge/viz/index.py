@@ -60,7 +60,7 @@ in the flow folder, lower/tasks.py's ``TaskList``), whose ``start`` step launche
 accelerator task together with its streamer tasks; each task's component is its configure
 step's. ``streamers[acc task] = {mover: streamer task}`` and ``accel[streamer task] = acc
 task``; with several groups (D148) a start launches one unit's task with a task on every
-mover, the other groups' idle (every bound 0), which SNAX-GVSoC starts and ends at once. An accelerator task launched without a streamer task for one of its movers, or with
+mover, the other groups' idle (every bound 0, ``idle``: ``idle_tasks``), which SNAX-GVSoC starts and ends at once. An accelerator task launched without a streamer task for one of its movers, or with
 two for one, or with a streamer task on no mover of it, is a RunError (``index.tasks``)
 naming the tasks: not expected, and never guessed.
 
@@ -85,9 +85,9 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
-from snax_forge.lower.tasks import Configure, Start, TaskList
+from snax_forge.lower.tasks import TaskList
 from snax_forge.run import Cluster, Region, RunError, RunOutputs, core_counts, core_spans
-from snax_forge.run.beats import class_runs, run_end
+from snax_forge.run.beats import class_runs, pairing, run_end
 from snax_forge.run.cluster import DMA
 from snax_forge.run.trace import LEVELS, at_least
 
@@ -131,6 +131,7 @@ class RunIndex:
     issue: dict[int, Event] = field(default_factory=dict)
     streamers: dict[str, dict[str, str]] = field(default_factory=dict)  # the pairing
     accel: dict[str, str] = field(default_factory=dict)
+    idle: set[str] = field(default_factory=set)  # streamer tasks with every temporal bound 0
     total_cycles: int = 0  # the window
     boot: int = 0  # the cycles before it
     times: list[int] = field(default_factory=list)  # events[i]["t"], for bisect
@@ -195,13 +196,14 @@ class RunIndex:
         that does not pair, or a core's spans that are not the profile's counts."""
         streamers = pairing(tasks, cluster)
         accel = {st: t for t, ms in streamers.items() for st in ms.values()}
+        idle = idle_tasks(tasks)
         tr = outputs.trace
         if tr is None:
             total = outputs.profile.total_cycles if outputs.profile is not None else 0
             return cls("off", [], cluster, list(regions), streamers=streamers, accel=accel,
-                       total_cycles=total)  # fmt: skip
+                       idle=idle, total_cycles=total)  # fmt: skip
         idx = cls(tr.level, list(tr.filter), cluster, list(regions), list(tr.events),
-                  streamers=streamers, accel=accel, total_cycles=tr.total_cycles,
+                  streamers=streamers, accel=accel, idle=idle, total_cycles=tr.total_cycles,
                   boot=tr.boot)  # fmt: skip
         idx.times = [e["t"] for e in idx.events]
 
@@ -315,46 +317,18 @@ class RunIndex:
         self.boundary_cycles = sorted(t for t in bounds if 0 <= t < T)
 
 
+def idle_tasks(tasks: TaskList) -> set[str]:
+    """The streamer tasks with every temporal bound 0: another group's movers, started only
+    because an accelerator's movers share one start (D148, lower/derive.py), which SNAX-GVSoC
+    starts and ends at once."""
+    return {s.task_name for s in tasks.of_type("streamer")
+            if not any(s.values.get("temporal_bounds") or [1])}  # fmt: skip
+
+
 def _line(e: Event) -> str:
     """A trace line as a refusal names it."""
     ids = {k: e[k] for k in ("task", "n", "b", "id", "i", "first", "last") if k in e}
     return f"(t {e['t']} {e['k']} {e['src']} {ids})"
-
-
-def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
-    """Per accelerator task, the streamer task of each of its movers, from the start step
-    that launches them together (module doc)."""
-    acc = cluster.accelerator
-    movers = [m.name for m in acc.movers]
-    conf = {s.task_name: s for s in tasks.steps if isinstance(s, Configure)}
-    out: dict[str, dict[str, str]] = {}
-    for s in tasks.steps:
-        if not isinstance(s, Start):
-            continue
-        launched = [conf[t] for t in s.tasks if t in conf]
-        mine = [c.task_name for c in launched
-                if c.type == "accel" and c.component in acc.unit_names]  # fmt: skip
-        if not mine:
-            continue
-        what = f"{tasks.name}: start {s.tasks}"
-        if len(mine) > 1:
-            raise RunError("index.tasks", f"{what} launches {len(mine)} tasks of {acc.name} "
-                           f"({mine})")  # fmt: skip
-        by: dict[str, list[str]] = {}
-        for c in launched:
-            if c.type != "streamer":
-                continue
-            if c.component not in movers:
-                raise RunError("index.tasks", f"{what}: streamer task {c.task_name!r} is on "
-                               f"{c.component}, no mover of {acc.name} ({movers})")  # fmt: skip
-            by.setdefault(c.component, []).append(c.task_name)
-        for m in movers:
-            if len(by.get(m, [])) != 1:
-                have = by.get(m, [])
-                raise RunError("index.tasks", f"{what}: accelerator task {mine[0]!r} has "
-                               f"{len(have)} streamer tasks for {m} ({have}), one expected")  # fmt: skip
-        out[mine[0]] = {m: by[m][0] for m in movers}
-    return out
 
 
 # =============================================================================

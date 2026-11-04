@@ -3,6 +3,7 @@
     load(tech) -> Table                                          snax_forge/char/<tech>.json
     lookup(table, datapath, params, lanes, depth=None) -> Lookup | None
     TECHS                                                        the technologies held here
+    L1_ACCESS_LOADS, CTRL_COMB_PER_FLOP                          D154's two placeholders
 
 ``<tech>.json`` is a byte copy of snax-forge-experiments' ``results/char/<tech>/char.json``
 (its X37), which names its own source commits: per catalogue datapath (``hw/chisel/blocks.json``)
@@ -42,6 +43,12 @@ HERE = Path(__file__).parent
 TECHS = ("nangate45", "nangate15")
 DEFAULT_TECH = "nangate45"
 FOUND = ("measured", "copy", "interpolate")
+# CHAR1's two placeholders until the streamers and OpenRAM's memories are characterized (D154;
+# HWCOST, RAM1): a word a streamer reads or writes in L1 costs L1_ACCESS_LOADS × e_load per bit,
+# and a control unit's comb area is CTRL_COMB_PER_FLOP × its flops' area (its comb energy taken
+# as negligible). Neither is in the table, a byte copy of snax-forge-experiments' char.json.
+L1_ACCESS_LOADS = 4
+CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
 
 
@@ -131,4 +138,15 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
     return None
 
 
-__all__ = ["DEFAULT_TECH", "FOUND", "TECHS", "CharError", "Lookup", "Table", "load", "lookup"]
+__all__ = [
+    "CTRL_COMB_PER_FLOP",
+    "DEFAULT_TECH",
+    "FOUND",
+    "L1_ACCESS_LOADS",
+    "TECHS",
+    "CharError",
+    "Lookup",
+    "Table",
+    "load",
+    "lookup",
+]

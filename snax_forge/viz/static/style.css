@@ -83,7 +83,14 @@ h3 { margin: 1.1rem 0 0.4rem; font-size: 1rem; }
 .note { margin: 0.15rem 0 0.8rem; color: var(--muted); }
 p.note { max-width: 110ch; }
 .block + .block { margin-top: 1.2rem; }
-.scroll { overflow-x: auto; }
+.scroll { overflow-x: auto; max-width: 100%; }
+/* the cluster view scrolls sideways in its own box, never the page (#18) */
+.cluster, .cluster .scroll { min-width: 0; max-width: 100%; }
+/* an accelerator's movers per group (C§7): a collapsible in the report */
+details.group-movers { margin: 0.6rem 0 0; border: 1px solid var(--rule); border-radius: 4px; background: var(--panel); }
+details.group-movers > summary { cursor: pointer; padding: 0.3rem 0.6rem; font-weight: 600; }
+details.group-movers[open] > summary { border-bottom: 1px solid var(--rule); }
+details.group-movers > .scroll { margin: 0.4rem 0.6rem 0.6rem; max-width: calc(100% - 1.2rem); }
 
 /* colour groups of the cycle classes */
 .g-busy { background: var(--busy); }
@@ -192,6 +199,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .s-req.burst { fill-opacity: 0.6; }
 .s-busy.push { fill-opacity: 0.6; }
 .bar { fill: none; stroke: var(--ink); stroke-width: 1; stroke-opacity: 0.55; }
+.bar.idle { stroke-dasharray: 3 2; stroke-opacity: 0.35; } /* a task started only for the shared start (D148) */
 .fn { fill: var(--muted); }
 .fn.fn-1 { fill-opacity: 0.45; }
 .csr-tick { fill: var(--command); }
@@ -206,6 +214,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .refold rect { fill: var(--panel); stroke: var(--rule); }
 .refold:hover rect { stroke: var(--command); }
 i.key.fold-key { background: repeating-linear-gradient(45deg, var(--idle) 0 2px, transparent 2px 4px); box-shadow: inset 0 0 0 1px var(--rule); }
+i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--ink) 45%, transparent); } /* the dashed idle bar */
 .cursor { fill: var(--command); fill-opacity: 0.18; stroke: var(--command); stroke-width: 1; pointer-events: none; }
 
 .cycle-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem; }
@@ -411,11 +420,27 @@ table.c-cols tr.differs td, table.c-cols tr.differs th { background: var(--req-b
 .c-est-group small { display: block; color: var(--muted); }
 .c-bank-note { margin: 0.15rem 0 0; padding-left: 0.5rem; border-left: 2px solid var(--wait); font-size: 0.92em; }
 .c-est-line { margin: 0.35rem 0 0.15rem; }
+.nb { white-space: nowrap; } /* a figure and its unit on one line (the Estimate's group lines) */
+/* the design checks under the Estimate (D156): problems first, then notes */
+.c-checks { margin-top: 0.5rem; border-top: 1px solid var(--rule); padding-top: 0.3rem; }
+.c-check-list { list-style: none; margin: 0.2rem 0; padding: 0; }
+.c-check { margin: 0.25rem 0; padding: 0.25rem 0.4rem; border-left: 3px solid var(--rule); overflow-wrap: anywhere; }
+.c-check.problem { border-left-color: var(--mem); background: var(--hot-bg); }
+.c-check.note { border-left-color: var(--muted); }
+.c-check-head { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: baseline; }
+.c-check-tag { font-size: 0.8em; padding: 0 0.3rem; border-radius: 3px; border: 1px solid var(--rule); color: var(--muted); }
+.c-check-fix { font-size: 0.92em; }
+.log-check { color: inherit; text-decoration: underline dotted; }
 /* the cost table (dfg.js's costTable): one per accelerator, the total last */
 table.c-cost-table { width: 100%; border-collapse: collapse; margin: 0.35rem 0 0.5rem; font-size: 0.9em; }
 table.c-cost-table caption { text-align: left; font-weight: 600; padding-bottom: 0.15rem; }
-table.c-cost-table th, table.c-cost-table td { padding: 0.08rem 0.3rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-table.c-cost-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+table.c-cost-table th, table.c-cost-table td { padding: 0.08rem 0.3rem; text-align: left; vertical-align: top; white-space: normal; overflow-wrap: anywhere; }
+table.c-cost-table .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+table.c-cost-table tr.differs .num { white-space: normal; } /* Compare's before → after wraps at the arrow */
+.c-cost-wrap { max-width: 100%; overflow-x: auto; } /* the fallback: the table scrolls inside the panel */
+table.c-cost-table tr.placeholder th, table.c-cost-table tr.placeholder td { color: var(--muted); font-style: italic; }
+.c-cost-dp { font-size: 0.86em; color: var(--muted); }
+.c-cost-tag { font-size: 0.82em; font-style: normal; padding: 0 0.25rem; border: 1px solid var(--rule); border-radius: 3px; }
 table.c-cost-table thead th { color: var(--muted); font-weight: 600; border-bottom: 1px solid var(--rule); }
 table.c-cost-table tbody th { font-weight: 400; }
 table.c-cost-table tr.total th, table.c-cost-table tr.total td { border-top: 1px solid var(--rule); font-weight: 600; }
@@ -473,6 +498,7 @@ svg.dfg-edges .acc-box rect { stroke: var(--rule); stroke-width: 1.5; }
 svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.85rem; fill: var(--muted); pointer-events: visiblePainted; cursor: pointer; }
 svg.dfg-edges .hover rect { stroke: var(--busy); stroke-width: 2.5; stroke-dasharray: none; }
 svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
+svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; } /* the band a click on an outline hits (D72) */
 
 /* the selection */
 .c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
@@ -510,6 +536,11 @@ svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
 .dfg-binding + .dfg-binding { border-top: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
 .dfg-binding.sel { box-shadow: inset 2px 0 0 var(--hl); }
 .dfg-binding.split .dfg-cont-name { font-style: italic; }
+/* the Bindings tree (D156): accelerator ▸ group ▸ entries */
+.dfg-bindings details > summary { cursor: pointer; padding: 0.15rem 0.2rem; font-size: 0.95em; }
+.dfg-bindings details > summary .kind { color: var(--muted); font-size: 0.85em; }
+.dfg-bind-kids { margin-left: 0.7rem; padding-left: 0.4rem; border-left: 1px solid var(--rule); }
+.dfg-bind-group + .dfg-bind-group, .dfg-bind-accelerator + .dfg-binding, .dfg-binding + .dfg-bind-accelerator, .dfg-binding + .dfg-bind-group { margin-top: 0.2rem; }
 .dfg-param { display: inline-flex; align-items: baseline; gap: 0.15rem; padding: 0 0.2rem; border-radius: 3px; flex-wrap: wrap; }
 .dfg-param input { font: inherit; width: auto; color: var(--ink); background: var(--bg); border: 1px solid var(--rule); border-radius: 3px; padding: 0 0.25rem; }
 .dfg-param small { color: var(--muted); }

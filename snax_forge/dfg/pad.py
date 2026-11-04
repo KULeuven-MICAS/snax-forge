@@ -15,6 +15,13 @@ container is padded in memory, in the data itself, never by the hardware:
                              dtype: 0 for add, the dtype's minimum for max,
                              its maximum for min), else 0. Readers that need
                              different pads raise DfgError naming them
+    code_on_pads(graph, node, pads)
+                             a unit's code (on its port names) evaluated on
+                             ``pads``, its inputs' pad contents by port, with the
+                             reference executor's operators at each container's
+                             dtype, cast to its output's: what a unit writes into
+                             its output's pad lanes (D144); None when it cannot
+                             say (no code, several outputs)
 
 The reference executor reads a pad lane as ``pad_value`` and never writes
 one (execute.py); the memory plan lays a container out over its padded
@@ -114,6 +121,26 @@ def fold_op(node: Node) -> str | None:
         tasks = [node]
     ops = {m.reduce.op for t in tasks for m in t.outputs.values() if m.reduce is not None}
     return ops.pop() if len(ops) == 1 else None
+
+
+def code_on_pads(graph: Graph, node: Node, pads: dict[str, int]) -> int | None:
+    """What ``node`` writes into its one output's pad lanes, given its inputs' pad contents by
+    port; see the module doc."""
+    code = node.attrs.get("code")
+    if code is None or len(node.outputs) != 1:
+        return None
+    ((port, out),) = node.outputs.items()
+    values = {p: np.array(pads[p], dtype=graph.containers[m.data].dtype)
+              for p, m in node.inputs.items()}  # fmt: skip
+    results: dict[str, Any] = {}
+    try:
+        for target, rhs in expr.statements(code, f"node {node.id}.attrs.code"):
+            results[target] = expr.evaluate(rhs, values | results)
+    except (expr.ExprError, KeyError, TypeError, ValueError):
+        return None
+    if port not in results:
+        return None
+    return int(np.asarray(results[port]).astype(graph.containers[out.data].dtype))
 
 
 def pad_value(graph: Graph, c: str) -> int:

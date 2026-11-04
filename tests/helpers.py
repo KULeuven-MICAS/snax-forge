@@ -7,6 +7,8 @@ marker, and the graph fixtures read as dicts or bound by their recipes.
     bound_vsum(w, impl)     vsum bound by its recipe, or at W = ``w`` to ``impl``
     imported(kernel, dtypes)  a kernel's import (DaCe), once per kernel and dtypes
     steps(name, **params)   every graph of ``recipes/<name>.json`` at ``params``, the import first
+    dot1_split(w_mul, w_sum, n)  ``recipes/dot_1.json`` with a factor param per split, ``W_mul``
+                            and ``W_sum`` (the dot 1 dry run's, DRY1-2)
 """
 
 from __future__ import annotations
@@ -56,6 +58,17 @@ def _imported(kernel: str, dtypes: tuple[tuple[str, str], ...]) -> Graph:
     from snax_forge.dfg.import_sdfg import import_kernel
 
     return import_kernel(kernel, dict(dtypes) or None)
+
+
+def dot1_split(w_mul: int, w_sum: int, n: int = 2048) -> Recipe:
+    """dot 1's recipe with ``mult_map`` split by ``W_mul`` and ``sum_map`` by ``W_sum``."""
+    from snax_forge.sandbox.recipe import Step
+
+    d = Recipe.load(REPO / "recipes" / "dot_1.json")
+    factor = {"mult_map": "W_mul", "sum_map": "W_sum"}
+    return Recipe(d.name, d.kernel, {"N": n, "W_mul": w_mul, "W_sum": w_sum}, d.symbols,
+                  [Step(x.transform, {**x.params, "factor": factor[x.params["map"]]})
+                   if "factor" in x.params else x for x in d.steps])  # fmt: skip
 
 
 @cache

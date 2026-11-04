@@ -4,6 +4,7 @@ C§20).
     Block(datapath, params, fires)                 a unit or a buffer link to cost
     block_cost(table, block, bits, c_acc) -> BlockCost
     group_cost(table, blocks, bits, ctrl_bits, c_acc) -> GroupCost
+    l1_cost(table, words) -> L1Cost                an accelerator's L1 accesses (placeholder)
     sig3(x) -> str                                 an area as shown: 3 significant figures
     dec3(x) -> str                                 an energy as shown: 3 decimal places
     heading(tech), CAVEAT                          what every shown cost is headed with
@@ -19,11 +20,18 @@ e_comb, A_comb its comb energy per fire and area from the table (snax_forge/char
     area   = A_comb + n_bits A_flop                     µm²
 
 and per group its control unit, n_bits^ctrl its ``ctrl_bits`` and f_ctrl the table's counter
-factor: energy f_ctrl n_bits^ctrl C_acc e_hold, area n_bits^ctrl A_flop (its comb area and the
-csr are left out, D152). n_fire is a unit's firings times its span (SerialAccumulate reads span
+factor: energy f_ctrl n_bits^ctrl C_acc e_hold, area its flops' n_bits^ctrl A_flop plus an equal
+comb area (``CTRL_COMB_PER_FLOP``, a placeholder, D154; its comb energy taken as negligible); the
+csr is left out (D152). n_fire is a unit's firings times its span (SerialAccumulate reads span
 beats per firing); a buffer link loads once per beat of its producer, its producer's firings. A
 block the table does not hold (``lookup`` None) or the generator does not fill has ``found``
 None and its comb part counted as 0; its flops are still counted, the description gives them.
+
+**L1 accesses** (a placeholder until the streamers and the memories are characterized, D154):
+per accelerator, every 64-bit word its streamers read or write in L1 costs ``L1_ACCESS_LOADS``
+(4) × e_load per bit, energy 4 e_load · 64 · words; a link's container is not in L1, and the
+DMA's traffic, the same for every variant, is not counted. It adds to the accelerator's energy,
+not to a group's.
 
 **Shown, not stored.** The fields keep full precision; everything a reader sees (``design.md``,
 the viewer and the editor) is rounded for display only, an area by ``sig3`` (3 significant figures) and an energy by
@@ -39,10 +47,13 @@ from dataclasses import dataclass, field
 from math import floor, log10
 from typing import Any
 
-from snax_forge.char import Table, lookup
+from snax_forge.char import CTRL_COMB_PER_FLOP, L1_ACCESS_LOADS, Table, lookup
 
 CAVEAT = ("First-order: aimed at the large costs (about 20 % of synthesis there; small blocks "
-          "can be much further off); memory, the streamers and the csr are left out.")  # fmt: skip
+          "can be much further off); the L1 accesses (4 × e_load per bit) and the control unit's "
+          "comb area (equal to its flops') are placeholders, the streamers' own logic and the csr "
+          "are left out.")  # fmt: skip
+L1_LABEL = "L1 accesses (placeholder, 4 × e_load per bit)"  # its row in every cost table
 
 
 def heading(tech: str) -> str:
@@ -119,12 +130,22 @@ class GroupCost:
     units: dict[str, BlockCost] = field(default_factory=dict)
     links: dict[str, BlockCost] = field(default_factory=dict)
     ctrl_bits: int = 0
-    ctrl_um2: float = 0.0
+    ctrl_flops_um2: float = 0.0
     ctrl_nj: float = 0.0
 
     @property
+    def ctrl_comb_um2(self) -> float:
+        """The control unit's comb area: equal to its flops' (a placeholder, D154)."""
+        return CTRL_COMB_PER_FLOP * self.ctrl_flops_um2
+
+    @property
+    def ctrl_um2(self) -> float:
+        """The control unit's area: its flops' and its comb's."""
+        return self.ctrl_flops_um2 + self.ctrl_comb_um2
+
+    @property
     def area(self) -> float:
-        """µm²: units, buffer links and the control unit's flops."""
+        """µm²: units, buffer links and the control unit (flops and comb)."""
         return sum(b.total_um2 for b in (*self.units.values(), *self.links.values())) + (
             self.ctrl_um2)  # fmt: skip
 
@@ -142,15 +163,43 @@ class GroupCost:
     def to_dict(self) -> dict[str, Any]:
         return {"units": {k: b.to_dict() for k, b in self.units.items()},
                 "links": {k: b.to_dict() for k, b in self.links.items()},
-                "ctrl": {"bits": self.ctrl_bits, "area": self.ctrl_um2, "energy": self.ctrl_nj},
+                "ctrl": {"bits": self.ctrl_bits,
+                         "area": {"flops": self.ctrl_flops_um2, "comb": self.ctrl_comb_um2,
+                                  "total": self.ctrl_um2}, "energy": self.ctrl_nj},
                 "area": self.area, "energy": self.energy}  # fmt: skip
 
     @classmethod
     def from_dict(cls, d: dict[str, Any]) -> GroupCost:
         c = d["ctrl"]
+        area = c["area"]["flops"] if isinstance(c["area"], dict) else c["area"]  # older: flops
         return cls({k: BlockCost.from_dict(b) for k, b in d["units"].items()},
                    {k: BlockCost.from_dict(b) for k, b in d["links"].items()}, c["bits"],
-                   c["area"], c["energy"])  # fmt: skip
+                   area, c["energy"])  # fmt: skip
+
+
+@dataclass
+class L1Cost:
+    """One accelerator's L1 accesses (module doc): the 64-bit words its streamers read and write
+    in L1, and their energy in nJ."""
+
+    words: int
+    energy_nj: float
+
+    @property
+    def bits(self) -> int:
+        return 64 * self.words
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"words": self.words, "bits": self.bits, "energy": self.energy_nj}
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> L1Cost:
+        return cls(d["words"], d["energy"])
+
+
+def l1_cost(table: Table, words: int) -> L1Cost:
+    """An accelerator's L1 accesses on ``table``: ``L1_ACCESS_LOADS`` × e_load per bit."""
+    return L1Cost(words, L1_ACCESS_LOADS * table.e_load_pj * 64 * words / 1000)
 
 
 def block_cost(table: Table, block: Block, bits: int, c_acc: int) -> BlockCost:

@@ -89,10 +89,11 @@ def test_view_mode_over_dot_2s_steps(tmp_path):
         assert list(v["details"]["node:sum"])[-2:] == ["timing", "cost"]
         assert v["details"]["node:tmp0"]["cost"]["found"] == "copy on nangate45"
         assert v["details"]["group:dot"]["cost"] == {
-            "area": "32 200 µm²", "energy": "6.945 nJ", "ctrl": "196 bits, 1 040 µm², 0.193 nJ"}  # fmt: skip
+            "area": "33 200 µm²", "energy": "6.945 nJ",
+            "ctrl": "196 bits, 2 090 µm² (flops 1 040, comb 1 040), 0.193 nJ"}  # fmt: skip
         assert "cost" not in v["details"]["group:dot"]["estimate"]
         assert (s["groups"][0]["area_text"], s["groups"][0]["energy_text"]) == (
-            "32 200 µm²",
+            "33 200 µm²",
             "6.945 nJ",
         )
         assert (s["cost"]["heading"], s["cost"]["missing"]) == (
@@ -196,11 +197,20 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             assert status == 200 and got["transform"] == transform, got
             assert got["log"].startswith(f"step {got['index']}  {transform} ")
             logs.append(got["log"])
-        # the cycles before and after; the not-mapped count only where it changes
+        # the cycles before and after; the unmapped cycles only where they change (D155, D156:
+        # no not-mapped count), the bind's renamed W, the design checks' problems and notes:
+        # graph.unbound until the bind, a note before Save (D156)
         assert [line.split(" · C ")[1] for line in logs] == [
-            "0 → 0", "0 → 0 · not mapped 64 → 16", "0 → 0", "0 → 16 · not mapped 16 → 0"]  # fmt: skip
+            "0 → 0 · 1 note", "0 → 0 · 1 note", "0 → 0 · 1 note",
+            "0 → 16 · unmapped 64 → 0 · renamed W → W_acc"]  # fmt: skip
         assert "changed add" in logs[-1]
+        three = get_json(srv, "/api/step/3")[1]
+        (p,) = three["notes"]
+        assert three["problems"] == [] and p["code"] == "graph.unbound"
+        assert p["message"].startswith("before Save: bind it (is not bound to an accelerator")
+        assert set(p) == {"code", "where", "message", "fix", "before_save"} and p["before_save"]
         status, v = get_json(srv, "/api/step/4")
+        assert (v["problems"], v["notes"]) == ([], [])
         # the tasklet add became the unit add, its spatial map gone
         assert (v["diff"]["nodes"]["removed"], "add" in v["diff"]["nodes"]["changed"]) == (
             ["add_map_inner"],
@@ -212,7 +222,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         # the left column's Bindings: the unit with the split's W, an input in edit mode
         (unit,) = v["bindings_section"]["entries"]
         assert (unit["label"], unit["params"]) == ("acc · elementwise_add", [
-            {"name": "W", "value": 4, "editable": True, "shared_with": []}])  # fmt: skip
+            {"name": "W_acc", "value": 4, "editable": True, "shared_with": []}])  # fmt: skip
         assert v["symbols_section"][0] | {"containers": None} == {
             "name": "N",
             "value": 64,
@@ -232,6 +242,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert post(srv, "/api/cursor", {"k": 2})[1] == {
             "ok": True,
             "cursor": 2,
+            "replayed": [],
             "log": "cursor → step 2",
         }
         status, got = post(srv, "/api/apply", {"transform": "tag_map",
@@ -252,8 +263,8 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert get_json(srv, "/api/compare/2/4")[1]["diff"]["nodes"]["removed"] == ["add_map_inner"]
         assert post(srv, "/api/cursor", {"k": 4})[0] == 200
         assert post(srv, "/api/cursor", {"k": 9})[0] == 400
-        assert post(srv, "/api/params", {"params": {"W": 8}})[0] == 200
-        assert get_json(srv, "/api/session")[1]["params"] == {"N": 64, "W": 8}
+        assert post(srv, "/api/params", {"params": {"W_acc": 8}})[0] == 200
+        assert get_json(srv, "/api/session")[1]["params"] == {"N": 64, "W_acc": 8}
         assert get_json(srv, "/api/step/4")[1]["estimate"]["groups"][0]["cycles"] == 8
         status, saved = post(srv, "/api/save", {"name": "vecadd_mine"})
         assert status == 200 and (roots.recipes / "vecadd_mine.json").is_file(), saved
@@ -265,6 +276,88 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert [x["name"] for x in get_json(srv, "/api/recipes")[1]] == ["vecadd_mine"]
         assert get_json(srv, "/api/sessions")[1][0]["cursor"] == 4
         assert get_json(srv, "/api/nope")[0] == 404 and post(srv, "/api/nope")[0] == 404
+
+
+@pytest.mark.slow
+def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
+    """D156: a param change's log line gives the step's problem and note counts as an apply's:
+    dot 1 at 8/8, then W_acc_2 = 10, one connect.pad problem (the pads never written)."""
+    monkeypatch.setattr(session, "_import", imported)
+    roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
+    with served(make_edit_server(0, roots=roots)) as srv:
+        post(srv, "/api/session", {"kernel": "dot", "params": {"N": 2048}})
+        for m, node, impl in (("mult_map", "mult", ("elementwise_mul", "chisel_tiled_spatial")),
+                              ("sum_map", "sum", ("accumulate", "chisel_adder_tree"))):  # fmt: skip
+            _, got = post(
+                srv, "/api/apply", {"transform": "split", "params": {"map": m, "factor": 8}}
+            )
+            (inner,) = got["diff"]["nodes"]["added"]
+            post(
+                srv,
+                "/api/apply",
+                {"transform": "tag_map", "params": {"map": inner, "kind": "spatial"}},
+            )
+            post(
+                srv,
+                "/api/apply",
+                {"transform": "tag_map", "params": {"map": m, "kind": "temporal"}},
+            )
+            k = get_json(srv, "/api/session")[1]["cursor"]
+            f = {
+                x["name"]: x for x in get_json(srv, f"/api/step/{k}/site/{node}")[1]["bind"]["form"]
+            }
+            status, _ = post(
+                srv,
+                "/api/apply",
+                {
+                    "transform": "bind",
+                    "params": {
+                        "node": node,
+                        "brm": impl[0],
+                        "implementation": impl[1],
+                        "instance": f["instance"]["value"],
+                    },
+                },
+            )
+            assert status == 200
+        post(srv, "/api/apply", {"transform": "encapsulate",
+                                 "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}})  # fmt: skip
+        status, got = post(srv, "/api/params", {"params": {"W_acc_2": 10}})
+        assert (
+            status == 200 and got["log"] == "params W_acc_2=10  ok · 9 steps replayed · 1 problem"
+        )
+        status, got = post(srv, "/api/params", {"params": {"W_acc_2": 8}})
+        assert got["log"] == "params W_acc_2=8  ok · 9 steps replayed"
+
+
+@pytest.mark.slow
+def test_the_site_route_takes_a_selection(tmp_path, monkeypatch):
+    """D72: GET /api/step/<k>/site?sel=…&sel=… on dot 1 (its recipe at its step 4, before
+    encapsulate): the two group outlines offer encapsulate with both units ticked, one unit's box
+    only that unit (the one-item route as before), split over two is "Not here"; at step 5 the
+    accelerator's outline (dot) offers unencapsulate; no sel is a 400."""
+    monkeypatch.setattr(session, "_import", imported)
+    roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
+    with served(make_edit_server(0, roots=roots)) as srv:
+        post(srv, "/api/session", {"recipe": str(REPO / "recipes" / "dot_1.json")})
+        status, both = get_json(srv, "/api/step/4/site?sel=mul&sel=sum")
+        assert status == 200 and both["encapsulate"]["ok"]
+        units = next(f for f in both["encapsulate"]["form"] if f["name"] == "units")
+        assert units["value"] == ["mul", "sum"]
+        assert (both["split"]["code"], both["split"]["message"]) == (
+            "site.one",
+            "split: takes one selection, not 2",
+        )
+        one = get_json(srv, "/api/step/4/site/mult")[1]
+        assert next(f for f in one["encapsulate"]["form"] if f["name"] == "units")["value"] == [
+            "mul"
+        ]
+        assert get_json(srv, "/api/step/4/site?sel=mult")[1] == one
+        dot = get_json(srv, "/api/step/5/site?sel=dot")[1]
+        assert dot["unencapsulate"]["ok"] and dot["unencapsulate"]["params"] == {
+            "accelerator": "dot"
+        }
+        assert get_json(srv, "/api/step/4/site")[0] == 400
 
 
 @pytest.mark.slow
