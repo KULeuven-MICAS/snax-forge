@@ -49,7 +49,6 @@ class AccCsrRandomSpec extends AnyFlatSpec with ForgeTester {
       GroupSpec(s"g$g", Seq(start, jobs, status, count), units, links)
     }
     AcceleratorSpec(
-      "t",
       "p",
       "t",
       groups.map(g => g.units.head.name -> "a"),

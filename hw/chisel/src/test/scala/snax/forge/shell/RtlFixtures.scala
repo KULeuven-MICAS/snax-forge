@@ -11,7 +11,7 @@ import snax.forge.RepoPaths
 /** The fixtures of the shell specs, one folder each in `hw/chisel/src/test/resources/rtl/<design>/`: for a design of
   * one accelerator task, `vectors.json` (`driven`; dot_1's two groups have none: `TwoGroupsSpec` drives each itself),
   * written by the Python side (`snax_forge/gen/rtl.py`'s `write_fixture`, checked byte for byte by
-  * `tests/gen/test_rtl.py`). Its `accelerator.json` and streamer hjson (`<tag>_streamer.hjson`) are snax-gvsoc's
+  * `tests/gen/test_rtl.py`). Its `accelerator.json` and streamer hjsons (`<tag>_streamer_<set>.hjson`) are snax-gvsoc's
   * `forge/<design>/` (gen-gvsoc's bytes), read from the submodule; a design that `forge/` does not hold (vsum_tree_w8,
   * dot_5_w1) keeps the two in its folder. A spec that needs a `forge/` file the submodule does not have is cancelled.
   */
@@ -37,14 +37,16 @@ object RtlFixtures {
 
     lazy val spec: AcceleratorSpec = AcceleratorSpec.load(file("accelerator.json"))
 
-    /** The streamer hjson: `//` comment lines, then JSON. */
-    lazy val streamer: ujson.Value = ujson.read(
-      Files
-        .readAllLines(file(s"${spec.tag}_streamer.hjson"))
-        .asScala
-        .filterNot(_.startsWith("//"))
-        .mkString("\n")
-    )
+    /** The streamer hjsons, one per set in set order: `//` comment lines, then JSON. */
+    lazy val streamers: Seq[ujson.Value] = spec.sets.map { set =>
+      ujson.read(
+        Files
+          .readAllLines(file(s"${spec.tag}_streamer_$set.hjson"))
+          .asScala
+          .filterNot(_.startsWith("//"))
+          .mkString("\n")
+      )
+    }
 
     lazy val vectors: ujson.Value = ujson.read(Files.readString(folder.resolve("vectors.json")))
 
@@ -67,9 +69,11 @@ object RtlFixtures {
       )
     }
 
-    /** Each mover's num_ch (the hjson's `num_channel`) of a group, `data_reader_params` or `data_writer_params`. */
+    /** Each mover's num_ch (the hjson's `num_channel`) of a group, `data_reader_params` or `data_writer_params`, set
+      * after set (the wrapper's port order).
+      */
     def numCh(group: String): Seq[Int] =
-      streamer.obj.get(group).map(_("num_channel").arr.toSeq.map(_.num.toInt)).getOrElse(Seq.empty)
+      streamers.flatMap(_.obj.get(group).map(_("num_channel").arr.toSeq.map(_.num.toInt)).getOrElse(Seq.empty))
   }
 
   def all: Seq[Fixture] =
