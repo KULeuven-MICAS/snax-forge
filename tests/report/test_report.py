@@ -358,8 +358,8 @@ def test_the_bank_bound_notes_in_design_md_and_run_md(tmp_path, w):
     point = DesignPoint.load(next(tmp_path.rglob("design_point.json")))
     assert bank_notes(point) == ({"mult_acc": note} if w == 16 else {})
     c = CheckRow(True, "vecmul", 0, 2048, {"mult_acc": 194}, {"mult_acc": 131}, bank_notes(point))
-    assert counters_text(c) == (f"mult_acc 194 (expected 131; {note})" if w == 16
-                                else "mult_acc 194 (expected 131)")  # fmt: skip
+    assert counters_text(c) == (f"mult_acc 194 (expected 131, a guide; {note})" if w == 16
+                                else "mult_acc 194 (expected 131, a guide)")  # fmt: skip
 
 
 def test_design_md_counts_unmapped_work_as_cycles():
@@ -416,8 +416,19 @@ def test_the_run_report_names_each_tasks_group(dot1):
         ("mul", "mul", 16), ("sum", "sum", 16)]  # fmt: skip
     text = render_run(r.run)
     assert "| Block | Group | # | Task | Start | Done | Cycles | Direction | Bytes |" in text
-    assert "| mul | mul | 0 | mult_mul |" in text and "| sum_a | mul | 0 | mult_sum_a |" in text
+    assert (
+        "| mul | mul | 0 | mult_mul |" in text and "| sum_a | mul | 0 | mult_sum_a (idle) |" in text
+    )
     assert "| Accelerator | Group | Firings |" in text
+    # the other group's movers, started only for the shared start, tagged idle (C§7)
+    idle = sorted(t.name for t in r.run.tasks if t.idle)
+    assert idle == ["mult_sum_a", "mult_sum_out", "sum_mul_a", "sum_mul_b", "sum_mul_out"]
+    # each group's movers in a collapsible under Accelerators
+    assert [(g.group, [m.name for m in g.movers]) for g in r.run.group_movers] == [
+        ("mul", ["mul_a", "mul_b", "mul_out"]), ("sum", ["sum_a", "sum_out"])]  # fmt: skip
+    assert "<details>\n<summary>mul ▸ mul_a, mul_b, mul_out</summary>" in text
+    assert "<summary>sum ▸ sum_a, sum_out</summary>" in text
+    assert text.index("## Accelerators") < text.index("<summary>mul ▸") < text.index("## Cores")
 
 
 def test_the_design_report_has_a_row_per_unit(dot1):
@@ -549,6 +560,8 @@ def test_the_estimate_beside_the_counters(dot1, dot4):
     text = render_design(r.design)
     assert "## Estimate" in text and "| mul | 16 | 16 | 0 | 0 | 19 |" in text
     assert r.run.check.expected == r.run.check.counters == {"mult_mul": 19, "sum_sum": 19}
-    assert "mult_mul 19 (expected 19), sum_sum 19 (expected 19)" in render_run(r.run)
+    assert "mult_mul 19 (expected 19, a guide), sum_sum 19 (expected 19, a guide)" in render_run(
+        r.run
+    )
     four = reports_of(dot4)
     assert four.run.check.expected == four.run.check.counters == {"mult_dot": 133}

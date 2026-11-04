@@ -192,6 +192,7 @@ svg.sched { display: block; flex: none; cursor: crosshair; }
 .s-req.burst { fill-opacity: 0.6; }
 .s-busy.push { fill-opacity: 0.6; }
 .bar { fill: none; stroke: var(--ink); stroke-width: 1; stroke-opacity: 0.55; }
+.bar.idle { stroke-dasharray: 3 2; stroke-opacity: 0.35; } /* a task started only for the shared start (D148) */
 .fn { fill: var(--muted); }
 .fn.fn-1 { fill-opacity: 0.45; }
 .csr-tick { fill: var(--command); }

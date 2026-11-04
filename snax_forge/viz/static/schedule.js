@@ -189,7 +189,7 @@ function laneRows(detail, ans, showDetail) {
         for (const b of lane.bars) {
           const to = b.to ?? T - 1;
           const totals = b.cycles ? Object.entries(b.cycles).map(([k, v]) => `${k} ${int(v)}`).join(", ") : "–";
-          const tip = `${b.task}: start in ${b.from}, done in ${b.to ?? "–"}; ${totals}${b.firings !== undefined ? `; ${int(b.firings)} firings` : ""}`;
+          const tip = `${b.task}${b.idle ? " (idle: every bound 0, started with the other group's task)" : ""}: start in ${b.from}, done in ${b.to ?? "–"}; ${totals}${b.firings !== undefined ? `; ${int(b.firings)} firings` : ""}`;
           for (const r of b.classes ?? []) {
             const group = CLASS_GROUP[r.mode];
             if (!group || group === "idle") continue;
@@ -198,15 +198,16 @@ function laneRows(detail, ans, showDetail) {
             }
           }
           for (const [x1, x2] of m.pieces(b.from, to + 1)) {
-            g.append(s("rect", { x: x1, y: 3, width: x2 - x1, height: LANE_H - 8, class: "bar" }, tip));
-            if (!b.classes && fits(x2 - x1, b.task)) txt(g, { x: x1 + 4, y: LANE_H - 10, class: "cell-text" }, b.task);
+            g.append(s("rect", { x: x1, y: 3, width: x2 - x1, height: LANE_H - 8, class: b.idle ? "bar idle" : "bar" }, tip));
+            if (!b.classes && fits(x2 - x1, b.task)) txt(g, { x: x1 + 4, y: LANE_H - 10, class: "cell-text" }, b.idle ? `${b.task} (idle)` : b.task);
           }
         }
       } });
       if (!showDetail) continue;
       if (lane.kind === "accelerator") {
-        rows.push(sub(`${name} fire`, "its firings (n)", (g, d, m) => cells(g, m, d.acc.filter((e) => e.k === "fire"), () => "s-busy", (e) => e.n)));
-        rows.push(sub(`${name} push`, "its results handed to the writer (n)", (g, d, m) => cells(g, m, d.acc.filter((e) => e.k === "push"), () => "s-busy push", (e) => e.n)));
+        const own = (d) => d.units?.[name] ?? d.acc; // each unit its own lines (several groups, D148)
+        rows.push(sub(`${name} fire`, "its firings (n)", (g, d, m) => cells(g, m, own(d).filter((e) => e.k === "fire"), () => "s-busy", (e) => e.n)));
+        rows.push(sub(`${name} push`, "its results handed to the writer (n)", (g, d, m) => cells(g, m, own(d).filter((e) => e.k === "push"), () => "s-busy push", (e) => e.n)));
       } else {
         const mv = movers[name];
         for (let l = 0; l < (mv?.lanes ?? 0); l++) {

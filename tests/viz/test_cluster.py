@@ -154,3 +154,49 @@ def test_step_by_boundary_visits_starts_dones_and_copies():
 def test_a_bad_step_is_refused():
     with pytest.raises(ValueError):
         cv.step(run().index("stall", total=30), 0, 2, "event")
+
+
+# =============================================================================
+# An accelerator of two groups at beat level (dot 1, DRY1-2 R2)
+# =============================================================================
+
+
+@pytest.fixture(scope="module")
+def dot1_stall(tmp_path_factory):
+    from snax_forge.viz import api
+    from tests.run.helpers import RECORDED
+
+    from .helpers import recorded_run
+
+    out = recorded_run(tmp_path_factory.mktemp("dot1") / "dot_1_stall", "stall", RECORDED / "dot_1")
+    return api.load_run(out, "dot_1_stall")
+
+
+def test_the_cluster_view_names_the_unit_that_fires(dot1_stall):
+    """dot 1 (fixtures/dot_1, N = 64, W = 4): at a mul firing ``acc`` is mul, its task and fire
+    its own, sum's entry quiet; at a sum firing the other way round; each lane's grant is its
+    own mover's."""
+    idx = dot1_stall.index
+    for unit, other in (("mul", "sum"), ("sum", "mul")):
+        t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == unit)
+        a = cv.cluster_at(idx, t)["acc"]
+        assert (a["name"], a["accelerator"], a["fire"]["src"]) == (unit, "dot", unit)
+        units = {u["name"]: u for u in a["units"]}
+        assert units[other]["task"] is None and units[other]["fire"] is None
+        assert units[unit]["task"] == ("mult_mul" if unit == "mul" else "sum_sum")
+
+
+def test_the_schedule_marks_the_idle_tasks_and_splits_the_detail(dot1_stall):
+    from snax_forge.viz import schedule
+
+    idx = dot1_stall.index
+    bars = {b["task"]: b["idle"] for lane in schedule.lanes(idx)["lanes"] for b in lane.get("bars", [])
+            if "idle" in b}  # fmt: skip
+    assert sorted(t for t, idle in bars.items() if idle) == [
+        "mult_sum_a", "mult_sum_out", "sum_mul_a", "sum_mul_b", "sum_mul_out"]  # fmt: skip
+    assert not bars["mult_mul_a"] and not bars["sum_sum"]
+    d = schedule.detail(idx, 0, idx.total_cycles)
+    assert {u: {e["src"] for e in es} for u, es in d["units"].items()} == {
+        "mul": {"mul"},
+        "sum": {"sum"},
+    }
