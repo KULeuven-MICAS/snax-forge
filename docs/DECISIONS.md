@@ -10,14 +10,14 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D157**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D159**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 D152 |
-| lower | D64 D75 D105 D135 D144 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 D152 D157 |
+| lower | D64 D75 D105 D135 D144 D158 |
 | gvsoc | D120–D122 D125 D134 D137 |
 | brm | D68 D70 D82 D103 D129 D133 D143 D147 D149 D153 |
 | dfg | D19 D71 D102 D148 D150 |
@@ -159,7 +159,7 @@ Retired, and where each now lives:
 
 **D130** · scope — A generated accelerator carries its own CSR manager (ReqRspManager's protocol, snax_cluster's off), its CSRs per group (D146): one wrapper contract. Python checks `accelerator.json` against the datapath catalogue, Scala only builds; snax_cluster sees only the bundle. → C§17, C§18.
 
-**D131** · design — The base cluster is snax-forge's own file, `platforms/snax_forge_cluster.hjson` (from snax_cluster's, its names snax-forge's), which `design from-hjson` reads: one accelerator, its movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134). → C§13.
+**D131** · design — The base cluster is snax-forge's own file, `platforms/snax_forge_cluster.hjson` (from snax_cluster's, its names snax-forge's), which `design from-hjson` reads: one accelerator entry, on core0, its movers agreeing (D84), the rest small16's; `accelerator_slot` names its slot (D134) and prefixes the generated entry's name, `<accelerator_slot>_<design>`, i.e. `snax_forge_<design>`. → C§13.
 
 **D133** · brm — The Chisel Accumulator becomes `TreeAccumulate`, a datapath under the nest controller (D147; L 1, pins `fire` and `first`, drain 0 as today): it extends its lanes by signedness (D143), and its W → 1 adder tree makes it `chisel_adder_tree` too. → C§17, `hw/chisel/`.
 
@@ -179,13 +179,13 @@ Retired, and where each now lives:
 
 **D144** · lower — Padding is in the data, the hardware masks nothing: a split dimension pads to a multiple of W, then the container to whole DMA beats, with zero or a max or min fold's identity. A fold may read through a tail a container another unit wrote when the producer's tasklet on its inputs' pad values gives the fold's identity (dot 1 at W_mul = W_sum = 10: 0 × 0 = 0, add's identity); otherwise `connect.pad` refuses, as when the producer never writes the pad words (W_mul = 8, W_sum = 10; open item 106). → `dfg/pad.py`, `gen/data.py`.
 
-**D145** · scope — One description per design point, `accelerator.json`: snax-forge writes it once, and Emit, the catalogue check and SNAX-GVSoC read it, in place of `rtl.json` and `<slot>_acc.hjson`, so the model and the RTL cannot be configured apart. → C§16, C§17.
+**D145** · scope — One description per design point, `accelerator.json`, nested as the graph is (D148), `accelerators ⊃ groups ⊃ units`: snax-forge writes it once, and Emit, the catalogue check and SNAX-GVSoC read it, in place of `rtl.json` and `<slot>_acc.hjson`, so the model and the RTL cannot be configured apart. → C§16, C§17.
 
 **D146** · scope — An accelerator is groups of linked units, each with one JOBS (a unit fires JOBS · ∏ T over itself and the folds downstream, SDF's balance) and its own START, STATUS, COUNTER and busy and done pins, so groups run apart; an empty run ends in a done, so no ERROR CSR. → C§17.
 
 **D147** · brm — Every block is a datapath of data and enables only, under one control unit per group (`<tag>_<group>_ctrl`) generated from the description, so control is written once for model and RTL, never per variant; "shell" is the wrapper. → C§17.
 
-**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links: a group is a stand-alone accelerator (its own START, JOBS, STATUS, COUNTER and control unit), which may hold several units joined by links and is still one accelerator, and `encapsulate` puts several groups behind one shell in the platform's one slot. `link` merges two bound units' groups, their transient becoming a link; a group is its own accelerator until `encapsulate` puts several in one (both undone by inverses): dot 1 is one accelerator, groups `mul` and `sum`, which the core drives one after the other; dot 2–6 one group of two units. → C§11, C§12.
+**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links: a group is a stand-alone accelerator (its own START, JOBS, STATUS, COUNTER and control unit), which may hold several units joined by links and is still one accelerator; each accelerator is one streamer set of the design's entry (D157), and `encapsulate` puts several groups on one streamer set, sharing its start. `link` merges two bound units' groups, their transient becoming a link; a group is its own accelerator until `encapsulate` puts several in one (both undone by inverses): dot 1 is two accelerators, `vmul` and `vsum`, which the core drives one after the other; `dot_1_enc` encapsulates them as `dot`; dot 2–6 one group of two units. → C§11, C§12.
 
 **D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE; no `regIn`), not vmul into a lane accumulator. The one-lane vsum is `SerialAccumulate` (`span` = lanes), not a serializer link; a buffer is `LinkBuffer`, not a FIFO. → C§17.
 
@@ -199,4 +199,8 @@ Retired, and where each now lives:
 
 **D155** · estimate — An ideal estimate: per group snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work one cycle per iteration, a labelled assumption (a core takes several) in one constant; the total adds both. A run's COUNTER counts from its group's START, every cycle until busy drops, so it includes bank conflicts and is shortened by the streamers' head start (the program configures the streamers, then the accelerator, then starts the streamers, then the accelerator); the expected COUNTER (cycles + fill) is a guide SNAX-DFG shows, not a check, a run above or below it (dot 1 at W_mul = W_sum = 8: mul 256 against 259, its START 10 cycles after the streamers'). `bank_bound` bounds the streams' L1 time, ⌈Σ beats × num_ch / n_banks⌉, not the COUNTER (dot 1 at W_mul = 16: streams 211 cycles against the bound of 192, COUNTER 186). → ARCHITECTURE §5, C§19.
 
-**D156** · sandbox — The editor: `bind`'s default instance is `acc_N`, N the bind's order in the session (`acc_1`, `acc_2`; replaces `acc`, `acc_2`). A split's factor param is named neutrally (`W`, `W_2`) and renamed through the session to `W_<instance>` when its map is bound, unless several units share it. Every apply and param change runs Save's design checks and lists the problems under the Estimate, `graph.unbound` while building and `gen.instances` before `encapsulate` "before Save" notes, not problems (Save still refuses them), the design notes (`char.missing`) always shown, also beside problems. A param change replays the steps up to the cursor only; the steps after it stay redo steps, checked when the cursor reaches them. The log and Compare give one unmapped count, D155's unmapped cycles (`not_mapped` leaves both). Bindings lists the accelerators and their groups as drop-downs, each holding its units' entries with their params editable. → C§12.
+**D156** · sandbox — The editor: `bind`'s default instance is `acc_N`, N the bind's order in the session (`acc_1`, `acc_2`; replaces `acc`, `acc_2`). A split's factor param is named neutrally (`W`, `W_2`) and renamed through the session to `W_<instance>` when its map is bound, unless several units share it. Every apply and param change runs Save's design checks and lists the problems under the Estimate, `graph.unbound` while building a "before Save" note, not a problem (Save still refuses it), the design notes (`char.missing`) always shown, also beside problems. A param change replays the steps up to the cursor only; the steps after it stay redo steps, checked when the cursor reaches them. The log and Compare give one unmapped count, D155's unmapped cycles (`not_mapped` leaves both). Bindings lists the accelerators and their groups as drop-downs, each holding its units' entries with their params editable. → C§12.
+
+**D157** · scope — A design's accelerators are streamer sets in one snax_cluster entry, `snax_forge_<design>`, each with its own streamer, START and CSRs behind `snax_csr_range_demux`, not entries behind `snax_acc_mux_demux` (its 0x7C6 select can misroute a delayed write) or address windows (open item 108); forge-only. → C§16, C§17.
+
+**D158** · lower — Accelerators run in series for now: before each accelerator's start, a `sync` on the previous accelerator's task, its configures before that sync, so the next one is set up while the current one runs; overlap of independent accelerators, with data-only waits, is open item 109. → C§9.
