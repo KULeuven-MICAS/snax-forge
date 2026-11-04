@@ -124,14 +124,16 @@ A platform without a source hjson stops at `gen`, before anything is built, and 
 
     FAILED recipes/vecadd.json: gen: [gen.source] platform small16 has no source hjson: read it from one with `pixi run design from-hjson`
 
-Two accelerators for the platform's one slot stop earlier, at the design checks (`gen.instances`, C§14), in the flow as in the design step alone:
+A design the platform cannot take stops earlier, at the design checks (C§14), in the flow as in the design step alone, and exits 1: vecmul at W = 32 needs more TCDM crossbar inputs than SNAX-GVSoC's crossbar takes (`connect.xbar_inputs`):
 
-    pixi run sandbox recipes/dot_serial.json
-    pixi run design out/sandbox/dot_serial/4_bind.snaxdfg --platform platforms/snax_forge.json
+    pixi run sandbox recipes/vecmul.json --set W=32 --out out/sandbox/vecmul_W32
+    pixi run design out/sandbox/vecmul_W32/2_bind.snaxdfg --platform platforms/snax_forge.json
 
-    design check of out/sandbox/dot_serial/4_bind.snaxdfg on platforms/snax_forge.json: 1 problem
-     [gen.instances] graph: 2 accelerators ['mul', 'sum']; the platform has one accelerator slot (snax_forge) and the program drives one accelerator
-         fix: encapsulate them into one: a recipe step encapsulate with units ['mul', 'sum'] (D148)
+    design check of out/sandbox/vecmul_W32/2_bind.snaxdfg on platforms/snax_forge.json: 1 problem
+     [connect.xbar_inputs] acc: 99 TCDM crossbar inputs, the platform takes at most 64 (96 streamer channels, 3 for the cores and AXI; l1.max_xbar_inputs, the limit SNAX-GVSoC's crossbar asserts)
+         fix: fewer lanes, or a platform with more inputs (--set platform.l1.max_xbar_inputs=99 on a model that takes them, open item 105)
+
+`pixi run flow recipes/vecmul.json --platform platforms/snax_forge.json --set W=32` prints the same problem. Two accelerators are no refusal: `recipes/dot_serial.json` leaves dot's `mul` and `sum` unencapsulated, two streamer sets of the one entry `snax_forge_dot_serial` (D157).
 
 ## 7. By hand: the stages, the RTL and the bundle
 
@@ -150,13 +152,13 @@ The flow's stages are tools of their own. The design point, the generator into `
     pixi run gen-rtl out/design/vecadd/design_point.json
 
     ...
-    wrote out/rtl/vecadd/accelerator.json: snax_forge_shell_wrapper, ElementwiseLanes
+    wrote out/rtl/vecadd/accelerator.json: snax_forge_vecadd_shell_wrapper, ElementwiseLanes
     wrote out/rtl/vecadd/sv/ElementwiseAlu_w64_add.sv
     ...
-    wrote out/rtl/vecadd/sv/snax_forge_shell_wrapper.sv
+    wrote out/rtl/vecadd/sv/snax_forge_vecadd_shell_wrapper.sv
     wrote out/rtl/vecadd/emitted.json
 
-`snax_forge_shell_wrapper` is what snax_cluster's `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager` (C§17); inside it `snax_forge_csr`, `snax_forge_ctrl` (the group's `GroupCtrl`, `snax_forge_acc_ctrl`) and `snax_forge_datapath`. The bundle (C§18) is gen-gvsoc's files, the RTL under `rtl/` with its file list, and `bundle.json`:
+The modules are named after the entry's tag, `<accelerator_slot>_<design>` (`snax_forge_vecadd`, D157). `snax_forge_vecadd_shell_wrapper` is what snax_cluster's `snax_acc_wrapper.sv.tpl` connects with `snax_disable_csr_manager` (C§17); inside it `snax_forge_vecadd_csr`, `snax_forge_vecadd_ctrl` (the group's `GroupCtrl`, `snax_forge_vecadd_acc_ctrl`) and `snax_forge_vecadd_datapath`. The bundle (C§18) is gen-gvsoc's files, the RTL under `rtl/` with its file list, and `bundle.json`:
 
     pixi run bundle out/design/vecadd/design_point.json
 
