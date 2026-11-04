@@ -37,7 +37,8 @@ named it (D137).
     movement      from the run index (viz/movement.py), at beat and above: per
                   region and memory its arrival, use and departure spans; per
                   streamer lane and task its configured nest and pace against
-                  one beat per cycle; at stall, the L1 stalls per bank and per
+                  one beat per cycle, the idle tasks' lanes left out with a line
+                  saying so; at stall, the L1 stalls per bank and per
                   port (and the held cycles per lane). At off and task one line
                   says why there is none
 
@@ -217,6 +218,7 @@ class MovementReport(Record):
     banks: list[StallCount] = field(default_factory=list)
     ports: list[StallCount] = field(default_factory=list)
     conflicts_reason: str | None = None
+    idle_left_out: int = 0  # idle streamer tasks whose lanes the port table leaves out
 
 
 @dataclass
@@ -285,7 +287,9 @@ def build_movement(rv: api.RunView) -> MovementReport:
                                   r["arrival"], r["use"], r["departure"]) for r in res]  # fmt: skip
     out.patterns = [PatternRow(p["port"], p["task"], p["addr"]["base"], p["addr"]["nest"],
                                p["beats"], p["first"], p["last"], p["ideal_last"],
-                               p.get("held_cycles")) for p in pats if p["port"] != "dma"]  # fmt: skip
+                               p.get("held_cycles")) for p in pats
+                    if p["port"] != "dma" and not p.get("idle")]  # fmt: skip
+    out.idle_left_out = len({p["task"] for p in pats if p.get("idle")})
     try:
         c = movement.conflicts(idx)
     except MovementUnavailable:
@@ -584,6 +588,9 @@ def render_movement(m: MovementReport) -> list[str]:
     )  # fmt: skip
     out += ["", ("The nest is the one each task's CSR writes configured (the converter checked it "
                  "against the grants).")]  # fmt: skip
+    if m.idle_left_out:
+        out += ["", (f"The {m.idle_left_out} idle streamer tasks (every temporal bound 0, started "
+                     "only for the shared start; tagged idle under Tasks) are left out.")]  # fmt: skip
     out.append("")
     if m.conflicts is None:
         out.append(f"L1 stalls: {m.conflicts_reason}")

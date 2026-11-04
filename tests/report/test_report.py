@@ -431,6 +431,20 @@ def test_the_run_report_names_each_tasks_group(dot1):
     assert text.index("## Accelerators") < text.index("<summary>mul ▸") < text.index("## Cores")
 
 
+def test_the_port_table_leaves_out_the_idle_tasks(tmp_path):
+    """C§7: dot 1 at stall (fixtures/dot_1): the Data movement port table has no lane of the five
+    idle streamer tasks, and one line under it says they are left out."""
+    from tests.run.helpers import RECORDED
+    from tests.viz.helpers import recorded_run
+
+    r = reports_of(recorded_run(tmp_path / "dot_1_stall", "stall", RECORDED / "dot_1")).run
+    tasks = {p.task for p in r.movement.patterns}
+    assert tasks == {"mult_mul_a", "mult_mul_b", "mult_mul_out", "sum_sum_a", "sum_sum_out"}
+    assert r.movement.idle_left_out == 5
+    assert ("The 5 idle streamer tasks (every temporal bound 0, started only for the shared start; "
+            "tagged idle under Tasks) are left out.") in render_run(r)  # fmt: skip
+
+
 def test_the_bank_notes_compare_the_streamers_of_one_group(dot1):
     """C§14: dot 1's mul_a and mul_b keep their note (A and B a whole number of bank rows
     apart); nothing pairs a mul streamer with a sum one (the groups run one after the other):
