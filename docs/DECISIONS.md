@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D156**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D157**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -22,7 +22,7 @@ Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX
 | brm | D68 D70 D82 D103 D129 D133 D143 D147 D149 D153 |
 | dfg | D19 D71 D102 D148 D150 |
 | ref | D28 D79 |
-| sandbox | D72 D73 |
+| sandbox | D72 D73 D156 |
 | design | D12 D84–D87 D131 D142 |
 | flow | D50 D108 D136 |
 | estimate | D154 D155 |
@@ -99,7 +99,7 @@ Retired, and where each now lives:
 
 **D72** · sandbox — Decisions are made by hand in SNAX-SANDBOX: registered transforms applied in order from a recipe, each step checked by the reference executor; a sweep is one recipe with a parameter, automated search writes recipes. A transform may give `site(g, selected)`, the graph-shape test of where it applies, which it calls first and the editor marks and lists from; Apply runs it, then the check.
 
-**D73** · sandbox — A split and its tags are separate steps: `split` only splits, with neutral names that suggest no tag (the outer map keeps its id, variable `<var>_1`; the inner is `<id>_inner`, `<var>_2`), `tag_map` tags `tile`, `temporal` or `spatial` (`split_map` does both, so old recipes run; it and `split_reduce` keep `<var>_t`, `<var>_s` and `<id>_s`, since they tag in the same step and dot 4–6 and matvec 4–6 bind `mult_map_s`, `mult_map_1_s`); `untag_map` removes any tag but around a bound unit, `join_map` a split whatever its tags. `bind` reads design params off the graph (W from the spatial bound), streamers theirs off memlets and layouts, so each is decided once. → C§12.
+**D73** · sandbox — A split and its tags are separate steps: `split` only splits, with neutral names that suggest no tag (the outer map keeps its id, variable `<var>_1`; the inner is `<id>_inner`, `<var>_2`; a later split takes the next free pair, `<var>_3` and `<var>_4`, then `<var>_5` and `<var>_6`, so dot's sum_map gets `i_3` and `i_4`, not `i_1_1` and `i_2`), `tag_map` tags `tile`, `temporal` or `spatial` (`split_map` does both, so old recipes run; it and `split_reduce` keep `<var>_t`, `<var>_s` and `<id>_s`, since they tag in the same step and dot 4–6 and matvec 4–6 bind `mult_map_s`, `mult_map_1_s`); `untag_map` removes any tag but around a bound unit, `join_map` a split whatever its tags. `bind` reads design params off the graph (W from the spatial bound), streamers theirs off memlets and layouts, so each is decided once. → C§12.
 
 **D75** · lower — Names are derived, never stated: streamer `<instance>_<port>`, task `<node>_<component>`, DMA task `load_<container>` or `store_<container>`.
 
@@ -177,7 +177,7 @@ Retired, and where each now lives:
 
 **D143** · brm — Arithmetic follows NumPy: each op runs at its operands' result type, with signedness from each port's container, and the result is then extended or wrapped into its target. A fold's lanes are cast to its output's type before its tree. Exact products (tier P) need an explicit cast in the kernel (open item 37). → C§16, snax-gvsoc `snax/snax_types.hpp`.
 
-**D144** · lower — Padding is in the data, the hardware masks nothing: a split dimension pads to a multiple of W, then the container to whole DMA beats, with zero or a max or min fold's identity; a chain into a fold at a non-dividing size is refused (`connect.pad`). → `dfg/pad.py`, `gen/data.py`.
+**D144** · lower — Padding is in the data, the hardware masks nothing: a split dimension pads to a multiple of W, then the container to whole DMA beats, with zero or a max or min fold's identity. A fold may read through a tail a container another unit wrote when the producer's tasklet on its inputs' pad values gives the fold's identity (dot 1 at W_mul = W_sum = 10: 0 × 0 = 0, add's identity); otherwise `connect.pad` refuses, as when the producer never writes the pad words (W_mul = 8, W_sum = 10; open item 106). → `dfg/pad.py`, `gen/data.py`.
 
 **D145** · scope — One description per design point, `accelerator.json`: snax-forge writes it once, and Emit, the catalogue check and SNAX-GVSoC read it, in place of `rtl.json` and `<slot>_acc.hjson`, so the model and the RTL cannot be configured apart. → C§16, C§17.
 
@@ -185,7 +185,7 @@ Retired, and where each now lives:
 
 **D147** · brm — Every block is a datapath of data and enables only, under one control unit per group (`<tag>_<group>_ctrl`) generated from the description, so control is written once for model and RTL, never per variant; "shell" is the wrapper. → C§17.
 
-**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links. `link` merges two bound units' groups, their transient becoming a link; a group is its own accelerator until `encapsulate` puts several in one (both undone by inverses): dot 1 is one accelerator, groups `mul` and `sum`. → C§11, C§12.
+**D148** · dfg — A bound graph nests accelerator ⊃ groups ⊃ units and links: a group is a stand-alone accelerator (its own START, JOBS, STATUS, COUNTER and control unit), which may hold several units joined by links and is still one accelerator, and `encapsulate` puts several groups behind one shell in the platform's one slot. `link` merges two bound units' groups, their transient becoming a link; a group is its own accelerator until `encapsulate` puts several in one (both undone by inverses): dot 1 is one accelerator, groups `mul` and `sum`, which the core drives one after the other; dot 2–6 one group of two units. → C§11, C§12.
 
 **D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE; no `regIn`), not vmul into a lane accumulator. The one-lane vsum is `SerialAccumulate` (`span` = lanes), not a serializer link; a buffer is `LinkBuffer`, not a FIFO. → C§17.
 
@@ -195,6 +195,8 @@ Retired, and where each now lives:
 
 **D153** · brm — A group's control unit counts per segment with no product: a unit at L 0 on a wire borrows its consumer's test, any other counts its results in mixed radix over the Ts after it and JOBS, all at job_width; so dot 2 and 3 lose the 32 × 32 multiplier and dot 3 a count per unit. SnaxGroupRule's flat count of firings stays the spec. → C§17, `GroupRule.scala`.
 
-**D154** · estimate — CHAR1's first-order cost model, from the description before any synthesis: registers are bits (e_load when loading, e_hold every cycle), a block its comb energy per fire, ctrl its bits × e_hold × a factor; the table `snax_forge/char/<tech>.json`. An early estimate (about 20 % on the large costs), shown so. → C§20.
+**D154** · estimate — CHAR1's first-order cost model, from the description before any synthesis: registers are bits (e_load when loading, e_hold every cycle), a block its comb energy per fire, ctrl its bits × e_hold × a factor; the table `snax_forge/char/<tech>.json`. An early estimate (about 20 % on the large costs), shown so. Two placeholders until streamer and OpenRAM memory characterization (HWCOST, RAM1): (a) each word an accelerator's streamers read or write in L1 costs 4 × e_load per bit (nangate45 68.68 fJ per bit, 4.40 pJ per 64-bit word; nangate15 4 × 5.50 fJ), the DMA's traffic not counted, being the same for every variant; transients such as dot 1's tmp0 are in L1 by default, so their round trip counts, and a link takes a container out of L1; (b) a control unit's area is its flops' area plus an equal comb area (comb : flops = 1 : 1), its energy unchanged, its comb energy taken as negligible. → C§20.
 
-**D155** · estimate — An ideal estimate: per group snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work one cycle per iteration, a labelled assumption (a core takes several) in one constant; the total adds both; `bank_bound` a note; a COUNTER is cycles plus fill where that holds (open item 104). → ARCHITECTURE §5, C§19.
+**D155** · estimate — An ideal estimate: per group snax-gvsoc's group rule on ideal streams, groups adding through L1; unmapped work one cycle per iteration, a labelled assumption (a core takes several) in one constant; the total adds both. A run's COUNTER counts from its group's START, every cycle until busy drops, so it includes bank conflicts and is shortened by the streamers' head start (the program configures the streamers, then the accelerator, then starts the streamers, then the accelerator); the expected COUNTER (cycles + fill) is a guide SNAX-DFG shows, not a check, a run above or below it (dot 1 at W_mul = W_sum = 8: mul 256 against 259, its START 10 cycles after the streamers'). `bank_bound` bounds the streams' L1 time, ⌈Σ beats × num_ch / n_banks⌉, not the COUNTER (dot 1 at W_mul = 16: streams 211 cycles against the bound of 192, COUNTER 186). → ARCHITECTURE §5, C§19.
+
+**D156** · sandbox — The editor: `bind`'s default instance is `acc_N`, N the bind's order in the session (`acc_1`, `acc_2`; replaces `acc`, `acc_2`). A split's factor param is named neutrally (`W`, `W_2`) and renamed through the session to `W_<instance>` when its map is bound, unless several units share it. Every apply and param change runs Save's design checks and lists the problems under the Estimate, `gen.instances` before `encapsulate` a "before Save" note, not a problem. A param change replays the steps up to the cursor only; the steps after it stay redo steps, checked when the cursor reaches them. The log and Compare give one unmapped count, D155's unmapped cycles (`not_mapped` leaves both). Bindings lists the accelerators and their groups as drop-downs, each holding its units' entries with their params editable. → C§12.
