@@ -39,7 +39,16 @@ function status(msg, err = false) {
 
 // -- state ----------------------------------------------------------------------
 
-const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, t: null, session: null, platform: null, tech: null, techs: [] };
+const state = { mode: "view", steps: [], k: 0, cmp: null, sel: null, sels: [], t: null, session: null, platform: null, tech: null, techs: [] };
+
+// The selection (D72): ``sels`` every selected item in the order selected (shift-click adds or
+// removes one), ``sel`` the last, which Details, the Bindings and the hash's ``t`` follow; the
+// hash's ``sel`` holds them all, comma-separated.
+const selText = () => (state.sels.length ? state.sels.join(",") : null);
+function setSels(text) {
+  state.sels = text ? String(text).split(",").filter(Boolean) : [];
+  state.sel = state.sels.length ? state.sels[state.sels.length - 1] : null;
+}
 const views = new Map(); // step -> its view, until Reload
 const compares = new Map(); // "j/k" -> the compare answer
 
@@ -68,7 +77,7 @@ const ref = (k) => (state.mode === "view" && state.steps[k] ? state.steps[k].nam
 function writeHash() {
   const q = new URLSearchParams();
   q.set("step", ref(state.k));
-  if (state.sel) q.set("sel", state.sel);
+  if (state.sel) q.set("sel", selText());
   if (state.cmp !== null) q.set("cmp", ref(state.cmp));
   if (state.t && state.sel) q.set("t", state.t);
   if (state.tech) q.set("tech", state.tech);
@@ -262,8 +271,10 @@ const LABEL = 17; // px above an outline's content for its name (style.css: 0.85
 /** An outline with its name on top: a group's at the left, an accelerator's at the right. */
 function outlineBox(r, pad, cls, name) {
   const g = svgEl("g", { class: cls, "data-sel": name, ...(cls === "group-box" ? { "data-group": name } : {}) });
-  g.append(svgEl("rect", { x: r.left - pad, y: r.top - pad - LABEL, width: r.right - r.left + 2 * pad,
-    height: r.bottom - r.top + 2 * pad + LABEL, rx: 6 }));
+  const box = { x: r.left - pad, y: r.top - pad - LABEL, width: r.right - r.left + 2 * pad,
+    height: r.bottom - r.top + 2 * pad + LABEL, rx: 6 };
+  g.append(svgEl("rect", { ...box, class: "outline-hit" })); // a wide band to click, as an edge's
+  g.append(svgEl("rect", box));
   const right = cls === "acc-box";
   const t = svgEl("text", { x: right ? r.right + pad - 6 : r.left - pad + 6, y: r.top - pad - 4,
     "text-anchor": right ? "end" : "start" });
@@ -349,16 +360,22 @@ function outline() {
     el.classList.remove("sel");
     if (el._marker) el.setAttribute("marker-end", `url(#${el._marker})`);
   }
-  if (!state.sel) return;
-  for (const el of document.querySelectorAll(`#graphs [data-sel="${CSS.escape(state.sel)}"]`)) {
-    el.classList.add("sel");
-    if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
+  for (const name of state.sels) { // every selected item highlighted
+    for (const el of document.querySelectorAll(`#graphs [data-sel="${CSS.escape(name)}"]`)) {
+      el.classList.add("sel");
+      if (el._marker) el.setAttribute("marker-end", `url(#${el._marker}-sel)`);
+    }
   }
 }
 
-function select(name) {
-  if (name !== state.sel) state.t = null;
-  state.sel = name;
+/** Select ``name`` (null clears); with ``add`` (shift-click) add it to the selection, or remove
+it when it is in it already. */
+function select(name, add = false) {
+  const before = selText();
+  if (add && name) {
+    setSels((state.sels.includes(name) ? state.sels.filter((x) => x !== name) : [...state.sels, name]).join(","));
+  } else setSels(name);
+  if (selText() !== before) state.t = null;
   writeHash();
   outline();
   details();
@@ -655,8 +672,9 @@ async function draw() {
   status("Loading…");
   try {
     const shown = await view(state.k);
-    if (state.sel && !KINDS.some((kind) => shown.details && shown.details[`${kind}:${state.sel}`])) {
-      state.sel = null; // kept across steps only where it exists
+    const there = state.sels.filter((x) => KINDS.some((kind) => shown.details && shown.details[`${kind}:${x}`]));
+    if (there.length !== state.sels.length) {
+      setSels(there.join(",")); // kept across steps only where it exists
       state.t = null;
       writeHash();
     }
@@ -721,7 +739,7 @@ async function load() {
       want = await resolve(want);
       edit.init({ state, status, clear, show, view, writeHash, hover });
       state.session = await edit.session();
-      state.sel = want.sel;
+      setSels(want.sel);
       state.t = want.t;
       state.cmp = want.cmp;
       if (state.session && want.k !== null && want.k !== state.session.cursor && want.k <= state.session.n) {
@@ -740,7 +758,7 @@ async function load() {
   stepOptions();
   state.k = clampStep(want.k === null ? 0 : want.k);
   state.cmp = want.cmp === null ? null : clampStep(want.cmp);
-  state.sel = want.sel;
+  setSels(want.sel);
   draw();
 }
 
@@ -796,7 +814,8 @@ $("compare").addEventListener("change", (ev) => {
 $("graphs").addEventListener("click", (ev) => {
   if (ev.target.closest("select")) return;
   const t = ev.target.closest("[data-sel]");
-  select(t ? t.getAttribute("data-sel") : null);
+  if (ev.shiftKey && !t) return; // a shift-click on empty space keeps the selection
+  select(t ? t.getAttribute("data-sel") : null, ev.shiftKey);
 });
 // Keys: ← → the steps; Esc closes an open form, then clears the selection; edit mode: Enter
 // applies the form that has the focus, Ctrl+Z (⌘Z) undoes, Ctrl+Shift+Z redoes. In a text field
@@ -836,9 +855,9 @@ window.addEventListener("hashchange", async () => {
     state.tech = tech;
     techOptions();
     clear();
-  } else if (want.k === state.k && want.sel === state.sel && want.cmp === state.cmp && want.t === state.t) return;
+  } else if (want.k === state.k && (want.sel || null) === selText() && want.cmp === state.cmp && want.t === state.t) return;
   state.cmp = want.cmp === null ? null : clampStep(want.cmp);
-  state.sel = want.sel;
+  setSels(want.sel);
   state.t = want.t;
   if (want.k !== null && want.k !== state.k) goto(clampStep(want.k));
   else draw();

@@ -498,6 +498,7 @@ svg.dfg-edges .acc-box rect { stroke: var(--rule); stroke-width: 1.5; }
 svg.dfg-edges .group-box text, svg.dfg-edges .acc-box text { font-size: 0.85rem; fill: var(--muted); pointer-events: visiblePainted; cursor: pointer; }
 svg.dfg-edges .hover rect { stroke: var(--busy); stroke-width: 2.5; stroke-dasharray: none; }
 svg.dfg-edges .sel rect { stroke: var(--hl); stroke-width: 2; }
+svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-hit { stroke: transparent; stroke-width: 10; stroke-dasharray: none; } /* the band a click on an outline hits (D72) */
 
 /* the selection */
 .c-node.sel, .c-pill.sel { box-shadow: 0 0 0 2px var(--hl); }
