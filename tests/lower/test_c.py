@@ -363,6 +363,22 @@ def test_refused_an_idle_mover_at_stride_0(tmp_path):
         main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
 
 
+def test_an_idle_mover_outside_an_encapsulated_set_is_refused(tmp_path):
+    """c.idle's stride check is an encapsulated set's (dot 1, above); in a set of one group an
+    idle mover is no other group's, so the start is refused (c.start), whatever its stride."""
+    from tests.gen.helpers import bound_recipe
+
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_recipe("dot_serial", "dot"),
+                                           name="dot_serial")  # fmt: skip
+    d = tasks.to_dict()
+    for s in d["steps"]:
+        if s.get("task_name") == "sum_sum_a":
+            s["values"]["temporal_bounds"] = [0]
+    with pytest.raises(CError, match=r"\[c.start\] sum_sum_a: an idle mover .* of sum, a set of "
+                       "one group"):  # fmt: skip
+        main_c(p, TaskList.from_dict(d), cluster, acc, arrays, INCLUDES, POINT)
+
+
 def test_two_accelerators_each_run_through_their_own_set(tmp_path):
     """D157: dot_serial's mul and sum are two accelerators, two streamer sets of the one entry;
     each task configures, starts and waits on its own set's macros and its own header's CSRs
@@ -373,15 +389,26 @@ def test_two_accelerators_each_run_through_their_own_set(tmp_path):
                                            name="dot_serial")  # fmt: skip
     assert [a.name for a in acc.accelerators] == ["mul", "sum"]
     core = functions(main_c(p, tasks, cluster, acc, arrays, INCLUDES, POINT))["forge_core_0"]
-    acc_lines = [x for x in core if "START" in x or "STATUS" in x or "BUSY" in x]
+    acc_lines = [x for x in core if "START" in x or "STATUS" in x or "BUSY" in x
+                 or x.startswith("forge_counter") or x == BARRIER]  # fmt: skip
+    # mul: its set's streamers, its CSRs, its streamer start, START; sum the same once the
+    # serial sync (D158) has waited for mul, its counter read there; then the data wait on
+    # mul's writer, mul's set again
     assert acc_lines == [
-        "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
+        BARRIER, "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
+        "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
+        "forge_counter[0] = csrr_ss(MUL_RO_COUNTER);", BARRIER,
         "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
         "csrw_ss(SUM_STREAMER_START_CSR, 1);", "csrw_ss(SUM_RW_START, 1);",
         "while (csrr_ss(SUM_RO_STATUS) & 1) {", "while (csrr_ss(SUM_STREAMER_BUSY_CSR)) {",
+        "forge_counter[1] = csrr_ss(SUM_RO_COUNTER);", BARRIER, BARRIER,
     ]  # fmt: skip
+    i = core.index("csrw_ss(SUM_STREAMER_START_CSR, 1);")
+    assert core.index("csrw_ss(SUM_RW_JOB_BEATS, 64);") < core.index("forge_counter[0] = "
+                                                                     "csrr_ss(MUL_RO_COUNTER);") < i  # fmt: skip
     assert "csrw_ss(SUM_BASE_PTR_READER_0_LOW, 0x10000440);" in core  # mul's output, tmp0
     assert "csrw_ss(SUM_RW_JOBS, 1);" in core and "csrw_ss(SUM_RW_JOB_BEATS, 64);" in core
+    assert not any("_T_BOUND_" in x and x.endswith(", 0);") for x in core)  # no idle mover
 
 
 # =============================================================================

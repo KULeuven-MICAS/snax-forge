@@ -58,7 +58,8 @@ back; a DMA task starts at its place in the step.
 **Waits.** On the SNAX components, as waits.py places them (D64,
 ``placed_waits``): on the owner's core, a wait on a unit or one of its
 streamers polls its group's ``STATUS & 1`` (busy), then its set's
-``<SET>_STREAMER_BUSY_CSR``. On the
+``<SET>_STREAMER_BUSY_CSR``; D158's serial sync before the next accelerator's
+start (derive.py) is such a wait, on the previous accelerator's task. On the
 DMA, from dependences only: the iDMA queues transfers (the hjson's
 ``dma_req_fifo_depth``; a full queue stalls the core), so a DMA task starts
 without waiting for the one before it, and ``snrt_dma_wait_all()`` comes
@@ -89,7 +90,9 @@ it returns to main (0 on the other cores; snRuntime sums them at exit).
 the description's ``tag`` names (``c.cores``), a start that does not cover
 every mover of each accelerator it starts movers of, the idle ones at bound 0,
 or that starts a unit before them
-(``c.start``), an idle mover (every temporal bound 0) whose first temporal
+(``c.start``; also an idle mover in a set of one group, since only another
+group's mover in an encapsulated set is idle), in an encapsulated set an idle
+mover (every temporal bound 0) whose first temporal
 stride is 0, which would start and read anyway (snax_cluster's Reader.scala:
 stride 0 on loop 0 forces that bound to 1 and repeats each beat the bound's
 times; ``c.idle``), a wait in
@@ -334,10 +337,17 @@ class _Program:
             return f"{self.prefix(acc)}{kind}_{mover}"
 
         tb = list(v["temporal_bounds"])
-        if tb and not any(tb) and not v["temporal_strides"][0]:
-            raise CError("c.idle", f"{s.task_name}: an idle mover (every temporal bound 0) with "
-                         "first temporal stride 0 starts anyway (Reader.scala: stride 0 on loop "
-                         "0 forces that bound to 1); give it a nonzero stride")  # fmt: skip
+        if tb and not any(tb):  # an idle mover: another group's in an encapsulated set only
+            groups = next(len(a.groups) for a in self.acc.accelerators if a.name == acc)
+            if groups == 1:
+                raise CError("c.start", f"{s.task_name}: an idle mover (every temporal bound 0) of "
+                             f"{acc}, a set of one group: only another group's mover in an "
+                             "encapsulated set is idle (D148), and this group's run would never "
+                             "end")  # fmt: skip
+            if not v["temporal_strides"][0]:
+                raise CError("c.idle", f"{s.task_name}: an idle mover (every temporal bound 0) "
+                             "with first temporal stride 0 starts anyway (Reader.scala: stride 0 "
+                             "on loop 0 forces that bound to 1); give it a nonzero stride")  # fmt: skip
         dims = self.point.streamers[s.component].temporal_dims
         bounds, strides = list(v["temporal_bounds"]), list(v["temporal_strides"])
         spatial = list(v["spatial_strides"])  # check_values checked every count against the dims
