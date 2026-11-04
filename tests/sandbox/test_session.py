@@ -527,7 +527,7 @@ def test_every_step_lists_saves_design_checks(roots):
     eight = s.checks(8)
     assert eight["problems"] == [] and [n["code"] for n in eight["notes"]] == ["gen.instances"]
     assert eight["notes"][0]["message"].startswith(
-        "before Save: encapsulate acc_1, acc_2 into one accelerator (2 accelerators"
+        "before Save: shift-click the outlines of acc_1 and acc_2 and apply encapsulate (2 accelerators"
     )
     assert out[7]["checks"] == eight  # the bind's answer carries them
     assert s.checks(9) == {"problems": [], "notes": []} == out[8]["checks"]

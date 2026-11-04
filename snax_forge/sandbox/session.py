@@ -109,7 +109,8 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
     checks(k)            Save's design checks on step k and the platform (D156): ``problems``,
                          each ``{code, where, message, fix}``, and ``notes``: ``graph.unbound``
                          while building (``before Save: bind it …``) and ``gen.instances``
-                         before ``encapsulate`` (``before Save: encapsulate …``) as notes, not
+                         before ``encapsulate`` (``before Save: shift-click the outlines of acc_1 and acc_2
+                         and apply encapsulate …``) as notes, not
                          problems, which Save still refuses, and the design notes (check.py's
                          ``NOTES``, ``char.missing``) always, also beside problems
 
@@ -840,9 +841,10 @@ def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]
         d = {"code": p.code, "where": p.where, "message": p.message, "fix": p.fix,
              "before_save": p.code in BEFORE_SAVE}  # fmt: skip
         if p.code == "gen.instances":
-            units = [u for us in accelerators_of(g).values() for u in us]
-            d["message"] = (f"before Save: encapsulate {', '.join(units)} into one accelerator "
-                            f"({p.message})")  # fmt: skip
+            names = list(accelerators_of(g))  # each group, its own accelerator: its outline
+            outlines = ", ".join(names[:-1]) + f" and {names[-1]}" if len(names) > 1 else names[0]
+            d["message"] = (f"before Save: shift-click the outlines of {outlines} and apply "
+                            f"encapsulate ({p.message})")  # fmt: skip
             notes.append(d)
         elif p.code == "graph.unbound":
             d["message"] = f"before Save: bind it ({p.message})"
