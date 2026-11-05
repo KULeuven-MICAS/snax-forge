@@ -284,10 +284,11 @@ def residency(idx: RunIndex) -> list[dict[str, Any]]:
 # =============================================================================
 
 
-def _regs(idx: RunIndex, before: int) -> dict[int, int]:
-    """The streamer's CSR values written up to cycle ``before`` (a start copies them)."""
+def _regs(idx: RunIndex, set_: str, before: int) -> dict[int, int]:
+    """Set ``set_``'s streamer's CSR values written up to cycle ``before`` (a start copies
+    them)."""
     regs: dict[int, int] = {}
-    for e in idx.csr.get(idx.cluster.accelerator.streamer, []):
+    for e in idx.csr.get(f"{set_}_streamer", []):
         if e["op"] == "w" and e["t"] <= before:
             regs[e["csr"]] = e["value"]
     return regs
@@ -319,7 +320,7 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
     out = []
     for m in c.accelerator.movers:
         for s in (s for s in idx.start.values() if s["src"] == m.name):
-            regs = _regs(idx, s["t"])
+            regs = _regs(idx, m.set, s["t"])
             _, _, tb, ts = mover_values(c, m, regs)
             lanes = mover_nest(c, m, regs)
             bounds = [1 if (d == 0 and not m.write and ts[0] == 0) else b for d, b in enumerate(tb)]

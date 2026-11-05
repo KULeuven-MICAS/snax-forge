@@ -254,8 +254,14 @@ class Accelerator:
     def set_at(self, path: str) -> StreamerCsrs | None:
         """The set whose streamer is at the SNAX-GVSoC path ``path`` (its trace path, or a
         path ending in it), or None."""
-        return next((s for s in self.csrs.sets
-                     if s.trace and (path == s.trace or path.endswith("/" + s.trace))), None)
+        return next(
+            (
+                s
+                for s in self.csrs.sets
+                if s.trace and (path == s.trace or path.endswith("/" + s.trace))
+            ),
+            None,
+        )
 
 
 @dataclass(frozen=True)
@@ -532,5 +538,6 @@ def load_cluster(cluster_hjson: str | Path, design_point: str | Path) -> Cluster
         raise RunError("cluster.manifest", f"no {mp}: the generator's manifest names each set's "
                        "streamer trace path")  # fmt: skip
     manifest = json.loads(mp.read_text())
-    return replace(cluster_from(cluster, templates, description, point, manifest),
-                   meta={"cluster": cp.name})
+    return replace(
+        cluster_from(cluster, templates, description, point, manifest), meta={"cluster": cp.name}
+    )
