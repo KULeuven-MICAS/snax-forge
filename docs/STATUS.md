@@ -48,7 +48,7 @@ M14 is done (CLN1): a recipe runs to a checked SNAX-GVSoC run (`pixi run flow`) 
 
 Next up: SYN1, the synthesis of the basic blocks and kernels in KULeuven-MICAS/snax-forge-experiments (PAPER §7); then HWCOST, B2 and tier A (D141).
 
-SLOT1 is in progress, its plan in the project's `claude/slot1-plan-2026-11-04.md`: R0, F1, F2, F2b, G1 (snax-gvsoc) and F3 done (the M13 row); the submodule goes to snax-gvsoc's squashed commit before the merge.
+SLOT1 is in progress, its plan in the project's `claude/slot1-plan-2026-11-04.md`: R0, F1, F2, F2b, G1 (snax-gvsoc) and F3 done (the M13 row), C1 (done, `slot1-c1`: the quick set on vsim, open item 95); the submodule at snax-gvsoc main's squashed G1, `61d1e8ac` (#43), the same tree as `1e988679`.
 
 ## Open Items
 
