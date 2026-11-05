@@ -1,0 +1,20 @@
+{
+ "name": "vecmul_dry",
+ "kernel": "vecmul",
+ "params": {"N": 2048, "W": 8},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split", "params": {"map": "mult_map", "factor": "W"}},
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "tag_map", "params": {"map": "mult_map_inner", "kind": "spatial"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "elementwise_mul",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}
