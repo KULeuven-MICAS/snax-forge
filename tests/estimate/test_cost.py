@@ -81,8 +81,10 @@ def test_l1_accesses_cost_4_e_load_per_bit_per_accelerator():
     assert f"{1000 * x.energy_nj / x.words:.2f}" == "4.40"
     assert e.energy == pytest.approx(e.kernel_energy + x.energy_nj)
     assert e.kernel_energy == pytest.approx(sum(g.cost.energy for g in e.groups))
-    assert e.to_dict()["cost"]["l1"] == {"acc": {"words": 6144, "bits": 393216,
-                                                 "energy": x.energy_nj}}  # fmt: skip
+    (a,) = e.to_dict()["accelerators"]  # cost.l1 under its accelerator (C§19)
+    assert (a["name"], a["cost"]) == ("acc", {"l1": {"words": 6144, "bits": 393216,
+                                                     "energy": x.energy_nj}})  # fmt: skip
+    assert "l1" not in e.to_dict()["cost"]
     fifteen = estimate(steps("vecmul", W=8, N=2048)[-1], None, "nangate15").l1["acc"]
     assert f"{1000 * fifteen.energy_nj / fifteen.words:.2f}" == "1.41"
     assert estimated("vecadd_i32").l1_words == {"acc": 96}

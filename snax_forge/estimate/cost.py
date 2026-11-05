@@ -36,7 +36,7 @@ not to a group's.
 **Shown, not stored.** The fields keep full precision; everything a reader sees (``design.md``,
 the viewer and the editor) is rounded for display only, an area by ``sig3`` (3 significant figures) and an energy by
 ``dec3`` (3 decimal places in its unit, so two close designs can be told apart), and headed by
-``heading`` with ``CAVEAT``: the model is first-order, aimed at about 20 % of synthesis on the
+``heading`` with ``caveat`` (``CAVEAT`` naming the streamers not costed): the model is first-order, aimed at about 20 % of synthesis on the
 large costs (C§20).
 """
 
@@ -53,6 +53,16 @@ CAVEAT = ("First-order: aimed at the large costs (about 20 % of synthesis there;
           "can be much further off); the L1 accesses (4 × e_load per bit) and the control unit's "
           "comb area (equal to its flops') are placeholders, the streamers' own logic and the csr "
           "are left out.")  # fmt: skip
+
+
+def caveat(streamers: int) -> str:
+    """``CAVEAT`` naming how many streamers are not costed (one per streamer set, open item
+    110)."""
+    n = f"{streamers} streamer{'' if streamers == 1 else 's'}"
+    return CAVEAT.replace("the streamers' own logic", f"the streamers' own logic ({n} not "
+                          "costed, open item 110)")  # fmt: skip
+
+
 L1_LABEL = "L1 accesses (placeholder, 4 × e_load per bit)"  # its row in every cost table
 
 

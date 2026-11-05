@@ -102,7 +102,10 @@ worked out here as text, an area to 3 significant figures and an energy to 3 dec
 a unit's and a buffer link's Details gain ``cost`` after ``timing`` (``found``, its area total,
 comb and flops, its energy per fire, holding per cycle and per task, or "not characterized"), a
 group's its area, energy and control unit; the Estimate panel's ``summary`` per group
-``area_text`` and ``energy_text``, and ``cost`` (the heading, ``CAVEAT``, the accelerator's
+``area_text`` and ``energy_text``, ``streamers`` (the accelerators, one streamer set each, D157:
+their count, the entry's CSRs, a ``text`` line and per accelerator its groups, CSRs and
+streamer's movers and channels, none of them costed, open item 110), and ``cost`` (the heading,
+``caveat`` naming the streamers not costed, the accelerator's
 area and energy, the blocks not characterized, and ``tables``, the cost as a table per
 accelerator, ``cost_tables``, with its L1 accesses' row, a placeholder (D154); None when nothing
 is bound or there is no technology); a block with no flops holds "–".
@@ -157,7 +160,7 @@ from snax_forge.design.streamers import (
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
 from snax_forge.dfg.subset import map_range, parse_dim
-from snax_forge.estimate.cost import CAVEAT, L1_LABEL, L1Cost, dec3, heading, sig3
+from snax_forge.estimate.cost import L1_LABEL, L1Cost, caveat, dec3, heading, sig3
 from snax_forge.expr import ExprError
 
 # A bank word, in bits: num_slc = WORD_BITS / b slices of a b-bit dtype
@@ -757,7 +760,8 @@ def estimate_rows(sa: dict[str, Any] | None, sb: dict[str, Any] | None) -> list[
 
     rows = [_row("cycles", *both(lambda s: s["accelerator_cycles"]), "accelerator"),
             _row("unmapped cycles", *both(lambda s: s["unmapped_cycles"]), "accelerator"),
-            _row("total cycles", *both(lambda s: s["total_cycles"]), "accelerator")]  # fmt: skip
+            _row("total cycles", *both(lambda s: s["total_cycles"]), "accelerator"),
+            _row("streamers", *both(lambda s: s["streamers"]["text"]), "accelerator")]  # fmt: skip
     names = dict.fromkeys(g["name"] for s in (sa, sb) if s for g in s["groups"])
     for name in names:
 
@@ -854,8 +858,21 @@ def estimate_summary(est: Any, graph: Graph | None = None) -> dict[str, Any]:
         "reads": sum(c.reads for c in est.containers.values()),
         "writes": sum(c.writes for c in est.containers.values()),
         "splits": splits,
+        "streamers": streamers_summary(est),
         "cost": cost_summary(est, graph),
     }
+
+
+def streamers_summary(est: Any) -> dict[str, Any]:
+    """The Estimate panel's ``streamers`` (module doc): one streamer set per accelerator, D157."""
+    n = est.streamers
+    text = f"{n} streamer{'' if n == 1 else 's'} (not costed, open item 110)"
+    if est.csrs is not None:
+        text += f" · {est.csrs} CSRs"
+    rows = [{"name": a.name, "groups": list(a.groups),
+             "csrs_text": None if a.csrs is None else f"{a.csrs[0]}–{a.csrs[1]}",
+             "movers": a.streamer.movers, "channels": a.streamer.channels} for a in est.accelerators]  # fmt: skip
+    return {"count": n, "csrs": est.csrs, "text": text, "accelerators": rows}
 
 
 def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
@@ -864,7 +881,7 @@ def cost_summary(est: Any, g: Graph | None = None) -> dict[str, Any] | None:
     if est.tech is None or not est.groups:
         return None
     l1 = "; ".join(f"{a}: {x.words} words, {_nj(x.energy_nj)}" for a, x in est.l1.items())
-    return {"tech": est.tech, "heading": heading(est.tech), "caveat": CAVEAT,
+    return {"tech": est.tech, "heading": heading(est.tech), "caveat": caveat(est.streamers),
             "area_text": _um2(est.area), "energy_text": _nj(est.energy),
             "l1_text": l1 or None, "missing": list(est.missing),
             "tables": cost_tables(est, g)}  # fmt: skip
