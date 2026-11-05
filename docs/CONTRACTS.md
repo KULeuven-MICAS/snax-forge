@@ -112,9 +112,9 @@ Names, ports, `write` and the FIFO depths come from the hjson files and the desi
     finegrained  insn     pc, func, text  (src = the core)
 ```
 
-`src` is a unit (`acc`; with several groups each, `mul`, `sum`, D148) or a linked group (`dot`: SNAX-GVSoC's one component for its units, `snax_acc<i>/group_<group>`, the manifest's trace path), a mover (`acc_a`), `dma`, `core0`, and for a `grant` or `stall` the crossbar port (`acc_a.lane0`, `core0`, `axi`). A linked group's lines are its boundary's (snax-gvsoc `docs/EVENTS.md`): a run's `count` and `firings` are the head unit's, `rate` the head's firings per result of the last unit, and a `push` line's `first` and `last` the head's firings it folds. `block` is the component whose CSR it is (`acc`, a group's unit or a linked group; `acc_streamer`, `<accelerator>_streamer`). The beat levels read an accelerator of several groups, each of one unit (dot 1's `mul` and `sum`, D148): each unit's `fire` and `push` lines are its own (`src` the unit, `b`, `value` and `vals` keyed by its own readers, `mul_a` and `mul_b` for the mul), and a streamer line's `task` is its mover's task bracketing it, that task paired with the unit task its start launched it with (`run/beats.py`'s `pairing`, from the task list's `start` steps), so a firing's operands are the grants of the streamer tasks launched with it; a group of several linked units at beat level stays refused (`convert.level`: `trace beat: the beat lines of a group of several linked units are not read yet (open item 96); task and off are`). A DMA copy's `dir` (`l2_to_l1`, `l1_to_l2`) comes from its addresses, and copies are matched to the task list's `load_<C>` and `store_<C>` tasks in issue order.
+`src` is a unit (`acc`; with several groups each, `mul`, `sum`, D148) or a linked group (`dot`: SNAX-GVSoC's one component for its units, `snax_acc<i>/group_<group>`, the manifest's trace path), a mover (`acc_a`), `dma`, `core0`, and for a `grant` or `stall` the crossbar port (`acc_a.lane0`, `core0`, `axi`). A linked group's lines are its boundary's (snax-gvsoc `docs/EVENTS.md`): a run's `count` and `firings` are the head unit's, `rate` the head's firings per result of the last unit, and a `push` line's `first` and `last` the head's firings it folds. `block` is the component whose CSR it is (`acc`, a group's unit or a linked group; `acc_streamer`, `<accelerator>_streamer`, its streamer set's). Each streamer set's streamer is read at its trace path, the manifest's `csrs.streamers[].trace` (`snax_acc<i>/streamer_<set>`, section 16, D157), its `mover` numbered within the set (`reader0` of `streamer_vsum` is `vsum_a`), and the crossbar's inputs are `snax_acc<i>.streamer_<set>.<mover>.lane<l>` (`run/cluster.py`, `run/convert.py`, `run/sources.py`). The beat levels read an accelerator of several groups, each of one unit (dot 1's `mul` and `sum`, D148): each unit's `fire` and `push` lines are its own (`src` the unit, `b`, `value` and `vals` keyed by its own readers, `mul_a` and `mul_b` for the mul), and a streamer line's `task` is its mover's task bracketing it, that task paired with the unit task its start launched it with (`run/beats.py`'s `pairing`, from the task list's `start` steps: a unit's start launches its own set's movers only), so a firing's operands are the grants of the streamer tasks launched with it; a group of several linked units at beat level stays refused (`convert.level`: `trace beat: the beat lines of a group of several linked units are not read yet (open item 96); task and off are`). A DMA copy's `dir` (`l2_to_l1`, `l1_to_l2`) comes from its addresses, and copies are matched to the task list's `load_<C>` and `store_<C>` tasks in issue order.
 
-**The run report and the run viewer** (`report/run.md`, `pixi run view`). `run.md`'s Accelerators table has a row per unit (a linked group's under the group's name), its first column `Unit`. An accelerator's movers are listed in a drop-down per group (`mul` ▸ `mul_a`, `mul_b`, `mul_out`; `sum` ▸ `sum_a`, `sum_out`): in `run.md` a `<details>` per group under Accelerators, its summary `mul ▸ mul_a, mul_b, mul_out` and inside the movers' port, direction, num_ch, busy, crossbar and FIFO stalls and FIFO highest against depth; in the viewer's Accelerator section the same. A streamer task with zero bounds (every temporal bound 0), started only because the accelerator's streamers share one start (an idle mover of another group, section 9), is marked idle: `mult_sum_a (idle)` in the task table, and the schedule's bar `idle: true`, drawn dashed (`viz/index.py`'s `idle_tasks`). A task's COUNTER is shown beside its expected COUNTER, a guide and not a check (`mult_mul 256 (expected 259, a guide)`, D155, section 19). The cluster view at a cycle (`viz/cluster.py`) gives the unit whose task is open there as `acc`, with `accelerator` the accelerator's name and `units` every unit's task, class, fire and push; the schedule's detail gives each unit's fires and pushes under `units`.
+**The run report and the run viewer** (`report/run.md`, `pixi run view`). `run.md`'s Accelerators section opens with a row per accelerator, its streamer set (D157): its groups, its CSRs (its streamer's, then its own, first to last), its streamer's busy windows (from its start to its busy low: its movers' first start to their last done, one window per start) and each group's COUNTER; dot 1 (N = 64) `vmul` 960–981 and `vsum` 982–999, `dot_1_enc` `dot` 960–996 with two windows. Its Units table then has a row per unit (a linked group's under the group's name), its first column `Unit`, and the Tasks table names each task's accelerator. An accelerator's movers are listed in a drop-down per group (`vmul` ▸ `vmul_a`, `vmul_b`, `vmul_out`; `vsum` ▸ `vsum_a`, `vsum_out`): in `run.md` a `<details>` per group, its summary `vmul ▸ vmul_a, vmul_b, vmul_out` and inside the movers' port, direction, num_ch, busy, crossbar and FIFO stalls and FIFO highest against depth; in the viewer's Accelerator section the same, each headed accelerator ▸ group. A streamer task with zero bounds (every temporal bound 0), started only because an encapsulated set's movers share one start (the idle mover of another group in the same encapsulated set, section 9), is marked idle: `mult_vsum_a (idle)` in `dot_1_enc`'s task table, and the schedule's bar `idle: true`, drawn dashed (`viz/index.py`'s `idle_tasks`); dot 1's two sets have none. A task's COUNTER is shown beside its expected COUNTER, a guide and not a check (`mult_mul 256 (expected 259, a guide)`, D155, section 19). The schedule's lanes go accelerator ▸ group, as the editor's Bindings (D156): per group its movers, then its unit. The cluster view at a cycle (`viz/cluster.py`) gives the unit whose task is open there as `acc`, with `accelerator` the entry's name and `units` every unit's task, class, fire and push, and `streamers`, one per set inside the accelerator, each busy while a task of its movers is open; the schedule's detail gives each unit's fires and pushes under `units`.
 
 **Ids.** Lines are linked by ids, never by order: a streamer beat is its mover and `b` (a reader's numbered in its AGU's order from 0 per run, a writer's in the order the accelerator hands them over; a repeated beat is one `b` for several firings); a firing's `n` is its index in the run, a push's its index among the run's results, equal to the writer's `b`; a DMA beat on L1 is its copy's `id` and `i`. `fire`'s `b`, `value` and `vals` are keyed by reader mover; `push`'s `first` and `last` are the firings it folds.
 
@@ -542,54 +542,58 @@ A unit:
 
 A CSR: `name`, `access` (`rw` or `ro`), `offset` from the shell's first CSR (contiguous over the accelerators, section 16), `width` (every CSR, 1 to 32: START 1, JOBS and every JOB_BEATS the platform's `acc_csr.job_width`, STATUS 2, COUNTER its `counter_width`; D152), `pin` (a scalar's datapath pin). snax-forge computes the offsets and widths once and stores them; a reader checks them (contiguous from 0 in CSR order; JOBS and every JOB_BEATS one width, every COUNTER one) and never recomputes them.
 
-dot 4's file, one group `dot`, the MAC's lane partials wired into the tree:
+dot 4's file, one accelerator `dot` of one group `dot`, the MAC's lane partials wired into the tree:
 
 <!-- snippet: gvsoc/snax-gvsoc/forge/dot_4/accelerator.json -->
 ```json
 {
- "name": "dot",
  "design_point": "out/design/dot_4/design_point.json",
- "tag": "snax_forge",
- "inputs": ["mac.a", "mac.b"],
- "outputs": ["sum.out"],
- "groups": [
+ "tag": "snax_forge_dot_4",
+ "accelerators": [
   {
    "name": "dot",
-   "csrs": [
-    {"name": "START", "access": "rw", "offset": 0, "width": 1},
-    {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
-    {"name": "STATUS", "access": "ro", "offset": 3, "width": 2},
-    {"name": "COUNTER", "access": "ro", "offset": 4, "width": 32}
-   ],
-   "units": [
+   "inputs": ["mac.a", "mac.b"],
+   "outputs": ["sum.out"],
+   "groups": [
     {
-     "name": "mac",
-     "brm": "mac",
-     "datapath": "Mac",
-     "ports": {
-      "a": {"port": "a", "dir": "in", "dtype": "int64", "lanes": 4},
-      "b": {"port": "b", "dir": "in", "dtype": "int64", "lanes": 4},
-      "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 4}
-     },
-     "opType": "int64",
-     "params": {"accumulate": true, "regOut": false},
-     "timing": {"latency": 1, "ii": 1, "span": 1},
-     "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}]
-    },
-    {
-     "name": "sum",
-     "brm": "accumulate",
-     "datapath": "TreeAccumulate",
-     "ports": {
-      "a": {"port": "in", "dir": "in", "dtype": "int64", "lanes": 4},
-      "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 1}
-     },
-     "params": {"op": "add", "T": 1},
-     "timing": {"latency": 1, "ii": 1, "span": 1},
-     "csrs": []
+     "name": "dot",
+     "csrs": [
+      {"name": "START", "access": "rw", "offset": 0, "width": 1},
+      {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
+      {"name": "STATUS", "access": "ro", "offset": 3, "width": 2},
+      {"name": "COUNTER", "access": "ro", "offset": 4, "width": 32}
+     ],
+     "units": [
+      {
+       "name": "mac",
+       "brm": "mac",
+       "datapath": "Mac",
+       "ports": {
+        "a": {"port": "a", "dir": "in", "dtype": "int64", "lanes": 4},
+        "b": {"port": "b", "dir": "in", "dtype": "int64", "lanes": 4},
+        "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 4}
+       },
+       "opType": "int64",
+       "params": {"accumulate": true, "regOut": false},
+       "timing": {"latency": 1, "ii": 1, "span": 1},
+       "csrs": [{"name": "JOB_BEATS", "access": "rw", "offset": 2, "width": 32}]
+      },
+      {
+       "name": "sum",
+       "brm": "accumulate",
+       "datapath": "TreeAccumulate",
+       "ports": {
+        "a": {"port": "in", "dir": "in", "dtype": "int64", "lanes": 4},
+        "out": {"port": "out", "dir": "out", "dtype": "int64", "lanes": 1}
+       },
+       "params": {"op": "add", "T": 1},
+       "timing": {"latency": 1, "ii": 1, "span": 1},
+       "csrs": []
+      }
+     ],
+     "links": [{"name": "out_partial", "from": "mac.out", "to": "sum.a", "depth": 0}]
     }
-   ],
-   "links": [{"name": "out_partial", "from": "mac.out", "to": "sum.a", "depth": 0}]
+   ]
   }
  ]
 }
@@ -690,7 +694,7 @@ The ideal estimate of a bound graph (D155, `estimate/`), with or without a platf
 | Field | Holds |
 |---|---|
 | `groups` | per group (one unit, or linked units, D146), in the graph's order: `name`, `units`, `links` (their containers), `cycles` (snax-gvsoc's group rule, `snax_group_rule.py`, stepped by `estimate/cycles.py`'s `group_cycles` with every input valid and the output ready, JOBS and each unit's T as the program writes them; `gen/rtl.py`'s `group_counter` calls the same), `bottleneck` (the max over its units of n · max(II, span), n the unit's firings), `ramp` (the cycles to start and finish the pipeline: the sum over its units of L + span − 1, plus 1 per buffer link and 0 per wire), `stall` (`cycles` − `bottleneck` − `ramp`), `fill` (the streamers' fill a run adds: 3, or 2 for a group whose units have one outer input between them), `counter` (`cycles` + `fill`, the expected COUNTER: a guide, not a check, D155), `bank_bound` (⌈(Σ over its outer ports of beats × num_ch) / `l1.n_banks`⌉, the fewest cycles of L1 time the group's streams take, a bound on the streams and not on the COUNTER, `cycles` staying ideal (D155), with `n_banks`, the platform's; both null without a platform; a note in the page, `design.md` and `run.md` when it exceeds `cycles`, over the streamers of that group only: `mul: the streams move 6144 words over 32 banks, at least 192 cycles of L1 time against the ideal 128`, dot 1 at W_mul = 16, whose streams took 211 cycles and its COUNTER 186), `channels` (the sum of num_ch over its outer ports, D142), `words_per_cycle` (the 64-bit words its outer ports move per cycle), `bits` (per unit and per link, by its container, its datapath's register bits: the catalogue's `flops` on its params, section 17; a wire 0; a unit the generator does not fill is not listed), `ctrl_bits` (the register bits of its control unit from the group description that firtool keeps, every register `GroupRule.scala` and `GroupCtrl.scala` declare but a `v` at L 0 and the slots of a wire or of a depth-1 buffer, which are never written, at the platform's `acc_csr.job_width`, `estimate/bits.py`): CHAR1's cost model's counts, D154; and `cost`, on a technology its units', buffer links' and control unit's area and energy and the group's totals (section 20) |
-| `accelerators` | per accelerator, in CSR order: `name`, `groups` (its groups' names), `csrs` (its first and last CSR, section 16), `streamer` (its streamer set: `movers`, `channels`, `temporal_dims`, `csrs`, and its `cost`, null until a streamer set has one, open item 110) and `cost.l1` (its L1 accesses, section 20) |
+| `accelerators` | per accelerator, in CSR order (`estimate/accelerators.py`): `name`, `groups` (its groups' names), `own_csrs` (its own: per group START, JOBS, STATUS, COUNTER and a fold's JOB_BEATS), `csrs` (its first and last CSR, its streamer's then its own, section 16), `streamer` (its streamer set: `movers`, `channels`, `temporal_dims` per mover, `csrs`, and its `cost`, null until a streamer set has one, open item 110), `missing` (`streamer not characterized (open item 110)`) and `cost.l1` (its L1 accesses, section 20; null without a technology); without a platform both `csrs` are null, the streamer's spatial bounds being the platform's (dot 1: `vmul` 960–981 and `vsum` 982–999, 2 streamers and 40 CSRs; `dot_1_enc`: `dot` 960–996, 1 and 37) |
 | `accelerator_cycles` | the sum of the groups' `cycles`: groups add up through L1 (D105) |
 | `not_mapped` | the iterations of each nest no unit runs, counted once per innermost map that holds tasklets (a fused nest of two tasklets counts once), over every map around it except spatial ones (dot at N = 512: 1024 as imported, 640 once `mult_map` is split and tagged, 257 after `split_reduce` on `sum_map`) |
 | `unmapped_iterations` | the iterations of each nest no unit runs as `not_mapped` counts them, but over every map around them, spatial ones included: a spatial tag only says which loop will become lanes, and lanes only exist once a unit runs them, so until the bind a tagged loop is still that many iterations of work (vecmul at N = 2048: 2048 as imported, after the split and after both tags, where `not_mapped` is 256; dot at N = 512: 1024, 1024, 1028, the last with the final sum's 4 lanes) |
@@ -702,7 +706,7 @@ The ideal estimate of a bound graph (D155, `estimate/`), with or without a platf
 | `splits` | per split map with a tail: `n` (`loop.split.valid`), `w` (its inner map's length, or once bound its lanes) and `lane_use` n / (ceil(n / W) · W) |
 | `cost` | on a technology (section 20): `tech`, `source` (its table's commits), the design's `area`, `kernel_energy` and `energy` (its accelerators' groups added up) and `missing`, each accelerator's own figures under `accelerators`; null without one |
 
-**The COUNTER and the expected COUNTER** (D155). A run's COUNTER counts from its group's START, every cycle until busy drops (section 17), so it includes bank conflicts and is shortened by the streamers' head start: the program configures the streamers, then the accelerator, then starts the streamers, then the accelerator (section 9), so a stream may have data waiting when the group starts. Each group's `counter`, its `cycles` plus the streamers' fill, is the expected COUNTER, a guide SNAX-DFG shows and `run.md` sets beside the measured one, not a check: a run may be above it or below it (dot 1 at W_mul = W_sum = 8: mul 256 against 259, its START 10 cycles after the streamers' start; vecmul at W = 1: 2048 against 2051). `tests/estimate/` holds it equal to every `forge counter` of STATUS open item 95, a regression of those designs. The unmapped cycles never enter a group's expected COUNTER. `bank_bound` is in `to_dict` / `from_dict` with the rest. Against SYN2's 48 points (vecadd, vecmul, vsum_tree, dot 2 to 6 at W = 1 to 32; `tests/estimate/fixtures/syn2_flops.json`, from snax-forge-experiments' DC results), each datapath's `bits` matched the flops DC kept, and `ctrl_bits` matched DC's at all 48 points when it was built (the test holds it within 10 %, so a later control change does not fail on a bit or two): a check of the counts, not a promise of the cost's accuracy, which section 20 states. `design.md` shows the groups, `run.md` each task's expected COUNTER beside the measured one.
+**The COUNTER and the expected COUNTER** (D155). A run's COUNTER counts from its group's START, every cycle until busy drops (section 17), so it includes bank conflicts and is shortened by the streamers' head start: the program configures the streamers, then the accelerator, then starts the streamers, then the accelerator (section 9), so a stream may have data waiting when the group starts. Each group's `counter`, its `cycles` plus the streamers' fill, is the expected COUNTER, a guide SNAX-DFG shows and `run.md` sets beside the measured one, not a check: a run may be above it or below it (dot 1 encapsulated, `dot_1_enc`, at W_mul = W_sum = 8: vmul 256 against 259, its START 10 cycles after the shared streamer's start; dot 1's two accelerators 259, each set's streamer started just before its START; vecmul at W = 1: 2048 against 2051). `tests/estimate/` holds it equal to every `forge counter` of STATUS open item 95, a regression of those designs. The unmapped cycles never enter a group's expected COUNTER. `bank_bound` is in `to_dict` / `from_dict` with the rest. Against SYN2's 48 points (vecadd, vecmul, vsum_tree, dot 2 to 6 at W = 1 to 32; `tests/estimate/fixtures/syn2_flops.json`, from snax-forge-experiments' DC results), each datapath's `bits` matched the flops DC kept, and `ctrl_bits` matched DC's at all 48 points when it was built (the test holds it within 10 %, so a later control change does not fail on a bit or two): a check of the counts, not a promise of the cost's accuracy, which section 20 states. `design.md` shows the groups, `run.md` each task's expected COUNTER beside the measured one.
 
 ## 20. Cost model
 
