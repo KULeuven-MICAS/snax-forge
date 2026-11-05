@@ -121,7 +121,7 @@ Retired, and where each now lives:
 
 **D99** · viz — Design and run reports in the layout of HLS reports, Markdown from dataclasses, for humans and LLMs alike. Every number comes from the design point, profile or trace, nothing grows with cycles, and a wait is named by what it was for. → `report/`.
 
-**D100** · scope — SNAX-FORGE is the subject of a paper, with no fixed deadline: a plan (P1) runs alongside development, a draft (P2) follows the evidence. The evaluation climbs NPBench from kernels to layers to blocks and models (ResNet, Transformer, NVSA). → `docs/PAPER.md`.
+**D100** · scope — SNAX-FORGE is the subject of a paper for ISPASS 2027 (abstract 11 Dec 2026, paper 18 Dec): a plan (P1) runs alongside development, a draft (P2) follows the evidence. The evaluation climbs NPBench from kernels to layers to blocks and models (ResNet, Transformer, NVSA). → `docs/PAPER.md`.
 
 **D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `reduce` (an associative op and its identity), so import, split and bind treat it as any map; bind folds every lane of an output without the spatial variable into one, its rate from `named_rates`. → C§11.
 
