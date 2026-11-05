@@ -1,0 +1,33 @@
+{
+ "name": "dot_2_dry",
+ "kernel": "dot",
+ "params": {"N": 2048, "W_acc_1": 8, "W_acc_2": 8, "D": 1},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split", "params": {"map": "mult_map", "factor": "W_acc_1"}},
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "tag_map", "params": {"map": "mult_map_inner", "kind": "spatial"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "elementwise_mul",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc_1"
+   }
+  },
+  {"transform": "split", "params": {"map": "sum_map", "factor": "W_acc_2"}},
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "tag_map", "params": {"map": "sum_map_inner", "kind": "spatial"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "acc_2"
+   }
+  },
+  {"transform": "link", "params": {"container": "tmp0", "depth": "D", "group": "dot"}}
+ ]
+}
