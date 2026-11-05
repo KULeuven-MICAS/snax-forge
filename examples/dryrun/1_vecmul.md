@@ -213,7 +213,7 @@ Turn Compare on and pick `vecmul_w4/4_bind` and `vecmul_w8/4_bind`: Details and 
 
 ## 8. What was generated
 
-The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the cluster file `snax_forge.hjson` and its streamer file `snax_forge_vecmul_dry_streamer_acc.hjson`, which SNAX-GVSoC reads, the headers, the program `main.c` with its `data.h`, `manifest.json`, and `accelerator.json`, the one description both SNAX-GVSoC and the RTL are built from (D134, C§17). The design is one snax_cluster entry, `snax_forge_vecmul_dry`, with one streamer set, `acc` (D157):
+The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the cluster file `snax_forge.hjson` and its streamer file `snax_forge_vecmul_dry_streamer_acc.hjson`, which SNAX-GVSoC reads, the headers, the program `main.c` with its `data.h`, `manifest.json`, and `accelerator.json`, the one description both SNAX-GVSoC and the RTL are built from (D134, C§17). The design is one snax_cluster entry with one streamer set, `acc` (D157). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `vecmul_dry` gives `snax_forge_vecmul_dry` here and in the RTL's module names (a recipe `vecmul` would give `snax_forge_vecmul`):
 
 ```json
     "snax_acc_name": "snax_forge_vecmul_dry",
@@ -229,9 +229,9 @@ The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the clust
     ],
 ```
 
-The RTL comes from `gen-rtl` on the same design point (the flow does not make RTL, D136); with the folder given, since without it a flow's design point names the folder after `design/`:
+The RTL comes from `gen-rtl` on the same design point (the flow does not make RTL, D136):
 
-    pixi run gen-rtl out/flow/vecmul_dry/design/design_point.json out/rtl/vecmul_dry
+    pixi run gen-rtl out/flow/vecmul_dry/design/design_point.json
 
 It writes `out/rtl/vecmul_dry/accelerator.json`, runs `hw/chisel/`'s `Emit --spec` into `sv/` and lists what it emitted in `emitted.json`. Every module the design owns carries its tag, `snax_forge_vecmul_dry`. The top is `snax_forge_vecmul_dry_shell_wrapper`, which snax_cluster connects to the set's streamer; inside it three parts:
 

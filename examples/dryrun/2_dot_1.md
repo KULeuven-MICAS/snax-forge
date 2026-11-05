@@ -262,7 +262,7 @@ The cycles do not move: both units take one beat a cycle, so a deeper buffer has
 
 ## 8. What was generated
 
-The flow wrote the design point's files to `out/flow/dot_1_dry/gen/`: the cluster file, a streamer file per set, `accelerator.json`, the headers, `main.c`, `data.h` and `manifest.json`. The cluster file's slot is the one entry `snax_forge_dot_1_dry` with its two streamer sets (`snax_forge.hjson`):
+The flow wrote the design point's files to `out/flow/dot_1_dry/gen/`: the cluster file, a streamer file per set, `accelerator.json`, the headers, `main.c`, `data.h` and `manifest.json`. The cluster file's slot is the one entry `snax_forge_dot_1_dry` with its two streamer sets (`snax_forge.hjson`). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `dot_1_dry` gives `snax_forge_dot_1_dry` here and in the RTL's module names, where the checked-in `recipes/dot_1.json` gives `snax_forge_dot_1`:
 
 ```json
   "snax_acc_cfg": [
@@ -348,9 +348,9 @@ and each accelerator one of its own CSRs, `include/vmul_csr.h` (`VMUL_RW_START` 
 
 `vsum`'s set-up is twelve writes: five for each of its two movers, JOBS and JOB_BEATS.
 
-The RTL comes from `gen-rtl` on the same design point (the flow does not make RTL, D136); with the folder given, since without it a flow's design point names the folder after `design/`:
+The RTL comes from `gen-rtl` on the same design point (the flow does not make RTL, D136):
 
-    pixi run gen-rtl out/flow/dot_1_dry/design/design_point.json out/rtl/dot_1_dry
+    pixi run gen-rtl out/flow/dot_1_dry/design/design_point.json
 
 It writes `out/rtl/dot_1_dry/accelerator.json`, runs `hw/chisel/`'s `Emit --spec` into `sv/` and lists what it emitted in `emitted.json` (`snax_forge_dot_1_dry_shell_wrapper from out/rtl/dot_1_dry/accelerator.json: 11 module(s)`). Every module the design owns carries its tag, `snax_forge_dot_1_dry`; the shell's module tree, instance names first:
 
@@ -512,9 +512,9 @@ At N = 2048 and W = 8 the encapsulated run's window is 1230 against `dot_1_dry`'
 | 64 | dot_1 | 264 | 282 | 19, 19 | 2 | 40 (960–999) | 31 400 µm², 1.953 nJ |
 | 64 | dot_1_enc | 304 | 302 | 19, 19 | 1 | 37 (960–996) | 31 400 µm², 1.953 nJ |
 | 512 | dot_1 | 584 | 597 | 131, 131 | 2 | 40 (960–999) | 31 400 µm², 15.576 nJ |
-| 512 | dot_1_enc | 586 | 609 (FAIL: COUNTER 128, 131) | 131, 131 | 1 | 37 (960–996) | 31 400 µm², 15.576 nJ |
+| 512 | dot_1_enc | 586 | 609 | 131, 131 | 1 | 37 (960–996) | 31 400 µm², 15.576 nJ |
 
-Every RTL run has `forge data: 0 errors`, and three print the SNAX-GVSoC run's `forge counter` lines (`PASS`). `dot_1_enc` at N = 512 fails the check on `vmul`'s COUNTER, 128 against SNAX-GVSoC's 131: on the RTL's core its STREAMER_START and START land 6 cycles apart (cycles 1174 and 1180 in core 0's trace), so the streamer's FIFOs are full when the group starts and the COUNTER is the ideal 128, without the fill (section 5's head start, D155). `vsum`'s two writes land 1 cycle apart (1336, 1337) and its COUNTER is 131 on both. The Estimate's cost is equal for both forms, since it leaves out the streamers (open item 110).
+Every RTL run passes: `forge data: 0 errors`, and each COUNTER within its group's streamer fill of SNAX-GVSoC's (D123; `forge_expected.txt` gives each counter's `forge fill`). Three print SNAX-GVSoC's COUNTERs exactly; `dot_1_enc` at N = 512 passes with a note, `mult_vmul: counter 128 against 131, within its fill 3`, because on the RTL's core its STREAMER_START and START land 6 cycles apart (cycles 1174 and 1180 in core 0's trace), so the streamer's FIFOs are full when `vmul` starts and its COUNTER leaves out the fill (section 5's head start). The Estimate's cost is equal for both forms, since it leaves out the streamers (open item 110).
 
 **Why two accelerators are faster.** `vsum`'s own set takes 12 CSR writes, where the shared streamer rewrites all five movers (27), and in both forms the writes overlap `vmul`'s run. At N = 64 `vmul` runs only 20 cycles (120 to 140 in `--trace beat`), shorter than either set-up: `dot_1`'s twelve writes end at 154 and `vsum` starts at 175, `dot_1_enc`'s 27 end at 189 and `vsum` starts at 209. So two sets save 40 cycles on SNAX-GVSoC and 20 on the RTL at N = 64. At N = 512 `vmul` runs about 130 cycles, longer than either set-up (the 27 writes took 67 cycles at N = 64), and the saving shrinks to 2 cycles on SNAX-GVSoC and 12 on the RTL. The gap between the model and the RTL is the core's timing, which SNAX-GVSoC does not model (open items 65, 67): the CSR writes and the handover take a different number of cycles on the RTL's core.
 

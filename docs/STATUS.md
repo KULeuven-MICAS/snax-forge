@@ -48,7 +48,7 @@ M14 is done (CLN1): a recipe runs to a checked SNAX-GVSoC run (`pixi run flow`) 
 
 Next up: SYN1, the synthesis of the basic blocks and kernels in KULeuven-MICAS/snax-forge-experiments (PAPER §7); then HWCOST, B2 and tier A (D141).
 
-SLOT1 is in progress, its plan in the project's `claude/slot1-plan-2026-11-04.md`: R0, F1, F2, F2b, G1 (snax-gvsoc) and F3 done (the M13 row), C1 (done, `slot1-c1`: the quick set on vsim, open item 95); the submodule at snax-gvsoc main's squashed G1, `61d1e8ac` (#43), the same tree as `1e988679`.
+SLOT1 is in progress, its plan in the project's `claude/slot1-plan-2026-11-04.md`: R0, F1, F2, F2b, G1 (snax-gvsoc) and F3 done (the M13 row), C1 (done, `slot1-c1`: the quick set on vsim, open item 95); the submodule at snax-gvsoc main's squashed G1, `61d1e8ac` (#43), the same tree as `1e988679`. P1 (`wip`, `ry/slot1-p1`, #54): the dry-run pages again on SLOT1, `examples/dryrun/2_dot_1.md` (dot 1 as two accelerators, `dot_1_enc` beside it at N = 64 and 512 on SNAX-GVSoC and vsim) and `1_vecmul.md`'s generated files and names, their recipes `recipes/*_dry.json` checked in; with it D123 amended (an RTL COUNTER may differ from SNAX-GVSoC's by its group's streamer fill: `forge_expected.txt`'s `forge fill` lines, applied by snax_cluster's `snax_forge_check.sh`, `ry/slot1-check`), and the default output folder of gen-gvsoc, gen-rtl and bundle for a flow's design point the flow's folder again (F2 had made it `design`).
 
 ## Open Items
 
