@@ -76,7 +76,7 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
         ),
         f"  flow      passed: design point {flow / 'design' / 'design_point.json'}, run {flow}/run/",
         f"  bundle    {bundle}/: snax_forge_vecadd_shell_wrapper, snax-forge {COMMIT[:12]}",
-        f"  expected  {bundle / 'forge_expected.txt'}: the run's counter and data lines",
+        f"  expected  {bundle / 'forge_expected.txt'}: the run's counter and data lines, each counter's fill",
         f"  sw        {forge / 'sw' / 'forge.elf'} from the bundle (sha256 {sha[:16]}, the flow's)",
         f"SNAX-GVSoC ({flow / 'run' / 'stdout.txt'}):",
         "  forge cycles: 226",
@@ -112,7 +112,7 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
     )  # make's output in forge.log
     # The bundle carries the run's lines an RTL run must print
     assert (bundle / "forge_expected.txt").read_text() == (
-        "forge counter add_acc: 19\nforge data: 0 errors (64 words)\n"
+        "forge counter add_acc: 19\nforge data: 0 errors (64 words)\nforge fill add_acc: 3\n"
     )
     assert json.loads((bundle / "bundle.json").read_text())["expected"] == "forge_expected.txt"
     sw = forged.calls[-1][1]

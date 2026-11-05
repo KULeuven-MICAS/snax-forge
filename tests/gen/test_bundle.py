@@ -14,14 +14,16 @@ from pathlib import Path
 
 import pytest
 
+from snax_forge.design import DesignPoint
 from snax_forge.gen import GenError, generate
 from snax_forge.gen import bundle as bundle_mod
 from snax_forge.gen import gvsoc as gvsoc_mod
 from snax_forge.gen import rtl as rtl_mod
 from snax_forge.gen.bundle import Bundle, write_bundle
 from snax_forge.gen.rtl import EMITTED_JSON
+from snax_forge.lower.derive import task_list
 
-from .helpers import COMMIT, SV, fake_emit, files, point, with_groups
+from .helpers import COMMIT, SV, bound_dot1, fake_emit, files, point, with_groups
 
 
 @pytest.fixture
@@ -199,17 +201,29 @@ def test_the_expected_lines_and_their_refusal(tmp_path, fake):
     write_bundle(point(tmp_path), out, tmp_path)
     run = ("forge cycles: 304\nforge data: 0 errors (1 words)\nforge counter mult_mul: 19\n"
            "forge counter sum_sum: 19\nforge errors: 0\n")  # fmt: skip
-    path = bundle_mod.write_expected(out, run)
+    fills = {"mult_mul": 3, "sum_sum": 2}
+    path = bundle_mod.write_expected(out, run, fills)
     assert path.read_text() == (
         "forge counter mult_mul: 19\nforge counter sum_sum: 19\nforge data: 0 errors (1 words)\n"
+        "forge fill mult_mul: 3\nforge fill sum_sum: 2\n"
     )
     assert Bundle.load(out / "bundle.json").expected == "forge_expected.txt"
-    for bad in (
-        "forge data: 0 errors (1 words)\n",
-        "forge counter a: 3\nforge data: 2 errors (8 words)\n",
+    for bad, fill in (
+        ("forge data: 0 errors (1 words)\n", fills),
+        ("forge counter a: 3\nforge data: 2 errors (8 words)\n", {"a": 3}),
+        (run, {"mult_mul": 3}),  # sum_sum's counter has no fill
     ):
         with pytest.raises(GenError) as e:
-            bundle_mod.write_expected(out, bad)
+            bundle_mod.write_expected(out, bad, fill)
         assert e.value.code == "bundle.expected"
     write_bundle(point(tmp_path), out, tmp_path)  # a bundle alone: the earlier run's file goes
     assert not path.exists() and Bundle.load(out / "bundle.json").expected is None
+
+
+def test_each_counter_s_fill_is_its_group_s_from_the_estimate(tmp_path):
+    """counter_fills: per accelerator task the estimate's fill of the group it runs (D123), 3
+    for vmul's two inputs and 2 for vsum's one, in dot 1's two accelerators."""
+    path = point(tmp_path, name="dot_1", graph=bound_dot1())
+    tasks = path.with_name("tasks.json")
+    task_list(DesignPoint.load(path)).save(tasks)
+    assert bundle_mod.counter_fills(path, tasks) == {"mult_vmul": 3, "sum_vsum": 2}

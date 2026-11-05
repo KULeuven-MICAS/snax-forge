@@ -182,16 +182,16 @@ One catalogue block alone, as an accelerator holds it (CHAR1, C§17), for snax-f
 
 ## 8. The local RTL check
 
-One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL, and the RTL run must print the SNAX-GVSoC run's `forge counter` and `forge data` lines (D123). snax-forge never runs RTL; snax_cluster's `snax-forge-check` does (C§18).
+One ELF, snax-forge's, runs on SNAX-GVSoC and on snax_cluster's RTL, and the RTL run must print the SNAX-GVSoC run's `forge data` line and each of its `forge counter` lines within that group's streamer fill (D123): the COUNTER counts the streamer's head start before START, which the core's timing between STREAMER_START and START sets and SNAX-GVSoC does not model (open items 65, 67). snax-forge never runs RTL; snax_cluster's `snax-forge-check` does (C§18).
 
-`pixi run forge` runs section 2's flow, the bundle of its design point with `forge_expected.txt` (the run's counter and data lines), and the bundle's ELF, checked to be the flow's; each step's output is in `out/forge/<name>/forge.log`:
+`pixi run forge` runs section 2's flow, the bundle of its design point with `forge_expected.txt` (the run's counter and data lines, then each counter's `forge fill`, its group's streamer fill from the estimate), and the bundle's ELF, checked to be the flow's; each step's output is in `out/forge/<name>/forge.log`:
 
     pixi run forge recipes/vecadd.json
 
     forge vecadd: recipes/vecadd.json on platforms/snax_forge.json; every step's output in out/forge/vecadd/forge.log
       flow      passed: design point out/flow/vecadd/design/design_point.json, run out/flow/vecadd/run/
       bundle    out/bundle/vecadd/: snax_forge_vecadd_shell_wrapper, snax-forge $COMMIT
-      expected  out/bundle/vecadd/forge_expected.txt: the run's counter and data lines
+      expected  out/bundle/vecadd/forge_expected.txt: the run's counter and data lines, each counter's fill
       sw        out/forge/vecadd/sw/forge.elf from the bundle (sha256 3fa93c774886c3b3, the flow's)
     ...
 
@@ -208,7 +208,7 @@ then the snax_cluster commands for one design (Verilator, and Questa as below). 
     wrote out/forge-set/quick.md; from snax_cluster's target/snitch_cluster:
       make snax-forge-check BUNDLES="$ROOT/snax-forge/out/bundle/vecadd_i32 ... $ROOT/snax-forge/out/bundle/dot_4" SIM=vsim SNAX_CLUSTER_IMAGE=<image>
 
-Run that line from snax_cluster's `target/snitch_cluster`, outside the image. `<image>` is snax_cluster's development image for podman; on the MICAS servers it is `d3d8f5572ff4`. The image has no sbt, Coursier or firtool cache, so every `podman run` downloads them: put a `podman` wrapper first on `PATH` that adds `-v` mounts of persistent folders at `/root/.sbt`, `/root/.cache/sbt`, `/root/.cache/coursier` and `/root/.cache/llvm-firtool` to every `run`. With `SIM=vsim`, `rtl-gen` and `vsim_preparation` run in the image and the build and the run outside it, with Questa and bender on `PATH` (snax_cluster's pixi environment); with `SIM=vlt` every step runs in the image. It prints per bundle `PASS <name>` or `FAIL <name>: <want> / <got>` and fails if any failed; `logs/snax-forge-check.txt` keeps those lines with each run's `forge cycles`, `logs/snax-forge-<name>-<sim>.txt` each run's output:
+Run that line from snax_cluster's `target/snitch_cluster`, outside the image. `<image>` is snax_cluster's development image for podman; on the MICAS servers it is `d3d8f5572ff4`. The image has no sbt, Coursier or firtool cache, so every `podman run` downloads them: put a `podman` wrapper first on `PATH` that adds `-v` mounts of persistent folders at `/root/.sbt`, `/root/.cache/sbt`, `/root/.cache/coursier` and `/root/.cache/llvm-firtool` to every `run`. With `SIM=vsim`, `rtl-gen` and `vsim_preparation` run in the image and the build and the run outside it, with Questa and bender on `PATH` (snax_cluster's pixi environment); with `SIM=vlt` every step runs in the image. It prints per bundle `PASS <name>`, with a line for each counter that differs from SNAX-GVSoC's within its fill, or `FAIL <name>: <want> / <got>`, and fails if any failed; `logs/snax-forge-check.txt` keeps those lines with each run's `forge cycles`, `logs/snax-forge-<name>-<sim>.txt` each run's output:
 
     PASS vecadd_i32
       vecadd_i32 forge cycles: 217
@@ -220,6 +220,12 @@ Run that line from snax_cluster's `target/snitch_cluster`, outside the image. `<
       dot_1_enc forge cycles: 302
     PASS dot_4
       dot_4 forge cycles: 449
+
+A counter that differs within its fill gets a line under its PASS, as `dot_1_enc` at N = 512 on vsim (the RTL's core starts `vmul` 6 cycles after its streamer, so the COUNTER leaves out the fill):
+
+    PASS dot_1_enc_N512
+      mult_vmul: counter 128 against 131, within its fill 3
+      dot_1_enc_N512 forge cycles: 609
 
 Each vsim design takes about 2 minutes, its run 6–13 s against SNAX-GVSoC's 1.5–2.2 s. CLAUDE.md's rule says when each set is due: the quick set on vsim before a PR that changes the emitted RTL or `main.c` merges, the full set at a phase's close, its numbers into STATUS's open item 95.
 
