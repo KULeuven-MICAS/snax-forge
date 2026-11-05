@@ -10,13 +10,13 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D159**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D160**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
 | Area | Decisions |
 |---|---|
-| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 D152 D157 |
+| scope | D8 D23 D51 D52 D91 D98 D100 D111–D113 D116 D118 D123 D126 D130 D141 D145 D146 D152 D157 D159 |
 | lower | D64 D75 D105 D135 D144 D158 |
 | gvsoc | D120–D122 D125 D134 D137 |
 | brm | D68 D70 D82 D103 D129 D133 D143 D147 D149 D153 |
@@ -121,7 +121,7 @@ Retired, and where each now lives:
 
 **D99** · viz — Design and run reports in the layout of HLS reports, Markdown from dataclasses, for humans and LLMs alike. Every number comes from the design point, profile or trace, nothing grows with cycles, and a wait is named by what it was for. → `report/`.
 
-**D100** · scope — SNAX-FORGE is the subject of a paper for ISPASS 2027 (abstract 11 Dec 2026, paper 18 Dec): a plan (P1) runs alongside development, a draft (P2) follows the evidence. The evaluation climbs NPBench from kernels to layers to blocks and models (ResNet, Transformer, NVSA). → `docs/PAPER.md`.
+**D100** · scope — SNAX-FORGE is the subject of a paper for ISPASS 2027 (abstract 11 Dec 2026, paper 18 Dec): a plan (P1) runs alongside development, a draft (P2) follows the evidence. The evaluation climbs NPBench from kernels to layers to blocks and models (ResNet, Transformer, NVSA); the ISPASS paper carries kernels and composite kernels (PAP3), with Transformer decode as its end-to-end case only if softmax runs on SNAX-GVSoC by 27 Nov 2026, the rest after it. → `docs/PAPER.md` §6.
 
 **D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `reduce` (an associative op and its identity), so import, split and bind treat it as any map; bind folds every lane of an output without the spatial variable into one, its rate from `named_rates`. → C§11.
 
@@ -171,7 +171,7 @@ Retired, and where each now lives:
 
 **D137** · gvsoc — Events in two stages, so the model owns what it counts and snax-forge only names it: SNAX-GVSoC's traces go to one `events.log`, a level turns trace names on, lines are linked by ids; the converter renames, never recounts, and cuts the window. → `run/`, C§7.
 
-**D141** · scope — M13, the block library, joins M7's tier A, the composed bind and BASE1's forge side, with dot's variants as the case study. Phases B0, B1, B1x, clean-up, VIEW2, SYN1, CHAR1 (each block's cost alone, for the DFG viewer), HWCOST, B2, tier A, with RAM1 alongside. → ARCHITECTURE §8.
+**D141** · scope — M13, the block library, joins M7's tier A, the composed bind and BASE1's forge side, with dot's variants as the case study. Phases B0, B1, B1x, clean-up, VIEW2, SYN1, CHAR1 (each block's cost alone, for the DFG viewer), then, from PAP3, two tracks: the code (B2, then tier A, with L2V1, XBAR1 and PORT1) and the server (RAM1, then the streamer and interconnect sweeps), joined in HWCOST. → ARCHITECTURE §8, STATUS's M13.
 
 **D142** · design — A bank word packs num_slc = 64/b elements of a port's container dtype, little-endian as NumPy. W lanes use num_ch = W/num_slc channels; another needs the FIFO slicer (parked: open item 93), so `connect.num_ch` refuses it. A packed stream: word-aligned base, num_slc | S_0, innermost stride 1, the others multiples of num_slc. The platform keeps only the word. → C§1, C§13, C§14.
 
@@ -204,3 +204,5 @@ Retired, and where each now lives:
 **D157** · scope — A design's accelerators are streamer sets in one snax_cluster entry, `snax_forge_<design>`, each with its own streamer, START and CSRs behind `snax_csr_range_demux`, not entries behind `snax_acc_mux_demux` (its 0x7C6 select can misroute a delayed write) or address windows (open item 108); forge-only. → C§16, C§17.
 
 **D158** · lower — Accelerators run in series for now: before each accelerator's start, a `sync` on the previous accelerator's task, its configures before that sync, so the next one is set up while the current one runs; overlap of independent accelerators, with data-only waits, is open item 109. → C§9.
+
+**D159** · scope — Characterization is on Nangate 45 nm only from 5 Nov 2026: OpenRAM has no 15 nm technology (FreePDK15 has no SRAM cells or SPICE models), so the L1 macros, the cluster synthesis and the homogeneous comparison exist at 45 nm only, and new block, streamer and interconnect characterization follows. What exists at 15 nm stays (SYN1, SYN2, CHAR1, `nangate15.json`, HSYN1), and nangate15 keeps D154's two placeholders. → PAPER §7.

@@ -30,14 +30,14 @@ The tasks are a first cut; each milestone is planned in a round of its own.
 
 | Milestone | Tasks | Content |
 |---|---|---|
-| P1 | PAP2 (`brief`), BASE1, BASE2, PAP3 | Related work after the reading; the SNAX RTL flow logged step by step by hand (BASE1; its forge side, one `pixi run forge` per dot variant, is in M13); SNAX-GVSoC's speed on large runs (BASE2); the evaluation plan mapped onto the claims (PAP3) |
-| M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3 (`done`); HWCOST, B2, tier A; RAM1 alongside | Its tasks, below (M13) |
+| P1 | PAP3 (`done`), PAP2 (`brief`), BASE1, BASE2 | PAP3 chose the ISPASS 2027 paper's experiments and the order of the work (PAPER §6, Next Up; D100, D141, D159). PAP2: related work after the reading, DSAGEN and OverGen first (PAPER §8.4). BASE1 and BASE2 are E2: the vsim path timed step by step against SNAX-GVSoC's, and both simulators' cycles per second, logged on E1's runs |
+| M13 | B0, B1, B1x, CLN2, VIEW2, SPAN1, SYN1, CTRL1, CHAR1, CHAR1b, DRY1, DRY1-2, SLOT1, DRY1-3 (`done`); track A: B2, L2V1, XBAR1, tier A, PORT1; track B: RAM1, HWCOST | Its tasks, below (M13) |
 | M7 | KER0 (`done`), FE1b, FE1c, PACK0 (`done`), PACK1, FE1d, FE1e, FE2, FE3 | The tiers of PAPER §6.1 after tier A (D113), which M13 does. KER0 staged every target kernel in `kernels/`, not linked to the flow (`kernels/README.md`, `pixi run kernels`). FE1b is tier B; FE1c tier C; PACK0 packed int32 and int8 into 64-bit words with NumPy's arithmetic (D142–D144); PACK1 keeps tier P: the exact products, requantization and the int8 kernels (the reference executor accumulates as the hardware does); FE1d tier D; FE1e tier E. FE3 is C2's coverage table |
 | M15 | LOW3b | A tile transform and a DMA per tile, an L2 slice per tile, reductions over tiles (open item 44) |
 | M9 | J1 | Stencil BRM with reuse and double buffering (see open item 76) |
 | M11 | LAY1–LAY3 | conv2d tiled on a MAC-array BRM; softmax and attention with several BRMs; HDC bind, bundle and similarity |
 | M12 | BLK2–BLK4 | A ResNet basic block, a Transformer encoder block, an NVSA pipeline; JEPA if it adds a case |
-| P2 | PAP4 | The paper, every number from a checked-in command and a test |
+| P2 | PAP4 | The paper, every number from a checked-in command; the tests checking them follow after the submission |
 | M6 | F1–F3 | Package layout and CI; versioned schemas for every contract (closes open item 1); registries and namespaced attrs |
 | M8 | DSE1–DSE5 | Search over recipes; replacement across the BRM library; parameter choices; memory-plan policies (D86); a sweep runner |
 | M10 | COS1, COS2 | One accelerator's RTL in place of its model, and the mismatch of its latency and II per BRM (D52) |
@@ -63,20 +63,37 @@ Done, each in its PRs and git history:
 | SLOT1 | #53, #54, snax_cluster #679, #680, snax-gvsoc #43 | A design's accelerators as streamer sets of one snax_cluster entry, run in series (D157, D158; D123 amended); `dot_1` two accelerators, `dot_1_enc` one; plan in the project's `claude/slot1-plan-2026-11-04.md` |
 | DRY1-3 | #55 | `examples/dryrun/3_dot_2_6.md`, dot 2–6 against SYN2 (cycles exact, area within 0.6 %, kernel energy 1.01–1.08); a buffer link loads once per output of its producer; a fused nest's local value leaves the graph at its bind and is drawn as a wire; the bind form lists only what fits; the dry-run pages name no commits (D98) |
 
-To do, in order:
+To do, in two tracks (D141), each task in its own PR:
 
-- **HWCOST**: the costs CHAR1b left as placeholders (the estimate already sums the blocks, and DRY1-3 checked it against dot 2–6 synthesized whole): the streamers with the memory and the interconnect (open item 110), in place of D154's two placeholders (an L1 word at 4 × e_load per bit, a control unit's comb area equal to its flops'); dot 2's buffer (open item 112); energy on SNAX-GVSoC from what ran, each unit's active cycles times its logic and register energy.
-- **B2** (shrunk): the 1-stream SIMD, axpy's CSR scalar, the lane accumulator without an op, the fold's `init` port, other group binds; it lifts `gen.span` (a unit of span > 1 reading from a link).
-- **tier A** (B3 and B4 merged): B3's fork, join, broadcast, hold and fragments (applied by output name, `augment_init`), with B4's bicg, mvt, gesummv and atax; it lifts `gen.chain` (a group is a chain). With open items 47 (mvt's in-place update, LOW4), 109 (overlap of independent accelerators, mvt first), 54 (SMALL in a 128 KiB L1) and 113 (one unit across DFG regions, atax).
-- **RAM1**, alongside: OpenRAM macros sized for the cluster, in snax-forge-experiments, so snax_cluster and snitch_cluster synthesize on the same macros; HWCOST's memory costs come from them.
+- **Track A, the code** (snax-forge, snax-gvsoc for PORT1):
+  1. **B2** (shrunk): the 1-stream SIMD (relu), axpy's CSR scalar, the lane accumulator without an op, the fold's `init` port, the group binds tier A and the untiered kernels need; it lifts `gen.span` (a unit of span > 1 reading from a link).
+  2. **L2V1**: each container the DMA moves drawn in the DFG views as its L2 copy with a DMA edge into L1, and a DMA row in the estimate from the memory plan, $\sum_c (\lceil B_c / 64 \rceil + t_0)$ for a 512-bit DMA and a fixed cost $t_0$ per transfer read from a SNAX-GVSoC run, added to the total (amends D155), checked against the run's DMA tasks. The graph-level copy node stays open item 99.
+  3. **XBAR1**: an interconnect marker per running accelerator, $u = \sum_s \mathrm{ch}_s / n_{\mathrm{banks}}$ over its streamers' channels, green at $u \le 0.5$, orange up to 1, red above, the thresholds platform fields (D85), a design note (C§14) in the estimate, `design.md` and the editor (vecmul: W = 4 green, 8 orange, 16 red).
+  4. **tier A**, in two halves: fork, join, broadcast, hold and fragments (applied by output name, `augment_init`) with bicg and gesummv; then mvt (open items 47 and 109) and atax (open item 113). It lifts `gen.chain` (a group is a chain). MINI first, SMALL only where a case needs it (open item 54).
+  5. **PORT1**, beside open item 109: a design's streamer sets, which run in series (D158), share their crossbar ports through a mux selected by the busy set, so the ports are the most any set needs, not their sum (amends D157 and C§16); on SNAX-GVSoC and in HWCOST's interconnect cost first, its RTL in snax_cluster when open item 114 calls for it.
+- **Track B, the server** (snax-forge-experiments, Nangate 45 nm only, D159):
+  1. **RAM1**: OpenRAM macros on freepdk45 at the cluster's L1 sizes and DaCe's dot buffer, so snax_cluster and the homogeneous cluster synthesize on the same macros.
+  2. The streamer and the TCDM interconnect synthesized over their parameters (channels, temporal dims; inputs against banks), for open item 110.
+  3. forge's untiered points synthesized and powered at Vitis's power sizes, after B2, for E7; DaCe's dot with its RAM buffer, after RAM1.
+- **HWCOST**, where the tracks join (snax-forge): RAM1's and the sweeps' costs into `snax_forge/char/nangate45.json` in place of D154's two placeholders, the estimate, the viewer and the editor; open item 112 stated as a known error. Energy on SNAX-GVSoC from what ran moves after the paper.
 
 ## Next Up
 
-HWCOST, then B2 and tier A (M13), then M7's tiers (ARCHITECTURE §8). The paper targets ISPASS 2027, the abstract on 11 Dec 2026 and the paper on 18 Dec (D100, PAPER §1); which experiments fit by then is PAP3's choice (P1).
+The ISPASS 2027 plan (PAP3; D100, PAPER §6): M13's two tracks above, run at once, track B starting now so the server never waits; HSYN1 finishes in snax-forge-experiments on both technologies. Then, as each lands:
+
+| Step | Waits for | Gives |
+|---|---|---|
+| E4: the composition sweeps (a sweep script over `pixi run flow --set`, no DSE5) | tier A, PORT1, HWCOST | C3 |
+| E7: forge against Vitis opt and dace, Bambu and XLS on tier done and untiered, W ≤ 16 | HSYN1, track B's step 3 | the blocks against HLS |
+| E1: mvt and atax (gesummv if time) on vsim, 3–5 compositions each; E2's times logged on the same runs | tier A | C4, C1 |
+| The cluster synthesis (2–3 composites) and E11, the homogeneous cluster (snax_cluster's cores, no accelerator, hand-written C) | E1, RAM1 | cluster PPA, the Snitch baseline |
+| E5: Transformer decode, one head (q·Kᵀ, softmax, ·V) at a short context in L1 | tier A; `exp`, `max` and division (M7 tiers B and C) | the end-to-end case |
+
+Dates: 27 Nov, E5's cut-off (softmax not running on SNAX-GVSoC moves E5, and E6 with it, to future work); 4 Dec, the abstract's result sentence from E4; 11 Dec, the abstract and the data freeze (figure fixes only after it); 12–18 Dec, writing. PAPER §2 and §3 are written alongside from now.
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 114.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 115.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -94,7 +111,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 41. A report glossary, a "where the cycles went" ranking and the knobs' `--set` paths: on hold.
 44. Reductions over tiles need partial sums and a final combine; until then no tile loop sits around a `reduce` memlet (LOW3b).
 47. An in-place update (`y += x`) binds but does not lower: the writer waits for its own node's reader (LOW4).
-50. SNAX-GVSoC's speed on large runs, measured in BASE2; timing-only runs and extrapolation only if it is too slow for C1.
+50. SNAX-GVSoC's speed on large runs, measured in E2 on E1's runs (BASE2); timing-only runs and extrapolation only if it is too slow for C1.
 53. A link between two accelerators: amends D12 and D51 and the SNAX shell. Parked (D112).
 54. Which kernels take PolyBench's SMALL in a 128 KiB L1 (M13 tier A); the NumPy tolerance for float sums waits for the float pass (D113).
 65. Instruction fetch: snax_cluster's L0 prefetches the next line and taken branches' targets, GVSoC's I-cache does not, so SNAX-GVSoC misses more lines for fewer cycles each (tens of cycles in fixed-cost phases). A forge accelerator's counter depends on the core's timing between the streamer's and the accelerator's start writes, so GEN2b compares it with care (D123). Modelled when a kernel's numbers need it.
@@ -141,7 +158,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 
 96. The measurements of a linked group: per-unit and per-link events, the converter at beat level for a group of several linked units (`convert.level` refuses it; an accelerator of several one-unit groups, dot 1, is done) and the run viewer's view of it; bank and port statistics, the export CSV, the area × cycles metric. The bank conflicts measured so far (F3, SNAX-GVSoC) stay inside C§17's cycles plus the fill.
 97. dot 1's row form at 16 × 512 does not fit: tmp0 needs 132 KiB of the 128 KiB L1, so it runs at 8 × 512.
-99. L2 in SNAX-DFG: containers get a level (L2 or L1), and an L2-to-L1 move becomes a DMA copy node placed by a transform, so the editor shows its cost; today lowering derives the DMAs from the memory plan (D64, D86). It belongs with M15's LOW3b.
+99. L2 in SNAX-DFG: containers get a level (L2 or L1), and an L2-to-L1 move becomes a DMA copy node placed by a transform, so tiling can choose what moves per tile; today lowering derives the DMAs from the memory plan (D64, D86), and L2V1 only draws them and counts their cycles. It belongs with M15's LOW3b.
 100. Unmapped work on a core: a node no accelerator runs is run by a core, its tasklet turned into C; this needs `graph.unbound` (C§14) relaxed and lowering to emit core code. Until then the estimate counts it at one cycle per iteration, an assumption (D155, `UNMAPPED_CYCLES_PER_ITERATION`), which a measured core value could replace.
 101. The graph page's edges into a node lower in a map pass behind the nodes above it (`viz/dfg/api.py`'s layout, `static/dfg.js`): a route around them, or the rows inside a map spaced for it.
 102. `gen/accelerator.py`'s `_check_chain` takes a `ports` argument it never reads (from B1x).
@@ -150,9 +167,10 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 106. A fold reading through a tail a container whose pad words its producer never writes (dot 1 at W_mul = 8, W_sum = 10: tmp0's 2048 words written, 2050 read) needs the program to write the fold's identity there before the fold's task; `connect.pad` refuses it until then (D144, DRY1-2).
 108. Several `snax_acc_cfg` entries on one core: the range decoder between entries in place of `snax_acc_mux_demux` and 0x7C6, and `snaxgen.py:620` building every entry; untested since SLOT1 drops the multi-ALU cluster.
 109. Overlap of independent accelerators: D158's serial rule dropped for data-only waits; first case PolyBench mvt, run serial as the baseline; `accelerator_cycles` and C_acc change with it.
-110. Characterize the streamer, with the memory and the interconnect, so a streamer set has a cost.
+110. Characterize the streamer, with the memory and the interconnect, so a streamer set has a cost: track B's step 2 and RAM1, on Nangate 45 nm only (D159), into HWCOST.
 112. A buffer link's energy against SYN2 (DRY1-3): dot 2's `tmp0` buffer, which loads every beat, is 1.59× (nangate45) and 1.49× (nangate15) high against CHAR1's `link/d1_w8` stream point, not explained. dot 6's `out_partial` was 2.65× and 3.13× high while a buffer loaded once per firing of its producer; it now loads once per output (C§20), once per job behind the Mac.
 113. One unit across several DFG regions (atax's A and Aᵀ on one GeMM): a unit bound at several nodes, trading throughput for area; amends D112 (Ryan, 27 Oct 2026, for the paper). tier A's atax is the first case.
+114. PORT1's shared crossbar ports exist on SNAX-GVSoC only: snax_cluster's mux follows when a shared-port design is in E4's result, in E1 or in the cluster synthesis, before E1 runs it; until then those runs are marked model only, outside D123's check.
 
 ## Sync Reminders
 
