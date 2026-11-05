@@ -35,7 +35,7 @@ and, for dot 1's two groups, the one-unit rule: `vmul` (L 0) its firings, JT; `v
 
 What each builds:
 
-- dot 1: the multiplier writes `tmp0` to L1, then the adder tree reads it back; two accelerators, each its own streamer set, the second started once the first is done (D158), a task each; its COUNTERs, 131 and 131, are those of `recipes/dot_1_enc.json`, the two encapsulated as one accelerator, too (SLOT1 G1: 584 cycles against 586, each group's START just after its streamer's start in both).
+- dot 1: the multiplier writes `tmp0` to L1, then the adder tree reads it back; two accelerators, each its own streamer set, the second started once the first is done (D158), a task each; its COUNTERs are those of `recipes/dot_1_enc.json`, the two encapsulated as one accelerator, too (SLOT1 G1), each group's START just after its streamer's start in both.
 - dot 2, dot 3: the same two units in one group, the products passed on in place of `tmp0`: through a buffer of one beat (dot 2, one cycle more) or a wire (dot 3).
 - dot 4: a MAC sums each lane over the job's T beats and gives one beat of W partials, which the tree adds up (its T fixed at 1).
 - dot 5, dot 6: the MAC's partials summed one lane a cycle (span W), the W − 1 lanes after the last beat the cycles over dot 4: through a wire (dot 5, where from the second job on the MAC waits while the sum reads) or a buffer of one beat (dot 6, where it goes on, one cycle more at one job).
