@@ -106,8 +106,9 @@ def files() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, A
                      dict[str, Any]]:  # fmt: skip
     """Fresh copies of the cluster file, the streamer files by set (vecadd's one, ``acc``),
     accelerator.json, the point and the manifest: ``cluster_from``'s arguments."""
-    cluster, streamer, unit, point, manifest = (copy.deepcopy(x) for x in
-                                                (CLUSTER, STREAMER, UNIT, POINT, MANIFEST))
+    cluster, streamer, unit, point, manifest = (
+        copy.deepcopy(x) for x in (CLUSTER, STREAMER, UNIT, POINT, MANIFEST)
+    )
     return cluster, {"acc": streamer}, unit, point, manifest
 
 

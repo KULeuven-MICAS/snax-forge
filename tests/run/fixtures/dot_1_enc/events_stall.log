@@ -82,23 +82,23 @@
 250900000: 2509: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2509 csr pc=0x80000390 csr=0x3dd op=w value=16
 251000000: 2510: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2509 barrier first=2509 last=2510
 251000000: 2510: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2510 barrier first=2510 last=2510
-251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2511 start mover=reader0
-251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2511 start mover=reader1
-251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2511 start mover=reader2
-251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2511 start mover=writer0
-251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2511 start mover=writer1
+251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2511 start mover=reader0
+251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2511 start mover=reader1
+251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2511 start mover=reader2
+251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2511 start mover=writer0
+251100000: 2511: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2511 start mover=writer1
 251100000: 2511: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2511 csr pc=0x80000398 csr=0x3d9 op=w value=1
-251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/events                            [0m] 2512 start count=16 rate=1
+251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/events                           [0m] 2512 start count=16 rate=1
 251200000: 2512: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2512 csr pc=0x8000039c csr=0x3dc op=w value=1
-251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2512 class mover=reader0 mode=idle
-251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2512 class mover=reader1 mode=idle
-251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2512 class mover=reader2 mode=idle
-251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2512 class mover=writer0 mode=idle
-251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2512 class mover=writer1 mode=idle
-251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2512 done mover=reader2
-251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2512 done mover=writer1
+251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2512 class mover=reader0 mode=idle
+251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2512 class mover=reader1 mode=idle
+251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2512 class mover=reader2 mode=idle
+251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2512 class mover=writer0 mode=idle
+251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2512 class mover=writer1 mode=idle
+251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2512 done mover=reader2
+251200000: 2512: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2512 done mover=writer1
 251300000: 2513: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2513 csr pc=0x800003a0 csr=0x3c0 op=w value=0
-251300000: 2513: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2513 class mode=stall_in
+251300000: 2513: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2513 class mode=stall_in
 251300000: 2513: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/stalls                                [0m] 2513 stall in=4 addr=0x200 bank=0 row=2 by=0 by_addr=0x0 b=0
 251300000: 2513: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2513 grant in=0 op=r addr=0x0 bank=0 row=0 value=0x2bd back=2514 b=0
 251300000: 2513: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/stalls                                [0m] 2513 stall in=5 addr=0x208 bank=1 row=2 by=1 by_addr=0x8 b=0
@@ -107,9 +107,9 @@
 251300000: 2513: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2513 grant in=2 op=r addr=0x10 bank=2 row=0 value=0x16 back=2514 b=0
 251300000: 2513: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/stalls                                [0m] 2513 stall in=7 addr=0x218 bank=3 row=2 by=3 by_addr=0x18 b=0
 251300000: 2513: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2513 grant in=3 op=r addr=0x18 bank=3 row=0 value=0xfffffffffffffe33 back=2514 b=0
-251300000: 2513: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2513 class mover=reader0 mode=busy
-251300000: 2513: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2513 class mover=reader1 mode=stall_xbar
-251300000: 2513: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2513 class mover=writer0 mode=stall_fifo
+251300000: 2513: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2513 class mover=reader0 mode=busy
+251300000: 2513: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2513 class mover=reader1 mode=stall_xbar
+251300000: 2513: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2513 class mover=writer0 mode=stall_fifo
 251400000: 2514: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2514 grant in=4 op=r addr=0x200 bank=0 row=2 value=0x2ee back=2515 b=0
 251400000: 2514: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2514 grant in=5 op=r addr=0x208 bank=1 row=2 value=0xfffffffffffffd26 back=2515 b=0
 251400000: 2514: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2514 grant in=6 op=r addr=0x210 bank=2 row=2 value=0x9d back=2515 b=0
@@ -118,11 +118,11 @@
 251400000: 2514: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2514 grant in=1 op=r addr=0x28 bank=5 row=0 value=0xfffffffffffffc69 back=2515 b=1
 251400000: 2514: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2514 grant in=2 op=r addr=0x30 bank=6 row=0 value=0xfffffffffffffcae back=2515 b=1
 251400000: 2514: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2514 grant in=3 op=r addr=0x38 bank=7 row=0 value=0xfffffffffffffc39 back=2515 b=1
-251400000: 2514: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2514 class mover=reader1 mode=busy
-251500000: 2515: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2515 fifo mover=reader0 lane=0 count=1
-251500000: 2515: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2515 fifo mover=reader0 lane=1 count=1
-251500000: 2515: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2515 fifo mover=reader0 lane=2 count=1
-251500000: 2515: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2515 fifo mover=reader0 lane=3 count=1
+251400000: 2514: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2514 class mover=reader1 mode=busy
+251500000: 2515: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2515 fifo mover=reader0 lane=0 count=1
+251500000: 2515: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2515 fifo mover=reader0 lane=1 count=1
+251500000: 2515: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2515 fifo mover=reader0 lane=2 count=1
+251500000: 2515: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2515 fifo mover=reader0 lane=3 count=1
 251500000: 2515: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2515 grant in=4 op=r addr=0x220 bank=4 row=2 value=0x2b2 back=2516 b=1
 251500000: 2515: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2515 grant in=5 op=r addr=0x228 bank=5 row=2 value=0x32 back=2516 b=1
 251500000: 2515: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2515 grant in=6 op=r addr=0x230 bank=6 row=2 value=0xffffffffffffff06 back=2516 b=1
@@ -131,17 +131,17 @@
 251500000: 2515: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2515 grant in=1 op=r addr=0x48 bank=9 row=0 value=0x272 back=2516 b=2
 251500000: 2515: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2515 grant in=2 op=r addr=0x50 bank=10 row=0 value=0x12a back=2516 b=2
 251500000: 2515: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2515 grant in=3 op=r addr=0x58 bank=11 row=0 value=0x339 back=2516 b=2
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2516 class mode=busy
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2516 fifo mover=reader0 lane=0 count=2
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2516 fifo mover=reader0 lane=1 count=2
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2516 fifo mover=reader0 lane=2 count=2
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2516 fifo mover=reader0 lane=3 count=2
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2516 fifo mover=reader1 lane=0 count=1
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2516 fifo mover=reader1 lane=1 count=1
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2516 fifo mover=reader1 lane=2 count=1
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2516 fifo mover=reader1 lane=3 count=1
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2516 fire n=0 b=0,0 value=0x2bd,0x111,0x16,0xfffffffffffffe33,0x2ee,0xfffffffffffffd26,0x9d,0x1ba
-251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2516 push n=0 first=0 last=0 value=0x805b6,0xfffffffffffcf586,0xd7e,0xfffffffffffce40e
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2516 class mode=busy
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2516 fifo mover=reader0 lane=0 count=2
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2516 fifo mover=reader0 lane=1 count=2
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2516 fifo mover=reader0 lane=2 count=2
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2516 fifo mover=reader0 lane=3 count=2
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2516 fifo mover=reader1 lane=0 count=1
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2516 fifo mover=reader1 lane=1 count=1
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2516 fifo mover=reader1 lane=2 count=1
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2516 fifo mover=reader1 lane=3 count=1
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2516 fire n=0 b=0,0 value=0x2bd,0x111,0x16,0xfffffffffffffe33,0x2ee,0xfffffffffffffd26,0x9d,0x1ba
+251600000: 2516: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2516 push n=0 first=0 last=0 value=0x805b6,0xfffffffffffcf586,0xd7e,0xfffffffffffce40e
 251600000: 2516: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2516 grant in=4 op=r addr=0x240 bank=8 row=2 value=0xffffffffffffff65 back=2517 b=2
 251600000: 2516: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2516 grant in=5 op=r addr=0x248 bank=9 row=2 value=0xffffffffffffffe3 back=2517 b=2
 251600000: 2516: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2516 grant in=6 op=r addr=0x250 bank=10 row=2 value=0x1b5 back=2517 b=2
@@ -150,12 +150,12 @@
 251600000: 2516: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2516 grant in=1 op=r addr=0x68 bank=13 row=0 value=0xd5 back=2517 b=3
 251600000: 2516: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2516 grant in=2 op=r addr=0x70 bank=14 row=0 value=0x3ad back=2517 b=3
 251600000: 2516: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2516 grant in=3 op=r addr=0x78 bank=15 row=0 value=0x1ca back=2517 b=3
-251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2517 fire n=1 b=1,1 value=0xfffffffffffffe7f,0xfffffffffffffc69,0xfffffffffffffcae,0xfffffffffffffc39,0x2b2,0x32,0xffffffffffffff06,0xfffffffffffffe84
-251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2517 fifo mover=writer0 lane=0 count=1
-251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2517 fifo mover=writer0 lane=1 count=1
-251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2517 fifo mover=writer0 lane=2 count=1
-251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2517 fifo mover=writer0 lane=3 count=1
-251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2517 push n=1 first=1 last=1 value=0xfffffffffffbf24e,0xffffffffffff4c82,0x33e14,0x59b64
+251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2517 fire n=1 b=1,1 value=0xfffffffffffffe7f,0xfffffffffffffc69,0xfffffffffffffcae,0xfffffffffffffc39,0x2b2,0x32,0xffffffffffffff06,0xfffffffffffffe84
+251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2517 fifo mover=writer0 lane=0 count=1
+251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2517 fifo mover=writer0 lane=1 count=1
+251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2517 fifo mover=writer0 lane=2 count=1
+251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2517 fifo mover=writer0 lane=3 count=1
+251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2517 push n=1 first=1 last=1 value=0xfffffffffffbf24e,0xffffffffffff4c82,0x33e14,0x59b64
 251700000: 2517: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2517 grant in=12 op=w addr=0x440 bank=8 row=4 value=0x805b6 back=2518 b=0
 251700000: 2517: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2517 grant in=13 op=w addr=0x448 bank=9 row=4 value=0xfffffffffffcf586 back=2518 b=0
 251700000: 2517: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2517 grant in=14 op=w addr=0x450 bank=10 row=4 value=0xd7e back=2518 b=0
@@ -168,9 +168,9 @@
 251700000: 2517: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2517 grant in=1 op=r addr=0x88 bank=17 row=0 value=0x57 back=2518 b=4
 251700000: 2517: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2517 grant in=2 op=r addr=0x90 bank=18 row=0 value=0x77 back=2518 b=4
 251700000: 2517: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2517 grant in=3 op=r addr=0x98 bank=19 row=0 value=0x366 back=2518 b=4
-251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2517 class mover=writer0 mode=busy
-251800000: 2518: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2518 fire n=2 b=2,2 value=0xfffffffffffffd76,0x272,0x12a,0x339,0xffffffffffffff65,0xffffffffffffffe3,0x1b5,0x30a
-251800000: 2518: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2518 push n=2 first=2 last=2 value=0x1898e,0xffffffffffffb916,0x1fcb2,0x9cb3a
+251700000: 2517: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2517 class mover=writer0 mode=busy
+251800000: 2518: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2518 fire n=2 b=2,2 value=0xfffffffffffffd76,0x272,0x12a,0x339,0xffffffffffffff65,0xffffffffffffffe3,0x1b5,0x30a
+251800000: 2518: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2518 push n=2 first=2 last=2 value=0x1898e,0xffffffffffffb916,0x1fcb2,0x9cb3a
 251800000: 2518: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2518 grant in=12 op=w addr=0x460 bank=12 row=4 value=0xfffffffffffbf24e back=2519 b=1
 251800000: 2518: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2518 grant in=13 op=w addr=0x468 bank=13 row=4 value=0xffffffffffff4c82 back=2519 b=1
 251800000: 2518: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2518 grant in=14 op=w addr=0x470 bank=14 row=4 value=0x33e14 back=2519 b=1
@@ -183,8 +183,8 @@
 251800000: 2518: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2518 grant in=1 op=r addr=0xa8 bank=21 row=0 value=0x277 back=2519 b=5
 251800000: 2518: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2518 grant in=2 op=r addr=0xb0 bank=22 row=0 value=0x155 back=2519 b=5
 251800000: 2518: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2518 grant in=3 op=r addr=0xb8 bank=23 row=0 value=0xfffffffffffffc1d back=2519 b=5
-251900000: 2519: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2519 fire n=3 b=3,3 value=0x7,0xd5,0x3ad,0x1ca,0xfffffffffffffca9,0x364,0x3e,0xfffffffffffffee3
-251900000: 2519: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2519 push n=3 first=3 last=3 value=0xffffffffffffe89f,0x2d234,0xe3e6,0xfffffffffffe021e
+251900000: 2519: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2519 fire n=3 b=3,3 value=0x7,0xd5,0x3ad,0x1ca,0xfffffffffffffca9,0x364,0x3e,0xfffffffffffffee3
+251900000: 2519: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2519 push n=3 first=3 last=3 value=0xffffffffffffe89f,0x2d234,0xe3e6,0xfffffffffffe021e
 251900000: 2519: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2519 grant in=12 op=w addr=0x480 bank=16 row=4 value=0x1898e back=2520 b=2
 251900000: 2519: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2519 grant in=13 op=w addr=0x488 bank=17 row=4 value=0xffffffffffffb916 back=2520 b=2
 251900000: 2519: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2519 grant in=14 op=w addr=0x490 bank=18 row=4 value=0x1fcb2 back=2520 b=2
@@ -197,8 +197,8 @@
 251900000: 2519: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2519 grant in=1 op=r addr=0xc8 bank=25 row=0 value=0x2ca back=2520 b=6
 251900000: 2519: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2519 grant in=2 op=r addr=0xd0 bank=26 row=0 value=0x6c back=2520 b=6
 251900000: 2519: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2519 grant in=3 op=r addr=0xd8 bank=27 row=0 value=0xfffffffffffffc5b back=2520 b=6
-252000000: 2520: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2520 fire n=4 b=4,4 value=0x108,0x57,0x77,0x366,0x159,0x8f,0xfffffffffffffe15,0xfffffffffffffe9b
-252000000: 2520: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2520 push n=4 first=4 last=4 value=0x163c8,0x3099,0xffffffffffff1bc3,0xfffffffffffb42c2
+252000000: 2520: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2520 fire n=4 b=4,4 value=0x108,0x57,0x77,0x366,0x159,0x8f,0xfffffffffffffe15,0xfffffffffffffe9b
+252000000: 2520: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2520 push n=4 first=4 last=4 value=0x163c8,0x3099,0xffffffffffff1bc3,0xfffffffffffb42c2
 252000000: 2520: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2520 grant in=12 op=w addr=0x4a0 bank=20 row=4 value=0xffffffffffffe89f back=2521 b=3
 252000000: 2520: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2520 grant in=13 op=w addr=0x4a8 bank=21 row=4 value=0x2d234 back=2521 b=3
 252000000: 2520: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2520 grant in=14 op=w addr=0x4b0 bank=22 row=4 value=0xe3e6 back=2521 b=3
@@ -211,8 +211,8 @@
 252000000: 2520: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2520 grant in=1 op=r addr=0xe8 bank=29 row=0 value=0x1cb back=2521 b=7
 252000000: 2520: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2520 grant in=2 op=r addr=0xf0 bank=30 row=0 value=0x2b5 back=2521 b=7
 252000000: 2520: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2520 grant in=3 op=r addr=0xf8 bank=31 row=0 value=0xfffffffffffffd77 back=2521 b=7
-252100000: 2521: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2521 fire n=5 b=5,5 value=0xfffffffffffffe42,0x277,0x155,0xfffffffffffffc1d,0x1b7,0xbc,0x8,0xfffffffffffffebb
-252100000: 2521: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2521 push n=5 first=5 last=5 value=0xfffffffffffd032e,0x1cf64,0xaa8,0x4ef2f
+252100000: 2521: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2521 fire n=5 b=5,5 value=0xfffffffffffffe42,0x277,0x155,0xfffffffffffffc1d,0x1b7,0xbc,0x8,0xfffffffffffffebb
+252100000: 2521: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2521 push n=5 first=5 last=5 value=0xfffffffffffd032e,0x1cf64,0xaa8,0x4ef2f
 252100000: 2521: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2521 grant in=0 op=r addr=0x100 bank=0 row=1 value=0xfffffffffffffcca back=2522 b=8
 252100000: 2521: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2521 grant in=1 op=r addr=0x108 bank=1 row=1 value=0x2d6 back=2522 b=8
 252100000: 2521: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2521 grant in=2 op=r addr=0x110 bank=2 row=1 value=0xfffffffffffffc44 back=2522 b=8
@@ -225,8 +225,8 @@
 252100000: 2521: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2521 grant in=5 op=r addr=0x2e8 bank=29 row=2 value=0xfffffffffffffdde back=2522 b=7
 252100000: 2521: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2521 grant in=6 op=r addr=0x2f0 bank=30 row=2 value=0x1ac back=2522 b=7
 252100000: 2521: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2521 grant in=7 op=r addr=0x2f8 bank=31 row=2 value=0xf6 back=2522 b=7
-252200000: 2522: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2522 fire n=6 b=6,6 value=0xffffffffffffff2c,0x2ca,0x6c,0xfffffffffffffc5b,0x209,0xffffffffffffff27,0xfffffffffffffea8,0x30c
-252200000: 2522: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2522 push n=6 first=6 last=6 value=0xfffffffffffe508c,0xfffffffffffda2c6,0xffffffffffff6ee0,0xfffffffffff4e544
+252200000: 2522: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2522 fire n=6 b=6,6 value=0xffffffffffffff2c,0x2ca,0x6c,0xfffffffffffffc5b,0x209,0xffffffffffffff27,0xfffffffffffffea8,0x30c
+252200000: 2522: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2522 push n=6 first=6 last=6 value=0xfffffffffffe508c,0xfffffffffffda2c6,0xffffffffffff6ee0,0xfffffffffff4e544
 252200000: 2522: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2522 grant in=4 op=r addr=0x300 bank=0 row=3 value=0xfffffffffffffc79 back=2523 b=8
 252200000: 2522: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2522 grant in=5 op=r addr=0x308 bank=1 row=3 value=0xfffffffffffffcc0 back=2523 b=8
 252200000: 2522: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2522 grant in=6 op=r addr=0x310 bank=2 row=3 value=0xffffffffffffff0a back=2523 b=8
@@ -239,8 +239,8 @@
 252200000: 2522: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2522 grant in=13 op=w addr=0x4e8 bank=29 row=4 value=0x1cf64 back=2523 b=5
 252200000: 2522: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2522 grant in=14 op=w addr=0x4f0 bank=30 row=4 value=0xaa8 back=2523 b=5
 252200000: 2522: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2522 grant in=15 op=w addr=0x4f8 bank=31 row=4 value=0x4ef2f back=2523 b=5
-252300000: 2523: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2523 fire n=7 b=7,7 value=0x211,0x1cb,0x2b5,0xfffffffffffffd77,0xfffffffffffffe27,0xfffffffffffffdde,0x1ac,0xf6
-252300000: 2523: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2523 push n=7 first=7 last=7 value=0xfffffffffffc2e97,0xfffffffffffc2d0a,0x4869c,0xfffffffffffd905a
+252300000: 2523: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2523 fire n=7 b=7,7 value=0x211,0x1cb,0x2b5,0xfffffffffffffd77,0xfffffffffffffe27,0xfffffffffffffdde,0x1ac,0xf6
+252300000: 2523: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2523 push n=7 first=7 last=7 value=0xfffffffffffc2e97,0xfffffffffffc2d0a,0x4869c,0xfffffffffffd905a
 252300000: 2523: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2523 grant in=12 op=w addr=0x500 bank=0 row=5 value=0xfffffffffffe508c back=2524 b=6
 252300000: 2523: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2523 grant in=13 op=w addr=0x508 bank=1 row=5 value=0xfffffffffffda2c6 back=2524 b=6
 252300000: 2523: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2523 grant in=14 op=w addr=0x510 bank=2 row=5 value=0xffffffffffff6ee0 back=2524 b=6
@@ -253,8 +253,8 @@
 252300000: 2523: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2523 grant in=1 op=r addr=0x148 bank=9 row=1 value=0xfffffffffffffc50 back=2524 b=10
 252300000: 2523: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2523 grant in=2 op=r addr=0x150 bank=10 row=1 value=0xfffffffffffffc22 back=2524 b=10
 252300000: 2523: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2523 grant in=3 op=r addr=0x158 bank=11 row=1 value=0xfffffffffffffd10 back=2524 b=10
-252400000: 2524: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2524 fire n=8 b=8,8 value=0xfffffffffffffcca,0x2d6,0xfffffffffffffc44,0x52,0xfffffffffffffc79,0xfffffffffffffcc0,0xffffffffffffff0a,0x299
-252400000: 2524: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2524 push n=8 first=8 last=8 value=0xb537a,0xfffffffffff6c880,0x396a8,0xd502
+252400000: 2524: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2524 fire n=8 b=8,8 value=0xfffffffffffffcca,0x2d6,0xfffffffffffffc44,0x52,0xfffffffffffffc79,0xfffffffffffffcc0,0xffffffffffffff0a,0x299
+252400000: 2524: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2524 push n=8 first=8 last=8 value=0xb537a,0xfffffffffff6c880,0x396a8,0xd502
 252400000: 2524: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2524 grant in=12 op=w addr=0x520 bank=4 row=5 value=0xfffffffffffc2e97 back=2525 b=7
 252400000: 2524: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2524 grant in=13 op=w addr=0x528 bank=5 row=5 value=0xfffffffffffc2d0a back=2525 b=7
 252400000: 2524: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2524 grant in=14 op=w addr=0x530 bank=6 row=5 value=0x4869c back=2525 b=7
@@ -267,8 +267,8 @@
 252400000: 2524: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2524 grant in=1 op=r addr=0x168 bank=13 row=1 value=0x155 back=2525 b=11
 252400000: 2524: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2524 grant in=2 op=r addr=0x170 bank=14 row=1 value=0x33 back=2525 b=11
 252400000: 2524: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2524 grant in=3 op=r addr=0x178 bank=15 row=1 value=0x126 back=2525 b=11
-252500000: 2525: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2525 fire n=9 b=9,9 value=0xfffffffffffffcb8,0xfffffffffffffe6f,0xffffffffffffffda,0xffffffffffffff65,0xffffffffffffff39,0x23e,0xfffffffffffffe90,0xfffffffffffffdf6
-252500000: 2525: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2525 push n=9 first=9 last=9 value=0x28cf8,0xfffffffffffc7ce2,0x36a0,0x13c0e
+252500000: 2525: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2525 fire n=9 b=9,9 value=0xfffffffffffffcb8,0xfffffffffffffe6f,0xffffffffffffffda,0xffffffffffffff65,0xffffffffffffff39,0x23e,0xfffffffffffffe90,0xfffffffffffffdf6
+252500000: 2525: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2525 push n=9 first=9 last=9 value=0x28cf8,0xfffffffffffc7ce2,0x36a0,0x13c0e
 252500000: 2525: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2525 grant in=12 op=w addr=0x540 bank=8 row=5 value=0xb537a back=2526 b=8
 252500000: 2525: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2525 grant in=13 op=w addr=0x548 bank=9 row=5 value=0xfffffffffff6c880 back=2526 b=8
 252500000: 2525: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2525 grant in=14 op=w addr=0x550 bank=10 row=5 value=0x396a8 back=2526 b=8
@@ -281,8 +281,8 @@
 252500000: 2525: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2525 grant in=1 op=r addr=0x188 bank=17 row=1 value=0xe6 back=2526 b=12
 252500000: 2525: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2525 grant in=2 op=r addr=0x190 bank=18 row=1 value=0x210 back=2526 b=12
 252500000: 2525: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2525 grant in=3 op=r addr=0x198 bank=19 row=1 value=0xffffffffffffff17 back=2526 b=12
-252600000: 2526: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2526 fire n=10 b=10,10 value=0xffffffffffffff3e,0xfffffffffffffc50,0xfffffffffffffc22,0xfffffffffffffd10,0x247,0x2f0,0xfffffffffffffcb6,0xfffffffffffffc8d
-252600000: 2526: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2526 push n=10 first=10 last=10 value=0xfffffffffffe4632,0xfffffffffff52b00,0xcb82c,0xa21d0
+252600000: 2526: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2526 fire n=10 b=10,10 value=0xffffffffffffff3e,0xfffffffffffffc50,0xfffffffffffffc22,0xfffffffffffffd10,0x247,0x2f0,0xfffffffffffffcb6,0xfffffffffffffc8d
+252600000: 2526: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2526 push n=10 first=10 last=10 value=0xfffffffffffe4632,0xfffffffffff52b00,0xcb82c,0xa21d0
 252600000: 2526: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2526 grant in=12 op=w addr=0x560 bank=12 row=5 value=0x28cf8 back=2527 b=9
 252600000: 2526: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2526 grant in=13 op=w addr=0x568 bank=13 row=5 value=0xfffffffffffc7ce2 back=2527 b=9
 252600000: 2526: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2526 grant in=14 op=w addr=0x570 bank=14 row=5 value=0x36a0 back=2527 b=9
@@ -295,8 +295,8 @@
 252600000: 2526: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2526 grant in=1 op=r addr=0x1a8 bank=21 row=1 value=0x3e2 back=2527 b=13
 252600000: 2526: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2526 grant in=2 op=r addr=0x1b0 bank=22 row=1 value=0x261 back=2527 b=13
 252600000: 2526: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2526 grant in=3 op=r addr=0x1b8 bank=23 row=1 value=0x3c1 back=2527 b=13
-252700000: 2527: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2527 fire n=11 b=11,11 value=0xfffffffffffffc28,0x155,0x33,0x126,0x156,0xfffffffffffffeb8,0x93,0xfffffffffffffd44
-252700000: 2527: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2527 push n=11 first=11 last=11 value=0xfffffffffffadd70,0xfffffffffffe4b18,0x1d49,0xfffffffffffcdc18
+252700000: 2527: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2527 fire n=11 b=11,11 value=0xfffffffffffffc28,0x155,0x33,0x126,0x156,0xfffffffffffffeb8,0x93,0xfffffffffffffd44
+252700000: 2527: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2527 push n=11 first=11 last=11 value=0xfffffffffffadd70,0xfffffffffffe4b18,0x1d49,0xfffffffffffcdc18
 252700000: 2527: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2527 grant in=12 op=w addr=0x580 bank=16 row=5 value=0xfffffffffffe4632 back=2528 b=10
 252700000: 2527: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2527 grant in=13 op=w addr=0x588 bank=17 row=5 value=0xfffffffffff52b00 back=2528 b=10
 252700000: 2527: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2527 grant in=14 op=w addr=0x590 bank=18 row=5 value=0xcb82c back=2528 b=10
@@ -310,8 +310,8 @@
 252700000: 2527: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2527 grant in=2 op=r addr=0x1d0 bank=26 row=1 value=0x384 back=2528 b=14
 252700000: 2527: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2527 grant in=3 op=r addr=0x1d8 bank=27 row=1 value=0x12c back=2528 b=14
 252800000: 2528: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2528 csr pc=0x800003a4 csr=0x3c1 op=w value=0
-252800000: 2528: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2528 fire n=12 b=12,12 value=0xfffffffffffffe1a,0xe6,0x210,0xffffffffffffff17,0x2d0,0xffffffffffffff9c,0x315,0x250
-252800000: 2528: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2528 push n=12 first=12 last=12 value=0xfffffffffffaa920,0xffffffffffffa628,0x65b50,0xfffffffffffde530
+252800000: 2528: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2528 fire n=12 b=12,12 value=0xfffffffffffffe1a,0xe6,0x210,0xffffffffffffff17,0x2d0,0xffffffffffffff9c,0x315,0x250
+252800000: 2528: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2528 push n=12 first=12 last=12 value=0xfffffffffffaa920,0xffffffffffffa628,0x65b50,0xfffffffffffde530
 252800000: 2528: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2528 grant in=12 op=w addr=0x5a0 bank=20 row=5 value=0xfffffffffffadd70 back=2529 b=11
 252800000: 2528: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2528 grant in=13 op=w addr=0x5a8 bank=21 row=5 value=0xfffffffffffe4b18 back=2529 b=11
 252800000: 2528: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2528 grant in=14 op=w addr=0x5b0 bank=22 row=5 value=0x1d49 back=2529 b=11
@@ -324,10 +324,10 @@
 252800000: 2528: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2528 grant in=1 op=r addr=0x1e8 bank=29 row=1 value=0x178 back=2529 b=15
 252800000: 2528: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2528 grant in=2 op=r addr=0x1f0 bank=30 row=1 value=0x198 back=2529 b=15
 252800000: 2528: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2528 grant in=3 op=r addr=0x1f8 bank=31 row=1 value=0xffffffffffffff21 back=2529 b=15
-252800000: 2528: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2528 done mover=reader0
+252800000: 2528: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2528 done mover=reader0
 252900000: 2529: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2529 csr pc=0x800003a8 csr=0x3c2 op=w value=0
-252900000: 2529: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2529 fire n=13 b=13,13 value=0xffffffffffffffb1,0x3e2,0x261,0x3c1,0x19a,0xfffffffffffffde5,0x216,0xfffffffffffffc80
-252900000: 2529: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2529 push n=13 first=13 last=13 value=0xffffffffffff817a,0xfffffffffff7d32a,0x4f656,0xfffffffffff2dc80
+252900000: 2529: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2529 fire n=13 b=13,13 value=0xffffffffffffffb1,0x3e2,0x261,0x3c1,0x19a,0xfffffffffffffde5,0x216,0xfffffffffffffc80
+252900000: 2529: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2529 push n=13 first=13 last=13 value=0xffffffffffff817a,0xfffffffffff7d32a,0x4f656,0xfffffffffff2dc80
 252900000: 2529: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2529 grant in=12 op=w addr=0x5c0 bank=24 row=5 value=0xfffffffffffaa920 back=2530 b=12
 252900000: 2529: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2529 grant in=13 op=w addr=0x5c8 bank=25 row=5 value=0xffffffffffffa628 back=2530 b=12
 252900000: 2529: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2529 grant in=14 op=w addr=0x5d0 bank=26 row=5 value=0x65b50 back=2530 b=12
@@ -336,25 +336,25 @@
 252900000: 2529: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2529 grant in=5 op=r addr=0x3e8 bank=29 row=3 value=0xfffffffffffffccd back=2530 b=15
 252900000: 2529: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2529 grant in=6 op=r addr=0x3f0 bank=30 row=3 value=0xf6 back=2530 b=15
 252900000: 2529: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2529 grant in=7 op=r addr=0x3f8 bank=31 row=3 value=0xa0 back=2530 b=15
-252900000: 2529: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2529 class mover=reader0 mode=idle
-252900000: 2529: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2529 done mover=reader1
+252900000: 2529: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2529 class mover=reader0 mode=idle
+252900000: 2529: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2529 done mover=reader1
 253000000: 2530: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2530 csr pc=0x800003ac csr=0x3c3 op=w value=0
-253000000: 2530: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2530 fire n=14 b=14,14 value=0xffffffffffffff0f,0x173,0x384,0x12c,0x8c,0xffffffffffffff41,0x3e1,0xfffffffffffffda5
-253000000: 2530: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2530 push n=14 first=14 last=14 value=0xffffffffffff7c34,0xfffffffffffeeb33,0xda304,0xfffffffffffd3d5c
+253000000: 2530: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2530 fire n=14 b=14,14 value=0xffffffffffffff0f,0x173,0x384,0x12c,0x8c,0xffffffffffffff41,0x3e1,0xfffffffffffffda5
+253000000: 2530: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2530 push n=14 first=14 last=14 value=0xffffffffffff7c34,0xfffffffffffeeb33,0xda304,0xfffffffffffd3d5c
 253000000: 2530: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2530 grant in=12 op=w addr=0x5e0 bank=28 row=5 value=0xffffffffffff817a back=2531 b=13
 253000000: 2530: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2530 grant in=13 op=w addr=0x5e8 bank=29 row=5 value=0xfffffffffff7d32a back=2531 b=13
 253000000: 2530: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2530 grant in=14 op=w addr=0x5f0 bank=30 row=5 value=0x4f656 back=2531 b=13
 253000000: 2530: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2530 grant in=15 op=w addr=0x5f8 bank=31 row=5 value=0xfffffffffff2dc80 back=2531 b=13
-253000000: 2530: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2530 class mover=reader1 mode=idle
+253000000: 2530: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2530 class mover=reader1 mode=idle
 253100000: 2531: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2531 csr pc=0x800003b0 csr=0x3c4 op=w value=8
-253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2531 fifo mover=reader0 lane=0 count=1
-253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2531 fifo mover=reader0 lane=1 count=1
-253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2531 fifo mover=reader0 lane=2 count=1
-253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2531 fifo mover=reader0 lane=3 count=1
-253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2531 fire n=15 b=15,15 value=0x2a8,0x178,0x198,0xffffffffffffff21,0x37d,0xfffffffffffffccd,0xf6,0xa0
-253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/beats                             [0m] 2531 push n=15 first=15 last=15 value=0x94408,0xfffffffffffb4d18,0x18810,0xffffffffffff74a0
-253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/events                            [0m] 2531 done firings=16 first=2516 last=2531
-253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/unit_mul/summary                           [0m] 2531 run index=0 firings=16 busy=16 stall_in=3 stall_out=0 flush=0
+253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2531 fifo mover=reader0 lane=0 count=1
+253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2531 fifo mover=reader0 lane=1 count=1
+253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2531 fifo mover=reader0 lane=2 count=1
+253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2531 fifo mover=reader0 lane=3 count=1
+253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2531 fire n=15 b=15,15 value=0x2a8,0x178,0x198,0xffffffffffffff21,0x37d,0xfffffffffffffccd,0xf6,0xa0
+253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/beats                            [0m] 2531 push n=15 first=15 last=15 value=0x94408,0xfffffffffffb4d18,0x18810,0xffffffffffff74a0
+253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/events                           [0m] 2531 done firings=16 first=2516 last=2531
+253100000: 2531: [[34m/chip/soc/cluster_0/snax_acc0/unit_vmul/summary                          [0m] 2531 run index=0 firings=16 busy=16 stall_in=3 stall_out=0 flush=0
 253100000: 2531: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2531 grant in=12 op=w addr=0x600 bank=0 row=6 value=0xffffffffffff7c34 back=2532 b=14
 253100000: 2531: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2531 grant in=13 op=w addr=0x608 bank=1 row=6 value=0xfffffffffffeeb33 back=2532 b=14
 253100000: 2531: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2531 grant in=14 op=w addr=0x610 bank=2 row=6 value=0xda304 back=2532 b=14
@@ -364,26 +364,26 @@
 253200000: 2532: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2532 grant in=13 op=w addr=0x628 bank=5 row=6 value=0xfffffffffffb4d18 back=2533 b=15
 253200000: 2532: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2532 grant in=14 op=w addr=0x630 bank=6 row=6 value=0x18810 back=2533 b=15
 253200000: 2532: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2532 grant in=15 op=w addr=0x638 bank=7 row=6 value=0xffffffffffff74a0 back=2533 b=15
-253200000: 2532: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2532 done mover=writer0
-253200000: 2532: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2533 class mover=writer0 mode=idle
+253200000: 2532: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2532 done mover=writer0
+253200000: 2532: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2533 class mover=writer0 mode=idle
 253300000: 2533: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2533 csr pc=0x800003b8 csr=0x3c6 op=w value=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2532 fifo mover=reader0 lane=0 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2532 fifo mover=reader0 lane=1 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2532 fifo mover=reader0 lane=2 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2532 fifo mover=reader0 lane=3 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2533 mover mover=reader0 run=0 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=2,2,2,2
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2532 fifo mover=reader1 lane=0 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2532 fifo mover=reader1 lane=1 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2532 fifo mover=reader1 lane=2 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2532 fifo mover=reader1 lane=3 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2533 mover mover=reader1 run=0 busy=16 stall_xbar=1 stall_fifo=0 idle=5 qmax=1,1,1,1
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2533 mover mover=reader2 run=0 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0,0,0,0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2533 fifo mover=writer0 lane=0 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2533 fifo mover=writer0 lane=1 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2533 fifo mover=writer0 lane=2 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2533 fifo mover=writer0 lane=3 count=0
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2533 mover mover=writer0 run=0 busy=16 stall_xbar=0 stall_fifo=4 idle=2 qmax=1,1,1,1
-253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2533 mover mover=writer1 run=0 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2532 fifo mover=reader0 lane=0 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2532 fifo mover=reader0 lane=1 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2532 fifo mover=reader0 lane=2 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2532 fifo mover=reader0 lane=3 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2533 mover mover=reader0 run=0 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=2,2,2,2
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2532 fifo mover=reader1 lane=0 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2532 fifo mover=reader1 lane=1 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2532 fifo mover=reader1 lane=2 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2532 fifo mover=reader1 lane=3 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2533 mover mover=reader1 run=0 busy=16 stall_xbar=1 stall_fifo=0 idle=5 qmax=1,1,1,1
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2533 mover mover=reader2 run=0 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0,0,0,0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2533 fifo mover=writer0 lane=0 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2533 fifo mover=writer0 lane=1 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2533 fifo mover=writer0 lane=2 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2533 fifo mover=writer0 lane=3 count=0
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2533 mover mover=writer0 run=0 busy=16 stall_xbar=0 stall_fifo=4 idle=2 qmax=1,1,1,1
+253300000: 2533: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2533 mover mover=writer1 run=0 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0
 253400000: 2534: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2534 csr pc=0x800003bc csr=0x3c7 op=w value=0
 253500000: 2535: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2535 csr pc=0x800003c0 csr=0x3c8 op=w value=0
 254500000: 2545: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2545 csr pc=0x800003c4 csr=0x3c9 op=w value=8
@@ -407,131 +407,131 @@
 258400000: 2584: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2581 csr pc=0x8000040c csr=0x3de op=r value=2
 258600000: 2586: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2584 csr pc=0x80000418 csr=0x3da op=r value=0
 259900000: 2599: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2586 csr pc=0x80000420 csr=0x3df op=r value=19
-259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2599 start mover=reader0
-259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2599 start mover=reader1
-259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2599 start mover=reader2
-259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2599 start mover=writer0
-259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2599 start mover=writer1
+259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2599 start mover=reader0
+259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2599 start mover=reader1
+259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2599 start mover=reader2
+259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2599 start mover=writer0
+259900000: 2599: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2599 start mover=writer1
 259900000: 2599: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2599 csr pc=0x80000430 csr=0x3d9 op=w value=1
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/events                            [0m] 2600 start count=16 rate=16
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/events                           [0m] 2600 start count=16 rate=16
 260000000: 2600: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2600 csr pc=0x80000434 csr=0x3e0 op=w value=1
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2600 class mover=reader0 mode=idle
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2600 class mover=reader1 mode=idle
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2600 class mover=reader2 mode=idle
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2600 class mover=writer0 mode=idle
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2600 class mover=writer1 mode=idle
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2600 done mover=reader0
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2600 done mover=reader1
-260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2600 done mover=writer0
-260100000: 2601: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2601 class mode=stall_in
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2600 class mover=reader0 mode=idle
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2600 class mover=reader1 mode=idle
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2600 class mover=reader2 mode=idle
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2600 class mover=writer0 mode=idle
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2600 class mover=writer1 mode=idle
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2600 done mover=reader0
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2600 done mover=reader1
+260000000: 2600: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2600 done mover=writer0
+260100000: 2601: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2601 class mode=stall_in
 260100000: 2601: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2601 grant in=8 op=r addr=0x440 bank=8 row=4 value=0x805b6 back=2602 b=0
 260100000: 2601: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2601 grant in=9 op=r addr=0x448 bank=9 row=4 value=0xfffffffffffcf586 back=2602 b=0
 260100000: 2601: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2601 grant in=10 op=r addr=0x450 bank=10 row=4 value=0xd7e back=2602 b=0
 260100000: 2601: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2601 grant in=11 op=r addr=0x458 bank=11 row=4 value=0xfffffffffffce40e back=2602 b=0
-260100000: 2601: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2601 class mover=reader2 mode=busy
-260100000: 2601: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2601 class mover=writer1 mode=stall_fifo
+260100000: 2601: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2601 class mover=reader2 mode=busy
+260100000: 2601: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2601 class mover=writer1 mode=stall_fifo
 260200000: 2602: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2602 grant in=8 op=r addr=0x460 bank=12 row=4 value=0xfffffffffffbf24e back=2603 b=1
 260200000: 2602: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2602 grant in=9 op=r addr=0x468 bank=13 row=4 value=0xffffffffffff4c82 back=2603 b=1
 260200000: 2602: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2602 grant in=10 op=r addr=0x470 bank=14 row=4 value=0x33e14 back=2603 b=1
 260200000: 2602: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2602 grant in=11 op=r addr=0x478 bank=15 row=4 value=0x59b64 back=2603 b=1
-260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2603 class mode=busy
-260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2603 fifo mover=reader2 lane=0 count=1
-260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2603 fifo mover=reader2 lane=1 count=1
-260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2603 fifo mover=reader2 lane=2 count=1
-260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2603 fifo mover=reader2 lane=3 count=1
-260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2603 fire n=0 b=0 value=0x805b6,0xfffffffffffcf586,0xd7e,0xfffffffffffce40e
+260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2603 class mode=busy
+260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2603 fifo mover=reader2 lane=0 count=1
+260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2603 fifo mover=reader2 lane=1 count=1
+260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2603 fifo mover=reader2 lane=2 count=1
+260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2603 fifo mover=reader2 lane=3 count=1
+260300000: 2603: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2603 fire n=0 b=0 value=0x805b6,0xfffffffffffcf586,0xd7e,0xfffffffffffce40e
 260300000: 2603: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2603 grant in=8 op=r addr=0x480 bank=16 row=4 value=0x1898e back=2604 b=2
 260300000: 2603: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2603 grant in=9 op=r addr=0x488 bank=17 row=4 value=0xffffffffffffb916 back=2604 b=2
 260300000: 2603: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2603 grant in=10 op=r addr=0x490 bank=18 row=4 value=0x1fcb2 back=2604 b=2
 260300000: 2603: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2603 grant in=11 op=r addr=0x498 bank=19 row=4 value=0x9cb3a back=2604 b=2
-260400000: 2604: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2604 fire n=1 b=1 value=0xfffffffffffbf24e,0xffffffffffff4c82,0x33e14,0x59b64
+260400000: 2604: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2604 fire n=1 b=1 value=0xfffffffffffbf24e,0xffffffffffff4c82,0x33e14,0x59b64
 260400000: 2604: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2604 grant in=8 op=r addr=0x4a0 bank=20 row=4 value=0xffffffffffffe89f back=2605 b=3
 260400000: 2604: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2604 grant in=9 op=r addr=0x4a8 bank=21 row=4 value=0x2d234 back=2605 b=3
 260400000: 2604: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2604 grant in=10 op=r addr=0x4b0 bank=22 row=4 value=0xe3e6 back=2605 b=3
 260400000: 2604: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2604 grant in=11 op=r addr=0x4b8 bank=23 row=4 value=0xfffffffffffe021e back=2605 b=3
-260500000: 2605: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2605 fire n=2 b=2 value=0x1898e,0xffffffffffffb916,0x1fcb2,0x9cb3a
+260500000: 2605: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2605 fire n=2 b=2 value=0x1898e,0xffffffffffffb916,0x1fcb2,0x9cb3a
 260500000: 2605: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2605 grant in=8 op=r addr=0x4c0 bank=24 row=4 value=0x163c8 back=2606 b=4
 260500000: 2605: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2605 grant in=9 op=r addr=0x4c8 bank=25 row=4 value=0x3099 back=2606 b=4
 260500000: 2605: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2605 grant in=10 op=r addr=0x4d0 bank=26 row=4 value=0xffffffffffff1bc3 back=2606 b=4
 260500000: 2605: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2605 grant in=11 op=r addr=0x4d8 bank=27 row=4 value=0xfffffffffffb42c2 back=2606 b=4
-260600000: 2606: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2606 fire n=3 b=3 value=0xffffffffffffe89f,0x2d234,0xe3e6,0xfffffffffffe021e
+260600000: 2606: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2606 fire n=3 b=3 value=0xffffffffffffe89f,0x2d234,0xe3e6,0xfffffffffffe021e
 260600000: 2606: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2606 grant in=8 op=r addr=0x4e0 bank=28 row=4 value=0xfffffffffffd032e back=2607 b=5
 260600000: 2606: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2606 grant in=9 op=r addr=0x4e8 bank=29 row=4 value=0x1cf64 back=2607 b=5
 260600000: 2606: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2606 grant in=10 op=r addr=0x4f0 bank=30 row=4 value=0xaa8 back=2607 b=5
 260600000: 2606: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2606 grant in=11 op=r addr=0x4f8 bank=31 row=4 value=0x4ef2f back=2607 b=5
-260700000: 2607: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2607 fire n=4 b=4 value=0x163c8,0x3099,0xffffffffffff1bc3,0xfffffffffffb42c2
+260700000: 2607: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2607 fire n=4 b=4 value=0x163c8,0x3099,0xffffffffffff1bc3,0xfffffffffffb42c2
 260700000: 2607: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2607 grant in=8 op=r addr=0x500 bank=0 row=5 value=0xfffffffffffe508c back=2608 b=6
 260700000: 2607: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2607 grant in=9 op=r addr=0x508 bank=1 row=5 value=0xfffffffffffda2c6 back=2608 b=6
 260700000: 2607: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2607 grant in=10 op=r addr=0x510 bank=2 row=5 value=0xffffffffffff6ee0 back=2608 b=6
 260700000: 2607: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2607 grant in=11 op=r addr=0x518 bank=3 row=5 value=0xfffffffffff4e544 back=2608 b=6
-260800000: 2608: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2608 fire n=5 b=5 value=0xfffffffffffd032e,0x1cf64,0xaa8,0x4ef2f
+260800000: 2608: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2608 fire n=5 b=5 value=0xfffffffffffd032e,0x1cf64,0xaa8,0x4ef2f
 260800000: 2608: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2608 grant in=8 op=r addr=0x520 bank=4 row=5 value=0xfffffffffffc2e97 back=2609 b=7
 260800000: 2608: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2608 grant in=9 op=r addr=0x528 bank=5 row=5 value=0xfffffffffffc2d0a back=2609 b=7
 260800000: 2608: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2608 grant in=10 op=r addr=0x530 bank=6 row=5 value=0x4869c back=2609 b=7
 260800000: 2608: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2608 grant in=11 op=r addr=0x538 bank=7 row=5 value=0xfffffffffffd905a back=2609 b=7
-260900000: 2609: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2609 fire n=6 b=6 value=0xfffffffffffe508c,0xfffffffffffda2c6,0xffffffffffff6ee0,0xfffffffffff4e544
+260900000: 2609: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2609 fire n=6 b=6 value=0xfffffffffffe508c,0xfffffffffffda2c6,0xffffffffffff6ee0,0xfffffffffff4e544
 260900000: 2609: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2609 grant in=8 op=r addr=0x540 bank=8 row=5 value=0xb537a back=2610 b=8
 260900000: 2609: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2609 grant in=9 op=r addr=0x548 bank=9 row=5 value=0xfffffffffff6c880 back=2610 b=8
 260900000: 2609: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2609 grant in=10 op=r addr=0x550 bank=10 row=5 value=0x396a8 back=2610 b=8
 260900000: 2609: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2609 grant in=11 op=r addr=0x558 bank=11 row=5 value=0xd502 back=2610 b=8
-261000000: 2610: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2610 fire n=7 b=7 value=0xfffffffffffc2e97,0xfffffffffffc2d0a,0x4869c,0xfffffffffffd905a
+261000000: 2610: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2610 fire n=7 b=7 value=0xfffffffffffc2e97,0xfffffffffffc2d0a,0x4869c,0xfffffffffffd905a
 261000000: 2610: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2610 grant in=8 op=r addr=0x560 bank=12 row=5 value=0x28cf8 back=2611 b=9
 261000000: 2610: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2610 grant in=9 op=r addr=0x568 bank=13 row=5 value=0xfffffffffffc7ce2 back=2611 b=9
 261000000: 2610: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2610 grant in=10 op=r addr=0x570 bank=14 row=5 value=0x36a0 back=2611 b=9
 261000000: 2610: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2610 grant in=11 op=r addr=0x578 bank=15 row=5 value=0x13c0e back=2611 b=9
-261100000: 2611: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2611 fire n=8 b=8 value=0xb537a,0xfffffffffff6c880,0x396a8,0xd502
+261100000: 2611: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2611 fire n=8 b=8 value=0xb537a,0xfffffffffff6c880,0x396a8,0xd502
 261100000: 2611: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2611 grant in=8 op=r addr=0x580 bank=16 row=5 value=0xfffffffffffe4632 back=2612 b=10
 261100000: 2611: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2611 grant in=9 op=r addr=0x588 bank=17 row=5 value=0xfffffffffff52b00 back=2612 b=10
 261100000: 2611: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2611 grant in=10 op=r addr=0x590 bank=18 row=5 value=0xcb82c back=2612 b=10
 261100000: 2611: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2611 grant in=11 op=r addr=0x598 bank=19 row=5 value=0xa21d0 back=2612 b=10
-261200000: 2612: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2612 fire n=9 b=9 value=0x28cf8,0xfffffffffffc7ce2,0x36a0,0x13c0e
+261200000: 2612: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2612 fire n=9 b=9 value=0x28cf8,0xfffffffffffc7ce2,0x36a0,0x13c0e
 261200000: 2612: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2612 grant in=8 op=r addr=0x5a0 bank=20 row=5 value=0xfffffffffffadd70 back=2613 b=11
 261200000: 2612: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2612 grant in=9 op=r addr=0x5a8 bank=21 row=5 value=0xfffffffffffe4b18 back=2613 b=11
 261200000: 2612: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2612 grant in=10 op=r addr=0x5b0 bank=22 row=5 value=0x1d49 back=2613 b=11
 261200000: 2612: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2612 grant in=11 op=r addr=0x5b8 bank=23 row=5 value=0xfffffffffffcdc18 back=2613 b=11
-261300000: 2613: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2613 fire n=10 b=10 value=0xfffffffffffe4632,0xfffffffffff52b00,0xcb82c,0xa21d0
+261300000: 2613: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2613 fire n=10 b=10 value=0xfffffffffffe4632,0xfffffffffff52b00,0xcb82c,0xa21d0
 261300000: 2613: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2613 grant in=8 op=r addr=0x5c0 bank=24 row=5 value=0xfffffffffffaa920 back=2614 b=12
 261300000: 2613: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2613 grant in=9 op=r addr=0x5c8 bank=25 row=5 value=0xffffffffffffa628 back=2614 b=12
 261300000: 2613: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2613 grant in=10 op=r addr=0x5d0 bank=26 row=5 value=0x65b50 back=2614 b=12
 261300000: 2613: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2613 grant in=11 op=r addr=0x5d8 bank=27 row=5 value=0xfffffffffffde530 back=2614 b=12
-261400000: 2614: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2614 fire n=11 b=11 value=0xfffffffffffadd70,0xfffffffffffe4b18,0x1d49,0xfffffffffffcdc18
+261400000: 2614: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2614 fire n=11 b=11 value=0xfffffffffffadd70,0xfffffffffffe4b18,0x1d49,0xfffffffffffcdc18
 261400000: 2614: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2614 grant in=8 op=r addr=0x5e0 bank=28 row=5 value=0xffffffffffff817a back=2615 b=13
 261400000: 2614: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2614 grant in=9 op=r addr=0x5e8 bank=29 row=5 value=0xfffffffffff7d32a back=2615 b=13
 261400000: 2614: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2614 grant in=10 op=r addr=0x5f0 bank=30 row=5 value=0x4f656 back=2615 b=13
 261400000: 2614: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2614 grant in=11 op=r addr=0x5f8 bank=31 row=5 value=0xfffffffffff2dc80 back=2615 b=13
-261500000: 2615: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2615 fire n=12 b=12 value=0xfffffffffffaa920,0xffffffffffffa628,0x65b50,0xfffffffffffde530
+261500000: 2615: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2615 fire n=12 b=12 value=0xfffffffffffaa920,0xffffffffffffa628,0x65b50,0xfffffffffffde530
 261500000: 2615: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2615 grant in=8 op=r addr=0x600 bank=0 row=6 value=0xffffffffffff7c34 back=2616 b=14
 261500000: 2615: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2615 grant in=9 op=r addr=0x608 bank=1 row=6 value=0xfffffffffffeeb33 back=2616 b=14
 261500000: 2615: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2615 grant in=10 op=r addr=0x610 bank=2 row=6 value=0xda304 back=2616 b=14
 261500000: 2615: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2615 grant in=11 op=r addr=0x618 bank=3 row=6 value=0xfffffffffffd3d5c back=2616 b=14
-261600000: 2616: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2616 fire n=13 b=13 value=0xffffffffffff817a,0xfffffffffff7d32a,0x4f656,0xfffffffffff2dc80
+261600000: 2616: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2616 fire n=13 b=13 value=0xffffffffffff817a,0xfffffffffff7d32a,0x4f656,0xfffffffffff2dc80
 261600000: 2616: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2616 grant in=8 op=r addr=0x620 bank=4 row=6 value=0x94408 back=2617 b=15
 261600000: 2616: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2616 grant in=9 op=r addr=0x628 bank=5 row=6 value=0xfffffffffffb4d18 back=2617 b=15
 261600000: 2616: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2616 grant in=10 op=r addr=0x630 bank=6 row=6 value=0x18810 back=2617 b=15
 261600000: 2616: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2616 grant in=11 op=r addr=0x638 bank=7 row=6 value=0xffffffffffff74a0 back=2617 b=15
-261600000: 2616: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2616 done mover=reader2
-261700000: 2617: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2617 fire n=14 b=14 value=0xffffffffffff7c34,0xfffffffffffeeb33,0xda304,0xfffffffffffd3d5c
-261700000: 2617: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2617 class mover=reader2 mode=idle
-261800000: 2618: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2618 fire n=15 b=15 value=0x94408,0xfffffffffffb4d18,0x18810,0xffffffffffff74a0
-261900000: 2619: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2619 class mode=flush
-261900000: 2619: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/beats                             [0m] 2619 push n=0 first=0 last=15 value=0x327ef
-261900000: 2619: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/events                            [0m] 2619 done firings=16 first=2603 last=2618
-261900000: 2619: [[34m/chip/soc/cluster_0/snax_acc0/unit_sum/summary                           [0m] 2619 run index=0 firings=16 busy=16 stall_in=2 stall_out=0 flush=1
+261600000: 2616: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2616 done mover=reader2
+261700000: 2617: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2617 fire n=14 b=14 value=0xffffffffffff7c34,0xfffffffffffeeb33,0xda304,0xfffffffffffd3d5c
+261700000: 2617: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2617 class mover=reader2 mode=idle
+261800000: 2618: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2618 fire n=15 b=15 value=0x94408,0xfffffffffffb4d18,0x18810,0xffffffffffff74a0
+261900000: 2619: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2619 class mode=flush
+261900000: 2619: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/beats                            [0m] 2619 push n=0 first=0 last=15 value=0x327ef
+261900000: 2619: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/events                           [0m] 2619 done firings=16 first=2603 last=2618
+261900000: 2619: [[34m/chip/soc/cluster_0/snax_acc0/unit_vsum/summary                          [0m] 2619 run index=0 firings=16 busy=16 stall_in=2 stall_out=0 flush=1
 262000000: 2620: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2620 grant in=16 op=w addr=0x400 bank=0 row=4 value=0x327ef back=2621 b=0
-262000000: 2620: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2620 class mover=writer1 mode=busy
-262000000: 2620: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2620 fifo mover=writer1 lane=0 count=1
-262000000: 2620: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2620 done mover=writer1
-262000000: 2620: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2621 class mover=writer1 mode=idle
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2621 mover mover=reader0 run=1 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0,0,0,0
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2621 mover mover=reader1 run=1 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0,0,0,0
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2619 fifo mover=reader2 lane=0 count=0
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2619 fifo mover=reader2 lane=1 count=0
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2619 fifo mover=reader2 lane=2 count=0
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2619 fifo mover=reader2 lane=3 count=0
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2621 mover mover=reader2 run=1 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=1,1,1,1
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2621 mover mover=writer0 run=1 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0,0,0,0
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2621 fifo mover=writer1 lane=0 count=0
-262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2621 mover mover=writer1 run=1 busy=1 stall_xbar=0 stall_fifo=19 idle=2 qmax=1
+262000000: 2620: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2620 class mover=writer1 mode=busy
+262000000: 2620: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2620 fifo mover=writer1 lane=0 count=1
+262000000: 2620: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/events                        [0m] 2620 done mover=writer1
+262000000: 2620: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/beats                         [0m] 2621 class mover=writer1 mode=idle
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2621 mover mover=reader0 run=1 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0,0,0,0
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2621 mover mover=reader1 run=1 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0,0,0,0
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2619 fifo mover=reader2 lane=0 count=0
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2619 fifo mover=reader2 lane=1 count=0
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2619 fifo mover=reader2 lane=2 count=0
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2619 fifo mover=reader2 lane=3 count=0
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2621 mover mover=reader2 run=1 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=1,1,1,1
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2621 mover mover=writer0 run=1 busy=0 stall_xbar=0 stall_fifo=0 idle=22 qmax=0,0,0,0
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/stalls                        [0m] 2621 fifo mover=writer1 lane=0 count=0
+262100000: 2621: [[34m/chip/soc/cluster_0/snax_acc0/streamer_dot/summary                       [0m] 2621 mover mover=writer1 run=1 busy=1 stall_xbar=0 stall_fifo=19 idle=2 qmax=1
 262200000: 2622: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2601 poll pc=0x80000438 csr=0x3e3 value=1 first=2601 last=2619 count=4
 262500000: 2625: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2622 csr pc=0x80000438 csr=0x3e3 op=r value=2
 262700000: 2627: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2625 csr pc=0x80000444 csr=0x3da op=r value=0
@@ -714,113 +714,117 @@
 1087900000: 10879: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 10879 func name=_vsnprintf pc=0x80000dd0
 1090300000: 10903: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 10903 func name=_out_char pc=0x80001554
 1094900000: 10949: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 10949 func name=_vsnprintf pc=0x80000dd0
-1107300000: 11073: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11073 func name=_ntoa_long pc=0x800015f4
-1117800000: 11178: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11178 func name=_out_char pc=0x80001554
-1122400000: 11224: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11224 func name=_ntoa_long pc=0x800018c4
-1123500000: 11235: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11235 func name=_out_char pc=0x80001554
-1128100000: 11281: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11281 func name=_ntoa_long pc=0x800018c4
-1133400000: 11334: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11334 func name=_vsnprintf pc=0x80001430
-1136000000: 11360: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11360 func name=_out_char pc=0x80001554
-1211100000: 12111: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12111 func name=_vsnprintf pc=0x80000dd0
-1214000000: 12140: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12140 func name=_out_char pc=0x80001554
-1214300000: 12143: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12143 func name=_vsnprintf pc=0x80001514
-1219600000: 12196: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12196 func name=printf_ pc=0x80000d24
-1220200000: 12202: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12202 func name=forge_check pc=0x800002c4
-1222200000: 12222: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12222 func name=printf_ pc=0x80000cd8
-1224400000: 12244: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12244 func name=_vsnprintf pc=0x80000d30
-1229700000: 12297: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12297 func name=_out_char pc=0x80001554
-1234300000: 12343: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12343 func name=_vsnprintf pc=0x80000dd0
-1236700000: 12367: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12367 func name=_out_char pc=0x80001554
-1241300000: 12413: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12413 func name=_vsnprintf pc=0x80000dd0
-1243700000: 12437: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12437 func name=_out_char pc=0x80001554
-1248300000: 12483: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12483 func name=_vsnprintf pc=0x80000dd0
-1250700000: 12507: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12507 func name=_out_char pc=0x80001554
-1255300000: 12553: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12553 func name=_vsnprintf pc=0x80000dd0
-1257700000: 12577: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12577 func name=_out_char pc=0x80001554
-1262300000: 12623: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12623 func name=_vsnprintf pc=0x80000dd0
-1264700000: 12647: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12647 func name=_out_char pc=0x80001554
-1269300000: 12693: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12693 func name=_vsnprintf pc=0x80000dd0
-1271700000: 12717: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12717 func name=_out_char pc=0x80001554
-1276300000: 12763: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12763 func name=_vsnprintf pc=0x80000dd0
-1278700000: 12787: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12787 func name=_out_char pc=0x80001554
-1283300000: 12833: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12833 func name=_vsnprintf pc=0x80000dd0
-1285700000: 12857: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12857 func name=_out_char pc=0x80001554
-1290300000: 12903: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12903 func name=_vsnprintf pc=0x80000dd0
-1292700000: 12927: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12927 func name=_out_char pc=0x80001554
-1297300000: 12973: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12973 func name=_vsnprintf pc=0x80000dd0
-1299700000: 12997: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12997 func name=_out_char pc=0x80001554
-1304300000: 13043: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13043 func name=_vsnprintf pc=0x80000dd0
-1306700000: 13067: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13067 func name=_out_char pc=0x80001554
-1311300000: 13113: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13113 func name=_vsnprintf pc=0x80000dd0
-1313700000: 13137: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13137 func name=_out_char pc=0x80001554
-1318300000: 13183: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13183 func name=_vsnprintf pc=0x80000dd0
-1320700000: 13207: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13207 func name=_out_char pc=0x80001554
-1325300000: 13253: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13253 func name=_vsnprintf pc=0x80000dd0
-1327700000: 13277: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13277 func name=_out_char pc=0x80001554
-1332300000: 13323: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13323 func name=_vsnprintf pc=0x80000dd0
-1334700000: 13347: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13347 func name=_out_char pc=0x80001554
-1339300000: 13393: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13393 func name=_vsnprintf pc=0x80000dd0
-1341700000: 13417: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13417 func name=_out_char pc=0x80001554
-1346300000: 13463: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13463 func name=_vsnprintf pc=0x80000dd0
-1348700000: 13487: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13487 func name=_out_char pc=0x80001554
-1353300000: 13533: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13533 func name=_vsnprintf pc=0x80000dd0
-1355700000: 13557: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13557 func name=_out_char pc=0x80001554
-1360300000: 13603: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13603 func name=_vsnprintf pc=0x80000dd0
-1362700000: 13627: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13627 func name=_out_char pc=0x80001554
-1367300000: 13673: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13673 func name=_vsnprintf pc=0x80000dd0
-1369700000: 13697: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13697 func name=_out_char pc=0x80001554
-1374300000: 13743: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13743 func name=_vsnprintf pc=0x80000dd0
-1376700000: 13767: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13767 func name=_out_char pc=0x80001554
-1381300000: 13813: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13813 func name=_vsnprintf pc=0x80000dd0
-1383700000: 13837: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13837 func name=_out_char pc=0x80001554
-1388300000: 13883: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13883 func name=_vsnprintf pc=0x80000dd0
-1400700000: 14007: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14007 func name=_ntoa_long pc=0x800015f4
-1411200000: 14112: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14112 func name=_out_char pc=0x80001554
-1415800000: 14158: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14158 func name=_ntoa_long pc=0x800018c4
-1416900000: 14169: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14169 func name=_out_char pc=0x80001554
-1421500000: 14215: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14215 func name=_ntoa_long pc=0x800018c4
-1426800000: 14268: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14268 func name=_vsnprintf pc=0x80001430
-1429400000: 14294: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14294 func name=_out_char pc=0x80001554
-1511000000: 15110: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15110 func name=_vsnprintf pc=0x80000dd0
-1513900000: 15139: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15139 func name=_out_char pc=0x80001554
-1514200000: 15142: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15142 func name=_vsnprintf pc=0x80001514
-1519500000: 15195: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15195 func name=printf_ pc=0x80000d24
-1520100000: 15201: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15201 func name=forge_check pc=0x800002dc
-1522300000: 15223: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15223 func name=printf_ pc=0x80000cd8
-1524300000: 15243: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15243 func name=_vsnprintf pc=0x80000d30
-1529600000: 15296: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15296 func name=_out_char pc=0x80001554
-1534200000: 15342: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15342 func name=_vsnprintf pc=0x80000dd0
-1536600000: 15366: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15366 func name=_out_char pc=0x80001554
-1541200000: 15412: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15412 func name=_vsnprintf pc=0x80000dd0
-1543600000: 15436: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15436 func name=_out_char pc=0x80001554
-1548200000: 15482: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15482 func name=_vsnprintf pc=0x80000dd0
-1550600000: 15506: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15506 func name=_out_char pc=0x80001554
-1555200000: 15552: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15552 func name=_vsnprintf pc=0x80000dd0
-1557600000: 15576: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15576 func name=_out_char pc=0x80001554
-1562200000: 15622: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15622 func name=_vsnprintf pc=0x80000dd0
-1564600000: 15646: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15646 func name=_out_char pc=0x80001554
-1569200000: 15692: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15692 func name=_vsnprintf pc=0x80000dd0
-1571600000: 15716: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15716 func name=_out_char pc=0x80001554
-1576200000: 15762: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15762 func name=_vsnprintf pc=0x80000dd0
-1578600000: 15786: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15786 func name=_out_char pc=0x80001554
-1583200000: 15832: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15832 func name=_vsnprintf pc=0x80000dd0
-1585600000: 15856: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15856 func name=_out_char pc=0x80001554
-1590200000: 15902: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15902 func name=_vsnprintf pc=0x80000dd0
-1592600000: 15926: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15926 func name=_out_char pc=0x80001554
-1597200000: 15972: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15972 func name=_vsnprintf pc=0x80000dd0
-1599600000: 15996: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15996 func name=_out_char pc=0x80001554
-1604200000: 16042: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16042 func name=_vsnprintf pc=0x80000dd0
-1606600000: 16066: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16066 func name=_out_char pc=0x80001554
-1611200000: 16112: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16112 func name=_vsnprintf pc=0x80000dd0
-1613600000: 16136: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16136 func name=_out_char pc=0x80001554
-1618200000: 16182: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16182 func name=_vsnprintf pc=0x80000dd0
-1620600000: 16206: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16206 func name=_out_char pc=0x80001554
-1625200000: 16252: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16252 func name=_vsnprintf pc=0x80000dd0
-1637400000: 16374: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16374 func name=_ntoa_long pc=0x800015f4
-1646000000: 16460: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16460 func name=_out_char pc=0x80001554
-1650600000: 16506: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16506 func name=_ntoa_long pc=0x800018c4
-1655900000: 16559: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16559 func name=_vsnprintf pc=0x80001430
-1658500000: 16585: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16585 func name=_out_char pc=0x80001554
+1097300000: 10973: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 10973 func name=_out_char pc=0x80001554
+1101900000: 11019: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11019 func name=_vsnprintf pc=0x80000dd0
+1114300000: 11143: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11143 func name=_ntoa_long pc=0x800015f4
+1124800000: 11248: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11248 func name=_out_char pc=0x80001554
+1129400000: 11294: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11294 func name=_ntoa_long pc=0x800018c4
+1130500000: 11305: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11305 func name=_out_char pc=0x80001554
+1135100000: 11351: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11351 func name=_ntoa_long pc=0x800018c4
+1140400000: 11404: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11404 func name=_vsnprintf pc=0x80001430
+1143000000: 11430: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 11430 func name=_out_char pc=0x80001554
+1211200000: 12112: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12112 func name=_vsnprintf pc=0x80000dd0
+1214100000: 12141: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12141 func name=_out_char pc=0x80001554
+1214400000: 12144: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12144 func name=_vsnprintf pc=0x80001514
+1219700000: 12197: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12197 func name=printf_ pc=0x80000d24
+1220300000: 12203: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12203 func name=forge_check pc=0x800002c4
+1222300000: 12223: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12223 func name=printf_ pc=0x80000cd8
+1224500000: 12245: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12245 func name=_vsnprintf pc=0x80000d30
+1229800000: 12298: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12298 func name=_out_char pc=0x80001554
+1234400000: 12344: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12344 func name=_vsnprintf pc=0x80000dd0
+1236800000: 12368: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12368 func name=_out_char pc=0x80001554
+1241400000: 12414: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12414 func name=_vsnprintf pc=0x80000dd0
+1243800000: 12438: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12438 func name=_out_char pc=0x80001554
+1248400000: 12484: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12484 func name=_vsnprintf pc=0x80000dd0
+1250800000: 12508: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12508 func name=_out_char pc=0x80001554
+1255400000: 12554: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12554 func name=_vsnprintf pc=0x80000dd0
+1257800000: 12578: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12578 func name=_out_char pc=0x80001554
+1262400000: 12624: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12624 func name=_vsnprintf pc=0x80000dd0
+1264800000: 12648: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12648 func name=_out_char pc=0x80001554
+1269400000: 12694: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12694 func name=_vsnprintf pc=0x80000dd0
+1271800000: 12718: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12718 func name=_out_char pc=0x80001554
+1276400000: 12764: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12764 func name=_vsnprintf pc=0x80000dd0
+1278800000: 12788: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12788 func name=_out_char pc=0x80001554
+1283400000: 12834: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12834 func name=_vsnprintf pc=0x80000dd0
+1285800000: 12858: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12858 func name=_out_char pc=0x80001554
+1290400000: 12904: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12904 func name=_vsnprintf pc=0x80000dd0
+1292800000: 12928: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12928 func name=_out_char pc=0x80001554
+1297400000: 12974: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12974 func name=_vsnprintf pc=0x80000dd0
+1299800000: 12998: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 12998 func name=_out_char pc=0x80001554
+1304400000: 13044: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13044 func name=_vsnprintf pc=0x80000dd0
+1306800000: 13068: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13068 func name=_out_char pc=0x80001554
+1311400000: 13114: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13114 func name=_vsnprintf pc=0x80000dd0
+1313800000: 13138: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13138 func name=_out_char pc=0x80001554
+1318400000: 13184: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13184 func name=_vsnprintf pc=0x80000dd0
+1320800000: 13208: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13208 func name=_out_char pc=0x80001554
+1325400000: 13254: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13254 func name=_vsnprintf pc=0x80000dd0
+1327800000: 13278: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13278 func name=_out_char pc=0x80001554
+1332400000: 13324: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13324 func name=_vsnprintf pc=0x80000dd0
+1334800000: 13348: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13348 func name=_out_char pc=0x80001554
+1339400000: 13394: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13394 func name=_vsnprintf pc=0x80000dd0
+1341800000: 13418: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13418 func name=_out_char pc=0x80001554
+1346400000: 13464: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13464 func name=_vsnprintf pc=0x80000dd0
+1348800000: 13488: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13488 func name=_out_char pc=0x80001554
+1353400000: 13534: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13534 func name=_vsnprintf pc=0x80000dd0
+1355800000: 13558: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13558 func name=_out_char pc=0x80001554
+1360400000: 13604: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13604 func name=_vsnprintf pc=0x80000dd0
+1362800000: 13628: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13628 func name=_out_char pc=0x80001554
+1367400000: 13674: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13674 func name=_vsnprintf pc=0x80000dd0
+1369800000: 13698: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13698 func name=_out_char pc=0x80001554
+1374400000: 13744: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13744 func name=_vsnprintf pc=0x80000dd0
+1376800000: 13768: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13768 func name=_out_char pc=0x80001554
+1381400000: 13814: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13814 func name=_vsnprintf pc=0x80000dd0
+1383800000: 13838: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13838 func name=_out_char pc=0x80001554
+1388400000: 13884: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13884 func name=_vsnprintf pc=0x80000dd0
+1390800000: 13908: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13908 func name=_out_char pc=0x80001554
+1395400000: 13954: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 13954 func name=_vsnprintf pc=0x80000dd0
+1407800000: 14078: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14078 func name=_ntoa_long pc=0x800015f4
+1418300000: 14183: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14183 func name=_out_char pc=0x80001554
+1422900000: 14229: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14229 func name=_ntoa_long pc=0x800018c4
+1424000000: 14240: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14240 func name=_out_char pc=0x80001554
+1428600000: 14286: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14286 func name=_ntoa_long pc=0x800018c4
+1433900000: 14339: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14339 func name=_vsnprintf pc=0x80001430
+1436500000: 14365: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 14365 func name=_out_char pc=0x80001554
+1511100000: 15111: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15111 func name=_vsnprintf pc=0x80000dd0
+1514000000: 15140: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15140 func name=_out_char pc=0x80001554
+1514300000: 15143: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15143 func name=_vsnprintf pc=0x80001514
+1519600000: 15196: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15196 func name=printf_ pc=0x80000d24
+1520200000: 15202: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15202 func name=forge_check pc=0x800002dc
+1522400000: 15224: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15224 func name=printf_ pc=0x80000cd8
+1524400000: 15244: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15244 func name=_vsnprintf pc=0x80000d30
+1529700000: 15297: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15297 func name=_out_char pc=0x80001554
+1534300000: 15343: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15343 func name=_vsnprintf pc=0x80000dd0
+1536700000: 15367: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15367 func name=_out_char pc=0x80001554
+1541300000: 15413: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15413 func name=_vsnprintf pc=0x80000dd0
+1543700000: 15437: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15437 func name=_out_char pc=0x80001554
+1548300000: 15483: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15483 func name=_vsnprintf pc=0x80000dd0
+1550700000: 15507: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15507 func name=_out_char pc=0x80001554
+1555300000: 15553: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15553 func name=_vsnprintf pc=0x80000dd0
+1557700000: 15577: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15577 func name=_out_char pc=0x80001554
+1562300000: 15623: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15623 func name=_vsnprintf pc=0x80000dd0
+1564700000: 15647: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15647 func name=_out_char pc=0x80001554
+1569300000: 15693: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15693 func name=_vsnprintf pc=0x80000dd0
+1571700000: 15717: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15717 func name=_out_char pc=0x80001554
+1576300000: 15763: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15763 func name=_vsnprintf pc=0x80000dd0
+1578700000: 15787: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15787 func name=_out_char pc=0x80001554
+1583300000: 15833: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15833 func name=_vsnprintf pc=0x80000dd0
+1585700000: 15857: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15857 func name=_out_char pc=0x80001554
+1590300000: 15903: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15903 func name=_vsnprintf pc=0x80000dd0
+1592700000: 15927: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15927 func name=_out_char pc=0x80001554
+1597300000: 15973: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15973 func name=_vsnprintf pc=0x80000dd0
+1599700000: 15997: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 15997 func name=_out_char pc=0x80001554
+1604300000: 16043: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16043 func name=_vsnprintf pc=0x80000dd0
+1606700000: 16067: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16067 func name=_out_char pc=0x80001554
+1611300000: 16113: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16113 func name=_vsnprintf pc=0x80000dd0
+1613700000: 16137: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16137 func name=_out_char pc=0x80001554
+1618300000: 16183: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16183 func name=_vsnprintf pc=0x80000dd0
+1620700000: 16207: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16207 func name=_out_char pc=0x80001554
+1625300000: 16253: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16253 func name=_vsnprintf pc=0x80000dd0
+1637500000: 16375: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16375 func name=_ntoa_long pc=0x800015f4
+1646100000: 16461: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16461 func name=_out_char pc=0x80001554
+1650700000: 16507: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16507 func name=_ntoa_long pc=0x800018c4
+1656000000: 16560: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16560 func name=_vsnprintf pc=0x80001430
+1658600000: 16586: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 16586 func name=_out_char pc=0x80001554
 1710000000: 17100: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 17100 func name=_vsnprintf pc=0x80000dd0
 1712900000: 17129: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 17129 func name=_out_char pc=0x80001554
 1713200000: 17132: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 17132 func name=_vsnprintf pc=0x80001514
@@ -838,23 +842,23 @@
 1731200000: 17312: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 17312 state mode=sleep
 1732300000: 17323: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 17323 func name=snrt.crt0.end pc=0x800001d8
 1732300000: 17323: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 17323 state mode=sleep
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=0 name=snax_acc0.streamer.reader0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=1 name=snax_acc0.streamer.reader0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=2 name=snax_acc0.streamer.reader0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=3 name=snax_acc0.streamer.reader0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=4 name=snax_acc0.streamer.reader1.lane0 grants=16 stalls=1 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=5 name=snax_acc0.streamer.reader1.lane1 grants=16 stalls=1 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=6 name=snax_acc0.streamer.reader1.lane2 grants=16 stalls=1 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=7 name=snax_acc0.streamer.reader1.lane3 grants=16 stalls=1 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=8 name=snax_acc0.streamer.reader2.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=9 name=snax_acc0.streamer.reader2.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=10 name=snax_acc0.streamer.reader2.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=11 name=snax_acc0.streamer.reader2.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=12 name=snax_acc0.streamer.writer0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=13 name=snax_acc0.streamer.writer0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=14 name=snax_acc0.streamer.writer0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=15 name=snax_acc0.streamer.writer0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
-1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=16 name=snax_acc0.streamer.writer1.lane0 grants=1 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=0 name=snax_acc0.streamer_dot.reader0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=1 name=snax_acc0.streamer_dot.reader0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=2 name=snax_acc0.streamer_dot.reader0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=3 name=snax_acc0.streamer_dot.reader0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=4 name=snax_acc0.streamer_dot.reader1.lane0 grants=16 stalls=1 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=5 name=snax_acc0.streamer_dot.reader1.lane1 grants=16 stalls=1 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=6 name=snax_acc0.streamer_dot.reader1.lane2 grants=16 stalls=1 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=7 name=snax_acc0.streamer_dot.reader1.lane3 grants=16 stalls=1 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=8 name=snax_acc0.streamer_dot.reader2.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=9 name=snax_acc0.streamer_dot.reader2.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=10 name=snax_acc0.streamer_dot.reader2.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=11 name=snax_acc0.streamer_dot.reader2.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=12 name=snax_acc0.streamer_dot.writer0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=13 name=snax_acc0.streamer_dot.writer0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=14 name=snax_acc0.streamer_dot.writer0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=15 name=snax_acc0.streamer_dot.writer0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
+1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=16 name=snax_acc0.streamer_dot.writer1.lane0 grants=1 stalls=0 stalls_dma=0 whole_run=0
 1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=17 name=core0 grants=390 stalls=0 stalls_dma=0 whole_run=1
 1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=18 name=core1 grants=55 stalls=1 stalls_dma=0 whole_run=1
 1800100000: 18001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 18001 input index=19 name=axi grants=0 stalls=0 stalls_dma=0 whole_run=1

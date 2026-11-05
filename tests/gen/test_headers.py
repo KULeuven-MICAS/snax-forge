@@ -161,8 +161,10 @@ def test_the_accelerator_header_numbers(include):
 
 @requires_submodule
 def test_snax_shell_drives_the_accelerator_header(include):
-    """snax-gvsoc's snax-shell includes vecadd's acc_csr.h: every CSR name it uses is ours."""
+    """snax-gvsoc's snax-shell includes vecadd's acc_csr.h and its set's streamer header (G1:
+    streamer_acc_csr_addr_map.h, its macros prefixed ACC_): every CSR name it uses is ours."""
     ours = dict(defines((include / "acc_csr.h").read_text()))
+    ours |= dict(defines((include / "streamer_acc_csr_addr_map.h").read_text()))
     used = set(re.findall(r"\bACC_\w+", SHELL.read_text()))
     assert used and used <= set(ours), used - set(ours)
 

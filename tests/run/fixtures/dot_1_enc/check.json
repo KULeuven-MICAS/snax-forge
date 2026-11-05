@@ -10,15 +10,15 @@
   "data_errors": 0,
   "words": 1,
   "tasks": {
-   "mult_mul": {
+   "mult_vmul": {
     "counter": 19,
     "beats": 16,
-    "group": "mul"
+    "group": "vmul"
    },
-   "sum_sum": {
+   "sum_vsum": {
     "counter": 19,
     "beats": 16,
-    "group": "sum"
+    "group": "vsum"
    }
   },
   "passed": true

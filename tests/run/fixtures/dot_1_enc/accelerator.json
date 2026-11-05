@@ -1,14 +1,14 @@
 {
  "design_point": "design/design_point.json",
- "tag": "snax_forge_dot_1",
+ "tag": "snax_forge_dot_1_enc",
  "accelerators": [
   {
    "name": "dot",
-   "inputs": ["mul.a", "mul.b", "sum.a"],
-   "outputs": ["mul.out", "sum.out"],
+   "inputs": ["vmul.a", "vmul.b", "vsum.a"],
+   "outputs": ["vmul.out", "vsum.out"],
    "groups": [
     {
-     "name": "mul",
+     "name": "vmul",
      "csrs": [
       {"name": "START", "access": "rw", "offset": 0, "width": 1},
       {"name": "JOBS", "access": "rw", "offset": 1, "width": 32},
@@ -17,7 +17,7 @@
      ],
      "units": [
       {
-       "name": "mul",
+       "name": "vmul",
        "brm": "elementwise_mul",
        "datapath": "ElementwiseLanes",
        "ports": {
@@ -34,7 +34,7 @@
      "links": []
     },
     {
-     "name": "sum",
+     "name": "vsum",
      "csrs": [
       {"name": "START", "access": "rw", "offset": 4, "width": 1},
       {"name": "JOBS", "access": "rw", "offset": 5, "width": 32},
@@ -43,7 +43,7 @@
      ],
      "units": [
       {
-       "name": "sum",
+       "name": "vsum",
        "brm": "accumulate",
        "datapath": "TreeAccumulate",
        "ports": {

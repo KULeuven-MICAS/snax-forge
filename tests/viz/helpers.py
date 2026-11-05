@@ -249,7 +249,8 @@ def recorded_run(out: Path, level: str = "stall", fixture: Path | None = None) -
         "snax_forge.hjson",
         *sorted(p.name for p in recorded.glob("*_streamer_*.hjson")),
         "accelerator.json",
-    ]  # the cluster file, a streamer file per set (D157)
+        "manifest.json",
+    ]  # the cluster file, a streamer file per set (D157), the manifest (the sets' trace paths)
     for name in described:
         shutil.copy(recorded / name, out / "gen" / name)
     shutil.copy(recorded / "design_point.json", out / "design" / "design_point.json")

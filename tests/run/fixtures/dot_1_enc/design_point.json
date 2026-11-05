@@ -1,6 +1,6 @@
 {
- "name": "dot_1",
- "graph_from": "out/flow/dot_1_task/sandbox/5_encapsulate.snaxdfg",
+ "name": "dot_1_enc",
+ "graph_from": "out/flow/dot_1_enc_task/sandbox/5_encapsulate.snaxdfg",
  "graph": {
   "name": "dot",
   "symbols": {"N": 64},
@@ -32,7 +32,7 @@
       },
       "outputs": {"out": {"data": "tmp0", "subset": ["4 * i_t:4 * i_t + 4"]}},
       "attrs": {
-       "instance": "mul",
+       "instance": "vmul",
        "brm": "elementwise_mul",
        "implementation": "chisel_tiled_spatial",
        "code": "out = a * b",
@@ -80,7 +80,7 @@
       "inputs": {"a": {"data": "tmp0", "subset": ["4 * i_t_1:4 * i_t_1 + 4"]}},
       "outputs": {"out": {"data": "out", "subset": ["0:1"]}},
       "attrs": {
-       "instance": "sum",
+       "instance": "vsum",
        "brm": "accumulate",
        "implementation": "chisel_adder_tree",
        "code": "out = a",
@@ -115,14 +115,22 @@
   "changes": {},
   "hjson": "platforms/snax_forge_cluster.hjson",
   "accelerator_slot": "snax_forge",
-  "l1": {"n_banks": 32, "width_bits": 64, "rows": 512, "base_addr": 268435456, "wide_bits": 512},
+  "acc_csr": {"job_width": 32, "counter_width": null},
+  "l1": {
+   "n_banks": 32,
+   "width_bits": 64,
+   "rows": 512,
+   "base_addr": 268435456,
+   "wide_bits": 512,
+   "max_xbar_inputs": 64
+  },
   "l2": {"size_bytes": 2147483648, "base_addr": 2147483648, "beat_bits": 512, "width_bits": 64},
   "wait_mode": "poll",
   "streamers": {"default": {"fifo_depth": 8}}
  },
  "streamers": {
-  "mul_a": {
-   "instance": "mul",
+  "vmul_a": {
+   "instance": "vmul",
    "port": "a",
    "write": false,
    "n_ports": 4,
@@ -133,8 +141,8 @@
    "num_ch": 4,
    "fifo_depth": 8
   },
-  "mul_b": {
-   "instance": "mul",
+  "vmul_b": {
+   "instance": "vmul",
    "port": "b",
    "write": false,
    "n_ports": 4,
@@ -145,8 +153,8 @@
    "num_ch": 4,
    "fifo_depth": 8
   },
-  "mul_out": {
-   "instance": "mul",
+  "vmul_out": {
+   "instance": "vmul",
    "port": "out",
    "write": true,
    "n_ports": 4,
@@ -157,8 +165,8 @@
    "num_ch": 4,
    "fifo_depth": 8
   },
-  "sum_a": {
-   "instance": "sum",
+  "vsum_a": {
+   "instance": "vsum",
    "port": "a",
    "write": false,
    "n_ports": 4,
@@ -169,8 +177,8 @@
    "num_ch": 4,
    "fifo_depth": 8
   },
-  "sum_out": {
-   "instance": "sum",
+  "vsum_out": {
+   "instance": "vsum",
    "port": "out",
    "write": true,
    "n_ports": 1,

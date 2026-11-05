@@ -1,0 +1,32 @@
+{
+ "design": "dot_1_enc",
+ "design_point": "design/design_point.json",
+ "symbols": {"N": 64},
+ "cluster": "snax_forge.hjson",
+ "files": ["snax_forge.hjson", "snax_forge_dot_1_enc_streamer_dot.hjson", "accelerator.json", "include/streamer_dot_csr_addr_map.h", "include/dot_csr.h", "include/snitch_cluster_cfg.h", "include/snitch_cluster_addrmap.h", "data.h", "main.c", "manifest.json"],
+ "program": "main.c",
+ "trace": "snax_acc0",
+ "csrs": {
+  "streamers": [{"name": "dot", "first": 960, "last": 987, "trace": "snax_acc0/streamer_dot"}],
+  "accelerator": {
+   "DOT_RW_VMUL_START": 988,
+   "DOT_RW_VMUL_JOBS": 989,
+   "DOT_RO_VMUL_STATUS": 990,
+   "DOT_RO_VMUL_COUNTER": 991,
+   "DOT_RW_VSUM_START": 992,
+   "DOT_RW_VSUM_JOBS": 993,
+   "DOT_RW_VSUM_JOB_BEATS": 994,
+   "DOT_RO_VSUM_STATUS": 995,
+   "DOT_RO_VSUM_COUNTER": 996
+  }
+ },
+ "tasks": [
+  {"name": "mult_vmul", "beats": 16, "csrs": {"JOBS": 16}, "trace": "snax_acc0/unit_vmul"},
+  {
+   "name": "sum_vsum",
+   "beats": 16,
+   "csrs": {"JOBS": 1, "JOB_BEATS": 16},
+   "trace": "snax_acc0/unit_vsum"
+  }
+ ]
+}

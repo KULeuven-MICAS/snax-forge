@@ -1,0 +1,20 @@
+{
+ "design": "dot_4",
+ "design_point": "design/design_point.json",
+ "symbols": {"N": 512},
+ "cluster": "snax_forge.hjson",
+ "files": ["snax_forge.hjson", "snax_forge_dot_4_streamer_dot.hjson", "accelerator.json", "include/streamer_dot_csr_addr_map.h", "include/dot_csr.h", "include/snitch_cluster_cfg.h", "include/snitch_cluster_addrmap.h", "data.h", "main.c", "manifest.json"],
+ "program": "main.c",
+ "trace": "snax_acc0/group_dot",
+ "csrs": {
+  "streamers": [{"name": "dot", "first": 960, "last": 977, "trace": "snax_acc0/streamer_dot"}],
+  "accelerator": {
+   "DOT_RW_START": 978,
+   "DOT_RW_JOBS": 979,
+   "DOT_RW_MAC_JOB_BEATS": 980,
+   "DOT_RO_STATUS": 981,
+   "DOT_RO_COUNTER": 982
+  }
+ },
+ "tasks": [{"name": "mult_dot", "beats": 128, "csrs": {"JOBS": 1, "MAC_JOB_BEATS": 128}}]
+}

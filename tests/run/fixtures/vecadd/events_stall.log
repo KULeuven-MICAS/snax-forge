@@ -72,15 +72,15 @@
 293900000: 2939: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2939 dma id=3 i=7 op=w addr=0x3c0 size=64 bank=24 row=3 value=0x8c,0xffffffffffffff41,0x3e1,0xfffffffffffffda5,0x37d,0xfffffffffffffccd,0xf6,0xa0 l2=0x80002cc0
 294100000: 2941: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2922 barrier first=2922 last=2941
 294100000: 2941: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2941 barrier first=2941 last=2941
-294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2942 start mover=reader0
-294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2942 start mover=reader1
-294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2942 start mover=writer0
+294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2942 start mover=reader0
+294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2942 start mover=reader1
+294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2942 start mover=writer0
 294200000: 2942: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2942 csr pc=0x80000370 csr=0x3cf op=w value=1
 294300000: 2943: [[34m/chip/soc/cluster_0/snax_acc0/unit/events                                [0m] 2943 start count=16 rate=1
 294300000: 2943: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2943 csr pc=0x80000374 csr=0x3d2 op=w value=1
-294300000: 2943: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2943 class mover=reader0 mode=idle
-294300000: 2943: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2943 class mover=reader1 mode=idle
-294300000: 2943: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2943 class mover=writer0 mode=idle
+294300000: 2943: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2943 class mover=reader0 mode=idle
+294300000: 2943: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2943 class mover=reader1 mode=idle
+294300000: 2943: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2943 class mover=writer0 mode=idle
 294400000: 2944: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2944 class mode=stall_in
 294400000: 2944: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/stalls                                [0m] 2944 stall in=4 addr=0x200 bank=0 row=2 by=0 by_addr=0x0 b=0
 294400000: 2944: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2944 grant in=0 op=r addr=0x0 bank=0 row=0 value=0x2bd back=2945 b=0
@@ -90,9 +90,9 @@
 294400000: 2944: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2944 grant in=2 op=r addr=0x10 bank=2 row=0 value=0x16 back=2945 b=0
 294400000: 2944: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/stalls                                [0m] 2944 stall in=7 addr=0x218 bank=3 row=2 by=3 by_addr=0x18 b=0
 294400000: 2944: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2944 grant in=3 op=r addr=0x18 bank=3 row=0 value=0xfffffffffffffe33 back=2945 b=0
-294400000: 2944: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2944 class mover=reader0 mode=busy
-294400000: 2944: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2944 class mover=reader1 mode=stall_xbar
-294400000: 2944: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2944 class mover=writer0 mode=stall_fifo
+294400000: 2944: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2944 class mover=reader0 mode=busy
+294400000: 2944: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2944 class mover=reader1 mode=stall_xbar
+294400000: 2944: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2944 class mover=writer0 mode=stall_fifo
 294500000: 2945: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2945 grant in=4 op=r addr=0x200 bank=0 row=2 value=0x2ee back=2946 b=0
 294500000: 2945: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2945 grant in=5 op=r addr=0x208 bank=1 row=2 value=0xfffffffffffffd26 back=2946 b=0
 294500000: 2945: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2945 grant in=6 op=r addr=0x210 bank=2 row=2 value=0x9d back=2946 b=0
@@ -101,11 +101,11 @@
 294500000: 2945: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2945 grant in=1 op=r addr=0x28 bank=5 row=0 value=0xfffffffffffffc69 back=2946 b=1
 294500000: 2945: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2945 grant in=2 op=r addr=0x30 bank=6 row=0 value=0xfffffffffffffcae back=2946 b=1
 294500000: 2945: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2945 grant in=3 op=r addr=0x38 bank=7 row=0 value=0xfffffffffffffc39 back=2946 b=1
-294500000: 2945: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2945 class mover=reader1 mode=busy
-294600000: 2946: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2946 fifo mover=reader0 lane=0 count=1
-294600000: 2946: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2946 fifo mover=reader0 lane=1 count=1
-294600000: 2946: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2946 fifo mover=reader0 lane=2 count=1
-294600000: 2946: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2946 fifo mover=reader0 lane=3 count=1
+294500000: 2945: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2945 class mover=reader1 mode=busy
+294600000: 2946: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2946 fifo mover=reader0 lane=0 count=1
+294600000: 2946: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2946 fifo mover=reader0 lane=1 count=1
+294600000: 2946: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2946 fifo mover=reader0 lane=2 count=1
+294600000: 2946: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2946 fifo mover=reader0 lane=3 count=1
 294600000: 2946: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2946 grant in=4 op=r addr=0x220 bank=4 row=2 value=0x2b2 back=2947 b=1
 294600000: 2946: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2946 grant in=5 op=r addr=0x228 bank=5 row=2 value=0x32 back=2947 b=1
 294600000: 2946: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2946 grant in=6 op=r addr=0x230 bank=6 row=2 value=0xffffffffffffff06 back=2947 b=1
@@ -115,14 +115,14 @@
 294600000: 2946: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2946 grant in=2 op=r addr=0x50 bank=10 row=0 value=0x12a back=2947 b=2
 294600000: 2946: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2946 grant in=3 op=r addr=0x58 bank=11 row=0 value=0x339 back=2947 b=2
 294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2947 class mode=busy
-294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2947 fifo mover=reader0 lane=0 count=2
-294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2947 fifo mover=reader0 lane=1 count=2
-294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2947 fifo mover=reader0 lane=2 count=2
-294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2947 fifo mover=reader0 lane=3 count=2
-294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2947 fifo mover=reader1 lane=0 count=1
-294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2947 fifo mover=reader1 lane=1 count=1
-294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2947 fifo mover=reader1 lane=2 count=1
-294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2947 fifo mover=reader1 lane=3 count=1
+294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2947 fifo mover=reader0 lane=0 count=2
+294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2947 fifo mover=reader0 lane=1 count=2
+294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2947 fifo mover=reader0 lane=2 count=2
+294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2947 fifo mover=reader0 lane=3 count=2
+294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2947 fifo mover=reader1 lane=0 count=1
+294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2947 fifo mover=reader1 lane=1 count=1
+294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2947 fifo mover=reader1 lane=2 count=1
+294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2947 fifo mover=reader1 lane=3 count=1
 294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2947 fire n=0 b=0,0 value=0x2bd,0x111,0x16,0xfffffffffffffe33,0x2ee,0xfffffffffffffd26,0x9d,0x1ba
 294700000: 2947: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2947 push n=0 first=0 last=0 value=0x5ab,0xfffffffffffffe37,0xb3,0xffffffffffffffed
 294700000: 2947: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2947 grant in=4 op=r addr=0x240 bank=8 row=2 value=0xffffffffffffff65 back=2948 b=2
@@ -134,10 +134,10 @@
 294700000: 2947: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2947 grant in=2 op=r addr=0x70 bank=14 row=0 value=0x3ad back=2948 b=3
 294700000: 2947: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2947 grant in=3 op=r addr=0x78 bank=15 row=0 value=0x1ca back=2948 b=3
 294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2948 fire n=1 b=1,1 value=0xfffffffffffffe7f,0xfffffffffffffc69,0xfffffffffffffcae,0xfffffffffffffc39,0x2b2,0x32,0xffffffffffffff06,0xfffffffffffffe84
-294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2948 fifo mover=writer0 lane=0 count=1
-294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2948 fifo mover=writer0 lane=1 count=1
-294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2948 fifo mover=writer0 lane=2 count=1
-294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2948 fifo mover=writer0 lane=3 count=1
+294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2948 fifo mover=writer0 lane=0 count=1
+294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2948 fifo mover=writer0 lane=1 count=1
+294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2948 fifo mover=writer0 lane=2 count=1
+294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2948 fifo mover=writer0 lane=3 count=1
 294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2948 push n=1 first=1 last=1 value=0x131,0xfffffffffffffc9b,0xfffffffffffffbb4,0xfffffffffffffabd
 294800000: 2948: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2948 grant in=8 op=w addr=0x400 bank=0 row=4 value=0x5ab back=2949 b=0
 294800000: 2948: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2948 grant in=9 op=w addr=0x408 bank=1 row=4 value=0xfffffffffffffe37 back=2949 b=0
@@ -151,7 +151,7 @@
 294800000: 2948: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2948 grant in=1 op=r addr=0x88 bank=17 row=0 value=0x57 back=2949 b=4
 294800000: 2948: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2948 grant in=2 op=r addr=0x90 bank=18 row=0 value=0x77 back=2949 b=4
 294800000: 2948: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2948 grant in=3 op=r addr=0x98 bank=19 row=0 value=0x366 back=2949 b=4
-294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2948 class mover=writer0 mode=busy
+294800000: 2948: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2948 class mover=writer0 mode=busy
 294900000: 2949: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2949 fire n=2 b=2,2 value=0xfffffffffffffd76,0x272,0x12a,0x339,0xffffffffffffff65,0xffffffffffffffe3,0x1b5,0x30a
 294900000: 2949: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2949 push n=2 first=2 last=2 value=0xfffffffffffffcdb,0x255,0x2df,0x643
 294900000: 2949: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2949 grant in=8 op=w addr=0x420 bank=4 row=4 value=0x131 back=2950 b=1
@@ -306,7 +306,7 @@
 295900000: 2959: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2959 grant in=1 op=r addr=0x1e8 bank=29 row=1 value=0x178 back=2960 b=15
 295900000: 2959: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2959 grant in=2 op=r addr=0x1f0 bank=30 row=1 value=0x198 back=2960 b=15
 295900000: 2959: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2959 grant in=3 op=r addr=0x1f8 bank=31 row=1 value=0xffffffffffffff21 back=2960 b=15
-295900000: 2959: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2959 done mover=reader0
+295900000: 2959: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2959 done mover=reader0
 296000000: 2960: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2960 fire n=13 b=13,13 value=0xffffffffffffffb1,0x3e2,0x261,0x3c1,0x19a,0xfffffffffffffde5,0x216,0xfffffffffffffc80
 296000000: 2960: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2960 push n=13 first=13 last=13 value=0x14b,0x1c7,0x477,0x41
 296000000: 2960: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2960 grant in=8 op=w addr=0x580 bank=16 row=5 value=0xea back=2961 b=12
@@ -317,19 +317,19 @@
 296000000: 2960: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2960 grant in=5 op=r addr=0x3e8 bank=29 row=3 value=0xfffffffffffffccd back=2961 b=15
 296000000: 2960: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2960 grant in=6 op=r addr=0x3f0 bank=30 row=3 value=0xf6 back=2961 b=15
 296000000: 2960: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2960 grant in=7 op=r addr=0x3f8 bank=31 row=3 value=0xa0 back=2961 b=15
-296000000: 2960: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2960 class mover=reader0 mode=idle
-296000000: 2960: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2960 done mover=reader1
+296000000: 2960: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2960 class mover=reader0 mode=idle
+296000000: 2960: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2960 done mover=reader1
 296100000: 2961: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2961 fire n=14 b=14,14 value=0xffffffffffffff0f,0x173,0x384,0x12c,0x8c,0xffffffffffffff41,0x3e1,0xfffffffffffffda5
 296100000: 2961: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2961 push n=14 first=14 last=14 value=0xffffffffffffff9b,0xb4,0x765,0xfffffffffffffed1
 296100000: 2961: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2961 grant in=8 op=w addr=0x5a0 bank=20 row=5 value=0x14b back=2962 b=13
 296100000: 2961: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2961 grant in=9 op=w addr=0x5a8 bank=21 row=5 value=0x1c7 back=2962 b=13
 296100000: 2961: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2961 grant in=10 op=w addr=0x5b0 bank=22 row=5 value=0x477 back=2962 b=13
 296100000: 2961: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2961 grant in=11 op=w addr=0x5b8 bank=23 row=5 value=0x41 back=2962 b=13
-296100000: 2961: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2961 class mover=reader1 mode=idle
-296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2962 fifo mover=reader0 lane=0 count=1
-296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2962 fifo mover=reader0 lane=1 count=1
-296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2962 fifo mover=reader0 lane=2 count=1
-296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2962 fifo mover=reader0 lane=3 count=1
+296100000: 2961: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2961 class mover=reader1 mode=idle
+296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2962 fifo mover=reader0 lane=0 count=1
+296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2962 fifo mover=reader0 lane=1 count=1
+296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2962 fifo mover=reader0 lane=2 count=1
+296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2962 fifo mover=reader0 lane=3 count=1
 296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2962 fire n=15 b=15,15 value=0x2a8,0x178,0x198,0xffffffffffffff21,0x37d,0xfffffffffffffccd,0xf6,0xa0
 296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/unit/beats                                 [0m] 2962 push n=15 first=15 last=15 value=0x625,0xfffffffffffffe45,0x28e,0xffffffffffffffc1
 296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/unit/events                                [0m] 2962 done firings=16 first=2947 last=2962
@@ -342,23 +342,23 @@
 296300000: 2963: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2963 grant in=9 op=w addr=0x5e8 bank=29 row=5 value=0xfffffffffffffe45 back=2964 b=15
 296300000: 2963: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2963 grant in=10 op=w addr=0x5f0 bank=30 row=5 value=0x28e back=2964 b=15
 296300000: 2963: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/beats                                 [0m] 2963 grant in=11 op=w addr=0x5f8 bank=31 row=5 value=0xffffffffffffffc1 back=2964 b=15
-296300000: 2963: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2963 done mover=writer0
-296300000: 2963: [[34m/chip/soc/cluster_0/snax_acc0/streamer/beats                             [0m] 2964 class mover=writer0 mode=idle
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2963 fifo mover=reader0 lane=0 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2963 fifo mover=reader0 lane=1 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2963 fifo mover=reader0 lane=2 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2963 fifo mover=reader0 lane=3 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2964 mover mover=reader0 run=0 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=2,2,2,2
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2963 fifo mover=reader1 lane=0 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2963 fifo mover=reader1 lane=1 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2963 fifo mover=reader1 lane=2 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2963 fifo mover=reader1 lane=3 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2964 mover mover=reader1 run=0 busy=16 stall_xbar=1 stall_fifo=0 idle=5 qmax=1,1,1,1
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2964 fifo mover=writer0 lane=0 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2964 fifo mover=writer0 lane=1 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2964 fifo mover=writer0 lane=2 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/stalls                            [0m] 2964 fifo mover=writer0 lane=3 count=0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2964 mover mover=writer0 run=0 busy=16 stall_xbar=0 stall_fifo=4 idle=2 qmax=1,1,1,1
+296300000: 2963: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2963 done mover=writer0
+296300000: 2963: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/beats                         [0m] 2964 class mover=writer0 mode=idle
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2963 fifo mover=reader0 lane=0 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2963 fifo mover=reader0 lane=1 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2963 fifo mover=reader0 lane=2 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2963 fifo mover=reader0 lane=3 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/summary                       [0m] 2964 mover mover=reader0 run=0 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=2,2,2,2
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2963 fifo mover=reader1 lane=0 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2963 fifo mover=reader1 lane=1 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2963 fifo mover=reader1 lane=2 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2963 fifo mover=reader1 lane=3 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/summary                       [0m] 2964 mover mover=reader1 run=0 busy=16 stall_xbar=1 stall_fifo=0 idle=5 qmax=1,1,1,1
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2964 fifo mover=writer0 lane=0 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2964 fifo mover=writer0 lane=1 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2964 fifo mover=writer0 lane=2 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/stalls                        [0m] 2964 fifo mover=writer0 lane=3 count=0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/summary                       [0m] 2964 mover mover=writer0 run=0 busy=16 stall_xbar=0 stall_fifo=4 idle=2 qmax=1,1,1,1
 296500000: 2965: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2944 poll pc=0x80000378 csr=0x3d4 value=1 first=2944 last=2962 count=4
 296800000: 2968: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2965 csr pc=0x80000378 csr=0x3d4 op=r value=2
 297000000: 2970: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2968 csr pc=0x80000384 csr=0x3d0 op=r value=0
@@ -619,18 +619,18 @@
 1930100000: 19301: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 19301 state mode=sleep
 1932300000: 19323: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 19323 func name=snrt.crt0.end pc=0x800001d8
 1932300000: 19323: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 19323 state mode=sleep
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=0 name=snax_acc0.streamer.reader0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=1 name=snax_acc0.streamer.reader0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=2 name=snax_acc0.streamer.reader0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=3 name=snax_acc0.streamer.reader0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=4 name=snax_acc0.streamer.reader1.lane0 grants=16 stalls=1 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=5 name=snax_acc0.streamer.reader1.lane1 grants=16 stalls=1 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=6 name=snax_acc0.streamer.reader1.lane2 grants=16 stalls=1 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=7 name=snax_acc0.streamer.reader1.lane3 grants=16 stalls=1 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=8 name=snax_acc0.streamer.writer0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=9 name=snax_acc0.streamer.writer0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=10 name=snax_acc0.streamer.writer0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=11 name=snax_acc0.streamer.writer0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=0 name=snax_acc0.streamer_acc.reader0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=1 name=snax_acc0.streamer_acc.reader0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=2 name=snax_acc0.streamer_acc.reader0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=3 name=snax_acc0.streamer_acc.reader0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=4 name=snax_acc0.streamer_acc.reader1.lane0 grants=16 stalls=1 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=5 name=snax_acc0.streamer_acc.reader1.lane1 grants=16 stalls=1 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=6 name=snax_acc0.streamer_acc.reader1.lane2 grants=16 stalls=1 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=7 name=snax_acc0.streamer_acc.reader1.lane3 grants=16 stalls=1 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=8 name=snax_acc0.streamer_acc.writer0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=9 name=snax_acc0.streamer_acc.writer0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=10 name=snax_acc0.streamer_acc.writer0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=11 name=snax_acc0.streamer_acc.writer0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
 2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=12 name=core0 grants=322 stalls=0 stalls_dma=0 whole_run=1
 2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=13 name=core1 grants=55 stalls=1 stalls_dma=0 whole_run=1
 2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=14 name=axi grants=0 stalls=0 stalls_dma=0 whole_run=1

@@ -54,20 +54,20 @@
 293700000: 2937: [[34m/chip/soc/cluster_0/idma/fe/events                                       [0m] 2937 done id=3
 294100000: 2941: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2922 barrier first=2922 last=2941
 294100000: 2941: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 2941 barrier first=2941 last=2941
-294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2942 start mover=reader0
-294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2942 start mover=reader1
-294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2942 start mover=writer0
+294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2942 start mover=reader0
+294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2942 start mover=reader1
+294200000: 2942: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2942 start mover=writer0
 294200000: 2942: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2942 csr pc=0x80000370 csr=0x3cf op=w value=1
 294300000: 2943: [[34m/chip/soc/cluster_0/snax_acc0/unit/events                                [0m] 2943 start count=16 rate=1
 294300000: 2943: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2943 csr pc=0x80000374 csr=0x3d2 op=w value=1
-295900000: 2959: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2959 done mover=reader0
-296000000: 2960: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2960 done mover=reader1
+295900000: 2959: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2959 done mover=reader0
+296000000: 2960: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2960 done mover=reader1
 296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/unit/events                                [0m] 2962 done firings=16 first=2947 last=2962
 296200000: 2962: [[34m/chip/soc/cluster_0/snax_acc0/unit/summary                               [0m] 2962 run index=0 firings=16 busy=16 stall_in=3 stall_out=0 flush=0
-296300000: 2963: [[34m/chip/soc/cluster_0/snax_acc0/streamer/events                            [0m] 2963 done mover=writer0
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2964 mover mover=reader0 run=0 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=2,2,2,2
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2964 mover mover=reader1 run=0 busy=16 stall_xbar=1 stall_fifo=0 idle=5 qmax=1,1,1,1
-296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer/summary                           [0m] 2964 mover mover=writer0 run=0 busy=16 stall_xbar=0 stall_fifo=4 idle=2 qmax=1,1,1,1
+296300000: 2963: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/events                        [0m] 2963 done mover=writer0
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/summary                       [0m] 2964 mover mover=reader0 run=0 busy=16 stall_xbar=0 stall_fifo=0 idle=6 qmax=2,2,2,2
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/summary                       [0m] 2964 mover mover=reader1 run=0 busy=16 stall_xbar=1 stall_fifo=0 idle=5 qmax=1,1,1,1
+296400000: 2964: [[34m/chip/soc/cluster_0/snax_acc0/streamer_acc/summary                       [0m] 2964 mover mover=writer0 run=0 busy=16 stall_xbar=0 stall_fifo=4 idle=2 qmax=1,1,1,1
 296500000: 2965: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2944 poll pc=0x80000378 csr=0x3d4 value=1 first=2944 last=2962 count=4
 296800000: 2968: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2965 csr pc=0x80000378 csr=0x3d4 op=r value=2
 297000000: 2970: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 2968 csr pc=0x80000384 csr=0x3d0 op=r value=0
@@ -312,18 +312,18 @@
 1930100000: 19301: [[34m/chip/soc/cluster_0/pe1/events                                           [0m] 19301 state mode=sleep
 1932300000: 19323: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 19323 func name=snrt.crt0.end pc=0x800001d8
 1932300000: 19323: [[34m/chip/soc/cluster_0/pe0/events                                           [0m] 19323 state mode=sleep
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=0 name=snax_acc0.streamer.reader0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=1 name=snax_acc0.streamer.reader0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=2 name=snax_acc0.streamer.reader0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=3 name=snax_acc0.streamer.reader0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=4 name=snax_acc0.streamer.reader1.lane0 grants=16 stalls=1 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=5 name=snax_acc0.streamer.reader1.lane1 grants=16 stalls=1 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=6 name=snax_acc0.streamer.reader1.lane2 grants=16 stalls=1 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=7 name=snax_acc0.streamer.reader1.lane3 grants=16 stalls=1 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=8 name=snax_acc0.streamer.writer0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=9 name=snax_acc0.streamer.writer0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=10 name=snax_acc0.streamer.writer0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
-2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=11 name=snax_acc0.streamer.writer0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=0 name=snax_acc0.streamer_acc.reader0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=1 name=snax_acc0.streamer_acc.reader0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=2 name=snax_acc0.streamer_acc.reader0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=3 name=snax_acc0.streamer_acc.reader0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=4 name=snax_acc0.streamer_acc.reader1.lane0 grants=16 stalls=1 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=5 name=snax_acc0.streamer_acc.reader1.lane1 grants=16 stalls=1 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=6 name=snax_acc0.streamer_acc.reader1.lane2 grants=16 stalls=1 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=7 name=snax_acc0.streamer_acc.reader1.lane3 grants=16 stalls=1 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=8 name=snax_acc0.streamer_acc.writer0.lane0 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=9 name=snax_acc0.streamer_acc.writer0.lane1 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=10 name=snax_acc0.streamer_acc.writer0.lane2 grants=16 stalls=0 stalls_dma=0 whole_run=0
+2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=11 name=snax_acc0.streamer_acc.writer0.lane3 grants=16 stalls=0 stalls_dma=0 whole_run=0
 2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=12 name=core0 grants=322 stalls=0 stalls_dma=0 whole_run=1
 2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=13 name=core1 grants=55 stalls=1 stalls_dma=0 whole_run=1
 2000100000: 20001: [[34m/chip/soc/cluster_0/tcdm/snax_xbar/summary                               [0m] 20001 input index=14 name=axi grants=0 stalls=0 stalls_dma=0 whole_run=1
