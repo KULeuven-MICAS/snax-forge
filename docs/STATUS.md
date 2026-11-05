@@ -96,14 +96,15 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 92. The per-group busy and done pins (`<group>_busy_o`, `<group>_done_o`, D146), which snax_cluster leaves unconnected, into a hardware barrier in the cluster, like `snitch_hw_barrier`, so a core waits on the groups in the barrier instead of polling their STATUS: a snax_cluster template change, then SNAX-GVSoC to match. Parked: snax_cluster leaves them unconnected (Verilator `PINMISSING`, Questa `vopt-2718`).
 93. A port of fewer lanes than its beat's elements (rho ≠ 1, D142): the flow places only the wire slice. The FIFO slicer and packer are built and tested (`hw/chisel/.../stream/`, `snax.forge.stream`) and parked: placing them in the flow when a design needs it.
 94. A masked last beat, the hardware alternative to padding a tail (D144): a lane-valid mask from a CSR, so a tail needs no pads in the data.
-95. The cycle gap between SNAX-GVSoC and snax_cluster's RTL, for BASE2 (D123): on the full set, measured on vsim with snax_cluster at #666 and snax-forge at #43, every `forge counter` is equal and every run has `forge data: 0 errors`; the windows are within −4.5% to +8.6%. The gaps are the core's timing (open items 65, 67; snax-gvsoc NOTES.md, "The comparison with snax_cluster's RTL").
+95. The cycle gap between SNAX-GVSoC and snax_cluster's RTL, for BASE2 (D123): on the full set, measured on vsim with snax_cluster at #666 and snax-forge at #43, every `forge counter` is equal and every run has `forge data: 0 errors`; the windows are within −4.5% to +8.6%. The quick set measured again in SLOT1 C1 (snax_cluster `ry/slot1` at `5b59191e`, tag `slot1-s3`, snax-forge `slot1-f3`, SNAX-GVSoC `1e988679`, image `d3d8f5572ff4`): every `forge counter` equal and `forge data: 0 errors` again, the windows within −4.8% to +6.8%; dot 1's two streamer sets (`dot_1`) and its encapsulated form (`dot_1_enc`, the earlier `dot_1` row's shape) are its new rows. The gaps are the core's timing (open items 65, 67; snax-gvsoc NOTES.md, "The comparison with snax_cluster's RTL").
 
     | Design | `forge counter` (both) | vsim window | SNAX-GVSoC window |
     |---|---|---|---|
-    | vecadd_i32 | 19 | 210 | 228 |
-    | vsum_tree_i8 | 11 | 197 | 192 |
-    | dot_1 | 19, 19 | 300 | 304 |
-    | dot_4 | 133 | 443 | 437 |
+    | vecadd_i32 | 19 | 217 | 228 |
+    | vsum_tree_i8 | 11 | 196 | 192 |
+    | dot_1 | 19, 19 | 282 | 264 |
+    | dot_1_enc | 19, 19 | 302 | 304 |
+    | dot_4 | 133 | 449 | 437 |
     | vecadd | 19 | 210 | 214 |
     | vsum | 67 | 266 | 254 |
     | vecmul_i32_i64 | 19 | 210 | 214 |
