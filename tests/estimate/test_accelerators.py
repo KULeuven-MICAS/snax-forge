@@ -27,8 +27,9 @@ def test_dot_1_two_streamers_40_csrs_dot_1_enc_one_and_37():
     assert all(a.missing == [STREAMER_MISSING] for a in (*one.accelerators, dot))
 
 
-@pytest.mark.parametrize("name", ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4",
-                                  "matvec_1", "rowsum"])
+@pytest.mark.parametrize(
+    "name", ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "matvec_1", "rowsum"]
+)
 def test_the_csrs_are_the_generators(tmp_path, name):
     """Each accelerator's CSRs, first to last, as the generator lays the sets out."""
     from snax_forge.gen import generate

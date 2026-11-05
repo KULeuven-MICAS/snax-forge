@@ -13,11 +13,18 @@ named it (D137).
                   more L1 time than the ideal cycles), the trace level and the boot's length (the cycles before
                   the window, which the profile, the cores and the trace share)
     tasks         per block each task's start, done and length, named from the
-                  task list, a mover's task with every temporal bound 0 (another
-                  group's, started only for the shared start, D148) tagged idle;
-                  a DMA copy with its direction and bytes
-                                                         (needs a task trace)
-    accelerators  per unit (its first column ``Unit``; a linked group's under its
+                  task list, with the accelerator (its streamer set, D157) it
+                  runs on; a mover's task with every temporal bound 0 (another
+                  group's in the same encapsulated set, started only for the
+                  set's shared start, D148) tagged idle; a DMA copy with its
+                  direction and bytes                    (needs a task trace)
+    accelerators  per accelerator, one streamer set each (D157): its groups,
+                  its CSRs (its streamer's, then its own, first to last), its
+                  streamer's busy windows (its STREAMER_START to its busy low:
+                  the first start of its movers to their last done, one window
+                  per start; needs a task trace) and each group's COUNTER as
+                  the program printed it; then per unit (its first column
+                  ``Unit``; a linked group's under its
                   name): firings, target II (the datapath file's), achieved II,
                   utilisation over the window and over its tasks' span,
                   stall_in, stall_out, flush; then per group a collapsible
@@ -85,6 +92,20 @@ class TaskRow(Record):
     bytes: int | None = None
     group: str | None = None  # the group whose start launched it (D148); None for the DMA's
     idle: bool = False  # a mover's task with every temporal bound 0, started for the shared start
+    accelerator: str | None = None  # the accelerator (streamer set) it runs on; None: the DMA's
+
+
+@dataclass
+class AcceleratorRow(Record):
+    """One accelerator, its streamer set (D157): its groups, its CSRs, its streamer's busy
+    windows (None without a task trace) and each group's COUNTERs as the program printed them."""
+
+    name: str
+    groups: list[str]
+    first: int
+    last: int
+    busy: list[list[int]] | None  # [start, end] per start
+    counters: dict[str, list[int]] = field(default_factory=dict)
 
 
 @dataclass
@@ -238,6 +259,7 @@ class RunReport(Record):
     movement: MovementReport
     groups: int = 1  # the accelerator's; with more than one, the tables name each row's
     group_movers: list[GroupMovers] = field(default_factory=list)
+    sets: list[AcceleratorRow] = field(default_factory=list)  # per accelerator (streamer set)
 
 
 # =============================================================================
@@ -332,6 +354,36 @@ def _task_groups(point: Any) -> dict[str, Any]:
             if t.component in by_group and runs.count(t.component) == 1}  # fmt: skip
 
 
+def task_components(point: Any) -> dict[str, str]:
+    """Per accelerator task, its component: its group (lower/derive.py's task list)."""
+    from snax_forge.lower.derive import task_list
+
+    return {t.task_name: t.component for t in task_list(point).accel_steps()}
+
+
+def accelerator_rows(rv: api.RunView, task_rows: list[TaskRow] | None,
+                     check: CheckRow | None) -> list[AcceleratorRow]:  # fmt: skip
+    """One row per accelerator, its streamer set (``AcceleratorRow``): its streamer's busy
+    windows from its movers' tasks, one per start (the movers of a set start together)."""
+    acc = rv.cluster.accelerator
+    component = task_components(rv.point)
+    out = []
+    for name, groups in acc.accelerators():
+        first, last = acc.window(name)
+        busy = None
+        if task_rows is not None:
+            mine = {m.name for m in acc.movers if m.set == name}
+            starts: dict[int, int] = {}
+            for t in task_rows:
+                if t.block in mine:
+                    starts[t.start] = max(starts.get(t.start, t.done), t.done)
+            busy = [[a, b] for a, b in sorted(starts.items())]
+        counters = {g: [n for t, n in (check.counters if check else {}).items()
+                        if component.get(t) == g] for g in groups}  # fmt: skip
+        out.append(AcceleratorRow(name, groups, first, last, busy, counters))
+    return out
+
+
 def build_run(rv: api.RunView) -> RunReport:
     """The run report of one loaded flow run."""
     p = rv.outputs.profile
@@ -360,9 +412,12 @@ def build_run(rv: api.RunView) -> RunReport:
         for block, ts in ((x["name"], x["bars"]) for x in lanes if "bars" in x):
             for k, t in enumerate(ts):
                 done = total if t["to"] is None else t["to"]  # still open at the end
+                g = group_of(block, t["task"])
+                mover = next((m for m in acc.movers if m.name == block), None)
                 task_rows.append(TaskRow(block, k, t["task"], t["from"], done, done - t["from"],
-                                         t.get("dir"), t.get("bytes"),
-                                         group_of(block, t["task"]), bool(t.get("idle"))))  # fmt: skip
+                                         t.get("dir"), t.get("bytes"), g, bool(t.get("idle")),
+                                         mover.set if mover is not None
+                                         else acc.accelerator_of(g) if g else None))  # fmt: skip
         task_rows.sort(key=lambda r: (r.start, r.block))
 
     accels = []
@@ -411,7 +466,7 @@ def build_run(rv: api.RunView) -> RunReport:
         rv.name, total, rv.trace_level, None if tr is None else tr.boot,
         check, task_rows, accels, cores, dmas, ports,
         _bank_ranges(p.banks.conflicts if p.banks else []), streamers, build_movement(rv),
-        len(acc.units), group_movers,
+        len(acc.units), group_movers, accelerator_rows(rv, task_rows, check),
     )  # fmt: skip
 
 
@@ -458,13 +513,17 @@ def render_run(r: RunReport) -> str:
         out.append("Needs at least a task trace (--trace task).")
     else:
         out += grouped(r.groups, 1, table(
-            ["Block", "#", "Task", "Start", "Done", "Cycles", "Direction", "Bytes"],
-            [[t.block, t.index, f"{t.name} (idle)" if t.idle else t.name, t.start, t.done,
-              t.cycles, DIRECTION.get(t.direction or "", t.direction), t.bytes] for t in r.tasks],
-            {1, 3, 4, 5, 7},
+            ["Block", "#", "Task", "Accelerator", "Start", "Done", "Cycles", "Direction",
+             "Bytes"],
+            [[t.block, t.index, f"{t.name} (idle)" if t.idle else t.name, t.accelerator,
+              t.start, t.done, t.cycles, DIRECTION.get(t.direction or "", t.direction), t.bytes]
+             for t in r.tasks],
+            {1, 4, 5, 6, 8},
         ), [t.group for t in r.tasks])  # fmt: skip
 
     out += ["", "## Accelerators", ""]
+    out += render_sets(r.sets, r.tasks is not None)
+    out += ["", "### Units", ""]
     out += grouped(r.groups, 1, table(
         ["Unit", "Firings", "Target II", "Achieved II", "Utilisation (window)",
          "Task span", "Utilisation (span)", "Starved (stall_in)", "Blocked (stall_out)", "Flush"],
@@ -479,9 +538,9 @@ def render_run(r: RunReport) -> str:
             "window, then over the cycles its tasks ran.")]  # fmt: skip
     out += render_group_movers(r.group_movers)
     if any(t.idle for t in r.tasks or []):
-        out += ["", ("A task tagged idle has every temporal bound 0: another group's mover, started "
-                     "only because the accelerator's movers share one start (D148); it moves "
-                     "nothing.")]  # fmt: skip
+        out += ["", ("A task tagged idle has every temporal bound 0: the mover of another group "
+                     "in the same encapsulated set, started only because the set's movers share "
+                     "one start (D148); it moves nothing.")]  # fmt: skip
 
     out += ["", "## Cores", ""]
     out += table(
@@ -535,6 +594,23 @@ def render_run(r: RunReport) -> str:
 
     out += ["", "## Data movement", ""] + render_movement(r.movement)
     return "\n".join(out) + "\n"
+
+
+def render_sets(rows: list[AcceleratorRow], traced: bool) -> list[str]:
+    """The Accelerators table: one row per accelerator, its streamer set (D157)."""
+    out = table(
+        ["Accelerator", "Groups", "CSRs", "Streamer busy", "COUNTER"],
+        [[a.name, ", ".join(a.groups), f"{a.first}–{a.last}",
+          "–" if a.busy is None else ", ".join(f"{x}–{y}" for x, y in a.busy) or "none",
+          ", ".join(f"{g} {', '.join(map(str, n))}" for g, n in a.counters.items() if n) or "–"]
+         for a in rows],
+    )  # fmt: skip
+    out += ["", ("Each accelerator is one streamer set: its streamer's CSRs, then its own (C§16). "
+                 "Its streamer is busy from its start (STREAMER_START) until its busy drops, its "
+                 "movers' first start to their last done, one window per start"
+                 + ("" if traced else "; the windows need at least a task trace (--trace task)")
+                 + "; COUNTER is each group's as the program printed it.")]  # fmt: skip
+    return out
 
 
 def render_group_movers(groups: list[GroupMovers]) -> list[str]:

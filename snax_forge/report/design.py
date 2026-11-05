@@ -10,8 +10,12 @@ the kernel from the run's functional check.
     header       kernel, recipe and its params (or the graph), symbols,
                  platform (base and changes), memory plan passes and pins
     components   the accelerator, its movers, the DMA and the cores
-    accelerators instance, unit, BRM and implementation, params, latency,
-                 target II (the datapath file's), ports
+    accelerators per accelerator, one streamer set each (D157): its groups, its
+                 streamer's movers, channels (num_ch added up) and temporal
+                 dims, its CSRs (its streamer's, then its own, first to last)
+                 and each group's own CSRs; then per unit its instance, unit,
+                 BRM and implementation, params, latency, target II (the
+                 datapath file's), ports
     streamers    one per mover: instance port, direction, the container's
                  dtype, num_slc (its slices, elements, per 64-bit word),
                  num_ch (the channels the port uses, the mover's
@@ -33,8 +37,9 @@ the kernel from the run's functional check.
                  L1 footprint against the L1; then the cost (C§20): per unit, buffer
                  link and control unit how it is costed, per accelerator its L1
                  accesses (a placeholder, D154), the accelerator's area and energy,
-                 the technology and its table's source, and the blocks the table
-                 does not characterize
+                 the technology and its table's source, the blocks the table
+                 does not characterize, and the streamers and CSRs (one
+                 streamer per accelerator, not costed, open item 110)
     notes        the design notes first (check.py's ``run_notes``: a design that
                  passes but is worth a second look, with its fix); then
                  facts about addresses: movers of one group whose
@@ -52,7 +57,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.char import DEFAULT_TECH
-from snax_forge.estimate.cost import CAVEAT, L1_LABEL, dec3, heading, sig3
+from snax_forge.estimate.cost import L1_LABEL, caveat, dec3, heading, sig3
 from snax_forge.lower.layout import Layout, round_up
 from snax_forge.run import Cluster, Region, padding_of, regions_of
 
@@ -92,6 +97,21 @@ class AccelRow(Record):
     target_ii: int
     ports: list[str]
     group: str | None = None
+
+
+@dataclass
+class SetRow(Record):
+    """One accelerator, its streamer set (D157): its groups, its streamer's movers, channels and
+    temporal dims, its CSRs first to last and each group's own CSRs, first to last."""
+
+    name: str
+    groups: list[str]
+    movers: int
+    channels: int
+    temporal_dims: list[int]
+    first: int
+    last: int
+    group_csrs: dict[str, list[int]] = field(default_factory=dict)  # [first, last] per group
 
 
 @dataclass
@@ -200,6 +220,8 @@ class EstimateTable(Record):
     unmapped_iterations: int = 0  # over every map, spatial ones included
     total_cycles: int = 0  # accelerator_cycles + unmapped_cycles
     l1: list[L1Row] = field(default_factory=list)  # per accelerator, its L1 accesses
+    streamers: int = 1  # one per accelerator, none costed (open item 110)
+    csrs: int | None = None  # every CSR of the entry; None without a platform
 
 
 @dataclass
@@ -213,6 +235,7 @@ class DesignReport(Record):
     notes: list[str]
     groups: int = 1  # the accelerator's; with more than one, the accelerators' table names each's
     estimate: EstimateTable | None = None
+    sets: list[SetRow] = field(default_factory=list)  # per accelerator (streamer set)
 
 
 # =============================================================================
@@ -317,13 +340,19 @@ def _notes(cluster: Cluster, regions: list[Region], point: Any,
     return notes
 
 
+def file_groups(file: dict[str, Any]) -> list[dict[str, Any]]:
+    """accelerator.json's groups, accelerator by accelerator (C§17, D157)."""
+    return [g for a in file["accelerators"] for g in a["groups"]]
+
+
 def members(file: dict[str, Any], name: str) -> list[dict[str, Any]]:
     """The slot's accelerator.json units the run's unit ``name`` stands for: a linked group's
     units (SNAX-GVSoC's one component, named after the group), else the unit itself."""
-    for g in file["groups"]:
+    groups = file_groups(file)
+    for g in groups:
         if g["name"] == name and len(g["units"]) > 1:
             return list(g["units"])
-    return [next(u for g in file["groups"] for u in g["units"] if u["name"] == name)]
+    return [next(u for g in groups for u in g["units"] if u["name"] == name)]
 
 
 def unit_view(file: dict[str, Any], instance: str) -> tuple[str, str, int, int]:
@@ -335,7 +364,7 @@ def unit_view(file: dict[str, Any], instance: str) -> tuple[str, str, int, int]:
     if len(units) == 1:
         (u,) = units
         return u["datapath"], "nest controller", u["timing"]["latency"], u["timing"]["ii"]
-    (g,) = (g for g in file["groups"] if g["name"] == instance)
+    (g,) = (g for g in file_groups(file) if g["name"] == instance)
     kind = units[0]["datapath"]
     for link, u in zip(g["links"], units[1:], strict=True):
         kind += f" → {u['datapath']}" if not link["depth"] else (
@@ -414,10 +443,17 @@ def build_design(
                     m.fifo_depth, point.streamers[m.name].temporal_dims, containers.get(m.name))
         for m in a.movers
     ]  # fmt: skip
+    sets = []
+    for acc_name, groups in a.accelerators():
+        movers = [m for m in a.movers if m.set == acc_name]
+        first, last = a.window(acc_name)
+        sets.append(SetRow(acc_name, groups, len(movers), sum(m.lanes for m in movers),
+                           [m.temporal_dim for m in movers], first, last,
+                           {u.group: [u.start, u.counter] for u in a.units if u.group in groups}))  # fmt: skip
     return DesignReport(name, header, components, accels, streamers,
                         _memory_tables(cluster, regions, point),
                         design_notes + _notes(cluster, regions, point, streamers), len(a.units),
-                        estimate_table(point, tech))  # fmt: skip
+                        estimate_table(point, tech), sets)  # fmt: skip
 
 
 def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable:
@@ -445,7 +481,8 @@ def estimate_table(point: Any, tech: str | None = DEFAULT_TECH) -> EstimateTable
                          notes, unmapped_cycles=e.unmapped_cycles,
                          unmapped_iterations=e.unmapped_iterations,
                          total_cycles=e.total_cycles,
-                         l1=[L1Row(a, x.words, x.bits, x.energy_nj) for a, x in e.l1.items()])  # fmt: skip
+                         l1=[L1Row(a, x.words, x.bits, x.energy_nj) for a, x in e.l1.items()],
+                         streamers=e.streamers, csrs=e.csrs)  # fmt: skip
 
 
 # =============================================================================
@@ -477,6 +514,8 @@ def render_design(r: DesignReport) -> str:
         ["Component", "Kind", "Details"], [[c.name, c.kind, c.detail] for c in r.components]
     )
     out += ["", "## Accelerators", ""]
+    out += render_sets(r.sets)
+    out += ["", "### Units", ""]
     out += grouped(r.groups, 1, table(
         [
             "Instance",
@@ -583,6 +622,21 @@ def cycles_line(e: EstimateTable) -> str:
     return f"Accelerator cycles: {e.accelerator_cycles}.{unmapped} Total: {e.total_cycles}."
 
 
+def render_sets(rows: list[SetRow]) -> list[str]:
+    """The accelerators, one streamer set each (D157)."""
+    out = table(
+        ["Accelerator", "Groups", "Movers", "Channels", "Temporal dims", "CSRs", "Groups' CSRs"],
+        [[x.name, ", ".join(x.groups), x.movers, x.channels,
+          ", ".join(map(str, x.temporal_dims)), f"{x.first}–{x.last}",
+          "; ".join(f"{g} {a}–{b}" for g, (a, b) in x.group_csrs.items())] for x in rows],
+        {2, 3},
+    )  # fmt: skip
+    out += ["", ("Each accelerator is one streamer set: its streamer's CSRs first, then its own, "
+                 "packed from 960 (C§16); its movers are its groups' outer ports, readers "
+                 "first.")]  # fmt: skip
+    return out
+
+
 def render_estimate(e: EstimateTable) -> list[str]:
     """The estimate section: per group its cycles, then the accelerator's (D155)."""
     out = [("The ideal estimate (D155): the group rule on ideal streams, with no bank conflicts, "
@@ -627,7 +681,7 @@ def render_cost(e: EstimateTable) -> list[str]:
     """The cost subsection (C§20): how each block is costed, then the accelerator's totals,
     an area to 3 significant figures, an energy to 3 decimals."""
     src = e.char_source.get("snax_forge_experiments", "")[:7]
-    out = [f"### {heading(e.tech)}", "", CAVEAT, "",
+    out = [f"### {heading(e.tech)}", "", caveat(e.streamers), "",
            (f"CHAR1's model (D154, C§20) on `snax_forge/char/{e.tech}.json` (snax-forge-experiments "
             f"{src}), per run of the accelerator: a unit or buffer link pays its comb energy per "
             "fire, from the table as measured, copied (lanes × the lanes-1 point) or "
@@ -653,4 +707,13 @@ def render_cost(e: EstimateTable) -> list[str]:
     if e.missing:
         out += ["", (f"Not characterized on {e.tech} (comb counted as 0, flops counted): "
                      f"{', '.join(e.missing)}; see the notes.")]  # fmt: skip
+    out += ["", streamers_line(e.streamers, e.csrs)]
     return out
+
+
+def streamers_line(streamers: int, csrs: int | None) -> str:
+    """The streamers left out of the cost (one per accelerator, open item 110) and the
+    entry's CSRs."""
+    n = f"{streamers} streamer{'' if streamers == 1 else 's'}"
+    c = "" if csrs is None else f"; {csrs} CSRs, the streamers' and the accelerators' own"
+    return f"Not costed: {n}, one per accelerator (streamer not characterized, open item 110){c}."
