@@ -48,7 +48,7 @@ The Estimate after step 8:
 
 The two accelerators add through L1: the multiply runs its 256 beats, then the sum runs its 256 beats plus its latency of 1, so
 
-$$C = \frac{N}{W_{\mathit{acc\_1}}} + \frac{N}{W_{\mathit{acc\_2}}} + 1 = 256 + 256 + 1 = 513.$$
+$$C = \frac{N}{W_{\mathit{acc}_1}} + \frac{N}{W_{\mathit{acc}_2}} + 1 = 256 + 256 + 1 = 513.$$
 
 The expected COUNTER adds the streamers' fill (3 for a group with two inputs, 2 with one); it is a guide from SNAX-DFG, not something a run must hit (section 5). Reads are 6144 words (A, B and tmp0), writes 2049 (tmp0 and the one `out`). Under the groups the panel names the streamers: `2 streamers (not costed, open item 110) · 40 CSRs: acc_1 960–981, acc_2 982–999`.
 
