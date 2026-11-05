@@ -240,7 +240,8 @@ def _cycles(s: Any, k: int) -> tuple[int, int] | None:
 
 def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any]) -> str:
     """The log line of an apply: ``step 4  bind add …  ok · 5 ms · changed add · C 0 → 16 ·
-    unmapped 64 → 0 · renamed W → W_acc_1 · 1 note`` (the unmapped part only when it changes,
+    unmapped 64 → 0 · renamed W → W_acc_1 · 1 note`` (``removed`` the nodes and containers that
+    went, a fused nest's bind its local value; the unmapped part only when it changes,
     the problems and notes of the step's design checks when it has some), or its refusal's code
     and message."""
     values = list(params.items())
@@ -253,8 +254,9 @@ def apply_log(s: Any, transform: str, params: dict[str, Any], out: dict[str, Any
     parts = [f"step {out['index']}  {head}  ok", f"{out['ms']:.0f} ms"]
     if changed:
         parts.append(f"changed {', '.join(dict.fromkeys(changed))}")
-    if d["nodes"]["removed"]:
-        parts.append(f"removed {', '.join(d['nodes']['removed'])}")
+    removed = [*d["nodes"]["removed"], *d["containers"]["removed"]]  # a fused bind's local too
+    if removed:
+        parts.append(f"removed {', '.join(dict.fromkeys(removed))}")
     before, after = _cycles(s, out["index"] - 1), _cycles(s, out["index"])
     if before is not None and after is not None:
         parts.append(f"C {before[0]} → {after[0]}")
