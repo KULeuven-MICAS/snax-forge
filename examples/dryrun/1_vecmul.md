@@ -1,6 +1,6 @@
 # Dry run 1: vecmul, from the kernel to SNAX-GVSoC
 
-A snapshot of 3 Nov 2026 (snax-forge `ry/dry1` at `dry1-r3`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The flow's output, the reports' tables and section 8's generated files and names were taken again on 5 Nov 2026 after SLOT1 (snax-forge `main` at `58a703b`, #53; snax-gvsoc `61d1e8ac`, #43), which gave every cycle count on this page again. The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
+Every number on this page is what the tools printed when it was written; no test checks them (D98), so they can drift as the code moves.
 
 vecmul is $C_i = A_i \cdot B_i$ over N int64 elements (`kernels/polybench/vecmul.py`). It is the first half of dot, so it is the baseline the dot variants are read against. The designer's question: how many lanes W, given what a lane costs in area and what it buys in time?
 
