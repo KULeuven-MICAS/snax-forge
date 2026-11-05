@@ -15,11 +15,12 @@ when it is named).
 
 ``gvsoc_options`` maps them onto SNAX-GVSoC: the trace names for ``gvsoc/Makefile``'s
 ``TRACES`` (one ``--trace`` regex each: ``summary`` and ``events`` whole, then per component,
-a unit's ``beats`` for it (``snax_acc<i>/unit``, ``unit_<unit>`` with several groups), the streamer's ``beats`` (its ``class`` lines) and ``stalls``
-for a mover, the crossbar's
+a unit's ``beats`` for it (``snax_acc<i>/unit``, ``unit_<unit>`` with several groups), its
+set's streamer's ``beats`` (its ``class`` lines) and ``stalls`` for a mover, at the set's
+trace path (the manifest's, ``snax_acc<i>/streamer_<set>``, D157), the crossbar's
 ``beats`` and ``stalls`` for its inputs, the AXI backend's ``beats`` for ``dma``, ``pe<i>/insn``
 for a core), the crossbar's ``trace_inputs`` parameter (the named inputs by name: a mover's
-lanes ``snax_acc<i>.streamer.<mover>.lane<l>``, ``core<i>``, ``axi``, and ``dma``), and with
+lanes ``snax_acc<i>.streamer_<set>.<mover>.lane<l>``, ``core<i>``, ``axi``, and ``dma``), and with
 ``vcd`` gvrun's ``--vcd`` with one ``--event`` regex per source's components. A level or
 source this run does not have is a RunError (``sources.<rule>``).
 """
@@ -91,11 +92,14 @@ def gvsoc_options(cluster: Cluster, level: str, sources: list[str], vcd: bool,
     movers = [m for m in a.movers if m.name in sources]
     cores = [c for c in cluster.cores if c in sources]
     xbar_cores = cores if given or level != "finegrained" else []
-    inputs = [f"{acc}.streamer.{m.gvsoc}.lane{lane}" for m in movers for lane in range(m.lanes)]
+    sets = {s.name: s for s in a.csrs.sets}
+    inputs = [f"{sets[m.set].xbar}.{m.gvsoc}.lane{lane}" for m in movers
+              for lane in range(m.lanes)]  # fmt: skip
+    streamers = [s.trace for s in a.csrs.sets if any(m.set == s.name for m in movers)]
     inputs += xbar_cores + ([AXI] if AXI in sources else []) + ([DMA] if DMA in sources else [])
     # the traced components by their GVSoC paths: the unit, the streamer, the crossbar; the cores
     comps = [path for path, on_ in (*((f"{acc}/{u.path}", u.name in sources) for u in a.units),
-                                    (f"{acc}/streamer", bool(movers)),
+                                    *((t, True) for t in streamers),
                                     ("tcdm/snax_xbar", bool(inputs))) if on_]  # fmt: skip
     pes = [c.replace("core", "pe") for c in cores]
     o = GvsocOptions(traces=["summary"] + (["events"] if "task" in on else []))
@@ -105,8 +109,7 @@ def gvsoc_options(cluster: Cluster, level: str, sources: list[str], vcd: bool,
             o.traces += ["idma/axi_read/beats", "idma/axi_write/beats"]
         o.args += ["--param", f"{XBAR_PATH}/trace_inputs={','.join(inputs)}"]
     if "stall" in on:
-        if movers:
-            o.traces.append(f"{acc}/streamer/stalls")
+        o.traces += [f"{t}/stalls" for t in streamers]
         if [i for i in inputs if i != DMA]:
             o.traces.append("tcdm/snax_xbar/stalls")
     if "finegrained" in on:

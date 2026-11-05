@@ -467,7 +467,7 @@ class _Beats:
 
     def fifo(self, e: dict, src: str, f: dict) -> dict | None:
         """A queue count of a mover's lane."""
-        m = self.acc.mover(f["mover"])
+        m = next(x for x in self.acc.movers if x.name == src)  # src: the line's mover
         if m.name not in self.ctx.filter:
             return None
         run = self.task(m.name, e["t"])

@@ -69,7 +69,7 @@ def test_csrs_agree_with_the_generator(k):
     start, busy and counter, the other R/W ones as fields."""
     from tests.gen.helpers import one_unit
 
-    _, templates, _, _ = files()
+    _, templates, _, _, _ = files()
     templates["acc"]["data_reader_params"]["temporal_dim"] = [2, 1]
     acc = one_unit(k)
     c = csrs_of(templates, acc.to_dict(), "acc")
@@ -108,20 +108,33 @@ def test_round_trip(cluster):
 @pytest.mark.parametrize(
     ("edit", "code"),
     [
-        (lambda c, s, u, p: c["acc_core"].update(xdma=True), "cluster.cores"),  # two DMA cores
-        (lambda c, s, u, p: p["streamers"].pop("acc_b"), "cluster.movers"),  # not the point's
+        (lambda c, s, u, p, m: c["acc_core"].update(xdma=True), "cluster.cores"),  # 2 DMA cores
+        (lambda c, s, u, p, m: p["streamers"].pop("acc_b"), "cluster.movers"),  # not the point's
+        # the manifest's streamers: another range, no trace path, none at all
+        (lambda c, s, u, p, m: m["csrs"]["streamers"][0].update(last=978), "cluster.manifest"),
+        (lambda c, s, u, p, m: m["csrs"]["streamers"][0].pop("trace"), "cluster.manifest"),
+        (lambda c, s, u, p, m: m.pop("csrs"), "cluster.manifest"),
     ],
 )
 def test_a_cluster_that_does_not_fit_is_refused(edit, code):
-    cluster, streamer, unit, point = files()
-    edit(cluster, streamer, unit, point)
+    cluster, streamer, unit, point, manifest = files()
+    edit(cluster, streamer, unit, point, manifest)
     with pytest.raises(RunError) as e:
-        cluster_from(cluster, streamer, unit, point)
+        cluster_from(cluster, streamer, unit, point, manifest)
     assert e.value.code == code
 
 
+def test_each_set_has_its_trace_path(cluster):
+    """The manifest's trace path, its crossbar inputs' prefix from it (D157)."""
+    (s,) = cluster.accelerator.csrs.sets
+    assert (s.name, s.trace, s.xbar) == ("acc", "snax_acc0/streamer_acc", "snax_acc0.streamer_acc")
+    assert cluster.accelerator.set_at("/chip/soc/cluster_0/snax_acc0/streamer_acc") == s
+    assert cluster.accelerator.set_at("/chip/soc/cluster_0/snax_acc0/streamer") is None
+
+
 def test_load_from_files(tmp_path):
-    cluster, streamer, unit, point = files()
+    cluster, streamer, unit, point, manifest = files()
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
     (tmp_path / "snax_forge.hjson").write_text(hjson.dumps(cluster))
     (tmp_path / STREAMER_FILE).write_text(hjson.dumps(streamer["acc"]))
     (tmp_path / "accelerator.json").write_text(json.dumps(unit))
@@ -133,12 +146,17 @@ def test_load_from_files(tmp_path):
     with pytest.raises(RunError) as e:
         load_cluster(tmp_path / "snax_forge.hjson", tmp_path / "design_point.json")
     assert e.value.code == "cluster.ref"
+    (tmp_path / "accelerator.json").write_text(json.dumps(unit))
+    (tmp_path / "manifest.json").unlink()
+    with pytest.raises(RunError) as e:
+        load_cluster(tmp_path / "snax_forge.hjson", tmp_path / "design_point.json")
+    assert e.value.code == "cluster.manifest"
 
 
 def test_the_old_one_streamer_slot_is_refused(tmp_path):
     """The slot in the form before the sets (snax_streamer_cfg, no snax_streamer_sets) does not
     read: cluster.sets."""
-    cluster, templates, unit, point = files()
+    cluster, templates, unit, point, _ = files()
     (slot,) = cluster["acc_core"]["snax_acc_cfg"]
     del slot["snax_streamer_sets"]
     slot["snax_streamer_cfg"] = {"$ref": STREAMER_FILE}
@@ -179,6 +197,9 @@ def test_two_sets_read_set_by_set(tmp_path):
         "mul_streamer", "mul", "sum_streamer", "sum_streamer", "sum"]  # fmt: skip
     assert mover_csrs(c) == {"mul_a": 960, "mul_b": 965, "mul_out": 970, "sum_a": 982,
                              "sum_out": 987}  # fmt: skip
+    # each set's streamer at its own path, its movers by their names within it
+    assert [s.trace for s in a.csrs.sets] == ["snax_acc0/streamer_mul", "snax_acc0/streamer_sum"]
+    assert [a.mover("reader0", x).name for x in ("mul", "sum")] == ["mul_a", "sum_a"]
     with pytest.raises(RunError) as e:
         a.csrs.streamer_first  # noqa: B018 (two sets: name the set)
     assert e.value.code == "cluster.sets"

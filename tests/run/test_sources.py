@@ -5,7 +5,7 @@ import pytest
 from snax_forge.run import RunError
 from snax_forge.run.sources import gvsoc_options, parse_trace, sources_for
 
-LANES = ",".join(f"snax_acc0.streamer.{m}.lane{i}" for m in ("reader0", "reader1", "writer0")
+LANES = ",".join(f"snax_acc0.streamer_acc.{m}.lane{i}" for m in ("reader0", "reader1", "writer0")
                  for i in range(4))  # fmt: skip
 XBAR = "chip/soc/cluster_0/tcdm/snax_xbar/trace_inputs="
 
@@ -34,12 +34,12 @@ def test_the_default_sources(cluster):
     [
         ("off", ["summary"]),
         ("task", ["summary", "events"]),
-        ("beat", ["summary", "events", "snax_acc0/unit/beats", "snax_acc0/streamer/beats",
+        ("beat", ["summary", "events", "snax_acc0/unit/beats", "snax_acc0/streamer_acc/beats",
                   "tcdm/snax_xbar/beats",
                   "idma/axi_read/beats", "idma/axi_write/beats"]),
-        ("stall", ["summary", "events", "snax_acc0/unit/beats", "snax_acc0/streamer/beats",
+        ("stall", ["summary", "events", "snax_acc0/unit/beats", "snax_acc0/streamer_acc/beats",
                   "tcdm/snax_xbar/beats",
-                   "idma/axi_read/beats", "idma/axi_write/beats", "snax_acc0/streamer/stalls",
+                   "idma/axi_read/beats", "idma/axi_write/beats", "snax_acc0/streamer_acc/stalls",
                    "tcdm/snax_xbar/stalls"]),
     ],
 )  # fmt: skip
@@ -63,5 +63,5 @@ def test_finegrained_adds_the_cores_instructions_only(cluster):
 def test_the_vcd_names_the_sources_components(cluster):
     o = gvsoc_options(cluster, "beat", ["acc", "acc_out", "dma"], True, given=True)
     assert o.args[2:] == ["--vcd", "--event=.*/snax_acc0/unit/.*",
-                          "--event=.*/snax_acc0/streamer/.*", "--event=.*/tcdm/snax_xbar/.*",
+                          "--event=.*/snax_acc0/streamer_acc/.*", "--event=.*/tcdm/snax_xbar/.*",
                           "--event=.*/idma/fe/dma_busy"]  # fmt: skip
