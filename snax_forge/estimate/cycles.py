@@ -293,7 +293,8 @@ def group_blocks(graph: Graph, job_width: int = 32,
             cycles += end
             for u in task:
                 firings[u] += values[u]["n"]
-                gives[u] += values[u]["n"] // ts[members.index(u)]
+                t = ts[members.index(u)]
+                gives[u] += values[u]["n"] // t if t else 0  # T = 0: the empty run
             bottleneck = max(bottleneck, *(values[u]["n"] * max(insts[u].initiation_interval,
                                            insts[u].span) for u in members))  # fmt: skip
         ramp = sum(insts[u].latency + insts[u].span - 1 for u in members)
