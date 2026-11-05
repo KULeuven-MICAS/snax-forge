@@ -83,7 +83,7 @@ worked out here:
                  tasklet's                                          (``mul · a * b · W 4``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
     container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
-                 ``local``, ``wire``, ``FIFO 1``)
+                 ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links)
     group, accelerator   their name
 
 Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
@@ -131,8 +131,13 @@ None, ``a`` and ``b`` each side's text as a single step shows it ("–" where a 
 ``<container> · wire`` or ``<container> · FIFO <depth>``, its units and the transient it
 replaced in its Details. The container it replaced gets no box: the writer's edge runs from
 its output connector into the link (connector ``in``) and the link's out of it (``out``) into
-the reader's input connector; the container stays in Details. A transient in L1 (dot 1's
-``tmp0``), a local value and the kernel's inputs and outputs keep their boxes.
+the reader's input connector; the container stays in Details. A fused nest's local value
+(``loop.local``, dot 4's ``tmp0`` after ``fuse_map``) gets no box either: it has no memory, the
+writer's output connector joins the reader's input connector inside the fused map, the edge
+``local`` and labelled with the container's name (drawn as a link's wire); its Containers
+line gives no bytes and ``local to <fused map>``, its Details ``local to <fused map>, no
+memory``. A transient in L1 (dot 1's ``tmp0``) and the kernel's inputs and outputs keep
+their boxes.
 """
 
 from __future__ import annotations
@@ -603,10 +608,28 @@ def bindings_tree(g: Graph, entries: list[dict[str, Any]]) -> list[dict[str, Any
     return top
 
 
+@dataclass(frozen=True)
+class _Local:
+    """A fused nest's local value as the Containers and Details show it: in no memory, so no
+    bytes, its placement ``local to <fused map>, no memory``."""
+
+    fused: str
+    bytes: None = None
+    depth: None = None
+
+    @property
+    def placement(self) -> str:
+        return f"local to {self.fused}, no memory"
+
+
 def _placed_text(placed: Any) -> str | None:
-    """A container's placement as its line shows it: ``L1``, ``local``, ``wire``, ``FIFO 1``."""
+    """A container's placement as its line shows it: ``L1``, ``wire``, ``FIFO 1``, a fused
+    nest's local value ``local to <fused map>`` (no bytes after it: it has no memory; Details
+    say so in full, so the line fits the column at 1280 px)."""
     if placed is None:
         return None
+    if isinstance(placed, _Local):
+        return f"local to {placed.fused}"
     if placed.placement == "l1":
         return "L1"
     if placed.placement == "link":
@@ -625,6 +648,8 @@ def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
     out = []
     for name, c in g.containers.items():
         placed = est.containers.get(name) if est is not None else None
+        if "loop.local" in c.attrs:  # no memory: no bytes, its placement the fused map's
+            placed = _Local(c.attrs["loop.local"])
         try:
             sizes = [expr.evaluate(x, g.bound_symbols) for x in c.shape]
         except ExprError:
@@ -649,12 +674,14 @@ def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
             "sizes": sizes, "sizes_text": " × ".join(map(str, sizes)) if sizes else None,
             "dtype": c.dtype, "transient": c.transient,
             "bytes": placed.bytes if placed else None,
-            "bytes_text": size_text(placed.bytes) if placed else None,
+            "bytes_text": size_text(placed.bytes) if placed and placed.bytes is not None else None,
             "placement": placed.placement if placed else None,
             "symbols": list(dict.fromkeys(used)),
             "line": " · ".join(x for x in (" × ".join(str(d) for d in c.shape) or "scalar",
                                            _placed_text(placed),
-                                           size_text(placed.bytes) if placed else None) if x),
+                                           size_text(placed.bytes)
+                                           if placed and placed.bytes is not None else None)
+                               if x),
         })  # fmt: skip
     return out
 
@@ -1133,6 +1160,8 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
         out[f"node:{n.id}"] = _node_details(n)
     for c, cont in g.containers.items():
         placed = est.containers.get(c) if est is not None else None
+        if "loop.local" in cont.attrs:  # as the Containers line has it
+            placed = _Local(cont.attrs["loop.local"])
         try:
             sizes = [expr.evaluate(x, g.bound_symbols) for x in cont.shape]
         except ExprError:
@@ -1316,12 +1345,14 @@ def _layout(g: Graph) -> dict[str, Any]:
     tops = list(g.body)
     # A link's container gets no box: its writer's edge goes into the link, the link's out of it
     linked = {n.attrs["container"]: n.id for n, _ in g.walk() if n.kind == "link"}
+    # nor does a fused nest's local value: its writer's connector joins its reader's
+    local = {c for c, cont in g.containers.items() if "loop.local" in cont.attrs}
     reads, writes = [], []
     for top in tops:
         r: list[str] = []
         w: list[str] = []
         for side, _, _, m in _uses(top):
-            if m.data in linked:
+            if m.data in linked or m.data in local:
                 continue
             if side == "read" and m.data not in w and m.data not in r:
                 r.append(m.data)
@@ -1359,7 +1390,7 @@ def _layout(g: Graph) -> dict[str, Any]:
             rows.append({"kind": "containers", "boxes": list(keys.values())})
         return keys
 
-    unused = [c for c in g.containers if c not in used and c not in linked]
+    unused = [c for c in g.containers if c not in used and c not in linked and c not in local]
     before = reads[0] + unused if tops else list(g.containers)
     above = box_row(before, {}, 0)
     for k, top in enumerate(tops):
@@ -1378,6 +1409,13 @@ def _layout(g: Graph) -> dict[str, Any]:
                     edges.append(
                         _edge(f"{link}.out", port, m.data, text, "read", packing(g, n, c, m.data))
                     )
+                continue
+            if m.data in local:  # one iteration's value, from the writer straight to the reader
+                if side == "write":
+                    writers.setdefault(m.data, []).append(port)
+                else:
+                    edges.extend(_edge(w, port, m.data, text, "read", packing(g, n, c, m.data),
+                                       local=True) for w in writers.get(m.data, []))  # fmt: skip
                 continue
             if side == "write":
                 writers.setdefault(m.data, []).append(port)
@@ -1405,10 +1443,19 @@ def _layout(g: Graph) -> dict[str, Any]:
 
 
 def _edge(
-    src: str, dst: str, data: str, text: str, side: str, pack: str | None = None
+    src: str,
+    dst: str,
+    data: str,
+    text: str,
+    side: str,
+    pack: str | None = None,
+    local: bool = False,
 ) -> dict[str, Any]:
-    """One memlet; ``pack`` the port's packing when it meets an accelerated node."""
+    """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
+    fused nest's local value between its two tasklets, labelled with the container's name."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack
+    if local:
+        out |= {"local": True, "label": data}
     return out

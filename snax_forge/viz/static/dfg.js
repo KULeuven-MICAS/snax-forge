@@ -247,9 +247,14 @@ function drawEdges(canvas, svg, edges, k) {
     const bend = Math.max(18, Math.abs(y2 - y1) * 0.45);
     const d = `M${x1},${y1} C${x1},${y1 + bend} ${x2},${y2 - bend} ${x2},${y2 - 2}`;
     out.push(svgEl("path", { d, class: "edge-hit", "data-sel": e.id }));
-    const p = svgEl("path", { d, class: `edge ${e.dir}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
+    const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
+    if (e.label) { // a fused nest's local value: its name beside the wire, highlighted with the container (no box, api.py)
+      const t = svgEl("text", { x: (x1 + x2) / 2 + 6, y: (y1 + y2) / 2 + 4, class: "edge-label", "data-sel": e.data });
+      t.textContent = e.label;
+      out.push(t);
+    }
   }
   svg.replaceChildren(defs, ...out);
 }
