@@ -25,7 +25,8 @@ by order here, every link is an id the events carry (snax-gvsoc
               equal to the grants), the pace (first and last grant against one
               beat per cycle) and every cycle it was held, with the port its
               bank served and that port's address, ``idle`` for a task with every
-              temporal bound 0 (index.py's ``idle``); per DMA copy its sides, as
+              temporal bound 0 (index.py's ``idle``: another group's in the same
+              encapsulated set); per DMA copy its sides, as
               issued, and its L1 beats' pace
   conflicts   every L1 stall placed on the memory layout: the word the held
               request wanted and the word its bank served in that cycle; per

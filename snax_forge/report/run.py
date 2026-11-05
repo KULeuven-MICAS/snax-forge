@@ -91,7 +91,7 @@ class TaskRow(Record):
     direction: str | None = None
     bytes: int | None = None
     group: str | None = None  # the group whose start launched it (D148); None for the DMA's
-    idle: bool = False  # a mover's task with every temporal bound 0, started for the shared start
+    idle: bool = False  # every temporal bound 0: another group's in the same encapsulated set
     accelerator: str | None = None  # the accelerator (streamer set) it runs on; None: the DMA's
 
 
