@@ -549,10 +549,18 @@ def cli(write: Callable[[], int]) -> int:
         return 1
 
 
+# A flow's design step writes its design point to <flow folder>/design/ (flow/run.py)
+FLOW_DESIGN = "design"
+
+
 def out_dir(given: Path | None, under: Path, design_point: Path) -> Path:
-    """``given``, else ``under/<folder>``, the design point's folder (the design step's
-    ``out/design/<folder>/``, which keeps a flow's or a sandbox's ``--set`` suffix)."""
-    return given or under / Path(design_point).resolve().parent.name
+    """``given``, else ``under/<folder>``, the design point's folder: the design step's
+    ``out/design/<folder>/``, or a flow's ``out/flow/<folder>/`` for the flow's
+    ``<folder>/design/design_point.json``; either keeps the ``--set`` suffix."""
+    if given:
+        return given
+    folder = Path(design_point).resolve().parent
+    return under / (folder.parent.name if folder.name == FLOW_DESIGN else folder.name)
 
 
 def _hjson(point_path: str, what: str, value: Any) -> str:

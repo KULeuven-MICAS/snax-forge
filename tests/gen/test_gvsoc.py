@@ -792,3 +792,16 @@ def test_generating_again_changes_no_file(tmp_path):
     assert not (out / "include" / "gone.h").exists()
     changed = [f for f in manifest.files if (out / f).stat().st_mtime_ns != stamps[f]]
     assert changed == ["manifest.json"]  # the one file changed by hand, written back
+
+
+def test_the_output_folder_is_the_design_point_s_or_its_flow_s(tmp_path):
+    """gen-gvsoc, gen-rtl and bundle default to under/<folder>: the design step's folder, or for
+    a flow's design point (``out/flow/<name>/design/``) the flow's, with its ``--set`` suffix."""
+    from snax_forge.gen.gvsoc import out_dir
+
+    under = tmp_path / "out" / "rtl"
+    flow = tmp_path / "out" / "flow" / "dot_1_dry_W_vmul8_W_vsum4" / "design" / "design_point.json"
+    assert out_dir(None, under, flow) == under / "dot_1_dry_W_vmul8_W_vsum4"
+    design = tmp_path / "out" / "design" / "vecadd_W8" / "design_point.json"
+    assert out_dir(None, under, design) == under / "vecadd_W8"
+    assert out_dir(tmp_path / "x", under, flow) == tmp_path / "x"
