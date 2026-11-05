@@ -25,7 +25,8 @@ by order here, every link is an id the events carry (snax-gvsoc
               equal to the grants), the pace (first and last grant against one
               beat per cycle) and every cycle it was held, with the port its
               bank served and that port's address, ``idle`` for a task with every
-              temporal bound 0 (index.py's ``idle``); per DMA copy its sides, as
+              temporal bound 0 (index.py's ``idle``: another group's in the same
+              encapsulated set); per DMA copy its sides, as
               issued, and its L1 beats' pace
   conflicts   every L1 stall placed on the memory layout: the word the held
               request wanted and the word its bank served in that cycle; per
@@ -284,10 +285,11 @@ def residency(idx: RunIndex) -> list[dict[str, Any]]:
 # =============================================================================
 
 
-def _regs(idx: RunIndex, before: int) -> dict[int, int]:
-    """The streamer's CSR values written up to cycle ``before`` (a start copies them)."""
+def _regs(idx: RunIndex, set_: str, before: int) -> dict[int, int]:
+    """Set ``set_``'s streamer's CSR values written up to cycle ``before`` (a start copies
+    them)."""
     regs: dict[int, int] = {}
-    for e in idx.csr.get(idx.cluster.accelerator.streamer, []):
+    for e in idx.csr.get(f"{set_}_streamer", []):
         if e["op"] == "w" and e["t"] <= before:
             regs[e["csr"]] = e["value"]
     return regs
@@ -319,7 +321,7 @@ def patterns(idx: RunIndex) -> list[dict[str, Any]]:
     out = []
     for m in c.accelerator.movers:
         for s in (s for s in idx.start.values() if s["src"] == m.name):
-            regs = _regs(idx, s["t"])
+            regs = _regs(idx, m.set, s["t"])
             _, _, tb, ts = mover_values(c, m, regs)
             lanes = mover_nest(c, m, regs)
             bounds = [1 if (d == 0 and not m.write and ts[0] == 0) else b for d, b in enumerate(tb)]

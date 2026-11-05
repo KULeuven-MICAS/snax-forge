@@ -32,7 +32,7 @@ from snax_forge.gen.rtl import warm_emit
 ROOT = bundle.ROOT
 OUT = ROOT / "out" / "forge-set"
 
-QUICK = ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_4"]
+QUICK = ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4"]
 SETS = {
     "quick": QUICK,
     "full": [*QUICK, "vecadd", "vsum", "vecmul_i32_i64", "dot_2", "dot_3", "dot_5", "dot_6",

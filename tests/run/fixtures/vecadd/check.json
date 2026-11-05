@@ -12,7 +12,8 @@
   "tasks": {
    "add_acc": {
     "counter": 19,
-    "beats": 16
+    "beats": 16,
+    "group": "acc"
    }
   },
   "passed": true

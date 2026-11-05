@@ -269,13 +269,12 @@ def test_save_refuses_unbound_work(roots):
     assert not (roots.recipes / "vecadd_mine.json").exists()
 
 
-def test_save_refuses_two_accelerators_unless_forced(roots):
+def test_save_takes_two_accelerators(roots):
+    """D157: dot 1, no encapsulate, is two accelerators, two streamer sets of the one entry: Save
+    takes it as it is (gen.instances retired)."""
     s = opened("dot_1", roots)
-    assert s.recipe.steps[-1].transform == "encapsulate"
-    ok(s.move(s.n - 1))
-    got = s.save("dot_two")
-    assert got["code"] == "save.design" and any("[gen.instances]" in p for p in got["problems"])
-    assert ok(s.save("dot_two", force=True))["recipe"] == str(roots.recipes / "dot_two.json")
+    assert "encapsulate" not in [x.transform for x in s.recipe.steps]
+    assert ok(s.save("dot_two"))["recipe"] == str(roots.recipes / "dot_two.json")
 
 
 def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
@@ -438,18 +437,17 @@ def test_the_bind_form_lists_the_library_with_timing(roots):
 
 
 def test_the_encapsulate_and_link_forms(roots):
-    """dot 1 before encapsulate: the units unencapsulated in graph order, the selection's ticked
+    """dot 1 (no encapsulate): the units unencapsulated in graph order, the selection's ticked
     (one unit's box: that unit; both group outlines: both), and a free accelerator name; dot 2
     before its link: the depth a param of its own, D, at 1 by default, the group from the site."""
     one = opened("dot_1", roots)
-    ok(one.move(one.n - 1))
     f = _form(one.sites(one.cursor, "mult")["encapsulate"])
     assert (f["units"]["type"], f["units"]["value"], [c["value"] for c in f["units"]["choices"]]) == (
-        "checklist", ["mul"], ["mul", "sum"])  # fmt: skip
+        "checklist", ["vmul"], ["vmul", "vsum"])  # fmt: skip
     assert f["accelerator"]["value"] == "dot" and not f["units"]["readonly"]
-    assert _form(one.sites(one.cursor, ["mul", "sum"])["encapsulate"])["units"]["value"] == [
-        "mul",
-        "sum",
+    assert _form(one.sites(one.cursor, ["vmul", "vsum"])["encapsulate"])["units"]["value"] == [
+        "vmul",
+        "vsum",
     ]
     two = opened("dot_2", roots)
     ok(two.move(two.n - 1))
@@ -520,19 +518,16 @@ def test_a_bind_keeps_a_shared_or_a_recipes_own_param(roots):
 
 
 def test_every_step_lists_saves_design_checks(roots):
-    """D156: dot 1 at W = 8 and 8 before encapsulate has no problem and one note, gen.instances
-    before Save; after it neither; at W = 10 and 10 none either (D144), at 8 and 10 connect.pad,
-    naming open item 106. Save still refuses at step 8 unless forced."""
+    """D156: dot 1 at W = 8 and 8 has no problem and no note before encapsulate (two
+    accelerators, D157) or after it; at W = 10 and 10 none either (D144), at 8 and 10
+    connect.pad, naming open item 106. Save takes step 8."""
     s, out = dot1_by_hand(roots)
     eight = s.checks(8)
-    assert eight["problems"] == [] and [n["code"] for n in eight["notes"]] == ["gen.instances"]
-    assert eight["notes"][0]["message"].startswith(
-        "before Save: shift-click the outlines of acc_1 and acc_2 and apply encapsulate (2 accelerators"
-    )
+    assert eight == {"problems": [], "notes": []}
     assert out[7]["checks"] == eight  # the bind's answer carries them
     assert s.checks(9) == {"problems": [], "notes": []} == out[8]["checks"]
     ok(s.move(8))
-    assert s.save("dot_early")["code"] == "save.design"
+    assert ok(s.save("dot_early"))["recipe"] == str(roots.recipes / "dot_early.json")
     ten = dot1_by_hand(Roots(roots.sessions / "b", roots.recipes, roots.sandbox), 10, 10)[0]
     assert ten.checks(9) == {"problems": [], "notes": []}
     bad = dot1_by_hand(Roots(roots.sessions / "c", roots.recipes, roots.sandbox), 8, 10)[0]

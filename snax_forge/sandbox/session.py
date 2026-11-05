@@ -72,8 +72,7 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            an identifier, or a recipe of that name exists),
                                            ``save.graph`` (a problem of the ``graph`` stage, so
                                            the graph is not one SNAX-LOWER takes), ``save.design``
-                                           (any other problem, unless ``force``: dot 1 without
-                                           ``encapsulate`` is ``gen.instances``); returns the
+                                           (any other problem, unless ``force``); returns the
                                            ``pixi run sandbox``, ``flow`` and ``forge`` lines
                                            as ``commands``, each ``{command, what}``, ``what``
                                            one line on what it does (``COMMANDS``)
@@ -108,10 +107,8 @@ DfgError ``dfg``, a failed reference check ``sandbox.check``.
                          on ``tech`` (default nangate45, C§20)
     checks(k)            Save's design checks on step k and the platform (D156): ``problems``,
                          each ``{code, where, message, fix}``, and ``notes``: ``graph.unbound``
-                         while building (``before Save: bind it …``) and ``gen.instances``
-                         before ``encapsulate`` (``before Save: shift-click the outlines of acc_1 and acc_2
-                         and apply encapsulate …``) as notes, not
-                         problems, which Save still refuses, and the design notes (check.py's
+                         while building (``before Save: bind it …``) as a note, not a
+                         problem, which Save still refuses, and the design notes (check.py's
                          ``NOTES``, ``char.missing``) always, also beside problems
 
 ``sites``, ``marks``, ``estimate`` and ``checks`` are cached per step (``sites`` per step and selection,
@@ -135,7 +132,6 @@ from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import repo_root
 from snax_forge.design import Design, Platform, run_checks
 from snax_forge.design.check import CHECKS
-from snax_forge.design.streamers import accelerators as accelerators_of
 from snax_forge.design.streamers import instance_of
 from snax_forge.dfg import DfgError, Graph
 from snax_forge.dfg.subset import parse_dim
@@ -823,14 +819,14 @@ def _renamed(v: Any, renamed: dict[str, str]) -> Any:
 
 
 # The problems that only say a graph is still being built (D156): notes "before Save", which
-# Save still refuses (save.graph, save.design)
-BEFORE_SAVE = ("graph.unbound", "gen.instances")
+# Save still refuses (save.graph)
+BEFORE_SAVE = ("graph.unbound",)
 
 
 def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]]]:
     """Save's design checks on ``g`` (``Session.checks``): ``problems`` and ``notes``, each
-    ``{code, where, message, fix, before_save}``. ``graph.unbound`` and ``gen.instances`` are
-    "before Save" notes (``before_save`` true), not problems, and the design notes (check.py's ``NOTES``, ``char.missing``) are
+    ``{code, where, message, fix, before_save}``. ``graph.unbound`` is a "before Save" note
+    (``before_save`` true), not a problem, and the design notes (check.py's ``NOTES``, ``char.missing``) are
     listed whatever else is wrong, each one that cannot read the graph left out (D156)."""
     from snax_forge.design.check import NOTES
 
@@ -840,13 +836,7 @@ def design_checks(platform: Platform, g: Graph) -> dict[str, list[dict[str, Any]
     for p in found:
         d = {"code": p.code, "where": p.where, "message": p.message, "fix": p.fix,
              "before_save": p.code in BEFORE_SAVE}  # fmt: skip
-        if p.code == "gen.instances":
-            names = list(accelerators_of(g))  # each group, its own accelerator: its outline
-            outlines = ", ".join(names[:-1]) + f" and {names[-1]}" if len(names) > 1 else names[0]
-            d["message"] = (f"before Save: shift-click the outlines of {outlines} and apply "
-                            f"encapsulate ({p.message})")  # fmt: skip
-            notes.append(d)
-        elif p.code == "graph.unbound":
+        if p.code == "graph.unbound":
             d["message"] = f"before Save: bind it ({p.message})"
             notes.append(d)
         else:

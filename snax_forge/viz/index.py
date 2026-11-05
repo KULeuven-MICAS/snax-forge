@@ -59,9 +59,12 @@ and results' grants their streamers' tasks. It comes from the run's task list (`
 in the flow folder, lower/tasks.py's ``TaskList``), whose ``start`` step launches an
 accelerator task together with its streamer tasks; each task's component is its configure
 step's. ``streamers[acc task] = {mover: streamer task}`` and ``accel[streamer task] = acc
-task``; with several groups (D148) a start launches one unit's task with a task on every
-mover, the other groups' idle (every bound 0, ``idle``: ``idle_tasks``), which SNAX-GVSoC starts and ends at once. An accelerator task launched without a streamer task for one of its movers, or with
-two for one, or with a streamer task on no mover of it, is a RunError (``index.tasks``)
+task``: a start launches one unit's task with a task on every mover of its streamer set
+(D157); with several groups in one encapsulated set (D148) the movers of another group in the
+same encapsulated set are idle (every bound 0, ``idle``: ``idle_tasks``), which SNAX-GVSoC
+starts and ends at once. An accelerator task launched without a streamer task for one of its
+set's movers, or with two for one, or with a streamer task on no mover of its set, is a
+RunError (``index.tasks``)
 naming the tasks: not expected, and never guessed.
 
 **Marks** are the memory tab's per-word values, added by registration, as the memory passes
@@ -318,9 +321,9 @@ class RunIndex:
 
 
 def idle_tasks(tasks: TaskList) -> set[str]:
-    """The streamer tasks with every temporal bound 0: another group's movers, started only
-    because an accelerator's movers share one start (D148, lower/derive.py), which SNAX-GVSoC
-    starts and ends at once."""
+    """The streamer tasks with every temporal bound 0: the movers of another group in the same
+    encapsulated set, started only because the set's movers share one start (D148, D157,
+    lower/derive.py), which SNAX-GVSoC starts and ends at once."""
     return {s.task_name for s in tasks.of_type("streamer")
             if not any(s.values.get("temporal_bounds") or [1])}  # fmt: skip
 

@@ -19,7 +19,13 @@ earlier one on it.
 A wait on a writer streamer also covers the unit it serves (a linked
 group's: the group) and its reader streamers, for the tasks the same start launched: their data flows
 into the writer, so the writer finishes last (``upstream``, from the design
-point's streamers: their ``instance`` and ``write``).
+point's streamers: their ``instance`` and ``write``). A wait on an accelerator's
+task (a unit, or a linked group) also covers its writer streamers, and so their
+readers, for the tasks the same start launched: the C backend polls the group's
+STATUS, then its set's STREAMER_BUSY, which is clear only once every mover of
+the set is done (lower/c.py). So D158's serial sync on the previous
+accelerator's task leaves out the data wait on its writer (dot_serial: one wait
+between mul and sum, the sync).
 
 An idle mover's task (every temporal bound 0: another group's mover in an
 accelerator of several, D148) never needs a wait: it never starts and moves
@@ -47,18 +53,22 @@ def upstream(point: DesignPoint) -> dict[str, list[str]]:
     """Per component, the components a wait on it also covers (module doc).
 
     A writer streamer -> the unit it serves (a linked group's: the group); a unit or group ->
-    its reader streamers, in port order.
+    its reader streamers, in port order, then its writer streamers.
     """
     from snax_forge.design.streamers import groups
 
     owner = {u: g for g, units in groups(point.graph).items() if len(units) > 1 for u in units}
     up: dict[str, list[str]] = {}
+    writers: dict[str, list[str]] = {}
     for s in point.streamers.values():
         comp = owner.get(s.instance, s.instance)
         if s.write:
             up.setdefault(s.name, []).append(comp)
+            writers.setdefault(comp, []).append(s.name)
         else:
             up.setdefault(comp, []).append(s.name)
+    for comp, ws in writers.items():
+        up.setdefault(comp, []).extend(ws)
     return up
 
 
@@ -124,11 +134,16 @@ class _Waits:
                 if not self.is_covered(a):
                     ac = self.conf[a].component
                     need[ac] = self.latest[ac]
-        # A wait another needed wait covers is left out (a writer's covers its group).
-        covered_by_others = {x for c in need for x in self.covers(c) if x != c}
-        for c in sorted(need, key=lambda c: self.started_at[need[c]]):
-            if c not in covered_by_others and not self.is_covered(need[c]):
-                self.wait(i, c, self.conf[need[c]].wait_mode)
+        # A wait another needed wait covers is left out (a writer's covers its group, a group's
+        # its writers): the widest first, ties to the one started first, then in start order.
+        chosen: list[str] = []
+        taken: set[str] = set()
+        for c in sorted(need, key=lambda c: (-len(self.covers(c)), self.started_at[need[c]])):
+            if c not in taken and not self.is_covered(need[c]):
+                chosen.append(c)
+                taken |= set(self.covers(c))
+        for c in sorted(chosen, key=lambda c: self.started_at[need[c]]):
+            self.wait(i, c, self.conf[need[c]].wait_mode)
         for j, t in enumerate(s.tasks):
             c = self.conf[t].component
             self.latest[c] = t

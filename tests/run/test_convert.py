@@ -17,8 +17,8 @@ def parse(lines):
     "path, trace, text, name",
     [
         ("snax_acc0/unit", "events", "5 start count=16 rate=1", "acc"),
-        ("snax_acc0/streamer", "events", "5 start mover=reader1", "acc_b"),
-        ("snax_acc0/streamer", "events", "5 done mover=writer0", "acc_out"),
+        ("snax_acc0/streamer_acc", "events", "5 start mover=reader1", "acc_b"),
+        ("snax_acc0/streamer_acc", "events", "5 done mover=writer0", "acc_out"),
         ("pe1", "events", "5 state mode=run", "core1"),
         ("idma/fe", "events", "5 done id=2", "dma"),
         ("tcdm/snax_xbar", "summary", "5 bank index=0 reads=0 writes=0 conflicts=0", "xbar"),
@@ -31,7 +31,7 @@ def test_paths_are_renamed(cluster, path, trace, text, name):
 @pytest.mark.parametrize(
     "path, text",
     [("snax_acc1/unit", "5 start count=1 rate=1"), ("pe2", "5 state mode=run"),
-     ("snax_acc0/streamer", "5 start mover=reader7")],
+     ("snax_acc0/streamer_acc", "5 start mover=reader7")],
 )  # fmt: skip
 def test_a_path_not_of_the_cluster_is_named(cluster, path, text):
     with pytest.raises(RunError) as e:
@@ -40,8 +40,8 @@ def test_a_path_not_of_the_cluster_is_named(cluster, path, text):
 
 
 def test_crossbar_inputs_become_ports(cluster):
-    assert port_of("snax_acc0.streamer.reader1.lane3", cluster) == "acc_b.lane3"
-    assert port_of("snax_acc0.streamer.writer0.lane0", cluster) == "acc_out.lane0"
+    assert port_of("snax_acc0.streamer_acc.reader1.lane3", cluster) == "acc_b.lane3"
+    assert port_of("snax_acc0.streamer_acc.writer0.lane0", cluster) == "acc_out.lane0"
     assert [port_of(x, cluster) for x in ("core0", "core1", "axi")] == ["core0", "core1", "axi"]
     with pytest.raises(RunError):
         port_of("core5", cluster)

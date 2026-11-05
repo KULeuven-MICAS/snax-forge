@@ -8,7 +8,9 @@ and of its control unit, CHAR1's cost model's counts (cycles.py, bits.py, D154);
 technology (``tech``, snax_forge/char/; None skips it) the cost, per unit, buffer link, control
 unit, group and accelerator its area and energy, and per accelerator its L1 accesses, the words
 its streamers read and write in L1 at 4 × e_load per bit, a placeholder added to its energy
-(``l1``, cost.py, C§20, D154); and the data side, per
+(``l1``, cost.py, C§20, D154); per accelerator its streamer set, its groups, CSRs and
+streamer (``accelerators``, accelerators.py, D157), its streamer not costed (open item 110);
+and the data side, per
 container its placement, bytes and L1 traffic, per outer port its streamer's loops, beats and
 channels, per tailed split its lane use (data.py). No bank conflicts, no streamer fill, no DMA,
 no core control. A group's expected COUNTER, its cycles plus the streamers' fill (C§17), is a
@@ -36,6 +38,7 @@ from snax_forge.char import DEFAULT_TECH, load
 from snax_forge.common import JsonFile
 from snax_forge.design.streamers import accelerator_of
 
+from .accelerators import STREAMER_MISSING, AcceleratorEstimate, StreamerEstimate, accelerators
 from .bits import ctrl_bits, ctrl_registers
 from .cost import BlockCost, GroupCost, L1Cost, group_cost, l1_cost
 from .cycles import EstimateError, GroupEstimate, group_blocks, group_cycles, not_mapped
@@ -65,6 +68,19 @@ class Estimate(JsonFile):
     char_source: dict[str, str] | None = None
     unmapped_iterations: int = 0  # not_mapped over every map, spatial ones included (D155)
     l1_words: dict[str, int] = field(default_factory=dict)  # per accelerator, its L1 accesses
+    accelerators: list[AcceleratorEstimate] = field(default_factory=list)  # in CSR order
+
+    @property
+    def streamers(self) -> int:
+        """The streamers, one per accelerator's set, none of them costed (open item 110)."""
+        return len(self.accelerators)
+
+    @property
+    def csrs(self) -> int | None:
+        """Every CSR of the entry, the streamers' and the accelerators' own; None without a
+        platform."""
+        n = [a.n_csrs for a in self.accelerators]
+        return None if not n or None in n else sum(n)  # type: ignore[arg-type]
 
     @property
     def area(self) -> float | None:
@@ -132,10 +148,13 @@ class Estimate(JsonFile):
             "l1_size": self.l1_size,
             "ports": {k: p.to_dict() for k, p in self.ports.items()},
             "splits": {k: s.to_dict() for k, s in self.splits.items()},
+            "accelerators": [a.to_dict() | {"cost": None if self.tech is None else {
+                "l1": self.l1[a.name].to_dict() if a.name in self.l1 else None}}
+                for a in self.accelerators],
             "cost": None if self.tech is None else {
                 "tech": self.tech, "source": dict(self.char_source or {}), "area": self.area,
                 "energy": self.energy, "kernel_energy": self.kernel_energy,
-                "l1": {a: x.to_dict() for a, x in self.l1.items()}, "missing": self.missing},
+                "missing": self.missing},
         }  # fmt: skip
 
     @classmethod
@@ -150,8 +169,10 @@ class Estimate(JsonFile):
             (d.get("cost") or {}).get("tech"),
             (d.get("cost") or {}).get("source"),
             d["unmapped_iterations"],
-            {a: x["words"] for a, x in ((d.get("cost") or {}).get("l1") or {}).items()},
-        )
+            {a["name"]: a["cost"]["l1"]["words"] for a in d.get("accelerators", [])
+             if (a.get("cost") or {}).get("l1")},
+            [AcceleratorEstimate.from_dict(a) for a in d.get("accelerators", [])],
+        )  # fmt: skip
 
 
 def estimate(graph: Graph, platform: Platform | None = None,
@@ -185,11 +206,14 @@ def estimate(graph: Graph, platform: Platform | None = None,
     size = None if l1 is None else l1.n_banks * l1.rows * l1.width_bits // 8
     return Estimate(found, not_mapped(graph), data, size, ports(graph), splits(graph),
                     tech, None if table is None else dict(table.source),
-                    not_mapped(graph, spatial=True), l1_words)  # fmt: skip
+                    not_mapped(graph, spatial=True), l1_words,
+                    accelerators(graph, platform))  # fmt: skip
 
 
 __all__ = [
+    "STREAMER_MISSING",
     "UNMAPPED_CYCLES_PER_ITERATION",
+    "AcceleratorEstimate",
     "BlockCost",
     "ContainerData",
     "Estimate",
@@ -199,6 +223,7 @@ __all__ = [
     "L1Cost",
     "PortData",
     "SplitData",
+    "StreamerEstimate",
     "ctrl_bits",
     "ctrl_registers",
     "estimate",

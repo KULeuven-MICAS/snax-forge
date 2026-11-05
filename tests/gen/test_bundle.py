@@ -21,7 +21,7 @@ from snax_forge.gen import rtl as rtl_mod
 from snax_forge.gen.bundle import Bundle, write_bundle
 from snax_forge.gen.rtl import EMITTED_JSON
 
-from .helpers import COMMIT, SV, fake_emit, files, point
+from .helpers import COMMIT, SV, fake_emit, files, point, with_groups
 
 
 @pytest.fixture
@@ -33,8 +33,8 @@ def test_the_layout(tmp_path, fake):
     out = tmp_path / "bundle"
     b, written = write_bundle(point(tmp_path), out, tmp_path)
     assert files(out) == sorted([
-        "snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json",
-        "include/streamer_csr_addr_map.h", "include/acc_csr.h", "include/snitch_cluster_cfg.h",
+        "snax_forge.hjson", "snax_forge_vecadd_streamer_acc.hjson", "accelerator.json",
+        "include/streamer_acc_csr_addr_map.h", "include/acc_csr.h", "include/snitch_cluster_cfg.h",
         "include/snitch_cluster_addrmap.h", "data.h", "main.c",
         "manifest.json", *(f"rtl/{f}" for f in SV), "rtl/emitted.json",
         "rtl/files.f", "bundle.json",
@@ -42,7 +42,7 @@ def test_the_layout(tmp_path, fake):
     assert sorted(f.relative_to(out).as_posix() for f in written) == files(out)
     assert written[-3:] == [out / "rtl" / "emitted.json", out / "rtl" / "files.f",
                             out / "bundle.json"]  # fmt: skip
-    assert b.tag == "snax_forge"
+    assert b.tag == "snax_forge_vecadd"
 
 
 def test_the_root_is_gen_gvsocs_output(tmp_path, fake):
@@ -83,10 +83,11 @@ def test_bundle_json(tmp_path, fake):
     out = tmp_path / "bundle"
     b, _ = write_bundle(point(tmp_path), out, tmp_path)
     d = json.loads((out / "bundle.json").read_text())
-    assert d == {"design_point": "design/vecadd/design_point.json", "tag": "snax_forge",
-                 "top": "snax_forge_shell_wrapper",
-                 "modules": {"snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_acc_ctrl"],
-                             "snax_forge_datapath": ["snax_forge_acc"]},
+    t = "snax_forge_vecadd"  # the tag, <accelerator_slot>_<design> (D157)
+    assert d == {"design_point": "design/vecadd/design_point.json", "tag": t,
+                 "top": f"{t}_shell_wrapper",
+                 "modules": {f"{t}_csr": [], f"{t}_ctrl": [f"{t}_acc_ctrl"],
+                             f"{t}_datapath": [f"{t}_acc"]},
                  "snax_forge_commit": COMMIT, "dirty": False, "expected": None}  # fmt: skip
     assert Bundle.load(out / "bundle.json") == b == Bundle.from_dict(b.to_dict())
     assert d["design_point"] == json.loads((out / "manifest.json").read_text())["design_point"]
@@ -124,7 +125,7 @@ def test_the_command(tmp_path, fake, monkeypatch, capsys):
     assert bundle_mod.main([str(path)]) == 0
     text = capsys.readouterr().out
     assert text.startswith(
-        f"bundle out/bundle/vecadd: snax_forge_shell_wrapper from "
+        f"bundle out/bundle/vecadd: snax_forge_vecadd_shell_wrapper from "
         f"design/vecadd/design_point.json, snax-forge {COMMIT}\n"
     )
     assert "wrote out/bundle/vecadd/rtl/files.f\n" in text
@@ -139,37 +140,55 @@ def test_the_command(tmp_path, fake, monkeypatch, capsys):
     assert e.value.code == 2
 
 
-def test_dot_1s_bundle_holds_both_groups(tmp_path, fake):
-    """An accelerator of two groups (D148): the bundle's accelerator.json, header and program
-    are gen-gvsoc's; the RTL is elaborated from the same file."""
+def test_dot_1_encs_bundle_holds_both_groups(tmp_path, fake):
+    """An accelerator of two groups (D148, dot_1_enc): the bundle's accelerator.json, header and
+    program are gen-gvsoc's; the RTL is elaborated from the same file."""
+    from .helpers import bound_dot1_enc
+
+    out = tmp_path / "bundle"
+    b, _ = write_bundle(point(tmp_path, name="dot_1_enc", graph=bound_dot1_enc()), out, tmp_path)
+    assert b.tag == "snax_forge_dot_1_enc" and "include/dot_csr.h" in files(out)
+    acc = json.loads((out / "accelerator.json").read_text())
+    assert [g["name"] for a in acc["accelerators"] for g in a["groups"]] == ["vmul", "vsum"]
+    assert b.top == "snax_forge_dot_1_enc_shell_wrapper"
+
+
+def test_dot_1s_bundle_holds_both_accelerators(tmp_path, fake):
+    """dot 1, two accelerators (D157): one shell, a header pair per set."""
     from .helpers import bound_dot1
 
     out = tmp_path / "bundle"
     b, _ = write_bundle(point(tmp_path, name="dot_1", graph=bound_dot1()), out, tmp_path)
-    assert b.tag == "snax_forge" and "include/dot_csr.h" in files(out)
-    acc = json.loads((out / "accelerator.json").read_text())
-    assert [g["name"] for g in acc["groups"]] == ["mul", "sum"]
+    assert b.top == "snax_forge_dot_1_shell_wrapper"
+    assert {"include/vmul_csr.h", "include/vsum_csr.h"} <= set(files(out))
+    assert b.modules["snax_forge_dot_1_ctrl"] == ["snax_forge_dot_1_vmul_ctrl",
+                                                  "snax_forge_dot_1_vsum_ctrl"]  # fmt: skip
 
 
 def test_the_module_tree_names_every_group_unit_and_buffer():
-    """From the description, not Emit (C§18): dot 1's two groups and units; a linked group's
-    units and its buffer (a wire is no module)."""
-    from tests.gen.test_accelerator import dot, dot4
+    """From the description, not Emit (C§18), under the tag: dot_1_enc's two groups and units,
+    and dot_serial's the same over its two accelerators (one shell, D157); a linked group's units
+    and its buffer (a wire is no module)."""
+    from tests.gen.test_accelerator import dot, dot4, dot_serial
 
+    t = "snax_forge_dot_1_enc"
     assert bundle_mod.module_tree(dot()) == {
-        "snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_mul_ctrl", "snax_forge_sum_ctrl"],
-        "snax_forge_datapath": ["snax_forge_mul", "snax_forge_sum"],
+        f"{t}_csr": [], f"{t}_ctrl": [f"{t}_vmul_ctrl", f"{t}_vsum_ctrl"],
+        f"{t}_datapath": [f"{t}_vmul", f"{t}_vsum"],
+    }  # fmt: skip
+    t = "snax_forge_dot_serial"
+    assert bundle_mod.module_tree(dot_serial()) == {
+        f"{t}_csr": [], f"{t}_ctrl": [f"{t}_mul_ctrl", f"{t}_sum_ctrl"],
+        f"{t}_datapath": [f"{t}_mul", f"{t}_sum"],
     }  # fmt: skip
     wire = dot4()
-    assert bundle_mod.module_tree(wire)["snax_forge_datapath"] == [
-        "snax_forge_mac",
-        "snax_forge_sum",
-    ]
+    t = "snax_forge_dot_4"
+    assert bundle_mod.module_tree(wire)[f"{t}_datapath"] == [f"{t}_mac", f"{t}_sum"]
     g = wire.groups[0]
-    buffer = replace(wire, groups=[replace(g, links=[replace(g.links[0], depth=1)])])
+    buffer = with_groups(wire, [replace(g, links=[replace(g.links[0], depth=1)])])
     assert bundle_mod.module_tree(buffer) == {
-        "snax_forge_csr": [], "snax_forge_ctrl": ["snax_forge_dot_ctrl"],
-        "snax_forge_datapath": ["snax_forge_mac", "snax_forge_sum", "snax_forge_out_partial"],
+        f"{t}_csr": [], f"{t}_ctrl": [f"{t}_dot_ctrl"],
+        f"{t}_datapath": [f"{t}_mac", f"{t}_sum", f"{t}_out_partial"],
     }  # fmt: skip
 
 

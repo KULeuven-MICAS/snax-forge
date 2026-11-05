@@ -60,7 +60,7 @@ def test_the_design_report_equals_its_sources(flows, key):
     assert (h.platform, h.passes) == ("snax_forge", dict(point.memory.passes))
     assert [c.name for c in r.components] == cluster.sources
     (a,) = r.accelerators
-    (unit,) = cluster.accelerator.description["groups"][0]["units"]
+    (unit,) = cluster.accelerator.description["accelerators"][0]["groups"][0]["units"]
     assert (a.instance, a.kind, a.target_ii, a.latency) == (
         "acc",
         unit["datapath"],
@@ -217,7 +217,12 @@ def test_the_recorded_vecadd_run(flows, tmp_path):
     real events render."""
     folder = tmp_path / "vecadd_task"
     shutil.copytree(flows[("vecadd", "task")], folder)
-    for f in ("snax_forge.hjson", "snax_forge_streamer.hjson", "accelerator.json"):
+    for f in (
+        "snax_forge.hjson",
+        "snax_forge_vecadd_streamer_acc.hjson",
+        "accelerator.json",
+        "manifest.json",
+    ):
         shutil.copy(FIXTURE / f, folder / "gen" / f)
     shutil.copy(FIXTURE / "tasks.json", folder / "tasks.json")
     check = json.loads((FIXTURE / "check.json").read_text())
@@ -394,7 +399,7 @@ def test_the_extents_include_the_padding(tmp_path):
 
 
 # =============================================================================
-# Several groups (D148): dot 1's recorded run
+# Several groups (D148): dot_1_enc's recorded run
 # =============================================================================
 
 
@@ -402,33 +407,37 @@ def test_the_extents_include_the_padding(tmp_path):
 def dot1(tmp_path_factory):
     from tests.viz.helpers import recorded_run
 
-    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_1"
-    return recorded_run(tmp_path_factory.mktemp("dot1") / "dot_1_task", "task", fixture)
+    fixture = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "dot_1_enc"
+    return recorded_run(tmp_path_factory.mktemp("dot1") / "dot_1_enc_task", "task", fixture)
 
 
 def test_the_run_report_names_each_tasks_group(dot1):
     r = reports_of(dot1)
     groups = {t.name: t.group for t in r.run.tasks}
-    assert (groups["mult_mul"], groups["mult_mul_a"], groups["mult_sum_a"]) == ("mul",) * 3
-    assert (groups["sum_sum"], groups["sum_mul_a"], groups["sum_sum_out"]) == ("sum",) * 3
+    assert (groups["mult_vmul"], groups["mult_vmul_a"], groups["mult_vsum_a"]) == ("vmul",) * 3
+    assert (groups["sum_vsum"], groups["sum_vmul_a"], groups["sum_vsum_out"]) == ("vsum",) * 3
     assert groups["load_A"] is None
     assert [(a.name, a.group, a.firings) for a in r.run.accelerators] == [
-        ("mul", "mul", 16), ("sum", "sum", 16)]  # fmt: skip
+        ("vmul", "vmul", 16), ("vsum", "vsum", 16)]  # fmt: skip
     text = render_run(r.run)
-    assert "| Block | Group | # | Task | Start | Done | Cycles | Direction | Bytes |" in text
     assert (
-        "| mul | mul | 0 | mult_mul |" in text and "| sum_a | mul | 0 | mult_sum_a (idle) |" in text
+        "| Block | Group | # | Task | Accelerator | Start | Done | Cycles | Direction | Bytes |"
+        in text
+    )
+    assert (
+        "| vmul | vmul | 0 | mult_vmul | dot |" in text
+        and "| vsum_a | vmul | 0 | mult_vsum_a (idle) | dot |" in text
     )
     assert "| Unit | Group | Firings |" in text
     # the other group's movers, started only for the shared start, tagged idle (C§7)
     idle = sorted(t.name for t in r.run.tasks if t.idle)
-    assert idle == ["mult_sum_a", "mult_sum_out", "sum_mul_a", "sum_mul_b", "sum_mul_out"]
+    assert idle == ["mult_vsum_a", "mult_vsum_out", "sum_vmul_a", "sum_vmul_b", "sum_vmul_out"]
     # each group's movers in a collapsible under Accelerators
     assert [(g.group, [m.name for m in g.movers]) for g in r.run.group_movers] == [
-        ("mul", ["mul_a", "mul_b", "mul_out"]), ("sum", ["sum_a", "sum_out"])]  # fmt: skip
-    assert "<details>\n<summary>mul ▸ mul_a, mul_b, mul_out</summary>" in text
-    assert "<summary>sum ▸ sum_a, sum_out</summary>" in text
-    assert text.index("## Accelerators") < text.index("<summary>mul ▸") < text.index("## Cores")
+        ("vmul", ["vmul_a", "vmul_b", "vmul_out"]), ("vsum", ["vsum_a", "vsum_out"])]  # fmt: skip
+    assert "<details>\n<summary>vmul ▸ vmul_a, vmul_b, vmul_out</summary>" in text
+    assert "<summary>vsum ▸ vsum_a, vsum_out</summary>" in text
+    assert text.index("## Accelerators") < text.index("<summary>vmul ▸") < text.index("## Cores")
 
 
 def test_the_port_table_leaves_out_the_idle_tasks(tmp_path):
@@ -437,9 +446,9 @@ def test_the_port_table_leaves_out_the_idle_tasks(tmp_path):
     from tests.run.helpers import RECORDED
     from tests.viz.helpers import recorded_run
 
-    r = reports_of(recorded_run(tmp_path / "dot_1_stall", "stall", RECORDED / "dot_1")).run
+    r = reports_of(recorded_run(tmp_path / "dot_1_enc_stall", "stall", RECORDED / "dot_1_enc")).run
     tasks = {p.task for p in r.movement.patterns}
-    assert tasks == {"mult_mul_a", "mult_mul_b", "mult_mul_out", "sum_sum_a", "sum_sum_out"}
+    assert tasks == {"mult_vmul_a", "mult_vmul_b", "mult_vmul_out", "sum_vsum_a", "sum_vsum_out"}
     assert r.movement.idle_left_out == 5
     assert ("The 5 idle streamer tasks (every temporal bound 0, started only for the shared start; "
             "tagged idle under Tasks) are left out.") in render_run(r)  # fmt: skip
@@ -450,18 +459,18 @@ def test_the_bank_notes_compare_the_streamers_of_one_group(dot1):
     apart); nothing pairs a mul streamer with a sum one (the groups run one after the other):
     no note on mul_a and sum_out, none on tmp0 against itself through mul_out and sum_a."""
     notes = reports_of(dot1).design.notes
-    assert any(n.startswith("mul_a and mul_b: A and B lie ") for n in notes), notes
-    assert not any("sum_" in n and "mul_" in n for n in notes), notes
+    assert any(n.startswith("vmul_a and vmul_b: A and B lie ") for n in notes), notes
+    assert not any("vsum_" in n and "vmul_" in n for n in notes), notes
     assert not any("tmp0 and tmp0" in n for n in notes), notes
 
 
 def test_the_design_report_has_a_row_per_unit(dot1):
     r = reports_of(dot1).design
     assert [(a.instance, a.group, a.kind) for a in r.accelerators] == [
-        ("mul", "mul", "ElementwiseLanes"), ("sum", "sum", "TreeAccumulate")]  # fmt: skip
-    assert [c.name for c in r.components][:2] == ["mul", "sum"]
+        ("vmul", "vmul", "ElementwiseLanes"), ("vsum", "vsum", "TreeAccumulate")]  # fmt: skip
+    assert [c.name for c in r.components][:2] == ["vmul", "vsum"]
     assert [(s.name, s.instance) for s in r.streamers][:3] == [
-        ("mul_a", "mul"), ("mul_b", "mul"), ("sum_a", "sum")]  # fmt: skip
+        ("vmul_a", "vmul"), ("vmul_b", "vmul"), ("vsum_a", "vsum")]  # fmt: skip
 
 
 # =============================================================================
@@ -493,7 +502,7 @@ def test_a_linked_groups_design_report_has_a_row_per_unit(dot4):
     group's control unit; an accelerator row per unit, each with its BRM and ports."""
     r = reports_of(dot4).design
     assert (r.components[0].name, r.components[0].detail) == (
-        "dot", "Mac → TreeAccumulate on core0, group control unit, slot snax_forge")  # fmt: skip
+        "dot", "Mac → TreeAccumulate on core0, group control unit, slot snax_forge_dot_4")  # fmt: skip
     assert [(a.instance, a.kind, a.brm, a.latency, a.ports) for a in r.accelerators] == [
         ("mac", "Mac", "mac", 1, ["a ← mac_a", "b ← mac_b"]),
         ("sum", "TreeAccumulate", "accumulate", 1, ["out ← sum_out"]),
@@ -502,7 +511,7 @@ def test_a_linked_groups_design_report_has_a_row_per_unit(dot4):
 
 def test_one_group_has_no_group_column(flows):
     text = render_run(reports_of(flows[("vecadd", "task")]).run)
-    assert "| Block | # | Task |" in text and "Group" not in text
+    assert "| Block | # | Task |" in text and "| Group |" not in text
 
 
 def test_design_md_costs_each_group_beside_its_cycles(dot1):
@@ -516,8 +525,8 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
     e = r.estimate
     assert e.tech == "nangate45" and e.char_source["snax_forge_experiments"] and not e.missing
     assert [(c.group, c.block, c.datapath) for c in e.cost] == [
-        ("mul", "mul", "ElementwiseLanes"), ("mul", "ctrl", "group control unit"),
-        ("sum", "sum", "TreeAccumulate"), ("sum", "ctrl", "group control unit")]  # fmt: skip
+        ("vmul", "vmul", "ElementwiseLanes"), ("vmul", "ctrl", "group control unit"),
+        ("vsum", "vsum", "TreeAccumulate"), ("vsum", "ctrl", "group control unit")]  # fmt: skip
     assert all(c.found for c in e.cost if c.block != "ctrl")
     assert e.area_um2 == pytest.approx(sum(g.area_um2 for g in e.groups))
     assert e.energy_nj == pytest.approx(sum(c.energy_nj for c in e.cost)
@@ -535,12 +544,12 @@ def test_design_md_costs_each_group_beside_its_cycles(dot1):
             "per run.") in text  # fmt: skip
     # an area shown to 3 significant figures, an energy to 3 decimals
     assert (
-        "| sum | sum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.495 | 0.457 | 0.055 |"
+        "| vsum | vsum | TreeAccumulate | measured | 16 | 64 | 1 300 | 340 | 2.495 | 0.457 | 0.055 |"
         in text
     )
     # a block with no flops (the ElementwiseLanes mul) holds "–"
     (mul,) = [x for x in text.splitlines()
-              if x.startswith("| mul | mul | ElementwiseLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
+              if x.startswith("| vmul | vmul | ElementwiseLanes |") and len(x.split(" | ")) == 11]  # fmt: skip
     assert mul.split(" | ")[9] == "–", mul
     assert (f"| dot | L1 accesses (placeholder, 4 × e_load per bit) | {l1.words} | {l1.bits} | "
             f"{l1.energy_nj:.3f} |") in text  # fmt: skip
@@ -579,13 +588,71 @@ def test_the_estimate_beside_the_counters(dot1, dot4):
     r = reports_of(dot1)
     e = r.design.estimate
     assert [(g.group, g.cycles, g.bottleneck, g.ramp, g.stall, g.counter) for g in e.groups] == [
-        ("mul", 16, 16, 0, 0, 19), ("sum", 17, 16, 1, 0, 19)]  # fmt: skip
+        ("vmul", 16, 16, 0, 0, 19), ("vsum", 17, 16, 1, 0, 19)]  # fmt: skip
     assert (e.accelerator_cycles, e.not_mapped, e.l1_size) == (33, 0, 128 * 1024)
     text = render_design(r.design)
-    assert "## Estimate" in text and "| mul | 16 | 16 | 0 | 0 | 19 |" in text
-    assert r.run.check.expected == r.run.check.counters == {"mult_mul": 19, "sum_sum": 19}
-    assert "mult_mul 19 (expected 19, a guide), sum_sum 19 (expected 19, a guide)" in render_run(
+    assert "## Estimate" in text and "| vmul | 16 | 16 | 0 | 0 | 19 |" in text
+    assert r.run.check.expected == r.run.check.counters == {"mult_vmul": 19, "sum_vsum": 19}
+    assert "mult_vmul 19 (expected 19, a guide), sum_vsum 19 (expected 19, a guide)" in render_run(
         r.run
     )
     four = reports_of(dot4)
     assert four.run.check.expected == four.run.check.counters == {"mult_dot": 133}
+
+
+# =============================================================================
+# The accelerators, one streamer set each (D157): dot_1 and dot_1_enc
+# =============================================================================
+
+
+@pytest.fixture(scope="module")
+def dot1_sets(tmp_path_factory):
+    from tests.run.helpers import RECORDED
+    from tests.viz.helpers import recorded_run
+
+    base = tmp_path_factory.mktemp("sets")
+    return {
+        d: recorded_run(base / f"{d}_task", "task", RECORDED / d) for d in ("dot_1", "dot_1_enc")
+    }
+
+
+def test_run_md_has_a_row_per_accelerator(dot1_sets):
+    """dot_1: vmul 960-981 and vsum 982-999, each its own streamer busy window and COUNTER;
+    dot_1_enc: one accelerator dot, 960-996, its streamer started twice; each task names its
+    accelerator."""
+    one, enc = (reports_of(dot1_sets[d]).run for d in ("dot_1", "dot_1_enc"))
+    assert [(a.name, a.groups, a.first, a.last, a.counters) for a in one.sets] == [
+        ("vmul", ["vmul"], 960, 981, {"vmul": [19]}), ("vsum", ["vsum"], 982, 999, {"vsum": [19]})]  # fmt: skip
+    assert [len(a.busy) for a in one.sets] == [1, 1]
+    assert one.sets[0].busy[0][1] < one.sets[1].busy[0][0]  # vsum's starts after vmul's ends
+    (dot,) = enc.sets
+    assert (dot.name, dot.groups, dot.first, dot.last, dot.counters) == (
+        "dot", ["vmul", "vsum"], 960, 996, {"vmul": [19], "vsum": [19]})  # fmt: skip
+    assert len(dot.busy) == 2  # the shared streamer, once per group's task
+    acc_of = {t.name: t.accelerator for t in one.tasks}
+    assert (acc_of["mult_vmul_a"], acc_of["sum_vsum"], acc_of["load_A"]) == ("vmul", "vsum", None)
+    text = render_run(one)
+    assert "| Accelerator | Groups | CSRs | Streamer busy | COUNTER |" in text
+    assert "| vmul | vmul | 960–981 |" in text and "| vsum | vsum | 982–999 |" in text
+    assert text.index("## Accelerators") < text.index("| Accelerator | Groups") < text.index(
+        "### Units")  # fmt: skip
+
+
+def test_design_md_has_a_row_per_accelerator_and_counts_the_streamers(dot1_sets):
+    """The same rows from the design: each set's movers, channels, temporal dims, CSRs and its
+    groups' own CSRs; the cost leaves out dot_1's 2 streamers (40 CSRs), dot_1_enc's 1 (37)."""
+    one, enc = (reports_of(dot1_sets[d]).design for d in ("dot_1", "dot_1_enc"))
+    assert [(x.name, x.movers, x.channels, x.temporal_dims, x.first, x.last, x.group_csrs)
+            for x in one.sets] == [
+        ("vmul", 3, 12, [1, 1, 1], 960, 981, {"vmul": [978, 981]}),
+        ("vsum", 2, 5, [1, 1], 982, 999, {"vsum": [995, 999]})]  # fmt: skip
+    (dot,) = enc.sets
+    assert (dot.movers, dot.channels, dot.first, dot.last, dot.group_csrs) == (
+        5, 17, 960, 996, {"vmul": [988, 991], "vsum": [992, 996]})  # fmt: skip
+    assert (one.estimate.streamers, one.estimate.csrs) == (2, 40)
+    assert (enc.estimate.streamers, enc.estimate.csrs) == (1, 37)
+    text = render_design(one)
+    assert "(2 streamers not costed, open item 110)" in text
+    assert "Not costed: 2 streamers, one per accelerator" in text and "; 40 CSRs" in text
+    assert "| vmul | vmul | 3 | 12 | 1, 1, 1 | 960–981 | vmul 978–981 |" in text
+    assert "Not costed: 1 streamer, one per accelerator" in render_design(enc)

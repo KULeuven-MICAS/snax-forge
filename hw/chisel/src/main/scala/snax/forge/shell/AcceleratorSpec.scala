@@ -2,14 +2,16 @@ package snax.forge.shell
 
 import java.nio.file.{Files, Path}
 
-/** `accelerator.json` as `Emit --spec` reads it (C§17, D145): the one description of a design point's accelerator,
-  * written by snax-forge (`snax_forge/gen/accelerator.py`) and checked by it against the datapath catalogue
-  * (`hw/chisel/blocks.json`, D130). Nothing is checked again here beyond what construction needs: the offsets as
-  * stored, contiguous in CSR order.
+/** `accelerator.json` as `Emit --spec` reads it (C§17, D145, D157): the one description of a design point's
+  * accelerators, written by snax-forge (`snax_forge/gen/accelerator.py`) and checked by it against the datapath
+  * catalogue (`hw/chisel/blocks.json`, D130). The file nests accelerators ⊃ groups ⊃ units; the shell is one for the
+  * whole design, so the reader flattens it once: the groups in CSR order across the accelerators, the outer inputs and
+  * outputs set after set (the wrapper's port order). Nothing is checked again here beyond what construction needs: the
+  * offsets as stored, contiguous in CSR order from the shell's first CSR.
   */
 object AcceleratorSpec {
 
-  /** A CSR: its offset from the accelerator's first CSR and its width, 1 to 32 bits (D152: START 1, JOBS and JOB_BEATS
+  /** A CSR: its offset from the shell's first CSR and its width, 1 to 32 bits (D152: START 1, JOBS and JOB_BEATS
     * job_width, STATUS 2, COUNTER counter_width); a read gives its bits, the upper ones 0.
     */
   case class CsrSpec(name: String, access: String, offset: Int, width: Int) {
@@ -70,14 +72,14 @@ object AcceleratorSpec {
       val Array(u, p) = e.split("\\.", 2)
       u -> p
     }
-    def outer(key: String) = d(key).arr.toSeq.map(e => end(e.str))
-    val spec           = AcceleratorSpec(
-      d("name").str,
+    val accs           = d("accelerators").arr.toSeq
+    def outer(key: String) = accs.flatMap(a => a(key).arr.toSeq.map(e => end(e.str)))
+    val spec    = AcceleratorSpec(
       d("design_point").str,
       d("tag").str,
       outer("inputs"),
       outer("outputs"),
-      d("groups").arr.toSeq.map { g =>
+      accs.flatMap(_("groups").arr.toSeq).map { g =>
         GroupSpec(
           g("name").str,
           g("csrs").arr.toSeq.map(csr),
@@ -101,9 +103,10 @@ object AcceleratorSpec {
             LinkSpec(l("name").str, end(l("from").str), end(l("to").str), l("depth").num.toInt)
           }
         )
-      }
+      },
+      accs.map(_("name").str)
     )
-    val offsets        = spec.csrs.map(_.offset)
+    val offsets = spec.csrs.map(_.offset)
     require(offsets == offsets.indices, s"CSR offsets $offsets in CSR order are not contiguous from 0")
     spec.jobWidth
     spec.counterWidth
@@ -113,13 +116,16 @@ object AcceleratorSpec {
   def load(path: Path): AcceleratorSpec = parse(Files.readString(path))
 }
 
+/** The design's accelerators, flattened (the companion's doc): every group in CSR order, every outer port set after
+  * set.
+  */
 case class AcceleratorSpec(
-  name:        String,
   designPoint: String,
   tag:         String,
   inputs:      Seq[(String, String)],
   outputs:     Seq[(String, String)],
-  groups:      Seq[AcceleratorSpec.GroupSpec]
+  groups:      Seq[AcceleratorSpec.GroupSpec],
+  sets:        Seq[String] = Seq.empty
 ) {
 
   /** Every CSR in CSR order. */

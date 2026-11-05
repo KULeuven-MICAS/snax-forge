@@ -1,0 +1,19 @@
+{
+ "design": "vecadd",
+ "design_point": "design/design_point.json",
+ "symbols": {"N": 64},
+ "cluster": "snax_forge.hjson",
+ "files": ["snax_forge.hjson", "snax_forge_vecadd_streamer_acc.hjson", "accelerator.json", "include/streamer_acc_csr_addr_map.h", "include/acc_csr.h", "include/snitch_cluster_cfg.h", "include/snitch_cluster_addrmap.h", "data.h", "main.c", "manifest.json"],
+ "program": "main.c",
+ "trace": "snax_acc0/unit",
+ "csrs": {
+  "streamers": [{"name": "acc", "first": 960, "last": 977, "trace": "snax_acc0/streamer_acc"}],
+  "accelerator": {
+   "ACC_RW_START": 978,
+   "ACC_RW_JOBS": 979,
+   "ACC_RO_STATUS": 980,
+   "ACC_RO_COUNTER": 981
+  }
+ },
+ "tasks": [{"name": "add_acc", "beats": 16, "csrs": {"JOBS": 16}}]
+}

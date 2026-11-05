@@ -128,15 +128,15 @@ def test_the_bank_bound_of_vecmul():
 
 @pytest.mark.slow
 def test_the_bank_bound_of_dot_1_per_group():
-    """dot 1 at N = 2048, W = 8: the mul's 3 ports of 256 beats x 8 channels, 6144 words, 192
+    """dot 1 at N = 2048, W = 8: vmul's 3 ports of 256 beats x 8 channels, 6144 words, 192
     banked cycles under its 256; the sum's in (256 x 8) and out (1 word), 2049 words, 65."""
     mul, total = estimated("dot_1", N=2048, W=8).groups
     assert [(g.name, g.cycles, g.bank_bound) for g in (mul, total)] == [
-        ("mul", 256, 192), ("sum", 257, 65)]  # fmt: skip
+        ("vmul", 256, 192), ("vsum", 257, 65)]  # fmt: skip
     assert mul.bank_bound_note is None and total.bank_bound_note is None
     # at W = 16 the mul's streams, its own only (D155, C§14), need L1 time over its 128 cycles
     mul, total = estimated("dot_1", N=2048, W=16).groups
-    assert mul.bank_bound_note == ("mul: the streams move 6144 words over 32 banks, at least 192 "
+    assert mul.bank_bound_note == ("vmul: the streams move 6144 words over 32 banks, at least 192 "
                                    "cycles of L1 time against the ideal 128")  # fmt: skip
     assert (total.bank_bound, total.bank_bound_note) == (65, None)
 

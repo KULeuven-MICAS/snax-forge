@@ -2,11 +2,13 @@
 // design/design_point.json. Do not edit: run `pixi run gen-gvsoc
 // design/design_point.json` again.
 // The cluster snax_forge_cluster: platforms/snax_forge_cluster.hjson with
-// platform snax_forge's values and the slot snax_forge set for accelerator dot
-// of group instance mul, BRM elementwise_mul, implementation
-// chisel_tiled_spatial, datapath ElementwiseLanes; group instance sum, BRM
-// accumulate, implementation chisel_adder_tree, datapath TreeAccumulate; its
-// streamer in snax_forge_streamer.hjson, its accelerator in accelerator.json.
+// platform snax_forge's values and its slot the entry snax_forge_dot_1, one
+// streamer set per accelerator: accelerator vmul: instance vmul, BRM
+// elementwise_mul, implementation chisel_tiled_spatial, datapath
+// ElementwiseLanes; accelerator vsum: instance vsum, BRM accumulate,
+// implementation chisel_adder_tree, datapath TreeAccumulate; each set's
+// streamer in snax_forge_dot_1_streamer_<set>.hjson, the accelerators in
+// accelerator.json.
 {
  "nr_s1_quadrant": 1,
  "s1_quadrant": {"nr_clusters": 1},
@@ -76,14 +78,25 @@
   "xfvec": false,
   "snax_acc_cfg": [
    {
-    "snax_acc_name": "snax_forge",
+    "snax_acc_name": "snax_forge_dot_1",
     "snax_tcdm_ports": 17,
-    "sparse_interconnect_config": [[17, 1]],
-    "snax_num_rw_csr": 5,
-    "snax_num_ro_csr": 4,
+    "sparse_interconnect_config": [[12, 1], [5, 1]],
     "snax_disable_csr_manager": true,
     "snax_forge_rtl": "rtl/files.f",
-    "snax_streamer_cfg": {"$ref": "snax_forge_streamer.hjson"},
+    "snax_streamer_sets": [
+     {
+      "name": "vmul",
+      "snax_streamer_cfg": {"$ref": "snax_forge_dot_1_streamer_vmul.hjson"},
+      "snax_num_rw_csr": 2,
+      "snax_num_ro_csr": 2
+     },
+     {
+      "name": "vsum",
+      "snax_streamer_cfg": {"$ref": "snax_forge_dot_1_streamer_vsum.hjson"},
+      "snax_num_rw_csr": 3,
+      "snax_num_ro_csr": 2
+     }
+    ],
     "snax_datapath_cfg": {"$ref": "accelerator.json"}
    }
   ],

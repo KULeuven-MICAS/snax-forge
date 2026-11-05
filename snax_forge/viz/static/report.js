@@ -7,7 +7,7 @@
 // arranges numbers. Components appear in the cluster's order: the
 // accelerator, its movers, the DMA, the cores.
 
-import { CLASS_GROUP as GROUP, h, int, pct, section, table, unitFacts, unitsOf } from "./dom.js";
+import { CLASS_GROUP as GROUP, accelGroup, h, int, pct, section, table, unitFacts, unitsOf } from "./dom.js";
 
 // Cycle classes per component kind, in CONTRACTS.md section 7 order.
 const CLASS_ORDER = {
@@ -75,15 +75,18 @@ function accelSection(detail) {
     "Utilisation is busy cycles over the program's window: a firing and the II gap after it (D59).",
     names.map((n) => {
       const a = profile.accelerators[n];
+      // accelerator ▸ group, as the editor's Bindings nest them (D156), one streamer set each (D157)
+      const own = unitsOf(acc.description, n)[0];
+      const where = own ? accelGroup(own.accelerator, own.group) : n;
       return h("div", { class: "block" },
-        h("h3", {}, n, h("span", { class: "kind" }, `on core${acc.core}`)),
+        h("h3", {}, n, h("span", { class: "kind" }, `${where === n ? "" : `${where}, `}on core${acc.core}`)),
         unitsOf(acc.description, n).map((x) => h("p", { class: "note" }, unitFacts(x))),
         h("div", { class: "util" },
           h("div", { class: "meter" }, h("span", { class: "g-busy", style: { width: `${100 * a.utilisation}%` } })),
           h("b", {}, `${(100 * a.utilisation).toFixed(1)}%`), ` utilisation, ${int(a.firings)} firings`),
         // its group's movers in a collapsible (C§7: mul ▸ mul_a, mul_b, mul_out); R3 styles it
         ((movers) => h("details", { class: "group-movers" },
-          h("summary", {}, `${n} ▸ ${movers.map((m) => m.name).join(", ")}`),
+          h("summary", {}, `${where} ▸ ${movers.map((m) => m.name).join(", ")}`),
           table(
             [{ key: "port", label: "Port" }, { key: "mover", label: "Mover" }, { key: "dir", label: "Direction" }, { key: "num_ch", label: "num_ch", num: true }],
             movers.map((m) => ({ port: m.port, mover: m.name, dir: m.write ? "write" : "read", num_ch: m.lanes })))))(

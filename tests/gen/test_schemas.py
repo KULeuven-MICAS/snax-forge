@@ -20,6 +20,11 @@ from .helpers import SOURCE, SUB, parsed, point, validate
 CLUSTER_SCHEMA = SUB / "sw" / "docs" / "schema" / "snitch_cluster.schema.json"
 
 
+def G(d: dict) -> dict:  # a short name for the parametrize table
+    """accelerator.json's first accelerator's first group."""
+    return d["accelerators"][0]["groups"][0]
+
+
 @pytest.fixture(scope="module", params=["vecadd", "vsum"])
 def folder(request, tmp_path_factory):
     tmp = tmp_path_factory.mktemp(request.param)
@@ -34,34 +39,46 @@ def test_the_schemas_are_schemas(name):
     Draft202012Validator.check_schema(schema(name))
 
 
+STREAMER = "streamer_acc.hjson"  # the one set's file, after snax_forge_<design>_
+
+
+def _streamer(folder: Path) -> Path:
+    """The folder's one streamer file, ``snax_forge_<design>_streamer_acc.hjson``."""
+    return folder / f"snax_forge_{folder.name}_{STREAMER}"
+
+
 def test_the_writers_files_validate(folder):
-    validate("streamer", parsed(folder / "snax_forge_streamer.hjson"))
+    validate("streamer", parsed(_streamer(folder)))
     validate("accelerator", parsed(folder / "accelerator.json"))
 
 
 @pytest.mark.parametrize(
     ("name", "file", "edit"),
     [
-        ("streamer", "snax_forge_streamer.hjson", lambda d: d["data_reader_params"].pop("fifo_depth")),
-        ("streamer", "snax_forge_streamer.hjson", lambda d: d.update(snax_library_name="snax-alu")),
-        ("streamer", "snax_forge_streamer.hjson",
+        ("streamer", STREAMER, lambda d: d["data_reader_params"].pop("fifo_depth")),
+        ("streamer", STREAMER, lambda d: d.update(snax_library_name="snax-alu")),
+        ("streamer", STREAMER,
          lambda d: d["data_writer_params"].update(num_channel=[0])),
-        ("streamer", "snax_forge_streamer.hjson", lambda d: d.clear()),
-        ("accelerator", "accelerator.json", lambda d: d.pop("name")),
+        ("streamer", STREAMER, lambda d: d.clear()),
+        ("accelerator", "accelerator.json", lambda d: d.pop("tag")),
+        ("accelerator", "accelerator.json", lambda d: d.update(tag="snax-forge")),
         ("accelerator", "accelerator.json", lambda d: d.update(fields=["loopCount"])),
-        ("accelerator", "accelerator.json", lambda d: d.update(inputs=[])),
-        ("accelerator", "accelerator.json", lambda d: d.update(inputs=["a"])),
-        ("accelerator", "accelerator.json", lambda d: d["groups"][0].update(links=[{}])),
-        ("accelerator", "accelerator.json", lambda d: d["groups"][0]["csrs"][2].update(width=32)),
-        ("accelerator", "accelerator.json", lambda d: d["groups"][0]["csrs"][0].pop("width")),
+        ("accelerator", "accelerator.json", lambda d: d.update(accelerators=[])),
+        ("accelerator", "accelerator.json", lambda d: d.update(groups=d["accelerators"][0]["groups"])),
+        ("accelerator", "accelerator.json", lambda d: d["accelerators"][0].pop("name")),
+        ("accelerator", "accelerator.json", lambda d: d["accelerators"][0].update(inputs=[])),
+        ("accelerator", "accelerator.json", lambda d: d["accelerators"][0].update(inputs=["a"])),
+        ("accelerator", "accelerator.json", lambda d: G(d).update(links=[{}])),
+        ("accelerator", "accelerator.json", lambda d: G(d)["csrs"][2].update(width=32)),
+        ("accelerator", "accelerator.json", lambda d: G(d)["csrs"][0].pop("width")),
         ("accelerator", "accelerator.json",
-         lambda d: d["groups"][0]["units"][0]["ports"]["a"].update(dtype="float64")),
-        ("accelerator", "accelerator.json",
-         lambda d: d["groups"][0]["units"][0].update(wait="lockstep")),
+         lambda d: G(d)["units"][0]["ports"]["a"].update(dtype="float64")),
+        ("accelerator", "accelerator.json", lambda d: G(d)["units"][0].update(wait="lockstep")),
     ],
 )  # fmt: skip
 def test_a_broken_file_does_not_validate(folder, name, file, edit):
-    d = copy.deepcopy(parsed(folder / file))
+    path = _streamer(folder) if file == STREAMER else folder / file
+    d = copy.deepcopy(parsed(path))
     edit(d)
     with pytest.raises(ValidationError):
         validate(name, d)

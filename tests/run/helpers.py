@@ -1,5 +1,6 @@
-"""Shared snippets for the run tests: a cluster's three description files and design point, as the
-generator writes them for vecadd on snax_forge (cut to what run/ reads), and GVSoC header lines."""
+"""Shared snippets for the run tests: a cluster's description files (the cluster file, its one
+streamer set's file, accelerator.json) and design point, as the generator writes them for vecadd
+on snax_forge (cut to what run/ reads), and GVSoC header lines."""
 
 from __future__ import annotations
 
@@ -47,6 +48,9 @@ def load_recorded(name: str | Path, events: str = "events.log") -> Recorded:
     )
 
 
+# vecadd's one streamer set, acc, and its file (D157)
+STREAMER_FILE = "snax_forge_vecadd_streamer_acc.hjson"
+
 CLUSTER: dict[str, Any] = {
     "cluster": {
         "cluster_base_addr": 0x10000000,
@@ -58,8 +62,10 @@ CLUSTER: dict[str, Any] = {
     "acc_core": {
         "xdma": False,
         "snax_acc_cfg": [{
-            "snax_acc_name": "snax_forge",
-            "snax_streamer_cfg": {"$ref": "snax_forge_streamer.hjson"},
+            "snax_acc_name": "snax_forge_vecadd",
+            "snax_streamer_sets": [{"name": "acc",
+                                    "snax_streamer_cfg": {"$ref": STREAMER_FILE},
+                                    "snax_num_rw_csr": 2, "snax_num_ro_csr": 2}],
             "snax_datapath_cfg": {"$ref": "accelerator.json"},
         }],
     },
@@ -89,9 +95,21 @@ POINT: dict[str, Any] = {
 }
 
 
-def files() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Fresh copies of the cluster file, the streamer file, accelerator.json, the point."""
-    return tuple(copy.deepcopy(x) for x in (CLUSTER, STREAMER, UNIT, POINT))  # type: ignore[return-value]
+# vecadd's manifest, what run/ reads of it: its one set's streamer range and trace path (C§16)
+MANIFEST: dict[str, Any] = {
+    "csrs": {"streamers": [{"name": "acc", "first": 960, "last": 977,
+                            "trace": "snax_acc0/streamer_acc"}]},
+}  # fmt: skip
+
+
+def files() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any], dict[str, Any],
+                     dict[str, Any]]:  # fmt: skip
+    """Fresh copies of the cluster file, the streamer files by set (vecadd's one, ``acc``),
+    accelerator.json, the point and the manifest: ``cluster_from``'s arguments."""
+    cluster, streamer, unit, point, manifest = (
+        copy.deepcopy(x) for x in (CLUSTER, STREAMER, UNIT, POINT, MANIFEST)
+    )
+    return cluster, {"acc": streamer}, unit, point, manifest
 
 
 def line(path: str, trace: str, text: str, cycle: int = 0) -> str:
@@ -136,7 +154,7 @@ def synthetic(
     from snax_forge.lower.tasks import Configure
 
     acc = cluster.accelerator
-    unit, streamer = f"snax_acc{acc.core}/unit", f"snax_acc{acc.core}/streamer"
+    unit, streamer = f"snax_acc{acc.core}/unit", acc.csrs.sets[0].trace
     pa, pd = f"pe{acc.core}", f"pe{cluster.dma_core}"
     ev: list[tuple[int, str, str, str]] = []  # cycle, path, trace, text
     on = LEVELS.index(level) if level in LEVELS else 0
@@ -212,7 +230,7 @@ def synthetic(
         for lane, port in enumerate(p.ports):
             index = input_index(cluster, port)
             add(end, "tcdm/snax_xbar", "summary", f"input index={index} name=snax_acc"
-                f"{acc.core}.streamer.{p.gvsoc}.lane{lane} grants={traffic.grants[index]} "
+                f"{acc.core}.streamer_{p.set}.{p.gvsoc}.lane{lane} grants={traffic.grants[index]} "
                 f"stalls={traffic.stalls[index]} stalls_dma=0 whole_run=0")  # fmt: skip
     for i in range(cluster.nb_cores):
         add(end, "tcdm/snax_xbar", "summary", f"input index={1000 + i} name=core{i} grants=300 "
@@ -330,7 +348,7 @@ class Traffic:
         acc = c.accelerator
         readers = [m for m in acc.movers if not m.write]
         writer = next(m for m in acc.movers if m.write)
-        streamer = f"snax_acc{acc.core}/streamer"
+        streamer = acc.csrs.sets[0].trace
         unit = f"snax_acc{acc.core}/unit"
 
         def addr(m: Any, b: int, lane: int) -> int:

@@ -11,32 +11,31 @@ from dataclasses import replace
 
 import pytest
 
-from snax_forge.design import DesignPoint, run_checks
-from snax_forge.dfg import Graph
+from snax_forge.design import DesignPoint
 from snax_forge.gen import describe
 from snax_forge.gen import gvsoc as gen_mod
 from snax_forge.gen.data import arrays as data_arrays
 from snax_forge.lower import CError, TaskList, main_c, task_list
 from snax_forge.lower.c import cores, job_values
-from tests.design.helpers import chained, design
 from tests.gen.helpers import SUB, bound_vecmul, point
-from tests.helpers import SUBMODULE_MISSING, bound_vsum, graph_dict
+from tests.helpers import SUBMODULE_MISSING, bound_vsum
 
 POINT = "out/design/vecadd/design_point.json"
 
 
 def parts(tmp_path, graph=None, name="vecadd", acc=None):
     """What main_c reads for vecadd (or ``graph``) on snax_forge: the source, its slot named
-    as the generator names it; the description ``describe``'s unless ``acc`` is given."""
+    as the generator names it (the tag); the description ``describe``'s unless ``acc`` is
+    given."""
     p = DesignPoint.load(point(tmp_path, name=name, graph=graph))
     acc = describe(p, POINT) if acc is None else acc
     cluster = gen_mod.source(p.platform, tmp_path)
     _, slot = gen_mod.find_slot(cluster, p.platform)
-    slot["snax_acc_name"] = p.platform.accelerator_slot
+    slot["snax_acc_name"] = acc.tag
     return p, task_list(p), cluster, acc, data_arrays(p)
 
 
-INCLUDES = ["data.h", "acc_csr.h", "streamer_csr_addr_map.h"]
+INCLUDES = ["data.h", "acc_csr.h", "streamer_acc_csr_addr_map.h"]
 
 
 def text(tmp_path, edit_tasks=None, edit_cluster=None, **kw) -> str:
@@ -110,7 +109,7 @@ def test_vecadd_barriers_follow_the_cross_core_waits(tmp_path):
     assert c1[b1[0] - 1] == "snrt_dma_wait_all();"
     assert c0[b0[1] - 1] == "forge_counter[0] = csrr_ss(ACC_RO_COUNTER);"
     assert c1[b1[2] - 1] == "snrt_dma_wait_all();"
-    assert c0[b0[0] + 1] == "csrw_ss(STREAMER_START_CSR, 1);"
+    assert c0[b0[0] + 1] == "csrw_ss(ACC_STREAMER_START_CSR, 1);"
     assert c1[b1[1] + 1] == "snrt_dma_start_1d(C, (void *)0x10000400, 512);"
     # the function ends after the last barrier; forge_check follows in main
     assert c0[b0[2] + 1] == "return 0;"
@@ -132,17 +131,19 @@ def test_a_dependence_on_a_dma_task_brings_its_wait_back(tmp_path):
 
 
 def test_vecadd_starts_the_movers_with_one_csr_then_the_accelerator(tmp_path):
+    """Its set's start (D157: every streamer macro prefixed with the set's name), then START."""
     src = text(tmp_path)
-    assert src.count("csrw_ss(STREAMER_START_CSR, 1);") == 1
+    assert src.count("csrw_ss(ACC_STREAMER_START_CSR, 1);") == 1
     # the two start CSRs back to back
-    assert "csrw_ss(STREAMER_START_CSR, 1);\n    csrw_ss(ACC_RW_START, 1);" in src
+    assert "csrw_ss(ACC_STREAMER_START_CSR, 1);\n    csrw_ss(ACC_RW_START, 1);" in src
 
 
 def test_vecadd_configures_from_the_task_values(tmp_path):
     src = text(tmp_path)
     for line in [
-        "csrw_ss(BASE_PTR_READER_1_LOW, 0x10000200);", "csrw_ss(T_BOUND_WRITER_0_0, 16);",
-        "csrw_ss(T_STRIDE_READER_0_0, 32);", "csrw_ss(S_STRIDE_READER_0_0, 8);",
+        "csrw_ss(ACC_BASE_PTR_READER_1_LOW, 0x10000200);",
+        "csrw_ss(ACC_T_BOUND_WRITER_0_0, 16);", "csrw_ss(ACC_T_STRIDE_READER_0_0, 32);",
+        "csrw_ss(ACC_S_STRIDE_READER_0_0, 8);",
         "csrw_ss(ACC_RW_JOBS, 16);", "snrt_dma_start_1d((void *)0x10000000, A, 512);",
         "snrt_dma_start_1d(C, (void *)0x10000400, 512);",
     ]:  # fmt: skip
@@ -158,8 +159,9 @@ def test_vecadd_checks_itself(tmp_path):
     assert "static uint32_t forge_counter[1];" in src
     f = functions(src)
     assert "forge_counter[0] = csrr_ss(ACC_RO_COUNTER);" in f["forge_core_0"]
-    # the wait polls STATUS bit 0 (busy), then the streamer
+    # the wait polls STATUS bit 0 (busy), then its set's streamer
     assert "while (csrr_ss(ACC_RO_STATUS) & 1) {" in f["forge_core_0"]
+    assert "while (csrr_ss(ACC_STREAMER_BUSY_CSR)) {" in f["forge_core_0"]
     assert f["forge_check"][-2:] == ['printf("forge errors: %d\\n", err);', "return err;"]
 
 
@@ -210,7 +212,7 @@ def test_refused_without_one_dma_core(tmp_path):
     with pytest.raises(CError, match=r"\[c.cores\] .*xdma on cores \[\]"):
         text(tmp_path, edit_cluster=no_dma)
     p, *_ = parts(tmp_path)
-    assert cores(gen_mod.source(p.platform, tmp_path), "snax_forge").count == 2
+    assert cores(gen_mod.source(p.platform, tmp_path), "snax_forge").count == 2  # the source's
 
 
 def test_refused_a_start_of_some_movers(tmp_path):
@@ -273,7 +275,9 @@ def test_refused_a_csr_the_description_lacks(tmp_path):
     no_jobs = replace(group, csrs=[c for c in group.csrs if c.name != "JOBS"])
     no_jobs = replace(no_jobs, csrs=[replace(c, offset=i) for i, c in enumerate(no_jobs.csrs)])
     with pytest.raises(CError, match=r"\[c.csrs\] add_acc: unit acc's group acc has no CSR JOBS"):
-        main_c(p, tasks, cluster, replace(acc, groups=[no_jobs]), arrays, INCLUDES, POINT)
+        (a,) = acc.accelerators
+        main_c(p, tasks, cluster, replace(acc, accelerators=[replace(a, groups=[no_jobs])]), arrays,
+               INCLUDES, POINT)  # fmt: skip
 
 
 def test_job_values():
@@ -289,85 +293,121 @@ def test_job_values():
 
 
 def dot1_text(tmp_path) -> str:
-    """dot 1's main.c: groups mul and sum in the accelerator dot (D148)."""
-    from tests.gen.helpers import bound_dot1
+    """dot_1_enc's main.c: groups vmul and vsum in the accelerator dot (D148)."""
+    from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
     return main_c(p, tasks, cluster, acc, arrays, ["data.h", "dot_csr.h", STREAMER], POINT)
 
 
-STREAMER = "streamer_csr_addr_map.h"
+STREAMER = "streamer_dot_csr_addr_map.h"
 
 
 def test_dot_1_runs_each_group_with_its_own_csrs(tmp_path):
-    """Per task: every mover (the other group's at bound 0), the group's JOBS (and JOB_BEATS),
-    one streamer start, the group's START; then its STATUS, the streamer's busy, its COUNTER."""
+    """Per task: every mover of the one set dot (the other group's at bound 0), the group's JOBS
+    (and JOB_BEATS), the set's streamer start, the group's START; then its STATUS, the set's
+    streamer busy, its COUNTER."""
     core = functions(dot1_text(tmp_path))["forge_core_0"]
-    acc = [x for x in core if "DOT_" in x or "STREAMER_" in x or x.startswith("forge_counter")]
+    acc = [x for x in core if "_RW_" in x or "_RO_" in x or "STREAMER_" in x
+           or x.startswith("forge_counter")]  # fmt: skip
     assert acc == [
-        "csrw_ss(DOT_RW_MUL_JOBS, 16);",
-        "csrw_ss(STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_MUL_START, 1);",
-        "csrw_ss(DOT_RW_SUM_JOBS, 1);", "csrw_ss(DOT_RW_SUM_JOB_BEATS, 16);",
-        "while (csrr_ss(DOT_RO_MUL_STATUS) & 1) {", "while (csrr_ss(STREAMER_BUSY_CSR)) {",
-        "forge_counter[0] = csrr_ss(DOT_RO_MUL_COUNTER);",
-        "csrw_ss(STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_SUM_START, 1);",
-        "while (csrr_ss(DOT_RO_SUM_STATUS) & 1) {", "while (csrr_ss(STREAMER_BUSY_CSR)) {",
-        "forge_counter[1] = csrr_ss(DOT_RO_SUM_COUNTER);",
+        "csrw_ss(DOT_RW_VMUL_JOBS, 16);",
+        "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_VMUL_START, 1);",
+        "csrw_ss(DOT_RW_VSUM_JOBS, 1);", "csrw_ss(DOT_RW_VSUM_JOB_BEATS, 16);",
+        "while (csrr_ss(DOT_RO_VMUL_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
+        "forge_counter[0] = csrr_ss(DOT_RO_VMUL_COUNTER);",
+        "csrw_ss(DOT_STREAMER_START_CSR, 1);", "csrw_ss(DOT_RW_VSUM_START, 1);",
+        "while (csrr_ss(DOT_RO_VSUM_STATUS) & 1) {", "while (csrr_ss(DOT_STREAMER_BUSY_CSR)) {",
+        "forge_counter[1] = csrr_ss(DOT_RO_VSUM_COUNTER);",
     ]  # fmt: skip
-    bounds = [x for x in core if x.startswith("csrw_ss(T_BOUND_")]
+    bounds = [x for x in core if x.startswith("csrw_ss(DOT_T_BOUND_")]
     assert bounds == [
-        "csrw_ss(T_BOUND_READER_0_0, 16);", "csrw_ss(T_BOUND_READER_1_0, 16);",
-        "csrw_ss(T_BOUND_WRITER_0_0, 16);", "csrw_ss(T_BOUND_READER_2_0, 0);",
-        "csrw_ss(T_BOUND_WRITER_1_0, 0);",
-        "csrw_ss(T_BOUND_READER_0_0, 0);", "csrw_ss(T_BOUND_READER_1_0, 0);",
-        "csrw_ss(T_BOUND_WRITER_0_0, 0);", "csrw_ss(T_BOUND_READER_2_0, 16);",
-        "csrw_ss(T_BOUND_WRITER_1_0, 1);",
+        "csrw_ss(DOT_T_BOUND_READER_0_0, 16);", "csrw_ss(DOT_T_BOUND_READER_1_0, 16);",
+        "csrw_ss(DOT_T_BOUND_WRITER_0_0, 16);", "csrw_ss(DOT_T_BOUND_READER_2_0, 0);",
+        "csrw_ss(DOT_T_BOUND_WRITER_1_0, 0);",
+        "csrw_ss(DOT_T_BOUND_READER_0_0, 0);", "csrw_ss(DOT_T_BOUND_READER_1_0, 0);",
+        "csrw_ss(DOT_T_BOUND_WRITER_0_0, 0);", "csrw_ss(DOT_T_BOUND_READER_2_0, 16);",
+        "csrw_ss(DOT_T_BOUND_WRITER_1_0, 1);",
     ]  # fmt: skip
 
 
 def test_dot_1_checks_both_counters(tmp_path):
     check = functions(dot1_text(tmp_path))["forge_check"]
-    assert 'printf("forge counter mult_mul: %u\\n", forge_counter[0]);' in check
-    assert 'printf("forge counter sum_sum: %u\\n", forge_counter[1]);' in check
+    assert 'printf("forge counter mult_vmul: %u\\n", forge_counter[0]);' in check
+    assert 'printf("forge counter sum_vsum: %u\\n", forge_counter[1]);' in check
 
 
 def test_refused_a_start_without_the_idle_movers(tmp_path):
-    from tests.gen.helpers import bound_dot1
+    from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
     d = tasks.to_dict()
     for s in d["steps"]:
-        if s["op"] == "start" and "mult_mul" in s["tasks"]:
-            s["tasks"] = [t for t in s["tasks"] if not t.startswith("mult_sum")]
-    d["steps"] = [s for s in d["steps"] if s.get("task_name", "").startswith("mult_sum") is False]
+        if s["op"] == "start" and "mult_vmul" in s["tasks"]:
+            s["tasks"] = [t for t in s["tasks"] if not t.startswith("mult_vsum")]
+    d["steps"] = [s for s in d["steps"] if s.get("task_name", "").startswith("mult_vsum") is False]
     with pytest.raises(CError, match=r"\[c.start\] .*the other groups' idle at bound 0"):
         main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
 
 
 def test_refused_an_idle_mover_at_stride_0(tmp_path):
     """An idle mover starts anyway when its first temporal stride is 0 (Reader.scala)."""
-    from tests.gen.helpers import bound_dot1
+    from tests.gen.helpers import bound_dot1_enc
 
-    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1(), name="dot_1")
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_dot1_enc(), name="dot_1_enc")
     d = tasks.to_dict()
     for s in d["steps"]:
-        if s.get("task_name") == "mult_sum_a":
+        if s.get("task_name") == "mult_vsum_a":
             s["values"]["temporal_strides"] = [0]
-    with pytest.raises(CError, match=r"\[c.idle\] mult_sum_a: an idle mover"):
+    with pytest.raises(CError, match=r"\[c.idle\] mult_vsum_a: an idle mover"):
         main_c(p, TaskList.from_dict(d), cluster, acc, arrays, [], POINT)
 
 
-def test_refused_two_instances(tmp_path):
-    """Lowering's own guard: on snax_forge the design checks refuse two accelerators first
-    (gen.instances, tests/design), on small16, which has no slot, the C backend does."""
-    _, _, cluster, acc, _ = parts(tmp_path / "one")
-    gd = graph_dict()
-    chained(gd)
-    d = design(Graph.from_dict(gd))
-    assert run_checks(d) == []
-    p = DesignPoint.of(d, "chained")
-    with pytest.raises(CError, match=r"\[c.instances\] 2 accelerators \['acc', 'acc2'\]"):
-        main_c(p, task_list(p), cluster, acc, [], INCLUDES, POINT)
+def test_an_idle_mover_outside_an_encapsulated_set_is_refused(tmp_path):
+    """c.idle's stride check is an encapsulated set's (dot_1_enc, above); in a set of one group an
+    idle mover is no other group's, so the start is refused (c.start), whatever its stride."""
+    from tests.gen.helpers import bound_recipe
+
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_recipe("dot_serial", "dot"),
+                                           name="dot_serial")  # fmt: skip
+    d = tasks.to_dict()
+    for s in d["steps"]:
+        if s.get("task_name") == "sum_sum_a":
+            s["values"]["temporal_bounds"] = [0]
+    with pytest.raises(CError, match=r"\[c.start\] sum_sum_a: an idle mover .* of sum, a set of "
+                       "one group"):  # fmt: skip
+        main_c(p, TaskList.from_dict(d), cluster, acc, arrays, INCLUDES, POINT)
+
+
+def test_two_accelerators_each_run_through_their_own_set(tmp_path):
+    """D157: dot_serial's mul and sum are two accelerators, two streamer sets of the one entry;
+    each task configures, starts and waits on its own set's macros and its own header's CSRs
+    (c.instances retired)."""
+    from tests.gen.helpers import bound_recipe
+
+    p, tasks, cluster, acc, arrays = parts(tmp_path, graph=bound_recipe("dot_serial", "dot"),
+                                           name="dot_serial")  # fmt: skip
+    assert [a.name for a in acc.accelerators] == ["mul", "sum"]
+    core = functions(main_c(p, tasks, cluster, acc, arrays, INCLUDES, POINT))["forge_core_0"]
+    acc_lines = [x for x in core if "START" in x or "STATUS" in x or "BUSY" in x
+                 or x.startswith("forge_counter") or x == BARRIER]  # fmt: skip
+    # mul: its set's streamers, its CSRs, its streamer start, START; sum the same once the
+    # serial sync (D158), the one wait between them, has waited for mul (its writer too, waits.py)
+    # and read its counter
+    assert acc_lines == [
+        BARRIER, "csrw_ss(MUL_STREAMER_START_CSR, 1);", "csrw_ss(MUL_RW_START, 1);",
+        "while (csrr_ss(MUL_RO_STATUS) & 1) {", "while (csrr_ss(MUL_STREAMER_BUSY_CSR)) {",
+        "forge_counter[0] = csrr_ss(MUL_RO_COUNTER);", BARRIER,
+        "csrw_ss(SUM_STREAMER_START_CSR, 1);", "csrw_ss(SUM_RW_START, 1);",
+        "while (csrr_ss(SUM_RO_STATUS) & 1) {", "while (csrr_ss(SUM_STREAMER_BUSY_CSR)) {",
+        "forge_counter[1] = csrr_ss(SUM_RO_COUNTER);", BARRIER, BARRIER,
+    ]  # fmt: skip
+    i = core.index("csrw_ss(SUM_STREAMER_START_CSR, 1);")
+    assert core.index("csrw_ss(SUM_RW_JOB_BEATS, 64);") < core.index("forge_counter[0] = "
+                                                                     "csrr_ss(MUL_RO_COUNTER);") < i  # fmt: skip
+    assert "csrw_ss(SUM_BASE_PTR_READER_0_LOW, 0x10000440);" in core  # mul's output, tmp0
+    assert "csrw_ss(SUM_RW_JOBS, 1);" in core and "csrw_ss(SUM_RW_JOB_BEATS, 64);" in core
+    assert not any("_T_BOUND_" in x and x.endswith(", 0);") for x in core)  # no idle mover
 
 
 # =============================================================================

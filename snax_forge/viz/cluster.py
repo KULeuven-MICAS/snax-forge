@@ -14,11 +14,15 @@ the run's index (index.py) that read no file; the viewer only draws their answer
   mover's class at ``t`` (the class run holding it), its grant at ``t`` and the read data
   coming back at ``t`` (the index's ``returns``); from ``stall`` its stall at ``t`` and its
   FIFO count (the last ``fifo`` line at or before ``t``, 0 before the first);
-- ``acc``: the unit whose task is open at ``t`` (the first unit when none is), its ``name``
-  and ``group``, whether its task is open, from ``beat`` its class at ``t``, its firing at
-  ``t`` with its operands' values and its push with the result; ``accelerator`` the
-  accelerator's name and ``units`` every unit so (an accelerator of several groups, D148, has
-  one per group, ``mul`` and ``sum`` in dot 1);
+- ``acc``: the unit whose task is open at ``t`` (the first unit when none is), its ``name``,
+  ``group`` and ``accelerator`` (its streamer set's), whether its task is open, from ``beat``
+  its class at ``t``, its firing at ``t`` with its operands' values and its push with the
+  result; ``accelerator`` the entry's name and ``units`` every unit so (one per group, D148:
+  ``vmul`` and ``vsum`` in dot 1);
+- ``streamers``, one per streamer set inside the accelerator (D157), in set order: its
+  ``name`` (the set's, its accelerator's), ``groups``, its CSRs (``first``, ``last``), its
+  ``movers``, and whether it is ``busy`` at ``t`` (a task of one of its movers open) with
+  that ``task``;
 - ``banks``, every bank, grouped by superbank (a DMA beat's banks): the access at ``t``
   (port, op, row, region, elements and their values, the word: a grant's, or a DMA beat's
   word on it), the read
@@ -134,6 +138,16 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
         units.append(x)
     active = next((x for x in units if x["task"] is not None), units[0] if units else {})
     unit: dict[str, Any] = {**active, "accelerator": acc.name, "units": units}
+    group_set = {g: name for name, gs in acc.accelerators() for g in gs}
+    for x in units:
+        x["set"] = group_set.get(x["group"])
+    streamers = []
+    for s in acc.csrs.sets:
+        mine = [m.name for m in acc.movers if m.set == s.name]
+        task = next((k for k in (movers[f"{m}.lane0"]["task"] for m in mine) if k), None)
+        streamers.append({"name": s.name, "groups": dict(acc.accelerators()).get(s.name, []),
+                          "first": s.first, "last": s.last, "movers": mine,
+                          "busy": task is not None, "task": task})  # fmt: skip
 
     per_sb = max(c.dma_beat_bytes // c.bank_bytes, 1)
     banks = []
@@ -166,7 +180,8 @@ def cluster_at(index: RunIndex, t: int) -> dict[str, Any]:
 
     needs = {k: v for k, v in NEEDS.items() if not index.on(v)}
     return {"t": t, "level": index.level, "filtered": index.filtered, "needs": needs,
-            "dma": {"copies": copies}, "movers": movers, "acc": unit, "banks": banks,
+            "dma": {"copies": copies}, "movers": movers, "acc": unit, "streamers": streamers,
+            "banks": banks,
             "interconnect": xbar, "events": here}  # fmt: skip
 
 

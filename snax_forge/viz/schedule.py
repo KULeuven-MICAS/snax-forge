@@ -8,13 +8,16 @@ the viewer only draws their answers.
                                         "segments": [...]}
     detail(index, start, stop)      -> the beat and stall lines of [start, stop) per lane
 
-**Lanes**, top to bottom: one per core (``core<i>``), the DMA, one per mover as the streamer
-orders them, the accelerator. A core's lane has its spans classed barrier > poll > sleep > run
+**Lanes**, top to bottom: one per core (``core<i>``), the DMA, then accelerator ▸ group, as
+the editor's Bindings nest them (D156): per accelerator, its streamer set (D157), per group its
+movers as the streamer orders them, then its unit (a linked group's one component), each
+lane with its ``accelerator`` and ``group``. A core's lane has its spans classed barrier > poll > sleep > run
 (``run/cores.py``, the profile's rule), its function spans and its CSR accesses (``csr`` and
 ``poll`` events); the DMA's one bar per copy, issue to done; a mover's and the accelerator's
 one bar per task, start to done, with the run's class totals (its ``done``'s ``cycles``) and,
 from ``beat`` on, its class runs (index.py); a mover's task with every temporal bound 0, started
-only because the movers share one start (another group's, D148), is marked ``idle``
+only because the set's movers share one start (another group's in the same encapsulated
+set, D148), is marked ``idle``
 (``RunIndex.idle``). Class names only: colours are the viewer's.
 
 **Segments** cover ``[0, T)``, ``T`` the window, with no gap and no overlap. A cycle is
@@ -94,10 +97,15 @@ def lanes(index: RunIndex) -> dict[str, Any]:
          "bytes": e["size"] * e["reps"]}
         for i, e in index.copies()]})  # fmt: skip
     acc = index.cluster.accelerator
-    for name, kind in [*((m.name, "mover") for m in acc.movers),
-                       *((u, "accelerator") for u in acc.unit_names)]:  # fmt: skip
-        tasks = sorted(index.tasks_of.get(name, []), key=lambda t: index.start[t]["t"])
-        out.append({"name": name, "kind": kind, "bars": [_bar(index, t) for t in tasks]})
+    for set_, groups in acc.accelerators():
+        for g in groups:
+            units = [u.name for u in acc.units if u.group == g]
+            rows = [*((m.name, "mover") for u in units for m in acc.movers_of(u)
+                      if m.set == set_), *((u, "accelerator") for u in units)]  # fmt: skip
+            for name, kind in rows:
+                tasks = sorted(index.tasks_of.get(name, []), key=lambda t: index.start[t]["t"])
+                out.append({"name": name, "kind": kind, "accelerator": set_, "group": g,
+                            "bars": [_bar(index, t) for t in tasks]})  # fmt: skip
     return {"level": index.level, "total_cycles": index.total_cycles, "lanes": out}
 
 

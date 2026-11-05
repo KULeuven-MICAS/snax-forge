@@ -5,7 +5,7 @@ generator the cluster file (gen/gvsoc.py). The design step writes it once every 
 has passed; it is not edited by hand.
 
     {
-     "name":       "vecadd",
+     "name":       "vecadd",  the design's name (``design_of``): the recipe's
      "graph_from": "out/sandbox/vecadd/2_bind.snaxdfg",
      "graph":      {...},     the bound graph as it was read: instances, code,
                               replaced, loop.split (D71, D82)
@@ -26,6 +26,7 @@ an edited or stale file is caught rather than lowered.
 
 from __future__ import annotations
 
+import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,9 +46,25 @@ STEP = re.compile(r"\d+_\w+\.snaxdfg")
 
 
 def design_name(graph: Path) -> str:
-    """The default name of a graph's design: the sandbox folder of a step's graph
+    """The default name of a graph's design folder: the sandbox folder of a step's graph
     (``out/sandbox/vecadd_w8/2_bind.snaxdfg`` -> ``vecadd_w8``), else the file's stem."""
     return graph.parent.name if STEP.fullmatch(graph.name) else graph.stem
+
+
+def design_of(graph: Path) -> str:
+    """The design's name, which the design point holds and the generated entry is named after
+    (``<accelerator_slot>_<name>``, D131): the ``name`` of the recipe the sandbox (or Save)
+    kept beside a step's graph, ``recipe.json``, which no ``--set`` changes
+    (``out/flow/vecmul_W32/sandbox/2_bind.snaxdfg`` -> ``vecmul``); else ``design_name``."""
+    recipe = Path(graph).parent / "recipe.json"
+    if STEP.fullmatch(Path(graph).name) and recipe.is_file():
+        try:
+            name = json.loads(recipe.read_text()).get("name")
+        except (OSError, ValueError, AttributeError):
+            name = None
+        if isinstance(name, str) and name:
+            return name
+    return design_name(Path(graph))
 
 
 @dataclass(frozen=True)

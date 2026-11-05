@@ -78,12 +78,12 @@ The Schedule tab (`docs/RUN.md` says how to open it on a server) shows one lane 
 Between them, the run is serial. The task table of `run.md` gives the bars:
 
 <!-- excerpt: vecadd_N512_stall/report/run.md -->
-| Block | # | Task | Start | Done | Cycles | Direction | Bytes |
-|---|---:|---|---:|---:|---:|---|---:|
-| dma | 0 | load_A | 78 | 155 | 77 | L2 → L1 | 4096 |
-| dma | 1 | load_B | 93 | 219 | 126 | L2 → L1 | 4096 |
-| acc | 0 | add_acc | 224 | 356 | 132 | – | – |
-| dma | 2 | store_C | 369 | 440 | 71 | L1 → L2 | 4096 |
+| Block | # | Task | Accelerator | Start | Done | Cycles | Direction | Bytes |
+|---|---:|---|---|---:|---:|---:|---|---:|
+| dma | 0 | load_A | – | 78 | 155 | 77 | L2 → L1 | 4096 |
+| dma | 1 | load_B | – | 93 | 219 | 126 | L2 → L1 | 4096 |
+| acc | 0 | add_acc | acc | 224 | 356 | 132 | – | – |
+| dma | 2 | store_C | – | 369 | 440 | 71 | L1 → L2 | 4096 |
 
 - The setup takes 78 cycles before the first copy.
 - The two loads take cycles 78 to 219, while core0 waits at a barrier from 84 to 222.
@@ -136,12 +136,12 @@ The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one. `report/r
 | acc | 64 | 1 | 1.00 | 15.1% | 68 | 94.1% | 3 | 0 | 0 |
 
 <!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
-| Block | # | Task | Start | Done | Cycles | Direction | Bytes |
-|---|---:|---|---:|---:|---:|---|---:|
-| dma | 0 | load_A | 77 | 154 | 77 | L2 → L1 | 4096 |
-| dma | 1 | load_B | 92 | 218 | 126 | L2 → L1 | 4096 |
-| acc | 0 | add_acc | 223 | 291 | 68 | – | – |
-| dma | 2 | store_C | 305 | 376 | 71 | L1 → L2 | 4096 |
+| Block | # | Task | Accelerator | Start | Done | Cycles | Direction | Bytes |
+|---|---:|---|---|---:|---:|---:|---|---:|
+| dma | 0 | load_A | – | 77 | 154 | 77 | L2 → L1 | 4096 |
+| dma | 1 | load_B | – | 92 | 218 | 126 | L2 → L1 | 4096 |
+| acc | 0 | add_acc | acc | 223 | 291 | 68 | – | – |
+| dma | 2 | store_C | – | 305 | 376 | 71 | L1 → L2 | 4096 |
 
 <!-- excerpt: vecadd_N512_W8_stall/report/run.md -->
 | DMA | Transfers | Busy | Beats read | Beats written | Bytes L2 → L1 | Bytes L1 → L2 | Bytes per busy cycle |

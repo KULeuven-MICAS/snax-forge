@@ -14,18 +14,25 @@ ports on a link with no streamer (D112) and no load or store. For each group:
     streamers    configure ``<node>_<instance>_<port>`` for every port, in the
                  BRM's port order, with values from the memlet through the
                  container's L1 layout (below)
-    idle movers  in an accelerator of several groups, configure
-                 ``<node>_<streamer>`` for every port of the other groups'
-                 units too, every temporal bound 0, so they never start: the
-                 streamer starts all its movers with one CSR; the task list
-                 holds them in the shell's order, unit by unit. Their
-                 temporal strides are a bank word, not 0: a reader whose
-                 first loop has stride 0 runs that loop once whatever its
-                 bound and hands each beat out bound times (snax_cluster's
-                 Reader.scala), so it would start and read
+    idle movers  only in an encapsulated accelerator (several groups on one
+                 streamer set, D148, D157): configure ``<node>_<streamer>``
+                 for every port of the set's other groups' units too, every
+                 temporal bound 0, so they never start: the set's streamer
+                 starts all its movers with one CSR; the task list holds them
+                 in the set's order, unit by unit. Their temporal strides
+                 are a bank word, not 0: a reader whose first loop has stride
+                 0 runs that loop once whatever its bound and hands each beat
+                 out bound times (snax_cluster's Reader.scala), so it would
+                 start and read. An accelerator's tasks hold its own set's
+                 movers only: another accelerator's streamer is another set,
+                 started by its own CSR
     accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, and its
                  named rates; a linked group's ``<node>_<group>`` with each unit's,
                  by unit
+    serial sync  when the accelerator is not the previous group's (D158):
+                 ``sync`` on the previous accelerator's task, after this
+                 group's configures and before its start, unless an ``after``
+                 of this start already holds that task (``serial_syncs``)
     start        the streamer tasks, then the accelerator task, together
     stores       for each output whose container has an L2 layout and is written
                  for the last time here: configure ``store_<C>`` (L1 -> L2)
@@ -38,6 +45,15 @@ for the task that last put its container in L1 (a load or a writer), a
 writer for the tasks that read or wrote its container since; the waits a
 busy component needs are placed later (waits.py). Every configure uses the platform's
 ``wait_mode``; so does every sync.
+
+**Accelerators run in series** (D158, C§9): the groups of one accelerator (an
+encapsulated set) follow each other through their data dependences, as
+before; between two accelerators the next one's start waits for the previous
+accelerator's task, so its streamers and CSRs are set up while the previous
+one runs and it starts when that one is done. dot 1: ``sum_vsum``'s
+configures, ``sync mult_vmul``, then the start of ``sum_vsum``'s tasks;
+dot_1_enc (one accelerator, ``dot``) has no serial sync. Overlap of
+independent accelerators is open item 109.
 
 **Streamer values from a memlet**. With the firing loops ``v_k``
 (begin ``b_k``, ``count_k`` iterations, step ``s_k``) and the container's L1
@@ -153,7 +169,44 @@ def addresses(values: dict[str, Any], spatial_bounds: list[int]) -> np.ndarray:
 
 def task_list(point: DesignPoint) -> TaskList:
     """The task list of a design point; see the module doc. Raises LowerError."""
-    return _Derivation(point).run()
+    return serial_syncs(_Derivation(point).run(), point)
+
+
+def accelerator_components(point: DesignPoint) -> dict[str, str]:
+    """Each component an accelerator task runs on (a unit, or a linked group) -> its
+    accelerator, the streamer set it is in (D157)."""
+    group = {u: k for k, units in unit_groups(point.graph).items() for u in units}
+    out: dict[str, str] = {}
+    for acc, units in accelerators(point.graph).items():
+        for u in units:
+            out[u] = out[group[u]] = acc
+    return out
+
+
+def serial_syncs(tasks: TaskList, point: DesignPoint) -> TaskList:
+    """``tasks`` with D158's serial syncs (module doc): before each start of an accelerator
+    task whose accelerator is not the previous accelerator task's, a ``sync`` on that previous
+    task, in its ``wait_mode``, unless an ``after`` of the start's tasks holds it, or a sync on it
+    comes after its start already. The configures stay where they are, before the sync."""
+    acc_of = accelerator_components(point)
+    conf = tasks.configured()
+    steps: list[Any] = []
+    prev: tuple[str, str] | None = None  # (accelerator, its accelerator task)
+    synced: set[str] = set()
+    for step in tasks.steps:
+        if isinstance(step, Sync):
+            synced.add(step.task)
+        if isinstance(step, Start):
+            accel = [t for t in step.tasks if conf[t].type == "accel"]
+            if accel:
+                acc = acc_of[conf[accel[0]].component]
+                after = {a for t in step.tasks for a in conf[t].after}
+                if prev is not None and prev[0] != acc and prev[1] not in after | synced:
+                    steps.append(Sync(prev[1], conf[prev[1]].wait_mode))
+                    synced.add(prev[1])
+                prev = (acc, accel[0])
+        steps.append(step)
+    return TaskList(tasks.name, steps)
 
 
 def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], list[Loop]]:
@@ -337,8 +390,8 @@ class _Derivation:
 
     def accelerator(self, n: Any, group: str, members: list[str] | None,
                     starts: dict[str, dict[str, Any]], own: dict[str, Configure]) -> None:  # fmt: skip
-        """The accelerator's every mover (its other groups' idle), then the group's task,
-        all started together."""
+        """Every mover of the group's accelerator, its streamer set (the set's other groups'
+        idle, in an encapsulated one only), then the group's task, all started together."""
         name = n.attrs["instance"]
         movers = []
         for unit in self.groups[accelerator_of(n)]:

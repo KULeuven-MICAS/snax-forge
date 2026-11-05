@@ -176,6 +176,7 @@ div.sched { display: flex; border: 1px solid var(--rule); background: var(--pane
 .sched-labels .lab span { font-weight: 600; }
 .sched-labels .lab.sub { padding-left: 1.2rem; font-size: 0.9em; }
 .sched-labels .lab.sub span { font-weight: 400; }
+.sched-labels .lab.head { font-size: 0.85em; color: var(--muted); border-top: 1px solid var(--rule); }
 .sched-labels small { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 svg.sched { display: block; flex: none; cursor: crosshair; }
 .row-bg { fill: var(--panel); }
@@ -307,6 +308,8 @@ i.key.idle-key { background: none; border: 1px dashed color-mix(in srgb, var(--i
 .cl-box[data-group="command"] { border-left-color: var(--command); }
 .cl-box[data-group="wait"] { border-left-color: var(--wait); }
 .cl-box.bad { border-color: var(--mem); border-left-color: var(--mem); background: var(--hot-bg); }
+.cl-sets { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0 0.4rem; }
+.cl-sets .cl-set { flex: 1 1 10rem; }
 .cl-box.plain { border-left-width: 1px; }
 .cl-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.1rem 0.4rem; }
 .cl-head small { color: var(--muted); }

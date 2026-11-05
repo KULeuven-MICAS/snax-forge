@@ -19,11 +19,12 @@ unit (``acc``), with several groups ``snax_acc<i>/unit_<unit>`` each (D148, ``mu
 a shell has no trace of its own), ``snax_acc<i>/group_<group>`` a linked group, named after
 the group (``dot``; its tasks are the group's), whose lines are at its boundary: its
 ``firings`` and ``count`` the head unit's, ``rate`` the head's firings per result of the last
-unit (snax-gvsoc's docs/EVENTS.md), ``snax_acc<i>/streamer`` with its ``mover`` the mover
-(``reader0`` -> ``acc_a``),
-``pe<i>`` the core ``core<i>``, ``idma/fe`` and the AXI backend (``idma/axi_read``,
-``idma/axi_write``) the DMA (``dma``), ``tcdm/snax_xbar`` the crossbar,
-whose inputs become ports (``snax_acc<i>.streamer.reader0.lane1`` -> ``acc_a.lane1``,
+unit (snax-gvsoc's docs/EVENTS.md), a streamer set's streamer at its trace path (the
+manifest's ``csrs.streamers[].trace``, ``snax_acc<i>/streamer_<set>``, D157) with its
+``mover`` the set's mover (``reader0`` of ``streamer_acc`` -> ``acc_a``; movers are numbered
+within their set), ``pe<i>`` the core ``core<i>``, ``idma/fe`` and the AXI backend
+(``idma/axi_read``, ``idma/axi_write``) the DMA (``dma``), ``tcdm/snax_xbar`` the crossbar,
+whose inputs become ports (``snax_acc<i>.streamer_<set>.reader0.lane1`` -> ``acc_a.lane1``,
 ``core<i>`` and ``axi`` as they are). Any other path is a RunError (``convert.path``).
 
 **The window** (task level) is the program's own (D135): on the accelerator's core, from its
@@ -111,11 +112,12 @@ def source_of(line: Line, cluster: Cluster) -> str:
     unit = acc.unit_at(last) if parent == f"snax_acc{acc.core}" else None
     if unit is not None:
         return unit.name
-    if parent == f"snax_acc{acc.core}" and last == "streamer":
+    s = acc.set_at(line.path)
+    if s is not None:
         mover = line.fields.get("mover")
         if mover is None:
             raise RunError("convert.path", f"a streamer line without its mover: {line}")
-        return acc.mover(mover).name
+        return acc.mover(mover, s.name).name
     if last == "snax_xbar":
         return XBAR
     if parent == "idma" and last in ("fe", "axi_read", "axi_write"):
@@ -129,9 +131,10 @@ def source_of(line: Line, cluster: Cluster) -> str:
 def port_of(name: str, cluster: Cluster) -> str:
     """A crossbar input's C§7 port name (module doc)."""
     acc = cluster.accelerator
-    m = re.fullmatch(rf"snax_acc{acc.core}\.streamer\.(\w+)\.lane(\d+)", name)
-    if m:
-        return f"{acc.mover(m[1]).name}.lane{m[2]}"
+    for s in acc.csrs.sets:
+        m = re.fullmatch(rf"{re.escape(s.xbar)}\.(\w+)\.lane(\d+)", name)
+        if m:
+            return f"{acc.mover(m[1], s.name).name}.lane{m[2]}"
     if name == "axi" or name in cluster.cores:
         return name
     raise RunError("convert.path", f"crossbar input {name!r}: no port of the cluster")

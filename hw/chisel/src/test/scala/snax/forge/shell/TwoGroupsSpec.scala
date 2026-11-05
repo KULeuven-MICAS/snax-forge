@@ -5,18 +5,18 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, LaneBits, Sink, Source}
 
-/** Several groups in one accelerator (D146, D148): dot 1 (C§17's table), the generated `accelerator.json` of
-  * `recipes/dot_1.json` (the fixture dot_1, snax-gvsoc's `forge/dot_1/`): group mul (ElementwiseLanes, mul, 4 lanes of
-  * int64; START 0, JOBS 1, STATUS 2, COUNTER 3) and group sum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS
-  * 5, JOB_BEATS 6, STATUS 7, COUNTER 8). Each group starts, runs and reports STATUS on its own: sum is started first
-  * and starved (its input held back), mul then runs its 3 jobs to the end while sum stays busy, then sum's input flows
-  * and it ends.
+/** Several groups in one accelerator (D146, D148): dot 1 encapsulated, the generated `accelerator.json` of
+  * `recipes/dot_1_enc.json` (the fixture dot_1_enc, snax-gvsoc's `forge/dot_1_enc/`), one accelerator `dot` in one
+  * streamer set: group vmul (ElementwiseLanes, mul, 4 lanes of int64; START 0, JOBS 1, STATUS 2, COUNTER 3) and group
+  * vsum (TreeAccumulate, 4 lanes of int64 into one; START 4, JOBS 5, JOB_BEATS 6, STATUS 7, COUNTER 8). Each group
+  * starts, runs and reports STATUS on its own: vsum is started first and starved (its input held back), vmul then runs
+  * its 3 jobs to the end while vsum stays busy, then vsum's input flows and it ends.
   */
 class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
 
-  private lazy val spec = RtlFixtures.all.find(_.name == "dot_1").get.spec
+  private lazy val spec = RtlFixtures.all.find(_.name == "dot_1_enc").get.spec
 
-  behavior of "a two-group accelerator (dot 1)"
+  behavior of "a two-group accelerator (dot_1_enc)"
 
   it should "start, run and report STATUS per group" in {
     test(new ShellHarness(spec)) { dut =>
@@ -42,7 +42,7 @@ class TwoGroupsSpec extends AnyFlatSpec with ForgeTester {
       assert(d.read(dut.csr("STATUS", mul)) == 2, "mul done")
       assert(d.read(dut.csr("COUNTER", mul)) == 3, "mul's COUNTER: three busy cycles")
       assert(d.read(dut.csr("STATUS", sum)) == 1, "sum still busy, not done")
-      assert(dut.io.bool("sum_busy_o").peek().litToBoolean && !dut.io.bool("mul_busy_o").peek().litToBoolean)
+      assert(dut.io.bool("vsum_busy_o").peek().litToBoolean && !dut.io.bool("vmul_busy_o").peek().litToBoolean)
       release = true
       while ((d.read(dut.csr("STATUS", sum)) & 1) != 0) {}
       assert(d.read(dut.csr("STATUS", sum)) == 2, "sum done")

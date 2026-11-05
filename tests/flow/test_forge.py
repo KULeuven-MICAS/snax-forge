@@ -75,7 +75,7 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
             f"in {forge / 'forge.log'}"
         ),
         f"  flow      passed: design point {flow / 'design' / 'design_point.json'}, run {flow}/run/",
-        f"  bundle    {bundle}/: snax_forge_shell_wrapper, snax-forge {COMMIT[:12]}",
+        f"  bundle    {bundle}/: snax_forge_vecadd_shell_wrapper, snax-forge {COMMIT[:12]}",
         f"  expected  {bundle / 'forge_expected.txt'}: the run's counter and data lines",
         f"  sw        {forge / 'sw' / 'forge.elf'} from the bundle (sha256 {sha[:16]}, the flow's)",
         f"SNAX-GVSoC ({flow / 'run' / 'stdout.txt'}):",
@@ -105,7 +105,7 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
         f"flow vecadd (vecadd: W=4, N=64; N=64) on snax_forge -> {flow}/",
     ]
     assert f"== bundle: {flow / 'design' / 'design_point.json'} --out {bundle}\n" in log
-    assert f"bundle {bundle}: snax_forge_shell_wrapper from " in log
+    assert f"bundle {bundle}: snax_forge_vecadd_shell_wrapper from " in log
     assert f"wrote {bundle / 'bundle.json'}\n" in log
     assert (
         log.endswith("make sw\n") and not (forge / "sw.log").exists()

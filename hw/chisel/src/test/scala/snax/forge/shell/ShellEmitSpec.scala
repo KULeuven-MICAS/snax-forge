@@ -116,6 +116,6 @@ class ShellEmitSpec extends AnyFlatSpec {
       assert(svs == listed, s"sv/ holds ${svs -- listed} besides emitted.json's files")
     }
 
-  it should "have the fixtures of two groups, a wire and a buffer" in
-    assert(Set("dot_1", "dot_4", "dot_6").subsetOf(RtlFixtures.all.map(_.name).toSet))
+  it should "have the fixtures of two accelerators, two groups in one, a wire and a buffer" in
+    assert(Set("dot_1", "dot_1_enc", "dot_4", "dot_6").subsetOf(RtlFixtures.all.map(_.name).toSet))
 }

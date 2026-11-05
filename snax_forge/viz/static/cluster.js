@@ -16,7 +16,9 @@
 //                 the DMA with L2 beside it (its own pair of lanes)
 //   arrows        reader → accelerator on a fire, accelerator → writer on a
 //                 push
-//   accelerator   its class, task, firing and push
+//   accelerator   its class, task, firing and push; inside it one streamer
+//                 box per streamer set (D157): the set's CSRs and movers,
+//                 striped busy while a task of its movers is open
 //
 // Every memory hop has two lanes, because both can happen in one cycle:
 // the request (teal, dashed, pointing to memory; red when refused)
@@ -204,7 +206,16 @@ function build(detail, first) {
   const facts = accelUnits(acc.description).map((x) => h("div", { class: "cl-line muted" }, unitFacts(x)));
   const unit = block(acc.name, "accelerator");
   const unitLines = { task: h("div", { class: "cl-line" }), fire: h("div", { class: "cl-line" }), push: h("div", { class: "cl-line" }) };
-  unit.body.append(...facts, unitLines.task, unitLines.fire, unitLines.push);
+  // one streamer box per streamer set, inside the accelerator (D157)
+  const sets = (acc.csrs?.sets ?? []).map((x) => {
+    const b = block(`streamer ${x.name}`, `CSRs ${x.first}–${x.counter}`);
+    const task = h("div", { class: "cl-line" });
+    b.el.classList.add("cl-set");
+    b.body.append(h("div", { class: "cl-line muted" }, acc.movers.filter((m) => m.set === x.name).map((m) => m.name).join(", ")), task);
+    return { name: x.name, b, task };
+  });
+  const setRow = sets.length ? h("div", { class: "cl-sets" }, sets.map((x) => x.b.el)) : null;
+  unit.body.append(...[setRow, ...facts, unitLines.task, unitLines.fire, unitLines.push].filter(Boolean));
   items.push(place(unit.el, 1, 4, Math.max(movers.length, 1)));
 
   const req = h("div", { class: "cl-req", style: { gridTemplateColumns: cols.map(track).join(" ") } }, items);
@@ -315,6 +326,12 @@ function build(detail, first) {
     setArrow(l2Pair.resp, l2back.length ? "left" : null, false, lines(l2back.map((e) => `L2 read data back: ${eventText(e)}`)));
     setText(l2Lines.req, bursts.map((b) => `${b.op === "w" ? "write" : "read"} ${b.size} B${b.region ? ` of ${b.region}` : ""}`).join("; "), "req");
     setText(l2Lines.back, l2back.length ? "read data back" : "", "resp");
+
+    for (const x of sets) {
+      const st = on ? (a.streamers ?? []).find((s) => s.name === x.name) : null;
+      setClass(x.b, st ? (st.busy ? "busy" : "idle") : null);
+      setText(x.task, st?.task ? `busy: ${st.task}` : on ? "quiet" : "");
+    }
 
     const un = on ? a.acc : {};
     setClass(unit, un.class ?? null);

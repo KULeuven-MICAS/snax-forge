@@ -191,11 +191,14 @@ def agu_nest(ptr: int, spatial_bounds: Sequence[int], spatial_strides: Sequence[
 
 
 def mover_csrs(cluster: Cluster) -> dict[str, int]:
-    """Each mover's first CSR number (its pointer's low word), in the streamer's layout."""
-    out, csr = {}, cluster.accelerator.csrs.streamer_first
-    for m in cluster.accelerator.movers:
-        out[m.name] = csr
-        csr += mover_csr_count(m.spatial_bounds, m.temporal_dim)
+    """Each mover's first CSR number (its pointer's low word), in its set's streamer layout
+    (each set's from its own first CSR, D157)."""
+    acc = cluster.accelerator
+    out, csr = {}, {s.name: s.first for s in acc.csrs.sets}
+    for m in acc.movers:
+        key = m.set or acc.csrs.sets[0].name
+        out[m.name] = csr[key]
+        csr[key] += mover_csr_count(m.spatial_bounds, m.temporal_dim)
     return out
 
 
@@ -242,13 +245,14 @@ def nests(ctx: Context) -> dict[tuple[str, int], list[list[int]]]:
 
 
 def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
-    """Per accelerator task, the streamer task of each mover, from the start step that launches
-    them together: a unit's task with a task on every mover, with several groups (D148) the
-    other groups' idle (every bound 0), which SNAX-GVSoC starts and ends at once. An accelerator
-    task launched without a streamer task for a mover, with two for one, or with a streamer task
-    on no mover, is a RunError (``index.tasks``) naming the tasks: never guessed."""
+    """Per accelerator task, the streamer task of each mover of its streamer set (D157), from the
+    start step that launches them together: a unit's task with a task on every mover of its set,
+    with several groups in one encapsulated set (D148) the other groups' idle (every bound 0),
+    which SNAX-GVSoC starts and ends at once. An accelerator task launched without a streamer
+    task for a mover of its set, with two for one, or with a streamer task on no mover of its
+    set, is a RunError (``index.tasks``) naming the tasks: never guessed."""
     acc = cluster.accelerator
-    movers = [m.name for m in acc.movers]
+    set_of = {u.name: acc.accelerator_of(u.group) for u in acc.units}
     conf = {s.task_name: s for s in tasks.steps if isinstance(s, Configure)}
     out: dict[str, dict[str, str]] = {}
     for s in tasks.steps:
@@ -260,6 +264,8 @@ def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
         if not mine:
             continue
         what = f"{tasks.name}: start {s.tasks}"
+        unit = next(c.component for c in launched if c.task_name == mine[0])
+        movers = [m.name for m in acc.movers if m.set == set_of[unit]]
         if len(mine) > 1:
             raise RunError("index.tasks", f"{what} launches {len(mine)} tasks of {acc.name} "
                            f"({mine})")  # fmt: skip
@@ -269,7 +275,7 @@ def pairing(tasks: TaskList, cluster: Cluster) -> dict[str, dict[str, str]]:
                 continue
             if c.component not in movers:
                 raise RunError("index.tasks", f"{what}: streamer task {c.task_name!r} is on "
-                               f"{c.component}, no mover of {acc.name} ({movers})")  # fmt: skip
+                               f"{c.component}, no mover of set {set_of[unit]} ({movers})")  # fmt: skip
             by.setdefault(c.component, []).append(c.task_name)
         for m in movers:
             if len(by.get(m, [])) != 1:
@@ -464,7 +470,7 @@ class _Beats:
 
     def fifo(self, e: dict, src: str, f: dict) -> dict | None:
         """A queue count of a mover's lane."""
-        m = self.acc.mover(f["mover"])
+        m = next(x for x in self.acc.movers if x.name == src)  # src: the line's mover
         if m.name not in self.ctx.filter:
             return None
         run = self.task(m.name, e["t"])

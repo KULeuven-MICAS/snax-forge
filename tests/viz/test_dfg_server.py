@@ -332,25 +332,25 @@ def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
 
 @pytest.mark.slow
 def test_the_site_route_takes_a_selection(tmp_path, monkeypatch):
-    """D72: GET /api/step/<k>/site?sel=…&sel=… on dot 1 (its recipe at its step 4, before
+    """D72: GET /api/step/<k>/site?sel=…&sel=… on dot_1_enc (its recipe at its step 4, before
     encapsulate): the two group outlines offer encapsulate with both units ticked, one unit's box
     only that unit (the one-item route as before), split over two is "Not here"; at step 5 the
     accelerator's outline (dot) offers unencapsulate; no sel is a 400."""
     monkeypatch.setattr(session, "_import", imported)
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
     with served(make_edit_server(0, roots=roots)) as srv:
-        post(srv, "/api/session", {"recipe": str(REPO / "recipes" / "dot_1.json")})
-        status, both = get_json(srv, "/api/step/4/site?sel=mul&sel=sum")
+        post(srv, "/api/session", {"recipe": str(REPO / "recipes" / "dot_1_enc.json")})
+        status, both = get_json(srv, "/api/step/4/site?sel=vmul&sel=vsum")
         assert status == 200 and both["encapsulate"]["ok"]
         units = next(f for f in both["encapsulate"]["form"] if f["name"] == "units")
-        assert units["value"] == ["mul", "sum"]
+        assert units["value"] == ["vmul", "vsum"]
         assert (both["split"]["code"], both["split"]["message"]) == (
             "site.one",
             "split: takes one selection, not 2",
         )
         one = get_json(srv, "/api/step/4/site/mult")[1]
         assert next(f for f in one["encapsulate"]["form"] if f["name"] == "units")["value"] == [
-            "mul"
+            "vmul"
         ]
         assert get_json(srv, "/api/step/4/site?sel=mult")[1] == one
         dot = get_json(srv, "/api/step/5/site?sel=dot")[1]
