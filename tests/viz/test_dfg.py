@@ -664,7 +664,12 @@ def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
     assert v["containers"]["out_partial"]["badge"] == "wire"
     # out_partial gets no box: the edges run through the link, straight between the connectors
     boxes = [b for r in v["rows"] if r["kind"] == "containers" for b in r["boxes"]]
-    assert boxes == ["A@0", "B@0", "tmp0@0", "out@1"]  # tmp0, the fused nest's local value, stays
+    assert boxes == [
+        "A@0",
+        "B@0",
+        "out@1",
+    ]  # tmp0, the fused nest's local value, left with the bind
+    assert "tmp0" not in v["containers"]
     assert [(e["from"], e["to"]) for e in v["edges"] if e["data"] == "out_partial"] == [
         ("mult.out", f"{link['id']}.in"), (f"{link['id']}.out", "sum_final.a")]  # fmt: skip
     assert v["details"]["container:out_partial"]["placement"] == "link"

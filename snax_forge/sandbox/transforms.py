@@ -58,8 +58,10 @@ name) stay in the transform.
     must give the elements in the order of the port's nest (D70); in
     the ``stream`` notation the memlet is the order. The tasklet's code, on
     the BRM's port names, must be the BRM's ``function.code``; the accelerated node carries that
-    code and the replaced subtree (D82). A folding output (``reduce``)
-    whose memlet does not use the spatial variable (dot's
+    code and the replaced subtree (D82), and, for a fused nest, the nest's local value
+    (``loop.local``), which only its two tasklets named: it leaves the graph's containers for
+    the node's ``locals`` (dfg/kinds.py), and ``unbind`` puts it back at its index. A folding
+    output (``reduce``) whose memlet does not use the spatial variable (dot's
     ``out[0]``) folds every lane into one: its port must have one lane, its
     index becomes the range of that lane (``out[0:1]``, no ``reduce`` on
     the accelerated node), and its order is checked over the temporal maps
@@ -93,7 +95,7 @@ import numpy as np
 
 from snax_forge import expr
 from snax_forge.common import fresh
-from snax_forge.dfg import DfgError, Graph, Memlet, Node, named_rates, parse_dim
+from snax_forge.dfg import Container, DfgError, Graph, Memlet, Node, named_rates, parse_dim
 from snax_forge.dfg.subset import dim_names, format_dim, map_range
 from snax_forge.expr import ExprError
 
@@ -586,9 +588,25 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
         },
         body=[],
     )
+    if site.pattern is smap and (taken := _take_locals(g, smap)):  # a fused nest's local value
+        acc.attrs["locals"] = taken  # goes with its two tasklets
     parent_body, j, _ = _locate(g, smap.id)
     parent_body[j] = acc
     return _result(g)
+
+
+def _take_locals(g: Graph, smap: Node) -> list[dict[str, Any]]:
+    """The fused nest's local values (``loop.local``: the first tasklet's output, which only the
+    two tasklets name) taken out of the graph, each with its index among the containers, for
+    ``unbind`` to put back."""
+    found = fused_view(smap)
+    assert found is not None  # _bind_site took the map as a fused nest
+    (m,) = found[0].outputs.values()
+    names = list(g.containers)
+    if "loop.local" not in g.containers[m.data].attrs:
+        return []
+    cont = g.containers.pop(m.data)
+    return [{"name": m.data, "index": names.index(m.data), "container": cont.to_dict()}]
 
 
 def _length(m: Node) -> str:
@@ -691,7 +709,13 @@ def unbind(g: Graph, node: str) -> Graph:
     _unbind_site(g, node, what)
     g = _copy(g)
     body, i, _ = _locate(g, node)
+    taken = body[i].attrs.get("locals", [])
     body[i] = Node.from_dict(body[i].attrs["replaced"], what)
+    if taken:  # a fused nest's local values back where they were among the containers
+        items = list(g.containers.items())
+        for rec in sorted(taken, key=lambda r: r["index"]):
+            items.insert(rec["index"], (rec["name"], Container.from_dict(rec["container"], what)))
+        g.containers = dict(items)
     return _result(g)
 
 

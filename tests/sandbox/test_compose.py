@@ -6,7 +6,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from snax_forge.dfg import Graph, execute
+from snax_forge.dfg import DfgError, Graph, execute
 from snax_forge.sandbox import (
     SandboxError,
     bind,
@@ -15,6 +15,7 @@ from snax_forge.sandbox import (
     link,
     split_map,
     split_reduce,
+    unbind,
     unfuse_map,
     unlink,
 )
@@ -89,6 +90,48 @@ def test_bind_takes_the_fused_nests_spatial_map():
     assert mac.outputs["out"].subset == ["0:4"]
     assert mac.attrs["replaced"]["id"] == "mult_map_s"
     same(g)
+
+
+def unreferenced(g: Graph) -> set[str]:
+    """The containers no live node's memlet names."""
+    used = {m.data for n, _ in g.walk() for m in (*n.inputs.values(), *n.outputs.values())}
+    return set(g.containers) - used
+
+
+def test_bind_takes_the_fused_nests_local_value_out_of_the_graph():
+    before = fused()
+    g = bind(before, "mult_map_s", "mac", "chisel_mac", "mac")
+    assert "tmp0" not in g.containers and unreferenced(g) == set()
+    (rec,) = g.node("mult").attrs["locals"]
+    assert rec == {"name": "tmp0", "index": list(before.containers).index("tmp0"),
+                   "container": before.containers["tmp0"].to_dict()}  # fmt: skip
+    assert Graph.from_dict(g.to_dict()).to_json() == g.to_json()  # round-trips with its locals
+
+
+def test_a_local_value_may_not_also_be_a_live_container():
+    d = bind(fused(), "mult_map_s", "mac", "chisel_mac", "mac").to_dict()
+    d["containers"]["tmp0"] = d["body"][0]["body"][0]["attrs"]["locals"][0]["container"]
+    with pytest.raises(DfgError, match="'tmp0' is a container of the graph too"):
+        Graph.from_dict(d)
+
+
+@pytest.mark.parametrize("name", ["dot_4", "dot_5", "dot_6", "matvec_4", "matvec_5", "matvec_6"])
+def test_unbind_then_unfuse_map_gives_the_graph_before_fuse_map(name):
+    """On each recipe that fuses: after the fused nest's bind no container is unreferenced, and
+    unbind then unfuse_map give the graphs before the bind and before fuse_map exactly."""
+    from tests.sandbox.helpers import recipe_graphs
+
+    r, graphs = recipe_graphs(name)
+    steps = [s.transform for s in r.steps]
+    k = steps.index("fuse_map") + 1  # graphs[0] is the input, graphs[k] after fuse_map
+    b = k + steps[k:].index("bind") + 1
+    acc = graphs[b].node(next(n.id for n, _ in graphs[b].walk() if "locals" in n.attrs))
+    assert [x["name"] for x in acc.attrs["locals"]] == ["tmp0"]
+    assert unreferenced(graphs[b]) == set()
+    back = unbind(graphs[b], acc.id)
+    assert back.to_json() == graphs[k].to_json()
+    first = r.steps[k - 1].params["first"]
+    assert unfuse_map(back, first).to_json() == graphs[k - 1].to_json()
 
 
 @pytest.mark.parametrize("depth", [0, 1])

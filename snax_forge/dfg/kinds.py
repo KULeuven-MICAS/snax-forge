@@ -42,7 +42,13 @@ Built-in kinds:
                  one lane computes, over its connectors, as the BRM states it;
                  ``replaced`` is the subtree ``bind`` replaced, in stored form
                  and checked in this node's scope, so ``unbind`` gives it back
-                 (null for a node written by hand). ``accelerator`` (D148,
+                 (null for a node written by hand). ``locals`` (written only
+                 when set, by ``bind`` on a fused nest) holds the nest's local
+                 values (``loop.local``) bind took out of the graph, as
+                 ``[{name, index, container}]`` (the container in stored form,
+                 its index in the graph's containers): the ``replaced``
+                 subtree is checked with them in scope, and ``unbind`` puts
+                 them back where they were. ``accelerator`` (D148,
                  written only when set, by ``encapsulate``) names the
                  accelerator its group is in; without it the group, named
                  after the instance, is an accelerator of its own. ``group``
@@ -275,14 +281,36 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
     for key in ("accelerator", "group"):
         if key in a:
             ident(a[key], f"{what}.attrs.{key}")
-    # the replaced subtree itself is checked in graph.py, in this node's scope
+    if "locals" in a:
+        _check_locals(a["locals"], f"{what}.attrs.locals")
+    # the replaced subtree itself is checked in graph.py, in this node's scope, with its locals
+
+
+def _check_locals(locals_: Any, what: str) -> None:
+    """``locals``: a list of ``{name, index, container}``, the names distinct, each index an int
+    from 0, the container an object (checked as one in graph.py)."""
+    if not isinstance(locals_, list):
+        raise DfgError(f"{what}: must be a list")
+    names = []
+    for k, rec in enumerate(locals_):
+        w = f"{what}[{k}]"
+        if not isinstance(rec, Mapping) or set(rec) != {"name", "index", "container"}:
+            raise DfgError(f"{w}: must be an object of name, index and container")
+        ident(rec["name"], f"{w}.name")
+        if type(rec["index"]) is not int or rec["index"] < 0:
+            raise DfgError(f"{w}.index: must be an int from 0, got {rec['index']!r}")
+        if not isinstance(rec["container"], Mapping):
+            raise DfgError(f"{w}.container: must be an object")
+        names.append(rec["name"])
+    if len(set(names)) != len(names):
+        raise DfgError(f"{what}: a name is given twice")
 
 
 register_kind(
     "accelerated",
     required=("instance", "brm", "implementation", "code"),
     defaults={"params": {}, "replaced": None},
-    optional=("accelerator", "group"),
+    optional=("accelerator", "group", "locals"),
     body=True,
     normalize=_normalize_code,
     check=_check_accelerated,

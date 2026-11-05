@@ -45,7 +45,7 @@ which load the BRM.
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -306,7 +306,7 @@ def _validate(g: Graph) -> None:
         if v is not None and type(v) is not int:
             raise DfgError(f"{g.name}.symbols.{s}: must be an int or null, got {v!r}")
     for c, cont in g.containers.items():
-        _check_container(g, c, cont)
+        _check_container(g.symbols, c, cont)
     scope = Scope(frozenset(g.symbols), g.containers)
     ids: set[str] = set()
     instances: dict[str, tuple[Any, ...]] = {}
@@ -316,10 +316,10 @@ def _validate(g: Graph) -> None:
         raise DfgError(f"{g.name}: accelerator {clash[0]!r} is also an instance's name (D148)")
 
 
-def _check_container(g: Graph, name: str, c: Container) -> None:
+def _check_container(symbols: Iterable[str], name: str, c: Container) -> None:
     what = f"container {name!r}"
     ident(name, what)
-    if name in g.symbols:
+    if name in symbols:
         raise DfgError(f"{what}: {name!r} is also a symbol")
     try:
         ok = isinstance(c.dtype, str) and np.dtype(c.dtype).name == c.dtype
@@ -330,7 +330,7 @@ def _check_container(g: Graph, name: str, c: Container) -> None:
     if type(c.transient) is not bool:
         raise DfgError(f"{what}.transient: must be true or false")
     for s in c.shape:
-        unbound = sorted(expr.names(s) - set(g.symbols))
+        unbound = sorted(expr.names(s) - set(symbols))
         if unbound:
             raise DfgError(f"{what}.shape: {unbound[0]!r} is not a symbol")
         if type(s) is int and s < 1:
@@ -416,19 +416,36 @@ def _check_memlets(node: Node, scope: Scope, what: str) -> None:
 
 
 def _check_replaced(node: Node, scope: Scope, what: str) -> None:
-    """The subtree an accelerated node replaced: a valid node in the node's own scope (D82).
+    """The subtree an accelerated node replaced: a valid node in the node's own scope (D82),
+    with the local values ``bind`` took out of the graph (``locals``) in it.
 
     It is history, not part of the graph: its ids may repeat live ones (the
     tasklet ``bind`` replaced has the accelerated node's id) and it is never
-    run. It is kept in its stored form.
+    run. It is kept in its stored form, and so is each local's container, whose name must not
+    be a live container's.
     """
+    containers = dict(scope.containers)
+    if "locals" in node.attrs:
+        w = f"{what}.attrs.locals"
+        stored = []
+        for rec in node.attrs["locals"]:
+            name = rec["name"]
+            if name in containers:
+                raise DfgError(f"{w}: {name!r} is a container of the graph too")
+            c = Container.from_dict(rec["container"], f"{w}.{name}")
+            _check_container(scope.symbols, name, c)
+            containers[name] = c
+            stored.append({"name": name, "index": rec["index"], "container": c.to_dict()})
+        node.attrs["locals"] = stored
     r = node.attrs.get("replaced")
     if r is None:
+        if "locals" in node.attrs:
+            raise DfgError(f"{what}.attrs.locals: a node that replaced nothing holds no locals")
         return
     w = f"{what}.attrs.replaced"
     try:
         old = Node.from_dict(r, w)
-        _check_body([old], scope, set(), {})
+        _check_body([old], Scope(scope.symbols, containers, scope.variables), set(), {})
     except DfgError as e:
         raise DfgError(f"{w}: {e}") from None
     node.attrs["replaced"] = old.to_dict()
