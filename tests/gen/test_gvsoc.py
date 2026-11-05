@@ -202,14 +202,19 @@ def test_the_cluster_file_is_the_source_renamed_with_the_slot_set(w4):
 
 @requires_submodule
 def test_snax_gvsocs_reader_takes_the_folder(w4):
-    """snax-gvsoc's snax_cfg.load: the whole-file refs resolve, the slot's counts agree, and
+    """snax-gvsoc's snax_cfg.load (G1): the whole-file refs resolve, the slot is the tag with one
+    streamer set per accelerator (slot.sets), each set's counts agree, and the nested
     accelerator.json reads as written (its CSRs in CSR order)."""
     out, _ = w4
     cfg = snax_cfg().load(out / "snax_forge.hjson")
     (acc,) = cfg.cores[0].accelerators
-    assert (acc.name, acc.tcdm_ports, acc.streamer) == ("snax_forge", 12, TEMPLATE_W4)
+    assert (acc.name, acc.tcdm_ports) == ("snax_forge_vecadd", 12)
+    ((s,),) = (acc.sets,)
+    assert (s.name, s.streamer, s.num_rw_csr, s.num_ro_csr) == ("acc", TEMPLATE_W4, 2, 2)
     assert (acc.num_rw_csr, acc.num_ro_csr) == (2, 2)
-    a = acc.accelerator
+    d = acc.description
+    assert (d.tag, d.design_point) == ("snax_forge_vecadd", "design/vecadd/design_point.json")
+    (a,) = d.accelerators
     assert (a.name, a.inputs, a.outputs) == ("acc", ["acc.a", "acc.b"], ["acc.out"])
     assert [(c.name, c.offset) for c in a.csrs] == [
         ("START", 0),
