@@ -1,6 +1,6 @@
 # Dry run 2: dot 1, two accelerators through L1
 
-A snapshot of 5 Nov 2026 (snax-forge `main` at `58a703b`, SLOT1 #53; snax-gvsoc `61d1e8ac`, #43; the RTL on snax_cluster `main` at `4abd432c`, #679, in its image `d3d8f5572ff4`, and the COUNTER's fill bound in its `snax-forge-check` at `ca9ae691`, #680; the cost table from snax-forge-experiments `6c727da`). Sections 1, 2, 4, 7 and 9's editor steps ran through the editor's HTTP API. Sections 1–8 and section 9's editor steps were taken again with the editor's default instance names on `ry/slot1-p1` at `18d7459` (#54), which changed no number but the boot count before `main`. The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
+Every number on this page is what the tools printed when it was written; no test checks them (D98), so they can drift as the code moves.
 
 dot is $\mathit{out} = \sum_i A_i \cdot B_i$ over N int64 elements (`kernels/polybench/dot.py`). dot 1 is its plainest hardware: a multiplier `acc_1` writes the N products to a transient `tmp0` in L1, then an adder tree `acc_2` reads them back and sums them. These are two accelerators, each a streamer set of the design's one snax_cluster entry, `snax_forge_<design>`, with its own streamer, START and CSRs (D157). The core runs them in series (D158): it sets up `acc_2` while `acc_1` runs, waits for `acc_1`, then starts `acc_2`. Encapsulating the two puts them on one shared streamer set, `dot_1_enc` (section 9); dot 2 to 6 instead join the two units in one group with a link (section 7).
 

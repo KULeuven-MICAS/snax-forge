@@ -493,6 +493,10 @@ path.edge-hit { fill: none; stroke: transparent; stroke-width: 12; pointer-event
 path.arrow { fill: var(--edge); }
 path.arrow-sel { fill: var(--hl); }
 path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
+/* a fused nest's local value: the writer's connector straight to the reader's, as a link's wire */
+path.edge.local { stroke: var(--busy); stroke-width: 2; stroke-dasharray: 4 3; }
+svg.dfg-edges text.edge-label { font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--busy); }
+svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
 
 /* groups and accelerators: a thin dashed outline, the name on top */
 svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; pointer-events: stroke; cursor: pointer; }
@@ -566,8 +570,8 @@ svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-h
 .dfg-choices { display: flex; flex-direction: column; gap: 0.15rem; }
 .dfg-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.35rem; align-items: baseline; }
 .dfg-choice small { grid-column: 2; color: var(--muted); }
-.dfg-choice.refused span { color: var(--muted); text-decoration: line-through; }
 button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+button.primary:disabled { opacity: 0.4; cursor: not-allowed; }
 .dfg-not-here { margin-top: 0.8rem; color: var(--muted); }
 .dfg-not-here ul { padding-left: 1rem; margin: 0.3rem 0; }
 .dfg-not-here li { margin-bottom: 0.25rem; overflow-wrap: anywhere; }

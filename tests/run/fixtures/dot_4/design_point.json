@@ -8,12 +8,6 @@
    "A": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
    "B": {"shape": ["N"], "dtype": "int64", "transient": false, "attrs": {}},
    "out": {"shape": [1], "dtype": "int64", "transient": false, "attrs": {}},
-   "tmp0": {
-    "shape": ["N"],
-    "dtype": "int64",
-    "transient": true,
-    "attrs": {"loop.local": "mult_map"}
-   },
    "out_partial": {"shape": [4], "dtype": "int64", "transient": true, "attrs": {}}
   },
   "body": [
@@ -144,7 +138,19 @@
          }
         ]
        },
-       "group": "dot"
+       "group": "dot",
+       "locals": [
+        {
+         "name": "tmp0",
+         "index": 3,
+         "container": {
+          "shape": ["N"],
+          "dtype": "int64",
+          "transient": true,
+          "attrs": {"loop.local": "mult_map"}
+         }
+        }
+       ]
       },
       "body": []
      }
@@ -263,7 +269,6 @@
     "l2": {"base": 0, "shape": [1], "strides": [8]},
     "l1": {"base": 268443648, "shape": [1], "strides": [8]}
    },
-   "tmp0": {},
    "out_partial": {}
   }
  }

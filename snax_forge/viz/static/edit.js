@@ -217,16 +217,25 @@ export async function start() {
 
 // -- the sidebar: what applies to the selection ------------------------------------------
 
+/** A form whose bind list has nothing that fits: Apply would only be refused. */
+const unfit = (form) => form.some((f) => f.name === "binding" && !f.choices.some((c) => c.ok));
+
 function field(f) {
   const attrs = { "data-field": f.name, disabled: f.readonly };
-  if (f.type === "choice" && f.name === "binding") { // bind: the list, with each option's timing
-    return h("div", { class: "dfg-choices", ...attrs }, f.choices.map((c, i) => {
+  if (f.type === "choice" && f.name === "binding") { // bind: the options that fit, with their timing
+    const fit = f.choices.map((c, i) => [c, i]).filter(([c]) => c.ok); // the index is the API's
+    if (!fit.length) { // nothing fits: the refusals, so the fix each names is still there
+      return h("div", { class: "dfg-choices", ...attrs }, h("p", { class: "muted" }, "no BRM in the library fits"),
+        h("details", {}, h("summary", {}, `why (${f.choices.length})`),
+          f.choices.map((c) => h("p", { class: "muted" }, `${c.label}: ${c.message}`))));
+    }
+    return h("div", { class: "dfg-choices", ...attrs }, fit.map(([c, i]) => {
       const t = c.timing;
       const timing = t ? `II ${t.ii} · latency ${t.latency} · span ${t.span}` : "";
-      return h("label", { class: `dfg-choice${c.ok ? "" : " refused"}`, title: c.message || "" },
-        h("input", { type: "radio", name: "binding", value: String(i), disabled: !c.ok,
+      return h("label", { class: "dfg-choice" },
+        h("input", { type: "radio", name: "binding", value: String(i),
           checked: f.value && c.value.brm === f.value.brm && c.value.implementation === f.value.implementation }),
-        h("span", {}, c.label), h("small", {}, c.ok ? timing : c.message));
+        h("span", {}, c.label), h("small", {}, timing));
     }));
   }
   if (f.type === "choice") {
@@ -346,7 +355,7 @@ export async function sidebar() {
     const isOpen = st.t === name;
     const formEl = isOpen ? h("form", { class: "dfg-form", onsubmit: (ev) => { ev.preventDefault(); apply(name, a.form, formEl); } },
       a.form.map((f) => h("label", { class: `dfg-field${f.readonly ? " readonly" : ""}` }, h("span", {}, f.name), field(f))),
-      h("button", { type: "submit", class: "primary" }, "Apply")) : null;
+      h("button", { type: "submit", class: "primary", disabled: unfit(a.form) }, "Apply")) : null;
     return h("div", { class: `dfg-transform${isOpen ? " open" : ""}` },
       h("button", { type: "button", class: "dfg-transform-name", "aria-expanded": isOpen ? "true" : "false",
         onclick: () => {

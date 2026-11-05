@@ -35,7 +35,9 @@ name), ``unlink``'s a link node or its container.
     the container, so it gets no L1 space; nothing else may name it. The
     fused map records both nests (``loop.fused``), and ``unfuse_map`` gives
     them back when nothing changed since (unbind first). ``bind`` takes the
-    fused nest's spatial map (patterns.py's ``fused_view``).
+    fused nest's spatial map (patterns.py's ``fused_view``) and the local
+    value with it: the container leaves the graph for the accelerated node's
+    ``locals``, and ``unbind`` puts it back where it was.
 ``link(container, depth, group)`` and ``unlink(container)``
     a transient with one writer and one reader, both bound (``link.unbound``
     otherwise; ``link.container`` for another container), becomes a link
@@ -311,6 +313,8 @@ def unfuse_map(g: Graph, map: str) -> Graph:
     body, i, _ = _locate(g, map)
     node = body[i]
     rec = node.attrs["loop.fused"]
+    if rec["local"] not in g.containers:  # bind took the local value with the nest
+        raise SandboxError(f"{what}: the nest changed since fuse_map (unbind first)")
     f, s = Node.from_dict(rec["first"], what), Node.from_dict(rec["second"], what)
     again, _ = _fuse(g, f, s, what)
     again.attrs["loop.fused"] = rec

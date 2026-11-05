@@ -173,10 +173,11 @@ def _ins(inst: Any) -> list[str]:
 
 def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
                      ends: list[tuple[Node, str, str]], firings: dict[str, int],
+                     gives: dict[str, int],
                      ) -> tuple[dict[str, Block], dict[str, Block], dict[str, int]]:  # fmt: skip
     """Per unit and per buffer link (by container) the datapath to cost, its params as the
     generator fills them and its fires (cost.py: a unit's ``firings`` times its span, a
-    buffer's its producer's firings, a load per beat), and per unit and link its register bits
+    buffer's its producer's ``gives``, a load per output), and per unit and link its register bits
     (module doc): a wire 0 and no block; a unit the generator does not fill a block with no
     params and no bits. The generator is imported here: gen/rtl.py imports this package."""
     from snax_forge.brm import port_dtypes
@@ -209,7 +210,7 @@ def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
             continue
         end = filled[unit].ports[port]
         links[name] = Block("LinkBuffer", buffer_params(depth, end.lanes, end.dtype,
-                                                        cat["LinkBuffer"]), firings[unit])  # fmt: skip
+                                                        cat["LinkBuffer"]), gives[unit])  # fmt: skip
         bits[name] = flops("LinkBuffer", links[name].params, cat)
     return units, links, bits
 
@@ -235,7 +236,8 @@ def datapath_blocks(graph: Graph) -> dict[str, Block]:
     insts, out = instances(graph), {}
     for members in graph_groups(graph).values():
         ends = [(k, *link_ends(graph, k)) for k in links(graph) if k.attrs["from"] in members]
-        units, bufs, _ = _datapath_blocks(graph, insts, members, ends, dict.fromkeys(members, 0))
+        zero = dict.fromkeys(members, 0)
+        units, bufs, _ = _datapath_blocks(graph, insts, members, ends, zero, zero)
         out |= units | bufs
     return out
 
@@ -250,7 +252,8 @@ def group_blocks(graph: Graph, job_width: int = 32,
                  ) -> list[tuple[GroupEstimate, dict[str, Block], dict[str, Block]]]:  # fmt: skip
     """``groups``, each with its units and buffer links to cost (by name and by container,
     cost.py's ``Block``): per unit its firings over the group's tasks times its span, per
-    buffer link its producer's firings."""
+    buffer link its producer's outputs, its firings over its T (a fold gives once per T beats:
+    dot 6's Mac once per job)."""
     insts = instances(graph)
     nodes: dict[str, list[Node]] = {}
     for n, _ in graph.walk():
@@ -276,7 +279,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
             else [{members[0]: n} for n in nodes[members[0]]]
         )
         cycles = bottleneck = 0
-        firings = dict.fromkeys(members, 0)
+        firings, gives = dict.fromkeys(members, 0), dict.fromkeys(members, 0)
         for task in tasks:
             values = {u: unit_firings(graph, n, insts[u])[0] for u, n in task.items()}
             writes = job_writes({u: insts[u] for u in task}, values if len(task) > 1 else
@@ -290,12 +293,14 @@ def group_blocks(graph: Graph, job_width: int = 32,
             cycles += end
             for u in task:
                 firings[u] += values[u]["n"]
+                t = ts[members.index(u)]
+                gives[u] += values[u]["n"] // t if t else 0  # T = 0: the empty run
             bottleneck = max(bottleneck, *(values[u]["n"] * max(insts[u].initiation_interval,
                                            insts[u].span) for u in members))  # fmt: skip
         ramp = sum(insts[u].latency + insts[u].span - 1 for u in members)
         ramp += sum(k.attrs["depth"] >= 1 for k, _, _ in ends)
         inputs = sum(u["inputs"] for u in rule_units)
-        units, bufs, bits = _datapath_blocks(graph, insts, members, ends, firings)
+        units, bufs, bits = _datapath_blocks(graph, insts, members, ends, firings, gives)
         g = GroupEstimate(name, list(members), cycles, bottleneck, ramp,
                           cycles - bottleneck - ramp, FILL_ONE_INPUT if inputs == 1 else FILL,
                           [k.attrs["container"] for k, _, _ in ends], bits=bits,

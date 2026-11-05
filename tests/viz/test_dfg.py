@@ -664,7 +664,12 @@ def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
     assert v["containers"]["out_partial"]["badge"] == "wire"
     # out_partial gets no box: the edges run through the link, straight between the connectors
     boxes = [b for r in v["rows"] if r["kind"] == "containers" for b in r["boxes"]]
-    assert boxes == ["A@0", "B@0", "tmp0@0", "out@1"]  # tmp0, the fused nest's local value, stays
+    assert boxes == [
+        "A@0",
+        "B@0",
+        "out@1",
+    ]  # tmp0, the fused nest's local value, left with the bind
+    assert "tmp0" not in v["containers"]
     assert [(e["from"], e["to"]) for e in v["edges"] if e["data"] == "out_partial"] == [
         ("mult.out", f"{link['id']}.in"), (f"{link['id']}.out", "sum_final.a")]  # fmt: skip
     assert v["details"]["container:out_partial"]["placement"] == "link"
@@ -674,6 +679,41 @@ def test_dot4_draws_its_wire_and_boxes_its_group(tmp_path):
     assert [u["instance"] for u in grp["units"]] == ["mac", "sum"]
     assert grp["tops"] == ["mult_map", link["id"], "sum_final"]
     assert v["details"]["node:mult"]["group"] == "dot"
+
+
+def test_a_fused_nests_local_value_is_an_edge_inside_the_map_not_a_box():
+    """dot 4 after fuse_map: tmp0 (``loop.local``) gets no box; mult's output connector joins
+    sum's input connector inside the fused map, the edge marked local and labelled tmp0; the
+    Containers line and Details give no bytes and the fused map; dot 1's tmp0 in L1 keeps its
+    box."""
+    from snax_forge.design import Platform
+    from snax_forge.estimate import estimate
+    from snax_forge.sandbox import Recipe
+    from snax_forge.viz.dfg.api import Entry, step_view
+    from tests.design.helpers import SNAX_FORGE
+    from tests.helpers import steps
+
+    platform = Platform.load(SNAX_FORGE)
+    names = [s.transform for s in Recipe.load(REPO / "recipes" / "dot_4.json").steps]
+    k = names.index("fuse_map") + 1
+    g = steps("dot_4")[k]
+    v = step_view(Entry("3_fuse_map", Path("3_fuse_map.snaxdfg"), g, None), "3 fuse_map", platform)
+    boxes = [b for r in v["rows"] if r["kind"] == "containers" for b in r["boxes"]]
+    assert not any(b.startswith("tmp0@") for b in boxes)
+    (edge,) = [e for e in v["edges"] if e["data"] == "tmp0"]
+    assert (edge["from"], edge["to"], edge["local"], edge["label"]) == (
+        "mult.out", "sum.in1", True, "tmp0")  # fmt: skip
+    line = {c["name"]: c for c in v["containers_section"]}["tmp0"]
+    assert (line["line"], line["bytes"]) == ("N · local to mult_map", None)
+    d = v["details"]["container:tmp0"]
+    assert (d["placement"], d["bytes"], d["writers"], d["readers"]) == (
+        "local to mult_map, no memory", None, ["mult"], ["sum"])  # fmt: skip
+    assert estimate(g, platform).containers["tmp0"].placement == "local"  # the estimate's own
+    one = steps("dot_1")[-1]
+    w = step_view(Entry("8_bind", Path("8_bind.snaxdfg"), one, None), "8 bind", platform)
+    assert any(b.startswith("tmp0@") for r in w["rows"] if r["kind"] == "containers"
+               for b in r["boxes"])  # fmt: skip
+    assert not any(e.get("local") for e in w["edges"])
 
 
 def test_dot6_draws_a_buffer_with_its_depth(tmp_path):

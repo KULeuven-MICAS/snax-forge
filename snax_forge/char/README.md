@@ -69,7 +69,7 @@ Where the estimate gets each count:
 
 | Symbol | What | Where |
 |---|---|---|
-| $n_{\mathit{fire}}$ | a unit's fires: its firings times its span (SerialAccumulate reads span beats per firing); a buffer link's loads: its producer's firings, one load per beat | SNAX-LOWER's firings (`lower/derive.py`), the catalogue's span (`estimate/cycles.py`) |
+| $n_{\mathit{fire}}$ | a unit's fires: its firings times its span (SerialAccumulate reads span beats per firing); a buffer link's loads: its producer's outputs, its firings over its T (a fold gives once per T beats) | SNAX-LOWER's firings (`lower/derive.py`), the catalogue's span (`estimate/cycles.py`) |
 | $n_{\mathit{bits}}$ | the register bits of the unit's datapath or the buffer | the catalogue's `flops` on its params (`gen/rtl.py`, the estimate's `bits`) |
 | $n_{\mathit{bits}}^{\mathit{ctrl}}$ | the register bits of the group's control unit firtool keeps | `estimate/bits.py`, the estimate's `ctrl_bits` |
 | $C_{\mathit{acc}}$ | the accelerator's cycles, every group's | the group rule stepped on ideal streams (D155), `accelerator_cycles` |

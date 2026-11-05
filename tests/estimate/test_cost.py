@@ -57,9 +57,10 @@ def test_a_groups_ctrl_is_its_bits_held_times_the_counter_factor():
     assert g.energy == pytest.approx(g.units["acc"].task_nj + g.ctrl_nj) and g.missing == []
 
 
-def test_a_unit_fires_its_firings_times_its_span_a_buffer_its_producers_firings():
+def test_a_unit_fires_its_firings_times_its_span_a_buffer_its_producers_outputs():
     """dot 5 at W = 8: the Mac 256 fires, the serial sum one firing of 8 beats; dot 2 at W = 8:
-    the depth-1 buffer loads once per beat of its producer, the mul's 256."""
+    the depth-1 buffer loads once per output of its producer, the mul's 256; dot 6 at W = 8:
+    once, the Mac giving once per job of 256 beats (DRY1-3)."""
     (g,) = estimated("dot_5", W=8, N=2048).groups
     assert (g.cost.units["mac"].fires, g.cost.units["sum"].fires) == (256, 8)
     (g,) = estimated("dot_2", W=8, N=2048).groups
@@ -67,6 +68,8 @@ def test_a_unit_fires_its_firings_times_its_span_a_buffer_its_producers_firings(
     assert (
         g.cost.links["tmp0"].found == "measured" and g.cost.links["tmp0"].datapath == "LinkBuffer"
     )
+    (g,) = estimated("dot_6", W=8, N=2048).groups
+    assert (g.cost.units["mac"].fires, g.cost.links["out_partial"].fires) == (256, 1)
 
 
 def test_l1_accesses_cost_4_e_load_per_bit_per_accelerator():

@@ -1,0 +1,32 @@
+{
+ "name": "dot_6_dry",
+ "kernel": "dot",
+ "params": {"N": 2048, "W_acc_1": 8, "D": 1},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split", "params": {"map": "mult_map", "factor": "W_acc_1"}},
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "tag_map", "params": {"map": "mult_map_inner", "kind": "spatial"}},
+  {"transform": "split_reduce", "params": {"map": "sum_map", "factor": "W_acc_1"}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "sum_map"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult_map_inner",
+    "brm": "mac",
+    "implementation": "chisel_mac",
+    "instance": "acc_1"
+   }
+  },
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum_final",
+    "brm": "accumulate",
+    "implementation": "chisel_serial",
+    "instance": "acc_2"
+   }
+  },
+  {"transform": "link", "params": {"container": "out_partial", "depth": "D", "group": "dot"}}
+ ]
+}

@@ -4,7 +4,7 @@ What the paper claims, how each claim is measured, and which milestones deliver 
 
 ## 1. Venue
 
-Quality first, with no fixed deadline (D100): the target is the paper the work deserves. DAC 2027 is dropped. Candidates once the evidence exists: ISPASS (performance analysis, so fidelity would lead), ICCAD, MICRO. Double-blind: SNAX, SNAX-MLIR, OpenGeMM, DataMaestro and Hypercorex are cited in the third person, and the repository goes through an anonymous mirror.
+ISPASS 2027 (D100): the abstract on 11 Dec 2026, the paper on 18 Dec. It is a performance-analysis venue, so fidelity leads (E1). DAC 2027 is dropped; ICCAD and MICRO were the other candidates. Double-blind: SNAX, SNAX-MLIR, OpenGeMM, DataMaestro and Hypercorex are cited in the third person, and the repository goes through an anonymous mirror.
 
 ## 2. Problem
 

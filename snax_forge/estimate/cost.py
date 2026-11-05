@@ -23,7 +23,8 @@ and per group its control unit, n_bits^ctrl its ``ctrl_bits`` and f_ctrl the tab
 factor: energy f_ctrl n_bits^ctrl C_acc e_hold, area its flops' n_bits^ctrl A_flop plus an equal
 comb area (``CTRL_COMB_PER_FLOP``, a placeholder, D154; its comb energy taken as negligible); the
 csr is left out (D152). n_fire is a unit's firings times its span (SerialAccumulate reads span
-beats per firing); a buffer link loads once per beat of its producer, its producer's firings. A
+beats per firing); a buffer link loads once per output of its producer, its firings over its T
+(a fold gives once per T beats: dot 6's Mac once per job, dot 2's mul at every firing). A
 block the table does not hold (``lookup`` None) or the generator does not fill has ``found``
 None and its comb part counted as 0; its flops are still counted, the description gives them.
 

@@ -117,11 +117,11 @@ Retired, and where each now lives:
 
 **D91** · scope — The old SDFG → descriptor → RTL path is gone; the Chisel blocks and `Emit` are a project of their own in `hw/chisel/`.
 
-**D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their reports, until sweeps need one. Walk-throughs live in `examples/`: those under `examples/dryrun/` are dated snapshots that name the commits they ran on and have no test; the others keep a test checking every number they state.
+**D98** · scope — No run diff view: runs are compared by switching in the viewer and reading their reports, until sweeps need one. Walk-throughs live in `examples/`: those under `examples/dryrun/` are tutorials with no test, which name no commits and state their numbers as the tools printed them when written, so they can drift without the page being redone; the others keep a test checking every number they state.
 
 **D99** · viz — Design and run reports in the layout of HLS reports, Markdown from dataclasses, for humans and LLMs alike. Every number comes from the design point, profile or trace, nothing grows with cycles, and a wait is named by what it was for. → `report/`.
 
-**D100** · scope — SNAX-FORGE is the subject of a paper, with no fixed deadline: a plan (P1) runs alongside development, a draft (P2) follows the evidence. The evaluation climbs NPBench from kernels to layers to blocks and models (ResNet, Transformer, NVSA). → `docs/PAPER.md`.
+**D100** · scope — SNAX-FORGE is the subject of a paper for ISPASS 2027 (abstract 11 Dec 2026, paper 18 Dec): a plan (P1) runs alongside development, a draft (P2) follows the evidence. The evaluation climbs NPBench from kernels to layers to blocks and models (ResNet, Transformer, NVSA). → `docs/PAPER.md`.
 
 **D102** · dfg — A reduction is a map whose tasklet writes through a memlet with a `reduce` (an associative op and its identity), so import, split and bind treat it as any map; bind folds every lane of an output without the spatial variable into one, its rate from `named_rates`. → C§11.
 
