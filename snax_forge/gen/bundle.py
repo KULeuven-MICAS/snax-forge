@@ -1,7 +1,8 @@
 """A design point -> its bundle for snax_cluster (D111, D130, C§18).
 
     write_bundle(design_point, out_dir, root=None) -> (Bundle, written)
-    write_expected(out_dir, stdout) -> Path
+    counter_fills(design_point, tasks) -> {task: fill}
+    write_expected(out_dir, stdout, fills) -> Path
     python -m snax_forge.gen.bundle DESIGN_POINT [--out DIR]    (pixi bundle)
 
 A bundle is one folder per design point holding what snax_cluster builds the
@@ -36,9 +37,16 @@ the rest of the folder is left as it is. Then, in this order:
 **The expected lines** (``write_expected``, which ``pixi run forge`` calls
 after its SNAX-GVSoC run passed): ``forge_expected.txt`` beside the bundle,
 the run's ``forge counter`` lines in order and then its ``forge data: 0
-errors`` line, as the program prints them, which a run of the same ELF on
-snax_cluster's RTL must print too; ``bundle.json``'s ``expected`` names it. A
-bundle alone has no run, so ``write_bundle`` removes an earlier one.
+errors`` line, as the program prints them, then a ``forge fill <task>: <n>``
+line per counter, in the same order: the task's group's streamer fill, the
+estimate's ``fill`` (``counter_fills``, from the design point and the flow's
+``tasks.json``). A run of the same ELF on snax_cluster's RTL must print the
+data line as it is and each counter within its fill of SNAX-GVSoC's (D123):
+the COUNTER counts the streamer's head start, which the core's timing between
+STREAMER_START and START sets and SNAX-GVSoC does not model (open items 65,
+67). snax_cluster's ``snax-forge-check`` applies the bound. ``bundle.json``'s
+``expected`` names the file. A bundle alone has no run, so ``write_bundle``
+removes an earlier one.
 
 **The modules** (``module_tree``, C§18), from accelerator.json, not from
 Emit's output: the wrapper's three modules, each with the submodules it holds,
@@ -56,13 +64,14 @@ builds read.
 ``elaborate`` refuse (``gen.*``, the catalogue's checks and a listed file that is not there among them), then
 ``bundle.empty`` (``emitted.json`` lists no file); and ``write_expected``'s
 ``bundle.expected``: the run's lines hold no ``forge counter`` line or no
-``forge data: 0 errors`` line.
+``forge data: 0 errors`` line, or a counter's task has no fill.
 The flow does not call it (D136).
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import shutil
 import sys
 from dataclasses import dataclass, replace
@@ -151,24 +160,44 @@ def write_bundle(design_point: str | Path, out_dir: str | Path,
     return bundle, written
 
 
-def expected_lines(stdout: str) -> list[str]:
-    """A SNAX-GVSoC run's ``forge counter`` lines in order, then its ``forge data:`` line (the
-    module doc); ``bundle.expected`` without a counter line or a clean data line."""
+def counter_fills(design_point: str | Path, tasks: str | Path) -> dict[str, int]:
+    """Each accelerator task's group's streamer fill by task name (the module doc): the
+    estimate's ``fill`` of the group the task (``tasks.json``'s accel configure) runs."""
+    from snax_forge.design import DesignPoint
+    from snax_forge.estimate import estimate
+
+    point = DesignPoint.load(design_point)
+    fill = {g.name: g.fill for g in estimate(point.graph, point.platform, None).groups}
+    steps = json.loads(Path(tasks).read_text())["steps"]
+    return {s["task_name"]: fill[s["component"]] for s in steps
+            if s.get("op") == "configure" and s.get("type") == "accel"}  # fmt: skip
+
+
+def expected_lines(stdout: str, fills: dict[str, int]) -> list[str]:
+    """A SNAX-GVSoC run's ``forge counter`` lines in order, then its ``forge data:`` line, then
+    each counter's ``forge fill`` line (the module doc); ``bundle.expected`` without a counter
+    line or a clean data line, or for a counter whose task has no fill."""
     lines = stdout.splitlines()
     counters = [x for x in lines if x.startswith("forge counter ")]
     data = [x for x in lines if x.startswith("forge data: ")]
     if not counters or len(data) != 1 or not data[0].startswith("forge data: 0 errors"):
         raise GenError("bundle.expected", f"the run printed counters {counters} and data {data}: "
                        "no counter, or not one line of 0 errors")  # fmt: skip
-    return [*counters, *data]
+    tasks = [x.removeprefix("forge counter ").rpartition(":")[0] for x in counters]
+    missing = [t for t in tasks if t not in fills]
+    if missing:
+        raise GenError("bundle.expected", f"no streamer fill for the counters of {missing}: "
+                       f"the fills are for {sorted(fills)}")  # fmt: skip
+    return [*counters, *data, *(f"forge fill {t}: {fills[t]}" for t in tasks)]
 
 
-def write_expected(out_dir: str | Path, stdout: str) -> Path:
-    """``forge_expected.txt`` in the bundle ``out_dir`` from its SNAX-GVSoC run's ``stdout``, and
-    ``bundle.json``'s ``expected`` naming it; the file's path."""
+def write_expected(out_dir: str | Path, stdout: str, fills: dict[str, int]) -> Path:
+    """``forge_expected.txt`` in the bundle ``out_dir`` from its SNAX-GVSoC run's ``stdout`` and
+    each task's fill (``counter_fills``), and ``bundle.json``'s ``expected`` naming it; the
+    file's path."""
     out = Path(out_dir)
     path = out / EXPECTED
-    path.write_text("".join(f"{x}\n" for x in expected_lines(stdout)))
+    path.write_text("".join(f"{x}\n" for x in expected_lines(stdout, fills)))
     made = Bundle.load(out / BUNDLE_JSON)
     (out / BUNDLE_JSON).write_text(replace(made, expected=EXPECTED).to_json())
     return path

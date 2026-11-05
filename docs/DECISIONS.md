@@ -149,7 +149,7 @@ Retired, and where each now lives:
 
 **D122** · gvsoc — SNAX-GVSoC's crossbar takes the SNAX ports, cores and AXI, numbered as on the RTL, and copies its sparse arbiter, checked against the RTL module in Verilator; the DMA takes whole superbanks and refuses narrow winners. → snax-gvsoc `SG3.md`, `SG7.md`.
 
-**D123** · scope — SNAX-GVSoC is checked against snax_cluster's RTL by one ELF, snax-forge's, on both: counters free of the core's timing, against GEN2b's tiers and the cluster tests' references. snax-forge never runs RTL; snax_cluster's own ELF is only its CI's pass/fail. → C§18.
+**D123** · scope — SNAX-GVSoC is checked against snax_cluster's RTL by one ELF, snax-forge's, on both, against GEN2b's tiers and the cluster tests' references: its data exactly, each group's COUNTER within that group's streamer fill (the estimate's `fill`), since the COUNTER counts the streamer's head start, set by the core's timing between STREAMER_START and START, which SNAX-GVSoC does not model (open items 65, 67). snax-forge never runs RTL; snax_cluster's own ELF is only its CI's pass/fail. → C§17, C§18.
 
 **D125** · gvsoc — The Snitch core's loads follow the hjson and the RTL: one integer load in flight, the RTL's load-to-load cycles, the core going on until the next load or a use of its register; fetch keeps GVSoC's cache (open item 65). → snax-gvsoc `SG5.md`, `SG7.md`.
 

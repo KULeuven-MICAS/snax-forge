@@ -10,7 +10,8 @@ Three steps, each the tool of that name called as its command line would be
              the design point and the run on SNAX-GVSoC      out/flow/<name>/
     bundle   ``python -m snax_forge.gen.bundle`` on the flow's design point, then the
              flow's expected lines beside it (``bundle.write_expected``: its
-             ``forge counter`` lines and ``forge data: 0 errors``)
+             ``forge counter`` lines, ``forge data: 0 errors`` and each
+             counter's streamer fill, the bound D123 allows on the RTL)
                                                              out/bundle/<name>/
     sw       the bundle's program, by snax-gvsoc's generic app (``make sw``), and its
              sha256 checked against the flow's ``elf_sha256`` (docs/RUN.md section 8)
@@ -159,13 +160,15 @@ def forge(recipe: Path, platform: Path, sets: list[tuple[str, tuple[str, str, An
                   f"{commit}{', dirty' if made.dirty else ''}", flush=True)  # fmt: skip
             try:
                 expected = bundle.write_expected(
-                    bundle_dir, (flow_dir / "run" / "stdout.txt").read_text()
+                    bundle_dir,
+                    (flow_dir / "run" / "stdout.txt").read_text(),
+                    bundle.counter_fills(point, flow_dir / "tasks.json"),
                 )
             except GenError as e:
                 print(f"== expected: {e}", file=log, flush=True)
                 raise StepFailed(f"expected: {e}") from None
             print(
-                f"  expected  {cwd_relative(expected)}: the run's counter and data lines",
+                f"  expected  {cwd_relative(expected)}: the run's counter and data lines, each counter's fill",
                 flush=True,
             )
             sha = json.loads((flow_dir / "run" / "run.json").read_text())["elf_sha256"]

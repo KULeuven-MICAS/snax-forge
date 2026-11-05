@@ -1,6 +1,6 @@
 # Dry run 1: vecmul, from the kernel to SNAX-GVSoC
 
-A snapshot of 3 Nov 2026 (snax-forge `ry/dry1` at `dry1-r3`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
+A snapshot of 3 Nov 2026 (snax-forge `ry/dry1` at `dry1-r3`; snax-gvsoc `c061e32b`; the cost table from snax-forge-experiments `6c727da`). The flow's output, the reports' tables and section 8's generated files and names were taken again on 5 Nov 2026 after SLOT1 (snax-forge `main` at `58a703b`, #53; snax-gvsoc `61d1e8ac`, #43), which gave every cycle count on this page again. The numbers are what these commits printed; no test checks them (D98), so they can drift as the code moves.
 
 vecmul is $C_i = A_i \cdot B_i$ over N int64 elements (`kernels/polybench/vecmul.py`). It is the first half of dot, so it is the baseline the dot variants are read against. The designer's question: how many lanes W, given what a lane costs in area and what it buys in time?
 
@@ -118,10 +118,10 @@ The flow takes the saved recipe through the design checks, lowering and the gene
 
     flow vecmul_dry (vecmul_dry: N=2048, W=8; N=2048) on snax_forge -> out/flow/vecmul_dry/
       sandbox   4 steps, each equal to the input graph on the reference check -> sandbox/
-      design    25 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
+      design    24 checks passed; platform base snax_forge, 0 changes; memory contiguous, 0 changes -> design/
       lower     tasks.json (12 steps)
-      gen       snax_forge.hjson, snax_forge_streamer.hjson, accelerator.json, main.c, data.h (seed 0) -> gen/
-      build     up to date (snax-gvsoc c061e32b)
+      gen       snax_forge.hjson, snax_forge_vecmul_dry_streamer_acc.hjson, accelerator.json, main.c, data.h (seed 0) -> gen/
+      build     up to date (snax-gvsoc 61d1e8ac)
       sw        sw/forge.elf (sha256 254f665a9aa34d27)
       gvsoc     snax_hjson, exit 0 -> run/
       check     passed: 1200 cycles (main to forge_check); data 0 errors (2048 words); counters mult_acc 259 (256 beats)
@@ -171,15 +171,21 @@ A run with a trace shows what each part of the cluster did in every cycle. `--tr
 
 `report/run.md` now names every task with its start and end cycle:
 
-| Block | # | Task | Start | Done | Cycles | Direction | Bytes |
-|---|---:|---|---:|---:|---:|---|---:|
-| dma | 0 | load_A | 89 | 359 | 270 | L2 → L1 | 16384 |
-| dma | 1 | load_B | 94 | 615 | 521 | L2 → L1 | 16384 |
-| acc_a | 0 | mult_acc_a | 619 | 877 | 258 | – | – |
-| acc_b | 0 | mult_acc_b | 619 | 878 | 259 | – | – |
-| acc_out | 0 | mult_acc_out | 619 | 883 | 264 | – | – |
-| acc | 0 | mult_acc | 620 | 880 | 260 | – | – |
-| dma | 2 | store_C | 894 | 1157 | 263 | L1 → L2 | 16384 |
+| Block | # | Task | Accelerator | Start | Done | Cycles | Direction | Bytes |
+|---|---:|---|---|---:|---:|---:|---|---:|
+| dma | 0 | load_A | – | 89 | 359 | 270 | L2 → L1 | 16384 |
+| dma | 1 | load_B | – | 94 | 615 | 521 | L2 → L1 | 16384 |
+| acc_a | 0 | mult_acc_a | acc | 619 | 877 | 258 | – | – |
+| acc_b | 0 | mult_acc_b | acc | 619 | 878 | 259 | – | – |
+| acc_out | 0 | mult_acc_out | acc | 619 | 883 | 264 | – | – |
+| acc | 0 | mult_acc | acc | 620 | 880 | 260 | – | – |
+| dma | 2 | store_C | – | 894 | 1157 | 263 | L1 → L2 | 16384 |
+
+and its Accelerators open with a row per accelerator: the one streamer set `acc`, its CSRs, its streamer's busy window and the group's COUNTER:
+
+| Accelerator | Groups | CSRs | Streamer busy | COUNTER |
+|---|---|---|---|---|
+| acc | acc | 960–981 | 619–883 | acc 259 |
 
 The DMA brings A and B in one after the other (one 512-bit beat per cycle, 256 beats each), the accelerator and its three streamers run for 260 cycles, then the DMA writes C back. Nothing overlaps: the program loads, computes, then stores.
 
@@ -207,21 +213,37 @@ Turn Compare on and pick `vecmul_w4/4_bind` and `vecmul_w8/4_bind`: Details and 
 
 ## 8. What was generated
 
-The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the cluster and streamer hjson SNAX-GVSoC reads, the program `main.c` with its `data.h`, and `accelerator.json`, the one description both SNAX-GVSoC and the RTL are built from (D134, C§17). The RTL comes from `gen-rtl` on the same design point (the flow does not make RTL, D136):
+The flow wrote the design point's files to `out/flow/vecmul_dry/gen/`: the cluster file `snax_forge.hjson` and its streamer file `snax_forge_vecmul_dry_streamer_acc.hjson`, which SNAX-GVSoC reads, the headers, the program `main.c` with its `data.h`, `manifest.json`, and `accelerator.json`, the one description both SNAX-GVSoC and the RTL are built from (D134, C§17). The design is one snax_cluster entry with one streamer set, `acc` (D157). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `vecmul_dry` gives `snax_forge_vecmul_dry` here and in the RTL's module names (a recipe `vecmul` would give `snax_forge_vecmul`):
+
+```json
+    "snax_acc_name": "snax_forge_vecmul_dry",
+    "snax_tcdm_ports": 24,
+    ...
+    "snax_streamer_sets": [
+     {
+      "name": "acc",
+      "snax_streamer_cfg": {"$ref": "snax_forge_vecmul_dry_streamer_acc.hjson"},
+      "snax_num_rw_csr": 2,
+      "snax_num_ro_csr": 2
+     }
+    ],
+```
+
+The RTL comes from `gen-rtl` on the same design point (the flow does not make RTL, D136):
 
     pixi run gen-rtl out/flow/vecmul_dry/design/design_point.json
 
-It writes `out/rtl/vecmul_dry/accelerator.json`, runs `hw/chisel/`'s `Emit --spec` into `sv/` and lists what it emitted in `emitted.json`. The top is `snax_forge_shell_wrapper`, which snax_cluster connects to the streamers; inside it three parts:
+It writes `out/rtl/vecmul_dry/accelerator.json`, runs `hw/chisel/`'s `Emit --spec` into `sv/` and lists what it emitted in `emitted.json`. Every module the design owns carries its tag, `snax_forge_vecmul_dry`. The top is `snax_forge_vecmul_dry_shell_wrapper`, which snax_cluster connects to the set's streamer; inside it three parts:
 
 ```mermaid
 flowchart LR
-  core["core0<br/>CSR writes"] --> csr["snax_forge_csr<br/>START, JOBS, STATUS, COUNTER"]
-  csr -- "start (JOBS)" --> ctrl["snax_forge_acc_ctrl<br/>GroupCtrl"]
+  core["core0<br/>CSR writes"] --> csr["snax_forge_vecmul_dry_csr<br/>START, JOBS, STATUS, COUNTER"]
+  csr -- "start (JOBS)" --> ctrl["snax_forge_vecmul_dry_acc_ctrl<br/>GroupCtrl"]
   ctrl -- "busy, done pulse" --> csr
-  sa["streamer acc_a<br/>8 lanes"] -- "valid / ready" --> ctrl
-  sb["streamer acc_b<br/>8 lanes"] -- "valid / ready" --> ctrl
-  ctrl -- "valid / ready" --> so["streamer acc_out<br/>8 lanes"]
-  sa -- "a[0..7]" --> dp["snax_forge_datapath<br/>ElementwiseLanes mul, 8 lanes"]
+  sa["streamer acc: acc_a<br/>8 lanes"] -- "valid / ready" --> ctrl
+  sb["streamer acc: acc_b<br/>8 lanes"] -- "valid / ready" --> ctrl
+  ctrl -- "valid / ready" --> so["streamer acc: acc_out<br/>8 lanes"]
+  sa -- "a[0..7]" --> dp["snax_forge_vecmul_dry_datapath<br/>ElementwiseLanes mul, 8 lanes"]
   sb -- "b[0..7]" --> dp
   dp -- "out[0..7]" --> so
 ```
@@ -230,14 +252,14 @@ The datapath is combinational and gets no enable: it multiplies whatever the str
 
 | File | Module |
 |---|---|
-| `snax_forge_csr.sv` | the CSR block: START, JOBS, STATUS, COUNTER |
-| `snax_forge_acc_ctrl.sv` | the group `acc`'s control unit (`GroupCtrl`) |
-| `snax_forge_ctrl.sv` | the control units of every group, here one |
+| `snax_forge_vecmul_dry_csr.sv` | the CSR block: START, JOBS, STATUS, COUNTER |
+| `snax_forge_vecmul_dry_acc_ctrl.sv` | the group `acc`'s control unit (`GroupCtrl`) |
+| `snax_forge_vecmul_dry_ctrl.sv` | the control units of every group, here one |
 | `ElementwiseAlu_w64_mul.sv` | one 64-bit lane's multiply |
 | `ElementwiseLanes_i64xi64_i64_i64_n8_mul.sv` | the 8 lanes, the datapath block of `acc` |
-| `snax_forge_acc.sv` | the unit `acc`, around its block |
-| `snax_forge_datapath.sv` | the datapaths of every unit, here one |
-| `snax_forge_shell_wrapper.sv` | the top, the CSR block, the control and the datapath wired to the streamers |
+| `snax_forge_vecmul_dry_acc.sv` | the unit `acc`, around its block |
+| `snax_forge_vecmul_dry_datapath.sv` | the datapaths of every unit, here one |
+| `snax_forge_vecmul_dry_shell_wrapper.sv` | the top, the CSR block, the control and the datapath wired to the streamer |
 | `filelist.f` | the files above, in compile order |
 
 The lanes and the multiply, from `ElementwiseLanes_i64xi64_i64_i64_n8_mul.sv` and the lane it instantiates eight times, `ElementwiseAlu_w64_mul.sv`:
@@ -260,10 +282,10 @@ module ElementwiseLanes_i64xi64_i64_i64_n8_mul(
   assign io_out = io_a * io_b;
 ```
 
-The control unit's header and its registers, from `snax_forge_acc_ctrl.sv`:
+The control unit's header and its registers, from `snax_forge_vecmul_dry_acc_ctrl.sv`:
 
 ```systemverilog
-module snax_forge_acc_ctrl(
+module snax_forge_vecmul_dry_acc_ctrl(
   ...
   input  [31:0] io_start_bits_jobs,
   input         io_in_0_valid,
@@ -281,7 +303,7 @@ module snax_forge_acc_ctrl(
   reg         io_done_REG;
 ```
 
-The CSR block's registers and its read mux, from `snax_forge_csr.sv`:
+The CSR block's registers and its read mux, from `snax_forge_vecmul_dry_csr.sv`:
 
 ```systemverilog
   reg  [31:0] acc_jobs;
@@ -301,16 +323,27 @@ The CSR block's registers and its read mux, from `snax_forge_csr.sv`:
         acc_counter <= acc_counter + 32'h1;
 ```
 
-**The CSRs.** `accelerator.json` lists them per group (D152):
+**The CSRs.** The set's streamer CSRs come first, then the accelerator's own, packed from 960 (D157, C§16); the manifest numbers them, and `accelerator.json` lists the group's own with their offsets in the CSR block (D152):
 
-| CSR | Access | Offset | Bits | What |
-|---|---|---:|---:|---|
-| START | R/W | 0 | 1 | a write with bit 0 set starts the group; it reads 0 |
-| JOBS | R/W | 1 | 32 | how many jobs; here one job per beat, 256 |
-| STATUS | R/O | 2 | 2 | bit 0 busy, bit 1 done (sticky, cleared by the next start) |
-| COUNTER | R/O | 3 | 32 | the busy cycles of the last run, saturating at 2³² − 1 |
+| CSR | Access | Offset | Number | Bits | What |
+|---|---|---:|---:|---:|---|
+| `acc_a`, `acc_b`, `acc_out` | R/W | – | 960–974 | 32 | the streamer's movers: base pointer (low, high), spatial stride, temporal bound, temporal stride, 5 each |
+| STREAMER_START, STREAMER_BUSY, STREAMER_PERFORMANCE_COUNTER | – | – | 975–977 | 32 | the streamer's start, busy and counter |
+| START | R/W | 0 | 978 | 1 | a write with bit 0 set starts the group; it reads 0 |
+| JOBS | R/W | 1 | 979 | 32 | how many jobs; here one job per beat, 256 |
+| STATUS | R/O | 2 | 980 | 2 | bit 0 busy, bit 1 done (sticky, cleared by the next start) |
+| COUNTER | R/O | 3 | 981 | 32 | the busy cycles of the last run, saturating at 2³² − 1 |
 
-The program (`gen/main.c`) sets the three streamers (base address, strides, 256 temporal beats each), writes `ACC_RW_JOBS` 256, starts the streamers and then `ACC_RW_START`, polls `ACC_RO_STATUS` until busy drops, and reads `ACC_RO_COUNTER`.
+The headers give them names prefixed with the set's: `include/streamer_acc_csr_addr_map.h` the streamer's (`ACC_BASE_PTR_READER_0_LOW` 960 to `ACC_STREAMER_PERFORMANCE_COUNTER_CSR` 977), `include/acc_csr.h` the accelerator's own:
+
+```c
+#define ACC_RW_START 978
+#define ACC_RW_JOBS 979
+#define ACC_RO_STATUS 980
+#define ACC_RO_COUNTER 981
+```
+
+The program (`gen/main.c`) sets the three movers (base address, strides, 256 temporal beats each), writes `ACC_RW_JOBS` 256, starts the streamer (`ACC_STREAMER_START_CSR`) and then `ACC_RW_START`, polls `ACC_RO_STATUS` until busy drops and `ACC_STREAMER_BUSY_CSR` until the streamer is done, and reads `ACC_RO_COUNTER`.
 
 **The control.** `GroupCtrl` (`hw/chisel/.../ctrl/GroupCtrl.scala`) is generated from the group's description, not written per kernel: it takes the start with JOBS, runs the group rule (the same rule SNAX-GVSoC steps, `snax_group_rule.py`), and drives the handshakes. A beat is taken only when both input streams are valid and the output is ready (`acc_offer` and not `acc_frozen`); in that cycle it raises both inputs' ready and the output's valid, so the datapath's result of that cycle is the one pushed. It raises `busy` from the start to the last push and a done pulse at the end, which the CSR block turns into STATUS and COUNTER. Its 66 flops are what the cost model counts: `busy` (1), `acc_jobs` (32, JOBS as the start gave it), `acc_jobs_counter` (32) and `io_done_REG` (1, the done pulse a cycle later), as `estimate/bits.py` lists them.
 
