@@ -7,6 +7,9 @@
 //                 thin band of its function spans under them, a tick per CSR
 //                 access (a poll's at its first read)
 //   DMA lane      one bar per copy, issue to done, with its direction
+//   headings      accelerator ▸ group, as the editor's Bindings nest them
+//                 (D156): one per group, its movers' and its unit's lanes under
+//                 it (one streamer set per accelerator, D157)
 //   mover, acc    one bar per task, start to done, coloured by its class runs
 //                 from beat on (idle left blank), its class totals on hover
 //   detail rows   from beat on, inside the open segments in view only, from
@@ -29,7 +32,7 @@
 // the play button steps as the right arrow does (app.js, player.js). A cycle
 // change moves the cursor and updates the cluster view in place.
 
-import { CLASS_GROUP, clampCycle, dec, h, int } from "./dom.js";
+import { CLASS_GROUP, accelGroup, clampCycle, dec, h, int } from "./dom.js";
 import { clusterView, eventList } from "./cluster.js";
 import { journeyOf, tracersOf } from "./memory.js";
 import { playControl } from "./player.js";
@@ -39,6 +42,7 @@ const SVG = "http://www.w3.org/2000/svg";
 const LANE_H = 28; // px, a lane
 const BAND_H = 5; // px, a core's function band
 const SUB_H = 16; // px, a detail row
+const HEAD_H = 18; // px, an accelerator ▸ group heading
 const RULER_H = 24;
 const LABEL_W = 170;
 const FOLD_W = 30; // px, a folded segment, whatever its length
@@ -138,8 +142,15 @@ function laneRows(detail, ans, showDetail) {
   const filter = detail.trace?.filter ?? [];
   const movers = Object.fromEntries(detail.cluster.accelerator.movers.map((m) => [m.name, m]));
   const rows = [];
+  let at = null; // the accelerator ▸ group the last heading named (D156, D157)
   for (const lane of ans.lanes) {
     const name = lane.name;
+    if (lane.group !== undefined && `${lane.accelerator}|${lane.group}` !== at) {
+      at = `${lane.accelerator}|${lane.group}`;
+      const label = accelGroup(lane.accelerator, lane.group);
+      rows.push({ label, sub: lane.accelerator !== lane.group ? "accelerator ▸ group" : "group", height: HEAD_H, head: true,
+        title: `${label}: its movers, then its unit (one streamer set per accelerator, D157)` });
+    }
     if (lane.kind === "core") {
       rows.push({ label: name, sub: "core", height: LANE_H, draw(g, m) {
         const top = 3;
@@ -353,7 +364,7 @@ function labels(rows, setHash, tracers) {
   ];
   return h("div", { class: "sched-labels", style: { width: `${LABEL_W}px` } },
     h("div", { style: { height: `${RULER_H}px` }, class: "ruler-label" }, "cycle"),
-    rows.map((r) => h("div", { class: `lab${r.detail ? " sub" : ""}${r.tracer ? " tracer" : ""}`, style: { height: `${r.height}px` }, title: r.title ?? r.label },
+    rows.map((r) => h("div", { class: `lab${r.detail ? " sub" : ""}${r.head ? " head" : ""}${r.tracer ? " tracer" : ""}`, style: { height: `${r.height}px` }, title: r.title ?? r.label },
       r.tracer ? tracerLabel(r) : [h("span", {}, r.label), r.sub ? h("small", {}, r.sub) : null])));
 }
 

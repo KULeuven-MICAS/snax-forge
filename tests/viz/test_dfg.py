@@ -426,6 +426,10 @@ def test_the_estimate_panel_gives_the_unmapped_and_total_cycles():
         "cycles": ("0", "256"),
         "unmapped cycles": ("2048", "0"),
         "total cycles": ("2048", "256"),
+        "streamers": (
+            "0 streamers (not costed, open item 110)",
+            "1 streamer (not costed, open item 110) · 22 CSRs",
+        ),
     }  # fmt: skip (one unmapped count, D156)
 
 
@@ -718,7 +722,11 @@ def test_compare_gives_two_columns_when_the_groups_differ():
     assert not any("→" in r["a"] + r["b"] for r in rows)
     assert _rows(rows, "accelerator") == {"cycles": ("266", "265", True),
                                           "unmapped cycles": ("0", "0", False),
-                                          "total cycles": ("266", "265", True)}  # fmt: skip
+                                          "total cycles": ("266", "265", True),
+                                          "streamers": (
+                                              "2 streamers (not costed, open item 110) · 40 CSRs",
+                                              "1 streamer (not costed, open item 110) · 23 CSRs",
+                                              True)}  # fmt: skip
     assert _rows(rows, "group mac")["energy"] == ("26.136 nJ", "–", True)
     assert _rows(rows, "group dot")["cycles"] == ("–", "265 = 256 + 9", True)
     assert _rows(rows, "Cost estimate (first-order) on nangate45") == {

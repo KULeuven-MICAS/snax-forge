@@ -168,22 +168,24 @@ def dot1_stall(tmp_path_factory):
 
     from .helpers import recorded_run
 
-    out = recorded_run(tmp_path_factory.mktemp("dot1") / "dot_1_stall", "stall", RECORDED / "dot_1")
-    return api.load_run(out, "dot_1_stall")
+    out = recorded_run(
+        tmp_path_factory.mktemp("dot1") / "dot_1_enc_stall", "stall", RECORDED / "dot_1_enc"
+    )
+    return api.load_run(out, "dot_1_enc_stall")
 
 
 def test_the_cluster_view_names_the_unit_that_fires(dot1_stall):
-    """dot 1 (fixtures/dot_1, N = 64, W = 4): at a mul firing ``acc`` is mul, its task and fire
-    its own, sum's entry quiet; at a sum firing the other way round; each lane's grant is its
-    own mover's."""
+    """dot_1_enc (fixtures/dot_1_enc, N = 64, W = 4): at a vmul firing ``acc`` is vmul, its task
+    and fire its own, vsum's entry quiet; at a vsum firing the other way round; each lane's grant
+    is its own mover's."""
     idx = dot1_stall.index
-    for unit, other in (("mul", "sum"), ("sum", "mul")):
+    for unit, other in (("vmul", "vsum"), ("vsum", "vmul")):
         t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == unit)
         a = cv.cluster_at(idx, t)["acc"]
         assert (a["name"], a["accelerator"], a["fire"]["src"]) == (unit, "dot", unit)
         units = {u["name"]: u for u in a["units"]}
         assert units[other]["task"] is None and units[other]["fire"] is None
-        assert units[unit]["task"] == ("mult_mul" if unit == "mul" else "sum_sum")
+        assert units[unit]["task"] == ("mult_vmul" if unit == "vmul" else "sum_vsum")
 
 
 def test_the_schedule_marks_the_idle_tasks_and_splits_the_detail(dot1_stall):
@@ -193,10 +195,55 @@ def test_the_schedule_marks_the_idle_tasks_and_splits_the_detail(dot1_stall):
     bars = {b["task"]: b["idle"] for lane in schedule.lanes(idx)["lanes"] for b in lane.get("bars", [])
             if "idle" in b}  # fmt: skip
     assert sorted(t for t, idle in bars.items() if idle) == [
-        "mult_sum_a", "mult_sum_out", "sum_mul_a", "sum_mul_b", "sum_mul_out"]  # fmt: skip
-    assert not bars["mult_mul_a"] and not bars["sum_sum"]
+        "mult_vsum_a", "mult_vsum_out", "sum_vmul_a", "sum_vmul_b", "sum_vmul_out"]  # fmt: skip
+    assert not bars["mult_vmul_a"] and not bars["sum_vsum"]
     d = schedule.detail(idx, 0, idx.total_cycles)
     assert {u: {e["src"] for e in es} for u, es in d["units"].items()} == {
-        "mul": {"mul"},
-        "sum": {"sum"},
+        "vmul": {"vmul"},
+        "vsum": {"vsum"},
     }
+
+
+@pytest.fixture(scope="module")
+def dot1_sets(tmp_path_factory):
+    from snax_forge.viz import api
+    from tests.run.helpers import RECORDED
+
+    from .helpers import recorded_run
+
+    out = recorded_run(tmp_path_factory.mktemp("sets") / "dot_1_stall", "stall", RECORDED / "dot_1")
+    return api.load_run(out, "dot_1_stall")
+
+
+def test_the_cluster_view_has_a_streamer_per_set(dot1_sets, dot1_stall):
+    """dot 1 (fixtures/dot_1): two streamers inside the accelerator, vmul's busy at a vmul firing
+    and vsum's quiet; dot_1_enc one, busy with both groups' tasks (D157)."""
+    idx = dot1_sets.index
+    t = next(e["t"] for e in idx.events if e["k"] == "fire" and e["src"] == "vmul")
+    a = cv.cluster_at(idx, t)
+    assert [(s["name"], s["groups"], s["first"], s["last"], s["movers"]) for s in a["streamers"]] == [
+        ("vmul", ["vmul"], 960, 977, ["vmul_a", "vmul_b", "vmul_out"]),
+        ("vsum", ["vsum"], 982, 994, ["vsum_a", "vsum_out"])]  # fmt: skip
+    assert [(s["busy"], s["task"]) for s in a["streamers"]] == [
+        (True, "mult_vmul_a"),
+        (False, None),
+    ]
+    assert {u["name"]: u["set"] for u in a["acc"]["units"]} == {"vmul": "vmul", "vsum": "vsum"}
+    (one,) = cv.cluster_at(dot1_stall.index, t)["streamers"]
+    assert (one["name"], one["groups"], one["movers"]) == (
+        "dot", ["vmul", "vsum"], ["vmul_a", "vmul_b", "vsum_a", "vmul_out", "vsum_out"])  # fmt: skip
+
+
+def test_the_schedule_groups_lanes_accelerator_then_group(dot1_sets, dot1_stall):
+    """As the editor's Bindings (D156): per accelerator, per group its movers then its unit."""
+    from snax_forge.viz import schedule
+
+    def order(run):
+        return [(x["accelerator"], x["group"], x["name"]) for x in schedule.lanes(run.index)["lanes"]
+                if x["kind"] in ("mover", "accelerator")]  # fmt: skip
+
+    assert order(dot1_sets) == [
+        ("vmul", "vmul", "vmul_a"), ("vmul", "vmul", "vmul_b"), ("vmul", "vmul", "vmul_out"),
+        ("vmul", "vmul", "vmul"), ("vsum", "vsum", "vsum_a"), ("vsum", "vsum", "vsum_out"),
+        ("vsum", "vsum", "vsum")]  # fmt: skip
+    assert [x[:2] for x in order(dot1_stall)] == [("dot", "vmul")] * 4 + [("dot", "vsum")] * 3
