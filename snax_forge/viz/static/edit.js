@@ -219,14 +219,20 @@ export async function start() {
 
 function field(f) {
   const attrs = { "data-field": f.name, disabled: f.readonly };
-  if (f.type === "choice" && f.name === "binding") { // bind: the list, with each option's timing
-    return h("div", { class: "dfg-choices", ...attrs }, f.choices.map((c, i) => {
+  if (f.type === "choice" && f.name === "binding") { // bind: the options that fit, with their timing
+    const fit = f.choices.map((c, i) => [c, i]).filter(([c]) => c.ok); // the index is the API's
+    if (!fit.length) { // nothing fits: the refusals, so the fix each names is still there
+      return h("div", { class: "dfg-choices", ...attrs }, h("p", { class: "muted" }, "no BRM in the library fits"),
+        h("details", {}, h("summary", {}, `why (${f.choices.length})`),
+          f.choices.map((c) => h("p", { class: "muted" }, `${c.label}: ${c.message}`))));
+    }
+    return h("div", { class: "dfg-choices", ...attrs }, fit.map(([c, i]) => {
       const t = c.timing;
       const timing = t ? `II ${t.ii} · latency ${t.latency} · span ${t.span}` : "";
-      return h("label", { class: `dfg-choice${c.ok ? "" : " refused"}`, title: c.message || "" },
-        h("input", { type: "radio", name: "binding", value: String(i), disabled: !c.ok,
+      return h("label", { class: "dfg-choice" },
+        h("input", { type: "radio", name: "binding", value: String(i),
           checked: f.value && c.value.brm === f.value.brm && c.value.implementation === f.value.implementation }),
-        h("span", {}, c.label), h("small", {}, c.ok ? timing : c.message));
+        h("span", {}, c.label), h("small", {}, timing));
     }));
   }
   if (f.type === "choice") {

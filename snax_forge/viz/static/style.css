@@ -566,7 +566,6 @@ svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-h
 .dfg-choices { display: flex; flex-direction: column; gap: 0.15rem; }
 .dfg-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 0.35rem; align-items: baseline; }
 .dfg-choice small { grid-column: 2; color: var(--muted); }
-.dfg-choice.refused span { color: var(--muted); text-decoration: line-through; }
 button.primary { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .dfg-not-here { margin-top: 0.8rem; color: var(--muted); }
 .dfg-not-here ul { padding-left: 1rem; margin: 0.3rem 0; }
