@@ -48,7 +48,7 @@ from snax_forge.common import generated_header
 from snax_forge.design.point import DesignPoint
 from snax_forge.dfg.execute import execute
 from snax_forge.dfg.pad import pad_value, padded_shape
-from snax_forge.dfg.reference import Goldens, KernelError, kernel_inputs, kernel_spec
+from snax_forge.dfg.reference import Goldens, KernelError, kernel_inputs, kernel_spec, on_graph
 from snax_forge.lower.layout import Layout, l2_bytes, over
 
 from .blocks import GenError, port_dtype
@@ -102,7 +102,7 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
         spec = kernel_spec(kernel or graph.name, "--kernel" if kernel else "the graph's name")
         if goldens is None:
             inputs = kernel_inputs(spec, graph, seed)
-            golden = execute(graph, {k: np.copy(v) for k, v in inputs.items()})
+            golden = execute(graph, {k: np.copy(v) for k, v in on_graph(graph, inputs).items()})
         else:
             inputs, golden = goldens
     except KernelError as e:

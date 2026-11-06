@@ -1,0 +1,20 @@
+{
+ "name": "axpy",
+ "kernel": "axpy",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {"transform": "split_map", "params": {"map": "augassign_19_4_map", "factor": "W"}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "augassign_19_4_map"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult_map_s",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

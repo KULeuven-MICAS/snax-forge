@@ -80,11 +80,16 @@ worked out here:
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
                  ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``)
     unit         ``<instance> · <what one lane computes> · W <lanes>``, then each slot
-                 and its value, a fold's as a tasklet's   (``mul · a * b · W 4``,
-                                                           ``acc · max(a, k) · W 4 · k 0``)
+                 and its value, baked or read from a scalar (a CSR), a fold's as a tasklet's
+                                                          (``mul · a * b · W 4``,
+                                                           ``acc · max(a, k) · W 4 · k = 0``,
+                                                           ``acc · k1 * a + b · W 4 · k1 = alpha (CSR)``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
     container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
-                 ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links)
+                 ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links); a
+                 kernel's scalar argument (``sdfg.scalar``, ``scalar``) is drawn as a parameter
+                 hexagon, each edge reading it as one element labelled ``alpha[0] · broadcast``,
+                 and its Containers line is ``scalar · <dtype>``
     group, accelerator   their name
 
 Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
@@ -165,6 +170,7 @@ from snax_forge.design.streamers import (
     port_loops,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
+from snax_forge.dfg.graph import SCALAR
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.estimate.cost import L1_LABEL, L1Cost, caveat, dec3, heading, sig3
 from snax_forge.expr import ExprError
@@ -571,12 +577,31 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
     return {"entries": entries, "unused": unused, "tree": bindings_tree(g, entries)}
 
 
-def slot_params(n: Node) -> dict[str, int]:
-    """An accelerated node's slots and their values: the int design params its code reads
-    (``simd``'s ``k``, brm.py's ``Code``)."""
+def slot_params(n: Node) -> dict[str, int | str]:
+    """An accelerated node's slots and their values: the int design params its code reads, baked
+    in (``simd``'s ``k``, brm.py's ``Code``), then the slots read from a scalar, each an input
+    connector that is no port, as ``<container> (CSR)`` (axpy's ``k1``: ``alpha (CSR)``), in the
+    order the code reads them."""
     params = n.attrs.get("params") or {}
-    read = {x for _, e in expr.statements(n.attrs["code"], n.id) for x in expr.names(e)}
-    return {k: v for k, v in params.items() if k in read and type(v) is int}
+    read = [x for _, e in expr.statements(n.attrs["code"], n.id) for x in expr.ordered_names(e)]
+    ports = _port_names(n)
+    out: dict[str, int | str] = {}
+    for x in dict.fromkeys(read):
+        if type(params.get(x)) is int:
+            out[x] = params[x]
+        elif x in n.inputs and x not in ports:
+            out[x] = f"{n.inputs[x].data} (CSR)"
+    return out
+
+
+def _port_names(n: Node) -> set[str]:
+    """Its BRM's port names; its connectors when the BRM does not load."""
+    from snax_forge.brm import load_brm
+
+    try:
+        return {p.name for p in load_brm(n.attrs["brm"]).interface.ports}
+    except (BrmError, KeyError, OSError):
+        return set(n.inputs) | set(n.outputs)
 
 
 def _lanes_names(n: Node) -> set[str]:
@@ -692,8 +717,9 @@ def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
             if at < len(text) or not parts:
                 parts.append({"text": text[at:], "symbol": None})
             dims.append({"parts": parts})
+        scalar = bool(c.attrs.get(SCALAR))
         out.append({
-            "name": name, "shape": list(c.shape),
+            "name": name, "shape": list(c.shape), "scalar": scalar,
             "shape_text": " × ".join(str(d) for d in c.shape) or "scalar", "dims": dims,
             "sizes": sizes, "sizes_text": " × ".join(map(str, sizes)) if sizes else None,
             "dtype": c.dtype, "transient": c.transient,
@@ -701,7 +727,8 @@ def containers_section(g: Graph, est: Any = None) -> list[dict[str, Any]]:
             "bytes_text": size_text(placed.bytes) if placed and placed.bytes is not None else None,
             "placement": placed.placement if placed else None,
             "symbols": list(dict.fromkeys(used)),
-            "line": " · ".join(x for x in (" × ".join(str(d) for d in c.shape) or "scalar",
+            "line": f"scalar · {c.dtype}" if scalar else
+                    " · ".join(x for x in (" × ".join(str(d) for d in c.shape) or "scalar",
                                            _placed_text(placed),
                                            size_text(placed.bytes)
                                            if placed and placed.bytes is not None else None)
@@ -1103,8 +1130,8 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
         text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}"
         try:
             inst = instance_of(n)
-            first = next(p.name for p in inst.ports if p.direction == "in")
-            slots = "".join(f" · {k} {v}" for k, v in slot_params(n).items())
+            first = next(p.name for p in inst.ports if p.direction == "in")  # a port, not a slot
+            slots = "".join(f" · {k} = {v}" for k, v in slot_params(n).items())
             return f"{text} · {param or 'W'} {inst.lanes(first)}{slots}"
         except (BrmError, ExprError, KeyError, StopIteration):
             return text
@@ -1283,7 +1310,8 @@ def _node_details(n: Node) -> dict[str, Any]:
 def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
     """A container as the drawing shows it: its name, its badge, whether it is transient."""
     c = g.containers[name]
-    return {"name": name, "text": name, "badge": badge(placed), "transient": c.transient}
+    return {"name": name, "text": name, "badge": badge(placed), "transient": c.transient,
+            "scalar": bool(c.attrs.get(SCALAR))}  # fmt: skip
 
 
 def memlet_text(m: Memlet) -> str:
@@ -1372,6 +1400,8 @@ def _layout(g: Graph) -> dict[str, Any]:
     linked = {n.attrs["container"]: n.id for n, _ in g.walk() if n.kind == "link"}
     # nor does a fused nest's local value: its writer's connector joins its reader's
     local = {c for c, cont in g.containers.items() if "loop.local" in cont.attrs}
+    # a kernel's scalar argument read as one element: its edge says it is broadcast
+    scalars = {c for c, cont in g.containers.items() if cont.attrs.get(SCALAR)}
     reads, writes = [], []
     for top in tops:
         r: list[str] = []
@@ -1449,9 +1479,9 @@ def _layout(g: Graph) -> dict[str, Any]:
                 edges.extend(_edge(w, port, m.data, text, "read", packing(g, n, c, m.data))
                              for w in writers[m.data])  # fmt: skip
             else:
-                edges.append(
-                    _edge(above[m.data], port, m.data, text, "read", packing(g, n, c, m.data))
-                )
+                label = f"{text} · broadcast" if m.data in scalars and not m.names else None
+                edges.append(_edge(above[m.data], port, m.data, text, "read",
+                                   packing(g, n, c, m.data), label=label))  # fmt: skip
         nxt = reads[k + 1] if k + 1 < len(tops) else []
         names = nxt + [c for c in writes[k] if c not in nxt]
         fresh = {c: list(dict.fromkeys(n.id for n, _, _ in wrote[c])) for c in writes[k]}
@@ -1475,12 +1505,16 @@ def _edge(
     side: str,
     pack: str | None = None,
     local: bool = False,
+    label: str | None = None,
 ) -> dict[str, Any]:
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
-    fused nest's local value between its two tasklets, labelled with the container's name."""
+    fused nest's local value between its two tasklets, labelled with the container's name;
+    ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``)."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack
     if local:
         out |= {"local": True, "label": data}
+    elif label is not None:
+        out |= {"label": label}
     return out

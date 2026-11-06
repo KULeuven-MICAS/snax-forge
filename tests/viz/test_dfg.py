@@ -158,6 +158,7 @@ def test_vecadd_accelerated():
         "text": "A",
         "badge": "L1 · 512 B",
         "transient": False,
+        "scalar": False,
     }
     top = v["rows"][1]["node"]
     assert (top["id"], top["loop_kind"], top["text"]) == (
@@ -905,9 +906,89 @@ def test_a_unit_with_a_slot_shows_it():
 
     r = Recipe.load(recipe_path("relu"))
     g = apply_recipe(r, Graph.load(FIXTURES / "relu.snaxdfg"))[-1].graph
-    assert compact_text(g, g.node("numpy_maximum")) == "acc · max(a, k) · W 4 · k 0"
+    assert compact_text(g, g.node("numpy_maximum")) == "acc · max(a, k) · W 4 · k = 0"
     for recipe in (r, None):
         (e,) = bindings_section(g, recipe)["entries"]
         assert e["label"] == "acc · simd"
         assert [(p["name"], p["value"], p["editable"]) for p in e["params"]] == [
             ("W", 4, False), ("k", 0, False)]  # fmt: skip
+
+
+# =============================================================================
+# Scalars: axpy's alpha (B2 R3b)
+# =============================================================================
+
+
+def _axpy(name: str):
+    from snax_forge.sandbox import Recipe, apply_recipe
+
+    r = Recipe.load(recipe_path(name))
+    return r, [x.graph for x in apply_recipe(r, Graph.load(FIXTURES / "axpy.snaxdfg"))]
+
+
+def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
+    """alpha: listed ``scalar · int32``, its box marked scalar (the hexagon), every edge reading
+    alpha[0] labelled ``alpha[0] · broadcast``; the bound unit's k1 connector too."""
+    from snax_forge.design import Platform
+    from snax_forge.viz.dfg.api import Entry, step_view
+    from tests.design.helpers import SNAX_FORGE
+
+    r, graphs = _axpy("axpy")
+    for g in (graphs[2], graphs[-1]):
+        v = step_view(Entry("s", Path("s"), g, None), "s", Platform.load(SNAX_FORGE), recipe=r)
+        line = {c["name"]: c["line"] for c in v["containers_section"]}
+        assert line["alpha"] == "scalar · int32" and line["x"] == "N · L1 · 256 B"
+        assert v["containers"]["alpha"]["scalar"] and not v["containers"]["x"]["scalar"]
+        labels = [e for e in v["edges"] if e.get("label")]
+        assert [e["label"] for e in labels if e["data"] == "alpha"] == ["alpha[0] · broadcast"]
+    bound = graphs[-1]
+    v = step_view(Entry("s", Path("s"), bound, None), "s", Platform.load(SNAX_FORGE), recipe=r)
+    (e,) = [e for e in v["edges"] if e["data"] == "alpha"]
+    assert e["to"] == "mult.k1"
+
+
+def test_a_units_slots_show_csr_or_baked():
+    """After bind the unit's label gives each slot: k1 = alpha (CSR), or k1 = 3 baked; the
+    Bindings the same, read only."""
+    from snax_forge.viz.dfg.api import bindings_section, compact_text
+
+    for name, slot in (("axpy", "alpha (CSR)"), ("axpy_baked", 3)):
+        r, graphs = _axpy(name)
+        g = graphs[-1]
+        assert compact_text(g, g.node("mult")) == f"acc · k1 * a + b · W 4 · k1 = {slot}"
+        (e,) = bindings_section(g, r)["entries"]
+        assert [(p["name"], p["value"], p["editable"]) for p in e["params"]][-1] == (
+            "k1", slot, False)  # fmt: skip
+
+
+@pytest.mark.slow
+def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatch):
+    """The editor (a session on axpy): after the two splits fuse_map on mult_map (second
+    augassign_19_4_map) and bake_scalar on alpha, its value an int field; after the bake,
+    unbake_scalar on the baked tasklet, and alpha no longer a container to bake; fuse_map and
+    bind then apply as the recipe does."""
+    from snax_forge.sandbox import session
+    from snax_forge.sandbox.session import Roots, Session
+    from tests.helpers import imported
+
+    monkeypatch.setattr(session, "_import", imported)
+    s = Session.from_kernel("axpy", {"N": 64, "W": 4},
+                            roots=Roots(tmp_path / "s", tmp_path / "r", tmp_path / "o"))  # fmt: skip
+    for m in ("mult_map", "augassign_19_4_map"):
+        assert s.apply("split_map", {"map": m, "factor": "W"})["ok"]
+    at = s.sites(s.cursor, "mult_map")
+    assert at["fuse_map"]["ok"] and at["fuse_map"]["params"] == {
+        "first": "mult_map", "second": "augassign_19_4_map"}  # fmt: skip
+    bake = s.sites(s.cursor, "alpha")["bake_scalar"]
+    assert bake["ok"] and {f["name"]: f["type"] for f in bake["form"]} == {
+        "container": "str", "value": "int"}  # fmt: skip
+    assert "alpha" in s.marks(s.cursor)["containers"]
+    assert not s.sites(s.cursor, "mult")["unbake_scalar"]["ok"]
+    assert s.apply("bake_scalar", {"container": "alpha", "value": 3})["ok"]
+    assert s.sites(s.cursor, "mult")["unbake_scalar"]["params"] == {"container": "alpha"}
+    assert "mult" in s.marks(s.cursor)["nodes"]
+    assert s.apply("fuse_map", {"first": "mult_map", "second": "augassign_19_4_map"})["ok"]
+    got = s.apply("bind", {"node": "mult_map_s", "brm": "simd",
+                           "implementation": "chisel_tiled_spatial", "instance": "acc"})  # fmt: skip
+    assert got["ok"], got
+    assert s.graphs[-1].node("mult").attrs["params"]["k1"] == 3

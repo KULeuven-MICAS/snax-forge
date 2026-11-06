@@ -119,6 +119,7 @@ function legend() {
     h("li", {}, h("i", { class: "key c-link" }), "link"),
     h("li", {}, h("i", { class: "key c-pill" }), "container"),
     h("li", {}, h("i", { class: "key c-pill transient" }), "transient"),
+    h("li", {}, h("i", { class: "key c-pill scalar" }), "scalar"),
   );
 }
 
@@ -154,7 +155,7 @@ function topEl(n) {
 function pill(v, key) {
   const b = v.boxes[key];
   const c = v.containers[b.container];
-  return h("div", { class: `c-pill${c.transient ? " transient" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-sel": c.name },
+  return h("div", { class: `c-pill${c.transient ? " transient" : ""}${c.scalar ? " scalar" : ""}${b.again ? " again" : ""}`, "data-box": key, "data-sel": c.name },
     h("b", {}, c.text), c.badge ? h("span", { class: "c-badge" }, c.badge) : null);
 }
 
@@ -250,7 +251,7 @@ function drawEdges(canvas, svg, edges, k) {
     const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
-    if (e.label) { // a fused nest's local value: its name beside the wire, highlighted with the container (no box, api.py)
+    if (e.label) { // a fused nest's local value (its name, no box) or a scalar's broadcast (alpha[0] · broadcast), api.py
       const t = svgEl("text", { x: (x1 + x2) / 2 + 6, y: (y1 + y2) / 2 + 4, class: "edge-label", "data-sel": e.data });
       t.textContent = e.label;
       out.push(t);

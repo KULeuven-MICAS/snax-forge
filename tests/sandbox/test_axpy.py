@@ -9,7 +9,9 @@ transient ``tmp0``, then ``y[i] + tmp0[i]`` into ``y``; split by W and fused, ``
 the fused nest composes the two codes, ``out = y + alpha * x``, and takes simd's
 ``out = k1 * a + b`` (op axpby; ``+`` and ``*`` commute, the array inputs tried on the ports
 in every order). Accepted when the worked example (W = 2, N = 4, alpha = 3) gives y' =
-(13, 14 | 7, 7) and every step checks against the reference.
+(13, 14 | 7, 7) and every step checks against the reference. ``bake_scalar`` puts a value in
+place of the scalar (``3 * x + y``, k1 baked), checked against the graph before it at that
+value, and ``unbake_scalar`` takes it back when nothing changed since.
 """
 
 from __future__ import annotations
@@ -24,9 +26,11 @@ from snax_forge.sandbox import (
     Recipe,
     SandboxError,
     apply_recipe,
+    bake_scalar,
     bind,
     fuse_map,
     split_map,
+    unbake_scalar,
     unbind,
     unfuse_map,
 )
@@ -199,3 +203,80 @@ def test_a_scalar_wider_than_the_op_type_is_refused():
     with pytest.raises(SandboxError, match="k2 reads the scalar beta, int64, which the op type "
                        "int32 does not hold"):  # fmt: skip
         bind(scaled(beta_dtype="int64"), node="mult", **BIND)
+
+
+# =============================================================================
+# The recipes, bake_scalar and unbake_scalar
+# =============================================================================
+
+
+@pytest.mark.parametrize(("name", "k1"), [("axpy", None), ("axpy_baked", 3)])
+def test_axpys_recipes_run_and_check(name, k1):
+    """Each step checked against the reference (the baked one at alpha = 3, which it keeps)."""
+    from tests.helpers import recipe_path
+
+    results = apply_recipe(Recipe.load(recipe_path(name)), Graph.load(FIXTURES / "axpy.snaxdfg"))
+    n = results[-1].graph.node("mult")
+    assert n.attrs["params"] == {"W": 4, "op": "axpby", "streams": 2} | (
+        {} if k1 is None else {"k1": k1})  # fmt: skip
+    assert ("k1" in n.inputs) == (k1 is None)
+    assert ("alpha" in results[-1].graph.containers) == (k1 is None)
+
+
+def test_bake_scalar_puts_the_value_in_the_code_and_drops_the_container():
+    g = fused()
+    b = bake_scalar(g, "alpha", 3)
+    t = b.node("mult")
+    assert t.attrs["code"] == "out = 3 * in2" and list(t.inputs) == ["in2"]
+    assert "alpha" not in b.containers
+    assert run(g).tolist() == execute(b, {"x": X, "y": Y.copy()})["y"].tolist() == [13, 14, 7, 7]
+    assert unbake_scalar(b, "alpha") == g
+    bound = bind(b, node="mult_map_s", **BIND)
+    assert bound.node("mult").attrs["params"]["k1"] == 3
+    assert unbake_scalar(unbind(bound, "mult"), "alpha") == g
+
+
+def test_a_negative_value_is_baked_and_bound():
+    b = bind(bake_scalar(fused(), "alpha", -7), node="mult_map_s", **BIND)
+    assert b.node("mult").attrs["params"]["k1"] == -7
+    assert execute(b, {"x": X, "y": Y.copy()})["y"].tolist() == (Y - 7 * X).tolist()
+
+
+def test_the_reference_check_runs_at_the_baked_value():
+    """The step is checked against the graph before it with alpha at the value; a step that
+    changed what the graph computes there would fail, the later steps run at the value."""
+    from snax_forge.sandbox.run import checked_step, reference
+
+    g = fused()
+    inputs, want = reference(g, 0, "t")
+    assert int(inputs["alpha"][0]) != 3
+    checked_step(g, "bake_scalar", {"container": "alpha", "value": 3}, inputs, want, "t")
+    assert inputs["alpha"].tolist() == [3]
+    assert np.array_equal(want["y"], inputs["y"] + 3 * inputs["x"])
+
+
+@pytest.mark.parametrize(
+    ("make", "params", "message"),
+    [
+        (fused, {"container": "x", "value": 3}, r"x is not a kernel's scalar argument"),
+        (fused, {"container": "beta", "value": 3}, r"the graph has no container 'beta'"),
+        (fused, {"container": "alpha", "value": 2**31},
+         r"2147483648 does not fit alpha's dtype int32"),
+        (lambda: bind(fused(), node="mult_map_s", **BIND), {"container": "alpha", "value": 3},
+         r"the accelerated mult reads alpha \(unbind first\)"),
+    ],
+)  # fmt: skip
+def test_bake_scalar_refuses(make, params, message):
+    with pytest.raises(SandboxError, match=message):
+        bake_scalar(make(), **params)
+
+
+def test_unbake_scalar_refuses_what_changed_since():
+    b = bake_scalar(fused(), "alpha", 3)
+    with pytest.raises(SandboxError, match=r"no live tasklet records alpha as baked \(bake_scalar; "
+                       r"a bound unit's: unbind first\), nor is it a tasklet"):  # fmt: skip
+        unbake_scalar(bind(b, node="mult_map_s", **BIND), "alpha")
+    d = b.to_dict()
+    d["body"][0]["body"][0]["body"][0]["attrs"]["code"] = "out = 4 * in2"
+    with pytest.raises(SandboxError, match="mult's code changed since bake_scalar"):
+        unbake_scalar(Graph.from_dict(d), "alpha")

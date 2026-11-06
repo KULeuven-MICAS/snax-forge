@@ -54,9 +54,11 @@ SELECTED = {
     "split": "map", "split_map": "map", "tag_map": "map", "untag_map": "map", "join_map": "map",
     "split_reduce": "map", "join_reduce": "map", "fuse_map": "first", "unfuse_map": "map",
     "bind": "node", "unbind": "node", "link": "container", "unlink": "container",
-    "encapsulate": "units", "unencapsulate": "accelerator",
+    "encapsulate": "units", "unencapsulate": "accelerator", "bake_scalar": "container",
+    "unbake_scalar": "container",
 }  # fmt: skip
-DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc"}
+DEFAULTS = {"factor": 4, "kind": "temporal", "depth": 1, "group": "g", "accelerator": "acc",
+            "value": 3}  # fmt: skip
 
 
 @cache

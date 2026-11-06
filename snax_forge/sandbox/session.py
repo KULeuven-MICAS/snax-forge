@@ -878,6 +878,10 @@ def fresh_param(field: str, taken: Any) -> str:
 DEFAULT_KIND = "temporal"
 
 
+# bake_scalar's value in the editor's form until the user gives one
+BAKE_DEFAULT = 1
+
+
 def form(
     name: str, g: Graph, answer: dict[str, Any], params: dict[str, Any], order: int = 1
 ) -> list[dict[str, Any]]:
@@ -910,6 +914,8 @@ def form(
             if field["value"] is None:  # a param of its own, its value beside it (C§12)
                 field["value"] = fresh_param(p, params)
             field["new_value"] = DEFAULT_INT.get(p, 1)
+        elif name == "bake_scalar" and p == "value":  # an int literal, not a param
+            field |= {"type": "int", "value": BAKE_DEFAULT}
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip

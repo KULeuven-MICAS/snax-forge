@@ -134,6 +134,9 @@ class TransformSpec:
     ints: tuple[str, ...] = ()
     site: Site | None = None
     multi: MultiSite | None = None  # its site over a selection of several items (D72)
+    # the inputs the step fixes, {container: array} from (graph, **params): its reference check
+    # runs the graph before it and after it on them (run.py's checked_step; bake_scalar's value)
+    fixes: Callable[..., dict[str, Any]] | None = None
 
 
 TRANSFORMS: dict[str, TransformSpec] = {}
@@ -145,12 +148,14 @@ def register_transform(
     ints: tuple[str, ...] = (),
     site: Site | None = None,
     multi: MultiSite | None = None,
+    fixes: Callable[..., dict[str, Any]] | None = None,
 ) -> None:
-    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72) and,
-    for a transform that takes several items, its site over a selection (``multi``)."""
+    """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72),
+    for a transform that takes several items its site over a selection (``multi``), and for
+    one that fixes an input (``bake_scalar``) the inputs it fixes (``fixes``)."""
     if name in TRANSFORMS:
         raise ValueError(f"transform {name!r} already registered")
-    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi)
+    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi, fixes)
 
 
 def site_of(name: str, g: Graph, selected: str | list[str]) -> dict[str, Any]:
