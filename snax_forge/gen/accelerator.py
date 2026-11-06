@@ -26,8 +26,13 @@ A unit: ``name`` (the instance), ``brm``, ``datapath`` (the binding's),
 the datapath's adapter's, blocks.py), ``opType`` (a SIMD or Mac
 unit only), ``params`` (the adapter's, and ``T`` for a fold whose rate is a
 constant once the recipe's design params are in: it depends on no kernel
-symbol), ``timing`` (``latency``, ``ii``, ``span``) and ``csrs`` (its R/W
-CSRs: ``JOB_BEATS`` for a fold without ``params.T``). A link is ``name``,
+symbol), ``scalars`` (each slot read from a container, a kernel's scalar
+argument the program writes, in slot order, at its dtype, opType: axpy's
+``{"k1": "int32"}``; written only when there is one), ``timing``
+(``latency``, ``ii``, ``span``) and ``csrs`` (its R/W CSRs: ``JOB_BEATS``
+for a fold without ``params.T``, then one per scalar named after its slot,
+``K1``, or two at 64 bits, ``K1_LO`` and ``K1_HI``, low word first, each
+with ``pin`` its slot, the datapath's pin). A link is ``name``,
 ``from`` (``"<unit>.<port>"`` of an ``out`` port), ``to`` (of an ``in``) and
 ``depth`` (0 a wire, >= 1 a buffer of that many beats).
 
@@ -35,8 +40,9 @@ CSRs: ``JOB_BEATS`` for a fold without ``params.T``). A link is ``name``,
 accelerators in order and per group in order: ``START`` and ``JOBS`` (R/W),
 each unit's R/W CSRs, ``STATUS`` and ``COUNTER`` (R/O). A CSR is ``name``,
 ``access`` (``rw``, ``ro``), ``offset``, ``width`` and ``pin`` (a scalar's
-datapath pin, none yet). The widths (D152): START 1 (a strobe, it reads 0),
-JOBS and every JOB_BEATS the platform's ``acc_csr.job_width``, STATUS 2,
+datapath pin). The widths (D152): START 1 (a strobe, it reads 0),
+JOBS and every JOB_BEATS the platform's ``acc_csr.job_width``, a scalar's
+its dtype's bits (32 for each word of a 64-bit one), STATUS 2,
 COUNTER its ``counter_width``. ``from_dict`` checks the offsets contiguous
 from 0 in that order and never recomputes them, and every width 1 to 32,
 START's 1, STATUS's 2, JOBS and every JOB_BEATS one width and every COUNTER
@@ -85,6 +91,8 @@ from functools import partial
 from itertools import pairwise
 from typing import TYPE_CHECKING, Any
 
+import numpy as np
+
 from snax_forge import expr
 from snax_forge.brm import Instance, port_dtypes
 from snax_forge.common import JsonFile
@@ -95,7 +103,7 @@ from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.lower.c import accelerators as c_accelerators
 from snax_forge.lower.c import fold_rate
 
-from .blocks import DATAPATHS, GenError, Port
+from .blocks import DATAPATHS, GenError, Port, port_dtype
 
 if TYPE_CHECKING:
     from snax_forge.design.point import DesignPoint
@@ -145,6 +153,7 @@ class Unit:
     csrs: list[Csr] = field(default_factory=list)
     op_type: str | None = None
     span: int = 1
+    scalars: dict[str, str] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         d: dict[str, Any] = {
@@ -155,8 +164,10 @@ class Unit:
         }
         if self.op_type is not None:
             d["opType"] = self.op_type
+        d["params"] = dict(self.params)
+        if self.scalars:
+            d["scalars"] = dict(self.scalars)
         d |= {
-            "params": dict(self.params),
             "timing": {"latency": self.latency, "ii": self.ii, "span": self.span},
             "csrs": [c.to_dict() for c in self.csrs],
         }
@@ -168,7 +179,7 @@ class Unit:
                    {k: Port.from_dict(p) for k, p in d["ports"].items()}, dict(d["params"]),
                    d["timing"]["latency"], d["timing"]["ii"],
                    [Csr.from_dict(c) for c in d["csrs"]], d.get("opType"),
-                   d["timing"]["span"])  # fmt: skip
+                   d["timing"]["span"], dict(d.get("scalars", {})))  # fmt: skip
 
 
 @dataclass(frozen=True)
@@ -302,6 +313,12 @@ class Description(JsonFile):
             twice = sorted({n for n in names if names.count(n) > 1})
             if twice:
                 raise ValueError(f"{self.tag}: the {what} names {twice} are used twice")
+        for u in self.units:
+            want = [(c, s) for s, t in u.scalars.items() for c in scalar_csrs(s, t)]
+            got = [(c.name, c.pin) for c in u.csrs if c.pin is not None]
+            if got != want or any(c.access != "rw" for c in u.csrs if c.pin is not None):
+                raise ValueError(f"{self.tag}: unit {u.name}'s scalars {u.scalars} are the R/W "
+                                 f"CSRs {want} (name, pin), not {got}")  # fmt: skip
         for a in self.accelerators:
             _check_links(a)
 
@@ -562,5 +579,15 @@ def _unit(point: DesignPoint, name: str, inst: Instance, offsets: Iterator[int])
     params = dict(fill.params) | ({} if fixed is None else {"T": fixed})
     unit_rw = ["JOB_BEATS"] if fold_rate(inst) is not None and fixed is None else []
     unit_csrs = [Csr(n, "rw", next(offsets), point.platform.acc_csr.job_width) for n in unit_rw]
+    for slot, dtype in fill.scalars.items():  # after JOB_BEATS, in slot order
+        width = min(port_dtype(dtype, f"{what}.{slot}")[0], 32)
+        unit_csrs += [Csr(c, "rw", next(offsets), width, slot) for c in scalar_csrs(slot, dtype)]
     return Unit(name, inst.brm.name, datapath, fill.ports, params, inst.latency,
-                inst.initiation_interval, unit_csrs, fill.op_type, inst.span)  # fmt: skip
+                inst.initiation_interval, unit_csrs, fill.op_type, inst.span,
+                dict(fill.scalars))  # fmt: skip
+
+
+def scalar_csrs(slot: str, dtype: str) -> list[str]:
+    """A scalar's CSR names: ``K1``, or ``K1_LO`` and ``K1_HI`` (low word first) at 64 bits."""
+    name = slot.upper()
+    return [f"{name}_LO", f"{name}_HI"] if np.dtype(dtype).itemsize == 8 else [name]

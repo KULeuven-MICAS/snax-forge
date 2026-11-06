@@ -72,7 +72,13 @@
      "additionalProperties": {"$ref": "#/$defs/port"}
     },
     "opType": {"description": "A SIMD or Mac unit's: NumPy's result type of its inputs (D143).", "$ref": "#/$defs/dtype"},
-    "params": {"description": "What the ports do not give (op, accumulate, regOut), and T, a fold's rate fixed at design time.", "type": "object"},
+    "params": {"description": "What the ports do not give (op, accumulate, regOut, a baked slot), and T, a fold's rate fixed at design time.", "type": "object"},
+    "scalars": {
+     "description": "Each slot read from a container, in slot order, at its dtype: an R/W CSR the program writes (two at 64 bits, low word first), the datapath's pin.",
+     "type": "object",
+     "minProperties": 1,
+     "additionalProperties": {"$ref": "#/$defs/dtype"}
+    },
     "timing": {
      "type": "object",
      "properties": {
@@ -83,7 +89,7 @@
      "required": ["latency", "ii", "span"],
      "additionalProperties": false
     },
-    "csrs": {"description": "Its R/W CSRs.", "type": "array", "items": {"$ref": "#/$defs/csr"}}
+    "csrs": {"description": "Its R/W CSRs: JOB_BEATS, then its scalars'.", "type": "array", "items": {"$ref": "#/$defs/csr"}}
    },
    "required": ["name", "brm", "datapath", "ports", "params", "timing", "csrs"],
    "additionalProperties": false

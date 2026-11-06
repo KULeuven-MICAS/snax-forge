@@ -32,7 +32,8 @@ instance's ``group``, ``link``'s, else its own), ``accelerators`` into
 accelerators (D148: an instance's ``accelerator``, ``encapsulate``'s, else its
 group's own); ``links``, ``linked_ports`` and ``unplaced`` read the links
 and the containers that get no L1 space (a link's, a fused nest's local
-value); ``resolve`` builds the shell. Neither checks the pairing:
+value), ``slot_containers`` those read only through a slot connector (a
+CSR's value, in the core's memory); ``resolve`` builds the shell. Neither checks the pairing:
 that is check.py, which runs first and reports every problem, so
 ``resolve`` raises on the first thing that does not fit.
 """
@@ -171,6 +172,25 @@ def unplaced(graph: Graph) -> set[str]:
     return {k.attrs["container"] for k in links(graph)} | {
         c for c, cont in graph.containers.items() if "loop.local" in cont.attrs
     }
+
+
+def slot_connectors(node: Node) -> set[str]:
+    """An accelerated node's input connectors that are no port of its BRM: slots read from
+    their container (a CSR), which no streamer moves."""
+    ports = {p.name for p in load_brm(node.attrs["brm"]).interface.ports}
+    return {c for c in node.inputs if c not in ports}
+
+
+def slot_containers(graph: Graph) -> set[str]:
+    """The containers read only through slot connectors (a kernel's scalar argument the
+    program writes into a CSR, ``k1: alpha[0]``): no streamer, no L1 space."""
+    slot, other = set(), set()
+    for n, _ in graph.walk():
+        slots = slot_connectors(n) if n.kind == "accelerated" else set()
+        for c, m in n.inputs.items():
+            (slot if c in slots else other).add(m.data)
+        other |= {m.data for m in n.outputs.values()}
+    return slot - other
 
 
 def instance_of(node: Node) -> Instance:

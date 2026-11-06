@@ -37,6 +37,9 @@ optionally streams (2 by default) and k.
                  ``axpby`` (two streams, ``k1 * a + k2 * b``) takes args.k1 and
                  args.k2, each baked (an int that fits opType, in params) or
                  read (a CSR), k1 one of the two, k2 also unset (no factor)
+    scalars      each slot read from a container (k at one stream, k1, k2), in
+                 slot order, at opType: an R/W CSR the program writes, an
+                 input pin of opType's width (gen/accelerator.py)
 
 **TreeAccumulate** (L 1, D133): a fold, one sum every T inputs, the input's
 lanes summed by an adder tree in front of its register.
@@ -102,11 +105,13 @@ class Port:
 @dataclass(frozen=True)
 class Fill:
     """What an adapter gives: the unit's ports (per BRM port, in the BRM's order), ``opType``
-    (a SIMD unit's, else None) and ``params``."""
+    (a SIMD unit's, else None), ``params`` and ``scalars``: each slot read from a container,
+    in slot order, at its dtype (an R/W CSR the program writes, the datapath's pin)."""
 
     ports: dict[str, Port]
     op_type: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
+    scalars: dict[str, str] = field(default_factory=dict)
 
 
 Adapter = Callable[..., Fill]  # (inst, dtypes=None) -> Fill
@@ -249,7 +254,8 @@ def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
             raise GenError("gen.args", f"{what}: {s} = {v!r}; a slot is an int")
         if op_type is not None and not fits(v, op_type):
             raise GenError("gen.k", f"{what}: {s} = {v} does not fit the op type {op_type}")
-    return Fill(ports, op_type, {"op": op} | baked)
+    scalars = {s: op_type for s in slots if s in read and op_type is not None}
+    return Fill(ports, op_type, {"op": op} | baked, scalars)
 
 
 def _set_arg(inst: Instance, name: str) -> Any:

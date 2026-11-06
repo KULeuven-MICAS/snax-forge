@@ -37,8 +37,10 @@ have exactly the type's keys (a streamer's ``base``, ``temporal_bounds``,
 ``temporal_strides``, ``spatial_strides``; a DMA's ``direction``, ``src`` and
 ``dst``, its L1 side ``base``, ``bounds`` and ``strides``, its L2 side
 ``symbol`` (a container in L2: its data.h array), ``bounds`` and ``strides``; an accelerator's
-runtime params, ``n`` and its named rates; a linked group's, each unit's by
-unit, in the group's order); an accelerator task's CSR writes fit them (D152:
+runtime params, ``n`` and its named rates, and each slot it reads from a
+container, ``{"from": <container>}``, a kernel's scalar argument in a memory
+(a CSR the program writes); a linked group's, each unit's by unit, in the
+group's order); an accelerator task's CSR writes fit them (D152:
 JOBS and every JOB_BEATS the program writes, c.py's ``job_writes``, at most
 2^job_width - 1, the platform's ``acc_csr.job_width``, and its head firings,
 JOBS times every T of the group, below 2^32, SNAX-GVSoC's limit); a streamer's loops fit it (as
@@ -346,15 +348,33 @@ def _check(s: Configure, point: DesignPoint) -> None:
             if list(v) != units:
                 raise ValueError(f"{s.component}: values for {list(v)}, its units are {units}")
             for u in units:
-                if set(v[u]) != set(found[u].brm.registers):
-                    raise ValueError(f"{s.component}.{u}: parameters {sorted(v[u])}, registers "
-                                     f"{found[u].brm.registers}")  # fmt: skip
+                _check_unit(f"{s.component}.{u}", v[u], found[u], point)
             _check_widths(s, point, units)
             return
-        names = found[s.component].brm.registers
-        if set(v) != set(names):
-            raise ValueError(f"{s.component}: parameters {sorted(v)}, registers {names}")
+        _check_unit(s.component, v, found[s.component], point)
         _check_widths(s, point, [s.component])
+
+
+def _check_unit(where: str, v: Mapping[str, Any], inst: Any, point: DesignPoint) -> None:
+    """A unit's accelerator values: its registers (``n``, the named rates) and each slot it
+    reads from a container (``Instance.read``) as ``{"from": <container>}``, a kernel's scalar
+    argument (shape [1]) that lives in a memory (the core's)."""
+    from snax_forge.dfg.graph import SCALAR
+
+    names = [*inst.brm.registers, *inst.read]
+    if set(v) != set(names):
+        raise ValueError(f"{where}: parameters {sorted(v)}, registers {names}")
+    for k in inst.read:
+        src = v[k]
+        if not isinstance(src, Mapping) or set(src) != {"from"}:
+            raise ValueError(f"{where}: {k} is {src!r}; a slot read from a container is "
+                             "{'from': <container>}")  # fmt: skip
+        c = point.graph.containers.get(src["from"])
+        if c is None or SCALAR not in c.attrs:  # shape [1], read as element 0
+            raise ValueError(f"{where}: {k} from {src['from']!r}, which is no kernel's scalar "
+                             "argument (sdfg.scalar)")  # fmt: skip
+        if not point.memory.layouts.get(src["from"]):
+            raise ValueError(f"{where}: {k} from {src['from']!r}, which lives in no memory")
 
 
 # The head's firings in a run stay below this (SNAX-GVSoC's SnaxGroup counts them in 32 bits)

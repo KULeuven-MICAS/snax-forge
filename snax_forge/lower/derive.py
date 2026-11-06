@@ -26,9 +26,10 @@ ports on a link with no streamer (D112) and no load or store. For each group:
                  start and read. An accelerator's tasks hold its own set's
                  movers only: another accelerator's streamer is another set,
                  started by its own CSR
-    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, and its
-                 named rates; a linked group's ``<node>_<group>`` with each unit's,
-                 by unit
+    accelerator  configure ``<node>_<instance>`` with ``n``, the firing count, its
+                 named rates and each slot it reads from a container (a CSR the
+                 program writes, ``{"k1": {"from": "alpha"}}``, axpy's); a linked
+                 group's ``<node>_<group>`` with each unit's, by unit
     serial sync  when the accelerator is not the previous group's (D158):
                  ``sync`` on the previous accelerator's task, after this
                  group's configures and before its start, unless an ``after``
@@ -282,10 +283,18 @@ class _Derivation:
         starts, unit_loops = self.firings(unit_nodes)
         self.loads(unit_nodes)
         own = self.streamers(unit_nodes, starts, unit_loops)
-        self.accelerator(n, group, members, starts, own)
+        values = {u: v | self.slot_values(un) for (u, v), un in zip(starts.items(), unit_nodes,
+                                                                      strict=True)}  # fmt: skip
+        self.accelerator(n, group, members, values, own)
         self.stores(unit_nodes, own)
 
     # -- helpers ----------------------------------------------------------------------------
+
+    def slot_values(self, un: Any) -> dict[str, dict[str, str]]:
+        """A unit's slots read from a container (CSRs, ``Instance.read``), each
+        ``{"from": <container>}``, in slot order."""
+        inst = self.insts[un.attrs["instance"]]
+        return {k: {"from": un.inputs[k].data} for k in inst.read}
 
     def unit_node(self, u: str) -> Any:
         """A linked unit's one node."""

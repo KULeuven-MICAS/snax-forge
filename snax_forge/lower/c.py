@@ -45,7 +45,10 @@ T and, for a fold whose T is not the description's ``params.T``, its unit's
 JOB_BEATS = T, from the task's values (n and the rates, C§9; ``job_values``,
 D146), on its accelerator's ``<acc>_csr.h``'s names. A linked group's task
 holds each unit's values by unit: JOBS = n_u / ∏ T_v over its first unit u and the group's folds
-v, then each fold's JOB_BEATS in unit order (``job_writes``).
+v, then each fold's JOB_BEATS in unit order (``job_writes``). Then each slot a unit reads from a
+container (``{"k1": {"from": "alpha"}}``) is written into its R/W CSR from data.h's element,
+``csrw_ss(ACC_RW_K1, alpha[0])``; at 64 bits two writes, ``K1_LO`` then ``K1_HI``, the element
+extended to the scalar's dtype first. All of it before the group's START.
 A DMA task writes nothing here: snRuntime programs and starts the DMA in one
 call, so it is ``snrt_dma_start_1d`` (one loop of whole beats) or
 ``snrt_dma_start_2d`` (a second loop) at its start.
@@ -328,6 +331,27 @@ class _Program:
             mine = self.linked.get(s.component, [s.component])
             for unit, k, v in job_writes({u: self.units[u] for u in mine}, s.values, self.fixed):
                 self.emit(core, f"csrw_ss({self.csr(k, unit, s.task_name)}, {v});")
+            by_unit = s.values if s.component in self.linked else {s.component: s.values}
+            for unit in mine:
+                for slot in self.units[unit].read:
+                    src = by_unit[unit][slot]["from"]
+                    self.emit(core, *self.scalar(unit, slot, src, s.task_name))
+
+    def scalar(self, unit: str, slot: str, container: str, task: str) -> list[str]:
+        """The writes of a slot read from ``container`` into its CSR (two at 64 bits, low word
+        first): data.h's element 0, extended to the scalar's dtype (the unit's opType)."""
+        from snax_forge.gen.accelerator import scalar_csrs
+        from snax_forge.gen.data import ctype
+
+        (u,) = [x for x in self.acc.units if x.name == unit]
+        dtype = u.scalars[slot]
+        value = f"{self.l2_symbol(container, task)}[0]"
+        names = [self.csr(c, unit, task) for c in scalar_csrs(slot, dtype)]
+        if len(names) == 1:
+            return [f"csrw_ss({names[0]}, {value});"]
+        wide = f"(uint64_t)({ctype(dtype, slot)}){value}"
+        return [f"csrw_ss({names[0]}, (uint32_t){wide});",
+                f"csrw_ss({names[1]}, (uint32_t)({wide} >> 32));"]  # fmt: skip
 
     def streamer(self, s: Configure) -> list[str]:
         acc, mover = self.movers[s.component]
