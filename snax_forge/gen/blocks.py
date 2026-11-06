@@ -31,11 +31,12 @@ optionally streams (2 by default) and k.
                  ``ELEMENTWISE_OP``, which tests/gen reads from the source);
                  at one stream also ``k``: args.k, an int that fits opType
                  (``gen.k``), read only there, so an unset k at two streams is
-                 never evaluated; a k at two streams is refused; an unset k at
-                 one stream is read from a scalar (a CSR slot, ``k`` left out);
+                 never evaluated; a k at two streams is refused; at one
+                 stream k is baked or read from a container (a CSR slot,
+                 ``Instance.read``, ``k`` left out), else refused;
                  ``axpby`` (two streams, ``k1 * a + k2 * b``) takes args.k1 and
                  args.k2, each baked (an int that fits opType, in params) or
-                 unset (from a CSR, or, k2, no factor)
+                 read (a CSR), k1 one of the two, k2 also unset (no factor)
 
 **TreeAccumulate** (L 1, D133): a fold, one sum every T inputs, the input's
 lanes summed by an adder tree in front of its register.
@@ -228,8 +229,15 @@ def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
         raise GenError("gen.args", f"{what}: k = {k} at two streams; k is one stream's constant")
     if op == AXPBY and streams != 2:
         raise GenError("gen.args", f"{what}: {AXPBY} at one stream; it takes two")
-    if op != AXPBY and (slots["k1"], slots["k2"]) != (None, None):
+    read = {s for s in slots if _read_arg(inst, s)}
+    if op != AXPBY and ({"k1", "k2"} & read or (slots["k1"], slots["k2"]) != (None, None)):
         raise GenError("gen.args", f"{what}: k1 and k2 are {AXPBY}'s, not {op}'s")
+    if streams == 1 and k is None and "k" not in read:
+        raise GenError("gen.args", f"{what}: one stream takes the constant k, got None (neither "
+                       "baked nor read from a container)")  # fmt: skip
+    if op == AXPBY and slots["k1"] is None and "k1" not in read:
+        raise GenError("gen.args", f"{what}: {AXPBY} takes k1, got None (neither baked nor read "
+                       "from a container)")  # fmt: skip
     ins, _ = _ports(inst, streams, 1, "SimdLanes", what)
     names = [p.name for p in inst.ports]
     _lanes(inst, {p: lanes for p in names}, what)
@@ -250,6 +258,12 @@ def _set_arg(inst: Instance, name: str) -> Any:
     if arg is None or not expr.names(arg) <= set(inst.params):  # unset: not evaluated
         return None
     return expr.evaluate(arg, inst.params)
+
+
+def _read_arg(inst: Instance, name: str) -> bool:
+    """Whether arg ``name`` names a slot the instance reads from a container (a CSR)."""
+    arg = inst.impl.binding["args"].get(name)
+    return arg is not None and bool(expr.names(arg) & set(inst.read))
 
 
 register_datapath("SimdLanes", 0, simd_lanes)

@@ -906,7 +906,7 @@ def test_a_unit_with_a_slot_shows_it():
 
     r = Recipe.load(recipe_path("relu"))
     g = apply_recipe(r, Graph.load(FIXTURES / "relu.snaxdfg"))[-1].graph
-    assert compact_text(g, g.node("numpy_maximum")) == "acc · max(a, k) · W 4 · k = 0"
+    assert compact_text(g, g.node("numpy_maximum")) == "acc · max(a, k) · W 4 · k 0"
     for recipe in (r, None):
         (e,) = bindings_section(g, recipe)["entries"]
         assert e["label"] == "acc · simd"
@@ -948,14 +948,14 @@ def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
 
 
 def test_a_units_slots_show_csr_or_baked():
-    """After bind the unit's label gives each slot: k1 = alpha (CSR), or k1 = 3 baked; the
-    Bindings the same, read only."""
+    """After bind the unit's label gives each slot as it gives W 4, no "=": k1 alpha (CSR),
+    or k1 3 baked; the Bindings the same, read only."""
     from snax_forge.viz.dfg.api import bindings_section, compact_text
 
     for name, slot in (("axpy", "alpha (CSR)"), ("axpy_baked", 3)):
         r, graphs = _axpy(name)
         g = graphs[-1]
-        assert compact_text(g, g.node("mult")) == f"acc · k1 * a + b · W 4 · k1 = {slot}"
+        assert compact_text(g, g.node("mult")) == f"acc · k1 * a + b · W 4 · k1 {slot}"
         (e,) = bindings_section(g, r)["entries"]
         assert [(p["name"], p["value"], p["editable"]) for p in e["params"]][-1] == (
             "k1", slot, False)  # fmt: skip
@@ -964,7 +964,8 @@ def test_a_units_slots_show_csr_or_baked():
 @pytest.mark.slow
 def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatch):
     """The editor (a session on axpy): after the two splits fuse_map on mult_map (second
-    augassign_19_4_map) and bake_scalar on alpha, its value an int field; after the bake,
+    augassign_19_4_map) and bake_scalar on alpha, its value an int field at alpha's seeded
+    input (make_inputs' 3); after the bake,
     unbake_scalar on the baked tasklet, and alpha no longer a container to bake; fuse_map and
     bind then apply as the recipe does."""
     from snax_forge.sandbox import session
@@ -982,6 +983,7 @@ def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatc
     bake = s.sites(s.cursor, "alpha")["bake_scalar"]
     assert bake["ok"] and {f["name"]: f["type"] for f in bake["form"]} == {
         "container": "str", "value": "int"}  # fmt: skip
+    assert {f["name"]: f["value"] for f in bake["form"]} == {"container": "alpha", "value": 3}
     assert "alpha" in s.marks(s.cursor)["containers"]
     assert not s.sites(s.cursor, "mult")["unbake_scalar"]["ok"]
     assert s.apply("bake_scalar", {"container": "alpha", "value": 3})["ok"]

@@ -174,9 +174,14 @@ def unplaced(graph: Graph) -> set[str]:
 
 
 def instance_of(node: Node) -> Instance:
-    """The node's instance, resolved against the BRM library (raises BrmError)."""
+    """The node's instance, resolved against the BRM library (raises BrmError); an input
+    connector named after a slot of the BRM's code, and no port, is the slot read from its
+    container (``Instance.read``); any other connector is left to the checks."""
     a = node.attrs
-    return load_brm(a["brm"]).resolve(a["implementation"], a["params"])
+    brm = load_brm(a["brm"])
+    ports = {p.name for p in brm.interface.ports}
+    read = [c for c in node.inputs if c not in ports and c in brm.all_slots()]
+    return brm.resolve(a["implementation"], a["params"], read)
 
 
 def instances(graph: Graph) -> dict[str, Instance]:

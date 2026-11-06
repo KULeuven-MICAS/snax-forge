@@ -199,6 +199,15 @@ def test_a_slot_given_as_a_param_and_read_from_a_scalar_is_refused():
         bind(fused(), node="mult_map_s", **BIND, params={"k1": 3})
 
 
+def test_a_slot_given_that_the_matched_entry_leaves_unset_is_refused():
+    """k2 given on ``y + alpha * x``: the instance would be ``k1 * a + k2 * b``'s (one entry
+    fits an instance), not the tasklet's ``k1 * a + b``."""
+    with pytest.raises(SandboxError, match=r"k2 = 2 given, but the tasklet computes "
+                       r"'out = b \+ alpha \* a', 'simd''s 'out = k1 \* a \+ b', which leaves k2 "
+                       "unset"):  # fmt: skip
+        bind(fused(), node="mult_map_s", **BIND, params={"k2": 2})
+
+
 def test_a_scalar_wider_than_the_op_type_is_refused():
     with pytest.raises(SandboxError, match="k2 reads the scalar beta, int64, which the op type "
                        "int32 does not hold"):  # fmt: skip
@@ -234,6 +243,29 @@ def test_bake_scalar_puts_the_value_in_the_code_and_drops_the_container():
     bound = bind(b, node="mult_map_s", **BIND)
     assert bound.node("mult").attrs["params"]["k1"] == 3
     assert unbake_scalar(unbind(bound, "mult"), "alpha") == g
+
+
+def test_bake_scalar_first_then_the_splits_fuse_and_bind():
+    """Baked on the imported graph, before any split: split_map, fuse_map and bind follow as
+    after a bake on the fused nest, every step checked against the reference at alpha = 3;
+    the worked example gives (13, 14 | 7, 7)."""
+    r = Recipe.from_dict({"name": "axpy_bake_first", "kernel": "axpy",
+                          "params": {"W": 4, "N": 64}, "symbols": {"N": "N"}, "steps": [
+        {"transform": "bake_scalar", "params": {"container": "alpha", "value": 3}},
+        {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+        {"transform": "split_map", "params": {"map": "augassign_19_4_map", "factor": "W"}},
+        {"transform": "fuse_map", "params": {"first": "mult_map", "second": "augassign_19_4_map"}},
+        {"transform": "bind", "params": {"node": "mult_map_s", **BIND}}]})  # fmt: skip
+    results = apply_recipe(r, Graph.load(FIXTURES / "axpy.snaxdfg"))
+    n = results[-1].graph.node("mult")
+    assert n.attrs["params"] == {"W": 4, "op": "axpby", "streams": 2, "k1": 3}
+    assert n.attrs["code"] == "out = k1 * a + b" and "k1" not in n.inputs
+    g = bind(fused(), node="mult_map_s", **BIND)
+    first = bake_scalar(axpy(), "alpha", 3)
+    first = split_map(split_map(first, "mult_map", 2), "augassign_19_4_map", 2)
+    first = bind(fuse_map(first, "mult_map", "augassign_19_4_map"), node="mult_map_s", **BIND)
+    assert execute(first, {"x": X, "y": Y.copy()})["y"].tolist() == run(g).tolist() == [
+        13, 14, 7, 7]  # fmt: skip
 
 
 def test_a_negative_value_is_baked_and_bound():

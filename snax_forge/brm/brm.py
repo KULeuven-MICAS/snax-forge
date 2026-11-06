@@ -56,7 +56,7 @@ generator's blocks in instance.py.
 from __future__ import annotations
 
 import keyword
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -232,10 +232,14 @@ class Function:
     its params (``Port.when``) and may name a slot: an int design param that is no port and
     that the entry does not fix (``simd``'s ``k``, ``axpby``'s ``k1`` and ``k2``), a constant
     baked into the hardware, or, matched to a kernel's scalar argument, a value the program
-    writes at run time (a CSR; the instance leaves the slot unset). ``bind`` takes the first entry whose code is the tasklet's up to its slots and sets its
-    params and slot values (sandbox/transforms.py, ``expr.unify``); ``code_for`` gives an
-    instance's code back from its params, ``codes_for`` every entry's at them (``simd``'s two
-    ``axpby`` entries share their params: ``k2`` read or not is the node's code).
+    writes at run time (a CSR; the instance leaves the slot unset and lists it in ``read``).
+    An entry fits an instance when the instance has every param the entry fixes, every slot
+    its code names has a value (baked in the params, or read from a container) and every other
+    slot is unset, so at most one entry fits (``Brm.entry_for``; two entries that would fit the
+    same instances are refused at load): ``simd``'s axpby with ``k2`` unset is
+    ``out = k1 * a + b``, with ``k2`` set ``out = k1 * a + k2 * b``. ``bind`` takes the first
+    entry whose code is the tasklet's up to its slots and sets its params and slot values
+    (sandbox/transforms.py, ``expr.unify``); ``Brm.code_for`` gives an instance's code back.
     """
 
     accel: str
@@ -249,17 +253,6 @@ class Function:
         if isinstance(self.code, str):
             return [Code({}, self.code)]
         return list(self.code)
-
-    def code_for(self, params: Mapping[str, Any]) -> str | None:
-        """The code at design ``params``: the first entry whose params they all have; None if
-        no entry fits (or the code is null)."""
-        codes = self.codes_for(params)
-        return codes[0] if codes else None
-
-    def codes_for(self, params: Mapping[str, Any]) -> list[str]:
-        """The codes of every entry whose params ``params`` all have, in table order."""
-        return [e.code for e in self.entries()
-                if all(k in params and params[k] == v for k, v in e.params.items())]  # fmt: skip
 
     def to_dict(self) -> dict[str, Any]:
         code = self.code if not isinstance(self.code, list) else [e.to_dict() for e in self.code]
@@ -414,11 +407,13 @@ class Brm(JsonFile):
         named = [p.rate for p in self.interface.ports if isinstance(p.rate, str)]
         return ["n", *dict.fromkeys(named)]
 
-    def resolve(self, implementation: str, params: Mapping[str, Any] | None = None) -> Instance:
-        """The ``Instance`` built as ``implementation`` with design ``params`` (instance.py)."""
+    def resolve(self, implementation: str, params: Mapping[str, Any] | None = None,
+                read: Iterable[str] = ()) -> Instance:  # fmt: skip
+        """The ``Instance`` built as ``implementation`` with design ``params`` and the slots
+        ``read`` from a container (instance.py)."""
         from .instance import resolve
 
-        return resolve(self, implementation, params)
+        return resolve(self, implementation, params, read)
 
     def present(self, params: Mapping[str, Any]) -> list[Port]:
         """The ports present at design ``params`` (``Port.when``), in order."""
@@ -427,6 +422,26 @@ class Brm(JsonFile):
     def defaults(self) -> dict[str, int | str]:
         """The design params that have a default, at it."""
         return {k: p.default for k, p in self.params("design").items() if p.default is not None}
+
+    def all_slots(self) -> list[str]:
+        """Every code entry's slots, in table order."""
+        return list(dict.fromkeys(s for e in self.function.entries() for s in self.slots(e)))
+
+    def entry_for(self, params: Mapping[str, Any], read: Iterable[str] = ()) -> Code | None:
+        """The code entry that fits an instance at design ``params`` with the slots ``read``
+        from a container (``Function``): the entry's params all at ``params``, every slot its
+        code names set or read, every other slot neither. None when none fits."""
+        read = set(read)
+        has = {s for s in self.all_slots() if params.get(s) is not None or s in read}
+        for e in self.function.entries():
+            if set(self.slots(e)) == has and all(params.get(k) == v for k, v in e.params.items()):
+                return e
+        return None
+
+    def code_for(self, params: Mapping[str, Any], read: Iterable[str] = ()) -> str | None:
+        """The code of the entry that fits (``entry_for``); None if none does."""
+        e = self.entry_for(params, read)
+        return None if e is None else e.code
 
     def slots(self, entry: Code) -> list[str]:
         """The slots ``entry``'s code names (``Function``), in the order they appear."""
@@ -612,6 +627,13 @@ def _check_function(b: Brm, design: dict[str, Param], what: str) -> None:
         for k, v in e.params.items():
             _allowed_value(design, k, v, f"{wc}.params.{k}")
         e.code = _check_entry(b, design, e, f"{wc}.code").code
+    seen: dict[tuple, int] = {}
+    for i, e in enumerate(f.code):  # at most one entry fits an instance (Function)
+        key = (tuple(sorted(e.params.items())), frozenset(b.slots(e)))
+        if key in seen:
+            raise BrmError(f"{w}.code[{i}]: fits the instances code[{seen[key]}] fits (the same "
+                           "params, and the same slots set)")  # fmt: skip
+        seen[key] = i
 
 
 def _allowed_value(design: dict[str, Param], k: str, v: Any, what: str) -> None:

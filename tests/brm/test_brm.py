@@ -308,14 +308,14 @@ def test_a_code_table_is_stored_canonical_and_round_trips():
         {"params": {"op": "mul"}, "code": "out = a * b"},
     ]
     assert Brm.from_dict(b.to_dict()) == b and Brm.from_dict(json.loads(b.to_json())) == b
-    assert b.function.code_for({"W": 4, "op": "mul"}) == "out = a * b"
-    assert b.function.code_for({"W": 4, "op": "sub"}) is None
+    assert b.code_for({"W": 4, "op": "mul"}) == "out = a * b"
+    assert b.code_for({"W": 4, "op": "sub"}) is None
 
 
 def test_a_plain_code_is_one_entry_without_params():
     b = Brm.from_dict(adder())
     assert [(e.params, e.code) for e in b.function.entries()] == [({}, "out = a + b")]
-    assert b.function.code_for({"W": 4, "op": "add"}) == "out = a + b"
+    assert b.code_for({"W": 4, "op": "add"}) == "out = a + b"
     assert b.to_dict()["function"]["code"] == "out = a + b"
 
 

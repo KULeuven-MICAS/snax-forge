@@ -8,6 +8,8 @@ Accumulator's drain, 0 (D133).
 
 from __future__ import annotations
 
+import json
+
 import numpy as np
 import pytest
 
@@ -106,21 +108,76 @@ def test_one_stream_has_no_b_and_takes_k():
     assert [p.name for p in function_of(inst).ports] == ["a", "out"]
 
 
-def test_a_slot_from_a_scalar_needs_its_value_to_fire_and_k_at_two_streams_is_refused():
-    """One stream without k is k read from a scalar (a CSR): the instance resolves, the kind
-    builds, and a firing without the value is refused; so is axpby without k1."""
+def test_one_stream_without_k_or_two_with_one_is_refused():
     brm = load_brm("simd")
-    a = {"a": np.arange(4)}
-    with pytest.raises(ValueError, match="k has no value"):
-        function_of(brm.resolve(IMPL, {"streams": 1})).fn(0, a, {}, {"n": 1})
-    with pytest.raises(ValueError, match="k1 has no value"):
-        function_of(brm.resolve(IMPL, {"op": "axpby"})).fn(0, a | {"b": a["a"]}, {}, {"n": 1})
+    with pytest.raises(BrmError, match="one stream takes the constant k"):
+        brm.resolve(IMPL, {"streams": 1})
     with pytest.raises(BrmError, match="k = 3 at two streams"):
         brm.resolve(IMPL, {"k": 3})
-    with pytest.raises(BrmError, match="k1 and k2 are axpby's"):
-        brm.resolve(IMPL, {"op": "add", "k1": 3})
-    with pytest.raises(BrmError, match="axpby at one stream"):
-        brm.resolve(IMPL, {"op": "axpby", "streams": 1, "k": 2})
+
+
+def test_an_entry_fits_when_its_slots_are_set_or_read_and_no_other_is():
+    """An instance's code is the one entry whose params it has, every slot the code names set
+    (baked) or read (a CSR), every other slot neither: axpby with k2 unset is ``k1 * a + b``,
+    with k2 baked or read ``k1 * a + k2 * b``; one stream with k read is ``op(a, k)``."""
+    brm = load_brm("simd")
+    axpby = {"op": "axpby"}
+    two, one = "out = k1 * a + k2 * b", "out = k1 * a + b"
+    for params, read, code in [
+        (axpby | {"k1": 3}, (), one),
+        (axpby, ("k1",), one),
+        (axpby | {"k1": 3, "k2": -2}, (), two),
+        (axpby | {"k1": 3}, ("k2",), two),
+        (axpby, ("k2", "k1"), two),
+        ({"op": "max", "streams": 1}, ("k",), "out = max(a, k)"),
+        ({}, (), "out = a + b"),
+    ]:
+        inst = brm.resolve(IMPL, params, read)
+        assert inst.code == code and brm.code_for(inst.params, read) == code
+        assert inst.read == tuple(s for s in ("k1", "k2", "k") if s in read)
+    assert brm.code_for({"W": 4, "op": "axpby", "streams": 2}) is None  # k1 has no value
+
+
+@pytest.mark.parametrize(
+    ("params", "read", "message"),
+    [
+        ({"op": "axpby"}, (), "axpby takes k1, got None"),
+        ({"op": "axpby", "k2": 2}, (), "axpby takes k1, got None"),
+        ({"op": "max", "streams": 1}, (), "one stream takes the constant k, got None"),
+        ({"op": "axpby", "k1": 3}, ("k1",), "k1 = 3 is set, and read from a container too"),
+        ({"op": "add"}, ("alpha",), "'alpha' is read from a container, but it is no slot"),
+        ({"op": "add"}, ("k1",), "k1 and k2 are axpby's, not add's"),
+        ({"op": "axpby", "streams": 1, "k": 2}, (), "axpby at one stream"),
+    ],
+)
+def test_an_instance_no_entry_fits_is_refused(params, read, message):
+    """Refused at resolve, not at a firing: a slot the code needs with no value, one set and
+    read, and a read slot the code does not name."""
+    with pytest.raises(BrmError, match=message):
+        load_brm("simd").resolve(IMPL, params, read)
+
+
+def test_the_code_check_refuses_what_no_entry_fits():
+    """resolve's own check (instance.py ``_check_code``), behind the adapter's: a BRM without
+    a binding, whose datapath adapter does not run, gets it alone."""
+    d = json.loads(load_brm("simd").to_json())
+    for impl in d["implementations"].values():
+        impl["binding"] = None
+    brm = Brm.from_dict(d)
+    with pytest.raises(BrmError, match=r"the code is 'out = max\(a, k\)' with k; the slots set "
+                       r"here \(baked, or read from a container\): none"):  # fmt: skip
+        brm.resolve(IMPL, {"op": "max", "streams": 1})
+    with pytest.raises(BrmError, match="'out = k1 \\* a \\+ k2 \\* b' with k1 and k2 or "
+                       "'out = k1 \\* a \\+ b' with k1; the slots set here .*: k2"):  # fmt: skip
+        brm.resolve(IMPL, {"op": "axpby", "k2": 2})
+
+
+def test_two_entries_that_fit_the_same_instances_are_refused():
+    d = json.loads(load_brm("simd").to_json())
+    d["function"]["code"].append({"params": {"op": "axpby", "streams": 2},
+                                  "code": "out = a * k1 + b"})  # fmt: skip
+    with pytest.raises(BrmError, match=r"code\[12\]: fits the instances code\[11\] fits"):
+        Brm.from_dict(d)
 
 
 @pytest.mark.parametrize("dtypes", [("int32", "int32"), ("int8", "int32"), ("int64", "int64")])
@@ -178,7 +235,7 @@ def test_function_code_agrees_with_its_kind(streams, op, w):
     cfg = function_of(inst)
     ins = {p.name: rng.integers(-1000, 1000, p.lanes) for p in cfg.inputs}
     got = cfg.fn(0, ins, {}, {"n": 1})
-    for target, e in expr.statements(inst.brm.function.code_for(inst.params), "code"):
+    for target, e in expr.statements(inst.code, "code"):
         assert np.array_equal(got[target], expr.evaluate(e, ins | k))
 
 
@@ -202,10 +259,9 @@ def test_simd_holds_twelve_entries():
         (axpby, "out = k1 * a + k2 * b"), (axpby, "out = k1 * a + b")]  # fmt: skip
     assert [brm.slots(e) for e in brm.function.entries()] == (
         [[]] * 5 + [["k"]] * 5 + [["k1", "k2"], ["k1"]])  # fmt: skip
-    assert brm.function.codes_for(axpby) == ["out = k1 * a + k2 * b", "out = k1 * a + b"]
-    assert brm.function.code_for(brm.resolve(IMPL).params) == "out = a + b"
-    inst = brm.resolve(IMPL, {"op": "min", "streams": 1, "k": 7})
-    assert brm.function.code_for(inst.params) == "out = min(a, k)"
+    assert brm.all_slots() == ["k", "k1", "k2"]
+    assert brm.resolve(IMPL).code == "out = a + b"
+    assert brm.resolve(IMPL, {"op": "min", "streams": 1, "k": 7}).code == "out = min(a, k)"
     assert brm.pattern.family == "simd" and brm.pattern.attrs == {}
 
 

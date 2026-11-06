@@ -37,9 +37,10 @@ each with ``op`` a registered op by name (``mac``'s the fold's) (``add``, ``sub`
 
 A function param that names a design param the instance leaves unset (``simd``'s
 ``k`` at two streams) is not passed. A slot read from a scalar (a CSR: ``k`` at one stream,
-``axpby``'s ``k1`` and ``k2``) is unset in the instance: the kind builds without it, and
-a firing without its value is refused; the reference executor resolves the instance with the
-value read from the node's slot connector. ``function_of`` refuses, as a BrmError, a kind that is not registered, params
+``axpby``'s ``k1`` and ``k2``) is unset in the instance and listed in its ``read``
+(instance.py, which refuses a slot the code needs with neither): the kind builds without
+it, and the reference executor resolves the instance with the value read from the node's
+slot connector (a firing without a value is refused, a guard nothing reaches). ``function_of`` refuses, as a BrmError, a kind that is not registered, params
 the kind rejects, and a kind whose ports (name, direction, lanes, rate, in
 order) are not the BRM's.
 """

@@ -129,6 +129,8 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+
 from snax_forge import expr
 from snax_forge.char import DEFAULT_TECH
 from snax_forge.common import repo_root
@@ -553,9 +555,26 @@ class Session:
             out["bind"]["list"] = bind_list(g, items[0], order)
         for name, answer in out.items():
             if answer["ok"]:
-                answer["form"] = form(name, g, answer, self.recipe.params, order)
+                answer["form"] = form(
+                    name,
+                    g,
+                    answer,
+                    self.recipe.params,
+                    order,
+                    self._kernel_inputs() if name == "bake_scalar" else None,
+                )
         self._sites[key] = out
         return out
+
+    def _kernel_inputs(self) -> dict[str, Any]:
+        """The kernel's ``make_inputs`` at seed 0 on the input graph (axpy's alpha 3), else the
+        session's seeded inputs (the reference check's)."""
+        from snax_forge.dfg.reference import KernelError, kernel_inputs, kernel_spec
+
+        try:
+            return kernel_inputs(kernel_spec(self.recipe.kernel, "editor"), self.graphs[0], SEED)
+        except (KernelError, KeyError, TypeError, ValueError):
+            return self.inputs
 
     def _checks_of(self, k: int) -> dict[str, list[dict[str, Any]]]:
         if k not in self._checks:
@@ -878,12 +897,17 @@ def fresh_param(field: str, taken: Any) -> str:
 DEFAULT_KIND = "temporal"
 
 
-# bake_scalar's value in the editor's form until the user gives one
+# bake_scalar's value in the editor's form for a container with no seeded input
 BAKE_DEFAULT = 1
 
 
 def form(
-    name: str, g: Graph, answer: dict[str, Any], params: dict[str, Any], order: int = 1
+    name: str,
+    g: Graph,
+    answer: dict[str, Any],
+    params: dict[str, Any],
+    order: int = 1,
+    inputs: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """The fields the editor shows to apply transform ``name`` where its site accepted
     (``answer``, with the bind list for ``bind``), in the transform's param order: each
@@ -895,7 +919,9 @@ def form(
     ``readonly`` (the selection's own field) and ``choices`` where they apply: ``tag_map``'s
     kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
-    units (the instances in no accelerator, in the graph's order, the selection's ticked)."""
+    units (the instances in no accelerator, in the graph's order, the selection's ticked),
+    ``bake_scalar``'s value (an int literal, the container's in ``inputs``: the session gives
+    the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``)."""
     import inspect
 
     from snax_forge.common import fresh
@@ -915,7 +941,9 @@ def form(
                 field["value"] = fresh_param(p, params)
             field["new_value"] = DEFAULT_INT.get(p, 1)
         elif name == "bake_scalar" and p == "value":  # an int literal, not a param
-            field |= {"type": "int", "value": BAKE_DEFAULT}
+            seeded = (inputs or {}).get(filled.get("container"))
+            value = BAKE_DEFAULT if seeded is None else int(np.asarray(seeded).reshape(-1)[0])
+            field |= {"type": "int", "value": value}
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip

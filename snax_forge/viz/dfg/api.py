@@ -82,8 +82,8 @@ worked out here:
     unit         ``<instance> · <what one lane computes> · W <lanes>``, then each slot
                  and its value, baked or read from a scalar (a CSR), a fold's as a tasklet's
                                                           (``mul · a * b · W 4``,
-                                                           ``acc · max(a, k) · W 4 · k = 0``,
-                                                           ``acc · k1 * a + b · W 4 · k1 = alpha (CSR)``)
+                                                           ``acc · max(a, k) · W 4 · k 0``,
+                                                           ``acc · k1 * a + b · W 4 · k1 alpha (CSR)``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
     container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
                  ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links); a
@@ -1131,7 +1131,7 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
         try:
             inst = instance_of(n)
             first = next(p.name for p in inst.ports if p.direction == "in")  # a port, not a slot
-            slots = "".join(f" · {k} = {v}" for k, v in slot_params(n).items())
+            slots = "".join(f" · {k} {v}" for k, v in slot_params(n).items())
             return f"{text} · {param or 'W'} {inst.lanes(first)}{slots}"
         except (BrmError, ExprError, KeyError, StopIteration):
             return text

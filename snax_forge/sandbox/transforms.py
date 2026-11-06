@@ -590,9 +590,16 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             )
         given[lanes_v] = end
     try:
-        inst = b.resolve(implementation, given)
+        inst = b.resolve(implementation, given, from_scalar)
     except BrmError as e:
         raise SandboxError(f"{what}: {e}") from None
+    if inst.code != entry.code:  # a slot given that the matched entry leaves unset
+        extra = [k for k in b.all_slots() if k in inst.params and k not in slots]
+        raise SandboxError(
+            f"{what}: {', '.join(f'{k} = {inst.params[k]!r}' for k in extra)} given, but the "
+            f"tasklet computes {computes!r}, {brm!r}'s {entry.code!r}, which leaves "
+            f"{' and '.join(extra)} unset"
+        )
     lane_port = next(ports[c] for c in memlets if c not in folds)
     if inst.lanes(lane_port) != end:
         raise SandboxError(f"{what}: the BRM has {inst.lanes(lane_port)} lanes, the map {end}")

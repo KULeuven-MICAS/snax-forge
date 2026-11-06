@@ -458,12 +458,10 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     if node.body:
         raise ExecutionError(f"{what}: a nested accelerated block is not run yet")
     instance, cfg, slots = _accel(node, what, ctx)
-    codes = instance.brm.function.codes_for(instance.params)
-    if instance.brm.function.code is not None and node.attrs["code"] not in codes:
-        brm_code = " or ".join(map(repr, codes)) or "nothing"
+    if instance.brm.function.code is not None and node.attrs["code"] != instance.code:
         raise ExecutionError(
             f"{what}.attrs.code: {node.attrs['code']!r}, but {node.attrs['brm']!r} "
-            f"computes {brm_code}"
+            f"computes {instance.code!r}"
         )
     for side, conns, ports in (
         ("inputs", node.inputs, cfg.inputs),
