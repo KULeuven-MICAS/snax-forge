@@ -27,10 +27,12 @@ them are ignored) and its lanes (and depth): the entry whose params equal them, 
 
 A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared,
 and one the table's export predates takes the value its points were measured at
-(``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2), on the entry's side and, when the caller does
+(``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2, and no slot from a CSR, ``kCsr``, ``k1Csr``
+and ``k2Csr`` false), on the entry's side and, when the caller does
 not give it, on the caller's, until the next export writes it.
 None for anything else: no entry with these params (a dtype other than int64, another op, a
-SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has),
+SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has, axpby, a slot from
+its CSR),
 lanes or depth outside the measured range (TreeAccumulate at lanes 64, SerialAccumulate at
 lanes 1, a LinkBuffer deeper than 16). None is never a refusal: the estimate counts the block as
 0 and lists it (C§19), and the design note ``char.missing`` names it (C§14).
@@ -63,7 +65,9 @@ _IGNORED = ("lanes", "depth")
 DATAPATH_RENAMES = {"SimdLanes": "ElementwiseLanes"}
 # per catalogue datapath, a param the table's export predates, at the value its points were
 # measured at: SimdLanes' streams, every point a two-input one (module doc)
-TABLE_DEFAULTS: dict[str, dict[str, Any]] = {"SimdLanes": {"streams": 2}}
+TABLE_DEFAULTS: dict[str, dict[str, Any]] = {
+    "SimdLanes": {"streams": 2, "kCsr": False, "k1Csr": False, "k2Csr": False}
+}
 
 
 class CharError(CodedError):

@@ -11,9 +11,10 @@ import snax.forge.datapath.{SimdLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 
 /** A unit case's hardware: a one-unit group's control unit (`GroupCtrl`) and the datapath of the case's shape: two
-  * inputs at L 0 `SimdLanes`, one input with `k` at L 0 the one-stream `SimdLanes` (op(a, k) at a's type), one input at
-  * L 1 `TreeAccumulate`, at the case's `types` (int64 without them), lanes and op; any other shape (L 1 or 2 with two
-  * inputs) the controller alone, no data.
+  * inputs at L 0 `SimdLanes` (at op axpby with the case's k1 and k2, each baked or on its pin, `k1` and `k2` here), one
+  * input with `k` at L 0 the one-stream `SimdLanes` (op(a, k) at a's type), one input at L 1 `TreeAccumulate`, at the
+  * case's `types` (int64 without them), lanes and op; any other shape (L 1 or 2 with two inputs) the controller alone,
+  * no data.
   */
 class UnitHarness(val c: Case) extends Module {
   private val ctrl =
@@ -38,6 +39,8 @@ class UnitHarness(val c: Case) extends Module {
     val fire  = Output(Bool())
     val busy  = Output(Bool())
     val cls   = Output(UInt(2.W))
+    val k1    = Input(UInt(64.W)) // axpby's slots on their pins (a CSR's value)
+    val k2    = Input(UInt(64.W))
   })
 
   ctrl.io.start <> io.start
@@ -52,9 +55,24 @@ class UnitHarness(val c: Case) extends Module {
 
   datapath match {
     case Some("SimdLanes")      =>
-      val op     = ElementwiseOp.byName(c.op)
+      val op     = SimdLanes.opByName(c.op)
       val opType = snax.forge.elementwise.ElementwiseModel.resultType(t(0), t(1))
-      val dp     = Module(new SimdLanes(Seq(t(0).name, t(1).name), opType.name, t(2).name, c.lanes, op))
+      def baked(s: Option[SnaxUnitCases.Slot]) = s.filter(!_.csr).map(x => LaneBits.signed(x.value, opType.width))
+      val dp = Module(
+        new SimdLanes(
+          Seq(t(0).name, t(1).name),
+          opType.name,
+          t(2).name,
+          c.lanes,
+          op,
+          k1    = baked(c.k1),
+          k2    = baked(c.k2),
+          k1Csr = c.k1.exists(_.csr),
+          k2Csr = c.k2.exists(_.csr)
+        )
+      )
+      dp.io.k1.foreach(_ := io.k1(opType.width - 1, 0))
+      dp.io.k2.foreach(_ := io.k2(opType.width - 1, 0))
       for (l <- 0 until c.lanes) {
         dp.io.a(l)     := lane(io.data(0)(l), t(0))
         dp.io.b.get(l) := lane(io.data(1)(l), t(1))
@@ -110,6 +128,8 @@ class UnitCasesSpec extends AnyFlatSpec with ForgeTester {
           case None    => dut.io.start.valid.poke(false.B)
         }
         cyc.valids.zipWithIndex.foreach { case (v, k) => dut.io.in(k).valid.poke(v.B) }
+        dut.io.k1.poke((c.k1.map(_.value).getOrElse(BigInt(0)) & LaneBits.mask(64)).U)
+        dut.io.k2.poke((c.k2.map(_.value).getOrElse(BigInt(0)) & LaneBits.mask(64)).U)
         dut.io.out.ready.poke(cyc.ready.B)
         for {
           k <- 0 until c.inputs

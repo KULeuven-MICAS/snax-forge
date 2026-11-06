@@ -21,6 +21,9 @@ object SnaxUnitCases {
   /** One cycle line: each input's valid, the output's ready, then the expected fire, push and busy. */
   case class Cycle(valids: Seq[Boolean], ready: Boolean, fire: Boolean, push: Boolean, busy: Boolean)
 
+  /** axpby's slot: its value, and whether it is read from its CSR (the pin) or baked. */
+  case class Slot(value: BigInt, csr: Boolean)
+
   case class Case(
     name:    String,
     latency: Int,
@@ -30,6 +33,8 @@ object SnaxUnitCases {
     types:   Seq[String],
     op:      String,
     k:       Option[BigInt], // one input's constant: a one-stream SimdLanes (relu's)
+    k1:      Option[Slot],   // axpby's (op axpby, axpy's): k1 required, k2 optional
+    k2:      Option[Slot],
     starts:  Map[Int, Start],
     runs:    Seq[RunLine],
     beats:   Map[Int, Seq[BigInt]],
@@ -46,6 +51,8 @@ object SnaxUnitCases {
     var types          = Seq.empty[String]
     var op             = "add"
     var k              = Option.empty[BigInt]
+    var k1             = Option.empty[Slot]
+    var k2             = Option.empty[Slot]
     var starts         = Map.empty[Int, Start]
     var runs           = Seq.empty[RunLine]
     var beats          = Map.empty[Int, Seq[BigInt]]
@@ -58,6 +65,8 @@ object SnaxUnitCases {
       case "types" :: ts if ts.nonEmpty                => types   = ts
       case "op" :: o :: Nil                            => op      = o
       case "k" :: v :: Nil                             => k       = Some(BigInt(v))
+      case "k1" :: v :: from                           => k1      = Some(slot(path, line, v, from))
+      case "k2" :: v :: from                           => k2      = Some(slot(path, line, v, from))
       case "start" :: c :: j :: t :: a :: Nil          =>
         starts += c.toInt -> Start(j.toInt, t.toInt, a)
       case "expect" :: "run" :: RunLine.Fields(i, run) =>
@@ -70,6 +79,10 @@ object SnaxUnitCases {
     }
     require(types.isEmpty || types.size == inputs + 1, s"$path: types gives ${types.size}, not ${inputs + 1}")
     require(k.isEmpty || inputs == 1, s"$path: k is one input's constant; inputs is $inputs")
+    require(
+      (op == "axpby") == k1.nonEmpty && (k2.isEmpty || k1.nonEmpty) && (op != "axpby" || inputs == 2),
+      s"$path: op axpby takes two inputs and k1 (k2 optional), and only it"
+    )
     val cycles = rows.map { line =>
       val v = line.split("\\s+").map(_ == "1").toSeq
       require(v.size == inputs + 4, s"$path: `$line` has ${v.size} columns, not ${inputs + 4}")
@@ -84,12 +97,20 @@ object SnaxUnitCases {
       types,
       op,
       k,
+      k1,
+      k2,
       starts,
       runs,
       beats,
       results,
       cycles
     )
+  }
+
+  /** `k1 V [csr]`: the value, baked or read from its CSR. */
+  private def slot(path: Path, line: String, v: String, from: List[String]): Slot = {
+    require(from == Nil || from == List("csr"), s"$path: `$line`: k1 V [csr]")
+    Slot(BigInt(v), from.nonEmpty)
   }
 
   /** Every case of the folder `Env` names (`CaseFile.all`). */
