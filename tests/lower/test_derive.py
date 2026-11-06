@@ -10,7 +10,7 @@ from snax_forge.dfg import Memlet
 from snax_forge.lower import Layout, LowerError, TaskList, memlet_values, placed_waits, task_list
 from snax_forge.lower import __main__ as cli
 from snax_forge.lower.derive import addresses
-from tests.brm.helpers import affine_elementwise_add
+from tests.brm.helpers import affine_simd
 from tests.design.helpers import (
     SNAX_FORGE,
     bound_matadd,
@@ -281,13 +281,13 @@ def _backwards(g):
 
 def test_a_memlet_the_nest_disagrees_with_is_refused(monkeypatch):
     """An affine BRM: the addresses are right, the order is not the BRM's nest's."""
-    monkeypatch.setattr(streamers, "load_brm", lambda name: affine_elementwise_add())
+    monkeypatch.setattr(streamers, "load_brm", lambda name: affine_simd())
     with pytest.raises(LowerError, match="different orders"):
         task_list(point(edit_graph=_backwards))
 
 
 def test_a_stream_brm_takes_the_memlets_order():
-    """The library's elementwise_add (stream, D70): the memlet is the order, so C back to front
+    """The library's simd (stream, D70): the memlet is the order, so C back to front
     lowers, its streamer starting at element 60 and stepping back a beat at a time."""
     out = task_list(point(edit_graph=_backwards)).configured()["add_acc_out"].values
     assert out["temporal_bounds"] == [16] and out["temporal_strides"] == [-32]

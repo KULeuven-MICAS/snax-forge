@@ -30,7 +30,7 @@
      "outputs": {"out": {"data": "tmp0", "subset": ["4 * i_t:4 * i_t + 4"]}},
      "attrs": {
       "instance": "mul",
-      "brm": "elementwise_mul",
+      "brm": "simd",
       "implementation": "chisel_tiled_spatial",
       "code": "out = a * b",
       "params": {"W": 4, "op": "mul"},

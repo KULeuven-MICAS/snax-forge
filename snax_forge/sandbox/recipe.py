@@ -13,7 +13,7 @@ A recipe is a hand-written JSON file, kept in a folder of ``recipes/`` by catego
                                           dtype in place of the kernel's
      "steps": [
       {"transform": "split_map", "params": {"map": "add_map", "factor": "W"}},
-      {"transform": "bind",      "params": {"node": "add", "brm": "elementwise_add", ...}}
+      {"transform": "bind",      "params": {"node": "add", "brm": "simd", ...}}
      ]
     }
 

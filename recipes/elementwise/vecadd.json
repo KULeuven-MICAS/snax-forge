@@ -9,7 +9,7 @@
    "transform": "bind",
    "params": {
     "node": "add",
-    "brm": "elementwise_add",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "acc"
    }

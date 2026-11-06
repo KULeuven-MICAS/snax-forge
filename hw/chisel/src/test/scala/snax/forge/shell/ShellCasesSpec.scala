@@ -11,8 +11,8 @@ import snax.forge.shell.AcceleratorSpec.CsrSpec
   * and its datapath) driven through snax-gvsoc's `SnaxShell` cases (`SnaxShellCases`, read from
   * `SNAX_GVSOC_SHELL_CASES`), which snax-gvsoc's `tb.cpp` checks `snax_shell.hpp`'s rule against.
   *
-  * A case's `csrs` line and unit pick the wrapper: `START JOBS` with an ElementwiseLanes unit (L 0, two inputs) is
-  * vecadd's (START 0, JOBS 1, STATUS 2, COUNTER 3); `START JOBS JOB_BEATS` with a fold (L 1, one input) is vsum's
+  * A case's `csrs` line and unit pick the wrapper: `START JOBS` with an SimdLanes unit (L 0, two inputs) is vecadd's
+  * (START 0, JOBS 1, STATUS 2, COUNTER 3); `START JOBS JOB_BEATS` with a fold (L 1, one input) is vsum's
   * (TreeAccumulate, one lane: START 0, JOBS 1, JOB_BEATS 2, STATUS 3, COUNTER 4). Its `job_width` and `counter_width`
   * lines set the widths of JOBS and JOB_BEATS and of COUNTER in the wrapper's description (D152).
   *

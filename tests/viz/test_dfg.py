@@ -169,7 +169,7 @@ def test_vecadd_accelerated():
     assert (acc["text"], acc["inputs"][0]) == ("acc · a + b · W 4", {"connector": "a", "data": "A"})
     d = v["details"]["node:add"]
     assert (d["brm"], d["implementation"], d["params"], d["replaced"], d["timing"]) == (
-        "elementwise_add", "chisel_tiled_spatial", {"W": 4, "op": "add"}, "add_map_s › add",
+        "simd", "chisel_tiled_spatial", {"W": 4, "op": "add"}, "add_map_s › add",
         {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
     assert v["details"]["node:add_map"] == {"kind": "map", "var": "i_t", "range": "0:N // 4",
                                            "loop.kind": "temporal",
@@ -343,14 +343,14 @@ def test_the_cost_tables_of_vecmul_and_dot_1():
     g = steps("vecmul", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(g, platform), g)
     assert t["accelerator"] == "acc" and _cost_rows(t) == [
-        ("acc", "ElementwiseLanes", "55 300", "23.137", "46.0%"),
+        ("acc", "SimdLanes", "55 300", "23.137", "46.0%"),
         ("acc ctrl", "control unit", "702", "0.128", "0.3%"),
         (L1_LABEL, "6144 words, 393 216 bits", "–", "27.005", "53.7%"),
         ("total", "", "56 000", "50.269", "100.0%")]  # fmt: skip
     d = steps("dot_1_enc", N=2048, W=8)[-1]
     (t,) = cost_tables(estimate(d, platform), d)
     assert t["accelerator"] == "dot" and _cost_rows(t) == [
-        ("vmul", "ElementwiseLanes", "55 300", "23.137", "37.8%"),
+        ("vmul", "SimdLanes", "55 300", "23.137", "37.8%"),
         ("vmul ctrl", "control unit", "702", "0.257", "0.4%"),
         ("vsum", "TreeAccumulate", "2 710", "1.231", "2.0%"),
         ("vsum ctrl", "control unit", "1 390", "0.509", "0.8%"),
@@ -464,7 +464,7 @@ def _editor_vecmul():
         Step("split", {"map": "mult_map", "factor": "W"}),
         Step("tag_map", {"map": "mult_map", "kind": "temporal"}),
         Step("tag_map", {"map": "mult_map_inner", "kind": "spatial"}),
-        Step("bind", {"node": "mult", "brm": "elementwise_mul",
+        Step("bind", {"node": "mult", "brm": "simd",
                       "implementation": "chisel_tiled_spatial", "instance": "acc"})])  # fmt: skip
 
 
@@ -476,7 +476,7 @@ def _entries(b):
 @pytest.mark.slow
 def test_the_bindings_of_vecmul_dot_1_and_dot_4():
     """C§12's Bindings: vecmul's split before its bind (``mult_map split · W = 8 · not bound``),
-    then the unit (``acc · elementwise_mul · W = 8``); dot 1 with W_mul and W_sum, two entries,
+    then the unit (``acc · simd · W = 8``); dot 1 with W_mul and W_sum, two entries,
     nothing shared; dot 4 at W = 4, one W shared by mac and sum; a param in none is unused."""
     from dataclasses import replace
 
@@ -490,7 +490,7 @@ def test_the_bindings_of_vecmul_dot_1_and_dot_4():
     one = bindings_section(gs[1], replace(r, steps=r.steps[:1]), editable=True)
     assert _entries(one) == [("split", "mult_map split", [("W", 8, True, [])], "not bound")]
     four = bindings_section(gs[4], r, editable=True)
-    assert _entries(four) == [("unit", "acc · elementwise_mul", [("W", 8, True, [])], None)]
+    assert _entries(four) == [("unit", "acc · simd", [("W", 8, True, [])], None)]
     assert (
         four["unused"] == []
         and not bindings_section(gs[4], r)["entries"][0]["params"][0]["editable"]
@@ -501,7 +501,7 @@ def test_the_bindings_of_vecmul_dot_1_and_dot_4():
                [Step(x.transform, {**x.params, "factor": factor[x.params["map"]]})
                 if "factor" in x.params else x for x in d.steps])  # fmt: skip
     dot1 = bindings_section(apply_recipe(d, imported("dot"))[-1].graph, d, editable=True)
-    assert _entries(dot1) == [("unit", "vmul · elementwise_mul", [("W_mul", 8, True, [])], None),
+    assert _entries(dot1) == [("unit", "vmul · simd", [("W_mul", 8, True, [])], None),
                               ("unit", "vsum · accumulate", [("W_sum", 4, True, [])], None)]  # fmt: skip
     d4 = Recipe.load(recipe_path("dot_4"))
     dot4 = bindings_section(steps("dot_4")[-1], d4, editable=True)
@@ -534,7 +534,7 @@ def test_view_mode_reads_the_folders_recipe(tmp_path):
     v = step_view(four, "4 bind", Platform.load(SNAX_FORGE), recipe=folder_recipe(four))
     (unit,) = v["bindings_section"]["entries"]
     assert (unit["label"], unit["params"][0]["name"], unit["params"][0]["editable"]) == (
-        "acc · elementwise_mul", "W", False)  # fmt: skip
+        "acc · simd", "W", False)  # fmt: skip
     assert v["symbols_section"][0]["param"] == "N" and not v["symbols_section"][0]["editable"]
     assert v["containers_section"][0]["line"] == "N · L1 · 16 KiB"
 
@@ -819,7 +819,7 @@ def test_value_text_is_the_pages():
 
 
 def test_a_block_with_no_flops_holds_dash():
-    """vecmul's ElementwiseLanes has no register: its Details' holding reads "–"."""
+    """vecmul's SimdLanes has no register: its Details' holding reads "–"."""
     from snax_forge.design import Platform
     from snax_forge.viz.dfg.api import Entry, step_view
     from tests.helpers import steps
@@ -854,17 +854,17 @@ def test_the_bindings_tree():
     assert tree("dot_1_enc") == ([{"kind": "accelerator", "name": "dot", "children": [
         {"kind": "group", "name": "vmul", "children": [{"kind": "entry", "index": 0}]},
         {"kind": "group", "name": "vsum", "children": [{"kind": "entry", "index": 1}]}]}],
-        ["vmul · elementwise_mul", "vsum · accumulate"])  # fmt: skip
+        ["vmul · simd", "vsum · accumulate"])  # fmt: skip
     # dot 1, two accelerators of one group of one unit each: both at the top
     assert tree("dot_1") == ([{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}],
-                             ["vmul · elementwise_mul", "vsum · accumulate"])  # fmt: skip
+                             ["vmul · simd", "vsum · accumulate"])  # fmt: skip
     assert tree("dot_2")[0] == [{"kind": "group", "name": "dot", "children": [
         {"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]}]  # fmt: skip
     assert tree("vecmul")[0] == [{"kind": "entry", "index": 0}]
     # dot 1 at its step 3: vmul bound, sum_map split, nothing encapsulated: both at the top
     t, labels = tree("dot_1", 3)
     assert t == [{"kind": "entry", "index": 0}, {"kind": "entry", "index": 1}]
-    assert labels == ["vmul · elementwise_mul", "sum_map split_map"]
+    assert labels == ["vmul · simd", "sum_map split_map"]
 
 
 def test_the_recipes_param_names_in_the_boxes_and_details():

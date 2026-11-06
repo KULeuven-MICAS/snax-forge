@@ -41,7 +41,7 @@ How a node runs is registered per kind (``register_executor``, principle
     containers' dtypes: a fold's lanes are cast to its output's before its tree, D143). The
     ``temporal`` maps directly around the node are
     its firing loop, outermost first, as the BRM nest orders them;
-    the node's ``code`` must be the BRM's ``function.code`` (D82), and its
+    the node's ``code`` must be the BRM's ``function.code`` at its params (D82), and its
     ``replaced`` subtree is history, never run;
     ``k`` counts firings, ``state`` lives for one task, ``n`` is the number
     of firings. Maps further out (a tile, an untagged map) start a new task
@@ -440,8 +440,8 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     if node.body:
         raise ExecutionError(f"{what}: a nested accelerated block is not run yet")
     instance, cfg = _accel(node, what, ctx.graph)
-    brm_code = instance.brm.function.code
-    if brm_code is not None and node.attrs["code"] != brm_code:
+    brm_code = instance.brm.function.code_for(instance.params)
+    if instance.brm.function.code is not None and node.attrs["code"] != brm_code:
         raise ExecutionError(
             f"{what}.attrs.code: {node.attrs['code']!r}, but {node.attrs['brm']!r} "
             f"computes {brm_code!r}"

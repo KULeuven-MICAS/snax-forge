@@ -33,7 +33,7 @@ object SnaxDatapathVectors {
       def one(k: String) = header(k).head
       val ins = header("in")
       datapath match {
-        case "ElementwiseLanes" =>
+        case "SimdLanes"        =>
           Map(
             "inTypes" -> ujson.Arr.from(ins),
             "opType"  -> ujson.Str(one("optype")),

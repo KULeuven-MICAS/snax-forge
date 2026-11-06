@@ -10,7 +10,7 @@
    "transform": "bind",
    "params": {
     "node": "mult",
-    "brm": "elementwise_mul",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "acc"
    }

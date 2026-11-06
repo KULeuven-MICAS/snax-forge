@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from snax_forge.brm import Brm, BrmError, function_of, load_brm
-from snax_forge.brm.function import elementwise, reduce_kind
+from snax_forge.brm.function import reduce_kind, simd
 
 from .helpers import IMPL, adder, reducer
 
@@ -31,9 +31,9 @@ def test_the_function_follows_the_design_params():
     assert inst.lanes("out") == 8
 
 
-def test_the_function_is_the_elementwise_kind():
+def test_the_function_is_the_simd_kind():
     f = function_of(_brm().resolve(IMPL))
-    want = elementwise(lanes=4, n_inputs=2)
+    want = simd(lanes=4, n_inputs=2)
     assert (f.ports, f.kind) == (want.ports, want.kind)
 
 
@@ -129,9 +129,9 @@ def test_rate_mismatch():
 
 def _bound(binding_edit=None, timing=None):
     d = adder()
-    d["implementations"][IMPL]["binding"] = load_brm("elementwise_add").to_dict()[
-        "implementations"
-    ][IMPL]["binding"]
+    d["implementations"][IMPL]["binding"] = load_brm("simd").to_dict()["implementations"][IMPL][
+        "binding"
+    ]
     if binding_edit:
         binding_edit(d["implementations"][IMPL]["binding"])
     if timing:
@@ -140,7 +140,7 @@ def _bound(binding_edit=None, timing=None):
 
 
 def test_a_bound_implementation_resolves_when_its_datapath_takes_it():
-    assert _bound().resolve(IMPL).impl.binding["datapath"] == "ElementwiseLanes"
+    assert _bound().resolve(IMPL).impl.binding["datapath"] == "SimdLanes"
 
 
 def test_a_datapath_the_generator_does_not_build_is_refused():

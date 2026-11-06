@@ -71,7 +71,7 @@
      "minProperties": 1,
      "additionalProperties": {"$ref": "#/$defs/port"}
     },
-    "opType": {"description": "An elementwise or Mac unit's: NumPy's result type of its inputs (D143).", "$ref": "#/$defs/dtype"},
+    "opType": {"description": "A SIMD or Mac unit's: NumPy's result type of its inputs (D143).", "$ref": "#/$defs/dtype"},
     "params": {"description": "What the ports do not give (op, accumulate, regOut), and T, a fold's rate fixed at design time.", "type": "object"},
     "timing": {
      "type": "object",

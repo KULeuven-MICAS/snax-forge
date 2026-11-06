@@ -18,7 +18,7 @@ from snax_forge.gen import DATAPATHS, ELEMENTWISE_OP, Description, GenError, Man
 from snax_forge.gen import __main__ as cli
 from snax_forge.gen import csrs as csrs_mod
 from snax_forge.gen import gvsoc as gen_mod
-from snax_forge.gen.blocks import Port, elementwise_lanes, tree_accumulate
+from snax_forge.gen.blocks import Port, simd_lanes, tree_accumulate
 from snax_forge.gen.data import array_text, arrays
 from snax_forge.lower import c as c_mod
 from tests.brm.helpers import IMPL
@@ -57,7 +57,7 @@ TEMPLATE_W4 = {
         "spatial_bounds": [[4]], "temporal_dim": [1], "num_channel": [4], "fifo_depth": [8],
     },
 }  # fmt: skip
-# vecadd's accelerator at W = 4 (C§17's example): one group of one ElementwiseLanes unit,
+# vecadd's accelerator at W = 4 (C§17's example): one group of one SimdLanes unit,
 # each port int64 (D143)
 GROUP_CSRS = [
     {"name": "START", "access": "rw", "offset": 0, "width": 1},
@@ -69,7 +69,7 @@ ADD_W4 = {
     "design_point": "design/vecadd/design_point.json", "tag": "snax_forge_vecadd",
     "accelerators": [{"name": "acc", "inputs": ["acc.a", "acc.b"], "outputs": ["acc.out"],
     "groups": [{"name": "acc", "csrs": GROUP_CSRS, "units": [{
-        "name": "acc", "brm": "elementwise_add", "datapath": "ElementwiseLanes",
+        "name": "acc", "brm": "simd", "datapath": "SimdLanes",
         "ports": {p: {"port": p, "dir": "out" if p == "out" else "in", "dtype": "int64", "lanes": 4}
                   for p in ("a", "b", "out")},
         "opType": "int64", "params": {"op": "add"}, "timing": {"latency": 0, "ii": 1, "span": 1},
@@ -224,7 +224,7 @@ def test_snax_gvsocs_reader_takes_the_folder(w4):
     ]
     (unit,) = a.groups[0].units
     assert (unit.datapath, unit.op_type, unit.params) == (
-        "ElementwiseLanes",
+        "SimdLanes",
         "int64",
         {"op": "add"},
     )
@@ -271,12 +271,12 @@ def test_vecadd_w8_gives_eight_channels_per_mover(tmp_path):
 
 
 def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
-    """elementwise_mul's binding gives vecadd's accelerator with op mul."""
+    """simd's binding gives vecadd's accelerator with op mul."""
     out = tmp_path / "gvsoc" / "vecmul"
     m = generate(point(tmp_path, name="vecmul", graph=bound_vecmul()), out, root=tmp_path)
     want = copy.deepcopy(ADD_W4)
     want["design_point"], want["tag"] = "design/vecmul/design_point.json", "snax_forge_vecmul"
-    want["accelerators"][0]["groups"][0]["units"][0].update(brm="elementwise_mul",
+    want["accelerators"][0]["groups"][0]["units"][0].update(brm="simd",
                                                             params={"op": "mul"})  # fmt: skip
     assert json.loads((out / "accelerator.json").read_text()) == want
     assert parsed(out / streamer_file("vecmul")) == TEMPLATE_W4
@@ -469,8 +469,8 @@ def test_a_platform_value_the_hjson_cannot_express(tmp_path, sets, text):
     assert text in _refused(tmp_path, "gen.platform", p)
 
 
-def _instance(edit=None, params=None, name="elementwise_add", impl=IMPL) -> Instance:
-    """An instance (elementwise_add's by default), its BRM dict edited (no resolve: the
+def _instance(edit=None, params=None, name="simd", impl=IMPL) -> Instance:
+    """An instance (simd's by default), its BRM dict edited (no resolve: the
     datapath adapter's checks only)."""
     d = copy.deepcopy(load_brm(name).to_dict())
     if edit:
@@ -511,7 +511,7 @@ ADAPTER_CASES = [
 )  # fmt: skip
 def test_the_adapter_refuses(case, edit, params, code, dtypes):
     with pytest.raises(GenError) as e:
-        elementwise_lanes(_instance(edit, params or None), dtypes)
+        simd_lanes(_instance(edit, params or None), dtypes)
     assert e.value.code == code
 
 
@@ -557,7 +557,7 @@ def test_the_accumulator_adapter_gives_a_fold():
     assert fill.ports == {"a": Port("in", "in", None, 1), "out": Port("out", "out", None, 1)}
     assert (fill.op_type, fill.params) == (None, {"op": "add"})
     assert DATAPATHS["TreeAccumulate"].fill is tree_accumulate
-    assert DATAPATHS["TreeAccumulate"].latency == 1 and DATAPATHS["ElementwiseLanes"].latency == 0
+    assert DATAPATHS["TreeAccumulate"].latency == 1 and DATAPATHS["SimdLanes"].latency == 0
 
 
 def test_the_adder_tree_is_tree_accumulate_at_w_lanes():
@@ -568,12 +568,12 @@ def test_the_adder_tree_is_tree_accumulate_at_w_lanes():
 
 def test_the_adapter_reads_unsigned_and_narrow_dtypes():
     """Each port its container's dtype, opType the inputs' NumPy result type."""
-    u16 = elementwise_lanes(_instance(), _dtypes(a="uint16", b="uint16", out="uint16"))
+    u16 = simd_lanes(_instance(), _dtypes(a="uint16", b="uint16", out="uint16"))
     assert [p.dtype for p in u16.ports.values()] == ["uint16"] * 3 and u16.op_type == "uint16"
-    mixed = elementwise_lanes(_instance(), _dtypes(a="int32", b="int32", out="int64"))
+    mixed = simd_lanes(_instance(), _dtypes(a="int32", b="int32", out="int64"))
     assert [p.dtype for p in mixed.ports.values()] == ["int32", "int32", "int64"]
     assert mixed.op_type == "int32"  # vmul int32 into int64: the op at int32, then extended
-    signs = elementwise_lanes(_instance(), _dtypes(a="int16", b="uint16", out="int32"))
+    signs = simd_lanes(_instance(), _dtypes(a="int16", b="uint16", out="int32"))
     assert signs.op_type == "int32"
 
 
@@ -584,7 +584,7 @@ def test_three_ports_are_refused():
         d["function"]["code"] = "out = a + b + c"
 
     with pytest.raises(GenError) as e:
-        elementwise_lanes(_instance(three_inputs))
+        simd_lanes(_instance(three_inputs))
     assert e.value.code == "gen.ports"
 
 
@@ -638,7 +638,7 @@ def test_what_describe_refuses(tmp_path, monkeypatch, binding, timing, code):
         generate(path, tmp_path / "out", root=tmp_path)
     assert e.value.code == code
     assert not (tmp_path / "out").exists()
-    assert "ElementwiseLanes" in DATAPATHS
+    assert "SimdLanes" in DATAPATHS
 
 
 def test_the_command(tmp_path, capsys, monkeypatch):

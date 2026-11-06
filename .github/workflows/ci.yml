@@ -118,7 +118,7 @@ jobs:
       - name: Assert catalogue RTL was produced
         run: |
           ls -la out/hw
-          test -f out/hw/ElementwiseLanes_i32xi32_i32_i32_n4_add.sv
+          test -f out/hw/SimdLanes_i32xi32_i32_i32_n4_add.sv
           test -f out/hw/TreeAccumulate_i32_i64_n4.sv
           test -f out/hw/Mac_i64xi64_i64_i64_n4_acc.sv
           test -f out/hw/SerialAccumulate_i64_i64_n4.sv

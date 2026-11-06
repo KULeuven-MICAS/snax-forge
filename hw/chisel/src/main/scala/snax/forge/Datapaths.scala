@@ -2,7 +2,7 @@ package snax.forge
 
 import chisel3._
 
-import snax.forge.datapath.{DatapathModule, ElementwiseLanes, LinkBuffer, Mac, SerialAccumulate, TreeAccumulate}
+import snax.forge.datapath.{DatapathModule, LinkBuffer, Mac, SerialAccumulate, SimdLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.AcceleratorSpec
 
@@ -29,7 +29,7 @@ import snax.forge.shell.AcceleratorSpec
   * The Python side (`snax_forge/gen/rtl.py`) checks each unit's timing and ports against it; `Emit --spec` builds from
   * the unit with `build`. A spec checks `describe` equal to `blocks.json`.
   *
-  * Param types: `int` (`min`), `bool`, `op` (one op name of `values`: ElementwiseLanes takes every ElementwiseOp,
+  * Param types: `int` (`min`), `bool`, `op` (one op name of `values`: SimdLanes takes every ElementwiseOp,
   * TreeAccumulate `add` only), `dtype` (an element type's NumPy name of `values`, `IntType`'s eight) and `dtypes` (a
   * list of them).
   */
@@ -134,7 +134,7 @@ object Datapaths {
 
   val all: Seq[Datapath] = Seq(
     Datapath(
-      "ElementwiseLanes",
+      "SimdLanes",
       Seq(
         ("inTypes", DtypesParam, "inputs.dtype"),
         ("opType", DtypeParam, "unit.opType"),
@@ -148,7 +148,7 @@ object Datapaths {
       ujson.Num(0),
       Seq.empty,
       p => {
-        new ElementwiseLanes(
+        new SimdLanes(
           p("inTypes").arr.toSeq.map(_.str),
           str(p, "opType"),
           str(p, "outType"),

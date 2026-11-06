@@ -27,7 +27,7 @@ Under the Estimate, the design checks (Save's, run on every step) list two notes
 | 1 | `mult_map` | `split`, factor `W` with its value box set to 8 | `mult_map` runs `i_1` over 256 around `mult_map_inner` running `i_2` over 8; Bindings shows `mult_map split · W = 8 · not bound` |
 | 2 | `mult_map` | `tag_map`, `temporal` | the streamers' loop |
 | 3 | `mult_map_inner` | `tag_map`, `spatial` | the lanes; the total stays at 4096, since a tag alone runs nothing |
-| 4 | `mult` | `bind`, `elementwise_mul / chisel_tiled_spatial`, instance `acc_1`, the field's default | the log ends `C 0 → 256 · unmapped 4096 → 2048 · renamed W → W_acc_1 · 1 note` (`sum` is still unbound); total 2304 |
+| 4 | `mult` | `bind`, `simd / chisel_tiled_spatial`, instance `acc_1`, the field's default | the log ends `C 0 → 256 · unmapped 4096 → 2048 · renamed W → W_acc_1 · 1 note` (`sum` is still unbound); total 2304 |
 | 5 | `sum_map` | `split`, factor `W`, 8 | `sum_map` runs `i_3` over 256 around `sum_map_inner` running `i_4` over 8 |
 | 6 | `sum_map` | `tag_map`, `temporal` | |
 | 7 | `sum_map_inner` | `tag_map`, `spatial` | |
@@ -37,7 +37,7 @@ Each split gets a param of its own. The factor field reads `W` both times, since
 
 At step 8 the bind list offers two implementations: `chisel_adder_tree` (latency 1, II 1, span 1: the 8 lanes summed in one beat) and `chisel_serial` (span 8: one lane a cycle). `chisel_accumulator` is refused at W = 8 (it takes one lane), `mac` needs `split_reduce` first (D150), and both element-wise patterns are refused (`'out = in1' is not one operator over distinct inputs`).
 
-Step 8 is a design Save takes as it is: two bound units are two accelerators, each its own streamer set in the one entry (D157), so nothing has to put them behind one shell. Bindings lists them side by side, `acc_1 · elementwise_mul · W_acc_1 = 8` and `acc_2 · accumulate · W_acc_2 = 8`, each param editable in place. Each accelerator is drawn with a dashed outline; section 9 selects both and encapsulates them.
+Step 8 is a design Save takes as it is: two bound units are two accelerators, each its own streamer set in the one entry (D157), so nothing has to put them behind one shell. Bindings lists them side by side, `acc_1 · simd · W_acc_1 = 8` and `acc_2 · accumulate · W_acc_2 = 8`, each param editable in place. Each accelerator is drawn with a dashed outline; section 9 selects both and encapsulates them.
 
 The Estimate after step 8:
 
@@ -56,7 +56,7 @@ The cost table on nangate45, one per accelerator:
 
 | Accelerator | Block | Datapath | Area (µm²) | Energy (nJ) | Share |
 |---|---|---|---:|---:|---:|
-| acc_1 | acc_1 | ElementwiseLanes | 55 300 | 23.137 | 45.9 % |
+| acc_1 | acc_1 | SimdLanes | 55 300 | 23.137 | 45.9 % |
 | acc_1 | acc_1 ctrl | control unit | 702 | 0.257 | 0.5 % |
 | acc_1 | L1 accesses (placeholder, 4 × e_load per bit) | 6144 words, 393 216 bits | – | 27.005 | 53.6 % |
 | acc_1 | total | | 56 000 | 50.398 | 100 % |
@@ -91,7 +91,7 @@ Save recipe, as `dot_1_dry`, runs the design checks and writes `recipes/custom/d
    "transform": "bind",
    "params": {
     "node": "mult",
-    "brm": "elementwise_mul",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "acc_1"
    }
@@ -362,7 +362,7 @@ snax_forge_dot_1_dry_shell_wrapper
 │   └── ctrl_1  snax_forge_dot_1_dry_acc_2_ctrl
 └── dp    snax_forge_dot_1_dry_datapath
     ├── blocks_0_4  snax_forge_dot_1_dry_acc_1
-    │   └── m  ElementwiseLanes_i64xi64_i64_i64_n8_mul
+    │   └── m  SimdLanes_i64xi64_i64_i64_n8_mul
     │       └── alus_0 … alus_7  ElementwiseAlu_w64_mul
     └── blocks_1_4  snax_forge_dot_1_dry_acc_2
         └── m  TreeAccumulate_i64_i64_n8
@@ -380,7 +380,7 @@ flowchart LR
     c2["snax_forge_dot_1_dry_acc_2_ctrl"]
   end
   subgraph dp["snax_forge_dot_1_dry_datapath"]
-    d1["snax_forge_dot_1_dry_acc_1<br/>ElementwiseLanes mul, 8 lanes"]
+    d1["snax_forge_dot_1_dry_acc_1<br/>SimdLanes mul, 8 lanes"]
     d2["snax_forge_dot_1_dry_acc_2<br/>TreeAccumulate add, 8 lanes"]
   end
   csr -- "start (JOBS)" --> c1
@@ -405,7 +405,7 @@ The two accelerators share nothing but the CSR block and the shell's ports: each
 | `snax_forge_dot_1_dry_acc_2_ctrl.sv` | the group `acc_2`'s control unit |
 | `snax_forge_dot_1_dry_ctrl.sv` | the control units of every group, here two |
 | `ElementwiseAlu_w64_mul.sv` | one 64-bit lane's multiply |
-| `ElementwiseLanes_i64xi64_i64_i64_n8_mul.sv` | the 8 lanes, the datapath block of `acc_1` |
+| `SimdLanes_i64xi64_i64_i64_n8_mul.sv` | the 8 lanes, the datapath block of `acc_1` |
 | `snax_forge_dot_1_dry_acc_1.sv` | the unit `acc_1`, around its block |
 | `TreeAccumulate_i64_i64_n8.sv` | the 8-lane adder tree and its 64-bit running sum, the datapath block of `acc_2` |
 | `snax_forge_dot_1_dry_acc_2.sv` | the unit `acc_2`, around its block |
@@ -493,7 +493,7 @@ Both START offsets (0 and 4) read 0: a start is a strobe (D152). Each COUNTER co
 
 ## 9. One streamer set: dot_1_enc
 
-Back at step 8, click `acc_1`'s dashed outline and shift-click `acc_2`'s: on the two the sidebar offers only `encapsulate` (every one-item transform says `takes one selection, not 2`), with accelerator `dot` and units `acc_1` and `acc_2` both ticked. Applied at step 8 it first asks `Drop steps 9..9?`, the link of section 7; then step 9 is `encapsulate dot units=['acc_1', 'acc_2']`, `C 513 → 513`, 0 problems, 0 notes. Bindings reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · elementwise_mul · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`. The two groups keep their own START, JOBS, STATUS, COUNTER and control unit; what they now share is one streamer set, with one streamer and one STREAMER_START.
+Back at step 8, click `acc_1`'s dashed outline and shift-click `acc_2`'s: on the two the sidebar offers only `encapsulate` (every one-item transform says `takes one selection, not 2`), with accelerator `dot` and units `acc_1` and `acc_2` both ticked. Applied at step 8 it first asks `Drop steps 9..9?`, the link of section 7; then step 9 is `encapsulate dot units=['acc_1', 'acc_2']`, `C 513 → 513`, 0 problems, 0 notes. Bindings reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · simd · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`. The two groups keep their own START, JOBS, STATUS, COUNTER and control unit; what they now share is one streamer set, with one streamer and one STREAMER_START.
 
 What changes in the Estimate: nothing in the groups' cycles or cost (513, 60 100 µm², 61.144 nJ, now in one table for `dot`), and the streamers line reads `1 streamer (not costed, open item 110) · 37 CSRs`, `dot`'s set from 960 to 996. Saved as `dot_1_enc_dry`, the recipe is section 3's with one more step, `{"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}}`; `recipes/dot/dot_1_enc.json` is the same on `recipes/dot/dot_1.json`.
 

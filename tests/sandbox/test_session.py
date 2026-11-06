@@ -227,7 +227,7 @@ def test_the_cursor_moves_and_a_step_before_the_last_drops_the_rest(roots):
 
 def test_a_refused_step_changes_nothing(roots):
     s = Session.from_kernel("vecadd", {"N": 64}, roots=roots)
-    got = s.apply("bind", {"node": "add", "brm": "elementwise_add",
+    got = s.apply("bind", {"node": "add", "brm": "simd",
                            "implementation": "chisel_tiled_spatial", "instance": "acc"})  # fmt: skip
     assert (got["ok"], got["code"]) == (False, "sandbox") and "split the map first" in got[
         "message"
@@ -353,7 +353,7 @@ def test_the_bind_list_of_a_split_multiply(roots):
     s = Session.from_kernel("dot", {"N": 512, "W": 4}, roots=roots)
     ok(s.apply("split_map", {"map": "mult_map", "factor": "W"}))
     entries = s.sites(1, "mult")["bind"]["list"]
-    assert _ok(entries) == [("elementwise_mul", "chisel_tiled_spatial")]
+    assert _ok(entries) == [("simd", "chisel_tiled_spatial")]
     (mul,) = [e for e in entries if e["ok"]]
     assert mul["params"]["instance"] == "acc_1" and mul["timing"] == {
         "latency": 0,
@@ -443,11 +443,11 @@ def test_the_bind_form_lists_the_library_with_timing(roots):
     f = _form(s.sites(1, "mult")["bind"])
     assert list(f) == ["node", "binding", "instance"] and f["node"]["readonly"]
     assert f["binding"]["value"] == {
-        "brm": "elementwise_mul",
+        "brm": "simd",
         "implementation": "chisel_tiled_spatial",
     }
     (good,) = [c for c in f["binding"]["choices"] if c["ok"]]
-    assert (good["label"], good["timing"]) == ("elementwise_mul / chisel_tiled_spatial",
+    assert (good["label"], good["timing"]) == ("simd / chisel_tiled_spatial",
                                                {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
     assert all(c["message"] for c in f["binding"]["choices"] if not c["ok"])
     assert f["instance"]["value"] == "acc_1"

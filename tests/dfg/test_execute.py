@@ -324,5 +324,5 @@ def test_an_unregistered_executor():
 def test_the_node_code_must_be_the_brms():
     d = as_dict("vecadd_accelerated")
     accel(d)["attrs"]["code"] = "out = a - b"
-    with pytest.raises(ExecutionError, match="'out = a - b', but 'elementwise_add' computes"):
+    with pytest.raises(ExecutionError, match="'out = a - b', but 'simd' computes"):
         execute(Graph.from_dict(d), kernel_run(64)[0])

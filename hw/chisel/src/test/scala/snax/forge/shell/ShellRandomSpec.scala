@@ -11,9 +11,8 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * data, configurations, streamer gaps and output stalls, through its CSR port as `main.c` drives it.
   *
   * Per seed, `Runs` runs back to back on one wrapper. Per run: J jobs in 1..32 (and for a fold T in 1..8 beats each; an
-  * elementwise unit has T = 1), one run in eight the empty run (JOBS 0), JOBS (and JOB_BEATS) written, then START; the
-  * gaps and the stall drawn when it starts. The streamer's inputs hold every run's beats in turn. Then, at random,
-  * either
+  * SIMD unit has T = 1), one run in eight the empty run (JOBS 0), JOBS (and JOB_BEATS) written, then START; the gaps
+  * and the stall drawn when it starts. The streamer's inputs hold every run's beats in turn. Then, at random, either
   *   - STATUS is read every cycle (`rsp` always ready) until bit 0 reads 0, and COUNTER read: it must equal the reads
   *     whose bit 0 was 1, and the cycles from the accepted start to the run's last output (E); STATUS then reads 2; or
   *   - the next run's CSRs and START are written at once: the START is held (`req.ready` low) until E and taken in E +
@@ -21,10 +20,10 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * An empty run reads STATUS 2 and COUNTER 0 from the cycle after its start.
   *
   * The outputs of all runs must equal the model at the fixture's types (its `accelerator.json` ports; each port's lanes
-  * drawn and packed at its dtype's width): `ElementwiseModel.numpy` per lane for an elementwise unit, the lane sums of
-  * every T inputs for a fold, each lane cast to the output type first; for a linked group (a dot product: a product per
-  * lane, then the sum of a job's lanes and beats, T its JOB_BEATS) the sum over each job's T beats of a · b, wrapping
-  * at the output type.
+  * drawn and packed at its dtype's width): `ElementwiseModel.numpy` per lane for a SIMD unit, the lane sums of every T
+  * inputs for a fold, each lane cast to the output type first; for a linked group (a dot product: a product per lane,
+  * then the sum of a job's lanes and beats, T its JOB_BEATS) the sum over each job's T beats of a · b, wrapping at the
+  * output type.
   */
 class ShellRandomSpec extends AnyFlatSpec with ForgeTester {
 

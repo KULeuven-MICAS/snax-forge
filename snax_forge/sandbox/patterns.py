@@ -12,11 +12,12 @@ tasklet connector feeds which BRM port:
 or raises ``SandboxError`` saying why not. A family's matcher is code in the
 sandbox, registered like any other extension (principle 6).
 
-``elementwise`` (the first family): the tasklet's code is one statement,
+``simd`` (the first family): the tasklet's code is one statement,
 ``out = in1 <op> in2 <op> ...``, a left fold of distinct input connectors
-with one operator; ``attrs.op`` names the operator (``add``, ``sub``,
-``mul``) and ``attrs.arity`` the number of inputs. Inputs map onto the
-BRM's input ports in fold order, the output onto its one output port.
+with one operator (``add``, ``sub``, ``mul``); ``attrs.arity`` is the number of
+inputs. Which operator is left to ``bind``'s code match, which picks the BRM's
+code entry (``simd``'s ``op``, brm.py's ``Code``). Inputs map onto the BRM's
+input ports in fold order, the output onto its one output port.
 
 ``reduce`` (D102): the tasklet copies its one input into its one output
 (``out = in1``), and the output memlet folds (``reduce``) with the op
@@ -27,7 +28,7 @@ what the importer makes of DaCe's ``Reduce``, and what a BRM of family ``reduce`
 ``reduce`` and the BRM's pattern meet, so the BRM names no IR's term.
 
 ``lane_fold`` (D149, ``mac``): a fused nest (``fuse_map``), the spatial map
-``bind`` is given with its two tasklets: the first ``elementwise`` with
+``bind`` is given with its two tasklets: the first a ``simd`` fold with
 ``attrs.op`` over two inputs, writing a local value the second reads at the
 same index; the second a ``reduce`` copy of it with ``attrs.fold``, its
 output indexed by the spatial variable (one partial per lane, from
@@ -71,15 +72,14 @@ def match(node: Node, brm: Any, dtypes: Mapping[str, str]) -> dict[str, str]:
     return PATTERNS[family](node, brm.pattern.attrs, brm, dtypes)
 
 
-def _elementwise(
-    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
-) -> dict[str, str]:
-    what = f"node {node.id!r} as {brm.name!r}"
+def _fold(node: Node, arity: Any, brm: Any, what: str) -> tuple[str, dict[str, str]]:
+    """A tasklet that folds ``arity`` distinct inputs with one operator: the operator and
+    ``{connector: port}``, the inputs onto the BRM's inputs in fold order."""
     if node.kind != "tasklet":
-        raise SandboxError(f"{what}: a {node.kind!r} is not an elementwise tasklet")
+        raise SandboxError(f"{what}: a {node.kind!r} is not a tasklet")
     stmts = ast.parse(node.attrs["code"]).body
     if len(stmts) != 1 or len(node.outputs) != 1:
-        raise SandboxError(f"{what}: elementwise is one statement with one output")
+        raise SandboxError(f"{what}: simd is one statement with one output")
     stmt, out = stmts[0], next(iter(node.outputs))
     operands: list[str] = []
     ops: set[str] = set()
@@ -100,19 +100,24 @@ def _elementwise(
             f"{what}: {node.attrs['code']!r} is not one operator over distinct inputs"
         )
     (op,) = ops
-    if op != attrs.get("op") or len(operands) != attrs.get("arity"):
+    if len(operands) != arity:
         raise SandboxError(
-            f"{what}: the tasklet is {op} of {len(operands)}, the pattern is "
-            f"{attrs.get('op')} of {attrs.get('arity')}"
+            f"{what}: the tasklet is {op} of {len(operands)}, the pattern takes {arity} inputs"
         )
     ins = [p.name for p in brm.interface.ports if p.direction == "in"]
     outs = [p.name for p in brm.interface.ports if p.direction == "out"]
     if len(ins) != len(operands) or len(outs) != 1:
         raise SandboxError(f"{what}: the BRM has ports {ins} -> {outs}")
-    return {**dict(zip(operands, ins, strict=True)), out: outs[0]}
+    return op, {**dict(zip(operands, ins, strict=True)), out: outs[0]}
 
 
-register_pattern("elementwise", _elementwise)
+def _simd(
+    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
+) -> dict[str, str]:
+    return _fold(node, attrs.get("arity"), brm, f"node {node.id!r} as {brm.name!r}")[1]
+
+
+register_pattern("simd", _simd)
 
 
 def _reduce(
@@ -194,7 +199,9 @@ def _lane_fold(
     if found is None:
         raise SandboxError(f"{what}: not a fused nest of a multiply and its fold (fuse_map first)")
     first, second, _ = found
-    ports = _elementwise(first, {"op": attrs.get("op"), "arity": 2}, brm, dtypes)
+    op, ports = _fold(first, 2, brm, what)
+    if op != attrs.get("op"):
+        raise SandboxError(f"{what}: {first.id} is {op}, the pattern {attrs.get('op')}")
     (cin,), (cout,) = second.inputs, second.outputs
     if second.attrs["code"] != f"{cout} = {cin}":
         raise SandboxError(f"{what}: {second.id}'s {second.attrs['code']!r} is not a copy of its "

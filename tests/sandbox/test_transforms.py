@@ -16,7 +16,7 @@ from .helpers import FIXTURES, graph, restricted_brm
 
 BIND = {
     "node": "add",
-    "brm": "elementwise_add",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "acc",
 }
@@ -129,8 +129,16 @@ def _edit(fn):
         ),
         (
             lambda: _edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 * in2")),
+            {"params": {"op": "add"}},
+            "op = 'add' given, but the tasklet computes 'out = a \\* b', 'simd''s code at op = 'mul'",
+        ),
+        (
+            lambda: _edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 - in2")),
             {},
-            "the tasklet is mul of 2, the pattern is add of 2",
+            (
+                "the tasklet computes 'out = a - b' on the BRM's ports, 'simd' computes one of "
+                "'out = a \\+ b' \\(op = 'add'\\), 'out = a \\* b' \\(op = 'mul'\\)"
+            ),
         ),
         (
             lambda: _edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 + in1")),
@@ -156,6 +164,16 @@ def test_bind_rejected(make, params, message):
         bind(make(), **(BIND | params))
 
 
+def test_bind_takes_the_first_code_entry_that_is_the_tasklets():
+    """simd's code table (C§10): a multiply binds at op mul, an add at op add, each node
+    carrying the matched entry's code; a bind param that agrees is taken as given."""
+    mul = bind(_edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 * in2")), **BIND)
+    add = bind(graph("vecadd_split"), **(BIND | {"params": {"op": "add"}}))
+    for g, op, code in ((mul, "mul", "out = a * b"), (add, "add", "out = a + b")):
+        attrs = g.node("add").attrs
+        assert (attrs["params"], attrs["code"]) == ({"W": 4, "op": op}, code)
+
+
 def test_bind_takes_the_containers_dtypes():
     """Every port takes every integer dtype; int32 in and out binds (D143)."""
     g = _edit(lambda d: [c.update(dtype="int32") for c in d["containers"].values()])
@@ -168,7 +186,7 @@ def test_bind_refuses_vmul_into_a_narrower_output_naming_the_accepted_ones():
         d["containers"]["C"].update(dtype="int32")
 
     with pytest.raises(SandboxError) as e:
-        bind(_edit(vmul_int32_out), **(BIND | {"brm": "elementwise_mul"}))
+        bind(_edit(vmul_int32_out), **(BIND | {"brm": "simd"}))
     assert str(e.value).endswith(
         "output out is int32, narrower than input a (int64): an output is at least as wide as "
         "every input (D143); output out is int32, narrower than input b (int64): an output is "
@@ -195,7 +213,7 @@ def test_the_order_check_is_about_the_brm_not_the_result(monkeypatch):
 
 
 def test_a_stream_brm_takes_the_memlets_order():
-    """elementwise_add is in the stream notation: the memlet is the order, so the strided
+    """simd is in the stream notation: the memlet is the order, so the strided
     lanes bind, and the bound graph still adds A and B."""
     g = bind(_strided(), **BIND)
     assert g.node("add").inputs["a"].subset == ["i_t:i_t + 64:16"]

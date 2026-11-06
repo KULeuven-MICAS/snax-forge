@@ -502,7 +502,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
     ``split_reduce``'s ``M_final``). ``entries``, in the graph's order:
 
         unit    per bound instance: its BRM, the lanes its design params give (``W = 8``) and
-                the params of the splits that set them (``acc · elementwise_mul · W = 8``)
+                the params of the splits that set them (``acc · simd · W = 8``)
         split   a split whose map is not bound yet: its factor's params (``not bound``)
         link    a link whose depth a step gives as a param
 

@@ -6,13 +6,13 @@ import org.scalatest.flatspec.AnyFlatSpec
 import snax.forge.{ForgeTester, IntType, LaneBits, Seeds}
 import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
 
-/** `ElementwiseLanes`: its types on fixed vectors (D143: each input extended to the op type by its own signedness, the
-  * op at the op type, the result extended or wrapped into the output type; each expected value NumPy's, and
+/** `SimdLanes`: its types on fixed vectors (D143: each input extended to the op type by its own signedness, the op at
+  * the op type, the result extended or wrapped into the output type; each expected value NumPy's, and
   * `ElementwiseModel.numpy`'s too); every op on the edge operands (`ElementwiseModel.edgePairs`: 0, 1, all ones, the
   * sign bit, ...) at int32, uint32, int8 and uint8, where min and max compare by the type's signedness and int8 wraps
   * far more often than int32; then random data against `ElementwiseModel.numpy` at random types, ops and lanes.
   */
-class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
+class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
 
   /** The lanes of `out` for `a` and `b` (numbers of their types), as numbers of `outType`. */
   private def run(
@@ -25,7 +25,7 @@ class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
   ): Seq[BigInt] = {
     val tr  = IntType(outType)
     var got = Seq.empty[BigInt]
-    test(new ElementwiseLanes(inTypes, opType, outType, a.size, op)) { dut =>
+    test(new SimdLanes(inTypes, opType, outType, a.size, op)) { dut =>
       for (l <- a.indices) {
         LaneBits.poke(dut.io.a(l), a(l))
         LaneBits.poke(dut.io.b(l), b(l))
@@ -61,7 +61,7 @@ class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
 
   private val Max32 = Int.MaxValue // 2^31 - 1
 
-  behavior of "ElementwiseLanes' types"
+  behavior of "SimdLanes' types"
 
   it should "multiply int32 by int32 at int32 and sign-extend into int64" in {
     // Lane 2 wraps at int32 to -2 and is sign-extended, not 4294967294.
@@ -117,7 +117,7 @@ class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
 
   it should "refuse an op type narrower than an input" in {
     val e = intercept[Exception] {
-      circt.stage.ChiselStage.emitCHIRRTL(new ElementwiseLanes(Seq("int32", "int32"), "int16", "int32", 1))
+      circt.stage.ChiselStage.emitCHIRRTL(new SimdLanes(Seq("int32", "int32"), "int16", "int32", 1))
     }
     assert(e.getMessage.contains("opType int16 must be at least as wide as each input"), e.getMessage)
   }
@@ -128,7 +128,7 @@ class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
       op <- ElementwiseOp.all
     } {
       val pairs = ElementwiseModel.edgePairs(t.width)
-      test(new ElementwiseLanes(Seq(t.name, t.name), t.name, t.name, pairs.size, op)) { dut =>
+      test(new SimdLanes(Seq(t.name, t.name), t.name, t.name, pairs.size, op)) { dut =>
         for (((a, b), l) <- pairs.zipWithIndex) {
           LaneBits.poke(dut.io.a(l), a)
           LaneBits.poke(dut.io.b(l), b)
@@ -142,7 +142,7 @@ class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
     }
   }
 
-  behavior of "ElementwiseLanes under random data"
+  behavior of "SimdLanes under random data"
 
   /** The input types with an integer result type: not a signed type with uint64 (NumPy gives a float). */
   private val Pairs = for {
@@ -160,7 +160,7 @@ class ElementwiseLanesSpec extends AnyFlatSpec with ForgeTester {
         val op       = r.pick(ElementwiseOp.all)
         val lanes    = r.pick(Seq(1, 2, 4, 8))
         val clue     = s"${ta.name} ${tb.name} -> ${to.name} -> ${tr.name}, ${ElementwiseOp.name(op)}, $lanes lanes"
-        test(new ElementwiseLanes(Seq(ta.name, tb.name), to.name, tr.name, lanes, op)) { dut =>
+        test(new SimdLanes(Seq(ta.name, tb.name), to.name, tr.name, lanes, op)) { dut =>
           for (_ <- 0 until 16) {
             val a = Seq.fill(lanes)(r.word(ta.width))
             val b = Seq.fill(lanes)(r.word(tb.width))

@@ -5,12 +5,12 @@ The fixtures are vecadd at three steps of the flow, kept in the form
 
     vecadd.snaxdfg              as imported: one map over 0:N, a tasklet (the importer's target)
     vecadd_split.snaxdfg        after split_map with W = 4, N bound to 64
-    vecadd_accelerated.snaxdfg  after bind to elementwise_add, instance acc
+    vecadd_accelerated.snaxdfg  after bind to simd, instance acc
 
 and dot as imported: a multiply map into ``tmp0``, then a sum map
 whose output memlet folds into ``out[0]`` with ``reduce`` add (``dot.snaxdfg``),
 and dot after ``recipes/dot/dot_1.json``'s binds: the multiply map bound to
-elementwise_mul, the sum map to accumulate, W = 4 (``dot_accelerated.snaxdfg``),
+simd, the sum map to accumulate, W = 4 (``dot_accelerated.snaxdfg``),
 vecmul as imported (vecadd with ``*``: ``mult_map`` and ``mult``,
 ``vecmul.snaxdfg``), and vsum as imported (dot's sum map on its own: ``sum_map`` and ``sum`` folding ``A`` into ``out[0]``,
 ``vsum.snaxdfg``).

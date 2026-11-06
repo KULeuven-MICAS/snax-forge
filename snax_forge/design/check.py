@@ -344,9 +344,10 @@ def _graph_brm(design: Design) -> Iterable[Problem]:
                 f"connectors {sorted(n.inputs)} -> {sorted(n.outputs)} are not the ports of "
                 f"{inst.brm.name}: {ins} -> {outs}",
             )  # fmt: skip
-        code = inst.brm.function.code
+        code = inst.brm.function.code_for(inst.params)
         if code is None:
-            yield Problem("graph.brm", where, f"{inst.brm.name} has no function.code to bind to")
+            yield Problem("graph.brm", where, f"{inst.brm.name} has no function.code to bind to "
+                          f"at {inst.params}")  # fmt: skip
         elif n.attrs.get("code") != code:
             yield Problem(
                 "graph.brm", where,

@@ -20,8 +20,8 @@ class DatapathVectorsSpec extends AnyFlatSpec with ForgeTester {
       def bool(n: String, v: Boolean) = io.get(n).foreach(_.asInstanceOf[Bool].poke(v.B))
       def slot(n: String, v: Int)     = io.get(n).foreach(x => x.asInstanceOf[UInt].poke(v.U))
       val inputs = t.datapath match {
-        case "ElementwiseLanes" | "Mac" => Seq("a", "b", "c")
-        case _                          => Seq("in")
+        case "SimdLanes" | "Mac" => Seq("a", "b", "c")
+        case _                   => Seq("in")
       }
       for ((s, k) <- t.steps.zipWithIndex) {
         bool("fire", s.fire); bool("first", s.first); bool("read", s.read); bool("en", s.en)

@@ -56,7 +56,7 @@ def test_nest_spatial_bounds_are_the_ports_lanes():
 
 
 def test_stream_spatial_bounds_are_the_memlets_ranges():
-    """elementwise_add is in the stream notation: matadd's A[i, 4 * j_t:4 * j_t + 4] has one
+    """simd is in the stream notation: matadd's A[i, 4 * j_t:4 * j_t + 4] has one
     range of 4, so each streamer has spatial bounds [4]."""
     got = shell(Platform.load(SMALL16), bound_matadd())
     assert {k: s.spatial_bounds for k, s in got.items()} == {

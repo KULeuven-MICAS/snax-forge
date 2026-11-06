@@ -68,7 +68,7 @@ def test_unmapped_work_counts_as_cycles():
     vecmul = _bound(imported("vecmul"), N=2048)
     split8 = split(vecmul, "mult_map", 8)
     tagged = tag_map(tag_map(split8, "mult_map", "temporal"), "mult_map_inner", "spatial")
-    bound = bind(tagged, "mult", "elementwise_mul", "chisel_tiled_spatial", "acc")
+    bound = bind(tagged, "mult", "simd", "chisel_tiled_spatial", "acc")
     assert _totals(vecmul, split8, tagged, bound) == [
         (0, 2048, 2048, 2048), (0, 2048, 2048, 2048), (0, 256, 2048, 2048), (256, 0, 0, 256)]  # fmt: skip
     dot = _bound(imported("dot"))

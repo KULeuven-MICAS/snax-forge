@@ -28,7 +28,7 @@ from .helpers import FIXTURES, graph, restricted_brm
 
 BIND = {
     "node": "add",
-    "brm": "elementwise_add",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "acc",
 }
@@ -149,7 +149,7 @@ def test_unfuse_map_undoes_fuse_map():
 def test_unlink_undoes_link(depth):
     from snax_forge.sandbox import link, unlink
 
-    g = bind(split_map(_dot(), "mult_map", 4), "mult", "elementwise_mul", "chisel_tiled_spatial",
+    g = bind(split_map(_dot(), "mult_map", 4), "mult", "simd", "chisel_tiled_spatial",
              "mul")  # fmt: skip
     g = bind(split_map(g, "sum_map", 4), "sum", "accumulate", "chisel_adder_tree", "sum")
     assert unlink(link(g, "tmp0", depth, "dot"), "tmp0").to_json() == g.to_json()

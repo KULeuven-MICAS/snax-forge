@@ -23,7 +23,7 @@ values only, nested as the graph is (D148), in this key order:
 
 A unit: ``name`` (the instance), ``brm``, ``datapath`` (the binding's),
 ``ports`` (per BRM port in its order: ``port``, ``dir``, ``dtype``, ``lanes``,
-the datapath's adapter's, blocks.py), ``opType`` (an elementwise or Mac
+the datapath's adapter's, blocks.py), ``opType`` (a SIMD or Mac
 unit only), ``params`` (the adapter's, and ``T`` for a fold whose rate is a
 constant once the recipe's design params are in: it depends on no kernel
 symbol), ``timing`` (``latency``, ``ii``, ``span``) and ``csrs`` (its R/W

@@ -2,7 +2,7 @@
 
 Accepted when ``recipes/dot/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at its
 last bind, the fixture's instances ``mul`` and ``sum`` named ``vmul`` and ``vsum``
-(the multiply map bound to elementwise_mul, the sum map to accumulate, each step
+(the multiply map bound to simd, the sum map to accumulate, each step
 passing the reference check), ``recipes/dot/dot_1_enc.json`` the same and then both
 groups in the accelerator ``dot`` (D148), and the bound graph equals ``np.dot``; the
 accumulate binding with one lane (the Chisel Accumulator) works as well, the
@@ -36,7 +36,7 @@ RECIPE = recipe_path("dot_1")
 ENC = recipe_path("dot_1_enc")
 MUL = {
     "node": "mult",
-    "brm": "elementwise_mul",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "mul",
 }
@@ -167,7 +167,7 @@ REJECTED = [
         "starts from 5, the BRM from add's identity 0",
     ),
     (split_sum, SUM | {"implementation": "chisel_accumulator"}, "W = 4 not supported"),
-    (split_sum, SUM | {"brm": "elementwise_add"}, "is not a fold of inputs|one operator"),
+    (split_sum, SUM | {"brm": "simd"}, "is not a fold of inputs|one operator"),
     (lambda: split_map(imported(), "mult_map", 4), MUL | {"brm": "accumulate"}, "reduce folds one"),
 ]
 

@@ -1,4 +1,4 @@
-"""The BRM library: elementwise_add, elementwise_mul and accumulate.
+"""The BRM library: simd, accumulate and mac.
 
 Each BRM resolves to the function the reference executor runs (its kind in
 brm/function.py, its params resolved), and its ``code`` computes what that
@@ -43,21 +43,22 @@ def test_library_files_are_canonical(name):
 
 
 def test_library_has_dots_blocks():
-    assert {"elementwise_add", "elementwise_mul", "accumulate"} <= set(library_names())
+    assert {"simd", "accumulate"} <= set(library_names())
+    assert "elementwise_add" not in library_names() and "elementwise_mul" not in library_names()
 
 
 def test_the_brms_are_bound():
-    """The bindings: elementwise_add and elementwise_mul, ElementwiseLanes with the op through
-    ElementwiseOp; accumulate's TreeAccumulate, its lanes W, its port a on the datapath's in;
+    """The bindings: simd, SimdLanes with the op through ElementwiseOp, at each op of its code
+    table; accumulate's TreeAccumulate, its lanes W, its port a on the datapath's in;
     the adder tree the same datapath; every one under the counted nest controller."""
     from snax_forge.gen import ELEMENTWISE_OP
 
     from .test_brm import BINDING
 
-    for name, op in (("elementwise_add", "add"), ("elementwise_mul", "mul")):
-        brm = load_brm(name)
-        assert brm.implementations[IMPL].binding == BINDING
-        assert brm.resolve(IMPL).params["op"] == op
+    brm = load_brm("simd")
+    assert brm.implementations[IMPL].binding == BINDING
+    for op in ("add", "mul"):
+        assert brm.resolve(IMPL, {"op": op}).params["op"] == op
     assert ELEMENTWISE_OP["mul"] == 2
     acc = load_brm("accumulate").implementations
     assert acc["chisel_accumulator"].binding == {
@@ -73,32 +74,32 @@ def test_unknown_name():
 
 
 # =============================================================================
-# elementwise_add and elementwise_mul against the elementwise kind
+# simd against the simd kind, one code per op
 # =============================================================================
 
 
 def test_default_is_four_lanes_of_add():
-    """No params: W = 4 by default, the elementwise kind with two inputs, latency 0, II 1."""
-    inst = load_brm("elementwise_add").resolve(IMPL)
-    assert inst.brm.function.accel == "elementwise"
+    """No params: W = 4 by default, the simd kind with two inputs, op add, latency 0, II 1."""
+    inst = load_brm("simd").resolve(IMPL)
+    assert inst.brm.function.accel == "simd"
     assert list(function_params(inst).items()) == [("lanes", 4), ("n_inputs", 2), ("op", "add")]
     assert (inst.latency, inst.initiation_interval, inst.drain) == (0, 1, 0)
 
 
 def test_other_lane_counts():
-    brm = load_brm("elementwise_add")
+    brm = load_brm("simd")
     for w in (1, 2, 8):
         inst = brm.resolve(IMPL, {"W": w})
         assert function_params(inst)["lanes"] == w
         assert [p.lanes for p in function_of(inst).ports] == [w, w, w]
 
 
-def test_only_add():
+def test_only_add_and_mul():
     with pytest.raises(BrmError, match="not in the param's values"):
-        load_brm("elementwise_add").resolve(IMPL, {"op": "mul"})
+        load_brm("simd").resolve(IMPL, {"op": "sub"})
 
 
-@pytest.mark.parametrize("name", ["elementwise_add", "elementwise_mul", "accumulate"])
+@pytest.mark.parametrize("name", ["simd", "accumulate"])
 def test_unit_brms_are_in_the_stream_notation(name):
     """Unit blocks (D70): every port's nest is empty, the bound memlet gives the order, so a,
     b and out take the same element as the memlets do; each loads and resolves."""
@@ -109,27 +110,34 @@ def test_unit_brms_are_in_the_stream_notation(name):
         brm.resolve(impl, {"W": 1} if impl == "chisel_accumulator" else {})
 
 
-@pytest.mark.parametrize("brm", ["elementwise_add", "elementwise_mul"])
+@pytest.mark.parametrize("op", ["add", "mul"])
 @pytest.mark.parametrize("w", [1, 4, 8])
-def test_function_code_agrees_with_its_kind(brm, w):
-    """The BRM's code and the kind the reference executor runs compute the same lanes."""
+def test_function_code_agrees_with_its_kind(op, w):
+    """Each op's code and the kind the reference executor runs compute the same lanes."""
     from snax_forge import expr
 
-    inst = load_brm(brm).resolve(IMPL, {"W": w})
+    inst = load_brm("simd").resolve(IMPL, {"W": w, "op": op})
     cfg = function_of(inst)
     rng = np.random.default_rng(w)
     ins = {p.name: rng.integers(-1000, 1000, p.lanes) for p in cfg.inputs}
     got = cfg.fn(0, ins, {}, {"n": 1})
-    for target, e in expr.statements(inst.brm.function.code, "code"):
+    for target, e in expr.statements(inst.brm.function.code_for(inst.params), "code"):
         assert np.array_equal(got[target], expr.evaluate(e, ins))
 
 
-def test_elementwise_mul_is_add_with_mul():
-    inst = load_brm("elementwise_mul").resolve(IMPL)
-    assert inst.brm.function.accel == "elementwise"
+def test_simd_holds_one_code_per_op():
+    """The code table: out = a + b at op add, out = a * b at mul, the default op add; the
+    pattern leaves the op to the code (arity only)."""
+    brm = load_brm("simd")
+    assert [(e.params, e.code) for e in brm.function.entries()] == [
+        ({"op": "add"}, "out = a + b"), ({"op": "mul"}, "out = a * b")]  # fmt: skip
+    inst = brm.resolve(IMPL, {"op": "mul"})
+    assert inst.brm.function.accel == "simd"
     assert function_params(inst) == {"lanes": 4, "n_inputs": 2, "op": "mul"}
+    assert brm.function.code_for(inst.params) == "out = a * b"
+    assert brm.function.code_for(brm.resolve(IMPL).params) == "out = a + b"
     assert (inst.latency, inst.initiation_interval) == (0, 1)
-    assert inst.brm.pattern.attrs == {"op": "mul", "arity": 2}
+    assert brm.pattern.family == "simd" and brm.pattern.attrs == {"arity": 2}
 
 
 # =============================================================================

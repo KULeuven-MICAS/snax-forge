@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from snax_forge.brm import INT_DTYPES, Brm, BrmError
@@ -86,9 +88,9 @@ def test_no_implementation_is_rejected():
         Brm.from_dict(d)
 
 
-# The binding of an elementwise BRM (D129): the datapath, its args, the nest controller
+# The binding of a simd BRM (D129): the datapath, its args, the nest controller
 BINDING = {
-    "datapath": "ElementwiseLanes",
+    "datapath": "SimdLanes",
     "args": {"lanes": "W", "op": "op"},
     "controller": "counted",
 }
@@ -279,3 +281,60 @@ def test_function_code_is_stored_canonical():
     d = adder()
     d["function"]["code"] = "out=(a+b)"
     assert Brm.from_dict(d).function.code == "out = a + b"
+
+
+# =============================================================================
+# function.code as a table: one code per design-param value (simd's op)
+# =============================================================================
+
+
+def two_ops() -> dict:
+    """adder() computing add or mul by its op, a code entry each."""
+    d = adder()
+    d["interface"]["params"]["op"]["values"] = ["add", "mul"]
+    d["function"]["code"] = [
+        {"params": {"op": "add"}, "code": "out=(a+b)"},
+        {"params": {"op": "mul"}, "code": "out = a * b"},
+    ]
+    return d
+
+
+def test_a_code_table_is_stored_canonical_and_round_trips():
+    b = Brm.from_dict(two_ops())
+    assert [(e.params, e.code) for e in b.function.entries()] == [
+        ({"op": "add"}, "out = a + b"), ({"op": "mul"}, "out = a * b")]  # fmt: skip
+    assert b.to_dict()["function"]["code"] == [
+        {"params": {"op": "add"}, "code": "out = a + b"},
+        {"params": {"op": "mul"}, "code": "out = a * b"},
+    ]
+    assert Brm.from_dict(b.to_dict()) == b and Brm.from_dict(json.loads(b.to_json())) == b
+    assert b.function.code_for({"W": 4, "op": "mul"}) == "out = a * b"
+    assert b.function.code_for({"W": 4, "op": "sub"}) is None
+
+
+def test_a_plain_code_is_one_entry_without_params():
+    b = Brm.from_dict(adder())
+    assert [(e.params, e.code) for e in b.function.entries()] == [({}, "out = a + b")]
+    assert b.function.code_for({"W": 4, "op": "add"}) == "out = a + b"
+    assert b.to_dict()["function"]["code"] == "out = a + b"
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (lambda c: c.clear(), r"function.code: must be a string, a non-empty list"),
+        (lambda c: c[0]["params"].update(W=4, K=1), r"code\[0\].params.K: not a design param"),
+        (lambda c: c[1]["params"].update(op="sub"),
+         r"code\[1\].params.op: 'sub' is not an allowed value \(\['add', 'mul'\]\)"),
+        (lambda c: c[1]["params"].update(op=2), r"code\[1\].params.op: 2 is not an allowed value"),
+        (lambda c: c[1].update(code="out = a / b"), r"code\[1\].code.*Div is not allowed"),
+        (lambda c: c[0].pop("params"), r"code\[0\]"),
+        (lambda c: c[0].update(when=1), r"code\[0\]"),
+        (lambda c: c[0].update(params=[]), r"code\[0\].params: must be an object"),
+    ],
+)  # fmt: skip
+def test_a_bad_code_table_is_rejected(edit, message):
+    d = two_ops()
+    edit(d["function"]["code"])
+    with pytest.raises(BrmError, match=message):
+        Brm.from_dict(d)

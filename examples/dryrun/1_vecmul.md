@@ -32,11 +32,11 @@ Click `mult_map`. The sidebar lists what applies there (`split`, `split_map`, `t
 | 1 | `mult_map` | `split`, factor `W` with its value box set to 8 | `mult_map` now runs `i_1` over 256, around a new map `mult_map_inner` running `i_2` over 8; the tasklet reads `A[8 * i_1 + i_2]`; Bindings shows `mult_map split · W = 8 · not bound` |
 | 2 | `mult_map` | `tag_map`, `temporal` | the outer loop becomes the streamers' loop |
 | 3 | `mult_map_inner` | `tag_map`, `spatial` | the inner loop will become lanes; the unmapped cycles stay at 2048, since a tag alone runs nothing |
-| 4 | `mult` | `bind`, `elementwise_mul / chisel_tiled_spatial`, instance `acc` | the tasklet becomes unit `acc` at 8 lanes; Bindings shows `acc · elementwise_mul · W = 8`; the total drops from 2048 to 256 (accelerator 256 + unmapped 0) |
+| 4 | `mult` | `bind`, `simd / chisel_tiled_spatial`, instance `acc` | the tasklet becomes unit `acc` at 8 lanes; Bindings shows `acc · simd · W = 8`; the total drops from 2048 to 256 (accelerator 256 + unmapped 0) |
 
 In step 1 the factor field already reads `W`, a param of its own, with its value box beside it ("new param W = 4"); set it to 8 and Apply. Typing the number 8 into the field does the same: every factor the editor writes names a param (`W`, then `W_2` for a second split), so W appears in Bindings with the split that made it, stays editable there after the bind, and the saved recipe sweeps with `--set W=…`. Each split can name its own param (dot 1 will use `W_mul` and `W_sum`). The split's names (`i_1`, `i_2`, `mult_map_inner`) say nothing about which loop becomes what; the tags in steps 2 and 3 decide that. `split_map` does all three in one step, with the names `i_t`, `i_s` and `mult_map_s`.
 
-At step 4 the bind list shows every BRM with its timing and, for those that don't fit, the reason: `elementwise_add` (the tasklet is mul, the pattern add), `accumulate` (no reduction), `mac` (needs `fuse_map` first, D150). Only `elementwise_mul` fits, with latency 0, II 1, span 1. The instance defaults to `acc`.
+At step 4 the bind list shows every BRM with its timing and, for those that don't fit, the reason: `simd` (the tasklet is mul, the pattern add), `accumulate` (no reduction), `mac` (needs `fuse_map` first, D150). Only `simd` fits, with latency 0, II 1, span 1. The instance defaults to `acc`.
 
 After the bind the Estimate shows one group, `acc`:
 
@@ -48,7 +48,7 @@ Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the u
 
 | Block | Datapath | Area (µm²) | Energy (nJ) | Share |
 |---|---|---:|---:|---:|
-| acc | ElementwiseLanes | 55 300 | 23.137 | 99.4 % |
+| acc | SimdLanes | 55 300 | 23.137 | 99.4 % |
 | acc ctrl | control unit | 351 | 0.128 | 0.6 % |
 
 ## 3. Save the recipe
@@ -69,7 +69,7 @@ Save recipe, as `vecmul_dry`, runs the design checks and writes `recipes/custom/
    "transform": "bind",
    "params": {
     "node": "mult",
-    "brm": "elementwise_mul",
+    "brm": "simd",
     "implementation": "chisel_tiled_spatial",
     "instance": "acc"
    }
@@ -90,7 +90,7 @@ The steps also go to `out/sandbox/vecmul_dry/` as `0_input.snaxdfg` to `4_bind.s
 
 ## 4. Sweep W in the editor
 
-Change W in its Bindings entry (`acc · elementwise_mul · W = 8`); the session replays its four steps and the Estimate follows. The tech dropdown switches between nangate45 and nangate15.
+Change W in its Bindings entry (`acc · simd · W = 8`); the session replays its four steps and the Estimate follows. The tech dropdown switches between nangate45 and nangate15.
 
 | W | Cycles | COUNTER (expected) | Channels | Area 45 nm (µm²) | Energy 45 nm (nJ) | ctrl share | Area 15 nm (µm²) | Energy 15 nm (nJ) |
 |---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -102,10 +102,10 @@ Change W in its Bindings entry (`acc · elementwise_mul · W = 8`); the session 
 
 How to read it:
 
-- **Area grows with W, energy does not.** ElementwiseLanes is W copies of a one-lane multiplier with no registers (0 flops), so its area is $W \cdot A_1$ and its energy is N multiplies whatever W is. On nangate45 $A_1$ is 6 910 µm² of comb, about 11.3 pJ per 64-bit multiply.
+- **Area grows with W, energy does not.** SimdLanes is W copies of a one-lane multiplier with no registers (0 flops), so its area is $W \cdot A_1$ and its energy is N multiplies whatever W is. On nangate45 $A_1$ is 6 910 µm² of comb, about 11.3 pJ per 64-bit multiply.
 - **The control unit is the only part that changes with time.** 66 bits held every cycle, $E_{\mathit{ctrl}} = f_{\mathit{ctrl}} \cdot 66 \cdot C \cdot e_{\mathit{hold}}$: 1.024 nJ at W = 1, 0.103 nJ at W = 10. That is the ctrl share column.
 - **W = 10 does not divide N.** The split pads 2048 to 205 beats of 10 lanes (2 pad elements, D144); the Estimate shows a lane use of 99.9 %.
-- **Differences under 1 % are the table, not the design.** The table has ElementwiseLanes measured at W = 1, 8 and 32 and copied in between (C§20), so W = 8 comes out 0.05 % above W = 4.
+- **Differences under 1 % are the table, not the design.** The table has SimdLanes measured at W = 1, 8 and 32 and copied in between (C§20), so W = 8 comes out 0.05 % above W = 4.
 - **Leakage is not in it.** A dynamic-only model makes the slow, small W = 1 look as cheap per run as W = 10, which it is not once leakage over ten times the cycles counts (a known limit).
 
 So on this model vecmul's choice is area against time at equal energy. Whether the cycles hold up in a run is the next section.
@@ -243,7 +243,7 @@ flowchart LR
   sa["streamer acc: acc_a<br/>8 lanes"] -- "valid / ready" --> ctrl
   sb["streamer acc: acc_b<br/>8 lanes"] -- "valid / ready" --> ctrl
   ctrl -- "valid / ready" --> so["streamer acc: acc_out<br/>8 lanes"]
-  sa -- "a[0..7]" --> dp["snax_forge_vecmul_dry_datapath<br/>ElementwiseLanes mul, 8 lanes"]
+  sa -- "a[0..7]" --> dp["snax_forge_vecmul_dry_datapath<br/>SimdLanes mul, 8 lanes"]
   sb -- "b[0..7]" --> dp
   dp -- "out[0..7]" --> so
 ```
@@ -256,16 +256,16 @@ The datapath is combinational and gets no enable: it multiplies whatever the str
 | `snax_forge_vecmul_dry_acc_ctrl.sv` | the group `acc`'s control unit (`GroupCtrl`) |
 | `snax_forge_vecmul_dry_ctrl.sv` | the control units of every group, here one |
 | `ElementwiseAlu_w64_mul.sv` | one 64-bit lane's multiply |
-| `ElementwiseLanes_i64xi64_i64_i64_n8_mul.sv` | the 8 lanes, the datapath block of `acc` |
+| `SimdLanes_i64xi64_i64_i64_n8_mul.sv` | the 8 lanes, the datapath block of `acc` |
 | `snax_forge_vecmul_dry_acc.sv` | the unit `acc`, around its block |
 | `snax_forge_vecmul_dry_datapath.sv` | the datapaths of every unit, here one |
 | `snax_forge_vecmul_dry_shell_wrapper.sv` | the top, the CSR block, the control and the datapath wired to the streamer |
 | `filelist.f` | the files above, in compile order |
 
-The lanes and the multiply, from `ElementwiseLanes_i64xi64_i64_i64_n8_mul.sv` and the lane it instantiates eight times, `ElementwiseAlu_w64_mul.sv`:
+The lanes and the multiply, from `SimdLanes_i64xi64_i64_i64_n8_mul.sv` and the lane it instantiates eight times, `ElementwiseAlu_w64_mul.sv`:
 
 ```systemverilog
-module ElementwiseLanes_i64xi64_i64_i64_n8_mul(
+module SimdLanes_i64xi64_i64_i64_n8_mul(
   input  [63:0] io_a_0,
   ...
   output [63:0] io_out_0,
@@ -347,7 +347,7 @@ The program (`gen/main.c`) sets the three movers (base address, strides, 256 tem
 
 **The control.** `GroupCtrl` (`hw/chisel/.../ctrl/GroupCtrl.scala`) is generated from the group's description, not written per kernel: it takes the start with JOBS, runs the group rule (the same rule SNAX-GVSoC steps, `snax_group_rule.py`), and drives the handshakes. A beat is taken only when both input streams are valid and the output is ready (`acc_offer` and not `acc_frozen`); in that cycle it raises both inputs' ready and the output's valid, so the datapath's result of that cycle is the one pushed. It raises `busy` from the start to the last push and a done pulse at the end, which the CSR block turns into STATUS and COUNTER. Its 66 flops are what the cost model counts: `busy` (1), `acc_jobs` (32, JOBS as the start gave it), `acc_jobs_counter` (32) and `io_done_REG` (1, the done pulse a cycle later), as `estimate/bits.py` lists them.
 
-**The datapath.** `ElementwiseLanes` (`hw/chisel/.../datapath/ElementwiseLanes.scala`) is data only: W copies of `ElementwiseAlu` with the casts at its edges, no valid, ready or registers. Every cycle `out(i)` is `a(i) * b(i)` at the op type, for each lane; the control's handshake says which cycle's result is pushed. That it has no registers is why its area is W times one lane and its energy is the same at every W.
+**The datapath.** `SimdLanes` (`hw/chisel/.../datapath/SimdLanes.scala`) is data only: W copies of `ElementwiseAlu` with the casts at its edges, no valid, ready or registers. Every cycle `out(i)` is `a(i) * b(i)` at the op type, for each lane; the control's handshake says which cycle's result is pushed. That it has no registers is why its area is W times one lane and its energy is the same at every W.
 
 ## 9. What this gives the designer
 

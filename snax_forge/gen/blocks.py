@@ -4,7 +4,7 @@ An adapter reads an instance (its BRM, implementation and design params,
 snax_forge/brm/instance.py) and its ports' dtypes (the node's containers',
 ``brm.port_dtypes``) and gives what ``accelerator.json`` holds of the unit
 beyond its name, BRM, timing and CSRs (accelerator.py): per BRM port its
-datapath port, dtype and lanes, ``opType`` for an elementwise unit, and
+datapath port, dtype and lanes, ``opType`` for a SIMD unit, and
 ``params``; or it refuses with a ``GenError`` naming what does not fit.
 Adapters are registered by the datapath's name with its latency L and span
 (``register_datapath``, D19), each an int or an ``expr.py`` expression over the
@@ -13,7 +13,7 @@ params the adapter gives and ``lanes`` (its first input's; a bool as 0 or 1,
 0 (accelerator.py). Every datapath is driven by the shell's nest
 controller (``counted``, D129): data and enables only.
 
-**ElementwiseLanes** (L 0): one op over every lane.
+**SimdLanes** (L 0): one op over every lane.
 
     ports        two inputs and one output (SnaxUnit's op table is binary),
                  each with args.lanes lanes; each port's lanes * N whole
@@ -34,7 +34,7 @@ lanes summed by an adder tree in front of its register.
                  one word whatever its N (the lanes are cast to it)
     op           add: the BRM's op param, the only one an adder tree runs
                  (``gen.op`` until a datapath takes another)
-    params       ``op``: add, as ElementwiseLanes' ``op``; args are lanes only
+    params       ``op``: add, as SimdLanes' ``op``; args are lanes only
 
 **SerialAccumulate** (L 1, span lanes, D149): TreeAccumulate's ports, op and
 args, its lanes added one a cycle (lane k in cycle k) into one sum; params
@@ -90,7 +90,7 @@ class Port:
 @dataclass(frozen=True)
 class Fill:
     """What an adapter gives: the unit's ports (per BRM port, in the BRM's order), ``opType``
-    (an elementwise unit's, else None) and ``params``."""
+    (a SIMD unit's, else None) and ``params``."""
 
     ports: dict[str, Port]
     op_type: str | None = None
@@ -193,13 +193,13 @@ def _lanes_arg(inst: Instance, what: str) -> int:
     return lanes
 
 
-def elementwise_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
-    """ElementwiseLanes' fill; see the module doc."""
+def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+    """SimdLanes' fill; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
     if set(b["args"]) != {"lanes", "op"}:
         raise GenError(
-            "gen.args", f"{what}: args {sorted(b['args'])}; ElementwiseLanes takes lanes and op"
+            "gen.args", f"{what}: args {sorted(b['args'])}; SimdLanes takes lanes and op"
         )
     lanes = _lanes_arg(inst, what)
     op = expr.evaluate(b["args"]["op"], inst.params)
@@ -207,7 +207,7 @@ def elementwise_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -
         raise GenError(
             "gen.op", f"{what}: op {op!r} is not one of ElementwiseOp's {list(ELEMENTWISE_OP)}"
         )
-    ins, _ = _ports(inst, 2, 1, "ElementwiseLanes", what)
+    ins, _ = _ports(inst, 2, 1, "SimdLanes", what)
     names = [p.name for p in brm.interface.ports]
     _lanes(inst, {p: lanes for p in names}, what)
     ports = _fill_ports(inst, dtypes, set(names), what)
@@ -215,7 +215,7 @@ def elementwise_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -
     return Fill(ports, op_type, {"op": op})
 
 
-register_datapath("ElementwiseLanes", 0, elementwise_lanes)
+register_datapath("SimdLanes", 0, simd_lanes)
 
 
 def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,

@@ -8,7 +8,7 @@ from snax_forge.brm import INT_DTYPES, Brm, check_dtypes, load_brm, output_dtype
 
 from .helpers import adder
 
-VMUL = load_brm("elementwise_mul")
+VMUL = load_brm("simd")
 VSUM = load_brm("accumulate")
 
 
@@ -34,7 +34,7 @@ REFUSED = [
     (
         "not in the port's dtypes",
         {"a": "float64", "b": "int64", "out": "int64"},
-        [f"port a is float64; elementwise_mul takes {list(INT_DTYPES)} there"],
+        [f"port a is float64; simd takes {list(INT_DTYPES)} there"],
     ),
     (
         "narrower output",

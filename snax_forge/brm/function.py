@@ -21,7 +21,7 @@ to its beat (a NumPy array, first axis = lanes); ``state`` lives for one
 task (a reduction's partial sum); ``params`` are the task's runtime params.
 ``outs`` holds exactly the outputs due at ``k``.
 
-Kinds: ``elementwise`` (every port rate 1, N inputs folded into one output,
+Kinds: ``simd`` (every port rate 1, N inputs folded into one output,
 lane by lane, at the inputs' dtype: the executor casts the result into the
 output's when it writes it, D143) and ``reduce`` (input ``a`` at rate 1,
 output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
@@ -139,7 +139,7 @@ class AccelFunction:
 # =============================================================================
 
 
-def elementwise(
+def simd(
     lanes: int = 1,
     n_inputs: int = 2,
     op: Callable[[Any, Any], Any] = np.add,
@@ -153,7 +153,7 @@ def elementwise(
         return {"out": _fold(op, (ins[n] for n in names))}
 
     ports = [AccelPort(n, "in", lanes) for n in names] + [AccelPort("out", "out", lanes)]
-    return AccelFunction(tuple(ports), fn, "elementwise")
+    return AccelFunction(tuple(ports), fn, "simd")
 
 
 def reduce_kind(
@@ -260,7 +260,7 @@ def _with_op(kind: Callable[..., AccelFunction]) -> KindFactory:
     return factory
 
 
-register_kind("elementwise", _with_op(elementwise))
+register_kind("simd", _with_op(simd))
 register_kind("reduce", _with_op(reduce_kind))
 register_kind("mac", _with_op(mac_kind))
 

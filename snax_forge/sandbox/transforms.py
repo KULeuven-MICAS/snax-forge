@@ -57,8 +57,11 @@ name) stay in the transform.
     ``affine`` notation, the memlets together with the temporal maps around
     must give the elements in the order of the port's nest (D70); in
     the ``stream`` notation the memlet is the order. The tasklet's code, on
-    the BRM's port names, must be the BRM's ``function.code``; the accelerated node carries that
-    code and the replaced subtree (D82), and, for a fused nest, the nest's local value
+    the BRM's port names, must be the BRM's ``function.code``: a code table (brm.py's ``Code``,
+    ``simd``'s one entry per ``op``) is tried in order and the first entry whose code is the
+    tasklet's is taken, its params set on the instance (a ``params`` value that contradicts
+    one is refused, naming both; no entry is refused listing every entry's code). The
+    accelerated node carries that code and the replaced subtree (D82), and, for a fused nest, the nest's local value
     (``loop.local``), which only its two tasklets named: it leaves the graph's containers for
     the node's ``locals`` (dfg/kinds.py), and ``unbind`` puts it back at its index. A folding
     output (``reduce``) whose memlet does not use the spatial variable (dot's
@@ -422,6 +425,7 @@ class _Bound:
     end: int
     memlets: dict[str, Memlet]
     folds: set[str]
+    code: str  # the matched code entry's
 
 
 def _bind_site(g: Graph, node: str, what: str) -> _Site:
@@ -476,14 +480,29 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             f"{what}: {'; '.join(refused)}; accepted output dtypes for these inputs: "
             f"{accepted(b, dtypes)}"
         )
-    if b.function.code is None:
+    entries = b.function.entries()
+    if not entries:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
     computes = expr.rename_code(tasklet.attrs["code"], ports)
-    if computes != b.function.code:
-        raise SandboxError(
-            f"{what}: the tasklet computes {computes!r} on the BRM's ports, "
-            f"{brm!r} computes {b.function.code!r}"
+    entry = next((e for e in entries if e.code == computes), None)
+    if entry is None:
+        listed = (
+            repr(entries[0].code)
+            if isinstance(b.function.code, str)
+            else "one of " + ", ".join(f"{e.code!r} ({_params_text(e.params)})" for e in entries)
         )
+        raise SandboxError(
+            f"{what}: the tasklet computes {computes!r} on the BRM's ports, {brm!r} computes "
+            f"{listed}"
+        )
+    given = dict(params or {})
+    for k, v in entry.params.items():
+        if k in given and given[k] != v:
+            raise SandboxError(
+                f"{what}: {k} = {given[k]!r} given, but the tasklet computes {computes!r}, "
+                f"{brm!r}'s code at {k} = {v!r}"
+            )
+        given[k] = v
 
     begin, end, step = parse_dim(smap.attrs["range"], what)
     if begin != 0 or step != 1:
@@ -506,7 +525,6 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             f"{what}: the BRM's ports have different lanes {sorted(map(str, lanes))}"
         )
     (lanes_v,) = lanes
-    given = dict(params or {})
     if expr.is_name(lanes_v):
         if lanes_v in given and given[lanes_v] != end:
             raise SandboxError(
@@ -526,7 +544,12 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{what}: {c} folds every lane into one, port {ports[c]!r} has "
                 f"{inst.lanes(ports[c])} lanes"
             )
-    return _Bound(b, ports, inst, var_s, end, memlets, folds)
+    return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code)
+
+
+def _params_text(params: Mapping[str, Any]) -> str:
+    """A code entry's params as the refusals write them: ``op = 'add'``."""
+    return ", ".join(f"{k} = {v!r}" for k, v in params.items()) or "any params"
 
 
 def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation: str,
@@ -582,7 +605,7 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             "instance": instance,
             "brm": brm,
             "implementation": implementation,
-            "code": b.function.code,
+            "code": bound.code,
             "params": dict(inst.params),
             "replaced": smap.to_dict(),  # for unbind
         },

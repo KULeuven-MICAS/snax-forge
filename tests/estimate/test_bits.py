@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 
+from snax_forge.char import DATAPATH_RENAMES
 from snax_forge.estimate import ctrl_bits, ctrl_registers
 
 from .helpers import estimated
@@ -35,7 +36,7 @@ def test_a_fold_alone_counts_its_t_from_the_start():
 
 
 def test_a_unit_without_a_fold_has_no_t_and_a_v_at_l_0():
-    """vecmul: ElementwiseLanes, L 0, T 1: its jobs digit; v is declared as one bit (max(L, 1))
+    """vecmul: SimdLanes, L 0, T 1: its jobs digit; v is declared as one bit (max(L, 1))
     but never written, so firtool drops it."""
     regs = ctrl_registers([_unit("acc", 0)], [], "acc", {"acc": 1}, JW)
     assert regs == [("busy", 1), ("acc_jobs", 32), ("acc_jobs_counter", 32), ("done", 1)]
@@ -110,6 +111,18 @@ def test_every_datapath_has_the_flops_dc_kept(syn2):
         want = {k: v["flops"] for k, v in r["instances"].items()}
         assert {k: g.bits[k] for k in want} == want, r["point"]
         assert all(v == 0 for k, v in g.bits.items() if k not in want), (r["point"], g.bits)
+
+
+@pytest.mark.slow
+def test_each_synthesized_module_is_its_instances_datapath(syn2):
+    """SYN2's module names stay as synthesized: each instance's is its estimated datapath's,
+    under the name CHAR's table still has (``DATAPATH_RENAMES``: SimdLanes was
+    ElementwiseLanes)."""
+    for r, g in syn2:
+        blocks = g.cost.units | g.cost.links
+        for k, v in r["instances"].items():
+            dp = blocks[k].datapath
+            assert v["module"].startswith(f"{DATAPATH_RENAMES.get(dp, dp)}_"), (r["point"], k)
 
 
 @pytest.mark.slow

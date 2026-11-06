@@ -31,7 +31,7 @@ def files(folder: Path) -> set[str]:
 
 
 def edited(tmp_path: Path, name: str, edit) -> Path:
-    """``BOUND`` (vecadd on ``elementwise_add``, W = 4) edited as a dict, as a person would."""
+    """``BOUND`` (vecadd on ``simd``, W = 4) edited as a dict, as a person would."""
     d = json.loads(BOUND.read_text())
     edit(d)
     path = tmp_path / name
@@ -123,7 +123,7 @@ def test_a_graph_edited_to_compute_something_else_stops_at_gen(tmp_path, monkeyp
 
     def swap(d):
         attrs = d["body"][0]["body"][0]["attrs"]
-        attrs.update(brm="elementwise_mul", code="out = a * b", params={"W": 4, "op": "mul"})
+        attrs.update(brm="simd", code="out = a * b", params={"W": 4, "op": "mul"})
 
     fake = stub(monkeypatch, tmp_path)
     with pytest.raises(FlowError) as e:

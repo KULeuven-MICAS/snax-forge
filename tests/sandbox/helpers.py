@@ -2,7 +2,7 @@
 
 The graphs are the SNAX-DFG fixtures of tests/dfg/fixtures (vecadd as
 imported, split, accelerated); the recipe is the checked-in
-``recipes/elementwise/vecadd.json``. ``restricted_brm`` is ``elementwise_add`` with W
+``recipes/elementwise/vecadd.json``. ``restricted_brm`` is ``simd`` with W
 limited to 4 and 8, for the "a W the BRM does not allow" case.
 
 For the sites (D72): ``recipe_graphs(name)``, every recipe's graphs from its
@@ -41,7 +41,7 @@ def recipe() -> Recipe:
 
 
 def restricted_brm() -> Brm:
-    d = json.loads((LIBRARY / "elementwise_add.json").read_text())
+    d = json.loads((LIBRARY / "simd.json").read_text())
     d["interface"]["params"]["W"]["values"] = [4, 8]
     return Brm.from_dict(d)
 

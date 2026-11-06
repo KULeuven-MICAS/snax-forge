@@ -12,6 +12,10 @@ measured ``points`` (``lanes``, LinkBuffer's ``depth``, ``comb_um2`` and ``e_com
 comb energy), and the technology's ``flop`` (``area_um2``, ``e_load_fj``, ``e_hold_fj``) and
 ``ctrl.counter_factor``. ``tests/char/`` checks it against the catalogue.
 
+``DATAPATH_RENAMES`` maps a catalogue datapath to the name the table still has it under
+(``SimdLanes`` was ``ElementwiseLanes`` when CHAR measured it); it lasts until CHAR's next
+export uses the new name, and the lookup goes through it.
+
 **The lookup** of a block, its params as the generator fills them (``lanes`` and ``depth`` in
 them are ignored) and its lanes (and depth): the entry whose params equal them, then
 
@@ -50,6 +54,8 @@ FOUND = ("measured", "copy", "interpolate")
 L1_ACCESS_LOADS = 4
 CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
+# catalogue name -> the table's, until CHAR's next export uses the new name (module doc)
+DATAPATH_RENAMES = {"SimdLanes": "ElementwiseLanes"}
 
 
 class CharError(CodedError):
@@ -119,7 +125,8 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
     """A block's comb area and energy per fire on ``table`` (module doc), or None."""
     want = {k: v for k, v in params.items() if k not in _IGNORED}
-    entry = next((e for e in table.blocks.get(datapath, []) if e["params"] == want), None)
+    entries = table.blocks.get(DATAPATH_RENAMES.get(datapath, datapath), [])
+    entry = next((e for e in entries if e["params"] == want), None)
     if entry is None:
         return None
     points = entry["points"]
@@ -140,6 +147,7 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
 
 __all__ = [
     "CTRL_COMB_PER_FLOP",
+    "DATAPATH_RENAMES",
     "DEFAULT_TECH",
     "FOUND",
     "L1_ACCESS_LOADS",

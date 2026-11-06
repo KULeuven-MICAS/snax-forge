@@ -5,7 +5,7 @@ import chisel3._
 import snax.forge.IntType
 import snax.forge.elementwise.{ElementwiseAlu, ElementwiseOp}
 
-/** `lanes` lanes of one op: the datapath of an elementwise unit, latency 0, no pins.
+/** `lanes` lanes of one op: the datapath of a SIMD unit, latency 0, no pins.
   *
   * Data only: no valid, ready or counter. Its group's control unit (`ctrl.GroupCtrl`) decides when a beat is taken and
   * the result pushed; in that cycle `out` is the op on `a` and `b`, lane by lane.
@@ -28,7 +28,7 @@ import snax.forge.elementwise.{ElementwiseAlu, ElementwiseOp}
   * @param op
   *   the op, `ElementwiseOp`'s encoding (the unit's `params.op`)
   */
-class ElementwiseLanes(
+class SimdLanes(
   val inTypes: Seq[String] = Seq("int32", "int32"),
   val opType:  String      = "int32",
   val outType: String      = "int32",
@@ -47,7 +47,7 @@ class ElementwiseLanes(
   )
 
   override def desiredName: String =
-    s"ElementwiseLanes_${ins.map(_.tag).mkString("x")}_${opT.tag}_${res.tag}_n${lanes}_${ElementwiseOp.name(op)}"
+    s"SimdLanes_${ins.map(_.tag).mkString("x")}_${opT.tag}_${res.tag}_n${lanes}_${ElementwiseOp.name(op)}"
 
   val io = IO(new Bundle {
     val a   = Input(Vec(lanes, ins(0).lane))

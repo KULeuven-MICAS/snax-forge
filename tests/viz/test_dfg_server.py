@@ -188,7 +188,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             ("split", {"map": "add_map", "factor": "W"}),
             ("tag_map", {"map": "add_map_inner", "kind": "spatial"}),
             ("tag_map", {"map": "add_map", "kind": "temporal"}),
-            ("bind", {"node": "add", "brm": "elementwise_add",
+            ("bind", {"node": "add", "brm": "simd",
                       "implementation": "chisel_tiled_spatial", "instance": "acc"}),
         ):  # fmt: skip
             new = {"W": 4} if transform == "split" else None
@@ -221,7 +221,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert v["estimate"]["groups"][0]["bank_bound"] == 6
         # the left column's Bindings: the unit with the split's W, an input in edit mode
         (unit,) = v["bindings_section"]["entries"]
-        assert (unit["label"], unit["params"]) == ("acc · elementwise_add", [
+        assert (unit["label"], unit["params"]) == ("acc · simd", [
             {"name": "W_acc", "value": 4, "editable": True, "shared_with": []}])  # fmt: skip
         assert v["symbols_section"][0] | {"containers": None} == {
             "name": "N",
@@ -289,7 +289,7 @@ def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
     with served(make_edit_server(0, roots=roots)) as srv:
         post(srv, "/api/session", {"kernel": "dot", "params": {"N": 2048}})
-        for m, node, impl in (("mult_map", "mult", ("elementwise_mul", "chisel_tiled_spatial")),
+        for m, node, impl in (("mult_map", "mult", ("simd", "chisel_tiled_spatial")),
                               ("sum_map", "sum", ("accumulate", "chisel_adder_tree"))):  # fmt: skip
             _, got = post(
                 srv, "/api/apply", {"transform": "split", "params": {"map": m, "factor": 8}}

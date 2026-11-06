@@ -8,7 +8,8 @@ implementations, which differ in how they are built:
      "name": ...,
      "interface":       params (design / runtime) and ports
      "function":        a registered accelerator kind and its params,
-                        and what one lane computes, as code (D82)
+                        and what one lane computes, as code (D82): one
+                        string, or a table of {params, code} by design param
      "dataflow":        a notation and one nest per port (notation.py)
      "pattern":         the DFG subgraph it can replace: a family matched by
                         SNAX-SANDBOX (snax_forge/sandbox/patterns.py)
@@ -178,6 +179,25 @@ class Interface:
 
 
 @dataclass
+class Code:
+    """One entry of a function's code table: ``code`` when the design params are ``params``
+    (each a design param at one of its allowed values)."""
+
+    params: dict[str, int | str]
+    code: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"params": dict(self.params), "code": self.code}
+
+    @classmethod
+    def from_dict(cls, d: Mapping[str, Any], what: str) -> Code:
+        _keys(d, ("params", "code"), (), what)
+        if not isinstance(d["params"], Mapping):
+            raise BrmError(f"{what}.params: must be an object")
+        return cls(dict(d["params"]), d["code"])
+
+
+@dataclass
 class Function:
     """A registered accelerator kind, its factory params, and what it computes.
 
@@ -191,19 +211,44 @@ class Function:
     reduction says what one element contributes (``accumulate``'s ``out = a``);
     that it folds, and with which op, is its pattern's and kind's. A
     BRM with a null ``code`` cannot be bound.
+
+    ``code`` is one string, or a table of ``Code`` entries when one BRM computes several
+    things by a design param (``simd``'s ``op``: ``out = a + b`` at ``op`` add, ``out = a * b``
+    at mul). ``bind`` takes the first entry whose code is the tasklet's and sets its params
+    (sandbox/transforms.py); ``code_for`` gives an instance's code back from its params.
     """
 
     accel: str
     params: dict[str, Value] = field(default_factory=dict)
-    code: str | None = None
+    code: str | list[Code] | None = None
+
+    def entries(self) -> list[Code]:
+        """The code table: one entry without params for a string, none for a null code."""
+        if self.code is None:
+            return []
+        if isinstance(self.code, str):
+            return [Code({}, self.code)]
+        return list(self.code)
+
+    def code_for(self, params: Mapping[str, Any]) -> str | None:
+        """The code at design ``params``: the first entry whose params they all have; None if
+        no entry fits (or the code is null)."""
+        for e in self.entries():
+            if all(k in params and params[k] == v for k, v in e.params.items()):
+                return e.code
+        return None
 
     def to_dict(self) -> dict[str, Any]:
-        return {"accel": self.accel, "params": dict(self.params), "code": self.code}
+        code = self.code if not isinstance(self.code, list) else [e.to_dict() for e in self.code]
+        return {"accel": self.accel, "params": dict(self.params), "code": code}
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Function:
         _keys(d, ("accel",), ("params", "code"), what)
-        return cls(d["accel"], dict(d.get("params", {})), d.get("code"))
+        code = d.get("code")
+        if isinstance(code, (list, tuple)):
+            code = [Code.from_dict(e, f"{what}.code[{i}]") for i, e in enumerate(code)]
+        return cls(d["accel"], dict(d.get("params", {})), code)
 
 
 @dataclass
@@ -509,18 +554,37 @@ def _check_function(b: Brm, design: dict[str, Param], what: str) -> None:
         if k in TIMING_IN_FUNCTION:
             raise BrmError(f"{w}.params.{k}: timing comes from the implementation, not here")
         _uses(v, design, f"{w}.params.{k}")
-    if f.code is not None:
-        ports = b.interface.ports
+    if f.code is None:
+        return
+    ports = b.interface.ports
+    ins = [p.name for p in ports if p.direction == "in"]
+    outs = [p.name for p in ports if p.direction == "out"]
+
+    def canonical(code: Any, wc: str) -> str:
         try:
-            f.code = expr.canonical_code(f.code, f"{w}.code")
-            expr.check_code(
-                f.code,
-                [p.name for p in ports if p.direction == "in"],
-                [p.name for p in ports if p.direction == "out"],
-                f"{w}.code",
-            )
+            code = expr.canonical_code(code, wc)
+            expr.check_code(code, ins, outs, wc)
         except expr.ExprError as e:
             raise BrmError(str(e)) from None
+        return code
+
+    if isinstance(f.code, str):
+        f.code = canonical(f.code, f"{w}.code")
+        return
+    if not isinstance(f.code, list) or not f.code:
+        raise BrmError(f"{w}.code: must be a string, a non-empty list of {{params, code}} or null")
+    for i, e in enumerate(f.code):
+        wc = f"{w}.code[{i}]"
+        if not isinstance(e, Code):
+            raise BrmError(f"{wc}: must be an entry {{params, code}}")
+        for k, v in e.params.items():
+            if k not in design:
+                raise BrmError(f"{wc}.params.{k}: not a design param ({sorted(design)})")
+            p = design[k]
+            if type(v) is not TYPES[p.type] or (p.values is not None and v not in p.values):
+                allowed = p.values if p.values is not None else f"any {p.type}"
+                raise BrmError(f"{wc}.params.{k}: {v!r} is not an allowed value ({allowed})")
+        e.code = canonical(e.code, f"{wc}.code")
 
 
 def _check_pattern(b: Brm, what: str) -> None:

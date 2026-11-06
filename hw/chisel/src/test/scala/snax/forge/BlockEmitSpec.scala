@@ -14,8 +14,8 @@ import org.scalatest.flatspec.AnyFlatSpec
   * `blocks.json` (its `when` holding on the params) `io_<port>` (a scalar) or `io_<port>_0` to `io_<port>_<lanes - 1>`
   * (a Vec of the params' lanes), in its direction, and per live pin an input `io_<pin>`, but for a pin of no bits,
   * which firtool leaves out: `LinkBuffer`'s `wslot` and `rslot` at depth 1, `SerialAccumulate`'s `lane` at lanes 1. A
-  * registered block (all but `ElementwiseLanes` and the plain `Mac`) has every `always` block of its files on `posedge
-  * clock or posedge reset`, a flop with an asynchronous reset; the others none.
+  * registered block (all but `SimdLanes` and the plain `Mac`) has every `always` block of its files on `posedge clock
+  * or posedge reset`, a flop with an asynchronous reset; the others none.
   */
 class BlockEmitSpec extends AnyFlatSpec {
 
@@ -30,7 +30,7 @@ class BlockEmitSpec extends AnyFlatSpec {
 
   private val cases = Seq(
     Case(
-      "ElementwiseLanes",
+      "SimdLanes",
       ujson.Obj("inTypes" -> i64(2), "opType" -> "int64", "outType" -> "int64", "lanes" -> Lanes, "op" -> "add"),
       Set.empty,
       registered = false

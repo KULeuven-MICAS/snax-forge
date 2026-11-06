@@ -15,12 +15,12 @@ from .helpers import SMALL16, accel_node, problems
 from .helpers import design as paired
 
 
-def _vecadd(dtypes: dict[str, str], brm: str = "elementwise_add") -> Graph:
+def _vecadd(dtypes: dict[str, str], brm: str = "simd") -> Graph:
     """vecadd at W = 4, its containers of ``dtypes``, bound to ``brm``."""
     d = graph_dict()
     for c, dt in dtypes.items():
         d["containers"][c]["dtype"] = dt
-    if brm == "elementwise_mul":
+    if brm == "simd":
         node = accel_node(d)
         node["attrs"].update(brm=brm, code="out = a * b", params={"W": 4, "op": "mul"})
     return Graph.from_dict(d)
@@ -76,7 +76,7 @@ def test_vecadd_int32_takes_two_channels_per_port():
 
 
 def test_vmul_int32_into_int64():
-    g = _vecadd({"A": "int32", "B": "int32", "C": "int64"}, brm="elementwise_mul")
+    g = _vecadd({"A": "int32", "B": "int32", "C": "int64"}, brm="simd")
     assert problems(paired(g)) == []
     assert _shell(g) == {
         "acc_a": ("int32", 2, 2), "acc_b": ("int32", 2, 2), "acc_out": ("int64", 1, 4)

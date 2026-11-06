@@ -3,7 +3,7 @@
 The platform is the checked-in ``platforms/small16.json`` (``snax_forge.json``
 for a platform read from snax_cluster's hjson, the snax-gvsoc submodule's
 cluster files, which CI's python, chisel and gvsoc jobs fetch, D134); the graphs are the SNAX-DFG
-fixtures of tests/dfg/fixtures (vecadd bound to ``elementwise_add`` with
+fixtures of tests/dfg/fixtures (vecadd bound to ``simd`` with
 W = 4, split, as imported), and vecadd bound with W = 8 through the
 checked-in recipe. ``design`` pairs them in memory, with optional edits to
 either side as plain dicts, the way a person edits the files.

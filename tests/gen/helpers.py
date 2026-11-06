@@ -73,7 +73,7 @@ def one_unit(k: int = 0, name: str = "acc") -> Description:
     rw = [Csr("START", "rw", 0, 1), Csr("JOBS", "rw", 1, 32)]
     own = [Csr(f"F{i}", "rw", 2 + i, 32) for i in range(k)]
     ro = [Csr("STATUS", "ro", 2 + k, 2), Csr("COUNTER", "ro", 3 + k, 32)]
-    unit = Unit(name, "elementwise_add", "ElementwiseLanes",
+    unit = Unit(name, "simd", "SimdLanes",
                 {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
                 {"op": "add"}, 0, 1, own,
                 "int64")  # fmt: skip
@@ -90,7 +90,7 @@ def with_groups(desc: Description, groups: list[Group], k: int = 0) -> Descripti
 
 
 def bound_vecmul(w: int = 4) -> Graph:
-    """vecmul bound with W = ``w`` by the checked-in recipe (elementwise_mul, instance acc)."""
+    """vecmul bound with W = ``w`` by the checked-in recipe (simd, instance acc)."""
     recipe = Recipe.load(recipe_path("vecmul")).with_params({"W": w})
     return apply_recipe(recipe, Graph.load(FIXTURES / "vecmul.snaxdfg"))[-1].graph
 

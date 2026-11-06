@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.char import FOUND, TECHS, CharError, Lookup, Table, load, lookup
+from snax_forge.char import DATAPATH_RENAMES, FOUND, TECHS, CharError, Lookup, Table, load, lookup
 from snax_forge.gen.rtl import catalogue, check_params
 
 I64 = {"inType": "int64", "outType": "int64"}
@@ -13,12 +13,15 @@ I64 = {"inType": "int64", "outType": "int64"}
 
 @pytest.mark.parametrize("tech", TECHS)
 def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
-    """Each entry's datapath is the catalogue's, its params with each point's lanes (and
+    """Each entry's datapath is the catalogue's (through ``DATAPATH_RENAMES``), its params with each point's lanes (and
     depth) a valid and complete param set there, its rule known, its points unique."""
     cat, t = catalogue(), load(tech)
     assert t.tech == tech and t.source["snax_forge"] and t.source["snax_forge_experiments"]
     assert t.flop_um2 > 0 and t.e_load_pj > t.e_hold_pj > 0 and t.counter_factor >= 1
-    for dp, entries in t.blocks.items():
+    renamed = {table: cat_name for cat_name, table in DATAPATH_RENAMES.items()}
+    assert set(renamed) <= set(t.blocks) and set(DATAPATH_RENAMES) <= set(cat)
+    for table_dp, entries in t.blocks.items():
+        dp = renamed.get(table_dp, table_dp)  # the table's old name, the catalogue's new one
         assert dp in cat, dp
         sig = cat[dp]["params"]
         for e in entries:
@@ -125,6 +128,6 @@ def test_the_real_tables_on_chars_named_cases(tech):
     assert lookup(t, "SerialAccumulate", I64, 12).found == "interpolate"
     assert lookup(t, "LinkBuffer", {"dtype": "int64"}, 1, 3).found == "interpolate"
     assert lookup(t, "LinkBuffer", {"dtype": "int64"}, 1, 32) is None
-    assert {lookup(t, "ElementwiseLanes", {**i64, "op": op}, 8).found
+    assert {lookup(t, "SimdLanes", {**i64, "op": op}, 8).found
             for op in ("add", "mul")} == {"measured"}  # fmt: skip
     assert set(FOUND) == {"measured", "copy", "interpolate"}

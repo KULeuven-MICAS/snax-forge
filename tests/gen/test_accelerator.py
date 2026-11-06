@@ -31,9 +31,9 @@ def own(base: int, rw_units: int) -> list[Csr]:
 
 
 def mul_sum(v: str = "") -> tuple[Unit, Unit]:
-    """dot's units: ``<v>mul`` (an ElementwiseLanes unit) and ``<v>sum`` (a TreeAccumulate unit
+    """dot's units: ``<v>mul`` (an SimdLanes unit) and ``<v>sum`` (a TreeAccumulate unit
     with JOB_BEATS at offset 6); dot 1's are vmul and vsum, dot_serial's mul and sum."""
-    mul = Unit(f"{v}mul", "elementwise_mul", "ElementwiseLanes",
+    mul = Unit(f"{v}mul", "simd", "SimdLanes",
                {p: Port(p, "out" if p == "out" else "in", "int64", 4) for p in ("a", "b", "out")},
                {"op": "mul"}, 0, 1, [],
                "int64")  # fmt: skip

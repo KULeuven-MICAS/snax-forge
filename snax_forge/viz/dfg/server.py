@@ -68,7 +68,7 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
     POST /api/export                ``{k}``: Session.export, the file's ``path``
 
 Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
-``step 2  bind add elementwise_add …  ok · 5 ms · changed add · C 0 → 16 · unmapped 64 → 0 ·
+``step 2  bind add simd …  ok · 5 ms · changed add · C 0 → 16 · unmapped 64 → 0 ·
 renamed W → W_acc_1 · 1 note``, C the accelerator cycles before and after, the unmapped cycles
 where they change (D155), the params a bind renamed and the design checks' problems and notes
 on the new step). A refusal is a 400 with ``{code, message}`` (and

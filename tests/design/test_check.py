@@ -154,7 +154,7 @@ def test_an_empty_map_and_an_empty_graph_are_unbound():
         ("brm", "elementwise_div", "no BRM 'elementwise_div'"),
         ("implementation", "verilog", "no implementation 'verilog'"),
         ("params", {"W": 4, "op": "sub"}, "not in the param's values"),
-        ("code", "out = a - b", "computes 'out = a - b', but elementwise_add computes"),
+        ("code", "out = a - b", "computes 'out = a - b', but simd computes"),
     ],
 )
 def test_a_bad_accelerated_node_is_named(attr, value, text):
@@ -241,7 +241,7 @@ def test_write_and_n_ports_come_from_the_port():
 def test_spatial_bounds_must_give_the_lanes():
     (p,) = problems(design(sets=[("streamers.acc_a.spatial_bounds", [8])]))
     assert (p.code, p.where) == ("connect.lanes", "platform.streamers.acc_a.spatial_bounds")
-    assert "[8] gives 8 lanes, but port a of instance acc (elementwise_add, W=4" in p.message
+    assert "[8] gives 8 lanes, but port a of instance acc (simd, W=4" in p.message
     assert "change the lanes in the recipe" in p.fix
 
 
@@ -281,7 +281,7 @@ def test_one_instance_moves_one_dtype_per_port():
     got = [p for p in problems(design(edit_graph=_second_node_of_acc)) if p.code == "connect.dtype"]
     assert [p.where for p in got] == ["streamer acc_a", "streamer acc_b", "streamer acc_out"]
     assert got[0].message == (
-        "port a of instance acc (elementwise_add, W=4, op=add) gets int32 from add2, int64 from "
+        "port a of instance acc (simd, W=4, op=add) gets int32 from add2, int64 from "
         "add: one streamer moves one dtype"
     )
     assert got[0].fix == "bind the nodes of each dtype to an instance of their own in the recipe"
@@ -622,11 +622,11 @@ def _missing(graph):
 
 
 def test_a_block_the_table_does_not_hold_is_noted():
-    """vecadd_i32: an int32 ElementwiseLanes, which nangate45's table (int64) does not hold."""
+    """vecadd_i32: an int32 SimdLanes, which nangate45's table (int64) does not hold."""
     from tests.helpers import steps
 
     assert _missing(steps("vecadd_i32")[-1]) == [
-        "[char.missing] acc: not characterized: ElementwiseLanes at lanes 4 on nangate45"]  # fmt: skip
+        "[char.missing] acc: not characterized: SimdLanes at lanes 4 on nangate45"]  # fmt: skip
 
 
 def test_only_the_block_outside_the_measured_lanes_is_noted():
