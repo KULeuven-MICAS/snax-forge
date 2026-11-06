@@ -31,7 +31,7 @@ description, accelerator.json, for SNAX-GVSoC and the RTL).
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
 and reach the design point and accelerator.json; one with a null default is
 unset unless ``bind`` or a matched code entry gives it (``simd``'s slot ``k``),
-and an instance leaves it out. A port may carry ``when``, design params at
+and an instance leaves it out (a slot read from a scalar stays unset). A port may carry ``when``, design params at
 which alone it exists (``simd``'s ``b`` at two streams); an instance's
 ``ports`` are those present at its params. ``runtime`` params are
 the accelerator's start parameters: exactly ``n`` and every named port rate
@@ -230,10 +230,12 @@ class Function:
     things by design params (``simd``'s ``op`` and ``streams``: ``out = a + b`` at add and two
     streams, ``out = max(a, k)`` at max and one). An entry's code uses the ports present at
     its params (``Port.when``) and may name a slot: an int design param that is no port and
-    that the entry does not fix (``simd``'s ``k``), a constant baked into the hardware.
-    ``bind`` takes the first entry whose code is the tasklet's up to its slots and sets its
+    that the entry does not fix (``simd``'s ``k``, ``axpby``'s ``k1`` and ``k2``), a constant
+    baked into the hardware, or, matched to a kernel's scalar argument, a value the program
+    writes at run time (a CSR; the instance leaves the slot unset). ``bind`` takes the first entry whose code is the tasklet's up to its slots and sets its
     params and slot values (sandbox/transforms.py, ``expr.unify``); ``code_for`` gives an
-    instance's code back from its params.
+    instance's code back from its params, ``codes_for`` every entry's at them (``simd``'s two
+    ``axpby`` entries share their params: ``k2`` read or not is the node's code).
     """
 
     accel: str
@@ -251,10 +253,13 @@ class Function:
     def code_for(self, params: Mapping[str, Any]) -> str | None:
         """The code at design ``params``: the first entry whose params they all have; None if
         no entry fits (or the code is null)."""
-        for e in self.entries():
-            if all(k in params and params[k] == v for k, v in e.params.items()):
-                return e.code
-        return None
+        codes = self.codes_for(params)
+        return codes[0] if codes else None
+
+    def codes_for(self, params: Mapping[str, Any]) -> list[str]:
+        """The codes of every entry whose params ``params`` all have, in table order."""
+        return [e.code for e in self.entries()
+                if all(k in params and params[k] == v for k, v in e.params.items())]  # fmt: skip
 
     def to_dict(self) -> dict[str, Any]:
         code = self.code if not isinstance(self.code, list) else [e.to_dict() for e in self.code]

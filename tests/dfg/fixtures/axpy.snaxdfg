@@ -1,0 +1,44 @@
+{
+ "name": "axpy",
+ "symbols": {"N": null},
+ "containers": {
+  "alpha": {"shape": [1], "dtype": "int32", "transient": false, "attrs": {"sdfg.scalar": true}},
+  "x": {"shape": ["N"], "dtype": "int32", "transient": false, "attrs": {}},
+  "y": {"shape": ["N"], "dtype": "int32", "transient": false, "attrs": {}},
+  "tmp0": {"shape": ["N"], "dtype": "int32", "transient": true, "attrs": {}}
+ },
+ "body": [
+  {
+   "id": "mult_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i", "range": "0:N"},
+   "body": [
+    {
+     "id": "mult",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "alpha", "subset": [0]}, "in2": {"data": "x", "subset": ["i"]}},
+     "outputs": {"out": {"data": "tmp0", "subset": ["i"]}},
+     "attrs": {"code": "out = in1 * in2"}
+    }
+   ]
+  },
+  {
+   "id": "augassign_19_4_map",
+   "kind": "map",
+   "inputs": {},
+   "outputs": {},
+   "attrs": {"var": "i", "range": "0:N"},
+   "body": [
+    {
+     "id": "augassign_19_4",
+     "kind": "tasklet",
+     "inputs": {"in1": {"data": "y", "subset": ["i"]}, "in2": {"data": "tmp0", "subset": ["i"]}},
+     "outputs": {"out": {"data": "y", "subset": ["i"]}},
+     "attrs": {"code": "out = in1 + in2"}
+    }
+   ]
+  }
+ ]
+}

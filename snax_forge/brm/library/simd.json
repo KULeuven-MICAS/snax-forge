@@ -7,10 +7,12 @@
     "stage": "design",
     "type": "str",
     "default": "add",
-    "values": ["add", "sub", "mul", "min", "max"]
+    "values": ["add", "sub", "mul", "min", "max", "axpby"]
    },
    "streams": {"stage": "design", "type": "int", "default": 2, "values": [1, 2]},
    "k": {"stage": "design", "type": "int", "default": null, "values": null},
+   "k1": {"stage": "design", "type": "int", "default": null, "values": null},
+   "k2": {"stage": "design", "type": "int", "default": null, "values": null},
    "n": {"stage": "runtime", "type": "int", "default": null, "values": null}
   },
   "ports": [
@@ -21,7 +23,7 @@
  },
  "function": {
   "accel": "simd",
-  "params": {"lanes": "W", "n_inputs": "streams", "op": "op", "k": "k"},
+  "params": {"lanes": "W", "n_inputs": "streams", "op": "op", "k": "k", "k1": "k1", "k2": "k2"},
   "code": [
    {"params": {"op": "add", "streams": 2}, "code": "out = a + b"},
    {"params": {"op": "sub", "streams": 2}, "code": "out = a - b"},
@@ -32,7 +34,9 @@
    {"params": {"op": "sub", "streams": 1}, "code": "out = a - k"},
    {"params": {"op": "mul", "streams": 1}, "code": "out = a * k"},
    {"params": {"op": "min", "streams": 1}, "code": "out = min(a, k)"},
-   {"params": {"op": "max", "streams": 1}, "code": "out = max(a, k)"}
+   {"params": {"op": "max", "streams": 1}, "code": "out = max(a, k)"},
+   {"params": {"op": "axpby", "streams": 2}, "code": "out = k1 * a + k2 * b"},
+   {"params": {"op": "axpby", "streams": 2}, "code": "out = k1 * a + b"}
   ]
  },
  "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}},
@@ -44,7 +48,7 @@
    "timing": {"latency": 0, "initiation_interval": 1, "drain": 0, "span": 1},
    "binding": {
     "datapath": "SimdLanes",
-    "args": {"lanes": "W", "op": "op", "streams": "streams", "k": "k"},
+    "args": {"lanes": "W", "op": "op", "streams": "streams", "k": "k", "k1": "k1", "k2": "k2"},
     "controller": "counted"
    }
   }

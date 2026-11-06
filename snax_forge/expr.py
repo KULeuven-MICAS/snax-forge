@@ -36,8 +36,8 @@ Operations
     ``4 * i_t + i_s``).
 ``unify``
     match code against a pattern code whose slot names each stand for an int
-    constant (a BRM's code entry ``out = max(a, k)`` against ``out = max(a, 0)``:
-    ``{k: 0}``).
+    constant or a scalar argument, ``+``, ``*``, ``max`` and ``min`` commuting (a BRM's
+    code entry ``out = max(a, k)`` against ``out = max(0, a)``: ``{k: 0}``).
 ``linear``
     split a value that is affine in some variables into its constant part
     and one int coefficient per variable, without evaluating anything
@@ -50,7 +50,7 @@ from __future__ import annotations
 import ast
 import copy
 import functools
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping
 from typing import Any
 
 import numpy as np
@@ -426,23 +426,37 @@ def check_code(
     return lines
 
 
-def unify(pattern: str, code: str, slots: Iterable[str]) -> dict[str, int] | None:
+# the operators and calls ``unify`` lets commute: ``a + b`` is ``b + a``, ``max(a, 0)`` ``max(0, a)``
+COMMUTING_OPS = (ast.Add, ast.Mult)
+COMMUTING_CALLS = frozenset({"max", "min"})
+
+
+def unify(
+    pattern: str, code: str, slots: Iterable[str], scalars: Iterable[str] = ()
+) -> dict[str, int | str] | None:
     """The slot values that make ``code`` equal ``pattern``, or None when none do.
 
     Both are valid code (``statements``), compared statement by statement and tree by tree.
     A name in ``slots`` matches a sub-expression of ``code`` with no names whose value is an
-    int (``0``, ``-3``, ``2 * 4``); a slot used twice must match the same value. Everything
-    else must be the same: names, int literals, operators and calls. So ``out = max(a, k)``
-    takes ``out = max(a, 0)`` with ``k = 0``, and neither ``out = max(0, a)`` nor
-    ``out = max(a, b)``.
+    int (``0``, ``-3``, ``2 * 4``), its value an int, or a name in ``scalars`` (a kernel's
+    scalar argument, read as it is), its value that name; a slot used twice must match the
+    same thing. ``+``, ``*``, ``max`` and ``min`` commute on their two operands, at any
+    depth: the operands are tried in their order first, then swapped. Everything else must be
+    the same: names, int literals, operators and calls. So ``out = max(a, k)`` takes
+    ``out = max(a, 0)`` and ``out = max(0, a)`` with ``k = 0``, ``out = k1 * a + b`` takes
+    ``out = b + alpha * a`` with ``k1 = 'alpha'`` (``alpha`` in ``scalars``), and neither
+    takes ``out = max(a, b)``.
     """
-    names_ = set(slots)
+    names_, scalars_ = set(slots), set(scalars)
     p_lines, c_lines = statements(pattern, "pattern"), statements(code, "code")
-    if len(p_lines) != len(c_lines):
+    if len(p_lines) != len(c_lines) or any(
+        tp != tc for (tp, _), (tc, _) in zip(p_lines, c_lines, strict=True)
+    ):
         return None
-    found: dict[str, int] = {}
 
-    def value(c: ast.expr) -> int | None:
+    def value(c: ast.expr) -> int | str | None:
+        if isinstance(c, ast.Name) and c.id in scalars_:
+            return c.id
         if _names(c):
             return None
         try:
@@ -451,26 +465,61 @@ def unify(pattern: str, code: str, slots: Iterable[str]) -> dict[str, int] | Non
             return None
         return v if type(v) is int else None
 
-    def same(p: ast.expr, c: ast.expr) -> bool:
+    def pairs(p: ast.expr, c: ast.expr) -> list[list[tuple[ast.expr, ast.expr]]]:
+        """The ways to match ``p``'s operands against ``c``'s, in the order tried."""
+        if isinstance(p, ast.BinOp):
+            same = [(p.left, c.left), (p.right, c.right)]
+            if isinstance(p.op, COMMUTING_OPS):
+                return [same, [(p.left, c.right), (p.right, c.left)]]
+            return [same]
+        assert isinstance(p, ast.Call) and isinstance(c, ast.Call)
+        same = list(zip(p.args, c.args, strict=True))
+        if p.func.id in COMMUTING_CALLS and len(p.args) == 2:
+            return [same, [(p.args[0], c.args[1]), (p.args[1], c.args[0])]]
+        return [same]
+
+    def match(p: ast.expr, c: ast.expr, found: dict[str, Any]) -> Iterator[dict[str, Any]]:
+        """Every way ``c`` matches ``p`` extending ``found``, in the order tried."""
         if isinstance(p, ast.Name) and p.id in names_:
             v = value(c)
-            return v is not None and found.setdefault(p.id, v) == v
+            if v is not None and found.get(p.id, v) == v:
+                yield found | {p.id: v}
+            return
         if type(p) is not type(c):
-            return False
+            return
         if isinstance(p, ast.Name):
-            return p.id == c.id
+            if p.id == c.id:
+                yield found
+            return
         if isinstance(p, ast.Constant):
-            return p.value == c.value
+            if p.value == c.value:
+                yield found
+            return
         if isinstance(p, ast.UnaryOp):
-            return type(p.op) is type(c.op) and same(p.operand, c.operand)
-        if isinstance(p, ast.BinOp):
-            return type(p.op) is type(c.op) and same(p.left, c.left) and same(p.right, c.right)
-        if isinstance(p, ast.Call):
-            return (p.func.id == c.func.id and len(p.args) == len(c.args)
-                    and all(same(a, b) for a, b in zip(p.args, c.args, strict=True)))  # fmt: skip
-        return False
+            if type(p.op) is type(c.op):
+                yield from match(p.operand, c.operand, found)
+            return
+        if isinstance(p, ast.BinOp) and type(p.op) is not type(c.op):
+            return
+        if isinstance(p, ast.Call) and (p.func.id != c.func.id or len(p.args) != len(c.args)):
+            return
+        if not isinstance(p, (ast.BinOp, ast.Call)):
+            return
+        for way in pairs(p, c):
+            yield from every(way, found)
 
-    for (tp, ep), (tc, ec) in zip(p_lines, c_lines, strict=True):
-        if tp != tc or not same(_parse(str(ep)), _parse(str(ec))):
-            return None
-    return found
+    def every(
+        way: list[tuple[ast.expr, ast.expr]], found: dict[str, Any]
+    ) -> Iterator[dict[str, Any]]:
+        if not way:
+            yield found
+            return
+        (pp, cc), rest = way[0], way[1:]
+        for got in match(pp, cc, found):
+            yield from every(rest, got)
+
+    way = [
+        (_parse(str(ep)), _parse(str(ec)))
+        for (_, ep), (_, ec) in zip(p_lines, c_lines, strict=True)
+    ]
+    return next(every(way, {}), None)

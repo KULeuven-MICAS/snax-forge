@@ -3,9 +3,11 @@
 Accepted when relu (``B = max(A, 0)``, ``tests/dfg/fixtures/relu.snaxdfg``) split by 4 binds to
 simd at op max, one stream, k = 0, the recipe's reference check passing, and gives the worked
 example's B; every entry of the table binds on a graph of its own form, its params and slot
-set; vecadd and vecmul still bind at two streams with no k; and each refusal names what it
+set; vecadd and vecmul still bind at two streams with no k; ``+``, ``*``, ``min`` and ``max``
+commute (``max(0, a)`` is relu, ``3 + a`` the add at k = 3); and each refusal names what it
 found: a contradicting bind param or slot, a slot that does not fit the op type, and no
-matching entry (``max(0, a)``, ``3 + a``: no commuting).
+matching entry (``3 - a``: ``-`` does not commute). Scalar operands and axpy are
+test_axpy.py's.
 """
 
 from __future__ import annotations
@@ -123,7 +125,8 @@ def test_vecadd_and_vecmul_bind_at_two_streams_with_no_k(name, node, op):
 # =============================================================================
 
 LISTED = (r"'simd' computes one of 'out = a \+ b' \(op = 'add', streams = 2\), .*"
-          r"'out = max\(a, k\)' \(op = 'max', streams = 1\)$")  # fmt: skip
+          r"'out = max\(a, k\)' \(op = 'max', streams = 1\), .*"
+          r"'out = k1 \* a \+ b' \(op = 'axpby', streams = 2\)$")  # fmt: skip
 
 
 @pytest.mark.parametrize(
@@ -142,16 +145,29 @@ LISTED = (r"'simd' computes one of 'out = a \+ b' \(op = 'add', streams = 2\), .
          r"k = 128 does not fit the op type int8"),
         (lambda: relu(code="out = in1 - -1", dtype="uint8"), {},
          r"k = -1 does not fit the op type uint8"),
-        (lambda: relu(code="out = max(0, in1)"), {},
-         r"the tasklet computes 'out = max\(0, a\)' on the BRM's ports, " + LISTED),
-        (lambda: relu(code="out = 3 + in1"), {},
-         r"the tasklet computes 'out = 3 \+ a' on the BRM's ports, " + LISTED),
+        (lambda: relu(code="out = 3 - in1"), {},
+         r"the tasklet computes 'out = 3 - a' on the BRM's ports, " + LISTED),
         (lambda: relu(code="out = max(in1, in1)"), {}, r"reads in1 more than once"),
     ],
 )  # fmt: skip
 def test_bind_refuses(make, params, message):
     with pytest.raises(SandboxError, match=message):
         bind(make(), **(RELU | {"params": params}))
+
+
+@pytest.mark.parametrize(
+    ("code", "op", "k"),
+    [("out = max(0, in1)", "max", 0), ("out = 3 + in1", "add", 3), ("out = -2 * in1", "mul", -2),
+     ("out = min(7, in1)", "min", 7)],
+)  # fmt: skip
+def test_commuting_ops_bind_either_way_round(code, op, k):
+    """``max(0, a)`` is relu: the entry ``max(a, k)`` with its operands swapped."""
+    g = bind(relu(code=code), **RELU)
+    n = g.node("numpy_maximum")
+    assert n.attrs["params"] == {"W": 4, "op": op, "streams": 1, "k": k}
+    A = np.array([-3, 5, 0, -1, 7, -8, 2, -2], np.int32)
+    assert np.array_equal(execute(g, {"A": A, "B": np.zeros(8, np.int32)})["B"],
+                          NP[op](A, np.int32(k)))  # fmt: skip
 
 
 def test_a_one_stream_tasklet_never_binds_two_streams():

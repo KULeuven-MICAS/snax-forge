@@ -31,7 +31,11 @@ optionally streams (2 by default) and k.
                  ``ELEMENTWISE_OP``, which tests/gen reads from the source);
                  at one stream also ``k``: args.k, an int that fits opType
                  (``gen.k``), read only there, so an unset k at two streams is
-                 never evaluated; a k at two streams is refused
+                 never evaluated; a k at two streams is refused; an unset k at
+                 one stream is read from a scalar (a CSR slot, ``k`` left out);
+                 ``axpby`` (two streams, ``k1 * a + k2 * b``) takes args.k1 and
+                 args.k2, each baked (an int that fits opType, in params) or
+                 unset (from a CSR, or, k2, no factor)
 
 **TreeAccumulate** (L 1, D133): a fold, one sum every T inputs, the input's
 lanes summed by an adder tree in front of its register.
@@ -200,40 +204,52 @@ def _lanes_arg(inst: Instance, what: str) -> int:
     return lanes
 
 
+AXPBY = "axpby"  # SimdLanes' one ternary op, k1 * a + k2 * b (k2 unset: + b)
+
+
 def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
     """SimdLanes' fill; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
-    if not {"lanes", "op"} <= set(b["args"]) <= {"lanes", "op", "streams", "k"}:
+    if not {"lanes", "op"} <= set(b["args"]) <= {"lanes", "op", "streams", "k", "k1", "k2"}:
         raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; SimdLanes takes lanes and "
-                       "op, and optionally streams and k")  # fmt: skip
+                       "op, and optionally streams, k, k1 and k2")  # fmt: skip
     lanes = _lanes_arg(inst, what)
     op = expr.evaluate(b["args"]["op"], inst.params)
-    if op not in ELEMENTWISE_OP:
-        raise GenError(
-            "gen.op", f"{what}: op {op!r} is not one of ElementwiseOp's {list(ELEMENTWISE_OP)}"
-        )
+    if op not in ELEMENTWISE_OP and op != AXPBY:
+        raise GenError("gen.op", f"{what}: op {op!r} is not one of ElementwiseOp's "
+                       f"{list(ELEMENTWISE_OP)} nor {AXPBY}")  # fmt: skip
     streams = expr.evaluate(b["args"].get("streams", 2), inst.params)
     if streams not in (1, 2):
         raise GenError("gen.args", f"{what}: streams {streams!r}; SimdLanes takes 1 or 2")
-    k_arg = b["args"].get("k")
-    k = None
-    if k_arg is not None and expr.names(k_arg) <= set(inst.params):  # unset: not evaluated
-        k = expr.evaluate(k_arg, inst.params)
+    slots = {s: _set_arg(inst, s) for s in ("k", "k1", "k2")}
+    k = slots["k"]
     if streams == 2 and k is not None:
         raise GenError("gen.args", f"{what}: k = {k} at two streams; k is one stream's constant")
-    if streams == 1 and type(k) is not int:
-        raise GenError("gen.args", f"{what}: one stream takes the constant k, got {k!r}")
+    if op == AXPBY and streams != 2:
+        raise GenError("gen.args", f"{what}: {AXPBY} at one stream; it takes two")
+    if op != AXPBY and (slots["k1"], slots["k2"]) != (None, None):
+        raise GenError("gen.args", f"{what}: k1 and k2 are {AXPBY}'s, not {op}'s")
     ins, _ = _ports(inst, streams, 1, "SimdLanes", what)
     names = [p.name for p in inst.ports]
     _lanes(inst, {p: lanes for p in names}, what)
     ports = _fill_ports(inst, dtypes, set(names), what)
     op_type = None if dtypes is None else result_type([dtypes[p.name] for p in ins])
-    if streams == 2:
-        return Fill(ports, op_type, {"op": op})
-    if op_type is not None and not fits(k, op_type):
-        raise GenError("gen.k", f"{what}: k = {k} does not fit the op type {op_type}")
-    return Fill(ports, op_type, {"op": op, "k": k})
+    baked = {s: v for s, v in slots.items() if v is not None}
+    for s, v in baked.items():
+        if type(v) is not int:
+            raise GenError("gen.args", f"{what}: {s} = {v!r}; a slot is an int")
+        if op_type is not None and not fits(v, op_type):
+            raise GenError("gen.k", f"{what}: {s} = {v} does not fit the op type {op_type}")
+    return Fill(ports, op_type, {"op": op} | baked)
+
+
+def _set_arg(inst: Instance, name: str) -> Any:
+    """Arg ``name`` at the instance's params; None when it is absent or names an unset param."""
+    arg = inst.impl.binding["args"].get(name)
+    if arg is None or not expr.names(arg) <= set(inst.params):  # unset: not evaluated
+        return None
+    return expr.evaluate(arg, inst.params)
 
 
 register_datapath("SimdLanes", 0, simd_lanes)

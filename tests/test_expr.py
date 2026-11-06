@@ -254,8 +254,8 @@ def test_unify_finds_the_slots(pattern, code, slots, found):
 @pytest.mark.parametrize(
     ("pattern", "code"),
     [
-        ("out = max(a, k)", "out = max(0, a)"),  # no commuting
-        ("out = a + k", "out = 3 + a"),
+        ("out = a - k", "out = 3 - a"),  # - does not commute
+        ("out = k1 * a + b", "out = a + alpha * b"),  # alpha on b, not a
         ("out = max(a, k)", "out = max(a, b)"),  # a slot takes no name
         ("out = max(a, k)", "out = min(a, 0)"),
         ("out = a * k + k", "out = a * 5 + 6"),  # a slot used twice, two values
@@ -265,7 +265,31 @@ def test_unify_finds_the_slots(pattern, code, slots, found):
     ],
 )
 def test_unify_refuses(pattern, code):
-    assert expr.unify(pattern, code, ["k"]) is None
+    assert expr.unify(pattern, code, ["k", "k1"], ["alpha"]) is None
+
+
+@pytest.mark.parametrize(
+    ("pattern", "code", "found"),
+    [
+        ("out = max(a, k)", "out = max(0, a)", {"k": 0}),
+        ("out = a + k", "out = 3 + a", {"k": 3}),
+        ("out = min(a, k) * b", "out = b * min(-1, a)", {"k": -1}),  # at any depth
+        ("out = k1 * a + b", "out = b + alpha * a", {"k1": "alpha"}),
+        ("out = k1 * a + k2 * b", "out = b * beta + alpha * a", {"k1": "alpha", "k2": "beta"}),
+        ("out = k1 * a + k2 * b", "out = alpha * a + b * 3", {"k1": "alpha", "k2": 3}),
+        ("out = a * k", "out = alpha * a", {"k": "alpha"}),
+    ],
+)
+def test_unify_commutes_and_takes_scalars(pattern, code, found):
+    """+, *, max and min commute on two operands; a slot takes a scalar's name as it is."""
+    assert expr.unify(pattern, code, ["k", "k1", "k2"], ["alpha", "beta"]) == found
+
+
+def test_unify_tries_every_way_before_refusing():
+    """A first way that binds a slot and fails later is backtracked: ``k`` is first tried as 2
+    against ``a + 2``'s swap, then as the one value both sides agree on."""
+    assert expr.unify("out = (a + k) * (b + k)", "out = (b + 2) * (2 + a)", ["k"]) == {"k": 2}
+    assert expr.unify("out = (a + k) * (b + k)", "out = (b + 2) * (3 + a)", ["k"]) is None
 
 
 def test_ordered_names_and_occurrences():

@@ -276,7 +276,8 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
         ident(k, f"{what}.attrs.params")
         if type(v) not in (int, str):
             raise DfgError(f"{what}.attrs.params.{k}: must be an int or a string, got {v!r}")
-    # the code may read an int design param, a slot the BRM bakes in (simd's k, brm.py's Code)
+    # the code may read an int design param, a slot the BRM bakes in (simd's k, brm.py's Code),
+    # or an input connector that is no port: a slot read from a scalar (axpy's k1: alpha[0])
     _check_code(node, what, [k for k, v in a["params"].items() if type(v) is int])
     if a["replaced"] is not None and not isinstance(a["replaced"], Mapping):
         raise DfgError(f"{what}.attrs.replaced: must be a node or null")

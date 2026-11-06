@@ -58,11 +58,12 @@ def test_the_brms_are_bound():
 
     brm = load_brm("simd")
     assert brm.implementations[IMPL].binding == {
-        "datapath": "SimdLanes", "args": {"lanes": "W", "op": "op", "streams": "streams", "k": "k"},
+        "datapath": "SimdLanes", "args": {"lanes": "W", "op": "op", "streams": "streams", "k": "k",
+                                          "k1": "k1", "k2": "k2"},
         "controller": "counted",
     }  # fmt: skip
     for e in brm.function.entries():
-        given = e.params | ({"k": 0} if e.params["streams"] == 1 else {})
+        given = e.params | {s: 2 for s in brm.slots(e)}
         assert brm.resolve(IMPL, given).params == {"W": 4, **given}
     assert ELEMENTWISE_OP["mul"] == 2
     acc = load_brm("accumulate").implementations
@@ -105,12 +106,38 @@ def test_one_stream_has_no_b_and_takes_k():
     assert [p.name for p in function_of(inst).ports] == ["a", "out"]
 
 
-def test_one_stream_without_k_or_two_with_one_is_refused():
+def test_a_slot_from_a_scalar_needs_its_value_to_fire_and_k_at_two_streams_is_refused():
+    """One stream without k is k read from a scalar (a CSR): the instance resolves, the kind
+    builds, and a firing without the value is refused; so is axpby without k1."""
     brm = load_brm("simd")
-    with pytest.raises(BrmError, match="one stream takes the constant k"):
-        brm.resolve(IMPL, {"streams": 1})
+    a = {"a": np.arange(4)}
+    with pytest.raises(ValueError, match="k has no value"):
+        function_of(brm.resolve(IMPL, {"streams": 1})).fn(0, a, {}, {"n": 1})
+    with pytest.raises(ValueError, match="k1 has no value"):
+        function_of(brm.resolve(IMPL, {"op": "axpby"})).fn(0, a | {"b": a["a"]}, {}, {"n": 1})
     with pytest.raises(BrmError, match="k = 3 at two streams"):
         brm.resolve(IMPL, {"k": 3})
+    with pytest.raises(BrmError, match="k1 and k2 are axpby's"):
+        brm.resolve(IMPL, {"op": "add", "k1": 3})
+    with pytest.raises(BrmError, match="axpby at one stream"):
+        brm.resolve(IMPL, {"op": "axpby", "streams": 1, "k": 2})
+
+
+@pytest.mark.parametrize("dtypes", [("int32", "int32"), ("int8", "int32"), ("int64", "int64")])
+@pytest.mark.parametrize("k2", [None, -2])
+def test_axpby_is_k1_a_plus_k2_b_at_the_op_type(k2, dtypes):
+    """k1 * a + k2 * b (k2 unset: + b) at the inputs' result type, wrapping there."""
+    rng = np.random.default_rng(3)
+    k1 = int(rng.integers(-9, 9))
+    params = {"op": "axpby", "k1": k1} | ({} if k2 is None else {"k2": k2})
+    fn = function_of(load_brm("simd").resolve(IMPL, params)).fn
+    t = np.result_type(*dtypes)
+    info = np.iinfo(dtypes[0])
+    a = rng.integers(info.min, info.max, 4, dtype=dtypes[0], endpoint=True)
+    b = rng.integers(-1000, 1000, 4).astype(dtypes[1])
+    got = fn(0, {"a": a, "b": b}, {}, {"n": 1})["out"]
+    want = t.type(k1) * a.astype(t) + (b.astype(t) if k2 is None else t.type(k2) * b.astype(t))
+    assert got.dtype == t and np.array_equal(got, want)
 
 
 def test_other_lane_counts():
@@ -163,14 +190,19 @@ def test_one_stream_casts_k_to_a_dtype():
     assert got.dtype == np.int8 and got.tolist() == [-1, 0, 126, 127]
 
 
-def test_simd_holds_ten_entries():
-    """The code table: the five ops on two streams, then on one with the slot k; the default
-    op add; the pattern leaves everything to the code (no attrs)."""
+def test_simd_holds_twelve_entries():
+    """The code table: the five ops on two streams, then on one with the slot k, then axpby
+    with k1 and k2, and with k1 alone; the default op add; the pattern leaves everything to the
+    code (no attrs)."""
     brm = load_brm("simd")
+    axpby = {"op": "axpby", "streams": 2}
     assert [(e.params, e.code) for e in brm.function.entries()] == [
         *(({"op": o, "streams": 2}, f"out = {c}") for o, c in TWO.items()),
-        *(({"op": o, "streams": 1}, f"out = {c}") for o, c in ONE.items())]  # fmt: skip
-    assert [brm.slots(e) for e in brm.function.entries()] == [[]] * 5 + [["k"]] * 5
+        *(({"op": o, "streams": 1}, f"out = {c}") for o, c in ONE.items()),
+        (axpby, "out = k1 * a + k2 * b"), (axpby, "out = k1 * a + b")]  # fmt: skip
+    assert [brm.slots(e) for e in brm.function.entries()] == (
+        [[]] * 5 + [["k"]] * 5 + [["k1", "k2"], ["k1"]])  # fmt: skip
+    assert brm.function.codes_for(axpby) == ["out = k1 * a + k2 * b", "out = k1 * a + b"]
     assert brm.function.code_for(brm.resolve(IMPL).params) == "out = a + b"
     inst = brm.resolve(IMPL, {"op": "min", "streams": 1, "k": 7})
     assert brm.function.code_for(inst.params) == "out = min(a, k)"
