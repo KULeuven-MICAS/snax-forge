@@ -29,6 +29,7 @@ object SnaxUnitCases {
     lanes:   Int,
     types:   Seq[String],
     op:      String,
+    k:       Option[BigInt], // one input's constant: a one-stream SimdLanes (relu's)
     starts:  Map[Int, Start],
     runs:    Seq[RunLine],
     beats:   Map[Int, Seq[BigInt]],
@@ -44,6 +45,7 @@ object SnaxUnitCases {
     var lanes          = 1
     var types          = Seq.empty[String]
     var op             = "add"
+    var k              = Option.empty[BigInt]
     var starts         = Map.empty[Int, Start]
     var runs           = Seq.empty[RunLine]
     var beats          = Map.empty[Int, Seq[BigInt]]
@@ -55,6 +57,7 @@ object SnaxUnitCases {
       case "lanes" :: n :: Nil                         => lanes   = n.toInt
       case "types" :: ts if ts.nonEmpty                => types   = ts
       case "op" :: o :: Nil                            => op      = o
+      case "k" :: v :: Nil                             => k       = Some(BigInt(v))
       case "start" :: c :: j :: t :: a :: Nil          =>
         starts += c.toInt -> Start(j.toInt, t.toInt, a)
       case "expect" :: "run" :: RunLine.Fields(i, run) =>
@@ -66,6 +69,7 @@ object SnaxUnitCases {
       case _ => throw new IllegalArgumentException(s"$path: `$line` is not a header line")
     }
     require(types.isEmpty || types.size == inputs + 1, s"$path: types gives ${types.size}, not ${inputs + 1}")
+    require(k.isEmpty || inputs == 1, s"$path: k is one input's constant; inputs is $inputs")
     val cycles = rows.map { line =>
       val v = line.split("\\s+").map(_ == "1").toSeq
       require(v.size == inputs + 4, s"$path: `$line` has ${v.size} columns, not ${inputs + 4}")
@@ -79,6 +83,7 @@ object SnaxUnitCases {
       lanes,
       types,
       op,
+      k,
       starts,
       runs,
       beats,

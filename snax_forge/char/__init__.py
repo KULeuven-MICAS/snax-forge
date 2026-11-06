@@ -27,7 +27,8 @@ them are ignored) and its lanes (and depth): the entry whose params equal them, 
 
 A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared,
 and one the table's export predates takes the value its points were measured at
-(``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2) until the next export writes it.
+(``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2), on the entry's side and, when the caller does
+not give it, on the caller's, until the next export writes it.
 None for anything else: no entry with these params (a dtype other than int64, another op, a
 SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has),
 lanes or depth outside the measured range (TreeAccumulate at lanes 64, SerialAccumulate at
@@ -131,9 +132,9 @@ def _at_depth(points: list[dict[str, Any]], lanes: int, depth: int | None) -> Lo
 def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
     """A block's comb area and energy per fire on ``table`` (module doc), or None."""
-    want = {k: v for k, v in params.items() if k not in _IGNORED and v is not None}  # unset: none
-    entries = table.blocks.get(DATAPATH_RENAMES.get(datapath, datapath), [])
     defaults = TABLE_DEFAULTS.get(datapath, {})
+    want = defaults | {k: v for k, v in params.items() if k not in _IGNORED and v is not None}
+    entries = table.blocks.get(DATAPATH_RENAMES.get(datapath, datapath), [])
     entry = next((e for e in entries if defaults | e["params"] == want), None)
     if entry is None:
         return None

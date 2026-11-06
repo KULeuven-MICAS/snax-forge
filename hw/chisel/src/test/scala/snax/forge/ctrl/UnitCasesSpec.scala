@@ -11,8 +11,9 @@ import snax.forge.datapath.{SimdLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 
 /** A unit case's hardware: a one-unit group's control unit (`GroupCtrl`) and the datapath of the case's shape: two
-  * inputs at L 0 `SimdLanes`, one input at L 1 `TreeAccumulate`, at the case's `types` (int64 without them), lanes and
-  * op; any other shape (L 1 or 2 with two inputs) the controller alone, no data.
+  * inputs at L 0 `SimdLanes`, one input with `k` at L 0 the one-stream `SimdLanes` (op(a, k) at a's type), one input at
+  * L 1 `TreeAccumulate`, at the case's `types` (int64 without them), lanes and op; any other shape (L 1 or 2 with two
+  * inputs) the controller alone, no data.
   */
 class UnitHarness(val c: Case) extends Module {
   private val ctrl =
@@ -22,10 +23,11 @@ class UnitHarness(val c: Case) extends Module {
 
   val datapath: Option[String] =
     if (c.inputs == 2 && c.latency == 0) Some("SimdLanes")
+    else if (c.inputs == 1 && c.latency == 0 && c.k.nonEmpty) Some("SimdLanesK")
     else if (c.inputs == 1 && c.latency == 1) Some("TreeAccumulate")
     else None
 
-  private val outLanes = if (c.inputs == 1) 1 else c.lanes
+  private val outLanes = if (c.inputs == 1 && c.k.isEmpty) 1 else c.lanes
 
   val io = IO(new Bundle {
     val start = Flipped(Decoupled(new GroupStart(1)))
@@ -57,6 +59,12 @@ class UnitHarness(val c: Case) extends Module {
         dp.io.a(l)     := lane(io.data(0)(l), t(0))
         dp.io.b.get(l) := lane(io.data(1)(l), t(1))
         io.res(l)      := dp.io.out(l).asUInt
+      }
+    case Some("SimdLanesK")     =>
+      val dp = Module(new SimdLanes(Seq(t(0).name), t(0).name, t(1).name, c.lanes, ElementwiseOp.byName(c.op), c.k))
+      for (l <- 0 until c.lanes) {
+        dp.io.a(l) := lane(io.data(0)(l), t(0))
+        io.res(l)  := dp.io.out(l).asUInt
       }
     case Some("TreeAccumulate") =>
       val dp = Module(new TreeAccumulate(t(0).name, t(1).name, c.lanes))

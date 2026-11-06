@@ -5,7 +5,17 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.char import DATAPATH_RENAMES, FOUND, TECHS, CharError, Lookup, Table, load, lookup
+from snax_forge.char import (
+    DATAPATH_RENAMES,
+    FOUND,
+    TABLE_DEFAULTS,
+    TECHS,
+    CharError,
+    Lookup,
+    Table,
+    load,
+    lookup,
+)
 from snax_forge.gen.rtl import catalogue, check_params
 
 I64 = {"inType": "int64", "outType": "int64"}
@@ -29,7 +39,9 @@ def test_every_entry_is_a_catalogue_datapath_with_complete_params(tech):
             keys = [(p["lanes"], p.get("depth")) for p in e["points"]]
             assert len(keys) == len(set(keys)), (dp, keys)
             for p in e["points"]:
-                full = {**e["params"], "lanes": p["lanes"]}
+                # a param the export predates at its default, a const one (k) unset
+                unset = {k: None for k, t in sig.items() if t["type"] == "const"}
+                full = {**unset, **TABLE_DEFAULTS.get(dp, {}), **e["params"], "lanes": p["lanes"]}
                 if "depth" in p:
                     full["depth"] = p["depth"]
                 assert set(full) == set(sig), (dp, sorted(full), sorted(sig))

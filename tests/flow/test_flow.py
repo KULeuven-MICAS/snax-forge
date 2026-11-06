@@ -713,6 +713,42 @@ def test_rowsum_restarts_every_row_on_snax_gvsoc(tmp_path, design, beats):
     assert "csrw_ss(ACC_RW_JOB_BEATS, 16);" in (gen / "main.c").read_text()
 
 
+RELU_A = [-3, 5, 0, -1, 7, -8, 2, -2]
+RELU_B = [0, 5, 0, 0, 7, 0, 2, 0]
+RELU_COUNTER = 4  # the run's COUNTER on SNAX-GVSoC: 2 firings and 2 cycles of the shell
+
+
+@pytest.mark.gvsoc
+@needs_gvsoc
+def test_relu_on_one_stream_on_snax_gvsoc(tmp_path, monkeypatch):
+    """relu at W = 4, N = 8, int32 (B2 R2's worked example): simd at one stream, op max, k 0;
+    A = (-3, 5, 0, -1 | 7, -8, 2, -2) gives B = (0, 5, 0, 0 | 7, 0, 2, 0) on SNAX-GVSoC, in
+    JOBS = 2 firings, each beat 2 channels (4 int32 in 2 words) on the reader and the writer."""
+    from snax_forge.dfg import reference
+
+    def inputs(spec, graph, seed):
+        return {"A": np.array(RELU_A, np.int32), "B": np.zeros(8, np.int32)}
+
+    monkeypatch.setattr(reference, "kernel_inputs", inputs)
+    f = run_flow(recipe_path("relu"), SNAX_FORGE, recipe_sets={"W": 4, "N": 8},
+                 out=tmp_path / "relu")  # fmt: skip
+    assert f.passed, summary(f)
+    assert f.check["exit_code"] == 0 and f.check["data_errors"] == 0
+    assert f.check["tasks"] == {"numpy_maximum_acc": {"counter": RELU_COUNTER, "beats": 2,
+                                                      "group": "acc"}}  # fmt: skip
+    gen = tmp_path / "relu" / "gen"
+    data = (gen / "data.h").read_text()  # B_golden padded to whole 64-byte beats: 16 int32
+    golden = data.split("const int32_t B_golden[16]", 1)[1].split("{", 1)[1].split("}", 1)[0]
+    assert [int(x) for x in golden.replace(",", " ").split()] == RELU_B + [0] * 8
+    text = (gen / "snax_forge_relu_streamer_acc.hjson").read_text()
+    streamer = json.loads("".join(ln for ln in text.splitlines(True) if not ln.startswith("//")))
+    assert streamer["data_reader_params"]["num_channel"] == [2]
+    assert streamer["data_writer_params"]["num_channel"] == [2]
+    (unit,) = json.loads((gen / "accelerator.json").read_text())["accelerators"][0]["groups"][0][
+        "units"]  # fmt: skip
+    assert unit["params"] == {"op": "max", "k": 0}
+
+
 @pytest.mark.gvsoc
 @needs_gvsoc
 def test_a_64_kib_l1_runs_on_its_own_runtime(tmp_path):
