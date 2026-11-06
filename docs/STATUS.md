@@ -66,8 +66,8 @@ Done, each in its PRs and git history:
 
 To do, in two tracks (D141), each task in its own PR:
 
-- **Track A, the code** (snax-forge, snax-gvsoc for PORT1):
-  1. **B2** (shrunk): the 1-stream SIMD (relu), axpy's CSR scalar, the lane accumulator without an op, the fold's `init` port, the group binds tier A and the untiered kernels need; it lifts `gen.span` (a unit of span > 1 reading from a link).
+- **Track A, the code** (snax-forge, snax-gvsoc for B2 and PORT1):
+  1. **B2** (`wip`, branch `ry/b2`; plan in the project's `claude/b2-plan-2026-11-06.md`), in this order, each kernel run on SNAX-GVSoC and snax_cluster: the recipes in folders by category, and one `simd` BRM over `SimdLanes` in place of `elementwise_add`, `elementwise_mul` and `ElementwiseLanes`, its code a table over `op`, `streams` and a scalar slot `k`; relu, the 1-stream SIMD with k = 0 baked; axpy, axpby with k₁ an R/W CSR (`bake_scalar` makes it a constant), its body joined by `fuse_map`, its in-place write (open item 47); rowsum 2, `LaneAccumulate` after `interchange_map`, A in the `padded_rows` layout (a `--set`); the fold's `seed`, a per-job port (`seed_fold`), on `TreeAccumulate` and `SerialAccumulate`; mvt in the row form on both sides, its variants one at a time, recipe against recipe, in `examples/dryrun/4_mvt.md` (open item 117 first). `gen.span` stays (open item 116); E7's points are chosen after B2.
   2. **L2V1**: each container the DMA moves drawn in the DFG views as its L2 copy with a DMA edge into L1, and a DMA row in the estimate from the memory plan, $\sum_c (\lceil B_c / 64 \rceil + t_0)$ for a 512-bit DMA and a fixed cost $t_0$ per transfer read from a SNAX-GVSoC run, added to the total (amends D155), checked against the run's DMA tasks. The graph-level copy node stays open item 99.
   3. **XBAR1**: an interconnect marker per running accelerator, $u = \sum_s \mathrm{ch}_s / n_{\mathrm{banks}}$ over its streamers' channels, green at $u \le 0.5$, orange up to 1, red above, the thresholds platform fields (D85), a design note (C§14) in the estimate, `design.md` and the editor (vecmul: W = 4 green, 8 orange, 16 red).
   4. **tier A**, in two halves: fork, join, broadcast, hold and fragments (applied by output name, `augment_init`) with bicg and gesummv; then mvt (open items 47 and 109) and atax (open item 113). It lifts `gen.chain` (a group is a chain). MINI first, SMALL only where a case needs it (open item 54).
@@ -94,7 +94,7 @@ Dates: 27 Nov, E5's cut-off (softmax not running on SNAX-GVSoC moves E5, and E6 
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 115.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 119.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -172,6 +172,10 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 112. A buffer link's energy against SYN2 (DRY1-3): dot 2's `tmp0` buffer, which loads every beat, is 1.59× (nangate45) and 1.49× (nangate15) high against CHAR1's `link/d1_w8` stream point, not explained. dot 6's `out_partial` was 2.65× and 3.13× high while a buffer loaded once per firing of its producer; it now loads once per output (C§20), once per job behind the Mac.
 113. One unit across several DFG regions (atax's A and Aᵀ on one GeMM): a unit bound at several nodes, trading throughput for area; amends D112 (Ryan, 27 Oct 2026, for the paper). tier A's atax is the first case.
 114. PORT1's shared crossbar ports exist on SNAX-GVSoC only: snax_cluster's mux follows when a shared-port design is in E4's result, in E1 or in the cluster synthesis, before E1 runs it; until then those runs are marked model only, outside D123's check.
+115. An ALU SIMD: the `simd` BRM's `op` as an R/W CSR, its op set a design param, so a design pays only for the ops it can select; worth it once one unit runs several ops, a unit bound at several nodes (open item 113).
+116. `gen.span` refuses a unit of span > 1 reading an outer input (a serial unit straight from its streamer: vsum or rowsum 1 on `chisel_serial` at W > 1, the beat held for span cycles); lifted when E7 or a kernel needs such a point.
+117. Reusing a composite's recipe: a transform applying a saved recipe (dot's variants) to a region of another graph, drawn as one bound accelerator labelled with its recipe, the recipe's map ids mapped onto the region's; first case mvt (B2).
+118. The run viewer (`pixi run view`: banks, interconnect, transactions) is kept working but gets no new features until after the paper (Ryan, 6 Nov 2026); the DFG views (`view-dfg`, `edit-dfg`) stay first.
 
 ## Sync Reminders
 
