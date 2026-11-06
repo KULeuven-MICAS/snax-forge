@@ -85,7 +85,7 @@ Retired, and where each now lives:
 
 **D52** · scope — Cosim (M10) swaps one accelerator for its RTL and checks its output, latency and II; the whole cluster is checked by running the same program on SNAX-GVSoC and on snax_cluster RTL (D123). Neither blocks the inner loop.
 
-**D55** · viz — The viewers (runs, and graphs in two modes: `view-dfg` shows given `.snaxdfg` files, `edit-dfg` a session the server holds, saved as a new recipe, never overwriting, C§12) are a local server on 127.0.0.1 plus a static page: stdlib only, no build step or library, offline, every POST `application/json`, for humans; LLMs read the reports (D99). Views read the dataclasses. → `viz/`.
+**D55** · viz — The viewers (runs, and graphs in two modes: `view-dfg` shows given `.snaxdfg` files, `edit-dfg` a session the server holds, saved as a new recipe in `recipes/custom/`, never overwriting, C§12) are a local server on 127.0.0.1 plus a static page: stdlib only, no build step or library, offline, every POST `application/json`, for humans; LLMs read the reports (D99). Views read the dataclasses. → `viz/`.
 
 **D57** · viz — The run views (a schedule over the program's window, the cluster at the selected cycle, the memory tab, data movement off the beat trace) live in the URL hash; Python answers every fold, lookup and step and `static/` only draws, so a view never disagrees with a report.
 
@@ -105,7 +105,7 @@ Retired, and where each now lives:
 
 **D79** · ref — The reference executor runs any `.snaxdfg` in NumPy, accelerated nodes through their BRM's function; every sandbox step and every run is compared with it, so DaCe's CPU reference is not needed. → `dfg/execute.py`.
 
-**D82** · brm — A BRM says what one lane computes (`function.code`), and `bind` checks the tasklet, or a fused map's tasklets joined by a local value, against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
+**D82** · brm — A BRM says what one lane computes (`function.code`, or a list of codes each fixing design params, such as `simd`'s one per `op`: the first that matches gives the instance its params), and `bind` checks the tasklet, or a fused map's tasklets joined by a local value, against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
 
 **D84** · design — The platform is its own file in `platforms/`, paired with the bound graph by the design step, so either changes alone; its cluster parameters and the streamers' FIFO depths are design knobs, never a template (D134), and the streamers' temporal loops come from the graph. → C§13.
 
