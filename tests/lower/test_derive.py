@@ -7,7 +7,15 @@ import pytest
 from snax_forge.design import Design, DesignPoint, MemorySpec, Platform, run_checks, streamers
 from snax_forge.design.streamers import Loop
 from snax_forge.dfg import Memlet
-from snax_forge.lower import Layout, LowerError, TaskList, memlet_values, placed_waits, task_list
+from snax_forge.lower import (
+    Layout,
+    LowerError,
+    TaskList,
+    check_values,
+    memlet_values,
+    placed_waits,
+    task_list,
+)
 from snax_forge.lower import __main__ as cli
 from snax_forge.lower.derive import addresses
 from tests.brm.helpers import affine_simd
@@ -143,6 +151,54 @@ def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():
     assert c["add2_acc2_b"].after == ["load_B"] and c["store_D"].after == ["add2_acc2_out"]
     # two accelerators in series (D158): acc's task before acc2 starts, then the stores' syncs
     assert [s.task for s in tl.steps if s.op == "sync"] == ["add_acc", "store_C", "store_D"]
+
+
+# =============================================================================
+# in place (open item 47): a unit that writes the container it reads
+# =============================================================================
+
+
+def in_place(gd: dict, out_subset: str | None = None, tasklet_subset: str | None = None) -> None:
+    """vecadd writing B in place of C: ``B = A + B``. With subsets, the write goes there
+    instead (in a B of 2N), so it is no longer the read's elements."""
+    del gd["containers"]["C"]
+    if out_subset is not None:
+        gd["containers"]["B"]["shape"] = ["2 * N"]
+    (node,) = gd["body"][0]["body"]
+    node["outputs"]["out"]["data"] = "B"
+    (tasklet,) = node["attrs"]["replaced"]["body"]
+    tasklet["outputs"]["out"]["data"] = "B"
+    if out_subset is not None:
+        node["outputs"]["out"]["subset"] = [out_subset]
+        tasklet["outputs"]["out"]["subset"] = [tasklet_subset]
+
+
+def test_an_in_place_update_does_not_wait_on_its_own_read():
+    """B = A + B: the writer starts with B's reader, so it cannot wait for it; the same
+    subset over the same firing loops needs no wait (open item 47)."""
+    p = point(edit_graph=in_place)
+    tl = task_list(p)
+    check_values(tl, p)
+    c = tl.configured()
+    assert [s.task_name for s in tl.steps if s.op == "configure"] == [
+        "load_A", "load_B", "add_acc_a", "add_acc_b", "add_acc_out", "add_acc", "store_B",
+    ]  # fmt: skip
+    assert c["add_acc_b"].after == ["load_B"]
+    assert c["add_acc_out"].after == ["load_B"]  # B in L1 before it, not the read beside it
+    assert c["store_B"].after == ["add_acc_out"]
+    start = next(s for s in tl.steps if s.op == "start" and "add_acc" in s.tasks)
+    assert {"add_acc_b", "add_acc_out"} <= set(start.tasks)
+
+
+def test_a_write_into_its_read_container_elsewhere_is_refused():
+    """B[N:2N] = A + B[0:N]: not the elements it reads, so not an in-place update."""
+
+    def edit(gd):
+        in_place(gd, "4 * i_t + N:4 * i_t + N + 4", "4 * i_t + i_s + N")
+
+    with pytest.raises(LowerError, match=r"node add\.out: writes B in place of add_acc_b's "
+                                         r"read, but not the same elements"):  # fmt: skip
+        task_list(point(edit_graph=edit))
 
 
 # =============================================================================

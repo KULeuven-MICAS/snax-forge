@@ -46,6 +46,13 @@ writer for the tasks that read or wrote its container since; the waits a
 busy component needs are placed later (waits.py). Every configure uses the platform's
 ``wait_mode``; so does every sync.
 
+**In place** (open item 47). A writer whose container a reader of the same start reads
+cannot wait for that reader: they start together. It needs no wait when the reader is a
+port of its own unit and both visit the same addresses in the same order, beat by beat
+(``addresses``): every element is read before the unit writes its result back (axpy's
+``y``, every beat; a fold's seed and its write, once per job). Any other reader in the
+same start is refused by name, naming both ports.
+
 **Accelerators run in series** (D158, C§9): the groups of one accelerator (an
 encapsulated set) follow each other through their data dependences, as
 before; between two accelerators the next one's start waits for the previous
@@ -348,6 +355,8 @@ class _Derivation:
                   unit_loops: dict[str, list[Loop]]) -> dict[str, Configure]:  # fmt: skip
         """Each outer port's streamer task, by streamer, after what it needs in L1."""
         own: dict[str, Configure] = {}
+        # this start's reader tasks -> (their unit's node, the addresses they visit)
+        launched: dict[str, tuple[str, np.ndarray]] = {}
         for un in unit_nodes:
             u, what = un.attrs["instance"], f"node {un.id}"
             inst, loops = self.insts[u], unit_loops[u]
@@ -380,13 +389,36 @@ class _Derivation:
                 if p in un.inputs:
                     after = [self.in_l1[c]] if c in self.in_l1 else []
                     self.readers.setdefault(c, []).append(task)
+                    launched[task] = (un.id, addresses(values, sb))
                 else:
+                    readers = self.readers.pop(c, [])
+                    for r in (r for r in readers if r in launched):
+                        self.in_place(f"{what}.{p}", c, un.id, addresses(values, sb), r,
+                                      *launched[r])  # fmt: skip
                     after = [
-                        *self.readers.pop(c, []),
+                        *(r for r in readers if r not in launched),
                         *([self.in_l1[c]] if c in self.in_l1 else []),
                     ]
                 own[s.name] = Configure(task, "streamer", s.name, values, after, self.mode)
         return own
+
+    @staticmethod
+    def in_place(what: str, c: str, node: str, writes: np.ndarray, reader: str,
+                 reader_node: str, reads: np.ndarray) -> None:  # fmt: skip
+        """A writer of ``c`` whose reader ``reader`` starts with it: allowed only as an
+        in-place update, its own unit reading the same addresses in the same order (the
+        module doc, "In place")."""
+        if reader_node != node:
+            raise LowerError(
+                f"{what}: writes {c}, which {reader} (node {reader_node}) reads in the same "
+                "start; an in-place update lowers only within one unit (open item 47)"
+            )
+        if not np.array_equal(writes, reads):
+            raise LowerError(
+                f"{what}: writes {c} in place of {reader}'s read, but not the same elements in "
+                "the same order; an in-place update lowers only as the same subset over the "
+                "same firing loops (open item 47)"
+            )
 
     def accelerator(self, n: Any, group: str, members: list[str] | None,
                     starts: dict[str, dict[str, Any]], own: dict[str, Configure]) -> None:  # fmt: skip
