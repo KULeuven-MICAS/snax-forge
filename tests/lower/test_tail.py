@@ -12,11 +12,12 @@ from snax_forge.lower import task_list
 from snax_forge.lower.c import _compare
 from snax_forge.lower.layout import moved_bytes
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.design.helpers import REPO, SNAX_FORGE
+from tests.design.helpers import SNAX_FORGE
+from tests.helpers import recipe_path
 
 
 def _design(name: str, dtypes: dict | None = None, **params) -> Design:
-    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params(params)
+    recipe = Recipe.load(recipe_path(name)).with_params(params)
     d = apply_recipe(recipe, import_kernel(recipe.kernel))[-1].graph.to_dict()
     for c, dt in (dtypes or {}).items():
         d["containers"][c]["dtype"] = dt

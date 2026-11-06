@@ -716,7 +716,7 @@ def test_the_whole_entrys_layout_packs_the_sets_from_960():
 
 
 def _narrow(tmp_path, recipe: str) -> Path:
-    """``recipes/<recipe>.json`` designed and generated under ``tmp_path``; the out folder."""
+    """``recipes/<folder>/<recipe>.json`` designed and generated under ``tmp_path``; the out folder."""
     point = designed(tmp_path, recipe, recipe)
     out = tmp_path / "gvsoc" / recipe
     with pytest.MonkeyPatch.context() as mp:

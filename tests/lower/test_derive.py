@@ -255,7 +255,7 @@ def test_dot_1_waits_for_mul_s_writer_before_sum_and_never_on_an_idle_mover():
 
 
 def test_dot_1_is_two_accelerators_in_series():
-    """recipes/dot_1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
+    """recipes/dot/dot_1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
     serial sync on vmul's task before vsum starts, the one wait between them (D158)."""
     from tests.gen.helpers import bound_dot1
 

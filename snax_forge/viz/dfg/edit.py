@@ -7,8 +7,8 @@
 Serves the editor on 127.0.0.1 until Ctrl-C with one session (sandbox/session.py): a new one
 on kernel K (``--set`` gives its params, each symbol the param of its name and each one needing
 a value: ``vecmul: give N, e.g. --set N=2048``; no W unless given), one replaying
-recipe R, or the session in DIR (``out/sessions/<name>/``) resumed. Without a start option the
-page shows its start dialog. Sessions go to ``out/sessions/``, saved recipes to ``recipes/``
+recipe R (a path, or a name in a folder of ``recipes/``, ``find_recipe``), or the session in DIR (``out/sessions/<name>/``) resumed. Without a start option the
+page shows its start dialog. Sessions go to ``out/sessions/``, saved recipes to ``recipes/custom/``
 and their steps to ``out/sandbox/``. The cost estimate is on ``--tech`` until the page's
 technology dropdown picks another (default nangate45, C§20). pixi: ``edit-dfg``.
 
@@ -33,7 +33,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                                 description=__doc__.split("\n\n")[0])  # fmt: skip
     start = p.add_mutually_exclusive_group()
     start.add_argument("--kernel", help="start a session on this kernel's import")
-    start.add_argument("--recipe", help="start a session replaying this recipe")
+    start.add_argument("--recipe", help="start a session replaying this recipe (a path or a name)")
     start.add_argument("--session", help="resume the session in this folder")
     p.add_argument("--set", type=setting, action="append", default=[], metavar="NAME=VALUE",
                    help="a param of the --kernel session")  # fmt: skip

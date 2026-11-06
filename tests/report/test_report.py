@@ -32,6 +32,7 @@ from snax_forge.run import load_cluster, read_events, read_run, write_run
 from snax_forge.run.convert import convert
 from snax_forge.viz import api, movement, schedule
 from tests.flow.helpers import stubbed_flow
+from tests.helpers import recipe_path
 
 FIXTURE = Path(__file__).resolve().parents[1] / "run" / "fixtures" / "vecadd"
 
@@ -310,12 +311,12 @@ def test_the_command_line(flows, tmp_path, capsys):
 
 
 def designed_report(tmp_path, recipe, sets=()):
-    """The design report of ``recipes/<recipe>.json`` (``--set`` each of ``sets``) designed on
+    """The design report of ``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``) designed on
     snax_forge (no run)."""
     from snax_forge.gen import generate
     from snax_forge.report.design import build_design
     from snax_forge.sandbox import Recipe
-    from tests.gen.helpers import REPO, designed
+    from tests.gen.helpers import designed
 
     rel = designed(tmp_path, recipe, recipe, sets)
     with pytest.MonkeyPatch.context() as mp:
@@ -323,7 +324,7 @@ def designed_report(tmp_path, recipe, sets=()):
         generate(rel, tmp_path / "gen", root=tmp_path)
     point = DesignPoint.load(tmp_path / rel)
     cluster = load_cluster(tmp_path / "gen" / "snax_forge.hjson", tmp_path / rel)
-    return build_design(recipe, cluster, point, Recipe.load(REPO / "recipes" / f"{recipe}.json"))
+    return build_design(recipe, cluster, point, Recipe.load(recipe_path(recipe)))
 
 
 def test_a_mover_shows_its_dtype_k_and_channels(tmp_path):

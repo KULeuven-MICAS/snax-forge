@@ -9,9 +9,9 @@ from snax_forge.design import Platform, instances, resolve
 from snax_forge.dfg import Graph
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.helpers import graph_dict
+from tests.helpers import graph_dict, recipe_path
 
-from .helpers import REPO, SMALL16, accel_node, problems
+from .helpers import SMALL16, accel_node, problems
 from .helpers import design as paired
 
 
@@ -47,8 +47,8 @@ def _grid(shape: list[int], loops: list[tuple[str, str]], subset: list[str]) -> 
 
 
 def _vsum(dtypes: dict[str, str]) -> Graph:
-    """vsum bound by recipes/vsum_tree.json (accumulate, adder tree, W = 4), of ``dtypes``."""
-    recipe = Recipe.load(REPO / "recipes" / "vsum_tree.json")
+    """vsum bound by recipes/reduce/vsum_tree.json (accumulate, adder tree, W = 4), of ``dtypes``."""
+    recipe = Recipe.load(recipe_path("vsum_tree"))
     d = apply_recipe(recipe, import_kernel("vsum"))[-1].graph.to_dict()
     for c, dt in dtypes.items():
         d["containers"][c]["dtype"] = dt

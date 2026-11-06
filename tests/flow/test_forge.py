@@ -21,10 +21,11 @@ from snax_forge.flow import run as flow_run
 from snax_forge.gen import bundle as bundle_mod
 from tests.design.helpers import REPO
 from tests.gen.helpers import COMMIT, fake_emit, root
+from tests.helpers import recipe_path
 
 from .helpers import PLAINS, stub
 
-RECIPE = REPO / "recipes" / "vecadd.json"
+RECIPE = recipe_path("vecadd")
 
 
 @pytest.fixture
@@ -71,7 +72,7 @@ def test_forge_prints_each_step_and_snax_clusters_commands(tmp_path, forged, cap
     sha = json.loads((flow / "run" / "run.json").read_text())["elf_sha256"]
     assert out == [
         (
-            f"forge vecadd: recipes/vecadd.json on platforms/snax_forge.json; every step's output "
+            f"forge vecadd: recipes/elementwise/vecadd.json on platforms/snax_forge.json; every step's output "
             f"in {forge / 'forge.log'}"
         ),
         f"  flow      passed: design point {flow / 'design' / 'design_point.json'}, run {flow}/run/",

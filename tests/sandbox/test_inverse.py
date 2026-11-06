@@ -22,9 +22,9 @@ from snax_forge.sandbox import (
 )
 from snax_forge.sandbox import transforms as tr
 from snax_forge.sandbox.__main__ import main
-from tests.helpers import graph_dict
+from tests.helpers import graph_dict, recipe_path
 
-from .helpers import FIXTURES, REPO, graph, restricted_brm
+from .helpers import FIXTURES, graph, restricted_brm
 
 BIND = {
     "node": "add",
@@ -76,11 +76,11 @@ def test_round_trip_with_an_offset_range():
 
 
 def test_the_undo_recipe(tmp_path):
-    """recipes/vecadd_undo.json on the accelerated fixture gives the imported graph back."""
-    r = Recipe.load(REPO / "recipes" / "vecadd_undo.json")
+    """recipes/elementwise/vecadd_undo.json on the accelerated fixture gives the imported graph back."""
+    r = Recipe.load(recipe_path("vecadd_undo"))
     results = apply_recipe(r, graph("vecadd_accelerated"))
     assert results[-1].graph.to_json() == imported().to_json()
-    args = [str(REPO / "recipes" / "vecadd_undo.json"), "--graph",
+    args = [str(recipe_path("vecadd_undo")), "--graph",
             str(FIXTURES / "vecadd_accelerated.snaxdfg"), "--out", str(tmp_path)]  # fmt: skip
     assert main(args) == 0
     assert Graph.load(tmp_path / "2_join_map.snaxdfg").to_json() == imported().to_json()

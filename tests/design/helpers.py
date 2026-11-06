@@ -20,11 +20,11 @@ from typing import Any
 from snax_forge.design import Design, Platform, run_checks
 from snax_forge.dfg import Graph
 from snax_forge.sandbox import Recipe, apply_recipe
-from tests.helpers import FIXTURES, REPO, graph_dict
+from tests.helpers import FIXTURES, REPO, graph_dict, recipe_path
 
 SMALL16 = REPO / "platforms" / "small16.json"
 SNAX_FORGE = REPO / "platforms" / "snax_forge.json"
-RECIPE = REPO / "recipes" / "vecadd.json"
+RECIPE = recipe_path("vecadd")
 BOUND = FIXTURES / "vecadd_accelerated.snaxdfg"
 
 Edit = Callable[[dict[str, Any]], Any]
@@ -46,7 +46,7 @@ def bound_w8() -> Graph:
 
 
 # matadd at W = 4, M = 8, N = 16: the row map tagged temporal, the column map split (D73)
-MATADD_RECIPE = json.loads((REPO / "recipes" / "matadd.json").read_text())
+MATADD_RECIPE = json.loads((recipe_path("matadd")).read_text())
 
 
 @cache
@@ -59,12 +59,12 @@ def bound_matadd() -> Graph:
 
 @cache
 def bound_rowsum(name: str = "rowsum", **sizes: int) -> Graph:
-    """rowsum bound by ``recipes/<name>.json`` (``rowsum``: adder tree, W = 4, M = 8, N = 64;
+    """rowsum bound by ``recipes/<folder>/<name>.json`` (``rowsum``: adder tree, W = 4, M = 8, N = 64;
     ``rowsum_serial``: accumulator, W = 1, M = 4, N = 16), ``sizes`` overriding its params:
     a restart every T = N / W beats (open item 81)."""
     from snax_forge.dfg.import_sdfg import import_kernel
 
-    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params(sizes)
+    recipe = Recipe.load(recipe_path(name)).with_params(sizes)
     return apply_recipe(recipe, import_kernel("rowsum"))[-1].graph
 
 

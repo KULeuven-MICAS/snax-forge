@@ -15,9 +15,9 @@ from snax_forge.lower import task_list
 from snax_forge.sandbox import Recipe, SandboxError, apply_recipe, session
 from snax_forge.sandbox import __main__ as sandbox_cli
 from snax_forge.sandbox.session import Roots, Session
-from tests.helpers import imported
+from tests.helpers import REPO, imported, recipe_path
 
-from .helpers import RECIPES, REPO, recipe_graphs, renamed, tagged_names
+from .helpers import RECIPES, recipe_graphs, renamed, tagged_names
 
 pytestmark = pytest.mark.slow
 
@@ -33,11 +33,11 @@ def roots(tmp_path):
 
 
 def recipe(name: str) -> Recipe:
-    return Recipe.load(REPO / "recipes" / f"{name}.json")
+    return Recipe.load(recipe_path(name))
 
 
 def opened(name: str, roots: Roots) -> Session:
-    return Session.from_recipe(REPO / "recipes" / f"{name}.json", roots=roots)
+    return Session.from_recipe(recipe_path(name), roots=roots)
 
 
 def ok(result: dict) -> dict:
@@ -110,7 +110,7 @@ def test_a_number_given_for_a_factor_becomes_a_param(roots, tmp_path):
     ok(s.set_params({"W_acc_1": 4}))
     assert s.estimate(4).accelerator_cycles == 512
     ok(s.save("vecmul_w"))
-    assert sandbox_cli.main([str(roots.recipes / "vecmul_w.json"), "--set", "W_acc_1=2", "--out",
+    assert sandbox_cli.main([str(roots.recipes / "custom" / "vecmul_w.json"), "--set", "W_acc_1=2", "--out",
                              str(tmp_path / "w2")]) == 0  # fmt: skip
     dot = Session.from_kernel("dot", {"N": 512}, roots=roots)
     ok(dot.apply("split", {"map": "mult_map", "factor": 8}))
@@ -140,7 +140,7 @@ def test_a_kernel_session_needs_every_symbol_and_no_w(roots):
 
 def test_vecmul_from_its_kernel_with_a_new_param_is_the_recipes_graph(roots):
     """vecmul at N = 2048 alone, ``split`` by a new param W = 8, the tags, ``bind`` at the form's
-    defaults: ``recipes/vecmul.json``'s last graph at N = 2048, W = 8 up to the split's names;
+    defaults: ``recipes/elementwise/vecmul.json``'s last graph at N = 2048, W = 8 up to the split's names;
     the default instance ``acc_1`` gives the task ``mult_acc_1`` and the streamers ``acc_1_a``,
     ``acc_1_b`` and ``acc_1_out``, and W becomes ``W_acc_1``."""
     s = Session.from_kernel("vecmul", {"N": 2048}, roots=roots)
@@ -183,12 +183,12 @@ def test_dot_1_in_the_editor_has_a_param_per_split(roots, tmp_path):
     ok(s.apply("encapsulate", {"accelerator": f["accelerator"]["value"],
                                "units": ["acc_1", "acc_2"]}))  # fmt: skip
     got = ok(s.save("dot_mine"))
-    saved = Recipe.load(roots.recipes / "dot_mine.json")
+    saved = Recipe.load(roots.recipes / "custom" / "dot_mine.json")
     assert saved.params == {"N": 2048, "W_mul": 8, "W_sum": 4}
     assert [x.params.get("factor") for x in saved.steps if x.transform == "split"] == [
         "W_mul", "W_sum"]  # fmt: skip
     assert got["problems"] == []
-    assert sandbox_cli.main([str(roots.recipes / "dot_mine.json"), "--out",
+    assert sandbox_cli.main([str(roots.recipes / "custom" / "dot_mine.json"), "--out",
                              str(tmp_path / "steps")]) == 0  # fmt: skip
     ok(s.move(1))
     assert s.recipe.params == {"N": 2048, "W_mul": 8, "W_sum": 4}  # undo keeps the params
@@ -266,7 +266,7 @@ def test_save_refuses_unbound_work(roots):
     s = Session.from_kernel("vecadd", {"N": 64}, roots=roots)
     got = s.save("vecadd_mine")
     assert got["code"] == "save.graph" and any("[graph.unbound]" in p for p in got["problems"])
-    assert not (roots.recipes / "vecadd_mine.json").exists()
+    assert not (roots.recipes / "custom" / "vecadd_mine.json").exists()
 
 
 def test_save_takes_two_accelerators(roots):
@@ -274,7 +274,22 @@ def test_save_takes_two_accelerators(roots):
     takes it as it is (gen.instances retired)."""
     s = opened("dot_1", roots)
     assert "encapsulate" not in [x.transform for x in s.recipe.steps]
-    assert ok(s.save("dot_two"))["recipe"] == str(roots.recipes / "dot_two.json")
+    assert ok(s.save("dot_two"))["recipe"] == str(roots.recipes / "custom" / "dot_two.json")
+
+
+def test_save_writes_into_custom_and_a_name_in_any_folder_is_taken(roots):
+    """C§12: Save writes ``<recipes>/custom/<name>.json``, making the folder; a name a recipe has
+    in any folder is ``save.name`` and nothing is written."""
+    s = opened("vecadd", roots)
+    assert not (roots.recipes / "custom").exists()
+    assert ok(s.save("vecadd_mine"))["recipe"] == str(roots.recipes / "custom" / "vecadd_mine.json")
+    other = roots.recipes / "elementwise" / "vecadd_two.json"
+    other.parent.mkdir(parents=True)
+    replace(recipe("vecadd"), name="vecadd_two").save(other)
+    got = s.save("vecadd_two")
+    assert (got["code"], got["message"]) == (
+        "save.name", f"{other} exists; a recipe is never overwritten")  # fmt: skip
+    assert not (roots.recipes / "custom" / "vecadd_two.json").exists()
 
 
 def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
@@ -284,7 +299,9 @@ def test_save_lists_too_many_crossbar_inputs_and_saves_anyway(roots):
     split_and_tag(s, "mult_map", "W", {"W": 32})
     bind_default(s, "mult")
     got = s.save("vecmul_w32")
-    assert got["code"] == "save.design" and not (roots.recipes / "vecmul_w32.json").exists()
+    assert (
+        got["code"] == "save.design" and not (roots.recipes / "custom" / "vecmul_w32.json").exists()
+    )
     (p,) = got["problems"]
     assert p.startswith("[connect.xbar_inputs] acc_1: 99 TCDM crossbar inputs, the platform "
                         "takes at most 64")  # fmt: skip
@@ -296,7 +313,7 @@ def test_a_saved_recipe_gives_the_sessions_graphs(roots):
     session's graphs; a name taken or not a name is refused."""
     s = opened("dot_2", roots)
     got = ok(s.save("dot_mine"))
-    assert got["commands"][0] == {"command": f"pixi run sandbox {roots.recipes / 'dot_mine.json'}",
+    assert got["commands"][0] == {"command": f"pixi run sandbox {roots.recipes / 'custom' / 'dot_mine.json'}",
                                   "what": "writes the steps and checks each against the reference"}  # fmt: skip
     assert got["commands"][1]["command"].endswith("--platform platforms/snax_forge.json")
     assert [c["what"] for c in got["commands"][1:]] == [
@@ -304,7 +321,7 @@ def test_a_saved_recipe_gives_the_sessions_graphs(roots):
         "the flow plus the bundle for snax_cluster's RTL"]  # fmt: skip
     assert s.save("dot_mine")["code"] == "save.name"
     assert s.save("2dot")["code"] == "save.name"
-    saved = Recipe.load(roots.recipes / "dot_mine.json")
+    saved = Recipe.load(roots.recipes / "custom" / "dot_mine.json")
     assert (saved.name, saved.steps) == ("dot_mine", s.recipe.steps)
     graphs = [x.graph.to_json() for x in apply_recipe(saved, imported("dot"))]
     assert graphs == [g.to_json() for g in s.graphs]
@@ -527,7 +544,7 @@ def test_every_step_lists_saves_design_checks(roots):
     assert out[7]["checks"] == eight  # the bind's answer carries them
     assert s.checks(9) == {"problems": [], "notes": []} == out[8]["checks"]
     ok(s.move(8))
-    assert ok(s.save("dot_early"))["recipe"] == str(roots.recipes / "dot_early.json")
+    assert ok(s.save("dot_early"))["recipe"] == str(roots.recipes / "custom" / "dot_early.json")
     ten = dot1_by_hand(Roots(roots.sessions / "b", roots.recipes, roots.sandbox), 10, 10)[0]
     assert ten.checks(9) == {"problems": [], "notes": []}
     bad = dot1_by_hand(Roots(roots.sessions / "c", roots.recipes, roots.sandbox), 8, 10)[0]
@@ -585,16 +602,18 @@ def test_save_keeps_only_the_params_its_steps_use(roots):
     assert "D" in s.recipe.params
     ok(s.move(9))
     ok(s.save("dot_1_kept"))
-    saved = Recipe.load(roots.recipes / "dot_1_kept.json")
+    saved = Recipe.load(roots.recipes / "custom" / "dot_1_kept.json")
     assert saved.params == {"N": 2048, "W_acc_1": 8, "W_acc_2": 8}
-    extra = roots.recipes / "vecmul_extra.json"
-    roots.recipes.mkdir(parents=True, exist_ok=True)
+    extra = roots.recipes / "elementwise" / "vecmul_extra.json"
+    extra.parent.mkdir(parents=True, exist_ok=True)
     replace(recipe("vecmul"), name="vecmul_extra", params={**recipe("vecmul").params, "K": 3}).save(
         extra
     )
     one = Session.from_recipe(extra, roots=roots)
     ok(one.save("vecmul_kept"))
-    assert Recipe.load(roots.recipes / "vecmul_kept.json").params["K"] == 3  # its own, kept
+    assert (
+        Recipe.load(roots.recipes / "custom" / "vecmul_kept.json").params["K"] == 3
+    )  # its own, kept
 
 
 def test_sites_over_a_selection_on_dot_1(roots):

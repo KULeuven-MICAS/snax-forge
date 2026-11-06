@@ -21,7 +21,7 @@ from snax_forge.design.memory import MEMORY_PASSES, MemorySpec
 from snax_forge.design.problems import Problem
 from snax_forge.dfg import Graph
 from snax_forge.lower.layout import Layout, LayoutError, dma_side
-from tests.helpers import FIXTURES, graph_dict
+from tests.helpers import FIXTURES, graph_dict, recipe_path
 
 from .helpers import (
     BOUND,
@@ -304,11 +304,11 @@ def test_several_accelerators_share_the_one_slot():
 
 
 def _vecmul(w: int) -> Graph:
-    """``recipes/vecmul.json`` at N = 2048 and W = ``w``."""
+    """``recipes/elementwise/vecmul.json`` at N = 2048 and W = ``w``."""
     from snax_forge.sandbox import Recipe, apply_recipe
-    from tests.helpers import REPO, imported
+    from tests.helpers import imported
 
-    r = Recipe.load(REPO / "recipes" / "vecmul.json").with_params({"N": 2048, "W": w})
+    r = Recipe.load(recipe_path("vecmul")).with_params({"N": 2048, "W": w})
     return apply_recipe(r, imported("vecmul"))[-1].graph
 
 

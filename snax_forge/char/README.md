@@ -78,7 +78,7 @@ Where the estimate gets each count:
 
 ## A worked example: dot 5 at W = 8 on nangate45
 
-dot 5 (`recipes/dot_5.json`, N = 2048, W = 8) is one group, `dot`: a Mac `mac` at lanes 8 feeding a SerialAccumulate `sum` at lanes 8 over a wire. The estimate gives $C_{\mathit{acc}}$ = 265 cycles.
+dot 5 (`recipes/dot/dot_5.json`, N = 2048, W = 8) is one group, `dot`: a Mac `mac` at lanes 8 feeding a SerialAccumulate `sum` at lanes 8 over a wire. The estimate gives $C_{\mathit{acc}}$ = 265 cycles.
 
 The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.1692 fJ, $e_{\mathit{hold}}$ = 7.1476 fJ, so $e_{\mathit{load}} - e_{\mathit{hold}}$ = 10.0216 fJ; $A_{\mathit{flop}}$ = 5.32 µm²; $f_{\mathit{ctrl}}$ = 1.06.
 

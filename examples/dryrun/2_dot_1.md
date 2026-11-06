@@ -75,7 +75,7 @@ How to read it:
 
 ## 3. Save the recipe
 
-Save recipe, as `dot_1_dry`, runs the design checks and writes `recipes/dot_1_dry.json`:
+Save recipe, as `dot_1_dry`, runs the design checks and writes `recipes/custom/dot_1_dry.json`:
 
 ```json
 {
@@ -112,7 +112,7 @@ Save recipe, as `dot_1_dry`, runs the design checks and writes `recipes/dot_1_dr
 }
 ```
 
-It keeps only the params its steps and symbols use (D156). The log lists `pixi run sandbox`, `pixi run flow` and `pixi run forge` on it, each with what it does, as in `1_vecmul.md` section 3. `recipes/dot_1.json` builds the same structure at W = 4 and N = 64 with `split_map` and one shared `W`, its instances named `vmul` and `vsum`.
+It keeps only the params its steps and symbols use (D156). The log lists `pixi run sandbox`, `pixi run flow` and `pixi run forge` on it, each with what it does, as in `1_vecmul.md` section 3. `recipes/dot/dot_1.json` builds the same structure at W = 4 and N = 64 with `split_map` and one shared `W`, its instances named `vmul` and `vsum`.
 
 ## 4. Sweep the two widths in Bindings
 
@@ -141,7 +141,7 @@ So on the model, dot 1's sweep is the multiplier's area against time, with the s
 
 ## 5. Run it on SNAX-GVSoC
 
-    pixi run flow recipes/dot_1_dry.json --platform platforms/snax_forge.json
+    pixi run flow recipes/custom/dot_1_dry.json --platform platforms/snax_forge.json
 
     flow dot_1_dry (dot_1_dry: N=2048, W_acc_1=8, W_acc_2=8; N=2048) on snax_forge -> out/flow/dot_1_dry/
       sandbox   8 steps, each equal to the input graph on the reference check -> sandbox/
@@ -165,7 +165,7 @@ The generator writes one streamer file per accelerator, `snax_forge_dot_1_dry_st
 
 The other points, each in its own folder, named after its `--set`s:
 
-    pixi run flow recipes/dot_1_dry.json --platform platforms/snax_forge.json --set W_acc_1=8 --set W_acc_2=4
+    pixi run flow recipes/custom/dot_1_dry.json --platform platforms/snax_forge.json --set W_acc_1=8 --set W_acc_2=4
 
     flow dot_1_dry_W_acc_1-8_W_acc_2-4 (dot_1_dry: N=2048, W_acc_1=8, W_acc_2=4; N=2048) on snax_forge -> out/flow/dot_1_dry_W_acc_1-8_W_acc_2-4/
 
@@ -191,7 +191,7 @@ The other points, each in its own folder, named after its `--set`s:
 
 ## 6. The run in the reports and the viewer
 
-    pixi run flow recipes/dot_1_dry.json --platform platforms/snax_forge.json --trace beat
+    pixi run flow recipes/custom/dot_1_dry.json --platform platforms/snax_forge.json --trace beat
 
     ...
       check     passed: 1218 cycles (main to forge_check); data 0 errors (1 words); counters mult_acc_1 259 (256 beats), sum_acc_2 259 (256 beats)
@@ -262,7 +262,7 @@ The cycles do not move: both units take one beat a cycle, so a deeper buffer has
 
 ## 8. What was generated
 
-The flow wrote the design point's files to `out/flow/dot_1_dry/gen/`: the cluster file, a streamer file per set, `accelerator.json`, the headers, `main.c`, `data.h` and `manifest.json`. The cluster file's slot is the one entry `snax_forge_dot_1_dry` with its two streamer sets (`snax_forge.hjson`). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `dot_1_dry` gives `snax_forge_dot_1_dry` here and in the RTL's module names, where the checked-in `recipes/dot_1.json` gives `snax_forge_dot_1`:
+The flow wrote the design point's files to `out/flow/dot_1_dry/gen/`: the cluster file, a streamer file per set, `accelerator.json`, the headers, `main.c`, `data.h` and `manifest.json`. The cluster file's slot is the one entry `snax_forge_dot_1_dry` with its two streamer sets (`snax_forge.hjson`). The entry's name is the design's tag, `snax_forge_<design>` with the design named after its recipe, so Save's `dot_1_dry` gives `snax_forge_dot_1_dry` here and in the RTL's module names, where the checked-in `recipes/dot/dot_1.json` gives `snax_forge_dot_1`:
 
 ```json
   "snax_acc_cfg": [
@@ -495,7 +495,7 @@ Both START offsets (0 and 4) read 0: a start is a strobe (D152). Each COUNTER co
 
 Back at step 8, click `acc_1`'s dashed outline and shift-click `acc_2`'s: on the two the sidebar offers only `encapsulate` (every one-item transform says `takes one selection, not 2`), with accelerator `dot` and units `acc_1` and `acc_2` both ticked. Applied at step 8 it first asks `Drop steps 9..9?`, the link of section 7; then step 9 is `encapsulate dot units=['acc_1', 'acc_2']`, `C 513 → 513`, 0 problems, 0 notes. Bindings reads as a tree, `accelerator dot ▸ group acc_1 ▸ acc_1 · elementwise_mul · W_acc_1 = 8` and `group acc_2 ▸ acc_2 · accumulate · W_acc_2 = 8`. The two groups keep their own START, JOBS, STATUS, COUNTER and control unit; what they now share is one streamer set, with one streamer and one STREAMER_START.
 
-What changes in the Estimate: nothing in the groups' cycles or cost (513, 60 100 µm², 61.144 nJ, now in one table for `dot`), and the streamers line reads `1 streamer (not costed, open item 110) · 37 CSRs`, `dot`'s set from 960 to 996. Saved as `dot_1_enc_dry`, the recipe is section 3's with one more step, `{"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}}`; `recipes/dot_1_enc.json` is the same on `recipes/dot_1.json`.
+What changes in the Estimate: nothing in the groups' cycles or cost (513, 60 100 µm², 61.144 nJ, now in one table for `dot`), and the streamers line reads `1 streamer (not costed, open item 110) · 37 CSRs`, `dot`'s set from 960 to 996. Saved as `dot_1_enc_dry`, the recipe is section 3's with one more step, `{"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["acc_1", "acc_2"]}}`; `recipes/dot/dot_1_enc.json` is the same on `recipes/dot/dot_1.json`.
 
 What changes in the program and the run:
 

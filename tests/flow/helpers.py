@@ -34,6 +34,7 @@ from snax_forge.flow import run as flow_run
 from snax_forge.lower.tasks import TaskList
 from snax_forge.run import load_cluster
 from tests.design.helpers import FIXTURES, REPO
+from tests.helpers import recipe_path
 from tests.run.helpers import point_symbols, synthetic, tiny_elf
 
 PLAIN = FIXTURES / "vecadd.snaxdfg"  # the import of the vecadd kernel
@@ -190,7 +191,7 @@ def stubbed_flow(base: Path, design: str = "vecadd", level: str = "task", out: P
     out = out or base / f"{design}_{level}"
     with pytest.MonkeyPatch.context() as mp:
         stub(mp, out.parent / f".gvsoc_{out.name}")
-        run_flow(REPO / "recipes" / f"{design}.json", REPO / "platforms" / "snax_forge.json",
+        run_flow(recipe_path(design), REPO / "platforms" / "snax_forge.json",
                  graph_path=PLAINS[design], out=out, trace_level=level, **kw)  # fmt: skip
     return out
 

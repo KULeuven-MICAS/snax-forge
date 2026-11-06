@@ -2,7 +2,7 @@
 
 A recorded SNAX-GVSoC run of two accelerators in two streamer sets (D157), so CI converts it without GVSoC (`tests/run/test_dot1.py`): dot 1, the accelerators `vmul` and `vsum`, each one group of one unit, a task each, each with its own streamer (`snax_acc0/streamer_vmul`, `snax_acc0/streamer_vsum`) whose movers start with its own task only. Made in SLOT1 F3 in snax-forge's image at snax-forge `slot1-f2b` plus F3's readers and snax-gvsoc `1e988679` (G1):
 
-    pixi run flow recipes/dot_1.json --platform platforms/snax_forge.json --trace task
-    pixi run flow recipes/dot_1.json --platform platforms/snax_forge.json --trace stall
+    pixi run flow recipes/dot/dot_1.json --platform platforms/snax_forge.json --trace task
+    pixi run flow recipes/dot/dot_1.json --platform platforms/snax_forge.json --trace stall
 
 and copied from `out/flow/dot_1_task/` as vecadd's (`../vecadd/README.md`): `run/events.log`, the four description files of `gen/` (the cluster file, the two sets' streamer files, `accelerator.json`) and its `manifest.json` (each set's streamer trace path, C§16), `tasks.json`, `design/design_point.json` (its `graph_from` made relative), `check.json` (the profile's `total_cycles` and `functional_check`) and `elf_symbols.json` (`run.json`'s, the ELF `sw/forge.elf` sha256 `75a5d9db2befd449`); from `out/flow/dot_1_stall/` its `run/events.log` as `events_stall.log` (the same ELF and window). Both flows passed once the index paired each accelerator task with its own set's movers only (F3's `run/beats.py` `pairing`); a first recording made before that fix gave every file byte-identical. The run: 264 cycles, COUNTERs `mult_vmul` 19 and `sum_vsum` 19 (dot_1_enc's 304 and 19, 19: vsum's own set takes 12 CSR writes before its start where the shared streamer rewrites all five movers, 27). Made again the same way when snax-gvsoc's grammar (`docs/EVENTS.md`) or the generated files change.

@@ -2,12 +2,13 @@
 marker, and the graph fixtures read as dicts or bound by their recipes.
 
     REPO, FIXTURES (tests/dfg/fixtures), SUB (gvsoc/snax-gvsoc)
+    recipe_path(name)       ``recipes/<folder>/<name>.json`` (``find_recipe``)
     requires_submodule      skips where the submodule is not checked out (SUBMODULE_MISSING)
     graph_dict(name)        a fixture's .snaxdfg as a dict
     bound_vsum(w, impl)     vsum bound by its recipe, or at W = ``w`` to ``impl``
     imported(kernel, dtypes)  a kernel's import (DaCe), once per kernel and dtypes
-    steps(name, **params)   every graph of ``recipes/<name>.json`` at ``params``, the import first
-    dot1_split(w_mul, w_sum, n)  ``recipes/dot_1.json`` with a factor param per split, ``W_mul``
+    steps(name, **params)   every graph of the recipe ``name`` at ``params``, the import first
+    dot1_split(w_mul, w_sum, n)  ``recipes/dot/dot_1.json`` with a factor param per split, ``W_mul``
                             and ``W_sum`` (the dot 1 dry run's, DRY1-2)
 """
 
@@ -23,6 +24,7 @@ import pytest
 
 from snax_forge.dfg import Graph
 from snax_forge.sandbox import Recipe, apply_recipe
+from snax_forge.sandbox.recipe import find_recipe
 
 REPO = Path(__file__).resolve().parents[1]
 FIXTURES = REPO / "tests" / "dfg" / "fixtures"
@@ -34,6 +36,11 @@ SUBMODULE_MISSING = (
 requires_submodule = pytest.mark.skipif(not (SUB / "snax").is_dir(), reason=SUBMODULE_MISSING)
 
 
+def recipe_path(name: str) -> Path:
+    """The recipe ``name``'s file, ``recipes/<folder>/<name>.json`` (``find_recipe``)."""
+    return find_recipe(name)
+
+
 def graph_dict(name: str = "vecadd_accelerated") -> dict[str, Any]:
     return json.loads((FIXTURES / f"{name}.snaxdfg").read_text())
 
@@ -41,7 +48,7 @@ def graph_dict(name: str = "vecadd_accelerated") -> dict[str, Any]:
 def bound_vsum(w: int = 1, impl: str = "chisel_accumulator") -> Graph:
     """vsum bound by the checked-in recipe (W = 1, N = 64; accumulate's chisel_accumulator,
     instance acc), or with W = ``w`` to ``impl``."""
-    d = Recipe.load(REPO / "recipes" / "vsum.json").with_params({"W": w}).to_dict()
+    d = Recipe.load(recipe_path("vsum")).with_params({"W": w}).to_dict()
     d["steps"][-1]["params"]["implementation"] = impl
     return apply_recipe(Recipe.from_dict(d), Graph.load(FIXTURES / "vsum.snaxdfg"))[-1].graph
 
@@ -64,7 +71,7 @@ def dot1_split(w_mul: int, w_sum: int, n: int = 2048) -> Recipe:
     """dot 1's recipe with ``mult_map`` split by ``W_mul`` and ``sum_map`` by ``W_sum``."""
     from snax_forge.sandbox.recipe import Step
 
-    d = Recipe.load(REPO / "recipes" / "dot_1.json")
+    d = Recipe.load(recipe_path("dot_1"))
     factor = {"mult_map": "W_mul", "sum_map": "W_sum"}
     return Recipe(d.name, d.kernel, {"N": n, "W_mul": w_mul, "W_sum": w_sum}, d.symbols,
                   [Step(x.transform, {**x.params, "factor": factor[x.params["map"]]})
@@ -75,5 +82,5 @@ def dot1_split(w_mul: int, w_sum: int, n: int = 2048) -> Recipe:
 def steps(name: str, **params: int) -> tuple[Graph, ...]:
     """Every graph of recipe ``name`` at ``params`` (the recipe's defaults for the rest), the
     import first."""
-    r = Recipe.load(REPO / "recipes" / f"{name}.json").with_params(params)
+    r = Recipe.load(recipe_path(name)).with_params(params)
     return tuple(x.graph for x in apply_recipe(r, imported(r.kernel, r.dtypes)))

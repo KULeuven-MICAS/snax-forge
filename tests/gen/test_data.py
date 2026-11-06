@@ -16,7 +16,7 @@ from snax_forge.gen import GenError
 from snax_forge.gen import data as data_mod
 from snax_forge.gen.data import arrays, data_h, literal
 from snax_forge.lower.layout import Layout, moved_bytes
-from tests.helpers import bound_vsum
+from tests.helpers import bound_vsum, recipe_path
 
 from .helpers import bound_vecmul, point
 
@@ -188,9 +188,8 @@ def test_vecadd_n7_writes_its_pad_and_a_whole_beat(tmp_path):
     """N = 7 at W = 4 (D144): each array 7 elements, a pad element of 0, one 64-byte beat."""
     from snax_forge.dfg.import_sdfg import import_kernel
     from snax_forge.sandbox import Recipe, apply_recipe
-    from tests.design.helpers import REPO
 
-    recipe = Recipe.load(REPO / "recipes" / "vecadd.json").with_params({"W": 4, "N": 7})
+    recipe = Recipe.load(recipe_path("vecadd")).with_params({"W": 4, "N": 7})
     g = apply_recipe(recipe, import_kernel("vecadd"))[-1].graph
     p = DesignPoint.load(point(tmp_path, graph=g))
     a = {x.name: x for x in arrays(p)}

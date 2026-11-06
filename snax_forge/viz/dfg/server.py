@@ -32,11 +32,12 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
 
     GET  /api/kernels               the staged kernels (kernels/) and their symbols, each with
                                     its load error if it has one
-    GET  /api/recipes               the recipes (name, kernel, params, steps)
+    GET  /api/recipes               the recipes (name, path, folder, kernel, params, steps),
+                                    every folder of the recipes root
     GET  /api/sessions              the sessions (name, kernel, steps, cursor, platform, date)
     POST /api/session               start or open the session: ``{kernel, params, symbols?,
-                                    dtypes?, platform?}``, ``{recipe}`` (a path, or a name in
-                                    the recipes) or ``{session}`` (a folder, or a name in the
+                                    dtypes?, platform?}``, ``{recipe}`` (a path, or a name
+                                    in a folder of the recipes, ``find_recipe``) or ``{session}`` (a folder, or a name in the
                                     sessions); answers as GET
     GET  /api/session               its name, kernel, params, symbols, steps, cursor, n, the
                                     steps' ``labels``, the ``undo`` and ``redo`` steps (null
@@ -62,7 +63,8 @@ files go to the roots the server was given (sandbox/session.py's ``Roots``).
                                     steps it reaches
     POST /api/params                ``{params}``: Session.set_params, up to the cursor
     POST /api/save                  ``{name, force?}``: Session.save; its log line names the
-                                    recipe from the repository (``saved recipes/<name>.json``)
+                                    recipe from the repository (``saved
+                                    recipes/custom/<name>.json``)
     POST /api/export                ``{k}``: Session.export, the file's ``path``
 
 Every POST answer, a refusal's too, carries ``log``, the page's log line for it (an apply's
@@ -148,13 +150,19 @@ class EditState:
         from snax_forge.sandbox import Recipe
 
         out = []
-        for p in sorted(self.roots.recipes.glob("*.json")):
+        root = self.roots.recipes
+        for p in sorted(root.glob("*.json")):  # not in a folder: listed, refused (find_recipe)
+            out.append({"name": p.stem, "path": str(p), "folder": None,
+                        "error": "not in a folder of recipes/"})  # fmt: skip
+        for p in sorted(root.glob("*/*.json")):
             try:
                 r = Recipe.load(p)
-                out.append({"name": r.name, "path": str(p), "kernel": r.kernel,
-                            "params": dict(r.params), "steps": len(r.steps), "error": None})  # fmt: skip
+                out.append({"name": r.name, "path": str(p), "folder": p.parent.name,
+                            "kernel": r.kernel, "params": dict(r.params), "steps": len(r.steps),
+                            "error": None})  # fmt: skip
             except (OSError, ValueError, KeyError, TypeError) as e:
-                out.append({"name": p.stem, "path": str(p), "error": str(e)})
+                out.append({"name": p.stem, "path": str(p), "folder": p.parent.name,
+                            "error": str(e)})  # fmt: skip
         return out
 
     def sessions(self) -> list[dict[str, Any]]:
@@ -188,9 +196,11 @@ class EditState:
                                           body.get("symbols"), body.get("dtypes"), platform,
                                           body.get("name"), self.roots)  # fmt: skip
         elif "recipe" in body:
+            from snax_forge.sandbox.recipe import find_recipe
+
             path = Path(body["recipe"])
             if not path.is_file():
-                path = self.roots.recipes / f"{body['recipe']}.json"
+                path = find_recipe(body["recipe"], self.roots.recipes)
             session = Session.from_recipe(path, platform, self.roots)
         elif "session" in body:
             folder = Path(body["session"])

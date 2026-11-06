@@ -23,7 +23,7 @@ cursor that refuses (and the ones after it) left as redo steps. The graphs are r
 from the kernel's import, never stored. The seeded inputs (seed 0) and what step 0 computes on
 them are drawn once and every step is checked against them (run.py's ``checked_step``). The
 roots are injectable (``Roots``): sessions default to ``out/sessions/``, recipes to
-``recipes/``, step files to ``out/sandbox/``. A new session takes its kernel's or its recipe's
+``recipes/`` (its folders by category; Save writes ``custom/``), step files to ``out/sandbox/``. A new session takes its kernel's or its recipe's
 name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never written.
 
 **Changing it**, each a dict with ``ok``; a refusal changes nothing and gives its ``code`` and
@@ -63,13 +63,15 @@ name, ``_2``, ``_3``, ... when one is taken; an opened recipe file is never writ
                                            after k left as redo steps (D156); a step that
                                            refuses keeps the old params and graphs and is named
                                            by its ``index``; returns the cursor's ``checks``
-    save(name, force=False)                steps 1..k as ``<recipes>/<name>.json``, with the
+    save(name, force=False)                steps 1..k as ``<recipes>/custom/<name>.json``
+                                           (``SAVED``, made when missing), with the
                                            params those steps or the symbols use and the
                                            session's own (``used_params``), and the step
                                            files with ``recipe.json`` in ``<sandbox>/<name>/``
                                            (run.py's ``write_steps``), after the design checks on
                                            step k's graph and the platform: ``save.name`` (not
-                                           an identifier, or a recipe of that name exists),
+                                           an identifier, or a recipe of that name exists in
+                                           any folder of ``<recipes>``),
                                            ``save.graph`` (a problem of the ``graph`` stage, so
                                            the graph is not one SNAX-LOWER takes), ``save.design``
                                            (any other problem, unless ``force``); returns the
@@ -152,6 +154,7 @@ from .transforms import TRANSFORMS, _bind_site, _bound, bind, site_of
 ROOT = repo_root()
 PLATFORM = "platforms/snax_forge.json"
 RECIPE_JSON, SESSION_JSON, EXPORT = "recipe.json", "session.json", "export"
+SAVED = "custom"  # the folder of ``<recipes>`` Save writes into
 SEED = 0
 
 # The size a kernel session's refusal suggests for a symbol without a value
@@ -455,11 +458,15 @@ class Session:
     def save(self, name: str, force: bool = False) -> dict[str, Any]:
         """Steps 1..cursor as a recipe of its own (module doc)."""
         with self._lock:
-            path = self.roots.recipes / f"{name}.json"
             if not isinstance(name, str) or not name.isidentifier():
                 return _refused("save.name", f"{name!r} is not a name (an identifier)")
-            if path.exists():
-                return _refused("save.name", f"{path} exists; a recipe is never overwritten")
+            path = self.roots.recipes / SAVED / f"{name}.json"
+            taken = sorted(self.roots.recipes.glob(f"*/{name}.json"))
+            taken += [p for p in [self.roots.recipes / f"{name}.json"] if p.exists()]
+            if taken:
+                return _refused("save.name", f"{_shown(taken[0])} exists; a recipe is never "
+                                "overwritten")  # fmt: skip
+
             g = self.graphs[self.cursor]
             problems = run_checks(Design(self.platform, g))
             listed = [str(p) for p in problems]

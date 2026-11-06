@@ -1,9 +1,9 @@
 """dot through SNAX-SANDBOX: a multiplier and an accumulator bound in one recipe.
 
-Accepted when ``recipes/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at its
+Accepted when ``recipes/dot/dot_1.json`` gives ``dot_accelerated.snaxdfg`` at its
 last bind, the fixture's instances ``mul`` and ``sum`` named ``vmul`` and ``vsum``
 (the multiply map bound to elementwise_mul, the sum map to accumulate, each step
-passing the reference check), ``recipes/dot_1_enc.json`` the same and then both
+passing the reference check), ``recipes/dot/dot_1_enc.json`` the same and then both
 groups in the accelerator ``dot`` (D148), and the bound graph equals ``np.dot``; the
 accumulate binding with one lane (the Chisel Accumulator) works as well, the
 reduce matcher rejects every mismatch by name, and unbind and join_map take
@@ -28,12 +28,12 @@ from snax_forge.sandbox import (
     unencapsulate,
 )
 from snax_forge.sandbox.transforms import tag_map
-from tests.helpers import graph_dict
+from tests.helpers import graph_dict, recipe_path
 
-from .helpers import FIXTURES, REPO, graph
+from .helpers import FIXTURES, graph
 
-RECIPE = REPO / "recipes" / "dot_1.json"
-ENC = REPO / "recipes" / "dot_1_enc.json"
+RECIPE = recipe_path("dot_1")
+ENC = recipe_path("dot_1_enc")
 MUL = {
     "node": "mult",
     "brm": "elementwise_mul",

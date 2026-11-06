@@ -7,7 +7,7 @@ Every quoted table is copied line for line from the report named above it.
 ## 1. Run the default
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set N=512 --trace stall
+pixi run flow recipes/elementwise/vecadd.json --platform platforms/snax_forge.json --set N=512 --trace stall
 ```
 
 `N=512` makes the vectors 512 elements long, so the accelerator's work is long enough to see against the cores' and the DMA's. The folder is `out/flow/vecadd_N512_stall/`. The run is traced at stall level so the schedule has its detail rows and `run.md` its stalls; the cycle counts are the same at every trace level.
@@ -118,7 +118,7 @@ Prediction, written here before the rerun, on what the accelerator and the DMA d
 ## 6. Rerun at W=8
 
 ```bash
-pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set N=512 --set W=8 --trace stall
+pixi run flow recipes/elementwise/vecadd.json --platform platforms/snax_forge.json --set N=512 --set W=8 --trace stall
 ```
 
 The folder is `out/flow/vecadd_N512_W8_stall/`, next to the first one. `report/run.md`:

@@ -43,7 +43,7 @@ The boundary with the Python side is two files. `blocks.json`, checked in, is th
 
 Only the outer ports reach the wrapper, which splits each Decoupled port: its data to its unit's datapath, its valid and ready to its group's control unit. `ShellEmitSpec` checks the emitted hierarchy against `bundle.json`'s `modules` (C§18) on every fixture. `pixi run gen-rtl DESIGN_POINT` does the check and the elaboration (`docs/RUN.md` section 7), running `Emit` with java on hw/chisel's runtime classpath, which sbt exports into `target/emit-classpath.txt` on the first run and again only after a change under `src/main/` or to `build.sbt`. The fixtures in `src/test/resources/rtl/<design>/` hold `vectors.json`; their `accelerator.json` and streamer hjsons (`<tag>_streamer_<set>.hjson`) are read from snax-gvsoc's `forge/<design>/` (the submodule; a spec that needs one cancels without it), but for vsum_tree_w8 and dot_5_w1 (dot 5 at W = 1: SerialAccumulate at lanes 1), which `forge/` does not hold and which keep the two beside their vectors. The Python side writes and checks them byte for byte (`tests/gen/test_rtl.py`); refresh one with
 
-    pixi run sandbox recipes/vsum_tree.json --set W=8 --out out/sandbox/vsum_tree_w8
+    pixi run sandbox recipes/reduce/vsum_tree.json --set W=8 --out out/sandbox/vsum_tree_w8
     pixi run design out/sandbox/vsum_tree_w8/2_bind.snaxdfg --platform platforms/snax_forge.json --out out/design/vsum_tree_w8
     pixi run gen-rtl out/design/vsum_tree_w8/design_point.json --fixture hw/chisel/src/test/resources/rtl/vsum_tree_w8
 

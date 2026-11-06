@@ -40,7 +40,7 @@ pixi install && pixi run check
 One command runs the flow (it builds SNAX-GVSoC the first time), the bundle and the bundle's ELF:
 
 ```bash
-pixi run forge recipes/vecadd.json
+pixi run forge recipes/elementwise/vecadd.json
 ```
 
     ...
@@ -72,8 +72,8 @@ The flow's tools also run on their own (`docs/RUN.md` section 7):
 | SDFG of a kernel | `pixi run sdfg vecadd` | `out/sdfg/vecadd.raw.sdfg`, `.simplified.sdfg` |
 | Import | `pixi run import-dfg vecadd` | `out/dfg/vecadd.snaxdfg` |
 | Check a graph | `pixi run check-dfg out/dfg/vecadd.snaxdfg --kernel vecadd` | nothing; compares with the kernel's reference |
-| Recipe | `pixi run sandbox recipes/vecadd.json [--set W=8]` | `out/sandbox/vecadd/<i>_<transform>.snaxdfg` |
-| Undo a recipe | `pixi run sandbox recipes/vecadd_undo.json --graph out/sandbox/vecadd/2_bind.snaxdfg --out out/sandbox/vecadd_undo` | the graph back as imported |
+| Recipe | `pixi run sandbox recipes/elementwise/vecadd.json [--set W=8]` | `out/sandbox/vecadd/<i>_<transform>.snaxdfg` |
+| Undo a recipe | `pixi run sandbox recipes/elementwise/vecadd_undo.json --graph out/sandbox/vecadd/2_bind.snaxdfg --out out/sandbox/vecadd_undo` | the graph back as imported |
 | Design point | `pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json` | `out/design/vecadd/` platform, memory plan, design point |
 | Only check | `pixi run design check out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json` | nothing |
 | Keep a platform | `pixi run design save out/design/vecadd/platform.json NAME` | `platforms/NAME.json` |
@@ -83,7 +83,7 @@ The flow's tools also run on their own (`docs/RUN.md` section 7):
 | Accelerator RTL | `pixi run gen-rtl out/design/vecadd/design_point.json` | `out/rtl/vecadd/` (C§17) |
 | Bundle | `pixi run bundle out/design/vecadd/design_point.json` | `out/bundle/vecadd/` (C§18) |
 | Graphs | `pixi run view-dfg out/sandbox/vecadd/ [--platform platforms/snax_forge.json] [--tech nangate45]` | nothing; serves http://127.0.0.1:8766/: the steps one at a time, Compare for two, each item's Details and the Estimate on `--platform` (D155) with its first-order cost estimate (C§20) |
-| Editor | `pixi run edit-dfg [--kernel vecadd --set N=64 \| --recipe R \| --session DIR]` | the session in `out/sessions/<name>/`; Save writes `recipes/<name>.json` and its steps, Export one step; serves http://127.0.0.1:8767/ (`docs/RUN.md` section 9) |
+| Editor | `pixi run edit-dfg [--kernel vecadd --set N=64 \| --recipe R \| --session DIR]` | the session in `out/sessions/<name>/`; Save writes `recipes/custom/<name>.json` and its steps, Export one step; serves http://127.0.0.1:8767/ (`docs/RUN.md` section 9) |
 | Runs | `pixi run view out/flow/vecadd_task` | nothing; serves http://127.0.0.1:8765/ (`docs/RUN.md` section 4) |
 | Reports | `pixi run report out/flow/vecadd_task` | the folder's `report/` again |
 
@@ -98,7 +98,7 @@ A flow's `--set` without a dot is a recipe param, and `platform.` and `memory.` 
 snax-gvsoc keeps one generated design point per folder in `forge/<design>/`, which its `make regress` runs (D134; its `forge/README.md` lists them). `tests/gen/test_fixture.py` generates each again and compares it byte for byte with the submodule's copy; it skips when the submodule is not checked out. When the generator or the design point changes, refresh the folder in a snax-gvsoc checkout next to this one, the folder cleared first:
 
 ```bash
-pixi run sandbox recipes/vecadd.json
+pixi run sandbox recipes/elementwise/vecadd.json
 pixi run design out/sandbox/vecadd/2_bind.snaxdfg --platform platforms/snax_forge.json
 pixi run gen-gvsoc out/design/vecadd/design_point.json --out ../snax-gvsoc/forge/vecadd
 ```

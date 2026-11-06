@@ -1,6 +1,6 @@
-"""dot 1 through the generator (D148, D157, C§16, C§17): ``recipes/dot_1_enc.json``, one
+"""dot 1 through the generator (D148, D157, C§16, C§17): ``recipes/dot/dot_1_enc.json``, one
 accelerator ``dot`` of two groups, ``vmul`` and ``vsum``, in encapsulate's order, each with its
-own CSRs and a task of its own; ``recipes/dot_1.json``, the same groups as two accelerators,
+own CSRs and a task of its own; ``recipes/dot/dot_1.json``, the same groups as two accelerators,
 two streamer sets of the one entry; and dot_serial, two accelerators ``mul`` and ``sum``.
 
 dot_1_enc's description is C§17's (tests/gen/test_accelerator.py's ``dot``): VMUL at offsets

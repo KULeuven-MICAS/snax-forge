@@ -1,6 +1,7 @@
 """Recipes (D72): an ordered list of transforms applied to an imported graph.
 
-A recipe is a hand-written JSON file, kept under ``recipes/``:
+A recipe is a hand-written JSON file, kept in a folder of ``recipes/`` by category
+(``recipes/elementwise/vecadd.json``; the editor's Save writes ``recipes/custom/``):
 
     {
      "name":    "vecadd",
@@ -36,21 +37,54 @@ Every field is written (``dtypes`` only when it is not empty); ``params`` and
 ``symbols`` default to empty, unknown keys are errors (D26). Whether a step's transform exists and takes its
 params is checked when the recipe runs (run.py), where the transforms are
 registered.
+
+**Finding a recipe by name** (``find_recipe``), as the kernel loader finds a kernel: a name is
+the file's stem, searched one folder deep (``recipes/*/<name>.json``). A name in no folder or in
+two, and any ``.json`` directly in ``recipes/``, is an error naming it.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.common import JsonFile, check_keys, plain
+from snax_forge.common import JsonFile, check_keys, plain, repo_root
 from snax_forge.expr import ExprError, Value
 
 
 class SandboxError(ValueError):
     """A recipe or a transform step that is malformed or cannot be applied."""
+
+
+RECIPE_ROOT = repo_root() / "recipes"
+
+
+def recipe_paths(root: Path = RECIPE_ROOT) -> dict[str, list[Path]]:
+    """Every recipe under ``root``, one folder deep: name -> its files (more than one is an
+    error for ``find_recipe``). A ``.json`` directly in ``root`` is an error."""
+    flat = sorted(p.name for p in root.glob("*.json"))
+    if flat:
+        raise SandboxError(
+            f"{root}: recipes live in a folder by category, not directly in it: {flat}"
+        )
+    paths: dict[str, list[Path]] = {}
+    for p in sorted(root.glob("*/*.json")):
+        paths.setdefault(p.stem, []).append(p)
+    return paths
+
+
+def find_recipe(name: str, root: Path = RECIPE_ROOT) -> Path:
+    """The file of the recipe ``name``: ``root/<folder>/<name>.json``, one folder deep."""
+    found = recipe_paths(root).get(name, [])
+    if not found:
+        raise SandboxError(f"no recipe {name!r} in any folder of {root}")
+    if len(found) > 1:
+        where = [str(p.relative_to(root)) for p in found]
+        raise SandboxError(f"recipe {name!r} is in {len(found)} folders of {root}: {where}")
+    return found[0]
 
 
 def _keys(d: Any, required: tuple[str, ...], optional: tuple[str, ...], what: str) -> None:

@@ -28,7 +28,7 @@ from snax_forge.viz.dfg.api import (
     load_entry,
 )
 from snax_forge.viz.dfg.server import make_dfg_server
-from tests.helpers import FIXTURES, REPO
+from tests.helpers import FIXTURES, REPO, recipe_path
 
 from .helpers import get, served
 
@@ -184,11 +184,11 @@ def test_vecadd_accelerated():
 
 
 def recipe_view(tmp_path: Path, recipe: str) -> dict:
-    """The view of ``recipes/<recipe>.json``'s last (bound) graph."""
+    """The view of ``recipes/<folder>/<recipe>.json``'s last (bound) graph."""
     from snax_forge.dfg.import_sdfg import import_kernel
     from snax_forge.sandbox import Recipe, apply_recipe
 
-    r = Recipe.load(REPO / "recipes" / f"{recipe}.json")
+    r = Recipe.load(recipe_path(recipe))
     path = tmp_path / f"{recipe}.snaxdfg"
     apply_recipe(r, import_kernel(r.kernel, r.dtypes))[-1].graph.save(path)
     return view(path)
@@ -439,10 +439,10 @@ def test_the_symbols_section():
     on the param of its name with a session's recipe in edit mode, read only otherwise."""
     from snax_forge.sandbox import Recipe
     from snax_forge.viz.dfg.api import symbols_section
-    from tests.helpers import REPO, steps
+    from tests.helpers import steps
 
     g = steps("vecmul", N=2048, W=8)[-1]
-    r = Recipe.load(REPO / "recipes" / "vecmul.json").with_params({"N": 2048, "W": 8})
+    r = Recipe.load(recipe_path("vecmul")).with_params({"N": 2048, "W": 8})
     assert symbols_section(g, r, editable=True) == [
         {"name": "N", "value": 2048, "param": "N", "editable": True, "containers": ["A", "B", "C"]}
     ]
@@ -483,7 +483,7 @@ def test_the_bindings_of_vecmul_dot_1_and_dot_4():
     from snax_forge.sandbox import Recipe, apply_recipe
     from snax_forge.sandbox.recipe import Step
     from snax_forge.viz.dfg.api import bindings_section
-    from tests.helpers import REPO, imported, steps
+    from tests.helpers import imported, steps
 
     r = _editor_vecmul()
     gs = [x.graph for x in apply_recipe(r, imported("vecmul"))]
@@ -495,7 +495,7 @@ def test_the_bindings_of_vecmul_dot_1_and_dot_4():
         four["unused"] == []
         and not bindings_section(gs[4], r)["entries"][0]["params"][0]["editable"]
     )
-    d = Recipe.load(REPO / "recipes" / "dot_1.json")
+    d = Recipe.load(recipe_path("dot_1"))
     factor = {"mult_map": "W_mul", "sum_map": "W_sum"}
     d = Recipe(d.name, d.kernel, {"N": 2048, "W_mul": 8, "W_sum": 4}, d.symbols,
                [Step(x.transform, {**x.params, "factor": factor[x.params["map"]]})
@@ -503,7 +503,7 @@ def test_the_bindings_of_vecmul_dot_1_and_dot_4():
     dot1 = bindings_section(apply_recipe(d, imported("dot"))[-1].graph, d, editable=True)
     assert _entries(dot1) == [("unit", "vmul · elementwise_mul", [("W_mul", 8, True, [])], None),
                               ("unit", "vsum · accumulate", [("W_sum", 4, True, [])], None)]  # fmt: skip
-    d4 = Recipe.load(REPO / "recipes" / "dot_4.json")
+    d4 = Recipe.load(recipe_path("dot_4"))
     dot4 = bindings_section(steps("dot_4")[-1], d4, editable=True)
     assert _entries(dot4) == [("unit", "mac · mac", [("W", 4, True, ["sum · accumulate"])], None),
                               ("unit", "sum · accumulate", [("W", 4, True, ["mac · mac"])], None)]  # fmt: skip
@@ -694,7 +694,7 @@ def test_a_fused_nests_local_value_is_an_edge_inside_the_map_not_a_box():
     from tests.helpers import steps
 
     platform = Platform.load(SNAX_FORGE)
-    names = [s.transform for s in Recipe.load(REPO / "recipes" / "dot_4.json").steps]
+    names = [s.transform for s in Recipe.load(recipe_path("dot_4")).steps]
     k = names.index("fuse_map") + 1
     g = steps("dot_4")[k]
     v = step_view(Entry("3_fuse_map", Path("3_fuse_map.snaxdfg"), g, None), "3 fuse_map", platform)
@@ -846,7 +846,7 @@ def test_the_bindings_tree():
     from tests.helpers import steps
 
     def tree(name, k=None):
-        r = Recipe.load(REPO / "recipes" / f"{name}.json")
+        r = Recipe.load(recipe_path(name))
         k = len(r.steps) if k is None else k  # graph k is made by steps 1..k
         b = bindings_section(steps(name)[k], replace(r, steps=r.steps[:k]))
         return b["tree"], [e["label"] for e in b["entries"]]
@@ -890,6 +890,6 @@ def test_the_recipes_param_names_in_the_boxes_and_details():
     assert map_ranges(gt, tail)["mult_map"] == "0:(N + W_mul - 1) // W_mul = 205"
     plain = step_view(Entry("5", Path("5"), g, None), "5", Platform.load(SNAX_FORGE))
     assert "vmul · a * b · W 8" in json.dumps(plain["rows"], ensure_ascii=False)
-    two = Recipe.load(REPO / "recipes" / "dot_2.json").with_params({"N": 2048, "W": 8})
+    two = Recipe.load(recipe_path("dot_2")).with_params({"N": 2048, "W": 8})
     g2 = apply_recipe(two, imported("dot"))[-1].graph
     assert unit_params(g2, two) == {"mul": ["W"], "sum": ["W"]}

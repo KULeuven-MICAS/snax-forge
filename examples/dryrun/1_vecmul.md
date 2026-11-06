@@ -53,7 +53,7 @@ Cycles is $N / W$: one beat of W elements per cycle, nothing to fill since the u
 
 ## 3. Save the recipe
 
-Save recipe, as `vecmul_dry`, runs the design checks and writes `recipes/vecmul_dry.json`:
+Save recipe, as `vecmul_dry`, runs the design checks and writes `recipes/custom/vecmul_dry.json`:
 
 ```json
 {
@@ -82,9 +82,9 @@ The log pane then lists what to run next, each with what it does:
 
 | Command | What it does |
 |---|---|
-| `pixi run sandbox recipes/vecmul_dry.json` | writes the steps and checks each against the reference |
-| `pixi run flow recipes/vecmul_dry.json --platform platforms/snax_forge.json` | runs the recipe on SNAX-GVSoC and writes the reports |
-| `pixi run forge recipes/vecmul_dry.json` | the flow plus the bundle for snax_cluster's RTL |
+| `pixi run sandbox recipes/custom/vecmul_dry.json` | writes the steps and checks each against the reference |
+| `pixi run flow recipes/custom/vecmul_dry.json --platform platforms/snax_forge.json` | runs the recipe on SNAX-GVSoC and writes the reports |
+| `pixi run forge recipes/custom/vecmul_dry.json` | the flow plus the bundle for snax_cluster's RTL |
 
 The steps also go to `out/sandbox/vecmul_dry/` as `0_input.snaxdfg` to `4_bind.snaxdfg`. The recipe is the thing to keep: it replays and sweeps, a `.snaxdfg` alone does not (D72). Save never overwrites a recipe, so pick a new name to save again.
 
@@ -114,7 +114,7 @@ So on this model vecmul's choice is area against time at equal energy. Whether t
 
 The flow takes the saved recipe through the design checks, lowering and the generator, builds SNAX-GVSoC the first time (about 6 minutes), runs the program and reads each group's COUNTER:
 
-    pixi run flow recipes/vecmul_dry.json --platform platforms/snax_forge.json
+    pixi run flow recipes/custom/vecmul_dry.json --platform platforms/snax_forge.json
 
     flow vecmul_dry (vecmul_dry: N=2048, W=8; N=2048) on snax_forge -> out/flow/vecmul_dry/
       sandbox   4 steps, each equal to the input graph on the reference check -> sandbox/
@@ -142,7 +142,7 @@ Section 6's task table shows how the 1200 cycles of the window at W = 8 split up
 
 The other points, each into its own folder (`out/flow/vecmul_dry_W4/` and so on):
 
-    pixi run flow recipes/vecmul_dry.json --platform platforms/snax_forge.json --set W=4
+    pixi run flow recipes/custom/vecmul_dry.json --platform platforms/snax_forge.json --set W=4
 
 | W | Expected COUNTER | COUNTER | Window | DMA busy |
 |---:|---:|---:|---:|---:|
@@ -163,7 +163,7 @@ The COUNTER is the estimate plus 3 at every point but W = 1, where it is 3 under
 
 A run with a trace shows what each part of the cluster did in every cycle. `--trace beat` records every grant, DMA beat and firing, and adds `_beat` to the folder's name:
 
-    pixi run flow recipes/vecmul_dry.json --platform platforms/snax_forge.json --trace beat
+    pixi run flow recipes/custom/vecmul_dry.json --platform platforms/snax_forge.json --trace beat
 
     ...
       check     passed: 1200 cycles (main to forge_check); data 0 errors (2048 words); counters mult_acc 259 (256 beats)
@@ -205,8 +205,8 @@ The address bar holds the whole view, so a link shows someone else the same cycl
 
 The sandbox writes a recipe's steps at any params to a folder of its own, and `view-dfg` shows folders side by side:
 
-    pixi run sandbox recipes/vecmul_dry.json --set W=4 --out out/sandbox/try/vecmul_w4
-    pixi run sandbox recipes/vecmul_dry.json --set W=8 --out out/sandbox/try/vecmul_w8
+    pixi run sandbox recipes/custom/vecmul_dry.json --set W=4 --out out/sandbox/try/vecmul_w4
+    pixi run sandbox recipes/custom/vecmul_dry.json --set W=8 --out out/sandbox/try/vecmul_w8
     pixi run view-dfg out/sandbox/try/vecmul_w4/ out/sandbox/try/vecmul_w8/ --platform platforms/snax_forge.json
 
 Turn Compare on and pick `vecmul_w4/4_bind` and `vecmul_w8/4_bind`: Details and the Estimate become two columns, cycles 512 → 256, area 28 000 → 55 700 µm², energy 23.254 → 23.265 nJ, and the cost table's cells read before → after. Both side panels resize on their inner edge.
