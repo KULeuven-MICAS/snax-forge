@@ -39,7 +39,10 @@ object SnaxDatapathVectors {
             "opType"  -> ujson.Str(one("optype")),
             "outType" -> ujson.Str(one("out")),
             "lanes"   -> ujson.Num(one("lanes").toInt),
-            "op"      -> ujson.Str(one("op"))
+            "op"      -> ujson.Str(one("op")),
+            "streams" -> ujson.Num(ins.size),
+            // one input's constant, as its decimal text: exact at every int64 (Datapaths.const)
+            "k"       -> header.get("k").map(v => ujson.Str(v.head)).getOrElse(ujson.Null)
           )
         case "TreeAccumulate"   =>
           Map(

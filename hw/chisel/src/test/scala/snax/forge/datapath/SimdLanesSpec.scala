@@ -10,7 +10,9 @@ import snax.forge.elementwise.{ElementwiseModel, ElementwiseOp}
   * the op type, the result extended or wrapped into the output type; each expected value NumPy's, and
   * `ElementwiseModel.numpy`'s too); every op on the edge operands (`ElementwiseModel.edgePairs`: 0, 1, all ones, the
   * sign bit, ...) at int32, uint32, int8 and uint8, where min and max compare by the type's signedness and int8 wraps
-  * far more often than int32; then random data against `ElementwiseModel.numpy` at random types, ops and lanes.
+  * far more often than int32; then random data against `ElementwiseModel.numpy` at random types, ops and lanes. With
+  * one input: its name's `_k`, its refusals, every op at int32 and int64 at the edge constants (0, -1, the type's min
+  * and max), then random data and a random or edge k per seed, against `ElementwiseModel.numpy` with b the constant k.
   */
 class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
 
@@ -28,7 +30,7 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
     test(new SimdLanes(inTypes, opType, outType, a.size, op)) { dut =>
       for (l <- a.indices) {
         LaneBits.poke(dut.io.a(l), a(l))
-        LaneBits.poke(dut.io.b(l), b(l))
+        LaneBits.poke(dut.io.b.get(l), b(l))
       }
       got = a.indices.map { l =>
         val bits = LaneBits.peek(dut.io.out(l))
@@ -131,7 +133,7 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
       test(new SimdLanes(Seq(t.name, t.name), t.name, t.name, pairs.size, op)) { dut =>
         for (((a, b), l) <- pairs.zipWithIndex) {
           LaneBits.poke(dut.io.a(l), a)
-          LaneBits.poke(dut.io.b(l), b)
+          LaneBits.poke(dut.io.b.get(l), b)
         }
         for (((a, b), l) <- pairs.zipWithIndex) {
           val want = ElementwiseModel.numpy(op, a, b, t, t, t, t)
@@ -166,7 +168,7 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
             val b = Seq.fill(lanes)(r.word(tb.width))
             for (l <- 0 until lanes) {
               LaneBits.poke(dut.io.a(l), a(l))
-              LaneBits.poke(dut.io.b(l), b(l))
+              LaneBits.poke(dut.io.b.get(l), b(l))
             }
             for (l <- 0 until lanes) {
               val want = ElementwiseModel.numpy(op, a(l), b(l), ta, tb, to, tr)
@@ -176,6 +178,88 @@ class SimdLanesSpec extends AnyFlatSpec with ForgeTester {
             dut.clock.step()
           }
         }
+      }
+    }
+
+  behavior of "SimdLanes with one input"
+
+  private val OneOps =
+    Seq(ElementwiseOp.Add, ElementwiseOp.Sub, ElementwiseOp.Mul, ElementwiseOp.Min, ElementwiseOp.Max)
+
+  private def edges(t: IntType): Seq[BigInt] = {
+    val (lo, hi) =
+      if (t.signed) (-(BigInt(1) << (t.width - 1)), (BigInt(1) << (t.width - 1)) - 1)
+      else (BigInt(0), LaneBits.mask(t.width))
+    Seq(BigInt(0), BigInt(-1), lo, hi).filter(k => SimdLanes.fits(k, t))
+  }
+
+  /** `op(a, k)` on 16 beats of random `a`, every lane against the model with b = k at the op type. */
+  private def oneInput(r: snax.forge.Rand, t: IntType, tr: IntType, op: Int, k: BigInt, lanes: Int): Unit = {
+    val clue = s"${t.name} -> ${tr.name}, ${ElementwiseOp.name(op)}, k $k, $lanes lanes"
+    test(new SimdLanes(Seq(t.name), t.name, tr.name, lanes, op, Some(k))) { dut =>
+      assert(dut.io.b.isEmpty, s"$clue: a b port")
+      for (_ <- 0 until 16) {
+        val a = Seq.fill(lanes)(r.word(t.width))
+        for (l <- 0 until lanes) LaneBits.poke(dut.io.a(l), a(l))
+        for (l <- 0 until lanes) {
+          val want = ElementwiseModel.numpy(op, a(l), k & LaneBits.mask(t.width), t, t, t, tr)
+          val got  = LaneBits.peek(dut.io.out(l))
+          assert(got == want, s"$clue, lane $l: a ${a(l)}: $got, the model $want")
+        }
+        dut.clock.step()
+      }
+    }
+  }
+
+  it should "end its name in _k and its k, a negative one as _km" in {
+    def name(k: BigInt) = {
+      val sv = circt.stage.ChiselStage.emitCHIRRTL(
+        new SimdLanes(Seq("int32"), "int32", "int32", 4, ElementwiseOp.Max, Some(k))
+      )
+      raw"module (SimdLanes\w*)".r.findFirstMatchIn(sv).get.group(1)
+    }
+    assert(name(0) == "SimdLanes_i32_i32_i32_n4_max_k0")
+    assert(name(-3) == "SimdLanes_i32_i32_i32_n4_max_km3")
+    assert(name(7) == "SimdLanes_i32_i32_i32_n4_max_k7")
+  }
+
+  it should "refuse one input without k, two with one, and a k that does not fit the op type" in {
+    def refused(body: => SimdLanes, text: String): Unit = {
+      val e = intercept[Exception](circt.stage.ChiselStage.emitCHIRRTL(body))
+      assert(e.getMessage.contains(text), e.getMessage)
+    }
+    refused(new SimdLanes(Seq("int32"), "int32", "int32", 4, ElementwiseOp.Max), "one input takes the constant k")
+    refused(
+      new SimdLanes(Seq("int32", "int32"), "int32", "int32", 4, ElementwiseOp.Max, Some(BigInt(0))),
+      "k = 0 is one input's constant; two inputs take none"
+    )
+    refused(
+      new SimdLanes(Seq("int32"), "int32", "int32", 4, ElementwiseOp.Add, Some(BigInt(1) << 31)),
+      "k = 2147483648 does not fit opType int32"
+    )
+    refused(
+      new SimdLanes(Seq("uint8"), "uint8", "uint8", 8, ElementwiseOp.Add, Some(BigInt(-1))),
+      "k = -1 does not fit opType uint8"
+    )
+  }
+
+  it should "give the model's lanes at every op at int32 and int64 on the edge constants" in Seeds.run(1) { r =>
+    for {
+      t  <- Seq("int32", "int64").map(IntType(_))
+      k  <- edges(t)
+      op <- OneOps
+    } oneInput(r, t, t, op, k, 4)
+  }
+
+  for (seed <- Seeds())
+    it should s"give NumPy's op(a, k) at int32 and int64, random k and data (seed $seed)" in Seeds.run(seed) { r =>
+      for {
+        t  <- Seq("int32", "int64").map(IntType(_))
+        op <- OneOps
+      } {
+        val k  = if (r.chance(0.3)) r.pick(edges(t)) else LaneBits.signed(r.word(t.width), t.width)
+        val tr = IntType(r.pick(IntType.names.filter(IntType(_).width >= t.width)))
+        oneInput(r, t, tr, op, k, r.pick(Seq(1, 2, 4, 8)))
       }
     }
 }

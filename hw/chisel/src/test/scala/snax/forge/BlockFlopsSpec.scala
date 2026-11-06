@@ -23,12 +23,15 @@ class BlockFlopsSpec extends AnyFlatSpec {
     def lanes       = r.between(1, 8)
     val elementwise = {
       val (a, b) = (dtype(r), dtype(r))
+      val one    = r.between(0, 1) == 0 // one stream: a alone and the constant k (0, which every type holds)
       ujson.Obj(
-        "inTypes" -> ujson.Arr(a, b),
-        "opType"  -> dtype(r, IntType(a).width max IntType(b).width),
+        "inTypes" -> (if (one) ujson.Arr(a) else ujson.Arr(a, b)),
+        "opType"  -> dtype(r, IntType(a).width max (if (one) 0 else IntType(b).width)),
         "outType" -> dtype(r),
         "lanes"   -> lanes,
-        "op"      -> r.pick(ElementwiseOp.all.map(ElementwiseOp.name))
+        "op"      -> r.pick(ElementwiseOp.all.map(ElementwiseOp.name)),
+        "streams" -> (if (one) 1 else 2),
+        "k"       -> (if (one) ujson.Num(0) else ujson.Null)
       )
     }
     val tree        = {

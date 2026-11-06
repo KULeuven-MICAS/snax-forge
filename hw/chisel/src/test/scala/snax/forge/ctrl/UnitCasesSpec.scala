@@ -54,9 +54,9 @@ class UnitHarness(val c: Case) extends Module {
       val opType = snax.forge.elementwise.ElementwiseModel.resultType(t(0), t(1))
       val dp     = Module(new SimdLanes(Seq(t(0).name, t(1).name), opType.name, t(2).name, c.lanes, op))
       for (l <- 0 until c.lanes) {
-        dp.io.a(l) := lane(io.data(0)(l), t(0))
-        dp.io.b(l) := lane(io.data(1)(l), t(1))
-        io.res(l)  := dp.io.out(l).asUInt
+        dp.io.a(l)     := lane(io.data(0)(l), t(0))
+        dp.io.b.get(l) := lane(io.data(1)(l), t(1))
+        io.res(l)      := dp.io.out(l).asUInt
       }
     case Some("TreeAccumulate") =>
       val dp = Module(new TreeAccumulate(t(0).name, t(1).name, c.lanes))

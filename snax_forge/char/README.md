@@ -13,7 +13,7 @@ The known limits (C§20):
 - Deep LinkBuffers come out about 1.4 to 1.8 times high on nangate45: there the stream slope PrimePower gives is 0.56 to 0.71 of one held slot per depth (X35); nangate15's is 0.96 to 1.14.
 - Comb energy is counted per fire only, so a unit fed by another unit is undercounted when its inputs change more often than it fires: dot 4's sum fires once but sees 256 new Mac outputs. The kernel stays within 4 % because such sums are small.
 - A TreeAccumulate alone keeps the logic for its `first` pin, which dot 4 ties and firtool folds, so the table's comb area is above the block inside dot 4 by about 370 µm² on nangate45 (82 % at W = 1, 4 % at W = 32).
-- The table holds int64 only, the Mac in its accumulating form only, and ElementwiseLanes (now SimdLanes, mapped by `DATAPATH_RENAMES` until the next export) `add` and `mul` only; anything else is "not characterized" (its comb counted as 0, its flops still counted) and the design note `char.missing` names it.
+- The table holds int64 only, the Mac in its accumulating form only, and ElementwiseLanes (now SimdLanes, mapped by `DATAPATH_RENAMES` until the next export) `add` and `mul` only, two-input points (`streams` 2, `TABLE_DEFAULTS`, so a one-stream SimdLanes such as relu's is not characterized); anything else is "not characterized" (its comb counted as 0, its flops still counted) and the design note `char.missing` names it.
 
 ## Where the numbers come from
 

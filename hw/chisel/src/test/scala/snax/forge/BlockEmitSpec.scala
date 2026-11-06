@@ -31,7 +31,29 @@ class BlockEmitSpec extends AnyFlatSpec {
   private val cases = Seq(
     Case(
       "SimdLanes",
-      ujson.Obj("inTypes" -> i64(2), "opType" -> "int64", "outType" -> "int64", "lanes" -> Lanes, "op" -> "add"),
+      ujson.Obj(
+        "inTypes" -> i64(2),
+        "opType"  -> "int64",
+        "outType" -> "int64",
+        "lanes"   -> Lanes,
+        "op"      -> "add",
+        "streams" -> 2,
+        "k"       -> ujson.Null
+      ),
+      Set.empty,
+      registered = false
+    ),
+    Case(
+      "SimdLanes",
+      ujson.Obj(
+        "inTypes" -> i64(1),
+        "opType"  -> "int64",
+        "outType" -> "int64",
+        "lanes"   -> Lanes,
+        "op"      -> "max",
+        "streams" -> 1,
+        "k"       -> 0
+      ),
       Set.empty,
       registered = false
     ),

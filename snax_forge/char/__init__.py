@@ -25,7 +25,9 @@ them are ignored) and its lanes (and depth): the entry whose params equal them, 
                   a LinkBuffer's depth, when no point has it, is linear between the two
                   measured depths around it (at lanes 1, then copied), and found so
 
-A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared.
+A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared,
+and one the table's export predates takes the value its points were measured at
+(``TABLE_DEFAULTS``: SimdLanes' ``streams`` 2) until the next export writes it.
 None for anything else: no entry with these params (a dtype other than int64, another op, a
 SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has),
 lanes or depth outside the measured range (TreeAccumulate at lanes 64, SerialAccumulate at
@@ -58,6 +60,9 @@ CTRL_COMB_PER_FLOP = 1.0
 _IGNORED = ("lanes", "depth")
 # catalogue name -> the table's, until CHAR's next export uses the new name (module doc)
 DATAPATH_RENAMES = {"SimdLanes": "ElementwiseLanes"}
+# per catalogue datapath, a param the table's export predates, at the value its points were
+# measured at: SimdLanes' streams, every point a two-input one (module doc)
+TABLE_DEFAULTS: dict[str, dict[str, Any]] = {"SimdLanes": {"streams": 2}}
 
 
 class CharError(CodedError):
@@ -128,7 +133,8 @@ def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
     """A block's comb area and energy per fire on ``table`` (module doc), or None."""
     want = {k: v for k, v in params.items() if k not in _IGNORED and v is not None}  # unset: none
     entries = table.blocks.get(DATAPATH_RENAMES.get(datapath, datapath), [])
-    entry = next((e for e in entries if e["params"] == want), None)
+    defaults = TABLE_DEFAULTS.get(datapath, {})
+    entry = next((e for e in entries if defaults | e["params"] == want), None)
     if entry is None:
         return None
     points = entry["points"]
@@ -153,6 +159,7 @@ __all__ = [
     "DEFAULT_TECH",
     "FOUND",
     "L1_ACCESS_LOADS",
+    "TABLE_DEFAULTS",
     "TECHS",
     "CharError",
     "Lookup",

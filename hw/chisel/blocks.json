@@ -14,9 +14,11 @@
     "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
    },
    "lanes": {"type": "int", "min": 1},
-   "op": {"type": "op", "values": ["add", "sub", "mul", "and", "or", "xor", "min", "max"]}
+   "op": {"type": "op", "values": ["add", "sub", "mul", "and", "or", "xor", "min", "max"]},
+   "streams": {"type": "int", "min": 1},
+   "k": {"type": "const"}
   },
-  "ports": {"a": "in", "b": "in", "out": "out"},
+  "ports": {"a": "in", "b": {"dir": "in", "when": {"streams": 2}}, "out": "out"},
   "latency": 0,
   "span": 1,
   "flops": 0,
@@ -26,7 +28,9 @@
    "opType": "unit.opType",
    "outType": "outputs.dtype",
    "lanes": "inputs.lanes",
-   "op": "unit.params.op"
+   "op": "unit.params.op",
+   "streams": "inputs.count",
+   "k": "unit.params.k"
   }
  },
  "TreeAccumulate": {

@@ -100,7 +100,8 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
     (u,) = acc.groups[0].units
     sig = catalogue()["SimdLanes"]
     assert fill(acc, u, sig) == {"inTypes": ["int64", "int64"], "opType": "int64",
-                                 "outType": "int64", "lanes": 4, "op": "add"}  # fmt: skip
+                                 "outType": "int64", "lanes": 4, "op": "add", "streams": 2,
+                                 "k": None}  # fmt: skip
     vsum = accelerator_spec(
         point(tmp_path / "vsum", name="vsum", graph=bound_vsum()), tmp_path / "vsum"
     )
@@ -108,6 +109,21 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
     assert fill(vsum, v, catalogue()["TreeAccumulate"]) == {
         "inType": "int64", "outType": "int64", "lanes": 1, "op": "add"
     }  # fmt: skip
+
+
+def test_relus_unit_fills_one_stream_and_its_k(tmp_path):
+    """relu's SimdLanes: one input (streams 1, b not live), k 0 from its params; the catalogue
+    takes it."""
+    from .helpers import bound_recipe
+
+    path = point(tmp_path, name="relu", graph=bound_recipe("relu", "relu"))
+    acc = accelerator_spec(path, tmp_path)
+    (u,) = acc.groups[0].units
+    sig = catalogue()["SimdLanes"]
+    params = fill(acc, u, sig)
+    assert params == {"inTypes": ["int32"], "opType": "int32", "outType": "int32", "lanes": 4,
+                      "op": "max", "streams": 1, "k": 0}  # fmt: skip
+    assert list(live(sig["ports"], params)) == ["a", "out"]
 
 
 def test_the_catalogues_ops_are_elementwise_ops():
@@ -168,10 +184,12 @@ def test_a_unit_the_catalogue_refuses(vecadd, code, cat):
 def test_a_type_param_must_be_type_names():
     sig = catalogue()["SimdLanes"]["params"]
     good = {"inTypes": ["int8", "uint8"], "opType": "int16", "outType": "int16", "lanes": 8,
-            "op": "add"}  # fmt: skip
+            "op": "add", "streams": 2, "k": None}  # fmt: skip
     check_params("E", good, sig)
+    check_params("E", {**good, "inTypes": ["int8"], "streams": 1, "k": -(2**53)}, sig)
     for k, v in (("opType", 16), ("inTypes", "int8"), ("outType", "float32"),
-                 ("inTypes", ["int8", "int128"]), ("op", "pow"), ("lanes", 0)):  # fmt: skip
+                 ("inTypes", ["int8", "int128"]), ("op", "pow"), ("lanes", 0), ("streams", 0),
+                 ("k", "0"), ("k", 1.5), ("k", 2**53 + 1)):  # fmt: skip
         with pytest.raises(GenError) as e:
             check_params("E", {**good, k: v}, sig)
         assert e.value.code == "gen.params"

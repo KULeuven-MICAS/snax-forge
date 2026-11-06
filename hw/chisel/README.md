@@ -72,7 +72,7 @@ Every module has a spec; the random ones drive it with seeded random data, confi
 
 | Spec | Random | Model |
 |---|---|---|
-| `SimdLanesSpec` | in, op and out types, lanes, every op, data | `ElementwiseModel`, NumPy's rule (D143) |
+| `SimdLanesSpec` | in, op and out types, lanes, every op, data; one input at int32 and int64, add, sub, mul, min and max, k random and at the edges (0, -1, the type's min and max), the out type | `ElementwiseModel`, NumPy's rule (D143), b the constant k |
 | `TreeAccumulateSpec` | in and out types, lanes, data, `fire` and `first` | lane sums from each `first`, each lane cast to the out type (the docstring) |
 | `MacSpec` | the three forms (accumulating, plain, plain with `regOut`), 2, 4, 8 lanes, int64/int32 signed and unsigned, a wider out type, data and enables | per lane p = cast_out(cast_op(a)·cast_op(b)), s ← first ? p : s + p, or p + c (C§17) |
 | `SerialAccumulateSpec` | 1, 2, 4, 8 lanes, in and out types, data, `read`, `lane`, `first` | acc ← (first ∧ lane 0) ? x_lane : acc + x_lane (C§17) |
@@ -107,7 +107,7 @@ Elaborated SystemVerilog goes to `out/hw/` (gitignored). RTL is never committed 
 
 All are data and enables only, under their group's control unit (D147); `blocks.json` gives each one's ports, timing, register bits and pins.
 
-- **SIMD (`SimdLanes`, vecadd's).** A beat in, a beat out, L = 0, II = 1, no pins; a typed ALU per lane.
+- **SIMD (`SimdLanes`, vecadd's and relu's).** A beat in, a beat out, L = 0, II = 1, no pins; a typed ALU per lane. Two inputs (`streams` 2), or one with the constant `k` as every lane's second operand, baked in at `opType` (`streams` 1, the `b` port absent, the module named `..._k<k>`, `_km3` for -3); `k` is a `const` param, null at two streams, read from `accelerator.json` as a JSON number, so exact within ±2^53 (`Datapaths.const`).
 - **Folds (`TreeAccumulate`, `SerialAccumulate`, an accumulating `Mac`).** T beats in, one result out (JOB_BEATS = T), L = 1: `TreeAccumulate` sums a beat's lanes in a tree, `SerialAccumulate` reads them one per cycle in place (span = lanes), `Mac` keeps a lane-wise product sum. A fold is a chaining barrier: no output exists until its last input is in.
 - **`LinkBuffer`.** A link of depth D ≥ 1 between two units of a group: a ring of D beats, loaded by the producer and read by the consumer.
 
