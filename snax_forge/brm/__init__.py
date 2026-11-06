@@ -36,7 +36,15 @@ from .brm import (
     Port,
     Timing,
 )
-from .dtypes import INT_DTYPES, accepted, check_dtypes, output_dtypes, port_dtypes
+from .dtypes import (
+    INT_DTYPES,
+    accepted,
+    check_dtypes,
+    fits,
+    output_dtypes,
+    port_dtypes,
+    result_type,
+)
 from .function import KINDS, OPS, AccelFunction, AccelPort, function_of, register_kind, register_op
 from .instance import Instance, resolve
 from .library import LIBRARY, library_names, load_brm
@@ -69,6 +77,7 @@ __all__ = [
     "accepted",
     "affine",
     "check_dtypes",
+    "fits",
     "function_of",
     "library_names",
     "load_brm",
@@ -81,6 +90,7 @@ __all__ = [
     "register_op",
     "resolve",
     "resolve_nest",
+    "result_type",
     "stream",
     "task_nest",
 ]

@@ -39,7 +39,8 @@ Built-in kinds:
                  design ``params``) doing one beat: its connectors are the BRM's
                  ports, its memlets give each port's lanes as a range. It sits
                  inside the temporal maps it runs over. ``code`` is what
-                 one lane computes, over its connectors, as the BRM states it;
+                 one lane computes, over its connectors and its int params
+                 (a slot, ``simd``'s ``k``), as the BRM states it;
                  ``replaced`` is the subtree ``bind`` replaced, in stored form
                  and checked in this node's scope, so ``unbind`` gives it back
                  (null for a node written by hand). ``locals`` (written only
@@ -74,7 +75,7 @@ them (open item 36).
 from __future__ import annotations
 
 import keyword
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -237,11 +238,11 @@ def _normalize_code(attrs: dict[str, Any], what: str) -> dict[str, Any]:
     return attrs
 
 
-def _check_code(node: Node, what: str) -> None:
-    """One ``output = expression`` per output connector, reading input connectors only."""
-    _wrap(
-        lambda: expr.check_code(node.attrs["code"], node.inputs, node.outputs, f"{what}.attrs.code")
-    )
+def _check_code(node: Node, what: str, slots: Iterable[str] = ()) -> None:
+    """One ``output = expression`` per output connector, reading input connectors and
+    ``slots`` only."""
+    reads = [*node.inputs, *slots]
+    _wrap(lambda: expr.check_code(node.attrs["code"], reads, node.outputs, f"{what}.attrs.code"))
 
 
 def _check_tasklet(node: Node, scope: Scope, what: str) -> None:
@@ -275,7 +276,8 @@ def _check_accelerated(node: Node, scope: Scope, what: str) -> None:
         ident(k, f"{what}.attrs.params")
         if type(v) not in (int, str):
             raise DfgError(f"{what}.attrs.params.{k}: must be an int or a string, got {v!r}")
-    _check_code(node, what)
+    # the code may read an int design param, a slot the BRM bakes in (simd's k, brm.py's Code)
+    _check_code(node, what, [k for k, v in a["params"].items() if type(v) is int])
     if a["replaced"] is not None and not isinstance(a["replaced"], Mapping):
         raise DfgError(f"{what}.attrs.replaced: must be a node or null")
     for key in ("accelerator", "group"):

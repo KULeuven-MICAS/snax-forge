@@ -33,7 +33,7 @@
       "brm": "simd",
       "implementation": "chisel_tiled_spatial",
       "code": "out = a * b",
-      "params": {"W": 4, "op": "mul"},
+      "params": {"W": 4, "op": "mul", "streams": 2},
       "replaced": {
        "id": "mult_map_s",
        "kind": "map",

@@ -13,18 +13,25 @@ params the adapter gives and ``lanes`` (its first input's; a bool as 0 or 1,
 0 (accelerator.py). Every datapath is driven by the shell's nest
 controller (``counted``, D129): data and enables only.
 
-**SimdLanes** (L 0): one op over every lane.
+**SimdLanes** (L 0): one op over every lane; args lanes and op, and
+optionally streams (2 by default) and k.
 
-    ports        two inputs and one output (SnaxUnit's op table is binary),
-                 each with args.lanes lanes; each port's lanes * N whole
-                 64-bit channels (D142), N its dtype's bits (intN or uintN,
-                 N in 8, 16, 32, 64)
+    ports        at two streams, two inputs and one output (SnaxUnit's op
+                 table is binary); at one, one input and one output, the op's
+                 second operand the constant k; each with args.lanes lanes;
+                 each port's lanes * N whole 64-bit channels (D142), N its
+                 dtype's bits (intN or uintN, N in 8, 16, 32, 64); the
+                 instance's ports (``Instance.ports``) are the ones counted
     opType       the inputs' NumPy result type (brm/dtypes.py's
-                 ``result_type``, D143), the type the op runs at; the result
-                 is then extended or wrapped into the output's
+                 ``result_type``, D143), the type the op runs at (at one
+                 stream a's dtype); the result is then extended or wrapped
+                 into the output's
     params       ``op``: args.op, one of ElementwiseOp's names (add, sub, mul,
                  and, or, xor, min, max; ElementwiseAlu.scala's encoding is
-                 ``ELEMENTWISE_OP``, which tests/gen reads from the source)
+                 ``ELEMENTWISE_OP``, which tests/gen reads from the source);
+                 at one stream also ``k``: args.k, an int that fits opType
+                 (``gen.k``), read only there, so an unset k at two streams is
+                 never evaluated; a k at two streams is refused
 
 **TreeAccumulate** (L 1, D133): a fold, one sum every T inputs, the input's
 lanes summed by an adder tree in front of its register.
@@ -61,7 +68,7 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
-from snax_forge.brm.dtypes import result_type
+from snax_forge.brm.dtypes import fits, result_type
 from snax_forge.common import CodedError
 
 
@@ -145,8 +152,8 @@ def port_dtype(dtype: str, where: str) -> tuple[int, bool]:
 
 def _ports(inst: Instance, n_in: int, n_out: int, who: str, what: str) -> tuple[list, list]:
     """The BRM's input and output ports, ``n_in`` and ``n_out`` of them."""
-    ins = [p for p in inst.brm.interface.ports if p.direction == "in"]
-    outs = [p for p in inst.brm.interface.ports if p.direction == "out"]
+    ins = [p for p in inst.ports if p.direction == "in"]
+    outs = [p for p in inst.ports if p.direction == "out"]
     if (len(ins), len(outs)) != (n_in, n_out):
         raise GenError(
             "gen.ports",
@@ -166,12 +173,12 @@ def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
 
 def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str],
                 what: str) -> dict[str, Port]:  # fmt: skip
-    """Every BRM port in its order: the binding's datapath port (by default the same name), its
+    """Every port of the instance in its order: the binding's datapath port (by default the same name), its
     dtype and its lanes; a port in ``words`` must be whole 64-bit channels (``gen.lanes``),
     the others are one word (a fold's output)."""
     mapping = inst.impl.binding.get("ports") or {}
     out = {}
-    for p in inst.brm.interface.ports:
+    for p in inst.ports:
         n, dtype = inst.lanes(p.name), None
         if dtypes is not None:
             dtype = dtypes[p.name]
@@ -197,22 +204,36 @@ def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
     """SimdLanes' fill; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
-    if set(b["args"]) != {"lanes", "op"}:
-        raise GenError(
-            "gen.args", f"{what}: args {sorted(b['args'])}; SimdLanes takes lanes and op"
-        )
+    if not {"lanes", "op"} <= set(b["args"]) <= {"lanes", "op", "streams", "k"}:
+        raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; SimdLanes takes lanes and "
+                       "op, and optionally streams and k")  # fmt: skip
     lanes = _lanes_arg(inst, what)
     op = expr.evaluate(b["args"]["op"], inst.params)
     if op not in ELEMENTWISE_OP:
         raise GenError(
             "gen.op", f"{what}: op {op!r} is not one of ElementwiseOp's {list(ELEMENTWISE_OP)}"
         )
-    ins, _ = _ports(inst, 2, 1, "SimdLanes", what)
-    names = [p.name for p in brm.interface.ports]
+    streams = expr.evaluate(b["args"].get("streams", 2), inst.params)
+    if streams not in (1, 2):
+        raise GenError("gen.args", f"{what}: streams {streams!r}; SimdLanes takes 1 or 2")
+    k_arg = b["args"].get("k")
+    k = None
+    if k_arg is not None and expr.names(k_arg) <= set(inst.params):  # unset: not evaluated
+        k = expr.evaluate(k_arg, inst.params)
+    if streams == 2 and k is not None:
+        raise GenError("gen.args", f"{what}: k = {k} at two streams; k is one stream's constant")
+    if streams == 1 and type(k) is not int:
+        raise GenError("gen.args", f"{what}: one stream takes the constant k, got {k!r}")
+    ins, _ = _ports(inst, streams, 1, "SimdLanes", what)
+    names = [p.name for p in inst.ports]
     _lanes(inst, {p: lanes for p in names}, what)
     ports = _fill_ports(inst, dtypes, set(names), what)
     op_type = None if dtypes is None else result_type([dtypes[p.name] for p in ins])
-    return Fill(ports, op_type, {"op": op})
+    if streams == 2:
+        return Fill(ports, op_type, {"op": op})
+    if op_type is not None and not fits(k, op_type):
+        raise GenError("gen.k", f"{what}: k = {k} does not fit the op type {op_type}")
+    return Fill(ports, op_type, {"op": op, "k": k})
 
 
 register_datapath("SimdLanes", 0, simd_lanes)
@@ -269,7 +290,7 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
         raise GenError("gen.rate", f"{what}: rates {[p.rate for p in ins]} in and {out.rate!r} "
                        "out; Mac takes 1 in and, accumulating, a named rate out (one sum per T "
                        "products), else 1")  # fmt: skip
-    names = [p.name for p in brm.interface.ports]
+    names = [p.name for p in inst.ports]
     _lanes(inst, {p: lanes for p in names}, what)
     ports = _fill_ports(inst, dtypes, set(names), what)
     if not accumulate and dtypes is not None and dtypes[ins[2].name] != dtypes[out.name]:

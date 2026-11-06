@@ -4,7 +4,8 @@ Accepted when the import of ``kernels/polybench/vecadd.py`` equals the
 checked-in ``tests/dfg/fixtures/vecadd.snaxdfg``, with no transient and no
 copy left, and the import of ``dot.py`` equals ``dot.snaxdfg``: a multiply
 map, then its ``Reduce`` as a sum map folding into ``out[0]``; and
-``vecmul.py``'s equals ``vecmul.snaxdfg``, ``vsum.py``'s ``vsum.snaxdfg``. The
+``vecmul.py``'s equals ``vecmul.snaxdfg``, ``vsum.py``'s ``vsum.snaxdfg``, ``relu.py``'s
+``relu.snaxdfg`` (int32, ``out = max(in1, 0)``). The
 importer builds the simplified SDFG as ``pixi run sdfg`` does, and a stored
 ``.sdfg`` gives the same graph. Beyond them: a transient between two maps,
 offset subsets, a Max reduction, a Reduce over one axis of two, and every
@@ -67,7 +68,7 @@ def test_a_stored_sdfg_gives_the_same_graph(vecadd_sdfg, tmp_path):
     assert import_sdfg(dace.SDFG.from_file(path), "vecadd") == Graph.load(fixture("vecadd"))
 
 
-@pytest.mark.parametrize("kernel", ["vecadd", "dot", "vecmul", "vsum"])
+@pytest.mark.parametrize("kernel", ["vecadd", "dot", "vecmul", "vsum", "relu"])
 def test_cli_writes_the_fixture(tmp_path, capsys, kernel):
     """vecmul is vecadd with ``*`` (the map and tasklet named after Mult); vsum is dot's sum
     map on its own, the Reduce folding A into out[0] with add."""

@@ -229,3 +229,46 @@ def test_substitute_leaves_the_cached_parse_alone():
     assert expr.substitute(v, {"a": "c - 1", "b": 3}) == "max(c - 1, 3) + (c - 1) * 2"
     assert ast.dump(expr._parsed(v)) == before
     assert expr.canonical(v) == "max(a, b) + a * 2" and expr.names(v) == {"a", "b"}
+
+
+# =============================================================================
+# unify: code against a pattern with slots
+# =============================================================================
+
+
+@pytest.mark.parametrize(
+    ("pattern", "code", "slots", "found"),
+    [
+        ("out = max(a, k)", "out = max(a, 0)", ["k"], {"k": 0}),
+        ("out = a + k", "out = a + -3", ["k"], {"k": -3}),
+        ("out = a + k", "out = a + 2 * 4", ["k"], {"k": 8}),
+        ("out = a * k + k", "out = a * 5 + 5", ["k"], {"k": 5}),
+        ("out = a + b", "out = a + b", [], {}),
+        ("out = a + b", "out = a + b", ["k"], {}),
+    ],
+)
+def test_unify_finds_the_slots(pattern, code, slots, found):
+    assert expr.unify(pattern, code, slots) == found
+
+
+@pytest.mark.parametrize(
+    ("pattern", "code"),
+    [
+        ("out = max(a, k)", "out = max(0, a)"),  # no commuting
+        ("out = a + k", "out = 3 + a"),
+        ("out = max(a, k)", "out = max(a, b)"),  # a slot takes no name
+        ("out = max(a, k)", "out = min(a, 0)"),
+        ("out = a * k + k", "out = a * 5 + 6"),  # a slot used twice, two values
+        ("out = a + k", "out = a + 1 // 0"),
+        ("out = a + k", "x = a + 1"),
+        ("out = a + k", "out = a - 1"),
+    ],
+)
+def test_unify_refuses(pattern, code):
+    assert expr.unify(pattern, code, ["k"]) is None
+
+
+def test_ordered_names_and_occurrences():
+    assert expr.ordered_names("max(in2, in1) + in2") == ["in2", "in1"]
+    assert expr.occurrences("max(in2, in1) + in2", "in2") == 2
+    assert expr.occurrences("max(a, 0)", "max") == 0

@@ -3,31 +3,50 @@
  "interface": {
   "params": {
    "W": {"stage": "design", "type": "int", "default": 4, "values": null},
-   "op": {"stage": "design", "type": "str", "default": "add", "values": ["add", "mul"]},
+   "op": {
+    "stage": "design",
+    "type": "str",
+    "default": "add",
+    "values": ["add", "sub", "mul", "min", "max"]
+   },
+   "streams": {"stage": "design", "type": "int", "default": 2, "values": [1, 2]},
+   "k": {"stage": "design", "type": "int", "default": null, "values": null},
    "n": {"stage": "runtime", "type": "int", "default": null, "values": null}
   },
   "ports": [
    {"name": "a", "direction": "in", "lanes": "W", "rate": 1},
-   {"name": "b", "direction": "in", "lanes": "W", "rate": 1},
+   {"name": "b", "direction": "in", "lanes": "W", "rate": 1, "when": {"streams": 2}},
    {"name": "out", "direction": "out", "lanes": "W", "rate": 1}
   ]
  },
  "function": {
   "accel": "simd",
-  "params": {"lanes": "W", "n_inputs": 2, "op": "op"},
+  "params": {"lanes": "W", "n_inputs": "streams", "op": "op", "k": "k"},
   "code": [
-   {"params": {"op": "add"}, "code": "out = a + b"},
-   {"params": {"op": "mul"}, "code": "out = a * b"}
+   {"params": {"op": "add", "streams": 2}, "code": "out = a + b"},
+   {"params": {"op": "sub", "streams": 2}, "code": "out = a - b"},
+   {"params": {"op": "mul", "streams": 2}, "code": "out = a * b"},
+   {"params": {"op": "min", "streams": 2}, "code": "out = min(a, b)"},
+   {"params": {"op": "max", "streams": 2}, "code": "out = max(a, b)"},
+   {"params": {"op": "add", "streams": 1}, "code": "out = a + k"},
+   {"params": {"op": "sub", "streams": 1}, "code": "out = a - k"},
+   {"params": {"op": "mul", "streams": 1}, "code": "out = a * k"},
+   {"params": {"op": "min", "streams": 1}, "code": "out = min(a, k)"},
+   {"params": {"op": "max", "streams": 1}, "code": "out = max(a, k)"}
   ]
  },
  "dataflow": {"notation": "stream", "ports": {"a": {}, "b": {}, "out": {}}},
- "pattern": {"family": "simd", "attrs": {"arity": 2}},
+ "pattern": {"family": "simd", "attrs": {}},
  "implementations": {
   "chisel_tiled_spatial": {
    "source": "chisel",
    "supports": {},
    "timing": {"latency": 0, "initiation_interval": 1, "drain": 0, "span": 1},
-   "binding": {"datapath": "SimdLanes", "args": {"lanes": "W", "op": "op"}, "controller": "counted"}
+   "binding": {
+    "datapath": "SimdLanes",
+    "args": {"lanes": "W", "op": "op", "streams": "streams", "k": "k"},
+    "controller": "counted"
+   }
   }
  }
 }

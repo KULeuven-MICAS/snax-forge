@@ -58,9 +58,14 @@ name) stay in the transform.
     must give the elements in the order of the port's nest (D70); in
     the ``stream`` notation the memlet is the order. The tasklet's code, on
     the BRM's port names, must be the BRM's ``function.code``: a code table (brm.py's ``Code``,
-    ``simd``'s one entry per ``op``) is tried in order and the first entry whose code is the
-    tasklet's is taken, its params set on the instance (a ``params`` value that contradicts
-    one is refused, naming both; no entry is refused listing every entry's code). The
+    ``simd``'s one entry per ``op`` and ``streams``) is tried in order, and the first entry
+    whose present input ports (``Port.when`` at its params) are exactly the mapped ones and
+    whose code equals the tasklet's up to its slots (``expr.unify``: a slot takes an int
+    sub-expression with no names, the same value wherever it appears) is taken; its params and
+    slot values are set on the instance. Refused, each naming what it found: a ``params``
+    value that contradicts the entry's params or a slot's value, a slot value that does not
+    fit the op type (NumPy's result type of the input ports' dtypes, the literal weak,
+    NEP 50), and no matching entry, listing every entry's code with its params. The
     accelerated node carries that code and the replaced subtree (D82), and, for a fused nest, the nest's local value
     (``loop.local``), which only its two tasklets named: it leaves the graph's containers for
     the node's ``locals`` (dfg/kinds.py), and ``unbind`` puts it back at its index. A folding
@@ -463,7 +468,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     """The check: the BRM's ports match the tasklet's, their dtypes are accepted, it computes
     what the tasklet computes, and its lanes are the spatial bound (the design params: the
     lanes param from that bound, the rest given or default)."""
-    from snax_forge.brm import BrmError, accepted, check_dtypes
+    from snax_forge.brm import BrmError, accepted, check_dtypes, fits, result_type
 
     tasklet, smap = site.tasklet, site.smap
     try:
@@ -484,7 +489,8 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     if not entries:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
     computes = expr.rename_code(tasklet.attrs["code"], ports)
-    entry = next((e for e in entries if e.code == computes), None)
+    given = dict(params or {})
+    entry, slots = _entry(b, entries, ports, tasklet, computes, given)
     if entry is None:
         listed = (
             repr(entries[0].code)
@@ -495,12 +501,29 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
             f"{what}: the tasklet computes {computes!r} on the BRM's ports, {brm!r} computes "
             f"{listed}"
         )
-    given = dict(params or {})
     for k, v in entry.params.items():
         if k in given and given[k] != v:
             raise SandboxError(
                 f"{what}: {k} = {given[k]!r} given, but the tasklet computes {computes!r}, "
                 f"{brm!r}'s code at {k} = {v!r}"
+            )
+        given[k] = v
+    op_type = None
+    if slots:
+        try:
+            op_type = result_type([conn_dtypes[c] for c in tasklet.inputs])
+        except ValueError:
+            op_type = None  # no integer result type: check_dtypes refused it above
+    for k, v in slots.items():
+        if k in given and given[k] != v:
+            raise SandboxError(
+                f"{what}: {k} = {given[k]!r} given, but the tasklet computes {computes!r}, "
+                f"{brm!r}'s {entry.code!r} at its slot {k} = {v!r}"
+            )
+        if op_type is not None and not fits(v, op_type):
+            raise SandboxError(
+                f"{what}: {k} = {v} does not fit the op type {op_type} (NumPy's result type of "
+                "the input ports' dtypes; the literal is weak, NEP 50)"
             )
         given[k] = v
 
@@ -545,6 +568,23 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
                 f"{inst.lanes(ports[c])} lanes"
             )
     return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code)
+
+
+def _entry(b: Any, entries: list[Any], ports: Mapping[str, str], tasklet: Node, computes: str,
+           given: Mapping[str, Any]) -> tuple[Any, dict[str, int]]:  # fmt: skip
+    """The first code entry whose present ports (at the defaults, ``given`` and its params) are
+    the mapped ones and whose code is ``computes`` up to its slots, with the slot values; or
+    ``(None, {})``."""
+    mapped = {d: {p for c, p in ports.items() if c in conns}
+              for d, conns in (("in", tasklet.inputs), ("out", tasklet.outputs))}  # fmt: skip
+    for e in entries:
+        present = b.present(b.defaults() | dict(given) | e.params)
+        if any({p.name for p in present if p.direction == d} != mapped[d] for d in mapped):
+            continue
+        found = expr.unify(e.code, computes, b.slots(e))
+        if found is not None:
+            return e, found
+    return None, {}
 
 
 def _params_text(params: Mapping[str, Any]) -> str:

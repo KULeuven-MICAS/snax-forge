@@ -25,8 +25,11 @@ from .helpers import IMPL
 
 
 def function_params(inst) -> dict:
-    """The function's params, resolved, in their order."""
-    return {k: inst.value(v) for k, v in inst.brm.function.params.items()}
+    """The function's params, resolved, in their order; one naming an unset param left out."""
+    from snax_forge import expr
+
+    return {k: inst.value(v) for k, v in inst.brm.function.params.items()
+            if expr.names(v) <= set(inst.params)}  # fmt: skip
 
 
 # =============================================================================
@@ -48,17 +51,19 @@ def test_library_has_dots_blocks():
 
 
 def test_the_brms_are_bound():
-    """The bindings: simd, SimdLanes with the op through ElementwiseOp, at each op of its code
-    table; accumulate's TreeAccumulate, its lanes W, its port a on the datapath's in;
+    """The bindings: simd, SimdLanes with its lanes, op, streams and slot k, at each entry of
+    its code table; accumulate's TreeAccumulate, its lanes W, its port a on the datapath's in;
     the adder tree the same datapath; every one under the counted nest controller."""
     from snax_forge.gen import ELEMENTWISE_OP
 
-    from .test_brm import BINDING
-
     brm = load_brm("simd")
-    assert brm.implementations[IMPL].binding == BINDING
-    for op in ("add", "mul"):
-        assert brm.resolve(IMPL, {"op": op}).params["op"] == op
+    assert brm.implementations[IMPL].binding == {
+        "datapath": "SimdLanes", "args": {"lanes": "W", "op": "op", "streams": "streams", "k": "k"},
+        "controller": "counted",
+    }  # fmt: skip
+    for e in brm.function.entries():
+        given = e.params | ({"k": 0} if e.params["streams"] == 1 else {})
+        assert brm.resolve(IMPL, given).params == {"W": 4, **given}
     assert ELEMENTWISE_OP["mul"] == 2
     acc = load_brm("accumulate").implementations
     assert acc["chisel_accumulator"].binding == {
@@ -74,16 +79,38 @@ def test_unknown_name():
 
 
 # =============================================================================
-# simd against the simd kind, one code per op
+# simd against the simd kind: a code table by op and streams, the slot k
 # =============================================================================
 
+TWO = {"add": "a + b", "sub": "a - b", "mul": "a * b", "min": "min(a, b)", "max": "max(a, b)"}
+ONE = {"add": "a + k", "sub": "a - k", "mul": "a * k", "min": "min(a, k)", "max": "max(a, k)"}
 
-def test_default_is_four_lanes_of_add():
-    """No params: W = 4 by default, the simd kind with two inputs, op add, latency 0, II 1."""
+
+def test_default_is_four_lanes_of_add_on_two_streams():
+    """No params: W = 4, op add, two streams, k unset (left out of the params and of the
+    function's), latency 0, II 1."""
     inst = load_brm("simd").resolve(IMPL)
+    assert inst.params == {"W": 4, "op": "add", "streams": 2}
     assert inst.brm.function.accel == "simd"
     assert list(function_params(inst).items()) == [("lanes", 4), ("n_inputs", 2), ("op", "add")]
+    assert [p.name for p in inst.ports] == ["a", "b", "out"]
     assert (inst.latency, inst.initiation_interval, inst.drain) == (0, 1, 0)
+
+
+def test_one_stream_has_no_b_and_takes_k():
+    inst = load_brm("simd").resolve(IMPL, {"op": "max", "streams": 1, "k": 0})
+    assert inst.params == {"W": 4, "op": "max", "streams": 1, "k": 0}
+    assert [p.name for p in inst.ports] == ["a", "out"]
+    assert function_params(inst) == {"lanes": 4, "n_inputs": 1, "op": "max", "k": 0}
+    assert [p.name for p in function_of(inst).ports] == ["a", "out"]
+
+
+def test_one_stream_without_k_or_two_with_one_is_refused():
+    brm = load_brm("simd")
+    with pytest.raises(BrmError, match="one stream takes the constant k"):
+        brm.resolve(IMPL, {"streams": 1})
+    with pytest.raises(BrmError, match="k = 3 at two streams"):
+        brm.resolve(IMPL, {"k": 3})
 
 
 def test_other_lane_counts():
@@ -94,9 +121,9 @@ def test_other_lane_counts():
         assert [p.lanes for p in function_of(inst).ports] == [w, w, w]
 
 
-def test_only_add_and_mul():
+def test_only_its_ops():
     with pytest.raises(BrmError, match="not in the param's values"):
-        load_brm("simd").resolve(IMPL, {"op": "sub"})
+        load_brm("simd").resolve(IMPL, {"op": "and"})
 
 
 @pytest.mark.parametrize("name", ["simd", "accumulate"])
@@ -110,34 +137,44 @@ def test_unit_brms_are_in_the_stream_notation(name):
         brm.resolve(impl, {"W": 1} if impl == "chisel_accumulator" else {})
 
 
-@pytest.mark.parametrize("op", ["add", "mul"])
+@pytest.mark.parametrize("streams", [2, 1])
+@pytest.mark.parametrize("op", list(TWO))
 @pytest.mark.parametrize("w", [1, 4, 8])
-def test_function_code_agrees_with_its_kind(op, w):
-    """Each op's code and the kind the reference executor runs compute the same lanes."""
+def test_function_code_agrees_with_its_kind(streams, op, w):
+    """Each entry's code and the kind the reference executor runs compute the same lanes (k
+    random at one stream)."""
     from snax_forge import expr
 
-    inst = load_brm("simd").resolve(IMPL, {"W": w, "op": op})
-    cfg = function_of(inst)
     rng = np.random.default_rng(w)
+    k = {"k": int(rng.integers(-50, 50))} if streams == 1 else {}
+    inst = load_brm("simd").resolve(IMPL, {"W": w, "op": op, "streams": streams, **k})
+    cfg = function_of(inst)
     ins = {p.name: rng.integers(-1000, 1000, p.lanes) for p in cfg.inputs}
     got = cfg.fn(0, ins, {}, {"n": 1})
     for target, e in expr.statements(inst.brm.function.code_for(inst.params), "code"):
-        assert np.array_equal(got[target], expr.evaluate(e, ins))
+        assert np.array_equal(got[target], expr.evaluate(e, ins | k))
 
 
-def test_simd_holds_one_code_per_op():
-    """The code table: out = a + b at op add, out = a * b at mul, the default op add; the
-    pattern leaves the op to the code (arity only)."""
+def test_one_stream_casts_k_to_a_dtype():
+    """k at a's dtype, the result at it too (cast into the output's when written)."""
+    inst = load_brm("simd").resolve(IMPL, {"op": "add", "streams": 1, "k": -1})
+    a = np.array([0, 1, 127, -128], np.int8)
+    got = function_of(inst).fn(0, {"a": a}, {}, {"n": 1})["out"]
+    assert got.dtype == np.int8 and got.tolist() == [-1, 0, 126, 127]
+
+
+def test_simd_holds_ten_entries():
+    """The code table: the five ops on two streams, then on one with the slot k; the default
+    op add; the pattern leaves everything to the code (no attrs)."""
     brm = load_brm("simd")
     assert [(e.params, e.code) for e in brm.function.entries()] == [
-        ({"op": "add"}, "out = a + b"), ({"op": "mul"}, "out = a * b")]  # fmt: skip
-    inst = brm.resolve(IMPL, {"op": "mul"})
-    assert inst.brm.function.accel == "simd"
-    assert function_params(inst) == {"lanes": 4, "n_inputs": 2, "op": "mul"}
-    assert brm.function.code_for(inst.params) == "out = a * b"
+        *(({"op": o, "streams": 2}, f"out = {c}") for o, c in TWO.items()),
+        *(({"op": o, "streams": 1}, f"out = {c}") for o, c in ONE.items())]  # fmt: skip
+    assert [brm.slots(e) for e in brm.function.entries()] == [[]] * 5 + [["k"]] * 5
     assert brm.function.code_for(brm.resolve(IMPL).params) == "out = a + b"
-    assert (inst.latency, inst.initiation_interval) == (0, 1)
-    assert brm.pattern.family == "simd" and brm.pattern.attrs == {"arity": 2}
+    inst = brm.resolve(IMPL, {"op": "min", "streams": 1, "k": 7})
+    assert brm.function.code_for(inst.params) == "out = min(a, k)"
+    assert brm.pattern.family == "simd" and brm.pattern.attrs == {}
 
 
 # =============================================================================

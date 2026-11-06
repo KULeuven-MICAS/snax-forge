@@ -53,7 +53,7 @@ def test_hand_built_accelerated_equals_the_fixture():
             "brm": "simd",
             "implementation": "chisel_tiled_spatial",
             "code": "out = a + b",
-            "params": {"W": 4, "op": "add"},
+            "params": {"W": 4, "op": "add", "streams": 2},
             "replaced": split.node("add_map_s").to_dict(),
         },
     )

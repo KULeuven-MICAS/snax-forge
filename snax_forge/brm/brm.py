@@ -29,7 +29,11 @@ implementation's timing and binding serve the generators (the accelerator's
 description, accelerator.json, for SNAX-GVSoC and the RTL).
 
 Params have a stage. ``design`` params (lanes, op) are fixed per instance
-and reach the design point and accelerator.json. ``runtime`` params are
+and reach the design point and accelerator.json; one with a null default is
+unset unless ``bind`` or a matched code entry gives it (``simd``'s slot ``k``),
+and an instance leaves it out. A port may carry ``when``, design params at
+which alone it exists (``simd``'s ``b`` at two streams); an instance's
+``ports`` are those present at its params. ``runtime`` params are
 the accelerator's start parameters: exactly ``n`` and every named port rate
 (CONTRACTS.md section 10). A port's streamer width comes from its lanes
 (D12); it is not written in the BRM. Nor is its dtype: ``dtypes`` lists the
@@ -131,26 +135,36 @@ class Param:
 
 @dataclass
 class Port:
-    """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings."""
+    """One data port: ``lanes`` elements per beat, one beat every ``rate`` firings; present only
+    at the design params ``when`` gives (every one holding; always when None)."""
 
     name: str
     direction: str
     lanes: Value
     rate: Value = 1
     dtypes: list[str] = field(default_factory=lambda: list(INT_DTYPES))  # the rule: dtypes.py
+    when: dict[str, int | str] | None = None
+
+    def present(self, params: Mapping[str, Any]) -> bool:
+        """The port exists at design ``params``: each of its ``when`` holds there."""
+        return all(k in params and params[k] == v for k, v in (self.when or {}).items())
 
     def to_dict(self) -> dict[str, Any]:
         d = {"name": self.name, "direction": self.direction, "lanes": self.lanes, "rate": self.rate}
+        if self.when is not None:  # written only when set
+            d["when"] = dict(self.when)
         if list(self.dtypes) != list(INT_DTYPES):  # every integer dtype unless the file says
             d["dtypes"] = list(self.dtypes)
         return d
 
     @classmethod
     def from_dict(cls, d: Mapping[str, Any], what: str) -> Port:
-        _keys(d, ("name", "direction", "lanes"), ("rate", "dtypes"), what)
+        _keys(d, ("name", "direction", "lanes"), ("rate", "when", "dtypes"), what)
         dtypes = d.get("dtypes", INT_DTYPES)
         dtypes = list(dtypes) if isinstance(dtypes, (list, tuple)) else dtypes
-        return cls(d["name"], d["direction"], d["lanes"], d.get("rate", 1), dtypes)
+        when = d.get("when")
+        when = dict(when) if isinstance(when, Mapping) else when
+        return cls(d["name"], d["direction"], d["lanes"], d.get("rate", 1), dtypes, when)
 
 
 @dataclass
@@ -213,9 +227,13 @@ class Function:
     BRM with a null ``code`` cannot be bound.
 
     ``code`` is one string, or a table of ``Code`` entries when one BRM computes several
-    things by a design param (``simd``'s ``op``: ``out = a + b`` at ``op`` add, ``out = a * b``
-    at mul). ``bind`` takes the first entry whose code is the tasklet's and sets its params
-    (sandbox/transforms.py); ``code_for`` gives an instance's code back from its params.
+    things by design params (``simd``'s ``op`` and ``streams``: ``out = a + b`` at add and two
+    streams, ``out = max(a, k)`` at max and one). An entry's code uses the ports present at
+    its params (``Port.when``) and may name a slot: an int design param that is no port and
+    that the entry does not fix (``simd``'s ``k``), a constant baked into the hardware.
+    ``bind`` takes the first entry whose code is the tasklet's up to its slots and sets its
+    params and slot values (sandbox/transforms.py, ``expr.unify``); ``code_for`` gives an
+    instance's code back from its params.
     """
 
     accel: str
@@ -397,6 +415,22 @@ class Brm(JsonFile):
 
         return resolve(self, implementation, params)
 
+    def present(self, params: Mapping[str, Any]) -> list[Port]:
+        """The ports present at design ``params`` (``Port.when``), in order."""
+        return [p for p in self.interface.ports if p.present(params)]
+
+    def defaults(self) -> dict[str, int | str]:
+        """The design params that have a default, at it."""
+        return {k: p.default for k, p in self.params("design").items() if p.default is not None}
+
+    def slots(self, entry: Code) -> list[str]:
+        """The slots ``entry``'s code names (``Function``), in the order they appear."""
+        design = self.params("design")
+        ports = {p.name for p in self.interface.ports}
+        found = [n for _, e in expr.statements(entry.code, "code") for n in expr.ordered_names(e)]
+        return list(dict.fromkeys(n for n in found if n in design and n not in ports
+                                  and n not in entry.params))  # fmt: skip
+
     def port(self, name: str) -> Port:
         for p in self.interface.ports:
             if p.name == name:
@@ -516,6 +550,11 @@ def _check_ports(b: Brm, design: dict[str, Param], what: str) -> None:
     for p in ports:
         w = f"{what}.port {p.name!r}"
         _port_name(p.name, w)
+        if p.when is not None:
+            if not isinstance(p.when, dict) or not p.when:
+                raise BrmError(f"{w}.when: must be a non-empty object, design param -> value")
+            for k, v in p.when.items():
+                _allowed_value(design, k, v, f"{w}.when.{k}")
         if p.direction not in DIRECTIONS:
             raise BrmError(f"{w}: direction must be 'in' or 'out', got {p.direction!r}")
         _uses(p.lanes, design, f"{w}.lanes")
@@ -556,20 +595,8 @@ def _check_function(b: Brm, design: dict[str, Param], what: str) -> None:
         _uses(v, design, f"{w}.params.{k}")
     if f.code is None:
         return
-    ports = b.interface.ports
-    ins = [p.name for p in ports if p.direction == "in"]
-    outs = [p.name for p in ports if p.direction == "out"]
-
-    def canonical(code: Any, wc: str) -> str:
-        try:
-            code = expr.canonical_code(code, wc)
-            expr.check_code(code, ins, outs, wc)
-        except expr.ExprError as e:
-            raise BrmError(str(e)) from None
-        return code
-
     if isinstance(f.code, str):
-        f.code = canonical(f.code, f"{w}.code")
+        f.code = _check_entry(b, design, Code({}, f.code), f"{w}.code").code
         return
     if not isinstance(f.code, list) or not f.code:
         raise BrmError(f"{w}.code: must be a string, a non-empty list of {{params, code}} or null")
@@ -578,13 +605,55 @@ def _check_function(b: Brm, design: dict[str, Param], what: str) -> None:
         if not isinstance(e, Code):
             raise BrmError(f"{wc}: must be an entry {{params, code}}")
         for k, v in e.params.items():
-            if k not in design:
-                raise BrmError(f"{wc}.params.{k}: not a design param ({sorted(design)})")
-            p = design[k]
-            if type(v) is not TYPES[p.type] or (p.values is not None and v not in p.values):
-                allowed = p.values if p.values is not None else f"any {p.type}"
-                raise BrmError(f"{wc}.params.{k}: {v!r} is not an allowed value ({allowed})")
-        e.code = canonical(e.code, f"{wc}.code")
+            _allowed_value(design, k, v, f"{wc}.params.{k}")
+        e.code = _check_entry(b, design, e, f"{wc}.code").code
+
+
+def _allowed_value(design: dict[str, Param], k: str, v: Any, what: str) -> None:
+    """``k`` is a design param and ``v`` one of its values."""
+    if k not in design:
+        raise BrmError(f"{what}: not a design param ({sorted(design)})")
+    p = design[k]
+    if type(v) is not TYPES[p.type] or (p.values is not None and v not in p.values):
+        allowed = p.values if p.values is not None else f"any {p.type}"
+        raise BrmError(f"{what}: {v!r} is not an allowed value ({allowed})")
+
+
+def _check_entry(b: Brm, design: dict[str, Param], e: Code, what: str) -> Code:
+    """``e`` with its code canonical: each output present at its params (over the defaults)
+    assigned once, and every name read a present input or a slot (an int design param that is
+    no port and that the entry does not fix)."""
+    at = b.defaults() | e.params
+    present = b.present(at)
+    ins = [p.name for p in present if p.direction == "in"]
+    outs = [p.name for p in present if p.direction == "out"]
+    absent = {p.name for p in b.interface.ports} - {p.name for p in present}
+    shown = ", ".join(f"{k} = {v!r}" for k, v in e.params.items()) or "the defaults"
+    try:
+        code = expr.canonical_code(e.code, what)
+        lines = expr.statements(code, what)
+    except expr.ExprError as err:
+        raise BrmError(str(err)) from None
+    targets = [t for t, _ in lines]
+    for t in targets:
+        if t in absent:
+            raise BrmError(f"{what}: assigns {t!r}, a port not present at {shown}")
+        if t not in outs:
+            raise BrmError(f"{what}: assigns {t!r}, which is not an output")
+    for o in outs:
+        if targets.count(o) != 1:
+            raise BrmError(f"{what}: output {o!r} must be assigned exactly once")
+    for _, rhs in lines:
+        for n in sorted(expr.names(rhs)):
+            if n in ins:
+                continue
+            if n in absent:
+                raise BrmError(f"{what}: reads {n!r}, a port not present at {shown}")
+            slot = n in design and design[n].type == "int" and n not in e.params
+            if not slot:
+                raise BrmError(f"{what}: {n!r} is not an input present at {shown}, nor a slot "
+                               "(an int design param the entry does not fix)")  # fmt: skip
+    return Code(e.params, code)
 
 
 def _check_pattern(b: Brm, what: str) -> None:

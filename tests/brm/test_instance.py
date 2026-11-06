@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from snax_forge.brm import Brm, BrmError, function_of, load_brm
+from snax_forge.brm import Brm, BrmError, function_of
 from snax_forge.brm.function import reduce_kind, simd
 
 from .helpers import IMPL, adder, reducer
@@ -129,9 +129,8 @@ def test_rate_mismatch():
 
 def _bound(binding_edit=None, timing=None):
     d = adder()
-    d["implementations"][IMPL]["binding"] = load_brm("simd").to_dict()["implementations"][IMPL][
-        "binding"
-    ]
+    d["implementations"][IMPL]["binding"] = {  # simd's, at two streams and no slot
+        "datapath": "SimdLanes", "args": {"lanes": "W", "op": "op"}, "controller": "counted"}  # fmt: skip
     if binding_edit:
         binding_edit(d["implementations"][IMPL]["binding"])
     if timing:

@@ -90,7 +90,7 @@ def test_bind_gives_the_accelerated_fixture():
 def test_bind_reads_w_off_the_spatial_bound():
     g = bind(split_map(bound("vecadd"), "add_map", 8), **BIND)
     acc = g.node("add")
-    assert acc.attrs["params"] == {"W": 8, "op": "add"}
+    assert acc.attrs["params"] == {"W": 8, "op": "add", "streams": 2}
     assert acc.inputs["a"].subset == ["8 * i_t:8 * i_t + 8"]
     assert same_output(graph("vecadd_split"), g)
 
@@ -133,17 +133,17 @@ def _edit(fn):
             "op = 'add' given, but the tasklet computes 'out = a \\* b', 'simd''s code at op = 'mul'",
         ),
         (
-            lambda: _edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 - in2")),
+            lambda: _edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 // in2")),
             {},
             (
-                "the tasklet computes 'out = a - b' on the BRM's ports, 'simd' computes one of "
-                "'out = a \\+ b' \\(op = 'add'\\), 'out = a \\* b' \\(op = 'mul'\\)"
+                "the tasklet computes 'out = a // b' on the BRM's ports, 'simd' computes one of "
+                "'out = a \\+ b' \\(op = 'add', streams = 2\\), 'out = a - b' \\(op = 'sub', "
             ),
         ),
         (
             lambda: _edit(lambda d: tasklet(d)["attrs"].update(code="out = in1 + in1")),
             {},
-            "not one operator over distinct inputs",
+            "reads in1 more than once; simd reads distinct inputs, each once",
         ),
         (
             lambda: _edit(lambda d: d["containers"]["C"].update(dtype="int32")),
@@ -171,7 +171,7 @@ def test_bind_takes_the_first_code_entry_that_is_the_tasklets():
     add = bind(graph("vecadd_split"), **(BIND | {"params": {"op": "add"}}))
     for g, op, code in ((mul, "mul", "out = a * b"), (add, "add", "out = a + b")):
         attrs = g.node("add").attrs
-        assert (attrs["params"], attrs["code"]) == ({"W": 4, "op": op}, code)
+        assert (attrs["params"], attrs["code"]) == ({"W": 4, "op": op, "streams": 2}, code)
 
 
 def test_bind_takes_the_containers_dtypes():

@@ -12,12 +12,14 @@ tasklet connector feeds which BRM port:
 or raises ``SandboxError`` saying why not. A family's matcher is code in the
 sandbox, registered like any other extension (principle 6).
 
-``simd`` (the first family): the tasklet's code is one statement,
-``out = in1 <op> in2 <op> ...``, a left fold of distinct input connectors
-with one operator (``add``, ``sub``, ``mul``); ``attrs.arity`` is the number of
-inputs. Which operator is left to ``bind``'s code match, which picks the BRM's
-code entry (``simd``'s ``op``, brm.py's ``Code``). Inputs map onto the BRM's
-input ports in fold order, the output onto its one output port.
+``simd`` (the first family, no attrs): the tasklet's code is one statement
+with one output, in the expression grammar, over its input connectors, each
+read once, and int literals (``out = in1 + in2``, ``out = max(in1, 0)``); every
+input connector is read. Inputs map onto the BRM's input ports in the order
+they first appear, the output onto its one output port. What it computes, and
+so how many inputs it takes, is ``bind``'s code match: the BRM's code entry
+whose present input ports are the mapped ones and whose code is the tasklet's
+up to its slots (``simd``'s ``op``, ``streams`` and ``k``, brm.py's ``Code``).
 
 ``reduce`` (D102): the tasklet copies its one input into its one output
 (``out = in1``), and the output memlet folds (``reduce``) with the op
@@ -46,6 +48,7 @@ from typing import Any
 
 import numpy as np
 
+from snax_forge import expr
 from snax_forge.dfg import REDUCE_OPS, Memlet, Node
 
 from .recipe import SandboxError
@@ -114,7 +117,32 @@ def _fold(node: Node, arity: Any, brm: Any, what: str) -> tuple[str, dict[str, s
 def _simd(
     node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
 ) -> dict[str, str]:
-    return _fold(node, attrs.get("arity"), brm, f"node {node.id!r} as {brm.name!r}")[1]
+    what = f"node {node.id!r} as {brm.name!r}"
+    if node.kind != "tasklet":
+        raise SandboxError(f"{what}: a {node.kind!r} is not a tasklet")
+    code = node.attrs["code"]
+    try:
+        lines = expr.statements(code, what)
+    except expr.ExprError as e:
+        raise SandboxError(str(e)) from None
+    if len(lines) != 1 or len(node.outputs) != 1:
+        raise SandboxError(f"{what}: simd is one statement with one output")
+    ((_, rhs),), out = lines, next(iter(node.outputs))
+    read = expr.ordered_names(rhs)
+    for n in read:
+        if n not in node.inputs:
+            raise SandboxError(f"{what}: {code!r} reads {n!r}, not an input connector (simd "
+                               "reads its inputs and int literals)")  # fmt: skip
+        if expr.occurrences(rhs, n) > 1:
+            raise SandboxError(f"{what}: {code!r} reads {n} more than once; simd reads distinct "
+                               "inputs, each once")  # fmt: skip
+    if unread := [c for c in node.inputs if c not in read]:
+        raise SandboxError(f"{what}: {code!r} does not read the input {unread[0]}")
+    ins = [p.name for p in brm.interface.ports if p.direction == "in"]
+    outs = [p.name for p in brm.interface.ports if p.direction == "out"]
+    if len(read) > len(ins) or len(outs) != 1:
+        raise SandboxError(f"{what}: {len(read)} inputs; the BRM has ports {ins} -> {outs}")
+    return {**dict(zip(read, ins, strict=False)), out: outs[0]}
 
 
 register_pattern("simd", _simd)

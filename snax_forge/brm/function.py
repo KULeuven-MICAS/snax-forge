@@ -23,7 +23,8 @@ task (a reduction's partial sum); ``params`` are the task's runtime params.
 
 Kinds: ``simd`` (every port rate 1, N inputs folded into one output,
 lane by lane, at the inputs' dtype: the executor casts the result into the
-output's when it writes it, D143) and ``reduce`` (input ``a`` at rate 1,
+output's when it writes it, D143; one input with the constant ``k``,
+``op(a, k)``, k cast to a's dtype) and ``reduce`` (input ``a`` at rate 1,
 output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
 each input lane cast to the output's dtype first, so its tree and its
 accumulator run at that dtype, as ``np.add.reduce(a, dtype=out)`` and
@@ -33,7 +34,8 @@ type, cast to the output's dtype and folded per lane over T beats),
 each with ``op`` a registered op by name (``mac``'s the fold's) (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
 ``or``, ``xor``). New ones with ``register_kind`` and ``register_op``.
 
-``function_of`` refuses, as a BrmError, a kind that is not registered, params
+A function param that names a design param the instance leaves unset (``simd``'s
+``k`` at two streams) is not passed. ``function_of`` refuses, as a BrmError, a kind that is not registered, params
 the kind rejects, and a kind whose ports (name, direction, lanes, rate, in
 order) are not the BRM's.
 """
@@ -46,6 +48,8 @@ from functools import reduce as _fold
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+from snax_forge import expr
 
 from .brm import BrmError
 
@@ -143,13 +147,23 @@ def simd(
     lanes: int = 1,
     n_inputs: int = 2,
     op: Callable[[Any, Any], Any] = np.add,
+    k: int | None = None,
     dtypes: Mapping[str, str] | None = None,
 ) -> AccelFunction:
     """N inputs -> 1 output, one beat each per firing, ``op`` folding them left to right at
-    the inputs' dtype (``dtypes`` is not read: the result is cast when written)."""
+    the inputs' dtype (``dtypes`` is not read: the result is cast when written). One input
+    takes the constant ``k`` as its second operand, ``op(a, k)``, k cast to a's dtype; two or
+    more take none."""
     names = [chr(ord("a") + i) for i in range(n_inputs)]
+    if n_inputs == 1 and k is None:
+        raise ValueError("one input takes the constant k, op(a, k); none given")
+    if n_inputs != 1 and k is not None:
+        raise ValueError(f"k = {k} is one input's constant; {n_inputs} inputs take none")
 
-    def fn(k, ins, state, params):
+    def fn(i, ins, state, params):
+        if k is not None:
+            a = np.asarray(ins["a"])
+            return {"out": op(a, np.asarray(k).astype(a.dtype))}
         return {"out": _fold(op, (ins[n] for n in names))}
 
     ports = [AccelPort(n, "in", lanes) for n in names] + [AccelPort("out", "out", lanes)]
@@ -272,12 +286,13 @@ def function_of(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Acce
     kind = inst.brm.function.accel
     if kind not in KINDS:
         raise BrmError(f"{what}: accelerator kind {kind!r} not registered ({sorted(KINDS)})")
-    params = {k: inst.value(v) for k, v in inst.brm.function.params.items()}
+    params = {k: inst.value(v) for k, v in inst.brm.function.params.items()
+              if expr.names(v) <= set(inst.params)}  # an unset param is not evaluated  # fmt: skip
     try:
         built = KINDS[kind](**params, dtypes=dtypes)
     except (TypeError, ValueError) as e:
         raise BrmError(f"{what}: kind {kind!r} rejects {params}: {e}") from None
-    declared = [(p.name, p.direction, inst.lanes(p.name), p.rate) for p in inst.brm.interface.ports]
+    declared = [(p.name, p.direction, inst.lanes(p.name), p.rate) for p in inst.ports]
     ports = [(p.name, p.direction, p.lanes, p.rate) for p in built.ports]
     if declared != ports:
         raise BrmError(

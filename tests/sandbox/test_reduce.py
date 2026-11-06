@@ -106,7 +106,7 @@ def test_the_bound_dot_equals_np_dot():
 def test_every_w_that_divides_n(w):
     """One W for both accelerators; the recipe checks each step, and the result is np.dot."""
     g = apply_recipe(Recipe.load(RECIPE).with_params({"W": w}), graph("dot"))[-1].graph
-    assert g.node("mult").attrs["params"] == {"W": w, "op": "mul"}
+    assert g.node("mult").attrs["params"] == {"W": w, "op": "mul", "streams": 2}
     assert g.node("sum").attrs["params"] == {"W": w, "op": "add"}
     x = dot_inputs(seed=w)
     assert execute(g, x)["out"].tolist() == [int(x["A"] @ x["B"])]
@@ -167,7 +167,7 @@ REJECTED = [
         "starts from 5, the BRM from add's identity 0",
     ),
     (split_sum, SUM | {"implementation": "chisel_accumulator"}, "W = 4 not supported"),
-    (split_sum, SUM | {"brm": "simd"}, "is not a fold of inputs|one operator"),
+    (split_sum, SUM | {"brm": "simd"}, "the tasklet computes 'out = a' on the BRM's ports"),
     (lambda: split_map(imported(), "mult_map", 4), MUL | {"brm": "accumulate"}, "reduce folds one"),
 ]
 

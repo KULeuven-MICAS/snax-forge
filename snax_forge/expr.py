@@ -34,6 +34,10 @@ Operations
 ``substitute``
     replace names by values, canonical result (``split_map``: ``i`` becomes
     ``4 * i_t + i_s``).
+``unify``
+    match code against a pattern code whose slot names each stand for an int
+    constant (a BRM's code entry ``out = max(a, k)`` against ``out = max(a, 0)``:
+    ``{k: 0}``).
 ``linear``
     split a value that is affine in some variables into its constant part
     and one int coefficient per variable, without evaluating anything
@@ -131,6 +135,37 @@ def names(v: Value) -> set[str]:
     if type(v) is int:
         return set()
     return _names(_parsed(v))
+
+
+def ordered_names(v: Value) -> list[str]:
+    """The names ``v`` refers to, each once, in the order they first appear in its text."""
+    if type(v) is int:
+        return []
+    out: list[str] = []
+
+    def walk(node: ast.expr) -> None:
+        if isinstance(node, ast.Name):
+            out.append(node.id)
+        elif isinstance(node, ast.BinOp):
+            walk(node.left)
+            walk(node.right)
+        elif isinstance(node, ast.UnaryOp):
+            walk(node.operand)
+        elif isinstance(node, ast.Call):
+            for a in node.args:
+                walk(a)
+
+    walk(_parsed(v))
+    return list(dict.fromkeys(out))
+
+
+def occurrences(v: Value, name: str) -> int:
+    """How many times ``v`` reads ``name``."""
+    if type(v) is int:
+        return 0
+    funcs = {id(n.func) for n in ast.walk(_parsed(v)) if isinstance(n, ast.Call)}
+    return sum(1 for n in ast.walk(_parsed(v))
+               if isinstance(n, ast.Name) and n.id == name and id(n) not in funcs)  # fmt: skip
 
 
 def outside(v: Any, allowed: Iterable[str], what: str) -> list[str]:
@@ -389,3 +424,53 @@ def check_code(
             if name not in ins:
                 raise ExprError(f"{what}: {name!r} is not an input")
     return lines
+
+
+def unify(pattern: str, code: str, slots: Iterable[str]) -> dict[str, int] | None:
+    """The slot values that make ``code`` equal ``pattern``, or None when none do.
+
+    Both are valid code (``statements``), compared statement by statement and tree by tree.
+    A name in ``slots`` matches a sub-expression of ``code`` with no names whose value is an
+    int (``0``, ``-3``, ``2 * 4``); a slot used twice must match the same value. Everything
+    else must be the same: names, int literals, operators and calls. So ``out = max(a, k)``
+    takes ``out = max(a, 0)`` with ``k = 0``, and neither ``out = max(0, a)`` nor
+    ``out = max(a, b)``.
+    """
+    names_ = set(slots)
+    p_lines, c_lines = statements(pattern, "pattern"), statements(code, "code")
+    if len(p_lines) != len(c_lines):
+        return None
+    found: dict[str, int] = {}
+
+    def value(c: ast.expr) -> int | None:
+        if _names(c):
+            return None
+        try:
+            v = evaluate(ast.unparse(c), {})
+        except (ExprError, ZeroDivisionError):
+            return None
+        return v if type(v) is int else None
+
+    def same(p: ast.expr, c: ast.expr) -> bool:
+        if isinstance(p, ast.Name) and p.id in names_:
+            v = value(c)
+            return v is not None and found.setdefault(p.id, v) == v
+        if type(p) is not type(c):
+            return False
+        if isinstance(p, ast.Name):
+            return p.id == c.id
+        if isinstance(p, ast.Constant):
+            return p.value == c.value
+        if isinstance(p, ast.UnaryOp):
+            return type(p.op) is type(c.op) and same(p.operand, c.operand)
+        if isinstance(p, ast.BinOp):
+            return type(p.op) is type(c.op) and same(p.left, c.left) and same(p.right, c.right)
+        if isinstance(p, ast.Call):
+            return (p.func.id == c.func.id and len(p.args) == len(c.args)
+                    and all(same(a, b) for a, b in zip(p.args, c.args, strict=True)))  # fmt: skip
+        return False
+
+    for (tp, ep), (tc, ec) in zip(p_lines, c_lines, strict=True):
+        if tp != tc or not same(_parse(str(ep)), _parse(str(ec))):
+            return None
+    return found
