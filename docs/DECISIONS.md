@@ -91,7 +91,7 @@ Retired, and where each now lives:
 
 **D64** · lower — The task list is derived from a design point: per accelerated node `configure`, `start` and `sync` steps, loads and stores from the memory plan, `after` for data dependences only; lowering adds only the waits correctness needs, one per component. → C§9.
 
-**D68** · brm — A BRM is a hand-written JSON file: a shared part (an interface with a rate per port, so reductions and elementwise blocks share one; function, dataflow, pattern) and implementations (source, supports, timing, binding D129), its timing the user's numbers (D51). → C§10.
+**D68** · brm — A BRM is a hand-written JSON file: a shared part (an interface with a rate per port, so reductions and SIMD blocks share one, and a `when` naming the design params a port exists at; function, dataflow, pattern) and implementations (source, supports, timing, binding D129), its timing the user's numbers (D51). → C§10.
 
 **D70** · brm — A port's dataflow is a nest in a registered notation. `affine` gives the operand's shape, an offset and loops (spatial last, an innermost stride 0 repeating a beat); `stream`, for unit BRMs, gives only lanes and a rate, the bound memlet giving the order. → C§10.
 
@@ -105,7 +105,7 @@ Retired, and where each now lives:
 
 **D79** · ref — The reference executor runs any `.snaxdfg` in NumPy, accelerated nodes through their BRM's function; every sandbox step and every run is compared with it, so DaCe's CPU reference is not needed. → `dfg/execute.py`.
 
-**D82** · brm — A BRM says what one lane computes (`function.code`, or a list of codes each fixing design params, such as `simd`'s one per `op`: the first that matches gives the instance its params), and `bind` checks the tasklet, or a fused map's tasklets joined by a local value, against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
+**D82** · brm — A BRM says what one lane computes (`function.code`, or a table of codes each fixing design params and naming scalar slots, such as `simd`'s per `op` and `streams` with `k`: the first that matches gives the instance its params and the slots' values), and `bind` checks the tasklet, or a fused map's tasklets joined by a local value, against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
 
 **D84** · design — The platform is its own file in `platforms/`, paired with the bound graph by the design step, so either changes alone; its cluster parameters and the streamers' FIFO depths are design knobs, never a template (D134), and the streamers' temporal loops come from the graph. → C§13.
 
@@ -175,7 +175,7 @@ Retired, and where each now lives:
 
 **D142** · design — A bank word packs num_slc = 64/b elements of a port's container dtype, little-endian as NumPy. W lanes use num_ch = W/num_slc channels; another needs the FIFO slicer (parked: open item 93), so `connect.num_ch` refuses it. A packed stream: word-aligned base, num_slc | S_0, innermost stride 1, the others multiples of num_slc. The platform keeps only the word. → C§1, C§13, C§14.
 
-**D143** · brm — Arithmetic follows NumPy: each op runs at its operands' result type, with signedness from each port's container, and the result is then extended or wrapped into its target. A fold's lanes are cast to its output's type before its tree. Exact products (tier P) need an explicit cast in the kernel (open item 37). → C§16, snax-gvsoc `snax/snax_types.hpp`.
+**D143** · brm — Arithmetic follows NumPy: each op runs at its operands' result type, with signedness from each port's container, and the result is then extended or wrapped into its target. A fold's lanes are cast to its output's type before its tree. A literal operand is weak (NumPy's NEP 50): the op runs at the other operands' type, which the literal must fit (relu's `k`). Exact products (tier P) need an explicit cast in the kernel (open item 37). → C§16, snax-gvsoc `snax/snax_types.hpp`.
 
 **D144** · lower — Padding is in the data, the hardware masks nothing: a split dimension pads to a multiple of W, then the container to whole DMA beats, with zero or a max or min fold's identity. A fold may read through a tail a container another unit wrote when the producer's tasklet on its inputs' pad values gives the fold's identity (dot 1 at W_mul = W_sum = 10: 0 × 0 = 0, add's identity); otherwise `connect.pad` refuses, as when the producer never writes the pad words (W_mul = 8, W_sum = 10; open item 106). → `dfg/pad.py`, `gen/data.py`.
 
