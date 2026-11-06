@@ -76,6 +76,9 @@ DESIGNS = {
     "matvec_6": ("matvec_6", ["M=2", "N=16"]),
 }
 
+# SimdLanes' slot params of a unit with none (axpby's k1 and k2, each slot from its CSR or not)
+NO_SLOTS = {"k1": None, "k2": None, "kCsr": False, "k1Csr": False, "k2Csr": False}
+
 
 @pytest.fixture
 def vecadd(tmp_path):
@@ -101,7 +104,7 @@ def test_the_fill_rule_gives_the_datapaths_params(vecadd, tmp_path):
     sig = catalogue()["SimdLanes"]
     assert fill(acc, u, sig) == {"inTypes": ["int64", "int64"], "opType": "int64",
                                  "outType": "int64", "lanes": 4, "op": "add", "streams": 2,
-                                 "k": None}  # fmt: skip
+                                 "k": None} | NO_SLOTS  # fmt: skip
     vsum = accelerator_spec(
         point(tmp_path / "vsum", name="vsum", graph=bound_vsum()), tmp_path / "vsum"
     )
@@ -122,14 +125,15 @@ def test_relus_unit_fills_one_stream_and_its_k(tmp_path):
     sig = catalogue()["SimdLanes"]
     params = fill(acc, u, sig)
     assert params == {"inTypes": ["int32"], "opType": "int32", "outType": "int32", "lanes": 4,
-                      "op": "max", "streams": 1, "k": 0}  # fmt: skip
+                      "op": "max", "streams": 1, "k": 0} | NO_SLOTS  # fmt: skip
     assert list(live(sig["ports"], params)) == ["a", "out"]
 
 
 def test_the_catalogues_ops_are_elementwise_ops():
-    """The catalogue's op names are blocks.py's (whose encodings tests read from the Chisel source)."""
+    """The catalogue's op names are blocks.py's (whose encodings tests read from the Chisel source),
+    then axpby."""
     ops = catalogue()["SimdLanes"]["params"]["op"]["values"]
-    assert ops == list(ELEMENTWISE_OP)
+    assert ops == [*ELEMENTWISE_OP, "axpby"]
 
 
 def test_the_catalogue_has_the_datapaths_latency_span_and_pins():
@@ -184,12 +188,12 @@ def test_a_unit_the_catalogue_refuses(vecadd, code, cat):
 def test_a_type_param_must_be_type_names():
     sig = catalogue()["SimdLanes"]["params"]
     good = {"inTypes": ["int8", "uint8"], "opType": "int16", "outType": "int16", "lanes": 8,
-            "op": "add", "streams": 2, "k": None}  # fmt: skip
+            "op": "add", "streams": 2, "k": None} | NO_SLOTS  # fmt: skip
     check_params("E", good, sig)
     check_params("E", {**good, "inTypes": ["int8"], "streams": 1, "k": -(2**53)}, sig)
     for k, v in (("opType", 16), ("inTypes", "int8"), ("outType", "float32"),
                  ("inTypes", ["int8", "int128"]), ("op", "pow"), ("lanes", 0), ("streams", 0),
-                 ("k", "0"), ("k", 1.5), ("k", 2**53 + 1)):  # fmt: skip
+                 ("k", "0"), ("k", 1.5), ("k", 2**53 + 1), ("k1Csr", 1)):  # fmt: skip
         with pytest.raises(GenError) as e:
             check_params("E", {**good, k: v}, sig)
         assert e.value.code == "gen.params"
@@ -454,3 +458,36 @@ def test_a_links_flops_are_its_buffers():
     assert link_flops(0, 8, "int64", cat) == 0
     assert [link_flops(d, 8, "int64", cat) for d in (1, 2, 4)] == [512, 1024, 2048]
     assert link_flops(2, 4, "int8", cat) == 64
+
+
+def test_axpys_unit_fills_k1_from_its_csr_and_k1_is_a_live_pin(tmp_path):
+    """axpy's SimdLanes at axpby: k1 from its CSR (``scalars``), so k1Csr and the pin k1; baked,
+    k1 the const and no pin. A scalar that is no live pin is refused (gen.port_map)."""
+    from dataclasses import replace
+
+    from .test_axpy import axpy
+
+    sig = catalogue()["SimdLanes"]
+    for name, graph, slots in (("axpy", axpy(), {"k1Csr": True}),
+                               ("axpy_baked", axpy(baked=3), {"k1": 3})):  # fmt: skip
+        acc = accelerator_spec(point(tmp_path / name, name=name, graph=graph), tmp_path / name)
+        (u,) = acc.groups[0].units
+        params = fill(acc, u, sig)
+        assert (
+            params
+            == {
+                "inTypes": ["int32", "int32"],
+                "opType": "int32",
+                "outType": "int32",
+                "lanes": 2,
+                "op": "axpby",
+                "streams": 2,
+                "k": None,
+            }
+            | NO_SLOTS
+            | slots
+        )
+        assert list(live(sig["pins"], params)) == (["k1"] if "k1Csr" in slots else [])
+        check_unit(acc, u, catalogue())
+    with pytest.raises(GenError, match=r"scalar k3 is no pin of SimdLanes here \(\[\]\)"):
+        check_unit(acc, replace(u, scalars={"k3": "int32"}), catalogue())

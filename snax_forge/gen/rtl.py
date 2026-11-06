@@ -52,7 +52,9 @@ every ``--spec FILE --out DIR`` pair (``elaborate_all``).
 (a ``dtypes`` param) or the first input's (a ``dtype``), ``outputs.dtype`` the output's,
 ``inputs.lanes`` the first input's lanes, ``inputs.count`` how many inputs (SimdLanes'
 ``streams``), ``unit.opType`` and ``unit.params.<name>`` the unit's (None where the unit has no
-such param: SimdLanes' ``k`` at two streams, a ``const`` param); a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
+such param: SimdLanes' ``k`` at two streams, a ``const`` param), ``unit.scalars.<slot>`` whether
+the unit reads that slot from its CSR (SimdLanes' ``k1Csr``; each of the unit's scalars must
+then be a live pin, ``gen.port_map``); a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
 the unit's ports by their ``dir``, in the BRM's order.
 
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds, for
@@ -134,6 +136,7 @@ FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
     "unit.opType": lambda u, kind: u.op_type,
 }
 PARAMS_RULE = "unit.params."
+SCALARS_RULE = "unit.scalars."  # whether the unit reads that slot from its CSR (a bool)
 CONST_EXACT = 2**53  # a ``const`` param reaches Emit as a JSON number: a double, exact within it
 
 
@@ -145,6 +148,8 @@ def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[st
             out[name] = FILL_RULES[rule](unit, sig["params"][name]["type"])
         elif rule.startswith(PARAMS_RULE):
             out[name] = unit.params.get(rule.removeprefix(PARAMS_RULE))
+        elif rule.startswith(SCALARS_RULE):
+            out[name] = rule.removeprefix(SCALARS_RULE) in unit.scalars
         else:
             raise GenError(
                 "gen.catalogue", f"{unit.datapath}.{name}: the fill rule {rule!r} is unknown"
@@ -257,6 +262,11 @@ def check_unit(acc: Description, unit: Unit, cat: Mapping[str, Any]) -> None:
         if p.dir != ports[p.port]:
             raise GenError("gen.port_map", f"unit {unit.name}: BRM port {brm} ({p.dir}) onto "
                            f"{p.port} ({ports[p.port]})")  # fmt: skip
+    pins = live(sig["pins"], params)
+    for s in unit.scalars:
+        if s not in pins:
+            raise GenError("gen.port_map", f"unit {unit.name}: scalar {s} is no pin of "
+                           f"{unit.datapath} here ({list(pins)})")  # fmt: skip
     latency, span = value(sig["latency"], params), value(sig["span"], params)
     if (unit.latency, unit.ii, unit.span) != (latency, 1, span):
         raise GenError("gen.timing", f"unit {unit.name}: latency {unit.latency}, ii {unit.ii}, "

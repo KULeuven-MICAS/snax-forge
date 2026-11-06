@@ -18,6 +18,7 @@ import snax.forge.shell.AcceleratorSpec
   *   - `inputs.lanes`: the first input port's lanes;
   *   - `inputs.count`: the number of input ports (SimdLanes' `streams`);
   *   - `unit.opType`, `unit.params.<name>`: the unit's `opType` and its `params.<name>`;
+  *   - `unit.scalars.<slot>`: whether the unit reads that slot from its CSR (a `bool`: its `scalars` has it);
   *   - `link.depth`, `link.lanes`, `link.dtype`: a buffer's link's depth and its ends' lanes and dtype.
   *
   * A port is `"in"` or `"out"`, or `{"dir": ..., "when": {param: value, ...}}`; a pin is a name, or `{"name": ...,
@@ -81,6 +82,8 @@ object Datapaths {
           case "inputs.count"                     => ujson.Num(inPorts.size)
           case "unit.opType"                      => ujson.Str(unit.opType.get)
           case r if r.startsWith("unit.params.")  => unit.params.getOrElse(r.stripPrefix("unit.params."), ujson.Null)
+          case r if r.startsWith("unit.scalars.") =>
+            ujson.Bool(unit.scalars.exists(_._1 == r.stripPrefix("unit.scalars.")))
           case other                              => throw new IllegalArgumentException(s"$name.$n: fill rule $other")
         }
         n -> value
@@ -159,15 +162,24 @@ object Datapaths {
         ("opType", DtypeParam, "unit.opType"),
         ("outType", DtypeParam, "outputs.dtype"),
         ("lanes", IntParam(1), "inputs.lanes"),
-        ("op", OpParam(ElementwiseOp.all.map(ElementwiseOp.name)), "unit.params.op"),
+        ("op", OpParam(ElementwiseOp.all.map(ElementwiseOp.name) :+ SimdLanes.AxpbyName), "unit.params.op"),
         ("streams", IntParam(1), "inputs.count"),
-        ("k", ConstParam, "unit.params.k")
+        ("k", ConstParam, "unit.params.k"),
+        ("k1", ConstParam, "unit.params.k1"),
+        ("k2", ConstParam, "unit.params.k2"),
+        ("kCsr", BoolParam, "unit.scalars.k"),
+        ("k1Csr", BoolParam, "unit.scalars.k1"),
+        ("k2Csr", BoolParam, "unit.scalars.k2")
       ),
       Seq(Port("a", "in"), Port("b", "in", Seq("streams" -> ujson.Num(2))), Port("out", "out")),
       ujson.Num(0),
       ujson.Num(1),
       ujson.Num(0),
-      Seq.empty,
+      Seq(
+        Pin("k", Seq("kCsr" -> ujson.Bool(true))),
+        Pin("k1", Seq("k1Csr" -> ujson.Bool(true))),
+        Pin("k2", Seq("k2Csr" -> ujson.Bool(true)))
+      ),
       p => {
         val inTypes = p("inTypes").arr.toSeq.map(_.str)
         require(
@@ -179,8 +191,13 @@ object Datapaths {
           str(p, "opType"),
           str(p, "outType"),
           int(p, "lanes"),
-          ElementwiseOp.byName(str(p, "op")),
-          const(p("k"))
+          SimdLanes.opByName(str(p, "op")),
+          const(p("k")),
+          const(p("k1")),
+          const(p("k2")),
+          p("kCsr").bool,
+          p("k1Csr").bool,
+          p("k2Csr").bool
         )
       },
       Map(
@@ -190,7 +207,12 @@ object Datapaths {
         "lanes"   -> ujson.Num(4),
         "op"      -> ujson.Str("add"),
         "streams" -> ujson.Num(2),
-        "k"       -> ujson.Null
+        "k"       -> ujson.Null,
+        "k1"      -> ujson.Null,
+        "k2"      -> ujson.Null,
+        "kCsr"    -> ujson.Bool(false),
+        "k1Csr"   -> ujson.Bool(false),
+        "k2Csr"   -> ujson.Bool(false)
       )
     ),
     Datapath(

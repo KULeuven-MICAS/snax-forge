@@ -6,7 +6,7 @@ import chisel3._
 import _root_.circt.stage.ChiselStage
 import org.scalatest.flatspec.AnyFlatSpec
 
-import snax.forge.Datapaths.{BoolParam, DtypeParam, DtypesParam, IntParam, OpParam}
+import snax.forge.Datapaths.{BoolParam, ConstParam, DtypeParam, DtypesParam, IntParam, OpParam}
 
 /** The datapath catalogue: `Emit --describe` (the registry, `Datapaths`) equals the checked-in `hw/chisel/blocks.json`,
   * the file the Python side checks `accelerator.json` against (D130). Compared as JSON, key and list order included, so
@@ -25,7 +25,7 @@ class DatapathsSpec extends AnyFlatSpec {
 
   /** The least params each type takes: an int's min (8 lanes, whole words of the first type), the first op, `flag` for
     * a bool (and its opposite for `regOut`, so a Mac is accumulating, or plain with its output register), the first
-    * type (two of it for a list, three for a plain Mac's a, b and c).
+    * type (two of it for a list, three for a plain Mac's a, b and c), null for a const.
     */
   private def least(d: Datapaths.Datapath, flag: Boolean): Map[String, ujson.Value] = {
     val plain = d.name == "Mac" && !flag
@@ -35,15 +35,29 @@ class DatapathsSpec extends AnyFlatSpec {
       case (n, BoolParam, _)     => n -> ujson.Bool(if (n == "regOut") !flag else flag)
       case (n, DtypeParam, _)    => n -> ujson.Str(IntType.names.head)
       case (n, DtypesParam, _)   => n -> ujson.Arr.from(Seq.fill(if (plain) 3 else 2)(IntType.names.head))
+      case (n, ConstParam, _)    => n -> ujson.Null
     }.toMap
   }
 
+  /** The params each datapath is built at: its least at both flags; SimdLanes' at two streams, at one with k from its
+    * CSR pin, and at axpby with k1 and k2 from theirs, so every pin is live once.
+    */
+  private def variants(d: Datapaths.Datapath): Seq[Map[String, ujson.Value]] =
+    if (d.name != "SimdLanes") Seq(false, true).map(least(d, _))
+    else {
+      val two = least(d, false) ++ Map("streams" -> ujson.Num(2))
+      Seq(
+        two,
+        two ++ Map("streams" -> ujson.Num(1), "inTypes" -> ujson.Arr(IntType.names.head), "kCsr" -> ujson.Bool(true)),
+        two ++ Map("op" -> ujson.Str("axpby"), "k1Csr" -> ujson.Bool(true), "k2Csr" -> ujson.Bool(true))
+      )
+    }
+
   it should "name every live port and pin of each datapath's IO, and nothing else" in {
     for {
-      d    <- Datapaths.all
-      flag <- Seq(false, true)
+      d <- Datapaths.all
+      p <- variants(d)
     } {
-      val p     = least(d, flag)
       var names = Set.empty[String]
       ChiselStage.emitCHIRRTL(new Module {
         val built = d.build(p)
