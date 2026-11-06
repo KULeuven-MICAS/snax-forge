@@ -37,7 +37,7 @@ QUICK = ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4"]
 SETS = {
     "quick": QUICK,
     "full": [*QUICK, "vecadd", "vsum", "vecmul_i32_i64", "dot_2", "dot_3", "dot_5", "dot_6",
-             "matvec_5", "matvec_6"],
+             "matvec_5", "matvec_6", "relu"],
 }  # fmt: skip
 
 

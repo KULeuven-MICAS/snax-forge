@@ -228,7 +228,7 @@ def _streamers(design: Design) -> dict[str, tuple[str, str]]:
     return {
         streamer_name(i, p.name): (i, p.name)
         for i, inst in design.instances.items()
-        for p in inst.brm.interface.ports
+        for p in inst.ports
         if f"{i}.{p.name}" not in linked
     }
 
@@ -335,7 +335,7 @@ def _graph_brm(design: Design) -> Iterable[Problem]:
             yield Problem("graph.brm", where, str(e))
             continue
         design.instances.setdefault(n.attrs["instance"], inst)
-        ports = inst.brm.interface.ports
+        ports = inst.ports
         ins = [p.name for p in ports if p.direction == "in"]
         outs = [p.name for p in ports if p.direction == "out"]
         if sorted(n.inputs) != sorted(ins) or sorted(n.outputs) != sorted(outs):
@@ -464,7 +464,7 @@ def _connect_dtype(design: Design) -> Iterable[Problem]:
     g = design.graph
     for i, inst in design.instances.items():
         nodes = [n for n in accelerated(g) if n.attrs["instance"] == i]
-        for p in inst.brm.interface.ports:
+        for p in inst.ports:
             by: dict[str, list[str]] = {}
             for n in nodes:
                 by.setdefault(port_dtypes(g, n)[p.name], []).append(n.id)

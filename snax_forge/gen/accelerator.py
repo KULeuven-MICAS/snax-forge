@@ -459,7 +459,7 @@ def fixed_fold(graph: Graph, node: Node, inst: Instance) -> int | None:
     rate = fold_rate(inst)
     if rate is None:
         return None
-    port = next(p.name for p in inst.brm.interface.ports if p.direction == "out" and p.rate == rate)
+    port = next(p.name for p in inst.ports if p.direction == "out" and p.rate == rate)
     used = node.outputs[port].names
     loops = list(next(o for n, o in graph.walk() if n is node))
     k = len(loops)
@@ -530,7 +530,7 @@ def describe(point: DesignPoint, point_path: str) -> Description:
             groups.append(Group(group_name, [start, jobs, status, counter], group_units,
                                 group_links))  # fmt: skip
             for u in members:
-                ports = [p for p in mine[u].brm.interface.ports if f"{u}.{p.name}" not in linked]
+                ports = [p for p in mine[u].ports if f"{u}.{p.name}" not in linked]
                 inputs += [f"{u}.{p.name}" for p in ports if p.direction == "in"]
                 outputs += [f"{u}.{p.name}" for p in ports if p.direction == "out"]
         accs.append(Accelerator(acc_name, inputs, outputs, groups))

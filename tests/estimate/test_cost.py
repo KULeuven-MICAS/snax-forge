@@ -179,3 +179,21 @@ def _platform():
     from snax_forge.design import Platform
 
     return Platform.load(SNAX_FORGE)
+
+
+def test_a_one_stream_simd_is_not_the_two_input_point():
+    """relu at int64 binds a one-stream SimdLanes (op max, k 0): the table's SimdLanes points
+    are two-input ones, so it is not characterized (``char.missing``), its flops still counted;
+    vecadd's two-stream add at int64 is."""
+    from snax_forge.design import Platform
+    from snax_forge.dfg import Graph
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from tests.helpers import graph_dict, recipe_path
+
+    d = graph_dict("relu")
+    for c in d["containers"].values():
+        c["dtype"] = "int64"
+    g = apply_recipe(Recipe.load(recipe_path("relu")), Graph.from_dict(d))[-1].graph
+    e = estimate(g, Platform.load(SNAX_FORGE))
+    assert e.missing == ["acc"] and e.groups[0].cost.units["acc"].found is None
+    assert estimated("vecadd").missing == []

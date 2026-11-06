@@ -476,7 +476,7 @@ def _instance(edit=None, params=None, name="simd", impl=IMPL) -> Instance:
     if edit:
         edit(d)
     brm = Brm.from_dict(d)
-    return Instance(brm, impl, params or {"W": 4, "op": "add"})
+    return Instance(brm, impl, params or {"W": 4, "op": "add", "streams": 2})
 
 
 def _binding(impl=IMPL, **kw):
@@ -497,7 +497,13 @@ def _ports(**kw):
 
 
 ADAPTER_CASES = [
-    ("op", None, {"W": 4, "op": "nand"}, "gen.op"),
+    ("op", None, {"W": 4, "op": "nand", "streams": 2}, "gen.op"),
+    ("no k", None, {"W": 4, "op": "max", "streams": 1}, "gen.args"),
+    ("k at two", None, {"W": 4, "op": "max", "streams": 2, "k": 0}, "gen.args"),
+    ("k too wide", None, {"W": 8, "op": "add", "streams": 1, "k": 128}, "gen.k",
+     _dtypes(("a", "out"), a="int8", out="int8")),
+    ("k below", None, {"W": 4, "op": "add", "streams": 1, "k": -1}, "gen.k",
+     _dtypes(("a", "out"), a="uint16", out="uint16")),
     ("args", _binding(args={"lanes": "W"}), {}, "gen.args"),
     ("float", None, {}, "gen.dtype", _dtypes(a="float64", b="float64", out="float64")),
     ("lanes x N", None, {}, "gen.lanes", _dtypes(a="int8", b="int8", out="int8")),
@@ -575,6 +581,40 @@ def test_the_adapter_reads_unsigned_and_narrow_dtypes():
     assert mixed.op_type == "int32"  # vmul int32 into int64: the op at int32, then extended
     signs = simd_lanes(_instance(), _dtypes(a="int16", b="uint16", out="int32"))
     assert signs.op_type == "int32"
+
+
+def test_one_stream_is_a_and_out_with_k():
+    """At one stream the unit is a and out, opType a's dtype, params op and k; at two, as
+    before, op only (an unset k never read)."""
+    one = simd_lanes(_instance(None, {"W": 4, "op": "max", "streams": 1, "k": -3}),
+                     _dtypes(("a", "out"), a="int32", out="int32"))  # fmt: skip
+    assert list(one.ports) == ["a", "out"] and one.op_type == "int32"
+    assert one.params == {"op": "max", "k": -3}
+    two = simd_lanes(_instance(), _dtypes())
+    assert list(two.ports) == ["a", "b", "out"] and two.params == {"op": "add"}
+    edge = {"W": 8, "op": "add", "streams": 1, "k": -128}
+    assert simd_lanes(_instance(None, edge), _dtypes(("a", "out"), a="int8", out="int8")).params[
+        "k"] == -128  # fmt: skip
+
+
+def test_relu_is_one_unit_of_one_input_and_k(tmp_path):
+    """relu's recipe gives one SimdLanes unit: a and out at int32, op max, k 0; one reader and
+    one writer of two channels each."""
+    from .helpers import bound_recipe
+
+    out = tmp_path / "gvsoc" / "relu"
+    m = generate(point(tmp_path, name="relu", graph=bound_recipe("relu", "relu")), out,
+                 root=tmp_path)  # fmt: skip
+    (unit,) = json.loads((out / "accelerator.json").read_text())["accelerators"][0]["groups"][0][
+        "units"]  # fmt: skip
+    assert unit["ports"] == {"a": {"port": "a", "dir": "in", "dtype": "int32", "lanes": 4},
+                             "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 4}}  # fmt: skip
+    assert (unit["opType"], unit["params"]) == ("int32", {"op": "max", "k": 0})
+    s = parsed(out / streamer_file("relu"))
+    assert s["data_reader_params"]["num_channel"] == [2]
+    assert s["data_writer_params"]["num_channel"] == [2]
+    assert [t.to_dict() for t in m.tasks] == [
+        {"name": "numpy_maximum_acc", "beats": 16, "csrs": {"JOBS": 16}}]  # fmt: skip
 
 
 def test_three_ports_are_refused():

@@ -220,7 +220,7 @@ def unit_firings(g: Graph, node: Node, inst: Instance) -> tuple[dict[str, Any], 
     memlets = {**node.inputs, **node.outputs}
     try:  # named rates from the loops a memlet does not use (D102), as REF and bind do
         rates = named_rates(
-            {p.name: (memlets[p.name], p.rate) for p in inst.brm.interface.ports},
+            {p.name: (memlets[p.name], p.rate) for p in inst.ports},
             [(lp.var, lp.count) for lp in loops],
             what,
         )
@@ -296,7 +296,7 @@ class _Derivation:
     def outer(self, un: Any) -> list[str]:
         """The node's ports with a streamer: every port not on a link."""
         u = un.attrs["instance"]
-        return [p.name for p in self.insts[u].brm.interface.ports
+        return [p.name for p in self.insts[u].ports
                 if f"{u}.{p.name}" not in self.linked_ports]  # fmt: skip
 
     def dma(self, task: str, direction: str, c: str, after: list[str]) -> None:
@@ -395,7 +395,7 @@ class _Derivation:
         name = n.attrs["instance"]
         movers = []
         for unit in self.groups[accelerator_of(n)]:
-            for q in (q.name for q in self.insts[unit].brm.interface.ports):
+            for q in (q.name for q in self.insts[unit].ports):
                 s = self.point.streamers.get(streamer_name(unit, q))
                 if s is None:  # a port on a link
                     continue

@@ -79,8 +79,9 @@ worked out here:
                                                        (``mult_map · i · 2048 · untagged``)
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
                  ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``)
-    unit         ``<instance> · <what one lane computes> · W <lanes>``, a fold's as a
-                 tasklet's                                          (``mul · a * b · W 4``)
+    unit         ``<instance> · <what one lane computes> · W <lanes>``, then each slot
+                 and its value, a fold's as a tasklet's   (``mul · a * b · W 4``,
+                                                           ``acc · max(a, k) · W 4 · k 0``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
     container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
                  ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links)
@@ -502,7 +503,8 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
     ``split_reduce``'s ``M_final``). ``entries``, in the graph's order:
 
         unit    per bound instance: its BRM, the lanes its design params give (``W = 8``) and
-                the params of the splits that set them (``acc · simd · W = 8``)
+                the params of the splits that set them, then its slots, read only
+                (``acc · simd · W = 8``, relu's ``acc · simd · W = 4 · k = 0``)
         split   a split whose map is not bound yet: its factor's params (``not bound``)
         link    a link whose depth a step gives as a param
 
@@ -534,9 +536,11 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
                     used.add(i)
                     names += [x for x in ps if x not in names]
             design = dict(a.get("params") or {})
-            lanes = {k: v for k, v in design.items() if isinstance(v, int)}
+            slots = slot_params(n)
+            lanes = {k: v for k, v in design.items() if isinstance(v, int) and k not in slots
+                     and k in _lanes_names(n)}  # fmt: skip
             entries.append({"kind": "unit", "id": a["instance"], "label": f"{a['instance']} · {a['brm']}",
-                            "names": names, "lanes": lanes, "note": None})  # fmt: skip
+                            "names": names, "lanes": lanes, "slots": slots, "note": None})  # fmt: skip
         elif n.kind == "link" and n.attrs["container"] in links:
             c = n.attrs["container"]
             entries.append({"kind": "link", "id": c, "label": f"link {c} · depth",
@@ -552,17 +556,37 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
         for x in e["names"]:
             by_name.setdefault(x, []).append(e["label"])
     for e in entries:
-        names = e.pop("names")
+        names, slots = e.pop("names"), e.pop("slots", {})
         e["params"] = [{"name": x, "value": params.get(x), "editable": bool(editable and x in params),
                         "shared_with": [lbl for lbl in by_name[x] if lbl != e["label"]]}
                        for x in names]  # fmt: skip
         if not e["params"] and e["lanes"]:  # no recipe param: the design params, read only
             e["params"] = [{"name": k, "value": v, "editable": False, "shared_with": []}
                            for k, v in e["lanes"].items()]  # fmt: skip
+        e["params"] += [{"name": k, "value": v, "editable": False, "shared_with": []}
+                        for k, v in slots.items()]  # a slot, baked in: read only  # fmt: skip
     symbol_params = {x["param"] for x in symbols_section(g, recipe) if x["param"]}
     unused = [{"name": k, "value": v, "editable": editable} for k, v in params.items()
               if k not in symbol_params and k not in by_name]  # fmt: skip
     return {"entries": entries, "unused": unused, "tree": bindings_tree(g, entries)}
+
+
+def slot_params(n: Node) -> dict[str, int]:
+    """An accelerated node's slots and their values: the int design params its code reads
+    (``simd``'s ``k``, brm.py's ``Code``)."""
+    params = n.attrs.get("params") or {}
+    read = {x for _, e in expr.statements(n.attrs["code"], n.id) for x in expr.names(e)}
+    return {k: v for k, v in params.items() if k in read and type(v) is int}
+
+
+def _lanes_names(n: Node) -> set[str]:
+    """The design params its BRM's ports' lanes name; every int param when it does not
+    resolve."""
+    try:
+        inst = instance_of(n)
+    except (BrmError, ExprError, KeyError, ValueError):
+        return set(n.attrs.get("params") or {})
+    return {x for p in inst.ports for x in expr.names(p.lanes)}
 
 
 def bindings_tree(g: Graph, entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1079,8 +1103,9 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
         text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}"
         try:
             inst = instance_of(n)
-            first = next(p.name for p in inst.brm.interface.ports if p.direction == "in")
-            return f"{text} · {param or 'W'} {inst.lanes(first)}"
+            first = next(p.name for p in inst.ports if p.direction == "in")
+            slots = "".join(f" · {k} {v}" for k, v in slot_params(n).items())
+            return f"{text} · {param or 'W'} {inst.lanes(first)}{slots}"
         except (BrmError, ExprError, KeyError, StopIteration):
             return text
     if n.kind == "link":

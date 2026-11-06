@@ -25,7 +25,9 @@ them are ignored) and its lanes (and depth): the entry whose params equal them, 
                   a LinkBuffer's depth, when no point has it, is linear between the two
                   measured depths around it (at lanes 1, then copied), and found so
 
-and None for anything else: no entry with these params (a dtype other than int64, another op),
+A param the fill leaves None (an unset slot, SimdLanes' ``k`` at two streams) is not compared.
+None for anything else: no entry with these params (a dtype other than int64, another op, a
+SimdLanes at one stream, whose ``inTypes`` and ``k`` no two-input point has),
 lanes or depth outside the measured range (TreeAccumulate at lanes 64, SerialAccumulate at
 lanes 1, a LinkBuffer deeper than 16). None is never a refusal: the estimate counts the block as
 0 and lists it (C§19), and the design note ``char.missing`` names it (C§14).
@@ -124,7 +126,7 @@ def _at_depth(points: list[dict[str, Any]], lanes: int, depth: int | None) -> Lo
 def lookup(table: Table, datapath: str, params: Mapping[str, Any], lanes: int,
            depth: int | None = None) -> Lookup | None:  # fmt: skip
     """A block's comb area and energy per fire on ``table`` (module doc), or None."""
-    want = {k: v for k, v in params.items() if k not in _IGNORED}
+    want = {k: v for k, v in params.items() if k not in _IGNORED and v is not None}  # unset: none
     entries = table.blocks.get(DATAPATH_RENAMES.get(datapath, datapath), [])
     entry = next((e for e in entries if e["params"] == want), None)
     if entry is None:

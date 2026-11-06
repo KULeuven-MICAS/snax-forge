@@ -169,7 +169,7 @@ def test_vecadd_accelerated():
     assert (acc["text"], acc["inputs"][0]) == ("acc · a + b · W 4", {"connector": "a", "data": "A"})
     d = v["details"]["node:add"]
     assert (d["brm"], d["implementation"], d["params"], d["replaced"], d["timing"]) == (
-        "simd", "chisel_tiled_spatial", {"W": 4, "op": "add"}, "add_map_s › add",
+        "simd", "chisel_tiled_spatial", {"W": 4, "op": "add", "streams": 2}, "add_map_s › add",
         {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
     assert v["details"]["node:add_map"] == {"kind": "map", "var": "i_t", "range": "0:N // 4",
                                            "loop.kind": "temporal",
@@ -893,3 +893,21 @@ def test_the_recipes_param_names_in_the_boxes_and_details():
     two = Recipe.load(recipe_path("dot_2")).with_params({"N": 2048, "W": 8})
     g2 = apply_recipe(two, imported("dot"))[-1].graph
     assert unit_params(g2, two) == {"mul": ["W"], "sum": ["W"]}
+
+
+def test_a_unit_with_a_slot_shows_it():
+    """relu's unit: its slot k beside its lanes, in the drawing and in the Bindings, read only;
+    streams is no lanes param, so not shown."""
+    from snax_forge.dfg import Graph
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from snax_forge.viz.dfg.api import bindings_section, compact_text
+    from tests.helpers import FIXTURES, recipe_path
+
+    r = Recipe.load(recipe_path("relu"))
+    g = apply_recipe(r, Graph.load(FIXTURES / "relu.snaxdfg"))[-1].graph
+    assert compact_text(g, g.node("numpy_maximum")) == "acc · max(a, k) · W 4 · k 0"
+    for recipe in (r, None):
+        (e,) = bindings_section(g, recipe)["entries"]
+        assert e["label"] == "acc · simd"
+        assert [(p["name"], p["value"], p["editable"]) for p in e["params"]] == [
+            ("W", 4, False), ("k", 0, False)]  # fmt: skip

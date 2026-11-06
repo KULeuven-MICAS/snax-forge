@@ -139,7 +139,7 @@ class CError(CodedError):
 def fold_rate(inst: Instance) -> str | None:
     """The runtime param an output port's rate names, a fold's T; None for a unit whose
     outputs all have rate 1."""
-    for p in inst.brm.interface.ports:
+    for p in inst.ports:
         if p.direction == "out" and isinstance(p.rate, str):
             return p.rate
     return None
@@ -265,7 +265,7 @@ class _Program:
         for acc, units in self.accs.items():
             n = {False: 0, True: 0}
             for unit, inst in units.items():
-                for p in inst.brm.interface.ports:
+                for p in inst.ports:
                     s = self.point.streamers.get(streamer_name(unit, p.name))
                     if s is None:  # a port on a link: no streamer
                         continue

@@ -375,7 +375,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         name, port = end.split(".", 1)
         inst, node = found[name], instance_nodes(point.graph)[name]
         values = task.values[name] if linked else task.values
-        (p,) = (x for x in inst.brm.interface.ports if x.name == port)
+        (p,) = (x for x in inst.ports if x.name == port)
         c = (node.inputs if p.direction == "in" else node.outputs)[p.name].data
         array = c if p.direction == "in" else f"{c}_golden"
         rate = 1 if p.rate == 1 else values[p.rate]

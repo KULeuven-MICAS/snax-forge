@@ -116,7 +116,7 @@ def accelerators(graph: Graph, platform: Platform | None = None) -> list[Acceler
             from .data import ports
 
             outer = ports(graph)
-            mine = [(u, p) for u in units for p in insts[u].brm.interface.ports
+            mine = [(u, p) for u in units for p in insts[u].ports
                     if f"{u}.{p.name}" in outer]  # fmt: skip
             mine = ([x for x in mine if x[1].direction == "in"]
                     + [x for x in mine if x[1].direction == "out"])  # fmt: skip

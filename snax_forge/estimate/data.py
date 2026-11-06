@@ -113,7 +113,7 @@ def outer_ports(graph: Graph) -> list[tuple[Node, str, PortData]]:
         if n.kind != "accelerated":
             continue
         inst, loops = instance_of(n), firing_loops(graph, n)
-        for p in inst.brm.interface.ports:
+        for p in inst.ports:
             if f"{n.attrs['instance']}.{p.name}" in linked:
                 continue
             m = (n.inputs | n.outputs)[p.name]

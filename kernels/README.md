@@ -1,6 +1,6 @@
 # Kernels
 
-Every kernel SNAX-FORGE targets, one file each with a `KernelSpec`. The flow uses `vecadd`, `vecmul`, `vsum` and `dot` (`recipes/`). The kernels tagged `staged` are here to be read and their graphs looked at (`pixi run sdfg K`, `pixi run import-dfg K`, `pixi run view-dfg`); they are not linked to the flow. `pixi run kernels` prints each kernel's directory, tier, dtype, whether its SDFG builds and whether `import-dfg` takes it, or why not.
+Every kernel SNAX-FORGE targets, one file each with a `KernelSpec`. The flow uses `vecadd`, `vecmul`, `vsum`, `dot` and `relu` (`recipes/`). The kernels tagged `staged` are here to be read and their graphs looked at (`pixi run sdfg K`, `pixi run import-dfg K`, `pixi run view-dfg`); they are not linked to the flow. `pixi run kernels` prints each kernel's directory, tier, dtype, whether its SDFG builds and whether `import-dfg` takes it, or why not.
 
 The PolyBench and DL kernels are NPBench's DaCe sources (BSD-3, `NPBENCH_LICENSE`) with their structure kept (D113): a `return X` becomes `out[:] = X`, and a body that only runs under DaCe (it loops over symbols or calls DaCe programs) has NPBench's NumPy version as its reference (`ref`). They are `int64` where the kernel is integer arithmetic, at PolyBench's MINI sizes; `softmax`, `mlp`, `lenet` and `resnet` keep NPBench's `float32` (`float-staged`) until their tier decides the integer form. The tiers are PAPER §6.1's.
 
@@ -55,6 +55,7 @@ $$B = \max(A, 0)$$
 
 - `np.maximum` becomes `max(in1, 0)`, in the expression grammar; at int32 DaCe writes the 0 as `dace.int32(0)`, a constant cast the importer folds.
 - A compare-and-select unit at II 1; `mlp`, `lenet` and `resnet` use it between layers.
+- It runs: `recipes/elementwise/relu.json` splits the map by W = 4 and binds `simd` at one stream, op max, its slot k = 0 read off the tasklet's literal and baked into the SimdLanes (C§10).
 
 ### rowsum
 

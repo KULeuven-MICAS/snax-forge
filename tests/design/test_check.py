@@ -153,7 +153,7 @@ def test_an_empty_map_and_an_empty_graph_are_unbound():
     [
         ("brm", "elementwise_div", "no BRM 'elementwise_div'"),
         ("implementation", "verilog", "no implementation 'verilog'"),
-        ("params", {"W": 4, "op": "sub"}, "not in the param's values"),
+        ("params", {"W": 4, "op": "and"}, "not in the param's values"),
         ("code", "out = a - b", "computes 'out = a - b', but simd computes"),
     ],
 )
@@ -281,7 +281,7 @@ def test_one_instance_moves_one_dtype_per_port():
     got = [p for p in problems(design(edit_graph=_second_node_of_acc)) if p.code == "connect.dtype"]
     assert [p.where for p in got] == ["streamer acc_a", "streamer acc_b", "streamer acc_out"]
     assert got[0].message == (
-        "port a of instance acc (simd, W=4, op=add) gets int32 from add2, int64 from "
+        "port a of instance acc (simd, W=4, op=add, streams=2) gets int32 from add2, int64 from "
         "add: one streamer moves one dtype"
     )
     assert got[0].fix == "bind the nodes of each dtype to an instance of their own in the recipe"

@@ -282,7 +282,7 @@ def _movers(point: DesignPoint, name: str, inst: Instance,
             groups: dict[str, list[dict[str, Any]]]) -> None:  # fmt: skip
     """Unit ``name``'s movers onto ``groups`` (readers, writers), in port order."""
     dtypes = node_dtypes(point, name)
-    for p in inst.brm.interface.ports:
+    for p in inst.ports:
         s = point.streamers.get(streamer_name(name, p.name))
         if s is None:  # a port on a link: no streamer (D112)
             continue

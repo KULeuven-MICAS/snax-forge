@@ -291,7 +291,7 @@ def components(point: DesignPoint) -> dict[str, str]:
     found = instances(point.graph)
     for group, units in groups(point.graph).items():
         for name in units:
-            for p in found[name].brm.interface.ports:
+            for p in found[name].ports:
                 if streamer_name(name, p.name) in point.streamers:
                     out[streamer_name(name, p.name)] = "streamer"
             if len(units) == 1:

@@ -270,7 +270,7 @@ def resolve(platform: Platform, graph: Graph, insts: dict[str, Instance]) -> dic
     for name, inst in insts.items():
         mine = [n for n in nodes if n.attrs["instance"] == name]
         loops = {n.id: firing_loops(graph, n) for n in mine}
-        for p in inst.brm.interface.ports:
+        for p in inst.ports:
             if f"{name}.{p.name}" in linked:
                 continue
             s = streamer_name(name, p.name)
