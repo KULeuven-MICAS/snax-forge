@@ -18,8 +18,8 @@
      "units": [
       {
        "name": "acc",
-       "brm": "elementwise_add",
-       "datapath": "ElementwiseLanes",
+       "brm": "simd",
+       "datapath": "SimdLanes",
        "ports": {
         "a": {"port": "a", "dir": "in", "dtype": "int64", "lanes": 4},
         "b": {"port": "b", "dir": "in", "dtype": "int64", "lanes": 4},

@@ -3,10 +3,10 @@
 // design/design_point.json` again.
 // The cluster snax_forge_cluster: platforms/snax_forge_cluster.hjson with
 // platform snax_forge's values and its slot the entry snax_forge_vecadd, one
-// streamer set per accelerator: accelerator acc: instance acc, BRM
-// elementwise_add, implementation chisel_tiled_spatial, datapath
-// ElementwiseLanes; each set's streamer in
-// snax_forge_vecadd_streamer_<set>.hjson, the accelerators in accelerator.json.
+// streamer set per accelerator: accelerator acc: instance acc, BRM simd,
+// implementation chisel_tiled_spatial, datapath SimdLanes; each set's streamer
+// in snax_forge_vecadd_streamer_<set>.hjson, the accelerators in
+// accelerator.json.
 {
  "nr_s1_quadrant": 1,
  "s1_quadrant": {"nr_clusters": 1},
