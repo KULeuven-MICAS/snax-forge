@@ -6,6 +6,7 @@ import scala.jdk.CollectionConverters._
 
 import org.scalatest.flatspec.AnyFlatSpec
 
+import snax.forge.datapath.SimdLanes
 import snax.forge.elementwise.ElementwiseOp
 
 /** `flops` (`blocks.json`, the registry's `Datapath.flops`): per seed of `Seeds`, a block of every datapath at random
@@ -22,16 +23,29 @@ class BlockFlopsSpec extends AnyFlatSpec {
   private def blocks(r: Rand): Seq[(String, ujson.Obj)] = {
     def lanes       = r.between(1, 8)
     val elementwise = {
-      val (a, b) = (dtype(r), dtype(r))
-      val one    = r.between(0, 1) == 0 // one stream: a alone and the constant k (0, which every type holds)
+      val (a, b)       = (dtype(r), dtype(r))
+      // two streams at an ElementwiseOp; one stream with k baked or from its CSR; or axpby, k1 baked or from its CSR
+      // and k2 baked, from its CSR or neither. A baked value is in 0..100, which every type holds.
+      val form         = r.between(0, 2)
+      val (one, axpby) = (form == 1, form == 2)
+      def baked        = ujson.Num(r.between(0, 100))
+      def pick(csr: Boolean, none: Boolean): ujson.Value = if (csr || none) ujson.Null else baked
+      val kCsr  = one   && r.between(0, 1) == 0
+      val k1Csr = axpby && r.between(0, 1) == 0
+      val k2    = if (axpby) r.between(0, 2) else 0 // 0 none, 1 baked, 2 from its CSR
       ujson.Obj(
         "inTypes" -> (if (one) ujson.Arr(a) else ujson.Arr(a, b)),
         "opType"  -> dtype(r, IntType(a).width max (if (one) 0 else IntType(b).width)),
         "outType" -> dtype(r),
         "lanes"   -> lanes,
-        "op"      -> r.pick(ElementwiseOp.all.map(ElementwiseOp.name)),
+        "op"      -> (if (axpby) SimdLanes.AxpbyName else r.pick(ElementwiseOp.all.map(ElementwiseOp.name))),
         "streams" -> (if (one) 1 else 2),
-        "k"       -> (if (one) ujson.Num(0) else ujson.Null)
+        "k"       -> pick(kCsr, !one),
+        "k1"      -> pick(k1Csr, !axpby),
+        "k2"      -> pick(k2 == 2, k2 == 0),
+        "kCsr"    -> kCsr,
+        "k1Csr"   -> k1Csr,
+        "k2Csr"   -> (k2 == 2)
       )
     }
     val tree        = {

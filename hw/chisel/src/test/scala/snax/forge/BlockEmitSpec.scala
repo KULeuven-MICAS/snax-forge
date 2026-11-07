@@ -28,35 +28,46 @@ class BlockEmitSpec extends AnyFlatSpec {
 
   private def i64(n: Int) = ujson.Arr.from(Seq.fill(n)(ujson.Str("int64")))
 
+  /** A SimdLanes block at int64 and `Lanes` lanes, its params in `blocks.json`'s order (as `emitted.json` lists them):
+    * each constant baked (a number) or absent (null), each CSR flag.
+    */
+  private def simd(
+    streams: Int,
+    op:      String,
+    k:       ujson.Value = ujson.Null,
+    k1:      ujson.Value = ujson.Null,
+    k2:      ujson.Value = ujson.Null,
+    kCsr:    Boolean     = false,
+    k1Csr:   Boolean     = false,
+    k2Csr:   Boolean     = false
+  ): Case =
+    Case(
+      "SimdLanes",
+      ujson.Obj(
+        "inTypes" -> i64(streams),
+        "opType"  -> "int64",
+        "outType" -> "int64",
+        "lanes"   -> Lanes,
+        "op"      -> op,
+        "streams" -> streams,
+        "k"       -> k,
+        "k1"      -> k1,
+        "k2"      -> k2,
+        "kCsr"    -> kCsr,
+        "k1Csr"   -> k1Csr,
+        "k2Csr"   -> k2Csr
+      ),
+      Set.empty,
+      registered = false
+    )
+
   private val cases = Seq(
-    Case(
-      "SimdLanes",
-      ujson.Obj(
-        "inTypes" -> i64(2),
-        "opType"  -> "int64",
-        "outType" -> "int64",
-        "lanes"   -> Lanes,
-        "op"      -> "add",
-        "streams" -> 2,
-        "k"       -> ujson.Null
-      ),
-      Set.empty,
-      registered = false
-    ),
-    Case(
-      "SimdLanes",
-      ujson.Obj(
-        "inTypes" -> i64(1),
-        "opType"  -> "int64",
-        "outType" -> "int64",
-        "lanes"   -> Lanes,
-        "op"      -> "max",
-        "streams" -> 1,
-        "k"       -> 0
-      ),
-      Set.empty,
-      registered = false
-    ),
+    simd(2, "add"),
+    simd(1, "max", k       = 0),
+    simd(1, "max", kCsr    = true), // the pin k
+    simd(2, "axpby", k1Csr = true, k2Csr = true), // the pins k1 and k2
+    simd(2, "axpby", k1    = 3) // no pin
+  ) ++ Seq(
     Case(
       "TreeAccumulate",
       ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> Lanes, "op" -> "add"),
