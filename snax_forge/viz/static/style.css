@@ -499,6 +499,8 @@ path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
 path.edge.local { stroke: var(--busy); stroke-width: 2; stroke-dasharray: 4 3; }
 svg.dfg-edges text.edge-label { font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--busy); }
 svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
+/* a broadcast's label at its edge's start: a band of the page behind it, so an edge it crosses does not run through it */
+svg.dfg-edges text.edge-label.at-start { paint-order: stroke; stroke: var(--bg); stroke-width: 4px; stroke-linejoin: round; }
 
 /* groups and accelerators: a thin dashed outline, the name on top */
 svg.dfg-edges .group-box rect, svg.dfg-edges .acc-box rect { fill: none; stroke-dasharray: 5 4; pointer-events: stroke; cursor: pointer; }

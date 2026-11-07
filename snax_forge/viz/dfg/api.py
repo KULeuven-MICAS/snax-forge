@@ -39,8 +39,9 @@ shown again in the row above its reader, with the same version and a
 shows an array once per access. Inside
 one top-level node, a read of a container written earlier in that same node
 is an edge straight from the writer's connector. Within a row, containers
-come in the order the next node's connectors read them, then the rest, so
-edges cross as little as possible.
+come in the order the next node's connectors read them, then the rest; the
+page then puts each box above the leftmost connector it feeds, which only the
+browser knows (dfg.js's ``orderRows``), so edges cross as little as possible.
 
 Each edge is one memlet: from a container box (or a writer's connector) to
 an input connector, or from an output connector to a container box, with its ``id``
@@ -78,7 +79,9 @@ worked out here:
     map          ``<id> · <var> · <iterations> · <kind or untagged>``
                                                        (``mult_map · i · 2048 · untagged``)
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
-                 ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``)
+                 ``fold <op>`` for a copy into a ``reduce``, then each scalar baked into it
+                 (``bake_scalar``) and its value  (``mult · in1 * in2``, ``sum · fold +``,
+                                                   ``mult · 3 * in2 · alpha 3``)
     unit         ``<instance> · <what one lane computes> · W <lanes>``, then each slot
                  and its value, baked or read from a scalar (a CSR), a fold's as a tasklet's
                                                           (``mul · a * b · W 4``,
@@ -88,8 +91,9 @@ worked out here:
     container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
                  ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links); a
                  kernel's scalar argument (``sdfg.scalar``, ``scalar``) is drawn as a parameter
-                 hexagon, each edge reading it as one element labelled ``alpha[0] · broadcast``,
-                 and its Containers line is ``scalar · <dtype>``
+                 hexagon, each edge reading it as one element labelled ``alpha[0] · broadcast``
+                 (drawn at the edge's start, beside the hexagon), and its Containers line is
+                 ``scalar · <dtype>``
     group, accelerator   their name
 
 Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
@@ -170,7 +174,7 @@ from snax_forge.design.streamers import (
     port_loops,
 )
 from snax_forge.dfg import DfgError, Graph, Memlet, Node
-from snax_forge.dfg.graph import SCALAR
+from snax_forge.dfg.graph import BAKED, SCALAR
 from snax_forge.dfg.subset import map_range, parse_dim
 from snax_forge.estimate.cost import L1_LABEL, L1Cost, caveat, dec3, heading, sig3
 from snax_forge.expr import ExprError
@@ -1125,7 +1129,8 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
             f"{a.get('loop.kind') or 'untagged'}"
         )
     if n.kind == "tasklet":
-        return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}"
+        baked = "".join(f" · {r['name']} {r['value']}" for r in a.get(BAKED, []))
+        return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}{baked}"
     if n.kind == "accelerated":
         text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}"
         try:

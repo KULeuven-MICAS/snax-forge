@@ -961,6 +961,17 @@ def test_a_units_slots_show_csr_or_baked():
             "k1", slot, False)  # fmt: skip
 
 
+def test_a_baked_tasklet_names_its_scalar():
+    """After bake_scalar the tasklet's text keeps the scalar's name: ``mult · 3 * in2 · alpha 3``."""
+    from snax_forge.viz.dfg.api import compact_text
+
+    r, graphs = _axpy("axpy_baked")
+    assert r.steps[0].transform == "bake_scalar"
+    g = graphs[1]
+    assert compact_text(g, g.node("mult")) == "mult · 3 * in2 · alpha 3"
+    assert compact_text(g, g.node("augassign_19_4")) == "augassign_19_4 · in1 + in2"
+
+
 @pytest.mark.slow
 def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatch):
     """The editor (a session on axpy): after the two splits fuse_map on mult_map (second
@@ -975,6 +986,7 @@ def test_the_editor_offers_bake_unbake_and_fuse_map_on_axpy(tmp_path, monkeypatc
     monkeypatch.setattr(session, "_import", imported)
     s = Session.from_kernel("axpy", {"N": 64, "W": 4},
                             roots=Roots(tmp_path / "s", tmp_path / "r", tmp_path / "o"))  # fmt: skip
+    assert s.sites(s.cursor, "mult_map")["fuse_map"]["ok"]  # the recipes' order: before any split
     for m in ("mult_map", "augassign_19_4_map"):
         assert s.apply("split_map", {"map": m, "factor": "W"})["ok"]
     at = s.sites(s.cursor, "mult_map")

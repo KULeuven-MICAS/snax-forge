@@ -232,6 +232,26 @@ def test_axpys_recipes_run_and_check(name, k1):
     assert ("alpha" in results[-1].graph.containers) == (k1 is None)
 
 
+def test_the_recipes_fuse_the_imported_maps_then_split_once():
+    """The recipes' order (bake_scalar first when baked): fuse_map on the two imported maps,
+    both ``i in 0:N`` with tmp0[i] between them, then one split_map of the fused nest; the
+    unit is the one the older order (split, split, fuse_map) binds."""
+    from tests.helpers import recipe_path
+
+    r = Recipe.load(recipe_path("axpy"))
+    assert [s.transform for s in r.steps] == ["fuse_map", "split_map", "bind"]
+    assert [s.transform for s in Recipe.load(recipe_path("axpy_baked")).steps] == [
+        "bake_scalar", "fuse_map", "split_map", "bind"]  # fmt: skip
+    now = bind(split_map(fuse_map(axpy(), "mult_map", "augassign_19_4_map"), "mult_map", 2),
+               node="mult_map_s", **BIND)  # fmt: skip
+    before = bind(fused(), node="mult_map_s", **BIND)
+    a, b = now.node("mult"), before.node("mult")
+    assert (a.attrs["code"], a.attrs["params"]) == (b.attrs["code"], b.attrs["params"])
+    assert {c: (m.data, m.subset) for c, m in a.inputs.items()} == {
+        c: (m.data, m.subset) for c, m in b.inputs.items()}  # fmt: skip
+    assert run(now).tolist() == run(before).tolist() == [13, 14, 7, 7]
+
+
 def test_bake_scalar_puts_the_value_in_the_code_and_drops_the_container():
     g = fused()
     b = bake_scalar(g, "alpha", 3)
