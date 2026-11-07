@@ -473,7 +473,9 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-node > .c-body { padding: 0.6rem; }
 
 /* tasklets, units and links: small boxes with their text */
-.c-node { display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
+.c-node { position: relative; display: flex; flex-direction: column; align-items: stretch; min-width: 7rem; border: 1.5px solid var(--ink); border-radius: 4px; background: var(--panel); cursor: pointer; }
+/* a scalar read at run time from a CSR: a mark on the node's top right, not an input port (api.py) */
+.c-csr { position: absolute; top: -1.15rem; right: 0.3rem; padding: 0 0.25rem; font: 600 0.62rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-style: normal; line-height: 1rem; color: var(--busy); background: var(--panel); border: 1px dashed var(--busy); border-radius: 3px; }
 .c-node.c-unit { border: 2px solid var(--busy); background: var(--busy-bg); }
 .c-node.c-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
 .c-text { padding: 0.15rem 0.6rem; font-size: 0.82em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; text-align: center; }
@@ -497,6 +499,7 @@ path.arrow-sel { fill: var(--hl); }
 path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
 /* a fused nest's local value: the writer's connector straight to the reader's, as a link's wire */
 path.edge.local { stroke: var(--busy); stroke-width: 2; stroke-dasharray: 4 3; }
+path.edge.csr { stroke-dasharray: 2 3; } /* a scalar read at run time from a CSR */
 svg.dfg-edges text.edge-label { font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--busy); }
 svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
 /* a broadcast's label at its edge's start: a band of the page behind it, so an edge it crosses does not run through it */

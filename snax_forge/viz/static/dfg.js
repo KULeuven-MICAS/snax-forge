@@ -126,7 +126,7 @@ function legend() {
 // -- the compact drawing ------------------------------------------------------------
 
 function ports(n, side) {
-  const list = side === "in" ? n.inputs : n.outputs;
+  const list = (side === "in" ? n.inputs : n.outputs).filter((p) => !p.csr);
   if (!list.length) return null;
   return h("div", { class: `c-ports ${side}` },
     list.map((p) => h("i", { class: "c-port", "data-port": `${n.id}.${p.connector}`, title: `${p.connector}: ${p.data}` })));
@@ -139,7 +139,11 @@ function nodeEl(n) {
       h("div", { class: "c-body" }, n.body.map(nodeEl)));
   }
   const cls = { tasklet: "c-tasklet", accelerated: "c-unit", link: "c-link" }[n.kind] || "c-tasklet";
+  // a scalar read at run time from a CSR: no input port, a mark at the top right (api.py)
+  const csr = (n.inputs || []).filter((p) => p.csr).map((p) =>
+    h("i", { class: "c-csr", "data-port": `${n.id}.${p.connector}`, title: `${p.connector}: ${p.data}, from a CSR` }, "csr"));
   return h("div", { class: `c-node ${cls}`, "data-sel": n.id },
+    ...csr,
     ports(n, "in"),
     h("div", { class: "c-text" }, n.text),
     n.body && n.body.length ? h("div", { class: "c-body" }, n.body.map(nodeEl)) : null,
@@ -248,7 +252,7 @@ function drawEdges(canvas, svg, edges, k) {
     const bend = Math.max(18, Math.abs(y2 - y1) * 0.45);
     const d = `M${x1},${y1} C${x1},${y1 + bend} ${x2},${y2 - bend} ${x2},${y2 - 2}`;
     out.push(svgEl("path", { d, class: "edge-hit", "data-sel": e.id }));
-    const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
+    const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.csr ? " csr" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
     if (e.label) { // a fused nest's local value (its name, no box) or a scalar's broadcast (alpha[0] · broadcast), api.py

@@ -233,15 +233,15 @@ def test_axpys_recipes_run_and_check(name, k1):
 
 
 def test_the_recipes_fuse_the_imported_maps_then_split_once():
-    """The recipes' order (bake_scalar first when baked): fuse_map on the two imported maps,
-    both ``i in 0:N`` with tmp0[i] between them, then one split_map of the fused nest; the
-    unit is the one the older order (split, split, fuse_map) binds."""
+    """The recipes' order, the same for both: bake_scalar (csr, or 3), fuse_map on the two
+    imported maps, both ``i in 0:N`` with tmp0[i] between them, then one split_map of the
+    fused nest; the unit is the one the older order (split, split, fuse_map) binds."""
     from tests.helpers import recipe_path
 
-    r = Recipe.load(recipe_path("axpy"))
-    assert [s.transform for s in r.steps] == ["fuse_map", "split_map", "bind"]
-    assert [s.transform for s in Recipe.load(recipe_path("axpy_baked")).steps] == [
-        "bake_scalar", "fuse_map", "split_map", "bind"]  # fmt: skip
+    for name, value in (("axpy", "csr"), ("axpy_baked", 3)):
+        r = Recipe.load(recipe_path(name))
+        assert [s.transform for s in r.steps] == ["bake_scalar", "fuse_map", "split_map", "bind"]
+        assert r.steps[0].params == {"container": "alpha", "value": value}
     now = bind(split_map(fuse_map(axpy(), "mult_map", "augassign_19_4_map"), "mult_map", 2),
                node="mult_map_s", **BIND)  # fmt: skip
     before = bind(fused(), node="mult_map_s", **BIND)
@@ -286,6 +286,51 @@ def test_bake_scalar_first_then_the_splits_fuse_and_bind():
     first = bind(fuse_map(first, "mult_map", "augassign_19_4_map"), node="mult_map_s", **BIND)
     assert execute(first, {"x": X, "y": Y.copy()})["y"].tolist() == run(g).tolist() == [
         13, 14, 7, 7]  # fmt: skip
+
+
+def test_bake_scalar_csr_names_the_scalar_and_keeps_the_container():
+    """value csr: the connector takes alpha's name (``out = alpha * in2``), alpha stays, the
+    values are unchanged; bind reads k1 from it as without the step; unbake undoes it, also
+    after a fuse; a second bake is refused."""
+    g = axpy()
+    b = bake_scalar(g, "alpha", "csr")
+    t = b.node("mult")
+    assert t.attrs["code"] == "out = alpha * in2" and list(t.inputs) == ["alpha", "in2"]
+    assert t.inputs["alpha"].data == "alpha" and "alpha" in b.containers
+    assert unbake_scalar(b, "alpha") == g
+    f = fuse_map(b, "mult_map", "augassign_19_4_map")
+    u = unbake_scalar(f, "alpha").node("mult")  # inside the fused nest too
+    assert u.attrs["code"] == "out = in1 * in2" and list(u.inputs) == ["in1", "in2"]
+    n = bind(split_map(f, "mult_map", 2), node="mult_map_s", **BIND).node("mult")
+    plain = bind(fused(), node="mult_map_s", **BIND).node("mult")
+    assert (n.attrs["code"], n.attrs["params"]) == (plain.attrs["code"], plain.attrs["params"])
+    assert {c: m.data for c, m in n.inputs.items()} == {"a": "x", "b": "y", "k1": "alpha"}
+    for again in ("csr", 3):
+        with pytest.raises(SandboxError, match="reads alpha as CSR already"):
+            bake_scalar(b, "alpha", again)
+    with pytest.raises(SandboxError, match="neither an int nor 'csr'"):
+        bake_scalar(g, "alpha", "CSR")
+
+
+@pytest.mark.parametrize("value", ["csr", 3])
+def test_bake_scalar_goes_anywhere_before_bind(value):
+    """bake_scalar before, between or after the fuse and the splits: the same unit each time."""
+    bake = {"transform": "bake_scalar", "params": {"container": "alpha", "value": value}}
+    fuse = {
+        "transform": "fuse_map",
+        "params": {"first": "mult_map", "second": "augassign_19_4_map"},
+    }
+    s1 = {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}}
+    s2 = {"transform": "split_map", "params": {"map": "augassign_19_4_map", "factor": "W"}}
+    bind_ = {"transform": "bind", "params": {"node": "mult_map_s", **BIND}}
+    got = set()
+    for steps in ([bake, fuse, s1], [fuse, bake, s1], [fuse, s1, bake], [s1, bake, s2, fuse],
+                  [s1, s2, bake, fuse], [s1, s2, fuse, bake]):  # fmt: skip
+        r = Recipe.from_dict({"name": "t", "kernel": "axpy", "params": {"W": 4, "N": 64},
+                              "symbols": {"N": "N"}, "steps": [*steps, bind_]})  # fmt: skip
+        n = apply_recipe(r, Graph.load(FIXTURES / "axpy.snaxdfg"))[-1].graph.node("mult")
+        got.add((n.attrs["code"], tuple(sorted(n.attrs["params"].items())), tuple(n.inputs)))
+    assert len(got) == 1
 
 
 def test_a_negative_value_is_baked_and_bound():

@@ -926,25 +926,56 @@ def _axpy(name: str):
     return r, [x.graph for x in apply_recipe(r, Graph.load(FIXTURES / "axpy.snaxdfg"))]
 
 
-def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
-    """alpha: listed ``scalar · int32``, its box marked scalar (the hexagon), every edge reading
-    alpha[0] labelled ``alpha[0] · broadcast``; the bound unit's k1 connector too."""
+def _views(r, graphs):
     from snax_forge.design import Platform
     from snax_forge.viz.dfg.api import Entry, step_view
     from tests.design.helpers import SNAX_FORGE
 
+    p = Platform.load(SNAX_FORGE)
+    return [step_view(Entry("s", Path("s"), g, None), "s", p, recipe=r) for g in graphs]
+
+
+def _node_in(view: dict, node_id: str) -> dict:
+    stack = [r["node"] for r in view["rows"] if r["kind"] == "node"]
+    while stack:
+        n = stack.pop()
+        if n["id"] == node_id:
+            return n
+        stack += n.get("body") or []
+    raise KeyError(node_id)
+
+
+def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
+    """alpha before any bake: listed ``scalar · int32``, its box marked scalar (the hexagon), its
+    edge into mult's port labelled ``alpha[0] · broadcast``."""
     r, graphs = _axpy("axpy")
-    for g in (graphs[2], graphs[-1]):
-        v = step_view(Entry("s", Path("s"), g, None), "s", Platform.load(SNAX_FORGE), recipe=r)
-        line = {c["name"]: c["line"] for c in v["containers_section"]}
-        assert line["alpha"] == "scalar · int32" and line["x"] == "N · L1 · 256 B"
-        assert v["containers"]["alpha"]["scalar"] and not v["containers"]["x"]["scalar"]
-        labels = [e for e in v["edges"] if e.get("label")]
-        assert [e["label"] for e in labels if e["data"] == "alpha"] == ["alpha[0] · broadcast"]
-    bound = graphs[-1]
-    v = step_view(Entry("s", Path("s"), bound, None), "s", Platform.load(SNAX_FORGE), recipe=r)
+    (v,) = _views(r, graphs[:1])
+    line = {c["name"]: c["line"] for c in v["containers_section"]}
+    assert line["alpha"] == "scalar · int32" and line["x"] == "N · L1 · 256 B"
+    assert v["containers"]["alpha"]["scalar"] and not v["containers"]["x"]["scalar"]
     (e,) = [e for e in v["edges"] if e["data"] == "alpha"]
-    assert e["to"] == "mult.k1"
+    assert (e["to"], e["label"], e.get("csr")) == ("mult.in1", "alpha[0] · broadcast", None)
+    assert [p["connector"] for p in _node_in(v, "mult")["inputs"] if not p.get("csr")] == [
+        "in1", "in2"]  # fmt: skip
+
+
+def test_a_scalar_read_as_csr_is_a_mark_not_a_port():
+    """axpy's recipe: bake_scalar alpha csr first, so mult reads ``alpha * in2``, its one input
+    port in2 (x), alpha's dashed edge ``alpha[0] · CSR`` on the csr mark; the same through the
+    fuse and the split, and on the bound unit's slot k1."""
+    from snax_forge.viz.dfg.api import compact_text
+
+    r, graphs = _axpy("axpy")
+    assert r.steps[0].params == {"container": "alpha", "value": "csr"}
+    assert compact_text(graphs[1], graphs[1].node("mult")) == "mult · alpha * in2"
+    for g, v in zip(graphs[1:], _views(r, graphs[1:]), strict=True):
+        assert v["containers"]["alpha"]["scalar"]
+        (e,) = [e for e in v["edges"] if e["data"] == "alpha"]
+        port = "mult.k1" if g is graphs[-1] else "mult.alpha"
+        assert (e["to"], e["label"], e["csr"]) == (port, "alpha[0] · CSR", True)
+        ins = _node_in(v, "mult")["inputs"]
+        assert [p["connector"] for p in ins if p.get("csr")] == [port.split(".")[1]]
+        assert len([p for p in ins if not p.get("csr")]) == (2 if g is graphs[-1] else 1)
 
 
 def test_a_units_slots_show_csr_or_baked():
@@ -961,14 +992,17 @@ def test_a_units_slots_show_csr_or_baked():
             "k1", slot, False)  # fmt: skip
 
 
-def test_a_baked_tasklet_names_its_scalar():
-    """After bake_scalar the tasklet's text keeps the scalar's name: ``mult · 3 * in2 · alpha 3``."""
+def test_a_baked_tasklet_reads_the_value():
+    """After bake_scalar 3 the tasklet reads ``mult · 3 * in2``, one input port, no alpha."""
+    r, graphs = _axpy("axpy_baked")
+    assert r.steps[0].params == {"container": "alpha", "value": 3}
+    g = graphs[1]
     from snax_forge.viz.dfg.api import compact_text
 
-    r, graphs = _axpy("axpy_baked")
-    assert r.steps[0].transform == "bake_scalar"
-    g = graphs[1]
-    assert compact_text(g, g.node("mult")) == "mult · 3 * in2 · alpha 3"
+    assert compact_text(g, g.node("mult")) == "mult · 3 * in2"
+    (v,) = _views(r, [g])
+    assert "alpha" not in v["containers"]
+    assert [p["connector"] for p in _node_in(v, "mult")["inputs"]] == ["in2"]
     assert compact_text(g, g.node("augassign_19_4")) == "augassign_19_4 · in1 + in2"
 
 

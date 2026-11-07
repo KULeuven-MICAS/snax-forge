@@ -79,9 +79,8 @@ worked out here:
     map          ``<id> · <var> · <iterations> · <kind or untagged>``
                                                        (``mult_map · i · 2048 · untagged``)
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
-                 ``fold <op>`` for a copy into a ``reduce``, then each scalar baked into it
-                 (``bake_scalar``) and its value  (``mult · in1 * in2``, ``sum · fold +``,
-                                                   ``mult · 3 * in2 · alpha 3``)
+                 ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``;
+                 after ``bake_scalar`` ``mult · 3 * in2``, or ``mult · alpha * in2`` read as CSR)
     unit         ``<instance> · <what one lane computes> · W <lanes>``, then each slot
                  and its value, baked or read from a scalar (a CSR), a fold's as a tasklet's
                                                           (``mul · a * b · W 4``,
@@ -93,7 +92,10 @@ worked out here:
                  kernel's scalar argument (``sdfg.scalar``, ``scalar``) is drawn as a parameter
                  hexagon, each edge reading it as one element labelled ``alpha[0] · broadcast``
                  (drawn at the edge's start, beside the hexagon), and its Containers line is
-                 ``scalar · <dtype>``
+                 ``scalar · <dtype>``; read as CSR (a tasklet's connector ``bake_scalar`` named
+                 after it, or a unit's slot) the connector is no input port but a ``csr``
+                 mark at the node's top right, its edge dashed and labelled ``alpha[0] · CSR``,
+                 so the node shows only its streamed inputs
     group, accelerator   their name
 
 Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
@@ -1129,8 +1131,7 @@ def compact_text(g: Graph, n: Node, param: str | None = None) -> str:
             f"{a.get('loop.kind') or 'untagged'}"
         )
     if n.kind == "tasklet":
-        baked = "".join(f" · {r['name']} {r['value']}" for r in a.get(BAKED, []))
-        return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}{baked}"
+        return f"{n.id} · {_operation(n, a['code'], list(n.inputs))}"
     if n.kind == "accelerated":
         text = f"{a['instance']} · {_operation(n, a['code'], list(n.inputs))}"
         try:
@@ -1331,14 +1332,30 @@ def _iterations(g: Graph, rng: str) -> int | None:
         return None
 
 
+def csr_connectors(g: Graph, n: Node) -> set[str]:
+    """The input connectors ``n`` reads a kernel's scalar argument through at run time, from a
+    CSR (module doc): a tasklet's that ``bake_scalar`` named after its container (value
+    ``csr``), a unit's slots (inputs that are no BRM port)."""
+    if n.kind == "tasklet":
+        return {r["name"] for r in n.attrs.get(BAKED, [])
+                if r["value"] == "csr" and r["name"] in n.inputs}  # fmt: skip
+    if n.kind == "accelerated":
+        ports = _port_names(n)
+        return {c for c, m in n.inputs.items() if c not in ports
+                and g.containers.get(m.data) is not None
+                and g.containers[m.data].attrs.get(SCALAR)}  # fmt: skip
+    return set()
+
+
 def _node(g: Graph, n: Node) -> dict[str, Any]:
     """A node as the compact drawing shows it: its text, a map's tag, its connectors (where
     the edges meet it) and its body; the rest is in Details."""
+    csr = csr_connectors(g, n)
     d: dict[str, Any] = {
         "id": n.id,
         "kind": n.kind,
         "text": compact_text(g, n),
-        "inputs": [_conn(c, m) for c, m in n.inputs.items()],
+        "inputs": [_conn(c, m) | ({"csr": True} if c in csr else {}) for c, m in n.inputs.items()],
         "outputs": [_conn(c, m) for c, m in n.outputs.items()],
     }
     if n.kind == "map":
@@ -1483,6 +1500,9 @@ def _layout(g: Graph) -> dict[str, Any]:
             elif m.data in writers:  # written earlier inside this node: straight from the writer
                 edges.extend(_edge(w, port, m.data, text, "read", packing(g, n, c, m.data))
                              for w in writers[m.data])  # fmt: skip
+            elif c in csr_connectors(g, n):  # read at run time from a CSR, not streamed
+                edges.append(_edge(above[m.data], port, m.data, text, "read",
+                                   label=f"{text} · CSR", csr=True))  # fmt: skip
             else:
                 label = f"{text} · broadcast" if m.data in scalars and not m.names else None
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
@@ -1511,10 +1531,12 @@ def _edge(
     pack: str | None = None,
     local: bool = False,
     label: str | None = None,
+    csr: bool = False,
 ) -> dict[str, Any]:
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
     fused nest's local value between its two tasklets, labelled with the container's name;
-    ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``)."""
+    ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``); ``csr`` a
+    scalar read at run time, from a CSR (dashed, at the node's ``csr`` mark)."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack
@@ -1522,4 +1544,6 @@ def _edge(
         out |= {"local": True, "label": data}
     elif label is not None:
         out |= {"label": label}
+    if csr:
+        out["csr"] = True
     return out

@@ -268,7 +268,7 @@ function field(f) {
       h("input", { type: "checkbox", value: c.value, checked: ticked.has(c.value) }), h("span", {}, c.label))));
   }
   const input = h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value),
-    title: f.sweepable ? "a number, or an expression over the params (W, W * 2); a new name gets its value beside it" : "" });
+    title: f.sweepable ? "a number, or an expression over the params (W, W * 2); a new name gets its value beside it" : f.hint || "" });
   return f.sweepable && !f.readonly ? sweepable(input, f.new_value) : input;
 }
 

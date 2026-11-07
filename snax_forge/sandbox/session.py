@@ -920,7 +920,7 @@ def form(
     kinds, ``bind``'s (BRM, implementation) pairs from the bind list with their timing and
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
     units (the instances in no accelerator, in the graph's order, the selection's ticked),
-    ``bake_scalar``'s value (an int literal, the container's in ``inputs``: the session gives
+    ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in ``inputs``: the session gives
     the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``)."""
     import inspect
 
@@ -943,7 +943,11 @@ def form(
         elif name == "bake_scalar" and p == "value":  # an int literal, not a param
             seeded = (inputs or {}).get(filled.get("container"))
             value = BAKE_DEFAULT if seeded is None else int(np.asarray(seeded).reshape(-1)[0])
-            field |= {"type": "int", "value": value}
+            field |= {
+                "type": "int",
+                "value": value,
+                "hint": "an int baked into the hardware, or csr: read at run time from a CSR",
+            }
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip

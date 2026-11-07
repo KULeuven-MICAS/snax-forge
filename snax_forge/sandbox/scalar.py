@@ -1,20 +1,26 @@
 """Baking a kernel's scalar argument into the graph, and back (C§12).
 
 ``bake_scalar(container, value)`` and ``unbake_scalar(container)``
-    ``bake_scalar`` replaces a kernel's scalar argument (``sdfg.scalar``,
-    axpy's ``alpha``) by a value: every tasklet reading it, at a subset with
-    no names (``alpha[0]``), gets the value as an int literal in place of its
-    connector, and loses the connector; the container leaves the graph. So
-    ``bind`` sees ``3 * x + y`` and bakes ``k1 = 3`` into the hardware, where
-    without the step it reads ``k1`` from ``alpha`` (a CSR). Refused: a
+    ``bake_scalar`` fixes how a kernel's scalar argument (``sdfg.scalar``,
+    axpy's ``alpha``) reaches every tasklet reading it at a subset with no
+    names (``alpha[0]``). With an int ``value`` the tasklet gets it as a
+    literal in place of its connector and loses the connector, and the
+    container leaves the graph: ``mult`` reads ``out = 3 * in2``, so ``bind``
+    bakes ``k1 = 3`` into the hardware. With ``value`` ``"csr"`` the scalar
+    is read at run time: the connector takes the container's name, so the
+    code names it (``out = alpha * in2``), the container stays (data.h holds
+    it, the program writes the CSR from it), and ``bind`` reads ``k1`` from
+    it, as it does from a scalar no step marked (D161). Either way the
+    tasklet then has one streamed input, the same shape for both. Refused: a
     container that is not a scalar argument, one a node writes, one read at a
     subset with names, one an accelerated node reads or a bound unit's
-    replaced subtree names (unbind first), and a value that does not fit its
-    dtype. Each tasklet rewritten records the bake (``sandbox.baked``: the
-    container's definition and index, the connector, its place and memlet, and the code
-    before and after), and ``unbake_scalar`` puts the connector and the
-    container back when every such tasklet is live with the code the bake
-    left (otherwise unbind first, or undo what changed since).
+    replaced subtree names (unbind first), one a tasklet reads as CSR already
+    (unbake first), a connector name the tasklet uses already, and an int
+    that does not fit its dtype. Each tasklet rewritten records the bake
+    (``sandbox.baked``: the value, the container's definition and index, the
+    connector, its place and memlet, and the code before and after), and
+    ``unbake_scalar`` undoes it when every such tasklet is live with the code
+    the bake left (otherwise unbind first, or undo what changed since).
 
 The step's reference check (run.py's ``checked_step``, through the
 transform's ``fixes``) runs the graph before the step with the container set
@@ -50,6 +56,9 @@ def _bake_site(g: Graph, container: str) -> dict[str, Any]:
         reads = [(k, m) for k, m in n.inputs.items() if m.data == container]
         if reads and n.kind != "tasklet":
             raise SandboxError(f"{what}: the {n.kind} {n.id} reads {container} (unbind first)")
+        if any(r["name"] == container and r["value"] == CSR for r in n.attrs.get(BAKED, [])):
+            raise SandboxError(f"{what}: {n.id} reads {container} as CSR already (unbake_scalar "
+                               "first)")  # fmt: skip
         for k, m in reads:
             if m.names:
                 raise SandboxError(f"{what}: {n.id}.{k} reads {container}{m.subset}, at names; a "
@@ -71,19 +80,28 @@ def _names_in(d: Any, container: str) -> bool:
     return False
 
 
-def _fixes(g: Graph, container: str, value: int) -> dict[str, Any]:
-    """The inputs the step fixes: the container at the value (its dtype, shape [1])."""
+# bake_scalar's value for a scalar read at run time, from a CSR
+CSR = "csr"
+
+
+def _fixes(g: Graph, container: str, value: int | str) -> dict[str, Any]:
+    """The inputs the step fixes: the container at an int value (its dtype, shape [1]); none
+    for ``csr``, which changes no value."""
+    if value == CSR:
+        return {}
     return {container: np.array([value], g.containers[container].dtype)}
 
 
-def bake_scalar(g: Graph, container: str, value: int) -> Graph:
+def bake_scalar(g: Graph, container: str, value: int | str) -> Graph:
     from snax_forge.brm import fits
 
     what = f"bake_scalar {container!r}"
     _bake_site(g, container)
     dtype = g.containers[container].dtype
+    if value == CSR:
+        return _as_csr(g, container, what)
     if type(value) is not int:
-        raise SandboxError(f"{what}: value {value!r} is not an int")
+        raise SandboxError(f"{what}: value {value!r} is neither an int nor {CSR!r}")
     if not fits(value, dtype):
         raise SandboxError(f"{what}: {value} does not fit {container}'s dtype {dtype}")
     g = _copy(g)
@@ -102,6 +120,26 @@ def bake_scalar(g: Graph, container: str, value: int) -> Graph:
             n.attrs["code"] = after
             del n.inputs[k]
     del g.containers[container]
+    return _result(g)
+
+
+def _as_csr(g: Graph, container: str, what: str) -> Graph:
+    """``bake_scalar`` at ``csr``: each reading connector renamed to the container (module doc)."""
+    g = _copy(g)
+    names = list(g.containers)
+    record = {"container": g.containers[container].to_dict(), "index": names.index(container),
+              "value": CSR}  # fmt: skip
+    for n, _ in g.walk():
+        for k in [k for k, m in n.inputs.items() if m.data == container]:
+            if k != container and (container in n.inputs or container in n.outputs):
+                raise SandboxError(f"{what}: {n.id} has a connector {container!r} already")
+            before = n.attrs["code"]
+            after = expr.rename_code(before, {k: container})
+            n.attrs[BAKED] = [*n.attrs.get(BAKED, []), {
+                **record, "name": container, "connector": k, "position": list(n.inputs).index(k),
+                "memlet": n.inputs[k].to_dict(), "before": before, "after": after}]  # fmt: skip
+            n.attrs["code"] = after
+            n.inputs = {container if c == k else c: m for c, m in n.inputs.items()}
     return _result(g)
 
 
@@ -131,24 +169,31 @@ def unbake_scalar(g: Graph, container: str) -> Graph:
     if named != container:
         raise SandboxError(f"{what}: {container} is a tasklet; give the container it baked, "
                            f"{named}")  # fmt: skip
-    if container in g.containers:
-        raise SandboxError(f"{what}: the graph has a container {container!r} again")
     g = _copy(g)
     found = _baked(g, container)
+    csr = found[0][2]["value"] == CSR
+    if container in g.containers and not csr:
+        raise SandboxError(f"{what}: the graph has a container {container!r} again")
     for n, _, r in reversed(found):  # the last bake on a node first
         if n.attrs["code"] != r["after"]:
             raise SandboxError(f"{what}: {n.id}'s code changed since bake_scalar ({n.attrs['code']!r}, "
                                f"baked as {r['after']!r}): undo what changed first")  # fmt: skip
         n.attrs["code"] = r["before"]
-        ins = list(n.inputs.items())
-        ins.insert(r["position"], (r["connector"], Memlet.from_dict(r["memlet"], f"{what}.{n.id}")))
-        n.inputs = dict(ins)
+        if r["value"] == CSR:  # the connector back to its name, where it is
+            n.inputs = {r["connector"] if c == container else c: m for c, m in n.inputs.items()}
+        else:
+            ins = list(n.inputs.items())
+            ins.insert(r["position"], (r["connector"], Memlet.from_dict(r["memlet"],
+                                                                        f"{what}.{n.id}")))  # fmt: skip
+            n.inputs = dict(ins)
         rest = [x for x in n.attrs[BAKED] if x is not r]
         if rest:
             n.attrs[BAKED] = rest
         else:
             del n.attrs[BAKED]
     r = found[0][2]
+    if csr:  # the container never left
+        return _result(g)
     items = list(g.containers.items())
     items.insert(r["index"], (container, Container.from_dict(r["container"], what)))
     g.containers = dict(items)
