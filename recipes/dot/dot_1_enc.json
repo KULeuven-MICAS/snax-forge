@@ -1,0 +1,29 @@
+{
+ "name": "dot_1_enc",
+ "kernel": "dot",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "vmul"
+   }
+  },
+  {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_adder_tree",
+    "instance": "vsum"
+   }
+  },
+  {"transform": "encapsulate", "params": {"accelerator": "dot", "units": ["vmul", "vsum"]}}
+ ]
+}

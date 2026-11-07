@@ -38,10 +38,13 @@ How a node runs is registered per kind (``register_executor``, principle
 ``accelerated``
     one firing at a time, through the BRM's function, its registered
     kind's ``fn(k, ins, state, params)`` (``brm.function_of``, given the node's
-    containers' dtypes: a fold's lanes are cast to its output's before its tree, D143). The
+    containers' dtypes: a fold's lanes are cast to its output's before its tree, D143). An
+    input connector that is no BRM port is a slot read from a scalar (axpy's ``k1:
+    alpha[0]``, a CSR): the instance is resolved with the slot at that element's value, a
+    baked slot's value being in the node's params. The
     ``temporal`` maps directly around the node are
     its firing loop, outermost first, as the BRM nest orders them;
-    the node's ``code`` must be the BRM's ``function.code`` (D82), and its
+    the node's ``code`` must be the BRM's ``function.code`` at its params (D82), and its
     ``replaced`` subtree is history, never run;
     ``k`` counts firings, ``state`` lives for one task, ``n`` is the number
     of firings. Maps further out (a tile, an untagged map) start a new task
@@ -392,13 +395,28 @@ def _run_tasklet(node: Node, ctx: Context) -> None:
 # =============================================================================
 
 
-def _accel(node: Node, what: str, graph: Graph) -> Any:
+def _accel(node: Node, what: str, ctx: Context) -> tuple[Any, Any, list[str]]:
+    """The node's instance and function, each slot read from a scalar (an input connector that
+    is no BRM port, named after the slot) at its element's value; and those slots."""
     from snax_forge.brm import BrmError, function_of, load_brm, port_dtypes
 
     a = node.attrs
     try:
-        instance = load_brm(a["brm"]).resolve(a["implementation"], a["params"])
-        return instance, function_of(instance, port_dtypes(graph, node))
+        brm = load_brm(a["brm"])
+        ports = {p.name for p in brm.interface.ports}
+        slots = [c for c in node.inputs if c not in ports]
+        design = brm.params("design")
+        values: dict[str, int] = {}
+        for c in slots:
+            if c not in design or c in a["params"]:
+                raise ExecutionError(
+                    f"{what}.inputs.{c}: neither a port of {a['brm']!r} nor an unset slot of it"
+                )
+            m = node.inputs[c]
+            idx = tuple(_int(d, ctx.symbols, f"{what}.inputs.{c}") for d in m.subset)
+            values[c] = int(ctx.data[m.data][idx])
+        instance = brm.resolve(a["implementation"], a["params"] | values)
+        return instance, function_of(instance, port_dtypes(ctx.graph, node)), slots
     except BrmError as e:
         raise ExecutionError(f"{what}: {e}") from None
 
@@ -439,19 +457,18 @@ def _run_accelerated(node: Node, ctx: Context) -> None:
     what = f"node {node.id!r}"
     if node.body:
         raise ExecutionError(f"{what}: a nested accelerated block is not run yet")
-    instance, cfg = _accel(node, what, ctx.graph)
-    brm_code = instance.brm.function.code
-    if brm_code is not None and node.attrs["code"] != brm_code:
+    instance, cfg, slots = _accel(node, what, ctx)
+    if instance.brm.function.code is not None and node.attrs["code"] != instance.code:
         raise ExecutionError(
             f"{what}.attrs.code: {node.attrs['code']!r}, but {node.attrs['brm']!r} "
-            f"computes {brm_code!r}"
+            f"computes {instance.code!r}"
         )
     for side, conns, ports in (
         ("inputs", node.inputs, cfg.inputs),
         ("outputs", node.outputs, cfg.outputs),
     ):
         names = [p.name for p in ports]
-        if sorted(conns) != sorted(names):
+        if sorted(c for c in conns if c not in slots) != sorted(names):
             raise ExecutionError(
                 f"{what}.{side}: connectors {list(conns)}, the BRM's ports {names}"
             )

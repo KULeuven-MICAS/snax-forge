@@ -2,8 +2,8 @@
 Elementwise vector multiply.
 
 int64, one element per 64-bit L1 word, as vecadd. A test kernel: it exists
-to exercise the elementwise_mul BRM on its own, since dot binds two
-instances (elementwise_mul and accumulate) and snax_forge's board has one
+to exercise the simd BRM on its own, since dot binds two
+instances (simd and accumulate) and snax_forge's board has one
 accelerator slot.
 
 Tier done (PAPER §6.1).

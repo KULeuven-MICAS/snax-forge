@@ -1,5 +1,5 @@
 {
- "ElementwiseLanes": {
+ "SimdLanes": {
   "params": {
    "inTypes": {
     "type": "dtypes",
@@ -14,19 +14,37 @@
     "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
    },
    "lanes": {"type": "int", "min": 1},
-   "op": {"type": "op", "values": ["add", "sub", "mul", "and", "or", "xor", "min", "max"]}
+   "op": {"type": "op", "values": ["add", "sub", "mul", "and", "or", "xor", "min", "max", "axpby"]},
+   "streams": {"type": "int", "min": 1},
+   "k": {"type": "const"},
+   "k1": {"type": "const"},
+   "k2": {"type": "const"},
+   "kCsr": {"type": "bool"},
+   "k1Csr": {"type": "bool"},
+   "k2Csr": {"type": "bool"}
   },
-  "ports": {"a": "in", "b": "in", "out": "out"},
+  "ports": {"a": "in", "b": {"dir": "in", "when": {"streams": 2}}, "out": "out"},
   "latency": 0,
   "span": 1,
   "flops": 0,
-  "pins": [],
+  "pins": [
+   {"name": "k", "when": {"kCsr": true}},
+   {"name": "k1", "when": {"k1Csr": true}},
+   {"name": "k2", "when": {"k2Csr": true}}
+  ],
   "fill": {
    "inTypes": "inputs.dtype",
    "opType": "unit.opType",
    "outType": "outputs.dtype",
    "lanes": "inputs.lanes",
-   "op": "unit.params.op"
+   "op": "unit.params.op",
+   "streams": "inputs.count",
+   "k": "unit.params.k",
+   "k1": "unit.params.k1",
+   "k2": "unit.params.k2",
+   "kCsr": "unit.scalars.k",
+   "k1Csr": "unit.scalars.k1",
+   "k2Csr": "unit.scalars.k2"
   }
  },
  "TreeAccumulate": {

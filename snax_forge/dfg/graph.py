@@ -80,6 +80,27 @@ def _namespaced(key: Any) -> bool:
 
 # the container attr of a kernel's scalar argument: shape [1], read as element 0
 SCALAR = "sdfg.scalar"
+# a tasklet's record of the sandbox's bake_scalar: the scalar it reads as a literal now, or
+# (value "csr") by the container's name, at run time
+BAKED = "sandbox.baked"
+
+
+def baked_values(d: Any) -> dict[str, tuple[int, str]]:
+    """Each scalar baked into a graph or a node (a dict, ``to_dict``'s form): its value and
+    dtype, from the ``sandbox.baked`` records of the live tasklets and the subtrees bound units
+    replaced."""
+    out: dict[str, tuple[int, str]] = {}
+    if isinstance(d, Mapping):
+        attrs = d.get("attrs")
+        for r in attrs.get(BAKED, []) if isinstance(attrs, Mapping) else []:
+            if type(r["value"]) is int:  # a csr record changes no value
+                out[r["name"]] = (r["value"], r["container"]["dtype"])
+        for v in d.values():
+            out |= baked_values(v)
+    elif isinstance(d, list):
+        for v in d:
+            out |= baked_values(v)
+    return out
 
 
 @dataclass

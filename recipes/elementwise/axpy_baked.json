@@ -1,0 +1,20 @@
+{
+ "name": "axpy_baked",
+ "kernel": "axpy",
+ "params": {"W": 4, "N": 64},
+ "symbols": {"N": "N"},
+ "steps": [
+  {"transform": "bake_scalar", "params": {"container": "alpha", "value": 3}},
+  {"transform": "fuse_map", "params": {"first": "mult_map", "second": "augassign_19_4_map"}},
+  {"transform": "split_map", "params": {"map": "mult_map", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult_map_s",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "acc"
+   }
+  }
+ ]
+}

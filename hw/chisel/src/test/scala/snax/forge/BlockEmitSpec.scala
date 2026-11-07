@@ -14,8 +14,8 @@ import org.scalatest.flatspec.AnyFlatSpec
   * `blocks.json` (its `when` holding on the params) `io_<port>` (a scalar) or `io_<port>_0` to `io_<port>_<lanes - 1>`
   * (a Vec of the params' lanes), in its direction, and per live pin an input `io_<pin>`, but for a pin of no bits,
   * which firtool leaves out: `LinkBuffer`'s `wslot` and `rslot` at depth 1, `SerialAccumulate`'s `lane` at lanes 1. A
-  * registered block (all but `ElementwiseLanes` and the plain `Mac`) has every `always` block of its files on `posedge
-  * clock or posedge reset`, a flop with an asynchronous reset; the others none.
+  * registered block (all but `SimdLanes` and the plain `Mac`) has every `always` block of its files on `posedge clock
+  * or posedge reset`, a flop with an asynchronous reset; the others none.
   */
 class BlockEmitSpec extends AnyFlatSpec {
 
@@ -28,13 +28,46 @@ class BlockEmitSpec extends AnyFlatSpec {
 
   private def i64(n: Int) = ujson.Arr.from(Seq.fill(n)(ujson.Str("int64")))
 
-  private val cases = Seq(
+  /** A SimdLanes block at int64 and `Lanes` lanes, its params in `blocks.json`'s order (as `emitted.json` lists them):
+    * each constant baked (a number) or absent (null), each CSR flag.
+    */
+  private def simd(
+    streams: Int,
+    op:      String,
+    k:       ujson.Value = ujson.Null,
+    k1:      ujson.Value = ujson.Null,
+    k2:      ujson.Value = ujson.Null,
+    kCsr:    Boolean     = false,
+    k1Csr:   Boolean     = false,
+    k2Csr:   Boolean     = false
+  ): Case =
     Case(
-      "ElementwiseLanes",
-      ujson.Obj("inTypes" -> i64(2), "opType" -> "int64", "outType" -> "int64", "lanes" -> Lanes, "op" -> "add"),
+      "SimdLanes",
+      ujson.Obj(
+        "inTypes" -> i64(streams),
+        "opType"  -> "int64",
+        "outType" -> "int64",
+        "lanes"   -> Lanes,
+        "op"      -> op,
+        "streams" -> streams,
+        "k"       -> k,
+        "k1"      -> k1,
+        "k2"      -> k2,
+        "kCsr"    -> kCsr,
+        "k1Csr"   -> k1Csr,
+        "k2Csr"   -> k2Csr
+      ),
       Set.empty,
       registered = false
-    ),
+    )
+
+  private val cases = Seq(
+    simd(2, "add"),
+    simd(1, "max", k       = 0),
+    simd(1, "max", kCsr    = true), // the pin k
+    simd(2, "axpby", k1Csr = true, k2Csr = true), // the pins k1 and k2
+    simd(2, "axpby", k1    = 3) // no pin
+  ) ++ Seq(
     Case(
       "TreeAccumulate",
       ujson.Obj("inType" -> "int64", "outType" -> "int64", "lanes" -> Lanes, "op" -> "add"),

@@ -8,11 +8,11 @@ in tests/brm/test_library.py. Generating BRMs from RTL sources is open item
 
 Library BRMs:
 
-    elementwise_add   c = a + b over W lanes (W = 4 by default); one Chisel
-                      implementation, the datapath ElementwiseLanes (L = 0,
-                      II = 1)
-    elementwise_mul   c = a * b, the same with op mul (ElementwiseLanes
-                      takes it, bound as elementwise_add),
+    simd              out = a <op> b over W lanes (W = 4 by default), op add
+                      (``out = a + b``) or mul (``out = a * b``), one code per
+                      op (a ``Code`` table, bind picks the op from the
+                      tasklet's code); one Chisel implementation, the
+                      datapath SimdLanes (L = 0, II = 1): vecadd's adder,
                       dot's multiplier and vecmul's
     accumulate        the sum of every lane of T beats of ``a``, one element
                       of ``out`` per T beats (pattern family ``reduce``):

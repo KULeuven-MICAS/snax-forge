@@ -1,6 +1,6 @@
 """An implementation's binding: its datapath and how the BRM fills it (D129).
 
-    {"datapath":   "ElementwiseLanes",          a datapath of the catalogue
+    {"datapath":   "SimdLanes",                 a datapath of the catalogue
                                                 (hw/chisel/blocks.json, D147)
      "args":       {"lanes": "W", "op": "op"},  its parameters, each an
                                                 expression over design params,

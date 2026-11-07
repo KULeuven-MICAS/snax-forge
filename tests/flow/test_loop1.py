@@ -26,9 +26,9 @@ pytestmark = [pytest.mark.gvsoc, needs_gvsoc]
 README = REPO / "examples" / "loop1" / "README.md"
 DEFAULT, WIDE = "vecadd_N512_stall", "vecadd_N512_W8_stall"
 COMMANDS = {
-    DEFAULT: "pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set N=512 "
+    DEFAULT: "pixi run flow recipes/elementwise/vecadd.json --platform platforms/snax_forge.json --set N=512 "
     "--trace stall",
-    WIDE: "pixi run flow recipes/vecadd.json --platform platforms/snax_forge.json --set N=512 "
+    WIDE: "pixi run flow recipes/elementwise/vecadd.json --platform platforms/snax_forge.json --set N=512 "
     "--set W=8 --trace stall",
 }
 

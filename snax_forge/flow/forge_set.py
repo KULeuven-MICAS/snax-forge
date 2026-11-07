@@ -28,26 +28,28 @@ from pathlib import Path
 from snax_forge.common import cwd_relative
 from snax_forge.gen import bundle
 from snax_forge.gen.rtl import warm_emit
+from snax_forge.sandbox.recipe import find_recipe
 
 ROOT = bundle.ROOT
 OUT = ROOT / "out" / "forge-set"
 
-QUICK = ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4"]
+QUICK = ["vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "axpy"]
 SETS = {
     "quick": QUICK,
     "full": [*QUICK, "vecadd", "vsum", "vecmul_i32_i64", "dot_2", "dot_3", "dot_5", "dot_6",
-             "matvec_5", "matvec_6"],
+             "matvec_5", "matvec_6", "relu"],
 }  # fmt: skip
 
 
 def run_forge(recipe: str, output: Path) -> int:
-    """``pixi run forge recipes/<recipe>.json``, its terminal output into ``output``; its exit."""
+    """``pixi run forge recipes/<folder>/<recipe>.json`` (``find_recipe``), its terminal output
+    into ``output``; its exit."""
     with output.open("w") as f:
         cmd = [
             sys.executable,
             "-m",
             "snax_forge.flow.forge",
-            str(ROOT / "recipes" / f"{recipe}.json"),
+            str(find_recipe(recipe)),
         ]
         return subprocess.run(
             cmd, cwd=ROOT, stdout=f, stderr=subprocess.STDOUT, check=False

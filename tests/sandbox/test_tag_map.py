@@ -2,7 +2,7 @@
 
 matadd imports as two nested maps (``add_map`` over i, ``add_map_1`` over j).
 The row map is tagged temporal as it is, the column map split by W, and
-``add`` bound to ``elementwise_add``: every map around the spatial map is a
+``add`` bound to ``simd``: every map around the spatial map is a
 firing loop, and each memlet keeps its row index and runs its lanes along
 the columns. The bound graph passes the reference check against the kernel.
 A split and its tags are separate steps: an untagged split joins, a map
@@ -86,7 +86,7 @@ def test_join_map_joins_an_untagged_split():
 
 def test_tag_map_spatial_unsplit_binds_at_w_n():
     """vecadd's add_map tagged spatial as it is: one firing of N lanes, W read off N."""
-    acc = bind(tag_map(vecadd64(), "add_map", "spatial"), "add", "elementwise_add",
+    acc = bind(tag_map(vecadd64(), "add_map", "spatial"), "add", "simd",
                "chisel_tiled_spatial", "acc").node("add")  # fmt: skip
     assert acc.attrs["params"]["W"] == 64
     assert acc.inputs["a"].subset == ["0:64"]

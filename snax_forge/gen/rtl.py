@@ -50,8 +50,11 @@ every ``--spec FILE --out DIR`` pair (``elaborate_all``).
 
 **The fill rule** (the catalogue's ``fill``): ``inputs.dtype`` the input ports' dtypes in order
 (a ``dtypes`` param) or the first input's (a ``dtype``), ``outputs.dtype`` the output's,
-``inputs.lanes`` the first input's lanes, ``unit.opType`` and ``unit.params.<name>`` the
-unit's; a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
+``inputs.lanes`` the first input's lanes, ``inputs.count`` how many inputs (SimdLanes'
+``streams``), ``unit.opType`` and ``unit.params.<name>`` the unit's (None where the unit has no
+such param: SimdLanes' ``k`` at two streams, a ``const`` param), ``unit.scalars.<slot>`` whether
+the unit reads that slot from its CSR (SimdLanes' ``k1Csr``; each of the unit's scalars must
+then be a live pin, ``gen.port_map``); a buffer's ``link.depth``, ``link.lanes`` and ``link.dtype``. Inputs and outputs are
 the unit's ports by their ``dir``, in the BRM's order.
 
 **The fixtures** (``write_fixture``): ``hw/chisel/src/test/resources/rtl/<design>/`` holds, for
@@ -129,9 +132,12 @@ FILL_RULES: dict[str, Callable[[Unit, str], Any]] = {
     "inputs.dtype": _input_dtypes,
     "outputs.dtype": lambda u, kind: _ports(u, "out")[0].dtype,
     "inputs.lanes": lambda u, kind: _ports(u, "in")[0].lanes,
+    "inputs.count": lambda u, kind: len(_ports(u, "in")),
     "unit.opType": lambda u, kind: u.op_type,
 }
 PARAMS_RULE = "unit.params."
+SCALARS_RULE = "unit.scalars."  # whether the unit reads that slot from its CSR (a bool)
+CONST_EXACT = 2**53  # a ``const`` param reaches Emit as a JSON number: a double, exact within it
 
 
 def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[str, Any]:
@@ -142,6 +148,8 @@ def fill(acc: Description | None, unit: Unit, sig: Mapping[str, Any]) -> dict[st
             out[name] = FILL_RULES[rule](unit, sig["params"][name]["type"])
         elif rule.startswith(PARAMS_RULE):
             out[name] = unit.params.get(rule.removeprefix(PARAMS_RULE))
+        elif rule.startswith(SCALARS_RULE):
+            out[name] = rule.removeprefix(SCALARS_RULE) in unit.scalars
         else:
             raise GenError(
                 "gen.catalogue", f"{unit.datapath}.{name}: the fill rule {rule!r} is unknown"
@@ -223,6 +231,12 @@ def check_params(datapath: str, params: Mapping[str, Any], sig: Mapping[str, Any
         elif t["type"] == "bool":
             if type(v) is not bool:
                 raise GenError("gen.params", f"{what}: {v!r} is not a bool")
+        elif t["type"] == "const":  # an integer, or null: unset (SimdLanes' k)
+            if v is not None and type(v) is not int:
+                raise GenError("gen.params", f"{what}: {v!r} is not an integer or null")
+            if v is not None and abs(v) > CONST_EXACT:
+                raise GenError("gen.params", f"{what}: {v} reaches Emit as a JSON number, exact "
+                               f"within ±2^53 only (Datapaths.const)")  # fmt: skip
         elif t["type"] in ("dtype", "dtypes", "op"):
             vs = v if t["type"] == "dtypes" else [v]
             if not isinstance(vs, list) or not vs or not set(vs) <= set(t["values"]):
@@ -248,6 +262,11 @@ def check_unit(acc: Description, unit: Unit, cat: Mapping[str, Any]) -> None:
         if p.dir != ports[p.port]:
             raise GenError("gen.port_map", f"unit {unit.name}: BRM port {brm} ({p.dir}) onto "
                            f"{p.port} ({ports[p.port]})")  # fmt: skip
+    pins = live(sig["pins"], params)
+    for s in unit.scalars:
+        if s not in pins:
+            raise GenError("gen.port_map", f"unit {unit.name}: scalar {s} is no pin of "
+                           f"{unit.datapath} here ({list(pins)})")  # fmt: skip
     latency, span = value(sig["latency"], params), value(sig["span"], params)
     if (unit.latency, unit.ii, unit.span) != (latency, 1, span):
         raise GenError("gen.timing", f"unit {unit.name}: latency {unit.latency}, ii {unit.ii}, "
@@ -375,7 +394,7 @@ def vectors(design_point: str | Path, root: str | Path | None = None) -> dict:
         name, port = end.split(".", 1)
         inst, node = found[name], instance_nodes(point.graph)[name]
         values = task.values[name] if linked else task.values
-        (p,) = (x for x in inst.brm.interface.ports if x.name == port)
+        (p,) = (x for x in inst.ports if x.name == port)
         c = (node.inputs if p.direction == "in" else node.outputs)[p.name].data
         array = c if p.direction == "in" else f"{c}_golden"
         rate = 1 if p.rate == 1 else values[p.rate]

@@ -52,9 +52,10 @@ class ShellPorts(val readers: Seq[Int], val writers: Seq[Int], val groups: Seq[S
   * the outer ports reach the wrapper (a link stays inside the datapath): each, `stream2acc_<k>` for the k-th entry of
   * the file's `inputs` and `acc2stream_<k>` for its `outputs`, is split, its data to its unit's datapath, its valid and
   * ready to its group's control unit. The control unit's enables go to the datapaths' pins (`en`, a plain Mac's output
-  * register, is the unit's firing) and the buffers'. A port's data is its lanes side by side, lane i at bits `[w(i+1)-1
-  * : wi]` for the port's w-bit dtype (num_slc = 64 / w lanes a word, D142), at least one 64-bit word (a fold's one-lane
-  * output); the streamer's packing, checked on snax_cluster's RTL (D123).
+  * register, is the unit's firing) and the buffers'; a scalar's pin (`k1`) takes its CSRs from `<tag>_csr` (K1, or
+  * K1_HI over K1_LO at 64 bits), so the datapath sees what the program last wrote. A port's data is its lanes side by
+  * side, lane i at bits `[w(i+1)-1 : wi]` for the port's w-bit dtype (num_slc = 64 / w lanes a word, D142), at least
+  * one 64-bit word (a fold's one-lane output); the streamer's packing, checked on snax_cluster's RTL (D123).
   *
   * Clock `clk_i`, reset `rst_ni` active low and asynchronous, as snax_cluster's (`RequireAsyncReset` in ReqRspManager).
   */
@@ -77,6 +78,16 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
       spec.groups.map(_.name)
     )
   )
+
+  /** A scalar pin's value: its unit's CSRs for it from `<tag>_csr`, the high word over the low (one at 32 bits or
+    * fewer).
+    */
+  private def scalar(csr: AccCsr, u: AcceleratorSpec.UnitSpec, pin: String): UInt = {
+    val all  = AccCsr.scalars(spec)
+    val mine = u.pinned(pin).map(c => csr.io.scalars(all.indexOf(c)))
+    require(mine.nonEmpty, s"${u.name}: pin $pin has no CSR")
+    chisel3.util.Cat(mine.reverse)
+  }
 
   withClockAndReset(clk_i, (!rst_ni).asAsyncReset) {
     val csr  = Module(new AccCsr(spec))
@@ -121,11 +132,12 @@ class ShellWrapper(spec: AcceleratorSpec) extends RawModule {
         val e = c.units(k)
         for ((name, pin) <- d.elements if !u.ports.exists(_._1 == name))
           pin := (name match {
-            case "fire" | "en" => e.fire
-            case "first"       => e.first
-            case "read"        => e.read
-            case "lane"        => e.lane
-            case other         => throw new IllegalArgumentException(s"${u.datapath}: unknown pin $other")
+            case "fire" | "en"                    => e.fire
+            case "first"                          => e.first
+            case "read"                           => e.read
+            case "lane"                           => e.lane
+            case s if u.scalars.exists(_._1 == s) => scalar(csr, u, s).asTypeOf(pin)
+            case other => throw new IllegalArgumentException(s"${u.datapath}: unknown pin $other")
           })
       }
 

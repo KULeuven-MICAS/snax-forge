@@ -22,7 +22,7 @@ from snax_forge.sandbox import (
 from snax_forge.sandbox.compose import LinkError, beats
 from tests.helpers import graph_dict
 
-MUL = ("elementwise_mul", "chisel_tiled_spatial", "mul")
+MUL = ("simd", "chisel_tiled_spatial", "mul")
 TREE = ("accumulate", "chisel_adder_tree")
 
 
@@ -259,11 +259,11 @@ def _join() -> Graph:
     d = {"name": "join", "symbols": {"N": 8},
          "containers": {**{c: dict(cont) for c in ("A", "B", "C", "D", "out")},
                         **{c: dict(cont, transient=True) for c in ("t1", "t2")}},
-         "body": [loop("m1", acc("mul1", "elementwise_mul", "out = a * b", {"a": "A", "b": "B"},
+         "body": [loop("m1", acc("mul1", "simd", "out = a * b", {"a": "A", "b": "B"},
                                  "t1", "mul")),
-                  loop("m2", acc("mul2", "elementwise_mul", "out = a * b", {"a": "C", "b": "D"},
+                  loop("m2", acc("mul2", "simd", "out = a * b", {"a": "C", "b": "D"},
                                  "t2", "mul")),
-                  loop("m3", acc("add", "elementwise_add", "out = a + b", {"a": "t1", "b": "t2"},
+                  loop("m3", acc("add", "simd", "out = a + b", {"a": "t1", "b": "t2"},
                                  "out", "add"))]}  # fmt: skip
     return Graph.from_dict(d)
 

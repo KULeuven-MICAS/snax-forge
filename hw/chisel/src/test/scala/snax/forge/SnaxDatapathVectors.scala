@@ -12,7 +12,9 @@ object SnaxDatapathVectors {
 
   val Env = "SNAX_GVSOC_DATAPATH_VECTORS"
 
-  /** One step: fire, first, read, lane, en, load, wslot, rslot; each input's lanes; the output's lanes. */
+  /** One step: fire, first, read, lane, en, load, wslot, rslot; each input's lanes; the output's lanes; the CSR slots
+    * set before it (`set SLOT V` lines: SimdLanes' `k`, `k1`, `k2` from their pins).
+    */
   case class Step(
     fire:  Boolean,
     first: Boolean,
@@ -23,7 +25,8 @@ object SnaxDatapathVectors {
     wslot: Int,
     rslot: Int,
     ins:   Seq[Seq[BigInt]],
-    out:   Seq[BigInt]
+    out:   Seq[BigInt],
+    sets:  Seq[(String, BigInt)] = Seq.empty
   )
 
   case class Test(name: String, datapath: String, header: Map[String, Seq[String]], steps: Seq[Step]) {
@@ -31,15 +34,26 @@ object SnaxDatapathVectors {
     /** The datapath's params as the catalogue names them (`Datapaths`), from the test's header. */
     def params: Map[String, ujson.Value] = {
       def one(k: String) = header(k).head
+      def baked(k: String): ujson.Value =
+        header.get(k).filter(_ != Seq("csr")).map(v => ujson.Str(v.head)).getOrElse(ujson.Null)
       val ins = header("in")
       datapath match {
-        case "ElementwiseLanes" =>
+        case "SimdLanes"        =>
           Map(
             "inTypes" -> ujson.Arr.from(ins),
             "opType"  -> ujson.Str(one("optype")),
             "outType" -> ujson.Str(one("out")),
             "lanes"   -> ujson.Num(one("lanes").toInt),
-            "op"      -> ujson.Str(one("op"))
+            "op"      -> ujson.Str(one("op")),
+            "streams" -> ujson.Num(ins.size),
+            // one input's constant, as its decimal text: exact at every int64 (Datapaths.const)
+            "k"       -> header.get("k").map(v => ujson.Str(v.head)).getOrElse(ujson.Null),
+            // axpby's k1 and k2: baked (decimal) or `csr`, read from its pin
+            "k1"      -> baked("k1"),
+            "k2"      -> baked("k2"),
+            "kCsr"    -> ujson.Bool(header.contains("kcsr")),
+            "k1Csr"   -> ujson.Bool(header.get("k1").contains(Seq("csr"))),
+            "k2Csr"   -> ujson.Bool(header.get("k2").contains(Seq("csr")))
           )
         case "TreeAccumulate"   =>
           Map(
@@ -81,12 +95,14 @@ object SnaxDatapathVectors {
     var header = Map.empty[String, Seq[String]]
     var steps  = Vector.empty[Step]
     var name   = ""
+    var sets   = Vector.empty[(String, BigInt)]
     def close(): Unit = if (name.nonEmpty) tests :+= Test(name, header("datapath").head, header, steps)
     for (raw <- text.linesIterator) {
       val line = raw.takeWhile(_ != '#').trim
       if (line.nonEmpty) line.split("\\s+").toList match {
-        case "test" :: n :: Nil => close(); name = n; header = Map.empty; steps = Vector.empty
-        case "step" :: _        =>
+        case "test" :: n :: Nil     => close(); name = n; header = Map.empty; steps = Vector.empty
+        case "set" :: k :: v :: Nil => sets :+= k  -> BigInt(v)
+        case "step" :: _            =>
           val Array(head, rest) = line.stripPrefix("step").split(":", 2)
           val Array(ins, out)   = rest.split("=>", 2)
           val e                 = head.trim.split("\\s+").map(_.toInt)
@@ -100,10 +116,12 @@ object SnaxDatapathVectors {
             e(6),
             e(7),
             ins.split(";").toSeq.map(numbers),
-            numbers(out)
+            numbers(out),
+            sets
           )
-        case k :: vs            => header += k -> vs
-        case Nil                =>
+          sets = Vector.empty
+        case k :: vs                => header += k -> vs
+        case Nil                    =>
       }
     }
     close()

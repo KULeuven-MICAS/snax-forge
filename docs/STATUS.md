@@ -66,8 +66,8 @@ Done, each in its PRs and git history:
 
 To do, in two tracks (D141), each task in its own PR:
 
-- **Track A, the code** (snax-forge, snax-gvsoc for PORT1):
-  1. **B2** (shrunk): the 1-stream SIMD (relu), axpy's CSR scalar, the lane accumulator without an op, the fold's `init` port, the group binds tier A and the untiered kernels need; it lifts `gen.span` (a unit of span > 1 reading from a link).
+- **Track A, the code** (snax-forge, snax-gvsoc for B2 and PORT1):
+  1. **B2** (`wip`, branch `ry/b2`; plan in the project's `claude/b2-plan-2026-11-06.md`), in this order, each kernel run on SNAX-GVSoC and snax_cluster: the recipes in folders by category, and one `simd` BRM over `SimdLanes` in place of `elementwise_add`, `elementwise_mul` and `ElementwiseLanes` (done, R1, `b2-r1`: its code one entry per `op`, the quick set on vsim unchanged); its code table over `streams` and a scalar slot `k`, and relu, the 1-stream SIMD with k = 0 baked (done, R2, `b2-r2`: `SimdLanes` at one input, relu's COUNTER 18 on vsim and SNAX-GVSoC, the quick set unchanged); axpy, axpby with k₁ an R/W CSR (`bake_scalar` makes it a constant), its body joined by `fuse_map`, its in-place write (done: R3a, a writer skips its own unit's read of the same addresses, `lower/derive.py`; R3b, `b2-r3b`, axpy and axpy_baked on vsim and SNAX-GVSoC, axpy in the quick set, D161); rowsum 2, `LaneAccumulate` after `interchange_map`, A in the `padded_rows` layout (a `--set`); the fold's `seed`, a per-job port (`seed_fold`), on `TreeAccumulate` and `SerialAccumulate`; mvt in the row form on both sides, its variants one at a time, recipe against recipe, in `examples/dryrun/4_mvt.md` (open item 117 first). `gen.span` stays (open item 116); E7's points are chosen after B2.
   2. **L2V1**: each container the DMA moves drawn in the DFG views as its L2 copy with a DMA edge into L1, and a DMA row in the estimate from the memory plan, $\sum_c (\lceil B_c / 64 \rceil + t_0)$ for a 512-bit DMA and a fixed cost $t_0$ per transfer read from a SNAX-GVSoC run, added to the total (amends D155), checked against the run's DMA tasks. The graph-level copy node stays open item 99.
   3. **XBAR1**: an interconnect marker per running accelerator, $u = \sum_s \mathrm{ch}_s / n_{\mathrm{banks}}$ over its streamers' channels, green at $u \le 0.5$, orange up to 1, red above, the thresholds platform fields (D85), a design note (C§14) in the estimate, `design.md` and the editor (vecmul: W = 4 green, 8 orange, 16 red).
   4. **tier A**, in two halves: fork, join, broadcast, hold and fragments (applied by output name, `augment_init`) with bicg and gesummv; then mvt (open items 47 and 109) and atax (open item 113). It lifts `gen.chain` (a group is a chain). MINI first, SMALL only where a case needs it (open item 54).
@@ -94,7 +94,7 @@ Dates: 27 Nov, E5's cut-off (softmax not running on SNAX-GVSoC moves E5, and E6 
 
 ## Open Items
 
-Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 115.
+Questions not decided yet. Numbers are never reused; a closed item is removed, and where it closed is in git history. Next free number: 119.
 
 1. BRM dataflow notation: `affine` and `stream` (D70), frozen in M6.
 2. What automated search reads and how a sweep is configured (DSE1, M8).
@@ -111,7 +111,6 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 40. Switching runs in the viewer clears the selected cycle.
 41. A report glossary, a "where the cycles went" ranking and the knobs' `--set` paths: on hold.
 44. Reductions over tiles need partial sums and a final combine; until then no tile loop sits around a `reduce` memlet (LOW3b).
-47. An in-place update (`y += x`) binds but does not lower: the writer waits for its own node's reader (LOW4).
 50. SNAX-GVSoC's speed on large runs, measured in E2 on E1's runs (BASE2); timing-only runs and extrapolation only if it is too slow for C1.
 53. A link between two accelerators: amends D12 and D51 and the SNAX shell. Parked (D112).
 54. Which kernels take PolyBench's SMALL in a 128 KiB L1 (M13 tier A); the NumPy tolerance for float sums waits for the float pass (D113).
@@ -138,7 +137,7 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 92. The per-group busy and done pins (`<group>_busy_o`, `<group>_done_o`, D146), which snax_cluster leaves unconnected, into a hardware barrier in the cluster, like `snitch_hw_barrier`, so a core waits on the groups in the barrier instead of polling their STATUS: a snax_cluster template change, then SNAX-GVSoC to match. Parked: snax_cluster leaves them unconnected (Verilator `PINMISSING`, Questa `vopt-2718`).
 93. A port of fewer lanes than its beat's elements (rho ≠ 1, D142): the flow places only the wire slice. The FIFO slicer and packer are built and tested (`hw/chisel/.../stream/`, `snax.forge.stream`) and parked: placing them in the flow when a design needs it.
 94. A masked last beat, the hardware alternative to padding a tail (D144): a lane-valid mask from a CSR, so a tail needs no pads in the data.
-95. The cycle gap between SNAX-GVSoC and snax_cluster's RTL, for BASE2 (D123): on the full set, measured on vsim with snax_cluster at #666 and snax-forge at #43, every `forge counter` is equal and every run has `forge data: 0 errors`; the windows are within −4.5% to +8.6%. The quick set measured again in SLOT1 C1 (snax_cluster `ry/slot1` at `5b59191e`, tag `slot1-s3`, snax-forge `slot1-f3`, SNAX-GVSoC `1e988679`, image `d3d8f5572ff4`): every `forge counter` equal and `forge data: 0 errors` again, the windows within −4.8% to +6.8%; dot 1's two streamer sets (`dot_1`) and its encapsulated form (`dot_1_enc`, the earlier `dot_1` row's shape) are its new rows. The gaps are the core's timing (open items 65, 67; snax-gvsoc NOTES.md, "The comparison with snax_cluster's RTL").
+95. The cycle gap between SNAX-GVSoC and snax_cluster's RTL, for BASE2 (D123): on the full set, measured on vsim with snax_cluster at #666 and snax-forge at #43, every `forge counter` is equal and every run has `forge data: 0 errors`; the windows are within −4.5% to +8.6%. The quick set measured again in SLOT1 C1 (snax_cluster `ry/slot1` at `5b59191e`, tag `slot1-s3`, snax-forge `slot1-f3`, SNAX-GVSoC `1e988679`, image `d3d8f5572ff4`): every `forge counter` equal and `forge data: 0 errors` again, the windows within −4.8% to +6.8%; dot 1's two streamer sets (`dot_1`) and its encapsulated form (`dot_1_enc`, the earlier `dot_1` row's shape) are its new rows. relu's row is from B2 R2 (snax_cluster main at `ea9c837b`, tag `b2-r2`), axpy's and axpy_baked's from R3b (tag `b2-r3b`), where the quick set measured the same again each time. axpy's K1 write costs SNAX-GVSoC 11 cycles over the baked design and the RTL 4. The gaps are the core's timing (open items 65, 67; snax-gvsoc NOTES.md, "The comparison with snax_cluster's RTL").
 
     | Design | `forge counter` (both) | vsim window | SNAX-GVSoC window |
     |---|---|---|---|
@@ -156,6 +155,9 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
     | dot_6 | 137 | 448 | 440 |
     | matvec_5 | 2101 | 3384 | 3375 |
     | matvec_6 | 2057 | 3339 | 3330 |
+    | relu | 18 | 204 | 224 |
+    | axpy | 19 | 210 | 217 |
+    | axpy_baked | 19 | 206 | 206 |
 
 96. The measurements of a linked group: per-unit and per-link events, the converter at beat level for a group of several linked units (`convert.level` refuses it; an accelerator of several one-unit groups, dot 1, is done) and the run viewer's view of it; bank and port statistics, the export CSV, the area × cycles metric. The bank conflicts measured so far (F3, SNAX-GVSoC) stay inside C§17's cycles plus the fill.
 97. dot 1's row form at 16 × 512 does not fit: tmp0 needs 132 KiB of the 128 KiB L1, so it runs at 8 × 512.
@@ -172,6 +174,10 @@ Questions not decided yet. Numbers are never reused; a closed item is removed, a
 112. A buffer link's energy against SYN2 (DRY1-3): dot 2's `tmp0` buffer, which loads every beat, is 1.59× (nangate45) and 1.49× (nangate15) high against CHAR1's `link/d1_w8` stream point, not explained. dot 6's `out_partial` was 2.65× and 3.13× high while a buffer loaded once per firing of its producer; it now loads once per output (C§20), once per job behind the Mac.
 113. One unit across several DFG regions (atax's A and Aᵀ on one GeMM): a unit bound at several nodes, trading throughput for area; amends D112 (Ryan, 27 Oct 2026, for the paper). tier A's atax is the first case.
 114. PORT1's shared crossbar ports exist on SNAX-GVSoC only: snax_cluster's mux follows when a shared-port design is in E4's result, in E1 or in the cluster synthesis, before E1 runs it; until then those runs are marked model only, outside D123's check.
+115. An ALU SIMD: the `simd` BRM's `op` as an R/W CSR, its op set a design param, so a design pays only for the ops it can select; worth it once one unit runs several ops, a unit bound at several nodes (open item 113).
+116. `gen.span` refuses a unit of span > 1 reading an outer input (a serial unit straight from its streamer: vsum or rowsum 1 on `chisel_serial` at W > 1, the beat held for span cycles); lifted when E7 or a kernel needs such a point.
+117. Reusing a composite's recipe: a transform applying a saved recipe (dot's variants) to a region of another graph, drawn as one bound accelerator labelled with its recipe, the recipe's map ids mapped onto the region's; first case mvt (B2).
+118. The run viewer (`pixi run view`: banks, interconnect, transactions) is kept working but gets no new features until after the paper (Ryan, 6 Nov 2026); the DFG views (`view-dfg`, `edit-dfg`) stay first.
 
 ## Sync Reminders
 

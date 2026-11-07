@@ -15,7 +15,7 @@ from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe, session, write_steps
 from snax_forge.sandbox.session import Roots
 from snax_forge.viz.dfg.server import make_dfg_server, make_edit_server
-from tests.helpers import REPO, imported
+from tests.helpers import REPO, imported, recipe_path
 
 from .helpers import get, get_json, post, run_dir, served, serving
 
@@ -38,7 +38,7 @@ def _texts(node):
 def test_view_mode_over_dot_2s_steps(tmp_path):
     """dot 2's six step files: step 5 (the link) in compact texts, with Details and the
     estimate's 130 cycles."""
-    r = Recipe.load(REPO / "recipes" / "dot_2.json")
+    r = Recipe.load(recipe_path("dot_2"))
     write_steps(r, apply_recipe(r, import_kernel(r.kernel)), tmp_path / "sandbox" / "dot_2")
     with served(make_dfg_server([tmp_path / "sandbox" / "dot_2"], 0, platform=PLATFORM)) as srv:
         assert get_json(srv, "/api/mode") == (200, {"mode": "view", "techs": ["nangate45", "nangate15"],
@@ -188,7 +188,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
             ("split", {"map": "add_map", "factor": "W"}),
             ("tag_map", {"map": "add_map_inner", "kind": "spatial"}),
             ("tag_map", {"map": "add_map", "kind": "temporal"}),
-            ("bind", {"node": "add", "brm": "elementwise_add",
+            ("bind", {"node": "add", "brm": "simd",
                       "implementation": "chisel_tiled_spatial", "instance": "acc"}),
         ):  # fmt: skip
             new = {"W": 4} if transform == "split" else None
@@ -221,7 +221,7 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert v["estimate"]["groups"][0]["bank_bound"] == 6
         # the left column's Bindings: the unit with the split's W, an input in edit mode
         (unit,) = v["bindings_section"]["entries"]
-        assert (unit["label"], unit["params"]) == ("acc · elementwise_add", [
+        assert (unit["label"], unit["params"]) == ("acc · simd", [
             {"name": "W_acc", "value": 4, "editable": True, "shared_with": []}])  # fmt: skip
         assert v["symbols_section"][0] | {"containers": None} == {
             "name": "N",
@@ -267,13 +267,16 @@ def test_edit_mode_over_a_vecadd_session(tmp_path, monkeypatch):
         assert get_json(srv, "/api/session")[1]["params"] == {"N": 64, "W_acc": 8}
         assert get_json(srv, "/api/step/4")[1]["estimate"]["groups"][0]["cycles"] == 8
         status, saved = post(srv, "/api/save", {"name": "vecadd_mine"})
-        assert status == 200 and (roots.recipes / "vecadd_mine.json").is_file(), saved
+        assert status == 200 and (roots.recipes / "custom" / "vecadd_mine.json").is_file(), saved
         assert saved["log"] == f"saved {saved['shown']}" and saved["commands"][2]["command"] == (
             f"pixi run forge {saved['shown']}")  # fmt: skip
         assert post(srv, "/api/save", {"name": "vecadd_mine"})[1]["code"] == "save.name"
         status, out = post(srv, "/api/export", {"k": 1})
         assert status == 200 and Path(out["path"]).name == "1_split.snaxdfg"
-        assert [x["name"] for x in get_json(srv, "/api/recipes")[1]] == ["vecadd_mine"]
+        assert [(x["name"], x["folder"]) for x in get_json(srv, "/api/recipes")[1]] == [
+            ("vecadd_mine", "custom")]  # fmt: skip
+        status, again = post(srv, "/api/session", {"recipe": "vecadd_mine"})  # a name: find_recipe
+        assert status == 200 and again["name"] == "vecadd_mine", again
         assert get_json(srv, "/api/sessions")[1][0]["cursor"] == 4
         assert get_json(srv, "/api/nope")[0] == 404 and post(srv, "/api/nope")[0] == 404
 
@@ -286,7 +289,7 @@ def test_a_param_changes_log_line_counts_its_checks(tmp_path, monkeypatch):
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
     with served(make_edit_server(0, roots=roots)) as srv:
         post(srv, "/api/session", {"kernel": "dot", "params": {"N": 2048}})
-        for m, node, impl in (("mult_map", "mult", ("elementwise_mul", "chisel_tiled_spatial")),
+        for m, node, impl in (("mult_map", "mult", ("simd", "chisel_tiled_spatial")),
                               ("sum_map", "sum", ("accumulate", "chisel_adder_tree"))):  # fmt: skip
             _, got = post(
                 srv, "/api/apply", {"transform": "split", "params": {"map": m, "factor": 8}}
@@ -339,7 +342,7 @@ def test_the_site_route_takes_a_selection(tmp_path, monkeypatch):
     monkeypatch.setattr(session, "_import", imported)
     roots = Roots(tmp_path / "sessions", tmp_path / "recipes", tmp_path / "sandbox")
     with served(make_edit_server(0, roots=roots)) as srv:
-        post(srv, "/api/session", {"recipe": str(REPO / "recipes" / "dot_1_enc.json")})
+        post(srv, "/api/session", {"recipe": str(recipe_path("dot_1_enc"))})
         status, both = get_json(srv, "/api/step/4/site?sel=vmul&sel=vsum")
         assert status == 200 and both["encapsulate"]["ok"]
         units = next(f for f in both["encapsulate"]["form"] if f["name"] == "units")

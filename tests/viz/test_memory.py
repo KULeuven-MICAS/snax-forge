@@ -428,7 +428,7 @@ def test_a_read_back_long_after_its_grant_is_in_that_cycle_only(runs):
 
 
 def designed_l1(tmp_path, recipe):
-    """L1's summary for ``recipes/<recipe>.json`` designed on snax_forge (no run: no L2)."""
+    """L1's summary for ``recipes/<folder>/<recipe>.json`` designed on snax_forge (no run: no L2)."""
     from snax_forge.design import DesignPoint
     from snax_forge.gen import generate
     from snax_forge.run import load_cluster, regions_of

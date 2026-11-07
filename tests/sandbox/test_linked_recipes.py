@@ -9,8 +9,7 @@ import pytest
 
 from snax_forge.dfg.import_sdfg import import_kernel
 from snax_forge.sandbox import Recipe, apply_recipe
-
-from .helpers import REPO
+from tests.helpers import recipe_path
 
 # Each recipe: its last graph's groups (name -> instances) and its link (container, depth)
 WANT = {
@@ -32,7 +31,7 @@ WANT = {
 @pytest.mark.parametrize("name", list(WANT))
 def test_the_recipe_runs_and_ends_in_its_groups(name, w):
     small = {"N": 32, **({"M": 2} if name.startswith("matvec") else {})}
-    recipe = Recipe.load(REPO / "recipes" / f"{name}.json").with_params({"W": w, **small})
+    recipe = Recipe.load(recipe_path(name)).with_params({"W": w, **small})
     last = apply_recipe(recipe, import_kernel(recipe.kernel))[-1].graph  # each step checked
     groups: dict[str, list[str]] = {}
     for n, _ in last.walk():

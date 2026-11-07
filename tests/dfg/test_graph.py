@@ -50,10 +50,10 @@ def test_hand_built_accelerated_equals_the_fixture():
         outputs={"out": Memlet("C", [lanes])},
         attrs={
             "instance": "acc",
-            "brm": "elementwise_add",
+            "brm": "simd",
             "implementation": "chisel_tiled_spatial",
             "code": "out = a + b",
-            "params": {"W": 4, "op": "add"},
+            "params": {"W": 4, "op": "add", "streams": 2},
             "replaced": split.node("add_map_s").to_dict(),
         },
     )
@@ -155,7 +155,7 @@ def test_kind_owned_attrs_come_first_with_defaults():
     d = as_dict("vecadd_accelerated")
     acc = d["body"][0]["body"][0]
     acc["attrs"] = {
-        "user.x": 1, "code": "out=a+b", "brm": "elementwise_add", "instance": "acc",
+        "user.x": 1, "code": "out=a+b", "brm": "simd", "instance": "acc",
         "implementation": "i",
     }  # fmt: skip
     attrs = Graph.from_dict(d).node("add").attrs

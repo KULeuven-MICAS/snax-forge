@@ -13,7 +13,9 @@ dtypes pass ``check_dtypes`` when
 
 ``output_dtypes`` lists, per output port, the dtypes it accepts for given
 input dtypes: what a refusal's fix names. ``result_type`` is the type an op
-runs at: NumPy's result type of its inputs (the Chisel blocks' ``opType``).
+runs at: NumPy's result type of its inputs (the Chisel blocks' ``opType``);
+``fits`` says whether a constant (a slot's value, ``simd``'s ``k``) is one of a
+dtype's values.
 """
 
 from __future__ import annotations
@@ -42,6 +44,12 @@ def result_type(dtypes: Iterable[str]) -> str:
     if out not in INT_DTYPES:
         raise ValueError(f"{dts} have no integer result type (NumPy gives {out})")
     return out
+
+
+def fits(value: int, dtype: str) -> bool:
+    """``value`` is one of integer ``dtype``'s values (a NumPy name)."""
+    info = np.iinfo(dtype)
+    return int(info.min) <= value <= int(info.max)
 
 
 def port_dtypes(graph: Graph, node: Node) -> dict[str, str]:

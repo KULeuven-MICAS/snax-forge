@@ -5,18 +5,26 @@ a matcher registered here; the attrs are its parameters. ``bind`` asks the
 matcher whether a tasklet is an instance of the pattern, and if so which
 tasklet connector feeds which BRM port:
 
-    matcher(tasklet, attrs, brm, dtypes) -> {connector: port}
+    matcher(tasklet, attrs, brm, dtypes, scalars) -> {connector: port}
 
-``dtypes`` gives each connector's container dtype (the graph's, D143).
+``dtypes`` gives each connector's container dtype (the graph's, D143), ``scalars``
+the input connectors that are scalar operands (``bind``'s).
 
 or raises ``SandboxError`` saying why not. A family's matcher is code in the
 sandbox, registered like any other extension (principle 6).
 
-``elementwise`` (the first family): the tasklet's code is one statement,
-``out = in1 <op> in2 <op> ...``, a left fold of distinct input connectors
-with one operator; ``attrs.op`` names the operator (``add``, ``sub``,
-``mul``) and ``attrs.arity`` the number of inputs. Inputs map onto the
-BRM's input ports in fold order, the output onto its one output port.
+``simd`` (the first family, no attrs): the tasklet's code is one statement
+with one output, in the expression grammar, over its input connectors, each
+array input read once, and int literals (``out = in1 + in2``, ``out = max(in1, 0)``); every
+input connector is read. The array inputs map onto the BRM's input ports in the order
+they first appear, the output onto its one output port; the scalar operands
+(``scalars``, ``bind``'s) map to no port. A fused nest of two plain tasklets
+(``fuse_map``, its second no fold) is matched as the one tasklet ``fused_view``
+composes. What it computes, and so how many inputs it takes and on which ports,
+is ``bind``'s code match: the BRM's code entry whose present input ports take the
+array inputs, in some assignment, and whose code is the tasklet's up to its slots and
+commuting operands (``simd``'s ``op``, ``streams``, ``k``, ``k1`` and ``k2``,
+brm.py's ``Code``).
 
 ``reduce`` (D102): the tasklet copies its one input into its one output
 (``out = in1``), and the output memlet folds (``reduce``) with the op
@@ -27,7 +35,7 @@ what the importer makes of DaCe's ``Reduce``, and what a BRM of family ``reduce`
 ``reduce`` and the BRM's pattern meet, so the BRM names no IR's term.
 
 ``lane_fold`` (D149, ``mac``): a fused nest (``fuse_map``), the spatial map
-``bind`` is given with its two tasklets: the first ``elementwise`` with
+``bind`` is given with its two tasklets: the first a ``simd`` fold with
 ``attrs.op`` over two inputs, writing a local value the second reads at the
 same index; the second a ``reduce`` copy of it with ``attrs.fold``, its
 output indexed by the spatial variable (one partial per lane, from
@@ -40,16 +48,20 @@ into one element with "split_reduce first" (D150).
 from __future__ import annotations
 
 import ast
+import copy
 from collections.abc import Callable, Mapping
 from typing import Any
 
 import numpy as np
 
+from snax_forge import expr
 from snax_forge.dfg import REDUCE_OPS, Memlet, Node
 
 from .recipe import SandboxError
 
-Matcher = Callable[[Node, Mapping[str, Any], Any, Mapping[str, str]], dict[str, str]]
+Matcher = Callable[
+    [Node, Mapping[str, Any], Any, Mapping[str, str], frozenset[str]], dict[str, str]
+]
 PATTERNS: dict[str, Matcher] = {}
 
 OPS = {ast.Add: "add", ast.Sub: "sub", ast.Mult: "mul"}
@@ -62,24 +74,27 @@ def register_pattern(family: str, matcher: Matcher) -> None:
     PATTERNS[family] = matcher
 
 
-def match(node: Node, brm: Any, dtypes: Mapping[str, str]) -> dict[str, str]:
+def match(
+    node: Node, brm: Any, dtypes: Mapping[str, str], scalars: frozenset[str] = frozenset()
+) -> dict[str, str]:
     """``{connector: port}`` if ``node`` matches ``brm``'s pattern; else SandboxError.
-    ``dtypes`` is each connector's container dtype."""
+    ``dtypes`` is each connector's container dtype, ``scalars`` the input connectors that are
+    scalar operands (``bind``'s: a kernel's scalar argument, the same element every firing),
+    which go to no port."""
     family = brm.pattern.family
     if family not in PATTERNS:
         raise SandboxError(f"brm {brm.name!r}: no matcher for pattern family {family!r}")
-    return PATTERNS[family](node, brm.pattern.attrs, brm, dtypes)
+    return PATTERNS[family](node, brm.pattern.attrs, brm, dtypes, scalars)
 
 
-def _elementwise(
-    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
-) -> dict[str, str]:
-    what = f"node {node.id!r} as {brm.name!r}"
+def _fold(node: Node, arity: Any, brm: Any, what: str) -> tuple[str, dict[str, str]]:
+    """A tasklet that folds ``arity`` distinct inputs with one operator: the operator and
+    ``{connector: port}``, the inputs onto the BRM's inputs in fold order."""
     if node.kind != "tasklet":
-        raise SandboxError(f"{what}: a {node.kind!r} is not an elementwise tasklet")
+        raise SandboxError(f"{what}: a {node.kind!r} is not a tasklet")
     stmts = ast.parse(node.attrs["code"]).body
     if len(stmts) != 1 or len(node.outputs) != 1:
-        raise SandboxError(f"{what}: elementwise is one statement with one output")
+        raise SandboxError(f"{what}: simd is one statement with one output")
     stmt, out = stmts[0], next(iter(node.outputs))
     operands: list[str] = []
     ops: set[str] = set()
@@ -100,24 +115,65 @@ def _elementwise(
             f"{what}: {node.attrs['code']!r} is not one operator over distinct inputs"
         )
     (op,) = ops
-    if op != attrs.get("op") or len(operands) != attrs.get("arity"):
+    if len(operands) != arity:
         raise SandboxError(
-            f"{what}: the tasklet is {op} of {len(operands)}, the pattern is "
-            f"{attrs.get('op')} of {attrs.get('arity')}"
+            f"{what}: the tasklet is {op} of {len(operands)}, the pattern takes {arity} inputs"
         )
     ins = [p.name for p in brm.interface.ports if p.direction == "in"]
     outs = [p.name for p in brm.interface.ports if p.direction == "out"]
     if len(ins) != len(operands) or len(outs) != 1:
         raise SandboxError(f"{what}: the BRM has ports {ins} -> {outs}")
-    return {**dict(zip(operands, ins, strict=True)), out: outs[0]}
+    return op, {**dict(zip(operands, ins, strict=True)), out: outs[0]}
 
 
-register_pattern("elementwise", _elementwise)
+def _simd(
+    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str],
+    scalars: frozenset[str],
+) -> dict[str, str]:  # fmt: skip
+    what = f"node {node.id!r} as {brm.name!r}"
+    if node.kind == "map":  # a fused nest of two plain tasklets: the one they compose
+        found = fused_view(node)
+        if found is None:
+            raise SandboxError(f"{what}: not a fused nest of two tasklets (fuse_map)")
+        if any(m.reduce is not None for m in found[1].outputs.values()):
+            raise SandboxError(f"{what}: {found[1].id} folds its input; simd binds a fused nest "
+                               "of two plain tasklets")  # fmt: skip
+        node = found[2]
+    if node.kind != "tasklet":
+        raise SandboxError(f"{what}: a {node.kind!r} is not a tasklet")
+    code = node.attrs["code"]
+    try:
+        lines = expr.statements(code, what)
+    except expr.ExprError as e:
+        raise SandboxError(str(e)) from None
+    if len(lines) != 1 or len(node.outputs) != 1:
+        raise SandboxError(f"{what}: simd is one statement with one output")
+    ((_, rhs),), out = lines, next(iter(node.outputs))
+    read = expr.ordered_names(rhs)
+    for n in read:
+        if n not in node.inputs:
+            raise SandboxError(f"{what}: {code!r} reads {n!r}, not an input connector (simd "
+                               "reads its inputs and int literals)")  # fmt: skip
+        if n not in scalars and expr.occurrences(rhs, n) > 1:
+            raise SandboxError(f"{what}: {code!r} reads {n} more than once; simd reads distinct "
+                               "inputs, each once")  # fmt: skip
+    if unread := [c for c in node.inputs if c not in read]:
+        raise SandboxError(f"{what}: {code!r} does not read the input {unread[0]}")
+    arrays = [n for n in read if n not in scalars]
+    ins = [p.name for p in brm.interface.ports if p.direction == "in"]
+    outs = [p.name for p in brm.interface.ports if p.direction == "out"]
+    if len(arrays) > len(ins) or len(outs) != 1:
+        raise SandboxError(f"{what}: {len(arrays)} inputs; the BRM has ports {ins} -> {outs}")
+    return {**dict(zip(arrays, ins, strict=False)), out: outs[0]}
+
+
+register_pattern("simd", _simd)
 
 
 def _reduce(
-    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
-) -> dict[str, str]:
+    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str],
+    scalars: frozenset[str],
+) -> dict[str, str]:  # fmt: skip
     what = f"node {node.id!r} as {brm.name!r}"
     if node.kind != "tasklet":
         raise SandboxError(f"{what}: a {node.kind!r} is not a reduce tasklet")
@@ -153,36 +209,66 @@ register_pattern("reduce", _reduce)
 
 def fused_view(smap: Node) -> tuple[Node, Node, Node] | None:
     """A fused nest's two tasklets and the one tasklet they stand for to ``bind``: the first's
-    inputs, the second's outputs, the first's code onto the second's output connector. None
-    when ``smap`` is not a spatial map of two tasklets, the first's one output read by the
-    second at the same index."""
+    inputs and the second's other inputs (one clashing with a first's connector renamed to
+    the next free ``in<k>``), the second's output, and the second's code with the first's
+    expression in place of the local value (axpy's ``out = in3 + in1 * in2``: ``y`` plus
+    ``alpha`` times ``x``; a fold's ``out = in1 * in2``). None when ``smap`` is not a spatial
+    map of two tasklets, the first's one output read once by the second at the same index."""
     if smap.kind != "map" or smap.attrs.get("loop.kind") != "spatial":
         return None
     kids = smap.body or []
     if len(kids) != 2 or any(k.kind != "tasklet" for k in kids):
         return None
     first, second = kids
-    if len(first.outputs) != 1 or len(second.inputs) != 1 or len(second.outputs) != 1:
+    if len(first.outputs) != 1 or len(second.outputs) != 1:
         return None
-    (m1,), (m2,) = first.outputs.values(), second.inputs.values()
-    if (m1.data, m1.subset) != (m2.data, m2.subset) or m1.reduce is not None:
+    (m1,) = first.outputs.values()
+    local = [c for c, m in second.inputs.items() if (m.data, m.subset) == (m1.data, m1.subset)]
+    if len(local) != 1 or m1.reduce is not None:
         return None
     (c2,) = second.outputs
-    if set(first.inputs) & {c2}:
+    s1, s2 = ast.parse(first.attrs["code"]).body, ast.parse(second.attrs["code"]).body
+    if len(s1) != 1 or len(s2) != 1 or not isinstance(s1[0], ast.Assign):
         return None
-    stmts = ast.parse(first.attrs["code"]).body
-    if len(stmts) != 1 or not isinstance(stmts[0], ast.Assign):
+    if not isinstance(s2[0], ast.Assign):
         return None
-    code = f"{c2} = {ast.unparse(stmts[0].value)}"
-    view = Node(first.id, "tasklet", inputs=dict(first.inputs),
+    others = [c for c in second.inputs if c != local[0]]
+    taken = set(first.inputs) | {c2} | set(others)
+    rename: dict[str, str] = {}
+    for c in others:
+        if c in first.inputs or c == c2:
+            k = 1
+            while f"in{k}" in taken:
+                k += 1
+            rename[c] = f"in{k}"
+            taken.add(rename[c])
+    body = _swap_names(s2[0].value, rename | {local[0]: ""}, s1[0].value)
+    code = f"{c2} = {ast.unparse(body)}"
+    inputs = dict(first.inputs) | {rename.get(c, c): m for c, m in second.inputs.items()
+                                   if c != local[0]}  # fmt: skip
+    view = Node(first.id, "tasklet", inputs=inputs,
                 outputs={c2: Memlet.from_dict(second.outputs[c2].to_dict(), first.id)},
                 attrs={"code": code})  # fmt: skip
     return first, second, view
 
 
+def _swap_names(tree: ast.expr, rename: Mapping[str, str], value: ast.expr) -> ast.expr:
+    """``tree`` with each name in ``rename`` renamed, one renamed to ``""`` replaced by
+    ``value``."""
+
+    class Swap(ast.NodeTransformer):
+        def visit_Name(self, n: ast.Name) -> ast.expr:
+            if n.id not in rename:
+                return n
+            return copy.deepcopy(value) if rename[n.id] == "" else ast.Name(rename[n.id], n.ctx)
+
+    return Swap().visit(copy.deepcopy(tree))
+
+
 def _lane_fold(
-    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str]
-) -> dict[str, str]:
+    node: Node, attrs: Mapping[str, Any], brm: Any, dtypes: Mapping[str, str],
+    scalars: frozenset[str],
+) -> dict[str, str]:  # fmt: skip
     what = f"node {node.id!r} as {brm.name!r}"
     if node.kind == "tasklet":
         if any(m.reduce is not None for m in node.outputs.values()):
@@ -194,7 +280,12 @@ def _lane_fold(
     if found is None:
         raise SandboxError(f"{what}: not a fused nest of a multiply and its fold (fuse_map first)")
     first, second, _ = found
-    ports = _elementwise(first, {"op": attrs.get("op"), "arity": 2}, brm, dtypes)
+    if len(second.inputs) != 1:
+        raise SandboxError(f"{what}: {second.id} reads {len(second.inputs)} inputs; a "
+                           f"{brm.name}'s fold reads the product only")  # fmt: skip
+    op, ports = _fold(first, 2, brm, what)
+    if op != attrs.get("op"):
+        raise SandboxError(f"{what}: {first.id} is {op}, the pattern {attrs.get('op')}")
     (cin,), (cout,) = second.inputs, second.outputs
     if second.attrs["code"] != f"{cout} = {cin}":
         raise SandboxError(f"{what}: {second.id}'s {second.attrs['code']!r} is not a copy of its "

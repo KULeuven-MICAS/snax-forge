@@ -5,7 +5,8 @@ graph (step 0, ``input``), then applies the steps in order. After every
 step the reference executor runs the new graph and the input graph on
 the same seeded inputs, and every non-transient container must come out
 equal: a transform that changes what the graph computes stops the recipe at
-that step. The inputs are random integers of each container's dtype and
+that step. A step that fixes an input (``bake_scalar``) is checked against the
+graph before it with that input at the value, which the later steps keep. The inputs are random integers of each container's dtype and
 shape, independent of the kernel; that the input graph computes what the
 kernel does is checked against the kernel's reference (``pixi run
 check-dfg``).
@@ -114,15 +115,28 @@ def reference(g: Graph, seed: int, what: str) -> tuple[dict[str, np.ndarray], di
 def checked_step(g: Graph, name: str, params: dict[str, Any], inputs: dict[str, np.ndarray],
                  want: dict[str, Any], what: str) -> Graph:  # fmt: skip
     """Transform ``name`` on ``g``, then the reference check: every non-transient container
-    equal to ``want`` on ``inputs``; a StepError named ``what`` otherwise."""
+    equal to ``want`` on ``inputs``; a StepError named ``what`` otherwise. A transform that
+    fixes inputs (``TransformSpec.fixes``, ``bake_scalar``'s value) is checked against ``g``
+    itself on ``inputs`` with those fixed, and, once it passes, ``inputs`` and ``want`` keep
+    them (in place), so the steps after it are checked at the value."""
+    spec = TRANSFORMS[name]
     try:
-        g = TRANSFORMS[name].fn(g, **params)
-        got = execute(g, inputs)
+        fixed = spec.fixes(g, **params) if spec.fixes is not None else {}
+        step_inputs, step_want = inputs, want
+        if fixed:
+            step_inputs = inputs | fixed
+            step_want = execute(g, step_inputs)
+        g = spec.fn(g, **params)
+        # a baked container is gone from the graph, its value kept in the inputs
+        got = execute(g, {k: v for k, v in step_inputs.items() if k in g.containers})
     except (SandboxError, DfgError) as e:
         raise StepError(f"{what}: {e}", e) from None
     for k, c in g.containers.items():
-        if not c.transient and not np.array_equal(got[k], want[k]):
+        if not c.transient and not np.array_equal(got[k], step_want[k]):
             raise StepError(f"{what}: the reference check fails, {k!r} differs")
+    if fixed:
+        inputs.update(fixed)
+        want.update(step_want)
     return g
 
 

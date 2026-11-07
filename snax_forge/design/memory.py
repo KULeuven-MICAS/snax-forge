@@ -11,7 +11,10 @@ replace any one of them (``register_memory_pass``):
                 container that is not transient in L2 and L1 when the
                 platform has an L2 (the DMA loads and stores it), else in
                 L1; a transient in L1, but a link's container and a
-                fused nest's local value in none (D112, D150)
+                fused nest's local value in none (D112, D150);
+                a container read only through slot connectors
+                (a CSR's value, the core writes it) in L2 when
+                the platform has one, else in L1
     layout      shape and strides per container and      contiguous:
                 memory, base 0                           row-major, each
                                                          element its
@@ -308,12 +311,14 @@ def register_memory_pass(kind: str, name: str, fn: MemoryPass) -> None:
 
 
 def default_residency(ctx: MemoryContext) -> dict[str, list[str]]:
-    from .streamers import unplaced
+    from .streamers import slot_containers, unplaced
 
     none = unplaced(ctx.graph)  # a link's and a fused nest's local value: in no memory
+    core = slot_containers(ctx.graph)  # a CSR's value: the core's memory, the first
     out = {}
     for name, c in ctx.graph.containers.items():
-        out[name] = [] if name in none else ["l1"] if c.transient else ctx.memories
+        out[name] = ([] if name in none else ctx.memories[:1] if name in core
+                     else ["l1"] if c.transient else ctx.memories)  # fmt: skip
     return out
 
 

@@ -120,11 +120,11 @@ def test_rejected_by_name(name, edit, message):
 def test_one_instance_bound_two_ways():
     d = as_dict("vecadd_accelerated")
     a = d["body"][0]["body"][0]
-    b = {**a, "id": "add2", "attrs": {**a["attrs"], "params": {"W": 8, "op": "add"}}}
+    b = {**a, "id": "add2", "attrs": {**a["attrs"], "params": {"W": 8, "op": "add", "streams": 2}}}
     d["body"][0]["body"].append(b)
     with pytest.raises(DfgError, match="instance 'acc' is bound elsewhere"):
         Graph.from_dict(d)
-    b["attrs"]["params"] = {"W": 4, "op": "add"}
+    b["attrs"]["params"] = {"W": 4, "op": "add", "streams": 2}
     Graph.from_dict(d)  # the same binding twice is fine
 
 

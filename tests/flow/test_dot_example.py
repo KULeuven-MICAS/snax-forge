@@ -18,6 +18,7 @@ import pytest
 from snax_forge.flow import run_flow, summary
 from snax_forge.run import read_run
 from tests.design.helpers import REPO, SNAX_FORGE
+from tests.helpers import recipe_path
 
 from .helpers import needs_gvsoc
 
@@ -65,15 +66,14 @@ def test_the_table_is_c17_plus_the_fill():
 
 def test_the_readme_gives_the_command_and_dot_4s_check_line():
     text = README.read_text()
-    assert "\npixi run flow recipes/dot_4.json --platform platforms/snax_forge.json\n" in text
+    assert "\npixi run flow recipes/dot/dot_4.json --platform platforms/snax_forge.json\n" in text
     assert f"counters mult_dot {table()['dot_4'][3]} (128 beats)" in text
 
 
 @pytest.fixture(scope="module")
 def flows(tmp_path_factory):
     base = tmp_path_factory.mktemp("dot")
-    recipes = REPO / "recipes"
-    return {n: run_flow(recipes / f"{n}.json", SNAX_FORGE, recipe_sets={"N": SMALL}, out=base / n)
+    return {n: run_flow(recipe_path(n), SNAX_FORGE, recipe_sets={"N": SMALL}, out=base / n)
             for n in NAMES}  # fmt: skip
 
 

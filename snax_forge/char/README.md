@@ -13,7 +13,7 @@ The known limits (C§20):
 - Deep LinkBuffers come out about 1.4 to 1.8 times high on nangate45: there the stream slope PrimePower gives is 0.56 to 0.71 of one held slot per depth (X35); nangate15's is 0.96 to 1.14.
 - Comb energy is counted per fire only, so a unit fed by another unit is undercounted when its inputs change more often than it fires: dot 4's sum fires once but sees 256 new Mac outputs. The kernel stays within 4 % because such sums are small.
 - A TreeAccumulate alone keeps the logic for its `first` pin, which dot 4 ties and firtool folds, so the table's comb area is above the block inside dot 4 by about 370 µm² on nangate45 (82 % at W = 1, 4 % at W = 32).
-- The table holds int64 only, the Mac in its accumulating form only, and ElementwiseLanes `add` and `mul` only; anything else is "not characterized" (its comb counted as 0, its flops still counted) and the design note `char.missing` names it.
+- The table holds int64 only, the Mac in its accumulating form only, and ElementwiseLanes (now SimdLanes, mapped by `DATAPATH_RENAMES` until the next export) `add` and `mul` only, two-input points (`streams` 2 and no slot from a CSR, `kCsr`, `k1Csr`, `k2Csr` false, `TABLE_DEFAULTS`, so a one-stream SimdLanes such as relu's, or axpy's axpby, is not characterized); anything else is "not characterized" (its comb counted as 0, its flops still counted) and the design note `char.missing` names it.
 
 ## Where the numbers come from
 
@@ -78,7 +78,7 @@ Where the estimate gets each count:
 
 ## A worked example: dot 5 at W = 8 on nangate45
 
-dot 5 (`recipes/dot_5.json`, N = 2048, W = 8) is one group, `dot`: a Mac `mac` at lanes 8 feeding a SerialAccumulate `sum` at lanes 8 over a wire. The estimate gives $C_{\mathit{acc}}$ = 265 cycles.
+dot 5 (`recipes/dot/dot_5.json`, N = 2048, W = 8) is one group, `dot`: a Mac `mac` at lanes 8 feeding a SerialAccumulate `sum` at lanes 8 over a wire. The estimate gives $C_{\mathit{acc}}$ = 265 cycles.
 
 The constants (`nangate45.json`, `flop` and `ctrl`): $e_{\mathit{load}}$ = 17.1692 fJ, $e_{\mathit{hold}}$ = 7.1476 fJ, so $e_{\mathit{load}} - e_{\mathit{hold}}$ = 10.0216 fJ; $A_{\mathit{flop}}$ = 5.32 µm²; $f_{\mathit{ctrl}}$ = 1.06.
 

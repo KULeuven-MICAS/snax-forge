@@ -168,7 +168,7 @@ class GroupEstimate:
 
 
 def _ins(inst: Any) -> list[str]:
-    return [p.name for p in inst.brm.interface.ports if p.direction == "in"]
+    return [p.name for p in inst.ports if p.direction == "in"]
 
 
 def _datapath_blocks(graph: Graph, insts: dict[str, Any], members: list[str],
@@ -271,7 +271,7 @@ def group_blocks(graph: Graph, job_width: int = 32,
         rule_links = [{"from": frm.split(".")[0], "to": to.split(".")[0],
                        "to_input": _ins(insts[to.split(".")[0]]).index(to.split(".")[1]),
                        "depth": k.attrs["depth"]} for k, frm, to in ends]  # fmt: skip
-        (owner,) = {u for u in members for p in insts[u].brm.interface.ports
+        (owner,) = {u for u in members for p in insts[u].ports
                     if p.direction == "out" and f"{u}.{p.name}" not in taken}  # fmt: skip
         tasks = (
             [{u: nodes[u][0] for u in members}]

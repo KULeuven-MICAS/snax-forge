@@ -67,6 +67,7 @@ from .streamers import (
     nest_spatial_bounds,
     resolve,
     slices_per_word,
+    slot_connectors,
     streamer_name,
 )
 
@@ -228,7 +229,7 @@ def _streamers(design: Design) -> dict[str, tuple[str, str]]:
     return {
         streamer_name(i, p.name): (i, p.name)
         for i, inst in design.instances.items()
-        for p in inst.brm.interface.ports
+        for p in inst.ports
         if f"{i}.{p.name}" not in linked
     }
 
@@ -335,18 +336,21 @@ def _graph_brm(design: Design) -> Iterable[Problem]:
             yield Problem("graph.brm", where, str(e))
             continue
         design.instances.setdefault(n.attrs["instance"], inst)
-        ports = inst.brm.interface.ports
+        ports = inst.ports
         ins = [p.name for p in ports if p.direction == "in"]
         outs = [p.name for p in ports if p.direction == "out"]
-        if sorted(n.inputs) != sorted(ins) or sorted(n.outputs) != sorted(outs):
+        if sorted(c for c in n.inputs if c not in inst.read) != sorted(ins) or sorted(
+            n.outputs
+        ) != sorted(outs):  # a slot read from its container (a CSR) is no port
             yield Problem(
                 "graph.brm", where,
                 f"connectors {sorted(n.inputs)} -> {sorted(n.outputs)} are not the ports of "
                 f"{inst.brm.name}: {ins} -> {outs}",
             )  # fmt: skip
-        code = inst.brm.function.code
+        code = inst.code
         if code is None:
-            yield Problem("graph.brm", where, f"{inst.brm.name} has no function.code to bind to")
+            yield Problem("graph.brm", where, f"{inst.brm.name} has no function.code to bind to "
+                          f"at {inst.params}")  # fmt: skip
         elif n.attrs.get("code") != code:
             yield Problem(
                 "graph.brm", where,
@@ -463,7 +467,7 @@ def _connect_dtype(design: Design) -> Iterable[Problem]:
     g = design.graph
     for i, inst in design.instances.items():
         nodes = [n for n in accelerated(g) if n.attrs["instance"] == i]
-        for p in inst.brm.interface.ports:
+        for p in inst.ports:
             by: dict[str, list[str]] = {}
             for n in nodes:
                 by.setdefault(port_dtypes(g, n)[p.name], []).append(n.id)
@@ -540,7 +544,10 @@ def _connect_pack(design: Design) -> Iterable[Problem]:
     requires)."""
     g, pf = design.graph, design.platform
     for n in accelerated(g):
+        slots = slot_connectors(n)  # a CSR's value: no streamer, nothing packed
         for conn, m in (n.inputs | n.outputs).items():
+            if conn in slots:
+                continue
             yield from _reach(design, n, conn)
             dtype = g.containers[m.data].dtype
             num_slc = slices_per_word(dtype, pf.l1.width_bits)
@@ -876,8 +883,11 @@ def _memory_residency(design: Design) -> Iterable[Problem]:
             yield Problem("memory.residency", f"container {c}", "lives in no memory")
     linked = linked_ports(design.graph)
     for n in accelerated(design.graph):
+        slots = slot_connectors(n)
         for conn, mlet in {**n.inputs, **n.outputs}.items():
             if f"{n.attrs['instance']}.{conn}" in linked:  # a link: no L1, no streamer
+                continue
+            if conn in slots:  # a CSR's value: the core reads it where it lives
                 continue
             if "l1" not in lays.get(mlet.data, {}):
                 yield Problem(

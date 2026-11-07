@@ -12,9 +12,10 @@ import java.nio.file.{Files, Path}
 object AcceleratorSpec {
 
   /** A CSR: its offset from the shell's first CSR and its width, 1 to 32 bits (D152: START 1, JOBS and JOB_BEATS
-    * job_width, STATUS 2, COUNTER counter_width); a read gives its bits, the upper ones 0.
+    * job_width, a scalar its dtype's bits, 32 a word at 64, STATUS 2, COUNTER counter_width); a read gives its bits,
+    * the upper ones 0. `pin`: a scalar's datapath pin (`k1`), which the CSR drives (two at 64 bits, low word first).
     */
-  case class CsrSpec(name: String, access: String, offset: Int, width: Int) {
+  case class CsrSpec(name: String, access: String, offset: Int, width: Int, pin: Option[String] = None) {
     require(1 <= width && width <= 32, s"CSR $name: width $width, must be 1 to 32")
   }
 
@@ -36,7 +37,8 @@ object AcceleratorSpec {
     latency:  Int,
     ii:       Int,
     span:     Int,
-    csrs:     Seq[CsrSpec]
+    csrs:     Seq[CsrSpec],
+    scalars:  Seq[(String, String)] = Seq.empty
   ) {
     def port(brm: String): PortSpec = ports.find(_._1 == brm).get._2
 
@@ -50,6 +52,9 @@ object AcceleratorSpec {
     def fixedT: Option[Int] =
       if (csrs.exists(_.name == "JOB_BEATS")) None
       else Some(params.get("T").map(_.num.toInt).getOrElse(1))
+
+    /** A scalar's CSRs, the pin's low word first. */
+    def pinned(pin: String): Seq[CsrSpec] = csrs.filter(_.pin.contains(pin))
   }
 
   case class GroupSpec(name: String, csrs: Seq[CsrSpec], units: Seq[UnitSpec], links: Seq[LinkSpec]) {
@@ -66,13 +71,14 @@ object AcceleratorSpec {
   }
 
   def parse(text: String): AcceleratorSpec = {
-    val d = ujson.read(text)
-    def csr(c: ujson.Value) = CsrSpec(c("name").str, c("access").str, c("offset").num.toInt, c("width").num.toInt)
-    def end(e: String) = {
+    val d                   = ujson.read(text)
+    def csr(c: ujson.Value) =
+      CsrSpec(c("name").str, c("access").str, c("offset").num.toInt, c("width").num.toInt, c.obj.get("pin").map(_.str))
+    def end(e: String)      = {
       val Array(u, p) = e.split("\\.", 2)
       u -> p
     }
-    val accs           = d("accelerators").arr.toSeq
+    val accs                = d("accelerators").arr.toSeq
     def outer(key: String) = accs.flatMap(a => a(key).arr.toSeq.map(e => end(e.str)))
     val spec    = AcceleratorSpec(
       d("design_point").str,
@@ -96,7 +102,8 @@ object AcceleratorSpec {
               u("timing")("latency").num.toInt,
               u("timing")("ii").num.toInt,
               u("timing")("span").num.toInt,
-              u("csrs").arr.toSeq.map(csr)
+              u("csrs").arr.toSeq.map(csr),
+              u.obj.get("scalars").map(_.obj.toSeq.map { case (k, v) => k -> v.str }).getOrElse(Seq.empty)
             )
           },
           g("links").arr.toSeq.map { l =>

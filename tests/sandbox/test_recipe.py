@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from snax_forge.sandbox import Recipe, SandboxError
+from snax_forge.sandbox.recipe import RECIPE_ROOT, find_recipe, recipe_paths
 
 from .helpers import RECIPE, recipe
 
@@ -55,3 +56,36 @@ def test_params_and_symbols():
 def test_rejected(d, message):
     with pytest.raises(SandboxError, match=message):
         Recipe.from_dict(d)
+
+
+def test_every_recipe_is_in_a_folder_once_under_its_name():
+    """The recipes live one folder deep by category (C§12): none directly in ``recipes/``, each
+    name in one folder only, and each recipe's ``name`` its file's stem."""
+    assert not list(RECIPE_ROOT.glob("*.json"))
+    paths = recipe_paths()
+    assert sorted(p.name for p in RECIPE_ROOT.iterdir() if p.is_dir()) == [
+        "custom", "dot", "elementwise", "matvec", "reduce"]  # fmt: skip
+    assert {n: len(ps) for n, ps in paths.items() if len(ps) > 1} == {}
+    for name, (path,) in paths.items():
+        assert Recipe.load(path).name == name == path.stem, path
+        assert find_recipe(name) == path
+    assert find_recipe("vecadd") == RECIPE_ROOT / "elementwise" / "vecadd.json"
+
+
+def test_find_recipe_names_what_is_wrong(tmp_path):
+    """A name in no folder or in two, and any .json directly in the root, is an error naming it."""
+    for folder in ("dot", "custom"):
+        (tmp_path / folder).mkdir()
+        recipe().save(tmp_path / folder / "twice.json")
+    recipe().save(tmp_path / "dot" / "once.json")
+    assert find_recipe("once", tmp_path) == tmp_path / "dot" / "once.json"
+    with pytest.raises(SandboxError, match=r"no recipe 'gone' in any folder of "):
+        find_recipe("gone", tmp_path)
+    with pytest.raises(
+        SandboxError,
+        match=r"recipe 'twice' is in 2 folders of .*\['custom/twice.json', 'dot/twice.json'\]",
+    ):
+        find_recipe("twice", tmp_path)
+    recipe().save(tmp_path / "flat.json")
+    with pytest.raises(SandboxError, match=r"not directly in it: \['flat.json'\]"):
+        find_recipe("once", tmp_path)

@@ -10,8 +10,8 @@ nests that ``task_nest`` resolves and enumerates for one task, which
 SNAX-LOWER maps onto streamer values (``snax_forge.lower.streams``);
 ``stream``, for unit BRMs, leaves the order to the bound memlet
 (``memlet_ordered``). The library of hand-written BRMs
-(library.py, ``load_brm``) holds ``elementwise_add``, ``elementwise_mul``
-and ``accumulate``, a reduction named by its pattern and kind. ``drain`` is
+(library.py, ``load_brm``) holds ``simd`` (one code per ``op``, a ``Code`` table),
+``accumulate``, a reduction named by its pattern and kind, and ``mac``. ``drain`` is
 a third timing number (D103), and port names can appear in code. An
 implementation's ``binding`` (binding.py, D129) has its ``controller`` kind
 registered. A port's ``dtypes`` are a rule (dtypes.py,
@@ -26,6 +26,7 @@ from .binding import CONTROLLERS, register_controller
 from .brm import (
     Brm,
     BrmError,
+    Code,
     Dataflow,
     Function,
     Implementation,
@@ -35,7 +36,15 @@ from .brm import (
     Port,
     Timing,
 )
-from .dtypes import INT_DTYPES, accepted, check_dtypes, output_dtypes, port_dtypes
+from .dtypes import (
+    INT_DTYPES,
+    accepted,
+    check_dtypes,
+    fits,
+    output_dtypes,
+    port_dtypes,
+    result_type,
+)
 from .function import KINDS, OPS, AccelFunction, AccelPort, function_of, register_kind, register_op
 from .instance import Instance, resolve
 from .library import LIBRARY, library_names, load_brm
@@ -53,6 +62,7 @@ __all__ = [
     "AccelPort",
     "Brm",
     "BrmError",
+    "Code",
     "Dataflow",
     "ExprError",
     "Function",
@@ -67,6 +77,7 @@ __all__ = [
     "accepted",
     "affine",
     "check_dtypes",
+    "fits",
     "function_of",
     "library_names",
     "load_brm",
@@ -79,6 +90,7 @@ __all__ = [
     "register_op",
     "resolve",
     "resolve_nest",
+    "result_type",
     "stream",
     "task_nest",
 ]

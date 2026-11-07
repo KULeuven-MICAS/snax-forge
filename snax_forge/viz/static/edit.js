@@ -195,18 +195,39 @@ function kernelForm(kernels) {
         `importing ${pick.value}… (DaCe builds its SDFG, a few seconds)`) }, "Start")));
 }
 
+/** The recipes as one dropdown, an optgroup per folder (``recipes/<folder>/``), in the order
+the server lists them; a recipe that does not load is listed, disabled, with its error. */
+function recipeForm(recipes) {
+  const groups = [];
+  recipes.forEach((r, i) => {
+    const opt = h("option", { value: i, disabled: !!r.error, title: r.error || r.path }, r.error ? `${r.name} (does not load)` : r.name);
+    const last = groups[groups.length - 1];
+    if (last && last.folder === r.folder) last.options.push(opt);
+    else groups.push({ folder: r.folder, options: [opt] });
+  });
+  const pick = h("select", { "aria-label": "recipe" }, groups.map((g) => h("optgroup", { label: g.folder || "(no folder)" }, g.options)));
+  const first = recipes.findIndex((r) => !r.error);
+  if (first >= 0) pick.value = String(first);
+  const about = h("small", {});
+  const chosen = () => recipes[Number(pick.value)];
+  const fill = () => {
+    const r = chosen();
+    about.textContent = !r ? "" : r.error ? ` ${r.error}` : ` ${r.kernel} · ${r.steps} steps`;
+  };
+  pick.addEventListener("change", fill);
+  fill();
+  return h("div", {}, h("p", {}, pick, about),
+    h("p", {}, h("button", { type: "button", class: "primary",
+      onclick: () => { const r = chosen(); if (r && !r.error) open({ recipe: r.path }, `replaying ${r.name}…`); } }, "Open")));
+}
+
 export async function start() {
   $("start").showModal();
   startStatus("loading the kernels…");
   const [kernels, recipes, sessions] = await Promise.all([get("/api/kernels"), get("/api/recipes"), get("/api/sessions")]);
   startStatus("");
   $("start-kernel").replaceChildren(kernelForm(kernels.body));
-  $("start-recipe").replaceChildren(recipes.body.length
-    ? h("ul", { class: "dfg-pick" }, recipes.body.map((r) => h("li", {},
-      h("button", { type: "button", disabled: !!r.error, title: r.error || r.path,
-        onclick: () => open({ recipe: r.path }, `replaying ${r.name}…`) }, r.name),
-      h("small", {}, r.error ? ` ${r.error}` : ` ${r.kernel} · ${r.steps} steps`))))
-    : h("p", { class: "muted" }, "no recipe"));
+  $("start-recipe").replaceChildren(recipes.body.length ? recipeForm(recipes.body) : h("p", { class: "muted" }, "no recipe"));
   $("start-session").replaceChildren(sessions.body.length
     ? h("ul", { class: "dfg-pick" }, sessions.body.map((x) => h("li", {},
       h("button", { type: "button", disabled: !!x.error, title: x.error || "",
@@ -247,7 +268,7 @@ function field(f) {
       h("input", { type: "checkbox", value: c.value, checked: ticked.has(c.value) }), h("span", {}, c.label))));
   }
   const input = h("input", { ...attrs, value: f.value === null || f.value === undefined ? "" : String(f.value),
-    title: f.sweepable ? "a number, or an expression over the params (W, W * 2); a new name gets its value beside it" : "" });
+    title: f.sweepable ? "a number, or an expression over the params (W, W * 2); a new name gets its value beside it" : f.hint || "" });
   return f.sweepable && !f.readonly ? sweepable(input, f.new_value) : input;
 }
 

@@ -7,10 +7,18 @@ import pytest
 from snax_forge.design import Design, DesignPoint, MemorySpec, Platform, run_checks, streamers
 from snax_forge.design.streamers import Loop
 from snax_forge.dfg import Memlet
-from snax_forge.lower import Layout, LowerError, TaskList, memlet_values, placed_waits, task_list
+from snax_forge.lower import (
+    Layout,
+    LowerError,
+    TaskList,
+    check_values,
+    memlet_values,
+    placed_waits,
+    task_list,
+)
 from snax_forge.lower import __main__ as cli
 from snax_forge.lower.derive import addresses
-from tests.brm.helpers import affine_elementwise_add
+from tests.brm.helpers import affine_simd
 from tests.design.helpers import (
     SNAX_FORGE,
     bound_matadd,
@@ -146,6 +154,54 @@ def test_a_chain_of_two_nodes_orders_its_tasks_by_the_data():
 
 
 # =============================================================================
+# in place (open item 47): a unit that writes the container it reads
+# =============================================================================
+
+
+def in_place(gd: dict, out_subset: str | None = None, tasklet_subset: str | None = None) -> None:
+    """vecadd writing B in place of C: ``B = A + B``. With subsets, the write goes there
+    instead (in a B of 2N), so it is no longer the read's elements."""
+    del gd["containers"]["C"]
+    if out_subset is not None:
+        gd["containers"]["B"]["shape"] = ["2 * N"]
+    (node,) = gd["body"][0]["body"]
+    node["outputs"]["out"]["data"] = "B"
+    (tasklet,) = node["attrs"]["replaced"]["body"]
+    tasklet["outputs"]["out"]["data"] = "B"
+    if out_subset is not None:
+        node["outputs"]["out"]["subset"] = [out_subset]
+        tasklet["outputs"]["out"]["subset"] = [tasklet_subset]
+
+
+def test_an_in_place_update_does_not_wait_on_its_own_read():
+    """B = A + B: the writer starts with B's reader, so it cannot wait for it; the same
+    subset over the same firing loops needs no wait (open item 47)."""
+    p = point(edit_graph=in_place)
+    tl = task_list(p)
+    check_values(tl, p)
+    c = tl.configured()
+    assert [s.task_name for s in tl.steps if s.op == "configure"] == [
+        "load_A", "load_B", "add_acc_a", "add_acc_b", "add_acc_out", "add_acc", "store_B",
+    ]  # fmt: skip
+    assert c["add_acc_b"].after == ["load_B"]
+    assert c["add_acc_out"].after == ["load_B"]  # B in L1 before it, not the read beside it
+    assert c["store_B"].after == ["add_acc_out"]
+    start = next(s for s in tl.steps if s.op == "start" and "add_acc" in s.tasks)
+    assert {"add_acc_b", "add_acc_out"} <= set(start.tasks)
+
+
+def test_a_write_into_its_read_container_elsewhere_is_refused():
+    """B[N:2N] = A + B[0:N]: not the elements it reads, so not an in-place update."""
+
+    def edit(gd):
+        in_place(gd, "4 * i_t + N:4 * i_t + N + 4", "4 * i_t + i_s + N")
+
+    with pytest.raises(LowerError, match=r"node add\.out: writes B in place of add_acc_b's "
+                                         r"read, but not the same elements"):  # fmt: skip
+        task_list(point(edit_graph=edit))
+
+
+# =============================================================================
 # dot: a multiplier chained into an accumulator through L1 (D105)
 # =============================================================================
 
@@ -255,7 +311,7 @@ def test_dot_1_waits_for_mul_s_writer_before_sum_and_never_on_an_idle_mover():
 
 
 def test_dot_1_is_two_accelerators_in_series():
-    """recipes/dot_1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
+    """recipes/dot/dot_1.json (no encapsulate): vmul and vsum, two streamer sets; no idle mover, the
     serial sync on vmul's task before vsum starts, the one wait between them (D158)."""
     from tests.gen.helpers import bound_dot1
 
@@ -281,13 +337,13 @@ def _backwards(g):
 
 def test_a_memlet_the_nest_disagrees_with_is_refused(monkeypatch):
     """An affine BRM: the addresses are right, the order is not the BRM's nest's."""
-    monkeypatch.setattr(streamers, "load_brm", lambda name: affine_elementwise_add())
+    monkeypatch.setattr(streamers, "load_brm", lambda name: affine_simd())
     with pytest.raises(LowerError, match="different orders"):
         task_list(point(edit_graph=_backwards))
 
 
 def test_a_stream_brm_takes_the_memlets_order():
-    """The library's elementwise_add (stream, D70): the memlet is the order, so C back to front
+    """The library's simd (stream, D70): the memlet is the order, so C back to front
     lowers, its streamer starting at element 60 and stepping back a beat at a time."""
     out = task_list(point(edit_graph=_backwards)).configured()["add_acc_out"].values
     assert out["temporal_bounds"] == [16] and out["temporal_strides"] == [-32]

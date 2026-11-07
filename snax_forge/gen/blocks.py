@@ -4,7 +4,7 @@ An adapter reads an instance (its BRM, implementation and design params,
 snax_forge/brm/instance.py) and its ports' dtypes (the node's containers',
 ``brm.port_dtypes``) and gives what ``accelerator.json`` holds of the unit
 beyond its name, BRM, timing and CSRs (accelerator.py): per BRM port its
-datapath port, dtype and lanes, ``opType`` for an elementwise unit, and
+datapath port, dtype and lanes, ``opType`` for a SIMD unit, and
 ``params``; or it refuses with a ``GenError`` naming what does not fit.
 Adapters are registered by the datapath's name with its latency L and span
 (``register_datapath``, D19), each an int or an ``expr.py`` expression over the
@@ -13,18 +13,33 @@ params the adapter gives and ``lanes`` (its first input's; a bool as 0 or 1,
 0 (accelerator.py). Every datapath is driven by the shell's nest
 controller (``counted``, D129): data and enables only.
 
-**ElementwiseLanes** (L 0): one op over every lane.
+**SimdLanes** (L 0): one op over every lane; args lanes and op, and
+optionally streams (2 by default) and k.
 
-    ports        two inputs and one output (SnaxUnit's op table is binary),
-                 each with args.lanes lanes; each port's lanes * N whole
-                 64-bit channels (D142), N its dtype's bits (intN or uintN,
-                 N in 8, 16, 32, 64)
+    ports        at two streams, two inputs and one output (SnaxUnit's op
+                 table is binary); at one, one input and one output, the op's
+                 second operand the constant k; each with args.lanes lanes;
+                 each port's lanes * N whole 64-bit channels (D142), N its
+                 dtype's bits (intN or uintN, N in 8, 16, 32, 64); the
+                 instance's ports (``Instance.ports``) are the ones counted
     opType       the inputs' NumPy result type (brm/dtypes.py's
-                 ``result_type``, D143), the type the op runs at; the result
-                 is then extended or wrapped into the output's
+                 ``result_type``, D143), the type the op runs at (at one
+                 stream a's dtype); the result is then extended or wrapped
+                 into the output's
     params       ``op``: args.op, one of ElementwiseOp's names (add, sub, mul,
                  and, or, xor, min, max; ElementwiseAlu.scala's encoding is
-                 ``ELEMENTWISE_OP``, which tests/gen reads from the source)
+                 ``ELEMENTWISE_OP``, which tests/gen reads from the source);
+                 at one stream also ``k``: args.k, an int that fits opType
+                 (``gen.k``), read only there, so an unset k at two streams is
+                 never evaluated; a k at two streams is refused; at one
+                 stream k is baked or read from a container (a CSR slot,
+                 ``Instance.read``, ``k`` left out), else refused;
+                 ``axpby`` (two streams, ``k1 * a + k2 * b``) takes args.k1 and
+                 args.k2, each baked (an int that fits opType, in params) or
+                 read (a CSR), k1 one of the two, k2 also unset (no factor)
+    scalars      each slot read from a container (k at one stream, k1, k2), in
+                 slot order, at opType: an R/W CSR the program writes, an
+                 input pin of opType's width (gen/accelerator.py)
 
 **TreeAccumulate** (L 1, D133): a fold, one sum every T inputs, the input's
 lanes summed by an adder tree in front of its register.
@@ -34,7 +49,7 @@ lanes summed by an adder tree in front of its register.
                  one word whatever its N (the lanes are cast to it)
     op           add: the BRM's op param, the only one an adder tree runs
                  (``gen.op`` until a datapath takes another)
-    params       ``op``: add, as ElementwiseLanes' ``op``; args are lanes only
+    params       ``op``: add, as SimdLanes' ``op``; args are lanes only
 
 **SerialAccumulate** (L 1, span lanes, D149): TreeAccumulate's ports, op and
 args, its lanes added one a cycle (lane k in cycle k) into one sum; params
@@ -61,7 +76,7 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.brm import Instance
-from snax_forge.brm.dtypes import result_type
+from snax_forge.brm.dtypes import fits, result_type
 from snax_forge.common import CodedError
 
 
@@ -90,11 +105,13 @@ class Port:
 @dataclass(frozen=True)
 class Fill:
     """What an adapter gives: the unit's ports (per BRM port, in the BRM's order), ``opType``
-    (an elementwise unit's, else None) and ``params``."""
+    (a SIMD unit's, else None), ``params`` and ``scalars``: each slot read from a container,
+    in slot order, at its dtype (an R/W CSR the program writes, the datapath's pin)."""
 
     ports: dict[str, Port]
     op_type: str | None = None
     params: dict[str, Any] = field(default_factory=dict)
+    scalars: dict[str, str] = field(default_factory=dict)
 
 
 Adapter = Callable[..., Fill]  # (inst, dtypes=None) -> Fill
@@ -145,8 +162,8 @@ def port_dtype(dtype: str, where: str) -> tuple[int, bool]:
 
 def _ports(inst: Instance, n_in: int, n_out: int, who: str, what: str) -> tuple[list, list]:
     """The BRM's input and output ports, ``n_in`` and ``n_out`` of them."""
-    ins = [p for p in inst.brm.interface.ports if p.direction == "in"]
-    outs = [p for p in inst.brm.interface.ports if p.direction == "out"]
+    ins = [p for p in inst.ports if p.direction == "in"]
+    outs = [p for p in inst.ports if p.direction == "out"]
     if (len(ins), len(outs)) != (n_in, n_out):
         raise GenError(
             "gen.ports",
@@ -166,12 +183,12 @@ def _lanes(inst: Instance, want: dict[str, int], what: str) -> None:
 
 def _fill_ports(inst: Instance, dtypes: Mapping[str, str] | None, words: set[str],
                 what: str) -> dict[str, Port]:  # fmt: skip
-    """Every BRM port in its order: the binding's datapath port (by default the same name), its
+    """Every port of the instance in its order: the binding's datapath port (by default the same name), its
     dtype and its lanes; a port in ``words`` must be whole 64-bit channels (``gen.lanes``),
     the others are one word (a fold's output)."""
     mapping = inst.impl.binding.get("ports") or {}
     out = {}
-    for p in inst.brm.interface.ports:
+    for p in inst.ports:
         n, dtype = inst.lanes(p.name), None
         if dtypes is not None:
             dtype = dtypes[p.name]
@@ -193,29 +210,69 @@ def _lanes_arg(inst: Instance, what: str) -> int:
     return lanes
 
 
-def elementwise_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
-    """ElementwiseLanes' fill; see the module doc."""
+AXPBY = "axpby"  # SimdLanes' one ternary op, k1 * a + k2 * b (k2 unset: + b)
+
+
+def simd_lanes(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
+    """SimdLanes' fill; see the module doc."""
     brm, b = inst.brm, inst.impl.binding
     what = f"{brm.name}.{inst.implementation}"
-    if set(b["args"]) != {"lanes", "op"}:
-        raise GenError(
-            "gen.args", f"{what}: args {sorted(b['args'])}; ElementwiseLanes takes lanes and op"
-        )
+    if not {"lanes", "op"} <= set(b["args"]) <= {"lanes", "op", "streams", "k", "k1", "k2"}:
+        raise GenError("gen.args", f"{what}: args {sorted(b['args'])}; SimdLanes takes lanes and "
+                       "op, and optionally streams, k, k1 and k2")  # fmt: skip
     lanes = _lanes_arg(inst, what)
     op = expr.evaluate(b["args"]["op"], inst.params)
-    if op not in ELEMENTWISE_OP:
-        raise GenError(
-            "gen.op", f"{what}: op {op!r} is not one of ElementwiseOp's {list(ELEMENTWISE_OP)}"
-        )
-    ins, _ = _ports(inst, 2, 1, "ElementwiseLanes", what)
-    names = [p.name for p in brm.interface.ports]
+    if op not in ELEMENTWISE_OP and op != AXPBY:
+        raise GenError("gen.op", f"{what}: op {op!r} is not one of ElementwiseOp's "
+                       f"{list(ELEMENTWISE_OP)} nor {AXPBY}")  # fmt: skip
+    streams = expr.evaluate(b["args"].get("streams", 2), inst.params)
+    if streams not in (1, 2):
+        raise GenError("gen.args", f"{what}: streams {streams!r}; SimdLanes takes 1 or 2")
+    slots = {s: _set_arg(inst, s) for s in ("k", "k1", "k2")}
+    k = slots["k"]
+    if streams == 2 and k is not None:
+        raise GenError("gen.args", f"{what}: k = {k} at two streams; k is one stream's constant")
+    if op == AXPBY and streams != 2:
+        raise GenError("gen.args", f"{what}: {AXPBY} at one stream; it takes two")
+    read = {s for s in slots if _read_arg(inst, s)}
+    if op != AXPBY and ({"k1", "k2"} & read or (slots["k1"], slots["k2"]) != (None, None)):
+        raise GenError("gen.args", f"{what}: k1 and k2 are {AXPBY}'s, not {op}'s")
+    if streams == 1 and k is None and "k" not in read:
+        raise GenError("gen.args", f"{what}: one stream takes the constant k, got None (neither "
+                       "baked nor read from a container)")  # fmt: skip
+    if op == AXPBY and slots["k1"] is None and "k1" not in read:
+        raise GenError("gen.args", f"{what}: {AXPBY} takes k1, got None (neither baked nor read "
+                       "from a container)")  # fmt: skip
+    ins, _ = _ports(inst, streams, 1, "SimdLanes", what)
+    names = [p.name for p in inst.ports]
     _lanes(inst, {p: lanes for p in names}, what)
     ports = _fill_ports(inst, dtypes, set(names), what)
     op_type = None if dtypes is None else result_type([dtypes[p.name] for p in ins])
-    return Fill(ports, op_type, {"op": op})
+    baked = {s: v for s, v in slots.items() if v is not None}
+    for s, v in baked.items():
+        if type(v) is not int:
+            raise GenError("gen.args", f"{what}: {s} = {v!r}; a slot is an int")
+        if op_type is not None and not fits(v, op_type):
+            raise GenError("gen.k", f"{what}: {s} = {v} does not fit the op type {op_type}")
+    scalars = {s: op_type for s in slots if s in read and op_type is not None}
+    return Fill(ports, op_type, {"op": op} | baked, scalars)
 
 
-register_datapath("ElementwiseLanes", 0, elementwise_lanes)
+def _set_arg(inst: Instance, name: str) -> Any:
+    """Arg ``name`` at the instance's params; None when it is absent or names an unset param."""
+    arg = inst.impl.binding["args"].get(name)
+    if arg is None or not expr.names(arg) <= set(inst.params):  # unset: not evaluated
+        return None
+    return expr.evaluate(arg, inst.params)
+
+
+def _read_arg(inst: Instance, name: str) -> bool:
+    """Whether arg ``name`` names a slot the instance reads from a container (a CSR)."""
+    arg = inst.impl.binding["args"].get(name)
+    return arg is not None and bool(expr.names(arg) & set(inst.read))
+
+
+register_datapath("SimdLanes", 0, simd_lanes)
 
 
 def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
@@ -269,7 +326,7 @@ def mac(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Fill:
         raise GenError("gen.rate", f"{what}: rates {[p.rate for p in ins]} in and {out.rate!r} "
                        "out; Mac takes 1 in and, accumulating, a named rate out (one sum per T "
                        "products), else 1")  # fmt: skip
-    names = [p.name for p in brm.interface.ports]
+    names = [p.name for p in inst.ports]
     _lanes(inst, {p: lanes for p in names}, what)
     ports = _fill_ports(inst, dtypes, set(names), what)
     if not accumulate and dtypes is not None and dtypes[ins[2].name] != dtypes[out.name]:

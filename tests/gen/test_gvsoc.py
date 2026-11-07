@@ -18,7 +18,7 @@ from snax_forge.gen import DATAPATHS, ELEMENTWISE_OP, Description, GenError, Man
 from snax_forge.gen import __main__ as cli
 from snax_forge.gen import csrs as csrs_mod
 from snax_forge.gen import gvsoc as gen_mod
-from snax_forge.gen.blocks import Port, elementwise_lanes, tree_accumulate
+from snax_forge.gen.blocks import Port, simd_lanes, tree_accumulate
 from snax_forge.gen.data import array_text, arrays
 from snax_forge.lower import c as c_mod
 from tests.brm.helpers import IMPL
@@ -57,7 +57,7 @@ TEMPLATE_W4 = {
         "spatial_bounds": [[4]], "temporal_dim": [1], "num_channel": [4], "fifo_depth": [8],
     },
 }  # fmt: skip
-# vecadd's accelerator at W = 4 (C§17's example): one group of one ElementwiseLanes unit,
+# vecadd's accelerator at W = 4 (C§17's example): one group of one SimdLanes unit,
 # each port int64 (D143)
 GROUP_CSRS = [
     {"name": "START", "access": "rw", "offset": 0, "width": 1},
@@ -69,7 +69,7 @@ ADD_W4 = {
     "design_point": "design/vecadd/design_point.json", "tag": "snax_forge_vecadd",
     "accelerators": [{"name": "acc", "inputs": ["acc.a", "acc.b"], "outputs": ["acc.out"],
     "groups": [{"name": "acc", "csrs": GROUP_CSRS, "units": [{
-        "name": "acc", "brm": "elementwise_add", "datapath": "ElementwiseLanes",
+        "name": "acc", "brm": "simd", "datapath": "SimdLanes",
         "ports": {p: {"port": p, "dir": "out" if p == "out" else "in", "dtype": "int64", "lanes": 4}
                   for p in ("a", "b", "out")},
         "opType": "int64", "params": {"op": "add"}, "timing": {"latency": 0, "ii": 1, "span": 1},
@@ -224,7 +224,7 @@ def test_snax_gvsocs_reader_takes_the_folder(w4):
     ]
     (unit,) = a.groups[0].units
     assert (unit.datapath, unit.op_type, unit.params) == (
-        "ElementwiseLanes",
+        "SimdLanes",
         "int64",
         {"op": "add"},
     )
@@ -271,12 +271,12 @@ def test_vecadd_w8_gives_eight_channels_per_mover(tmp_path):
 
 
 def test_vecmul_is_vecadd_with_op_mul(tmp_path, w4):
-    """elementwise_mul's binding gives vecadd's accelerator with op mul."""
+    """simd's binding gives vecadd's accelerator with op mul."""
     out = tmp_path / "gvsoc" / "vecmul"
     m = generate(point(tmp_path, name="vecmul", graph=bound_vecmul()), out, root=tmp_path)
     want = copy.deepcopy(ADD_W4)
     want["design_point"], want["tag"] = "design/vecmul/design_point.json", "snax_forge_vecmul"
-    want["accelerators"][0]["groups"][0]["units"][0].update(brm="elementwise_mul",
+    want["accelerators"][0]["groups"][0]["units"][0].update(brm="simd",
                                                             params={"op": "mul"})  # fmt: skip
     assert json.loads((out / "accelerator.json").read_text()) == want
     assert parsed(out / streamer_file("vecmul")) == TEMPLATE_W4
@@ -469,14 +469,14 @@ def test_a_platform_value_the_hjson_cannot_express(tmp_path, sets, text):
     assert text in _refused(tmp_path, "gen.platform", p)
 
 
-def _instance(edit=None, params=None, name="elementwise_add", impl=IMPL) -> Instance:
-    """An instance (elementwise_add's by default), its BRM dict edited (no resolve: the
+def _instance(edit=None, params=None, name="simd", impl=IMPL) -> Instance:
+    """An instance (simd's by default), its BRM dict edited (no resolve: the
     datapath adapter's checks only)."""
     d = copy.deepcopy(load_brm(name).to_dict())
     if edit:
         edit(d)
     brm = Brm.from_dict(d)
-    return Instance(brm, impl, params or {"W": 4, "op": "add"})
+    return Instance(brm, impl, params or {"W": 4, "op": "add", "streams": 2})
 
 
 def _binding(impl=IMPL, **kw):
@@ -497,7 +497,13 @@ def _ports(**kw):
 
 
 ADAPTER_CASES = [
-    ("op", None, {"W": 4, "op": "nand"}, "gen.op"),
+    ("op", None, {"W": 4, "op": "nand", "streams": 2}, "gen.op"),
+    ("no k", None, {"W": 4, "op": "max", "streams": 1}, "gen.args"),
+    ("k at two", None, {"W": 4, "op": "max", "streams": 2, "k": 0}, "gen.args"),
+    ("k too wide", None, {"W": 8, "op": "add", "streams": 1, "k": 128}, "gen.k",
+     _dtypes(("a", "out"), a="int8", out="int8")),
+    ("k below", None, {"W": 4, "op": "add", "streams": 1, "k": -1}, "gen.k",
+     _dtypes(("a", "out"), a="uint16", out="uint16")),
     ("args", _binding(args={"lanes": "W"}), {}, "gen.args"),
     ("float", None, {}, "gen.dtype", _dtypes(a="float64", b="float64", out="float64")),
     ("lanes x N", None, {}, "gen.lanes", _dtypes(a="int8", b="int8", out="int8")),
@@ -511,7 +517,7 @@ ADAPTER_CASES = [
 )  # fmt: skip
 def test_the_adapter_refuses(case, edit, params, code, dtypes):
     with pytest.raises(GenError) as e:
-        elementwise_lanes(_instance(edit, params or None), dtypes)
+        simd_lanes(_instance(edit, params or None), dtypes)
     assert e.value.code == code
 
 
@@ -557,7 +563,7 @@ def test_the_accumulator_adapter_gives_a_fold():
     assert fill.ports == {"a": Port("in", "in", None, 1), "out": Port("out", "out", None, 1)}
     assert (fill.op_type, fill.params) == (None, {"op": "add"})
     assert DATAPATHS["TreeAccumulate"].fill is tree_accumulate
-    assert DATAPATHS["TreeAccumulate"].latency == 1 and DATAPATHS["ElementwiseLanes"].latency == 0
+    assert DATAPATHS["TreeAccumulate"].latency == 1 and DATAPATHS["SimdLanes"].latency == 0
 
 
 def test_the_adder_tree_is_tree_accumulate_at_w_lanes():
@@ -568,13 +574,47 @@ def test_the_adder_tree_is_tree_accumulate_at_w_lanes():
 
 def test_the_adapter_reads_unsigned_and_narrow_dtypes():
     """Each port its container's dtype, opType the inputs' NumPy result type."""
-    u16 = elementwise_lanes(_instance(), _dtypes(a="uint16", b="uint16", out="uint16"))
+    u16 = simd_lanes(_instance(), _dtypes(a="uint16", b="uint16", out="uint16"))
     assert [p.dtype for p in u16.ports.values()] == ["uint16"] * 3 and u16.op_type == "uint16"
-    mixed = elementwise_lanes(_instance(), _dtypes(a="int32", b="int32", out="int64"))
+    mixed = simd_lanes(_instance(), _dtypes(a="int32", b="int32", out="int64"))
     assert [p.dtype for p in mixed.ports.values()] == ["int32", "int32", "int64"]
     assert mixed.op_type == "int32"  # vmul int32 into int64: the op at int32, then extended
-    signs = elementwise_lanes(_instance(), _dtypes(a="int16", b="uint16", out="int32"))
+    signs = simd_lanes(_instance(), _dtypes(a="int16", b="uint16", out="int32"))
     assert signs.op_type == "int32"
+
+
+def test_one_stream_is_a_and_out_with_k():
+    """At one stream the unit is a and out, opType a's dtype, params op and k; at two, as
+    before, op only (an unset k never read)."""
+    one = simd_lanes(_instance(None, {"W": 4, "op": "max", "streams": 1, "k": -3}),
+                     _dtypes(("a", "out"), a="int32", out="int32"))  # fmt: skip
+    assert list(one.ports) == ["a", "out"] and one.op_type == "int32"
+    assert one.params == {"op": "max", "k": -3}
+    two = simd_lanes(_instance(), _dtypes())
+    assert list(two.ports) == ["a", "b", "out"] and two.params == {"op": "add"}
+    edge = {"W": 8, "op": "add", "streams": 1, "k": -128}
+    assert simd_lanes(_instance(None, edge), _dtypes(("a", "out"), a="int8", out="int8")).params[
+        "k"] == -128  # fmt: skip
+
+
+def test_relu_is_one_unit_of_one_input_and_k(tmp_path):
+    """relu's recipe gives one SimdLanes unit: a and out at int32, op max, k 0; one reader and
+    one writer of two channels each."""
+    from .helpers import bound_recipe
+
+    out = tmp_path / "gvsoc" / "relu"
+    m = generate(point(tmp_path, name="relu", graph=bound_recipe("relu", "relu")), out,
+                 root=tmp_path)  # fmt: skip
+    (unit,) = json.loads((out / "accelerator.json").read_text())["accelerators"][0]["groups"][0][
+        "units"]  # fmt: skip
+    assert unit["ports"] == {"a": {"port": "a", "dir": "in", "dtype": "int32", "lanes": 4},
+                             "out": {"port": "out", "dir": "out", "dtype": "int32", "lanes": 4}}  # fmt: skip
+    assert (unit["opType"], unit["params"]) == ("int32", {"op": "max", "k": 0})
+    s = parsed(out / streamer_file("relu"))
+    assert s["data_reader_params"]["num_channel"] == [2]
+    assert s["data_writer_params"]["num_channel"] == [2]
+    assert [t.to_dict() for t in m.tasks] == [
+        {"name": "numpy_maximum_acc", "beats": 16, "csrs": {"JOBS": 16}}]  # fmt: skip
 
 
 def test_three_ports_are_refused():
@@ -584,7 +624,7 @@ def test_three_ports_are_refused():
         d["function"]["code"] = "out = a + b + c"
 
     with pytest.raises(GenError) as e:
-        elementwise_lanes(_instance(three_inputs))
+        simd_lanes(_instance(three_inputs))
     assert e.value.code == "gen.ports"
 
 
@@ -638,7 +678,7 @@ def test_what_describe_refuses(tmp_path, monkeypatch, binding, timing, code):
         generate(path, tmp_path / "out", root=tmp_path)
     assert e.value.code == code
     assert not (tmp_path / "out").exists()
-    assert "ElementwiseLanes" in DATAPATHS
+    assert "SimdLanes" in DATAPATHS
 
 
 def test_the_command(tmp_path, capsys, monkeypatch):
@@ -716,7 +756,7 @@ def test_the_whole_entrys_layout_packs_the_sets_from_960():
 
 
 def _narrow(tmp_path, recipe: str) -> Path:
-    """``recipes/<recipe>.json`` designed and generated under ``tmp_path``; the out folder."""
+    """``recipes/<folder>/<recipe>.json`` designed and generated under ``tmp_path``; the out folder."""
     point = designed(tmp_path, recipe, recipe)
     out = tmp_path / "gvsoc" / recipe
     with pytest.MonkeyPatch.context() as mp:

@@ -21,9 +21,11 @@ to its beat (a NumPy array, first axis = lanes); ``state`` lives for one
 task (a reduction's partial sum); ``params`` are the task's runtime params.
 ``outs`` holds exactly the outputs due at ``k``.
 
-Kinds: ``elementwise`` (every port rate 1, N inputs folded into one output,
+Kinds: ``simd`` (every port rate 1, N inputs folded into one output,
 lane by lane, at the inputs' dtype: the executor casts the result into the
-output's when it writes it, D143) and ``reduce`` (input ``a`` at rate 1,
+output's when it writes it, D143; one input with the constant ``k``,
+``op(a, k)``, k cast to a's dtype; op ``axpby``, two inputs, ``k1 * a + k2 * b``
+at their result type, ``+ b`` with k2 unset) and ``reduce`` (input ``a`` at rate 1,
 output ``out`` at rate ``"T"``, the lanes folded too when ``lanes_out`` is 1;
 each input lane cast to the output's dtype first, so its tree and its
 accumulator run at that dtype, as ``np.add.reduce(a, dtype=out)`` and
@@ -33,7 +35,12 @@ type, cast to the output's dtype and folded per lane over T beats),
 each with ``op`` a registered op by name (``mac``'s the fold's) (``add``, ``sub``, ``mul``, ``min``, ``max``, ``and``,
 ``or``, ``xor``). New ones with ``register_kind`` and ``register_op``.
 
-``function_of`` refuses, as a BrmError, a kind that is not registered, params
+A function param that names a design param the instance leaves unset (``simd``'s
+``k`` at two streams) is not passed. A slot read from a scalar (a CSR: ``k`` at one stream,
+``axpby``'s ``k1`` and ``k2``) is unset in the instance and listed in its ``read``
+(instance.py, which refuses a slot the code needs with neither): the kind builds without
+it, and the reference executor resolves the instance with the value read from the node's
+slot connector (a firing without a value is refused, a guard nothing reaches). ``function_of`` refuses, as a BrmError, a kind that is not registered, params
 the kind rejects, and a kind whose ports (name, direction, lanes, rate, in
 order) are not the BRM's.
 """
@@ -46,6 +53,8 @@ from functools import reduce as _fold
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+from snax_forge import expr
 
 from .brm import BrmError
 
@@ -139,21 +148,51 @@ class AccelFunction:
 # =============================================================================
 
 
-def elementwise(
+AXPBY = "axpby"  # simd's k1 * a + k2 * b
+
+
+def simd(
     lanes: int = 1,
     n_inputs: int = 2,
-    op: Callable[[Any, Any], Any] = np.add,
+    op: Callable[[Any, Any], Any] | str = np.add,
+    k: int | None = None,
+    k1: int | None = None,
+    k2: int | None = None,
     dtypes: Mapping[str, str] | None = None,
 ) -> AccelFunction:
     """N inputs -> 1 output, one beat each per firing, ``op`` folding them left to right at
-    the inputs' dtype (``dtypes`` is not read: the result is cast when written)."""
+    the inputs' dtype (``dtypes`` is not read: the result is cast when written). One input
+    takes the constant ``k`` as its second operand, ``op(a, k)``, k cast to a's dtype; two or
+    more take none. ``op`` ``"axpby"`` (two inputs): ``k1 * a + k2 * b``, or ``k1 * a + b``
+    with ``k2`` unset, at the inputs' result type. A slot read from a scalar is unset here
+    (module doc): the firing needs it."""
     names = [chr(ord("a") + i) for i in range(n_inputs)]
+    axpby = op == AXPBY
+    if n_inputs != 1 and k is not None:
+        raise ValueError(f"k = {k} is one input's constant; {n_inputs} inputs take none")
+    if axpby and n_inputs != 2:
+        raise ValueError(f"{AXPBY} takes two inputs, not {n_inputs}")
+    if not axpby and (k1, k2) != (None, None):
+        raise ValueError(f"k1 and k2 are {AXPBY}'s")
 
-    def fn(k, ins, state, params):
+    def fn(i, ins, state, params):
+        if axpby:
+            if k1 is None:
+                raise ValueError("k1 has no value: a slot read from a scalar needs it")
+            a, b = np.asarray(ins["a"]), np.asarray(ins["b"])
+            t = np.result_type(a.dtype, b.dtype)
+            a, b = a.astype(t), b.astype(t)
+            scaled = b if k2 is None else np.asarray(k2).astype(t) * b
+            return {"out": np.asarray(k1).astype(t) * a + scaled}
+        if n_inputs == 1:
+            if k is None:
+                raise ValueError("one input takes the constant k, op(a, k); k has no value")
+            a = np.asarray(ins["a"])
+            return {"out": op(a, np.asarray(k).astype(a.dtype))}
         return {"out": _fold(op, (ins[n] for n in names))}
 
     ports = [AccelPort(n, "in", lanes) for n in names] + [AccelPort("out", "out", lanes)]
-    return AccelFunction(tuple(ports), fn, "elementwise")
+    return AccelFunction(tuple(ports), fn, "simd")
 
 
 def reduce_kind(
@@ -253,6 +292,8 @@ def _with_op(kind: Callable[..., AccelFunction]) -> KindFactory:
 
     def factory(**params: Any) -> AccelFunction:
         name = params.get("op", "add")
+        if name == AXPBY and kind is simd:  # simd's one ternary op, by name
+            return kind(**params)
         if name not in OPS:
             raise ValueError(f"unknown op {name!r} (registered: {sorted(OPS)})")
         return kind(**{**params, "op": OPS[name]})
@@ -260,7 +301,7 @@ def _with_op(kind: Callable[..., AccelFunction]) -> KindFactory:
     return factory
 
 
-register_kind("elementwise", _with_op(elementwise))
+register_kind("simd", _with_op(simd))
 register_kind("reduce", _with_op(reduce_kind))
 register_kind("mac", _with_op(mac_kind))
 
@@ -272,12 +313,13 @@ def function_of(inst: Instance, dtypes: Mapping[str, str] | None = None) -> Acce
     kind = inst.brm.function.accel
     if kind not in KINDS:
         raise BrmError(f"{what}: accelerator kind {kind!r} not registered ({sorted(KINDS)})")
-    params = {k: inst.value(v) for k, v in inst.brm.function.params.items()}
+    params = {k: inst.value(v) for k, v in inst.brm.function.params.items()
+              if expr.names(v) <= set(inst.params)}  # an unset param is not evaluated  # fmt: skip
     try:
         built = KINDS[kind](**params, dtypes=dtypes)
     except (TypeError, ValueError) as e:
         raise BrmError(f"{what}: kind {kind!r} rejects {params}: {e}") from None
-    declared = [(p.name, p.direction, inst.lanes(p.name), p.rate) for p in inst.brm.interface.ports]
+    declared = [(p.name, p.direction, inst.lanes(p.name), p.rate) for p in inst.ports]
     ports = [(p.name, p.direction, p.lanes, p.rate) for p in built.ports]
     if declared != ports:
         raise BrmError(
