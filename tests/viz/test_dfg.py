@@ -959,31 +959,31 @@ def test_a_scalar_is_a_parameter_hexagon_its_edge_broadcast():
         "in1", "in2"]  # fmt: skip
 
 
-def test_a_scalar_read_as_csr_is_a_mark_not_a_port():
-    """axpy's recipe: bake_scalar alpha csr first, so mult reads ``alpha * in2``, its one input
-    port in2 (x), alpha's dashed edge ``alpha[0] · CSR`` on the csr mark; the same through the
-    fuse and the split, and on the bound unit's slot k1."""
+def test_a_scalar_read_as_csr_is_drawn_like_a_baked_one():
+    """axpy's recipe: bake_scalar alpha csr first, so mult reads ``csr(alpha) * in2`` where
+    axpy_baked's reads ``3 * in2``: alpha gets no box, edge or port, through the fuse and the
+    split, and the bound unit reads ``k1 csr(alpha)``; Containers still lists alpha."""
     from snax_forge.viz.dfg.api import compact_text
 
     r, graphs = _axpy("axpy")
+    rb, baked = _axpy("axpy_baked")
     assert r.steps[0].params == {"container": "alpha", "value": "csr"}
-    assert compact_text(graphs[1], graphs[1].node("mult")) == "mult · alpha * in2"
-    for g, v in zip(graphs[1:], _views(r, graphs[1:]), strict=True):
-        assert v["containers"]["alpha"]["scalar"]
-        (e,) = [e for e in v["edges"] if e["data"] == "alpha"]
-        port = "mult.k1" if g is graphs[-1] else "mult.alpha"
-        assert (e["to"], e["label"], e["csr"]) == (port, "alpha[0] · CSR", True)
-        ins = _node_in(v, "mult")["inputs"]
-        assert [p["connector"] for p in ins if p.get("csr")] == [port.split(".")[1]]
-        assert len([p for p in ins if not p.get("csr")]) == (2 if g is graphs[-1] else 1)
+    assert compact_text(graphs[1], graphs[1].node("mult")) == "mult · csr(alpha) * in2"
+    for g, v, vb in zip(graphs[1:], _views(r, graphs[1:]), _views(rb, baked[1:]), strict=True):
+        assert "alpha" in {c["name"] for c in v["containers_section"]}
+        assert not [b for b in v["boxes"].values() if b["container"] == "alpha"]
+        assert not [e for e in v["edges"] if e["data"] == "alpha"]
+        ins = [p["connector"] for p in _node_in(v, "mult")["inputs"] if not p.get("csr")]
+        assert ins == [p["connector"] for p in _node_in(vb, "mult")["inputs"]]
+        assert v["rows"][0] == vb["rows"][0]  # the same boxes, in the same order
 
 
 def test_a_units_slots_show_csr_or_baked():
-    """After bind the unit's label gives each slot as it gives W 4, no "=": k1 alpha (CSR),
+    """After bind the unit's label gives each slot as it gives W 4, no "=": k1 csr(alpha),
     or k1 3 baked; the Bindings the same, read only."""
     from snax_forge.viz.dfg.api import bindings_section, compact_text
 
-    for name, slot in (("axpy", "alpha (CSR)"), ("axpy_baked", 3)):
+    for name, slot in (("axpy", "csr(alpha)"), ("axpy_baked", 3)):
         r, graphs = _axpy(name)
         g = graphs[-1]
         assert compact_text(g, g.node("mult")) == f"acc · k1 * a + b · W 4 · k1 {slot}"

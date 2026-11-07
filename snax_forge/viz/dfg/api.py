@@ -80,12 +80,12 @@ worked out here:
                                                        (``mult_map · i · 2048 · untagged``)
     tasklet      ``<id> · <operation>``: the code's right-hand side on its connector names,
                  ``fold <op>`` for a copy into a ``reduce``        (``mult · in1 * in2``, ``sum · fold +``;
-                 after ``bake_scalar`` ``mult · 3 * in2``, or ``mult · alpha * in2`` read as CSR)
+                 after ``bake_scalar`` ``mult · 3 * in2``, or ``mult · csr(alpha) * in2`` read as CSR)
     unit         ``<instance> · <what one lane computes> · W <lanes>``, then each slot
                  and its value, baked or read from a scalar (a CSR), a fold's as a tasklet's
                                                           (``mul · a * b · W 4``,
                                                            ``acc · max(a, k) · W 4 · k 0``,
-                                                           ``acc · k1 * a + b · W 4 · k1 alpha (CSR)``)
+                                                           ``acc · k1 * a + b · W 4 · k1 csr(alpha)``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
     container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
                  ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links); a
@@ -93,9 +93,9 @@ worked out here:
                  hexagon, each edge reading it as one element labelled ``alpha[0] · broadcast``
                  (drawn at the edge's start, beside the hexagon), and its Containers line is
                  ``scalar · <dtype>``; read as CSR (a tasklet's connector ``bake_scalar`` named
-                 after it, or a unit's slot) the connector is no input port but a ``csr``
-                 mark at the node's top right, its edge dashed and labelled ``alpha[0] · CSR``,
-                 so the node shows only its streamed inputs
+                 after it, or a unit's slot) it has no box, edge or port in the drawing: the
+                 operation names it ``csr(alpha)``, as a baked one shows its value, so the
+                 node shows only its streamed inputs (Containers still lists it)
     group, accelerator   their name
 
 Details: a map's range as written, ``loop.split``, ``loop.fused`` and ``loop.split_reduce``; a
@@ -586,7 +586,7 @@ def bindings_section(g: Graph, recipe: Any = None, editable: bool = False) -> di
 def slot_params(n: Node) -> dict[str, int | str]:
     """An accelerated node's slots and their values: the int design params its code reads, baked
     in (``simd``'s ``k``, brm.py's ``Code``), then the slots read from a scalar, each an input
-    connector that is no port, as ``<container> (CSR)`` (axpy's ``k1``: ``alpha (CSR)``), in the
+    connector that is no port, as ``csr(<container>)`` (axpy's ``k1``: ``csr(alpha)``), in the
     order the code reads them."""
     params = n.attrs.get("params") or {}
     read = [x for _, e in expr.statements(n.attrs["code"], n.id) for x in expr.ordered_names(e)]
@@ -596,7 +596,7 @@ def slot_params(n: Node) -> dict[str, int | str]:
         if type(params.get(x)) is int:
             out[x] = params[x]
         elif x in n.inputs and x not in ports:
-            out[x] = f"{n.inputs[x].data} (CSR)"
+            out[x] = f"csr({n.inputs[x].data})"
     return out
 
 
@@ -1117,6 +1117,11 @@ def _operation(n: Node, code: str, ins: Sequence[str]) -> str:
     op = fold_op(n)
     if op is not None and _rhs(code) in ins:
         return f"fold {FOLD.get(op, op)}"
+    if n.kind == "tasklet":  # a scalar read as CSR by name: csr(alpha) (module doc)
+        csr = {r["name"] for r in n.attrs.get(BAKED, []) if r["value"] == "csr"} & set(ins)
+        if csr:
+            return re.sub(r"\b(" + "|".join(map(re.escape, sorted(csr))) + r")\b", r"csr(\1)",
+                          _rhs(code))  # fmt: skip
     return _rhs(code)
 
 
@@ -1428,8 +1433,10 @@ def _layout(g: Graph) -> dict[str, Any]:
     for top in tops:
         r: list[str] = []
         w: list[str] = []
-        for side, _, _, m in _uses(top):
+        for side, node, c, m in _uses(top):
             if m.data in linked or m.data in local:
+                continue
+            if side == "read" and c in csr_connectors(g, node):  # no box: csr(alpha) in the text
                 continue
             if side == "read" and m.data not in w and m.data not in r:
                 r.append(m.data)
@@ -1467,7 +1474,9 @@ def _layout(g: Graph) -> dict[str, Any]:
             rows.append({"kind": "containers", "boxes": list(keys.values())})
         return keys
 
-    unused = [c for c in g.containers if c not in used and c not in linked and c not in local]
+    csr_read = {n.inputs[c].data for n, _ in g.walk() for c in csr_connectors(g, n)}
+    unused = [c for c in g.containers
+              if c not in used and c not in linked and c not in local and c not in csr_read]  # fmt: skip
     before = reads[0] + unused if tops else list(g.containers)
     above = box_row(before, {}, 0)
     for k, top in enumerate(tops):
@@ -1500,9 +1509,8 @@ def _layout(g: Graph) -> dict[str, Any]:
             elif m.data in writers:  # written earlier inside this node: straight from the writer
                 edges.extend(_edge(w, port, m.data, text, "read", packing(g, n, c, m.data))
                              for w in writers[m.data])  # fmt: skip
-            elif c in csr_connectors(g, n):  # read at run time from a CSR, not streamed
-                edges.append(_edge(above[m.data], port, m.data, text, "read",
-                                   label=f"{text} · CSR", csr=True))  # fmt: skip
+            elif c in csr_connectors(g, n):  # read at run time from a CSR: no edge (module doc)
+                continue
             else:
                 label = f"{text} · broadcast" if m.data in scalars and not m.names else None
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
@@ -1531,12 +1539,10 @@ def _edge(
     pack: str | None = None,
     local: bool = False,
     label: str | None = None,
-    csr: bool = False,
 ) -> dict[str, Any]:
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
     fused nest's local value between its two tasklets, labelled with the container's name;
-    ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``); ``csr`` a
-    scalar read at run time, from a CSR (dashed, at the node's ``csr`` mark)."""
+    ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``)."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack
@@ -1544,6 +1550,4 @@ def _edge(
         out |= {"local": True, "label": data}
     elif label is not None:
         out |= {"label": label}
-    if csr:
-        out["csr"] = True
     return out
