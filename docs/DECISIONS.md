@@ -10,7 +10,7 @@ Rules (D117):
 - A replaced or merged entry is removed, and its number goes under Retired with the entry that holds it now. A number is never changed or reused, since code, tests and docs cite them; the text of every retired entry is in git history (tag `pre-gvsoc`; RET1's at `cad6619`, CLN1's at `6079d24`).
 - Closing a milestone compacts this file and removes the done tasks from STATUS.
 - Markdown prose is never hard-wrapped: one line per paragraph, list item and table row (`util/md_reflow.py --check` in lint); headings, code blocks, tables, display maths and HTML stay as they are. An entry's three lines are about 300 characters.
-- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D160**.
+- A new decision gets the next number at the end of this file, with its area tag. Next free number: **D162**.
 
 Area tags: `scope` (plan, ownership, order), `lower` (SNAX-LOWER), `gvsoc` (SNAX-GVSoC), `brm` (SNAX-BRM), `dfg` (SNAX-DFG and importers), `ref` (reference executor), `sandbox`, `design` (platform, checks, memory plan, design point), `flow`, `estimate` (the ideal estimate of a bound graph), `viz`, `docs`.
 
@@ -103,9 +103,9 @@ Retired, and where each now lives:
 
 **D75** · lower — Names are derived, never stated: streamer `<instance>_<port>`, task `<node>_<component>`, DMA task `load_<container>` or `store_<container>`.
 
-**D79** · ref — The reference executor runs any `.snaxdfg` in NumPy, accelerated nodes through their BRM's function; every sandbox step and every run is compared with it, so DaCe's CPU reference is not needed. → `dfg/execute.py`.
+**D79** · ref — The reference executor runs any `.snaxdfg` in NumPy, accelerated nodes through their BRM's function, a slot's value from its params or its slot connector; every sandbox step and every run is compared with it, so DaCe's CPU reference is not needed. → `dfg/execute.py`.
 
-**D82** · brm — A BRM says what one lane computes (`function.code`, or a table of codes each fixing design params and naming scalar slots, such as `simd`'s per `op` and `streams` with `k`: the first that matches gives the instance its params and the slots' values), and `bind` checks the tasklet, or a fused map's tasklets joined by a local value, against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
+**D82** · brm — A BRM says what one lane computes (`function.code`, or a table of codes each fixing design params and naming scalar slots, such as `simd`'s per `op` and `streams` with `k`, `k1` and `k2`, matched with `+`, `*`, `min` and `max` commuting: the first that matches gives the instance its params and the slots' values), and `bind` checks the tasklet, or a fused map's tasklets joined by a local value, against it. A bound graph records what it replaced, so `unbind` and `join_map` take it back.
 
 **D84** · design — The platform is its own file in `platforms/`, paired with the bound graph by the design step, so either changes alone; its cluster parameters and the streamers' FIFO depths are design knobs, never a template (D134), and the streamers' temporal loops come from the graph. → C§13.
 
@@ -189,7 +189,7 @@ Retired, and where each now lives:
 
 **D149** · brm — The MAC is one block with design-time variants (`accumulate`, or a·b + c with `regOut` for a later systolic PE; no `regIn`), not vmul into a lane accumulator. The one-lane vsum is `SerialAccumulate` (`span` = lanes), not a serializer link; a buffer is `LinkBuffer`, not a FIFO. → C§17.
 
-**D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
+**D150** · dfg — The mapping is spelled step by step: `split_reduce`, `fuse_map` (a fold, or a plain second tasklet composed into one code) and `link`, each with its inverse, one recipe per variant, instead of binding a group of tasklets in one step. `bind` refuses with the fix named ("fuse_map first", "split_reduce first"). → C§11, C§12.
 
 **D152** · scope — `<tag>_csr` is the accelerator's interface, what an HLS block leaves to its driver, so `<tag>_ctrl` and `<tag>_datapath` compare with the whole HLS block: START a strobe that reads 0, STATUS's done bit and COUNTER kept there from ctrl's busy and done pulse, and every CSR at its width, the platform's `acc_csr` (JOBS and JOB_BEATS job_width, a saturating COUNTER counter_width). → C§13, C§17.
 
@@ -208,3 +208,5 @@ Retired, and where each now lives:
 **D159** · scope — Characterization is on Nangate 45 nm only from 5 Nov 2026: the memories come from CACTI at 45 nm (D160; its smallest node is 22 nm, and OpenRAM, the first choice, has no 15 nm either), so the L1 macros, the cluster synthesis and the homogeneous comparison exist at 45 nm only, and new block, streamer and interconnect characterization follows. What exists at 15 nm stays (SYN1, SYN2, CHAR1, `nangate15.json`, HSYN1), and nangate15 keeps D154's two placeholders. → PAPER §7.
 
 **D160** · estimate — The memories (TCDM banks, instruction cache, DaCe's buffer) are costed from CACTI 7 at 45 nm, not OpenRAM, whose analytical model gave one power for read, write and idle and an area only with layout: a lookup table of area and read and write energy per access for every depth 32–4096 (step 32) and width 8–256 (step 8), no fit, as CACTI's numbers step between neighbouring sizes; synthesis and power use `.lib` and `.v` macros generated from the same numbers, and a run's memory energy is its counted accesses times them. → snax-forge-experiments X47–X50, PAPER §7.
+
+**D161** · sandbox — A kernel's scalar argument (`sdfg.scalar`) binds to a slot read at run time from an R/W CSR, so one ELF serves any value (axpy's alpha as K1); baking it is a separate step, `bake_scalar`, rather than a choice inside `bind` or a promote transform, so both variants are recipes and the editor shows the step. → C§10, C§12, C§17.
