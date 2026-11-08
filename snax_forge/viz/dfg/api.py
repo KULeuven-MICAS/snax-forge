@@ -161,6 +161,12 @@ any in-place write). The seed's edge is labelled with its memlet, ``q[m_t]``, an
 ``seed``; its Details' memlet ends ``(seed)``; the node's Details list it under ``seed``, a
 seeded tasklet's output memlet ``(reduce add, seed q[m])``.
 
+**Folds** (``folds``). A node whose output folds is drawn as an upside-down trapezoid, wide on
+top where its inputs come in, narrow at the bottom where its output leaves (``fold: true`` on
+the node): a tasklet whose output memlet has a ``reduce`` (an identity or a seed), and a bound
+unit whose replaced nest holds one, so TreeAccumulate, SerialAccumulate, LaneAccumulate and the
+Mac accumulating a lane fold; any other node stays a rectangle.
+
 **Partners** (``partners``). Each map's list of the maps it can be fused with
 (``fuse_map``), seeded with (``fuse_seed``) or interchanged with (``interchange_map``),
 found by the transforms' own sites, the code that fills the editor's fields (compose.py's
@@ -1427,6 +1433,8 @@ def _node(g: Graph, n: Node) -> dict[str, Any]:
         d["inputs"].append({"connector": SEED, "data": seed.data, "seed": True})
     if n.kind == "map":
         d["loop_kind"] = n.attrs.get("loop.kind")
+    if folds(n):  # drawn as an upside-down trapezoid (module doc, "Folds")
+        d["fold"] = True
     if n.kind == "link":  # its container's edges meet it here (module doc)
         c = n.attrs["container"]
         d["inputs"], d["outputs"] = (
@@ -1478,6 +1486,23 @@ def partners(g: Graph, boxes: dict[str, dict[str, Any]]) -> dict[str, list[dict[
         except (SandboxError, DfgError, ExprError, KeyError):
             continue  # a graph the transform cannot judge: no partners by it
     return out
+
+
+def folds(n: Node) -> bool:
+    """Whether ``n``'s output folds (module doc, "Folds"): a tasklet's output memlet has a
+    ``reduce`` (an identity or a seed), a bound unit's replaced nest holds such a tasklet."""
+    if n.kind == "tasklet":
+        return any(m.reduce is not None for m in n.outputs.values())
+    if n.kind == "accelerated" and n.attrs.get("replaced"):
+        return _folds_in(n.attrs["replaced"])
+    return False
+
+
+def _folds_in(d: dict[str, Any]) -> bool:
+    """A stored subtree (``replaced``) holds a tasklet whose output folds."""
+    if d.get("kind") == "tasklet" and any("reduce" in m for m in (d.get("outputs") or {}).values()):
+        return True
+    return any(_folds_in(c) for c in d.get("body") or [])
 
 
 def _replaced_text(r: dict[str, Any] | None) -> str | None:

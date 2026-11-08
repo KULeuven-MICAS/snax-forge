@@ -477,6 +477,16 @@ svg.dfg-edges { position: absolute; top: 0; left: 0; z-index: 0; pointer-events:
 .c-node.c-unit { border: 2px solid var(--busy); background: var(--busy-bg); }
 .c-node.c-link { border: 2px dashed var(--busy); background: var(--busy-bg); }
 .c-text { padding: 0.15rem 0.6rem; font-size: 0.82em; font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; white-space: nowrap; text-align: center; }
+/* a fold: an upside-down trapezoid, wide on top where the inputs come in, narrow at the bottom
+   where the output leaves; ::before the edge's colour, .c-shape the fill inset by the edge's
+   width; padded by half the slant, so the text fits at mid-height */
+.c-node.c-fold { --slant: 0.9rem; --fold-edge: var(--ink); --fold-fill: var(--panel); --bw: 1.5px; isolation: isolate; border: none; border-radius: 0; background: none; padding: 0.2rem calc(var(--slant) / 2); }
+.c-node.c-fold.c-unit { --fold-edge: var(--busy); --fold-fill: var(--busy-bg); --bw: 2px; }
+.c-node.c-fold::before { content: ""; position: absolute; inset: 0; z-index: -2; background: var(--fold-edge); clip-path: polygon(0 0, 100% 0, calc(100% - var(--slant)) 100%, var(--slant) 100%); }
+.c-fold > .c-shape { position: absolute; inset: 0; z-index: -1; background: var(--fold-fill); clip-path: polygon(calc(var(--bw) * 1.7) var(--bw), calc(100% - var(--bw) * 1.7) var(--bw), calc(100% - var(--slant) - var(--bw) * 0.6) calc(100% - var(--bw)), calc(var(--slant) + var(--bw) * 0.6) calc(100% - var(--bw))); }
+.c-fold > .c-ports.out { margin: 0 var(--slant); }
+.c-node.c-fold.sel { box-shadow: none; --fold-edge: var(--hl); --bw: 2.5px; }
+.c-node.c-fold.diffed { background: none; --fold-fill: color-mix(in srgb, var(--wait) 35%, var(--panel)); }
 .c-ports { display: flex; justify-content: space-evenly; height: 0; }
 .c-port { display: block; width: 7px; height: 7px; margin-top: -4px; border-radius: 50%; background: var(--edge); }
 .c-ports.out .c-port { margin-top: -3px; }
@@ -637,6 +647,7 @@ i.key.loop-temporal { background: var(--loop-temporal); }
 i.key.loop-spatial { background: var(--loop-spatial); }
 i.key.c-tasklet { background: var(--panel); box-shadow: inset 0 0 0 1.5px var(--ink); }
 i.key.c-unit { background: var(--busy-bg); box-shadow: inset 0 0 0 2px var(--busy); }
+i.key.c-fold { background: var(--ink); clip-path: polygon(0 0, 100% 0, 75% 100%, 25% 100%); }
 i.key.c-link { background: var(--busy-bg); border: 2px dashed var(--busy); }
 i.key.c-pill { background: color-mix(in srgb, var(--data) 18%, var(--panel)); box-shadow: inset 0 0 0 1.5px var(--data); border-radius: 6px; }
 i.key.c-pill.transient { background: var(--panel); box-shadow: none; border: 1.5px dashed var(--data); }

@@ -1230,3 +1230,43 @@ def test_a_seeded_or_bound_graph_has_no_seed_partner():
     _, graphs = _matvec_seed()
     for g in graphs[6:]:
         assert not [p for ps in _partners(g).values() for p in ps if p[1] == "fuse_seed"]
+
+
+# =============================================================================
+# Folds: drawn as upside-down trapezoids (B2 R5)
+# =============================================================================
+
+
+def _fold_nodes(v: dict) -> list[str]:
+    stack = [r["node"] for r in v["rows"] if r["kind"] == "node"]
+    out = []
+    while stack:
+        n = stack.pop(0)
+        if n.get("fold"):
+            out.append(n["id"])
+        stack += n.get("body") or []
+    return out
+
+
+def test_a_folding_node_is_marked_fold():
+    """A tasklet whose output memlet has a reduce (an identity or a seed) and a bound unit whose
+    replaced nest folds: matvec_acc's sum, seeded or not, its bound accumulate; dot 4's mac and
+    final adder tree; rowsum 2's lane accumulator. The multiplies, the elementwise add, a simd
+    unit and a link do not."""
+    from snax_forge.viz.dfg.api import Entry, graph_view
+    from tests.sandbox.helpers import recipe_graphs
+
+    def view_of(g: Graph) -> dict:
+        return graph_view(Entry("g", Path("g"), g, None))
+
+    assert _fold_nodes(view_of(_bound_fixture("matvec_acc", M=8, N=512))) == ["sum"]
+    _, graphs = _matvec_seed()
+    assert [_fold_nodes(view_of(g)) for g in graphs[5:]] == [["sum"]] * 4
+    assert "fold" not in _node_in(view_of(graphs[-1]), "mult")
+    for name, want in (("dot_4", ["mult", "sum_final"]), ("rowsum_2", ["sum"]),
+                       ("axpy", [])):  # fmt: skip
+        v = view_of(recipe_graphs(name)[1][-1])
+        assert sorted(_fold_nodes(v)) == want, name
+    links = [r["node"] for r in view_of(recipe_graphs("dot_4")[1][-1])["rows"]
+             if r["kind"] == "node" and r["node"]["kind"] == "link"]  # fmt: skip
+    assert links and not any(n.get("fold") for n in links)

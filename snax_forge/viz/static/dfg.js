@@ -116,6 +116,7 @@ function legend() {
     ...loops.map(([k, label]) => h("li", {}, h("i", { class: `key loop-${k}` }), label)),
     h("li", {}, h("i", { class: "key c-tasklet" }), "tasklet"),
     h("li", {}, h("i", { class: "key c-unit" }), "unit"),
+    h("li", {}, h("i", { class: "key c-fold" }), "fold"),
     h("li", {}, h("i", { class: "key c-link" }), "link"),
     h("li", {}, h("i", { class: "key c-pill" }), "container"),
     h("li", {}, h("i", { class: "key c-pill transient" }), "transient"),
@@ -139,7 +140,10 @@ function nodeEl(n) {
       h("div", { class: "c-body" }, n.body.map(nodeEl)));
   }
   const cls = { tasklet: "c-tasklet", accelerated: "c-unit", link: "c-link" }[n.kind] || "c-tasklet";
-  return h("div", { class: `c-node ${cls}`, "data-sel": n.id },
+  // a fold (api.py's ``fold``): an upside-down trapezoid, its fill a layer of its own under
+  // the text (style.css), the output connectors inside its narrow bottom
+  return h("div", { class: `c-node ${cls}${n.fold ? " c-fold" : ""}`, "data-sel": n.id },
+    n.fold ? h("i", { class: "c-shape" }) : null,
     ports(n, "in"),
     h("div", { class: "c-text" }, n.text),
     n.body && n.body.length ? h("div", { class: "c-body" }, n.body.map(nodeEl)) : null,
