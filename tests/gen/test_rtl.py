@@ -140,12 +140,13 @@ def test_the_catalogue_has_the_datapaths_latency_span_and_pins():
     cat = catalogue()
     assert {k: (v["latency"], v["span"]) for k, v in cat.items()} == {
         "SimdLanes": (0, 1), "TreeAccumulate": (1, 1), "Mac": ("max(accumulate, regOut)", 1),
-        "SerialAccumulate": (1, "lanes"), "LinkBuffer": (1, 1),
+        "SerialAccumulate": (1, "lanes"), "LaneAccumulate": (1, 1), "LinkBuffer": (1, 1),
     }  # fmt: skip
     pins = {k: live(v["pins"], {"accumulate": True, "regOut": False}) for k, v in cat.items()}
     assert {k: list(v) for k, v in pins.items()} == {
         "SimdLanes": [], "TreeAccumulate": ["fire", "first"], "Mac": ["fire", "first"],
-        "SerialAccumulate": ["read", "lane", "first"], "LinkBuffer": ["load", "wslot", "rslot"],
+        "SerialAccumulate": ["read", "lane", "first"], "LaneAccumulate": ["fire", "first"],
+        "LinkBuffer": ["load", "wslot", "rslot"],
     }  # fmt: skip
     assert list(live(cat["Mac"]["pins"], {"accumulate": False, "regOut": True})) == ["en"]
     assert live(cat["Mac"]["pins"], {"accumulate": False, "regOut": False}) == {}
@@ -424,7 +425,8 @@ def test_the_catalogue_has_each_datapaths_flops():
     assert {k: v["flops"] for k, v in catalogue().items()} == {
         "SimdLanes": 0, "TreeAccumulate": "width(outType)",
         "Mac": "lanes * width(outType) * max(accumulate, regOut)",
-        "SerialAccumulate": "width(outType)", "LinkBuffer": "depth * lanes * width(dtype)",
+        "SerialAccumulate": "width(outType)", "LaneAccumulate": "lanes * width(outType)",
+        "LinkBuffer": "depth * lanes * width(dtype)",
     }  # fmt: skip
 
 
@@ -437,6 +439,7 @@ def test_the_catalogue_has_each_datapaths_flops():
         ("Mac", {"outType": "int64", "lanes": 8, "accumulate": True, "regOut": False}, 512),
         ("Mac", {"outType": "int16", "lanes": 4, "accumulate": False, "regOut": True}, 64),
         ("Mac", {"outType": "int64", "lanes": 8, "accumulate": False, "regOut": False}, 0),
+        ("LaneAccumulate", {"inType": "int32", "outType": "int64", "lanes": 8}, 512),
         ("LinkBuffer", {"depth": 3, "lanes": 4, "dtype": "uint8"}, 96),
     ],
 )

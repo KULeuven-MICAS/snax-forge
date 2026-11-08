@@ -114,9 +114,10 @@ def bound_recipe(recipe: str, kernel: str) -> Graph:
 
 
 def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str:
-    """The design point of ``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``) on snax_forge,
-    made by the sandbox's and the design step's commands under ``tmp`` as the root (``root``),
-    as ``out/design/<name>/design_point.json``; that path, from ``tmp``."""
+    """The design point of ``recipes/<folder>/<recipe>.json`` (``--set`` each of ``sets``: a
+    recipe param to the sandbox, a ``platform.`` or ``memory.`` path to the design step) on
+    snax_forge, made by the sandbox's and the design step's commands under ``tmp`` as the root
+    (``root``), as ``out/design/<name>/design_point.json``; that path, from ``tmp``."""
     from snax_forge.design import __main__ as design_cli
     from snax_forge.sandbox import Recipe
     from snax_forge.sandbox import __main__ as sandbox_cli
@@ -125,11 +126,14 @@ def designed(tmp: Path, recipe: str, name: str, sets: Sequence[str] = ()) -> str
     with pytest.MonkeyPatch.context() as mp:
         mp.chdir(tmp)
         args = [str(recipe_path(recipe)), "--out", f"out/sandbox/{name}"]
-        assert sandbox_cli.main([*args, *(a for s in sets for a in ("--set", s))]) == 0
+        dotted = [s for s in sets if "." in s.partition("=")[0]]
+        params = [s for s in sets if s not in dotted]
+        assert sandbox_cli.main([*args, *(a for s in params for a in ("--set", s))]) == 0
         steps = Recipe.load(recipe_path(recipe)).steps  # the last: the bound graph
         last = f"out/sandbox/{name}/{len(steps)}_{steps[-1].transform}.snaxdfg"
-        assert design_cli.main([last, "--platform",
-                                str(SNAX_FORGE), "--out", f"out/design/{name}"]) == 0  # fmt: skip
+        assert design_cli.main([last, "--platform", str(SNAX_FORGE), "--out",
+                                f"out/design/{name}",
+                                *(a for s in dotted for a in ("--set", s))]) == 0  # fmt: skip
     return f"out/design/{name}/design_point.json"
 
 

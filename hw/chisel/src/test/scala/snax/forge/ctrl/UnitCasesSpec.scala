@@ -7,14 +7,14 @@ import org.scalatest.flatspec.AnyFlatSpec
 
 import snax.forge.{ForgeTester, IntType, LaneBits, RunLines, SnaxUnitCases}
 import snax.forge.SnaxUnitCases.Case
-import snax.forge.datapath.{SimdLanes, TreeAccumulate}
+import snax.forge.datapath.{LaneAccumulate, SimdLanes, TreeAccumulate}
 import snax.forge.elementwise.ElementwiseOp
 
 /** A unit case's hardware: a one-unit group's control unit (`GroupCtrl`) and the datapath of the case's shape: two
   * inputs at L 0 `SimdLanes` (at op axpby with the case's k1 and k2, each baked or on its pin, `k1` and `k2` here), one
-  * input with `k` at L 0 the one-stream `SimdLanes` (op(a, k) at a's type), one input at L 1 `TreeAccumulate`, at the
-  * case's `types` (int64 without them), lanes and op; any other shape (L 1 or 2 with two inputs) the controller alone,
-  * no data.
+  * input with `k` at L 0 the one-stream `SimdLanes` (op(a, k) at a's type), one input at L 1 `TreeAccumulate`, or
+  * `LaneAccumulate` with `fold lanes` (each lane its own sum, W results per push), at the case's `types` (int64 without
+  * them), lanes and op; any other shape (L 1 or 2 with two inputs) the controller alone, no data.
   */
 class UnitHarness(val c: Case) extends Module {
   private val ctrl =
@@ -25,10 +25,11 @@ class UnitHarness(val c: Case) extends Module {
   val datapath: Option[String] =
     if (c.inputs == 2 && c.latency == 0) Some("SimdLanes")
     else if (c.inputs == 1 && c.latency == 0 && c.k.nonEmpty) Some("SimdLanesK")
+    else if (c.inputs == 1 && c.latency == 1 && c.laneFold) Some("LaneAccumulate")
     else if (c.inputs == 1 && c.latency == 1) Some("TreeAccumulate")
     else None
 
-  private val outLanes = if (c.inputs == 1 && c.k.isEmpty) 1 else c.lanes
+  private val outLanes = if (c.inputs == 1 && c.k.isEmpty && !c.laneFold) 1 else c.lanes
 
   val io = IO(new Bundle {
     val start = Flipped(Decoupled(new GroupStart(1)))
@@ -90,6 +91,14 @@ class UnitHarness(val c: Case) extends Module {
       dp.io.fire  := ctrl.io.units(0).fire
       dp.io.first := ctrl.io.units(0).first
       io.res(0)   := dp.io.out.asUInt
+    case Some("LaneAccumulate") =>
+      val dp = Module(new LaneAccumulate(t(0).name, t(1).name, c.lanes))
+      for (l <- 0 until c.lanes) {
+        dp.io.a(l) := lane(io.data(0)(l), t(0))
+        io.res(l)  := dp.io.out(l).asUInt
+      }
+      dp.io.fire := ctrl.io.units(0).fire
+      dp.io.first := ctrl.io.units(0).first
     case _                      =>
   }
 }
