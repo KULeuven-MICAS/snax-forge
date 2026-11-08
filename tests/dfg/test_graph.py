@@ -48,7 +48,7 @@ def test_hand_built_vecadd_equals_the_fixture():
 
 
 def test_hand_built_accelerated_equals_the_fixture():
-    lanes = "4*n_t:4*n_t+4"
+    lanes = "4*n_1_t:4*n_1_t+4"
     split = Graph.load(fixture("vecadd_split"))
     acc = Node(
         "add",
@@ -68,7 +68,7 @@ def test_hand_built_accelerated_equals_the_fixture():
         "add_map",
         "map",
         attrs={
-            "var": "n_t",
+            "var": "n_1_t",
             "range": "0:N//4",
             "loop.dim": "n",
             "loop.piece": 1,
@@ -129,13 +129,13 @@ def test_body_is_written_only_for_kinds_that_have_one():
 def test_expressions_are_stored_canonical():
     d = as_dict("vecadd_split")
     tasklet = d["body"][0]["body"][0]["body"][0]
-    tasklet["inputs"]["in1"]["subset"] = ["(4*n_t) + n_s + 0*1"]
+    tasklet["inputs"]["in1"]["subset"] = ["(4*n_1_t) + n_2_s + 0*1"]
     tasklet["attrs"]["code"] = "out=(in1+in2)"
     d["body"][0]["attrs"]["range"] = "0:N//4:1"
     d["containers"]["A"]["shape"] = ["N+0"]
     g = Graph.from_dict(d)
     t = g.node("add")
-    assert t.inputs["in1"].subset == ["4 * n_t + n_s + 0 * 1"]  # canonical, not simplified
+    assert t.inputs["in1"].subset == ["4 * n_1_t + n_2_s + 0 * 1"]  # canonical, not simplified
     assert t.attrs["code"] == "out = in1 + in2"
     assert g.node("add_map").attrs["range"] == "0:N // 4"  # a step of 1 is left out
     assert g.containers["A"].shape == ["N + 0"]

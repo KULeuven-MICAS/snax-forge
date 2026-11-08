@@ -198,7 +198,7 @@ def tiled() -> dict:
     d = as_dict("vecadd_accelerated")
     tmap = d["body"][0]
     tmap["attrs"]["range"] = "0:8"
-    lanes = "32 * k + 4 * n_t:32 * k + 4 * n_t + 4"
+    lanes = "32 * k + 4 * n_1_t:32 * k + 4 * n_1_t + 4"
     for m in (*tmap["body"][0]["inputs"].values(), *tmap["body"][0]["outputs"].values()):
         m["subset"] = [lanes]
     d["body"] = [

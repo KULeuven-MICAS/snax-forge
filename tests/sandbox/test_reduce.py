@@ -116,7 +116,7 @@ def test_the_sum_folds_every_lane_into_one():
     """out[0] becomes the one lane out[0:1], with no reduce: the BRM folds (D102)."""
     s = Graph.load(FIXTURES / "dot_accelerated.snaxdfg").node("sum")
     assert s.outputs["out"].to_dict() == {"data": "out", "subset": ["0:1"]}
-    assert s.inputs["a"].subset == ["4 * i_t_1:4 * i_t_1 + 4"]
+    assert s.inputs["a"].subset == ["4 * n_1_t:4 * n_1_t + 4"]
     assert s.attrs["code"] == "out = a"
     assert s.attrs["replaced"]["body"][0]["outputs"]["out"]["reduce"] == {
         "op": "add",

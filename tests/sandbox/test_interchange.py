@@ -2,10 +2,10 @@
 range and tag, the maps between them and the inner one's body where they are; the pair again,
 in either order, undoes it.
 
-rowsum imports as ``sum_map`` (i) around ``sum_map_1`` (j) around ``sum``. Its lane accumulator
+rowsum imports as ``sum_map`` (m) around ``sum_map_1`` (n) around ``sum``. Its lane accumulator
 (rowsum_2) splits the row map by W, tags the column map temporal and puts the spatial row map
 inside it (``{"map": "sum_map_s", "with": "sum_map_1"}``, the innermost map with its parent):
-``sum_map`` (i_t) -> ``sum_map_1`` (j) -> ``sum_map_s`` (i_s) -> ``sum``. Every step is
+``sum_map`` (m_1_t) -> ``sum_map_1`` (n_t) -> ``sum_map_s`` (m_2_s) -> ``sum``. Every step is
 checked against the reference executor (run.py's ``checked_step``).
 """
 
@@ -50,15 +50,15 @@ def test_the_innermost_map_with_its_parent():
     """rowsum_2's step: the spatial row map and the innermost column map trade places."""
     *_, before, g = run([SPLIT, TAG, swap("sum_map_s", "sum_map_1")])
     assert nest(g) == [
-        ("sum_map", "i_t", "0:M // 4", "temporal"),
-        ("sum_map_1", "j", "0:N", "temporal"),
-        ("sum_map_s", "i_s", "0:4", "spatial"),
+        ("sum_map", "m_1_t", "0:M // 4", "temporal"),
+        ("sum_map_1", "n_t", "0:N", "temporal"),
+        ("sum_map_s", "m_2_s", "0:4", "spatial"),
         ("sum", None, None, None),
     ]
     s = g.node("sum")
-    assert s.inputs["in1"].subset == ["4 * i_t + i_s", "j"]
-    assert s.outputs["out"].subset == ["4 * i_t + i_s"]
-    assert g.node("sum_map").attrs["loop.split"] == {"var": "i", "range": "0:M"}
+    assert s.inputs["in1"].subset == ["4 * m_1_t + m_2_s", "n_t"]
+    assert s.outputs["out"].subset == ["4 * m_1_t + m_2_s"]
+    assert g.node("sum_map").attrs["loop.split"] == {"var": "m", "range": "0:M"}
     for n in ("sum_map_1", "sum_map_s"):  # each keeps its attrs, its tag among them
         assert g.node(n).attrs == before.node(n).attrs
     assert interchange(before, "sum_map_1", "sum_map_s").to_json() == g.to_json()  # either order
@@ -74,18 +74,19 @@ def test_twice_gives_the_graph_back_in_either_order():
 
 
 def test_a_non_adjacent_pair_outer_with_innermost():
-    """sum_map (i_t) -> sum_map_s (i_s) -> sum_map_1 (j): the outer and the innermost map trade
-    places, the middle one stays, and the pair again gives the graph back."""
+    """sum_map (m_1_t) -> sum_map_s (m_2_s) -> sum_map_1 (n): the outer and the innermost map
+    trade places, the middle one stays, each keeps its name, and the pair again gives the graph
+    back."""
     _, before, g, back = run([SPLIT, swap("sum_map", "sum_map_1"), swap("sum_map_1", "sum_map")])
     assert nest(before)[:3] == [
-        ("sum_map", "i_t", "0:M // 4", "temporal"),
-        ("sum_map_s", "i_s", "0:4", "spatial"),
-        ("sum_map_1", "j", "0:N", None),
+        ("sum_map", "m_1_t", "0:M // 4", "temporal"),
+        ("sum_map_s", "m_2_s", "0:4", "spatial"),
+        ("sum_map_1", "n", "0:N", None),
     ]
     assert nest(g) == [
-        ("sum_map_1", "j", "0:N", None),
-        ("sum_map_s", "i_s", "0:4", "spatial"),
-        ("sum_map", "i_t", "0:M // 4", "temporal"),
+        ("sum_map_1", "n", "0:N", None),
+        ("sum_map_s", "m_2_s", "0:4", "spatial"),
+        ("sum_map", "m_1_t", "0:M // 4", "temporal"),
         ("sum", None, None, None),
     ]
     assert g.node("sum_map").attrs == before.node("sum_map").attrs
@@ -106,11 +107,11 @@ def refused(g: Graph, x: str, y: str, match: str) -> None:
 
 
 def triangle() -> Graph:
-    """rowsum with j running to the row, ``0:i``, and a map ``k_map`` (k) under the column map:
-    sum_map (i) -> sum_map_1 (j) -> k_map (k) -> sum."""
+    """rowsum with n running to the row, ``0:m``, and a map ``k_map`` (k) under the column map:
+    sum_map (m) -> sum_map_1 (n) -> k_map (k) -> sum."""
     d = copy.deepcopy(imported("rowsum").to_dict())
     col = d["body"][0]["body"][0]
-    col["attrs"]["range"] = "0:i"
+    col["attrs"]["range"] = "0:m"
     col["body"] = [{"id": "k_map", "kind": "map", "attrs": {"var": "k", "range": "0:2"},
                     "body": col["body"]}]  # fmt: skip
     return Graph.from_dict(d)
@@ -120,8 +121,8 @@ def test_refused_a_range_naming_a_variable_now_inside_it():
     """With the column map outside the row map, its range would name the row map's variable,
     then inside it; the column map trades with k_map, so the pair's own refusal is given."""
     g = triangle()
-    want = ("interchange_map 'sum_map_1' with 'sum_map': after the swap sum_map_1's range 0:i "
-            "would name sum_map's variable 'i', a map then inside it; a range names only the "
+    want = ("interchange_map 'sum_map_1' with 'sum_map': after the swap sum_map_1's range 0:m "
+            "would name sum_map's variable 'm', a map then inside it; a range names only the "
             "variables of the maps around it")  # fmt: skip
     with pytest.raises(SandboxError) as e:
         interchange(g, "sum_map_1", "sum_map")
@@ -208,14 +209,14 @@ def test_refused_a_fused_nests_outer_map():
 def test_refused_an_order_dependent_fold(monkeypatch):
     """A fold over two of the chain's maps, one of them moved, with an op that is not
     order-free; every registered op is order-free (D28), so add is marked as one that is not.
-    sum_map (i) -> sum_map_1 (j_t) -> sum_map_1_s (j_s): y[i] folds over j_t and j_s."""
+    sum_map (m) -> sum_map_1 (n_1_t) -> sum_map_1_s (n_2_s): y[m] folds over n_1_t and n_2_s."""
     _, g = run([SPLIT_COLS])
     monkeypatch.setitem(REDUCE_OPS, "add", ReduceOp(REDUCE_OPS["add"].ufunc,
                                                     REDUCE_OPS["add"].identity, False))  # fmt: skip
-    match = "sum's out folds over 'j_t', 'j_s' with 'add', whose result depends on the order"
+    match = "sum's out folds over 'n_1_t', 'n_2_s' with 'add', whose result depends on the order"
     refused(g, "sum_map_1", "sum_map_1_s", match)
-    refused(g, "sum_map", "sum_map_1_s", match)  # j_t and j_s swap their order too
-    # the row map with the next: y[i] moves with i, so each element's writes keep their order
+    refused(g, "sum_map", "sum_map_1_s", match)  # n_1_t and n_2_s swap their order too
+    # the row map with the next: y[m] moves with m, so each element's writes keep their order
     assert interchange(g, "sum_map", "sum_map_1").body[0].id == "sum_map_1"
 
 
@@ -272,5 +273,5 @@ def test_a_refused_partner_is_a_disabled_choice():
 
     f = _partner_field(triangle(), "sum_map_1")
     assert [(c["value"], c["ok"]) for c in f["choices"]] == [("sum_map", False), ("k_map", True)]
-    assert "would name sum_map's variable 'i'" in f["choices"][0]["message"]
+    assert "would name sum_map's variable 'm'" in f["choices"][0]["message"]
     assert f["value"] == "k_map"

@@ -42,11 +42,11 @@ def test_the_worked_example():
         "out = a",
     )
     assert s.attrs["params"] == {"W": 2, "op": "add"}
-    assert s.inputs["a"].to_dict() == {"data": "A", "subset": ["2 * i_t:2 * i_t + 2", "j"]}
-    assert s.outputs["out"].to_dict() == {"data": "y", "subset": ["2 * i_t:2 * i_t + 2"]}
+    assert s.inputs["a"].to_dict() == {"data": "A", "subset": ["2 * m_1_t:2 * m_1_t + 2", "n_t"]}
+    assert s.outputs["out"].to_dict() == {"data": "y", "subset": ["2 * m_1_t:2 * m_1_t + 2"]}
     assert s.attrs["replaced"] == before.node("sum_map_s").to_dict()
     loops, named = rates(g)
-    assert loops == [("i_t", 2), ("j", 3)] and named == {"T": 3}  # JOB_BEATS = N
+    assert loops == [("m_1_t", 2), ("n_t", 3)] and named == {"T": 3}  # JOB_BEATS = N
     assert 2 * 3 // named["T"] == 2  # JOBS = n / T = M / W
     a = np.arange(1, 13, dtype=np.int64).reshape(4, 3)
     inputs = {"A": a, "y": np.zeros(4, dtype=np.int64)}
@@ -60,7 +60,7 @@ def test_the_recipe_at_its_defaults():
     from snax_forge.sandbox import unbind
 
     *_, before, g = steps()
-    assert rates(g) == ([("i_t", 2), ("j", 64)], {"T": 64})
+    assert rates(g) == ([("m_1_t", 2), ("n_t", 64)], {"T": 64})
     assert g.node("sum").attrs["params"] == {"W": 4, "op": "add"}
     assert unbind(g, "sum").to_json() == before.to_json()
 
@@ -109,7 +109,7 @@ def tagged(kinds: dict[str, str], **sizes: int) -> Graph:
 def test_refused_the_reduced_loop_spatial():
     """The column map tagged spatial and bound: its lanes are the loop the fold runs over."""
     g = tagged({"sum_map": "temporal", "sum_map_1": "spatial"})
-    with pytest.raises(SandboxError, match="sum folds over 'sum_map_1' \\(j\\), which is spatial; a "
+    with pytest.raises(SandboxError, match="sum folds over 'sum_map_1' \\(n_s\\), which is spatial; a "
                                            "lane_accumulate folds each lane over the temporal maps "
                                            "around it, a fold across the lanes binds accumulate"):  # fmt: skip
         bind(g, "sum_map_1", **(LANE | {"params": {"W": 4}}))
@@ -122,7 +122,7 @@ def test_refused_an_output_not_indexed_by_the_lane():
     col["body"] = [{"id": "lane_map", "kind": "map",
                     "attrs": {"var": "l", "range": "0:4", "loop.kind": "spatial"},
                     "body": col["body"]}]  # fmt: skip
-    with pytest.raises(SandboxError, match="sum's output y\\['i'\\] is not indexed by the lane "
+    with pytest.raises(SandboxError, match="sum's output y\\['m_t'\\] is not indexed by the lane "
                                            "variable 'l'; each lane folds its own element"):  # fmt: skip
         bind(Graph.from_dict(d), "lane_map", **LANE)
 

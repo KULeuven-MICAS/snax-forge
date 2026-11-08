@@ -69,7 +69,7 @@ CASES = [
     ("vecadd", _node(lambda n: n.update(id="add.x")), "'add.x' is not a valid name"),
     ("vecadd", _map(lambda m: m["attrs"].update(var="N")), "'N' is already a symbol"),
     ("vecadd", _map(lambda m: m["attrs"].update(var="A")), "'A' is already a symbol, container"),
-    ("vecadd_split", lambda d: d["body"][0]["body"][0]["attrs"].update(var="n_t"), "variable"),
+    ("vecadd_split", lambda d: d["body"][0]["body"][0]["attrs"].update(var="n_1_t"), "variable"),
     # reduce
     ("dot", _reduce(op="sub"), "reduce.op: 'sub' is not a registered op"),
     ("dot", _reduce(identity=None), "reduce.identity: null .* not accepted yet$"),

@@ -58,7 +58,7 @@ def test_split_a_range_that_does_not_start_at_zero():
     g = Graph.from_dict(d)
     s = split_map(g, "add_map", 8)
     assert s.node("add_map").attrs["range"] == "0:(N - 2) // 8"
-    assert s.node("add").inputs["in1"].subset == ["2 + 8 * i_t + i_s"]
+    assert s.node("add").inputs["in1"].subset == ["2 + 8 * n_1_t + n_2_s"]
     assert same_output(g, s, 66)
 
 
@@ -91,7 +91,7 @@ def test_bind_reads_w_off_the_spatial_bound():
     g = bind(split_map(bound("vecadd"), "add_map", 8), **BIND)
     acc = g.node("add")
     assert acc.attrs["params"] == {"W": 8, "op": "add", "streams": 2}
-    assert acc.inputs["a"].subset == ["8 * i_t:8 * i_t + 8"]
+    assert acc.inputs["a"].subset == ["8 * n_1_t:8 * n_1_t + 8"]
     assert same_output(graph("vecadd_split"), g)
 
 
@@ -152,7 +152,7 @@ def _edit(fn):
         ),
         (
             lambda: _edit(
-                lambda d: tasklet(d)["inputs"]["in1"].update(subset=["4 * i_t + 3 - i_s"])
+                lambda d: tasklet(d)["inputs"]["in1"].update(subset=["4 * n_1_t + 3 - n_2_s"])
             ),
             {},
             "runs the lanes backwards",
@@ -199,7 +199,7 @@ def _strided() -> Graph:
     """vecadd split, its lanes strided by 16: the right elements, in another order."""
     d = split_dict()
     for m in (*tasklet(d)["inputs"].values(), *tasklet(d)["outputs"].values()):
-        m["subset"] = ["i_t + 16 * i_s"]
+        m["subset"] = ["n_1_t + 16 * n_2_s"]
     return Graph.from_dict(d)
 
 
@@ -216,5 +216,5 @@ def test_a_stream_brm_takes_the_memlets_order():
     """simd is in the stream notation: the memlet is the order, so the strided
     lanes bind, and the bound graph still adds A and B."""
     g = bind(_strided(), **BIND)
-    assert g.node("add").inputs["a"].subset == ["i_t:i_t + 64:16"]
+    assert g.node("add").inputs["a"].subset == ["n_1_t:n_1_t + 64:16"]
     assert same_output(graph("vecadd"), g)

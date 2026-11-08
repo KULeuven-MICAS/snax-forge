@@ -158,7 +158,7 @@ def test_vecmul_from_its_kernel_with_a_new_param_is_the_recipes_graph(roots):
     r = recipe("vecmul").with_params({"N": 2048, "W": 8})
     want = apply_recipe(r, imported("vecmul"))[-1].graph
     names = tagged_names(s.graphs[0], "mult_map", 8)
-    assert names == {"i_1": "i_t", "i_2": "i_s", "mult_map_inner": "mult_map_s"}
+    assert names == {"n_1": "n_1_t", "n_2": "n_2_s", "mult_map_inner": "mult_map_s"}
     assert renamed(s.graphs[-1], names | {"acc_1": "acc"}) == want.to_json()
     d = Design(s.platform, s.graphs[-1])
     assert run_checks(d) == []
@@ -504,7 +504,8 @@ def dot1_by_hand(roots: Roots, w_mul: int = 8, w_sum: int = 8) -> tuple[Session,
 def test_dot_1_by_hand_names_its_units_params_and_loops(roots):
     """D156 and D73: the binds' instances ``acc_1`` and ``acc_2`` by their order, each split's
     factor named ``W`` and renamed ``W_<instance>`` at its bind, the second split's variables
-    the next free pair ``i_3`` and ``i_4`` (not ``i_1_1`` and ``i_2``)."""
+    named as the first's, ``n_1_t`` and ``n_2_s``: the two maps over N are siblings, each its own
+    dimension ``n``."""
     s, out = dot1_by_hand(roots)
     assert [x["params"].get("instance") for x in out if x["transform"] == "bind"] == [
         "acc_1",
@@ -516,7 +517,7 @@ def test_dot_1_by_hand_names_its_units_params_and_loops(roots):
     assert [x.params["factor"] for x in s.recipe.steps if x.transform == "split"] == [
         "W_acc_1", "W_acc_2"]  # fmt: skip
     vars_ = {n.id: n.attrs["var"] for n, _ in s.graphs[7].walk() if n.kind == "map"}
-    assert (vars_["sum_map"], vars_["sum_map_inner"]) == ("i_3", "i_4")
+    assert (vars_["sum_map"], vars_["sum_map_inner"]) == ("n_1_t", "n_2_s")
     assert s.recipe.steps[-1].params["accelerator"] == "dot"
 
 

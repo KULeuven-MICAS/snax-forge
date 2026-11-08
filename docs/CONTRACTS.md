@@ -277,10 +277,10 @@ vecadd after `split_map` (W = 4) and `bind` (`tests/dfg/fixtures/vecadd_accelera
 <!-- snippet: tests/dfg/fixtures/vecadd_accelerated.snaxdfg -->
 ```json
      "inputs": {
-      "a": {"data": "A", "subset": ["4 * i_t:4 * i_t + 4"]},
-      "b": {"data": "B", "subset": ["4 * i_t:4 * i_t + 4"]}
+      "a": {"data": "A", "subset": ["4 * n_1_t:4 * n_1_t + 4"]},
+      "b": {"data": "B", "subset": ["4 * n_1_t:4 * n_1_t + 4"]}
      },
-     "outputs": {"out": {"data": "C", "subset": ["4 * i_t:4 * i_t + 4"]}},
+     "outputs": {"out": {"data": "C", "subset": ["4 * n_1_t:4 * n_1_t + 4"]}},
      "attrs": {
       "instance": "acc",
       "brm": "simd",

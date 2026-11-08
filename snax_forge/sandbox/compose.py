@@ -16,10 +16,11 @@ name), ``unlink``'s a link node or its container.
     splits it: ``<map>`` temporal around a spatial ``<map>_s``; its tasklet
     now writes one partial per lane, into a new transient
     ``<output>_partial`` indexed by the output's dimensions that move with an
-    enclosing map, then the spatial variable (dot's ``out_partial[v_s]``,
-    matvec's ``q_partial[i, v_s]``), folding as before. A final sum follows
+    enclosing map, then the spatial variable (dot's ``out_partial[n_2_s]``,
+    matvec's ``q_partial[m_t, n_2_s]``), folding as before. A final sum follows
     the temporal map: tasklet ``<tasklet>_final`` in a spatial map
-    ``<map>_final`` over ``0:factor``, folding the partials into the output
+    ``<map>_final`` over ``0:factor``, a dimension of its own, ``<dim>_f``
+    (dot's ``n_f_s``, dfg/loops.py), folding the partials into the output
     as the tasklet did. The temporal map records both
     (``loop.split_reduce``); ``join_reduce`` takes them back and joins the
     map (``join_map``). A length that is not a multiple of the factor is
@@ -28,8 +29,8 @@ name), ``unlink``'s a link node or its container.
     two adjacent nests, ``second`` right after ``first``, with the same
     ranges and tags level by level down to one tasklet each, joined by a
     transient the first writes and the second reads at the same index,
-    become one nest of two tasklets: the first's ids and variables (the
-    second's renamed onto them), the second's other nodes after the fused
+    become one nest of two tasklets: the first's ids, variables, dimensions
+    and pieces (the second's renamed onto them), the second's other nodes after the fused
     one at their level (matvec's final sum inside the row map). The
     transient becomes a local value: ``loop.local`` (the fused map's id) on
     the container, so it gets no L1 space; nothing else may name it. The
@@ -65,7 +66,7 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.common import CodedError, fresh
-from snax_forge.dfg import Container, Graph, Memlet, Node
+from snax_forge.dfg import Container, Graph, Memlet, Node, loops
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
 
 from .recipe import SandboxError
@@ -142,14 +143,17 @@ def split_reduce(g: Graph, map: str, factor: int) -> Graph:
     g.containers[partial] = Container([*(out.shape[k] for k in kept), factor], out.dtype, True)
     index = [om.subset[k] for k in kept]
     t.outputs[cout] = Memlet(partial, [*index, smap.attrs["var"]], om.reduce)
-    var = fresh(f"{node.attrs['loop.split']['var']}_f", taken | {partial})
+    dim = fresh(f"{node.attrs[loops.DIM]}_f", taken | {partial})  # its own dimension
+    var = fresh(f"{dim}_s", taken)  # named by the rule below
     ids = {n.id for n, _ in g.walk()}
     final_t = Node(fresh(f"{t.id}_final", ids), "tasklet", inputs={cin: Memlet(partial, [*index, var])},
                    outputs={cout: om}, attrs={"code": t.attrs["code"]})  # fmt: skip
     final = Node(fresh(f"{map}_final", ids | {final_t.id}), "map",
-                 attrs={"var": var, "range": f"0:{factor}", "loop.kind": "spatial"}, body=[final_t])  # fmt: skip
+                 attrs={"var": var, "range": f"0:{factor}", loops.DIM: dim, loops.PIECE: 1,
+                        "loop.kind": "spatial"}, body=[final_t])  # fmt: skip
     node.attrs["loop.split_reduce"] = {"partial": partial, "final": final.id}
     body.insert(i + 1, final)
+    loops.rename(g)
     return _result(g)
 
 

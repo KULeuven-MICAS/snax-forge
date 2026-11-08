@@ -13,7 +13,7 @@
    "inputs": {},
    "outputs": {},
    "attrs": {
-    "var": "n_t",
+    "var": "n_1_t",
     "range": "0:N // 4",
     "loop.dim": "n",
     "loop.piece": 1,
@@ -26,16 +26,22 @@
      "kind": "map",
      "inputs": {},
      "outputs": {},
-     "attrs": {"var": "n_s", "range": "0:4", "loop.kind": "spatial"},
+     "attrs": {
+      "var": "n_2_s",
+      "range": "0:4",
+      "loop.dim": "n",
+      "loop.piece": 2,
+      "loop.kind": "spatial"
+     },
      "body": [
       {
        "id": "add",
        "kind": "tasklet",
        "inputs": {
-        "in1": {"data": "A", "subset": ["4 * n_t + n_s"]},
-        "in2": {"data": "B", "subset": ["4 * n_t + n_s"]}
+        "in1": {"data": "A", "subset": ["4 * n_1_t + n_2_s"]},
+        "in2": {"data": "B", "subset": ["4 * n_1_t + n_2_s"]}
        },
-       "outputs": {"out": {"data": "C", "subset": ["4 * n_t + n_s"]}},
+       "outputs": {"out": {"data": "C", "subset": ["4 * n_1_t + n_2_s"]}},
        "attrs": {"code": "out = in1 + in2"}
       }
      ]

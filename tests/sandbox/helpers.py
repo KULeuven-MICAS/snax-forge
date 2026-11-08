@@ -102,12 +102,13 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
 
 
 def tagged_names(g: Graph, map: str, factor: int) -> dict[str, str]:
-    """``split``'s names of ``map``'s split on ``g`` (outer variable, inner variable, inner id)
-    -> ``split_map``'s."""
+    """``split``'s names of ``map``'s split on ``g`` -> ``split_map``'s, where they differ: the
+    inner id (``_inner``, ``_s``) and, before any tag, the variables (``n_1``, ``n_1_t``)."""
     a, b = split(g, map, factor), split_map(g, map, factor)
     (ia,), (ib,) = a.node(map).body, b.node(map).body
-    return {a.node(map).attrs["var"]: b.node(map).attrs["var"], ia.attrs["var"]: ib.attrs["var"],
-            ia.id: ib.id}  # fmt: skip
+    pairs = [(a.node(map).attrs["var"], b.node(map).attrs["var"]), (ia.attrs["var"], ib.attrs["var"]),
+             (ia.id, ib.id)]  # fmt: skip
+    return {x: y for x, y in pairs if x != y}
 
 
 def renamed(g: Graph, names: dict[str, str]) -> str:

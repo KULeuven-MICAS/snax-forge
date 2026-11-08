@@ -117,16 +117,16 @@ def accel_node(gd: dict[str, Any]) -> dict[str, Any]:
 
 
 def two_loops(g: dict[str, Any]) -> None:
-    """vecadd's temporal map split in two temporal maps, i_o over 0:2 around i_t over 0:N // 8."""
+    """vecadd's temporal map split in two temporal maps, i_o over 0:2 around n_1_t over 0:N // 8."""
     inner = g["body"][0]
     inner["attrs"]["range"] = "0:N // 8"
     del inner["attrs"]["loop.split"]
     node = inner["body"][0]
     for m in [*node["inputs"].values(), *node["outputs"].values()]:
-        m["subset"] = ["32 * i_o + 4 * i_t:32 * i_o + 4 * i_t + 4"]
+        m["subset"] = ["32 * i_o + 4 * n_1_t:32 * i_o + 4 * n_1_t + 4"]
     tasklet = node["attrs"]["replaced"]["body"][0]
     for m in [*tasklet["inputs"].values(), *tasklet["outputs"].values()]:
-        m["subset"] = ["32 * i_o + 4 * i_t + i_s"]
+        m["subset"] = ["32 * i_o + 4 * n_1_t + n_2_s"]
     outer = {"id": "add_map_o", "kind": "map", "inputs": {}, "outputs": {},
              "attrs": {"var": "i_o", "range": "0:2", "loop.kind": "temporal"}, "body": [inner]}  # fmt: skip
     g["body"] = [outer]

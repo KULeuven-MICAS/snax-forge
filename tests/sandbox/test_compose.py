@@ -66,8 +66,8 @@ def test_split_reduce_gives_lane_partials_and_a_final_sum():
     g = split_reduce(split_map(dot(), "mult_map", 4), "sum_map", 4)
     assert [n.id for n in g.body] == ["mult_map", "sum_map", "sum_map_final"]
     assert g.containers["out_partial"].shape == [4] and g.containers["out_partial"].transient
-    assert g.node("sum").outputs["out"].subset == ["i_s_1"]  # split_map's fresh variable
-    assert g.node("sum_final").inputs["in1"].subset == ["i_f"]
+    assert g.node("sum").outputs["out"].subset == ["n_2_s"]  # its dimension's second piece
+    assert g.node("sum_final").inputs["in1"].subset == ["n_f_s"]  # a dimension of its own
     assert g.node("sum_final").outputs["out"].subset == [0]
     assert g.node("sum_map").attrs["loop.split_reduce"] == {"partial": "out_partial",
                                                             "final": "sum_map_final"}  # fmt: skip

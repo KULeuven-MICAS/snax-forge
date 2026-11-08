@@ -48,7 +48,7 @@ into one element with "split_reduce first" (D150).
 bound is a spatial map whose body is one tasklet copying its one input into its
 one output (``out = in1``), the output folding (``reduce``) with ``attrs.fold``
 and indexed by the spatial variable, so each lane folds its own element (rowsum
-2's ``y[4 * i_t + i_s]``). The maps around it are temporal (``bind``'s site), and
+2's ``y[4 * m_1_t + m_2_s]``). The maps around it are temporal (``bind``'s site), and
 those the input names and the output does not are the ones it folds over. Refused,
 naming what is missing: the tasklet bound instead of its map, a front op (a fused
 nest, or a tasklet that is not a copy: "bind mac"), an output not indexed by the

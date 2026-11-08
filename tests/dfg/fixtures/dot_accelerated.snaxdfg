@@ -14,7 +14,7 @@
    "inputs": {},
    "outputs": {},
    "attrs": {
-    "var": "n_t",
+    "var": "n_1_t",
     "range": "0:N // 4",
     "loop.dim": "n",
     "loop.piece": 1,
@@ -26,10 +26,10 @@
      "id": "mult",
      "kind": "accelerated",
      "inputs": {
-      "a": {"data": "A", "subset": ["4 * n_t:4 * n_t + 4"]},
-      "b": {"data": "B", "subset": ["4 * n_t:4 * n_t + 4"]}
+      "a": {"data": "A", "subset": ["4 * n_1_t:4 * n_1_t + 4"]},
+      "b": {"data": "B", "subset": ["4 * n_1_t:4 * n_1_t + 4"]}
      },
-     "outputs": {"out": {"data": "tmp0", "subset": ["4 * n_t:4 * n_t + 4"]}},
+     "outputs": {"out": {"data": "tmp0", "subset": ["4 * n_1_t:4 * n_1_t + 4"]}},
      "attrs": {
       "instance": "mul",
       "brm": "simd",
@@ -41,16 +41,22 @@
        "kind": "map",
        "inputs": {},
        "outputs": {},
-       "attrs": {"var": "n_s", "range": "0:4", "loop.kind": "spatial"},
+       "attrs": {
+        "var": "n_2_s",
+        "range": "0:4",
+        "loop.dim": "n",
+        "loop.piece": 2,
+        "loop.kind": "spatial"
+       },
        "body": [
         {
          "id": "mult",
          "kind": "tasklet",
          "inputs": {
-          "in1": {"data": "A", "subset": ["4 * n_t + n_s"]},
-          "in2": {"data": "B", "subset": ["4 * n_t + n_s"]}
+          "in1": {"data": "A", "subset": ["4 * n_1_t + n_2_s"]},
+          "in2": {"data": "B", "subset": ["4 * n_1_t + n_2_s"]}
          },
-         "outputs": {"out": {"data": "tmp0", "subset": ["4 * n_t + n_s"]}},
+         "outputs": {"out": {"data": "tmp0", "subset": ["4 * n_1_t + n_2_s"]}},
          "attrs": {"code": "out = in1 * in2"}
         }
        ]
@@ -66,7 +72,7 @@
    "inputs": {},
    "outputs": {},
    "attrs": {
-    "var": "n_t_1",
+    "var": "n_1_t",
     "range": "0:N // 4",
     "loop.dim": "n",
     "loop.piece": 1,
@@ -77,7 +83,7 @@
     {
      "id": "sum",
      "kind": "accelerated",
-     "inputs": {"a": {"data": "tmp0", "subset": ["4 * n_t_1:4 * n_t_1 + 4"]}},
+     "inputs": {"a": {"data": "tmp0", "subset": ["4 * n_1_t:4 * n_1_t + 4"]}},
      "outputs": {"out": {"data": "out", "subset": ["0:1"]}},
      "attrs": {
       "instance": "sum",
@@ -90,12 +96,18 @@
        "kind": "map",
        "inputs": {},
        "outputs": {},
-       "attrs": {"var": "n_s", "range": "0:4", "loop.kind": "spatial"},
+       "attrs": {
+        "var": "n_2_s",
+        "range": "0:4",
+        "loop.dim": "n",
+        "loop.piece": 2,
+        "loop.kind": "spatial"
+       },
        "body": [
         {
          "id": "sum",
          "kind": "tasklet",
-         "inputs": {"in1": {"data": "tmp0", "subset": ["4 * n_t_1 + n_s"]}},
+         "inputs": {"in1": {"data": "tmp0", "subset": ["4 * n_1_t + n_2_s"]}},
          "outputs": {"out": {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}},
          "attrs": {"code": "out = in1"}
         }

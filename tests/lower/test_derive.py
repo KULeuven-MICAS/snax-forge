@@ -110,7 +110,7 @@ def test_matadd_lowers_its_two_firing_loops():
         }  # fmt: skip
     assert c["add_acc"].values == {"n": 32}
     lay = p.memory.layouts["C"]["l1"]
-    visited = addresses(c["add_acc_out"].values, [2])  # beat i * 4 + j_t, channel (a word)
+    visited = addresses(c["add_acc_out"].values, [2])  # beat m_t * 4 + n_1_t, channel (a word)
     assert visited[1 * 4 + 1, 1] == lay.base + 88 == lay.address([1, 6])  # elements (1, 6:8)
 
 
@@ -194,7 +194,7 @@ def test_a_write_into_its_read_container_elsewhere_is_refused():
     """B[N:2N] = A + B[0:N]: not the elements it reads, so not an in-place update."""
 
     def edit(gd):
-        in_place(gd, "4 * i_t + N:4 * i_t + N + 4", "4 * i_t + i_s + N")
+        in_place(gd, "4 * n_1_t + N:4 * n_1_t + N + 4", "4 * n_1_t + n_2_s + N")
 
     with pytest.raises(LowerError, match=r"node add\.out: writes B in place of add_acc_b's "
                                          r"read, but not the same elements"):  # fmt: skip
@@ -332,7 +332,7 @@ def test_dot_without_encapsulate_is_two_accelerators_with_no_idle_movers():
 
 def _backwards(g):
     """C written back to front: beat t at elements 60 - 4t .. 63 - 4t."""
-    g["body"][0]["body"][0]["outputs"]["out"]["subset"] = ["60 - 4 * i_t:64 - 4 * i_t"]
+    g["body"][0]["body"][0]["outputs"]["out"]["subset"] = ["60 - 4 * n_1_t:64 - 4 * n_1_t"]
 
 
 def test_a_memlet_the_nest_disagrees_with_is_refused(monkeypatch):

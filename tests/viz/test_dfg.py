@@ -164,7 +164,7 @@ def test_vecadd_accelerated():
     assert (top["id"], top["loop_kind"], top["text"]) == (
         "add_map",
         "temporal",
-        "add_map · i_t · 16 · temporal",
+        "add_map · n_1_t · 16 · temporal",
     )
     acc = top["body"][0]
     assert (acc["text"], acc["inputs"][0]) == ("acc · a + b · W 4", {"connector": "a", "data": "A"})
@@ -172,16 +172,16 @@ def test_vecadd_accelerated():
     assert (d["brm"], d["implementation"], d["params"], d["replaced"], d["timing"]) == (
         "simd", "chisel_tiled_spatial", {"W": 4, "op": "add", "streams": 2}, "add_map_s › add",
         {"latency": 0, "ii": 1, "span": 1})  # fmt: skip
-    assert v["details"]["node:add_map"] == {"kind": "map", "var": "i_t", "range": "0:N // 4",
+    assert v["details"]["node:add_map"] == {"kind": "map", "var": "n_1_t", "range": "0:N // 4",
                                            "loop.kind": "temporal",
-                                           "loop.split": {"var": "i", "range": "0:N"}}  # fmt: skip
+                                           "loop.split": {"var": "n", "range": "0:N"}}  # fmt: skip
     assert v["details"]["container:A"]["sizes"] == [64]
     assert [(e["id"], e["dir"]) for e in v["edges"]] == [
         ("A@0->add.a", "read"), ("B@0->add.b", "read"), ("add.out->C@1", "write")]  # fmt: skip
     assert "text" not in v["edges"][0] and "packing" not in v["edges"][0]
     e = v["details"]["edge:A@0->add.a"]
     assert (e["memlet"], e["packing"], e["loops"], e["beats"], e["streamer"]) == (
-        "A[4 * i_t:4 * i_t + 4]", "int64 · num_slc 1 · num_ch 4", [["i_t", 16]], 16, True)  # fmt: skip
+        "A[4 * n_1_t:4 * n_1_t + 4]", "int64 · num_slc 1 · num_ch 4", [["n_1_t", 16]], 16, True)  # fmt: skip
 
 
 def recipe_view(tmp_path: Path, recipe: str) -> dict:
@@ -222,7 +222,7 @@ def test_a_folding_write_names_its_op():
         for e in v["edges"]
         if e["dir"] == "write"
     ]
-    assert writes == [("mult.out", "tmp0[i]"), ("sum.out", "out[0] (reduce add)")]
+    assert writes == [("mult.out", "tmp0[n]"), ("sum.out", "out[0] (reduce add)")]
     tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
     assert [t["body"][0]["text"] for t in tops] == ["mult · in1 * in2", "sum · fold +"]
 
@@ -232,8 +232,8 @@ def test_the_bound_dot_shows_both_accelerators():
     v = view(FIXTURES / "dot_accelerated.snaxdfg")
     tops = [r["node"] for r in v["rows"] if r["kind"] == "node"]
     assert [t["text"] for t in tops] == [
-        "mult_map · i_t · 16 · temporal",
-        "sum_map · i_t_1 · 16 · temporal",
+        "mult_map · n_1_t · 16 · temporal",
+        "sum_map · n_1_t · 16 · temporal",
     ]
     assert [t["body"][0]["text"] for t in tops] == ["mul · a * b · W 4", "sum · fold + · W 4"]
     writes = [
@@ -241,7 +241,7 @@ def test_the_bound_dot_shows_both_accelerators():
         for e in v["edges"]
         if e["dir"] == "write"
     ]
-    assert writes == [("mult.out", "tmp0[4 * i_t:4 * i_t + 4]"), ("sum.out", "out[0:1]")]
+    assert writes == [("mult.out", "tmp0[4 * n_1_t:4 * n_1_t + 4]"), ("sum.out", "out[0:1]")]
 
 
 def test_dot_1_enc_draws_one_accelerator_of_two_groups(tmp_path):
@@ -278,13 +278,13 @@ def test_without_encapsulate_each_group_is_its_own_accelerator():
 
 @pytest.mark.slow
 def test_a_maps_bar_starts_with_its_id():
-    """C§12: vecmul as imported at N = 2048, its map's bar ``mult_map · i · 2048 · untagged``."""
+    """C§12: vecmul as imported at N = 2048, its map's bar ``mult_map · n · 2048 · untagged``."""
     from snax_forge.viz.dfg.api import Entry
     from tests.helpers import steps
 
     g = steps("vecmul", N=2048)[0]
     v = graph_view(Entry("0_input", Path("0_input.snaxdfg"), g, None))
-    assert v["rows"][1]["node"]["text"] == "mult_map · i · 2048 · untagged"
+    assert v["rows"][1]["node"]["text"] == "mult_map · n · 2048 · untagged"
 
 
 @pytest.mark.slow
@@ -542,7 +542,7 @@ def test_view_mode_reads_the_folders_recipe(tmp_path):
 
 def test_iterations_need_bound_symbols():
     plain = view(FIXTURES / "vecadd.snaxdfg")
-    assert plain["rows"][1]["node"]["text"] == "add_map · i · ? · untagged"
+    assert plain["rows"][1]["node"]["text"] == "add_map · n · ? · untagged"
     assert plain["details"]["container:A"]["sizes"] is None
     assert plain["containers"]["A"]["badge"] is None and plain["estimate_error"]
     split = view(FIXTURES / "vecadd_split.snaxdfg")
@@ -550,7 +550,7 @@ def test_iterations_need_bound_symbols():
     assert (inner["id"], inner["loop_kind"], inner["text"]) == (
         "add_map_s",
         "spatial",
-        "add_map_s · i_s · 4 · spatial",
+        "add_map_s · n_2_s · 4 · spatial",
     )
 
 
@@ -1074,8 +1074,8 @@ def test_the_lane_accumulator_reads_as_a_fold():
     (col,) = top["body"]
     (unit,) = col["body"]
     assert [top["text"], col["text"], unit["text"]] == [
-        "sum_map · i_t · 2 · temporal", "sum_map_1 · j · 64 · temporal", "acc · fold + · W 4"]  # fmt: skip
+        "sum_map · m_1_t · 2 · temporal", "sum_map_1 · n_t · 64 · temporal", "acc · fold + · W 4"]  # fmt: skip
     d = v["details"]["node:sum"]
     assert (d["brm"], d["replaced"]) == ("lane_accumulate", "sum_map_s › sum")
-    assert d["inputs"] == {"a": "A[4 * i_t:4 * i_t + 4, j]"}
-    assert d["outputs"] == {"out": "y[4 * i_t:4 * i_t + 4]"}
+    assert d["inputs"] == {"a": "A[4 * m_1_t:4 * m_1_t + 4, n_t]"}
+    assert d["outputs"] == {"out": "y[4 * m_1_t:4 * m_1_t + 4]"}

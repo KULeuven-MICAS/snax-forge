@@ -19,24 +19,28 @@ name) stay in the transform.
 
 ``split(map, factor)`` and ``split_map(map, factor)``
     ``split`` splits a map ``v`` over ``b:e`` (step 1, no ``loop.kind``) into
-    an outer map ``v_1`` over ``0:(e - b) // factor``, keeping the map's id
-    and attrs and recording the split (``loop.split``), around an inner map
-    ``<id>_inner`` with ``v_2`` over ``0:factor``, both untagged, neutral
-    names that suggest no tag (D73); a later split takes the next free pair,
-    ``v_3`` and ``v_4``, then ``v_5`` and ``v_6``; every use of ``v`` in
-    the body becomes ``b + factor * v_1 + v_2``. A length n that is not a
-    multiple of the factor (D144) runs ``v_1`` over ceil(n / factor) and
+    an outer map over ``0:(e - b) // factor``, keeping the map's id
+    and attrs and recording the split (``loop.split``, with the record it
+    had before as ``prior`` when it was split before), around an inner map
+    ``<id>_inner`` over ``0:factor``, both untagged (D73). The variables follow
+    dfg/loops.py's rule: the map keeps its piece k of its dimension, the inner
+    map is piece k + 1, the pieces below move down one, and every variable of
+    the dimension is named again (``n`` -> ``n_1``, ``n_2``; ``n_2`` split ->
+    ``n_1``, ``n_2``, ``n_3``); every use of ``v`` in the body becomes
+    ``b + factor * v_1 + v_2`` on the two pieces. A length n that is not a
+    multiple of the factor (D144) runs the outer piece over ceil(n / factor) and
     records n in ``loop.split`` (``valid``): only the lanes with
     ``factor * v_1 + v_2`` below n are the kernel's, the rest pad lanes
     (dfg/pad.py), which the reference executor neither reads nor writes and
     the containers hold in memory as padding. ``split_map`` is ``split``,
     then ``tag_map`` ``temporal`` on the outer map and ``spatial`` on the
-    inner, in one step, with the names of the tags it gives: ``v_t``,
-    ``v_s`` and ``<id>_s`` (``SPLIT_TAGGED``), which the recipes bind and
-    compose.py's ``split_reduce`` uses too.
+    inner, in one step: ``n_1_t``, ``n_2_s`` and the inner id ``<id>_s``
+    (``SPLIT_TAGGED``), which the recipes bind and compose.py's
+    ``split_reduce`` uses too.
 ``tag_map(map, kind)`` and ``untag_map(map)``
     ``tag_map`` tags an untagged map ``temporal``, ``tile`` or ``spatial`` as
-    it is, without splitting it (matadd's row map); a tagged map is an
+    it is, without splitting it (matadd's row map), its variable taking the
+    tag's suffix (``m_t``, ``m_tile``, ``m_s``); a tagged map is an
     error. ``untag_map`` removes the tag, whatever set it, but not from a map
     a bound unit is inside (unbind first).
 ``bind(node, brm, implementation, instance, params={})``
@@ -89,14 +93,20 @@ name) stay in the transform.
     it uses, one beat per T firings, T from ``named_rates`` (D102).
 ``unbind(node)`` and ``join_map(map)``
     the inverses: the subtree an accelerated node replaced, and the
-    map a split pair was split from (``loop.split``), whatever their tags,
-    so a graph at any step can go back to the imported one.
+    map a split pair was split from (``loop.split``, its ``prior`` record back),
+    whatever their tags, its inner piece gone and the pieces below it moved
+    up one (one piece left is the base again), so a graph at any step can go
+    back to the imported one; an index split wrote is put back as it was, any
+    other written back as ``k + c * v``. An inner piece split since is refused
+    (join it first), as is a child of another dimension (interchange_map it
+    back first).
 ``interchange_map(map, with)``
     two maps ``X`` and ``Y`` of one perfect nest (one inside the other, every
     map from the outer down to the inner one's parent holding exactly one
     map and nothing else) trade places in it, each keeping its id, variable,
     range and attrs (its tag among them); the maps between them and the
-    inner one's body stay where they are. Adjacent or not, either may be the
+    inner one's body stay where they are, each its dimension's piece and name
+    (dfg/loops.py). Adjacent or not, either may be the
     innermost map. The pair again, in either order, undoes it. rowsum's lane
     accumulator puts the spatial row map inside the column map this way
     (``{"map": "sum_map_s", "with": "sum_map_1"}``). ``with`` is a Python
@@ -127,6 +137,7 @@ name) stay in the transform.
 
 from __future__ import annotations
 
+import ast
 import copy
 import itertools
 from collections.abc import Callable, Iterator, Mapping
@@ -144,6 +155,7 @@ from snax_forge.dfg import (
     Graph,
     Memlet,
     Node,
+    loops,
     named_rates,
     parse_dim,
 )
@@ -266,10 +278,7 @@ def _map_dims(body: list[Node], fn: Callable[[Any], Any], splits: bool = False) 
         if n.kind == "map":
             n.attrs["range"] = fn(n.attrs["range"])
             if splits and n.attrs.get("loop.split"):
-                split = n.attrs["loop.split"]
-                n.attrs["loop.split"] = {**split, "range": fn(split["range"])}
-                if "valid" in split:
-                    n.attrs["loop.split"]["valid"] = fn(split["valid"])
+                n.attrs["loop.split"] = loops.split_record(n.attrs["loop.split"], fn)
         if n.kind == "accelerated" and n.attrs.get("replaced"):
             old = Node.from_dict(n.attrs["replaced"], n.id)
             _map_dims([old], fn, splits)
@@ -325,10 +334,10 @@ def _split_site(g: Graph, map: str, what: str) -> dict[str, Any]:
     return {"map": map}
 
 
-# The suffixes of a split's outer variable, inner variable and inner map id: ``split``'s
-# neutral ones and ``split_map``'s (and ``split_reduce``'s), which tag in the same step (D73).
-SPLIT_NEUTRAL = ("_1", "_2", "_inner")
-SPLIT_TAGGED = ("_t", "_s", "_s")
+# The suffix of a split's inner map id: ``split``'s neutral one and ``split_map``'s (and
+# ``split_reduce``'s), which tags in the same step (D73). The variables follow loops.py's rule.
+SPLIT_NEUTRAL = "_inner"
+SPLIT_TAGGED = "_s"
 
 
 def split(g: Graph, map: str, factor: int) -> Graph:
@@ -340,10 +349,16 @@ def split_map(g: Graph, map: str, factor: int) -> Graph:
     return tag_map(tag_map(g, map, "temporal"), inner, "spatial")
 
 
-def _split(g: Graph, map: str, factor: int, what: str,
-           names: tuple[str, str, str]) -> tuple[Graph, str]:  # fmt: skip
-    """``split`` with ``names`` (outer var, inner var, inner id suffixes): the graph and the
-    inner map's id."""
+def _named(g: Graph) -> Graph:
+    """``g`` with every variable named by loops.py's rule, as a new valid graph."""
+    loops.rename(g)
+    return _result(g)
+
+
+def _split(g: Graph, map: str, factor: int, what: str, suffix: str) -> tuple[Graph, str]:
+    """``split`` with the inner map id's ``suffix``: the graph and the inner map's id. The map
+    keeps its piece k of its dimension, the inner map is piece k + 1, the pieces below move
+    down one (loops.py)."""
     _split_site(g, map, what)
     if type(factor) is not int or factor < 1:
         raise SandboxError(f"{what}: factor {factor!r} must be a positive int")
@@ -355,23 +370,16 @@ def _split(g: Graph, map: str, factor: int, what: str,
     n = _bound(g, length, what)
     tail = n % factor != 0
     var = node.attrs["var"]
-    taken = (
-        set(g.symbols)
-        | set(g.containers)
-        | {nd.attrs["var"] for nd, _ in g.walk() if nd.kind == "map"}
-    )
-    if names == SPLIT_NEUTRAL:  # the next free pair: v_1 and v_2, then v_3 and v_4, ... (D73)
-        k = 1
-        while f"{var}_{k}" in taken or f"{var}_{k + 1}" in taken:
-            k += 2
-        var_t, var_s = f"{var}_{k}", f"{var}_{k + 1}"
-    else:
-        var_t, var_s = fresh(f"{var}{names[0]}", taken), fresh(f"{var}{names[1]}", taken)
+    taken = _names(g)
+    var_t, var_s = fresh(f"{var}_1", taken), fresh(f"{var}_2", taken)  # named below
+    loops.ensure(node)
+    dim, k = node.attrs[loops.DIM], node.attrs[loops.PIECE]
+    loops.renumber(g, node, k, 1)
     ids = {nd.id for nd, _ in g.walk()}
     inner = Node(
-        fresh(f"{map}{names[2]}", ids),
+        fresh(f"{map}{suffix}", ids),
         "map",
-        attrs={"var": var_s, "range": f"0:{factor}"},
+        attrs={"var": var_s, "range": f"0:{factor}", loops.DIM: dim, loops.PIECE: k + 1},
         body=node.body,
     )
     start = "" if begin == 0 else f"{begin} + "
@@ -380,6 +388,8 @@ def _split(g: Graph, map: str, factor: int, what: str,
     split = {"var": var, "range": node.attrs["range"]}  # for join_map
     if tail:  # the lanes past n are padding
         split["valid"] = expr.canonical(length)
+    if node.attrs.get("loop.split"):  # split before: join_map gives its record back
+        split["prior"] = node.attrs["loop.split"]
     node.attrs = {
         "var": var_t,
         "range": format_dim((0, expr.canonical(firings), 1)),
@@ -387,7 +397,13 @@ def _split(g: Graph, map: str, factor: int, what: str,
         "loop.split": split,
     }
     node.body = [inner]
-    return _result(g), inner.id
+    return _named(g), inner.id
+
+
+def _names(g: Graph) -> set[str]:
+    """The symbols, containers and map variables of ``g``: what a new name must avoid."""
+    return set(g.symbols) | set(g.containers) | {n.attrs["var"] for n, _ in g.walk()
+                                                  if n.kind == "map"}  # fmt: skip
 
 
 # =============================================================================
@@ -412,13 +428,14 @@ def tag_map(g: Graph, map: str, kind: str) -> Graph:
         raise SandboxError(f"{what}: kind {kind!r} is not one of {list(TAGS)}")
     g = _copy(g)
     node = g.node(map)
+    loops.ensure(node)
     attrs: dict[str, Any] = {}
     for k, v in node.attrs.items():  # the kind before loop.split, as split_map writes them
         if k == "loop.split":
             attrs["loop.kind"] = kind
         attrs[k] = v
     node.attrs = {**attrs, "loop.kind": kind}
-    return _result(g)
+    return _named(g)
 
 
 def _untag_site(g: Graph, map: str, what: str) -> dict[str, Any]:
@@ -439,8 +456,9 @@ def untag_map(g: Graph, map: str) -> Graph:
     _untag_site(g, map, f"untag_map {map!r}")
     g = _copy(g)
     node = g.node(map)
+    loops.ensure(node)
     node.attrs = {k: v for k, v in node.attrs.items() if k != "loop.kind"}
-    return _result(g)
+    return _named(g)
 
 
 # =============================================================================
@@ -965,6 +983,14 @@ def _join_site(g: Graph, map: str, what: str) -> dict[str, Any]:
     kids = outer.body or []
     if len(kids) != 1 or kids[0].kind != "map":
         raise SandboxError(f"{what}: its only child must be the inner map (unbind first)")
+    if kids[0].attrs.get("loop.split") is not None:
+        raise SandboxError(f"{what}: its inner piece {kids[0].id!r} was split since (join_map "
+                           f"{kids[0].id!r} first)")  # fmt: skip
+    dim, inner = outer.attrs.get(loops.DIM), kids[0].attrs.get(loops.DIM)
+    if dim is not None and inner != dim:
+        raise SandboxError(f"{what}: its only child {kids[0].id!r} is a piece of {inner!r}, not "
+                           f"of {dim!r}; join_map joins a map and its inner piece "
+                           "(interchange_map them back first)")  # fmt: skip
     return {"map": map}
 
 
@@ -973,10 +999,13 @@ def join_map(g: Graph, map: str) -> Graph:
 
     Needs ``loop.split`` (the var and range before the split) and the
     inner map as the outer map's only child, whatever their tags; the
-    joined map has none. Every index under it is
-    written back over the old variable: an index ``k + c * (b + f * v_t + v_s)``
-    that split wrote becomes ``k + c * v``; an index in another form is
-    an error, since it is not what split wrote.
+    joined map has none, and takes back its record before (``prior``). Every
+    index under it is written back over the old variable: split's own
+    ``b + f * v_t + v_s`` wherever it still stands becomes ``v`` (the text
+    before the split), and any other index affine in the two, ``k + c * (b + f
+    * v_t + v_s)`` (one a later transform rewrote), becomes ``k + c * v``; an
+    index in another form is an error, since it is not what split wrote. The
+    variables are then named again by dfg/loops.py's rule.
     """
     what = f"join_map {map!r}"
     _join_site(g, map, what)
@@ -985,13 +1014,21 @@ def join_map(g: Graph, map: str) -> Graph:
     outer = body[i]
     split = outer.attrs["loop.split"]
     (inner,) = outer.body
-    v_t, v_s, var = outer.attrs["var"], inner.attrs["var"], split["var"]
+    v_t, v_s = outer.attrs["var"], inner.attrs["var"]
+    named = loops.DIM in outer.attrs  # renamed by the rule below, else the recorded name
+    var = fresh(f"{split['var']}_joined", _names(g)) if named else split["var"]
     begin, _, _ = parse_dim(split["range"], what)
     b0, factor, step = parse_dim(inner.attrs["range"], what)
     if b0 != 0 or step != 1 or type(factor) is not int:
         raise SandboxError(f"{what}: the inner map must run over 0:<int>")
 
+    start = "" if begin == 0 else f"{begin} + "
+    wrote = ast.dump(ast.parse(f"{start}{factor} * {v_t} + {v_s}", mode="eval").body)
+
     def back(part: Any) -> Any:
+        exact = _unsplit(part, wrote, var, {v_t, v_s})
+        if exact is not None:  # split's own expression, as it wrote it: the old text
+            return exact
         try:
             const, co = expr.linear(part, [v_t, v_s])
         except ExprError as e:
@@ -1013,13 +1050,31 @@ def join_map(g: Graph, map: str) -> Graph:
         return format_dim(tuple(back(p) for p in parse_dim(d, what)))
 
     _map_dims(inner.body or [], back_dim)
-    rest = {
-        k: v for k, v in outer.attrs.items() if k not in ("var", "range", "loop.kind", "loop.split")
-    }
+    prior = split.get("prior")  # the record before this split, where it was
+    rest = {k: prior if k == "loop.split" else v for k, v in outer.attrs.items()
+            if k not in ("var", "range", "loop.kind") and (k != "loop.split" or prior)}  # fmt: skip
     body[i] = Node(
         outer.id, "map", attrs={"var": var, "range": split["range"], **rest}, body=inner.body
     )
-    return _result(g)
+    if named:  # the inner piece is gone: the pieces below it move up one
+        loops.renumber(g, body[i], inner.attrs.get(loops.PIECE, 0), -1)
+    return _named(g)
+
+
+def _unsplit(part: Any, wrote: str, var: str, gone: set[str]) -> Any | None:
+    """``part`` with every sub-expression that is split's (``wrote``, an ``ast.dump``) put back
+    as ``var``, or None when a split variable is left (an index another transform rewrote)."""
+    if type(part) is int:
+        return part
+
+    class Back(ast.NodeTransformer):
+        def visit(self, node: ast.AST) -> ast.AST:
+            if ast.dump(node) == wrote:
+                return ast.Name(var, ast.Load())
+            return super().visit(node)
+
+    text = expr.canonical(ast.unparse(Back().visit(ast.parse(str(part), mode="eval").body)))
+    return None if dim_names(text) & gone else text
 
 
 # =============================================================================
