@@ -81,16 +81,18 @@ def test_a_failing_forge_stops_the_set(tmp_path, stubbed, capsys):
 
 
 def test_the_full_set_holds_the_quick_one():
-    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 17
-    assert fs.SETS["full"][-2] == fs.Design("relu") and fs.Design("relu") not in fs.QUICK
+    assert fs.SETS["full"][: len(fs.QUICK)] == fs.QUICK and len(fs.SETS["full"]) == 18
+    assert fs.SETS["full"][-3] == fs.Design("relu") and fs.Design("relu") not in fs.QUICK
 
 
 def test_a_design_carries_its_own_sets():
-    """rowsum_2 runs with the padded_rows layout: forge gets the --set, and the design is named
-    as forge names its folders (flow/run.py's default_name)."""
-    rowsum_2 = fs.SETS["full"][-1]
-    assert rowsum_2 == fs.Design("rowsum_2", ("memory.passes.layout=padded_rows",))
-    assert rowsum_2.name == "rowsum_2_passes.layoutpadded_rows"
+    """rowsum_2 runs at its defaults (contiguous) and with the padded_rows layout: forge gets
+    the --set, and the design is named as forge names its folders (flow/run.py's
+    default_name)."""
+    flat, padded = fs.SETS["full"][-2:]
+    assert flat == fs.Design("rowsum_2") and flat.name == "rowsum_2"
+    assert padded == fs.Design("rowsum_2", ("memory.passes.layout=padded_rows",))
+    assert padded.name == "rowsum_2_passes.layoutpadded_rows"
     assert fs.Design("relu").name == "relu"
 
 
@@ -106,7 +108,7 @@ def test_the_full_set_passes_each_designs_sets_to_forge(tmp_path, stubbed, monke
     assert fs.main(["full", "-j", "4"]) == 0
     assert sorted(d.name for d in calls) == sorted(d.name for d in fs.SETS["full"])
     text = (tmp_path / "out" / "forge-set" / "full.md").read_text()
-    assert "| rowsum_2_passes.layoutpadded_rows | " in text
+    assert "| rowsum_2 | " in text and "| rowsum_2_passes.layoutpadded_rows | " in text
     assert "  rowsum_2_passes.layoutpadded_rows passed" in capsys.readouterr().out
 
 

@@ -63,8 +63,9 @@ PER_LINE = 8
 class Array:
     """One C array of data.h: ``role`` is ``input``, ``output`` or ``golden``; ``values`` are
     the container in its ``padded`` shape (row-major, a tail's pads holding the pad value,
-    D144), then zeros to ``len(values)``; ``elements`` counts the container's own, the
-    ``shape`` it has (the valid elements, which the self-check compares)."""
+    D144, a pitched row's gap zero, ``padded_rows``), then zeros to ``len(values)``;
+    ``elements`` counts the container's own, the ``shape`` it has (the valid elements, which
+    the self-check compares)."""
 
     name: str
     container: str
@@ -125,13 +126,13 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
         t = ctype(cont.dtype, f"container {c}")
         size = np.dtype(cont.dtype).itemsize
         lay, shape = point.memory.layouts[c]["l2"], padded_shape(graph, c)
-        block = over(lay, shape)  # a tail's pads included
-        if block != Layout.contiguous(lay.base, shape, size):
+        block = over(lay, shape)  # a tail's pads and a pitched row's included
+        if block != Layout.contiguous(lay.base, block.shape, size):
             raise GenError(
                 "gen.layout", f"{c}'s L2 layout {lay} is not its {size}-byte elements in order"
             )
         padded = l2_bytes(point, c) // size
-        pad = (shape, pad_value(graph, c))
+        pad = (shape, pad_value(graph, c), block.shape)
         if c in spec.inout:  # make_inputs' value when it gives one: an in-place update
             start = inputs[c] if c in inputs else np.zeros(lay.shape, cont.dtype)
             out.append(_array(c, c, "output", t, start, padded, beat, *pad))
@@ -148,17 +149,21 @@ def arrays(point: DesignPoint, seed: int = 0, kernel: str | None = None,
 
 def _array(
     name: str, c: str, role: str, t: str, values: np.ndarray, padded: int, align: int,
-    shape: tuple[int, ...] | None = None, pad: int = 0,
+    shape: tuple[int, ...] | None = None, pad: int = 0, pitched: tuple[int, ...] | None = None,
 ) -> Array:  # fmt: skip
     """The array of ``values``: laid out in ``shape`` (the padded one; ``values``' own when
-    None), its pads ``pad``, then zeros to ``padded`` elements (whole DMA beats)."""
+    None), its pads ``pad``, in rows of ``pitched`` (the layout's block, ``over``: a pitched
+    row's gap zeros; ``shape`` when None), then zeros to ``padded`` elements (whole DMA
+    beats)."""
     values = np.asarray(values)
     shape = values.shape if shape is None else tuple(shape)
-    block = np.full(shape, pad, dtype=values.dtype)
-    block[tuple(slice(0, n) for n in values.shape)] = values
+    tail = np.full(shape, pad, dtype=values.dtype)
+    tail[tuple(slice(0, n) for n in values.shape)] = values
+    block = np.zeros(shape if pitched is None else tuple(pitched), dtype=values.dtype)
+    block[tuple(slice(0, n) for n in shape)] = tail
     flat = [int(v) for v in block.reshape(-1)]
     return Array(name, c, role, t, values.size, tuple(flat + [0] * (padded - len(flat))), align,
-                 tuple(values.shape), shape)  # fmt: skip
+                 tuple(values.shape), tuple(block.shape))  # fmt: skip
 
 
 def literal(v: int, t: str) -> str:

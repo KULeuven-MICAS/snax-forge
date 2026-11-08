@@ -199,3 +199,87 @@ def test_context_sizes():
     c = ctx()
     assert c.memories == ["l2", "l1"] and c.shape("A") == (64,)
     assert c.span("l1") == (0, 8192) and c.span("l2") == (0, 32768) and c.beat_bytes == 64
+
+
+# =============================================================================
+# 4. padded_rows: rows an odd number of words apart (rowsum 2's lane accumulator)
+# =============================================================================
+
+PADDED = MemorySpec().with_changes([("passes.layout", "padded_rows")])
+
+
+def rowsum_2(spec: MemorySpec | None = None, **params: int):
+    """rowsum_2 bound by its recipe (W 4, M 8, N 64 unless given) as a Design under ``spec``,
+    its checks run (they make the plan)."""
+    from snax_forge.design import Design, Platform, run_checks
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from tests.helpers import imported, recipe_path
+
+    from .helpers import SNAX_FORGE
+
+    r = Recipe.load(recipe_path("rowsum_2")).with_params(params)
+    g = apply_recipe(r, imported("rowsum"))[-1].graph
+    d = Design(Platform.load(SNAX_FORGE), g, memory_spec=spec or MemorySpec())
+    assert run_checks(d) == []
+    return d
+
+
+@pytest.mark.parametrize(
+    "spec, stride, words",
+    [(MemorySpec(), 512, 64), (PADDED, 520, 65)],
+    ids=["contiguous", "padded_rows"],
+)  # fmt: skip
+def test_rowsum_2s_layout_with_and_without_padded_rows(spec, stride, words):
+    """A, 8 x 64 int64: rows 64 words apart, or 65 under padded_rows, in L2 and L1 alike; its
+    block 8 x 64 or 8 x 65 words, 4096 or 4160 B, 64 or 65 beats, all moved; y, 1-D, as it was,
+    placed after A's block."""
+    from snax_forge.lower.layout import moved_bytes
+
+    d = rowsum_2(spec)
+    ctx, lays = d.context(), d.memory.layouts
+    for m in ("l2", "l1"):
+        assert (lays["A"][m].shape, lays["A"][m].strides) == ((8, 64), (stride, 8))
+        assert (lays["y"][m].shape, lays["y"][m].strides) == ((8,), (8,))
+    block = ctx.block("A", lays["A"]["l1"])
+    assert block.shape == (8, words) and block.extent(8)[1] - block.base == 8 * words * 8
+    assert moved_bytes(block, 8, ctx.beat_bytes) == 8 * words * 8 == 64 * words
+    assert lays["y"]["l1"].base - lays["A"]["l1"].base == 64 * words
+    assert d.memory.passes["layout"] == ("padded_rows" if spec is PADDED else "contiguous")
+
+
+@pytest.mark.parametrize(
+    "spec, banks", [(MemorySpec(), [0, 0, 0, 0]), (PADDED, [0, 1, 2, 3])],
+    ids=["R=64", "R=65"],
+)  # fmt: skip
+def test_each_lanes_first_read_one_bank_at_64_distinct_at_65(spec, banks):
+    """The lanes read down a column, A[4 i_t + w, j]: rows R words apart put lane w in bank
+    (w R + j) mod 32, all one bank at R = 64, w + j at R = 65 (L1's 32 banks)."""
+    d = rowsum_2(spec)
+    ctx = d.context()
+    (a,) = [x for x in ctx.accesses if x.connector == "a"]
+    lay, word, n = d.memory.layouts["A"]["l1"], ctx.word_bytes("l1"), d.platform.l1.n_banks
+    assert n == 32
+    first = (lay.address(a.indices[0]) - lay.base) // word % n
+    assert first.tolist() == banks
+    every = (lay.address(a.indices) - lay.base) // word % n  # every beat: the same story
+    assert all(len(set(beat)) == (4 if spec is PADDED else 1) for beat in every.tolist())
+
+
+def test_vecadd_under_padded_rows_is_unchanged():
+    """1-D containers keep contiguous."""
+    c = ctx()
+    assert plan(c, PADDED).layouts == plan(c, MemorySpec()).layouts
+
+
+def test_padded_rows_rounds_a_row_up_to_odd_words():
+    """An odd row stays (63 int64); a narrow dtype's row is counted in whole words: 64 int32
+    are 32 words, 63 int32 252 B, also 32; either becomes 33 words, 66 elements apart."""
+    from snax_forge.design.memory import padded_rows_layout
+
+    c = rowsum_2(N=63).context()
+    assert padded_rows_layout(c, {"A": ["l1"]})["A"]["l1"].strides == (504, 8)
+    c.graph.containers["A"].dtype = "int32"
+    assert padded_rows_layout(c, {"A": ["l1"]})["A"]["l1"].strides == (264, 4)
+    c = rowsum_2().context()
+    c.graph.containers["A"].dtype = "int32"
+    assert padded_rows_layout(c, {"A": ["l1"]})["A"]["l1"].strides == (264, 4)

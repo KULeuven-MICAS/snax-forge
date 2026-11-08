@@ -406,7 +406,7 @@ def test_a_pin_must_name_a_container_and_one_of_its_memories():
 def test_an_unknown_pass_is_named():
     (p,) = problems(with_memory([("passes.layout", "tiled")]))
     assert (p.code, p.where) == ("memory.pin", "memory.passes.layout")
-    assert "registered: ['contiguous']" in p.message
+    assert "registered: ['contiguous', 'padded_rows']" in p.message
 
 
 def test_memory_load_problems_are_reported(tmp_path):

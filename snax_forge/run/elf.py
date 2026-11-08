@@ -27,7 +27,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge.dfg.pad import padded_shape
-from snax_forge.lower.layout import l2_bytes
+from snax_forge.lower.layout import l2_bytes, over
 
 from .events import RunError
 
@@ -77,7 +77,8 @@ def l2_symbols(point: Any, symbols: dict[str, tuple[int, int]]) -> dict[str, dic
                            f"{name!r} (data.h declares it)")  # fmt: skip
         addr, size = symbols[name]
         if size != want:
-            n = int(np.prod(padded_shape(point.graph, name)))
+            block = over(point.memory.layouts[name]["l2"], padded_shape(point.graph, name))
+            n = int(np.prod(block.shape))  # a tail's pads and a pitched row's gap
             raise RunError("elf.size", f"container {name}: its symbol is {size} bytes, its "
                            f"{n} {point.graph.containers[name].dtype} elements padded to "
                            f"{beat}-byte beats are {want}")  # fmt: skip

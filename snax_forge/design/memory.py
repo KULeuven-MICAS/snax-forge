@@ -23,7 +23,10 @@ replace any one of them (``register_memory_pass``):
                                                          several narrow ones),
                                                          over the padded
                                                          shape (a tail's,
-                                                         D144)
+                                                         D144); padded_rows:
+                                                         rows an odd number
+                                                         of words apart
+                                                         (``padded_rows_layout``)
     placement   L1 base per container                    contiguous: in
                 the graph's container order, from L1's first
                 byte, no gaps; a layout the DMA moves (in L2 and L1) starts
@@ -373,8 +376,32 @@ def contiguous_placement(
     return bases
 
 
+def padded_rows_layout(
+    ctx: MemoryContext, residency: dict[str, list[str]]
+) -> dict[str, dict[str, Layout]]:
+    """``contiguous``, but every container of two or more dimensions has its rows (its last
+    dimension, over the padded shape) a whole odd number of words apart, the smallest at
+    least the row's: a column read by W lanes then falls in W distinct banks (bank count a
+    power of two). The dimensions before keep row-major over the pitched rows; the pad
+    elements are zero (gen/data.py), never read. In every memory the container lives in, L2
+    included, so the DMA copies one contiguous block (``lower.layout.over``)."""
+    out = contiguous_layout(ctx, residency)
+    for c, mems in out.items():
+        padded, elem = ctx.padded(c), ctx.elem_bytes(c)
+        if len(padded) < 2:
+            continue
+        for m, lay in mems.items():
+            word = ctx.word_bytes(m)
+            words = -(-padded[-1] * elem // word)  # the row in whole words
+            words += 1 - words % 2  # the smallest odd at least it
+            pitched = (*padded[:-1], words * word // elem)
+            mems[m] = Layout(0, lay.shape, Layout.contiguous(0, pitched, elem).strides)
+    return out
+
+
 register_memory_pass("residency", "default", default_residency)
 register_memory_pass("layout", "contiguous", contiguous_layout)
+register_memory_pass("layout", "padded_rows", padded_rows_layout)
 register_memory_pass("placement", "contiguous", contiguous_placement)
 
 
