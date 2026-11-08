@@ -87,7 +87,9 @@ worked out here:
                                                            ``acc · max(a, k) · W 4 · k 0``,
                                                            ``acc · k1 * a + b · W 4 · k1 csr(alpha)``)
     link         ``<container> · wire`` or ``<container> · FIFO <depth>``
-    container    its name, and a ``badge`` from the estimate's placement (``L1 · 4 KiB``,
+    container    its name with its shape over the kernel's symbols, ``A[M, N]`` (a matrix),
+                 ``y[M]`` (a vector), a scalar argument by its name alone, and a ``badge``
+                 from the estimate's placement (``L1 · 4 KiB``,
                  ``wire``, ``FIFO 1``); a fused nest's local value has no box (Links); a
                  kernel's scalar argument (``sdfg.scalar``, ``scalar``) is drawn as a parameter
                  hexagon, each edge reading it as one element labelled ``alpha[0] · broadcast``
@@ -1318,11 +1320,22 @@ def _node_details(n: Node) -> dict[str, Any]:
     return {"kind": n.kind, "attrs": dict(a), **io}
 
 
-def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
-    """A container as the drawing shows it: its name, its badge, whether it is transient."""
+def container_text(g: Graph, name: str) -> str:
+    """A container's text in its box: its name and shape, as the graph spells it over the
+    kernel's symbols (``A[M, N]``, ``y[M]``, a convolution's ``X[B, C, H, W]``); a kernel's
+    scalar argument by its name alone (``alpha``)."""
     c = g.containers[name]
-    return {"name": name, "text": name, "badge": badge(placed), "transient": c.transient,
-            "scalar": bool(c.attrs.get(SCALAR))}  # fmt: skip
+    if c.attrs.get(SCALAR):
+        return name
+    return f"{name}[{', '.join(str(d) for d in c.shape)}]"
+
+
+def _container(g: Graph, name: str, placed: Any = None) -> dict[str, Any]:
+    """A container as the drawing shows it: its name and shape, its badge, whether it is
+    transient."""
+    c = g.containers[name]
+    return {"name": name, "text": container_text(g, name), "badge": badge(placed),
+            "transient": c.transient, "scalar": bool(c.attrs.get(SCALAR))}  # fmt: skip
 
 
 def memlet_text(m: Memlet) -> str:

@@ -155,7 +155,7 @@ def test_vecadd_accelerated():
     }  # fmt: skip
     assert v["containers"]["A"] == {
         "name": "A",
-        "text": "A",
+        "text": "A[N]",
         "badge": "L1 · 512 B",
         "transient": False,
         "scalar": False,
@@ -990,6 +990,22 @@ def test_a_units_slots_show_csr_or_baked():
         (e,) = bindings_section(g, r)["entries"]
         assert [(p["name"], p["value"], p["editable"]) for p in e["params"]][-1] == (
             "k1", slot, False)  # fmt: skip
+
+
+def test_a_container_box_names_its_shape():
+    """A box reads the container's name and shape over the kernel's symbols: rowsum's A[M, N]
+    (a matrix) and y[M] (a vector); a scalar argument its name alone (axpy's alpha)."""
+    from snax_forge.viz.dfg.api import container_text
+    from tests.helpers import imported
+
+    g = imported("rowsum")
+    assert (container_text(g, "A"), container_text(g, "y")) == ("A[M, N]", "y[M]")
+    r, graphs = _axpy("axpy")
+    a = graphs[0]
+    assert [container_text(a, c) for c in ("alpha", "x", "y")] == ["alpha", "x[N]", "y[N]"]
+    (v,) = _views(r, graphs[:1])
+    assert {c: v["containers"][c]["text"] for c in ("alpha", "x", "y")} == {
+        "alpha": "alpha", "x": "x[N]", "y": "y[N]"}  # fmt: skip
 
 
 def test_a_baked_tasklet_reads_the_value():
