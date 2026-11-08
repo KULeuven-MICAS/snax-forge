@@ -6,7 +6,7 @@
  "steps": [
   {"transform": "split_map", "params": {"map": "sum_map", "factor": "W"}},
   {"transform": "tag_map", "params": {"map": "sum_map_1", "kind": "temporal"}},
-  {"transform": "interchange_map", "params": {"map": "sum_map_s"}},
+  {"transform": "interchange_map", "params": {"map": "sum_map_s", "with": "sum_map_1"}},
   {
    "transform": "bind",
    "params": {

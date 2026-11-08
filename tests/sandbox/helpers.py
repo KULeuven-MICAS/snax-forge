@@ -16,7 +16,6 @@ the first's names to the second's on the same graph, and ``renamed`` a graph's t
 
 from __future__ import annotations
 
-import inspect
 import json
 import re
 from functools import cache
@@ -82,9 +81,12 @@ def default_calls(g: Graph, name: str, selected: str) -> list[dict[str, Any]]:
     """``name``'s params for ``selected``, the user's at DEFAULTS; bind once per library BRM
     and implementation; fuse_map's ``second`` the next sibling, if any."""
     params: dict[str, Any] = {}
-    for p in list(inspect.signature(TRANSFORMS[name].fn).parameters)[1:]:
+    for p in TRANSFORMS[name].param_names():
         if p == SELECTED[name]:
             params[p] = [selected] if p == "units" else selected
+        elif p == "with":  # interchange_map: the first other map, any
+            maps = [n.id for n, _ in g.walk() if n.kind == "map" and n.id != selected]
+            params[p] = maps[0] if maps else selected
         elif p == "second":
             try:
                 body, k, _ = _locate(g, selected)

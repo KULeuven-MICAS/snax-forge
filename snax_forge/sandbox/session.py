@@ -922,7 +922,6 @@ def form(
     units (the instances in no accelerator, in the graph's order, the selection's ticked),
     ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in ``inputs``: the session gives
     the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``)."""
-    import inspect
 
     from snax_forge.common import fresh
 
@@ -932,7 +931,7 @@ def form(
     filled = answer["params"]
     selection = next(iter(filled), None)
     fields: list[dict[str, Any]] = []
-    for p in list(inspect.signature(spec.fn).parameters)[1:]:
+    for p in spec.param_names():
         field: dict[str, Any] = {"name": p, "type": "str", "sweepable": p in spec.ints,
                                  "value": filled.get(p), "readonly": p == selection}  # fmt: skip
         if p in spec.ints:
@@ -948,6 +947,8 @@ def form(
                 "value": value,
                 "hint": "an int baked into the hardware, or csr: read at run time from a CSR",
             }
+        elif name == "interchange_map" and p == "with":  # every map above and below it
+            field |= _partner_field(g, filled["map"])
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
@@ -980,6 +981,26 @@ def form(
             field["value"] = fresh(g.name, taken)
         fields.append(field)
     return fields
+
+
+def _partner_field(g: Graph, map: str) -> dict[str, Any]:
+    """interchange_map's ``with``: a choice per map above and below ``map`` in its nest, top to
+    bottom, one it cannot trade with not ``ok`` with its refusal (as bind's list marks a BRM
+    that does not fit); the default the nearest that can, the one below on a tie."""
+    from .transforms import _locate, partners
+
+    _, _, around = _locate(g, map)
+    above = {o.id: len(around) - k for k, o in enumerate(around) if o.kind == "map"}
+    depth = {n.id: len(outer) - len(around) for n, outer in g.walk()}
+    choices = []
+    for pid, why in partners(g, map):
+        where = "above" if pid in above else "below"
+        choices.append({"value": pid, "label": f"{pid} ({where})", "ok": why is None,
+                        "message": why})  # fmt: skip
+    ok = [c["value"] for c in choices if c["ok"]]
+    dist = {pid: above[pid] if pid in above else depth[pid] for pid in ok}
+    best = min(ok, key=lambda pid: (dist[pid], pid in above), default=None)
+    return {"type": "choice", "readonly": False, "value": best, "choices": choices}
 
 
 def _timing(inst: Any) -> dict[str, int]:

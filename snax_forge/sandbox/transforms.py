@@ -91,18 +91,26 @@ name) stay in the transform.
     the inverses: the subtree an accelerated node replaced, and the
     map a split pair was split from (``loop.split``), whatever their tags,
     so a graph at any step can go back to the imported one.
-``interchange_map(map)``
-    a map ``X`` whose body is one map ``Y`` and nothing else trades places
-    with it: ``Y`` becomes the parent, ``X`` its only child, and ``Y``'s
-    body ``X``'s; each keeps its id, variable, range and attrs (its tag
-    among them). Applied to ``Y`` it undoes itself. rowsum's lane
-    accumulator puts the spatial row map inside the column map this way.
-    Refused, naming what it found: a body other than one map; a range that
-    names the other's variable; ``X`` inside an accelerated node or a bound
-    unit under ``Y`` (unbind first); ``X`` or ``Y`` a fused nest's outer map
-    (``loop.fused``: unfuse_map first); a fold under ``Y`` over ``X``'s
-    variable whose op is not order-free (dfg/reduce.py's ``order_free``;
-    every registered op is, D28).
+``interchange_map(map, with)``
+    two maps ``X`` and ``Y`` of one perfect nest (one inside the other, every
+    map from the outer down to the inner one's parent holding exactly one
+    map and nothing else) trade places in it, each keeping its id, variable,
+    range and attrs (its tag among them); the maps between them and the
+    inner one's body stay where they are. Adjacent or not, either may be the
+    innermost map. The pair again, in either order, undoes it. rowsum's lane
+    accumulator puts the spatial row map inside the column map this way
+    (``{"map": "sum_map_s", "with": "sum_map_1"}``). ``with`` is a Python
+    keyword, so the function is ``interchange(g, map, partner)`` under a
+    registration that names its params (``TransformSpec.params``). Refused,
+    naming the map: not in one nest or not a perfect one; after the swap a
+    range naming the variable of a map then inside it (a range names only the
+    variables of the maps around it); the pair inside an accelerated node or
+    a bound unit under the inner one (unbind first); a fused nest's outer map
+    in the chain (``loop.fused``: unfuse_map first); a fold under them whose op
+    is not order-free (dfg/reduce.py's ``order_free``; every registered op is,
+    D28) over two or more of the chain's maps, one of them moved (the order of
+    its writes would change). The site takes a map with at least one partner
+    (``partners``: every map above and below it, each with its refusal).
 ``encapsulate(accelerator, units)`` and ``unencapsulate(accelerator)``
     put the groups of the instances ``units`` into one accelerator of that
     name (D148): every accelerated node of each carries ``accelerator``. A
@@ -160,6 +168,17 @@ class TransformSpec:
     # the inputs the step fixes, {container: array} from (graph, **params): its reference check
     # runs the graph before it and after it on them (run.py's checked_step; bake_scalar's value)
     fixes: Callable[..., dict[str, Any]] | None = None
+    # the params the user gives, in order, when the function cannot name them (a keyword:
+    # interchange_map's ``with``); otherwise its signature's after the graph (``param_names``)
+    params: tuple[str, ...] | None = None
+
+    def param_names(self) -> list[str]:
+        """The params a step gives, in order."""
+        if self.params is not None:
+            return list(self.params)
+        import inspect
+
+        return list(inspect.signature(self.fn).parameters)[1:]
 
 
 TRANSFORMS: dict[str, TransformSpec] = {}
@@ -172,13 +191,15 @@ def register_transform(
     site: Site | None = None,
     multi: MultiSite | None = None,
     fixes: Callable[..., dict[str, Any]] | None = None,
+    params: tuple[str, ...] | None = None,
 ) -> None:
     """Make ``{"transform": name}`` usable in a recipe (principle 6), with its site (D72),
     for a transform that takes several items its site over a selection (``multi``), and for
-    one that fixes an input (``bake_scalar``) the inputs it fixes (``fixes``)."""
+    one that fixes an input (``bake_scalar``) the inputs it fixes (``fixes``), and for one whose
+    params a Python signature cannot name (a keyword) its params (``params``)."""
     if name in TRANSFORMS:
         raise ValueError(f"transform {name!r} already registered")
-    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi, fixes)
+    TRANSFORMS[name] = TransformSpec(fn, tuple(ints), site, multi, fixes, params)
 
 
 def site_of(name: str, g: Graph, selected: str | list[str]) -> dict[str, Any]:
@@ -501,10 +522,15 @@ def _bind_site(g: Graph, node: str, what: str) -> _Site:
         kind = m.attrs.get("loop.kind")
         if kind == "tile":
             raise SandboxError(f"{what}: map {m.id!r} is a tile; tiles are not lowered yet (LOW3b)")
-        if kind != "temporal":
+        if kind is None:
             raise SandboxError(
                 f"{what}: map {m.id!r} around it is untagged; the maps around the spatial map are "
                 "its firing loops: tag it temporal with tag_map"
+            )
+        if kind != "temporal":
+            raise SandboxError(
+                f"{what}: map {m.id!r} around it is {kind}; the maps around the spatial map are "
+                "its firing loops, temporal: untag_map it, then tag_map it temporal"
             )
     return _Site(tasklet, pattern_node, smap, temporal)
 
@@ -1001,45 +1027,101 @@ def join_map(g: Graph, map: str) -> Graph:
 # =============================================================================
 
 
-def _interchange_site(g: Graph, map: str, what: str) -> dict[str, Any]:
-    """A map whose body is one map, the two free to trade places: neither range names the
-    other's variable, no accelerated node around or under them, neither a fused nest's map,
-    and no fold under them over the outer map with an op whose result depends on the order."""
-    body, i, outer = _locate(g, map)
-    x = body[i]
-    if x.kind != "map":
-        raise SandboxError(f"{what}: a {x.kind!r} is not a map")
-    kids = x.body or []
-    if len(kids) != 1 or kids[0].kind != "map":
-        held = ", ".join(f"the {k.kind} {k.id!r}" for k in kids) or "nothing"
-        raise SandboxError(f"{what}: its body must be one map and nothing else; it holds {held}")
-    (y,) = kids
-    for a, b in ((x, y), (y, x)):
-        if b.attrs["var"] in dim_names(a.attrs["range"]):
-            raise SandboxError(f"{what}: {a.id}'s range {a.attrs['range']} names {b.id}'s "
-                               f"variable {b.attrs['var']!r}; the two cannot trade places")  # fmt: skip
-    for o in outer:
+def _nest(g: Graph, x_id: str, y_id: str, what: str) -> tuple[tuple[Node, ...], list[Node]]:
+    """The perfect nest from the outer of the two maps down to the inner one: the nodes around
+    its top and the chain, top first, each map but the last holding exactly one map."""
+    if x_id == y_id:
+        raise SandboxError(f"{what}: a map trades places with another map, not with itself")
+    x, y = _map_node(g, x_id, what), _map_node(g, y_id, what)
+    _, _, around_x = _locate(g, x_id)
+    _, _, around_y = _locate(g, y_id)
+    if any(o is x for o in around_y):
+        top, bottom, around = x, y, around_x
+    elif any(o is y for o in around_x):
+        top, bottom, around = y, x, around_y
+    else:
+        raise SandboxError(f"{what}: not in one nest, neither map is inside the other")
+    chain = [top]
+    while chain[-1] is not bottom:
+        kids = chain[-1].body or []
+        if len(kids) != 1 or kids[0].kind != "map":
+            held = ", ".join(f"the {k.kind} {k.id!r}" for k in kids)
+            raise SandboxError(f"{what}: not one perfect nest: {chain[-1].id!r} holds {held}; "
+                               f"every map from {top.id!r} down to {bottom.id}'s parent holds "
+                               "one map and nothing else")  # fmt: skip
+        chain.append(kids[0])
+    return around, chain
+
+
+def _interchange_check(g: Graph, x_id: str, y_id: str, what: str) -> list[Node]:
+    """The two maps free to trade places (module doc): the chain from the outer to the inner."""
+    around, chain = _nest(g, x_id, y_id, what)
+    top, bottom = chain[0], chain[-1]
+    for o in around:
         if o.kind == "accelerated":
-            raise SandboxError(f"{what}: it is inside the accelerated node {o.id!r} (unbind "
-                               "first)")  # fmt: skip
-    under = list(_nodes_under(y.body or []))
+            raise SandboxError(f"{what}: inside the accelerated node {o.id!r} (unbind first)")
+    under = list(_nodes_under(bottom.body or []))
     for n in under:
         if n.kind == "accelerated":
-            raise SandboxError(f"{what}: the bound unit {n.id!r} is inside it (unbind first)")
-    for m in (x, y):
+            raise SandboxError(f"{what}: the bound unit {n.id!r} is inside {bottom.id!r} (unbind "
+                               "first)")  # fmt: skip
+    for m in chain:
         if m.attrs.get("loop.fused") is not None:
             raise SandboxError(f"{what}: {m.id!r} is a fused nest's outer map (unfuse_map "
                                "first)")  # fmt: skip
-    var = x.attrs["var"]
+    after = [bottom, *chain[1:-1], top]
+    for i, m in enumerate(after):
+        for inner in after[i:]:
+            if inner.attrs["var"] in dim_names(m.attrs["range"]):
+                raise SandboxError(f"{what}: after the swap {m.id}'s range {m.attrs['range']} "
+                                   f"would name {inner.id}'s variable {inner.attrs['var']!r}, a "
+                                   "map then inside it; a range names only the variables of the "
+                                   "maps around it")  # fmt: skip
+    moved = {top.attrs["var"], bottom.attrs["var"]}
     for n in under:
         for c, m in n.outputs.items():
             red = m.reduce
-            if red is not None and var not in m.names and not REDUCE_OPS[red.op].order_free:
+            if red is None or REDUCE_OPS[red.op].order_free:
+                continue
+            over = [lp.attrs["var"] for lp in chain if lp.attrs["var"] not in m.names]
+            if len(over) >= 2 and moved & set(over):
                 raise SandboxError(
-                    f"{what}: {n.id}'s {c} folds over {var!r} with {red.op!r}, whose result "
-                    "depends on the order (not associative and commutative); the interchange "
-                    "would change it"
+                    f"{what}: {n.id}'s {c} folds over {', '.join(map(repr, over))} with "
+                    f"{red.op!r}, whose result depends on the order (not associative and "
+                    "commutative); the swap reorders its writes"
                 )
+    return chain
+
+
+def partners(g: Graph, map: str) -> list[tuple[str, str | None]]:
+    """Every map above and below ``map`` in its nest, top to bottom (the maps around it, then
+    those under it, depth first), each with None if it trades places with ``map`` or the
+    refusal if not."""
+    _, _, around = _locate(g, map)
+    x = _map_node(g, map, f"interchange_map {map!r}")
+    above = [o.id for o in around if o.kind == "map"]
+    below = [n.id for n in _nodes_under(x.body or []) if n.kind == "map"]
+    out: list[tuple[str, str | None]] = []
+    for p in [*above, *below]:
+        try:
+            _interchange_check(g, map, p, f"interchange_map {map!r} with {p!r}")
+            out.append((p, None))
+        except SandboxError as e:
+            out.append((p, str(e)))
+    return out
+
+
+def _interchange_site(g: Graph, map: str) -> dict[str, Any]:
+    """A map with at least one partner (``partners``); the transform's pair check is
+    ``_interchange_check``."""
+    what = f"interchange_map {map!r}"
+    _map_node(g, map, what)
+    found = partners(g, map)
+    if not found:
+        raise SandboxError(f"{what}: no map above or below it")
+    if all(why is not None for _, why in found):
+        raise SandboxError(f"{what}: no map above or below it trades places with it: "
+                           + "; ".join(why for _, why in found if why))  # fmt: skip
     return {"map": map}
 
 
@@ -1050,16 +1132,32 @@ def _nodes_under(body: list[Node]) -> Iterator[Node]:
         yield from _nodes_under(n.body or [])
 
 
-def interchange_map(g: Graph, map: str) -> Graph:
-    """The map ``map`` and its only child map trade places (module doc); its own inverse."""
-    _interchange_site(g, map, f"interchange_map {map!r}")
+def interchange(g: Graph, map: str, partner: str) -> Graph:
+    """``map`` and ``partner`` trade places in their perfect nest (module doc); its own
+    inverse, the pair in either order."""
+    _interchange_site(g, map)  # the site's refusal first, as every transform's
     g = _copy(g)
-    body, i, _ = _locate(g, map)
-    x = body[i]
-    (y,) = x.body
-    x.body, y.body = y.body, [x]
-    body[i] = y
+    chain = _interchange_check(g, map, partner, f"interchange_map {map!r} with {partner!r}")
+    top, bottom = chain[0], chain[-1]
+    body, i, _ = _locate(g, top.id)
+    deepest = bottom.body
+    new_top = Node(bottom.id, "map", attrs=bottom.attrs, body=[])
+    new_bottom = Node(top.id, "map", attrs=top.attrs, body=deepest)
+    middle = chain[1:-1]
+    levels = [new_top, *middle, new_bottom]
+    for outer, inner in itertools.pairwise(levels):
+        outer.body = [inner]
+    body[i] = new_top
     return _result(g)
+
+
+def interchange_map(g: Graph, map: str, **partner: str) -> Graph:
+    """The registered transform, ``{"map": X, "with": Y}`` (``with`` is a Python keyword:
+    ``interchange``'s ``partner``)."""
+    if set(partner) != {"with"}:
+        raise SandboxError(f"interchange_map {map!r}: takes map and with, got "
+                           f"{sorted(['map', *partner])}")  # fmt: skip
+    return interchange(g, map, partner["with"])
 
 
 # =============================================================================
@@ -1186,7 +1284,8 @@ register_transform("untag_map", untag_map, site=lambda g, s: _untag_site(g, s, f
 register_transform("bind", bind, site=_bind_params)
 register_transform("unbind", unbind, site=lambda g, s: _unbind_site(g, s, f"unbind {s!r}"))
 register_transform("join_map", join_map, site=lambda g, s: _join_site(g, s, f"join_map {s!r}"))
-register_transform("interchange_map", interchange_map,
-                   site=lambda g, s: _interchange_site(g, s, f"interchange_map {s!r}"))  # fmt: skip
+register_transform(
+    "interchange_map", interchange_map, site=_interchange_site, params=("map", "with")
+)
 register_transform("encapsulate", encapsulate, site=_encapsulate_site, multi=_encapsulate_multi)
 register_transform("unencapsulate", unencapsulate, site=_unencapsulate_site)

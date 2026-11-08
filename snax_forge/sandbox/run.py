@@ -71,6 +71,10 @@ def step_params(recipe: Recipe, index: int) -> tuple[str, dict[str, Any]]:
         k: recipe.value(v, f"{what}.params.{k}") if k in spec.ints else v
         for k, v in step.params.items()
     }
+    if spec.params is not None:  # params a signature cannot name (interchange_map's with)
+        if set(params) != set(spec.params):
+            raise SandboxError(f"{what}: takes {list(spec.params)}, got {sorted(params)}")
+        return step.transform, params
     try:
         inspect.signature(spec.fn).bind(None, **params)
     except TypeError as e:
