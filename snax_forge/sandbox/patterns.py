@@ -66,6 +66,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.brm.brm import SEED
 from snax_forge.dfg import REDUCE_OPS, Memlet, Node
 
 from .recipe import SandboxError
@@ -195,7 +196,8 @@ def _reduce(
         raise SandboxError(
             f"{what}: {node.attrs['code']!r} is not a copy of its input ({cout} = {cin})"
         )
-    ins = [p for p in brm.interface.ports if p.direction == "in"]
+    # the seed's port takes no connector (bind puts a seeded fold's seed there)
+    ins = [p for p in brm.interface.ports if p.direction == "in" and p.name != SEED]
     outs = [p for p in brm.interface.ports if p.direction == "out"]
     if len(ins) != 1 or len(outs) != 1:
         raise SandboxError(f"{what}: the BRM has ports {[p.name for p in brm.interface.ports]}")
@@ -208,7 +210,7 @@ def _reduce(
     if red.op != op:
         raise SandboxError(f"{what}: the tasklet folds with {red.op!r}, the pattern with {op!r}")
     identity = REDUCE_OPS[op].identity(np.dtype(dtypes[cout]))
-    if red.identity != identity:
+    if red.seed is None and red.identity != identity:
         raise SandboxError(
             f"{what}: the fold starts from {red.identity}, the BRM from {op}'s identity {identity}"
         )

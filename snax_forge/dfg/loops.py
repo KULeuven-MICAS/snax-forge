@@ -156,7 +156,7 @@ def rename(g: Graph) -> None:
     def go(body: list[Node], env: Mapping[str, str]) -> None:
         for n in body:
             for m in (*n.inputs.values(), *n.outputs.values()):
-                m.subset = [_substitute(d, env) for d in m.subset]
+                m.map_dims(lambda d: _substitute(d, env))
             if id(n) in opened:
                 go([opened[id(n)]], env)
             if n.kind == "map":

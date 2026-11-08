@@ -1,0 +1,32 @@
+{
+ "name": "matvec_seed_serial",
+ "kernel": "matvec_acc",
+ "params": {"W": 4, "M": 8, "N": 512},
+ "symbols": {"M": "M", "N": "N"},
+ "steps": [
+  {"transform": "tag_map", "params": {"map": "mult_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "mult_map_1", "factor": "W"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "mult",
+    "brm": "simd",
+    "implementation": "chisel_tiled_spatial",
+    "instance": "mul"
+   }
+  },
+  {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
+  {"transform": "split_map", "params": {"map": "sum_map_1", "factor": 1}},
+  {"transform": "seed_fold", "params": {"map": "sum_map_1"}},
+  {
+   "transform": "bind",
+   "params": {
+    "node": "sum",
+    "brm": "accumulate",
+    "implementation": "chisel_accumulator",
+    "instance": "sum"
+   }
+  },
+  {"transform": "encapsulate", "params": {"accelerator": "matvec", "units": ["mul", "sum"]}}
+ ]
+}

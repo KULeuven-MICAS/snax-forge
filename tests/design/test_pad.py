@@ -97,3 +97,22 @@ def test_a_memlet_past_the_padding_is_refused_by_the_design_check():
         "memlet A['4 * n_1_t + 4:4 * n_1_t + 8'] reaches index 11 on dimension 0, past its padded "
         "extent 8 (the container's N, a tail's padding included, D144)"
     )
+
+
+def test_a_seeded_folds_pads_take_the_ops_identity():
+    """matvec_seed at N = 510, W = 4 (a tail): the pads feed the tree, not the seed, so tmp0's
+    pad lanes are add's identity, 0 (the multiplier's 0 × 0), and connect.pad passes; the seed
+    q is read once per job, through no tail, and the run is q + A p (B2 R5)."""
+    import numpy as np
+
+    from snax_forge.dfg import execute
+    from snax_forge.dfg.pad import pad_value
+
+    g = bound("matvec_seed", W=4, M=8, N=510)
+    assert g.node("sum").inputs["seed"].to_dict() == {"data": "q", "subset": ["m_t:m_t + 1"]}
+    assert (pad_content(g, "tmp0"), pad_value(g, "tmp0"), pad_value(g, "A")) == (0, 0, 0)
+    assert [p for p in problems(design(g, edit_platform=None)) if p.code == "connect.pad"] == []
+    rng = np.random.default_rng(1)
+    a = rng.integers(-9, 9, (8, 510), dtype=np.int64)
+    p, q = rng.integers(-9, 9, 510, dtype=np.int64), rng.integers(-9, 9, 8, dtype=np.int64)
+    assert execute(g, {"A": a, "p": p, "q": q.copy()})["q"].tolist() == (q + a @ p).tolist()

@@ -5,19 +5,21 @@
    "W": {"stage": "design", "type": "int", "default": 4, "values": null},
    "op": {"stage": "design", "type": "str", "default": "add", "values": ["add"]},
    "n": {"stage": "runtime", "type": "int", "default": null, "values": null},
-   "T": {"stage": "runtime", "type": "int", "default": null, "values": null}
+   "T": {"stage": "runtime", "type": "int", "default": null, "values": null},
+   "seed": {"stage": "design", "type": "int", "default": null, "values": [0, 1]}
   },
   "ports": [
    {"name": "a", "direction": "in", "lanes": "W", "rate": 1},
+   {"name": "seed", "direction": "in", "lanes": 1, "rate": "T", "when": {"seed": 1}},
    {"name": "out", "direction": "out", "lanes": 1, "rate": "T"}
   ]
  },
  "function": {
   "accel": "reduce",
-  "params": {"lanes": "W", "lanes_out": 1, "op": "op"},
+  "params": {"lanes": "W", "lanes_out": 1, "op": "op", "seed": "seed"},
   "code": "out = a"
  },
- "dataflow": {"notation": "stream", "ports": {"a": {}, "out": {}}},
+ "dataflow": {"notation": "stream", "ports": {"a": {}, "seed": {}, "out": {}}},
  "pattern": {"family": "reduce", "attrs": {"op": "add"}},
  "implementations": {
   "chisel_accumulator": {
@@ -28,7 +30,7 @@
     "datapath": "TreeAccumulate",
     "args": {"lanes": "W"},
     "controller": "counted",
-    "ports": {"a": "in", "out": "out"}
+    "ports": {"a": "in", "seed": "seed", "out": "out"}
    }
   },
   "chisel_adder_tree": {
@@ -39,7 +41,7 @@
     "datapath": "TreeAccumulate",
     "args": {"lanes": "W"},
     "controller": "counted",
-    "ports": {"a": "in", "out": "out"}
+    "ports": {"a": "in", "seed": "seed", "out": "out"}
    }
   },
   "chisel_serial": {
@@ -50,7 +52,7 @@
     "datapath": "SerialAccumulate",
     "args": {"lanes": "W"},
     "controller": "counted",
-    "ports": {"a": "in", "out": "out"}
+    "ports": {"a": "in", "seed": "seed", "out": "out"}
    }
   }
  }

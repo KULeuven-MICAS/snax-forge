@@ -497,6 +497,7 @@ path.arrow-sel { fill: var(--hl); }
 path.edge.sel { stroke: var(--hl); stroke-width: 2.6; }
 /* a fused nest's local value: the writer's connector straight to the reader's, as a link's wire */
 path.edge.local { stroke: var(--busy); stroke-width: 2; stroke-dasharray: 4 3; }
+path.edge.seed { stroke-dasharray: 1 3; stroke-linecap: round; stroke-width: 2; }
 svg.dfg-edges text.edge-label { font: 600 0.72rem ui-monospace, "SF Mono", Menlo, Consolas, monospace; fill: var(--busy); }
 svg.dfg-edges text.edge-label.sel { fill: var(--hl); }
 /* a broadcast's label at its edge's start: a band of the page behind it, so an edge it crosses does not run through it */

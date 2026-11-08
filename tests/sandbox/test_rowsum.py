@@ -26,7 +26,8 @@ def rates(g, node="sum"):
     n = g.node(node)
     brm = load_brm(n.attrs["brm"])
     loops = [(lp.var, lp.count) for lp in firing_loops(g, n)]
-    ports = {p.name: (({**n.inputs, **n.outputs})[p.name], p.rate) for p in brm.interface.ports}
+    present = brm.present(n.attrs["params"])  # the ports at its params (a seed's only when set)
+    ports = {p.name: (({**n.inputs, **n.outputs})[p.name], p.rate) for p in present}
     return loops, named_rates(ports, loops, node)
 
 

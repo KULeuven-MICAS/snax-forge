@@ -24,7 +24,11 @@ name), ``unlink``'s a link node or its container.
     as the tasklet did. The temporal map records both
     (``loop.split_reduce``); ``join_reduce`` takes them back and joins the
     map (``join_map``). A length that is not a multiple of the factor is
-    refused: the partials' padding is not placed yet (D144).
+    refused: the partials' padding is not placed yet (D144). A seeded fold
+    (seed.py's ``seed_fold``) keeps its seed on the final sum only, which
+    takes the fold's record too; the partials start from the identity and are
+    named after the transient the seed took (matvec_acc's ``tmp1_partial``),
+    as split before the seed.
 ``fuse_map(first, second)`` and ``unfuse_map(map)``
     two adjacent nests, ``second`` right after ``first``, with the same
     ranges and tags level by level down to one tasklet each, joined by a
@@ -66,7 +70,8 @@ from typing import Any
 
 from snax_forge import expr
 from snax_forge.common import CodedError, fresh
-from snax_forge.dfg import Container, Graph, Memlet, Node, loops
+from snax_forge.dfg import Container, Graph, Memlet, Node, Reduction, loops
+from snax_forge.dfg.graph import SEEDED
 from snax_forge.dfg.subset import dim_names, map_range, parse_dim
 
 from .recipe import SandboxError
@@ -138,16 +143,22 @@ def split_reduce(g: Graph, map: str, factor: int) -> Graph:
     enclosing = {m.attrs["var"] for m in outer if m.kind == "map"}
     kept = [k for k, d in enumerate(om.subset) if dim_names(d) & enclosing]
     taken = _taken(g)
-    partial = fresh(f"{om.data}_partial", taken)
+    red = om.reduce
+    seeded = t.attrs.pop(SEEDED, None) if red is not None and red.seed is not None else None
+    # a seeded fold's partials are named after the transient the seed took, as before the seed
+    partial = fresh(f"{seeded['container'] if seeded else om.data}_partial", taken)
     out = g.containers[om.data]
     g.containers[partial] = Container([*(out.shape[k] for k in kept), factor], out.dtype, True)
     index = [om.subset[k] for k in kept]
-    t.outputs[cout] = Memlet(partial, [*index, smap.attrs["var"]], om.reduce)
+    if seeded is not None:  # the partials start from the identity, the final sum from the seed
+        red = Reduction(red.op, seeded["identity"])
+    t.outputs[cout] = Memlet(partial, [*index, smap.attrs["var"]], red)
     dim = fresh(f"{node.attrs[loops.DIM]}_f", taken | {partial})  # its own dimension
     var = fresh(f"{dim}_s", taken)  # named by the rule below
     ids = {n.id for n, _ in g.walk()}
     final_t = Node(fresh(f"{t.id}_final", ids), "tasklet", inputs={cin: Memlet(partial, [*index, var])},
-                   outputs={cout: om}, attrs={"code": t.attrs["code"]})  # fmt: skip
+                   outputs={cout: om}, attrs={"code": t.attrs["code"],
+                                              **({SEEDED: seeded} if seeded else {})})  # fmt: skip
     final = Node(fresh(f"{map}_final", ids | {final_t.id}), "map",
                  attrs={"var": var, "range": f"0:{factor}", loops.DIM: dim, loops.PIECE: 1,
                         "loop.kind": "spatial"}, body=[final_t])  # fmt: skip
@@ -198,6 +209,8 @@ def join_reduce(g: Graph, map: str) -> Graph:
         raise SandboxError(f"{what}: {rec['partial']} is named by {users} (unlink first)")
     (cout,) = inner[0].outputs
     inner[0].outputs[cout] = ft.outputs[cout]
+    if SEEDED in ft.attrs:  # the seed's record back with the seed
+        inner[0].attrs[SEEDED] = ft.attrs[SEEDED]
     del body[j]
     del g.containers[rec["partial"]]
     del node.attrs["loop.split_reduce"]

@@ -23,9 +23,17 @@ op (True for all four): a transform that changes the order a fold's writes
 land in (``interchange_map``) reads it, so an op registered with
 ``order_free=False`` is refused there.
 
-A fold into what the element already holds (DaCe's plain ``wcr`` memlet,
-``C[i] += ...`` in a loop) would be ``identity: null``; it is not accepted
-yet.
+**The seed** (M13 B2 R5). In place of ``identity`` a reduce may hold
+``seed``, an element of a container the fold starts from instead, read once
+per element before the first write (``seed_fold`` in sandbox/seed.py makes
+it, the fold of matvec_acc's ``q += A p`` as ``x' = x (+) fold_j(a_j)``):
+
+    {"data": "q", "subset": ["m"], "reduce": {"op": "add", "seed": {"data": "q", "subset": ["m"]}}}
+
+``identity`` and ``seed`` are mutually exclusive, one of them is given. The
+seed's subset moves with the memlet's: every transform rewriting a subset
+rewrites it too (``Reduction.map_seed``). A plain ``identity: null`` (fold
+into what the element already holds, DaCe's plain ``wcr``) is not accepted.
 """
 
 from __future__ import annotations
@@ -36,7 +44,8 @@ from typing import Any
 
 import numpy as np
 
-from .kinds import DfgError
+from .kinds import DfgError, _wrap
+from .subset import canonical_dim
 
 
 @dataclass(frozen=True)
@@ -68,15 +77,49 @@ register_reduction("max", np.maximum, lambda dt: int(np.iinfo(dt).min))
 
 
 @dataclass(frozen=True)
+class Seed:
+    """The element a seeded fold starts from: a container and a subset, as a memlet's."""
+
+    data: str
+    subset: tuple[Any, ...]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.data, str) or not self.data:
+            raise DfgError(f"reduce.seed.data: must be a container name, got {self.data!r}")
+        if not isinstance(self.subset, (list, tuple)) or not self.subset:
+            raise DfgError(f"reduce.seed.subset: must be a non-empty list, got {self.subset!r}")
+        dims = tuple(_wrap(lambda d=d: canonical_dim(d, "reduce.seed.subset")) for d in self.subset)
+        object.__setattr__(self, "subset", dims)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"data": self.data, "subset": list(self.subset)}
+
+    @classmethod
+    def from_dict(cls, d: Any, what: str) -> Seed:
+        if not isinstance(d, Mapping) or set(d) != {"data", "subset"}:
+            raise DfgError(f"{what}: must be {{data, subset}}, got {d!r}")
+        return cls(d["data"], tuple(d["subset"]))
+
+
+@dataclass(frozen=True)
 class Reduction:
-    """The ``reduce`` of a memlet: a registered op and the value the element starts from."""
+    """The ``reduce`` of a memlet: a registered op and the value the element starts from, its
+    ``identity`` or a ``seed`` element (module doc), one of the two."""
 
     op: str
-    identity: int
+    identity: int | None = None
+    seed: Seed | None = None
 
     def __post_init__(self) -> None:
         if self.op not in REDUCE_OPS:
             raise DfgError(f"reduce.op: {self.op!r} is not a registered op {sorted(REDUCE_OPS)}")
+        if self.seed is not None:
+            if not isinstance(self.seed, Seed):
+                raise DfgError(f"reduce.seed: must be a Seed, got {self.seed!r}")
+            if self.identity is not None:
+                raise DfgError("reduce: identity and seed are mutually exclusive (a seeded fold "
+                               "starts from its seed)")  # fmt: skip
+            return
         if self.identity is None:
             raise DfgError(
                 "reduce.identity: null (fold into the element's contents) is not accepted yet"
@@ -88,14 +131,26 @@ class Reduction:
     def ufunc(self) -> np.ufunc:
         return REDUCE_OPS[self.op].ufunc
 
+    def map_seed(self, fn: Callable[[Any], Any]) -> Reduction:
+        """The reduction with ``fn`` on each dimension of its seed's subset (itself unseeded)."""
+        if self.seed is None:
+            return self
+        return Reduction(
+            self.op, None, Seed(self.seed.data, tuple(fn(d) for d in self.seed.subset))
+        )
+
     def to_dict(self) -> dict[str, Any]:
+        if self.seed is not None:
+            return {"op": self.op, "seed": self.seed.to_dict()}
         return {"op": self.op, "identity": self.identity}
 
     @classmethod
     def from_dict(cls, d: Any, what: str) -> Reduction:
-        if not isinstance(d, Mapping) or set(d) != {"op", "identity"}:
-            raise DfgError(f"{what}: must be {{op, identity}}, got {d!r}")
+        if not isinstance(d, Mapping) or set(d) not in ({"op", "identity"}, {"op", "seed"}):
+            raise DfgError(f"{what}: must be {{op, identity}} or {{op, seed}}, got {d!r}")
         try:
+            if "seed" in d:
+                return cls(d["op"], None, Seed.from_dict(d["seed"], "seed"))
             return cls(d["op"], d["identity"])
         except DfgError as e:
             raise DfgError(f"{what}.{e}") from None

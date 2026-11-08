@@ -248,10 +248,10 @@ function drawEdges(canvas, svg, edges, k) {
     const bend = Math.max(18, Math.abs(y2 - y1) * 0.45);
     const d = `M${x1},${y1} C${x1},${y1 + bend} ${x2},${y2 - bend} ${x2},${y2 - 2}`;
     out.push(svgEl("path", { d, class: "edge-hit", "data-sel": e.id }));
-    const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
+    const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.seed ? " seed" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
-    if (e.label) { // a fused nest's local value (its name, no box) or a scalar's broadcast (alpha[0] · broadcast), api.py
+    if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m] · seed · once per job), api.py
       // a local value's right of its edge, halfway down (clear of the line and its arrow); a
       // broadcast's at its start, beside the hexagon, so no map bar it passes hides it
       const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [x1 + 6, y1 + 14];

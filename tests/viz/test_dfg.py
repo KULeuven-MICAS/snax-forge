@@ -1079,3 +1079,43 @@ def test_the_lane_accumulator_reads_as_a_fold():
     assert (d["brm"], d["replaced"]) == ("lane_accumulate", "sum_map_s › sum")
     assert d["inputs"] == {"a": "A[4 * m_1_t:4 * m_1_t + 4, n_t]"}
     assert d["outputs"] == {"out": "y[4 * m_1_t:4 * m_1_t + 4]"}
+
+
+# =============================================================================
+# The fold's seed: matvec_seed (B2 R5)
+# =============================================================================
+
+
+def _matvec_seed():
+    from snax_forge.sandbox import Recipe, apply_recipe
+
+    r = Recipe.load(recipe_path("matvec_seed"))
+    return r, [x.graph for x in apply_recipe(r, Graph.load(FIXTURES / "matvec_acc.snaxdfg"))]
+
+
+def test_the_seed_is_two_edges_of_x_on_the_fold():
+    """Before seed_fold the sum writes tmp1, which the elementwise nest adds to q; after it q
+    has two edges on the fold, its seed (labelled with its beats per job, T = N // 4 = 128)
+    and its write, and tmp1 has no box; bound, the unit's seed port takes the seed's edge and
+    its Details list it."""
+    r, graphs = _matvec_seed()
+    before, seeded, bound = _views(r, graphs[5:8])
+    assert "tmp1" in {b["container"] for b in before["boxes"].values()}
+    assert not [e for e in before["edges"] if e.get("seed")]
+    for v, node, subset in ((seeded, "sum", "q[m_t]"), (bound, "sum", "q[m_t:m_t + 1]")):
+        assert "tmp1" not in {b["container"] for b in v["boxes"].values()}
+        q = [e for e in v["edges"] if e["data"] == "q"]
+        seed = [e for e in q if e.get("seed")]
+        assert [(e["from"], e["to"]) for e in q] == [("q@0", f"{node}.seed"),
+                                                     (f"{node}.out", "q@1")]  # fmt: skip
+        assert seed[0]["label"] == f"{subset} · seed · once per job (T = N // 4 = 128 beats)"
+        assert v["details"][f"edge:{seed[0]['id']}"]["memlet"] == f"{subset} (seed)"
+        assert v["details"][f"node:{node}"]["seed"] == seed[0]["label"]
+        conns = _node_in(v, node)["inputs"]
+        assert [c["connector"] for c in conns if c.get("seed")] == ["seed"]
+    assert seeded["details"]["node:sum"]["outputs"] == {
+        "out": "q[m_t] (reduce add, seed q[m_t])"}  # fmt: skip
+    d = bound["details"]["node:sum"]
+    assert d["inputs"] == {"a": "tmp0[m_t, 4 * n_1_t:4 * n_1_t + 4]", "seed": "q[m_t:m_t + 1]"}
+    assert d["params"] == {"W": 4, "op": "add", "seed": 1}
+    assert bound["details"]["container:q"]["readers"] == ["sum"]

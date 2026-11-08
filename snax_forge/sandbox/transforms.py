@@ -147,6 +147,7 @@ from typing import Any
 import numpy as np
 
 from snax_forge import expr
+from snax_forge.brm.brm import SEED
 from snax_forge.common import fresh
 from snax_forge.dfg import (
     REDUCE_OPS,
@@ -274,7 +275,7 @@ def _map_dims(body: list[Node], fn: Callable[[Any], Any], splits: bool = False) 
     node's ``replaced`` subtree included); with ``splits``, on each split's range too."""
     for n in body:
         for m in (*n.inputs.values(), *n.outputs.values()):
-            m.subset = [fn(d) for d in m.subset]
+            m.map_dims(fn)
         if n.kind == "map":
             n.attrs["range"] = fn(n.attrs["range"])
             if splits and n.attrs.get("loop.split"):
@@ -580,6 +581,16 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     conn_dtypes = {
         c: g.containers[m.data].dtype for c, m in (tasklet.inputs | tasklet.outputs).items()
     }
+    seeds = _seeds(site)
+    given_seed = (params or {}).get(SEED)
+    if seeds and not any(p.name == SEED for p in b.interface.ports):
+        (s,) = seeds.values()
+        raise SandboxError(f"{what}: the fold is seeded from {s.data}; {brm!r} has no seed port "
+                           "(TreeAccumulate and SerialAccumulate take one, D149): unseed_fold "
+                           "first")  # fmt: skip
+    if given_seed is not None and given_seed != int(bool(seeds)):
+        raise SandboxError(f"{what}: seed = {given_seed!r} given, but the fold is "
+                           f"{'seeded' if seeds else 'not seeded'} (seed_fold sets it)")  # fmt: skip
     scalars = _scalar_inputs(g, site, what)
     ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
     _check_port_dtypes(b, ports, conn_dtypes, what)
@@ -587,6 +598,8 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     if not entries:
         raise SandboxError(f"{what}: brm {brm!r} does not say what it computes (function.code)")
     given = dict(params or {})
+    if seeds:
+        given[SEED] = 1  # the seed's port, on the seed's element (_bind_rewrite)
     names = _scalar_names(b, scalars)
     entry, ports, slots = _entry(b, entries, ports, tasklet, names, given)
     if entry is None:
@@ -695,6 +708,17 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     return _Bound(b, ports, inst, var_s, end, memlets, folds, entry.code, from_scalar)
 
 
+def _seeds(site: _Site) -> dict[str, Any]:
+    """The seeded folds under the bind's site (seed.py's ``seed_fold``): connector -> its
+    reduce's seed, over every tasklet of the spatial map (a fused nest's second too)."""
+    found = {}
+    for t in [site.tasklet, *(n for n in site.smap.body or [] if n.kind == "tasklet")]:
+        for c, m in t.outputs.items():
+            if m.reduce is not None and m.reduce.seed is not None:
+                found[c] = m.reduce.seed
+    return found
+
+
 def _scalar_inputs(g: Graph, site: _Site, what: str) -> dict[str, Memlet]:
     """The tasklet's scalar operands: each input whose memlet names no variable of the maps
     around it (the same element every firing), on a kernel's scalar argument (``sdfg.scalar``),
@@ -761,7 +785,7 @@ def _entry(b: Any, entries: list[Any], ports: Mapping[str, str], tasklet: Node,
     outs = {c: p for c, p in ports.items() if c in tasklet.outputs}
     for e in entries:
         present = b.present(b.defaults() | dict(given) | e.params)
-        ins = [p.name for p in present if p.direction == "in"]
+        ins = [p.name for p in present if p.direction == "in" and p.name != SEED]
         if {p.name for p in present if p.direction == "out"} != set(outs.values()):
             continue
         if len(ins) != len(arrays):
@@ -791,10 +815,11 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
     counts = [_bound(g, _length(m), what) for m in temporal]
     n = int(np.prod(counts, dtype=int))
     loops = [(m.attrs["var"], k) for m, k in zip(temporal, counts, strict=True)]
+    with_seed = {ports[c]: (m, b.port(ports[c]).rate) for c, m in bound.memlets.items()}
+    for seed in _seeds(site).values():  # one beat per job, as its fold's output
+        with_seed[SEED] = (Memlet(seed.data, list(seed.subset)), b.port(SEED).rate)
     try:
-        rates = named_rates(
-            {ports[c]: (m, b.port(ports[c]).rate) for c, m in bound.memlets.items()}, loops, what
-        )
+        rates = named_rates(with_seed, loops, what)
     except DfgError as e:
         raise SandboxError(str(e)) from None
     task = {"n": n} | rates
@@ -825,6 +850,10 @@ def _bind_rewrite(g: Graph, site: _Site, bound: _Bound, brm: str, implementation
             out[port] = Memlet(m.data, _lanes_dims(m, bound.var_s, bound.end, f"{what}.{side}.{c}"))
             if nest is not None:
                 _check_order(g, m, temporal, smap, nest.indices(), f"{what} port {port!r}")
+    for c, seed in _seeds(site).items():  # the seed's element, one lane as its fold's output
+        sm = Memlet(seed.data, list(seed.subset))
+        new_in[SEED] = Memlet(seed.data, [*sm.subset[:-1], _one_lane(sm.subset[-1],
+                                                                      f"{what}.seed")])  # fmt: skip
     for slot, m in bound.scalars.items():  # a slot read from a scalar: a connector of its name
         new_in[slot] = Memlet(m.data, list(m.subset))
     acc = Node(

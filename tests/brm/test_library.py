@@ -54,8 +54,9 @@ def test_library_has_dots_blocks():
 
 def test_the_brms_are_bound():
     """The bindings: simd, SimdLanes with its lanes, op, streams and slot k, at each entry of
-    its code table; accumulate's TreeAccumulate, its lanes W, its port a on the datapath's in;
-    the adder tree the same datapath; every one under the counted nest controller."""
+    its code table; accumulate's TreeAccumulate, its lanes W, its port a on the datapath's in
+    and its optional seed on seed; the adder tree the same datapath; every one under the
+    counted nest controller."""
     from snax_forge.gen import ELEMENTWISE_OP
 
     brm = load_brm("simd")
@@ -71,7 +72,7 @@ def test_the_brms_are_bound():
     acc = load_brm("accumulate").implementations
     assert acc["chisel_accumulator"].binding == {
         "datapath": "TreeAccumulate", "args": {"lanes": "W"}, "controller": "counted",
-        "ports": {"a": "in", "out": "out"},
+        "ports": {"a": "in", "seed": "seed", "out": "out"},
     }  # fmt: skip
     assert acc["chisel_adder_tree"].binding == acc["chisel_accumulator"].binding
 

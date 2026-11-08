@@ -50,6 +50,10 @@ lanes summed by an adder tree in front of its register.
     op           add: the BRM's op param, the only one an adder tree runs
                  (``gen.op`` until a datapath takes another)
     params       ``op``: add, as SimdLanes' ``op``; args are lanes only
+    seed         optional (the BRM's port ``seed``, present at its design
+                 param ``seed`` 1): an input of one word at the output's rate,
+                 the sum's start in a job's first firing (``seed_fold``); its
+                 presence in ``ports`` says so, no param
 
 **SerialAccumulate** (L 1, span lanes, D149): TreeAccumulate's ports, op and
 args, its lanes added one a cycle (lane k in cycle k) into one sum; params
@@ -81,7 +85,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from snax_forge import expr
-from snax_forge.brm import Instance
+from snax_forge.brm import SEED, Instance
 from snax_forge.brm.dtypes import fits, result_type
 from snax_forge.common import CodedError
 
@@ -292,14 +296,19 @@ def tree_accumulate(inst: Instance, dtypes: Mapping[str, str] | None = None,
     op = inst.params.get("op")
     if op != "add":
         raise GenError("gen.op", f"{what}: op {op!r}; {who} adds")
-    (a,), (out,) = _ports(inst, 1, 1, who, what)
+    seeded = any(p.name == SEED for p in inst.ports)
+    ins, (out,) = _ports(inst, 2 if seeded else 1, 1, who, what)
+    a = next(p for p in ins if p.name != SEED)
     if a.rate != 1 or not isinstance(out.rate, str):
         raise GenError(
             "gen.rate",
             f"{what}: rates {a.rate!r} in and {out.rate!r} out; {who} takes 1 in and "
             "a named rate out (one sum per T inputs)",
         )
-    _lanes(inst, {a.name: lanes, out.name: 1}, what)
+    if seeded and inst.brm.port(SEED).rate != out.rate:
+        raise GenError("gen.rate", f"{what}: the seed's rate {inst.brm.port(SEED).rate!r}, the "
+                       f"output's {out.rate!r}; {who} reads one seed per sum")  # fmt: skip
+    _lanes(inst, {a.name: lanes, out.name: 1, **({SEED: 1} if seeded else {})}, what)
     params = {"op": op} if who == "TreeAccumulate" else {}
     return Fill(_fill_ports(inst, dtypes, {a.name}, what), params=params)
 

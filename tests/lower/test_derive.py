@@ -452,3 +452,60 @@ def test_matadd_int32_4x6_in_2x2_tiles_in_words():
                  "spatial_strides": [8, 24]}  # fmt: skip
     words = (addresses(v, [1, 2]) // 8).tolist()  # 1 channel of 2 int32 by 2 rows
     assert words[:3] == [[0, 3], [1, 4], [2, 5]]  # the first row of tiles
+
+
+# =============================================================================
+# The fold's seed (B2 R5): matvec_seed's q, read once per job, written in place
+# =============================================================================
+
+
+def _seeded(name: str, edit=None) -> DesignPoint:
+    from snax_forge.dfg import Graph
+    from snax_forge.dfg.import_sdfg import import_kernel
+    from snax_forge.sandbox import Recipe, apply_recipe
+    from tests.helpers import recipe_path
+
+    r = Recipe.load(recipe_path(name))
+    g = apply_recipe(r, import_kernel(r.kernel))[-1].graph
+    if edit is not None:
+        d = g.to_dict()
+        edit(d)
+        g = Graph.from_dict(d)
+    d = Design(Platform.load(SNAX_FORGE), g)
+    assert run_checks(d) == []
+    return DesignPoint.of(d, name)
+
+
+@pytest.mark.parametrize("name, beats", [("matvec_seed", 128), ("matvec_seed_serial", 512)])
+def test_the_seed_is_read_once_per_job_in_place_of_its_write(name, beats):
+    """q's seed streamer loops over the jobs only, one beat per row at q's addresses, the
+    write's; the in-place rule lets the two start together, each after q's load only; the
+    multiply's task keeps the seed idle."""
+    p = _seeded(name)
+    assert p.streamers["sum_seed"].temporal_dims == 1
+    tl = task_list(p)
+    check_values(tl, p)
+    c = tl.configured()
+    q = {"base": p.memory.layouts["q"]["l1"].base, "temporal_bounds": [8],
+         "temporal_strides": [8], "spatial_strides": [8]}  # fmt: skip
+    assert (c["sum_sum_seed"].values, c["sum_sum_out"].values) == (q, q)
+    assert c["sum_sum_seed"].after == c["sum_sum_out"].after == ["load_q"]
+    assert c["sum_sum"].values == {"n": 8 * beats, "T": beats}
+    assert (c["mult_sum_seed"].values, c["mult_sum_seed"].after) == (IDLE, [])
+    start = next(s for s in tl.steps if s.op == "start" and "sum_sum" in s.tasks)
+    assert {"sum_sum_seed", "sum_sum_out"} <= set(start.tasks)
+
+
+def test_a_seed_on_other_elements_than_its_write_is_refused():
+    """The in-place rule, not a bypass: a seed read in another order than the write is
+    refused by name."""
+
+    def reversed_seed(d):
+        for top in d["body"]:
+            for n in top["body"]:
+                if n["id"] == "sum_map_1":
+                    n["body"][0]["inputs"]["seed"]["subset"] = ["7 - m_t:8 - m_t"]
+
+    with pytest.raises(LowerError, match=r"node sum\.out: writes q in place of sum_sum_seed's "
+                       r"read, but not the same elements in the same order"):  # fmt: skip
+        task_list(_seeded("matvec_seed", reversed_seed))

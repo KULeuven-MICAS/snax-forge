@@ -921,7 +921,9 @@ def form(
     message (one field, ``binding``, whose ``value`` gives both params), ``encapsulate``'s
     units (the instances in no accelerator, in the graph's order, the selection's ticked),
     ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in ``inputs``: the session gives
-    the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``)."""
+    the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``),
+    ``seed_fold``'s and ``unseed_fold``'s map (a choice per fold each takes, with a ``hint``,
+    ``_fold_field``)."""
 
     from snax_forge.common import fresh
 
@@ -949,6 +951,8 @@ def form(
             }
         elif name == "interchange_map" and p == "with":  # every map above and below it
             field |= _partner_field(g, filled["map"])
+        elif name in ("seed_fold", "unseed_fold") and p == "map":  # the folds it takes
+            field |= _fold_field(g, filled["map"], name == "unseed_fold")
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
@@ -1001,6 +1005,32 @@ def _partner_field(g: Graph, map: str) -> dict[str, Any]:
     dist = {pid: above[pid] if pid in above else depth[pid] for pid in ok}
     best = min(ok, key=lambda pid: (dist[pid], pid in above), default=None)
     return {"type": "choice", "readonly": False, "value": best, "choices": choices}
+
+
+def _fold_field(g: Graph, map: str, seeded: bool) -> dict[str, Any]:
+    """seed_fold's (``seeded`` False) or unseed_fold's ``map``: a choice per fold it takes, in
+    the graph's order, by the map a recipe names it with (seed.py's ``fold_map``), the
+    selection's fold the default; and the form's hint."""
+    from .seed import fold_choices, fold_map, fold_of
+
+    folds = fold_choices(g, seeded)
+    mine = fold_map(g, fold_of(g, map, "")[0])
+    if seeded:
+        label, hint = (
+            "{fold} writes {x} from its seed; back: {into}, then {reads}",
+            ("the seeded fold whose elementwise nest and transient come back (unseed_fold)"),
+        )
+    else:
+        label, hint = (
+            "{fold} folds into {into}, read once by {reads}",
+            (
+                "the fold that takes its reader x' = x (+) t: it starts each job from x, the seed, "
+                "one beat per job, and t and the elementwise nest go"
+            ),
+        )
+    choices = [{"value": c["map"], "label": f"{c['map']} · " + label.format(**c), "ok": True}
+               for c in folds]  # fmt: skip
+    return {"type": "choice", "readonly": False, "value": mine, "choices": choices, "hint": hint}
 
 
 def _timing(inst: Any) -> dict[str, int]:

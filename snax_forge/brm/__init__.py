@@ -24,6 +24,7 @@ from . import affine, stream  # register the "affine" and "stream" notations
 from .affine import Nest, resolve_nest, task_nest
 from .binding import CONTROLLERS, register_controller
 from .brm import (
+    SEED,
     Brm,
     BrmError,
     Code,
@@ -58,6 +59,7 @@ __all__ = [
     "LIBRARY",
     "NOTATIONS",
     "OPS",
+    "SEED",
     "AccelFunction",
     "AccelPort",
     "Brm",

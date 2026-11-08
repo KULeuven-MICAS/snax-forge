@@ -260,7 +260,7 @@ function field(f) {
     }));
   }
   if (f.type === "choice") { // a choice the server marks not ok is disabled, its refusal below (interchange_map's with)
-    const select = h("select", attrs, f.choices.map((c) => h("option",
+    const select = h("select", { ...attrs, title: f.hint || "" }, f.choices.map((c) => h("option",
       { value: c.value, selected: c.value === f.value, disabled: c.ok === false, title: c.message || "" },
       c.ok === false ? `${c.label} · cannot` : c.label)));
     const no = f.choices.filter((c) => c.ok === false);

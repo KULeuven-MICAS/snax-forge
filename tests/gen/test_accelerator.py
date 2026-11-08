@@ -369,3 +369,32 @@ def test_the_tag_is_the_designs_name_whatever_the_folder(tmp_path):
     p = DesignPoint.load(tmp_path / path)
     assert p.name == "dot_1"
     assert describe(p, path).tag == "snax_forge_dot_1"
+
+
+@pytest.mark.parametrize("recipe", ["matvec_seed", "matvec_seed_serial"])
+def test_a_seeded_fold_has_its_seed_port_and_no_new_csr(tmp_path, recipe):
+    """matvec_seed (B2 R5): the sum's seed is a port of one int64 word, an outer input after
+    a, read by the accelerator's streamer; its CSRs are the same as unseeded, so is its
+    params, which the port says (C§17). data.h's golden is q + A p on the seeded inputs."""
+    import numpy as np
+
+    from snax_forge.design import DesignPoint
+    from snax_forge.gen.data import arrays
+
+    graph = bound_recipe(recipe, "matvec_acc")
+    p = DesignPoint.load(point(tmp_path, name=recipe, graph=graph))
+    desc = describe(p, "p")
+    (acc,) = desc.accelerators
+    assert (acc.inputs, acc.outputs) == (["mul.a", "mul.b", "sum.a", "sum.seed"],
+                                         ["mul.out", "sum.out"])  # fmt: skip
+    (unit,) = [u for g in acc.groups for u in g.units if u.name == "sum"]
+    assert unit.ports["seed"].to_dict() == {"port": "seed", "dir": "in", "dtype": "int64",
+                                            "lanes": 1}  # fmt: skip
+    assert list(unit.ports) == ["a", "seed", "out"] and unit.params == {"op": "add"}
+    assert [(g.name, c.name) for g, _, c in desc.csrs()] == [  # matvec_1's: none for the seed
+        *(("mul", c) for c in ("START", "JOBS", "STATUS", "COUNTER")),
+        *(("sum", c) for c in ("START", "JOBS", "JOB_BEATS", "STATUS", "COUNTER"))]  # fmt: skip
+    validate("accelerator", desc.to_dict())
+    got = {a.name: np.array(a.values) for a in arrays(p)}
+    want = got["q"] + got["A"].reshape(8, 512) @ got["p"]
+    assert np.array_equal(got["q_golden"], want) and got["q"].any()
