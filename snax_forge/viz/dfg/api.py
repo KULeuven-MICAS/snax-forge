@@ -176,8 +176,13 @@ the viewer's, so a partner shown is one the transform takes. A fuse's entry has 
 the second nest reads and the loops matched with their range (``tmp0[m, n] · m = m (0:8), n
 = n (0:512)`` for fuse_map on matvec_acc's mult and sum, ``tmp1[m] · m_t = m (0:8)`` for
 fuse_seed after ``tag_map sum_map temporal``); an interchange's none (its partners are maps
-of one nest). The page shows them for a selected map only: each partner in its transform's
-colour with a tag naming it, and the marker beside the transient's box.
+of one nest). A near partner (``near``, the refusal's message) is a map ``fuse_map`` refuses
+only for different ranges, one side split and the other not, and takes after the split its
+refusal names (compose.py's ``fuse_near``: "mult_map_1 runs 0:512, sum_map_1 runs 0:128 and
+its child 0:4: split_map mult_map_1 4 first"); ``fuse_seed`` compares the elements its
+loops run over, not their ranges, so it has none. The page shows them for a selected map
+only: each partner in its transform's colour with a tag naming it, and the marker beside the
+transient's box; a near partner grey and dashed, its tag the refusal.
 """
 
 from __future__ import annotations
@@ -1454,7 +1459,7 @@ def partners(g: Graph, boxes: dict[str, dict[str, Any]]) -> dict[str, list[dict[
     """Each map's partners (module doc, "Partners"): map id -> ``{"map", "transform"}`` per map
     it fuses, seeds or interchanges with, by the transforms' own sites, and for a fuse the
     ``marker`` on the transient between the two nests, ``{"box", "container", "text"}``."""
-    from snax_forge.sandbox.compose import fuse_link, fuse_pairs, link_text
+    from snax_forge.sandbox.compose import fuse_link, fuse_near, fuse_pairs, link_text
     from snax_forge.sandbox.recipe import SandboxError
     from snax_forge.sandbox.seed import seed_link, seed_pairs
     from snax_forge.sandbox.transforms import partners as swaps
@@ -1485,6 +1490,12 @@ def partners(g: Graph, boxes: dict[str, dict[str, Any]]) -> dict[str, list[dict[
                 add(b, a, transform, marker)
         except (SandboxError, DfgError, ExprError, KeyError):
             continue  # a graph the transform cannot judge: no partners by it
+    try:  # near partners: refused for different ranges only, its refusal naming the split
+        for a, b, why in fuse_near(g):
+            for x, y in ((a, b), (b, a)):
+                out.setdefault(x, []).append({"map": y, "transform": "fuse_map", "near": why})
+    except (SandboxError, DfgError, ExprError, KeyError):
+        pass
     return out
 
 

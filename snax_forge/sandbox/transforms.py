@@ -427,6 +427,11 @@ def tag_map(g: Graph, map: str, kind: str) -> Graph:
     _tag_site(g, map, what)
     if kind not in TAGS:
         raise SandboxError(f"{what}: kind {kind!r} is not one of {list(TAGS)}")
+    from .compose import retag  # a fused nest's level: both nests tagged (compose.py)
+
+    again = retag(g, map, lambda h, m: tag_map(h, m, kind))
+    if again is not None:
+        return again
     g = _copy(g)
     node = g.node(map)
     loops.ensure(node)
@@ -455,6 +460,11 @@ def _untag_site(g: Graph, map: str, what: str) -> dict[str, Any]:
 def untag_map(g: Graph, map: str) -> Graph:
     """The inverse of tag_map: the map without its tag."""
     _untag_site(g, map, f"untag_map {map!r}")
+    from .compose import retag  # a fused nest's level: both nests untagged (compose.py)
+
+    again = retag(g, map, untag_map)
+    if again is not None:
+        return again
     g = _copy(g)
     node = g.node(map)
     loops.ensure(node)

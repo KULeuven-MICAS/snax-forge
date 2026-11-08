@@ -533,6 +533,8 @@ svg.dfg-edges .group-box rect.outline-hit, svg.dfg-edges .acc-box rect.outline-h
 .p-fuse_map { --p: var(--p-fuse); }
 .p-fuse_seed { --p: var(--p-seed); }
 .p-interchange_map { --p: var(--p-swap); }
+.p-near { --p: var(--muted); }
+.p-tag.p-near { background: var(--panel); color: var(--muted); border: 1px dashed var(--muted); font-weight: 400; white-space: nowrap; }
 .c-map.p-on { outline: 2px dashed var(--p); outline-offset: 2px; }
 .c-bar { position: relative; }
 .p-tags { position: absolute; right: 0.3rem; bottom: 100%; display: flex; gap: 0.25rem; margin-bottom: 3px; pointer-events: none; }

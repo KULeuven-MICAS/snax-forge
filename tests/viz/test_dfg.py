@@ -1136,8 +1136,17 @@ def _partners(g: Graph) -> dict[str, list[tuple[str, str, str | None]]]:
     from snax_forge.viz.dfg.api import Entry, graph_view
 
     v = graph_view(Entry("g", Path("g"), g, None))
-    return {m: [(p["map"], p["transform"], (p.get("marker") or {}).get("text")) for p in ps]
+    return {m: [(p["map"], p["transform"], (p.get("marker") or {}).get("text")) for p in ps
+                if "near" not in p]
             for m, ps in v["partners"].items()}  # fmt: skip
+
+
+def _near(g: Graph) -> dict[str, list[tuple[str, str]]]:
+    from snax_forge.viz.dfg.api import Entry, graph_view
+
+    v = graph_view(Entry("g", Path("g"), g, None))
+    return {m: [(p["map"], p["near"]) for p in ps if "near" in p]
+            for m, ps in v["partners"].items() if any("near" in p for p in ps)}  # fmt: skip
 
 
 def _agree(g: Graph, found: dict) -> None:
@@ -1188,14 +1197,19 @@ def test_matvec_acc_partners_at_import():
 
 
 def test_matvec_acc_partners_after_the_tag_and_split():
-    """After tag_map sum_map temporal and split_map sum_map_1 4: mult and sum no longer fuse
-    (one nest untagged, the other temporal), every map of the sum's nest seeds with the
-    elementwise nest, its kept loop now m_t, and the three maps of the sum's nest interchange
-    pairwise (interchange_map takes any two maps of one perfect nest)."""
+    """After tag_map sum_map temporal, mult (untagged) still fuses with sum (B0.2: it takes the
+    tag). After split_map sum_map_1 4 too, the two no longer fuse: mult_map is a near partner
+    of sum_map, its tag the refusal naming split_map mult_map_1 4; every map of the sum's nest
+    seeds with the elementwise nest, its kept loop m_t, and the three maps of the sum's nest
+    interchange pairwise (interchange_map takes any two maps of one perfect nest). After
+    split_map mult_map_1 4, mult and sum fuse again, three loops matched."""
     from snax_forge.sandbox.transforms import split_map, tag_map
 
-    g = split_map(tag_map(_bound_fixture("matvec_acc", M=8, N=512), "sum_map", "temporal"),
-                  "sum_map_1", 4)  # fmt: skip
+    t = tag_map(_bound_fixture("matvec_acc", M=8, N=512), "sum_map", "temporal")
+    fuse = "tmp0[m_t, n] · m = m_t (0:8), n = n (0:512)"
+    assert _partners(t)["mult_map"][0] == ("sum_map", "fuse_map", fuse)
+    assert _near(t) == {}
+    g = split_map(t, "sum_map_1", 4)
     found = _partners(g)
     seed = "tmp1[m] · m_t = m (0:8)"
     ew = "augassign_19_4_map"
@@ -1212,6 +1226,14 @@ def test_matvec_acc_partners_after_the_tag_and_split():
              ("sum_map_1_s", "fuse_seed", seed)],
     }  # fmt: skip
     _agree(g, found)
+    why = ("fuse_map 'mult_map' 'sum_map': mult_map_1 runs 0:512, sum_map_1 runs 0:128 and its "
+           "child 0:4: split_map mult_map_1 4 first")  # fmt: skip
+    assert _near(g) == {"mult_map": [("sum_map", why)], "sum_map": [("mult_map", why)]}
+    both = split_map(g, "mult_map_1", 4)
+    assert _near(both) == {}
+    fused = ("tmp0[m_t, 4 * n_1_t + n_2_s] · m = m_t (0:8), n_1_t = n_1_t (0:128), "
+             "n_2_s = n_2_s (0:4)")  # fmt: skip
+    assert _partners(both)["mult_map"][0] == ("sum_map", "fuse_map", fused)
 
 
 def test_axpys_two_maps_fuse():
