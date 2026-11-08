@@ -10,3 +10,5 @@ and copied from `out/flow/dot_1_task/` as vecadd's (`../vecadd/README.md`): `run
 Made again in B2 R3b by the same commands at snax-forge `1025109` and snax-gvsoc `c1e4230c` (a unit's scalar CSRs, axpy's K1): every file above, the ELF and the events came out byte-identical.
 
 Made again in B2 R4 by the same commands at snax-forge `26d211d` (with the test changes of `B2 R4: submodule on snax-gvsoc ry/b2-2`) and snax-gvsoc `95fc6ac1` (`LaneAccumulate`, the `padded_rows` layout pass, which no fixture uses): every file above, the ELF and the events came out byte-identical.
+
+Made again in B2 R4b: loop names only. By the same commands at snax-forge `fe16e6c` and snax-gvsoc `95fc6ac1`, `design_point.json`'s bound graph names each loop after its dimension (`n_1_t`, `n_2_s`, with `loop.dim` and `loop.piece`); every other file, the ELF and the events came out byte-identical.
