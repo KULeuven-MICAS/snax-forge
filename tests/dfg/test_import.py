@@ -118,10 +118,10 @@ def test_dot_is_a_multiply_map_then_a_sum_map():
     assert list(g.containers) == ["A", "B", "out", "tmp0"]
     assert [c for c, cont in g.containers.items() if cont.transient] == ["tmp0"]
     assert {c.dtype for c in g.containers.values()} == {"int64"}
-    assert [(n.id, n.attrs.get("var")) for n in g.body] == [("mult_map", "i"), ("sum_map", "i")]
+    assert [(n.id, n.attrs.get("var")) for n in g.body] == [("mult_map", "n"), ("sum_map", "n")]
     s = g.node("sum")
     assert s.attrs["code"] == "out = in1"
-    assert s.inputs["in1"].to_dict() == {"data": "tmp0", "subset": ["i"]}
+    assert s.inputs["in1"].to_dict() == {"data": "tmp0", "subset": ["n"]}
     assert s.outputs["out"].to_dict() == {
         "data": "out",
         "subset": [0],
@@ -157,11 +157,11 @@ def test_reduce_over_one_axis():
 
 
 def test_transient_between_two_maps():
-    """Two maps in one state, in order, sibling variables both ``i``, ``__tmp0`` -> ``tmp0``."""
+    """Two maps in one state, in order, sibling variables both ``n``, ``__tmp0`` -> ``tmp0``."""
     g = import_sdfg(progs.two.to_sdfg(simplify=True), "two")
     assert list(g.containers) == ["A", "B", "C", "tmp0"]
     assert g.containers["tmp0"].transient
-    assert [(n.id, n.attrs.get("var")) for n in g.body] == [("add_map", "i"), ("mult_map", "i")]
+    assert [(n.id, n.attrs.get("var")) for n in g.body] == [("add_map", "n"), ("mult_map", "n")]
     assert g.node("add").outputs["out"].data == "tmp0"
     assert g.node("mult").inputs["in1"].data == "tmp0"
     assert g.node("mult").attrs["code"] == "out = in1 * in2"
@@ -174,6 +174,51 @@ def test_offset_subsets_and_ranges():
     add = g.node("add")
     assert [m.subset for m in add.inputs.values()] == [["i"], ["i + 2"]]
     assert add.outputs["out"].subset == ["i + 1"]
+
+
+# =============================================================================
+# Loop variables named after their dimension (loops.py)
+# =============================================================================
+
+
+def test_rowsum_names_its_loops_after_their_dimensions():
+    """sum_map over M is m, sum_map_1 over N is n: A[m, n], y[m]; base and piece in the attrs."""
+    g = import_kernel("rowsum")
+    assert [(n.id, n.attrs["var"]) for n, _ in g.walk() if n.kind == "map"] == [
+        ("sum_map", "m"),
+        ("sum_map_1", "n"),
+    ]
+    s = g.node("sum")
+    assert (s.inputs["in1"].subset, s.outputs["out"].subset) == (["m", "n"], ["m"])
+    assert {k: g.node("sum_map_1").attrs[k] for k in ("loop.dim", "loop.piece")} == {
+        "loop.dim": "n",
+        "loop.piece": 1,
+    }
+
+
+def test_vecadd_names_its_loop_n():
+    g = import_kernel("vecadd")
+    assert g.node("add_map").attrs["var"] == "n"
+    assert [m.subset for m in g.node("add").inputs.values()] == [["n"], ["n"]]
+
+
+def test_a_triangular_range_keeps_the_importers_name():
+    """The inner map over 0:i keeps j (its base too); its range names the outer map's n."""
+    g = import_sdfg(progs.triangle(), "triangle")
+    outer, inner = g.node("outer"), g.node("inner")
+    assert (outer.attrs["var"], inner.attrs["var"], inner.attrs["range"]) == ("n", "j", "0:n")
+    assert inner.attrs["loop.dim"] == "j"
+    assert g.node("c").inputs["a"].subset == ["n", "j"]
+
+
+def test_a_second_map_over_the_same_symbol_keeps_the_importers_name():
+    """total's sum over A[N, N]: n outer, the inner map over N again keeps j (n is taken by the
+    enclosing map), A[n, j]; an int range keeps the importer's names too (row_sum's 0:4, 0:6)."""
+    g = import_sdfg(progs.total.to_sdfg(simplify=True), "total")
+    assert [n.attrs["var"] for n, _ in g.walk() if n.kind == "map"] == ["n", "j"]
+    assert g.node("sum").inputs["in1"].subset == ["n", "j"]
+    g = import_sdfg(progs.row_sum(), "row_sum")
+    assert [n.attrs["var"] for n, _ in g.walk() if n.kind == "map"] == ["i", "j"]
 
 
 def test_names():

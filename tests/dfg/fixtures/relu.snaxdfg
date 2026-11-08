@@ -11,13 +11,13 @@
    "kind": "map",
    "inputs": {},
    "outputs": {},
-   "attrs": {"var": "i", "range": "0:N"},
+   "attrs": {"var": "n", "range": "0:N", "loop.dim": "n", "loop.piece": 1},
    "body": [
     {
      "id": "numpy_maximum",
      "kind": "tasklet",
-     "inputs": {"in1": {"data": "A", "subset": ["i"]}},
-     "outputs": {"out": {"data": "B", "subset": ["i"]}},
+     "inputs": {"in1": {"data": "A", "subset": ["n"]}},
+     "outputs": {"out": {"data": "B", "subset": ["n"]}},
      "attrs": {"code": "out = max(in1, 0)"}
     }
    ]

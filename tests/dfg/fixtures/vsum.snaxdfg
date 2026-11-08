@@ -11,12 +11,12 @@
    "kind": "map",
    "inputs": {},
    "outputs": {},
-   "attrs": {"var": "i", "range": "0:N"},
+   "attrs": {"var": "n", "range": "0:N", "loop.dim": "n", "loop.piece": 1},
    "body": [
     {
      "id": "sum",
      "kind": "tasklet",
-     "inputs": {"in1": {"data": "A", "subset": ["i"]}},
+     "inputs": {"in1": {"data": "A", "subset": ["n"]}},
      "outputs": {"out": {"data": "out", "subset": [0], "reduce": {"op": "add", "identity": 0}}},
      "attrs": {"code": "out = in1"}
     }

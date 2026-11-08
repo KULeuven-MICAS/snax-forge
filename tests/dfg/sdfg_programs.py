@@ -236,3 +236,17 @@ def unsupported_matmul_shapes() -> dace.SDFG:
     st.add_edge(st.add_read("b"), None, mm, "_b", dace.Memlet("b[0:5]"))
     st.add_edge(mm, "_c", st.add_write("c"), None, dace.Memlet("c[0:4]"))
     return sdfg
+
+
+def triangle() -> dace.SDFG:
+    """B[i, j] = A[i, j] below the diagonal: an outer map over 0:N, an inner over 0:i (a
+    triangular range, which keeps the importer's name)."""
+    sdfg, st = _one_state({"A": ([N, N], {}), "B": ([N, N], {})})
+    oe, ox = st.add_map("outer", {"i": "0:N"})
+    ie, ix = st.add_map("inner", {"j": "0:i"})
+    t = st.add_tasklet("c", {"a"}, {"o"}, "o = a")
+    st.add_memlet_path(st.add_read("A"), oe, ie, t, dst_conn="a", memlet=dace.Memlet("A[i, j]"))
+    st.add_memlet_path(t, ix, ox, st.add_write("B"), src_conn="o", memlet=dace.Memlet("B[i, j]"))
+    for e in st.edges():  # DaCe cannot propagate a triangle, so the outer memlets are dynamic
+        e.data.dynamic = False
+    return sdfg

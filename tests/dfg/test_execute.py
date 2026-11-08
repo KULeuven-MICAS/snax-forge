@@ -113,7 +113,7 @@ def test_other_folds():
     assert execute(g, {"A": m, "B": np.zeros(4, np.int64)})["B"].tolist() == m.sum(1).tolist()
     g = import_sdfg(progs.total.to_sdfg(simplify=True), "total")
     assert [(n.id, n.attrs.get("var")) for n, _ in g.walk()][:2] == [
-        ("sum_map", "i"),
+        ("sum_map", "n"),
         ("sum_map_1", "j"),
     ]
     m = np.arange(36).reshape(6, 6)
@@ -198,7 +198,7 @@ def tiled() -> dict:
     d = as_dict("vecadd_accelerated")
     tmap = d["body"][0]
     tmap["attrs"]["range"] = "0:8"
-    lanes = "32 * k + 4 * i_t:32 * k + 4 * i_t + 4"
+    lanes = "32 * k + 4 * n_t:32 * k + 4 * n_t + 4"
     for m in (*tmap["body"][0]["inputs"].values(), *tmap["body"][0]["outputs"].values()):
         m["subset"] = [lanes]
     d["body"] = [
@@ -264,10 +264,10 @@ GRAPH_CASES = [
     ("vecadd", lambda d: plain_node(d)["outputs"]["out"].update(subset=[0]), "write conflict"),
     (
         "vecadd",
-        lambda d: plain_node(d)["inputs"]["in1"].update(subset=["i + 1"]),
-        "A\\[i \\+ 1\\] leaves 0:64",
+        lambda d: plain_node(d)["inputs"]["in1"].update(subset=["n + 1"]),
+        "A\\[n \\+ 1\\] leaves 0:64",
     ),
-    ("vecadd", lambda d: plain_node(d)["inputs"]["in1"].update(subset=["i - 1"]), "leaves 0:64"),
+    ("vecadd", lambda d: plain_node(d)["inputs"]["in1"].update(subset=["n - 1"]), "leaves 0:64"),
 ]
 
 

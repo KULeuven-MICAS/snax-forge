@@ -13,6 +13,9 @@ here). execute.py (D79) runs a graph in NumPy (``execute``), an
 accelerated node through its BRM's function. The command line is
 ``python -m snax_forge.dfg import | check``.
 
+loops.py names each map's variable after its dimension (``loop.dim``, ``loop.piece`` and its
+tag: ``n``, ``n_1_t``, ``n_2_s``); the importer and the sandbox's transforms rename through it.
+
 reduce.py (D102): a reduction on a tasklet's output memlet
 (``Reduction``, ``register_reduction``), so a reduction is a map like any other; the
 importer turns DaCe's ``Reduce`` into one and the executor folds it.
