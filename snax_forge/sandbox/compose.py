@@ -5,8 +5,9 @@ reduction split into lane partials and a final sum, two nests fused into one,
 a transient between two bound units made a link. Registered as any transform
 (transforms.py); ``ints`` and the sites as there: ``split_reduce``'s an
 untagged map around one folding tasklet, ``join_reduce``'s and
-``unfuse_map``'s a map that records what made it, ``fuse_map``'s a map whose
-next sibling it fuses with (filling ``second``), ``link``'s a transient
+``unfuse_map``'s a map that records what made it, ``fuse_map``'s a map that
+fuses with its next sibling (filling ``second``) or its previous one (filling
+``first``; ``fuse_choices`` both, the editor's drop-down), ``link``'s a transient
 between two bound units (filling ``group`` with an end's, else the graph's
 name), ``unlink``'s a link node or its container.
 
@@ -323,8 +324,9 @@ def _fuse(g: Graph, first: Node, second: Node, what: str) -> tuple[Node, str, li
     return inner[0], local, tags
 
 
-def _fuse_site(g: Graph, first: str) -> dict[str, Any]:
-    """A map whose next sibling is a map it fuses with (``_fuse``); ``second`` is that map."""
+def _fuse_next(g: Graph, first: str) -> dict[str, Any]:
+    """``first`` fused with its next sibling, a map it fuses with (``_fuse``); ``second`` that
+    map."""
     body, i, _ = _locate(g, first)
     if i + 1 >= len(body):
         raise SandboxError(f"fuse_map {first!r}: nothing comes right after it in one body")
@@ -336,6 +338,36 @@ def _fuse_site(g: Graph, first: str) -> dict[str, Any]:
     return {"first": first, "second": s.id}
 
 
+def _fuse_site(g: Graph, map: str) -> dict[str, Any]:
+    """A map that fuses with its next sibling (``first``) or its previous one (``second``), the
+    next first; refused as the map fused with its next sibling is."""
+    try:
+        return _fuse_next(g, map)
+    except SandboxError as e:
+        why = e
+    body, i, _ = _locate(g, map)
+    if i > 0 and body[i - 1].kind == "map" and body[i].kind == "map":
+        try:
+            return _fuse_next(g, body[i - 1].id)
+        except SandboxError:
+            pass
+    raise why
+
+
+def fuse_choices(g: Graph, map: str) -> list[dict[str, str]]:
+    """The pairs ``fuse_map`` takes with ``map`` on one side, next sibling first then previous,
+    each ``{"first", "second"}`` in body order (the editor's drop-down)."""
+    out = []
+    body, i, _ = _locate(g, map)
+    for k in (i, i - 1):
+        if 0 <= k < len(body) and body[k].kind == "map":
+            try:
+                out.append(_fuse_next(g, body[k].id))
+            except SandboxError:
+                continue
+    return [c for c in out if map in c.values()]
+
+
 def _fuse_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
     """One map, ``_fuse_site``'s; or two, ``first`` and ``second`` in the order selected, the
     second right after the first in one body."""
@@ -344,7 +376,7 @@ def _fuse_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
     if len(selected) != 2:
         raise SandboxError(f"fuse_map: takes one map or two, not {len(selected)}")
     first, second = selected
-    got = _fuse_site(g, first)
+    got = _fuse_next(g, first)
     if got["second"] != second:
         raise SandboxError(f"fuse_map {first!r} {second!r}: {second!r} must come right after "
                            f"{first!r} in one body (after it comes {got['second']!r})")  # fmt: skip
@@ -353,7 +385,7 @@ def _fuse_multi(g: Graph, selected: list[str]) -> dict[str, Any]:
 
 def fuse_map(g: Graph, first: str, second: str) -> Graph:
     what = f"fuse_map {first!r} {second!r}"
-    if _fuse_site(g, first)["second"] != second:
+    if _fuse_next(g, first)["second"] != second:
         raise SandboxError(f"{what}: {second!r} must come right after {first!r} in one body")
     body, i, _ = _locate(g, first)
     for m, kind in _fuse(g, body[i], body[i + 1], what)[2]:  # an untagged side takes the tag
@@ -369,14 +401,14 @@ def fuse_map(g: Graph, first: str, second: str) -> Graph:
 
 
 def fuse_pairs(g: Graph) -> list[tuple[str, str]]:
-    """Every (first, second) ``fuse_map`` takes in ``g`` (``_fuse_site`` on each map), in the
+    """Every (first, second) ``fuse_map`` takes in ``g`` (``_fuse_next`` on each map), in the
     graph's order."""
     out: list[tuple[str, str]] = []
     for n, _ in g.walk():
         if n.kind != "map":
             continue
         try:
-            out.append((n.id, _fuse_site(g, n.id)["second"]))
+            out.append((n.id, _fuse_next(g, n.id)["second"]))
         except SandboxError:
             continue
     return out
@@ -387,7 +419,7 @@ def fuse_link(g: Graph, first: str, second: str) -> dict[str, Any]:
     level: ``{"container": "tmp0", "subset": ["m", "n"], "writer": "mult", "loops": [["m",
     "m", "0:8"], ["n", "n", "0:512"]]}`` (matvec_acc's mult and sum), the subset the second
     reads; SandboxError as the site."""
-    if _fuse_site(g, first)["second"] != second:
+    if _fuse_next(g, first)["second"] != second:
         raise SandboxError(f"fuse_map {first!r} {second!r}: {second!r} must come right after "
                            f"{first!r} in one body")  # fmt: skip
     f, s = g.node(first), g.node(second)
@@ -409,14 +441,14 @@ def fuse_near(g: Graph) -> list[tuple[str, str, str]]:
         if n.kind != "map":
             continue
         try:
-            _fuse_site(g, n.id)
+            _fuse_next(g, n.id)
         except FuseRangeError as e:
             assert e.fix is not None
             body, i, _ = _locate(g, n.id)
             second = body[i + 1].id
             try:
                 if (
-                    _fuse_site(split_map(g, e.fix["map"], e.fix["factor"]), n.id)["second"]
+                    _fuse_next(split_map(g, e.fix["map"], e.fix["factor"]), n.id)["second"]
                     == second
                 ):
                     out.append((n.id, second, str(e)))

@@ -28,8 +28,9 @@
     fold (unbind first); a ``second`` that is not a map of the reader's nest.
     The subsets are compared at the graph's symbol values (a recipe binds
     them at step 0). Registered as ``fuse_map`` is: its site a map of a fold's
-    nest, filling ``second``; over two maps selected, ``first`` and
-    ``second`` in the order selected.
+    nest, filling ``second``, or a map of the elementwise nest, filling
+    ``first`` (``seed_choices`` every pair, the editor's drop-down); over two
+    maps selected, ``first`` and ``second`` in the order selected.
 
     The fold's tasklet records what went (``sandbox.seeded``: the transient's
     name, definition, index and identity, and the nest with where it stood: ``after`` null
@@ -182,10 +183,27 @@ def seed_seconds(g: Graph, first: str, what: str | None = None) -> list[str]:
     return [m.id for m in chain]
 
 
-def _site(g: Graph, first: str) -> dict[str, Any]:
-    """fuse_seed's site: a map of a fold's nest the checks of the module doc pass; ``second``
-    the elementwise nest's outermost map."""
-    return {"first": first, "second": seed_seconds(g, first)[0]}
+def _site(g: Graph, map: str) -> dict[str, Any]:
+    """fuse_seed's site: a map of a fold's nest the checks of the module doc pass, ``second``
+    the elementwise nest's outermost map; or a map of such a nest, ``first`` the outermost map
+    of the fold's nest that reads into it; refused as ``map`` taken as ``first`` is."""
+    try:
+        return {"first": map, "second": seed_seconds(g, map)[0]}
+    except SandboxError as e:
+        firsts = [a for a, b in seed_pairs(g) if b == map]
+        if not firsts:
+            raise e from None
+        return {"first": firsts[0], "second": map}
+
+
+def seed_choices(g: Graph, map: str) -> list[dict[str, str]]:
+    """The pairs ``fuse_seed`` takes with ``map`` on one side, each ``{"first", "second"}``
+    (the editor's drop-down): its seconds when it is a fold's map, else the folds' maps that
+    read into it."""
+    try:
+        return [{"first": map, "second": m} for m in seed_seconds(g, map)]
+    except SandboxError:
+        return [{"first": a, "second": b} for a, b in seed_pairs(g) if b == map]
 
 
 def _multi(g: Graph, selected: list[str]) -> dict[str, Any]:

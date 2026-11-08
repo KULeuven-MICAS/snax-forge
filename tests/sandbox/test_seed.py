@@ -268,9 +268,10 @@ def test_the_site_takes_one_map_or_two_as_fuse_map_does():
         site_of("fuse_seed", g, [FOLD, "mult_map"])
     with pytest.raises(SandboxError, match=r"fuse_seed: takes one map or two, not 3"):
         site_of("fuse_seed", g, [FOLD, EW, "mult_map"])
-    with pytest.raises(SandboxError, match=r"fuse_seed 'augassign_19_4_map': its tasklet augassign_19_4 "
-                       r"must fold its one output"):  # fmt: skip
-        site_of("fuse_seed", g, EW)
+    assert site_of("fuse_seed", g, EW) == {"first": "sum_map", "second": EW}  # the other side
+    with pytest.raises(SandboxError, match=r"fuse_seed 'mult_map': its tasklet mult must fold "
+                       r"its one output"):  # fmt: skip
+        site_of("fuse_seed", g, "mult_map")
 
 
 def test_the_link_names_the_loops_matched():
@@ -293,13 +294,16 @@ def test_the_link_names_the_loops_matched():
 
 def test_the_editor_offers_the_elementwise_nests_maps():
     g = tagged(matvec_acc(8, 512), 4)
-    first, second = form("fuse_seed", g, {"params": site_of("fuse_seed", g, "sum_map")}, {})
-    assert (first["name"], first["value"], first["readonly"]) == ("first", "sum_map", True)
-    assert (second["name"], second["type"], second["value"], second["readonly"]) == (
-        "second", "choice", EW, False)  # fmt: skip
-    assert second["choices"] == [{"value": EW, "ok": True, "label": "augassign_19_4_map · "
-                                  "tmp1[m] · m_t = m (0:8)"}]  # fmt: skip
-    assert "seed" in second["hint"]
+    (pair,) = form("fuse_seed", g, {"params": site_of("fuse_seed", g, "sum_map")}, {},
+                   selected=["sum_map"])  # fmt: skip
+    assert (pair["name"], pair["type"], pair["spread"], pair["value"]) == (
+        "pair", "choice", True, {"first": "sum_map", "second": EW})  # fmt: skip
+    assert pair["choices"] == [{"value": {"first": "sum_map", "second": EW}, "ok": True,
+                                "label": "augassign_19_4_map · tmp1[m] · m_t = m (0:8)"}]  # fmt: skip
+    assert "seed" in pair["hint"]
+    (back,) = form("fuse_seed", g, {"params": site_of("fuse_seed", g, EW)}, {}, selected=[EW])
+    assert [c["value"]["first"] for c in back["choices"]] == ["sum_map", FOLD, "sum_map_1_s"]
+    assert back["choices"][0]["label"] == "sum_map · tmp1[m] · m_t = m (0:8)"
     s = fuse_seed(g, FOLD, EW)
     assert seed_pairs(s) == [] and [c["map"] for c in seeded_choices(s)] == [FOLD]
     (u,) = form("unfuse_seed", s, {"params": site_of("unfuse_seed", s, "sum_map_1_s")}, {})

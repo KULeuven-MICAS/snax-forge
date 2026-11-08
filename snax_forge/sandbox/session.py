@@ -562,6 +562,7 @@ class Session:
                     self.recipe.params,
                     order,
                     self._kernel_inputs() if name == "bake_scalar" else None,
+                    items,
                 )
         self._sites[key] = out
         return out
@@ -908,6 +909,7 @@ def form(
     params: dict[str, Any],
     order: int = 1,
     inputs: dict[str, Any] | None = None,
+    selected: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """The fields the editor shows to apply transform ``name`` where its site accepted
     (``answer``, with the bind list for ``bind``), in the transform's param order: each
@@ -922,9 +924,12 @@ def form(
     units (the instances in no accelerator, in the graph's order, the selection's ticked),
     ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in ``inputs``: the session gives
     the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``),
-    ``fuse_seed``'s ``second`` (a choice per map of the elementwise nest that reads the fold's
-    result, with a ``hint``, ``_second_field``) and ``unfuse_seed``'s ``map`` (a choice per
-    seeded fold, ``_fold_field``)."""
+    ``fuse_map``'s and ``fuse_seed``'s ``first`` and ``second`` on one map ``selected`` (one
+    field, ``pair``, a choice per pair the transform takes with the selected map on either
+    side, its ``value`` giving both params, labelled with the partner and the transient's
+    marker, ``_pair_field``; on two maps ``first`` the selection's and fuse_seed's ``second`` a
+    choice per map of the elementwise nest, ``_second_field``) and ``unfuse_seed``'s ``map`` (a
+    choice per seeded fold, ``_fold_field``)."""
 
     from snax_forge.common import fresh
 
@@ -934,6 +939,10 @@ def form(
     filled = answer["params"]
     selection = next(iter(filled), None)
     fields: list[dict[str, Any]] = []
+    one = selected is None or len(selected) == 1
+    if name in ("fuse_map", "fuse_seed") and one:  # the partner, on either side
+        mine = selected[0] if selected else filled["first"]
+        return [_pair_field(name, g, mine, filled)]
     for p in spec.param_names():
         field: dict[str, Any] = {"name": p, "type": "str", "sweepable": p in spec.ints,
                                  "value": filled.get(p), "readonly": p == selection}  # fmt: skip
@@ -1008,6 +1017,30 @@ def _partner_field(g: Graph, map: str) -> dict[str, Any]:
     dist = {pid: above[pid] if pid in above else depth[pid] for pid in ok}
     best = min(ok, key=lambda pid: (dist[pid], pid in above), default=None)
     return {"type": "choice", "readonly": False, "value": best, "choices": choices}
+
+
+def _pair_field(name: str, g: Graph, map: str, filled: dict[str, Any]) -> dict[str, Any]:
+    """fuse_map's or fuse_seed's one field on one selected map: a choice per pair it takes
+    with ``map`` on either side (compose.py's ``fuse_choices``, seed.py's ``seed_choices``),
+    its value ``{"first", "second"}``, labelled with the partner and the transient between the
+    nests (``link_text``); the site's pair the default."""
+    from .compose import fuse_choices, fuse_link, link_text
+    from .seed import seed_choices, seed_link
+
+    pairs, link = ((fuse_choices, fuse_link) if name == "fuse_map"
+                   else (seed_choices, seed_link))  # fmt: skip
+    choices = []
+    for c in pairs(g, map):
+        other = c["second"] if c["first"] == map else c["first"]
+        label = f"{other} · {link_text(link(g, c['first'], c['second']))}"
+        choices.append({"value": c, "label": label, "ok": True})
+    value = {"first": filled["first"], "second": filled["second"]}
+    hint = ("the nest fused with this one: its first and second by body order, the transient "
+            "between them a local value" if name == "fuse_map" else
+            "the elementwise nest x' = x (+) t that the fold takes as its seed: the fold starts "
+            "each job from x, one beat per job, and t and the nest go")  # fmt: skip
+    return {"name": "pair", "type": "choice", "spread": True, "readonly": False, "sweepable": False,
+            "value": value, "choices": choices, "hint": hint}  # fmt: skip
 
 
 def _second_field(g: Graph, first: str, second: str | None) -> dict[str, Any]:

@@ -658,13 +658,62 @@ def test_the_editor_steps_through_fuse_seed(roots):
     site = s.sites(s.cursor, "sum_map_1_s")["fuse_seed"]
     assert site["ok"] and site["params"] == {"first": "sum_map_1_s",
                                              "second": "augassign_19_4_map"}  # fmt: skip
-    first, second = site["form"]
-    assert (first["readonly"], second["type"], second["value"]) == (
-        True, "choice", "augassign_19_4_map")  # fmt: skip
+    (pair,) = site["form"]
+    assert (pair["name"], pair["value"]) == ("pair", site["params"])
+    back = s.sites(s.cursor, "augassign_19_4_map")["fuse_seed"]  # the other side offers it too
+    assert back["ok"] and back["params"] == {"first": "sum_map", "second": "augassign_19_4_map"}
     both = s.sites(s.cursor, ["sum_map", "augassign_19_4_map"])["fuse_seed"]
     assert both["ok"] and both["params"] == {"first": "sum_map", "second": "augassign_19_4_map"}
-    ok(s.apply("fuse_seed", {"first": "sum_map_1", "second": second["value"]}))
+    ok(s.apply("fuse_seed", {"first": "sum_map_1", "second": pair["value"]["second"]}))
     assert s.sites(s.cursor, "sum")["fuse_seed"]["ok"] is False
     assert s.sites(s.cursor, "sum_map")["unfuse_seed"]["ok"]
     ok(s.apply("unfuse_seed", {"map": "sum_map_1"}))
     assert s.graphs[s.cursor] == s.graphs[s.cursor - 2]
+
+
+# =============================================================================
+# The highlight and the editor agree (B2 R5): every partner shown is offered
+# =============================================================================
+
+
+def _offered(answer: dict, transform: str, map: str, partner: str) -> bool:
+    """The editor's answer on ``map`` offers ``transform`` with ``partner``: in fuse_map's and
+    fuse_seed's pair drop-down (either side), interchange_map's ``with``."""
+    if not answer["ok"]:
+        return False
+    (field,) = [f for f in answer["form"] if f["name"] in ("pair", "with")]
+    if transform == "interchange_map":
+        return any(c["value"] == partner and c["ok"] for c in field["choices"])
+    return any(set(c["value"].values()) == {map, partner} for c in field["choices"])
+
+
+SCENES = [
+    ("matvec_acc", {"M": 8, "N": 512}, []),
+    ("matvec_acc", {"M": 8, "N": 512}, [("tag_map", {"map": "sum_map", "kind": "temporal"})]),
+    ("matvec_acc", {"M": 8, "N": 512}, [("tag_map", {"map": "sum_map", "kind": "temporal"}),
+                                        ("split_map", {"map": "sum_map_1", "factor": 4}),
+                                        ("split_map", {"map": "mult_map_1", "factor": 4})]),
+    ("axpy", {"N": 64}, []),
+]  # fmt: skip
+
+
+@pytest.mark.parametrize(("kernel", "symbols", "steps"), SCENES,
+                         ids=["matvec_acc", "matvec_acc-tag", "matvec_acc-splits", "axpy"])  # fmt: skip
+def test_every_highlighted_partner_is_offered_by_the_editor(roots, kernel, symbols, steps):
+    """For every map and every partner the highlight shows (viz/dfg/api.py's ``partners``,
+    near partners left out), the editor's answer on that selected map offers that transform
+    with that partner, whichever side of the pair the map is."""
+    from pathlib import Path
+
+    from snax_forge.viz.dfg.api import Entry, graph_view
+
+    s = Session.from_kernel(kernel, symbols, roots=roots)
+    for name, params in steps:
+        ok(s.apply(name, params))
+    v = graph_view(Entry("g", Path("g"), s.graphs[s.cursor], None))
+    shown = [(m, p["transform"], p["map"]) for m, ps in v["partners"].items() for p in ps
+             if "near" not in p]  # fmt: skip
+    assert shown
+    missing = [(m, t, p) for m, t, p in shown
+               if not _offered(s.sites(s.cursor, m)[t], t, m, p)]  # fmt: skip
+    assert missing == []
