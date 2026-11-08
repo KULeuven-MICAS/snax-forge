@@ -12,7 +12,8 @@ vsum, two streamer sets (D157), and dot_1_enc, the two as one accelerator of two
 groups (D148); dot_2 to dot_6 and matvec_2 to matvec_6, one group of
 linked units each, and matvec_1, dot_1_enc's two groups on each row; relu, axpy and
 axpy_baked (one stream, CSR scalars); rowsum_2, the lane accumulator, and rowsum_2_padded, the
-same with ``--set memory.passes.layout=padded_rows`` (rows 65 words apart). Its refresh commands
+same with ``--set memory.passes.layout=padded_rows`` (rows 65 words apart); matvec_seed and
+matvec_seed_serial, the fold's seed (B2 R5) on TreeAccumulate and SerialAccumulate. Its refresh commands
 are run
 here as written, from a temporary folder that stands for the repo root (the
 recipe and the platform the checked-in ones, the platform's source hjson
@@ -43,7 +44,7 @@ DESIGNS = [
     "vecadd_n7", "vsum_tree_n21", "rowsum_3x7", "vecmul_i32_i64", "dot_1", "dot_1_enc",
     "dot_2", "dot_3", "dot_4", "dot_5", "dot_6",
     "matvec_1", "matvec_2", "matvec_3", "matvec_4", "matvec_5", "matvec_6", "relu",
-    "axpy", "axpy_baked", "rowsum_2", "rowsum_2_padded",
+    "axpy", "axpy_baked", "rowsum_2", "rowsum_2_padded", "matvec_seed", "matvec_seed_serial",
 ]  # fmt: skip
 # A fixture made from another recipe, or with --set values: its recipe and its sets
 FROM = {"rowsum_2_padded": ("rowsum_2", ("memory.passes.layout=padded_rows",))}

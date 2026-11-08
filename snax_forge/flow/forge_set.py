@@ -70,7 +70,8 @@ QUICK = designs("vecadd_i32", "vsum_tree_i8", "dot_1", "dot_1_enc", "dot_4", "ax
 SETS = {
     "quick": QUICK,
     "full": [*QUICK, *designs("vecadd", "vsum", "vecmul_i32_i64", "dot_2", "dot_3", "dot_5",
-                              "dot_6", "matvec_5", "matvec_6", "relu", "rowsum_2",
+                              "dot_6", "matvec_5", "matvec_6", "matvec_seed",
+                              "matvec_seed_serial", "relu", "rowsum_2",
                               Design("rowsum_2", ("memory.passes.layout=padded_rows",)))],
 }  # fmt: skip
 
