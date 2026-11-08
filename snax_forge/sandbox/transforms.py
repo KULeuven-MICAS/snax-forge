@@ -586,11 +586,11 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
     if seeds and not any(p.name == SEED for p in b.interface.ports):
         (s,) = seeds.values()
         raise SandboxError(f"{what}: the fold is seeded from {s.data}; {brm!r} has no seed port "
-                           "(TreeAccumulate and SerialAccumulate take one, D149): unseed_fold "
+                           "(TreeAccumulate and SerialAccumulate take one, D149): unfuse_seed "
                            "first")  # fmt: skip
     if given_seed is not None and given_seed != int(bool(seeds)):
         raise SandboxError(f"{what}: seed = {given_seed!r} given, but the fold is "
-                           f"{'seeded' if seeds else 'not seeded'} (seed_fold sets it)")  # fmt: skip
+                           f"{'seeded' if seeds else 'not seeded'} (fuse_seed sets it)")  # fmt: skip
     scalars = _scalar_inputs(g, site, what)
     ports = match(site.pattern, b, conn_dtypes, frozenset(scalars))
     _check_port_dtypes(b, ports, conn_dtypes, what)
@@ -709,7 +709,7 @@ def _bind_check(g: Graph, site: _Site, brm: str, implementation: str,
 
 
 def _seeds(site: _Site) -> dict[str, Any]:
-    """The seeded folds under the bind's site (seed.py's ``seed_fold``): connector -> its
+    """The seeded folds under the bind's site (seed.py's ``fuse_seed``): connector -> its
     reduce's seed, over every tasklet of the spatial map (a fused nest's second too)."""
     found = {}
     for t in [site.tasklet, *(n for n in site.smap.body or [] if n.kind == "tasklet")]:

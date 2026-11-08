@@ -650,19 +650,23 @@ def test_sites_over_a_selection_on_dot_1(roots):
     )
 
 
-def test_the_editor_steps_through_seed_fold(roots):
-    """edit-dfg on matvec_acc: after the sum's tag and split, the sum's maps offer seed_fold with
-    the fold's drop-down; applied, the step checks, and unseed_fold takes it back (B2 R5)."""
+def test_the_editor_steps_through_fuse_seed(roots):
+    """edit-dfg on matvec_acc: after the sum's tag and split, a map of the sum's nest offers
+    fuse_seed with the elementwise nest's drop-down, as do the two maps selected; applied, the
+    step checks, and unfuse_seed takes it back (B2 R5)."""
     s = Session.from_kernel("matvec_acc", {"M": 8, "N": 512}, roots=roots)
     ok(s.apply("tag_map", {"map": "sum_map", "kind": "temporal"}))
     ok(s.apply("split_map", {"map": "sum_map_1", "factor": 4}))
-    site = s.sites(s.cursor, "sum_map_1_s")["seed_fold"]
-    assert site["ok"] and site["params"] == {"map": "sum_map_1_s"}
-    (f,) = site["form"]
-    assert (f["type"], f["value"], [c["value"] for c in f["choices"]]) == (
-        "choice", "sum_map_1", ["sum_map_1"])  # fmt: skip
-    ok(s.apply("seed_fold", {"map": f["value"]}))
-    assert s.sites(s.cursor, "sum")["seed_fold"]["ok"] is False
-    assert s.sites(s.cursor, "sum_map")["unseed_fold"]["ok"]
-    ok(s.apply("unseed_fold", {"map": "sum_map_1"}))
+    site = s.sites(s.cursor, "sum_map_1_s")["fuse_seed"]
+    assert site["ok"] and site["params"] == {"first": "sum_map_1_s",
+                                             "second": "augassign_19_4_map"}  # fmt: skip
+    first, second = site["form"]
+    assert (first["readonly"], second["type"], second["value"]) == (
+        True, "choice", "augassign_19_4_map")  # fmt: skip
+    both = s.sites(s.cursor, ["sum_map", "augassign_19_4_map"])["fuse_seed"]
+    assert both["ok"] and both["params"] == {"first": "sum_map", "second": "augassign_19_4_map"}
+    ok(s.apply("fuse_seed", {"first": "sum_map_1", "second": second["value"]}))
+    assert s.sites(s.cursor, "sum")["fuse_seed"]["ok"] is False
+    assert s.sites(s.cursor, "sum_map")["unfuse_seed"]["ok"]
+    ok(s.apply("unfuse_seed", {"map": "sum_map_1"}))
     assert s.graphs[s.cursor] == s.graphs[s.cursor - 2]

@@ -17,13 +17,13 @@
   },
   {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
   {"transform": "split_map", "params": {"map": "sum_map_1", "factor": 1}},
-  {"transform": "seed_fold", "params": {"map": "sum_map_1"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_1", "second": "augassign_19_4_map"}},
   {
    "transform": "bind",
    "params": {
     "node": "sum",
     "brm": "accumulate",
-    "implementation": "chisel_accumulator",
+    "implementation": "chisel_serial",
     "instance": "sum"
    }
   },

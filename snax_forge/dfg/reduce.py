@@ -25,7 +25,7 @@ land in (``interchange_map``) reads it, so an op registered with
 
 **The seed** (M13 B2 R5). In place of ``identity`` a reduce may hold
 ``seed``, an element of a container the fold starts from instead, read once
-per element before the first write (``seed_fold`` in sandbox/seed.py makes
+per element before the first write (``fuse_seed`` in sandbox/seed.py makes
 it, the fold of matvec_acc's ``q += A p`` as ``x' = x (+) fold_j(a_j)``):
 
     {"data": "q", "subset": ["m"], "reduce": {"op": "add", "seed": {"data": "q", "subset": ["m"]}}}

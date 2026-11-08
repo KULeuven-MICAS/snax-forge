@@ -17,7 +17,7 @@
   },
   {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
   {"transform": "split_map", "params": {"map": "sum_map_1", "factor": "W"}},
-  {"transform": "seed_fold", "params": {"map": "sum_map_1"}},
+  {"transform": "fuse_seed", "params": {"first": "sum_map_1", "second": "augassign_19_4_map"}},
   {
    "transform": "bind",
    "params": {

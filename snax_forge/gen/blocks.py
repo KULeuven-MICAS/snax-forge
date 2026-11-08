@@ -52,7 +52,7 @@ lanes summed by an adder tree in front of its register.
     params       ``op``: add, as SimdLanes' ``op``; args are lanes only
     seed         optional (the BRM's port ``seed``, present at its design
                  param ``seed`` 1): an input of one word at the output's rate,
-                 the sum's start in a job's first firing (``seed_fold``); its
+                 the sum's start in a job's first firing (``fuse_seed``); its
                  presence in ``ports`` says so, no param
 
 **SerialAccumulate** (L 1, span lanes, D149): TreeAccumulate's ports, op and

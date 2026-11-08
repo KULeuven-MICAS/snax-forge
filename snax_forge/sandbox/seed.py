@@ -1,38 +1,52 @@
 """The fold's seed: the reduction x' = x (+) fold_j(a_j) done in the fold itself (M13 B2 R5).
 
-``seed_fold(map)`` and ``unseed_fold(map)``
-    ``map`` is a map of a fold's nest: any map of the chain of single-child
-    maps down to one tasklet whose one output folds (``reduce``, D102), or a
-    map ``split_reduce`` split, which stands for its final sum (the fold that
-    writes the output). The fold writes a transient ``t`` with op (+), and
-    ``t``'s only reader is an elementwise nest computing ``t (+) x`` with the
-    same op and writing ``x`` in place, over ``t``'s whole subset, each
-    element once, ``x`` at ``t``'s index (matvec_acc: the sum's ``tmp1[m]``,
-    then ``augassign_19_4``'s ``q[m] = q[m] + tmp1[m]``). ``seed_fold``
-    removes that nest and ``t``: the fold writes ``x`` at its own subset, and
-    its reduce holds ``"seed": {"data": "x", "subset": [...]}`` in place of
-    ``identity`` (dfg/reduce.py), so the fold starts each element from ``x``'s.
-    That is exact for any associative and commutative op on integers (D28),
-    which every registered op is. Refused, naming what it found: a fold whose
-    transient has another reader (or writer, or a link); a reader computing
-    another op; a reader over a different subset (an element twice or not at
-    all, ``x`` at another index, ``x`` not written in place, the fold not
-    writing every element of ``t``); a target that is not a transient; a
-    float dtype; a fold seeded already; a node between the fold and its reader
-    naming ``x``, or the fold's nest reading it; a bound fold (unbind first).
-    The subsets are compared at the graph's symbol values (a recipe binds them
-    at step 0).
+``fuse_seed(first, second)`` and ``unfuse_seed(map)``
+    A fuse, as ``fuse_map`` (compose.py) is: ``first`` is a map of a fold's
+    nest, any map of the chain of single-child maps down to one tasklet whose
+    one output folds (``reduce``, D102), or a map ``split_reduce`` split, which
+    stands for its final sum (the fold that writes the output); ``second`` a
+    map of the elementwise nest that reads the fold's result, any map of its
+    chain down to the reader (its outermost the site's default). The fold
+    writes a transient ``t`` with op (+), and ``t``'s only reader is that
+    nest, computing ``t (+) x`` with the same op and writing ``x`` in place,
+    over ``t``'s whole subset, each element once, ``x`` at ``t``'s index
+    (matvec_acc: the sum's ``tmp1[m]``, then ``augassign_19_4``'s ``q[m] =
+    q[m] + tmp1[m]``): the fold's kept loops (those its output moves with) and
+    the nest's loops run over the same elements, ``m_t`` and ``m`` (0:8)
+    after ``tag_map sum_map temporal``, the fold's other loops free.
+    ``fuse_seed`` removes that nest and ``t``: the fold writes ``x`` at its own
+    subset, and its reduce holds ``"seed": {"data": "x", "subset": [...]}`` in
+    place of ``identity`` (dfg/reduce.py), so the fold starts each element
+    from ``x``'s. That is exact for any associative and commutative op on
+    integers (D28), which every registered op is. Refused, naming what it
+    found: a fold whose transient has another reader (or writer, or a link);
+    a reader computing another op; a reader over a different subset (an
+    element twice or not at all, ``x`` at another index, ``x`` not written in
+    place, the fold not writing every element of ``t``); a target that is not
+    a transient; a float dtype; a fold seeded already; a node between the
+    fold and its reader naming ``x``, or the fold's nest reading it; a bound
+    fold (unbind first); a ``second`` that is not a map of the reader's nest.
+    The subsets are compared at the graph's symbol values (a recipe binds
+    them at step 0). Registered as ``fuse_map`` is: its site a map of a fold's
+    nest, filling ``second``; over two maps selected, ``first`` and
+    ``second`` in the order selected.
 
     The fold's tasklet records what went (``sandbox.seeded``: the transient's
     name, definition, index and identity, and the nest with where it stood: ``after`` null
     when right after the node holding the fold, whatever that node's id becomes),
     which ``split_reduce`` moves to the final sum with the seed (the partials
-    keep the identity) and ``join_reduce`` back. ``unseed_fold`` puts the nest
+    keep the identity) and ``join_reduce`` back. ``unfuse_seed`` (``map`` a map
+    of the seeded fold's nest) puts the nest
     and the transient back, names as at import, and the fold writes ``t`` at
-    its subset again from the identity: ``seed_fold`` then ``unseed_fold`` is
+    its subset again from the identity: ``fuse_seed`` then ``unfuse_seed`` is
     the graph before. split, split_map, tag_map, untag_map, interchange_map and
     join_map carry the seed as any subset (``Memlet.map_dims``), so the steps
     before ``bind`` go in any order.
+
+    ``seed_seconds`` gives the maps ``second`` takes for a ``first`` (the
+    editor's drop-down), ``seed_pairs`` every (first, second) of a graph and
+    ``seed_link`` the transient between them with the loops matched (the
+    viewer's partners, viz/dfg/api.py), all through the site's check.
 
 ``bind`` takes a seeded fold only on a BRM with a ``seed`` port
 (``accumulate``: TreeAccumulate and SerialAccumulate, D149), with the design
@@ -144,10 +158,52 @@ def _nest_root(g: Graph, node: Node) -> tuple[Node, Node | None, list[Node]]:
     return root, parent, parent.body if parent is not None else g.body
 
 
-def _site(g: Graph, map: str) -> dict[str, Any]:
-    """seed_fold's site: the checks of the module doc."""
-    _check(g, map, f"seed_fold {map!r}")
-    return {"map": map}
+def _reader_chain(g: Graph, reader: Node) -> list[Node]:
+    """The maps of the elementwise nest around ``reader``, outermost first: ``second``'s
+    choices (its chain of single-child maps)."""
+    root, _, _ = _nest_root(g, reader)
+    chain: list[Node] = []
+    node = root
+    while node.kind == "map":
+        chain.append(node)
+        node = (node.body or [node])[0]
+    return chain
+
+
+def seed_seconds(g: Graph, first: str, what: str | None = None) -> list[str]:
+    """The maps ``second`` takes for ``first`` (module doc), outermost first; SandboxError
+    with the site's refusal when ``first`` takes none."""
+    what = what or f"fuse_seed {first!r}"
+    found = _check(g, first, what)
+    chain = _reader_chain(g, found["reader"])
+    if not chain:
+        raise SandboxError(f"{what}: {found['t']}'s reader {found['reader'].id} is in no map")
+    return [m.id for m in chain]
+
+
+def _site(g: Graph, first: str) -> dict[str, Any]:
+    """fuse_seed's site: a map of a fold's nest the checks of the module doc pass; ``second``
+    the elementwise nest's outermost map."""
+    return {"first": first, "second": seed_seconds(g, first)[0]}
+
+
+def _multi(g: Graph, selected: list[str]) -> dict[str, Any]:
+    """One map, ``_site``'s; or two, ``first`` and ``second`` in the order selected."""
+    if len(selected) == 1:
+        return _site(g, selected[0])
+    if len(selected) != 2:
+        raise SandboxError(f"fuse_seed: takes one map or two, not {len(selected)}")
+    first, second = selected
+    _second(g, first, second)
+    return {"first": first, "second": second}
+
+
+def _second(g: Graph, first: str, second: str) -> None:
+    what = f"fuse_seed {first!r} {second!r}"
+    seconds = seed_seconds(g, first, what)
+    if second not in seconds:
+        raise SandboxError(f"{what}: {second!r} is not a map of the elementwise nest that reads "
+                           f"the fold's result ({', '.join(seconds)})")  # fmt: skip
 
 
 def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
@@ -158,7 +214,7 @@ def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
     t = om.data
     if red.seed is not None:
         raise SandboxError(f"{what}: {fold.id} is seeded from {red.seed.data} already "
-                           "(unseed_fold first)")  # fmt: skip
+                           "(unfuse_seed first)")  # fmt: skip
     if not g.containers[t].transient:
         raise SandboxError(f"{what}: {fold.id} folds into {t}, which is not a transient; the seed "
                            "takes a transient that one elementwise nest adds to x")  # fmt: skip
@@ -225,11 +281,12 @@ def _check(g: Graph, map: str, what: str) -> dict[str, Any]:
     return {"fold": fold, "cout": cout, "reader": r, "x": x, "t": t}
 
 
-def seed_fold(g: Graph, map: str) -> Graph:
-    what = f"seed_fold {map!r}"
-    _check(g, map, what)
+def fuse_seed(g: Graph, first: str, second: str) -> Graph:
+    what = f"fuse_seed {first!r} {second!r}"
+    _site(g, first)  # the site's refusal first, as every transform's
+    _second(g, first, second)
     g = _copy(g)
-    found = _check(g, map, what)
+    found = _check(g, first, what)
     fold, cout, r, x, t = (found[k] for k in ("fold", "cout", "reader", "x", "t"))
     om = fold.outputs[cout]
     assert om.reduce is not None
@@ -254,7 +311,7 @@ def seed_fold(g: Graph, map: str) -> Graph:
 
 
 def _unseed_site(g: Graph, map: str) -> dict[str, Any]:
-    _unseed_check(g, map, f"unseed_fold {map!r}")
+    _unseed_check(g, map, f"unfuse_seed {map!r}")
     return {"map": map}
 
 
@@ -263,7 +320,7 @@ def _unseed_check(g: Graph, map: str, what: str) -> tuple[Node, dict[str, Any]]:
     ((_, om),) = fold.outputs.items()
     rec = fold.attrs.get(SEEDED)
     if om.reduce is None or om.reduce.seed is None or rec is None:
-        raise SandboxError(f"{what}: {fold.id}'s fold is not seeded by seed_fold")
+        raise SandboxError(f"{what}: {fold.id}'s fold is not seeded by fuse_seed")
     t = rec["container"]
     taken = set(g.symbols) | set(g.containers) | {n.attrs["var"] for n, _ in g.walk()
                                                   if n.kind == "map"}  # fmt: skip
@@ -288,9 +345,9 @@ def _ids(n: Node) -> list[Node]:
     return [n, *(k for c in n.body or [] for k in _ids(c))]
 
 
-def unseed_fold(g: Graph, map: str) -> Graph:
-    """The inverse of seed_fold: the elementwise nest and the transient back."""
-    what = f"unseed_fold {map!r}"
+def unfuse_seed(g: Graph, map: str) -> Graph:
+    """The inverse of fuse_seed: the elementwise nest and the transient back."""
+    what = f"unfuse_seed {map!r}"
     _unseed_check(g, map, what)
     g = _copy(g)
     fold, rec = _unseed_check(g, map, what)
@@ -331,34 +388,74 @@ def fold_map(g: Graph, fold: Node) -> str:
     return next((o.id for o in chain if o.attrs["var"] not in om.names), chain[-1].id)
 
 
-def fold_choices(g: Graph, seeded: bool) -> list[dict[str, str]]:
-    """The folds ``seed_fold`` takes (``seeded`` False) or ``unseed_fold`` takes (True), one
-    each in the graph's order: its map (``fold_map``), its tasklet, what it folds into, the
-    seed's container and the reader's code (the editor's drop-down)."""
+def seeded_choices(g: Graph) -> list[dict[str, str]]:
+    """The folds ``unfuse_seed`` takes, one each in the graph's order: its map (``fold_map``),
+    its tasklet, what it folded into, the seed's container and the reader's code (the
+    editor's drop-down)."""
     out: list[dict[str, str]] = []
     for n, _ in g.walk():
         if n.kind != "tasklet" or not any(m.reduce is not None for m in n.outputs.values()):
             continue
         try:
             m = fold_map(g, n)
-        except (StopIteration, IndexError):
-            continue
-        try:
-            if seeded:
-                _unseed_check(g, m, "")
-                ((_, om),) = n.outputs.items()
-                into, x = n.attrs[SEEDED]["container"], om.data
-            else:
-                found = _check(g, m, "")
-                into, x = found["t"], found["x"]
-        except SandboxError:
+            _unseed_check(g, m, "")
+        except (StopIteration, IndexError, SandboxError):
             continue
         ((_, om),) = n.outputs.items()
         assert om.reduce is not None
+        into, x = n.attrs[SEEDED]["container"], om.data
         reads = f"{x} = " + _OP_CODE[om.reduce.op].format(t=into, x=x)
         out.append({"map": m, "fold": n.id, "into": into, "x": x, "reads": reads})
     return out
 
 
-register_transform("seed_fold", seed_fold, site=_site)
-register_transform("unseed_fold", unseed_fold, site=_unseed_site)
+def seed_pairs(g: Graph) -> list[tuple[str, str]]:
+    """Every (first, second) ``fuse_seed`` takes in ``g`` (``seed_seconds`` on each map), in the
+    graph's order."""
+    out: list[tuple[str, str]] = []
+    for n, _ in g.walk():
+        if n.kind != "map":
+            continue
+        try:
+            seconds = seed_seconds(g, n.id)
+        except SandboxError:
+            continue
+        out += [(n.id, s) for s in seconds]
+    return out
+
+
+def range_text(g: Graph, rng: str) -> str:
+    """A map's range at the graph's symbols, ``0:8``; as written where they are unknown."""
+    try:
+        return ":".join(str(expr.evaluate(p, g.bound_symbols)) for p in rng.split(":"))
+    except ExprError:
+        return rng
+
+
+def seed_link(g: Graph, first: str, second: str) -> dict[str, Any]:
+    """The transient between ``first``'s fold and ``second``'s nest and the loops matched: the
+    fold's kept loops (the maps around it its output moves with) against the nest's, level by
+    level, ``{"container": "tmp1", "subset": ["m"], "loops": [["m_t", "m", "0:8"]]}``; the
+    two sides' ranges joined by `` = `` where they differ (``0:8 = 0:4``), and the leftover
+    loops of the longer side with an empty partner."""
+    _second(g, first, second)
+    found = _check(g, first, "")
+    fold, r = found["fold"], found["reader"]
+    ((_, om),) = fold.outputs.items()
+    _, _, outer = _locate(g, fold.id)
+    kept = [o for o in outer if o.kind == "map" and o.attrs["var"] in om.names]
+    mine = _reader_chain(g, r)
+    loops = []
+    for k in range(max(len(kept), len(mine))):
+        a = kept[k] if k < len(kept) else None
+        b = mine[k] if k < len(mine) else None
+        ra = range_text(g, a.attrs["range"]) if a else None
+        rb = range_text(g, b.attrs["range"]) if b else None
+        text = ra if ra == rb or rb is None else rb if ra is None else f"{ra} = {rb}"
+        loops.append([a.attrs["var"] if a else "", b.attrs["var"] if b else "", text])
+    (read,) = [m for m in r.inputs.values() if m.data == found["t"]]
+    return {"container": found["t"], "subset": [str(d) for d in read.subset], "loops": loops}
+
+
+register_transform("fuse_seed", fuse_seed, site=_site, multi=_multi)
+register_transform("unfuse_seed", unfuse_seed, site=_unseed_site)

@@ -25,7 +25,7 @@ name), ``unlink``'s a link node or its container.
     (``loop.split_reduce``); ``join_reduce`` takes them back and joins the
     map (``join_map``). A length that is not a multiple of the factor is
     refused: the partials' padding is not placed yet (D144). A seeded fold
-    (seed.py's ``seed_fold``) keeps its seed on the final sum only, which
+    (seed.py's ``fuse_seed``) keeps its seed on the final sum only, which
     takes the fold's record too; the partials start from the identity and are
     named after the transient the seed took (matvec_acc's ``tmp1_partial``),
     as split before the seed.

@@ -1,12 +1,12 @@
-"""The fold's seed: ``seed_fold`` and ``unseed_fold`` on matvec_acc (C§11, C§12, M13 B2 R5).
+"""The fold's seed: ``fuse_seed`` and ``unfuse_seed`` on matvec_acc (C§11, C§12, M13 B2 R5).
 
 matvec_acc (``q += A p``, ``tests/dfg/fixtures/matvec_acc.snaxdfg``) imports as matvec's
 multiply into ``tmp0``, the sum folding into the transient ``tmp1[m]``, then the elementwise
-``q[m] = q[m] + tmp1[m]``. ``seed_fold`` takes the last into the fold: the sum writes ``q[m]``
+``q[m] = q[m] + tmp1[m]``. ``fuse_seed`` takes the last into the fold: the sum writes ``q[m]``
 from the seed ``q[m]``, and ``tmp1`` and its nest go. Accepted when the worked example (W = 2:
 A's rows (1, 2, 3, 4), (5, 6, 7, 8), (9, 10, 11, 12), p = (1, 2, 0, 1), q = (1, 1, 1)) gives
 q' = (10, 26, 42) at every step and bound (row 0: 1 + 5 = 6 after the first beat, then
-6 + 4 = 10), ``unseed_fold`` gives the graph back, the seed follows the splits, tags and
+6 + 4 = 10), ``unfuse_seed`` gives the graph back, the seed follows the splits, tags and
 interchanges in any order before ``bind``, and each refusal names what it found.
 """
 
@@ -22,16 +22,16 @@ from snax_forge.sandbox import (
     SandboxError,
     apply_recipe,
     bind,
+    fuse_seed,
     join_map,
     join_reduce,
-    seed_fold,
     split,
     split_map,
     split_reduce,
     unbind,
-    unseed_fold,
+    unfuse_seed,
 )
-from snax_forge.sandbox.seed import fold_choices
+from snax_forge.sandbox.seed import seed_link, seed_pairs, seed_seconds, seeded_choices
 from snax_forge.sandbox.session import form
 from snax_forge.sandbox.transforms import interchange, site_of, tag_map, untag_map
 from tests.helpers import FIXTURES, graph_dict
@@ -42,6 +42,7 @@ Q = np.array([1, 1, 1], np.int64)
 WANT = [10, 26, 42]
 TREE = {"brm": "accumulate", "implementation": "chisel_adder_tree", "instance": "sum"}
 FOLD = "sum_map_1"
+EW = "augassign_19_4_map"  # the elementwise nest q = q + tmp1
 
 
 def matvec_acc(m: int = 3, n: int = 4) -> Graph:
@@ -60,13 +61,13 @@ def tagged(g: Graph, w: int = 2) -> Graph:
 
 
 # =============================================================================
-# seed_fold, the worked example, unseed_fold
+# fuse_seed, the worked example, unfuse_seed
 # =============================================================================
 
 
-def test_seed_fold_takes_the_elementwise_nest_and_the_transient():
+def test_fuse_seed_takes_the_elementwise_nest_and_the_transient():
     g = matvec_acc()
-    s = seed_fold(g, FOLD)
+    s = fuse_seed(g, FOLD, EW)
     assert "tmp1" not in s.containers and list(s.containers) == ["A", "p", "q", "tmp0"]
     assert [n.id for n in s.body] == ["mult_map", "sum_map"]
     out = s.node("sum").outputs["out"].to_dict()
@@ -82,15 +83,15 @@ def test_seed_fold_takes_the_elementwise_nest_and_the_transient():
     "make",
     [
         matvec_acc,
-        lambda: seed_fold(matvec_acc(), FOLD),
-        lambda: tagged(seed_fold(matvec_acc(), FOLD)),
-        lambda: seed_fold(tagged(matvec_acc()), FOLD),
-        lambda: bind(seed_fold(tagged(matvec_acc()), FOLD), node="sum", **TREE),
-        lambda: bind(seed_fold(tagged(matvec_acc(), 1), FOLD), node="sum", **TREE
+        lambda: fuse_seed(matvec_acc(), FOLD, EW),
+        lambda: tagged(fuse_seed(matvec_acc(), FOLD, EW)),
+        lambda: fuse_seed(tagged(matvec_acc()), FOLD, EW),
+        lambda: bind(fuse_seed(tagged(matvec_acc()), FOLD, EW), node="sum", **TREE),
+        lambda: bind(fuse_seed(tagged(matvec_acc(), 1), FOLD, EW), node="sum", **TREE
                      | {"implementation": "chisel_accumulator"}),
-        lambda: bind(seed_fold(tagged(matvec_acc()), FOLD), node="sum", **TREE
+        lambda: bind(fuse_seed(tagged(matvec_acc()), FOLD, EW), node="sum", **TREE
                      | {"implementation": "chisel_serial"}),
-        lambda: split_reduce(seed_fold(matvec_acc(), FOLD), FOLD, 2),
+        lambda: split_reduce(fuse_seed(matvec_acc(), FOLD, EW), FOLD, 2),
     ],
     ids=["imported", "seeded", "seeded-split", "split-seeded", "bound-tree", "bound-w1",
          "bound-serial", "split_reduce"],
@@ -100,7 +101,7 @@ def test_the_worked_example_gives_10_26_42(make):
 
 
 def test_the_bound_unit_takes_the_seed_on_its_port_once_per_job():
-    b = bind(seed_fold(tagged(matvec_acc()), FOLD), node="sum", **TREE)
+    b = bind(fuse_seed(tagged(matvec_acc()), FOLD, EW), node="sum", **TREE)
     n = b.node("sum")
     assert n.attrs["params"] == {"W": 2, "op": "add", "seed": 1}
     assert {c: m.to_dict() for c, m in n.inputs.items()} == {
@@ -115,18 +116,18 @@ def test_the_bound_unit_takes_the_seed_on_its_port_once_per_job():
 
 def test_seed_then_unseed_gives_the_graph_back():
     g = matvec_acc()
-    assert unseed_fold(seed_fold(g, FOLD), FOLD) == g
+    assert unfuse_seed(fuse_seed(g, FOLD, EW), FOLD) == g
     t = tagged(g)
-    assert unseed_fold(seed_fold(t, FOLD), FOLD) == t
-    assert unseed_fold(tagged(seed_fold(g, FOLD)), FOLD) == t  # the splits since kept
+    assert unfuse_seed(fuse_seed(t, FOLD, EW), FOLD) == t
+    assert unfuse_seed(tagged(fuse_seed(g, FOLD, EW)), FOLD) == t  # the splits since kept
     sr = split_reduce(g, FOLD, 2)
-    assert unseed_fold(seed_fold(sr, FOLD), FOLD) == sr
+    assert unfuse_seed(fuse_seed(sr, FOLD, EW), FOLD) == sr
 
 
 def test_split_reduce_seeds_the_final_sum_only():
     """The partials keep the identity, the final sum takes the seed and its record; seeding
     before or after split_reduce gives one graph, and join_reduce gives the seeded fold back."""
-    s = seed_fold(matvec_acc(), FOLD)
+    s = fuse_seed(matvec_acc(), FOLD, EW)
     sr = split_reduce(s, FOLD, 2)
     assert sr.node("sum").outputs["out"].to_dict() == {
         "data": "tmp1_partial", "subset": ["m", "n_2_s"],
@@ -134,17 +135,17 @@ def test_split_reduce_seeds_the_final_sum_only():
     assert sr.node("sum_final").outputs["out"].to_dict()["reduce"]["seed"] == {
         "data": "q", "subset": ["m"]}  # fmt: skip
     assert SEEDED not in sr.node("sum").attrs and SEEDED in sr.node("sum_final").attrs
-    assert sr == seed_fold(split_reduce(matvec_acc(), FOLD, 2), FOLD)
+    assert sr == fuse_seed(split_reduce(matvec_acc(), FOLD, 2), FOLD, EW)
     assert join_reduce(sr, FOLD) == s
 
 
 def test_the_seed_follows_split_tag_interchange_and_join():
     g = matvec_acc()
-    s = seed_fold(g, FOLD)
+    s = fuse_seed(g, FOLD, EW)
     assert join_map(split(s, FOLD, 2), FOLD) == s
     assert untag_map(tag_map(s, "sum_map", "temporal"), "sum_map") == s
     x = interchange(s, "sum_map", FOLD)
-    assert x == seed_fold(interchange(g, "sum_map", FOLD), FOLD) and run(x) == WANT
+    assert x == fuse_seed(interchange(g, "sum_map", FOLD), FOLD, EW) and run(x) == WANT
     assert interchange(x, FOLD, "sum_map") == s
     sp = split(s, "sum_map", 3)  # the row map split: the seed's index moves with it
     assert sp.node("sum").outputs["out"].reduce.seed.subset == ("3 * m_1 + m_2",)
@@ -154,15 +155,15 @@ def test_the_seed_follows_split_tag_interchange_and_join():
 STEPS = {
     "tag": {"transform": "tag_map", "params": {"map": "sum_map", "kind": "temporal"}},
     "split": {"transform": "split_map", "params": {"map": FOLD, "factor": "W"}},
-    "seed": {"transform": "seed_fold", "params": {"map": FOLD}},
+    "seed": {"transform": "fuse_seed", "params": {"first": FOLD, "second": EW}},
 }
 BIND = {"transform": "bind", "params": {"node": "sum", **TREE}}
 
 
 @pytest.mark.parametrize("order", [["seed", "tag", "split"], ["tag", "seed", "split"],
                                    ["tag", "split", "seed"]])  # fmt: skip
-def test_seed_fold_goes_anywhere_before_bind(order):
-    """seed_fold before, between or after the tag and the split: the same bound unit, every
+def test_fuse_seed_goes_anywhere_before_bind(order):
+    """fuse_seed before, between or after the tag and the split: the same bound unit, every
     step checked against the reference on the seeded inputs (run.py)."""
     r = Recipe.from_dict({"name": "t", "kernel": "matvec_acc", "params": {"W": 4},
                           "symbols": {"M": 8, "N": 64},
@@ -212,7 +213,7 @@ def _reader(d):
          r"folds into tmp1, which is not a transient"),
         (lambda: _edited(lambda d: d["containers"]["tmp1"].update(dtype="float64")),
          r"tmp1 is float64, a float op type"),
-        (lambda: seed_fold(matvec_acc(), FOLD), r"sum is seeded from q already \(unseed_fold first\)"),
+        (lambda: fuse_seed(matvec_acc(), FOLD, EW), r"sum is seeded from q already \(unfuse_seed first\)"),
         (lambda: bind(tagged(matvec_acc()), node="sum", **TREE),
          r"its fold is bound as 'sum' \(unbind first\)"),
         (matvec_acc, None),
@@ -220,24 +221,24 @@ def _reader(d):
     ids=["another-reader", "another-op", "another-subset", "x-elsewhere", "not-transient",
          "float", "seeded", "bound", "ok"],
 )  # fmt: skip
-def test_seed_fold_refuses(make, message):
+def test_fuse_seed_refuses(make, message):
     g = make()
     if message is None:
-        assert site_of("seed_fold", g, FOLD) == {"map": FOLD}
+        assert site_of("fuse_seed", g, FOLD) == {"first": FOLD, "second": EW}
         return
     with pytest.raises(SandboxError, match=message):
-        seed_fold(g, FOLD)
+        fuse_seed(g, FOLD, EW)
     with pytest.raises(SandboxError, match=message):  # its site says the same
-        site_of("seed_fold", g, FOLD)
+        site_of("fuse_seed", g, FOLD)
 
 
-def test_unseed_fold_refuses_a_fold_not_seeded():
-    with pytest.raises(SandboxError, match=r"sum's fold is not seeded by seed_fold"):
-        unseed_fold(matvec_acc(), FOLD)
+def test_unfuse_seed_refuses_a_fold_not_seeded():
+    with pytest.raises(SandboxError, match=r"sum's fold is not seeded by fuse_seed"):
+        unfuse_seed(matvec_acc(), FOLD)
 
 
 def test_bind_refuses_a_seed_on_a_brm_without_a_seed_port():
-    s = seed_fold(tagged(matvec_acc()), FOLD)
+    s = fuse_seed(tagged(matvec_acc()), FOLD, EW)
     with pytest.raises(SandboxError, match=r"seeded from q; 'simd' has no seed port"):
         bind(s, node="sum", brm="simd", implementation="chisel_tiled_spatial", instance="x")
     with pytest.raises(SandboxError, match=r"seed = 0 given, but the fold is seeded"):
@@ -249,15 +250,57 @@ def test_bind_refuses_a_seed_on_a_brm_without_a_seed_port():
 # =============================================================================
 
 
-def test_the_editor_offers_the_folds_seed_fold_takes():
+def test_the_site_takes_one_map_or_two_as_fuse_map_does():
+    """One map of the fold's nest fills ``second`` with the nest's outermost map; two maps are
+    first and second in the order selected; any map of either chain goes, others are refused."""
     g = tagged(matvec_acc())
-    assert [c["map"] for c in fold_choices(g, False)] == [FOLD]
-    (f,) = form("seed_fold", g, {"params": site_of("seed_fold", g, "sum_map")}, {})
-    assert (f["name"], f["type"], f["value"], f["readonly"]) == ("map", "choice", FOLD, False)
-    assert f["choices"] == [{"value": FOLD, "ok": True, "label": "sum_map_1 · sum folds into "
-                             "tmp1, read once by q = tmp1 + q"}]  # fmt: skip
-    assert "seed" in f["hint"]
-    s = seed_fold(g, FOLD)
-    assert fold_choices(s, False) == [] and [c["map"] for c in fold_choices(s, True)] == [FOLD]
-    (u,) = form("unseed_fold", s, {"params": site_of("unseed_fold", s, "sum_map_1_s")}, {})
+    for first in ("sum_map", FOLD, "sum_map_1_s"):
+        assert site_of("fuse_seed", g, first) == {"first": first, "second": EW}
+        assert site_of("fuse_seed", g, [first, EW]) == {"first": first, "second": EW}
+    assert seed_seconds(g, "sum_map") == [EW]
+    assert seed_pairs(g) == [("sum_map", EW), (FOLD, EW), ("sum_map_1_s", EW)]
+    assert fuse_seed(g, "sum_map", EW) == fuse_seed(g, FOLD, EW)
+    with pytest.raises(SandboxError, match=r"fuse_seed 'sum_map_1' 'mult_map': 'mult_map' is not "
+                       r"a map of the elementwise nest that reads the fold's result "
+                       r"\(augassign_19_4_map\)"):  # fmt: skip
+        fuse_seed(g, FOLD, "mult_map")
+    with pytest.raises(SandboxError, match=r"is not a map of the elementwise nest"):
+        site_of("fuse_seed", g, [FOLD, "mult_map"])
+    with pytest.raises(SandboxError, match=r"fuse_seed: takes one map or two, not 3"):
+        site_of("fuse_seed", g, [FOLD, EW, "mult_map"])
+    with pytest.raises(SandboxError, match=r"fuse_seed 'augassign_19_4_map': its tasklet augassign_19_4 "
+                       r"must fold its one output"):  # fmt: skip
+        site_of("fuse_seed", g, EW)
+
+
+def test_the_link_names_the_loops_matched():
+    """The fold's kept loop against the nest's: m = m at import, m_t = m after the tag; a row
+    split of the nest leaves a loop of its own."""
+    g = matvec_acc(8, 512)
+    assert seed_link(g, FOLD, EW) == {"container": "tmp1", "subset": ["m"],
+                                      "loops": [["m", "m", "0:8"]]}  # fmt: skip
+    t = tagged(g, 4)
+    assert seed_link(t, FOLD, EW)["loops"] == [["m_t", "m", "0:8"]]
+    sp = split(t, EW, 2)
+    assert seed_link(sp, FOLD, EW)["loops"] == [["m_t", "m_1", "0:8 = 0:4"], ["", "m_2", "0:2"]]
+    assert run(fuse_seed(split(tagged(matvec_acc()), EW, 3), FOLD, EW)) == WANT
+
+
+# =============================================================================
+# The editor
+# =============================================================================
+
+
+def test_the_editor_offers_the_elementwise_nests_maps():
+    g = tagged(matvec_acc(8, 512), 4)
+    first, second = form("fuse_seed", g, {"params": site_of("fuse_seed", g, "sum_map")}, {})
+    assert (first["name"], first["value"], first["readonly"]) == ("first", "sum_map", True)
+    assert (second["name"], second["type"], second["value"], second["readonly"]) == (
+        "second", "choice", EW, False)  # fmt: skip
+    assert second["choices"] == [{"value": EW, "ok": True, "label": "augassign_19_4_map · "
+                                  "tmp1[m] · m_t = m (0:8)"}]  # fmt: skip
+    assert "seed" in second["hint"]
+    s = fuse_seed(g, FOLD, EW)
+    assert seed_pairs(s) == [] and [c["map"] for c in seeded_choices(s)] == [FOLD]
+    (u,) = form("unfuse_seed", s, {"params": site_of("unfuse_seed", s, "sum_map_1_s")}, {})
     assert (u["value"], u["choices"][0]["value"]) == (FOLD, FOLD)

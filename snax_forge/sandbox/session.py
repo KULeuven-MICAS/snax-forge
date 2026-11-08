@@ -922,8 +922,9 @@ def form(
     units (the instances in no accelerator, in the graph's order, the selection's ticked),
     ``bake_scalar``'s value (an int literal, or ``csr``, its ``hint`` says; the container's in ``inputs``: the session gives
     the kernel's ``make_inputs`` at seed 0, axpy's alpha 3; else ``BAKE_DEFAULT``),
-    ``seed_fold``'s and ``unseed_fold``'s map (a choice per fold each takes, with a ``hint``,
-    ``_fold_field``)."""
+    ``fuse_seed``'s ``second`` (a choice per map of the elementwise nest that reads the fold's
+    result, with a ``hint``, ``_second_field``) and ``unfuse_seed``'s ``map`` (a choice per
+    seeded fold, ``_fold_field``)."""
 
     from snax_forge.common import fresh
 
@@ -951,8 +952,10 @@ def form(
             }
         elif name == "interchange_map" and p == "with":  # every map above and below it
             field |= _partner_field(g, filled["map"])
-        elif name in ("seed_fold", "unseed_fold") and p == "map":  # the folds it takes
-            field |= _fold_field(g, filled["map"], name == "unseed_fold")
+        elif name == "fuse_seed" and p == "second":  # the elementwise nest's maps
+            field |= _second_field(g, filled["first"], filled.get("second"))
+        elif name == "unfuse_seed" and p == "map":  # the seeded folds
+            field |= _fold_field(g, filled["map"])
         elif name == "tag_map" and p == "kind":
             field |= {"type": "choice", "value": DEFAULT_KIND,
                       "choices": [{"value": t, "label": t} for t in TAGS]}  # fmt: skip
@@ -1007,29 +1010,36 @@ def _partner_field(g: Graph, map: str) -> dict[str, Any]:
     return {"type": "choice", "readonly": False, "value": best, "choices": choices}
 
 
-def _fold_field(g: Graph, map: str, seeded: bool) -> dict[str, Any]:
-    """seed_fold's (``seeded`` False) or unseed_fold's ``map``: a choice per fold it takes, in
-    the graph's order, by the map a recipe names it with (seed.py's ``fold_map``), the
-    selection's fold the default; and the form's hint."""
-    from .seed import fold_choices, fold_map, fold_of
+def _second_field(g: Graph, first: str, second: str | None) -> dict[str, Any]:
+    """fuse_seed's ``second``: a choice per map of the elementwise nest that reads ``first``'s
+    fold (seed.py's ``seed_seconds``), outermost first, the site's (or the selection's) the
+    default; and the form's hint."""
+    from .seed import seed_link, seed_seconds
 
-    folds = fold_choices(g, seeded)
+    seconds = seed_seconds(g, first)
+    choices = []
+    for m in seconds:
+        link = seed_link(g, first, m)
+        loops = ", ".join(f"{a} = {b} ({r})" for a, b, r in link["loops"])
+        label = f"{m} · {link['container']}[{', '.join(link['subset'])}] · {loops}"
+        choices.append({"value": m, "label": label, "ok": True})
+    hint = ("the elementwise nest x' = x (+) t that the fold takes as its seed: the fold starts "
+            "each job from x, one beat per job, and t and the nest go")  # fmt: skip
+    value = second if second in seconds else seconds[0]
+    return {"type": "choice", "readonly": False, "value": value, "choices": choices, "hint": hint}
+
+
+def _fold_field(g: Graph, map: str) -> dict[str, Any]:
+    """unfuse_seed's ``map``: a choice per seeded fold, in the graph's order, by the map a
+    recipe names it with (seed.py's ``fold_map``), the selection's fold the default; and the
+    form's hint."""
+    from .seed import fold_map, fold_of, seeded_choices
+
     mine = fold_map(g, fold_of(g, map, "")[0])
-    if seeded:
-        label, hint = (
-            "{fold} writes {x} from its seed; back: {into}, then {reads}",
-            ("the seeded fold whose elementwise nest and transient come back (unseed_fold)"),
-        )
-    else:
-        label, hint = (
-            "{fold} folds into {into}, read once by {reads}",
-            (
-                "the fold that takes its reader x' = x (+) t: it starts each job from x, the seed, "
-                "one beat per job, and t and the elementwise nest go"
-            ),
-        )
+    label = "{fold} writes {x} from its seed; back: {into}, then {reads}"
+    hint = "the seeded fold whose elementwise nest and transient come back (unfuse_seed)"
     choices = [{"value": c["map"], "label": f"{c['map']} · " + label.format(**c), "ok": True}
-               for c in folds]  # fmt: skip
+               for c in seeded_choices(g)]  # fmt: skip
     return {"type": "choice", "readonly": False, "value": mine, "choices": choices, "hint": hint}
 
 

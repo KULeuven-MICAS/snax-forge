@@ -84,8 +84,8 @@ SCALAR = "sdfg.scalar"
 # a tasklet's record of the sandbox's bake_scalar: the scalar it reads as a literal now, or
 # (value "csr") by the container's name, at run time
 BAKED = "sandbox.baked"
-# a fold tasklet's record of the sandbox's seed_fold: the transient and the elementwise nest it
-# took, for unseed_fold (sandbox/seed.py)
+# a fold tasklet's record of the sandbox's fuse_seed: the transient and the elementwise nest it
+# took, for unfuse_seed (sandbox/seed.py)
 SEEDED = "sandbox.seeded"
 
 

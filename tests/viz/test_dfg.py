@@ -1094,7 +1094,7 @@ def _matvec_seed():
 
 
 def test_the_seed_is_two_edges_of_x_on_the_fold():
-    """Before seed_fold the sum writes tmp1, which the elementwise nest adds to q; after it q
+    """Before fuse_seed the sum writes tmp1, which the elementwise nest adds to q; after it q
     has two edges on the fold, its seed (labelled with its beats per job, T = N // 4 = 128)
     and its write, and tmp1 has no box; bound, the unit's seed port takes the seed's edge and
     its Details list it."""

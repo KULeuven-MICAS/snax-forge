@@ -2,7 +2,7 @@
 
 matvec's multiply into a transient and sum over j, then the row sums added to
 q's old values: an elementwise map q = q + t after the fold, which
-``seed_fold`` takes into the fold as its per-job seed (M13 B2 R5).
+``fuse_seed`` takes into the fold as its per-job seed (M13 B2 R5).
 
 int64 (D113).
 """
