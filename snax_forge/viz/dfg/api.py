@@ -153,14 +153,13 @@ line gives no bytes and ``local to <fused map>``, its Details ``local to <fused 
 memory``. A transient in L1 (dot 1's ``tmp0``) and the kernel's inputs and outputs keep
 their boxes.
 
-**The seed** (sandbox/seed.py's ``seed_fold``). A seeded fold reads and writes ``x`` itself,
+**The seed** (sandbox/seed.py's ``fuse_seed``). A seeded fold reads and writes ``x`` itself,
 so no transient sits between it and an elementwise nest: ``x`` has two edges on the fold,
 its seed, read from ``x``'s box above (a tasklet's drawn connector ``seed``, ``seed: true``,
 a bound unit's ``seed`` port), and its write into ``x``'s box below (its next version, as
-any in-place write). The seed's edge is labelled ``q[m] · seed · once per job (T = N // 4 =
-128 beats)`` (``seed_text``: T evaluated where the symbols are known) and marked ``seed``;
-its Details' memlet ends ``(seed)``; the node's Details list it under ``seed`` with the same
-text, a seeded tasklet's output memlet ``(reduce add, seed q[m])``.
+any in-place write). The seed's edge is labelled with its memlet, ``q[m_t]``, and marked
+``seed``; its Details' memlet ends ``(seed)``; the node's Details list it under ``seed``, a
+seeded tasklet's output memlet ``(reduce add, seed q[m])``.
 """
 
 from __future__ import annotations
@@ -1225,7 +1224,7 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
         c: {"writers": [], "readers": []} for c in g.containers
     }
     nodes: dict[str, Node] = {}
-    for n, outer in g.walk():
+    for n, _ in g.walk():
         nodes[n.id] = n
         seed = seed_memlet(n)
         for m in [
@@ -1235,7 +1234,7 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
             users[m.data]["readers"].append(n.id)
         for m in n.outputs.values():
             users[m.data]["writers"].append(n.id)
-        out[f"node:{n.id}"] = _node_details(n, {n.id: seed_text(g, n, outer)})
+        out[f"node:{n.id}"] = _node_details(n)
     for c, cont in g.containers.items():
         placed = est.containers.get(c) if est is not None else None
         if "loop.local" in cont.attrs:  # as the Containers line has it
@@ -1301,9 +1300,8 @@ def details(g: Graph, view: dict[str, Any], est: Any) -> dict[str, dict[str, Any
     return out
 
 
-def _node_details(n: Node, seed_texts: dict[str, str | None] | None = None) -> dict[str, Any]:
+def _node_details(n: Node) -> dict[str, Any]:
     a = n.attrs
-    seed_texts = seed_texts or {}
     if n.kind == "map":
         keys = ("loop.kind", "loop.split", "loop.fused", "loop.split_reduce")
         return {
@@ -1315,8 +1313,8 @@ def _node_details(n: Node, seed_texts: dict[str, str | None] | None = None) -> d
     io = {"inputs": {c: memlet_text(m) for c, m in n.inputs.items()},
           "outputs": {c: memlet_text(m) for c, m in n.outputs.items()}}  # fmt: skip
     seed = seed_memlet(n)
-    if seed is not None:  # the seed, with its beats (the node's edge label, seed_text)
-        io["seed"] = seed_texts.get(n.id) or memlet_text(seed)
+    if seed is not None:  # the seed (its edge's label)
+        io["seed"] = memlet_text(seed)
     if n.kind == "tasklet":
         return {"kind": "tasklet", "code": a["code"], **io}
     if n.kind == "accelerated":
@@ -1374,31 +1372,6 @@ def seed_memlet(n: Node) -> Memlet | None:
         if m.reduce is not None and m.reduce.seed is not None:
             return Memlet(m.reduce.seed.data, list(m.reduce.seed.subset))
     return None
-
-
-def seed_text(g: Graph, n: Node, outer: Sequence[Node]) -> str | None:
-    """The seed's edge label, ``q[m_t:m_t + 1] · seed · once per job (T = N // 4 = 128
-    beats)``: T the fold's beats per job, the innermost maps around it (not spatial; a unit's
-    firing loops) whose variable the seed does not use, evaluated where the shape is known."""
-    m = seed_memlet(n)
-    if m is None:
-        return None
-    loops = [o for o in outer if o.kind == "map" and o.attrs.get("loop.kind") != "spatial"]
-    inner: list[Node] = []
-    for o in reversed(loops):
-        if o.attrs["var"] in m.names:
-            break
-        inner.insert(0, o)
-    ends = []
-    for o in inner:
-        b, e, _ = parse_dim(o.attrs["range"], o.id)
-        ends.append(str(e) if b == 0 else f"({e} - {b})")
-    counts = [_iterations(g, o.attrs["range"]) for o in inner]
-    t = " * ".join(ends) or "1"
-    value = prod(counts) if None not in counts else None  # type: ignore[arg-type]
-    if value is not None and str(value) != t:
-        t = f"{t} = {value}"
-    return f"{memlet_text(m)} · seed · once per job (T = {t} beats)"
 
 
 def _iterations(g: Graph, rng: str) -> int | None:
@@ -1554,7 +1527,6 @@ def _layout(g: Graph) -> dict[str, Any]:
         return keys
 
     csr_read = {n.inputs[c].data for n, _ in g.walk() for c in csr_connectors(g, n)}
-    outer_of = {n.id: outer for n, outer in g.walk()}
     unused = [c for c in g.containers
               if c not in used and c not in linked and c not in local and c not in csr_read]  # fmt: skip
     before = reads[0] + unused if tops else list(g.containers)
@@ -1594,8 +1566,8 @@ def _layout(g: Graph) -> dict[str, Any]:
             else:
                 label = f"{text} · broadcast" if m.data in scalars and not m.names else None
                 seeded = c == SEED and seed_memlet(n) is not None
-                if seeded:  # the fold's seed, once per job
-                    label, text = seed_text(g, n, outer_of[n.id]), f"{text} (seed)"
+                if seeded:  # the fold's seed, labelled with its memlet
+                    label, text = text, f"{text} (seed)"
                 edges.append(_edge(above[m.data], port, m.data, text, "read",
                                    packing(g, n, c, m.data), label=label, seed=seeded))  # fmt: skip
         nxt = reads[k + 1] if k + 1 < len(tops) else []
@@ -1627,7 +1599,7 @@ def _edge(
     """One memlet; ``pack`` the port's packing when it meets an accelerated node; ``local`` a
     fused nest's local value between its two tasklets, labelled with the container's name;
     ``label`` any other text drawn beside it (a scalar's ``alpha[0] · broadcast``, a fold's
-    seed); ``seed`` a fold's seed (``seed_text``)."""
+    seed ``q[m_t]``); ``seed`` a fold's seed."""
     out = {"id": f"{src}->{dst}", "from": src, "to": dst, "data": data, "text": text, "dir": side}
     if pack is not None:
         out["packing"] = pack

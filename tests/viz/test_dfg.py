@@ -1095,8 +1095,8 @@ def _matvec_seed():
 
 def test_the_seed_is_two_edges_of_x_on_the_fold():
     """Before fuse_seed the sum writes tmp1, which the elementwise nest adds to q; after it q
-    has two edges on the fold, its seed (labelled with its beats per job, T = N // 4 = 128)
-    and its write, and tmp1 has no box; bound, the unit's seed port takes the seed's edge and
+    has two edges on the fold, its seed (labelled with its memlet alone, as q[m_t]) and its
+    write, and tmp1 has no box; bound, the unit's seed port takes the seed's edge and
     its Details list it."""
     r, graphs = _matvec_seed()
     before, seeded, bound = _views(r, graphs[5:8])
@@ -1108,7 +1108,7 @@ def test_the_seed_is_two_edges_of_x_on_the_fold():
         seed = [e for e in q if e.get("seed")]
         assert [(e["from"], e["to"]) for e in q] == [("q@0", f"{node}.seed"),
                                                      (f"{node}.out", "q@1")]  # fmt: skip
-        assert seed[0]["label"] == f"{subset} · seed · once per job (T = N // 4 = 128 beats)"
+        assert seed[0]["label"] == subset
         assert v["details"][f"edge:{seed[0]['id']}"]["memlet"] == f"{subset} (seed)"
         assert v["details"][f"node:{node}"]["seed"] == seed[0]["label"]
         conns = _node_in(v, node)["inputs"]

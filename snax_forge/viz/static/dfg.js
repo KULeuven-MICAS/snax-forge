@@ -251,7 +251,7 @@ function drawEdges(canvas, svg, edges, k) {
     const p = svgEl("path", { d, class: `edge ${e.dir}${e.local ? " local" : ""}${e.seed ? " seed" : ""}`, "data-sel": e.id, "marker-end": `url(#${marker})` });
     p._marker = marker;
     out.push(p);
-    if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m] · seed · once per job), api.py
+    if (e.label) { // a fused nest's local value (its name, no box), a scalar's broadcast (alpha[0] · broadcast) or a fold's seed (q[m_t]), api.py
       // a local value's right of its edge, halfway down (clear of the line and its arrow); a
       // broadcast's at its start, beside the hexagon, so no map bar it passes hides it
       const [tx, ty] = e.local ? [Math.max(x1, x2) + 10, (y1 + y2) / 2 + 4] : [x1 + 6, y1 + 14];
