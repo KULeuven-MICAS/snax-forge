@@ -2,7 +2,15 @@ package snax.forge
 
 import chisel3._
 
-import snax.forge.datapath.{DatapathModule, LinkBuffer, Mac, SerialAccumulate, SimdLanes, TreeAccumulate}
+import snax.forge.datapath.{
+  DatapathModule,
+  LaneAccumulate,
+  LinkBuffer,
+  Mac,
+  SerialAccumulate,
+  SimdLanes,
+  TreeAccumulate
+}
 import snax.forge.elementwise.ElementwiseOp
 import snax.forge.shell.AcceleratorSpec
 
@@ -296,6 +304,23 @@ object Datapaths {
       Seq(Pin("read"), Pin("lane"), Pin("first")),
       p => {
         new SerialAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
+      },
+      Map("inType" -> ujson.Str("int64"), "outType" -> ujson.Str("int64"), "lanes" -> ujson.Num(4))
+    ),
+    Datapath(
+      "LaneAccumulate",
+      Seq(
+        ("inType", DtypeParam, "inputs.dtype"),
+        ("outType", DtypeParam, "outputs.dtype"),
+        ("lanes", IntParam(1), "inputs.lanes")
+      ),
+      Seq(Port("a", "in"), Port("out", "out")),
+      ujson.Num(1),
+      ujson.Num(1),
+      ujson.Str("lanes * width(outType)"),
+      Seq(Pin("fire"), Pin("first")),
+      p => {
+        new LaneAccumulate(str(p, "inType"), str(p, "outType"), int(p, "lanes"))
       },
       Map("inType" -> ujson.Str("int64"), "outType" -> ujson.Str("int64"), "lanes" -> ujson.Num(4))
     ),

@@ -127,6 +127,25 @@
   "pins": ["read", "lane", "first"],
   "fill": {"inType": "inputs.dtype", "outType": "outputs.dtype", "lanes": "inputs.lanes"}
  },
+ "LaneAccumulate": {
+  "params": {
+   "inType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "outType": {
+    "type": "dtype",
+    "values": ["int8", "int16", "int32", "int64", "uint8", "uint16", "uint32", "uint64"]
+   },
+   "lanes": {"type": "int", "min": 1}
+  },
+  "ports": {"a": "in", "out": "out"},
+  "latency": 1,
+  "span": 1,
+  "flops": "lanes * width(outType)",
+  "pins": ["fire", "first"],
+  "fill": {"inType": "inputs.dtype", "outType": "outputs.dtype", "lanes": "inputs.lanes"}
+ },
  "LinkBuffer": {
   "params": {
    "depth": {"type": "int", "min": 1},

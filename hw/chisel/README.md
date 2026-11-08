@@ -1,6 +1,6 @@
 # SNAX-FORGE Chisel datapaths
 
-Hardware side of SNAX-FORGE: a hand-written library of datapaths and the group control unit, their chiseltest specs, and `Emit`, which elaborates a catalogue of configurations to SystemVerilog and a design point's accelerator from its `accelerator.json` (C§17). It is a project of its own: nothing here imports `snax_forge/`, and the Python side calls it only through `pixi run gen-rtl`. The datapaths are the reference implementations of the BRMs (`simd` names `SimdLanes`, `accumulate` `TreeAccumulate`).
+Hardware side of SNAX-FORGE: a hand-written library of datapaths and the group control unit, their chiseltest specs, and `Emit`, which elaborates a catalogue of configurations to SystemVerilog and a design point's accelerator from its `accelerator.json` (C§17). It is a project of its own: nothing here imports `snax_forge/`, and the Python side calls it only through `pixi run gen-rtl`. The datapaths are the reference implementations of the BRMs (`simd` names `SimdLanes`, `accumulate` `TreeAccumulate`, `lane_accumulate` `LaneAccumulate`).
 
 ## Why these versions
 
@@ -22,7 +22,7 @@ hw/chisel/
     │   ├── Datapaths.scala             # the datapath registry (blocks.json)
     │   ├── IntType.scala               # NumPy's integer types as Chisel lanes (D143)
     │   ├── ctrl/                       # GroupCtrl and its control model GroupRule
-    │   ├── datapath/                   # SimdLanes, TreeAccumulate, Mac, SerialAccumulate, LinkBuffer
+    │   ├── datapath/                   # SimdLanes, TreeAccumulate, Mac, SerialAccumulate, LaneAccumulate, LinkBuffer
     │   ├── shell/                      # accelerator.json, <tag>_csr, _ctrl, _datapath, the wrapper
     │   ├── RepoPaths.scala             # out/hw and repository paths
     │   ├── elementwise/                # the typed ALU lane, the ops
@@ -75,6 +75,7 @@ Every module has a spec; the random ones drive it with seeded random data, confi
 | `SimdLanesSpec` | in, op and out types, lanes, every op, data; one input at int32 and int64, add, sub, mul, min and max, k random and at the edges (0, -1, the type's min and max), or from its pin, the out type; axpby at int32, int64 and int64 with an int16 `b`, k1 from its pin or baked, k2 from its pin or unset, lanes, data | `ElementwiseModel`, NumPy's rule (D143), b the constant k; axpby's `k1 * a + k2 * b` at the op type, wrapping |
 | `TreeAccumulateSpec` | in and out types, lanes, data, `fire` and `first` | lane sums from each `first`, each lane cast to the out type (the docstring) |
 | `MacSpec` | the three forms (accumulating, plain, plain with `regOut`), 2, 4, 8 lanes, int64/int32 signed and unsigned, a wider out type, data and enables | per lane p = cast_out(cast_op(a)·cast_op(b)), s ← first ? p : s + p, or p + c (C§17) |
+| `LaneAccumulateSpec` | 1, 4, 8 lanes, int32 → int32, int32 → int64, int64 → int64, data, jobs of random T, fires spread over random gaps (no gaps, 30 % or 70 %) | per lane x = cast_out(a), s ← first ? x : s + x on fire, held otherwise (C§17); each job's sums after its last fire |
 | `SerialAccumulateSpec` | 1, 2, 4, 8 lanes, in and out types, data, `read`, `lane`, `first` | acc ← (first ∧ lane 0) ? x_lane : acc + x_lane (C§17) |
 | `LinkBufferSpec` | depth 1, 2, 4, lanes, types, data, loads and takes as a ring | slot wslot loaded, slot rslot out (C§17) |
 | `GroupCtrlSpec` | chains of 1, 2 and 3 units, half in a shuffled unit order, L ∈ {0, 1, 2}, II ∈ {1, 2}, span ∈ {1, 2, 4}, T ∈ {1..4} fixed or from the start, 0–2 outer inputs, depth ∈ {0, 1, 2}, J ∈ {0, 1, 3}, T 0, starts while busy, input valids, output stalls, job_width 3 or 32 | `GroupModel`, SnaxGroupRule (`snax_group.hpp`) |
@@ -109,7 +110,7 @@ Elaborated SystemVerilog goes to `out/hw/` (gitignored). RTL is never committed 
 All are data and enables only, under their group's control unit (D147); `blocks.json` gives each one's ports, timing, register bits and pins.
 
 - **SIMD (`SimdLanes`, vecadd's, relu's and axpy's).** A beat in, a beat out, L = 0, II = 1, no pins but its scalars'; a typed ALU per lane. Two inputs (`streams` 2), or one with the constant `k` as every lane's second operand, baked in at `opType` (`streams` 1, the `b` port absent, the module named `..._k<k>`, `_km3` for -3), or from its pin `k` (`kCsr`, `_kr`); `k` is a `const` param, null at two streams, read from `accelerator.json` as a JSON number, so exact within ±2^53 (`Datapaths.const`). axpby (two inputs) is `k1 * a + k2 * b` at `opType` (`+ b` with no k2), each of `k1` and `k2` a `const` baked in (`_k13`) or its pin (`k1Csr`, `k2Csr`: the unit's `scalars`, its K1 or K2 CSR; `_k1r`), the module named `..._axpby` and its slots'.
-- **Folds (`TreeAccumulate`, `SerialAccumulate`, an accumulating `Mac`).** T beats in, one result out (JOB_BEATS = T), L = 1: `TreeAccumulate` sums a beat's lanes in a tree, `SerialAccumulate` reads them one per cycle in place (span = lanes), `Mac` keeps a lane-wise product sum. A fold is a chaining barrier: no output exists until its last input is in.
+- **Folds (`TreeAccumulate`, `SerialAccumulate`, an accumulating `Mac`, `LaneAccumulate`).** T beats in, one result out (JOB_BEATS = T), L = 1: `TreeAccumulate` sums a beat's lanes in a tree, `SerialAccumulate` reads them one per cycle in place (span = lanes), `Mac` keeps a lane-wise product sum, `LaneAccumulate` a lane-wise sum of its input (pins `fire` and `first`, s ← first ? a : s + a at the output type; rowsum 2's W rows on W lanes, a column a beat). A fold is a chaining barrier: no output exists until its last input is in.
 - **`LinkBuffer`.** A link of depth D ≥ 1 between two units of a group: a ring of D beats, loaded by the producer and read by the consumer.
 
 dot and matvec are compositions of these, one group of linked units each (dot 2–6, matvec 4–6).
